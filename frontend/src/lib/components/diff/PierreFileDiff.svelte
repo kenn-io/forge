@@ -1208,16 +1208,13 @@
     const root = host?.shadowRoot;
     const pre = renderedDiffPre(root);
     if (!root || !pre || !pierreDiff) return;
+    for (const target of root.querySelectorAll<HTMLElement>("[data-kenn-forge-review-line-number]")) {
+      resetLineNumberKeyboardTarget(target);
+    }
     for (const line of root.querySelectorAll<HTMLElement>("[data-diff-path]")) {
       line.removeAttribute("data-diff-path");
       line.removeAttribute("data-diff-old-line");
       line.removeAttribute("data-diff-new-line");
-      if (line.hasAttribute("data-kenn-forge-review-line-number")) {
-        line.tabIndex = -1;
-        line.removeAttribute("aria-label");
-        line.removeAttribute("data-kenn-forge-review-line-number");
-        line.removeAttribute("role");
-      }
     }
 
     const split = pre.getAttribute("data-diff-type") === "split";
@@ -1256,22 +1253,29 @@
     side: PierreSide,
     attributes: Record<string, string>,
   ): void {
+    gutter.tabIndex = -1;
+    const target = gutter.querySelector<HTMLElement>("[data-line-number-content]");
+    if (!target) return;
     if (!enableLineSelection || !onLineSelected) {
-      gutter.tabIndex = -1;
-      gutter.removeAttribute("aria-label");
-      gutter.removeAttribute("data-kenn-forge-review-line-number");
-      gutter.removeAttribute("role");
+      resetLineNumberKeyboardTarget(target);
       return;
     }
     const lineNumber = attributes[side === "additions" ? "data-diff-new-line" : "data-diff-old-line"];
     if (!lineNumber) return;
-    gutter.tabIndex = 0;
-    gutter.setAttribute("role", "button");
-    gutter.setAttribute("data-kenn-forge-review-line-number", "");
-    gutter.setAttribute(
+    target.tabIndex = 0;
+    target.setAttribute("role", "button");
+    target.setAttribute("data-kenn-forge-review-line-number", "");
+    target.setAttribute(
       "aria-label",
       `Select ${side === "additions" ? "new" : "old"} line ${lineNumber} for review`,
     );
+  }
+
+  function resetLineNumberKeyboardTarget(target: HTMLElement): void {
+    target.tabIndex = -1;
+    target.removeAttribute("aria-label");
+    target.removeAttribute("data-kenn-forge-review-line-number");
+    target.removeAttribute("role");
   }
 
   function handleLineNumberKeyboardSelection(event: Event): void {
@@ -1280,16 +1284,29 @@
       (event.key !== "Enter" && event.key !== " ") ||
       closestFromEvent(event, "[data-utility-button]")
     ) return;
-    const gutter = closestFromEvent(event, "[data-kenn-forge-review-line-number]");
-    if (!(gutter instanceof HTMLElement)) return;
-    const selection = keyboardLineSelection(gutter);
+    const target = closestFromEvent(event, "[data-kenn-forge-review-line-number]");
+    if (!(target instanceof HTMLElement)) return;
+    const selection = keyboardLineSelection(target);
     if (!selection) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    onLineSelected?.(selection);
+    onLineSelected?.(
+      event.shiftKey && selectedRange
+        ? {
+            start: selectedRange.start,
+            side: selectedRange.side ?? selection.side,
+            end: selection.end,
+            endSide: selection.side,
+          }
+        : selection,
+    );
   }
 
-  function keyboardLineSelection(gutter: HTMLElement): SelectedLineRange | undefined {
+  function keyboardLineSelection(
+    target: HTMLElement,
+  ): { start: number; end: number; side: PierreSide } | undefined {
+    const gutter = target.closest<HTMLElement>("[data-column-number]");
+    if (!gutter) return undefined;
     const newLine = Number.parseInt(gutter.getAttribute("data-diff-new-line") ?? "", 10);
     if (Number.isFinite(newLine)) {
       return { start: newLine, end: newLine, side: "additions" };

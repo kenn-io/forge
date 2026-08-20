@@ -752,6 +752,34 @@ describe("DiffFile", () => {
     });
   }
 
+  async function findPierreLineKeyboardTarget(line: number, side: "left" | "right"): Promise<HTMLElement> {
+    const lineNumber = await findPierreLineNumber(line, side);
+    const target = lineNumber.querySelector<HTMLElement>("[data-line-number-content]");
+    expect(target).toBeTruthy();
+    return target!;
+  }
+
+  async function keyboardSelectPierreLine(
+    line: number,
+    side: "left" | "right",
+    options: { shiftKey?: boolean } = {},
+  ): Promise<void> {
+    const target = await findPierreLineKeyboardTarget(line, side);
+    target.focus();
+    expect(
+      await fireEvent.keyDown(target, {
+        key: "Enter",
+        code: "Enter",
+        shiftKey: options.shiftKey,
+      }),
+    ).toBe(false);
+    await fireEvent.keyUp(target, {
+      key: "Enter",
+      code: "Enter",
+      shiftKey: options.shiftKey,
+    });
+  }
+
   function selectedPierreLines(): NodeListOf<Element> | undefined {
     return document.querySelector(".pierre-diff")?.shadowRoot?.querySelectorAll("[data-selected-line]");
   }
@@ -935,24 +963,31 @@ describe("DiffFile", () => {
     expect(selectedPierreLines()).toHaveLength(0);
   });
 
-  it("opens an inline composer without preceding pointer interaction", async () => {
+  it("opens a multiline inline composer without pointer interaction", async () => {
     renderDiffFile(makeFile(), {
       reviewEnabled: true,
       diffHeadSHA: "diff-head",
+      nativeMultilineRanges: true,
     });
 
-    const lineNumber = await findPierreLineNumber(2, "right");
-    expect(lineNumber.tabIndex).toBe(0);
-    lineNumber.focus();
-    await fireEvent.keyDown(lineNumber, { key: "Enter", code: "Enter" });
-    await fireEvent.keyUp(lineNumber, { key: "Enter", code: "Enter" });
+    const lineNumber = await findPierreLineNumber(1, "right");
+    const lineNumberTarget = await findPierreLineKeyboardTarget(1, "right");
+    expect(lineNumber.tabIndex).toBe(-1);
+    expect(lineNumber.getAttribute("role")).toBeNull();
+    expect(lineNumberTarget.tabIndex).toBe(0);
+    expect(lineNumberTarget.getAttribute("role")).toBe("button");
+
+    await keyboardSelectPierreLine(1, "right");
+    await keyboardSelectPierreLine(2, "right", { shiftKey: true });
 
     await findLineCommentButton(2, "right");
     expect(screen.queryByPlaceholderText("Leave a comment")).toBeNull();
+    expect(selectedPierreLines()?.length).toBeGreaterThanOrEqual(2);
 
     await keyboardActivateLineCommentButton(2, "right");
 
     expect(screen.getByPlaceholderText("Leave a comment")).toBeTruthy();
+    expect(selectedPierreLines()?.length).toBeGreaterThanOrEqual(2);
   });
 
   it("toggles an active multiline composer from keyboard line comment button activation", async () => {

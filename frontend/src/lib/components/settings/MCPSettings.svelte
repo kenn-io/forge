@@ -29,17 +29,13 @@
   let enabledDraft = $state(mcp.enabled);
   // svelte-ignore state_referenced_locally
   let portDraft = $state<number | undefined>(mcp.port);
+  let portValid = $state(true);
   // svelte-ignore state_referenced_locally
   let diffCacheDraft = $state<number | undefined>(mcp.diff_cache_mb);
+  let diffCacheValid = $state(true);
 
   const parsedPort = $derived(portDraft ?? 0);
   const parsedDiffCache = $derived(diffCacheDraft ?? 0);
-  const portValid = $derived(
-    Number.isInteger(parsedPort) && parsedPort >= 0 && parsedPort <= 65_535,
-  );
-  const diffCacheValid = $derived(
-    Number.isInteger(parsedDiffCache) && parsedDiffCache >= 0,
-  );
   const pendingMCP: MCPSettingsUpdate = $derived({
     enabled: enabledDraft,
     port: parsedPort,
@@ -70,7 +66,9 @@
   function resetDraft(): void {
     enabledDraft = currentMCP.enabled;
     portDraft = currentMCP.port;
+    portValid = true;
     diffCacheDraft = currentMCP.diff_cache_mb;
+    diffCacheValid = true;
   }
 
   function save(): void {
@@ -131,6 +129,9 @@
         min="0"
         max="65535"
         step="1"
+        oninput={(event) => {
+          portValid = event.currentTarget.validity.valid;
+        }}
         bind:value={portDraft}
         placeholder="Automatic"
         disabled={embedded || saving}
@@ -146,6 +147,9 @@
           type="number"
           min="0"
           step="1"
+          oninput={(event) => {
+            diffCacheValid = event.currentTarget.validity.valid;
+          }}
           bind:value={diffCacheDraft}
           placeholder="128"
           disabled={embedded || saving}

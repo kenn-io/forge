@@ -108,7 +108,7 @@ export type Settings = Omit<SettingsResponse, "notifications"> & {
 export type FleetSettings = components["schemas"]["FleetSettingsResponse"];
 export type FleetSettingsUpdate = components["schemas"]["UpdateFleetSettingsInputBody"];
 export type MCPSettings = components["schemas"]["McpSettingsResponse"];
-export type MCPSettingsUpdate = components["schemas"]["MCP"];
+export type MCPSettingsUpdate = components["schemas"]["McpSettingsUpdate"];
 export type FleetPeer = components["schemas"]["FleetPeer"];
 export type FleetSSHPeer = components["schemas"]["FleetSSHPeer"];
 

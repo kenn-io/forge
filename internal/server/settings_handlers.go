@@ -60,12 +60,18 @@ type updateSettingsRequest struct {
 	Modes        *config.ModeVisibility           `json:"modes,omitempty"`
 	Agents       *[]config.Agent                  `json:"agents,omitempty"`
 	KataProjects *[]config.KataProjectRepoMapping `json:"kata_projects,omitempty"`
-	MCP          *config.MCP                      `json:"mcp,omitempty"`
+	MCP          *mcpSettingsUpdate               `json:"mcp,omitempty"`
 }
 
 type workspaceSettingsUpdate struct {
 	AutoAssignOnCreate *bool   `json:"auto_assign_on_create,omitempty"`
 	DefaultSidebarView *string `json:"default_sidebar_view,omitempty" enum:"diff,item"`
+}
+
+type mcpSettingsUpdate struct {
+	Enabled     *bool `json:"enabled,omitempty"`
+	Port        *int  `json:"port,omitempty"`
+	DiffCacheMB *int  `json:"diff_cache_mb,omitempty"`
 }
 
 func (s *Server) configuredClients(
@@ -897,7 +903,15 @@ func (s *Server) updateSettings(
 		s.cfg.KataProjects = slices.Clone(*input.Body.KataProjects)
 	}
 	if input.Body.MCP != nil {
-		s.cfg.MCP = *input.Body.MCP
+		if input.Body.MCP.Enabled != nil {
+			s.cfg.MCP.Enabled = *input.Body.MCP.Enabled
+		}
+		if input.Body.MCP.Port != nil {
+			s.cfg.MCP.Port = *input.Body.MCP.Port
+		}
+		if input.Body.MCP.DiffCacheMB != nil {
+			s.cfg.MCP.DiffCacheMB = *input.Body.MCP.DiffCacheMB
+		}
 	}
 	if err := s.cfg.Validate(); err != nil {
 		s.cfg.Activity = prevActivity

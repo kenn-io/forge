@@ -2911,13 +2911,6 @@ type LocalSyncCeilingStatus struct {
 	Spent           int64  `json:"spent"`
 }
 
-// MCP defines model for MCP.
-type MCP struct {
-	DiffCacheMb *int64 `json:"diff_cache_mb,omitempty"`
-	Enabled     *bool  `json:"enabled,omitempty"`
-	Port        *int64 `json:"port,omitempty"`
-}
-
 // McpSettingsResponse defines model for McpSettingsResponse.
 type McpSettingsResponse struct {
 	ActiveRequiresAuth bool    `json:"active_requires_auth"`
@@ -2926,6 +2919,13 @@ type McpSettingsResponse struct {
 	Enabled            bool    `json:"enabled"`
 	Port               *int64  `json:"port,omitempty"`
 	RestartRequired    bool    `json:"restart_required"`
+}
+
+// McpSettingsUpdate defines model for McpSettingsUpdate.
+type McpSettingsUpdate struct {
+	DiffCacheMb *int64 `json:"diff_cache_mb,omitempty"`
+	Enabled     *bool  `json:"enabled,omitempty"`
+	Port        *int64 `json:"port,omitempty"`
 }
 
 // MergePRBody defines model for MergePRBody.
@@ -4553,7 +4553,7 @@ type UpdateSettingsRequest struct {
 	Detail       *Detail                   `json:"detail,omitempty"`
 	Issues       *Issues                   `json:"issues,omitempty"`
 	KataProjects *[]KataProjectRepoMapping `json:"kata_projects,omitempty"`
-	Mcp          *MCP                      `json:"mcp,omitempty"`
+	Mcp          *McpSettingsUpdate        `json:"mcp,omitempty"`
 	Modes        *ModeVisibility           `json:"modes,omitempty"`
 	PullRequests *PullRequests             `json:"pull_requests,omitempty"`
 	Terminal     *Terminal                 `json:"terminal,omitempty"`

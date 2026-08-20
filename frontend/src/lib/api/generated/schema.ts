@@ -6433,13 +6433,6 @@ export interface components {
             /** Format: int64 */
             spent: number;
         };
-        MCP: {
-            /** Format: int64 */
-            diff_cache_mb?: number;
-            enabled?: boolean;
-            /** Format: int64 */
-            port?: number;
-        };
         McpSettingsResponse: {
             active_requires_auth: boolean;
             active_url?: string;
@@ -6449,6 +6442,13 @@ export interface components {
             /** Format: int64 */
             port?: number;
             restart_required: boolean;
+        };
+        McpSettingsUpdate: {
+            /** Format: int64 */
+            diff_cache_mb?: number;
+            enabled?: boolean;
+            /** Format: int64 */
+            port?: number;
         };
         MergePRBody: {
             /**
@@ -8094,7 +8094,7 @@ export interface components {
             detail?: components["schemas"]["Detail"];
             issues?: components["schemas"]["Issues"];
             kata_projects?: components["schemas"]["KataProjectRepoMapping"][];
-            mcp?: components["schemas"]["MCP"];
+            mcp?: components["schemas"]["McpSettingsUpdate"];
             modes?: components["schemas"]["ModeVisibility"];
             pull_requests?: components["schemas"]["PullRequests"];
             terminal?: components["schemas"]["Terminal"];

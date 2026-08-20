@@ -3857,18 +3857,6 @@ components:
         - remaining
         - reset_at
       type: object
-    MCP:
-      additionalProperties: false
-      properties:
-        diff_cache_mb:
-          format: int64
-          type: integer
-        enabled:
-          type: boolean
-        port:
-          format: int64
-          type: integer
-      type: object
     McpSettingsResponse:
       additionalProperties: false
       properties:
@@ -3890,6 +3878,18 @@ components:
         - enabled
         - restart_required
         - active_requires_auth
+      type: object
+    McpSettingsUpdate:
+      additionalProperties: false
+      properties:
+        diff_cache_mb:
+          format: int64
+          type: integer
+        enabled:
+          type: boolean
+        port:
+          format: int64
+          type: integer
       type: object
     MergePRBody:
       additionalProperties: false
@@ -7614,7 +7614,7 @@ components:
             $ref: "#/components/schemas/KataProjectRepoMapping"
           type: array
         mcp:
-          $ref: "#/components/schemas/MCP"
+          $ref: "#/components/schemas/McpSettingsUpdate"
         modes:
           $ref: "#/components/schemas/ModeVisibility"
         pull_requests:

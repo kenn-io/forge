@@ -412,7 +412,9 @@ func TestHandleUpdateSettingsPersistsMCPAndReportsRestartRequired(t *testing.T) 
 	srv, _, cfgPath := setupTestServerWithConfig(t)
 
 	mcp := config.MCP{Enabled: true, Port: 9092, DiffCacheMB: 256}
-	rr := doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{MCP: &mcp})
+	rr := doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{MCP: &mcpSettingsUpdate{
+		Enabled: new(true), Port: new(9092), DiffCacheMB: new(256),
+	}})
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
 	var resp settingsResponse
@@ -430,13 +432,39 @@ func TestHandleUpdateSettingsPersistsMCPAndReportsRestartRequired(t *testing.T) 
 	assert.Equal(mcp, reloaded.MCP)
 }
 
+func TestHandleUpdateSettingsMergesMCPFields(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, _, cfgPath := setupTestServerWithConfig(t)
+
+	srv.cfg.MCP = config.MCP{Port: 9092, DiffCacheMB: 256}
+	require.NoError(srv.cfg.Save(cfgPath))
+
+	rr := doJSON(t, srv, http.MethodPut, "/api/v1/settings", map[string]any{
+		"mcp": map[string]any{"enabled": true},
+	})
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	assert.Equal(config.MCP{Enabled: true, Port: 9092, DiffCacheMB: 256}, srv.cfg.MCP)
+
+	rr = doJSON(t, srv, http.MethodPut, "/api/v1/settings", map[string]any{
+		"mcp": map[string]any{"port": 0},
+	})
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	assert.Equal(config.MCP{Enabled: true, DiffCacheMB: 256}, srv.cfg.MCP)
+
+	reloaded, err := config.Load(cfgPath)
+	require.NoError(err)
+	assert.Equal(config.MCP{Enabled: true, DiffCacheMB: 256}, reloaded.MCP)
+}
+
 func TestHandleUpdateSettingsRejectsInvalidMCPWithoutPublishing(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, _, cfgPath := setupTestServerWithConfig(t)
 
-	invalid := config.MCP{Enabled: true, Port: 8091}
-	rr := doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{MCP: &invalid})
+	rr := doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{MCP: &mcpSettingsUpdate{
+		Enabled: new(true), Port: new(8091),
+	}})
 	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
 	assert.Equal(config.MCP{}, srv.cfg.MCP)
 

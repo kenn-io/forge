@@ -151,10 +151,10 @@ func applyCachedWorkspaceTmux(
 }
 
 func recordCachedWorkspaceTmux(
-	entry *workspaceEnrichmentCacheEntry,
+	entry workspaceEnrichmentCacheEntry,
 	observed workspaceResponse,
 	now time.Time,
-) {
+) workspaceEnrichmentCacheEntry {
 	entry.response.TmuxPaneTitle = observed.TmuxPaneTitle
 	entry.response.TmuxWorking = observed.TmuxWorking
 	entry.response.TmuxActivitySource = observed.TmuxActivitySource
@@ -165,11 +165,11 @@ func recordCachedWorkspaceTmux(
 		entry.tmuxObservedOutputAt = time.Time{}
 		entry.tmuxPublishedOutputAt = time.Time{}
 		entry.tmuxRecencyPublishedAt = time.Time{}
-		return
+		return entry
 	}
 	if !entry.tmuxObservedOutputAt.IsZero() &&
 		observedAt.Before(entry.tmuxObservedOutputAt) {
-		return
+		return entry
 	}
 	if observedAt.After(entry.tmuxObservedOutputAt) {
 		entry.tmuxObservedOutputAt = observedAt
@@ -187,6 +187,7 @@ func recordCachedWorkspaceTmux(
 	}
 	formatted := entry.tmuxPublishedOutputAt.Format(time.RFC3339)
 	entry.response.TmuxLastOutputAt = &formatted
+	return entry
 }
 
 func parseWorkspaceTmuxOutputAt(value *string) time.Time {
@@ -485,7 +486,7 @@ func (s *Handler) recordWorkspaceEnrichmentResult(
 		}
 	}
 	if result.tmuxComplete {
-		recordCachedWorkspaceTmux(&entry, result.response, now)
+		entry = recordCachedWorkspaceTmux(entry, result.response, now)
 		entry.hasTmux = true
 		entry.tmuxRefreshedAt = now
 	}

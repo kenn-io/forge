@@ -899,6 +899,36 @@ token_env = "KENN_FORGE_MISSING_REPO_TOKEN"
 	assert.Equal("KENN_FORGE_REPO_TOKEN", currentTokenEnv)
 }
 
+func TestConfigReload_IgnoresCredentialsForProviderMissingAtStartup(t *testing.T) {
+	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "github-token")
+	t.Setenv("KENN_FORGE_FAILED_GITLAB_TOKEN", "")
+	const failedProvider = `
+[[platforms]]
+type = "gitlab"
+host = "gitlab.example.com"
+token_env = "KENN_FORGE_FAILED_GITLAB_TOKEN"
+
+[[repos]]
+platform = "gitlab"
+platform_host = "gitlab.example.com"
+owner = "acme"
+name = "backend"
+`
+
+	srv, _, cfgPath := setupTestServerWithConfigContent(
+		t, validReloadConfig+failedProvider, &mockGH{},
+	)
+	set := tokenauth.NewSourceSet(tokenauth.Options{})
+	for _, plan := range srv.cfg.ProviderTokenSources() {
+		set.Upsert(plan.Descriptor)
+	}
+	srv.tokenSources = set
+
+	writeConfigToml(t, cfgPath, validReloadConfigChangedActivity+failedProvider)
+	event := srv.applyConfigChange(t.Context())
+	require.True(t, event.Valid, "unrelated reload failed: %s", event.Error)
+}
+
 func TestValidateReloadCloneTokenSourcesUsesRepoDescriptorForProviderHost(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "config.toml")
 	writeConfigToml(t, cfgPath, `

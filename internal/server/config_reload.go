@@ -625,6 +625,17 @@ func (s *Server) validateReloadProviderTokenSources(
 			continue
 		}
 		desc := plan.Descriptor
+		if s.syncer != nil {
+			registry := s.syncer.Registry()
+			if registry == nil {
+				continue
+			}
+			if _, err := registry.Provider(
+				platform.Kind(desc.Key.Platform), desc.Key.Host,
+			); err != nil {
+				continue
+			}
+		}
 		if _, ok := s.tokenSources.Get(desc.Key); !ok {
 			continue
 		}

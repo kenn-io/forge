@@ -304,13 +304,6 @@ test: ensure-embed-dir ensure-tmp-dir
 test-short: ensure-embed-dir ensure-tmp-dir
 	$(GOTESTSUM)=tmp/test-short-output.json -- $(GO_TEST_P_FLAG) ./... -short -shuffle=on
 
-# Pre-commit lane for test-short. Deliberately no -shuffle=on: shuffle is not a
-# cacheable go-test flag, so it forces a full re-run of every package on every
-# commit. Unshuffled runs let unchanged packages hit the Go test result cache;
-# CI and make test/test-short keep shuffled ordering to catch test coupling.
-test-short-precommit: ensure-embed-dir ensure-tmp-dir
-	$(GOTESTSUM)=tmp/test-short-precommit-output.json -- $(GO_TEST_P_FLAG) ./... -short
-
 # Run integration tests that execute real git commands (excluded from test-short)
 test-integration: ensure-embed-dir ensure-tmp-dir
 	$(GOTESTSUM)=tmp/test-integration-output.json -- $(GO_TEST_P_FLAG) -tags integration ./... -run '^TestIntegration' -shuffle=on

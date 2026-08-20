@@ -21,9 +21,11 @@ import (
 	shellquote "github.com/kballard/go-shellquote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/ptyowner"
 	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
+	"go.kenn.io/forge/internal/ptysize"
 	"go.kenn.io/forge/internal/testutil/processjob"
 	"go.kenn.io/forge/internal/testutil/testsignal"
 	"go.kenn.io/forge/internal/testutil/testtmux"
@@ -483,23 +485,23 @@ func TestManagerLaunchCommandMarksWrappedAgentTmuxSession(t *testing.T) {
 	tmuxPath := filepath.Join(dir, "tmux")
 	require.NoError(os.WriteFile(tmuxPath, fmt.Appendf(nil, `#!/bin/sh
 printf '%%s\0' "$#" "$@" >> %s
-if [ "$1" = "has-session" ]; then
+if [ "$1" = "has-session" ] || [ "$3" = "has-session" ]; then
   echo "can't find session: $3" >&2
   exit 1
 fi
 exit 0
 `, shellquote.Join(record)), 0o755))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	agent := helperTarget("codex", "sleep")
 	mgr := NewManager(Options{
 		Targets: []LaunchTarget{
 			agent,
 			{
 				Key: "shell", Label: "Shell", Kind: LaunchTargetShell,
-				Source: "system", Command: []string{tmuxPath},
+				Source: "system", Command: config.DefaultTmuxCommand(),
 				Available: true,
 			},
 		},
-		TmuxCommand:             []string{tmuxPath},
 		TmuxOwnerMarker:         "kenn-forge:test-owner",
 		WrapAgentSessionsInTmux: true,
 	})
@@ -510,7 +512,7 @@ exit 0
 	sessionName := tmuxSessionName("ws-1", "codex")
 
 	assert.Equal(
-		[]string{tmuxPath, "-u", "attach-session", "-E", "-t", sessionName},
+		[]string{tmuxPath, "-L", "kenn-forge", "-u", "attach-session", "-E", "-t", sessionName},
 		launch.Command,
 	)
 	assert.Equal(sessionName, launch.TmuxSession)
@@ -524,17 +526,17 @@ exit 0
 	assert.Contains(newSession, "@forge_owner")
 	assert.Contains(newSession, "kenn-forge:test-owner")
 	assert.Equal([]string{
-		"set-option", "-q", "-g", "allow-passthrough", "on",
+		"-L", "kenn-forge", "set-option", "-q", "-g", "allow-passthrough", "on",
 	}, records[2])
 	assert.Equal([]string{
-		"set-option", "-q", "-g", "terminal-features[100]",
+		"-L", "kenn-forge", "set-option", "-q", "-g", "terminal-features[100]",
 		"xterm-256color:sixel",
 	}, records[3])
 	assert.Equal([]string{
-		"set-option", "-q", "-g", "mouse", "off",
+		"-L", "kenn-forge", "set-option", "-q", "-g", "mouse", "off",
 	}, records[4])
 	assert.Equal([]string{
-		"set-option", "-q", "-p", "-t", sessionName,
+		"-L", "kenn-forge", "set-option", "-q", "-p", "-t", sessionName,
 		"allow-passthrough", "on",
 	}, records[5])
 }
@@ -2112,27 +2114,27 @@ func TestAttachmentResizeOwnerPrefersActiveLocalUntilInactive(t *testing.T) {
 	)
 	require.NoError(err)
 	defer remote.Close()
-	require.NoError(remote.Resize(80, 24))
+	require.NoError(remote.Resize(ptysize.Geometry{Cols: 80, Rows: 24}))
 
 	local, err := attachToSession(
 		s, "ws-1", "session-1", nil,
 		AttachSessionOptions{ResizePriority: ResizePriorityLocal},
 	)
 	require.NoError(err)
-	require.NoError(remote.Resize(90, 25))
+	require.NoError(remote.Resize(ptysize.Geometry{Cols: 90, Rows: 25}))
 	local.SetResizeActive(true)
-	require.NoError(remote.Resize(95, 26))
-	require.NoError(local.Resize(100, 30))
+	require.NoError(remote.Resize(ptysize.Geometry{Cols: 95, Rows: 26}))
+	require.NoError(local.Resize(ptysize.Geometry{Cols: 100, Rows: 30}))
 
 	local.SetResizeActive(false)
-	require.NoError(remote.Resize(120, 40))
+	require.NoError(remote.Resize(ptysize.Geometry{Cols: 120, Rows: 40}))
 
 	assert.Equal([]terminalResize{
-		{cols: 80, rows: 24},
-		{cols: 90, rows: 25},
-		{cols: 100, rows: 30},
-		{cols: 95, rows: 26},
-		{cols: 120, rows: 40},
+		{geometry: ptysize.Geometry{Cols: 80, Rows: 24}},
+		{geometry: ptysize.Geometry{Cols: 90, Rows: 25}},
+		{geometry: ptysize.Geometry{Cols: 100, Rows: 30}},
+		{geometry: ptysize.Geometry{Cols: 95, Rows: 26}},
+		{geometry: ptysize.Geometry{Cols: 120, Rows: 40}},
 	}, pty.resizes())
 }
 
@@ -2169,42 +2171,56 @@ func TestAttachmentResizeOwnerFollowsLatestDeliberateLocalClaim(t *testing.T) {
 		s, "ws-1", "session-1", nil,
 		AttachSessionOptions{
 			ResizePriority: ResizePriorityLocal,
-			ResizeActive:   true,
 		},
 	)
 	require.NoError(err)
 	defer second.Close()
 
-	settle, err := first.ClaimResize(100, 30)
+	firstGeometry := ptysize.Geometry{
+		Cols: 100, Rows: 30, PixelWidth: 800, PixelHeight: 480,
+	}
+	settle, err := first.ClaimResize(firstGeometry)
 	require.NoError(err)
 	require.True(settle)
-	settle, err = first.ClaimResize(100, 30)
+	settle, err = first.ClaimResize(firstGeometry)
 	require.NoError(err)
 	require.True(settle, "an unacknowledged claim must keep requesting settlement")
 	first.ResizeSettled()
-	settle, err = first.ClaimResize(100, 30)
+	settle, err = first.ClaimResize(firstGeometry)
 	require.NoError(err)
 	require.False(settle)
-	secondNeedsSettle, err := second.ClaimResize(120, 40)
+	secondGeometry := ptysize.Geometry{
+		Cols: 120, Rows: 40, PixelWidth: 1080, PixelHeight: 760,
+	}
+	secondNeedsSettle, err := second.ClaimResize(secondGeometry)
 	require.NoError(err)
 	require.True(secondNeedsSettle)
-	require.NoError(first.Resize(101, 31))
-	firstNeedsSettle, err := first.ClaimResize(101, 31)
+	firstGeometry = ptysize.Geometry{
+		Cols: 101, Rows: 31, PixelWidth: 808, PixelHeight: 496,
+	}
+	require.NoError(first.Resize(firstGeometry))
+	firstNeedsSettle, err := first.ClaimResize(firstGeometry)
 	require.NoError(err)
 	require.True(firstNeedsSettle)
 	second.ResizeSettled()
-	firstNeedsSettle, err = first.ClaimResize(101, 31)
+	firstNeedsSettle, err = first.ClaimResize(firstGeometry)
 	require.NoError(err)
 	require.True(firstNeedsSettle, "an older acknowledgement must not settle a newer claim")
 	first.ResizeSettled()
-	firstNeedsSettle, err = first.ClaimResize(101, 31)
+	firstNeedsSettle, err = first.ClaimResize(firstGeometry)
 	require.NoError(err)
 	require.False(firstNeedsSettle)
 
 	assert.Equal([]terminalResize{
-		{cols: 100, rows: 30},
-		{cols: 120, rows: 40},
-		{cols: 101, rows: 31},
+		{geometry: ptysize.Geometry{
+			Cols: 100, Rows: 30, PixelWidth: 800, PixelHeight: 480,
+		}},
+		{geometry: ptysize.Geometry{
+			Cols: 120, Rows: 40, PixelWidth: 1080, PixelHeight: 760,
+		}},
+		{geometry: ptysize.Geometry{
+			Cols: 101, Rows: 31, PixelWidth: 808, PixelHeight: 496,
+		}},
 	}, pty.resizes())
 }
 
@@ -2237,7 +2253,7 @@ func TestAttachmentResizeOwnerFallbackRestoresLatestRemainingClaim(t *testing.T)
 	)
 	require.NoError(err)
 	defer first.Close()
-	_, err = first.ClaimResize(80, 24)
+	_, err = first.ClaimResize(ptysize.Geometry{Cols: 80, Rows: 24})
 	require.NoError(err)
 
 	second, err := attachToSession(
@@ -2249,7 +2265,7 @@ func TestAttachmentResizeOwnerFallbackRestoresLatestRemainingClaim(t *testing.T)
 	)
 	require.NoError(err)
 	defer second.Close()
-	_, err = second.ClaimResize(90, 25)
+	_, err = second.ClaimResize(ptysize.Geometry{Cols: 90, Rows: 25})
 	require.NoError(err)
 
 	third, err := attachToSession(
@@ -2260,16 +2276,16 @@ func TestAttachmentResizeOwnerFallbackRestoresLatestRemainingClaim(t *testing.T)
 		},
 	)
 	require.NoError(err)
-	_, err = third.ClaimResize(100, 30)
+	_, err = third.ClaimResize(ptysize.Geometry{Cols: 100, Rows: 30})
 	require.NoError(err)
-	require.NoError(first.Resize(81, 24))
+	require.NoError(first.Resize(ptysize.Geometry{Cols: 81, Rows: 24}))
 	third.Close()
 
 	assert.Equal([]terminalResize{
-		{cols: 80, rows: 24},
-		{cols: 90, rows: 25},
-		{cols: 100, rows: 30},
-		{cols: 90, rows: 25},
+		{geometry: ptysize.Geometry{Cols: 80, Rows: 24}},
+		{geometry: ptysize.Geometry{Cols: 90, Rows: 25}},
+		{geometry: ptysize.Geometry{Cols: 100, Rows: 30}},
+		{geometry: ptysize.Geometry{Cols: 90, Rows: 25}},
 	}, pty.resizes())
 }
 
@@ -2490,8 +2506,7 @@ type fakeRuntimePTY struct {
 }
 
 type terminalResize struct {
-	cols int
-	rows int
+	geometry ptysize.Geometry
 }
 
 func (f *fakeRuntimePTY) Output() <-chan []byte { return f.output }
@@ -2541,10 +2556,10 @@ func (f *fakeRuntimePTY) resetWrites() {
 	f.mu.Unlock()
 }
 
-func (f *fakeRuntimePTY) Resize(cols, rows int) error {
+func (f *fakeRuntimePTY) Resize(geometry ptysize.Geometry) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.resizeCalls = append(f.resizeCalls, terminalResize{cols: cols, rows: rows})
+	f.resizeCalls = append(f.resizeCalls, terminalResize{geometry: geometry})
 	return nil
 }
 

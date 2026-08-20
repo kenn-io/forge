@@ -25,6 +25,7 @@ import (
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/platform"
 	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
+	"go.kenn.io/forge/internal/ptysize"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/internal/workspace/localruntime"
@@ -1621,11 +1622,11 @@ func (m *fakeRuntimeOwner) Stop(context.Context, string) error {
 	return nil
 }
 
-func (p *fakeRuntimePTY) Output() <-chan []byte { return p.output }
-func (p *fakeRuntimePTY) Done() <-chan struct{} { return p.done }
-func (p *fakeRuntimePTY) Write([]byte) error    { return nil }
-func (p *fakeRuntimePTY) Resize(int, int) error { return nil }
-func (p *fakeRuntimePTY) ExitCode() int         { return 0 }
+func (p *fakeRuntimePTY) Output() <-chan []byte         { return p.output }
+func (p *fakeRuntimePTY) Done() <-chan struct{}         { return p.done }
+func (p *fakeRuntimePTY) Write([]byte) error            { return nil }
+func (p *fakeRuntimePTY) Resize(ptysize.Geometry) error { return nil }
+func (p *fakeRuntimePTY) ExitCode() int                 { return 0 }
 
 func (p *fakeRuntimePTY) Close() {
 	select {

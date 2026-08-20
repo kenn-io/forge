@@ -914,6 +914,7 @@ func (s *Server) updateSettings(
 	s.applyPullConfigLocked()
 	s.applyIssueConfigLocked()
 	s.cfgMu.Unlock()
+	s.applyTmuxMouse(ctx)
 	s.reconcileGitHubNativeStackProjection(nativeStacksPrevious, nativeStacksEnabled)
 
 	return s.settingsOutputResponse(ctx)
@@ -1005,6 +1006,15 @@ func (s *Server) refreshRuntimeTargetsLocked() {
 	s.runtime.UpdateTargetsAndStripEnvVars(targets, s.cfg.TokenEnvNames())
 	s.runtime.UpdateHideTmuxStatus(s.cfg.Terminal.HideTmuxStatus)
 	s.runtime.UpdateTmuxMouse(s.cfg.TerminalTmuxMouseEnabled())
+}
+
+func (s *Server) applyTmuxMouse(ctx context.Context) {
+	if s.workspaces == nil {
+		return
+	}
+	if err := s.workspaces.ApplyTmuxMouse(ctx); err != nil {
+		slog.Warn("apply tmux mouse setting", "err", err)
+	}
 }
 
 func (s *Server) bootTmuxCommand() []string {

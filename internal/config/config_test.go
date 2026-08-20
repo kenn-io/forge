@@ -3389,6 +3389,12 @@ func TestDefaultTmuxCommandDefensiveCopy(t *testing.T) {
 	assert.Equal([]string{"tmux", "-L", "kenn-forge"}, DefaultTmuxCommand())
 }
 
+func TestIsDefaultTmuxCommand(t *testing.T) {
+	assert.True(t, IsDefaultTmuxCommand(nil))
+	assert.True(t, IsDefaultTmuxCommand([]string{"tmux", "-L", "kenn-forge"}))
+	assert.False(t, IsDefaultTmuxCommand([]string{"tmux"}))
+}
+
 func TestLoadTmuxCommandRejectsEmptyFirstElement(t *testing.T) {
 	path := writeConfig(t, `
 [tmux]

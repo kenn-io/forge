@@ -3046,6 +3046,12 @@ func DefaultTmuxCommand() []string {
 	return []string{"tmux", "-L", "kenn-forge"}
 }
 
+// IsDefaultTmuxCommand reports whether command selects Forge's dedicated tmux
+// server. An empty command uses that default through TmuxCommand.
+func IsDefaultTmuxCommand(command []string) bool {
+	return len(command) == 0 || slices.Equal(command, DefaultTmuxCommand())
+}
+
 // tmuxNonSecretEnvVars names every variable admitted into tmux client
 // environments and, transitively, the tmux server's permanently
 // retained spawn environment — exact names only, never prefixes, which

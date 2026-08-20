@@ -6,6 +6,7 @@ import (
 
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/ptyowner"
+	"go.kenn.io/forge/internal/ptysize"
 )
 
 const (
@@ -19,8 +20,7 @@ type PtyOwnerClient interface {
 	Attach(
 		ctx context.Context,
 		session string,
-		cols int,
-		rows int,
+		geometry ptysize.Geometry,
 	) (*ptyowner.Attachment, error)
 	Stop(ctx context.Context, session string) error
 	Snapshot(ctx context.Context, session string) (ptyowner.Status, error)
@@ -66,13 +66,12 @@ func (m *Manager) EnsureTerminal(
 func (m *Manager) AttachPtyOwnerTerminal(
 	ctx context.Context,
 	session string,
-	cols int,
-	rows int,
+	geometry ptysize.Geometry,
 ) (*ptyowner.Attachment, error) {
 	if m.ptyOwner == nil {
 		return nil, ErrWorkspaceInvalidState
 	}
-	return m.ptyOwner.Attach(ctx, session, cols, rows)
+	return m.ptyOwner.Attach(ctx, session, geometry)
 }
 
 func (m *Manager) newTerminalSession(

@@ -1816,7 +1816,6 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() => expect(mountedSessions()).toHaveLength(1));
     await waitFor(() => expect(sockets).toHaveLength(1));
     sockets[0]!.onopen();
-    await waitFor(() => expect(sockets[0]!.send).toHaveBeenCalled());
     const firstPrefix = sessionHostPrefix("ws-1", undefined);
     expect(mountedSessions()[0]?.hostKey.startsWith(firstPrefix)).toBe(true);
     const firstHostKey = mountedSessions()[0]!.hostKey;
@@ -1849,7 +1848,6 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() => expect(mountedSessions()).toHaveLength(1));
     await waitFor(() => expect(sockets).toHaveLength(1));
     sockets[0]!.onopen();
-    await waitFor(() => expect(sockets[0]!.send).toHaveBeenCalled());
     const hostKey = mountedSessions()[0]!.hostKey;
 
     await rerender({ workspaceId: "ws-1", showView: false });
@@ -2393,7 +2391,6 @@ describe("WorkspaceTerminalView", () => {
     );
     await waitFor(() => expect(sockets).toHaveLength(1));
     sockets[0]!.onopen();
-    await waitFor(() => expect(sockets[0]!.send).toHaveBeenCalled());
     const hostKey = mountedSessions()[0]!.hostKey;
 
     await fireEvent.click(screen.getAllByRole("button", { name: "Close terminal panel" })[0]!);

@@ -459,6 +459,7 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 	s.applyPullConfigLocked()
 	s.applyIssueConfigLocked()
 	s.cfgMu.Unlock()
+	s.applyTmuxMouse(ctx)
 
 	if s.syncer != nil {
 		s.syncer.SetBranchActivityLimits(

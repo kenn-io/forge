@@ -42,9 +42,9 @@ Rules:
 - Use standard negotiation, not an application compression envelope: context
   takeover shares a dictionary across PTY messages, while unsupported peers
   continue with an ordinary uncompressed WebSocket.
-- Character-only tmux PTY resizes preserve nonzero per-cell pixel geometry;
-  tmux 3.4 does not re-query it, and native SIXEL falls back when either dimension is zero
-  (`internal/workspace/localruntime/manager.go::session.resizePTYLocked`).
+- The browser pane that claims resize authority owns the complete character and
+  pixel geometry; hidden or non-owning panes cannot overwrite it. Retained PTYs use
+  an 8x16 fallback only until claimed browser geometry arrives (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::resizeVisibleTerminal`).
 
 ## Natural Exit Rules
 
@@ -157,9 +157,9 @@ still exists.
   `internal/workspace/localruntime/manager.go::Manager.Shutdown`).
 - New tmux sessions use the `forge-` prefix; persisted `middleman-` session
   names remain valid and must not be rewritten (`internal/workspace/`).
-- Forge owns the tmux server it addresses, including when `[tmux].command`
-  customizes its executable or socket; server-global terminal defaults must
-  not be withheld as if this were the user's personal server (`internal/config/config.go::DefaultTmuxCommand`).
+- Only `DefaultTmuxCommand` selects Forge's dedicated tmux server. Custom tmux
+  commands may address a shared user server, so Forge applies pane passthrough
+  but never changes their global options (`internal/config/config.go::IsDefaultTmuxCommand`).
 - The tmux server permanently retains its spawn environment for every pane to
   read via `show-environment -g`, and only `new-session` clients spawn it, so
   every Forge-issued tmux client runs with the non-secret allowlist
@@ -198,9 +198,9 @@ still exists.
 - Every tmux client attach must force UTF-8; service launchers may omit locale
   variables, causing tmux to replace non-ASCII output before WebSocket transport
   (`internal/workspace/localruntime/tmux_launcher.go::tmuxAttachSessionCommand`).
-- Managed tmux servers default passthrough and configurable mouse mode globally;
-  direct Kitty and IIP use passthrough, while native SIXEL requires the
-  `xterm-256color:sixel` client feature (`internal/workspace/localruntime/tmux_launcher.go::tmuxLauncher.prepare`).
+- Forge's dedicated tmux server sets global passthrough, SIXEL, and configurable
+  mouse mode, including live mouse-setting changes; custom servers receive only
+  pane passthrough (`internal/workspace/manager.go::Manager.ApplyTmuxMouse`).
 - Browser Kitty output must use direct placements; the current xterm addon does
   not implement the Unicode placeholders that `kitten icat` selects in tmux
   (`frontend/tests/e2e-full/00-terminal-kitty-graphics.spec.ts::kittyGraphicsCommand`).

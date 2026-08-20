@@ -17,6 +17,8 @@ import (
 	"syscall"
 	"time"
 
+	"go.kenn.io/forge/internal/ptysize"
+
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/procutil"
 )
@@ -368,8 +370,7 @@ func (c *Client) Snapshot(ctx context.Context, session string) (Status, error) {
 func (c *Client) Attach(
 	ctx context.Context,
 	session string,
-	cols int,
-	rows int,
+	geometry ptysize.Geometry,
 ) (*Attachment, error) {
 	conn, state, err := c.connect(ctx, session)
 	if err != nil {
@@ -379,7 +380,9 @@ func (c *Client) Attach(
 	enc := json.NewEncoder(conn)
 	dec := json.NewDecoder(conn)
 	if err := enc.Encode(Request{
-		Type: RequestAttach, Token: state.Token, Cols: cols, Rows: rows,
+		Type: RequestAttach, Token: state.Token,
+		Cols: geometry.Cols, Rows: geometry.Rows,
+		PixelWidth: geometry.PixelWidth, PixelHeight: geometry.PixelHeight,
 	}); err != nil {
 		clearDeadline()
 		conn.Close()
@@ -646,14 +649,16 @@ func (a *Attachment) Write(data []byte) error {
 	})
 }
 
-func (a *Attachment) Resize(cols, rows int) error {
+func (a *Attachment) Resize(geometry ptysize.Geometry) error {
 	if a == nil || a.enc == nil {
 		return fmt.Errorf("pty owner attachment is closed")
 	}
 	a.writeMu.Lock()
 	defer a.writeMu.Unlock()
 	return a.enc.Encode(Request{
-		Type: RequestResize, Token: a.token, Cols: cols, Rows: rows,
+		Type: RequestResize, Token: a.token,
+		Cols: geometry.Cols, Rows: geometry.Rows,
+		PixelWidth: geometry.PixelWidth, PixelHeight: geometry.PixelHeight,
 	})
 }
 

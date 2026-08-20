@@ -176,14 +176,15 @@ func (p tmuxEnvPolicy) environment(
 }
 
 type tmuxLauncher struct {
-	TmuxCommand []string
-	Session     string
-	CWD         string
-	Pane        tmuxPaneEnvironment
-	OwnerMarker string
-	LaunchID    string
-	HideStatus  bool
-	TmuxMouse   bool
+	TmuxCommand     []string
+	Session         string
+	CWD             string
+	Pane            tmuxPaneEnvironment
+	OwnerMarker     string
+	LaunchID        string
+	HideStatus      bool
+	TmuxMouse       bool
+	ConfigureServer bool
 }
 
 type tmuxLaunchResult struct {
@@ -219,20 +220,22 @@ func (l tmuxLauncher) prepare(ctx context.Context) (tmuxLaunchResult, error) {
 		}
 		return tmuxLaunchResult{}, fmt.Errorf("tmux new-session: %w", err)
 	}
-	if err := l.run(ctx, l.enableGlobalPassthroughCommand()); err != nil {
-		return tmuxLaunchResult{}, l.cleanupNewSessionAfterError(
-			ctx, "enable global tmux passthrough", err,
-		)
-	}
-	if err := l.run(ctx, l.enableSixelCommand()); err != nil {
-		return tmuxLaunchResult{}, l.cleanupNewSessionAfterError(
-			ctx, "enable tmux SIXEL", err,
-		)
-	}
-	if err := l.run(ctx, l.tmuxMouseCommand()); err != nil {
-		return tmuxLaunchResult{}, l.cleanupNewSessionAfterError(
-			ctx, "configure tmux mouse", err,
-		)
+	if l.ConfigureServer {
+		if err := l.run(ctx, l.enableGlobalPassthroughCommand()); err != nil {
+			return tmuxLaunchResult{}, l.cleanupNewSessionAfterError(
+				ctx, "enable global tmux passthrough", err,
+			)
+		}
+		if err := l.run(ctx, l.enableSixelCommand()); err != nil {
+			return tmuxLaunchResult{}, l.cleanupNewSessionAfterError(
+				ctx, "enable tmux SIXEL", err,
+			)
+		}
+		if err := l.run(ctx, l.tmuxMouseCommand()); err != nil {
+			return tmuxLaunchResult{}, l.cleanupNewSessionAfterError(
+				ctx, "configure tmux mouse", err,
+			)
+		}
 	}
 	if err := l.run(ctx, l.enablePassthroughCommand()); err != nil {
 		return tmuxLaunchResult{}, l.cleanupNewSessionAfterError(
@@ -260,14 +263,16 @@ func (l tmuxLauncher) prepareExisting(ctx context.Context) (tmuxLaunchResult, er
 	if err := l.replaceLaunchMarker(ctx); err != nil {
 		return tmuxLaunchResult{}, err
 	}
-	if err := l.run(ctx, l.enableGlobalPassthroughCommand()); err != nil {
-		return tmuxLaunchResult{}, fmt.Errorf("enable global tmux passthrough: %w", err)
-	}
-	if err := l.run(ctx, l.enableSixelCommand()); err != nil {
-		return tmuxLaunchResult{}, fmt.Errorf("enable tmux SIXEL: %w", err)
-	}
-	if err := l.run(ctx, l.tmuxMouseCommand()); err != nil {
-		return tmuxLaunchResult{}, fmt.Errorf("configure tmux mouse: %w", err)
+	if l.ConfigureServer {
+		if err := l.run(ctx, l.enableGlobalPassthroughCommand()); err != nil {
+			return tmuxLaunchResult{}, fmt.Errorf("enable global tmux passthrough: %w", err)
+		}
+		if err := l.run(ctx, l.enableSixelCommand()); err != nil {
+			return tmuxLaunchResult{}, fmt.Errorf("enable tmux SIXEL: %w", err)
+		}
+		if err := l.run(ctx, l.tmuxMouseCommand()); err != nil {
+			return tmuxLaunchResult{}, fmt.Errorf("configure tmux mouse: %w", err)
+		}
 	}
 	if err := l.run(ctx, l.enablePassthroughCommand()); err != nil {
 		return tmuxLaunchResult{}, fmt.Errorf("enable tmux passthrough: %w", err)

@@ -110,8 +110,10 @@ function stubFontLoad(promise: Promise<FontFace[]>): ReturnType<typeof vi.fn> {
 }
 
 class MockWebSocket extends EventTarget {
+  static CONNECTING = 0;
   static OPEN = 1;
-  readyState: WebSocket["readyState"] = this.CONNECTING;
+  static CLOSED = 3;
+  readyState: WebSocket["readyState"] = MockWebSocket.CONNECTING;
   binaryType = "arraybuffer";
   onopen = () => this.dispatchEvent(new Event("open"));
   onmessage = (event: MessageEvent) => this.dispatchEvent(event);
@@ -124,7 +126,7 @@ class MockWebSocket extends EventTarget {
     mockSockets.push(this);
     if (mockSocketsStartOpen) {
       queueMicrotask(() => {
-        this.readyState = this.OPEN;
+        this.readyState = MockWebSocket.OPEN;
         this.onopen();
       });
     }
@@ -133,7 +135,7 @@ class MockWebSocket extends EventTarget {
     this.sent.push(data);
   }
   close(): void {
-    this.readyState = this.CLOSED;
+    this.readyState = MockWebSocket.CLOSED;
   }
 }
 
@@ -289,9 +291,7 @@ function resizeFramesOf(socket: MockWebSocket): string[] {
 }
 
 async function waitForSocketConnected(socket: MockWebSocket): Promise<void> {
-  await waitFor(() =>
-    expect(socket.sent.map(String)).toContainEqual(expect.stringContaining('"type":"resize_active"')),
-  );
+  await waitFor(() => expect(socket.readyState).toBe(MockWebSocket.OPEN));
 }
 
 async function waitForInitialGeometry(socket: MockWebSocket): Promise<void> {
@@ -865,7 +865,6 @@ describe("TerminalPane", () => {
     expect(mockSockets[0]!.url).toContain("resize_active=0");
 
     await waitForSocketConnected(mockSockets[0]!);
-    expect(mockSockets[0]!.sent).toContain(JSON.stringify({ type: "resize_active", active: false }));
 
     mockSockets[0]!.sent = [];
     fitDimensions = { cols: 100, rows: 40 };
@@ -913,12 +912,17 @@ describe("TerminalPane", () => {
 
   it("claims authority before resizing when an active region gains geometry", async () => {
     fitDimensions = undefined;
-    render(TerminalPane, { props: { workspaceId: "ws-123", active: true } });
+    const { container } = render(TerminalPane, { props: { workspaceId: "ws-123", active: true } });
 
     await waitFor(() => expect(mockSockets).toHaveLength(1));
     expect(mockSockets[0]!.url).toContain("resize_active=0");
     await waitForSocketConnected(mockSockets[0]!);
     mockSockets[0]!.sent = [];
+
+    const screen = document.createElement("div");
+    screen.className = "xterm-screen";
+    vi.spyOn(screen, "getBoundingClientRect").mockReturnValue(DOMRect.fromRect({ width: 875, height: 740 }));
+    container.querySelector(".terminal-container")?.append(screen);
 
     fitDimensions = { cols: 100, rows: 40 };
     resizeObserverCallbacks[0]!([], {} as ResizeObserver);
@@ -926,8 +930,13 @@ describe("TerminalPane", () => {
 
     await waitFor(() =>
       expect(mockSockets[0]!.sent.map(String)).toEqual([
-        JSON.stringify({ type: "resize_active", active: true }),
-        JSON.stringify({ type: "resize", cols: 100, rows: 40 }),
+        JSON.stringify({
+          type: "claim_resize",
+          cols: 100,
+          rows: 40,
+          pixel_width: 875,
+          pixel_height: 740,
+        }),
       ]),
     );
   });
@@ -953,8 +962,7 @@ describe("TerminalPane", () => {
     await waitFor(() =>
       expect(mockSockets[0]!.sent.map(String)).toEqual([
         JSON.stringify({ type: "resize_active", active: false }),
-        JSON.stringify({ type: "resize_active", active: true }),
-        JSON.stringify({ type: "resize", cols: 80, rows: 24 }),
+        JSON.stringify({ type: "claim_resize", cols: 80, rows: 24 }),
       ]),
     );
   });
@@ -995,7 +1003,9 @@ describe("TerminalPane", () => {
 
     await waitFor(() => expect(terminal.rows).toBe(25));
     await waitFor(() =>
-      expect(resizeFramesOf(mockSockets[0]!)).toEqual([JSON.stringify({ type: "resize", cols: 80, rows: 25 })]),
+      expect(socketFramesOfType(mockSockets[0]!, "claim_resize")).toEqual([
+        JSON.stringify({ type: "claim_resize", cols: 80, rows: 25 }),
+      ]),
     );
   });
 
@@ -1352,7 +1362,7 @@ describe("TerminalPane", () => {
     expect(firstBoundaryCallback).toBeTypeOf("function");
     firstBoundaryCallback?.();
     await waitFor(() =>
-      expect(firstSocket.sent.map(String)).toContain(JSON.stringify({ type: "refresh", cols: 177, rows: 41 })),
+      expect(firstSocket.sent.map(String)).toContain(JSON.stringify({ type: "claim_resize", cols: 177, rows: 41 })),
     );
 
     firstSocket.onclose();
@@ -1389,7 +1399,7 @@ describe("TerminalPane", () => {
 
     await waitFor(() => expect(terminal.rows).toBe(42));
     await waitFor(() =>
-      expect(socket.sent.map(String)).toContain(JSON.stringify({ type: "refresh", cols: 177, rows: 42 })),
+      expect(socket.sent.map(String)).toContain(JSON.stringify({ type: "claim_resize", cols: 177, rows: 42 })),
     );
   });
 

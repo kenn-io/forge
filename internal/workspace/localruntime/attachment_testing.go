@@ -1,6 +1,10 @@
 package localruntime
 
-import "context"
+import (
+	"context"
+
+	"go.kenn.io/forge/internal/ptysize"
+)
 
 // AttachmentForTestingOptions configures NewAttachmentForTesting.
 // Output and Done are required; sessionOutputClosed lets callers
@@ -13,8 +17,8 @@ type AttachmentForTestingOptions struct {
 	Done                     <-chan struct{}
 	Info                     func() SessionInfo
 	Write                    func([]byte) error
-	Resize                   func(cols, rows int) error
-	ClaimResize              func(cols, rows int) (bool, error)
+	Resize                   func(ptysize.Geometry) error
+	ClaimResize              func(ptysize.Geometry) (bool, error)
 	ResizeSettled            func()
 	Refresh                  func(context.Context) error
 	SessionOutputClosed      func() bool

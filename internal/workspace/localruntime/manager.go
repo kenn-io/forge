@@ -20,12 +20,11 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/creack/pty/v2"
-
 	"go.kenn.io/forge/internal/agentactivity"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/procutil"
 	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
+	"go.kenn.io/forge/internal/ptysize"
 )
 
 type SessionStatus string
@@ -238,8 +237,7 @@ type resizeAttachment struct {
 	priority ResizePriority
 	active   bool
 	claim    uint64
-	cols     int
-	rows     int
+	geometry ptysize.Geometry
 	hasSize  bool
 }
 
@@ -250,8 +248,8 @@ type Attachment struct {
 	info                 func() SessionInfo
 	write                func([]byte) error
 	submitInitialMessage func(context.Context, string) error
-	resize               func(cols, rows int) error
-	claimResize          func(cols, rows int) (bool, error)
+	resize               func(ptysize.Geometry) error
+	claimResize          func(ptysize.Geometry) (bool, error)
 	resizeSettled        func()
 	refresh              func(context.Context) error
 	setResizeActive      func(active bool)
@@ -1354,22 +1352,22 @@ func (a *Attachment) Write(data []byte) error {
 	return a.write(data)
 }
 
-func (a *Attachment) Resize(cols, rows int) error {
+func (a *Attachment) Resize(geometry ptysize.Geometry) error {
 	if a == nil || a.resize == nil {
 		return errors.New("attachment is closed")
 	}
-	return a.resize(cols, rows)
+	return a.resize(geometry)
 }
 
 // ClaimResize records a deliberate interaction from this attachment and
 // applies its dimensions when its priority permits it to own PTY sizing. The
 // returned bool tells the caller that tmux must be synchronously refreshed
 // before forwarding the input that followed the claim.
-func (a *Attachment) ClaimResize(cols, rows int) (bool, error) {
+func (a *Attachment) ClaimResize(geometry ptysize.Geometry) (bool, error) {
 	if a == nil || a.claimResize == nil {
 		return false, errors.New("attachment is closed")
 	}
-	return a.claimResize(cols, rows)
+	return a.claimResize(geometry)
 }
 
 // ResizeSettled records that the synchronous tmux refresh following a resize
@@ -1535,6 +1533,7 @@ func (m *Manager) shellLaunchCommand(
 	if len(tmuxCommand) == 0 {
 		tmuxCommand = config.DefaultTmuxCommand()
 	}
+	configureServer := config.IsDefaultTmuxCommand(tmuxCommand)
 	tmuxCommand, err = resolveTmuxCommand(tmuxCommand)
 	if err != nil {
 		return launchCommand{}, err
@@ -1555,14 +1554,15 @@ func (m *Manager) shellLaunchCommand(
 		os.Environ(), resolvedCommand, m.currentStripEnvVars(),
 	)
 	prepared, err := tmuxLauncher{
-		TmuxCommand: tmuxCommand,
-		Session:     tmuxSession,
-		CWD:         cwd,
-		Pane:        paneEnv,
-		OwnerMarker: m.tmuxOwnerMarker,
-		LaunchID:    launchID,
-		HideStatus:  m.currentHideTmuxStatus(),
-		TmuxMouse:   m.currentTmuxMouse(),
+		TmuxCommand:     tmuxCommand,
+		Session:         tmuxSession,
+		CWD:             cwd,
+		Pane:            paneEnv,
+		OwnerMarker:     m.tmuxOwnerMarker,
+		LaunchID:        launchID,
+		HideStatus:      m.currentHideTmuxStatus(),
+		TmuxMouse:       m.currentTmuxMouse(),
+		ConfigureServer: configureServer,
 	}.prepare(ctx)
 	if err != nil {
 		return launchCommand{}, err
@@ -1714,6 +1714,7 @@ func (m *Manager) launchCommand(
 	if len(tmuxCommand) == 0 {
 		tmuxCommand = config.DefaultTmuxCommand()
 	}
+	configureServer := config.IsDefaultTmuxCommand(tmuxCommand)
 	tmuxCommand, err = resolveTmuxCommand(tmuxCommand)
 	if err != nil {
 		return launchCommand{}, err
@@ -1737,14 +1738,15 @@ func (m *Manager) launchCommand(
 		},
 	)
 	prepared, err := tmuxLauncher{
-		TmuxCommand: tmuxCommand,
-		Session:     tmuxSession,
-		CWD:         cwd,
-		Pane:        paneEnv,
-		OwnerMarker: m.tmuxOwnerMarker,
-		LaunchID:    launchID,
-		HideStatus:  m.currentHideTmuxStatus(),
-		TmuxMouse:   m.currentTmuxMouse(),
+		TmuxCommand:     tmuxCommand,
+		Session:         tmuxSession,
+		CWD:             cwd,
+		Pane:            paneEnv,
+		OwnerMarker:     m.tmuxOwnerMarker,
+		LaunchID:        launchID,
+		HideStatus:      m.currentHideTmuxStatus(),
+		TmuxMouse:       m.currentTmuxMouse(),
+		ConfigureServer: configureServer,
 	}.prepare(ctx)
 	if err != nil {
 		return launchCommand{}, err
@@ -2334,28 +2336,27 @@ func (s *session) unregisterResizeAttachment(id uint64) {
 
 func (s *session) resizeAttachment(
 	id uint64,
-	cols int,
-	rows int,
+	geometry ptysize.Geometry,
 	claim bool,
 ) (uint64, error) {
-	if cols <= 0 || rows <= 0 {
+	if geometry.Cols <= 0 || geometry.Rows <= 0 {
 		return 0, nil
 	}
-	clampedCols := int(clampWinsizeDim(cols))
-	clampedRows := int(clampWinsizeDim(rows))
+	geometry = ptysize.Normalize(geometry)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	attachment, ok := s.resizeAttachments[id]
-	if !ok || !attachment.active {
+	if !ok || (!attachment.active && !claim) {
 		return 0, nil
 	}
+	if claim {
+		attachment.active = true
+	}
 	sizeChanged := !attachment.hasSize ||
-		attachment.cols != clampedCols ||
-		attachment.rows != clampedRows
-	attachment.cols = clampedCols
-	attachment.rows = clampedRows
+		attachment.geometry != geometry
+	attachment.geometry = geometry
 	attachment.hasSize = true
 	if claim {
 		s.nextResizeClaim++
@@ -2375,7 +2376,7 @@ func (s *session) resizeAttachment(
 		return 0, nil
 	}
 	if !claim || ownerChanged || sizeChanged {
-		if err := s.resizePTYAndMarkLocked(clampedCols, clampedRows); err != nil {
+		if err := s.resizePTYAndMarkLocked(geometry); err != nil {
 			return 0, err
 		}
 	}
@@ -2441,44 +2442,22 @@ func (s *session) applyResizeOwnerSizeLocked(attachment resizeAttachment) {
 	if !attachment.hasSize {
 		return
 	}
-	_ = s.resizePTYAndMarkLocked(attachment.cols, attachment.rows)
+	_ = s.resizePTYAndMarkLocked(attachment.geometry)
 }
 
-func (s *session) resizePTYAndMarkLocked(cols, rows int) error {
-	if err := s.resizePTYLocked(cols, rows); err != nil {
+func (s *session) resizePTYAndMarkLocked(geometry ptysize.Geometry) error {
+	if err := s.resizePTYLocked(geometry); err != nil {
 		return err
 	}
 	s.resizeGeneration++
 	return nil
 }
 
-func (s *session) resizePTYLocked(cols, rows int) error {
+func (s *session) resizePTYLocked(geometry ptysize.Geometry) error {
 	if s.pty != nil {
-		return s.pty.Resize(cols, rows)
+		return s.pty.Resize(geometry)
 	}
-	size, err := pty.GetsizeFull(s.ptmx)
-	if err != nil {
-		return fmt.Errorf("get PTY size before resize: %w", err)
-	}
-	cellWidth := uint32(0)
-	if size.Cols > 0 {
-		cellWidth = uint32(size.X) / uint32(size.Cols)
-	}
-	cellHeight := uint32(0)
-	if size.Rows > 0 {
-		cellHeight = uint32(size.Y) / uint32(size.Rows)
-	}
-	size.Rows = uint16(rows)
-	size.Cols = uint16(cols)
-	size.X = uint16(min(
-		uint32(size.Cols)*cellWidth,
-		uint32(math.MaxUint16),
-	))
-	size.Y = uint16(min(
-		uint32(size.Rows)*cellHeight,
-		uint32(math.MaxUint16),
-	))
-	return pty.Setsize(s.ptmx, size)
+	return ptysize.Resize(s.ptmx, geometry)
 }
 
 func (s *session) closeSubscribers() {
@@ -2829,13 +2808,13 @@ func attachToSession(
 			return err
 		},
 		submitInitialMessage: s.submitInitialMessage,
-		resize: func(cols, rows int) error {
-			_, err := s.resizeAttachment(resizeAttachmentID, cols, rows, false)
+		resize: func(geometry ptysize.Geometry) error {
+			_, err := s.resizeAttachment(resizeAttachmentID, geometry, false)
 			return err
 		},
-		claimResize: func(cols, rows int) (bool, error) {
+		claimResize: func(geometry ptysize.Geometry) (bool, error) {
 			generation, err := s.resizeAttachment(
-				resizeAttachmentID, cols, rows, true,
+				resizeAttachmentID, geometry, true,
 			)
 			resizeSettlementMu.Lock()
 			resizeSettlementGeneration = generation

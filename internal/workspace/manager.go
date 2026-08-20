@@ -4600,34 +4600,29 @@ func (m *Manager) configureTmuxSession(
 	ctx context.Context,
 	session string,
 ) error {
-	if err := runBuiltCmd(
-		ctx,
-		m.tmuxExec(
+	if config.IsDefaultTmuxCommand(m.tmuxCmd) {
+		if err := runBuiltCmd(
 			ctx,
-			"set-option", "-q", "-g", "allow-passthrough", "on",
-		),
-	); err != nil {
-		return fmt.Errorf("enable global tmux passthrough: %w", err)
-	}
-	if err := runBuiltCmd(
-		ctx,
-		m.tmuxExec(
+			m.tmuxExec(
+				ctx,
+				"set-option", "-q", "-g", "allow-passthrough", "on",
+			),
+		); err != nil {
+			return fmt.Errorf("enable global tmux passthrough: %w", err)
+		}
+		if err := runBuiltCmd(
 			ctx,
-			"set-option", "-q", "-g", "terminal-features[100]",
-			"xterm-256color:sixel",
-		),
-	); err != nil {
-		return fmt.Errorf("enable tmux SIXEL: %w", err)
-	}
-	value := "off"
-	if m.currentTmuxMouse() {
-		value = "on"
-	}
-	if err := runBuiltCmd(
-		ctx,
-		m.tmuxExec(ctx, "set-option", "-q", "-g", "mouse", value),
-	); err != nil {
-		return fmt.Errorf("configure tmux mouse: %w", err)
+			m.tmuxExec(
+				ctx,
+				"set-option", "-q", "-g", "terminal-features[100]",
+				"xterm-256color:sixel",
+			),
+		); err != nil {
+			return fmt.Errorf("enable tmux SIXEL: %w", err)
+		}
+		if err := m.applyTmuxMouse(ctx); err != nil {
+			return err
+		}
 	}
 	if err := runBuiltCmd(
 		ctx,
@@ -4638,6 +4633,37 @@ func (m *Manager) configureTmuxSession(
 		),
 	); err != nil {
 		return fmt.Errorf("enable tmux passthrough: %w", err)
+	}
+	return nil
+}
+
+// ApplyTmuxMouse updates a running Forge-owned tmux server. Custom commands
+// may target a user's shared server, so Forge never changes their global
+// options. A missing dedicated server has no state to update.
+func (m *Manager) ApplyTmuxMouse(ctx context.Context) error {
+	if !config.IsDefaultTmuxCommand(m.tmuxCmd) {
+		return nil
+	}
+	sessions, err := m.listTmuxSessions(ctx)
+	if err != nil {
+		return err
+	}
+	if len(sessions) == 0 {
+		return nil
+	}
+	return m.applyTmuxMouse(ctx)
+}
+
+func (m *Manager) applyTmuxMouse(ctx context.Context) error {
+	value := "off"
+	if m.currentTmuxMouse() {
+		value = "on"
+	}
+	if err := runBuiltCmd(
+		ctx,
+		m.tmuxExec(ctx, "set-option", "-q", "-g", "mouse", value),
+	); err != nil {
+		return fmt.Errorf("configure tmux mouse: %w", err)
 	}
 	return nil
 }

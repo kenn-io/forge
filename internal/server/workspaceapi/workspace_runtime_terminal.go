@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
-	"math"
 	"net/http"
 	"strconv"
 	"sync"
@@ -15,16 +14,19 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/ptysize"
 	"go.kenn.io/forge/internal/terminalwebsocket"
 	"go.kenn.io/forge/internal/tracing"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
 type runtimeTerminalControlMsg struct {
-	Type   string `json:"type"`
-	Cols   int    `json:"cols,omitempty"`
-	Rows   int    `json:"rows,omitempty"`
-	Active *bool  `json:"active,omitempty"`
+	Type        string `json:"type"`
+	Cols        int    `json:"cols,omitempty"`
+	Rows        int    `json:"rows,omitempty"`
+	PixelWidth  int    `json:"pixel_width,omitempty"`
+	PixelHeight int    `json:"pixel_height,omitempty"`
+	Active      *bool  `json:"active,omitempty"`
 }
 
 // RuntimeTerminalControlMsg is shared with Fleet's websocket relay.
@@ -129,16 +131,18 @@ func (s *Handler) serveRuntimeTerminal(
 		"session_key", info.Key,
 		"target_key", info.TargetKey,
 	)
-	if cols, rows, ok := parseRuntimeTerminalSize(r); ok &&
+	if geometry, ok := parseRuntimeTerminalGeometry(r); ok &&
 		!parseRuntimeTerminalReplayBoundary(r) {
 		logWebsocketDebug(
 			"runtime terminal initial resize",
 			"workspace_id", info.WorkspaceID,
 			"session_key", info.Key,
-			"cols", cols,
-			"rows", rows,
+			"cols", geometry.Cols,
+			"rows", geometry.Rows,
+			"pixel_width", geometry.PixelWidth,
+			"pixel_height", geometry.PixelHeight,
 		)
-		if err := attachment.Resize(cols, rows); err != nil {
+		if err := attachment.Resize(geometry); err != nil {
 			slog.Warn("runtime terminal initial resize", "err", err)
 		}
 		// subscribe queues ordinary-screen replay before the websocket is
@@ -246,35 +250,23 @@ func (s *Handler) runtimeWorkspaceForHTTP(
 	return summary, true
 }
 
-func parseRuntimeTerminalSize(
-	r *http.Request,
-) (cols int, rows int, ok bool) {
+func parseRuntimeTerminalGeometry(r *http.Request) (ptysize.Geometry, bool) {
 	cols, colsOK := parsePositiveQueryInt(r, "cols")
 	rows, rowsOK := parsePositiveQueryInt(r, "rows")
-	return cols, rows, colsOK && rowsOK
+	pixelWidth, _ := parsePositiveQueryInt(r, "pixel_width")
+	pixelHeight, _ := parsePositiveQueryInt(r, "pixel_height")
+	return ptysize.Normalize(ptysize.Geometry{
+		Cols:        cols,
+		Rows:        rows,
+		PixelWidth:  pixelWidth,
+		PixelHeight: pixelHeight,
+	}), colsOK && rowsOK
 }
 
-// ParseRuntimeTerminalSize parses the requested terminal dimensions.
-func ParseRuntimeTerminalSize(r *http.Request) (int, int, bool) {
-	return parseRuntimeTerminalSize(r)
+// ParseRuntimeTerminalGeometry parses the requested terminal geometry.
+func ParseRuntimeTerminalGeometry(r *http.Request) (ptysize.Geometry, bool) {
+	return parseRuntimeTerminalGeometry(r)
 }
-
-// clampTerminalDim bounds a client-supplied terminal dimension into the
-// uint16 range pty.Winsize requires, so an oversized cols/rows value is
-// capped rather than silently truncated by the narrowing conversion.
-func clampTerminalDim(v int) uint16 {
-	switch {
-	case v < 1:
-		return 1
-	case v > math.MaxUint16:
-		return math.MaxUint16
-	default:
-		return uint16(v)
-	}
-}
-
-// ClampTerminalDim bounds a terminal dimension to the PTY wire range.
-func ClampTerminalDim(v int) uint16 { return clampTerminalDim(v) }
 
 func parsePositiveQueryInt(r *http.Request, name string) (int, bool) {
 	raw := r.URL.Query().Get(name)
@@ -440,7 +432,12 @@ func handleRuntimeTerminalControl(
 	info := attachment.Info()
 	switch msg.Type {
 	case "claim_resize":
-		settle, err := attachment.ClaimResize(msg.Cols, msg.Rows)
+		settle, err := attachment.ClaimResize(ptysize.Geometry{
+			Cols:        msg.Cols,
+			Rows:        msg.Rows,
+			PixelWidth:  msg.PixelWidth,
+			PixelHeight: msg.PixelHeight,
+		})
 		if err != nil {
 			return err
 		}
@@ -466,9 +463,16 @@ func handleRuntimeTerminalControl(
 			"session_key", info.Key,
 			"cols", msg.Cols,
 			"rows", msg.Rows,
+			"pixel_width", msg.PixelWidth,
+			"pixel_height", msg.PixelHeight,
 		)
 		if msg.Cols > 0 && msg.Rows > 0 {
-			if err := attachment.Resize(msg.Cols, msg.Rows); err != nil {
+			if err := attachment.Resize(ptysize.Geometry{
+				Cols:        msg.Cols,
+				Rows:        msg.Rows,
+				PixelWidth:  msg.PixelWidth,
+				PixelHeight: msg.PixelHeight,
+			}); err != nil {
 				slog.Warn("runtime terminal refresh resize", "err", err)
 			}
 		}
@@ -485,8 +489,15 @@ func handleRuntimeTerminalControl(
 			"session_key", info.Key,
 			"cols", msg.Cols,
 			"rows", msg.Rows,
+			"pixel_width", msg.PixelWidth,
+			"pixel_height", msg.PixelHeight,
 		)
-		if err := attachment.Resize(msg.Cols, msg.Rows); err != nil {
+		if err := attachment.Resize(ptysize.Geometry{
+			Cols:        msg.Cols,
+			Rows:        msg.Rows,
+			PixelWidth:  msg.PixelWidth,
+			PixelHeight: msg.PixelHeight,
+		}); err != nil {
 			slog.Warn("runtime terminal resize", "err", err)
 		}
 	}

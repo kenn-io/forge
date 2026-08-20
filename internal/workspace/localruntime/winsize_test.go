@@ -7,6 +7,8 @@ import (
 	"github.com/creack/pty/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.kenn.io/forge/internal/ptysize"
 )
 
 func TestClampWinsizeDim(t *testing.T) {
@@ -48,7 +50,7 @@ func TestResizePTYLockedPreservesCellPixelSize(t *testing.T) {
 	}))
 
 	s := &session{ptmx: ptmx}
-	require.NoError(s.resizePTYLocked(100, 40))
+	require.NoError(s.resizePTYLocked(ptysize.Geometry{Cols: 100, Rows: 40}))
 
 	size, err := pty.GetsizeFull(ptmx)
 	require.NoError(err)

@@ -1,5 +1,7 @@
 package ptyowner
 
+import "go.kenn.io/forge/internal/ptysize"
+
 const (
 	RequestAttach = "attach"
 	RequestInput  = "input"
@@ -14,11 +16,22 @@ const (
 )
 
 type Request struct {
-	Type  string `json:"type"`
-	Token string `json:"token,omitempty"`
-	Cols  int    `json:"cols,omitempty"`
-	Rows  int    `json:"rows,omitempty"`
-	Data  []byte `json:"data,omitempty"`
+	Type        string `json:"type"`
+	Token       string `json:"token,omitempty"`
+	Cols        int    `json:"cols,omitempty"`
+	Rows        int    `json:"rows,omitempty"`
+	PixelWidth  int    `json:"pixel_width,omitempty"`
+	PixelHeight int    `json:"pixel_height,omitempty"`
+	Data        []byte `json:"data,omitempty"`
+}
+
+func (r Request) geometry() ptysize.Geometry {
+	return ptysize.Geometry{
+		Cols:        r.Cols,
+		Rows:        r.Rows,
+		PixelWidth:  r.PixelWidth,
+		PixelHeight: r.PixelHeight,
+	}
 }
 
 type Response struct {

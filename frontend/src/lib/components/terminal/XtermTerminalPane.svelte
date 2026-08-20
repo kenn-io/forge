@@ -64,6 +64,13 @@
     initialStatus?: string | undefined;
   }
 
+  interface TerminalGeometry {
+    cols: number;
+    rows: number;
+    pixelWidth?: number;
+    pixelHeight?: number;
+  }
+
   let {
     workspaceId,
     websocketPath,
@@ -102,6 +109,8 @@
   // ResizeObserver burst costs one frame, not one per callback.
   let sentCols = 0;
   let sentRows = 0;
+  let sentPixelWidth = 0;
+  let sentPixelHeight = 0;
   let sentResizeActive: boolean | null = null;
   let claimedGeometryIntentGeneration = 0;
   let resizeReady = true;
@@ -465,15 +474,16 @@
 
   function appendConnectionParams(
     url: string,
-    size: { cols: number; rows: number } | null,
+    size: TerminalGeometry | null,
     replayBoundary: boolean,
   ): string {
     const sep = url.includes("?") ? "&" : "?";
     const resizeActive = resizeAuthorityRegionSize() !== null ? "1" : "0";
     const { traceparent, baggage } = traceHeadersForRequest();
-    const sizeParams = size
-      ? `cols=${size.cols}&rows=${size.rows}&`
-      : "";
+    let sizeParams = size ? `cols=${size.cols}&rows=${size.rows}&` : "";
+    if (size?.pixelWidth && size.pixelHeight) {
+      sizeParams += `pixel_width=${size.pixelWidth}&pixel_height=${size.pixelHeight}&`;
+    }
     const replayBoundaryParam = replayBoundary ? "replay_boundary=1&" : "";
     let result = `${url}${sep}${sizeParams}${replayBoundaryParam}resize_active=${resizeActive}&traceparent=${encodeURIComponent(traceparent)}`;
     if (baggage !== null) result += `&baggage=${encodeURIComponent(baggage)}`;
@@ -481,7 +491,7 @@
   }
 
   function buildWsUrl(
-    size: { cols: number; rows: number } | null,
+    size: TerminalGeometry | null,
     replayBoundary: boolean,
   ): string | null {
     const path = websocketPath ?? defaultWebsocketPath();
@@ -530,34 +540,35 @@
     }
   }
 
-  function sendResize(cols: number, rows: number, claim: boolean = false): boolean {
-    return sendControl(claim ? "claim_resize" : "resize", cols, rows);
+  function sendResize(geometry: TerminalGeometry, claim: boolean = false): boolean {
+    return sendControl(claim ? "claim_resize" : "resize", geometry);
   }
 
-  function sendRefresh(cols: number, rows: number): boolean {
-    return sendControl("refresh", cols, rows);
+  function sendRefresh(geometry: TerminalGeometry): boolean {
+    return sendControl("refresh", geometry);
   }
 
-  function claimTerminalResize(): boolean {
+  function claimTerminalResize(refit: boolean = false): boolean {
     const size = resizeAuthorityRegionSize();
     if (!resizeReady || !size || !terminal || !terminalSession?.isConnected()) return false;
 
-    if (terminal.cols !== size.cols || terminal.rows !== size.rows) {
+    if (refit || terminal.cols !== size.cols || terminal.rows !== size.rows) {
       fitAddon?.fit();
       terminal.refresh(0, Math.max(0, terminal.rows - 1));
     }
-    terminalSession.send(JSON.stringify({
-      type: "claim_resize",
-      cols: terminal.cols,
-      rows: terminal.rows,
-    }));
-    sentCols = terminal.cols;
-    sentRows = terminal.rows;
+    const geometry = terminalGeometry(terminal.cols, terminal.rows);
+    if (!sendControl("claim_resize", geometry)) return false;
+    sentResizeActive = true;
+    recordSentGeometry(geometry);
     return true;
   }
 
   function sendResizeActive(nextActive: boolean): boolean {
     if (sentResizeActive === nextActive) return false;
+    // A geometry claim activates a pane and transfers resize ownership in one
+    // server operation. Deactivation remains a separate message because it
+    // has no geometry to apply.
+    if (nextActive) return true;
     if (terminalSession?.isConnected()) {
       terminalSession.send(JSON.stringify({ type: "resize_active", active: nextActive }));
       sentResizeActive = nextActive;
@@ -568,12 +579,60 @@
 
   function sendControl(
     type: "claim_resize" | "resize" | "refresh",
-    cols: number,
-    rows: number,
+    geometry: TerminalGeometry,
   ): boolean {
     if (!resizeReady || !terminalSession?.isConnected()) return false;
-    terminalSession.send(JSON.stringify({ type, cols, rows }));
+    terminalSession.send(JSON.stringify(terminalControlMessage(type, geometry)));
     return true;
+  }
+
+  function terminalControlMessage(
+    type: "claim_resize" | "resize" | "refresh",
+    geometry: TerminalGeometry,
+  ): {
+    type: "claim_resize" | "resize" | "refresh";
+    cols: number;
+    rows: number;
+    pixel_width?: number;
+    pixel_height?: number;
+  } {
+    const message: {
+      type: "claim_resize" | "resize" | "refresh";
+      cols: number;
+      rows: number;
+      pixel_width?: number;
+      pixel_height?: number;
+    } = {
+      type,
+      cols: geometry.cols,
+      rows: geometry.rows,
+    };
+    if (geometry.pixelWidth && geometry.pixelHeight) {
+      message.pixel_width = geometry.pixelWidth;
+      message.pixel_height = geometry.pixelHeight;
+    }
+    return message;
+  }
+
+  function terminalGeometry(cols: number, rows: number): TerminalGeometry {
+    const screen = containerEl.querySelector<HTMLElement>(".xterm-screen");
+    const bounds = screen?.getBoundingClientRect();
+    if (!bounds || bounds.width <= 0 || bounds.height <= 0) {
+      return { cols, rows };
+    }
+    return {
+      cols,
+      rows,
+      pixelWidth: Math.max(1, Math.round(bounds.width)),
+      pixelHeight: Math.max(1, Math.round(bounds.height)),
+    };
+  }
+
+  function recordSentGeometry(geometry: TerminalGeometry): void {
+    sentCols = geometry.cols;
+    sentRows = geometry.rows;
+    sentPixelWidth = geometry.pixelWidth ?? 0;
+    sentPixelHeight = geometry.pixelHeight ?? 0;
   }
 
   function refreshVisibleTerminal(): void {
@@ -581,13 +640,12 @@
     if (!size || !terminal) return;
 
     fitAddon?.fit();
-    const fittedSize = { cols: terminal.cols, rows: terminal.rows };
-    terminal.refresh(0, Math.max(0, fittedSize.rows - 1));
+    const fittedGeometry = terminalGeometry(terminal.cols, terminal.rows);
+    terminal.refresh(0, Math.max(0, fittedGeometry.rows - 1));
     // The server resizes on a refresh's dimensions too, so a delivered refresh
     // counts as the size the PTY now has.
-    if (sendRefresh(fittedSize.cols, fittedSize.rows)) {
-      sentCols = fittedSize.cols;
-      sentRows = fittedSize.rows;
+    if (sendRefresh(fittedGeometry)) {
+      recordSentGeometry(fittedGeometry);
     }
   }
 
@@ -700,9 +758,12 @@
     if (!resizeActive || !size || !terminal) return;
 
     fitAddon?.fit();
-    const fittedSize = { cols: terminal.cols, rows: terminal.rows };
-    const dimensionsChanged = fittedSize.cols !== sentCols || fittedSize.rows !== sentRows;
-    terminal.refresh(0, Math.max(0, fittedSize.rows - 1));
+    const fittedGeometry = terminalGeometry(terminal.cols, terminal.rows);
+    const dimensionsChanged = fittedGeometry.cols !== sentCols ||
+      fittedGeometry.rows !== sentRows ||
+      (fittedGeometry.pixelWidth ?? 0) !== sentPixelWidth ||
+      (fittedGeometry.pixelHeight ?? 0) !== sentPixelHeight;
+    terminal.refresh(0, Math.max(0, fittedGeometry.rows - 1));
     // Report the dimensions fit() actually applied. It takes its own fresh
     // measurement, so the region can cross a row or column boundary after the
     // authority preflight above but before xterm is resized.
@@ -714,14 +775,18 @@
     const geometryIntentGeneration = dimensionsChanged
       ? currentTerminalGeometryIntent()
       : null;
-    const claim = geometryIntentGeneration !== null &&
-      geometryIntentGeneration !== claimedGeometryIntentGeneration;
-    if (sendResize(fittedSize.cols, fittedSize.rows, claim)) {
-      if (claim) {
+    const claim = authorityChanged || (
+      geometryIntentGeneration !== null &&
+      geometryIntentGeneration !== claimedGeometryIntentGeneration
+    );
+    if (sendResize(fittedGeometry, claim)) {
+      if (authorityChanged) {
+        sentResizeActive = true;
+      }
+      if (claim && geometryIntentGeneration !== null) {
         claimedGeometryIntentGeneration = geometryIntentGeneration;
       }
-      sentCols = fittedSize.cols;
-      sentRows = fittedSize.rows;
+      recordSentGeometry(fittedGeometry);
     }
   }
 
@@ -769,7 +834,10 @@
       cancelPendingTerminalSequence(() => {
         if (disposed || generation !== connectionGeneration || !terminalSession?.isConnected()) return;
         resizeReady = true;
-        scheduleTerminalRefresh();
+        // Replayed state can belong to an older browser attachment. Claim with
+        // the geometry xterm has now so this pane becomes the resize owner
+        // without first restoring the retained PTY's fallback size.
+        claimTerminalResize(true);
       });
       return "continue";
     }
@@ -794,10 +862,12 @@
         const replayBoundary = terminalSupportsReplayBoundary();
         sentResizeActive = null;
         resizeReady = !replayBoundary;
-        return buildWsUrl(
-          replayBoundary ? null : { cols: terminal.cols, rows: terminal.rows },
-          replayBoundary,
-        ) ?? undefined;
+        const claimedSize = resizeAuthorityRegionSize();
+        sentResizeActive = claimedSize !== null;
+        const geometry = claimedSize
+          ? terminalGeometry(terminal.cols, terminal.rows)
+          : null;
+        return buildWsUrl(replayBoundary ? null : geometry, replayBoundary) ?? undefined;
       },
       onOpen: () => {
         connectionGeneration += 1;
@@ -875,7 +945,7 @@
     }
     redrawTerminalTextureAtlas();
     fitAddon?.fit();
-    if (active) scheduleTerminalRefresh();
+    if (active) scheduleTerminalResize();
   });
 
   $effect(syncRendererState);
@@ -891,7 +961,7 @@
     // painted split leaf stays eligible, while hidden and parked terminals do
     // not dictate a size for the pane the user is actually looking at.
     sendResizeActive(resizeAuthorityRegionSize() !== null);
-    if (active) scheduleTerminalRefresh();
+    if (active) scheduleTerminalResize();
   });
 
   const FONT_LOADED: "loaded" = "loaded";

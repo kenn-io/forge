@@ -19,6 +19,7 @@ import (
 	"go.kenn.io/forge/internal/agentactivity"
 	"go.kenn.io/forge/internal/db"
 	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
+	"go.kenn.io/forge/internal/ptysize"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/workspace"
@@ -374,10 +375,10 @@ type initialMessagePTY struct {
 	once     sync.Once
 }
 
-func (p *initialMessagePTY) Output() <-chan []byte { return p.output }
-func (p *initialMessagePTY) Done() <-chan struct{} { return p.done }
-func (p *initialMessagePTY) ExitCode() int         { return 0 }
-func (p *initialMessagePTY) Resize(int, int) error { return nil }
+func (p *initialMessagePTY) Output() <-chan []byte         { return p.output }
+func (p *initialMessagePTY) Done() <-chan struct{}         { return p.done }
+func (p *initialMessagePTY) ExitCode() int                 { return 0 }
+func (p *initialMessagePTY) Resize(ptysize.Geometry) error { return nil }
 
 func (p *initialMessagePTY) Write(data []byte) error {
 	p.mu.Lock()

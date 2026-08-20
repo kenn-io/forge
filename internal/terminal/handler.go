@@ -17,6 +17,7 @@ import (
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/ptyowner"
+	"go.kenn.io/forge/internal/ptysize"
 	"go.kenn.io/forge/internal/terminalwebsocket"
 	"go.kenn.io/forge/internal/tracing"
 	"go.kenn.io/forge/internal/workspace"
@@ -91,7 +92,8 @@ func (h *Handler) ServeHTTP(
 		return
 	}
 
-	cols, rows := parseSize(r)
+	geometry := parseGeometry(r)
+	cols, rows := geometry.Cols, geometry.Rows
 	logWebsocketDebug(
 		"workspace terminal attaching",
 		"workspace_id", id,
@@ -131,7 +133,7 @@ func (h *Handler) ServeHTTP(
 			return
 		}
 		attachment, err := h.Workspaces.AttachPtyOwnerTerminal(
-			ctx, ws.TmuxSession, cols, rows,
+			ctx, ws.TmuxSession, geometry,
 		)
 		if err != nil {
 			slog.Error("attach pty owner", "err", err)
@@ -210,10 +212,7 @@ func (h *Handler) ServeHTTP(
 	}
 	defer releaseProc()
 
-	winSize := &pty.Winsize{
-		Rows: uint16(rows),
-		Cols: uint16(cols),
-	}
+	winSize := ptysize.Winsize(geometry)
 	ptmx, err := pty.StartWithSize(cmd, winSize)
 	if err != nil {
 		slog.Error("pty start", "err", err)
@@ -362,7 +361,12 @@ func bridgePtyOwnerAttachment(
 					continue
 				}
 				if msg.Type == "resize" || msg.Type == "claim_resize" {
-					_ = attachment.Resize(msg.Cols, msg.Rows)
+					_ = attachment.Resize(ptysize.Geometry{
+						Cols:        msg.Cols,
+						Rows:        msg.Rows,
+						PixelWidth:  msg.PixelWidth,
+						PixelHeight: msg.PixelHeight,
+					})
 				}
 			}
 		}

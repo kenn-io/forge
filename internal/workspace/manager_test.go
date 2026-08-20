@@ -27,6 +27,7 @@ import (
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/ptyowner"
+	"go.kenn.io/forge/internal/ptysize"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	gitcmd "go.kenn.io/kit/git/cmd"
 )
@@ -4764,33 +4765,53 @@ func TestManagerEnsureTmuxHasSessionPrefix(t *testing.T) {
 	require.NoError(t, mgr.EnsureTmux(t.Context(), "sess-A", t.TempDir()))
 
 	argvs := readRecorderArgv(t, record)
-	require.Len(t, argvs, 5)
+	require.Len(t, argvs, 2)
 	assert.Equal(
 		[]string{"wrap", "has-session", "-t", "sess-A"},
 		argvs[0],
-	)
-	assert.Equal(
-		[]string{"wrap", "set-option", "-q", "-g", "allow-passthrough", "on"},
-		argvs[1],
-	)
-	assert.Equal(
-		[]string{
-			"wrap", "set-option", "-q", "-g", "terminal-features[100]",
-			"xterm-256color:sixel",
-		},
-		argvs[2],
-	)
-	assert.Equal(
-		[]string{"wrap", "set-option", "-q", "-g", "mouse", "on"},
-		argvs[3],
 	)
 	assert.Equal(
 		[]string{
 			"wrap", "set-option", "-q", "-p", "-t", "sess-A",
 			"allow-passthrough", "on",
 		},
-		argvs[4],
+		argvs[1],
 	)
+}
+
+func TestManagerApplyTmuxMouseUpdatesDedicatedServer(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	tmuxPath := filepath.Join(dir, "tmux")
+	body := "#!/bin/sh\n" +
+		"TMUX_RECORD=" + shellquote.Join(record) + "\n" +
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
+		`case "$*" in *list-sessions*) printf 'sess-A:kenn-forge:test-owner\n';; esac` + "\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(tmuxPath, []byte(body), 0o755))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr.SetTmuxMouse(true)
+	require.NoError(mgr.ApplyTmuxMouse(t.Context()))
+
+	assert.Equal([][]string{
+		{"-L", "kenn-forge", "list-sessions", "-F", tmuxSessionListFormat},
+		{"-L", "kenn-forge", "set-option", "-q", "-g", "mouse", "on"},
+	}, readRecorderArgv(t, record))
+}
+
+func TestManagerApplyTmuxMouseDoesNotMutateCustomServer(t *testing.T) {
+	require := require.New(t)
+	script, record := writeRecorderScript(t)
+	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr.SetTmuxCommand([]string{script})
+	mgr.SetTmuxMouse(true)
+
+	require.NoError(mgr.ApplyTmuxMouse(t.Context()))
+	require.NoFileExists(record)
 }
 
 func TestManagerEnsureTerminalUsesPtyOwnerWhenConfigured(t *testing.T) {
@@ -6416,7 +6437,7 @@ func TestManagerEnsureTmuxCreatesSessionOnMiss(t *testing.T) {
 	require.NoError(mgr.EnsureTmux(t.Context(), "sess-B", "/tmp/cwd"))
 
 	argvs := readRecorderArgv(t, record)
-	require.Len(argvs, 8)
+	require.Len(argvs, 5)
 	assert.Equal(
 		[]string{"has-session", "-t", "sess-B"},
 		argvs[0],
@@ -6440,30 +6461,15 @@ func TestManagerEnsureTmuxCreatesSessionOnMiss(t *testing.T) {
 		argvs[2],
 	)
 	assert.Equal(
-		[]string{"set-option", "-q", "-g", "allow-passthrough", "on"},
-		argvs[3],
-	)
-	assert.Equal(
-		[]string{
-			"set-option", "-q", "-g", "terminal-features[100]",
-			"xterm-256color:sixel",
-		},
-		argvs[4],
-	)
-	assert.Equal(
-		[]string{"set-option", "-q", "-g", "mouse", "on"},
-		argvs[5],
-	)
-	assert.Equal(
 		[]string{
 			"set-option", "-q", "-p", "-t", "sess-B",
 			"allow-passthrough", "on",
 		},
-		argvs[6],
+		argvs[3],
 	)
 	assert.Equal(
 		[]string{"set-option", "-q", "-t", "sess-B", "status", "off"},
-		argvs[7],
+		argvs[4],
 	)
 }
 
@@ -6494,7 +6500,7 @@ func TestManagerEnsureTmuxCreatesSessionOnMacOSMissingServer(t *testing.T) {
 	require.NoError(mgr.EnsureTmux(context.Background(), "sess-macos", "/tmp/cwd"))
 
 	argvs := readRecorderArgv(t, record)
-	require.Len(argvs, 7)
+	require.Len(argvs, 4)
 	assert.Equal(
 		[]string{"has-session", "-t", "sess-macos"},
 		argvs[0],
@@ -6509,26 +6515,11 @@ func TestManagerEnsureTmuxCreatesSessionOnMacOSMissingServer(t *testing.T) {
 		argvs[2],
 	)
 	assert.Equal(
-		[]string{"set-option", "-q", "-g", "allow-passthrough", "on"},
-		argvs[3],
-	)
-	assert.Equal(
-		[]string{
-			"set-option", "-q", "-g", "terminal-features[100]",
-			"xterm-256color:sixel",
-		},
-		argvs[4],
-	)
-	assert.Equal(
-		[]string{"set-option", "-q", "-g", "mouse", "on"},
-		argvs[5],
-	)
-	assert.Equal(
 		[]string{
 			"set-option", "-q", "-p", "-t", "sess-macos",
 			"allow-passthrough", "on",
 		},
-		argvs[6],
+		argvs[3],
 	)
 }
 
@@ -6683,8 +6674,7 @@ func (f *fakePtyOwnerClient) Ensure(
 func (f *fakePtyOwnerClient) Attach(
 	context.Context,
 	string,
-	int,
-	int,
+	ptysize.Geometry,
 ) (*ptyowner.Attachment, error) {
 	return nil, nil
 }

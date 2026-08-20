@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -218,7 +219,7 @@ func NormalizeIssueTimelineEvents(
 ) []platform.IssueEvent {
 	events := make([]platform.IssueEvent, 0, len(timeline))
 	for _, item := range timeline {
-		eventType, summary, metadataJSON, ok := normalizeTimelineEvent(item)
+		eventType, summary, metadataJSON, ok := normalizeTimelineEvent(repo, item)
 		if !ok {
 			continue
 		}
@@ -305,7 +306,7 @@ func NormalizeMergeRequestTimelineEvents(
 ) []platform.MergeRequestEvent {
 	events := make([]platform.MergeRequestEvent, 0, len(timeline))
 	for _, item := range timeline {
-		eventType, summary, metadataJSON, ok := normalizeTimelineEvent(item)
+		eventType, summary, metadataJSON, ok := normalizeTimelineEvent(repo, item)
 		if !ok {
 			continue
 		}
@@ -335,7 +336,41 @@ type renamedTitleMetadata struct {
 	CurrentTitle  string `json:"current_title"`
 }
 
-func normalizeTimelineEvent(item TimelineEventDTO) (eventType, summary, metadataJSON string, ok bool) {
+type crossReferenceMetadata struct {
+	SourceType        string `json:"source_type"`
+	SourceOwner       string `json:"source_owner"`
+	SourceRepo        string `json:"source_repo"`
+	SourceNumber      int    `json:"source_number"`
+	SourceTitle       string `json:"source_title"`
+	SourceURL         string `json:"source_url"`
+	IsCrossRepository bool   `json:"is_cross_repository"`
+	WillCloseTarget   bool   `json:"will_close_target"`
+}
+
+func normalizeTimelineEvent(repo platform.RepoRef, item TimelineEventDTO) (eventType, summary, metadataJSON string, ok bool) {
+	if strings.EqualFold(strings.TrimSpace(item.Type), "pull_ref") && item.Reference != nil && item.Reference.IsPullRequest {
+		ref := item.Reference
+		if strings.TrimSpace(ref.Owner) == "" || strings.TrimSpace(ref.Repo) == "" ||
+			ref.Number <= 0 || strings.TrimSpace(ref.HTMLURL) == "" {
+			return "", "", "", false
+		}
+		parsedSourceURL, err := url.Parse(ref.HTMLURL)
+		if err != nil || (repo.Host != "" && !strings.EqualFold(parsedSourceURL.Host, repo.Host)) {
+			return "", "", "", false
+		}
+		metadata, _ := json.Marshal(crossReferenceMetadata{
+			SourceType:        "PullRequest",
+			SourceOwner:       ref.Owner,
+			SourceRepo:        ref.Repo,
+			SourceNumber:      ref.Number,
+			SourceTitle:       ref.Title,
+			SourceURL:         ref.HTMLURL,
+			IsCrossRepository: path.Join(ref.Owner, ref.Repo) != repo.RepoPath,
+			WillCloseTarget:   strings.EqualFold(strings.TrimSpace(item.RefAction), "closes"),
+		})
+		return "cross_referenced", fmt.Sprintf("Referenced from %s/%s#%d", ref.Owner, ref.Repo, ref.Number), string(metadata), true
+	}
+
 	eventType, ok = normalizeAssignmentEventType(item.Type)
 	if ok {
 		return eventType, assignmentSummary(eventType, item.User.UserName, item.Assignee.UserName), "", true

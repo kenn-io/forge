@@ -816,6 +816,8 @@ func TestReadClientFetchesMergeRequestsIssuesEventsReleasesTagsAndPipelines(t *t
 			writeJSON(w, `[
 				{"id": "disc10", "notes": [{"id": 10, "body": "issue note", "system": false, "author": {"username": "bob"}, "created_at": "2026-04-02T10:00:00Z"}]}
 			]`)
+		case "/api/v4/projects/42/issues/5/related_merge_requests":
+			writeJSON(w, `[{"id":3001,"iid":11,"project_id":77,"title":"Fix issue one","web_url":"https://gitlab.example.com/acme/tools/-/merge_requests/11","references":{"full":"acme/tools!11"},"updated_at":"2026-04-02T11:00:00Z"}]`)
 		case "/api/v4/projects/42/releases":
 			writeJSON(w, `[{"tag_name": "v1.0.0", "name": "One", "released_at": "2026-04-03T10:00:00Z", "created_at": "2026-04-03T09:00:00Z", "commit": {"id": "abc"}}]`)
 		case "/api/v4/projects/42/repository/tags":
@@ -862,8 +864,18 @@ func TestReadClientFetchesMergeRequestsIssuesEventsReleasesTagsAndPipelines(t *t
 
 	issueEvents, err := client.ListIssueEvents(context.Background(), ref, 5)
 	require.NoError(err)
-	require.Len(issueEvents, 1)
+	require.Len(issueEvents, 2)
 	assert.Equal("issue_comment", issueEvents[0].EventType)
+	assert.Equal("cross_referenced", issueEvents[1].EventType)
+	assert.JSONEq(`{
+		"source_type":"PullRequest",
+		"source_owner":"acme",
+		"source_repo":"tools",
+		"source_number":11,
+		"source_title":"Fix issue one",
+		"source_url":"https://gitlab.example.com/acme/tools/-/merge_requests/11",
+		"is_cross_repository":true
+	}`, issueEvents[1].MetadataJSON)
 
 	releases, err := client.ListReleases(context.Background(), ref)
 	require.NoError(err)

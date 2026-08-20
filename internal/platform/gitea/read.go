@@ -291,19 +291,7 @@ func (t *transport) ListIssueTimeline(
 	number int,
 	opts gitealike.PageOptions,
 ) ([]gitealike.TimelineEventDTO, gitealike.Page, error) {
-	var comments []*giteasdk.TimelineComment
-	var resp *giteasdk.Response
-	err := t.withRequestContext(ctx, func() error {
-		var err error
-		comments, resp, err = t.api.ListIssueTimeline(ref.Owner, ref.Name, int64(number), giteasdk.ListIssueCommentOptions{
-			ListOptions: giteaListOptions(opts),
-		})
-		return err
-	})
-	if err != nil {
-		return nil, gitealike.Page{}, giteaHTTPError(resp, err)
-	}
-	return convertTimelineEvents(comments), giteaPage(resp), nil
+	return gitealike.ReadIssueTimelinePage(ctx, t.httpClient, t.baseURL, ref, number, opts)
 }
 
 func (t *transport) ListReleases(

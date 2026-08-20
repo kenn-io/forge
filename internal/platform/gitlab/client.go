@@ -241,6 +241,7 @@ func (c *Client) Capabilities() platform.Capabilities {
 		ReadRepositories:       true,
 		ReadMergeRequests:      true,
 		ReadIssues:             true,
+		ReadIssuePRReferences:  true,
 		ReadComments:           true,
 		ReadReleases:           true,
 		ReadCI:                 true,
@@ -547,9 +548,15 @@ func (c *Client) ListIssueEvents(
 	if err != nil {
 		return nil, err
 	}
-	return NormalizeIssueDiscussions(
+	events := NormalizeIssueDiscussions(
 		normalizedRef, number, gitLabIssueURL(normalizedRef, number), discussions,
-	), nil
+	)
+	related, err := c.listIssueRelatedMergeRequests(ctx, pid, normalizedRef, number)
+	if err != nil {
+		return nil, err
+	}
+	events = append(events, NormalizeIssueRelatedMergeRequests(normalizedRef, number, related)...)
+	return events, nil
 }
 
 func (c *Client) ListOpenIssues(ctx context.Context, ref platform.RepoRef) ([]platform.Issue, error) {

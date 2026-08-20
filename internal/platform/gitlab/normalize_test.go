@@ -792,6 +792,31 @@ func TestNormalizeIssueDiscussions(t *testing.T) {
 	assert.Equal(10, events[0].IssueNumber)
 }
 
+func TestNormalizeIssueRelatedMergeRequestsKeepsProviderHostBoundary(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	repo := testGitLabRepoRef()
+
+	events := NormalizeIssueRelatedMergeRequests(repo, 10, []*gitlab.BasicMergeRequest{
+		{
+			ID: 101, IID: 11, Title: "Fix the issue",
+			WebURL:     "https://gitlab.example.com/acme/tools/-/merge_requests/11",
+			References: &gitlab.IssueReferences{Full: "acme/tools!11"},
+			UpdatedAt:  timePtr(time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)),
+		},
+		{
+			ID: 102, IID: 12, Title: "Foreign provider reference",
+			WebURL:     "https://gitlab.other.example/acme/tools/-/merge_requests/12",
+			References: &gitlab.IssueReferences{Full: "acme/tools!12"},
+		},
+	})
+
+	require.Len(events, 1)
+	assert.Equal("cross_referenced", events[0].EventType)
+	assert.Contains(events[0].MetadataJSON, `"source_owner":"acme"`)
+	assert.Contains(events[0].MetadataJSON, `"source_number":11`)
+}
+
 func testGitLabRepoRef() platform.RepoRef {
 	return platform.RepoRef{
 		Platform:   platform.KindGitLab,

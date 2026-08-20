@@ -210,9 +210,10 @@ Persisted controls must state their scope clearly.
 - `Referenced by PR` defaults off. Issue visibility reset clears it, and the
   compact `Reset view` action restores it with the other menu defaults.
   (`frontend/src/lib/components/sidebar/IssueList.svelte::resetVisibility`)
-- Mixed-provider scopes offer `Referenced by PR` when any selected provider can
-  supply reference edges. Issues with no edge, including unsupported providers, do
-  not match. The graph has no separate badge or detail UI.
+- `Referenced by PR` is available when any configured provider-host can supply
+  reference edges. Active repository selections do not hide it. Issues with no
+  edge do not match, and edges never cross provider-host boundaries. The graph
+  has no separate badge or detail UI.
   (`frontend/src/lib/app-stores.svelte.ts::createAppStores`)
 - Named repository preset definitions follow server settings, while the active
   repository selection and preset affinity remain browser-local; `Global` clears both

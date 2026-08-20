@@ -197,8 +197,10 @@ registry helpers return typed errors for missing providers or capabilities.
 - Each edge keeps provider-supplied source identity and URL without requiring a
   tracked source repository or local PR row.
   (`internal/db/migrations/000052_issue_pr_references.up.sql:1`)
-- Ingest only regular-sync payloads and backfill stored events; reference tracking
-  must not add provider reads or content scans.
+- Ingest provider-native issue-event payloads and backfill stored events. GitHub
+  uses cross-reference timeline events, GitLab uses related merge requests, and
+  Gitea/Forgejo use `pull_ref` timeline events. Never scan Markdown or add reads
+  while serving issue lists.
   (`internal/db/queries.go::issuePRReferenceFromEvent`)
 - Historical references cannot prove a current issue-PR relationship. A current-link
   capability requires an authoritative replaceable provider snapshot.

@@ -64,13 +64,15 @@ func (p *Provider) Host() string {
 
 func (p *Provider) Capabilities() platform.Capabilities {
 	caps := platform.Capabilities{
-		ReadRepositories:  true,
-		ReadMergeRequests: true,
-		ReadIssues:        true,
-		ReadComments:      true,
-		ReadReleases:      true,
-		ReadCI:            true,
+		ReadRepositories:      true,
+		ReadMergeRequests:     true,
+		ReadIssues:            true,
+		ReadIssuePRReferences: false,
+		ReadComments:          true,
+		ReadReleases:          true,
+		ReadCI:                true,
 	}
+	_, caps.ReadIssuePRReferences = p.transport.(TimelineTransport)
 	if _, ok := p.transport.(ArchiveTransport); ok {
 		caps.Archive = platform.ArchiveCapabilities{
 			HistoricalIssues: true, HistoricalMergeRequests: true,

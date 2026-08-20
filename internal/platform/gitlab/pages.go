@@ -338,6 +338,31 @@ func (c *Client) listIssueDiscussionsPage(
 	return discussions, nextGitLabPage(resp), nil
 }
 
+func (c *Client) listIssueRelatedMergeRequests(
+	ctx context.Context,
+	pid any,
+	ref platform.RepoRef,
+	number int,
+) ([]*gitlab.BasicMergeRequest, error) {
+	return collectGitLabPages(ctx, func(ctx context.Context, page int64) ([]*gitlab.BasicMergeRequest, int64, error) {
+		items, resp, err := c.api.Issues.ListMergeRequestsRelatedToIssue(
+			pid,
+			int64(number),
+			&gitlab.ListMergeRequestsRelatedToIssueOptions{
+				ListOptions: gitlab.ListOptions{Page: page, PerPage: defaultPageSize},
+			},
+			gitlab.WithContext(ctx),
+		)
+		if err != nil {
+			return nil, 0, c.repositoryFeatureError(
+				ctx, ref, platform.RepositoryFeatureIssues,
+				"list_issue_related_merge_requests", err,
+			)
+		}
+		return items, nextGitLabPage(resp), nil
+	})
+}
+
 // listMergeRequestDiscussionsPage is the single owner of the merge-request
 // discussions endpoint request shape, feeding the ordinary-comment filter, the
 // review-thread extraction, and the live event surfaces. Callers map errors

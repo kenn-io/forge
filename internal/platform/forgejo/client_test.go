@@ -374,6 +374,7 @@ func TestClientProviderIdentityExposesReadCapabilities(t *testing.T) {
 		ReadRepositories:      true,
 		ReadMergeRequests:     true,
 		ReadIssues:            true,
+		ReadIssuePRReferences: true,
 		ReadComments:          true,
 		ReadReleases:          true,
 		ReadCI:                true,
@@ -401,6 +402,46 @@ func TestClientProviderIdentityExposesReadCapabilities(t *testing.T) {
 			OrdinaryComments: true, SubmittedReviews: true, InlineReviewComments: true,
 		},
 	}, client.Capabilities())
+}
+
+func TestClientReadsIssuePullReferenceTimelineEvents(t *testing.T) {
+	assert := assert.New(t)
+	require := Require.New(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal("token forgejo-token", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/repos/owner/repo/issues/3/comments":
+			assert.NoError(json.NewEncoder(w).Encode([]map[string]any{}))
+		case "/api/v1/repos/owner/repo/issues/3/timeline":
+			assert.NoError(json.NewEncoder(w).Encode([]map[string]any{{
+				"id": 13, "type": "pull_ref", "user": map[string]any{"login": "dana"},
+				"created_at": "2026-05-01T10:03:00Z",
+				"ref_issue": map[string]any{
+					"number": 9, "title": "Fix the issue",
+					"html_url":     "https://codeberg.test/acme/tools/pulls/9",
+					"pull_request": map[string]any{"merged": false},
+					"repository":   map[string]any{"owner": "acme", "name": "tools", "full_name": "acme/tools"},
+				},
+			}}))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewClient("codeberg.test", testTokenSource("forgejo-token"), WithBaseURLForTesting(server.URL))
+	require.NoError(err)
+	events, err := client.ListIssueEvents(context.Background(), platform.RepoRef{
+		Host: "codeberg.test", Owner: "owner", Name: "repo", RepoPath: "owner/repo",
+	}, 3)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.Equal("cross_referenced", events[0].EventType)
+	assert.Contains(events[0].MetadataJSON, `"source_owner":"acme"`)
+	assert.Contains(events[0].MetadataJSON, `"source_repo":"tools"`)
+	assert.Contains(events[0].MetadataJSON, `"source_number":9`)
 }
 
 func TestClientReadsOpenPullRequestsIssuesAndCIChecks(t *testing.T) {

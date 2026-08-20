@@ -103,10 +103,11 @@ func NewClient(host string, source tokenauth.Source, options ...ClientOption) (*
 		RetryOnUnauthorized: true,
 		AllowedOrigin:       opts.baseURL,
 	}
-	clientOptions = append(clientOptions, forgejosdk.SetHTTPClient(&http.Client{
+	apiHTTPClient := &http.Client{
 		Timeout:   opts.foregroundTimeout,
 		Transport: authRT,
-	}))
+	}
+	clientOptions = append(clientOptions, forgejosdk.SetHTTPClient(apiHTTPClient))
 
 	api, err := forgejosdk.NewClient(opts.baseURL, clientOptions...)
 	if err != nil {
@@ -114,6 +115,8 @@ func NewClient(host string, source tokenauth.Source, options ...ClientOption) (*
 	}
 	transport := &transport{
 		api:                api,
+		httpClient:         apiHTTPClient,
+		baseURL:            opts.baseURL,
 		mergeability:       mergeability,
 		mergeRejections:    mergeRejections,
 		requestContextLock: make(chan struct{}, 1),
@@ -160,6 +163,8 @@ func (c *Client) AuthenticatedUser(
 
 type transport struct {
 	api                *forgejosdk.Client
+	httpClient         *http.Client
+	baseURL            string
 	mergeability       *gitealike.MergeableCache
 	mergeRejections    *gitealike.MergeRejectionCapture
 	requestContextLock chan struct{}

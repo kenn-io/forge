@@ -3,6 +3,7 @@ package gitlab
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"path"
 	"reflect"
 	"strconv"
@@ -449,6 +450,85 @@ func NormalizeIssueDiscussions(
 	return normalizeIssueDiscussions(
 		repo, issueNumber, parentURL, discussions, true,
 	)
+}
+
+type issueCrossReferenceMetadata struct {
+	SourceType        string `json:"source_type"`
+	SourceOwner       string `json:"source_owner"`
+	SourceRepo        string `json:"source_repo"`
+	SourceNumber      int    `json:"source_number"`
+	SourceTitle       string `json:"source_title"`
+	SourceURL         string `json:"source_url"`
+	IsCrossRepository bool   `json:"is_cross_repository"`
+}
+
+func NormalizeIssueRelatedMergeRequests(
+	repo platform.RepoRef,
+	issueNumber int,
+	mergeRequests []*gitlab.BasicMergeRequest,
+) []platform.IssueEvent {
+	events := make([]platform.IssueEvent, 0, len(mergeRequests))
+	for _, mr := range mergeRequests {
+		if mr == nil || mr.IID <= 0 || strings.TrimSpace(mr.WebURL) == "" {
+			continue
+		}
+		sourcePath, ok := gitLabRelatedMergeRequestPath(repo.Host, mr)
+		if !ok {
+			continue
+		}
+		owner := path.Dir(sourcePath)
+		name := path.Base(sourcePath)
+		metadata, _ := json.Marshal(issueCrossReferenceMetadata{
+			SourceType:        "PullRequest",
+			SourceOwner:       owner,
+			SourceRepo:        name,
+			SourceNumber:      int(mr.IID),
+			SourceTitle:       mr.Title,
+			SourceURL:         mr.WebURL,
+			IsCrossRepository: sourcePath != repo.RepoPath,
+		})
+		observedAt := timeValue(mr.UpdatedAt)
+		if observedAt.IsZero() {
+			observedAt = timeValue(mr.CreatedAt)
+		}
+		externalID := strconv.FormatInt(mr.ID, 10)
+		events = append(events, platform.IssueEvent{
+			Repo:               repo,
+			PlatformID:         mr.ID,
+			PlatformExternalID: externalID,
+			IssueNumber:        issueNumber,
+			EventType:          "cross_referenced",
+			Summary:            fmt.Sprintf("Referenced from %s#%d", sourcePath, mr.IID),
+			MetadataJSON:       string(metadata),
+			CreatedAt:          observedAt,
+			DirectURL:          mr.WebURL,
+			DedupeKey: noteDedupeKey(
+				repo, "issue", issueNumber, "cross_reference",
+				fmt.Sprintf("%s!%d", sourcePath, mr.IID),
+			),
+		})
+	}
+	return events
+}
+
+func gitLabRelatedMergeRequestPath(host string, mr *gitlab.BasicMergeRequest) (string, bool) {
+	parsed, err := url.Parse(mr.WebURL)
+	if err != nil || !strings.EqualFold(parsed.Host, host) {
+		return "", false
+	}
+	if mr.References != nil {
+		if full, _, ok := strings.Cut(strings.TrimSpace(mr.References.Full), "!"); ok {
+			if normalized, err := normalizeSafeProjectPath(full); err == nil {
+				return normalized, true
+			}
+		}
+	}
+	projectPath, _, ok := strings.Cut(strings.Trim(parsed.Path, "/"), "/-/merge_requests/")
+	if !ok {
+		return "", false
+	}
+	normalized, err := normalizeSafeProjectPath(projectPath)
+	return normalized, err == nil
 }
 
 func normalizeIssueDiscussionComments(

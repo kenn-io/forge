@@ -279,9 +279,23 @@ func TestNormalizeMergeRequestIssueEventsAndArtifacts(t *testing.T) {
 		[]TimelineEventDTO{
 			{ID: 402, User: UserDTO{UserName: "hank"}, Type: "unassigned", Created: base},
 			{ID: 404, User: UserDTO{UserName: "jane"}, Type: "change_title", PreviousTitle: "Old issue", CurrentTitle: "New issue", Created: base.Add(time.Minute)},
+			{
+				ID: 408, User: UserDTO{UserName: "kai"}, Type: "pull_ref", Created: base.Add(2 * time.Minute),
+				Reference: &IssueReferenceDTO{
+					Owner: "acme", Repo: "tools", Number: 11, Title: "Fix the issue",
+					HTMLURL: "https://gitea.com/acme/tools/pulls/11", IsPullRequest: true,
+				},
+			},
+			{
+				ID: 409, Type: "pull_ref", Created: base.Add(3 * time.Minute),
+				Reference: &IssueReferenceDTO{
+					Owner: "acme", Repo: "tools", Number: 12,
+					HTMLURL: "https://github.com/acme/tools/pull/12", IsPullRequest: true,
+				},
+			},
 		},
 	)
-	require.Len(issueTimelineEvents, 2)
+	require.Len(issueTimelineEvents, 3)
 	assert.Equal("unassigned", issueTimelineEvents[0].EventType)
 	assert.Equal("hank", issueTimelineEvents[0].Author)
 	assert.Equal("removed an assignment", issueTimelineEvents[0].Summary)
@@ -291,6 +305,9 @@ func TestNormalizeMergeRequestIssueEventsAndArtifacts(t *testing.T) {
 	assert.Equal(`"Old issue" -> "New issue"`, issueTimelineEvents[1].Summary)
 	assert.JSONEq(`{"previous_title":"Old issue","current_title":"New issue"}`, issueTimelineEvents[1].MetadataJSON)
 	assert.Equal("gitea/gitea.com/gitea/tea/issue/9/renamed_title/404", issueTimelineEvents[1].DedupeKey)
+	assert.Equal("cross_referenced", issueTimelineEvents[2].EventType)
+	assert.Contains(issueTimelineEvents[2].MetadataJSON, `"source_owner":"acme"`)
+	assert.Contains(issueTimelineEvents[2].MetadataJSON, `"source_number":11`)
 
 	release := NormalizeRelease(repo, ReleaseDTO{
 		ID:          500,

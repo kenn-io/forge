@@ -382,6 +382,7 @@ func TestClientProviderIdentityExposesReadCapabilities(t *testing.T) {
 		ReadRepositories:      true,
 		ReadMergeRequests:     true,
 		ReadIssues:            true,
+		ReadIssuePRReferences: true,
 		ReadComments:          true,
 		ReadReleases:          true,
 		ReadCI:                true,
@@ -568,6 +569,16 @@ func TestClientReadsTimelineAssignmentAndTitleEvents(t *testing.T) {
 					"old_title": "Old title", "new_title": "New title",
 					"created_at": "2026-05-01T10:02:00Z",
 				},
+				{
+					"id": 13, "type": "pull_ref", "user": map[string]any{"login": "dana"},
+					"ref_action": "closes", "created_at": "2026-05-01T10:03:00Z",
+					"ref_issue": map[string]any{
+						"number": 9, "title": "Fix the issue",
+						"html_url":     "https://gitea.test/acme/tools/pulls/9",
+						"pull_request": map[string]any{"merged": false},
+						"repository":   map[string]any{"owner": "acme", "name": "tools", "full_name": "acme/tools"},
+					},
+				},
 			}))
 		default:
 			http.NotFound(w, r)
@@ -577,11 +588,11 @@ func TestClientReadsTimelineAssignmentAndTitleEvents(t *testing.T) {
 
 	client, err := NewClient("gitea.test", testTokenSource("gitea-token"), WithBaseURLForTesting(server.URL), WithServerVersionForTesting(testGiteaServerVersion))
 	require.NoError(err)
-	ref := platform.RepoRef{Owner: "owner", Name: "repo", RepoPath: "owner/repo"}
+	ref := platform.RepoRef{Host: "gitea.test", Owner: "owner", Name: "repo", RepoPath: "owner/repo"}
 
 	mrEvents, err := client.ListMergeRequestEvents(context.Background(), ref, 3)
 	require.NoError(err)
-	require.Len(mrEvents, 3)
+	require.Len(mrEvents, 4)
 	assert.Equal("issue_comment", mrEvents[0].EventType)
 	assert.Equal("assigned", mrEvents[1].EventType)
 	assert.Equal("bob", mrEvents[1].Author)
@@ -590,10 +601,11 @@ func TestClientReadsTimelineAssignmentAndTitleEvents(t *testing.T) {
 	assert.Equal("carol", mrEvents[2].Author)
 	assert.Equal(`"Old title" -> "New title"`, mrEvents[2].Summary)
 	assert.JSONEq(`{"previous_title":"Old title","current_title":"New title"}`, mrEvents[2].MetadataJSON)
+	assert.Equal("cross_referenced", mrEvents[3].EventType)
 
 	issueEvents, err := client.ListIssueEvents(context.Background(), ref, 3)
 	require.NoError(err)
-	require.Len(issueEvents, 3)
+	require.Len(issueEvents, 4)
 	assert.Equal("issue_comment", issueEvents[0].EventType)
 	assert.Equal("assigned", issueEvents[1].EventType)
 	assert.Equal("bob", issueEvents[1].Author)
@@ -602,6 +614,17 @@ func TestClientReadsTimelineAssignmentAndTitleEvents(t *testing.T) {
 	assert.Equal("carol", issueEvents[2].Author)
 	assert.Equal(`"Old title" -> "New title"`, issueEvents[2].Summary)
 	assert.JSONEq(`{"previous_title":"Old title","current_title":"New title"}`, issueEvents[2].MetadataJSON)
+	assert.Equal("cross_referenced", issueEvents[3].EventType)
+	assert.JSONEq(`{
+		"source_type":"PullRequest",
+		"source_owner":"acme",
+		"source_repo":"tools",
+		"source_number":9,
+		"source_title":"Fix the issue",
+		"source_url":"https://gitea.test/acme/tools/pulls/9",
+		"is_cross_repository":true,
+		"will_close_target":true
+	}`, issueEvents[3].MetadataJSON)
 }
 
 func TestClientFallsBackToStatusesWhenActionsRequireNewerGitea(t *testing.T) {

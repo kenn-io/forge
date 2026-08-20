@@ -143,23 +143,6 @@ func convertComment(comment *giteasdk.Comment) gitealike.CommentDTO {
 	}
 }
 
-func convertTimelineEvent(comment *giteasdk.TimelineComment) gitealike.TimelineEventDTO {
-	if comment == nil {
-		return gitealike.TimelineEventDTO{}
-	}
-	return gitealike.TimelineEventDTO{
-		ID:            comment.ID,
-		HTMLURL:       comment.HTMLURL,
-		User:          convertUser(comment.Poster),
-		Type:          comment.Type,
-		Body:          comment.Body,
-		PreviousTitle: comment.OldTitle,
-		CurrentTitle:  comment.NewTitle,
-		Created:       comment.Created,
-		Updated:       comment.Updated,
-	}
-}
-
 func convertReview(review *giteasdk.PullReview) gitealike.ReviewDTO {
 	if review == nil {
 		return gitealike.ReviewDTO{}
@@ -304,14 +287,6 @@ func convertComments(comments []*giteasdk.Comment) []gitealike.CommentDTO {
 	out := make([]gitealike.CommentDTO, 0, len(comments))
 	for _, comment := range comments {
 		out = append(out, convertComment(comment))
-	}
-	return out
-}
-
-func convertTimelineEvents(comments []*giteasdk.TimelineComment) []gitealike.TimelineEventDTO {
-	out := make([]gitealike.TimelineEventDTO, 0, len(comments))
-	for _, comment := range comments {
-		out = append(out, convertTimelineEvent(comment))
 	}
 	return out
 }

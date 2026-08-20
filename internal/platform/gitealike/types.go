@@ -214,8 +214,19 @@ type TimelineEventDTO struct {
 	Assignee      UserDTO
 	PreviousTitle string
 	CurrentTitle  string
+	Reference     *IssueReferenceDTO
+	RefAction     string
 	Created       time.Time
 	Updated       time.Time
+}
+
+type IssueReferenceDTO struct {
+	Owner         string
+	Repo          string
+	Number        int
+	Title         string
+	HTMLURL       string
+	IsPullRequest bool
 }
 
 type ReviewDTO struct {

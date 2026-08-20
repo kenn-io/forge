@@ -306,6 +306,15 @@ func (t *transport) ListIssueComments(
 	return t.ListPullRequestComments(ctx, ref, number, opts)
 }
 
+func (t *transport) ListIssueTimeline(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	opts gitealike.PageOptions,
+) ([]gitealike.TimelineEventDTO, gitealike.Page, error) {
+	return gitealike.ReadIssueTimelinePage(ctx, t.httpClient, t.baseURL, ref, number, opts)
+}
+
 func (t *transport) ListReleases(
 	ctx context.Context,
 	ref platform.RepoRef,

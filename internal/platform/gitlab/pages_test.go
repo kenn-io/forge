@@ -356,19 +356,27 @@ func TestGitLabPaginationChargesEveryMarkedPage(t *testing.T) {
 func TestGitLabLiveIssueEventsCollectCanonicalCommentPages(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	var pages []string
+	var discussionPages []string
+	var relatedPages []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal("/api/v4/projects/42/issues/7/discussions", r.URL.EscapedPath())
-		pages = append(pages, r.URL.Query().Get("page"))
-		if r.URL.Query().Get("page") == "1" {
-			w.Header().Set("X-Next-Page", "2")
-			writeJSON(w, `[{"id":"first","notes":[
-				{"id":301,"body":"first comment","author":{"username":"ivy"},"created_at":"2026-07-01T00:00:00Z"},
-				{"id":303,"body":"closed","system":true,"author":{"username":"closer"},"created_at":"2026-07-01T12:00:00Z"}
-			]}]`)
-			return
+		switch r.URL.EscapedPath() {
+		case "/api/v4/projects/42/issues/7/discussions":
+			discussionPages = append(discussionPages, r.URL.Query().Get("page"))
+			if r.URL.Query().Get("page") == "1" {
+				w.Header().Set("X-Next-Page", "2")
+				writeJSON(w, `[{"id":"first","notes":[
+					{"id":301,"body":"first comment","author":{"username":"ivy"},"created_at":"2026-07-01T00:00:00Z"},
+					{"id":303,"body":"closed","system":true,"author":{"username":"closer"},"created_at":"2026-07-01T12:00:00Z"}
+				]}]`)
+				return
+			}
+			writeJSON(w, `[{"id":"second","notes":[{"id":302,"body":"second comment","author":{"username":"joe"},"created_at":"2026-07-02T00:00:00Z"}]}]`)
+		case "/api/v4/projects/42/issues/7/related_merge_requests":
+			relatedPages = append(relatedPages, r.URL.Query().Get("page"))
+			writeJSON(w, `[]`)
+		default:
+			http.NotFound(w, r)
 		}
-		writeJSON(w, `[{"id":"second","notes":[{"id":302,"body":"second comment","author":{"username":"joe"},"created_at":"2026-07-02T00:00:00Z"}]}]`)
 	}))
 	defer server.Close()
 	client := newTestClient(t, server.URL)
@@ -381,15 +389,17 @@ func TestGitLabLiveIssueEventsCollectCanonicalCommentPages(t *testing.T) {
 	assert.Equal("closed", events[1].EventType)
 	assert.Equal("closer", events[1].Author)
 	assert.Equal("second comment", events[2].Body)
-	assert.Equal([]string{"1", "2"}, pages)
+	assert.Equal([]string{"1", "2"}, discussionPages)
+	assert.Equal([]string{"1"}, relatedPages)
 
-	pages = nil
+	discussionPages = nil
 	comments, err := client.ListIssueComments(t.Context(), ref, 7)
 	require.NoError(err)
 	require.Len(comments, 2)
 	assert.Equal("first comment", comments[0].Body)
 	assert.Equal("second comment", comments[1].Body)
-	assert.Equal([]string{"1", "2"}, pages)
+	assert.Equal([]string{"1", "2"}, discussionPages)
+	assert.Equal([]string{"1"}, relatedPages)
 }
 func TestGitLabArchiveCapabilities(t *testing.T) {
 	assert.Equal(t, platform.ArchiveCapabilities{

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import type { EventsStoreOptions } from "./lib/stores/events.svelte.js";
 import type { DetailStoreOptions } from "./lib/stores/detail.svelte.js";
 import type { IssuesStoreOptions } from "./lib/stores/issues.svelte.js";
-import type { Settings, SyncStatus } from "./lib/api/types.js";
+import type { ConfigRepo, Settings, SyncStatus } from "./lib/api/types.js";
 import type { AppServices, OwnedAppRuntime } from "./lib/app/runtime.js";
 import { createAppStores, type AppStoreOptions } from "./lib/app-stores.svelte.js";
 import { client } from "./lib/api/runtime.js";
@@ -80,6 +80,7 @@ const refreshDetailOnlyEffect = vi.fn((...args: Parameters<typeof refreshDetailO
   Effect.promise(() => refreshDetailOnly(...args)),
 );
 let currentDetail: unknown = null;
+let configuredRepos: ConfigRepo[] = [];
 
 vi.mock("./lib/stores/pulls.svelte.js", () => ({
   createPullsStore: () => ({
@@ -164,7 +165,7 @@ vi.mock("./lib/stores/settings.svelte.js", () => ({
   createSettingsStore: () => {
     let launchTargets: LaunchTargets = [];
     const store = {
-      getConfiguredRepos: () => [],
+      getConfiguredRepos: () => configuredRepos,
       setConfiguredRepos: vi.fn(),
       setRepoPresets: vi.fn(),
       getPullRequestSettings: () => ({
@@ -238,6 +239,7 @@ beforeEach(() => {
   refreshDetailOnlyEffect.mockClear();
   notifyWorkspaceDeleted.mockClear();
   currentDetail = null;
+  configuredRepos = [];
 });
 
 afterEach(async () => {
@@ -248,6 +250,34 @@ afterEach(async () => {
 function compose(options: Omit<AppStoreOptions, "runtime"> = {}) {
   return createAppStores({ runtime, ...options });
 }
+
+describe("issue PR-reference capability", () => {
+  it("stays available when a capable provider-host is configured outside the selected repository scope", () => {
+    configuredRepos = [
+      {
+        hidden_from_ui: false,
+        is_glob: false,
+        issue_pr_references: true,
+        matched_repo_count: 1,
+        name: "widgets",
+        owner: "acme",
+        platform_host: "github.example.com",
+        provider: "github",
+        repo_path: "acme/widgets",
+      },
+    ];
+
+    compose({ getGlobalRepo: () => "gitlab|gitlab.example.com/acme/backend" });
+
+    expect(captured.issuesOptions?.supportsIssuePRReferences?.()).toBe(true);
+  });
+
+  it("is unavailable only when no configured provider-host supplies reference edges", () => {
+    compose({ getGlobalRepo: () => "gitlab|gitlab.example.com/acme/backend" });
+
+    expect(captured.issuesOptions?.supportsIssuePRReferences?.()).toBe(false);
+  });
+});
 
 describe("app store event wiring", () => {
   it("acknowledges a data change only after its visible refresh succeeds", async () => {

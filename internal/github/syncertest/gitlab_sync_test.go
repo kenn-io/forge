@@ -317,6 +317,8 @@ func TestGitLabArchiveIssueLifecyclePersistsCloseActorInReport(t *testing.T) {
 					"created_at": "2026-06-03T12:00:00Z"
 				}]}
 			]`))
+		case "/api/v4/projects/42/issues/7/related_merge_requests":
+			_, _ = w.Write([]byte(`[]`))
 		default:
 			http.NotFound(w, r)
 		}

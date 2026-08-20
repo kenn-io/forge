@@ -187,11 +187,13 @@ timeline/comment-like events through provider capability interfaces in
 `internal/platform`. Providers implement only supported optional interfaces;
 registry helpers return typed errors for missing providers or capabilities.
 
-- Historical cross-reference events cannot prove a current issue-PR relationship.
-  A current-link capability requires an authoritative replaceable provider snapshot;
-  providers without one must not advertise it.
-- Persist normalized issue-PR relationships and query that graph for list filters.
-  A missing edge means no link; never parse Markdown during list reads.
+- A PR reference is historical evidence that a provider observed a pull or merge
+  request cross-reference to an issue. It survives upstream mention removal and
+  does not depend on repository tracking, repository boundary, or PR lifecycle.
+- Persist normalized PR references and query that graph for list filters. A missing
+  edge means no reference; never parse Markdown during list reads.
+- Historical references cannot prove a current issue-PR relationship. A current-link
+  capability requires an authoritative replaceable provider snapshot.
 
 - Missing optional capabilities should degrade that feature with a typed
   platform error, not break unrelated sync work.

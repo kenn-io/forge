@@ -551,9 +551,9 @@ func run(opts serve.Options) error {
 		identityResolver = ghclient.HTTPIdentityResolver{}
 	}
 
-	startup, err := buildProviderStartupOrDegraded(
+	startup, err := buildProviderStartupForServe(
 		ctx, database, cfg, tokenSources, providerSources,
-		defaultProviderFactories(), identityResolver,
+		defaultProviderFactories(), identityResolver, opts.DisableSync,
 	)
 	if err != nil {
 		if ctx.Err() != nil && errors.Is(err, context.Canceled) {

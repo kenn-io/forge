@@ -335,6 +335,26 @@ func (e *providerHostStartupError) Error() string { return e.err.Error() }
 
 func (e *providerHostStartupError) Unwrap() error { return e.err }
 
+func buildProviderStartupForServe(
+	ctx context.Context,
+	database *db.DB,
+	cfg *config.Config,
+	set *tokenauth.SourceSet,
+	providerSources map[string]tokenauth.Source,
+	factories map[string]providerFactory,
+	resolver github.IdentityResolver,
+	disableSync bool,
+) (providerStartup, error) {
+	if disableSync {
+		return buildProviderStartup(
+			ctx, database, cfg, set, providerSources, factories, resolver,
+		)
+	}
+	return buildProviderStartupOrDegraded(
+		ctx, database, cfg, set, providerSources, factories, resolver,
+	)
+}
+
 // buildProviderStartupOrDegraded keeps the local UI available when a remote
 // provider cannot be initialized. Failures attributable to one provider host
 // drop only that host, so healthy hosts keep syncing; anything else falls

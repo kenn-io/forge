@@ -635,6 +635,27 @@ func TestBuildProviderStartupOrDegradedKeepsHealthyProviderWhenFactoryFails(t *t
 	require.NoError(err)
 }
 
+func TestBuildProviderStartupForServeReturnsFactoryErrorWhenSyncDisabled(t *testing.T) {
+	require := require.New(t)
+
+	set := tokenauth.NewSourceSet(tokenauth.Options{})
+	_, err := buildProviderStartupForServe(
+		t.Context(), dbtest.Open(t), &config.Config{}, set,
+		map[string]tokenauth.Source{
+			providerHostKey(string(platform.KindForgejo), "forge.example.com"): mainTestTokenSource(
+				t, string(platform.KindForgejo), "forge.example.com", "FORGEJO_TEST_TOKEN", "forgejo-token",
+			),
+		},
+		map[string]providerFactory{
+			string(platform.KindForgejo): func(providerFactoryInput) (providerFactoryOutput, error) {
+				return providerFactoryOutput{}, errors.New("provider API unavailable")
+			},
+		},
+		nil, true,
+	)
+	require.ErrorContains(err, "create Forgejo client for forge.example.com: provider API unavailable")
+}
+
 func TestBuildProviderStartupUsesRegisteredFactoryForFutureProvider(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

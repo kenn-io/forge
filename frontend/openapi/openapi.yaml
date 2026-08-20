@@ -3857,6 +3857,40 @@ components:
         - remaining
         - reset_at
       type: object
+    MCP:
+      additionalProperties: false
+      properties:
+        diff_cache_mb:
+          format: int64
+          type: integer
+        enabled:
+          type: boolean
+        port:
+          format: int64
+          type: integer
+      type: object
+    McpSettingsResponse:
+      additionalProperties: false
+      properties:
+        active_requires_auth:
+          type: boolean
+        active_url:
+          type: string
+        diff_cache_mb:
+          format: int64
+          type: integer
+        enabled:
+          type: boolean
+        port:
+          format: int64
+          type: integer
+        restart_required:
+          type: boolean
+      required:
+        - enabled
+        - restart_required
+        - active_requires_auth
+      type: object
     MergePRBody:
       additionalProperties: false
       properties:
@@ -7020,6 +7054,8 @@ components:
           type:
             - array
             - "null"
+        mcp:
+          $ref: "#/components/schemas/McpSettingsResponse"
         modes:
           $ref: "#/components/schemas/ModeVisibility"
         notifications:
@@ -7051,6 +7087,7 @@ components:
         - agents
         - kata_projects
         - fleet
+        - mcp
       type: object
     Snapshot:
       additionalProperties: false
@@ -7576,6 +7613,8 @@ components:
           items:
             $ref: "#/components/schemas/KataProjectRepoMapping"
           type: array
+        mcp:
+          $ref: "#/components/schemas/MCP"
         modes:
           $ref: "#/components/schemas/ModeVisibility"
         pull_requests:

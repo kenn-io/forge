@@ -14,6 +14,7 @@
   import ModeVisibilitySettings from "./ModeVisibilitySettings.svelte";
   import AgentSettings from "./AgentSettings.svelte";
   import FleetSettings from "./FleetSettings.svelte";
+  import MCPSettings from "./MCPSettings.svelte";
   import KataProjectMappingsSettings from "./KataProjectMappingsSettings.svelte";
   import PullRequestSettings from "./PullRequestSettings.svelte";
   import DetailSettings from "./DetailSettings.svelte";
@@ -221,6 +222,13 @@
               fleet={loaded.fleet}
               onUpdate={(fleet) => {
                 settings = { ...settings!, fleet };
+              }}
+            />
+          {:else if meta.id === "settings-mcp"}
+            <MCPSettings
+              mcp={loaded.mcp}
+              onUpdate={(mcp) => {
+                settings = { ...settings!, mcp };
               }}
             />
               {/if}

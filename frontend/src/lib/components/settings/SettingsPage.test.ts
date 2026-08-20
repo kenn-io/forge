@@ -57,6 +57,9 @@ vi.mock("./AgentSettings.svelte", async () => ({
 vi.mock("./FleetSettings.svelte", async () => ({
   default: (await import("../../testing/AppViewStub.svelte")).default,
 }));
+vi.mock("./MCPSettings.svelte", async () => ({
+  default: (await import("../../testing/AppViewStub.svelte")).default,
+}));
 vi.mock("./KataProjectMappingsSettings.svelte", async () => ({
   default: (await import("../../testing/AppViewStub.svelte")).default,
 }));
@@ -107,6 +110,11 @@ function makeSettings(): Settings {
       peers: [],
       ssh_peers: [],
       restart_required: false,
+    },
+    mcp: {
+      enabled: false,
+      restart_required: false,
+      active_requires_auth: false,
     },
     activity: {
       view_mode: "threaded",

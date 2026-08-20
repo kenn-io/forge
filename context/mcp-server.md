@@ -7,6 +7,11 @@
   `mcp_listen_addr` and `/api/ping` publishes `mcp_url`; changing listener
   settings requires a restart (`cmd/kenn-forge/main.go::bindDaemonListeners`,
   `internal/server/daemon_ping.go::Server.daemonPing`).
+- Settings exposes the saved MCP listener/cache configuration separately from
+  the boot-active endpoint and authentication policy. Saving MCP settings never
+  hot-restarts the companion: report restart drift, keep showing an endpoint
+  that remains active until restart, and provide only token-file guidance rather
+  than returning the daemon bearer (`internal/server/settings_handlers.go::Server.buildLocalSettingsResponse`).
 - MCP serves only `/mcp` over stateless Streamable HTTP. Authentication follows
   `[api].require_auth`; direct loopback peer, exact loopback authority, absent
   forwarding headers, and optional same-origin HTTP Origin are required

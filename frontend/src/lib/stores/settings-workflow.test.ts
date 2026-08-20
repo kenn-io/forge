@@ -30,6 +30,11 @@ function makeSettings(repos: SettingsResponse["repos"] = []): SettingsResponse {
       ssh_peers: [],
       restart_required: false,
     },
+    mcp: {
+      enabled: false,
+      restart_required: false,
+      active_requires_auth: false,
+    },
     issues: { hide_bots: true },
     kata_projects: [],
     launch_targets: [],

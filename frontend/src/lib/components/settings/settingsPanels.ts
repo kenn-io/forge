@@ -89,4 +89,12 @@ export const SETTINGS_PANELS: SettingsPanelMeta[] = [
     description: "Modes shown in the app header",
     keywords: "visible modes navigation tabs prs issues reviews docs kata",
   },
+  {
+    id: "settings-mcp",
+    label: "MCP companion",
+    title: "MCP companion",
+    group: "System",
+    description: "Local MCP access for external clients",
+    keywords: "mcp companion server streamable http endpoint agents clients cache port",
+  },
 ];

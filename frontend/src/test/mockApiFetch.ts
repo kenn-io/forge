@@ -335,6 +335,11 @@ export const mockSettings = {
     ssh_peers: [],
     restart_required: false,
   },
+  mcp: {
+    enabled: false,
+    restart_required: false,
+    active_requires_auth: false,
+  },
 } satisfies SettingsResponse;
 
 export function makeRateLimits() {

@@ -374,6 +374,77 @@ command = ["codex", "--full-auto"]
 	assert.Equal([]string{"codex", "--full-auto"}, resp.Agents[0].Command)
 }
 
+func TestHandleGetSettingsReportsMCPDesiredAndActiveState(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, _, _ := setupTestServerWithConfigContentAndOptions(t, `
+sync_interval = "5m"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[mcp]
+enabled = true
+port = 9092
+diff_cache_mb = 256
+`, &mockGH{}, ServerOptions{
+		HostCheckAllowLoopbackAnyPort: true,
+		MCPURL:                       "http://127.0.0.1:9092/mcp",
+	})
+	srv.bootCfgSnapshot.RequireAuth = true
+
+	rr := doJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	var resp settingsResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	assert.True(resp.MCP.Enabled)
+	assert.Equal(9092, resp.MCP.Port)
+	assert.Equal(256, resp.MCP.DiffCacheMB)
+	assert.False(resp.MCP.RestartRequired)
+	assert.Equal("http://127.0.0.1:9092/mcp", resp.MCP.ActiveURL)
+	assert.True(resp.MCP.ActiveRequiresAuth)
+}
+
+func TestHandleUpdateSettingsPersistsMCPAndReportsRestartRequired(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, _, cfgPath := setupTestServerWithConfig(t)
+
+	mcp := config.MCP{Enabled: true, Port: 9092, DiffCacheMB: 256}
+	rr := doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{MCP: &mcp})
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	var resp settingsResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	assert.Equal(mcp, config.MCP{
+		Enabled:     resp.MCP.Enabled,
+		Port:        resp.MCP.Port,
+		DiffCacheMB: resp.MCP.DiffCacheMB,
+	})
+	assert.True(resp.MCP.RestartRequired)
+	assert.Empty(resp.MCP.ActiveURL)
+
+	reloaded, err := config.Load(cfgPath)
+	require.NoError(err)
+	assert.Equal(mcp, reloaded.MCP)
+}
+
+func TestHandleUpdateSettingsRejectsInvalidMCPWithoutPublishing(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, _, cfgPath := setupTestServerWithConfig(t)
+
+	invalid := config.MCP{Enabled: true, Port: 8091}
+	rr := doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{MCP: &invalid})
+	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
+	assert.Equal(config.MCP{}, srv.cfg.MCP)
+
+	reloaded, err := config.Load(cfgPath)
+	require.NoError(err)
+	assert.Equal(config.MCP{}, reloaded.MCP)
+}
+
 func TestHandleGetSettingsEncodesEmptyKataProjectsAsArray(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

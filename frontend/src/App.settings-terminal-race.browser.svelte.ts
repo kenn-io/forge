@@ -82,7 +82,7 @@ describe("terminal settings response races", () => {
         },
       ],
     });
-    await vi.waitFor(() => expect(navLabels()).toHaveLength(10), WAIT);
+    await vi.waitFor(() => expect(navLabels()).toHaveLength(11), WAIT);
 
     const terminalButton = Array.from(document.querySelectorAll<HTMLButtonElement>(".kit-settings__nav-item")).find(
       (button) => button.textContent?.includes("Terminal"),

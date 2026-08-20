@@ -199,13 +199,10 @@ still exists.
 - Local-runtime reconnects restore browser-generated cursor-key, mouse, focus,
   and paste DEC modes from session-wide PTY state, not bounded screen replay
   (`internal/workspace/localruntime/manager.go::session.subscribe`).
-- Initial agent handoff waits for bracketed-paste mode and the prompt's terminal
-  echo before sending Enter; adjacent bytes or a fixed delay do not establish
-  separate TUI input events (`internal/workspace/localruntime/manager.go::waitForInitialMessageEcho`).
-- Subscribe to live session output before validating paste mode so every later
-  disable is observable in-stream; a disable seen after the framed write aborts
-  before Enter and reports uncertain delivery, never a safe-to-retry rejection
-  (`internal/workspace/localruntime/manager.go::session.submitInitialMessage`).
+- Initial agent handoff requires observed bracketed-paste mode, then sends the
+  opening frame, prompt, closing frame, and Enter in one bounded terminal write.
+  Do not gate Enter on terminal echo: Claude renders pasted input only after the
+  Enter event (`internal/workspace/localruntime/manager.go::session.submitInitialMessage`).
 - Mode transitions precede one session-wide UTF-8-aware VT tail even in the
   alternate screen; retain split-rune introducers and decoded C1 controls/ST
   (`internal/workspace/localruntime/terminal_sequence_tail.go::trailingIncompleteTerminalDataLen`).

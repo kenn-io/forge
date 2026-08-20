@@ -2259,12 +2259,11 @@ func TestAttachmentResizeOwnerFallbackRestoresLatestRemainingClaim(t *testing.T)
 	}, pty.resizes())
 }
 
-func TestManagerSubmitInitialMessageFramesSingleAndMultilineInput(t *testing.T) {
+func TestManagerSubmitInitialMessageWritesFramedPromptAndEnterTogether(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	pty := &fakeRuntimePTY{
 		output: make(chan []byte), done: make(chan struct{}),
-		writeObserved: make(chan []byte, 2),
 	}
 	s := &session{
 		info: SessionInfo{
@@ -2284,99 +2283,18 @@ func TestManagerSubmitInitialMessageFramesSingleAndMultilineInput(t *testing.T) 
 	s.broadcast([]byte("\x1b[?2004h"))
 	submit := func(message, framed string) {
 		pty.resetWrites()
-		promptObserved := make(chan struct{})
-		go func() {
-			assert.Equal(framed, string(<-pty.writeObserved))
-			s.broadcast([]byte(message))
-			close(promptObserved)
-		}()
+		ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+		defer cancel()
 
-		require.NoError(mgr.SubmitInitialMessage(t.Context(), "ws-1", "agent-1", message))
-		<-promptObserved
-		assert.Equal("\r", string(<-pty.writeObserved))
+		require.NoError(mgr.SubmitInitialMessage(ctx, "ws-1", "agent-1", message))
 		pty.mu.Lock()
 		writeCalls := slices.Clone(pty.writeCalls)
 		pty.mu.Unlock()
-		assert.Equal([][]byte{[]byte(framed), []byte("\r")}, writeCalls)
+		assert.Equal([][]byte{[]byte(framed + "\r")}, writeCalls)
 	}
 
 	submit("review this", "\x1b[200~review this\x1b[201~")
 	submit("first\nsecond", "\x1b[200~first\nsecond\x1b[201~")
-}
-
-func TestWaitForInitialMessageEchoIgnoresUnrelatedAndSplitOutput(t *testing.T) {
-	output := make(chan []byte, 3)
-	output <- []byte("unrelated status redraw")
-	output <- []byte("Reply exactly: raw ")
-	output <- []byte("output probe")
-
-	require.NoError(t, waitForInitialMessageEcho(
-		t.Context(), output, "Reply exactly: raw output probe",
-	))
-}
-
-func TestWaitForInitialMessageEchoFailsWhenBracketedPasteDisables(t *testing.T) {
-	output := make(chan []byte, 3)
-	output <- []byte("redraw \x1b[?20")
-	output <- []byte("04l more redraw")
-	output <- []byte("Reply exactly: raw output probe")
-
-	err := waitForInitialMessageEcho(
-		t.Context(), output, "Reply exactly: raw output probe",
-	)
-	require.ErrorIs(t, err, errBracketedPasteDisabledMidDelivery)
-	assert.NotErrorIs(t, err, ErrBracketedPasteInactive)
-}
-
-func TestDrainForBracketedPasteDisableChecksBufferedOutputWithoutBlocking(t *testing.T) {
-	clean := make(chan []byte, 1)
-	clean <- []byte("prompt redraw")
-	require.NoError(t, drainForBracketedPasteDisable(clean))
-
-	disabled := make(chan []byte, 2)
-	disabled <- []byte("echo tail \x1b[?2")
-	disabled <- []byte("004l")
-	require.ErrorIs(
-		t, drainForBracketedPasteDisable(disabled),
-		errBracketedPasteDisabledMidDelivery,
-	)
-}
-
-func TestManagerSubmitInitialMessageAbortsWhenPasteModeDisablesMidDelivery(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	pty := &fakeRuntimePTY{
-		output: make(chan []byte), done: make(chan struct{}),
-		writeObserved: make(chan []byte, 2),
-	}
-	s := &session{
-		info: SessionInfo{
-			Key: "agent-1", WorkspaceID: "ws-1", Kind: LaunchTargetAgent,
-			Status: SessionStatusRunning,
-		},
-		pty:         pty,
-		subscribers: map[chan []byte]struct{}{},
-	}
-	mgr := NewManager(Options{})
-	mgr.sessions[s.info.Key] = s
-	s.broadcast([]byte("\x1b[?2004h"))
-
-	disableObserved := make(chan struct{})
-	go func() {
-		<-pty.writeObserved
-		s.broadcast([]byte("\x1b[?2004l"))
-		close(disableObserved)
-	}()
-
-	err := mgr.SubmitInitialMessage(t.Context(), "ws-1", "agent-1", "first\nsecond")
-	<-disableObserved
-	require.ErrorIs(err, errBracketedPasteDisabledMidDelivery)
-	require.NotErrorIs(err, ErrBracketedPasteInactive)
-	pty.mu.Lock()
-	writeCalls := slices.Clone(pty.writeCalls)
-	pty.mu.Unlock()
-	require.Len(writeCalls, 1)
-	assert.Equal("\x1b[200~first\nsecond\x1b[201~", string(writeCalls[0]))
 }
 
 func TestManagerSubmitInitialMessageClassifiesMissingSessionAsNotWritten(t *testing.T) {

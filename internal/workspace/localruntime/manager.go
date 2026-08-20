@@ -49,13 +49,6 @@ var (
 	ErrInitialMessageNotWritten = errors.New(
 		"initial message was not written",
 	)
-	// errBracketedPasteDisabledMidDelivery must stay distinct from
-	// ErrBracketedPasteInactive: the framed message bytes have already been
-	// written, so callers must treat the outcome as uncertain, never as a
-	// safe-to-retry rejection.
-	errBracketedPasteDisabledMidDelivery = errors.New(
-		"bracketed paste mode was disabled while delivering the initial message",
-	)
 	errWorkspaceStopping = errors.New(
 		"workspace is being stopped",
 	)
@@ -1316,8 +1309,8 @@ func (m *Manager) AttachSessionWithOptions(
 }
 
 // SubmitInitialMessage writes one bounded, already-normalized initial prompt
-// through a live agent runtime. It waits for bracketed-paste mode and a terminal
-// redraw before sending Enter so paste processing and submission stay ordered.
+// through a live agent runtime. It requires observed bracketed-paste mode and
+// sends the complete paste frame and Enter in one terminal write.
 func (m *Manager) SubmitInitialMessage(
 	ctx context.Context,
 	workspaceID string,
@@ -2197,10 +2190,6 @@ func (s *session) subscribeWithReplayBoundary() (<-chan []byte, func()) {
 	return s.subscribeInternal(true, true)
 }
 
-func (s *session) subscribeLive() (<-chan []byte, func()) {
-	return s.subscribeInternal(false, false)
-}
-
 func (s *session) subscribeInternal(
 	includeReplay bool,
 	replayBoundary bool,
@@ -2849,96 +2838,16 @@ func attachToSession(
 	}, nil
 }
 
-var bracketedPasteDisableSequence = []byte("\x1b[?2004l")
-
-func waitForInitialMessageEcho(
-	ctx context.Context,
-	output <-chan []byte,
-	message string,
-) error {
-	var marker []byte
-	for line := range strings.SplitSeq(message, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		runes := []rune(line)
-		if len(runes) > 32 {
-			runes = runes[:32]
-		}
-		marker = []byte(string(runes))
-		break
-	}
-	if len(marker) == 0 {
-		return ErrInitialMessageNotWritten
-	}
-
-	observed := make([]byte, 0, len(marker)*2)
-	for {
-		select {
-		case chunk, ok := <-output:
-			if !ok {
-				return ErrSessionUnavailable
-			}
-			observed = append(observed, chunk...)
-			disabledAt := bytes.Index(observed, bracketedPasteDisableSequence)
-			markerAt := bytes.Index(observed, marker)
-			if disabledAt >= 0 && (markerAt < 0 || disabledAt < markerAt) {
-				return errBracketedPasteDisabledMidDelivery
-			}
-			if markerAt >= 0 {
-				return nil
-			}
-			keep := max(len(marker), len(bracketedPasteDisableSequence)) - 1
-			if len(observed) > keep {
-				observed = slices.Clone(observed[len(observed)-keep:])
-			}
-		case <-ctx.Done():
-			return context.Cause(ctx)
-		}
-	}
-}
-
-// drainForBracketedPasteDisable inspects already-broadcast output without
-// blocking so a paste-mode disable observed after the echo still withholds
-// the submitting Enter keypress.
-func drainForBracketedPasteDisable(output <-chan []byte) error {
-	var observed []byte
-	for {
-		select {
-		case chunk, ok := <-output:
-			if !ok {
-				return ErrSessionUnavailable
-			}
-			observed = append(observed, chunk...)
-		default:
-			if bytes.Contains(observed, bracketedPasteDisableSequence) {
-				return errBracketedPasteDisabledMidDelivery
-			}
-			return nil
-		}
-	}
-}
-
 func (s *session) submitInitialMessage(ctx context.Context, message string) error {
-	// Subscribe before validating paste mode: broadcast updates input modes
-	// and delivers to subscribers under one lock, so every disable that
-	// happens after the check below is guaranteed to surface on this
-	// channel, where the echo wait and pre-Enter drain detect it. This
-	// orders the mode check with the write without holding the session
-	// lock across blocking terminal writes.
-	output, unsubscribe := s.subscribeLive()
-	defer unsubscribe()
-
 	s.mu.Lock()
 	if !s.inputModes.observed[2004] {
 		s.mu.Unlock()
 		return ErrBracketedPasteInactive
 	}
-	data := make([]byte, 0, len(message)+12)
+	data := make([]byte, 0, len(message)+13)
 	data = append(data, "\x1b[200~"...)
 	data = append(data, message...)
-	data = append(data, "\x1b[201~"...)
+	data = append(data, "\x1b[201~\r"...)
 	pty := s.pty
 	ptmx := s.ptmx
 	s.mu.Unlock()
@@ -2959,26 +2868,12 @@ func (s *session) submitInitialMessage(ctx context.Context, message string) erro
 	}
 	result := make(chan error, 1)
 	go func() {
-		write := func(data []byte) error {
-			if pty != nil {
-				return pty.Write(data)
-			}
-			_, err := ptmx.Write(data)
-			return err
-		}
-		if err := write(data); err != nil {
-			result <- err
+		if pty != nil {
+			result <- pty.Write(data)
 			return
 		}
-		if err := waitForInitialMessageEcho(writeCtx, output, message); err != nil {
-			result <- err
-			return
-		}
-		if err := drainForBracketedPasteDisable(output); err != nil {
-			result <- err
-			return
-		}
-		result <- write([]byte{'\r'})
+		_, err := ptmx.Write(data)
+		result <- err
 	}()
 	select {
 	case err := <-result:

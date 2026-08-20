@@ -3044,7 +3044,7 @@ test.describe("workspace launch home", () => {
             socket.sent.some((frame) => {
               if (typeof frame !== "string") return false;
               try {
-                return JSON.parse(frame).type === "refresh";
+                return JSON.parse(frame).type === "claim_resize";
               } catch {
                 return false;
               }
@@ -3081,7 +3081,8 @@ test.describe("workspace launch home", () => {
             socket.sent.some((frame) => {
               if (typeof frame !== "string") return false;
               try {
-                return JSON.parse(frame).type === "resize";
+                const type = JSON.parse(frame).type;
+                return type === "resize" || type === "claim_resize";
               } catch {
                 return false;
               }

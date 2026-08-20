@@ -515,7 +515,7 @@ exit 0
 	)
 	assert.Equal(sessionName, launch.TmuxSession)
 	records := readNullArgvRecord(t, record)
-	require.Len(records, 3)
+	require.Len(records, 6)
 	newSession := records[1]
 	assert.Contains(newSession, ";")
 	assert.Contains(newSession, "set-option")
@@ -524,9 +524,19 @@ exit 0
 	assert.Contains(newSession, "@forge_owner")
 	assert.Contains(newSession, "kenn-forge:test-owner")
 	assert.Equal([]string{
+		"set-option", "-q", "-g", "allow-passthrough", "on",
+	}, records[2])
+	assert.Equal([]string{
+		"set-option", "-q", "-g", "terminal-features[100]",
+		"xterm-256color:sixel",
+	}, records[3])
+	assert.Equal([]string{
+		"set-option", "-q", "-g", "mouse", "off",
+	}, records[4])
+	assert.Equal([]string{
 		"set-option", "-q", "-p", "-t", sessionName,
 		"allow-passthrough", "on",
-	}, records[2])
+	}, records[5])
 }
 
 func TestManagerLaunchPlainShellWrapsInTmuxWhenAvailable(t *testing.T) {

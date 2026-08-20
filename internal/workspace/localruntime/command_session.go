@@ -294,6 +294,7 @@ func (m *Manager) commandSessionLaunch(
 		OwnerMarker: m.tmuxOwnerMarker,
 		LaunchID:    launchID,
 		HideStatus:  m.currentHideTmuxStatus(),
+		TmuxMouse:   m.currentTmuxMouse(),
 	}.prepare(ctx)
 	if err != nil {
 		return launchCommand{}, err

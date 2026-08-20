@@ -125,6 +125,33 @@ func TestTmuxLauncherEnablesPassthroughPerPane(t *testing.T) {
 	)
 }
 
+func TestTmuxLauncherConfiguresGlobalMouse(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		enabled bool
+		value   string
+	}{
+		{name: "enabled", enabled: true, value: "on"},
+		{name: "disabled", enabled: false, value: "off"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			launcher := tmuxLauncher{
+				TmuxCommand: []string{"/usr/bin/tmux", "-L", "kenn-forge-test"},
+				Session:     "kenn-forge-test",
+				TmuxMouse:   test.enabled,
+			}
+			assert.Equal(t,
+				[]string{
+					"/usr/bin/tmux", "-L", "kenn-forge-test",
+					"set-option", "-q", "-g",
+					"mouse", test.value,
+				},
+				launcher.tmuxMouseCommand(),
+			)
+		})
+	}
+}
+
 func TestTmuxLauncherAttachForcesUTF8(t *testing.T) {
 	launcher := tmuxLauncher{
 		TmuxCommand: []string{"/usr/bin/tmux", "-L", "kenn-forge-test"},

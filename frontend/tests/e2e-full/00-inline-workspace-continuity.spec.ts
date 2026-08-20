@@ -2004,8 +2004,7 @@ test.describe("inline workspace pane continuity", () => {
       const tmuxServer = isolatedServer;
       await initialA.click({ position: { x: 10, y: 10 } });
       await expect.poll(() => tmuxClientTTY(tmuxServer, runtimeTmuxSessionA), { timeout: 15_000 }).not.toBe("");
-      runE2ETmuxCommand(isolatedServer, ["set-option", "-g", "-t", runtimeTmuxSessionA, "mouse", "off"]);
-      runE2ETmuxCommand(isolatedServer, ["set-option", "-g", "-t", runtimeTmuxSessionA, "mouse", "on"]);
+      expect(runE2ETmuxCommand(isolatedServer, ["show-options", "-gv", "mouse"])).toBe("on");
       await expect(initialA.locator(".xterm.enable-mouse-events")).toBeVisible();
 
       const replaySentinel = "mode-replay-output-complete";

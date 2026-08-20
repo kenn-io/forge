@@ -4756,17 +4756,40 @@ func TestManagerEnsureTmuxHasSessionPrefix(t *testing.T) {
 	d := openTestDB(t)
 	mgr := NewManager(d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script, "wrap"})
+	mgr.SetTmuxMouse(true)
 
 	// Script exits 0 for every invocation, so EnsureTmux observes
-	// "session exists" after the has-session call and returns
-	// without running new-session.
+	// "session exists" after the has-session call and refreshes the
+	// Forge-owned terminal options without running new-session.
 	require.NoError(t, mgr.EnsureTmux(t.Context(), "sess-A", t.TempDir()))
 
 	argvs := readRecorderArgv(t, record)
-	require.Len(t, argvs, 1)
+	require.Len(t, argvs, 5)
 	assert.Equal(
 		[]string{"wrap", "has-session", "-t", "sess-A"},
 		argvs[0],
+	)
+	assert.Equal(
+		[]string{"wrap", "set-option", "-q", "-g", "allow-passthrough", "on"},
+		argvs[1],
+	)
+	assert.Equal(
+		[]string{
+			"wrap", "set-option", "-q", "-g", "terminal-features[100]",
+			"xterm-256color:sixel",
+		},
+		argvs[2],
+	)
+	assert.Equal(
+		[]string{"wrap", "set-option", "-q", "-g", "mouse", "on"},
+		argvs[3],
+	)
+	assert.Equal(
+		[]string{
+			"wrap", "set-option", "-q", "-p", "-t", "sess-A",
+			"allow-passthrough", "on",
+		},
+		argvs[4],
 	)
 }
 
@@ -6388,11 +6411,12 @@ func TestManagerEnsureTmuxCreatesSessionOnMiss(t *testing.T) {
 	mgr := NewManager(d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script})
 	mgr.SetHideTmuxStatus(true)
+	mgr.SetTmuxMouse(true)
 
 	require.NoError(mgr.EnsureTmux(t.Context(), "sess-B", "/tmp/cwd"))
 
 	argvs := readRecorderArgv(t, record)
-	require.Len(argvs, 4)
+	require.Len(argvs, 8)
 	assert.Equal(
 		[]string{"has-session", "-t", "sess-B"},
 		argvs[0],
@@ -6416,8 +6440,30 @@ func TestManagerEnsureTmuxCreatesSessionOnMiss(t *testing.T) {
 		argvs[2],
 	)
 	assert.Equal(
-		[]string{"set-option", "-q", "-t", "sess-B", "status", "off"},
+		[]string{"set-option", "-q", "-g", "allow-passthrough", "on"},
 		argvs[3],
+	)
+	assert.Equal(
+		[]string{
+			"set-option", "-q", "-g", "terminal-features[100]",
+			"xterm-256color:sixel",
+		},
+		argvs[4],
+	)
+	assert.Equal(
+		[]string{"set-option", "-q", "-g", "mouse", "on"},
+		argvs[5],
+	)
+	assert.Equal(
+		[]string{
+			"set-option", "-q", "-p", "-t", "sess-B",
+			"allow-passthrough", "on",
+		},
+		argvs[6],
+	)
+	assert.Equal(
+		[]string{"set-option", "-q", "-t", "sess-B", "status", "off"},
+		argvs[7],
 	)
 }
 
@@ -6443,11 +6489,12 @@ func TestManagerEnsureTmuxCreatesSessionOnMacOSMissingServer(t *testing.T) {
 	d := openTestDB(t)
 	mgr := NewManager(d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script})
+	mgr.SetTmuxMouse(true)
 
 	require.NoError(mgr.EnsureTmux(context.Background(), "sess-macos", "/tmp/cwd"))
 
 	argvs := readRecorderArgv(t, record)
-	require.Len(argvs, 3)
+	require.Len(argvs, 7)
 	assert.Equal(
 		[]string{"has-session", "-t", "sess-macos"},
 		argvs[0],
@@ -6460,6 +6507,28 @@ func TestManagerEnsureTmuxCreatesSessionOnMacOSMissingServer(t *testing.T) {
 			"@forge_owner", mgr.tmuxOwnerMarker(),
 		},
 		argvs[2],
+	)
+	assert.Equal(
+		[]string{"set-option", "-q", "-g", "allow-passthrough", "on"},
+		argvs[3],
+	)
+	assert.Equal(
+		[]string{
+			"set-option", "-q", "-g", "terminal-features[100]",
+			"xterm-256color:sixel",
+		},
+		argvs[4],
+	)
+	assert.Equal(
+		[]string{"set-option", "-q", "-g", "mouse", "on"},
+		argvs[5],
+	)
+	assert.Equal(
+		[]string{
+			"set-option", "-q", "-p", "-t", "sess-macos",
+			"allow-passthrough", "on",
+		},
+		argvs[6],
 	)
 }
 

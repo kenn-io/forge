@@ -995,6 +995,7 @@ func (s *Server) refreshRuntimeTargetsLocked() {
 	}
 	if s.workspaces != nil {
 		s.workspaces.SetHideTmuxStatus(s.cfg.Terminal.HideTmuxStatus)
+		s.workspaces.SetTmuxMouse(s.cfg.TerminalTmuxMouseEnabled())
 	}
 	if s.runtime == nil {
 		return
@@ -1003,6 +1004,7 @@ func (s *Server) refreshRuntimeTargetsLocked() {
 	targets := localruntime.ResolveLaunchTargets(s.cfg.Agents, tmuxCmd, nil)
 	s.runtime.UpdateTargetsAndStripEnvVars(targets, s.cfg.TokenEnvNames())
 	s.runtime.UpdateHideTmuxStatus(s.cfg.Terminal.HideTmuxStatus)
+	s.runtime.UpdateTmuxMouse(s.cfg.TerminalTmuxMouseEnabled())
 }
 
 func (s *Server) bootTmuxCommand() []string {

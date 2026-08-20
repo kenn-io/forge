@@ -64,6 +64,7 @@ it.layer(StartupTestLayer)("shares startup settings demand", (it) => {
           cursor_blink: true,
           font_ligatures: false,
           hide_tmux_status: false,
+          tmux_mouse: true,
         },
         workspaces: { auto_assign_on_create: false, default_sidebar_view: "diff" },
       } satisfies SettingsResponse;
@@ -136,6 +137,7 @@ it.layer(StartupTestLayer)("startup invalidation", (it) => {
           cursor_blink: true,
           font_ligatures: false,
           hide_tmux_status: false,
+          tmux_mouse: true,
         },
         workspaces: { auto_assign_on_create: false, default_sidebar_view: "diff" },
       } satisfies SettingsResponse;
@@ -221,6 +223,7 @@ it.layer(StartupTestLayer)("startup retry after failure", (it) => {
           cursor_blink: true,
           font_ligatures: false,
           hide_tmux_status: false,
+          tmux_mouse: true,
         },
         workspaces: { auto_assign_on_create: false, default_sidebar_view: "diff" },
       } satisfies SettingsResponse;

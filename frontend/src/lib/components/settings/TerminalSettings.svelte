@@ -80,6 +80,9 @@
   let hideTmuxStatusDraft = $state(
     DEFAULT_TERMINAL_SETTINGS.hide_tmux_status,
   );
+  let tmuxMouseDraft = $state(
+    DEFAULT_TERMINAL_SETTINGS.tmux_mouse,
+  );
   let retainedSessionsDraft = $state<number | null>(
     DEFAULT_TERMINAL_SETTINGS.retained_sessions,
   );
@@ -162,6 +165,7 @@
       cursor_blink: cursorBlinkDraft,
       font_ligatures: fontLigaturesDraft,
       hide_tmux_status: hideTmuxStatusDraft,
+      tmux_mouse: tmuxMouseDraft,
       retained_sessions:
         retainedSessionsDraft ?? DEFAULT_TERMINAL_SETTINGS.retained_sessions,
     };
@@ -181,6 +185,7 @@
       pendingTerminal.cursor_blink !== currentTerminal.cursor_blink ||
       pendingTerminal.font_ligatures !== currentTerminal.font_ligatures ||
       pendingTerminal.hide_tmux_status !== currentTerminal.hide_tmux_status ||
+      pendingTerminal.tmux_mouse !== currentTerminal.tmux_mouse ||
       pendingTerminal.retained_sessions !== currentTerminal.retained_sessions
   );
   const isDefaultDraft = $derived(
@@ -196,6 +201,7 @@
         DEFAULT_TERMINAL_SETTINGS.font_ligatures &&
       pendingTerminal.hide_tmux_status ===
         DEFAULT_TERMINAL_SETTINGS.hide_tmux_status &&
+      pendingTerminal.tmux_mouse === DEFAULT_TERMINAL_SETTINGS.tmux_mouse &&
       pendingTerminal.retained_sessions ===
         DEFAULT_TERMINAL_SETTINGS.retained_sessions
   );
@@ -240,6 +246,7 @@
     cursorBlinkDraft = value.cursor_blink;
     fontLigaturesDraft = value.font_ligatures;
     hideTmuxStatusDraft = value.hide_tmux_status;
+    tmuxMouseDraft = value.tmux_mouse;
     retainedSessionsDraft = value.retained_sessions;
   }
 
@@ -494,6 +501,13 @@
     bind:checked={hideTmuxStatusDraft}
     disabled={saving}
     label="Hide tmux status line in new sessions"
+  />
+
+  <Checkbox
+    class="toggle-field"
+    bind:checked={tmuxMouseDraft}
+    disabled={saving}
+    label="Enable tmux mouse mode"
   />
 
   <div class="setting-actions">

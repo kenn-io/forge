@@ -47,6 +47,8 @@ type Manager struct {
 	tmuxStripEnvVars          []string
 	hideTmuxStatusMu          sync.RWMutex
 	hideTmuxStatus            bool
+	tmuxMouseMu               sync.RWMutex
+	tmuxMouse                 bool
 	ptyOwner                  PtyOwnerClient
 	preferPtyOwner            bool
 	retryMu                   sync.Mutex
@@ -342,6 +344,19 @@ func (m *Manager) currentHideTmuxStatus() bool {
 	m.hideTmuxStatusMu.RLock()
 	defer m.hideTmuxStatusMu.RUnlock()
 	return m.hideTmuxStatus
+}
+
+// SetTmuxMouse controls tmux mouse handling for managed workspace sessions.
+func (m *Manager) SetTmuxMouse(enabled bool) {
+	m.tmuxMouseMu.Lock()
+	defer m.tmuxMouseMu.Unlock()
+	m.tmuxMouse = enabled
+}
+
+func (m *Manager) currentTmuxMouse() bool {
+	m.tmuxMouseMu.RLock()
+	defer m.tmuxMouseMu.RUnlock()
+	return m.tmuxMouse
 }
 
 // tmuxExec builds an *exec.Cmd for a tmux invocation: the
@@ -4155,7 +4170,7 @@ func (m *Manager) EnsureTmux(
 		return fmt.Errorf("tmux has-session: %w", err)
 	}
 	if exists {
-		return nil
+		return m.configureTmuxSession(ctx, session)
 	}
 	return m.newTmuxSession(ctx, session, cwd)
 }
@@ -4556,6 +4571,16 @@ func (m *Manager) newTmuxSession(
 		}
 		return fmt.Errorf("set tmux owner marker: %w", err)
 	}
+	if err := m.configureTmuxSession(ctx, session); err != nil {
+		if killErr := m.killTmuxSession(ctx, session); killErr != nil &&
+			!isTmuxKillSessionGone(killErr) {
+			return fmt.Errorf(
+				"configure tmux session: %w; cleanup new tmux session: %v",
+				err, killErr,
+			)
+		}
+		return fmt.Errorf("configure tmux session: %w", err)
+	}
 	if m.currentHideTmuxStatus() {
 		if err := m.setTmuxStatus(ctx, session, false); err != nil {
 			if killErr := m.killTmuxSession(ctx, session); killErr != nil &&
@@ -4567,6 +4592,52 @@ func (m *Manager) newTmuxSession(
 			}
 			return fmt.Errorf("hide tmux status: %w", err)
 		}
+	}
+	return nil
+}
+
+func (m *Manager) configureTmuxSession(
+	ctx context.Context,
+	session string,
+) error {
+	if err := runBuiltCmd(
+		ctx,
+		m.tmuxExec(
+			ctx,
+			"set-option", "-q", "-g", "allow-passthrough", "on",
+		),
+	); err != nil {
+		return fmt.Errorf("enable global tmux passthrough: %w", err)
+	}
+	if err := runBuiltCmd(
+		ctx,
+		m.tmuxExec(
+			ctx,
+			"set-option", "-q", "-g", "terminal-features[100]",
+			"xterm-256color:sixel",
+		),
+	); err != nil {
+		return fmt.Errorf("enable tmux SIXEL: %w", err)
+	}
+	value := "off"
+	if m.currentTmuxMouse() {
+		value = "on"
+	}
+	if err := runBuiltCmd(
+		ctx,
+		m.tmuxExec(ctx, "set-option", "-q", "-g", "mouse", value),
+	); err != nil {
+		return fmt.Errorf("configure tmux mouse: %w", err)
+	}
+	if err := runBuiltCmd(
+		ctx,
+		m.tmuxExec(
+			ctx,
+			"set-option", "-q", "-p", "-t", session,
+			"allow-passthrough", "on",
+		),
+	); err != nil {
+		return fmt.Errorf("enable tmux passthrough: %w", err)
 	}
 	return nil
 }

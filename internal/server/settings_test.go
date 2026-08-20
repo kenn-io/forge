@@ -663,6 +663,7 @@ func TestHandleUpdateSettings(t *testing.T) {
 		CursorBlink:      new(true),
 		FontLigatures:    true,
 		HideTmuxStatus:   true,
+		TmuxMouse:        new(false),
 		RetainedSessions: new(4),
 	}
 	body := updateSettingsRequest{
@@ -690,6 +691,8 @@ func TestHandleUpdateSettings(t *testing.T) {
 	assert.InDelta(1.15, cfg2.Terminal.LineHeight, 0.001)
 	assert.True(cfg2.Terminal.FontLigatures)
 	assert.True(cfg2.Terminal.HideTmuxStatus)
+	require.NotNil(t, cfg2.Terminal.TmuxMouse)
+	assert.False(*cfg2.Terminal.TmuxMouse)
 	require.NotNil(t, cfg2.Terminal.RetainedSessions)
 	assert.Equal(4, *cfg2.Terminal.RetainedSessions)
 }
@@ -794,6 +797,7 @@ docs = false
 		Scrollback:       2000,
 		LetterSpacing:    1,
 		CursorBlink:      new(true),
+		TmuxMouse:        new(true),
 		RetainedSessions: new(config.DefaultTerminalRetainedSessions),
 	}
 	body := updateSettingsRequest{

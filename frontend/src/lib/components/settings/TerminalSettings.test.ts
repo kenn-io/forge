@@ -21,6 +21,7 @@ const {
     cursor_blink: true,
     font_ligatures: false,
     hide_tmux_status: false,
+    tmux_mouse: true,
     retained_sessions: 10,
   };
   const store = { terminal: { ...defaultTerminal } };
@@ -195,6 +196,7 @@ describe("TerminalSettings", () => {
         cursor_blink: true,
         font_ligatures: false,
         hide_tmux_status: false,
+        tmux_mouse: true,
         retained_sessions: 10,
       },
     });
@@ -211,6 +213,7 @@ describe("TerminalSettings", () => {
           cursor_blink: true,
           font_ligatures: false,
           hide_tmux_status: false,
+          tmux_mouse: true,
           retained_sessions: 10,
         },
         onUpdate,
@@ -241,6 +244,7 @@ describe("TerminalSettings", () => {
           cursor_blink: true,
           font_ligatures: false,
           hide_tmux_status: false,
+          tmux_mouse: true,
           retained_sessions: 10,
         },
       });
@@ -255,6 +259,7 @@ describe("TerminalSettings", () => {
         cursor_blink: true,
         font_ligatures: false,
         hide_tmux_status: false,
+        tmux_mouse: true,
         retained_sessions: 10,
       });
     });
@@ -267,6 +272,7 @@ describe("TerminalSettings", () => {
       cursor_blink: true,
       font_ligatures: false,
       hide_tmux_status: false,
+      tmux_mouse: true,
       retained_sessions: 10,
     });
   });
@@ -282,6 +288,7 @@ describe("TerminalSettings", () => {
         cursor_blink: false,
         font_ligatures: false,
         hide_tmux_status: false,
+        tmux_mouse: true,
         retained_sessions: 10,
       },
     });
@@ -298,6 +305,7 @@ describe("TerminalSettings", () => {
           cursor_blink: true,
           font_ligatures: false,
           hide_tmux_status: false,
+          tmux_mouse: true,
           retained_sessions: 10,
         },
         onUpdate,
@@ -330,6 +338,7 @@ describe("TerminalSettings", () => {
           cursor_blink: false,
           font_ligatures: false,
           hide_tmux_status: false,
+          tmux_mouse: true,
           retained_sessions: 10,
         },
       });
@@ -347,6 +356,7 @@ describe("TerminalSettings", () => {
         cursor_blink: true,
         font_ligatures: true,
         hide_tmux_status: false,
+        tmux_mouse: true,
         retained_sessions: 10,
       },
     });
@@ -363,6 +373,7 @@ describe("TerminalSettings", () => {
           cursor_blink: true,
           font_ligatures: false,
           hide_tmux_status: false,
+          tmux_mouse: true,
           retained_sessions: 10,
         },
         onUpdate,
@@ -383,6 +394,7 @@ describe("TerminalSettings", () => {
           cursor_blink: true,
           font_ligatures: true,
           hide_tmux_status: false,
+          tmux_mouse: true,
           retained_sessions: 10,
         },
       });
@@ -400,6 +412,7 @@ describe("TerminalSettings", () => {
         cursor_blink: true,
         font_ligatures: false,
         hide_tmux_status: true,
+        tmux_mouse: true,
         retained_sessions: 10,
       },
     });
@@ -415,6 +428,7 @@ describe("TerminalSettings", () => {
           cursor_blink: true,
           font_ligatures: false,
           hide_tmux_status: false,
+          tmux_mouse: true,
           retained_sessions: 10,
         },
         onUpdate: vi.fn(),
@@ -435,9 +449,32 @@ describe("TerminalSettings", () => {
           cursor_blink: true,
           font_ligatures: false,
           hide_tmux_status: true,
+          tmux_mouse: true,
           retained_sessions: 10,
         },
       });
+    });
+  });
+
+  it("persists tmux mouse mode for managed sessions", async () => {
+    const updated = {
+      ...mockTerminalStore.defaultTerminal,
+      tmux_mouse: false,
+    };
+    mockUpdateSettings.mockResolvedValue({ terminal: updated });
+
+    render(TerminalSettings, {
+      props: {
+        terminal: { ...mockTerminalStore.defaultTerminal },
+        onUpdate: vi.fn(),
+      },
+    });
+
+    await fireEvent.click(screen.getByLabelText("Enable tmux mouse mode"));
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(mockUpdateSettings).toHaveBeenCalledWith({ terminal: updated });
     });
   });
 
@@ -458,6 +495,7 @@ describe("TerminalSettings", () => {
             cursor_blink: true,
             font_ligatures: false,
             hide_tmux_status: false,
+            tmux_mouse: true,
             retained_sessions: 10,
           },
           onUpdate,
@@ -489,6 +527,7 @@ describe("TerminalSettings", () => {
         cursor_blink: true,
         font_ligatures: false,
         hide_tmux_status: false,
+        tmux_mouse: true,
         retained_sessions: 10,
       },
     });
@@ -504,6 +543,7 @@ describe("TerminalSettings", () => {
           cursor_blink: true,
           font_ligatures: false,
           hide_tmux_status: false,
+          tmux_mouse: true,
           retained_sessions: 10,
         },
         onUpdate: vi.fn(),
@@ -535,6 +575,7 @@ describe("TerminalSettings", () => {
           cursor_blink: true,
           font_ligatures: false,
           hide_tmux_status: false,
+          tmux_mouse: true,
           retained_sessions: 10,
         },
       });
@@ -553,6 +594,7 @@ describe("TerminalSettings", () => {
           cursor_blink: true,
           font_ligatures: false,
           hide_tmux_status: false,
+          tmux_mouse: true,
           retained_sessions: 10,
         },
         livePreview: true,
@@ -573,6 +615,7 @@ describe("TerminalSettings", () => {
       cursor_blink: true,
       font_ligatures: false,
       hide_tmux_status: false,
+      tmux_mouse: true,
       retained_sessions: 10,
     });
 
@@ -587,6 +630,7 @@ describe("TerminalSettings", () => {
       cursor_blink: true,
       font_ligatures: false,
       hide_tmux_status: false,
+      tmux_mouse: true,
       retained_sessions: 10,
     });
   });
@@ -602,6 +646,7 @@ describe("TerminalSettings", () => {
         cursor_blink: true,
         font_ligatures: false,
         hide_tmux_status: false,
+        tmux_mouse: true,
         retained_sessions: 10,
       },
     });
@@ -616,6 +661,7 @@ describe("TerminalSettings", () => {
           cursor_blink: true,
           font_ligatures: false,
           hide_tmux_status: false,
+          tmux_mouse: true,
           retained_sessions: 10,
         },
         livePreview: true,
@@ -644,6 +690,7 @@ describe("TerminalSettings", () => {
       cursor_blink: true,
       font_ligatures: false,
       hide_tmux_status: false,
+      tmux_mouse: true,
       retained_sessions: 10,
     });
   });
@@ -660,6 +707,7 @@ describe("TerminalSettings", () => {
           cursor_blink: true,
           font_ligatures: false,
           hide_tmux_status: false,
+          tmux_mouse: true,
           retained_sessions: 10,
         },
         livePreview: true,
@@ -681,6 +729,7 @@ describe("TerminalSettings", () => {
       cursor_blink: true,
       font_ligatures: false,
       hide_tmux_status: false,
+      tmux_mouse: true,
       retained_sessions: 10,
     });
   });
@@ -697,6 +746,7 @@ describe("TerminalSettings", () => {
           cursor_blink: true,
           font_ligatures: false,
           hide_tmux_status: false,
+          tmux_mouse: true,
           retained_sessions: 10,
         },
         onUpdate: vi.fn(),
@@ -797,6 +847,7 @@ describe("TerminalSettings", () => {
           cursor_blink: true,
           font_ligatures: false,
           hide_tmux_status: false,
+          tmux_mouse: true,
           retained_sessions: 10,
         },
         onUpdate: vi.fn(),

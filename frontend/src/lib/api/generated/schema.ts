@@ -7984,6 +7984,7 @@ export interface components {
             retained_sessions: number;
             /** Format: int64 */
             scrollback: number;
+            tmux_mouse: boolean;
         };
         TmuxSessionInfo: {
             createdAt?: string;

@@ -113,6 +113,8 @@ type Options struct {
 	// HideTmuxStatus turns off tmux's status line for newly-created
 	// tmux-backed runtime sessions.
 	HideTmuxStatus bool
+	// TmuxMouse enables tmux mouse handling for tmux-backed runtime sessions.
+	TmuxMouse bool
 	// StripEnvVars names additional env vars to strip beyond the
 	// built-in credential prefixes (e.g. a configured token env).
 	StripEnvVars []string
@@ -142,6 +144,7 @@ type Manager struct {
 	tmuxOwnerMarker   string
 	wrapAgentsInTmux  bool
 	hideTmuxStatus    bool
+	tmuxMouse         bool
 	stripEnvVars      []string
 	onSessionExit     func(SessionInfo)
 	ptyOwnerRuntime   ptyownerruntime.Owner
@@ -281,6 +284,7 @@ func NewManager(options Options) *Manager {
 		tmuxOwnerMarker:   options.TmuxOwnerMarker,
 		wrapAgentsInTmux:  options.WrapAgentSessionsInTmux,
 		hideTmuxStatus:    options.HideTmuxStatus,
+		tmuxMouse:         options.TmuxMouse,
 		stripEnvVars:      dedupeStrings(options.StripEnvVars),
 		onSessionExit:     options.OnSessionExit,
 		ptyOwnerRuntime:   options.PtyOwnerRuntime,
@@ -723,6 +727,12 @@ func (m *Manager) UpdateHideTmuxStatus(hide bool) {
 	m.mu.Unlock()
 }
 
+func (m *Manager) UpdateTmuxMouse(enabled bool) {
+	m.mu.Lock()
+	m.tmuxMouse = enabled
+	m.mu.Unlock()
+}
+
 func cloneLaunchTargetSet(
 	targets []LaunchTarget,
 ) (map[string]LaunchTarget, []LaunchTarget) {
@@ -761,6 +771,12 @@ func (m *Manager) currentHideTmuxStatus() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.hideTmuxStatus
+}
+
+func (m *Manager) currentTmuxMouse() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.tmuxMouse
 }
 
 func (m *Manager) ListSessions(workspaceID string) []SessionInfo {
@@ -1546,6 +1562,7 @@ func (m *Manager) shellLaunchCommand(
 		OwnerMarker: m.tmuxOwnerMarker,
 		LaunchID:    launchID,
 		HideStatus:  m.currentHideTmuxStatus(),
+		TmuxMouse:   m.currentTmuxMouse(),
 	}.prepare(ctx)
 	if err != nil {
 		return launchCommand{}, err
@@ -1727,6 +1744,7 @@ func (m *Manager) launchCommand(
 		OwnerMarker: m.tmuxOwnerMarker,
 		LaunchID:    launchID,
 		HideStatus:  m.currentHideTmuxStatus(),
+		TmuxMouse:   m.currentTmuxMouse(),
 	}.prepare(ctx)
 	if err != nil {
 		return launchCommand{}, err

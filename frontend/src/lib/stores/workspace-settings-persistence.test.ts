@@ -56,6 +56,7 @@ function settingsResponse(workspaces: WorkspaceSettings): StartupSnapshot {
       cursor_blink: true,
       font_ligatures: false,
       hide_tmux_status: false,
+      tmux_mouse: true,
       retained_sessions: 10,
     },
     workspaces,

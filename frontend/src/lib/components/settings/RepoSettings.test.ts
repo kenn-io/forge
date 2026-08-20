@@ -233,6 +233,7 @@ describe("RepoSettings", () => {
         cursor_blink: true,
         font_ligatures: false,
         hide_tmux_status: false,
+        tmux_mouse: true,
       },
       notifications: {
         enabled: false,
@@ -265,6 +266,7 @@ describe("RepoSettings", () => {
         cursor_blink: true,
         font_ligatures: false,
         hide_tmux_status: false,
+        tmux_mouse: true,
       },
       notifications: {
         enabled: false,
@@ -343,6 +345,7 @@ describe("RepoSettings", () => {
         cursor_blink: true,
         font_ligatures: false,
         hide_tmux_status: false,
+        tmux_mouse: true,
       },
       agents: [],
       fleet: defaultFleetSettings(),
@@ -588,6 +591,7 @@ describe("RepoSettings", () => {
         cursor_blink: true,
         font_ligatures: false,
         hide_tmux_status: false,
+        tmux_mouse: true,
       },
       agents: [],
       fleet: defaultFleetSettings(),
@@ -799,6 +803,7 @@ describe("RepoSettings", () => {
         cursor_blink: true,
         font_ligatures: false,
         hide_tmux_status: false,
+        tmux_mouse: true,
       },
       notifications: {
         enabled: false,

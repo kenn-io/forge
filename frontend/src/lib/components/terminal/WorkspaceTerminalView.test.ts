@@ -145,6 +145,7 @@ vi.mock("../../context.js", async (importOriginal) => {
           cursor_blink: true,
           font_ligatures: false,
           hide_tmux_status: false,
+          tmux_mouse: true,
           retained_sessions: 10,
         }),
         setTerminalSettings: mocks.mockSetTerminalSettings,

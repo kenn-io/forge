@@ -154,10 +154,9 @@ still exists.
   `internal/workspace/localruntime/manager.go::Manager.Shutdown`).
 - New tmux sessions use the `forge-` prefix; persisted `middleman-` session
   names remain valid and must not be rewritten (`internal/workspace/`).
-- Forge talks to its own tmux server, not the user's global one: every
-  empty-tmux-command fallback must use `config.DefaultTmuxCommand`, never bare
-  `tmux`; a configured `[tmux] command` is used verbatim, so socket choice
-  stays with the user (`internal/config/config.go::DefaultTmuxCommand`).
+- Forge owns the tmux server it addresses, including when `[tmux].command`
+  customizes its executable or socket; server-global terminal defaults must
+  not be withheld as if this were the user's personal server (`internal/config/config.go::DefaultTmuxCommand`).
 - The tmux server permanently retains its spawn environment for every pane to
   read via `show-environment -g`, and only `new-session` clients spawn it, so
   every Forge-issued tmux client runs with the non-secret allowlist
@@ -196,9 +195,15 @@ still exists.
 - Every tmux client attach must force UTF-8; service launchers may omit locale
   variables, causing tmux to replace non-ASCII output before WebSocket transport
   (`internal/workspace/localruntime/tmux_launcher.go::tmuxAttachSessionCommand`).
-- Direct Kitty frames need the browser decoder and per-pane tmux `allow-passthrough`;
-  the current addon does not handle the Unicode placeholder mode that `kitten icat`
-  forces through tmux (`frontend/tests/e2e-full/00-terminal-kitty-graphics.spec.ts:106`).
+- Managed tmux servers default passthrough and configurable mouse mode globally;
+  direct Kitty and IIP use passthrough, while native SIXEL requires the
+  `xterm-256color:sixel` client feature (`internal/workspace/localruntime/tmux_launcher.go::tmuxLauncher.prepare`).
+- Browser Kitty output must use direct placements; the current xterm addon does
+  not implement the Unicode placeholders that `kitten icat` selects in tmux
+  (`frontend/tests/e2e-full/00-terminal-kitty-graphics.spec.ts::kittyGraphicsCommand`).
+- Retained tmux attach PTYs must start with nonzero pixel geometry: tmux asks for
+  pixels before a browser subscribes and otherwise never retries the unanswered
+  query needed for native SIXEL (`internal/workspace/localruntime/tmux_runtime.go::startTmuxAttachSession`).
 - Local-runtime reconnects restore browser-generated cursor-key, mouse, focus,
   and paste DEC modes from session-wide PTY state, not bounded screen replay
   (`internal/workspace/localruntime/manager.go::session.subscribe`).

@@ -977,6 +977,11 @@
         vtExtensions: {
           kittyKeyboard: true,
         },
+        windowOptions: {
+          getCellSizePixels: true,
+          getWinSizeChars: true,
+          getWinSizePixels: true,
+        },
         disableStdin: disabled,
       });
       terminal = term;
@@ -994,9 +999,9 @@
       term.loadAddon(fit);
       term.loadAddon(
         new ImageAddon({
-          iipSupport: false,
+          iipSupport: true,
           kittySupport: true,
-          sixelSupport: false,
+          sixelSupport: true,
         }),
       );
       term.loadAddon(

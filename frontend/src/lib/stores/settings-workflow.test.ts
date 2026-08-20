@@ -58,6 +58,7 @@ function makeSettings(repos: SettingsResponse["repos"] = []): SettingsResponse {
       cursor_blink: true,
       font_ligatures: false,
       hide_tmux_status: false,
+      tmux_mouse: true,
       retained_sessions: 0,
     },
     workspaces: { auto_assign_on_create: false, default_sidebar_view: "diff" },

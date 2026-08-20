@@ -75,6 +75,12 @@ func startTmuxAttachSession(
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{
 		Rows: 30,
 		Cols: 120,
+		// A retained tmux attach starts before any browser can answer tmux's
+		// pixel-size query. Seed nonzero cell geometry so tmux does not leave
+		// that query permanently outstanding. The first browser resize clears
+		// these placeholder pixels and tmux then queries the connected xterm.
+		X: 120 * 8,
+		Y: 30 * 16,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("start tmux attach pty: %w", err)

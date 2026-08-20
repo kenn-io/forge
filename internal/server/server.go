@@ -882,6 +882,7 @@ func newServer(
 	tmuxCmd := cfg.TmuxCommand()
 	s.tmuxCmd = tmuxCmd
 	hideTmuxStatus := false
+	tmuxMouse := cfg.TerminalTmuxMouseEnabled()
 	if cfg != nil {
 		hideTmuxStatus = cfg.Terminal.HideTmuxStatus
 	}
@@ -925,6 +926,7 @@ func newServer(
 		s.workspaces.SetTmuxCommand(tmuxCmd)
 		s.workspaces.UpdateTmuxStripEnvVars(s.runtimeStripEnvVars)
 		s.workspaces.SetHideTmuxStatus(hideTmuxStatus)
+		s.workspaces.SetTmuxMouse(tmuxMouse)
 		s.workspaces.SetIssueBranchSlugEnabled(
 			cfg.IssueWorkspaceBranchSlugEnabled(),
 		)
@@ -984,6 +986,7 @@ func newServer(
 			TmuxOwnerMarker:                s.workspaces.TmuxOwnerMarker(),
 			WrapAgentSessionsInTmux:        cfg.TmuxAgentSessionsEnabled(),
 			HideTmuxStatus:                 hideTmuxStatus,
+			TmuxMouse:                      tmuxMouse,
 			StripEnvVars:                   s.runtimeStripEnvVars,
 			ShellCommand:                   cfg.ShellCommand(),
 			OnSessionExit:                  s.handleRuntimeSessionExit,

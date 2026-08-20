@@ -99,11 +99,71 @@ function tmuxPassthroughFormat(payloadFormat: string): string {
 
 function kittyGraphicsCommand(): string {
   const pixels = Buffer.from([255, 0, 0, 0, 255, 0]).toString("base64");
-  const kittySequence = `\\033\\033_Ga=T,f=24,s=2,v=1;${pixels}\\033\\033\\\\`;
+  const kittySequence = `\\033\\033_Ga=T,f=24,s=2,v=1,c=2,r=1,C=1,q=2;${pixels}\\033\\033\\\\`;
   return `printf '${tmuxPassthroughFormat(kittySequence)}'`;
 }
 
-test("Direct Kitty graphics render through the real tmux terminal path", async ({ page }) => {
+function sixelGraphicsCommand(): string {
+  return `printf '\\033Pq"1;1;4;6#0;2;100;0;0#0!2~$#1;2;0;100;0#1??!2~\\033\\\\'`;
+}
+
+function iipGraphicsCommand(): string {
+  const png = "iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAADklEQVR4nGP4z8DwHwQBEPgD/U6VwW8AAAAASUVORK5CYII=";
+  const iipSequence = `\\033\\033]1337;File=inline=1;size=71;width=2;height=1;preserveAspectRatio=0:${png}\\033\\033\\\\`;
+  return `printf '${tmuxPassthroughFormat(iipSequence)}'`;
+}
+
+async function expectGraphicsImage(terminal: Locator, checkColors: boolean): Promise<void> {
+  await expect
+    .poll(() =>
+      terminal.evaluate((element) => {
+        const canvas = element.querySelector<HTMLCanvasElement>(".xterm-image-layer-top");
+        if (!canvas) return false;
+        const pixels = canvas
+          .getContext("2d", { willReadFrequently: true })
+          ?.getImageData(0, 0, canvas.width, canvas.height).data;
+        if (!pixels) return false;
+        for (let index = 3; index < pixels.length; index += 4) {
+          if (pixels[index]! > 0) return true;
+        }
+        return false;
+      }),
+    )
+    .toBe(true);
+  if (!checkColors) return;
+  await expect
+    .poll(
+      () =>
+        terminal.evaluate((element) => {
+          const canvas = element.querySelector<HTMLCanvasElement>(".xterm-image-layer-top");
+          if (!canvas) return false;
+          const context = canvas.getContext("2d", { willReadFrequently: true });
+          if (!context) return false;
+          const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+          let red = false;
+          let green = false;
+          for (let index = 0; index < pixels.length; index += 4) {
+            const alpha = pixels[index + 3]!;
+            if (alpha === 0) continue;
+            const redChannel = pixels[index]!;
+            const greenChannel = pixels[index + 1]!;
+            const blueChannel = pixels[index + 2]!;
+            red ||= redChannel > 180 && greenChannel < 80 && blueChannel < 80;
+            green ||= greenChannel > 180 && redChannel < 80 && blueChannel < 80;
+            if (red && green) return true;
+          }
+          return false;
+        }),
+      { timeout: 15_000 },
+    )
+    .toBe(true);
+}
+
+async function renderGraphicsThroughTmux(
+  page: Page,
+  command: string,
+  options: { checkColors: boolean; passthrough: boolean },
+): Promise<void> {
   test.skip(!hasCommand("git") || !hasCommand("tmux", ["-V"]), "git and tmux are required for the real workspace flow");
 
   let isolatedServer: IsolatedE2EServer | null = null;
@@ -116,40 +176,50 @@ test("Direct Kitty graphics render through the real tmux terminal path", async (
     await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
     const terminal = await openTerminalPanel(page);
     const tmuxSession = await runningRuntimeTmuxSession(api, workspace.id);
-    expect(runE2ETmuxCommand(isolatedServer, ["show-options", "-pv", "-t", tmuxSession, "allow-passthrough"])).toBe(
-      "on",
-    );
-    runE2ETmuxCommand(isolatedServer, ["send-keys", "-t", tmuxSession, "-l", kittyGraphicsCommand()]);
+    if (options.passthrough) {
+      expect(runE2ETmuxCommand(isolatedServer, ["show-options", "-pv", "-t", tmuxSession, "allow-passthrough"])).toBe(
+        "on",
+      );
+    } else {
+      const features = runE2ETmuxCommand(isolatedServer, [
+        "display-message",
+        "-p",
+        "-t",
+        tmuxSession,
+        "#{client_termfeatures}",
+      ]);
+      expect(features).toContain("sixel");
+      await expect
+        .poll(() =>
+          Number(
+            runE2ETmuxCommand(isolatedServer!, ["display-message", "-p", "-t", tmuxSession, "#{client_cell_width}"]),
+          ),
+        )
+        .toBeGreaterThan(0);
+      expect(
+        Number(
+          runE2ETmuxCommand(isolatedServer, ["display-message", "-p", "-t", tmuxSession, "#{client_cell_height}"]),
+        ),
+      ).toBeGreaterThan(0);
+    }
+    runE2ETmuxCommand(isolatedServer, ["send-keys", "-t", tmuxSession, "-l", command]);
     runE2ETmuxCommand(isolatedServer, ["send-keys", "-t", tmuxSession, "Enter"]);
 
-    await expect
-      .poll(
-        () =>
-          terminal.evaluate((element) => {
-            const canvas = element.querySelector<HTMLCanvasElement>(".xterm-image-layer-top");
-            if (!canvas) return false;
-            const context = canvas.getContext("2d", { willReadFrequently: true });
-            if (!context) return false;
-            const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
-            let red = false;
-            let green = false;
-            for (let index = 0; index < pixels.length; index += 4) {
-              const alpha = pixels[index + 3]!;
-              if (alpha === 0) continue;
-              const redChannel = pixels[index]!;
-              const greenChannel = pixels[index + 1]!;
-              const blueChannel = pixels[index + 2]!;
-              red ||= redChannel > 200 && greenChannel < 32 && blueChannel < 32;
-              green ||= greenChannel > 200 && redChannel < 32 && blueChannel < 32;
-              if (red && green) return true;
-            }
-            return false;
-          }),
-        { timeout: 15_000 },
-      )
-      .toBe(true);
+    await expectGraphicsImage(terminal, options.checkColors);
   } finally {
     await api?.dispose();
     await isolatedServer?.stop();
   }
+}
+
+test("Direct Kitty graphics render through tmux passthrough", async ({ page }) => {
+  await renderGraphicsThroughTmux(page, kittyGraphicsCommand(), { checkColors: true, passthrough: true });
+});
+
+test("Native SIXEL graphics render through tmux", async ({ page }) => {
+  await renderGraphicsThroughTmux(page, sixelGraphicsCommand(), { checkColors: false, passthrough: false });
+});
+
+test("OSC 1337 inline images render through tmux passthrough", async ({ page }) => {
+  await renderGraphicsThroughTmux(page, iipGraphicsCommand(), { checkColors: true, passthrough: true });
 });

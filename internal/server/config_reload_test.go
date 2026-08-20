@@ -899,7 +899,9 @@ token_env = "KENN_FORGE_MISSING_REPO_TOKEN"
 	assert.Equal("KENN_FORGE_REPO_TOKEN", currentTokenEnv)
 }
 
-func TestConfigReload_IgnoresCredentialsForProviderMissingAtStartup(t *testing.T) {
+func TestConfigReload_PreservesCachedReposForProviderMissingAtStartup(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "github-token")
 	t.Setenv("KENN_FORGE_FAILED_GITLAB_TOKEN", "")
 	const failedProvider = `
@@ -913,9 +915,15 @@ platform = "gitlab"
 platform_host = "gitlab.example.com"
 owner = "acme"
 name = "backend"
+
+[[repos]]
+platform = "gitlab"
+platform_host = "gitlab.example.com"
+owner = "acme"
+name = "service-*"
 `
 
-	srv, _, cfgPath := setupTestServerWithConfigContent(
+	srv, database, cfgPath := setupTestServerWithConfigContent(
 		t, validReloadConfig+failedProvider, &mockGH{},
 	)
 	set := tokenauth.NewSourceSet(tokenauth.Options{})
@@ -923,10 +931,37 @@ name = "backend"
 		set.Upsert(plan.Descriptor)
 	}
 	srv.tokenSources = set
+	startupFallbacks := []ghclient.RepoRef{
+		{
+			Platform: platform.KindGitLab, PlatformHost: "gitlab.example.com",
+			Owner: "acme", Name: "backend", RepoPath: "acme/backend",
+			PlatformExternalID: "gid://gitlab/Project/42",
+			ConfiguredRepoPath: "acme/backend",
+		},
+		{
+			Platform: platform.KindGitLab, PlatformHost: "gitlab.example.com",
+			Owner: "acme", Name: "service-api", RepoPath: "acme/service-api",
+		},
+	}
+	srv.syncer.SetRepos(append(srv.syncer.TrackedRepos(), startupFallbacks...))
+	for i, repo := range startupFallbacks {
+		seedVerifiedRepo(t, database, db.RepoIdentity{
+			Platform: string(repo.Platform), PlatformHost: repo.PlatformHost,
+			PlatformRepoID: fmt.Sprintf("gid://gitlab/Project/%d", 42+i),
+			Owner:          repo.Owner, Name: repo.Name, RepoPath: repo.RepoPath,
+		})
+	}
+	assert.ElementsMatch([]string{"backend", "service-api"}, listRepoNames(t, srv))
 
 	writeConfigToml(t, cfgPath, validReloadConfigChangedActivity+failedProvider)
 	event := srv.applyConfigChange(t.Context())
-	require.True(t, event.Valid, "unrelated reload failed: %s", event.Error)
+	require.True(event.Valid, "unrelated reload failed: %s", event.Error)
+	assert.True(event.RestartRequired)
+	tracked := srv.syncer.TrackedRepos()
+	for _, repo := range startupFallbacks {
+		assert.Contains(tracked, repo)
+	}
+	assert.ElementsMatch([]string{"backend", "service-api"}, listRepoNames(t, srv))
 }
 
 func TestValidateReloadCloneTokenSourcesUsesRepoDescriptorForProviderHost(t *testing.T) {

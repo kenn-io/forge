@@ -120,6 +120,9 @@ GitHub may additionally define exact-repository and owner authorization routes.
 - Reload credential probes cover only provider hosts registered at startup, so
   a degraded host cannot block unrelated config changes
   (`internal/server/config_reload.go::Server.validateReloadProviderTokenSources`).
+- Reloads retain boot-tracked exact and glob matches for degraded hosts; new
+  unavailable hosts remain untracked until restart
+  (`internal/server/config_reload.go::Server.resolveReposForReload`).
 - Disabled startup registers credential descriptors without resolving them, so
   provider tokens stay lazy (`cmd/kenn-forge/provider_startup.go::registerProviderTokenSources`).
 - Refresh access uses the gated registry; only explicit foreground provider

@@ -709,6 +709,11 @@ func (s *Server) resolveReposForReload(
 		host := raw.PlatformHostOrDefault()
 		kind := platform.Kind(raw.PlatformOrDefault())
 		if _, err := s.syncer.RepositoryReader(kind, host); err != nil {
+			for _, repo := range ghclient.FallbackConfiguredRepoRefs(previous, raw) {
+				if slices.Contains(previous, repo) {
+					set.Add(repo, false)
+				}
+			}
 			skipped = append(skipped, fmt.Sprintf(
 				"%s/%s@%s/%s",
 				string(kind), host, raw.Owner, raw.Name,

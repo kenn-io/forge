@@ -42,6 +42,9 @@ Rules:
 - Use standard negotiation, not an application compression envelope: context
   takeover shares a dictionary across PTY messages, while unsupported peers
   continue with an ordinary uncompressed WebSocket.
+- Character-only tmux PTY resizes preserve nonzero per-cell pixel geometry;
+  tmux 3.4 does not re-query it, and native SIXEL falls back when either dimension is zero
+  (`internal/workspace/localruntime/manager.go::session.resizePTYLocked`).
 
 ## Natural Exit Rules
 

@@ -640,6 +640,7 @@ func assertDefaultModeVisibility(t *testing.T, modes config.ModeVisibility) {
 
 func TestHandleUpdateSettings(t *testing.T) {
 	assert := assert.New(t)
+	require := require.New(t)
 	srv, _, cfgPath := setupTestServerWithConfig(t)
 
 	activity := config.Activity{
@@ -675,11 +676,11 @@ func TestHandleUpdateSettings(t *testing.T) {
 	rr := doJSON(
 		t, srv, http.MethodPut, "/api/v1/settings", body,
 	)
-	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
 	// Verify persisted to disk.
 	cfg2, err := config.Load(cfgPath)
-	require.NoError(t, err)
+	require.NoError(err)
 	assert.Equal("threaded", cfg2.Activity.ViewMode)
 	assert.Equal("30d", cfg2.Activity.TimeRange)
 	assert.True(cfg2.Issues.HideBots)
@@ -691,9 +692,9 @@ func TestHandleUpdateSettings(t *testing.T) {
 	assert.InDelta(1.15, cfg2.Terminal.LineHeight, 0.001)
 	assert.True(cfg2.Terminal.FontLigatures)
 	assert.True(cfg2.Terminal.HideTmuxStatus)
-	require.NotNil(t, cfg2.Terminal.TmuxMouse)
+	require.NotNil(cfg2.Terminal.TmuxMouse)
 	assert.False(*cfg2.Terminal.TmuxMouse)
-	require.NotNil(t, cfg2.Terminal.RetainedSessions)
+	require.NotNil(cfg2.Terminal.RetainedSessions)
 	assert.Equal(4, *cfg2.Terminal.RetainedSessions)
 }
 

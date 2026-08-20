@@ -4,7 +4,9 @@ import (
 	"math"
 	"testing"
 
+	"github.com/creack/pty/v2"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestClampWinsizeDim(t *testing.T) {
@@ -25,4 +27,35 @@ func TestClampWinsizeDim(t *testing.T) {
 	for _, tc := range cases {
 		assert.Equalf(tc.want, clampWinsizeDim(tc.in), "case %s", tc.name)
 	}
+}
+
+func TestResizePTYLockedPreservesCellPixelSize(t *testing.T) {
+	requirePTYAvailable(t)
+	require := require.New(t)
+	assert := assert.New(t)
+
+	ptmx, tty, err := pty.Open()
+	require.NoError(err)
+	t.Cleanup(func() {
+		_ = ptmx.Close()
+		_ = tty.Close()
+	})
+	require.NoError(pty.Setsize(ptmx, &pty.Winsize{
+		Rows: 30,
+		Cols: 120,
+		X:    120 * 8,
+		Y:    30 * 16,
+	}))
+
+	s := &session{ptmx: ptmx}
+	require.NoError(s.resizePTYLocked(100, 40))
+
+	size, err := pty.GetsizeFull(ptmx)
+	require.NoError(err)
+	assert.Equal(&pty.Winsize{
+		Rows: 40,
+		Cols: 100,
+		X:    100 * 8,
+		Y:    40 * 16,
+	}, size)
 }

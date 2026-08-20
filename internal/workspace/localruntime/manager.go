@@ -2456,10 +2456,29 @@ func (s *session) resizePTYLocked(cols, rows int) error {
 	if s.pty != nil {
 		return s.pty.Resize(cols, rows)
 	}
-	return pty.Setsize(s.ptmx, &pty.Winsize{
-		Rows: uint16(rows),
-		Cols: uint16(cols),
-	})
+	size, err := pty.GetsizeFull(s.ptmx)
+	if err != nil {
+		return fmt.Errorf("get PTY size before resize: %w", err)
+	}
+	cellWidth := uint32(0)
+	if size.Cols > 0 {
+		cellWidth = uint32(size.X) / uint32(size.Cols)
+	}
+	cellHeight := uint32(0)
+	if size.Rows > 0 {
+		cellHeight = uint32(size.Y) / uint32(size.Rows)
+	}
+	size.Rows = uint16(rows)
+	size.Cols = uint16(cols)
+	size.X = uint16(min(
+		uint32(size.Cols)*cellWidth,
+		uint32(math.MaxUint16),
+	))
+	size.Y = uint16(min(
+		uint32(size.Rows)*cellHeight,
+		uint32(math.MaxUint16),
+	))
+	return pty.Setsize(s.ptmx, size)
 }
 
 func (s *session) closeSubscribers() {

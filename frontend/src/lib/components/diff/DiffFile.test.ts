@@ -980,14 +980,21 @@ describe("DiffFile", () => {
     await keyboardSelectPierreLine(1, "right");
     await keyboardSelectPierreLine(2, "right", { shiftKey: true });
 
+    const selectedNewLineNumbers = () =>
+      new Set(
+        Array.from(selectedPierreLines() ?? [], (line) => line.getAttribute("data-diff-new-line")).filter(
+          (line): line is string => line !== null,
+        ),
+      );
+
     await findLineCommentButton(2, "right");
     expect(screen.queryByPlaceholderText("Leave a comment")).toBeNull();
-    expect(selectedPierreLines()?.length).toBeGreaterThanOrEqual(2);
+    expect(selectedNewLineNumbers()).toEqual(new Set(["1", "2"]));
 
     await keyboardActivateLineCommentButton(2, "right");
 
     expect(screen.getByPlaceholderText("Leave a comment")).toBeTruthy();
-    expect(selectedPierreLines()?.length).toBeGreaterThanOrEqual(2);
+    expect(selectedNewLineNumbers()).toEqual(new Set(["1", "2"]));
   });
 
   it("toggles an active multiline composer from keyboard line comment button activation", async () => {

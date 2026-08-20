@@ -68,14 +68,14 @@ func TestLoadMCPQuickstartExplainsStoppedDaemonWithoutCreatingRuntimeState(t *te
 	root := t.TempDir()
 	dataDir := filepath.Join(root, "data")
 	configPath := filepath.Join(root, "config.toml")
-	require.NoError(os.WriteFile(configPath, []byte(fmt.Sprintf(`
+	require.NoError(os.WriteFile(configPath, fmt.Appendf(nil, `
 host = "127.0.0.1"
 port = 8091
 data_dir = %q
 
 [mcp]
 enabled = true
-`, dataDir)), 0o600))
+`, dataDir), 0o600))
 
 	info, err := loadMCPQuickstart(t.Context(), configPath, time.Second)
 	require.NoError(err)

@@ -3,14 +3,15 @@ package issueapi
 import "context"
 
 type ListQuery struct {
-	Repo       string
-	State      string
-	Starred    bool
-	InvolvesMe bool
-	Text       string
-	Assignee   string
-	Limit      int
-	Offset     int
+	Repo           string
+	State          string
+	Starred        bool
+	InvolvesMe     bool
+	ReferencedByPR bool
+	Text           string
+	Assignee       string
+	Limit          int
+	Offset         int
 }
 
 type ItemIdentity struct {
@@ -24,8 +25,8 @@ type ItemIdentity struct {
 func (s *Handler) ListService(ctx context.Context, req ListQuery) ([]IssueResponse, error) {
 	output, err := s.listIssuesRouteCore(ctx, &listIssuesInput{
 		Repo: req.Repo, State: req.State, Starred: req.Starred,
-		InvolvesMe: req.InvolvesMe, Q: req.Text, Assignee: req.Assignee,
-		Limit: req.Limit, Offset: req.Offset,
+		InvolvesMe: req.InvolvesMe, ReferencedByPR: req.ReferencedByPR,
+		Q: req.Text, Assignee: req.Assignee, Limit: req.Limit, Offset: req.Offset,
 	})
 	if err != nil {
 		return nil, err

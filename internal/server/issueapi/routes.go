@@ -15,8 +15,8 @@ import (
 func (s *Handler) listIssues(ctx context.Context, input *listIssuesInput) (*listIssuesOutput, error) {
 	rows, err := s.ListService(ctx, ListQuery{
 		Repo: input.Repo, State: input.State, Starred: input.Starred,
-		InvolvesMe: input.InvolvesMe, Text: input.Q, Assignee: input.Assignee,
-		Limit: input.Limit, Offset: input.Offset,
+		InvolvesMe: input.InvolvesMe, ReferencedByPR: input.ReferencedByPR,
+		Text: input.Q, Assignee: input.Assignee, Limit: input.Limit, Offset: input.Offset,
 	})
 	if err != nil {
 		return nil, err

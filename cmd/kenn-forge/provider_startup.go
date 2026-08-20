@@ -456,9 +456,13 @@ func buildProviderStartup(
 			quotaRegistry: startup.quotaRegistry,
 		})
 		if err != nil {
-			return providerStartup{}, fmt.Errorf(
-				"create %s client for %s: %w", platformLabel(platformName), host, err,
-			)
+			return providerStartup{}, &providerHostStartupError{
+				platformName: platformName,
+				host:         host,
+				err: fmt.Errorf(
+					"create %s client for %s: %w", platformLabel(platformName), host, err,
+				),
+			}
 		}
 		if built.githubClient != nil {
 			if routed := startup.githubClients[host]; routed != nil {

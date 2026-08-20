@@ -603,6 +603,38 @@ func TestBuildProviderStartupKeepsForgeProviderHostsDistinct(t *testing.T) {
 	assert.NotNil(giteaReader)
 }
 
+func TestBuildProviderStartupOrDegradedKeepsHealthyProviderWhenFactoryFails(t *testing.T) {
+	require := require.New(t)
+
+	set := tokenauth.NewSourceSet(tokenauth.Options{})
+	startup, err := buildProviderStartupOrDegraded(
+		t.Context(), dbtest.Open(t), &config.Config{}, set,
+		map[string]tokenauth.Source{
+			providerHostKey(string(platform.KindForgejo), "forge.example.com"): mainTestTokenSource(
+				t, string(platform.KindForgejo), "forge.example.com", "FORGEJO_TEST_TOKEN", "forgejo-token",
+			),
+			providerHostKey(string(platform.KindGitea), "gitea.example.com"): mainTestTokenSource(
+				t, string(platform.KindGitea), "gitea.example.com", "GITEA_TEST_TOKEN", "gitea-token",
+			),
+		},
+		map[string]providerFactory{
+			string(platform.KindForgejo): func(providerFactoryInput) (providerFactoryOutput, error) {
+				return providerFactoryOutput{}, errors.New("provider API unavailable")
+			},
+			string(platform.KindGitea): func(input providerFactoryInput) (providerFactoryOutput, error) {
+				return providerFactoryOutput{provider: mainTestRepositoryReader{
+					kind: platform.KindGitea,
+					host: input.host,
+				}}, nil
+			},
+		},
+		nil,
+	)
+	require.NoError(err)
+	_, err = startup.registry.Provider(platform.KindGitea, "gitea.example.com")
+	require.NoError(err)
+}
+
 func TestBuildProviderStartupUsesRegisteredFactoryForFutureProvider(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

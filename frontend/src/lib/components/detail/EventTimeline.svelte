@@ -2435,7 +2435,7 @@
     transition: opacity 0.15s;
   }
 
-  .event-timeline :global(.kit-comment-card:not(.event-card--commit) .kit-card__meta) {
+  .event-timeline :global(.kit-comment-card:not(.event-card--commit):has(.kit-card__actions) .kit-card__meta) {
     order: 2;
     margin-left: 0;
   }

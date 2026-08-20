@@ -208,6 +208,9 @@ Persisted controls must state their scope clearly.
   repository, search, starred, and involvement filters before limits.
 - `Referenced by PR` defaults off. Issue visibility reset clears it, and the
   compact `Reset view` action restores it with the other menu defaults.
+- Mixed-provider scopes offer `Referenced by PR` when any selected provider can
+  supply reference edges. Issues with no edge, including unsupported providers, do
+  not match. The graph has no separate badge or detail UI.
 - Named repository preset definitions follow server settings, while the active
   repository selection and preset affinity remain browser-local; `Global` clears both
   (`frontend/src/lib/stores/filter.svelte.ts::setGlobalRepoPresetSelection`).

@@ -192,6 +192,10 @@ registry helpers return typed errors for missing providers or capabilities.
   does not depend on repository tracking, repository boundary, or PR lifecycle.
 - Persist normalized PR references and query that graph for list filters. A missing
   edge means no reference; never parse Markdown during list reads.
+- Each edge keeps provider-supplied source identity and URL without requiring a
+  tracked source repository or local PR row.
+- Ingest only regular-sync payloads and backfill stored events; reference tracking
+  must not add provider reads or content scans.
 - Historical references cannot prove a current issue-PR relationship. A current-link
   capability requires an authoritative replaceable provider snapshot.
 

@@ -24,6 +24,8 @@ func detailWorstCaseAttemptCost(kind platform.Kind, itemType QueueItemType) int 
 	logicalRequests := IssueDetailWorstCase
 	if itemType == QueueItemPR {
 		logicalRequests = PRDetailWorstCase
+	} else if kind != platform.KindGitHub {
+		logicalRequests++ // provider-native reference or timeline read
 	}
 	if kind != platform.KindGitHub {
 		logicalRequests++ // repository metadata confirmation after a candidate feature error

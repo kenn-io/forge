@@ -21,7 +21,7 @@ func TestQueueItemWorstCaseCost(t *testing.T) {
 		{name: "GitHub pull request", item: QueueItem{Type: QueueItemPR, Platform: platform.KindGitHub}, want: 20},
 		{name: "GitLab pull request", item: QueueItem{Type: QueueItemPR, Platform: platform.KindGitLab}, want: 22},
 		{name: "GitHub issue", item: QueueItem{Type: QueueItemIssue, Platform: platform.KindGitHub}, want: 4},
-		{name: "Gitea issue", item: QueueItem{Type: QueueItemIssue, Platform: platform.KindGitea}, want: 6},
+		{name: "Gitea issue", item: QueueItem{Type: QueueItemIssue, Platform: platform.KindGitea}, want: 8},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

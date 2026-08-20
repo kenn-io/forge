@@ -294,7 +294,7 @@ func TestArchiveItemSyncCostIncludesProviderConfirmationAndAuthRetry(t *testing.
 		{name: "Gitea pull request", kind: platform.KindGitea, itemType: db.ArchiveItemTypeMergeRequest, want: 22},
 		{name: "Forgejo pull request", kind: platform.KindForgejo, itemType: db.ArchiveItemTypeMergeRequest, want: 22},
 		{name: "GitHub issue", kind: platform.KindGitHub, itemType: db.ArchiveItemTypeIssue, want: 4},
-		{name: "Forgejo issue", kind: platform.KindForgejo, itemType: db.ArchiveItemTypeIssue, want: 6},
+		{name: "Forgejo issue", kind: platform.KindForgejo, itemType: db.ArchiveItemTypeIssue, want: 8},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

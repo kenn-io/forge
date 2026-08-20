@@ -1605,9 +1605,10 @@ async function selectPierreReviewLine(file: Locator, line: number, side: "left" 
     `[data-column-number="${line}"][data-line-type="${type}"]`,
     ...fallback.map((lineType) => `[data-column-number="${line}"][data-line-type="${lineType}"]`),
   ].join(",");
-  const target = file.locator(`.pierre-diff ${selector}`).first();
+  const target = file.locator(`.pierre-diff ${selector}`).first().locator("[data-line-number-content]");
   await expect(target).toBeVisible({ timeout: 10_000 });
-  await clickVisibleTarget(target.locator("[data-kenn-forge-line-comment-button]"));
+  await target.press("Enter");
+  await clickVisibleTarget(file.getByRole("button", { name: "Add comment to selected lines" }));
 }
 
 function inlineComposerFor(textarea: Locator): Locator {
@@ -4292,7 +4293,7 @@ test.describe("diff view (git-backed)", () => {
     }
   });
 
-  test("inline review composer only opens from the gutter comment button", async ({ page }) => {
+  test("inline review composer only opens from the gutter utility", async ({ page }) => {
     const server = await startIsolatedE2EServer();
     try {
       const baseURL = server.info.base_url;

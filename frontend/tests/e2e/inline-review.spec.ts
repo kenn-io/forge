@@ -615,6 +615,31 @@ async function firstDiffGutterRight(page: Page): Promise<number> {
     });
 }
 
+function reviewLineControl(page: Page, line: number, side: "new" | "old" = "new") {
+  return page.locator(".diff-area").getByRole("button", {
+    name: `Select ${side} line ${line} for review`,
+  });
+}
+
+async function selectReviewLine(page: Page, line: number, side: "new" | "old" = "new", extend = false): Promise<void> {
+  const control = reviewLineControl(page, line, side);
+  await expect(control).toBeVisible();
+  await control.press(extend ? "Shift+Enter" : "Enter");
+}
+
+async function openSelectedReviewRange(page: Page): Promise<void> {
+  const utility = page.locator(".diff-area").getByRole("button", {
+    name: "Add comment to selected lines",
+  });
+  await expect(utility).toBeVisible();
+  await utility.click();
+}
+
+async function openReviewComposer(page: Page, line: number, side: "new" | "old" = "new"): Promise<void> {
+  await selectReviewLine(page, line, side);
+  await openSelectedReviewRange(page);
+}
+
 test.beforeEach(async ({ page }) => {
   await mockApi(page);
 });
@@ -643,7 +668,7 @@ test("unavailable operations disable inline review authoring and thread replies"
 
   await page.goto("/pulls/github/acme/widgets/42/files");
   await expect(page.locator(".file-content").first()).toBeVisible();
-  await expect(page.getByRole("button", { name: /Comment on new line/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Select new line .* for review/ })).toHaveCount(0);
   await expect(page.getByPlaceholder("Leave a comment")).toHaveCount(0);
   // The existing review thread renders read-only: no reply composer
   // or reply affordance, and no reply request can fire.
@@ -739,11 +764,11 @@ test("adds and publishes an inline draft review comment", async ({ page }) => {
 
   await page.goto("/pulls/github/acme/widgets/42");
   await page.getByRole("tab", { name: "Files changed" }).click();
-  await page.getByRole("button", { name: "Comment on new line 2" }).click();
+  await openReviewComposer(page, 2);
   const composer = page.getByPlaceholder("Leave a comment");
   await composer.fill("Please cover this line.");
   await expect(composer).toHaveValue("Please cover this line.");
-  const addCommentButton = page.getByRole("button", { name: "Add comment" });
+  const addCommentButton = page.getByRole("button", { name: "Add comment", exact: true });
   await expect(addCommentButton).toBeEnabled();
   await addCommentButton.click();
 
@@ -810,18 +835,18 @@ test("keeps split-mode inline composers on trailing right-side hunk lines", asyn
 
   await page.goto("/pulls/github/acme/widgets/42/files");
   async function assertRightSideComposer(line: number): Promise<void> {
-    const button = page.getByRole("button", { name: `Comment on new line ${line}` });
-    await expect(button).toBeVisible();
+    const control = reviewLineControl(page, line);
+    await expect(control).toBeVisible();
     await expect(
       page
         .locator(".pierre-diff")
         .first()
         .evaluate((host, lineNumber) => {
           const root = host.shadowRoot;
-          const button = Array.from(
-            root?.querySelectorAll<HTMLButtonElement>("[data-kenn-forge-line-comment-button]") ?? [],
-          ).find((candidate) => candidate.getAttribute("aria-label") === `Comment on new line ${lineNumber}`);
-          return button ? pierreCodeSide(root, button) : null;
+          const control = Array.from(
+            root?.querySelectorAll<HTMLElement>("[data-kenn-forge-review-line-number]") ?? [],
+          ).find((candidate) => candidate.getAttribute("aria-label") === `Select new line ${lineNumber} for review`);
+          return control ? pierreCodeSide(root, control) : null;
 
           function pierreCodeSide(
             root: ShadowRoot | null | undefined,
@@ -844,7 +869,7 @@ test("keeps split-mode inline composers on trailing right-side hunk lines", asyn
         }, line),
     ).resolves.toBe("additions");
 
-    await button.click();
+    await openReviewComposer(page, line);
     await expect(page.getByPlaceholder("Leave a comment")).toBeVisible();
     const diff = page.locator(".pierre-diff").first();
     const composerSide = () =>
@@ -890,7 +915,7 @@ test("keeps final added-file line visible when opening an inline composer", asyn
   await expect(page.getByText("blank_issues_enabled: false")).toBeVisible();
 
   async function assertComposerLayout(lineNumber: number, lineText: string, followingText?: string): Promise<void> {
-    await page.getByRole("button", { name: `Comment on new line ${lineNumber}` }).click();
+    await openReviewComposer(page, lineNumber);
     await expect(page.getByPlaceholder("Leave a comment")).toBeVisible();
     await expect(page.getByText(lineText)).toBeVisible();
 
@@ -989,7 +1014,7 @@ test("shows a visible composer focus indicator without focus flicker", async ({ 
     );
   });
 
-  await page.getByRole("button", { name: "Comment on new line 2" }).click();
+  await openReviewComposer(page, 2);
   const composer = page.getByPlaceholder("Leave a comment");
   await expect(composer).toBeVisible();
 
@@ -1077,7 +1102,7 @@ test("keeps inline composer inside the visible diff pane on long lines", async (
   await mockInlineReviewAPI(page, baseCapabilities, "github", "github.com", longLineDiffResponse);
 
   await page.goto("/pulls/github/acme/widgets/42/files");
-  await page.getByRole("button", { name: "Comment on new line 1141" }).click();
+  await openReviewComposer(page, 1141);
 
   const scrollPane = page.locator(".diff-area .file-content").first();
   const composer = page.locator(".inline-composer");
@@ -1124,12 +1149,11 @@ test("shows saved draft comments inline and jumps from the tray", async ({ page 
   await mockInlineReviewAPI(page);
 
   await page.goto("/pulls/github/acme/widgets/42/files");
-  await page.getByRole("button", { name: "Comment on new line 1" }).click();
-  await page.getByRole("button", { name: "Comment on new line 2" }).click({
-    modifiers: ["Shift"],
-  });
+  await selectReviewLine(page, 1);
+  await selectReviewLine(page, 2, "new", true);
+  await openSelectedReviewRange(page);
   await page.getByPlaceholder("Leave a comment").fill("Please cover both lines.");
-  await page.getByRole("button", { name: "Add comment" }).click();
+  await page.getByRole("button", { name: "Add comment", exact: true }).click();
 
   const inlineDraft = page.locator(".inline-draft-comment");
   const scrollPane = page.locator(".diff-area .file-content").first();
@@ -1173,9 +1197,9 @@ test("keeps remaining GitLab draft state visible after a partial publish", async
   });
 
   await page.goto("/pulls/gitlab/acme/widgets/42/files");
-  await page.getByRole("button", { name: "Comment on new line 2" }).click();
+  await openReviewComposer(page, 2);
   await page.getByPlaceholder("Leave a comment").fill("Please cover this line.");
-  await page.getByRole("button", { name: "Add comment" }).click();
+  await page.getByRole("button", { name: "Add comment", exact: true }).click();
 
   const summary = page.getByPlaceholder("Review summary");
   await summary.fill("Summary should not stay in the composer.");
@@ -1196,7 +1220,7 @@ test("hides inline review controls when provider draft review is unsupported", a
 
   await page.goto("/pulls/github/acme/widgets/42");
   await page.getByRole("tab", { name: "Files changed" }).click();
-  await expect(page.getByRole("button", { name: "Comment on new line 2" })).toHaveCount(0);
+  await expect(reviewLineControl(page, 2)).toHaveCount(0);
 });
 
 test("resolves a published inline review thread from the timeline", async ({ page }) => {
@@ -1218,9 +1242,7 @@ test("shows published inline review context in conversation and jumps to the dif
 
   await expect(page.getByRole("tab", { name: "Files changed" })).toHaveAttribute("aria-selected", "true");
   await expect(
-    page.locator(
-      '.diff-area [data-diff-path="src/main.ts"][data-diff-new-line="2"]:not([data-kenn-forge-line-comment-cell])',
-    ),
+    page.locator('.diff-area [data-diff-path="src/main.ts"][data-diff-new-line="2"][data-line]'),
   ).toBeVisible();
 });
 
@@ -1399,11 +1421,11 @@ test("opens the sticky draft review action menu upward", async ({ page }) => {
 test("enables inline review on public Forgejo and Gitea files routes", async ({ page }) => {
   await mockInlineReviewAPI(page, baseCapabilities, "forgejo", "codeberg.org");
   await page.goto("/pulls/forgejo/acme/widgets/42/files");
-  await expect(page.getByRole("button", { name: "Comment on new line 2" })).toBeVisible();
+  await expect(reviewLineControl(page, 2)).toBeVisible();
 
   await mockInlineReviewAPI(page, baseCapabilities, "gitea", "gitea.com");
   await page.goto("/pulls/gitea/acme/widgets/42/files");
-  await expect(page.getByRole("button", { name: "Comment on new line 2" })).toBeVisible();
+  await expect(reviewLineControl(page, 2)).toBeVisible();
 });
 
 test("does not create multiline draft ranges across separate PR diff hunks", async ({ page }) => {
@@ -1416,17 +1438,16 @@ test("does not create multiline draft ranges across separate PR diff hunks", asy
   });
 
   await page.goto("/pulls/github/acme/widgets/42/files");
-  await page.getByRole("button", { name: "Comment on new line 1" }).click();
-  await page.getByRole("button", { name: "Comment on new line 20" }).click({
-    modifiers: ["Shift"],
-  });
+  await selectReviewLine(page, 1);
+  await selectReviewLine(page, 20, "new", true);
 
   const selected = page.locator(".gutter-new.gutter--selected");
   await expect(selected).toHaveCount(1);
   await expect(selected).toHaveText("20");
 
+  await openSelectedReviewRange(page);
   await page.getByPlaceholder("Leave a comment").fill("Only the second hunk.");
-  await page.getByRole("button", { name: "Add comment" }).click();
+  await page.getByRole("button", { name: "Add comment", exact: true }).click();
 
   const createdRange = await createdRangePromise;
   expect(createdRange).toMatchObject({

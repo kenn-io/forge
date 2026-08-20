@@ -93,6 +93,7 @@ func TestQuickstartFormatsStructuredOutput(t *testing.T) {
 	assert.Equal("http://forge.test/api/v1", payload["api_base_url"])
 	assert.Contains(jsonOut.String(), "kenn-forge api GET /pulls")
 	assert.Contains(jsonOut.String(), "kenn-forge api GET /version")
+	assert.Contains(jsonOut.String(), "kenn-forge mcp quickstart")
 
 	var yamlOut bytes.Buffer
 	cmd = newCommand(commandDeps{

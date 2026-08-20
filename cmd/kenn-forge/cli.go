@@ -64,6 +64,7 @@ func newRootCommand(opts cliOptions) *cobra.Command {
 		newArchiveCommand(opts.Stdout, time.Now),
 		newAgentHookCommand(opts.Stdin, opts.Stdout),
 		newDaemonCommand(opts.DaemonRunner),
+		newMCPCommand(opts.Stdout, loadMCPQuickstart),
 		newPtyOwnerCommand(),
 		serve.NewCommand(opts.RunServer),
 	)

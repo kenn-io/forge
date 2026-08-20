@@ -12,6 +12,9 @@
   hot-restarts the companion: report restart drift, keep showing an endpoint
   that remains active until restart, and provide only token-file guidance rather
   than returning the daemon bearer (`internal/server/settings_handlers.go::Server.buildLocalSettingsResponse`).
+- `kenn-forge mcp quickstart` is the canonical agent discovery path for the
+  active connector and saved restart drift; expose token paths and environment
+  placeholders there, never bearer contents (`cmd/kenn-forge/mcp_cli.go::newMCPCommand`).
 - MCP serves only `/mcp` over stateless Streamable HTTP. Authentication follows
   `[api].require_auth`; direct loopback peer, exact loopback authority, absent
   forwarding headers, and optional same-origin HTTP Origin are required

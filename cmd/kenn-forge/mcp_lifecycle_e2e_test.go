@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"net"
 	"os"
 	"path/filepath"
@@ -86,6 +87,21 @@ func TestDaemonServesMCPEndpointThroughLifecycleE2E(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(result)
 	assert.False(result.IsError)
+
+	quickstart := procutil.Command(
+		bin, "mcp", "quickstart", "--config", cfgPath, "--json",
+	)
+	quickstartOutput, err := quickstart.Output()
+	require.NoError(err)
+	var connection mcpQuickstartInfo
+	require.NoError(json.Unmarshal(quickstartOutput, &connection))
+	assert.True(connection.Active)
+	assert.Equal("http://"+mcpAddr+"/mcp", connection.Endpoint)
+	require.NotNil(connection.ClientConfig)
+	assert.Equal(
+		connection.Endpoint,
+		connection.ClientConfig.MCPServers["kenn-forge"].URL,
+	)
 	require.NoError(session.Close())
 
 	require.NoError(serve.Process.Signal(syscall.SIGTERM))

@@ -11,8 +11,9 @@ import (
 )
 
 type daemonHTTPClient struct {
-	BaseURL string
-	Client  *http.Client
+	BaseURL   string
+	Client    *http.Client
+	TokenPath string
 }
 
 func discoverDaemonHTTP(configPath string, timeout time.Duration) (daemonHTTPClient, error) {
@@ -45,8 +46,9 @@ func discoverDaemonHTTP(configPath string, timeout time.Duration) (daemonHTTPCli
 		base: http.DefaultTransport,
 	}
 	return daemonHTTPClient{
-		BaseURL: baseURL,
-		Client:  &http.Client{Timeout: timeout, Transport: transport},
+		BaseURL:   baseURL,
+		Client:    &http.Client{Timeout: timeout, Transport: transport},
+		TokenPath: status.Metadata.TokenPath,
 	}, nil
 }
 

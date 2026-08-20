@@ -336,6 +336,7 @@ func newQuickstartCommand(cfg *viper.Viper, stdout io.Writer) *cobra.Command {
 					{"command": "kenn-forge api GET /version", "does": "Show server version"},
 					{"command": "kenn-forge api GET /sync/status", "does": "Inspect sync state"},
 					{"command": "kenn-forge api POST /sync", "does": "Trigger a sync"},
+					{"command": "kenn-forge mcp quickstart", "does": "Print MCP connectivity and client configuration"},
 				},
 				"notes": []string{
 					"PATH values without /api/v1 are automatically scoped to /api/v1.",

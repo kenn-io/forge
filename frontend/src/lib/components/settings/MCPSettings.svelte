@@ -28,14 +28,12 @@
   // svelte-ignore state_referenced_locally
   let enabledDraft = $state(mcp.enabled);
   // svelte-ignore state_referenced_locally
-  let portDraft = $state(mcp.port ? String(mcp.port) : "");
+  let portDraft = $state<number | undefined>(mcp.port);
   // svelte-ignore state_referenced_locally
-  let diffCacheDraft = $state(mcp.diff_cache_mb ? String(mcp.diff_cache_mb) : "");
+  let diffCacheDraft = $state<number | undefined>(mcp.diff_cache_mb);
 
-  const parsedPort = $derived(portDraft.trim() === "" ? 0 : Number(portDraft));
-  const parsedDiffCache = $derived(
-    diffCacheDraft.trim() === "" ? 0 : Number(diffCacheDraft),
-  );
+  const parsedPort = $derived(portDraft ?? 0);
+  const parsedDiffCache = $derived(diffCacheDraft ?? 0);
   const portValid = $derived(
     Number.isInteger(parsedPort) && parsedPort >= 0 && parsedPort <= 65_535,
   );
@@ -71,10 +69,8 @@
 
   function resetDraft(): void {
     enabledDraft = currentMCP.enabled;
-    portDraft = currentMCP.port ? String(currentMCP.port) : "";
-    diffCacheDraft = currentMCP.diff_cache_mb
-      ? String(currentMCP.diff_cache_mb)
-      : "";
+    portDraft = currentMCP.port;
+    diffCacheDraft = currentMCP.diff_cache_mb;
   }
 
   function save(): void {

@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { Effect, Layer } from "effect";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import type { MCPSettings as MCPSettingsType } from "../../api/types.js";
+import type { MCPSettings as MCPSettingsType, MCPSettingsUpdate } from "../../api/types.js";
 
 const mockPersistSettings = vi.hoisted(() => vi.fn());
 
@@ -59,6 +59,32 @@ describe("MCPSettings", () => {
     });
     expect(onUpdate).toHaveBeenCalledWith(saved);
     expect(screen.getByText("The MCP companion will start after the Forge daemon restarts.")).toBeTruthy();
+  });
+
+  it("edits numeric overrides and clears them back to backend defaults", async () => {
+    const updates: MCPSettingsUpdate[] = [];
+    mockPersistSettings.mockImplementation((request) => {
+      const update = request().mcp ?? {};
+      updates.push(update);
+      return Effect.succeed({ mcp: mcpSettings(update) });
+    });
+    renderMCPSettings(mcpSettings());
+
+    const port = screen.getByLabelText(/Port/);
+    const diffCache = screen.getByLabelText(/Diff cache/);
+    await fireEvent.input(port, { target: { value: "9092" } });
+    await fireEvent.input(diffCache, { target: { value: "256" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Save MCP companion" }));
+
+    await waitFor(() => expect(mockPersistSettings).toHaveBeenCalledTimes(1));
+    expect(updates[0]).toEqual({ enabled: false, port: 9092, diff_cache_mb: 256 });
+
+    await fireEvent.input(port, { target: { value: "" } });
+    await fireEvent.input(diffCache, { target: { value: "" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Save MCP companion" }));
+
+    await waitFor(() => expect(mockPersistSettings).toHaveBeenCalledTimes(2));
+    expect(updates[1]).toEqual({ enabled: false, port: 0, diff_cache_mb: 0 });
   });
 
   it("shows the active endpoint and a token-safe client configuration", () => {

@@ -796,6 +796,8 @@ func TestWorkspaceEnrichmentBroadcastsOnlyDurableChanges(t *testing.T) {
 	}
 	ahead := 1
 	behind := 0
+	clean := false
+	dirty := true
 	title := "pane"
 	record := func(result workspaceEnrichmentProbeResult) bool {
 		_, recorded, changed := srv.recordWorkspaceEnrichmentResult("ws-1", 1, result)
@@ -805,7 +807,7 @@ func TestWorkspaceEnrichmentBroadcastsOnlyDurableChanges(t *testing.T) {
 
 	// First completion is the pending -> fresh transition clients wait on.
 	assert.True(record(workspaceEnrichmentProbeResult{
-		response:           workspaceResponse{CommitsAhead: &ahead, CommitsBehind: &behind, TmuxPaneTitle: &title},
+		response:           workspaceResponse{CommitsAhead: &ahead, CommitsBehind: &behind, WorktreeDirty: &clean, TmuxPaneTitle: &title},
 		divergenceComplete: true,
 		tmuxComplete:       true,
 	}))
@@ -817,6 +819,7 @@ func TestWorkspaceEnrichmentBroadcastsOnlyDurableChanges(t *testing.T) {
 		response: workspaceResponse{
 			CommitsAhead:  &ahead,
 			CommitsBehind: &behind,
+			WorktreeDirty: &clean,
 			TmuxPaneTitle: &spinnerTitle,
 			TmuxWorking:   true,
 		},
@@ -827,7 +830,14 @@ func TestWorkspaceEnrichmentBroadcastsOnlyDurableChanges(t *testing.T) {
 	// Divergence movement notifies.
 	newBehind := 3
 	assert.True(record(workspaceEnrichmentProbeResult{
-		response:           workspaceResponse{CommitsAhead: &ahead, CommitsBehind: &newBehind, TmuxPaneTitle: &spinnerTitle},
+		response:           workspaceResponse{CommitsAhead: &ahead, CommitsBehind: &newBehind, WorktreeDirty: &clean, TmuxPaneTitle: &spinnerTitle},
+		divergenceComplete: true,
+		tmuxComplete:       true,
+	}))
+
+	// Worktree cleanliness movement notifies.
+	assert.True(record(workspaceEnrichmentProbeResult{
+		response:           workspaceResponse{CommitsAhead: &ahead, CommitsBehind: &newBehind, WorktreeDirty: &dirty, TmuxPaneTitle: &spinnerTitle},
 		divergenceComplete: true,
 		tmuxComplete:       true,
 	}))
@@ -844,7 +854,7 @@ func TestWorkspaceEnrichmentBroadcastsOnlyDurableChanges(t *testing.T) {
 
 	// Recovery notifies.
 	assert.True(record(workspaceEnrichmentProbeResult{
-		response:           workspaceResponse{CommitsAhead: &ahead, CommitsBehind: &newBehind, TmuxPaneTitle: &spinnerTitle},
+		response:           workspaceResponse{CommitsAhead: &ahead, CommitsBehind: &newBehind, WorktreeDirty: &dirty, TmuxPaneTitle: &spinnerTitle},
 		divergenceComplete: true,
 		tmuxComplete:       true,
 	}))

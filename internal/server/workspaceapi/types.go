@@ -56,7 +56,8 @@ type workspaceResponse struct {
 	MRDeletions           *int                      `json:"mr_deletions,omitempty"`
 	CommitsAhead          *int                      `json:"commits_ahead,omitempty"`
 	CommitsBehind         *int                      `json:"commits_behind,omitempty"`
-	EnrichmentStatus      string                    `json:"enrichment_status" enum:"not_applicable,pending,fresh,stale,failed" doc:"Aggregate git-divergence and tmux-activity reconciliation status. Failed responses retain last-known-good component fields when available."`
+	WorktreeDirty         *bool                     `json:"worktree_dirty,omitempty" doc:"True when the worktree has staged, unstaged, or untracked changes; false when clean; omitted until git-state enrichment completes."`
+	EnrichmentStatus      string                    `json:"enrichment_status" enum:"not_applicable,pending,fresh,stale,failed" doc:"Aggregate git-state and tmux-activity reconciliation status. Failed responses retain last-known-good component fields when available."`
 	EnrichmentRefreshedAt *string                   `json:"enrichment_refreshed_at,omitempty" doc:"Oldest successful refresh time across the populated enrichment components."`
 	EnrichmentError       *string                   `json:"enrichment_error,omitempty" doc:"Combined error from the most recent reconciliation attempt; populated component fields may still contain last-known-good values."`
 	AssociatedPRNumber    *int                      `json:"associated_pr_number,omitempty"`

@@ -85,6 +85,7 @@ interface WorkspaceFixtureOptions {
   status?: string;
   errorMessage?: string | null;
   associatedPRNumber?: number | null;
+  worktreeDirty?: boolean;
 }
 
 function workspaceFixture({
@@ -115,6 +116,7 @@ function workspaceFixture({
   status = "ready",
   errorMessage = null,
   associatedPRNumber = null,
+  worktreeDirty,
 }: WorkspaceFixtureOptions) {
   // Kata and ad-hoc workspaces carry no joined provider item metadata.
   const noProviderItem = itemType === "kata_task" || itemType === "adhoc";
@@ -155,6 +157,7 @@ function workspaceFixture({
     commits_ahead: commitsAhead,
     commits_behind: commitsBehind,
     associated_pr_number: associatedPRNumber,
+    ...(worktreeDirty === undefined ? {} : { worktree_dirty: worktreeDirty }),
   };
 }
 
@@ -1540,6 +1543,48 @@ describe("WorkspaceListSidebar", () => {
 
     expect(container.querySelector(".workspace-diff-stats")).toBeNull();
     expect(container.querySelector(".branch-chip")).toBeTruthy();
+  });
+
+  it("marks dirty worktrees without marking clean rows", async () => {
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          workspaceFixture({
+            id: "ws-dirty",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "kenn-io",
+            name: "kenn-forge",
+            number: 9,
+            title: "Dirty workspace",
+            worktreeDirty: true,
+          }),
+          workspaceFixture({
+            id: "ws-clean",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "kenn-io",
+            name: "kenn-forge",
+            number: 10,
+            title: "Clean workspace",
+            worktreeDirty: false,
+          }),
+        ],
+      },
+    });
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-dirty" },
+    });
+    await screen.findByText("Dirty workspace");
+
+    expect(screen.queryByText("Dirty")).toBeNull();
+    expect(screen.getByLabelText("Dirty worktree")).toBeTruthy();
+    expect(container.querySelector('[title="Dirty worktree"]')).toBeTruthy();
+    expect(container.querySelectorAll(".worktree-dirty")).toHaveLength(1);
+    expect(container.querySelector(".worktree-dirty svg.lucide-pencil")).toBeTruthy();
+    expect(container.querySelector(".ws-row-aside > .item-bubble + .worktree-dirty")).toBeTruthy();
+    expect(container.querySelectorAll(".worktree-dirty-slot")).toHaveLength(0);
   });
 
   it("opens a host-aware context menu for local macOS workspaces", async () => {

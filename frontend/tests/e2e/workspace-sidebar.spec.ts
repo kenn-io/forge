@@ -4608,8 +4608,20 @@ test.describe("workspace list bubble opens right sidebar", () => {
       commits_behind: 5,
       mr_additions: 1500,
       mr_deletions: 2400,
+      worktree_dirty: true,
     };
-    const list = [wsBare, wsBranchOnly, wsAhead, wsAheadBehindDiff];
+    const wsAheadBehindDiffClean = {
+      ...testWorkspace,
+      id: "ws-busy-clean",
+      item_number: 5555,
+      git_head_ref: "feature/busy",
+      commits_ahead: 12,
+      commits_behind: 5,
+      mr_additions: 1500,
+      mr_deletions: 2400,
+      worktree_dirty: false,
+    };
+    const list = [wsBare, wsBranchOnly, wsAhead, wsAheadBehindDiff, wsAheadBehindDiffClean];
 
     await mockApi(page);
     await page.route("**/api/v1/events", async (route) => {
@@ -4656,13 +4668,43 @@ test.describe("workspace list bubble opens right sidebar", () => {
 
     await page.goto("/workspaces");
     await expect(page.locator(".workspace-list-sidebar .ws-row")).toHaveCount(list.length);
-    await expect(
-      page
-        .locator(".workspace-list-sidebar .ws-row", {
-          hasText: "feature/busy",
-        })
-        .locator(".kit-diff-stats"),
-    ).toHaveCount(1);
+    const busyRow = page.locator(".workspace-list-sidebar .ws-row", {
+      has: page.getByTitle("Open PR #4444"),
+    });
+    const cleanBusyRow = page.locator(".workspace-list-sidebar .ws-row", {
+      has: page.getByTitle("Open PR #5555"),
+    });
+    await expect(busyRow.locator(".kit-diff-stats")).toHaveCount(1);
+    await expect(page.locator(".workspace-list-sidebar .worktree-dirty")).toHaveCount(1);
+    await expect(page.locator(".workspace-list-sidebar .worktree-dirty-slot")).toHaveCount(0);
+    await expect(page.locator(".workspace-list-sidebar .ws-row-aside > .item-bubble + .worktree-dirty")).toHaveCount(1);
+
+    const diffBox = await busyRow.locator(".workspace-diff-stats").boundingBox();
+    const cleanDiffBox = await cleanBusyRow.locator(".workspace-diff-stats").boundingBox();
+    const pushBox = await busyRow.locator(".push-state").boundingBox();
+    const cleanPushBox = await cleanBusyRow.locator(".push-state").boundingBox();
+    const pencilBox = await busyRow.locator(".worktree-dirty").boundingBox();
+    const bubbleBox = await busyRow.locator(".item-bubble").boundingBox();
+    expect(diffBox).not.toBeNull();
+    expect(cleanDiffBox).not.toBeNull();
+    expect(pushBox).not.toBeNull();
+    expect(cleanPushBox).not.toBeNull();
+    expect(pencilBox).not.toBeNull();
+    expect(bubbleBox).not.toBeNull();
+    if (
+      diffBox != null &&
+      cleanDiffBox != null &&
+      pushBox != null &&
+      cleanPushBox != null &&
+      pencilBox != null &&
+      bubbleBox != null
+    ) {
+      expect(Math.abs(diffBox.x + diffBox.width - (cleanDiffBox.x + cleanDiffBox.width))).toBeLessThanOrEqual(1);
+      expect(Math.abs(pushBox.x - cleanPushBox.x)).toBeLessThanOrEqual(1);
+      expect(pencilBox.x).toBeGreaterThan(diffBox.x + diffBox.width);
+      expect(Math.abs(pencilBox.x - bubbleBox.x)).toBeLessThanOrEqual(1);
+      expect(pencilBox.y).toBeGreaterThan(bubbleBox.y + bubbleBox.height + 2);
+    }
 
     const bubbles = page.locator(".workspace-list-sidebar .ws-row .item-bubble");
     const boxes: Array<{ right: number }> = [];

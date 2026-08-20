@@ -48,7 +48,8 @@ func TestWorkspaceListReportsCommitsAheadBehindE2E(t *testing.T) {
 	require.Eventually(func() bool {
 		initial := workspaceByID()
 		return initial != nil && initial.CommitsAhead != nil && initial.CommitsBehind != nil &&
-			*initial.CommitsAhead == 0 && *initial.CommitsBehind == 0
+			initial.WorktreeDirty != nil && *initial.CommitsAhead == 0 &&
+			*initial.CommitsBehind == 0 && !*initial.WorktreeDirty
 	}, 10*time.Second, 10*time.Millisecond)
 
 	runGit(t, ws.WorktreePath, "config", "user.email", "test@test.com")
@@ -58,15 +59,18 @@ func TestWorkspaceListReportsCommitsAheadBehindE2E(t *testing.T) {
 		runGit(t, ws.WorktreePath, "add", ".")
 		runGit(t, ws.WorktreePath, "commit", "-m", name)
 	}
+	require.NoError(os.WriteFile(filepath.Join(ws.WorktreePath, "uncommitted.txt"), []byte("dirty\n"), 0o644))
 	clockNow.Store(now.Add(workspaceapi.EnrichmentTTL + time.Second).UnixNano())
 
 	var found *generated.WorkspaceResponse
 	require.Eventually(func() bool {
 		found = workspaceByID()
 		return found != nil && found.CommitsAhead != nil && found.CommitsBehind != nil &&
-			*found.CommitsAhead == 2 && *found.CommitsBehind == 0
+			found.WorktreeDirty != nil && *found.CommitsAhead == 2 &&
+			*found.CommitsBehind == 0 && *found.WorktreeDirty
 	}, 10*time.Second, 10*time.Millisecond)
 	require.NotNil(found)
 	assert.Equal(int64(2), *found.CommitsAhead)
 	assert.Equal(int64(0), *found.CommitsBehind)
+	assert.True(*found.WorktreeDirty)
 }

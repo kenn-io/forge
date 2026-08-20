@@ -4663,7 +4663,7 @@ type WorkspaceResponse struct {
 	// EnrichmentRefreshedAt Oldest successful refresh time across the populated enrichment components.
 	EnrichmentRefreshedAt *string `json:"enrichment_refreshed_at,omitempty"`
 
-	// EnrichmentStatus Aggregate git-divergence and tmux-activity reconciliation status. Failed responses retain last-known-good component fields when available.
+	// EnrichmentStatus Aggregate git-state and tmux-activity reconciliation status. Failed responses retain last-known-good component fields when available.
 	EnrichmentStatus   WorkspaceResponseEnrichmentStatus `json:"enrichment_status"`
 	ErrorMessage       *string                           `json:"error_message,omitempty"`
 	GitHeadRef         string                            `json:"git_head_ref"`
@@ -4693,13 +4693,16 @@ type WorkspaceResponse struct {
 	TmuxPaneTitle      *string                          `json:"tmux_pane_title,omitempty"`
 	TmuxSession        string                           `json:"tmux_session"`
 	TmuxWorking        bool                             `json:"tmux_working"`
-	WorktreePath       string                           `json:"worktree_path"`
+
+	// WorktreeDirty True when the worktree has staged, unstaged, or untracked changes; false when clean; omitted until git-state enrichment completes.
+	WorktreeDirty *bool  `json:"worktree_dirty,omitempty"`
+	WorktreePath  string `json:"worktree_path"`
 }
 
 // WorkspaceResponseAgentState Hook-reported aggregate state for live agent sessions. Omitted when no live session has reported lifecycle state.
 type WorkspaceResponseAgentState string
 
-// WorkspaceResponseEnrichmentStatus Aggregate git-divergence and tmux-activity reconciliation status. Failed responses retain last-known-good component fields when available.
+// WorkspaceResponseEnrichmentStatus Aggregate git-state and tmux-activity reconciliation status. Failed responses retain last-known-good component fields when available.
 type WorkspaceResponseEnrichmentStatus string
 
 // WorkspaceResponseMrHeadRepoKind Set only for pull_request workspaces: same_repo when the PR head is confirmed to be in the base repo, fork when it is a confirmed fork clone, unknown when repository identity could not be resolved.

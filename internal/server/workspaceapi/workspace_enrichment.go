@@ -204,6 +204,7 @@ func applyWorkspaceEnrichmentCacheEntry(
 	if entry.hasDivergence {
 		resp.CommitsAhead = entry.response.CommitsAhead
 		resp.CommitsBehind = entry.response.CommitsBehind
+		resp.WorktreeDirty = entry.response.WorktreeDirty
 	}
 	if entry.hasTmux {
 		applyCachedWorkspaceTmux(resp, entry.response)
@@ -470,6 +471,7 @@ func (s *Handler) recordWorkspaceEnrichmentResult(
 	if result.divergenceComplete {
 		entry.response.CommitsAhead = result.response.CommitsAhead
 		entry.response.CommitsBehind = result.response.CommitsBehind
+		entry.response.WorktreeDirty = result.response.WorktreeDirty
 		entry.hasDivergence = true
 		entry.divergenceRefreshedAt = now
 	}
@@ -499,7 +501,7 @@ func (s *Handler) recordWorkspaceEnrichmentResult(
 
 // workspaceEnrichmentBroadcastWorthy reports whether a recorded enrichment
 // result should notify SSE clients. Completion of the first probe (the
-// pending → fresh transition clients wait on), a divergence change, and an
+// pending → fresh transition clients wait on), a git-state change, and an
 // error-state change are notification-worthy. Tmux-activity-only changes are
 // not: an active agent moves the activity timestamp on every probe, and
 // broadcasting those turned each completion into a client refetch that
@@ -515,10 +517,18 @@ func workspaceEnrichmentBroadcastWorthy(prior, next workspaceEnrichmentCacheEntr
 	}
 	return next.hasDivergence &&
 		(!intPointerEqual(prior.response.CommitsAhead, next.response.CommitsAhead) ||
-			!intPointerEqual(prior.response.CommitsBehind, next.response.CommitsBehind))
+			!intPointerEqual(prior.response.CommitsBehind, next.response.CommitsBehind) ||
+			!boolPointerEqual(prior.response.WorktreeDirty, next.response.WorktreeDirty))
 }
 
 func intPointerEqual(a, b *int) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
+func boolPointerEqual(a, b *bool) bool {
 	if a == nil || b == nil {
 		return a == b
 	}

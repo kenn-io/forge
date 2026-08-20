@@ -7,6 +7,7 @@
     type StatusDotStatus,
   } from "@kenn-io/kit-ui";
   import PlusIcon from "@lucide/svelte/icons/plus";
+  import PencilIcon from "@lucide/svelte/icons/pencil";
   import {
     openNewWorkspaceDialog,
     type NewWorkspaceRepoSeed,
@@ -1462,6 +1463,17 @@
       {/each}
     {/if}
 
+    {#snippet worktreeDirtyIndicator()}
+      <span
+        class="worktree-dirty"
+        title="Dirty worktree"
+        role="img"
+        aria-label="Dirty worktree"
+      >
+        <PencilIcon size={10} strokeWidth={2.2} aria-hidden="true" />
+      </span>
+    {/snippet}
+
     {#snippet workspaceRow(ws: Workspace, showRepo: boolean)}
           {@const adds = ws.mr_additions}
           {@const dels = ws.mr_deletions}
@@ -1602,29 +1614,37 @@
                     />
                   </span>
                 {/if}
+                {#if ws.worktree_dirty && !hasItemBubble(ws)}
+                  {@render worktreeDirtyIndicator()}
+                {/if}
               </div>
             </div>
             <!-- An ad-hoc workspace with no detected PR has nothing for a
                  bubble to open, so it renders none rather than an empty one. -->
             {#if hasItemBubble(ws)}
-            <button
-              class={[
-                "item-bubble",
-                itemStateClass(ws),
-                ws.item_type === "kata_task" && "item-bubble--kata",
-              ]}
-              onclick={(e) => handleItemBubbleClick(e, ws)}
-              onkeydown={(e) => {
-                // Stop Enter/Space from bubbling to the row,
-                // since the row's keyboard handler also navigates.
-                if (e.key === "Enter" || e.key === " ") {
-                  e.stopPropagation();
-                }
-              }}
-              title={itemBubbleTitle(ws)}
-            >
-              {itemBubbleLabel(ws)}
-            </button>
+              <div class="ws-row-aside">
+                <button
+                  class={[
+                    "item-bubble",
+                    itemStateClass(ws),
+                    ws.item_type === "kata_task" && "item-bubble--kata",
+                  ]}
+                  onclick={(e) => handleItemBubbleClick(e, ws)}
+                  onkeydown={(e) => {
+                    // Stop Enter/Space from bubbling to the row,
+                    // since the row's keyboard handler also navigates.
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.stopPropagation();
+                    }
+                  }}
+                  title={itemBubbleTitle(ws)}
+                >
+                  {itemBubbleLabel(ws)}
+                </button>
+                {#if ws.worktree_dirty}
+                  {@render worktreeDirtyIndicator()}
+                {/if}
+              </div>
             {/if}
           </div>
     {/snippet}
@@ -2205,6 +2225,25 @@
     margin-right: 1px;
   }
 
+  .worktree-dirty {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    color: var(--text-muted);
+    opacity: 0.5;
+    line-height: 1;
+    margin-top: 1px;
+  }
+
+  .ws-row-aside {
+    flex-shrink: 0;
+    align-self: flex-start;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+  }
+
   .item-bubble {
     /* GitHub-style state pill: a soft solid pastel fill with a
      * near-black foreground for legibility. The bg is mostly the
@@ -2217,7 +2256,6 @@
      * it pins to the row's top edge regardless of the meta line's
      * height. */
     flex-shrink: 0;
-    align-self: flex-start;
     margin-top: 1px;
     height: 16px;
     padding: 0 6px;

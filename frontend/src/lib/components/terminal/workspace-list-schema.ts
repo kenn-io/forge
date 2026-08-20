@@ -21,7 +21,7 @@ export type WorkspaceListItem = Pick<
   | "tmux_working"
   | "worktree_path"
 > &
-  Partial<Pick<GeneratedWorkspace, "item_key" | "kata">> & {
+  Partial<Pick<GeneratedWorkspace, "item_key" | "kata" | "worktree_dirty">> & {
     readonly agent_state?: GeneratedWorkspace["agent_state"] | null;
     readonly agent_state_updated_at?: string | null;
     readonly associated_pr_number?: Exclude<GeneratedWorkspace["associated_pr_number"], undefined> | null;
@@ -92,6 +92,7 @@ const Workspace = Schema.Struct({
   tmux_pane_title: Schema.optionalKey(Schema.NullOr(Schema.String)),
   tmux_working: Schema.Boolean,
   worktree_path: Schema.String,
+  worktree_dirty: Schema.optionalKey(Schema.Boolean),
 });
 
 const WorkspaceList = Schema.Struct({

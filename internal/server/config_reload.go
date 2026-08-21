@@ -438,6 +438,8 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 	}
 
 	s.cfgMu.Lock()
+	tmuxGraphicsChanged := s.cfg.TerminalGraphicsEnabled() !=
+		newCfg.TerminalGraphicsEnabled()
 	*s.cfg = cloneReloadedConfig(newCfg)
 	nativeStacksPrevious := s.swapGitHubNativeStackPreferenceLocked(
 		newCfg.PullRequests.PreferGitHubNativeStacks,
@@ -459,6 +461,9 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 	s.applyPullConfigLocked()
 	s.applyIssueConfigLocked()
 	s.cfgMu.Unlock()
+	if tmuxGraphicsChanged {
+		s.applyTmuxGraphics(ctx)
+	}
 	s.applyTmuxMouse(ctx)
 
 	if s.syncer != nil {

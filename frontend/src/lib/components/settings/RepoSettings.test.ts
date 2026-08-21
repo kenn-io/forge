@@ -233,6 +233,7 @@ describe("RepoSettings", () => {
         cursor_blink: true,
         font_ligatures: false,
         hide_tmux_status: false,
+        graphics: true,
         tmux_mouse: true,
       },
       notifications: {
@@ -266,6 +267,7 @@ describe("RepoSettings", () => {
         cursor_blink: true,
         font_ligatures: false,
         hide_tmux_status: false,
+        graphics: true,
         tmux_mouse: true,
       },
       notifications: {
@@ -345,6 +347,7 @@ describe("RepoSettings", () => {
         cursor_blink: true,
         font_ligatures: false,
         hide_tmux_status: false,
+        graphics: true,
         tmux_mouse: true,
       },
       agents: [],
@@ -591,6 +594,7 @@ describe("RepoSettings", () => {
         cursor_blink: true,
         font_ligatures: false,
         hide_tmux_status: false,
+        graphics: true,
         tmux_mouse: true,
       },
       agents: [],
@@ -803,6 +807,7 @@ describe("RepoSettings", () => {
         cursor_blink: true,
         font_ligatures: false,
         hide_tmux_status: false,
+        graphics: true,
         tmux_mouse: true,
       },
       notifications: {

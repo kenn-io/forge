@@ -13,6 +13,7 @@ type TerminalSettings = {
   cursor_blink: boolean;
   font_ligatures: boolean;
   hide_tmux_status: boolean;
+  graphics: boolean;
   tmux_mouse: boolean;
 };
 
@@ -45,6 +46,7 @@ const {
     cursor_blink: true,
     font_ligatures: false,
     hide_tmux_status: false,
+    graphics: true,
     tmux_mouse: true,
   };
   const modes: ModeVisibility = {
@@ -94,6 +96,7 @@ vi.mock("../../context.js", async (importOriginal) => {
       cursor_blink: true,
       font_ligatures: false,
       hide_tmux_status: false,
+      graphics: true,
       tmux_mouse: true,
     },
     getStores: () => ({

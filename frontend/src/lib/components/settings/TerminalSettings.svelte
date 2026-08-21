@@ -80,6 +80,9 @@
   let hideTmuxStatusDraft = $state(
     DEFAULT_TERMINAL_SETTINGS.hide_tmux_status,
   );
+  let graphicsDraft = $state(
+    DEFAULT_TERMINAL_SETTINGS.graphics,
+  );
   let tmuxMouseDraft = $state(
     DEFAULT_TERMINAL_SETTINGS.tmux_mouse,
   );
@@ -165,6 +168,7 @@
       cursor_blink: cursorBlinkDraft,
       font_ligatures: fontLigaturesDraft,
       hide_tmux_status: hideTmuxStatusDraft,
+      graphics: graphicsDraft,
       tmux_mouse: tmuxMouseDraft,
       retained_sessions:
         retainedSessionsDraft ?? DEFAULT_TERMINAL_SETTINGS.retained_sessions,
@@ -185,6 +189,7 @@
       pendingTerminal.cursor_blink !== currentTerminal.cursor_blink ||
       pendingTerminal.font_ligatures !== currentTerminal.font_ligatures ||
       pendingTerminal.hide_tmux_status !== currentTerminal.hide_tmux_status ||
+      pendingTerminal.graphics !== currentTerminal.graphics ||
       pendingTerminal.tmux_mouse !== currentTerminal.tmux_mouse ||
       pendingTerminal.retained_sessions !== currentTerminal.retained_sessions
   );
@@ -201,6 +206,7 @@
         DEFAULT_TERMINAL_SETTINGS.font_ligatures &&
       pendingTerminal.hide_tmux_status ===
         DEFAULT_TERMINAL_SETTINGS.hide_tmux_status &&
+      pendingTerminal.graphics === DEFAULT_TERMINAL_SETTINGS.graphics &&
       pendingTerminal.tmux_mouse === DEFAULT_TERMINAL_SETTINGS.tmux_mouse &&
       pendingTerminal.retained_sessions ===
         DEFAULT_TERMINAL_SETTINGS.retained_sessions
@@ -246,6 +252,7 @@
     cursorBlinkDraft = value.cursor_blink;
     fontLigaturesDraft = value.font_ligatures;
     hideTmuxStatusDraft = value.hide_tmux_status;
+    graphicsDraft = value.graphics;
     tmuxMouseDraft = value.tmux_mouse;
     retainedSessionsDraft = value.retained_sessions;
   }
@@ -501,6 +508,13 @@
     bind:checked={hideTmuxStatusDraft}
     disabled={saving}
     label="Hide tmux status line in new sessions"
+  />
+
+  <Checkbox
+    class="toggle-field"
+    bind:checked={graphicsDraft}
+    disabled={saving}
+    label="Display SIXEL and iTerm terminal images"
   />
 
   <Checkbox

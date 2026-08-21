@@ -95,6 +95,7 @@
   let terminal: Terminal | null = $state(null);
   let hoveredTerminalLink: string | null = $state(null);
   let fitAddon: FitAddon | null = null;
+  let imageAddon: ImageAddon | null = null;
   let ligaturesAddon: LigaturesAddon | null = null;
   let webglAddon: WebglAddon | null = null;
   let rendererParked = false;
@@ -462,6 +463,9 @@
   const terminalFontLigatures = $derived(
     settingsStore.getTerminalFontLigatures(),
   );
+  const terminalGraphics = $derived(
+    settingsStore.getTerminalGraphics(),
+  );
 
   function defaultWebsocketPath(): string {
     if (!workspaceId) return "";
@@ -710,6 +714,22 @@
     recreateWebglAddon();
   }
 
+  function syncImageAddon(enabled: boolean): void {
+    if (!terminal) return;
+    if (!enabled) {
+      imageAddon?.dispose();
+      imageAddon = null;
+      return;
+    }
+    if (imageAddon) return;
+    imageAddon = new ImageAddon({
+      iipSupport: true,
+      kittySupport: false,
+      sixelSupport: true,
+    });
+    terminal.loadAddon(imageAddon);
+  }
+
   function scheduleTerminalRefresh(): void {
     requestTerminalRefresh();
   }
@@ -906,6 +926,8 @@
     if (terminal) {
       unregisterTextureAtlasParticipant?.();
       unregisterTextureAtlasParticipant = null;
+      imageAddon?.dispose();
+      imageAddon = null;
       ligaturesAddon?.dispose();
       ligaturesAddon = null;
       webglAddon?.dispose();
@@ -950,6 +972,10 @@
   });
 
   $effect(syncRendererState);
+
+  $effect(() => {
+    syncImageAddon(terminalGraphics);
+  });
 
   $effect(() => {
     if (!terminal) return;
@@ -1068,13 +1094,7 @@
       const fit = new FitAddon();
       fitAddon = fit;
       term.loadAddon(fit);
-      term.loadAddon(
-        new ImageAddon({
-          iipSupport: true,
-          kittySupport: true,
-          sixelSupport: true,
-        }),
-      );
+      syncImageAddon(terminalGraphics);
       term.loadAddon(
         new WebLinksAddon(openTerminalLink, {
           hover: showTerminalLink,

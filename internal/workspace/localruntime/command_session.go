@@ -296,6 +296,7 @@ func (m *Manager) commandSessionLaunch(
 		LaunchID:        launchID,
 		HideStatus:      m.currentHideTmuxStatus(),
 		TmuxMouse:       m.currentTmuxMouse(),
+		Graphics:        m.currentTmuxGraphics(),
 		ConfigureServer: configureServer,
 	}.prepare(ctx)
 	if err != nil {

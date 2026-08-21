@@ -145,6 +145,7 @@ vi.mock("../../context.js", async (importOriginal) => {
           cursor_blink: true,
           font_ligatures: false,
           hide_tmux_status: false,
+          graphics: true,
           tmux_mouse: true,
           retained_sessions: 10,
         }),
@@ -166,6 +167,7 @@ vi.mock("../../context.js", async (importOriginal) => {
         getTerminalLetterSpacing: () => 0,
         getTerminalCursorBlink: () => true,
         getTerminalFontLigatures: () => false,
+        getTerminalGraphics: () => true,
         getWorkspaceSettings: () => ({
           auto_assign_on_create: false,
           default_sidebar_view: mocks.workspaceSidebarPreference,

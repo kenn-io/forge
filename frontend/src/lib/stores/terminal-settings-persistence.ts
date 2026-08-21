@@ -48,6 +48,7 @@ const TERMINAL_SETTINGS_KEYS = [
   "cursor_blink",
   "font_ligatures",
   "hide_tmux_status",
+  "graphics",
   "tmux_mouse",
   "retained_sessions",
 ] satisfies ReadonlyArray<keyof TerminalSettings>;

@@ -442,6 +442,32 @@ tmux_mouse = false
 	}, readSettingsTmuxMouseCommands(t, record))
 }
 
+func TestConfigReloadAppliesGraphicsToDedicatedTmuxServer(t *testing.T) {
+	require := require.New(t)
+	record := installSettingsTmuxRecorder(t)
+	srv, _, cfgPath := setupTestServerWithConfigContentAndOptions(t, validReloadConfig, &mockGH{}, ServerOptions{
+		HostCheckAllowLoopbackAnyPort: true,
+		WorktreeDir:                   t.TempDir(),
+	})
+	require.NoError(os.WriteFile(record, nil, 0o600))
+	waitForConfigWatcher(t, srv, 2*time.Second)
+	stream := streamConfigEvents(t, srv)
+	defer stream.Close()
+
+	writeConfigToml(t, cfgPath, validReloadConfig+`
+[terminal]
+graphics = false
+`)
+
+	event := waitForConfigEvent(t, stream, 2*time.Second)
+	require.True(event.Valid, "reload error: %s", event.Error)
+	assert.Equal(t, []string{
+		"-L kenn-forge set-option -q -g allow-passthrough off",
+		"-L kenn-forge set-option -q -s -u terminal-features[100]",
+		"-L kenn-forge set-option -q -p -t sess-A allow-passthrough off",
+	}, readSettingsTmuxGraphicsCommands(t, record))
+}
+
 func TestConfigReloadPublishesPullConfigOnlyAfterSuccessfulReload(t *testing.T) {
 	require := require.New(t)
 	srv, _, _ := setupTestServerWithConfigContent(

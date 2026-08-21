@@ -4757,6 +4757,7 @@ func TestManagerEnsureTmuxHasSessionPrefix(t *testing.T) {
 	d := openTestDB(t)
 	mgr := NewManager(d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script, "wrap"})
+	mgr.SetTmuxGraphics(true)
 	mgr.SetTmuxMouse(true)
 
 	// Script exits 0 for every invocation, so EnsureTmux observes
@@ -4801,6 +4802,43 @@ func TestManagerApplyTmuxMouseUpdatesDedicatedServer(t *testing.T) {
 		{"-L", "kenn-forge", "list-sessions", "-F", tmuxSessionListFormat},
 		{"-L", "kenn-forge", "set-option", "-q", "-g", "mouse", "on"},
 	}, readRecorderArgv(t, record))
+}
+
+func TestManagerApplyTmuxGraphicsDisablesDedicatedServer(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	tmuxPath := filepath.Join(dir, "tmux")
+	body := "#!/bin/sh\n" +
+		"TMUX_RECORD=" + shellquote.Join(record) + "\n" +
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
+		`case "$*" in *list-sessions*) printf 'sess-A:kenn-forge:test-owner\n';; esac` + "\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(tmuxPath, []byte(body), 0o755))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr.SetTmuxGraphics(false)
+	require.NoError(mgr.ApplyTmuxGraphics(t.Context()))
+
+	assert.Equal([][]string{
+		{"-L", "kenn-forge", "list-sessions", "-F", tmuxSessionListFormat},
+		{"-L", "kenn-forge", "set-option", "-q", "-g", "allow-passthrough", "off"},
+		{"-L", "kenn-forge", "set-option", "-q", "-s", "-u", "terminal-features[100]"},
+		{"-L", "kenn-forge", "set-option", "-q", "-p", "-t", "sess-A", "allow-passthrough", "off"},
+	}, readRecorderArgv(t, record))
+}
+
+func TestManagerApplyTmuxGraphicsDoesNotMutateCustomServer(t *testing.T) {
+	require := require.New(t)
+	script, record := writeRecorderScript(t)
+	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr.SetTmuxCommand([]string{script})
+	mgr.SetTmuxGraphics(false)
+
+	require.NoError(mgr.ApplyTmuxGraphics(t.Context()))
+	require.NoFileExists(record)
 }
 
 func TestManagerApplyTmuxMouseDoesNotMutateCustomServer(t *testing.T) {
@@ -6432,6 +6470,7 @@ func TestManagerEnsureTmuxCreatesSessionOnMiss(t *testing.T) {
 	mgr := NewManager(d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script})
 	mgr.SetHideTmuxStatus(true)
+	mgr.SetTmuxGraphics(true)
 	mgr.SetTmuxMouse(true)
 
 	require.NoError(mgr.EnsureTmux(t.Context(), "sess-B", "/tmp/cwd"))
@@ -6495,6 +6534,7 @@ func TestManagerEnsureTmuxCreatesSessionOnMacOSMissingServer(t *testing.T) {
 	d := openTestDB(t)
 	mgr := NewManager(d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script})
+	mgr.SetTmuxGraphics(true)
 	mgr.SetTmuxMouse(true)
 
 	require.NoError(mgr.EnsureTmux(context.Background(), "sess-macos", "/tmp/cwd"))

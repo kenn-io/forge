@@ -184,6 +184,7 @@ type tmuxLauncher struct {
 	LaunchID        string
 	HideStatus      bool
 	TmuxMouse       bool
+	Graphics        bool
 	ConfigureServer bool
 }
 
@@ -221,14 +222,14 @@ func (l tmuxLauncher) prepare(ctx context.Context) (tmuxLaunchResult, error) {
 		return tmuxLaunchResult{}, fmt.Errorf("tmux new-session: %w", err)
 	}
 	if l.ConfigureServer {
-		if err := l.run(ctx, l.enableGlobalPassthroughCommand()); err != nil {
+		if err := l.run(ctx, l.globalPassthroughCommand()); err != nil {
 			return tmuxLaunchResult{}, l.cleanupNewSessionAfterError(
-				ctx, "enable global tmux passthrough", err,
+				ctx, "configure global tmux passthrough", err,
 			)
 		}
-		if err := l.run(ctx, l.enableSixelCommand()); err != nil {
+		if err := l.run(ctx, l.sixelCommand()); err != nil {
 			return tmuxLaunchResult{}, l.cleanupNewSessionAfterError(
-				ctx, "enable tmux SIXEL", err,
+				ctx, "configure tmux SIXEL", err,
 			)
 		}
 		if err := l.run(ctx, l.tmuxMouseCommand()); err != nil {
@@ -237,10 +238,12 @@ func (l tmuxLauncher) prepare(ctx context.Context) (tmuxLaunchResult, error) {
 			)
 		}
 	}
-	if err := l.run(ctx, l.enablePassthroughCommand()); err != nil {
-		return tmuxLaunchResult{}, l.cleanupNewSessionAfterError(
-			ctx, "enable tmux passthrough", err,
-		)
+	if l.Graphics || l.ConfigureServer {
+		if err := l.run(ctx, l.passthroughCommand()); err != nil {
+			return tmuxLaunchResult{}, l.cleanupNewSessionAfterError(
+				ctx, "configure tmux passthrough", err,
+			)
+		}
 	}
 	if l.HideStatus {
 		if err := l.run(ctx, l.hideStatusCommand()); err != nil {
@@ -264,18 +267,20 @@ func (l tmuxLauncher) prepareExisting(ctx context.Context) (tmuxLaunchResult, er
 		return tmuxLaunchResult{}, err
 	}
 	if l.ConfigureServer {
-		if err := l.run(ctx, l.enableGlobalPassthroughCommand()); err != nil {
-			return tmuxLaunchResult{}, fmt.Errorf("enable global tmux passthrough: %w", err)
+		if err := l.run(ctx, l.globalPassthroughCommand()); err != nil {
+			return tmuxLaunchResult{}, fmt.Errorf("configure global tmux passthrough: %w", err)
 		}
-		if err := l.run(ctx, l.enableSixelCommand()); err != nil {
-			return tmuxLaunchResult{}, fmt.Errorf("enable tmux SIXEL: %w", err)
+		if err := l.run(ctx, l.sixelCommand()); err != nil {
+			return tmuxLaunchResult{}, fmt.Errorf("configure tmux SIXEL: %w", err)
 		}
 		if err := l.run(ctx, l.tmuxMouseCommand()); err != nil {
 			return tmuxLaunchResult{}, fmt.Errorf("configure tmux mouse: %w", err)
 		}
 	}
-	if err := l.run(ctx, l.enablePassthroughCommand()); err != nil {
-		return tmuxLaunchResult{}, fmt.Errorf("enable tmux passthrough: %w", err)
+	if l.Graphics || l.ConfigureServer {
+		if err := l.run(ctx, l.passthroughCommand()); err != nil {
+			return tmuxLaunchResult{}, fmt.Errorf("configure tmux passthrough: %w", err)
+		}
 	}
 	return tmuxLaunchResult{AttachCommand: l.attachSessionCommand()}, nil
 }
@@ -592,27 +597,37 @@ func (l tmuxLauncher) hideStatusCommand() []string {
 	)
 }
 
-func (l tmuxLauncher) enablePassthroughCommand() []string {
+func (l tmuxLauncher) passthroughCommand() []string {
+	value := "off"
+	if l.Graphics {
+		value = "on"
+	}
 	return append(
 		slices.Clone(l.TmuxCommand),
 		"set-option", "-q", "-p", "-t", l.Session,
-		"allow-passthrough", "on",
+		"allow-passthrough", value,
 	)
 }
 
-func (l tmuxLauncher) enableGlobalPassthroughCommand() []string {
+func (l tmuxLauncher) globalPassthroughCommand() []string {
+	value := "off"
+	if l.Graphics {
+		value = "on"
+	}
 	return append(
 		slices.Clone(l.TmuxCommand),
-		"set-option", "-q", "-g", "allow-passthrough", "on",
+		"set-option", "-q", "-g", "allow-passthrough", value,
 	)
 }
 
-func (l tmuxLauncher) enableSixelCommand() []string {
-	return append(
-		slices.Clone(l.TmuxCommand),
-		"set-option", "-q", "-g", "terminal-features[100]",
-		"xterm-256color:sixel",
+func (l tmuxLauncher) sixelCommand() []string {
+	command := append(
+		slices.Clone(l.TmuxCommand), "set-option", "-q", "-s",
 	)
+	if !l.Graphics {
+		return append(command, "-u", "terminal-features[100]")
+	}
+	return append(command, "terminal-features[100]", "xterm-256color:sixel")
 }
 
 func (l tmuxLauncher) tmuxMouseCommand() []string {

@@ -7975,6 +7975,7 @@ export interface components {
             font_ligatures: boolean;
             /** Format: int64 */
             font_size: number;
+            graphics: boolean;
             hide_tmux_status: boolean;
             /** Format: int64 */
             letter_spacing: number;

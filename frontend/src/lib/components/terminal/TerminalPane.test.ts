@@ -11,6 +11,8 @@ const {
   clipboardWriterConfirmPointerSelection,
   clipboardWriterDispose,
   clipboardWriterWrite,
+  imageAddonCtor,
+  imageAddons,
   ligaturesAddonCtor,
   mockShowFlash,
   mockWebglCtor,
@@ -34,6 +36,8 @@ const {
   clipboardWriterConfirmPointerSelection: vi.fn(),
   clipboardWriterDispose: vi.fn(),
   clipboardWriterWrite: vi.fn(),
+  imageAddonCtor: vi.fn(),
+  imageAddons: [] as Array<{ dispose: ReturnType<typeof vi.fn> }>,
   ligaturesAddonCtor: vi.fn(),
   mockShowFlash: vi.fn(),
   mockWebglCtor: vi.fn(),
@@ -72,6 +76,7 @@ let configuredLineHeight = 1;
 let configuredLetterSpacing = 0;
 let configuredCursorBlink = true;
 let configuredFontLigatures = false;
+let configuredGraphics = true;
 let mockSockets: MockWebSocket[] = [];
 let mockSocketsStartOpen = true;
 let initialTerminalDimensions = { cols: 80, rows: 24 };
@@ -149,6 +154,7 @@ vi.mock("../../context.js", () => ({
       getTerminalLetterSpacing: () => configuredLetterSpacing,
       getTerminalCursorBlink: () => configuredCursorBlink,
       getTerminalFontLigatures: () => configuredFontLigatures,
+      getTerminalGraphics: () => configuredGraphics,
     },
   }),
 }));
@@ -256,6 +262,15 @@ vi.mock("@xterm/addon-fit", () => ({
   }),
 }));
 
+vi.mock("@xterm/addon-image", () => ({
+  ImageAddon: vi.fn().mockImplementation(function (options) {
+    imageAddonCtor(options);
+    const addon = { dispose: vi.fn() };
+    imageAddons.push(addon);
+    return addon;
+  }),
+}));
+
 vi.mock("@xterm/addon-ligatures/lib/addon-ligatures.mjs", () => ({
   LigaturesAddon: vi.fn().mockImplementation(function () {
     ligaturesAddonCtor();
@@ -307,9 +322,12 @@ describe("TerminalPane", () => {
     configuredLetterSpacing = 0;
     configuredCursorBlink = true;
     configuredFontLigatures = false;
+    configuredGraphics = true;
     initialTerminalDimensions = { cols: 80, rows: 24 };
     fitDimensions = { cols: 80, rows: 24 };
     ligaturesAddonCtor.mockReset();
+    imageAddonCtor.mockReset();
+    imageAddons.length = 0;
     clipboardWriteText.mockReset();
     clipboardWriterCancelAuthorization.mockReset();
     clipboardWriterCancelPointerGesture.mockReset();
@@ -384,6 +402,27 @@ describe("TerminalPane", () => {
     render(TerminalPane, { props: { workspaceId: "ws-123" } });
 
     await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());
+  });
+
+  it("loads SIXEL and iTerm images without enabling Kitty graphics", async () => {
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+
+    await waitFor(() => {
+      expect(imageAddonCtor).toHaveBeenCalledWith({
+        iipSupport: true,
+        kittySupport: false,
+        sixelSupport: true,
+      });
+    });
+  });
+
+  it("does not load the image decoder when terminal graphics are disabled", async () => {
+    configuredGraphics = false;
+
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+
+    await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());
+    expect(imageAddonCtor).not.toHaveBeenCalled();
   });
 
   it("leaves Ctrl+V browser-owned on Windows and Linux", async () => {

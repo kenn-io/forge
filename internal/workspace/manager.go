@@ -47,6 +47,8 @@ type Manager struct {
 	tmuxStripEnvVars          []string
 	hideTmuxStatusMu          sync.RWMutex
 	hideTmuxStatus            bool
+	tmuxGraphicsMu            sync.RWMutex
+	tmuxGraphics              bool
 	tmuxMouseMu               sync.RWMutex
 	tmuxMouse                 bool
 	ptyOwner                  PtyOwnerClient
@@ -344,6 +346,19 @@ func (m *Manager) currentHideTmuxStatus() bool {
 	m.hideTmuxStatusMu.RLock()
 	defer m.hideTmuxStatusMu.RUnlock()
 	return m.hideTmuxStatus
+}
+
+// SetTmuxGraphics controls graphics passthrough for managed workspace sessions.
+func (m *Manager) SetTmuxGraphics(enabled bool) {
+	m.tmuxGraphicsMu.Lock()
+	defer m.tmuxGraphicsMu.Unlock()
+	m.tmuxGraphics = enabled
+}
+
+func (m *Manager) currentTmuxGraphics() bool {
+	m.tmuxGraphicsMu.RLock()
+	defer m.tmuxGraphicsMu.RUnlock()
+	return m.tmuxGraphics
 }
 
 // SetTmuxMouse controls tmux mouse handling for managed workspace sessions.
@@ -4600,39 +4615,92 @@ func (m *Manager) configureTmuxSession(
 	ctx context.Context,
 	session string,
 ) error {
-	if config.IsDefaultTmuxCommand(m.tmuxCmd) {
-		if err := runBuiltCmd(
-			ctx,
-			m.tmuxExec(
-				ctx,
-				"set-option", "-q", "-g", "allow-passthrough", "on",
-			),
-		); err != nil {
-			return fmt.Errorf("enable global tmux passthrough: %w", err)
-		}
-		if err := runBuiltCmd(
-			ctx,
-			m.tmuxExec(
-				ctx,
-				"set-option", "-q", "-g", "terminal-features[100]",
-				"xterm-256color:sixel",
-			),
-		); err != nil {
-			return fmt.Errorf("enable tmux SIXEL: %w", err)
+	graphics := m.currentTmuxGraphics()
+	dedicatedServer := config.IsDefaultTmuxCommand(m.tmuxCmd)
+	if dedicatedServer {
+		if err := m.applyTmuxServerGraphics(ctx, graphics); err != nil {
+			return err
 		}
 		if err := m.applyTmuxMouse(ctx); err != nil {
 			return err
 		}
+	}
+	if !graphics && !dedicatedServer {
+		return nil
+	}
+	return m.setTmuxPassthrough(ctx, session, graphics)
+}
+
+func (m *Manager) applyTmuxServerGraphics(ctx context.Context, enabled bool) error {
+	value := "off"
+	if enabled {
+		value = "on"
+	}
+	if err := runBuiltCmd(
+		ctx,
+		m.tmuxExec(ctx, "set-option", "-q", "-g", "allow-passthrough", value),
+	); err != nil {
+		return fmt.Errorf("configure global tmux passthrough: %w", err)
+	}
+	args := []string{
+		"set-option", "-q", "-s", "terminal-features[100]",
+		"xterm-256color:sixel",
+	}
+	if !enabled {
+		args = []string{
+			"set-option", "-q", "-s", "-u", "terminal-features[100]",
+		}
+	}
+	if err := runBuiltCmd(ctx, m.tmuxExec(ctx, args...)); err != nil {
+		return fmt.Errorf("configure tmux SIXEL: %w", err)
+	}
+	return nil
+}
+
+func (m *Manager) setTmuxPassthrough(
+	ctx context.Context,
+	session string,
+	enabled bool,
+) error {
+	value := "off"
+	if enabled {
+		value = "on"
 	}
 	if err := runBuiltCmd(
 		ctx,
 		m.tmuxExec(
 			ctx,
 			"set-option", "-q", "-p", "-t", session,
-			"allow-passthrough", "on",
+			"allow-passthrough", value,
 		),
 	); err != nil {
-		return fmt.Errorf("enable tmux passthrough: %w", err)
+		return fmt.Errorf("configure tmux passthrough: %w", err)
+	}
+	return nil
+}
+
+// ApplyTmuxGraphics updates the Forge-owned tmux server and its managed panes.
+// Custom commands may target a user's shared server, so Forge does not change
+// their existing graphics settings.
+func (m *Manager) ApplyTmuxGraphics(ctx context.Context) error {
+	if !config.IsDefaultTmuxCommand(m.tmuxCmd) {
+		return nil
+	}
+	sessions, err := m.listTmuxSessions(ctx)
+	if err != nil {
+		return err
+	}
+	if len(sessions) == 0 {
+		return nil
+	}
+	enabled := m.currentTmuxGraphics()
+	if err := m.applyTmuxServerGraphics(ctx, enabled); err != nil {
+		return err
+	}
+	for _, session := range sessions {
+		if err := m.setTmuxPassthrough(ctx, session, enabled); err != nil {
+			return err
+		}
 	}
 	return nil
 }

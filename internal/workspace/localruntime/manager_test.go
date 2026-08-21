@@ -504,6 +504,7 @@ exit 0
 		},
 		TmuxOwnerMarker:         "kenn-forge:test-owner",
 		WrapAgentSessionsInTmux: true,
+		TmuxGraphics:            true,
 	})
 	t.Cleanup(mgr.Shutdown)
 
@@ -529,7 +530,7 @@ exit 0
 		"-L", "kenn-forge", "set-option", "-q", "-g", "allow-passthrough", "on",
 	}, records[2])
 	assert.Equal([]string{
-		"-L", "kenn-forge", "set-option", "-q", "-g", "terminal-features[100]",
+		"-L", "kenn-forge", "set-option", "-q", "-s", "terminal-features[100]",
 		"xterm-256color:sixel",
 	}, records[3])
 	assert.Equal([]string{

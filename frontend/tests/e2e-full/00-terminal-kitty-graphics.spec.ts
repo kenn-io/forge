@@ -97,12 +97,6 @@ function tmuxPassthroughFormat(payloadFormat: string): string {
   return `\\033Ptmux;${payloadFormat}\\033\\\\`;
 }
 
-function kittyGraphicsCommand(): string {
-  const pixels = Buffer.from([255, 0, 0, 0, 255, 0]).toString("base64");
-  const kittySequence = `\\033\\033_Ga=T,f=24,s=2,v=1,c=2,r=1,C=1,q=2;${pixels}\\033\\033\\\\`;
-  return `printf '${tmuxPassthroughFormat(kittySequence)}'`;
-}
-
 function sixelGraphicsCommand(): string {
   return `printf '\\033Pq"1;1;4;6#0;2;100;0;0#0!2~$#1;2;0;100;0#1??!2~\\033\\\\'`;
 }
@@ -174,7 +168,7 @@ async function renderGraphicsThroughTmux(
     const workspace = await createIssueWorkspace(api);
 
     if (!options.passthrough) {
-      runE2ETmuxCommand(isolatedServer, ["set-option", "-q", "-g", "terminal-features[100]", "xterm-256color:sixel"]);
+      runE2ETmuxCommand(isolatedServer, ["set-option", "-q", "-s", "terminal-features[100]", "xterm-256color:sixel"]);
     }
 
     await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
@@ -215,10 +209,6 @@ async function renderGraphicsThroughTmux(
     await isolatedServer?.stop();
   }
 }
-
-test("Direct Kitty graphics render through tmux passthrough", async ({ page }) => {
-  await renderGraphicsThroughTmux(page, kittyGraphicsCommand(), { checkColors: true, passthrough: true });
-});
 
 test("Native SIXEL graphics render through tmux", async ({ page }) => {
   await renderGraphicsThroughTmux(page, sixelGraphicsCommand(), { checkColors: false, passthrough: false });

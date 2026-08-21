@@ -715,6 +715,7 @@ const (
 	DefaultTerminalScrollback       = 1000
 	DefaultTerminalLineHeight       = 1.0
 	DefaultTerminalCursorBlink      = true
+	DefaultTerminalGraphics         = true
 	DefaultTerminalTmuxMouse        = true
 	DefaultTerminalRetainedSessions = 10
 )
@@ -728,6 +729,7 @@ type Terminal struct {
 	CursorBlink      *bool   `toml:"cursor_blink,omitempty" json:"cursor_blink" nullable:"false"`
 	FontLigatures    bool    `toml:"font_ligatures,omitempty" json:"font_ligatures"`
 	HideTmuxStatus   bool    `toml:"hide_tmux_status,omitempty" json:"hide_tmux_status"`
+	Graphics         *bool   `toml:"graphics,omitempty" json:"graphics" nullable:"false"`
 	TmuxMouse        *bool   `toml:"tmux_mouse,omitempty" json:"tmux_mouse" nullable:"false"`
 	RetainedSessions *int    `toml:"retained_sessions,omitempty" json:"retained_sessions" nullable:"false"`
 }
@@ -1718,6 +1720,10 @@ func (c *Config) validate() error {
 	if c.Terminal.CursorBlink == nil {
 		cursorBlink := DefaultTerminalCursorBlink
 		c.Terminal.CursorBlink = &cursorBlink
+	}
+	if c.Terminal.Graphics == nil {
+		graphics := DefaultTerminalGraphics
+		c.Terminal.Graphics = &graphics
 	}
 	if c.Terminal.TmuxMouse == nil {
 		tmuxMouse := DefaultTerminalTmuxMouse
@@ -3161,6 +3167,13 @@ func (c *Config) ShellCommand() []string {
 // enable mouse handling. It defaults to true for omitted and nil configs.
 func (c *Config) TerminalTmuxMouseEnabled() bool {
 	return c == nil || c.Terminal.TmuxMouse == nil || *c.Terminal.TmuxMouse
+}
+
+// TerminalGraphicsEnabled reports whether Forge-managed terminals should
+// decode images and configure tmux graphics support. It defaults to true for
+// omitted and nil configs.
+func (c *Config) TerminalGraphicsEnabled() bool {
+	return c == nil || c.Terminal.Graphics == nil || *c.Terminal.Graphics
 }
 
 // TmuxAgentSessionsEnabled reports whether runtime agent launches

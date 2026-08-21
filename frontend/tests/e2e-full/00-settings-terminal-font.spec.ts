@@ -128,6 +128,7 @@ test("settings saves and reloads workspace terminal options", async ({ page }) =
           cursor_blink: boolean;
           font_ligatures: boolean;
           hide_tmux_status: boolean;
+          graphics: boolean;
           tmux_mouse: boolean;
         };
       };
@@ -143,6 +144,7 @@ test("settings saves and reloads workspace terminal options", async ({ page }) =
       cursor_blink: false,
       font_ligatures: false,
       hide_tmux_status: false,
+      graphics: true,
       tmux_mouse: true,
     });
 
@@ -229,6 +231,7 @@ test.describe("terminal options popover", () => {
         cursor_blink: false,
         font_ligatures: true,
         hide_tmux_status: true,
+        graphics: true,
         tmux_mouse: true,
       };
       const settingsResponse = await workspaceApi.put("/api/v1/settings", {

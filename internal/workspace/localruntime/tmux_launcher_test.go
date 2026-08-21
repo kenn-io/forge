@@ -113,6 +113,7 @@ func TestTmuxLauncherEnablesPassthroughPerPane(t *testing.T) {
 	launcher := tmuxLauncher{
 		TmuxCommand: []string{"/usr/bin/tmux", "-L", "kenn-forge-test"},
 		Session:     "kenn-forge-test",
+		Graphics:    true,
 	}
 
 	assert.Equal(t,
@@ -121,8 +122,30 @@ func TestTmuxLauncherEnablesPassthroughPerPane(t *testing.T) {
 			"set-option", "-q", "-p", "-t", "kenn-forge-test",
 			"allow-passthrough", "on",
 		},
-		launcher.enablePassthroughCommand(),
+		launcher.passthroughCommand(),
 	)
+}
+
+func TestTmuxLauncherDisablesGraphicsOnDedicatedServer(t *testing.T) {
+	launcher := tmuxLauncher{
+		TmuxCommand:     []string{"/usr/bin/tmux", "-L", "kenn-forge-test"},
+		Session:         "kenn-forge-test",
+		ConfigureServer: true,
+	}
+
+	assert.Equal(t, []string{
+		"/usr/bin/tmux", "-L", "kenn-forge-test",
+		"set-option", "-q", "-g", "allow-passthrough", "off",
+	}, launcher.globalPassthroughCommand())
+	assert.Equal(t, []string{
+		"/usr/bin/tmux", "-L", "kenn-forge-test",
+		"set-option", "-q", "-s", "-u", "terminal-features[100]",
+	}, launcher.sixelCommand())
+	assert.Equal(t, []string{
+		"/usr/bin/tmux", "-L", "kenn-forge-test",
+		"set-option", "-q", "-p", "-t", "kenn-forge-test",
+		"allow-passthrough", "off",
+	}, launcher.passthroughCommand())
 }
 
 func TestTmuxLauncherConfiguresGlobalMouse(t *testing.T) {

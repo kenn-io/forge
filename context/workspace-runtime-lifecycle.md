@@ -158,8 +158,8 @@ still exists.
 - New tmux sessions use the `forge-` prefix; persisted `middleman-` session
   names remain valid and must not be rewritten (`internal/workspace/`).
 - Only `DefaultTmuxCommand` selects Forge's dedicated tmux server. Custom tmux
-  commands may address a shared user server, so Forge applies pane passthrough
-  but never changes their global options (`internal/config/config.go::IsDefaultTmuxCommand`).
+  commands may address a shared user server, so Forge never changes their global
+  options or applies graphics-off mutations (`internal/config/config.go::IsDefaultTmuxCommand`).
 - The tmux server permanently retains its spawn environment for every pane to
   read via `show-environment -g`, and only `new-session` clients spawn it, so
   every Forge-issued tmux client runs with the non-secret allowlist
@@ -198,15 +198,15 @@ still exists.
 - Every tmux client attach must force UTF-8; service launchers may omit locale
   variables, causing tmux to replace non-ASCII output before WebSocket transport
   (`internal/workspace/localruntime/tmux_launcher.go::tmuxAttachSessionCommand`).
-- Forge's dedicated tmux server sets global passthrough, SIXEL, and configurable
-  mouse mode, including live mouse-setting changes; custom servers receive only
-  pane passthrough (`internal/workspace/manager.go::Manager.ApplyTmuxMouse`).
-- Applying a saved mouse change to a live tmux server is best-effort: failures
-  are logged, and the next managed session setup reapplies the saved value
-  (`internal/server/settings_handlers.go::Server.applyTmuxMouse`).
-- Browser Kitty output must use direct placements; the current xterm addon does
-  not implement the Unicode placeholders that `kitten icat` selects in tmux
-  (`frontend/tests/e2e-full/00-terminal-kitty-graphics.spec.ts::kittyGraphicsCommand`).
+- Forge's dedicated tmux server owns global passthrough, SIXEL, and mouse mode,
+  including live setting changes; custom servers receive pane passthrough only
+  while graphics are enabled (`internal/workspace/manager.go::Manager.ApplyTmuxGraphics`).
+- Applying saved graphics or mouse changes to a live dedicated tmux server is
+  best-effort; the next managed session setup reapplies values after a failure
+  (`internal/server/settings_handlers.go::Server.applyTmuxGraphics`).
+- Terminal graphics are optional and default on. The browser supports SIXEL and
+  iTerm images; Kitty graphics remain disabled while the xterm add-on labels
+  that protocol alpha (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::syncImageAddon`).
 - Retained tmux attach PTYs must start with nonzero pixel geometry: tmux asks for
   pixels before a browser subscribes and otherwise never retries the unanswered
   query needed for native SIXEL (`internal/workspace/localruntime/tmux_runtime.go::startTmuxAttachSession`).

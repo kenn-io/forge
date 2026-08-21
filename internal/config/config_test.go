@@ -2719,6 +2719,7 @@ line_height = 1.2
 letter_spacing = 1
 cursor_blink = false
 font_ligatures = true
+graphics = false
 tmux_mouse = false
 retained_sessions = 0
 `)
@@ -2732,6 +2733,8 @@ retained_sessions = 0
 	require.NotNil(cfg.Terminal.CursorBlink)
 	assert.False(*cfg.Terminal.CursorBlink)
 	assert.True(cfg.Terminal.FontLigatures)
+	require.NotNil(cfg.Terminal.Graphics)
+	assert.False(*cfg.Terminal.Graphics)
 	require.NotNil(cfg.Terminal.TmuxMouse)
 	assert.False(*cfg.Terminal.TmuxMouse)
 	require.NotNil(cfg.Terminal.RetainedSessions)
@@ -2750,6 +2753,8 @@ retained_sessions = 0
 	require.NotNil(cfg2.Terminal.CursorBlink)
 	assert.False(*cfg2.Terminal.CursorBlink)
 	assert.True(cfg2.Terminal.FontLigatures)
+	require.NotNil(cfg2.Terminal.Graphics)
+	assert.False(*cfg2.Terminal.Graphics)
 	require.NotNil(cfg2.Terminal.TmuxMouse)
 	assert.False(*cfg2.Terminal.TmuxMouse)
 	require.NotNil(cfg2.Terminal.RetainedSessions)
@@ -2774,6 +2779,8 @@ name = "b"
 	require.NotNil(cfg.Terminal.CursorBlink)
 	assert.True(*cfg.Terminal.CursorBlink)
 	assert.False(cfg.Terminal.FontLigatures)
+	require.NotNil(cfg.Terminal.Graphics)
+	assert.True(*cfg.Terminal.Graphics)
 	require.NotNil(cfg.Terminal.TmuxMouse)
 	assert.True(*cfg.Terminal.TmuxMouse)
 	require.NotNil(cfg.Terminal.RetainedSessions)

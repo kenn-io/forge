@@ -251,50 +251,52 @@ func TestGitHubAppFailedMintIsSingleFlight(t *testing.T) {
 }
 
 func TestGitHubAppInvalidateDoesNotEvictInFlightMint(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	var mints atomic.Int64
-	entered := make(chan struct{})
-	release := make(chan struct{})
-	src := NewManagedSource(githubAppDescriptor(42), Options{
-		GitHubApp: func(context.Context, Candidate) (string, time.Time, error) {
-			if mints.Add(1) == 1 {
-				close(entered)
-				<-release
-			}
-			return "ghs_fresh", time.Now().Add(time.Hour), nil
-		},
+	synctest.Test(t, func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+		var mints atomic.Int64
+		entered := make(chan struct{})
+		release := make(chan struct{})
+		src := NewManagedSource(githubAppDescriptor(42), Options{
+			GitHubApp: func(context.Context, Candidate) (string, time.Time, error) {
+				if mints.Add(1) == 1 {
+					close(entered)
+					<-release
+				}
+				return "ghs_fresh", time.Now().Add(time.Hour), nil
+			},
+		})
+
+		type result struct {
+			token string
+			err   error
+		}
+		winner := make(chan result, 1)
+		go func() {
+			token, err := src.Token(context.Background())
+			winner <- result{token: token, err: err}
+		}()
+		<-entered
+		// A stale 401 for the previous token arrives while the replacement
+		// mint is already in flight.
+		src.Invalidate("ghs_stale")
+
+		joiner := make(chan result, 1)
+		go func() {
+			token, err := src.Token(context.Background())
+			joiner <- result{token: token, err: err}
+		}()
+		synctest.Wait()
+		assert.Equal(int64(1), mints.Load(),
+			"stale invalidation must not evict the in-flight mint into a parallel mint")
+		close(release)
+		for _, ch := range []chan result{winner, joiner} {
+			got := <-ch
+			require.NoError(got.err)
+			assert.Equal("ghs_fresh", got.token)
+		}
+		assert.Equal(int64(1), mints.Load())
 	})
-
-	type result struct {
-		token string
-		err   error
-	}
-	winner := make(chan result, 1)
-	go func() {
-		token, err := src.Token(context.Background())
-		winner <- result{token: token, err: err}
-	}()
-	<-entered
-	// A stale 401 for the previous token arrives while the replacement
-	// mint is already in flight.
-	src.Invalidate("ghs_stale")
-
-	joiner := make(chan result, 1)
-	go func() {
-		token, err := src.Token(context.Background())
-		joiner <- result{token: token, err: err}
-	}()
-	time.Sleep(50 * time.Millisecond) // let the joiner reach the store
-	assert.Equal(int64(1), mints.Load(),
-		"stale invalidation must not evict the in-flight mint into a parallel mint")
-	close(release)
-	for _, ch := range []chan result{winner, joiner} {
-		got := <-ch
-		require.NoError(got.err)
-		assert.Equal("ghs_fresh", got.token)
-	}
-	assert.Equal(int64(1), mints.Load())
 }
 
 func TestGitHubAppStaleUnauthorizedDoesNotEvictReplacementToken(t *testing.T) {

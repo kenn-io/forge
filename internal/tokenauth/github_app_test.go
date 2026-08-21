@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -209,41 +210,44 @@ func TestGitHubAppMintFailureSurfacesError(t *testing.T) {
 }
 
 func TestGitHubAppFailedMintIsSingleFlight(t *testing.T) {
-	var mints atomic.Int64
-	firstEntered := make(chan struct{})
-	secondEntered := make(chan struct{})
-	release := make(chan struct{})
-	src := NewManagedSource(githubAppDescriptor(42), Options{
-		GitHubApp: func(context.Context, Candidate) (string, time.Time, error) {
-			switch mints.Add(1) {
-			case 1:
-				close(firstEntered)
-			case 2:
-				close(secondEntered)
-			}
-			<-release
-			return "", time.Time{}, errors.New("rate limited")
-		},
-	})
+	synctest.Test(t, func(t *testing.T) {
+		var mints atomic.Int64
+		firstEntered := make(chan struct{})
+		secondEntered := make(chan struct{})
+		release := make(chan struct{})
+		src := NewManagedSource(githubAppDescriptor(42), Options{
+			GitHubApp: func(context.Context, Candidate) (string, time.Time, error) {
+				switch mints.Add(1) {
+				case 1:
+					close(firstEntered)
+				case 2:
+					close(secondEntered)
+				}
+				<-release
+				return "", time.Time{}, errors.New("rate limited")
+			},
+		})
 
-	results := make(chan error, 2)
-	for range 2 {
-		go func() {
-			_, err := src.Token(context.Background())
-			results <- err
-		}()
-	}
-	<-firstEntered
-	select {
-	case <-secondEntered:
-		assert.Fail(t, "parallel callers minted the same App token independently")
-	case <-time.After(100 * time.Millisecond):
-	}
-	close(release)
-	for range 2 {
-		require.ErrorContains(t, <-results, "rate limited")
-	}
-	assert.Equal(t, int64(1), mints.Load())
+		results := make(chan error, 2)
+		for range 2 {
+			go func() {
+				_, err := src.Token(context.Background())
+				results <- err
+			}()
+		}
+		<-firstEntered
+		synctest.Wait()
+		select {
+		case <-secondEntered:
+			assert.Fail(t, "parallel callers minted the same App token independently")
+		default:
+		}
+		close(release)
+		for range 2 {
+			require.ErrorContains(t, <-results, "rate limited")
+		}
+		assert.Equal(t, int64(1), mints.Load())
+	})
 }
 
 func TestGitHubAppInvalidateDoesNotEvictInFlightMint(t *testing.T) {
@@ -364,46 +368,48 @@ func TestGitHubAppStaleUnauthorizedDoesNotEvictReplacementToken(t *testing.T) {
 }
 
 func TestGitHubAppMintCancellationIsNotPublishedToWaiters(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	var mints atomic.Int64
-	winnerEntered := make(chan struct{})
-	src := NewManagedSource(githubAppDescriptor(42), Options{
-		GitHubApp: func(ctx context.Context, _ Candidate) (string, time.Time, error) {
-			if mints.Add(1) == 1 {
-				close(winnerEntered)
-				<-ctx.Done()
-				return "", time.Time{}, ctx.Err()
-			}
-			return "ghs_recovered", time.Now().Add(time.Hour), nil
-		},
+	synctest.Test(t, func(t *testing.T) {
+		require := require.New(t)
+		assert := assert.New(t)
+		var mints atomic.Int64
+		winnerEntered := make(chan struct{})
+		src := NewManagedSource(githubAppDescriptor(42), Options{
+			GitHubApp: func(ctx context.Context, _ Candidate) (string, time.Time, error) {
+				if mints.Add(1) == 1 {
+					close(winnerEntered)
+					<-ctx.Done()
+					return "", time.Time{}, ctx.Err()
+				}
+				return "ghs_recovered", time.Now().Add(time.Hour), nil
+			},
+		})
+
+		winnerCtx, cancel := context.WithCancel(context.Background())
+		winnerErr := make(chan error, 1)
+		go func() {
+			_, err := src.Token(winnerCtx)
+			winnerErr <- err
+		}()
+		<-winnerEntered
+		type result struct {
+			token string
+			err   error
+		}
+		waiterResult := make(chan result, 1)
+		go func() {
+			token, err := src.Token(context.Background())
+			waiterResult <- result{token: token, err: err}
+		}()
+		synctest.Wait()
+		cancel()
+
+		require.ErrorIs(<-winnerErr, context.Canceled)
+		waiter := <-waiterResult
+		require.NoError(waiter.err)
+		assert.Equal("ghs_recovered", waiter.token)
+		assert.Equal(int64(2), mints.Load(),
+			"waiter must re-mint with its own context after the winner cancels")
 	})
-
-	winnerCtx, cancel := context.WithCancel(context.Background())
-	winnerErr := make(chan error, 1)
-	go func() {
-		_, err := src.Token(winnerCtx)
-		winnerErr <- err
-	}()
-	<-winnerEntered
-	type result struct {
-		token string
-		err   error
-	}
-	waiterResult := make(chan result, 1)
-	go func() {
-		token, err := src.Token(context.Background())
-		waiterResult <- result{token: token, err: err}
-	}()
-	time.Sleep(50 * time.Millisecond) // let the waiter park on the in-flight mint
-	cancel()
-
-	require.ErrorIs(<-winnerErr, context.Canceled)
-	waiter := <-waiterResult
-	require.NoError(waiter.err)
-	assert.Equal("ghs_recovered", waiter.token)
-	assert.Equal(int64(2), mints.Load(),
-		"waiter must re-mint with its own context after the winner cancels")
 }
 
 func TestGitHubAppMintCallerDeadlineFailureIsNotCached(t *testing.T) {

@@ -18360,13 +18360,18 @@ func TestAPIPublishReviewDraftReconcilesAfterTransientThreadIngestFailure(t *tes
 		UpdatedAt: now,
 	}}
 	var reviewThreadCalls atomic.Int32
+	reviewThreadRefreshStarted := make(chan struct{}, 1)
 	provider.reviewThreadsFn = func(
 		context.Context,
 		platform.RepoRef,
 		int,
 	) ([]platform.MergeRequestReviewThread, error) {
-		if reviewThreadCalls.Add(1) == 1 {
+		call := reviewThreadCalls.Add(1)
+		if call == 1 {
 			return nil, errors.New("transient review thread refresh failure")
+		}
+		if call == 2 {
+			reviewThreadRefreshStarted <- struct{}{}
 		}
 		return provider.reviewThreads, nil
 	}
@@ -18403,6 +18408,14 @@ func TestAPIPublishReviewDraftReconcilesAfterTransientThreadIngestFailure(t *tes
 
 	detailPath := "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7"
 	require.Eventually(func() bool {
+		select {
+		case <-reviewThreadRefreshStarted:
+			return true
+		default:
+			return false
+		}
+	}, 10*time.Second, 10*time.Millisecond, "background refresh did not reach the provider")
+	require.Eventually(func() bool {
 		detailRR := doJSON(t, srv, http.MethodGet, detailPath, nil)
 		if detailRR.Code != http.StatusOK {
 			return false
@@ -18415,7 +18428,7 @@ func TestAPIPublishReviewDraftReconcilesAfterTransientThreadIngestFailure(t *tes
 			detail.Events[0].EventType == "review_comment" &&
 			detail.Events[0].Body == "hidden provider comment" &&
 			detail.Events[0].MetadataJSON == hiddenMetadata
-	}, time.Second, 10*time.Millisecond)
+	}, 10*time.Second, 10*time.Millisecond)
 
 	threads, err := database.ListMRReviewThreads(ctx, mr.ID)
 	require.NoError(err)

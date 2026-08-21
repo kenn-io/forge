@@ -18,9 +18,9 @@
   "devDependencies": {
     "@playwright/test": "1.62.1",
     "@sveltejs/mcp": "0.1.26",
-    "svelte-check": "4.7.5",
+    "svelte-check": "4.7.6",
     "typescript": "5.9.3",
-    "vite-plus": "0.2.8"
+    "vite-plus": "0.2.9"
   },
   "overrides": {
     "dompurify": "3.4.13"

@@ -183,6 +183,17 @@ test.describe("head-pinned merge and approve", () => {
     await mockApi(page);
   });
 
+  test("clicking outside the approval popover dismisses it", async ({ page }) => {
+    await gotoPull42(page);
+    await page.locator(".btn--approve").first().click();
+
+    const popover = page.locator(".approve-popover");
+    await expect(popover).toBeVisible();
+    await page.locator(".detail-title").click();
+
+    await expect(popover).toHaveCount(0);
+  });
+
   test("merge echoes the rendered head as expected_head_sha", async ({ page }) => {
     let mergeBody: Record<string, unknown> | null = null;
     await page.route(MERGE_PATH, async (route: Route) => {

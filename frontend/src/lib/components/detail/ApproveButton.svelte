@@ -74,6 +74,7 @@
   let body = $state("");
   let submitting = $state(false);
   let submittingAction = $state<"approve" | "request_changes" | null>(null);
+  let sectionEl = $state<HTMLDivElement | undefined>();
   let commentInput = $state<HTMLTextAreaElement | undefined>();
   const canRequestChanges = $derived(supportedReviewActions.includes("request_changes"));
 
@@ -226,9 +227,18 @@
       },
     );
   }
+
+  function handleDocumentPointerDown(event: PointerEvent): void {
+    if (!expanded || submitting) return;
+    if (event.target instanceof Node && !sectionEl?.contains(event.target)) {
+      expanded = false;
+    }
+  }
 </script>
 
-<div class={["approve-section", expanded && "approve-section--open"]}>
+<svelte:document onpointerdowncapture={handleDocumentPointerDown} />
+
+<div bind:this={sectionEl} class={["approve-section", expanded && "approve-section--open"]}>
   <Button
     class="btn btn--approve"
     onclick={() => {

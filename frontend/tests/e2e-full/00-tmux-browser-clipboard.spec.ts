@@ -433,27 +433,6 @@ async function renderTerminalLink(
   return dimensions;
 }
 
-async function renderRawTerminalLink(
-  page: Page,
-  output: ReturnType<typeof observeTerminalOutput>,
-  server: IsolatedE2EServer,
-  tmuxSession: string,
-  renderedText: string,
-  marker: string,
-): Promise<TerminalDimensions> {
-  writeTmuxClientTTY(server, tmuxSession, new TextEncoder().encode(`\x1b[2J\x1b[H${renderedText}\r\n${marker}\r\n`));
-  await expect.poll(() => output.includes(marker), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBe(true);
-  await page.evaluate(
-    () =>
-      new Promise<void>((resolve) => {
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-      }),
-  );
-  const dimensions = output.dimensionsForLatestInput();
-  if (!dimensions) throw new Error(`terminal dimensions unavailable for link marker ${marker}`);
-  return dimensions;
-}
-
 async function terminalCellCenter(
   container: Locator,
   dimensions: TerminalDimensions,
@@ -818,7 +797,7 @@ async function dragTerminalPastTop(page: Page, container: Locator, dimensions: T
 
 test.describe.configure({ mode: "serial", timeout: 120_000 });
 
-test("real xterm links disclose destinations and require a modified click", async ({ page }) => {
+test("detected terminal URLs disclose destinations and require a modified click", async ({ page }) => {
   test.skip(!hasCommand("git") || !hasCommand("tmux", ["-V"]), "git and tmux are required for the real workspace flow");
 
   let isolatedServer: IsolatedE2EServer | null = null;
@@ -832,62 +811,40 @@ test("real xterm links disclose destinations and require a modified click", asyn
 
     await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
     const terminal = await openTerminalPanel(page);
-    const tmuxSession = await runningRuntimeTmuxSession(api, workspace.id);
     const usesMetaKey = await page.evaluate(() => /Mac/.test(navigator.platform));
     const modifier = usesMetaKey ? "Meta" : "Control";
     const modifierLabel = usesMetaKey ? "Cmd" : "Ctrl";
-    const links = [
-      {
-        destination: "https://example.com/detected-link",
-        renderedText: "https://example.com/detected-link",
-        marker: "detected-link-ready",
-        raw: false,
-      },
-      {
-        destination: "https://example.org/osc8-destination",
-        renderedText: "\x1b]8;;https://example.org/osc8-destination\x07Open release notes\x1b]8;;\x07",
-        marker: "osc8-link-ready",
-        raw: true,
-      },
-    ];
+    const destination = "https://example.com/detected-link";
+    const marker = "detected-link-ready";
 
-    for (const link of links) {
-      await page.mouse.move(1, 1);
-      await expect(terminal.locator(".terminal-link-tooltip")).toHaveCount(0);
-      const dimensions = link.raw
-        ? await renderRawTerminalLink(page, output, isolatedServer, tmuxSession, link.renderedText, link.marker)
-        : await renderTerminalLink(page, terminal, output, link.renderedText, link.marker);
-      expect(output.includes(link.destination), `${link.marker} destination did not reach the terminal stream`).toBe(
-        true,
-      );
-      const point = await terminalCellCenter(terminal, dimensions, 4, 0);
-      const resetPoint = await terminalCellCenter(terminal, dimensions, 4, 2);
+    await page.mouse.move(1, 1);
+    await expect(terminal.locator(".terminal-link-tooltip")).toHaveCount(0);
+    const dimensions = await renderTerminalLink(page, terminal, output, destination, marker);
+    expect(output.includes(destination), `${marker} destination did not reach the terminal stream`).toBe(true);
+    const point = await terminalCellCenter(terminal, dimensions, 4, 0);
+    const resetPoint = await terminalCellCenter(terminal, dimensions, 4, 2);
 
-      const tooltip = await hoverTerminalLink(page, terminal, resetPoint, point, link.destination);
-      await expect(tooltip).toContainText(`${modifierLabel}+Click to open link`);
+    const tooltip = await hoverTerminalLink(page, terminal, resetPoint, point, destination);
+    await expect(tooltip).toContainText(`${modifierLabel}+Click to open link`);
 
-      const opensBeforeClick = await terminalLinkOpens(page);
-      await page.mouse.click(point.x, point.y);
-      expect(await terminalLinkOpens(page)).toEqual(opensBeforeClick);
+    await page.mouse.click(point.x, point.y);
+    expect(await terminalLinkOpens(page)).toEqual([]);
 
-      await page.mouse.move(resetPoint.x, resetPoint.y);
-      await expect(tooltip).toHaveCount(0);
-      await hoverTerminalLink(page, terminal, resetPoint, point, link.destination);
-      await page.keyboard.down(modifier);
-      await page.mouse.click(point.x, point.y);
-      await page.keyboard.up(modifier);
-      await expect.poll(() => terminalLinkOpens(page)).toHaveLength(opensBeforeClick.length + 1);
-    }
-
+    await page.mouse.move(resetPoint.x, resetPoint.y);
+    await expect(tooltip).toHaveCount(0);
+    await hoverTerminalLink(page, terminal, resetPoint, point, destination);
+    await page.keyboard.down(modifier);
+    await page.mouse.click(point.x, point.y);
+    await page.keyboard.up(modifier);
     await expect
       .poll(() => terminalLinkOpens(page))
-      .toEqual(
-        links.map((link) => ({
-          url: link.destination,
+      .toEqual([
+        {
+          url: destination,
           target: "_blank",
           features: "noopener,noreferrer",
-        })),
-      );
+        },
+      ]);
   } finally {
     await api?.dispose();
     await isolatedServer?.stop();

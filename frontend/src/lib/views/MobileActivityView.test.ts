@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { ActivityItem, ActivitySubject, WorkspaceActivitySubject } from "../api/types.js";
 import MobileActivityView from "./MobileActivityViewRuntimeHarness.svelte";
@@ -46,6 +46,9 @@ const hideOrgName = vi.hoisted(() => ({ value: false }));
 const showNotifications = vi.hoisted(() => ({ value: true }));
 const activityCapped = vi.hoisted(() => ({ value: false }));
 const itemActivityCapped = vi.hoisted(() => ({ value: false }));
+const activityLoading = vi.hoisted(() => ({ value: false }));
+const activityError = vi.hoisted(() => ({ value: null as string | null }));
+const showFlash = vi.hoisted(() => vi.fn());
 const involvesMe = vi.hoisted(() => ({ value: false }));
 const enabledEvents = vi.hoisted(() => ({
   value: new Set(["comment", "review", "commit", "force_push"]),
@@ -90,6 +93,8 @@ const setActivityAuthor = vi.hoisted(() =>
   }),
 );
 
+vi.mock("../stores/flash.svelte.js", () => ({ showFlash }));
+
 vi.mock("../context.js", () => ({
   getStores: () => ({
     activity: {
@@ -105,7 +110,7 @@ vi.mock("../context.js", () => ({
       getActivityItems: () => items.value,
       getItemActivity: () => itemActivity.value,
       getWorkspaceActivity: () => workspaceActivity.value,
-      getActivityError: () => null,
+      getActivityError: () => activityError.value,
       getTimeRange: () => "7d",
       getEnabledItemTypes: () => enabledItemTypes.value,
       getEnabledEvents: () => enabledEvents.value,
@@ -115,7 +120,7 @@ vi.mock("../context.js", () => ({
       getHideBots: () => hideBots.value,
       getUseWorkspaceActivityForRecency: () => useWorkspaceActivityForRecency.value,
       getHideDefaultBranchActivity: () => false,
-      isActivityLoading: () => false,
+      isActivityLoading: () => activityLoading.value,
       isActivityCapped: () => activityCapped.value,
       isItemActivityCapped: () => itemActivityCapped.value,
       setActivityFilterTypes: vi.fn(),
@@ -138,7 +143,32 @@ vi.mock("../context.js", () => ({
       syncToURL: vi.fn(),
     },
     settings: {
-      getConfiguredRepos: () => [],
+      getConfiguredRepos: () => [
+        {
+          provider: "github",
+          platform_host: "github.com",
+          owner: "acme",
+          name: "api",
+          repo_path: "acme/api",
+          platform_repo_id: "R_api",
+          is_glob: false,
+          matched_repo_count: 1,
+          hidden_from_ui: false,
+        },
+      ],
+      getRepoPresets: () => [
+        {
+          name: "Backend",
+          repos: [
+            {
+              provider: "github",
+              platform_host: "github.com",
+              platform_repo_id: "R_api",
+              repo_path: "acme/api",
+            },
+          ],
+        },
+      ],
       isSettingsLoaded: () => true,
       hasConfiguredRepos: () => true,
     },
@@ -166,6 +196,8 @@ describe("MobileActivityView branch activity", () => {
     hideClosedMerged.value = false;
     activityCapped.value = false;
     itemActivityCapped.value = false;
+    activityLoading.value = false;
+    activityError.value = null;
     enabledEvents.value = new Set(["comment", "review", "commit", "force_push"]);
     enabledItemTypes.value = new Set(["pr", "issue"]);
     onSelectItem.mockClear();
@@ -179,10 +211,12 @@ describe("MobileActivityView branch activity", () => {
     setFullEventProjectionRequired.mockClear();
     setActivityPageLimit.mockClear();
     loadThreadPreview.mockClear();
+    showFlash.mockClear();
   });
 
   afterEach(() => {
     cleanup();
+    vi.unstubAllGlobals();
   });
 
   it("keeps search and icon-only filters in one compact toolbar", () => {
@@ -208,6 +242,22 @@ describe("MobileActivityView branch activity", () => {
     await fireEvent.click(comments);
 
     expect([...setEnabledEvents.mock.calls[0]![0]]).toEqual(["review", "commit", "force_push"]);
+  });
+
+  it("uses the shared repository picker inside the filter panel", async () => {
+    const onRepoChange = vi.fn();
+    render(MobileActivityView, { props: { onSelectItem, onRepoChange } });
+
+    expect(screen.queryByRole("button", { name: "Select repository: Global" })).toBeNull();
+    await fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Select repository: Global" }));
+    loadActivity.mockClear();
+    await fireEvent.mouseDown(screen.getByRole("option", { name: "Backend" }));
+
+    expect(onRepoChange).toHaveBeenCalledWith("github|github.com/acme/api");
+    expect(loadActivity).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "Save preset" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Delete preset Backend" })).toBeNull();
   });
 
   it("exposes closed and merged visibility", async () => {
@@ -250,23 +300,67 @@ describe("MobileActivityView branch activity", () => {
     expect(setActivityPageLimit).toHaveBeenLastCalledWith(undefined);
   });
 
-  it("loads the next bounded parent chunk on demand", async () => {
+  it("autoloads one parent chunk when the end sentinel enters the viewport", async () => {
+    const observed = new Map<Element, IntersectionObserverCallback>();
+    class IntersectionObserverStub {
+      constructor(private readonly callback: IntersectionObserverCallback) {}
+      observe(target: Element): void {
+        observed.set(target, this.callback);
+      }
+      disconnect(): void {}
+      unobserve(): void {}
+      takeRecords(): IntersectionObserverEntry[] {
+        return [];
+      }
+      readonly root = null;
+      readonly rootMargin = "0px";
+      readonly thresholds = [0];
+    }
+    vi.stubGlobal("IntersectionObserver", IntersectionObserverStub);
     itemActivityCapped.value = true;
-    render(MobileActivityView, { props: { onSelectItem } });
+    activityLoading.value = true;
+    const { container } = render(MobileActivityView, { props: { onSelectItem } });
+    const sentinel = container.querySelector(".mobile-activity-loading-sentinel");
+    expect(sentinel).toBeTruthy();
+    const notify = observed.get(sentinel!);
+    expect(notify).toBeTruthy();
 
-    await fireEvent.click(screen.getByRole("button", { name: "Load 30 more" }));
+    notify!([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
 
     expect(setActivityPageLimit).toHaveBeenLastCalledWith(60);
     expect(loadActivity).toHaveBeenCalledTimes(2);
+
+    notify!([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
+    expect(loadActivity).toHaveBeenCalledTimes(2);
+
+    activityLoading.value = false;
+    const viewport = sentinel!.closest(".kit-scrollbox__viewport");
+    expect(viewport).toBeTruthy();
+    await fireEvent.touchStart(viewport!);
+    expect(setActivityPageLimit).toHaveBeenLastCalledWith(90);
+    expect(loadActivity).toHaveBeenCalledTimes(3);
   });
 
-  it("warns about parent truncation separately from event truncation", () => {
+  it("does not render truncation warnings or a manual load control", () => {
+    activityCapped.value = true;
     itemActivityCapped.value = true;
 
     render(MobileActivityView, { props: { onSelectItem } });
 
-    expect(screen.getByText(/most recently active pull requests and issues/)).toBeTruthy();
     expect(screen.queryByText(/most recent activity/)).toBeNull();
+    expect(screen.queryByText(/most recently active pull requests and issues/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Load 30 more" })).toBeNull();
+  });
+
+  it("reports connection errors through the shared Kit UI warning banner", async () => {
+    activityError.value = "Could not reach Kenn Forge";
+
+    const { container } = render(MobileActivityView, { props: { onSelectItem } });
+
+    await waitFor(() => {
+      expect(showFlash).toHaveBeenCalledWith("Could not reach Kenn Forge", { tone: "warning", durationMs: 8_000 });
+    });
+    expect(container.querySelector(".mobile-activity-error")).toBeNull();
   });
 
   it("exposes independent PR and issue toggles", async () => {

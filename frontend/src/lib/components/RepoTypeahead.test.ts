@@ -907,6 +907,34 @@ describe("RepoTypeahead", () => {
     expect(localStorage.getItem("kenn-forge-filter-repo-preset")).toBe("Backend");
   });
 
+  it("can apply saved presets without exposing preset management", async () => {
+    const onchange = vi.fn();
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "api",
+        repo_path: "acme/api",
+        platform_repo_id: "R_api",
+        is_glob: false,
+        matched_repo_count: 1,
+        hidden_from_ui: false,
+      },
+    ]);
+    settingsStore.setRepoPresets([{ name: "Backend", repos: [presetRepo("acme/api", "R_api")] }]);
+    render(RepoTypeahead, {
+      props: { selected: undefined, onchange, allowPresetManagement: false },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Select repository: Global" }));
+    await fireEvent.mouseDown(screen.getByRole("option", { name: "Backend" }));
+
+    expect(onchange).toHaveBeenLastCalledWith("github|github.com/acme/api");
+    expect(screen.queryByRole("button", { name: "Save preset" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Delete preset Backend" })).toBeNull();
+  });
+
   it("resolves a renamed configured repository without selecting a replacement at its old route", async () => {
     const onchange = vi.fn();
     settingsStore.setConfiguredRepos([

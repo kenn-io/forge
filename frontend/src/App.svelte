@@ -1233,9 +1233,9 @@
             </div>
           {/if}
         {:else if getPage() === "mobile-pulls"}
-          <FocusListView listType="mrs" />
+          <FocusListView listType="mrs" showRepoSelector />
         {:else if getPage() === "mobile-issues"}
-          <FocusListView listType="issues" />
+          <FocusListView listType="issues" showRepoSelector />
         {:else}
           <MobileActivityView
             selectedRepo={getNormalizedGlobalRepo()}

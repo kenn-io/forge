@@ -173,7 +173,7 @@ test.describe("phone routes", () => {
     await expect(page.getByRole("switch", { name: "Notifications" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Hide closed/merged" })).toBeVisible();
     await expect(page.getByLabel("Time range")).toBeVisible();
-    await expect(page.getByLabel("Repository")).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Select repository:/ })).toBeVisible();
     await expect(page.locator(".threaded-view")).toHaveCount(0);
 
     const metrics = await page.evaluate(() => {
@@ -194,7 +194,7 @@ test.describe("phone routes", () => {
       const appIcon = document.querySelector(".mobile-app-icon");
       const itemTypeToggle = document.querySelector(".mobile-item-type-toggle .kit-toggle");
       const rangeSelect = document.querySelector(".mobile-filter-dropdown button[aria-label^='Time range']");
-      const repoSelect = document.querySelector(".mobile-filter-dropdown button[aria-label^='Repository']");
+      const repoSelect = document.querySelector(".mobile-filter-select--repo .typeahead-trigger");
       const search = document.querySelector(".kit-search-input");
       const cardRect = firstCard?.getBoundingClientRect();
       const buttonRect = firstButton?.getBoundingClientRect();
@@ -339,9 +339,10 @@ test.describe("phone routes", () => {
       const url = new URL(response.url());
       return url.pathname === "/api/v1/activity" && url.searchParams.get("repo") === "github|github.com/acme/widgets";
     });
-    await page.getByRole("combobox", { name: /Repository/ }).click();
-    await page.getByRole("option", { name: "github/github.com/acme/widgets" }).click();
-    await expect(page.getByRole("combobox", { name: "Repository: acme/widgets" })).toHaveText("acme/widgets");
+    await page.getByRole("button", { name: /^Select repository:/ }).click();
+    await page.getByRole("option", { name: "github/github.com/acme/widgets", exact: true }).dispatchEvent("mousedown");
+    await page.getByRole("textbox", { name: "Filter repos" }).press("Escape");
+    await expect(page.getByRole("button", { name: /^Select repository:/ })).toContainText("acme/widgets");
     expect((await activityForRepo).ok()).toBe(true);
 
     const repoLabels = page.locator(".mobile-activity-card__meta > span:first-child");

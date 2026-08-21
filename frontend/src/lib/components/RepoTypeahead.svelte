@@ -57,9 +57,17 @@
     selected: string | undefined;
     onchange: (repo: string | undefined) => void;
     initialOpen?: boolean;
+    allowPresetManagement?: boolean;
+    mobile?: boolean;
   }
 
-  let { selected, onchange, initialOpen = false }: Props = $props();
+  let {
+    selected,
+    onchange,
+    initialOpen = false,
+    allowPresetManagement = true,
+    mobile = false,
+  }: Props = $props();
 
   const stores = getStores();
   const runtime = getAppRuntime();
@@ -518,7 +526,7 @@
   }
 </script>
 
-<div class="typeahead" bind:this={containerEl}>
+<div class="typeahead" class:typeahead--mobile={mobile} bind:this={containerEl}>
   {#if open}
     <input
       bind:this={inputEl}
@@ -574,18 +582,20 @@
               />
               <span class="preset-name">{preset.name}</span>
             </div>
-            <button
-              type="button"
-              class="preset-delete"
-              aria-label={`Delete preset ${preset.name}`}
-              disabled={mutationBusy}
-              onclick={() => {
-                mutationError = undefined;
-                deletePreset = preset;
-              }}
-            >
-              <TrashIcon size="13" strokeWidth="2" aria-hidden="true" />
-            </button>
+            {#if allowPresetManagement}
+              <button
+                type="button"
+                class="preset-delete"
+                aria-label={`Delete preset ${preset.name}`}
+                disabled={mutationBusy}
+                onclick={() => {
+                  mutationError = undefined;
+                  deletePreset = preset;
+                }}
+              >
+                <TrashIcon size="13" strokeWidth="2" aria-hidden="true" />
+              </button>
+            {/if}
           </li>
         {/each}
       </ul>
@@ -615,19 +625,21 @@
         {/each}
       </ul>
 
-      <div class="typeahead-footer">
-        {#if mutationError && !saveDialogOpen && !deletePreset}
-          <p class="typeahead-error" role="alert">{mutationError}</p>
-        {/if}
-        <Button
-          class="save-preset-button"
-          size="sm"
-          disabled={selectedValues.length === 0 || selectedPresetRepos === undefined || mutationBusy}
-          onclick={openSaveDialog}
-        >
-          Save preset
-        </Button>
-      </div>
+      {#if allowPresetManagement}
+        <div class="typeahead-footer">
+          {#if mutationError && !saveDialogOpen && !deletePreset}
+            <p class="typeahead-error" role="alert">{mutationError}</p>
+          {/if}
+          <Button
+            class="save-preset-button"
+            size="sm"
+            disabled={selectedValues.length === 0 || selectedPresetRepos === undefined || mutationBusy}
+            onclick={openSaveDialog}
+          >
+            Save preset
+          </Button>
+        </div>
+      {/if}
     </div>
   {:else}
     <Button
@@ -647,7 +659,7 @@
   {/if}
 </div>
 
-{#if saveDialogOpen}
+{#if allowPresetManagement && saveDialogOpen}
   <RepoPresetSaveDialog
     open
     presets={repoPresets}
@@ -663,22 +675,24 @@
   />
 {/if}
 
-<ConfirmDialog
-  open={deletePreset !== undefined}
-  title="Delete repository preset?"
-  message={`Delete the preset ‘${deletePreset?.name ?? ""}’?`}
-  hint="The repositories remain selected as a custom filter."
-  confirmLabel="Delete preset"
-  pendingLabel="Deleting…"
-  busy={mutationBusy}
-  tone="danger"
-  onCancel={() => {
-    if (mutationBusy) return;
-    deletePreset = undefined;
-    mutationError = undefined;
-  }}
-  onConfirm={confirmDeletePreset}
-/>
+{#if allowPresetManagement}
+  <ConfirmDialog
+    open={deletePreset !== undefined}
+    title="Delete repository preset?"
+    message={`Delete the preset ‘${deletePreset?.name ?? ""}’?`}
+    hint="The repositories remain selected as a custom filter."
+    confirmLabel="Delete preset"
+    pendingLabel="Deleting…"
+    busy={mutationBusy}
+    tone="danger"
+    onCancel={() => {
+      if (mutationBusy) return;
+      deletePreset = undefined;
+      mutationError = undefined;
+    }}
+    onConfirm={confirmDeletePreset}
+  />
+{/if}
 
 <style>
   .typeahead {
@@ -865,5 +879,39 @@
     font-size: var(--font-size-xs);
     line-height: 1.35;
     white-space: normal;
+  }
+
+  .typeahead--mobile {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+  }
+
+  .typeahead--mobile :global(.typeahead-trigger.kit-button),
+  .typeahead--mobile .typeahead-input {
+    min-height: 44px;
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-md);
+  }
+
+  .typeahead--mobile .typeahead-popover {
+    width: min(360px, calc(100vw - 26px));
+    max-width: calc(100vw - 26px);
+    max-height: min(60vh, 520px);
+  }
+
+  .typeahead--mobile .typeahead-popover :global(.typeahead-option) {
+    min-height: 44px;
+    box-sizing: border-box;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    font-size: var(--font-size-md);
+  }
+
+  .typeahead--mobile .typeahead-empty {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    font-size: var(--font-size-md);
   }
 </style>

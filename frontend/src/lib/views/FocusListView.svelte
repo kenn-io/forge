@@ -11,6 +11,8 @@
   import IssueItem from "../components/sidebar/IssueItem.svelte";
   import type { Issue, PullRequest } from "../api/types.js";
   import { createRepoLabelFormatter } from "../utils/repo-label.js";
+  import RepoTypeahead from "../components/RepoTypeahead.svelte";
+  import { getGlobalRepo, setGlobalRepo } from "../stores/filter.svelte.js";
   import {
     buildFocusIssueRoute,
     buildFocusPullRequestRoute,
@@ -41,9 +43,15 @@
     listType: "mrs" | "issues";
     repo?: string;
     routeFamily?: "focus" | "canonical";
+    showRepoSelector?: boolean;
   }
 
-  const { listType, repo, routeFamily = "focus" }: Props = $props();
+  const {
+    listType,
+    repo,
+    routeFamily = "focus",
+    showRepoSelector = false,
+  }: Props = $props();
 
   let searchInput = $state("");
   let filtersExpanded = $state(false);
@@ -68,10 +76,11 @@
     loadList();
   }
 
-  const repoLabel = $derived(repo ?? "All repositories");
+  const selectedRepo = $derived(showRepoSelector ? getGlobalRepo() : repo);
+  const repoLabel = $derived(selectedRepo ?? "All repositories");
 
   const repoParams = $derived(
-    repo ? { repo } : undefined,
+    selectedRepo ? { repo: selectedRepo } : undefined,
   );
 
   $effect(() => {
@@ -210,15 +219,28 @@
 </script>
 
 <div class="focus-list">
-  <div class="header">
-    <span class="header-label">{repoLabel}</span>
-    <span class="count-badge">{itemCount} {itemLabel}</span>
-  </div>
+  {#if !showRepoSelector}
+    <div class="header">
+      <span class="header-label">{repoLabel}</span>
+      <span class="count-badge">{itemCount} {itemLabel}</span>
+    </div>
+  {/if}
   <div
     id="focus-list-filters"
     class="filter-bar"
     class:filter-bar--expanded={filtersExpanded}
   >
+    {#if showRepoSelector && filtersExpanded}
+      <div class="mobile-repo-filter">
+        <span>Repository</span>
+        <RepoTypeahead
+          selected={selectedRepo}
+          onchange={setGlobalRepo}
+          allowPresetManagement={false}
+          mobile
+        />
+      </div>
+    {/if}
     <div class="state-toggle">
       {#if listType === "mrs"}
         {#each ["open", "closed", "all"] as s (s)}
@@ -663,6 +685,30 @@
 
   :global(.mobile-main) .filter-bar--expanded {
     display: flex;
+  }
+
+  :global(.mobile-main) .mobile-repo-filter {
+    flex: 1 0 100%;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: var(--focus-mobile-space-sm);
+    padding: 0 var(--focus-mobile-space-sm);
+    border: thin solid var(--border-default);
+    border-radius: var(--focus-mobile-radius-md);
+    background: var(--bg-inset);
+  }
+
+  :global(.mobile-main) .mobile-repo-filter > span {
+    color: var(--text-muted);
+    font-size: var(--font-size-sm);
+    font-weight: 700;
+  }
+
+  :global(.mobile-main) .mobile-repo-filter :global(.typeahead-popover) {
+    left: auto;
+    right: 0;
   }
 
   :global(.mobile-main) .state-toggle,

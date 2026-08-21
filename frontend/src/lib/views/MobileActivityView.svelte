@@ -28,10 +28,12 @@
     type TypeaheadOption,
     type TimelineTone,
   } from "@kenn-io/kit-ui";
+  import { showFlash } from "../stores/flash.svelte.js";
   import { parseAPITimestamp } from "../utils/time.js";
   import { latestActivityAt } from "../utils/effective-activity.js";
   import ItemKindChip from "../components/shared/ItemKindChip.svelte";
   import ItemStateChip from "../components/shared/ItemStateChip.svelte";
+  import RepoTypeahead from "../components/RepoTypeahead.svelte";
   import { SelectDropdown } from "@kenn-io/kit-ui";
   import WorkspaceIndicator from "../components/shared/WorkspaceIndicator.svelte";
   import CheckIcon from "@lucide/svelte/icons/check";
@@ -45,9 +47,6 @@
     notificationReasonLabel,
     shortSha,
   } from "../components/activityRows.js";
-  import {
-    buildMobileActivityRepoOptions,
-  } from "./mobileActivityRepoOptions.js";
   import {
     createRepoLabelFormatter,
     type RepoLabelIdentity,
@@ -91,15 +90,12 @@
   let searchInput = $state("");
   let activityPageLimit = $state(30);
   let filtersExpanded = $state(false);
+  let flashedActivityError: string | null = null;
+  let paginationArmed = true;
+  let paginationIntersecting = false;
   let searchExecution: AppExecution<void, never> | null = null;
   let unsubSync: (() => void) | undefined;
 
-  const repoOptions = $derived.by(() =>
-    [
-      { value: "", label: "All repos" },
-      ...buildMobileActivityRepoOptions(settings.getConfiguredRepos()),
-    ],
-  );
   onMount(() => {
     activity.initializeFromMount();
     searchInput = activity.getActivitySearch() ?? "";
@@ -111,6 +107,17 @@
       activity.loadActivity();
       activity.loadActivityAuthors(true);
     });
+  });
+
+  $effect(() => {
+    const error = activity.getActivityError();
+    if (!error) {
+      flashedActivityError = null;
+      return;
+    }
+    if (error === flashedActivityError) return;
+    flashedActivityError = error;
+    showFlash(error, { tone: "warning", durationMs: 8_000 });
   });
 
   onDestroy(() => {
@@ -394,8 +401,8 @@
     setTimeRange(value as TimeRange);
   }
 
-  function handleRepoChange(value: string): void {
-    onRepoChange?.(value || undefined);
+  function handleRepoChange(value: string | undefined): void {
+    onRepoChange?.(value);
     activity.loadActivity();
   }
 
@@ -501,6 +508,60 @@
     activity.setActivityPageLimit(activityPageLimit);
     activity.loadActivity();
   }
+
+  const autoloadMoreActivity: Attachment<HTMLElement> = (node) => {
+    if (typeof IntersectionObserver === "undefined") {
+      if (paginationArmed) {
+        paginationArmed = false;
+        loadMoreActivity();
+      }
+      return;
+    }
+
+    const root = node.closest<HTMLElement>(".kit-scrollbox__viewport");
+    const armPagination = () => {
+      if (paginationArmed || activity.isActivityLoading()) return;
+      paginationArmed = true;
+      if (!paginationIntersecting) return;
+      paginationArmed = false;
+      loadMoreActivity();
+    };
+    root?.addEventListener("touchstart", armPagination, { passive: true });
+    root?.addEventListener("wheel", armPagination, { passive: true });
+    root?.addEventListener("pointerdown", armPagination, { passive: true });
+    root?.addEventListener("keydown", armPagination);
+
+    const execution = runtime.runCommand(
+      Effect.scoped(
+        observeIntersection(
+          node,
+          (entries) => {
+            const nextIntersecting = entries[0]?.isIntersecting === true;
+            paginationIntersecting = nextIntersecting;
+            if (nextIntersecting && paginationArmed) {
+              paginationArmed = false;
+              loadMoreActivity();
+            }
+          },
+          { root, rootMargin: "240px 0px" },
+        ).pipe(Effect.andThen(Effect.never)),
+      ),
+      {
+        operation: "observe mobile activity pagination",
+        safeContext: {},
+        onFailure: () => {},
+      },
+    );
+
+    return () => {
+      paginationIntersecting = false;
+      root?.removeEventListener("touchstart", armPagination);
+      root?.removeEventListener("wheel", armPagination);
+      root?.removeEventListener("pointerdown", armPagination);
+      root?.removeEventListener("keydown", armPagination);
+      execution.interrupt();
+    };
+  };
 
   function subjectSelectionItem(
     subject: ActivitySubject | WorkspaceActivitySubject,
@@ -754,12 +815,11 @@
 
       <div class="mobile-filter-select mobile-filter-select--repo">
         <span>Repo</span>
-        <SelectDropdown
-          class="mobile-filter-dropdown"
-          title="Repository"
-          value={selectedRepo ?? ""}
-          options={repoOptions}
+        <RepoTypeahead
+          selected={selectedRepo}
           onchange={handleRepoChange}
+          allowPresetManagement={false}
+          mobile
         />
       </div>
 
@@ -806,10 +866,6 @@
     </div>
     {/if}
 
-
-    {#if activity.getActivityError()}
-      <div class="mobile-activity-error">{activity.getActivityError()}</div>
-    {/if}
 
     {#if settings.isSettingsLoaded() && !settings.hasConfiguredRepos()}
       <div class="mobile-activity-empty">No repositories configured.</div>
@@ -903,24 +959,14 @@
       </div>
     {/if}
 
-    {#if activity.isActivityCapped()}
-      <div class="mobile-activity-capped event-capped-notice">
-        Showing the most recent activity. Narrow the range or filters to see more.
+    {#if activity.isItemActivityCapped() && activityPageLimit < 500}
+      <div
+        class="mobile-activity-loading-sentinel"
+        aria-live="polite"
+        {@attach autoloadMoreActivity}
+      >
+        {#if activity.isActivityLoading()}Loading more…{/if}
       </div>
-    {/if}
-
-    {#if activity.isItemActivityCapped()}
-      <div class="mobile-activity-capped item-activity-capped-notice">
-        Showing the most recently active pull requests and issues. Narrow the range or item filters to see more.
-      </div>
-      {#if activityPageLimit < 500}
-        <button
-          type="button"
-          class="mobile-activity-load-more"
-          disabled={activity.isActivityLoading()}
-          onclick={loadMoreActivity}
-        >Load 30 more</button>
-      {/if}
     {/if}
   </div>
   </ScrollBox>
@@ -1059,6 +1105,11 @@
 
   .mobile-filter-select--repo {
     grid-column: 1 / -1;
+  }
+
+  .mobile-filter-select--repo :global(.typeahead-popover) {
+    left: auto;
+    right: 0;
   }
 
   .mobile-filter-select span {
@@ -1312,9 +1363,7 @@
     font-weight: 750;
   }
 
-  .mobile-activity-empty,
-  .mobile-activity-error,
-  .mobile-activity-capped {
+  .mobile-activity-empty {
     padding: var(--mobile-space-lg);
     border: thin solid var(--border-default);
     border-radius: var(--radius-lg);
@@ -1324,20 +1373,12 @@
     text-align: center;
   }
 
-  .mobile-activity-load-more {
-    min-height: var(--mobile-hit-target);
-    border: thin solid var(--border-default);
-    border-radius: var(--mobile-radius-sm);
-    color: var(--text-primary);
-    background: var(--bg-inset);
-  }
-
-  .mobile-activity-error {
-    color: var(--accent-red);
-  }
-
-  .mobile-activity-capped {
-    margin-top: var(--mobile-space-md);
-    color: var(--accent-amber);
+  .mobile-activity-loading-sentinel {
+    display: grid;
+    min-height: var(--mobile-space-lg);
+    place-items: center;
+    overflow-anchor: none;
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
   }
 </style>

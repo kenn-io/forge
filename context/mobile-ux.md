@@ -87,9 +87,12 @@ Avoid by default:
 - Tiny icon-only actions without accessible names and visible context.
 - Routing mobile taps into desktop drawer/query state with no visible phone result.
 
-Mobile Activity starts with 30 collapsed parents, expands in 30-parent chunks on demand,
-and loads one bounded event preview only near the phone viewport. Keep this separate from
-desktop thread expansion (`frontend/src/lib/views/MobileActivityView.svelte`).
+- Mobile Activity starts with 30 collapsed parents and autoloads one 30-parent chunk per
+  end-of-list scroll gesture. Event previews stay bounded and viewport-driven
+  (`frontend/src/lib/views/MobileActivityView.svelte::autoloadMoreActivity`).
+- Phone Activity, PR, and issue filters use the shared repository selector for Global,
+  saved presets, and custom selections; preset management remains outside the phone
+  workflow (`frontend/src/lib/components/RepoTypeahead.svelte`).
 
 ## Routing expectations
 

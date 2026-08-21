@@ -15,6 +15,7 @@ import {
   setPullInvolvesMe,
   setPullSearch,
 } from "../../test/focusListViewState.svelte.js";
+import { getGlobalRepo, setGlobalRepo } from "../stores/filter.svelte.js";
 
 const pullSearch = vi.hoisted(() => vi.fn());
 const issueSearch = vi.hoisted(() => vi.fn());
@@ -79,6 +80,32 @@ vi.mock("../context.js", () => ({
       },
     },
     settings: {
+      getConfiguredRepos: () => [
+        {
+          provider: "github",
+          platform_host: "github.com",
+          owner: "acme",
+          name: "api",
+          repo_path: "acme/api",
+          platform_repo_id: "R_api",
+          is_glob: false,
+          matched_repo_count: 1,
+          hidden_from_ui: false,
+        },
+      ],
+      getRepoPresets: () => [
+        {
+          name: "Backend",
+          repos: [
+            {
+              provider: "github",
+              platform_host: "github.com",
+              platform_repo_id: "R_api",
+              repo_path: "acme/api",
+            },
+          ],
+        },
+      ],
       hasConfiguredRepos: () => true,
       isSettingsLoaded: () => true,
     },
@@ -102,6 +129,7 @@ describe("FocusListView search", () => {
     unsubscribeSync.mockClear();
     subscribeSyncComplete.mockClear();
     resetFocusListViewState();
+    setGlobalRepo(undefined);
   });
 
   afterEach(() => {
@@ -162,6 +190,23 @@ describe("FocusListView search", () => {
 
     expect(filters.getAttribute("aria-expanded")).toBe("true");
     expect(container.querySelector(".filter-bar")?.classList.contains("filter-bar--expanded")).toBe(true);
+  });
+
+  it.each([
+    ["mrs" as const, loadPulls],
+    ["issues" as const, loadIssues],
+  ])("applies saved repository presets to the mobile %s query", async (listType, loadList) => {
+    render(FocusListView, { props: { listType, showRepoSelector: true } });
+
+    expect(screen.queryByRole("button", { name: "Select repository: Global" })).toBeNull();
+    await fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Select repository: Global" }));
+    await fireEvent.mouseDown(screen.getByRole("option", { name: "Backend" }));
+
+    expect(getGlobalRepo()).toBe("github|github.com/acme/api");
+    expect(loadList).toHaveBeenLastCalledWith({ repo: "github|github.com/acme/api" });
+    expect(screen.queryByRole("button", { name: "Save preset" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Delete preset Backend" })).toBeNull();
   });
 
   it.each([

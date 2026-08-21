@@ -1177,6 +1177,46 @@ test("shows saved draft comments inline and jumps from the tray", async ({ page 
   await expect(inlineDraft).toBeFocused();
 });
 
+test("drags across line numbers to create a multiline draft", async ({ page }) => {
+  let resolveCreatedRange!: (range: Record<string, unknown>) => void;
+  const createdRangePromise = new Promise<Record<string, unknown>>((resolve) => {
+    resolveCreatedRange = resolve;
+  });
+  await mockInlineReviewAPI(page, baseCapabilities, "github", "github.com", diffResponse, (body) => {
+    resolveCreatedRange(body.range);
+  });
+
+  await page.goto("/pulls/github/acme/widgets/42/files");
+  const firstLine = reviewLineControl(page, 1);
+  const secondLine = reviewLineControl(page, 2);
+  await expect(firstLine).toBeVisible();
+  await expect(secondLine).toBeVisible();
+  const firstLineBox = await firstLine.boundingBox();
+  const secondLineBox = await secondLine.boundingBox();
+  expect(firstLineBox).not.toBeNull();
+  expect(secondLineBox).not.toBeNull();
+
+  await page.mouse.move(firstLineBox!.x + 1, firstLineBox!.y + firstLineBox!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(secondLineBox!.x + 1, secondLineBox!.y + secondLineBox!.height / 2);
+  await page.mouse.up();
+
+  await openSelectedReviewRange(page);
+  const composer = page.getByPlaceholder("Leave a comment");
+  await expect(composer).toBeVisible();
+  await composer.fill("Please cover both lines.");
+  await page.getByRole("button", { name: "Add comment", exact: true }).click();
+
+  await expect(createdRangePromise).resolves.toMatchObject({
+    path: "src/main.ts",
+    start_side: "right",
+    start_line: 1,
+    side: "right",
+    line: 2,
+    new_line: 2,
+  });
+});
+
 test("keeps remaining GitLab draft state visible after a partial publish", async ({ page }) => {
   await mockInlineReviewAPI(page, baseCapabilities, "gitlab", "gitlab.com", diffResponse, undefined, {
     publishStatus: "partially_published",

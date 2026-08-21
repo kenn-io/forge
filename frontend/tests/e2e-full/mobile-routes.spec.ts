@@ -184,16 +184,20 @@ test.describe("phone routes", () => {
     await expect(page.getByText("Readable threads first")).toHaveCount(0);
     const search = page.getByPlaceholder("Search activity");
     const filters = page.getByRole("button", { name: /^Filters/ });
+    const activityFilters = page.locator("#mobile-activity-filters");
     await expect(filters).toHaveText("");
     await expect(filters).toHaveAttribute("aria-expanded", "false");
+    await expect(activityFilters).toBeAttached();
+    await expect(activityFilters).toBeHidden();
     const [searchBounds, filterBounds] = await Promise.all([search.boundingBox(), filters.boundingBox()]);
     expect(searchBounds).not.toBeNull();
     expect(filterBounds).not.toBeNull();
     expect(Math.abs(searchBounds!.y - filterBounds!.y)).toBeLessThan(2);
     expect(filterBounds!.height).toBeGreaterThanOrEqual(44);
-    await filters.click();
+    await filters.locator("svg").click();
     await expect(filters).toHaveAttribute("aria-expanded", "true");
-    await expect(page.locator("#mobile-activity-filters")).toBeVisible();
+    await expect(activityFilters).toBeVisible();
+    expect((await activityFilters.boundingBox())?.height ?? 0).toBeGreaterThan(0);
     await expect(page.getByRole("switch", { name: "PRs" })).toBeVisible();
     await expect(page.getByRole("switch", { name: "Issues" })).toBeVisible();
     await expect(page.getByRole("switch", { name: "Comments" })).toBeVisible();
@@ -225,9 +229,11 @@ test.describe("phone routes", () => {
       const itemTypeToggle = document.querySelector(".mobile-item-type-toggle .kit-toggle");
       const rangeSelect = document.querySelector(".mobile-filter-dropdown button[aria-label^='Time range']");
       const repoSelect = document.querySelector(".mobile-filter-select--repo .typeahead-trigger");
+      const repoChevron = repoSelect?.querySelector(".typeahead-chevron") ?? null;
       const toolbar = document.querySelector(".mobile-triage-search-bar");
       const filterPanel = document.querySelector(".mobile-activity-filter-grid");
       const authorFilter = document.querySelector(".mobile-author-filter");
+      const authorChevron = authorFilter?.querySelector(".kit-typeahead__chevron") ?? null;
       const search = document.querySelector(".kit-search-input");
       const cardRect = firstCard?.getBoundingClientRect();
       const buttonRect = firstButton?.getBoundingClientRect();
@@ -257,7 +263,7 @@ test.describe("phone routes", () => {
       document.body.append(surfaceSample);
       const compactRect = (node: Element | null) => {
         const r = node?.getBoundingClientRect();
-        return r ? { top: r.top, left: r.left, right: r.right, height: r.height } : null;
+        return r ? { top: r.top, left: r.left, right: r.right, width: r.width, height: r.height } : null;
       };
       const fontSize = (node: Element | null): number =>
         node ? Number.parseFloat(getComputedStyle(node).fontSize) : 0;
@@ -305,7 +311,9 @@ test.describe("phone routes", () => {
         itemTypeToggleRect: compactRect(itemTypeToggle),
         rangeSelectRect: compactRect(rangeSelect),
         repoSelectRect: compactRect(repoSelect),
+        repoChevronRect: compactRect(repoChevron),
         authorFilterRect: compactRect(authorFilter),
+        authorChevronRect: compactRect(authorChevron),
         searchLeft: searchRect?.left ?? 0,
         searchRight: searchRect?.right ?? 0,
       };
@@ -347,6 +355,13 @@ test.describe("phone routes", () => {
     expect(metrics.rangeSelectFontSize).toBeGreaterThanOrEqual(15);
     expect(metrics.repoSelectFontSize).toBeGreaterThanOrEqual(15);
     expect(metrics.repoSelectRect?.top ?? Infinity).toBeLessThan(metrics.authorFilterRect?.top ?? 0);
+    expect(
+      (metrics.authorFilterRect?.top ?? Infinity) -
+        (metrics.repoSelectRect?.top ?? 0) -
+        (metrics.repoSelectRect?.height ?? 0),
+    ).toBeLessThanOrEqual(1);
+    expect(metrics.authorChevronRect?.width).toBe(metrics.repoChevronRect?.width);
+    expect(metrics.authorChevronRect?.height).toBe(metrics.repoChevronRect?.height);
     for (const bounds of [metrics.itemTypeToggleRect, metrics.rangeSelectRect, metrics.repoSelectRect]) {
       expect(bounds?.left ?? 0).toBeGreaterThanOrEqual(0);
       expect(bounds?.right ?? 0).toBeLessThanOrEqual(metrics.viewportWidth);

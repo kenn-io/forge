@@ -739,37 +739,44 @@
       />
     </div>
 
-    {#if filtersExpanded}
-    <div id="mobile-activity-filters" class="mobile-activity-filter-grid" aria-label="Activity filters">
-      <div class="mobile-filter-select mobile-filter-select--repo">
-        <RepoTypeahead
-          selected={selectedRepo}
-          onchange={handleRepoChange}
-          allowPresetManagement={false}
-          mobile
-        />
-      </div>
-
-      <div class="mobile-author-filter">
-        <span class="mobile-author-icon">
-          <UserRoundIcon size="16" strokeWidth="2" aria-hidden="true" />
-        </span>
-        <div class="mobile-author-picker">
-          <Typeahead
-            options={authorOptions}
-            value={activity.getActivityAuthor() ?? ""}
-            fallbackLabel="Anyone"
-            placeholder="Filter authors"
-            title="Filter by PR or issue author"
-            allowClear
-            clearLabel="Anyone"
-            loading={activity.isActivityAuthorsLoading()}
-            error={activity.getActivityAuthorsError() ?? ""}
-            onselect={handleAuthorSelect}
+    <div
+      id="mobile-activity-filters"
+      class="mobile-activity-filter-grid"
+      class:mobile-activity-filter-grid--expanded={filtersExpanded}
+      aria-label="Activity filters"
+      hidden={!filtersExpanded}
+    >
+      <div class="mobile-identity-filters">
+        <div class="mobile-filter-select mobile-filter-select--repo">
+          <RepoTypeahead
+            selected={selectedRepo}
+            onchange={handleRepoChange}
+            allowPresetManagement={false}
+            mobile
           />
-          <span class="mobile-author-summary">
-            {activity.getActivityAuthor() ? "Selected author" : "All authors"}
+        </div>
+
+        <div class="mobile-author-filter">
+          <span class="mobile-author-icon">
+            <UserRoundIcon size="16" strokeWidth="2" aria-hidden="true" />
           </span>
+          <div class="mobile-author-picker">
+            <Typeahead
+              options={authorOptions}
+              value={activity.getActivityAuthor() ?? ""}
+              fallbackLabel="Anyone"
+              placeholder="Filter authors"
+              title="Filter by PR or issue author"
+              allowClear
+              clearLabel="Anyone"
+              loading={activity.isActivityAuthorsLoading()}
+              error={activity.getActivityAuthorsError() ?? ""}
+              onselect={handleAuthorSelect}
+            />
+            <span class="mobile-author-summary">
+              {activity.getActivityAuthor() ? "Selected author" : "All authors"}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -857,10 +864,7 @@
           onchange={() => toggleHideOrgName()}
         />
       </div>
-
     </div>
-    {/if}
-
 
     {#if settings.isSettingsLoaded() && !settings.hasConfiguredRepos()}
       <div class="mobile-activity-empty">No repositories configured.</div>
@@ -1013,7 +1017,7 @@
   }
 
   .mobile-activity-filter-grid {
-    display: grid;
+    display: none;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--mobile-space-xs);
     margin:
@@ -1023,6 +1027,17 @@
     padding: var(--mobile-space-sm);
     border-bottom: thin solid var(--border-muted);
     background: var(--bg-surface);
+  }
+
+  .mobile-activity-filter-grid--expanded {
+    display: grid;
+  }
+
+  .mobile-identity-filters {
+    grid-column: 1 / -1;
+    min-width: 0;
+    display: grid;
+    gap: 0;
   }
 
   .mobile-author-filter {
@@ -1035,7 +1050,7 @@
     min-height: 48px;
     padding: var(--mobile-space-2xs) var(--mobile-space-xs);
     border: 0;
-    border-top: thin solid var(--border-muted);
+    border-top: 0;
     border-bottom: thin solid var(--border-muted);
     border-radius: 0;
     color: var(--text-secondary);
@@ -1082,7 +1097,10 @@
   }
 
   .mobile-author-picker :global(.kit-typeahead__chevron) {
+    width: 16px;
+    height: 16px;
     transform: rotate(-90deg);
+    opacity: 0.5;
   }
 
   .mobile-author-picker :global(.kit-typeahead__input) {

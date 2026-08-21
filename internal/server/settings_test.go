@@ -107,7 +107,8 @@ func readSettingsTmuxMouseCommands(t *testing.T, record string) []string {
 	require.NoError(t, err)
 	commands := make([]string, 0, 2)
 	for command := range strings.SplitSeq(strings.TrimSpace(string(content)), "\n") {
-		if strings.Contains(command, " list-sessions ") || strings.Contains(command, " set-option -q -g mouse ") {
+		if strings.Contains(command, " list-sessions -F #{session_name}:#{@forge_owner}") ||
+			strings.Contains(command, " set-option -q -g mouse ") {
 			commands = append(commands, command)
 		}
 	}

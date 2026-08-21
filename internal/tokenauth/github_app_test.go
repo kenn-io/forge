@@ -360,6 +360,25 @@ func TestGitHubAppMintCallerDeadlineFailureIsNotCached(t *testing.T) {
 		"caller-caused deadline failure must not enter the retry window")
 }
 
+func TestGitHubAppMintInternalDeadlineFailureIsCached(t *testing.T) {
+	var mints atomic.Int64
+	src := NewManagedSource(githubAppDescriptor(42), Options{
+		GitHubApp: func(context.Context, Candidate) (string, time.Time, error) {
+			if mints.Add(1) == 1 {
+				return "", time.Time{}, fmt.Errorf("mint client timeout: %w", context.DeadlineExceeded)
+			}
+			return "ghs_recovered", time.Now().Add(time.Hour), nil
+		},
+	})
+
+	for range 2 {
+		_, err := src.Token(context.Background())
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+	}
+	assert.Equal(t, int64(1), mints.Load(),
+		"an internal client deadline must enter the retry window")
+}
+
 type retryDeadlineTestError struct {
 	at time.Time
 }
@@ -374,10 +393,10 @@ func TestGitHubAppFailedMintCachesBoundedRetryDeadline(t *testing.T) {
 	now := time.Date(2026, time.August, 19, 12, 0, 0, 0, time.UTC)
 	tooLate := now.Add(24 * time.Hour)
 	assert.Equal(now.Add(githubAppMintRetryMax),
-		githubAppMintRetryDeadline(retryDeadlineTestError{at: tooLate}, now))
+		githubAppMintRetryDeadline(retryDeadlineTestError{at: tooLate}, nil, now))
 	assert.Equal(now.Add(githubAppMintRetryDefault),
-		githubAppMintRetryDeadline(retryDeadlineTestError{at: now}, now))
-	assert.True(githubAppMintRetryDeadline(context.Canceled, now).IsZero())
+		githubAppMintRetryDeadline(retryDeadlineTestError{at: now}, nil, now))
+	assert.True(githubAppMintRetryDeadline(context.Canceled, context.Canceled, now).IsZero())
 
 	var mints atomic.Int64
 	store := newGitHubAppTokenStore()
@@ -434,6 +453,24 @@ func TestGitHubAppHeaderlessMintFailureCooldownIsSharedAcrossRoutes(t *testing.T
 	require.NoError(err)
 	assert.Equal("ghs_recovered", token)
 	assert.Equal(int64(2), mints.Load())
+}
+
+func TestGitHubAppInvalidatePreservesFailedMintCooldown(t *testing.T) {
+	var mints atomic.Int64
+	src := NewManagedSource(githubAppDescriptor(42), Options{
+		GitHubApp: func(context.Context, Candidate) (string, time.Time, error) {
+			mints.Add(1)
+			return "", time.Time{}, errors.New("upstream unavailable")
+		},
+	})
+
+	_, err := src.Token(context.Background())
+	require.ErrorContains(t, err, "upstream unavailable")
+	src.Invalidate()
+	_, err = src.Token(context.Background())
+	require.ErrorContains(t, err, "upstream unavailable")
+	assert.Equal(t, int64(1), mints.Load(),
+		"stale invalidation must preserve an active failure cooldown")
 }
 
 func TestMutationAuthSkipsGitHubAppCandidate(t *testing.T) {

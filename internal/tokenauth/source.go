@@ -75,9 +75,8 @@ type retryDeadlineError interface {
 	RetryDeadline(time.Time) time.Time
 }
 
-func githubAppMintRetryDeadline(err error, now time.Time) time.Time {
-	if err == nil || errors.Is(err, context.Canceled) ||
-		errors.Is(err, context.DeadlineExceeded) {
+func githubAppMintRetryDeadline(err, callerErr error, now time.Time) time.Time {
+	if err == nil || (callerErr != nil && errors.Is(err, callerErr)) {
 		return time.Time{}
 	}
 	var retryErr retryDeadlineError
@@ -144,7 +143,7 @@ func (s *githubAppTokenStore) resolve(
 		cached.token = token
 		cached.exp = exp
 		cached.err = err
-		cached.retryAt = githubAppMintRetryDeadline(err, now)
+		cached.retryAt = githubAppMintRetryDeadline(err, ctx.Err(), now)
 		if err != nil && cached.retryAt.IsZero() {
 			// Cancellation and deadline failures come from the winning
 			// caller's context, not from GitHub: mark the entry so
@@ -167,6 +166,7 @@ func (s *githubAppTokenStore) invalidate(candidates []Candidate) {
 		return
 	}
 	s.mu.Lock()
+	now := s.now()
 	for _, candidate := range candidates {
 		if candidate.Kind != SourceKindGitHubApp {
 			continue
@@ -176,12 +176,13 @@ func (s *githubAppTokenStore) invalidate(candidates []Candidate) {
 		if cached == nil {
 			continue
 		}
-		// An in-flight mint has never handed a token to anyone, so an
-		// invalidation arriving now is about an older, completed token
-		// (a stale 401 retry). Evicting the mint would let concurrent
-		// stale invalidations trigger parallel mints and discard the
-		// fresh result.
-		if cached.mintDone != nil {
+		// An in-flight mint or active failure cooldown has not handed a
+		// token to anyone, so an invalidation arriving now is about an
+		// older, completed token (a stale 401 retry). Evicting either
+		// entry would let stale invalidations defeat single-flight or
+		// failure backoff.
+		if cached.mintDone != nil ||
+			cached.err != nil && now.Before(cached.retryAt) {
 			continue
 		}
 		cached.invalidated = true

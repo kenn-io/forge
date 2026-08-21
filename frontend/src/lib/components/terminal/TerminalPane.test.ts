@@ -1030,6 +1030,26 @@ describe("TerminalPane", () => {
     );
   });
 
+  it("claims resize authority when its tab becomes active while the socket connects", async () => {
+    mockSocketsStartOpen = false;
+    const { rerender } = render(TerminalPane, {
+      props: { workspaceId: "ws-123", active: false },
+    });
+
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    expect(mockSockets[0]!.url).toContain("resize_active=0");
+
+    await rerender({ workspaceId: "ws-123", active: true });
+    mockSockets[0]!.readyState = MockWebSocket.OPEN;
+    mockSockets[0]!.onopen();
+
+    await waitFor(() =>
+      expect(socketFramesOfType(mockSockets[0]!, "claim_resize")).toEqual([
+        JSON.stringify({ type: "claim_resize", cols: 80, rows: 24 }),
+      ]),
+    );
+  });
+
   it("focuses the xterm terminal once it initializes while active", async () => {
     render(TerminalPane, { props: { workspaceId: "ws-123" } });
 

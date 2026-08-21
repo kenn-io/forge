@@ -417,6 +417,31 @@ func TestConfigReload_WatcherFiresOnInPlaceEdit(t *testing.T) {
 	assert.Equal("30d", gotActivity.TimeRange)
 }
 
+func TestConfigReloadAppliesMouseToDedicatedTmuxServer(t *testing.T) {
+	require := require.New(t)
+	record := installSettingsTmuxRecorder(t)
+	srv, _, cfgPath := setupTestServerWithConfigContentAndOptions(t, validReloadConfig, &mockGH{}, ServerOptions{
+		HostCheckAllowLoopbackAnyPort: true,
+		WorktreeDir:                   t.TempDir(),
+	})
+	require.NoError(os.WriteFile(record, nil, 0o600))
+	waitForConfigWatcher(t, srv, 2*time.Second)
+	stream := streamConfigEvents(t, srv)
+	defer stream.Close()
+
+	writeConfigToml(t, cfgPath, validReloadConfig+`
+[terminal]
+tmux_mouse = false
+`)
+
+	event := waitForConfigEvent(t, stream, 2*time.Second)
+	require.True(event.Valid, "reload error: %s", event.Error)
+	assert.Equal(t, []string{
+		"-L kenn-forge list-sessions -F #{session_name}:#{@forge_owner}",
+		"-L kenn-forge set-option -q -g mouse off",
+	}, readSettingsTmuxMouseCommands(t, record))
+}
+
 func TestConfigReloadPublishesPullConfigOnlyAfterSuccessfulReload(t *testing.T) {
 	require := require.New(t)
 	srv, _, _ := setupTestServerWithConfigContent(

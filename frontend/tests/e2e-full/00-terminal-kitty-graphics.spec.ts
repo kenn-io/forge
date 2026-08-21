@@ -173,6 +173,10 @@ async function renderGraphicsThroughTmux(
     api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
     const workspace = await createIssueWorkspace(api);
 
+    if (!options.passthrough) {
+      runE2ETmuxCommand(isolatedServer, ["set-option", "-q", "-g", "terminal-features[100]", "xterm-256color:sixel"]);
+    }
+
     await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
     const terminal = await openTerminalPanel(page);
     const tmuxSession = await runningRuntimeTmuxSession(api, workspace.id);

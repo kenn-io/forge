@@ -17,6 +17,7 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v89/github"
+	shellquote "github.com/kballard/go-shellquote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
@@ -85,6 +86,32 @@ func setupTestServerWithConfigContentAndOptions(
 		options,
 	)
 	return srv, database, cfgPath
+}
+
+func installSettingsTmuxRecorder(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	record := filepath.Join(dir, "commands")
+	tmuxPath := filepath.Join(dir, "tmux")
+	body := "#!/bin/sh\n" +
+		"printf '%s\\n' \"$*\" >> " + shellquote.Join(record) + "\n" +
+		`case " $* " in *" list-sessions "*) printf 'sess-A:\n';; esac` + "\n"
+	require.NoError(t, os.WriteFile(tmuxPath, []byte(body), 0o755))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return record
+}
+
+func readSettingsTmuxMouseCommands(t *testing.T, record string) []string {
+	t.Helper()
+	content, err := os.ReadFile(record)
+	require.NoError(t, err)
+	commands := make([]string, 0, 2)
+	for command := range strings.SplitSeq(strings.TrimSpace(string(content)), "\n") {
+		if strings.Contains(command, " list-sessions ") || strings.Contains(command, " set-option -q -g mouse ") {
+			commands = append(commands, command)
+		}
+	}
+	return commands
 }
 
 func setupTestServerWithConfigProviders(
@@ -820,6 +847,37 @@ docs = false
 	assert.Equal(2000, cfg2.Terminal.Scrollback)
 	assert.Equal(1, cfg2.Terminal.LetterSpacing)
 	assert.False(*cfg2.Modes.Docs)
+}
+
+func TestHandleUpdateTerminalSettingsAppliesMouseToDedicatedTmuxServer(t *testing.T) {
+	require := require.New(t)
+	record := installSettingsTmuxRecorder(t)
+	srv, _, _ := setupTestServerWithConfigContentAndOptions(t, `
+sync_interval = "5m"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+`, &mockGH{}, ServerOptions{
+		HostCheckAllowLoopbackAnyPort: true,
+		WorktreeDir:                   t.TempDir(),
+	})
+	require.NoError(os.WriteFile(record, nil, 0o600))
+
+	srv.cfgMu.Lock()
+	terminal := srv.cfg.Terminal
+	srv.cfgMu.Unlock()
+	terminal.TmuxMouse = new(false)
+	rr := doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{Terminal: &terminal})
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	assert.Equal(t, []string{
+		"-L kenn-forge list-sessions -F #{session_name}:#{@forge_owner}",
+		"-L kenn-forge set-option -q -g mouse off",
+	}, readSettingsTmuxMouseCommands(t, record))
 }
 
 func TestHandleUpdateSettingsPersistsAgents(t *testing.T) {

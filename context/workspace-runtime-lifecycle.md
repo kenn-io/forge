@@ -201,6 +201,9 @@ still exists.
 - Forge's dedicated tmux server sets global passthrough, SIXEL, and configurable
   mouse mode, including live mouse-setting changes; custom servers receive only
   pane passthrough (`internal/workspace/manager.go::Manager.ApplyTmuxMouse`).
+- Applying a saved mouse change to a live tmux server is best-effort: failures
+  are logged, and the next managed session setup reapplies the saved value
+  (`internal/server/settings_handlers.go::Server.applyTmuxMouse`).
 - Browser Kitty output must use direct placements; the current xterm addon does
   not implement the Unicode placeholders that `kitten icat` selects in tmux
   (`frontend/tests/e2e-full/00-terminal-kitty-graphics.spec.ts::kittyGraphicsCommand`).
@@ -289,8 +292,8 @@ stale tabs.
 - The frontend may react immediately to terminal exit events, but should then
   reconcile with a runtime refresh.
 - Only the active terminal pane may publish cell geometry; font-metric changes
-  must refit and publish columns/rows through the refresh control because unchanged
-  container pixels do not trigger resize observation (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::refreshVisibleTerminal`).
+  must refit and publish columns/rows through an ownership-aware geometry control because unchanged
+  container pixels do not trigger resize observation (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::resizeVisibleTerminal`).
 - Keyboard and pointer interactions inside workspace rows must not trigger
   unintended navigation when the user is targeting a nested control.
 - Persisted "last active tab" state must be scoped per workspace.

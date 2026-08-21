@@ -965,7 +965,7 @@ test.describe("inline workspace pane continuity", () => {
       const terminalTab = workflow.getByRole("tab", { name: "Terminal" });
       await expect(terminalTab).toHaveAttribute("aria-selected", "true");
       await expect
-        .poll(() => controlFrames.some((frame) => frame.type === "resize_active" && frame.active === true), {
+        .poll(() => controlFrames.some((frame) => frame.type === "claim_resize"), {
           timeout: 15_000,
         })
         .toBe(true);
@@ -981,7 +981,7 @@ test.describe("inline workspace pane continuity", () => {
         })
         .toBeGreaterThan(revocationsBeforeHide);
       const geometryFramesAfterHide = controlFrames.filter(
-        (frame) => frame.type === "resize" || frame.type === "refresh",
+        (frame) => frame.type === "claim_resize" || frame.type === "resize" || frame.type === "refresh",
       ).length;
       const widthBeforeResize = await workflow.evaluate((element) => element.getBoundingClientRect().width);
 
@@ -996,9 +996,11 @@ test.describe("inline workspace pane continuity", () => {
           }),
       );
 
-      expect(controlFrames.filter((frame) => frame.type === "resize" || frame.type === "refresh")).toHaveLength(
-        geometryFramesAfterHide,
-      );
+      expect(
+        controlFrames.filter(
+          (frame) => frame.type === "claim_resize" || frame.type === "resize" || frame.type === "refresh",
+        ),
+      ).toHaveLength(geometryFramesAfterHide);
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();
@@ -1834,7 +1836,10 @@ test.describe("inline workspace pane continuity", () => {
     let api: APIRequestContext | null = null;
     try {
       const controlFrames = observeTerminalControlFrames(page);
-      const refreshFrames = () => controlFrames.filter((frame) => frame.type === "refresh");
+      const geometryFrames = () =>
+        controlFrames.filter(
+          (frame) => frame.type === "claim_resize" || frame.type === "resize" || frame.type === "refresh",
+        );
       isolatedServer = await startIsolatedWorkspaceE2EServer();
       api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
 
@@ -1868,14 +1873,14 @@ test.describe("inline workspace pane continuity", () => {
         name: "Reset terminal font size",
       });
       await expect(resetZoom).toHaveText("12px");
-      const refreshCountBeforeZoom = refreshFrames().length;
+      const geometryFrameCountBeforeZoom = geometryFrames().length;
       for (let fontSize = 13; fontSize <= ZOOMED_TERMINAL_FONT_SIZE; fontSize += 1) {
         await page.getByRole("button", { name: "Increase terminal font size" }).click();
         await expect(resetZoom).toHaveText(`${fontSize}px`);
       }
       await expectPersistedTerminalFontSize(api, ZOOMED_TERMINAL_FONT_SIZE);
-      await expect.poll(() => refreshFrames().length).toBeGreaterThan(refreshCountBeforeZoom);
-      await expect.poll(() => refreshFrames().at(-1)?.cols).toBeLessThan(beforeZoom.cols);
+      await expect.poll(() => geometryFrames().length).toBeGreaterThan(geometryFrameCountBeforeZoom);
+      await expect.poll(() => geometryFrames().at(-1)?.cols).toBeLessThan(beforeZoom.cols);
       await waitForPtyColumnsBelow(
         page,
         tabContainer,
@@ -1997,6 +2002,8 @@ test.describe("inline workspace pane continuity", () => {
       api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
       const workspaceA = await createIssueWorkspace(api, 10);
       const workspaceB = await createIssueWorkspace(api, 11);
+
+      runE2ETmuxCommand(isolatedServer, ["set-option", "-q", "-g", "mouse", "on"]);
 
       await page.goto(`${isolatedServer.info.base_url}/terminal/${workspaceA.id}`);
       const initialA = await openTerminalPanel(page);
@@ -2543,14 +2550,14 @@ test.describe("inline workspace pane continuity", () => {
       await expect
         .poll(
           async () =>
-            (await runtimeSockets()).at(-1)?.sent.filter((frame) => frame.includes('"type":"refresh"')).length,
+            (await runtimeSockets()).at(-1)?.sent.filter((frame) => frame.includes('"type":"claim_resize"')).length,
         )
         .toBe(1);
-      const refresh = JSON.parse(
-        (await runtimeSockets()).at(-1)!.sent.find((frame) => frame.includes('"type":"refresh"'))!,
+      const claim = JSON.parse(
+        (await runtimeSockets()).at(-1)!.sent.find((frame) => frame.includes('"type":"claim_resize"'))!,
       ) as TerminalControlFrame;
-      expect(refresh.cols).toBeGreaterThan(0);
-      expect(refresh.rows).toBeGreaterThan(0);
+      expect(claim.cols).toBeGreaterThan(0);
+      expect(claim.rows).toBeGreaterThan(0);
       await expect(page.locator('[data-same-renderer-reconnect="witness"]')).toBeVisible();
       await expect(container.locator(".xterm.enable-mouse-events")).toHaveCount(0);
       const normalCursorUpBefore = output.inputOccurrences(normalCursorUp);

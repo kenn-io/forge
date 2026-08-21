@@ -873,7 +873,8 @@
         connectionGeneration += 1;
         onConnectionChange?.(true);
         switchTimer.record("socket-open");
-        sendResizeActive(resizeAuthorityRegionSize() !== null);
+        const authorityChanged = sendResizeActive(resizeAuthorityRegionSize() !== null);
+        if (authorityChanged) claimTerminalResize(true);
         const size = resizeAuthorityRegionSize();
         if (resizeReady && size && (size.cols !== sentCols || size.rows !== sentRows)) {
           scheduleTerminalRefresh();

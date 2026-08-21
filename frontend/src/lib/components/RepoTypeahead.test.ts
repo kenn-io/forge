@@ -69,6 +69,21 @@ describe("RepoTypeahead", () => {
     cleanup();
   });
 
+  it("renders the mobile picker as one menu row with selection context", () => {
+    render(RepoTypeahead, {
+      props: {
+        selected: undefined,
+        onchange: vi.fn(),
+        mobile: true,
+      },
+    });
+
+    const trigger = screen.getByRole("button", { name: "Select repository: Global" });
+    expect(trigger.textContent).toContain("Global");
+    expect(trigger.textContent).toContain("All repositories");
+    expect(trigger.querySelector(".typeahead-mobile-icon")).toBeTruthy();
+  });
+
   it("updates dropdown options when configured repos change", async () => {
     render(RepoTypeahead, {
       props: {

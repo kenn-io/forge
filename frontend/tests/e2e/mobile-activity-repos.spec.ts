@@ -84,13 +84,12 @@ test.describe("mobile activity repository selector", () => {
 
     await page.goto("/m?range=30d&view=threaded");
     await page.getByRole("button", { name: /Filters/ }).click();
-    const repoSelect = page.getByRole("combobox", {
-      name: /Repository/,
-    });
+    const repoSelect = page.getByRole("button", { name: "Select repository: Global" });
     await expect(repoSelect).toBeVisible();
+    await expect(repoSelect).toContainText("All repositories");
 
     await repoSelect.click();
-    await expect(page.getByRole("option", { name: "All repos" })).toBeVisible();
+    await expect(page.getByRole("option", { name: "Global" })).toBeVisible();
     await expect(page.getByRole("option", { name: "github/github.com/acme/widgets" })).toBeVisible();
     await expect(page.getByRole("option", { name: "gitea/github.com/acme/widgets" })).toBeVisible();
     await expect(
@@ -101,7 +100,7 @@ test.describe("mobile activity repository selector", () => {
     await expect(page.getByRole("option", { name: "acme/*" })).toHaveCount(0);
 
     await page.getByRole("option", { name: "gitea/github.com/acme/widgets" }).click();
-    await expect(page.getByRole("combobox", { name: "Repository: gitea/github.com/acme/widgets" })).toHaveText(
+    await expect(page.getByRole("button", { name: "Select repository: gitea/github.com/acme/widgets" })).toContainText(
       "gitea/github.com/acme/widgets",
     );
     await expect.poll(() => activityRepos).toContain("gitea|github.com/acme/widgets");

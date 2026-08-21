@@ -1,5 +1,7 @@
 <script lang="ts">
   import { Button } from "@kenn-io/kit-ui";
+  import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
+  import FolderGit2Icon from "@lucide/svelte/icons/folder-git-2";
   import TrashIcon from "@lucide/svelte/icons/trash-2";
   import { Effect } from "effect";
   import { onDestroy, onMount, tick, untrack } from "svelte";
@@ -279,6 +281,11 @@
     if (selectedValues.length === 1) return displayRepoFilterValue(selectedValues[0]!);
     return `${selectedValues.length} repos`;
   });
+  const selectionSummary = $derived(
+    selectedValues.length === 0
+      ? "All repositories"
+      : `${selectedValues.length} ${selectedValues.length === 1 ? "repository" : "repositories"}`,
+  );
 
   const expansion = createRepoTreeExpansionStore();
 
@@ -353,6 +360,11 @@
     openExecution = null;
     open = false;
     query = "";
+  }
+
+  function toggleDropdown(): void {
+    if (open) closeDropdown();
+    else openDropdown();
   }
 
   function clearSelection() {
@@ -527,21 +539,64 @@
 </script>
 
 <div class="typeahead" class:typeahead--mobile={mobile} bind:this={containerEl}>
+  {#if !open || mobile}
+    <Button
+      class="typeahead-trigger"
+      size="sm"
+      ariaLabel={`Select repository: ${displayValue}`}
+      ariaExpanded={open}
+      onclick={mobile ? toggleDropdown : openDropdown}
+    >
+      {#if mobile}
+        <span class="typeahead-mobile-icon">
+          <FolderGit2Icon size="16" strokeWidth="2" aria-hidden="true" />
+        </span>
+        <span class="typeahead-mobile-copy">
+          <span class="typeahead-value">{displayValue}</span>
+          <span class="typeahead-selection-summary">{selectionSummary}</span>
+        </span>
+        <ChevronRightIcon
+          class="typeahead-chevron"
+          size="16"
+          strokeWidth="2"
+          aria-hidden="true"
+        />
+      {:else}
+        <span class="typeahead-value">{displayValue}</span>
+        <ChevronDownIcon
+          class="typeahead-chevron"
+          size="10"
+          strokeWidth="2"
+          aria-hidden="true"
+        />
+      {/if}
+    </Button>
+  {/if}
   {#if open}
-    <input
-      bind:this={inputEl}
-      class="typeahead-input"
-      type="text"
-      bind:value={query}
-      oninput={handleInput}
-      onkeydown={handleKeydown}
-      onblur={handleBlur}
-      placeholder="Filter repos..."
-      aria-label="Filter repos"
-      autocomplete="off"
-    />
-    <!-- kit-ui-check-ignore: checkable provider tree owns tri-state multi-selection, named presets, persistent expansion, and provider-host-qualified identity; kit Typeahead is single-select -->
-    <div class="typeahead-popover kit-popover-card" role="presentation" onmousedown={preventBlur}>
+    <div
+      class="typeahead-menu-shell"
+      class:typeahead-menu-shell--mobile={mobile}
+      class:kit-popover-card={mobile}
+    >
+      <input
+        bind:this={inputEl}
+        class="typeahead-input"
+        type="text"
+        bind:value={query}
+        oninput={handleInput}
+        onkeydown={handleKeydown}
+        onblur={handleBlur}
+        placeholder="Filter repos..."
+        aria-label="Filter repos"
+        autocomplete="off"
+      />
+      <!-- kit-ui-check-ignore: checkable provider tree owns tri-state multi-selection, named presets, persistent expansion, and provider-host-qualified identity; kit Typeahead is single-select -->
+      <div
+        class="typeahead-popover"
+        class:kit-popover-card={!mobile}
+        role="presentation"
+        onmousedown={preventBlur}
+      >
       <!-- kit-ui-check-ignore: preset rows share keyboard highlighting and selection with the tri-state repository tree below -->
       <ul class="typeahead-presets" role="listbox" aria-label="Repository presets">
         <li
@@ -640,22 +695,8 @@
           </Button>
         </div>
       {/if}
+      </div>
     </div>
-  {:else}
-    <Button
-      class="typeahead-trigger"
-      size="sm"
-      ariaLabel={`Select repository: ${displayValue}`}
-      onclick={openDropdown}
-    >
-      <span class="typeahead-value">{displayValue}</span>
-      <ChevronDownIcon
-        class="typeahead-chevron"
-        size="10"
-        strokeWidth="2"
-        aria-hidden="true"
-      />
-    </Button>
   {/if}
 </div>
 
@@ -699,6 +740,10 @@
     position: relative;
     min-width: 160px;
     max-width: 260px;
+  }
+
+  .typeahead-menu-shell {
+    display: contents;
   }
 
   :global(.typeahead-trigger.kit-button) {
@@ -894,10 +939,94 @@
     font-size: var(--font-size-md);
   }
 
-  .typeahead--mobile .typeahead-popover {
+  .typeahead--mobile :global(.typeahead-trigger.kit-button) {
+    height: auto;
+    min-height: 48px;
+    gap: var(--space-4);
+    padding: var(--space-1) var(--space-2);
+    border: 0;
+    border-top: thin solid var(--border-muted);
+    border-bottom: thin solid var(--border-muted);
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .typeahead--mobile :global(.typeahead-trigger.kit-button[aria-expanded="true"]) {
+    color: var(--accent-blue);
+    background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
+  }
+
+  .typeahead-mobile-icon {
+    width: 28px;
+    height: 28px;
+    flex: 0 0 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    color: var(--accent-blue);
+    background: color-mix(in srgb, var(--accent-blue) 13%, transparent);
+  }
+
+  .typeahead-mobile-copy {
+    min-width: 0;
+    flex: 1;
+    display: grid;
+    gap: var(--space-1);
+    text-align: left;
+  }
+
+  .typeahead-mobile-copy .typeahead-value {
+    flex: none;
+    color: var(--text-primary);
+    font-size: var(--font-size-md);
+    font-weight: 700;
+    line-height: 1.15;
+  }
+
+  .typeahead-selection-summary {
+    overflow: hidden;
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+    line-height: 1.15;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .typeahead--mobile .typeahead-menu-shell--mobile {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 90;
     width: min(360px, calc(100vw - 26px));
     max-width: calc(100vw - 26px);
     max-height: min(60vh, 520px);
+    margin-top: var(--space-1);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    overflow: hidden;
+    padding: var(--space-2);
+  }
+
+  .typeahead--mobile .typeahead-menu-shell--mobile .typeahead-input {
+    width: 100%;
+    flex: 0 0 auto;
+  }
+
+  .typeahead--mobile .typeahead-popover {
+    position: static;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    max-height: none;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    z-index: auto;
   }
 
   .typeahead--mobile .typeahead-popover :global(.typeahead-option) {

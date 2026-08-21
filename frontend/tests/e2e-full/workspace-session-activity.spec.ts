@@ -336,7 +336,6 @@ test.describe("workspace session activity across item surfaces", () => {
         expect(new Set(topTitles)).toEqual(new Set(["Add widget caching layer", "Widget rendering broken on Safari"]));
 
         const mobileIssueCard = mobileCards.filter({ hasText: "Widget rendering broken on Safari" }).first();
-        await expect(mobileIssueCard).toContainText("0 events");
         await expect(mobileIssueCard.locator('time[title="Recent workspace activity"]')).toBeVisible();
         await expect(mobileIssueCard.getByLabel("Workspace attached (ready)")).toBeVisible();
         await expect(mobileIssueCard.locator(".mobile-activity-events")).toHaveCount(0);
@@ -456,7 +455,7 @@ test.describe("workspace session activity across item surfaces", () => {
         const botIssueCard = botPhonePage.locator(".mobile-activity-card", { hasText: botIssueTitle });
         await expect(botPullCard).toBeVisible();
         await expect(botIssueCard).toBeVisible();
-        await botPhonePage.getByRole("button", { name: "Hide bots", exact: true }).click();
+        await botPhonePage.getByRole("switch", { name: "Hide bots", exact: true }).click();
         await expect(botPullCard).toHaveCount(0);
         await expect(botIssueCard).toHaveCount(0);
       } finally {

@@ -38,6 +38,7 @@
   import WorkspaceIndicator from "../components/shared/WorkspaceIndicator.svelte";
   import CheckIcon from "@lucide/svelte/icons/check";
   import FunnelIcon from "@lucide/svelte/icons/funnel";
+  import UserRoundIcon from "@lucide/svelte/icons/user-round";
   import {
     activityBranchKey,
     activityItemKey,
@@ -721,7 +722,10 @@
 <section class="mobile-activity-inbox" aria-label="Mobile activity inbox">
   <ScrollBox label="Activity inbox">
   <div class="mobile-activity-scroll">
-    <div class="mobile-activity-toolbar">
+    <div
+      class="mobile-activity-toolbar"
+      class:mobile-activity-toolbar--expanded={filtersExpanded}
+    >
       <div class="mobile-activity-search">
         <SearchInput
           bind:value={searchInput}
@@ -752,20 +756,36 @@
 
     {#if filtersExpanded}
     <div id="mobile-activity-filters" class="mobile-activity-filter-grid" aria-label="Activity filters">
-      <div class="mobile-author-filter">
-        <span>Author</span>
-        <Typeahead
-          options={authorOptions}
-          value={activity.getActivityAuthor() ?? ""}
-          fallbackLabel="Anyone"
-          placeholder="Filter authors"
-          title="Filter by PR or issue author"
-          allowClear
-          clearLabel="Anyone"
-          loading={activity.isActivityAuthorsLoading()}
-          error={activity.getActivityAuthorsError() ?? ""}
-          onselect={handleAuthorSelect}
+      <div class="mobile-filter-select mobile-filter-select--repo">
+        <RepoTypeahead
+          selected={selectedRepo}
+          onchange={handleRepoChange}
+          allowPresetManagement={false}
+          mobile
         />
+      </div>
+
+      <div class="mobile-author-filter">
+        <span class="mobile-author-icon">
+          <UserRoundIcon size="16" strokeWidth="2" aria-hidden="true" />
+        </span>
+        <div class="mobile-author-picker">
+          <Typeahead
+            options={authorOptions}
+            value={activity.getActivityAuthor() ?? ""}
+            fallbackLabel="Anyone"
+            placeholder="Filter authors"
+            title="Filter by PR or issue author"
+            allowClear
+            clearLabel="Anyone"
+            loading={activity.isActivityAuthorsLoading()}
+            error={activity.getActivityAuthorsError() ?? ""}
+            onselect={handleAuthorSelect}
+          />
+          <span class="mobile-author-summary">
+            {activity.getActivityAuthor() ? "Selected author" : "All authors"}
+          </span>
+        </div>
       </div>
 
       <div class="mobile-item-type-toggle">
@@ -813,55 +833,45 @@
         />
       </div>
 
-      <div class="mobile-filter-select mobile-filter-select--repo">
-        <span>Repo</span>
-        <RepoTypeahead
-          selected={selectedRepo}
-          onchange={handleRepoChange}
-          allowPresetManagement={false}
-          mobile
+      <div class="mobile-boolean-toggle">
+        <Toggle
+          checked={activity.getInvolvesMe()}
+          label="Involves me"
+          onchange={() => toggleInvolvesMe()}
         />
       </div>
 
-      <button
-        type="button"
-        class="mobile-filter-toggle"
-        class:active={activity.getInvolvesMe()}
-        aria-pressed={activity.getInvolvesMe()}
-        onclick={toggleInvolvesMe}
-      >Involves me</button>
+      <div class="mobile-boolean-toggle">
+        <Toggle
+          checked={activity.getHideClosedMerged()}
+          label="Hide closed/merged"
+          onchange={() => toggleHideClosedMerged()}
+        />
+      </div>
 
-      <button
-        type="button"
-        class="mobile-filter-toggle"
-        class:active={activity.getHideClosedMerged()}
-        aria-pressed={activity.getHideClosedMerged()}
-        onclick={toggleHideClosedMerged}
-      >Hide closed/merged</button>
+      <div class="mobile-boolean-toggle">
+        <Toggle
+          checked={activity.getHideBots()}
+          label="Hide bots"
+          onchange={() => toggleHideBots()}
+        />
+      </div>
 
-      <button
-        type="button"
-        class="mobile-filter-toggle"
-        class:active={activity.getHideBots()}
-        aria-pressed={activity.getHideBots()}
-        onclick={toggleHideBots}
-      >Hide bots</button>
+      <div class="mobile-boolean-toggle">
+        <Toggle
+          checked={activity.getHideDefaultBranchActivity()}
+          label="Hide branch"
+          onchange={() => toggleHideDefaultBranchActivity()}
+        />
+      </div>
 
-      <button
-        type="button"
-        class="mobile-filter-toggle"
-        class:active={activity.getHideDefaultBranchActivity()}
-        aria-pressed={activity.getHideDefaultBranchActivity()}
-        onclick={toggleHideDefaultBranchActivity}
-      >Hide branch</button>
-
-      <button
-        type="button"
-        class="mobile-filter-toggle"
-        class:active={grouping.getHideOrgName()}
-        aria-pressed={grouping.getHideOrgName()}
-        onclick={toggleHideOrgName}
-      >Hide org</button>
+      <div class="mobile-boolean-toggle">
+        <Toggle
+          checked={grouping.getHideOrgName()}
+          label="Hide org"
+          onchange={() => toggleHideOrgName()}
+        />
+      </div>
 
     </div>
     {/if}
@@ -1007,10 +1017,22 @@
   }
 
   .mobile-activity-toolbar {
+    box-sizing: border-box;
+    height: 65px;
     display: flex;
     align-items: stretch;
-    gap: var(--mobile-space-xs);
-    margin-bottom: var(--mobile-space-sm);
+    gap: var(--mobile-space-sm);
+    margin:
+      calc(-1 * var(--mobile-space-md))
+      calc(-1 * var(--mobile-space-sm))
+      var(--mobile-space-sm);
+    padding: var(--mobile-space-sm) var(--mobile-space-md);
+    border-bottom: thin solid var(--border-default);
+    background: var(--bg-surface);
+  }
+
+  .mobile-activity-toolbar--expanded {
+    margin-bottom: 0;
   }
 
   .mobile-activity-search {
@@ -1019,7 +1041,8 @@
   }
 
   .mobile-activity-search :global(.kit-search-input) {
-    min-height: calc(var(--mobile-hit-target) + var(--mobile-space-xs));
+    height: 44px;
+    min-height: 44px;
     border-radius: var(--radius-lg);
     font-size: var(--font-size-md);
     /* The phone inbox keeps the inset field look of the original
@@ -1035,9 +1058,9 @@
   }
 
   .mobile-filter-summary :global(.kit-icon-button) {
-    width: calc(var(--mobile-hit-target) + var(--mobile-space-xs));
-    height: 100%;
-    min-height: var(--mobile-hit-target);
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
     border: thin solid var(--border-default);
     border-radius: var(--radius-md);
     background: var(--bg-inset);
@@ -1047,38 +1070,93 @@
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--mobile-space-xs);
-    margin-bottom: var(--mobile-space-sm);
+    margin:
+      0
+      calc(-1 * var(--mobile-space-sm))
+      var(--mobile-space-sm);
+    padding: var(--mobile-space-sm);
+    border-bottom: thin solid var(--border-muted);
+    background: var(--bg-surface);
   }
 
   .mobile-author-filter {
     grid-column: 1 / -1;
     min-width: 0;
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: 28px minmax(0, 1fr);
     align-items: center;
-    gap: var(--mobile-space-xs);
-    min-height: var(--mobile-hit-target);
-    padding: 0 var(--mobile-space-sm);
-    border: thin solid var(--border-default);
-    border-radius: var(--radius-md);
+    gap: var(--mobile-space-sm);
+    min-height: 48px;
+    padding: var(--mobile-space-2xs) var(--mobile-space-xs);
+    border: 0;
+    border-top: thin solid var(--border-muted);
+    border-bottom: thin solid var(--border-muted);
+    border-radius: 0;
     color: var(--text-secondary);
-    background: var(--bg-inset);
+    background: transparent;
   }
 
-  .mobile-author-filter > span {
-    color: var(--text-muted);
-    font-size: var(--font-size-xs);
-    font-weight: 750;
+  .mobile-author-icon {
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    color: var(--accent-blue);
+    background: color-mix(in srgb, var(--accent-blue) 13%, transparent);
   }
 
-  .mobile-author-filter :global(.kit-typeahead) {
+  .mobile-author-picker {
+    min-width: 0;
+    display: grid;
+    gap: var(--mobile-space-2xs);
+  }
+
+  .mobile-author-picker :global(.kit-typeahead) {
     width: 100%;
     min-width: 0;
+    max-width: none;
+  }
+
+  .mobile-author-picker :global(.kit-typeahead__trigger) {
+    height: auto;
+    min-height: 20px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--text-primary);
+    font-size: var(--font-size-md);
+    font-weight: 700;
+  }
+
+  .mobile-author-picker :global(.kit-typeahead__trigger:hover),
+  .mobile-author-picker :global(.kit-typeahead__trigger:focus) {
+    border: 0;
+  }
+
+  .mobile-author-picker :global(.kit-typeahead__chevron) {
+    transform: rotate(-90deg);
+  }
+
+  .mobile-author-picker :global(.kit-typeahead__input) {
+    min-height: 24px;
+    font-size: var(--font-size-sm);
+  }
+
+  .mobile-author-summary {
+    overflow: hidden;
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+    line-height: 1.15;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .mobile-filter-select,
   .mobile-item-type-toggle,
-  .mobile-event-type-toggle {
+  .mobile-event-type-toggle,
+  .mobile-boolean-toggle {
     min-width: 0;
     min-height: var(--mobile-hit-target);
     display: grid;
@@ -1093,18 +1171,30 @@
   }
 
   .mobile-item-type-toggle,
-  .mobile-event-type-toggle {
+  .mobile-event-type-toggle,
+  .mobile-boolean-toggle {
     display: flex;
+    padding: 0 var(--mobile-space-2xs);
+    border: 0;
+    border-radius: 0;
+    background: transparent;
   }
 
   .mobile-item-type-toggle :global(.kit-toggle),
-  .mobile-event-type-toggle :global(.kit-toggle) {
+  .mobile-event-type-toggle :global(.kit-toggle),
+  .mobile-boolean-toggle :global(.kit-toggle) {
     width: 100%;
     min-height: var(--mobile-hit-target);
   }
 
   .mobile-filter-select--repo {
     grid-column: 1 / -1;
+    display: block;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
   }
 
   .mobile-filter-select--repo :global(.typeahead-popover) {
@@ -1155,25 +1245,6 @@
   .mobile-filter-select :global(.mobile-filter-dropdown .kit-select-dropdown__check) {
     width: 13px;
   }
-
-  .mobile-filter-toggle {
-    min-height: var(--mobile-hit-target);
-    flex: 0 0 auto;
-    padding: var(--mobile-space-sm) var(--mobile-space-md);
-    border: thin solid var(--border-default);
-    border-radius: var(--radius-md);
-    color: var(--text-secondary);
-    background: var(--bg-inset);
-    font-size: var(--font-size-sm);
-    font-weight: 750;
-  }
-
-  .mobile-filter-toggle.active {
-    color: var(--accent-blue);
-    background: color-mix(in srgb, var(--accent-blue) 12%, transparent);
-    border-color: color-mix(in srgb, var(--accent-blue) 34%, transparent);
-  }
-
 
   .mobile-activity-card-list {
     display: grid;

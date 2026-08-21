@@ -232,7 +232,6 @@
   >
     {#if showRepoSelector && filtersExpanded}
       <div class="mobile-repo-filter">
-        <span>Repository</span>
         <RepoTypeahead
           selected={selectedRepo}
           onchange={setGlobalRepo}
@@ -690,20 +689,6 @@
   :global(.mobile-main) .mobile-repo-filter {
     flex: 1 0 100%;
     min-width: 0;
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: center;
-    gap: var(--focus-mobile-space-sm);
-    padding: 0 var(--focus-mobile-space-sm);
-    border: thin solid var(--border-default);
-    border-radius: var(--focus-mobile-radius-md);
-    background: var(--bg-inset);
-  }
-
-  :global(.mobile-main) .mobile-repo-filter > span {
-    color: var(--text-muted);
-    font-size: var(--font-size-sm);
-    font-weight: 700;
   }
 
   :global(.mobile-main) .mobile-repo-filter :global(.typeahead-popover) {

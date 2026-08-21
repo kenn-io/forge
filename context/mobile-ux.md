@@ -93,6 +93,9 @@ Avoid by default:
 - Phone Activity, PR, and issue filters use the shared repository selector for Global,
   saved presets, and custom selections; preset management remains outside the phone
   workflow (`frontend/src/lib/components/RepoTypeahead.svelte`).
+- Phone triage shares one full-width search strip and grouped filter surface. Repository
+  selection comes first; hierarchical selectors use divider rows and booleans use
+  unframed kit switches (`frontend/src/lib/views/MobileActivityView.svelte`, `frontend/src/lib/views/FocusListView.svelte`).
 
 ## Routing expectations
 

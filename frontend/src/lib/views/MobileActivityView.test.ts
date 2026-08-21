@@ -250,7 +250,14 @@ describe("MobileActivityView branch activity", () => {
 
     expect(screen.queryByRole("button", { name: "Select repository: Global" })).toBeNull();
     await fireEvent.click(screen.getByRole("button", { name: "Filters" }));
-    await fireEvent.click(screen.getByRole("button", { name: "Select repository: Global" }));
+    const repoPicker = screen.getByRole("button", { name: "Select repository: Global" });
+    const filterPanel = screen.getByLabelText("Activity filters");
+    expect(filterPanel.firstElementChild?.contains(repoPicker)).toBe(true);
+    const authorPicker = screen.getByRole("button", { name: "Filter authors" });
+    const authorRow = authorPicker.closest(".mobile-author-filter");
+    expect(authorRow?.querySelector(".mobile-author-icon")).toBeTruthy();
+    expect(authorRow?.textContent).toContain("All authors");
+    await fireEvent.click(repoPicker);
     loadActivity.mockClear();
     await fireEvent.mouseDown(screen.getByRole("option", { name: "Backend" }));
 
@@ -264,8 +271,8 @@ describe("MobileActivityView branch activity", () => {
     render(MobileActivityView, { props: { onSelectItem } });
 
     await fireEvent.click(screen.getByRole("button", { name: "Filters" }));
-    const control = screen.getByRole("button", { name: "Hide closed/merged" });
-    expect(control.getAttribute("aria-pressed")).toBe("false");
+    const control = screen.getByRole<HTMLInputElement>("switch", { name: "Hide closed/merged" });
+    expect(control.checked).toBe(false);
 
     await fireEvent.click(control);
 
@@ -461,8 +468,8 @@ describe("MobileActivityView branch activity", () => {
     });
 
     await fireEvent.click(getByRole("button", { name: /^Filters/ }));
-    const button = getByRole("button", { name: "Hide org" });
-    expect(button.getAttribute("aria-pressed")).toBe("false");
+    const button = getByRole<HTMLInputElement>("switch", { name: "Hide org" });
+    expect(button.checked).toBe(false);
 
     await fireEvent.click(button);
 

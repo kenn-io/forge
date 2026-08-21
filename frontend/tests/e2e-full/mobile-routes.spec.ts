@@ -12,6 +12,34 @@ async function expectPathname(page: Page, pathname: string): Promise<void> {
   await expect.poll(() => new URL(page.url()).pathname).toBe(pathname);
 }
 
+async function mobileSearchBarMetrics(page: Page) {
+  return await page.evaluate(() => {
+    const bar = document.querySelector(".mobile-triage-search-bar");
+    const search = bar?.querySelector(".kit-search-input");
+    const filter = bar?.querySelector(".kit-icon-button");
+    const barStyle = bar ? getComputedStyle(bar) : null;
+    const searchStyle = search ? getComputedStyle(search) : null;
+    const filterStyle = filter ? getComputedStyle(filter) : null;
+    const rect = (element: Element | null | undefined) => {
+      const bounds = element?.getBoundingClientRect();
+      return bounds ? { width: bounds.width, height: bounds.height } : null;
+    };
+    return {
+      bar: rect(bar),
+      search: rect(search),
+      filter: rect(filter),
+      gap: barStyle?.gap,
+      padding: barStyle
+        ? [barStyle.paddingTop, barStyle.paddingRight, barStyle.paddingBottom, barStyle.paddingLeft]
+        : null,
+      searchRadius: searchStyle?.borderRadius,
+      filterRadius: filterStyle?.borderRadius,
+      searchBackground: searchStyle?.backgroundColor,
+      filterBackground: filterStyle?.backgroundColor,
+    };
+  });
+}
+
 async function expectReadableFocusList(page: Page, itemSelector: string): Promise<void> {
   await expect(page.locator(itemSelector).first()).toBeVisible();
 
@@ -152,7 +180,7 @@ test.describe("phone routes", () => {
 
     await expect(page.locator(".mobile-shell")).toBeVisible();
     await expect(page.locator(".mobile-activity-inbox")).toBeVisible();
-    await expect(page.locator(".mobile-activity-toolbar")).toBeVisible();
+    await expect(page.locator(".mobile-triage-search-bar")).toBeVisible();
     await expect(page.getByText("Readable threads first")).toHaveCount(0);
     const search = page.getByPlaceholder("Search activity");
     const filters = page.getByRole("button", { name: /^Filters/ });
@@ -197,7 +225,7 @@ test.describe("phone routes", () => {
       const itemTypeToggle = document.querySelector(".mobile-item-type-toggle .kit-toggle");
       const rangeSelect = document.querySelector(".mobile-filter-dropdown button[aria-label^='Time range']");
       const repoSelect = document.querySelector(".mobile-filter-select--repo .typeahead-trigger");
-      const toolbar = document.querySelector(".mobile-activity-toolbar");
+      const toolbar = document.querySelector(".mobile-triage-search-bar");
       const filterPanel = document.querySelector(".mobile-activity-filter-grid");
       const authorFilter = document.querySelector(".mobile-author-filter");
       const search = document.querySelector(".kit-search-input");
@@ -227,16 +255,6 @@ test.describe("phone routes", () => {
         "border-radius:var(--radius-lg)",
       ].join(";");
       document.body.append(surfaceSample);
-      const insetSample = document.createElement("div");
-      insetSample.style.cssText = [
-        "position:absolute",
-        "left:-9999px",
-        "top:0",
-        "width:1px",
-        "height:1px",
-        "background:var(--bg-inset)",
-      ].join(";");
-      document.body.append(insetSample);
       const compactRect = (node: Element | null) => {
         const r = node?.getBoundingClientRect();
         return r ? { top: r.top, left: r.left, right: r.right, height: r.height } : null;
@@ -273,15 +291,12 @@ test.describe("phone routes", () => {
         cardBackground: styleFor(firstCard)?.backgroundColor ?? "",
         cardBorderColor: styleFor(firstCard)?.borderColor ?? "",
         cardRadius: styleFor(firstCard)?.borderRadius ?? "",
-        searchBackground:
-          styleFor(document.querySelector(".mobile-activity-search .kit-search-input"))?.backgroundColor ?? "",
         toolbarBackground: styleFor(toolbar)?.backgroundColor ?? "",
         toolbarBorderBottom: styleFor(toolbar)?.borderBottomColor ?? "",
         toolbarRect: compactRect(toolbar),
         filterPanelBackground: styleFor(filterPanel)?.backgroundColor ?? "",
         themeBgPrimary: getComputedStyle(themeSample).backgroundColor,
         themeBgSurface: getComputedStyle(surfaceSample).backgroundColor,
-        themeBgInset: getComputedStyle(insetSample).backgroundColor,
         themeBorder: getComputedStyle(themeSample).borderColor,
         themeRadiusLg: getComputedStyle(surfaceSample).borderRadius,
         itemTypeToggleFontSize: fontSize(document.querySelector(".mobile-item-type-toggle .kit-toggle__label")),
@@ -321,7 +336,6 @@ test.describe("phone routes", () => {
     expect(metrics.cardBackground).toBe(metrics.themeBgSurface);
     expect(metrics.cardBorderColor).toBe(metrics.themeBorder);
     expect(metrics.cardRadius).toBe(metrics.themeRadiusLg);
-    expect(metrics.searchBackground).toBe(metrics.themeBgInset);
     expect(metrics.toolbarBackground).toBe(metrics.themeBgSurface);
     expect(metrics.toolbarBorderBottom).toBe(metrics.themeBorder);
     expect(metrics.toolbarRect?.left ?? -1).toBe(0);
@@ -411,7 +425,7 @@ test.describe("phone routes", () => {
     await expect(page.getByRole("button", { name: "Filters · carol" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Clear author filter carol" })).toHaveCount(0);
 
-    const summaryMetrics = await page.locator(".mobile-filter-summary").evaluate((summary) => {
+    const summaryMetrics = await page.locator(".mobile-triage-search-bar__filter").evaluate((summary) => {
       const bounds = summary.getBoundingClientRect();
       return {
         viewportWidth: window.innerWidth,
@@ -626,6 +640,23 @@ test.describe("phone routes", () => {
     await issueFilters.click();
     await expect(page.locator(".filter-bar")).toBeVisible();
     await expectReadableFocusList(page, ".issue-item");
+  });
+
+  test("mobile activity, pull, and issue lists share one search bar geometry", async ({ page }) => {
+    await page.goto("/m/pulls");
+    await expect(page.getByRole("searchbox", { name: "Search PRs" })).toBeVisible();
+    const pullMetrics = await mobileSearchBarMetrics(page);
+
+    await page.goto("/m?view=threaded");
+    await expect(page.getByRole("searchbox", { name: "Search activity" })).toBeVisible();
+    const activityMetrics = await mobileSearchBarMetrics(page);
+
+    await page.goto("/m/issues");
+    await expect(page.getByRole("searchbox", { name: "Search issues" })).toBeVisible();
+    const issueMetrics = await mobileSearchBarMetrics(page);
+
+    expect(activityMetrics).toEqual(pullMetrics);
+    expect(issueMetrics).toEqual(pullMetrics);
   });
 
   test("mobile issue bot visibility can be toggled and persists through the real settings API", async ({ page }) => {

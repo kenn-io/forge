@@ -224,10 +224,10 @@ describe("MobileActivityView branch activity", () => {
 
     const search = screen.getByPlaceholderText("Search activity");
     const filters = screen.getByRole("button", { name: "Filters" });
-    const toolbar = search.closest(".mobile-activity-toolbar");
+    const toolbar = search.closest(".mobile-triage-search-bar");
 
     expect(toolbar).toBeTruthy();
-    expect(filters.closest(".mobile-activity-toolbar")).toBe(toolbar);
+    expect(filters.closest(".mobile-triage-search-bar")).toBe(toolbar);
     expect(filters.textContent?.trim()).toBe("");
     expect(filters.querySelector("svg")).toBeTruthy();
   });

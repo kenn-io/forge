@@ -18,9 +18,7 @@
   import {
     Card,
     Chip,
-    IconButton,
     ScrollBox,
-    SearchInput,
     Timeline,
     TimelineItem,
     Toggle,
@@ -34,10 +32,10 @@
   import ItemKindChip from "../components/shared/ItemKindChip.svelte";
   import ItemStateChip from "../components/shared/ItemStateChip.svelte";
   import RepoTypeahead from "../components/RepoTypeahead.svelte";
+  import MobileTriageSearchBar from "../components/mobile/MobileTriageSearchBar.svelte";
   import { SelectDropdown } from "@kenn-io/kit-ui";
   import WorkspaceIndicator from "../components/shared/WorkspaceIndicator.svelte";
   import CheckIcon from "@lucide/svelte/icons/check";
-  import FunnelIcon from "@lucide/svelte/icons/funnel";
   import UserRoundIcon from "@lucide/svelte/icons/user-round";
   import {
     activityBranchKey,
@@ -723,35 +721,22 @@
   <ScrollBox label="Activity inbox">
   <div class="mobile-activity-scroll">
     <div
-      class="mobile-activity-toolbar"
-      class:mobile-activity-toolbar--expanded={filtersExpanded}
+      class="mobile-activity-search-strip"
+      class:mobile-activity-search-strip--expanded={filtersExpanded}
     >
-      <div class="mobile-activity-search">
-        <SearchInput
-          bind:value={searchInput}
-          block
-          placeholder="Search activity"
-          ariaLabel="Search activity"
-          oninput={handleSearchInput}
-        />
-      </div>
-
-      <div class="mobile-filter-summary">
-        <IconButton
-          size="md"
-          tone="info"
-          ariaLabel={activity.getActivityAuthor()
+      <MobileTriageSearchBar
+        bind:value={searchInput}
+        placeholder="Search activity"
+        searchAriaLabel="Search activity"
+        filterAriaLabel={activity.getActivityAuthor()
           ? `Filters · ${activity.getActivityAuthor()}`
           : "Filters"}
-          title="Filters"
-          ariaExpanded={filtersExpanded}
-          ariaControls="mobile-activity-filters"
-          ariaPressed={filtersExpanded || activeFilterCount > 0}
-          onclick={() => filtersExpanded = !filtersExpanded}
-        >
-          <FunnelIcon size={18} strokeWidth={2} aria-hidden="true" />
-        </IconButton>
-      </div>
+        filterControls="mobile-activity-filters"
+        {filtersExpanded}
+        filtersActive={filtersExpanded || activeFilterCount > 0}
+        oninput={handleSearchInput}
+        ontoggle={() => filtersExpanded = !filtersExpanded}
+      />
     </div>
 
     {#if filtersExpanded}
@@ -1016,54 +1001,15 @@
     font-size: var(--font-size-md);
   }
 
-  .mobile-activity-toolbar {
-    box-sizing: border-box;
-    height: 65px;
-    display: flex;
-    align-items: stretch;
-    gap: var(--mobile-space-sm);
+  .mobile-activity-search-strip {
     margin:
       calc(-1 * var(--mobile-space-md))
       calc(-1 * var(--mobile-space-sm))
       var(--mobile-space-sm);
-    padding: var(--mobile-space-sm) var(--mobile-space-md);
-    border-bottom: thin solid var(--border-default);
-    background: var(--bg-surface);
   }
 
-  .mobile-activity-toolbar--expanded {
+  .mobile-activity-search-strip--expanded {
     margin-bottom: 0;
-  }
-
-  .mobile-activity-search {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .mobile-activity-search :global(.kit-search-input) {
-    height: 44px;
-    min-height: 44px;
-    border-radius: var(--radius-lg);
-    font-size: var(--font-size-md);
-    /* The phone inbox keeps the inset field look of the original
-       hand-rolled search (mobile-routes e2e pins this against
-       --bg-inset). */
-    background: var(--bg-inset);
-  }
-
-  .mobile-filter-summary {
-    display: flex;
-    align-items: center;
-    flex: 0 0 auto;
-  }
-
-  .mobile-filter-summary :global(.kit-icon-button) {
-    width: 44px;
-    height: 44px;
-    min-height: 44px;
-    border: thin solid var(--border-default);
-    border-radius: var(--radius-md);
-    background: var(--bg-inset);
   }
 
   .mobile-activity-filter-grid {

@@ -2,8 +2,7 @@
   import { Effect, Schedule } from "effect";
   import { onDestroy, untrack } from "svelte";
   import type { Attachment } from "svelte/attachments";
-  import { IconButton, ScrollBox, SearchInput, StatusDot } from "@kenn-io/kit-ui";
-  import FunnelIcon from "@lucide/svelte/icons/funnel";
+  import { ScrollBox, StatusDot } from "@kenn-io/kit-ui";
   import { getAppRuntime } from "../app/runtime-context.js";
   import type { AppExecution } from "../app/runtime.js";
   import { getStores, getNavigate, getActions } from "../context.js";
@@ -13,6 +12,7 @@
   import type { Issue, PullRequest } from "../api/types.js";
   import { createRepoLabelFormatter } from "../utils/repo-label.js";
   import RepoTypeahead from "../components/RepoTypeahead.svelte";
+  import MobileTriageSearchBar from "../components/mobile/MobileTriageSearchBar.svelte";
   import { getGlobalRepo, setGlobalRepo } from "../stores/filter.svelte.js";
   import { observeIntersection } from "../browser/observers.js";
   import {
@@ -401,32 +401,15 @@
       {/if}
     </div>
   </div>
-  <div class="search-bar">
-    <div class="search-wrap">
-      <SearchInput
-        bind:value={searchInput}
-        size="sm"
-        block
-        placeholder="Search {itemLabel}..."
-        ariaLabel="Search {itemLabel}"
-        oninput={onSearchInput}
-      />
-    </div>
-    <div class="mobile-filter-button">
-      <IconButton
-        size="md"
-        tone="info"
-        ariaLabel="Filters"
-        title="Filters"
-        ariaExpanded={filtersExpanded}
-        ariaControls="focus-list-filters"
-        ariaPressed={filtersExpanded}
-        onclick={() => filtersExpanded = !filtersExpanded}
-      >
-        <FunnelIcon size={18} strokeWidth={2} aria-hidden="true" />
-      </IconButton>
-    </div>
-  </div>
+  <MobileTriageSearchBar
+    bind:value={searchInput}
+    placeholder="Search {itemLabel}..."
+    searchAriaLabel="Search {itemLabel}"
+    filterControls="focus-list-filters"
+    {filtersExpanded}
+    oninput={onSearchInput}
+    ontoggle={() => filtersExpanded = !filtersExpanded}
+  />
 
   {#if listType === "mrs" && prFilterState !== "open"}
     <p class="state-note">
@@ -659,25 +642,6 @@
     z-index: 1;
   }
 
-  .search-bar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 10px;
-    border-bottom: 1px solid var(--border-default);
-    flex-shrink: 0;
-    background: var(--bg-surface);
-  }
-
-  .search-wrap {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .mobile-filter-button {
-    display: none;
-  }
-
   .state-toggle {
     display: flex;
     gap: 2px;
@@ -819,40 +783,12 @@
     font-weight: 600;
   }
 
-  :global(.mobile-main) .search-bar {
-    order: 1;
-    gap: var(--focus-mobile-space-sm);
-    padding: var(--focus-mobile-space-sm) var(--focus-mobile-space-md);
-    border-bottom: thin solid var(--border-default);
-  }
-
   :global(.mobile-main) .state-note {
     order: 3;
   }
 
   :global(.mobile-main) .focus-list > :global(.list-body) {
     order: 4;
-  }
-
-  :global(.mobile-main) .mobile-filter-button {
-    display: flex;
-    align-items: stretch;
-    flex: 0 0 auto;
-  }
-
-  :global(.mobile-main) .mobile-filter-button :global(.kit-icon-button) {
-    width: var(--focus-mobile-hit-target);
-    height: 100%;
-    min-height: var(--focus-mobile-hit-target);
-    border: thin solid var(--border-default);
-    border-radius: var(--focus-mobile-radius-sm);
-    background: var(--bg-inset);
-  }
-
-  :global(.mobile-main) .search-wrap :global(.kit-search-input) {
-    min-height: var(--focus-mobile-hit-target);
-    border-radius: var(--focus-mobile-radius-sm);
-    font-size: var(--font-size-md);
   }
 
   :global(.mobile-main) .group-header {

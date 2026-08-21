@@ -956,6 +956,7 @@ test.describe("inline workspace pane continuity", () => {
       await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
       const terminalPanel = page.getByRole("region", { name: "Terminal panel" });
       await terminalPanel.getByRole("button", { name: "New terminal" }).click();
+      await expect(terminalPanel.getByRole("textbox", { name: "Terminal input" })).toBeVisible();
       const moveToWorkflow = terminalPanel.getByRole("button", { name: "Move terminal panel to workflow" });
       await expect(moveToWorkflow).toBeVisible();
       await moveToWorkflow.click();

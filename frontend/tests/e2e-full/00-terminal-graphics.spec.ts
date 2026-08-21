@@ -210,7 +210,7 @@ async function renderGraphicsThroughTmux(
   }
 }
 
-test("Native SIXEL graphics render through tmux", async ({ page }) => {
+test("native SIXEL graphics render through tmux", async ({ page }) => {
   await renderGraphicsThroughTmux(page, sixelGraphicsCommand(), { checkColors: false, passthrough: false });
 });
 

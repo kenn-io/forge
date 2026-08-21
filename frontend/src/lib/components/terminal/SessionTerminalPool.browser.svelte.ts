@@ -33,6 +33,7 @@ const settingsStore = {
   getTerminalLetterSpacing: () => DEFAULT_TERMINAL_SETTINGS.letter_spacing,
   getTerminalCursorBlink: () => DEFAULT_TERMINAL_SETTINGS.cursor_blink,
   getTerminalFontLigatures: () => DEFAULT_TERMINAL_SETTINGS.font_ligatures,
+  getTerminalGraphics: () => DEFAULT_TERMINAL_SETTINGS.graphics,
 };
 
 // The placement effect parks synchronously, defers the real move by a tick, then

@@ -212,7 +212,7 @@ type session struct {
 	lifecycleMu               sync.Mutex
 	lifecycleClosed           bool
 	stopRequested             bool
-	detachedForServerRestart  bool
+	recoverableDetach         bool
 	nextAttachmentID          uint64
 	nextResizeClaim           uint64
 	resizeOwnerID             uint64
@@ -264,7 +264,7 @@ type Attachment struct {
 	// this subscriber for falling behind; that is not a session exit
 	// and bridges must not propagate it as one.
 	sessionOutputClosed func() bool
-	detachedForRestart  func() bool
+	recoverableDetach   func() bool
 }
 
 func NewManager(options Options) *Manager {
@@ -739,6 +739,31 @@ func (m *Manager) UpdateTmuxGraphics(enabled bool) {
 	m.mu.Lock()
 	m.tmuxGraphics = enabled
 	m.mu.Unlock()
+}
+
+// ReattachTmuxClients closes retained tmux attach clients so their browser
+// connections restore them with the dedicated server's current terminal
+// features. The tmux sessions and their pane processes remain running.
+func (m *Manager) ReattachTmuxClients() {
+	m.mu.Lock()
+	if !m.tmuxGraphics || !config.IsDefaultTmuxCommand(m.tmuxCommand) {
+		m.mu.Unlock()
+		return
+	}
+	detaching := make([]*session, 0)
+	for key, current := range m.sessions {
+		if current.tmuxSession == "" {
+			continue
+		}
+		delete(m.sessions, key)
+		detaching = append(detaching, current)
+	}
+	m.mu.Unlock()
+
+	for _, current := range detaching {
+		current.markRecoverableDetach()
+		current.detach()
+	}
 }
 
 func cloneLaunchTargetSet(
@@ -1448,14 +1473,14 @@ func (a *Attachment) SessionOutputClosed() bool {
 	return a.sessionOutputClosed()
 }
 
-// DetachedForServerRestart reports whether the server deliberately detached
-// this recoverable session during shutdown. That is a connection interruption,
-// not a process exit.
-func (a *Attachment) DetachedForServerRestart() bool {
-	if a == nil || a.detachedForRestart == nil {
+// RecoverableDetach reports whether the server deliberately detached this
+// session while leaving its backend available. That is a connection
+// interruption, not a process exit.
+func (a *Attachment) RecoverableDetach() bool {
+	if a == nil || a.recoverableDetach == nil {
 		return false
 	}
-	return a.detachedForRestart()
+	return a.recoverableDetach()
 }
 
 func fallbackSessionLabel(label string, fallback string) string {
@@ -1615,7 +1640,7 @@ func (m *Manager) Shutdown() {
 
 	for _, s := range sessions {
 		if m.detachForRestart {
-			s.markDetachedForServerRestart()
+			s.markRecoverableDetach()
 		}
 		s.detach()
 	}
@@ -2534,10 +2559,10 @@ func (s *session) wasStopRequested() bool {
 	return s.stopRequested
 }
 
-func (s *session) markDetachedForServerRestart() {
+func (s *session) markRecoverableDetach() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.detachedForServerRestart = true
+	s.recoverableDetach = true
 }
 
 func (s *session) detach() {
@@ -2864,10 +2889,10 @@ func attachToSession(
 			defer s.mu.Unlock()
 			return s.outputClosed
 		},
-		detachedForRestart: func() bool {
+		recoverableDetach: func() bool {
 			s.mu.Lock()
 			defer s.mu.Unlock()
-			return s.detachedForServerRestart
+			return s.recoverableDetach
 		},
 	}, nil
 }

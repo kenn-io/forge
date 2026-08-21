@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/svelte";
 import { tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { createSettingsStore, type SettingsStore } from "../../stores/settings.svelte.js";
 import { beginTerminalGeometryIntent, extendTerminalGeometryIntent } from "./terminalGeometryIntent.js";
 import TerminalPaneInputHarness from "./TerminalPaneInputHarness.svelte";
 
@@ -76,7 +77,7 @@ let configuredLineHeight = 1;
 let configuredLetterSpacing = 0;
 let configuredCursorBlink = true;
 let configuredFontLigatures = false;
-let configuredGraphics = true;
+let terminalSettingsStore: SettingsStore;
 let mockSockets: MockWebSocket[] = [];
 let mockSocketsStartOpen = true;
 let initialTerminalDimensions = { cols: 80, rows: 24 };
@@ -154,7 +155,7 @@ vi.mock("../../context.js", () => ({
       getTerminalLetterSpacing: () => configuredLetterSpacing,
       getTerminalCursorBlink: () => configuredCursorBlink,
       getTerminalFontLigatures: () => configuredFontLigatures,
-      getTerminalGraphics: () => configuredGraphics,
+      getTerminalGraphics: () => terminalSettingsStore.getTerminalGraphics(),
     },
   }),
 }));
@@ -322,7 +323,7 @@ describe("TerminalPane", () => {
     configuredLetterSpacing = 0;
     configuredCursorBlink = true;
     configuredFontLigatures = false;
-    configuredGraphics = true;
+    terminalSettingsStore = createSettingsStore();
     initialTerminalDimensions = { cols: 80, rows: 24 };
     fitDimensions = { cols: 80, rows: 24 };
     ligaturesAddonCtor.mockReset();
@@ -417,12 +418,35 @@ describe("TerminalPane", () => {
   });
 
   it("does not load the image decoder when terminal graphics are disabled", async () => {
-    configuredGraphics = false;
+    terminalSettingsStore.setTerminalSettings({
+      ...terminalSettingsStore.getTerminalSettings(),
+      graphics: false,
+    });
 
     render(TerminalPane, { props: { workspaceId: "ws-123" } });
 
     await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());
     expect(imageAddonCtor).not.toHaveBeenCalled();
+  });
+
+  it("reloads the image decoder when terminal graphics change", async () => {
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+
+    await waitFor(() => expect(imageAddons).toHaveLength(1));
+    const initialAddon = imageAddons[0]!;
+
+    terminalSettingsStore.setTerminalSettings({
+      ...terminalSettingsStore.getTerminalSettings(),
+      graphics: false,
+    });
+    await waitFor(() => expect(initialAddon.dispose).toHaveBeenCalledTimes(1));
+
+    terminalSettingsStore.setTerminalSettings({
+      ...terminalSettingsStore.getTerminalSettings(),
+      graphics: true,
+    });
+    await waitFor(() => expect(imageAddons).toHaveLength(2));
+    expect(imageAddonCtor).toHaveBeenCalledTimes(2);
   });
 
   it("leaves Ctrl+V browser-owned on Windows and Linux", async () => {

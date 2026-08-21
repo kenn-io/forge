@@ -477,6 +477,51 @@ func TestManagerLaunchCommandRejectsRelativeTmuxCommandWhenWrapped(t *testing.T)
 	require.Contains(t, err.Error(), "relative paths")
 }
 
+func TestManagerReattachTmuxClientsOnlyDetachesDedicatedTmuxSessions(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		command    []string
+		wantDetach bool
+	}{
+		{name: "dedicated server", command: config.DefaultTmuxCommand(), wantDetach: true},
+		{name: "custom server", command: []string{"/usr/bin/tmux"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			assert := assert.New(t)
+			mgr := NewManager(Options{
+				TmuxCommand:  test.command,
+				TmuxGraphics: true,
+			})
+			tmuxSession := &session{
+				info: SessionInfo{
+					WorkspaceID: "ws-1",
+					Key:         "tmux",
+					Status:      SessionStatusRunning,
+				},
+				tmuxSession: "forge-ws-1-test",
+				lifecycle:   tmuxAttachLifecycle{},
+			}
+			directSession := &session{
+				info: SessionInfo{
+					WorkspaceID: "ws-1",
+					Key:         "direct",
+					Status:      SessionStatusRunning,
+				},
+			}
+			mgr.sessions["tmux"] = tmuxSession
+			mgr.sessions["direct"] = directSession
+
+			mgr.ReattachTmuxClients()
+
+			_, tmuxRetained := mgr.sessions["tmux"]
+			assert.Equal(!test.wantDetach, tmuxRetained)
+			assert.Equal(test.wantDetach, tmuxSession.lifecycleClosed)
+			assert.Equal(test.wantDetach, tmuxSession.recoverableDetach)
+			assert.Same(directSession, mgr.sessions["direct"])
+		})
+	}
+}
+
 func TestManagerLaunchCommandMarksWrappedAgentTmuxSession(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -518,7 +563,7 @@ exit 0
 	)
 	assert.Equal(sessionName, launch.TmuxSession)
 	records := readNullArgvRecord(t, record)
-	require.Len(records, 6)
+	require.Len(records, 5)
 	newSession := records[1]
 	assert.Contains(newSession, ";")
 	assert.Contains(newSession, "set-option")
@@ -536,10 +581,6 @@ exit 0
 	assert.Equal([]string{
 		"-L", "kenn-forge", "set-option", "-q", "-g", "mouse", "off",
 	}, records[4])
-	assert.Equal([]string{
-		"-L", "kenn-forge", "set-option", "-q", "-p", "-t", sessionName,
-		"allow-passthrough", "on",
-	}, records[5])
 }
 
 func TestManagerLaunchPlainShellWrapsInTmuxWhenAvailable(t *testing.T) {
@@ -1430,7 +1471,7 @@ func TestManagerShutdownLeavesTmuxSessionsRunning(t *testing.T) {
 
 	mgr.Shutdown()
 
-	assert.True(attachment.DetachedForServerRestart())
+	assert.True(attachment.RecoverableDetach())
 	_, statErr := os.Stat(record)
 	assert.True(os.IsNotExist(statErr), "shutdown should not invoke tmux cleanup")
 	assert.Eventually(func() bool {

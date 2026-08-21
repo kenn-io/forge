@@ -4659,7 +4659,7 @@ func (m *Manager) applyTmuxServerGraphics(ctx context.Context, enabled bool) err
 
 func (m *Manager) setTmuxPassthrough(
 	ctx context.Context,
-	session string,
+	target string,
 	enabled bool,
 ) error {
 	value := "off"
@@ -4670,7 +4670,7 @@ func (m *Manager) setTmuxPassthrough(
 		ctx,
 		m.tmuxExec(
 			ctx,
-			"set-option", "-q", "-p", "-t", session,
+			"set-option", "-q", "-p", "-t", target,
 			"allow-passthrough", value,
 		),
 	); err != nil {
@@ -4679,30 +4679,108 @@ func (m *Manager) setTmuxPassthrough(
 	return nil
 }
 
-// ApplyTmuxGraphics updates the Forge-owned tmux server and its managed panes.
-// Custom commands may target a user's shared server, so Forge does not change
-// their existing graphics settings.
-func (m *Manager) ApplyTmuxGraphics(ctx context.Context) error {
-	if !config.IsDefaultTmuxCommand(m.tmuxCmd) {
-		return nil
+func (m *Manager) unsetTmuxPassthrough(
+	ctx context.Context,
+	target string,
+) error {
+	if err := runBuiltCmd(
+		ctx,
+		m.tmuxExec(
+			ctx,
+			"set-option", "-q", "-p", "-u", "-t", target,
+			"allow-passthrough",
+		),
+	); err != nil {
+		return fmt.Errorf("clear tmux passthrough override: %w", err)
 	}
-	sessions, err := m.listTmuxSessions(ctx)
+	return nil
+}
+
+const tmuxPaneListFormat = "#{pane_id}"
+
+func (m *Manager) listTmuxPanes(
+	ctx context.Context,
+	session string,
+) ([]string, error) {
+	cmd := m.tmuxExec(
+		ctx,
+		"list-panes", "-s", "-t", session, "-F", tmuxPaneListFormat,
+	)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := procutil.Run(ctx, cmd, "tmux subprocess capacity")
+	if err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg == "" {
+			msg = strings.TrimSpace(stdout.String())
+		}
+		return nil, fmt.Errorf("tmux list-panes: %w: %s", err, msg)
+	}
+	var panes []string
+	for line := range strings.SplitSeq(stdout.String(), "\n") {
+		pane := strings.TrimSpace(strings.TrimSuffix(line, "\r"))
+		if pane != "" {
+			panes = append(panes, pane)
+		}
+	}
+	return panes, nil
+}
+
+func (m *Manager) applyTmuxSessionGraphics(
+	ctx context.Context,
+	session string,
+	dedicatedServer bool,
+) error {
+	panes, err := m.listTmuxPanes(ctx, session)
 	if err != nil {
 		return err
 	}
-	if len(sessions) == 0 {
-		return nil
-	}
-	enabled := m.currentTmuxGraphics()
-	if err := m.applyTmuxServerGraphics(ctx, enabled); err != nil {
-		return err
-	}
-	for _, session := range sessions {
-		if err := m.setTmuxPassthrough(ctx, session, enabled); err != nil {
-			return err
+	var errs []error
+	for _, pane := range panes {
+		if dedicatedServer {
+			err = m.unsetTmuxPassthrough(ctx, pane)
+		} else {
+			err = m.setTmuxPassthrough(ctx, pane, true)
+		}
+		if err != nil {
+			errs = append(errs, fmt.Errorf("pane %q: %w", pane, err))
 		}
 	}
-	return nil
+	return errors.Join(errs...)
+}
+
+// ApplyTmuxGraphics updates the Forge-owned tmux server and every managed pane.
+// Custom commands may target a user's shared server, so Forge changes only
+// panes in marked Forge sessions, and only while graphics are enabled.
+func (m *Manager) ApplyTmuxGraphics(ctx context.Context) error {
+	dedicatedServer := config.IsDefaultTmuxCommand(m.tmuxCmd)
+	enabled := m.currentTmuxGraphics()
+	if !dedicatedServer && !enabled {
+		return nil
+	}
+	infos, err := m.listTmuxSessionInfos(ctx)
+	if err != nil {
+		return err
+	}
+	if len(infos) == 0 {
+		return nil
+	}
+	var errs []error
+	if dedicatedServer {
+		if err := m.applyTmuxServerGraphics(ctx, enabled); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	for _, info := range infos {
+		if !dedicatedServer && info.owner != m.tmuxOwnerMarker() {
+			continue
+		}
+		if err := m.applyTmuxSessionGraphics(ctx, info.name, dedicatedServer); err != nil {
+			errs = append(errs, fmt.Errorf("session %q: %w", info.name, err))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // ApplyTmuxMouse updates a running Forge-owned tmux server. Custom commands

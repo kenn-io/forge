@@ -1021,6 +1021,10 @@ func (s *Server) applyTmuxGraphics(ctx context.Context) {
 	}
 	if err := s.workspaces.ApplyTmuxGraphics(ctx); err != nil {
 		slog.Warn("apply tmux graphics setting", "err", err)
+		return
+	}
+	if s.runtime != nil {
+		s.runtime.ReattachTmuxClients()
 	}
 }
 

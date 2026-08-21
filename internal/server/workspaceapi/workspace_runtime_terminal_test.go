@@ -359,10 +359,10 @@ func TestServeRuntimeTerminalRestartDetachDoesNotReportSessionExit(t *testing.T)
 			require := require.New(t)
 			attachment := localruntime.NewAttachmentForTesting(
 				localruntime.AttachmentForTestingOptions{
-					Output:                   tt.output(),
-					Done:                     tt.done(),
-					SessionOutputClosed:      func() bool { return true },
-					DetachedForServerRestart: func() bool { return true },
+					Output:              tt.output(),
+					Done:                tt.done(),
+					SessionOutputClosed: func() bool { return true },
+					RecoverableDetach:   func() bool { return true },
 				},
 			)
 			wsURL, handlerDone := runtimeTerminalTestServer(t, attachment)

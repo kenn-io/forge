@@ -4813,7 +4813,7 @@ func TestManagerApplyTmuxGraphicsDisablesDedicatedServer(t *testing.T) {
 	body := "#!/bin/sh\n" +
 		"TMUX_RECORD=" + shellquote.Join(record) + "\n" +
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
-		`case "$*" in *list-sessions*) printf 'sess-A:kenn-forge:test-owner\n';; esac` + "\n" +
+		`case "$*" in *list-sessions*) printf 'sess-A:kenn-forge:test-owner\n';; *list-panes*) printf 'pane-A\npane-B\n';; esac` + "\n" +
 		"exit 0\n"
 	require.NoError(os.WriteFile(tmuxPath, []byte(body), 0o755))
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -4826,8 +4826,60 @@ func TestManagerApplyTmuxGraphicsDisablesDedicatedServer(t *testing.T) {
 		{"-L", "kenn-forge", "list-sessions", "-F", tmuxSessionListFormat},
 		{"-L", "kenn-forge", "set-option", "-q", "-g", "allow-passthrough", "off"},
 		{"-L", "kenn-forge", "set-option", "-q", "-s", "-u", "terminal-features[100]"},
-		{"-L", "kenn-forge", "set-option", "-q", "-p", "-t", "sess-A", "allow-passthrough", "off"},
+		{"-L", "kenn-forge", "list-panes", "-s", "-t", "sess-A", "-F", tmuxPaneListFormat},
+		{"-L", "kenn-forge", "set-option", "-q", "-p", "-u", "-t", "pane-A", "allow-passthrough"},
+		{"-L", "kenn-forge", "set-option", "-q", "-p", "-u", "-t", "pane-B", "allow-passthrough"},
 	}, readRecorderArgv(t, record))
+}
+
+func TestManagerApplyTmuxGraphicsEnablesEveryOwnedCustomPane(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	tmuxPath := filepath.Join(dir, "tmux")
+	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr.SetTmuxCommand([]string{tmuxPath})
+	mgr.SetTmuxGraphics(true)
+	body := fmt.Sprintf("#!/bin/sh\n"+
+		"TMUX_RECORD=%s\n"+
+		`printf '%%s\0' "$#" "$@" >> "$TMUX_RECORD"`+"\n"+
+		`case "$*" in *list-sessions*) printf 'owned:%s\nother:user-owned\n';; *list-panes*) printf 'pane-A\npane-B\n';; esac`+"\n"+
+		"exit 0\n", shellquote.Join(record), mgr.TmuxOwnerMarker())
+	require.NoError(os.WriteFile(tmuxPath, []byte(body), 0o755))
+
+	require.NoError(mgr.ApplyTmuxGraphics(t.Context()))
+
+	assert.Equal([][]string{
+		{"list-sessions", "-F", tmuxSessionListFormat},
+		{"list-panes", "-s", "-t", "owned", "-F", tmuxPaneListFormat},
+		{"set-option", "-q", "-p", "-t", "pane-A", "allow-passthrough", "on"},
+		{"set-option", "-q", "-p", "-t", "pane-B", "allow-passthrough", "on"},
+	}, readRecorderArgv(t, record))
+}
+
+func TestManagerApplyTmuxGraphicsAttemptsEveryPaneAfterFailure(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	tmuxPath := filepath.Join(dir, "tmux")
+	body := "#!/bin/sh\n" +
+		"TMUX_RECORD=" + shellquote.Join(record) + "\n" +
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
+		`case "$*" in *list-sessions*) printf 'sess-A:\n';; *list-panes*) printf 'pane-A\npane-B\n';; *'-t pane-A'*) exit 1;; esac` + "\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(tmuxPath, []byte(body), 0o755))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr.SetTmuxGraphics(true)
+	require.Error(mgr.ApplyTmuxGraphics(t.Context()))
+
+	records := readRecorderArgv(t, record)
+	assert.Contains(records, []string{
+		"-L", "kenn-forge", "set-option", "-q", "-p", "-u", "-t", "pane-B", "allow-passthrough",
+	})
 }
 
 func TestManagerApplyTmuxGraphicsDoesNotMutateCustomServer(t *testing.T) {

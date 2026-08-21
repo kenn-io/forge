@@ -95,7 +95,7 @@ func installSettingsTmuxRecorder(t *testing.T) string {
 	tmuxPath := filepath.Join(dir, "tmux")
 	body := "#!/bin/sh\n" +
 		"printf '%s\\n' \"$*\" >> " + shellquote.Join(record) + "\n" +
-		`case " $* " in *" list-sessions "*) printf 'sess-A:\n';; esac` + "\n"
+		`case " $* " in *" list-sessions "*) printf 'sess-A:\n';; *" list-panes "*) printf 'pane-A\npane-B\n';; esac` + "\n"
 	require.NoError(t, os.WriteFile(tmuxPath, []byte(body), 0o755))
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	return record
@@ -120,7 +120,7 @@ func readSettingsTmuxGraphicsCommands(t *testing.T, record string) []string {
 	require.NoError(t, err)
 	commands := make([]string, 0, 3)
 	for command := range strings.SplitSeq(strings.TrimSpace(string(content)), "\n") {
-		if strings.Contains(command, " allow-passthrough ") ||
+		if strings.Contains(command, "allow-passthrough") ||
 			strings.Contains(command, " terminal-features[100]") {
 			commands = append(commands, command)
 		}
@@ -891,9 +891,10 @@ name = "widget"
 	terminal := srv.cfg.Terminal
 	srv.cfgMu.Unlock()
 	terminal.TmuxMouse = new(false)
-	rr := doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{Terminal: &terminal})
+	rr := doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+		Terminal: &terminal,
+	})
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-
 	assert.Equal(t, []string{
 		"-L kenn-forge list-sessions -F #{session_name}:#{@forge_owner}",
 		"-L kenn-forge set-option -q -g mouse off",
@@ -922,13 +923,15 @@ name = "widget"
 	terminal := srv.cfg.Terminal
 	srv.cfgMu.Unlock()
 	terminal.Graphics = new(false)
-	rr := doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{Terminal: &terminal})
+	rr := doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+		Terminal: &terminal,
+	})
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-
 	assert.Equal(t, []string{
 		"-L kenn-forge set-option -q -g allow-passthrough off",
 		"-L kenn-forge set-option -q -s -u terminal-features[100]",
-		"-L kenn-forge set-option -q -p -t sess-A allow-passthrough off",
+		"-L kenn-forge set-option -q -p -u -t pane-A allow-passthrough",
+		"-L kenn-forge set-option -q -p -u -t pane-B allow-passthrough",
 	}, readSettingsTmuxGraphicsCommands(t, record))
 }
 

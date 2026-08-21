@@ -198,12 +198,17 @@ still exists.
 - Every tmux client attach must force UTF-8; service launchers may omit locale
   variables, causing tmux to replace non-ASCII output before WebSocket transport
   (`internal/workspace/localruntime/tmux_launcher.go::tmuxAttachSessionCommand`).
-- Forge's dedicated tmux server owns global passthrough, SIXEL, and mouse mode,
-  including live setting changes; custom servers receive pane passthrough only
-  while graphics are enabled (`internal/workspace/manager.go::Manager.ApplyTmuxGraphics`).
+- Forge's dedicated tmux server owns global passthrough, SIXEL, and mouse mode;
+  live changes clear pane overrides, while custom servers receive passthrough
+  only on Forge-owned panes and only while graphics are enabled
+  (`internal/workspace/manager.go::Manager.ApplyTmuxGraphics`).
 - Applying saved graphics or mouse changes to a live dedicated tmux server is
-  best-effort; the next managed session setup reapplies values after a failure
+  best-effort; graphics updates try every managed pane before reporting combined
+  failures, and setup reapplies the current session's pane state
   (`internal/server/settings_handlers.go::Server.applyTmuxGraphics`).
+- Enabling graphics detaches retained clients from Forge's dedicated tmux
+  server without stopping panes; reconnect restores each client after tmux has
+  applied SIXEL (`internal/workspace/localruntime/manager.go::Manager.ReattachTmuxClients`).
 - Terminal graphics are optional and default on. The browser supports SIXEL and
   iTerm images; Kitty graphics remain disabled while the xterm add-on labels
   that protocol alpha (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::syncImageAddon`).

@@ -464,7 +464,8 @@ graphics = false
 	assert.Equal(t, []string{
 		"-L kenn-forge set-option -q -g allow-passthrough off",
 		"-L kenn-forge set-option -q -s -u terminal-features[100]",
-		"-L kenn-forge set-option -q -p -t sess-A allow-passthrough off",
+		"-L kenn-forge set-option -q -p -u -t pane-A allow-passthrough",
+		"-L kenn-forge set-option -q -p -u -t pane-B allow-passthrough",
 	}, readSettingsTmuxGraphicsCommands(t, record))
 }
 

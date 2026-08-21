@@ -238,7 +238,7 @@ func (l tmuxLauncher) prepare(ctx context.Context) (tmuxLaunchResult, error) {
 			)
 		}
 	}
-	if l.Graphics || l.ConfigureServer {
+	if l.Graphics && !l.ConfigureServer {
 		if err := l.run(ctx, l.passthroughCommand()); err != nil {
 			return tmuxLaunchResult{}, l.cleanupNewSessionAfterError(
 				ctx, "configure tmux passthrough", err,
@@ -277,7 +277,7 @@ func (l tmuxLauncher) prepareExisting(ctx context.Context) (tmuxLaunchResult, er
 			return tmuxLaunchResult{}, fmt.Errorf("configure tmux mouse: %w", err)
 		}
 	}
-	if l.Graphics || l.ConfigureServer {
+	if l.Graphics && !l.ConfigureServer {
 		if err := l.run(ctx, l.passthroughCommand()); err != nil {
 			return tmuxLaunchResult{}, fmt.Errorf("configure tmux passthrough: %w", err)
 		}

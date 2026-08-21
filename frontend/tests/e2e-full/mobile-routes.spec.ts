@@ -152,10 +152,17 @@ test.describe("phone routes", () => {
 
     await expect(page.locator(".mobile-shell")).toBeVisible();
     await expect(page.locator(".mobile-activity-inbox")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "What needs attention?" })).toBeVisible();
+    await expect(page.locator(".mobile-activity-toolbar")).toBeVisible();
     await expect(page.getByText("Readable threads first")).toHaveCount(0);
+    const search = page.getByPlaceholder("Search activity");
     const filters = page.getByRole("button", { name: /^Filters/ });
+    await expect(filters).toHaveText("");
     await expect(filters).toHaveAttribute("aria-expanded", "false");
+    const [searchBounds, filterBounds] = await Promise.all([search.boundingBox(), filters.boundingBox()]);
+    expect(searchBounds).not.toBeNull();
+    expect(filterBounds).not.toBeNull();
+    expect(Math.abs(searchBounds!.y - filterBounds!.y)).toBeLessThan(2);
+    expect(filterBounds!.height).toBeGreaterThanOrEqual(44);
     await filters.click();
     await expect(page.getByRole("switch", { name: "PRs" })).toBeVisible();
     await expect(page.getByRole("switch", { name: "Issues" })).toBeVisible();

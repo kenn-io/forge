@@ -161,6 +161,19 @@ describe("MobileActivityView branch activity", () => {
     cleanup();
   });
 
+  it("keeps search and icon-only filters in one compact toolbar", () => {
+    render(MobileActivityView, { props: { onSelectItem } });
+
+    const search = screen.getByPlaceholderText("Search activity");
+    const filters = screen.getByRole("button", { name: "Filters" });
+    const toolbar = search.closest(".mobile-activity-toolbar");
+
+    expect(toolbar).toBeTruthy();
+    expect(filters.closest(".mobile-activity-toolbar")).toBe(toolbar);
+    expect(filters.textContent?.trim()).toBe("");
+    expect(filters.querySelector("svg")).toBeTruthy();
+  });
+
   it("renders branch activity without a fake PR or issue number", () => {
     const { container } = render(MobileActivityView, {
       props: { onSelectItem },

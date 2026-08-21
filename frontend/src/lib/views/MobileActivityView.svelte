@@ -15,6 +15,7 @@
   import {
     Card,
     Chip,
+    IconButton,
     ScrollBox,
     SearchInput,
     Timeline,
@@ -31,6 +32,7 @@
   import { SelectDropdown } from "@kenn-io/kit-ui";
   import WorkspaceIndicator from "../components/shared/WorkspaceIndicator.svelte";
   import CheckIcon from "@lucide/svelte/icons/check";
+  import FunnelIcon from "@lucide/svelte/icons/funnel";
   import {
     activityBranchKey,
     activityItemKey,
@@ -587,46 +589,33 @@
 <section class="mobile-activity-inbox" aria-label="Mobile activity inbox">
   <ScrollBox label="Activity inbox">
   <div class="mobile-activity-scroll">
-    <header class="mobile-activity-hero">
-      <p class="mobile-activity-eyebrow">
-        Activity inbox · {activity.getTimeRange()}
-      </p>
-      <h1>What needs attention?</h1>
-    </header>
+    <div class="mobile-activity-toolbar">
+      <div class="mobile-activity-search">
+        <SearchInput
+          bind:value={searchInput}
+          block
+          placeholder="Search activity"
+          ariaLabel="Search activity"
+          oninput={handleSearchInput}
+        />
+      </div>
 
-    <div class="mobile-activity-search">
-      <SearchInput
-        bind:value={searchInput}
-        block
-        placeholder="Search activity"
-        ariaLabel="Search activity"
-        oninput={handleSearchInput}
-      />
-    </div>
-
-    <div class="mobile-filter-summary">
-      <button
-        type="button"
-        class="mobile-filter-disclosure"
-        aria-label={activity.getActivityAuthor()
+      <div class="mobile-filter-summary">
+        <IconButton
+          size="md"
+          tone="info"
+          ariaLabel={activity.getActivityAuthor()
           ? `Filters · ${activity.getActivityAuthor()}`
           : "Filters"}
-        aria-expanded={filtersExpanded}
-        aria-controls="mobile-activity-filters"
-        onclick={() => filtersExpanded = !filtersExpanded}
-      >
-        <span>Filters</span>
-        {#if activity.getActivityAuthor()}
-          <span class="mobile-filter-author">· {activity.getActivityAuthor()}</span>
-        {/if}
-        {#if activeFilterCount > 0}
-          <span class="mobile-filter-count" aria-label={`${activeFilterCount} active filters`}>
-            {activeFilterCount}
-          </span>
-        {/if}
-        <span aria-hidden="true">{filtersExpanded ? "−" : "+"}</span>
-      </button>
-
+          title="Filters"
+          ariaExpanded={filtersExpanded}
+          ariaControls="mobile-activity-filters"
+          ariaPressed={filtersExpanded || activeFilterCount > 0}
+          onclick={() => filtersExpanded = !filtersExpanded}
+        >
+          <FunnelIcon size={18} strokeWidth={2} aria-hidden="true" />
+        </IconButton>
+      </div>
     </div>
 
     {#if filtersExpanded}
@@ -874,28 +863,16 @@
     font-size: var(--font-size-md);
   }
 
-  .mobile-activity-hero {
-    margin: var(--mobile-space-2xs) var(--mobile-space-2xs) var(--mobile-space-sm);
-  }
-
-  .mobile-activity-eyebrow {
-    margin: 0 0 var(--mobile-space-2xs);
-    color: var(--text-secondary);
-    font-size: var(--font-size-sm);
-    font-weight: 700;
-    letter-spacing: 0.02em;
-  }
-
-  .mobile-activity-hero h1 {
-    margin: 0;
-    color: var(--text-primary);
-    font-size: var(--font-size-xl);
-    line-height: 1.16;
-    letter-spacing: 0;
+  .mobile-activity-toolbar {
+    display: flex;
+    align-items: stretch;
+    gap: var(--mobile-space-xs);
+    margin-bottom: var(--mobile-space-sm);
   }
 
   .mobile-activity-search {
-    margin-bottom: var(--mobile-space-sm);
+    flex: 1;
+    min-width: 0;
   }
 
   .mobile-activity-search :global(.kit-search-input) {
@@ -911,44 +888,16 @@
   .mobile-filter-summary {
     display: flex;
     align-items: center;
-    flex-wrap: wrap;
-    gap: var(--mobile-space-xs);
-    margin-bottom: var(--mobile-space-sm);
+    flex: 0 0 auto;
   }
 
-  .mobile-filter-disclosure {
-    max-width: 100%;
+  .mobile-filter-summary :global(.kit-icon-button) {
+    width: calc(var(--mobile-hit-target) + var(--mobile-space-xs));
+    height: 100%;
     min-height: var(--mobile-hit-target);
-    display: inline-flex;
-    align-items: center;
-    gap: var(--mobile-space-xs);
-    padding: 0 var(--mobile-space-md);
     border: thin solid var(--border-default);
     border-radius: var(--radius-md);
-    color: var(--text-primary);
     background: var(--bg-inset);
-    font: inherit;
-    font-weight: 750;
-  }
-
-  .mobile-filter-author {
-    min-width: 0;
-    max-width: 12rem;
-    overflow: hidden;
-    color: var(--text-secondary);
-    font-weight: var(--font-weight-medium, 500);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .mobile-filter-count {
-    min-width: 20px;
-    padding: 1px 6px;
-    border-radius: 999px;
-    color: var(--accent-blue);
-    background: color-mix(in srgb, var(--accent-blue) 14%, transparent);
-    font-size: var(--font-size-xs);
-    text-align: center;
   }
 
   .mobile-activity-filter-grid {

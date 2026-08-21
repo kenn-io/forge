@@ -65,7 +65,8 @@ func TestMCPQuickstartCommandPrintsStructuredConnector(t *testing.T) {
 func TestLoadMCPQuickstartExplainsStoppedDaemonWithoutCreatingRuntimeState(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	root := t.TempDir()
+	root := filepath.Join(t.TempDir(), "custom config")
+	require.NoError(os.Mkdir(root, 0o700))
 	dataDir := filepath.Join(root, "data")
 	configPath := filepath.Join(root, "config.toml")
 	require.NoError(os.WriteFile(configPath, fmt.Appendf(nil, `
@@ -82,7 +83,10 @@ enabled = true
 
 	assert.True(info.Enabled)
 	assert.False(info.Active)
-	assert.Contains(info.NextSteps, "Start the Forge daemon with `kenn-forge daemon start`.")
+	assert.Contains(
+		info.NextSteps,
+		"Start the Forge daemon with `kenn-forge daemon start --config '"+configPath+"'`.",
+	)
 	_, err = os.Stat(runtimelock.LockPath(dataDir))
 	assert.ErrorIs(err, os.ErrNotExist)
 }

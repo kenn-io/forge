@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	shellquote "github.com/kballard/go-shellquote"
 	"github.com/spf13/cobra"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/runtimelock"
@@ -105,7 +106,7 @@ func loadMCPQuickstart(
 	}
 	if _, err := os.Stat(runtimelock.LockPath(cfg.DataDir)); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return stoppedMCPQuickstart(cfg.MCP.Enabled), nil
+			return stoppedMCPQuickstart(cfg.MCP.Enabled, configPath), nil
 		}
 		return mcpQuickstartInfo{}, fmt.Errorf("mcp quickstart: inspect daemon lock: %w", err)
 	}
@@ -114,7 +115,7 @@ func loadMCPQuickstart(
 		return mcpQuickstartInfo{}, fmt.Errorf("mcp quickstart: read daemon status: %w", err)
 	}
 	if !status.Running {
-		return stoppedMCPQuickstart(cfg.MCP.Enabled), nil
+		return stoppedMCPQuickstart(cfg.MCP.Enabled, configPath), nil
 	}
 	if status.Metadata == nil {
 		return mcpQuickstartInfo{}, fmt.Errorf(
@@ -162,18 +163,26 @@ func loadMCPQuickstart(
 	return daemonMCPQuickstart(*settings.MCP, daemon.TokenPath), nil
 }
 
-func stoppedMCPQuickstart(enabled bool) mcpQuickstartInfo {
+func stoppedMCPQuickstart(enabled bool, configPath string) mcpQuickstartInfo {
+	startArgs := []string{"kenn-forge", "daemon", "start"}
+	if configPath != config.DefaultConfigPath() {
+		startArgs = append(startArgs, "--config", configPath)
+	}
+	startStep := fmt.Sprintf(
+		"Start the Forge daemon with `%s`.",
+		shellquote.Join(startArgs...),
+	)
 	info := mcpQuickstartInfo{
 		Enabled:        enabled,
 		Transport:      "streamable-http",
 		Authentication: mcpAuthenticationInfo{},
 	}
 	if enabled {
-		info.NextSteps = []string{"Start the Forge daemon with `kenn-forge daemon start`."}
+		info.NextSteps = []string{startStep}
 	} else {
 		info.NextSteps = []string{
 			"Enable the MCP companion in Forge Settings or set `[mcp].enabled = true`.",
-			"Start the Forge daemon with `kenn-forge daemon start`.",
+			startStep,
 		}
 	}
 	return info

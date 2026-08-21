@@ -150,6 +150,20 @@ describe("FocusListView search", () => {
     view.unmount();
   });
 
+  it.each(["mrs", "issues"] as const)("discloses %s filters from an icon-only control", async (listType) => {
+    const { container } = render(FocusListView, { props: { listType, repo: "acme/one" } });
+
+    const filters = screen.getByRole("button", { name: "Filters" });
+    expect(filters.textContent?.trim()).toBe("");
+    expect(filters.getAttribute("aria-expanded")).toBe("false");
+    expect(container.querySelector(".filter-bar")?.classList.contains("filter-bar--expanded")).toBe(false);
+
+    await fireEvent.click(filters);
+
+    expect(filters.getAttribute("aria-expanded")).toBe("true");
+    expect(container.querySelector(".filter-bar")?.classList.contains("filter-bar--expanded")).toBe(true);
+  });
+
   it.each([
     ["mrs" as const, setPullsInvolvesMe, loadPulls],
     ["issues" as const, setIssuesInvolvesMe, loadIssues],

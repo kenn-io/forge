@@ -1,13 +1,16 @@
 <script lang="ts">
   import { Effect } from "effect";
   import { onDestroy, onMount } from "svelte";
+  import type { Attachment } from "svelte/attachments";
   import { SvelteMap, SvelteSet } from "svelte/reactivity";
   import { getAppRuntime } from "../app/runtime-context.js";
+  import { observeIntersection } from "../browser/observers.js";
   import type { AppExecution } from "../app/runtime.js";
   import type { ActivityItem, ActivitySubject, WorkspaceActivitySubject } from "../api/types.js";
   import { getStores } from "../context.js";
   import {
     buildActivityFilterTypes,
+    DEFAULT_EVENT_TYPES,
     isActivityItemTypeEnabled,
     type ActivityItemType,
     type TimeRange,
@@ -67,16 +70,26 @@
     events: ActivityItem[];
     eventCount: number;
     latestTime: string;
+    previewRevision: string;
     workspaceActivityAt?: string;
   };
 
   const BOT_SUFFIXES = ["[bot]", "-bot", "bot"];
+  const EVENT_TYPES = DEFAULT_EVENT_TYPES;
+  type EventType = (typeof EVENT_TYPES)[number];
+  const EVENT_LABELS: Record<EventType, string> = {
+    comment: "Comments",
+    review: "Reviews",
+    commit: "Commits",
+    force_push: "Force pushes",
+  };
   const timeRanges: TimeRange[] = ["24h", "7d", "30d", "90d"];
   const timeRangeOptions = timeRanges.map((range) => ({
     value: range,
     label: range,
   }));
   let searchInput = $state("");
+  let activityPageLimit = $state(30);
   let filtersExpanded = $state(false);
   let searchExecution: AppExecution<void, never> | null = null;
   let unsubSync: (() => void) | undefined;
@@ -90,7 +103,8 @@
   onMount(() => {
     activity.initializeFromMount();
     searchInput = activity.getActivitySearch() ?? "";
-    activity.setFullEventProjectionRequired(true);
+    activityPageLimit = 30;
+    activity.setActivityPageLimit(activityPageLimit);
     activity.loadActivity(true);
     activity.startActivityPolling();
     unsubSync = sync.subscribeSyncComplete(() => {
@@ -100,7 +114,7 @@
   });
 
   onDestroy(() => {
-    activity.setFullEventProjectionRequired(false);
+    activity.setActivityPageLimit(undefined);
     activity.stopActivityPolling();
     unsubSync?.();
     searchExecution?.interrupt();
@@ -210,6 +224,7 @@
           representative.created_at,
           representative.item_last_activity_at,
         ),
+        previewRevision: "",
       });
     }
 
@@ -244,6 +259,7 @@
           repo: subject.repo,
           ...(subject.workspace ? { workspace: subject.workspace } : {}),
         };
+        existing.previewRevision = subject.event_ledger_revision ?? subject.activity_at;
         continue;
       }
       groupsByKey.set(key, {
@@ -252,6 +268,7 @@
         events: [],
         eventCount: 0,
         latestTime: subject.activity_at,
+        previewRevision: subject.event_ledger_revision ?? subject.activity_at,
       });
     }
 
@@ -291,6 +308,7 @@
         events: [],
         eventCount: 0,
         latestTime: subject.activity_at,
+        previewRevision: subject.activity_at,
         workspaceActivityAt: subject.activity_at,
       });
     }
@@ -319,7 +337,9 @@
     + (selectedRepo ? 1 : 0)
     + (activity.getEnabledItemTypes().has("pr") ? 0 : 1)
     + (activity.getEnabledItemTypes().has("issue") ? 0 : 1)
+    + (EVENT_TYPES.length - activity.getEnabledEvents().size)
     + (activity.getHideBots() ? 1 : 0)
+    + (activity.getHideClosedMerged() ? 1 : 0)
     + (activity.getHideDefaultBranchActivity() ? 1 : 0)
     + (grouping.getHideOrgName() ? 1 : 0)
     + (activity.getShowNotifications() ? 0 : 1)
@@ -356,6 +376,14 @@
     applyFilters();
   }
 
+  function toggleEvent(eventType: EventType): void {
+    const next = new SvelteSet(activity.getEnabledEvents());
+    if (next.has(eventType)) next.delete(eventType);
+    else next.add(eventType);
+    activity.setEnabledEvents(next);
+    applyFilters();
+  }
+
   function setTimeRange(range: TimeRange): void {
     activity.setTimeRange(range);
     activity.syncToURL();
@@ -380,6 +408,11 @@
   function toggleHideBots(): void {
     activity.setHideBots(!activity.getHideBots());
     applyFilters();
+  }
+
+  function toggleHideClosedMerged(): void {
+    activity.setHideClosedMerged(!activity.getHideClosedMerged());
+    activity.loadActivity();
   }
 
   function toggleHideNotifications(): void {
@@ -429,6 +462,44 @@
       return;
     }
     onSelectItem?.(group.representative);
+  }
+
+  function loadPreviewWhenVisible(key: string, previewRevision: string): Attachment<HTMLElement> {
+    return (node) => {
+      void previewRevision;
+      const load = () => activity.loadThreadPreview(key);
+
+      if (typeof IntersectionObserver === "undefined") {
+        load();
+        return;
+      }
+
+      const root = node.closest(".kit-scrollbox__viewport");
+      const execution = runtime.runCommand(
+        Effect.scoped(
+          observeIntersection(
+            node,
+            (entries) => {
+              if (entries[0]?.isIntersecting) load();
+            },
+            { root, rootMargin: "240px 0px" },
+          ).pipe(Effect.andThen(Effect.never)),
+        ),
+        {
+          operation: "observe mobile activity preview",
+          safeContext: {},
+          onFailure: () => {},
+        },
+      );
+
+      return () => execution.interrupt();
+    };
+  }
+
+  function loadMoreActivity(): void {
+    activityPageLimit = Math.min(activityPageLimit + 30, 500);
+    activity.setActivityPageLimit(activityPageLimit);
+    activity.loadActivity();
   }
 
   function subjectSelectionItem(
@@ -652,6 +723,24 @@
         />
       </div>
 
+      {#each EVENT_TYPES as eventType (eventType)}
+        <div class="mobile-event-type-toggle">
+          <Toggle
+            checked={activity.getEnabledEvents().has(eventType)}
+            label={EVENT_LABELS[eventType]}
+            onchange={() => toggleEvent(eventType)}
+          />
+        </div>
+      {/each}
+
+      <div class="mobile-event-type-toggle">
+        <Toggle
+          checked={activity.getShowNotifications()}
+          label="Notifications"
+          onchange={toggleHideNotifications}
+        />
+      </div>
+
       <div class="mobile-filter-select">
         <span>Range</span>
         <SelectDropdown
@@ -685,6 +774,14 @@
       <button
         type="button"
         class="mobile-filter-toggle"
+        class:active={activity.getHideClosedMerged()}
+        aria-pressed={activity.getHideClosedMerged()}
+        onclick={toggleHideClosedMerged}
+      >Hide closed/merged</button>
+
+      <button
+        type="button"
+        class="mobile-filter-toggle"
         class:active={activity.getHideBots()}
         aria-pressed={activity.getHideBots()}
         onclick={toggleHideBots}
@@ -706,13 +803,6 @@
         onclick={toggleHideOrgName}
       >Hide org</button>
 
-      <button
-        type="button"
-        class="mobile-filter-toggle"
-        class:active={!activity.getShowNotifications()}
-        aria-pressed={!activity.getShowNotifications()}
-        onclick={toggleHideNotifications}
-      >Hide notifications</button>
     </div>
     {/if}
 
@@ -731,7 +821,7 @@
       <div class="mobile-activity-card-list">
         {#each visibleGroups as group (group.key)}
           {@const item = group.representative}
-          <article>
+          <article {@attach loadPreviewWhenVisible(group.key, group.previewRevision)}>
             <Card level="raised" padding="none" class="mobile-activity-card">
               <button
                 type="button"
@@ -766,7 +856,7 @@
                 </span>
                 <span class="mobile-activity-card__meta">
                   <span>{repoLabel(item)}</span>
-                  <span>{group.eventCount} {group.eventCount === 1 ? "event" : "events"}</span>
+                  <span>Recent activity</span>
                 </span>
               </button>
 
@@ -815,15 +905,22 @@
 
     {#if activity.isActivityCapped()}
       <div class="mobile-activity-capped event-capped-notice">
-        Showing most recent 5,000 events. Narrow the range or filters to see more.
+        Showing the most recent activity. Narrow the range or filters to see more.
       </div>
     {/if}
 
     {#if activity.isItemActivityCapped()}
       <div class="mobile-activity-capped item-activity-capped-notice">
-        Showing the 5,000 most recently active pull requests and issues. Item totals may be incomplete; narrow the
-        range or item filters to see fewer results.
+        Showing the most recently active pull requests and issues. Narrow the range or item filters to see more.
       </div>
+      {#if activityPageLimit < 500}
+        <button
+          type="button"
+          class="mobile-activity-load-more"
+          disabled={activity.isActivityLoading()}
+          onclick={loadMoreActivity}
+        >Load 30 more</button>
+      {/if}
     {/if}
   </div>
   </ScrollBox>
@@ -934,7 +1031,8 @@
   }
 
   .mobile-filter-select,
-  .mobile-item-type-toggle {
+  .mobile-item-type-toggle,
+  .mobile-event-type-toggle {
     min-width: 0;
     min-height: var(--mobile-hit-target);
     display: grid;
@@ -948,11 +1046,13 @@
     background: var(--bg-inset);
   }
 
-  .mobile-item-type-toggle {
+  .mobile-item-type-toggle,
+  .mobile-event-type-toggle {
     display: flex;
   }
 
-  .mobile-item-type-toggle :global(.kit-toggle) {
+  .mobile-item-type-toggle :global(.kit-toggle),
+  .mobile-event-type-toggle :global(.kit-toggle) {
     width: 100%;
     min-height: var(--mobile-hit-target);
   }
@@ -1222,6 +1322,14 @@
     background: var(--bg-surface);
     font-size: var(--font-size-sm);
     text-align: center;
+  }
+
+  .mobile-activity-load-more {
+    min-height: var(--mobile-hit-target);
+    border: thin solid var(--border-default);
+    border-radius: var(--mobile-radius-sm);
+    color: var(--text-primary);
+    background: var(--bg-inset);
   }
 
   .mobile-activity-error {

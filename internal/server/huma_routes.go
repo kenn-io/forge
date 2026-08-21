@@ -1408,7 +1408,7 @@ func (s *Server) listActivityRouteCore(ctx context.Context, input *listActivityI
 		projection = "full"
 	}
 	pageLimit := activitySafetyCap
-	if projection == "events" {
+	if projection == "events" || (projection == "collapsed" && input.Limit > 0) {
 		pageLimit = input.Limit
 		if pageLimit == 0 {
 			pageLimit = 500
@@ -1497,7 +1497,7 @@ func (s *Server) listActivityRouteCore(ctx context.Context, input *listActivityI
 	if projection == "collapsed" {
 		collapsed, projectionErr := s.db.ListCollapsedActivityProjection(ctx, db.ListActivityProjectionOpts{
 			ListActivityOpts: opts,
-			SubjectLimit:     activitySafetyCap + 1,
+			SubjectLimit:     pageLimit + 1,
 		})
 		if projectionErr != nil {
 			slog.Error("list collapsed activity failed", "err", projectionErr)
@@ -1605,7 +1605,11 @@ func (s *Server) listActivityRouteCore(ctx context.Context, input *listActivityI
 	}
 
 	eventsCapped := len(items) > pageLimit
-	itemActivityCapped := len(itemActivity) > activitySafetyCap || searchMatchesTruncated
+	itemActivityLimit := activitySafetyCap
+	if projection == "collapsed" {
+		itemActivityLimit = pageLimit
+	}
+	itemActivityCapped := len(itemActivity) > itemActivityLimit || searchMatchesTruncated
 	if len(items) > pageLimit {
 		items = items[:pageLimit]
 	}
@@ -1614,8 +1618,8 @@ func (s *Server) listActivityRouteCore(ctx context.Context, input *listActivityI
 		last := items[len(items)-1]
 		nextCursor = db.EncodeCursor(last.CreatedAt, last.Source, last.SourceID)
 	}
-	if len(itemActivity) > activitySafetyCap {
-		itemActivity = itemActivity[:activitySafetyCap]
+	if len(itemActivity) > itemActivityLimit {
+		itemActivity = itemActivity[:itemActivityLimit]
 	}
 	if hasFullWorkspaceEventItems {
 		if len(workspaceEventItems) > activitySafetyCap {

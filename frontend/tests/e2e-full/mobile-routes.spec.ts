@@ -166,6 +166,12 @@ test.describe("phone routes", () => {
     await filters.click();
     await expect(page.getByRole("switch", { name: "PRs" })).toBeVisible();
     await expect(page.getByRole("switch", { name: "Issues" })).toBeVisible();
+    await expect(page.getByRole("switch", { name: "Comments" })).toBeVisible();
+    await expect(page.getByRole("switch", { name: "Reviews" })).toBeVisible();
+    await expect(page.getByRole("switch", { name: "Commits" })).toBeVisible();
+    await expect(page.getByRole("switch", { name: "Force pushes" })).toBeVisible();
+    await expect(page.getByRole("switch", { name: "Notifications" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Hide closed/merged" })).toBeVisible();
     await expect(page.getByLabel("Time range")).toBeVisible();
     await expect(page.getByLabel("Repository")).toBeVisible();
     await expect(page.locator(".threaded-view")).toHaveCount(0);
@@ -377,10 +383,10 @@ test.describe("phone routes", () => {
     const response = await filteredResponse;
     expect(response.status()).toBe(200);
     const payload = await response.json();
-    expect(payload.items.length).toBeGreaterThan(0);
-    expect(payload.items.every((item: { item_author: string }) => item.item_author.toLowerCase() === "carol")).toBe(
-      true,
-    );
+    expect(payload.item_activity.length).toBeGreaterThan(0);
+    expect(
+      payload.item_activity.every((item: { item_author: string }) => item.item_author.toLowerCase() === "carol"),
+    ).toBe(true);
 
     await expect(page).toHaveURL(/author=carol/);
     await expect(page.getByRole("button", { name: "Filters · carol" })).toBeVisible();
@@ -570,6 +576,18 @@ test.describe("phone routes", () => {
     const modePicker = page.getByRole("combobox", { name: /Phone mode/ });
     await expect(modePicker).toHaveText("PRs");
     await expect(page.locator(".focus-list")).toBeVisible();
+    const pullSearch = page.getByRole("searchbox", { name: "Search PRs" });
+    const pullFilters = page.getByRole("button", { name: "Filters" });
+    await expect(pullFilters).toHaveText("");
+    await expect(pullFilters).toHaveAttribute("aria-expanded", "false");
+    await expect(page.locator(".filter-bar")).toBeHidden();
+    const [pullSearchBounds, pullFilterBounds] = await Promise.all([
+      pullSearch.boundingBox(),
+      pullFilters.boundingBox(),
+    ]);
+    expect(Math.abs(pullSearchBounds!.y - pullFilterBounds!.y)).toBeLessThan(2);
+    await pullFilters.click();
+    await expect(page.locator(".filter-bar")).toBeVisible();
     await expectReadableFocusList(page, ".pull-item");
 
     await modePicker.click();
@@ -577,6 +595,17 @@ test.describe("phone routes", () => {
     await expect(page).toHaveURL(/\/m\/issues(?:\?|$)/);
     await expect(modePicker).toHaveText("Issues");
     await expect(page.locator(".focus-list")).toBeVisible();
+    const issueSearch = page.getByRole("searchbox", { name: "Search issues" });
+    const issueFilters = page.getByRole("button", { name: "Filters" });
+    await expect(issueFilters).toHaveAttribute("aria-expanded", "false");
+    await expect(page.locator(".filter-bar")).toBeHidden();
+    const [issueSearchBounds, issueFilterBounds] = await Promise.all([
+      issueSearch.boundingBox(),
+      issueFilters.boundingBox(),
+    ]);
+    expect(Math.abs(issueSearchBounds!.y - issueFilterBounds!.y)).toBeLessThan(2);
+    await issueFilters.click();
+    await expect(page.locator(".filter-bar")).toBeVisible();
     await expectReadableFocusList(page, ".issue-item");
   });
 
@@ -590,6 +619,7 @@ test.describe("phone routes", () => {
       await expect(botIssue).toBeVisible();
       await expect(humanIssue).toBeVisible();
 
+      await page.getByRole("button", { name: "Filters" }).click();
       const hideBots = page.getByRole("button", { name: "Hide bot-authored issues" });
       await expect(hideBots).toHaveAttribute("aria-pressed", "false");
       const settingsUpdate = page.waitForResponse(
@@ -608,6 +638,7 @@ test.describe("phone routes", () => {
 
       await page.reload();
       await expect(page.locator(".issue-item").first()).toBeVisible();
+      await page.getByRole("button", { name: "Filters" }).click();
       await expect(hideBots).toHaveAttribute("aria-pressed", "true");
       await expect(botIssue).toHaveCount(0);
       await expect(humanIssue).toBeVisible();

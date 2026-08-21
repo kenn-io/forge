@@ -1,7 +1,8 @@
 <script lang="ts">
   import { Effect, Schedule } from "effect";
   import { onDestroy, untrack } from "svelte";
-  import { ScrollBox, SearchInput, StatusDot } from "@kenn-io/kit-ui";
+  import { IconButton, ScrollBox, SearchInput, StatusDot } from "@kenn-io/kit-ui";
+  import FunnelIcon from "@lucide/svelte/icons/funnel";
   import { getAppRuntime } from "../app/runtime-context.js";
   import type { AppExecution } from "../app/runtime.js";
   import { getStores, getNavigate, getActions } from "../context.js";
@@ -45,6 +46,7 @@
   const { listType, repo, routeFamily = "focus" }: Props = $props();
 
   let searchInput = $state("");
+  let filtersExpanded = $state(false);
   let searchExecution: AppExecution<void, never> | null = null;
 
   function loadList(): void {
@@ -75,6 +77,7 @@
   $effect(() => {
     listType;
     repoParams;
+    filtersExpanded = false;
     searchInput = untrack(() => listType === "mrs"
       ? pulls.getSearchQuery() ?? ""
       : issues.getIssueSearchQuery() ?? "");
@@ -211,7 +214,11 @@
     <span class="header-label">{repoLabel}</span>
     <span class="count-badge">{itemCount} {itemLabel}</span>
   </div>
-  <div class="filter-bar">
+  <div
+    id="focus-list-filters"
+    class="filter-bar"
+    class:filter-bar--expanded={filtersExpanded}
+  >
     <div class="state-toggle">
       {#if listType === "mrs"}
         {#each ["open", "closed", "all"] as s (s)}
@@ -301,6 +308,20 @@
         ariaLabel="Search {itemLabel}"
         oninput={onSearchInput}
       />
+    </div>
+    <div class="mobile-filter-button">
+      <IconButton
+        size="md"
+        tone="info"
+        ariaLabel="Filters"
+        title="Filters"
+        ariaExpanded={filtersExpanded}
+        ariaControls="focus-list-filters"
+        ariaPressed={filtersExpanded}
+        onclick={() => filtersExpanded = !filtersExpanded}
+      >
+        <FunnelIcon size={18} strokeWidth={2} aria-hidden="true" />
+      </IconButton>
     </div>
   </div>
 
@@ -541,6 +562,10 @@
     min-width: 0;
   }
 
+  .mobile-filter-button {
+    display: none;
+  }
+
   .state-toggle {
     display: flex;
     gap: 2px;
@@ -627,11 +652,17 @@
   }
 
   :global(.mobile-main) .filter-bar {
+    display: none;
+    order: 2;
     flex-wrap: wrap;
     align-items: stretch;
     gap: var(--focus-mobile-space-sm);
     padding: var(--focus-mobile-space-sm) var(--focus-mobile-space-md);
     border-bottom: thin solid var(--border-muted);
+  }
+
+  :global(.mobile-main) .filter-bar--expanded {
+    display: flex;
   }
 
   :global(.mobile-main) .state-toggle,
@@ -664,9 +695,33 @@
   }
 
   :global(.mobile-main) .search-bar {
+    order: 1;
     gap: var(--focus-mobile-space-sm);
     padding: var(--focus-mobile-space-sm) var(--focus-mobile-space-md);
     border-bottom: thin solid var(--border-default);
+  }
+
+  :global(.mobile-main) .state-note {
+    order: 3;
+  }
+
+  :global(.mobile-main) .focus-list > :global(.list-body) {
+    order: 4;
+  }
+
+  :global(.mobile-main) .mobile-filter-button {
+    display: flex;
+    align-items: stretch;
+    flex: 0 0 auto;
+  }
+
+  :global(.mobile-main) .mobile-filter-button :global(.kit-icon-button) {
+    width: var(--focus-mobile-hit-target);
+    height: 100%;
+    min-height: var(--focus-mobile-hit-target);
+    border: thin solid var(--border-default);
+    border-radius: var(--focus-mobile-radius-sm);
+    background: var(--bg-inset);
   }
 
   :global(.mobile-main) .search-wrap :global(.kit-search-input) {

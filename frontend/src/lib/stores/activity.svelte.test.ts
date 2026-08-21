@@ -218,6 +218,73 @@ describe("activity store collapse state", () => {
     expect(store.getActivityEventCursor()).toBe("hidden:9");
   });
 
+  it("requests a bounded collapsed projection for mobile", async () => {
+    const get = vi.fn(async () => ({
+      data: { items: [], item_activity: [], workspace_activity: [], capped: false, event_cursor: "hidden:9" },
+      error: null,
+    }));
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.hydrateDefaults(settings(true));
+
+    store.setActivityPageLimit(30);
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+
+    expect(get).toHaveBeenCalledWith(
+      "/activity",
+      expect.objectContaining({
+        params: { query: expect.objectContaining({ projection: "collapsed", limit: 30 }) },
+      }),
+    );
+  });
+
+  it("loads one bounded event-preview page for a visible mobile card", async () => {
+    const subject = {
+      ...itemActivity(7),
+      repo: {
+        provider: "github",
+        platform_host: "github.com",
+        platform_repo_id: "repo-7",
+        repo_path: "acme/widgets",
+        owner: "acme",
+        name: "widgets",
+        host: "github.com",
+      },
+    } satisfies ActivitySubject;
+    const threadQueries: Array<Record<string, unknown>> = [];
+    const get = vi.fn(async (path: string, options: { params?: { query?: Record<string, unknown> } }) => {
+      if (path === "/activity/thread-events") {
+        threadQueries.push(options.params?.query ?? {});
+        return {
+          data: {
+            items: [],
+            item_activity: [],
+            workspace_activity: [],
+            capped: true,
+            next_cursor: "another-page",
+          },
+          error: null,
+        };
+      }
+      return {
+        data: { items: [], item_activity: [subject], workspace_activity: [], capped: false, event_cursor: "hidden:9" },
+        error: null,
+      };
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.hydrateDefaults(settings(false));
+    store.setActivityPageLimit(30);
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getItemActivity()).toEqual([subject]));
+    expect(threadQueries).toHaveLength(0);
+
+    store.loadThreadPreview("github|github.com|id|repo-7:pr:7");
+    await vi.waitFor(() => expect(threadQueries).toHaveLength(1));
+
+    expect(threadQueries[0]).toEqual(expect.objectContaining({ limit: 10, at_or_before: "hidden:9" }));
+    expect(threadQueries[0]).not.toHaveProperty("before");
+  });
+
   it("pages a capped feed when persisted settings initialize threaded mode expanded", async () => {
     await expectInitialExpandedFeedToPage((store) => {
       store.hydrateDefaults(settings(false));

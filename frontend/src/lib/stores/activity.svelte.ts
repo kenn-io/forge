@@ -217,6 +217,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   let rollUpCommits = $state(false);
   let collapseThreadsDefault = false;
   let fullEventProjectionRequired = false;
+  let activityPageLimit: number | undefined;
   let expandOverrides = $state<Set<string>>(new Set());
   let pagedActivityGeneration = 0;
   let childProjectionInvalidationGeneration = 0;
@@ -363,6 +364,10 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     fullEventProjectionRequired = required;
     invalidatePagedActivityRequests();
   }
+  function setActivityPageLimit(limit: number | undefined): void {
+    activityPageLimit = limit;
+    invalidatePagedActivityRequests();
+  }
   function setRollUpCommits(value: boolean): void {
     rollUpCommits = value;
   }
@@ -452,7 +457,11 @@ export function createActivityStore(opts: ActivityStoreOptions) {
 
   function buildParams(): ActivityParams {
     const p: ActivityParams = { since: computeSince() };
-    p.projection = viewMode === "threaded" && collapseThreads && !fullEventProjectionRequired ? "collapsed" : "full";
+    p.projection =
+      activityPageLimit !== undefined || (viewMode === "threaded" && collapseThreads && !fullEventProjectionRequired)
+        ? "collapsed"
+        : "full";
+    if (activityPageLimit !== undefined) p.limit = activityPageLimit;
     const repo = getGlobalRepo();
     if (repo) p.repo = repo;
     if (filterTypes.length > 0) p.types = filterTypes;
@@ -470,7 +479,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   }
 
   function shouldUseCollapsedAuthoritativeProjection(): boolean {
-    return viewMode === "threaded" && !fullEventProjectionRequired;
+    return activityPageLimit !== undefined || (viewMode === "threaded" && !fullEventProjectionRequired);
   }
 
   function activityProjectionScope(params: ActivityParams): string {
@@ -486,6 +495,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       params.hide_closed_merged ?? false,
       params.hide_bots ?? false,
       params.hide_default_branch ?? false,
+      params.limit ?? 0,
     ]);
   }
 
@@ -669,7 +679,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     projectedChildInvalidationGeneration = childProjectionInvalidationGeneration;
     loading = false;
     storeError = null;
-    if (projection === "collapsed") {
+    if (projection === "collapsed" && activityPageLimit === undefined) {
       for (const subject of itemActivity) {
         const key = stableParentKey(subject);
         if (key && isThreadItemExpanded(key)) loadThreadEvents(key);
@@ -687,6 +697,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
 
   function projectAuthoritativeActivitySnapshot(result: OwnedActivityResponse): void {
     const reconcileCollapsedThreads = shouldUseCollapsedAuthoritativeProjection();
+    const autoLoadExpandedThreadEvents = activityPageLimit === undefined;
     const childProjectionStale =
       reconcileCollapsedThreads && projectedChildInvalidationGeneration !== childProjectionInvalidationGeneration;
     const received = projectOwnedNotificationStates(result);
@@ -729,7 +740,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       ) {
         changedThreadKeys.add(key);
       }
-      if (reconcileCollapsedThreads && key && !previous && isThreadItemExpanded(key)) {
+      if (reconcileCollapsedThreads && autoLoadExpandedThreadEvents && key && !previous && isThreadItemExpanded(key)) {
         newExpandedThreadKeys.add(key);
       }
     }
@@ -763,17 +774,18 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       threadLoadError = null;
       threadRequestTokens.clear();
       bulkRequestToken = undefined;
-      if (!collapseThreads) {
+      if (autoLoadExpandedThreadEvents && !collapseThreads) {
         restartBulkActivity = true;
-      } else {
+      } else if (autoLoadExpandedThreadEvents) {
         for (const key of receivedSubjectKeys) {
           if (isThreadItemExpanded(key)) loadThreadEvents(key);
         }
       }
     } else if (reconcileCollapsedThreads && (changedThreadKeys.size > 0 || newExpandedThreadKeys.size > 0)) {
       restartBulkActivity =
-        (changedThreadKeys.size > 0 && bulkRequestToken !== undefined) ||
-        (!collapseThreads && newExpandedThreadKeys.size > 0);
+        autoLoadExpandedThreadEvents &&
+        ((changedThreadKeys.size > 0 && bulkRequestToken !== undefined) ||
+          (!collapseThreads && newExpandedThreadKeys.size > 0));
       if (!restartBulkActivity) {
         const reloadThreadKeys = new Set([...changedThreadKeys, ...newExpandedThreadKeys]);
         loadedThreadKeys = new Set([...loadedThreadKeys].filter((key) => !reloadThreadKeys.has(key)));
@@ -781,8 +793,10 @@ export function createActivityStore(opts: ActivityStoreOptions) {
         failedThreadKeys = new Set([...failedThreadKeys].filter((key) => !reloadThreadKeys.has(key)));
         if (failedThreadKeys.size === 0) threadLoadError = null;
         for (const key of reloadThreadKeys) threadRequestTokens.delete(key);
-        for (const key of reloadThreadKeys) {
-          if (isThreadItemExpanded(key)) loadThreadEvents(key);
+        if (autoLoadExpandedThreadEvents) {
+          for (const key of reloadThreadKeys) {
+            if (isThreadItemExpanded(key)) loadThreadEvents(key);
+          }
         }
       }
     }
@@ -850,7 +864,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     });
   }
 
-  function loadThreadEvents(key: string): void {
+  function loadThreadEvents(key: string, loadAllPages = true): void {
     if (loadedThreadKeys.has(key) || loadingThreadKeys.has(key)) return;
     const subject = itemActivity.find((candidate) => stableParentKey(candidate) === key);
     const platformRepoID = subject?.repo.platform_repo_id?.trim();
@@ -874,7 +888,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       item_number: subject.item_number,
       since: computeSince(),
       ...(snapshotCursor ? { at_or_before: snapshotCursor } : {}),
-      limit: 100,
+      limit: loadAllPages ? 100 : 10,
       ...(filterTypes.length > 0 ? { types: [...filterTypes] } : {}),
       ...(searchQuery ? { search: searchQuery } : {}),
       ...(hideClosedMerged ? { hide_closed_merged: true } : {}),
@@ -899,6 +913,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
         ).pipe(retryIdempotentRead);
         if (!(yield* Effect.sync(isCurrentRequest))) return;
         pageResults.push({ response, startedAt });
+        if (!loadAllPages) break;
         const next = response.next_cursor ?? "";
         if (next === "") break;
         before = next;
@@ -946,6 +961,10 @@ export function createActivityStore(opts: ActivityStoreOptions) {
         onFailure: () => {},
       },
     );
+  }
+
+  function loadThreadPreview(key: string): void {
+    loadThreadEvents(key, false);
   }
 
   function retryFailedThreadLoads(): void {
@@ -1317,11 +1336,13 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     setTimeRange,
     setViewMode,
     setFullEventProjectionRequired,
+    setActivityPageLimit,
     setRollUpCommits,
     collapseAllThreads,
     expandAllThreads,
     toggleThreadItem,
     retryFailedThreadLoads,
+    loadThreadPreview,
     setHideClosedMerged,
     setHideBots,
     setHideDefaultBranchActivity,

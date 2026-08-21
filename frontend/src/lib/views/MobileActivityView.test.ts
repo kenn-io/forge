@@ -47,9 +47,22 @@ const showNotifications = vi.hoisted(() => ({ value: true }));
 const activityCapped = vi.hoisted(() => ({ value: false }));
 const itemActivityCapped = vi.hoisted(() => ({ value: false }));
 const involvesMe = vi.hoisted(() => ({ value: false }));
+const enabledEvents = vi.hoisted(() => ({
+  value: new Set(["comment", "review", "commit", "force_push"]),
+}));
 const enabledItemTypes = vi.hoisted(() => ({
   value: new Set<"pr" | "issue">(["pr", "issue"]),
 }));
+const setEnabledEvents = vi.hoisted(() =>
+  vi.fn((events: Set<string>) => {
+    enabledEvents.value = events;
+  }),
+);
+const setHideClosedMerged = vi.hoisted(() =>
+  vi.fn((value: boolean) => {
+    hideClosedMerged.value = value;
+  }),
+);
 const setEnabledItemTypes = vi.hoisted(() =>
   vi.fn((itemTypes: Set<"pr" | "issue">) => {
     enabledItemTypes.value = itemTypes;
@@ -68,6 +81,8 @@ const setShowNotifications = vi.hoisted(() =>
 const markNotificationSeen = vi.hoisted(() => vi.fn(async () => undefined));
 const loadActivity = vi.hoisted(() => vi.fn(async () => undefined));
 const setFullEventProjectionRequired = vi.hoisted(() => vi.fn());
+const setActivityPageLimit = vi.hoisted(() => vi.fn());
+const loadThreadPreview = vi.hoisted(() => vi.fn());
 const selectedAuthor = vi.hoisted(() => ({ value: undefined as string | undefined }));
 const setActivityAuthor = vi.hoisted(() =>
   vi.fn((author: string | undefined) => {
@@ -93,7 +108,7 @@ vi.mock("../context.js", () => ({
       getActivityError: () => null,
       getTimeRange: () => "7d",
       getEnabledItemTypes: () => enabledItemTypes.value,
-      getEnabledEvents: () => new Set(["comment", "review", "commit", "force_push"]),
+      getEnabledEvents: () => enabledEvents.value,
       getShowNotifications: () => showNotifications.value,
       getInvolvesMe: () => involvesMe.value,
       getHideClosedMerged: () => hideClosedMerged.value,
@@ -107,12 +122,16 @@ vi.mock("../context.js", () => ({
       setActivitySearch: vi.fn(),
       setActivityAuthor,
       setTimeRange: vi.fn(),
+      setEnabledEvents,
       setEnabledItemTypes,
+      setHideClosedMerged,
       setShowNotifications,
       setInvolvesMe: vi.fn((value: boolean) => {
         involvesMe.value = value;
       }),
       setFullEventProjectionRequired,
+      setActivityPageLimit,
+      loadThreadPreview,
       markNotificationSeen,
       setHideBots: vi.fn(),
       setHideDefaultBranchActivity: vi.fn(),
@@ -147,14 +166,19 @@ describe("MobileActivityView branch activity", () => {
     hideClosedMerged.value = false;
     activityCapped.value = false;
     itemActivityCapped.value = false;
+    enabledEvents.value = new Set(["comment", "review", "commit", "force_push"]);
     enabledItemTypes.value = new Set(["pr", "issue"]);
     onSelectItem.mockClear();
     setEnabledItemTypes.mockClear();
     setHideOrgName.mockClear();
     selectedAuthor.value = undefined;
     setActivityAuthor.mockClear();
+    setEnabledEvents.mockClear();
+    setHideClosedMerged.mockClear();
     loadActivity.mockClear();
     setFullEventProjectionRequired.mockClear();
+    setActivityPageLimit.mockClear();
+    loadThreadPreview.mockClear();
   });
 
   afterEach(() => {
@@ -174,6 +198,30 @@ describe("MobileActivityView branch activity", () => {
     expect(filters.querySelector("svg")).toBeTruthy();
   });
 
+  it("exposes the desktop event-type filters", async () => {
+    render(MobileActivityView, { props: { onSelectItem } });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    const comments = screen.getByRole<HTMLInputElement>("switch", { name: "Comments" });
+    expect(comments.checked).toBe(true);
+
+    await fireEvent.click(comments);
+
+    expect([...setEnabledEvents.mock.calls[0]![0]]).toEqual(["review", "commit", "force_push"]);
+  });
+
+  it("exposes closed and merged visibility", async () => {
+    render(MobileActivityView, { props: { onSelectItem } });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    const control = screen.getByRole("button", { name: "Hide closed/merged" });
+    expect(control.getAttribute("aria-pressed")).toBe("false");
+
+    await fireEvent.click(control);
+
+    expect(setHideClosedMerged).toHaveBeenCalledWith(true);
+  });
+
   it("renders branch activity without a fake PR or issue number", () => {
     const { container } = render(MobileActivityView, {
       props: { onSelectItem },
@@ -189,16 +237,27 @@ describe("MobileActivityView branch activity", () => {
     expect(article?.querySelector(".chip--kind-issue")).toBeNull();
   });
 
-  it("requires full event projection for its mounted lifetime", () => {
+  it("uses a bounded projection for its mounted lifetime", () => {
     const view = render(MobileActivityView, { props: { onSelectItem } });
 
-    expect(setFullEventProjectionRequired).toHaveBeenCalledWith(true);
-    expect(setFullEventProjectionRequired.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(setActivityPageLimit).toHaveBeenCalledWith(30);
+    expect(setActivityPageLimit.mock.invocationCallOrder[0]).toBeLessThan(
       loadActivity.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
     );
+    expect(setFullEventProjectionRequired).not.toHaveBeenCalled();
 
     view.unmount();
-    expect(setFullEventProjectionRequired).toHaveBeenLastCalledWith(false);
+    expect(setActivityPageLimit).toHaveBeenLastCalledWith(undefined);
+  });
+
+  it("loads the next bounded parent chunk on demand", async () => {
+    itemActivityCapped.value = true;
+    render(MobileActivityView, { props: { onSelectItem } });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Load 30 more" }));
+
+    expect(setActivityPageLimit).toHaveBeenLastCalledWith(60);
+    expect(loadActivity).toHaveBeenCalledTimes(2);
   });
 
   it("warns about parent truncation separately from event truncation", () => {
@@ -206,8 +265,8 @@ describe("MobileActivityView branch activity", () => {
 
     render(MobileActivityView, { props: { onSelectItem } });
 
-    expect(screen.getByText(/5,000 most recently active pull requests and issues/)).toBeTruthy();
-    expect(screen.queryByText(/most recent 5,000 events/)).toBeNull();
+    expect(screen.getByText(/most recently active pull requests and issues/)).toBeTruthy();
+    expect(screen.queryByText(/most recent activity/)).toBeNull();
   });
 
   it("exposes independent PR and issue toggles", async () => {
@@ -471,7 +530,7 @@ describe("MobileActivityView workspace activity", () => {
     const { container } = render(MobileActivityView, { props: { onSelectItem } });
 
     expect(screen.getByText("Workspace-only pull")).toBeTruthy();
-    expect(screen.getByText("0 events")).toBeTruthy();
+    expect(screen.getByText("Recent activity")).toBeTruthy();
     expect(screen.getByLabelText("Workspace attached (ready)")).toBeTruthy();
     expect(container.querySelector(".mobile-activity-events")).toBeNull();
 
@@ -502,7 +561,7 @@ describe("MobileActivityView workspace activity", () => {
     const { container } = render(MobileActivityView, { props: { onSelectItem } });
 
     expect(screen.getByText("Old pull with recent hidden activity")).toBeTruthy();
-    expect(screen.getByText("0 events")).toBeTruthy();
+    expect(screen.getByText("Recent activity")).toBeTruthy();
     expect(container.querySelector(".mobile-activity-card time")?.textContent).toBe("5m ago");
     expect(container.querySelector(".mobile-activity-events")).toBeNull();
   });
@@ -627,8 +686,8 @@ describe("MobileActivityView notifications", () => {
     });
 
     await fireEvent.click(getByRole("button", { name: /^Filters/ }));
-    const button = getByRole("button", { name: "Hide notifications" });
-    expect(button.getAttribute("aria-pressed")).toBe("false");
+    const button = getByRole<HTMLInputElement>("switch", { name: "Notifications" });
+    expect(button.checked).toBe(true);
 
     await fireEvent.click(button);
 

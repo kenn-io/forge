@@ -23950,6 +23950,35 @@ func TestAPIListActivity(t *testing.T) {
 	assert.Len(*unfiltered.JSON200.Items, len(*resp.JSON200.Items))
 }
 
+func TestAPIListCollapsedActivityHonorsLimit(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	for number := 1; number <= 11; number++ {
+		activityAt := now.Add(-time.Duration(number) * time.Minute)
+		seedPR(
+			t, database, "acme", "widget", number,
+			withSeedPRTimes(activityAt, activityAt, activityAt),
+		)
+	}
+
+	since := url.QueryEscape(now.Add(-7 * 24 * time.Hour).Format(time.RFC3339))
+	rr := doJSON(
+		t,
+		srv,
+		http.MethodGet,
+		"/api/v1/activity?since="+since+"&projection=collapsed&limit=10",
+		nil,
+	)
+	require.Equal(http.StatusOK, rr.Code)
+	var body activityResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
+	require.Len(body.ItemActivity, 10)
+	assert.True(body.ItemActivityCapped)
+	assert.Equal(1, body.ItemActivity[0].ItemNumber)
+}
+
 func TestAPIListCollapsedActivityIncludesParentRecentOnlyByNotification(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

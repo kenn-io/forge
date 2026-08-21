@@ -300,7 +300,7 @@ describe("app store event wiring", () => {
     expect(acknowledged).toBe(true);
   });
 
-  it("replaces stale launch targets after a valid config reload", async () => {
+  it("replaces stale launch targets and refreshes only the visible phone list after a valid config reload", async () => {
     const codexTarget = {
       key: "codex",
       label: "Codex",
@@ -352,7 +352,7 @@ describe("app store event wiring", () => {
     >;
     getSettings.mockResolvedValue({ data: settings });
 
-    compose();
+    compose({ getPage: () => "mobile-activity" });
     captured.settings?.setLaunchTargets([staleTarget]);
 
     await acceptEvent(captured.store?.options.onConfigChanged?.({ valid: true, restart_required: false }));
@@ -360,6 +360,9 @@ describe("app store event wiring", () => {
     await vi.waitFor(() => {
       expect(captured.settings?.getLaunchTargets()).toEqual([codexTarget]);
     });
+    expect(reconcilePullsEffect).not.toHaveBeenCalled();
+    expect(reconcileIssuesEffect).not.toHaveBeenCalled();
+    expect(reconcileActivityEffect).toHaveBeenCalledTimes(1);
   });
 
   it.each([

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Effect, Schedule } from "effect";
   import { onDestroy, untrack } from "svelte";
+  import type { Attachment } from "svelte/attachments";
   import { IconButton, ScrollBox, SearchInput, StatusDot } from "@kenn-io/kit-ui";
   import FunnelIcon from "@lucide/svelte/icons/funnel";
   import { getAppRuntime } from "../app/runtime-context.js";
@@ -13,6 +14,7 @@
   import { createRepoLabelFormatter } from "../utils/repo-label.js";
   import RepoTypeahead from "../components/RepoTypeahead.svelte";
   import { getGlobalRepo, setGlobalRepo } from "../stores/filter.svelte.js";
+  import { observeIntersection } from "../browser/observers.js";
   import {
     buildFocusIssueRoute,
     buildFocusPullRequestRoute,
@@ -44,6 +46,7 @@
     repo?: string;
     routeFamily?: "focus" | "canonical";
     showRepoSelector?: boolean;
+    chunked?: boolean;
   }
 
   const {
@@ -51,10 +54,14 @@
     repo,
     routeFamily = "focus",
     showRepoSelector = false,
+    chunked = false,
   }: Props = $props();
 
   let searchInput = $state("");
   let filtersExpanded = $state(false);
+  let pageLimit = $state(30);
+  let paginationArmed = true;
+  let paginationIntersecting = false;
   let searchExecution: AppExecution<void, never> | null = null;
 
   function loadList(): void {
@@ -68,24 +75,30 @@
     } else {
       issues.setInvolvesMe(!issues.getInvolvesMe());
     }
-    loadList();
+    resetPageAndLoad();
   }
 
   function toggleReferencedByPR(): void {
     issues.setReferencedByPR(!issues.getReferencedByPR());
-    loadList();
+    resetPageAndLoad();
   }
 
   const selectedRepo = $derived(showRepoSelector ? getGlobalRepo() : repo);
   const repoLabel = $derived(selectedRepo ?? "All repositories");
 
   const repoParams = $derived(
-    selectedRepo ? { repo: selectedRepo } : undefined,
+    !selectedRepo && !chunked
+      ? undefined
+      : {
+          ...(selectedRepo ? { repo: selectedRepo } : {}),
+          ...(chunked ? { limit: pageLimit } : {}),
+        },
   );
 
   $effect(() => {
-    listType;
-    repoParams;
+    const identity = `${listType}:${selectedRepo ?? ""}:${chunked}`;
+    pageLimit = 30;
+    paginationArmed = true;
     filtersExpanded = false;
     searchInput = untrack(() => listType === "mrs"
       ? pulls.getSearchQuery() ?? ""
@@ -94,7 +107,7 @@
       Effect.sync(loadList).pipe(Effect.repeat(Schedule.spaced("15 seconds")), Effect.asVoid),
       {
         operation: "poll focus list",
-        safeContext: { listType },
+        safeContext: { listType, identity },
         onFailure: () => {},
       },
     ));
@@ -119,7 +132,7 @@
           const q = value.trim() === "" ? undefined : value.trim();
           if (listType === "mrs") pulls.setSearchQuery(q);
           else issues.setIssueSearchQuery(q);
-          loadList();
+          resetPageAndLoad();
         })),
       ),
       {
@@ -181,6 +194,75 @@
   const issueItems = $derived(issues.getIssues());
   const issueLoading = $derived(issues.isIssuesLoading());
   const issueError = $derived(issues.getIssuesError());
+  const listCapped = $derived(
+    listType === "mrs" ? pulls.isListCapped() : issues.isIssueListCapped(),
+  );
+
+  function resetPageAndLoad(): void {
+    pageLimit = 30;
+    paginationArmed = true;
+    loadList();
+  }
+
+  function loadMore(): void {
+    pageLimit = Math.min(pageLimit + 30, 500);
+    loadList();
+  }
+
+  const autoloadMore: Attachment<HTMLElement> = (node) => {
+    if (typeof IntersectionObserver === "undefined") {
+      if (paginationArmed) {
+        paginationArmed = false;
+        loadMore();
+      }
+      return;
+    }
+
+    const root = node.closest<HTMLElement>(".kit-scrollbox__viewport");
+    const armPagination = () => {
+      const loading = listType === "mrs" ? pulls.isLoading() : issues.isIssuesLoading();
+      if (paginationArmed || loading) return;
+      paginationArmed = true;
+      if (!paginationIntersecting) return;
+      paginationArmed = false;
+      loadMore();
+    };
+    root?.addEventListener("touchstart", armPagination, { passive: true });
+    root?.addEventListener("wheel", armPagination, { passive: true });
+    root?.addEventListener("pointerdown", armPagination, { passive: true });
+    root?.addEventListener("keydown", armPagination);
+
+    const execution = runtime.runCommand(
+      Effect.scoped(
+        observeIntersection(
+          node,
+          (entries) => {
+            const nextIntersecting = entries[0]?.isIntersecting === true;
+            paginationIntersecting = nextIntersecting;
+            if (nextIntersecting && paginationArmed) {
+              paginationArmed = false;
+              loadMore();
+            }
+          },
+          { root, rootMargin: "240px 0px" },
+        ).pipe(Effect.andThen(Effect.never)),
+      ),
+      {
+        operation: "observe focus list pagination",
+        safeContext: { listType },
+        onFailure: () => {},
+      },
+    );
+
+    return () => {
+      paginationIntersecting = false;
+      root?.removeEventListener("touchstart", armPagination);
+      root?.removeEventListener("wheel", armPagination);
+      root?.removeEventListener("pointerdown", armPagination);
+      root?.removeEventListener("keydown", armPagination);
+      execution.interrupt();
+    };
+  };
 
   const prRepoLabelFormatter = $derived(
     createRepoLabelFormatter(
@@ -248,7 +330,7 @@
             class:state-btn--active={prFilterState === s}
             onclick={() => {
               pulls.setFilterState(s);
-              pulls.loadPulls(repoParams);
+              resetPageAndLoad();
             }}
           >
             {s === "open"
@@ -265,7 +347,7 @@
             class:state-btn--active={issueFilterState === s}
             onclick={() => {
               issues.setIssueFilterState(s);
-              issues.loadIssues(repoParams);
+              resetPageAndLoad();
             }}
           >
             {s === "open"
@@ -451,6 +533,15 @@
           />
         {/each}
       {/if}
+    {/if}
+    {#if chunked && listCapped && pageLimit < 500}
+      <div
+        class="focus-list-loading-sentinel"
+        aria-live="polite"
+        {@attach autoloadMore}
+      >
+        {#if prLoading || issueLoading}Loading more…{/if}
+      </div>
     {/if}
   </ScrollBox>
 </div>
@@ -638,6 +729,9 @@
     gap: 8px;
   }
 
+  .focus-list-loading-sentinel {
+    min-height: 1px;
+  }
 
   :global(.mobile-main) .focus-list {
     --focus-mobile-space-2xs: 4.5px;

@@ -76,6 +76,34 @@ function clientWithPulls(data: PullRequest[]): GeneratedClient {
 }
 
 describe("pulls store display order", () => {
+  it("reports when a bounded list filled the requested chunk", async () => {
+    const get = vi.fn(async () => ({
+      data: Array.from({ length: 30 }, (_, index) => pull(index + 1, "api", "2026-05-20T15:00:00Z")),
+      error: undefined,
+    }));
+    const store = createPullsStore({
+      client: { GET: get } as unknown as GeneratedClient,
+    });
+
+    store.loadPulls({ limit: 30 });
+    await vi.waitFor(() => expect(store.isLoading()).toBe(false));
+
+    expect(store.isListCapped()).toBe(true);
+
+    get.mockClear();
+    const refresh = runtime!.runCommand(store.reconcilePullsEffect(), {
+      operation: "reconcile bounded pulls",
+      safeContext: {},
+      onFailure: () => {},
+    });
+    await refresh.exit;
+
+    expect(get).toHaveBeenCalledWith(
+      "/pulls",
+      expect.objectContaining({ params: { query: expect.objectContaining({ limit: 30 }) } }),
+    );
+  });
+
   it("persists and sends the Involves me filter", async () => {
     const get = vi.fn(async () => ({ data: [], error: undefined }));
     const store = createPullsStore({ client: { GET: get } as unknown as GeneratedClient });

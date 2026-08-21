@@ -90,6 +90,13 @@ Avoid by default:
 - Mobile Activity starts with 30 collapsed parents and autoloads one 30-parent chunk per
   end-of-list scroll gesture. Event previews stay bounded and viewport-driven
   (`frontend/src/lib/views/MobileActivityView.svelte::autoloadMoreActivity`).
+- Phone PR and issue lists start with 30 items and autoload one 30-item chunk per
+  end-of-list scroll gesture
+  (`frontend/src/lib/views/FocusListView.svelte::autoloadMore`).
+- Phone startup and repository changes defer list loading to the current phone view
+  (`frontend/src/App.svelte::shouldDeferInitialListsToActiveView`).
+- Config and provider events refresh only the current list
+  (`frontend/src/lib/app-stores.svelte.ts::refreshVisibleData`).
 - Phone Activity, PR, and issue filters use the shared repository selector for Global,
   saved presets, and custom selections; preset management remains outside the phone
   workflow (`frontend/src/lib/components/RepoTypeahead.svelte`).

@@ -11,6 +11,7 @@ export interface AppStartupDeps {
   readonly afterBackendReady?: Effect.Effect<void, never, AppServices>;
   readonly onReady: () => void;
   readonly beforeInitialLoad?: () => void;
+  readonly loadInitialLists?: boolean;
 }
 
 export const appStartupProgram = Effect.fn("AppStartup.run")(function* (deps: AppStartupDeps) {
@@ -47,10 +48,12 @@ export const appStartupProgram = Effect.fn("AppStartup.run")(function* (deps: Ap
   }
   yield* Effect.sync(() => deps.beforeInitialLoad?.());
   yield* Effect.sync(deps.onReady);
-  yield* Effect.sync(() => {
-    deps.stores.pulls.loadPulls();
-    deps.stores.issues.loadIssues();
-  });
+  if (deps.loadInitialLists !== false) {
+    yield* Effect.sync(() => {
+      deps.stores.pulls.loadPulls();
+      deps.stores.issues.loadIssues();
+    });
+  }
   yield* Effect.forkChild(deps.stores.sync.pollingEffect, { startImmediately: true });
   yield* Effect.forkChild(deps.stores.events.streamEffect, { startImmediately: true });
   return yield* Effect.never;

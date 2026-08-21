@@ -210,6 +210,34 @@ function mockClient(overrides: Partial<GeneratedClient> = {}): GeneratedClient {
 }
 
 describe("createIssuesStore", () => {
+  it("reports when a bounded list filled the requested chunk", async () => {
+    const get = vi.fn(async () => ({
+      data: Array.from({ length: 30 }, (_, index) => issue(index + 1, "alice")),
+      error: undefined,
+    }));
+    const store = createIssuesStore({
+      client: mockClient({ GET: get }),
+    });
+
+    store.loadIssues({ limit: 30 });
+    await vi.waitFor(() => expect(store.isIssuesLoading()).toBe(false));
+
+    expect(store.isIssueListCapped()).toBe(true);
+
+    get.mockClear();
+    const refresh = runtime!.runCommand(store.reconcileIssuesEffect(), {
+      operation: "reconcile bounded issues",
+      safeContext: {},
+      onFailure: () => {},
+    });
+    await refresh.exit;
+
+    expect(get).toHaveBeenCalledWith(
+      "/issues",
+      expect.objectContaining({ params: { query: expect.objectContaining({ limit: 30 }) } }),
+    );
+  });
+
   it("persists and sends the Involves me filter", async () => {
     const get = vi.fn(async () => ({ data: [], error: undefined }));
     const store = createIssuesStore({ client: { GET: get } as unknown as GeneratedClient });

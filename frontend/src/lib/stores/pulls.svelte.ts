@@ -61,6 +61,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
 
   let pulls = $state<PullRequest[]>([]);
   let loading = $state(false);
+  let listCapped = $state(false);
   let storeError = $state<string | null>(null);
   let filterKanban = $state<KanbanStatus | undefined>(undefined);
   let attributeFilters = $state<PullAttributeFilter[]>([]);
@@ -70,6 +71,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
   let filterState = $state<string>("open");
   let searchQuery = $state<string | undefined>(undefined);
   let selectedPR = $state<PullSelection | null>(null);
+  let activeListParams: PullsParams | undefined;
 
   // --- reads ---
 
@@ -83,6 +85,10 @@ export function createPullsStore(opts: PullsStoreOptions) {
 
   function isLoading(): boolean {
     return loading;
+  }
+
+  function isListCapped(): boolean {
+    return listCapped;
   }
 
   function getError(): string | null {
@@ -486,6 +492,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
       Effect.tap((result) =>
         Effect.sync(() => {
           pulls = result;
+          listCapped = query.limit !== undefined && result.length === query.limit;
           loading = false;
         }),
       ),
@@ -498,7 +505,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
     );
   }
 
-  function reconcilePullsEffect(params?: PullsParams) {
+  function reconcilePullsEffect(params: PullsParams | undefined = activeListParams) {
     return Effect.suspend(() => {
       const globalRepo = getGlobalRepo();
       const query: PullsParams = {
@@ -521,6 +528,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
         yield* workflow.reconcile(read, (result) =>
           Effect.sync(() => {
             pulls = [...result];
+            listCapped = query.limit !== undefined && result.length === query.limit;
           }),
         );
       });
@@ -528,6 +536,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
   }
 
   function loadPulls(params?: PullsParams): void {
+    activeListParams = params;
     runtime.runCommand(loadPullsEffect(params), {
       operation: "load pull requests",
       safeContext: {},
@@ -587,6 +596,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
     getPulls,
     getFilteredPulls,
     isLoading,
+    isListCapped,
     getError,
     getSelectedPR,
     pullsByRepo,

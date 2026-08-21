@@ -26,6 +26,8 @@ const setIssuesInvolvesMe = vi.hoisted(() => vi.fn());
 const setIssuesReferencedByPR = vi.hoisted(() => vi.fn());
 const unsubscribeSync = vi.hoisted(() => vi.fn());
 const subscribeSyncComplete = vi.hoisted(() => vi.fn(() => unsubscribeSync));
+const pullListCapped = vi.hoisted(() => ({ value: false }));
+const issueListCapped = vi.hoisted(() => ({ value: false }));
 vi.mock("../context.js", () => ({
   getActions: () => ({ importItem: vi.fn() }),
   getNavigate: () => vi.fn(),
@@ -45,6 +47,7 @@ vi.mock("../context.js", () => ({
       getIssues: () => [],
       getIssuesError: () => null,
       isIssuesLoading: () => false,
+      isIssueListCapped: () => issueListCapped.value,
       loadIssues,
       setHideBots: vi.fn(),
       setInvolvesMe: (value: boolean) => {
@@ -68,6 +71,7 @@ vi.mock("../context.js", () => ({
       getFilterState: () => "open",
       getPulls: () => [],
       isLoading: () => false,
+      isListCapped: () => pullListCapped.value,
       loadPulls,
       setFilterState: vi.fn(),
       setInvolvesMe: (value: boolean) => {
@@ -129,6 +133,8 @@ describe("FocusListView search", () => {
     unsubscribeSync.mockClear();
     subscribeSyncComplete.mockClear();
     resetFocusListViewState();
+    pullListCapped.value = false;
+    issueListCapped.value = false;
     setGlobalRepo(undefined);
   });
 
@@ -176,6 +182,43 @@ describe("FocusListView search", () => {
     expect(subscribeSyncComplete).toHaveBeenCalledTimes(1);
     expect(unsubscribeSync).not.toHaveBeenCalled();
     view.unmount();
+  });
+
+  it.each([
+    ["mrs" as const, loadPulls, pullListCapped],
+    ["issues" as const, loadIssues, issueListCapped],
+  ])("loads mobile %s results in bounded chunks and autoloads the next chunk", async (listType, loadList, capped) => {
+    const observed = new Map<Element, IntersectionObserverCallback>();
+    class IntersectionObserverStub {
+      constructor(private readonly callback: IntersectionObserverCallback) {}
+      observe(target: Element): void {
+        observed.set(target, this.callback);
+      }
+      disconnect(): void {}
+      unobserve(): void {}
+      takeRecords(): IntersectionObserverEntry[] {
+        return [];
+      }
+      readonly root = null;
+      readonly rootMargin = "0px";
+      readonly thresholds = [0];
+    }
+    vi.stubGlobal("IntersectionObserver", IntersectionObserverStub);
+    capped.value = true;
+
+    const { container } = render(FocusListView, {
+      props: { listType, repo: "acme/one", chunked: true },
+    });
+
+    expect(loadList).toHaveBeenCalledWith({ repo: "acme/one", limit: 30 });
+    const sentinel = container.querySelector(".focus-list-loading-sentinel");
+    expect(sentinel).toBeTruthy();
+    const notify = observed.get(sentinel!);
+    expect(notify).toBeTruthy();
+
+    notify!([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
+
+    expect(loadList).toHaveBeenLastCalledWith({ repo: "acme/one", limit: 60 });
   });
 
   it.each(["mrs", "issues"] as const)("discloses %s filters from an icon-only control", async (listType) => {

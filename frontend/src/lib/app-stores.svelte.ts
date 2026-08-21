@@ -186,14 +186,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
           workspaceHydration,
         );
       });
-      yield* Effect.all(
-        [
-          pullsStore.reconcilePullsEffect(),
-          issuesStore.reconcileIssuesEffect(),
-          activityStore.reconcileActivityEffect(),
-        ],
-        { concurrency: "unbounded", discard: true },
-      );
+      yield* refreshVisibleData();
     });
   }
 

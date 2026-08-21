@@ -230,6 +230,29 @@ it.layer(SuccessfulStartup)("application startup hydration", (it) => {
       }),
     ),
   );
+
+  it.effect("does not prefetch pull requests or issues when the active phone view owns its list", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const stores = makeStores();
+        const ready = yield* Deferred.make<void>();
+        const fiber = yield* Effect.forkScoped(
+          appStartupProgram({
+            stores,
+            loadInitialLists: false,
+            onReady: () => Deferred.doneUnsafe(ready, Effect.void),
+          }),
+        );
+
+        yield* Deferred.await(ready);
+        yield* Effect.yieldNow;
+
+        assert.strictEqual(vi.mocked(stores.pulls.loadPulls).mock.calls.length, 0);
+        assert.strictEqual(vi.mocked(stores.issues.loadIssues).mock.calls.length, 0);
+        yield* Fiber.interrupt(fiber);
+      }),
+    ),
+  );
 });
 
 it.layer(FailedStartup)("application startup defaults", (it) => {

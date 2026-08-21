@@ -500,6 +500,7 @@
     const cancelStartup = runAppStartup(runtime, {
       stores: startupStores,
       beforeInitialLoad: () => syncGlobalRepoWithRoute(startupStores),
+      loadInitialLists: !shouldDeferInitialListsToActiveView(),
       onReady: () => {
         appReady = true;
       },
@@ -613,6 +614,12 @@
     if (shouldUseDesktopOnPhone()) return false;
     if (getPage() !== "activity") return false;
     return isCompactViewport() || shouldForceMobileRoutes();
+  }
+
+  function shouldDeferInitialListsToActiveView(): boolean {
+    return isMobilePage(getPage())
+      || shouldUseResponsiveMobileActivityPresentation()
+      || (shouldUseFocusPresentation() && useFocusLayoutClass());
   }
 
   function flashTopOffset(): string {
@@ -752,6 +759,7 @@
     }
     if (repo === lastRepo) return;
     lastRepo = repo;
+    if (shouldDeferInitialListsToActiveView()) return;
     stores.pulls.loadPulls();
     stores.issues.loadIssues();
     stores.activity.loadActivity();
@@ -1091,11 +1099,13 @@
         <FocusListView
           listType="mrs"
           {...r.repo ? { repo: r.repo } : {}}
+          chunked={useFocusLayoutClass()}
         />
       {:else if r.page === "focus" && r.itemType === "issues"}
         <FocusListView
           listType="issues"
           {...r.repo ? { repo: r.repo } : {}}
+          chunked={useFocusLayoutClass()}
         />
       {:else if r.page === "focus" && r.itemType === "pr"}
         {@const selectedPR = {
@@ -1139,6 +1149,7 @@
         <FocusListView
           listType="mrs"
           routeFamily="canonical"
+          chunked={useFocusLayoutClass()}
         />
       {:else if r.page === "issues" && r.selected}
         <IssueListView
@@ -1150,6 +1161,7 @@
         <FocusListView
           listType="issues"
           routeFamily="canonical"
+          chunked={useFocusLayoutClass()}
         />
       {/if}
     </main>
@@ -1233,9 +1245,9 @@
             </div>
           {/if}
         {:else if getPage() === "mobile-pulls"}
-          <FocusListView listType="mrs" showRepoSelector />
+          <FocusListView listType="mrs" showRepoSelector chunked />
         {:else if getPage() === "mobile-issues"}
-          <FocusListView listType="issues" showRepoSelector />
+          <FocusListView listType="issues" showRepoSelector chunked />
         {:else}
           <MobileActivityView
             selectedRepo={getNormalizedGlobalRepo()}

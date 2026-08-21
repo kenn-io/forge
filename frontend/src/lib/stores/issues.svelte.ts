@@ -136,6 +136,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   let confirmedHideBots = false;
   let hideBotsMutationGeneration = 0;
   let loading = $state(false);
+  let listCapped = $state(false);
   let storeError = $state<string | null>(null);
   let filterStarred = $state(false);
   let involvesMe = $state(readInvolvesMeFilter("issues"));
@@ -143,6 +144,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   let filterState = $state<string>("open");
   let searchQuery = $state<string | undefined>(undefined);
   let selectedIssue = $state<IssueSelection | null>(null);
+  let activeListParams: IssuesParams | undefined;
 
   // --- detail state ---
 
@@ -194,6 +196,9 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   }
   function isIssuesLoading(): boolean {
     return loading;
+  }
+  function isIssueListCapped(): boolean {
+    return listCapped;
   }
   function getIssuesError(): string | null {
     return storeError;
@@ -414,6 +419,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       Effect.tap((result) =>
         Effect.sync(() => {
           issues = result;
+          listCapped = query.limit !== undefined && result.length === query.limit;
           loading = false;
         }),
       ),
@@ -426,7 +432,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     );
   }
 
-  function reconcileIssuesEffect(params?: IssuesParams) {
+  function reconcileIssuesEffect(params: IssuesParams | undefined = activeListParams) {
     return Effect.suspend(() => {
       const globalRepo = getGlobalRepo();
       const query: IssuesParams = {
@@ -449,6 +455,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         yield* workflow.reconcile(read, (result) =>
           Effect.sync(() => {
             issues = [...result];
+            listCapped = query.limit !== undefined && result.length === query.limit;
           }),
         );
       });
@@ -456,6 +463,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   }
 
   function loadIssues(params?: IssuesParams): void {
+    activeListParams = params;
     runtime.runCommand(loadIssuesEffect(params), {
       operation: "load issues",
       safeContext: {},
@@ -1863,6 +1871,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     getIssues,
     getHideBots,
     isIssuesLoading,
+    isIssueListCapped,
     getIssuesError,
     getSelectedIssue,
     getIssueFilterStarred,

@@ -122,7 +122,7 @@ func (s staticTokenSource) Token(context.Context) (string, error) {
 	return string(s), nil
 }
 
-func (s staticTokenSource) Invalidate() {}
+func (s staticTokenSource) Invalidate(string) {}
 
 func (s staticTokenSource) Descriptor() tokenauth.Descriptor {
 	return tokenauth.Descriptor{Key: tokenauth.Key{Platform: "github", Host: "github.com"}}

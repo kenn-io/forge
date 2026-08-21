@@ -120,10 +120,12 @@ func (s *identityBoundSource) Token(ctx context.Context) (string, error) {
 	return token, nil
 }
 
-func (s *identityBoundSource) Invalidate() {
-	s.source.Invalidate()
+func (s *identityBoundSource) Invalidate(rejectedToken string) {
+	s.source.Invalidate(rejectedToken)
 	s.mu.Lock()
-	s.acceptedToken = ""
+	if s.acceptedToken == rejectedToken {
+		s.acceptedToken = ""
+	}
 	s.mu.Unlock()
 }
 
@@ -137,7 +139,7 @@ type staticTokenSource struct {
 }
 
 func (s staticTokenSource) Token(context.Context) (string, error) { return s.token, nil }
-func (s staticTokenSource) Invalidate()                           {}
+func (s staticTokenSource) Invalidate(string)                     {}
 func (s staticTokenSource) Descriptor() tokenauth.Descriptor      { return s.desc }
 
 type authenticatedUserLookup func(
@@ -162,10 +164,12 @@ func (s *identityRecordingSource) Token(ctx context.Context) (string, error) {
 	return token, nil
 }
 
-func (s *identityRecordingSource) Invalidate() {
-	s.source.Invalidate()
+func (s *identityRecordingSource) Invalidate(rejectedToken string) {
+	s.source.Invalidate(rejectedToken)
 	s.mu.Lock()
-	s.token = ""
+	if s.token == rejectedToken {
+		s.token = ""
+	}
 	s.mu.Unlock()
 }
 

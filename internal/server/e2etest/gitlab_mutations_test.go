@@ -28,7 +28,7 @@ const gitlabMutationThreadID = "abc123def456789012345678901234567890abcd"
 type staticGitLabTokenSource string
 
 func (s staticGitLabTokenSource) Token(context.Context) (string, error) { return string(s), nil }
-func (s staticGitLabTokenSource) Invalidate()                           {}
+func (s staticGitLabTokenSource) Invalidate(string)                     {}
 func (s staticGitLabTokenSource) Descriptor() tokenauth.Descriptor {
 	return tokenauth.Descriptor{Key: tokenauth.Key{Platform: "gitlab", Host: "gitlab.com"}}
 }

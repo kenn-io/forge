@@ -13,8 +13,9 @@ import (
 )
 
 type sequenceSource struct {
-	tokens      []string
-	invalidated int
+	tokens            []string
+	invalidated       int
+	invalidatedTokens []string
 }
 
 func (s *sequenceSource) Token(context.Context) (string, error) {
@@ -25,7 +26,10 @@ func (s *sequenceSource) Token(context.Context) (string, error) {
 	return token, nil
 }
 
-func (s *sequenceSource) Invalidate() { s.invalidated++ }
+func (s *sequenceSource) Invalidate(token string) {
+	s.invalidated++
+	s.invalidatedTokens = append(s.invalidatedTokens, token)
+}
 
 func (s *sequenceSource) Descriptor() Descriptor {
 	return Descriptor{Key: Key{Platform: "github", Host: "github.com"}}
@@ -97,6 +101,7 @@ func TestRetryOnUnauthorizedInvalidatesAndRetriesOnce(t *testing.T) {
 
 	assert.Equal(http.StatusOK, resp.StatusCode)
 	assert.Equal(1, src.invalidated)
+	assert.Equal([]string{"old"}, src.invalidatedTokens)
 	assert.Equal([]string{"Bearer old", "Bearer new"}, auth)
 }
 

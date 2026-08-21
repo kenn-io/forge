@@ -30,11 +30,14 @@ func (s *mutableRuntimeAuthTokenSource) Token(context.Context) (string, error) {
 	return s.token, nil
 }
 
-func (s *mutableRuntimeAuthTokenSource) Invalidate() {
+func (s *mutableRuntimeAuthTokenSource) Invalidate(rejectedToken string) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.token != rejectedToken {
+		return
+	}
 	s.token = "second-token"
 	s.invalidates++
-	s.mu.Unlock()
 }
 
 func (s *mutableRuntimeAuthTokenSource) Descriptor() tokenauth.Descriptor {

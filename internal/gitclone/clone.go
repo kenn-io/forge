@@ -815,18 +815,18 @@ func (m *Manager) gitNetworked(
 	cleanupBeforeAuthRetry func() error,
 	args ...string,
 ) ([]byte, error) {
-	out, stderr, err := m.runGitAuthed(ctx, source, host, dir, args...)
+	out, stderr, rejectedToken, err := m.runGitAuthed(ctx, source, host, dir, args...)
 	if err == nil {
 		return out, nil
 	}
 	wrapped := wrapGitError(err, stderr)
-	if isAuthGitError(wrapped) && invalidateTokenSource(source) {
+	if isAuthGitError(wrapped) && invalidateTokenSource(source, rejectedToken) {
 		if cleanupBeforeAuthRetry != nil {
 			if err := cleanupBeforeAuthRetry(); err != nil {
 				return nil, err
 			}
 		}
-		out, stderr, err = m.runGitAuthed(ctx, source, host, dir, args...)
+		out, stderr, _, err = m.runGitAuthed(ctx, source, host, dir, args...)
 		if err == nil {
 			return out, nil
 		}
@@ -839,12 +839,13 @@ func (m *Manager) gitNetworked(
 // command. Networked git has no stdin, so it takes no input.
 func (m *Manager) runGitAuthed(
 	ctx context.Context, source tokenauth.Source, host, dir string, args ...string,
-) ([]byte, []byte, error) {
-	runner, err := m.gitRunnerAuthed(ctx, source, host)
+) ([]byte, []byte, string, error) {
+	runner, token, err := m.gitRunnerAuthed(ctx, source, host)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
-	return runGitCommand(ctx, runner, dir, nil, args...)
+	out, stderr, err := runGitCommand(ctx, runner, dir, nil, args...)
+	return out, stderr, token, err
 }
 
 // runGitCommand runs git in dir with the given runner, bounded by the shared
@@ -926,11 +927,11 @@ func gitExitCode(err error) (int, bool) {
 	return 0, false
 }
 
-func invalidateTokenSource(source tokenauth.Source) bool {
+func invalidateTokenSource(source tokenauth.Source, rejectedToken string) bool {
 	if source == nil {
 		return false
 	}
-	source.Invalidate()
+	source.Invalidate(rejectedToken)
 	return true
 }
 
@@ -961,20 +962,20 @@ func (m *Manager) fallbackSource(host string) tokenauth.Source {
 // networked operations. With no source configured it returns the plain runner.
 func (m *Manager) gitRunnerAuthed(
 	ctx context.Context, source tokenauth.Source, host string,
-) (gitcmd.Runner, error) {
+) (gitcmd.Runner, string, error) {
 	runner := newGitRunner()
 	if source == nil {
-		return runner, nil
+		return runner, "", nil
 	}
 	token, err := source.Token(ctx)
 	if err != nil {
-		return runner, fmt.Errorf("resolve git token for host %s: %w", host, err)
+		return runner, "", fmt.Errorf("resolve git token for host %s: %w", host, err)
 	}
 	if token != "" {
 		// GitHub's smart HTTP endpoint expects Basic auth credentials.
 		runner = runner.WithBasicAuth("x-access-token", token)
 	}
-	return runner, nil
+	return runner, token, nil
 }
 
 // isNotFoundError checks if git stderr indicates a missing object or ref.

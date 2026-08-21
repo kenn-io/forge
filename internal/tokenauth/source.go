@@ -28,7 +28,8 @@ type Options struct {
 
 type Source interface {
 	Token(context.Context) (string, error)
-	Invalidate()
+	// Invalidate evicts only cache state that produced rejectedToken.
+	Invalidate(rejectedToken string)
 	Descriptor() Descriptor
 }
 
@@ -161,7 +162,7 @@ func (s *githubAppTokenStore) resolve(
 	}
 }
 
-func (s *githubAppTokenStore) invalidate(candidates []Candidate) {
+func (s *githubAppTokenStore) evictCompleted(candidates []Candidate) {
 	if s == nil {
 		return
 	}
@@ -176,13 +177,33 @@ func (s *githubAppTokenStore) invalidate(candidates []Candidate) {
 		if cached == nil {
 			continue
 		}
-		// An in-flight mint or active failure cooldown has not handed a
-		// token to anyone, so an invalidation arriving now is about an
-		// older, completed token (a stale 401 retry). Evicting either
-		// entry would let stale invalidations defeat single-flight or
-		// failure backoff.
+		// Other routes may share the same canonical candidate. Preserve
+		// in-flight mints and active failure cooldowns because neither
+		// contains a completed token from the replaced descriptor.
 		if cached.mintDone != nil ||
 			cached.err != nil && now.Before(cached.retryAt) {
+			continue
+		}
+		cached.invalidated = true
+		delete(s.tokens, key)
+	}
+	s.mu.Unlock()
+}
+
+func (s *githubAppTokenStore) invalidateToken(
+	candidates []Candidate, rejectedToken string,
+) {
+	if s == nil || rejectedToken == "" {
+		return
+	}
+	s.mu.Lock()
+	for _, candidate := range candidates {
+		if candidate.Kind != SourceKindGitHubApp {
+			continue
+		}
+		key := canonicalCandidate(candidate)
+		cached := s.tokens[key]
+		if cached == nil || cached.token != rejectedToken {
 			continue
 		}
 		cached.invalidated = true
@@ -215,16 +236,18 @@ func (s *ManagedSource) Update(desc Descriptor) {
 	if !s.desc.EqualSource(desc) {
 		s.ghToken = ""
 		s.ghCached = false
-		s.appTokens.invalidate(s.desc.Candidates)
+		s.appTokens.evictCompleted(s.desc.Candidates)
 	}
 	s.desc = cloneDescriptor(desc)
 }
 
-func (s *ManagedSource) Invalidate() {
+func (s *ManagedSource) Invalidate(rejectedToken string) {
 	s.mu.Lock()
-	s.ghToken = ""
-	s.ghCached = false
-	s.appTokens.invalidate(s.desc.Candidates)
+	if s.ghToken == rejectedToken {
+		s.ghToken = ""
+		s.ghCached = false
+	}
+	s.appTokens.invalidateToken(s.desc.Candidates, rejectedToken)
 	s.mu.Unlock()
 }
 

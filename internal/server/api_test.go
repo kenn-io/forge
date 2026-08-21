@@ -22102,7 +22102,9 @@ func (s *countingTokenFileSource) Token(ctx context.Context) (string, error) {
 	return s.inner.Token(ctx)
 }
 
-func (s *countingTokenFileSource) Invalidate() { s.inner.Invalidate() }
+func (s *countingTokenFileSource) Invalidate(rejectedToken string) {
+	s.inner.Invalidate(rejectedToken)
+}
 
 func (s *countingTokenFileSource) Descriptor() tokenauth.Descriptor {
 	return s.inner.Descriptor()

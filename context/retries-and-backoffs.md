@@ -141,8 +141,9 @@ GitHub App token mints share one in-flight result per credential. Only errors ma
 caller's context failure bypass caching and waiters; internal timeouts cool down normally. Headerless
 failures cool down for five seconds; server-directed retry deadlines stop at one hour.
 (`internal/tokenauth/source.go::githubAppTokenStore.resolve`)
-Invalidation preserves in-flight mints and active failure cooldowns across stale 401 retries.
-(`internal/tokenauth/source.go::githubAppTokenStore.invalidate`)
+Unauthorized retries evict only the exact rejected token; in-flight mints, active failure cooldowns,
+and newer completed tokens survive stale responses.
+(`internal/tokenauth/source.go::githubAppTokenStore.invalidateToken`)
 
 Roborev configured-repository discovery retains successful inventory and
 definitive hook results for the process lifetime; only transient failures retry

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -53,7 +55,7 @@ func TestGitHubAppTokenMintAndCache(t *testing.T) {
 	assert.Equal(int64(1), mints.Load())
 
 	// Invalidate (e.g. a 401 retry in AuthTransport) forces a re-mint.
-	src.Invalidate()
+	src.Invalidate("ghs_minted")
 	_, err = src.Token(context.Background())
 	require.NoError(err)
 	assert.Equal(int64(2), mints.Load())
@@ -272,7 +274,7 @@ func TestGitHubAppInvalidateDoesNotEvictInFlightMint(t *testing.T) {
 	<-entered
 	// A stale 401 for the previous token arrives while the replacement
 	// mint is already in flight.
-	src.Invalidate()
+	src.Invalidate("ghs_stale")
 
 	joiner := make(chan result, 1)
 	go func() {
@@ -289,6 +291,76 @@ func TestGitHubAppInvalidateDoesNotEvictInFlightMint(t *testing.T) {
 		assert.Equal("ghs_fresh", got.token)
 	}
 	assert.Equal(int64(1), mints.Load())
+}
+
+func TestGitHubAppStaleUnauthorizedDoesNotEvictReplacementToken(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	var mints atomic.Int64
+	src := NewManagedSource(githubAppDescriptor(42), Options{
+		GitHubApp: func(context.Context, Candidate) (string, time.Time, error) {
+			mint := mints.Add(1)
+			return fmt.Sprintf("token-%d", mint), time.Now().Add(time.Hour), nil
+		},
+	})
+	firstEntered := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	var authMu sync.Mutex
+	authByPath := make(map[string][]string)
+	transport := AuthTransport{
+		Source: src,
+		Base: RoundTripFunc(func(req *http.Request) (*http.Response, error) {
+			authMu.Lock()
+			authByPath[req.URL.Path] = append(
+				authByPath[req.URL.Path], req.Header.Get("Authorization"),
+			)
+			attempt := len(authByPath[req.URL.Path])
+			authMu.Unlock()
+
+			status := http.StatusOK
+			if attempt == 1 {
+				status = http.StatusUnauthorized
+				if req.URL.Path == "/first" {
+					close(firstEntered)
+					<-releaseFirst
+				}
+			}
+			return &http.Response{
+				StatusCode: status,
+				Body:       http.NoBody,
+				Header:     make(http.Header),
+				Request:    req,
+			}, nil
+		}),
+		SetHeader:           BearerAuthHeader,
+		RetryOnUnauthorized: true,
+	}
+
+	firstReq, err := http.NewRequestWithContext(
+		t.Context(), http.MethodGet, "https://api.example.test/first", nil,
+	)
+	require.NoError(err)
+	firstResult := make(chan error, 1)
+	go func() {
+		_, err := transport.RoundTrip(firstReq)
+		firstResult <- err
+	}()
+	<-firstEntered
+
+	secondReq, err := http.NewRequestWithContext(
+		t.Context(), http.MethodGet, "https://api.example.test/second", nil,
+	)
+	require.NoError(err)
+	_, secondErr := transport.RoundTrip(secondReq)
+	close(releaseFirst)
+	firstErr := <-firstResult
+	require.NoError(secondErr)
+	require.NoError(firstErr)
+
+	assert.Equal([]string{"Bearer token-1", "Bearer token-2"}, authByPath["/second"])
+	assert.Equal([]string{"Bearer token-1", "Bearer token-2"}, authByPath["/first"])
+	assert.Equal(int64(2), mints.Load(),
+		"a stale 401 must not evict the replacement token")
 }
 
 func TestGitHubAppMintCancellationIsNotPublishedToWaiters(t *testing.T) {
@@ -466,7 +538,7 @@ func TestGitHubAppInvalidatePreservesFailedMintCooldown(t *testing.T) {
 
 	_, err := src.Token(context.Background())
 	require.ErrorContains(t, err, "upstream unavailable")
-	src.Invalidate()
+	src.Invalidate("ghs_stale")
 	_, err = src.Token(context.Background())
 	require.ErrorContains(t, err, "upstream unavailable")
 	assert.Equal(t, int64(1), mints.Load(),

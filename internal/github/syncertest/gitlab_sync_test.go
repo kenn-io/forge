@@ -22,7 +22,7 @@ type staticGitLabToken string
 
 func (s staticGitLabToken) Token(context.Context) (string, error) { return string(s), nil }
 
-func (s staticGitLabToken) Invalidate() {}
+func (s staticGitLabToken) Invalidate(string) {}
 
 func (s staticGitLabToken) Descriptor() tokenauth.Descriptor {
 	return tokenauth.Descriptor{Key: tokenauth.Key{Platform: "gitlab", Host: "gitlab.example.com"}}

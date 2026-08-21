@@ -82,7 +82,7 @@ func TestManagedSourceGitHubCLIInvalidatesCache(t *testing.T) {
 	require.NoError(err)
 	second, err := src.Token(context.Background())
 	require.NoError(err)
-	src.Invalidate()
+	src.Invalidate("first")
 	third, err := src.Token(context.Background())
 	require.NoError(err)
 

@@ -16,7 +16,7 @@ func (s staticTestTokenSource) Token(context.Context) (string, error) {
 	return string(s), nil
 }
 
-func (s staticTestTokenSource) Invalidate() {}
+func (s staticTestTokenSource) Invalidate(string) {}
 
 func (s staticTestTokenSource) Descriptor() tokenauth.Descriptor {
 	return tokenauth.Descriptor{Key: tokenauth.Key{Platform: "test", Host: "test"}}

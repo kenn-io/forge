@@ -85,7 +85,7 @@ func (s missingRouteTokenSource) Token(context.Context) (string, error) {
 	}
 }
 
-func (missingRouteTokenSource) Invalidate() {}
+func (missingRouteTokenSource) Invalidate(string) {}
 
 func (missingRouteTokenSource) Descriptor() tokenauth.Descriptor {
 	return tokenauth.Descriptor{}

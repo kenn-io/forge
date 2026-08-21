@@ -24,7 +24,7 @@ type staticGiteaLikeToken struct {
 
 func (s staticGiteaLikeToken) Token(context.Context) (string, error) { return "token", nil }
 
-func (s staticGiteaLikeToken) Invalidate() {}
+func (s staticGiteaLikeToken) Invalidate(string) {}
 
 func (s staticGiteaLikeToken) Descriptor() tokenauth.Descriptor {
 	return tokenauth.Descriptor{

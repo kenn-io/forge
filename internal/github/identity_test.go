@@ -133,7 +133,7 @@ func TestIdentityBoundSourceRejectsCrossUserRotation(t *testing.T) {
 	_, err := bound.Token(tokenauth.WithMutationAuth(t.Context()))
 	require.NoError(err)
 	source.token = "different-user-token"
-	bound.Invalidate()
+	bound.Invalidate("same-user-token")
 	_, err = bound.Token(tokenauth.WithMutationAuth(t.Context()))
 	assert.ErrorIs(t, err, ErrIdentityChanged)
 }
@@ -147,7 +147,7 @@ func (f identityResolverFunc) ResolvePAT(ctx context.Context, host string, sourc
 type mutableIdentityTestSource struct{ token string }
 
 func (s *mutableIdentityTestSource) Token(context.Context) (string, error) { return s.token, nil }
-func (s *mutableIdentityTestSource) Invalidate()                           {}
+func (s *mutableIdentityTestSource) Invalidate(string)                     {}
 func (s *mutableIdentityTestSource) Descriptor() tokenauth.Descriptor {
 	return tokenauth.Descriptor{Key: tokenauth.Key{Platform: "github", Host: "github.com"}}
 }

@@ -23,7 +23,10 @@ func (s *mutableTestTokenSource) Token(context.Context) (string, error) {
 	return s.token, nil
 }
 
-func (s *mutableTestTokenSource) Invalidate() {
+func (s *mutableTestTokenSource) Invalidate(rejectedToken string) {
+	if s.token != rejectedToken {
+		return
+	}
 	s.invalidated++
 	s.token = "second-token"
 }
@@ -473,7 +476,7 @@ func (s *failingTokenSource) Token(context.Context) (string, error) {
 	return "", tokenauth.ErrMissingToken
 }
 
-func (s *failingTokenSource) Invalidate() {}
+func (s *failingTokenSource) Invalidate(string) {}
 
 func (s *failingTokenSource) Descriptor() tokenauth.Descriptor {
 	return tokenauth.Descriptor{Key: tokenauth.Key{Platform: "test", Host: "github.com"}}

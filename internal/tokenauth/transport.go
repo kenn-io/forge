@@ -42,7 +42,7 @@ func (t AuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if base == nil {
 		base = http.DefaultTransport
 	}
-	first, err := t.authorizedRequest(req)
+	first, firstToken, err := t.authorizedRequest(req)
 	if err != nil {
 		return nil, err
 	}
@@ -59,20 +59,20 @@ func (t AuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	_, _ = io.Copy(io.Discard, resp.Body)
 	_ = resp.Body.Close()
-	t.Source.Invalidate()
-	second, err := t.authorizedRequest(retry)
+	t.Source.Invalidate(firstToken)
+	second, _, err := t.authorizedRequest(retry)
 	if err != nil {
 		return nil, err
 	}
 	return base.RoundTrip(second)
 }
 
-func (t AuthTransport) authorizedRequest(req *http.Request) (*http.Request, error) {
+func (t AuthTransport) authorizedRequest(req *http.Request) (*http.Request, string, error) {
 	if err := t.validateOrigin(req); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if t.Source == nil {
-		return nil, fmt.Errorf("%w: nil token source", ErrMissingToken)
+		return nil, "", fmt.Errorf("%w: nil token source", ErrMissingToken)
 	}
 	ctx := req.Context()
 	if t.GitHubOwner != nil {
@@ -80,14 +80,14 @@ func (t AuthTransport) authorizedRequest(req *http.Request) (*http.Request, erro
 	}
 	token, err := t.Source.Token(ctx)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	clone := req.Clone(req.Context())
 	if req.Body != nil && req.Body != http.NoBody {
 		clone.Body = req.Body
 	}
 	t.SetHeader(clone, token)
-	return clone, nil
+	return clone, token, nil
 }
 
 func (t AuthTransport) validateOrigin(req *http.Request) error {

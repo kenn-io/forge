@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"slices"
@@ -19,7 +20,7 @@ import (
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
-	managedworktree "go.kenn.io/kit/git/managed"
+	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
 type createWorkspaceInput struct {
@@ -2149,7 +2150,7 @@ func applyWorktreeDirty(
 	probeCtx, cancel := context.WithTimeout(ctx, worktreeDivergenceTimeout)
 	defer cancel()
 
-	dirty, err := managedworktree.WorktreeIsDirty(probeCtx, worktreePath)
+	dirty, err := readOnlyWorktreeIsDirty(probeCtx, worktreePath)
 	if err != nil {
 		slog.Debug(
 			"worktree dirty-state probe failed",
@@ -2161,6 +2162,28 @@ func applyWorktreeDirty(
 	}
 	resp.WorktreeDirty = &dirty
 	return nil
+}
+
+func readOnlyWorktreeIsDirty(ctx context.Context, worktreePath string) (bool, error) {
+	stdout, stderr, err := gitcmd.New().Run(
+		ctx,
+		worktreePath,
+		nil,
+		"--no-optional-locks",
+		"status",
+		"--porcelain",
+		"--untracked-files=all",
+		"--ignore-submodules=none",
+	)
+	if err != nil {
+		out := append(stdout, stderr...)
+		return false, fmt.Errorf(
+			"check worktree dirty state: %w: %s",
+			err,
+			strings.TrimSpace(string(out)),
+		)
+	}
+	return strings.TrimSpace(string(stdout)) != "", nil
 }
 
 func isWorkingTmuxTitle(title string) bool {

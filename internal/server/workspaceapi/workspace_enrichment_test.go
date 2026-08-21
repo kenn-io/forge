@@ -50,6 +50,32 @@ func runGit(t *testing.T, dir string, args ...string) {
 	require.NoError(t, err, "git %v failed: %s", args, stderr)
 }
 
+func TestApplyWorktreeDirtyDoesNotWriteTheGitIndex(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+
+	runGit(t, dir, "init", "--initial-branch=main", ".")
+	runGit(t, dir, "config", "user.email", "test@example.com")
+	runGit(t, dir, "config", "user.name", "Test")
+	trackedPath := filepath.Join(dir, "tracked.txt")
+	require.NoError(os.WriteFile(trackedPath, []byte("base\n"), 0o644))
+	runGit(t, dir, "add", "tracked.txt")
+	runGit(t, dir, "commit", "-m", "base")
+	indexPath := filepath.Join(dir, ".git", "index")
+	indexBefore, err := os.ReadFile(indexPath)
+	require.NoError(err)
+	future := time.Now().Add(2 * time.Hour)
+	require.NoError(os.Chtimes(trackedPath, future, future))
+
+	var resp workspaceResponse
+	require.NoError(applyWorktreeDirty(t.Context(), &resp, dir))
+	require.NotNil(resp.WorktreeDirty)
+	require.False(*resp.WorktreeDirty)
+	indexAfter, err := os.ReadFile(indexPath)
+	require.NoError(err)
+	require.Equal(indexBefore, indexAfter)
+}
+
 func TestFormatAgentActivityUpdatedAtPreservesSubsecondPrecision(t *testing.T) {
 	t.Parallel()
 	updatedAt := time.Date(2026, 7, 28, 12, 0, 0, 123456789, time.UTC)

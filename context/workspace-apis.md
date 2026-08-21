@@ -81,6 +81,9 @@ embedder protocol for arbitrary host state.
 - List/detail reads return persisted plus last-known-good enrichment without
   foreground git or tmux probes; stale components reconcile through bounded
   background workers (`internal/server/workspaceapi/workspace_enrichment.go::toCachedWorkspaceResponse`).
+- Background Git enrichment must not take optional repository locks; cached
+  probes cannot interfere with a maintainer's foreground Git commands
+  (`internal/server/workspaceapi/routes_handlers.go::readOnlyWorktreeIsDirty`).
 - Activity and Issue/Pull Request list and detail responses share one cached
   subject snapshot: every resolvable subject keeps a workspace reference, while
   tmux activity remains optional and ephemeral (`internal/server/workspaceapi/subject_activity.go::Handler.WorkspaceSubjectSnapshot`).

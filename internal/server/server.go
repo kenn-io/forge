@@ -620,6 +620,7 @@ func workspaceConfigSnapshot(
 	}
 	snapshot.Agents = cloneConfigAgents(cfg.Agents)
 	snapshot.AutoAssignOnCreate = cfg.Workspaces.AutoAssignOnCreate
+	snapshot.RoborevInitManagedClones = cfg.Roborev.InitManagedClones
 	snapshot.KnownPlatformHosts = make(
 		[]projects.KnownPlatformHost, 0, len(cfg.Platforms)+len(cfg.Repos)+1,
 	)
@@ -926,6 +927,8 @@ func newServer(
 		s.workspaces.SetIssueBranchSlugEnabled(
 			cfg.IssueWorkspaceBranchSlugEnabled(),
 		)
+		s.workspaces.SetRoborevEndpoint(roborevConfig.RoborevEndpoint())
+		s.workspaces.SetRoborevRepositoryInvalidator(s.roborevRepositories.Invalidate)
 		s.workspaces.SetWorktreeBasePathResolver(s.worktreeBasePathForRepo)
 		ptyOwnerDir := options.PtyOwnerDir
 		if ptyOwnerDir == "" {

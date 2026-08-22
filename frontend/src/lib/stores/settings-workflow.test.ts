@@ -52,6 +52,7 @@ function makeSettings(repos: SettingsResponse["repos"] = []): SettingsResponse {
       allow_mid_stack_merges: false,
       prefer_github_native_stacks: false,
     },
+    roborev: { init_managed_clones: false },
     repo_presets: [],
     repos,
     terminal: {
@@ -759,6 +760,43 @@ it.layer(SettingsTestLayer)("ordered settings writes", (it) => {
         "GET /api/v1/settings",
         "GET /api/v1/settings",
       ]);
+    }),
+  );
+
+  it.effect("accepts a committed Roborev toggle after its response is lost", () =>
+    Effect.gen(function* () {
+      const original = makeSettings();
+      const saved = { ...original, roborev: { init_managed_clones: true } };
+      const fetch: typeof globalThis.fetch = (input, init) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        return request.method === "PUT"
+          ? Promise.reject(new TypeError("response lost after commit"))
+          : Promise.resolve(Response.json(saved));
+      };
+      vi.stubGlobal("fetch", fetch);
+
+      const workflow = yield* SettingsWorkflow;
+      const result = yield* workflow.persist(() => ({ roborev: saved.roborev }));
+
+      assert.isTrue(result.roborev.init_managed_clones);
+    }),
+  );
+
+  it.effect("reports a Roborev toggle that was not committed after its response is lost", () =>
+    Effect.gen(function* () {
+      const original = makeSettings();
+      const fetch: typeof globalThis.fetch = (input, init) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        return request.method === "PUT"
+          ? Promise.reject(new TypeError("response lost before commit"))
+          : Promise.resolve(Response.json(original));
+      };
+      vi.stubGlobal("fetch", fetch);
+
+      const workflow = yield* SettingsWorkflow;
+      const failure = yield* Effect.flip(workflow.persist(() => ({ roborev: { init_managed_clones: true } })));
+
+      assert.strictEqual(failure._tag, "TransientTransportError");
     }),
   );
 

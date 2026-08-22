@@ -6,6 +6,7 @@ import { applySettingsHydration } from "./settings-hydration.js";
 import { createSettingsStore } from "./settings.svelte.js";
 import { beginTerminalSettingsHydration } from "./terminal-settings-persistence.js";
 import { beginWorkspaceSettingsHydration } from "./workspace-settings-persistence.js";
+import { beginRoborevSettingsHydration } from "./roborev-settings-persistence.js";
 
 const activitySettings: ActivitySettings = {
   view_mode: "threaded",
@@ -56,6 +57,7 @@ const settingsPayload = {
   kata_projects: [],
   notifications: { enabled: true },
   workspaces: { auto_assign_on_create: false, default_sidebar_view: "item" },
+  roborev: { init_managed_clones: true },
 } satisfies StartupSnapshot;
 
 function hydrate(
@@ -66,11 +68,13 @@ function hydrate(
   const settingsStore = createSettingsStore();
   const terminalHydration = beginTerminalSettingsHydration(settingsStore);
   const workspaceHydration = beginWorkspaceSettingsHydration(settingsStore);
+  const roborevHydration = beginRoborevSettingsHydration(settingsStore);
   applySettingsHydration(
     { settings: settingsStore, activity, issues },
     { ...settingsPayload, launch_targets: launchTargets },
     terminalHydration,
     workspaceHydration,
+    roborevHydration,
   );
   return { settingsStore, activity, issues };
 }
@@ -91,6 +95,11 @@ describe("applySettingsHydration", () => {
     expect(settingsStore.getWorkspaceSettings()).toEqual(settingsPayload.workspaces);
   });
 
+  it("hydrates the managed-clone Roborev preference into its own store value", () => {
+    const { settingsStore } = hydrate();
+    expect(settingsStore.getRoborevSettings()).toEqual(settingsPayload.roborev);
+  });
+
   it("hydrates the detail timeline limit into the settings store", () => {
     const { settingsStore } = hydrate();
     expect(settingsStore.getDetailSettings()).toEqual({ initial_timeline_entry_limit: 75 });
@@ -101,11 +110,13 @@ describe("applySettingsHydration", () => {
     settingsStore.setLaunchTargets([codexTarget]);
     const terminalHydration = beginTerminalSettingsHydration(settingsStore);
     const workspaceHydration = beginWorkspaceSettingsHydration(settingsStore);
+    const roborevHydration = beginRoborevSettingsHydration(settingsStore);
     applySettingsHydration(
       { settings: settingsStore, activity: { hydrateDefaults: vi.fn() }, issues: { hydrateDefaults: vi.fn() } },
       { ...settingsPayload, launch_targets: [] },
       terminalHydration,
       workspaceHydration,
+      roborevHydration,
     );
     expect(settingsStore.getLaunchTargets()).toEqual([]);
   });

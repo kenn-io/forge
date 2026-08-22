@@ -27,6 +27,10 @@
     beginWorkspaceSettingsHydration,
     hydrateWorkspaceSettings,
   } from "../../stores/workspace-settings-persistence.js";
+  import {
+    beginRoborevSettingsHydration,
+    hydrateRoborevSettings,
+  } from "../../stores/roborev-settings-persistence.js";
   import { SETTINGS_PANELS } from "./settingsPanels.js";
 
   // Switched-panel model on kit SettingsLayout: this list is the single
@@ -61,6 +65,7 @@
   onMount(() => {
     const terminalHydration = beginTerminalSettingsHydration(settingsStore);
     const workspaceHydration = beginWorkspaceSettingsHydration(settingsStore);
+    const roborevHydration = beginRoborevSettingsHydration(settingsStore);
     loading = true;
     error = null;
     const execution = runtime.runCommand(
@@ -86,6 +91,7 @@
               settingsStore.setDetailSettings(loaded.detail);
               settingsStore.setLaunchTargets(loaded.launch_targets ?? []);
               hydrateWorkspaceSettings(workspaceHydration, loaded.workspaces);
+              hydrateRoborevSettings(roborevHydration, loaded.roborev);
               loading = false;
             }),
         }),
@@ -179,6 +185,10 @@
               onUpdate={(workspaces) => {
                 settings = { ...settings!, workspaces };
                 settingsStore.setWorkspaceSettings(workspaces);
+              }}
+              onRoborevUpdate={(roborev) => {
+                settings = { ...settings!, roborev };
+                settingsStore.setRoborevSettings(roborev);
               }}
             />
           {:else if meta.id === "settings-terminal"}

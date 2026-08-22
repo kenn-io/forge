@@ -5,6 +5,7 @@ import type { StoreInstances } from "../types.js";
 import { applySettingsHydration } from "../stores/settings-hydration.js";
 import { beginTerminalSettingsHydration } from "../stores/terminal-settings-persistence.js";
 import { beginWorkspaceSettingsHydration } from "../stores/workspace-settings-persistence.js";
+import { beginRoborevSettingsHydration } from "../stores/roborev-settings-persistence.js";
 
 export interface AppStartupDeps {
   readonly stores: StoreInstances;
@@ -18,6 +19,7 @@ export const appStartupProgram = Effect.fn("AppStartup.run")(function* (deps: Ap
   const startup = yield* StartupWorkflow;
   const terminalHydration = yield* Effect.sync(() => beginTerminalSettingsHydration(deps.stores.settings));
   const workspaceHydration = yield* Effect.sync(() => beginWorkspaceSettingsHydration(deps.stores.settings));
+  const roborevHydration = yield* Effect.sync(() => beginRoborevSettingsHydration(deps.stores.settings));
   const snapshot = yield* startup.start.pipe(
     Effect.match({
       onFailure: (failure) => {
@@ -39,6 +41,7 @@ export const appStartupProgram = Effect.fn("AppStartup.run")(function* (deps: Ap
         snapshot.value,
         terminalHydration,
         workspaceHydration,
+        roborevHydration,
       );
     });
   }

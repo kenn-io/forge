@@ -14,9 +14,10 @@ func TestConfigSnapshotIsImmutableAndApplyConfigPublishesCommittedState(t *testi
 	assert := assert.New(t)
 	enabled := true
 	initial := ConfigSnapshot{
-		KnownPlatformHosts: []projects.KnownPlatformHost{{Platform: "github", Host: "github.com"}},
-		Agents:             []config.Agent{{Key: "codex", Command: []string{"codex"}, Enabled: &enabled}},
-		TmuxCommand:        []string{"tmux", "-L", "initial"},
+		KnownPlatformHosts:       []projects.KnownPlatformHost{{Platform: "github", Host: "github.com"}},
+		Agents:                   []config.Agent{{Key: "codex", Command: []string{"codex"}, Enabled: &enabled}},
+		TmuxCommand:              []string{"tmux", "-L", "initial"},
+		RoborevInitManagedClones: true,
 	}
 	h := New(Deps{Config: initial})
 
@@ -29,16 +30,19 @@ func TestConfigSnapshotIsImmutableAndApplyConfigPublishesCommittedState(t *testi
 	assert.Equal("codex", h.configSnapshot().Agents[0].Command[0])
 	assert.True(*h.configSnapshot().Agents[0].Enabled)
 	assert.Equal([]string{"tmux", "-L", "initial"}, h.tmuxCommand())
+	assert.True(h.configSnapshot().RoborevInitManagedClones)
 
 	h.ApplyConfig(ConfigSnapshot{
-		KnownPlatformHosts: []projects.KnownPlatformHost{{Platform: "gitlab", Host: "gitlab.example"}},
-		Agents:             []config.Agent{{Key: "claude", Command: []string{"claude"}}},
-		TmuxCommand:        []string{"tmux", "-L", "reloaded"},
+		KnownPlatformHosts:       []projects.KnownPlatformHost{{Platform: "gitlab", Host: "gitlab.example"}},
+		Agents:                   []config.Agent{{Key: "claude", Command: []string{"claude"}}},
+		TmuxCommand:              []string{"tmux", "-L", "reloaded"},
+		RoborevInitManagedClones: false,
 	})
 
 	assert.Equal("gitlab.example", h.knownProjectPlatformHosts()[0].Host)
 	assert.Equal("claude", h.configSnapshot().Agents[0].Command[0])
 	assert.Equal([]string{"tmux", "-L", "reloaded"}, h.tmuxCommand())
+	assert.False(h.configSnapshot().RoborevInitManagedClones)
 }
 
 func TestLifecycleShutdownHonorsContextAndCanBeWaitedAgain(t *testing.T) {

@@ -349,7 +349,10 @@ func (s *Handler) runWorkspaceSetupWithBasePath(ws *workspace.Workspace, basePat
 	if !s.runBackground(func(bgCtx context.Context) {
 		defer s.finishWorkspaceSetup(ws.ID, done)
 		for {
-			setupErr := s.workspaces.SetupWithWorktreeBasePath(bgCtx, ws, basePath)
+			setupErr := s.workspaces.SetupWithOptions(bgCtx, ws, workspace.SetupOptions{
+				WorktreeBasePath:         basePath,
+				RoborevInitManagedClones: s.configSnapshot().RoborevInitManagedClones,
+			})
 			summary, getErr := s.workspaces.GetSummary(
 				bgCtx, ws.ID,
 			)

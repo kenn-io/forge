@@ -166,10 +166,16 @@ endpoint is `http://127.0.0.1:7373`:
 ```toml
 [roborev]
 endpoint = "http://127.0.0.1:7373"
+init_managed_clones = true
 ```
 
-Restart kenn-forge after changing this value. Set `reviews = false` under
-`[modes]` if you do not want the Reviews page. See
+The endpoint controls the Reviews connection and requires a restart when it
+changes. `init_managed_clones` is optional and defaults to `false`; you can
+also change it under **Settings → Workspaces** without restarting. When it is
+enabled, the endpoint must use loopback HTTP (`127.0.0.1`, `localhost`, or
+`[::1]`) because Forge passes it to the Roborev CLI during workspace setup.
+
+Set `reviews = false` under `[modes]` if you do not want the Reviews page. See
 [Integrations](integrations.md#review-roborev-jobs) for the current Reviews
 workflow.
 

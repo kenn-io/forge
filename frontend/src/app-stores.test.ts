@@ -177,6 +177,8 @@ vi.mock("./lib/stores/settings.svelte.js", () => ({
       setDetailSettings: vi.fn(),
       getWorkspaceSettings: () => ({ auto_assign_on_create: false, default_sidebar_view: "diff" as const }),
       setWorkspaceSettings: vi.fn(),
+      getRoborevSettings: () => ({ init_managed_clones: false }),
+      setRoborevSettings: vi.fn(),
       getModeVisibility: () => ({
         activity: true,
         repos: true,

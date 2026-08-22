@@ -32,6 +32,9 @@ export function createSettingsStore() {
     auto_assign_on_create: false,
     default_sidebar_view: "diff",
   });
+  let roborevSettings = $state.raw<Settings["roborev"]>({
+    init_managed_clones: false,
+  });
   let repoPresets = $state.raw<RepoPreset[]>([]);
   let loaded = $state(false);
 
@@ -119,6 +122,16 @@ export function createSettingsStore() {
     };
   }
 
+  function getRoborevSettings(): Settings["roborev"] {
+    return roborevSettings;
+  }
+
+  function setRoborevSettings(value: Settings["roborev"] | null | undefined): void {
+    roborevSettings = {
+      init_managed_clones: value?.init_managed_clones ?? false,
+    };
+  }
+
   function getTerminalFontFamily(): string {
     return terminalSettings.font_family;
   }
@@ -184,6 +197,8 @@ export function createSettingsStore() {
     setLaunchTargets,
     getWorkspaceSettings,
     setWorkspaceSettings,
+    getRoborevSettings,
+    setRoborevSettings,
     getTerminalFontFamily,
     setTerminalFontFamily,
     getTerminalFontSize,

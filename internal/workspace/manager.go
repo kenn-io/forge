@@ -69,6 +69,8 @@ type Manager struct {
 	// refresh resolves the workspace repository; tests use it to queue a
 	// reconciliation writer against the held read lock.
 	beforeHeadRepoSnapshotRepoLookup func()
+	roborevEndpoint                  string
+	roborevRepositoryInvalidator     func()
 }
 
 // WorktreeBasePathResolver resolves a tracked remote repository to a
@@ -150,14 +152,15 @@ func (e *WorkspaceDirectoryRecoveryError) Error() string {
 }
 
 const (
-	workspaceSetupStageSetup       = "setup"
-	workspaceSetupStageClone       = "clone"
-	workspaceSetupStageWorktree    = "worktree"
-	workspaceSetupStageTmuxSession = "tmux_session"
-	workspaceBranchUnknown         = "__kenn_forge_unknown__"
-	workspaceBranchRecoveryPending = "__kenn_forge_recovery_pending__..state"
-	workspaceOwnershipMarkerFile   = "kenn-forge-workspace-id"
-	tmuxCaptureScrollbackLines     = 160
+	workspaceSetupStageSetup           = "setup"
+	workspaceSetupStageClone           = "clone"
+	workspaceSetupStageWorktree        = "worktree"
+	workspaceSetupStageRepositoryHooks = "repository_hooks"
+	workspaceSetupStageTmuxSession     = "tmux_session"
+	workspaceBranchUnknown             = "__kenn_forge_unknown__"
+	workspaceBranchRecoveryPending     = "__kenn_forge_recovery_pending__..state"
+	workspaceOwnershipMarkerFile       = "kenn-forge-workspace-id"
+	tmuxCaptureScrollbackLines         = 160
 )
 
 var workspacePersistTimeout = 5 * time.Second
@@ -236,6 +239,18 @@ func (m *Manager) defaultIssueBranch(issueNumber int, title string) string {
 // operations. Called after the clone manager is initialized.
 func (m *Manager) SetClones(clones *gitclone.Manager) {
 	m.clones = clones
+}
+
+// SetRoborevEndpoint binds the startup-scoped daemon endpoint used for
+// managed-clone initialization. Endpoint edits require a server restart.
+func (m *Manager) SetRoborevEndpoint(endpoint string) {
+	m.roborevEndpoint = endpoint
+}
+
+// SetRoborevRepositoryInvalidator configures the cache invalidation callback
+// invoked after a managed workspace is confirmed in the daemon inventory.
+func (m *Manager) SetRoborevRepositoryInvalidator(invalidate func()) {
+	m.roborevRepositoryInvalidator = invalidate
 }
 
 // withRepoLock acquires a repository-scoped lock, executes the function, and
@@ -1038,7 +1053,14 @@ func WorkspaceHeadRepo(provider, platformHost, owner, name, cloneURL string) *st
 func (m *Manager) Setup(
 	ctx context.Context, ws *Workspace,
 ) error {
-	return m.SetupWithWorktreeBasePath(ctx, ws, "")
+	return m.SetupWithOptions(ctx, ws, SetupOptions{})
+}
+
+// SetupOptions carries the committed per-attempt configuration and the exact
+// user-selected worktree base path into workspace setup.
+type SetupOptions struct {
+	WorktreeBasePath         string
+	RoborevInitManagedClones bool
 }
 
 func (m *Manager) verifyWorkspaceRouteUnoccupied(
@@ -1115,6 +1137,15 @@ func (m *Manager) verifyRepoRouteUnoccupied(
 func (m *Manager) SetupWithWorktreeBasePath(
 	ctx context.Context, ws *Workspace, worktreeBasePath string,
 ) error {
+	return m.SetupWithOptions(ctx, ws, SetupOptions{WorktreeBasePath: worktreeBasePath})
+}
+
+// SetupWithOptions sets up a workspace using a committed configuration
+// snapshot captured for this attempt.
+func (m *Manager) SetupWithOptions(
+	ctx context.Context, ws *Workspace, options SetupOptions,
+) error {
+	worktreeBasePath := options.WorktreeBasePath
 	recoveryPending := workspaceRequiresExistingDirectory(ws)
 	m.recordSetupEvent(
 		ctx,
@@ -1145,8 +1176,10 @@ func (m *Manager) SetupWithWorktreeBasePath(
 		}
 	}
 
-	branch, reusedWorktree, err := m.reuseExistingWorkspaceWorktree(ctx, ws)
+	reuse, err := m.reuseExistingWorkspaceWorktreeDetails(ctx, ws)
+	branch, reusedWorktree := reuse.branch, reuse.reused
 	var gitDir string
+	commonDir, managedClone := reuse.commonDir, reuse.managedClone
 	if err != nil {
 		if recoveryPending {
 			if recoveryErr := m.validateExistingWorkspaceDirectory(ctx, ws); recoveryErr != nil {
@@ -1186,6 +1219,8 @@ func (m *Manager) SetupWithWorktreeBasePath(
 				ws.ID, workspaceSetupStageWorktree, err,
 			)
 		}
+		commonDir = gitDir
+		managedClone = !refreshBeforeAdd
 	}
 	if ws.ItemType == db.WorkspaceItemTypePullRequest && ws.MRHeadRepo != nil {
 		currentBranch, branchErr := worktreeCurrentBranch(ctx, ws.WorktreePath)
@@ -1231,6 +1266,20 @@ func (m *Manager) SetupWithWorktreeBasePath(
 				ws.ID, workspaceSetupStageWorktree, err,
 			)
 		}
+	}
+
+	if managedClone && options.RoborevInitManagedClones {
+		m.recordSetupEvent(
+			ctx, ws.ID, workspaceSetupStageRepositoryHooks, "started",
+			"setting up managed repository hooks",
+		)
+		if err := m.setupManagedRepositoryHooks(ctx, commonDir, ws); err != nil {
+			return m.failSetup(ctx, ws.ID, workspaceSetupStageRepositoryHooks, err)
+		}
+		m.recordSetupEvent(
+			ctx, ws.ID, workspaceSetupStageRepositoryHooks, "success",
+			"managed repository hooks ready",
+		)
 	}
 
 	terminalWorkspace := ws
@@ -1458,44 +1507,58 @@ func (m *Manager) RefreshWorkspaceHeadRepoSnapshot(
 	}
 }
 
+type existingWorkspaceWorktreeResult struct {
+	branch       string
+	commonDir    string
+	managedClone bool
+	reused       bool
+}
+
 func (m *Manager) reuseExistingWorkspaceWorktree(
 	ctx context.Context, ws *Workspace,
 ) (string, bool, error) {
+	result, err := m.reuseExistingWorkspaceWorktreeDetails(ctx, ws)
+	return result.branch, result.reused, err
+}
+
+func (m *Manager) reuseExistingWorkspaceWorktreeDetails(
+	ctx context.Context, ws *Workspace,
+) (existingWorkspaceWorktreeResult, error) {
 	info, err := os.Lstat(ws.WorktreePath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return "", false, nil
+			return existingWorkspaceWorktreeResult{}, nil
 		}
-		return "", false, fmt.Errorf("stat existing worktree: %w", err)
+		return existingWorkspaceWorktreeResult{}, fmt.Errorf("stat existing worktree: %w", err)
 	}
 	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		return "", false, nil
+		return existingWorkspaceWorktreeResult{}, nil
 	}
 	commonDir, err := worktreeCommonGitDir(ctx, ws.WorktreePath)
 	if err != nil {
 		if isGitWorktreeAbsent(err) {
-			return "", false, nil
+			return existingWorkspaceWorktreeResult{}, nil
 		}
-		return "", false, fmt.Errorf("inspect existing worktree: %w", err)
+		return existingWorkspaceWorktreeResult{}, fmt.Errorf("inspect existing worktree: %w", err)
 	}
 	if !gitDirMatchesWorkspaceRepo(ctx, commonDir, ws) {
-		return "", false, nil
+		return existingWorkspaceWorktreeResult{}, nil
 	}
 	owned, err := gitDirOwnsLinkedWorktree(ctx, commonDir, ws.WorktreePath)
 	if err != nil {
-		return "", false, err
+		return existingWorkspaceWorktreeResult{}, err
 	}
 	if !owned {
-		return "", false, nil
+		return existingWorkspaceWorktreeResult{}, nil
 	}
 	localBase, reusable, err := m.existingWorkspaceWorktreeProvenance(
 		ctx, commonDir, ws,
 	)
 	if err != nil {
-		return "", false, err
+		return existingWorkspaceWorktreeResult{}, err
 	}
 	if !reusable {
-		return "", false, nil
+		return existingWorkspaceWorktreeResult{}, nil
 	}
 	if m.beforeExistingWorktreeRepoLock != nil {
 		m.beforeExistingWorktreeRepoLock()
@@ -1535,9 +1598,11 @@ func (m *Manager) reuseExistingWorkspaceWorktree(
 		}
 		return nil
 	}); err != nil {
-		return "", false, err
+		return existingWorkspaceWorktreeResult{}, err
 	}
-	return branch, true, nil
+	return existingWorkspaceWorktreeResult{
+		branch: branch, commonDir: commonDir, managedClone: !localBase, reused: true,
+	}, nil
 }
 
 func (m *Manager) revalidateExistingWorkspaceWorktree(

@@ -226,6 +226,51 @@ func TestResolveDefaultBranchFallsBackToOriginHEAD(t *testing.T) {
 	require.NoError(err)
 	assert.Equal("main", branch)
 	assert.Equal(gitSHA(t, work, "main"), ref)
+
+	cloneDir, err := mgr.ClonePath("github", "github.com", "acme", "widgets")
+	require.NoError(err)
+	identityCtx := WithRepositoryIdentity(t.Context(), "different-storage-namespace")
+	branch, ref, err = mgr.ResolveDefaultBranchInDir(identityCtx, cloneDir, "stale")
+	require.NoError(err)
+	assert.Equal("main", branch)
+	assert.Equal(gitSHA(t, work, "main"), ref)
+}
+
+func TestResolveRemoteDefaultBranchInDirIgnoresStaleLocalBranch(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	dir := t.TempDir()
+	remote := filepath.Join(dir, "remote.git")
+	commitTestRun(t, dir, "git", "init", "--bare", "--initial-branch=main", remote)
+	work := filepath.Join(dir, "work")
+	commitTestRun(t, dir, "git", "clone", remote, work)
+	commitTestRun(t, work, "git", "config", "user.email", "alice@example.com")
+	commitTestRun(t, work, "git", "config", "user.name", "Alice")
+	require.NoError(os.WriteFile(filepath.Join(work, "main.txt"), []byte("main\n"), 0o644))
+	commitTestRun(t, work, "git", "add", ".")
+	commitTestRun(t, work, "git", "commit", "-m", "main")
+	mainSHA := gitSHA(t, work, "HEAD")
+	commitTestRun(t, work, "git", "push", "origin", "main")
+	commitTestRun(t, work, "git", "checkout", "-b", "trunk")
+	require.NoError(os.WriteFile(filepath.Join(work, "trunk.txt"), []byte("trunk\n"), 0o644))
+	commitTestRun(t, work, "git", "add", ".")
+	commitTestRun(t, work, "git", "commit", "-m", "trunk")
+	trunkSHA := gitSHA(t, work, "HEAD")
+	commitTestRun(t, work, "git", "push", "origin", "trunk")
+	commitTestRun(t, remote, "git", "symbolic-ref", "HEAD", "refs/heads/trunk")
+
+	mgr := New(filepath.Join(dir, "clones"), nil)
+	require.NoError(mgr.EnsureClone(t.Context(), "github", "github.com", "acme", "widgets", remote))
+	cloneDir, err := mgr.ClonePath("github", "github.com", "acme", "widgets")
+	require.NoError(err)
+	commitTestRun(t, cloneDir, "git", "update-ref", "refs/heads/main", mainSHA)
+	commitTestRun(t, cloneDir, "git", "update-ref", "-d", "refs/remotes/origin/main")
+
+	branch, sha, err := mgr.ResolveRemoteDefaultBranchInDir(t.Context(), cloneDir, "main")
+	require.NoError(err)
+	assert.Equal("trunk", branch)
+	assert.Equal(trunkSHA, sha)
 }
 
 func TestResolveDefaultBranchStripsOriginPrefixBeforeOriginHEADFallback(t *testing.T) {

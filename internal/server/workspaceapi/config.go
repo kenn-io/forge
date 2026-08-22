@@ -11,18 +11,20 @@ import (
 // the Workspace and Projects API. The root server derives and publishes it
 // only after its config transaction succeeds.
 type ConfigSnapshot struct {
-	KnownPlatformHosts []projects.KnownPlatformHost
-	Agents             []config.Agent
-	TmuxCommand        []string
-	AutoAssignOnCreate bool
+	KnownPlatformHosts       []projects.KnownPlatformHost
+	Agents                   []config.Agent
+	TmuxCommand              []string
+	AutoAssignOnCreate       bool
+	RoborevInitManagedClones bool
 }
 
 func cloneConfigSnapshot(snapshot ConfigSnapshot) ConfigSnapshot {
 	out := ConfigSnapshot{
-		KnownPlatformHosts: slices.Clone(snapshot.KnownPlatformHosts),
-		Agents:             make([]config.Agent, len(snapshot.Agents)),
-		TmuxCommand:        slices.Clone(snapshot.TmuxCommand),
-		AutoAssignOnCreate: snapshot.AutoAssignOnCreate,
+		KnownPlatformHosts:       slices.Clone(snapshot.KnownPlatformHosts),
+		Agents:                   make([]config.Agent, len(snapshot.Agents)),
+		TmuxCommand:              slices.Clone(snapshot.TmuxCommand),
+		AutoAssignOnCreate:       snapshot.AutoAssignOnCreate,
+		RoborevInitManagedClones: snapshot.RoborevInitManagedClones,
 	}
 	for i := range snapshot.Agents {
 		out.Agents[i] = snapshot.Agents[i]

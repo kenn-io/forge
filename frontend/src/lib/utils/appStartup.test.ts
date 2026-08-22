@@ -30,6 +30,7 @@ function makeStores(
     auto_assign_on_create: false,
     default_sidebar_view: "diff",
   };
+  let roborevSettings: Settings["roborev"] = { init_managed_clones: false };
   return {
     settings: {
       setConfiguredRepos: vi.fn(),
@@ -44,6 +45,10 @@ function makeStores(
       getWorkspaceSettings: () => workspaceSettings,
       setWorkspaceSettings: vi.fn((settings) => {
         workspaceSettings = settings;
+      }),
+      getRoborevSettings: () => roborevSettings,
+      setRoborevSettings: vi.fn((settings) => {
+        roborevSettings = settings;
       }),
       setTerminalFontFamily: vi.fn(),
       getLaunchTargets: () => launchTargets,
@@ -77,6 +82,7 @@ const settings = {
   pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
   detail: { initial_timeline_entry_limit: 50 },
   workspaces: { auto_assign_on_create: false, default_sidebar_view: "diff" },
+  roborev: { init_managed_clones: true },
   issues: { hide_bots: true },
   kata_projects: [],
   fleet: {

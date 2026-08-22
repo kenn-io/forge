@@ -35,6 +35,7 @@ type settingsResponse struct {
 	LaunchTargets []localruntime.LaunchTarget     `json:"launch_targets,omitempty"`
 	Fleet         fleetSettingsResponse           `json:"fleet"`
 	MCP           mcpSettingsResponse             `json:"mcp"`
+	Roborev       roborevSettingsResponse         `json:"roborev"`
 }
 
 type notificationsSettingsResponse struct {
@@ -50,6 +51,10 @@ type mcpSettingsResponse struct {
 	ActiveRequiresAuth bool   `json:"active_requires_auth"`
 }
 
+type roborevSettingsResponse struct {
+	InitManagedClones bool `json:"init_managed_clones"`
+}
+
 type updateSettingsRequest struct {
 	Activity     *config.Activity                 `json:"activity,omitempty"`
 	Detail       *config.Detail                   `json:"detail,omitempty"`
@@ -61,6 +66,7 @@ type updateSettingsRequest struct {
 	Agents       *[]config.Agent                  `json:"agents,omitempty"`
 	KataProjects *[]config.KataProjectRepoMapping `json:"kata_projects,omitempty"`
 	MCP          *mcpSettingsUpdate               `json:"mcp,omitempty"`
+	Roborev      *roborevSettingsUpdate           `json:"roborev,omitempty"`
 }
 
 type workspaceSettingsUpdate struct {
@@ -72,6 +78,10 @@ type mcpSettingsUpdate struct {
 	Enabled     *bool `json:"enabled,omitempty"`
 	Port        *int  `json:"port,omitempty"`
 	DiffCacheMB *int  `json:"diff_cache_mb,omitempty"`
+}
+
+type roborevSettingsUpdate struct {
+	InitManagedClones *bool `json:"init_managed_clones,omitempty"`
 }
 
 func (s *Server) configuredClients(
@@ -114,6 +124,7 @@ func (s *Server) buildLocalSettingsResponse(
 	agents := cloneConfigAgents(s.cfg.Agents)
 	kataProjects := slices.Clone(s.cfg.KataProjects)
 	mcp := s.cfg.MCP
+	roborev := s.cfg.Roborev
 	if kataProjects == nil {
 		// kata_projects is a required non-null array in the API schema, so a
 		// nil clone (the default, no-mappings case) must serialize as [] rather
@@ -186,6 +197,9 @@ func (s *Server) buildLocalSettingsResponse(
 			RestartRequired:    mcp != s.bootCfgSnapshot.MCP,
 			ActiveURL:          s.options.MCPURL,
 			ActiveRequiresAuth: s.bootCfgSnapshot.RequireAuth,
+		},
+		Roborev: roborevSettingsResponse{
+			InitManagedClones: roborev.InitManagedClones,
 		},
 	}, nil
 }
@@ -867,6 +881,7 @@ func (s *Server) updateSettings(
 	prevAgents := cloneConfigAgents(s.cfg.Agents)
 	prevKataProjects := slices.Clone(s.cfg.KataProjects)
 	prevMCP := s.cfg.MCP
+	prevRoborev := s.cfg.Roborev
 	if input.Body.Activity != nil {
 		candidate := *input.Body.Activity
 		if candidate.ViewMode == "" {
@@ -917,6 +932,9 @@ func (s *Server) updateSettings(
 			s.cfg.MCP.DiffCacheMB = *input.Body.MCP.DiffCacheMB
 		}
 	}
+	if input.Body.Roborev != nil && input.Body.Roborev.InitManagedClones != nil {
+		s.cfg.Roborev.InitManagedClones = *input.Body.Roborev.InitManagedClones
+	}
 	if err := s.cfg.Validate(); err != nil {
 		s.cfg.Activity = prevActivity
 		s.cfg.Detail = prevDetail
@@ -928,6 +946,7 @@ func (s *Server) updateSettings(
 		s.cfg.Agents = prevAgents
 		s.cfg.KataProjects = prevKataProjects
 		s.cfg.MCP = prevMCP
+		s.cfg.Roborev = prevRoborev
 		s.cfgMu.Unlock()
 		return nil, httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
 	}
@@ -942,6 +961,7 @@ func (s *Server) updateSettings(
 		s.cfg.Agents = prevAgents
 		s.cfg.KataProjects = prevKataProjects
 		s.cfg.MCP = prevMCP
+		s.cfg.Roborev = prevRoborev
 		s.cfgMu.Unlock()
 		return nil, httpapi.Internal("save config: " + err.Error())
 	}

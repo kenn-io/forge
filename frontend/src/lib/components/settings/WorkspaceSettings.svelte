@@ -8,17 +8,21 @@
   import { isEmbedded } from "../../stores/embed-config.svelte.js";
   import { settingsErrorMessage } from "../../stores/settings-workflow.js";
   import { saveWorkspaceSettings } from "../../stores/workspace-settings-persistence.js";
+  import { saveRoborevSettings } from "../../stores/roborev-settings-persistence.js";
 
   interface Props {
     onUpdate: (settings: Settings["workspaces"]) => void;
+    onRoborevUpdate?: (settings: Settings["roborev"]) => void;
   }
 
-  let { onUpdate }: Props = $props();
+  let { onUpdate, onRoborevUpdate = () => {} }: Props = $props();
   const runtime = getAppRuntime();
   const { settings: settingsStore } = getStores();
   const workspaces = $derived(settingsStore.getWorkspaceSettings());
+  const roborev = $derived(settingsStore.getRoborevSettings());
   const embedded = isEmbedded();
   let saving = $state(false);
+  let savingRoborev = $state(false);
   const defaultSidebarViewOptions: SelectDropdownOption[] = [
     { value: "diff", label: "Diff" },
     { value: "item", label: "PR/Issue" },
@@ -88,6 +92,41 @@
       { operation: "save workspace settings", safeContext: {}, onFailure: () => {} },
     );
   }
+
+  function toggleRoborevManagedClones(): void {
+    if (embedded || savingRoborev) return;
+    const baseline = roborev;
+    const pending = {
+      ...roborev,
+      init_managed_clones: !roborev.init_managed_clones,
+    };
+    onRoborevUpdate(pending);
+    savingRoborev = true;
+    runtime.runCommand(
+      Effect.gen(function* () {
+        return yield* saveRoborevSettings({
+          baseline,
+          changes: { init_managed_clones: pending.init_managed_clones },
+          store: settingsStore,
+        });
+      }).pipe(
+        Effect.matchEffect({
+          onFailure: (failure) =>
+            Effect.sync(() => {
+              onRoborevUpdate(settingsStore.getRoborevSettings());
+              console.warn("Failed to save Roborev settings:", settingsErrorMessage(failure));
+            }),
+          onSuccess: () => Effect.sync(() => onRoborevUpdate(settingsStore.getRoborevSettings())),
+        }),
+        Effect.ensuring(
+          Effect.sync(() => {
+            savingRoborev = false;
+          }),
+        ),
+      ),
+      { operation: "save Roborev settings", safeContext: {}, onFailure: () => {} },
+    );
+  }
 </script>
 
 <div class="settings-list">
@@ -105,6 +144,24 @@
       onclick={toggleAutoAssign}
       aria-label="Assign new workspace items to me"
       aria-pressed={workspaces.auto_assign_on_create}
+    >
+      <span class="toggle-track"><span class="toggle-thumb"></span></span>
+    </button>
+  </div>
+  <div class="setting-row">
+    <div class="setting-copy">
+      <span class="setting-label">Initialize Roborev in managed clones</span>
+      <span class="setting-description">
+        Run Roborev initialization for Forge-managed workspaces so commits can trigger reviews. Requires a Roborev daemon on a loopback HTTP endpoint; Forge does not start it.
+      </span>
+    </div>
+    <button
+      class={["toggle-btn", roborev.init_managed_clones && "toggle-on"]}
+      type="button"
+      disabled={embedded || savingRoborev}
+      onclick={toggleRoborevManagedClones}
+      aria-label="Initialize Roborev in managed clones"
+      aria-pressed={roborev.init_managed_clones}
     >
       <span class="toggle-track"><span class="toggle-thumb"></span></span>
     </button>

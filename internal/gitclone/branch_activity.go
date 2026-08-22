@@ -20,7 +20,16 @@ func (m *Manager) ResolveDefaultBranch(
 	if err != nil {
 		return "", "", err
 	}
+	return m.ResolveDefaultBranchInDir(ctx, dir, preferred)
+}
 
+// ResolveDefaultBranchInDir resolves the preferred remote branch in the exact
+// clone directory supplied by the caller. Unlike ResolveDefaultBranch, a
+// repository identity carried by ctx cannot select a different clone
+// namespace.
+func (m *Manager) ResolveDefaultBranchInDir(
+	ctx context.Context, dir, preferred string,
+) (branch string, ref string, err error) {
 	preferred = strings.TrimSpace(preferred)
 	if preferred != "" {
 		for _, candidate := range branchActivityRefCandidates(preferred) {
@@ -31,7 +40,45 @@ func (m *Manager) ResolveDefaultBranch(
 			}
 		}
 	}
+	return m.resolveOriginHEADInDir(ctx, dir)
+}
 
+// ResolveRemoteDefaultBranchInDir resolves only fetched remote-tracking refs
+// in the exact clone directory. It never falls back to a local branch with the
+// same name as the preferred default branch.
+func (m *Manager) ResolveRemoteDefaultBranchInDir(
+	ctx context.Context, dir, preferred string,
+) (branch string, ref string, err error) {
+	branch, remoteRef := preferredRemoteBranchRef(preferred)
+	if remoteRef != "" {
+		sha, err := m.resolveRefInDir(ctx, dir, remoteRef)
+		if err == nil {
+			return branch, sha, nil
+		}
+		if !isMissingRefError(err) {
+			return "", "", fmt.Errorf("resolve preferred remote default branch %s: %w", preferred, err)
+		}
+	}
+	return m.resolveOriginHEADInDir(ctx, dir)
+}
+
+func preferredRemoteBranchRef(preferred string) (string, string) {
+	preferred = strings.TrimSpace(preferred)
+	if branch, ok := strings.CutPrefix(preferred, "refs/remotes/origin/"); ok && branch != "" {
+		return branch, remoteBranchRef(branch)
+	}
+	if branch, ok := strings.CutPrefix(preferred, "origin/"); ok && branch != "" {
+		return branch, remoteBranchRef(branch)
+	}
+	if preferred == "" || strings.HasPrefix(preferred, "refs/") {
+		return "", ""
+	}
+	return preferred, remoteBranchRef(preferred)
+}
+
+func (m *Manager) resolveOriginHEADInDir(
+	ctx context.Context, dir string,
+) (branch string, ref string, err error) {
 	out, err := m.git(ctx, dir,
 		"symbolic-ref", "--quiet", "refs/remotes/origin/HEAD",
 	)

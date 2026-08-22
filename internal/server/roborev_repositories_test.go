@@ -69,6 +69,86 @@ func TestRoborevRepositoryProbeCachesDefinitiveResultsAndDeduplicatesIdentity(t 
 	assert.Equal(int32(1), inspectCalls.Load())
 }
 
+func TestRoborevRepositoryProbeInvalidateReloadsInventoryAndDefinitiveResults(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	var calls atomic.Int32
+	probe := newRoborevRepositoryProbeWithDeps(
+		[]projects.KnownPlatformHost{{Platform: "github", Host: "github.com"}},
+		roborevRepositoryProbeDeps{
+			now: time.Now,
+			loadInventory: func(context.Context) ([]roborevTrackedRepository, error) {
+				if calls.Add(1) == 1 {
+					return []roborevTrackedRepository{{
+						RootPath: "/first", Identity: "https://github.com/acme/first.git",
+					}}, nil
+				}
+				return []roborevTrackedRepository{{
+					RootPath: "/second", Identity: "https://github.com/acme/second.git",
+				}}, nil
+			},
+			resolveHookPath: func(_ context.Context, root string) (string, error) {
+				return root + "/post-commit", nil
+			},
+			inspectHook: func(string) (bool, error) { return true, nil },
+		},
+	)
+
+	first, err := probe.configuredRepositories(t.Context())
+	require.NoError(err)
+	require.Len(first, 1)
+	assert.Equal("acme/first", first[0].RepoPath)
+
+	probe.Invalidate()
+	second, err := probe.configuredRepositories(t.Context())
+	require.NoError(err)
+	require.Len(second, 1)
+	assert.Equal("acme/second", second[0].RepoPath)
+	assert.Equal(int32(2), calls.Load())
+}
+
+func TestRoborevRepositoryProbeInvalidateFencesInFlightRefresh(t *testing.T) {
+	require := require.New(t)
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var calls atomic.Int32
+	probe := newRoborevRepositoryProbeWithDeps(
+		[]projects.KnownPlatformHost{{Platform: "github", Host: "github.com"}},
+		roborevRepositoryProbeDeps{
+			now: time.Now,
+			loadInventory: func(context.Context) ([]roborevTrackedRepository, error) {
+				if calls.Add(1) == 1 {
+					close(started)
+					<-release
+					return []roborevTrackedRepository{{
+						RootPath: "/stale", Identity: "https://github.com/acme/stale.git",
+					}}, nil
+				}
+				return []roborevTrackedRepository{{
+					RootPath: "/fresh", Identity: "https://github.com/acme/fresh.git",
+				}}, nil
+			},
+			resolveHookPath: func(_ context.Context, root string) (string, error) {
+				return root + "/post-commit", nil
+			},
+			inspectHook: func(string) (bool, error) { return true, nil },
+		},
+	)
+
+	result := make(chan []roborevConfiguredRepositoryResponse, 1)
+	go func() {
+		configured, _ := probe.configuredRepositories(t.Context())
+		result <- configured
+	}()
+	<-started
+	probe.Invalidate()
+	close(release)
+	configured := <-result
+	require.Len(configured, 1)
+	require.Equal("acme/fresh", configured[0].RepoPath)
+	require.Equal(int32(2), calls.Load())
+}
+
 func TestRoborevRepositoryProbeCoalescesConcurrentRequests(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

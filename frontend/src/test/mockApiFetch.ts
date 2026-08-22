@@ -342,6 +342,9 @@ export const mockSettings = {
     restart_required: false,
     active_requires_auth: false,
   },
+  roborev: {
+    init_managed_clones: false,
+  },
 } satisfies SettingsResponse;
 
 export function makeRateLimits() {

@@ -145,10 +145,10 @@ Unauthorized retries evict only the exact rejected token; in-flight mints, activ
 and newer completed tokens survive stale responses.
 (`internal/tokenauth/source.go::githubAppTokenStore.invalidateToken`)
 
-Roborev configured-repository discovery retains successful inventory and
-definitive hook results for the process lifetime; only transient failures retry
-after cooldown. Shared refresh work is lifecycle-bound and independently
-cancelable by each waiter (`internal/server/roborev_repositories.go::roborevRepositoryProbe`).
+Roborev discovery retains definitive results until managed-clone initialization
+confirms a registration. Invalidation clears all inventory state and fences out
+older refreshes by generation; transient failures still retry after cooldown and
+each waiter can cancel independently (`internal/server/roborev_repositories.go::roborevRepositoryProbe`).
 
 ## Tests
 

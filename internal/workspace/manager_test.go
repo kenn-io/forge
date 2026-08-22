@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -1642,6 +1643,138 @@ func TestSetupUsesConfiguredWorktreeBasePath(t *testing.T) {
 	assert.NoFileExists(filepath.Join(ws.WorktreePath, "CLAUDE.local.md"))
 	status := strings.TrimSpace(string(runWorkspaceTestGit(t, ws.WorktreePath, "status", "--porcelain")))
 	assert.Empty(status)
+}
+
+func TestSetupWithOptionsConfirmsRoborevBeforeTerminal(t *testing.T) {
+	tests := []struct {
+		name     string
+		response string
+		wantErr  string
+	}{
+		{name: "registered", response: "registered"},
+		{name: "malformed inventory", response: "malformed", wantErr: "invalid daemon response"},
+		{name: "absent registration", response: "absent", wantErr: "workspace is absent"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			t.Setenv("XDG_CONFIG_HOME", "")
+			assert := assert.New(t)
+			require := require.New(t)
+			ctx := t.Context()
+			d := openTestDB(t)
+			_, remote := setupLocalWorktreeBaseWithRemoteForWorkspaceGitTest(
+				t, "feature/source",
+			)
+			repoID := seedRepo(t, d, "github.com", "acme", "widget")
+			require.NoError(d.UpdateRepoProviderMetadata(
+				ctx, repoID, db.RepoProviderMetadata{
+					CloneURL:      remote,
+					DefaultBranch: "main",
+				},
+			))
+
+			clones := gitclone.New(t.TempDir(), nil)
+			require.NoError(clones.EnsureCloneInNamespace(
+				ctx, workspaceCloneNamespace("github"), "github", "github.com",
+				"acme", "widget", remote,
+			))
+			cloneDir, cloneErr := clones.ClonePathInNamespace(
+				workspaceCloneNamespace("github"), "github.com", "acme", "widget",
+			)
+			require.NoError(cloneErr)
+			originalHook := []byte("#!/bin/sh\n# existing security hook\n")
+			postCommitPath := filepath.Join(cloneDir, "hooks", "post-commit")
+			require.NoError(os.WriteFile(postCommitPath, originalHook, 0o755))
+			siblingPath := filepath.Join(t.TempDir(), "sibling")
+			runWorkspaceTestGit(
+				t, cloneDir, "worktree", "add", "-b", "sibling", siblingPath, "main",
+			)
+
+			mgr := NewManager(d, t.TempDir())
+			mgr.SetClones(clones)
+			tmuxScript, tmuxRecord := writeRecorderScript(t)
+			mgr.SetTmuxCommand([]string{tmuxScript})
+
+			binDir := t.TempDir()
+			require.NoError(os.WriteFile(filepath.Join(binDir, "roborev"), []byte(`#!/bin/sh
+set -eu
+hooks="$(git -C "$PWD" rev-parse --path-format=absolute --git-path hooks)"
+mkdir -p "$hooks"
+printf '\n# roborev post-commit hook\n' >> "$hooks/post-commit"
+printf '#!/bin/sh\n# roborev post-rewrite hook\n' > "$hooks/post-rewrite"
+chmod +x "$hooks/post-commit" "$hooks/post-rewrite"
+`), 0o755))
+			t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+			var ws *Workspace
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				switch tt.response {
+				case "registered":
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"repos":       []map[string]string{{"root_path": ws.WorktreePath}},
+						"total_count": 1,
+					})
+				case "malformed":
+					_, _ = w.Write([]byte("{"))
+				case "absent":
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"repos":       []map[string]string{},
+						"total_count": 0,
+					})
+				}
+			}))
+			t.Cleanup(server.Close)
+			mgr.SetRoborevEndpoint(server.URL)
+			var invalidations atomic.Int32
+			mgr.SetRoborevRepositoryInvalidator(func() { invalidations.Add(1) })
+
+			var err error
+			ws, err = mgr.CreateAdHoc(
+				ctx, "github", "github.com", "acme", "widget",
+				CreateAdHocOptions{BranchName: "feature/hook-test"},
+			)
+			require.NoError(err)
+			require.NotNil(ws)
+
+			err = mgr.SetupWithOptions(ctx, ws, SetupOptions{RoborevInitManagedClones: true})
+			stored, getErr := d.GetWorkspace(ctx, ws.ID)
+			require.NoError(getErr)
+			require.NotNil(stored)
+			if tt.wantErr != "" {
+				require.ErrorContains(err, tt.wantErr)
+				assert.Equal("error", stored.Status)
+				assert.NoFileExists(tmuxRecord)
+				assert.Zero(invalidations.Load())
+				content, readErr := os.ReadFile(postCommitPath)
+				require.NoError(readErr)
+				assert.Equal(originalHook, content)
+				assert.NoFileExists(filepath.Join(cloneDir, "hooks", "post-rewrite"))
+				_, _, configErr := gitcmd.New().Run(
+					ctx, cloneDir, nil,
+					"config", "--local", "--get-all", "core.hooksPath",
+				)
+				require.Error(configErr)
+				resolved, resolveErr := effectiveHooksDir(ctx, siblingPath)
+				require.NoError(resolveErr)
+				canonicalHooks, canonicalErr := canonicalFilesystemPath(
+					filepath.Join(cloneDir, "hooks"),
+				)
+				require.NoError(canonicalErr)
+				assert.Equal(canonicalHooks, resolved)
+				return
+			}
+
+			require.NoError(err)
+			assert.Equal("ready", stored.Status)
+			assert.FileExists(tmuxRecord)
+			assert.Equal(int32(1), invalidations.Load())
+			content, readErr := os.ReadFile(postCommitPath)
+			require.NoError(readErr)
+			assert.Contains(string(content), "existing security hook")
+			assert.Contains(string(content), "roborev post-commit hook")
+		})
+	}
 }
 
 func TestSetupReusesExistingWorkspaceWorktree(t *testing.T) {

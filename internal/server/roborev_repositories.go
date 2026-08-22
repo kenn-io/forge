@@ -82,6 +82,7 @@ type roborevRepositoryProbe struct {
 	inventoryRetryAfter time.Time
 	checkouts           map[string]roborevCheckoutProbeState
 	inFlight            chan struct{}
+	generation          uint64
 }
 
 func newRoborevRepositoryProbe(
@@ -162,10 +163,11 @@ func (p *roborevRepositoryProbe) configuredRepositorySnapshot(
 			return configured, complete, nil
 		}
 		wait := make(chan struct{})
+		generation := p.generation
 		p.inFlight = wait
 		p.mu.Unlock()
 
-		go p.runRefresh(now, wait)
+		go p.runRefresh(now, wait, generation)
 		select {
 		case <-wait:
 			continue
@@ -175,10 +177,12 @@ func (p *roborevRepositoryProbe) configuredRepositorySnapshot(
 	}
 }
 
-func (p *roborevRepositoryProbe) runRefresh(now time.Time, wait chan struct{}) {
+func (p *roborevRepositoryProbe) runRefresh(
+	now time.Time, wait chan struct{}, generation uint64,
+) {
 	ctx, cancel := context.WithTimeout(p.lifecycleCtx, roborevRefreshTimeout)
 	defer cancel()
-	_ = p.refresh(ctx, now)
+	_ = p.refresh(ctx, now, generation)
 
 	p.mu.Lock()
 	if p.inFlight == wait {
@@ -200,13 +204,23 @@ func (p *roborevRepositoryProbe) needsProbeLocked(now time.Time) bool {
 	return false
 }
 
-func (p *roborevRepositoryProbe) refresh(ctx context.Context, now time.Time) error {
+func (p *roborevRepositoryProbe) refresh(
+	ctx context.Context, now time.Time, generation uint64,
+) error {
 	p.mu.Lock()
+	if generation != p.generation {
+		p.mu.Unlock()
+		return nil
+	}
 	loaded := p.inventoryLoaded
 	p.mu.Unlock()
 	if !loaded {
 		repositories, err := p.deps.loadInventory(ctx)
 		p.mu.Lock()
+		if generation != p.generation {
+			p.mu.Unlock()
+			return nil
+		}
 		if err != nil {
 			p.inventoryErr = err
 			p.inventoryRetryAfter = now.Add(roborevProbeRetryCooldown)
@@ -233,7 +247,7 @@ func (p *roborevRepositoryProbe) refresh(ctx context.Context, now time.Time) err
 		}
 	}
 	p.mu.Unlock()
-	p.probeCheckouts(ctx, due)
+	p.probeCheckouts(ctx, due, generation)
 	return nil
 }
 
@@ -246,6 +260,7 @@ type roborevHookPathResult struct {
 func (p *roborevRepositoryProbe) probeCheckouts(
 	ctx context.Context,
 	repositories []roborevTrackedRepository,
+	generation uint64,
 ) {
 	jobs := make(chan roborevTrackedRepository)
 	results := make(chan roborevHookPathResult, len(repositories))
@@ -271,7 +286,7 @@ func (p *roborevRepositoryProbe) probeCheckouts(
 	resolved := make(map[string][]roborevTrackedRepository)
 	for result := range results {
 		if result.err != nil {
-			p.recordCheckoutResult(result.repository, false, false, p.deps.now())
+			p.recordCheckoutResult(result.repository, false, false, p.deps.now(), generation)
 			continue
 		}
 		resolved[result.path] = append(resolved[result.path], result.repository)
@@ -280,7 +295,7 @@ func (p *roborevRepositoryProbe) probeCheckouts(
 		installed, err := p.deps.inspectHook(path)
 		completedAt := p.deps.now()
 		for _, repository := range matching {
-			p.recordCheckoutResult(repository, installed, err == nil, completedAt)
+			p.recordCheckoutResult(repository, installed, err == nil, completedAt, generation)
 		}
 	}
 }
@@ -290,9 +305,13 @@ func (p *roborevRepositoryProbe) recordCheckoutResult(
 	installed bool,
 	definitive bool,
 	now time.Time,
+	generation uint64,
 ) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if generation != p.generation {
+		return
+	}
 	state := p.checkouts[roborevCheckoutKey(repository)]
 	state.installed = installed
 	state.definitive = definitive
@@ -300,6 +319,22 @@ func (p *roborevRepositoryProbe) recordCheckoutResult(
 		state.retryAfter = now.Add(roborevProbeRetryCooldown)
 	}
 	p.checkouts[roborevCheckoutKey(repository)] = state
+}
+
+// Invalidate clears every cached inventory and checkout decision. A generation
+// fence prevents a refresh that started before invalidation from publishing
+// stale results after it completes.
+func (p *roborevRepositoryProbe) Invalidate() {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	p.generation++
+	p.inventoryLoaded = false
+	p.inventoryErr = nil
+	p.inventoryRetryAfter = time.Time{}
+	p.checkouts = make(map[string]roborevCheckoutProbeState)
+	p.mu.Unlock()
 }
 
 func (p *roborevRepositoryProbe) configuredLocked() []roborevConfiguredRepositoryResponse {

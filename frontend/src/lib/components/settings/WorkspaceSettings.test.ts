@@ -11,6 +11,8 @@ const { mockPersistSettings, workspaceStore } = vi.hoisted(() => ({
     current: undefined as unknown as {
       getWorkspaceSettings: () => WorkspaceSettings;
       setWorkspaceSettings: (settings: WorkspaceSettings) => void;
+      getRoborevSettings: () => Settings["roborev"];
+      setRoborevSettings: (settings: Settings["roborev"]) => void;
     },
   },
 }));
@@ -65,6 +67,41 @@ describe("WorkspaceSettings", () => {
     expect(mockPersistSettings.mock.calls[0]?.[0]()).toEqual({ workspaces: { auto_assign_on_create: true } });
     expect(onUpdate).toHaveBeenNthCalledWith(1, saved);
     expect(onUpdate).toHaveBeenLastCalledWith(saved);
+  });
+
+  it("saves managed-clone Roborev initialization through the Roborev settings object", async () => {
+    const onUpdate = vi.fn();
+    const onRoborevUpdate = vi.fn();
+    const saved = { init_managed_clones: true };
+    mockPersistSettings.mockReturnValue(Effect.succeed({ roborev: saved }));
+    render(SettingsRuntimeHarness, {
+      props: { component: WorkspaceSettings, componentProps: { onUpdate, onRoborevUpdate } },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Initialize Roborev in managed clones" }));
+
+    await waitFor(() => expect(mockPersistSettings).toHaveBeenCalledOnce());
+    expect(mockPersistSettings.mock.calls[0]?.[0]()).toEqual({ roborev: { init_managed_clones: true } });
+    expect(onRoborevUpdate).toHaveBeenNthCalledWith(1, saved);
+    expect(onRoborevUpdate).toHaveBeenLastCalledWith(saved);
+  });
+
+  it("rolls back a failed Roborev save without changing workspace preferences", async () => {
+    const onUpdate = vi.fn();
+    const onRoborevUpdate = vi.fn((roborev: Settings["roborev"]) => workspaceStore.current.setRoborevSettings(roborev));
+    mockPersistSettings.mockReturnValue(
+      Effect.fail({ _tag: "TransientTransportError", operation: "save settings", cause: new Error("save failed") }),
+    );
+    render(SettingsRuntimeHarness, {
+      props: { component: WorkspaceSettings, componentProps: { onUpdate, onRoborevUpdate } },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Initialize Roborev in managed clones" }));
+
+    await waitFor(() => expect(onRoborevUpdate).toHaveBeenCalledTimes(2));
+    expect(onRoborevUpdate).toHaveBeenLastCalledWith({ init_managed_clones: false });
+    expect(workspaceStore.current.getWorkspaceSettings()).toEqual(initial);
+    expect(onUpdate).not.toHaveBeenCalled();
   });
 
   it("saves the default sidebar view without changing automatic assignment", async () => {

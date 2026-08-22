@@ -4155,6 +4155,16 @@ type RoborevConfiguredRepositoryResponse struct {
 	RepoPath     string `json:"repo_path"`
 }
 
+// RoborevSettingsResponse defines model for RoborevSettingsResponse.
+type RoborevSettingsResponse struct {
+	InitManagedClones bool `json:"init_managed_clones"`
+}
+
+// RoborevSettingsUpdate defines model for RoborevSettingsUpdate.
+type RoborevSettingsUpdate struct {
+	InitManagedClones *bool `json:"init_managed_clones,omitempty"`
+}
+
 // RoborevStatusResponse defines model for RoborevStatusResponse.
 type RoborevStatusResponse struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -4318,6 +4328,7 @@ type SettingsResponse struct {
 	PullRequests  PullRequests                  `json:"pull_requests"`
 	RepoPresets   []RepoPreset                  `json:"repo_presets"`
 	Repos         []ConfiguredRepoStatus        `json:"repos"`
+	Roborev       RoborevSettingsResponse       `json:"roborev"`
 	Terminal      Terminal                      `json:"terminal"`
 	Workspaces    Workspaces                    `json:"workspaces"`
 }
@@ -4558,6 +4569,7 @@ type UpdateSettingsRequest struct {
 	Mcp          *McpSettingsUpdate        `json:"mcp,omitempty"`
 	Modes        *ModeVisibility           `json:"modes,omitempty"`
 	PullRequests *PullRequests             `json:"pull_requests,omitempty"`
+	Roborev      *RoborevSettingsUpdate    `json:"roborev,omitempty"`
 	Terminal     *Terminal                 `json:"terminal,omitempty"`
 	Workspaces   *WorkspaceSettingsUpdate  `json:"workspaces,omitempty"`
 }

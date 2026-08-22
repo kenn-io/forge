@@ -2228,6 +2228,22 @@ func TestRestartRequiredForMCPConfig(t *testing.T) {
 	}))
 }
 
+func TestRestartRequiredForRoborevEndpointButNotManagedCloneInit(t *testing.T) {
+	assert := assert.New(t)
+	base := &config.Config{Roborev: config.Roborev{
+		Endpoint: "http://127.0.0.1:7373",
+	}}
+	snap := snapshotStartupConfig(base)
+
+	toggleChanged := *base
+	toggleChanged.Roborev.InitManagedClones = true
+	assert.False(snap.restartRequiredFor(&toggleChanged))
+
+	endpointChanged := *base
+	endpointChanged.Roborev.Endpoint = "http://localhost:7474"
+	assert.True(snap.restartRequiredFor(&endpointChanged))
+}
+
 func TestRestartRequiredForNotificationIntervals(t *testing.T) {
 	require := require.New(t)
 	base := func() *config.Config {

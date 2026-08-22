@@ -6733,6 +6733,20 @@ components:
         - owner
         - name
       type: object
+    RoborevSettingsResponse:
+      additionalProperties: false
+      properties:
+        init_managed_clones:
+          type: boolean
+      required:
+        - init_managed_clones
+      type: object
+    RoborevSettingsUpdate:
+      additionalProperties: false
+      properties:
+        init_managed_clones:
+          type: boolean
+      type: object
     RoborevStatusResponse:
       additionalProperties: false
       properties:
@@ -7076,6 +7090,8 @@ components:
           items:
             $ref: "#/components/schemas/ConfiguredRepoStatus"
           type: array
+        roborev:
+          $ref: "#/components/schemas/RoborevSettingsResponse"
         terminal:
           $ref: "#/components/schemas/Terminal"
         workspaces:
@@ -7094,6 +7110,7 @@ components:
         - kata_projects
         - fleet
         - mcp
+        - roborev
       type: object
     Snapshot:
       additionalProperties: false
@@ -7625,6 +7642,8 @@ components:
           $ref: "#/components/schemas/ModeVisibility"
         pull_requests:
           $ref: "#/components/schemas/PullRequests"
+        roborev:
+          $ref: "#/components/schemas/RoborevSettingsUpdate"
         terminal:
           $ref: "#/components/schemas/Terminal"
         workspaces:

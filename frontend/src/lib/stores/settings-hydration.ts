@@ -1,5 +1,6 @@
 import { hydrateTerminalSettings, type TerminalSettingsHydration } from "./terminal-settings-persistence.js";
 import { hydrateWorkspaceSettings, type WorkspaceSettingsHydration } from "./workspace-settings-persistence.js";
+import { hydrateRoborevSettings, type RoborevSettingsHydration } from "./roborev-settings-persistence.js";
 import type { components } from "../api/generated/schema.js";
 
 type SettingsResponse = components["schemas"]["SettingsResponse"];
@@ -43,6 +44,7 @@ export function applySettingsHydration(
   payload: SettingsHydrationPayload,
   terminalHydration: TerminalSettingsHydration,
   workspaceHydration: WorkspaceSettingsHydration,
+  roborevHydration: RoborevSettingsHydration,
 ): void {
   stores.settings.setConfiguredRepos(payload.repos);
   stores.settings.setRepoPresets(payload.repo_presets);
@@ -52,6 +54,7 @@ export function applySettingsHydration(
   stores.settings.setDetailSettings(payload.detail);
   stores.settings.setLaunchTargets(payload.launch_targets ?? []);
   hydrateWorkspaceSettings(workspaceHydration, payload.workspaces);
+  hydrateRoborevSettings(roborevHydration, payload.roborev);
   stores.activity.hydrateDefaults(payload.activity);
   stores.issues.hydrateDefaults(payload.issues);
 }

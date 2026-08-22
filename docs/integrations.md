@@ -12,10 +12,22 @@ Roborev runs as a separate daemon. kenn-forge looks for it at
 ```toml
 [roborev]
 endpoint = "http://127.0.0.1:7373"
+init_managed_clones = true
 ```
 
 Restart kenn-forge after changing the endpoint. kenn-forge does not start the
-Roborev daemon for you.
+Roborev daemon for you. The optional managed-clone setting is off by default
+and can be changed live under **Settings → Workspaces**. It runs `roborev init
+--no-daemon` for new, retried, or recovered Forge-managed workspaces. This
+requires a loopback HTTP endpoint; remote Roborev endpoints still work for the
+Reviews page when managed-clone initialization is off.
+
+Initialization applies only to Forge's managed clones. A repository configured
+with `worktree_base_path`, a source-browser clone, or another user-owned
+checkout keeps its existing user-managed hooks. Forge keeps each worktree's
+Roborev snapshot exclusion separate, so changing or removing one workspace
+does not hide paths in its siblings. Hook setup failures leave the workspace
+available for retry but do not start its terminal session.
 
 Open **Reviews** to see jobs from the connected daemon. Filter by repository,
 branch, status, or Git ref. The table shows the agent, status, verdict, elapsed

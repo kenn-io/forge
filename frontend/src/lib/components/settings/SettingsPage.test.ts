@@ -23,6 +23,8 @@ vi.mock("../../context.js", async (importOriginal) => ({
       setDetailSettings,
       getWorkspaceSettings: () => ({ auto_assign_on_create: false, default_sidebar_view: "diff" as const }),
       setWorkspaceSettings: vi.fn(),
+      getRoborevSettings: () => ({ init_managed_clones: false }),
+      setRoborevSettings: vi.fn(),
       setLaunchTargets,
     },
   }),
@@ -116,6 +118,7 @@ function makeSettings(): Settings {
       restart_required: false,
       active_requires_auth: false,
     },
+    roborev: { init_managed_clones: false },
     activity: {
       view_mode: "threaded",
       time_range: "7d",

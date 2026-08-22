@@ -71,13 +71,13 @@ type startupConfigSnapshot struct {
 	// TokenEnvNames is the boot-time baseline of provider token env
 	// names used to accumulate runtime strip-env lists; it is not
 	// compared for restart-required drift.
-	TokenEnvNames []string
-	Roborev       config.Roborev
-	Tmux          config.Tmux
-	Shell         config.Shell
-	FleetSessions config.FleetSessions
-	RequireAuth   bool
-	SSHPeers      []config.FleetSSHPeer
+	TokenEnvNames   []string
+	RoborevEndpoint string
+	Tmux            config.Tmux
+	Shell           config.Shell
+	FleetSessions   config.FleetSessions
+	RequireAuth     bool
+	SSHPeers        []config.FleetSSHPeer
 }
 
 func snapshotStartupConfig(cfg *config.Config) startupConfigSnapshot {
@@ -101,7 +101,7 @@ func snapshotStartupConfig(cfg *config.Config) startupConfigSnapshot {
 		ProviderHosts:                   startupProviderHosts(cfg),
 		GitHubCredentialRoutes:          githubCredentialRoutes(cfg),
 		GitHubAppSplitHosts:             githubAppSplitHosts(cfg),
-		Roborev:                         cfg.Roborev,
+		RoborevEndpoint:                 cfg.RoborevEndpoint(),
 	}
 	snap.Tmux.Command = slices.Clone(cfg.Tmux.Command)
 	if cfg.Tmux.AgentSessions != nil {

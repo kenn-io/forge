@@ -17,7 +17,7 @@ a category.
 | Repositories | Import repositories, refresh tracking globs, choose local clones, and hide repositories from the app. |
 | Pull requests | Choose whether kenn-forge may merge a pull request from the middle of a detected stack. |
 | Detail views and Activity | Set the initial timeline size and the defaults used when Activity opens. |
-| Workspaces and Terminal | Choose workspace creation behavior, the default right sidebar, and terminal appearance. |
+| Workspaces and Terminal | Choose workspace creation behavior, optional Roborev initialization for managed clones, the default right sidebar, and terminal appearance. |
 | Kata mappings | Override the repository matched to a Kata project. |
 | Workspace agents | Enable agents and edit the command and arguments used to launch each one. |
 | Fleet federation | Connect remote kenn-forge hosts and control which sessions they share. |

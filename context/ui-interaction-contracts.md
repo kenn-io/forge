@@ -266,6 +266,10 @@ Persisted controls must state their scope clearly.
   mutation generation; value equality alone is ABA-prone, while stale full-object
   saves can erase unrelated preferences
   (`frontend/src/lib/stores/terminal-settings-persistence.ts::saveTerminalSettings`).
+- A control may render in a neighboring panel without joining its persistence
+  object: the managed-clone Roborev toggle appears under Workspaces but owns a
+  separate optimistic queue, hydration generation, and `roborev` request payload
+  (`frontend/src/lib/stores/roborev-settings-persistence.ts`).
 - Server-backed settings with irreversible local effects must publish only after
   persistence succeeds, not during preview or optimistic save; lowering terminal
   retention destroys cache entries that rollback cannot reconstruct

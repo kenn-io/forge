@@ -742,7 +742,8 @@ func (a Agent) EnabledOrDefault() bool {
 }
 
 type Roborev struct {
-	Endpoint string `toml:"endpoint,omitempty"`
+	Endpoint          string `toml:"endpoint,omitempty"`
+	InitManagedClones bool   `toml:"init_managed_clones,omitempty"`
 }
 
 // ModeVisibility controls which top-level app modes are shown. Nil booleans

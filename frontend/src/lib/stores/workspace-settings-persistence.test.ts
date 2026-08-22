@@ -59,6 +59,7 @@ function settingsResponse(workspaces: WorkspaceSettings): StartupSnapshot {
       retained_sessions: 10,
     },
     workspaces,
+    roborev: { init_managed_clones: false },
   };
 }
 

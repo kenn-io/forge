@@ -458,6 +458,24 @@ func TestHandleUpdateSettingsMergesMCPFields(t *testing.T) {
 	assert.Equal(config.MCP{Enabled: true, DiffCacheMB: 256}, reloaded.MCP)
 }
 
+func TestHandleUpdateSettingsPersistsRoborevManagedCloneInit(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, _, cfgPath := setupTestServerWithConfig(t)
+
+	rr := doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+		Roborev: &roborevSettingsUpdate{InitManagedClones: new(true)},
+	})
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	var resp settingsResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	assert.True(resp.Roborev.InitManagedClones)
+	reloaded, err := config.Load(cfgPath)
+	require.NoError(err)
+	assert.True(reloaded.Roborev.InitManagedClones)
+}
+
 func TestHandleUpdateSettingsRejectsInvalidMCPWithoutPublishing(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

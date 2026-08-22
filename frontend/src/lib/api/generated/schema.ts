@@ -7683,6 +7683,12 @@ export interface components {
             provider: string;
             repo_path: string;
         };
+        RoborevSettingsResponse: {
+            init_managed_clones: boolean;
+        };
+        RoborevSettingsUpdate: {
+            init_managed_clones?: boolean;
+        };
         RoborevStatusResponse: {
             /**
              * Format: uri
@@ -7852,6 +7858,7 @@ export interface components {
             pull_requests: components["schemas"]["PullRequests"];
             repo_presets: components["schemas"]["RepoPreset"][];
             repos: components["schemas"]["ConfiguredRepoStatus"][];
+            roborev: components["schemas"]["RoborevSettingsResponse"];
             terminal: components["schemas"]["Terminal"];
             workspaces: components["schemas"]["Workspaces"];
         };
@@ -8099,6 +8106,7 @@ export interface components {
             mcp?: components["schemas"]["McpSettingsUpdate"];
             modes?: components["schemas"]["ModeVisibility"];
             pull_requests?: components["schemas"]["PullRequests"];
+            roborev?: components["schemas"]["RoborevSettingsUpdate"];
             terminal?: components["schemas"]["Terminal"];
             workspaces?: components["schemas"]["WorkspaceSettingsUpdate"];
         };

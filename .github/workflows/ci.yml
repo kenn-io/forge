@@ -245,11 +245,11 @@ jobs:
 
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
-          version: v2.11.4
+          version: v2.13.1
 
       - name: Install NilAway
         run: |
-          go install go.uber.org/nilaway/cmd/nilaway@v0.0.0-20260318203545-ad240b12fb4c
+          go install go.uber.org/nilaway/cmd/nilaway@v0.0.0-20260808063849-8649a03c818a
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Run NilAway

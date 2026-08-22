@@ -973,11 +973,10 @@ func mapGitLabErrorForHost(platformHost, capability string, err error) error {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return err
 	}
-	var gitlabErr *gitlab.ErrorResponse
 	code := platform.ErrCodeProviderContract
 	if errors.Is(err, gitlab.ErrNotFound) {
 		code = platform.ErrCodeNotFound
-	} else if errors.As(err, &gitlabErr) {
+	} else if gitlabErr, ok := errors.AsType[*gitlab.ErrorResponse](err); ok {
 		switch {
 		case gitlabErr.HasStatusCode(http.StatusUnauthorized), gitlabErr.HasStatusCode(http.StatusForbidden):
 			code = platform.ErrCodePermissionDenied
@@ -1005,8 +1004,7 @@ func mapSourceProjectLookupError(err error) error {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, gitlab.ErrNotFound) {
 		return err
 	}
-	var gitlabErr *gitlab.ErrorResponse
-	if errors.As(err, &gitlabErr) {
+	if gitlabErr, ok := errors.AsType[*gitlab.ErrorResponse](err); ok {
 		switch {
 		case gitlabErr.HasStatusCode(http.StatusUnauthorized),
 			gitlabErr.HasStatusCode(http.StatusForbidden),
@@ -1042,8 +1040,7 @@ func isGitLabNotFound(err error) bool {
 }
 
 func isUnavailableSourceProjectError(err error) bool {
-	var platformErr *platform.Error
-	if errors.As(err, &platformErr) {
+	if platformErr, ok := errors.AsType[*platform.Error](err); ok {
 		if platformErr.Code == platform.ErrCodePermissionDenied ||
 			platformErr.Code == platform.ErrCodeNotFound {
 			return true
@@ -1054,8 +1051,7 @@ func isUnavailableSourceProjectError(err error) bool {
 
 func partialError(namespace string, page int64, err error) PartialError {
 	code := "upstream_error"
-	var platformErr *platform.Error
-	if errors.As(mapGitLabError("preview_page", err), &platformErr) {
+	if platformErr, ok := errors.AsType[*platform.Error](mapGitLabError("preview_page", err)); ok {
 		code = string(platformErr.Code)
 		if code == string(platform.ErrCodeProviderContract) {
 			code = "upstream_error"

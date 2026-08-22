@@ -490,8 +490,7 @@ func (c *Client) ApproveMergeRequest(
 		if notePosted {
 			// The note side effect must survive problem mapping so the
 			// client knows a retry repeats the comment.
-			var platformErr *platform.Error
-			if errors.As(mapped, &platformErr) {
+			if platformErr, ok := errors.AsType[*platform.Error](mapped); ok {
 				platformErr.Hint = "the review comment was already posted; retrying will repeat it"
 			}
 			return platform.MergeRequestEvent{}, fmt.Errorf(

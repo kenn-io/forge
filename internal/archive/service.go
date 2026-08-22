@@ -485,8 +485,7 @@ func (s *Service) resolveRepositoriesTolerant(ctx context.Context, refs []platfo
 			// configured, missing capability) are repository-scoped. Anything
 			// else — a broken store above all — is infrastructure and must
 			// surface instead of emptying the pass into a silent success.
-			var platformErr *platform.Error
-			if !errors.As(err, &platformErr) {
+			if _, ok := errors.AsType[*platform.Error](err); !ok {
 				return nil, err
 			}
 			slog.Debug("skip unresolvable archive repository",

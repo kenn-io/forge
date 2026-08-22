@@ -390,7 +390,7 @@ lint-check: ensure-embed-dir check-mise
 nilaway: ensure-embed-dir
 	@if [ -z "$(NILAWAY_BIN)" ]; then \
 		echo "nilaway not found. Install with:" >&2; \
-		echo "go install go.uber.org/nilaway/cmd/nilaway@v0.0.0-20260318203545-ad240b12fb4c" >&2; \
+		echo "go install go.uber.org/nilaway/cmd/nilaway@v0.0.0-20260808063849-8649a03c818a" >&2; \
 		exit 1; \
 	fi
 	@module_path="$$(go list -m)" || { \

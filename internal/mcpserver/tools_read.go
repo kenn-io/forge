@@ -124,8 +124,7 @@ func wrapTool[In, Out any](
 		payload := toolErrorOutput{Error: toolErrorEvidence{
 			Kind: "tool_error", Message: err.Error(),
 		}}
-		var backendErr *Error
-		if errors.As(err, &backendErr) {
+		if backendErr, ok := errors.AsType[*Error](err); ok {
 			payload.Error = toolErrorEvidence{
 				Kind: backendErr.Kind, Code: backendErr.Code, Message: backendErr.Message,
 				Retryable: backendErr.Retryable, Ambiguous: backendErr.Ambiguous,

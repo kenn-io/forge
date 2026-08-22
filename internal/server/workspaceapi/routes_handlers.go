@@ -627,8 +627,7 @@ func (s *Handler) createIssueWorkspaceRouteCore(
 			return nil, problem
 		}
 		msg := err.Error()
-		var recoveryErr *workspace.WorkspaceDirectoryRecoveryError
-		if errors.As(err, &recoveryErr) {
+		if recoveryErr, ok := errors.AsType[*workspace.WorkspaceDirectoryRecoveryError](err); ok {
 			details := map[string]any{
 				"reason": string(recoveryErr.Reason),
 			}
@@ -642,8 +641,7 @@ func (s *Handler) createIssueWorkspaceRouteCore(
 				details,
 			)
 		}
-		var branchConflict *workspace.WorkspaceBranchConflictError
-		if errors.As(err, &branchConflict) {
+		if branchConflict, ok := errors.AsType[*workspace.WorkspaceBranchConflictError](err); ok {
 			// Branch-conflict gets the typed problem envelope with
 			// Type carrying the URN and Details carrying the conflicting
 			// branch + suggested alternative. The legacy Errors[]
@@ -892,8 +890,7 @@ func (s *Handler) adHocWorkspaceCreateError(
 		return nil, problem
 	}
 	msg := err.Error()
-	var branchConflict *workspace.WorkspaceBranchConflictError
-	if errors.As(err, &branchConflict) {
+	if branchConflict, ok := errors.AsType[*workspace.WorkspaceBranchConflictError](err); ok {
 		conflict := httpapi.NewProblem(
 			http.StatusConflict,
 			httpapi.CodeBranchConflict,
@@ -2753,8 +2750,7 @@ func (s *Handler) DeleteWorkspace(
 		if admitted {
 			s.persistWorkspaceDeletionFailure(input.ID, err.Error())
 		}
-		var dirty *workspaceDirtyDeletionError
-		if errors.As(err, &dirty) {
+		if _, ok := errors.AsType[*workspaceDirtyDeletionError](err); ok {
 			current, getErr := s.db.GetWorkspace(ctx, input.ID)
 			if getErr != nil {
 				return nil, httpapi.Internal("recheck workspace before dirty response: " + getErr.Error())

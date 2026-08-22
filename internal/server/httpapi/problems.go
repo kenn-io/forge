@@ -508,8 +508,7 @@ func ProviderMutationProblem(err error, provider, host string) huma.StatusError 
 	if errors.Is(err, tokenauth.ErrMissingToken) {
 		return ProviderCallProblem(err, provider, host)
 	}
-	var pe *platform.Error
-	if errors.As(err, &pe) {
+	if pe, ok := errors.AsType[*platform.Error](err); ok {
 		switch pe.Code {
 		case platform.ErrCodeUnsupportedCapability,
 			platform.ErrCodeRepositoryFeatureDisabled,
@@ -548,8 +547,7 @@ func ProviderCallProblemWithDetail(
 	if errors.Is(err, platform.ErrSyncDisabled) {
 		return ServiceUnavailable(err.Error())
 	}
-	var pe *platform.Error
-	if errors.As(err, &pe) {
+	if _, ok := errors.AsType[*platform.Error](err); ok {
 		if mapped := MapPlatformError(err); mapped != nil {
 			return mapped
 		}

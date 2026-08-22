@@ -98,8 +98,7 @@ func archiveTerminalSyncOutcome(
 }
 
 func archiveSyncErrorCode(err error) string {
-	var platformErr *platform.Error
-	if errors.As(err, &platformErr) {
+	if platformErr, ok := errors.AsType[*platform.Error](err); ok {
 		return string(platformErr.Code)
 	}
 	return string(db.ArchiveErrorCodeTransient)

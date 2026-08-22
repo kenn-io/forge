@@ -152,8 +152,7 @@ func main() {
 	}()
 
 	if err := runCLI(os.Args[1:], os.Stdout); err != nil {
-		var apiErr *apiVerbError
-		if errors.As(err, &apiErr) {
+		if _, ok := errors.AsType[*apiVerbError](err); ok {
 			_, _ = fmt.Fprintln(os.Stderr, err)
 			os.Exit(exitCodeForAPIVerb(err))
 			return
@@ -342,8 +341,7 @@ func run(opts serve.Options) error {
 
 	lockHandle, err := runtimelock.Acquire(cfg.DataDir)
 	if err != nil {
-		var cerr *runtimelock.CollisionError
-		if errors.As(err, &cerr) {
+		if cerr, ok := errors.AsType[*runtimelock.CollisionError](err); ok {
 			runtimelock.FormatCollisionBanner(
 				os.Stderr, cerr, configPath, config.DefaultConfigPath(),
 			)

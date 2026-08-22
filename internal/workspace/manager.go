@@ -534,8 +534,7 @@ func (m *Manager) CreateIssue(
 	} else if opts.ReuseExistingDirectory {
 		return nil, directoryErr
 	} else {
-		var recoveryErr *WorkspaceDirectoryRecoveryError
-		if !errors.As(directoryErr, &recoveryErr) {
+		if _, ok := errors.AsType[*WorkspaceDirectoryRecoveryError](directoryErr); !ok {
 			return nil, directoryErr
 		}
 	}
@@ -760,8 +759,7 @@ func (m *Manager) CreateAdHoc(
 			ctx, branchDir, gitHeadRef, opts.ReuseExistingBranch, localBase,
 		)
 		if err != nil {
-			var conflict *WorkspaceBranchConflictError
-			if !errors.As(err, &conflict) {
+			if _, ok := errors.AsType[*WorkspaceBranchConflictError](err); !ok {
 				return nil, err
 			}
 			branch, nextHashAttempt, err = nextAvailableAdHocBranchName(

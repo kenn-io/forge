@@ -2987,8 +2987,7 @@ func runGHAuthToken(ctx context.Context, extraArgs ...string) ([]byte, []byte, e
 // context-deadline, auth-failure, and unrelated nonzero exits all
 // return false so the caller does not retry bare.
 func isUnsupportedHostnameFlag(err error, stderr []byte) bool {
-	var exitErr *exec.ExitError
-	if !errors.As(err, &exitErr) {
+	if _, ok := errors.AsType[*exec.ExitError](err); !ok {
 		return false
 	}
 	text := string(stderr)

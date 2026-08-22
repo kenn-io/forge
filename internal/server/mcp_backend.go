@@ -411,8 +411,7 @@ func (b mcpBackend) SetWorkflowState(
 		Status: update.Status, ExpectedStatus: update.ExpectedStatus,
 		Source: update.Source, Actor: update.Actor, Reason: update.Reason,
 	})
-	var conflict *db.WorkflowStateConflictError
-	if errors.As(err, &conflict) {
+	if conflict, ok := errors.AsType[*db.WorkflowStateConflictError](err); ok {
 		return mcpserver.WorkflowMutation{}, &mcpserver.Error{
 			Kind: "conflict", Code: string(httpapi.CodeConflict),
 			Message: "workflow state changed", Details: map[string]any{
@@ -587,8 +586,7 @@ func (b mcpBackend) SubmitInitialMessage(
 	if err != nil {
 		converted := mcpBackendError(err)
 		if result.State == "pending" || result.State == "uncertain" {
-			var backendErr *mcpserver.Error
-			if errors.As(converted, &backendErr) {
+			if backendErr, ok := errors.AsType[*mcpserver.Error](converted); ok {
 				copy := *backendErr
 				copy.Ambiguous = true
 				copy.Retryable = false
@@ -720,8 +718,7 @@ func mcpBackendError(err error) error {
 	if err == nil {
 		return nil
 	}
-	var existing *mcpserver.Error
-	if errors.As(err, &existing) {
+	if existing, ok := errors.AsType[*mcpserver.Error](err); ok {
 		return existing
 	}
 	var problem *httpapi.ProblemError

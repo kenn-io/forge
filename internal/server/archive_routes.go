@@ -450,8 +450,7 @@ func archiveStatusResponses(statuses []archive.Status) []archiveStatusResponse {
 }
 
 func archiveOperationProblem(err error) error {
-	var limit *report.LimitError
-	if errors.As(err, &limit) {
+	if limit, ok := errors.AsType[*report.LimitError](err); ok {
 		return httpapi.NewProblem(
 			http.StatusRequestEntityTooLarge, httpapi.CodePayloadTooLarge,
 			"archive report exceeds detailed limits", map[string]any{
@@ -464,12 +463,10 @@ func archiveOperationProblem(err error) error {
 	if errors.Is(err, archive.ErrEmptyReportScope) {
 		return httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
 	}
-	var platformErr *platform.Error
-	if errors.As(err, &platformErr) {
+	if _, ok := errors.AsType[*platform.Error](err); ok {
 		return httpapi.MapPlatformError(err)
 	}
-	var missingState *db.ArchiveRepoStateNotFoundError
-	if errors.As(err, &missingState) {
+	if _, ok := errors.AsType[*db.ArchiveRepoStateNotFoundError](err); ok {
 		return httpapi.BadRequest(httpapi.CodeBadRequest, "repository is not available for archiving", nil)
 	}
 	return httpapi.Internal("archive operation failed")

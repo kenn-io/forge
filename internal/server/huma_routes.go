@@ -2273,12 +2273,10 @@ func (s *Server) resolveItem(
 		// Classified lookup outcomes (removed, inaccessible, moved with
 		// its destination) arrive as platform errors; map them to their
 		// typed problems instead of collapsing into an internal error.
-		var platformErr *platform.Error
-		if errors.As(err, &platformErr) {
+		if _, ok := errors.AsType[*platform.Error](err); ok {
 			return nil, httpapi.MapPlatformError(err)
 		}
-		var ghErr *gh.ErrorResponse
-		if errors.As(err, &ghErr) {
+		if ghErr, ok := errors.AsType[*gh.ErrorResponse](err); ok {
 			if ghErr.Response != nil &&
 				ghErr.Response.StatusCode == 404 {
 				return nil, httpapi.NotFound(httpapi.CodeNotFound,

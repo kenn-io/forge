@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -227,8 +228,8 @@ func (w *notificationProviderWork) addRepo(repo RepoRef) {
 }
 
 func (w *notificationProviderWork) release() {
-	for i := len(w.releases) - 1; i >= 0; i-- {
-		w.releases[i]()
+	for _, v := range slices.Backward(w.releases) {
+		v()
 	}
 }
 
@@ -1253,16 +1254,14 @@ func (s *Syncer) reopenLegacyNotificationAckAfterRouteChange(
 }
 
 func notificationReadRateLimitNextAttempt(err error, now time.Time) (time.Time, bool) {
-	var rateLimitErr *gh.RateLimitError
-	if errors.As(err, &rateLimitErr) {
+	if rateLimitErr, ok := errors.AsType[*gh.RateLimitError](err); ok {
 		resetAt := rateLimitErr.Rate.Reset.UTC()
 		if resetAt.After(now) {
 			return resetAt, true
 		}
 		return now.Add(notificationReadBackoff(1)), true
 	}
-	var abuseRateLimitErr *gh.AbuseRateLimitError
-	if errors.As(err, &abuseRateLimitErr) {
+	if abuseRateLimitErr, ok := errors.AsType[*gh.AbuseRateLimitError](err); ok {
 		if abuseRateLimitErr.RetryAfter != nil && *abuseRateLimitErr.RetryAfter > 0 {
 			return now.Add(*abuseRateLimitErr.RetryAfter), true
 		}

@@ -64,8 +64,7 @@ func resolveIdentityFromPathWithGitEnv(
 	cmd.Env = gitEnv
 	out, err := cmd.Output()
 	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
+		if _, ok := errors.AsType[*exec.ExitError](err); ok {
 			// `git remote get-url origin` exits non-zero when origin is
 			// unset; treat as a clean no-identity result.
 			return nil, nil

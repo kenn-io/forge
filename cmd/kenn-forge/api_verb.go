@@ -174,8 +174,7 @@ func runAPIVerb(method, requestPath string, opts apiVerbOptions, stdout io.Write
 
 // exitCodeForAPIVerb maps a runAPICLI error to its process exit code.
 func exitCodeForAPIVerb(err error) int {
-	var verr *apiVerbError
-	if errors.As(err, &verr) {
+	if verr, ok := errors.AsType[*apiVerbError](err); ok {
 		return verr.code
 	}
 	return apiVerbExitNoRequest

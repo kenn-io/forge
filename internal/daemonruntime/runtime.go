@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -375,8 +376,8 @@ func CanonicalConfigPath(configPath string) (string, error) {
 					"resolve daemon config path casing: %w", err,
 				)
 			}
-			for index := len(missingSuffix) - 1; index >= 0; index-- {
-				resolvedPath = filepath.Join(resolvedPath, missingSuffix[index])
+			for _, m := range slices.Backward(missingSuffix) {
+				resolvedPath = filepath.Join(resolvedPath, m)
 			}
 			return filepath.Clean(resolvedPath), nil
 		}

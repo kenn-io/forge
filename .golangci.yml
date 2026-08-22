@@ -1,6 +1,7 @@
 version: "2"
 run:
   tests: true
+  go: "1.26"
   allow-parallel-runners: true
 linters:
   default: none

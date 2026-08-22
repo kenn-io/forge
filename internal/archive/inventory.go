@@ -134,12 +134,10 @@ func archiveInventoryFeatureDisabled(err error, itemType db.ArchiveItemType) boo
 // traversal without failing it.
 func (s *Service) commitInventoryPage(ctx context.Context, commit db.ArchiveInventoryCommit) (bool, error) {
 	err := s.db.CommitArchiveInventoryPage(ctx, commit)
-	var stale *db.StaleArchiveScanError
-	if errors.As(err, &stale) {
+	if _, ok := errors.AsType[*db.StaleArchiveScanError](err); ok {
 		return true, nil
 	}
-	var blocked *db.ScanBlockedError
-	if errors.As(err, &blocked) {
+	if _, ok := errors.AsType[*db.ScanBlockedError](err); ok {
 		return true, nil
 	}
 	return err != nil, err

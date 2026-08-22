@@ -877,8 +877,7 @@ func wrapGitError(err error, stderr []byte) error {
 		message: errMsg + ": " + msg,
 		cause:   safeGitErrorCause(err),
 	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 		wrapped.exitCode = exitErr.ExitCode()
 		wrapped.hasExitCode = true
 	}

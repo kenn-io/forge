@@ -28,8 +28,8 @@ type daemonLifecycleLocks []daemonLifecycleLock
 
 func (locks daemonLifecycleLocks) Release() error {
 	errs := make([]error, 0, len(locks))
-	for index := len(locks) - 1; index >= 0; index-- {
-		if err := locks[index].Release(); err != nil {
+	for _, lock := range slices.Backward(locks) {
+		if err := lock.Release(); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -129,8 +129,7 @@ func (l *daemonLifecycle) Start(
 
 	record, err := l.deps.ensureBackground(ctx, mutation.configPath, mutation.config)
 	if err != nil {
-		var mismatch *daemonruntime.VersionMismatchError
-		if errors.As(err, &mismatch) {
+		if _, ok := errors.AsType[*daemonruntime.VersionMismatchError](err); ok {
 			return fmt.Errorf(
 				"daemon start: %w; run `kenn-forge daemon restart` to replace it",
 				err,

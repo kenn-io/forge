@@ -149,8 +149,7 @@ func worktreeNumstatAgainst(
 	defer release()
 
 	if runErr := cmd.Run(); runErr != nil {
-		var exitErr *exec.ExitError
-		if errors.As(runErr, &exitErr) {
+		if _, ok := errors.AsType[*exec.ExitError](runErr); ok {
 			msg := stderr.String()
 			if isNoMergeBaseStderr(msg) {
 				return 0, 0, false, true, nil

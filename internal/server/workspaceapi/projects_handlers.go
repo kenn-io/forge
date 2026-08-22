@@ -1461,8 +1461,7 @@ func (s *Handler) launchProjectWorktreeRuntimeCommandSession(
 		},
 	)
 	if err != nil {
-		var persistenceErr *localruntime.CommandSessionPersistenceError
-		if errors.As(err, &persistenceErr) {
+		if persistenceErr, ok := errors.AsType[*localruntime.CommandSessionPersistenceError](err); ok {
 			if persistenceErr.RollbackErr != nil {
 				slog.Warn(
 					"roll back unrecorded project worktree runtime session",

@@ -453,8 +453,7 @@ func (c *kataDaemonClient) get(
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return kataDaemonReadResult{}, ctxErr
 		}
-		var urlErr *url.Error
-		if errors.As(err, &urlErr) {
+		if urlErr, ok := errors.AsType[*url.Error](err); ok {
 			err = urlErr.Err
 		}
 		return kataDaemonReadResult{}, fmt.Errorf("read Kata daemon %q: %w", c.daemon.ID, err)

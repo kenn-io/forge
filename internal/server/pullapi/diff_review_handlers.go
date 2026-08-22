@@ -589,8 +589,7 @@ func (s *Handler) publishDiffReviewDraft(
 		HeadSHA:  reviewHeadSHA,
 		Comments: comments,
 	}); err != nil {
-		var partialErr *platform.DiffReviewPublishPartialError
-		if errors.As(err, &partialErr) {
+		if partialErr, ok := errors.AsType[*platform.DiffReviewPublishPartialError](err); ok {
 			if len(partialErr.PublishedCommentIDs) > 0 {
 				if discardErr := s.deletePublishedReviewDraftComments(ctx, draft.ID, mr.ID, partialErr.PublishedCommentIDs); discardErr != nil {
 					return nil, huma.Error500InternalServerError("discard partially published review draft comments failed")

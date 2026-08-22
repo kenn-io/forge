@@ -838,8 +838,7 @@ func (p *gitHubClientProvider) archiveTransportError(capability platform.Archive
 			return disabled
 		}
 	}
-	var existing *platform.Error
-	if errors.As(err, &existing) {
+	if existing, ok := errors.AsType[*platform.Error](err); ok {
 		mapped := *existing
 		if mapped.Provider == "" {
 			mapped.Provider = platform.KindGitHub
@@ -854,8 +853,7 @@ func (p *gitHubClientProvider) archiveTransportError(capability platform.Archive
 	}
 	response := githubArchiveErrorResponse(err)
 	resetAt := githubArchiveResetAt(response)
-	var rateLimit *gh.RateLimitError
-	if errors.As(err, &rateLimit) {
+	if rateLimit, ok := errors.AsType[*gh.RateLimitError](err); ok {
 		if !rateLimit.Rate.Reset.IsZero() {
 			reset := rateLimit.Rate.Reset.UTC()
 			resetAt = &reset
@@ -863,8 +861,7 @@ func (p *gitHubClientProvider) archiveTransportError(capability platform.Archive
 		return &platform.Error{Code: platform.ErrCodeRateLimited, Provider: platform.KindGitHub,
 			PlatformHost: p.host, Capability: string(capability), ResetAt: resetAt, Err: err}
 	}
-	var abuseLimit *gh.AbuseRateLimitError
-	if errors.As(err, &abuseLimit) {
+	if abuseLimit, ok := errors.AsType[*gh.AbuseRateLimitError](err); ok {
 		if resetAt == nil && abuseLimit.RetryAfter != nil {
 			reset := time.Now().UTC().Add(*abuseLimit.RetryAfter)
 			resetAt = &reset
@@ -886,16 +883,13 @@ func (p *gitHubClientProvider) archiveTransportError(capability platform.Archive
 }
 
 func githubArchiveErrorResponse(err error) *http.Response {
-	var rateLimit *gh.RateLimitError
-	if errors.As(err, &rateLimit) {
+	if rateLimit, ok := errors.AsType[*gh.RateLimitError](err); ok {
 		return rateLimit.Response
 	}
-	var abuseLimit *gh.AbuseRateLimitError
-	if errors.As(err, &abuseLimit) {
+	if abuseLimit, ok := errors.AsType[*gh.AbuseRateLimitError](err); ok {
 		return abuseLimit.Response
 	}
-	var response *gh.ErrorResponse
-	if errors.As(err, &response) {
+	if response, ok := errors.AsType[*gh.ErrorResponse](err); ok {
 		return response.Response
 	}
 	return nil
@@ -1073,8 +1067,7 @@ func githubStatusCode(err error) int {
 	if errors.As(err, &response) && response.Response != nil {
 		return response.Response.StatusCode
 	}
-	var redirect *url.Error
-	if errors.As(err, &redirect) {
+	if redirect, ok := errors.AsType[*url.Error](err); ok {
 		var responseError *gh.ErrorResponse
 		if errors.As(redirect.Err, &responseError) && responseError.Response != nil {
 			return responseError.Response.StatusCode

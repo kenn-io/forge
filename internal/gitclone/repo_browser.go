@@ -1293,8 +1293,7 @@ func (m *Manager) refreshRepoBrowserClone(
 		return err
 	}
 	if res.Err != nil {
-		var invalidated *repoBrowserCloneValidationError
-		if !errors.As(res.Err, &invalidated) {
+		if _, ok := errors.AsType[*repoBrowserCloneValidationError](res.Err); !ok {
 			if errors.Is(res.Err, ErrRepoBrowserRouteFenceChanged) {
 				if ownErr := m.validateRepoBrowserRouteFence(ctx, repo); ownErr != nil {
 					m.evictStaleRepoBrowserRegistration(repo, ownErr)

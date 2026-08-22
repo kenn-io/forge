@@ -116,8 +116,7 @@ func (tracker *testTmuxTracker) stop(key string, tmuxCommand []string) error {
 			killErr, killOutput, listOutput,
 		)
 	}
-	var listExitErr *exec.ExitError
-	if !errors.As(listErr, &listExitErr) {
+	if _, ok := errors.AsType[*exec.ExitError](listErr); !ok {
 		return fmt.Errorf("verify e2e-server test tmux stopped: %w: %s", listErr, listOutput)
 	}
 	if !strings.HasPrefix(strings.TrimSpace(string(listOutput)), "no server running on ") {

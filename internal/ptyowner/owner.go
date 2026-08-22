@@ -709,8 +709,7 @@ func waitExitCode(waitErr error) int {
 	if waitErr == nil {
 		return 0
 	}
-	var exitErr *exec.ExitError
-	if errors.As(waitErr, &exitErr) {
+	if exitErr, ok := errors.AsType[*exec.ExitError](waitErr); ok {
 		return exitErr.ExitCode()
 	}
 	return -1

@@ -644,8 +644,7 @@ func (s *Server) bulkAddRepos(
 	}
 	resp, err := s.applyBulkExactRepos(ctx, resolved)
 	if err != nil {
-		var bae *bulkApplyError
-		if errors.As(err, &bae) {
+		if bae, ok := errors.AsType[*bulkApplyError](err); ok {
 			return nil, bae.problem
 		}
 		return nil, httpapi.Internal(err.Error())

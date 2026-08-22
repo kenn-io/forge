@@ -378,8 +378,7 @@ func buildProviderStartupOrDegraded(
 		if err == nil {
 			return startup, nil
 		}
-		var hostErr *providerHostStartupError
-		if errors.As(err, &hostErr) {
+		if hostErr, ok := errors.AsType[*providerHostStartupError](err); ok {
 			key := providerHostKey(hostErr.platformName, hostErr.host)
 			if _, ok := sources[key]; ok {
 				slog.Warn(

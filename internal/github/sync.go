@@ -5059,8 +5059,7 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 				"number", mr.Number,
 				"err", err,
 			)
-			var diffErr *DiffSyncError
-			if errors.As(err, &diffErr) {
+			if _, ok := errors.AsType[*DiffSyncError](err); ok {
 				syncedAny = true
 			}
 			continue
@@ -5676,8 +5675,7 @@ func (s *Syncer) recordRunError(
 				string(repoPlatform(repo)), identity.Host, identity.Principal,
 			)
 		}
-		var exhausted *syncBudgetExhaustedError
-		if errors.As(err, &exhausted) {
+		if exhausted, ok := errors.AsType[*syncBudgetExhaustedError](err); ok {
 			ceilingResetAt = exhausted.resetAt.UTC().Format(time.RFC3339)
 		}
 	}
@@ -13730,8 +13728,7 @@ func (s *Syncer) SyncItemByNumber(
 			// freshness can react, but report itemType so callers that
 			// just need to route the user (e.g. /items/{n}/resolve) can
 			// proceed.
-			var diffErr *DiffSyncError
-			if errors.As(err, &diffErr) {
+			if _, ok := errors.AsType[*DiffSyncError](err); ok {
 				return "pr", err
 			}
 			return "", fmt.Errorf(

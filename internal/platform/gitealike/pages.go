@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -315,8 +316,8 @@ func createdOrderMergeRequestsPage(
 		return nextCursorPage([]platform.MergeRequest(nil), cursor, true)
 	}
 	out := normalizeMergeRequestPage(ref, items, boundary, pin)
-	for i := len(items) - 1; i >= 0; i-- {
-		created := items[i].Created
+	for _, item := range slices.Backward(items) {
+		created := item.Created
 		if created.After(pin) {
 			continue
 		}

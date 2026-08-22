@@ -1119,6 +1119,14 @@ func newServer(
 			}
 		},
 	)
+	if s.workspaces != nil {
+		if err := s.workspaces.ApplyTmuxGraphics(context.Background()); err != nil {
+			slog.Warn("apply startup tmux graphics setting", "err", err)
+		}
+		if err := s.workspaces.ApplyTmuxMouse(context.Background()); err != nil {
+			slog.Warn("apply startup tmux mouse setting", "err", err)
+		}
+	}
 	if err := s.workspaceAPI.RestoreRuntimeSessions(context.Background()); err != nil {
 		slog.Warn("restore runtime tmux sessions", "err", err)
 	}

@@ -129,6 +129,28 @@ func readSettingsTmuxGraphicsCommands(t *testing.T, record string) []string {
 	return commands
 }
 
+func TestServerStartupAppliesTmuxSettingsToExistingDedicatedServer(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	record := installSettingsTmuxRecorder(t)
+	srv, _, _ := setupTestServerWithConfigContentAndOptions(t, `
+[terminal]
+graphics = true
+tmux_mouse = false
+`, &mockGH{}, ServerOptions{
+		HostCheckAllowLoopbackAnyPort: true,
+		WorktreeDir:                   t.TempDir(),
+	})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+
+	commands, err := os.ReadFile(record)
+	require.NoError(err)
+	text := string(commands)
+	assert.Contains(text, "-L kenn-forge set-option -q -g allow-passthrough on")
+	assert.Contains(text, "-L kenn-forge set-option -q -s terminal-features[100] xterm-256color:sixel")
+	assert.Contains(text, "-L kenn-forge set-option -q -g mouse off")
+}
+
 func setupTestServerWithConfigProviders(
 	t *testing.T,
 	cfgContent string,

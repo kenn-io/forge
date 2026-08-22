@@ -202,13 +202,17 @@ still exists.
   live changes clear pane overrides, while custom servers receive passthrough
   only on Forge-owned panes and only while graphics are enabled
   (`internal/workspace/manager.go::Manager.ApplyTmuxGraphics`).
-- Applying saved graphics or mouse changes to a live dedicated tmux server is
-  best-effort; graphics updates try every managed pane before reporting combined
-  failures, and setup reapplies the current session's pane state
+- Startup applies saved graphics and mouse settings before restoring retained
+  clients on an existing dedicated tmux server
+  (`internal/server/server.go::newServer`).
+- Live graphics or mouse changes are best-effort; graphics updates try every
+  managed pane before reporting combined failures, and setup reapplies the
+  pane state
   (`internal/server/settings_handlers.go::Server.applyTmuxGraphics`).
-- Enabling graphics detaches retained clients from Forge's dedicated tmux
-  server without stopping panes; reconnect restores each client after tmux has
-  applied SIXEL (`internal/workspace/localruntime/manager.go::Manager.ReattachTmuxClients`).
+- Enabling graphics installs each replacement retained client before detaching
+  the old one; browser reconnects must always find an attachment while panes
+  stay running
+  (`internal/workspace/localruntime/manager.go::Manager.ReattachTmuxClients`).
 - Terminal graphics are optional and default on. The browser supports SIXEL and
   iTerm images; Kitty graphics remain disabled while the xterm add-on labels
   that protocol alpha (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::syncImageAddon`).

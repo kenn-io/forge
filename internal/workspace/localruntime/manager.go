@@ -741,29 +741,79 @@ func (m *Manager) UpdateTmuxGraphics(enabled bool) {
 	m.mu.Unlock()
 }
 
-// ReattachTmuxClients closes retained tmux attach clients so their browser
+// ReattachTmuxClients replaces retained tmux attach clients so their browser
 // connections restore them with the dedicated server's current terminal
 // features. The tmux sessions and their pane processes remain running.
-func (m *Manager) ReattachTmuxClients() {
+func (m *Manager) ReattachTmuxClients(ctx context.Context) error {
 	m.mu.Lock()
 	if !m.tmuxGraphics || !config.IsDefaultTmuxCommand(m.tmuxCommand) {
 		m.mu.Unlock()
-		return
+		return nil
 	}
-	detaching := make([]*session, 0)
+	targets := make(map[string]*session)
 	for key, current := range m.sessions {
 		if current.tmuxSession == "" {
 			continue
 		}
-		delete(m.sessions, key)
-		detaching = append(detaching, current)
+		targets[key] = current
 	}
 	m.mu.Unlock()
 
-	for _, current := range detaching {
+	if err := m.beginStart(); err != nil {
+		return err
+	}
+	defer m.finishStart()
+
+	var errs []error
+	for key, current := range targets {
+		startMu := m.startLock(key)
+		startMu.Lock()
+
+		m.mu.Lock()
+		if m.sessions[key] != current {
+			m.mu.Unlock()
+			startMu.Unlock()
+			continue
+		}
+		m.mu.Unlock()
+
+		info := current.snapshot()
+		command, err := m.restoredRuntimeCommand(RestoredRuntimeSession{
+			TmuxSession: current.tmuxSession,
+		})
+		if err != nil {
+			errs = append(errs, fmt.Errorf("reattach %q: %w", key, err))
+			startMu.Unlock()
+			continue
+		}
+		replacement, err := m.startOwnedSession(
+			ctx, info, command, "", m.currentStripEnvVars(),
+		)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("reattach %q: %w", key, err))
+			startMu.Unlock()
+			continue
+		}
+		replacement.tmuxSession = current.tmuxSession
+
+		m.mu.Lock()
+		if m.closed || m.sessions[key] != current {
+			m.mu.Unlock()
+			go m.watchSession(replacement)
+			replacement.markRecoverableDetach()
+			replacement.detach()
+			startMu.Unlock()
+			continue
+		}
+		m.sessions[key] = replacement
+		m.mu.Unlock()
+		go m.watchSession(replacement)
+		startMu.Unlock()
+
 		current.markRecoverableDetach()
 		current.detach()
 	}
+	return errors.Join(errs...)
 }
 
 func cloneLaunchTargetSet(

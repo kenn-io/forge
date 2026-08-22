@@ -477,49 +477,78 @@ func TestManagerLaunchCommandRejectsRelativeTmuxCommandWhenWrapped(t *testing.T)
 	require.Contains(t, err.Error(), "relative paths")
 }
 
-func TestManagerReattachTmuxClientsOnlyDetachesDedicatedTmuxSessions(t *testing.T) {
-	for _, test := range []struct {
-		name       string
-		command    []string
-		wantDetach bool
-	}{
-		{name: "dedicated server", command: config.DefaultTmuxCommand(), wantDetach: true},
-		{name: "custom server", command: []string{"/usr/bin/tmux"}},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			assert := assert.New(t)
-			mgr := NewManager(Options{
-				TmuxCommand:  test.command,
-				TmuxGraphics: true,
-			})
-			tmuxSession := &session{
-				info: SessionInfo{
-					WorkspaceID: "ws-1",
-					Key:         "tmux",
-					Status:      SessionStatusRunning,
-				},
-				tmuxSession: "forge-ws-1-test",
-				lifecycle:   tmuxAttachLifecycle{},
-			}
-			directSession := &session{
-				info: SessionInfo{
-					WorkspaceID: "ws-1",
-					Key:         "direct",
-					Status:      SessionStatusRunning,
-				},
-			}
-			mgr.sessions["tmux"] = tmuxSession
-			mgr.sessions["direct"] = directSession
-
-			mgr.ReattachTmuxClients()
-
-			_, tmuxRetained := mgr.sessions["tmux"]
-			assert.Equal(!test.wantDetach, tmuxRetained)
-			assert.Equal(test.wantDetach, tmuxSession.lifecycleClosed)
-			assert.Equal(test.wantDetach, tmuxSession.recoverableDetach)
-			assert.Same(directSession, mgr.sessions["direct"])
-		})
+func TestManagerReattachTmuxClientsReplacesDedicatedTmuxSessions(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	dir := t.TempDir()
+	tmuxPath := filepath.Join(dir, "tmux")
+	require.NoError(os.WriteFile(tmuxPath, []byte(`#!/bin/sh
+if [ "$1" = "-L" ]; then shift 2; fi
+if [ "$1" = "-u" ]; then shift; fi
+if [ "$1" = "attach-session" ]; then
+  trap 'exit 0' HUP INT TERM
+  while :; do sleep 1; done
+fi
+exit 0
+`), 0o755))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	mgr := NewManager(Options{
+		TmuxCommand:  config.DefaultTmuxCommand(),
+		TmuxGraphics: true,
+	})
+	t.Cleanup(mgr.Shutdown)
+	restored := RestoredRuntimeSession{
+		WorkspaceID: "ws-1",
+		SessionKey:  "ws-1_shell-restored",
+		TmuxSession: "kenn-forge-ws-1-shell",
+		TargetKey:   string(LaunchTargetPlainShell),
+		CreatedAt:   time.Date(2026, 5, 28, 12, 0, 0, 0, time.UTC),
 	}
+	require.NoError(mgr.RestoreRuntimeSessions(t.Context(), []RestoredRuntimeSession{restored}))
+	previous := mgr.sessions[restored.SessionKey]
+	direct := &session{info: SessionInfo{
+		WorkspaceID: "ws-1",
+		Key:         "direct",
+		Status:      SessionStatusRunning,
+	}}
+	mgr.sessions[direct.info.Key] = direct
+
+	require.NoError(mgr.ReattachTmuxClients(t.Context()))
+
+	replacement := mgr.sessions[restored.SessionKey]
+	require.NotNil(replacement)
+	assert.NotSame(previous, replacement)
+	assert.True(previous.lifecycleClosed)
+	assert.True(previous.recoverableDetach)
+	assert.Same(direct, mgr.sessions[direct.info.Key])
+	attachment, err := mgr.AttachSession(restored.WorkspaceID, restored.SessionKey)
+	require.NoError(err)
+	attachment.Close()
+}
+
+func TestManagerReattachTmuxClientsLeavesCustomTmuxSessionsAttached(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	mgr := NewManager(Options{
+		TmuxCommand:  []string{"/usr/bin/tmux"},
+		TmuxGraphics: true,
+	})
+	tmuxSession := &session{
+		info: SessionInfo{
+			WorkspaceID: "ws-1",
+			Key:         "tmux",
+			Status:      SessionStatusRunning,
+		},
+		tmuxSession: "forge-ws-1-test",
+		lifecycle:   tmuxAttachLifecycle{},
+	}
+	mgr.sessions["tmux"] = tmuxSession
+
+	require.NoError(mgr.ReattachTmuxClients(t.Context()))
+
+	assert.Same(tmuxSession, mgr.sessions["tmux"])
+	assert.False(tmuxSession.lifecycleClosed)
+	assert.False(tmuxSession.recoverableDetach)
 }
 
 func TestManagerLaunchCommandMarksWrappedAgentTmuxSession(t *testing.T) {

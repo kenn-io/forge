@@ -17,6 +17,8 @@ import (
 	"time"
 
 	gopty "github.com/aymanbagabas/go-pty"
+
+	"go.kenn.io/forge/internal/ptysize"
 )
 
 const maxOutputReplay = 64 * 1024
@@ -86,6 +88,10 @@ func RunOwner(ctx context.Context, opts Options) error {
 	p, err := gopty.New()
 	if err != nil {
 		return fmt.Errorf("open pty: %w", err)
+	}
+	if err := resizeOwnerPTY(p, ptysize.FallbackGeometry(120, 30)); err != nil {
+		_ = p.Close()
+		return fmt.Errorf("set initial pty size: %w", err)
 	}
 
 	cmd := p.Command(command[0], command[1:]...)
@@ -203,6 +209,14 @@ func RunOwner(ctx context.Context, opts Options) error {
 	}
 }
 
+func resizeOwnerPTY(p gopty.Pty, geometry ptysize.Geometry) error {
+	geometry = ptysize.Normalize(geometry)
+	if unixPTY, ok := p.(gopty.UnixPty); ok {
+		return ptysize.Resize(unixPTY.Master(), geometry)
+	}
+	return p.Resize(geometry.Cols, geometry.Rows)
+}
+
 func closeOwnerPTYSlave(p gopty.Pty) {
 	if unixPTY, ok := p.(gopty.UnixPty); ok {
 		_ = unixPTY.Slave().Close()
@@ -293,7 +307,7 @@ func (o *owner) handleConn(conn net.Conn) {
 		_ = enc.Encode(Response{Type: ResponseOK, OK: true})
 	case RequestResize:
 		if first.Cols > 0 && first.Rows > 0 {
-			_ = o.pty.Resize(first.Cols, first.Rows)
+			_ = resizeOwnerPTY(o.pty, first.geometry())
 		}
 		_ = enc.Encode(Response{Type: ResponseOK, OK: true})
 	case RequestAttach:
@@ -314,7 +328,7 @@ func (o *owner) handleAttach(
 	startedAfterExit := o.beginAttach()
 	defer o.endAttach(startedAfterExit)
 	if first.Cols > 0 && first.Rows > 0 {
-		_ = o.pty.Resize(first.Cols, first.Rows)
+		_ = resizeOwnerPTY(o.pty, first.geometry())
 	}
 	if err := enc.Encode(Response{Type: ResponseOK, OK: true}); err != nil {
 		return
@@ -373,7 +387,7 @@ func (o *owner) handleAttach(
 			_, _ = o.pty.Write(req.Data)
 		case RequestResize:
 			if req.Cols > 0 && req.Rows > 0 {
-				_ = o.pty.Resize(req.Cols, req.Rows)
+				_ = resizeOwnerPTY(o.pty, req.geometry())
 			}
 		case RequestStop:
 			o.stop()
@@ -426,15 +440,21 @@ func (o *owner) hadActiveAttachmentsAtExit() bool {
 }
 
 type initialRequest struct {
-	Type  string `json:"type"`
-	Token string `json:"token,omitempty"`
-	Cols  int    `json:"cols,omitempty"`
-	Rows  int    `json:"rows,omitempty"`
-	Data  []byte `json:"data,omitempty"`
+	Type        string `json:"type"`
+	Token       string `json:"token,omitempty"`
+	Cols        int    `json:"cols,omitempty"`
+	Rows        int    `json:"rows,omitempty"`
+	PixelWidth  int    `json:"pixel_width,omitempty"`
+	PixelHeight int    `json:"pixel_height,omitempty"`
+	Data        []byte `json:"data,omitempty"`
 }
 
 func (r initialRequest) Request() Request {
 	return Request(r)
+}
+
+func (r initialRequest) geometry() ptysize.Geometry {
+	return r.Request().geometry()
 }
 
 func decodeOwnerRequest(

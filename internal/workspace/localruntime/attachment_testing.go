@@ -1,24 +1,28 @@
 package localruntime
 
-import "context"
+import (
+	"context"
+
+	"go.kenn.io/forge/internal/ptysize"
+)
 
 // AttachmentForTestingOptions configures NewAttachmentForTesting.
-// Output and Done are required; sessionOutputClosed lets callers
+// Output and Done are required; SessionOutputClosed lets callers
 // distinguish a real session exit from a per-subscriber drop, which
 // is the contract bridge code in internal/server depends on. Other
 // fields default to no-ops; tests that exercise resize / refresh /
 // write callbacks should set them explicitly.
 type AttachmentForTestingOptions struct {
-	Output                   <-chan []byte
-	Done                     <-chan struct{}
-	Info                     func() SessionInfo
-	Write                    func([]byte) error
-	Resize                   func(cols, rows int) error
-	ClaimResize              func(cols, rows int) (bool, error)
-	ResizeSettled            func()
-	Refresh                  func(context.Context) error
-	SessionOutputClosed      func() bool
-	DetachedForServerRestart func() bool
+	Output              <-chan []byte
+	Done                <-chan struct{}
+	Info                func() SessionInfo
+	Write               func([]byte) error
+	Resize              func(ptysize.Geometry) error
+	ClaimResize         func(ptysize.Geometry) (bool, error)
+	ResizeSettled       func()
+	Refresh             func(context.Context) error
+	SessionOutputClosed func() bool
+	RecoverableDetach   func() bool
 }
 
 // NewAttachmentForTesting constructs an Attachment with caller-
@@ -36,9 +40,9 @@ func NewAttachmentForTesting(opts AttachmentForTestingOptions) *Attachment {
 	if sessionOutputClosed == nil {
 		sessionOutputClosed = func() bool { return false }
 	}
-	detachedForRestart := opts.DetachedForServerRestart
-	if detachedForRestart == nil {
-		detachedForRestart = func() bool { return false }
+	recoverableDetach := opts.RecoverableDetach
+	if recoverableDetach == nil {
+		recoverableDetach = func() bool { return false }
 	}
 	return &Attachment{
 		Output:              opts.Output,
@@ -50,6 +54,6 @@ func NewAttachmentForTesting(opts AttachmentForTestingOptions) *Attachment {
 		resizeSettled:       opts.ResizeSettled,
 		refresh:             opts.Refresh,
 		sessionOutputClosed: sessionOutputClosed,
-		detachedForRestart:  detachedForRestart,
+		recoverableDetach:   recoverableDetach,
 	}
 }

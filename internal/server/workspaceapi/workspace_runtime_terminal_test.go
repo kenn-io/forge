@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -16,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/trace"
 
+	"go.kenn.io/forge/internal/ptysize"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
@@ -68,7 +68,7 @@ func TestServeRuntimeTerminalForwardsBufferedReplayBeforeRefresh(t *testing.T) {
 		localruntime.AttachmentForTestingOptions{
 			Output: output,
 			Done:   done,
-			Resize: func(_, _ int) error { return nil },
+			Resize: func(ptysize.Geometry) error { return nil },
 			Refresh: func(ctx context.Context) error {
 				close(refreshStarted)
 				select {
@@ -179,7 +179,7 @@ func TestServeRuntimeTerminalReplayBoundaryDefersInitialResize(t *testing.T) {
 		localruntime.AttachmentForTestingOptions{
 			Output: output,
 			Done:   make(chan struct{}),
-			Resize: func(_, _ int) error {
+			Resize: func(ptysize.Geometry) error {
 				resizeCalled <- struct{}{}
 				return nil
 			},
@@ -212,9 +212,13 @@ func TestHandleRuntimeTerminalControlAcknowledgesResizeClaimBeforeReturning(t *t
 	events := make([]string, 0, 4)
 	attachment := localruntime.NewAttachmentForTesting(
 		localruntime.AttachmentForTestingOptions{
-			ClaimResize: func(cols, rows int) (bool, error) {
-				require.Equal(132, cols)
-				require.Equal(43, rows)
+			ClaimResize: func(geometry ptysize.Geometry) (bool, error) {
+				require.Equal(ptysize.Geometry{
+					Cols:        132,
+					Rows:        43,
+					PixelWidth:  1056,
+					PixelHeight: 688,
+				}, geometry)
 				events = append(events, "claim")
 				return true, nil
 			},
@@ -231,7 +235,7 @@ func TestHandleRuntimeTerminalControlAcknowledgesResizeClaimBeforeReturning(t *t
 	require.NoError(handleRuntimeTerminalControl(
 		context.Background(),
 		attachment,
-		[]byte(`{"type":"claim_resize","cols":132,"rows":43}`),
+		[]byte(`{"type":"claim_resize","cols":132,"rows":43,"pixel_width":1056,"pixel_height":688}`),
 	))
 	events = append(events, "next input")
 
@@ -249,7 +253,7 @@ func TestRuntimeTerminalStopsBeforeInputWhenResizeClaimSettlementFails(t *testin
 				input <- data
 				return nil
 			},
-			ClaimResize: func(_, _ int) (bool, error) {
+			ClaimResize: func(ptysize.Geometry) (bool, error) {
 				return true, nil
 			},
 			Refresh: func(context.Context) error {
@@ -293,7 +297,7 @@ func TestServeRuntimeTerminalClosedOutputStillReportsSessionExit(t *testing.T) {
 		localruntime.AttachmentForTestingOptions{
 			Output:              output,
 			Done:                done,
-			Resize:              func(_, _ int) error { return nil },
+			Resize:              func(ptysize.Geometry) error { return nil },
 			Refresh:             func(context.Context) error { return nil },
 			SessionOutputClosed: func() bool { return true },
 		},
@@ -355,10 +359,10 @@ func TestServeRuntimeTerminalRestartDetachDoesNotReportSessionExit(t *testing.T)
 			require := require.New(t)
 			attachment := localruntime.NewAttachmentForTesting(
 				localruntime.AttachmentForTestingOptions{
-					Output:                   tt.output(),
-					Done:                     tt.done(),
-					SessionOutputClosed:      func() bool { return true },
-					DetachedForServerRestart: func() bool { return true },
+					Output:              tt.output(),
+					Done:                tt.done(),
+					SessionOutputClosed: func() bool { return true },
+					RecoverableDetach:   func() bool { return true },
 				},
 			)
 			wsURL, handlerDone := runtimeTerminalTestServer(t, attachment)
@@ -448,22 +452,20 @@ func runtimeTerminalTestServer(
 	return "ws" + strings.TrimPrefix(srv.URL, "http"), handlerDone
 }
 
-func TestClampTerminalDim(t *testing.T) {
-	assert := assert.New(t)
-	cases := []struct {
-		name string
-		in   int
-		want uint16
-	}{
-		{"zero floors to one", 0, 1},
-		{"negative floors to one", -5, 1},
-		{"minimum", 1, 1},
-		{"typical", 120, 120},
-		{"uint16 max", math.MaxUint16, math.MaxUint16},
-		{"above uint16 max caps", math.MaxUint16 + 1, math.MaxUint16},
-		{"large value caps", 1_000_000, math.MaxUint16},
-	}
-	for _, tc := range cases {
-		assert.Equalf(tc.want, clampTerminalDim(tc.in), "case %s", tc.name)
-	}
+func TestParseRuntimeTerminalGeometry(t *testing.T) {
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/?cols=132&rows=43&pixel_width=1056&pixel_height=688",
+		nil,
+	)
+
+	geometry, ok := parseRuntimeTerminalGeometry(req)
+
+	require.True(t, ok)
+	assert.Equal(t, ptysize.Geometry{
+		Cols:        132,
+		Rows:        43,
+		PixelWidth:  1056,
+		PixelHeight: 688,
+	}, geometry)
 }

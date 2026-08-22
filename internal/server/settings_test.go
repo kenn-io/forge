@@ -17,6 +17,7 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v89/github"
+	shellquote "github.com/kballard/go-shellquote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
@@ -85,6 +86,69 @@ func setupTestServerWithConfigContentAndOptions(
 		options,
 	)
 	return srv, database, cfgPath
+}
+
+func installSettingsTmuxRecorder(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	record := filepath.Join(dir, "commands")
+	tmuxPath := filepath.Join(dir, "tmux")
+	body := "#!/bin/sh\n" +
+		"printf '%s\\n' \"$*\" >> " + shellquote.Join(record) + "\n" +
+		`case " $* " in *" list-sessions "*) printf 'sess-A:\n';; *" list-panes "*) printf 'pane-A\npane-B\n';; esac` + "\n"
+	require.NoError(t, os.WriteFile(tmuxPath, []byte(body), 0o755))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return record
+}
+
+func readSettingsTmuxMouseCommands(t *testing.T, record string) []string {
+	t.Helper()
+	content, err := os.ReadFile(record)
+	require.NoError(t, err)
+	commands := make([]string, 0, 2)
+	for command := range strings.SplitSeq(strings.TrimSpace(string(content)), "\n") {
+		if strings.Contains(command, " list-sessions -F #{session_name}:#{@forge_owner}") ||
+			strings.Contains(command, " set-option -q -g mouse ") {
+			commands = append(commands, command)
+		}
+	}
+	return commands
+}
+
+func readSettingsTmuxGraphicsCommands(t *testing.T, record string) []string {
+	t.Helper()
+	content, err := os.ReadFile(record)
+	require.NoError(t, err)
+	commands := make([]string, 0, 3)
+	for command := range strings.SplitSeq(strings.TrimSpace(string(content)), "\n") {
+		if strings.Contains(command, "allow-passthrough") ||
+			strings.Contains(command, " terminal-features[100]") {
+			commands = append(commands, command)
+		}
+	}
+	return commands
+}
+
+func TestServerStartupAppliesTmuxSettingsToExistingDedicatedServer(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	record := installSettingsTmuxRecorder(t)
+	srv, _, _ := setupTestServerWithConfigContentAndOptions(t, `
+[terminal]
+graphics = true
+tmux_mouse = false
+`, &mockGH{}, ServerOptions{
+		HostCheckAllowLoopbackAnyPort: true,
+		WorktreeDir:                   t.TempDir(),
+	})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+
+	commands, err := os.ReadFile(record)
+	require.NoError(err)
+	text := string(commands)
+	assert.Contains(text, "-L kenn-forge set-option -q -g allow-passthrough on")
+	assert.Contains(text, "-L kenn-forge set-option -q -s terminal-features[100] xterm-256color:sixel")
+	assert.Contains(text, "-L kenn-forge set-option -q -g mouse off")
 }
 
 func setupTestServerWithConfigProviders(
@@ -369,6 +433,8 @@ command = ["codex", "--full-auto"]
 	assert.True(*resp.Terminal.CursorBlink)
 	assert.False(resp.Terminal.FontLigatures)
 	assert.False(resp.Terminal.HideTmuxStatus)
+	require.NotNil(resp.Terminal.Graphics)
+	assert.True(*resp.Terminal.Graphics)
 	assertDefaultModeVisibility(t, resp.Modes)
 	require.Len(resp.Agents, 1)
 	assert.Equal("codex", resp.Agents[0].Key)
@@ -740,6 +806,7 @@ func assertDefaultModeVisibility(t *testing.T, modes config.ModeVisibility) {
 
 func TestHandleUpdateSettings(t *testing.T) {
 	assert := assert.New(t)
+	require := require.New(t)
 	srv, _, cfgPath := setupTestServerWithConfig(t)
 
 	activity := config.Activity{
@@ -763,6 +830,8 @@ func TestHandleUpdateSettings(t *testing.T) {
 		CursorBlink:      new(true),
 		FontLigatures:    true,
 		HideTmuxStatus:   true,
+		Graphics:         new(true),
+		TmuxMouse:        new(false),
 		RetainedSessions: new(4),
 	}
 	body := updateSettingsRequest{
@@ -774,11 +843,11 @@ func TestHandleUpdateSettings(t *testing.T) {
 	rr := doJSON(
 		t, srv, http.MethodPut, "/api/v1/settings", body,
 	)
-	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
 	// Verify persisted to disk.
 	cfg2, err := config.Load(cfgPath)
-	require.NoError(t, err)
+	require.NoError(err)
 	assert.Equal("threaded", cfg2.Activity.ViewMode)
 	assert.Equal("30d", cfg2.Activity.TimeRange)
 	assert.True(cfg2.Issues.HideBots)
@@ -790,7 +859,11 @@ func TestHandleUpdateSettings(t *testing.T) {
 	assert.InDelta(1.15, cfg2.Terminal.LineHeight, 0.001)
 	assert.True(cfg2.Terminal.FontLigatures)
 	assert.True(cfg2.Terminal.HideTmuxStatus)
-	require.NotNil(t, cfg2.Terminal.RetainedSessions)
+	require.NotNil(cfg2.Terminal.TmuxMouse)
+	assert.False(*cfg2.Terminal.TmuxMouse)
+	require.NotNil(cfg2.Terminal.Graphics)
+	assert.True(*cfg2.Terminal.Graphics)
+	require.NotNil(cfg2.Terminal.RetainedSessions)
 	assert.Equal(4, *cfg2.Terminal.RetainedSessions)
 }
 
@@ -894,6 +967,8 @@ docs = false
 		Scrollback:       2000,
 		LetterSpacing:    1,
 		CursorBlink:      new(true),
+		Graphics:         new(true),
+		TmuxMouse:        new(true),
 		RetainedSessions: new(config.DefaultTerminalRetainedSessions),
 	}
 	body := updateSettingsRequest{
@@ -915,6 +990,72 @@ docs = false
 	assert.Equal(2000, cfg2.Terminal.Scrollback)
 	assert.Equal(1, cfg2.Terminal.LetterSpacing)
 	assert.False(*cfg2.Modes.Docs)
+}
+
+func TestHandleUpdateTerminalSettingsAppliesMouseToDedicatedTmuxServer(t *testing.T) {
+	require := require.New(t)
+	record := installSettingsTmuxRecorder(t)
+	srv, _, _ := setupTestServerWithConfigContentAndOptions(t, `
+sync_interval = "5m"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+`, &mockGH{}, ServerOptions{
+		HostCheckAllowLoopbackAnyPort: true,
+		WorktreeDir:                   t.TempDir(),
+	})
+	require.NoError(os.WriteFile(record, nil, 0o600))
+
+	srv.cfgMu.Lock()
+	terminal := srv.cfg.Terminal
+	srv.cfgMu.Unlock()
+	terminal.TmuxMouse = new(false)
+	rr := doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+		Terminal: &terminal,
+	})
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	assert.Equal(t, []string{
+		"-L kenn-forge list-sessions -F #{session_name}:#{@forge_owner}",
+		"-L kenn-forge set-option -q -g mouse off",
+	}, readSettingsTmuxMouseCommands(t, record))
+}
+
+func TestHandleUpdateTerminalSettingsAppliesGraphicsToDedicatedTmuxServer(t *testing.T) {
+	require := require.New(t)
+	record := installSettingsTmuxRecorder(t)
+	srv, _, _ := setupTestServerWithConfigContentAndOptions(t, `
+sync_interval = "5m"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+`, &mockGH{}, ServerOptions{
+		HostCheckAllowLoopbackAnyPort: true,
+		WorktreeDir:                   t.TempDir(),
+	})
+	require.NoError(os.WriteFile(record, nil, 0o600))
+
+	srv.cfgMu.Lock()
+	terminal := srv.cfg.Terminal
+	srv.cfgMu.Unlock()
+	terminal.Graphics = new(false)
+	rr := doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+		Terminal: &terminal,
+	})
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	assert.Equal(t, []string{
+		"-L kenn-forge set-option -q -g allow-passthrough off",
+		"-L kenn-forge set-option -q -s -u terminal-features[100]",
+		"-L kenn-forge set-option -q -p -u -t pane-A allow-passthrough",
+		"-L kenn-forge set-option -q -p -u -t pane-B allow-passthrough",
+	}, readSettingsTmuxGraphicsCommands(t, record))
 }
 
 func TestHandleUpdateSettingsPersistsAgents(t *testing.T) {

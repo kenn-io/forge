@@ -20,12 +20,11 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/creack/pty/v2"
-
 	"go.kenn.io/forge/internal/agentactivity"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/procutil"
 	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
+	"go.kenn.io/forge/internal/ptysize"
 )
 
 type SessionStatus string
@@ -113,6 +112,10 @@ type Options struct {
 	// HideTmuxStatus turns off tmux's status line for newly-created
 	// tmux-backed runtime sessions.
 	HideTmuxStatus bool
+	// TmuxMouse enables tmux mouse handling for tmux-backed runtime sessions.
+	TmuxMouse bool
+	// TmuxGraphics enables image passthrough for tmux-backed runtime sessions.
+	TmuxGraphics bool
 	// StripEnvVars names additional env vars to strip beyond the
 	// built-in credential prefixes (e.g. a configured token env).
 	StripEnvVars []string
@@ -142,6 +145,8 @@ type Manager struct {
 	tmuxOwnerMarker   string
 	wrapAgentsInTmux  bool
 	hideTmuxStatus    bool
+	tmuxMouse         bool
+	tmuxGraphics      bool
 	stripEnvVars      []string
 	onSessionExit     func(SessionInfo)
 	ptyOwnerRuntime   ptyownerruntime.Owner
@@ -207,7 +212,7 @@ type session struct {
 	lifecycleMu               sync.Mutex
 	lifecycleClosed           bool
 	stopRequested             bool
-	detachedForServerRestart  bool
+	recoverableDetach         bool
 	nextAttachmentID          uint64
 	nextResizeClaim           uint64
 	resizeOwnerID             uint64
@@ -235,8 +240,7 @@ type resizeAttachment struct {
 	priority ResizePriority
 	active   bool
 	claim    uint64
-	cols     int
-	rows     int
+	geometry ptysize.Geometry
 	hasSize  bool
 }
 
@@ -247,8 +251,8 @@ type Attachment struct {
 	info                 func() SessionInfo
 	write                func([]byte) error
 	submitInitialMessage func(context.Context, string) error
-	resize               func(cols, rows int) error
-	claimResize          func(cols, rows int) (bool, error)
+	resize               func(ptysize.Geometry) error
+	claimResize          func(ptysize.Geometry) (bool, error)
 	resizeSettled        func()
 	refresh              func(context.Context) error
 	setResizeActive      func(active bool)
@@ -260,7 +264,7 @@ type Attachment struct {
 	// this subscriber for falling behind; that is not a session exit
 	// and bridges must not propagate it as one.
 	sessionOutputClosed func() bool
-	detachedForRestart  func() bool
+	recoverableDetach   func() bool
 }
 
 func NewManager(options Options) *Manager {
@@ -281,6 +285,8 @@ func NewManager(options Options) *Manager {
 		tmuxOwnerMarker:   options.TmuxOwnerMarker,
 		wrapAgentsInTmux:  options.WrapAgentSessionsInTmux,
 		hideTmuxStatus:    options.HideTmuxStatus,
+		tmuxMouse:         options.TmuxMouse,
+		tmuxGraphics:      options.TmuxGraphics,
 		stripEnvVars:      dedupeStrings(options.StripEnvVars),
 		onSessionExit:     options.OnSessionExit,
 		ptyOwnerRuntime:   options.PtyOwnerRuntime,
@@ -723,6 +729,93 @@ func (m *Manager) UpdateHideTmuxStatus(hide bool) {
 	m.mu.Unlock()
 }
 
+func (m *Manager) UpdateTmuxMouse(enabled bool) {
+	m.mu.Lock()
+	m.tmuxMouse = enabled
+	m.mu.Unlock()
+}
+
+func (m *Manager) UpdateTmuxGraphics(enabled bool) {
+	m.mu.Lock()
+	m.tmuxGraphics = enabled
+	m.mu.Unlock()
+}
+
+// ReattachTmuxClients replaces retained tmux attach clients so their browser
+// connections restore them with the dedicated server's current terminal
+// features. The tmux sessions and their pane processes remain running.
+func (m *Manager) ReattachTmuxClients(ctx context.Context) error {
+	m.mu.Lock()
+	if !m.tmuxGraphics || !config.IsDefaultTmuxCommand(m.tmuxCommand) {
+		m.mu.Unlock()
+		return nil
+	}
+	targets := make(map[string]*session)
+	for key, current := range m.sessions {
+		if current.tmuxSession == "" {
+			continue
+		}
+		targets[key] = current
+	}
+	m.mu.Unlock()
+
+	if err := m.beginStart(); err != nil {
+		return err
+	}
+	defer m.finishStart()
+
+	var errs []error
+	for key, current := range targets {
+		startMu := m.startLock(key)
+		startMu.Lock()
+
+		m.mu.Lock()
+		if m.sessions[key] != current {
+			m.mu.Unlock()
+			startMu.Unlock()
+			continue
+		}
+		m.mu.Unlock()
+
+		info := current.snapshot()
+		command, err := m.restoredRuntimeCommand(RestoredRuntimeSession{
+			TmuxSession: current.tmuxSession,
+		})
+		if err != nil {
+			errs = append(errs, fmt.Errorf("reattach %q: %w", key, err))
+			startMu.Unlock()
+			continue
+		}
+		replacement, err := m.startOwnedSession(
+			ctx, info, command, "", m.currentStripEnvVars(),
+		)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("reattach %q: %w", key, err))
+			startMu.Unlock()
+			continue
+		}
+		replacement.tmuxSession = current.tmuxSession
+
+		m.mu.Lock()
+		if m.closed || m.sessions[key] != current {
+			m.mu.Unlock()
+			go m.watchSession(replacement)
+			replacement.markRecoverableDetach()
+			replacement.detach()
+			startMu.Unlock()
+			continue
+		}
+		m.sessions[key] = replacement
+		m.mu.Unlock()
+		go m.watchSession(replacement)
+		startMu.Unlock()
+
+		current.markRecoverableDetach()
+		current.detach()
+	}
+	return errors.Join(errs...)
+}
+
 func cloneLaunchTargetSet(
 	targets []LaunchTarget,
 ) (map[string]LaunchTarget, []LaunchTarget) {
@@ -761,6 +854,18 @@ func (m *Manager) currentHideTmuxStatus() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.hideTmuxStatus
+}
+
+func (m *Manager) currentTmuxMouse() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.tmuxMouse
+}
+
+func (m *Manager) currentTmuxGraphics() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.tmuxGraphics
 }
 
 func (m *Manager) ListSessions(workspaceID string) []SessionInfo {
@@ -1338,22 +1443,22 @@ func (a *Attachment) Write(data []byte) error {
 	return a.write(data)
 }
 
-func (a *Attachment) Resize(cols, rows int) error {
+func (a *Attachment) Resize(geometry ptysize.Geometry) error {
 	if a == nil || a.resize == nil {
 		return errors.New("attachment is closed")
 	}
-	return a.resize(cols, rows)
+	return a.resize(geometry)
 }
 
 // ClaimResize records a deliberate interaction from this attachment and
 // applies its dimensions when its priority permits it to own PTY sizing. The
 // returned bool tells the caller that tmux must be synchronously refreshed
 // before forwarding the input that followed the claim.
-func (a *Attachment) ClaimResize(cols, rows int) (bool, error) {
+func (a *Attachment) ClaimResize(geometry ptysize.Geometry) (bool, error) {
 	if a == nil || a.claimResize == nil {
 		return false, errors.New("attachment is closed")
 	}
-	return a.claimResize(cols, rows)
+	return a.claimResize(geometry)
 }
 
 // ResizeSettled records that the synchronous tmux refresh following a resize
@@ -1418,14 +1523,14 @@ func (a *Attachment) SessionOutputClosed() bool {
 	return a.sessionOutputClosed()
 }
 
-// DetachedForServerRestart reports whether the server deliberately detached
-// this recoverable session during shutdown. That is a connection interruption,
-// not a process exit.
-func (a *Attachment) DetachedForServerRestart() bool {
-	if a == nil || a.detachedForRestart == nil {
+// RecoverableDetach reports whether the server deliberately detached this
+// session while leaving its backend available. That is a connection
+// interruption, not a process exit.
+func (a *Attachment) RecoverableDetach() bool {
+	if a == nil || a.recoverableDetach == nil {
 		return false
 	}
-	return a.detachedForRestart()
+	return a.recoverableDetach()
 }
 
 func fallbackSessionLabel(label string, fallback string) string {
@@ -1519,6 +1624,7 @@ func (m *Manager) shellLaunchCommand(
 	if len(tmuxCommand) == 0 {
 		tmuxCommand = config.DefaultTmuxCommand()
 	}
+	configureServer := config.IsDefaultTmuxCommand(tmuxCommand)
 	tmuxCommand, err = resolveTmuxCommand(tmuxCommand)
 	if err != nil {
 		return launchCommand{}, err
@@ -1539,13 +1645,16 @@ func (m *Manager) shellLaunchCommand(
 		os.Environ(), resolvedCommand, m.currentStripEnvVars(),
 	)
 	prepared, err := tmuxLauncher{
-		TmuxCommand: tmuxCommand,
-		Session:     tmuxSession,
-		CWD:         cwd,
-		Pane:        paneEnv,
-		OwnerMarker: m.tmuxOwnerMarker,
-		LaunchID:    launchID,
-		HideStatus:  m.currentHideTmuxStatus(),
+		TmuxCommand:     tmuxCommand,
+		Session:         tmuxSession,
+		CWD:             cwd,
+		Pane:            paneEnv,
+		OwnerMarker:     m.tmuxOwnerMarker,
+		LaunchID:        launchID,
+		HideStatus:      m.currentHideTmuxStatus(),
+		TmuxMouse:       m.currentTmuxMouse(),
+		Graphics:        m.currentTmuxGraphics(),
+		ConfigureServer: configureServer,
 	}.prepare(ctx)
 	if err != nil {
 		return launchCommand{}, err
@@ -1581,7 +1690,7 @@ func (m *Manager) Shutdown() {
 
 	for _, s := range sessions {
 		if m.detachForRestart {
-			s.markDetachedForServerRestart()
+			s.markRecoverableDetach()
 		}
 		s.detach()
 	}
@@ -1697,6 +1806,7 @@ func (m *Manager) launchCommand(
 	if len(tmuxCommand) == 0 {
 		tmuxCommand = config.DefaultTmuxCommand()
 	}
+	configureServer := config.IsDefaultTmuxCommand(tmuxCommand)
 	tmuxCommand, err = resolveTmuxCommand(tmuxCommand)
 	if err != nil {
 		return launchCommand{}, err
@@ -1720,13 +1830,16 @@ func (m *Manager) launchCommand(
 		},
 	)
 	prepared, err := tmuxLauncher{
-		TmuxCommand: tmuxCommand,
-		Session:     tmuxSession,
-		CWD:         cwd,
-		Pane:        paneEnv,
-		OwnerMarker: m.tmuxOwnerMarker,
-		LaunchID:    launchID,
-		HideStatus:  m.currentHideTmuxStatus(),
+		TmuxCommand:     tmuxCommand,
+		Session:         tmuxSession,
+		CWD:             cwd,
+		Pane:            paneEnv,
+		OwnerMarker:     m.tmuxOwnerMarker,
+		LaunchID:        launchID,
+		HideStatus:      m.currentHideTmuxStatus(),
+		TmuxMouse:       m.currentTmuxMouse(),
+		Graphics:        m.currentTmuxGraphics(),
+		ConfigureServer: configureServer,
 	}.prepare(ctx)
 	if err != nil {
 		return launchCommand{}, err
@@ -2316,28 +2429,27 @@ func (s *session) unregisterResizeAttachment(id uint64) {
 
 func (s *session) resizeAttachment(
 	id uint64,
-	cols int,
-	rows int,
+	geometry ptysize.Geometry,
 	claim bool,
 ) (uint64, error) {
-	if cols <= 0 || rows <= 0 {
+	if geometry.Cols <= 0 || geometry.Rows <= 0 {
 		return 0, nil
 	}
-	clampedCols := int(clampWinsizeDim(cols))
-	clampedRows := int(clampWinsizeDim(rows))
+	geometry = ptysize.Normalize(geometry)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	attachment, ok := s.resizeAttachments[id]
-	if !ok || !attachment.active {
+	if !ok || (!attachment.active && !claim) {
 		return 0, nil
 	}
+	if claim {
+		attachment.active = true
+	}
 	sizeChanged := !attachment.hasSize ||
-		attachment.cols != clampedCols ||
-		attachment.rows != clampedRows
-	attachment.cols = clampedCols
-	attachment.rows = clampedRows
+		attachment.geometry != geometry
+	attachment.geometry = geometry
 	attachment.hasSize = true
 	if claim {
 		s.nextResizeClaim++
@@ -2357,7 +2469,7 @@ func (s *session) resizeAttachment(
 		return 0, nil
 	}
 	if !claim || ownerChanged || sizeChanged {
-		if err := s.resizePTYAndMarkLocked(clampedCols, clampedRows); err != nil {
+		if err := s.resizePTYAndMarkLocked(geometry); err != nil {
 			return 0, err
 		}
 	}
@@ -2423,25 +2535,22 @@ func (s *session) applyResizeOwnerSizeLocked(attachment resizeAttachment) {
 	if !attachment.hasSize {
 		return
 	}
-	_ = s.resizePTYAndMarkLocked(attachment.cols, attachment.rows)
+	_ = s.resizePTYAndMarkLocked(attachment.geometry)
 }
 
-func (s *session) resizePTYAndMarkLocked(cols, rows int) error {
-	if err := s.resizePTYLocked(cols, rows); err != nil {
+func (s *session) resizePTYAndMarkLocked(geometry ptysize.Geometry) error {
+	if err := s.resizePTYLocked(geometry); err != nil {
 		return err
 	}
 	s.resizeGeneration++
 	return nil
 }
 
-func (s *session) resizePTYLocked(cols, rows int) error {
+func (s *session) resizePTYLocked(geometry ptysize.Geometry) error {
 	if s.pty != nil {
-		return s.pty.Resize(cols, rows)
+		return s.pty.Resize(geometry)
 	}
-	return pty.Setsize(s.ptmx, &pty.Winsize{
-		Rows: uint16(rows),
-		Cols: uint16(cols),
-	})
+	return ptysize.Resize(s.ptmx, geometry)
 }
 
 func (s *session) closeSubscribers() {
@@ -2500,10 +2609,10 @@ func (s *session) wasStopRequested() bool {
 	return s.stopRequested
 }
 
-func (s *session) markDetachedForServerRestart() {
+func (s *session) markRecoverableDetach() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.detachedForServerRestart = true
+	s.recoverableDetach = true
 }
 
 func (s *session) detach() {
@@ -2791,13 +2900,13 @@ func attachToSession(
 			return err
 		},
 		submitInitialMessage: s.submitInitialMessage,
-		resize: func(cols, rows int) error {
-			_, err := s.resizeAttachment(resizeAttachmentID, cols, rows, false)
+		resize: func(geometry ptysize.Geometry) error {
+			_, err := s.resizeAttachment(resizeAttachmentID, geometry, false)
 			return err
 		},
-		claimResize: func(cols, rows int) (bool, error) {
+		claimResize: func(geometry ptysize.Geometry) (bool, error) {
 			generation, err := s.resizeAttachment(
-				resizeAttachmentID, cols, rows, true,
+				resizeAttachmentID, geometry, true,
 			)
 			resizeSettlementMu.Lock()
 			resizeSettlementGeneration = generation
@@ -2829,10 +2938,10 @@ func attachToSession(
 			defer s.mu.Unlock()
 			return s.outputClosed
 		},
-		detachedForRestart: func() bool {
+		recoverableDetach: func() bool {
 			s.mu.Lock()
 			defer s.mu.Unlock()
-			return s.detachedForServerRestart
+			return s.recoverableDetach
 		},
 	}, nil
 }

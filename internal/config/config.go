@@ -715,6 +715,8 @@ const (
 	DefaultTerminalScrollback       = 1000
 	DefaultTerminalLineHeight       = 1.0
 	DefaultTerminalCursorBlink      = true
+	DefaultTerminalGraphics         = true
+	DefaultTerminalTmuxMouse        = true
 	DefaultTerminalRetainedSessions = 10
 )
 
@@ -727,6 +729,8 @@ type Terminal struct {
 	CursorBlink      *bool   `toml:"cursor_blink,omitempty" json:"cursor_blink" nullable:"false"`
 	FontLigatures    bool    `toml:"font_ligatures,omitempty" json:"font_ligatures"`
 	HideTmuxStatus   bool    `toml:"hide_tmux_status,omitempty" json:"hide_tmux_status"`
+	Graphics         *bool   `toml:"graphics,omitempty" json:"graphics" nullable:"false"`
+	TmuxMouse        *bool   `toml:"tmux_mouse,omitempty" json:"tmux_mouse" nullable:"false"`
 	RetainedSessions *int    `toml:"retained_sessions,omitempty" json:"retained_sessions" nullable:"false"`
 }
 
@@ -1716,6 +1720,14 @@ func (c *Config) validate() error {
 	if c.Terminal.CursorBlink == nil {
 		cursorBlink := DefaultTerminalCursorBlink
 		c.Terminal.CursorBlink = &cursorBlink
+	}
+	if c.Terminal.Graphics == nil {
+		graphics := DefaultTerminalGraphics
+		c.Terminal.Graphics = &graphics
+	}
+	if c.Terminal.TmuxMouse == nil {
+		tmuxMouse := DefaultTerminalTmuxMouse
+		c.Terminal.TmuxMouse = &tmuxMouse
 	}
 	if c.Terminal.RetainedSessions == nil {
 		retainedSessions := DefaultTerminalRetainedSessions
@@ -3039,6 +3051,12 @@ func DefaultTmuxCommand() []string {
 	return []string{"tmux", "-L", "kenn-forge"}
 }
 
+// IsDefaultTmuxCommand reports whether command selects Forge's dedicated tmux
+// server. An empty command uses that default through TmuxCommand.
+func IsDefaultTmuxCommand(command []string) bool {
+	return len(command) == 0 || slices.Equal(command, DefaultTmuxCommand())
+}
+
 // tmuxNonSecretEnvVars names every variable admitted into tmux client
 // environments and, transitively, the tmux server's permanently
 // retained spawn environment — exact names only, never prefixes, which
@@ -3123,9 +3141,9 @@ func IsTmuxNonSecretEnvVarExact(name string) bool {
 
 // TmuxCommand returns the command + argv prefix used to invoke tmux.
 // Defaults to DefaultTmuxCommand when c is nil or the setting is
-// unconfigured; an explicitly configured command is returned verbatim,
-// so choosing a socket (or the global server) stays with the user. The
-// returned slice is a copy, safe to append to.
+// unconfigured. An explicitly configured command is returned verbatim, but
+// still identifies the tmux server Forge owns and configures. The returned
+// slice is a copy, safe to append to.
 func (c *Config) TmuxCommand() []string {
 	if c == nil || len(c.Tmux.Command) == 0 {
 		return DefaultTmuxCommand()
@@ -3142,6 +3160,19 @@ func (c *Config) ShellCommand() []string {
 		return nil
 	}
 	return slices.Clone(c.Shell.Command)
+}
+
+// TerminalTmuxMouseEnabled reports whether Forge-managed tmux sessions should
+// enable mouse handling. It defaults to true for omitted and nil configs.
+func (c *Config) TerminalTmuxMouseEnabled() bool {
+	return c == nil || c.Terminal.TmuxMouse == nil || *c.Terminal.TmuxMouse
+}
+
+// TerminalGraphicsEnabled reports whether Forge-managed terminals should
+// decode images and configure tmux graphics support. It defaults to true for
+// omitted and nil configs.
+func (c *Config) TerminalGraphicsEnabled() bool {
+	return c == nil || c.Terminal.Graphics == nil || *c.Terminal.Graphics
 }
 
 // TmuxAgentSessionsEnabled reports whether runtime agent launches

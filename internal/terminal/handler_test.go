@@ -237,11 +237,22 @@ func TestHandleControlAppliesResizeClaim(t *testing.T) {
 		_ = tty.Close()
 	})
 
-	handleControl(ptmx, &controlMsg{Type: "claim_resize", Cols: 103, Rows: 35})
+	handleControl(ptmx, &controlMsg{
+		Type:        "claim_resize",
+		Cols:        103,
+		Rows:        35,
+		PixelWidth:  824,
+		PixelHeight: 560,
+	})
 
 	size, err := pty.GetsizeFull(ptmx)
 	require.NoError(t, err)
-	require.Equal(t, &pty.Winsize{Cols: 103, Rows: 35}, size)
+	require.Equal(t, &pty.Winsize{
+		Cols: 103,
+		Rows: 35,
+		X:    824,
+		Y:    560,
+	}, size)
 }
 
 func TestProcessExitCode(t *testing.T) {
@@ -250,14 +261,14 @@ func TestProcessExitCode(t *testing.T) {
 	assert.Equal(-1, processExitCode(errors.New("wait failed")))
 }
 
-func TestParseSizeFallsBack(t *testing.T) {
+func TestParseGeometryFallsBack(t *testing.T) {
 	req := httptest.NewRequest(
 		http.MethodGet, "/?cols=bad&rows=0", nil,
 	)
-	cols, rows := parseSize(req)
+	geometry := parseGeometry(req)
 	assert := assert.New(t)
-	assert.Equal(120, cols)
-	assert.Equal(30, rows)
+	assert.Equal(120, geometry.Cols)
+	assert.Equal(30, geometry.Rows)
 }
 
 func readWebSocketUntil(

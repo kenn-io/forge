@@ -47,6 +47,10 @@ type Manager struct {
 	tmuxStripEnvVars          []string
 	hideTmuxStatusMu          sync.RWMutex
 	hideTmuxStatus            bool
+	tmuxGraphicsMu            sync.RWMutex
+	tmuxGraphics              bool
+	tmuxMouseMu               sync.RWMutex
+	tmuxMouse                 bool
 	ptyOwner                  PtyOwnerClient
 	preferPtyOwner            bool
 	retryMu                   sync.Mutex
@@ -342,6 +346,32 @@ func (m *Manager) currentHideTmuxStatus() bool {
 	m.hideTmuxStatusMu.RLock()
 	defer m.hideTmuxStatusMu.RUnlock()
 	return m.hideTmuxStatus
+}
+
+// SetTmuxGraphics controls graphics passthrough for managed workspace sessions.
+func (m *Manager) SetTmuxGraphics(enabled bool) {
+	m.tmuxGraphicsMu.Lock()
+	defer m.tmuxGraphicsMu.Unlock()
+	m.tmuxGraphics = enabled
+}
+
+func (m *Manager) currentTmuxGraphics() bool {
+	m.tmuxGraphicsMu.RLock()
+	defer m.tmuxGraphicsMu.RUnlock()
+	return m.tmuxGraphics
+}
+
+// SetTmuxMouse controls tmux mouse handling for managed workspace sessions.
+func (m *Manager) SetTmuxMouse(enabled bool) {
+	m.tmuxMouseMu.Lock()
+	defer m.tmuxMouseMu.Unlock()
+	m.tmuxMouse = enabled
+}
+
+func (m *Manager) currentTmuxMouse() bool {
+	m.tmuxMouseMu.RLock()
+	defer m.tmuxMouseMu.RUnlock()
+	return m.tmuxMouse
 }
 
 // tmuxExec builds an *exec.Cmd for a tmux invocation: the
@@ -4153,7 +4183,7 @@ func (m *Manager) EnsureTmux(
 		return fmt.Errorf("tmux has-session: %w", err)
 	}
 	if exists {
-		return nil
+		return m.configureTmuxSession(ctx, session)
 	}
 	return m.newTmuxSession(ctx, session, cwd)
 }
@@ -4554,6 +4584,16 @@ func (m *Manager) newTmuxSession(
 		}
 		return fmt.Errorf("set tmux owner marker: %w", err)
 	}
+	if err := m.configureTmuxSession(ctx, session); err != nil {
+		if killErr := m.killTmuxSession(ctx, session); killErr != nil &&
+			!isTmuxKillSessionGone(killErr) {
+			return fmt.Errorf(
+				"configure tmux session: %w; cleanup new tmux session: %v",
+				err, killErr,
+			)
+		}
+		return fmt.Errorf("configure tmux session: %w", err)
+	}
 	if m.currentHideTmuxStatus() {
 		if err := m.setTmuxStatus(ctx, session, false); err != nil {
 			if killErr := m.killTmuxSession(ctx, session); killErr != nil &&
@@ -4565,6 +4605,209 @@ func (m *Manager) newTmuxSession(
 			}
 			return fmt.Errorf("hide tmux status: %w", err)
 		}
+	}
+	return nil
+}
+
+func (m *Manager) configureTmuxSession(
+	ctx context.Context,
+	session string,
+) error {
+	graphics := m.currentTmuxGraphics()
+	dedicatedServer := config.IsDefaultTmuxCommand(m.tmuxCmd)
+	if dedicatedServer {
+		if err := m.applyTmuxServerGraphics(ctx, graphics); err != nil {
+			return err
+		}
+		if err := m.applyTmuxMouse(ctx); err != nil {
+			return err
+		}
+	}
+	if !graphics && !dedicatedServer {
+		return nil
+	}
+	return m.setTmuxPassthrough(ctx, session, graphics)
+}
+
+func (m *Manager) applyTmuxServerGraphics(ctx context.Context, enabled bool) error {
+	value := "off"
+	if enabled {
+		value = "on"
+	}
+	if err := runBuiltCmd(
+		ctx,
+		m.tmuxExec(ctx, "set-option", "-q", "-g", "allow-passthrough", value),
+	); err != nil {
+		return fmt.Errorf("configure global tmux passthrough: %w", err)
+	}
+	args := []string{
+		"set-option", "-q", "-s", "terminal-features[100]",
+		"xterm-256color:sixel",
+	}
+	if !enabled {
+		args = []string{
+			"set-option", "-q", "-s", "-u", "terminal-features[100]",
+		}
+	}
+	if err := runBuiltCmd(ctx, m.tmuxExec(ctx, args...)); err != nil {
+		return fmt.Errorf("configure tmux SIXEL: %w", err)
+	}
+	return nil
+}
+
+func (m *Manager) setTmuxPassthrough(
+	ctx context.Context,
+	target string,
+	enabled bool,
+) error {
+	value := "off"
+	if enabled {
+		value = "on"
+	}
+	if err := runBuiltCmd(
+		ctx,
+		m.tmuxExec(
+			ctx,
+			"set-option", "-q", "-p", "-t", target,
+			"allow-passthrough", value,
+		),
+	); err != nil {
+		return fmt.Errorf("configure tmux passthrough: %w", err)
+	}
+	return nil
+}
+
+func (m *Manager) unsetTmuxPassthrough(
+	ctx context.Context,
+	target string,
+) error {
+	if err := runBuiltCmd(
+		ctx,
+		m.tmuxExec(
+			ctx,
+			"set-option", "-q", "-p", "-u", "-t", target,
+			"allow-passthrough",
+		),
+	); err != nil {
+		return fmt.Errorf("clear tmux passthrough override: %w", err)
+	}
+	return nil
+}
+
+const tmuxPaneListFormat = "#{pane_id}"
+
+func (m *Manager) listTmuxPanes(
+	ctx context.Context,
+	session string,
+) ([]string, error) {
+	cmd := m.tmuxExec(
+		ctx,
+		"list-panes", "-s", "-t", session, "-F", tmuxPaneListFormat,
+	)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := procutil.Run(ctx, cmd, "tmux subprocess capacity")
+	if err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg == "" {
+			msg = strings.TrimSpace(stdout.String())
+		}
+		return nil, fmt.Errorf("tmux list-panes: %w: %s", err, msg)
+	}
+	var panes []string
+	for line := range strings.SplitSeq(stdout.String(), "\n") {
+		pane := strings.TrimSpace(strings.TrimSuffix(line, "\r"))
+		if pane != "" {
+			panes = append(panes, pane)
+		}
+	}
+	return panes, nil
+}
+
+func (m *Manager) applyTmuxSessionGraphics(
+	ctx context.Context,
+	session string,
+	dedicatedServer bool,
+) error {
+	panes, err := m.listTmuxPanes(ctx, session)
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, pane := range panes {
+		if dedicatedServer {
+			err = m.unsetTmuxPassthrough(ctx, pane)
+		} else {
+			err = m.setTmuxPassthrough(ctx, pane, true)
+		}
+		if err != nil {
+			errs = append(errs, fmt.Errorf("pane %q: %w", pane, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// ApplyTmuxGraphics updates the Forge-owned tmux server and every managed pane.
+// Custom commands may target a user's shared server, so Forge changes only
+// panes in marked Forge sessions, and only while graphics are enabled.
+func (m *Manager) ApplyTmuxGraphics(ctx context.Context) error {
+	dedicatedServer := config.IsDefaultTmuxCommand(m.tmuxCmd)
+	enabled := m.currentTmuxGraphics()
+	if !dedicatedServer && !enabled {
+		return nil
+	}
+	infos, err := m.listTmuxSessionInfos(ctx)
+	if err != nil {
+		return err
+	}
+	if len(infos) == 0 {
+		return nil
+	}
+	var errs []error
+	if dedicatedServer {
+		if err := m.applyTmuxServerGraphics(ctx, enabled); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	for _, info := range infos {
+		if !dedicatedServer && info.owner != m.tmuxOwnerMarker() {
+			continue
+		}
+		if err := m.applyTmuxSessionGraphics(ctx, info.name, dedicatedServer); err != nil {
+			errs = append(errs, fmt.Errorf("session %q: %w", info.name, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// ApplyTmuxMouse updates a running Forge-owned tmux server. Custom commands
+// may target a user's shared server, so Forge never changes their global
+// options. A missing dedicated server has no state to update.
+func (m *Manager) ApplyTmuxMouse(ctx context.Context) error {
+	if !config.IsDefaultTmuxCommand(m.tmuxCmd) {
+		return nil
+	}
+	sessions, err := m.listTmuxSessions(ctx)
+	if err != nil {
+		return err
+	}
+	if len(sessions) == 0 {
+		return nil
+	}
+	return m.applyTmuxMouse(ctx)
+}
+
+func (m *Manager) applyTmuxMouse(ctx context.Context) error {
+	value := "off"
+	if m.currentTmuxMouse() {
+		value = "on"
+	}
+	if err := runBuiltCmd(
+		ctx,
+		m.tmuxExec(ctx, "set-option", "-q", "-g", "mouse", value),
+	); err != nil {
+		return fmt.Errorf("configure tmux mouse: %w", err)
 	}
 	return nil
 }

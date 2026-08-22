@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/creack/pty/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
@@ -27,6 +28,7 @@ import (
 
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/fleet"
+	"go.kenn.io/forge/internal/ptysize"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/sshfleet"
 	"go.kenn.io/kit/openssh"
@@ -973,7 +975,7 @@ func TestSSHFleetWebSocketTerminalClaimsSharedResizeOwnership(t *testing.T) {
 	require.NoError(err)
 	defer first.Close(websocket.StatusNormalClosure, "test done")
 	second, _, err := websocket.Dial(
-		ctx, wsURL+"?cols=50&rows=12&resize_active=1", nil,
+		ctx, wsURL+"?cols=50&rows=12&resize_active=0", nil,
 	)
 	require.NoError(err)
 
@@ -1003,6 +1005,45 @@ func TestSSHFleetWebSocketTerminalClaimsSharedResizeOwnership(t *testing.T) {
 	readWebSocketBinaryUntil(t, ctx, first, readTimeout, "size:31:100:fallback")
 }
 
+func TestFleetResizeClaimActivatesAndAppliesCompleteGeometry(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	firstPTMX, firstTTY, err := pty.Open()
+	require.NoError(err)
+	t.Cleanup(func() {
+		_ = firstPTMX.Close()
+		_ = firstTTY.Close()
+	})
+	secondPTMX, secondTTY, err := pty.Open()
+	require.NoError(err)
+	t.Cleanup(func() {
+		_ = secondPTMX.Close()
+		_ = secondTTY.Close()
+	})
+
+	group := new(fleetSSHResizeGroup)
+	group.register(
+		&fleetSSHPTYAttachment{ptmx: firstPTMX}, true,
+		ptysize.Geometry{Cols: 80, Rows: 24, PixelWidth: 640, PixelHeight: 384},
+	)
+	second := group.register(
+		&fleetSSHPTYAttachment{ptmx: secondPTMX}, false,
+		ptysize.Geometry{Cols: 50, Rows: 12, PixelWidth: 400, PixelHeight: 192},
+	)
+
+	handleFleetSSHAttachControl(second, []byte(
+		`{"type":"claim_resize","cols":100,"rows":40,"pixel_width":875,"pixel_height":740}`,
+	))
+
+	want := &pty.Winsize{Cols: 100, Rows: 40, X: 875, Y: 740}
+	firstSize, err := pty.GetsizeFull(firstPTMX)
+	require.NoError(err)
+	secondSize, err := pty.GetsizeFull(secondPTMX)
+	require.NoError(err)
+	assert.Equal(want, firstSize)
+	assert.Equal(want, secondSize)
+}
+
 func TestSSHFleetAttachPTYWritesExitFrameWhenPTYEOFPrecedesWait(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -1014,7 +1055,9 @@ func TestSSHFleetAttachPTYWritesExitFrameWhenPTYEOFPrecedesWait(t *testing.T) {
 		ptmx: ptyReader,
 		done: done,
 	}
-	resizeMember := new(fleetSSHResizeGroup).register(attach, true, 120, 30)
+	resizeMember := new(fleetSSHResizeGroup).register(
+		attach, true, ptysize.Geometry{Cols: 120, Rows: 30},
+	)
 
 	bridgeDone := make(chan struct{})
 	acceptErrors := make(chan error, 1)

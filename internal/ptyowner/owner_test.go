@@ -14,8 +14,12 @@ import (
 	"testing"
 	"time"
 
+	gopty "github.com/aymanbagabas/go-pty"
+	"github.com/creack/pty/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.kenn.io/forge/internal/ptysize"
 )
 
 func TestOwnerAttachInputAndReplay(t *testing.T) {
@@ -41,7 +45,10 @@ func TestOwnerAttachInputAndReplay(t *testing.T) {
 	client := &Client{Root: root}
 	waitOwnerReady(t, done, client, "kenn-forge-test")
 
-	first, err := client.Attach(context.Background(), "kenn-forge-test", 120, 30)
+	first, err := client.Attach(
+		context.Background(), "kenn-forge-test",
+		ptysize.Geometry{Cols: 120, Rows: 30},
+	)
 	require.NoError(err)
 	defer first.Close()
 
@@ -50,12 +57,15 @@ func TestOwnerAttachInputAndReplay(t *testing.T) {
 	require.Contains(readUntil(t, first.Output, "got:hello"), "got:hello")
 	first.Close()
 
-	second, err := client.Attach(context.Background(), "kenn-forge-test", 100, 20)
+	second, err := client.Attach(
+		context.Background(), "kenn-forge-test",
+		ptysize.Geometry{Cols: 100, Rows: 20},
+	)
 	require.NoError(err)
 	defer second.Close()
 
 	assert.Contains(readUntil(t, second.Output, "got:hello"), "got:hello")
-	require.NoError(second.Resize(90, 25))
+	require.NoError(second.Resize(ptysize.Geometry{Cols: 90, Rows: 25}))
 	require.NoError(client.Stop(context.Background(), "kenn-forge-test"))
 
 	select {
@@ -64,6 +74,27 @@ func TestOwnerAttachInputAndReplay(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		require.Fail("owner did not stop")
 	}
+}
+
+func TestResizeOwnerPTYAppliesBrowserPixels(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("ConPTY accepts character geometry only")
+	}
+	require := require.New(t)
+	assert := assert.New(t)
+	ownerPTY, err := gopty.New()
+	require.NoError(err)
+	t.Cleanup(func() { _ = ownerPTY.Close() })
+
+	require.NoError(resizeOwnerPTY(ownerPTY, ptysize.Geometry{
+		Cols: 100, Rows: 40, PixelWidth: 875, PixelHeight: 740,
+	}))
+	unixPTY, ok := ownerPTY.(gopty.UnixPty)
+	require.True(ok)
+	actual, err := pty.GetsizeFull(unixPTY.Master())
+	require.NoError(err)
+
+	assert.Equal(&pty.Winsize{Cols: 100, Rows: 40, X: 875, Y: 740}, actual)
 }
 
 func TestOwnerStopWhileRunOwnerReturns(t *testing.T) {
@@ -121,7 +152,10 @@ func TestOwnerQuickExitRemainsAttachable(t *testing.T) {
 	client := &Client{Root: root}
 	waitOwnerReady(t, done, client, session)
 
-	attach, err := client.Attach(context.Background(), session, 120, 30)
+	attach, err := client.Attach(
+		context.Background(), session,
+		ptysize.Geometry{Cols: 120, Rows: 30},
+	)
 	require.NoError(err)
 	defer attach.Close()
 
@@ -170,7 +204,10 @@ func TestOwnerPTYEOFClosesAttachmentBeforeProcessWait(t *testing.T) {
 	client := &Client{Root: root}
 	waitOwnerReady(t, done, client, session)
 
-	attach, err := client.Attach(context.Background(), session, 120, 30)
+	attach, err := client.Attach(
+		context.Background(), session,
+		ptysize.Geometry{Cols: 120, Rows: 30},
+	)
 	require.NoError(err)
 	defer attach.Close()
 
@@ -224,13 +261,19 @@ func TestOwnerDetachedBeforeExitKeepsPostExitAttachWindow(t *testing.T) {
 	client := &Client{Root: root}
 	waitOwnerReady(t, done, client, session)
 
-	first, err := client.Attach(context.Background(), session, 120, 30)
+	first, err := client.Attach(
+		context.Background(), session,
+		ptysize.Geometry{Cols: 120, Rows: 30},
+	)
 	require.NoError(err)
 	assert.Contains(readUntil(t, first.Output, "ready"), "ready")
 	first.Close()
 
 	time.Sleep(300 * time.Millisecond)
-	second, err := client.Attach(context.Background(), session, 120, 30)
+	second, err := client.Attach(
+		context.Background(), session,
+		ptysize.Geometry{Cols: 120, Rows: 30},
+	)
 	require.NoError(err)
 	defer second.Close()
 	assert.Contains(readUntil(t, second.Output, "final-output"), "final-output")
@@ -685,7 +728,8 @@ func TestClientEnsuresExternalManager(t *testing.T) {
 	})
 
 	attachment, err := client.Attach(
-		context.Background(), "kenn-forge-rust-test", 120, 30,
+		context.Background(), "kenn-forge-rust-test",
+		ptysize.Geometry{Cols: 120, Rows: 30},
 	)
 	require.NoError(err)
 	defer attachment.Close()
@@ -721,7 +765,8 @@ func TestClientEnsuresExternalManagerWithPowerShell(t *testing.T) {
 	})
 
 	attachment, err := client.Attach(
-		context.Background(), "kenn-forge-powershell-test", 120, 30,
+		context.Background(), "kenn-forge-powershell-test",
+		ptysize.Geometry{Cols: 120, Rows: 30},
 	)
 	require.NoError(err)
 	defer attachment.Close()
@@ -760,7 +805,8 @@ func TestClientEnsuresExternalManagerWithGoTestHelper(t *testing.T) {
 	})
 
 	attachment, err := client.Attach(
-		context.Background(), "kenn-forge-go-helper-test", 120, 30,
+		context.Background(), "kenn-forge-go-helper-test",
+		ptysize.Geometry{Cols: 120, Rows: 30},
 	)
 	require.NoError(err)
 	defer attachment.Close()
@@ -863,7 +909,10 @@ func TestExternalManagerAttachmentWritesUseAttachConnection(t *testing.T) {
 		Root:        root,
 		ManagerPath: "/tmp/kenn-forge-pty-manager",
 	}
-	attachment, err := client.Attach(context.Background(), session, 120, 30)
+	attachment, err := client.Attach(
+		context.Background(), session,
+		ptysize.Geometry{Cols: 120, Rows: 30},
+	)
 	require.NoError(err)
 	defer attachment.Close()
 	require.NoError(attachment.Write([]byte("hello")))

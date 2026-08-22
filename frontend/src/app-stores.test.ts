@@ -197,6 +197,8 @@ vi.mock("./lib/stores/settings.svelte.js", () => ({
         cursor_blink: false,
         font_ligatures: false,
         hide_tmux_status: false,
+        graphics: true,
+        tmux_mouse: true,
       }),
       setTerminalSettings: vi.fn(),
       getTerminalFontFamily: () => "",
@@ -333,6 +335,8 @@ describe("app store event wiring", () => {
         cursor_blink: false,
         font_ligatures: false,
         hide_tmux_status: false,
+        graphics: true,
+        tmux_mouse: true,
       },
       modes: {
         activity: true,

@@ -51,6 +51,7 @@ import (
 	platformgitlab "go.kenn.io/forge/internal/platform/gitlab"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/ptyowner"
+	"go.kenn.io/forge/internal/ptysize"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/issueapi"
 	"go.kenn.io/forge/internal/server/pullapi"
@@ -27813,7 +27814,10 @@ func TestRustPtyManagerRejectsConcurrentAttachmentsE2E(t *testing.T) {
 		_ = client.Stop(context.Background(), session)
 	})
 
-	first, err := client.Attach(context.Background(), session, 120, 30)
+	first, err := client.Attach(
+		context.Background(), session,
+		ptysize.Geometry{Cols: 120, Rows: 30},
+	)
 	require.NoError(err)
 	defer first.Close()
 	if readyNeedle != "" {
@@ -27828,7 +27832,10 @@ func TestRustPtyManagerRejectsConcurrentAttachmentsE2E(t *testing.T) {
 		firstNeedle,
 	)
 
-	second, err := client.Attach(context.Background(), session, 100, 20)
+	second, err := client.Attach(
+		context.Background(), session,
+		ptysize.Geometry{Cols: 100, Rows: 20},
+	)
 	if second != nil {
 		second.Close()
 	}
@@ -27839,7 +27846,10 @@ func TestRustPtyManagerRejectsConcurrentAttachmentsE2E(t *testing.T) {
 	var third *ptyowner.Attachment
 	require.Eventually(func() bool {
 		var attachErr error
-		third, attachErr = client.Attach(context.Background(), session, 80, 24)
+		third, attachErr = client.Attach(
+			context.Background(), session,
+			ptysize.Geometry{Cols: 80, Rows: 24},
+		)
 		return attachErr == nil
 	}, 2*time.Second, 20*time.Millisecond)
 	defer third.Close()

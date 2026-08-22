@@ -11,6 +11,7 @@ import (
 
 	"go.kenn.io/forge/internal/agentactivity"
 	"go.kenn.io/forge/internal/ptyowner"
+	"go.kenn.io/forge/internal/ptysize"
 )
 
 type Owner interface {
@@ -30,7 +31,7 @@ type PTY interface {
 	Output() <-chan []byte
 	Done() <-chan struct{}
 	Write([]byte) error
-	Resize(cols, rows int) error
+	Resize(ptysize.Geometry) error
 	ExitCode() int
 	Close()
 }
@@ -67,7 +68,10 @@ func (o owner) Attach(ctx context.Context, session string) (PTY, error) {
 	if o.client == nil {
 		return nil, errors.New("pty owner runtime is unavailable")
 	}
-	attachment, err := o.client.Attach(context.WithoutCancel(ctx), session, 120, 30)
+	attachment, err := o.client.Attach(
+		context.WithoutCancel(ctx), session,
+		ptysize.FallbackGeometry(120, 30),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +125,10 @@ func (o owner) Start(
 	}
 	// The caller's launch context may end while the runtime session continues;
 	// this attachment is the long-lived drain for the owner-managed PTY.
-	attachment, err := client.Attach(context.WithoutCancel(ctx), session, 120, 30)
+	attachment, err := client.Attach(
+		context.WithoutCancel(ctx), session,
+		ptysize.FallbackGeometry(120, 30),
+	)
 	if err != nil {
 		_ = client.Stop(ctx, session)
 		return nil, err
@@ -161,11 +168,11 @@ func (p ownedPTY) Write(data []byte) error {
 	return p.attachment.Write(data)
 }
 
-func (p ownedPTY) Resize(cols int, rows int) error {
+func (p ownedPTY) Resize(geometry ptysize.Geometry) error {
 	if p.attachment == nil {
 		return errors.New("pty owner attachment is closed")
 	}
-	return p.attachment.Resize(cols, rows)
+	return p.attachment.Resize(geometry)
 }
 
 func (p ownedPTY) ExitCode() int {

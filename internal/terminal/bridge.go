@@ -10,13 +10,16 @@ import (
 	"strconv"
 
 	"github.com/coder/websocket"
-	"github.com/creack/pty/v2"
+
+	"go.kenn.io/forge/internal/ptysize"
 )
 
 type controlMsg struct {
-	Type string `json:"type"`
-	Cols int    `json:"cols,omitempty"`
-	Rows int    `json:"rows,omitempty"`
+	Type        string `json:"type"`
+	Cols        int    `json:"cols,omitempty"`
+	Rows        int    `json:"rows,omitempty"`
+	PixelWidth  int    `json:"pixel_width,omitempty"`
+	PixelHeight int    `json:"pixel_height,omitempty"`
 }
 
 func processExitCode(waitErr error) int {
@@ -92,19 +95,26 @@ func handleControl(ptmx *os.File, msg *controlMsg) {
 		"terminal resize requested",
 		"cols", msg.Cols,
 		"rows", msg.Rows,
+		"pixel_width", msg.PixelWidth,
+		"pixel_height", msg.PixelHeight,
 	)
-	if err := pty.Setsize(ptmx, &pty.Winsize{
-		Rows: uint16(msg.Rows),
-		Cols: uint16(msg.Cols),
+	if err := ptysize.Resize(ptmx, ptysize.Geometry{
+		Cols:        msg.Cols,
+		Rows:        msg.Rows,
+		PixelWidth:  msg.PixelWidth,
+		PixelHeight: msg.PixelHeight,
 	}); err != nil {
 		slog.Warn("pty resize", "err", err)
 	}
 }
 
-func parseSize(r *http.Request) (cols, rows int) {
-	cols = parseIntParam(r, "cols", 120)
-	rows = parseIntParam(r, "rows", 30)
-	return cols, rows
+func parseGeometry(r *http.Request) ptysize.Geometry {
+	return ptysize.Normalize(ptysize.Geometry{
+		Cols:        parseIntParam(r, "cols", 120),
+		Rows:        parseIntParam(r, "rows", 30),
+		PixelWidth:  parseIntParam(r, "pixel_width", 0),
+		PixelHeight: parseIntParam(r, "pixel_height", 0),
+	})
 }
 
 func parseIntParam(

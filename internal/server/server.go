@@ -882,6 +882,8 @@ func newServer(
 	tmuxCmd := cfg.TmuxCommand()
 	s.tmuxCmd = tmuxCmd
 	hideTmuxStatus := false
+	terminalGraphics := cfg.TerminalGraphicsEnabled()
+	tmuxMouse := cfg.TerminalTmuxMouseEnabled()
 	if cfg != nil {
 		hideTmuxStatus = cfg.Terminal.HideTmuxStatus
 	}
@@ -925,6 +927,8 @@ func newServer(
 		s.workspaces.SetTmuxCommand(tmuxCmd)
 		s.workspaces.UpdateTmuxStripEnvVars(s.runtimeStripEnvVars)
 		s.workspaces.SetHideTmuxStatus(hideTmuxStatus)
+		s.workspaces.SetTmuxGraphics(terminalGraphics)
+		s.workspaces.SetTmuxMouse(tmuxMouse)
 		s.workspaces.SetIssueBranchSlugEnabled(
 			cfg.IssueWorkspaceBranchSlugEnabled(),
 		)
@@ -984,6 +988,8 @@ func newServer(
 			TmuxOwnerMarker:                s.workspaces.TmuxOwnerMarker(),
 			WrapAgentSessionsInTmux:        cfg.TmuxAgentSessionsEnabled(),
 			HideTmuxStatus:                 hideTmuxStatus,
+			TmuxGraphics:                   terminalGraphics,
+			TmuxMouse:                      tmuxMouse,
 			StripEnvVars:                   s.runtimeStripEnvVars,
 			ShellCommand:                   cfg.ShellCommand(),
 			OnSessionExit:                  s.handleRuntimeSessionExit,
@@ -1113,6 +1119,14 @@ func newServer(
 			}
 		},
 	)
+	if s.workspaces != nil {
+		if err := s.workspaces.ApplyTmuxGraphics(context.Background()); err != nil {
+			slog.Warn("apply startup tmux graphics setting", "err", err)
+		}
+		if err := s.workspaces.ApplyTmuxMouse(context.Background()); err != nil {
+			slog.Warn("apply startup tmux mouse setting", "err", err)
+		}
+	}
 	if err := s.workspaceAPI.RestoreRuntimeSessions(context.Background()); err != nil {
 		slog.Warn("restore runtime tmux sessions", "err", err)
 	}

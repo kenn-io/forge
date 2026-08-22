@@ -105,6 +105,8 @@ const settings = {
     cursor_blink: true,
     font_ligatures: false,
     hide_tmux_status: false,
+    graphics: true,
+    tmux_mouse: true,
   },
   modes: {
     activity: true,

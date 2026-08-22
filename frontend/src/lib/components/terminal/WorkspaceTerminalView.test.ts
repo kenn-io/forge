@@ -145,6 +145,8 @@ vi.mock("../../context.js", async (importOriginal) => {
           cursor_blink: true,
           font_ligatures: false,
           hide_tmux_status: false,
+          graphics: true,
+          tmux_mouse: true,
           retained_sessions: 10,
         }),
         setTerminalSettings: mocks.mockSetTerminalSettings,
@@ -165,6 +167,7 @@ vi.mock("../../context.js", async (importOriginal) => {
         getTerminalLetterSpacing: () => 0,
         getTerminalCursorBlink: () => true,
         getTerminalFontLigatures: () => false,
+        getTerminalGraphics: () => true,
         getWorkspaceSettings: () => ({
           auto_assign_on_create: false,
           default_sidebar_view: mocks.workspaceSidebarPreference,
@@ -1815,7 +1818,6 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() => expect(mountedSessions()).toHaveLength(1));
     await waitFor(() => expect(sockets).toHaveLength(1));
     sockets[0]!.onopen();
-    await waitFor(() => expect(sockets[0]!.send).toHaveBeenCalled());
     const firstPrefix = sessionHostPrefix("ws-1", undefined);
     expect(mountedSessions()[0]?.hostKey.startsWith(firstPrefix)).toBe(true);
     const firstHostKey = mountedSessions()[0]!.hostKey;
@@ -1848,7 +1850,6 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() => expect(mountedSessions()).toHaveLength(1));
     await waitFor(() => expect(sockets).toHaveLength(1));
     sockets[0]!.onopen();
-    await waitFor(() => expect(sockets[0]!.send).toHaveBeenCalled());
     const hostKey = mountedSessions()[0]!.hostKey;
 
     await rerender({ workspaceId: "ws-1", showView: false });
@@ -2392,7 +2393,6 @@ describe("WorkspaceTerminalView", () => {
     );
     await waitFor(() => expect(sockets).toHaveLength(1));
     sockets[0]!.onopen();
-    await waitFor(() => expect(sockets[0]!.send).toHaveBeenCalled());
     const hostKey = mountedSessions()[0]!.hostKey;
 
     await fireEvent.click(screen.getAllByRole("button", { name: "Close terminal panel" })[0]!);

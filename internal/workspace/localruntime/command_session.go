@@ -267,6 +267,7 @@ func (m *Manager) commandSessionLaunch(
 	if len(tmuxCommand) == 0 {
 		tmuxCommand = config.DefaultTmuxCommand()
 	}
+	configureServer := config.IsDefaultTmuxCommand(tmuxCommand)
 	tmuxCommand, err := resolveTmuxCommand(tmuxCommand)
 	if err != nil {
 		return launchCommand{}, err
@@ -287,13 +288,16 @@ func (m *Manager) commandSessionLaunch(
 		os.Environ(), command, stripEnvVars, spec.Env,
 	)
 	prepared, err := tmuxLauncher{
-		TmuxCommand: tmuxCommand,
-		Session:     tmuxSession,
-		CWD:         spec.CWD,
-		Pane:        paneEnv,
-		OwnerMarker: m.tmuxOwnerMarker,
-		LaunchID:    launchID,
-		HideStatus:  m.currentHideTmuxStatus(),
+		TmuxCommand:     tmuxCommand,
+		Session:         tmuxSession,
+		CWD:             spec.CWD,
+		Pane:            paneEnv,
+		OwnerMarker:     m.tmuxOwnerMarker,
+		LaunchID:        launchID,
+		HideStatus:      m.currentHideTmuxStatus(),
+		TmuxMouse:       m.currentTmuxMouse(),
+		Graphics:        m.currentTmuxGraphics(),
+		ConfigureServer: configureServer,
 	}.prepare(ctx)
 	if err != nil {
 		return launchCommand{}, err

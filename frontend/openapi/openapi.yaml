@@ -7400,6 +7400,8 @@ components:
         font_size:
           format: int64
           type: integer
+        graphics:
+          type: boolean
         hide_tmux_status:
           type: boolean
         letter_spacing:
@@ -7414,6 +7416,8 @@ components:
         scrollback:
           format: int64
           type: integer
+        tmux_mouse:
+          type: boolean
       required:
         - font_family
         - font_size
@@ -7423,6 +7427,8 @@ components:
         - cursor_blink
         - font_ligatures
         - hide_tmux_status
+        - graphics
+        - tmux_mouse
         - retained_sessions
       type: object
     TmuxSessionInfo:

@@ -23,6 +23,7 @@ import (
 
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/forge/internal/ptysize"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/terminalwebsocket"
@@ -968,16 +969,15 @@ func (s *Handler) serveSSHFleetWebSocketTerminal(
 	}
 	defer clientConn.Close(websocket.StatusNormalClosure, "hub detached")
 	endAttachSpan()
-	cols, rows, sizeOK := workspaceapi.ParseRuntimeTerminalSize(r)
+	geometry, sizeOK := workspaceapi.ParseRuntimeTerminalGeometry(r)
 	if !sizeOK {
-		cols, rows = 120, 30
+		geometry = ptysize.Geometry{Cols: 120, Rows: 30}
 	}
 	resizeMember := s.registerFleetSSHResizeMember(
 		peer.Key+"\x00"+targetPath,
 		attach,
 		workspaceapi.ParseRuntimeTerminalResizeActive(r),
-		cols,
-		rows,
+		geometry,
 	)
 	defer resizeMember.close()
 	bridgeFleetSSHAttachPTY(r.Context(), clientConn, attach, resizeMember)
@@ -1010,9 +1010,9 @@ func startFleetSSHAttachPTY(
 		return nil, errors.New("attach-spec command is empty")
 	}
 	active := workspaceapi.ParseRuntimeTerminalResizeActive(r)
-	cols, rows, ok := workspaceapi.ParseRuntimeTerminalSize(r)
+	geometry, ok := workspaceapi.ParseRuntimeTerminalGeometry(r)
 	if !ok || !active {
-		cols, rows = 120, 30
+		geometry = ptysize.Geometry{Cols: 120, Rows: 30}
 	}
 	release, err := procutil.TryAcquire(ctx, "fleet ssh terminal attach")
 	if err != nil {
@@ -1021,10 +1021,7 @@ func startFleetSSHAttachPTY(
 
 	cmd := procutil.Command(spec.Command[0], spec.Command[1:]...)
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
-	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{
-		Cols: workspaceapi.ClampTerminalDim(cols),
-		Rows: workspaceapi.ClampTerminalDim(rows),
-	})
+	ptmx, err := pty.StartWithSize(cmd, ptysize.Winsize(geometry))
 	if err != nil {
 		release()
 		return nil, fmt.Errorf("start attach pty: %w", err)
@@ -1061,14 +1058,11 @@ func (a *fleetSSHPTYAttachment) close() {
 	}
 }
 
-func (a *fleetSSHPTYAttachment) resize(cols, rows int) {
-	if a == nil || cols <= 0 || rows <= 0 {
+func (a *fleetSSHPTYAttachment) resize(geometry ptysize.Geometry) {
+	if a == nil || geometry.Cols <= 0 || geometry.Rows <= 0 {
 		return
 	}
-	_ = pty.Setsize(a.ptmx, &pty.Winsize{
-		Cols: workspaceapi.ClampTerminalDim(cols),
-		Rows: workspaceapi.ClampTerminalDim(rows),
-	})
+	_ = ptysize.Resize(a.ptmx, geometry)
 }
 
 type fleetSSHResizeGroup struct {
@@ -1085,8 +1079,7 @@ type fleetSSHResizeMember struct {
 	attachment *fleetSSHPTYAttachment
 	active     bool
 	claim      uint64
-	cols       int
-	rows       int
+	geometry   ptysize.Geometry
 	hasSize    bool
 	unregister func() bool
 }
@@ -1095,8 +1088,7 @@ func (s *Handler) registerFleetSSHResizeMember(
 	key string,
 	attachment *fleetSSHPTYAttachment,
 	active bool,
-	cols int,
-	rows int,
+	geometry ptysize.Geometry,
 ) *fleetSSHResizeMember {
 	s.sshResizeMu.Lock()
 	defer s.sshResizeMu.Unlock()
@@ -1108,7 +1100,7 @@ func (s *Handler) registerFleetSSHResizeMember(
 		group = &fleetSSHResizeGroup{}
 		s.sshResizeGroups[key] = group
 	}
-	member := group.register(attachment, active, cols, rows)
+	member := group.register(attachment, active, geometry)
 	member.unregister = func() bool {
 		s.sshResizeMu.Lock()
 		defer s.sshResizeMu.Unlock()
@@ -1124,20 +1116,19 @@ func (s *Handler) registerFleetSSHResizeMember(
 func (g *fleetSSHResizeGroup) register(
 	attachment *fleetSSHPTYAttachment,
 	active bool,
-	cols int,
-	rows int,
+	geometry ptysize.Geometry,
 ) *fleetSSHResizeMember {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.nextID++
+	geometry = ptysize.Normalize(geometry)
 	member := &fleetSSHResizeMember{
 		group:      g,
 		id:         g.nextID,
 		attachment: attachment,
 		active:     active,
-		cols:       cols,
-		rows:       rows,
-		hasSize:    cols > 0 && rows > 0,
+		geometry:   geometry,
+		hasSize:    geometry.Cols > 0 && geometry.Rows > 0,
 	}
 	if g.members == nil {
 		g.members = make(map[uint64]*fleetSSHResizeMember)
@@ -1148,7 +1139,7 @@ func (g *fleetSSHResizeGroup) register(
 	}
 	owner := g.members[g.ownerID]
 	if owner != nil && owner.hasSize {
-		attachment.resize(owner.cols, owner.rows)
+		attachment.resize(owner.geometry)
 	}
 	return member
 }
@@ -1198,21 +1189,22 @@ func (m *fleetSSHResizeMember) setActive(active bool) {
 	}
 }
 
-func (m *fleetSSHResizeMember) resize(cols, rows int, claim bool) {
-	if m == nil || m.group == nil || cols <= 0 || rows <= 0 {
+func (m *fleetSSHResizeMember) resize(geometry ptysize.Geometry, claim bool) {
+	if m == nil || m.group == nil || geometry.Cols <= 0 || geometry.Rows <= 0 {
 		return
 	}
 	g := m.group
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if g.members[m.id] != m || !m.active {
+	if g.members[m.id] != m || (!m.active && !claim) {
 		return
 	}
-	clampedCols := int(workspaceapi.ClampTerminalDim(cols))
-	clampedRows := int(workspaceapi.ClampTerminalDim(rows))
-	sizeChanged := !m.hasSize || m.cols != clampedCols || m.rows != clampedRows
-	m.cols = clampedCols
-	m.rows = clampedRows
+	if claim {
+		m.active = true
+	}
+	geometry = ptysize.Normalize(geometry)
+	sizeChanged := !m.hasSize || m.geometry != geometry
+	m.geometry = geometry
 	m.hasSize = true
 	ownerChanged := false
 	if claim {
@@ -1222,7 +1214,7 @@ func (m *fleetSSHResizeMember) resize(cols, rows int, claim bool) {
 		g.ownerID = m.id
 	}
 	if g.ownerID == m.id && (!claim || ownerChanged || sizeChanged) {
-		g.applySizeLocked(m.cols, m.rows)
+		g.applySizeLocked(m.geometry)
 	}
 }
 
@@ -1246,13 +1238,13 @@ func (g *fleetSSHResizeGroup) selectOwnerLocked() {
 func (g *fleetSSHResizeGroup) applyOwnerSizeLocked() {
 	owner := g.members[g.ownerID]
 	if owner != nil && owner.hasSize {
-		g.applySizeLocked(owner.cols, owner.rows)
+		g.applySizeLocked(owner.geometry)
 	}
 }
 
-func (g *fleetSSHResizeGroup) applySizeLocked(cols, rows int) {
+func (g *fleetSSHResizeGroup) applySizeLocked(geometry ptysize.Geometry) {
 	for _, member := range g.members {
-		member.attachment.resize(cols, rows)
+		member.attachment.resize(geometry)
 	}
 }
 
@@ -1338,9 +1330,19 @@ func handleFleetSSHAttachControl(member *fleetSSHResizeMember, data []byte) {
 	}
 	switch msg.Type {
 	case "refresh", "resize":
-		member.resize(msg.Cols, msg.Rows, false)
+		member.resize(ptysize.Geometry{
+			Cols:        msg.Cols,
+			Rows:        msg.Rows,
+			PixelWidth:  msg.PixelWidth,
+			PixelHeight: msg.PixelHeight,
+		}, false)
 	case "claim_resize":
-		member.resize(msg.Cols, msg.Rows, true)
+		member.resize(ptysize.Geometry{
+			Cols:        msg.Cols,
+			Rows:        msg.Rows,
+			PixelWidth:  msg.PixelWidth,
+			PixelHeight: msg.PixelHeight,
+		}, true)
 	case "resize_active":
 		if msg.Active != nil {
 			member.setActive(*msg.Active)

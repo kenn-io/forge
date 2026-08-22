@@ -42,6 +42,7 @@
     "@tiptap/pm": "3.29.2",
     "@tiptap/suggestion": "3.29.2",
     "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-image": "0.10.0-beta.299",
     "@xterm/addon-ligatures": "^0.10.0",
     "@xterm/addon-web-links": "^0.12.0",
     "@xterm/addon-webgl": "0.20.0-beta.298",

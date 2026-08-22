@@ -957,7 +957,13 @@ func (s *Server) updateSettings(
 	s.applyWorkspaceConfigLocked()
 	s.applyPullConfigLocked()
 	s.applyIssueConfigLocked()
+	tmuxGraphicsChanged := (prevTerminal.Graphics == nil || *prevTerminal.Graphics) !=
+		s.cfg.TerminalGraphicsEnabled()
 	s.cfgMu.Unlock()
+	if tmuxGraphicsChanged {
+		s.applyTmuxGraphics(ctx)
+	}
+	s.applyTmuxMouse(ctx)
 	s.reconcileGitHubNativeStackProjection(nativeStacksPrevious, nativeStacksEnabled)
 
 	return s.settingsOutputResponse(ctx)
@@ -1039,6 +1045,8 @@ func (s *Server) refreshRuntimeTargetsLocked() {
 	}
 	if s.workspaces != nil {
 		s.workspaces.SetHideTmuxStatus(s.cfg.Terminal.HideTmuxStatus)
+		s.workspaces.SetTmuxGraphics(s.cfg.TerminalGraphicsEnabled())
+		s.workspaces.SetTmuxMouse(s.cfg.TerminalTmuxMouseEnabled())
 	}
 	if s.runtime == nil {
 		return
@@ -1047,6 +1055,32 @@ func (s *Server) refreshRuntimeTargetsLocked() {
 	targets := localruntime.ResolveLaunchTargets(s.cfg.Agents, tmuxCmd, nil)
 	s.runtime.UpdateTargetsAndStripEnvVars(targets, s.cfg.TokenEnvNames())
 	s.runtime.UpdateHideTmuxStatus(s.cfg.Terminal.HideTmuxStatus)
+	s.runtime.UpdateTmuxGraphics(s.cfg.TerminalGraphicsEnabled())
+	s.runtime.UpdateTmuxMouse(s.cfg.TerminalTmuxMouseEnabled())
+}
+
+func (s *Server) applyTmuxGraphics(ctx context.Context) {
+	if s.workspaces == nil {
+		return
+	}
+	if err := s.workspaces.ApplyTmuxGraphics(ctx); err != nil {
+		slog.Warn("apply tmux graphics setting", "err", err)
+		return
+	}
+	if s.runtime != nil {
+		if err := s.runtime.ReattachTmuxClients(ctx); err != nil {
+			slog.Warn("reattach tmux runtime clients", "err", err)
+		}
+	}
+}
+
+func (s *Server) applyTmuxMouse(ctx context.Context) {
+	if s.workspaces == nil {
+		return
+	}
+	if err := s.workspaces.ApplyTmuxMouse(ctx); err != nil {
+		slog.Warn("apply tmux mouse setting", "err", err)
+	}
 }
 
 func (s *Server) bootTmuxCommand() []string {

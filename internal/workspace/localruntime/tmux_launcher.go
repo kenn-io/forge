@@ -176,13 +176,16 @@ func (p tmuxEnvPolicy) environment(
 }
 
 type tmuxLauncher struct {
-	TmuxCommand []string
-	Session     string
-	CWD         string
-	Pane        tmuxPaneEnvironment
-	OwnerMarker string
-	LaunchID    string
-	HideStatus  bool
+	TmuxCommand     []string
+	Session         string
+	CWD             string
+	Pane            tmuxPaneEnvironment
+	OwnerMarker     string
+	LaunchID        string
+	HideStatus      bool
+	TmuxMouse       bool
+	Graphics        bool
+	ConfigureServer bool
 }
 
 type tmuxLaunchResult struct {
@@ -199,13 +202,7 @@ func (l tmuxLauncher) prepare(ctx context.Context) (tmuxLaunchResult, error) {
 		return tmuxLaunchResult{}, err
 	}
 	if exists {
-		if err := l.validateOwner(ctx); err != nil {
-			return tmuxLaunchResult{}, err
-		}
-		if err := l.replaceLaunchMarker(ctx); err != nil {
-			return tmuxLaunchResult{}, err
-		}
-		return tmuxLaunchResult{AttachCommand: l.attachSessionCommand()}, nil
+		return l.prepareExisting(ctx)
 	}
 
 	paneCommand, cleanupEnvFile, err := l.newSessionPaneCommand()
@@ -220,28 +217,39 @@ func (l tmuxLauncher) prepare(ctx context.Context) (tmuxLaunchResult, error) {
 	}()
 	if err := l.run(ctx, l.newSessionCommand(paneCommand)); err != nil {
 		if retryErr := l.validateExistingAfterCreateRace(ctx); retryErr == nil {
-			if markerErr := l.replaceLaunchMarker(ctx); markerErr != nil {
-				return tmuxLaunchResult{}, markerErr
-			}
-			return tmuxLaunchResult{AttachCommand: l.attachSessionCommand()}, nil
+			return l.prepareExisting(ctx)
 		}
 		return tmuxLaunchResult{}, fmt.Errorf("tmux new-session: %w", err)
 	}
+	if l.ConfigureServer {
+		if err := l.run(ctx, l.globalPassthroughCommand()); err != nil {
+			return tmuxLaunchResult{}, l.cleanupNewSessionAfterError(
+				ctx, "configure global tmux passthrough", err,
+			)
+		}
+		if err := l.run(ctx, l.sixelCommand()); err != nil {
+			return tmuxLaunchResult{}, l.cleanupNewSessionAfterError(
+				ctx, "configure tmux SIXEL", err,
+			)
+		}
+		if err := l.run(ctx, l.tmuxMouseCommand()); err != nil {
+			return tmuxLaunchResult{}, l.cleanupNewSessionAfterError(
+				ctx, "configure tmux mouse", err,
+			)
+		}
+	}
+	if l.Graphics && !l.ConfigureServer {
+		if err := l.run(ctx, l.passthroughCommand()); err != nil {
+			return tmuxLaunchResult{}, l.cleanupNewSessionAfterError(
+				ctx, "configure tmux passthrough", err,
+			)
+		}
+	}
 	if l.HideStatus {
 		if err := l.run(ctx, l.hideStatusCommand()); err != nil {
-			cleanupCtx, cancel := context.WithTimeout(
-				context.WithoutCancel(ctx),
-				5*time.Second,
+			return tmuxLaunchResult{}, l.cleanupNewSessionAfterError(
+				ctx, "hide tmux status", err,
 			)
-			killErr := l.run(cleanupCtx, l.killSessionCommand())
-			cancel()
-			if killErr != nil {
-				return tmuxLaunchResult{}, fmt.Errorf(
-					"hide tmux status: %w; cleanup new tmux session: %v",
-					err, killErr,
-				)
-			}
-			return tmuxLaunchResult{}, fmt.Errorf("hide tmux status: %w", err)
 		}
 	}
 	created = true
@@ -249,6 +257,51 @@ func (l tmuxLauncher) prepare(ctx context.Context) (tmuxLaunchResult, error) {
 		AttachCommand: l.attachSessionCommand(),
 		Created:       true,
 	}, nil
+}
+
+func (l tmuxLauncher) prepareExisting(ctx context.Context) (tmuxLaunchResult, error) {
+	if err := l.validateOwner(ctx); err != nil {
+		return tmuxLaunchResult{}, err
+	}
+	if err := l.replaceLaunchMarker(ctx); err != nil {
+		return tmuxLaunchResult{}, err
+	}
+	if l.ConfigureServer {
+		if err := l.run(ctx, l.globalPassthroughCommand()); err != nil {
+			return tmuxLaunchResult{}, fmt.Errorf("configure global tmux passthrough: %w", err)
+		}
+		if err := l.run(ctx, l.sixelCommand()); err != nil {
+			return tmuxLaunchResult{}, fmt.Errorf("configure tmux SIXEL: %w", err)
+		}
+		if err := l.run(ctx, l.tmuxMouseCommand()); err != nil {
+			return tmuxLaunchResult{}, fmt.Errorf("configure tmux mouse: %w", err)
+		}
+	}
+	if l.Graphics && !l.ConfigureServer {
+		if err := l.run(ctx, l.passthroughCommand()); err != nil {
+			return tmuxLaunchResult{}, fmt.Errorf("configure tmux passthrough: %w", err)
+		}
+	}
+	return tmuxLaunchResult{AttachCommand: l.attachSessionCommand()}, nil
+}
+
+func (l tmuxLauncher) cleanupNewSessionAfterError(
+	ctx context.Context,
+	operation string,
+	cause error,
+) error {
+	cleanupCtx, cancel := context.WithTimeout(
+		context.WithoutCancel(ctx),
+		5*time.Second,
+	)
+	defer cancel()
+	if err := l.run(cleanupCtx, l.killSessionCommand()); err != nil {
+		return fmt.Errorf(
+			"%s: %w; cleanup new tmux session: %v",
+			operation, cause, err,
+		)
+	}
+	return fmt.Errorf("%s: %w", operation, cause)
 }
 
 // replaceLaunchMarker rewrites @forge_launch when this launch adopts an
@@ -541,6 +594,50 @@ func (l tmuxLauncher) hideStatusCommand() []string {
 	return append(
 		slices.Clone(l.TmuxCommand),
 		"set-option", "-q", "-t", l.Session, "status", "off",
+	)
+}
+
+func (l tmuxLauncher) passthroughCommand() []string {
+	value := "off"
+	if l.Graphics {
+		value = "on"
+	}
+	return append(
+		slices.Clone(l.TmuxCommand),
+		"set-option", "-q", "-p", "-t", l.Session,
+		"allow-passthrough", value,
+	)
+}
+
+func (l tmuxLauncher) globalPassthroughCommand() []string {
+	value := "off"
+	if l.Graphics {
+		value = "on"
+	}
+	return append(
+		slices.Clone(l.TmuxCommand),
+		"set-option", "-q", "-g", "allow-passthrough", value,
+	)
+}
+
+func (l tmuxLauncher) sixelCommand() []string {
+	command := append(
+		slices.Clone(l.TmuxCommand), "set-option", "-q", "-s",
+	)
+	if !l.Graphics {
+		return append(command, "-u", "terminal-features[100]")
+	}
+	return append(command, "terminal-features[100]", "xterm-256color:sixel")
+}
+
+func (l tmuxLauncher) tmuxMouseCommand() []string {
+	value := "off"
+	if l.TmuxMouse {
+		value = "on"
+	}
+	return append(
+		slices.Clone(l.TmuxCommand),
+		"set-option", "-q", "-g", "mouse", value,
 	)
 }
 

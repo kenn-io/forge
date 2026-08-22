@@ -4452,11 +4452,13 @@ type Terminal struct {
 	FontFamily       string  `json:"font_family"`
 	FontLigatures    bool    `json:"font_ligatures"`
 	FontSize         int64   `json:"font_size"`
+	Graphics         bool    `json:"graphics"`
 	HideTmuxStatus   bool    `json:"hide_tmux_status"`
 	LetterSpacing    int64   `json:"letter_spacing"`
 	LineHeight       float64 `json:"line_height"`
 	RetainedSessions int64   `json:"retained_sessions"`
 	Scrollback       int64   `json:"scrollback"`
+	TmuxMouse        bool    `json:"tmux_mouse"`
 }
 
 // TmuxSessionInfo defines model for TmuxSessionInfo.

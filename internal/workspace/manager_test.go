@@ -27,6 +27,7 @@ import (
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/ptyowner"
+	"go.kenn.io/forge/internal/ptysize"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	gitcmd "go.kenn.io/kit/git/cmd"
 )
@@ -4756,18 +4757,151 @@ func TestManagerEnsureTmuxHasSessionPrefix(t *testing.T) {
 	d := openTestDB(t)
 	mgr := NewManager(d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script, "wrap"})
+	mgr.SetTmuxGraphics(true)
+	mgr.SetTmuxMouse(true)
 
 	// Script exits 0 for every invocation, so EnsureTmux observes
-	// "session exists" after the has-session call and returns
-	// without running new-session.
+	// "session exists" after the has-session call and refreshes the
+	// Forge-owned terminal options without running new-session.
 	require.NoError(t, mgr.EnsureTmux(t.Context(), "sess-A", t.TempDir()))
 
 	argvs := readRecorderArgv(t, record)
-	require.Len(t, argvs, 1)
+	require.Len(t, argvs, 2)
 	assert.Equal(
 		[]string{"wrap", "has-session", "-t", "sess-A"},
 		argvs[0],
 	)
+	assert.Equal(
+		[]string{
+			"wrap", "set-option", "-q", "-p", "-t", "sess-A",
+			"allow-passthrough", "on",
+		},
+		argvs[1],
+	)
+}
+
+func TestManagerApplyTmuxMouseUpdatesDedicatedServer(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	tmuxPath := filepath.Join(dir, "tmux")
+	body := "#!/bin/sh\n" +
+		"TMUX_RECORD=" + shellquote.Join(record) + "\n" +
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
+		`case "$*" in *list-sessions*) printf 'sess-A:kenn-forge:test-owner\n';; esac` + "\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(tmuxPath, []byte(body), 0o755))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr.SetTmuxMouse(true)
+	require.NoError(mgr.ApplyTmuxMouse(t.Context()))
+
+	assert.Equal([][]string{
+		{"-L", "kenn-forge", "list-sessions", "-F", tmuxSessionListFormat},
+		{"-L", "kenn-forge", "set-option", "-q", "-g", "mouse", "on"},
+	}, readRecorderArgv(t, record))
+}
+
+func TestManagerApplyTmuxGraphicsDisablesDedicatedServer(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	tmuxPath := filepath.Join(dir, "tmux")
+	body := "#!/bin/sh\n" +
+		"TMUX_RECORD=" + shellquote.Join(record) + "\n" +
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
+		`case "$*" in *list-sessions*) printf 'sess-A:kenn-forge:test-owner\n';; *list-panes*) printf 'pane-A\npane-B\n';; esac` + "\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(tmuxPath, []byte(body), 0o755))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr.SetTmuxGraphics(false)
+	require.NoError(mgr.ApplyTmuxGraphics(t.Context()))
+
+	assert.Equal([][]string{
+		{"-L", "kenn-forge", "list-sessions", "-F", tmuxSessionListFormat},
+		{"-L", "kenn-forge", "set-option", "-q", "-g", "allow-passthrough", "off"},
+		{"-L", "kenn-forge", "set-option", "-q", "-s", "-u", "terminal-features[100]"},
+		{"-L", "kenn-forge", "list-panes", "-s", "-t", "sess-A", "-F", tmuxPaneListFormat},
+		{"-L", "kenn-forge", "set-option", "-q", "-p", "-u", "-t", "pane-A", "allow-passthrough"},
+		{"-L", "kenn-forge", "set-option", "-q", "-p", "-u", "-t", "pane-B", "allow-passthrough"},
+	}, readRecorderArgv(t, record))
+}
+
+func TestManagerApplyTmuxGraphicsEnablesEveryOwnedCustomPane(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	tmuxPath := filepath.Join(dir, "tmux")
+	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr.SetTmuxCommand([]string{tmuxPath})
+	mgr.SetTmuxGraphics(true)
+	body := fmt.Sprintf("#!/bin/sh\n"+
+		"TMUX_RECORD=%s\n"+
+		`printf '%%s\0' "$#" "$@" >> "$TMUX_RECORD"`+"\n"+
+		`case "$*" in *list-sessions*) printf 'owned:%s\nother:user-owned\n';; *list-panes*) printf 'pane-A\npane-B\n';; esac`+"\n"+
+		"exit 0\n", shellquote.Join(record), mgr.TmuxOwnerMarker())
+	require.NoError(os.WriteFile(tmuxPath, []byte(body), 0o755))
+
+	require.NoError(mgr.ApplyTmuxGraphics(t.Context()))
+
+	assert.Equal([][]string{
+		{"list-sessions", "-F", tmuxSessionListFormat},
+		{"list-panes", "-s", "-t", "owned", "-F", tmuxPaneListFormat},
+		{"set-option", "-q", "-p", "-t", "pane-A", "allow-passthrough", "on"},
+		{"set-option", "-q", "-p", "-t", "pane-B", "allow-passthrough", "on"},
+	}, readRecorderArgv(t, record))
+}
+
+func TestManagerApplyTmuxGraphicsAttemptsEveryPaneAfterFailure(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	tmuxPath := filepath.Join(dir, "tmux")
+	body := "#!/bin/sh\n" +
+		"TMUX_RECORD=" + shellquote.Join(record) + "\n" +
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
+		`case "$*" in *list-sessions*) printf 'sess-A:\n';; *list-panes*) printf 'pane-A\npane-B\n';; *'-t pane-A'*) exit 1;; esac` + "\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(tmuxPath, []byte(body), 0o755))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr.SetTmuxGraphics(true)
+	require.Error(mgr.ApplyTmuxGraphics(t.Context()))
+
+	records := readRecorderArgv(t, record)
+	assert.Contains(records, []string{
+		"-L", "kenn-forge", "set-option", "-q", "-p", "-u", "-t", "pane-B", "allow-passthrough",
+	})
+}
+
+func TestManagerApplyTmuxGraphicsDoesNotMutateCustomServer(t *testing.T) {
+	require := require.New(t)
+	script, record := writeRecorderScript(t)
+	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr.SetTmuxCommand([]string{script})
+	mgr.SetTmuxGraphics(false)
+
+	require.NoError(mgr.ApplyTmuxGraphics(t.Context()))
+	require.NoFileExists(record)
+}
+
+func TestManagerApplyTmuxMouseDoesNotMutateCustomServer(t *testing.T) {
+	require := require.New(t)
+	script, record := writeRecorderScript(t)
+	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr.SetTmuxCommand([]string{script})
+	mgr.SetTmuxMouse(true)
+
+	require.NoError(mgr.ApplyTmuxMouse(t.Context()))
+	require.NoFileExists(record)
 }
 
 func TestManagerEnsureTerminalUsesPtyOwnerWhenConfigured(t *testing.T) {
@@ -6388,11 +6522,13 @@ func TestManagerEnsureTmuxCreatesSessionOnMiss(t *testing.T) {
 	mgr := NewManager(d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script})
 	mgr.SetHideTmuxStatus(true)
+	mgr.SetTmuxGraphics(true)
+	mgr.SetTmuxMouse(true)
 
 	require.NoError(mgr.EnsureTmux(t.Context(), "sess-B", "/tmp/cwd"))
 
 	argvs := readRecorderArgv(t, record)
-	require.Len(argvs, 4)
+	require.Len(argvs, 5)
 	assert.Equal(
 		[]string{"has-session", "-t", "sess-B"},
 		argvs[0],
@@ -6416,8 +6552,15 @@ func TestManagerEnsureTmuxCreatesSessionOnMiss(t *testing.T) {
 		argvs[2],
 	)
 	assert.Equal(
-		[]string{"set-option", "-q", "-t", "sess-B", "status", "off"},
+		[]string{
+			"set-option", "-q", "-p", "-t", "sess-B",
+			"allow-passthrough", "on",
+		},
 		argvs[3],
+	)
+	assert.Equal(
+		[]string{"set-option", "-q", "-t", "sess-B", "status", "off"},
+		argvs[4],
 	)
 }
 
@@ -6443,11 +6586,13 @@ func TestManagerEnsureTmuxCreatesSessionOnMacOSMissingServer(t *testing.T) {
 	d := openTestDB(t)
 	mgr := NewManager(d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script})
+	mgr.SetTmuxGraphics(true)
+	mgr.SetTmuxMouse(true)
 
 	require.NoError(mgr.EnsureTmux(context.Background(), "sess-macos", "/tmp/cwd"))
 
 	argvs := readRecorderArgv(t, record)
-	require.Len(argvs, 3)
+	require.Len(argvs, 4)
 	assert.Equal(
 		[]string{"has-session", "-t", "sess-macos"},
 		argvs[0],
@@ -6460,6 +6605,13 @@ func TestManagerEnsureTmuxCreatesSessionOnMacOSMissingServer(t *testing.T) {
 			"@forge_owner", mgr.tmuxOwnerMarker(),
 		},
 		argvs[2],
+	)
+	assert.Equal(
+		[]string{
+			"set-option", "-q", "-p", "-t", "sess-macos",
+			"allow-passthrough", "on",
+		},
+		argvs[3],
 	)
 }
 
@@ -6614,8 +6766,7 @@ func (f *fakePtyOwnerClient) Ensure(
 func (f *fakePtyOwnerClient) Attach(
 	context.Context,
 	string,
-	int,
-	int,
+	ptysize.Geometry,
 ) (*ptyowner.Attachment, error) {
 	return nil, nil
 }

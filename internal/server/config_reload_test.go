@@ -25,6 +25,7 @@ import (
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/platform"
 	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
+	"go.kenn.io/forge/internal/ptysize"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/internal/workspace/localruntime"
@@ -414,6 +415,58 @@ func TestConfigReload_WatcherFiresOnInPlaceEdit(t *testing.T) {
 	srv.cfgMu.Unlock()
 	assert.Equal("flat", gotActivity.ViewMode)
 	assert.Equal("30d", gotActivity.TimeRange)
+}
+
+func TestConfigReloadAppliesMouseToDedicatedTmuxServer(t *testing.T) {
+	require := require.New(t)
+	record := installSettingsTmuxRecorder(t)
+	srv, _, cfgPath := setupTestServerWithConfigContentAndOptions(t, validReloadConfig, &mockGH{}, ServerOptions{
+		HostCheckAllowLoopbackAnyPort: true,
+		WorktreeDir:                   t.TempDir(),
+	})
+	require.NoError(os.WriteFile(record, nil, 0o600))
+	waitForConfigWatcher(t, srv, 2*time.Second)
+	stream := streamConfigEvents(t, srv)
+	defer stream.Close()
+
+	writeConfigToml(t, cfgPath, validReloadConfig+`
+[terminal]
+tmux_mouse = false
+`)
+
+	event := waitForConfigEvent(t, stream, 2*time.Second)
+	require.True(event.Valid, "reload error: %s", event.Error)
+	assert.Equal(t, []string{
+		"-L kenn-forge list-sessions -F #{session_name}:#{@forge_owner}",
+		"-L kenn-forge set-option -q -g mouse off",
+	}, readSettingsTmuxMouseCommands(t, record))
+}
+
+func TestConfigReloadAppliesGraphicsToDedicatedTmuxServer(t *testing.T) {
+	require := require.New(t)
+	record := installSettingsTmuxRecorder(t)
+	srv, _, cfgPath := setupTestServerWithConfigContentAndOptions(t, validReloadConfig, &mockGH{}, ServerOptions{
+		HostCheckAllowLoopbackAnyPort: true,
+		WorktreeDir:                   t.TempDir(),
+	})
+	require.NoError(os.WriteFile(record, nil, 0o600))
+	waitForConfigWatcher(t, srv, 2*time.Second)
+	stream := streamConfigEvents(t, srv)
+	defer stream.Close()
+
+	writeConfigToml(t, cfgPath, validReloadConfig+`
+[terminal]
+graphics = false
+`)
+
+	event := waitForConfigEvent(t, stream, 2*time.Second)
+	require.True(event.Valid, "reload error: %s", event.Error)
+	assert.Equal(t, []string{
+		"-L kenn-forge set-option -q -g allow-passthrough off",
+		"-L kenn-forge set-option -q -s -u terminal-features[100]",
+		"-L kenn-forge set-option -q -p -u -t pane-A allow-passthrough",
+		"-L kenn-forge set-option -q -p -u -t pane-B allow-passthrough",
+	}, readSettingsTmuxGraphicsCommands(t, record))
 }
 
 func TestConfigReloadPublishesPullConfigOnlyAfterSuccessfulReload(t *testing.T) {
@@ -1686,11 +1739,11 @@ func (m *fakeRuntimeOwner) Stop(context.Context, string) error {
 	return nil
 }
 
-func (p *fakeRuntimePTY) Output() <-chan []byte { return p.output }
-func (p *fakeRuntimePTY) Done() <-chan struct{} { return p.done }
-func (p *fakeRuntimePTY) Write([]byte) error    { return nil }
-func (p *fakeRuntimePTY) Resize(int, int) error { return nil }
-func (p *fakeRuntimePTY) ExitCode() int         { return 0 }
+func (p *fakeRuntimePTY) Output() <-chan []byte         { return p.output }
+func (p *fakeRuntimePTY) Done() <-chan struct{}         { return p.done }
+func (p *fakeRuntimePTY) Write([]byte) error            { return nil }
+func (p *fakeRuntimePTY) Resize(ptysize.Geometry) error { return nil }
+func (p *fakeRuntimePTY) ExitCode() int                 { return 0 }
 
 func (p *fakeRuntimePTY) Close() {
 	select {

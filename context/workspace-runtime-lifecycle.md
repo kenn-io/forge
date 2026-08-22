@@ -42,6 +42,9 @@ Rules:
 - Use standard negotiation, not an application compression envelope: context
   takeover shares a dictionary across PTY messages, while unsupported peers
   continue with an ordinary uncompressed WebSocket.
+- The browser pane that claims resize authority owns the complete character and
+  pixel geometry; hidden or non-owning panes cannot overwrite it. Retained PTYs use
+  an 8x16 fallback only until claimed browser geometry arrives (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::resizeVisibleTerminal`).
 
 ## Natural Exit Rules
 
@@ -154,10 +157,9 @@ still exists.
   `internal/workspace/localruntime/manager.go::Manager.Shutdown`).
 - New tmux sessions use the `forge-` prefix; persisted `middleman-` session
   names remain valid and must not be rewritten (`internal/workspace/`).
-- Forge talks to its own tmux server, not the user's global one: every
-  empty-tmux-command fallback must use `config.DefaultTmuxCommand`, never bare
-  `tmux`; a configured `[tmux] command` is used verbatim, so socket choice
-  stays with the user (`internal/config/config.go::DefaultTmuxCommand`).
+- Only `DefaultTmuxCommand` selects Forge's dedicated tmux server. Custom tmux
+  commands may address a shared user server, so Forge never changes their global
+  options or applies graphics-off mutations (`internal/config/config.go::IsDefaultTmuxCommand`).
 - The tmux server permanently retains its spawn environment for every pane to
   read via `show-environment -g`, and only `new-session` clients spawn it, so
   every Forge-issued tmux client runs with the non-secret allowlist
@@ -196,6 +198,27 @@ still exists.
 - Every tmux client attach must force UTF-8; service launchers may omit locale
   variables, causing tmux to replace non-ASCII output before WebSocket transport
   (`internal/workspace/localruntime/tmux_launcher.go::tmuxAttachSessionCommand`).
+- Forge's dedicated tmux server owns global passthrough, SIXEL, and mouse mode;
+  live changes clear pane overrides, while custom servers receive passthrough
+  only on Forge-owned panes and only while graphics are enabled
+  (`internal/workspace/manager.go::Manager.ApplyTmuxGraphics`).
+- Startup applies saved graphics and mouse settings before restoring retained
+  clients on an existing dedicated tmux server
+  (`internal/server/server.go::newServer`).
+- Live graphics or mouse changes are best-effort; graphics updates try every
+  managed pane before reporting combined failures, and setup reapplies the
+  pane state
+  (`internal/server/settings_handlers.go::Server.applyTmuxGraphics`).
+- Enabling graphics installs each replacement retained client before detaching
+  the old one; browser reconnects must always find an attachment while panes
+  stay running
+  (`internal/workspace/localruntime/manager.go::Manager.ReattachTmuxClients`).
+- Terminal graphics are optional and default on. The browser supports SIXEL and
+  iTerm images; Kitty graphics remain disabled while the xterm add-on labels
+  that protocol alpha (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::syncImageAddon`).
+- Retained tmux attach PTYs must start with nonzero pixel geometry: tmux asks for
+  pixels before a browser subscribes and otherwise never retries the unanswered
+  query needed for native SIXEL (`internal/workspace/localruntime/tmux_runtime.go::startTmuxAttachSession`).
 - Local-runtime reconnects restore browser-generated cursor-key, mouse, focus,
   and paste DEC modes from session-wide PTY state, not bounded screen replay
   (`internal/workspace/localruntime/manager.go::session.subscribe`).
@@ -278,8 +301,8 @@ stale tabs.
 - The frontend may react immediately to terminal exit events, but should then
   reconcile with a runtime refresh.
 - Only the active terminal pane may publish cell geometry; font-metric changes
-  must refit and publish columns/rows through the refresh control because unchanged
-  container pixels do not trigger resize observation (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::refreshVisibleTerminal`).
+  must refit and publish columns/rows through an ownership-aware geometry control because unchanged
+  container pixels do not trigger resize observation (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::resizeVisibleTerminal`).
 - Keyboard and pointer interactions inside workspace rows must not trigger
   unintended navigation when the user is targeting a nested control.
 - Persisted "last active tab" state must be scoped per workspace.

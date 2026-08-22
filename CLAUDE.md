@@ -79,7 +79,7 @@ only routes to them.
 - Verify Zensical screenshot asset-path findings against rendered `site/` output; raw HTML source paths can be rewritten when `use_directory_urls` is enabled.
 - Zensical resolves `docs_dir`/`site_dir` relative to the config file's directory, so `uvx zensical build` cannot run in place against the checked-in `docs/zensical.toml`; stage a scratch project root containing a copy of the config beside a copy of `docs/`, then build there.
 - Tests, docs, fixtures, commit messages, and PR text should use generic synthetic examples unless the user explicitly asks to preserve exact private project names, paths, prose, or domain details.
-- **Never use npm** — use `bun install` for frontend dependencies and invoke Vite+ directly via `./node_modules/.bin/vp ...` (or `../node_modules/.bin/vp ...` from `frontend/`). Never run `npm install` or `npm run` — this creates `package-lock.json` which conflicts with the bun lockfile
+- **Use Bun only for dependency installation** — run `bun install`, and launch Vite+, Vitest, Svelte tooling, and Playwright with Node via `./node_modules/.bin/vp ...` (or `../node_modules/.bin/vp ...` from `frontend/`). Never use npm; it creates `package-lock.json`, which conflicts with the Bun lockfile
 - No emojis in code or output
 - Datetimes are UTC across storage and API boundaries. Store timestamps in UTC, emit API timestamps as UTC RFC3339, and only convert to local time in the Svelte UI presentation layer.
 

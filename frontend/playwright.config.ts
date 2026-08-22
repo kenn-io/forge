@@ -28,7 +28,7 @@ export default defineConfig({
     trace: "on-first-retry",
   },
   webServer: {
-    command: `bun run dev --host ${host} --port ${port} --strictPort`,
+    command: `node ../node_modules/vite-plus/bin/vp dev --host ${host} --port ${port} --strictPort`,
     url: baseURL,
     reuseExistingServer: e2eReuseExistingServer(),
     timeout: 120_000,

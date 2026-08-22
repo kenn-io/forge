@@ -16,7 +16,7 @@ make profile-workspace-switch
 or, from `frontend/`:
 
 ```bash
-bun run profile:workspace-switch
+node node_modules/.bin/playwright test --config tests/profiling/playwright-profile.config.ts
 ```
 
 Requires `git`, `tmux`, and `less` on the host (the same requirements

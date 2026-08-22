@@ -10,6 +10,8 @@ import { nodeUnitTestFiles } from "./vitest.node-files.ts";
 
 const require = createRequire(import.meta.url);
 const testingLibrarySvelteEntry = require.resolve("@testing-library/svelte");
+const kitUiMarkdownEntry = require.resolve("@kenn-io/kit-ui/utils/markdown");
+const kitUiTimeEntry = require.resolve("@kenn-io/kit-ui/utils/time");
 
 // resolveDevApiUrl() prefers KENN_FORGE_API_URL, which dev-ephemeral sets
 // to the generated backend URL before starting Vite.
@@ -233,12 +235,20 @@ const config = {
       return hostType === "js" ? { relative: true } : undefined;
     },
   },
-  plugins: [healthcheckPlugin(), devApiUrlPlugin(apiUrl), svelte(), svelteTesting()],
+  plugins: [healthcheckPlugin(), devApiUrlPlugin(apiUrl), svelte(), svelteTesting({ autoCleanup: false })],
   resolve: {
     alias: [
       {
         find: /^@testing-library\/svelte$/,
         replacement: testingLibrarySvelteEntry,
+      },
+      {
+        find: /^@kenn-io\/kit-ui\/utils\/markdown$/,
+        replacement: kitUiMarkdownEntry,
+      },
+      {
+        find: /^@kenn-io\/kit-ui\/utils\/time$/,
+        replacement: kitUiTimeEntry,
       },
     ],
   },

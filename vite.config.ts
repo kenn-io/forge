@@ -4,7 +4,7 @@ const rootVP = "node node_modules/vite-plus/bin/vp";
 const frontendVP = "node ../node_modules/vite-plus/bin/vp";
 const packageVP = "node ../../node_modules/vite-plus/bin/vp";
 const effectDiagnostics =
-  "(cd frontend && node node_modules/@effect/language-service/cli.js diagnostics --project tsconfig.json --format text --severity error)";
+  "(cd frontend && NODE_PATH=../node_modules node node_modules/@effect/language-service/cli.js diagnostics --project tsconfig.json --format text --severity error)";
 
 export default defineConfig({
   run: {

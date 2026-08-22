@@ -172,7 +172,7 @@ frontend-check-core-no-deps: check-vite-plus-bin
 	$(VITE_PLUS_BIN) run svelte-check
 
 frontend-effect-diagnostics: check-vite-plus-bin
-	cd frontend && node node_modules/@effect/language-service/cli.js diagnostics --project tsconfig.json --format text --severity error
+	cd frontend && NODE_PATH=../node_modules node node_modules/@effect/language-service/cli.js diagnostics --project tsconfig.json --format text --severity error
 
 # Build and verify the public documentation, including generated screenshots.
 docs-build: frontend-deps

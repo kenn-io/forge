@@ -1,3 +1,5 @@
+import "@testing-library/svelte/vitest";
+
 function createMemoryStorage(): Storage {
   const data = new Map<string, string>();
 

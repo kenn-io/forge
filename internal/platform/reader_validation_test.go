@@ -36,11 +36,9 @@ func TestUpdatedMergeRequestInventoryDoesNotRequireHistoricalCapability(t *testi
 		Name: "project", RepoPath: "group/project",
 	}
 	provider := testPageReadProvider{
-		testProvider: testProvider{
-			kind: KindGitLab,
-			host: ref.Host,
-			caps: Capabilities{Archive: ArchiveCapabilities{HistoricalIssues: true}},
-		},
+		kind:          KindGitLab,
+		host:          ref.Host,
+		caps:          Capabilities{Archive: ArchiveCapabilities{HistoricalIssues: true}},
 		mergeRequests: Page[MergeRequest]{Exhausted: true},
 	}
 	registry, err := NewRegistry(provider)
@@ -62,11 +60,9 @@ func TestIssueInventoryRejectsItemsFromAnotherRepository(t *testing.T) {
 	foreign := ref
 	foreign.Owner, foreign.RepoPath = "other", "other/widgets"
 	provider := testPageReadProvider{
-		testProvider: testProvider{
-			kind: KindGitHub,
-			host: "github.com",
-			caps: Capabilities{Archive: ArchiveCapabilities{HistoricalIssues: true}},
-		},
+		kind: KindGitHub,
+		host: "github.com",
+		caps: Capabilities{Archive: ArchiveCapabilities{HistoricalIssues: true}},
 		issues: Page[Issue]{
 			Items:     []Issue{{Repo: foreign, Number: 7}},
 			Exhausted: true,

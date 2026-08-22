@@ -725,7 +725,7 @@ func (c *liveClient) ListNotifications(ctx context.Context, opts NotificationLis
 	ghOpts := &gh.NotificationListOptions{
 		All:           opts.All,
 		Participating: opts.Participating,
-		ListOptions:   gh.ListOptions{Page: page, PerPage: 100},
+		Page:          page, PerPage: 100,
 	}
 	if opts.Since != nil {
 		ghOpts.Since = opts.Since.UTC()
@@ -1505,8 +1505,8 @@ func parseRateHeaderInt(header http.Header, name string) (int, error) {
 
 func (c *liveClient) ListOpenPullRequests(ctx context.Context, owner, repo string) ([]*gh.PullRequest, error) {
 	opts := &gh.PullRequestListOptions{
-		State:       "open",
-		ListOptions: gh.ListOptions{PerPage: 100},
+		State:   "open",
+		PerPage: 100,
 	}
 	progress := newMergeRequestListFetchProgressLogger(RepoRef{
 		Owner:        owner,
@@ -2390,7 +2390,7 @@ func (c *liveClient) ListCheckRunsForRef(
 	ctx context.Context, owner, repo, ref string,
 ) ([]*gh.CheckRun, error) {
 	opts := &gh.ListCheckRunsOptions{
-		ListOptions: gh.ListOptions{PerPage: 100},
+		PerPage: 100,
 	}
 	all, err := collectPages(ctx, func(pageOpts *gh.ListOptions) ([]*gh.CheckRun, *gh.Response, error) {
 		opts.ListOptions = *pageOpts
@@ -2415,9 +2415,9 @@ func (c *liveClient) ListWorkflowRunsForHeadSHA(
 	ctx context.Context, owner, repo, headSHA string,
 ) ([]*gh.WorkflowRun, error) {
 	opts := &gh.ListWorkflowRunsOptions{
-		HeadSHA:     headSHA,
-		Status:      "action_required",
-		ListOptions: gh.ListOptions{PerPage: 100},
+		HeadSHA: headSHA,
+		Status:  "action_required",
+		PerPage: 100,
 	}
 	all, err := collectPages(ctx, func(pageOpts *gh.ListOptions) ([]*gh.WorkflowRun, *gh.Response, error) {
 		opts.ListOptions = *pageOpts
@@ -3461,10 +3461,8 @@ func (c *liveClient) ListPullRequestsPage(
 		State:     state,
 		Sort:      "updated",
 		Direction: "desc",
-		ListOptions: gh.ListOptions{
-			Page:    page,
-			PerPage: 100,
-		},
+		Page:      page,
+		PerPage:   100,
 	}
 	prs, resp, err := c.gh.PullRequests.List(
 		ctx, owner, repo, opts,

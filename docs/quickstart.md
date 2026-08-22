@@ -52,7 +52,7 @@ If the Releases page has no published version, build from source.
 
 ## Build from source
 
-Source builds require Go 1.26+ and [Bun](https://bun.sh/).
+Source builds require Go 1.27+ and [Bun](https://bun.sh/).
 
 ```sh
 git clone https://github.com/kenn-io/forge.git kenn-forge

@@ -118,7 +118,7 @@ func (t *transport) listAllPullReviews(
 		err = t.withRequestContext(ctx, func() error {
 			var err error
 			reviews, resp, err = t.api.ListPullReviews(ref.Owner, ref.Name, int64(number), forgejosdk.ListPullReviewsOptions{
-				ListOptions: forgejosdk.ListOptions{Page: page, PageSize: 100},
+				Page: page, PageSize: 100,
 			})
 			return err
 		})

@@ -549,9 +549,9 @@ func TestWorktreeFromWorkspaceFoldsDraft(t *testing.T) {
 	open := "open"
 	draftFlag := true
 	sum := db.WorkspaceSummary{
-		Workspace: db.Workspace{WorktreePath: "/tmp/wt-draft"},
-		MRState:   &open,
-		MRIsDraft: &draftFlag,
+		WorktreePath: "/tmp/wt-draft",
+		MRState:      &open,
+		MRIsDraft:    &draftFlag,
 	}
 	wt := worktreeFromWorkspace(sum, "worktree:/tmp/wt-draft", "repo:/tmp")
 	require.NotNil(t, wt.PRState)
@@ -565,9 +565,9 @@ func TestWorktreeFromWorkspaceClosedDraftKeepsTerminalState(t *testing.T) {
 	closed := "closed"
 	draftFlag := true
 	sum := db.WorkspaceSummary{
-		Workspace: db.Workspace{WorktreePath: "/tmp/wt-closed"},
-		MRState:   &closed,
-		MRIsDraft: &draftFlag,
+		WorktreePath: "/tmp/wt-closed",
+		MRState:      &closed,
+		MRIsDraft:    &draftFlag,
 	}
 	wt := worktreeFromWorkspace(sum, "worktree:/tmp/wt-closed", "repo:/tmp")
 	require.NotNil(t, wt.PRState)
@@ -584,12 +584,10 @@ func TestWorktreeFromWorkspaceIssueExposesIssueLink(t *testing.T) {
 	issueState := "open"
 	associatedPR := 99
 	sum := db.WorkspaceSummary{
-		Workspace: db.Workspace{
-			WorktreePath:       "/tmp/wt-issue",
-			ItemType:           db.WorkspaceItemTypeIssue,
-			ItemNumber:         42,
-			AssociatedPRNumber: &associatedPR,
-		},
+		WorktreePath:        "/tmp/wt-issue",
+		ItemType:            db.WorkspaceItemTypeIssue,
+		ItemNumber:          42,
+		AssociatedPRNumber:  &associatedPR,
 		MRTitle:             &issueTitle,
 		MRState:             &issueState,
 		SourceItemVisible:   true,
@@ -615,11 +613,9 @@ func TestWorktreeFromWorkspacePRPopulatesPRFields(t *testing.T) {
 	deletions := 9
 	comments := 4
 	sum := db.WorkspaceSummary{
-		Workspace: db.Workspace{
-			WorktreePath: "/tmp/wt-pr",
-			ItemType:     db.WorkspaceItemTypePullRequest,
-			ItemNumber:   7,
-		},
+		WorktreePath:      "/tmp/wt-pr",
+		ItemType:          db.WorkspaceItemTypePullRequest,
+		ItemNumber:        7,
 		MRTitle:           &title,
 		MRState:           &state,
 		MRReviewDecision:  &reviewDecision,
@@ -718,11 +714,9 @@ func TestWorktreeFromWorkspacePREnrichmentOmitsZeroAndEmpty(t *testing.T) {
 	emptyDecision := ""
 	zero := 0
 	sum := db.WorkspaceSummary{
-		Workspace: db.Workspace{
-			WorktreePath: "/tmp/wt-pr",
-			ItemType:     db.WorkspaceItemTypePullRequest,
-			ItemNumber:   7,
-		},
+		WorktreePath:     "/tmp/wt-pr",
+		ItemType:         db.WorkspaceItemTypePullRequest,
+		ItemNumber:       7,
 		MRTitle:          &title,
 		MRState:          &state,
 		MRReviewDecision: &emptyDecision,
@@ -763,12 +757,10 @@ func TestWorktreeFromWorkspaceMapsSessionBackend(t *testing.T) {
 	}
 	for _, tc := range cases {
 		sum := db.WorkspaceSummary{
-			Workspace: db.Workspace{
-				WorktreePath:    "/tmp/wt",
-				ItemType:        tc.itemType,
-				ItemNumber:      1,
-				TerminalBackend: tc.backend,
-			},
+			WorktreePath:    "/tmp/wt",
+			ItemType:        tc.itemType,
+			ItemNumber:      1,
+			TerminalBackend: tc.backend,
 		}
 		wt := worktreeFromWorkspace(sum, "worktree:/tmp/wt", "repo:/tmp")
 		require.Equal(tc.want, wt.SessionBackend, tc.name)

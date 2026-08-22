@@ -32,19 +32,17 @@ func newMidStackMergeFixture(
 		DefaultBranch:      "main",
 	}
 	provider := &deferredMergeTestProvider{
-		deferredMergeProviderBase: deferredMergeProviderBase{
-			ref: ref,
-			mergeRequests: []platform.MergeRequest{
-				{
-					Repo: ref, PlatformID: 7001, Number: 1, State: "open",
-					HeadBranch: "bottom", BaseBranch: "main",
-					HeadSHA: "bottom-head", BaseSHA: "base-sha",
-				},
-				{
-					Repo: ref, PlatformID: 7002, Number: 2, State: "open",
-					HeadBranch: "middle", BaseBranch: "bottom",
-					HeadSHA: "middle-head", BaseSHA: "bottom-head",
-				},
+		ref: ref,
+		mergeRequests: []platform.MergeRequest{
+			{
+				Repo: ref, PlatformID: 7001, Number: 1, State: "open",
+				HeadBranch: "bottom", BaseBranch: "main",
+				HeadSHA: "bottom-head", BaseSHA: "base-sha",
+			},
+			{
+				Repo: ref, PlatformID: 7002, Number: 2, State: "open",
+				HeadBranch: "middle", BaseBranch: "bottom",
+				HeadSHA: "middle-head", BaseSHA: "bottom-head",
 			},
 		},
 		mergeCh: make(chan deferredMergeTestMergeCall, 1),

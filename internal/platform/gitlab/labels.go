@@ -18,7 +18,7 @@ func (c *Client) ListLabels(
 	if err != nil {
 		return platform.LabelCatalog{}, err
 	}
-	opt := &gitlab.ListLabelsOptions{ListOptions: gitlab.ListOptions{Page: 1, PerPage: defaultPageSize}}
+	opt := &gitlab.ListLabelsOptions{Page: 1, PerPage: defaultPageSize}
 
 	var out []platform.Label
 	for {

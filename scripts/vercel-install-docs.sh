@@ -6,19 +6,19 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 tools_root="$repo_root/.vercel/tools"
 tools_bin="$tools_root/bin"
 go_root="$tools_root/go"
-go_version="1.26.6"
+go_version="1.27.0"
 uv_version="0.12.1"
 
 case "$(uname -m)" in
   x86_64)
     go_arch="amd64"
-    go_sha256="708effb774be8237570d0add163225abbdfaf4fca28b2611df167beba4feef89"
+    go_sha256="675c26c449cbb18fc24b74650de1eabbae6e16f64326fd85a283fb3b58280685"
     uv_target="uv-x86_64-unknown-linux-gnu"
     uv_sha256="90b2f223fb69d19db49e117da601f64978593417988530aa733d456141b4bcbb"
     ;;
   aarch64 | arm64)
     go_arch="arm64"
-    go_sha256="d0507e9e9d7fe012aae570108cbd76c15de879e17130ab8cb90d4d7445cb1f2e"
+    go_sha256="51798d2c42d0e1c6ed7fd9f48728b4193abac9e8aad6dbac2fe96a81f5909bda"
     uv_target="uv-aarch64-unknown-linux-gnu"
     uv_sha256="769d373e146692c639b5fbaae33b331c297a32e03d30448772051902df52bbf4"
     ;;

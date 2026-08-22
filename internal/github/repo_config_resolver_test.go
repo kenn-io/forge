@@ -419,16 +419,12 @@ func TestResolveConfiguredReposKeepsDuplicateOwnerNameOnDifferentPlatforms(t *te
 		t.Context(),
 		mustRegistry(t,
 			resolverRepositoryReader{
-				resolverTestProvider: resolverTestProvider{
-					kind: platform.KindGitHub,
-					host: "code.example.com",
-				},
+				kind: platform.KindGitHub,
+				host: "code.example.com",
 			},
 			resolverRepositoryReader{
-				resolverTestProvider: resolverTestProvider{
-					kind: platform.KindGitLab,
-					host: "code.example.com",
-				},
+				kind: platform.KindGitLab,
+				host: "code.example.com",
 			},
 		),
 		[]config.Repo{
@@ -614,10 +610,8 @@ func TestResolveConfiguredReposWithRegistryUsesNonGitHubProvider(t *testing.T) {
 	result := ResolveConfiguredReposWithRegistry(
 		t.Context(),
 		mustRegistry(t, resolverRepositoryReader{
-			resolverTestProvider: resolverTestProvider{
-				kind: platform.KindGitLab,
-				host: "gitlab.com",
-			},
+			kind: platform.KindGitLab,
+			host: "gitlab.com",
 		}),
 		[]config.Repo{{
 			Platform:     "gitlab",

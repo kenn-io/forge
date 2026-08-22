@@ -188,17 +188,15 @@ func TestListSummariesUsesCacheWhenStoreHasNoRows(t *testing.T) {
 	mgr := NewManager(d, t.TempDir())
 
 	mgr.setWorkspaceSummaryCache([]WorkspaceSummary{{
-		Workspace: Workspace{
-			ID:           "cached-workspace",
-			PlatformHost: "github.com",
-			RepoOwner:    "acme",
-			RepoName:     "widget",
-			ItemType:     db.WorkspaceItemTypePullRequest,
-			ItemNumber:   7,
-			GitHeadRef:   "feature/cache-workspace",
-			Status:       "ready",
-			CreatedAt:    time.Now().UTC(),
-		},
+		ID:           "cached-workspace",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   7,
+		GitHeadRef:   "feature/cache-workspace",
+		Status:       "ready",
+		CreatedAt:    time.Now().UTC(),
 	}})
 	got, err := mgr.ListSummaries(ctx)
 	require.NoError(err)

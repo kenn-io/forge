@@ -499,7 +499,7 @@ func TestConvertGQLPRCompleteness(t *testing.T) {
 
 func TestConvertGQLPRNativeStackHint(t *testing.T) {
 	gql := gqlPRWithNativeStacks{
-		gqlPR: gqlPR{Number: 42},
+		Number: 42,
 		Stack: &gqlNativeStack{
 			Number: 7, Size: 3, BaseRefName: "main",
 		},

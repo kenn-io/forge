@@ -181,10 +181,8 @@ func (r *Registry) IssuePageReader(kind Kind, host string) (IssuePageReader, err
 		return nil, UnsupportedCapability(kind, host, "read_issues")
 	}
 	return &validatingIssuePageReader{
-		reader: reader,
-		pageReaderValidation: pageReaderValidation{
-			contract: readerContract{kind: kind, host: host}, caps: caps,
-		},
+		reader:   reader,
+		contract: readerContract{kind: kind, host: host}, caps: caps,
 	}, nil
 }
 
@@ -204,10 +202,8 @@ func (r *Registry) MergeRequestPageReader(
 		return nil, UnsupportedCapability(kind, host, "read_merge_requests")
 	}
 	return &validatingMergeRequestPageReader{
-		reader: reader,
-		pageReaderValidation: pageReaderValidation{
-			contract: readerContract{kind: kind, host: host}, caps: caps,
-		},
+		reader:   reader,
+		contract: readerContract{kind: kind, host: host}, caps: caps,
 	}, nil
 }
 

@@ -256,10 +256,9 @@ func TestWorkspaceEnrichmentSupersededResponseUsesCurrentCacheState(t *testing.T
 	assert := assert.New(t)
 	now := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
 	srv := &Handler{now: func() time.Time { return now }}
-	summary := db.WorkspaceSummary{Workspace: db.Workspace{
+	summary := db.WorkspaceSummary{
 		ID:     "ws-superseded",
-		Status: "ready",
-	}}
+		Status: "ready"}
 	currentAhead := 7
 	entry := workspaceEnrichmentCacheEntry{
 		response:              workspaceResponse{CommitsAhead: &currentAhead},
@@ -299,12 +298,10 @@ func TestWorkspaceEnrichmentPendingJobUsesLatestSummary(t *testing.T) {
 		}
 	})
 
-	srv.scheduleWorkspaceEnrichment(db.WorkspaceSummary{Workspace: db.Workspace{
-		ID: "ws-latest", Status: "ready", WorktreePath: "/old",
-	}})
-	srv.scheduleWorkspaceEnrichment(db.WorkspaceSummary{Workspace: db.Workspace{
-		ID: "ws-latest", Status: "ready", WorktreePath: "/new",
-	}})
+	srv.scheduleWorkspaceEnrichment(db.WorkspaceSummary{
+		ID: "ws-latest", Status: "ready", WorktreePath: "/old"})
+	srv.scheduleWorkspaceEnrichment(db.WorkspaceSummary{
+		ID: "ws-latest", Status: "ready", WorktreePath: "/new"})
 
 	srv.workspaceEnrichmentMu.Lock()
 	pending := srv.workspaceEnrichmentPending["ws-latest"]
@@ -329,7 +326,7 @@ func TestTrimWorkspaceEnrichmentCacheDropsDeletedPendingState(t *testing.T) {
 		},
 	}
 
-	srv.trimWorkspaceEnrichmentCache([]db.WorkspaceSummary{{Workspace: db.Workspace{ID: "keep"}}})
+	srv.trimWorkspaceEnrichmentCache([]db.WorkspaceSummary{{ID: "keep"}})
 
 	assert.Contains(srv.workspaceEnrichmentCache, "keep")
 	assert.NotContains(srv.workspaceEnrichmentCache, "drop")
@@ -353,10 +350,9 @@ func TestCachedWorkspaceEnrichmentReportsStaleAndFailedState(t *testing.T) {
 			<-srv.workspaceEnrichmentSlots
 		}
 	})
-	summary := db.WorkspaceSummary{Workspace: db.Workspace{
+	summary := db.WorkspaceSummary{
 		ID:     "ws-status",
-		Status: "ready",
-	}}
+		Status: "ready"}
 	ahead := 2
 	srv.workspaceEnrichmentCache[summary.ID] = workspaceEnrichmentCacheEntry{
 		response: workspaceResponse{
@@ -439,9 +435,8 @@ func TestCachedWorkspaceEnrichmentDoesNotTreatTmuxAttemptAsDivergenceAttempt(t *
 func TestCachedWorkspaceEnrichmentKeepsFreshTmuxOnlyResultPending(t *testing.T) {
 	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
 	srv := &Handler{now: func() time.Time { return now }}
-	summary := db.WorkspaceSummary{Workspace: db.Workspace{
-		ID: "ws-tmux-only", Status: "ready",
-	}}
+	summary := db.WorkspaceSummary{
+		ID: "ws-tmux-only", Status: "ready"}
 	entry := workspaceEnrichmentCacheEntry{
 		hasTmux: true, tmuxRefreshedAt: now, tmuxAttemptAt: now,
 	}
@@ -462,9 +457,8 @@ func TestWorkspaceEnrichmentTmuxSuccessPreservesDivergenceFailure(t *testing.T) 
 		workspaceEnrichmentCache:       make(map[string]workspaceEnrichmentCacheEntry),
 		workspaceEnrichmentGenerations: map[string]uint64{"ws-component-errors": 1},
 	}
-	summary := db.WorkspaceSummary{Workspace: db.Workspace{
-		ID: "ws-component-errors", Status: "ready",
-	}}
+	summary := db.WorkspaceSummary{
+		ID: "ws-component-errors", Status: "ready"}
 
 	_, recorded, _ := srv.recordWorkspaceEnrichmentResult(
 		summary.ID,
@@ -593,12 +587,11 @@ func TestWorkspaceEnrichmentRefreshFailurePreservesLastKnownGood(t *testing.T) {
 	srv.workspaceEnrichmentCache["ws-failed-refresh"] = lastGood
 	srv.workspaceEnrichmentMu.Unlock()
 
-	srv.scheduleWorkspaceEnrichment(db.WorkspaceSummary{Workspace: db.Workspace{
+	srv.scheduleWorkspaceEnrichment(db.WorkspaceSummary{
 		ID:           "ws-failed-refresh",
 		WorktreePath: worktree,
 		TmuxSession:  "missing-session",
-		Status:       "ready",
-	}})
+		Status:       "ready"})
 
 	require.Eventually(func() bool {
 		srv.workspaceEnrichmentMu.Lock()
@@ -619,12 +612,11 @@ func TestWorkspaceEnrichmentRefreshFailurePreservesLastKnownGood(t *testing.T) {
 	assert.Equal(now, got.lastAttemptAt)
 	assert.Contains(got.tmuxError, "tmux display-message:")
 
-	missingSummary := db.WorkspaceSummary{Workspace: db.Workspace{
+	missingSummary := db.WorkspaceSummary{
 		ID:           "ws-partial-refresh",
 		WorktreePath: worktree,
 		TmuxSession:  "missing-session-2",
-		Status:       "ready",
-	}}
+		Status:       "ready"}
 	srv.scheduleWorkspaceEnrichment(missingSummary)
 	require.Eventually(func() bool {
 		srv.workspaceEnrichmentMu.Lock()
@@ -949,10 +941,9 @@ func TestWorkspaceEnrichmentUsesBoundedWorkersPastBackgroundCapacity(t *testing.
 	})
 
 	for i := range 12 {
-		srv.scheduleWorkspaceEnrichment(db.WorkspaceSummary{Workspace: db.Workspace{
+		srv.scheduleWorkspaceEnrichment(db.WorkspaceSummary{
 			ID:     "ws-" + string(rune('a'+i)),
-			Status: "ready",
-		}})
+			Status: "ready"})
 	}
 
 	srv.workspaceEnrichmentMu.Lock()

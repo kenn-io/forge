@@ -425,7 +425,7 @@ func (c *Client) ListOpenMergeRequests(
 	recheck := true
 	opt := &gitlab.ListProjectMergeRequestsOptions{
 		State: &state, WithMergeStatusRecheck: &recheck,
-		ListOptions: gitlab.ListOptions{Page: 1, PerPage: defaultPageSize},
+		Page: 1, PerPage: defaultPageSize,
 	}
 	var out []platform.MergeRequest
 	// Fork-source clone URL lookups are enrichment, not discovery: they run
@@ -566,7 +566,7 @@ func (c *Client) ListOpenIssues(ctx context.Context, ref platform.RepoRef) ([]pl
 	}
 	state := "opened"
 	opt := &gitlab.ListProjectIssuesOptions{
-		State: &state, ListOptions: gitlab.ListOptions{Page: 1, PerPage: defaultPageSize},
+		State: &state, Page: 1, PerPage: defaultPageSize,
 	}
 	var out []platform.Issue
 	for {
@@ -632,7 +632,7 @@ func (c *Client) ListReleases(ctx context.Context, ref platform.RepoRef) ([]plat
 	if err != nil {
 		return nil, err
 	}
-	opt := &gitlab.ListReleasesOptions{ListOptions: gitlab.ListOptions{Page: 1, PerPage: defaultPageSize}}
+	opt := &gitlab.ListReleasesOptions{Page: 1, PerPage: defaultPageSize}
 
 	var out []platform.Release
 	for {
@@ -655,7 +655,7 @@ func (c *Client) ListTags(ctx context.Context, ref platform.RepoRef) ([]platform
 	if err != nil {
 		return nil, err
 	}
-	opt := &gitlab.ListTagsOptions{ListOptions: gitlab.ListOptions{Page: 1, PerPage: defaultPageSize}}
+	opt := &gitlab.ListTagsOptions{Page: 1, PerPage: defaultPageSize}
 
 	var out []platform.Tag
 	for {
@@ -698,11 +698,9 @@ func (c *Client) ListCIChecks(
 		return nil, err
 	}
 	opt := &gitlab.ListProjectPipelinesOptions{
-		SHA: &sha,
-		ListOptions: gitlab.ListOptions{
-			Page:    1,
-			PerPage: 1,
-		},
+		SHA:     &sha,
+		Page:    1,
+		PerPage: 1,
 	}
 	pipelines, _, err := c.api.Pipelines.ListProjectPipelines(pid, opt, gitlab.WithContext(ctx))
 	if err != nil {
@@ -720,7 +718,7 @@ func (c *Client) listMergeRequestCommits(
 	ref platform.RepoRef,
 	number int,
 ) ([]*gitlab.Commit, error) {
-	opt := &gitlab.GetMergeRequestCommitsOptions{ListOptions: gitlab.ListOptions{Page: 1, PerPage: defaultPageSize}}
+	opt := &gitlab.GetMergeRequestCommitsOptions{Page: 1, PerPage: defaultPageSize}
 	var out []*gitlab.Commit
 	for {
 		commits, resp, err := c.api.MergeRequests.GetMergeRequestCommits(pid, int64(number), opt, gitlab.WithContext(ctx))
@@ -747,10 +745,8 @@ func (c *Client) previewGroup(
 	includeSubGroups := true
 	opt := &gitlab.ListGroupProjectsOptions{
 		IncludeSubGroups: &includeSubGroups,
-		ListOptions: gitlab.ListOptions{
-			Page:    1,
-			PerPage: pageSizeForRemaining(result.Limit),
-		},
+		Page:             1,
+		PerPage:          pageSizeForRemaining(result.Limit),
 	}
 	if !includeArchived {
 		archived := false
@@ -786,10 +782,8 @@ func (c *Client) previewUser(
 	includeArchived bool,
 ) (PreviewResult, error) {
 	opt := &gitlab.ListProjectsOptions{
-		ListOptions: gitlab.ListOptions{
-			Page:    1,
-			PerPage: pageSizeForRemaining(result.Limit),
-		},
+		Page:    1,
+		PerPage: pageSizeForRemaining(result.Limit),
 	}
 	if !includeArchived {
 		archived := false

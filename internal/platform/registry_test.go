@@ -104,11 +104,9 @@ func TestRegistryFindsOptionalRepositoryReader(t *testing.T) {
 	require := require.New(t)
 
 	registry, err := NewRegistry(testRepositoryReader{
-		testProvider: testProvider{
-			kind: KindGitLab,
-			host: "gitlab.com",
-			caps: Capabilities{ReadRepositories: true},
-		},
+		kind: KindGitLab,
+		host: "gitlab.com",
+		caps: Capabilities{ReadRepositories: true},
 	})
 	require.NoError(err)
 
@@ -265,13 +263,11 @@ func TestRegistryFindsNotificationReaderAndMutator(t *testing.T) {
 	require := require.New(t)
 
 	registry, err := NewRegistry(testNotificationProvider{
-		testProvider: testProvider{
-			kind: KindGitHub,
-			host: "github.com",
-			caps: Capabilities{
-				ReadNotifications:    true,
-				NotificationMutation: true,
-			},
+		kind: KindGitHub,
+		host: "github.com",
+		caps: Capabilities{
+			ReadNotifications:    true,
+			NotificationMutation: true,
 		},
 	})
 	require.NoError(err)
@@ -298,11 +294,9 @@ func TestRegistryReturnsUnsupportedCapabilityForStubNotificationProvider(t *test
 	require := require.New(t)
 	assert := assert.New(t)
 	registry, err := NewRegistry(testNotificationProvider{
-		testProvider: testProvider{
-			kind: KindGitLab,
-			host: "gitlab.com",
-			caps: Capabilities{},
-		},
+		kind: KindGitLab,
+		host: "gitlab.com",
+		caps: Capabilities{},
 	})
 	require.NoError(err)
 

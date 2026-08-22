@@ -66,7 +66,7 @@ func newCompleteReviewSyncFixture(t *testing.T, reviewCount int) completeReviewS
 	}
 	provider := &completeReviewSyncProvider{
 		syncTestReadProvider: &syncTestReadProvider{
-			syncTestProvider: syncTestProvider{kind: platform.KindGitea, host: "gitea.test"},
+			kind: platform.KindGitea, host: "gitea.test",
 			mergeRequests: []platform.MergeRequest{{
 				Repo: platformRepoRef(repo), PlatformID: 7, PlatformExternalID: "mr-7",
 				Number: 7, URL: "https://gitea.test/acme/widget/pulls/7", Title: "fresh MR",

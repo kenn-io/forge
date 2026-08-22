@@ -136,11 +136,9 @@ func TestBuildAgentContextOmitsRemovedAssociatedPullRequest(t *testing.T) {
 	associatedPR := 42
 
 	rendered := RenderAgentContext(BuildAgentContext(WorkspaceSummary{
-		Workspace: db.Workspace{
-			ID: "ws-issue-pr", Platform: "github", PlatformHost: "github.com",
-			RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeIssue,
-			ItemNumber: 7, AssociatedPRNumber: &associatedPR,
-		},
+		ID: "ws-issue-pr", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeIssue,
+		ItemNumber: 7, AssociatedPRNumber: &associatedPR,
 		SourceItemVisible:   true,
 		AssociatedPRVisible: false,
 	}))

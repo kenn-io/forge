@@ -88,11 +88,9 @@ func TestToWorkspaceResponseSetsMRHeadRepoKind(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			summary := &db.WorkspaceSummary{
-				Workspace: db.Workspace{
-					ID:         "ws-1",
-					ItemType:   tt.itemType,
-					MRHeadRepo: tt.mrHeadRepo,
-				},
+				ID:                "ws-1",
+				ItemType:          tt.itemType,
+				MRHeadRepo:        tt.mrHeadRepo,
 				SourceItemVisible: tt.sourceItemVisible,
 			}
 			got := toWorkspaceResponse(summary)

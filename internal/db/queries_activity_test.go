@@ -938,8 +938,8 @@ func TestListCollapsedActivityProjection(t *testing.T) {
 	}}))
 
 	projection, err := d.ListCollapsedActivityProjection(ctx, ListActivityProjectionOpts{
-		ListActivityOpts: ListActivityOpts{Limit: 50},
-		SubjectLimit:     50,
+		Limit:        50,
+		SubjectLimit: 50,
 	})
 	require.NoError(err)
 	require.Len(projection.DirectRows, 1)
@@ -961,8 +961,8 @@ func TestListCollapsedActivityProjection(t *testing.T) {
 	}}))
 
 	refreshed, err := d.ListCollapsedActivityProjection(ctx, ListActivityProjectionOpts{
-		ListActivityOpts: ListActivityOpts{Limit: 50},
-		SubjectLimit:     50,
+		Limit:        50,
+		SubjectLimit: 50,
 	})
 	require.NoError(err)
 	require.Len(refreshed.Subjects, 1)
@@ -982,8 +982,8 @@ func TestListCollapsedActivityProjection(t *testing.T) {
 	}}))
 
 	edited, err := d.ListCollapsedActivityProjection(ctx, ListActivityProjectionOpts{
-		ListActivityOpts: ListActivityOpts{Limit: 50},
-		SubjectLimit:     50,
+		Limit:        50,
+		SubjectLimit: 50,
 	})
 	require.NoError(err)
 	require.Len(edited.Subjects, 1)
@@ -1002,8 +1002,8 @@ func TestListCollapsedActivityProjection(t *testing.T) {
 		DedupeKey:      "projection-comment",
 	}}))
 	unchanged, err := d.ListCollapsedActivityProjection(ctx, ListActivityProjectionOpts{
-		ListActivityOpts: ListActivityOpts{Limit: 50},
-		SubjectLimit:     50,
+		Limit:        50,
+		SubjectLimit: 50,
 	})
 	require.NoError(err)
 	require.Len(unchanged.Subjects, 1)
@@ -1038,8 +1038,8 @@ func TestListCollapsedActivityProjectionRetainsVisibleEventsForBotParents(t *tes
 	}))
 
 	projection, err := d.ListCollapsedActivityProjection(ctx, ListActivityProjectionOpts{
-		ListActivityOpts: ListActivityOpts{HideBots: true, Limit: 50},
-		SubjectLimit:     50,
+		HideBots: true, Limit: 50,
+		SubjectLimit: 50,
 	})
 	require.NoError(err)
 	require.Len(projection.DirectRows, 1)
@@ -1092,8 +1092,8 @@ func TestListCollapsedActivityProjectionIncludesParentsRecentOnlyByNotification(
 	}))
 
 	projection, err := d.ListCollapsedActivityProjection(ctx, ListActivityProjectionOpts{
-		ListActivityOpts: ListActivityOpts{Since: &since, Limit: 50},
-		SubjectLimit:     50,
+		Since: &since, Limit: 50,
+		SubjectLimit: 50,
 	})
 	require.NoError(err)
 	assert.Empty(projection.DirectRows, "anchored notifications must collapse into their parent summaries")
@@ -1104,8 +1104,8 @@ func TestListCollapsedActivityProjectionIncludesParentsRecentOnlyByNotification(
 	assert.Equal(issueNotificationAt, projection.Subjects[1].ActivityAt)
 
 	withoutNotifications, err := d.ListCollapsedActivityProjection(ctx, ListActivityProjectionOpts{
-		ListActivityOpts: ListActivityOpts{Since: &since, Limit: 50, Types: []string{"comment"}},
-		SubjectLimit:     50,
+		Since: &since, Limit: 50, Types: []string{"comment"},
+		SubjectLimit: 50,
 	})
 	require.NoError(err)
 	assert.Empty(withoutNotifications.DirectRows)
@@ -1133,8 +1133,8 @@ func TestListCollapsedActivityProjectionDetectsIssueCommentEdit(t *testing.T) {
 	}}))
 
 	projection, err := d.ListCollapsedActivityProjection(ctx, ListActivityProjectionOpts{
-		ListActivityOpts: ListActivityOpts{Limit: 50},
-		SubjectLimit:     50,
+		Limit:        50,
+		SubjectLimit: 50,
 	})
 	require.NoError(err)
 	require.Len(projection.Subjects, 1)
@@ -1150,8 +1150,8 @@ func TestListCollapsedActivityProjectionDetectsIssueCommentEdit(t *testing.T) {
 	}}))
 
 	edited, err := d.ListCollapsedActivityProjection(ctx, ListActivityProjectionOpts{
-		ListActivityOpts: ListActivityOpts{Limit: 50},
-		SubjectLimit:     50,
+		Limit:        50,
+		SubjectLimit: 50,
 	})
 	require.NoError(err)
 	require.Len(edited.Subjects, 1)
@@ -1194,8 +1194,8 @@ func TestListCollapsedActivityProjectionDetectsNonNewestNotificationMutation(t *
 	require.NoError(d.UpsertNotifications(ctx, []Notification{older, newer}))
 
 	projection, err := d.ListCollapsedActivityProjection(ctx, ListActivityProjectionOpts{
-		ListActivityOpts: ListActivityOpts{Limit: 50},
-		SubjectLimit:     50,
+		Limit:        50,
+		SubjectLimit: 50,
 	})
 	require.NoError(err)
 	require.Len(projection.Subjects, 1)
@@ -1208,8 +1208,8 @@ func TestListCollapsedActivityProjectionDetectsNonNewestNotificationMutation(t *
 	require.NoError(d.UpsertNotifications(ctx, []Notification{older}))
 
 	edited, err := d.ListCollapsedActivityProjection(ctx, ListActivityProjectionOpts{
-		ListActivityOpts: ListActivityOpts{Limit: 50},
-		SubjectLimit:     50,
+		Limit:        50,
+		SubjectLimit: 50,
 	})
 	require.NoError(err)
 	require.Len(edited.Subjects, 1)

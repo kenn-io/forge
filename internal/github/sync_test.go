@@ -257,8 +257,8 @@ func TestSyncArchiveItemClassifiesOnlyConfirmedParentNotFound(t *testing.T) {
 			require.NoError(err)
 			provider := &syncTestRepositoryReadProvider{
 				syncTestReadProvider: &syncTestReadProvider{
-					syncTestProvider: syncTestProvider{kind: ref.Platform, host: ref.Host},
-					issues:           test.issues, getIssueErr: test.getIssueErr,
+					kind: ref.Platform, host: ref.Host,
+					issues: test.issues, getIssueErr: test.getIssueErr,
 					listIssueEventsErr: test.listEventsErr,
 				},
 				repository: platform.Repository{
@@ -390,10 +390,8 @@ func setupSyncBranchActivityFixture(t *testing.T, defaultBranch string) syncBran
 	}
 	provider := &syncTestRepositoryReadProvider{
 		syncTestReadProvider: &syncTestReadProvider{
-			syncTestProvider: syncTestProvider{
-				kind: platform.KindGitLab,
-				host: "gitlab.example.com",
-			},
+			kind: platform.KindGitLab,
+			host: "gitlab.example.com",
 		},
 		repository: platform.Repository{
 			Ref: platform.RepoRef{
@@ -545,10 +543,8 @@ func TestSyncRepoRoutesCloneCredentialsForUnqualifiedGitHubRepoRef(t *testing.T)
 	}
 	provider := &syncTestRepositoryReadProvider{
 		syncTestReadProvider: &syncTestReadProvider{
-			syncTestProvider: syncTestProvider{
-				kind: platform.KindGitHub,
-				host: "github.com",
-			},
+			kind: platform.KindGitHub,
+			host: "github.com",
 		},
 		repository: platform.Repository{
 			Ref: platform.RepoRef{
@@ -4920,10 +4916,8 @@ func TestSyncIssueOnProviderMarksClosedLinkedNotificationsDone(t *testing.T) {
 	}}))
 
 	provider := &syncTestReadProvider{
-		syncTestProvider: syncTestProvider{
-			kind: platform.KindGitLab,
-			host: "gitlab.com",
-		},
+		kind: platform.KindGitLab,
+		host: "gitlab.com",
 		issues: []platform.Issue{{
 			Repo:           platformRepoRef(repo),
 			PlatformID:     2001,
@@ -6116,9 +6110,7 @@ func TestReconcileRepoIdentityDiscardsStaleSameRouteMetadata(t *testing.T) {
 	}
 	syncer := NewSyncerWithRegistry(
 		mustRegistry(t, staleMetadataRepositoryReader{
-			resolverTestProvider: resolverTestProvider{
-				kind: platform.KindGitHub, host: "github.com",
-			},
+			kind: platform.KindGitHub, host: "github.com",
 			repo: platform.Repository{
 				Ref: platform.RepoRef{
 					Platform: platform.KindGitHub, Host: "github.com",
@@ -7442,8 +7434,8 @@ func TestRunOncePreservesItemCeilingStatusAcrossLaterHardRepoFailure(t *testing.
 	require.NoError(err)
 
 	provider := &syncTestBudgetThenBrokenIssueProvider{
-		syncTestProvider: syncTestProvider{kind: platform.KindGitHub, host: "github.com"},
-		getMRErr:         newSyncBudgetExhaustedError(resetAt),
+		kind: platform.KindGitHub, host: "github.com",
+		getMRErr: newSyncBudgetExhaustedError(resetAt),
 	}
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
@@ -8069,10 +8061,8 @@ func TestSyncRepoUsesProviderIDToPreserveRenamedRepo(t *testing.T) {
 		PlatformExternalID: "gid://gitlab/Project/42",
 	}
 	provider := &syncTestReadProvider{
-		syncTestProvider: syncTestProvider{
-			kind: platform.KindGitLab,
-			host: "gitlab.example.com",
-		},
+		kind: platform.KindGitLab,
+		host: "gitlab.example.com",
 	}
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
@@ -8122,10 +8112,8 @@ func TestSyncRepoPublishesProviderResolvedRenameForBackgroundAndTargetedSync(t *
 	}
 	provider := &syncTestRepositoryReadProvider{
 		syncTestReadProvider: &syncTestReadProvider{
-			syncTestProvider: syncTestProvider{
-				kind: platform.KindGitLab,
-				host: "gitlab.example.com",
-			},
+			kind:            platform.KindGitLab,
+			host:            "gitlab.example.com",
 			requireRepoPath: "new-group/new-project",
 		},
 		repository: platform.Repository{
@@ -8166,10 +8154,8 @@ func TestConcurrentSyncRepoKeepsNewerProviderObservation(t *testing.T) {
 	releaseOldLookup := make(chan struct{})
 	provider := &syncTestRepositoryReadProvider{
 		syncTestReadProvider: &syncTestReadProvider{
-			syncTestProvider: syncTestProvider{
-				kind: platform.KindGitLab,
-				host: "gitlab.example.com",
-			},
+			kind: platform.KindGitLab,
+			host: "gitlab.example.com",
 		},
 		getRepositoryFn: func(
 			_ context.Context, ref platform.RepoRef,
@@ -8250,10 +8236,8 @@ func TestSyncRepoKeepsHistoryWhenNewIDReusesRoute(t *testing.T) {
 	}
 	provider := &syncTestRepositoryReadProvider{
 		syncTestReadProvider: &syncTestReadProvider{
-			syncTestProvider: syncTestProvider{
-				kind: platform.KindGitLab,
-				host: "gitlab.example.com",
-			},
+			kind: platform.KindGitLab,
+			host: "gitlab.example.com",
 		},
 		repository: platform.Repository{
 			Ref: platform.RepoRef{
@@ -8497,10 +8481,8 @@ func TestSyncRepoRefreshesProviderRepoSettingsWhenIdentityKnown(t *testing.T) {
 	viewerCanMerge := false
 	provider := &syncTestRepositoryReadProvider{
 		syncTestReadProvider: &syncTestReadProvider{
-			syncTestProvider: syncTestProvider{
-				kind: platform.KindGitLab,
-				host: "gitlab.example.com",
-			},
+			kind: platform.KindGitLab,
+			host: "gitlab.example.com",
 		},
 		repository: platform.Repository{
 			Ref: platform.RepoRef{
@@ -8547,10 +8529,8 @@ func TestSyncRepoUsesProviderCloneURLForNestedGitLabRepo(t *testing.T) {
 		CloneURL:           remote,
 	}
 	provider := &syncTestReadProvider{
-		syncTestProvider: syncTestProvider{
-			kind: platform.KindGitLab,
-			host: "gitlab.example.com",
-		},
+		kind: platform.KindGitLab,
+		host: "gitlab.example.com",
 	}
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
@@ -8600,10 +8580,8 @@ func TestDetailDrainUsesProviderCloneURLForNestedGitLabRepo(t *testing.T) {
 	require.NoError(err)
 	provider := &syncTestRepositoryReadProvider{
 		syncTestReadProvider: &syncTestReadProvider{
-			syncTestProvider: syncTestProvider{
-				kind: platform.KindGitLab,
-				host: "gitlab.example.com",
-			},
+			kind: platform.KindGitLab,
+			host: "gitlab.example.com",
 			mergeRequests: []platform.MergeRequest{{
 				Repo:           platformRepoRef(repo),
 				PlatformID:     1001,
@@ -8683,7 +8661,7 @@ func TestDetailDrainCompletesWhenProviderExceedsAdmittedCost(t *testing.T) {
 
 	var wireAttempts atomic.Int32
 	provider := &syncTestReadProvider{
-		syncTestProvider: syncTestProvider{kind: platform.KindGitea, host: "gitea.example.com"},
+		kind: platform.KindGitea, host: "gitea.example.com",
 		mergeRequests: []platform.MergeRequest{{
 			Repo:           platformRepoRef(repo),
 			PlatformID:     1001,
@@ -8743,10 +8721,8 @@ func TestSyncMRUsesConfiguredProviderRegistry(t *testing.T) {
 	ctx := t.Context()
 
 	provider := &syncTestReadProvider{
-		syncTestProvider: syncTestProvider{
-			kind: platform.KindGitLab,
-			host: "gitlab.com",
-		},
+		kind: platform.KindGitLab,
+		host: "gitlab.com",
 		mergeRequests: []platform.MergeRequest{{
 			Repo: platform.RepoRef{
 				Platform: platform.KindGitLab,
@@ -8797,10 +8773,8 @@ func TestSyncItemByNumberRejectsNonGitHubProviderWithoutForcingGitHub(t *testing
 	ctx := t.Context()
 
 	provider := &syncTestReadProvider{
-		syncTestProvider: syncTestProvider{
-			kind: platform.KindGitLab,
-			host: "gitlab.com",
-		},
+		kind: platform.KindGitLab,
+		host: "gitlab.com",
 	}
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
@@ -8834,10 +8808,8 @@ func TestSyncMRRejectsAmbiguousProviderIdentity(t *testing.T) {
 
 	registry, err := platform.NewRegistry(
 		&syncTestReadProvider{
-			syncTestProvider: syncTestProvider{
-				kind: platform.KindGitLab,
-				host: "code.example.com",
-			},
+			kind: platform.KindGitLab,
+			host: "code.example.com",
 		},
 	)
 	require.NoError(err)
@@ -9194,7 +9166,7 @@ func TestFetchProviderMRDetailPersistsMergedActorEventFromMergeRequest(t *testin
 	require.NoError(err)
 
 	provider := &syncTestReadProvider{
-		syncTestProvider: syncTestProvider{kind: platform.KindGitLab, host: "gitlab.example.com"},
+		kind: platform.KindGitLab, host: "gitlab.example.com",
 		mergeRequests: []platform.MergeRequest{{
 			Repo:           platformRepoRef(repo),
 			PlatformID:     7001,
@@ -9723,7 +9695,7 @@ func TestFetchProviderMRDetailSyncsReviewThreads(t *testing.T) {
 
 	line := 12
 	provider := &syncTestReadProvider{
-		syncTestProvider:  syncTestProvider{kind: platform.KindForgejo, host: "codeberg.org"},
+		kind: platform.KindForgejo, host: "codeberg.org",
 		readReviewThreads: true,
 		mergeRequests: []platform.MergeRequest{{
 			Repo:               ref,
@@ -10123,10 +10095,8 @@ func TestSyncRunUsesProviderReadersForIndexSync(t *testing.T) {
 		PlatformExternalID: "gid://gitlab/Project/100",
 	}
 	provider := &syncTestReadProvider{
-		syncTestProvider: syncTestProvider{
-			kind: platform.KindGitLab,
-			host: "gitlab.com",
-		},
+		kind: platform.KindGitLab,
+		host: "gitlab.com",
 		mergeRequests: []platform.MergeRequest{{
 			Repo:           platformRepoRef(repo),
 			PlatformID:     1001,
@@ -10189,10 +10159,8 @@ func TestSyncRunAllowsMergeRequestOnlyProvider(t *testing.T) {
 		PlatformExternalID: "gid://gitlab/Project/101",
 	}
 	provider := &syncTestMergeRequestOnlyProvider{
-		syncTestProvider: syncTestProvider{
-			kind: platform.KindGitLab,
-			host: "gitlab.com",
-		},
+		kind: platform.KindGitLab,
+		host: "gitlab.com",
 		mergeRequests: []platform.MergeRequest{{
 			Repo:           platformRepoRef(repo),
 			PlatformID:     1001,
@@ -10246,10 +10214,8 @@ func TestSyncRunAllowsIssueOnlyProvider(t *testing.T) {
 		PlatformExternalID: "gid://gitlab/Project/102",
 	}
 	provider := &syncTestIssueOnlyProvider{
-		syncTestProvider: syncTestProvider{
-			kind: platform.KindGitLab,
-			host: "gitlab.com",
-		},
+		kind: platform.KindGitLab,
+		host: "gitlab.com",
 		issues: []platform.Issue{{
 			Repo:           platformRepoRef(repo),
 			PlatformID:     2001,
@@ -10298,10 +10264,8 @@ func TestSyncMRUsesProviderMergeRequestReader(t *testing.T) {
 		Name:         "widget",
 	}
 	provider := &syncTestReadProvider{
-		syncTestProvider: syncTestProvider{
-			kind: platform.KindGitLab,
-			host: "gitlab.com",
-		},
+		kind: platform.KindGitLab,
+		host: "gitlab.com",
 		mergeRequests: []platform.MergeRequest{{
 			Repo:           platformRepoRef(repo),
 			PlatformID:     1001,
@@ -10348,10 +10312,8 @@ func TestSyncIssueUsesProviderIssueReader(t *testing.T) {
 	}
 	commentID := int64(2101)
 	provider := &syncTestReadProvider{
-		syncTestProvider: syncTestProvider{
-			kind: platform.KindGitLab,
-			host: "gitlab.com",
-		},
+		kind: platform.KindGitLab,
+		host: "gitlab.com",
 		issues: []platform.Issue{{
 			Repo:           platformRepoRef(repo),
 			PlatformID:     2001,
@@ -10420,7 +10382,7 @@ func TestDirectMRSyncReplacesConflictingPathOccupant(t *testing.T) {
 		Owner: "acme", Name: "widget", PlatformExternalID: "incoming-repo",
 	}
 	provider := &syncTestReadProvider{
-		syncTestProvider: syncTestProvider{kind: platform.KindGitLab, host: "gitlab.com"},
+		kind: platform.KindGitLab, host: "gitlab.com",
 		mergeRequests: []platform.MergeRequest{{
 			Repo: platformRepoRef(repo), PlatformID: 7007, Number: 7,
 			Title: "incoming merge request", State: "open",
@@ -10467,7 +10429,7 @@ func TestDirectIssueSyncReplacesConflictingPathOccupant(t *testing.T) {
 		Owner: "acme", Name: "widget", PlatformExternalID: "incoming-repo",
 	}
 	provider := &syncTestReadProvider{
-		syncTestProvider: syncTestProvider{kind: platform.KindGitLab, host: "gitlab.com"},
+		kind: platform.KindGitLab, host: "gitlab.com",
 		issues: []platform.Issue{{
 			Repo: platformRepoRef(repo), PlatformID: 8011, Number: 11,
 			Title: "incoming issue", State: "open",
@@ -10542,7 +10504,7 @@ func TestSyncIssueProviderCommentReplacementRollsBack(t *testing.T) {
 	newCommentID := int64(2102)
 	secondNewCommentID := int64(2103)
 	provider := &syncTestReadProvider{
-		syncTestProvider: syncTestProvider{kind: platform.KindGitLab, host: "gitlab.com"},
+		kind: platform.KindGitLab, host: "gitlab.com",
 		issues: []platform.Issue{{
 			Repo: platformRepoRef(repo), PlatformID: 2001, Number: 11,
 			URL: issue.URL, Title: issue.Title, Author: issue.Author, State: "open",
@@ -12931,12 +12893,8 @@ func TestFetchMRDetailDoesNotBackfillMergedActorOn304(t *testing.T) {
 	))
 
 	mc := &conditionalPRTrackingClient{
-		detailTrackingClient: detailTrackingClient{
-			mockClient: mockClient{
-				timelineEventsErr: errors.New("304 detail path must not fetch timeline events"),
-			},
-		},
-		notModified: true,
+		timelineEventsErr: errors.New("304 detail path must not fetch timeline events"),
+		notModified:       true,
 	}
 	syncer := NewSyncer(
 		map[string]Client{"github.com": mc}, d, nil,
@@ -13057,12 +13015,8 @@ func TestWatchedSyncMRDoesNotBackfillMergedActorOn304(t *testing.T) {
 	))
 
 	mc := &conditionalPRTrackingClient{
-		detailTrackingClient: detailTrackingClient{
-			mockClient: mockClient{
-				timelineEventsErr: errors.New("304 watched sync must not fetch timeline events"),
-			},
-		},
-		notModified: true,
+		timelineEventsErr: errors.New("304 watched sync must not fetch timeline events"),
+		notModified:       true,
 	}
 	syncer := NewSyncer(
 		map[string]Client{"github.com": mc}, d, nil,
@@ -13315,15 +13269,11 @@ func TestSyncArchiveIssueBypassesPersistedETagForLifecycleBackfill(t *testing.T)
 	))
 
 	client := &conditionalIssueLifecycleClient{
-		conditionalIssueTrackingClient: conditionalIssueTrackingClient{
-			mockClient: mockClient{
-				getIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) {
-					return issue, nil
-				},
-				comments: []*gh.IssueComment{},
-			},
-			notModified: true,
+		getIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) {
+			return issue, nil
 		},
+		comments:    []*gh.IssueComment{},
+		notModified: true,
 		timelineEvents: []PullRequestTimelineEvent{{
 			NodeID: "closed-7", EventType: "closed",
 			Actor: "closer", CreatedAt: closedAt,
@@ -14061,12 +14011,10 @@ func TestSyncArchiveIssuePropagatesTimelineFailure(t *testing.T) {
 	issue := buildOpenIssue(7, time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC))
 	timelineErr := errors.New("timeline temporarily unavailable")
 	client := &issueTimelineMockClient{
-		mockClient: mockClient{
-			getIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) {
-				return issue, nil
-			},
-			comments: []*gh.IssueComment{},
+		getIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) {
+			return issue, nil
 		},
+		comments:         []*gh.IssueComment{},
 		issueTimelineErr: timelineErr,
 	}
 	syncer := NewSyncer(
@@ -14392,10 +14340,8 @@ func TestDetailDrainUsesProviderReadersForNonGitHub(t *testing.T) {
 	require.NoError(err)
 
 	provider := &syncTestReadProvider{
-		syncTestProvider: syncTestProvider{
-			kind: platform.KindGitLab,
-			host: "gitlab.com",
-		},
+		kind: platform.KindGitLab,
+		host: "gitlab.com",
 		mergeRequests: []platform.MergeRequest{{
 			Repo:           platformRepoRef(repo),
 			PlatformID:     1001,
@@ -14493,10 +14439,8 @@ func TestDetailDrainDisambiguatesSameHostOwnerNameAcrossProviders(t *testing.T) 
 	require.NoError(err)
 
 	gitlabProvider := &syncTestReadProvider{
-		syncTestProvider: syncTestProvider{
-			kind: platform.KindGitLab,
-			host: host,
-		},
+		kind: platform.KindGitLab,
+		host: host,
 		mergeRequests: []platform.MergeRequest{{
 			Repo:           platformRepoRef(gitlabRepo),
 			PlatformID:     7001,
@@ -15939,11 +15883,9 @@ func TestSyncerPRList304MakesNoAPICalls(t *testing.T) {
 	completed := "completed"
 	success := "success"
 	spy := &callCountingClient{
-		mockClient: mockClient{
-			listOpenPRsErr: notModifiedErr(),
-			checkRuns: []*gh.CheckRun{
-				{Status: &completed, Conclusion: &success},
-			},
+		listOpenPRsErr: notModifiedErr(),
+		checkRuns: []*gh.CheckRun{
+			{Status: &completed, Conclusion: &success},
 		},
 	}
 	// budgetPerHour=0 disables detail drain so only index phase runs.
@@ -16851,7 +16793,7 @@ func TestSyncIssuesFromListStopsAfterWrappedRawDisabledTimelineResponse(t *testi
 	require.NoError(err)
 	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
 	client := &issueTimelineMockClient{
-		mockClient: mockClient{comments: []*gh.IssueComment{}},
+		comments: []*gh.IssueComment{},
 		issueTimelineErr: fmt.Errorf("list issue timeline: %w", &gh.ErrorResponse{
 			Response: &http.Response{StatusCode: http.StatusGone},
 			Message:  "Issues are disabled for this repo",
@@ -16884,7 +16826,7 @@ func TestSyncIssuesFromListRetainsBestEffortTimelineErrors(t *testing.T) {
 	require.NoError(err)
 	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
 	client := &issueTimelineMockClient{
-		mockClient:       mockClient{comments: []*gh.IssueComment{}},
+		comments:         []*gh.IssueComment{},
 		issueTimelineErr: errors.New("timeline temporarily unavailable"),
 	}
 	syncer := NewSyncer(
@@ -22697,9 +22639,7 @@ func TestReconcileRepoIdentityAbortsWhenRejectedObservationIsInactive(t *testing
 	}
 	syncer := NewSyncerWithRegistry(
 		mustRegistry(t, staleMetadataRepositoryReader{
-			resolverTestProvider: resolverTestProvider{
-				kind: platform.KindGitHub, host: "github.com",
-			},
+			kind: platform.KindGitHub, host: "github.com",
 			repo: platform.Repository{
 				Ref: platform.RepoRef{
 					Platform: platform.KindGitHub, Host: "github.com",
@@ -23414,9 +23354,7 @@ func TestSyncRepoDropsStaleSettingsSnapshotBehindNewerObservation(t *testing.T) 
 	}
 	provider := &syncTestRepositoryReadProvider{
 		syncTestReadProvider: &syncTestReadProvider{
-			syncTestProvider: syncTestProvider{
-				kind: platform.KindGitLab, host: "gitlab.example.com",
-			},
+			kind: platform.KindGitLab, host: "gitlab.example.com",
 		},
 		getRepositoryFn: func(context.Context, platform.RepoRef) (platform.Repository, error) {
 			injectNewerObservation()
@@ -23492,9 +23430,7 @@ func TestSyncMRForRepoPersistsSettingsForReplacementRepository(t *testing.T) {
 	}
 	provider := &syncTestRepositoryReadProvider{
 		syncTestReadProvider: &syncTestReadProvider{
-			syncTestProvider: syncTestProvider{
-				kind: platform.KindGitLab, host: "gitlab.example.com",
-			},
+			kind: platform.KindGitLab, host: "gitlab.example.com",
 			mergeRequests: []platform.MergeRequest{{
 				Repo:           platformRepoRef(repo),
 				PlatformID:     1001,
@@ -23569,9 +23505,7 @@ func TestSyncIssueForRepoPersistsSettingsForReplacementRepository(t *testing.T) 
 	}
 	provider := &syncTestRepositoryReadProvider{
 		syncTestReadProvider: &syncTestReadProvider{
-			syncTestProvider: syncTestProvider{
-				kind: platform.KindGitLab, host: "gitlab.example.com",
-			},
+			kind: platform.KindGitLab, host: "gitlab.example.com",
 			issues: []platform.Issue{{
 				Repo:           platformRepoRef(repo),
 				PlatformID:     2001,
@@ -23747,9 +23681,7 @@ func TestSyncMRForRepoPersistsSettingsDespiteArchiveWatermarkAdvance(t *testing.
 	}
 	provider := &syncTestRepositoryReadProvider{
 		syncTestReadProvider: &syncTestReadProvider{
-			syncTestProvider: syncTestProvider{
-				kind: platform.KindGitLab, host: "gitlab.example.com",
-			},
+			kind: platform.KindGitLab, host: "gitlab.example.com",
 			mergeRequests: []platform.MergeRequest{{
 				Repo:           platformRepoRef(repo),
 				PlatformID:     1001,
@@ -23827,9 +23759,7 @@ func TestSyncMRForRepoErrsWhenSettingsObservationKeepsLosing(t *testing.T) {
 	}
 	provider := &syncTestRepositoryReadProvider{
 		syncTestReadProvider: &syncTestReadProvider{
-			syncTestProvider: syncTestProvider{
-				kind: platform.KindGitLab, host: "gitlab.example.com",
-			},
+			kind: platform.KindGitLab, host: "gitlab.example.com",
 			mergeRequests: []platform.MergeRequest{{
 				Repo:           platformRepoRef(repo),
 				PlatformID:     1001,
@@ -23882,9 +23812,7 @@ func TestSyncRepoErrsWhenSettingsObservationKeepsLosing(t *testing.T) {
 
 	provider := &syncTestRepositoryReadProvider{
 		syncTestReadProvider: &syncTestReadProvider{
-			syncTestProvider: syncTestProvider{
-				kind: platform.KindGitLab, host: "gitlab.example.com",
-			},
+			kind: platform.KindGitLab, host: "gitlab.example.com",
 		},
 		repository: platform.Repository{
 			Ref: platform.RepoRef{

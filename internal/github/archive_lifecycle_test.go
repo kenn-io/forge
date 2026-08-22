@@ -943,9 +943,7 @@ func TestSyncRepoReplacementReconcilesArchiveLifecycle(t *testing.T) {
 	}
 	provider := &syncTestRepositoryReadProvider{
 		syncTestReadProvider: &syncTestReadProvider{
-			syncTestProvider: syncTestProvider{
-				kind: platform.KindGitLab, host: "gitlab.test",
-			},
+			kind: platform.KindGitLab, host: "gitlab.test",
 		},
 		repository: platform.Repository{
 			Ref: platform.RepoRef{
@@ -1024,9 +1022,7 @@ func TestSyncReusedRouteResolvingSuccessorKeepsBothReposTracked(t *testing.T) {
 	}
 	provider := &syncTestRepositoryReadProvider{
 		syncTestReadProvider: &syncTestReadProvider{
-			syncTestProvider: syncTestProvider{
-				kind: platform.KindGitLab, host: "gitlab.test",
-			},
+			kind: platform.KindGitLab, host: "gitlab.test",
 		},
 		repository: platform.Repository{
 			Ref: platform.RepoRef{
@@ -1093,9 +1089,7 @@ func TestSyncRouteReplacementIgnoresDisplacedArchivedFlipE2E(t *testing.T) {
 	}
 	provider := &syncTestRepositoryReadProvider{
 		syncTestReadProvider: &syncTestReadProvider{
-			syncTestProvider: syncTestProvider{
-				kind: platform.KindGitLab, host: "gitlab.test",
-			},
+			kind: platform.KindGitLab, host: "gitlab.test",
 		},
 		repository: platform.Repository{
 			Ref: platform.RepoRef{
@@ -1651,8 +1645,8 @@ func TestBackfillMergedActorCancelsAndWaitsForArchiveRequest(t *testing.T) {
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
 	}
 	provider := &blockingPriorityProvider{
-		syncTestProvider: syncTestProvider{kind: ref.Platform, host: ref.Host},
-		ref:              ref, operation: priorityWorkMR,
+		kind: ref.Platform, host: ref.Host,
+		ref: ref, operation: priorityWorkMR,
 		started: make(chan struct{}), release: make(chan struct{}),
 	}
 	releaseProvider := sync.OnceFunc(func() { close(provider.release) })
@@ -1747,8 +1741,8 @@ func TestArchiveAdmissionDefersToForegroundSyncEntryPoints(t *testing.T) {
 				Owner: "acme", Name: "widget", RepoPath: "acme/widget",
 			}
 			provider := &blockingPriorityProvider{
-				syncTestProvider: syncTestProvider{kind: ref.Platform, host: ref.Host},
-				ref:              ref, operation: tc.operation,
+				kind: ref.Platform, host: ref.Host,
+				ref: ref, operation: tc.operation,
 				started: make(chan struct{}), release: make(chan struct{}),
 			}
 			registry, err := platform.NewRegistry(provider)

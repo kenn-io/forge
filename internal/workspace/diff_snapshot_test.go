@@ -233,7 +233,7 @@ func TestReadDiffSnapshotFileRejectsIntermediateSymlink(t *testing.T) {
 	require.NoError(os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("secret\n"), 0o600))
 	require.NoError(os.Symlink(outside, filepath.Join(worktree, "nested")))
 	resolved := ResolvedDiffSnapshotSpec{
-		DiffSnapshotSpec: DiffSnapshotSpec{WorktreePath: worktree},
+		WorktreePath:     worktree,
 		IncludeUntracked: true,
 	}
 

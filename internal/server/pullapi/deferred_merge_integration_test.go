@@ -376,33 +376,31 @@ func TestDeferMergeEndpointQueuesMergeAndBroadcastsCompletion(t *testing.T) {
 		DefaultBranch:      "main",
 	}
 	provider := &deferredMergeTestProvider{
-		deferredMergeProviderBase: deferredMergeProviderBase{
-			ref: ref,
-			mergeRequests: []platform.MergeRequest{{
-				Repo:           ref,
-				PlatformID:     7001,
-				Number:         7,
-				URL:            "https://gitlab.example.com/group/project/-/merge_requests/7",
-				Title:          "Defer merge",
-				Author:         "ada",
-				State:          "open",
-				HeadBranch:     "feature",
-				BaseBranch:     "main",
-				HeadSHA:        "head-sha",
-				BaseSHA:        "base-sha",
-				CIStatus:       "pending",
-				CreatedAt:      now,
-				UpdatedAt:      now,
-				LastActivityAt: now,
+		ref: ref,
+		mergeRequests: []platform.MergeRequest{{
+			Repo:           ref,
+			PlatformID:     7001,
+			Number:         7,
+			URL:            "https://gitlab.example.com/group/project/-/merge_requests/7",
+			Title:          "Defer merge",
+			Author:         "ada",
+			State:          "open",
+			HeadBranch:     "feature",
+			BaseBranch:     "main",
+			HeadSHA:        "head-sha",
+			BaseSHA:        "base-sha",
+			CIStatus:       "pending",
+			CreatedAt:      now,
+			UpdatedAt:      now,
+			LastActivityAt: now,
+		}},
+		ciChecks: map[string][]platform.CICheck{
+			"head-sha": {{
+				App:        "GitLab",
+				Name:       "pipeline",
+				Status:     "completed",
+				Conclusion: "success",
 			}},
-			ciChecks: map[string][]platform.CICheck{
-				"head-sha": {{
-					App:        "GitLab",
-					Name:       "pipeline",
-					Status:     "completed",
-					Conclusion: "success",
-				}},
-			},
 		},
 		mergeCh: make(chan deferredMergeTestMergeCall, 1),
 	}
@@ -558,15 +556,13 @@ func TestPullDetailReportsDeferredMergePendingWhileQueued(t *testing.T) {
 		DefaultBranch:      "main",
 	}
 	provider := &deferredMergeTestProvider{
-		deferredMergeProviderBase: deferredMergeProviderBase{
-			ref: ref,
-			ciChecks: map[string][]platform.CICheck{
-				"head-sha": {{
-					App:    "GitLab",
-					Name:   "pipeline",
-					Status: "in_progress",
-				}},
-			},
+		ref: ref,
+		ciChecks: map[string][]platform.CICheck{
+			"head-sha": {{
+				App:    "GitLab",
+				Name:   "pipeline",
+				Status: "in_progress",
+			}},
 		},
 		mergeCh: make(chan deferredMergeTestMergeCall, 1),
 	}
@@ -625,35 +621,33 @@ func TestImmediateMergeSupersedesQueuedDeferredMerge(t *testing.T) {
 		DefaultBranch:      "main",
 	}
 	provider := &deferredMergeTestProvider{
-		deferredMergeProviderBase: deferredMergeProviderBase{
-			ref: ref,
-			// The provider's own view of the MR: the immediate merge flips
-			// it to merged, and the handler's canonical post-merge resync
-			// reads it back to record the terminal transition.
-			mergeRequests: []platform.MergeRequest{{
-				Repo:           ref,
-				PlatformID:     7001,
-				Number:         7,
-				URL:            "https://gitlab.example.com/group/project/-/merge_requests/7",
-				Title:          "Defer merge",
-				Author:         "ada",
-				State:          "open",
-				HeadBranch:     "feature",
-				BaseBranch:     "main",
-				HeadSHA:        "head-sha",
-				BaseSHA:        "base-sha",
-				CIStatus:       "pending",
-				CreatedAt:      now,
-				UpdatedAt:      now,
-				LastActivityAt: now,
+		ref: ref,
+		// The provider's own view of the MR: the immediate merge flips
+		// it to merged, and the handler's canonical post-merge resync
+		// reads it back to record the terminal transition.
+		mergeRequests: []platform.MergeRequest{{
+			Repo:           ref,
+			PlatformID:     7001,
+			Number:         7,
+			URL:            "https://gitlab.example.com/group/project/-/merge_requests/7",
+			Title:          "Defer merge",
+			Author:         "ada",
+			State:          "open",
+			HeadBranch:     "feature",
+			BaseBranch:     "main",
+			HeadSHA:        "head-sha",
+			BaseSHA:        "base-sha",
+			CIStatus:       "pending",
+			CreatedAt:      now,
+			UpdatedAt:      now,
+			LastActivityAt: now,
+		}},
+		ciChecks: map[string][]platform.CICheck{
+			"head-sha": {{
+				App:    "GitLab",
+				Name:   "pipeline",
+				Status: "in_progress",
 			}},
-			ciChecks: map[string][]platform.CICheck{
-				"head-sha": {{
-					App:    "GitLab",
-					Name:   "pipeline",
-					Status: "in_progress",
-				}},
-			},
 		},
 		mergeCh: make(chan deferredMergeTestMergeCall, 2),
 	}
@@ -736,33 +730,31 @@ func TestImmediateUnmergedResponsePreservesQueueUntilDeferredProviderRejects(t *
 	ciStarted := make(chan struct{})
 	ciRelease := make(chan struct{})
 	provider := &deferredMergeTestProvider{
-		deferredMergeProviderBase: deferredMergeProviderBase{
-			ref: ref,
-			mergeRequests: []platform.MergeRequest{{
-				Repo:           ref,
-				PlatformID:     7001,
-				Number:         7,
-				URL:            "https://gitlab.example.com/group/project/-/merge_requests/7",
-				Title:          "Defer merge",
-				Author:         "ada",
-				State:          "open",
-				HeadBranch:     "feature",
-				BaseBranch:     "main",
-				HeadSHA:        "head-sha",
-				BaseSHA:        "base-sha",
-				CIStatus:       "pending",
-				CreatedAt:      now,
-				UpdatedAt:      now,
-				LastActivityAt: now,
+		ref: ref,
+		mergeRequests: []platform.MergeRequest{{
+			Repo:           ref,
+			PlatformID:     7001,
+			Number:         7,
+			URL:            "https://gitlab.example.com/group/project/-/merge_requests/7",
+			Title:          "Defer merge",
+			Author:         "ada",
+			State:          "open",
+			HeadBranch:     "feature",
+			BaseBranch:     "main",
+			HeadSHA:        "head-sha",
+			BaseSHA:        "base-sha",
+			CIStatus:       "pending",
+			CreatedAt:      now,
+			UpdatedAt:      now,
+			LastActivityAt: now,
+		}},
+		ciChecks: map[string][]platform.CICheck{
+			"head-sha": {{
+				App:        "GitLab",
+				Name:       "pipeline",
+				Status:     "completed",
+				Conclusion: "success",
 			}},
-			ciChecks: map[string][]platform.CICheck{
-				"head-sha": {{
-					App:        "GitLab",
-					Name:       "pipeline",
-					Status:     "completed",
-					Conclusion: "success",
-				}},
-			},
 		},
 		mergeCh: make(chan deferredMergeTestMergeCall, 2),
 		mergeResults: []platform.MergeResult{
@@ -870,8 +862,8 @@ func TestDeferMergeEndpointRejectsInvalidMergeMethodBeforeQueueing(t *testing.T)
 		DefaultBranch:      "main",
 	}
 	provider := &deferredMergeTestProvider{
-		deferredMergeProviderBase: deferredMergeProviderBase{ref: ref},
-		mergeCh:                   make(chan deferredMergeTestMergeCall, 1),
+		ref:     ref,
+		mergeCh: make(chan deferredMergeTestMergeCall, 1),
 	}
 	_, _, _, client := newDeferredMergeRouteServer(t, provider, ref, now, []db.CICheck{{
 		App: "GitLab", Name: "pipeline", Status: "in_progress",
@@ -911,8 +903,8 @@ func TestDeferMergeEndpointRejectsWithoutPendingChecks(t *testing.T) {
 		DefaultBranch:      "main",
 	}
 	provider := &deferredMergeTestProvider{
-		deferredMergeProviderBase: deferredMergeProviderBase{ref: ref},
-		mergeCh:                   make(chan deferredMergeTestMergeCall, 1),
+		ref:     ref,
+		mergeCh: make(chan deferredMergeTestMergeCall, 1),
 	}
 	_, database, repoID, client := newDeferredMergeRouteServer(t, provider, ref, now, []db.CICheck{{
 		App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "success",
@@ -962,8 +954,8 @@ func TestDeferMergeEndpointRejectsMissingBaseSHA(t *testing.T) {
 		DefaultBranch:      "main",
 	}
 	provider := &deferredMergeTestProvider{
-		deferredMergeProviderBase: deferredMergeProviderBase{ref: ref},
-		mergeCh:                   make(chan deferredMergeTestMergeCall, 1),
+		ref:     ref,
+		mergeCh: make(chan deferredMergeTestMergeCall, 1),
 	}
 	_, database, repoID, client := newDeferredMergeRouteServer(t, provider, ref, now, []db.CICheck{{
 		App: "GitLab", Name: "pipeline", Status: "in_progress",
@@ -1026,8 +1018,8 @@ func TestDeferMergeEndpointRejectsFailedAggregateCIWithPassingRows(t *testing.T)
 		DefaultBranch:      "main",
 	}
 	provider := &deferredMergeTestProvider{
-		deferredMergeProviderBase: deferredMergeProviderBase{ref: ref},
-		mergeCh:                   make(chan deferredMergeTestMergeCall, 1),
+		ref:     ref,
+		mergeCh: make(chan deferredMergeTestMergeCall, 1),
 	}
 	_, database, repoID, client := newDeferredMergeRouteServer(t, provider, ref, now, []db.CICheck{{
 		App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "success",
@@ -1077,11 +1069,9 @@ func TestDeferMergeEndpointFailsWhenAggregatePendingRefreshBecomesUnknown(t *tes
 		DefaultBranch:      "main",
 	}
 	provider := &deferredMergeTestProvider{
-		deferredMergeProviderBase: deferredMergeProviderBase{
-			ref:      ref,
-			ciChecks: map[string][]platform.CICheck{"head-sha": {}},
-		},
-		mergeCh: make(chan deferredMergeTestMergeCall, 1),
+		ref:      ref,
+		ciChecks: map[string][]platform.CICheck{"head-sha": {}},
+		mergeCh:  make(chan deferredMergeTestMergeCall, 1),
 	}
 	srv, database, repoID, client := newDeferredMergeRouteServer(
 		t,
@@ -1158,11 +1148,9 @@ func TestDeferMergeEndpointFailsWhenGranularPendingRefreshHasUnknownAggregate(t 
 		DefaultBranch:      "main",
 	}
 	provider := &deferredMergeTestProvider{
-		deferredMergeProviderBase: deferredMergeProviderBase{
-			ref:      ref,
-			ciChecks: map[string][]platform.CICheck{"head-sha": {}},
-		},
-		mergeCh: make(chan deferredMergeTestMergeCall, 1),
+		ref:      ref,
+		ciChecks: map[string][]platform.CICheck{"head-sha": {}},
+		mergeCh:  make(chan deferredMergeTestMergeCall, 1),
 	}
 	srv, database, repoID, client := newDeferredMergeRouteServer(
 		t,
@@ -1238,15 +1226,13 @@ func TestDeferMergeEndpointRefreshesEmptyPendingSnapshotBeforeRejecting(t *testi
 		DefaultBranch:      "main",
 	}
 	provider := &deferredMergeTestProvider{
-		deferredMergeProviderBase: deferredMergeProviderBase{
-			ref: ref,
-			ciChecks: map[string][]platform.CICheck{
-				"head-sha": {{
-					App:    "GitLab",
-					Name:   "pipeline",
-					Status: "in_progress",
-				}},
-			},
+		ref: ref,
+		ciChecks: map[string][]platform.CICheck{
+			"head-sha": {{
+				App:    "GitLab",
+				Name:   "pipeline",
+				Status: "in_progress",
+			}},
 		},
 		mergeCh: make(chan deferredMergeTestMergeCall, 1),
 	}
@@ -1291,10 +1277,8 @@ func TestDeferMergeEndpointBroadcastsFailureWhenCIRefreshWarns(t *testing.T) {
 		DefaultBranch:      "main",
 	}
 	provider := &deferredMergeTestProvider{
-		deferredMergeProviderBase: deferredMergeProviderBase{
-			ref:   ref,
-			ciErr: errors.New("gitlab pipeline API unavailable"),
-		},
+		ref:     ref,
+		ciErr:   errors.New("gitlab pipeline API unavailable"),
 		mergeCh: make(chan deferredMergeTestMergeCall, 1),
 	}
 	srv, _, _, client := newDeferredMergeRouteServer(t, provider, ref, now, []db.CICheck{{
@@ -1357,13 +1341,11 @@ func TestDeferMergeEndpointBroadcastsFailureWhenCurrentChecksFail(t *testing.T) 
 		DefaultBranch:      "main",
 	}
 	provider := &deferredMergeTestProvider{
-		deferredMergeProviderBase: deferredMergeProviderBase{
-			ref: ref,
-			ciChecks: map[string][]platform.CICheck{
-				"head-sha": {
-					{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "success"},
-					{App: "GitLab", Name: "security", Status: "completed", Conclusion: "failure"},
-				},
+		ref: ref,
+		ciChecks: map[string][]platform.CICheck{
+			"head-sha": {
+				{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "success"},
+				{App: "GitLab", Name: "security", Status: "completed", Conclusion: "failure"},
 			},
 		},
 		mergeCh: make(chan deferredMergeTestMergeCall, 1),
@@ -1429,16 +1411,14 @@ func TestDeferMergeEndpointBroadcastsFailureWhenHeadChangesWhileWaiting(t *testi
 	ciStarted := make(chan struct{})
 	ciRelease := make(chan struct{})
 	provider := &deferredMergeTestProvider{
-		deferredMergeProviderBase: deferredMergeProviderBase{
-			ref: ref,
-			ciChecks: map[string][]platform.CICheck{
-				"head-sha": {{
-					App:        "GitLab",
-					Name:       "pipeline",
-					Status:     "completed",
-					Conclusion: "success",
-				}},
-			},
+		ref: ref,
+		ciChecks: map[string][]platform.CICheck{
+			"head-sha": {{
+				App:        "GitLab",
+				Name:       "pipeline",
+				Status:     "completed",
+				Conclusion: "success",
+			}},
 		},
 		mergeCh:   make(chan deferredMergeTestMergeCall, 1),
 		ciStarted: ciStarted,
@@ -1534,33 +1514,31 @@ func TestDeferMergeEndpointBroadcastsFailureWhenProviderBaseChangesBeforeMerge(t
 	ciStarted := make(chan struct{})
 	ciRelease := make(chan struct{})
 	provider := &deferredMergeTestProvider{
-		deferredMergeProviderBase: deferredMergeProviderBase{
-			ref: ref,
-			mergeRequests: []platform.MergeRequest{{
-				Repo:           ref,
-				PlatformID:     7001,
-				Number:         7,
-				URL:            "https://gitlab.example.com/group/project/-/merge_requests/7",
-				Title:          "Defer merge",
-				Author:         "ada",
-				State:          "open",
-				HeadBranch:     "feature",
-				BaseBranch:     "main",
-				HeadSHA:        "head-sha",
-				BaseSHA:        "base-sha",
-				CIStatus:       "pending",
-				CreatedAt:      now,
-				UpdatedAt:      now,
-				LastActivityAt: now,
+		ref: ref,
+		mergeRequests: []platform.MergeRequest{{
+			Repo:           ref,
+			PlatformID:     7001,
+			Number:         7,
+			URL:            "https://gitlab.example.com/group/project/-/merge_requests/7",
+			Title:          "Defer merge",
+			Author:         "ada",
+			State:          "open",
+			HeadBranch:     "feature",
+			BaseBranch:     "main",
+			HeadSHA:        "head-sha",
+			BaseSHA:        "base-sha",
+			CIStatus:       "pending",
+			CreatedAt:      now,
+			UpdatedAt:      now,
+			LastActivityAt: now,
+		}},
+		ciChecks: map[string][]platform.CICheck{
+			"head-sha": {{
+				App:        "GitLab",
+				Name:       "pipeline",
+				Status:     "completed",
+				Conclusion: "success",
 			}},
-			ciChecks: map[string][]platform.CICheck{
-				"head-sha": {{
-					App:        "GitLab",
-					Name:       "pipeline",
-					Status:     "completed",
-					Conclusion: "success",
-				}},
-			},
 		},
 		mergeCh:   make(chan deferredMergeTestMergeCall, 1),
 		ciStarted: ciStarted,
@@ -1633,15 +1611,13 @@ func TestDeferMergeEndpointBroadcastsFailureWhenPendingChecksTimeOut(t *testing.
 		DefaultBranch:      "main",
 	}
 	provider := &deferredMergeTestProvider{
-		deferredMergeProviderBase: deferredMergeProviderBase{
-			ref: ref,
-			ciChecks: map[string][]platform.CICheck{
-				"head-sha": {{
-					App:    "GitLab",
-					Name:   "pipeline",
-					Status: "in_progress",
-				}},
-			},
+		ref: ref,
+		ciChecks: map[string][]platform.CICheck{
+			"head-sha": {{
+				App:    "GitLab",
+				Name:   "pipeline",
+				Status: "in_progress",
+			}},
 		},
 		mergeCh: make(chan deferredMergeTestMergeCall, 1),
 	}
@@ -1719,8 +1695,8 @@ func TestDeferMergeEndpointRejectsClosedPullRequest(t *testing.T) {
 		DefaultBranch:      "main",
 	}
 	provider := &deferredMergeTestProvider{
-		deferredMergeProviderBase: deferredMergeProviderBase{ref: ref},
-		mergeCh:                   make(chan deferredMergeTestMergeCall, 1),
+		ref:     ref,
+		mergeCh: make(chan deferredMergeTestMergeCall, 1),
 	}
 	_, database, repoID, client := newDeferredMergeRouteServer(t, provider, ref, now, []db.CICheck{{
 		App: "GitLab", Name: "pipeline", Status: "in_progress",
@@ -1788,16 +1764,14 @@ func TestDeferMergeEndpointBroadcastsFailureWhenTargetClosedWhileWaiting(t *test
 	ciStarted := make(chan struct{})
 	ciRelease := make(chan struct{})
 	provider := &deferredMergeTestProvider{
-		deferredMergeProviderBase: deferredMergeProviderBase{
-			ref: ref,
-			ciChecks: map[string][]platform.CICheck{
-				"head-sha": {{
-					App:        "GitLab",
-					Name:       "pipeline",
-					Status:     "completed",
-					Conclusion: "success",
-				}},
-			},
+		ref: ref,
+		ciChecks: map[string][]platform.CICheck{
+			"head-sha": {{
+				App:        "GitLab",
+				Name:       "pipeline",
+				Status:     "completed",
+				Conclusion: "success",
+			}},
 		},
 		mergeCh:   make(chan deferredMergeTestMergeCall, 1),
 		ciStarted: ciStarted,
@@ -1895,16 +1869,14 @@ func TestDeferMergeEndpointStandsDownSilentlyWhenTargetMergedWhileWaiting(t *tes
 	ciStarted := make(chan struct{})
 	ciRelease := make(chan struct{})
 	provider := &deferredMergeTestProvider{
-		deferredMergeProviderBase: deferredMergeProviderBase{
-			ref: ref,
-			ciChecks: map[string][]platform.CICheck{
-				"head-sha": {{
-					App:        "GitLab",
-					Name:       "pipeline",
-					Status:     "completed",
-					Conclusion: "success",
-				}},
-			},
+		ref: ref,
+		ciChecks: map[string][]platform.CICheck{
+			"head-sha": {{
+				App:        "GitLab",
+				Name:       "pipeline",
+				Status:     "completed",
+				Conclusion: "success",
+			}},
 		},
 		mergeCh:   make(chan deferredMergeTestMergeCall, 1),
 		ciStarted: ciStarted,
@@ -1994,33 +1966,31 @@ func TestDeferMergeEndpointBroadcastsFailureWhenProviderClosedBeforeMerge(t *tes
 	ciStarted := make(chan struct{})
 	ciRelease := make(chan struct{})
 	provider := &deferredMergeTestProvider{
-		deferredMergeProviderBase: deferredMergeProviderBase{
-			ref: ref,
-			mergeRequests: []platform.MergeRequest{{
-				Repo:           ref,
-				PlatformID:     7001,
-				Number:         7,
-				URL:            "https://gitlab.example.com/group/project/-/merge_requests/7",
-				Title:          "Defer merge",
-				Author:         "ada",
-				State:          "open",
-				HeadBranch:     "feature",
-				BaseBranch:     "main",
-				HeadSHA:        "head-sha",
-				BaseSHA:        "base-sha",
-				CIStatus:       "pending",
-				CreatedAt:      now,
-				UpdatedAt:      now,
-				LastActivityAt: now,
+		ref: ref,
+		mergeRequests: []platform.MergeRequest{{
+			Repo:           ref,
+			PlatformID:     7001,
+			Number:         7,
+			URL:            "https://gitlab.example.com/group/project/-/merge_requests/7",
+			Title:          "Defer merge",
+			Author:         "ada",
+			State:          "open",
+			HeadBranch:     "feature",
+			BaseBranch:     "main",
+			HeadSHA:        "head-sha",
+			BaseSHA:        "base-sha",
+			CIStatus:       "pending",
+			CreatedAt:      now,
+			UpdatedAt:      now,
+			LastActivityAt: now,
+		}},
+		ciChecks: map[string][]platform.CICheck{
+			"head-sha": {{
+				App:        "GitLab",
+				Name:       "pipeline",
+				Status:     "completed",
+				Conclusion: "success",
 			}},
-			ciChecks: map[string][]platform.CICheck{
-				"head-sha": {{
-					App:        "GitLab",
-					Name:       "pipeline",
-					Status:     "completed",
-					Conclusion: "success",
-				}},
-			},
 		},
 		mergeCh:   make(chan deferredMergeTestMergeCall, 1),
 		ciStarted: ciStarted,
@@ -2104,31 +2074,29 @@ func TestImmediateMergeRecordsMergedActor(t *testing.T) {
 	}
 	mergedAt := now.Add(time.Minute)
 	provider := &deferredMergeTestProvider{
-		deferredMergeProviderBase: deferredMergeProviderBase{
-			ref: ref,
-			// The provider view after the merge lands: merged, with the
-			// acting user. The handler's synchronous canonical resync
-			// must persist this actor as an authored merged event before
-			// the merge response returns.
-			mergeRequests: []platform.MergeRequest{{
-				Repo:           ref,
-				PlatformID:     7001,
-				Number:         7,
-				URL:            "https://gitlab.example.com/group/project/-/merge_requests/7",
-				Title:          "Merge me",
-				Author:         "ada",
-				State:          "merged",
-				MergedAt:       &mergedAt,
-				MergedBy:       "merge-admin",
-				HeadBranch:     "feature",
-				BaseBranch:     "main",
-				HeadSHA:        "head-sha",
-				BaseSHA:        "base-sha",
-				CreatedAt:      now,
-				UpdatedAt:      mergedAt,
-				LastActivityAt: mergedAt,
-			}},
-		},
+		ref: ref,
+		// The provider view after the merge lands: merged, with the
+		// acting user. The handler's synchronous canonical resync
+		// must persist this actor as an authored merged event before
+		// the merge response returns.
+		mergeRequests: []platform.MergeRequest{{
+			Repo:           ref,
+			PlatformID:     7001,
+			Number:         7,
+			URL:            "https://gitlab.example.com/group/project/-/merge_requests/7",
+			Title:          "Merge me",
+			Author:         "ada",
+			State:          "merged",
+			MergedAt:       &mergedAt,
+			MergedBy:       "merge-admin",
+			HeadBranch:     "feature",
+			BaseBranch:     "main",
+			HeadSHA:        "head-sha",
+			BaseSHA:        "base-sha",
+			CreatedAt:      now,
+			UpdatedAt:      mergedAt,
+			LastActivityAt: mergedAt,
+		}},
 		mergeCh: make(chan deferredMergeTestMergeCall, 1),
 	}
 	_, database, repoID, client := newDeferredMergeRouteServer(

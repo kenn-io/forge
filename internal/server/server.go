@@ -310,11 +310,9 @@ func (s *Server) subscribeWorkspaceEvents(
 		for event := range source {
 			select {
 			case events <- workspaceapi.RecordedEvent{
-				ID: event.ID,
-				Event: workspaceapi.Event{
-					Type: event.Event.Type,
-					Data: event.Event.Data,
-				},
+				ID:   event.ID,
+				Type: event.Event.Type,
+				Data: event.Event.Data,
 			}:
 			case <-ctx.Done():
 				return

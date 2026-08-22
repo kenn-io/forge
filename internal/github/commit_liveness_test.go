@@ -973,10 +973,8 @@ func TestCommitLivenessViaFetchProviderMRDetail(t *testing.T) {
 
 	providerRef := platformRepoRef(providerRepo)
 	provider := &syncTestReadProvider{
-		syncTestProvider: syncTestProvider{
-			kind: platform.KindForgejo,
-			host: platform.DefaultForgejoHost,
-		},
+		kind: platform.KindForgejo,
+		host: platform.DefaultForgejoHost,
 		mergeRequests: []platform.MergeRequest{{
 			Repo:               providerRef,
 			PlatformID:         101,
@@ -1097,10 +1095,8 @@ func TestCommitLivenessFinalizedByPeriodicCloseDetection(t *testing.T) {
 	// a3-era flags.
 	providerRef := platformRepoRef(providerRepo)
 	provider := &syncTestReadProvider{
-		syncTestProvider: syncTestProvider{
-			kind: platform.KindForgejo,
-			host: platform.DefaultForgejoHost,
-		},
+		kind: platform.KindForgejo,
+		host: platform.DefaultForgejoHost,
 		mergeRequests: []platform.MergeRequest{{
 			Repo:               providerRef,
 			PlatformID:         101,

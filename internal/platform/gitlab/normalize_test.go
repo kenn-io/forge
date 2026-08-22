@@ -229,10 +229,8 @@ func TestNormalizeDetailedMergeRequestPreservesResultCommitSHA(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			mr := NormalizeDetailedMergeRequest(testGitLabRepoRef(), &gitlab.MergeRequest{
-				BasicMergeRequest: gitlab.BasicMergeRequest{
-					ID: 1001, IID: 7, State: "merged",
-					MergeCommitSHA: tt.mergeSHA, SquashCommitSHA: tt.squashSHA,
-				},
+				ID: 1001, IID: 7, State: "merged",
+				MergeCommitSHA: tt.mergeSHA, SquashCommitSHA: tt.squashSHA,
 			})
 
 			assert.Equal(t, tt.want, mr.MergeCommitSHA)

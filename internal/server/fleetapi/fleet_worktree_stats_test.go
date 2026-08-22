@@ -88,14 +88,12 @@ func TestFleetWorktreeStatsCollectTargetsDedupesByPath(t *testing.T) {
 		db: database,
 		workspaceSnapshot: func(context.Context) (workspaceapi.FleetSnapshot, error) {
 			return workspaceapi.FleetSnapshot{Workspaces: []db.WorkspaceSummary{
-				{Workspace: db.Workspace{
+				{
 					ID: "ws-feat", Platform: "github", PlatformHost: "github.com",
-					RepoOwner: "o", RepoName: "app", WorktreePath: featPath, Status: "ready",
-				}},
-				{Workspace: db.Workspace{
+					RepoOwner: "o", RepoName: "app", WorktreePath: featPath, Status: "ready"},
+				{
 					ID: "ws-orphan", Platform: "github", PlatformHost: "github.com",
-					RepoOwner: "o", RepoName: "orphan", WorktreePath: orphanPath, Status: "ready",
-				}},
+					RepoOwner: "o", RepoName: "orphan", WorktreePath: orphanPath, Status: "ready"},
 			}}, nil
 		},
 	}
@@ -122,10 +120,8 @@ func TestFleetWorktreeStatsCollectTargetsUsesWorkspaceSnapshot(t *testing.T) {
 		db: database,
 		workspaceSnapshot: func(context.Context) (workspaceapi.FleetSnapshot, error) {
 			return workspaceapi.FleetSnapshot{Workspaces: []db.WorkspaceSummary{{
-				Workspace: db.Workspace{
-					ID: "snapshot-only", Platform: "github", PlatformHost: "github.com",
-					RepoOwner: "o", RepoName: "snapshot-only", WorktreePath: orphanPath,
-				},
+				ID: "snapshot-only", Platform: "github", PlatformHost: "github.com",
+				RepoOwner: "o", RepoName: "snapshot-only", WorktreePath: orphanPath,
 			}}}, nil
 		},
 	}

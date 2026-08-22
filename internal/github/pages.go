@@ -529,9 +529,7 @@ func (c *liveClient) ListInventoryPullRequestsPage(
 		State:     "all",
 		Sort:      sortBy,
 		Direction: direction,
-		ListOptions: gh.ListOptions{
-			Page: page, PerPage: githubPageSize,
-		},
+		Page:      page, PerPage: githubPageSize,
 	}
 	items, resp, err := c.gh.PullRequests.List(withBypassETag(ctx), owner, repo, opts)
 	c.trackRate(resp)
@@ -574,7 +572,7 @@ func (c *liveClient) ListIssueCommentsPage(
 	page int,
 ) ([]*gh.IssueComment, bool, error) {
 	items, resp, err := c.gh.Issues.ListComments(ctx, owner, repo, number, &gh.IssueListCommentsOptions{
-		ListOptions: gh.ListOptions{Page: page, PerPage: githubPageSize},
+		Page: page, PerPage: githubPageSize,
 	})
 	c.trackRate(resp)
 	if err != nil {

@@ -441,15 +441,15 @@ func TestSetupAdHocWorkspaceLateBranchConflictFailsWithoutChangingIdentity(t *te
 func TestAgentContextForAdHocWorkspace(t *testing.T) {
 	assert := assert.New(t)
 
-	summary := WorkspaceSummary{}
-	summary.ID = "ws-adhoc"
-	summary.Platform = "github"
-	summary.PlatformHost = "github.com"
-	summary.RepoOwner = "acme"
-	summary.RepoName = "widget"
-	summary.ItemType = db.WorkspaceItemTypeAdHoc
-	summary.GitHeadRef = "spike/thing"
-	summary.WorkspaceBranch = "spike/thing"
+	summary := WorkspaceSummary{
+		ID:              "ws-adhoc",
+		Platform:        "github",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypeAdHoc,
+		GitHeadRef:      "spike/thing",
+		WorkspaceBranch: "spike/thing"}
 
 	rendered := RenderAgentContext(BuildAgentContext(summary))
 
@@ -464,17 +464,17 @@ func TestAgentContextForAdHocWorkspaceWithDetectedPR(t *testing.T) {
 	assert := assert.New(t)
 
 	prNumber := 41
-	summary := WorkspaceSummary{}
-	summary.ID = "ws-adhoc"
-	summary.Platform = "github"
-	summary.PlatformHost = "github.com"
-	summary.RepoOwner = "acme"
-	summary.RepoName = "widget"
-	summary.ItemType = db.WorkspaceItemTypeAdHoc
-	summary.GitHeadRef = "spike/thing"
-	summary.WorkspaceBranch = "spike/thing"
-	summary.AssociatedPRNumber = &prNumber
-	summary.AssociatedPRVisible = true
+	summary := WorkspaceSummary{
+		ID:                  "ws-adhoc",
+		Platform:            "github",
+		PlatformHost:        "github.com",
+		RepoOwner:           "acme",
+		RepoName:            "widget",
+		ItemType:            db.WorkspaceItemTypeAdHoc,
+		GitHeadRef:          "spike/thing",
+		WorkspaceBranch:     "spike/thing",
+		AssociatedPRNumber:  &prNumber,
+		AssociatedPRVisible: true}
 
 	rendered := RenderAgentContext(BuildAgentContext(summary))
 
@@ -487,15 +487,15 @@ func TestAgentContextForAdHocWorkspaceWithDetectedPR(t *testing.T) {
 func TestAgentContextForAdHocWorkspaceBeforeSetup(t *testing.T) {
 	assert := assert.New(t)
 
-	summary := WorkspaceSummary{}
-	summary.ID = "ws-adhoc"
-	summary.Platform = "github"
-	summary.PlatformHost = "github.com"
-	summary.RepoOwner = "acme"
-	summary.RepoName = "widget"
-	summary.ItemType = db.WorkspaceItemTypeAdHoc
-	summary.GitHeadRef = "spike/thing"
-	summary.WorkspaceBranch = workspaceBranchUnknown
+	summary := WorkspaceSummary{
+		ID:              "ws-adhoc",
+		Platform:        "github",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypeAdHoc,
+		GitHeadRef:      "spike/thing",
+		WorkspaceBranch: workspaceBranchUnknown}
 
 	rendered := RenderAgentContext(BuildAgentContext(summary))
 

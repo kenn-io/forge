@@ -191,7 +191,7 @@ func (c *Client) listInventoryMergeRequestsPage(
 		pid,
 		&gitlab.ListProjectMergeRequestsOptions{
 			State: &state, OrderBy: &orderBy, Sort: &sortOrder, UpdatedAfter: &overlap,
-			ListOptions: gitlab.ListOptions{Page: cursor.Page, PerPage: defaultPageSize},
+			Page: cursor.Page, PerPage: defaultPageSize,
 		},
 		gitlab.WithContext(ctx),
 	)
@@ -326,7 +326,7 @@ func (c *Client) listIssueDiscussionsPage(
 ) ([]*gitlab.Discussion, int64, error) {
 	discussions, resp, err := c.api.Discussions.ListIssueDiscussions(
 		pid, int64(number),
-		&gitlab.ListIssueDiscussionsOptions{ListOptions: gitlab.ListOptions{Page: page, PerPage: defaultPageSize}},
+		&gitlab.ListIssueDiscussionsOptions{Page: page, PerPage: defaultPageSize},
 		gitlab.WithContext(ctx),
 	)
 	if err != nil {
@@ -349,7 +349,7 @@ func (c *Client) listIssueRelatedMergeRequests(
 			pid,
 			int64(number),
 			&gitlab.ListMergeRequestsRelatedToIssueOptions{
-				ListOptions: gitlab.ListOptions{Page: page, PerPage: defaultPageSize},
+				Page: page, PerPage: defaultPageSize,
 			},
 			gitlab.WithContext(ctx),
 		)
@@ -376,7 +376,7 @@ func (c *Client) listMergeRequestDiscussionsPage(
 ) ([]*gitlab.Discussion, int64, error) {
 	discussions, resp, err := c.api.Discussions.ListMergeRequestDiscussions(
 		pid, int64(number),
-		&gitlab.ListMergeRequestDiscussionsOptions{ListOptions: gitlab.ListOptions{Page: page, PerPage: defaultPageSize}},
+		&gitlab.ListMergeRequestDiscussionsOptions{Page: page, PerPage: defaultPageSize},
 		gitlab.WithContext(ctx),
 	)
 	if err != nil {

@@ -71,7 +71,7 @@ func (t *transport) listAllPullReviews(
 			reviews, resp, err = t.api.ListPullReviews(
 				ref.Owner, ref.Name, int64(number),
 				giteasdk.ListPullReviewsOptions{
-					ListOptions: giteasdk.ListOptions{Page: page, PageSize: 100},
+					Page: page, PageSize: 100,
 				},
 			)
 			return err

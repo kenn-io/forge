@@ -68,10 +68,10 @@ Do not require duplicate e2e coverage for default-host and
 wrapper. Require host-specific e2e only for custom host logic, route
 parsing, or provider identity changes.
 
-kenn-forge targets Go 1.26, where the built-in new accepts expression
-operands such as new(expr). Do not flag new(expr) usage as invalid,
-suspicious, or something that must be rewritten through a temporary
-variable solely because older Go versions did not allow it.
+kenn-forge targets Go 1.27. Go 1.26 added value-form new(expr), and Go 1.27
+permits generic methods, promoted field selectors as struct-literal keys, and
+generic function inference in assignment contexts. Do not flag these forms as
+invalid solely because older Go versions did not allow them.
 
 Disregard findings whose only substance is that the code does not
 compile or type-check. kenn-forge has static tests for that already.

@@ -242,8 +242,8 @@ func TestIndexReaderResolutionFailureAbandonsExpiredFeatureProbeReservation(t *t
 			database := openTestDB(t)
 			now := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
 			provider := cooldownCapabilityOnlyProvider{
-				syncTestProvider: syncTestProvider{kind: platform.KindGitLab, host: "gitlab.test"},
-				capabilities:     tc.capabilities,
+				kind: platform.KindGitLab, host: "gitlab.test",
+				capabilities: tc.capabilities,
 			}
 			registry, err := platform.NewRegistry(provider)
 			require.NoError(err)

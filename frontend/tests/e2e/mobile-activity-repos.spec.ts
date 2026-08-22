@@ -217,6 +217,7 @@ test.describe("mobile PR status grouping", () => {
     await page.goto("/m/pulls");
     await expect(page.locator(".focus-list")).toBeVisible();
 
+    await page.getByRole("button", { name: "Filters" }).click();
     await page.getByRole("button", { name: "Status" }).click();
 
     await expect(page.locator(".workflow-group .group-header")).toHaveText(["New", "Reviewing"]);

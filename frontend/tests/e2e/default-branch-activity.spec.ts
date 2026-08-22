@@ -624,7 +624,7 @@ test.describe("mobile default branch activity", () => {
     });
     await expect(branchCard).toBeVisible();
     await expect(branchCard).toContainText("Branch");
-    await expect(branchCard).toContainText("6 events");
+    await expect(branchCard).toContainText("Recent activity");
     await expect(page.locator(".mobile-activity-card", { hasText: "#0" })).toHaveCount(0);
 
     await branchCard

@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	gh "github.com/google/go-github/v89/github"
+	gh "github.com/google/go-github/v90/github"
 	"go.kenn.io/forge/internal/platform"
 	platformgithub "go.kenn.io/forge/internal/platform/github"
 	"go.kenn.io/forge/internal/tokenauth"

@@ -104,6 +104,35 @@ describe("pulls store display order", () => {
     );
   });
 
+  it("preserves the bounded list request after starring a pull request", async () => {
+    const listed = pull(7, "api", "2026-05-20T15:00:00Z");
+    const get = vi.fn(async () => ({ data: [listed], error: undefined }));
+    const store = createPullsStore({
+      client: {
+        GET: get,
+        PUT: vi.fn(async () => ({ data: undefined, error: undefined })),
+      } as unknown as GeneratedClient,
+    });
+    const ref = {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "api",
+      repoPath: "acme/api",
+    };
+    store.loadPulls({ limit: 30 });
+    await vi.waitFor(() => expect(store.isLoading()).toBe(false));
+    get.mockClear();
+
+    store.togglePRStar(ref, 7, false);
+
+    await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(1));
+    expect(get).toHaveBeenCalledWith(
+      "/pulls",
+      expect.objectContaining({ params: { query: expect.objectContaining({ limit: 30 }) } }),
+    );
+  });
+
   it("persists and sends the Involves me filter", async () => {
     const get = vi.fn(async () => ({ data: [], error: undefined }));
     const store = createPullsStore({ client: { GET: get } as unknown as GeneratedClient });

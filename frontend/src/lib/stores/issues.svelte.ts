@@ -389,7 +389,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     selectedIssue = null;
   }
 
-  function loadIssuesEffect(params?: IssuesParams) {
+  function loadIssuesEffect(params: IssuesParams | undefined = activeListParams) {
     const globalRepo = getGlobalRepo();
     const query: IssuesParams = {
       state: filterState,

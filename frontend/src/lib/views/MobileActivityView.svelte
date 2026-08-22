@@ -329,7 +329,7 @@
     return result;
   });
 
-  const visibleGroups = $derived(groups.slice(0, 30));
+  const visibleGroups = $derived(groups.slice(0, activityPageLimit));
 
   const authorOptions = $derived.by<TypeaheadOption[]>(() =>
     activity.getActivityAuthors().map((author) => ({
@@ -958,7 +958,7 @@
       </div>
     {/if}
 
-    {#if activity.isItemActivityCapped() && activityPageLimit < 500}
+    {#if (activity.isActivityCapped() || activity.isItemActivityCapped()) && activityPageLimit < 500}
       <div
         class="mobile-activity-loading-sentinel"
         aria-live="polite"

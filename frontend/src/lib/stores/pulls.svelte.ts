@@ -462,7 +462,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
     });
   }
 
-  function loadPullsEffect(params?: PullsParams) {
+  function loadPullsEffect(params: PullsParams | undefined = activeListParams) {
     const globalRepo = getGlobalRepo();
     const query: PullsParams = {
       state: filterState,

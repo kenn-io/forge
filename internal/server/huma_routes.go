@@ -1498,6 +1498,7 @@ func (s *Server) listActivityRouteCore(ctx context.Context, input *listActivityI
 		collapsed, projectionErr := s.db.ListCollapsedActivityProjection(ctx, db.ListActivityProjectionOpts{
 			ListActivityOpts: opts,
 			SubjectLimit:     pageLimit + 1,
+			SearchEventLimit: activitySafetyCap + 1,
 		})
 		if projectionErr != nil {
 			slog.Error("list collapsed activity failed", "err", projectionErr)
@@ -1524,6 +1525,7 @@ func (s *Server) listActivityRouteCore(ctx context.Context, input *listActivityI
 		workspaceOpts.AfterTime = nil
 		workspaceOpts.AfterSource = ""
 		workspaceOpts.AfterSourceID = 0
+		workspaceOpts.Limit = activitySafetyCap + 1
 		workspaceEventItems, err = s.db.ListActivity(ctx, workspaceOpts)
 		if err != nil {
 			slog.Error("list activity search subjects failed", "err", err)

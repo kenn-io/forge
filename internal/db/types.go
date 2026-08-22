@@ -1411,7 +1411,8 @@ type ActivityProjection struct {
 
 type ListActivityProjectionOpts struct {
 	ListActivityOpts
-	SubjectLimit int
+	SubjectLimit     int
+	SearchEventLimit int
 }
 
 // ListActivityAuthorsOpts holds the repository and time scopes used to build

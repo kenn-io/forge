@@ -88,11 +88,11 @@ Avoid by default:
 - Routing mobile taps into desktop drawer/query state with no visible phone result.
 
 - Mobile Activity starts with 30 collapsed parents and autoloads one 30-parent chunk per
-  end-of-list scroll gesture. Event previews stay bounded and viewport-driven
-  (`frontend/src/lib/views/MobileActivityView.svelte::autoloadMoreActivity`).
+  end-of-list scroll gesture. The response limit counts distinct parents after event
+  matching, while event scans remain separately bounded (`internal/server/huma_routes.go::Server.listActivityRouteCore`).
 - Phone PR and issue lists start with 30 items and autoload one 30-item chunk per
-  end-of-list scroll gesture
-  (`frontend/src/lib/views/FocusListView.svelte::autoloadMore`).
+  end-of-list scroll gesture. Mutation reloads retain the active chunk size
+  (`frontend/src/lib/stores/pulls.svelte.ts::createPullsStore`, `frontend/src/lib/stores/issues.svelte.ts::createIssuesStore`).
 - Phone startup and repository changes defer list loading to the current phone view
   (`frontend/src/App.svelte::shouldDeferInitialListsToActiveView`).
 - Config and provider events refresh only the current list

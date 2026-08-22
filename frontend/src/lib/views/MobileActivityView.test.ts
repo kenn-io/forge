@@ -93,6 +93,26 @@ const setActivityAuthor = vi.hoisted(() =>
   }),
 );
 
+function stubIntersectionObserver(): Map<Element, IntersectionObserverCallback> {
+  const observed = new Map<Element, IntersectionObserverCallback>();
+  class IntersectionObserverStub {
+    constructor(private readonly callback: IntersectionObserverCallback) {}
+    observe(target: Element): void {
+      observed.set(target, this.callback);
+    }
+    disconnect(): void {}
+    unobserve(): void {}
+    takeRecords(): IntersectionObserverEntry[] {
+      return [];
+    }
+    readonly root = null;
+    readonly rootMargin = "0px";
+    readonly thresholds = [0];
+  }
+  vi.stubGlobal("IntersectionObserver", IntersectionObserverStub);
+  return observed;
+}
+
 vi.mock("../stores/flash.svelte.js", () => ({ showFlash }));
 
 vi.mock("../context.js", () => ({
@@ -307,24 +327,9 @@ describe("MobileActivityView branch activity", () => {
     expect(setActivityPageLimit).toHaveBeenLastCalledWith(undefined);
   });
 
-  it("autoloads one parent chunk when the end sentinel enters the viewport", async () => {
-    const observed = new Map<Element, IntersectionObserverCallback>();
-    class IntersectionObserverStub {
-      constructor(private readonly callback: IntersectionObserverCallback) {}
-      observe(target: Element): void {
-        observed.set(target, this.callback);
-      }
-      disconnect(): void {}
-      unobserve(): void {}
-      takeRecords(): IntersectionObserverEntry[] {
-        return [];
-      }
-      readonly root = null;
-      readonly rootMargin = "0px";
-      readonly thresholds = [0];
-    }
-    vi.stubGlobal("IntersectionObserver", IntersectionObserverStub);
-    itemActivityCapped.value = true;
+  it("autoloads one direct-activity chunk when the end sentinel enters the viewport", async () => {
+    const observed = stubIntersectionObserver();
+    activityCapped.value = true;
     activityLoading.value = true;
     const { container } = render(MobileActivityView, { props: { onSelectItem } });
     const sentinel = container.querySelector(".mobile-activity-loading-sentinel");
@@ -346,6 +351,25 @@ describe("MobileActivityView branch activity", () => {
     await fireEvent.touchStart(viewport!);
     expect(setActivityPageLimit).toHaveBeenLastCalledWith(90);
     expect(loadActivity).toHaveBeenCalledTimes(3);
+  });
+
+  it("renders the next parent chunk after autoloading it", async () => {
+    const observed = stubIntersectionObserver();
+    items.value = Array.from({ length: 31 }, (_, index) =>
+      branchActivityItem(`branch-commit-${index + 1}`, {
+        body_preview: `Branch activity ${index + 1}`,
+        branch_name: `branch-${index + 1}`,
+      }),
+    );
+    itemActivityCapped.value = true;
+    const { container } = render(MobileActivityView, { props: { onSelectItem } });
+    expect(container.querySelectorAll("article")).toHaveLength(30);
+
+    const sentinel = container.querySelector(".mobile-activity-loading-sentinel");
+    expect(sentinel).toBeTruthy();
+    observed.get(sentinel!)?.([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
+
+    await waitFor(() => expect(container.querySelectorAll("article")).toHaveLength(31));
   });
 
   it("does not render truncation warnings or a manual load control", () => {

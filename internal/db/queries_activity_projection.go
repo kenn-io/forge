@@ -40,7 +40,11 @@ func (d *DB) ListCollapsedActivityProjection(
 
 	var searchMatched []WorkspaceSubjectKey
 	if opts.Search != "" {
-		searchRows, searchErr := listActivityWithQueryer(ctx, tx, opts.ListActivityOpts)
+		searchOpts := opts.ListActivityOpts
+		if opts.SearchEventLimit > 0 {
+			searchOpts.Limit = opts.SearchEventLimit
+		}
+		searchRows, searchErr := listActivityWithQueryer(ctx, tx, searchOpts)
 		if searchErr != nil {
 			return ActivityProjection{}, searchErr
 		}

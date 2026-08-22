@@ -47,6 +47,12 @@ const MAX_OWNER_REQUEST_SIZE: usize = 96 * 1024;
 const MAX_OWNER_INPUT_SIZE: usize = 64 * 1024;
 const MAX_UNIX_SOCKET_PATH_LEN: usize = 100;
 const SUBSCRIBER_CHANNEL_CAPACITY: usize = 64;
+const INITIAL_PTY_SIZE: PtySize = PtySize {
+    rows: 24,
+    cols: 80,
+    pixel_width: 80 * 8,
+    pixel_height: 24 * 16,
+};
 
 #[cfg(windows)]
 type OwnerListener = TcpListener;
@@ -109,8 +115,23 @@ struct Request {
     cols: u16,
     #[serde(default)]
     rows: u16,
+    #[serde(default)]
+    pixel_width: u16,
+    #[serde(default)]
+    pixel_height: u16,
     #[serde(default, deserialize_with = "deserialize_base64_bytes")]
     data: Vec<u8>,
+}
+
+impl Request {
+    fn pty_size(&self) -> PtySize {
+        PtySize {
+            rows: self.rows,
+            cols: self.cols,
+            pixel_width: self.pixel_width,
+            pixel_height: self.pixel_height,
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -223,14 +244,7 @@ fn run_owner(args: Args) -> Result<()> {
     let (listener, listener_addr) = bind_owner_listener(&paths)?;
 
     let pty_system = native_pty_system();
-    let pair = pty_system
-        .openpty(PtySize {
-            rows: 24,
-            cols: 80,
-            pixel_width: 0,
-            pixel_height: 0,
-        })
-        .context("open pty")?;
+    let pair = pty_system.openpty(INITIAL_PTY_SIZE).context("open pty")?;
 
     let mut cmd = CommandBuilder::new(&args.command[0]);
     for arg in args.command.iter().skip(1) {
@@ -382,7 +396,7 @@ fn handle_conn(
             write_response(&mut response_stream, ok())?;
         }
         "resize" => {
-            resize_pty(&master, first.cols, first.rows);
+            resize_pty(&master, first.pty_size());
             write_response(&mut response_stream, ok())?;
         }
         "attach" => handle_attach(
@@ -446,7 +460,7 @@ fn handle_attach(
         subscriber_id: None,
     };
 
-    resize_pty(&runtime.master, first.cols, first.rows);
+    resize_pty(&runtime.master, first.pty_size());
     write_response(&mut stream, ok())?;
 
     let (tx, rx) = new_subscriber_channel();
@@ -501,7 +515,7 @@ fn handle_attach(
                 writer.flush()?;
             }
             "resize" if req.cols > 0 && req.rows > 0 => {
-                resize_pty(&runtime.master, req.cols, req.rows);
+                resize_pty(&runtime.master, req.pty_size());
             }
             "stop" => {
                 mark_stopping(&runtime.shared);
@@ -513,15 +527,33 @@ fn handle_attach(
     Ok(())
 }
 
-fn resize_pty(master: &Arc<Mutex<Box<dyn portable_pty::MasterPty + Send>>>, cols: u16, rows: u16) {
-    if cols > 0 && rows > 0 {
-        let _ = master.lock().expect("master poisoned").resize(PtySize {
-            cols,
-            rows,
-            pixel_width: 0,
-            pixel_height: 0,
-        });
+fn resize_pty(master: &Arc<Mutex<Box<dyn portable_pty::MasterPty + Send>>>, mut size: PtySize) {
+    if size.cols == 0 || size.rows == 0 {
+        return;
     }
+
+    let master = master.lock().expect("master poisoned");
+    if (size.pixel_width == 0 || size.pixel_height == 0)
+        && let Ok(current) = master.get_size()
+    {
+        if size.pixel_width == 0 {
+            size.pixel_width = scale_pixel_dimension(current.pixel_width, current.cols, size.cols);
+        }
+        if size.pixel_height == 0 {
+            size.pixel_height =
+                scale_pixel_dimension(current.pixel_height, current.rows, size.rows);
+        }
+    }
+    let _ = master.resize(size);
+}
+
+fn scale_pixel_dimension(pixels: u16, current_cells: u16, new_cells: u16) -> u16 {
+    if pixels == 0 || current_cells == 0 {
+        return pixels;
+    }
+
+    (u64::from(pixels) * u64::from(new_cells) / u64::from(current_cells)).min(u64::from(u16::MAX))
+        as u16
 }
 
 fn read_request<R: BufRead>(reader: &mut R, max_bytes: usize) -> Result<Option<Request>> {
@@ -1295,6 +1327,84 @@ mod tests {
 
         assert_eq!(req.kind, "input");
         assert_eq!(req.data, b"hello\n");
+    }
+
+    #[test]
+    fn request_decodes_go_pixel_geometry() {
+        let req: Request = serde_json::from_value(json!({
+            "type": "resize",
+            "cols": 132,
+            "rows": 43,
+            "pixel_width": 1056,
+            "pixel_height": 688
+        }))
+        .unwrap();
+
+        assert_eq!(
+            req.pty_size(),
+            PtySize {
+                rows: 43,
+                cols: 132,
+                pixel_width: 1056,
+                pixel_height: 688,
+            }
+        );
+    }
+
+    #[test]
+    fn retained_pty_preserves_pixel_geometry_across_character_only_resize() {
+        let pair = native_pty_system().openpty(INITIAL_PTY_SIZE).unwrap();
+        let initial_size = pair.master.get_size().unwrap();
+        #[cfg(unix)]
+        assert_eq!(initial_size, INITIAL_PTY_SIZE);
+        #[cfg(windows)]
+        assert_eq!(
+            (initial_size.rows, initial_size.cols),
+            (INITIAL_PTY_SIZE.rows, INITIAL_PTY_SIZE.cols)
+        );
+
+        let master = Arc::new(Mutex::new(pair.master));
+        let browser_size = PtySize {
+            rows: 43,
+            cols: 132,
+            pixel_width: 1056,
+            pixel_height: 688,
+        };
+        resize_pty(&master, browser_size);
+
+        let resized = master.lock().expect("master poisoned").get_size().unwrap();
+        #[cfg(unix)]
+        assert_eq!(resized, browser_size);
+        #[cfg(windows)]
+        assert_eq!(
+            (resized.rows, resized.cols),
+            (browser_size.rows, browser_size.cols)
+        );
+
+        let character_only_size = PtySize {
+            rows: 50,
+            cols: 100,
+            pixel_width: 0,
+            pixel_height: 0,
+        };
+        resize_pty(&master, character_only_size);
+
+        let resized = master.lock().expect("master poisoned").get_size().unwrap();
+        #[cfg(unix)]
+        assert_eq!(
+            resized,
+            PtySize {
+                rows: 50,
+                cols: 100,
+                pixel_width: 800,
+                pixel_height: 800,
+            }
+        );
+        #[cfg(windows)]
+        assert_eq!(
+            (resized.rows, resized.cols),
+            (character_only_size.rows, character_only_size.cols)
+        );
     }
 
     #[test]

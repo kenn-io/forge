@@ -110,7 +110,10 @@ func TestRoborevRepositoryProbeInvalidateReloadsInventoryAndDefinitiveResults(t 
 func TestRoborevRepositoryProbeInvalidateFencesInFlightRefresh(t *testing.T) {
 	require := require.New(t)
 	started := make(chan struct{})
+	freshStarted := make(chan struct{})
 	release := make(chan struct{})
+	var releaseOnce sync.Once
+	defer releaseOnce.Do(func() { close(release) })
 	var calls atomic.Int32
 	probe := newRoborevRepositoryProbeWithDeps(
 		[]projects.KnownPlatformHost{{Platform: "github", Host: "github.com"}},
@@ -124,6 +127,7 @@ func TestRoborevRepositoryProbeInvalidateFencesInFlightRefresh(t *testing.T) {
 						RootPath: "/stale", Identity: "https://github.com/acme/stale.git",
 					}}, nil
 				}
+				close(freshStarted)
 				return []roborevTrackedRepository{{
 					RootPath: "/fresh", Identity: "https://github.com/acme/fresh.git",
 				}}, nil
@@ -142,8 +146,13 @@ func TestRoborevRepositoryProbeInvalidateFencesInFlightRefresh(t *testing.T) {
 	}()
 	<-started
 	probe.Invalidate()
-	close(release)
+	select {
+	case <-freshStarted:
+	case <-time.After(time.Second):
+		require.Fail("invalidation did not start a fresh probe")
+	}
 	configured := <-result
+	releaseOnce.Do(func() { close(release) })
 	require.Len(configured, 1)
 	require.Equal("acme/fresh", configured[0].RepoPath)
 	require.Equal(int32(2), calls.Load())

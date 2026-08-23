@@ -72,6 +72,7 @@ func TestManagedCloneExcludeIsWorktreeScoped(t *testing.T) {
 	runWorkspaceTestGit(t, source, "commit", "--allow-empty", "-m", "initial")
 	runWorkspaceTestGit(t, root, "clone", "--bare", source, commonDir)
 	runWorkspaceTestGit(t, commonDir, "worktree", "add", "-b", "first", firstWorktree, "main")
+	runWorkspaceTestGit(t, commonDir, "worktree", "add", "-b", "second", secondWorktree, "main")
 	_, stderr, err = userGit.Run(
 		t.Context(), firstWorktree, nil,
 		"check-ignore", "--quiet", "--", "editor-cache/settings.json",
@@ -89,6 +90,11 @@ func TestManagedCloneExcludeIsWorktreeScoped(t *testing.T) {
 			t, firstWorktree, "config", "--worktree", "--get", "core.bare",
 		))),
 	)
+	assert.Equal(
+		t, "false", strings.TrimSpace(string(runWorkspaceTestGit(
+			t, secondWorktree, "rev-parse", "--is-bare-repository",
+		))),
+	)
 	assertGitIgnored(t, firstWorktree, "review*data/snapshot.json")
 	assertGitNotIgnored(t, firstWorktree, "review-public-data/snapshot.json")
 	_, stderr, err = userGit.Run(
@@ -97,9 +103,6 @@ func TestManagedCloneExcludeIsWorktreeScoped(t *testing.T) {
 	)
 	require.NoError(err, string(stderr))
 
-	require.NoError(runGitWorktreeAdd(
-		t.Context(), commonDir, secondWorktree, "-b", "second", "main",
-	))
 	assertGitNotIgnored(t, secondWorktree, "review*data/snapshot.json")
 
 	require.NoError(os.WriteFile(

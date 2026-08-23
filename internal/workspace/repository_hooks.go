@@ -20,6 +20,7 @@ import (
 	"github.com/BurntSushi/toml"
 	"go.kenn.io/forge/internal/procutil"
 	gitcmd "go.kenn.io/kit/git/cmd"
+	gitworktree "go.kenn.io/kit/git/worktree"
 )
 
 const (
@@ -255,11 +256,28 @@ func ensureManagedCloneExclude(
 		}
 	}
 	if strings.TrimSpace(sharedBare) == "true" {
-		if _, err := gitCombinedOutput(
-			ctx, commonDir, "config", "--file",
-			filepath.Join(canonicalGitDir, "config.worktree"), "core.bare", "false",
-		); err != nil {
-			return fmt.Errorf("configure managed linked worktree: %w", err)
+		worktreeList, err := gitCombinedOutput(ctx, commonDir, "worktree", "list", "--porcelain")
+		if err != nil {
+			return fmt.Errorf("list managed linked worktrees: %w", err)
+		}
+		for _, worktree := range gitworktree.ParsePorcelain(worktreeList) {
+			if worktree.Bare || worktree.Prunable {
+				continue
+			}
+			worktreeGitDir, err := gitCombinedOutput(
+				ctx, worktree.Path, "-c", "core.bare=false",
+				"rev-parse", "--path-format=absolute", "--git-dir",
+			)
+			if err != nil {
+				return fmt.Errorf("resolve managed linked worktree Git directory: %w", err)
+			}
+			if _, err := gitCombinedOutput(
+				ctx, commonDir, "config", "--file",
+				filepath.Join(strings.TrimSpace(worktreeGitDir), "config.worktree"),
+				"core.bare", "false",
+			); err != nil {
+				return fmt.Errorf("configure managed linked worktree: %w", err)
+			}
 		}
 	}
 	if _, err := gitCombinedOutput(

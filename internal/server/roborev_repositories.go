@@ -330,6 +330,10 @@ func (p *roborevRepositoryProbe) Invalidate() {
 	}
 	p.mu.Lock()
 	p.generation++
+	if p.inFlight != nil {
+		close(p.inFlight)
+		p.inFlight = nil
+	}
 	p.inventoryLoaded = false
 	p.inventoryErr = nil
 	p.inventoryRetryAfter = time.Time{}

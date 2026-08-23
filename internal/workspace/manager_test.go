@@ -1607,6 +1607,13 @@ func TestSetupUsesConfiguredWorktreeBasePath(t *testing.T) {
 	localRepo, _, platformHost := setupHTTPWorktreeBaseForWorkspaceGitTest(
 		t, "feature/thing",
 	)
+	hooksDir, err := effectiveHooksDir(t.Context(), localRepo)
+	require.NoError(err)
+	binDir := t.TempDir()
+	require.NoError(os.WriteFile(
+		filepath.Join(binDir, "roborev"), []byte("#!/bin/sh\nexit 99\n"), 0o755,
+	))
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	repoID := seedRepo(t, d, platformHost, "acme", "widget")
 	seedMR(t, d, repoID, 42, "feature/thing")
 
@@ -1618,7 +1625,11 @@ func TestSetupUsesConfiguredWorktreeBasePath(t *testing.T) {
 
 	ws, err := mgr.Create(t.Context(), "github", platformHost, "acme", "widget", 42)
 	require.NoError(err)
-	require.NoError(mgr.Setup(t.Context(), ws))
+	require.NoError(mgr.SetupWithOptions(
+		t.Context(), ws, SetupOptions{RoborevInitManagedClones: true},
+	))
+	assert.NoFileExists(filepath.Join(hooksDir, "post-commit"))
+	assert.NoFileExists(filepath.Join(hooksDir, "post-rewrite"))
 
 	got, err := d.GetWorkspace(t.Context(), ws.ID)
 	require.NoError(err)
@@ -1663,10 +1674,11 @@ func TestSetupWithOptionsConfirmsRoborevBeforeTerminal(t *testing.T) {
 			require := require.New(t)
 			ctx := t.Context()
 			d := openTestDB(t)
-			_, remote := setupLocalWorktreeBaseWithRemoteForWorkspaceGitTest(
+			_, _, platformHost := setupHTTPWorktreeBaseForWorkspaceGitTest(
 				t, "feature/source",
 			)
-			repoID := seedRepo(t, d, "github.com", "acme", "widget")
+			remote := "http://" + platformHost + "/acme/widget.git"
+			repoID := seedRepo(t, d, platformHost, "acme", "widget")
 			require.NoError(d.UpdateRepoProviderMetadata(
 				ctx, repoID, db.RepoProviderMetadata{
 					CloneURL:      remote,
@@ -1676,11 +1688,11 @@ func TestSetupWithOptionsConfirmsRoborevBeforeTerminal(t *testing.T) {
 
 			clones := gitclone.New(t.TempDir(), nil)
 			require.NoError(clones.EnsureCloneInNamespace(
-				ctx, workspaceCloneNamespace("github"), "github", "github.com",
+				ctx, workspaceCloneNamespace("github"), "github", platformHost,
 				"acme", "widget", remote,
 			))
 			cloneDir, cloneErr := clones.ClonePathInNamespace(
-				workspaceCloneNamespace("github"), "github.com", "acme", "widget",
+				workspaceCloneNamespace("github"), platformHost, "acme", "widget",
 			)
 			require.NoError(cloneErr)
 			originalHook := []byte("#!/bin/sh\n# existing security hook\n")
@@ -1697,8 +1709,11 @@ func TestSetupWithOptionsConfirmsRoborevBeforeTerminal(t *testing.T) {
 			mgr.SetTmuxCommand([]string{tmuxScript})
 
 			binDir := t.TempDir()
+			roborevInvocations := filepath.Join(t.TempDir(), "roborev-invocations")
+			t.Setenv("ROBOREV_INVOCATIONS", roborevInvocations)
 			require.NoError(os.WriteFile(filepath.Join(binDir, "roborev"), []byte(`#!/bin/sh
 set -eu
+printf 'run\n' >> "$ROBOREV_INVOCATIONS"
 hooks="$(git -C "$PWD" rev-parse --path-format=absolute --git-path hooks)"
 mkdir -p "$hooks"
 printf '\n# roborev post-commit hook\n' >> "$hooks/post-commit"
@@ -1731,7 +1746,7 @@ chmod +x "$hooks/post-commit" "$hooks/post-rewrite"
 
 			var err error
 			ws, err = mgr.CreateAdHoc(
-				ctx, "github", "github.com", "acme", "widget",
+				ctx, "github", platformHost, "acme", "widget",
 				CreateAdHocOptions{BranchName: "feature/hook-test"},
 			)
 			require.NoError(err)
@@ -1773,6 +1788,13 @@ chmod +x "$hooks/post-commit" "$hooks/post-rewrite"
 			require.NoError(readErr)
 			assert.Contains(string(content), "existing security hook")
 			assert.Contains(string(content), "roborev post-commit hook")
+
+			require.NoError(mgr.SetupWithOptions(
+				ctx, stored, SetupOptions{RoborevInitManagedClones: true},
+			))
+			invocations, readErr := os.ReadFile(roborevInvocations)
+			require.NoError(readErr)
+			assert.Len(strings.Fields(string(invocations)), 2)
 		})
 	}
 }
@@ -1799,7 +1821,8 @@ func TestManagedRepositoryHookSetupSerializesRegistration(t *testing.T) {
 		t, cloneDir, "worktree", "add", "-b", "serialization", worktreePath, "main",
 	)
 
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	d := openTestDB(t)
+	mgr := NewManager(d, t.TempDir())
 	mgr.SetClones(clones)
 	ws := &Workspace{
 		Platform:     "github",
@@ -1852,8 +1875,21 @@ chmod +x "$hooks/post-commit" "$hooks/post-rewrite"
 	err = mgr.setupManagedRepositoryHooks(secondCtx, cloneDir, ws)
 	require.ErrorIs(err, context.DeadlineExceeded)
 	require.Equal(int32(1), requests.Load())
+	observedAt := time.Date(2026, 8, 23, 0, 0, 0, 0, time.UTC)
+	_, _, err = d.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-old",
+		Owner: "acme", Name: "widget",
+	}, observedAt)
+	require.NoError(err)
+	_, _, err = d.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-new",
+		Owner: "acme", Name: "widget",
+	}, observedAt.Add(time.Hour))
+	require.NoError(err)
 	release()
-	require.NoError(<-firstDone)
+	require.ErrorContains(<-firstDone, "historical occupants")
+	require.NoFileExists(filepath.Join(cloneDir, "hooks", "post-commit"))
+	require.NoFileExists(filepath.Join(cloneDir, "hooks", "post-rewrite"))
 }
 
 func TestSetupReusesExistingWorkspaceWorktree(t *testing.T) {

@@ -821,6 +821,9 @@ func (m *Manager) setupManagedRepositoryHooks(
 		); err != nil {
 			return errors.Join(err, checkpoint.restore())
 		}
+		if err := m.verifyWorkspaceRouteUnoccupied(ctx, ws); err != nil {
+			return errors.Join(err, checkpoint.restore())
+		}
 		return nil
 	})
 	if err != nil {

@@ -277,8 +277,9 @@ without replacing explicit or implicit user exclusion rules. A custom effective
 hooks directory is a setup error; shared hook changes roll back unless
 registration succeeds.
 Only regular root config files on that commit are trusted; a workspace Roborev
-snapshot path must match it or use `.roborev`. Registration confirmation and
-rollback stay under the repository lock; cache invalidation follows lock release
+snapshot path must match it or use `.roborev`. Registration confirmation, final
+route validation, and rollback stay under the repository lock; cache invalidation
+follows lock release
 (`internal/workspace/repository_hooks.go::Manager.setupManagedRepositoryHooks`).
 
 Keep Git worktree and merge-request lifecycle semantics in

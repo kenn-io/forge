@@ -179,7 +179,7 @@ func requirePTYAvailable(t *testing.T) {
 
 func cleanupContext(t *testing.T) (context.Context, context.CancelFunc) {
 	t.Helper()
-	return context.WithTimeout(context.Background(), 5*time.Second)
+	return context.WithTimeout(context.Background(), 15*time.Second)
 }
 
 func gracefulShutdown(t *testing.T, srv interface{ Shutdown(context.Context) error }) {

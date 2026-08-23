@@ -337,4 +337,11 @@ func TestResolveDefaultBranchPrefersLiteralOriginPrefixedBranch(t *testing.T) {
 	require.NoError(err)
 	assert.Equal("origin/main", branch)
 	assert.Equal(literalSHA, ref)
+
+	cloneDir, err := mgr.ClonePath("github", "github.com", "acme", "widgets")
+	require.NoError(err)
+	branch, ref, err = mgr.ResolveRemoteDefaultBranchInDir(t.Context(), cloneDir, "origin/main")
+	require.NoError(err)
+	assert.Equal("origin/main", branch)
+	assert.Equal(literalSHA, ref)
 }

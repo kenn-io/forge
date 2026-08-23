@@ -49,11 +49,10 @@ func (m *Manager) ResolveDefaultBranchInDir(
 func (m *Manager) ResolveRemoteDefaultBranchInDir(
 	ctx context.Context, dir, preferred string,
 ) (branch string, ref string, err error) {
-	branch, remoteRef := preferredRemoteBranchRef(preferred)
-	if remoteRef != "" {
-		sha, err := m.resolveRefInDir(ctx, dir, remoteRef)
+	for _, candidate := range preferredRemoteBranchRefs(preferred) {
+		sha, err := m.resolveRefInDir(ctx, dir, candidate.ref)
 		if err == nil {
-			return branch, sha, nil
+			return candidate.branch, sha, nil
 		}
 		if !isMissingRefError(err) {
 			return "", "", fmt.Errorf("resolve preferred remote default branch %s: %w", preferred, err)
@@ -62,18 +61,30 @@ func (m *Manager) ResolveRemoteDefaultBranchInDir(
 	return m.resolveOriginHEADInDir(ctx, dir)
 }
 
-func preferredRemoteBranchRef(preferred string) (string, string) {
+type remoteBranchCandidate struct {
+	branch string
+	ref    string
+}
+
+func preferredRemoteBranchRefs(preferred string) []remoteBranchCandidate {
 	preferred = strings.TrimSpace(preferred)
 	if branch, ok := strings.CutPrefix(preferred, "refs/remotes/origin/"); ok && branch != "" {
-		return branch, remoteBranchRef(branch)
-	}
-	if branch, ok := strings.CutPrefix(preferred, "origin/"); ok && branch != "" {
-		return branch, remoteBranchRef(branch)
+		return []remoteBranchCandidate{{branch: branch, ref: remoteBranchRef(branch)}}
 	}
 	if preferred == "" || strings.HasPrefix(preferred, "refs/") {
-		return "", ""
+		return nil
 	}
-	return preferred, remoteBranchRef(preferred)
+	candidates := []remoteBranchCandidate{{
+		branch: preferred,
+		ref:    remoteBranchRef(preferred),
+	}}
+	if branch, ok := strings.CutPrefix(preferred, "origin/"); ok && branch != "" {
+		candidates = append(candidates, remoteBranchCandidate{
+			branch: branch,
+			ref:    remoteBranchRef(branch),
+		})
+	}
+	return candidates
 }
 
 func (m *Manager) resolveOriginHEADInDir(

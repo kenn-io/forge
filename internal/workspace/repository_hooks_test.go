@@ -57,10 +57,12 @@ func TestManagedCloneExcludeIsWorktreeScoped(t *testing.T) {
 	userHome := t.TempDir()
 	t.Setenv("HOME", userHome)
 	userGit := gitcmd.Runner{StripEnv: true}
-	globalExclude := filepath.Join(userHome, "global-exclude")
-	require.NoError(os.WriteFile(globalExclude, []byte("/editor-cache/\n"), 0o644))
+	require.NoError(os.WriteFile(
+		filepath.Join(root, "global-exclude"),
+		[]byte("/editor-cache/\n"), 0o644,
+	))
 	_, stderr, err := userGit.Run(
-		t.Context(), root, nil, "config", "--global", "core.excludesFile", globalExclude,
+		t.Context(), root, nil, "config", "--global", "core.excludesFile", "../global-exclude",
 	)
 	require.NoError(err, string(stderr))
 
@@ -100,11 +102,13 @@ func TestManagedCloneExcludeIsWorktreeScoped(t *testing.T) {
 	))
 	assertGitNotIgnored(t, secondWorktree, "review*data/snapshot.json")
 
-	worktreeExclude := filepath.Join(userHome, "worktree-exclude")
-	require.NoError(os.WriteFile(worktreeExclude, []byte("/workspace-cache/\n"), 0o644))
+	require.NoError(os.WriteFile(
+		filepath.Join(root, "worktree-exclude"),
+		[]byte("/workspace-cache/\n"), 0o644,
+	))
 	_, stderr, err = userGit.Run(
 		t.Context(), firstWorktree, nil,
-		"config", "--worktree", "core.excludesFile", worktreeExclude,
+		"config", "--worktree", "core.excludesFile", "../worktree-exclude",
 	)
 	require.NoError(err, string(stderr))
 	require.NoError(ensureManagedCloneExclude(t.Context(), commonDir, firstWorktree, "new-reviews"))

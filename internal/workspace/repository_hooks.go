@@ -411,6 +411,9 @@ func effectiveBaseExclude(
 	if basePath == "" {
 		return nil, nil
 	}
+	if !filepath.IsAbs(basePath) {
+		basePath = filepath.Join(workspacePath, basePath)
+	}
 	content, err := os.ReadFile(basePath)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil

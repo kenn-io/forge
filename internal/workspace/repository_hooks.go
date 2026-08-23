@@ -811,24 +811,20 @@ func confirmRoborevRegistration(
 func (m *Manager) setupManagedRepositoryHooks(
 	ctx context.Context, commonDir string, ws *Workspace,
 ) error {
-	var checkpoint *managedHooksCheckpoint
 	err := m.withRepoLockForGitDir(ctx, commonDir, func() error {
-		var setupErr error
-		checkpoint, setupErr = m.setupManagedRepositoryHooksLocked(ctx, commonDir, ws)
-		return setupErr
+		checkpoint, err := m.setupManagedRepositoryHooksLocked(ctx, commonDir, ws)
+		if err != nil {
+			return err
+		}
+		if err := confirmRoborevRegistration(
+			ctx, m.roborevEndpoint, ws.WorktreePath,
+		); err != nil {
+			return errors.Join(err, checkpoint.restore())
+		}
+		return nil
 	})
 	if err != nil {
 		return err
-	}
-	if err := confirmRoborevRegistration(ctx, m.roborevEndpoint, ws.WorktreePath); err != nil {
-		rollbackCtx, cancel := context.WithTimeout(
-			context.WithoutCancel(ctx), repositoryHookCommandTimeout,
-		)
-		defer cancel()
-		rollbackErr := m.withRepoLockForGitDir(rollbackCtx, commonDir, func() error {
-			return checkpoint.restore()
-		})
-		return errors.Join(err, rollbackErr)
 	}
 	if m.roborevRepositoryInvalidator != nil {
 		m.roborevRepositoryInvalidator()

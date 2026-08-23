@@ -1777,6 +1777,85 @@ chmod +x "$hooks/post-commit" "$hooks/post-rewrite"
 	}
 }
 
+func TestManagedRepositoryHookSetupSerializesRegistration(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", "")
+	require := require.New(t)
+	ctx := t.Context()
+	_, remote := setupLocalWorktreeBaseWithRemoteForWorkspaceGitTest(
+		t, "feature/source",
+	)
+	clones := gitclone.New(t.TempDir(), nil)
+	require.NoError(clones.EnsureCloneInNamespace(
+		ctx, workspaceCloneNamespace("github"), "github", "github.com",
+		"acme", "widget", remote,
+	))
+	cloneDir, err := clones.ClonePathInNamespace(
+		workspaceCloneNamespace("github"), "github.com", "acme", "widget",
+	)
+	require.NoError(err)
+	worktreePath := filepath.Join(t.TempDir(), "worktree")
+	runWorkspaceTestGit(
+		t, cloneDir, "worktree", "add", "-b", "serialization", worktreePath, "main",
+	)
+
+	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr.SetClones(clones)
+	ws := &Workspace{
+		Platform:     "github",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		WorktreePath: worktreePath,
+	}
+	binDir := t.TempDir()
+	require.NoError(os.WriteFile(filepath.Join(binDir, "roborev"), []byte(`#!/bin/sh
+set -eu
+hooks="$(git -C "$PWD" rev-parse --path-format=absolute --git-path hooks)"
+printf '#!/bin/sh\n# roborev post-commit hook\n' > "$hooks/post-commit"
+printf '#!/bin/sh\n# roborev post-rewrite hook\n' > "$hooks/post-rewrite"
+chmod +x "$hooks/post-commit" "$hooks/post-rewrite"
+`), 0o755))
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	confirmationStarted := make(chan struct{})
+	releaseConfirmation := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(releaseConfirmation) }) }
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if requests.Add(1) == 1 {
+			close(confirmationStarted)
+			<-releaseConfirmation
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"repos":       []map[string]string{{"root_path": worktreePath}},
+			"total_count": 1,
+		})
+	}))
+	t.Cleanup(server.Close)
+	t.Cleanup(release)
+	mgr.SetRoborevEndpoint(server.URL)
+
+	firstDone := make(chan error, 1)
+	go func() {
+		firstDone <- mgr.setupManagedRepositoryHooks(ctx, cloneDir, ws)
+	}()
+	select {
+	case <-confirmationStarted:
+	case <-time.After(5 * time.Second):
+		require.FailNow("first setup did not begin registration confirmation")
+	}
+
+	secondCtx, cancel := context.WithTimeout(ctx, 250*time.Millisecond)
+	defer cancel()
+	err = mgr.setupManagedRepositoryHooks(secondCtx, cloneDir, ws)
+	require.ErrorIs(err, context.DeadlineExceeded)
+	require.Equal(int32(1), requests.Load())
+	release()
+	require.NoError(<-firstDone)
+}
+
 func TestSetupReusesExistingWorkspaceWorktree(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

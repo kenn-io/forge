@@ -278,7 +278,8 @@ hooks directory is a setup error; shared hook changes roll back unless
 registration succeeds.
 Only regular root config files on that commit are trusted; a workspace Roborev
 snapshot path must match it or use `.roborev`. Registration confirmation and
-cache invalidation run after lock release (`internal/workspace/repository_hooks.go`).
+rollback stay under the repository lock; cache invalidation follows lock release
+(`internal/workspace/repository_hooks.go::Manager.setupManagedRepositoryHooks`).
 
 Keep Git worktree and merge-request lifecycle semantics in
 `go.kenn.io/kit/git/managed`; kenn-forge supplies application policy instead of

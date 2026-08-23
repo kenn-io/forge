@@ -15,6 +15,9 @@ configuration, hooks, and executable files. An attacker controlling repository
 content is outside the threat model. Do not report security findings whose
 exploit requires a malicious repository or branch.
 
+This includes fork and unknown-head pull request worktrees. `MRHeadRepo` controls
+Git ref and upstream routing; it is not a repository-content trust boundary.
+
 Repository skills under `skills/` are local maintainer tools, not shipped
 features or hosted services. Apply the trust boundary in each `SKILL.md`. A
 workflow that already runs an approved checkout does not gain more access by

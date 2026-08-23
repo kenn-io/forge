@@ -790,6 +790,8 @@ func (m *Manager) gitWithInput(
 func (m *Manager) gitCloneBare(
 	ctx context.Context, platform, host, owner, name, clonePath, remoteURL string,
 ) ([]byte, error) {
+	// Local-path clones copy the source object directory and can race source
+	// maintenance. Use transport semantics consistently for every remote.
 	return m.gitNetworked(
 		ctx, m.sourceForRepo(platform, host, owner, name), host, "",
 		func() error {
@@ -798,7 +800,7 @@ func (m *Manager) gitCloneBare(
 			}
 			return nil
 		},
-		"clone", "--bare", remoteURL, clonePath,
+		"clone", "--bare", "--no-local", remoteURL, clonePath,
 	)
 }
 

@@ -341,7 +341,11 @@ if [ "${1:-}" != "clone" ]; then
 fi
 
 out="${KENN_FORGE_TEST_GIT_CAPTURE:?}"
-dest="${4:?}"
+dest=""
+for arg in "$@"; do
+	dest="$arg"
+done
+: "${dest:?}"
 if [ -e "$dest" ]; then
 	echo "fatal: destination path '$dest' already exists and is not an empty directory." >&2
 	exit 128

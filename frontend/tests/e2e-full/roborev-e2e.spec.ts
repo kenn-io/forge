@@ -793,17 +793,9 @@ test.describe.serial("Roborev", () => {
       await elapsedHeader.click();
       await page.waitForTimeout(300);
 
-      const elapsedTexts: string[] = [];
-      const elapsedValues: number[] = [];
       const elapsedCells = page.locator(".col-elapsed");
-      const count = await elapsedCells.count();
-      for (let i = 0; i < count; i++) {
-        const text = await elapsedCells.nth(i).textContent();
-        if (text) {
-          elapsedTexts.push(text.trim());
-          elapsedValues.push(parseElapsed(text));
-        }
-      }
+      const elapsedTexts = (await elapsedCells.allTextContents()).map((text) => text.trim());
+      const elapsedValues = elapsedTexts.map(parseElapsed);
 
       const sorted = [...elapsedValues].sort((a, b) => a - b);
       expect(elapsedValues).toEqual(sorted);

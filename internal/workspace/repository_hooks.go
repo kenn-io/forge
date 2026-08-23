@@ -246,7 +246,7 @@ func ensureManagedCloneExclude(
 	}
 
 	sharedBare, err := gitCombinedOutput(
-		ctx, commonDir, "config", "--local", "--get-all", "core.bare",
+		ctx, commonDir, "config", "--local", "--bool", "--get", "core.bare",
 	)
 	if err != nil {
 		var exitErr *exec.ExitError
@@ -254,17 +254,12 @@ func ensureManagedCloneExclude(
 			return fmt.Errorf("inspect managed clone core.bare: %w", err)
 		}
 	}
-	if strings.TrimSpace(sharedBare) != "" {
+	if strings.TrimSpace(sharedBare) == "true" {
 		if _, err := gitCombinedOutput(
 			ctx, commonDir, "config", "--file",
-			filepath.Join(canonicalCommonDir, "config.worktree"), "core.bare", "true",
+			filepath.Join(canonicalGitDir, "config.worktree"), "core.bare", "false",
 		); err != nil {
-			return fmt.Errorf("preserve managed clone bare configuration: %w", err)
-		}
-		if _, err := gitCombinedOutput(
-			ctx, commonDir, "config", "--local", "--unset-all", "core.bare",
-		); err != nil {
-			return fmt.Errorf("move managed clone bare configuration: %w", err)
+			return fmt.Errorf("configure managed linked worktree: %w", err)
 		}
 	}
 	if _, err := gitCombinedOutput(

@@ -4966,7 +4966,62 @@ func runGitWorktreeAdd(
 	gitArgs := make([]string, 0, len(args)+3)
 	gitArgs = append(gitArgs, "worktree", "add", worktreePath)
 	gitArgs = append(gitArgs, args...)
-	return runGitWithoutHooks(ctx, dir, gitArgs...)
+	if err := runGitWithoutHooks(ctx, dir, gitArgs...); err != nil {
+		return err
+	}
+	if err := configureBareLinkedWorktree(ctx, dir, worktreePath); err != nil {
+		cleanupErr := runGitWithoutHooks(
+			ctx, dir, "worktree", "remove", "--force", worktreePath,
+		)
+		return errors.Join(err, cleanupErr)
+	}
+	return nil
+}
+
+// Bare clones stay bare in shared config so repository tools can identify the
+// layout. Each linked checkout overrides that value once worktree config is on.
+func configureBareLinkedWorktree(
+	ctx context.Context, commonDir, worktreePath string,
+) error {
+	bare, err := gitOutput(ctx, commonDir, "config", "--bool", "core.bare")
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+			return nil
+		}
+		return fmt.Errorf("inspect shared core.bare: %w", err)
+	}
+	if strings.TrimSpace(bare) != "true" {
+		return nil
+	}
+	worktreeConfig, err := gitOutput(
+		ctx, commonDir, "config", "--bool", "extensions.worktreeConfig",
+	)
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+			return nil
+		}
+		return fmt.Errorf("inspect shared worktree config: %w", err)
+	}
+	if strings.TrimSpace(worktreeConfig) != "true" {
+		return nil
+	}
+	gitDir, err := gitOutput(
+		ctx, worktreePath, "-c", "core.bare=false",
+		"rev-parse", "--path-format=absolute", "--git-dir",
+	)
+	if err != nil {
+		return fmt.Errorf("resolve linked worktree Git directory: %w", err)
+	}
+	if err := runGitWithoutHooks(
+		ctx, commonDir, "config", "--file",
+		filepath.Join(strings.TrimSpace(gitDir), "config.worktree"),
+		"core.bare", "false",
+	); err != nil {
+		return fmt.Errorf("configure linked worktree: %w", err)
+	}
+	return nil
 }
 
 func (m *Manager) runOwnedGitWorktreeAdd(

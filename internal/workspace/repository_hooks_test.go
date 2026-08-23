@@ -3,6 +3,7 @@ package workspace
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -76,6 +77,16 @@ func TestManagedCloneExcludeIsWorktreeScoped(t *testing.T) {
 	require.NoError(err, string(stderr))
 
 	require.NoError(ensureManagedCloneExclude(t.Context(), commonDir, firstWorktree, "review*data"))
+	assert.Equal(
+		t, "true", strings.TrimSpace(string(runWorkspaceTestGit(
+			t, commonDir, "config", "--local", "--get", "core.bare",
+		))),
+	)
+	assert.Equal(
+		t, "false", strings.TrimSpace(string(runWorkspaceTestGit(
+			t, firstWorktree, "config", "--worktree", "--get", "core.bare",
+		))),
+	)
 	assertGitIgnored(t, firstWorktree, "review*data/snapshot.json")
 	assertGitNotIgnored(t, firstWorktree, "review-public-data/snapshot.json")
 	_, stderr, err = userGit.Run(
@@ -84,7 +95,9 @@ func TestManagedCloneExcludeIsWorktreeScoped(t *testing.T) {
 	)
 	require.NoError(err, string(stderr))
 
-	runWorkspaceTestGit(t, commonDir, "worktree", "add", "-b", "second", secondWorktree, "main")
+	require.NoError(runGitWorktreeAdd(
+		t.Context(), commonDir, secondWorktree, "-b", "second", "main",
+	))
 	assertGitNotIgnored(t, secondWorktree, "review*data/snapshot.json")
 
 	worktreeExclude := filepath.Join(userHome, "worktree-exclude")

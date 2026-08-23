@@ -19,8 +19,9 @@ Restart kenn-forge after changing the endpoint. kenn-forge does not start the
 Roborev daemon for you. The optional managed-clone setting is off by default
 and can be changed live under **Settings → Workspaces**. It runs `roborev init
 --no-daemon` for new, retried, or recovered Forge-managed workspaces. This
-requires a loopback HTTP endpoint; remote Roborev endpoints still work for the
-Reviews page when managed-clone initialization is off.
+requires Roborev v0.65.0 or newer and a loopback HTTP endpoint; remote Roborev
+endpoints still work for the Reviews page when managed-clone initialization is
+off.
 
 Initialization applies only to Forge's managed clones. A repository configured
 with `worktree_base_path`, a source-browser clone, or another user-owned

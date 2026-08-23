@@ -27,6 +27,9 @@ embedder protocol for arbitrary host state.
 - Fleet consumes Workspace-owned summary and runtime snapshots, never the
   Workspace manager or root server receiver
   (`internal/server/workspaceapi/fleet_snapshot.go::FleetSnapshot`).
+- Managed clones keep `core.bare=true` in shared config and override it per
+  linked worktree; repository tools use the shared value to identify this layout
+  (`internal/workspace/manager.go::configureBareLinkedWorktree`).
 
 ## Endpoint Intent
 

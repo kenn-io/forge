@@ -7,7 +7,7 @@ RUN git checkout ${ROBOREV_REF} && \
 
 FROM debian:bookworm-slim
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl socat && \
+    apt-get install -y --no-install-recommends curl git socat && \
     rm -rf /var/lib/apt/lists/*
 COPY --from=builder /roborev /usr/local/bin/roborev
 RUN mkdir -p /data

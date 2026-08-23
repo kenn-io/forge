@@ -687,9 +687,8 @@ jobs:
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
     env:
-      # Pin to v0.61.2, the first release with panel reviews (panel_summary,
-      # omit_prompt, first_started_at).
-      ROBOREV_REF: 4238df4685524fa0b4e308014ae120e677e7b6ed
+      # Pin to v0.65.0, the managed-clone initialization compatibility floor.
+      ROBOREV_REF: 1221c3ee738c6204b4252b682dcc192525f3616c
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

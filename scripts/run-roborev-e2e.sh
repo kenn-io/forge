@@ -69,11 +69,47 @@ echo "--- start daemon (ref=$ROBOREV_REF, port=$ROBOREV_PORT) ---"
 cd "$REPO_ROOT/tests/integration" && \
   docker compose --env-file "$ENV_FILE" up -d --build --wait
 
-# 5. Install Playwright browsers if needed
+# 5. Verify Forge's managed-clone contract against the real pinned CLI.
+echo "--- verify managed-clone init ---"
+cd "$REPO_ROOT/tests/integration"
+docker compose --env-file "$ENV_FILE" exec -T roborev sh -eu -c '
+  fixture="$(mktemp -d /data/forge-managed-clone.XXXXXX)"
+  trap '\''rm -rf "$fixture"'\'' EXIT
+  source="$fixture/source"
+  clone="$fixture/clone.git"
+  repo="$fixture/worktree"
+  git init -q -b main "$source"
+  git -C "$source" config user.name "Forge E2E"
+  git -C "$source" config user.email "forge-e2e@example.invalid"
+  git -C "$source" commit -q --allow-empty -m initial
+  git clone -q --bare "$source" "$clone"
+  git -C "$clone" worktree add -q -b forge-e2e "$repo" main
+  git_dir="$(git -C "$repo" rev-parse --absolute-git-dir)"
+  git -C "$clone" config --file "$git_dir/config.worktree" core.bare false
+  git -C "$clone" config extensions.worktreeConfig true
+  hooks="$clone/hooks"
+  printf '\''#!/bin/sh\n# existing hook\n'\'' > "$hooks/post-commit"
+  chmod +x "$hooks/post-commit"
+  exclude="$git_dir/forge-roborev-exclude"
+  printf '\''/.roborev/\n'\'' > "$exclude"
+  git -C "$repo" config --worktree core.excludesFile "$exclude"
+
+  cd "$repo"
+  roborev --server 127.0.0.1:7373 init --no-daemon
+  test -x "$hooks/post-commit"
+  test -x "$hooks/post-rewrite"
+  grep -Fq "existing hook" "$hooks/post-commit"
+  grep -Fiq "roborev post-commit hook" "$hooks/post-commit"
+  grep -Fiq "roborev post-rewrite hook" "$hooks/post-rewrite"
+  test -z "$(git status --porcelain)"
+  curl -sf http://127.0.0.1:7373/api/repos | grep -Fq "$repo"
+'
+
+# 6. Install Playwright browsers if needed
 echo "--- install playwright ---"
 cd "$REPO_ROOT/frontend" && node node_modules/.bin/playwright install --with-deps chromium
 
-# 6. Run tests — pass env file path so helpers can read it
+# 7. Run tests — pass env file path so helpers can read it
 echo "--- run tests ---"
 cd "$REPO_ROOT/frontend"
 ROBOREV_ENDPOINT="http://127.0.0.1:$ROBOREV_PORT" \

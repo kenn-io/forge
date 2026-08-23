@@ -93,6 +93,30 @@ func TestIntegrationEnsureClone(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestIntegrationEnsureCloneIsolatesObjectsFromLocalSource(t *testing.T) {
+	_, source := setupTestRepo(t)
+	commitBytes, err := gitcmd.New().Output(t.Context(), source, "rev-parse", "HEAD")
+	require.NoError(t, err)
+	commit := strings.TrimSpace(string(commitBytes))
+	sourceObject := filepath.Join(source, ".git", "objects", commit[:2], commit[2:])
+	require.FileExists(t, sourceObject)
+
+	clonesDir := t.TempDir()
+	mgr := New(clonesDir, nil)
+	require.NoError(t, mgr.EnsureClone(
+		t.Context(), "github", "github.com", "testowner", "testrepo", source,
+	))
+
+	// A local clone may hardlink loose objects from its source. Corrupt the
+	// source object to prove the managed clone owns an independent copy.
+	require.NoError(t, os.Chmod(sourceObject, 0o600))
+	require.NoError(t, os.WriteFile(sourceObject, []byte("corrupt"), 0o600))
+
+	clonePath := filepath.Join(clonesDir, "github.com", "testowner", "testrepo.git")
+	_, err = gitcmd.New().Output(t.Context(), clonePath, "cat-file", "-p", commit)
+	require.NoError(t, err)
+}
+
 func TestIntegrationEnsureCloneInNamespacePartitionsStorage(t *testing.T) {
 	remote, _ := setupTestRepo(t)
 	clonesDir := t.TempDir()

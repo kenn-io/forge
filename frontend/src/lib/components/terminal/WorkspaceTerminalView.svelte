@@ -379,6 +379,7 @@
   // briefly outlives the workspace it was fetched for).
   let runtimeForId = $state<string>("");
   let runtimeForHostKey = $state<string | undefined>(undefined);
+  let runtimeSnapshotAuthoritative = $state(false);
   let loadError = $state<string | null>(null);
   let retryingSetup = $state(false);
   let refreshingWorkspace = $state(false);
@@ -1187,6 +1188,7 @@
       runtimeForHostKey === workspaceHostKey
         ? runtime
         : null;
+    if (currentRuntime === null) runtimeSnapshotAuthoritative = false;
     const sessions = [
       ...(currentRuntime?.sessions ?? []).filter(
         (candidate) =>
@@ -1725,11 +1727,11 @@
         disabled: actionsBlocked,
       });
     }
-    // An empty list is authoritative only after this workspace's runtime
-    // snapshot is live. During a route switch `runtimeSessions` is deliberately
-    // empty while the fetch is pending; treating that transient state as a
-    // tombstone would discard the retained terminal just before it is reused.
-    const liveGenerationKeys = runtimeLive
+    // Absences are authoritative only after a server runtime read. During a
+    // route switch `runtimeSessions` is empty, and launch replay can publish a
+    // live snapshot containing only its confirmed session. Neither may tombstone
+    // retained peers before hydration reconciles the complete session list.
+    const liveGenerationKeys = runtimeLive && runtimeSnapshotAuthoritative
       ? new Set(runtimeSessions.map(sessionHostKeyFor))
       : null;
     untrack(() => {
@@ -2253,6 +2255,7 @@
         ) {
           completeAcceptedWorkspaceLaunch(id, hostKey, acceptedLaunch.sessionKey);
         }
+        runtimeSnapshotAuthoritative = true;
         if (
           hasAppliedRuntimeFor(id, hostKey) &&
           appliedRuntimeState?.fingerprint === fingerprint
@@ -3785,6 +3788,7 @@
     const id = workspaceId;
     const hostKey = workspaceHostKey;
     workspacePresentationGeneration += 1;
+    runtimeSnapshotAuthoritative = false;
     if (
       appliedRuntimeState?.workspaceId !== id ||
       appliedRuntimeState.hostKey !== hostKey

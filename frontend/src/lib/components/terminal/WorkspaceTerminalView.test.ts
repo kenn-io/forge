@@ -4638,8 +4638,11 @@ describe("WorkspaceTerminalView", () => {
       expect(mocks.showFlash).not.toHaveBeenCalled();
     });
 
-    it("replays a successful launch after remount before runtime hydration", async () => {
-      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+    it("replays a successful launch after remount without discarding a retained peer", async () => {
+      mocks.getWorkspaceRuntime.mockResolvedValue({
+        ...runtimeWithLaunchTargetsOnly(),
+        sessions: [reviewerSession],
+      });
       claimForPrs();
 
       const firstView = render(WorkspaceTerminalView, {
@@ -4648,7 +4651,16 @@ describe("WorkspaceTerminalView", () => {
           paneSurface: "prs" as const,
         },
       });
+      await waitFor(() => expect(hostedWorkspaceControls()).not.toBeNull());
+      await waitFor(() => expect(mountedSessions()).toHaveLength(1));
+      await waitFor(() => expect(sockets).toHaveLength(1));
+      const peerHostKey = mountedSessions()[0]!.hostKey;
+      const peerSocket = sockets[0]!;
+      peerSocket.onopen();
+      await waitFor(() => expect(peerSocket.send).toHaveBeenCalled());
+      render(WorkspacePaneControls);
 
+      await fireEvent.click(screen.getByRole("button", { name: "Launch session" }));
       const dialog = await screen.findByRole("dialog", { name: /Launch a session/ });
       const launchRequest = deferred<typeof runningSession>();
       const launchStarted = deferred<void>();
@@ -4659,28 +4671,35 @@ describe("WorkspaceTerminalView", () => {
       await fireEvent.click(within(dialog).getByRole("button", { name: /Helper/ }));
       await launchStarted.promise;
 
-      firstView.unmount();
-      launchRequest.resolve(runningSession);
-      await new Promise((resolve) => setTimeout(resolve, 0));
-
       const runtimeReload = Promise.withResolvers<ReturnType<typeof runtimeWithLaunchTargetsOnly>>();
       mocks.getWorkspaceRuntime.mockReturnValue(runtimeReload.promise);
-      render(WorkspaceTerminalView, {
-        props: {
-          workspaceId: "ws-1",
-          paneSurface: "prs" as const,
-        },
+      await firstView.rerender({
+        workspaceId: "ws-1",
+        paneSurface: "prs" as const,
+        showView: false,
+      });
+      await waitFor(() => expect(isSessionClaimed(peerHostKey)).toBe(false));
+      expect(peerSocket.close).not.toHaveBeenCalled();
+      launchRequest.resolve(runningSession);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(peerSocket.close).not.toHaveBeenCalled();
+
+      await firstView.rerender({
+        workspaceId: "ws-1",
+        paneSurface: "prs" as const,
+        showView: true,
       });
 
-      // The replacement presenter receives the retained success before its runtime
-      // read settles. It must publish that returned session before acknowledging it.
-      await waitFor(() => expect(document.querySelector(".sole-embedded-session")).not.toBeNull());
+      await waitFor(() => expect(activeHostedSession("prs")?.label).toBe("Helper"));
       expect(screen.queryByRole("dialog", { name: /Launch a session/ })).toBeNull();
+      expect(mountedSessions().some((session) => session.hostKey === peerHostKey)).toBe(true);
+      expect(peerSocket.close).not.toHaveBeenCalled();
 
       runtimeReload.reject(new Error("runtime unavailable"));
       await new Promise((resolve) => setTimeout(resolve, 0));
-      expect(document.querySelector(".sole-embedded-session")).not.toBeNull();
-      expect(mocks.showFlash).not.toHaveBeenCalled();
+      expect(activeHostedSession("prs")?.label).toBe("Helper");
+      expect(mountedSessions().some((session) => session.hostKey === peerHostKey)).toBe(true);
+      expect(peerSocket.close).not.toHaveBeenCalled();
     });
 
     it("keeps a successful launch when the follow-up reload returns an API problem", async () => {

@@ -788,7 +788,6 @@ test.describe.serial("Roborev", () => {
     test("click Elapsed header sorts by elapsed duration", async ({ page }) => {
       await waitForReviewsReady(page);
       await waitForJobRows(page, 10);
-      await page.clock.setFixedTime(await page.evaluate(() => Date.now()));
 
       const elapsedHeader = page.locator("th.sortable").filter({ hasText: "Elapsed" });
       await elapsedHeader.click();

@@ -3485,6 +3485,58 @@ describe("WorkspaceTerminalView", () => {
     expect(pendingWorkspaceLaunch("ws-2", undefined)?.targetKey).toBe("codex");
   });
 
+  it("selects an accepted launch after navigating away and back before settlement", async () => {
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
+    const launchRequest = deferred<typeof runningSession>();
+    const workspaceAReload = deferred<Response>();
+    const runtimeReload = Promise.withResolvers<ReturnType<typeof runtimeWithCodexTarget>>();
+    const workspaceB = { ...workspaceResponse, id: "ws-2", git_head_ref: "feature/two" };
+    let holdWorkspaceA = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: Request | URL | string) => {
+        const path = fetchPath(input);
+        if (path.endsWith("/workspaces/ws-1")) {
+          return holdWorkspaceA ? workspaceAReload.promise : Promise.resolve(Response.json(workspaceResponse));
+        }
+        if (path.endsWith("/workspaces/ws-2")) return Promise.resolve(Response.json(workspaceB));
+        if (path.endsWith("/api/v1/workspaces")) {
+          return Promise.resolve(Response.json({ workspaces: [workspaceResponse, workspaceB] }));
+        }
+        return Promise.resolve(Response.json({}));
+      }),
+    );
+    queueWorkspaceLaunch("ws-1", "codex", undefined);
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget());
+    mocks.launchWorkspaceSession.mockReturnValue(launchRequest.promise);
+
+    const view = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    await waitFor(() => expect(mocks.launchWorkspaceSession).toHaveBeenCalledWith("ws-1", "codex", expect.anything()));
+
+    await view.rerender({ workspaceId: "ws-2" });
+    await waitFor(() => expect(document.querySelector(".header-branch")?.textContent).toBe("feature/two"));
+
+    holdWorkspaceA = true;
+    mocks.getWorkspaceRuntime.mockClear();
+    mocks.getWorkspaceRuntime.mockReturnValue(runtimeReload.promise);
+    await view.rerender({ workspaceId: "ws-1" });
+    await screen.findByText("Setting up workspace...");
+    await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalledWith("ws-1", undefined));
+
+    launchRequest.resolve(runningSession);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    workspaceAReload.resolve(Response.json(workspaceResponse));
+
+    const sessionTab = await screen.findByRole("tab", { name: /Helper/ });
+    expect(sessionTab.getAttribute("aria-selected")).toBe("true");
+    await waitFor(() => expect(sockets.some((socket) => socket.url.includes(runningSession.key))).toBe(true));
+
+    runtimeReload.reject(new Error("runtime unavailable"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sessionTab.getAttribute("aria-selected")).toBe("true");
+    expect(mocks.showFlash).not.toHaveBeenCalled();
+  });
+
   it("reacts when intent is queued after an already-ready workspace renders", async () => {
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget());
     mocks.launchWorkspaceSession.mockResolvedValue(runningSession);
@@ -4551,7 +4603,7 @@ describe("WorkspaceTerminalView", () => {
       await waitFor(() => expect(screen.queryByRole("dialog", { name: /Launch a session/ })).toBeNull());
     });
 
-    it("keeps the launcher up when the reload after a launch fails", async () => {
+    it("keeps a successful launch when the follow-up runtime reload fails", async () => {
       mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
       claimForPrs();
 
@@ -4563,17 +4615,75 @@ describe("WorkspaceTerminalView", () => {
       });
 
       const dialog = await screen.findByRole("dialog", { name: /Launch a session/ });
-      mocks.launchWorkspaceSession.mockResolvedValueOnce(runningSession);
-      mocks.getWorkspaceRuntime.mockRejectedValueOnce(new Error("runtime unavailable"));
+      const launchRequest = deferred<typeof runningSession>();
+      const launchStarted = deferred<void>();
+      mocks.launchWorkspaceSession.mockImplementationOnce(() => {
+        launchStarted.resolve();
+        return launchRequest.promise;
+      });
       await fireEvent.click(within(dialog).getByRole("button", { name: /Helper/ }));
+      await launchStarted.promise;
+      const runtimeReload = Promise.withResolvers<ReturnType<typeof runtimeWithLaunchTargetsOnly>>();
+      mocks.getWorkspaceRuntime.mockReturnValueOnce(runtimeReload.promise);
+      launchRequest.resolve(runningSession);
 
-      // The session did start, but the pane can only render what the runtime
-      // reports: closing here would leave an empty pane and no explanation.
-      await waitFor(() => expect(mocks.showFlash).toHaveBeenCalled());
-      expect(screen.getByRole("dialog", { name: /Launch a session/ })).toBeTruthy();
+      // The launch response already identifies the running session. A redundant
+      // read must not delay the confirmed session or keep the picker open.
+      await waitFor(() => expect(document.querySelector(".sole-embedded-session")).not.toBeNull());
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: /Launch a session/ })).toBeNull());
+      runtimeReload.reject(new Error("runtime unavailable"));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(document.querySelector(".sole-embedded-session")).not.toBeNull();
+      expect(mocks.showFlash).not.toHaveBeenCalled();
     });
 
-    it("acknowledges a launch when its runtime reload returns an API problem", async () => {
+    it("replays a successful launch after remount before runtime hydration", async () => {
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+      claimForPrs();
+
+      const firstView = render(WorkspaceTerminalView, {
+        props: {
+          workspaceId: "ws-1",
+          paneSurface: "prs" as const,
+        },
+      });
+
+      const dialog = await screen.findByRole("dialog", { name: /Launch a session/ });
+      const launchRequest = deferred<typeof runningSession>();
+      const launchStarted = deferred<void>();
+      mocks.launchWorkspaceSession.mockImplementationOnce(() => {
+        launchStarted.resolve();
+        return launchRequest.promise;
+      });
+      await fireEvent.click(within(dialog).getByRole("button", { name: /Helper/ }));
+      await launchStarted.promise;
+
+      firstView.unmount();
+      launchRequest.resolve(runningSession);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const runtimeReload = Promise.withResolvers<ReturnType<typeof runtimeWithLaunchTargetsOnly>>();
+      mocks.getWorkspaceRuntime.mockReturnValue(runtimeReload.promise);
+      render(WorkspaceTerminalView, {
+        props: {
+          workspaceId: "ws-1",
+          paneSurface: "prs" as const,
+        },
+      });
+
+      // The replacement presenter receives the retained success before its runtime
+      // read settles. It must publish that returned session before acknowledging it.
+      await waitFor(() => expect(document.querySelector(".sole-embedded-session")).not.toBeNull());
+      expect(screen.queryByRole("dialog", { name: /Launch a session/ })).toBeNull();
+
+      runtimeReload.reject(new Error("runtime unavailable"));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(document.querySelector(".sole-embedded-session")).not.toBeNull();
+      expect(mocks.showFlash).not.toHaveBeenCalled();
+    });
+
+    it("keeps a successful launch when the follow-up reload returns an API problem", async () => {
       mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
       claimForPrs();
 
@@ -4585,23 +4695,22 @@ describe("WorkspaceTerminalView", () => {
       });
 
       const dialog = await screen.findByRole("dialog", { name: /Launch a session/ });
-      const launchButton = within(dialog).getByRole("button", { name: /Helper/ });
-      mocks.launchWorkspaceSession.mockResolvedValueOnce(runningSession);
-      mocks.getWorkspaceRuntime
-        .mockResolvedValueOnce(runtimeWithLaunchTargetsOnly())
-        .mockResolvedValueOnce(
-          Response.json({ code: "serviceUnavailable", detail: "Runtime authority is unavailable" }, { status: 503 }),
-        );
-      await fireEvent.click(launchButton);
+      const launchRequest = deferred<typeof runningSession>();
+      const launchStarted = deferred<void>();
+      mocks.launchWorkspaceSession.mockImplementationOnce(() => {
+        launchStarted.resolve();
+        return launchRequest.promise;
+      });
+      await fireEvent.click(within(dialog).getByRole("button", { name: /Helper/ }));
+      await launchStarted.promise;
+      mocks.getWorkspaceRuntime.mockResolvedValueOnce(
+        Response.json({ code: "serviceUnavailable", detail: "Runtime authority is unavailable" }, { status: 503 }),
+      );
+      launchRequest.resolve(runningSession);
 
-      await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(3));
-      expect(screen.getByRole("dialog", { name: /Launch a session/ })).toBeTruthy();
-
-      mocks.launchWorkspaceSession.mockResolvedValueOnce(runningSession);
-      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithStaleSession());
-      await fireEvent.click(launchButton);
-
-      await waitFor(() => expect(mocks.launchWorkspaceSession).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(document.querySelector(".sole-embedded-session")).not.toBeNull());
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: /Launch a session/ })).toBeNull());
+      expect(mocks.showFlash).not.toHaveBeenCalled();
     });
 
     it("does not carry an open launcher into the next workspace", async () => {
@@ -4680,6 +4789,63 @@ describe("WorkspaceTerminalView", () => {
       unmount();
       await waitFor(() => expect(hostedWorkspaceLauncher("prs")).toBeNull());
     });
+  });
+
+  it("selects a replayed launch on the standalone workspace before runtime hydration", async () => {
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+
+    const firstView = render(WorkspaceTerminalView, {
+      props: { workspaceId: "ws-1" },
+    });
+
+    await screen.findByRole("tab", { name: "Home" });
+    const launchRequest = deferred<typeof runningSession>();
+    const launchStarted = deferred<void>();
+    mocks.launchWorkspaceSession.mockImplementationOnce(() => {
+      launchStarted.resolve();
+      return launchRequest.promise;
+    });
+    const launchButton = screen.getByRole("button", { name: "Launch" });
+    const launchMenu = launchButton.closest(".launch-menu");
+    expect(launchMenu).not.toBeNull();
+    await fireEvent.click(launchButton);
+    await fireEvent.click(within(launchMenu as HTMLElement).getByRole("button", { name: "Helper" }));
+    await launchStarted.promise;
+
+    firstView.unmount();
+    launchRequest.resolve(runningSession);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const workspaceReload = Promise.withResolvers<Response>();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: Request | URL | string) => {
+        const { pathname } = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
+        if (pathname.endsWith("/workspaces/ws-1")) return workspaceReload.promise;
+        if (pathname.endsWith("/api/v1/workspaces")) {
+          return Promise.resolve(Response.json({ workspaces: [workspaceResponse] }));
+        }
+        return Promise.resolve(Response.json({}));
+      }),
+    );
+    const runtimeReload = Promise.withResolvers<ReturnType<typeof runtimeWithLaunchTargetsOnly>>();
+    mocks.getWorkspaceRuntime.mockReturnValue(runtimeReload.promise);
+    render(WorkspaceTerminalView, {
+      props: { workspaceId: "ws-1" },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    workspaceReload.resolve(Response.json(workspaceResponse));
+
+    const sessionTab = await screen.findByRole("tab", { name: /Helper/ });
+    expect(sessionTab.getAttribute("aria-selected")).toBe("true");
+    await waitFor(() => expect(sockets.some((socket) => socket.url.includes(runningSession.key))).toBe(true));
+
+    runtimeReload.reject(new Error("runtime unavailable"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sessionTab.getAttribute("aria-selected")).toBe("true");
+    expect(mocks.showFlash).not.toHaveBeenCalled();
   });
 
   it("keeps its toolbar when the detail surface is flattened", async () => {

@@ -113,8 +113,9 @@ test.describe("embedded workspace launcher", () => {
       await expect(launcher).toBeVisible();
       await launcher.getByRole("button", { name: "Shell" }).click();
 
-      // The overlay stands down only once the refreshed runtime actually reports
-      // the session, so its absence here is proof the launch landed.
+      // The successful launch response records and publishes the session, so the
+      // overlay stands down without waiting on a redundant runtime reload. The live
+      // terminal marker below proves the launch completed across the backend boundary.
       await expect(launcher).toBeHidden();
       const container = page.locator(".detail-pane-workspace-slot .terminal-container");
       await expect(container).toBeVisible();

@@ -236,9 +236,9 @@ stale tabs.
 - Manual stop settlement must bound every awaited stage and publish confirmed local absence before any
   best-effort refresh; no stalled transport, authority read, or presenter may retain the pending control
   (`frontend/src/lib/components/terminal/workspace-runtime-workflow.ts::makeWorkspaceRuntimeWorkflow`).
-- Application workflow launch settlement precedes presenter delivery. Accept confirmed sessions immediately, reject only
-  definite failures, and leave uncertain launches unsettled until reconciliation decides them
-  (`frontend/src/lib/components/terminal/workspace-runtime-workflow.ts::storeAndPresentMutation`).
+- Publish confirmed workflow sessions from the launch response before any best-effort runtime reload; reject only definite
+  failures, and leave uncertain launches unsettled until reconciliation decides them
+  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::presentRuntimeMutation`).
 - Workspace terminals use xterm.js exclusively; there is no renderer setting
   or alternate renderer path (`frontend/src/lib/components/terminal/TerminalPane.svelte`).
 - Own every non-empty browser text paste at the terminal container boundary,

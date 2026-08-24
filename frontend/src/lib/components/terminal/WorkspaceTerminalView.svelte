@@ -1181,20 +1181,32 @@
   );
 
   function upsertRuntimeSession(session: RuntimeSession): RuntimeSession[] {
+    const currentRuntime =
+      runtime !== null &&
+      runtimeForId === workspaceId &&
+      runtimeForHostKey === workspaceHostKey
+        ? runtime
+        : null;
     const sessions = [
-      ...runtimeSessions.filter((candidate) => candidate.key !== session.key),
+      ...(currentRuntime?.sessions ?? []).filter(
+        (candidate) =>
+          candidate.key !== session.key &&
+          !closedSessions.some((closed) =>
+            sessionGenerationMatches(closed, candidate),
+          ),
+      ),
       session,
     ];
-    if (runtimeLive && runtime) {
-      invalidateRuntimeSnapshot();
-      runtime = {
-        ...runtime,
-        sessions: [
-          ...runtime.sessions.filter((candidate) => candidate.key !== session.key),
-          session,
-        ],
-      };
-    }
+    invalidateRuntimeSnapshot();
+    runtime = {
+      launch_targets: currentRuntime?.launch_targets ?? [],
+      sessions: [
+        ...(currentRuntime?.sessions ?? []).filter((candidate) => candidate.key !== session.key),
+        session,
+      ],
+    };
+    runtimeForId = workspaceId;
+    runtimeForHostKey = workspaceHostKey;
     return sessions;
   }
   const currentTerminalGroup = $derived(activeTerminalGroup(terminalLayout));
@@ -2453,42 +2465,46 @@
             return true;
           });
         }
+        if (state.request.placement._tag === "Workflow") {
+          // A successful launch response names the session the server already
+          // recorded. Publish it now; the runtime reload only reconciles peers.
+          return Effect.sync(() => {
+            if (!isCurrentWorkspace(id, hostKey)) return false;
+            const session = state.session;
+            clearClosedSession(session);
+            applySessionToWorkflow(session.key, upsertRuntimeSession(session));
+            closeLauncher();
+            requestSessionFocus(sessionHostKeyFor(session));
+            clearRuntimeMutationPending(state);
+            requestRuntime({ force: true });
+            return true;
+          });
+        }
+        const placement = state.request.placement;
         return Effect.gen(function* () {
-          const refreshed = yield* fetchRuntimeProgram({ force: true });
+          yield* fetchRuntimeProgram({ force: true });
           if (!isCurrentWorkspace(id, hostKey)) return false;
           yield* Effect.sync(() => {
             const session = state.session;
             clearClosedSession(session);
-            if (state.request.placement._tag === "Workflow") {
-              moveSessionToWorkflow(session.key);
-              mountSessionTerminal(session.key);
-              selectWorkspaceTab(workflowTabKeyForSession(session.key));
-              if (refreshed?.sessions.some((candidate) => candidate.key === session.key) === true) {
-                closeLauncher();
-                requestSessionFocus(sessionHostKeyFor(session));
-              } else {
-                showFlash("Session launched, but the workspace could not be reloaded", { tone: "danger" });
-              }
-            } else if (state.request.placement._tag === "Terminal") {
-              if (state.request.placement.insertIntoTree) {
-                const sessionsWithLaunch = upsertRuntimeSession(session);
-                const groups = addTerminalGroup(terminalLayout.terminalGroups, session.key);
-                const activeGroupID = groups.at(-1)?.id ?? terminalLayout.activeTerminalGroupID;
-                terminalLayout = normalizeLayoutForSessions(
-                  sessionsWithLaunch,
-                  layoutWithTerminalGroups(
-                    {
-                      ...terminalLayout,
-                      open: true,
-                      sessionRegions: { ...terminalLayout.sessionRegions, [session.key]: "terminal" },
-                    },
-                    groups,
-                    activeGroupID,
-                  ),
-                );
-              }
-              if (terminalLayout.dock === "top") selectWorkspaceTab("terminal");
+            if (placement.insertIntoTree) {
+              const sessionsWithLaunch = upsertRuntimeSession(session);
+              const groups = addTerminalGroup(terminalLayout.terminalGroups, session.key);
+              const activeGroupID = groups.at(-1)?.id ?? terminalLayout.activeTerminalGroupID;
+              terminalLayout = normalizeLayoutForSessions(
+                sessionsWithLaunch,
+                layoutWithTerminalGroups(
+                  {
+                    ...terminalLayout,
+                    open: true,
+                    sessionRegions: { ...terminalLayout.sessionRegions, [session.key]: "terminal" },
+                  },
+                  groups,
+                  activeGroupID,
+                ),
+              );
             }
+            if (terminalLayout.dock === "top") selectWorkspaceTab("terminal");
             clearRuntimeMutationPending(state);
           });
           return true;
@@ -2872,16 +2888,23 @@
     }
   }
 
-  function moveSessionToWorkflow(sessionKey: string): void {
+  function moveSessionToWorkflow(
+    sessionKey: string,
+    sessions: RuntimeSession[] = runtimeSessions,
+  ): void {
     if (actionsBlocked) return;
-    const session = runtimeSessions.find((candidate) => candidate.key === sessionKey);
+    applySessionToWorkflow(sessionKey, sessions);
+  }
+
+  function applySessionToWorkflow(sessionKey: string, sessions: RuntimeSession[]): void {
+    const session = sessions.find((candidate) => candidate.key === sessionKey);
     if (!session) return;
     if (isPromoted(session)) surfaceLayout?.demoteTab(sessionPaneKeyFor(session));
     const terminalGroups = closeSessionInTerminalGroups(
       terminalLayout.terminalGroups,
       sessionKey,
     );
-    terminalLayout = normalizeLayoutForSessions(runtimeSessions, {
+    terminalLayout = normalizeLayoutForSessions(sessions, {
       ...layoutWithTerminalGroups(
         {
           ...terminalLayout,

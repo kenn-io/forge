@@ -146,6 +146,13 @@ async function mockSplitViewPR(page: Page): Promise<void> {
   await page.route(`${detailPath}/diff**`, async (route) => {
     await fulfillJson(route, diffResponse);
   });
+  await page.route("**/api/v1/repo/github/acme/widgets/labels", async (route) => {
+    await fulfillJson(route, {
+      labels: [{ name: "bug", color: "d73a4a", description: "Something is not working" }],
+      stale: false,
+      syncing: false,
+    });
+  });
   await page.route(`${replacementDetailPath}/files`, async (route) => {
     await fulfillJson(route, diffResponse);
   });
@@ -264,12 +271,18 @@ test("routes page keys by focus while wheel input remains focus-neutral", async 
   await expect(page.locator(".tabbed-panel-leaf.input-active")).toHaveCount(1);
   await expect(conversationLeaf).toHaveClass(/input-active/);
   await expect(filesLeaf).not.toHaveClass(/input-active/);
-  const activeBorder = await conversationLeaf.evaluate((leaf) => {
-    const style = getComputedStyle(leaf, "::after");
-    return { color: style.borderTopColor, width: style.borderTopWidth };
-  });
-  expect(activeBorder.color).not.toBe("rgba(0, 0, 0, 0)");
-  expect(activeBorder.width).toBe("1px");
+
+  await page.locator(".pull-detail .chips-row").getByRole("button", { name: "Labels", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Edit labels" })).toBeVisible();
+  await expect(page.getByLabel("Filter labels")).toBeFocused();
+  const activeBorder = await conversationLeaf.evaluate((leaf) => ({
+    overlayContent: getComputedStyle(leaf, "::after").content,
+    insetShadow: getComputedStyle(leaf).boxShadow,
+  }));
+  expect(activeBorder.overlayContent).toBe("none");
+  expect(activeBorder.insetShadow).toContain("inset");
+  await page.getByRole("button", { name: "Close label picker" }).click();
+  await conversationLeaf.getByRole("tab").focus();
 
   await diffArea.evaluate((area) => {
     area.scrollTop = 0;
@@ -293,30 +306,19 @@ test("routes page keys by focus while wheel input remains focus-neutral", async 
   await expect(conversationLeaf).not.toHaveClass(/input-active/);
 
   const filesPaneChrome = await filesLeaf.evaluate((leaf) => {
-    const outline = getComputedStyle(leaf, "::after");
     const toolbar = leaf.querySelector<HTMLElement>(".diff-toolbar");
     const activeTab = leaf.querySelector<HTMLElement>(".tabbed-panel-tab.active");
     if (!toolbar || !activeTab) throw new Error("Files pane chrome is missing");
     const tabAccent = getComputedStyle(activeTab, "::before");
     return {
-      outlineColors: [
-        outline.borderTopColor,
-        outline.borderRightColor,
-        outline.borderBottomColor,
-        outline.borderLeftColor,
-      ],
-      outlineWidths: [
-        outline.borderTopWidth,
-        outline.borderRightWidth,
-        outline.borderBottomWidth,
-        outline.borderLeftWidth,
-      ],
+      activeBorder: getComputedStyle(leaf).boxShadow,
+      overlayContent: getComputedStyle(leaf, "::after").content,
       tabAccentContent: tabAccent.content,
       toolbarZIndex: getComputedStyle(toolbar).zIndex,
     };
   });
-  expect(new Set(filesPaneChrome.outlineColors).size).toBe(1);
-  expect(filesPaneChrome.outlineWidths).toEqual(["1px", "1px", "1px", "1px"]);
+  expect(filesPaneChrome.activeBorder).toContain("inset");
+  expect(filesPaneChrome.overlayContent).toBe("none");
   expect(filesPaneChrome.tabAccentContent).toBe("none");
   expect(filesPaneChrome.toolbarZIndex).toBe("auto");
 

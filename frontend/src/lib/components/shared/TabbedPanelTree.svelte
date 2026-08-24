@@ -925,14 +925,12 @@
     background: var(--bg-surface);
   }
 
-  .tabbed-panel-leaf.input-active::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    z-index: 30;
-    border: var(--chrome-border-width) solid
+  /* Paint focus as part of the leaf instead of as a high-z overlay. Descendant
+     popovers may be trapped in their own stacking context, so a generated layer
+     here would draw over them regardless of the popover's local z-index. */
+  .tabbed-panel-leaf.input-active {
+    box-shadow: inset 0 0 0 var(--chrome-border-width)
       color-mix(in srgb, var(--accent-blue) 48%, var(--border-default));
-    pointer-events: none;
   }
 
   /* Nested workspace surfaces are the actual keyboard owner. Keep the outer
@@ -941,8 +939,8 @@
       .tabbed-panel-leaf.input-active,
       :global(.terminal-panel.input-active),
       :global(.right-sidebar.input-active)
-    )::after {
-    content: none;
+    ) {
+    box-shadow: none;
   }
 
   /*

@@ -799,12 +799,9 @@ test.describe.serial("Roborev", () => {
           elapsed: row.querySelector(".col-elapsed")?.textContent?.trim(),
         })),
       );
-      // Running jobs and started cancellations derive elapsed time from
-      // Date.now() during both sorting and rendering. A second boundary
-      // between those operations can make their displayed order stale.
-      const elapsedTexts = elapsedRows
-        .filter(({ status }) => status !== "running" && status !== "canceled")
-        .map(({ elapsed }) => elapsed ?? "");
+      // The real daemon can move queued jobs through running to failed while
+      // this test reads the table. Compare the fixture's immutable done rows.
+      const elapsedTexts = elapsedRows.filter(({ status }) => status === "done").map(({ elapsed }) => elapsed ?? "");
       const elapsedValues = elapsedTexts.map(parseElapsed);
 
       const sorted = [...elapsedValues].sort((a, b) => a - b);

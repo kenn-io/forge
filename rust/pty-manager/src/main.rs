@@ -552,8 +552,9 @@ fn scale_pixel_dimension(pixels: u16, current_cells: u16, new_cells: u16) -> u16
         return pixels;
     }
 
-    (u64::from(pixels) * u64::from(new_cells) / u64::from(current_cells)).min(u64::from(u16::MAX))
-        as u16
+    let current_cells = u64::from(current_cells);
+    ((u64::from(pixels) * u64::from(new_cells) + current_cells / 2) / current_cells)
+        .min(u64::from(u16::MAX)) as u16
 }
 
 fn read_request<R: BufRead>(reader: &mut R, max_bytes: usize) -> Result<Option<Request>> {
@@ -1405,6 +1406,14 @@ mod tests {
             (resized.rows, resized.cols),
             (character_only_size.rows, character_only_size.cols)
         );
+    }
+
+    #[test]
+    fn pixel_scaling_preserves_non_integral_resize_round_trip() {
+        let expanded = scale_pixel_dimension(875, 100, 101);
+
+        assert_eq!(expanded, 884);
+        assert_eq!(scale_pixel_dimension(expanded, 101, 100), 875);
     }
 
     #[test]

@@ -15,10 +15,8 @@ import {
   createdWorkspaceRef,
   markWorkspaceIdDeleted,
   nextWorkspaceLifecycleTick,
-  reconcileWorkspaceCreated,
   recordWorkspaceCreated,
   resetWorkspaceCreatePendingForTest,
-  resolveControllerlessWorkspaceRef,
 } from "./workspace-create-pending.svelte.js";
 import { getLastWorkspaceRoute, getRoute, navigate } from "./router.svelte.ts";
 import {
@@ -178,19 +176,6 @@ describe("workspace host store", () => {
     prs.reconcile(identityA, null, nextWorkspaceLifecycleTick());
     expect(prs.effectiveWorkspaceRef(identityA, null)).toBeNull();
   });
-
-  it("a post-creation null envelope clears a controller-less created record", () => {
-    const prs = getInlineWorkspaceController("prs");
-    const preCreateTick = nextWorkspaceLifecycleTick();
-    recordWorkspaceCreated(identityA, refA);
-    reconcileWorkspaceCreated(identityA, null, preCreateTick);
-    expect(prs.effectiveWorkspaceRef(identityA, null)).toEqual(refA);
-    reconcileWorkspaceCreated(identityA, null);
-    expect(prs.effectiveWorkspaceRef(identityA, null)).toEqual(refA);
-    reconcileWorkspaceCreated(identityA, null, nextWorkspaceLifecycleTick());
-    expect(prs.effectiveWorkspaceRef(identityA, null)).toBeNull();
-  });
-
   it("a controller-less recreation under a fresh ID supersedes the tombstone", () => {
     const prs = getInlineWorkspaceController("prs");
     prs.claim(identityA, refA);
@@ -242,18 +227,6 @@ describe("workspace host store", () => {
     expect(prs.effectiveWorkspaceRef(identityA, null)).toBeNull();
     expect(prs.effectiveWorkspaceRef(identityA, refA)).toBeNull(); // stale envelope stays masked
   });
-
-  it("a delayed create response cannot republish a deleted controller-less record", () => {
-    const prs = getInlineWorkspaceController("prs");
-    // Deleted from the Workspaces tab before anything claimed or remembered
-    // the identity: no tombstone exists, so only the deleted-ID memory can
-    // block the late publication.
-    notifyWorkspaceDeleted("ws-a");
-    recordWorkspaceCreated(identityA, refA);
-    expect(createdWorkspaceRef(identityA)).toBeNull();
-    expect(prs.effectiveWorkspaceRef(identityA, null)).toBeNull();
-  });
-
   it("a delayed create response under a fresh ID supersedes the deletion tombstone", () => {
     const prs = getInlineWorkspaceController("prs");
     prs.claim(identityA, refA);
@@ -321,48 +294,6 @@ describe("workspace host store", () => {
     expect(prs.effectiveWorkspaceRef(identityA, { id: "ws-0", status: "ready" })).toEqual(recreated);
     expect(prs.effectiveWorkspaceRef(identityA, { id: "ws-c", status: "ready" })).toEqual(recreated);
   });
-
-  it("a stale different-ID envelope does not clear a fresh created record", () => {
-    // Delete ws-old, recreate as ws-a: a pre-create fetch still carrying
-    // ws-old must not erase the recreation's record — only a same-ID
-    // envelope or a request started after the confirmation reconciles it.
-    const staleTick = nextWorkspaceLifecycleTick();
-    const stale = { id: "ws-old", status: "ready" };
-    recordWorkspaceCreated(identityA, refA);
-    reconcileWorkspaceCreated(identityA, stale, staleTick);
-    expect(createdWorkspaceRef(identityA)).toEqual(refA);
-    reconcileWorkspaceCreated(identityA, stale); // no tick: still stale
-    expect(createdWorkspaceRef(identityA)).toEqual(refA);
-    // A same-ID envelope confirms the creation regardless of tick.
-    reconcileWorkspaceCreated(identityA, refA, staleTick);
-    expect(createdWorkspaceRef(identityA)).toBeNull();
-    // A post-confirmation different-ID envelope is authoritative
-    // (deleted and recreated elsewhere).
-    recordWorkspaceCreated(identityA, refA);
-    reconcileWorkspaceCreated(identityA, stale, nextWorkspaceLifecycleTick());
-    expect(createdWorkspaceRef(identityA)).toBeNull();
-  });
-
-  it("the controller-less resolver prefers the created record and masks deleted envelopes", () => {
-    // A clean envelope resolves as-is.
-    expect(resolveControllerlessWorkspaceRef(identityA, refA)).toEqual(refA);
-    // A session-deleted envelope is masked even though the cached detail
-    // still carries it (controller-less views get no invalidation).
-    markWorkspaceIdDeleted("ws-a");
-    expect(resolveControllerlessWorkspaceRef(identityA, refA)).toBeNull();
-    // The confirmed recreation wins over the stale envelope.
-    const recreated = { id: "ws-b", status: "provisioning" };
-    recordWorkspaceCreated(identityA, recreated);
-    expect(resolveControllerlessWorkspaceRef(identityA, refA)).toEqual(recreated);
-    // The record stays authoritative until reconciled, matching the host
-    // store's positive-override semantics.
-    expect(resolveControllerlessWorkspaceRef(identityA, { id: "ws-c", status: "ready" })).toEqual(recreated);
-    // Except for a same-ID envelope: that is the server refreshing the
-    // recorded workspace, and its status is fresher.
-    const refreshed = { id: "ws-b", status: "ready" };
-    expect(resolveControllerlessWorkspaceRef(identityA, refreshed)).toEqual(refreshed);
-  });
-
   it("a tombstone does not mask a recreated workspace under a fresh ID", () => {
     const prs = getInlineWorkspaceController("prs");
     const recreated = { id: "ws-a2", status: "provisioning" };

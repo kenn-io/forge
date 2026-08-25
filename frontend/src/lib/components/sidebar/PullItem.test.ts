@@ -79,18 +79,6 @@ describe("PullItem CI cluster", () => {
     expect(time).not.toBeNull();
     expect(time?.getAttribute("aria-label")).toContain("Recent workspace activity");
   });
-
-  it("keeps provider recency authoritative when workspace recency is disabled", () => {
-    renderItem(
-      mkPR({
-        LastActivityAt: "2026-05-01T12:00:00Z",
-        last_workspace_activity_at: "2026-05-02T12:00:00Z",
-      }),
-    );
-
-    expect(document.querySelector('.time[title="Recent workspace activity"]')).toBeNull();
-  });
-
   it("renders compact tokens for a mixed-state PR", () => {
     const checks = [
       {

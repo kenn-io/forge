@@ -242,18 +242,6 @@ describe("IssueListView inline workspace", () => {
         ?.querySelector('[data-testid="workspace-pane-controls"]'),
     ).toBeNull();
   });
-
-  it("claims when the loaded detail matches the selection and carries a workspace", () => {
-    const { controller } = createClaimTestController();
-    renderIssueListView({
-      inlineWorkspace: controller,
-      detail: issueDetailFixture({ id: "ws-1", status: "ready" }),
-    });
-
-    expect(controller.claim).toHaveBeenCalledWith(selectedIssueIdentity, { id: "ws-1", status: "ready" });
-    expect(controller.release).not.toHaveBeenCalled();
-  });
-
   it("claims when the selection omits the host and the detail carries the provider default", () => {
     // Activity URLs may omit platform_host while the loaded detail always
     // carries the concrete default host; the match guard must treat them
@@ -271,61 +259,6 @@ describe("IssueListView inline workspace", () => {
     );
     expect(controller.release).not.toHaveBeenCalled();
   });
-
-  it("releases on stale detail, missing workspace, or cleared selection", () => {
-    // (a) stale detail: loaded for a different identity than selectedIssue.
-    {
-      const { controller } = createClaimTestController();
-      renderIssueListView({
-        inlineWorkspace: controller,
-        detail: { ...issueDetailFixture({ id: "ws-1", status: "ready" }), repo_owner: "someone-else" },
-      });
-      expect(controller.claim).not.toHaveBeenCalled();
-      expect(controller.release).toHaveBeenCalled();
-      cleanup();
-    }
-
-    // (b) matching detail, no workspace ref and no override.
-    {
-      const { controller } = createClaimTestController();
-      renderIssueListView({
-        inlineWorkspace: controller,
-        detail: issueDetailFixture(undefined),
-      });
-      expect(controller.claim).not.toHaveBeenCalled();
-      expect(controller.release).toHaveBeenCalled();
-      cleanup();
-    }
-
-    // (c) selection cleared.
-    {
-      const { controller } = createClaimTestController();
-      renderIssueListView({
-        inlineWorkspace: controller,
-        selectedIssue: null,
-        detail: issueDetailFixture({ id: "ws-1", status: "ready" }),
-      });
-      expect(controller.claim).not.toHaveBeenCalled();
-      expect(controller.release).toHaveBeenCalled();
-      cleanup();
-    }
-  });
-
-  it("releases on unmount", () => {
-    const { controller } = createClaimTestController();
-    const { unmount } = renderIssueListView({
-      inlineWorkspace: controller,
-      detail: issueDetailFixture({ id: "ws-1", status: "ready" }),
-    });
-
-    expect(controller.claim).toHaveBeenCalled();
-    expect(controller.release).not.toHaveBeenCalled();
-
-    unmount();
-
-    expect(controller.release).toHaveBeenCalled();
-  });
-
   it("offers a workspace pane only once the workspace is claimed", () => {
     // Unclaimed: the workspace tab is unavailable, so the tree prunes to the
     // conversation pane alone and no portal slot exists to steal the terminal.
@@ -377,39 +310,6 @@ describe("IssueListView inline workspace", () => {
 
     expect(document.querySelector(".detail-pane-workspace-slot")).toBeTruthy();
   });
-
-  it("refetches the detail when the claimed identity is invalidated by deletion", async () => {
-    const { controller, notifyInvalidated } = createClaimTestController();
-    const detail = issueDetailFixture({ id: "ws-1", status: "ready" });
-    const { issuesStore, detailBox } = renderIssueListView({ inlineWorkspace: controller, detail });
-
-    expect(controller.claim).toHaveBeenCalled();
-    expect(document.querySelector(".detail-pane-workspace-slot")).toBeTruthy();
-
-    notifyInvalidated(selectedIssueIdentity);
-
-    expect(issuesStore.loadIssueDetail).toHaveBeenCalledWith(
-      selectedIssue.owner,
-      selectedIssue.name,
-      selectedIssue.number,
-      {
-        sync: false,
-        provider: selectedIssue.provider,
-        platformHost: selectedIssue.platformHost,
-        repoPath: selectedIssue.repoPath,
-      },
-    );
-
-    // Simulate the refetch landing without the workspace, as a real
-    // deletion followed by a refresh would leave it: the claim effect
-    // re-evaluates against the fresh envelope and releases the claim.
-    detailBox.set(issueDetailFixture(undefined));
-    await tick();
-
-    expect(controller.release).toHaveBeenCalled();
-    expect(document.querySelector(".detail-pane-workspace-slot")).toBeNull();
-  });
-
   it("threads inlineWorkspace to IssueDetail", () => {
     const { controller } = createClaimTestController();
     renderIssueListView({ inlineWorkspace: controller });

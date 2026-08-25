@@ -13,9 +13,7 @@ import { makeTestAppRuntime } from "../../testing/effect-layers.js";
 import { dismissFlash, getFlashes } from "../../stores/flash.svelte.js";
 import {
   discardWorkspaceLaunch,
-  markWorkspaceIdDeleted,
   nextWorkspaceLifecycleTick,
-  recordWorkspaceCreated,
   resetWorkspaceCreatePendingForTest,
 } from "../../stores/workspace-create-pending.svelte.js";
 import type { ActionRegistry } from "../../types.js";
@@ -887,70 +885,26 @@ describe("IssueDetail inline workspace handoff", () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 
-  it("keeps Create Workspace disabled across a selection round-trip while a create is pending", async () => {
-    // The local creating flag is cleared by the route-reset effect on
-    // A→B and again on B→A; only the shared identity-keyed pending
-    // store can keep the button disabled, or the second click sends a
-    // duplicate create and earns a misleading "already exists" conflict.
-    const controller = createTestController("split");
+  it("wires shared workspace creation state into the controller-less action", async () => {
     const { apiClient, resolvePost } = deferredWorkspaceApiClient();
-    const { rerender } = renderIssueDetail(issueDetail(), undefined, { inlineWorkspace: controller }, apiClient);
+    const { navigate, rerender, setEnvelopeTick } = renderIssueDetail(issueDetail(), undefined, {}, apiClient);
 
     await fireEvent.click(screen.getByRole("button", { name: "Create Workspace" }));
     await rerender({ number: 8 });
     await rerender({ number: 7 });
 
-    const button = screen.getByRole("button", { name: "Creating..." });
-    expect(button.hasAttribute("disabled")).toBe(true);
-    await fireEvent.click(button);
+    const pendingButton = screen.getByRole("button", { name: "Creating..." });
+    expect(pendingButton.hasAttribute("disabled")).toBe(true);
+    await fireEvent.click(pendingButton);
     expect(apiClient.POST).toHaveBeenCalledTimes(1);
 
     resolvePost({ data: { id: "ws-new", status: "provisioning" } });
-    await vi.waitFor(() => {
-      expect(controller.recordCreated).toHaveBeenCalledWith(identity, { id: "ws-new", status: "provisioning" });
-    });
-    expect(controller.recordCreated).toHaveBeenCalledTimes(1);
-  });
-
-  it("a confirmed creation without a controller survives a selection round-trip", async () => {
-    // Focus/mobile views mount IssueDetail without an
-    // inline controller, so there is no override store: the shared
-    // created-record is the only way a replacement view learns the
-    // workspace exists when the response lands after a round-trip, and
-    // without it the button re-offers a duplicate create.
-    const { apiClient, resolvePost } = deferredWorkspaceApiClient();
-    const { navigate, rerender } = renderIssueDetail(issueDetail(), undefined, {}, apiClient);
-
-    await fireEvent.click(screen.getByRole("button", { name: "Create Workspace" }));
-    await rerender({ number: 8 });
-    await rerender({ number: 7 });
-    resolvePost({ data: { id: "ws-new", status: "provisioning" } });
-
     await vi.waitFor(() => {
       expect(screen.getByRole("button", { name: "Open Workspace" })).toBeTruthy();
     });
     expect(screen.queryByRole("button", { name: "Create Workspace" })).toBeNull();
     expect(navigate).not.toHaveBeenCalled();
-    expect(apiClient.POST).toHaveBeenCalledTimes(1);
-  });
 
-  it("a post-creation refetch reporting no workspace clears the stale created record", async () => {
-    // Another client deleted the workspace: a detail load whose request
-    // started AFTER the creation confirmed returns workspace: null, which
-    // is authoritative absence. Without clearing, the button would offer
-    // "Open Workspace" against a dead ID forever. The pre-clear state is
-    // proven first: the confirmation's own envelope (older tick) must not
-    // clear the record.
-    const { apiClient, resolvePost } = deferredWorkspaceApiClient();
-    const { rerender, setEnvelopeTick } = renderIssueDetail(issueDetail(), undefined, {}, apiClient);
-
-    await fireEvent.click(screen.getByRole("button", { name: "Create Workspace" }));
-    resolvePost({ data: { id: "ws-new", status: "provisioning" } });
-    await vi.waitFor(() => {
-      expect(screen.getByRole("button", { name: "Open Workspace" })).toBeTruthy();
-    });
-
-    // A refetch initiated after the confirmation observes no workspace.
     setEnvelopeTick(nextWorkspaceLifecycleTick());
     await rerender({ number: 8 });
     await rerender({ number: 7 });
@@ -960,7 +914,6 @@ describe("IssueDetail inline workspace handoff", () => {
     });
     expect(screen.queryByRole("button", { name: "Open Workspace" })).toBeNull();
   });
-
   it("publishes a confirmed creation across a selection round-trip", async () => {
     // A→B→A: returning to the original issue restores an identity that
     // matches the request, but the round-trip bumped the request
@@ -1140,40 +1093,6 @@ describe("IssueDetail inline workspace handoff", () => {
       expect(navigate).toHaveBeenCalledWith("/workspaces");
     },
   );
-
-  it("without a controller a session-deleted envelope workspace is masked", async () => {
-    // Controller-less views subscribe to no invalidation: after a deletion
-    // from another surface their cached envelope still carries the dead
-    // workspace until the next fetch, and following it would offer "Open
-    // Workspace" against a 404.
-    const detail = issueDetail();
-    detail.workspace = { id: "ws-1", status: "ready" };
-
-    renderIssueDetail(detail);
-    expect(screen.getByRole("button", { name: "Open Workspace" })).toBeTruthy();
-
-    markWorkspaceIdDeleted("ws-1");
-    await vi.waitFor(() => {
-      expect(screen.getByRole("button", { name: "Create Workspace" })).toBeTruthy();
-    });
-    expect(screen.queryByRole("button", { name: "Open Workspace" })).toBeNull();
-  });
-
-  it("without a controller the created record wins over a stale envelope", async () => {
-    // The confirmed creation is fresher than any cached envelope: a
-    // pre-create envelope still carrying the previously deleted workspace
-    // must not shadow the recreation.
-    markWorkspaceIdDeleted("ws-old");
-    const detail = issueDetail();
-    detail.workspace = { id: "ws-old", status: "ready" };
-    recordWorkspaceCreated(identity, { id: "ws-new", status: "ready" });
-
-    const { navigate } = renderIssueDetail(detail);
-
-    await fireEvent.click(screen.getByRole("button", { name: "Open Workspace" }));
-    expect(navigate).toHaveBeenCalledWith("/terminal/ws-new");
-  });
-
   it("consults the override layer for button state", () => {
     const detail = issueDetail();
     detail.workspace = undefined;

@@ -28,6 +28,7 @@ const defaultProps = {
   repoPath: "acme/widget",
   number: 1,
   supportedReviewActions: [] as string[],
+  oncompleted: undefined as (() => void) | undefined,
 };
 
 function renderApproveButton(overrides: Partial<typeof defaultProps> = {}) {
@@ -113,22 +114,6 @@ describe("ApproveButton tooltips", () => {
     });
     expect(screen.queryByRole("dialog", { name: "Submit pull request review" })).toBeNull();
   });
-
-  it("closes a successful change request and launches both refreshes", async () => {
-    renderApproveButton({ supportedReviewActions: ["approve", "request_changes"] });
-
-    await fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));
-    await fireEvent.input(screen.getByRole("textbox"), {
-      target: { value: "Please cover the empty state." },
-    });
-    await fireEvent.click(screen.getByRole("button", { name: "Request changes" }));
-
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog", { name: "Submit pull request review" })).toBeNull();
-    });
-    expect(mockRequestPullChanges).toHaveBeenCalledTimes(1);
-  });
-
   it("collapses the approval popover from cancel without removing the trigger", async () => {
     renderApproveButton();
 
@@ -149,7 +134,8 @@ describe("ApproveButton tooltips", () => {
         callbacks.onSettled?.();
       };
     });
-    renderApproveButton();
+    const oncompleted = vi.fn();
+    renderApproveButton({ oncompleted });
 
     const trigger = screen.getByRole("button", { name: /^approve$/i });
     await fireEvent.click(trigger);
@@ -171,6 +157,7 @@ describe("ApproveButton tooltips", () => {
     await waitFor(() => {
       expect(screen.queryByRole("dialog", { name: "Submit pull request review" })).toBeNull();
     });
+    expect(oncompleted).toHaveBeenCalledTimes(1);
   });
 
   it("drops the captured head pin when only the provider identity changes", async () => {
@@ -249,6 +236,12 @@ describe("ApproveButton tooltips", () => {
       );
     });
     expect(screen.queryByRole("dialog", { name: "Submit pull request review" })).toBeNull();
+    expect(mockShowFlash).not.toHaveBeenCalled();
+
+    await fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));
+    expect(screen.getByRole("dialog", { name: "Submit pull request review" })).toBeTruthy();
+    expect(screen.queryByText("target changed since it was reviewed")).toBeNull();
+    await fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     await rerender({
       ...defaultProps,

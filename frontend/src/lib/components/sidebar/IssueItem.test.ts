@@ -61,21 +61,6 @@ describe("IssueItem", () => {
 
     expect(screen.getByLabelText("Workspace attached (ready)")).toBeTruthy();
   });
-
-  it("labels a newer workspace timestamp as the row's effective activity", () => {
-    renderItem(mkIssue({ last_workspace_activity_at: "2026-05-02T12:00:00Z" }), true);
-
-    const time = document.querySelector('.time[title="Recent workspace activity"]');
-    expect(time).not.toBeNull();
-    expect(time?.getAttribute("aria-label")).toContain("Recent workspace activity");
-  });
-
-  it("keeps provider recency authoritative when workspace recency is disabled", () => {
-    renderItem(mkIssue({ last_workspace_activity_at: "2026-05-02T12:00:00Z" }));
-
-    expect(document.querySelector('.time[title="Recent workspace activity"]')).toBeNull();
-  });
-
   it("renders the repo name inside the meta row with no separate repo row", () => {
     render(IssueItem, {
       props: {

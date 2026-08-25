@@ -4,7 +4,9 @@ import {
   beginWorkspaceCreate,
   beginWorkspaceDeletion,
   claimWorkspaceLaunch,
+  clearCreatedWorkspaceById,
   completeAcceptedWorkspaceLaunch,
+  createdWorkspaceRef,
   discardWorkspaceLaunch,
   endWorkspaceCreate,
   endWorkspaceDeletion,
@@ -12,13 +14,18 @@ import {
   failWorkspaceLaunch,
   isWorkspaceCreatePending,
   isWorkspaceDeletionPending,
+  markWorkspaceIdDeleted,
+  nextWorkspaceLifecycleTick,
   pendingWorkspaceCreateLaunch,
   pendingWorkspaceLaunch,
   promoteWorkspaceCreateLaunch,
   queueWorkspaceLaunch,
+  reconcileWorkspaceCreated,
+  recordWorkspaceCreated,
   resetWorkspaceCreatePendingForTest,
+  resolveControllerlessWorkspaceRef,
 } from "./workspace-create-pending.svelte.js";
-import type { WorkspaceItemIdentity } from "../workspace-inline.js";
+import type { WorkspaceItemIdentity, WorkspaceRefLite } from "../workspace-inline.js";
 
 const pullIdentity: WorkspaceItemIdentity = {
   provider: "github",
@@ -28,6 +35,9 @@ const pullIdentity: WorkspaceItemIdentity = {
   number: 1,
   itemType: "pull",
 };
+const issueIdentity: WorkspaceItemIdentity = { ...pullIdentity, itemType: "issue" };
+const createdRef: WorkspaceRefLite = { id: "ws-new", status: "provisioning" };
+const staleRef: WorkspaceRefLite = { id: "ws-old", status: "ready" };
 
 describe("workspace deletion pending", () => {
   beforeEach(() => {
@@ -45,6 +55,80 @@ describe("workspace deletion pending", () => {
     endWorkspaceDeletion("ws-1", undefined);
     expect(isWorkspaceDeletionPending("ws-1", undefined)).toBe(false);
     expect(isWorkspaceDeletionPending("ws-1", "member-a")).toBe(true);
+  });
+});
+
+describe("workspace creation state", () => {
+  beforeEach(() => {
+    resetWorkspaceCreatePendingForTest();
+  });
+
+  it("keeps pending creates independent by item identity until ended", () => {
+    beginWorkspaceCreate(pullIdentity);
+    expect(isWorkspaceCreatePending(pullIdentity)).toBe(true);
+    expect(isWorkspaceCreatePending(issueIdentity)).toBe(false);
+
+    beginWorkspaceCreate(issueIdentity);
+    endWorkspaceCreate(pullIdentity);
+
+    expect(isWorkspaceCreatePending(pullIdentity)).toBe(false);
+    expect(isWorkspaceCreatePending(issueIdentity)).toBe(true);
+  });
+
+  it("records confirmed creations by identity and clears them by workspace ID", () => {
+    const issueRef: WorkspaceRefLite = { id: "ws-issue", status: "ready" };
+    recordWorkspaceCreated(pullIdentity, createdRef);
+    recordWorkspaceCreated(issueIdentity, issueRef);
+
+    expect(createdWorkspaceRef(pullIdentity)).toEqual(createdRef);
+    expect(createdWorkspaceRef(issueIdentity)).toEqual(issueRef);
+
+    clearCreatedWorkspaceById(createdRef.id);
+    expect(createdWorkspaceRef(pullIdentity)).toBeNull();
+    expect(createdWorkspaceRef(issueIdentity)).toEqual(issueRef);
+  });
+
+  it.each([
+    ["null without a tick", null, "none", true],
+    ["null from a pre-confirmation request", null, "before", true],
+    ["a different ID from a pre-confirmation request", staleRef, "before", true],
+    ["a same-ID envelope", createdRef, "before", false],
+    ["null from a post-confirmation request", null, "after", false],
+    ["a different ID from a post-confirmation request", staleRef, "after", false],
+  ] as const)("reconciles %s", (_name, envelope, timing, retained) => {
+    const beforeConfirmation = nextWorkspaceLifecycleTick();
+    recordWorkspaceCreated(pullIdentity, createdRef);
+    const envelopeTick =
+      timing === "before" ? beforeConfirmation : timing === "after" ? nextWorkspaceLifecycleTick() : undefined;
+
+    reconcileWorkspaceCreated(pullIdentity, envelope, envelopeTick);
+
+    expect(createdWorkspaceRef(pullIdentity)).toEqual(retained ? createdRef : null);
+  });
+
+  it("resolves controller-less refs from creation records and deleted IDs", () => {
+    expect(resolveControllerlessWorkspaceRef(pullIdentity, staleRef)).toEqual(staleRef);
+
+    markWorkspaceIdDeleted(staleRef.id);
+    expect(resolveControllerlessWorkspaceRef(pullIdentity, staleRef)).toBeNull();
+
+    recordWorkspaceCreated(pullIdentity, createdRef);
+    expect(resolveControllerlessWorkspaceRef(pullIdentity, staleRef)).toEqual(createdRef);
+    expect(resolveControllerlessWorkspaceRef(pullIdentity, { id: "ws-other", status: "ready" })).toEqual(createdRef);
+    expect(resolveControllerlessWorkspaceRef(pullIdentity, { ...createdRef, status: "ready" })).toEqual({
+      ...createdRef,
+      status: "ready",
+    });
+  });
+
+  it("rejects delayed publication for a deleted ID but accepts a fresh recreation", () => {
+    markWorkspaceIdDeleted(createdRef.id);
+    recordWorkspaceCreated(pullIdentity, createdRef);
+    expect(createdWorkspaceRef(pullIdentity)).toBeNull();
+
+    const recreated: WorkspaceRefLite = { id: "ws-fresh", status: "provisioning" };
+    recordWorkspaceCreated(pullIdentity, recreated);
+    expect(createdWorkspaceRef(pullIdentity)).toEqual(recreated);
   });
 });
 

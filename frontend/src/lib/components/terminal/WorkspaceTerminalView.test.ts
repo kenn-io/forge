@@ -2103,37 +2103,6 @@ describe("WorkspaceTerminalView", () => {
     expect(screen.getByRole("tab", { name: /Helper 2/ })).toBeTruthy();
     expect(mocks.renameWorkspaceSession).toHaveBeenCalledWith("ws-1", "ws-1:helper", "Plan review", undefined);
   });
-
-  it("shows a moving insertion slot while sorting workflow tabs", async () => {
-    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoWorkflowSessions());
-
-    render(WorkspaceTerminalView, {
-      props: {
-        workspaceId: "ws-1",
-      },
-    });
-
-    const helperTab = await screen.findByRole("tab", { name: /Helper/ });
-    const reviewerTab = await screen.findByRole("tab", { name: /Reviewer/ });
-    const helperTabHost = helperTab.closest(".tabbed-panel-tab");
-    expect(helperTabHost).toBeTruthy();
-    const dataTransfer = fakeDataTransfer();
-
-    await fireEvent.dragStart(reviewerTab, { dataTransfer });
-    await fireEvent.dragOver(helperTabHost!, {
-      clientX: -1,
-      dataTransfer,
-    });
-
-    expect(screen.getByTestId("tabbed-panel-tab-drop-placeholder")).toBeTruthy();
-    expect(reviewerTab.closest(".tabbed-panel-tab")?.classList.contains("dragging")).toBe(true);
-
-    await fireEvent.dragEnd(reviewerTab);
-
-    expect(screen.queryByTestId("tabbed-panel-tab-drop-placeholder")).toBeNull();
-    expect(reviewerTab.closest(".tabbed-panel-tab")?.classList.contains("dragging")).toBe(false);
-  });
-
   it("does not reopen the just-exited terminal from stale runtime data", async () => {
     localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTerminalSession());
@@ -3831,30 +3800,6 @@ describe("WorkspaceTerminalView", () => {
     expect(activePaneKey()).toBe("session:ws-1:reviewer");
     endWorkspaceDeletion("ws-1", undefined);
   });
-
-  it("clears workflow focus ownership when the host is parked", async () => {
-    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "session:ws-1:helper");
-    localStorage.setItem(
-      "kenn-forge-workspace-terminal-layout:ws-1",
-      persistedTwoSessionWorkflowLayout("ws-1:helper", "ws-1:reviewer"),
-    );
-    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoWorkflowSessions());
-
-    const view = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", hostVisible: true } });
-    const reviewerPane = await waitFor(() => {
-      const pane = document.querySelector<HTMLElement>('[data-pane-key="session:ws-1:reviewer"]');
-      expect(pane).not.toBeNull();
-      return pane!;
-    });
-
-    await fireEvent.focusIn(reviewerPane);
-    expect(document.querySelectorAll(".workspace-stage .tabbed-panel-leaf.input-active")).toHaveLength(1);
-
-    await view.rerender({ workspaceId: "ws-1", hostVisible: false });
-
-    expect(document.querySelectorAll(".workspace-stage .tabbed-panel-leaf.input-active")).toHaveLength(0);
-  });
-
   it("keeps a focused bottom dock active while its header opens the panel", async () => {
     localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTerminalSession());

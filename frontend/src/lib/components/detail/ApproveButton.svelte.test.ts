@@ -39,73 +39,6 @@ describe("ApproveButton", () => {
     cleanup();
     showFlash.mockReset();
   });
-
-  it("closes the form without keeping the stale conflict as inline error", async () => {
-    const post = vi.fn().mockResolvedValue({
-      data: undefined,
-      error: {
-        type: "about:blank",
-        title: "Conflict",
-        status: 409,
-        detail: "target changed since it was reviewed; refresh and retry",
-        code: "conflict",
-        details: { reason: "stale_state" },
-      },
-      response: new Response("{}", { status: 409 }),
-    });
-    const onheadconflict = vi.fn();
-    render(ApproveButton, {
-      props: {
-        owner: "acme",
-        name: "widget",
-        number: 7,
-        provider: "github",
-        platformHost: "github.com",
-        repoPath: "acme/widget",
-        expectedHeadSha: "reviewed-sha",
-        requireHeadPin: true,
-        routeGeneration: 12,
-        onheadconflict,
-      },
-      context: new Map<symbol, unknown>([
-        [
-          STORES_KEY,
-          {
-            detail: detailActions(post),
-            pulls: { loadPulls: vi.fn() },
-          },
-        ],
-      ]),
-    });
-
-    await fireEvent.click(screen.getByRole("button", { name: "Approve" }));
-    const dialog = screen.getByRole("dialog", { name: "Submit pull request review" });
-    await fireEvent.click(within(dialog).getByRole("button", { name: "Approve" }));
-
-    await waitFor(() =>
-      expect(onheadconflict).toHaveBeenCalledWith(
-        "stale_state",
-        undefined,
-        "reviewed-sha",
-        {
-          provider: "github",
-          platformHost: "github.com",
-          owner: "acme",
-          name: "widget",
-          repoPath: "acme/widget",
-        },
-        7,
-        12,
-      ),
-    );
-    expect(screen.queryByRole("dialog", { name: "Submit pull request review" })).toBeNull();
-    expect(showFlash).not.toHaveBeenCalled();
-
-    await fireEvent.click(screen.getByRole("button", { name: "Approve" }));
-    expect(screen.getByRole("dialog", { name: "Submit pull request review" })).toBeTruthy();
-    expect(screen.queryByText("target changed since it was reviewed; refresh and retry")).toBeNull();
-  });
-
   for (const action of [
     { label: "Approve", supportedReviewActions: [] as string[], error: "approval rejected" },
     { label: "Request changes", supportedReviewActions: ["request_changes"], error: "change request rejected" },
@@ -221,41 +154,5 @@ describe("ApproveButton", () => {
     await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
     const [, init] = post.mock.calls[0] as [string, { body: { expected_head_sha?: string } }];
     expect(init.body.expected_head_sha).toBe("platform-head-sha");
-  });
-
-  it("closes a successful approval and launches both refreshes", async () => {
-    const post = vi.fn().mockResolvedValue({
-      data: { status: "approved" },
-      error: undefined,
-      response: new Response("{}"),
-    });
-    const oncompleted = vi.fn();
-    render(ApproveButton, {
-      props: {
-        owner: "acme",
-        name: "widget",
-        number: 7,
-        provider: "github",
-        platformHost: "github.com",
-        repoPath: "acme/widget",
-        oncompleted,
-      },
-      context: new Map<symbol, unknown>([
-        [
-          STORES_KEY,
-          {
-            detail: detailActions(post),
-            pulls: { loadPulls: vi.fn() },
-          },
-        ],
-      ]),
-    });
-
-    await fireEvent.click(screen.getByRole("button", { name: "Approve" }));
-    const dialog = screen.getByRole("dialog", { name: "Submit pull request review" });
-    await fireEvent.click(within(dialog).getByRole("button", { name: "Approve" }));
-
-    await waitFor(() => expect(oncompleted).toHaveBeenCalledTimes(1));
-    expect(screen.queryByRole("dialog", { name: "Submit pull request review" })).toBeNull();
   });
 });

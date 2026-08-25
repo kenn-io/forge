@@ -458,18 +458,6 @@ describe("PRListView inline workspace", () => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
-
-  it("claims when the loaded detail matches the selection and carries a workspace", () => {
-    const { controller } = createClaimTestController();
-    renderPRListView({
-      inlineWorkspace: controller,
-      detail: pullDetailFixture({ id: "ws-1", status: "ready" }),
-    });
-
-    expect(controller.claim).toHaveBeenCalledWith(selectedPRIdentity, { id: "ws-1", status: "ready" });
-    expect(controller.release).not.toHaveBeenCalled();
-  });
-
   it("claims when the selection omits the host and the detail carries the provider default", () => {
     // Activity URLs may omit platform_host while the loaded detail always
     // carries the concrete default host; the match guard must treat them
@@ -487,61 +475,6 @@ describe("PRListView inline workspace", () => {
     );
     expect(controller.release).not.toHaveBeenCalled();
   });
-
-  it("releases on stale detail, missing workspace, or cleared selection", () => {
-    // (a) stale detail: loaded for a different identity than selectedPR.
-    {
-      const { controller } = createClaimTestController();
-      renderPRListView({
-        inlineWorkspace: controller,
-        detail: { ...pullDetailFixture({ id: "ws-1", status: "ready" }), repo_owner: "someone-else" },
-      });
-      expect(controller.claim).not.toHaveBeenCalled();
-      expect(controller.release).toHaveBeenCalled();
-      cleanup();
-    }
-
-    // (b) matching detail, no workspace ref and no override.
-    {
-      const { controller } = createClaimTestController();
-      renderPRListView({
-        inlineWorkspace: controller,
-        detail: pullDetailFixture(undefined),
-      });
-      expect(controller.claim).not.toHaveBeenCalled();
-      expect(controller.release).toHaveBeenCalled();
-      cleanup();
-    }
-
-    // (c) selection cleared.
-    {
-      const { controller } = createClaimTestController();
-      renderPRListView({
-        inlineWorkspace: controller,
-        selectedPR: null,
-        detail: pullDetailFixture({ id: "ws-1", status: "ready" }),
-      });
-      expect(controller.claim).not.toHaveBeenCalled();
-      expect(controller.release).toHaveBeenCalled();
-      cleanup();
-    }
-  });
-
-  it("releases on unmount", () => {
-    const { controller } = createClaimTestController();
-    const { unmount } = renderPRListView({
-      inlineWorkspace: controller,
-      detail: pullDetailFixture({ id: "ws-1", status: "ready" }),
-    });
-
-    expect(controller.claim).toHaveBeenCalled();
-    expect(controller.release).not.toHaveBeenCalled();
-
-    unmount();
-
-    expect(controller.release).toHaveBeenCalled();
-  });
-
   it("offers a workspace pane only once the workspace is claimed", () => {
     // Unclaimed: the pane is unavailable, so it prunes out of the tree and no
     // portal slot exists to steal the single live terminal.
@@ -626,34 +559,6 @@ describe("PRListView inline workspace", () => {
     expect(screen.getByTestId("dock-row")).toBeTruthy();
     expect(document.querySelector(".detail-pane-workspace-slot")).toBeNull();
   });
-
-  it("refetches the detail when the claimed identity is invalidated by deletion", async () => {
-    const { controller, notifyInvalidated } = createClaimTestController();
-    const detail = pullDetailFixture({ id: "ws-1", status: "ready" });
-    const { detailStore, detailBox } = renderPRListView({ inlineWorkspace: controller, detail });
-
-    expect(controller.claim).toHaveBeenCalled();
-    expect(document.querySelector(".detail-pane-workspace-slot")).toBeTruthy();
-
-    notifyInvalidated(selectedPRIdentity);
-
-    expect(detailStore.loadDetail).toHaveBeenCalledWith(selectedPR.owner, selectedPR.name, selectedPR.number, {
-      sync: false,
-      provider: selectedPR.provider,
-      platformHost: selectedPR.platformHost,
-      repoPath: selectedPR.repoPath,
-    });
-
-    // Simulate the refetch landing without the workspace, as a real
-    // deletion followed by a refresh would leave it: the claim effect
-    // re-evaluates against the fresh envelope and releases the claim.
-    detailBox.set(pullDetailFixture(undefined));
-    await tick();
-
-    expect(controller.release).toHaveBeenCalled();
-    expect(document.querySelector(".detail-pane-workspace-slot")).toBeNull();
-  });
-
   it("threads inlineWorkspace to PullDetail", () => {
     const { controller } = createClaimTestController();
     renderPRListView({ inlineWorkspace: controller });

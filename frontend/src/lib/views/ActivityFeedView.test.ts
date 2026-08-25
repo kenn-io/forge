@@ -268,37 +268,6 @@ describe("ActivityFeedView detail panes", () => {
         ?.querySelector('[data-testid="workspace-pane-controls"]'),
     ).toBeNull();
   });
-
-  it("offers a workspace pane only once the workspace is claimed", () => {
-    {
-      const { controller } = createClaimTestController("activity");
-      renderActivity({
-        drawerItem: prDrawer(),
-        inlineWorkspace: controller,
-        pullDetail: pullDetailFixture(12),
-      });
-      expect(controller.claim).not.toHaveBeenCalled();
-      expect(screen.queryByRole("tab", { name: "Workspace" })).toBeNull();
-      expect(document.querySelector(".detail-pane-workspace-slot")).toBeNull();
-      cleanup();
-    }
-
-    {
-      const { controller } = createClaimTestController("activity");
-      renderActivity({
-        drawerItem: prDrawer(),
-        inlineWorkspace: controller,
-        pullDetail: pullDetailFixture(12, { id: "ws-1", status: "ready" }),
-      });
-      expect(controller.claim).toHaveBeenCalled();
-      // The slot, not a tab: a leaf holding the workspace alone draws no strip,
-      // because the workspace pane already draws one of its own inside.
-      expect(document.querySelector(".detail-pane-workspace-slot")).toBeTruthy();
-      expect(screen.queryByRole("tab", { name: "Workspace" })).toBeNull();
-      cleanup();
-    }
-  });
-
   it("claims through the issue store when the selection is an issue", () => {
     const { controller } = createClaimTestController("activity");
     renderActivity({

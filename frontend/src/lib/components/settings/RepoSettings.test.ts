@@ -1,8 +1,9 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { Effect, Layer } from "effect";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import type { ConfigRepo } from "../../api/types.js";
+import { DEFAULT_TERMINAL_SETTINGS, type ConfigRepo } from "../../api/types.js";
 import * as flash from "../../stores/flash.svelte.js";
+import { makeStartupSnapshot } from "../../../test/startupSnapshot.js";
 
 const {
   mockAddRepo,
@@ -71,14 +72,13 @@ import type { RepoPreviewResponse } from "../../stores/settings-workflow.js";
 import RepoSettings from "./RepoSettings.svelte";
 import SettingsRuntimeHarness from "./SettingsRuntimeHarness.svelte";
 
-function defaultFleetSettings() {
-  return {
-    enabled: false,
-    sessions: {},
-    peers: [],
-    ssh_peers: [],
-    restart_required: false,
-  };
+function settingsResponse(repos: ConfigRepo[] = []) {
+  return makeStartupSnapshot({
+    repos,
+    issues: { hide_bots: false },
+    notifications: { enabled: false },
+    terminal: { ...DEFAULT_TERMINAL_SETTINGS, font_size: 14 },
+  });
 }
 
 function renderRepoSettings(props: { repos: ConfigRepo[]; onUpdate: (repos: ConfigRepo[]) => void }): void {
@@ -208,74 +208,8 @@ describe("RepoSettings", () => {
   });
 
   it("forwards add/refresh through the settings API", async () => {
-    mockAddRepo.mockResolvedValue({
-      repos: [],
-      kata_projects: [],
-      pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
-      workspaces: { auto_assign_on_create: false, default_sidebar_view: "diff" },
-      issues: { hide_bots: false },
-      activity: {
-        view_mode: "threaded",
-        time_range: "7d",
-        hide_closed: false,
-        hide_bots: false,
-        collapse_threads: false,
-        default_branch_retention_days: 90,
-        default_branch_max_commits: 5000,
-        use_workspace_activity_for_recency: false,
-      },
-      terminal: {
-        font_family: "",
-        font_size: 14,
-        scrollback: 1000,
-        line_height: 1,
-        letter_spacing: 0,
-        cursor_blink: true,
-        font_ligatures: false,
-        hide_tmux_status: false,
-        graphics: true,
-        tmux_mouse: true,
-      },
-      notifications: {
-        enabled: false,
-      },
-      agents: [],
-      fleet: defaultFleetSettings(),
-    });
-    mockRefreshRepo.mockResolvedValue({
-      repos: [],
-      kata_projects: [],
-      pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
-      workspaces: { auto_assign_on_create: false, default_sidebar_view: "diff" },
-      issues: { hide_bots: false },
-      activity: {
-        view_mode: "threaded",
-        time_range: "7d",
-        hide_closed: false,
-        hide_bots: false,
-        collapse_threads: false,
-        default_branch_retention_days: 90,
-        default_branch_max_commits: 5000,
-        use_workspace_activity_for_recency: false,
-      },
-      terminal: {
-        font_family: "",
-        font_size: 14,
-        scrollback: 1000,
-        line_height: 1,
-        letter_spacing: 0,
-        cursor_blink: true,
-        font_ligatures: false,
-        hide_tmux_status: false,
-        graphics: true,
-        tmux_mouse: true,
-      },
-      notifications: {
-        enabled: false,
-      },
-      agents: [],
-      fleet: defaultFleetSettings(),
-    });
+    mockAddRepo.mockResolvedValue(settingsResponse());
+    mockRefreshRepo.mockResolvedValue(settingsResponse());
 
     renderRepoSettings({
       repos: [
@@ -322,37 +256,7 @@ describe("RepoSettings", () => {
         matched_repo_count: 1,
       },
     ];
-    mockUpdateRepoWorktreeBasePath.mockResolvedValue({
-      repos: updatedRepos,
-      kata_projects: [],
-      pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
-      workspaces: { auto_assign_on_create: false, default_sidebar_view: "diff" },
-      issues: { hide_bots: false },
-      activity: {
-        view_mode: "threaded",
-        time_range: "7d",
-        hide_closed: false,
-        hide_bots: false,
-        collapse_threads: false,
-        default_branch_retention_days: 90,
-        default_branch_max_commits: 5000,
-        use_workspace_activity_for_recency: false,
-      },
-      terminal: {
-        font_family: "",
-        font_size: 14,
-        scrollback: 1000,
-        line_height: 1,
-        letter_spacing: 0,
-        cursor_blink: true,
-        font_ligatures: false,
-        hide_tmux_status: false,
-        graphics: true,
-        tmux_mouse: true,
-      },
-      agents: [],
-      fleet: defaultFleetSettings(),
-    });
+    mockUpdateRepoWorktreeBasePath.mockResolvedValue(settingsResponse(updatedRepos));
 
     renderRepoSettings({
       repos: [
@@ -569,37 +473,7 @@ describe("RepoSettings", () => {
         },
       ],
     });
-    mockPromoteRepo.mockResolvedValue({
-      repos: promotedRepos,
-      kata_projects: [],
-      pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
-      workspaces: { auto_assign_on_create: false, default_sidebar_view: "diff" },
-      issues: { hide_bots: false },
-      activity: {
-        view_mode: "threaded",
-        time_range: "7d",
-        hide_closed: false,
-        hide_bots: false,
-        collapse_threads: false,
-        default_branch_retention_days: 90,
-        default_branch_max_commits: 5000,
-        use_workspace_activity_for_recency: false,
-      },
-      terminal: {
-        font_family: "",
-        font_size: 14,
-        scrollback: 1000,
-        line_height: 1,
-        letter_spacing: 0,
-        cursor_blink: true,
-        font_ligatures: false,
-        hide_tmux_status: false,
-        graphics: true,
-        tmux_mouse: true,
-      },
-      agents: [],
-      fleet: defaultFleetSettings(),
-    });
+    mockPromoteRepo.mockResolvedValue(settingsResponse(promotedRepos));
 
     renderRepoSettings({
       repos: [
@@ -782,40 +656,7 @@ describe("RepoSettings", () => {
         },
       ],
     });
-    mockBulkAddRepos.mockResolvedValue({
-      repos: importedRepos,
-      kata_projects: [],
-      pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
-      workspaces: { auto_assign_on_create: false, default_sidebar_view: "diff" },
-      issues: { hide_bots: false },
-      activity: {
-        view_mode: "threaded",
-        time_range: "7d",
-        hide_closed: false,
-        hide_bots: false,
-        collapse_threads: false,
-        default_branch_retention_days: 90,
-        default_branch_max_commits: 5000,
-        use_workspace_activity_for_recency: false,
-      },
-      terminal: {
-        font_family: "",
-        font_size: 14,
-        scrollback: 1000,
-        line_height: 1,
-        letter_spacing: 0,
-        cursor_blink: true,
-        font_ligatures: false,
-        hide_tmux_status: false,
-        graphics: true,
-        tmux_mouse: true,
-      },
-      notifications: {
-        enabled: false,
-      },
-      agents: [],
-      fleet: defaultFleetSettings(),
-    });
+    mockBulkAddRepos.mockResolvedValue(settingsResponse(importedRepos));
     renderRepoSettings({
       repos: [],
       onUpdate,

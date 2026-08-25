@@ -2,7 +2,9 @@ import { afterEach, assert, it, vi } from "@effect/vitest";
 import { Effect, Fiber, Layer } from "effect";
 import { GeneratedApiLive } from "../api/generated-api.js";
 import type { components } from "../api/generated/schema.js";
+import { DEFAULT_TERMINAL_SETTINGS } from "../api/types.js";
 import { StreamingFetchLive } from "../browser/streaming-fetch.js";
+import { makeStartupSnapshot } from "../../test/startupSnapshot.js";
 import { StartupWorkflowLive } from "../app/startup-workflow.js";
 import { SettingsWorkflow, SettingsWorkflowLive, settingsErrorMessage } from "./settings-workflow.js";
 
@@ -10,66 +12,10 @@ type SettingsResponse = components["schemas"]["SettingsResponse"];
 type FleetSettingsUpdate = components["schemas"]["UpdateFleetSettingsInputBody"];
 
 function makeSettings(repos: SettingsResponse["repos"] = []): SettingsResponse {
-  return {
-    activity: {
-      view_mode: "threaded",
-      time_range: "7d",
-      hide_closed: false,
-      hide_bots: false,
-      collapse_threads: false,
-      default_branch_retention_days: 90,
-      default_branch_max_commits: 5000,
-      use_workspace_activity_for_recency: false,
-    },
-    agents: [],
-    detail: { initial_timeline_entry_limit: 50 },
-    fleet: {
-      enabled: false,
-      sessions: {},
-      peers: [],
-      ssh_peers: [],
-      restart_required: false,
-    },
-    mcp: {
-      enabled: false,
-      restart_required: false,
-      active_requires_auth: false,
-    },
-    issues: { hide_bots: true },
-    kata_projects: [],
-    launch_targets: [],
-    modes: {
-      activity: true,
-      repos: true,
-      docs: false,
-      pulls: true,
-      issues: true,
-      reviews: true,
-      workspaces: true,
-    },
-    notifications: { enabled: true },
-    pull_requests: {
-      allow_mid_stack_merges: false,
-      prefer_github_native_stacks: false,
-    },
-    roborev: { init_managed_clones: false },
-    repo_presets: [],
+  return makeStartupSnapshot({
     repos,
-    terminal: {
-      font_family: "",
-      font_size: 12,
-      scrollback: 1000,
-      line_height: 1,
-      letter_spacing: 0,
-      cursor_blink: true,
-      font_ligatures: false,
-      hide_tmux_status: false,
-      graphics: true,
-      tmux_mouse: true,
-      retained_sessions: 0,
-    },
-    workspaces: { auto_assign_on_create: false, default_sidebar_view: "diff" },
-  };
+    terminal: { ...DEFAULT_TERMINAL_SETTINGS, retained_sessions: 0 },
+  });
 }
 
 const StartupTestLayer = Layer.provideMerge(StartupWorkflowLive, Layer.mergeAll(GeneratedApiLive, StreamingFetchLive));

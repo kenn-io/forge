@@ -2,7 +2,7 @@ import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { Settings } from "../api/types.js";
 import { makeAppRuntime, type OwnedAppRuntime } from "../app/runtime.js";
-import type { StartupSnapshot } from "../app/startup-workflow.js";
+import { makeStartupSnapshot } from "../../test/startupSnapshot.js";
 import { createSettingsStore } from "./settings.svelte.js";
 import {
   beginWorkspaceSettingsHydration,
@@ -17,52 +17,8 @@ const initial: WorkspaceSettings = {
   default_sidebar_view: "diff",
 };
 
-function settingsResponse(workspaces: WorkspaceSettings): StartupSnapshot {
-  return {
-    activity: {
-      view_mode: "threaded",
-      time_range: "7d",
-      hide_closed: false,
-      hide_bots: false,
-      collapse_threads: false,
-      default_branch_retention_days: 90,
-      default_branch_max_commits: 5000,
-      use_workspace_activity_for_recency: false,
-    },
-    agents: [],
-    fleet: { enabled: false, sessions: {}, peers: [], ssh_peers: [], restart_required: false },
-    issues: { hide_bots: true },
-    kata_projects: [],
-    launch_targets: [],
-    modes: {
-      activity: true,
-      repos: true,
-      kata: false,
-      docs: false,
-      pulls: true,
-      issues: true,
-      reviews: true,
-      workspaces: true,
-    },
-    notifications: { enabled: true },
-    pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
-    repos: [],
-    terminal: {
-      font_family: "",
-      font_size: 14,
-      scrollback: 1000,
-      line_height: 1,
-      letter_spacing: 0,
-      cursor_blink: true,
-      font_ligatures: false,
-      hide_tmux_status: false,
-      graphics: true,
-      tmux_mouse: true,
-      retained_sessions: 10,
-    },
-    workspaces,
-    roborev: { init_managed_clones: false },
-  };
+function settingsResponse(workspaces: WorkspaceSettings) {
+  return makeStartupSnapshot({ workspaces });
 }
 
 function deferred<T>() {

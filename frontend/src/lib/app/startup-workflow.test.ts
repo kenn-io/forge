@@ -2,11 +2,9 @@ import { afterEach, assert, it, vi } from "@effect/vitest";
 import { Effect, Exit, Fiber, Layer } from "effect";
 import { TestClock } from "effect/testing";
 import { GeneratedApiLive } from "../api/generated-api.js";
-import type { components } from "../api/generated/schema.js";
 import { StreamingFetchLive } from "../browser/streaming-fetch.js";
+import { makeStartupSnapshot } from "../../test/startupSnapshot.js";
 import { StartupWorkflow, StartupWorkflowLive, waitUntilBackendReady } from "./startup-workflow.js";
-
-type SettingsResponse = components["schemas"]["SettingsResponse"];
 
 const StartupTestLayer = Layer.provideMerge(StartupWorkflowLive, Layer.mergeAll(GeneratedApiLive, StreamingFetchLive));
 
@@ -17,58 +15,7 @@ afterEach(() => {
 it.layer(StartupTestLayer)("shares startup settings demand", (it) => {
   it.effect("performs one settings request until invalidated", () =>
     Effect.gen(function* () {
-      const settings = {
-        activity: {
-          view_mode: "threaded",
-          time_range: "7d",
-          hide_closed: false,
-          hide_bots: false,
-          collapse_threads: false,
-          default_branch_retention_days: 90,
-          default_branch_max_commits: 5000,
-          use_workspace_activity_for_recency: false,
-        },
-        agents: [],
-        fleet: {
-          enabled: false,
-          sessions: {},
-          peers: [],
-          ssh_peers: [],
-          restart_required: false,
-        },
-        issues: { hide_bots: true },
-        kata_projects: [],
-        launch_targets: [],
-        modes: {
-          activity: true,
-          repos: true,
-          kata: false,
-          docs: false,
-          pulls: true,
-          issues: true,
-          reviews: true,
-          workspaces: true,
-        },
-        notifications: { enabled: true },
-        pull_requests: {
-          allow_mid_stack_merges: false,
-          prefer_github_native_stacks: false,
-        },
-        repos: [],
-        terminal: {
-          font_family: "",
-          font_size: 12,
-          scrollback: 1000,
-          line_height: 1,
-          letter_spacing: 0,
-          cursor_blink: true,
-          font_ligatures: false,
-          hide_tmux_status: false,
-          graphics: true,
-          tmux_mouse: true,
-        },
-        workspaces: { auto_assign_on_create: false, default_sidebar_view: "diff" },
-      } satisfies SettingsResponse;
+      const settings = makeStartupSnapshot();
       const observedPaths: string[] = [];
       const fetch: typeof globalThis.fetch = (input, init) => {
         const request = input instanceof Request ? input : new Request(input, init);
@@ -94,55 +41,7 @@ it.layer(StartupTestLayer)("shares startup settings demand", (it) => {
 it.layer(StartupTestLayer)("startup invalidation", (it) => {
   it.effect("does not publish a settings snapshot invalidated while its request is in flight", () =>
     Effect.gen(function* () {
-      const first = {
-        activity: {
-          view_mode: "threaded",
-          time_range: "7d",
-          hide_closed: false,
-          hide_bots: false,
-          collapse_threads: false,
-          default_branch_retention_days: 90,
-          default_branch_max_commits: 5000,
-          use_workspace_activity_for_recency: false,
-        },
-        agents: [],
-        fleet: {
-          enabled: false,
-          sessions: {},
-          peers: [],
-          ssh_peers: [],
-          restart_required: false,
-        },
-        issues: { hide_bots: true },
-        kata_projects: [],
-        launch_targets: [],
-        modes: {
-          activity: true,
-          repos: true,
-          kata: false,
-          docs: false,
-          pulls: true,
-          issues: true,
-          reviews: true,
-          workspaces: true,
-        },
-        notifications: { enabled: true },
-        pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
-        repos: [],
-        terminal: {
-          font_family: "",
-          font_size: 12,
-          scrollback: 1000,
-          line_height: 1,
-          letter_spacing: 0,
-          cursor_blink: true,
-          font_ligatures: false,
-          hide_tmux_status: false,
-          graphics: true,
-          tmux_mouse: true,
-        },
-        workspaces: { auto_assign_on_create: false, default_sidebar_view: "diff" },
-      } satisfies SettingsResponse;
+      const first = makeStartupSnapshot();
       const second = { ...first, activity: { ...first.activity, hide_bots: true } };
       let releaseFirst = () => {};
       const firstGate = new Promise<void>((resolve) => {
@@ -178,58 +77,7 @@ it.layer(StartupTestLayer)("startup retry after failure", (it) => {
   it.effect("requests settings again after a failed startup lookup", () =>
     Effect.gen(function* () {
       let settingsRequests = 0;
-      const settings = {
-        activity: {
-          view_mode: "threaded",
-          time_range: "7d",
-          hide_closed: false,
-          hide_bots: false,
-          collapse_threads: false,
-          default_branch_retention_days: 90,
-          default_branch_max_commits: 5000,
-          use_workspace_activity_for_recency: false,
-        },
-        agents: [],
-        fleet: {
-          enabled: false,
-          sessions: {},
-          peers: [],
-          ssh_peers: [],
-          restart_required: false,
-        },
-        issues: { hide_bots: true },
-        kata_projects: [],
-        launch_targets: [],
-        modes: {
-          activity: true,
-          repos: true,
-          kata: false,
-          docs: false,
-          pulls: true,
-          issues: true,
-          reviews: true,
-          workspaces: true,
-        },
-        notifications: { enabled: true },
-        pull_requests: {
-          allow_mid_stack_merges: false,
-          prefer_github_native_stacks: false,
-        },
-        repos: [],
-        terminal: {
-          font_family: "",
-          font_size: 12,
-          scrollback: 1000,
-          line_height: 1,
-          letter_spacing: 0,
-          cursor_blink: true,
-          font_ligatures: false,
-          hide_tmux_status: false,
-          graphics: true,
-          tmux_mouse: true,
-        },
-        workspaces: { auto_assign_on_create: false, default_sidebar_view: "diff" },
-      } satisfies SettingsResponse;
+      const settings = makeStartupSnapshot();
       const fetch: typeof globalThis.fetch = (input, init) => {
         const request = input instanceof Request ? input : new Request(input, init);
         if (new URL(request.url).pathname.endsWith("/healthz")) {

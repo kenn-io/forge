@@ -2,6 +2,7 @@ import { cleanup, render, waitFor } from "@testing-library/svelte";
 import { Effect, Layer } from "effect";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { DEFAULT_TERMINAL_SETTINGS, type Settings } from "../../api/types.js";
+import { makeStartupSnapshot } from "../../../test/startupSnapshot.js";
 
 const { loadSettings, setDetailSettings, setLaunchTargets, setRepoPresets } = vi.hoisted(() => ({
   loadSettings: vi.fn(),
@@ -91,8 +92,7 @@ const codexTarget = {
 } satisfies LaunchTargets[number];
 
 function makeSettings(): Settings {
-  return {
-    repos: [],
+  return makeStartupSnapshot({
     repo_presets: [
       {
         name: "Review queue",
@@ -101,48 +101,8 @@ function makeSettings(): Settings {
         ],
       },
     ],
-    pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
-    detail: { initial_timeline_entry_limit: 50 },
-    workspaces: { auto_assign_on_create: false, default_sidebar_view: "diff" },
-    issues: { hide_bots: true },
-    kata_projects: [],
-    fleet: {
-      enabled: false,
-      sessions: {},
-      peers: [],
-      ssh_peers: [],
-      restart_required: false,
-    },
-    mcp: {
-      enabled: false,
-      restart_required: false,
-      active_requires_auth: false,
-    },
-    roborev: { init_managed_clones: false },
-    activity: {
-      view_mode: "threaded",
-      time_range: "7d",
-      hide_closed: false,
-      hide_bots: false,
-      collapse_threads: false,
-      default_branch_retention_days: 90,
-      default_branch_max_commits: 5000,
-      use_workspace_activity_for_recency: false,
-    },
-    terminal: DEFAULT_TERMINAL_SETTINGS,
-    modes: {
-      activity: true,
-      repos: true,
-      docs: false,
-      pulls: true,
-      issues: true,
-      reviews: true,
-      workspaces: true,
-    },
-    notifications: { enabled: true },
-    agents: [],
     launch_targets: [codexTarget],
-  };
+  });
 }
 
 describe("SettingsPage", () => {

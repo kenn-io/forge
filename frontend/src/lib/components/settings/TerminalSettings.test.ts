@@ -1,8 +1,9 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import type { TerminalSettings as TerminalSettingsValue } from "../../api/types.js";
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
-import type { StartupSnapshot } from "../../app/startup-workflow.js";
+import { makeStartupSnapshot } from "../../../test/startupSnapshot.js";
 
 const {
   mockEmbedded,
@@ -73,48 +74,8 @@ vi.mock("../../stores/embed-config.svelte.js", async (importOriginal) => {
 
 import TerminalSettings from "./TerminalSettings.svelte";
 
-function settingsResponse(terminal: StartupSnapshot["terminal"]): StartupSnapshot {
-  return {
-    activity: {
-      view_mode: "threaded",
-      time_range: "7d",
-      hide_closed: false,
-      hide_bots: false,
-      collapse_threads: false,
-      default_branch_retention_days: 90,
-      default_branch_max_commits: 5000,
-      use_workspace_activity_for_recency: false,
-    },
-    agents: [],
-    fleet: {
-      enabled: false,
-      sessions: {},
-      peers: [],
-      ssh_peers: [],
-      restart_required: false,
-    },
-    issues: { hide_bots: true },
-    kata_projects: [],
-    launch_targets: [],
-    modes: {
-      activity: true,
-      repos: true,
-      kata: false,
-      docs: false,
-      pulls: true,
-      issues: true,
-      reviews: true,
-      workspaces: true,
-    },
-    notifications: { enabled: true },
-    pull_requests: {
-      allow_mid_stack_merges: false,
-      prefer_github_native_stacks: false,
-    },
-    repos: [],
-    terminal,
-    workspaces: { auto_assign_on_create: false, default_sidebar_view: "diff" },
-  };
+function settingsResponse(terminal: TerminalSettingsValue) {
+  return makeStartupSnapshot({ terminal });
 }
 
 describe("TerminalSettings", () => {

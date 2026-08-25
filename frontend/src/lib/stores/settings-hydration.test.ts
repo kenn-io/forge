@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vite-plus/test";
-import { DEFAULT_MODE_VISIBILITY, DEFAULT_PULL_REQUEST_SETTINGS, DEFAULT_TERMINAL_SETTINGS } from "../api/types.js";
 import type { ActivitySettings } from "../api/types.js";
-import type { StartupSnapshot } from "../app/startup-workflow.js";
+import { makeStartupSnapshot } from "../../test/startupSnapshot.js";
 import { applySettingsHydration } from "./settings-hydration.js";
 import { createSettingsStore } from "./settings.svelte.js";
 import { beginTerminalSettingsHydration } from "./terminal-settings-persistence.js";
@@ -29,8 +28,7 @@ const codexTarget = {
   disabled_reason: "",
 };
 
-const settingsPayload = {
-  repos: [],
+const settingsPayload = makeStartupSnapshot({
   repo_presets: [
     {
       name: "Review queue",
@@ -41,24 +39,10 @@ const settingsPayload = {
   ],
   activity: activitySettings,
   detail: { initial_timeline_entry_limit: 75 },
-  issues: { hide_bots: true },
-  terminal: DEFAULT_TERMINAL_SETTINGS,
-  modes: DEFAULT_MODE_VISIBILITY,
-  pull_requests: DEFAULT_PULL_REQUEST_SETTINGS,
   launch_targets: [codexTarget],
-  agents: [],
-  fleet: {
-    enabled: false,
-    sessions: {},
-    peers: [],
-    ssh_peers: [],
-    restart_required: false,
-  },
-  kata_projects: [],
-  notifications: { enabled: true },
   workspaces: { auto_assign_on_create: false, default_sidebar_view: "item" },
   roborev: { init_managed_clones: true },
-} satisfies StartupSnapshot;
+});
 
 function hydrate(
   launchTargets = [codexTarget],

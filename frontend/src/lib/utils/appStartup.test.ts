@@ -4,6 +4,7 @@ import type { StoreInstances } from "../types.js";
 import { DEFAULT_TERMINAL_SETTINGS, type Settings, type TerminalSettings } from "../api/types.js";
 import { TransientTransportError } from "../api/effect-errors.js";
 import { StartupWorkflow, type StartupSnapshot } from "../app/startup-workflow.js";
+import { makeStartupSnapshot } from "../../test/startupSnapshot.js";
 import { appStartupProgram } from "./appStartup.js";
 
 type LaunchTargets = NonNullable<StartupSnapshot["launch_targets"]>;
@@ -76,58 +77,15 @@ function makeStores(
   } as unknown as StoreInstances;
 }
 
-const settings = {
-  repos: [],
-  repo_presets: [],
-  pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
-  detail: { initial_timeline_entry_limit: 50 },
-  workspaces: { auto_assign_on_create: false, default_sidebar_view: "diff" },
+const settings = makeStartupSnapshot({
   roborev: { init_managed_clones: true },
-  issues: { hide_bots: true },
-  kata_projects: [],
-  fleet: {
-    enabled: false,
-    sessions: {},
-    peers: [],
-    ssh_peers: [],
-    restart_required: false,
-  },
-  activity: {
-    view_mode: "threaded",
-    time_range: "7d",
-    hide_closed: false,
-    hide_bots: false,
-    collapse_threads: false,
-    default_branch_retention_days: 90,
-    default_branch_max_commits: 5000,
-    use_workspace_activity_for_recency: false,
-  },
   terminal: {
+    ...DEFAULT_TERMINAL_SETTINGS,
     font_family: '"Fira Code", monospace',
     font_size: 14,
-    scrollback: 1000,
-    line_height: 1,
-    letter_spacing: 0,
-    cursor_blink: true,
-    font_ligatures: false,
-    hide_tmux_status: false,
-    graphics: true,
-    tmux_mouse: true,
   },
-  modes: {
-    activity: true,
-    repos: true,
-    kata: false,
-    docs: false,
-    pulls: true,
-    issues: true,
-    reviews: true,
-    workspaces: true,
-  },
-  notifications: { enabled: true },
-  agents: [],
   launch_targets: [codexTarget],
-} satisfies StartupSnapshot;
+});
 
 const SuccessfulStartup = Layer.succeed(StartupWorkflow)({
   start: Effect.succeed(settings),

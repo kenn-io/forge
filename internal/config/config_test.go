@@ -1589,32 +1589,48 @@ name = "widgets"
 	)
 }
 
-func TestLoadPlatformConfigForgejoToken(t *testing.T) {
-	assert := assert.New(t)
-	path := writeConfig(t, `
+func TestLoadPlatformConfigGiteaLikeToken(t *testing.T) {
+	tests := []struct {
+		kind   string
+		host   string
+		env    string
+		secret string
+		owner  string
+		name   string
+	}{
+		{kind: "forgejo", host: "codeberg.org", env: "KENN_FORGE_FORGEJO_TOKEN", secret: "forgejo-secret", owner: "forgejo", name: "forgejo"},
+		{kind: "gitea", host: "gitea.com", env: "KENN_FORGE_GITEA_TOKEN", secret: "gitea-secret", owner: "gitea", name: "tea"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.kind, func(t *testing.T) {
+			assert := assert.New(t)
+			path := writeConfig(t, fmt.Sprintf(`
 [[platforms]]
-type = "forgejo"
-host = "codeberg.org"
-token_env = "KENN_FORGE_FORGEJO_TOKEN"
+type = %q
+host = %q
+token_env = %q
 
 [[repos]]
-platform = "forgejo"
-platform_host = "codeberg.org"
-owner = "forgejo"
-name = "forgejo"
-`)
-	t.Setenv("KENN_FORGE_FORGEJO_TOKEN", "forgejo-secret")
+platform = %q
+platform_host = %q
+owner = %q
+name = %q
+`, tt.kind, tt.host, tt.env, tt.kind, tt.host, tt.owner, tt.name))
+			t.Setenv(tt.env, tt.secret)
 
-	cfg, err := Load(path)
-	require.NoError(t, err)
-	require.Len(t, cfg.Platforms, 1)
-	require.Len(t, cfg.Repos, 1)
-	assert.Equal("forgejo", cfg.Platforms[0].Type)
-	assert.Equal("codeberg.org", cfg.Platforms[0].Host)
-	assert.Equal("KENN_FORGE_FORGEJO_TOKEN", cfg.Platforms[0].TokenEnv)
-	assert.Equal("forgejo", cfg.Repos[0].Platform)
-	assert.Equal("codeberg.org", cfg.Repos[0].PlatformHost)
-	assert.Equal("forgejo-secret", cfg.TokenForPlatformHost("forgejo", "codeberg.org", ""))
+			cfg, err := Load(path)
+			require.NoError(t, err)
+			require.Len(t, cfg.Platforms, 1)
+			require.Len(t, cfg.Repos, 1)
+			assert.Equal(tt.kind, cfg.Platforms[0].Type)
+			assert.Equal(tt.host, cfg.Platforms[0].Host)
+			assert.Equal(tt.env, cfg.Platforms[0].TokenEnv)
+			assert.Equal(tt.kind, cfg.Repos[0].Platform)
+			assert.Equal(tt.host, cfg.Repos[0].PlatformHost)
+			assert.Equal(tt.secret, cfg.TokenForPlatformHost(tt.kind, tt.host, ""))
+		})
+	}
 }
 
 func TestLoadForgejoDefaultHostUsesDefaultTokenEnv(t *testing.T) {
@@ -1633,37 +1649,52 @@ name = "forgejo"
 	assert.Empty(t, cfg.TokenForPlatformHost("forgejo", "forgejo.example.com", ""))
 }
 
-func TestLoadPlatformConfigForgejoTokensAreHostScoped(t *testing.T) {
-	path := writeConfig(t, `
+func TestLoadPlatformConfigGiteaLikeTokensAreHostScoped(t *testing.T) {
+	tests := []struct {
+		kind      string
+		public    string
+		private   string
+		publicEnv string
+		customEnv string
+	}{
+		{kind: "forgejo", public: "codeberg.org", private: "forgejo.example.com", publicEnv: "KENN_FORGE_FORGEJO_TOKEN", customEnv: "FORGEJO_EXAMPLE_TOKEN"},
+		{kind: "gitea", public: "gitea.com", private: "gitea.internal.example", publicEnv: "KENN_FORGE_GITEA_TOKEN", customEnv: "GITEA_INTERNAL_TOKEN"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.kind, func(t *testing.T) {
+			path := writeConfig(t, fmt.Sprintf(`
 [[platforms]]
-type = "forgejo"
-host = "codeberg.org"
-token_env = "KENN_FORGE_FORGEJO_TOKEN"
+type = %q
+host = %q
+token_env = %q
 
 [[platforms]]
-type = "forgejo"
-host = "forgejo.example.com"
-token_env = "FORGEJO_EXAMPLE_TOKEN"
+type = %q
+host = %q
+token_env = %q
 
 [[repos]]
-platform = "forgejo"
-platform_host = "codeberg.org"
-owner = "forgejo"
-name = "forgejo"
-
-[[repos]]
-platform = "forgejo"
-platform_host = "forgejo.example.com"
-owner = "team"
+platform = %q
+platform_host = %q
+owner = "public"
 name = "service"
-`)
-	t.Setenv("KENN_FORGE_FORGEJO_TOKEN", "codeberg-secret")
-	t.Setenv("FORGEJO_EXAMPLE_TOKEN", "self-hosted-secret")
 
-	cfg, err := Load(path)
-	require.NoError(t, err)
-	assert.Equal(t, "codeberg-secret", cfg.TokenForPlatformHost("forgejo", "codeberg.org", ""))
-	assert.Equal(t, "self-hosted-secret", cfg.TokenForPlatformHost("forgejo", "forgejo.example.com", ""))
+[[repos]]
+platform = %q
+platform_host = %q
+owner = "private"
+name = "service"
+`, tt.kind, tt.public, tt.publicEnv, tt.kind, tt.private, tt.customEnv, tt.kind, tt.public, tt.kind, tt.private))
+			t.Setenv(tt.publicEnv, "public-secret")
+			t.Setenv(tt.customEnv, "private-secret")
+
+			cfg, err := Load(path)
+			require.NoError(t, err)
+			assert.Equal(t, "public-secret", cfg.TokenForPlatformHost(tt.kind, tt.public, ""))
+			assert.Equal(t, "private-secret", cfg.TokenForPlatformHost(tt.kind, tt.private, ""))
+		})
+	}
 }
 
 func TestLoadParsesForgejoCodebergURL(t *testing.T) {
@@ -1683,34 +1714,6 @@ name = "https://codeberg.org/forgejo/forgejo.git"
 	assert.Equal("forgejo/forgejo", cfg.Repos[0].RepoPath)
 }
 
-func TestLoadPlatformConfigGiteaToken(t *testing.T) {
-	assert := assert.New(t)
-	path := writeConfig(t, `
-[[platforms]]
-type = "gitea"
-host = "gitea.com"
-token_env = "KENN_FORGE_GITEA_TOKEN"
-
-[[repos]]
-platform = "gitea"
-platform_host = "gitea.com"
-owner = "gitea"
-name = "tea"
-`)
-	t.Setenv("KENN_FORGE_GITEA_TOKEN", "gitea-secret")
-
-	cfg, err := Load(path)
-	require.NoError(t, err)
-	require.Len(t, cfg.Platforms, 1)
-	require.Len(t, cfg.Repos, 1)
-	assert.Equal("gitea", cfg.Platforms[0].Type)
-	assert.Equal("gitea.com", cfg.Platforms[0].Host)
-	assert.Equal("KENN_FORGE_GITEA_TOKEN", cfg.Platforms[0].TokenEnv)
-	assert.Equal("gitea", cfg.Repos[0].Platform)
-	assert.Equal("gitea.com", cfg.Repos[0].PlatformHost)
-	assert.Equal("gitea-secret", cfg.TokenForPlatformHost("gitea", "gitea.com", ""))
-}
-
 func TestLoadGiteaDefaultHostUsesDefaultTokenEnv(t *testing.T) {
 	path := writeConfig(t, `
 [[repos]]
@@ -1725,39 +1728,6 @@ name = "tea"
 	require.NoError(t, err)
 	assert.Equal(t, "gitea-public-secret", cfg.TokenForPlatformHost("gitea", "gitea.com", ""))
 	assert.Empty(t, cfg.TokenForPlatformHost("gitea", "gitea.internal.example", ""))
-}
-
-func TestLoadPlatformConfigGiteaTokensAreHostScoped(t *testing.T) {
-	path := writeConfig(t, `
-[[platforms]]
-type = "gitea"
-host = "gitea.com"
-token_env = "KENN_FORGE_GITEA_TOKEN"
-
-[[platforms]]
-type = "gitea"
-host = "gitea.internal.example"
-token_env = "GITEA_INTERNAL_TOKEN"
-
-[[repos]]
-platform = "gitea"
-platform_host = "gitea.com"
-owner = "gitea"
-name = "tea"
-
-[[repos]]
-platform = "gitea"
-platform_host = "gitea.internal.example"
-owner = "team"
-name = "service"
-`)
-	t.Setenv("KENN_FORGE_GITEA_TOKEN", "gitea-public-secret")
-	t.Setenv("GITEA_INTERNAL_TOKEN", "gitea-internal-secret")
-
-	cfg, err := Load(path)
-	require.NoError(t, err)
-	assert.Equal(t, "gitea-public-secret", cfg.TokenForPlatformHost("gitea", "gitea.com", ""))
-	assert.Equal(t, "gitea-internal-secret", cfg.TokenForPlatformHost("gitea", "gitea.internal.example", ""))
 }
 
 func TestLoadParsesGiteaURL(t *testing.T) {

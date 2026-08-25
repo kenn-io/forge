@@ -4,11 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import type { EventsStoreOptions } from "./lib/stores/events.svelte.js";
 import type { DetailStoreOptions } from "./lib/stores/detail.svelte.js";
 import type { IssuesStoreOptions } from "./lib/stores/issues.svelte.js";
-import type { ConfigRepo, Settings, SyncStatus } from "./lib/api/types.js";
+import { DEFAULT_TERMINAL_SETTINGS, type ConfigRepo, type Settings, type SyncStatus } from "./lib/api/types.js";
 import type { AppServices, OwnedAppRuntime } from "./lib/app/runtime.js";
 import { createAppStores, type AppStoreOptions } from "./lib/app-stores.svelte.js";
 import { client } from "./lib/api/runtime.js";
 import { makeTestAppRuntime } from "./lib/testing/effect-layers.js";
+import { makeStartupSnapshot } from "./test/startupSnapshot.js";
 
 type LaunchTargets = NonNullable<Settings["launch_targets"]>;
 
@@ -315,47 +316,10 @@ describe("app store event wiring", () => {
       disabled_reason: "",
     } satisfies LaunchTargets[number];
     const staleTarget = { ...codexTarget, key: "claude", label: "Claude", command: ["claude"] };
-    const settings = {
-      repos: [],
-      activity: {
-        view_mode: "threaded",
-        time_range: "7d",
-        hide_closed: false,
-        hide_bots: false,
-        collapse_threads: false,
-        default_branch_retention_days: 90,
-        default_branch_max_commits: 5000,
-        use_workspace_activity_for_recency: false,
-      },
-      issues: { hide_bots: true },
-      terminal: {
-        font_family: "",
-        font_size: 12,
-        scrollback: 1000,
-        line_height: 1,
-        letter_spacing: 0,
-        cursor_blink: false,
-        font_ligatures: false,
-        hide_tmux_status: false,
-        graphics: true,
-        tmux_mouse: true,
-      },
-      modes: {
-        activity: true,
-        repos: true,
-        docs: false,
-        pulls: true,
-        issues: true,
-        reviews: true,
-        workspaces: true,
-      },
-      pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
-      detail: { initial_timeline_entry_limit: 50 },
+    const settings = makeStartupSnapshot({
+      terminal: { ...DEFAULT_TERMINAL_SETTINGS, cursor_blink: false },
       launch_targets: [codexTarget],
-    } satisfies Pick<
-      Settings,
-      "repos" | "activity" | "issues" | "terminal" | "modes" | "pull_requests" | "detail" | "launch_targets"
-    >;
+    });
     getSettings.mockResolvedValue({ data: settings });
 
     compose({ getPage: () => "mobile-activity" });

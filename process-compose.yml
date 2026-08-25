@@ -10,7 +10,7 @@ processes:
     description: "Go backend with Air live reload on 127.0.0.1:8091"
     namespace: dev
     log_location: "tmp/logs/backend-process-compose.log"
-    command: "sh ./scripts/dev-stack-backend.sh"
+    command: "make frontend && sh ./scripts/dev-stack-backend.sh"
     readiness_probe:
       http_get:
         host: 127.0.0.1

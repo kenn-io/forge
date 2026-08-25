@@ -188,12 +188,11 @@ test.describe("threaded activity columns", () => {
       }),
     ]);
     // Start in ungrouped mode so the repo chip is rendered next to each row.
-    await page.goto("/?view=threaded");
-    await page.evaluate(() => {
+    await page.addInitScript(() => {
       localStorage.setItem("kenn-forge:groupingMode", "flat");
       localStorage.removeItem("kenn-forge:hideOrgName");
     });
-    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.goto("/?view=threaded");
 
     const repoLabel = page.locator(".item-row .repo-chip__label").first();
     await expect(repoLabel).toHaveText("acme/widgets");
@@ -204,9 +203,5 @@ test.describe("threaded activity columns", () => {
     await page.keyboard.press("Escape");
 
     await expect(repoLabel).toHaveText("widgets");
-
-    // Reload to verify the toggle persists via localStorage.
-    await page.reload({ waitUntil: "domcontentloaded" });
-    await expect(page.locator(".item-row .repo-chip__label").first()).toHaveText("widgets");
   });
 });

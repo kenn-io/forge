@@ -265,6 +265,9 @@ Rules:
 Choose the smallest boundary that catches the regression:
 
 - provider package tests for SDK/API normalization and capability errors;
+- shared Forgejo/Gitea behavior runs against both clients through one adapter
+  contract; keep SDK, version, timeline, Actions, and review differences local
+  (`internal/platform/gitealike/gitealiketest/contract.go::Run`);
 - config tests for provider selection and token/env behavior;
 - DB tests for identity, provider IDs, and rename/reconciliation behavior;
 - server e2e tests for API shape, capability gating, and real SQLite flows;

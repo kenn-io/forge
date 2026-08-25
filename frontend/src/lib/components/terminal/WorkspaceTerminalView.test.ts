@@ -63,6 +63,7 @@ class MockWebSocket extends EventTarget {
   static OPEN = 1;
   readyState = 1;
   binaryType = "arraybuffer";
+  runListenersAttached = false;
   onopen = () => this.dispatchEvent(new Event("open"));
   onmessage = (event: MessageEvent) => this.dispatchEvent(event);
   onclose = (event: CloseEvent) => this.dispatchEvent(event);
@@ -71,6 +72,15 @@ class MockWebSocket extends EventTarget {
   constructor(public url: string) {
     super();
     sockets.push(this);
+  }
+
+  addEventListener(
+    type: string,
+    callback: EventListenerOrEventListenerObject | null,
+    options?: boolean | AddEventListenerOptions,
+  ): void {
+    if (type === "message") this.runListenersAttached = true;
+    super.addEventListener(type, callback, options);
   }
 
   send = vi.fn();
@@ -4656,8 +4666,7 @@ describe("WorkspaceTerminalView", () => {
       await waitFor(() => expect(sockets).toHaveLength(1));
       const peerHostKey = mountedSessions()[0]!.hostKey;
       const peerSocket = sockets[0]!;
-      peerSocket.onopen();
-      await waitFor(() => expect(peerSocket.send).toHaveBeenCalled());
+      await waitFor(() => expect(peerSocket.runListenersAttached).toBe(true));
       render(WorkspacePaneControls);
 
       await fireEvent.click(screen.getByRole("button", { name: "Launch session" }));

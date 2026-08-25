@@ -538,6 +538,10 @@ Defaults for new code:
   comment the fault. The two `TestSSE_Terminates...` deadline tests are the
   legitimate exception.
 
+Test cleanup must not delete a failing test that still covers repository-owned
+behavior. Fix the test or production behavior; remove only obsolete assertions
+or behavior already covered at the same boundary.
+
 For TypeScript/Svelte cleanup, add tests only when user-visible behavior,
 cross-module contracts, or an actual regression risk changes. Do not fabricate
 large fake browser boundaries, console-spy cases, or component tests merely to

@@ -26,65 +26,50 @@ func TestSnapshotRoutesRegistered(t *testing.T) {
 	s.Register(api)
 
 	spec := api.OpenAPI()
-	for _, path := range []string{
-		"/snapshot",
-		"/snapshot/raw",
-		"/fleet/hosts/{host_key}/workspaces",
-		"/fleet/hosts/{host_key}/issues/{provider}/{owner}/{name}/{number}/workspace",
-		"/fleet/hosts/{host_key}/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/workspace",
-		"/fleet/hosts/{host_key}/workspaces/{id}/runtime/sessions",
-		"/fleet/hosts/{host_key}/workspaces/{id}/runtime/sessions/{session_key}",
-		"/fleet/hosts/{host_key}/workspaces/{id}/runtime/sessions/{session_key}/attach-spec",
-		"/fleet/hosts/{host_key}/workspaces/{id}/commits",
-		"/fleet/hosts/{host_key}/workspaces/{id}/diff",
-		"/fleet/hosts/{host_key}/workspaces/{id}/file-preview",
-		"/fleet/hosts/{host_key}/workspaces/{id}/files",
-		"/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/runtime",
-		"/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/runtime/shell",
-		"/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/runtime/sessions",
-		"/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/runtime/sessions/{session_key}",
-		"/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/runtime/sessions/{session_key}/attach-spec",
-		"/fleet/hosts/{host_key}/workspaces/{id}",
-		"/fleet/hosts/{host_key}/projects",
-		"/fleet/hosts/{host_key}/projects/{project_id}",
-		"/fleet/hosts/{host_key}/projects/{project_id}/worktrees",
-		"/fleet/hosts/{host_key}/projects/{project_id}/worktrees/from-merge-request",
-		"/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/delete",
-		"/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/session-backend",
-		"/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/linked-issues",
-		"/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/refresh-stats",
-	} {
-		require.NotNil(spec.Paths[path], "%s not registered", path)
+	operations := map[string]func(*huma.PathItem) *huma.Operation{
+		http.MethodGet:    func(item *huma.PathItem) *huma.Operation { return item.Get },
+		http.MethodPost:   func(item *huma.PathItem) *huma.Operation { return item.Post },
+		http.MethodPut:    func(item *huma.PathItem) *huma.Operation { return item.Put },
+		http.MethodDelete: func(item *huma.PathItem) *huma.Operation { return item.Delete },
 	}
-	require.NotNil(spec.Paths["/snapshot"].Get, "GET /snapshot not registered")
-	require.NotNil(spec.Paths["/snapshot/raw"].Get, "GET /snapshot/raw not registered")
-	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/workspaces"].Post, "POST fleet workspaces not registered")
-	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/issues/{provider}/{owner}/{name}/{number}/workspace"].Post, "POST fleet issue workspace not registered")
-	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/workspace"].Post, "POST fleet host issue workspace not registered")
-	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/workspaces/{id}/runtime/sessions"].Post, "POST fleet session not registered")
-	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/workspaces/{id}/runtime/sessions/{session_key}"].Delete, "DELETE fleet session not registered")
-	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/workspaces/{id}/runtime/sessions/{session_key}/attach-spec"].Get, "GET fleet session attach spec not registered")
-	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/workspaces/{id}/commits"].Get, "GET fleet workspace commits not registered")
-	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/workspaces/{id}/diff"].Get, "GET fleet workspace diff not registered")
-	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/workspaces/{id}/file-preview"].Get, "GET fleet workspace file preview not registered")
-	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/workspaces/{id}/files"].Get, "GET fleet workspace files not registered")
-	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/runtime"].Get, "GET fleet project worktree runtime not registered")
-	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/runtime/shell"].Post, "POST fleet project worktree shell not registered")
-	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/runtime/sessions"].Post, "POST fleet project worktree session not registered")
-	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/runtime/sessions/{session_key}"].Delete, "DELETE fleet project worktree session not registered")
-	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/runtime/sessions/{session_key}/attach-spec"].Get, "GET fleet project worktree session attach spec not registered")
-	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/workspaces/{id}"].Delete, "DELETE fleet workspace not registered")
-	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/projects"].Post, "POST fleet project register not registered")
-	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/projects/{project_id}"].Get, "GET fleet project not registered")
-	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/projects/{project_id}"].Delete, "DELETE fleet project not registered")
+	for _, route := range []struct {
+		method string
+		path   string
+	}{
+		{http.MethodGet, "/snapshot"},
+		{http.MethodGet, "/snapshot/raw"},
+		{http.MethodPost, "/fleet/hosts/{host_key}/workspaces"},
+		{http.MethodPost, "/fleet/hosts/{host_key}/issues/{provider}/{owner}/{name}/{number}/workspace"},
+		{http.MethodPost, "/fleet/hosts/{host_key}/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/workspace"},
+		{http.MethodPost, "/fleet/hosts/{host_key}/workspaces/{id}/runtime/sessions"},
+		{http.MethodDelete, "/fleet/hosts/{host_key}/workspaces/{id}/runtime/sessions/{session_key}"},
+		{http.MethodGet, "/fleet/hosts/{host_key}/workspaces/{id}/runtime/sessions/{session_key}/attach-spec"},
+		{http.MethodGet, "/fleet/hosts/{host_key}/workspaces/{id}/commits"},
+		{http.MethodGet, "/fleet/hosts/{host_key}/workspaces/{id}/diff"},
+		{http.MethodGet, "/fleet/hosts/{host_key}/workspaces/{id}/file-preview"},
+		{http.MethodGet, "/fleet/hosts/{host_key}/workspaces/{id}/files"},
+		{http.MethodGet, "/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/runtime"},
+		{http.MethodPost, "/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/runtime/shell"},
+		{http.MethodPost, "/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/runtime/sessions"},
+		{http.MethodDelete, "/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/runtime/sessions/{session_key}"},
+		{http.MethodGet, "/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/runtime/sessions/{session_key}/attach-spec"},
+		{http.MethodDelete, "/fleet/hosts/{host_key}/workspaces/{id}"},
+		{http.MethodPost, "/fleet/hosts/{host_key}/projects"},
+		{http.MethodGet, "/fleet/hosts/{host_key}/projects/{project_id}"},
+		{http.MethodDelete, "/fleet/hosts/{host_key}/projects/{project_id}"},
+		{http.MethodGet, "/fleet/hosts/{host_key}/projects/{project_id}/worktrees"},
+		{http.MethodPost, "/fleet/hosts/{host_key}/projects/{project_id}/worktrees"},
+		{http.MethodPost, "/fleet/hosts/{host_key}/projects/{project_id}/worktrees/from-merge-request"},
+		{http.MethodPost, "/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/delete"},
+		{http.MethodPut, "/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/session-backend"},
+		{http.MethodPut, "/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/linked-issues"},
+		{http.MethodPost, "/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/refresh-stats"},
+	} {
+		item := spec.Paths[route.path]
+		require.NotNil(item, "%s not registered", route.path)
+		require.NotNil(operations[route.method](item), "%s %s not registered", route.method, route.path)
+	}
 
-	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/projects/{project_id}/worktrees"].Get, "GET fleet worktree list not registered")
-	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/projects/{project_id}/worktrees"].Post, "POST fleet worktree create not registered")
-	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/projects/{project_id}/worktrees/from-merge-request"].Post, "POST fleet worktree from-merge-request not registered")
-	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/delete"].Post, "POST fleet worktree remove not registered")
-	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/session-backend"].Put, "PUT fleet worktree session backend not registered")
-	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/linked-issues"].Put, "PUT fleet worktree linked issues not registered")
-	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/refresh-stats"].Post, "POST fleet worktree stats refresh not registered")
 	for _, path := range []string{
 		"/fleet/hosts/{host_key}/workspaces/{id}/diff",
 		"/fleet/hosts/{host_key}/workspaces/{id}/file-preview",

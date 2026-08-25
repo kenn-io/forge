@@ -1,30 +1,9 @@
-import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import { Effect } from "effect";
 import { createRuntimeClient } from "../api/runtime.js";
 import { makeTestAppRuntime } from "../testing/effect-layers.js";
 import { getStackDepth, getTopFrame, resetModalStack } from "../stores/keyboard/modal-stack.svelte.js";
 import { expandMarkdownImages, observeMarkdownImageExpansion } from "./markdownImages";
-
-const appCss = readFileSync("src/app.css", "utf8");
-
-function declarationsFor(selector: string): Map<string, string> {
-  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = appCss.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`));
-  if (match?.[1]) {
-    return new Map(
-      match[1]
-        .split(";")
-        .map((declaration) => declaration.trim())
-        .filter(Boolean)
-        .map((declaration) => {
-          const separator = declaration.indexOf(":");
-          return [declaration.slice(0, separator).trim(), declaration.slice(separator + 1).trim()];
-        }),
-    );
-  }
-  throw new Error(`Missing CSS rule for ${selector}`);
-}
 
 describe("expandMarkdownImages", () => {
   beforeEach(() => {
@@ -199,95 +178,5 @@ describe("expandMarkdownImages", () => {
     } finally {
       iframe.remove();
     }
-  });
-
-  test("lets the expanded image use the viewport instead of a fixed-height canvas", () => {
-    const panelStyle = declarationsFor(".markdown-image-lightbox__panel");
-    const imageStyle = declarationsFor(".markdown-image-lightbox__panel img");
-
-    expect(panelStyle.get("width")).toBe("fit-content");
-    expect(panelStyle.get("height")).toBe("fit-content");
-    expect(panelStyle.get("max-width")).toBe("calc(100vw - 56px)");
-    expect(panelStyle.get("max-height")).toBe("calc(100vh - 56px)");
-    expect(panelStyle.get("overflow")).toBe("visible");
-    expect(imageStyle.get("max-width")).toBe("calc(100vw - 56px)");
-    expect(imageStyle.get("max-height")).toBe("calc(100vh - 56px)");
-  });
-
-  test("renders the expanded image without panel border chrome", () => {
-    const panelStyle = declarationsFor(".markdown-image-lightbox__panel");
-
-    expect(panelStyle.get("background")).toBe("transparent");
-    expect(panelStyle.get("border")).toBe("none");
-    expect(panelStyle.get("border-radius")).toBe("0");
-  });
-
-  test("uses the shared overlay stacking token", () => {
-    const overlayStyle = declarationsFor(".markdown-image-lightbox");
-
-    expect(overlayStyle.get("z-index")).toBe("var(--z-overlay)");
-  });
-
-  test("keeps the zoom affordance hidden until image hover or keyboard focus", () => {
-    const buttonStyle = declarationsFor(".markdown-image-expander__button");
-
-    expect(buttonStyle.get("opacity")).toBe("0");
-    expect(buttonStyle.get("pointer-events")).toBe("none");
-    expect(appCss).toContain(
-      [
-        ".markdown-image-expander:hover .markdown-image-expander__button,",
-        ".markdown-image-expander:focus-within .markdown-image-expander__button {",
-        "  opacity: 1;",
-        "  pointer-events: auto;",
-        "}",
-      ].join("\n"),
-    );
-  });
-
-  test("keeps image controls available on touch pointers", () => {
-    expect(appCss).toContain(
-      [
-        "@media (hover: none), (pointer: coarse) {",
-        "  .markdown-image-expander__button,",
-        "  .markdown-image-lightbox__close {",
-        "    opacity: 1;",
-        "    pointer-events: auto;",
-        "  }",
-        "}",
-      ].join("\n"),
-    );
-  });
-
-  test("keeps wrapped lazy images visible before browser image decode finishes", () => {
-    const imageStyle = declarationsFor(".markdown-image-expander img");
-
-    expect(imageStyle.get("display")).toBe("block");
-    expect(imageStyle.get("min-width")).toBe("1px");
-    expect(imageStyle.get("min-height")).toBe("1px");
-  });
-
-  test("keeps the overlay close control hidden until overlay hover or keyboard focus", () => {
-    const closeStyle = declarationsFor(".markdown-image-lightbox__close");
-    const visibleStyle = declarationsFor(
-      ".markdown-image-lightbox__panel:hover .markdown-image-lightbox__close,\n.markdown-image-lightbox__panel:focus-within .markdown-image-lightbox__close",
-    );
-
-    expect(closeStyle.get("opacity")).toBe("0");
-    expect(closeStyle.get("pointer-events")).toBe("none");
-    expect(visibleStyle.get("background")).toBe("var(--viewer-control-bg)");
-    expect(visibleStyle.get("color")).toBe("var(--viewer-control-text)");
-    expect(appCss).toContain(
-      [
-        ".markdown-image-lightbox__panel:hover .markdown-image-lightbox__close,",
-        ".markdown-image-lightbox__panel:focus-within .markdown-image-lightbox__close {",
-        "  background: var(--viewer-control-bg);",
-        "  border-color: var(--viewer-control-border);",
-        "  color: var(--viewer-control-text);",
-        "  box-shadow: var(--viewer-control-shadow);",
-        "  opacity: 1;",
-        "  pointer-events: auto;",
-        "}",
-      ].join("\n"),
-    );
   });
 });

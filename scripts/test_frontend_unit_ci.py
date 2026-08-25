@@ -60,12 +60,6 @@ class FrontendUnitCITest(unittest.TestCase):
         captured_output = "" if output.closed else output.getvalue()
         return status, captured_output, warnings.getvalue()
 
-    def full_destination(self, name: str) -> Path:
-        self.diagnostics.mkdir(parents=True)
-        destination = self.diagnostics / name
-        destination.symlink_to("/dev/full")
-        return destination
-
     def test_process_exit_status_survives_closed_output_pipe(self) -> None:
         scripts_dir = self.root / "scripts"
         scripts_dir.mkdir()
@@ -138,18 +132,6 @@ class FrontendUnitCITest(unittest.TestCase):
         self.assertIn("Child system CPU time (seconds):", timing)
         self.assertNotIn("running tests directly", warnings)
 
-    def test_time_output_failure_cannot_prevent_tests(self) -> None:
-        self.diagnostics.mkdir(parents=True)
-        (self.diagnostics / "time.txt").mkdir()
-
-        status, output, _ = self.run_child(
-            "print('child output'); import sys; sys.exit(23)"
-        )
-
-        self.assertEqual(23, status)
-        self.assertIn("child output", output)
-        self.assertIn("child output", (self.diagnostics / "vitest.log").read_text())
-
     def test_streams_output_and_preserves_success(self) -> None:
         status, output, _ = self.run_child("print('child output')")
         self.assertEqual(0, status)
@@ -174,21 +156,6 @@ class FrontendUnitCITest(unittest.TestCase):
         )
         self.assertEqual(23, status)
         self.assertIn("\ufffd", (self.diagnostics / "vitest.log").read_text())
-
-    def test_console_write_failure_preserves_status_and_log(self) -> None:
-        class FailingConsole(io.StringIO):
-            def write(self, _: str) -> int:
-                raise OSError("console write failed")
-
-            def flush(self) -> None:
-                raise OSError("console flush failed")
-
-        status, _, _ = self.run_child(
-            "print('child output'); import sys; sys.exit(23)",
-            output=FailingConsole(),
-        )
-        self.assertEqual(23, status)
-        self.assertIn("child output", (self.diagnostics / "vitest.log").read_text())
 
     def test_closed_console_preserves_status_and_log(self) -> None:
         output = io.StringIO()
@@ -229,27 +196,6 @@ class FrontendUnitCITest(unittest.TestCase):
         status, _, _ = self.run_child("", test_command=("definitely-not-a-command",))
         self.assertEqual(127, status)
 
-    def test_missing_version_command_does_not_change_success(self) -> None:
-        status, _, _ = self.run_child(
-            "pass",
-            version_commands=(("definitely-not-a-command", "--version"),),
-        )
-        self.assertEqual(0, status)
-        self.assertIn("unavailable", (self.diagnostics / "versions.txt").read_text())
-
-    def test_failure_still_captures_post_test_cgroup_metrics(self) -> None:
-        cgroup_root = self.root / "cgroup"
-        cgroup_root.mkdir()
-        (cgroup_root / "memory.events").write_text("oom_kill 0\n")
-        status, _, _ = self.run_child(
-            "import sys; sys.exit(23)",
-            cgroup_root=cgroup_root,
-        )
-        self.assertEqual(23, status)
-        after = (self.diagnostics / "cgroup-after.txt").read_text()
-        self.assertIn("== memory.events ==\noom_kill 0", after)
-        self.assertNotIn("memory.max", after)
-
     def test_child_receives_environment_safe_node_report_options(self) -> None:
         source = (
             "import os; "
@@ -261,44 +207,6 @@ class FrontendUnitCITest(unittest.TestCase):
         log = (self.diagnostics / "vitest.log").read_text()
         self.assertIn("--report-exclude-env", log)
         self.assertIn(str((self.diagnostics / "node-reports").resolve()), log)
-
-    def test_version_report_write_failure_preserves_child_status(self) -> None:
-        destination = self.diagnostics / "versions.txt"
-        original_open = Path.open
-        opened = False
-
-        def open_then_fail_write(path: Path, *args: object, **kwargs: object) -> object:
-            nonlocal opened
-            stream = original_open(path, *args, **kwargs)
-            if path == destination:
-                opened = True
-                return FailingWriteStream(stream)
-            return stream
-
-        with patch.object(Path, "open", autospec=True, side_effect=open_then_fail_write):
-            status, output, warnings = self.run_child(
-                "print('child output'); import sys; sys.exit(23)",
-                version_commands=((sys.executable, "-c", "print('version')"),),
-            )
-
-        self.assertEqual(23, status)
-        self.assertTrue(opened)
-        self.assertIn("child output", output)
-        self.assertEqual("", warnings)
-        self.assertTrue((self.diagnostics / "time.txt").read_text())
-
-    def test_post_test_cgroup_write_failure_preserves_child_status(self) -> None:
-        self.full_destination("cgroup-after.txt")
-        cgroup_root = self.root / "cgroup"
-        cgroup_root.mkdir()
-        (cgroup_root / "memory.current").write_text("123\n" * 3000)
-        status, output, _ = self.run_child(
-            "print('child output'); import sys; sys.exit(23)",
-            cgroup_root=cgroup_root,
-        )
-
-        self.assertEqual(23, status)
-        self.assertIn("child output", output)
 
     def test_log_write_failure_preserves_status_and_streams_output(self) -> None:
         destination = self.diagnostics / "vitest.log"

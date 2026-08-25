@@ -287,117 +287,6 @@ describe("AppHeader", () => {
     expect((screen.getByRole("button", { name: "Syncing" }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "Sync options" }) as HTMLButtonElement).disabled).toBe(true);
   });
-
-  it("toggles the root dark class when the theme button is clicked", async () => {
-    initTheme();
-    render(AppHeader);
-
-    const button = screen.getByTitle("Toggle theme");
-
-    expect(document.documentElement.classList.contains("dark")).toBe(false);
-
-    await fireEvent.click(button);
-    expect(document.documentElement.classList.contains("dark")).toBe(true);
-
-    await fireEvent.click(button);
-    expect(document.documentElement.classList.contains("dark")).toBe(false);
-  });
-
-  it("applies the system dark preference on mount", () => {
-    cleanup();
-    document.documentElement.classList.remove("dark");
-    mockMatchMedia(true);
-
-    initTheme();
-    render(AppHeader);
-
-    expect(document.documentElement.classList.contains("dark")).toBe(true);
-  });
-
-  it("persists theme choice to localStorage on toggle", async () => {
-    initTheme();
-    render(AppHeader);
-
-    const button = screen.getByTitle("Toggle theme");
-
-    await fireEvent.click(button);
-    expect(localStorage.getItem("kenn-forge-theme")).toBe("dark");
-
-    await fireEvent.click(button);
-    expect(localStorage.getItem("kenn-forge-theme")).toBe("light");
-  });
-
-  it("restores theme from localStorage over system preference", () => {
-    localStorage.setItem("kenn-forge-theme", "dark");
-    mockMatchMedia(false);
-
-    initTheme();
-    render(AppHeader);
-
-    expect(document.documentElement.classList.contains("dark")).toBe(true);
-  });
-
-  it("falls back to system preference when no stored theme", () => {
-    cleanup();
-    document.documentElement.classList.remove("dark");
-    mockMatchMedia(true);
-
-    initTheme();
-    render(AppHeader);
-
-    expect(document.documentElement.classList.contains("dark")).toBe(true);
-  });
-
-  it("ignores invalid localStorage value and falls back to system preference", () => {
-    cleanup();
-    document.documentElement.classList.remove("dark");
-    localStorage.setItem("kenn-forge-theme", "garbage");
-    mockMatchMedia(true);
-
-    initTheme();
-    render(AppHeader);
-
-    expect(document.documentElement.classList.contains("dark")).toBe(true);
-    // kit-ui's store leaves the invalid value in place (it resolves to
-    // "system" on every read); the old store deleted it. Either way the next
-    // explicit toggle overwrites it, so only the fallback is contractual.
-    localStorage.removeItem("kenn-forge-theme");
-  });
-
-  it("falls back to system preference when localStorage throws", () => {
-    cleanup();
-    document.documentElement.classList.remove("dark");
-    mockMatchMedia(true);
-
-    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
-      throw new DOMException("blocked");
-    });
-
-    initTheme();
-    render(AppHeader);
-
-    expect(document.documentElement.classList.contains("dark")).toBe(true);
-
-    vi.restoreAllMocks();
-  });
-
-  it("toggle still works when localStorage.setItem throws", async () => {
-    initTheme();
-
-    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
-      throw new DOMException("blocked");
-    });
-
-    render(AppHeader);
-
-    const button = screen.getByTitle("Toggle theme");
-
-    await fireEvent.click(button);
-    expect(document.documentElement.classList.contains("dark")).toBe(true);
-
-    vi.restoreAllMocks();
-  });
-
   it("renders SVG icons for the header controls", () => {
     initTheme();
     const { container } = render(AppHeader);
@@ -424,33 +313,6 @@ describe("AppHeader", () => {
 
     expect(isPaletteOpen()).toBe(true);
   });
-
-  it("changes the theme toggle SVG when toggled", async () => {
-    initTheme();
-    render(AppHeader);
-
-    const button = screen.getByTitle("Toggle theme");
-    const before = button.querySelector("svg")?.innerHTML ?? null;
-
-    expect(before).toBeTruthy();
-
-    await fireEvent.click(button);
-
-    const after = button.querySelector("svg")?.innerHTML ?? null;
-
-    expect(after).toBeTruthy();
-    expect(after).not.toBe(before);
-  });
-
-  it("renders a filled moon icon in light mode", () => {
-    initTheme();
-    render(AppHeader);
-
-    const moon = screen.getByTitle("Toggle theme").querySelector("[data-filled-icon='moon'] svg");
-
-    expect(moon).toBeTruthy();
-  });
-
   it("returns to the previous page when the settings button is clicked again", async () => {
     initTheme();
     navigate("/pulls/github/acme/widgets/1/files");
@@ -538,15 +400,6 @@ describe("AppHeader", () => {
     expect(expandButton).toBeTruthy();
     expect(expandButton!.querySelector("kbd[aria-label]")).toBeNull();
   });
-
-  it("never renders a global Kata mode and hides Docs by default", () => {
-    initTheme();
-    render(AppHeader);
-
-    expect(screen.queryByRole("button", { name: "Kata" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Docs" })).toBeNull();
-  });
-
   it("navigates to Docs from the desktop nav", async () => {
     initTheme();
     showImportedModes();

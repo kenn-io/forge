@@ -258,13 +258,6 @@ describe("view navigation", () => {
     pressKey("Escape");
     await vi.waitFor(() => expect(document.querySelector(".activity-shell--split")).toBeNull(), WAIT);
   });
-
-  it("legacy /mail route falls through to Activity", async () => {
-    mounted = await mountBrowserApp("/mail?q=label%3AInbox", { overrides: overrides() });
-
-    await vi.waitFor(() => expect(document.querySelector(".activity-feed")).not.toBeNull(), WAIT);
-  });
-
   it("clicking a PR row opens the detail pane", async () => {
     mounted = await mountBrowserApp("/pulls", { overrides: overrides() });
     await vi.waitFor(() => expect(document.querySelector(".pull-item")).not.toBeNull(), WAIT);

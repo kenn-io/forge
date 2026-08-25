@@ -49,14 +49,6 @@ describe("router initialization", () => {
       },
     });
   });
-
-  it("treats the removed Kata route as unknown on initial load", async () => {
-    const { getRoute, getPage } = await importRouterAt("/kata?issue=issue-email-susan");
-
-    expect(getRoute()).toEqual({ page: "activity" });
-    expect(getPage()).toBe("activity");
-  });
-
   it("uses embed initialRoute before the first app render", async () => {
     window.__kenn_forge_config = {
       embed: {

@@ -53,6 +53,7 @@ jobs:
               - packages/**
               - package.json
               - bun.lock
+              - bunfig.toml
               - vite.config.ts
               - scripts/frontend_unit_ci.py
               - scripts/test_frontend_unit_ci.py

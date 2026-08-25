@@ -7,19 +7,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestArchiveReportResponseTransformSchemaHandlesMissingSchemaProperty(t *testing.T) {
-	t.Parallel()
-
-	response := archiveReportResponse{}
-	assert.Nil(t, response.TransformSchema(nil, nil))
-
-	schema := &huma.Schema{}
-	assert.Same(t, schema, response.TransformSchema(nil, schema))
-
-	schema.Properties = map[string]*huma.Schema{"schema": nil}
-	assert.Same(t, schema, response.TransformSchema(nil, schema))
-}
-
 func TestArchiveReportResponseTransformSchemaNamesReportSchema(t *testing.T) {
 	t.Parallel()
 

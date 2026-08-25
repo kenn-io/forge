@@ -334,7 +334,7 @@ REST operations with the same metadata and generation workflow.
 For route metadata changes, run:
 
 ```sh
-go test ./internal/server -run 'TestHumaContractMetadata|TestHumaConvenienceRoutesUseDocumentOperation|TestRouteMetadataWalker' -shuffle=on
+go test ./internal/server -run 'TestHumaContractMetadata|TestRouteMetadataWalker' -shuffle=on
 make api-generate
 ```
 

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -858,200 +857,96 @@ func TestGraphQLFetcherFetchRepoIssuesPreservesBotAuthor(t *testing.T) {
 }
 
 func TestGraphQLFetcherFetchRepoIssuesLogsFetchProgressForPaginatedIssueSet(t *testing.T) {
-	assert := assert.New(t)
 	require := require.New(t)
-	now := time.Date(2026, 5, 20, 12, 0, 0, 0, time.UTC).Format(time.RFC3339)
-
-	var buf bytes.Buffer
-	sw := &syncedWriter{w: &buf}
-	h := slog.NewTextHandler(sw, &slog.HandlerOptions{Level: slog.LevelInfo})
-	orig := slog.Default()
-	slog.SetDefault(slog.New(h))
-	t.Cleanup(func() { slog.SetDefault(orig) })
+	logs := captureDefaultLogs(t)
 
 	calls := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls++
 		w.Header().Set("Content-Type", "application/json")
-		pageInfo := map[string]any{"hasNextPage": true, "endCursor": fmt.Sprintf("cursor-%d", calls)}
-		if calls == 3 {
-			pageInfo = map[string]any{"hasNextPage": false, "endCursor": ""}
-		}
-		count := 25
-		if calls == 3 {
-			count = 1
-		}
-		resp := map[string]any{
-			"data": map[string]any{
-				"repository": map[string]any{
-					"issues": map[string]any{
-						"totalCount": 51,
-						"nodes":      testGQLIssueNodes(((calls-1)*25)+1, count, now),
-						"pageInfo":   pageInfo,
-					},
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{"repository": map[string]any{"issues": map[string]any{
+				"totalCount": 2,
+				"nodes":      testGQLIssueNodes(calls),
+				"pageInfo": map[string]any{
+					"hasNextPage": calls == 1,
+					"endCursor":   fmt.Sprintf("cursor-%d", calls),
 				},
-			},
-		}
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
+			}}},
+		})
 	}))
 	defer srv.Close()
 
-	fetcher := NewGraphQLFetcherWithClient(
-		githubv4.NewEnterpriseClient(srv.URL, srv.Client()), nil,
-	)
-
+	fetcher := NewGraphQLFetcherWithClient(githubv4.NewEnterpriseClient(srv.URL, srv.Client()), nil)
 	result, err := fetcher.FetchRepoIssues(t.Context(), "owner", "repo")
 	require.NoError(err)
-	require.NotNil(result)
-	require.Len(result.Issues, 51)
-
-	logs := buf.String()
-	assert.Contains(logs, `msg="issue list fetch started"`)
-	assert.Contains(logs, "repo=owner/repo")
-	assert.Contains(logs, "platform=github")
-	assert.Contains(logs, "host=github.com")
-	assert.Contains(logs, "source=graphql")
-	assert.Contains(logs, "total=51")
-	assert.Contains(logs, "fetched=25")
-	assert.Contains(logs, `msg="issue list fetch progress"`)
-	assert.Contains(logs, "fetched=50")
-	assert.Contains(logs, `msg="issue list fetch completed"`)
-	assert.Contains(logs, "fetched=51")
+	require.Len(result.Issues, 2)
+	require.Contains(logs.String(), `msg="issue list fetch started"`)
+	require.Contains(logs.String(), `msg="issue list fetch completed"`)
+	require.Contains(logs.String(), "source=graphql")
 }
 
-func testGQLIssueNodes(start, count int, now string) []map[string]any {
-	issues := make([]map[string]any, 0, count)
-	for i := range count {
-		number := start + i
-		issues = append(issues, map[string]any{
-			"databaseId": number * 1000,
-			"number":     number,
-			"title":      fmt.Sprintf("Issue %d", number),
-			"state":      "OPEN",
-			"body":       "",
-			"url":        fmt.Sprintf("https://github.com/owner/repo/issues/%d", number),
-			"author":     map[string]any{"login": "alice"},
-			"createdAt":  now,
-			"updatedAt":  now,
-			"closedAt":   nil,
-			"labels":     map[string]any{"nodes": []any{}},
-			"comments": map[string]any{
-				"totalCount": 0,
-				"nodes":      []any{},
-				"pageInfo":   map[string]any{"hasNextPage": false, "endCursor": ""},
-			},
-			"timelineItems": map[string]any{
-				"nodes":    []any{},
-				"pageInfo": map[string]any{"hasNextPage": false, "endCursor": ""},
-			},
-		})
-	}
-	return issues
+func testGQLIssueNodes(number int) []map[string]any {
+	return []map[string]any{{
+		"databaseId": number * 1000,
+		"number":     number,
+		"title":      fmt.Sprintf("Issue %d", number),
+		"state":      "OPEN",
+		"url":        fmt.Sprintf("https://github.com/owner/repo/issues/%d", number),
+		"author":     map[string]any{"login": "alice"},
+		"createdAt":  "2026-05-20T12:00:00Z",
+		"updatedAt":  "2026-05-20T12:00:00Z",
+	}}
 }
 
 func TestGraphQLFetcherFetchRepoPRsLogsFetchProgressForPaginatedPullRequestSet(t *testing.T) {
-	assert := assert.New(t)
 	require := require.New(t)
-	now := time.Date(2026, 5, 20, 12, 0, 0, 0, time.UTC).Format(time.RFC3339)
-
-	var buf bytes.Buffer
-	sw := &syncedWriter{w: &buf}
-	h := slog.NewTextHandler(sw, &slog.HandlerOptions{Level: slog.LevelInfo})
-	orig := slog.Default()
-	slog.SetDefault(slog.New(h))
-	t.Cleanup(func() { slog.SetDefault(orig) })
+	logs := captureDefaultLogs(t)
 
 	calls := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls++
 		w.Header().Set("Content-Type", "application/json")
-		pageInfo := map[string]any{"hasNextPage": true, "endCursor": fmt.Sprintf("cursor-%d", calls)}
-		if calls == 3 {
-			pageInfo = map[string]any{"hasNextPage": false, "endCursor": ""}
-		}
-		count := 25
-		if calls == 3 {
-			count = 1
-		}
-		resp := map[string]any{
-			"data": map[string]any{
-				"repository": map[string]any{
-					"pullRequests": map[string]any{
-						"totalCount": 51,
-						"nodes":      testGQLPRNodes(((calls-1)*25)+1, count, now),
-						"pageInfo":   pageInfo,
-					},
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{"repository": map[string]any{"pullRequests": map[string]any{
+				"totalCount": 2,
+				"nodes":      testGQLPRNodes(calls),
+				"pageInfo": map[string]any{
+					"hasNextPage": calls == 1,
+					"endCursor":   fmt.Sprintf("cursor-%d", calls),
 				},
-			},
-		}
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
+			}}},
+		})
 	}))
 	defer srv.Close()
 
-	fetcher := NewGraphQLFetcherWithClient(
-		githubv4.NewEnterpriseClient(srv.URL, srv.Client()), nil,
-	)
-
+	fetcher := NewGraphQLFetcherWithClient(githubv4.NewEnterpriseClient(srv.URL, srv.Client()), nil)
 	result, err := fetcher.FetchRepoPRs(t.Context(), "conda-forge", "staged-recipes", false)
 	require.NoError(err)
-	require.NotNil(result)
-	require.Len(result.PullRequests, 51)
-
-	logs := buf.String()
-	assert.Contains(logs, `msg="merge request list fetch started"`)
-	assert.Contains(logs, "repo=conda-forge/staged-recipes")
-	assert.Contains(logs, "platform=github")
-	assert.Contains(logs, "host=github.com")
-	assert.Contains(logs, "source=graphql")
-	assert.Contains(logs, "total=51")
-	assert.Contains(logs, "fetched=25")
-	assert.Contains(logs, `msg="merge request list fetch progress"`)
-	assert.Contains(logs, "fetched=50")
-	assert.Contains(logs, `msg="merge request list fetch completed"`)
-	assert.Contains(logs, "fetched=51")
+	require.Len(result.PullRequests, 2)
+	require.Contains(logs.String(), `msg="merge request list fetch started"`)
+	require.Contains(logs.String(), `msg="merge request list fetch completed"`)
+	require.Contains(logs.String(), "source=graphql")
 }
 
-func testGQLPRNodes(start, count int, now string) []map[string]any {
-	prs := make([]map[string]any, 0, count)
-	for i := range count {
-		number := start + i
-		prs = append(prs, map[string]any{
-			"databaseId":     number * 1000,
-			"number":         number,
-			"title":          fmt.Sprintf("Pull request %d", number),
-			"state":          "OPEN",
-			"isDraft":        false,
-			"body":           "",
-			"url":            fmt.Sprintf("https://github.com/conda-forge/staged-recipes/pull/%d", number),
-			"author":         map[string]any{"login": "alice"},
-			"createdAt":      now,
-			"updatedAt":      now,
-			"mergedAt":       nil,
-			"closedAt":       nil,
-			"additions":      1,
-			"deletions":      0,
-			"mergeable":      "MERGEABLE",
-			"reviewDecision": "",
-			"headRefName":    "recipe",
-			"baseRefName":    "main",
-			"headRefOid":     "abc123",
-			"baseRefOid":     "def456",
-			"headRepository": map[string]any{"url": "https://github.com/conda-forge/staged-recipes"},
-			"labels":         map[string]any{"nodes": []any{}},
-			"comments":       map[string]any{"nodes": []any{}, "pageInfo": map[string]any{"hasNextPage": false, "endCursor": ""}},
-			"reviews":        map[string]any{"nodes": []any{}, "pageInfo": map[string]any{"hasNextPage": false, "endCursor": ""}},
-			"allCommits":     map[string]any{"nodes": []any{}, "pageInfo": map[string]any{"hasNextPage": false, "endCursor": ""}},
-			"lastCommit":     map[string]any{"nodes": []any{}},
-			"timelineItems":  map[string]any{"nodes": []any{}, "pageInfo": map[string]any{"hasNextPage": false, "endCursor": ""}},
-		})
-	}
-	return prs
+func testGQLPRNodes(number int) []map[string]any {
+	return []map[string]any{{
+		"databaseId":  number * 1000,
+		"number":      number,
+		"title":       fmt.Sprintf("Pull request %d", number),
+		"state":       "OPEN",
+		"url":         fmt.Sprintf("https://github.com/conda-forge/staged-recipes/pull/%d", number),
+		"author":      map[string]any{"login": "alice"},
+		"createdAt":   "2026-05-20T12:00:00Z",
+		"updatedAt":   "2026-05-20T12:00:00Z",
+		"headRefName": "recipe",
+		"baseRefName": "main",
+		"headRefOid":  "abc123",
+		"baseRefOid":  "def456",
+		"headRepository": map[string]any{
+			"url": "https://github.com/conda-forge/staged-recipes",
+		},
+	}}
 }
 
 func TestNormalizeBulkCI(t *testing.T) {

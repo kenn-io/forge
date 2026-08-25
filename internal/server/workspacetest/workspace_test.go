@@ -229,6 +229,7 @@ func TestWorkspaceRuntimeLaunchPlainShellCreatesRuntimeSessionE2E(t *testing.T) 
 	assert.Equal("plain_shell", shell.TargetKey)
 	assert.Equal(string(localruntime.LaunchTargetPlainShell), shell.Kind)
 	assert.Equal(string(localruntime.SessionStatusRunning), shell.Status)
+	assert.Equal("terminal", shell.DisplayRegion)
 
 	getResp, err := fixture.client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, ws.Id)
 	require.NoError(err)
@@ -237,6 +238,7 @@ func TestWorkspaceRuntimeLaunchPlainShellCreatesRuntimeSessionE2E(t *testing.T) 
 	require.NotNil(getResp.JSON200.Sessions)
 	require.Len(*getResp.JSON200.Sessions, 1)
 	assert.Equal(shell.Key, (*getResp.JSON200.Sessions)[0].Key)
+	assert.Equal("terminal", (*getResp.JSON200.Sessions)[0].DisplayRegion)
 }
 
 func TestWorkspaceRuntimeAttachSpecUsesStoredTmuxSessionE2E(t *testing.T) {

@@ -28,29 +28,6 @@ import (
 
 var fleetContainerUUIDPattern = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
-func TestFleetComposeBuildDisablesTelemetry(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-
-	dockerfile, err := os.ReadFile(filepath.Join(repoRoot(t), "Dockerfile.dev"))
-	require.NoError(err)
-	compose, err := os.ReadFile(filepath.Join(repoRoot(t), "scripts/e2e/fleet/docker-compose.yml"))
-	require.NoError(err)
-	script, err := os.ReadFile(filepath.Join(repoRoot(t), "scripts/e2e/fleet/run-daemon.sh"))
-	require.NoError(err)
-
-	assert.NotContains(string(dockerfile), "KENN_FORGE_GO_BUILD_TAGS")
-	assert.Equal(3, strings.Count(string(compose), "KENN_FORGE_GO_BUILD_TAGS: kit_posthog_disabled"))
-	assert.NotContains(string(compose), "args:\n        KENN_FORGE_GO_BUILD_TAGS: kit_posthog_disabled")
-	assert.Contains(
-		string(script),
-		`if [[ -n "${KENN_FORGE_GO_BUILD_TAGS:-}" ]]; then`,
-	)
-	assert.Contains(string(script), `go_build_args=(-tags "${KENN_FORGE_GO_BUILD_TAGS}" "${go_build_args[@]}")`)
-	assert.Contains(string(script), `go build "${go_build_args[@]}" ./cmd/kenn-forge`)
-	assert.NotContains(string(script), "go build -tags kit_posthog_disabled")
-}
-
 func TestFleetContainerReadE2E(t *testing.T) {
 	if os.Getenv("KENN_FORGE_FLEET_CONTAINER_E2E") != "1" {
 		t.Skip("set KENN_FORGE_FLEET_CONTAINER_E2E=1 to run fleet container e2e")

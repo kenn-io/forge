@@ -1,13 +1,11 @@
 package github
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -1090,17 +1088,9 @@ func TestTrackGraphQLRateHeadersUsesGraphQLTracker(t *testing.T) {
 	assert.True(gqlRT.Known())
 }
 
-func TestListOpenIssuesLogsFetchProgressForLargeIssueSet(t *testing.T) {
+func TestListOpenIssuesLogsFetchProgressForPaginatedIssueSet(t *testing.T) {
 	require := require.New(t)
-	assert := assert.New(t)
-	now := time.Date(2026, 5, 20, 12, 0, 0, 0, time.UTC).Format(time.RFC3339)
-
-	var buf bytes.Buffer
-	sw := &syncedWriter{w: &buf}
-	h := slog.NewTextHandler(sw, &slog.HandlerOptions{Level: slog.LevelInfo})
-	orig := slog.Default()
-	slog.SetDefault(slog.New(h))
-	t.Cleanup(func() { slog.SetDefault(orig) })
+	logs := captureDefaultLogs(t)
 
 	var serverURL string
 	mux := http.NewServeMux()
@@ -1109,18 +1099,13 @@ func TestListOpenIssuesLogsFetchProgressForLargeIssueSet(t *testing.T) {
 		if err != nil || page == 0 {
 			page = 1
 		}
-		if page < 3 {
-			nextURL := fmt.Sprintf(
-				"%s/api/v3/repos/acme/widgets/issues?page=%d&per_page=100",
-				serverURL, page+1,
-			)
-			w.Header().Set("Link", fmt.Sprintf(`<%s>; rel="next"`, nextURL))
+		if page == 1 {
+			w.Header().Set("Link", fmt.Sprintf(
+				`<%s/api/v3/repos/acme/widgets/issues?page=2&per_page=100>; rel="next"`, serverURL,
+			))
 		}
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(testIssuePage(page, now)); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
+		_ = json.NewEncoder(w).Encode(testIssuePage(page))
 	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
@@ -1128,62 +1113,32 @@ func TestListOpenIssuesLogsFetchProgressForLargeIssueSet(t *testing.T) {
 
 	ghClient, err := newEnterpriseGHClient(srv.Client(),
 		srv.URL+"/api/v3/", srv.URL+"/api/uploads/")
-
 	require.NoError(err)
-	c := &liveClient{gh: ghClient}
 
-	issues, err := c.ListOpenIssues(t.Context(), "acme", "widgets")
+	issues, err := (&liveClient{gh: ghClient}).ListOpenIssues(t.Context(), "acme", "widgets")
 	require.NoError(err)
-	require.Len(issues, 201)
-
-	logs := buf.String()
-	assert.Contains(logs, `msg="issue list fetch started"`)
-	assert.Contains(logs, "repo=acme/widgets")
-	assert.Contains(logs, "platform=github")
-	assert.Contains(logs, "host=github.com")
-	assert.Contains(logs, "source=rest")
-	assert.Contains(logs, "fetched=100")
-	assert.Contains(logs, `msg="issue list fetch progress"`)
-	assert.Contains(logs, "fetched=200")
-	assert.Contains(logs, `msg="issue list fetch completed"`)
-	assert.Contains(logs, "fetched=201")
-	assert.Contains(logs, "total=201")
+	require.Len(issues, 2)
+	require.Contains(logs.String(), `msg="issue list fetch started"`)
+	require.Contains(logs.String(), `msg="issue list fetch completed"`)
+	require.Contains(logs.String(), "source=rest")
 }
 
-func testIssuePage(page int, now string) []map[string]any {
-	count := 100
-	if page == 3 {
-		count = 1
-	}
-	start := ((page - 1) * 100) + 1
-	issues := make([]map[string]any, 0, count)
-	for i := 0; i < count; i++ {
-		number := start + i
-		issues = append(issues, map[string]any{
-			"id":         number * 1000,
-			"number":     number,
-			"title":      fmt.Sprintf("Issue %d", number),
-			"state":      "open",
-			"html_url":   fmt.Sprintf("https://github.com/acme/widgets/issues/%d", number),
-			"user":       map[string]any{"login": "alice"},
-			"created_at": now,
-			"updated_at": now,
-		})
-	}
-	return issues
+func testIssuePage(page int) []map[string]any {
+	return []map[string]any{{
+		"id":         page * 1000,
+		"number":     page,
+		"title":      fmt.Sprintf("Issue %d", page),
+		"state":      "open",
+		"html_url":   fmt.Sprintf("https://github.com/acme/widgets/issues/%d", page),
+		"user":       map[string]any{"login": "alice"},
+		"created_at": "2026-05-20T12:00:00Z",
+		"updated_at": "2026-05-20T12:00:00Z",
+	}}
 }
 
-func TestListOpenPullRequestsLogsFetchProgressForLargePullRequestSet(t *testing.T) {
+func TestListOpenPullRequestsLogsFetchProgressForPaginatedPullRequestSet(t *testing.T) {
 	require := require.New(t)
-	assert := assert.New(t)
-	now := time.Date(2026, 5, 20, 12, 0, 0, 0, time.UTC).Format(time.RFC3339)
-
-	var buf bytes.Buffer
-	sw := &syncedWriter{w: &buf}
-	h := slog.NewTextHandler(sw, &slog.HandlerOptions{Level: slog.LevelInfo})
-	orig := slog.Default()
-	slog.SetDefault(slog.New(h))
-	t.Cleanup(func() { slog.SetDefault(orig) })
+	logs := captureDefaultLogs(t)
 
 	var serverURL string
 	mux := http.NewServeMux()
@@ -1192,18 +1147,13 @@ func TestListOpenPullRequestsLogsFetchProgressForLargePullRequestSet(t *testing.
 		if err != nil || page == 0 {
 			page = 1
 		}
-		if page < 3 {
-			nextURL := fmt.Sprintf(
-				"%s/api/v3/repos/conda-forge/staged-recipes/pulls?page=%d&per_page=100",
-				serverURL, page+1,
-			)
-			w.Header().Set("Link", fmt.Sprintf(`<%s>; rel="next"`, nextURL))
+		if page == 1 {
+			w.Header().Set("Link", fmt.Sprintf(
+				`<%s/api/v3/repos/conda-forge/staged-recipes/pulls?page=2&per_page=100>; rel="next"`, serverURL,
+			))
 		}
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(testPullRequestPage(page, now)); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
+		_ = json.NewEncoder(w).Encode(testPullRequestPage(page))
 	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
@@ -1211,51 +1161,29 @@ func TestListOpenPullRequestsLogsFetchProgressForLargePullRequestSet(t *testing.
 
 	ghClient, err := newEnterpriseGHClient(srv.Client(),
 		srv.URL+"/api/v3/", srv.URL+"/api/uploads/")
-
 	require.NoError(err)
-	c := &liveClient{gh: ghClient}
 
-	prs, err := c.ListOpenPullRequests(t.Context(), "conda-forge", "staged-recipes")
+	prs, err := (&liveClient{gh: ghClient}).ListOpenPullRequests(t.Context(), "conda-forge", "staged-recipes")
 	require.NoError(err)
-	require.Len(prs, 201)
-
-	logs := buf.String()
-	assert.Contains(logs, `msg="merge request list fetch started"`)
-	assert.Contains(logs, "repo=conda-forge/staged-recipes")
-	assert.Contains(logs, "platform=github")
-	assert.Contains(logs, "host=github.com")
-	assert.Contains(logs, "source=rest")
-	assert.Contains(logs, "fetched=100")
-	assert.Contains(logs, `msg="merge request list fetch progress"`)
-	assert.Contains(logs, "fetched=200")
-	assert.Contains(logs, `msg="merge request list fetch completed"`)
-	assert.Contains(logs, "fetched=201")
-	assert.Contains(logs, "total=201")
+	require.Len(prs, 2)
+	require.Contains(logs.String(), `msg="merge request list fetch started"`)
+	require.Contains(logs.String(), `msg="merge request list fetch completed"`)
+	require.Contains(logs.String(), "source=rest")
 }
 
-func testPullRequestPage(page int, now string) []map[string]any {
-	count := 100
-	if page == 3 {
-		count = 1
-	}
-	start := ((page - 1) * 100) + 1
-	prs := make([]map[string]any, 0, count)
-	for i := 0; i < count; i++ {
-		number := start + i
-		prs = append(prs, map[string]any{
-			"id":         number * 1000,
-			"number":     number,
-			"title":      fmt.Sprintf("Pull request %d", number),
-			"state":      "open",
-			"html_url":   fmt.Sprintf("https://github.com/conda-forge/staged-recipes/pull/%d", number),
-			"user":       map[string]any{"login": "alice"},
-			"created_at": now,
-			"updated_at": now,
-			"head":       map[string]any{"ref": "recipe", "sha": "abc123"},
-			"base":       map[string]any{"ref": "main", "sha": "def456"},
-		})
-	}
-	return prs
+func testPullRequestPage(page int) []map[string]any {
+	return []map[string]any{{
+		"id":         page * 1000,
+		"number":     page,
+		"title":      fmt.Sprintf("Pull request %d", page),
+		"state":      "open",
+		"html_url":   fmt.Sprintf("https://github.com/conda-forge/staged-recipes/pull/%d", page),
+		"user":       map[string]any{"login": "alice"},
+		"created_at": "2026-05-20T12:00:00Z",
+		"updated_at": "2026-05-20T12:00:00Z",
+		"head":       map[string]any{"ref": "recipe", "sha": "abc123"},
+		"base":       map[string]any{"ref": "main", "sha": "def456"},
+	}}
 }
 
 func TestListRepositoriesByOwnerUsesAuthenticatedEndpointForViewer(t *testing.T) {

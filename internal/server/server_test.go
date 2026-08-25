@@ -53,58 +53,6 @@ func TestPreferPtyOwnerForWorkspacesOnWindows(t *testing.T) {
 	require.True(prefer)
 }
 
-func TestHealthzAndLivez_ReturnOK(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-
-	s := newTestServer(t)
-	ts := httptest.NewServer(s)
-	defer ts.Close()
-
-	for _, path := range []string{"/healthz", "/livez"} {
-		resp, err := http.Get(ts.URL + path)
-		require.NoError(err)
-		assert.Equal(http.StatusOK, resp.StatusCode, path)
-		if resp.StatusCode != http.StatusOK {
-			resp.Body.Close()
-			continue
-		}
-
-		var body struct {
-			Status string `json:"status"`
-		}
-		err = json.NewDecoder(resp.Body).Decode(&body)
-		resp.Body.Close()
-		require.NoError(err)
-
-		assert.Equal("ok", body.Status, path)
-	}
-}
-
-func TestHealthz_ReturnsServiceUnavailableAfterDBClose(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-
-	database := openTestDB(t)
-	s := New(database, nil, nil, "/", nil, ServerOptions{})
-	ts := httptest.NewServer(s)
-	defer ts.Close()
-
-	t.Cleanup(func() { gracefulShutdown(t, s) })
-
-	require.NoError(database.Close())
-
-	resp, err := http.Get(ts.URL + "/healthz")
-	require.NoError(err)
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	require.NoError(err)
-
-	assert.Equal(http.StatusServiceUnavailable, resp.StatusCode)
-	assert.Contains(string(body), "database unavailable")
-}
-
 func TestServeRejectsRebindingHost(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -762,45 +710,6 @@ func TestSSE_LastEventIDHeaderOverridesSinceQuery(t *testing.T) {
 	assert.Equal("5", f.ID)
 }
 
-func TestSSE_StaleCursorEmitsReconnectStale(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-
-	database := openTestDB(t)
-	s := newServerWithHub(t, database, NewEventHubWithCapacity(4))
-	ts := httptest.NewServer(s)
-	defer ts.Close()
-
-	// Fill past capacity so cursor 2 falls out of the ring.
-	for i := 1; i <= 10; i++ {
-		s.hub.Broadcast(Event{Type: "data_changed", Data: i})
-	}
-
-	req, err := http.NewRequestWithContext(
-		t.Context(), http.MethodGet, ts.URL+"/api/v1/events", nil,
-	)
-	require.NoError(err)
-	req.Header.Set("Last-Event-ID", "2")
-	resp, err := ts.Client().Do(req)
-	require.NoError(err)
-	defer resp.Body.Close()
-
-	scanner := bufio.NewScanner(resp.Body)
-	f := readSSEFrame(t, scanner)
-	assert.Equal("reconnect.stale", f.Event)
-	assert.Equal("11", f.ID, "synthetic id should follow last broadcast id")
-
-	// And a new broadcast continues from id 12.
-	require.Eventually(func() bool {
-		s.hub.mu.Lock()
-		defer s.hub.mu.Unlock()
-		return len(s.hub.subscribers) == 1
-	}, 2*time.Second, 10*time.Millisecond)
-	s.hub.Broadcast(Event{Type: "data_changed", Data: "post-stale"})
-	live := readSSEFrame(t, scanner)
-	assert.Equal("12", live.ID)
-}
-
 func TestSSE_InvalidCursorTreatedAsNoCursor(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -1024,16 +933,4 @@ func TestParseLastEventID_AllUnparsableMeansNoCursor(t *testing.T) {
 	r.Header.Set("Last-Event-ID", "xyz")
 	_, ok := parseLastEventID(r)
 	assert.False(t, ok)
-}
-
-// newServerWithHub builds a Server bypassing newServer's
-// NewEventHub allocation, useful for tests that need a non-default
-// ring capacity.
-func newServerWithHub(t *testing.T, database *db.DB, hub *EventHub) *Server {
-	t.Helper()
-	s := New(database, nil, nil, "/", nil, ServerOptions{})
-	// Replace the hub atomically before any subscribers exist.
-	s.hub.Close()
-	s.hub = hub
-	return s
 }

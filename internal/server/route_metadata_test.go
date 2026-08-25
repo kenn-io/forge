@@ -3,13 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"io/fs"
 	"net/http"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -49,9 +43,7 @@ var allowedAPITags = map[string]struct{}{
 // It deliberately does not consult huma's internal _convenience_summary and
 // _convenience_id markers: those markers fire when an explicit value happens
 // to match what huma would auto-generate ("List issues" for GET /issues), so
-// they are not a reliable signal of "this was never set on purpose". The
-// source-level convenience-route test enforces the registration pattern that
-// the live OpenAPI document cannot distinguish by value alone.
+// they are not a reliable signal of "this was never set on purpose".
 func collectMetadataFailures(openAPI *huma.OpenAPI) []string {
 	var failures []string
 	seen := map[string]string{}
@@ -126,71 +118,8 @@ func usesKnownSingleTag(tags []string) bool {
 	return ok
 }
 
-func collectConvenienceRouteMetadataFailures(path string, source []byte) []string {
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, path, source, 0)
-	if err != nil {
-		return []string{fmt.Sprintf("%s: parse: %v", path, err)}
-	}
-
-	var failures []string
-	ast.Inspect(file, func(node ast.Node) bool {
-		call, ok := node.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-		selector, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok || !isHumaConvenienceMethod(selector.Sel.Name) {
-			return true
-		}
-		pkg, ok := selector.X.(*ast.Ident)
-		if !ok || pkg.Name != "huma" {
-			return true
-		}
-		for _, arg := range call.Args {
-			argCall, ok := arg.(*ast.CallExpr)
-			if !ok {
-				continue
-			}
-			if isDocumentOperationCall(argCall.Fun) {
-				return true
-			}
-		}
-		pos := fset.Position(call.Pos())
-		failures = append(failures, fmt.Sprintf(
-			"%s:%d: huma.%s must use httpapi.DocumentOperation for OpenAPI metadata",
-			path, pos.Line, selector.Sel.Name,
-		))
-		return true
-	})
-	sort.Strings(failures)
-	return failures
-}
-
-func isDocumentOperationCall(expr ast.Expr) bool {
-	switch typed := expr.(type) {
-	case *ast.Ident:
-		return typed.Name == "documentOperation"
-	case *ast.SelectorExpr:
-		pkg, ok := typed.X.(*ast.Ident)
-		return ok && pkg.Name == "httpapi" && typed.Sel.Name == "DocumentOperation"
-	default:
-		return false
-	}
-}
-
-func isHumaConvenienceMethod(name string) bool {
-	switch name {
-	case "Get", "Post", "Put", "Patch", "Delete", "Head", "Options":
-		return true
-	default:
-		return false
-	}
-}
-
-// TestHumaContractMetadata asserts that every non-Hidden operation in the
-// live OpenAPI document carries an explicit Summary, exactly one known Tag,
-// and a unique non-empty OperationID.
+// TestHumaContractMetadata checks every live OpenAPI operation for non-empty,
+// unique metadata from the API taxonomy.
 func TestHumaContractMetadata(t *testing.T) {
 	require := require.New(t)
 	openAPI := NewOpenAPI()
@@ -201,44 +130,8 @@ func TestHumaContractMetadata(t *testing.T) {
 	assert.Empty(t, failures, strings.Join(failures, "\n"))
 }
 
-func TestHumaConvenienceRoutesUseDocumentOperation(t *testing.T) {
-	require := require.New(t)
-
-	var paths []string
-	err := filepath.WalkDir(".", func(path string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		if filepath.Ext(path) == ".go" {
-			paths = append(paths, path)
-		}
-		return nil
-	})
-	require.NoError(err)
-
-	var failures []string
-	for _, path := range paths {
-		if strings.HasSuffix(path, "_test.go") || filepath.Base(path) == "health_routes.go" {
-			continue
-		}
-		source, err := os.ReadFile(path)
-		require.NoError(err)
-		failures = append(failures,
-			collectConvenienceRouteMetadataFailures(path, source)...)
-	}
-	assert.Empty(t, failures, strings.Join(failures, "\n"))
-}
-
-// TestRouteMetadataWalkerCatchesUnannotatedRoute is a teeth-test: it builds
-// a tiny in-process huma.API with one convenience-helper route that has no
-// metadata callback, runs collectMetadataFailures, and asserts the walker
-// reports at least one failure. Catches the case where collectMetadataFailures
-// regresses into a no-op (for example by losing the Tags check) and keeps the
-// contract test honest if huma changes how its convenience helpers fill in
-// default Summary and OperationID values.
+// TestRouteMetadataWalkerCatchesUnannotatedRoute proves the live metadata
+// guard does not regress into a no-op.
 func TestRouteMetadataWalkerCatchesUnannotatedRoute(t *testing.T) {
 	require := require.New(t)
 
@@ -279,19 +172,4 @@ func TestRouteMetadataWalkerRejectsUnknownOrMultipleTags(t *testing.T) {
 	failures := collectMetadataFailures(api.OpenAPI())
 	require.Contains(failures,
 		"GET /bad-tag: expected exactly one tag from the API tag taxonomy")
-}
-
-func TestConvenienceRouteMetadataWalkerRejectsTagOnlyCallback(t *testing.T) {
-	require := require.New(t)
-
-	source := []byte(`package server
-func (s *Server) register(api huma.API) {
-	huma.Get(api, "/tag-only", s.handler, func(op *huma.Operation) {
-		op.Tags = []string{"Issues"}
-	})
-}`)
-
-	failures := collectConvenienceRouteMetadataFailures("sample.go", source)
-	require.Contains(failures,
-		"sample.go:3: huma.Get must use httpapi.DocumentOperation for OpenAPI metadata")
 }

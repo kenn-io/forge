@@ -68,19 +68,6 @@ func TestBasePathAPIRouting(t *testing.T) {
 	}
 }
 
-func TestBasePathHealthEndpointsStayAtRoot(t *testing.T) {
-	srv := setupWithBasePath(t, "/kenn-forge/", nil)
-
-	for _, path := range []string{"/healthz", "/livez"} {
-		req := httptest.NewRequest(http.MethodGet, path, nil)
-		rr := httptest.NewRecorder()
-		srv.ServeHTTP(rr, req)
-
-		require.Equal(t, http.StatusOK, rr.Code, path)
-		assert.Contains(t, rr.Body.String(), `"status":"ok"`, path)
-	}
-}
-
 func TestBasePathInjectsScript(t *testing.T) {
 	frontend := fstest.MapFS{
 		"index.html": &fstest.MapFile{

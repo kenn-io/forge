@@ -7483,6 +7483,19 @@ func (sw *syncedWriter) Write(p []byte) (int, error) {
 	return sw.w.Write(p)
 }
 
+func captureDefaultLogs(t *testing.T) *bytes.Buffer {
+	t.Helper()
+
+	var buf bytes.Buffer
+	original := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(
+		&syncedWriter{w: &buf},
+		&slog.HandlerOptions{Level: slog.LevelInfo},
+	)))
+	t.Cleanup(func() { slog.SetDefault(original) })
+	return &buf
+}
+
 // TestSyncMRReturnsErrorOnNilPullRequest verifies SyncMR returns
 // a clear error when a Client returns (nil, nil) from
 // GetPullRequest, instead of dereferencing nil in NormalizePR.
@@ -19604,6 +19617,43 @@ func TestSyncOpenIssueFromBulkStoresTimelineEvents(t *testing.T) {
 	assert.Equal("timeline-RE_issue_1", reopened.DedupeKey)
 }
 
+func TestListFetchProgressLogger(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		item       string
+		source     string
+		knownTotal bool
+		newLogger  func(RepoRef, string) *listFetchProgressLogger
+	}{
+		{"REST issues without reported total", "issue", "rest", false, newIssueListFetchProgressLogger},
+		{"GraphQL merge requests with reported total", "merge request", "graphql", true, newMergeRequestListFetchProgressLogger},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert := assert.New(t)
+			logs := captureDefaultLogs(t)
+			progress := tc.newLogger(RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, tc.source)
+
+			if tc.knownTotal {
+				progress.setTotal(3)
+			}
+			progress.recordPage(1, true)
+			progress.recordPage(1, true)
+			progress.recordPage(1, false)
+			progress.done()
+
+			output := logs.String()
+			attributes := " repo=owner/repo platform=github host=github.com source=" + tc.source
+			knownTotal := ""
+			if tc.knownTotal {
+				knownTotal = " total=3"
+			}
+			assert.Contains(output, `msg="`+tc.item+` list fetch started"`+attributes+" fetched=1"+knownTotal)
+			assert.Contains(output, `msg="`+tc.item+` list fetch progress"`+attributes+" fetched=2"+knownTotal)
+			assert.Contains(output, `msg="`+tc.item+` list fetch completed"`+attributes+" fetched=3 total=3")
+		})
+	}
+}
+
 func TestSyncIssuesFromListLogsProgressForLargeIssueSets(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -19620,12 +19670,7 @@ func TestSyncIssuesFromListLogsProgressForLargeIssueSets(t *testing.T) {
 		issues = append(issues, buildOpenIssue(number, now))
 	}
 
-	var buf bytes.Buffer
-	sw := &syncedWriter{w: &buf}
-	h := slog.NewTextHandler(sw, &slog.HandlerOptions{Level: slog.LevelInfo})
-	orig := slog.Default()
-	slog.SetDefault(slog.New(h))
-	t.Cleanup(func() { slog.SetDefault(orig) })
+	logs := captureDefaultLogs(t)
 
 	client := &mockClient{}
 	syncer := NewSyncer(
@@ -19636,18 +19681,18 @@ func TestSyncIssuesFromListLogsProgressForLargeIssueSets(t *testing.T) {
 	err = syncer.syncIssuesFromList(ctx, client, repo, repoID, issues, false)
 	require.NoError(err)
 
-	logs := buf.String()
-	assert.Contains(logs, `msg="issue sync started"`)
-	assert.Contains(logs, "repo=owner/repo")
-	assert.Contains(logs, "platform=github")
-	assert.Contains(logs, "host=github.com")
-	assert.Contains(logs, "source=rest")
-	assert.Contains(logs, "total=201")
-	assert.Contains(logs, `msg="issue sync progress"`)
-	assert.Contains(logs, "processed=100")
-	assert.Contains(logs, "processed=200")
-	assert.Contains(logs, `msg="issue sync completed"`)
-	assert.Contains(logs, "processed=201")
+	output := logs.String()
+	assert.Contains(output, `msg="issue sync started"`)
+	assert.Contains(output, "repo=owner/repo")
+	assert.Contains(output, "platform=github")
+	assert.Contains(output, "host=github.com")
+	assert.Contains(output, "source=rest")
+	assert.Contains(output, "total=201")
+	assert.Contains(output, `msg="issue sync progress"`)
+	assert.Contains(output, "processed=100")
+	assert.Contains(output, "processed=200")
+	assert.Contains(output, `msg="issue sync completed"`)
+	assert.Contains(output, "processed=201")
 }
 
 func TestSyncRepoGraphQLIssues(t *testing.T) {

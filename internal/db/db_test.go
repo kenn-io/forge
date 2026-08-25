@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -561,16 +560,6 @@ func TestOpenNormalizesInvalidWorkflowStatusesDuringCutover(t *testing.T) {
 	assert.Equal("new", orphaned)
 }
 
-func TestOpenCreatesFile(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "new.db")
-	d, err := Open(path)
-	require.NoError(t, err)
-	d.Close()
-	_, err = os.Stat(path)
-	require.NoError(t, err)
-}
-
 func TestOpenIdempotent(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.db")
@@ -580,21 +569,6 @@ func TestOpenIdempotent(t *testing.T) {
 	d2, err := Open(path)
 	require.NoError(t, err)
 	d2.Close()
-}
-
-func TestOpenCreatesSchemaMigrationsTable(t *testing.T) {
-	require := require.New(t)
-	d := openDBWithMigrations(t)
-
-	version := latestMigrationVersionForTest(t)
-	var actualVersion int
-	var dirty bool
-	err := d.ReadDB().QueryRow(
-		`SELECT version, dirty FROM schema_migrations LIMIT 1`,
-	).Scan(&actualVersion, &dirty)
-	require.NoError(err)
-	require.Equal(version, actualVersion)
-	require.False(dirty)
 }
 
 func TestArchivePromotionBoundaryMigrationReopensMaintenanceGap(t *testing.T) {

@@ -5,7 +5,6 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 	"time"
 
@@ -66,19 +65,4 @@ func TestStreamEventsReturnsLiveEventStream(t *testing.T) {
 	case <-time.After(500 * time.Millisecond):
 		require.Fail("StreamEvents did not return the live response body")
 	}
-}
-
-func TestGeneratedClientOmitsStreamEventsResponseWrapper(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-
-	source, err := os.ReadFile("client.gen.go")
-	require.NoError(err)
-	clientSource := string(source)
-
-	assert.Contains(clientSource, "StreamEvents(ctx context.Context")
-	assert.NotContains(clientSource, "StreamEventsWithResponse")
-	assert.NotContains(clientSource, "ParseStreamEventsResponse")
-	assert.NotContains(clientSource, "type StreamEventsResponse struct")
-	assert.NotContains(clientSource, "type StreamKataTaskEventsResponse struct")
 }

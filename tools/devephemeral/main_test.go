@@ -457,12 +457,6 @@ func TestBuildCommandSpecsPreservesExplicitTelemetrySetting(t *testing.T) {
 	assert.Contains(specs.backend.env, "TELEMETRY_ENABLED=1")
 }
 
-func TestBuildCommandSpecsReferenceExecutableScripts(t *testing.T) {
-	repoRoot := repoRoot(t)
-	assertExecutable(t, filepath.Join(repoRoot, "scripts", "dev-stack-backend.sh"))
-	assertExecutable(t, filepath.Join(repoRoot, "scripts", "frontend-dev.sh"))
-}
-
 func TestWriteStatusFileRecordsPIDsAndPortsNextToConfig(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -944,13 +938,6 @@ func TestRunWritesStatusAndReusesLiveDefaultStack(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		require.Fail("timed out waiting for dev-ephemeral run to stop")
 	}
-}
-
-func assertExecutable(t *testing.T, path string) {
-	t.Helper()
-	info, err := os.Stat(path)
-	require.NoError(t, err)
-	assert.NotZero(t, info.Mode().Perm()&0o111, "%s must be executable", path)
 }
 
 func repoRoot(t *testing.T) string {

@@ -15,6 +15,7 @@
   import OctagonXIcon from "@lucide/svelte/icons/octagon-x";
   import LabelRow from "../shared/LabelRow.svelte";
   import WorkspaceIndicator from "../shared/WorkspaceIndicator.svelte";
+  import SidebarTitlePopover from "./SidebarTitlePopover.svelte";
   import { repoIdentityKey } from "../../utils/repo-label.js";
   import { effectiveActivity } from "../../utils/effective-activity.js";
 
@@ -54,7 +55,7 @@
     );
   }
 
-  let el: HTMLButtonElement;
+  let el = $state<HTMLButtonElement>();
 
   $effect(() => {
     if (selected && el) {
@@ -275,6 +276,7 @@
     </span>
   </div>
 </button>
+<SidebarTitlePopover target={el} title={pr.Title} repository={repoLabel} branch={pr.HeadBranch} />
 
 <style>
   .pull-item {

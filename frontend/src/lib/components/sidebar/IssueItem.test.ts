@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { Issue } from "../../api/types.js";
@@ -151,5 +151,21 @@ describe("IssueItem", () => {
     renderItem(mkIssue({ State: "closed" }));
 
     expect(screen.getByText("Closed")).toBeTruthy();
+  });
+
+  it("shows the full title while the row has keyboard focus", async () => {
+    renderItem(mkIssue({ Title: "An issue title too long for the sidebar" }));
+    const row = screen.getByRole("button", { name: /An issue title too long for the sidebar/i });
+
+    await fireEvent.focusIn(row);
+    const tooltip = screen.getByRole("tooltip");
+    expect(Array.from(tooltip.children, (line) => line.textContent)).toEqual([
+      "An issue title too long for the sidebar",
+      "acme/widgets",
+    ]);
+    expect(row.getAttribute("aria-describedby")).toBe(tooltip.id);
+
+    await fireEvent.focusOut(row);
+    expect(screen.queryByRole("tooltip")).toBeNull();
   });
 });

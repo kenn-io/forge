@@ -6,6 +6,7 @@
   import { Chip } from "@kenn-io/kit-ui";
   import LabelRow from "../shared/LabelRow.svelte";
   import WorkspaceIndicator from "../shared/WorkspaceIndicator.svelte";
+  import SidebarTitlePopover from "./SidebarTitlePopover.svelte";
   import { repoIdentityKey } from "../../utils/repo-label.js";
   import { effectiveActivity } from "../../utils/effective-activity.js";
 
@@ -21,7 +22,7 @@
 
   const { issue, selected, showRepo, repoLabel, onclick }: Props = $props();
 
-  let el: HTMLButtonElement;
+  let el = $state<HTMLButtonElement>();
 
   $effect(() => {
     if (selected && el) {
@@ -107,6 +108,7 @@
     </span>
   </div>
 </button>
+<SidebarTitlePopover target={el} title={issue.Title} repository={repoLabel} />
 
 <style>
   .issue-item {

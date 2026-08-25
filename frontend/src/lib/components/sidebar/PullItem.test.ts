@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { PullRequest } from "../../api/types.js";
@@ -428,5 +428,36 @@ describe("PullItem compact layout", () => {
     expect(document.querySelector(".title .title-text")?.textContent).toBe("Cache widget details");
     expect(document.querySelector(".title .item-number")?.textContent).toBe("#7");
     expect(document.querySelector(".meta-left .meta-text")?.textContent).toBe("alice");
+  });
+
+  it("shows the full title after sustained row hover", async () => {
+    vi.useFakeTimers();
+    try {
+      renderItem(
+        mkPR({
+          Title: "A pull request title too long for the sidebar",
+          HeadBranch: "feature/full-sidebar-popover-details",
+        }),
+      );
+      const row = screen.getByRole("button", { name: /A pull request title too long for the sidebar/i });
+
+      await fireEvent.mouseEnter(row);
+      await vi.advanceTimersByTimeAsync(599);
+      expect(screen.queryByRole("tooltip")).toBeNull();
+
+      await vi.advanceTimersByTimeAsync(1);
+      const tooltip = screen.getByRole("tooltip");
+      expect(Array.from(tooltip.children, (line) => line.textContent)).toEqual([
+        "A pull request title too long for the sidebar",
+        "o/n",
+        "feature/full-sidebar-popover-details",
+      ]);
+      expect(row.contains(tooltip)).toBe(false);
+
+      await fireEvent.mouseLeave(row);
+      expect(screen.queryByRole("tooltip")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

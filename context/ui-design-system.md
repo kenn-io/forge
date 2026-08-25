@@ -220,6 +220,12 @@ Intent:
 
 Use it inside left sidebar headers and collapsed strips. Pass a specific label such as `Workspaces sidebar` when the generic `sidebar` label would be ambiguous. The resizable sidebar layout itself is kit-ui's `CollapsibleSidebar`; the container-width-driven floating overlay is requested through its `overlay` prop (hosts pass the container store's `isNarrow()` — kit's `overlayOnNarrow` media query is viewport-based, which is not the same signal).
 
+### SidebarTitlePopover
+
+Use `SidebarTitlePopover` on truncated pull-request and issue sidebar rows so the full
+title and formatted repository remain readable; pull requests add the full head branch
+on its own line (`frontend/src/lib/components/sidebar/SidebarTitlePopover.svelte`).
+
 ### GroupedSidebarSection
 
 Use `GroupedSidebarSection` for collapsible groups in PR, issue, and workspace list rails. Keep group chrome and the `--sidebar-*` surface/row-state tokens shared; domain-specific row content stays with its owner. Wrap large always-visible vertical scroll panes (list rails, diff area, pull/issue detail, activity views) in `ScrollBox` for consistent flex sizing, native vertical scrolling, and a labelled focusable region; bind `viewport` when a host needs imperative scroll logic, and note the scrolling element is the viewport, not the host's content wrapper class. Give each scroll area a concise accessible label so keyboard users can identify and scroll the region. (`frontend/src/lib/components/shared/GroupedSidebarSection.svelte`, `ScrollBox` from `@kenn-io/kit-ui` — see kit-ui's `docs/components/scroll-box.md`, `frontend/src/app.css:39`)

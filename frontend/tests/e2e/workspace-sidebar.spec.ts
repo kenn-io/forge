@@ -2702,15 +2702,12 @@ test.describe("workspace launch home", () => {
     await expect(page.locator(".workspace-stage .tabbed-panel-leaf.input-active")).toHaveCount(0);
     await codexLeaf.getByRole("tab", { name: /^Codex/ }).focus();
     await expect(codexLeaf).toHaveClass(/input-active/);
-    const activeBorder = await codexLeaf.evaluate((leaf) => {
-      const style = getComputedStyle(leaf, "::after");
-      return {
-        colors: [style.borderTopColor, style.borderRightColor, style.borderBottomColor, style.borderLeftColor],
-        widths: [style.borderTopWidth, style.borderRightWidth, style.borderBottomWidth, style.borderLeftWidth],
-      };
-    });
-    expect(activeBorder.colors.every((color) => color !== "rgba(0, 0, 0, 0)")).toBe(true);
-    expect(activeBorder.widths).toEqual(["1px", "1px", "1px", "1px"]);
+    const activeBorder = await codexLeaf.evaluate((leaf) => ({
+      overlayContent: getComputedStyle(leaf, "::after").content,
+      insetShadow: getComputedStyle(leaf).boxShadow,
+    }));
+    expect(activeBorder.overlayContent).toBe("none");
+    expect(activeBorder.insetShadow).toContain("inset");
 
     await reviewerLeaf.getByRole("tab", { name: /^Reviewer/ }).focus();
     await expect(reviewerLeaf).toHaveClass(/input-active/);

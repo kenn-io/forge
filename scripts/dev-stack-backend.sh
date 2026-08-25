@@ -7,6 +7,8 @@ if [ -z "$(find internal/web/dist -mindepth 1 -print -quit 2>/dev/null)" ]; then
   printf 'ok\n' > internal/web/dist/stub.html
 fi
 
+make frontend
+
 air_config=".air.toml"
 case "$(uname -s)" in
   CYGWIN* | MINGW* | MSYS*) air_config=".air.windows.toml" ;;

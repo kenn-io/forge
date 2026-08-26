@@ -320,7 +320,9 @@ describe("NewWorkspaceDialog", () => {
     await renderDialog();
 
     await fireEvent.click(screen.getByRole("button", { name: "Kata issue" }));
-    expect((await screen.findByRole("searchbox", { name: "Search Kata issues" }) as HTMLInputElement).disabled).toBe(false);
+    expect(((await screen.findByRole("searchbox", { name: "Search Kata issues" })) as HTMLInputElement).disabled).toBe(
+      false,
+    );
   });
 
   it("routes non-default hosts through the host-scoped path", async () => {

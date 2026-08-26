@@ -37,7 +37,7 @@ describe("KataLinkDialog", () => {
     vi.restoreAllMocks();
   });
 
-  it("uses the configured default initially and disables unhealthy or incompatible daemons", async () => {
+  it("uses the configured default initially and disables unhealthy daemons", async () => {
     const get = vi.fn().mockResolvedValue({
       data: {
         daemons: [
@@ -47,7 +47,7 @@ describe("KataLinkDialog", () => {
             health: "connected",
             auth: "none",
             default: true,
-            api_schema_version: "0.10.0",
+            api_schema_version: "0.13.0",
           },
           {
             id: "down",
@@ -55,15 +55,7 @@ describe("KataLinkDialog", () => {
             health: "unreachable",
             auth: "none",
             default: false,
-            api_schema_version: "0.10.0",
-          },
-          {
-            id: "old",
-            url: "http://old",
-            health: "connected",
-            auth: "none",
-            default: false,
-            api_schema_version: "0.8.4",
+            api_schema_version: "0.13.0",
           },
         ],
       },
@@ -73,33 +65,9 @@ describe("KataLinkDialog", () => {
     const trigger = await screen.findByRole("combobox", { name: /Kata daemon: healthy/ });
     await fireEvent.click(trigger);
     expect((screen.getByRole("option", { name: /down/ }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole("option", { name: /old/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("searchbox", { name: "Search Kata issues" }) as HTMLInputElement).disabled).toBe(false);
     expect(screen.queryByLabelText(/daemon URL/i)).toBeNull();
     expect(screen.queryByLabelText(/issue UID/i)).toBeNull();
-  });
-
-  it("explains how to recover when the selected daemon is incompatible", async () => {
-    const get = vi.fn().mockResolvedValue({
-      data: {
-        daemons: [
-          {
-            id: "old",
-            url: "http://old",
-            health: "incompatible",
-            auth: "none",
-            default: true,
-            api_schema_version: "0.7.0",
-            hint: "Kata API schema 0.7.0 is incompatible; Forge requires >=0.9.0 and <0.11.0. Upgrade Kata.",
-          },
-        ],
-      },
-    });
-    renderDialog(clientWith(get));
-
-    const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toContain("Kata API schema 0.7.0 is incompatible");
-    expect(alert.textContent).toContain("Upgrade Kata");
-    expect((screen.getByRole("searchbox", { name: "Search Kata issues" }) as HTMLInputElement).disabled).toBe(true);
   });
 
   it("debounces reference search and submits the selected canonical identity", async () => {

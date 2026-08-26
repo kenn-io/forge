@@ -281,21 +281,7 @@ describe("KataLinksPanel", () => {
     expect(post).not.toHaveBeenCalled();
   });
 
-  it.each([undefined, "0.8.9", "0.11.0"])(
-    "does not project or render incompatible schema version %s",
-    async (version) => {
-      const envelope = detail();
-      envelope.api_schema_version = version;
-      const { client } = listAndDetailClient([link({ api_schema_version: version })], envelope);
-      renderPanel(client);
-
-      expect(await screen.findByText(/Kata API schema is not supported/)).toBeTruthy();
-      expect(projectIssueDetail).not.toHaveBeenCalled();
-      expect(screen.queryByLabelText("Kata issue detail")).toBeNull();
-    },
-  );
-
-  it.each(["0.9.0", "0.10.7"])("renders supported schema version %s through Kata UI", async (version) => {
+  it.each(["0.11.0", "0.13.0"])("renders reported schema version %s through Kata UI", async (version) => {
     const { client } = listAndDetailClient([link({ api_schema_version: version })], detail(version));
     renderPanel(client);
 

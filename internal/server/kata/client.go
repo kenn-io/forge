@@ -18,8 +18,6 @@ const (
 	maxKataDaemonHealthBytes  = 1 << 20
 	defaultKataReferenceLimit = 100
 	maxKataReferenceLimit     = 200
-	kataMinimumVersion        = "v0.14.3"
-	kataSupportedAPISchemas   = ">=0.9.0 and <0.11.0"
 )
 
 type kataDaemonHealth struct {
@@ -93,50 +91,7 @@ func (c *kataDaemonClient) Health(ctx context.Context) (kataDaemonHealth, error)
 			"decode Kata daemon %q health response: %w", c.daemon.ID, err,
 		)
 	}
-	state := "connected"
-	if !supportsKataAPISchema(payload.APISchemaVersion) {
-		state = "incompatible"
-	}
-	return kataDaemonHealth{State: state, APISchemaVersion: payload.APISchemaVersion}, nil
-}
-
-func supportsKataAPISchema(version string) bool {
-	parsed, ok := parseKataAPISchema(version)
-	return ok && parsed[0] == 0 && (parsed[1] == 9 || parsed[1] == 10)
-}
-
-func parseKataAPISchema(version string) ([3]int, bool) {
-	var parsed [3]int
-	parts := strings.Split(strings.TrimSpace(version), ".")
-	if len(parts) != 3 {
-		return parsed, false
-	}
-	for i, part := range parts {
-		if part == "" || strings.IndexFunc(part, func(r rune) bool { return r < '0' || r > '9' }) >= 0 {
-			return parsed, false
-		}
-		value, err := strconv.Atoi(part)
-		if err != nil {
-			return parsed, false
-		}
-		parsed[i] = value
-	}
-	return parsed, true
-}
-
-func kataDaemonCompatibilityMessage(version string) string {
-	detected := strings.TrimSpace(version)
-	if detected == "" {
-		detected = "unknown"
-	}
-	action := fmt.Sprintf(
-		"Upgrade Kata to %s or newer with a supported API schema, then restart the daemon.",
-		kataMinimumVersion,
-	)
-	if parsed, ok := parseKataAPISchema(detected); ok && (parsed[0] > 0 || parsed[1] >= 11) {
-		action = "Upgrade Forge or use a supported Kata release."
-	}
-	return fmt.Sprintf("Kata API schema %s is incompatible; Forge requires %s. %s", detected, kataSupportedAPISchemas, action)
+	return kataDaemonHealth{State: "connected", APISchemaVersion: payload.APISchemaVersion}, nil
 }
 
 func (c *kataDaemonClient) References(

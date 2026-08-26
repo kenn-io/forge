@@ -286,17 +286,17 @@ url = "`+upstream.URL+`"
 	assert.NotContains(problem.Details, "platformHost")
 }
 
-func TestKataReferencesRouteExplainsIncompatibleDaemonBeforeNarrowRead(t *testing.T) {
+func TestKataReferencesRouteAcceptsCurrentSchema(t *testing.T) {
 	assert := assert.New(t)
 	var referenceCalls int
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path == "/api/v1/health" {
-			_, _ = w.Write([]byte(`{"ok":true,"api_schema_version":"0.7.0"}`))
+			_, _ = w.Write([]byte(`{"ok":true,"api_schema_version":"0.13.0"}`))
 			return
 		}
 		referenceCalls++
-		http.NotFound(w, r)
+		_, _ = w.Write([]byte(`{"issues":[]}`))
 	}))
 	defer upstream.Close()
 
@@ -304,21 +304,15 @@ func TestKataReferencesRouteExplainsIncompatibleDaemonBeforeNarrowRead(t *testin
 	t.Setenv("KATA_HOME", home)
 	writeKataServerCatalog(t, home, `
 [[daemon]]
-name = "old"
+name = "current"
 url = "`+upstream.URL+`"
 `)
 	srv, _ := setupTestServer(t)
 
 	rr := doJSON(t, srv, http.MethodGet,
-		"/api/v1/kata/daemons/old/references?q=task", nil)
-	require.Equal(t, http.StatusServiceUnavailable, rr.Code, rr.Body.String())
-	problem := decodeProblem(t, rr)
-	assert.Equal(httpapi.CodeServiceUnavailable, problem.Code)
-	assert.Equal("incompatible_api_schema", problem.Details["reason"])
-	assert.Equal("0.7.0", problem.Details["api_schema_version"])
-	assert.Equal(">=0.9.0 and <0.11.0", problem.Details["supported_api_schema"])
-	assert.Contains(problem.Detail, "Upgrade Kata")
-	assert.Zero(referenceCalls)
+		"/api/v1/kata/daemons/current/references?q=task", nil)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	assert.Equal(1, referenceCalls)
 }
 
 func TestKataReferencesRouteRequiresConnectedHealthBeforeNarrowRead(t *testing.T) {

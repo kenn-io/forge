@@ -94,8 +94,6 @@ func (h *Handler) listKataDaemons(context.Context, *struct{}) (*listKataDaemonsO
 		hint := ""
 		if d.Local && d.URL == "" {
 			hint = "local daemon not running; run `kata daemon start`"
-		} else if health[i].State == "incompatible" {
-			hint = kataDaemonCompatibilityMessage(health[i].APISchemaVersion)
 		}
 
 		out.Daemons = append(out.Daemons, kataDaemonResponse{

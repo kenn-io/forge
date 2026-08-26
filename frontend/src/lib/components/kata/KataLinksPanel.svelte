@@ -1,6 +1,5 @@
 <script lang="ts">
   import { Button, Chip, EmptyState, Spinner } from "@kenn-io/kit-ui";
-  import { supportsKataAPISchema } from "@kenn-io/kata-ui/packages/kata-ui/src/index.ts";
   import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
   import UnlinkIcon from "@lucide/svelte/icons/unlink";
   import { onDestroy, untrack } from "svelte";
@@ -56,9 +55,6 @@
 
   const selected = $derived(store.selected());
   const detailEnvelope = $derived(store.detail());
-  const detailCompatible = $derived(
-    detailEnvelope !== null && supportsKataAPISchema(detailEnvelope.api_schema_version ?? ""),
-  );
   const selectedWorkspaceIdentity = $derived<KataWorkspaceIdentity | null>(
     selected ? { daemonID: selected.daemon_id, issueUID: selected.issue_uid } : null,
   );
@@ -444,10 +440,6 @@
             <div class="loading"><Spinner size={14} /> Loading issue detail…</div>
           {:else if detailEnvelope === null}
             <p class="detail-message">Kata issue detail is unavailable.</p>
-          {:else if !detailCompatible}
-            <p class="detail-message">
-              Kata API schema is not supported ({detailEnvelope.api_schema_version || "version missing"}).
-            </p>
           {:else}
             {#key detailEnvelope}
               <svelte:boundary>

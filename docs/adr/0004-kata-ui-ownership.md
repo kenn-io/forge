@@ -334,11 +334,9 @@ a legacy config alias, route redirect, fallback wrapper, or translation shim.
 - A live validation failure prevents inserting an explicit link.
 - A deleted or unreachable task retains explicit identity and can be unlinked.
 - Hydration errors are per task and produce partial results.
-- A daemon outside `@kenn-io/kata-ui`'s supported API-schema range produces a
-  typed unavailable task state; additive fields from compatible newer daemons
-  are ignored.
-- A daemon health response with no `api_schema_version` is incompatible; Forge
-  never guesses an implicit minimum version.
+- Forge uses Kata health reachability and authentication state to decide
+  availability. `api_schema_version` remains diagnostic metadata and does not
+  gate Kata-backed workflows.
 - Detail, workspace, and launch operations are pinned to the task's daemon.
 - No safe HTTP(S) browser origin means `Open in Kata` is unavailable with an
   explanation; Forge never falls back to a Unix-socket URL or configured URL

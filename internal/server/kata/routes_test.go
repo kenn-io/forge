@@ -102,7 +102,7 @@ func TestKataDaemonsEndpointReportsHealthAndRedactsSecrets(t *testing.T) {
 		assert.Equal("/secret/path/api/v1/health", r.URL.Path)
 		assert.Equal("Bearer prod-secret", r.Header.Get("Authorization"))
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"ok":true,"api_schema_version":"0.9.0"}`))
+		_, _ = w.Write([]byte(`{"ok":true,"api_schema_version":"0.13.0"}`))
 	}))
 	defer connected.Close()
 	authRequired := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -139,7 +139,7 @@ url = "`+authRequired.URL+`"
 	assert.True(body.Daemons[0].Default)
 	assert.Equal("token", body.Daemons[0].Auth)
 	assert.Equal("connected", body.Daemons[0].Health)
-	assert.Equal("0.9.0", body.Daemons[0].APISchemaVersion)
+	assert.Equal("0.13.0", body.Daemons[0].APISchemaVersion)
 	assert.NotContains(body.Daemons[0].URL, "secret")
 	assert.NotContains(rr.Body.String(), "prod-secret")
 	assert.NotContains(rr.Body.String(), "token=leak")
@@ -148,32 +148,6 @@ url = "`+authRequired.URL+`"
 	assert.False(body.Daemons[1].Default)
 	assert.Equal("none", body.Daemons[1].Auth)
 	assert.Equal("auth_required", body.Daemons[1].Health)
-}
-
-func TestKataDaemonsEndpointSurfacesIncompatibleSchema(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"ok":true,"api_schema_version":"0.7.0"}`))
-	}))
-	defer upstream.Close()
-
-	home := t.TempDir()
-	t.Setenv("KATA_HOME", home)
-	writeKataServerCatalog(t, home, `
-[[daemon]]
-name = "old"
-url = "`+upstream.URL+`"
-`)
-	srv, _ := setupTestServer(t)
-
-	daemons := requestKataDaemons(t, srv)
-	require.Len(daemons, 1)
-	assert.Equal("incompatible", daemons[0].Health)
-	assert.Equal("0.7.0", daemons[0].APISchemaVersion)
-	assert.Contains(daemons[0].Hint, "Forge requires >=0.9.0 and <0.11.0")
-	assert.Contains(daemons[0].Hint, "Upgrade Kata")
 }
 
 func TestKataDaemonsEndpointRejectsUnsetTokenEnv(t *testing.T) {

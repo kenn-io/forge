@@ -78,7 +78,7 @@ func (h *Handler) listKataReferences(
 ) (*kataReferencesOutput, error) {
 	ctx, cancel := context.WithTimeout(ctx, kataDaemonReadTimeout)
 	defer cancel()
-	client, problem := h.kataClientForCompatibleDaemon(input.DaemonID)
+	client, problem := h.kataClientForConnectedDaemon(input.DaemonID)
 	if problem != nil {
 		return nil, problem
 	}
@@ -102,7 +102,7 @@ func (h *Handler) resolveKataIssueReference(
 ) (*kataIssueReferenceResolveOutput, error) {
 	ctx, cancel := context.WithTimeout(ctx, kataDaemonReadTimeout)
 	defer cancel()
-	client, problem := h.kataClientForCompatibleDaemon(input.DaemonID)
+	client, problem := h.kataClientForConnectedDaemon(input.DaemonID)
 	if problem != nil {
 		return nil, problem
 	}
@@ -145,7 +145,7 @@ func (h *Handler) getKataLaunchTarget(
 ) (*kataLaunchTargetOutput, error) {
 	ctx, cancel := context.WithTimeout(ctx, kataDaemonReadTimeout)
 	defer cancel()
-	client, problem := h.kataClientForCompatibleDaemon(input.DaemonID)
+	client, problem := h.kataClientForConnectedDaemon(input.DaemonID)
 	if problem != nil {
 		return nil, problem
 	}
@@ -181,7 +181,7 @@ func (h *Handler) kataClientForDaemon(daemonID string) (*kataDaemonClient, *http
 	return &kataDaemonClient{daemon: daemon, client: client, baseURL: baseURL}, nil
 }
 
-func (h *Handler) kataClientForCompatibleDaemon(daemonID string) (*kataDaemonClient, *httpapi.ProblemError) {
+func (h *Handler) kataClientForConnectedDaemon(daemonID string) (*kataDaemonClient, *httpapi.ProblemError) {
 	client, problem := h.kataClientForDaemon(daemonID)
 	if problem != nil {
 		return nil, problem
@@ -197,17 +197,6 @@ func kataDaemonUnavailableProblem(daemonID string, health kataDaemonHealth) *htt
 	details := map[string]any{"daemon": daemonID}
 	if health.State != "" {
 		details["health"] = health.State
-	}
-	if health.State == "incompatible" {
-		details["reason"] = "incompatible_api_schema"
-		details["api_schema_version"] = health.APISchemaVersion
-		details["supported_api_schema"] = kataSupportedAPISchemas
-		return httpapi.NewProblem(
-			http.StatusServiceUnavailable,
-			httpapi.CodeServiceUnavailable,
-			kataDaemonCompatibilityMessage(health.APISchemaVersion),
-			details,
-		)
 	}
 	return httpapi.NewProblem(
 		http.StatusServiceUnavailable,

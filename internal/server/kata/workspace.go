@@ -321,7 +321,7 @@ func (h *Handler) canonicalKataWorkspaceMetadata(
 	ctx context.Context,
 	requested db.WorkspaceKataMetadata,
 ) (db.WorkspaceKataMetadata, error) {
-	client, problem := h.kataClientForCompatibleDaemon(requested.DaemonID)
+	client, problem := h.kataClientForConnectedDaemon(requested.DaemonID)
 	if problem != nil {
 		return db.WorkspaceKataMetadata{}, problem
 	}

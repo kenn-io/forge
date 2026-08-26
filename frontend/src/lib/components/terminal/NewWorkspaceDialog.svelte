@@ -2,7 +2,6 @@
   import { Effect } from "effect";
   import { getStores } from "../../context.js";
   import WorkspaceCreateSplitButton from "../workspace/WorkspaceCreateSplitButton.svelte";
-  import { supportsKataAPISchema } from "@kenn-io/kata-ui/packages/kata-ui/src/index.ts";
   import {
     Button,
     SearchInput,
@@ -293,15 +292,11 @@
   const selectedDaemon = $derived(
     kataDaemons.daemons().find((daemon) => daemon.id === selectedDaemonID) ?? null,
   );
-  const selectedDaemonUsable = $derived(
-    selectedDaemon?.health === "connected" &&
-      supportsKataAPISchema(selectedDaemon.api_schema_version ?? ""),
-  );
+  const selectedDaemonUsable = $derived(selectedDaemon?.health === "connected");
   const selectedDaemonProblem = $derived.by(() => {
     if (!selectedDaemon || selectedDaemonUsable) return null;
     if (selectedDaemon.hint) return selectedDaemon.hint;
-    if (selectedDaemon.health !== "connected") return `Kata daemon health: ${selectedDaemon.health}.`;
-    return `Kata API schema ${selectedDaemon.api_schema_version || "unknown"} is incompatible.`;
+    return `Kata daemon health: ${selectedDaemon.health}.`;
   });
   const selectedKataWorkspaceIdentity = $derived<KataWorkspaceIdentity | null>(
     source === "kata_issue" && selectedKataReference && selectedDaemonID
@@ -315,11 +310,7 @@
   );
   const daemonOptions = $derived(
     kataDaemons.daemons().map((daemon) => {
-      const healthReason = daemon.health === "connected" ? "" : daemon.hint || `Health: ${daemon.health}`;
-      const schemaReason = supportsKataAPISchema(daemon.api_schema_version ?? "")
-        ? ""
-        : `Unsupported API schema ${daemon.api_schema_version || "unknown"}`;
-      const reason = healthReason || schemaReason;
+      const reason = daemon.health === "connected" ? "" : daemon.hint || `Health: ${daemon.health}`;
       return {
         value: daemon.id,
         label: daemon.id,

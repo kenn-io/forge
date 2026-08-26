@@ -1,6 +1,5 @@
 <script lang="ts">
   import { Button, Modal, SearchInput, SelectDropdown } from "@kenn-io/kit-ui";
-  import { supportsKataAPISchema } from "@kenn-io/kata-ui/packages/kata-ui/src/index.ts";
   import { untrack } from "svelte";
 
   import type { components } from "../../api/generated/schema.js";
@@ -43,11 +42,7 @@
   );
   const daemonOptions = $derived(
     daemons.map((daemon) => {
-      const healthReason = daemon.health === "connected" ? "" : daemon.hint || `Health: ${daemon.health}`;
-      const schemaReason = supportsKataAPISchema(daemon.api_schema_version ?? "")
-        ? ""
-        : `Unsupported API schema ${daemon.api_schema_version || "unknown"}`;
-      const reason = healthReason || schemaReason;
+      const reason = daemon.health === "connected" ? "" : daemon.hint || `Health: ${daemon.health}`;
       return {
         value: daemon.id,
         label: daemon.id,
@@ -58,15 +53,11 @@
       };
     }),
   );
-  const selectedDaemonUsable = $derived(
-    selectedDaemon?.health === "connected" &&
-      supportsKataAPISchema(selectedDaemon.api_schema_version ?? ""),
-  );
+  const selectedDaemonUsable = $derived(selectedDaemon?.health === "connected");
   const selectedDaemonProblem = $derived.by(() => {
     if (!selectedDaemon || selectedDaemonUsable) return null;
     if (selectedDaemon.hint) return selectedDaemon.hint;
-    if (selectedDaemon.health !== "connected") return `Kata daemon health: ${selectedDaemon.health}.`;
-    return `Kata API schema ${selectedDaemon.api_schema_version || "unknown"} is incompatible.`;
+    return `Kata daemon health: ${selectedDaemon.health}.`;
   });
 
   function problemMessage(problem: unknown, fallback: string): string {

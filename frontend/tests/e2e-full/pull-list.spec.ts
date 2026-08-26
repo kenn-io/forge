@@ -278,32 +278,40 @@ test.describe("PR list sidebar", () => {
       throw new Error("PR list sidebar e2e server was not started");
     }
     const baseURL = server.info.base_url;
+    const setup = await page.request.put(`${baseURL}/api/v1/starred`, {
+      data: {
+        item_type: "pr",
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "widgets",
+        number: 1,
+      },
+    });
+    expect(setup.status()).toBe(200);
     await page.goto(`${baseURL}/pulls`);
     await waitForPullList(page);
     const row = page.locator(".pull-item").filter({ hasText: "Add widget caching layer" }).first();
     const star = row.locator(".star-btn");
-    const initialTitle = await star.getAttribute("title");
-    const expectedTitle = initialTitle === "Star" ? "Unstar" : "Star";
-    const method = initialTitle === "Star" ? "PUT" : "DELETE";
-    const mutation = page.waitForResponse(
-      (response) => response.request().method() === method && response.url() === `${baseURL}/api/v1/starred`,
+    await expect(star).toHaveAttribute("title", "Unstar");
+    const unstarMutation = page.waitForResponse(
+      (response) => response.request().method() === "DELETE" && response.url() === `${baseURL}/api/v1/starred`,
     );
-
     await star.click();
 
-    expect((await mutation).status()).toBe(200);
-    await expect(star).toHaveAttribute("title", expectedTitle);
+    expect((await unstarMutation).status()).toBe(200);
+    await expect(star).toHaveAttribute("title", "Star");
     await expect
       .poll(async () => {
         const response = await page.request.get(`${baseURL}/api/v1/pulls/github/acme/widgets/1`);
         const detail = (await response.json()) as { merge_request: { Starred?: boolean } };
         return Boolean(detail.merge_request.Starred);
       })
-      .toBe(expectedTitle === "Unstar");
+      .toBe(false);
     await page.reload();
     await waitForPullList(page);
     await expect(
       page.locator(".pull-item").filter({ hasText: "Add widget caching layer" }).first().locator(".star-btn"),
-    ).toHaveAttribute("title", expectedTitle);
+    ).toHaveAttribute("title", "Star");
   });
 });

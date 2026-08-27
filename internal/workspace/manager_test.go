@@ -2327,8 +2327,7 @@ func TestValidateWorktreeBasePathRejectsLocalRemotes(t *testing.T) {
 			)
 
 			got, err := ValidateWorktreeBasePath(
-				t.Context(), localRepo, "github.com", "acme", "widget",
-			)
+				t.Context(), localRepo, "github.com", "acme", "widget", false)
 
 			require.Empty(got)
 			require.Error(err)
@@ -2377,8 +2376,7 @@ func TestValidateWorktreeBasePathRejectsExecutableLocalConfig(t *testing.T) {
 			runWorkspaceTestGit(t, localRepo, "config", tt.key, tt.value)
 
 			got, err := ValidateWorktreeBasePath(
-				t.Context(), localRepo, "github.com", "acme", "widget",
-			)
+				t.Context(), localRepo, "github.com", "acme", "widget", false)
 
 			require.Empty(got)
 			require.Error(err)
@@ -2404,8 +2402,7 @@ func TestValidateWorktreeBasePathAcceptsConfiguredHooksPath(t *testing.T) {
 	require.NoError(os.WriteFile(hookPath, []byte("#!/bin/sh\nexit 0\n"), 0o755))
 
 	got, err := ValidateWorktreeBasePath(
-		t.Context(), localRepo, "github.com", "acme", "widget",
-	)
+		t.Context(), localRepo, "github.com", "acme", "widget", false)
 
 	require.NoError(err)
 	canonicalLocalRepo, err := filepath.EvalSymlinks(localRepo)
@@ -2446,8 +2443,7 @@ func TestValidateWorktreeBasePathRejectsUnsafeOriginSchemes(t *testing.T) {
 			)
 
 			got, err := ValidateWorktreeBasePath(
-				t.Context(), localRepo, "github.com", "acme", "widget",
-			)
+				t.Context(), localRepo, "github.com", "acme", "widget", false)
 
 			require.Empty(got)
 			require.Error(err)
@@ -2476,7 +2472,25 @@ func TestValidateWorktreeBasePathAcceptsLoopbackHTTPOrigin(t *testing.T) {
 	)
 
 	got, err := ValidateWorktreeBasePath(
-		t.Context(), localRepo, "127.0.0.1", "acme", "widget",
+		t.Context(), localRepo, "127.0.0.1", "acme", "widget", false)
+
+	require.NoError(err)
+	canonicalLocalRepo, err := filepath.EvalSymlinks(localRepo)
+	require.NoError(err)
+	require.Equal(canonicalLocalRepo, got)
+}
+
+func TestValidateWorktreeBasePathAcceptsExplicitlyAllowedHTTPOrigin(t *testing.T) {
+	require := require.New(t)
+
+	localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/thing")
+	runWorkspaceTestGit(
+		t, localRepo, "remote", "set-url", "origin",
+		"http://gitea.example.test:3000/acme/widget.git",
+	)
+
+	got, err := ValidateWorktreeBasePath(
+		t.Context(), localRepo, "gitea.example.test:3000", "acme", "widget", true,
 	)
 
 	require.NoError(err)
@@ -2495,8 +2509,7 @@ func TestValidateWorktreeBasePathAcceptsSCPStyleSSHOrigin(t *testing.T) {
 	)
 
 	got, err := ValidateWorktreeBasePath(
-		t.Context(), localRepo, "github.com", "acme", "widget",
-	)
+		t.Context(), localRepo, "github.com", "acme", "widget", false)
 
 	require.NoError(err)
 	canonicalLocalRepo, err := filepath.EvalSymlinks(localRepo)
@@ -2533,8 +2546,7 @@ func TestValidateWorktreeBasePathCanonicalizesSymlinkPath(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := ValidateWorktreeBasePath(
-				t.Context(), tt.path, "github.com", "acme", "widget",
-			)
+				t.Context(), tt.path, "github.com", "acme", "widget", false)
 
 			require.NoError(err)
 			assert.Equal(canonicalLocalRepo, got)
@@ -2553,8 +2565,7 @@ func TestValidateWorktreeBasePathRejectsAdditionalOriginURLs(t *testing.T) {
 	)
 
 	got, err := ValidateWorktreeBasePath(
-		t.Context(), localRepo, "github.com", "acme", "widget",
-	)
+		t.Context(), localRepo, "github.com", "acme", "widget", false)
 
 	require.Empty(got)
 	require.Error(err)
@@ -2577,8 +2588,7 @@ func TestValidateWorktreeBasePathRejectsUnsafeOriginFetchRefspec(t *testing.T) {
 	)
 
 	got, err := ValidateWorktreeBasePath(
-		t.Context(), localRepo, "github.com", "acme", "widget",
-	)
+		t.Context(), localRepo, "github.com", "acme", "widget", false)
 
 	require.Empty(got)
 	require.Error(err)
@@ -2601,8 +2611,7 @@ func TestValidateWorktreeBasePathAcceptsSingleBranchOriginFetchRefspec(t *testin
 	)
 
 	got, err := ValidateWorktreeBasePath(
-		t.Context(), localRepo, "github.com", "acme", "widget",
-	)
+		t.Context(), localRepo, "github.com", "acme", "widget", false)
 
 	require.NoError(err)
 	canonicalLocalRepo, err := filepath.EvalSymlinks(localRepo)
@@ -2623,8 +2632,7 @@ func TestValidateWorktreeBasePathRejectsBareRepositories(t *testing.T) {
 	)
 
 	got, err := ValidateWorktreeBasePath(
-		t.Context(), bareRepo, "github.com", "acme", "widget",
-	)
+		t.Context(), bareRepo, "github.com", "acme", "widget", false)
 
 	require.Empty(got)
 	require.Error(err)
@@ -2643,8 +2651,7 @@ func TestValidateWorktreeBasePathRejectsExecutableWorktreeConfig(t *testing.T) {
 	)
 
 	got, err := ValidateWorktreeBasePath(
-		t.Context(), localRepo, "github.com", "acme", "widget",
-	)
+		t.Context(), localRepo, "github.com", "acme", "widget", false)
 
 	require.Empty(got)
 	require.Error(err)
@@ -2735,6 +2742,54 @@ func TestCreateIssueUsesProviderCloneURLForNamespacedManagedClone(t *testing.T) 
 			t, cloneDir, "config", "--get", "remote.origin.url",
 		))),
 	)
+}
+
+func TestCreateIssueClonesExplicitlyAllowedGiteaHTTPRemote(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	_, _, platformHost := setupHTTPWorktreeBaseForWorkspaceGitTest(
+		t, "feature/thing",
+	)
+	cloneURL := "http://" + platformHost + "/acme/widget.git"
+
+	repoID, err := d.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:       "gitea",
+		PlatformHost:   platformHost,
+		PlatformRepoID: "repo-gitea-widget",
+		Owner:          "acme",
+		Name:           "widget",
+	})
+	require.NoError(err)
+	require.NoError(d.UpdateRepoProviderMetadata(
+		ctx, repoID, db.RepoProviderMetadata{
+			CloneURL:      cloneURL,
+			DefaultBranch: "main",
+		},
+	))
+	seedIssue(t, d, repoID, 11, "Gitea issue")
+
+	clones := gitclone.New(filepath.Join(t.TempDir(), "clones"), nil)
+	clones.SetAllowInsecureHTTP("gitea", platformHost, true)
+	mgr := NewManager(d, t.TempDir())
+	mgr.SetClones(clones)
+
+	ws, err := mgr.CreateIssue(
+		ctx, platformHost, "acme", "widget", 11,
+		CreateIssueOptions{Provider: "gitea"},
+	)
+
+	require.NoError(err)
+	require.NotNil(ws)
+	cloneDir, err := clones.ClonePathInNamespace(
+		"gitea", platformHost, "acme", "widget",
+	)
+	require.NoError(err)
+	assert.DirExists(cloneDir)
+	assert.Equal(cloneURL, strings.TrimSpace(string(runWorkspaceTestGit(
+		t, cloneDir, "config", "--get", "remote.origin.url",
+	))))
 }
 
 func TestCreateUsesProviderQualifiedRepo(t *testing.T) {

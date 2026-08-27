@@ -2333,6 +2333,31 @@ func TestRestartRequiredForGitHubArchiveRoutes(t *testing.T) {
 	assert.True(snap.restartRequiredFor(&changed))
 }
 
+func TestRestartRequiredForPlatformTransportChange(t *testing.T) {
+	require := require.New(t)
+	base := func() *config.Config {
+		return &config.Config{Platforms: []config.PlatformConfig{
+			{
+				Type:          "gitea",
+				Host:          "gitea.example.test:3000",
+				BaseURL:       "http://gitea.example.test:3000",
+				AllowInsecure: true,
+			},
+		}}
+	}
+	snapshot := snapshotStartupConfig(base())
+
+	require.False(snapshot.restartRequiredFor(base()))
+
+	baseURLChanged := base()
+	baseURLChanged.Platforms[0].BaseURL = "https://gitea.example.test:3000"
+	require.True(snapshot.restartRequiredFor(baseURLChanged))
+
+	allowInsecureChanged := base()
+	allowInsecureChanged.Platforms[0].AllowInsecure = false
+	require.True(snapshot.restartRequiredFor(allowInsecureChanged))
+}
+
 func TestRestartRequiredForRoborevEndpointButNotManagedCloneInit(t *testing.T) {
 	assert := assert.New(t)
 	base := &config.Config{Roborev: config.Roborev{

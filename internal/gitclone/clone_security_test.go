@@ -193,3 +193,31 @@ func TestEnsureCloneValidatesRemoteURLRepoPerCaller(t *testing.T) {
 	assert.Contains(err.Error(), "other/widget")
 	assert.Contains(err.Error(), "acme/widget")
 }
+
+func TestValidateRemoteTransportRequiresHostScopedHTTPAcknowledgement(t *testing.T) {
+	mgr := New(t.TempDir(), nil)
+	remote := "http://gitea.example.test:3000/acme/widget.git"
+
+	err := mgr.validateRemoteTransport(
+		"gitea", "gitea.example.test:3000", remote,
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "allow_insecure = true")
+
+	mgr.SetAllowInsecureHTTP("gitea", "gitea.example.test:3000", true)
+	require.NoError(t, mgr.validateRemoteTransport(
+		"gitea", "gitea.example.test:3000", remote,
+	))
+	require.Error(t, mgr.validateRemoteTransport(
+		"forgejo", "gitea.example.test:3000", remote,
+	))
+}
+
+func TestValidateRemoteTransportAllowsLoopbackHTTPWithoutPlatformPolicy(t *testing.T) {
+	mgr := New(t.TempDir(), nil)
+
+	require.NoError(t, mgr.validateRemoteTransport(
+		"github", "127.0.0.1:3000",
+		"http://127.0.0.1:3000/acme/widget.git",
+	))
+}

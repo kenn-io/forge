@@ -673,6 +673,7 @@ func run(opts serve.Options) error {
 	cloneMgr := gitclone.New(
 		filepath.Join(cfg.DataDir, "clones"), &startup,
 	)
+	configureCloneTransportPolicy(cloneMgr, cfg)
 
 	syncer = ghclient.NewSyncerWithRegistry(
 		startup.registry, database, cloneMgr, nil,
@@ -1010,6 +1011,19 @@ func profilerSrvDone(srv *profiler.Server) <-chan error {
 		return nil
 	}
 	return srv.Done()
+}
+
+func configureCloneTransportPolicy(clones *gitclone.Manager, cfg *config.Config) {
+	if clones == nil || cfg == nil {
+		return
+	}
+	for _, configured := range cfg.Platforms {
+		if configured.AllowInsecure {
+			clones.SetAllowInsecureHTTP(
+				configured.Type, configured.Host, true,
+			)
+		}
+	}
 }
 
 func resolveStartupRepos(

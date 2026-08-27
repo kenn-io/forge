@@ -8791,7 +8791,7 @@ func TestAPIGiteaDisabledIssueCooldownPersistsThroughHTTPAndSQLite(t *testing.T)
 			_, _ = io.WriteString(w, `{
 				"id":101,"name":"kettle","full_name":"tea/kettle",
 				"html_url":"https://gitea.test/tea/kettle",
-				"clone_url":"https://gitea.test/tea/kettle.git",
+				"clone_url":"http://gitea.test/tea/kettle.git",
 				"default_branch":"main","owner":{"login":"tea"},
 				"has_issues":false,"has_pull_requests":true,
 				"created_at":"2026-07-22T12:00:00Z",
@@ -8825,7 +8825,7 @@ func TestAPIGiteaDisabledIssueCooldownPersistsThroughHTTPAndSQLite(t *testing.T)
 	provider, err := giteaplatform.NewClient(
 		"gitea.test",
 		testTokenSource("token"),
-		giteaplatform.WithBaseURLForTesting(providerServer.URL),
+		giteaplatform.WithBaseURL(providerServer.URL, true),
 		giteaplatform.WithServerVersionForTesting("1.26.0"),
 	)
 	require.NoError(err)
@@ -8858,6 +8858,7 @@ func TestAPIGiteaDisabledIssueCooldownPersistsThroughHTTPAndSQLite(t *testing.T)
 	require.NoError(err)
 	require.NotNil(repo)
 	assert.Empty(repo.LastSyncError)
+	assert.Equal("http://gitea.test/tea/kettle.git", repo.CloneURL)
 	stored, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
 	require.NoError(err)
 	require.NotNil(stored)
@@ -19761,7 +19762,7 @@ func TestAPIGitealikeHTTPMergeabilityPersistsThroughServer(t *testing.T) {
 				return giteaplatform.NewClient(
 					host,
 					testTokenSource(token),
-					giteaplatform.WithBaseURLForTesting(baseURL),
+					giteaplatform.WithBaseURL(baseURL, true),
 					giteaplatform.WithServerVersionForTesting("1.26.0"),
 				)
 			},

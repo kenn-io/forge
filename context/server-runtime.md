@@ -26,6 +26,10 @@ and the root event stream.
   host drop only that host while healthy hosts keep syncing; unattributable
   failures degrade to no provider sync. Dropped hosts serve cached data until a
   later restart (`cmd/kenn-forge/provider_startup.go::buildProviderStartupOrDegraded`).
+- Provider API origins and cleartext acknowledgements are startup-bound. Config
+  reload reports `restart_required` when either changes instead of claiming the
+  boot-time client and clone policy were updated
+  (`internal/server/config_reload.go::startupPlatformTransports`).
 
 ## Startup Lock
 

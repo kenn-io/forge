@@ -25,7 +25,7 @@ func TestGiteaLikeAdapterContract(t *testing.T) {
 			options gitealiketest.ClientOptions,
 		) gitealiketest.TestClient {
 			clientOptions := []ClientOption{
-				WithBaseURLForTesting(baseURL),
+				WithBaseURL(baseURL, true),
 				WithServerVersionForTesting(testGiteaServerVersion),
 			}
 			if options.ForegroundTimeout > 0 {

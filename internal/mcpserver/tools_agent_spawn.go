@@ -34,10 +34,16 @@ type adHocWorkspaceSource struct {
 }
 
 type spawnWorkspaceWithAgentInput struct {
-	Source         workspaceSourceInput `json:"source"`
-	AgentTarget    string               `json:"agent_target"`
-	InitialMessage string               `json:"initial_message"`
-	Timeout        string               `json:"timeout,omitempty"`
+	Source         *workspaceSourceInput `json:"source,omitempty"`
+	Resume         *agentHandoffResume   `json:"resume,omitempty"`
+	AgentTarget    string                `json:"agent_target"`
+	InitialMessage string                `json:"initial_message"`
+	Timeout        string                `json:"timeout,omitempty"`
+}
+
+type agentHandoffResume struct {
+	WorkspaceID       string `json:"workspace_id"`
+	RuntimeSessionKey string `json:"runtime_session_key"`
 }
 
 type spawnedWorkspace struct {
@@ -54,12 +60,12 @@ type spawnedRuntime struct {
 }
 
 type spawnWorkspaceWithAgentOutput struct {
-	Stage          string                   `json:"stage"`
-	Source         workspaceSourceInput     `json:"source"`
-	Workspace      spawnedWorkspace         `json:"workspace"`
-	Runtime        spawnedRuntime           `json:"runtime"`
-	CodingSession  workspaceAgentSessionRow `json:"coding_session"`
-	InitialMessage *agentInitialMessageRow  `json:"initial_message,omitempty"`
+	Stage          string                    `json:"stage"`
+	Source         *workspaceSourceInput     `json:"source,omitempty"`
+	Workspace      spawnedWorkspace          `json:"workspace"`
+	Runtime        spawnedRuntime            `json:"runtime"`
+	CodingSession  *workspaceAgentSessionRow `json:"coding_session,omitempty"`
+	InitialMessage *agentInitialMessageRow   `json:"initial_message,omitempty"`
 }
 
 func (s *Server) spawnWorkspaceWithAgent(
@@ -75,66 +81,20 @@ func (s *Server) spawnWorkspaceWithAgent(
 	defer cancel()
 
 	out := spawnWorkspaceWithAgentOutput{Source: in.Source}
-	targets, err := s.listAgentTargets(ctx, listAgentTargetsInput{})
+	workspace, runtime, err := s.prepareAgentHandoff(ctx, in, &out)
 	if err != nil {
-		return out, handoffFailure(ctx, err, out, "", "")
+		return out, err
 	}
-	target, ok := findAgentTarget(targets.Targets, in.AgentTarget)
-	if !ok {
-		return spawnWorkspaceWithAgentOutput{}, fmt.Errorf(
-			"agent_target %q is not a supported coding-agent target", in.AgentTarget,
-		)
-	}
-	if !target.Available {
-		return spawnWorkspaceWithAgentOutput{}, fmt.Errorf(
-			"agent_target %q is unavailable: %s", in.AgentTarget, target.DisabledReason,
-		)
-	}
-
-	workspace, reused, err := s.resolveOrCreateWorkspace(ctx, in.Source)
-	if err != nil {
-		return out, handoffFailure(ctx, err, out, "", "workspace_created")
-	}
-	if in.Source.AdHoc != nil && in.Source.AdHoc.Branch == "" {
-		out.Source.AdHoc.Branch = workspace.GitHeadRef
-	}
-	out.Stage = "workspace_created"
-	out.Workspace = spawnedWorkspace{ID: workspace.ID, Status: workspace.Status, Reused: reused}
-
-	workspace, err = s.waitForWorkspaceReady(ctx, workspace.ID)
-	out.Workspace.Status = workspace.Status
-	if err != nil {
-		return out, handoffFailure(ctx, err, out, "workspace_created", "workspace_ready")
-	}
-	out.Stage = "workspace_ready"
-	out.Workspace.Status = workspace.Status
-
-	runtime, err := s.backend.LaunchWorkspaceRuntime(ctx, workspace.ID, in.AgentTarget)
-	if err != nil {
-		return out, handoffFailure(ctx, err, out, "workspace_ready", "runtime_launched")
-	}
-	out.Stage = "runtime_launched"
-	out.Runtime = spawnedRuntime{
-		SessionKey: runtime.Key,
-		TargetKey:  runtime.TargetKey,
-		Status:     runtime.Status,
-		CreatedAt:  formatMCPTime(runtime.CreatedAt),
-	}
-
-	codingSession, err := s.waitForCodingSession(ctx, workspace.ID, runtime.Key)
-	if err != nil {
-		return out, handoffFailure(ctx, err, out, "runtime_launched", "coding_session_observed")
-	}
-	out.Stage = "coding_session_observed"
-	out.CodingSession = codingSession
 
 	messageStatus, err := s.submitInitialAgentMessage(
-		ctx, workspace.ID, runtime.Key, codingSession, in.InitialMessage,
+		ctx, workspace.ID, runtime.Key, in.AgentTarget, in.InitialMessage,
 	)
-	if err != nil {
-		return out, handoffFailure(ctx, err, out, "coding_session_observed", "message_delivered")
+	if messageStatus.State != "" {
+		out.InitialMessage = &messageStatus
 	}
-	out.InitialMessage = &messageStatus
+	if err != nil {
+		return out, handoffFailure(ctx, err, out, "runtime_launched", "message_delivered")
+	}
 	if messageStatus.State != "delivered" {
 		stateErr := &Error{
 			Kind:      "agent_handoff_failed",
@@ -143,10 +103,19 @@ func (s *Server) spawnWorkspaceWithAgent(
 			Details:   map[string]any{"initial_message_state": messageStatus.State},
 		}
 		return out, handoffFailure(
-			ctx, stateErr, out, "coding_session_observed", "message_delivered",
+			ctx, stateErr, out, "runtime_launched", "message_delivered",
 		)
 	}
 	out.Stage = "message_delivered"
+
+	codingSession, err := s.waitForCodingSession(
+		ctx, workspace.ID, runtime.Key, runtime.TargetKey,
+	)
+	if err != nil {
+		return out, handoffFailure(ctx, err, out, "message_delivered", "coding_session_observed")
+	}
+	out.Stage = "coding_session_observed"
+	out.CodingSession = &codingSession
 	return out, nil
 }
 
@@ -173,6 +142,20 @@ func validateSpawnWorkspaceInput(
 		return in, 0, err
 	}
 	in.InitialMessage = message
+	if (in.Source == nil) == (in.Resume == nil) {
+		return in, 0, fmt.Errorf("provide exactly one of source or resume")
+	}
+	if in.Resume != nil {
+		in.Resume.WorkspaceID = strings.TrimSpace(in.Resume.WorkspaceID)
+		in.Resume.RuntimeSessionKey = strings.TrimSpace(in.Resume.RuntimeSessionKey)
+		if in.Resume.WorkspaceID == "" {
+			return in, 0, fmt.Errorf("resume.workspace_id is required")
+		}
+		if in.Resume.RuntimeSessionKey == "" {
+			return in, 0, fmt.Errorf("resume.runtime_session_key is required")
+		}
+		return in, timeout, nil
+	}
 	in.Source.Type = strings.ToLower(strings.TrimSpace(in.Source.Type))
 	switch in.Source.Type {
 	case "item":
@@ -198,6 +181,122 @@ func validateSpawnWorkspaceInput(
 		return in, 0, fmt.Errorf("source.type must be item or adhoc")
 	}
 	return in, timeout, nil
+}
+
+func (s *Server) prepareAgentHandoff(
+	ctx context.Context,
+	in spawnWorkspaceWithAgentInput,
+	out *spawnWorkspaceWithAgentOutput,
+) (Workspace, RuntimeSession, error) {
+	if in.Resume != nil {
+		return s.resumeAgentHandoff(ctx, in, out)
+	}
+	targets, err := s.listAgentTargets(ctx, listAgentTargetsInput{})
+	if err != nil {
+		return Workspace{}, RuntimeSession{}, handoffFailure(ctx, err, *out, "", "")
+	}
+	target, ok := findAgentTarget(targets.Targets, in.AgentTarget)
+	if !ok {
+		return Workspace{}, RuntimeSession{}, fmt.Errorf(
+			"agent_target %q is not a supported coding-agent target", in.AgentTarget,
+		)
+	}
+	if !target.Available {
+		return Workspace{}, RuntimeSession{}, fmt.Errorf(
+			"agent_target %q is unavailable: %s", in.AgentTarget, target.DisabledReason,
+		)
+	}
+
+	workspace, reused, err := s.resolveOrCreateWorkspace(ctx, *in.Source)
+	if err != nil {
+		return Workspace{}, RuntimeSession{}, handoffFailure(
+			ctx, err, *out, "", "workspace_created",
+		)
+	}
+	if in.Source.AdHoc != nil && in.Source.AdHoc.Branch == "" {
+		out.Source.AdHoc.Branch = workspace.GitHeadRef
+	}
+	out.Stage = "workspace_created"
+	out.Workspace = spawnedWorkspace{ID: workspace.ID, Status: workspace.Status, Reused: reused}
+
+	workspace, err = s.waitForWorkspaceReady(ctx, workspace.ID)
+	out.Workspace.Status = workspace.Status
+	if err != nil {
+		return workspace, RuntimeSession{}, handoffFailure(
+			ctx, err, *out, "workspace_created", "workspace_ready",
+		)
+	}
+	out.Stage = "workspace_ready"
+
+	runtime, err := s.backend.LaunchWorkspaceRuntime(ctx, workspace.ID, in.AgentTarget)
+	if err != nil {
+		return workspace, RuntimeSession{}, handoffFailure(
+			ctx, err, *out, "workspace_ready", "runtime_launched",
+		)
+	}
+	out.Stage = "runtime_launched"
+	out.Runtime = spawnedRuntimeFrom(runtime)
+	return workspace, runtime, nil
+}
+
+func (s *Server) resumeAgentHandoff(
+	ctx context.Context,
+	in spawnWorkspaceWithAgentInput,
+	out *spawnWorkspaceWithAgentOutput,
+) (Workspace, RuntimeSession, error) {
+	workspace, err := s.backend.GetWorkspace(ctx, in.Resume.WorkspaceID)
+	if err != nil {
+		return Workspace{}, RuntimeSession{}, handoffFailure(
+			ctx, err, *out, "", "workspace_ready",
+		)
+	}
+	out.Workspace = spawnedWorkspace{ID: workspace.ID, Status: workspace.Status, Reused: true}
+	if workspace.Status != "ready" {
+		return workspace, RuntimeSession{}, handoffFailure(
+			ctx, fmt.Errorf("workspace is not ready: %s", workspace.Status), *out, "", "workspace_ready",
+		)
+	}
+	out.Stage = "workspace_ready"
+
+	runtimeState, err := s.backend.GetWorkspaceRuntime(ctx, workspace.ID)
+	if err != nil {
+		return workspace, RuntimeSession{}, handoffFailure(
+			ctx, err, *out, "workspace_ready", "runtime_launched",
+		)
+	}
+	for _, runtime := range runtimeState.Sessions {
+		if runtime.Key != in.Resume.RuntimeSessionKey {
+			continue
+		}
+		out.Runtime = spawnedRuntimeFrom(runtime)
+		if runtime.TargetKey != in.AgentTarget {
+			return workspace, runtime, handoffFailure(
+				ctx, fmt.Errorf("agent_target does not match the existing runtime"),
+				*out, "workspace_ready", "runtime_launched",
+			)
+		}
+		if runtime.Kind != "agent" || (runtime.Status != "starting" && runtime.Status != "running") {
+			return workspace, runtime, handoffFailure(
+				ctx, fmt.Errorf("agent runtime is not live"), *out,
+				"workspace_ready", "runtime_launched",
+			)
+		}
+		out.Stage = "runtime_launched"
+		return workspace, runtime, nil
+	}
+	return workspace, RuntimeSession{}, handoffFailure(
+		ctx, fmt.Errorf("agent runtime was not found"), *out,
+		"workspace_ready", "runtime_launched",
+	)
+}
+
+func spawnedRuntimeFrom(runtime RuntimeSession) spawnedRuntime {
+	return spawnedRuntime{
+		SessionKey: runtime.Key,
+		TargetKey:  runtime.TargetKey,
+		Status:     runtime.Status,
+		CreatedAt:  formatMCPTime(runtime.CreatedAt),
+	}
 }
 
 func normalizeSpawnItem(item itemRefInput) (itemRefInput, error) {
@@ -426,6 +525,7 @@ func (s *Server) waitForCodingSession(
 	ctx context.Context,
 	workspaceID string,
 	runtimeSessionKey string,
+	targetKey string,
 ) (workspaceAgentSessionRow, error) {
 	for {
 		response, err := s.listWorkspaceAgentSessions(
@@ -435,7 +535,8 @@ func (s *Server) waitForCodingSession(
 			return workspaceAgentSessionRow{}, err
 		}
 		for _, session := range response.Sessions {
-			if session.RuntimeSessionKey == runtimeSessionKey {
+			if session.RuntimeSessionKey == runtimeSessionKey &&
+				session.TargetKey == targetKey && session.Agent == targetKey {
 				return session, nil
 			}
 		}
@@ -488,22 +589,22 @@ func (s *Server) submitInitialAgentMessage(
 	ctx context.Context,
 	workspaceID string,
 	runtimeSessionKey string,
-	session workspaceAgentSessionRow,
+	targetKey string,
 	message string,
 ) (agentInitialMessageRow, error) {
 	var messageStatus InitialMessageStatus
 	for {
 		status, err := s.backend.SubmitInitialMessage(ctx, InitialMessageRequest{
 			WorkspaceID: workspaceID, RuntimeSessionKey: runtimeSessionKey,
-			Agent: session.Agent, SessionID: session.SessionID, Message: message,
+			TargetKey: targetKey, Message: message,
 		})
+		messageStatus = status
 		if err == nil {
-			messageStatus = status
 			break
 		}
 		var backendErr *Error
 		if !errors.As(err, &backendErr) || backendErr == nil {
-			return agentInitialMessageRow{}, err
+			return initialMessageStatusRow(messageStatus), err
 		}
 		if backendErr.Code == ErrorCodeInitialMessageInputModeNotReady &&
 			backendErr.Retryable && !backendErr.Ambiguous {
@@ -513,23 +614,28 @@ func (s *Server) submitInitialAgentMessage(
 			continue
 		}
 		if !backendErr.Ambiguous {
-			return agentInitialMessageRow{}, err
+			return initialMessageStatusRow(messageStatus), err
 		}
-		messageStatus, err = s.recoverInitialMessageStatus(
+		recoveredStatus, recoveryErr := s.recoverInitialMessageStatus(
 			ctx, workspaceID, runtimeSessionKey, backendErr,
 		)
-		if err != nil {
-			return agentInitialMessageRow{}, err
+		if recoveryErr != nil {
+			return initialMessageStatusRow(messageStatus), recoveryErr
 		}
+		messageStatus = recoveredStatus
 		break
 	}
+	return initialMessageStatusRow(messageStatus), nil
+}
+
+func initialMessageStatusRow(messageStatus InitialMessageStatus) agentInitialMessageRow {
 	row := agentInitialMessageRow{
 		State: messageStatus.State, MessageBytes: messageStatus.MessageBytes,
 	}
 	if messageStatus.DeliveredAt != nil {
 		row.DeliveredAt = formatMCPTime(*messageStatus.DeliveredAt)
 	}
-	return row, nil
+	return row
 }
 
 func (s *Server) recoverInitialMessageStatus(
@@ -615,7 +721,7 @@ func handoffFailure(
 		result.Details["runtime_session_key"] = state.Runtime.SessionKey
 		result.Details["target_key"] = state.Runtime.TargetKey
 	}
-	if state.CodingSession.SessionID != "" {
+	if state.CodingSession != nil {
 		result.Details["agent"] = state.CodingSession.Agent
 		result.Details["session_id"] = state.CodingSession.SessionID
 	}

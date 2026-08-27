@@ -4814,15 +4814,14 @@ export interface components {
              * @example /api/v1/schemas/AgentInitialMessageStatusResponse.json
              */
             readonly $schema?: string;
-            agent: string;
             /** Format: date-time */
             delivered_at?: string;
             /** Format: int64 */
             message_bytes: number;
             /** Format: date-time */
             reserved_at: string;
-            session_id: string;
             state: string;
+            target_key: string;
         };
         ApplyReviewSuggestionHostInputBody: {
             /**
@@ -7952,9 +7951,8 @@ export interface components {
              * @example /api/v1/schemas/SubmitInitialMessageInputBody.json
              */
             readonly $schema?: string;
-            agent: string;
             message: string;
-            session_id: string;
+            target_key: string;
         };
         SyncStatus: {
             /**

@@ -297,7 +297,7 @@ esac
 		LegacyClaim *bool `json:"message_delivered"`
 	}
 	require.NoError(json.Unmarshal(data, &spawn))
-	assert.Equal("message_delivered", spawn.Stage)
+	assert.Equal("coding_session_observed", spawn.Stage)
 	assert.Equal(workspace.ID, spawn.Workspace.ID)
 	assert.Equal(runtimeSession.SessionKey, spawn.Runtime.SessionKey)
 	require.NotNil(spawn.Initial)

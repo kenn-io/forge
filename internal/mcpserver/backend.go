@@ -294,6 +294,7 @@ type Workspace struct {
 type RuntimeSession struct {
 	Key       string
 	TargetKey string
+	Kind      string
 	Status    string
 	CreatedAt time.Time
 }
@@ -305,8 +306,7 @@ type WorkspaceRuntime struct {
 type InitialMessageRequest struct {
 	WorkspaceID       string
 	RuntimeSessionKey string
-	Agent             string
-	SessionID         string
+	TargetKey         string
 	Message           string
 }
 

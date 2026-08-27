@@ -82,12 +82,13 @@ func TestWorkspaceAgentActivityFlowsThroughHTTPResponsesE2E(t *testing.T) {
 	messageResponse, err := fixture.client.HTTP.SubmitWorkspaceRuntimeSessionInitialMessageWithResponse(
 		ctx, ws.Id, launch.JSON200.Key,
 		generated.SubmitInitialMessageInputBody{
-			Agent: "codex", SessionId: "live-agent", Message: "review this",
+			TargetKey: "hook-agent", Message: "review this",
 		},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, messageResponse.StatusCode(), string(messageResponse.Body))
 	require.NotNil(messageResponse.JSON200)
+	assert.Equal("hook-agent", messageResponse.JSON200.TargetKey)
 	assert.Equal("delivered", messageResponse.JSON200.State)
 	assert.Equal(int64(11), messageResponse.JSON200.MessageBytes)
 	assert.Equal(time.UTC, messageResponse.JSON200.ReservedAt.Location())
@@ -100,9 +101,7 @@ func TestWorkspaceAgentActivityFlowsThroughHTTPResponsesE2E(t *testing.T) {
 	require.NotNil(sessionsResponse.JSON200)
 	require.NotNil(sessionsResponse.JSON200.Sessions)
 	require.Len(*sessionsResponse.JSON200.Sessions, 1)
-	require.NotNil((*sessionsResponse.JSON200.Sessions)[0].InitialMessage)
-	assert.Equal("delivered", (*sessionsResponse.JSON200.Sessions)[0].InitialMessage.State)
-	assert.Equal(int64(11), (*sessionsResponse.JSON200.Sessions)[0].InitialMessage.MessageBytes)
+	assert.Nil((*sessionsResponse.JSON200.Sessions)[0].InitialMessage)
 
 	getResponse, err := fixture.client.HTTP.GetWorkspaceWithResponse(ctx, ws.Id)
 	require.NoError(err)

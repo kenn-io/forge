@@ -1245,12 +1245,11 @@ type AgentInitialMessageStatusResponse struct {
 	//
 	// Example: /api/v1/schemas/AgentInitialMessageStatusResponse.json
 	Schema       *string    `json:"$schema,omitempty"`
-	Agent        string     `json:"agent"`
 	DeliveredAt  *time.Time `json:"delivered_at,omitempty"`
 	MessageBytes int64      `json:"message_bytes"`
 	ReservedAt   time.Time  `json:"reserved_at"`
-	SessionId    string     `json:"session_id"`
 	State        string     `json:"state"`
+	TargetKey    string     `json:"target_key"`
 }
 
 // ApplyReviewSuggestionHostInputBody defines model for ApplyReviewSuggestionHostInputBody.
@@ -4414,9 +4413,8 @@ type SubmitInitialMessageInputBody struct {
 	//
 	// Example: /api/v1/schemas/SubmitInitialMessageInputBody.json
 	Schema    *string `json:"$schema,omitempty"`
-	Agent     string  `json:"agent"`
 	Message   string  `json:"message"`
-	SessionId string  `json:"session_id"`
+	TargetKey string  `json:"target_key"`
 }
 
 // SyncStatus defines model for SyncStatus.

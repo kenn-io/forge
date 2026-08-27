@@ -11,7 +11,6 @@ import (
 
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/workspace/localruntime"
-	"go.kenn.io/kit/agenthook"
 )
 
 const maxInitialAgentMessageBytes = 64 << 10
@@ -33,8 +32,7 @@ type initialMessageKey struct {
 // is retained only so retries against this daemon can be compared without
 // exposing prompt content through the API. Daemon restart clears all attempts.
 type initialMessageAttempt struct {
-	Agent       string
-	SessionID   string
+	TargetKey   string
 	Message     string
 	State       string
 	ReservedAt  time.Time
@@ -50,8 +48,7 @@ type submitInitialMessageInput struct {
 	ID         string `path:"id"`
 	SessionKey string `path:"session_key"`
 	Body       struct {
-		Agent     string `json:"agent"`
-		SessionID string `json:"session_id"`
+		TargetKey string `json:"target_key"`
 		Message   string `json:"message"`
 	}
 }
@@ -98,8 +95,7 @@ func (s *Handler) submitInitialMessage(
 ) (*initialMessageOutput, error) {
 	result, err := s.SubmitInitialMessageService(ctx, InitialMessageRequest{
 		WorkspaceID: input.ID, RuntimeSessionKey: input.SessionKey,
-		Agent: input.Body.Agent, SessionID: input.Body.SessionID,
-		Message: input.Body.Message,
+		TargetKey: input.Body.TargetKey, Message: input.Body.Message,
 	})
 	if errors.Is(err, ErrInitialMessageInputModeNotReady) {
 		return nil, httpapi.Validation("body.message", err.Error())
@@ -125,22 +121,18 @@ func (s *Handler) GetInitialMessageService(
 func (s *Handler) SubmitInitialMessageService(
 	ctx context.Context, req InitialMessageRequest,
 ) (InitialMessageResult, error) {
-	if s.workspaces == nil || s.runtime == nil || s.agentActivity == nil {
+	if s.workspaces == nil || s.runtime == nil {
 		return InitialMessageResult{}, httpapi.ServiceUnavailable("initial message delivery not configured")
 	}
-	agent, err := agenthook.ParseAgent(req.Agent)
-	if err != nil {
-		return InitialMessageResult{}, httpapi.Validation("body.agent", err.Error())
-	}
-	sessionID := strings.TrimSpace(req.SessionID)
-	if sessionID == "" {
-		return InitialMessageResult{}, httpapi.Validation("body.session_id", "session_id is required")
+	targetKey := strings.ToLower(strings.TrimSpace(req.TargetKey))
+	if targetKey == "" {
+		return InitialMessageResult{}, httpapi.Validation("body.target_key", "target_key is required")
 	}
 	message, _, err := normalizeInitialAgentMessage(req.Message)
 	if err != nil {
 		return InitialMessageResult{}, httpapi.Validation("body.message", err.Error())
 	}
-	proposed := initialMessageAttempt{Agent: string(agent), SessionID: sessionID, Message: message}
+	proposed := initialMessageAttempt{TargetKey: targetKey, Message: message}
 	if existing, ok := s.initialMessageAttempt(req.WorkspaceID, req.RuntimeSessionKey); ok {
 		return existingInitialMessageAttemptResult(existing, proposed)
 	}
@@ -153,33 +145,24 @@ func (s *Handler) SubmitInitialMessageService(
 			httpapi.CodeWorkspaceNotFound, "workspace not found", nil,
 		)
 	}
-	live := false
+	liveTarget := ""
 	for _, runtimeSession := range s.runtime.ListSessions(req.WorkspaceID) {
 		if runtimeSession.Key == req.RuntimeSessionKey &&
 			runtimeSession.Kind == localruntime.LaunchTargetAgent &&
 			(runtimeSession.Status == localruntime.SessionStatusStarting ||
 				runtimeSession.Status == localruntime.SessionStatusRunning) {
-			live = true
+			liveTarget = strings.ToLower(strings.TrimSpace(runtimeSession.TargetKey))
 			break
 		}
 	}
-	if !live {
+	if liveTarget == "" {
 		return InitialMessageResult{}, httpapi.Conflict(
 			httpapi.CodeConflict, "agent runtime session is not live", nil,
 		)
 	}
-	matchedReport := false
-	for _, report := range s.agentActivity.LiveReportsForWorkspace(
-		summary.WorktreePath, []string{req.RuntimeSessionKey},
-	) {
-		if report.Agent == string(agent) && report.SessionID == sessionID {
-			matchedReport = true
-			break
-		}
-	}
-	if !matchedReport {
+	if liveTarget != targetKey {
 		return InitialMessageResult{}, httpapi.Conflict(
-			httpapi.CodeConflict, "coding session does not match the live agent runtime", nil,
+			httpapi.CodeConflict, "target_key does not match the live agent runtime", nil,
 		)
 	}
 	attempt, reserved := s.reserveInitialMessageAttempt(req.WorkspaceID, req.RuntimeSessionKey, proposed)
@@ -223,8 +206,7 @@ func existingInitialMessageAttemptResult(
 	existing initialMessageAttempt,
 	proposed initialMessageAttempt,
 ) (InitialMessageResult, error) {
-	if existing.Agent != proposed.Agent ||
-		existing.SessionID != proposed.SessionID ||
+	if existing.TargetKey != proposed.TargetKey ||
 		existing.Message != proposed.Message {
 		return initialMessageAttemptConflict(existing)
 	}
@@ -238,8 +220,7 @@ func initialMessageAttemptConflict(
 		httpapi.CodeConflict,
 		"an initial message attempt already exists for this runtime session",
 		map[string]any{
-			"agent":         existing.Agent,
-			"session_id":    existing.SessionID,
+			"target_key":    existing.TargetKey,
 			"message_bytes": len(existing.Message),
 			"state":         existing.State,
 		},
@@ -292,7 +273,7 @@ func (s *Handler) releaseInitialMessageAttempt(
 	}
 	existing, ok := s.initialMessages[key]
 	if ok && existing.State == initialMessagePending &&
-		existing.Agent == proposed.Agent && existing.SessionID == proposed.SessionID &&
+		existing.TargetKey == proposed.TargetKey &&
 		existing.Message == proposed.Message {
 		delete(s.initialMessages, key)
 	}

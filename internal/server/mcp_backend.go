@@ -548,7 +548,7 @@ func (b mcpBackend) LaunchWorkspaceRuntime(
 	}
 	return mcpserver.RuntimeSession{
 		Key: session.Key, TargetKey: session.TargetKey,
-		Status: string(session.Status), CreatedAt: session.CreatedAt,
+		Kind: string(session.Kind), Status: string(session.Status), CreatedAt: session.CreatedAt,
 	}, nil
 }
 
@@ -563,7 +563,7 @@ func (b mcpBackend) GetWorkspaceRuntime(
 	for _, session := range result.Sessions {
 		out.Sessions = append(out.Sessions, mcpserver.RuntimeSession{
 			Key: session.Key, TargetKey: session.TargetKey,
-			Status: string(session.Status), CreatedAt: session.CreatedAt,
+			Kind: string(session.Kind), Status: string(session.Status), CreatedAt: session.CreatedAt,
 		})
 	}
 	return out, nil
@@ -574,7 +574,7 @@ func (b mcpBackend) SubmitInitialMessage(
 ) (mcpserver.InitialMessageStatus, error) {
 	result, err := b.server.workspaceAPI.SubmitInitialMessageService(ctx, workspaceapi.InitialMessageRequest{
 		WorkspaceID: req.WorkspaceID, RuntimeSessionKey: req.RuntimeSessionKey,
-		Agent: req.Agent, SessionID: req.SessionID, Message: req.Message,
+		TargetKey: req.TargetKey, Message: req.Message,
 	})
 	status := *mcpInitialMessage(result)
 	if errors.Is(err, workspaceapi.ErrInitialMessageInputModeNotReady) {

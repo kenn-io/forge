@@ -44,7 +44,16 @@ type workspaceAgentSessionRow struct {
 }
 
 type listWorkspaceAgentSessionsOutput struct {
+	Runtimes []workspaceAgentRuntimeRow `json:"runtimes"`
 	Sessions []workspaceAgentSessionRow `json:"sessions"`
+}
+
+type workspaceAgentRuntimeRow struct {
+	RuntimeSessionKey string `json:"runtime_session_key"`
+	TargetKey         string `json:"target_key"`
+	Status            string `json:"status"`
+	CreatedAt         string `json:"created_at"`
+	HookObserved      bool   `json:"hook_observed"`
 }
 
 func (s *Server) registerAgentTools() {
@@ -55,13 +64,14 @@ func (s *Server) registerAgentTools() {
 	}, wrapTool(s.listAgentTargets))
 	mcp.AddTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_list_workspace_agent_sessions",
-		Description: "List fresh hook-authoritative coding sessions joined to live agent runtimes for one workspace. " +
-			"This is a live projection, not session history.",
+		Description: "List live agent runtimes and their fresh hook-authoritative coding sessions for one workspace. " +
+			"A runtime with hook_observed=false has launched but has not reported its first hook. This is a live projection, not session history.",
 	}, wrapTool(s.listWorkspaceAgentSessions))
 	mcp.AddTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_spawn_workspace_with_agent",
-		Description: "Create or reuse a workspace, launch one configured coding agent, observe its hook session, " +
-			"and submit exactly one initial message. Partial resources are never cleaned up automatically.",
+		Description: "Create or reuse a workspace, launch one configured coding agent, submit exactly one initial message, " +
+			"and observe the resulting hook session. Resume can continue an existing runtime without launching another agent. " +
+			"Partial resources are never cleaned up automatically.",
 	}, wrapTool(s.spawnWorkspaceWithAgent))
 }
 
@@ -105,15 +115,22 @@ func (s *Server) listWorkspaceAgentSessions(
 	in listWorkspaceAgentSessionsInput,
 ) (listWorkspaceAgentSessionsOutput, error) {
 	workspaceID := strings.TrimSpace(in.WorkspaceID)
+	runtime, err := s.backend.GetWorkspaceRuntime(ctx, workspaceID)
+	if err != nil {
+		return listWorkspaceAgentSessionsOutput{}, err
+	}
 	sessions, err := s.backend.ListWorkspaceAgentSessions(ctx, workspaceID)
 	if err != nil {
 		return listWorkspaceAgentSessionsOutput{}, err
 	}
 	slices.SortFunc(sessions, compareWorkspaceAgentSessions)
 	out := listWorkspaceAgentSessionsOutput{
+		Runtimes: make([]workspaceAgentRuntimeRow, 0),
 		Sessions: make([]workspaceAgentSessionRow, 0, len(sessions)),
 	}
+	observedRuntimeKeys := make(map[string]struct{}, len(sessions))
 	for _, session := range sessions {
+		observedRuntimeKeys[session.RuntimeSessionKey] = struct{}{}
 		row := workspaceAgentSessionRow{
 			Agent:             session.Agent,
 			SessionID:         session.SessionID,
@@ -135,6 +152,25 @@ func (s *Server) listWorkspaceAgentSessions(
 		}
 		out.Sessions = append(out.Sessions, row)
 	}
+	for _, session := range runtime.Sessions {
+		if session.Kind != "agent" || (session.Status != "starting" && session.Status != "running") {
+			continue
+		}
+		_, hookObserved := observedRuntimeKeys[session.Key]
+		out.Runtimes = append(out.Runtimes, workspaceAgentRuntimeRow{
+			RuntimeSessionKey: session.Key,
+			TargetKey:         session.TargetKey,
+			Status:            session.Status,
+			CreatedAt:         formatMCPTime(session.CreatedAt),
+			HookObserved:      hookObserved,
+		})
+	}
+	slices.SortFunc(out.Runtimes, func(a, b workspaceAgentRuntimeRow) int {
+		if order := strings.Compare(a.CreatedAt, b.CreatedAt); order != 0 {
+			return order
+		}
+		return strings.Compare(a.RuntimeSessionKey, b.RuntimeSessionKey)
+	})
 	return out, nil
 }
 

@@ -71,7 +71,7 @@ func TestInitialMessageSubmitFailureReleasesPreWriteAttempt(t *testing.T) {
 		return time.Date(2026, 8, 18, 17, 0, 0, 0, time.UTC)
 	}})
 	proposed := initialMessageAttempt{
-		Agent: "codex", SessionID: "coding-session", Message: "review this",
+		TargetKey: "codex", Message: "review this",
 	}
 	_, reserved := handler.reserveInitialMessageAttempt("ws-1", "runtime-1", proposed)
 	require.True(reserved)
@@ -96,7 +96,7 @@ func TestInitialMessageInactivePasteModeReturnsRetryableServiceSignal(t *testing
 		return time.Date(2026, 8, 18, 17, 0, 0, 0, time.UTC)
 	}})
 	proposed := initialMessageAttempt{
-		Agent: "codex", SessionID: "coding-session", Message: "first\nsecond",
+		TargetKey: "codex", Message: "first\nsecond",
 	}
 	_, reserved := handler.reserveInitialMessageAttempt("ws-1", "runtime-1", proposed)
 	require.True(reserved)
@@ -157,10 +157,10 @@ func TestSubmitInitialMessageServiceReturnsDeliveredStateAndRoutesShareAttempt(t
 	handler.Register(api)
 	endpoint := "/api/v1/workspaces/" + workspaceID +
 		"/runtime/sessions/" + session.Key + "/initial-message"
-	postContext := func(requestContext context.Context, target, agent, codingSession, message string) *httptest.ResponseRecorder {
+	postContext := func(requestContext context.Context, target, targetKey, message string) *httptest.ResponseRecorder {
 		t.Helper()
 		body, marshalErr := json.Marshal(map[string]string{
-			"agent": agent, "session_id": codingSession, "message": message,
+			"target_key": targetKey, "message": message,
 		})
 		require.NoError(marshalErr)
 		request := httptest.NewRequest(http.MethodPost, target, bytes.NewReader(body)).WithContext(requestContext)
@@ -169,9 +169,9 @@ func TestSubmitInitialMessageServiceReturnsDeliveredStateAndRoutesShareAttempt(t
 		mux.ServeHTTP(recorder, request)
 		return recorder
 	}
-	post := func(target, agent, codingSession, message string) *httptest.ResponseRecorder {
+	post := func(target, targetKey, message string) *httptest.ResponseRecorder {
 		t.Helper()
-		return postContext(ctx, target, agent, codingSession, message)
+		return postContext(ctx, target, targetKey, message)
 	}
 
 	requestContext, cancelRequest := context.WithCancel(ctx)
@@ -183,7 +183,7 @@ func TestSubmitInitialMessageServiceReturnsDeliveredStateAndRoutesShareAttempt(t
 			requestContext,
 			InitialMessageRequest{
 				WorkspaceID: workspaceID, RuntimeSessionKey: session.Key,
-				Agent: "CoDeX", SessionID: "coding-session", Message: "review this",
+				TargetKey: "CoDeX", Message: "review this",
 			},
 		)
 		if errors.Is(submitErr, ErrInitialMessageInputModeNotReady) {
@@ -198,29 +198,27 @@ func TestSubmitInitialMessageServiceReturnsDeliveredStateAndRoutesShareAttempt(t
 	require.NotNil(serviceStatus.DeliveredAt)
 	assert.Equal("\x1b[200~review this\x1b[201~\r", string(owner.pty.written()))
 
-	response := post(endpoint, "codex", "coding-session", "review this")
+	response := post(endpoint, "codex", "review this")
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
 	var messageStatus struct {
-		Agent        string     `json:"agent"`
-		SessionID    string     `json:"session_id"`
+		TargetKey    string     `json:"target_key"`
 		State        string     `json:"state"`
 		MessageBytes int        `json:"message_bytes"`
 		DeliveredAt  *time.Time `json:"delivered_at"`
 	}
 	require.NoError(json.NewDecoder(response.Body).Decode(&messageStatus))
-	assert.Equal("codex", messageStatus.Agent)
-	assert.Equal("coding-session", messageStatus.SessionID)
+	assert.Equal("codex", messageStatus.TargetKey)
 	assert.Equal(initialMessageDelivered, messageStatus.State)
 	assert.Equal(11, messageStatus.MessageBytes)
 	require.NotNil(messageStatus.DeliveredAt)
 	assert.Equal(time.UTC, messageStatus.DeliveredAt.Location())
 	assert.Equal("\x1b[200~review this\x1b[201~\r", string(owner.pty.written()))
 
-	response = post(endpoint, "codex", "coding-session", "review this")
+	response = post(endpoint, "codex", "review this")
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
 	assert.Equal("\x1b[200~review this\x1b[201~\r", string(owner.pty.written()))
 
-	response = post(endpoint, "codex", "coding-session", "review that")
+	response = post(endpoint, "codex", "review that")
 	require.Equal(http.StatusConflict, response.Code, response.Body.String())
 	assert.Equal("\x1b[200~review this\x1b[201~\r", string(owner.pty.written()))
 
@@ -250,7 +248,7 @@ func TestSubmitInitialMessageServiceReturnsDeliveredStateAndRoutesShareAttempt(t
 	owner.pty.setWriteError(errors.New("write failed"))
 	failedResult, err := handler.SubmitInitialMessageService(ctx, InitialMessageRequest{
 		WorkspaceID: workspaceID, RuntimeSessionKey: failingSession.Key,
-		Agent: "codex", SessionID: "coding-failure", Message: "try once",
+		TargetKey: "codex", Message: "try once",
 	})
 	require.Error(err)
 	assert.Equal(initialMessageUncertain, failedResult.State)
@@ -263,39 +261,38 @@ func TestSubmitInitialMessageServiceReturnsDeliveredStateAndRoutesShareAttempt(t
 	inactivePasteSession := launchSession("coding-multiline", true)
 	writtenBefore := owner.pty.written()
 	response = post(
-		endpointFor(inactivePasteSession.Key), "codex", "coding-multiline", "first\nsecond",
+		endpointFor(inactivePasteSession.Key), "codex", "first\nsecond",
 	)
 	require.Equal(http.StatusBadRequest, response.Code, response.Body.String())
 	assert.Equal(writtenBefore, owner.pty.written())
 	_, found = handler.initialMessageAttempt(workspaceID, inactivePasteSession.Key)
 	assert.False(found)
 
+	owner.setEmitBracketedPaste(true)
 	unreportedSession := launchSession("coding-unreported", false)
 	response = post(
-		endpointFor(unreportedSession.Key), "codex", "coding-unreported", "do not send",
+		endpointFor(unreportedSession.Key), "codex", "do not send",
 	)
-	require.Equal(http.StatusConflict, response.Code, response.Body.String())
+	require.Equal(http.StatusOK, response.Code, response.Body.String())
 	_, found = handler.initialMessageAttempt(workspaceID, unreportedSession.Key)
-	assert.False(found)
+	assert.True(found)
 
 	require.NoError(runtime.Stop(ctx, workspaceID, session.Key))
 	require.NoError(database.DeleteWorkspaceRuntimeSession(ctx, workspaceID, session.Key))
-	response = post(endpoint, "codex", "different-session", "review this")
+	response = post(endpoint, "claude", "review this")
 	require.Equal(http.StatusConflict, response.Code, response.Body.String())
 
 	getRecorder := httptest.NewRecorder()
 	mux.ServeHTTP(getRecorder, httptest.NewRequest(http.MethodGet, endpoint, nil))
 	require.Equal(http.StatusOK, getRecorder.Code, getRecorder.Body.String())
 	messageStatus = struct {
-		Agent        string     `json:"agent"`
-		SessionID    string     `json:"session_id"`
+		TargetKey    string     `json:"target_key"`
 		State        string     `json:"state"`
 		MessageBytes int        `json:"message_bytes"`
 		DeliveredAt  *time.Time `json:"delivered_at"`
 	}{}
 	require.NoError(json.NewDecoder(getRecorder.Body).Decode(&messageStatus))
-	assert.Equal("codex", messageStatus.Agent)
-	assert.Equal("coding-session", messageStatus.SessionID)
+	assert.Equal("codex", messageStatus.TargetKey)
 	assert.Equal(initialMessageDelivered, messageStatus.State)
 }
 

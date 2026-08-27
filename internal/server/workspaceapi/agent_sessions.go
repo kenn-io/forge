@@ -17,8 +17,7 @@ type listWorkspaceAgentSessionsInput struct {
 }
 
 type agentInitialMessageStatusResponse struct {
-	Agent        string     `json:"agent"`
-	SessionID    string     `json:"session_id"`
+	TargetKey    string     `json:"target_key"`
 	State        string     `json:"state"`
 	MessageBytes int        `json:"message_bytes"`
 	ReservedAt   time.Time  `json:"reserved_at"`
@@ -110,7 +109,7 @@ func (s *Handler) ListWorkspaceAgentSessionsService(
 		}
 		if attempt, found := s.initialMessageAttempt(
 			summary.ID, report.RuntimeSessionKey,
-		); found && attempt.Agent == string(agent) && attempt.SessionID == report.SessionID {
+		); found && attempt.TargetKey == live.TargetKey && report.Agent == live.TargetKey {
 			message := initialMessageAttemptResult(attempt)
 			result.InitialMessage = &message
 		}
@@ -133,7 +132,7 @@ func (s *Handler) ListWorkspaceAgentSessionsService(
 
 func initialMessageAttemptResult(attempt initialMessageAttempt) InitialMessageResult {
 	result := InitialMessageResult{
-		Agent: attempt.Agent, SessionID: attempt.SessionID, State: attempt.State,
+		TargetKey: attempt.TargetKey, State: attempt.State,
 		MessageBytes: len(attempt.Message), ReservedAt: attempt.ReservedAt.UTC(),
 	}
 	if attempt.DeliveredAt != nil {
@@ -145,7 +144,7 @@ func initialMessageAttemptResult(attempt initialMessageAttempt) InitialMessageRe
 
 func initialMessageResultResponse(result InitialMessageResult) *agentInitialMessageStatusResponse {
 	return &agentInitialMessageStatusResponse{
-		Agent: result.Agent, SessionID: result.SessionID, State: result.State,
+		TargetKey: result.TargetKey, State: result.State,
 		MessageBytes: result.MessageBytes, ReservedAt: result.ReservedAt,
 		DeliveredAt: result.DeliveredAt,
 	}

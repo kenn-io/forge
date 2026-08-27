@@ -7,7 +7,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/forge/internal/agentactivity"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/mcpserver"
 	"go.kenn.io/forge/internal/server/httpapi"
@@ -97,19 +96,14 @@ func TestMCPBackendTranslatesInactivePasteModeToRetryableError(t *testing.T) {
 	t.Cleanup(runtime.Shutdown)
 	session, err := runtime.Launch(ctx, workspaceID, worktree, "codex")
 	require.NoError(err)
-	activity := agentactivity.NewStore(t.TempDir())
-	require.NoError(activity.HandleEvent("codex", agentactivity.HookEvent{
-		SessionID: "coding-session", CWD: worktree,
-		HookEventName: "UserPromptSubmit",
-	}, session.Key))
 	srv := &Server{workspaceAPI: workspaceapi.New(workspaceapi.Deps{
 		DB: database, Workspaces: workspace.NewManager(database, t.TempDir()),
-		Runtime: runtime, AgentActivity: activity,
+		Runtime: runtime,
 	})}
 
 	_, err = srv.MCPBackend().SubmitInitialMessage(ctx, mcpserver.InitialMessageRequest{
 		WorkspaceID: workspaceID, RuntimeSessionKey: session.Key,
-		Agent: "codex", SessionID: "coding-session", Message: "first\nsecond",
+		TargetKey: "codex", Message: "first\nsecond",
 	})
 
 	var backendErr *mcpserver.Error

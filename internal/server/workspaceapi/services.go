@@ -59,14 +59,12 @@ type AgentSessionResult struct {
 type InitialMessageRequest struct {
 	WorkspaceID       string
 	RuntimeSessionKey string
-	Agent             string
-	SessionID         string
+	TargetKey         string
 	Message           string
 }
 
 type InitialMessageResult struct {
-	Agent        string
-	SessionID    string
+	TargetKey    string
 	State        string
 	MessageBytes int
 	ReservedAt   time.Time

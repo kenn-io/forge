@@ -33,8 +33,7 @@ func TestSpawnWorkspaceWithAgentCallsDirectServicesAndUsesAuthoritativeEvidence(
 	backend.submitInitialMessageFn = func(_ context.Context, req InitialMessageRequest) (InitialMessageStatus, error) {
 		assert.Equal(InitialMessageRequest{
 			WorkspaceID: "ws-new", RuntimeSessionKey: "runtime-new",
-			Agent: "codex", SessionID: "coding-new",
-			Message: "review this\nthen implement",
+			TargetKey: "codex", Message: "review this\nthen implement",
 		}, req)
 		deliveredAt := time.Date(2026, 8, 7, 15, 0, 2, 0, time.UTC)
 		return InitialMessageStatus{State: "delivered", MessageBytes: 26, DeliveredAt: &deliveredAt}, nil
@@ -42,7 +41,7 @@ func TestSpawnWorkspaceWithAgentCallsDirectServicesAndUsesAuthoritativeEvidence(
 	s := newMCPTestServer(t, backend)
 
 	out, err := s.spawnWorkspaceWithAgent(t.Context(), spawnWorkspaceWithAgentInput{
-		Source: workspaceSourceInput{Type: "item", Item: &itemRefInput{
+		Source: &workspaceSourceInput{Type: "item", Item: &itemRefInput{
 			Type: "pr", Provider: "github", PlatformHost: "github.com",
 			PlatformRepoID: "repo-acme-widget",
 			Owner:          "acme", Name: "widget", Number: 42,
@@ -51,15 +50,150 @@ func TestSpawnWorkspaceWithAgentCallsDirectServicesAndUsesAuthoritativeEvidence(
 	})
 
 	require.NoError(err)
-	assert.Equal("message_delivered", out.Stage)
+	assert.Equal("coding_session_observed", out.Stage)
 	assert.Equal("delivered", out.InitialMessage.State)
 	assert.Equal("ws-new", out.Workspace.ID)
 	assert.False(out.Workspace.Reused)
 	assert.Equal("runtime-new", out.Runtime.SessionKey)
+	require.NotNil(out.CodingSession)
 	assert.Equal("coding-new", out.CodingSession.SessionID)
 	raw, err := json.Marshal(out)
 	require.NoError(err)
 	assert.NotContains(string(raw), `"message_delivered":`)
+}
+
+func TestSpawnWorkspaceWithAgentSubmitsPromptBeforeHookObservation(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	backend := successfulSpawnBackend("ws-prompt-first", "runtime-prompt-first", "coding-prompt-first")
+	promptSubmitted := false
+	backend.listWorkspaceAgentSessionsFn = func(context.Context, string) ([]WorkspaceAgentSession, error) {
+		if !promptSubmitted {
+			return nil, nil
+		}
+		return []WorkspaceAgentSession{{
+			Agent: "codex", SessionID: "coding-prompt-first",
+			RuntimeSessionKey: "runtime-prompt-first", TargetKey: "codex",
+			State: "working", UpdatedAt: time.Now().UTC(),
+		}}, nil
+	}
+	backend.submitInitialMessageFn = func(_ context.Context, req InitialMessageRequest) (InitialMessageStatus, error) {
+		assert.Equal("codex", req.TargetKey)
+		promptSubmitted = true
+		return InitialMessageStatus{State: "delivered", MessageBytes: 5}, nil
+	}
+	s := newMCPTestServer(t, backend)
+
+	out, err := s.spawnWorkspaceWithAgent(t.Context(), prSpawnInput("start"))
+
+	require.NoError(err)
+	assert.True(promptSubmitted)
+	assert.Equal("coding_session_observed", out.Stage)
+	require.NotNil(out.CodingSession)
+	assert.Equal("coding-prompt-first", out.CodingSession.SessionID)
+}
+
+func TestSpawnWorkspaceWithAgentResumesExistingRuntimeAfterHookTimeout(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	backend := successfulSpawnBackend("ws-resume", "runtime-resume", "coding-resume")
+	launches := 0
+	deliveries := 0
+	submissions := 0
+	hookVisible := false
+	backend.launchWorkspaceRuntimeFn = func(context.Context, string, string) (RuntimeSession, error) {
+		launches++
+		return RuntimeSession{
+			Key: "runtime-resume", TargetKey: "codex", Kind: "agent", Status: "running",
+			CreatedAt: time.Date(2026, 8, 7, 15, 0, 0, 0, time.UTC),
+		}, nil
+	}
+	backend.submitInitialMessageFn = func(context.Context, InitialMessageRequest) (InitialMessageStatus, error) {
+		submissions++
+		if deliveries == 0 {
+			deliveries++
+		}
+		return InitialMessageStatus{State: "delivered", MessageBytes: 5}, nil
+	}
+	backend.listWorkspaceAgentSessionsFn = func(context.Context, string) ([]WorkspaceAgentSession, error) {
+		if !hookVisible {
+			return nil, nil
+		}
+		return []WorkspaceAgentSession{{
+			Agent: "codex", SessionID: "coding-resume",
+			RuntimeSessionKey: "runtime-resume", TargetKey: "codex",
+			State: "working", UpdatedAt: time.Now().UTC(),
+		}}, nil
+	}
+	s := newMCPTestServer(t, backend)
+	first := prSpawnInput("start")
+	first.Timeout = "20ms"
+
+	_, err := s.spawnWorkspaceWithAgent(t.Context(), first)
+	var timeoutErr *Error
+	require.ErrorAs(err, &timeoutErr)
+	assert.Equal("message_delivered", timeoutErr.Details["last_completed_stage"])
+	assert.Equal("coding_session_observed", timeoutErr.Details["failed_stage"])
+	assert.Equal("delivered", timeoutErr.Details["initial_message_state"])
+
+	hookVisible = true
+	out, err := s.spawnWorkspaceWithAgent(t.Context(), spawnWorkspaceWithAgentInput{
+		Resume: &agentHandoffResume{
+			WorkspaceID: "ws-resume", RuntimeSessionKey: "runtime-resume",
+		},
+		AgentTarget: "codex", InitialMessage: "start", Timeout: "2s",
+	})
+
+	require.NoError(err)
+	assert.Equal("coding_session_observed", out.Stage)
+	assert.Equal(1, launches)
+	assert.Equal(2, submissions)
+	assert.Equal(1, deliveries)
+}
+
+func TestSpawnWorkspaceWithAgentResumesPromptSubmissionOnExistingRuntime(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	backend := successfulSpawnBackend("ws-submit-resume", "runtime-submit-resume", "coding-submit-resume")
+	launches := 0
+	inputReady := false
+	backend.launchWorkspaceRuntimeFn = func(context.Context, string, string) (RuntimeSession, error) {
+		launches++
+		return RuntimeSession{
+			Key: "runtime-submit-resume", TargetKey: "codex", Kind: "agent", Status: "running",
+			CreatedAt: time.Date(2026, 8, 7, 15, 0, 0, 0, time.UTC),
+		}, nil
+	}
+	backend.submitInitialMessageFn = func(context.Context, InitialMessageRequest) (InitialMessageStatus, error) {
+		if !inputReady {
+			return InitialMessageStatus{}, &Error{
+				Kind: "unavailable", Code: ErrorCodeInitialMessageInputModeNotReady,
+				Message: "agent terminal input mode is not ready", Retryable: true,
+			}
+		}
+		return InitialMessageStatus{State: "delivered", MessageBytes: 5}, nil
+	}
+	s := newMCPTestServer(t, backend)
+	first := prSpawnInput("start")
+	first.Timeout = "20ms"
+
+	_, err := s.spawnWorkspaceWithAgent(t.Context(), first)
+	var timeoutErr *Error
+	require.ErrorAs(err, &timeoutErr)
+	assert.Equal("runtime_launched", timeoutErr.Details["last_completed_stage"])
+	assert.Equal("message_delivered", timeoutErr.Details["failed_stage"])
+
+	inputReady = true
+	out, err := s.spawnWorkspaceWithAgent(t.Context(), spawnWorkspaceWithAgentInput{
+		Resume: &agentHandoffResume{
+			WorkspaceID: "ws-submit-resume", RuntimeSessionKey: "runtime-submit-resume",
+		},
+		AgentTarget: "codex", InitialMessage: "start", Timeout: "2s",
+	})
+
+	require.NoError(err)
+	assert.Equal("coding_session_observed", out.Stage)
+	assert.Equal(1, launches)
 }
 
 func TestSpawnWorkspaceWithAgentReusesWorkspaceAndLaunchesFreshRuntime(t *testing.T) {
@@ -168,7 +302,7 @@ func TestSpawnWorkspaceWithAgentCreatesIssueAndAdHocWorkspaces(t *testing.T) {
 		s := newMCPTestServer(t, backend)
 
 		out, err := s.spawnWorkspaceWithAgent(t.Context(), spawnWorkspaceWithAgentInput{
-			Source: workspaceSourceInput{Type: "item", Item: &itemRefInput{
+			Source: &workspaceSourceInput{Type: "item", Item: &itemRefInput{
 				Type: "issue", Provider: "github", PlatformRepoID: "repo-acme-widget",
 				Owner: "acme", Name: "widget", Number: 7,
 			}},
@@ -191,7 +325,7 @@ func TestSpawnWorkspaceWithAgentCreatesIssueAndAdHocWorkspaces(t *testing.T) {
 		s := newMCPTestServer(t, backend)
 
 		out, err := s.spawnWorkspaceWithAgent(t.Context(), spawnWorkspaceWithAgentInput{
-			Source: workspaceSourceInput{Type: "adhoc", AdHoc: &adHocWorkspaceSource{
+			Source: &workspaceSourceInput{Type: "adhoc", AdHoc: &adHocWorkspaceSource{
 				Repo: repoFilterInput{
 					Provider: "github", PlatformRepoID: "repo-acme-widget",
 					Owner: "acme", Name: "widget",
@@ -223,7 +357,7 @@ func TestSpawnWorkspaceWithAgentRetriesMultilineMessageUntilInputModeIsReady(t *
 	out, err := s.spawnWorkspaceWithAgent(t.Context(), prSpawnInput("first\nsecond"))
 
 	require.NoError(t, err)
-	assert.Equal("message_delivered", out.Stage)
+	assert.Equal("coding_session_observed", out.Stage)
 	assert.Equal("delivered", out.InitialMessage.State)
 	assert.Equal(3, messagePosts)
 }
@@ -249,7 +383,7 @@ func TestSpawnWorkspaceWithAgentRecoversAmbiguousMessageFromSameBackend(t *testi
 	out, err := s.spawnWorkspaceWithAgent(t.Context(), prSpawnInput("start"))
 
 	require.NoError(t, err)
-	assert.Equal("message_delivered", out.Stage)
+	assert.Equal("coding_session_observed", out.Stage)
 	assert.Equal("delivered", out.InitialMessage.State)
 	assert.Equal(1, messagePosts)
 	assert.Equal(1, statusReads)
@@ -276,14 +410,16 @@ func TestSpawnWorkspaceWithAgentKeepsUncertainRecoveryAmbiguous(t *testing.T) {
 	assert := assert.New(t)
 	backend := successfulSpawnBackend("ws-recovery", "runtime-recovery", "coding-recovery")
 	backend.submitInitialMessageFn = func(context.Context, InitialMessageRequest) (InitialMessageStatus, error) {
-		return InitialMessageStatus{}, &Error{Kind: "internal_error", Message: "result unknown", Ambiguous: true}
+		return InitialMessageStatus{State: "uncertain", MessageBytes: 5}, &Error{
+			Kind: "internal_error", Message: "result unknown", Ambiguous: true,
+		}
 	}
 	backend.getInitialMessageFn = func(context.Context, string, string) (InitialMessageStatus, error) {
 		return InitialMessageStatus{State: "uncertain", MessageBytes: 5}, nil
 	}
 	s := newMCPTestServer(t, backend)
 
-	_, err := s.spawnWorkspaceWithAgent(t.Context(), prSpawnInput("start"))
+	out, err := s.spawnWorkspaceWithAgent(t.Context(), prSpawnInput("start"))
 
 	var backendErr *Error
 	require.ErrorAs(t, err, &backendErr)
@@ -291,6 +427,8 @@ func TestSpawnWorkspaceWithAgentKeepsUncertainRecoveryAmbiguous(t *testing.T) {
 	assert.Equal("uncertain", backendErr.Details["initial_message_state"])
 	assert.Equal("message_delivered", backendErr.Details["failed_stage"])
 	assert.NotContains(backendErr.Details, "message_delivered")
+	require.NotNil(t, out.InitialMessage)
+	assert.Equal("uncertain", out.InitialMessage.State)
 }
 
 func TestSpawnWorkspaceWithAgentReportsRuntimeExitBeforeHookSession(t *testing.T) {
@@ -305,7 +443,7 @@ func TestSpawnWorkspaceWithAgentReportsRuntimeExitBeforeHookSession(t *testing.T
 	messagePosts := 0
 	backend.submitInitialMessageFn = func(context.Context, InitialMessageRequest) (InitialMessageStatus, error) {
 		messagePosts++
-		return InitialMessageStatus{}, nil
+		return InitialMessageStatus{State: "delivered", MessageBytes: 5}, nil
 	}
 	s := newMCPTestServer(t, backend)
 
@@ -315,7 +453,7 @@ func TestSpawnWorkspaceWithAgentReportsRuntimeExitBeforeHookSession(t *testing.T
 	require.ErrorAs(t, err, &backendErr)
 	assert.Equal("coding_session_observed", backendErr.Details["failed_stage"])
 	assert.Contains(backendErr.Message, "runtime exited")
-	assert.Equal(0, messagePosts)
+	assert.Equal(1, messagePosts)
 }
 
 func TestSpawnWorkspaceWithAgentRejectsInvalidInputBeforeBackendCalls(t *testing.T) {
@@ -328,7 +466,7 @@ func TestSpawnWorkspaceWithAgentRejectsInvalidInputBeforeBackendCalls(t *testing
 	inputs := []spawnWorkspaceWithAgentInput{
 		{AgentTarget: "codex", InitialMessage: "start", Timeout: "16m"},
 		{
-			Source: workspaceSourceInput{Type: "item", Item: &itemRefInput{
+			Source: &workspaceSourceInput{Type: "item", Item: &itemRefInput{
 				Type: "pr", Provider: "github", PlatformRepoID: "repo-acme-widget",
 				Owner: "acme", Name: "widget", Number: 42,
 			}},
@@ -363,7 +501,7 @@ func successfulSpawnBackend(workspaceID, runtimeKey, codingSessionID string) *fa
 			return RuntimeSession{}, errors.New("unexpected runtime launch")
 		}
 		return RuntimeSession{
-			Key: runtimeKey, TargetKey: "codex", Status: "running",
+			Key: runtimeKey, TargetKey: "codex", Kind: "agent", Status: "running",
 			CreatedAt: time.Date(2026, 8, 7, 15, 0, 0, 0, time.UTC),
 		}, nil
 	}
@@ -375,7 +513,9 @@ func successfulSpawnBackend(workspaceID, runtimeKey, codingSessionID string) *fa
 		}}, nil
 	}
 	backend.getWorkspaceRuntimeFn = func(context.Context, string) (WorkspaceRuntime, error) {
-		return WorkspaceRuntime{Sessions: []RuntimeSession{{Key: runtimeKey, Status: "running"}}}, nil
+		return WorkspaceRuntime{Sessions: []RuntimeSession{{
+			Key: runtimeKey, TargetKey: "codex", Kind: "agent", Status: "running",
+		}}}, nil
 	}
 	backend.submitInitialMessageFn = func(_ context.Context, req InitialMessageRequest) (InitialMessageStatus, error) {
 		return InitialMessageStatus{State: "delivered", MessageBytes: len(req.Message)}, nil
@@ -385,7 +525,7 @@ func successfulSpawnBackend(workspaceID, runtimeKey, codingSessionID string) *fa
 
 func prSpawnInput(message string) spawnWorkspaceWithAgentInput {
 	return spawnWorkspaceWithAgentInput{
-		Source: workspaceSourceInput{Type: "item", Item: &itemRefInput{
+		Source: &workspaceSourceInput{Type: "item", Item: &itemRefInput{
 			Type: "pr", Provider: "github", PlatformRepoID: "repo-acme-widget",
 			Owner: "acme", Name: "widget", Number: 42,
 		}},

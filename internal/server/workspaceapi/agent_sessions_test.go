@@ -110,7 +110,7 @@ func TestListWorkspaceAgentSessionsProjectsOnlySupportedLiveAgentReports(t *test
 	})
 	_, reserved := handler.reserveInitialMessageAttempt(
 		workspaceID, agentRuntime.Key,
-		initialMessageAttempt{Agent: "codex", SessionID: "shared-session", Message: "review this!"},
+		initialMessageAttempt{TargetKey: "codex", Message: "review this!"},
 	)
 	require.True(reserved)
 	handler.finishInitialMessageAttempt(workspaceID, agentRuntime.Key, initialMessageDelivered)

@@ -61,6 +61,18 @@ func TestListWorkspaceAgentSessionsMapsLiveProjectionDeterministically(t *testin
 			},
 		}, nil
 	}}
+	backend.getWorkspaceRuntimeFn = func(context.Context, string) (WorkspaceRuntime, error) {
+		return WorkspaceRuntime{Sessions: []RuntimeSession{
+			{
+				Key: "runtime-b", TargetKey: "codex", Kind: "agent", Status: "running",
+				CreatedAt: time.Date(2026, 8, 7, 13, 0, 0, 0, time.UTC),
+			},
+			{
+				Key: "runtime-a", TargetKey: "claude", Kind: "agent", Status: "running",
+				CreatedAt: time.Date(2026, 8, 7, 14, 0, 0, 0, time.UTC),
+			},
+		}}, nil
+	}
 	s := newMCPTestServer(t, backend)
 
 	out, err := s.listWorkspaceAgentSessions(
@@ -75,4 +87,37 @@ func TestListWorkspaceAgentSessionsMapsLiveProjectionDeterministically(t *testin
 	assert.Equal("delivered", out.Sessions[0].InitialMessage.State)
 	assert.Equal("2026-08-07T14:59:01Z", out.Sessions[0].InitialMessage.DeliveredAt)
 	assert.Equal("codex", out.Sessions[1].Agent)
+	require.Len(out.Runtimes, 2)
+	assert.True(out.Runtimes[0].HookObserved)
+	assert.True(out.Runtimes[1].HookObserved)
+}
+
+func TestListWorkspaceAgentSessionsShowsRuntimeBeforeFirstHook(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	backend := &fakeBackend{
+		getWorkspaceRuntimeFn: func(context.Context, string) (WorkspaceRuntime, error) {
+			return WorkspaceRuntime{Sessions: []RuntimeSession{
+				{
+					Key: "runtime-waiting", TargetKey: "codex", Kind: "agent", Status: "running",
+					CreatedAt: time.Date(2026, 8, 7, 15, 0, 0, 0, time.UTC),
+				},
+				{Key: "shell", TargetKey: "shell", Kind: "shell", Status: "running"},
+			}}, nil
+		},
+		listWorkspaceAgentSessionsFn: func(context.Context, string) ([]WorkspaceAgentSession, error) {
+			return nil, nil
+		},
+	}
+	s := newMCPTestServer(t, backend)
+
+	out, err := s.listWorkspaceAgentSessions(
+		t.Context(), listWorkspaceAgentSessionsInput{WorkspaceID: "ws-1"},
+	)
+
+	require.NoError(err)
+	require.Len(out.Runtimes, 1)
+	assert.Equal("runtime-waiting", out.Runtimes[0].RuntimeSessionKey)
+	assert.False(out.Runtimes[0].HookObserved)
+	assert.Empty(out.Sessions)
 }

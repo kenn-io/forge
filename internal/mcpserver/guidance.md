@@ -52,7 +52,10 @@ Handoff flow:
 1. Call kenn_forge_list_agent_targets and select an available coding agent.
 2. Call kenn_forge_spawn_workspace_with_agent once with the selected source,
    target, and initial message.
-3. Do not retry an ambiguous workspace, runtime, or message mutation. The tool
-   performs same-daemon status lookup when an initial-message response is lost.
-4. Report every returned workspace, runtime, and coding-session identifier.
+3. Do not retry an ambiguous workspace or runtime mutation. If prompt delivery
+   or hook observation times out after a runtime identifier is returned, call
+   the tool with resume, the returned workspace and runtime identifiers, and
+   the same target and initial message. Resume never launches another runtime.
+4. Report every returned workspace, runtime, prompt-delivery, and coding-session
+   identifier or state.
 ```

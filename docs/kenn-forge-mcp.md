@@ -109,14 +109,21 @@ call `kenn_forge_spawn_workspace_with_agent` with one source:
 - a provider-aware pull request or issue; or
 - a provider-aware repository with an optional ad-hoc branch.
 
-The tool creates or reuses a workspace, launches a new agent runtime, waits for
-its live hook session, and submits one initial message. It does not clean up a
-workspace or runtime after a later failure. The response uses `stage` and
-`initial_message.state` as the authoritative handoff evidence.
+The tool creates or reuses a workspace, launches a new agent runtime, submits
+one initial message, and then waits for the resulting live hook session. It does
+not clean up a workspace or runtime after a later failure. The response uses
+`stage` and `initial_message.state` as the authoritative handoff evidence.
 
-Use `kenn_forge_list_workspace_agent_sessions` to inspect fresh coding sessions
-joined to live agent runtimes. Historical sessions and arbitrary terminal bytes
-are outside the MCP surface.
+If prompt submission or hook observation times out after the response includes
+a workspace ID and runtime session key, call the same tool with `resume` instead
+of `source`. Pass those two IDs with the same `agent_target` and normalized
+`initial_message`. Resume targets the existing runtime and does not launch a
+second agent.
+
+Use `kenn_forge_list_workspace_agent_sessions` to inspect live agent runtimes
+and fresh coding sessions. A runtime with `hook_observed=false` has launched but
+has not reported its first hook. Historical sessions and arbitrary terminal
+bytes are outside the MCP surface.
 
 ## Troubleshooting
 

@@ -69,16 +69,17 @@
   `internal/mcpserver/tools_diff.go::serializeDiffPatches`,
   `internal/mcpserver/tools_diff.go::canonicalDiffFileRef`).
 - Initial-message attempts are process-local and retain the exact normalized
-  prompt only in daemon memory. Same-daemon retries must match agent, coding
-  session, and prompt; daemon restart permits a fresh attempt
+  prompt only in daemon memory. Same-daemon retries must match the live runtime
+  target and prompt; daemon restart permits a fresh attempt
   (`internal/server/workspaceapi/initial_message.go::initialMessageAttempt`).
-- Initial input requires exact live hook identity, LF or printable Unicode, and
-  tracked bracketed paste for multiline text. If safe paste mode is not observed
-  yet, release the no-write reservation and retry only that typed condition on
-  the same runtime until the handoff deadline. Terminal writes honor the handoff
-  context and do not hold the session lock while waiting. Other proven no-write
-  rejection releases its reservation; a timed-out write that may have started
-  remains uncertain
+- Initial input requires an exact live agent runtime and matching target, LF or
+  printable Unicode, and tracked bracketed paste for multiline text. Hook
+  observation is not a submission precondition. If safe paste mode is not
+  observed yet, release the no-write reservation and retry only that typed
+  condition on the same runtime until the handoff deadline. Terminal writes
+  honor the handoff context and do not hold the session lock while waiting.
+  Other proven no-write rejection releases its reservation; a timed-out write
+  that may have started remains uncertain
   (`internal/workspace/localruntime/manager.go::Manager.SubmitInitialMessage`,
   `internal/server/workspaceapi/initial_message.go::Handler.SubmitInitialMessageService`).
 - Shutdown contract: stop MCP admission, wait the bounded grace period, cancel
@@ -90,13 +91,20 @@
   (`internal/server/workspaceapi/routes_handlers.go::Handler.CreatePullWorkspace`,
   `internal/server/workspaceapi/routes_handlers.go::Handler.CreateIssueWorkspaceService`).
 - MCP can create or reuse a pull-request, issue, or ad-hoc workspace and launch
-  one new agent runtime with one initial message. Ambiguous mutations are never
-  retried or cleaned up. The exact `workspaceAlreadyExists` pull-workspace
-  conflict receives one authoritative pull read and reuses the concurrent
-  winner; only initial-message status receives a bounded,
-  cancellation-independent read
+  one new agent runtime with one initial message. It submits that message before
+  waiting for the runtime's matching hook session. A resume names the existing
+  workspace and runtime, repeats the same target and prompt through the
+  runtime-scoped duplicate guard, and never launches another agent. Ambiguous
+  workspace or runtime mutations are never retried or cleaned up. The exact
+  `workspaceAlreadyExists` pull-workspace conflict receives one authoritative
+  pull read and reuses the concurrent winner; only initial-message status
+  receives a bounded, cancellation-independent read
   (`internal/mcpserver/tools_agent_spawn.go::Server.resolveOrCreatePRWorkspace`,
   `internal/mcpserver/tools_agent_spawn.go::Server.recoverInitialMessageStatus`).
+- Agent-session inspection returns live agent runtimes separately from
+  hook-authoritative sessions. `hook_observed=false` distinguishes a launched
+  runtime awaiting its first hook from a workspace with no agent runtime
+  (`internal/mcpserver/tools_agent.go::Server.listWorkspaceAgentSessions`).
 - Handoff success and failure evidence uses `stage` plus
   `initial_message.state`; never add a separate `message_delivered` output or
   error detail (`internal/mcpserver/tools_agent_spawn.go::spawnWorkspaceWithAgentOutput`).

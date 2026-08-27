@@ -1798,6 +1798,9 @@ func (m *Manager) refreshExistingWorkspaceWorktree(
 	); err != nil {
 		return false, err
 	}
+	if err := m.syncWorkspaceBaseBranch(ctx, commonDir, ws); err != nil {
+		return false, err
+	}
 	if ws.ItemType != db.WorkspaceItemTypePullRequest {
 		return false, nil
 	}
@@ -2346,6 +2349,9 @@ func (m *Manager) addWorktree(
 			); err != nil {
 				return err
 			}
+		}
+		if err := m.syncWorkspaceBaseBranch(ctx, cloneDir, ws); err != nil {
+			return err
 		}
 		if err := m.ensureWorkspacePathAvailable(ctx, ws); err != nil {
 			return err
@@ -5152,6 +5158,114 @@ func fetchWorkspaceBaseWithGit(
 		return err
 	}
 	return nil
+}
+
+func (m *Manager) syncWorkspaceBaseBranch(
+	ctx context.Context, dir string, ws *Workspace,
+) error {
+	if ws == nil || ws.ItemType != db.WorkspaceItemTypePullRequest ||
+		ws.Platform == "" || ws.PlatformHost == "" ||
+		ws.RepoOwner == "" || ws.RepoName == "" {
+		return nil
+	}
+	repo, err := m.workspaceRepo(
+		ctx, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+	)
+	if err != nil {
+		return fmt.Errorf("look up workspace repo for base branch sync: %w", err)
+	}
+	if repo == nil {
+		return nil
+	}
+	mr, err := m.db.GetMergeRequestByRepoIDAndNumber(
+		ctx, repo.ID, ws.ItemNumber,
+	)
+	if err != nil {
+		return fmt.Errorf("look up workspace merge request for base branch sync: %w", err)
+	}
+	if mr == nil || strings.TrimSpace(mr.BaseBranch) == "" {
+		return nil
+	}
+	return syncLocalBaseBranch(ctx, dir, ws.ID, strings.TrimSpace(mr.BaseBranch))
+}
+
+func syncLocalBaseBranch(
+	ctx context.Context, dir, workspaceID, branch string,
+) error {
+	localRef := "refs/heads/" + branch
+	remoteRef := "refs/remotes/origin/" + branch
+	remoteSHA, exists, err := gitRefSHA(ctx, dir, remoteRef)
+	if err != nil {
+		return fmt.Errorf("inspect remote base branch %q: %w", branch, err)
+	}
+	if !exists {
+		slog.Warn("workspace base branch sync skipped",
+			"workspace_id", workspaceID, "branch", branch,
+			"reason", "remote-tracking branch is missing")
+		return nil
+	}
+	localSHA, exists, err := gitRefSHA(ctx, dir, localRef)
+	if err != nil {
+		return fmt.Errorf("inspect local base branch %q: %w", branch, err)
+	}
+	if exists {
+		if localSHA == remoteSHA {
+			return nil
+		}
+		checkedOut, err := localBranchCheckedOut(ctx, dir, branch)
+		if err != nil {
+			return fmt.Errorf("inspect base branch worktrees: %w", err)
+		}
+		if checkedOut {
+			slog.Warn("workspace base branch sync skipped",
+				"workspace_id", workspaceID, "branch", branch,
+				"reason", "local branch is checked out")
+			return nil
+		}
+		ancestor, err := gitCommitIsAncestor(ctx, dir, localSHA, remoteSHA)
+		if err != nil {
+			return fmt.Errorf("check base branch fast-forward: %w", err)
+		}
+		if !ancestor {
+			slog.Warn("workspace base branch sync skipped",
+				"workspace_id", workspaceID, "branch", branch,
+				"local_sha", localSHA, "remote_sha", remoteSHA,
+				"reason", "update is not a fast-forward")
+			return nil
+		}
+	}
+	if err := runGitWithoutHooks(
+		ctx, dir, "branch", "--force", "--", branch, remoteSHA,
+	); err == nil {
+		return nil
+	} else if ctx.Err() != nil {
+		return ctx.Err()
+	} else {
+		checkedOut, checkErr := localBranchCheckedOut(ctx, dir, branch)
+		if checkErr == nil && checkedOut {
+			slog.Warn("workspace base branch sync skipped",
+				"workspace_id", workspaceID, "branch", branch,
+				"reason", "local branch became checked out")
+			return nil
+		}
+		return fmt.Errorf("update local base branch %q: %w", branch, err)
+	}
+}
+
+func gitCommitIsAncestor(
+	ctx context.Context, dir, ancestor, descendant string,
+) (bool, error) {
+	_, err := gitCombinedOutput(
+		ctx, dir, "merge-base", "--is-ancestor", ancestor, descendant,
+	)
+	if err == nil {
+		return true, nil
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		return false, nil
+	}
+	return false, err
 }
 
 func refreshWorkspaceBaseOriginHeadWithGit(

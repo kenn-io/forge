@@ -2968,6 +2968,118 @@ func TestFetchWorkspaceBaseRequiresOriginHeadOnlyForIssueWorkspaces(t *testing.T
 	require.Error(fetchWorkspaceBaseWithGit(t.Context(), runGitWithoutHooks, localRepo, true))
 }
 
+func TestAddAndRefreshPRWorktreeFastForwardLocalBaseBranch(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	const branch = "feature/base-sync"
+	localRepo, remote, platformHost := setupHTTPWorktreeBaseForWorkspaceGitTest(
+		t, branch,
+	)
+	runWorkspaceTestGit(t, localRepo, "checkout", "--detach")
+	runWorkspaceTestGit(t, remote, "config", "user.email", "test@test.com")
+	runWorkspaceTestGit(t, remote, "config", "user.name", "Test")
+	firstBaseSHA := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, remote, "commit-tree", "refs/heads/main^{tree}",
+		"-p", "refs/heads/main", "-m", "advance base once",
+	)))
+	runWorkspaceTestGit(t, remote, "update-ref", "refs/heads/main", firstBaseSHA)
+	runWorkspaceTestGit(t, remote, "update-server-info")
+
+	d := openTestDB(t)
+	repoID := seedRepo(t, d, platformHost, "acme", "widget")
+	seedMR(t, d, repoID, 968, branch)
+	mgr := NewManager(d, t.TempDir())
+	ws, err := mgr.Create(
+		t.Context(), "github", platformHost, "acme", "widget", 968,
+	)
+	require.NoError(err)
+
+	_, err = mgr.addWorktree(t.Context(), localRepo, true, ws)
+	require.NoError(err)
+	localBaseSHA := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "rev-parse", "refs/heads/main",
+	)))
+	assert.Equal(firstBaseSHA, localBaseSHA)
+
+	secondBaseSHA := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, remote, "commit-tree", firstBaseSHA+"^{tree}",
+		"-p", firstBaseSHA, "-m", "advance base twice",
+	)))
+	runWorkspaceTestGit(t, remote, "update-ref", "refs/heads/main", secondBaseSHA)
+	runWorkspaceTestGit(t, remote, "update-server-info")
+
+	_, err = mgr.refreshExistingWorkspaceWorktree(t.Context(), localRepo, ws)
+	require.NoError(err)
+	localBaseSHA = strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "rev-parse", "refs/heads/main",
+	)))
+	assert.Equal(secondBaseSHA, localBaseSHA)
+}
+
+func TestSyncLocalBaseBranchSkipsCheckedOutAndDivergedBranches(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	const branch = "main"
+	localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/base-sync")
+	originalSHA := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "rev-parse", "refs/heads/main",
+	)))
+	firstRemoteSHA := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "commit-tree", originalSHA+"^{tree}",
+		"-p", originalSHA, "-m", "first remote base",
+	)))
+	runWorkspaceTestGit(
+		t, localRepo, "update-ref", "refs/remotes/origin/main", firstRemoteSHA,
+	)
+	runWorkspaceTestGit(t, localRepo, "checkout", "--detach")
+
+	require.NoError(syncLocalBaseBranch(
+		t.Context(), localRepo, "ws-base-sync-safety", branch,
+	))
+	assert.Equal(firstRemoteSHA, strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "rev-parse", "refs/heads/main",
+	))))
+
+	secondRemoteSHA := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "commit-tree", firstRemoteSHA+"^{tree}",
+		"-p", firstRemoteSHA, "-m", "second remote base",
+	)))
+	runWorkspaceTestGit(
+		t, localRepo, "update-ref", "refs/remotes/origin/main", secondRemoteSHA,
+	)
+	runWorkspaceTestGit(t, localRepo, "checkout", branch)
+	require.NoError(syncLocalBaseBranch(
+		t.Context(), localRepo, "ws-base-sync-safety", branch,
+	))
+	assert.Equal(firstRemoteSHA, strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "rev-parse", "refs/heads/main",
+	))))
+
+	runWorkspaceTestGit(t, localRepo, "checkout", "--detach")
+	divergentSHA := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "commit-tree", firstRemoteSHA+"^{tree}",
+		"-p", firstRemoteSHA, "-m", "divergent local base",
+	)))
+	thirdRemoteSHA := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "commit-tree", secondRemoteSHA+"^{tree}",
+		"-p", secondRemoteSHA, "-m", "third remote base",
+	)))
+	runWorkspaceTestGit(
+		t, localRepo, "update-ref", "refs/heads/main", divergentSHA,
+	)
+	runWorkspaceTestGit(
+		t, localRepo, "update-ref", "refs/remotes/origin/main", thirdRemoteSHA,
+	)
+	require.NoError(syncLocalBaseBranch(
+		t.Context(), localRepo, "ws-base-sync-safety", branch,
+	))
+	assert.Equal(divergentSHA, strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "rev-parse", "refs/heads/main",
+	))))
+}
+
 func TestFetchWorkspaceBaseConstrainsNegotiationTips(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

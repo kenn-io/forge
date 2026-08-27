@@ -541,6 +541,9 @@ synthetic name and its numbered variants and may delete them during cleanup;
 any other pre-existing branch is user-owned and must keep pointing where it did.
 Ad-hoc workspaces instead reserve their final hashed branch identity before
 setup; a later external Git ref collision is an explicit setup error.
+PR worktree creation and reuse fast-forward the fetched local base branch;
+checked-out or diverged base branches stay untouched and emit a warning
+(`internal/workspace/manager.go::syncLocalBaseBranch`).
 
 ## Branch Upstream
 

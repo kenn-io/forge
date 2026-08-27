@@ -1,0 +1,2 @@
+DROP INDEX IF EXISTS forge_workspace_agent_launches_created_at_idx;
+DROP TABLE IF EXISTS forge_workspace_agent_launches;

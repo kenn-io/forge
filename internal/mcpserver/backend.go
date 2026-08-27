@@ -18,6 +18,7 @@ type Backend interface {
 	ListWorkflowStates(context.Context, WorkflowQuery) (WorkflowPage, error)
 	SetWorkflowState(context.Context, ItemIdentity, WorkflowUpdate) (WorkflowMutation, error)
 	ListLaunchTargets(context.Context) ([]LaunchTarget, error)
+	PreferredWorkspaceAgentTarget(context.Context, time.Time, []string) (string, bool, error)
 	ListWorkspaceAgentSessions(context.Context, string) ([]WorkspaceAgentSession, error)
 	GetWorkspace(context.Context, string) (Workspace, error)
 	CreatePullWorkspace(context.Context, ItemIdentity, bool) (Workspace, error)

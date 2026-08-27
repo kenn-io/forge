@@ -20,6 +20,7 @@ type fakeBackend struct {
 	listWorkflowStatesFn         func(context.Context, WorkflowQuery) (WorkflowPage, error)
 	setWorkflowStateFn           func(context.Context, ItemIdentity, WorkflowUpdate) (WorkflowMutation, error)
 	listLaunchTargetsFn          func(context.Context) ([]LaunchTarget, error)
+	preferredWorkspaceAgentFn    func(context.Context, time.Time, []string) (string, bool, error)
 	listWorkspaceAgentSessionsFn func(context.Context, string) ([]WorkspaceAgentSession, error)
 	getWorkspaceFn               func(context.Context, string) (Workspace, error)
 	createPullWorkspaceFn        func(context.Context, ItemIdentity, bool) (Workspace, error)
@@ -106,6 +107,15 @@ func (b *fakeBackend) ListLaunchTargets(ctx context.Context) ([]LaunchTarget, er
 		return b.listLaunchTargetsFn(ctx)
 	}
 	return nil, nil
+}
+
+func (b *fakeBackend) PreferredWorkspaceAgentTarget(
+	ctx context.Context, since time.Time, targetKeys []string,
+) (string, bool, error) {
+	if b.preferredWorkspaceAgentFn != nil {
+		return b.preferredWorkspaceAgentFn(ctx, since, targetKeys)
+	}
+	return "", false, nil
 }
 
 func (b *fakeBackend) ListWorkspaceAgentSessions(ctx context.Context, workspaceID string) ([]WorkspaceAgentSession, error) {

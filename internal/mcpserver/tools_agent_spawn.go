@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -20,6 +21,7 @@ const (
 	defaultAgentHandoffPollInterval = 250 * time.Millisecond
 	messageStatusRecoveryTimeout    = 6 * time.Second
 	maxAgentInitialMessage          = 64 << 10
+	workspaceAgentPreferenceWindow  = 14 * 24 * time.Hour
 )
 
 type workspaceSourceInput struct {
@@ -36,7 +38,7 @@ type adHocWorkspaceSource struct {
 type spawnWorkspaceWithAgentInput struct {
 	Source         *workspaceSourceInput `json:"source,omitempty"`
 	Resume         *agentHandoffResume   `json:"resume,omitempty"`
-	AgentTarget    string                `json:"agent_target"`
+	AgentTarget    string                `json:"agent_target,omitempty" jsonschema:"configured coding-agent target; omit on a new handoff to use recent workspace launch history"`
 	InitialMessage string                `json:"initial_message"`
 	Timeout        string                `json:"timeout,omitempty"`
 }
@@ -87,7 +89,7 @@ func (s *Server) spawnWorkspaceWithAgent(
 	}
 
 	messageStatus, err := s.submitInitialAgentMessage(
-		ctx, workspace.ID, runtime.Key, in.AgentTarget, in.InitialMessage,
+		ctx, workspace.ID, runtime.Key, runtime.TargetKey, in.InitialMessage,
 	)
 	if messageStatus.State != "" {
 		out.InitialMessage = &messageStatus
@@ -134,9 +136,6 @@ func validateSpawnWorkspaceInput(
 		return in, 0, fmt.Errorf("timeout must not exceed 15m")
 	}
 	in.AgentTarget = strings.ToLower(strings.TrimSpace(in.AgentTarget))
-	if in.AgentTarget == "" {
-		return in, 0, fmt.Errorf("agent_target is required")
-	}
 	message, err := normalizeSpawnInitialMessage(in.InitialMessage)
 	if err != nil {
 		return in, 0, err
@@ -146,6 +145,9 @@ func validateSpawnWorkspaceInput(
 		return in, 0, fmt.Errorf("provide exactly one of source or resume")
 	}
 	if in.Resume != nil {
+		if in.AgentTarget == "" {
+			return in, 0, fmt.Errorf("agent_target is required when resume is provided")
+		}
 		in.Resume.WorkspaceID = strings.TrimSpace(in.Resume.WorkspaceID)
 		in.Resume.RuntimeSessionKey = strings.TrimSpace(in.Resume.RuntimeSessionKey)
 		if in.Resume.WorkspaceID == "" {
@@ -194,6 +196,12 @@ func (s *Server) prepareAgentHandoff(
 	targets, err := s.listAgentTargets(ctx, listAgentTargetsInput{})
 	if err != nil {
 		return Workspace{}, RuntimeSession{}, handoffFailure(ctx, err, *out, "", "")
+	}
+	if in.AgentTarget == "" {
+		in.AgentTarget, err = s.defaultAgentTarget(ctx, targets.Targets)
+		if err != nil {
+			return Workspace{}, RuntimeSession{}, handoffFailure(ctx, err, *out, "", "")
+		}
 	}
 	target, ok := findAgentTarget(targets.Targets, in.AgentTarget)
 	if !ok {
@@ -406,6 +414,37 @@ func findAgentTarget(targets []agentTargetRow, key string) (agentTargetRow, bool
 		}
 	}
 	return agentTargetRow{}, false
+}
+
+func (s *Server) defaultAgentTarget(
+	ctx context.Context,
+	targets []agentTargetRow,
+) (string, error) {
+	available := make([]agentTargetRow, 0, len(targets))
+	keys := make([]string, 0, len(targets))
+	for _, target := range targets {
+		if !target.Available {
+			continue
+		}
+		available = append(available, target)
+		keys = append(keys, target.Key)
+	}
+	if len(available) == 0 {
+		return "", fmt.Errorf("no available coding-agent targets are configured")
+	}
+	preferred, found, err := s.backend.PreferredWorkspaceAgentTarget(
+		ctx, time.Now().UTC().Add(-workspaceAgentPreferenceWindow), keys,
+	)
+	if err != nil {
+		return "", err
+	}
+	if found {
+		return preferred, nil
+	}
+	slices.SortFunc(available, func(a, b agentTargetRow) int {
+		return cmp.Compare(a.configOrder, b.configOrder)
+	})
+	return available[0].Key, nil
 }
 
 func (s *Server) resolveOrCreateWorkspace(

@@ -5462,31 +5462,9 @@ func (d *DB) UpsertWorkspaceRuntimeSession(
 	ctx context.Context,
 	session *WorkspaceRuntimeSession,
 ) error {
-	createdAt := canonicalUTCTime(session.CreatedAt)
-	if createdAt.IsZero() {
-		createdAt = time.Now().UTC()
-	}
-	_, err := d.execContext(ctx, `
-		INSERT INTO forge_workspace_runtime_sessions
-		    (workspace_id, session_key, target_key, label, kind, display_region, scope,
-		     tmux_session, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(workspace_id, session_key) DO UPDATE SET
-		    target_key = excluded.target_key,
-		    label = excluded.label,
-		    kind = excluded.kind,
-		    display_region = excluded.display_region,
-		    scope = excluded.scope,
-		    tmux_session = excluded.tmux_session,
-		    created_at = excluded.created_at`,
-		session.WorkspaceID, session.SessionKey, session.TargetKey,
-		session.Label, session.Kind, session.DisplayRegion, session.Scope,
-		session.TmuxSession, createdAt,
-	)
-	if err != nil {
-		return fmt.Errorf("upsert workspace runtime session: %w", err)
-	}
-	return nil
+	return d.Tx(ctx, func(tx *sql.Tx) error {
+		return upsertWorkspaceRuntimeSession(ctx, tx, session)
+	})
 }
 
 // ListWorkspaceRuntimeSessions returns stored runtime sessions for a workspace

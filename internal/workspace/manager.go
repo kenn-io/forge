@@ -4333,7 +4333,15 @@ func (m *Manager) RecordRuntimeSession(
 	if session.SessionKey == "" {
 		return nil
 	}
-	return m.db.UpsertWorkspaceRuntimeSession(ctx, &session)
+	return m.db.RecordWorkspaceRuntimeSession(ctx, &session)
+}
+
+func (m *Manager) PreferredWorkspaceAgentTarget(
+	ctx context.Context,
+	since time.Time,
+	targetKeys []string,
+) (string, bool, error) {
+	return m.db.PreferredWorkspaceAgentTarget(ctx, since, targetKeys)
 }
 
 func (m *Manager) UpdateRuntimeSessionLabel(

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -214,6 +215,84 @@ func TestSpawnWorkspaceWithAgentReusesWorkspaceAndLaunchesFreshRuntime(t *testin
 	require.NoError(t, err)
 	assert.True(t, out.Workspace.Reused)
 	assert.Equal(t, "runtime-fresh", out.Runtime.SessionKey)
+}
+
+func TestSpawnWorkspaceWithAgentDefaultsToMostUsedRecentAgent(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	backend := successfulSpawnBackend("ws-default", "runtime-default", "coding-default")
+	backend.listLaunchTargetsFn = func(context.Context) ([]LaunchTarget, error) {
+		return []LaunchTarget{
+			{Key: "codex", Label: "Codex", Kind: "agent", Source: "config", Available: true},
+			{Key: "claude", Label: "Claude", Kind: "agent", Source: "config", Available: true},
+		}, nil
+	}
+	backend.preferredWorkspaceAgentFn = func(_ context.Context, since time.Time, candidates []string) (string, bool, error) {
+		assert.WithinDuration(time.Now().Add(-14*24*time.Hour), since, time.Second)
+		assert.ElementsMatch([]string{"codex", "claude"}, candidates)
+		return "claude", true, nil
+	}
+	backend.launchWorkspaceRuntimeFn = func(_ context.Context, workspaceID, target string) (RuntimeSession, error) {
+		assert.Equal("ws-default", workspaceID)
+		assert.Equal("claude", target)
+		return RuntimeSession{
+			Key: "runtime-default", TargetKey: "claude", Status: "running",
+			CreatedAt: time.Date(2026, 8, 7, 15, 0, 0, 0, time.UTC),
+		}, nil
+	}
+	backend.listWorkspaceAgentSessionsFn = func(context.Context, string) ([]WorkspaceAgentSession, error) {
+		return []WorkspaceAgentSession{{
+			Agent: "claude", SessionID: "coding-default", RuntimeSessionKey: "runtime-default",
+			TargetKey: "claude", State: "working",
+			UpdatedAt: time.Date(2026, 8, 7, 15, 0, 1, 0, time.UTC),
+		}}, nil
+	}
+	s := newMCPTestServer(t, backend)
+
+	result, err := connectMCPTestSession(t, s).CallTool(
+		t.Context(), &mcp.CallToolParams{
+			Name: "kenn_forge_spawn_workspace_with_agent",
+			Arguments: map[string]any{
+				"source": map[string]any{
+					"type": "item",
+					"item": map[string]any{
+						"type": "pr", "provider": "github",
+						"platform_repo_id": "repo-acme-widget",
+						"owner":            "acme", "name": "widget", "number": 42,
+					},
+				},
+				"initial_message": "start",
+				"timeout":         "2s",
+			},
+		},
+	)
+
+	require.NoError(err)
+	require.NotNil(result)
+	assert.False(result.IsError)
+	raw, err := json.Marshal(result.StructuredContent)
+	require.NoError(err)
+	var out spawnWorkspaceWithAgentOutput
+	require.NoError(json.Unmarshal(raw, &out))
+	assert.Equal("claude", out.Runtime.TargetKey)
+}
+
+func TestSpawnWorkspaceWithAgentFallsBackToFirstConfiguredAgent(t *testing.T) {
+	backend := successfulSpawnBackend("ws-fallback", "runtime-fallback", "coding-fallback")
+	backend.listLaunchTargetsFn = func(context.Context) ([]LaunchTarget, error) {
+		return []LaunchTarget{
+			{Key: "codex", Label: "Codex", Kind: "agent", Source: "config", Available: true},
+			{Key: "claude", Label: "Claude", Kind: "agent", Source: "config", Available: true},
+		}, nil
+	}
+	s := newMCPTestServer(t, backend)
+	input := prSpawnInput("start")
+	input.AgentTarget = ""
+
+	out, err := s.spawnWorkspaceWithAgent(t.Context(), input)
+
+	require.NoError(t, err)
+	assert.Equal(t, "codex", out.Runtime.TargetKey)
 }
 
 func TestSpawnWorkspaceWithAgentReusesPRWorkspaceCreatedConcurrently(t *testing.T) {

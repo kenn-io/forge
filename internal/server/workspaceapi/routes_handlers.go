@@ -2336,6 +2336,12 @@ func (s *Handler) LaunchWorkspaceRuntimeService(
 	return s.launchWorkspaceRuntimeService(ctx, workspaceID, targetKey, "")
 }
 
+func (s *Handler) PreferredWorkspaceAgentTargetService(
+	ctx context.Context, since time.Time, targetKeys []string,
+) (string, bool, error) {
+	return s.workspaces.PreferredWorkspaceAgentTarget(ctx, since, targetKeys)
+}
+
 func (s *Handler) launchWorkspaceRuntimeService(
 	ctx context.Context, workspaceID, targetKey, displayRegion string,
 ) (localruntime.SessionInfo, error) {

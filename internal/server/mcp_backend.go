@@ -6,6 +6,7 @@ import (
 	"maps"
 	"net/http"
 	"strings"
+	"time"
 
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
@@ -550,6 +551,18 @@ func (b mcpBackend) LaunchWorkspaceRuntime(
 		Key: session.Key, TargetKey: session.TargetKey,
 		Kind: string(session.Kind), Status: string(session.Status), CreatedAt: session.CreatedAt,
 	}, nil
+}
+
+func (b mcpBackend) PreferredWorkspaceAgentTarget(
+	ctx context.Context, since time.Time, targetKeys []string,
+) (string, bool, error) {
+	target, found, err := b.server.workspaceAPI.PreferredWorkspaceAgentTargetService(
+		ctx, since, targetKeys,
+	)
+	if err != nil {
+		return "", false, mcpBackendError(err)
+	}
+	return target, found, nil
 }
 
 func (b mcpBackend) GetWorkspaceRuntime(

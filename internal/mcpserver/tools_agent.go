@@ -17,6 +17,7 @@ type agentTargetRow struct {
 	Source         string `json:"source"`
 	Available      bool   `json:"available"`
 	DisabledReason string `json:"disabled_reason,omitempty"`
+	configOrder    int
 }
 
 type listAgentTargetsOutput struct {
@@ -70,8 +71,9 @@ func (s *Server) registerAgentTools() {
 	mcp.AddTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_spawn_workspace_with_agent",
 		Description: "Create or reuse a workspace, launch one configured coding agent, submit exactly one initial message, " +
-			"and observe the resulting hook session. Resume can continue an existing runtime without launching another agent. " +
-			"Partial resources are never cleaned up automatically.",
+			"and observe the resulting hook session. When agent_target is omitted for a new handoff, the most used " +
+			"available agent from the previous 14 days is selected. Resume can continue an existing runtime without " +
+			"launching another agent. Partial resources are never cleaned up automatically.",
 	}, wrapTool(s.spawnWorkspaceWithAgent))
 }
 
@@ -88,7 +90,7 @@ func (s *Server) listAgentTargets(
 		supported[string(profile.Agent)] = struct{}{}
 	}
 	out := listAgentTargetsOutput{Targets: make([]agentTargetRow, 0)}
-	for _, target := range targets {
+	for index, target := range targets {
 		key := strings.ToLower(strings.TrimSpace(target.Key))
 		if target.Kind != "agent" {
 			continue
@@ -102,6 +104,7 @@ func (s *Server) listAgentTargets(
 			Source:         target.Source,
 			Available:      target.Available,
 			DisabledReason: target.DisabledReason,
+			configOrder:    index,
 		})
 	}
 	slices.SortFunc(out.Targets, func(a, b agentTargetRow) int {

@@ -362,6 +362,9 @@ refresh and persist head-repository classification while preparing generated
 context, but classification does not authorize or block the launch
 (`internal/server/workspaceapi/routes_handlers.go::Handler.launchWorkspaceRuntimeSession`,
 `internal/workspace/agent_context.go::Manager.PrepareAgentLaunchContext`).
+Each recorded workspace agent runtime contributes one durable launch event per
+session; runtime cleanup never erases this preference history
+(`internal/db/workspace_agent_usage.go::DB.RecordWorkspaceRuntimeSession`).
 Agent settings use the `agents` and `launch_targets` fields from `GET /settings`;
 the shared create split control consumes agent targets from the hydrated store
 (`frontend/src/lib/components/workspace/WorkspaceCreateSplitButton.svelte::agentTargets`).

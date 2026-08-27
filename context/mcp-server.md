@@ -105,6 +105,9 @@
   hook-authoritative sessions. `hook_observed=false` distinguishes a launched
   runtime awaiting its first hook from a workspace with no agent runtime
   (`internal/mcpserver/tools_agent.go::Server.listWorkspaceAgentSessions`).
+- An omitted MCP agent target selects the most-used available workspace agent
+  from the prior 14 days; ties prefer recent use, then key, and empty history
+  falls back to configured order (`internal/mcpserver/tools_agent_spawn.go::Server.defaultAgentTarget`).
 - Handoff success and failure evidence uses `stage` plus
   `initial_message.state`; never add a separate `message_delivered` output or
   error detail (`internal/mcpserver/tools_agent_spawn.go::spawnWorkspaceWithAgentOutput`).

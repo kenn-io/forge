@@ -48,3 +48,44 @@ func TestDefaultProviderFactoryPassesGitLabSharedSyncBudget(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(1, budget.Spent())
 }
+
+func TestDefaultProviderFactoryUsesGiteaExplicitBaseURL(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal("token factory-token", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.EscapedPath() {
+		case "/api/v1/version":
+			_, _ = w.Write([]byte(`{"version":"1.26.0"}`))
+		case "/api/v1/repos/owner/repo":
+			_, _ = w.Write([]byte(`{
+				"id":42,"name":"repo","full_name":"owner/repo",
+				"clone_url":"http://gitea.test/owner/repo.git",
+				"owner":{"login":"owner"}
+			}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	factory := defaultProviderFactories()[string(platform.KindGitea)]
+	built, err := factory(providerFactoryInput{
+		host:          "gitea.test",
+		baseURL:       server.URL,
+		allowInsecure: true,
+		tokenSource: mainTestTokenSource(
+			t, string(platform.KindGitea), "gitea.test", "GITEA_FACTORY_TOKEN", "factory-token",
+		),
+	})
+	require.NoError(err)
+	reader, ok := built.provider.(platform.RepositoryReader)
+	require.True(ok)
+
+	repo, err := reader.GetRepository(t.Context(), platform.RepoRef{
+		Platform: platform.KindGitea, Host: "gitea.test", Owner: "owner", Name: "repo",
+	})
+	require.NoError(err)
+	assert.Equal("http://gitea.test/owner/repo.git", repo.CloneURL)
+}

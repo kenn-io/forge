@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -120,6 +122,44 @@ func TestEnsureRepoBrowserCloneDoesNotFetchTagsForExistingClone(t *testing.T) {
 	require.NoError(err)
 	assert.False(truncated)
 	assert.NotContains(refs, RepoBrowserRef{Type: RepoBrowserRefTag, Name: "v1.0.0", SHA: mainSHA})
+}
+
+func TestRefreshRepoBrowserCloneRequiresGiteaHTTPAcknowledgement(t *testing.T) {
+	require := require.New(t)
+	root := t.TempDir()
+	remote := filepath.Join(root, "acme", "widgets.git")
+	require.NoError(os.MkdirAll(filepath.Dir(remote), 0o755))
+	commitTestRun(t, root, "git", "init", "--bare", "--initial-branch=main", remote)
+
+	work := filepath.Join(root, "work")
+	commitTestRun(t, root, "git", "clone", remote, work)
+	commitTestRun(t, work, "git", "config", "user.email", "maintainer@example.test")
+	commitTestRun(t, work, "git", "config", "user.name", "Maintainer")
+	require.NoError(os.WriteFile(filepath.Join(work, "README.md"), []byte("# Widgets\n"), 0o644))
+	commitTestRun(t, work, "git", "add", ".")
+	commitTestRun(t, work, "git", "commit", "-m", "initial")
+	commitTestRun(t, work, "git", "push", "origin", "main")
+	commitTestRun(t, remote, "git", "update-server-info")
+
+	server := httptest.NewServer(http.FileServer(http.Dir(root)))
+	t.Cleanup(server.Close)
+	host := strings.TrimPrefix(server.URL, "http://")
+	repo := RepoBrowserRepoRef{
+		Provider:  "gitea",
+		Host:      host,
+		Owner:     "acme",
+		Name:      "widgets",
+		RepoPath:  "acme/widgets",
+		RemoteURL: server.URL + "/acme/widgets.git",
+	}
+	mgr := New(filepath.Join(root, "clones"), nil)
+
+	err := mgr.RefreshRepoBrowserClone(t.Context(), repo)
+	require.Error(err)
+	require.Contains(err.Error(), "allow_insecure = true")
+
+	mgr.SetAllowInsecureHTTP("gitea", host, true)
+	require.NoError(mgr.RefreshRepoBrowserClone(t.Context(), repo))
 }
 
 func TestRefreshRepoBrowserClonesRefreshesRegisteredRepos(t *testing.T) {

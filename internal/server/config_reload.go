@@ -55,6 +55,7 @@ type startupConfigSnapshot struct {
 	AllowedHosts                    []config.HostKey
 	TrustReverseProxy               bool
 	ProviderHosts                   []tokenauth.Key
+	PlatformTransports              []startupPlatformTransport
 	// GitHubCredentialRoutes records the scoped client routes built at startup.
 	// Adding, removing, or changing a route descriptor requires rebuilding the
 	// bounded client pool and re-resolving authenticated identity. Token values
@@ -80,6 +81,13 @@ type startupConfigSnapshot struct {
 	SSHPeers        []config.FleetSSHPeer
 }
 
+type startupPlatformTransport struct {
+	Platform      string
+	Host          string
+	BaseURL       string
+	AllowInsecure bool
+}
+
 func snapshotStartupConfig(cfg *config.Config) startupConfigSnapshot {
 	if cfg == nil {
 		return startupConfigSnapshot{}
@@ -99,6 +107,7 @@ func snapshotStartupConfig(cfg *config.Config) startupConfigSnapshot {
 		AllowedHosts:                    startupAllowedHosts(cfg),
 		TrustReverseProxy:               cfg.TrustReverseProxy,
 		ProviderHosts:                   startupProviderHosts(cfg),
+		PlatformTransports:              startupPlatformTransports(cfg),
 		GitHubCredentialRoutes:          githubCredentialRoutes(cfg),
 		GitHubAppSplitHosts:             githubAppSplitHosts(cfg),
 		RoborevEndpoint:                 cfg.RoborevEndpoint(),
@@ -116,6 +125,28 @@ func snapshotStartupConfig(cfg *config.Config) startupConfigSnapshot {
 	snap.RequireAuth = cfg.API.RequireAuth
 	snap.SSHPeers = slices.Clone(cfg.Fleet.SSHPeers)
 	return snap
+}
+
+func startupPlatformTransports(cfg *config.Config) []startupPlatformTransport {
+	if cfg == nil {
+		return nil
+	}
+	transports := make([]startupPlatformTransport, 0, len(cfg.Platforms))
+	for _, configured := range cfg.Platforms {
+		transports = append(transports, startupPlatformTransport{
+			Platform:      configured.Type,
+			Host:          configured.Host,
+			BaseURL:       configured.BaseURL,
+			AllowInsecure: configured.AllowInsecure,
+		})
+	}
+	slices.SortFunc(transports, func(a, b startupPlatformTransport) int {
+		if cmp := strings.Compare(a.Platform, b.Platform); cmp != 0 {
+			return cmp
+		}
+		return strings.Compare(a.Host, b.Host)
+	})
+	return transports
 }
 
 func startupAllowedHosts(cfg *config.Config) []config.HostKey {

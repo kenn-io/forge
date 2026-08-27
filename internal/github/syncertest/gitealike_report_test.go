@@ -45,7 +45,7 @@ func TestGiteaLikeProviderMergeMetricsReachArchiveReport(t *testing.T) {
 			newClient: func(host string, source tokenauth.Source, baseURL string) (platform.MergeRequestReader, error) {
 				return gitea.NewClient(
 					host, source,
-					gitea.WithBaseURLForTesting(baseURL),
+					gitea.WithBaseURL(baseURL, true),
 					gitea.WithServerVersionForTesting("1.26.0"),
 				)
 			},

@@ -47,6 +47,10 @@ coherence, file history, previews, or refresh behavior.
   general clone hot path is not coupled to the tag namespace
   (`internal/server/repobrowserapi/refresh.go::Handler.RunRefreshLoop`,
   `internal/gitclone/repo_browser.go::Manager.fetchRepoBrowserTags`).
+- Initial, refreshed, adopted, and registered browser clones validate both the
+  advertised URL and any persisted origin against the exact provider-host
+  cleartext policy before authenticated Git runs
+  (`internal/gitclone/repo_browser.go::Manager.validateRepoBrowserRemote`).
 - A missing clone may finish its single-flight initial fetch after the opening
   caller cancels; later callers share that bounded work rather than starting
   competing clones (`internal/gitclone/repo_browser.go::Manager.ensureRepoBrowserCloneLocal`).

@@ -23,6 +23,7 @@ import (
 	"go.kenn.io/forge/internal/cli/serve"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/server"
@@ -670,6 +671,27 @@ func TestDefaultProviderFactoriesRegisterForgejoAndGitea(t *testing.T) {
 	assert.Contains(factories, string(platform.KindGitea))
 }
 
+func TestConfigureCloneTransportPolicyUsesExactProviderIdentity(t *testing.T) {
+	clones := gitclone.New(t.TempDir(), nil)
+	configureCloneTransportPolicy(clones, &config.Config{
+		Platforms: []config.PlatformConfig{
+			{
+				Type:          "gitea",
+				Host:          "gitea.example.test:3000",
+				AllowInsecure: true,
+			},
+			{
+				Type: "gitea",
+				Host: "secure-gitea.example.test",
+			},
+		},
+	})
+
+	assert.True(t, clones.AllowsInsecureHTTP("gitea", "gitea.example.test:3000"))
+	assert.False(t, clones.AllowsInsecureHTTP("forgejo", "gitea.example.test:3000"))
+	assert.False(t, clones.AllowsInsecureHTTP("gitea", "secure-gitea.example.test"))
+}
+
 func TestBuildProviderStartupKeepsForgeProviderHostsDistinct(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -701,7 +723,16 @@ func TestBuildProviderStartupKeepsForgeProviderHostsDistinct(t *testing.T) {
 	set := tokenauth.NewSourceSet(tokenauth.Options{})
 	startup, err := buildProviderStartup(
 		t.Context(), database,
-		&config.Config{SyncBudgetPerHour: 200},
+		&config.Config{
+			SyncBudgetPerHour: 200,
+			Platforms: []config.PlatformConfig{{
+				Type:          string(platform.KindGitea),
+				Host:          "gitea.example.com",
+				BaseURL:       "http://gitea-api.example.com:3000",
+				AllowInsecure: true,
+				TokenEnv:      "GITEA_TEST_TOKEN",
+			}},
+		},
 		set,
 		map[string]tokenauth.Source{
 			providerHostKey(string(platform.KindForgejo), "codeberg.org"): mainTestTokenSource(
@@ -724,6 +755,8 @@ func TestBuildProviderStartupKeepsForgeProviderHostsDistinct(t *testing.T) {
 	require.NoError(err)
 	assert.Equal("codeberg-token", forgejoFactoryToken)
 	assert.Equal("gitea.example.com", giteaCalls[0].host)
+	assert.Equal("http://gitea-api.example.com:3000", giteaCalls[0].baseURL)
+	assert.True(giteaCalls[0].allowInsecure)
 	giteaFactoryToken, err := giteaCalls[0].tokenSource.Token(t.Context())
 	require.NoError(err)
 	assert.Equal("gitea-token", giteaFactoryToken)

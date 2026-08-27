@@ -18,6 +18,7 @@ combining repository-owned history
 - `platform` is the provider kind named in the canonical provider list in
   `CLAUDE.md`.
 - `platform_host` is the normalized host for that provider. Preserve ports.
+- Gitea `base_url` changes API transport only; `platform_host` remains identity, and repository reads plus every authenticated Git path reject mismatched or unacknowledged plain-HTTP clone URLs (`internal/platform/gitea/client.go::validateRepositoryCloneURL`, `internal/gitclone/clone.go::validateRemoteTransport`).
 - `owner` and `name` are provider-canonical display/config fields.
 - `repo_path` carries the full provider path when `owner/name` is not enough.
 - `platform_repo_id` / provider external IDs are stable provider identities;

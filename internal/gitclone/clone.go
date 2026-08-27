@@ -9,6 +9,8 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -73,6 +75,8 @@ type Manager struct {
 	ancestryVisitBudget  int
 	repoBrowserBarrierMu sync.Mutex
 	repoBrowserBarriers  map[string]*repoBrowserBarrier
+	transportPolicyMu    sync.RWMutex
+	allowInsecureHTTP    map[string]struct{}
 
 	// Deterministic synchronization and failure-injection hooks for
 	// repository-browser concurrency tests and clone cleanup tests. Tests set
@@ -126,7 +130,36 @@ func New(baseDir string, routes RouteResolver) *Manager {
 		ensureFlights:       make(map[string]*ensureCloneFlight),
 		repoBrowserRepos:    make(map[string]RepoBrowserRepoRef),
 		repoBrowserBarriers: make(map[string]*repoBrowserBarrier),
+		allowInsecureHTTP:   make(map[string]struct{}),
 	}
+}
+
+// SetAllowInsecureHTTP records the explicit, host-scoped acknowledgement
+// required before authenticated Git may use plain HTTP.
+func (m *Manager) SetAllowInsecureHTTP(platform, host string, allowed bool) {
+	key := insecureHTTPPolicyKey(platform, host)
+	m.transportPolicyMu.Lock()
+	defer m.transportPolicyMu.Unlock()
+	if allowed {
+		m.allowInsecureHTTP[key] = struct{}{}
+		return
+	}
+	delete(m.allowInsecureHTTP, key)
+}
+
+// AllowsInsecureHTTP reports whether plain HTTP was explicitly acknowledged
+// for one provider identity. Loopback HTTP is handled separately.
+func (m *Manager) AllowsInsecureHTTP(platform, host string) bool {
+	key := insecureHTTPPolicyKey(platform, host)
+	m.transportPolicyMu.RLock()
+	defer m.transportPolicyMu.RUnlock()
+	_, ok := m.allowInsecureHTTP[key]
+	return ok
+}
+
+func insecureHTTPPolicyKey(platform, host string) string {
+	return strings.ToLower(strings.TrimSpace(platform)) + "\x00" +
+		strings.ToLower(strings.TrimSpace(host))
 }
 
 // ClonePath returns the filesystem path for a repo's bare clone.
@@ -301,6 +334,9 @@ func (m *Manager) ensureCloneInNamespaceValidated(
 	if err := validateRemoteURLIdentity(host, owner, name, remoteURL); err != nil {
 		return err
 	}
+	if err := m.validateRemoteTransport(platform, host, remoteURL); err != nil {
+		return err
+	}
 	clonePath, err := m.ClonePathInNamespace(namespace, host, owner, name)
 	if err != nil {
 		return err
@@ -357,6 +393,28 @@ func (m *Manager) ensureCloneInNamespaceValidated(
 		}
 	}
 	return nil
+}
+
+func (m *Manager) validateRemoteTransport(platform, host, remoteURL string) error {
+	u, err := url.Parse(strings.TrimSpace(remoteURL))
+	if err != nil || !strings.EqualFold(u.Scheme, "http") {
+		return nil
+	}
+	if m.AllowsInsecureHTTP(platform, host) {
+		return nil
+	}
+	hostname := strings.Trim(strings.ToLower(u.Hostname()), "[]")
+	if !strings.EqualFold(strings.TrimSpace(platform), "gitea") && hostname == "localhost" {
+		return nil
+	}
+	if ip := net.ParseIP(hostname); !strings.EqualFold(strings.TrimSpace(platform), "gitea") &&
+		ip != nil && ip.IsLoopback() {
+		return nil
+	}
+	return fmt.Errorf(
+		"plain HTTP clone transport for %s host %q requires allow_insecure = true",
+		strings.ToLower(strings.TrimSpace(platform)), host,
+	)
 }
 
 func validateEnsureCloneCaller(

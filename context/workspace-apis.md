@@ -30,6 +30,10 @@ embedder protocol for arbitrary host state.
 - Managed clones keep `core.bare=true` in shared config and override it per
   linked worktree; repository tools use the shared value to identify this layout
   (`internal/workspace/manager.go::configureBareLinkedWorktree`).
+- Managed clones and existing local base checkouts use the same exact
+  provider-host cleartext acknowledgement when validating their origin; local
+  bases do not silently weaken or ignore the configured transport policy
+  (`internal/workspace/manager.go::ValidateWorktreeBasePath`).
 
 ## Endpoint Intent
 

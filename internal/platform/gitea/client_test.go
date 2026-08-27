@@ -54,7 +54,7 @@ func TestClientReviewThreadCapabilitiesUseValidatedVersionFloor(t *testing.T) {
 			client, err := NewClient(
 				"gitea.test",
 				testTokenSource("token"),
-				WithBaseURLForTesting(server.URL),
+				WithBaseURL(server.URL, true),
 				WithServerVersionForTesting(tt.version),
 			)
 			require.NoError(err)
@@ -87,12 +87,128 @@ func TestClientDiscoversVersionAtTestingBaseURL(t *testing.T) {
 	client, err := NewClient(
 		"gitea.test",
 		testTokenSource("token"),
-		WithBaseURLForTesting(server.URL),
+		WithBaseURL(server.URL, true),
 	)
 	require.NoError(err)
 	assert.True(versionRequested)
 	assert.True(client.Capabilities().ReadReviewThreads)
 	assert.True(client.Capabilities().Archive.InlineReviewComments)
+}
+
+func TestClientDefaultsToHTTPSForConfiguredHost(t *testing.T) {
+	client, err := NewClient(
+		"gitea.test:3000",
+		testTokenSource("token"),
+		WithServerVersionForTesting(testGiteaServerVersion),
+	)
+	Require.NoError(t, err)
+	assert.Equal(t, "https://gitea.test:3000", client.baseURL)
+}
+
+func TestClientUsesExplicitHTTPBaseURLAndScopesTokenToItsOrigin(t *testing.T) {
+	assert := assert.New(t)
+	require := Require.New(t)
+	var apiAuthorization string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		apiAuthorization = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"id":42,"name":"repo","full_name":"owner/repo",
+			"clone_url":"http://gitea.test/owner/repo.git",
+			"owner":{"login":"owner"}
+		}`))
+	}))
+	defer server.Close()
+	offOriginAuthorization := ""
+	offOrigin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		offOriginAuthorization = r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer offOrigin.Close()
+
+	client, err := NewClient(
+		"gitea.test", testTokenSource("gitea-token"),
+		WithBaseURL(server.URL+"/", true),
+		WithServerVersionForTesting(testGiteaServerVersion),
+	)
+	require.NoError(err)
+	assert.Equal(server.URL, client.baseURL)
+
+	repo, err := client.GetRepository(t.Context(), platform.RepoRef{
+		Platform: platform.KindGitea, Host: "gitea.test", Owner: "owner", Name: "repo",
+	})
+	require.NoError(err)
+	assert.Equal("http://gitea.test/owner/repo.git", repo.CloneURL)
+	assert.Equal("token gitea-token", apiAuthorization)
+
+	_, err = client.transport.httpClient.Get(offOrigin.URL)
+	require.Error(err)
+	assert.Contains(err.Error(), "refusing to attach auth")
+	assert.Empty(offOriginAuthorization)
+}
+
+func TestClientRejectsUnsafeExplicitBaseURL(t *testing.T) {
+	tests := []struct {
+		name          string
+		baseURL       string
+		allowInsecure bool
+		want          string
+	}{
+		{name: "relative", baseURL: "gitea.test", want: "absolute http(s) URL"},
+		{name: "userinfo", baseURL: "https://user@gitea.test", want: "must not include user info"},
+		{name: "query", baseURL: "https://gitea.test?x=1", want: "must not include a query string"},
+		{name: "fragment", baseURL: "https://gitea.test#api", want: "must not include a fragment"},
+		{name: "unacknowledged http", baseURL: "http://gitea.test", want: "without an explicit insecure"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := NewClient(
+				"gitea.test", testTokenSource("token"),
+				WithBaseURL(tt.baseURL, tt.allowInsecure),
+				WithServerVersionForTesting(testGiteaServerVersion),
+			)
+			Require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.want)
+		})
+	}
+}
+
+func TestClientRejectsIncompatibleAdvertisedCloneTransport(t *testing.T) {
+	tests := []struct {
+		name          string
+		cloneURL      string
+		allowInsecure bool
+		want          string
+	}{
+		{
+			name:     "different stable host",
+			cloneURL: "https://proxy.test/owner/repo.git",
+			want:     "incompatible with configured platform identity",
+		},
+		{
+			name:     "unacknowledged plain HTTP",
+			cloneURL: "http://gitea.test/owner/repo.git",
+			want:     "set allow_insecure = true",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client, err := NewClient(
+				"gitea.test", testTokenSource("token"),
+				WithServerVersionForTesting(testGiteaServerVersion),
+			)
+			Require.NoError(t, err)
+			client.allowInsecureHTTP = tt.allowInsecure
+			err = client.validateRepositoryCloneURL(platform.Repository{
+				Ref:      platform.RepoRef{Owner: "owner", Name: "repo"},
+				CloneURL: tt.cloneURL,
+			})
+			Require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.want)
+		})
+	}
 }
 
 func TestClientReadsGiteaActionsChecks(t *testing.T) {
@@ -127,7 +243,7 @@ func TestClientReadsGiteaActionsChecks(t *testing.T) {
 
 	client, err := NewClient(
 		"gitea.test", testTokenSource("gitea-token"),
-		WithBaseURLForTesting(server.URL), WithServerVersionForTesting(testGiteaServerVersion),
+		WithBaseURL(server.URL, true), WithServerVersionForTesting(testGiteaServerVersion),
 	)
 	require.NoError(err)
 	checks, err := client.ListCIChecks(context.Background(), platform.RepoRef{Owner: "owner", Name: "repo"}, "abc")
@@ -184,7 +300,7 @@ func TestClientReadsTimelineAssignmentAndTitleEvents(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient("gitea.test", testTokenSource("gitea-token"), WithBaseURLForTesting(server.URL), WithServerVersionForTesting(testGiteaServerVersion))
+	client, err := NewClient("gitea.test", testTokenSource("gitea-token"), WithBaseURL(server.URL, true), WithServerVersionForTesting(testGiteaServerVersion))
 	require.NoError(err)
 	ref := platform.RepoRef{Host: "gitea.test", Owner: "owner", Name: "repo", RepoPath: "owner/repo"}
 
@@ -297,7 +413,7 @@ func TestClientRequestChangesSubmitsReview(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient("gitea.test", testTokenSource("gitea-token"), WithBaseURLForTesting(server.URL), WithServerVersionForTesting(testGiteaServerVersion))
+	client, err := NewClient("gitea.test", testTokenSource("gitea-token"), WithBaseURL(server.URL, true), WithServerVersionForTesting(testGiteaServerVersion))
 	require.NoError(err)
 	require.NoError(client.RequestChanges(
 		context.Background(), platform.RepoRef{Owner: "owner", Name: "repo"},

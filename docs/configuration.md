@@ -39,6 +39,25 @@ repo_path = "group/subgroup/project"
 Repository identity includes `platform`, `platform_host`, `owner`, and `name`.
 Keep `repo_path` when the provider uses nested namespaces or canonical casing.
 
+### Self-hosted Gitea transport
+
+Gitea uses `https://<host>` by default. Set an explicit API URL when a trusted
+private deployment serves Gitea over HTTP:
+
+```toml
+[[platforms]]
+type = "gitea"
+host = "gitea.example.test:3000"
+base_url = "http://gitea.example.test:3000"
+allow_insecure = true
+token_env = "GITEA_PRIVATE_TOKEN"
+```
+
+`host` remains the repository identity and must match Gitea's advertised clone
+URLs. `allow_insecure` acknowledges that API and Git credentials can travel
+without TLS. kenn-forge rejects plain-HTTP or mismatched clone URLs before
+using them.
+
 To hide a repository from lists and pickers without removing it, open the gear
 menu on its Settings row and choose "Hide from UI". Syncing continues and
 direct links keep working; choose "Show in UI" to bring it back. Hiding

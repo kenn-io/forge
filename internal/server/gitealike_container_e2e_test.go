@@ -143,7 +143,7 @@ func TestGiteaContainerSync(t *testing.T) {
 	client, err := platformgitea.NewClient(
 		manifest.Host,
 		testTokenSource(manifest.Token),
-		platformgitea.WithBaseURLForTesting(manifest.BaseURL),
+		platformgitea.WithBaseURL(manifest.BaseURL, true),
 		platformgitea.WithForegroundTimeoutForTesting(time.Minute),
 		platformgitea.WithRateTracker(tracker),
 		platformgitea.WithSyncBudget(budget),

@@ -946,7 +946,7 @@ func (m *Manager) AdoptLegacyClones(ctx context.Context, repo RepoBrowserRepoRef
 	if strings.TrimSpace(repo.ProviderRepoID) == "" {
 		return errors.New("adopt legacy clones requires a stable provider repository id")
 	}
-	if err := validateRemoteURLIdentity(repo.Host, repo.Owner, repo.Name, repo.RemoteURL); err != nil {
+	if err := m.validateRepoBrowserRemote(repo, repo.RemoteURL); err != nil {
 		return err
 	}
 
@@ -1216,7 +1216,7 @@ func (m *Manager) refreshRepoBrowserClone(
 		return errors.New("repo browser fenced refresh requires guarded publication")
 	}
 	namespace := repoBrowserCloneNamespace(repo)
-	if err := validateRemoteURLIdentity(repo.Host, repo.Owner, repo.Name, repo.RemoteURL); err != nil {
+	if err := m.validateRepoBrowserRemote(repo, repo.RemoteURL); err != nil {
 		return err
 	}
 	dir, err := m.ClonePathInNamespace(namespace, repo.Host, repo.Owner, repo.Name)
@@ -1375,9 +1375,7 @@ func (m *Manager) prepareRepoBrowserStaging(
 		return fail(err)
 	}
 	if out, err := m.git(ctx, published, "config", "--get", "remote.origin.url"); err == nil {
-		if err := validateRemoteURLIdentity(
-			repo.Host, repo.Owner, repo.Name, strings.TrimSpace(string(out)),
-		); err != nil {
+		if err := m.validateRepoBrowserRemote(repo, strings.TrimSpace(string(out))); err != nil {
 			return fail(err)
 		}
 	}
@@ -1526,7 +1524,7 @@ func (m *Manager) RegisterExistingRepoBrowserClone(ctx context.Context, repo Rep
 		m.evictStaleRepoBrowserRegistration(repo, err)
 		return false, err
 	}
-	if err := validateRemoteURLIdentity(repo.Host, repo.Owner, repo.Name, repo.RemoteURL); err != nil {
+	if err := m.validateRepoBrowserRemote(repo, repo.RemoteURL); err != nil {
 		return false, err
 	}
 	dir, err := m.repoBrowserClonePath(repo)
@@ -1544,7 +1542,7 @@ func (m *Manager) RegisterExistingRepoBrowserClone(ctx context.Context, repo Rep
 		return false, err
 	}
 	if out, err := m.git(ctx, dir, "config", "--get", "remote.origin.url"); err == nil {
-		if err := validateRemoteURLIdentity(repo.Host, repo.Owner, repo.Name, strings.TrimSpace(string(out))); err != nil {
+		if err := m.validateRepoBrowserRemote(repo, strings.TrimSpace(string(out))); err != nil {
 			return false, err
 		}
 	}
@@ -1562,7 +1560,7 @@ func (m *Manager) ensureRepoBrowserCloneLocal(ctx context.Context, repo RepoBrow
 		return err
 	}
 	namespace := repoBrowserCloneNamespace(repo)
-	if err := validateRemoteURLIdentity(repo.Host, repo.Owner, repo.Name, repo.RemoteURL); err != nil {
+	if err := m.validateRepoBrowserRemote(repo, repo.RemoteURL); err != nil {
 		return err
 	}
 	dir, err := m.ClonePathInNamespace(namespace, repo.Host, repo.Owner, repo.Name)
@@ -1581,7 +1579,7 @@ func (m *Manager) ensureRepoBrowserCloneLocal(ctx context.Context, repo RepoBrow
 		return err
 	}
 	if out, err := m.git(ctx, dir, "config", "--get", "remote.origin.url"); err == nil {
-		if err := validateRemoteURLIdentity(repo.Host, repo.Owner, repo.Name, strings.TrimSpace(string(out))); err != nil {
+		if err := m.validateRepoBrowserRemote(repo, strings.TrimSpace(string(out))); err != nil {
 			unlock()
 			return err
 		}
@@ -1661,6 +1659,13 @@ func (m *Manager) fetchRepoBrowserTags(
 		return fmt.Errorf("git fetch repo browser tags: %w", err)
 	}
 	return nil
+}
+
+func (m *Manager) validateRepoBrowserRemote(repo RepoBrowserRepoRef, remoteURL string) error {
+	if err := validateRemoteURLIdentity(repo.Host, repo.Owner, repo.Name, remoteURL); err != nil {
+		return err
+	}
+	return m.validateRemoteTransport(repo.Provider, repo.Host, remoteURL)
 }
 
 func repoBrowserCloneNamespace(repo RepoBrowserRepoRef) string {

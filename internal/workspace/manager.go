@@ -5168,7 +5168,15 @@ func (m *Manager) syncWorkspaceBaseBranch(
 		ws.RepoOwner == "" || ws.RepoName == "" {
 		return nil
 	}
-	repo, err := m.workspaceRepo(
+	releaseReconciliation, err := m.db.LockRepositoryReconciliationRead(ctx)
+	if err != nil {
+		return fmt.Errorf("lock repository reconciliation for base branch sync: %w", err)
+	}
+	defer releaseReconciliation()
+	if err := m.verifyWorkspaceRouteUnoccupied(ctx, ws); err != nil {
+		return err
+	}
+	repo, err := m.workspaceRepoUnderReconciliationRead(
 		ctx, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 	)
 	if err != nil {
@@ -5248,8 +5256,39 @@ func syncLocalBaseBranch(
 				"reason", "local branch became checked out")
 			return nil
 		}
+		if !exists {
+			occupied, checkErr := localBranchRefNamespaceOccupied(ctx, dir, branch)
+			if checkErr == nil && occupied {
+				slog.Warn("workspace base branch sync skipped",
+					"workspace_id", workspaceID, "branch", branch,
+					"reason", "local branch ref namespace is occupied")
+				return nil
+			}
+		}
 		return fmt.Errorf("update local base branch %q: %w", branch, err)
 	}
+}
+
+func localBranchRefNamespaceOccupied(
+	ctx context.Context, dir, branch string,
+) (bool, error) {
+	parts := strings.Split(branch, "/")
+	for i := 1; i < len(parts); i++ {
+		_, exists, err := gitRefSHA(ctx, dir, "refs/heads/"+strings.Join(parts[:i], "/"))
+		if err != nil {
+			return false, err
+		}
+		if exists {
+			return true, nil
+		}
+	}
+	out, err := gitCombinedOutput(
+		ctx, dir, "for-each-ref", "--format=%(refname)", "refs/heads/"+branch+"/",
+	)
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(out) != "", nil
 }
 
 func gitCommitIsAncestor(

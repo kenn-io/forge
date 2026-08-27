@@ -3080,6 +3080,78 @@ func TestSyncLocalBaseBranchSkipsCheckedOutAndDivergedBranches(t *testing.T) {
 	))))
 }
 
+func TestSyncLocalBaseBranchSkipsOccupiedRefNamespace(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/base-sync")
+	mainSHA := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "rev-parse", "refs/heads/main",
+	)))
+	runWorkspaceTestGit(t, localRepo, "checkout", "--detach")
+	runWorkspaceTestGit(t, localRepo, "branch", "-D", "main")
+	runWorkspaceTestGit(t, localRepo, "branch", "main/topic", mainSHA)
+
+	require.NoError(syncLocalBaseBranch(
+		t.Context(), localRepo, "ws-base-sync-namespace", "main",
+	))
+	_, mainExists, err := gitRefSHA(t.Context(), localRepo, "refs/heads/main")
+	require.NoError(err)
+	assert.False(mainExists)
+	assert.Equal(mainSHA, strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "rev-parse", "refs/heads/main/topic",
+	))))
+}
+
+func TestSyncWorkspaceBaseBranchRejectsReplacedRepositoryRoute(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/base-sync")
+	localMainSHA := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "rev-parse", "refs/heads/main",
+	)))
+	remoteMainSHA := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "commit-tree", localMainSHA+"^{tree}",
+		"-p", localMainSHA, "-m", "replacement base",
+	)))
+	runWorkspaceTestGit(
+		t, localRepo, "update-ref", "refs/remotes/origin/main", remoteMainSHA,
+	)
+	runWorkspaceTestGit(t, localRepo, "checkout", "--detach")
+
+	d := openTestDB(t)
+	seedRepo(t, d, "github.com", "acme", "widget")
+	replacement, _, err := d.ReconcileRepositoryObservation(
+		t.Context(), db.RepoIdentity{
+			Platform:       "github",
+			PlatformHost:   "github.com",
+			PlatformRepoID: "repo-acme-widget-replacement",
+			Owner:          "acme",
+			Name:           "widget",
+		}, time.Now().UTC(),
+	)
+	require.NoError(err)
+	require.NotNil(replacement)
+	seedMR(t, d, replacement.Repository.ID, 968, "feature/base-sync")
+	mgr := NewManager(d, t.TempDir())
+	ws := &Workspace{
+		ID:           "ws-base-sync-replaced-route",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   968,
+	}
+
+	err = mgr.syncWorkspaceBaseBranch(t.Context(), localRepo, ws)
+	require.ErrorContains(err, "historical occupants")
+	assert.Equal(localMainSHA, strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "rev-parse", "refs/heads/main",
+	))))
+}
+
 func TestFetchWorkspaceBaseConstrainsNegotiationTips(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

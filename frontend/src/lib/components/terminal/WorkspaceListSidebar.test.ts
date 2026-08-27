@@ -1732,6 +1732,51 @@ describe("WorkspaceListSidebar", () => {
     expect(openBubble?.classList.contains("draft")).toBe(false);
   });
 
+  it("gives an issue-backed workspace bubble the issue state class, not open", async () => {
+    // An open issue-backed workspace must not reuse the open/green PR
+    // treatment; the blue issue styling tells it apart from PR-backed
+    // rows at a glance.
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          workspaceFixture({
+            id: "ws-issue",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "kenn-io",
+            name: "kenn-forge",
+            number: 968,
+            title: "Keep local base branches in sync",
+            itemType: "issue",
+          }),
+          workspaceFixture({
+            id: "ws-pr",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "kenn-io",
+            name: "kenn-forge",
+            number: 242,
+            title: "Ready for review PR",
+          }),
+        ],
+      },
+    });
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-issue" },
+    });
+    await screen.findByText("Keep local base branches in sync");
+
+    const bubbles = Array.from(container.querySelectorAll(".item-bubble"));
+    const issueBubble = bubbles.find((b) => b.textContent?.trim() === "#968");
+    const prBubble = bubbles.find((b) => b.textContent?.trim() === "#242");
+
+    expect(issueBubble?.classList.contains("issue")).toBe(true);
+    expect(issueBubble?.classList.contains("open")).toBe(false);
+    expect(prBubble?.classList.contains("open")).toBe(true);
+    expect(prBubble?.classList.contains("issue")).toBe(false);
+  });
+
   it("omits provider item actions in the Kata workspace context menu", async () => {
     mockGet.mockResolvedValue({
       data: { workspaces: [kataWorkspaceFixture()] },

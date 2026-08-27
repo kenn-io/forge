@@ -839,7 +839,7 @@
       return "kata";
     }
     if (ws.item_type === "issue") {
-      return ws.mr_state === "closed" ? "closed" : "open";
+      return ws.mr_state === "closed" ? "closed" : "issue";
     }
     if (ws.mr_is_draft) return "draft";
     if (ws.mr_state === "merged") return "merged";
@@ -2298,6 +2298,13 @@
      * than as a muted/neutral pill indistinguishable from other states. */
     --bubble-bg: color-mix(in srgb, var(--accent-amber) 70%, #ffffff);
     --bubble-fg: color-mix(in srgb, var(--accent-amber) 25%, var(--bubble-ink));
+  }
+
+  /* Open issues use blue instead of the open/green PR treatment so an
+   * issue-backed workspace is distinguishable from a PR-backed one. */
+  .item-bubble.issue {
+    --bubble-bg: color-mix(in srgb, var(--accent-blue) 70%, #ffffff);
+    --bubble-fg: color-mix(in srgb, var(--accent-blue) 25%, var(--bubble-ink));
   }
 
   .item-bubble.kata {

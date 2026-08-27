@@ -119,6 +119,7 @@ the installed commands through `/hooks` once.
 
 ```sh
 kenn-forge-github-app create
+kenn-forge-github-app create --role archive
 kenn-forge-github-app list
 kenn-forge-github-app install
 kenn-forge-github-app uninstall
@@ -126,6 +127,7 @@ kenn-forge-github-app delete
 kenn-forge-github-app open
 ```
 
-Use this companion CLI when sync reads should use GitHub App installation
-tokens. Comments, reviews, state changes, and merges still use the user PAT
-chain.
+Use this companion CLI when sync or archive reads should use GitHub App
+installation tokens. `--role archive` creates a separate installation route
+for historical archive work. Comments, reviews, state changes, and merges
+still use the user PAT chain.

@@ -119,6 +119,20 @@ kenn-forge-github-app install
 kenn-forge-github-app list
 ```
 
+For a busy historical archive, create a second App with its own installation
+budget:
+
+```sh
+kenn-forge-github-app create --role archive
+kenn-forge-github-app install --app-id <archive-app-id>
+```
+
+The archive App must be installed on the same repository account. Archive
+reads use it only for repositories it covers; ordinary sync and mutations keep
+using the normal App/PAT routes. The two Apps must be distinct GitHub Apps.
+The role is also visible in `kenn-forge-github-app list` and can be set
+explicitly as `role = "archive"` in `[[github_apps]]`.
+
 The CLI writes `[[github_apps]]` entries. Mutations still use a user PAT.
 After changing selected repository access on GitHub, run
 `kenn-forge-github-app install` again and restart kenn-forge.

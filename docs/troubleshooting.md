@@ -73,6 +73,12 @@ kenn-forge-github-app install
 kenn-forge-github-app list
 ```
 
+If ordinary sync is healthy but historical archive work is competing for the
+same installation budget, add a separate App with
+`kenn-forge-github-app create --role archive`, install it on the repository
+account, and restart kenn-forge. `kenn-forge-github-app list` shows each App's
+role and independent rate-limit state.
+
 Mutating actions still use the user credential chain so comments, approvals, and
 merges are attributed to you. Multiple PAT entries issued to the same GitHub
 user do not create additional capacity: they share one rate limit and one

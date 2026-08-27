@@ -709,6 +709,42 @@ func TestRoutedClientPreservesAndRoutesArchiveInventory(t *testing.T) {
 	)
 }
 
+func TestRoutedClientUsesDedicatedArchiveRoute(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	normal := &routeRecordingClient{marker: "normal"}
+	archive := &routeRecordingClient{marker: "archive"}
+	router, err := NewHostRouter("github.com", &Route{
+		Key: RouteKey{Host: "github.com", Owner: "acme"}, Client: normal,
+		Fetcher:       &GraphQLFetcher{},
+		ArchiveKey:    RouteKey{Host: "github.com", Owner: "acme"},
+		ArchiveClient: archive, ArchiveFetcher: &GraphQLFetcher{},
+		ArchiveReadIdentity: IdentityKey{Host: "github.com", Principal: "installation:2"},
+	})
+	require.NoError(err)
+	routed, err := NewRoutedClient(router)
+	require.NoError(err)
+	_, err = routed.GetRepository(t.Context(), "acme", "widget")
+	require.NoError(err)
+	_, err = routed.GetRepository(WithArchiveSyncBudget(t.Context()), "acme", "widget")
+	require.NoError(err)
+	assert.Equal([]string{"get:acme/widget"}, normal.calls)
+	assert.Equal([]string{"get:acme/widget"}, archive.calls)
+
+	assert.Equal(
+		IdentityKey{Host: "github.com", Principal: "installation:2"},
+		mustArchiveIdentity(t, router, "acme", "widget"),
+	)
+}
+
+func mustArchiveIdentity(t *testing.T, router *HostRouter, owner, name string) IdentityKey {
+	t.Helper()
+	require := require.New(t)
+	identity, err := router.ArchiveIdentityForRepo(owner, name)
+	require.NoError(err)
+	return identity
+}
+
 func TestRoutedClientWithoutFallbackRejectsOwnerlessAPIs(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

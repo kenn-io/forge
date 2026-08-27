@@ -32,6 +32,7 @@ func runCreate(args []string, env *appEnv) error {
 	host := fs.String("host", "", "GitHub host (default github.com)")
 	org := fs.String("org", "", "create the app under this organization instead of your user")
 	name := fs.String("name", "", "app name (default kenn-forge-<random>)")
+	role := fs.String("role", config.GitHubAppRoleSync, "Forge workload for this App: sync or archive")
 	homepage := fs.String("homepage", "", "app homepage URL shown on its public page")
 	noBrowser := fs.Bool("no-browser", false, "print URLs instead of opening a browser")
 	timeout := fs.Duration("timeout", 10*time.Minute, "how long to wait for each browser step")
@@ -44,6 +45,10 @@ func runCreate(args []string, env *appEnv) error {
 	if err != nil {
 		return err
 	}
+	appRole := strings.ToLower(strings.TrimSpace(*role))
+	if appRole != config.GitHubAppRoleSync && appRole != config.GitHubAppRoleArchive {
+		return fmt.Errorf("--role must be %q or %q", config.GitHubAppRoleSync, config.GitHubAppRoleArchive)
+	}
 
 	if err := config.EnsureDefault(env.configPath); err != nil {
 		return fmt.Errorf("ensuring kenn-forge config exists: %w", err)
@@ -53,6 +58,13 @@ func runCreate(args []string, env *appEnv) error {
 		return err
 	}
 	for _, existing := range cfg.GitHubAppsForHost(h) {
+		existingRole := strings.ToLower(strings.TrimSpace(existing.Role))
+		if existingRole == "" {
+			existingRole = config.GitHubAppRoleSync
+		}
+		if existingRole != appRole {
+			continue
+		}
 		if *org != "" && strings.EqualFold(existing.Owner, *org) {
 			return fmt.Errorf(
 				"a github app for host %q and owner %q already exists (app id %d, slug %q); "+
@@ -108,6 +120,7 @@ func runCreate(args []string, env *appEnv) error {
 	}
 	app := config.GitHubAppConfig{
 		Host:           h,
+		Role:           appRole,
 		AppID:          creds.ID,
 		Slug:           creds.Slug,
 		Owner:          creds.Owner.Login,

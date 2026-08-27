@@ -39,6 +39,7 @@ func TestLoadGitHubApps(t *testing.T) {
 	assert.Equal("kenn-forge-abc", app.Slug)
 	assert.Equal(int64(99), app.InstallationID)
 	assert.Equal("kenn-io", app.InstallationAccount)
+	assert.Equal(GitHubAppRoleSync, app.Role)
 	// Relative key paths resolve against the config directory, like
 	// token_file does, so the CLI can write portable entries.
 	assert.Equal(
@@ -126,10 +127,40 @@ private_key_path = "b.pem"
 `,
 			wantErr: `duplicate github app for host "github.com" and owner "KENN-IO"`,
 		},
+		{
+			name: "same owner may have one app per role",
+			toml: `
+[[github_apps]]
+app_id = 1
+owner = "app-owner"
+role = "sync"
+private_key_path = "sync.pem"
+
+[[github_apps]]
+app_id = 2
+owner = "app-owner"
+role = "archive"
+private_key_path = "archive.pem"
+`,
+		},
+		{
+			name: "invalid role",
+			toml: `
+[[github_apps]]
+app_id = 1
+role = "background"
+private_key_path = "key.pem"
+`,
+			wantErr: `role must be "sync" or "archive"`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := Load(writeConfig(t, tt.toml))
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
 			require.Error(t, err)
 			assert.ErrorContains(t, err, tt.wantErr)
 		})
@@ -518,6 +549,70 @@ repository_selection = "all"
 	assert.Equal("kenn-io", app.InstallationAccount)
 	assert.True(filepath.IsAbs(app.FilePath), "key path %q", app.FilePath)
 	assert.Equal("MY_PAT", desc.Candidates[1].EnvName)
+}
+
+func TestResolveGitHubArchiveTokenSourceIsolatedFromSyncApp(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	cfg, err := Load(writeConfig(t, `
+[[repos]]
+owner = "kenn-io"
+name = "kenn-forge"
+
+[[github_apps]]
+app_id = 1
+private_key_path = "sync.pem"
+installation_id = 10
+installation_account = "kenn-io"
+repository_selection = "all"
+
+[[github_apps]]
+app_id = 2
+role = "archive"
+private_key_path = "archive.pem"
+installation_id = 20
+installation_account = "kenn-io"
+repository_selection = "all"
+`))
+	require.NoError(err)
+	repo := cfg.Repos[0]
+	syncDesc := cfg.ResolveGitHubRepoTokenSource(repo)
+	archiveDesc := cfg.ResolveGitHubArchiveTokenSource(repo)
+	assert.True(syncDesc.HasActiveGitHubApp())
+	assert.Equal("archive:owner:kenn-io", archiveDesc.Key.Scope)
+	assert.NotEqual(archiveDesc.Key, syncDesc.Key)
+	require.Len(archiveDesc.Candidates, 1)
+	assert.Equal(int64(2), archiveDesc.Candidates[0].AppID)
+	assert.Equal(int64(20), archiveDesc.Candidates[0].InstallationID)
+}
+
+func TestProviderTokenSourcesKeepSelectedArchiveReposExact(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `
+[[repos]]
+owner = "kenn-io"
+name = "one"
+
+[[repos]]
+owner = "kenn-io"
+name = "two"
+
+[[github_apps]]
+app_id = 2
+role = "archive"
+private_key_path = "archive.pem"
+installation_id = 20
+installation_account = "kenn-io"
+repository_selection = "selected"
+selected_repos = ["kenn-io/one", "kenn-io/two"]
+`))
+	require.NoError(t, err)
+	var keys []string
+	for _, plan := range cfg.ProviderTokenSources() {
+		if plan.ArchiveDescriptor.Key.Host != "" {
+			keys = append(keys, plan.Descriptor.Key.Scope)
+		}
+	}
+	assert.ElementsMatch(t, []string{"repo:kenn-io/one", "repo:kenn-io/two"}, keys)
 }
 
 func TestFallbackTokenSourceExcludesAccountScopedGitHubApps(t *testing.T) {

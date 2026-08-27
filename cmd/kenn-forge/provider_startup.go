@@ -92,13 +92,16 @@ func (missingRouteTokenSource) Descriptor() tokenauth.Descriptor {
 }
 
 type githubCredentialRoute struct {
-	key            tokenauth.Key
-	source         tokenauth.Source
-	client         github.Client
-	fetcher        *github.GraphQLFetcher
-	discoveryOwner string
-	readIdentity   github.IdentityKey
-	writeIdentity  github.IdentityKey
+	key                 tokenauth.Key
+	source              tokenauth.Source
+	client              github.Client
+	fetcher             *github.GraphQLFetcher
+	discoveryOwner      string
+	readIdentity        github.IdentityKey
+	writeIdentity       github.IdentityKey
+	archiveKey          tokenauth.Key
+	archiveSource       tokenauth.Source
+	archiveReadIdentity github.IdentityKey
 }
 
 type providerStartup struct {
@@ -668,16 +671,45 @@ func buildGitHubIdentityRuntimes(
 				source, desc.Key.Host, writeIdentity.Key, resolvedWrite.token, resolver,
 			)
 		}
+		var archiveSource tokenauth.Source
+		var archiveIdentity github.IdentityKey
+		var archiveKey tokenauth.Key
+		if plan.ArchiveDescriptor.Key.Host != "" {
+			archiveSource = set.Upsert(plan.ArchiveDescriptor)
+			archiveApp, archiveOK := activeGitHubAppCandidate(
+				plan.ArchiveDescriptor, plan.GitHubOwner,
+			)
+			if archiveOK {
+				if archiveApp.InstallationID <= 0 {
+					return fmt.Errorf(
+						"resolve GitHub archive identity for %s via %s: invalid installation id %d",
+						plan.ArchiveDescriptor.Key.Scope,
+						plan.ArchiveDescriptor.SafeString(), archiveApp.InstallationID,
+					)
+				}
+				archiveIdentity = github.InstallationIdentity(
+					plan.ArchiveDescriptor.Key.Host, archiveApp.InstallationID,
+				).Key
+				archiveKey = plan.ArchiveDescriptor.Key
+				ensureGitHubIdentityRuntime(
+					database, budgetPerHour,
+					github.GitHubIdentity{Key: archiveIdentity}, startup,
+				)
+			}
+		}
 		discoveryOwner := ""
 		if hasApp && strings.HasPrefix(desc.Key.Scope, "repo:") {
 			discoveryOwner = app.InstallationAccount
 		}
 		startup.githubRoutes[desc.Key] = githubCredentialRoute{
-			key:            desc.Key,
-			source:         source,
-			discoveryOwner: discoveryOwner,
-			readIdentity:   readIdentity.Key,
-			writeIdentity:  writeIdentity.Key,
+			key:                 desc.Key,
+			source:              source,
+			discoveryOwner:      discoveryOwner,
+			readIdentity:        readIdentity.Key,
+			writeIdentity:       writeIdentity.Key,
+			archiveKey:          archiveKey,
+			archiveSource:       archiveSource,
+			archiveReadIdentity: archiveIdentity,
 		}
 	}
 	return nil
@@ -780,6 +812,36 @@ func buildGitHubRouteClients(startup *providerStartup) error {
 				startup.quotaRegistry, configured.readIdentity,
 			),
 		)
+		var archiveClient github.Client
+		var archiveFetcher *github.GraphQLFetcher
+		if configured.archiveSource != nil && configured.archiveReadIdentity.Principal != "" {
+			archiveRuntime := startup.githubIdentities[configured.archiveReadIdentity.String()]
+			if archiveRuntime == nil {
+				return fmt.Errorf("create GitHub route %s archive client: missing identity runtime", key.Scope)
+			}
+			archiveClient, err = github.NewClient(
+				configured.archiveSource, key.Host, archiveRuntime.rest,
+				archiveRuntime.budget,
+				github.WithMutationsDisabled(),
+				github.WithQuotaAccounting(
+					startup.quotaRegistry,
+					configured.archiveReadIdentity, configured.archiveReadIdentity,
+				),
+			)
+			if err != nil {
+				return fmt.Errorf("create GitHub route %s archive client: %w", key.Scope, err)
+			}
+			if setter, ok := archiveClient.(graphQLRateTrackerSetter); ok {
+				setter.SetGraphQLRateTracker(archiveRuntime.graphql)
+			}
+			archiveFetcher = github.NewGraphQLFetcher(
+				configured.archiveSource, key.Host, archiveRuntime.graphql,
+				archiveRuntime.budget,
+				github.WithGraphQLQuotaAccounting(
+					startup.quotaRegistry, configured.archiveReadIdentity,
+				),
+			)
+		}
 		var writeSnapshotClient github.Client
 		if writeRuntime != nil && configured.writeIdentity != configured.readIdentity {
 			writeSnapshotClient, err = github.NewClient(
@@ -820,6 +882,10 @@ func buildGitHubRouteClients(startup *providerStartup) error {
 			WriteSnapshotClient: writeSnapshotClient,
 			Fetcher:             fetcher, ReadIdentity: configured.readIdentity,
 			WriteIdentity: configured.writeIdentity,
+			ArchiveKey:    archiveRouteKey(configured.archiveKey, key.Host),
+			ArchiveClient: archiveClient, ArchiveFetcher: archiveFetcher,
+			ArchiveCredentialKey: archiveCredentialKey(configured.archiveSource),
+			ArchiveReadIdentity:  configured.archiveReadIdentity,
 		})
 	}
 	for host, routes := range byHost {
@@ -847,6 +913,22 @@ func githubRouteOwnerAndName(scope string) (string, string) {
 	default:
 		return "", ""
 	}
+}
+
+func archiveRouteOwnerAndName(scope string) (string, string) {
+	return githubRouteOwnerAndName(strings.TrimPrefix(scope, "archive:"))
+}
+
+func archiveRouteKey(key tokenauth.Key, host string) github.RouteKey {
+	owner, name := archiveRouteOwnerAndName(key.Scope)
+	return github.RouteKey{Host: host, Owner: owner, Name: name}
+}
+
+func archiveCredentialKey(source tokenauth.Source) string {
+	if source == nil {
+		return ""
+	}
+	return source.Descriptor().CanonicalSourceString()
 }
 
 func githubCredentialPlans(cfg *config.Config) []config.ProviderTokenSource {

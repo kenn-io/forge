@@ -12,13 +12,14 @@
   interface Props {
     runtime: AppRuntime;
     range: DiffReviewLineRange;
+    body?: string;
+    onbodychange?: ((body: string) => void) | undefined;
     onclose?: (() => void) | undefined;
   }
 
-  const { runtime, range, onclose }: Props = $props();
+  let { runtime, range, body = $bindable(""), onbodychange, onclose }: Props = $props();
   const { diffReviewDraft } = getStores();
 
-  let body = $state("");
   let textareaEl: HTMLTextAreaElement | undefined = $state();
   let focusExecution: AppExecution<void, never> | undefined;
   let autosizeExecution: AppExecution<void, never> | undefined;
@@ -66,12 +67,18 @@
     );
   }
 
+  function handleInput(event: Event): void {
+    onbodychange?.((event.currentTarget as HTMLTextAreaElement).value);
+    scheduleAutosizeTextarea();
+  }
+
   function submit(): void {
     const nextBody = body.trim();
     if (!nextBody) return;
     diffReviewDraft.createComment(nextBody, range, {
       onSuccess: () => {
         body = "";
+        onbodychange?.("");
         onclose?.();
       },
     });
@@ -87,7 +94,7 @@
     placeholder="Leave a comment"
     disabled={submitting}
     rows="3"
-    oninput={scheduleAutosizeTextarea}
+    oninput={handleInput}
   ></textarea>
   {#if error}
     <p class="composer-error">{error}</p>

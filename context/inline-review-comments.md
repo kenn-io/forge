@@ -21,6 +21,9 @@ published review-thread ingestion, or review controls in shared diff UI.
 - Line-number pointer and keyboard selection only change the active review
   range. The gutter utility opens the composer for that range
   (`frontend/src/lib/components/diff/DiffFile.svelte::handlePierreGutterUtility`).
+- Keep unsaved composer text above renderer-owned annotation mounts: context
+  expansion can remount the composer without changing its review range
+  (`frontend/src/lib/components/diff/DiffFile.svelte::composerBody`).
 - Public routes use provider-aware pull paths and internal draft/thread IDs.
   Provider review, thread, and comment IDs remain persistence metadata unless a
   concrete public API need is introduced

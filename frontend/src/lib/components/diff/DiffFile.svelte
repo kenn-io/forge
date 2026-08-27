@@ -118,6 +118,7 @@
 
   let selectedRange = $state<SelectedLineRange | null>(null);
   let composerRange = $state<DiffReviewLineRange | null>(null);
+  let composerBody = $state("");
   let suppressNextPierreSelection = false;
   const selectableLineRefs = $derived.by(() => ({
     left: selectableLines("left"),
@@ -414,6 +415,7 @@
     }
     if (composerRange && rangeKey(composerRange) !== rangeKey(normalized.range)) {
       composerRange = null;
+      composerBody = "";
     }
     selectedRange = normalized.selected;
   }
@@ -430,6 +432,7 @@
       return;
     }
     selectedRange = normalized.selected;
+    composerBody = "";
     composerRange = normalized.range;
   }
 
@@ -513,7 +516,17 @@
         })
         : mount(DiffInlineCommentComposer, {
           target,
-          props: { runtime, range: metadata.range, onclose: closeComposer },
+          props: {
+            runtime,
+            range: metadata.range,
+            body: composerBody,
+            onbodychange: (body) => {
+              if (composerRange && rangeKey(composerRange) === rangeKey(metadata.range)) {
+                composerBody = body;
+              }
+            },
+            onclose: closeComposer,
+          },
           context,
         });
   }
@@ -550,6 +563,7 @@
 
   function closeComposer(): void {
     composerRange = null;
+    composerBody = "";
     selectedRange = null;
   }
 
@@ -561,6 +575,7 @@
     if (nextKey !== reviewContextKey) {
       reviewContextKey = nextKey;
       composerRange = null;
+      composerBody = "";
       selectedRange = null;
     }
   });

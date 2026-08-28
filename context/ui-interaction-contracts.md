@@ -258,6 +258,9 @@ Persisted controls must state their scope clearly.
 - Actions derives provider identity from globally filtered repository summaries and requires
   workflow catalog, run, and dispatch capabilities; unsupported repos stay visible without reads
   (`frontend/src/lib/components/actions/ActionsPage.svelte::supportsWorkflowActions`).
+- Actions snapshot read failures never collapse into successful empty/current data: empty
+  failures replace the empty state, while retained runs/jobs remain with a visible stale-data alert
+  (`frontend/src/lib/components/actions/ActionsPage.svelte::workflowReadErrorMessage`).
 - Server-backed settings belong in the API only when the preference should
   follow the user/config rather than one browser session.
 - Detail timelines apply the server-backed entry limit after filtering and grouping,

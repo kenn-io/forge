@@ -218,4 +218,50 @@ describe("ActionsPage", () => {
       "/api/v1/actions/github/acme/alpha/runs/alpha-run-1/jobs",
     );
   });
+
+  it("renders an empty runs read failure as an error instead of a successful empty state", async () => {
+    const runsFailure: MockRouteOverride = (request) => {
+      if (request.method !== "GET"
+        || request.url.pathname !== "/api/v1/actions/github/acme/alpha/runs") return null;
+      return jsonResponse({
+        code: "internalError",
+        detail: "Recent workflow runs could not be loaded.",
+        status: 500,
+      }, 500);
+    };
+    api = createMockApiFetch([runsFailure, workflowFixtures()]);
+    globalThis.fetch = api.fetch;
+    const workflowActions = createWorkflowActionsStore({ runtime });
+    render(ActionsPage, {
+      context: new Map([[STORES_KEY, { workflowActions }]]),
+    });
+
+    expect((await screen.findByRole("alert")).textContent).toContain("Recent workflow runs could not be loaded.");
+    expect(screen.queryByText("No recent workflow runs.")).toBeNull();
+  });
+
+  it("keeps retained runs visible while surfacing a lazy jobs read failure as degraded", async () => {
+    const jobsFailure: MockRouteOverride = (request) => {
+      if (request.method !== "GET"
+        || request.url.pathname !== "/api/v1/actions/github/acme/alpha/runs/alpha-run-1/jobs") return null;
+      return jsonResponse({
+        code: "internalError",
+        detail: "Workflow jobs could not be loaded.",
+        status: 500,
+      }, 500);
+    };
+    api = createMockApiFetch([jobsFailure, workflowFixtures()]);
+    globalThis.fetch = api.fetch;
+    const workflowActions = createWorkflowActionsStore({ runtime });
+    render(ActionsPage, {
+      context: new Map([[STORES_KEY, { workflowActions }]]),
+    });
+
+    const run = await screen.findByRole("button", { name: /Run 7 alpha deploy/ });
+    await fireEvent.click(run);
+
+    expect((await screen.findByRole("alert")).textContent).toContain("Workflow jobs could not be loaded.");
+    expect(screen.getByRole("button", { name: /Run 7 alpha deploy/ })).toBe(run);
+    expect(run.getAttribute("aria-expanded")).toBe("true");
+  });
 });

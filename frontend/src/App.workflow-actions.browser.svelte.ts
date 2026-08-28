@@ -225,4 +225,29 @@ describe("opt-in workflow Actions route", () => {
       expect(document.querySelector<HTMLElement>(".actions-page")!.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
     }, WAIT);
   });
+
+  it("uses one full-height medium row when a single capable repository needs no rail", async () => {
+    await page.viewport(760, 800);
+    const singleRepository: MockRouteOverride = (request) => {
+      if (request.method === "GET" && request.url.pathname === "/api/v1/repos/summary") {
+        return jsonResponse([summary("widgets", true)]);
+      }
+      return null;
+    };
+    mounted = await mountBrowserApp("/actions", {
+      overrides: [singleRepository, actionsFixtures()],
+    });
+
+    await expect.element(page.getByRole("heading", { name: "Actions" })).toBeVisible();
+    await vi.waitFor(() => {
+      const layout = document.querySelector<HTMLElement>(".actions-layout")!;
+      const workflows = document.querySelector<HTMLElement>(".workflow-catalog")!;
+      const workspace = document.querySelector<HTMLElement>(".workflow-workspace")!;
+      expect(document.querySelector(".repository-rail")).toBeNull();
+      expect(getComputedStyle(layout).display).toBe("grid");
+      expect(Math.round(workflows.getBoundingClientRect().top)).toBe(Math.round(workspace.getBoundingClientRect().top));
+      expect(Math.round(workflows.getBoundingClientRect().bottom)).toBe(Math.round(layout.getBoundingClientRect().bottom));
+      expect(Math.round(workspace.getBoundingClientRect().bottom)).toBe(Math.round(layout.getBoundingClientRect().bottom));
+    }, WAIT);
+  });
 });

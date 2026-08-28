@@ -23,6 +23,7 @@
   import { getGlobalRepo, parseRepoFilterValue } from "../../stores/filter.svelte.js";
   import type {
     WorkflowActionsSnapshot,
+    WorkflowActionsError,
     WorkflowDispatchState,
   } from "../../stores/workflow-actions-workflow.js";
   import WorkflowDispatchForm, {
@@ -150,6 +151,14 @@
       if ("cause" in error && error.cause instanceof Error) return error.cause.message;
     }
     return "The workflow outcome could not be confirmed.";
+  }
+
+  function workflowReadErrorMessage(error: WorkflowActionsError): string {
+    if (error._tag === "ApiProblemError") {
+      return apiErrorMessage(error.problem, "Workflow data could not be refreshed.");
+    }
+    if ("cause" in error && error.cause instanceof Error) return error.cause.message;
+    return "Workflow data could not be refreshed.";
   }
 
   function submitWorkflow(request: WorkflowDispatchRequest): void {
@@ -312,9 +321,15 @@
             {#if snapshot}<span>{snapshot.runs.length}</span>{/if}
           </header>
           <ScrollBox label="Recent workflow runs">
+            {#if snapshot?.error}
+              <div class="workflow-data-error" role="alert">
+                <strong>Workflow data may be stale.</strong>
+                <span>{workflowReadErrorMessage(snapshot.error)}</span>
+              </div>
+            {/if}
             {#if snapshot?.loading.runs && snapshot.runs.length === 0}
               <p class="pane-state" role="status">Loading runs…</p>
-            {:else if (snapshot?.runs.length ?? 0) === 0}
+            {:else if !snapshot?.error && (snapshot?.runs.length ?? 0) === 0}
               <p class="pane-state">No recent workflow runs.</p>
             {:else if selectedRef && snapshot}
               <WorkflowRunList
@@ -545,18 +560,34 @@
     font-size: var(--font-size-sm);
   }
 
+  .workflow-data-error {
+    display: grid;
+    gap: var(--space-1);
+    margin: var(--space-3) var(--space-4) 0;
+    padding: var(--space-3);
+    border: 1px solid color-mix(in srgb, var(--accent-red) 45%, var(--border-default));
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--accent-red) 8%, var(--bg-surface));
+    color: var(--status-danger-text, var(--text-danger));
+    font-size: var(--font-size-sm);
+  }
+
   @media (max-width: 900px) {
-    .actions-layout,
+    .actions-layout {
+      grid-template-columns: 180px minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr);
+    }
+
     .actions-layout--with-rail {
       grid-template-columns: 180px minmax(0, 1fr);
       grid-template-rows: minmax(150px, 0.7fr) minmax(0, 1.3fr);
     }
 
-    .repository-rail {
+    .actions-layout--with-rail .repository-rail {
       grid-row: 1 / 3;
     }
 
-    .workflow-catalog {
+    .actions-layout--with-rail .workflow-catalog {
       border-inline-end: 0;
       border-block-end: 1px solid var(--border-default);
     }

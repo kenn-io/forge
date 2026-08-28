@@ -1,6 +1,7 @@
 package github
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -20,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/forge/internal/platform"
+	platformgithub "go.kenn.io/forge/internal/platform/github"
 	"go.kenn.io/forge/internal/tokenauth"
 )
 
@@ -2061,9 +2063,11 @@ func TestNewClientWiresETagTransport(t *testing.T) {
 }
 
 func TestWorkflowTransportShape(t *testing.T) {
-	var paths []string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		paths = append(paths, r.Method+" "+r.URL.RequestURI())
+	var readPaths, writePaths []string
+	readServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		readPaths = append(readPaths, r.Method+" "+r.URL.RequestURI())
+		w.Header().Set("X-RateLimit-Limit", "5000")
+		w.Header().Set("X-RateLimit-Remaining", "4900")
 		switch {
 		case strings.Contains(r.URL.Path, "/contents/"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
@@ -2072,54 +2076,107 @@ func TestWorkflowTransportShape(t *testing.T) {
 				"encoding": "base64",
 			})
 		case strings.HasSuffix(r.URL.Path, "/environments"):
-			_ = json.NewEncoder(w).Encode(map[string]any{"environments": []any{map[string]any{"name": "prod"}}})
+			if r.URL.Query().Get("page") == "" {
+				w.Header().Set("Link", `<`+serverURL(r)+`?page=2>; rel="next"`)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"environments": []any{map[string]any{"name": "env-" + max(r.URL.Query().Get("page"), "1")}}})
 		case strings.HasSuffix(r.URL.Path, "/jobs"):
+			if r.URL.Query().Get("page") == "" {
+				w.Header().Set("Link", `<`+serverURL(r)+`?page=2>; rel="next"`)
+			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"jobs": []any{map[string]any{"id": 99}}})
 		case strings.HasSuffix(r.URL.Path, "/runs"):
-			w.Header().Set("Link", `<`+serverURL(r)+`?page=3>; rel="next"`)
+			if r.URL.Query().Get("page") == "2" {
+				w.Header().Set("Link", `<`+serverURL(r)+`?page=3>; rel="next"`)
+			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"workflow_runs": []any{map[string]any{"id": 7}}})
-		case strings.HasSuffix(r.URL.Path, "/dispatches"):
-			var body map[string]any
-			require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
-			assert.Equal(t, true, body["return_run_details"])
-			assert.Equal(t, "main", body["ref"])
-			w.WriteHeader(http.StatusCreated)
-			_, _ = w.Write([]byte(`{"workflow_run_id":123,"html_url":"https://example.test/runs/123"}`))
 		default:
+			if r.URL.Query().Get("page") == "" {
+				w.Header().Set("Link", `<`+serverURL(r)+`?page=2>; rel="next"`)
+			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"workflows": []any{map[string]any{"id": 42}}})
 		}
 	}))
-	defer server.Close()
-	ghClient, err := newEnterpriseGHClient(server.Client(), server.URL+"/", server.URL+"/")
+	defer readServer.Close()
+	dispatchCount := 0
+	var dispatchBodies []map[string]any
+	writeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writePaths = append(writePaths, r.Method+" "+r.URL.RequestURI())
+		w.Header().Set("X-RateLimit-Limit", "5000")
+		w.Header().Set("X-RateLimit-Remaining", "4800")
+		var body map[string]any
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		dispatchBodies = append(dispatchBodies, body)
+		dispatchCount++
+		if dispatchCount == 1 {
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"workflow_run_id":123,"html_url":"https://example.test/runs/123"}`))
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer writeServer.Close()
+	readGH, err := newEnterpriseGHClient(readServer.Client(), readServer.URL+"/", readServer.URL+"/")
 	require.NoError(t, err)
-	client := &liveClient{gh: ghClient, ghWrite: ghClient}
+	writeGH, err := newEnterpriseGHClient(writeServer.Client(), writeServer.URL+"/", writeServer.URL+"/")
+	require.NoError(t, err)
+	database := openTestDB(t)
+	readTracker := NewRateTracker(database, "github.example.com", "installation:1", "rest")
+	writeTracker := NewRateTracker(database, "github.example.com", "user:2", "rest")
+	client := &liveClient{
+		gh: readGH, ghWrite: writeGH, rateTracker: readTracker, writeRateTracker: writeTracker,
+	}
 
 	workflows, err := client.ListRepositoryWorkflows(t.Context(), "acme", "widgets")
 	require.NoError(t, err)
-	require.Len(t, workflows, 1)
+	require.Len(t, workflows, 2)
 	content, sha, err := client.GetWorkflowDefinition(t.Context(), "acme", "widgets", ".github/workflows/release.yml", "main")
 	require.NoError(t, err)
 	assert.Equal(t, "on: workflow_dispatch", content)
 	assert.Equal(t, "blob-sha", sha)
-	_, err = client.ListRepositoryEnvironments(t.Context(), "acme", "widgets")
+	environments, err := client.ListRepositoryEnvironments(t.Context(), "acme", "widgets")
 	require.NoError(t, err)
+	require.Len(t, environments, 2)
 	page, err := client.ListManualWorkflowRuns(t.Context(), "acme", "widgets", 42, platform.WorkflowRunQuery{
 		Cursor: "2", PerPage: 25, Event: "workflow_dispatch", Branch: "main",
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "3", page.NextCursor)
-	_, err = client.ListManualWorkflowJobs(t.Context(), "acme", "widgets", 99)
+	_, err = client.ListManualWorkflowRuns(t.Context(), "acme", "widgets", 42, platform.WorkflowRunQuery{PerPage: 10})
 	require.NoError(t, err)
+	jobs, err := client.ListManualWorkflowJobs(t.Context(), "acme", "widgets", 99)
+	require.NoError(t, err)
+	require.Len(t, jobs, 2)
 	details, err := client.DispatchManualWorkflow(t.Context(), "acme", "widgets", 42, gh.CreateWorkflowDispatchEventRequest{
 		Ref: "main", Inputs: map[string]any{"version": "1.2.3"},
 	})
 	require.NoError(t, err)
 	assert.Equal(t, int64(123), details.GetWorkflowRunID())
+	details, err = client.DispatchManualWorkflow(t.Context(), "acme", "widgets", 42, gh.CreateWorkflowDispatchEventRequest{Ref: "main"})
+	require.NoError(t, err)
+	assert.Nil(t, details)
 
-	assert.Contains(t, paths, "GET /api/v3/repos/acme/widgets/actions/workflows?per_page=100")
-	assert.Contains(t, paths, "GET /api/v3/repos/acme/widgets/contents/.github/workflows/release.yml?ref=main")
-	assert.Contains(t, paths, "GET /api/v3/repos/acme/widgets/actions/workflows/42/runs?branch=main&event=workflow_dispatch&page=2&per_page=25")
-	assert.Contains(t, paths, "POST /api/v3/repos/acme/widgets/actions/workflows/42/dispatches")
+	assert.Equal(t, []map[string]any{
+		{"ref": "main", "inputs": map[string]any{"version": "1.2.3"}, "return_run_details": true},
+		{"ref": "main", "return_run_details": true},
+	}, dispatchBodies)
+	assert.Contains(t, readPaths, "GET /api/v3/repos/acme/widgets/actions/workflows?per_page=100")
+	assert.Contains(t, readPaths, "GET /api/v3/repos/acme/widgets/actions/workflows?page=2&per_page=100")
+	assert.Contains(t, readPaths, "GET /api/v3/repos/acme/widgets/contents/.github/workflows/release.yml?ref=main")
+	assert.Contains(t, readPaths, "GET /api/v3/repos/acme/widgets/environments?per_page=100")
+	assert.Contains(t, readPaths, "GET /api/v3/repos/acme/widgets/environments?page=2&per_page=100")
+	assert.Contains(t, readPaths, "GET /api/v3/repos/acme/widgets/actions/workflows/42/runs?branch=main&event=workflow_dispatch&page=2&per_page=25")
+	assert.Contains(t, readPaths, "GET /api/v3/repos/acme/widgets/actions/workflows/42/runs?per_page=10")
+	assert.Contains(t, readPaths, "GET /api/v3/repos/acme/widgets/actions/runs/99/jobs?per_page=100")
+	assert.Contains(t, readPaths, "GET /api/v3/repos/acme/widgets/actions/runs/99/jobs?page=2&per_page=100")
+	assert.Equal(t, []string{
+		"POST /api/v3/repos/acme/widgets/actions/workflows/42/dispatches",
+		"POST /api/v3/repos/acme/widgets/actions/workflows/42/dispatches",
+	}, writePaths)
+	assert.Equal(t, 9, readTracker.RequestsThisHour())
+	assert.Equal(t, 4900, readTracker.Remaining())
+	assert.Equal(t, 2, writeTracker.RequestsThisHour())
+	assert.Equal(t, 4800, writeTracker.Remaining())
 }
 
 func serverURL(r *http.Request) string {
@@ -2130,5 +2187,21 @@ func TestListManualWorkflowRunsRejectsInvalidCursor(t *testing.T) {
 	client := &liveClient{platformHost: "github.com"}
 	_, err := client.ListManualWorkflowRuns(t.Context(), "acme", "widgets", 42, platform.WorkflowRunQuery{Cursor: "zero"})
 	require.ErrorIs(t, err, platform.ErrInvalidArgument)
+}
+
+func TestGetWorkflowDefinitionRejectsOversizedDecodedContent(t *testing.T) {
+	oversized := bytes.Repeat([]byte("x"), platformgithub.MaxWorkflowDefinitionBytes+1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"type": "file", "sha": "too-large", "encoding": "base64",
+			"content": base64.StdEncoding.EncodeToString(oversized),
+		})
+	}))
+	defer server.Close()
+	ghClient, err := newEnterpriseGHClient(server.Client(), server.URL+"/", server.URL+"/")
+	require.NoError(t, err)
+	client := &liveClient{gh: ghClient}
+	_, _, err = client.GetWorkflowDefinition(t.Context(), "acme", "widgets", "release.yml", "main")
+	require.ErrorContains(t, err, "exceeds")
 }
 

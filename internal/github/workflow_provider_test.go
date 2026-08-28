@@ -56,17 +56,85 @@ func (f *workflowProviderFake) DispatchManualWorkflow(context.Context, string, s
 	return f.dispatch, nil
 }
 
+type workflowCatalogOnlyFake struct{ Client }
+
+func (*workflowCatalogOnlyFake) ListRepositoryWorkflows(context.Context, string, string) ([]*gh.Workflow, error) {
+	return nil, nil
+}
+func (*workflowCatalogOnlyFake) GetWorkflowDefinition(context.Context, string, string, string, string) (string, string, error) {
+	return "", "", nil
+}
+func (*workflowCatalogOnlyFake) ListRepositoryEnvironments(context.Context, string, string) ([]*gh.Environment, error) {
+	return nil, nil
+}
+
+type workflowRunOnlyFake struct{ Client }
+
+func (*workflowRunOnlyFake) ListManualWorkflowRuns(context.Context, string, string, int64, platform.WorkflowRunQuery) (platform.Page[*gh.WorkflowRun], error) {
+	return platform.Page[*gh.WorkflowRun]{}, nil
+}
+func (*workflowRunOnlyFake) ListManualWorkflowJobs(context.Context, string, string, int64) ([]*gh.WorkflowJob, error) {
+	return nil, nil
+}
+
+type workflowDispatchOnlyFake struct{ Client }
+
+func (*workflowDispatchOnlyFake) DispatchManualWorkflow(context.Context, string, string, int64, gh.CreateWorkflowDispatchEventRequest) (*gh.WorkflowDispatchRunDetails, error) {
+	return nil, nil
+}
+
+func TestGitHubWorkflowCapabilitiesAreIndependent(t *testing.T) {
+	tests := []struct {
+		name string
+		client Client
+		readCatalog bool
+		readRuns bool
+		dispatch bool
+	}{
+		{name: "catalog", client: &workflowCatalogOnlyFake{}, readCatalog: true},
+		{name: "runs", client: &workflowRunOnlyFake{}, readRuns: true},
+		{name: "dispatch", client: &workflowDispatchOnlyFake{}, dispatch: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			provider := &gitHubClientProvider{host: "github.com", client: test.client}
+			caps := provider.Capabilities()
+			assert.Equal(t, test.readCatalog, caps.ReadWorkflows)
+			assert.Equal(t, test.readRuns, caps.ReadWorkflowRuns)
+			assert.Equal(t, test.dispatch, caps.WorkflowDispatch)
+			if !test.readCatalog {
+				_, err := provider.ListManualWorkflows(t.Context(), platform.RepoRef{})
+				require.ErrorIs(t, err, platform.ErrUnsupportedCapability)
+				_, err = provider.ListWorkflowEnvironments(t.Context(), platform.RepoRef{})
+				require.ErrorIs(t, err, platform.ErrUnsupportedCapability)
+			}
+			if !test.readRuns {
+				_, err := provider.ListWorkflowRuns(t.Context(), platform.RepoRef{}, platform.WorkflowRunQuery{})
+				require.ErrorIs(t, err, platform.ErrUnsupportedCapability)
+				_, err = provider.ListWorkflowRunJobs(t.Context(), platform.RepoRef{}, "1")
+				require.ErrorIs(t, err, platform.ErrUnsupportedCapability)
+			}
+			if !test.dispatch {
+				_, err := provider.DispatchWorkflow(t.Context(), platform.RepoRef{}, platform.WorkflowDispatchRequest{})
+				require.ErrorIs(t, err, platform.ErrUnsupportedCapability)
+			}
+		})
+	}
+}
+
 func TestGitHubWorkflowProviderCatalogPreservesPartialAvailability(t *testing.T) {
 	fake := &workflowProviderFake{
 		workflows: []*gh.Workflow{
 			{ID: gh.Ptr(int64(1)), Name: gh.Ptr("Release"), Path: gh.Ptr(".github/workflows/release.yml"), State: gh.Ptr("active"), HTMLURL: gh.Ptr("https://example.test/release")},
 			{ID: gh.Ptr(int64(2)), Name: gh.Ptr("Broken"), Path: gh.Ptr(".github/workflows/broken.yml"), State: gh.Ptr("active")},
 			{ID: gh.Ptr(int64(3)), Name: gh.Ptr("CI"), Path: gh.Ptr(".github/workflows/ci.yml"), State: gh.Ptr("active")},
+			{ID: gh.Ptr(int64(5)), Name: gh.Ptr("Malformed"), Path: gh.Ptr(".github/workflows/malformed.yml"), State: gh.Ptr("active")},
 			{ID: gh.Ptr(int64(4)), Name: gh.Ptr("Disabled"), Path: gh.Ptr("disabled.yml"), State: gh.Ptr("disabled_manually")},
 		},
 		definitions: map[string]string{
-			".github/workflows/release.yml": "on:\n  workflow_dispatch:\n    inputs:\n      target:\n        type: environment\n",
-			".github/workflows/ci.yml": "on: [push]\n",
+			".github/workflows/release.yml":   "on:\n  workflow_dispatch:\n    inputs:\n      target:\n        type: environment\n",
+			".github/workflows/ci.yml":        "on: [push]\n",
+			".github/workflows/malformed.yml": "on: workflow_dispatch\n---\non: workflow_dispatch\n",
 		},
 		environments: []*gh.Environment{{Name: gh.Ptr("production")}},
 	}
@@ -78,17 +146,39 @@ func TestGitHubWorkflowProviderCatalogPreservesPartialAvailability(t *testing.T)
 
 	catalog, err := provider.ListManualWorkflows(t.Context(), platform.RepoRef{Owner: "acme", Name: "widgets"})
 	require.NoError(t, err)
-	require.Len(t, catalog, 2)
+	require.Len(t, catalog, 3)
 	assert.Equal(t, "1", catalog[0].ID)
 	assert.True(t, catalog[0].Available)
 	assert.Equal(t, "2", catalog[1].ID)
 	assert.False(t, catalog[1].Available)
 	assert.NotEmpty(t, catalog[1].UnavailableReason)
-	assert.Equal(t, []string{"trunk", "trunk", "trunk"}, fake.definitionRefs)
+	assert.Equal(t, "5", catalog[2].ID)
+	assert.False(t, catalog[2].Available)
+	assert.NotEmpty(t, catalog[2].UnavailableReason)
+	assert.Equal(t, []string{"trunk", "trunk", "trunk", "trunk"}, fake.definitionRefs)
 
 	environments, err := provider.ListWorkflowEnvironments(t.Context(), platform.RepoRef{Owner: "acme", Name: "widgets"})
 	require.NoError(t, err)
 	assert.Equal(t, []platform.WorkflowEnvironment{{Name: "production"}}, environments)
+}
+
+func TestGitHubWorkflowEnvironmentsSkipTransportWithoutEnvironmentInput(t *testing.T) {
+	fake := &workflowProviderFake{
+		workflows: []*gh.Workflow{{
+			ID: gh.Ptr(int64(1)), Name: gh.Ptr("Release"),
+			Path: gh.Ptr(".github/workflows/release.yml"), State: gh.Ptr("active"),
+		}},
+		definitions: map[string]string{
+			".github/workflows/release.yml": "on:\n  workflow_dispatch:\n    inputs:\n      version:\n        type: string\n",
+		},
+	}
+	provider := &gitHubClientProvider{host: "github.com", client: fake}
+	environments, err := provider.ListWorkflowEnvironments(
+		t.Context(), platform.RepoRef{Owner: "acme", Name: "widgets"},
+	)
+	require.NoError(t, err)
+	assert.Empty(t, environments)
+	assert.NotContains(t, fake.calls, "environments")
 }
 
 func TestGitHubWorkflowProviderNormalizesRunsJobsAndDispatch(t *testing.T) {
@@ -108,28 +198,38 @@ func TestGitHubWorkflowProviderNormalizesRunsJobsAndDispatch(t *testing.T) {
 	provider := &gitHubClientProvider{host: "github.com", client: fake}
 	page, err := provider.ListWorkflowRuns(t.Context(), platform.RepoRef{Owner: "acme", Name: "widgets"}, platform.WorkflowRunQuery{WorkflowID: "42"})
 	require.NoError(t, err)
-	require.Len(t, page.Items, 1)
-	assert.Equal(t, "100", page.Items[0].ID)
-	assert.Equal(t, "octocat", page.Items[0].Actor)
-	assert.Equal(t, created.UTC(), page.Items[0].CreatedAt)
-	assert.Equal(t, "3", page.NextCursor)
+	assert.Equal(t, platform.Page[platform.WorkflowRun]{
+		NextCursor: "3",
+		Items: []platform.WorkflowRun{{
+			ID: "100", WorkflowID: "42", RunNumber: 7, Name: "Release",
+			Event: "workflow_dispatch", Ref: "main", HeadSHA: "abc", Actor: "octocat",
+			Status: "completed", Conclusion: "success", CreatedAt: created.UTC(),
+			UpdatedAt: updated.UTC(), WebURL: "https://example.test/runs/100",
+		}},
+	}, page)
 	jobs, err := provider.ListWorkflowRunJobs(t.Context(), platform.RepoRef{Owner: "acme", Name: "widgets"}, "100")
 	require.NoError(t, err)
-	require.Len(t, jobs, 1)
-	assert.Equal(t, "9", jobs[0].ID)
-	require.Len(t, jobs[0].Steps, 1)
-	assert.Equal(t, 1, jobs[0].Steps[0].Number)
+	assert.Equal(t, []platform.WorkflowRunJob{{
+		ID: "9", Name: "deploy", Status: "completed", Conclusion: "success",
+		StartedAt: started.UTC(), CompletedAt: completed.UTC(),
+		WebURL: "https://example.test/jobs/9",
+		Steps: []platform.WorkflowRunStep{{
+			Number: 1, Name: "ship", Status: "completed", Conclusion: "success",
+			StartedAt: started.UTC(), CompletedAt: completed.UTC(),
+		}},
+	}}, jobs)
 	result, err := provider.DispatchWorkflow(t.Context(), platform.RepoRef{Owner: "acme", Name: "widgets"}, platform.WorkflowDispatchRequest{WorkflowID: "42", Ref: "main"})
 	require.NoError(t, err)
-	assert.True(t, result.Accepted)
-	assert.False(t, result.LocatingRun)
-	require.NotNil(t, result.Run)
-	assert.Equal(t, "101", result.Run.ID)
-
+	assert.Equal(t, platform.WorkflowDispatchResult{
+		Accepted: true,
+		Run: &platform.WorkflowRun{
+			ID: "101", WorkflowID: "42", WebURL: "https://example.test/runs/101",
+		},
+	}, result)
 	fake.dispatch = nil
 	result, err = provider.DispatchWorkflow(t.Context(), platform.RepoRef{Owner: "acme", Name: "widgets"}, platform.WorkflowDispatchRequest{WorkflowID: "42", Ref: "main"})
 	require.NoError(t, err)
-	assert.True(t, result.LocatingRun)
+	assert.Equal(t, platform.WorkflowDispatchResult{Accepted: true, LocatingRun: true}, result)
 	_, err = provider.DispatchWorkflow(t.Context(), platform.RepoRef{}, platform.WorkflowDispatchRequest{WorkflowID: "not-decimal"})
 	require.ErrorIs(t, err, platform.ErrInvalidArgument)
 }

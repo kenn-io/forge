@@ -195,20 +195,21 @@ func TestEnsureCloneValidatesRemoteURLRepoPerCaller(t *testing.T) {
 }
 
 func TestValidateRemoteTransportRequiresHostScopedHTTPAcknowledgement(t *testing.T) {
+	require := require.New(t)
 	mgr := New(t.TempDir(), nil)
 	remote := "http://gitea.example.test:3000/acme/widget.git"
 
 	err := mgr.validateRemoteTransport(
 		"gitea", "gitea.example.test:3000", remote,
 	)
-	require.Error(t, err)
+	require.Error(err)
 	assert.Contains(t, err.Error(), "allow_insecure = true")
 
 	mgr.SetAllowInsecureHTTP("gitea", "gitea.example.test:3000", true)
-	require.NoError(t, mgr.validateRemoteTransport(
+	require.NoError(mgr.validateRemoteTransport(
 		"gitea", "gitea.example.test:3000", remote,
 	))
-	require.Error(t, mgr.validateRemoteTransport(
+	require.Error(mgr.validateRemoteTransport(
 		"forgejo", "gitea.example.test:3000", remote,
 	))
 }

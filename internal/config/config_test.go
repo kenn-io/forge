@@ -1703,6 +1703,8 @@ base_url = "https://api.example.test"
 }
 
 func TestSaveRoundTripGiteaExplicitBaseURL(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
 	path := filepath.Join(t.TempDir(), "config.toml")
 	cfg := &Config{
 		SyncInterval:        defaultSyncInterval,
@@ -1719,12 +1721,12 @@ func TestSaveRoundTripGiteaExplicitBaseURL(t *testing.T) {
 		}},
 	}
 
-	require.NoError(t, cfg.Save(path))
+	require.NoError(cfg.Save(path))
 	reloaded, err := Load(path)
-	require.NoError(t, err)
-	require.Len(t, reloaded.Platforms, 1)
-	assert.Equal(t, "http://gitea.example.test:3000", reloaded.Platforms[0].BaseURL)
-	assert.True(t, reloaded.Platforms[0].AllowInsecure)
+	require.NoError(err)
+	require.Len(reloaded.Platforms, 1)
+	assert.Equal("http://gitea.example.test:3000", reloaded.Platforms[0].BaseURL)
+	assert.True(reloaded.Platforms[0].AllowInsecure)
 }
 
 func TestLoadForgejoDefaultHostUsesDefaultTokenEnv(t *testing.T) {

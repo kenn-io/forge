@@ -68,6 +68,9 @@ Rules:
 - Keep workflow approval and workflow dispatch separate: approval advances an
   existing run, while dispatch starts a new one; neither contract may assume
   GitHub Actions semantics (`internal/platform/client.go::WorkflowDispatcher`).
+- Treat workflow dispatch as live-state mutation: re-read definitions/environments,
+  validate SHA and typed inputs, then gate one provider call under a stable route fence;
+  never retry uncertain writes or persist definitions (`internal/server/workflowapi/routes.go::Handler.dispatch`).
 - Provider-backed comment deletes remove synchronized local rows only after upstream
   synchronization observes provider absence. DELETE itself changes no SQLite comment
   state; the UI hides a confirmed deletion while ordinary sync converges. Authoritative

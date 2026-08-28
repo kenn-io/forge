@@ -275,6 +275,7 @@ func (s *Server) registerAPI(api huma.API) {
 	s.pullAPI.Register(api)
 	s.issueAPI.Register(api)
 	s.registerProviderRepoAPI(api)
+	s.workflowAPI.Register(api)
 	s.repoBrowserAPI.Register(api)
 	s.fleetAPI.Register(api)
 

@@ -24,6 +24,7 @@ import (
 	"go.kenn.io/forge/internal/platform/gitealike"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
+	"go.kenn.io/forge/internal/workspace"
 )
 
 var discussionIDPattern = regexp.MustCompile(`^[a-f0-9]{40}$`)
@@ -563,6 +564,7 @@ func (s *Handler) buildPullDetailResponse(
 		RepoOwner:            repo.Owner,
 		RepoName:             repo.Name,
 		PlatformHost:         repo.PlatformHost,
+		HeadRepoKind:         classifyHeadRepoKind(*repo, *mr),
 		PlatformHeadSHA:      mr.PlatformHeadSHA,
 		PlatformBaseSHA:      mr.PlatformBaseSHA,
 		ReviewedHeadSHA:      verifiedReviewedHeadSHA(mr),
@@ -624,6 +626,23 @@ func (s *Handler) buildPullDetailResponse(
 	}
 
 	return resp, nil
+}
+
+func classifyHeadRepoKind(repo db.Repo, mr db.MergeRequest) HeadRepoKind {
+	headRepo := workspace.WorkspaceHeadRepo(
+		string(httpapi.ProviderKind(repo)),
+		httpapi.ProviderHost(repo),
+		repo.Owner,
+		repo.Name,
+		mr.HeadRepoCloneURL,
+	)
+	if headRepo == nil {
+		return HeadRepoKindSameRepo
+	}
+	if *headRepo == "" {
+		return HeadRepoKindUnknown
+	}
+	return HeadRepoKindFork
 }
 
 // BuildDetail assembles the canonical Pull detail response for adjacent HTTP

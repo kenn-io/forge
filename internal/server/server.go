@@ -43,6 +43,7 @@ import (
 	"go.kenn.io/forge/internal/server/pullapi"
 	"go.kenn.io/forge/internal/server/repobrowserapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
+	"go.kenn.io/forge/internal/server/workflowapi"
 	"go.kenn.io/forge/internal/systemclipboard"
 	"go.kenn.io/forge/internal/telemetry"
 	"go.kenn.io/forge/internal/tokenauth"
@@ -220,6 +221,7 @@ type Server struct {
 	repoBrowserAPI         *repobrowserapi.Handler
 	pullAPI                *pullapi.Handler
 	issueAPI               *issueapi.Handler
+	workflowAPI            *workflowapi.Handler
 	pullLifecycle          pullLifecycle
 	workspaceAPI           *workspaceapi.Handler
 	// activityAfterItemsForTest pauses Activity between its two identity reads
@@ -1046,6 +1048,12 @@ func newServer(
 		)
 	}
 	s.updateCatalogStripEnvVars(bootCatalog.TokenEnvNames())
+	s.workflowAPI = workflowapi.New(workflowapi.Deps{
+		Resolver:       repoResolver,
+		Syncer:         syncer,
+		RepoOperations: s.repoOperations,
+		Now:            s.now,
+	})
 	s.pullAPI = pullapi.New(pullapi.Deps{
 		DB:                     database,
 		Resolver:               repoResolver,

@@ -4,6 +4,74 @@
  */
 
 export interface paths {
+    "/actions/{provider}/{owner}/{name}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List workflow runs */
+        get: operations["list-workflow-runs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/actions/{provider}/{owner}/{name}/runs/{run_id}/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List workflow run jobs */
+        get: operations["list-workflow-run-jobs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/actions/{provider}/{owner}/{name}/workflows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List manual workflows */
+        get: operations["list-workflows"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/actions/{provider}/{owner}/{name}/workflows/{workflow_id}/dispatch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dispatch workflow */
+        post: operations["dispatch-workflow"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/activity": {
         parameters: {
             query?: never;
@@ -1096,6 +1164,74 @@ export interface paths {
         get: operations["get-fleet-workspace-runtime-session-attach-spec"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/actions/{provider}/{owner}/{name}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List workflow runs */
+        get: operations["list-workflow-runs-on-host"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/actions/{provider}/{owner}/{name}/runs/{run_id}/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List workflow run jobs */
+        get: operations["list-workflow-run-jobs-on-host"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/actions/{provider}/{owner}/{name}/workflows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List manual workflows */
+        get: operations["list-workflows-on-host"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/actions/{provider}/{owner}/{name}/workflows/{workflow_id}/dispatch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dispatch workflow */
+        post: operations["dispatch-workflow-on-host"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6545,6 +6681,8 @@ export interface components {
             detail_loaded: boolean;
             diff_head_sha: string;
             events: components["schemas"]["MergeRequestEventResponse"][] | null;
+            /** @enum {string} */
+            head_repo_kind: "same_repo" | "fork" | "unknown";
             merge_base_sha: string;
             merge_request: components["schemas"]["MergeRequest"];
             platform_base_sha: string;
@@ -8137,6 +8275,131 @@ export interface components {
             count: number;
             required: boolean;
         };
+        WorkflowCatalogResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/WorkflowCatalogResponse.json
+             */
+            readonly $schema?: string;
+            environments: components["schemas"]["WorkflowEnvironmentResponse"][] | null;
+            repo: components["schemas"]["RepoRefResponse"];
+            workflows: components["schemas"]["WorkflowDefinitionResponse"][] | null;
+        };
+        WorkflowDefinitionResponse: {
+            available: boolean;
+            definition_sha: string;
+            id: string;
+            inputs: components["schemas"]["WorkflowInputResponse"][] | null;
+            name: string;
+            path: string;
+            state: string;
+            unavailable_reason?: string;
+            /** Format: uri */
+            web_url: string;
+        };
+        WorkflowDispatchBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/WorkflowDispatchBody.json
+             */
+            readonly $schema?: string;
+            expected_definition_sha: string;
+            inputs: {
+                [key: string]: unknown;
+            };
+            ref: string;
+        };
+        WorkflowDispatchResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/WorkflowDispatchResponse.json
+             */
+            readonly $schema?: string;
+            accepted: boolean;
+            locating_run: boolean;
+            run?: components["schemas"]["WorkflowRunResponse"];
+        };
+        WorkflowEnvironmentResponse: {
+            name: string;
+        };
+        WorkflowInputResponse: {
+            default?: unknown;
+            description?: string;
+            has_default: boolean;
+            name: string;
+            options?: string[] | null;
+            required: boolean;
+            /** @enum {string} */
+            type: "string" | "number" | "boolean" | "choice" | "environment";
+        };
+        WorkflowJobsResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/WorkflowJobsResponse.json
+             */
+            readonly $schema?: string;
+            items: components["schemas"]["WorkflowRunJobResponse"][] | null;
+            repo: components["schemas"]["RepoRefResponse"];
+        };
+        WorkflowRunJobResponse: {
+            /** Format: date-time */
+            completed_at?: string;
+            conclusion: string;
+            id: string;
+            name: string;
+            /** Format: date-time */
+            started_at?: string;
+            status: string;
+            steps: components["schemas"]["WorkflowRunStepResponse"][] | null;
+            /** Format: uri */
+            web_url?: string;
+        };
+        WorkflowRunResponse: {
+            actor: string;
+            conclusion: string;
+            /** Format: date-time */
+            created_at?: string;
+            event: string;
+            head_sha: string;
+            id: string;
+            name: string;
+            ref: string;
+            /** Format: int64 */
+            run_number: number;
+            status: string;
+            /** Format: date-time */
+            updated_at?: string;
+            /** Format: uri */
+            web_url?: string;
+            workflow_id: string;
+        };
+        WorkflowRunStepResponse: {
+            /** Format: date-time */
+            completed_at?: string;
+            conclusion: string;
+            name: string;
+            /** Format: int64 */
+            number: number;
+            /** Format: date-time */
+            started_at?: string;
+            status: string;
+        };
+        WorkflowRunsResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/WorkflowRunsResponse.json
+             */
+            readonly $schema?: string;
+            exhausted: boolean;
+            items: components["schemas"]["WorkflowRunResponse"][] | null;
+            next_cursor?: string;
+            repo: components["schemas"]["RepoRefResponse"];
+        };
         WorkflowStateMetaResponse: {
             /** @enum {string} */
             status: "new" | "reviewing" | "waiting" | "awaiting_merge";
@@ -8385,6 +8648,150 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    "list-workflow-runs": {
+        parameters: {
+            query?: {
+                workflow_id?: string;
+                event?: string;
+                branch?: string;
+                cursor?: string;
+                per_page?: number;
+            };
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowRunsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "list-workflow-run-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowJobsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "list-workflows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowCatalogResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "dispatch-workflow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowDispatchBody"];
+            };
+        };
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowDispatchResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
     "list-activity": {
         parameters: {
             query?: {
@@ -10702,6 +11109,154 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "list-workflow-runs-on-host": {
+        parameters: {
+            query?: {
+                workflow_id?: string;
+                event?: string;
+                branch?: string;
+                cursor?: string;
+                per_page?: number;
+            };
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowRunsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "list-workflow-run-jobs-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowJobsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "list-workflows-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowCatalogResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "dispatch-workflow-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowDispatchBody"];
+            };
+        };
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowDispatchResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
                     "application/problem+json": components["schemas"]["ProblemError"];
                 };
             };
@@ -19191,10 +19746,12 @@ export const kataEffectiveLinksResponseStateValues: ReadonlyArray<FlattenedDeepR
 export const kataWorkspaceTargetResponseResolution_statusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["KataWorkspaceTargetResponse"]["resolution_status"]> = ["mapped", "unmapped", "ambiguous", "invalid", "error"];
 export const mergeRequestKanbanStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequest"]["KanbanStatus"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
 export const mergeRequestStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequest"]["State"]> = ["open", "closed", "merged"];
+export const mergeRequestDetailResponseHead_repo_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequestDetailResponse"]["head_repo_kind"]> = ["same_repo", "fork", "unknown"];
 export const mergeRequestResponseKanbanStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequestResponse"]["KanbanStatus"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
 export const mergeRequestResponseStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequestResponse"]["State"]> = ["open", "closed", "merged"];
 export const problemErrorCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ProblemError"]["code"]> = ["badRequest", "branchConflict", "branchInUse", "branchProtected", "commentNotFound", "conflict", "destinationExists", "forbidden", "hookFailed", "internalError", "issueNotFound", "mutationOutcomeUnknown", "notFound", "payloadTooLarge", "projectNotFound", "pullNotFound", "rateLimited", "repoNotFound", "resyncRequired", "serviceUnavailable", "settingsUnavailable", "toolMissing", "toolUnauthenticated", "unauthorized", "unsupportedCapability", "upstreamError", "validationError", "workspaceAlreadyExists", "workspaceDeletionInProgress", "workspaceDirectoryNotReusable", "workspaceNotFound", "workspaceSetupInProgress", "worktreeDirty"];
 export const syncStatusLast_error_codeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["SyncStatus"]["last_error_code"]> = ["localSyncCeilingExhausted"];
+export const workflowInputResponseTypeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkflowInputResponse"]["type"]> = ["string", "number", "boolean", "choice", "environment"];
 export const workflowStateMetaResponseStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkflowStateMetaResponse"]["status"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
 export const workspaceResponseAgent_stateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkspaceResponse"]["agent_state"]> = ["idle", "working", "input", "approval", "done"];
 export const workspaceResponseEnrichment_statusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkspaceResponse"]["enrichment_status"]> = ["not_applicable", "pending", "fresh", "stale", "failed"];

@@ -16,39 +16,41 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
-	"go.kenn.io/forge/internal/testutil/dbtest"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
 type workflowTestProvider struct {
-	caps        platform.Capabilities
-	catalog     []platform.WorkflowDefinition
+	caps              platform.Capabilities
+	catalog           []platform.WorkflowDefinition
 	authenticatedUser string
-	catalogCalls int
-	environmentCalls int
-	environments []platform.WorkflowEnvironment
-	runs        platform.Page[platform.WorkflowRun]
-	jobs        []platform.WorkflowRunJob
-	dispatch    platform.WorkflowDispatchResult
-	catalogErr  error
-	runsErr     error
-	jobsErr     error
-	dispatchErr error
-	dispatches  []platform.WorkflowDispatchRequest
-	onCatalog   func()
+	catalogCalls      int
+	environmentCalls  int
+	environments      []platform.WorkflowEnvironment
+	runs              platform.Page[platform.WorkflowRun]
+	jobs              []platform.WorkflowRunJob
+	dispatch          platform.WorkflowDispatchResult
+	catalogErr        error
+	runsErr           error
+	jobsErr           error
+	dispatchErr       error
+	dispatches        []platform.WorkflowDispatchRequest
+	onCatalog         func()
 }
 
-func (p *workflowTestProvider) Platform() platform.Kind { return platform.KindGitHub }
-func (p *workflowTestProvider) Host() string { return platform.DefaultGitHubHost }
+func (p *workflowTestProvider) Platform() platform.Kind             { return platform.KindGitHub }
+func (p *workflowTestProvider) Host() string                        { return platform.DefaultGitHubHost }
 func (p *workflowTestProvider) Capabilities() platform.Capabilities { return p.caps }
 func (p *workflowTestProvider) AuthenticatedUser(context.Context, platform.RepoRef) (string, error) {
 	return p.authenticatedUser, nil
 }
 func (p *workflowTestProvider) ListManualWorkflows(context.Context, platform.RepoRef) ([]platform.WorkflowDefinition, error) {
 	p.catalogCalls++
-	if p.onCatalog != nil { p.onCatalog() }
+	if p.onCatalog != nil {
+		p.onCatalog()
+	}
 	return p.catalog, p.catalogErr
 }
 func (p *workflowTestProvider) ListWorkflowEnvironments(context.Context, platform.RepoRef) ([]platform.WorkflowEnvironment, error) {
@@ -85,14 +87,14 @@ func workflowFixture(t *testing.T, provider *workflowTestProvider, operation htt
 	syncer := ghclient.NewSyncerWithRegistry(registry, database, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
 	resolver := httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{
-		DB: database,
+		DB:                   database,
 		ProviderCapabilities: func(platform.Kind, string) (platform.Capabilities, error) { return provider.caps, nil },
 	})
 	handler := New(Deps{
-		Resolver: resolver,
-		Syncer: syncer,
+		Resolver:       resolver,
+		Syncer:         syncer,
 		RepoOperations: func(db.Repo) httpapi.RepoOperations { return httpapi.RepoOperations{DispatchWorkflow: operation} },
-		Now: func() time.Time { return time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC) },
+		Now:            func() time.Time { return time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC) },
 	})
 	mux := http.NewServeMux()
 	config := huma.DefaultConfig("workflow test", "0")
@@ -105,9 +107,13 @@ func workflowFixture(t *testing.T, provider *workflowTestProvider, operation htt
 func workflowRequest(t *testing.T, mux http.Handler, method, path string, body any) (int, map[string]any) {
 	t.Helper()
 	var payload bytes.Buffer
-	if body != nil { require.NoError(t, json.NewEncoder(&payload).Encode(body)) }
+	if body != nil {
+		require.NoError(t, json.NewEncoder(&payload).Encode(body))
+	}
 	req := httptest.NewRequest(method, "/api/v1"+path, &payload)
-	if body != nil { req.Header.Set("Content-Type", "application/json") }
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	recorder := httptest.NewRecorder()
 	mux.ServeHTTP(recorder, req)
 	var decoded map[string]any
@@ -146,8 +152,8 @@ func TestWorkflowCatalogRoutesUseStableRepositoryIdentity(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	provider := &workflowTestProvider{
-		caps: platform.Capabilities{ReadWorkflows: true, ReadWorkflowRuns: true, WorkflowDispatch: true},
-		catalog: []platform.WorkflowDefinition{workflowDefinitionFixture()},
+		caps:         platform.Capabilities{ReadWorkflows: true, ReadWorkflowRuns: true, WorkflowDispatch: true},
+		catalog:      []platform.WorkflowDefinition{workflowDefinitionFixture()},
 		environments: []platform.WorkflowEnvironment{{Name: "production"}, {Name: "staging"}},
 	}
 	mux, _ := workflowFixture(t, provider, httpapi.OperationAvailability{Available: true})
@@ -204,10 +210,10 @@ func TestWorkflowRoutesLoadEnvironmentsOnlyForDefinitionsThatNeedThem(t *testing
 			},
 		},
 		{
-			name:             "dispatch with environment input",
-			definition:       workflowDefinitionFixture(),
-			method:           http.MethodPost,
-			path:             "/actions/github/acme/widget/workflows/release.yml/dispatch",
+			name:       "dispatch with environment input",
+			definition: workflowDefinitionFixture(),
+			method:     http.MethodPost,
+			path:       "/actions/github/acme/widget/workflows/release.yml/dispatch",
 			body: map[string]any{
 				"ref":                     "main",
 				"expected_definition_sha": "definition-v1",
@@ -285,7 +291,6 @@ func TestWorkflowRunRoutesRequireWorkflowIDInSchema(t *testing.T) {
 		assert.True(t, workflowID.Required)
 	}
 }
-
 
 func TestWorkflowRunsAndJobsPreserveProviderContracts(t *testing.T) {
 	assert := assert.New(t)
@@ -391,9 +396,9 @@ func TestWorkflowCatalogFailsClosedWhenRouteIdentityChanges(t *testing.T) {
 
 func TestWorkflowDispatchValidatesLiveDefinitionBeforeMutation(t *testing.T) {
 	tests := []struct {
-		name string
-		body map[string]any
-		wantField string
+		name       string
+		body       map[string]any
+		wantField  string
 		wantStatus int
 		wantReason string
 	}{
@@ -414,8 +419,12 @@ func TestWorkflowDispatchValidatesLiveDefinitionBeforeMutation(t *testing.T) {
 			status, body := workflowRequest(t, mux, http.MethodPost, "/actions/github/acme/widget/workflows/release.yml/dispatch", test.body)
 			assert.Equal(test.wantStatus, status)
 			assert.Empty(provider.dispatches)
-			if test.wantField != "" { assert.Equal(test.wantField, body["details"].(map[string]any)["field"]) }
-			if test.wantReason != "" { assert.Equal(test.wantReason, body["details"].(map[string]any)["reason"]) }
+			if test.wantField != "" {
+				assert.Equal(test.wantField, body["details"].(map[string]any)["field"])
+			}
+			if test.wantReason != "" {
+				assert.Equal(test.wantReason, body["details"].(map[string]any)["reason"])
+			}
 		})
 	}
 }
@@ -426,7 +435,9 @@ func TestWorkflowDispatchEnforcesInputLimitsAndOperationGate(t *testing.T) {
 	provider := &workflowTestProvider{caps: platform.Capabilities{ReadWorkflows: true, WorkflowDispatch: true}, catalog: []platform.WorkflowDefinition{workflowDefinitionFixture()}}
 	mux, _ := workflowFixture(t, provider, httpapi.OperationAvailability{Available: true})
 	many := map[string]any{}
-	for i := range 26 { many[string(rune('a'+i))] = "x" }
+	for i := range 26 {
+		many[string(rune('a'+i))] = "x"
+	}
 	for _, inputs := range []map[string]any{many, {"version": strings.Repeat("x", 65536)}} {
 		status, _ := workflowRequest(t, mux, http.MethodPost, "/actions/github/acme/widget/workflows/release.yml/dispatch", map[string]any{"ref": "main", "expected_definition_sha": "definition-v1", "inputs": inputs})
 		assert.Equal(http.StatusBadRequest, status)
@@ -484,14 +495,13 @@ func TestWorkflowDispatchMapsWriteCredentialAvailabilityToForbidden(t *testing.T
 	}
 }
 
-
 func TestWorkflowDispatchMapsProviderRejectionAndMutationUncertainty(t *testing.T) {
 	for _, test := range []struct {
-		name        string
-		err         error
-		wantStatus  int
-		wantCode    string
-		wantActor   bool
+		name       string
+		err        error
+		wantStatus int
+		wantCode   string
+		wantActor  bool
 	}{
 		{name: "typed rejection", err: &platform.Error{Code: platform.ErrCodeInvalidArgument, Provider: platform.KindGitHub, PlatformHost: platform.DefaultGitHubHost, Field: "ref", Err: errors.New("ref rejected")}, wantStatus: 400, wantCode: "badRequest"},
 		{name: "transport uncertainty", err: errors.New("connection reset"), wantStatus: 502, wantCode: "mutationOutcomeUnknown", wantActor: true},
@@ -531,6 +541,8 @@ func TestWorkflowDispatchResponsePreservesLocatingConcreteRunAndActor(t *testing
 		require.Equal(http.StatusAccepted, status)
 		assert.Equal(result.LocatingRun, body["locating_run"])
 		assert.Equal("maintainer", body["actor"])
-		if result.Run != nil { assert.Equal("run-9", body["run"].(map[string]any)["id"]) }
+		if result.Run != nil {
+			assert.Equal("run-9", body["run"].(map[string]any)["id"])
+		}
 	}
 }

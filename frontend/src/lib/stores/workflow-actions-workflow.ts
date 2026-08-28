@@ -1,4 +1,4 @@
-import { Clock, Context, Deferred, Effect, FiberMap, Layer, Ref, Schedule, Semaphore } from "effect";
+import { Clock, Context, Deferred, Effect, FiberMap, Layer, Ref, Schedule, Scope, Semaphore } from "effect";
 
 import type { components } from "../api/generated/schema.js";
 import { GeneratedApi } from "../api/generated-api.js";
@@ -10,7 +10,11 @@ import {
   resolvedPlatformHost,
   type ProviderRouteRef,
 } from "../api/provider-routes.js";
-import { makeOrderedCommandQueue, type CommandQueueClosed } from "../effect/ordered-command-queue.js";
+import {
+  makeOrderedCommandQueue,
+  type CommandQueueClosed,
+  type OrderedCommandQueue,
+} from "../effect/ordered-command-queue.js";
 
 export type WorkflowCatalog = components["schemas"]["WorkflowCatalogResponse"];
 export type WorkflowDefinition = components["schemas"]["WorkflowDefinitionResponse"];
@@ -707,81 +711,99 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
       yield* restartRepositoryLoop(entry.key);
     });
 
-    const dispatchQueue = yield* makeOrderedCommandQueue<DispatchCommand, void, never, never>(
-      "workflow actions dispatch",
-      (command) =>
-        Deferred.await(command.admitted).pipe(
-          Effect.andThen(
-            Effect.gen(function* () {
-              const startedAt = yield* Clock.currentTimeMillis;
-              yield* updateSnapshot(workflowRepositoryKey(command.request.ref), (snapshot) => ({
-                ...snapshot,
-                dispatches: snapshot.dispatches.map(
-                  (state): WorkflowDispatchState =>
-                    state.request.id === command.request.id
-                      ? { ...state, request: { ...state.request, startedAt } }
-                      : state,
-                ),
-              }));
-              return yield* api.execute("POST workflow dispatch", (signal) =>
-                api.client.POST(providerActionsPath(command.request.ref, "/workflows/{workflow_id}/dispatch"), {
-                  params: {
-                    path: {
-                      ...providerRouteParams(command.request.ref),
-                      workflow_id: command.request.workflowId,
-                    },
-                  },
-                  body: {
-                    expected_definition_sha: command.request.expectedDefinitionSha,
-                    inputs: command.request.inputs,
-                    ref: command.request.dispatchRef,
-                  },
-                  signal,
-                }),
-              );
-            }),
-          ),
-          Effect.matchEffect({
-            onFailure: (error) =>
-              updateSnapshot(workflowRepositoryKey(command.request.ref), (snapshot) => ({
-                ...snapshot,
-                dispatches: snapshot.dispatches.map((state): WorkflowDispatchState => {
-                  if (state.request.id !== command.request.id) return state;
-                  const actor = actorFromMutationError(error);
-                  const request = actor === undefined ? state.request : { ...state.request, actor };
-                  return isDispatchOutcomeUncertain(error)
-                    ? { kind: "uncertain", request, error, candidates: [] }
-                    : { kind: "failed", request, error };
-                }),
-              })).pipe(
-                Effect.andThen(
-                  isDispatchOutcomeUncertain(error)
-                    ? restartRepositoryLoop(workflowRepositoryKey(command.request.ref))
-                    : Effect.void,
-                ),
+    const executeDispatchCommand = (command: DispatchCommand) =>
+      Deferred.await(command.admitted).pipe(
+        Effect.andThen(
+          Effect.gen(function* () {
+            const startedAt = yield* Clock.currentTimeMillis;
+            yield* updateSnapshot(workflowRepositoryKey(command.request.ref), (snapshot) => ({
+              ...snapshot,
+              dispatches: snapshot.dispatches.map(
+                (state): WorkflowDispatchState =>
+                  state.request.id === command.request.id
+                    ? { ...state, request: { ...state.request, startedAt } }
+                    : state,
               ),
-            onSuccess: (response) =>
-              updateSnapshot(workflowRepositoryKey(command.request.ref), (snapshot) => ({
-                ...snapshot,
-                dispatches: snapshot.dispatches.map((state): WorkflowDispatchState => {
-                  if (state.request.id !== command.request.id) return state;
-                  const actor = response.actor?.trim() || response.run?.actor.trim();
-                  const request = actor ? { ...state.request, actor } : state.request;
-                  if (response.run !== undefined) {
-                    return { kind: "succeeded", request, run: response.run };
-                  }
-                  return { kind: "locating", request };
-                }),
-              })).pipe(
-                Effect.andThen(
-                  response.run === undefined || !isTerminalRun(response.run)
-                    ? restartRepositoryLoop(workflowRepositoryKey(command.request.ref))
-                    : Effect.void,
-                ),
-              ),
+            }));
+            return yield* api.execute("POST workflow dispatch", (signal) =>
+              api.client.POST(providerActionsPath(command.request.ref, "/workflows/{workflow_id}/dispatch"), {
+                params: {
+                  path: {
+                    ...providerRouteParams(command.request.ref),
+                    workflow_id: command.request.workflowId,
+                  },
+                },
+                body: {
+                  expected_definition_sha: command.request.expectedDefinitionSha,
+                  inputs: command.request.inputs,
+                  ref: command.request.dispatchRef,
+                },
+                signal,
+              }),
+            );
           }),
         ),
-    );
+        Effect.matchEffect({
+          onFailure: (error) =>
+            updateSnapshot(workflowRepositoryKey(command.request.ref), (snapshot) => ({
+              ...snapshot,
+              dispatches: snapshot.dispatches.map((state): WorkflowDispatchState => {
+                if (state.request.id !== command.request.id) return state;
+                const actor = actorFromMutationError(error);
+                const request = actor === undefined ? state.request : { ...state.request, actor };
+                return isDispatchOutcomeUncertain(error)
+                  ? { kind: "uncertain", request, error, candidates: [] }
+                  : { kind: "failed", request, error };
+              }),
+            })).pipe(
+              Effect.andThen(
+                isDispatchOutcomeUncertain(error)
+                  ? restartRepositoryLoop(workflowRepositoryKey(command.request.ref))
+                  : Effect.void,
+              ),
+            ),
+          onSuccess: (response) =>
+            updateSnapshot(workflowRepositoryKey(command.request.ref), (snapshot) => ({
+              ...snapshot,
+              dispatches: snapshot.dispatches.map((state): WorkflowDispatchState => {
+                if (state.request.id !== command.request.id) return state;
+                const actor = response.actor?.trim() || response.run?.actor.trim();
+                const request = actor ? { ...state.request, actor } : state.request;
+                if (response.run !== undefined) {
+                  return { kind: "succeeded", request, run: response.run };
+                }
+                return { kind: "locating", request };
+              }),
+            })).pipe(
+              Effect.andThen(
+                response.run === undefined || !isTerminalRun(response.run)
+                  ? restartRepositoryLoop(workflowRepositoryKey(command.request.ref))
+                  : Effect.void,
+              ),
+            ),
+        }),
+      );
+
+    const dispatchQueues = new Map<string, OrderedCommandQueue<DispatchCommand, void, never>>();
+    yield* Effect.addFinalizer(() => Effect.sync(() => dispatchQueues.clear()));
+
+    const dispatchQueueFor = Effect.fn("WorkflowActions.dispatchQueueFor")(function* (ref: ProviderRouteRef) {
+      const key = workflowRepositoryKey(ref);
+      return yield* Effect.uninterruptible(
+        registry.withPermit(
+          Effect.gen(function* () {
+            const existing = dispatchQueues.get(key);
+            if (existing !== undefined) return existing;
+            const created = yield* makeOrderedCommandQueue<DispatchCommand, void, never, never>(
+              `workflow actions dispatch ${key}`,
+              executeDispatchCommand,
+            ).pipe(Effect.provideService(Scope.Scope, scope));
+            dispatchQueues.set(key, created);
+            return created;
+          }),
+        ),
+      );
+    });
 
     const releaseRepositoryOwner = Effect.fn("WorkflowActions.releaseRepositoryOwner")(function* (
       owner: string,
@@ -1044,6 +1066,7 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
       };
       const entry = entryFor(request.ref);
       const admitted = yield* Deferred.make<void>();
+      const dispatchQueue = yield* dispatchQueueFor(request.ref);
       const acknowledgement = yield* dispatchQueue.accept({ request, admitted });
       yield* Effect.uninterruptible(
         updateSnapshot(entry.key, (snapshot) => ({

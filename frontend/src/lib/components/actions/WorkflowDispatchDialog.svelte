@@ -29,12 +29,13 @@
   const canDismiss = $derived(
     presentation.kind === "idle"
       || presentation.kind === "succeeded"
-      || presentation.kind === "failed",
+      || presentation.kind === "failed"
+      || (presentation.kind === "conflict" && presentation.reloadError !== undefined),
   );
 
   async function close(): Promise<void> {
     if (!canDismiss) return;
-    if (presentation.kind !== "idle") onnewcycle();
+    if (presentation.kind === "succeeded" || presentation.kind === "failed") onnewcycle();
     onclose();
     await tick();
     trigger?.focus();
@@ -72,7 +73,10 @@
   </div>
   {#snippet footer()}
     {#if presentation.kind === "idle"}<DialogButton onclick={() => { void close(); }}>Cancel</DialogButton>{/if}
-    {#if presentation.kind === "conflict"}<DialogButton tone="primary" disabled={reloadRequested} onclick={reload}>Reload workflows</DialogButton>{/if}
+    {#if presentation.kind === "conflict"}
+      {#if presentation.reloadError}<DialogButton onclick={() => { void close(); }}>Close</DialogButton>{/if}
+      <DialogButton tone="primary" disabled={reloadRequested} onclick={reload}>Reload workflows</DialogButton>
+    {/if}
     {#if presentation.kind === "succeeded" || presentation.kind === "failed"}
       <DialogButton onclick={() => { void close(); }}>Close</DialogButton>
       <DialogButton tone="primary" onclick={beginNewCycle}>Run again</DialogButton>

@@ -2074,7 +2074,7 @@ func TestWorkflowTransportShape(t *testing.T) {
 		case strings.Contains(r.URL.Path, "/contents/"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"type": "file", "sha": "blob-sha",
-				"content": base64.StdEncoding.EncodeToString([]byte("on: workflow_dispatch")),
+				"content":  base64.StdEncoding.EncodeToString([]byte("on: workflow_dispatch")),
 				"encoding": "base64",
 			})
 		case strings.HasSuffix(r.URL.Path, "/environments"):
@@ -2209,4 +2209,3 @@ func TestGetWorkflowDefinitionRejectsOversizedDecodedContent(t *testing.T) {
 	_, _, err = client.GetWorkflowDefinition(t.Context(), "acme", "widgets", "release.yml", "main")
 	require.ErrorContains(t, err, "exceeds")
 }
-

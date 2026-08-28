@@ -58,6 +58,9 @@ service is the supported tool here.
 - Success, rejection, uncertainty, and definition conflict leave presentation only through
   the explicit new-cycle command; deliberate retry returns to fresh confirmation and never posts
   (`frontend/src/lib/stores/workflow-actions-workflow.ts::newDispatchCycle`).
+- Dispatch ordering is FIFO per canonical repository, not global: same-repository writes serialize
+  while unrelated repositories post concurrently, and every queue lives for the app scope
+  (`frontend/src/lib/stores/workflow-actions-workflow.ts::dispatchQueueFor`).
 - Use Effect concurrency, queues, fibers, schedules, and interruption instead
   of bespoke Promise generations, overlapping timers, or boolean race guards.
   Preserve latest-wins, single-flight, ordered, or lossless semantics explicitly;

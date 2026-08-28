@@ -128,6 +128,7 @@
     resolveControllerlessWorkspaceRef,
   } from "../../stores/workspace-create-pending.svelte.js";
   import type {
+    WorkflowActionsError,
     WorkflowDefinition,
     WorkflowDispatchState,
   } from "../../stores/workflow-actions-workflow.js";
@@ -1355,7 +1356,8 @@
     (): WorkflowDispatchPresentationState => {
       const workflow = workflowDialogWorkflow;
       if (!workflow) return { kind: "idle" };
-      const dispatch = [...workflowActions.getDispatches(routeRef)]
+      const actionSnapshot = workflowActions.getSnapshot(routeRef);
+      const dispatch = [...(actionSnapshot?.dispatches ?? [])]
         .reverse()
         .find((candidate) => candidate.request.workflowId === workflow.id);
       if (!dispatch) return { kind: "idle" };
@@ -1368,7 +1370,9 @@
         && dispatch.error.problem.code === ProblemCodes.conflict
         && dispatch.error.problem.details?.["reason"] === "workflow_definition_changed"
       ) {
-        return { kind: "conflict" };
+        return actionSnapshot?.error
+          ? { kind: "conflict", reloadError: workflowActionErrorMessage(actionSnapshot.error, "Could not reload workflows.") }
+          : { kind: "conflict" };
       }
       if (dispatch.kind === "failed") {
         return { kind: "failed", message: workflowDispatchFailureMessage(dispatch) };
@@ -1387,16 +1391,20 @@
     },
   );
 
+  function workflowActionErrorMessage(error: WorkflowActionsError, fallback: string): string {
+    if (error._tag === "ApiProblemError") {
+      return apiErrorMessage(error.problem, fallback);
+    }
+    if ("cause" in error && error.cause instanceof Error) return error.cause.message;
+    return fallback;
+  }
+
   function workflowDispatchFailureMessage(dispatch: WorkflowDispatchState): string {
     if (dispatch.kind === "locating_timed_out") {
       return "The provider accepted the workflow, but its run was not observed.";
     }
     if (dispatch.kind === "failed" || dispatch.kind === "uncertain") {
-      const error = dispatch.error;
-      if (error._tag === "ApiProblemError") {
-        return apiErrorMessage(error.problem, "The workflow outcome could not be confirmed.");
-      }
-      if ("cause" in error && error.cause instanceof Error) return error.cause.message;
+      return workflowActionErrorMessage(dispatch.error, "The workflow outcome could not be confirmed.");
     }
     return "The workflow outcome could not be confirmed.";
   }

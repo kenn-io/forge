@@ -159,14 +159,14 @@ type WorkflowRunsResponse struct {
 }
 
 type WorkflowJobsResponse struct {
-	Repo  httpapi.RepoRefResponse   `json:"repo"`
+	Repo  httpapi.RepoRefResponse  `json:"repo"`
 	Items []WorkflowRunJobResponse `json:"items"`
 }
 
 type WorkflowDispatchResponse struct {
 	Accepted    bool                 `json:"accepted"`
 	LocatingRun bool                 `json:"locating_run"`
-	Actor        string               `json:"actor,omitempty"`
+	Actor       string               `json:"actor,omitempty"`
 	Run         *WorkflowRunResponse `json:"run,omitempty"`
 }
 

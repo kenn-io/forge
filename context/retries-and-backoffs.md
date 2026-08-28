@@ -70,7 +70,7 @@ migrate ticker-driven sync or refresh loops into `backoff/v5`
 
 - Manual workflow dispatch is non-idempotent and never retried; reconcile
   accepted or uncertain outcomes by reads instead of replaying POST
-  (`frontend/src/lib/stores/workflow-actions-workflow.ts::dispatchQueue`).
+  (`frontend/src/lib/stores/workflow-actions-workflow.ts::dispatchQueueFor`).
 - Selected runs poll every 5 seconds while active; idle runs and failed catalog
   reads wait 30 seconds. Removing demand or disabling Actions interrupts it
   (`frontend/src/lib/stores/workflow-actions-workflow.ts::waitForPoll`).

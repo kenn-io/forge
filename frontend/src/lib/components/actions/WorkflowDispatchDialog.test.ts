@@ -131,6 +131,42 @@ it("allows one reload in each distinct conflict cycle", async () => {
   expect(onreload).toHaveBeenCalledTimes(3);
 });
 
+it("allows closing after a conflict reload failure and resets reload admission when reopened", async () => {
+  const onclose = vi.fn();
+  const onreload = vi.fn();
+  const onnewcycle = vi.fn();
+  const onsubmit = vi.fn();
+  const base = {
+    open: true,
+    workflow,
+    environments: [],
+    initialRef: "main",
+    operation,
+    trigger: null,
+    onsubmit,
+    onclose,
+    onreload,
+    onnewcycle,
+  };
+  const failedConflict = { kind: "conflict", reloadError: "Workflow catalog is unavailable." } as const;
+  const view = render(WorkflowDispatchDialog, { ...base, state: { kind: "conflict" } as const });
+  await fireEvent.click(screen.getByRole("button", { name: "Reload workflows" }));
+  await view.rerender({ ...base, state: failedConflict });
+  expect(screen.getByRole("alert").textContent).toContain("Workflow catalog is unavailable.");
+  await fireEvent.click(screen.getByRole("button", { name: "Close" }));
+  expect(onclose).toHaveBeenCalledOnce();
+  expect(onnewcycle).not.toHaveBeenCalled();
+  expect(onsubmit).not.toHaveBeenCalled();
+
+  await view.rerender({ ...base, open: false, state: failedConflict });
+  await view.rerender({ ...base, state: failedConflict });
+  const reload = screen.getByRole("button", { name: "Reload workflows" });
+  expect((reload as HTMLButtonElement).disabled).toBe(false);
+  await fireEvent.click(reload);
+  expect(onreload).toHaveBeenCalledTimes(2);
+  expect(onsubmit).not.toHaveBeenCalled();
+});
+
 it("presents definite rejection as dismissible and requires a fresh explicit cycle", async () => {
   const onclose = vi.fn();
   const onsubmit = vi.fn();

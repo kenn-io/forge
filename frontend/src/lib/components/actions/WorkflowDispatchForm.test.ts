@@ -409,6 +409,64 @@ describe("WorkflowDispatchForm", () => {
     });
   });
 
+  it.each([
+    ["NaN", Number.NaN],
+    ["1e999", Number("1e999")],
+  ])("rejects non-finite number default %s before dispatch", async (_label, value) => {
+    const onsubmit = vi.fn();
+    render(WorkflowDispatchForm, {
+      workflow: workflow([
+        {
+          name: "retries",
+          type: "number",
+          required: true,
+          has_default: true,
+          default: value,
+        },
+      ]),
+      environments,
+      initialRef: "trunk",
+      operation: available,
+      state: { kind: "idle" },
+      onsubmit,
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Run workflow" }));
+    expect(screen.getByRole("alert").textContent).toBe("retries must be a finite number.");
+    expect(onsubmit).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["choice", [], "channel", "No choices are available for channel."],
+    ["environment", [], "target", "No environments are available for target."],
+  ] as const)(
+    "disables dispatch when a %s input has zero provider options",
+    (type, environmentOptions, name, message) => {
+      const onsubmit = vi.fn();
+      render(WorkflowDispatchForm, {
+        workflow: workflow([
+          {
+            name,
+            type,
+            required: true,
+            has_default: false,
+            ...(type === "choice" && { options: [] }),
+          },
+        ]),
+        environments: environmentOptions,
+        initialRef: "trunk",
+        operation: available,
+        state: { kind: "idle" },
+        onsubmit,
+      });
+
+      expect(screen.getByRole("alert").textContent).toContain(message);
+      expect((screen.getByRole("button", { name: "Run workflow" }) as HTMLButtonElement).disabled).toBe(true);
+      expect(screen.queryByText(`${name} is required.`)).toBeNull();
+      expect(onsubmit).not.toHaveBeenCalled();
+    },
+  );
+
   it("announces locating and renders concrete accepted run details without a running submit label", async () => {
     const props = {
       workflow: workflow(),

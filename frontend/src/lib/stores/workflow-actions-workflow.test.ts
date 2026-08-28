@@ -971,6 +971,42 @@ it.effect("starts each queued dispatch reconciliation window immediately before 
   );
 });
 
+it.effect("serializes dispatches per repository while different repositories post concurrently", () => {
+  const firstResponse = Promise.withResolvers<WorkflowDispatchResponse>();
+  const probe = makeApiProbe({
+    dispatch: (call) =>
+      call === 1
+        ? firstResponse.promise
+        : {
+            accepted: true,
+            locating_run: false,
+            actor: "octocat",
+            run: run({ id: "other-run", status: "completed", conclusion: "success" }),
+          },
+  });
+  const other = { ...github, name: "other", repoPath: "octo/other" };
+  return withWorkflow(
+    probe,
+    Effect.gen(function* () {
+      const workflow = yield* WorkflowActionsWorkflow;
+      yield* workflow.dispatch(dispatchInput());
+      yield* workflow.dispatch(dispatchInput(other));
+      yield* settle;
+      assert.strictEqual(probe.calls.dispatch, 2);
+      assert.strictEqual((yield* workflow.snapshot(other)).dispatches.at(-1)?.kind, "succeeded");
+
+      firstResponse.resolve({
+        accepted: true,
+        locating_run: false,
+        actor: "octocat",
+        run: run({ status: "completed", conclusion: "success" }),
+      });
+      yield* settle;
+      assert.strictEqual((yield* workflow.snapshot(github)).dispatches.at(-1)?.kind, "succeeded");
+    }),
+  );
+});
+
 it.effect("never reconciles another maintainer's run when the dispatch actor is unknown", () => {
   const problem = {
     code: "mutationOutcomeUnknown",

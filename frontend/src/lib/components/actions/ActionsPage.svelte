@@ -122,6 +122,12 @@
     selectedRepositoryKey = repoStateKey(summary);
   }
 
+  function selectWorkflow(workflowId: string): void {
+    if (!selectedRef) return;
+    releaseAllRunOwners();
+    workflowActions.selectWorkflow(selectedRef, workflowId);
+  }
+
   function dispatchPresentation(
     currentSnapshot: WorkflowActionsSnapshot | null,
     workflowId: string,
@@ -139,7 +145,9 @@
       && dispatch.error.problem.code === ProblemCodes.conflict
       && dispatch.error.problem.details?.["reason"] === "workflow_definition_changed"
     ) {
-      return { kind: "conflict" };
+      return currentSnapshot?.error
+        ? { kind: "conflict", reloadError: workflowReadErrorMessage(currentSnapshot.error) }
+        : { kind: "conflict" };
     }
     if (dispatch.kind === "failed") {
       return { kind: "failed", message: dispatchFailureMessage(dispatch) };
@@ -330,7 +338,7 @@
                     type="button"
                     class:selected={selectedWorkflow?.id === workflow.id}
                     aria-current={selectedWorkflow?.id === workflow.id ? "true" : undefined}
-                    onclick={() => selectedRef && workflowActions.selectWorkflow(selectedRef, workflow.id)}
+                    onclick={() => selectWorkflow(workflow.id)}
                   >
                     <strong>{workflow.name}</strong>
                     <span>{workflow.path}</span>

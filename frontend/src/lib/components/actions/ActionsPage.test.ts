@@ -287,6 +287,60 @@ describe("ActionsPage", () => {
     expect(screen.getByRole("button", { name: /Verify/ })).toBeTruthy();
   });
 
+  it("releases every expanded run before switching workflows", async () => {
+    const twoWorkflows: MockRouteOverride = (request) => {
+      if (request.method !== "GET" || request.url.pathname !== "/api/v1/actions/github/acme/alpha/workflows")
+        return null;
+      return jsonResponse({
+        repo: { ...repoSummary("alpha").repo, default_branch: "trunk" },
+        environments: [],
+        workflows: [
+          {
+            id: "alpha-deploy.yml",
+            name: "alpha deploy",
+            path: ".github/workflows/alpha-deploy.yml",
+            state: "active",
+            available: true,
+            definition_sha: "alpha-definition",
+            inputs: [],
+            web_url: "https://github.com/acme/alpha/actions/workflows/alpha-deploy.yml",
+          },
+          {
+            id: "alpha-verify.yml",
+            name: "alpha verify",
+            path: ".github/workflows/alpha-verify.yml",
+            state: "active",
+            available: true,
+            definition_sha: "alpha-verify-definition",
+            inputs: [],
+            web_url: "https://github.com/acme/alpha/actions/workflows/alpha-verify.yml",
+          },
+        ],
+      });
+    };
+    api = createMockApiFetch([twoWorkflows, workflowFixtures()]);
+    globalThis.fetch = api.fetch;
+    const workflowActions = createWorkflowActionsStore({ runtime });
+    const collapseRun = vi.spyOn(workflowActions, "collapseRun");
+    const selectWorkflow = vi.spyOn(workflowActions, "selectWorkflow");
+    render(ActionsPage, {
+      context: new Map([[STORES_KEY, { workflowActions }]]),
+    });
+
+    await fireEvent.click(await screen.findByRole("button", { name: /alpha deploy/ }));
+    await fireEvent.click(await screen.findByRole("button", { name: /Run 7 alpha deploy/ }));
+    await fireEvent.click(await screen.findByRole("button", { name: /Run 6 alpha deploy/ }));
+    await screen.findByRole("button", { name: /Verify/ });
+    const jobReads = api.requests.filter((request) => request.url.pathname.endsWith("/jobs")).length;
+
+    await fireEvent.click(screen.getByRole("button", { name: /alpha verify/ }));
+    expect(collapseRun).toHaveBeenCalledWith("actions-page:jobs:alpha-run-1");
+    expect(collapseRun).toHaveBeenCalledWith("actions-page:jobs:alpha-run-2");
+    const switchOrder = selectWorkflow.mock.invocationCallOrder.at(-1)!;
+    expect(collapseRun.mock.invocationCallOrder.every((order) => order < switchOrder)).toBe(true);
+    expect(api.requests.filter((request) => request.url.pathname.endsWith("/jobs"))).toHaveLength(jobReads);
+  });
+
   it("loads an older run page without changing the repository default ref seed", async () => {
     const workflowActions = createWorkflowActionsStore({ runtime });
     render(ActionsPage, {

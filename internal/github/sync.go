@@ -2030,7 +2030,7 @@ func (p *gitHubClientProvider) Capabilities() platform.Capabilities {
 		ReadMarkdownImages:          markdownImages,
 		ReadAuthenticatedUser:       directViewer || routedViewer,
 		ReadNotifications:           true,
-		ReadWorkflows:                workflows,
+		ReadWorkflows:               workflows,
 		ReadWorkflowRuns:            workflowRuns,
 		CommentMutation:             true,
 		StateMutation:               true,
@@ -2231,6 +2231,19 @@ func (p *gitHubClientProvider) GetRepository(
 	return gitHubPlatformRepository(p.host, ref.Owner, repo), nil
 }
 
+func workflowDefinitionReadMustAbort(err error) bool {
+	if errors.Is(err, context.Canceled) ||
+		errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, platform.ErrRateLimited) {
+		return true
+	}
+	if _, ok := errors.AsType[*gh.RateLimitError](err); ok {
+		return true
+	}
+	_, abuseLimited := errors.AsType[*gh.AbuseRateLimitError](err)
+	return abuseLimited
+}
+
 func (p *gitHubClientProvider) ListManualWorkflows(
 	ctx context.Context, ref platform.RepoRef,
 ) ([]platform.WorkflowDefinition, error) {
@@ -2255,6 +2268,12 @@ func (p *gitHubClientProvider) ListManualWorkflows(
 			ctx, ref.Owner, ref.Name, workflow.GetPath(), repo.GetDefaultBranch(),
 		)
 		if fileErr != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, ctxErr
+			}
+			if workflowDefinitionReadMustAbort(fileErr) {
+				return nil, fileErr
+			}
 			definitions = append(definitions, platform.WorkflowDefinition{
 				ID: strconv.FormatInt(workflow.GetID(), 10), Name: workflow.GetName(),
 				Path: workflow.GetPath(), State: workflow.GetState(), WebURL: workflow.GetHTMLURL(),
@@ -2360,7 +2379,7 @@ func (p *gitHubClientProvider) ListWorkflowRunJobs(
 		normalized := platform.WorkflowRunJob{
 			ID: strconv.FormatInt(job.GetID(), 10), Name: job.GetName(),
 			Status: job.GetStatus(), Conclusion: job.GetConclusion(),
-			StartedAt: githubWorkflowTimestamp(job.StartedAt),
+			StartedAt:   githubWorkflowTimestamp(job.StartedAt),
 			CompletedAt: githubWorkflowTimestamp(job.CompletedAt), WebURL: job.GetHTMLURL(),
 			Steps: make([]platform.WorkflowRunStep, 0, len(job.Steps)),
 		}
@@ -2402,7 +2421,7 @@ func (p *gitHubClientProvider) DispatchWorkflow(
 	result.LocatingRun = details == nil || details.GetWorkflowRunID() == 0
 	if !result.LocatingRun {
 		run := platform.WorkflowRun{
-			ID: strconv.FormatInt(details.GetWorkflowRunID(), 10),
+			ID:         strconv.FormatInt(details.GetWorkflowRunID(), 10),
 			WorkflowID: request.WorkflowID, Actor: actor, WebURL: details.GetHTMLURL(),
 		}
 		result.Run = &run

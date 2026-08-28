@@ -259,7 +259,6 @@ func TestE2EWorkflowClientExercisesProviderWorkflowContract(t *testing.T) {
 	assert.Equal("in_progress", jobs[0].Steps[1].Status)
 }
 
-
 func TestTestTmuxTrackerRetainsFailedCleanupForRetry(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell tmux tracker probe is not supported on Windows")

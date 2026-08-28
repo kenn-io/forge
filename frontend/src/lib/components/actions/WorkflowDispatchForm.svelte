@@ -14,7 +14,7 @@
         readonly message: string;
         readonly candidates: readonly WorkflowRun[];
       }
-    | { readonly kind: "conflict" };
+    | { readonly kind: "conflict"; readonly reloadError?: string };
 
   export interface WorkflowDispatchRequest {
     readonly ref: string;
@@ -79,11 +79,24 @@
   const admitted = $derived(admissions[draftKey]?.blocked === true);
   const pending = $derived(presentation.kind === "pending");
   const controlsDisabled = $derived(pending || admitted);
-  const explicitlyUnavailable = $derived(operation?.available === false || workflow.available === false);
+  const unavailableInputReason = $derived.by(() => {
+    for (const input of workflow.inputs ?? []) {
+      if (input.type === "choice" && (input.options?.length ?? 0) === 0) {
+        return `No choices are available for ${input.name}. Reload workflows or choose another workflow.`;
+      }
+      if (input.type === "environment" && environments.length === 0) {
+        return `No environments are available for ${input.name}. Configure a provider environment before running this workflow.`;
+      }
+    }
+    return "";
+  });
+  const explicitlyUnavailable = $derived(
+    operation?.available === false || workflow.available === false || unavailableInputReason !== "",
+  );
   const unavailableReason = $derived.by(() => {
     if (operation?.available === false) return operation.unavailable_reason?.trim() || "Workflow dispatch is unavailable.";
     if (workflow.available === false) return workflow.unavailable_reason?.trim() || "This workflow is unavailable.";
-    return "";
+    return unavailableInputReason;
   });
   const errors = $derived(submitted ? validationErrors() : {});
 
@@ -150,7 +163,11 @@
     for (const input of workflow.inputs ?? []) {
       const value = draft.values[input.name];
       const missing = value === undefined || value === null || value === "" || (input.type === "string" && String(value).trim() === "");
-      if (input.required && missing) next[input.name] = `${input.name} is required.`;
+      if (input.required && missing) {
+        next[input.name] = `${input.name} is required.`;
+      } else if (input.type === "number" && (typeof value !== "number" || !Number.isFinite(value))) {
+        next[input.name] = `${input.name} must be a finite number.`;
+      }
     }
     return next;
   }
@@ -174,7 +191,10 @@
 <div class="dispatch-root" {@attach observePresentation(draftKey, presentation.kind)}>
   {#if presentation.kind === "conflict"}
     <div class="dispatch-outcome">
-      <p class="notice notice--error" role="alert">Workflow definition changed. Reload workflows before running it.</p>
+      <p class="notice notice--error" role="alert">
+        Workflow definition changed. Reload workflows before running it.
+        {#if presentation.reloadError} {presentation.reloadError}{/if}
+      </p>
       {#if onreload}<Button type="button" tone="workflow" surface="solid" onclick={onreload}>Reload workflows</Button>{/if}
     </div>
   {:else if presentation.kind === "locating"}

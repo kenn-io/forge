@@ -23,7 +23,7 @@
 </script>
 
 <script lang="ts">
-  import { Button, Checkbox } from "@kenn-io/kit-ui";
+  import { Button, Checkbox, SelectDropdown, type SelectDropdownOption } from "@kenn-io/kit-ui";
   import type { components } from "../../api/generated/schema.js";
   import type { OperationAvailability } from "../../api/types.js";
   import { isSafeExternalHTTPURL } from "../../utils/safe-external-url.js";
@@ -89,6 +89,42 @@
 
   function inputControlId(name: string, index: number): string {
     return `workflow-input-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "input"}-${index}`;
+  }
+
+  function dropdownOptions(input: NonNullable<Workflow["inputs"]>[number]): SelectDropdownOption[] {
+    const values = input.type === "choice"
+      ? (input.options ?? [])
+      : environments.map((environment) => environment.name);
+    const placeholder = input.type === "environment"
+      ? "Select an environment"
+      : draft.values[input.name] === ""
+        ? "Select an option"
+        : undefined;
+    return [
+      ...(placeholder === undefined ? [] : [{ value: "", label: placeholder }]),
+      ...values.map((value) => ({ value, label: value })),
+    ];
+  }
+
+  function dropdownAccessibility(
+    controlID: string,
+    required: boolean,
+    error: string | undefined,
+  ): Attachment<HTMLDivElement> {
+    return (container) => {
+      const control = container.querySelector<HTMLButtonElement>("[role='combobox']");
+      if (control === null) return;
+      control.id = controlID;
+      if (required) control.setAttribute("aria-required", "true");
+      else control.removeAttribute("aria-required");
+      if (error) {
+        control.setAttribute("aria-invalid", "true");
+        control.setAttribute("aria-describedby", `${controlID}-error`);
+      } else {
+        control.removeAttribute("aria-invalid");
+        control.removeAttribute("aria-describedby");
+      }
+    };
   }
 
   function observePresentation(key: string, kind: WorkflowDispatchPresentationState["kind"]): Attachment {
@@ -225,20 +261,27 @@
           {:else}
             <label for={inputControlId(input.name, index)}>{input.name}{#if input.required} <span aria-hidden="true">*</span>{/if}</label>
             {#if input.type === "choice" || input.type === "environment"}
-              <select
-                id={inputControlId(input.name, index)}
-                aria-label={input.name}
-                disabled={controlsDisabled}
-                required={input.required}
-                aria-required={input.required ? "true" : undefined}
-                value={String(draft.values[input.name] ?? "")}
-                onchange={(event) => { drafts[draftKey] = { ...draft, values: { ...draft.values, [input.name]: event.currentTarget.value } }; }}
-                aria-invalid={errors[input.name] ? "true" : undefined}
-                aria-describedby={errors[input.name] ? `${inputControlId(input.name, index)}-error` : undefined}
+              <div
+                class="workflow-input-dropdown"
+                {@attach dropdownAccessibility(
+                  inputControlId(input.name, index),
+                  input.required,
+                  errors[input.name],
+                )}
               >
-                {#if input.type === "environment"}<option value="">Select an environment</option>{/if}
-                {#each input.type === "choice" ? (input.options ?? []) : environments.map((item) => item.name) as option (option)}<option value={option}>{option}</option>{/each}
-              </select>
+                <SelectDropdown
+                  title={input.name}
+                  value={String(draft.values[input.name] ?? "")}
+                  options={dropdownOptions(input)}
+                  disabled={controlsDisabled}
+                  onchange={(value) => {
+                    drafts[draftKey] = {
+                      ...draft,
+                      values: { ...draft.values, [input.name]: value },
+                    };
+                  }}
+                />
+              </div>
             {:else}
               <input
                 id={inputControlId(input.name, index)}
@@ -272,8 +315,11 @@
   h2, .notice, .run-details { margin: 0; }
   h2 { font-size: var(--font-size-md); color: var(--text-primary); }
   label, small, dt { font-size: var(--font-size-sm); color: var(--text-secondary); }
-  input, select { box-sizing: border-box; width: 100%; min-height: 32px; border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--bg-inset); color: var(--text-primary); padding: 0 var(--space-3); font: inherit; }
-  input:focus, select:focus { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+  input { box-sizing: border-box; width: 100%; min-height: 32px; border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--bg-inset); color: var(--text-primary); padding: 0 var(--space-3); font: inherit; }
+  input:focus { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+  .workflow-input-dropdown { min-width: 0; }
+  .workflow-input-dropdown :global(.kit-select-dropdown),
+  .workflow-input-dropdown :global(.kit-select-dropdown__trigger) { width: 100%; min-width: 0; }
   .field-error, .notice, .run-details, .candidate-runs { font-size: var(--font-size-sm); }
   .field-error, .notice--error { color: var(--status-danger-text, var(--text-danger)); }
   .notice--success { color: var(--status-success-text, var(--text-success)); }

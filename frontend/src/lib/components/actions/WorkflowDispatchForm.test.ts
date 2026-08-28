@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/svelte";
+import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import { describe, expect, it, vi } from "vitest";
 import type { components } from "../../api/generated/schema.js";
 import type { OperationAvailability } from "../../api/types.js";
@@ -9,6 +9,15 @@ type Environment = components["schemas"]["WorkflowEnvironmentResponse"];
 
 const environments: Environment[] = [{ name: "staging" }, { name: "production" }];
 const available: OperationAvailability = { available: true };
+
+function dropdown(name: string): HTMLElement {
+  return screen.getByRole("combobox", { name: new RegExp(`^${name}:`) });
+}
+
+async function chooseDropdownOption(name: string, option: string): Promise<void> {
+  await fireEvent.click(dropdown(name));
+  await fireEvent.click(within(screen.getByRole("listbox")).getByRole("option", { name: option }));
+}
 
 function workflow(inputs: NonNullable<Workflow["inputs"]> = []): Workflow {
   return {
@@ -49,16 +58,21 @@ describe("WorkflowDispatchForm", () => {
     expect((screen.getByRole("textbox", { name: "message" }) as HTMLInputElement).value).toBe("hello");
     expect((screen.getByRole("spinbutton", { name: "retries" }) as HTMLInputElement).valueAsNumber).toBe(3);
     expect((screen.getByRole("checkbox", { name: "dry_run" }) as HTMLInputElement).checked).toBe(true);
+    await fireEvent.click(dropdown("region"));
     expect(
-      [...screen.getByRole("combobox", { name: "region" }).querySelectorAll("option")].map(
-        (option) => option.textContent,
-      ),
+      within(screen.getByRole("listbox"))
+        .getAllByRole("option")
+        .map((option) => option.textContent?.trim()),
     ).toEqual(["eu", "us"]);
+    await fireEvent.click(within(screen.getByRole("listbox")).getByRole("option", { name: "eu" }));
+    await fireEvent.click(dropdown("target"));
     expect(
-      [...screen.getByRole("combobox", { name: "target" }).querySelectorAll("option")].map(
-        (option) => option.textContent,
-      ),
+      within(screen.getByRole("listbox"))
+        .getAllByRole("option")
+        .map((option) => option.textContent?.trim()),
     ).toEqual(["Select an environment", "staging", "production"]);
+    await fireEvent.click(within(screen.getByRole("listbox")).getByRole("option", { name: "staging" }));
+    expect(container.querySelector("select")).toBeNull();
     await fireEvent.click(screen.getByRole("button", { name: "Run workflow" }));
     expect(onsubmit).toHaveBeenCalledWith({
       ref: "main",
@@ -186,7 +200,7 @@ describe("WorkflowDispatchForm", () => {
       onsubmit: vi.fn(),
     });
     expect(screen.queryByRole("textbox", { name: "version" })).toBeNull();
-    expect((screen.getByRole("combobox", { name: "channel" }) as HTMLSelectElement).value).toBe("beta");
+    expect(dropdown("channel").getAttribute("aria-label")).toBe("channel: beta");
   });
 
   it("releases admission only after owner leaves idle and starts a fresh idle cycle", async () => {
@@ -304,7 +318,7 @@ describe("WorkflowDispatchForm", () => {
 
   it("exposes native required semantics without treating a required false boolean as missing", async () => {
     const onsubmit = vi.fn();
-    render(WorkflowDispatchForm, {
+    const view = render(WorkflowDispatchForm, {
       workflow: workflow([
         { name: "message", type: "string", required: true, has_default: false },
         { name: "retries", type: "number", required: true, has_default: false },
@@ -323,22 +337,62 @@ describe("WorkflowDispatchForm", () => {
       screen.getByRole("textbox", { name: "Git ref" }),
       screen.getByRole("textbox", { name: "message" }),
       screen.getByRole("spinbutton", { name: "retries" }),
-      screen.getByRole("combobox", { name: "channel" }),
-      screen.getByRole("combobox", { name: "target" }),
     ]) {
-      expect((control as HTMLInputElement | HTMLSelectElement).required).toBe(true);
+      expect((control as HTMLInputElement).required).toBe(true);
       expect(control.getAttribute("aria-required")).toBe("true");
     }
+    const channel = dropdown("channel");
+    const target = dropdown("target");
+    expect(channel.getAttribute("aria-required")).toBe("true");
+    expect(target.getAttribute("aria-required")).toBe("true");
+    expect(document.querySelector("select")).toBeNull();
 
     const approved = screen.getByRole("checkbox", { name: "approved" });
     expect((approved as HTMLInputElement).required).toBe(false);
     const requiredDescription = document.getElementById(approved.getAttribute("aria-describedby") ?? "");
     expect(requiredDescription?.textContent).toContain("Required input");
 
+    await fireEvent.click(screen.getByRole("button", { name: "Run workflow" }));
+    expect(channel.getAttribute("aria-describedby")).toBe("workflow-input-channel-3-error");
+    expect(target.getAttribute("aria-describedby")).toBe("workflow-input-target-4-error");
+    expect(channel.getAttribute("aria-invalid")).toBe("true");
+    expect(target.getAttribute("aria-invalid")).toBe("true");
+
+    await view.rerender({
+      workflow: workflow([
+        { name: "message", type: "string", required: true, has_default: false },
+        { name: "retries", type: "number", required: true, has_default: false },
+        { name: "approved", type: "boolean", required: true, has_default: false },
+        { name: "channel", type: "choice", required: true, has_default: false, options: ["stable", "beta"] },
+        { name: "target", type: "environment", required: true, has_default: false },
+      ]),
+      environments,
+      initialRef: "trunk",
+      operation: available,
+      state: { kind: "pending" },
+      onsubmit,
+    });
+    expect((dropdown("channel") as HTMLButtonElement).disabled).toBe(true);
+    expect((dropdown("target") as HTMLButtonElement).disabled).toBe(true);
+    await view.rerender({
+      workflow: workflow([
+        { name: "message", type: "string", required: true, has_default: false },
+        { name: "retries", type: "number", required: true, has_default: false },
+        { name: "approved", type: "boolean", required: true, has_default: false },
+        { name: "channel", type: "choice", required: true, has_default: false, options: ["stable", "beta"] },
+        { name: "target", type: "environment", required: true, has_default: false },
+      ]),
+      environments,
+      initialRef: "trunk",
+      operation: available,
+      state: { kind: "idle" },
+      onsubmit,
+    });
+
     await fireEvent.input(screen.getByRole("textbox", { name: "message" }), { target: { value: "release" } });
     await fireEvent.input(screen.getByRole("spinbutton", { name: "retries" }), { target: { value: "2" } });
-    await fireEvent.change(screen.getByRole("combobox", { name: "channel" }), { target: { value: "stable" } });
-    await fireEvent.change(screen.getByRole("combobox", { name: "target" }), { target: { value: "production" } });
+    await chooseDropdownOption("channel", "stable");
+    await chooseDropdownOption("target", "production");
     await fireEvent.click(screen.getByRole("button", { name: "Run workflow" }));
 
     expect(onsubmit).toHaveBeenCalledWith({

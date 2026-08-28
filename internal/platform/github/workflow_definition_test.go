@@ -219,6 +219,22 @@ on:
 			content: []byte("on: [workflow_dispatch, {push: null}]\n"),
 		},
 		{
+			name:    "multiple YAML documents",
+			content: []byte("on: workflow_dispatch\n---\nname: trailing\n"),
+		},
+		{
+			name:    "unknown workflow dispatch field",
+			content: []byte("on:\n  workflow_dispatch:\n    inputz: {}\n"),
+		},
+		{
+			name:    "misspelled required field",
+			content: []byte("on:\n  workflow_dispatch:\n    inputs:\n      target:\n        requred: true\n"),
+		},
+		{
+			name:    "misspelled default field",
+			content: []byte("on:\n  workflow_dispatch:\n    inputs:\n      target:\n        defualt: main\n"),
+		},
+		{
 			name:    "malformed YAML",
 			content: []byte("on: [workflow_dispatch\n"),
 		},

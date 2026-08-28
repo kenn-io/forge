@@ -1,7 +1,9 @@
 package github
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"math"
 
 	"go.kenn.io/forge/internal/platform"
@@ -32,9 +34,17 @@ func ParseManualWorkflow(
 		)
 	}
 
+	decoder := yaml.NewDecoder(bytes.NewReader(content))
 	var document yaml.Node
-	if err := yaml.Unmarshal(content, &document); err != nil {
+	if err := decoder.Decode(&document); err != nil {
 		return definition, false, fmt.Errorf("parse workflow definition: %w", err)
+	}
+	var trailing yaml.Node
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err != nil {
+			return definition, false, fmt.Errorf("parse trailing workflow definition: %w", err)
+		}
+		return definition, false, fmt.Errorf("workflow definition must contain one document")
 	}
 	if len(document.Content) != 1 {
 		return definition, false, fmt.Errorf("workflow definition must contain one document")
@@ -69,7 +79,7 @@ func ParseManualWorkflow(
 		return definition, false, fmt.Errorf("workflow_dispatch configuration must be a mapping")
 	}
 
-	inputsNode, found, err := mappingValue(manualNode, "inputs")
+	inputsNode, found, err := workflowDispatchInputs(manualNode)
 	if err != nil {
 		return definition, false, fmt.Errorf("parse workflow_dispatch: %w", err)
 	}
@@ -120,6 +130,26 @@ func mappingValue(mapping *yaml.Node, wanted string) (*yaml.Node, bool, error) {
 		}
 	}
 	return value, found, nil
+}
+
+func workflowDispatchInputs(mapping *yaml.Node) (*yaml.Node, bool, error) {
+	var inputs *yaml.Node
+	found := false
+	for index := 0; index < len(mapping.Content); index += 2 {
+		key := mapping.Content[index]
+		if key.Kind != yaml.ScalarNode || key.Tag != "!!str" {
+			return nil, false, fmt.Errorf("workflow_dispatch keys must be strings")
+		}
+		if key.Value != "inputs" {
+			return nil, false, fmt.Errorf("unknown workflow_dispatch field %q", key.Value)
+		}
+		if found {
+			return nil, false, fmt.Errorf("duplicate workflow_dispatch field %q", key.Value)
+		}
+		inputs = mapping.Content[index+1]
+		found = true
+	}
+	return inputs, found, nil
 }
 
 func manualTrigger(onNode *yaml.Node) (*yaml.Node, bool, error) {
@@ -257,6 +287,11 @@ func inputFields(mapping *yaml.Node) (map[string]*yaml.Node, error) {
 		key := mapping.Content[index]
 		if key.Kind != yaml.ScalarNode || key.Tag != "!!str" {
 			return nil, fmt.Errorf("definition keys must be strings")
+		}
+		switch key.Value {
+		case "description", "required", "type", "default", "options":
+		default:
+			return nil, fmt.Errorf("unknown input definition field %q", key.Value)
 		}
 		if _, duplicate := fields[key.Value]; duplicate {
 			return nil, fmt.Errorf("duplicate definition key %q", key.Value)

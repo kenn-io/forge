@@ -41,6 +41,8 @@ func TestRepositoryResolverOwnsCapabilityFallbackPolicy(t *testing.T) {
 }
 
 func TestProviderCapabilitiesFromPlatformMapsWorkflowWireFields(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	response := ProviderCapabilitiesFromPlatform(platform.Capabilities{
 		ReadWorkflows:    true,
 		ReadWorkflowRuns: true,
@@ -48,13 +50,13 @@ func TestProviderCapabilitiesFromPlatformMapsWorkflowWireFields(t *testing.T) {
 	})
 
 	encoded, err := json.Marshal(response)
-	require.NoError(t, err)
+	require.NoError(err)
 	var fields map[string]any
-	require.NoError(t, json.Unmarshal(encoded, &fields))
+	require.NoError(json.Unmarshal(encoded, &fields))
 
-	assert.Equal(t, true, fields["read_workflows"])
-	assert.Equal(t, true, fields["read_workflow_runs"])
-	assert.Equal(t, true, fields["workflow_dispatch"])
+	assert.Equal(true, fields["read_workflows"])
+	assert.Equal(true, fields["read_workflow_runs"])
+	assert.Equal(true, fields["workflow_dispatch"])
 }
 
 func TestRepositoryResolverBuildsCanonicalRef(t *testing.T) {

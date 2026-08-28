@@ -2063,6 +2063,8 @@ func TestNewClientWiresETagTransport(t *testing.T) {
 }
 
 func TestWorkflowTransportShape(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	var readPaths, writePaths []string
 	readServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		readPaths = append(readPaths, r.Method+" "+r.URL.RequestURI())
@@ -2105,7 +2107,7 @@ func TestWorkflowTransportShape(t *testing.T) {
 		w.Header().Set("X-RateLimit-Limit", "5000")
 		w.Header().Set("X-RateLimit-Remaining", "4800")
 		var body map[string]any
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		require.NoError(json.NewDecoder(r.Body).Decode(&body))
 		dispatchBodies = append(dispatchBodies, body)
 		dispatchCount++
 		if dispatchCount == 1 {
@@ -2117,9 +2119,9 @@ func TestWorkflowTransportShape(t *testing.T) {
 	}))
 	defer writeServer.Close()
 	readGH, err := newEnterpriseGHClient(readServer.Client(), readServer.URL+"/", readServer.URL+"/")
-	require.NoError(t, err)
+	require.NoError(err)
 	writeGH, err := newEnterpriseGHClient(writeServer.Client(), writeServer.URL+"/", writeServer.URL+"/")
-	require.NoError(t, err)
+	require.NoError(err)
 	database := openTestDB(t)
 	readTracker := NewRateTracker(database, "github.example.com", "installation:1", "rest")
 	writeTracker := NewRateTracker(database, "github.example.com", "user:2", "rest")
@@ -2128,58 +2130,58 @@ func TestWorkflowTransportShape(t *testing.T) {
 	}
 
 	workflows, err := client.ListRepositoryWorkflows(t.Context(), "acme", "widgets")
-	require.NoError(t, err)
-	require.Len(t, workflows, 2)
+	require.NoError(err)
+	require.Len(workflows, 2)
 	content, sha, err := client.GetWorkflowDefinition(t.Context(), "acme", "widgets", ".github/workflows/release.yml", "main")
-	require.NoError(t, err)
-	assert.Equal(t, "on: workflow_dispatch", content)
-	assert.Equal(t, "blob-sha", sha)
+	require.NoError(err)
+	assert.Equal("on: workflow_dispatch", content)
+	assert.Equal("blob-sha", sha)
 	environments, err := client.ListRepositoryEnvironments(t.Context(), "acme", "widgets")
-	require.NoError(t, err)
-	require.Len(t, environments, 2)
+	require.NoError(err)
+	require.Len(environments, 2)
 	page, err := client.ListManualWorkflowRuns(t.Context(), "acme", "widgets", 42, platform.WorkflowRunQuery{
 		Cursor: "2", PerPage: 25, Event: "workflow_dispatch", Branch: "main",
 	})
-	require.NoError(t, err)
-	assert.Equal(t, "3", page.NextCursor)
-	assert.False(t, page.Exhausted)
+	require.NoError(err)
+	assert.Equal("3", page.NextCursor)
+	assert.False(page.Exhausted)
 	finalPage, err := client.ListManualWorkflowRuns(t.Context(), "acme", "widgets", 42, platform.WorkflowRunQuery{PerPage: 10})
-	require.NoError(t, err)
-	assert.Empty(t, finalPage.NextCursor)
-	assert.True(t, finalPage.Exhausted)
+	require.NoError(err)
+	assert.Empty(finalPage.NextCursor)
+	assert.True(finalPage.Exhausted)
 	jobs, err := client.ListManualWorkflowJobs(t.Context(), "acme", "widgets", 99)
-	require.NoError(t, err)
-	require.Len(t, jobs, 2)
+	require.NoError(err)
+	require.Len(jobs, 2)
 	details, err := client.DispatchManualWorkflow(t.Context(), "acme", "widgets", 42, gh.CreateWorkflowDispatchEventRequest{
 		Ref: "main", Inputs: map[string]any{"version": "1.2.3"},
 	})
-	require.NoError(t, err)
-	assert.Equal(t, int64(123), details.GetWorkflowRunID())
+	require.NoError(err)
+	assert.Equal(int64(123), details.GetWorkflowRunID())
 	details, err = client.DispatchManualWorkflow(t.Context(), "acme", "widgets", 42, gh.CreateWorkflowDispatchEventRequest{Ref: "main"})
-	require.NoError(t, err)
-	assert.Nil(t, details)
+	require.NoError(err)
+	assert.Nil(details)
 
-	assert.Equal(t, []map[string]any{
+	assert.Equal([]map[string]any{
 		{"ref": "main", "inputs": map[string]any{"version": "1.2.3"}, "return_run_details": true},
 		{"ref": "main", "return_run_details": true},
 	}, dispatchBodies)
-	assert.Contains(t, readPaths, "GET /api/v3/repos/acme/widgets/actions/workflows?per_page=100")
-	assert.Contains(t, readPaths, "GET /api/v3/repos/acme/widgets/actions/workflows?page=2&per_page=100")
-	assert.Contains(t, readPaths, "GET /api/v3/repos/acme/widgets/contents/.github/workflows/release.yml?ref=main")
-	assert.Contains(t, readPaths, "GET /api/v3/repos/acme/widgets/environments?per_page=100")
-	assert.Contains(t, readPaths, "GET /api/v3/repos/acme/widgets/environments?page=2&per_page=100")
-	assert.Contains(t, readPaths, "GET /api/v3/repos/acme/widgets/actions/workflows/42/runs?branch=main&event=workflow_dispatch&page=2&per_page=25")
-	assert.Contains(t, readPaths, "GET /api/v3/repos/acme/widgets/actions/workflows/42/runs?per_page=10")
-	assert.Contains(t, readPaths, "GET /api/v3/repos/acme/widgets/actions/runs/99/jobs?per_page=100")
-	assert.Contains(t, readPaths, "GET /api/v3/repos/acme/widgets/actions/runs/99/jobs?page=2&per_page=100")
-	assert.Equal(t, []string{
+	assert.Contains(readPaths, "GET /api/v3/repos/acme/widgets/actions/workflows?per_page=100")
+	assert.Contains(readPaths, "GET /api/v3/repos/acme/widgets/actions/workflows?page=2&per_page=100")
+	assert.Contains(readPaths, "GET /api/v3/repos/acme/widgets/contents/.github/workflows/release.yml?ref=main")
+	assert.Contains(readPaths, "GET /api/v3/repos/acme/widgets/environments?per_page=100")
+	assert.Contains(readPaths, "GET /api/v3/repos/acme/widgets/environments?page=2&per_page=100")
+	assert.Contains(readPaths, "GET /api/v3/repos/acme/widgets/actions/workflows/42/runs?branch=main&event=workflow_dispatch&page=2&per_page=25")
+	assert.Contains(readPaths, "GET /api/v3/repos/acme/widgets/actions/workflows/42/runs?per_page=10")
+	assert.Contains(readPaths, "GET /api/v3/repos/acme/widgets/actions/runs/99/jobs?per_page=100")
+	assert.Contains(readPaths, "GET /api/v3/repos/acme/widgets/actions/runs/99/jobs?page=2&per_page=100")
+	assert.Equal([]string{
 		"POST /api/v3/repos/acme/widgets/actions/workflows/42/dispatches",
 		"POST /api/v3/repos/acme/widgets/actions/workflows/42/dispatches",
 	}, writePaths)
-	assert.Equal(t, 9, readTracker.RequestsThisHour())
-	assert.Equal(t, 4900, readTracker.Remaining())
-	assert.Equal(t, 2, writeTracker.RequestsThisHour())
-	assert.Equal(t, 4800, writeTracker.Remaining())
+	assert.Equal(9, readTracker.RequestsThisHour())
+	assert.Equal(4900, readTracker.Remaining())
+	assert.Equal(2, writeTracker.RequestsThisHour())
+	assert.Equal(4800, writeTracker.Remaining())
 }
 
 func serverURL(r *http.Request) string {

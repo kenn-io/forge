@@ -130,15 +130,17 @@ on:
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
 			definition, manual, err := ParseManualWorkflow(
 				"CI", ".github/workflows/ci.yml", "https://example.test/ci", "sha", []byte(test.content),
 			)
-			require.NoError(t, err)
-			assert.Equal(t, test.manual, manual)
-			assert.Equal(t, test.inputs, definition.Inputs)
-			assert.Equal(t, ".github/workflows/ci.yml", definition.ID)
-			assert.Equal(t, "CI", definition.Name)
-			assert.True(t, definition.Available)
+			require.NoError(err)
+			assert.Equal(test.manual, manual)
+			assert.Equal(test.inputs, definition.Inputs)
+			assert.Equal(".github/workflows/ci.yml", definition.ID)
+			assert.Equal("CI", definition.Name)
+			assert.True(definition.Available)
 		})
 	}
 

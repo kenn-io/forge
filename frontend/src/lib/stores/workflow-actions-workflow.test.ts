@@ -889,6 +889,56 @@ it.effect(
   },
 );
 
+it.effect("retains a conflict reload failure across successful run polling until it is cleared", () => {
+  const conflict = {
+    code: "conflict",
+    detail: "Workflow definition changed.",
+    details: { reason: "workflow_definition_changed" },
+    status: 409,
+    title: "Conflict",
+    type: "about:blank",
+  };
+  const probe = makeApiProbe({
+    catalog: (call) => (call === 1 ? catalog() : Promise.reject<WorkflowCatalog>(new Error("catalog unavailable"))),
+    dispatch: () => ({ error: conflict, response: new Response(null, { status: 409 }) }),
+    runs: () => ({
+      repo: apiRepo(),
+      items: [run({ status: "completed", conclusion: "success" })],
+      exhausted: true,
+    }),
+  });
+  return withWorkflow(
+    probe,
+    Effect.gen(function* () {
+      const workflow = yield* WorkflowActionsWorkflow;
+      yield* workflow.selectWorkflow(github, "deploy.yml");
+      const owner = yield* workflow.watchRepository("surface", github, () => {}).pipe(Effect.forkChild);
+      yield* settle;
+      yield* workflow.dispatch(dispatchInput());
+      yield* settle;
+
+      yield* workflow.refreshCatalog(github, "deploy.yml");
+      let snapshot = yield* workflow.snapshot(github);
+      assert.strictEqual(snapshot.catalogRefreshErrors["deploy.yml"]?._tag, "TransientTransportError");
+      assert.strictEqual(probe.calls.dispatch, 1);
+
+      yield* TestClock.adjust("30 seconds");
+      yield* settle;
+      snapshot = yield* workflow.snapshot(github);
+      assert.strictEqual(snapshot.error, null);
+      assert.strictEqual(snapshot.catalogRefreshErrors["deploy.yml"]?._tag, "TransientTransportError");
+      assert.strictEqual(snapshot.dispatches.at(-1)?.kind, "failed");
+
+      yield* workflow.clearCatalogRefreshError(github, "deploy.yml");
+      snapshot = yield* workflow.snapshot(github);
+      assert.strictEqual(snapshot.catalogRefreshErrors["deploy.yml"], undefined);
+      assert.strictEqual(snapshot.dispatches.at(-1)?.kind, "failed");
+      assert.strictEqual(probe.calls.dispatch, 1);
+      yield* Fiber.interrupt(owner);
+    }),
+  );
+});
+
 it.effect("requires an explicit new cycle before deliberately dispatching the same workflow twice", () => {
   const probe = makeApiProbe({
     dispatch: () => ({

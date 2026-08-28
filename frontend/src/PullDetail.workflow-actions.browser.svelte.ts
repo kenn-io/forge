@@ -212,6 +212,7 @@ describe("PullDetail provider workflow action geometry", () => {
       }),
       selectWorkflow: vi.fn(),
       refreshCatalog: vi.fn(),
+      clearCatalogRefreshError: vi.fn(),
       loadMoreRuns: vi.fn(),
       newDispatchCycle: vi.fn(),
       expandRun: vi.fn(),

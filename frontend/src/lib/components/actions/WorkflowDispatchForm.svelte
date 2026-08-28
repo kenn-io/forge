@@ -165,7 +165,7 @@
       const missing = value === undefined || value === null || value === "" || (input.type === "string" && String(value).trim() === "");
       if (input.required && missing) {
         next[input.name] = `${input.name} is required.`;
-      } else if (input.type === "number" && (typeof value !== "number" || !Number.isFinite(value))) {
+      } else if (!missing && input.type === "number" && (typeof value !== "number" || !Number.isFinite(value))) {
         next[input.name] = `${input.name} must be a finite number.`;
       }
     }

@@ -27,6 +27,7 @@ export interface WorkflowActionsStore {
   readonly releaseRepository: (owner: string) => void;
   readonly selectWorkflow: (ref: ProviderRouteRef, workflowId: string | null) => void;
   readonly refreshCatalog: (ref: ProviderRouteRef, workflowId: string) => void;
+  readonly clearCatalogRefreshError: (ref: ProviderRouteRef, workflowId: string) => void;
   readonly loadMoreRuns: (ref: ProviderRouteRef) => void;
   readonly newDispatchCycle: (ref: ProviderRouteRef, workflowId: string) => void;
   readonly expandRun: (owner: string, ref: ProviderRouteRef, runId: string) => void;
@@ -109,6 +110,21 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
       }),
       {
         operation: "refresh provider workflow catalog",
+        safeContext: { provider: ref.provider, owner: ref.owner, name: ref.name, workflowId },
+        onFailure: () => {},
+      },
+    );
+  }
+
+  function clearCatalogRefreshError(ref: ProviderRouteRef, workflowId: string): void {
+    if (!enabled) return;
+    runtime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* WorkflowActionsWorkflow;
+        yield* workflow.clearCatalogRefreshError(ref, workflowId);
+      }),
+      {
+        operation: "clear provider workflow catalog refresh error",
         safeContext: { provider: ref.provider, owner: ref.owner, name: ref.name, workflowId },
         onFailure: () => {},
       },
@@ -246,6 +262,7 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
     releaseRepository,
     selectWorkflow,
     refreshCatalog,
+    clearCatalogRefreshError,
     loadMoreRuns,
     newDispatchCycle,
     expandRun,

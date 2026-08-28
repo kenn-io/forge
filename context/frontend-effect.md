@@ -61,6 +61,9 @@ service is the supported tool here.
 - Dispatch ordering is FIFO per canonical repository, not global: same-repository writes serialize
   while unrelated repositories post concurrently, and every queue lives for the app scope
   (`frontend/src/lib/stores/workflow-actions-workflow.ts::dispatchQueueFor`).
+- Definition-reload failures are workflow-cycle state, separate from general read errors;
+  successful run polling cannot clear them, and only dialog close or the next reload cycle does
+  (`frontend/src/lib/stores/workflow-actions-workflow.ts::clearCatalogRefreshError`).
 - Use Effect concurrency, queues, fibers, schedules, and interruption instead
   of bespoke Promise generations, overlapping timers, or boolean race guards.
   Preserve latest-wins, single-flight, ordered, or lossless semantics explicitly;

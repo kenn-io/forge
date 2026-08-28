@@ -1370,8 +1370,9 @@
         && dispatch.error.problem.code === ProblemCodes.conflict
         && dispatch.error.problem.details?.["reason"] === "workflow_definition_changed"
       ) {
-        return actionSnapshot?.error
-          ? { kind: "conflict", reloadError: workflowActionErrorMessage(actionSnapshot.error, "Could not reload workflows.") }
+        const reloadError = actionSnapshot?.catalogRefreshErrors[workflow.id];
+        return reloadError
+          ? { kind: "conflict", reloadError: workflowActionErrorMessage(reloadError, "Could not reload workflows.") }
           : { kind: "conflict" };
       }
       if (dispatch.kind === "failed") {
@@ -1437,6 +1438,14 @@
     const workflow = workflowDialogWorkflow;
     if (!workflowCatalogDemandEnabled || !workflow) return;
     workflowActions.newDispatchCycle(routeRef, workflow.id);
+  }
+
+  function closeWorkflowDialog(): void {
+    const workflow = workflowDialogWorkflow;
+    if (workflow && workflowActions.getSnapshot(routeRef)?.catalogRefreshErrors[workflow.id] !== undefined) {
+      workflowActions.clearCatalogRefreshError(routeRef, workflow.id);
+    }
+    workflowDialogWorkflow = null;
   }
 
   function claimWorkflowRepository(ref: ProviderRouteRef | null): Attachment {
@@ -3020,7 +3029,7 @@
           state={workflowDialogPresentation}
           trigger={actionMenuTriggerEl ?? null}
           onsubmit={submitWorkflow}
-          onclose={() => { workflowDialogWorkflow = null; }}
+          onclose={closeWorkflowDialog}
           onreload={reloadWorkflowCatalog}
           onnewcycle={newWorkflowDispatchCycle}
         />

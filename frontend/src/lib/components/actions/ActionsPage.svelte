@@ -145,8 +145,9 @@
       && dispatch.error.problem.code === ProblemCodes.conflict
       && dispatch.error.problem.details?.["reason"] === "workflow_definition_changed"
     ) {
-      return currentSnapshot?.error
-        ? { kind: "conflict", reloadError: workflowReadErrorMessage(currentSnapshot.error) }
+      const reloadError = currentSnapshot?.catalogRefreshErrors[workflowId];
+      return reloadError
+        ? { kind: "conflict", reloadError: workflowReadErrorMessage(reloadError) }
         : { kind: "conflict" };
     }
     if (dispatch.kind === "failed") {

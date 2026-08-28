@@ -409,6 +409,29 @@ describe("WorkflowDispatchForm", () => {
     });
   });
 
+  it("omits an optional blank number without treating it as non-finite", async () => {
+    const onsubmit = vi.fn();
+    render(WorkflowDispatchForm, {
+      workflow: workflow([
+        {
+          name: "retries",
+          type: "number",
+          required: false,
+          has_default: false,
+        },
+      ]),
+      environments,
+      initialRef: "trunk",
+      operation: available,
+      state: { kind: "idle" },
+      onsubmit,
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Run workflow" }));
+    expect(onsubmit).toHaveBeenCalledWith({ ref: "trunk", inputs: {} });
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it.each([
     ["NaN", Number.NaN],
     ["1e999", Number("1e999")],

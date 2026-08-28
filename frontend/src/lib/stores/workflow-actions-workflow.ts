@@ -77,6 +77,7 @@ export interface WorkflowActionsSnapshot {
   readonly jobs: Readonly<Record<string, readonly WorkflowRunJob[]>>;
   readonly loading: WorkflowActionsLoading;
   readonly dispatches: readonly WorkflowDispatchState[];
+  readonly catalogRefreshErrors: Readonly<Record<string, WorkflowActionsError>>;
   readonly error: WorkflowActionsError | null;
 }
 
@@ -91,6 +92,7 @@ interface WorkflowActionsWorkflowShape {
   readonly watchJobs: (owner: string, ref: ProviderRouteRef, runId: string) => Effect.Effect<never>;
   readonly selectWorkflow: (ref: ProviderRouteRef, workflowId: string | null) => Effect.Effect<void>;
   readonly refreshCatalog: (ref: ProviderRouteRef, workflowId: string) => Effect.Effect<void>;
+  readonly clearCatalogRefreshError: (ref: ProviderRouteRef, workflowId: string) => Effect.Effect<void>;
   readonly loadMoreRuns: (ref: ProviderRouteRef) => Effect.Effect<void>;
   readonly newDispatchCycle: (ref: ProviderRouteRef, workflowId: string) => Effect.Effect<void>;
   readonly dispatch: (input: WorkflowDispatchInput) => Effect.Effect<AcceptedWorkflowDispatch, CommandQueueClosed>;
@@ -186,6 +188,7 @@ function emptySnapshot(ref: ProviderRouteRef): WorkflowActionsSnapshot {
     jobs: {},
     loading: { catalog: false, runs: false, jobs: [] },
     dispatches: [],
+    catalogRefreshErrors: {},
     error: null,
   };
 }
@@ -446,7 +449,7 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
     }
 
     const loadCatalog = Effect.fn("WorkflowActions.loadCatalog")(function* (entry: RepositoryEntry, force = false) {
-      if (!force && entry.snapshot.catalog !== null) return true;
+      if (!force && entry.snapshot.catalog !== null) return null;
       yield* updateSnapshot(entry.key, (snapshot) => ({
         ...snapshot,
         loading: { ...snapshot.loading, catalog: true },
@@ -458,7 +461,7 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
               ...snapshot,
               error,
               loading: { ...snapshot.loading, catalog: false },
-            })).pipe(Effect.as(false)),
+            })).pipe(Effect.as<WorkflowActionsError | null>(error)),
           onSuccess: (catalog) =>
             updateSnapshot(entry.key, (snapshot, current) => ({
               ...snapshot,
@@ -467,7 +470,7 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
                 catalog.workflows?.find((workflow) => workflow.id === current.selectedWorkflowId) ?? null,
               error: null,
               loading: { ...snapshot.loading, catalog: false },
-            })).pipe(Effect.as(true)),
+            })).pipe(Effect.as<WorkflowActionsError | null>(null)),
         }),
       );
     });
@@ -701,12 +704,33 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
       yield* stopRepositoryLoopIfIdle(key);
     });
 
+    const clearCatalogRefreshError = Effect.fn("WorkflowActions.clearCatalogRefreshError")(function* (
+      ref: ProviderRouteRef,
+      workflowId: string,
+    ) {
+      const key = workflowRepositoryKey(ref);
+      yield* updateSnapshot(key, (snapshot) => {
+        if (snapshot.catalogRefreshErrors[workflowId] === undefined) return snapshot;
+        const catalogRefreshErrors = { ...snapshot.catalogRefreshErrors };
+        delete catalogRefreshErrors[workflowId];
+        return { ...snapshot, catalogRefreshErrors };
+      });
+    });
+
     const refreshCatalog = Effect.fn("WorkflowActions.refreshCatalog")(function* (
       ref: ProviderRouteRef,
       workflowId: string,
     ) {
       const entry = entryFor(ref);
-      if (!(yield* loadCatalog(entry, true))) return;
+      yield* clearCatalogRefreshError(entry.ref, workflowId);
+      const error = yield* loadCatalog(entry, true);
+      if (error !== null) {
+        yield* updateSnapshot(entry.key, (snapshot) => ({
+          ...snapshot,
+          catalogRefreshErrors: { ...snapshot.catalogRefreshErrors, [workflowId]: error },
+        }));
+        return;
+      }
       yield* newDispatchCycle(entry.ref, workflowId);
       yield* restartRepositoryLoop(entry.key);
     });
@@ -1122,6 +1146,7 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
       watchJobs,
       selectWorkflow,
       refreshCatalog,
+      clearCatalogRefreshError,
       loadMoreRuns,
       newDispatchCycle,
       dispatch,

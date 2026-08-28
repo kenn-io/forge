@@ -5138,6 +5138,10 @@ components:
           type: boolean
         read_review_threads:
           type: boolean
+        read_workflow_runs:
+          type: boolean
+        read_workflows:
+          type: boolean
         ready_for_review:
           type: boolean
         review_draft_mutation:
@@ -5164,6 +5168,8 @@ components:
           type: boolean
         workflow_approval:
           type: boolean
+        workflow_dispatch:
+          type: boolean
       required:
         - read_repositories
         - read_merge_requests
@@ -5172,6 +5178,8 @@ components:
         - read_comments
         - read_releases
         - read_ci
+        - read_workflows
+        - read_workflow_runs
         - read_labels
         - read_markdown_images
         - read_authenticated_user
@@ -5180,6 +5188,7 @@ components:
         - merge_mutation
         - review_mutation
         - workflow_approval
+        - workflow_dispatch
         - ready_for_review
         - draft_mutation
         - issue_mutation
@@ -6136,6 +6145,8 @@ components:
           $ref: "#/components/schemas/OperationAvailability"
         delete_comment:
           $ref: "#/components/schemas/OperationAvailability"
+        dispatch_workflow:
+          $ref: "#/components/schemas/OperationAvailability"
         edit_comment:
           $ref: "#/components/schemas/OperationAvailability"
         mark_draft:
@@ -6183,6 +6194,7 @@ components:
         - close_issue
         - reopen_issue
         - approve_workflow
+        - dispatch_workflow
         - update_content
         - reply_review_thread
         - resolve_review_thread

@@ -3435,6 +3435,8 @@ type ProviderCapabilitiesResponse struct {
 	ReadReleases                bool      `json:"read_releases"`
 	ReadRepositories            bool      `json:"read_repositories"`
 	ReadReviewThreads           bool      `json:"read_review_threads"`
+	ReadWorkflowRuns            bool      `json:"read_workflow_runs"`
+	ReadWorkflows               bool      `json:"read_workflows"`
 	ReadyForReview              bool      `json:"ready_for_review"`
 	ReviewDraftMutation         bool      `json:"review_draft_mutation"`
 	ReviewMutation              bool      `json:"review_mutation"`
@@ -3446,6 +3448,7 @@ type ProviderCapabilitiesResponse struct {
 	ThreadReply                 bool      `json:"thread_reply"`
 	ThreadResolve               bool      `json:"thread_resolve"`
 	WorkflowApproval            bool      `json:"workflow_approval"`
+	WorkflowDispatch            bool      `json:"workflow_dispatch"`
 }
 
 // PublishChange defines model for PublishChange.
@@ -3897,6 +3900,7 @@ type RepoOperations struct {
 	ClosePr               OperationAvailability `json:"close_pr"`
 	CreateIssue           OperationAvailability `json:"create_issue"`
 	DeleteComment         OperationAvailability `json:"delete_comment"`
+	DispatchWorkflow      OperationAvailability `json:"dispatch_workflow"`
 	EditComment           OperationAvailability `json:"edit_comment"`
 	MarkDraft             OperationAvailability `json:"mark_draft"`
 	MarkReadyForReview    OperationAvailability `json:"mark_ready_for_review"`

@@ -6975,6 +6975,8 @@ export interface components {
             read_releases: boolean;
             read_repositories: boolean;
             read_review_threads: boolean;
+            read_workflow_runs: boolean;
+            read_workflows: boolean;
             ready_for_review: boolean;
             review_draft_mutation: boolean;
             review_mutation: boolean;
@@ -6986,6 +6988,7 @@ export interface components {
             thread_reply: boolean;
             thread_resolve: boolean;
             workflow_approval: boolean;
+            workflow_dispatch: boolean;
         };
         PublishChange: {
             old_path?: string;
@@ -7432,6 +7435,7 @@ export interface components {
             close_pr: components["schemas"]["OperationAvailability"];
             create_issue: components["schemas"]["OperationAvailability"];
             delete_comment: components["schemas"]["OperationAvailability"];
+            dispatch_workflow: components["schemas"]["OperationAvailability"];
             edit_comment: components["schemas"]["OperationAvailability"];
             mark_draft: components["schemas"]["OperationAvailability"];
             mark_ready_for_review: components["schemas"]["OperationAvailability"];

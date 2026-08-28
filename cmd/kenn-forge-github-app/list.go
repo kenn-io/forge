@@ -104,10 +104,11 @@ func runList(args []string, env *appEnv) error {
 
 // fillLiveStatus queries GitHub for the app's current installation
 // and, when installed, the rate budget of a freshly minted token.
-// Installations limited to selected repositories are checked against
-// the configured repos: a manually edited or restored config can
-// carry an installation the CLI never verified, and surfacing the gap
-// here beats discovering it as sync-time 404s.
+// Sync installations limited to selected repositories are checked against
+// the configured repos: a manually edited or restored config can carry an
+// installation the CLI never verified, and surfacing the gap here beats
+// discovering it as sync-time 404s. Archive installations intentionally allow
+// partial coverage and use normal routes elsewhere.
 func (env *appEnv) fillLiveStatus(
 	ctx context.Context, cfg *config.Config, app config.GitHubAppConfig, status *appStatus,
 ) error {
@@ -147,13 +148,15 @@ func (env *appEnv) fillLiveStatus(
 		if err != nil {
 			return err
 		}
-		if missing := missingSelectedRepos(
-			cfg, app.Host, install.Account.Login, accessible,
-		); len(missing) > 0 {
-			return fmt.Errorf(
-				"installation does not cover %s; edit its repository access on GitHub",
-				strings.Join(missing, ", "),
-			)
+		if app.Role != config.GitHubAppRoleArchive {
+			if missing := missingSelectedRepos(
+				cfg, app.Host, install.Account.Login, accessible,
+			); len(missing) > 0 {
+				return fmt.Errorf(
+					"installation does not cover %s; edit its repository access on GitHub",
+					strings.Join(missing, ", "),
+				)
+			}
 		}
 	}
 	return nil

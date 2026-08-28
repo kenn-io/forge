@@ -1982,6 +1982,7 @@ func (c *Config) validateGitHubOwnerTokens() error {
 func (c *Config) validateGitHubApps() error {
 	seenOwners := make(map[string]struct{}, len(c.GitHubApps))
 	seenInstallations := make(map[string]struct{}, len(c.GitHubApps))
+	seenInstallationIdentities := make(map[string]string, len(c.GitHubApps))
 	for i := range c.GitHubApps {
 		app := &c.GitHubApps[i]
 		app.Host = strings.TrimSpace(app.Host)
@@ -2065,6 +2066,18 @@ func (c *Config) validateGitHubApps() error {
 				)
 			}
 			seenInstallations[installKey] = struct{}{}
+			identityKey := host + "\x00" + strconv.FormatInt(app.AppID, 10) +
+				"\x00" + strconv.FormatInt(app.InstallationID, 10) +
+				"\x00" + strings.ToLower(app.InstallationAccount)
+			if previousRole, ok := seenInstallationIdentities[identityKey]; ok &&
+				previousRole != app.Role {
+				return fmt.Errorf(
+					"config: github_apps[%d]: installation for host %q, app id %d, and account %q cannot be configured for both %q and %q roles",
+					i, host, app.AppID, app.InstallationAccount,
+					previousRole, app.Role,
+				)
+			}
+			seenInstallationIdentities[identityKey] = app.Role
 		}
 	}
 	return nil

@@ -144,6 +144,29 @@ private_key_path = "archive.pem"
 `,
 		},
 		{
+			name: "same installation cannot have both roles",
+			toml: `
+[[github_apps]]
+app_id = 1
+owner = "sync-owner"
+role = "sync"
+private_key_path = "sync.pem"
+installation_id = 10
+installation_account = "acme"
+repository_selection = "all"
+
+[[github_apps]]
+app_id = 1
+owner = "archive-owner"
+role = "archive"
+private_key_path = "archive.pem"
+installation_id = 10
+installation_account = "ACME"
+repository_selection = "all"
+`,
+			wantErr: `cannot be configured for both "sync" and "archive" roles`,
+		},
+		{
 			name: "invalid role",
 			toml: `
 [[github_apps]]

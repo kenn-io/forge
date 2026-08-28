@@ -616,12 +616,12 @@ func (env *appEnv) refreshAppMetadata(
 	return app, nil
 }
 
-// verifySelectedInstallationCoverage checks an "Only select
-// repositories" installation against the configured repos it is
-// supposed to serve, by listing what an installation token can
-// actually reach. Glob repo patterns cannot be verified repo-by-repo
-// and are rejected outright: they expand to an open-ended set only an
-// "All repositories" install can satisfy.
+// verifySelectedInstallationCoverage lists what an "Only select
+// repositories" installation token can reach. Sync Apps must cover every
+// configured repository for their account; archive Apps record their
+// reachable set and use normal routes for repositories outside it. Glob repo
+// patterns are therefore rejected only for sync Apps because they expand to
+// an open-ended set.
 func (env *appEnv) verifySelectedInstallationCoverage(
 	ctx context.Context,
 	cfg *config.Config,
@@ -642,7 +642,7 @@ func (env *appEnv) verifySelectedInstallationCoverage(
 		return nil, fmt.Errorf("verifying selected-repository installation: %w", err)
 	}
 	missing := missingSelectedRepos(cfg, app.Host, picked.Account.Login, names)
-	if len(missing) > 0 {
+	if app.Role != config.GitHubAppRoleArchive && len(missing) > 0 {
 		return nil, fmt.Errorf(
 			"the app was installed on %q with \"Only select repositories\", but the "+
 				"installation cannot reach %s; not recording it in config. Edit the "+

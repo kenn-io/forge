@@ -59,6 +59,10 @@ it("allows one reload in each distinct conflict cycle", async () => {
   const view = render(WorkflowDispatchDialog, { ...base, state: { kind: "conflict" } as const });
   await fireEvent.click(screen.getByRole("button", { name: "Reload workflows" }));
   expect(onreload).toHaveBeenCalledTimes(1);
+  await view.rerender({ ...base, state: { kind: "conflict" } });
+  expect((screen.getByRole("button", { name: "Reload workflows" }) as HTMLButtonElement).disabled).toBe(true);
+  await fireEvent.click(screen.getByRole("button", { name: "Reload workflows" }));
+  expect(onreload).toHaveBeenCalledTimes(1);
   await view.rerender({ ...base, state: { kind: "idle" } });
   await view.rerender({ ...base, state: { kind: "conflict" } });
   await Promise.all([

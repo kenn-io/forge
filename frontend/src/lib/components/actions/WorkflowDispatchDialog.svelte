@@ -40,18 +40,19 @@
     onreload();
   }
 
-  function reloadCycle(kind: WorkflowDispatchPresentationState["kind"]): Attachment {
+  const resetReloadOnUnmount: Attachment = () => () => {
+    reloadRequested = false;
+  };
+
+  function observeReloadKind(kind: WorkflowDispatchPresentationState["kind"]): Attachment {
     return () => {
       if (kind !== "conflict") reloadRequested = false;
-      return () => {
-        reloadRequested = false;
-      };
     };
   }
 </script>
 
 <Modal {open} title="Run workflow" width={520} frameId="workflow-dispatch" onClose={() => { void close(); }}>
-  <div class="dispatch-dialog-body" {@attach reloadCycle(presentation.kind)}>
+  <div class="dispatch-dialog-body" {@attach resetReloadOnUnmount} {@attach observeReloadKind(presentation.kind)}>
     <WorkflowDispatchForm {workflow} {environments} {initialRef} {operation} state={presentation} {onsubmit} />
   </div>
   {#snippet footer()}

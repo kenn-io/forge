@@ -53,6 +53,7 @@
     isNewWorkspaceDialogOpen,
   } from "./lib/stores/new-workspace.svelte.js";
   import RepoSummaryPage from "./lib/components/repositories/RepoSummaryPage.svelte";
+  import ActionsPage from "./lib/components/actions/ActionsPage.svelte";
   import SettingsPage from "./lib/components/settings/SettingsPage.svelte";
   import WorkspaceHost from "./lib/components/terminal/WorkspaceHost.svelte";
   import SessionTerminalPool from "./lib/components/terminal/SessionTerminalPool.svelte";
@@ -98,6 +99,7 @@
     getRoute,
     getPage,
     navigate,
+    getLastActivityRoute,
     replaceUrl,
     getBasePath,
     isMobilePage,
@@ -163,6 +165,7 @@
   type DocsFeatureComponent = typeof import("./lib/features/docs/DocsFeature.svelte").default;
 
   let stores = $state.raw<StoreInstances | undefined>();
+  let workflowActionsEnabled = false;
   const appRuntime = untrack(() => runtime);
   const appActions: ActionRegistry = {
     pull: getPullRequestActions().map((action) => ({
@@ -214,6 +217,7 @@
     },
     getPage,
   });
+  untrack(() => appComposition.stores.workflowActions.setEnabled(false));
   stores = appComposition.stores;
   const roborevPollingExecution = appComposition.stores.roborevDaemon === undefined
     ? undefined
@@ -523,6 +527,21 @@
       startFullAppShell(stores);
     }
   });
+
+  function syncWorkflowActionsAvailability(): void {
+    const appStores = stores;
+    if (!appStores?.settings.isSettingsLoaded()) return;
+    const enabled = !isEmbedded() && appStores.settings.isModeVisible("actions");
+    if (enabled !== workflowActionsEnabled) {
+      workflowActionsEnabled = enabled;
+      untrack(() => appStores.workflowActions.setEnabled(enabled));
+    }
+    if (!enabled && getPage() === "actions") {
+      untrack(() => replaceUrl(getLastActivityRoute()));
+    }
+  }
+
+  $effect(syncWorkflowActionsAvailability);
 
   $effect(() => {
     const route = getRoute();
@@ -1288,6 +1307,11 @@
         />
       {:else if getPage() === "repos"}
         <RepoSummaryPage />
+      {:else if getPage() === "actions"
+        && stores.settings.isSettingsLoaded()
+        && !isEmbedded()
+        && stores.settings.isModeVisible("actions")}
+        <ActionsPage />
       {:else if getPage() === "repo-browser"}
         {@const route = getRoute()}
         {#if route.page === "repo-browser"}

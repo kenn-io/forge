@@ -253,6 +253,11 @@ Persisted controls must state their scope clearly.
 - A foreground Activity load replaces a same-scope author read owned by supersedable
   reconciliation; joining that read can let its interruption strand stale candidates
   (`frontend/src/lib/stores/activity.svelte.ts::loadActivity`).
+- Actions is standalone-only and stays inert until settings hydrate; disabling it releases
+  workflow demand before replacing `/actions` with Activity (`frontend/src/App.svelte::syncWorkflowActionsAvailability`).
+- Actions derives provider identity from globally filtered repository summaries and requires
+  workflow catalog, run, and dispatch capabilities; unsupported repos stay visible without reads
+  (`frontend/src/lib/components/actions/ActionsPage.svelte::supportsWorkflowActions`).
 - Server-backed settings belong in the API only when the preference should
   follow the user/config rather than one browser session.
 - Detail timelines apply the server-backed entry limit after filtering and grouping,

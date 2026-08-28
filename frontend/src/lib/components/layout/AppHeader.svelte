@@ -104,6 +104,7 @@
     | "activity"
     | "repos"
     | "docs"
+    | "actions"
     | "pulls"
     | "issues"
     | "reviews"
@@ -114,6 +115,7 @@
     { value: "activity", label: "Activity", mode: "activity" },
     { value: "repos", label: "Repos", mode: "repos" },
     { value: "docs", label: "Docs", mode: "docs" },
+    { value: "actions", label: "Actions", mode: "actions" },
     { value: "pulls", label: "PRs", mode: "pulls" },
     { value: "issues", label: "Issues", mode: "issues" },
     { value: "reviews", label: "Reviews", mode: "reviews" },
@@ -222,6 +224,7 @@
   const isProviderRepoSelectorPage = $derived(
     getPage() === "activity" ||
       getPage() === "repos" ||
+      getPage() === "actions" ||
       getPage() === "pulls" ||
       getPage() === "issues" ||
       getPage() === "workspaces" ||
@@ -261,7 +264,8 @@
 
   const tabs: TopBarTab[] = $derived.by(() => {
     const entries: TopBarTab[] = modeNavOptions
-      .filter((option) => settings.isModeVisible(option.mode))
+      .filter((option) => settings.isModeVisible(option.mode)
+        && (option.value !== "actions" || !isEmbedded()))
       .map(({ value, label }) => {
         const tab: TopBarTab = { id: value, label };
         if (value === "reviews" && reviewsDaemonUnavailable) {
@@ -329,6 +333,7 @@
       if (getPage() !== "activity") navigate(getLastActivityRoute());
     }
     else if (destination === "repos") navigate("/repos");
+    else if (destination === "actions") navigate("/actions");
     else if (destination === "docs") {
       if (currentMode === destination) {
         lastStickyModeRoutes.set(destination, stickyModeDefaults[destination]);
@@ -353,6 +358,7 @@
     if (value === "activity") navigateTab("activity");
     else if (value === "repos") navigateTab("repos");
     else if (value === "docs") navigateTab("docs");
+    else if (value === "actions") navigateTab("actions");
     else if (value === "pulls") navigateTab("pulls");
     else if (value === "issues") navigateTab("issues");
     else if (value === "reviews") navigateTab("reviews");

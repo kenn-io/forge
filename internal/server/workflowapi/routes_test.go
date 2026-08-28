@@ -218,6 +218,7 @@ func TestWorkflowRoutesLoadEnvironmentsOnlyForDefinitionsThatNeedThem(t *testing
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			assert := assert.New(t)
 			provider := &workflowTestProvider{
 				caps:         platform.Capabilities{ReadWorkflows: true, WorkflowDispatch: true},
 				catalog:      []platform.WorkflowDefinition{test.definition},
@@ -227,18 +228,19 @@ func TestWorkflowRoutesLoadEnvironmentsOnlyForDefinitionsThatNeedThem(t *testing
 			mux, _ := workflowFixture(t, provider, httpapi.OperationAvailability{Available: true})
 			status, _ := workflowRequest(t, mux, test.method, test.path, test.body)
 			if test.method == http.MethodPost {
-				assert.Equal(t, http.StatusAccepted, status)
-				assert.Len(t, provider.dispatches, 1)
+				assert.Equal(http.StatusAccepted, status)
+				assert.Len(provider.dispatches, 1)
 			} else {
-				assert.Equal(t, http.StatusOK, status)
+				assert.Equal(http.StatusOK, status)
 			}
-			assert.Equal(t, 1, provider.catalogCalls)
-			assert.Equal(t, test.wantEnvironments, provider.environmentCalls)
+			assert.Equal(1, provider.catalogCalls)
+			assert.Equal(test.wantEnvironments, provider.environmentCalls)
 		})
 	}
 }
 
 func TestWorkflowCatalogIgnoresUnavailableEnvironmentInputs(t *testing.T) {
+	assert := assert.New(t)
 	unavailable := workflowDefinitionFixture()
 	unavailable.ID = "broken.yml"
 	unavailable.Name = "Broken"
@@ -254,9 +256,9 @@ func TestWorkflowCatalogIgnoresUnavailableEnvironmentInputs(t *testing.T) {
 	mux, _ := workflowFixture(t, provider, httpapi.OperationAvailability{})
 	status, body := workflowRequest(t, mux, http.MethodGet, "/actions/github/acme/widget/workflows", nil)
 	require.Equal(t, http.StatusOK, status)
-	assert.Len(t, body["workflows"], 2)
-	assert.Equal(t, 1, provider.catalogCalls)
-	assert.Zero(t, provider.environmentCalls)
+	assert.Len(body["workflows"], 2)
+	assert.Equal(1, provider.catalogCalls)
+	assert.Zero(provider.environmentCalls)
 }
 
 func TestWorkflowRunRoutesRequireWorkflowIDInSchema(t *testing.T) {

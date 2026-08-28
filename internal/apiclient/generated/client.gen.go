@@ -3173,6 +3173,7 @@ type MergeRequestSummary struct {
 
 // ModeVisibility defines model for ModeVisibility.
 type ModeVisibility struct {
+	Actions    bool `json:"actions"`
 	Activity   bool `json:"activity"`
 	Docs       bool `json:"docs"`
 	Issues     bool `json:"issues"`

@@ -6799,6 +6799,7 @@ export interface components {
             url?: string;
         };
         ModeVisibility: {
+            actions: boolean;
             activity: boolean;
             docs: boolean;
             issues: boolean;

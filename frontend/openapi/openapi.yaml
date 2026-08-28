@@ -4457,6 +4457,8 @@ components:
     ModeVisibility:
       additionalProperties: false
       properties:
+        actions:
+          type: boolean
         activity:
           type: boolean
         docs:
@@ -4475,6 +4477,7 @@ components:
         - activity
         - repos
         - docs
+        - actions
         - pulls
         - issues
         - reviews

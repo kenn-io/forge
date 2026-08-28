@@ -83,6 +83,7 @@ export const DEFAULT_MODE_VISIBILITY: ModeVisibility = {
   activity: true,
   repos: true,
   docs: false,
+  actions: false,
   pulls: true,
   issues: true,
   reviews: true,

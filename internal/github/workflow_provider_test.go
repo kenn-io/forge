@@ -22,30 +22,37 @@ type workflowProviderFake struct {
 	jobs []*gh.WorkflowJob
 	dispatch *gh.WorkflowDispatchRunDetails
 	definitionRefs []string
+	calls []string
 }
 
 func (f *workflowProviderFake) GetRepository(context.Context, string, string) (*gh.Repository, error) {
 	return &gh.Repository{Name: gh.Ptr("widgets"), DefaultBranch: gh.Ptr("trunk")}, nil
 }
 func (f *workflowProviderFake) ListRepositoryWorkflows(context.Context, string, string) ([]*gh.Workflow, error) {
+	f.calls = append(f.calls, "workflows")
 	return f.workflows, nil
 }
 func (f *workflowProviderFake) GetWorkflowDefinition(_ context.Context, _, _, path, ref string) (string, string, error) {
+	f.calls = append(f.calls, "definition:"+path+"@"+ref)
 	f.definitionRefs = append(f.definitionRefs, ref)
 	content, ok := f.definitions[path]
 	if !ok { return "", "", errors.New("definition unavailable") }
 	return content, "sha-" + path, nil
 }
 func (f *workflowProviderFake) ListRepositoryEnvironments(context.Context, string, string) ([]*gh.Environment, error) {
+	f.calls = append(f.calls, "environments")
 	return f.environments, nil
 }
 func (f *workflowProviderFake) ListManualWorkflowRuns(context.Context, string, string, int64, platform.WorkflowRunQuery) (platform.Page[*gh.WorkflowRun], error) {
+	f.calls = append(f.calls, "runs")
 	return f.runs, nil
 }
 func (f *workflowProviderFake) ListManualWorkflowJobs(context.Context, string, string, int64) ([]*gh.WorkflowJob, error) {
+	f.calls = append(f.calls, "jobs")
 	return f.jobs, nil
 }
 func (f *workflowProviderFake) DispatchManualWorkflow(context.Context, string, string, int64, gh.CreateWorkflowDispatchEventRequest) (*gh.WorkflowDispatchRunDetails, error) {
+	f.calls = append(f.calls, "dispatch")
 	return f.dispatch, nil
 }
 
@@ -136,4 +143,36 @@ func TestGitHubWorkflowProviderUnsupportedClientsAreTyped(t *testing.T) {
 	require.ErrorIs(t, err, platform.ErrUnsupportedCapability)
 	_, err = provider.DispatchWorkflow(t.Context(), platform.RepoRef{}, platform.WorkflowDispatchRequest{})
 	require.ErrorIs(t, err, platform.ErrUnsupportedCapability)
+}
+
+func TestRoutedClientRoutesWorkflowOperationsByRepository(t *testing.T) {
+	fallback := &workflowProviderFake{}
+	exact := &workflowProviderFake{
+		definitions: map[string]string{"release.yml": "on: workflow_dispatch"},
+		dispatch: &gh.WorkflowDispatchRunDetails{WorkflowRunID: gh.Ptr(int64(8))},
+	}
+	router, err := NewHostRouter(
+		"github.com",
+		&Route{Key: RouteKey{Host: "github.com"}, Client: fallback},
+		&Route{Key: RouteKey{Host: "github.com", Owner: "acme", Name: "widgets"}, Client: exact},
+	)
+	require.NoError(t, err)
+	routed, err := NewRoutedClient(router)
+	require.NoError(t, err)
+	_, err = routed.ListRepositoryWorkflows(t.Context(), "acme", "widgets")
+	require.NoError(t, err)
+	_, _, err = routed.GetWorkflowDefinition(t.Context(), "acme", "widgets", "release.yml", "main")
+	require.NoError(t, err)
+	_, err = routed.ListRepositoryEnvironments(t.Context(), "acme", "widgets")
+	require.NoError(t, err)
+	_, err = routed.ListManualWorkflowRuns(t.Context(), "acme", "widgets", 42, platform.WorkflowRunQuery{})
+	require.NoError(t, err)
+	_, err = routed.ListManualWorkflowJobs(t.Context(), "acme", "widgets", 99)
+	require.NoError(t, err)
+	_, err = routed.DispatchManualWorkflow(t.Context(), "acme", "widgets", 42, gh.CreateWorkflowDispatchEventRequest{Ref: "main"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{
+		"workflows", "definition:release.yml@main", "environments", "runs", "jobs", "dispatch",
+	}, exact.calls)
+	assert.Empty(t, fallback.calls)
 }

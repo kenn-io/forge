@@ -44,7 +44,9 @@ async function openReleaseFromPull(page: Page, number: number) {
   return dialog;
 }
 
-test("runs typed Actions workflows and applies pull request ref defaults until the mode is disabled", async ({ page }) => {
+test("runs typed Actions workflows and applies pull request ref defaults until the mode is disabled", async ({
+  page,
+}) => {
   test.setTimeout(60_000);
   const workflowReads: string[] = [];
   page.on("request", (request) => {
@@ -82,7 +84,7 @@ test("runs typed Actions workflows and applies pull request ref defaults until t
   await page.getByRole("button", { name: "Run workflow", exact: true }).click();
   const dispatchResponse = await dispatchResponsePromise;
   expect(dispatchResponse.status(), `workflow dispatch failed: ${await dispatchResponse.text()}`).toBe(202);
-  const dispatchBody = await dispatchResponse.json() as { run?: { id?: string } };
+  const dispatchBody = (await dispatchResponse.json()) as { run?: { id?: string } };
   expect(dispatchBody.run?.id).toBe("82003");
 
   const dispatchedRun = page.getByRole("button", { name: "Run 43 Release" });

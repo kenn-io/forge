@@ -132,7 +132,7 @@
     if (!dispatch) return { kind: "idle" };
     if (dispatch.kind === "pending") return { kind: "pending" };
     if (dispatch.kind === "locating") return { kind: "locating" };
-    if (dispatch.kind === "succeeded") return { kind: "succeeded", run: dispatch.run };
+    if (dispatch.kind === "succeeded") return dispatch.run === undefined ? { kind: "succeeded" } : { kind: "succeeded", run: dispatch.run };
     if (
       dispatch.kind === "failed"
       && dispatch.error._tag === "ApiProblemError"

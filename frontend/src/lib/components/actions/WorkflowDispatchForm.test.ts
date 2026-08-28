@@ -34,17 +34,36 @@ describe("WorkflowDispatchForm", () => {
         { name: "region", type: "choice", required: false, has_default: true, default: "eu", options: ["eu", "us"] },
         { name: "target", type: "environment", required: false, has_default: true, default: "staging" },
       ]),
-      environments, initialRef: "main", operation: available, state: { kind: "idle" }, onsubmit,
+      environments,
+      initialRef: "main",
+      operation: available,
+      state: { kind: "idle" },
+      onsubmit,
     });
 
-    expect([...container.querySelectorAll(".field")].map((field) => (field.matches("label") ? field : field.querySelector("label"))?.textContent?.trim())).toEqual(["Git ref *", "message", "retries", "dry_run", "region", "target"]);
+    expect(
+      [...container.querySelectorAll(".field")].map((field) =>
+        (field.matches("label") ? field : field.querySelector("label"))?.textContent?.trim(),
+      ),
+    ).toEqual(["Git ref *", "message", "retries", "dry_run", "region", "target"]);
     expect((screen.getByRole("textbox", { name: "message" }) as HTMLInputElement).value).toBe("hello");
     expect((screen.getByRole("spinbutton", { name: "retries" }) as HTMLInputElement).valueAsNumber).toBe(3);
     expect((screen.getByRole("checkbox", { name: "dry_run" }) as HTMLInputElement).checked).toBe(true);
-    expect([...screen.getByRole("combobox", { name: "region" }).querySelectorAll("option")].map((option) => option.textContent)).toEqual(["eu", "us"]);
-    expect([...screen.getByRole("combobox", { name: "target" }).querySelectorAll("option")].map((option) => option.textContent)).toEqual(["Select an environment", "staging", "production"]);
+    expect(
+      [...screen.getByRole("combobox", { name: "region" }).querySelectorAll("option")].map(
+        (option) => option.textContent,
+      ),
+    ).toEqual(["eu", "us"]);
+    expect(
+      [...screen.getByRole("combobox", { name: "target" }).querySelectorAll("option")].map(
+        (option) => option.textContent,
+      ),
+    ).toEqual(["Select an environment", "staging", "production"]);
     await fireEvent.click(screen.getByRole("button", { name: "Run workflow" }));
-    expect(onsubmit).toHaveBeenCalledWith({ ref: "main", inputs: { message: "hello", retries: 3, dry_run: true, region: "eu", target: "staging" } });
+    expect(onsubmit).toHaveBeenCalledWith({
+      ref: "main",
+      inputs: { message: "hello", retries: 3, dry_run: true, region: "eu", target: "staging" },
+    });
   });
 
   it("validates required inputs and editable ref, then submits one normalized request", async () => {
@@ -83,7 +102,11 @@ describe("WorkflowDispatchForm", () => {
   it("rejects whitespace-only required strings and wires stable inline errors", async () => {
     render(WorkflowDispatchForm, {
       workflow: workflow([{ name: "release name", type: "string", required: true, has_default: false }]),
-      environments, initialRef: "main", operation: available, state: { kind: "idle" }, onsubmit: vi.fn(),
+      environments,
+      initialRef: "main",
+      operation: available,
+      state: { kind: "idle" },
+      onsubmit: vi.fn(),
     });
     const input = screen.getByRole("textbox", { name: "release name" });
     await fireEvent.input(input, { target: { value: "   " } });
@@ -95,8 +118,17 @@ describe("WorkflowDispatchForm", () => {
 
   it("preserves edits across presentation updates, resets on definition identity, and latches rapid admission", async () => {
     const onsubmit = vi.fn();
-    const definition = workflow([{ name: "version", type: "string", required: false, has_default: true, default: "v1" }]);
-    const props = { workflow: definition, environments, initialRef: "main", operation: available, state: { kind: "idle" } as const, onsubmit };
+    const definition = workflow([
+      { name: "version", type: "string", required: false, has_default: true, default: "v1" },
+    ]);
+    const props = {
+      workflow: definition,
+      environments,
+      initialRef: "main",
+      operation: available,
+      state: { kind: "idle" } as const,
+      onsubmit,
+    };
     const view = render(WorkflowDispatchForm, props);
     await fireEvent.input(screen.getByRole("textbox", { name: "Git ref" }), { target: { value: "feature" } });
     await fireEvent.input(screen.getByRole("textbox", { name: "version" }), { target: { value: "v2" } });
@@ -109,7 +141,11 @@ describe("WorkflowDispatchForm", () => {
     expect((screen.getByRole("textbox", { name: "Git ref" }) as HTMLInputElement).value).toBe("feature");
     expect((screen.getByRole("textbox", { name: "version" }) as HTMLInputElement).value).toBe("v2");
 
-    await view.rerender({ ...props, workflow: { ...definition, definition_sha: "definition-2" }, initialRef: "release" });
+    await view.rerender({
+      ...props,
+      workflow: { ...definition, definition_sha: "definition-2" },
+      initialRef: "release",
+    });
     expect((screen.getByRole("textbox", { name: "Git ref" }) as HTMLInputElement).value).toBe("release");
     expect((screen.getByRole("textbox", { name: "version" }) as HTMLInputElement).value).toBe("v1");
   });
@@ -120,16 +156,34 @@ describe("WorkflowDispatchForm", () => {
   ])("derives new inputs when only workflow %s changes at the same ref", async (replacement) => {
     const original = workflow([{ name: "version", type: "string", required: false, has_default: true, default: "v1" }]);
     const view = render(WorkflowDispatchForm, {
-      workflow: original, environments, initialRef: "main", operation: available, state: { kind: "idle" }, onsubmit: vi.fn(),
+      workflow: original,
+      environments,
+      initialRef: "main",
+      operation: available,
+      state: { kind: "idle" },
+      onsubmit: vi.fn(),
     });
     await fireEvent.input(screen.getByRole("textbox", { name: "version" }), { target: { value: "edited" } });
     await view.rerender({
       workflow: {
         ...original,
         ...replacement,
-        inputs: [{ name: "channel", type: "choice", required: false, has_default: true, default: "beta", options: ["beta", "stable"] }],
+        inputs: [
+          {
+            name: "channel",
+            type: "choice",
+            required: false,
+            has_default: true,
+            default: "beta",
+            options: ["beta", "stable"],
+          },
+        ],
       },
-      environments, initialRef: "main", operation: available, state: { kind: "idle" }, onsubmit: vi.fn(),
+      environments,
+      initialRef: "main",
+      operation: available,
+      state: { kind: "idle" },
+      onsubmit: vi.fn(),
     });
     expect(screen.queryByRole("textbox", { name: "version" })).toBeNull();
     expect((screen.getByRole("combobox", { name: "channel" }) as HTMLSelectElement).value).toBe("beta");
@@ -158,7 +212,11 @@ describe("WorkflowDispatchForm", () => {
         { name: "release-name", type: "string", required: true, has_default: false },
         { name: "release_name", type: "string", required: true, has_default: false },
       ]),
-      environments, initialRef: "main", operation: available, state: { kind: "idle" }, onsubmit: vi.fn(),
+      environments,
+      initialRef: "main",
+      operation: available,
+      state: { kind: "idle" },
+      onsubmit: vi.fn(),
     });
     await fireEvent.click(screen.getByRole("button", { name: "Run workflow" }));
     const first = screen.getByRole("textbox", { name: "release-name" });
@@ -171,17 +229,30 @@ describe("WorkflowDispatchForm", () => {
   });
 
   it("uses fallback messages for explicit unavailable booleans", async () => {
-    const props = { workflow: workflow(), environments, initialRef: "main", state: { kind: "idle" } as const, onsubmit: vi.fn() };
+    const props = {
+      workflow: workflow(),
+      environments,
+      initialRef: "main",
+      state: { kind: "idle" } as const,
+      onsubmit: vi.fn(),
+    };
     const view = render(WorkflowDispatchForm, { ...props, operation: { available: false, unavailable_reason: "" } });
     expect(screen.getByRole("alert").textContent).toBe("Workflow dispatch is unavailable.");
-    await view.rerender({ ...props, workflow: { ...workflow(), available: false, unavailable_reason: "" }, operation: available });
+    await view.rerender({
+      ...props,
+      workflow: { ...workflow(), available: false, unavailable_reason: "" },
+      operation: available,
+    });
     expect(screen.getByRole("alert").textContent).toBe("This workflow is unavailable.");
   });
 
   it("surfaces unavailable, pending, uncertain, and conflict states without duplicate dispatch", async () => {
     const onsubmit = vi.fn();
     const props = {
-      workflow: workflow(), environments, initialRef: "main", onsubmit,
+      workflow: workflow(),
+      environments,
+      initialRef: "main",
+      onsubmit,
       operation: { available: false, unavailable_reason: "No write credential" } as OperationAvailability,
       state: { kind: "idle" } as const,
     };
@@ -195,18 +266,35 @@ describe("WorkflowDispatchForm", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Running workflow…" }));
     expect(onsubmit).not.toHaveBeenCalled();
 
-    await view.rerender({ ...props, operation: available, state: { kind: "uncertain", message: "The provider may have accepted this run. Verify on the provider before trying again.", candidates: [] } });
+    await view.rerender({
+      ...props,
+      operation: available,
+      state: {
+        kind: "uncertain",
+        message: "The provider may have accepted this run. Verify on the provider before trying again.",
+        candidates: [],
+      },
+    });
     expect(screen.getByRole("alert").textContent).toContain("may have accepted");
     expect(screen.queryByRole("button", { name: "Run workflow" })).toBeNull();
 
     await view.rerender({ ...props, operation: available, state: { kind: "conflict" } });
-    expect(screen.getByRole("alert").textContent).toContain("Workflow definition changed. Reload workflows before running it.");
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Workflow definition changed. Reload workflows before running it.",
+    );
     expect(screen.queryByRole("textbox", { name: "Git ref" })).toBeNull();
   });
 
   it("requires explicit confirmation and submits an empty input map", async () => {
     const onsubmit = vi.fn();
-    render(WorkflowDispatchForm, { workflow: workflow(), environments, initialRef: "release", operation: available, state: { kind: "idle" }, onsubmit });
+    render(WorkflowDispatchForm, {
+      workflow: workflow(),
+      environments,
+      initialRef: "release",
+      operation: available,
+      state: { kind: "idle" },
+      onsubmit,
+    });
     expect(screen.getByRole("heading", { name: "Deploy" })).toBeTruthy();
     expect((screen.getByRole("textbox", { name: "Git ref" }) as HTMLInputElement).value).toBe("release");
     expect(onsubmit).not.toHaveBeenCalled();

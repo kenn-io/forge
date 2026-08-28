@@ -127,11 +127,7 @@ export function providerItemPath(kind: "pulls" | "issues", ref: ProviderRouteRef
   return `/${kind}/{provider}/{owner}/{name}/{number}${suffix}`;
 }
 
-type ActionsSuffix =
-  | "/workflows"
-  | "/runs"
-  | "/runs/{run_id}/jobs"
-  | "/workflows/{workflow_id}/dispatch";
+type ActionsSuffix = "/workflows" | "/runs" | "/runs/{run_id}/jobs" | "/workflows/{workflow_id}/dispatch";
 
 type ActionsPath<S extends ActionsSuffix> =
   | `/actions/{provider}/{owner}/{name}${S}`

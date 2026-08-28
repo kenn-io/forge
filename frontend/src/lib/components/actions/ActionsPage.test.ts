@@ -110,16 +110,18 @@ function workflowFixtures(): MockRouteOverride {
       return jsonResponse({
         repo: { ...repoSummary(name).repo, default_branch: "trunk" },
         environments: [{ name: "production" }],
-        workflows: [{
-          id: `${name}-deploy.yml`,
-          name: `${name} deploy`,
-          path: `.github/workflows/${name}-deploy.yml`,
-          state: "active",
-          available: true,
-          definition_sha: `${name}-definition`,
-          inputs: [],
-          web_url: `https://github.com/acme/${name}/actions/workflows/${name}-deploy.yml`,
-        }],
+        workflows: [
+          {
+            id: `${name}-deploy.yml`,
+            name: `${name} deploy`,
+            path: `.github/workflows/${name}-deploy.yml`,
+            state: "active",
+            available: true,
+            definition_sha: `${name}-definition`,
+            inputs: [],
+            web_url: `https://github.com/acme/${name}/actions/workflows/${name}-deploy.yml`,
+          },
+        ],
       });
     }
     const runs = request.url.pathname.match(/^\/api\/v1\/actions\/github\/acme\/([^/]+)\/runs$/);
@@ -129,19 +131,21 @@ function workflowFixtures(): MockRouteOverride {
         return jsonResponse({
           repo: { ...repoSummary(name).repo, default_branch: "trunk" },
           exhausted: true,
-          items: [{
-            actor: "octocat",
-            conclusion: "success",
-            created_at: "2026-08-26T12:30:00Z",
-            event: "workflow_dispatch",
-            head_sha: "olderabcdef",
-            id: `${name}-run-older`,
-            name: `${name} deploy`,
-            ref: "release/v1",
-            run_number: 5,
-            status: "completed",
-            workflow_id: `${name}-deploy.yml`,
-          }],
+          items: [
+            {
+              actor: "octocat",
+              conclusion: "success",
+              created_at: "2026-08-26T12:30:00Z",
+              event: "workflow_dispatch",
+              head_sha: "olderabcdef",
+              id: `${name}-run-older`,
+              name: `${name} deploy`,
+              ref: "release/v1",
+              run_number: 5,
+              status: "completed",
+              workflow_id: `${name}-deploy.yml`,
+            },
+          ],
         });
       }
       return jsonResponse({
@@ -183,13 +187,15 @@ function workflowFixtures(): MockRouteOverride {
       const runId = jobs[2]!;
       return jsonResponse({
         repo: repoSummary(jobs[1]!).repo,
-        items: [{
-          id: `${runId}-job`,
-          name: runId.endsWith("run-2") ? "Verify" : "Publish",
-          status: "completed",
-          conclusion: "success",
-          steps: [],
-        }],
+        items: [
+          {
+            id: `${runId}-job`,
+            name: runId.endsWith("run-2") ? "Verify" : "Publish",
+            status: "completed",
+            conclusion: "success",
+            steps: [],
+          },
+        ],
       });
     }
     return null;
@@ -292,22 +298,25 @@ describe("ActionsPage", () => {
     await fireEvent.click(await screen.findByRole("button", { name: "Load more runs" }));
     expect(await screen.findByRole("button", { name: /Run 5 alpha deploy/ })).toBeTruthy();
     expect((screen.getByRole("textbox", { name: "Git ref" }) as HTMLInputElement).value).toBe("trunk");
-    const olderRequest = api.requests.find((request) =>
-      request.url.pathname.endsWith("/actions/github/acme/alpha/runs")
-        && request.url.searchParams.get("cursor") === "older-page"
+    const olderRequest = api.requests.find(
+      (request) =>
+        request.url.pathname.endsWith("/actions/github/acme/alpha/runs") &&
+        request.url.searchParams.get("cursor") === "older-page",
     );
     expect(olderRequest).toBeTruthy();
   });
 
   it("renders an empty runs read failure as an error instead of a successful empty state", async () => {
     const runsFailure: MockRouteOverride = (request) => {
-      if (request.method !== "GET"
-        || request.url.pathname !== "/api/v1/actions/github/acme/alpha/runs") return null;
-      return jsonResponse({
-        code: "internalError",
-        detail: "Recent workflow runs could not be loaded.",
-        status: 500,
-      }, 500);
+      if (request.method !== "GET" || request.url.pathname !== "/api/v1/actions/github/acme/alpha/runs") return null;
+      return jsonResponse(
+        {
+          code: "internalError",
+          detail: "Recent workflow runs could not be loaded.",
+          status: 500,
+        },
+        500,
+      );
     };
     api = createMockApiFetch([runsFailure, workflowFixtures()]);
     globalThis.fetch = api.fetch;
@@ -323,13 +332,19 @@ describe("ActionsPage", () => {
 
   it("keeps retained runs visible while surfacing a lazy jobs read failure as degraded", async () => {
     const jobsFailure: MockRouteOverride = (request) => {
-      if (request.method !== "GET"
-        || request.url.pathname !== "/api/v1/actions/github/acme/alpha/runs/alpha-run-1/jobs") return null;
-      return jsonResponse({
-        code: "internalError",
-        detail: "Workflow jobs could not be loaded.",
-        status: 500,
-      }, 500);
+      if (
+        request.method !== "GET" ||
+        request.url.pathname !== "/api/v1/actions/github/acme/alpha/runs/alpha-run-1/jobs"
+      )
+        return null;
+      return jsonResponse(
+        {
+          code: "internalError",
+          detail: "Workflow jobs could not be loaded.",
+          status: 500,
+        },
+        500,
+      );
     };
     api = createMockApiFetch([jobsFailure, workflowFixtures()]);
     globalThis.fetch = api.fetch;
@@ -350,43 +365,52 @@ describe("ActionsPage", () => {
   it("reloads a changed workflow definition once after conflict without replaying dispatch", async () => {
     let catalogReads = 0;
     const conflictRecovery: MockRouteOverride = (request) => {
-      if (request.method === "GET"
-        && request.url.pathname === "/api/v1/actions/github/acme/alpha/workflows") {
+      if (request.method === "GET" && request.url.pathname === "/api/v1/actions/github/acme/alpha/workflows") {
         catalogReads += 1;
         return jsonResponse({
           repo: { ...repoSummary("alpha").repo, default_branch: "trunk" },
           environments: [],
-          workflows: [{
-            id: "alpha-deploy.yml",
-            name: "alpha deploy",
-            path: ".github/workflows/alpha-deploy.yml",
-            state: "active",
-            available: true,
-            definition_sha: catalogReads === 1 ? "alpha-definition" : "alpha-definition-2",
-            inputs: catalogReads === 1
-              ? []
-              : [{
-                  name: "channel",
-                  type: "choice",
-                  required: true,
-                  has_default: true,
-                  default: "stable",
-                  options: ["stable", "beta"],
-                }],
-            web_url: "https://github.com/acme/alpha/actions/workflows/alpha-deploy.yml",
-          }],
+          workflows: [
+            {
+              id: "alpha-deploy.yml",
+              name: "alpha deploy",
+              path: ".github/workflows/alpha-deploy.yml",
+              state: "active",
+              available: true,
+              definition_sha: catalogReads === 1 ? "alpha-definition" : "alpha-definition-2",
+              inputs:
+                catalogReads === 1
+                  ? []
+                  : [
+                      {
+                        name: "channel",
+                        type: "choice",
+                        required: true,
+                        has_default: true,
+                        default: "stable",
+                        options: ["stable", "beta"],
+                      },
+                    ],
+              web_url: "https://github.com/acme/alpha/actions/workflows/alpha-deploy.yml",
+            },
+          ],
         });
       }
-      if (request.method === "POST"
-        && request.url.pathname.endsWith("/actions/github/acme/alpha/workflows/alpha-deploy.yml/dispatch")) {
-        return jsonResponse({
-          code: "conflict",
-          detail: "Workflow definition changed.",
-          details: { reason: "workflow_definition_changed" },
-          status: 409,
-          title: "Conflict",
-          type: "about:blank",
-        }, 409);
+      if (
+        request.method === "POST" &&
+        request.url.pathname.endsWith("/actions/github/acme/alpha/workflows/alpha-deploy.yml/dispatch")
+      ) {
+        return jsonResponse(
+          {
+            code: "conflict",
+            detail: "Workflow definition changed.",
+            details: { reason: "workflow_definition_changed" },
+            status: 409,
+            title: "Conflict",
+            type: "about:blank",
+          },
+          409,
+        );
       }
       return null;
     };
@@ -411,17 +435,22 @@ describe("ActionsPage", () => {
     ["validationError", 400],
   ] as const)("presents %s rejection as a fresh-cycle recovery without automatic POST", async (code, status) => {
     const rejection: MockRouteOverride = (request) => {
-      if (request.method !== "POST"
-        || !request.url.pathname.endsWith("/actions/github/acme/alpha/workflows/alpha-deploy.yml/dispatch")) {
+      if (
+        request.method !== "POST" ||
+        !request.url.pathname.endsWith("/actions/github/acme/alpha/workflows/alpha-deploy.yml/dispatch")
+      ) {
         return null;
       }
-      return jsonResponse({
-        code,
-        detail: `Rejected with ${code}.`,
+      return jsonResponse(
+        {
+          code,
+          detail: `Rejected with ${code}.`,
+          status,
+          title: "Rejected",
+          type: "about:blank",
+        },
         status,
-        title: "Rejected",
-        type: "about:blank",
-      }, status);
+      );
     };
     api = createMockApiFetch([rejection, workflowFixtures()]);
     globalThis.fetch = api.fetch;
@@ -442,29 +471,34 @@ describe("ActionsPage", () => {
   it("dispatches the same workflow twice only after two deliberate confirmations", async () => {
     let dispatches = 0;
     const accepted: MockRouteOverride = (request) => {
-      if (request.method !== "POST"
-        || !request.url.pathname.endsWith("/actions/github/acme/alpha/workflows/alpha-deploy.yml/dispatch")) {
+      if (
+        request.method !== "POST" ||
+        !request.url.pathname.endsWith("/actions/github/acme/alpha/workflows/alpha-deploy.yml/dispatch")
+      ) {
         return null;
       }
       dispatches += 1;
-      return jsonResponse({
-        accepted: true,
-        locating_run: false,
-        actor: "maintainer",
-        run: {
+      return jsonResponse(
+        {
+          accepted: true,
+          locating_run: false,
           actor: "maintainer",
-          conclusion: "success",
-          event: "workflow_dispatch",
-          head_sha: `head-${dispatches}`,
-          id: `repeat-run-${dispatches}`,
-          name: "alpha deploy",
-          ref: "trunk",
-          run_number: 10 + dispatches,
-          status: "completed",
-          web_url: `https://github.com/acme/alpha/actions/runs/${dispatches}`,
-          workflow_id: "alpha-deploy.yml",
+          run: {
+            actor: "maintainer",
+            conclusion: "success",
+            event: "workflow_dispatch",
+            head_sha: `head-${dispatches}`,
+            id: `repeat-run-${dispatches}`,
+            name: "alpha deploy",
+            ref: "trunk",
+            run_number: 10 + dispatches,
+            status: "completed",
+            web_url: `https://github.com/acme/alpha/actions/runs/${dispatches}`,
+            workflow_id: "alpha-deploy.yml",
+          },
         },
-      }, 202);
+        202,
+      );
     };
     api = createMockApiFetch([accepted, workflowFixtures()]);
     globalThis.fetch = api.fetch;

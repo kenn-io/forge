@@ -3,21 +3,12 @@ import type { Effect as EffectType } from "effect/Effect";
 import type { Exit as ExitType } from "effect/Exit";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-import type {
-  AppExecution,
-  AppRuntime,
-  AppServices,
-  CommandRunOptions,
-  OwnedAppRuntime,
-} from "../app/runtime.js";
+import type { AppExecution, AppRuntime, AppServices, CommandRunOptions, OwnedAppRuntime } from "../app/runtime.js";
 import type { components } from "../api/generated/schema.js";
 import { makeGeneratedApiLayer } from "../api/generated-api.js";
 import type { GeneratedClient } from "../api/generated-api.js";
 import type { ProviderRouteRef } from "../api/provider-routes.js";
-import {
-  WorkflowActionsWorkflow,
-  WorkflowActionsWorkflowLive,
-} from "./workflow-actions-workflow.js";
+import { WorkflowActionsWorkflow, WorkflowActionsWorkflowLive } from "./workflow-actions-workflow.js";
 import { createWorkflowActionsStore } from "./workflow-actions.svelte.js";
 
 type WorkflowRun = components["schemas"]["WorkflowRunResponse"];
@@ -69,7 +60,6 @@ function run(): WorkflowRun {
     workflow_id: "deploy.yml",
   };
 }
-
 
 function makeApiProbe() {
   const get = vi.fn(async (path: string) => {
@@ -180,9 +170,9 @@ describe("workflow Actions projection store", () => {
     expect(probe.post).toHaveBeenCalledTimes(1);
 
     store.refreshCatalog(ref, "deploy.yml");
-    await vi.waitFor(() => expect(
-      probe.get.mock.calls.filter(([path]) => String(path).endsWith("/workflows")),
-    ).toHaveLength(2));
+    await vi.waitFor(() =>
+      expect(probe.get.mock.calls.filter(([path]) => String(path).endsWith("/workflows"))).toHaveLength(2),
+    );
     expect(probe.post).toHaveBeenCalledTimes(1);
   });
 

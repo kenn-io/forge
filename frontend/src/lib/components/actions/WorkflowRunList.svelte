@@ -43,7 +43,7 @@
     {@const safeRunURL = run.web_url && isSafeExternalHTTPURL(run.web_url) ? run.web_url : undefined}
     <section class="run" role="listitem">
       <div class="run-row">
-        <Button class="run-disclosure" surface="ghost" ariaExpanded={expandedRuns[run.id] === true} ariaLabel={`Run ${run.run_number} ${run.name}`} onclick={() => toggleRun(run.id)}>
+        <Button class="run-disclosure" surface="soft" ariaExpanded={expandedRuns[run.id] === true} ariaLabel={`Run ${run.run_number} ${run.name}`} onclick={() => toggleRun(run.id)}>
           <ChevronRightIcon size={14} aria-hidden="true" class={`run-chevron${expandedRuns[run.id] === true ? " expanded" : ""}`} />
           <span class="run-primary" title={`#${run.run_number} ${run.name}`}>
             <span class="number">#{run.run_number}</span><strong>{run.name}</strong>

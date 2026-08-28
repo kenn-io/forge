@@ -7,7 +7,6 @@ import type { GeneratedClient } from "./lib/api/generated-api.js";
 import type { PullDetail } from "./lib/api/types.js";
 import { type OwnedAppRuntime } from "./lib/app/runtime.js";
 import { ACTIONS_KEY, NAVIGATE_KEY, STORES_KEY, UI_CONFIG_KEY } from "./lib/context.js";
-import PullDetailComponent from "./lib/components/detail/PullDetail.svelte";
 import PullDetailTestHarness from "./lib/components/detail/PullDetailTestHarness.svelte";
 import { createDetailActivityViewStore } from "./lib/stores/detail-activity-view.svelte.js";
 import { createSettingsStore } from "./lib/stores/settings.svelte.js";
@@ -27,7 +26,7 @@ const workflow = {
 } as const;
 
 function pullDetail(): PullDetail {
-  const capabilities = {
+  const capabilities: PullDetail["repo"]["capabilities"] = {
     read_repositories: true,
     read_merge_requests: true,
     read_issues: true,
@@ -61,33 +60,42 @@ function pullDetail(): PullDetail {
     thread_reply: false,
     thread_resolve: false,
     supported_review_actions: [],
-  } as const;
-  const operations = {
+  };
+  const unavailable = { available: false } as const;
+  const operations: NonNullable<PullDetail["repo"]["operations"]> = {
+    add_comment: unavailable,
+    add_label: unavailable,
+    apply_review_suggestion: unavailable,
+    approve_workflow: unavailable,
+    close_issue: unavailable,
     close_pr: { available: true },
+    create_issue: unavailable,
+    delete_comment: unavailable,
     dispatch_workflow: { available: true },
+    edit_comment: unavailable,
+    mark_draft: unavailable,
+    mark_ready_for_review: unavailable,
     merge_pr: { available: true },
+    remove_label: unavailable,
+    reopen_issue: unavailable,
+    reopen_pr: unavailable,
+    reply_review_thread: unavailable,
+    resolve_review_thread: unavailable,
+    review_draft: unavailable,
+    set_assignees: unavailable,
+    set_reviewers: unavailable,
     submit_review: { available: true },
-  } as const;
-  const repo = {
-    ID: 1,
-    Owner: "acme",
-    Name: "widgets",
-    Host: "github.com",
-    PlatformHost: "github.com",
-    Platform: "github",
-    URL: "https://github.com/acme/widgets",
-    DefaultBranch: "main",
-    IsArchived: false,
-    AllowSquashMerge: true,
-    AllowMergeCommit: false,
-    AllowRebaseMerge: false,
-    capabilities,
-    operations,
+    update_content: unavailable,
+  };
+  const repo: PullDetail["repo"] = {
     provider: "github",
     platform_host: "github.com",
     owner: "acme",
     name: "widgets",
     repo_path: "acme/widgets",
+    default_branch: "main",
+    capabilities,
+    operations,
   };
   return {
     detail_loaded: true,
@@ -103,8 +111,7 @@ function pullDetail(): PullDetail {
     repo_owner: "acme",
     repo_name: "widgets",
     warnings: [],
-    workflow_approval: { count: 0, required: false, runs: [] },
-    workspace: undefined,
+    workflow_approval: { checked: false, count: 0, required: false },
     worktree_links: [],
     repo,
     merge_request: {
@@ -125,6 +132,8 @@ function pullDetail(): PullDetail {
       BaseBranch: "main",
       HeadRepoCloneURL: "https://github.com/acme/widgets.git",
       Additions: 12,
+      FilesChanged: 3,
+      MergeCommitSHA: "",
       Deletions: 2,
       CommentCount: 0,
       ReviewDecision: "APPROVED",
@@ -157,12 +166,15 @@ function visibleActionsTriggers(): HTMLButtonElement[] {
 }
 
 function visibleButton(name: string): HTMLButtonElement | null {
-  return Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find((button) =>
-    button.textContent?.trim() === name
-      && !button.closest("[aria-hidden='true']")
-      && getComputedStyle(button).display !== "none"
-      && button.offsetParent !== null
-  ) ?? null;
+  return (
+    Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(
+      (button) =>
+        button.textContent?.trim() === name &&
+        !button.closest("[aria-hidden='true']") &&
+        getComputedStyle(button).display !== "none" &&
+        button.offsetParent !== null,
+    ) ?? null
+  );
 }
 
 afterEach(async () => {
@@ -192,17 +204,22 @@ describe("PullDetail provider workflow action geometry", () => {
     settings.setModeVisibility({ ...settings.getModeVisibility(), actions: true });
     settings.setDetailSettings({ initial_timeline_entry_limit: 250 });
     const workflowActions = {
-      claimRepository: vi.fn(() => { catalogClaimed = true; }),
-      releaseRepository: vi.fn(() => { catalogClaimed = false; }),
+      claimRepository: vi.fn(() => {
+        catalogClaimed = true;
+      }),
+      releaseRepository: vi.fn(() => {
+        catalogClaimed = false;
+      }),
       selectWorkflow: vi.fn(),
+      refreshCatalog: vi.fn(),
+      loadMoreRuns: vi.fn(),
+      newDispatchCycle: vi.fn(),
       expandRun: vi.fn(),
       collapseRun: vi.fn(),
       dispatch: vi.fn(),
       setEnabled: vi.fn(),
       getSnapshot: vi.fn(() => null),
-      getCatalog: () => catalogClaimed
-        ? { repo: detail.repo, environments: [], workflows: [workflow] }
-        : null,
+      getCatalog: () => (catalogClaimed ? { repo: detail.repo, environments: [], workflows: [workflow] } : null),
       getEnvironments: () => [],
       getSelectedWorkflow: vi.fn(() => null),
       getRuns: vi.fn(() => []),
@@ -258,14 +275,17 @@ describe("PullDetail provider workflow action geometry", () => {
         },
       },
       context: new Map<symbol, unknown>([
-        [STORES_KEY, {
-          detail: detailStore,
-          pulls: { loadPulls: vi.fn() },
-          activity: { loadActivity: vi.fn() },
-          detailActivityView: createDetailActivityViewStore(),
-          settings,
-          workflowActions,
-        }],
+        [
+          STORES_KEY,
+          {
+            detail: detailStore,
+            pulls: { loadPulls: vi.fn() },
+            activity: { loadActivity: vi.fn() },
+            detailActivityView: createDetailActivityViewStore(),
+            settings,
+            workflowActions,
+          },
+        ],
         [ACTIONS_KEY, { pull: [] }],
         [UI_CONFIG_KEY, { hideStar: true }],
         [NAVIGATE_KEY, vi.fn()],
@@ -279,7 +299,7 @@ describe("PullDetail provider workflow action geometry", () => {
       expect(visibleButton("Close")).not.toBeNull();
     }, WAIT);
 
-    await visibleActionsTriggers()[0]!.click();
+    visibleActionsTriggers()[0]!.click();
     await vi.waitFor(() => {
       const workflowMenu = document.querySelector<HTMLElement>(".workflow-actions-menu");
       expect(workflowMenu).not.toBeNull();
@@ -290,7 +310,7 @@ describe("PullDetail provider workflow action geometry", () => {
       expect(visibleButton("Close")).not.toBeNull();
     }, WAIT);
 
-    await visibleActionsTriggers()[0]!.click();
+    visibleActionsTriggers()[0]!.click();
     wrapper.style.width = "180px";
     await vi.waitFor(() => {
       expect(document.querySelector(".pull-detail-content--actions-menu")).not.toBeNull();
@@ -300,7 +320,7 @@ describe("PullDetail provider workflow action geometry", () => {
       expect(visibleButton("Close")).toBeNull();
     }, WAIT);
 
-    await visibleActionsTriggers()[0]!.click();
+    visibleActionsTriggers()[0]!.click();
     await vi.waitFor(() => {
       const menu = document.querySelector<HTMLElement>(".actions-menu-popover");
       expect(menu).not.toBeNull();

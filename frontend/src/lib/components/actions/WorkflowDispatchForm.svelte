@@ -1,7 +1,7 @@
 <script module lang="ts">
-  import type { components } from "../../api/generated/schema.js";
+  import type { components as GeneratedComponents } from "../../api/generated/schema.js";
 
-  type WorkflowRun = components["schemas"]["WorkflowRunResponse"];
+  type WorkflowRun = GeneratedComponents["schemas"]["WorkflowRunResponse"];
 
   export type WorkflowDispatchPresentationState =
     | { readonly kind: "idle" }
@@ -55,6 +55,7 @@
   }: Props = $props();
   interface Draft {
     readonly ref: string;
+    readonly definitionKey: string;
     readonly values: Readonly<Record<string, unknown>>;
   }
   let drafts = $state<Record<string, Draft>>({});
@@ -62,9 +63,8 @@
   let admissions = $state<Record<string, { blocked: boolean; ownerObserved: boolean }>>({});
   const draftKey = $derived(`${workflow.id}\u0000${workflow.definition_sha}\u0000${initialRef}`);
   const defaultDraft = $derived.by<Draft>(() => {
-    workflow.id;
-    workflow.definition_sha;
     return {
+      definitionKey: draftKey,
       ref: initialRef,
       values: Object.fromEntries(
         (workflow.inputs ?? []).map((input) => [
@@ -136,7 +136,7 @@
   {#if presentation.kind === "conflict"}
     <div class="dispatch-outcome">
       <p class="notice notice--error" role="alert">Workflow definition changed. Reload workflows before running it.</p>
-      {#if onreload}<Button type="button" tone="primary" onclick={onreload}>Reload workflows</Button>{/if}
+      {#if onreload}<Button type="button" tone="workflow" surface="solid" onclick={onreload}>Reload workflows</Button>{/if}
     </div>
   {:else if presentation.kind === "locating"}
     <div class="dispatch-outcome">
@@ -160,13 +160,13 @@
           </a>
         {/if}
       {/if}
-      {#if onnewcycle}<Button type="button" tone="primary" onclick={onnewcycle}>Run again</Button>{/if}
+      {#if onnewcycle}<Button type="button" tone="workflow" surface="solid" onclick={onnewcycle}>Run again</Button>{/if}
     </div>
   {:else if presentation.kind === "failed"}
     <div class="dispatch-outcome">
       <h2>{workflow.name}</h2>
       <p class="notice notice--error" role="alert">{presentation.message}</p>
-      {#if onnewcycle}<Button type="button" tone="primary" onclick={onnewcycle}>Run again</Button>{/if}
+      {#if onnewcycle}<Button type="button" tone="workflow" surface="solid" onclick={onnewcycle}>Run again</Button>{/if}
     </div>
   {:else if presentation.kind === "uncertain"}
     <div class="dispatch-outcome">
@@ -187,7 +187,7 @@
           {/each}
         </ul>
       {/if}
-      {#if onnewcycle}<Button type="button" tone="primary" onclick={onnewcycle}>Dispatch again</Button>{/if}
+      {#if onnewcycle}<Button type="button" tone="workflow" surface="solid" onclick={onnewcycle}>Dispatch again</Button>{/if}
     </div>
   {:else}
     <form class="dispatch-form" novalidate onsubmit={(event) => { event.preventDefault(); submit(); }}>
@@ -214,7 +214,7 @@
             <Checkbox
               checked={draft.values[input.name] === true}
               disabled={controlsDisabled}
-              ariaDescribedby={input.required ? requiredDescriptionId : undefined}
+              {...(input.required ? { ariaDescribedby: requiredDescriptionId } : {})}
               onchange={(checked) => { drafts[draftKey] = { ...draft, values: { ...draft.values, [input.name]: checked } }; }}
             >
               {input.name}{#if input.required} <span aria-hidden="true">*</span>{/if}
@@ -260,7 +260,7 @@
       {/each}
 
       {#if unavailableReason}<p class="notice notice--error" role="alert">{unavailableReason}</p>{/if}
-      <Button type="submit" tone="primary" disabled={controlsDisabled || explicitlyUnavailable || presentation.kind !== "idle"}>{pending || admitted ? "Running workflow…" : "Run workflow"}</Button>
+      <Button type="submit" tone="workflow" surface="solid" disabled={controlsDisabled || explicitlyUnavailable || presentation.kind !== "idle"}>{pending || admitted ? "Running workflow…" : "Run workflow"}</Button>
     </form>
   {/if}
 </div>

@@ -10,7 +10,16 @@ vi.mock("../../app/runtime-context.js", () => ({
 }));
 import WorkflowDispatchDialog from "./WorkflowDispatchDialog.svelte";
 
-const workflow = { available: true, definition_sha: "sha", id: "deploy", inputs: [], name: "Deploy", path: "deploy.yml", state: "active", web_url: "https://github.com/actions/deploy" } as const;
+const workflow = {
+  available: true,
+  definition_sha: "sha",
+  id: "deploy",
+  inputs: [],
+  name: "Deploy",
+  path: "deploy.yml",
+  state: "active",
+  web_url: "https://github.com/actions/deploy",
+} as const;
 const operation = { available: true } as const;
 
 it("restores trigger focus when canceled before admission", async () => {
@@ -18,7 +27,19 @@ it("restores trigger focus when canceled before admission", async () => {
   document.body.append(trigger);
   trigger.focus();
   const onclose = vi.fn();
-  render(WorkflowDispatchDialog, { open: true, workflow, environments: [], initialRef: "main", operation, state: { kind: "idle" }, trigger, onsubmit: vi.fn(), onclose, onreload: vi.fn(), onnewcycle: vi.fn() });
+  render(WorkflowDispatchDialog, {
+    open: true,
+    workflow,
+    environments: [],
+    initialRef: "main",
+    operation,
+    state: { kind: "idle" },
+    trigger,
+    onsubmit: vi.fn(),
+    onclose,
+    onreload: vi.fn(),
+    onnewcycle: vi.fn(),
+  });
   await fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   expect(onclose).toHaveBeenCalledOnce();
   await waitFor(() => expect(document.activeElement).toBe(trigger));
@@ -30,7 +51,19 @@ it.each([
   [{ kind: "conflict" } as const],
 ])("refuses Escape and overlay dismissal while state is %s", async (state) => {
   const onclose = vi.fn();
-  render(WorkflowDispatchDialog, { open: true, workflow, environments: [], initialRef: "main", operation, state, trigger: null, onsubmit: vi.fn(), onclose, onreload: vi.fn(), onnewcycle: vi.fn() });
+  render(WorkflowDispatchDialog, {
+    open: true,
+    workflow,
+    environments: [],
+    initialRef: "main",
+    operation,
+    state,
+    trigger: null,
+    onsubmit: vi.fn(),
+    onclose,
+    onreload: vi.fn(),
+    onnewcycle: vi.fn(),
+  });
   const dialog = screen.getByRole("dialog");
   await fireEvent.keyDown(window, { key: "Escape" });
   await fireEvent.click(dialog.parentElement as HTMLElement);
@@ -41,7 +74,18 @@ it.each([
 it("reloads a conflict exactly once and closes only after acknowledgement", async () => {
   const onclose = vi.fn();
   const onreload = vi.fn();
-  const base = { open: true, workflow, environments: [], initialRef: "main", operation, trigger: null, onsubmit: vi.fn(), onclose, onreload, onnewcycle: vi.fn() };
+  const base = {
+    open: true,
+    workflow,
+    environments: [],
+    initialRef: "main",
+    operation,
+    trigger: null,
+    onsubmit: vi.fn(),
+    onclose,
+    onreload,
+    onnewcycle: vi.fn(),
+  };
   const view = render(WorkflowDispatchDialog, { ...base, state: { kind: "conflict" } as const });
   const reload = screen.getByRole("button", { name: "Reload workflows" });
   await Promise.all([fireEvent.click(reload), fireEvent.click(reload)]);
@@ -55,7 +99,18 @@ it("reloads a conflict exactly once and closes only after acknowledgement", asyn
 
 it("allows one reload in each distinct conflict cycle", async () => {
   const onreload = vi.fn();
-  const base = { open: true, workflow, environments: [], initialRef: "main", operation, trigger: null, onsubmit: vi.fn(), onclose: vi.fn(), onreload, onnewcycle: vi.fn() };
+  const base = {
+    open: true,
+    workflow,
+    environments: [],
+    initialRef: "main",
+    operation,
+    trigger: null,
+    onsubmit: vi.fn(),
+    onclose: vi.fn(),
+    onreload,
+    onnewcycle: vi.fn(),
+  };
   const view = render(WorkflowDispatchDialog, { ...base, state: { kind: "conflict" } as const });
   await fireEvent.click(screen.getByRole("button", { name: "Reload workflows" }));
   expect(onreload).toHaveBeenCalledTimes(1);
@@ -118,19 +173,21 @@ it("renders ambiguous candidates and makes Dispatch again only begin a fresh con
     state: {
       kind: "uncertain",
       message: "The provider could not confirm the dispatch.",
-      candidates: [{
-        actor: "maintainer",
-        conclusion: "",
-        event: "workflow_dispatch",
-        head_sha: "candidate-head",
-        id: "candidate-9",
-        name: "Deploy",
-        ref: "main",
-        run_number: 9,
-        status: "queued",
-        web_url: "https://github.com/acme/app/actions/runs/9",
-        workflow_id: "deploy",
-      }],
+      candidates: [
+        {
+          actor: "maintainer",
+          conclusion: "",
+          event: "workflow_dispatch",
+          head_sha: "candidate-head",
+          id: "candidate-9",
+          name: "Deploy",
+          ref: "main",
+          run_number: 9,
+          status: "queued",
+          web_url: "https://github.com/acme/app/actions/runs/9",
+          workflow_id: "deploy",
+        },
+      ],
     },
     trigger: null,
     onsubmit,

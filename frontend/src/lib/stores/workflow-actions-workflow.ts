@@ -1,14 +1,4 @@
-import {
-  Clock,
-  Context,
-  Deferred,
-  Effect,
-  FiberMap,
-  Layer,
-  Ref,
-  Schedule,
-  Semaphore,
-} from "effect";
+import { Clock, Context, Deferred, Effect, FiberMap, Layer, Ref, Schedule, Semaphore } from "effect";
 
 import type { components } from "../api/generated/schema.js";
 import { GeneratedApi } from "../api/generated-api.js";
@@ -104,10 +94,9 @@ interface WorkflowActionsWorkflowShape {
   readonly setEnabled: (enabled: boolean) => Effect.Effect<void>;
 }
 
-export class WorkflowActionsWorkflow extends Context.Service<
-  WorkflowActionsWorkflow,
-  WorkflowActionsWorkflowShape
->()("kenn-forge/WorkflowActionsWorkflow") {}
+export class WorkflowActionsWorkflow extends Context.Service<WorkflowActionsWorkflow, WorkflowActionsWorkflowShape>()(
+  "kenn-forge/WorkflowActionsWorkflow",
+) {}
 
 interface RepositoryOwner {
   readonly token: symbol;
@@ -177,12 +166,7 @@ function normalizeRef(ref: ProviderRouteRef): ProviderRouteRef {
 
 export function workflowRepositoryKey(ref: ProviderRouteRef): string {
   const normalized = normalizeRef(ref);
-  const identity = [
-    normalized.provider,
-    normalized.platformHost ?? "",
-    normalized.owner,
-    normalized.name,
-  ]
+  const identity = [normalized.provider, normalized.platformHost ?? "", normalized.owner, normalized.name]
     .map(encodeURIComponent)
     .join("\u0000");
   return `${identity}\u0000${normalized.repoPath}`;
@@ -216,8 +200,7 @@ function dispatchNeedsPolling(state: WorkflowDispatchState, now: number): boolea
     case "locating":
       return true;
     case "uncertain":
-      return state.request.startedAt !== undefined
-        && now < state.request.startedAt + reconciliationWindowMs;
+      return state.request.startedAt !== undefined && now < state.request.startedAt + reconciliationWindowMs;
     case "failed":
     case "locating_timed_out":
       return false;
@@ -274,11 +257,9 @@ function reconcileDispatchStates(
       }
       case "locating": {
         const candidates = matchingCandidates(state.request, runs);
-        if (candidates.length === 1) return { kind: "succeeded", request: state.request, run: candidates[0] };
-        if (
-          state.request.startedAt !== undefined
-          && now >= state.request.startedAt + reconciliationWindowMs
-        ) {
+        const candidate = candidates[0];
+        if (candidate !== undefined) return { kind: "succeeded", request: state.request, run: candidate };
+        if (state.request.startedAt !== undefined && now >= state.request.startedAt + reconciliationWindowMs) {
           return { kind: "locating_timed_out", request: state.request };
         }
         return state;
@@ -351,7 +332,10 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
       return created;
     }
 
-    function notify(observers: readonly WorkflowActionsObserver[], snapshot: WorkflowActionsSnapshot): Effect.Effect<void> {
+    function notify(
+      observers: readonly WorkflowActionsObserver[],
+      snapshot: WorkflowActionsSnapshot,
+    ): Effect.Effect<void> {
       return Effect.sync(() => {
         for (const observer of observers) {
           try {
@@ -454,15 +438,10 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
         now,
       );
       let matchingIndex = 0;
-      return states.map((state) =>
-        state.request.workflowId === workflowId ? reconciled[matchingIndex++]! : state
-      );
+      return states.map((state) => (state.request.workflowId === workflowId ? reconciled[matchingIndex++]! : state));
     }
 
-    const loadCatalog = Effect.fn("WorkflowActions.loadCatalog")(function* (
-      entry: RepositoryEntry,
-      force = false,
-    ) {
+    const loadCatalog = Effect.fn("WorkflowActions.loadCatalog")(function* (entry: RepositoryEntry, force = false) {
       if (!force && entry.snapshot.catalog !== null) return true;
       yield* updateSnapshot(entry.key, (snapshot) => ({
         ...snapshot,
@@ -489,17 +468,14 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
       );
     });
 
-    const loadRuns = Effect.fn("WorkflowActions.loadRuns")(function* (
-      entry: RepositoryEntry,
-      workflowId: string,
-    ) {
+    const loadRuns = Effect.fn("WorkflowActions.loadRuns")(function* (entry: RepositoryEntry, workflowId: string) {
       yield* updateSnapshot(entry.key, (snapshot, current) =>
         current.selectedWorkflowId !== workflowId
           ? snapshot
           : {
               ...snapshot,
               loading: { ...snapshot.loading, runs: true },
-            }
+            },
       );
       yield* readRuns(entry, workflowId).pipe(
         Effect.matchEffect({
@@ -510,12 +486,7 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
                   const firstPage = runPageFor(current, workflowId).firstPage;
                   return {
                     ...snapshot,
-                    dispatches: reconcileWorkflowDispatchStates(
-                      snapshot.dispatches,
-                      workflowId,
-                      firstPage,
-                      now,
-                    ),
+                    dispatches: reconcileWorkflowDispatchStates(snapshot.dispatches, workflowId, firstPage, now),
                     ...(current.selectedWorkflowId === workflowId
                       ? {
                           error,
@@ -545,12 +516,7 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
                           loading: { ...snapshot.loading, runs: false },
                         }
                       : {}),
-                    dispatches: reconcileWorkflowDispatchStates(
-                      snapshot.dispatches,
-                      workflowId,
-                      items,
-                      now,
-                    ),
+                    dispatches: reconcileWorkflowDispatchStates(snapshot.dispatches, workflowId, items, now),
                   };
                 }),
               ),
@@ -559,10 +525,7 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
       );
     });
 
-    const runRepositoryLoop = Effect.fn("WorkflowActions.repositoryLoop")(function* (
-      key: string,
-      _generation: number,
-    ) {
+    const runRepositoryLoop = Effect.fn("WorkflowActions.repositoryLoop")(function* (key: string, _generation: number) {
       const entry = repositories.get(key);
       if (entry === undefined) return;
       while (yield* repositoryHasDemand(key)) {
@@ -580,9 +543,10 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
         }
         if (!(yield* repositoryHasDemand(key))) return;
         const active = yield* Clock.currentTimeMillis.pipe(
-          Effect.map((currentTime) =>
-            entry.snapshot.runs.some((candidate) => !isTerminalRun(candidate)) ||
-            entry.snapshot.dispatches.some((state) => dispatchNeedsPolling(state, currentTime)),
+          Effect.map(
+            (currentTime) =>
+              entry.snapshot.runs.some((candidate) => !isTerminalRun(candidate)) ||
+              entry.snapshot.dispatches.some((state) => dispatchNeedsPolling(state, currentTime)),
           ),
         );
         yield* waitForPoll(active);
@@ -693,19 +657,14 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
               return {
                 ...snapshot,
                 error,
-                ...(current.selectedWorkflowId === request.workflowId
-                  ? { runsPage: runsPageState(page) }
-                  : {}),
+                ...(current.selectedWorkflowId === request.workflowId ? { runsPage: runsPageState(page) } : {}),
               };
             }),
           onSuccess: (response) =>
             updateSnapshot(entry.key, (snapshot, current) => {
               const page = runPageFor(current, request.workflowId);
               const knownIDs = new Set([...page.firstPage, ...page.olderRuns].map((run) => run.id));
-              page.olderRuns = [
-                ...page.olderRuns,
-                ...(response.items ?? []).filter((run) => !knownIDs.has(run.id)),
-              ];
+              page.olderRuns = [...page.olderRuns, ...(response.items ?? []).filter((run) => !knownIDs.has(run.id))];
               page.nextCursor = response.next_cursor ?? null;
               page.exhausted = response.exhausted;
               page.loadingMore = false;
@@ -731,10 +690,8 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
       const key = workflowRepositoryKey(ref);
       yield* updateSnapshot(key, (snapshot) => ({
         ...snapshot,
-        dispatches: snapshot.dispatches.filter((state) =>
-          state.request.workflowId !== workflowId
-          || state.kind === "pending"
-          || state.kind === "locating"
+        dispatches: snapshot.dispatches.filter(
+          (state) => state.request.workflowId !== workflowId || state.kind === "pending" || state.kind === "locating",
         ),
       }));
       yield* stopRepositoryLoopIfIdle(key);
@@ -750,7 +707,6 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
       yield* restartRepositoryLoop(entry.key);
     });
 
-
     const dispatchQueue = yield* makeOrderedCommandQueue<DispatchCommand, void, never, never>(
       "workflow actions dispatch",
       (command) =>
@@ -760,10 +716,11 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
               const startedAt = yield* Clock.currentTimeMillis;
               yield* updateSnapshot(workflowRepositoryKey(command.request.ref), (snapshot) => ({
                 ...snapshot,
-                dispatches: snapshot.dispatches.map((state): WorkflowDispatchState =>
-                  state.request.id === command.request.id
-                    ? { ...state, request: { ...state.request, startedAt } }
-                    : state
+                dispatches: snapshot.dispatches.map(
+                  (state): WorkflowDispatchState =>
+                    state.request.id === command.request.id
+                      ? { ...state, request: { ...state.request, startedAt } }
+                      : state,
                 ),
               }));
               return yield* api.execute("POST workflow dispatch", (signal) =>
@@ -791,9 +748,7 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
                 dispatches: snapshot.dispatches.map((state): WorkflowDispatchState => {
                   if (state.request.id !== command.request.id) return state;
                   const actor = actorFromMutationError(error);
-                  const request = actor === undefined
-                    ? state.request
-                    : { ...state.request, actor };
+                  const request = actor === undefined ? state.request : { ...state.request, actor };
                   return isDispatchOutcomeUncertain(error)
                     ? { kind: "uncertain", request, error, candidates: [] }
                     : { kind: "failed", request, error };
@@ -895,12 +850,7 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
           if (demand === undefined || demand.generation !== generation) return false;
           demand.running = false;
           if (succeeded) demand.restartAfterFailure = false;
-          if (
-            succeeded ||
-            !enabled ||
-            demand.owners.size === 0 ||
-            !demand.restartAfterFailure
-          ) {
+          if (succeeded || !enabled || demand.owners.size === 0 || !demand.restartAfterFailure) {
             return false;
           }
           demand.restartAfterFailure = false;
@@ -1072,9 +1022,8 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
           ...snapshot,
           selectedWorkflow: snapshot.catalog?.workflows?.find((workflow) => workflow.id === workflowId) ?? null,
           runs: page === undefined ? [] : combinedRuns(page),
-          runsPage: page === undefined
-            ? { nextCursor: null, exhausted: false, loadingMore: false }
-            : runsPageState(page),
+          runsPage:
+            page === undefined ? { nextCursor: null, exhausted: false, loadingMore: false } : runsPageState(page),
           error: null,
           loading: { ...snapshot.loading, runs: false },
         };

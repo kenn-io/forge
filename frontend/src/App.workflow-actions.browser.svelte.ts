@@ -8,18 +8,13 @@ import {
   resetKeyboardModuleState,
   type MountedBrowserApp,
 } from "./test/browserAppHarness.js";
-import {
-  jsonResponse,
-  mockSettings,
-  type MockRouteOverride,
-} from "./test/mockApiFetch.js";
+import { jsonResponse, mockSettings, type MockRouteOverride } from "./test/mockApiFetch.js";
 
 const WAIT = 10_000;
 
 let actionsModeEnabled = true;
 
 const capable = {
-
   read_repositories: true,
   read_merge_requests: true,
   read_issues: true,
@@ -184,12 +179,14 @@ describe("opt-in workflow Actions route", () => {
     await expect.element(page.getByRole("heading", { name: "Actions" })).toBeVisible();
     await expect.element(page.getByRole("button", { name: /Deploy/ })).toBeVisible();
     await vi.waitFor(() => {
-      expect(actionReadPaths(mounted!)).toEqual(expect.arrayContaining([
-        "/api/v1/actions/github/acme/widgets/workflows",
-      ]));
+      expect(actionReadPaths(mounted!)).toEqual(
+        expect.arrayContaining(["/api/v1/actions/github/acme/widgets/workflows"]),
+      );
     }, WAIT);
     expect(actionReadPaths(mounted).some((pathname) => pathname.includes("/legacy/"))).toBe(false);
-    await expect.element(page.getByRole("note", { name: "acme/legacy does not support workflow Actions" })).toBeVisible();
+    await expect
+      .element(page.getByRole("note", { name: "acme/legacy does not support workflow Actions" }))
+      .toBeVisible();
   });
 
   it("releases the mounted workspace and redirects when a settings update disables Actions", async () => {
@@ -203,9 +200,9 @@ describe("opt-in workflow Actions route", () => {
     await vi.waitFor(() => expect(window.location.pathname).toBe("/"), WAIT);
     expect(document.querySelector(".actions-page")).toBeNull();
     expect(document.querySelector(".kit-top-bar__tab[aria-current='page']")?.textContent).toContain("Activity");
-    expect(
-      Array.from(document.querySelectorAll(".kit-top-bar__tab"), (tab) => tab.textContent?.trim()),
-    ).not.toContain("Actions");
+    expect(Array.from(document.querySelectorAll(".kit-top-bar__tab"), (tab) => tab.textContent?.trim())).not.toContain(
+      "Actions",
+    );
   });
 
   it("keeps repository, workflow, dispatch, and runs regions in semantic order when narrow", async () => {
@@ -228,25 +225,26 @@ describe("opt-in workflow Actions route", () => {
   it("keeps populated run metadata and provider actions reachable without narrow horizontal overflow", async () => {
     await page.viewport(520, 800);
     const longRun: MockRouteOverride = (request) => {
-      if (request.method !== "GET"
-        || request.url.pathname !== "/api/v1/actions/github/acme/widgets/runs") return null;
+      if (request.method !== "GET" || request.url.pathname !== "/api/v1/actions/github/acme/widgets/runs") return null;
       return jsonResponse({
         repo: { ...summary("widgets", true).repo, default_branch: "trunk" },
         exhausted: true,
-        items: [{
-          actor: "maintainer-with-an-intentionally-long-provider-identity",
-          conclusion: "success",
-          created_at: "2026-08-27T12:30:00Z",
-          event: "workflow_dispatch",
-          head_sha: "0123456789abcdef0123456789abcdef01234567",
-          id: "long-run",
-          name: "Release production assets with a deliberately long workflow name",
-          ref: "feature/an-intentionally-long-reference-that-must-not-expand-the-page",
-          run_number: 99,
-          status: "completed",
-          web_url: "https://github.com/acme/widgets/actions/runs/99",
-          workflow_id: "deploy.yml",
-        }],
+        items: [
+          {
+            actor: "maintainer-with-an-intentionally-long-provider-identity",
+            conclusion: "success",
+            created_at: "2026-08-27T12:30:00Z",
+            event: "workflow_dispatch",
+            head_sha: "0123456789abcdef0123456789abcdef01234567",
+            id: "long-run",
+            name: "Release production assets with a deliberately long workflow name",
+            ref: "feature/an-intentionally-long-reference-that-must-not-expand-the-page",
+            run_number: 99,
+            status: "completed",
+            web_url: "https://github.com/acme/widgets/actions/runs/99",
+            workflow_id: "deploy.yml",
+          },
+        ],
       });
     };
     mounted = await mountBrowserApp("/actions", { overrides: [longRun, actionsFixtures()] });
@@ -259,20 +257,14 @@ describe("opt-in workflow Actions route", () => {
       const row = document.querySelector<HTMLElement>(".run-row")!;
       const disclosure = document.querySelector<HTMLElement>(".run-disclosure")!;
       const providerLink = row.querySelector<HTMLAnchorElement>("a")!;
-      const metadata = row.querySelectorAll<HTMLElement>(
-        ".run-ref, .run-actor, .run-time, .run-status",
-      );
+      const metadata = row.querySelectorAll<HTMLElement>(".run-ref, .run-actor, .run-time, .run-status");
       expect(metadata).toHaveLength(4);
       expect(pageElement.scrollWidth).toBeLessThanOrEqual(pageElement.clientWidth);
       expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth);
       expect(disclosure.scrollWidth).toBeLessThanOrEqual(disclosure.clientWidth);
-      expect(providerLink.getBoundingClientRect().right).toBeLessThanOrEqual(
-        row.getBoundingClientRect().right,
-      );
+      expect(providerLink.getBoundingClientRect().right).toBeLessThanOrEqual(row.getBoundingClientRect().right);
       for (const item of metadata) {
-        expect(item.getBoundingClientRect().right).toBeLessThanOrEqual(
-          disclosure.getBoundingClientRect().right,
-        );
+        expect(item.getBoundingClientRect().right).toBeLessThanOrEqual(disclosure.getBoundingClientRect().right);
       }
     }, WAIT);
   });
@@ -297,8 +289,12 @@ describe("opt-in workflow Actions route", () => {
       expect(document.querySelector(".repository-rail")).toBeNull();
       expect(getComputedStyle(layout).display).toBe("grid");
       expect(Math.round(workflows.getBoundingClientRect().top)).toBe(Math.round(workspace.getBoundingClientRect().top));
-      expect(Math.round(workflows.getBoundingClientRect().bottom)).toBe(Math.round(layout.getBoundingClientRect().bottom));
-      expect(Math.round(workspace.getBoundingClientRect().bottom)).toBe(Math.round(layout.getBoundingClientRect().bottom));
+      expect(Math.round(workflows.getBoundingClientRect().bottom)).toBe(
+        Math.round(layout.getBoundingClientRect().bottom),
+      );
+      expect(Math.round(workspace.getBoundingClientRect().bottom)).toBe(
+        Math.round(layout.getBoundingClientRect().bottom),
+      );
     }, WAIT);
   });
 });

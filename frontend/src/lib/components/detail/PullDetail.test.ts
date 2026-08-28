@@ -584,39 +584,41 @@ function workflowClient(detail: PullDetail) {
     ViewerCanMerge: true,
     operations: detail.repo.operations,
   };
-  const GET = vi.fn(async (
-    path: string,
-    _options?: {
-      params?: {
-        path?: {
-          provider?: string;
-          platform_host?: string;
-          owner?: string;
-          name?: string;
+  const GET = vi.fn(
+    async (
+      path: string,
+      _options?: {
+        params?: {
+          path?: {
+            provider?: string;
+            platform_host?: string;
+            owner?: string;
+            name?: string;
+          };
         };
-      };
+      },
+    ) => {
+      if (path.endsWith("/workflows")) {
+        return {
+          data: {
+            repo: detail.repo,
+            environments: [],
+            workflows: [releaseWorkflow],
+          },
+        };
+      }
+      if (path.endsWith("/runs")) {
+        return {
+          data: {
+            repo: detail.repo,
+            items: [],
+            exhausted: true,
+          },
+        };
+      }
+      return { data: repoSettings };
     },
-  ) => {
-    if (path.endsWith("/workflows")) {
-      return {
-        data: {
-          repo: detail.repo,
-          environments: [],
-          workflows: [releaseWorkflow],
-        },
-      };
-    }
-    if (path.endsWith("/runs")) {
-      return {
-        data: {
-          repo: detail.repo,
-          items: [],
-          exhausted: true,
-        },
-      };
-    }
-    return { data: repoSettings };
-  });
+  );
   const POST = vi.fn(async () => ({ data: { accepted: true, locating_run: true } }));
   return {
     client: { GET, POST } as unknown as GeneratedClient,
@@ -626,10 +628,7 @@ function workflowClient(detail: PullDetail) {
   };
 }
 
-async function openReleaseWorkflow(
-  detail: PullDetail,
-  options: Parameters<typeof renderPullDetail>[3] = {},
-) {
+async function openReleaseWorkflow(detail: PullDetail, options: Parameters<typeof renderPullDetail>[3] = {}) {
   enableWorkflowActions(detail);
   const api = workflowClient(detail);
   const rendered = renderPullDetail(detail, api.repoSettings, api.client, {
@@ -748,18 +747,15 @@ describe("PullDetail provider workflow actions", () => {
     { state: "open", kind: "unknown", expected: "main" },
     { state: "merged", kind: "same_repo", expected: "main" },
     { state: "closed", kind: "same_repo", expected: "main" },
-  ] as const)(
-    "defaults a $state $kind pull request workflow to $expected",
-    async ({ state, kind, expected }) => {
-      const detail = pullDetail();
-      detail.merge_request.State = state;
-      detail.head_repo_kind = kind;
+  ] as const)("defaults a $state $kind pull request workflow to $expected", async ({ state, kind, expected }) => {
+    const detail = pullDetail();
+    detail.merge_request.State = state;
+    detail.head_repo_kind = kind;
 
-      await openReleaseWorkflow(detail);
+    await openReleaseWorkflow(detail);
 
-      expect(screen.getByRole<HTMLInputElement>("textbox", { name: "Git ref" }).value).toBe(expected);
-    },
-  );
+    expect(screen.getByRole<HTMLInputElement>("textbox", { name: "Git ref" }).value).toBe(expected);
+  });
 
   it("keeps the provider workflow ref editable", async () => {
     await openReleaseWorkflow(pullDetail());

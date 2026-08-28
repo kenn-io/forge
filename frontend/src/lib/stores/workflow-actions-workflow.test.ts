@@ -73,10 +73,12 @@ function run(overrides: Partial<WorkflowRun> = {}): WorkflowRun {
 }
 
 interface MockRequestOptions {
-  readonly params?: {
-    readonly path?: unknown;
-    readonly query?: Readonly<Record<string, unknown>>;
-  } | undefined;
+  readonly params?:
+    | {
+        readonly path?: unknown;
+        readonly query?: Readonly<Record<string, unknown>>;
+      }
+    | undefined;
   readonly signal?: AbortSignal | undefined;
   readonly body?: unknown;
 }
@@ -88,7 +90,10 @@ interface ApiProbeOptions {
   readonly dispatch?: (
     call: number,
     options: MockRequestOptions,
-  ) => WorkflowDispatchResponse | Promise<WorkflowDispatchResponse> | { readonly error: unknown; readonly response: Response };
+  ) =>
+    | WorkflowDispatchResponse
+    | Promise<WorkflowDispatchResponse>
+    | { readonly error: unknown; readonly response: Response };
 }
 
 interface ApiProbe {
@@ -207,10 +212,12 @@ it.effect("reads and polls runs only for the currently selected workflow", () =>
     catalog: () => release,
     runs: (_call, options) => ({
       repo: apiRepo(),
-      items: [run({
-        id: `run-${String(options.params?.query?.workflow_id)}`,
-        workflow_id: String(options.params?.query?.workflow_id),
-      })],
+      items: [
+        run({
+          id: `run-${String(options.params?.query?.workflow_id)}`,
+          workflow_id: String(options.params?.query?.workflow_id),
+        }),
+      ],
       exhausted: true,
     }),
   });
@@ -227,25 +234,32 @@ it.effect("reads and polls runs only for the currently selected workflow", () =>
       yield* settle;
       assert.strictEqual(probe.calls.runs, 1);
       let runReads = probe.observed.filter((entry) => entry.path.endsWith("/runs"));
-      assert.deepStrictEqual(runReads.map((entry) => entry.options.params?.query), [
-        { workflow_id: "deploy.yml", per_page: 50 },
-      ]);
+      assert.deepStrictEqual(
+        runReads.map((entry) => entry.options.params?.query),
+        [{ workflow_id: "deploy.yml", per_page: 50 }],
+      );
 
       yield* workflow.selectWorkflow(github, "maintenance.yml");
       yield* settle;
       assert.strictEqual(probe.calls.runs, 2);
       let snapshot = yield* workflow.snapshot(github);
-      assert.deepStrictEqual(snapshot.runs.map((item) => item.workflow_id), ["maintenance.yml"]);
+      assert.deepStrictEqual(
+        snapshot.runs.map((item) => item.workflow_id),
+        ["maintenance.yml"],
+      );
 
       yield* TestClock.adjust("5 seconds");
       yield* settle;
       assert.strictEqual(probe.calls.runs, 3);
       runReads = probe.observed.filter((entry) => entry.path.endsWith("/runs"));
-      assert.deepStrictEqual(runReads.map((entry) => entry.options.params?.query), [
-        { workflow_id: "deploy.yml", per_page: 50 },
-        { workflow_id: "maintenance.yml", per_page: 50 },
-        { workflow_id: "maintenance.yml", per_page: 50 },
-      ]);
+      assert.deepStrictEqual(
+        runReads.map((entry) => entry.options.params?.query),
+        [
+          { workflow_id: "deploy.yml", per_page: 50 },
+          { workflow_id: "maintenance.yml", per_page: 50 },
+          { workflow_id: "maintenance.yml", per_page: 50 },
+        ],
+      );
       assert.isTrue(runReads.every((entry) => entry.options.params?.query?.workflow_id !== ""));
       snapshot = yield* workflow.snapshot(github);
       assert.strictEqual(snapshot.selectedWorkflow?.id, "maintenance.yml");
@@ -256,10 +270,7 @@ it.effect("reads and polls runs only for the currently selected workflow", () =>
 
 it.effect("retries a failed visible catalog read only after the idle cadence", () => {
   const probe = makeApiProbe({
-    catalog: (call) =>
-      call === 1
-        ? Promise.reject<WorkflowCatalog>(new Error("provider unavailable"))
-        : catalog(),
+    catalog: (call) => (call === 1 ? Promise.reject<WorkflowCatalog>(new Error("provider unavailable")) : catalog()),
   });
   return withWorkflow(
     probe,
@@ -352,9 +363,7 @@ it.effect("wakes an idle selected-workflow poll when dispatch is accepted", () =
     }),
     runs: (call) => ({
       repo: apiRepo(),
-      items: [run(call === 1
-        ? { status: "completed", conclusion: "success" }
-        : { id: "run-2" })],
+      items: [run(call === 1 ? { status: "completed", conclusion: "success" } : { id: "run-2" })],
       exhausted: true,
     }),
   });
@@ -370,7 +379,10 @@ it.effect("wakes an idle selected-workflow poll when dispatch is accepted", () =
       yield* workflow.dispatch(dispatchInput());
       yield* settle;
       assert.strictEqual(probe.calls.runs, 2);
-      assert.deepStrictEqual((yield* workflow.snapshot(github)).runs.map((item) => item.id), ["run-2"]);
+      assert.deepStrictEqual(
+        (yield* workflow.snapshot(github)).runs.map((item) => item.id),
+        ["run-2"],
+      );
       yield* Fiber.interrupt(owner);
     }),
   );
@@ -451,7 +463,6 @@ it.effect("bounds locating an accepted response without a run ID at 60 seconds",
     }),
   );
 });
-
 
 it.effect("publishes a definite dispatch rejection as failed without replaying POST", () => {
   const problem = {
@@ -545,10 +556,10 @@ it.effect("publishes bounded ambiguous candidates for an uncertain mutation with
       yield* settle;
       const state = (yield* workflow.snapshot(github)).dispatches.find((item) => item.request.id === request.id);
       assert.strictEqual(state?.kind, "uncertain");
-      assert.deepStrictEqual(
-        state?.kind === "uncertain" ? state.candidates.map((candidate) => candidate.id) : [],
-        ["candidate-a", "candidate-b"],
-      );
+      assert.deepStrictEqual(state?.kind === "uncertain" ? state.candidates.map((candidate) => candidate.id) : [], [
+        "candidate-a",
+        "candidate-b",
+      ]);
 
       yield* TestClock.adjust("60 seconds");
       const readsAtDeadline = probe.calls.runs;
@@ -578,7 +589,11 @@ it.effect("setEnabled(false) releases reads but lets an admitted POST complete e
       yield* workflow.setEnabled(false);
       yield* TestClock.adjust("2 minutes");
       assert.strictEqual(probe.calls.runs, 1);
-      response.resolve({ accepted: true, locating_run: false, run: run({ status: "completed", conclusion: "success" }) });
+      response.resolve({
+        accepted: true,
+        locating_run: false,
+        run: run({ status: "completed", conclusion: "success" }),
+      });
       yield* settle;
 
       const state = (yield* workflow.snapshot(github)).dispatches.find((item) => item.request.id === request.id);
@@ -815,54 +830,64 @@ it.effect("starts one replacement jobs read for a consumer that joined the faili
   );
 });
 
-it.effect("refreshes a cached catalog after a definition conflict and starts a fresh cycle without replaying POST", () => {
-  const refreshed = catalog();
-  refreshed.workflows = [{
-    ...refreshed.workflows[0]!,
-    definition_sha: "definition-b",
-    inputs: [{
-      name: "channel",
-      type: "choice",
-      required: true,
-      has_default: true,
-      default: "stable",
-      options: ["stable", "beta"],
-    }],
-  }];
-  const conflict = {
-    code: "conflict",
-    detail: "Workflow definition changed.",
-    details: { reason: "workflow_definition_changed" },
-    status: 409,
-    title: "Conflict",
-    type: "about:blank",
-  };
-  const probe = makeApiProbe({
-    catalog: (call) => call === 1 ? catalog() : refreshed,
-    dispatch: () => ({ error: conflict, response: new Response(null, { status: 409 }) }),
-  });
-  return withWorkflow(
-    probe,
-    Effect.gen(function* () {
-      const workflow = yield* WorkflowActionsWorkflow;
-      yield* workflow.selectWorkflow(github, "deploy.yml");
-      const owner = yield* workflow.watchRepository("surface", github, () => {}).pipe(Effect.forkChild);
-      yield* settle;
-      yield* workflow.dispatch(dispatchInput());
-      yield* settle;
-      assert.strictEqual((yield* workflow.snapshot(github)).dispatches.at(-1)?.kind, "failed");
+it.effect(
+  "refreshes a cached catalog after a definition conflict and starts a fresh cycle without replaying POST",
+  () => {
+    const refreshed = catalog();
+    refreshed.workflows = [
+      {
+        ...refreshed.workflows[0]!,
+        definition_sha: "definition-b",
+        inputs: [
+          {
+            name: "channel",
+            type: "choice",
+            required: true,
+            has_default: true,
+            default: "stable",
+            options: ["stable", "beta"],
+          },
+        ],
+      },
+    ];
+    const conflict = {
+      code: "conflict",
+      detail: "Workflow definition changed.",
+      details: { reason: "workflow_definition_changed" },
+      status: 409,
+      title: "Conflict",
+      type: "about:blank",
+    };
+    const probe = makeApiProbe({
+      catalog: (call) => (call === 1 ? catalog() : refreshed),
+      dispatch: () => ({ error: conflict, response: new Response(null, { status: 409 }) }),
+    });
+    return withWorkflow(
+      probe,
+      Effect.gen(function* () {
+        const workflow = yield* WorkflowActionsWorkflow;
+        yield* workflow.selectWorkflow(github, "deploy.yml");
+        const owner = yield* workflow.watchRepository("surface", github, () => {}).pipe(Effect.forkChild);
+        yield* settle;
+        yield* workflow.dispatch(dispatchInput());
+        yield* settle;
+        assert.strictEqual((yield* workflow.snapshot(github)).dispatches.at(-1)?.kind, "failed");
 
-      yield* workflow.refreshCatalog(github, "deploy.yml");
-      const snapshot = yield* workflow.snapshot(github);
-      assert.strictEqual(probe.calls.catalog, 2);
-      assert.strictEqual(probe.calls.dispatch, 1);
-      assert.strictEqual(snapshot.selectedWorkflow?.definition_sha, "definition-b");
-      assert.deepStrictEqual(snapshot.selectedWorkflow?.inputs?.map((input) => input.name), ["channel"]);
-      assert.isFalse(snapshot.dispatches.some((state) => state.request.workflowId === "deploy.yml"));
-      yield* Fiber.interrupt(owner);
-    }),
-  );
-});
+        yield* workflow.refreshCatalog(github, "deploy.yml");
+        const snapshot = yield* workflow.snapshot(github);
+        assert.strictEqual(probe.calls.catalog, 2);
+        assert.strictEqual(probe.calls.dispatch, 1);
+        assert.strictEqual(snapshot.selectedWorkflow?.definition_sha, "definition-b");
+        assert.deepStrictEqual(
+          snapshot.selectedWorkflow?.inputs?.map((input) => input.name),
+          ["channel"],
+        );
+        assert.isFalse(snapshot.dispatches.some((state) => state.request.workflowId === "deploy.yml"));
+        yield* Fiber.interrupt(owner);
+      }),
+    );
+  },
+);
 
 it.effect("requires an explicit new cycle before deliberately dispatching the same workflow twice", () => {
   const probe = makeApiProbe({
@@ -884,9 +909,9 @@ it.effect("requires an explicit new cycle before deliberately dispatching the sa
 
       yield* workflow.newDispatchCycle(github, "deploy.yml");
       assert.strictEqual(probe.calls.dispatch, 1);
-      assert.isFalse((yield* workflow.snapshot(github)).dispatches.some(
-        (state) => state.request.workflowId === "deploy.yml",
-      ));
+      assert.isFalse(
+        (yield* workflow.snapshot(github)).dispatches.some((state) => state.request.workflowId === "deploy.yml"),
+      );
 
       yield* workflow.dispatch(dispatchInput());
       yield* settle;
@@ -899,9 +924,7 @@ it.effect("requires an explicit new cycle before deliberately dispatching the sa
 it.effect("starts each queued dispatch reconciliation window immediately before its own POST", () => {
   const firstResponse = Promise.withResolvers<WorkflowDispatchResponse>();
   const probe = makeApiProbe({
-    dispatch: (call) => call === 1
-      ? firstResponse.promise
-      : { accepted: true, locating_run: true, actor: "octocat" },
+    dispatch: (call) => (call === 1 ? firstResponse.promise : { accepted: true, locating_run: true, actor: "octocat" }),
     runs: () => ({ repo: apiRepo(), items: [], exhausted: true }),
   });
   return withWorkflow(
@@ -988,6 +1011,7 @@ it.effect("uses an accepted response actor to reconcile a locating run", () => {
       const state = (yield* workflow.snapshot(github)).dispatches.at(-1);
       assert.strictEqual(state?.kind, "succeeded");
       assert.strictEqual(state?.request.actor, "octocat");
+      assert.strictEqual(state?.kind === "succeeded" ? state.run?.id : undefined, "run-1");
       assert.strictEqual(probe.calls.dispatch, 1);
     }),
   );
@@ -1010,12 +1034,14 @@ it.effect("appends older run pages and preserves them while polling page one", (
       firstPageReads += 1;
       return {
         repo: apiRepo(),
-        items: [run({
-          id: firstPageReads === 1 ? "run-current-1" : "run-current-2",
-          run_number: firstPageReads === 1 ? 12 : 13,
-          status: "completed",
-          conclusion: "success",
-        })],
+        items: [
+          run({
+            id: firstPageReads === 1 ? "run-current-1" : "run-current-2",
+            run_number: firstPageReads === 1 ? 12 : 13,
+            status: "completed",
+            conclusion: "success",
+          }),
+        ],
         next_cursor: "cursor-2",
         exhausted: false,
       };
@@ -1029,7 +1055,10 @@ it.effect("appends older run pages and preserves them while polling page one", (
       const owner = yield* workflow.watchRepository("surface", github, () => {}).pipe(Effect.forkChild);
       yield* settle;
       let snapshot = yield* workflow.snapshot(github);
-      assert.deepStrictEqual(snapshot.runs.map((item) => item.id), ["run-current-1"]);
+      assert.deepStrictEqual(
+        snapshot.runs.map((item) => item.id),
+        ["run-current-1"],
+      );
       assert.strictEqual(snapshot.runsPage.nextCursor, "cursor-2");
       assert.isFalse(snapshot.runsPage.exhausted);
 

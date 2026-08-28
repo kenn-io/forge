@@ -1,12 +1,15 @@
 <script module lang="ts">
   const pullDetailScrollPositions: Record<string, number> = Object.create(null) as Record<string, number>;
+  let nextWorkflowRepositoryOwner = 0;
 </script>
 
 <script lang="ts">
   import { Effect, Schedule } from "effect";
   import { onDestroy, tick, untrack, type ComponentProps } from "svelte";
+  import type { Attachment } from "svelte/attachments";
   import type { ApiProblemError, TransientTransportError } from "../../api/effect-errors.js";
   import { executeGeneratedApiRequest } from "../../api/generated-api.js";
+  import { apiErrorMessage } from "../../api/runtime.js";
   import { retryIdempotentRead } from "../../api/retry-policy.js";
   import type { AppExecution } from "../../app/runtime.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
@@ -22,13 +25,18 @@
   } from "../../api/types.js";
   import type { DetailSyncMode } from "../../stores/detail.svelte.js";
   import type { MutationCallbacks } from "../../stores/ordered-mutations.js";
-  import type { ConflictReason } from "../../api/problems.js";
+  import { ProblemCodes, type ConflictReason } from "../../api/problems.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import {
     getStores, getActions,
     getUIConfig, getNavigate,
   } from "../../context.js";
   import MarkdownHtml from "../shared/MarkdownHtml.svelte";
+  import WorkflowDispatchDialog from "../actions/WorkflowDispatchDialog.svelte";
+  import type {
+    WorkflowDispatchPresentationState,
+    WorkflowDispatchRequest,
+  } from "../actions/WorkflowDispatchForm.svelte";
   import { buildPullRequestFilesRoute } from "../../routes.js";
   import { moveTaskListItem, toggleTaskListItem } from "../../utils/task-list.js";
   import type { ApplySuggestionRequest } from "../../utils/markdown-suggestions.js";
@@ -119,12 +127,24 @@
     recordWorkspaceCreated,
     resolveControllerlessWorkspaceRef,
   } from "../../stores/workspace-create-pending.svelte.js";
+  import type {
+    WorkflowDefinition,
+    WorkflowDispatchState,
+  } from "../../stores/workflow-actions-workflow.js";
 
   type ChipTrailing = ComponentProps<typeof Chip>["trailing"];
 
   const CLEAR_LABELS_PENDING = "__clear-label-selection__";
 
-  const { detail: detailStore, pulls, activity, diff: diffStore, detailActivityView, settings } = getStores();
+  const {
+    detail: detailStore,
+    pulls,
+    activity,
+    diff: diffStore,
+    detailActivityView,
+    settings,
+    workflowActions,
+  } = getStores();
   const runtime = getAppRuntime();
   const actions = getActions();
   const uiConfig = getUIConfig();
@@ -1293,6 +1313,119 @@
     actionMenuOpen = false;
   }
 
+  const workflowRepositoryOwner = `pull-detail:${++nextWorkflowRepositoryOwner}`;
+  let workflowDialogWorkflow = $state<WorkflowDefinition | null>(null);
+  let actionMenuTriggerEl = $state<HTMLButtonElement>();
+  const captureActionMenuTrigger: Attachment<HTMLButtonElement> = (button) => {
+    actionMenuTriggerEl = button;
+    return () => {
+      if (actionMenuTriggerEl === button) actionMenuTriggerEl = undefined;
+    };
+  };
+  const workflowCatalogDemandEnabled = $derived(
+    settings.isModeVisible("actions")
+      && currentCapabilities().read_workflows
+      && currentCapabilities().workflow_dispatch,
+  );
+  const workflowCatalog = $derived(
+    workflowCatalogDemandEnabled
+      ? workflowActions.getCatalog(routeRef)?.workflows ?? []
+      : [],
+  );
+  const workflowProviderLabel = $derived(
+    `${providerDisplayLabel(detailStore.getDetail()?.repo?.provider ?? provider)} Actions`,
+  );
+  const hasPrimaryPRActions = $derived(
+    detailStore.getDetail()?.merge_request.State !== "merged" && !stalePR,
+  );
+  const hasWorkflowActions = $derived(
+    workflowCatalogDemandEnabled && workflowCatalog.length > 0,
+  );
+  const showActionSurface = $derived(
+    hasPrimaryPRActions || hasWorkflowActions,
+  );
+  const workflowInitialRef = $derived.by(() => {
+    const detail = detailStore.getDetail();
+    if (!detail) return "";
+    return detail.merge_request.State === "open" && detail.head_repo_kind === "same_repo"
+      ? detail.merge_request.HeadBranch
+      : detail.merge_request.BaseBranch;
+  });
+  const workflowDialogPresentation = $derived.by(
+    (): WorkflowDispatchPresentationState => {
+      const workflow = workflowDialogWorkflow;
+      if (!workflow) return { kind: "idle" };
+      const dispatch = [...workflowActions.getDispatches(routeRef)]
+        .reverse()
+        .find((candidate) => candidate.request.workflowId === workflow.id);
+      if (!dispatch) return { kind: "idle" };
+      if (dispatch.kind === "pending" || dispatch.kind === "locating") {
+        return { kind: "pending" };
+      }
+      if (dispatch.kind === "succeeded") return { kind: "succeeded" };
+      if (
+        dispatch.kind === "failed"
+        && dispatch.error._tag === "ApiProblemError"
+        && dispatch.error.problem.code === ProblemCodes.conflict
+      ) {
+        return { kind: "conflict" };
+      }
+      return {
+        kind: "uncertain",
+        message: workflowDispatchFailureMessage(dispatch),
+      };
+    },
+  );
+
+  function workflowDispatchFailureMessage(dispatch: WorkflowDispatchState): string {
+    if (dispatch.kind === "locating_timed_out") {
+      return "The provider accepted the workflow, but its run was not observed.";
+    }
+    if (dispatch.kind === "failed" || dispatch.kind === "uncertain") {
+      const error = dispatch.error;
+      if (error._tag === "ApiProblemError") {
+        return apiErrorMessage(error.problem, "The workflow outcome could not be confirmed.");
+      }
+      if ("cause" in error && error.cause instanceof Error) return error.cause.message;
+    }
+    return "The workflow outcome could not be confirmed.";
+  }
+
+  function openWorkflowDialog(workflow: WorkflowDefinition): void {
+    if (!workflowCatalogDemandEnabled || !workflow.available) return;
+    workflowDialogWorkflow = workflow;
+    closeActionMenu();
+  }
+
+  function submitWorkflow(request: WorkflowDispatchRequest): void {
+    const workflow = workflowDialogWorkflow;
+    if (!workflowCatalogDemandEnabled || !workflow) return;
+    workflowActions.dispatch({
+      ref: routeRef,
+      workflowId: workflow.id,
+      expectedDefinitionSha: workflow.definition_sha,
+      dispatchRef: request.ref,
+      inputs: request.inputs,
+    });
+  }
+
+  function reloadWorkflowCatalog(): void {
+    if (!workflowCatalogDemandEnabled) return;
+    workflowActions.claimRepository(workflowRepositoryOwner, routeRef);
+  }
+
+  function claimWorkflowRepository(ref: ProviderRouteRef | null): Attachment {
+    return () => {
+      if (!ref) return;
+      untrack(() => workflowActions.claimRepository(workflowRepositoryOwner, ref));
+      return () => {
+        untrack(() => workflowActions.releaseRepository(workflowRepositoryOwner));
+        workflowDialogWorkflow = null;
+        closeActionMenu();
+      };
+    };
+  }
+
   function closeStateMenu(): void {
     stateMenuOpen = false;
   }
@@ -1983,7 +2116,7 @@
       detail.repo?.owner ?? owner,
       detail.repo?.name ?? name,
     )}
-    <div class="pull-detail-wrap">
+    <div class="pull-detail-wrap" {@attach claimWorkflowRepository(workflowCatalogDemandEnabled ? routeRef : null)}>
       {#if staleLoadError}
         <div class="detail-load-error" data-testid="detail-load-error">
           Couldn't load this pull request: {detailStore.getDetailError()}
@@ -2037,8 +2170,8 @@
         <div class="pull-detail">
           <div
             class="pull-detail-content"
-            class:pull-detail-content--has-compact-actions={pr.State !== "merged" && !stalePR}
-            class:pull-detail-content--actions-menu={primaryActionStage === 2}
+            class:pull-detail-content--has-compact-actions={showActionSurface}
+            class:pull-detail-content--actions-menu={hasPrimaryPRActions && primaryActionStage === 2}
           >
             {#snippet labelActionButton(iconSize = 16)}
               <Button
@@ -2679,6 +2812,12 @@
               <RefreshCwIcon size="14" strokeWidth="2.2" aria-hidden="true" />
             </Button>
           {/if}
+          {#if hasWorkflowActions}
+            <button type="button" class="actions-menu-trigger">
+              <span>Actions</span>
+              <ChevronDownIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+            </button>
+          {/if}
         </div>
       {/snippet}
 
@@ -2709,30 +2848,90 @@
           {stalePR ? "Refresh details before creating a workspace." : createWorkspaceTitle}
         </span>
       {/if}
-      {#if pr.State !== "merged" && !stalePR}
+      {#if showActionSurface}
         <div class="primary-actions-wrap">
-          <FitStages
-            class="primary-actions-fit"
-            bind:stage={primaryActionStage}
-            onstagechange={(stage) => {
-              if (stage !== 2) closeActionMenu();
-            }}
-            stages={[
-              fullPrimaryActionMeasure,
-              compactPrimaryActionMeasure,
-              menuPrimaryActionMeasure,
-            ]}
-          />
+          {#if hasPrimaryPRActions}
+            <FitStages
+              class="primary-actions-fit"
+              bind:stage={primaryActionStage}
+              onstagechange={(stage) => {
+                if (stage !== 2) closeActionMenu();
+              }}
+              stages={[
+                fullPrimaryActionMeasure,
+                compactPrimaryActionMeasure,
+                menuPrimaryActionMeasure,
+              ]}
+            />
+          {/if}
           <div
             class={[
               "actions-menu-wrap",
               {
-                "actions-menu-wrap--menu": primaryActionStage === 2,
+                "actions-menu-wrap--workflows": hasWorkflowActions,
+                "actions-menu-wrap--menu": hasPrimaryPRActions && primaryActionStage === 2,
               },
             ]}
             bind:this={actionMenuWrapEl}
           >
+            <div
+              class={[
+                "primary-actions-live",
+                {
+                  "actions-menu-popover":
+                    (hasPrimaryPRActions && primaryActionStage === 2)
+                    || (actionMenuOpen && !hasWorkflowActions),
+                  "primary-actions-live--open":
+                    hasPrimaryPRActions && primaryActionStage === 2 && actionMenuOpen,
+                },
+              ]}
+              aria-hidden={hasPrimaryPRActions && primaryActionStage === 2 && !actionMenuOpen}
+              inert={hasPrimaryPRActions && primaryActionStage === 2 && !actionMenuOpen}
+            >
+              {#if hasPrimaryPRActions}
+                <div class="actions-row actions-row--primary">
+                  {@render primaryActionButtons(primaryActionStage === 1)}
+                </div>
+                {#if actionMenuOpen && capabilities.read_labels && capabilities.label_mutation}
+                  <div class="actions-menu-popover__item actions-menu-popover__item--labels label-editor-anchor">
+                    {@render labelActionButton(14)}
+                  </div>
+                {/if}
+                {#if !hideWorkspaceAction}
+                  <div class="actions-row actions-row--workspace">
+                    {@render workspaceActionButton(primaryActionStage === 1)}
+                  </div>
+                {/if}
+              {/if}
+              {#if actionMenuOpen && hasWorkflowActions}
+                <section
+                  class={[
+                    "workflow-actions-menu",
+                    {
+                      "actions-menu-popover workflow-actions-menu--floating":
+                        !hasPrimaryPRActions || primaryActionStage !== 2,
+                    },
+                  ]}
+                  aria-label={workflowProviderLabel}
+                >
+                  <div class="workflow-actions-menu__label">{workflowProviderLabel}</div>
+                  {#each workflowCatalog as workflow (workflow.id)}
+                    <button
+                      type="button"
+                      class="workflow-actions-menu__item"
+                      disabled={!workflow.available}
+                      title={!workflow.available ? workflow.unavailable_reason || "Unavailable" : undefined}
+                      onclick={() => openWorkflowDialog(workflow)}
+                    >
+                      <WorkflowIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+                      <span>{workflow.name}</span>
+                    </button>
+                  {/each}
+                </section>
+              {/if}
+            </div>
             <button
+              {@attach captureActionMenuTrigger}
               type="button"
               class="actions-menu-trigger"
               aria-haspopup="true"
@@ -2742,73 +2941,63 @@
               <span>Actions</span>
               <ChevronDownIcon size="14" strokeWidth="2.2" aria-hidden="true" />
             </button>
-            <div
-              class={[
-                "primary-actions-live",
-                {
-                  "actions-menu-popover":
-                    primaryActionStage === 2 || actionMenuOpen,
-                  "primary-actions-live--open":
-                    primaryActionStage === 2 && actionMenuOpen,
-                },
-              ]}
-              aria-hidden={primaryActionStage === 2 && !actionMenuOpen}
-              inert={primaryActionStage === 2 && !actionMenuOpen}
-            >
-              <div class="actions-row actions-row--primary">
-                {@render primaryActionButtons(primaryActionStage === 1)}
-              </div>
-              {#if actionMenuOpen && capabilities.read_labels && capabilities.label_mutation}
-                <div class="actions-menu-popover__item actions-menu-popover__item--labels label-editor-anchor">
-                  {@render labelActionButton(14)}
-                </div>
-              {/if}
-              {#if !hideWorkspaceAction}
-                <div class="actions-row actions-row--workspace">
-                  {@render workspaceActionButton(primaryActionStage === 1)}
-                </div>
-              {/if}
-            </div>
           </div>
-          {#if stateConflict === "stale_state"}
-            <span class="action-error action-error--state" role="status">
-              The head commit changed since this pull request was reviewed. Re-review the latest changes before approving or merging.
-              {#if headConflictContext}
-                {" "}{headConflictContext}.
-              {/if}
-            </span>
-          {:else if stateConflict === "not_open"}
-            <span class="action-error action-error--state" role="status">
-              This pull request is no longer open. Its current state is being refreshed before any further action.
-            </span>
-          {:else if stateConflict === "head_repo_unknown"}
-            <span class="action-error action-error--state" role="status">
-              The head repository is no longer available. Merge is unavailable while the pull request state refreshes.
-            </span>
-          {:else if headActionsBlocked}
-            <span class="action-error action-error--state" role="status">
-              The head commit has not been synced yet. After the next sync records it, refresh the reviewed state before approving or merging.
-            </span>
-          {/if}
-          {#if stateConflict}
-            <div class="state-conflict-recovery">
-              <Button
-                class="btn--conflict-refresh"
-                disabled={conflictRefreshBusy}
-                onclick={() => refreshConflictState()}
-                tone="neutral"
-                surface="soft"
-                size="sm"
-                label={conflictRefreshBusy ? "Refreshing reviewed state..." : "Refresh reviewed state"}
-              >
-                <RefreshCwIcon size="14" aria-hidden="true" />
-              </Button>
-              {#if conflictRefreshError}
-                <span class="action-error" role="alert">{conflictRefreshError}</span>
-              {/if}
-            </div>
+          {#if hasPrimaryPRActions}
+            {#if stateConflict === "stale_state"}
+              <span class="action-error action-error--state" role="status">
+                The head commit changed since this pull request was reviewed. Re-review the latest changes before approving or merging.
+                {#if headConflictContext}
+                  {headConflictContext}.
+                {/if}
+              </span>
+            {:else if stateConflict === "not_open"}
+              <span class="action-error action-error--state" role="status">
+                This pull request is no longer open. Its current state is being refreshed before any further action.
+              </span>
+            {:else if stateConflict === "head_repo_unknown"}
+              <span class="action-error action-error--state" role="status">
+                The head repository is no longer available. Merge is unavailable while the pull request state refreshes.
+              </span>
+            {:else if headActionsBlocked}
+              <span class="action-error action-error--state" role="status">
+                The head commit has not been synced yet. After the next sync records it, refresh the reviewed state before approving or merging.
+              </span>
+            {/if}
+            {#if stateConflict}
+              <div class="state-conflict-recovery">
+                <Button
+                  class="btn--conflict-refresh"
+                  disabled={conflictRefreshBusy}
+                  onclick={() => refreshConflictState()}
+                  tone="neutral"
+                  surface="soft"
+                  size="sm"
+                  label={conflictRefreshBusy ? "Refreshing reviewed state..." : "Refresh reviewed state"}
+                >
+                  <RefreshCwIcon size="14" aria-hidden="true" />
+                </Button>
+                {#if conflictRefreshError}
+                  <span class="action-error" role="alert">{conflictRefreshError}</span>
+                {/if}
+              </div>
+            {/if}
           {/if}
         </div>
+      {/if}
+
+      {#if workflowDialogWorkflow && workflowCatalogDemandEnabled}
+        <WorkflowDispatchDialog
+          open={true}
+          workflow={workflowDialogWorkflow}
+          environments={workflowActions.getEnvironments(routeRef)}
+          initialRef={workflowInitialRef}
+          operation={repoOperations?.dispatch_workflow}
+          state={workflowDialogPresentation}
+          trigger={actionMenuTriggerEl ?? null}
+          onsubmit={submitWorkflow}
+          onclose={() => { workflowDialogWorkflow = null; }}
+          onreload={reloadWorkflowCatalog}
+        />
       {/if}
 
       {#if !hasWorktreeLinks && importAction}
@@ -3541,6 +3730,10 @@
     flex-wrap: nowrap;
   }
 
+  .primary-actions-wrap :global(.actions-row--measure > .actions-menu-trigger) {
+    display: inline-flex;
+  }
+
   .actions-row {
     display: flex;
     align-items: flex-start;
@@ -3571,6 +3764,14 @@
     display: contents;
   }
 
+  .actions-menu-wrap--workflows {
+    display: flex;
+    position: relative;
+    z-index: 65;
+    align-items: flex-start;
+    gap: var(--space-4);
+  }
+
   .actions-menu-wrap--menu {
     display: block;
     position: relative;
@@ -3590,6 +3791,10 @@
     font-size: var(--font-size-sm);
     font-weight: 600;
     cursor: pointer;
+  }
+
+  .actions-menu-wrap--workflows > .actions-menu-trigger {
+    display: inline-flex;
   }
 
   .actions-menu-wrap--menu > .actions-menu-trigger {
@@ -3632,6 +3837,59 @@
     border-radius: var(--radius-md, 8px);
     background: var(--bg-surface);
     box-shadow: var(--shadow-lg);
+  }
+
+  .workflow-actions-menu {
+    width: 100%;
+    min-width: 0;
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--border-default);
+  }
+
+  .workflow-actions-menu--floating {
+    right: 0;
+    left: auto;
+    width: max-content;
+    padding-top: var(--space-4);
+  }
+
+  .workflow-actions-menu__label {
+    padding: 0 var(--space-2) var(--space-2);
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+  }
+
+  .workflow-actions-menu__item {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: var(--space-3);
+    min-height: 28px;
+    padding: var(--space-2) var(--space-4);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-primary);
+    font: inherit;
+    font-size: var(--font-size-sm);
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .workflow-actions-menu__item:hover {
+    background: var(--bg-surface-hover);
+  }
+
+  .workflow-actions-menu__item:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 1px;
+  }
+
+  .workflow-actions-menu__item:disabled {
+    color: var(--text-muted);
+    cursor: not-allowed;
+    opacity: 0.65;
   }
 
   .actions-menu-popover :global(.kit-button) {

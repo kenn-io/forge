@@ -42,6 +42,10 @@ service is the supported tool here.
 - Use scoped acquisition and finalizers for listeners, streams, readers,
   abort controllers, timers, presenters, and workflow owners. Teardown must be
   explicit at the same lifetime boundary that acquired the resource.
+- Publish an owner registry entry and install its finalizer in one
+  uninterruptible acquisition handoff. After an ordered queue admits a
+  non-idempotent command, pending-state publication and executor release are
+  likewise one uninterruptible handoff.
 - Use Effect concurrency, queues, fibers, schedules, and interruption instead
   of bespoke Promise generations, overlapping timers, or boolean race guards.
   Preserve latest-wins, single-flight, ordered, or lossless semantics explicitly;

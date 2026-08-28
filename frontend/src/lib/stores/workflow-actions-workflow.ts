@@ -122,6 +122,7 @@ interface JobDemand {
   readonly owners: Map<string, symbol>;
   generation: number;
   running: boolean;
+  restartAfterFailure: boolean;
 }
 
 interface DispatchCommand {
@@ -440,33 +441,54 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
       }
     });
 
+    const ensureRepositoryLoop = Effect.fn("WorkflowActions.ensureRepositoryLoop")((key: string) =>
+      Effect.uninterruptible(
+        Effect.gen(function* () {
+          const now = yield* Clock.currentTimeMillis;
+          const generation = yield* registry.withPermit(
+            Effect.sync(() => {
+              const entry = repositories.get(key);
+              if (entry === undefined || entry.loopRunning || !enabled) return undefined;
+              const hasDemand =
+                entry.owners.size > 0 ||
+                entry.snapshot.dispatches.some((state) => dispatchNeedsPolling(state, now));
+              if (!hasDemand) return undefined;
+              entry.loopRunning = true;
+              entry.loopGeneration += 1;
+              return entry.loopGeneration;
+            }),
+          );
+          if (generation !== undefined) {
+            yield* FiberMap.run(repositoryFibers, key, repositoryLoop(key, generation));
+          }
+        }),
+      ),
+    );
+
     function repositoryLoop(key: string, generation: number): Effect.Effect<void> {
       return runRepositoryLoop(key, generation).pipe(
         Effect.ensuring(
-          registry.withPermit(
-            Effect.sync(() => {
-              const entry = repositories.get(key);
-              if (entry !== undefined && entry.loopGeneration === generation) entry.loopRunning = false;
-            }),
-          ),
+          Effect.gen(function* () {
+            const now = yield* Clock.currentTimeMillis;
+            const shouldRestart = yield* registry.withPermit(
+              Effect.sync(() => {
+                const entry = repositories.get(key);
+                if (entry === undefined || entry.loopGeneration !== generation) return false;
+                entry.loopRunning = false;
+                const hasDemand =
+                  enabled &&
+                  (entry.owners.size > 0 ||
+                    entry.snapshot.dispatches.some((state) => dispatchNeedsPolling(state, now)));
+                return hasDemand;
+              }),
+            );
+            if (shouldRestart) {
+              yield* Effect.forkIn(Effect.yieldNow.pipe(Effect.andThen(ensureRepositoryLoop(key))), scope);
+            }
+          }),
         ),
       );
     }
-
-    const ensureRepositoryLoop = Effect.fn("WorkflowActions.ensureRepositoryLoop")(function* (key: string) {
-      const generation = yield* registry.withPermit(
-        Effect.sync(() => {
-          const entry = repositories.get(key);
-          if (entry === undefined || entry.loopRunning || !enabled) return undefined;
-          entry.loopRunning = true;
-          entry.loopGeneration += 1;
-          return entry.loopGeneration;
-        }),
-      );
-      if (generation !== undefined) {
-        yield* FiberMap.run(repositoryFibers, key, repositoryLoop(key, generation));
-      }
-    });
 
     const stopRepositoryLoopIfIdle = Effect.fn("WorkflowActions.stopRepositoryLoopIfIdle")(function* (key: string) {
       const now = yield* Clock.currentTimeMillis;
@@ -547,45 +569,189 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
         ),
     );
 
+    const releaseRepositoryOwner = Effect.fn("WorkflowActions.releaseRepositoryOwner")(function* (
+      owner: string,
+      token: symbol,
+      previousKey: string | undefined,
+    ) {
+      const releasedKey = yield* registry.withPermit(
+        Effect.sync(() => {
+          const current = ownerRepositories.get(owner);
+          if (current?.token !== token) return undefined;
+          ownerRepositories.delete(owner);
+          repositories.get(current.key)?.owners.delete(owner);
+          return current.key;
+        }),
+      );
+      if (releasedKey !== undefined) yield* stopRepositoryLoopIfIdle(releasedKey);
+      if (previousKey !== undefined && previousKey !== releasedKey) {
+        yield* stopRepositoryLoopIfIdle(previousKey);
+      }
+    });
+
     const watchRepository = Effect.fn("WorkflowActions.watchRepository")(function* (
       owner: string,
       ref: ProviderRouteRef,
       observer: WorkflowActionsObserver,
     ) {
-      const token = Symbol(owner);
-      const registration = yield* registry.withPermit(
-        Effect.sync(() => {
-          if (!enabled) return undefined;
-          const entry = entryFor(ref);
-          const previous = ownerRepositories.get(owner);
-          if (previous !== undefined) repositories.get(previous.key)?.owners.delete(owner);
-          entry.owners.set(owner, { token, observer });
-          ownerRepositories.set(owner, { key: entry.key, token });
-          return { entry, previousKey: previous?.key };
+      return yield* Effect.uninterruptibleMask((restore) =>
+        Effect.gen(function* () {
+          const token = Symbol(owner);
+          const registration = yield* registry.withPermit(
+            Effect.sync(() => {
+              if (!enabled) return undefined;
+              const entry = entryFor(ref);
+              const previous = ownerRepositories.get(owner);
+              if (previous !== undefined) repositories.get(previous.key)?.owners.delete(owner);
+              entry.owners.set(owner, { token, observer });
+              ownerRepositories.set(owner, { key: entry.key, token });
+              return { entry, previousKey: previous?.key };
+            }),
+          );
+          if (registration === undefined) return yield* restore(Effect.never);
+
+          const lifetime = Effect.gen(function* () {
+            yield* notify([observer], registration.entry.snapshot);
+            if (registration.previousKey !== undefined && registration.previousKey !== registration.entry.key) {
+              yield* stopRepositoryLoopIfIdle(registration.previousKey);
+            }
+            yield* ensureRepositoryLoop(registration.entry.key);
+            return yield* Effect.never;
+          });
+          return yield* restore(lifetime).pipe(
+            Effect.ensuring(releaseRepositoryOwner(owner, token, registration.previousKey)),
+          );
         }),
       );
-      if (registration === undefined) return yield* Effect.never;
-      observer(registration.entry.snapshot);
-      if (registration.previousKey !== undefined && registration.previousKey !== registration.entry.key) {
-        yield* stopRepositoryLoopIfIdle(registration.previousKey);
-      }
-      yield* ensureRepositoryLoop(registration.entry.key);
-      return yield* Effect.never.pipe(
-        Effect.ensuring(
-          Effect.gen(function* () {
-            const releasedKey = yield* registry.withPermit(
-              Effect.sync(() => {
-                const current = ownerRepositories.get(owner);
-                if (current?.token !== token) return undefined;
-                ownerRepositories.delete(owner);
-                repositories.get(current.key)?.owners.delete(owner);
-                return current.key;
-              }),
-            );
-            if (releasedKey !== undefined) yield* stopRepositoryLoopIfIdle(releasedKey);
-          }),
-        ),
+    });
+
+    const finishJobRead = Effect.fn("WorkflowActions.finishJobRead")(function* (
+      key: string,
+      generation: number,
+      succeeded: boolean,
+    ) {
+      const shouldRestart = yield* registry.withPermit(
+        Effect.sync(() => {
+          const demand = jobs.get(key);
+          if (demand === undefined || demand.generation !== generation) return false;
+          demand.running = false;
+          if (succeeded) demand.restartAfterFailure = false;
+          if (
+            succeeded ||
+            !enabled ||
+            demand.owners.size === 0 ||
+            !demand.restartAfterFailure
+          ) {
+            return false;
+          }
+          demand.restartAfterFailure = false;
+          return true;
+        }),
       );
+      if (shouldRestart) {
+        yield* Effect.forkIn(Effect.yieldNow.pipe(Effect.andThen(startJobRead(key))), scope);
+      }
+    });
+
+    function jobRead(key: string, generation: number): Effect.Effect<void> {
+      const demand = jobs.get(key);
+      const repository = demand === undefined ? undefined : repositories.get(demand.repositoryKey);
+      if (demand === undefined || repository === undefined) return Effect.void;
+      let succeeded = false;
+      return updateSnapshot(repository.key, (snapshot) => ({
+        ...snapshot,
+        loading: {
+          ...snapshot.loading,
+          jobs: snapshot.loading.jobs.includes(demand.runId)
+            ? snapshot.loading.jobs
+            : [...snapshot.loading.jobs, demand.runId],
+        },
+      })).pipe(
+        Effect.andThen(readJobs(repository, demand.runId)),
+        Effect.matchEffect({
+          onFailure: (error) =>
+            updateSnapshot(repository.key, (snapshot) => ({
+              ...snapshot,
+              error,
+              loading: {
+                ...snapshot.loading,
+                jobs: snapshot.loading.jobs.filter((id) => id !== demand.runId),
+              },
+            })),
+          onSuccess: (response) =>
+            Effect.sync(() => {
+              succeeded = true;
+            }).pipe(
+              Effect.andThen(
+                updateSnapshot(repository.key, (snapshot) => ({
+                  ...snapshot,
+                  jobs: { ...snapshot.jobs, [demand.runId]: response.items ?? [] },
+                  error: null,
+                  loading: {
+                    ...snapshot.loading,
+                    jobs: snapshot.loading.jobs.filter((id) => id !== demand.runId),
+                  },
+                })),
+              ),
+            ),
+        }),
+        Effect.ensuring(Effect.suspend(() => finishJobRead(key, generation, succeeded))),
+      );
+    }
+
+    const startJobRead = Effect.fn("WorkflowActions.startJobRead")((key: string) =>
+      Effect.uninterruptible(
+        Effect.gen(function* () {
+          const generation = yield* registry.withPermit(
+            Effect.sync(() => {
+              const demand = jobs.get(key);
+              if (demand === undefined || demand.running || demand.owners.size === 0 || !enabled) {
+                return undefined;
+              }
+              const repository = repositories.get(demand.repositoryKey);
+              if (repository?.snapshot.jobs[demand.runId] !== undefined) return undefined;
+              demand.running = true;
+              demand.generation += 1;
+              return demand.generation;
+            }),
+          );
+          if (generation !== undefined) yield* FiberMap.run(jobFibers, key, jobRead(key, generation));
+        }),
+      ),
+    );
+
+    const stopJobDemandIfIdle = Effect.fn("WorkflowActions.stopJobDemandIfIdle")(function* (key: string) {
+      const shouldStop = yield* registry.withPermit(
+        Effect.sync(() => {
+          const demand = jobs.get(key);
+          if (demand === undefined || demand.owners.size > 0 || !demand.running) return false;
+          demand.running = false;
+          demand.generation += 1;
+          demand.restartAfterFailure = false;
+          return true;
+        }),
+      );
+      if (shouldStop) yield* FiberMap.remove(jobFibers, key);
+    });
+
+    const releaseJobsOwner = Effect.fn("WorkflowActions.releaseJobsOwner")(function* (
+      owner: string,
+      token: symbol,
+      previousKey: string | undefined,
+    ) {
+      const releasedKey = yield* registry.withPermit(
+        Effect.sync(() => {
+          const current = ownerJobs.get(owner);
+          if (current?.token !== token) return undefined;
+          ownerJobs.delete(owner);
+          jobs.get(current.key)?.owners.delete(owner);
+          return current.key;
+        }),
+      );
+      if (releasedKey !== undefined) yield* stopJobDemandIfIdle(releasedKey);
+      if (previousKey !== undefined && previousKey !== releasedKey) {
+        yield* stopJobDemandIfIdle(previousKey);
+      }
     });
 
     const watchJobs = Effect.fn("WorkflowActions.watchJobs")(function* (
@@ -593,94 +759,45 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
       ref: ProviderRouteRef,
       runId: string,
     ) {
-      const token = Symbol(owner);
-      const repository = entryFor(ref);
-      const key = `${repository.key}\u0000${encodeURIComponent(runId)}`;
-      const registration = yield* registry.withPermit(
-        Effect.sync(() => {
-          if (!enabled) return undefined;
-          const previous = ownerJobs.get(owner);
-          if (previous !== undefined) jobs.get(previous.key)?.owners.delete(owner);
-          const demand = jobs.get(key) ?? {
-            key,
-            repositoryKey: repository.key,
-            runId,
-            owners: new Map<string, symbol>(),
-            generation: 0,
-            running: false,
-          };
-          jobs.set(key, demand);
-          demand.owners.set(owner, token);
-          ownerJobs.set(owner, { key, token });
-          const cached = repository.snapshot.jobs[runId] !== undefined;
-          if (demand.running || cached) return { demand, start: false, previousKey: previous?.key };
-          demand.running = true;
-          demand.generation += 1;
-          return { demand, start: true, previousKey: previous?.key };
+      return yield* Effect.uninterruptibleMask((restore) =>
+        Effect.gen(function* () {
+          const token = Symbol(owner);
+          const repository = entryFor(ref);
+          const key = `${repository.key}\u0000${encodeURIComponent(runId)}`;
+          const registration = yield* registry.withPermit(
+            Effect.sync(() => {
+              if (!enabled) return undefined;
+              const previous = ownerJobs.get(owner);
+              if (previous !== undefined) jobs.get(previous.key)?.owners.delete(owner);
+              const demand = jobs.get(key) ?? {
+                key,
+                repositoryKey: repository.key,
+                runId,
+                owners: new Map<string, symbol>(),
+                generation: 0,
+                running: false,
+                restartAfterFailure: false,
+              };
+              jobs.set(key, demand);
+              demand.owners.set(owner, token);
+              if (demand.running) demand.restartAfterFailure = true;
+              ownerJobs.set(owner, { key, token });
+              return { previousKey: previous?.key };
+            }),
+          );
+          if (registration === undefined) return yield* restore(Effect.never);
+
+          const lifetime = Effect.gen(function* () {
+            if (registration.previousKey !== undefined && registration.previousKey !== key) {
+              yield* stopJobDemandIfIdle(registration.previousKey);
+            }
+            yield* startJobRead(key);
+            return yield* Effect.never;
+          });
+          return yield* restore(lifetime).pipe(
+            Effect.ensuring(releaseJobsOwner(owner, token, registration.previousKey)),
+          );
         }),
-      );
-      if (registration === undefined) return yield* Effect.never;
-      if (registration.previousKey !== undefined && registration.previousKey !== key) {
-        const previous = jobs.get(registration.previousKey);
-        if (previous !== undefined && previous.owners.size === 0 && previous.running) {
-          previous.running = false;
-          previous.generation += 1;
-          yield* FiberMap.remove(jobFibers, previous.key);
-        }
-      }
-      if (registration.start) {
-        const generation = registration.demand.generation;
-        const loading = updateSnapshot(repository.key, (snapshot) => ({
-          ...snapshot,
-          loading: { ...snapshot.loading, jobs: [...snapshot.loading.jobs, runId] },
-        }));
-        const read = loading.pipe(
-          Effect.andThen(readJobs(repository, runId)),
-          Effect.matchEffect({
-            onFailure: (error) =>
-              updateSnapshot(repository.key, (snapshot) => ({
-                ...snapshot,
-                error,
-                loading: { ...snapshot.loading, jobs: snapshot.loading.jobs.filter((id) => id !== runId) },
-              })),
-            onSuccess: (response) =>
-              updateSnapshot(repository.key, (snapshot) => ({
-                ...snapshot,
-                jobs: { ...snapshot.jobs, [runId]: response.items ?? [] },
-                error: null,
-                loading: { ...snapshot.loading, jobs: snapshot.loading.jobs.filter((id) => id !== runId) },
-              })),
-          }),
-          Effect.ensuring(
-            registry.withPermit(
-              Effect.sync(() => {
-                const demand = jobs.get(key);
-                if (demand !== undefined && demand.generation === generation) demand.running = false;
-              }),
-            ),
-          ),
-        );
-        yield* FiberMap.run(jobFibers, key, read);
-      }
-      return yield* Effect.never.pipe(
-        Effect.ensuring(
-          Effect.gen(function* () {
-            const stop = yield* registry.withPermit(
-              Effect.sync(() => {
-                const current = ownerJobs.get(owner);
-                if (current?.token !== token) return false;
-                ownerJobs.delete(owner);
-                const demand = jobs.get(current.key);
-                demand?.owners.delete(owner);
-                if (demand === undefined || demand.owners.size > 0 || !demand.running) return false;
-                demand.running = false;
-                demand.generation += 1;
-                return true;
-              }),
-            );
-            if (stop) yield* FiberMap.remove(jobFibers, key);
-          }),
-        ),
       );
     });
 
@@ -714,12 +831,15 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
       const entry = entryFor(request.ref);
       const admitted = yield* Deferred.make<void>();
       const acknowledgement = yield* dispatchQueue.accept({ request, admitted });
-      yield* updateSnapshot(entry.key, (snapshot) => ({
-        ...snapshot,
-        dispatches: [...snapshot.dispatches, { kind: "pending", request }],
-      }));
-      yield* Deferred.succeed(admitted, undefined);
-      yield* Effect.forkIn(acknowledgement.pipe(Effect.catch(() => Effect.void)), scope);
+      yield* Effect.uninterruptible(
+        updateSnapshot(entry.key, (snapshot) => ({
+          ...snapshot,
+          dispatches: [...snapshot.dispatches, { kind: "pending", request }],
+        })).pipe(
+          Effect.andThen(Deferred.succeed(admitted, undefined)),
+          Effect.andThen(Effect.forkIn(acknowledgement.pipe(Effect.catch(() => Effect.void)), scope)),
+        ),
+      );
       return request;
     });
 
@@ -738,11 +858,16 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
             entry.owners.clear();
             entry.loopRunning = false;
             entry.loopGeneration += 1;
+            entry.snapshot = {
+              ...entry.snapshot,
+              loading: { catalog: false, runs: false, jobs: [] },
+            };
           }
           for (const demand of jobs.values()) {
             demand.owners.clear();
             demand.running = false;
             demand.generation += 1;
+            demand.restartAfterFailure = false;
           }
           return true;
         }),

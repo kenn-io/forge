@@ -487,3 +487,190 @@ it.effect("loads jobs only for expanded consumers and aborts only after the fina
     }),
   );
 });
+
+it.effect("cannot interrupt the admitted dispatch handoff between pending publication and POST release", () => {
+  const probe = makeApiProbe();
+  return withWorkflow(
+    probe,
+    Effect.gen(function* () {
+      const workflow = yield* WorkflowActionsWorkflow;
+      let interruptDispatch: (() => void) | undefined;
+      const owner = yield* workflow
+        .watchRepository("handoff-observer", github, (snapshot) => {
+          if (snapshot.dispatches.some((state) => state.kind === "pending")) interruptDispatch?.();
+        })
+        .pipe(Effect.forkChild);
+      yield* settle;
+
+      const dispatch = yield* workflow.dispatch(dispatchInput()).pipe(Effect.forkChild);
+      interruptDispatch = () => dispatch.interruptUnsafe();
+      yield* settle;
+
+      assert.strictEqual(probe.calls.dispatch, 1);
+      assert.strictEqual((yield* workflow.snapshot(github)).dispatches.at(-1)?.kind, "succeeded");
+      yield* Fiber.interrupt(owner);
+    }),
+  );
+});
+
+it.effect("releases a repository owner interrupted by its initial observer", () => {
+  const probe = makeApiProbe();
+  return withWorkflow(
+    probe,
+    Effect.gen(function* () {
+      const workflow = yield* WorkflowActionsWorkflow;
+      let interruptOwner: (() => void) | undefined;
+      const interrupted = yield* workflow
+        .watchRepository("interrupted-owner", github, () => interruptOwner?.())
+        .pipe(Effect.forkChild);
+      interruptOwner = () => interrupted.interruptUnsafe();
+      yield* settle;
+
+      const survivor = yield* workflow.watchRepository("survivor", github, () => {}).pipe(Effect.forkChild);
+      yield* settle;
+      yield* Fiber.interrupt(survivor);
+      const readsAfterRelease = probe.calls.runs;
+      yield* TestClock.adjust("2 minutes");
+
+      assert.strictEqual(probe.calls.runs, readsAfterRelease);
+    }),
+  );
+});
+
+it.effect("releases a jobs owner interrupted while replacing its previous run", () => {
+  const oldRead = Promise.withResolvers<WorkflowJobs>();
+  let interruptReplacement: (() => void) | undefined;
+  const probe = makeApiProbe({
+    jobs: (call, requestOptions) => {
+      if (call > 1) return { repo: apiRepo(), items: [] };
+      const signal = requestOptions.signal;
+      if (signal === undefined) throw new Error("missing generated request abort signal");
+      signal.addEventListener("abort", () => {
+        interruptReplacement?.();
+        oldRead.reject(signal.reason);
+      });
+      return oldRead.promise;
+    },
+  });
+  return withWorkflow(
+    probe,
+    Effect.gen(function* () {
+      const workflow = yield* WorkflowActionsWorkflow;
+      const previous = yield* workflow.watchJobs("row", github, "run-old").pipe(Effect.forkChild);
+      yield* settle;
+      const replacement = yield* workflow.watchJobs("row", github, "run-new").pipe(Effect.forkChild);
+      interruptReplacement = () => replacement.interruptUnsafe();
+      yield* settle;
+
+      const helper = yield* workflow.watchJobs("helper", github, "run-new").pipe(Effect.forkChild);
+      yield* settle;
+      assert.strictEqual(probe.calls.jobs, 2);
+      yield* Fiber.interrupt(previous);
+      yield* Fiber.interrupt(helper);
+    }),
+  );
+});
+
+it.effect("restarts a repository loop when demand arrives as the prior loop exits", () => {
+  const probe = makeApiProbe({
+    dispatch: () => ({ accepted: true, locating_run: true }),
+    runs: () => ({ repo: apiRepo(), items: [], exhausted: true }),
+  });
+  return withWorkflow(
+    probe,
+    Effect.gen(function* () {
+      const workflow = yield* WorkflowActionsWorkflow;
+      yield* workflow.dispatch(dispatchInput());
+      yield* settle;
+
+      yield* TestClock.adjust("60 seconds");
+      const owner = yield* workflow.watchRepository("deadline-owner", github, () => {}).pipe(Effect.forkChild);
+      yield* settle;
+      const readsAfterClaim = probe.calls.runs;
+      yield* TestClock.adjust("30 seconds");
+      yield* settle;
+
+      assert.isAbove(probe.calls.runs, readsAfterClaim);
+      yield* Fiber.interrupt(owner);
+    }),
+  );
+});
+
+it.effect("clears interrupted catalog, runs, and jobs loading markers when disabled", () => {
+  const catalogRead = Promise.withResolvers<WorkflowCatalog>();
+  const runsRead = Promise.withResolvers<WorkflowRuns>();
+  const jobsRead = Promise.withResolvers<WorkflowJobs>();
+  const probe = makeApiProbe({
+    catalog: () => catalogRead.promise,
+    runs: () => runsRead.promise,
+    jobs: () => jobsRead.promise,
+  });
+  return withWorkflow(
+    probe,
+    Effect.gen(function* () {
+      const workflow = yield* WorkflowActionsWorkflow;
+      const repositoryOwner = yield* workflow.watchRepository("surface", github, () => {}).pipe(Effect.forkChild);
+      const jobsOwner = yield* workflow.watchJobs("row", github, "run-1").pipe(Effect.forkChild);
+      yield* settle;
+      catalogRead.resolve(catalog());
+      yield* settle;
+      assert.deepStrictEqual((yield* workflow.snapshot(github)).loading, {
+        catalog: false,
+        runs: true,
+        jobs: ["run-1"],
+      });
+
+      yield* workflow.setEnabled(false);
+      assert.deepStrictEqual((yield* workflow.snapshot(github)).loading, {
+        catalog: false,
+        runs: false,
+        jobs: [],
+      });
+      yield* Fiber.interrupt(repositoryOwner);
+      yield* Fiber.interrupt(jobsOwner);
+    }),
+  );
+});
+
+it.effect("starts one replacement jobs read for a consumer that joined the failing in-flight read", () => {
+  const firstRead = Promise.withResolvers<WorkflowJobs>();
+  const probe = makeApiProbe({
+    jobs: (call) =>
+      call === 1
+        ? firstRead.promise
+        : {
+            repo: apiRepo(),
+            items: [
+              {
+                id: "job-recovered",
+                name: "recovered",
+                status: "completed",
+                conclusion: "success",
+                steps: [],
+              },
+            ],
+          },
+  });
+  return withWorkflow(
+    probe,
+    Effect.gen(function* () {
+      const workflow = yield* WorkflowActionsWorkflow;
+      const first = yield* workflow.watchJobs("row-a", github, "run-1").pipe(Effect.forkChild);
+      yield* settle;
+      const joined = yield* workflow.watchJobs("row-b", github, "run-1").pipe(Effect.forkChild);
+      yield* settle;
+      firstRead.reject(new Error("first read failed"));
+      yield* settle;
+
+      assert.strictEqual(probe.calls.jobs, 2);
+      assert.deepStrictEqual(
+        (yield* workflow.snapshot(github)).jobs["run-1"]?.map((job) => job.id),
+        ["job-recovered"],
+      );
+      yield* TestClock.adjust("1 minute");
+      assert.strictEqual(probe.calls.jobs, 2);
+      yield* Fiber.interrupt(first);
+      yield* Fiber.interrupt(joined);
+    }),
+  );
+});

@@ -4031,6 +4031,7 @@ type RepoPreviewRow struct {
 // RepoRefResponse defines model for RepoRefResponse.
 type RepoRefResponse struct {
 	Capabilities   ProviderCapabilitiesResponse `json:"capabilities"`
+	DefaultBranch  *string                      `json:"default_branch,omitempty"`
 	Name           string                       `json:"name"`
 	Operations     *RepoOperations              `json:"operations,omitempty"`
 	Owner          string                       `json:"owner"`
@@ -4699,6 +4700,7 @@ type WorkflowDispatchResponse struct {
 	// Example: /api/v1/schemas/WorkflowDispatchResponse.json
 	Schema      *string              `json:"$schema,omitempty"`
 	Accepted    bool                 `json:"accepted"`
+	Actor       *string              `json:"actor,omitempty"`
 	LocatingRun bool                 `json:"locating_run"`
 	Run         *WorkflowRunResponse `json:"run,omitempty"`
 }
@@ -5033,7 +5035,7 @@ type WorktreeSummary struct {
 
 // ListWorkflowRunsParams defines parameters for ListWorkflowRuns.
 type ListWorkflowRunsParams struct {
-	WorkflowId *string `form:"workflow_id,omitempty" json:"workflow_id,omitempty"`
+	WorkflowId string  `form:"workflow_id" json:"workflow_id"`
 	Event      *string `form:"event,omitempty" json:"event,omitempty"`
 	Branch     *string `form:"branch,omitempty" json:"branch,omitempty"`
 	Cursor     *string `form:"cursor,omitempty" json:"cursor,omitempty"`
@@ -5313,7 +5315,7 @@ type RenameFleetWorkspaceRuntimeSessionJSONBody map[string]interface{}
 
 // ListWorkflowRunsOnHostParams defines parameters for ListWorkflowRunsOnHost.
 type ListWorkflowRunsOnHostParams struct {
-	WorkflowId *string `form:"workflow_id,omitempty" json:"workflow_id,omitempty"`
+	WorkflowId string  `form:"workflow_id" json:"workflow_id"`
 	Event      *string `form:"event,omitempty" json:"event,omitempty"`
 	Branch     *string `form:"branch,omitempty" json:"branch,omitempty"`
 	Cursor     *string `form:"cursor,omitempty" json:"cursor,omitempty"`
@@ -16154,16 +16156,12 @@ func NewListWorkflowRunsRequest(server string, provider string, owner string, na
 		// per the OpenAPI spec (e.g. "color=blue,black,brown").
 		var rawQueryFragments []string
 
-		if params.WorkflowId != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "workflow_id", *params.WorkflowId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
+		if queryFrag, err := runtime.StyleParamWithOptions("form", false, "workflow_id", params.WorkflowId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
 			}
-
 		}
 
 		if params.Event != nil {
@@ -20778,16 +20776,12 @@ func NewListWorkflowRunsOnHostRequest(server string, platformHost string, provid
 		// per the OpenAPI spec (e.g. "color=blue,black,brown").
 		var rawQueryFragments []string
 
-		if params.WorkflowId != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "workflow_id", *params.WorkflowId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
+		if queryFrag, err := runtime.StyleParamWithOptions("form", false, "workflow_id", params.WorkflowId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
 			}
-
 		}
 
 		if params.Event != nil {

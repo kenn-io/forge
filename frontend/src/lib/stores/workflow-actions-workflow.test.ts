@@ -814,3 +814,242 @@ it.effect("starts one replacement jobs read for a consumer that joined the faili
     }),
   );
 });
+
+it.effect("refreshes a cached catalog after a definition conflict and starts a fresh cycle without replaying POST", () => {
+  const refreshed = catalog();
+  refreshed.workflows = [{
+    ...refreshed.workflows[0]!,
+    definition_sha: "definition-b",
+    inputs: [{
+      name: "channel",
+      type: "choice",
+      required: true,
+      has_default: true,
+      default: "stable",
+      options: ["stable", "beta"],
+    }],
+  }];
+  const conflict = {
+    code: "conflict",
+    detail: "Workflow definition changed.",
+    details: { reason: "workflow_definition_changed" },
+    status: 409,
+    title: "Conflict",
+    type: "about:blank",
+  };
+  const probe = makeApiProbe({
+    catalog: (call) => call === 1 ? catalog() : refreshed,
+    dispatch: () => ({ error: conflict, response: new Response(null, { status: 409 }) }),
+  });
+  return withWorkflow(
+    probe,
+    Effect.gen(function* () {
+      const workflow = yield* WorkflowActionsWorkflow;
+      yield* workflow.selectWorkflow(github, "deploy.yml");
+      const owner = yield* workflow.watchRepository("surface", github, () => {}).pipe(Effect.forkChild);
+      yield* settle;
+      yield* workflow.dispatch(dispatchInput());
+      yield* settle;
+      assert.strictEqual((yield* workflow.snapshot(github)).dispatches.at(-1)?.kind, "failed");
+
+      yield* workflow.refreshCatalog(github, "deploy.yml");
+      const snapshot = yield* workflow.snapshot(github);
+      assert.strictEqual(probe.calls.catalog, 2);
+      assert.strictEqual(probe.calls.dispatch, 1);
+      assert.strictEqual(snapshot.selectedWorkflow?.definition_sha, "definition-b");
+      assert.deepStrictEqual(snapshot.selectedWorkflow?.inputs?.map((input) => input.name), ["channel"]);
+      assert.isFalse(snapshot.dispatches.some((state) => state.request.workflowId === "deploy.yml"));
+      yield* Fiber.interrupt(owner);
+    }),
+  );
+});
+
+it.effect("requires an explicit new cycle before deliberately dispatching the same workflow twice", () => {
+  const probe = makeApiProbe({
+    dispatch: () => ({
+      accepted: true,
+      locating_run: false,
+      actor: "octocat",
+      run: run({ status: "completed", conclusion: "success" }),
+    }),
+  });
+  return withWorkflow(
+    probe,
+    Effect.gen(function* () {
+      const workflow = yield* WorkflowActionsWorkflow;
+      yield* workflow.dispatch(dispatchInput());
+      yield* settle;
+      assert.strictEqual(probe.calls.dispatch, 1);
+      assert.strictEqual((yield* workflow.snapshot(github)).dispatches.at(-1)?.kind, "succeeded");
+
+      yield* workflow.newDispatchCycle(github, "deploy.yml");
+      assert.strictEqual(probe.calls.dispatch, 1);
+      assert.isFalse((yield* workflow.snapshot(github)).dispatches.some(
+        (state) => state.request.workflowId === "deploy.yml",
+      ));
+
+      yield* workflow.dispatch(dispatchInput());
+      yield* settle;
+      assert.strictEqual(probe.calls.dispatch, 2);
+      assert.strictEqual((yield* workflow.snapshot(github)).dispatches.at(-1)?.kind, "succeeded");
+    }),
+  );
+});
+
+it.effect("starts each queued dispatch reconciliation window immediately before its own POST", () => {
+  const firstResponse = Promise.withResolvers<WorkflowDispatchResponse>();
+  const probe = makeApiProbe({
+    dispatch: (call) => call === 1
+      ? firstResponse.promise
+      : { accepted: true, locating_run: true, actor: "octocat" },
+    runs: () => ({ repo: apiRepo(), items: [], exhausted: true }),
+  });
+  return withWorkflow(
+    probe,
+    Effect.gen(function* () {
+      const workflow = yield* WorkflowActionsWorkflow;
+      const first = yield* workflow.dispatch(dispatchInput());
+      const second = yield* workflow.dispatch(dispatchInput());
+      yield* settle;
+      assert.strictEqual(probe.calls.dispatch, 1);
+
+      yield* TestClock.adjust("61 seconds");
+      firstResponse.resolve({
+        accepted: true,
+        locating_run: false,
+        actor: "octocat",
+        run: run({ status: "completed", conclusion: "success" }),
+      });
+      yield* settle;
+      assert.strictEqual(probe.calls.dispatch, 2);
+      assert.strictEqual(
+        (yield* workflow.snapshot(github)).dispatches.find((state) => state.request.id === second.id)?.kind,
+        "locating",
+      );
+      assert.strictEqual(
+        (yield* workflow.snapshot(github)).dispatches.find((state) => state.request.id === first.id)?.kind,
+        "succeeded",
+      );
+
+      yield* TestClock.adjust("59 seconds");
+      yield* settle;
+      assert.strictEqual(
+        (yield* workflow.snapshot(github)).dispatches.find((state) => state.request.id === second.id)?.kind,
+        "locating",
+      );
+      yield* TestClock.adjust("1 second");
+      yield* settle;
+      assert.strictEqual(
+        (yield* workflow.snapshot(github)).dispatches.find((state) => state.request.id === second.id)?.kind,
+        "locating_timed_out",
+      );
+      assert.strictEqual(probe.calls.dispatch, 2);
+    }),
+  );
+});
+
+it.effect("never reconciles another maintainer's run when the dispatch actor is unknown", () => {
+  const problem = {
+    code: "mutationOutcomeUnknown",
+    detail: "The provider may have accepted the dispatch.",
+    status: 502,
+    title: "Outcome unknown",
+    type: "about:blank",
+  };
+  const probe = makeApiProbe({
+    dispatch: () => ({ error: problem, response: new Response(null, { status: 502 }) }),
+    runs: () => ({ repo: apiRepo(), exhausted: true, items: [run({ actor: "another-maintainer" })] }),
+  });
+  return withWorkflow(
+    probe,
+    Effect.gen(function* () {
+      const workflow = yield* WorkflowActionsWorkflow;
+      yield* workflow.dispatch({ ...dispatchInput(), actor: undefined });
+      yield* settle;
+      const state = (yield* workflow.snapshot(github)).dispatches.at(-1);
+      assert.strictEqual(state?.kind, "uncertain");
+      assert.deepStrictEqual(state?.kind === "uncertain" ? state.candidates : [], []);
+      assert.strictEqual(probe.calls.dispatch, 1);
+    }),
+  );
+});
+
+it.effect("uses an accepted response actor to reconcile a locating run", () => {
+  const probe = makeApiProbe({
+    dispatch: () => ({ accepted: true, locating_run: true, actor: "octocat" }),
+    runs: () => ({ repo: apiRepo(), exhausted: true, items: [run({ actor: "octocat" })] }),
+  });
+  return withWorkflow(
+    probe,
+    Effect.gen(function* () {
+      const workflow = yield* WorkflowActionsWorkflow;
+      yield* workflow.dispatch({ ...dispatchInput(), actor: undefined });
+      yield* settle;
+      const state = (yield* workflow.snapshot(github)).dispatches.at(-1);
+      assert.strictEqual(state?.kind, "succeeded");
+      assert.strictEqual(state?.request.actor, "octocat");
+      assert.strictEqual(probe.calls.dispatch, 1);
+    }),
+  );
+});
+
+it.effect("appends older run pages and preserves them while polling page one", () => {
+  const observedCursors: unknown[] = [];
+  let firstPageReads = 0;
+  const probe = makeApiProbe({
+    runs: (_call, options) => {
+      const cursor = options.params?.query?.["cursor"];
+      observedCursors.push(cursor);
+      if (cursor === "cursor-2") {
+        return {
+          repo: apiRepo(),
+          items: [run({ id: "run-older-2", run_number: 10 }), run({ id: "run-older-1", run_number: 11 })],
+          exhausted: true,
+        };
+      }
+      firstPageReads += 1;
+      return {
+        repo: apiRepo(),
+        items: [run({
+          id: firstPageReads === 1 ? "run-current-1" : "run-current-2",
+          run_number: firstPageReads === 1 ? 12 : 13,
+          status: "completed",
+          conclusion: "success",
+        })],
+        next_cursor: "cursor-2",
+        exhausted: false,
+      };
+    },
+  });
+  return withWorkflow(
+    probe,
+    Effect.gen(function* () {
+      const workflow = yield* WorkflowActionsWorkflow;
+      yield* workflow.selectWorkflow(github, "deploy.yml");
+      const owner = yield* workflow.watchRepository("surface", github, () => {}).pipe(Effect.forkChild);
+      yield* settle;
+      let snapshot = yield* workflow.snapshot(github);
+      assert.deepStrictEqual(snapshot.runs.map((item) => item.id), ["run-current-1"]);
+      assert.strictEqual(snapshot.runsPage.nextCursor, "cursor-2");
+      assert.isFalse(snapshot.runsPage.exhausted);
+
+      yield* workflow.loadMoreRuns(github);
+      snapshot = yield* workflow.snapshot(github);
+      assert.deepStrictEqual(
+        snapshot.runs.map((item) => item.id),
+        ["run-current-1", "run-older-2", "run-older-1"],
+      );
+      assert.isTrue(snapshot.runsPage.exhausted);
+
+      yield* TestClock.adjust("30 seconds");
+      yield* settle;
+      snapshot = yield* workflow.snapshot(github);
+      assert.deepStrictEqual(
+        snapshot.runs.map((item) => item.id),
+        ["run-current-2", "run-older-2", "run-older-1"],
+      );
+      assert.deepStrictEqual(observedCursors, [undefined, "cursor-2", undefined]);
+      yield* Fiber.interrupt(owner);
+    }),
+  );
+});

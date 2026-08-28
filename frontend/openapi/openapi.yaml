@@ -6345,6 +6345,8 @@ components:
       properties:
         capabilities:
           $ref: "#/components/schemas/ProviderCapabilitiesResponse"
+        default_branch:
+          type: string
         name:
           type: string
         operations:
@@ -7821,6 +7823,8 @@ components:
           type: string
         accepted:
           type: boolean
+        actor:
+          type: string
         locating_run:
           type: boolean
         run:
@@ -8584,6 +8588,7 @@ paths:
         - explode: false
           in: query
           name: workflow_id
+          required: true
           schema:
             type: string
         - explode: false
@@ -11353,6 +11358,7 @@ paths:
         - explode: false
           in: query
           name: workflow_id
+          required: true
           schema:
             type: string
         - explode: false

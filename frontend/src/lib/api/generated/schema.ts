@@ -7646,6 +7646,7 @@ export interface components {
         };
         RepoRefResponse: {
             capabilities: components["schemas"]["ProviderCapabilitiesResponse"];
+            default_branch?: string;
             name: string;
             operations?: components["schemas"]["RepoOperations"];
             owner: string;
@@ -8320,6 +8321,7 @@ export interface components {
              */
             readonly $schema?: string;
             accepted: boolean;
+            actor?: string;
             locating_run: boolean;
             run?: components["schemas"]["WorkflowRunResponse"];
         };
@@ -8651,8 +8653,8 @@ export type $defs = Record<string, never>;
 export interface operations {
     "list-workflow-runs": {
         parameters: {
-            query?: {
-                workflow_id?: string;
+            query: {
+                workflow_id: string;
                 event?: string;
                 branch?: string;
                 cursor?: string;
@@ -11117,8 +11119,8 @@ export interface operations {
     };
     "list-workflow-runs-on-host": {
         parameters: {
-            query?: {
-                workflow_id?: string;
+            query: {
+                workflow_id: string;
                 event?: string;
                 branch?: string;
                 cursor?: string;

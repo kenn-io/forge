@@ -1359,20 +1359,30 @@
         .reverse()
         .find((candidate) => candidate.request.workflowId === workflow.id);
       if (!dispatch) return { kind: "idle" };
-      if (dispatch.kind === "pending" || dispatch.kind === "locating") {
-        return { kind: "pending" };
-      }
-      if (dispatch.kind === "succeeded") return { kind: "succeeded" };
+      if (dispatch.kind === "pending") return { kind: "pending" };
+      if (dispatch.kind === "locating") return { kind: "locating" };
+      if (dispatch.kind === "succeeded") return { kind: "succeeded", run: dispatch.run };
       if (
         dispatch.kind === "failed"
         && dispatch.error._tag === "ApiProblemError"
         && dispatch.error.problem.code === ProblemCodes.conflict
+        && dispatch.error.problem.details?.["reason"] === "workflow_definition_changed"
       ) {
         return { kind: "conflict" };
+      }
+      if (dispatch.kind === "failed") {
+        return { kind: "failed", message: workflowDispatchFailureMessage(dispatch) };
+      }
+      if (dispatch.kind === "locating_timed_out") {
+        return {
+          kind: "succeeded",
+          message: "The provider accepted the workflow, but its run was not observed.",
+        };
       }
       return {
         kind: "uncertain",
         message: workflowDispatchFailureMessage(dispatch),
+        candidates: dispatch.candidates,
       };
     },
   );
@@ -1410,8 +1420,15 @@
   }
 
   function reloadWorkflowCatalog(): void {
-    if (!workflowCatalogDemandEnabled) return;
-    workflowActions.claimRepository(workflowRepositoryOwner, routeRef);
+    const workflow = workflowDialogWorkflow;
+    if (!workflowCatalogDemandEnabled || !workflow) return;
+    workflowActions.refreshCatalog(routeRef, workflow.id);
+  }
+
+  function newWorkflowDispatchCycle(): void {
+    const workflow = workflowDialogWorkflow;
+    if (!workflowCatalogDemandEnabled || !workflow) return;
+    workflowActions.newDispatchCycle(routeRef, workflow.id);
   }
 
   function claimWorkflowRepository(ref: ProviderRouteRef | null): Attachment {
@@ -2997,6 +3014,7 @@
           onsubmit={submitWorkflow}
           onclose={() => { workflowDialogWorkflow = null; }}
           onreload={reloadWorkflowCatalog}
+          onnewcycle={newWorkflowDispatchCycle}
         />
       {/if}
 

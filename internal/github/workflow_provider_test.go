@@ -21,12 +21,16 @@ type workflowProviderFake struct {
 	runs platform.Page[*gh.WorkflowRun]
 	jobs []*gh.WorkflowJob
 	dispatch *gh.WorkflowDispatchRunDetails
+	actor string
 	definitionRefs []string
 	calls []string
 }
 
 func (f *workflowProviderFake) GetRepository(context.Context, string, string) (*gh.Repository, error) {
 	return &gh.Repository{Name: gh.Ptr("widgets"), DefaultBranch: gh.Ptr("trunk")}, nil
+}
+func (f *workflowProviderFake) AuthenticatedViewerLogin(context.Context) (string, error) {
+	return f.actor, nil
 }
 func (f *workflowProviderFake) ListRepositoryWorkflows(context.Context, string, string) ([]*gh.Workflow, error) {
 	f.calls = append(f.calls, "workflows")
@@ -117,6 +121,14 @@ func TestGitHubWorkflowCapabilitiesAreIndependent(t *testing.T) {
 			if !test.dispatch {
 				_, err := provider.DispatchWorkflow(t.Context(), platform.RepoRef{}, platform.WorkflowDispatchRequest{})
 				require.ErrorIs(t, err, platform.ErrUnsupportedCapability)
+			} else {
+				result, err := provider.DispatchWorkflow(
+					t.Context(),
+					platform.RepoRef{Owner: "acme", Name: "widgets"},
+					platform.WorkflowDispatchRequest{WorkflowID: "1", Ref: "main"},
+				)
+				require.NoError(t, err)
+				assert.Empty(t, result.Actor)
 			}
 		})
 	}
@@ -187,7 +199,8 @@ func TestGitHubWorkflowProviderNormalizesRunsJobsAndDispatch(t *testing.T) {
 	started := created.Add(time.Second)
 	completed := created.Add(2 * time.Second)
 	fake := &workflowProviderFake{
-		runs: platform.Page[*gh.WorkflowRun]{NextCursor: "3", Items: []*gh.WorkflowRun{{
+		actor: "maintainer",
+		runs: platform.Page[*gh.WorkflowRun]{NextCursor: "3", Exhausted: true, Items: []*gh.WorkflowRun{{
 			ID: gh.Ptr(int64(100)), WorkflowID: gh.Ptr(int64(42)), RunNumber: gh.Ptr(7), Name: gh.Ptr("Release"),
 			Event: gh.Ptr("workflow_dispatch"), HeadBranch: gh.Ptr("main"), HeadSHA: gh.Ptr("abc"), Actor: &gh.User{Login: gh.Ptr("octocat")},
 			Status: gh.Ptr("completed"), Conclusion: gh.Ptr("success"), CreatedAt: &gh.Timestamp{Time: created}, UpdatedAt: &gh.Timestamp{Time: updated}, HTMLURL: gh.Ptr("https://example.test/runs/100"),
@@ -199,7 +212,7 @@ func TestGitHubWorkflowProviderNormalizesRunsJobsAndDispatch(t *testing.T) {
 	page, err := provider.ListWorkflowRuns(t.Context(), platform.RepoRef{Owner: "acme", Name: "widgets"}, platform.WorkflowRunQuery{WorkflowID: "42"})
 	require.NoError(t, err)
 	assert.Equal(t, platform.Page[platform.WorkflowRun]{
-		NextCursor: "3",
+		NextCursor: "3", Exhausted: true,
 		Items: []platform.WorkflowRun{{
 			ID: "100", WorkflowID: "42", RunNumber: 7, Name: "Release",
 			Event: "workflow_dispatch", Ref: "main", HeadSHA: "abc", Actor: "octocat",
@@ -221,15 +234,17 @@ func TestGitHubWorkflowProviderNormalizesRunsJobsAndDispatch(t *testing.T) {
 	result, err := provider.DispatchWorkflow(t.Context(), platform.RepoRef{Owner: "acme", Name: "widgets"}, platform.WorkflowDispatchRequest{WorkflowID: "42", Ref: "main"})
 	require.NoError(t, err)
 	assert.Equal(t, platform.WorkflowDispatchResult{
+		Actor:    "maintainer",
 		Accepted: true,
 		Run: &platform.WorkflowRun{
-			ID: "101", WorkflowID: "42", WebURL: "https://example.test/runs/101",
+			ID: "101", WorkflowID: "42", Actor: "maintainer",
+			WebURL: "https://example.test/runs/101",
 		},
 	}, result)
 	fake.dispatch = nil
 	result, err = provider.DispatchWorkflow(t.Context(), platform.RepoRef{Owner: "acme", Name: "widgets"}, platform.WorkflowDispatchRequest{WorkflowID: "42", Ref: "main"})
 	require.NoError(t, err)
-	assert.Equal(t, platform.WorkflowDispatchResult{Accepted: true, LocatingRun: true}, result)
+	assert.Equal(t, platform.WorkflowDispatchResult{Accepted: true, LocatingRun: true, Actor: "maintainer"}, result)
 	_, err = provider.DispatchWorkflow(t.Context(), platform.RepoRef{}, platform.WorkflowDispatchRequest{WorkflowID: "not-decimal"})
 	require.ErrorIs(t, err, platform.ErrInvalidArgument)
 }

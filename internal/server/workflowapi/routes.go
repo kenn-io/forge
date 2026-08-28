@@ -119,7 +119,7 @@ func (h *Handler) listCatalogOnHost(ctx context.Context, input *hostRepositoryIn
 }
 
 func (h *Handler) listRuns(ctx context.Context, input *workflowRunsInput) (*runsOutput, error) {
-	if input.WorkflowID != "" && strings.TrimSpace(input.WorkflowID) == "" {
+	if strings.TrimSpace(input.WorkflowID) == "" {
 		return nil, httpapi.Validation("query.workflow_id", "workflow_id must not be blank")
 	}
 	resolved, err := h.resolve(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, capabilityReadWorkflowRuns)
@@ -262,7 +262,16 @@ func (h *Handler) dispatch(ctx context.Context, input *workflowDispatchInput) (*
 		var dispatchErr error
 		result, dispatchErr = dispatcher.DispatchWorkflow(ctx, ref, request)
 		if dispatchErr != nil {
-			return httpapi.ProviderMutationProblem(dispatchErr, string(ref.Platform), ref.Host)
+			problem := httpapi.ProviderMutationProblem(dispatchErr, string(ref.Platform), ref.Host)
+			if result.Actor != "" {
+				if mutationProblem, ok := problem.(*httpapi.ProblemError); ok && mutationProblem.Code == httpapi.CodeMutationOutcomeUnknown {
+					if mutationProblem.Details == nil {
+						mutationProblem.Details = map[string]any{}
+					}
+					mutationProblem.Details["actor"] = result.Actor
+				}
+			}
+			return problem
 		}
 		return nil
 	})
@@ -272,7 +281,9 @@ func (h *Handler) dispatch(ctx context.Context, input *workflowDispatchInput) (*
 	if !matched {
 		return nil, repositoryIdentityChangedProblem()
 	}
-	response := WorkflowDispatchResponse{Accepted: result.Accepted, LocatingRun: result.LocatingRun}
+	response := WorkflowDispatchResponse{
+		Accepted: result.Accepted, LocatingRun: result.LocatingRun, Actor: result.Actor,
+	}
 	if result.Run != nil {
 		run := workflowRun(*result.Run)
 		response.Run = &run
@@ -301,6 +312,10 @@ func dispatchUnavailableProblem(repo db.Repo, availability httpapi.OperationAvai
 			details["retryAfter"] = availability.RetryAt
 		}
 		return httpapi.NewProblem(http.StatusTooManyRequests, httpapi.CodeRateLimited, availability.UnavailableReason, details)
+	case "missing_write_credential", "write_credential_error":
+		return httpapi.NewProblem(http.StatusForbidden, httpapi.CodeForbidden, availability.UnavailableReason, map[string]any{
+			"reason": availability.Code, "provider": string(httpapi.ProviderKind(repo)), "platformHost": httpapi.ProviderHost(repo),
+		})
 	default:
 		reason := availability.Code
 		if reason == "" {

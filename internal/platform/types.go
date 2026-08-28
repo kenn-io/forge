@@ -596,6 +596,7 @@ type WorkflowDispatchResult struct {
 	Accepted    bool
 	LocatingRun bool
 	Run         *WorkflowRun
+	Actor        string
 }
 
 type Capabilities struct {

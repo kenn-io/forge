@@ -47,7 +47,7 @@ export interface AcceptedWorkflowDispatch {
   readonly dispatchRef: string;
   readonly inputs: Readonly<Record<string, unknown>>;
   readonly actor?: string | undefined;
-  readonly acceptedAt: number;
+  readonly startedAt?: number | undefined;
 }
 
 export type WorkflowDispatchState =
@@ -68,12 +68,18 @@ export interface WorkflowActionsLoading {
   readonly runs: boolean;
   readonly jobs: readonly string[];
 }
+export interface WorkflowRunsPageState {
+  readonly nextCursor: string | null;
+  readonly exhausted: boolean;
+  readonly loadingMore: boolean;
+}
 
 export interface WorkflowActionsSnapshot {
   readonly ref: ProviderRouteRef;
   readonly catalog: WorkflowCatalog | null;
   readonly selectedWorkflow: WorkflowDefinition | null;
   readonly runs: readonly WorkflowRun[];
+  readonly runsPage: WorkflowRunsPageState;
   readonly jobs: Readonly<Record<string, readonly WorkflowRunJob[]>>;
   readonly loading: WorkflowActionsLoading;
   readonly dispatches: readonly WorkflowDispatchState[];
@@ -90,6 +96,9 @@ interface WorkflowActionsWorkflowShape {
   ) => Effect.Effect<never>;
   readonly watchJobs: (owner: string, ref: ProviderRouteRef, runId: string) => Effect.Effect<never>;
   readonly selectWorkflow: (ref: ProviderRouteRef, workflowId: string | null) => Effect.Effect<void>;
+  readonly refreshCatalog: (ref: ProviderRouteRef, workflowId: string) => Effect.Effect<void>;
+  readonly loadMoreRuns: (ref: ProviderRouteRef) => Effect.Effect<void>;
+  readonly newDispatchCycle: (ref: ProviderRouteRef, workflowId: string) => Effect.Effect<void>;
   readonly dispatch: (input: WorkflowDispatchInput) => Effect.Effect<AcceptedWorkflowDispatch, CommandQueueClosed>;
   readonly snapshot: (ref: ProviderRouteRef) => Effect.Effect<WorkflowActionsSnapshot>;
   readonly setEnabled: (enabled: boolean) => Effect.Effect<void>;
@@ -113,6 +122,7 @@ interface RepositoryEntry {
   selectedWorkflowId: string | null;
   loopGeneration: number;
   loopRunning: boolean;
+  readonly runPages: Map<string, WorkflowRunPagination>;
 }
 
 interface JobDemand {
@@ -123,6 +133,13 @@ interface JobDemand {
   generation: number;
   running: boolean;
   restartAfterFailure: boolean;
+}
+interface WorkflowRunPagination {
+  firstPage: readonly WorkflowRun[];
+  olderRuns: readonly WorkflowRun[];
+  nextCursor: string | null;
+  exhausted: boolean;
+  loadingMore: boolean;
 }
 
 interface DispatchCommand {
@@ -177,6 +194,7 @@ function emptySnapshot(ref: ProviderRouteRef): WorkflowActionsSnapshot {
     catalog: null,
     selectedWorkflow: null,
     runs: [],
+    runsPage: { nextCursor: null, exhausted: false, loadingMore: false },
     jobs: {},
     loading: { catalog: false, runs: false, jobs: [] },
     dispatches: [],
@@ -189,7 +207,6 @@ function isTerminalRun(run: WorkflowRun): boolean {
   return status === "completed" || status === "cancelled" || status === "failure" || status === "success";
 }
 
-
 function dispatchNeedsPolling(state: WorkflowDispatchState, now: number): boolean {
   switch (state.kind) {
     case "pending":
@@ -199,7 +216,8 @@ function dispatchNeedsPolling(state: WorkflowDispatchState, now: number): boolea
     case "locating":
       return true;
     case "uncertain":
-      return now < state.request.acceptedAt + reconciliationWindowMs;
+      return state.request.startedAt !== undefined
+        && now < state.request.startedAt + reconciliationWindowMs;
     case "failed":
     case "locating_timed_out":
       return false;
@@ -207,20 +225,35 @@ function dispatchNeedsPolling(state: WorkflowDispatchState, now: number): boolea
 }
 
 function matchingCandidates(request: AcceptedWorkflowDispatch, runs: readonly WorkflowRun[]): readonly WorkflowRun[] {
-  const earliest = request.acceptedAt - candidateClockSkewMs;
-  const latest = request.acceptedAt + reconciliationWindowMs;
+  const actor = request.actor?.trim();
+  if (request.startedAt === undefined || !actor) return [];
+  const earliest = request.startedAt - candidateClockSkewMs;
+  const latest = request.startedAt + reconciliationWindowMs;
   return runs.filter((candidate) => {
     const createdAt = candidate.created_at === undefined ? Number.NaN : Date.parse(candidate.created_at);
     return (
       candidate.workflow_id === request.workflowId &&
       candidate.event === "workflow_dispatch" &&
       candidate.ref === request.dispatchRef &&
-      (request.actor === undefined || candidate.actor === request.actor) &&
+      candidate.actor === actor &&
       Number.isFinite(createdAt) &&
       createdAt >= earliest &&
       createdAt <= latest
     );
   });
+}
+
+function runsPageState(page: WorkflowRunPagination): WorkflowRunsPageState {
+  return {
+    nextCursor: page.nextCursor,
+    exhausted: page.exhausted,
+    loadingMore: page.loadingMore,
+  };
+}
+
+function combinedRuns(page: WorkflowRunPagination): readonly WorkflowRun[] {
+  const firstPageIDs = new Set(page.firstPage.map((run) => run.id));
+  return [...page.firstPage, ...page.olderRuns.filter((run) => !firstPageIDs.has(run.id))];
 }
 
 function reconcileDispatchStates(
@@ -242,7 +275,10 @@ function reconcileDispatchStates(
       case "locating": {
         const candidates = matchingCandidates(state.request, runs);
         if (candidates.length === 1) return { kind: "succeeded", request: state.request, run: candidates[0] };
-        if (now >= state.request.acceptedAt + reconciliationWindowMs) {
+        if (
+          state.request.startedAt !== undefined
+          && now >= state.request.startedAt + reconciliationWindowMs
+        ) {
           return { kind: "locating_timed_out", request: state.request };
         }
         return state;
@@ -258,6 +294,14 @@ function isDispatchOutcomeUncertain(error: WorkflowActionsError): boolean {
     error._tag === "TransientTransportError" ||
     (error._tag === "ApiProblemError" && error.problem.code === "mutationOutcomeUnknown")
   );
+}
+
+function actorFromMutationError(error: WorkflowActionsError): string | undefined {
+  if (error._tag !== "ApiProblemError" || error.problem.code !== "mutationOutcomeUnknown") {
+    return undefined;
+  }
+  const actor = error.problem.details?.["actor"];
+  return typeof actor === "string" && actor.trim() !== "" ? actor.trim() : undefined;
 }
 
 export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)(
@@ -287,8 +331,23 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
         selectedWorkflowId: null,
         loopGeneration: 0,
         loopRunning: false,
+        runPages: new Map(),
       };
       repositories.set(key, created);
+      return created;
+    }
+
+    function runPageFor(entry: RepositoryEntry, workflowId: string): WorkflowRunPagination {
+      const existing = entry.runPages.get(workflowId);
+      if (existing !== undefined) return existing;
+      const created: WorkflowRunPagination = {
+        firstPage: [],
+        olderRuns: [],
+        nextCursor: null,
+        exhausted: false,
+        loadingMore: false,
+      };
+      entry.runPages.set(workflowId, created);
       return created;
     }
 
@@ -331,12 +390,16 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
       );
     }
 
-    function readRuns(entry: RepositoryEntry, workflowId: string) {
+    function readRuns(entry: RepositoryEntry, workflowId: string, cursor?: string) {
       return api.execute("GET workflow runs", (signal) =>
         api.client.GET(providerActionsPath(entry.ref, "/runs"), {
           params: {
             path: providerRouteParams(entry.ref),
-            query: { workflow_id: workflowId, per_page: 50 },
+            query: {
+              workflow_id: workflowId,
+              per_page: 50,
+              ...(cursor !== undefined && { cursor }),
+            },
           },
           signal,
         }),
@@ -396,20 +459,23 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
       );
     }
 
-    const loadCatalog = Effect.fn("WorkflowActions.loadCatalog")(function* (entry: RepositoryEntry) {
-      if (entry.snapshot.catalog !== null) return;
+    const loadCatalog = Effect.fn("WorkflowActions.loadCatalog")(function* (
+      entry: RepositoryEntry,
+      force = false,
+    ) {
+      if (!force && entry.snapshot.catalog !== null) return true;
       yield* updateSnapshot(entry.key, (snapshot) => ({
         ...snapshot,
         loading: { ...snapshot.loading, catalog: true },
       }));
-      yield* readCatalog(entry).pipe(
+      return yield* readCatalog(entry).pipe(
         Effect.matchEffect({
           onFailure: (error) =>
             updateSnapshot(entry.key, (snapshot) => ({
               ...snapshot,
               error,
               loading: { ...snapshot.loading, catalog: false },
-            })),
+            })).pipe(Effect.as(false)),
           onSuccess: (catalog) =>
             updateSnapshot(entry.key, (snapshot, current) => ({
               ...snapshot,
@@ -418,7 +484,7 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
                 catalog.workflows?.find((workflow) => workflow.id === current.selectedWorkflowId) ?? null,
               error: null,
               loading: { ...snapshot.loading, catalog: false },
-            })),
+            })).pipe(Effect.as(true)),
         }),
       );
     });
@@ -440,42 +506,53 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
           onFailure: (error) =>
             Clock.currentTimeMillis.pipe(
               Effect.flatMap((now) =>
-                updateSnapshot(entry.key, (snapshot, current) => ({
-                  ...snapshot,
-                  dispatches: reconcileWorkflowDispatchStates(
-                    snapshot.dispatches,
-                    workflowId,
-                    snapshot.runs,
-                    now,
-                  ),
-                  ...(current.selectedWorkflowId === workflowId
-                    ? {
-                        error,
-                        loading: { ...snapshot.loading, runs: false },
-                      }
-                    : {}),
-                })),
+                updateSnapshot(entry.key, (snapshot, current) => {
+                  const firstPage = runPageFor(current, workflowId).firstPage;
+                  return {
+                    ...snapshot,
+                    dispatches: reconcileWorkflowDispatchStates(
+                      snapshot.dispatches,
+                      workflowId,
+                      firstPage,
+                      now,
+                    ),
+                    ...(current.selectedWorkflowId === workflowId
+                      ? {
+                          error,
+                          loading: { ...snapshot.loading, runs: false },
+                        }
+                      : {}),
+                  };
+                }),
               ),
             ),
           onSuccess: (response) =>
             Clock.currentTimeMillis.pipe(
               Effect.flatMap((now) =>
-                updateSnapshot(entry.key, (snapshot, current) => ({
-                  ...snapshot,
-                  ...(current.selectedWorkflowId === workflowId
-                    ? {
-                        runs: response.items ?? [],
-                        error: null,
-                        loading: { ...snapshot.loading, runs: false },
-                      }
-                    : {}),
-                  dispatches: reconcileWorkflowDispatchStates(
-                    snapshot.dispatches,
-                    workflowId,
-                    response.items ?? [],
-                    now,
-                  ),
-                })),
+                updateSnapshot(entry.key, (snapshot, current) => {
+                  const items = response.items ?? [];
+                  const page = runPageFor(current, workflowId);
+                  page.firstPage = items;
+                  page.nextCursor = response.next_cursor ?? null;
+                  page.exhausted = response.exhausted;
+                  return {
+                    ...snapshot,
+                    ...(current.selectedWorkflowId === workflowId
+                      ? {
+                          runs: combinedRuns(page),
+                          runsPage: runsPageState(page),
+                          error: null,
+                          loading: { ...snapshot.loading, runs: false },
+                        }
+                      : {}),
+                    dispatches: reconcileWorkflowDispatchStates(
+                      snapshot.dispatches,
+                      workflowId,
+                      items,
+                      now,
+                    ),
+                  };
+                }),
               ),
             ),
         }),
@@ -591,39 +668,136 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
       ),
     );
 
+    const loadMoreRuns = Effect.fn("WorkflowActions.loadMoreRuns")(function* (ref: ProviderRouteRef) {
+      const entry = entryFor(ref);
+      const request = yield* registry.withPermit(
+        Effect.sync(() => {
+          if (!enabled || entry.selectedWorkflowId === null) return undefined;
+          const page = runPageFor(entry, entry.selectedWorkflowId);
+          if (page.loadingMore || page.exhausted || page.nextCursor === null) return undefined;
+          page.loadingMore = true;
+          return { workflowId: entry.selectedWorkflowId, cursor: page.nextCursor };
+        }),
+      );
+      if (request === undefined) return;
+      yield* updateSnapshot(entry.key, (snapshot, current) => ({
+        ...snapshot,
+        runsPage: runsPageState(runPageFor(current, request.workflowId)),
+      }));
+      yield* readRuns(entry, request.workflowId, request.cursor).pipe(
+        Effect.matchEffect({
+          onFailure: (error) =>
+            updateSnapshot(entry.key, (snapshot, current) => {
+              const page = runPageFor(current, request.workflowId);
+              page.loadingMore = false;
+              return {
+                ...snapshot,
+                error,
+                ...(current.selectedWorkflowId === request.workflowId
+                  ? { runsPage: runsPageState(page) }
+                  : {}),
+              };
+            }),
+          onSuccess: (response) =>
+            updateSnapshot(entry.key, (snapshot, current) => {
+              const page = runPageFor(current, request.workflowId);
+              const knownIDs = new Set([...page.firstPage, ...page.olderRuns].map((run) => run.id));
+              page.olderRuns = [
+                ...page.olderRuns,
+                ...(response.items ?? []).filter((run) => !knownIDs.has(run.id)),
+              ];
+              page.nextCursor = response.next_cursor ?? null;
+              page.exhausted = response.exhausted;
+              page.loadingMore = false;
+              return {
+                ...snapshot,
+                error: null,
+                ...(current.selectedWorkflowId === request.workflowId
+                  ? {
+                      runs: combinedRuns(page),
+                      runsPage: runsPageState(page),
+                    }
+                  : {}),
+              };
+            }),
+        }),
+      );
+    });
+
+    const newDispatchCycle = Effect.fn("WorkflowActions.newDispatchCycle")(function* (
+      ref: ProviderRouteRef,
+      workflowId: string,
+    ) {
+      const key = workflowRepositoryKey(ref);
+      yield* updateSnapshot(key, (snapshot) => ({
+        ...snapshot,
+        dispatches: snapshot.dispatches.filter((state) =>
+          state.request.workflowId !== workflowId
+          || state.kind === "pending"
+          || state.kind === "locating"
+        ),
+      }));
+      yield* stopRepositoryLoopIfIdle(key);
+    });
+
+    const refreshCatalog = Effect.fn("WorkflowActions.refreshCatalog")(function* (
+      ref: ProviderRouteRef,
+      workflowId: string,
+    ) {
+      const entry = entryFor(ref);
+      if (!(yield* loadCatalog(entry, true))) return;
+      yield* newDispatchCycle(entry.ref, workflowId);
+      yield* restartRepositoryLoop(entry.key);
+    });
+
+
     const dispatchQueue = yield* makeOrderedCommandQueue<DispatchCommand, void, never, never>(
       "workflow actions dispatch",
       (command) =>
         Deferred.await(command.admitted).pipe(
           Effect.andThen(
-            api.execute("POST workflow dispatch", (signal) =>
-              api.client.POST(providerActionsPath(command.request.ref, "/workflows/{workflow_id}/dispatch"), {
-                params: {
-                  path: {
-                    ...providerRouteParams(command.request.ref),
-                    workflow_id: command.request.workflowId,
+            Effect.gen(function* () {
+              const startedAt = yield* Clock.currentTimeMillis;
+              yield* updateSnapshot(workflowRepositoryKey(command.request.ref), (snapshot) => ({
+                ...snapshot,
+                dispatches: snapshot.dispatches.map((state): WorkflowDispatchState =>
+                  state.request.id === command.request.id
+                    ? { ...state, request: { ...state.request, startedAt } }
+                    : state
+                ),
+              }));
+              return yield* api.execute("POST workflow dispatch", (signal) =>
+                api.client.POST(providerActionsPath(command.request.ref, "/workflows/{workflow_id}/dispatch"), {
+                  params: {
+                    path: {
+                      ...providerRouteParams(command.request.ref),
+                      workflow_id: command.request.workflowId,
+                    },
                   },
-                },
-                body: {
-                  expected_definition_sha: command.request.expectedDefinitionSha,
-                  inputs: command.request.inputs,
-                  ref: command.request.dispatchRef,
-                },
-                signal,
-              }),
-            ),
+                  body: {
+                    expected_definition_sha: command.request.expectedDefinitionSha,
+                    inputs: command.request.inputs,
+                    ref: command.request.dispatchRef,
+                  },
+                  signal,
+                }),
+              );
+            }),
           ),
           Effect.matchEffect({
             onFailure: (error) =>
               updateSnapshot(workflowRepositoryKey(command.request.ref), (snapshot) => ({
                 ...snapshot,
-                dispatches: snapshot.dispatches.map((state): WorkflowDispatchState =>
-                  state.request.id !== command.request.id
-                    ? state
-                    : isDispatchOutcomeUncertain(error)
-                      ? { kind: "uncertain", request: command.request, error, candidates: [] }
-                      : { kind: "failed", request: command.request, error },
-                ),
+                dispatches: snapshot.dispatches.map((state): WorkflowDispatchState => {
+                  if (state.request.id !== command.request.id) return state;
+                  const actor = actorFromMutationError(error);
+                  const request = actor === undefined
+                    ? state.request
+                    : { ...state.request, actor };
+                  return isDispatchOutcomeUncertain(error)
+                    ? { kind: "uncertain", request, error, candidates: [] }
+                    : { kind: "failed", request, error };
+                }),
               })).pipe(
                 Effect.andThen(
                   isDispatchOutcomeUncertain(error)
@@ -636,10 +810,12 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
                 ...snapshot,
                 dispatches: snapshot.dispatches.map((state): WorkflowDispatchState => {
                   if (state.request.id !== command.request.id) return state;
+                  const actor = response.actor?.trim() || response.run?.actor.trim();
+                  const request = actor ? { ...state.request, actor } : state.request;
                   if (response.run !== undefined) {
-                    return { kind: "succeeded", request: command.request, run: response.run };
+                    return { kind: "succeeded", request, run: response.run };
                   }
-                  return { kind: "locating", request: command.request };
+                  return { kind: "locating", request };
                 }),
               })).pipe(
                 Effect.andThen(
@@ -891,10 +1067,14 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
       const entry = entryFor(ref);
       yield* updateSnapshot(entry.key, (snapshot, current) => {
         current.selectedWorkflowId = workflowId;
+        const page = workflowId === null ? undefined : runPageFor(current, workflowId);
         return {
           ...snapshot,
           selectedWorkflow: snapshot.catalog?.workflows?.find((workflow) => workflow.id === workflowId) ?? null,
-          runs: [],
+          runs: page === undefined ? [] : combinedRuns(page),
+          runsPage: page === undefined
+            ? { nextCursor: null, exhausted: false, loadingMore: false }
+            : runsPageState(page),
           error: null,
           loading: { ...snapshot.loading, runs: false },
         };
@@ -903,7 +1083,6 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
     });
 
     const dispatch = Effect.fn("WorkflowActions.dispatch")(function* (input: WorkflowDispatchInput) {
-      const acceptedAt = yield* Clock.currentTimeMillis;
       const sequence = yield* Ref.updateAndGet(requestSequence, (current) => current + 1);
       const request: AcceptedWorkflowDispatch = {
         id: `workflow-dispatch-${sequence}`,
@@ -913,7 +1092,6 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
         dispatchRef: input.dispatchRef,
         inputs: { ...input.inputs },
         ...(input.actor !== undefined && { actor: input.actor }),
-        acceptedAt,
       };
       const entry = entryFor(request.ref);
       const admitted = yield* Deferred.make<void>();
@@ -945,8 +1123,10 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
             entry.owners.clear();
             entry.loopRunning = false;
             entry.loopGeneration += 1;
+            for (const page of entry.runPages.values()) page.loadingMore = false;
             entry.snapshot = {
               ...entry.snapshot,
+              runsPage: { ...entry.snapshot.runsPage, loadingMore: false },
               loading: { catalog: false, runs: false, jobs: [] },
             };
           }
@@ -969,6 +1149,9 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
       watchRepository,
       watchJobs,
       selectWorkflow,
+      refreshCatalog,
+      loadMoreRuns,
+      newDispatchCycle,
       dispatch,
       snapshot,
       setEnabled,

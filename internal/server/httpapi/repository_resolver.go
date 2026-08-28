@@ -304,6 +304,7 @@ func (r *RepositoryResolver) Ref(repo db.Repo) RepoRefResponse {
 		RepoPath:       repoPath,
 		Owner:          repo.Owner,
 		Name:           repo.Name,
+		DefaultBranch:  repo.DefaultBranch,
 		Capabilities:   r.Capabilities(platform.Kind(provider), host),
 	}
 }

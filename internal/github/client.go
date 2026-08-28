@@ -3597,6 +3597,8 @@ func (c *liveClient) ListManualWorkflowRuns(
 	result := platform.Page[*gh.WorkflowRun]{Items: runs.WorkflowRuns}
 	if resp != nil && resp.NextPage > 0 {
 		result.NextCursor = strconv.Itoa(resp.NextPage)
+	} else {
+		result.Exhausted = true
 	}
 	return result, nil
 }

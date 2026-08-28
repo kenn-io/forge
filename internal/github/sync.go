@@ -2345,7 +2345,11 @@ func (p *gitHubClientProvider) ListWorkflowRuns(
 	if err != nil {
 		return platform.Page[platform.WorkflowRun]{}, err
 	}
-	result := platform.Page[platform.WorkflowRun]{NextCursor: page.NextCursor, Items: make([]platform.WorkflowRun, 0, len(page.Items))}
+	result := platform.Page[platform.WorkflowRun]{
+		NextCursor: page.NextCursor,
+		Exhausted:  page.Exhausted,
+		Items:      make([]platform.WorkflowRun, 0, len(page.Items)),
+	}
 	for _, run := range page.Items {
 		result.Items = append(result.Items, normalizeGitHubWorkflowRun(run))
 	}
@@ -2405,17 +2409,20 @@ func (p *gitHubClientProvider) DispatchWorkflow(
 	if err != nil {
 		return platform.WorkflowDispatchResult{}, err
 	}
+	actor, _ := p.AuthenticatedUser(ctx, ref)
+	result := platform.WorkflowDispatchResult{Actor: actor}
 	details, err := client.DispatchManualWorkflow(ctx, ref.Owner, ref.Name, workflowID, gh.CreateWorkflowDispatchEventRequest{
 		Ref: request.Ref, Inputs: request.Inputs,
 	})
 	if err != nil {
-		return platform.WorkflowDispatchResult{}, err
+		return result, err
 	}
-	result := platform.WorkflowDispatchResult{Accepted: true, LocatingRun: details == nil || details.GetWorkflowRunID() == 0}
+	result.Accepted = true
+	result.LocatingRun = details == nil || details.GetWorkflowRunID() == 0
 	if !result.LocatingRun {
 		run := platform.WorkflowRun{
 			ID: strconv.FormatInt(details.GetWorkflowRunID(), 10),
-			WorkflowID: request.WorkflowID, WebURL: details.GetHTMLURL(),
+			WorkflowID: request.WorkflowID, Actor: actor, WebURL: details.GetHTMLURL(),
 		}
 		result.Run = &run
 	}

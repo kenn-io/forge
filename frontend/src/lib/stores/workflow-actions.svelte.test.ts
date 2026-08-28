@@ -156,11 +156,10 @@ describe("workflow Actions projection store", () => {
     store.claimRepository("actions-page", ref);
     await vi.waitFor(() => expect(store.getCatalog(ref)?.workflows).toHaveLength(1));
     expect(store.getEnvironments(ref)).toEqual([{ name: "production" }]);
-    expect(store.getRuns(ref).map((item) => item.id)).toEqual(["run-1"]);
-    expect(store.getLoading(ref)).toEqual({ catalog: false, runs: false, jobs: [] });
-
     store.selectWorkflow(ref, "deploy.yml");
     await vi.waitFor(() => expect(store.getSelectedWorkflow(ref)?.name).toBe("Deploy"));
+    await vi.waitFor(() => expect(store.getRuns(ref).map((item) => item.id)).toEqual(["run-1"]));
+    expect(store.getLoading(ref)).toEqual({ catalog: false, runs: false, jobs: [] });
 
     expect(probe.get.mock.calls.some(([path]) => String(path).endsWith("/jobs"))).toBe(false);
     store.expandRun("actions-page:run-1", ref, "run-1");
@@ -175,6 +174,15 @@ describe("workflow Actions projection store", () => {
       actor: "octocat",
     });
     await vi.waitFor(() => expect(store.getDispatches(ref).at(-1)?.kind).toBe("succeeded"));
+    expect(probe.post).toHaveBeenCalledTimes(1);
+    store.newDispatchCycle(ref, "deploy.yml");
+    await vi.waitFor(() => expect(store.getDispatches(ref)).toEqual([]));
+    expect(probe.post).toHaveBeenCalledTimes(1);
+
+    store.refreshCatalog(ref, "deploy.yml");
+    await vi.waitFor(() => expect(
+      probe.get.mock.calls.filter(([path]) => String(path).endsWith("/workflows")),
+    ).toHaveLength(2));
     expect(probe.post).toHaveBeenCalledTimes(1);
   });
 

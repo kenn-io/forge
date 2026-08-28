@@ -33,7 +33,7 @@
   import WorkflowRunList from "./WorkflowRunList.svelte";
 
   const repositoryOwner = "actions-page:repository";
-  const jobsOwner = "actions-page:jobs";
+  const expandedRunIds = new Set<string>();
 
   const runtime = getAppRuntime();
   const { workflowActions } = getStores();
@@ -118,7 +118,7 @@
   }
 
   function selectRepository(summary: RepoSummaryCard): void {
-    workflowActions.collapseRun(jobsOwner);
+    releaseAllRunOwners();
     selectedRepositoryKey = repoStateKey(summary);
   }
 
@@ -130,13 +130,31 @@
       .reverse()
       .find((candidate) => candidate.request.workflowId === workflowId);
     if (!dispatch) return { kind: "idle" };
-    if (dispatch.kind === "pending" || dispatch.kind === "locating") return { kind: "pending" };
-    if (dispatch.kind === "succeeded") return { kind: "succeeded" };
-    if (dispatch.kind === "failed" && dispatch.error._tag === "ApiProblemError"
-      && dispatch.error.problem.code === ProblemCodes.conflict) {
+    if (dispatch.kind === "pending") return { kind: "pending" };
+    if (dispatch.kind === "locating") return { kind: "locating" };
+    if (dispatch.kind === "succeeded") return { kind: "succeeded", run: dispatch.run };
+    if (
+      dispatch.kind === "failed"
+      && dispatch.error._tag === "ApiProblemError"
+      && dispatch.error.problem.code === ProblemCodes.conflict
+      && dispatch.error.problem.details?.["reason"] === "workflow_definition_changed"
+    ) {
       return { kind: "conflict" };
     }
-    return { kind: "uncertain", message: dispatchFailureMessage(dispatch) };
+    if (dispatch.kind === "failed") {
+      return { kind: "failed", message: dispatchFailureMessage(dispatch) };
+    }
+    if (dispatch.kind === "locating_timed_out") {
+      return {
+        kind: "succeeded",
+        message: "The provider accepted the workflow, but its run was not observed.",
+      };
+    }
+    return {
+      kind: "uncertain",
+      message: dispatchFailureMessage(dispatch),
+      candidates: dispatch.candidates,
+    };
   }
 
   function dispatchFailureMessage(dispatch: WorkflowDispatchState): string {
@@ -172,11 +190,39 @@
     });
   }
 
+  function reloadWorkflowCatalog(): void {
+    if (!selectedRef || !selectedWorkflow) return;
+    workflowActions.refreshCatalog(selectedRef, selectedWorkflow.id);
+  }
+
+  function newDispatchCycle(): void {
+    if (!selectedRef || !selectedWorkflow) return;
+    workflowActions.newDispatchCycle(selectedRef, selectedWorkflow.id);
+  }
+
+  function expandRun(runId: string): void {
+    if (!selectedRef) return;
+    expandedRunIds.add(runId);
+    workflowActions.expandRun(`actions-page:jobs:${runId}`, selectedRef, runId);
+  }
+
+  function collapseRun(runId: string): void {
+    expandedRunIds.delete(runId);
+    workflowActions.collapseRun(`actions-page:jobs:${runId}`);
+  }
+
+  function releaseAllRunOwners(): void {
+    for (const runId of expandedRunIds) {
+      workflowActions.collapseRun(`actions-page:jobs:${runId}`);
+    }
+    expandedRunIds.clear();
+  }
+
   onMount(() => {
     loadSummaries();
     return () => {
       summaryExecution?.interrupt();
-      workflowActions.collapseRun(jobsOwner);
+      releaseAllRunOwners();
       workflowActions.releaseRepository(repositoryOwner);
     };
   });
@@ -185,7 +231,10 @@
     return () => {
       if (!ref) return;
       untrack(() => workflowActions.claimRepository(repositoryOwner, ref));
-      return () => untrack(() => workflowActions.releaseRepository(repositoryOwner));
+      return () => untrack(() => {
+        releaseAllRunOwners();
+        workflowActions.releaseRepository(repositoryOwner);
+      });
     };
   }
 
@@ -303,10 +352,12 @@
                 <WorkflowDispatchForm
                   workflow={selectedWorkflow}
                   environments={snapshot?.catalog?.environments ?? []}
-                  initialRef={snapshot?.runs[0]?.ref ?? "main"}
+                  initialRef={snapshot?.catalog?.repo.default_branch ?? ""}
                   operation={snapshot?.catalog?.repo.operations?.dispatch_workflow}
                   state={dispatchPresentation(snapshot, selectedWorkflow.id)}
                   onsubmit={submitWorkflow}
+                  onreload={reloadWorkflowCatalog}
+                  onnewcycle={newDispatchCycle}
                 />
               {:else}
                 <p class="pane-state">Select a workflow to configure a manual run.</p>
@@ -336,9 +387,20 @@
                 runs={snapshot.runs}
                 jobs={snapshot.jobs}
                 loadingJobs={snapshot.loading.jobs}
-                onexpand={(runId) => workflowActions.expandRun(jobsOwner, selectedRef, runId)}
-                oncollapse={() => workflowActions.collapseRun(jobsOwner)}
+                onexpand={expandRun}
+                oncollapse={collapseRun}
               />
+              {#if snapshot.runsPage.nextCursor && !snapshot.runsPage.exhausted}
+                <div class="runs-pagination">
+                  <button
+                    type="button"
+                    disabled={snapshot.runsPage.loadingMore}
+                    onclick={() => workflowActions.loadMoreRuns(selectedRef)}
+                  >
+                    {snapshot.runsPage.loadingMore ? "Loading more runs…" : "Load more runs"}
+                  </button>
+                </div>
+              {/if}
             {/if}
           </ScrollBox>
         </section>

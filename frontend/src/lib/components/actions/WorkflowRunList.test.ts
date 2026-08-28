@@ -7,7 +7,10 @@ type Run = components["schemas"]["WorkflowRunResponse"];
 type Job = components["schemas"]["WorkflowRunJobResponse"];
 
 const runs: Run[] = [{ actor: "octocat", conclusion: "success", created_at: "2026-08-27T12:30:00Z", event: "workflow_dispatch", head_sha: "0123456789abcdef", id: "run-2", name: "Deploy", ref: "main", run_number: 42, status: "completed", updated_at: "2026-08-27T12:32:00Z", web_url: "https://github.com/acme/app/actions/runs/2", workflow_id: "deploy.yml" }];
-const jobs: Record<string, readonly Job[]> = { "run-2": [{ id: "job-2", name: "Publish", status: "completed", conclusion: "success", steps: [{ number: 2, name: "Upload", status: "completed", conclusion: "success" }, { number: 1, name: "Build", status: "completed", conclusion: "success" }] }] };
+const jobs: Record<string, readonly Job[]> = { "run-2": [
+  { id: "job-9", name: "Verify", status: "completed", conclusion: "success", steps: [] },
+  { id: "job-2", name: "Publish", status: "completed", conclusion: "success", steps: [{ number: 2, name: "Upload", status: "completed", conclusion: "success" }, { number: 1, name: "Build", status: "completed", conclusion: "success" }] },
+] };
 
 it("exposes compact textual run data, local time, and secure provider links", () => {
   render(WorkflowRunList, { runs, jobs: {}, loadingJobs: [], onexpand: vi.fn(), oncollapse: vi.fn() });
@@ -42,6 +45,10 @@ it("owns one lazy job request per exact expand and collapse transition and prese
   expect(onexpand).toHaveBeenCalledTimes(1);
   expect(onexpand).toHaveBeenCalledWith("run-2");
   expect(disclosure.getAttribute("aria-expanded")).toBe("true");
+  expect(screen.getAllByRole("button", { name: /Verify|Publish/ }).map((item) => item.textContent)).toEqual([
+    expect.stringContaining("Verify"),
+    expect.stringContaining("Publish"),
+  ]);
   const job = screen.getByRole("button", { name: /Publish/ });
   expect(job.textContent).toContain("completed · success");
   await fireEvent.click(job);

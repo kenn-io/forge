@@ -792,6 +792,37 @@ describe("PullDetail provider workflow actions", () => {
     expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
   });
 
+  it("routes definition-conflict recovery through a real catalog refresh without replaying POST", async () => {
+    const rendered = await openReleaseWorkflow(pullDetail());
+    const refreshCatalog = vi.spyOn(rendered.workflowActions, "refreshCatalog");
+    rendered.api.POST.mockResolvedValue({
+      error: {
+        code: "conflict",
+        detail: "Workflow definition changed.",
+        details: { reason: "workflow_definition_changed" },
+        status: 409,
+        title: "Conflict",
+        type: "about:blank",
+      },
+      response: new Response(null, { status: 409 }),
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Run workflow" }));
+    const reload = await screen.findByRole("button", { name: "Reload workflows" });
+    await fireEvent.click(reload);
+
+    expect(refreshCatalog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "github",
+        platformHost: "github.com",
+        owner: "acme",
+        name: "widget",
+      }),
+      "release.yml",
+    );
+    expect(rendered.api.POST).toHaveBeenCalledTimes(1);
+  });
+
   it("tears down demand and confirmation without dispatch when Actions mode is disabled", async () => {
     const detail = pullDetail();
     const rendered = await openReleaseWorkflow(detail);

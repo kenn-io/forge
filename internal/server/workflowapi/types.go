@@ -24,7 +24,7 @@ type workflowRunsInput struct {
 	PlatformHost string
 	Owner        string `path:"owner"`
 	Name         string `path:"name"`
-	WorkflowID   string `query:"workflow_id"`
+	WorkflowID   string `query:"workflow_id" required:"true"`
 	Event        string `query:"event"`
 	Branch       string `query:"branch"`
 	Cursor       string `query:"cursor"`
@@ -36,7 +36,7 @@ type hostWorkflowRunsInput struct {
 	PlatformHost string `path:"platform_host"`
 	Owner        string `path:"owner"`
 	Name         string `path:"name"`
-	WorkflowID   string `query:"workflow_id"`
+	WorkflowID   string `query:"workflow_id" required:"true"`
 	Event        string `query:"event"`
 	Branch       string `query:"branch"`
 	Cursor       string `query:"cursor"`
@@ -166,6 +166,7 @@ type WorkflowJobsResponse struct {
 type WorkflowDispatchResponse struct {
 	Accepted    bool                 `json:"accepted"`
 	LocatingRun bool                 `json:"locating_run"`
+	Actor        string               `json:"actor,omitempty"`
 	Run         *WorkflowRunResponse `json:"run,omitempty"`
 }
 

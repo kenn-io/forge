@@ -859,6 +859,9 @@ Rows that contain buttons, links, or toggles need clear event ownership.
 - Catalog reads use consumer-local owners: picker teardown or route replacement may cancel only that
   consumer, never review-run state or sibling repository resolution
   (`frontend/src/lib/components/roborev/RepoTreePicker.svelte::owner`).
+- Workflow Actions seeds top-level refs from repository authority, preserves loaded older run
+  pages while polling page one, and keys lazy jobs by run so sibling disclosures release independently
+  (`frontend/src/lib/components/actions/ActionsPage.svelte`).
 - Docs publish commands snapshot folder and message and remain application-owned after replacement;
   same-folder surfaces adopt pending or unacknowledged failure state, while completed success is never
   replayed into a later session (`frontend/src/lib/stores/docs-workflow.ts::DocsWorkflowService`).

@@ -105,7 +105,7 @@ function actionsFixtures(): MockRouteOverride {
     }
     if (request.method === "GET" && request.url.pathname === "/api/v1/actions/github/acme/widgets/workflows") {
       return jsonResponse({
-        repo: summary("widgets", true).repo,
+        repo: { ...summary("widgets", true).repo, default_branch: "trunk" },
         environments: [],
         workflows: [
           {
@@ -186,7 +186,6 @@ describe("opt-in workflow Actions route", () => {
     await vi.waitFor(() => {
       expect(actionReadPaths(mounted!)).toEqual(expect.arrayContaining([
         "/api/v1/actions/github/acme/widgets/workflows",
-        "/api/v1/actions/github/acme/widgets/runs",
       ]));
     }, WAIT);
     expect(actionReadPaths(mounted).some((pathname) => pathname.includes("/legacy/"))).toBe(false);
@@ -223,6 +222,58 @@ describe("opt-in workflow Actions route", () => {
         Array.from(document.querySelectorAll(".actions-layout h2"), (heading) => heading.textContent?.trim()),
       ).toEqual(["Workflows", "Dispatch", "Recent runs"]);
       expect(document.querySelector<HTMLElement>(".actions-page")!.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
+    }, WAIT);
+  });
+
+  it("keeps populated run metadata and provider actions reachable without narrow horizontal overflow", async () => {
+    await page.viewport(520, 800);
+    const longRun: MockRouteOverride = (request) => {
+      if (request.method !== "GET"
+        || request.url.pathname !== "/api/v1/actions/github/acme/widgets/runs") return null;
+      return jsonResponse({
+        repo: { ...summary("widgets", true).repo, default_branch: "trunk" },
+        exhausted: true,
+        items: [{
+          actor: "maintainer-with-an-intentionally-long-provider-identity",
+          conclusion: "success",
+          created_at: "2026-08-27T12:30:00Z",
+          event: "workflow_dispatch",
+          head_sha: "0123456789abcdef0123456789abcdef01234567",
+          id: "long-run",
+          name: "Release production assets with a deliberately long workflow name",
+          ref: "feature/an-intentionally-long-reference-that-must-not-expand-the-page",
+          run_number: 99,
+          status: "completed",
+          web_url: "https://github.com/acme/widgets/actions/runs/99",
+          workflow_id: "deploy.yml",
+        }],
+      });
+    };
+    mounted = await mountBrowserApp("/actions", { overrides: [longRun, actionsFixtures()] });
+    await expect.element(page.getByRole("button", { name: /Deploy/ })).toBeVisible();
+    await page.getByRole("button", { name: /Deploy/ }).click();
+    await expect.element(page.getByRole("button", { name: /Run 99/ })).toBeVisible();
+
+    await vi.waitFor(() => {
+      const pageElement = document.querySelector<HTMLElement>(".actions-page")!;
+      const row = document.querySelector<HTMLElement>(".run-row")!;
+      const disclosure = document.querySelector<HTMLElement>(".run-disclosure")!;
+      const providerLink = row.querySelector<HTMLAnchorElement>("a")!;
+      const metadata = row.querySelectorAll<HTMLElement>(
+        ".run-ref, .run-actor, .run-time, .run-status",
+      );
+      expect(metadata).toHaveLength(4);
+      expect(pageElement.scrollWidth).toBeLessThanOrEqual(pageElement.clientWidth);
+      expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth);
+      expect(disclosure.scrollWidth).toBeLessThanOrEqual(disclosure.clientWidth);
+      expect(providerLink.getBoundingClientRect().right).toBeLessThanOrEqual(
+        row.getBoundingClientRect().right,
+      );
+      for (const item of metadata) {
+        expect(item.getBoundingClientRect().right).toBeLessThanOrEqual(
+          disclosure.getBoundingClientRect().right,
+        );
+      }
     }, WAIT);
   });
 

@@ -77,6 +77,7 @@ type RepoRefResponse struct {
 	RepoPath       string                       `json:"repo_path"`
 	Owner          string                       `json:"owner"`
 	Name           string                       `json:"name"`
+	DefaultBranch  string                       `json:"default_branch,omitempty"`
 	Capabilities   ProviderCapabilitiesResponse `json:"capabilities"`
 	Operations     *RepoOperations              `json:"operations,omitempty"`
 }

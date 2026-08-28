@@ -26,6 +26,9 @@ export interface WorkflowActionsStore {
   readonly claimRepository: (owner: string, ref: ProviderRouteRef) => void;
   readonly releaseRepository: (owner: string) => void;
   readonly selectWorkflow: (ref: ProviderRouteRef, workflowId: string | null) => void;
+  readonly refreshCatalog: (ref: ProviderRouteRef, workflowId: string) => void;
+  readonly loadMoreRuns: (ref: ProviderRouteRef) => void;
+  readonly newDispatchCycle: (ref: ProviderRouteRef, workflowId: string) => void;
   readonly expandRun: (owner: string, ref: ProviderRouteRef, runId: string) => void;
   readonly collapseRun: (owner: string) => void;
   readonly dispatch: (input: WorkflowDispatchInput) => void;
@@ -92,6 +95,51 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
       {
         operation: "select provider workflow",
         safeContext: { provider: ref.provider, owner: ref.owner, name: ref.name },
+        onFailure: () => {},
+      },
+    );
+  }
+
+  function refreshCatalog(ref: ProviderRouteRef, workflowId: string): void {
+    if (!enabled) return;
+    runtime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* WorkflowActionsWorkflow;
+        yield* workflow.refreshCatalog(ref, workflowId);
+      }),
+      {
+        operation: "refresh provider workflow catalog",
+        safeContext: { provider: ref.provider, owner: ref.owner, name: ref.name, workflowId },
+        onFailure: () => {},
+      },
+    );
+  }
+
+  function loadMoreRuns(ref: ProviderRouteRef): void {
+    if (!enabled) return;
+    runtime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* WorkflowActionsWorkflow;
+        yield* workflow.loadMoreRuns(ref);
+      }),
+      {
+        operation: "load more provider workflow runs",
+        safeContext: { provider: ref.provider, owner: ref.owner, name: ref.name },
+        onFailure: () => {},
+      },
+    );
+  }
+
+  function newDispatchCycle(ref: ProviderRouteRef, workflowId: string): void {
+    if (!enabled) return;
+    runtime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* WorkflowActionsWorkflow;
+        yield* workflow.newDispatchCycle(ref, workflowId);
+      }),
+      {
+        operation: "start new provider workflow dispatch cycle",
+        safeContext: { provider: ref.provider, owner: ref.owner, name: ref.name, workflowId },
         onFailure: () => {},
       },
     );
@@ -197,6 +245,9 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
     claimRepository,
     releaseRepository,
     selectWorkflow,
+    refreshCatalog,
+    loadMoreRuns,
+    newDispatchCycle,
     expandRun,
     collapseRun,
     dispatch,

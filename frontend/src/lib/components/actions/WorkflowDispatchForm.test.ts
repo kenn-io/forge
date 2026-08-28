@@ -195,9 +195,9 @@ describe("WorkflowDispatchForm", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Running workflow…" }));
     expect(onsubmit).not.toHaveBeenCalled();
 
-    await view.rerender({ ...props, operation: available, state: { kind: "uncertain", message: "The provider may have accepted this run. Verify on the provider before trying again." } });
+    await view.rerender({ ...props, operation: available, state: { kind: "uncertain", message: "The provider may have accepted this run. Verify on the provider before trying again.", candidates: [] } });
     expect(screen.getByRole("alert").textContent).toContain("may have accepted");
-    expect((screen.getByRole("button", { name: "Run workflow" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole("button", { name: "Run workflow" })).toBeNull();
 
     await view.rerender({ ...props, operation: available, state: { kind: "conflict" } });
     expect(screen.getByRole("alert").textContent).toContain("Workflow definition changed. Reload workflows before running it.");
@@ -212,5 +212,98 @@ describe("WorkflowDispatchForm", () => {
     expect(onsubmit).not.toHaveBeenCalled();
     await fireEvent.click(screen.getByRole("button", { name: "Run workflow" }));
     expect(onsubmit).toHaveBeenCalledWith({ ref: "release", inputs: {} });
+  });
+
+  it("exposes native required semantics without treating a required false boolean as missing", async () => {
+    const onsubmit = vi.fn();
+    render(WorkflowDispatchForm, {
+      workflow: workflow([
+        { name: "message", type: "string", required: true, has_default: false },
+        { name: "retries", type: "number", required: true, has_default: false },
+        { name: "approved", type: "boolean", required: true, has_default: false },
+        { name: "channel", type: "choice", required: true, has_default: false, options: ["stable", "beta"] },
+        { name: "target", type: "environment", required: true, has_default: false },
+      ]),
+      environments,
+      initialRef: "trunk",
+      operation: available,
+      state: { kind: "idle" },
+      onsubmit,
+    });
+
+    for (const control of [
+      screen.getByRole("textbox", { name: "Git ref" }),
+      screen.getByRole("textbox", { name: "message" }),
+      screen.getByRole("spinbutton", { name: "retries" }),
+      screen.getByRole("combobox", { name: "channel" }),
+      screen.getByRole("combobox", { name: "target" }),
+    ]) {
+      expect((control as HTMLInputElement | HTMLSelectElement).required).toBe(true);
+      expect(control.getAttribute("aria-required")).toBe("true");
+    }
+
+    const approved = screen.getByRole("checkbox", { name: "approved" });
+    expect((approved as HTMLInputElement).required).toBe(false);
+    const requiredDescription = document.getElementById(approved.getAttribute("aria-describedby") ?? "");
+    expect(requiredDescription?.textContent).toContain("Required input");
+
+    await fireEvent.input(screen.getByRole("textbox", { name: "message" }), { target: { value: "release" } });
+    await fireEvent.input(screen.getByRole("spinbutton", { name: "retries" }), { target: { value: "2" } });
+    await fireEvent.change(screen.getByRole("combobox", { name: "channel" }), { target: { value: "stable" } });
+    await fireEvent.change(screen.getByRole("combobox", { name: "target" }), { target: { value: "production" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Run workflow" }));
+
+    expect(onsubmit).toHaveBeenCalledWith({
+      ref: "trunk",
+      inputs: {
+        message: "release",
+        retries: 2,
+        approved: false,
+        channel: "stable",
+        target: "production",
+      },
+    });
+  });
+
+  it("announces locating and renders concrete accepted run details without a running submit label", async () => {
+    const props = {
+      workflow: workflow(),
+      environments,
+      initialRef: "trunk",
+      operation: available,
+      onsubmit: vi.fn(),
+    };
+    const view = render(WorkflowDispatchForm, {
+      ...props,
+      state: { kind: "locating" } as const,
+    });
+    expect(screen.getByRole("status").textContent).toContain("Locating run…");
+    expect(screen.queryByRole("button", { name: "Running workflow…" })).toBeNull();
+
+    await view.rerender({
+      ...props,
+      state: {
+        kind: "succeeded",
+        run: {
+          actor: "maintainer",
+          conclusion: "",
+          event: "workflow_dispatch",
+          head_sha: "0123456789abcdef",
+          id: "run-42",
+          name: "Deploy",
+          ref: "trunk",
+          run_number: 42,
+          status: "queued",
+          web_url: "https://github.com/acme/app/actions/runs/42",
+          workflow_id: "deploy.yml",
+        },
+      } as const,
+    });
+    expect(screen.getByText("run-42")).toBeTruthy();
+    expect(screen.getByText("0123456789abcdef")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Open accepted run on provider" }).getAttribute("href")).toBe(
+      "https://github.com/acme/app/actions/runs/42",
+    );
+    expect(screen.queryByRole("button", { name: "Running workflow…" })).toBeNull();
   });
 });

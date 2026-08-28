@@ -108,7 +108,7 @@ function workflowFixtures(): MockRouteOverride {
     if (request.method === "GET" && catalog) {
       const name = catalog[1]!;
       return jsonResponse({
-        repo: repoSummary(name).repo,
+        repo: { ...repoSummary(name).repo, default_branch: "trunk" },
         environments: [{ name: "production" }],
         workflows: [{
           id: `${name}-deploy.yml`,
@@ -125,31 +125,67 @@ function workflowFixtures(): MockRouteOverride {
     const runs = request.url.pathname.match(/^\/api\/v1\/actions\/github\/acme\/([^/]+)\/runs$/);
     if (request.method === "GET" && runs) {
       const name = runs[1]!;
+      if (request.url.searchParams.get("cursor") === "older-page") {
+        return jsonResponse({
+          repo: { ...repoSummary(name).repo, default_branch: "trunk" },
+          exhausted: true,
+          items: [{
+            actor: "octocat",
+            conclusion: "success",
+            created_at: "2026-08-26T12:30:00Z",
+            event: "workflow_dispatch",
+            head_sha: "olderabcdef",
+            id: `${name}-run-older`,
+            name: `${name} deploy`,
+            ref: "release/v1",
+            run_number: 5,
+            status: "completed",
+            workflow_id: `${name}-deploy.yml`,
+          }],
+        });
+      }
       return jsonResponse({
-        repo: repoSummary(name).repo,
-        exhausted: true,
-        items: [{
-          actor: "octocat",
-          conclusion: "success",
-          created_at: "2026-08-27T12:30:00Z",
-          event: "workflow_dispatch",
-          head_sha: "0123456789abcdef",
-          id: `${name}-run-1`,
-          name: `${name} deploy`,
-          ref: "main",
-          run_number: 7,
-          status: "completed",
-          workflow_id: `${name}-deploy.yml`,
-        }],
+        repo: { ...repoSummary(name).repo, default_branch: "trunk" },
+        exhausted: false,
+        next_cursor: "older-page",
+        items: [
+          {
+            actor: "octocat",
+            conclusion: "success",
+            created_at: "2026-08-27T12:30:00Z",
+            event: "workflow_dispatch",
+            head_sha: "0123456789abcdef",
+            id: `${name}-run-1`,
+            name: `${name} deploy`,
+            ref: "feature/recent-run",
+            run_number: 7,
+            status: "completed",
+            workflow_id: `${name}-deploy.yml`,
+          },
+          {
+            actor: "hubot",
+            conclusion: "success",
+            created_at: "2026-08-27T11:30:00Z",
+            event: "workflow_dispatch",
+            head_sha: "fedcba9876543210",
+            id: `${name}-run-2`,
+            name: `${name} deploy`,
+            ref: "tag/v2",
+            run_number: 6,
+            status: "completed",
+            workflow_id: `${name}-deploy.yml`,
+          },
+        ],
       });
     }
     const jobs = request.url.pathname.match(/^\/api\/v1\/actions\/github\/acme\/([^/]+)\/runs\/([^/]+)\/jobs$/);
     if (request.method === "GET" && jobs) {
+      const runId = jobs[2]!;
       return jsonResponse({
         repo: repoSummary(jobs[1]!).repo,
         items: [{
-          id: "job-1",
-          name: "Publish",
+          id: `${runId}-job`,
+          name: runId.endsWith("run-2") ? "Verify" : "Publish",
           status: "completed",
           conclusion: "success",
           steps: [],
@@ -197,7 +233,6 @@ describe("ActionsPage", () => {
     await waitFor(() => {
       const paths = api.requests.map((request) => request.url.pathname);
       expect(paths).toContain("/api/v1/actions/github/acme/alpha/workflows");
-      expect(paths).toContain("/api/v1/actions/github/acme/alpha/runs");
       expect(paths.some((path) => path.includes("/legacy/"))).toBe(false);
     });
   });
@@ -210,6 +245,7 @@ describe("ActionsPage", () => {
 
     await fireEvent.click(await screen.findByRole("button", { name: /alpha deploy/ }));
     expect(screen.getByRole("textbox", { name: "Git ref" })).toBeTruthy();
+    expect((screen.getByRole("textbox", { name: "Git ref" }) as HTMLInputElement).value).toBe("trunk");
 
     const run = await screen.findByRole("button", { name: /Run 7 alpha deploy/ });
     await fireEvent.click(run);
@@ -217,6 +253,50 @@ describe("ActionsPage", () => {
     expect(api.requests.map((request) => request.url.pathname)).toContain(
       "/api/v1/actions/github/acme/alpha/runs/alpha-run-1/jobs",
     );
+  });
+
+  it("uses distinct job owners for two expanded runs and collapsing one does not release the other", async () => {
+    const workflowActions = createWorkflowActionsStore({ runtime });
+    const expandRun = vi.spyOn(workflowActions, "expandRun");
+    const collapseRun = vi.spyOn(workflowActions, "collapseRun");
+    render(ActionsPage, {
+      context: new Map([[STORES_KEY, { workflowActions }]]),
+    });
+
+    await fireEvent.click(await screen.findByRole("button", { name: /alpha deploy/ }));
+    const newest = await screen.findByRole("button", { name: /Run 7 alpha deploy/ });
+    const older = await screen.findByRole("button", { name: /Run 6 alpha deploy/ });
+    await fireEvent.click(newest);
+    await fireEvent.click(older);
+    await screen.findByRole("button", { name: /Verify/ });
+    expect(expandRun.mock.calls.map(([owner, , runId]) => [owner, runId])).toEqual([
+      ["actions-page:jobs:alpha-run-1", "alpha-run-1"],
+      ["actions-page:jobs:alpha-run-2", "alpha-run-2"],
+    ]);
+
+    await fireEvent.click(newest);
+    expect(collapseRun).toHaveBeenCalledWith("actions-page:jobs:alpha-run-1");
+    expect(collapseRun).not.toHaveBeenCalledWith("actions-page:jobs:alpha-run-2");
+    expect(older.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("button", { name: /Verify/ })).toBeTruthy();
+  });
+
+  it("loads an older run page without changing the repository default ref seed", async () => {
+    const workflowActions = createWorkflowActionsStore({ runtime });
+    render(ActionsPage, {
+      context: new Map([[STORES_KEY, { workflowActions }]]),
+    });
+
+    await fireEvent.click(await screen.findByRole("button", { name: /alpha deploy/ }));
+    expect((screen.getByRole("textbox", { name: "Git ref" }) as HTMLInputElement).value).toBe("trunk");
+    await fireEvent.click(await screen.findByRole("button", { name: "Load more runs" }));
+    expect(await screen.findByRole("button", { name: /Run 5 alpha deploy/ })).toBeTruthy();
+    expect((screen.getByRole("textbox", { name: "Git ref" }) as HTMLInputElement).value).toBe("trunk");
+    const olderRequest = api.requests.find((request) =>
+      request.url.pathname.endsWith("/actions/github/acme/alpha/runs")
+        && request.url.searchParams.get("cursor") === "older-page"
+    );
+    expect(olderRequest).toBeTruthy();
   });
 
   it("renders an empty runs read failure as an error instead of a successful empty state", async () => {
@@ -235,6 +315,7 @@ describe("ActionsPage", () => {
     render(ActionsPage, {
       context: new Map([[STORES_KEY, { workflowActions }]]),
     });
+    await fireEvent.click(await screen.findByRole("button", { name: /alpha deploy/ }));
 
     expect((await screen.findByRole("alert")).textContent).toContain("Recent workflow runs could not be loaded.");
     expect(screen.queryByText("No recent workflow runs.")).toBeNull();
@@ -256,6 +337,7 @@ describe("ActionsPage", () => {
     render(ActionsPage, {
       context: new Map([[STORES_KEY, { workflowActions }]]),
     });
+    await fireEvent.click(await screen.findByRole("button", { name: /alpha deploy/ }));
 
     const run = await screen.findByRole("button", { name: /Run 7 alpha deploy/ });
     await fireEvent.click(run);
@@ -263,5 +345,144 @@ describe("ActionsPage", () => {
     expect((await screen.findByRole("alert")).textContent).toContain("Workflow jobs could not be loaded.");
     expect(screen.getByRole("button", { name: /Run 7 alpha deploy/ })).toBe(run);
     expect(run.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("reloads a changed workflow definition once after conflict without replaying dispatch", async () => {
+    let catalogReads = 0;
+    const conflictRecovery: MockRouteOverride = (request) => {
+      if (request.method === "GET"
+        && request.url.pathname === "/api/v1/actions/github/acme/alpha/workflows") {
+        catalogReads += 1;
+        return jsonResponse({
+          repo: { ...repoSummary("alpha").repo, default_branch: "trunk" },
+          environments: [],
+          workflows: [{
+            id: "alpha-deploy.yml",
+            name: "alpha deploy",
+            path: ".github/workflows/alpha-deploy.yml",
+            state: "active",
+            available: true,
+            definition_sha: catalogReads === 1 ? "alpha-definition" : "alpha-definition-2",
+            inputs: catalogReads === 1
+              ? []
+              : [{
+                  name: "channel",
+                  type: "choice",
+                  required: true,
+                  has_default: true,
+                  default: "stable",
+                  options: ["stable", "beta"],
+                }],
+            web_url: "https://github.com/acme/alpha/actions/workflows/alpha-deploy.yml",
+          }],
+        });
+      }
+      if (request.method === "POST"
+        && request.url.pathname.endsWith("/actions/github/acme/alpha/workflows/alpha-deploy.yml/dispatch")) {
+        return jsonResponse({
+          code: "conflict",
+          detail: "Workflow definition changed.",
+          details: { reason: "workflow_definition_changed" },
+          status: 409,
+          title: "Conflict",
+          type: "about:blank",
+        }, 409);
+      }
+      return null;
+    };
+    api = createMockApiFetch([conflictRecovery, workflowFixtures()]);
+    globalThis.fetch = api.fetch;
+    const workflowActions = createWorkflowActionsStore({ runtime });
+    render(ActionsPage, {
+      context: new Map([[STORES_KEY, { workflowActions }]]),
+    });
+
+    await fireEvent.click(await screen.findByRole("button", { name: /alpha deploy/ }));
+    await fireEvent.click(screen.getByRole("button", { name: "Run workflow" }));
+    await fireEvent.click(await screen.findByRole("button", { name: "Reload workflows" }));
+    expect(await screen.findByRole("combobox", { name: "channel" })).toBeTruthy();
+    expect(catalogReads).toBe(2);
+    expect(api.requests.filter((request) => request.method === "POST")).toHaveLength(1);
+  });
+
+  it.each([
+    ["forbidden", 403],
+    ["rateLimited", 429],
+    ["validationError", 400],
+  ] as const)("presents %s rejection as a fresh-cycle recovery without automatic POST", async (code, status) => {
+    const rejection: MockRouteOverride = (request) => {
+      if (request.method !== "POST"
+        || !request.url.pathname.endsWith("/actions/github/acme/alpha/workflows/alpha-deploy.yml/dispatch")) {
+        return null;
+      }
+      return jsonResponse({
+        code,
+        detail: `Rejected with ${code}.`,
+        status,
+        title: "Rejected",
+        type: "about:blank",
+      }, status);
+    };
+    api = createMockApiFetch([rejection, workflowFixtures()]);
+    globalThis.fetch = api.fetch;
+    const workflowActions = createWorkflowActionsStore({ runtime });
+    render(ActionsPage, {
+      context: new Map([[STORES_KEY, { workflowActions }]]),
+    });
+
+    await fireEvent.click(await screen.findByRole("button", { name: /alpha deploy/ }));
+    await fireEvent.click(screen.getByRole("button", { name: "Run workflow" }));
+    expect((await screen.findByRole("alert")).textContent).toContain(`Rejected with ${code}.`);
+    expect(api.requests.filter((request) => request.method === "POST")).toHaveLength(1);
+    await fireEvent.click(screen.getByRole("button", { name: "Run again" }));
+    expect(await screen.findByRole("button", { name: "Run workflow" })).toBeTruthy();
+    expect(api.requests.filter((request) => request.method === "POST")).toHaveLength(1);
+  });
+
+  it("dispatches the same workflow twice only after two deliberate confirmations", async () => {
+    let dispatches = 0;
+    const accepted: MockRouteOverride = (request) => {
+      if (request.method !== "POST"
+        || !request.url.pathname.endsWith("/actions/github/acme/alpha/workflows/alpha-deploy.yml/dispatch")) {
+        return null;
+      }
+      dispatches += 1;
+      return jsonResponse({
+        accepted: true,
+        locating_run: false,
+        actor: "maintainer",
+        run: {
+          actor: "maintainer",
+          conclusion: "success",
+          event: "workflow_dispatch",
+          head_sha: `head-${dispatches}`,
+          id: `repeat-run-${dispatches}`,
+          name: "alpha deploy",
+          ref: "trunk",
+          run_number: 10 + dispatches,
+          status: "completed",
+          web_url: `https://github.com/acme/alpha/actions/runs/${dispatches}`,
+          workflow_id: "alpha-deploy.yml",
+        },
+      }, 202);
+    };
+    api = createMockApiFetch([accepted, workflowFixtures()]);
+    globalThis.fetch = api.fetch;
+    const workflowActions = createWorkflowActionsStore({ runtime });
+    render(ActionsPage, {
+      context: new Map([[STORES_KEY, { workflowActions }]]),
+    });
+
+    await fireEvent.click(await screen.findByRole("button", { name: /alpha deploy/ }));
+    await fireEvent.click(screen.getByRole("button", { name: "Run workflow" }));
+    expect(await screen.findByText("repeat-run-1")).toBeTruthy();
+    expect(dispatches).toBe(1);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Run again" }));
+    expect(await screen.findByRole("button", { name: "Run workflow" })).toBeTruthy();
+    expect(dispatches).toBe(1);
+    await fireEvent.click(screen.getByRole("button", { name: "Run workflow" }));
+    expect(await screen.findByText("repeat-run-2")).toBeTruthy();
+    expect(dispatches).toBe(2);
   });
 });

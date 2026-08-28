@@ -19,11 +19,12 @@
     trigger?: HTMLElement | null;
     onsubmit: (request: WorkflowDispatchRequest) => void;
     onclose: () => void;
-    onreload?: (() => void) | undefined;
+    onreload: () => void;
   }
 
-  let { open, workflow, environments, initialRef, operation, state, trigger = null, onsubmit, onclose, onreload = undefined }: Props = $props();
-  const canDismiss = $derived(state.kind === "idle" || state.kind === "succeeded");
+  let { open, workflow, environments, initialRef, operation, state: presentation, trigger = null, onsubmit, onclose, onreload }: Props = $props();
+  let reloadRequested = $state(false);
+  const canDismiss = $derived(presentation.kind === "idle" || presentation.kind === "succeeded");
 
   async function close(): Promise<void> {
     if (!canDismiss) return;
@@ -31,13 +32,19 @@
     await tick();
     trigger?.focus();
   }
+
+  function reload(): void {
+    if (reloadRequested || presentation.kind !== "conflict") return;
+    reloadRequested = true;
+    onreload();
+  }
 </script>
 
 <Modal {open} title="Run workflow" width={520} frameId="workflow-dispatch" onClose={() => { void close(); }}>
-  <WorkflowDispatchForm {workflow} {environments} {initialRef} {operation} {state} {onsubmit} />
+  <WorkflowDispatchForm {workflow} {environments} {initialRef} {operation} state={presentation} {onsubmit} />
   {#snippet footer()}
-    {#if state.kind === "idle"}<DialogButton onclick={() => { void close(); }}>Cancel</DialogButton>{/if}
-    {#if state.kind === "conflict"}<DialogButton tone="primary" onclick={() => onreload?.()}>Reload workflows</DialogButton>{/if}
-    {#if state.kind === "succeeded"}<DialogButton tone="primary" onclick={() => { void close(); }}>Close</DialogButton>{/if}
+    {#if presentation.kind === "idle"}<DialogButton onclick={() => { void close(); }}>Cancel</DialogButton>{/if}
+    {#if presentation.kind === "conflict"}<DialogButton tone="primary" disabled={reloadRequested} onclick={reload}>Reload workflows</DialogButton>{/if}
+    {#if presentation.kind === "succeeded"}<DialogButton tone="primary" onclick={() => { void close(); }}>Close</DialogButton>{/if}
   {/snippet}
 </Modal>

@@ -23,6 +23,14 @@ it("exposes compact textual run data, local time, and secure provider links", ()
   expect(screen.getByRole("link", { name: "Open on GitHub" }).getAttribute("target")).toBe("_blank");
 });
 
+it("omits unsafe provider links", () => {
+  render(WorkflowRunList, {
+    runs: [{ ...runs[0]!, web_url: "javascript:alert(document.domain)" }],
+    jobs: {}, loadingJobs: [], onexpand: vi.fn(), oncollapse: vi.fn(),
+  });
+  expect(screen.queryByRole("link")).toBeNull();
+});
+
 it("owns one lazy job request per exact expand and collapse transition and preserves provider order", async () => {
   const onexpand = vi.fn();
   const oncollapse = vi.fn();

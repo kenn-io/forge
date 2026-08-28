@@ -2,6 +2,7 @@
   import { Button } from "@kenn-io/kit-ui";
   import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
   import ExternalLinkIcon from "@lucide/svelte/icons/external-link";
+  import { isSafeExternalHTTPURL } from "../../utils/safe-external-url.js";
   import type { components } from "../../api/generated/schema.js";
 
   type Run = components["schemas"]["WorkflowRunResponse"];
@@ -39,6 +40,7 @@
 
 <div class="run-list" role="list" aria-label="Workflow runs">
   {#each runs as run (run.id)}
+    {@const safeRunURL = run.web_url && isSafeExternalHTTPURL(run.web_url) ? run.web_url : undefined}
     <section class="run" role="listitem">
       <div class="run-row">
         <Button class="run-disclosure" surface="ghost" ariaExpanded={expandedRuns[run.id] === true} ariaLabel={`Run ${run.run_number} ${run.name}`} onclick={() => toggleRun(run.id)}>
@@ -49,8 +51,8 @@
           {#if run.created_at}<time datetime={run.created_at}>{new Date(run.created_at).toLocaleString()}</time>{/if}
           <code title={run.head_sha}>{run.head_sha.slice(0, 7)}</code>
         </Button>
-        {#if run.web_url}
-          <a href={run.web_url} target="_blank" rel="noopener" aria-label={`Open on ${providerName(run.web_url)}`}><ExternalLinkIcon size={14} aria-hidden="true" /></a>
+        {#if safeRunURL}
+          <a href={safeRunURL} target="_blank" rel="noopener" aria-label={`Open on ${providerName(safeRunURL)}`}><ExternalLinkIcon size={14} aria-hidden="true" /></a>
         {/if}
       </div>
       {#if expandedRuns[run.id]}

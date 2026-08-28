@@ -19,7 +19,6 @@
   import { untrack } from "svelte";
   type Workflow = components["schemas"]["WorkflowDefinitionResponse"];
   type Environment = components["schemas"]["WorkflowEnvironmentResponse"];
-  type Input = components["schemas"]["WorkflowInputResponse"];
 
   interface Props {
     workflow: Workflow;
@@ -31,39 +30,64 @@
   }
 
   let { workflow, environments, initialRef, operation, state: presentation, onsubmit }: Props = $props();
-  let ref = $state(untrack(() => initialRef));
-  let values = $state<Record<string, unknown>>(initialValues(untrack(() => workflow.inputs ?? [])));
-  let submitted = $state(false);
-
+  interface Draft {
+    readonly ref: string;
+    readonly values: Readonly<Record<string, unknown>>;
+  }
+  let drafts = $state<Record<string, Draft>>({});
+  let submittedKeys = $state<Record<string, boolean>>({});
+  let admittedKeys = $state<Record<string, boolean>>({});
+  const draftKey = $derived(`${workflow.id}\u0000${workflow.definition_sha}\u0000${initialRef}`);
+  const defaultDraft = $derived.by<Draft>(() => ({
+    ref: initialRef,
+    values: Object.fromEntries(
+      untrack(() => workflow.inputs ?? []).map((input) => [
+        input.name,
+        input.has_default ? input.default : input.type === "boolean" ? false : "",
+      ]),
+    ),
+  }));
+  const draft = $derived(drafts[draftKey] ?? defaultDraft);
+  const submitted = $derived(submittedKeys[draftKey] === true);
+  const admitted = $derived(admittedKeys[draftKey] === true);
   const pending = $derived(presentation.kind === "pending");
-  const unavailableReason = $derived(operation?.available === false ? (operation.unavailable_reason ?? "Workflow dispatch is unavailable.") : workflow.available ? "" : (workflow.unavailable_reason ?? "This workflow is unavailable."));
-  const errors = $derived.by(() => {
-    if (!submitted) return {} as Record<string, string>;
+  const controlsDisabled = $derived(pending || admitted);
+  const explicitlyUnavailable = $derived(operation?.available === false || workflow.available === false);
+  const unavailableReason = $derived.by(() => {
+    if (operation?.available === false) return operation.unavailable_reason?.trim() || "Workflow dispatch is unavailable.";
+    if (workflow.available === false) return workflow.unavailable_reason?.trim() || "This workflow is unavailable.";
+    return "";
+  });
+  const errors = $derived(submitted ? validationErrors() : {});
+
+  function inputControlId(name: string): string {
+    return `workflow-input-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "input"}`;
+  }
+
+  function validationErrors(): Record<string, string> {
     const next: Record<string, string> = {};
-    if (ref.trim() === "") next.ref = "Git ref is required.";
+    if (draft.ref.trim() === "") next.ref = "Git ref is required.";
     for (const input of workflow.inputs ?? []) {
-      const value = values[input.name];
-      if (input.required && (value === "" || value === undefined || value === null)) next[input.name] = `${input.name} is required.`;
+      const value = draft.values[input.name];
+      const missing = value === undefined || value === null || value === "" || (input.type === "string" && String(value).trim() === "");
+      if (input.required && missing) next[input.name] = `${input.name} is required.`;
     }
     return next;
-  });
-
-  function initialValues(inputs: readonly Input[]): Record<string, unknown> {
-    return Object.fromEntries(inputs.map((input) => [input.name, input.has_default ? input.default : input.type === "boolean" ? false : ""]));
   }
 
   function submit(): void {
-    if (pending || unavailableReason !== "" || presentation.kind !== "idle") return;
-    submitted = true;
+    if (pending || admitted || explicitlyUnavailable || presentation.kind !== "idle") return;
+    submittedKeys[draftKey] = true;
+    const currentErrors = validationErrors();
+    if (Object.keys(currentErrors).length > 0) return;
     const normalized: Record<string, unknown> = {};
     for (const input of workflow.inputs ?? []) {
-      const value = values[input.name];
-      if (input.required && (value === "" || value === undefined || value === null)) continue;
+      const value = draft.values[input.name];
       if (!input.required && value === "") continue;
       normalized[input.name] = input.type === "string" ? String(value).trim() : value;
     }
-    if (ref.trim() === "" || Object.keys(errors).length > 0) return;
-    onsubmit({ ref: ref.trim(), inputs: normalized });
+    admittedKeys[draftKey] = true;
+    onsubmit({ ref: draft.ref.trim(), inputs: normalized });
   }
 </script>
 
@@ -74,33 +98,33 @@
     <h2>{workflow.name}</h2>
     <label class="field">
       <span>Git ref <span aria-hidden="true">*</span></span>
-      <input aria-label="Git ref" bind:value={ref} disabled={pending} aria-invalid={errors.ref ? "true" : undefined} aria-describedby={errors.ref ? "workflow-ref-error" : undefined} />
+      <input aria-label="Git ref" value={draft.ref} oninput={(event) => { drafts[draftKey] = { ...draft, ref: event.currentTarget.value }; }} disabled={controlsDisabled} aria-invalid={errors.ref ? "true" : undefined} aria-describedby={errors.ref ? "workflow-ref-error" : undefined} />
     </label>
     {#if errors.ref}<p id="workflow-ref-error" class="field-error" role="alert">{errors.ref}</p>{/if}
 
     {#each workflow.inputs ?? [] as input (input.name)}
       <div class="field">
         {#if input.type === "boolean"}
-          <Checkbox label={input.name} checked={values[input.name] === true} disabled={pending} onchange={(checked) => { values[input.name] = checked; }} />
+          <Checkbox label={input.name} checked={draft.values[input.name] === true} disabled={controlsDisabled} onchange={(checked) => { drafts[draftKey] = { ...draft, values: { ...draft.values, [input.name]: checked } }; }} />
         {:else}
-          <label for={`workflow-input-${input.name}`}>{input.name}{#if input.required} <span aria-hidden="true">*</span>{/if}</label>
+          <label for={inputControlId(input.name)}>{input.name}{#if input.required} <span aria-hidden="true">*</span>{/if}</label>
           {#if input.type === "choice" || input.type === "environment"}
-            <select id={`workflow-input-${input.name}`} aria-label={input.name} disabled={pending} bind:value={values[input.name]} aria-invalid={errors[input.name] ? "true" : undefined}>
+            <select id={inputControlId(input.name)} aria-label={input.name} disabled={controlsDisabled} value={String(draft.values[input.name] ?? "")} onchange={(event) => { drafts[draftKey] = { ...draft, values: { ...draft.values, [input.name]: event.currentTarget.value } }; }} aria-invalid={errors[input.name] ? "true" : undefined} aria-describedby={errors[input.name] ? `${inputControlId(input.name)}-error` : undefined}>
               {#if input.type === "environment"}<option value="">Select an environment</option>{/if}
               {#each input.type === "choice" ? (input.options ?? []) : environments.map((item) => item.name) as option (option)}<option value={option}>{option}</option>{/each}
             </select>
           {:else}
-            <input id={`workflow-input-${input.name}`} aria-label={input.name} type={input.type === "number" ? "number" : "text"} disabled={pending} value={String(values[input.name] ?? "")} oninput={(event) => { const raw = event.currentTarget.value; values[input.name] = input.type === "number" ? (raw === "" ? "" : Number(raw)) : raw; }} aria-invalid={errors[input.name] ? "true" : undefined} />
+            <input id={inputControlId(input.name)} aria-label={input.name} type={input.type === "number" ? "number" : "text"} disabled={controlsDisabled} value={String(draft.values[input.name] ?? "")} oninput={(event) => { const raw = event.currentTarget.value; drafts[draftKey] = { ...draft, values: { ...draft.values, [input.name]: input.type === "number" ? (raw === "" ? "" : Number(raw)) : raw } }; }} aria-invalid={errors[input.name] ? "true" : undefined} aria-describedby={errors[input.name] ? `${inputControlId(input.name)}-error` : undefined} />
           {/if}
         {/if}
         {#if input.description}<small>{input.description}</small>{/if}
-        {#if errors[input.name]}<p class="field-error" role="alert">{errors[input.name]}</p>{/if}
+        {#if errors[input.name]}<p id={`${inputControlId(input.name)}-error`} class="field-error" role="alert">{errors[input.name]}</p>{/if}
       </div>
     {/each}
 
     {#if unavailableReason}<p class="notice notice--error" role="alert">{unavailableReason}</p>{/if}
     {#if presentation.kind === "uncertain"}<p class="notice notice--error" role="alert">{presentation.message}</p>{/if}
-    <Button type="submit" tone="primary" disabled={pending || unavailableReason !== "" || presentation.kind !== "idle"}>{pending ? "Running workflow…" : "Run workflow"}</Button>
+    <Button type="submit" tone="primary" disabled={controlsDisabled || explicitlyUnavailable || presentation.kind !== "idle"}>{pending || admitted ? "Running workflow…" : "Run workflow"}</Button>
   </form>
 {/if}
 

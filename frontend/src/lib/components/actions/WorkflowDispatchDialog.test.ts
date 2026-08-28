@@ -18,26 +18,35 @@ it("restores trigger focus when canceled before admission", async () => {
   document.body.append(trigger);
   trigger.focus();
   const onclose = vi.fn();
-  render(WorkflowDispatchDialog, { open: true, workflow, environments: [], initialRef: "main", operation, state: { kind: "idle" }, trigger, onsubmit: vi.fn(), onclose });
+  render(WorkflowDispatchDialog, { open: true, workflow, environments: [], initialRef: "main", operation, state: { kind: "idle" }, trigger, onsubmit: vi.fn(), onclose, onreload: vi.fn() });
   await fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   expect(onclose).toHaveBeenCalledOnce();
   await waitFor(() => expect(document.activeElement).toBe(trigger));
 });
 
-it("remains open while pending, uncertain, or conflicted and closes after acknowledgement", async () => {
+it.each([
+  [{ kind: "pending" } as const],
+  [{ kind: "uncertain", message: "Outcome unknown" } as const],
+  [{ kind: "conflict" } as const],
+])("refuses Escape and overlay dismissal while state is %s", async (state) => {
   const onclose = vi.fn();
-  const base = { open: true, workflow, environments: [], initialRef: "main", operation, trigger: null, onsubmit: vi.fn(), onclose };
-  const view = render(WorkflowDispatchDialog, { ...base, state: { kind: "pending" } as const });
+  render(WorkflowDispatchDialog, { open: true, workflow, environments: [], initialRef: "main", operation, state, trigger: null, onsubmit: vi.fn(), onclose, onreload: vi.fn() });
+  const dialog = screen.getByRole("dialog");
+  await fireEvent.keyDown(window, { key: "Escape" });
+  await fireEvent.click(dialog.parentElement as HTMLElement);
+  expect(onclose).not.toHaveBeenCalled();
   expect(screen.getByRole("dialog")).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+});
 
-  await view.rerender({ ...base, state: { kind: "uncertain", message: "Outcome unknown" } });
+it("reloads a conflict exactly once and closes only after acknowledgement", async () => {
+  const onclose = vi.fn();
+  const onreload = vi.fn();
+  const base = { open: true, workflow, environments: [], initialRef: "main", operation, trigger: null, onsubmit: vi.fn(), onclose, onreload };
+  const view = render(WorkflowDispatchDialog, { ...base, state: { kind: "conflict" } as const });
+  const reload = screen.getByRole("button", { name: "Reload workflows" });
+  await Promise.all([fireEvent.click(reload), fireEvent.click(reload)]);
+  expect(onreload).toHaveBeenCalledOnce();
   expect(screen.getByRole("dialog")).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
-
-  await view.rerender({ ...base, state: { kind: "conflict" } });
-  expect(screen.getByRole("dialog")).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Reload workflows" })).toBeTruthy();
 
   await view.rerender({ ...base, state: { kind: "succeeded" } });
   await fireEvent.click(screen.getByRole("button", { name: "Close" }));

@@ -3774,7 +3774,9 @@ test.describe("sidebar toggle behavior", () => {
     expect(workflowPanelMetrics).toEqual({
       handleWidth: 4,
       homeToPanelRight: 0,
-      homeToSplitter: 1,
+      // Leaf border plus the 1px ring the leaf reserves for the pane focus
+      // marker (see TabbedPanelTree); pane content sits inside both.
+      homeToSplitter: 2,
       panelOverflowY: "hidden",
     });
     // PR button should be active

@@ -68,6 +68,9 @@ Rules:
 - Keep workflow approval and workflow dispatch separate: approval advances an
   existing run, while dispatch starts a new one; neither contract may assume
   GitHub Actions semantics (`internal/platform/client.go::WorkflowDispatcher`).
+- Workflow contracts remain optional and provider-neutral. GitHub is the sole
+  current implementation; other providers must not advertise capabilities
+  before implementing the interfaces (`internal/github/sync.go::gitHubClientProvider.Capabilities`).
 - Treat workflow dispatch as live-state mutation: re-read definitions/environments,
   validate SHA and typed inputs, then gate one provider call under a stable route fence;
   never retry uncertain writes or persist definitions (`internal/server/workflowapi/routes.go::Handler.dispatch`).

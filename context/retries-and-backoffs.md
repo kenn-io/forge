@@ -68,6 +68,13 @@ Steady background cadence is scheduling policy, not transient retry. Do not
 migrate ticker-driven sync or refresh loops into `backoff/v5`
 (`internal/github/sync.go::Syncer.Start`).
 
+- Manual workflow dispatch is non-idempotent and never retried; reconcile
+  accepted or uncertain outcomes by reads instead of replaying POST
+  (`frontend/src/lib/stores/workflow-actions-workflow.ts::dispatchQueue`).
+- Selected runs poll every 5 seconds while active and every 30 seconds when
+  idle; removing demand or disabling Actions interrupts the cadence
+  (`frontend/src/lib/stores/workflow-actions-workflow.ts::waitForPoll`).
+
 - Provider-index sync keeps at most one coalesced follow-up, atomically transfers
   its single-flight slot, and preserves nil-versus-empty scope; bursts neither
   drop accepted work nor create an unbounded queue. Scoped user bypasses stay

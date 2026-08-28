@@ -46,6 +46,12 @@ service is the supported tool here.
   uninterruptible acquisition handoff. After an ordered queue admits a
   non-idempotent command, pending-state publication and executor release are
   likewise one uninterruptible handoff.
+- Workflow Actions is one app-scoped Effect service by canonical repository;
+  presenters only claim demand, while polling, dispatch, and accepted workflow
+  identity survive them (`frontend/src/lib/stores/workflow-actions-workflow.ts::WorkflowActionsWorkflowLive`).
+- Selection interrupts the prior run loop, and stale responses cannot replace
+  its runs; disabling clears owners/fibers without cancelling admitted dispatch
+  (`frontend/src/lib/stores/workflow-actions-workflow.ts::selectWorkflow`).
 - Use Effect concurrency, queues, fibers, schedules, and interruption instead
   of bespoke Promise generations, overlapping timers, or boolean race guards.
   Preserve latest-wins, single-flight, ordered, or lossless semantics explicitly;

@@ -261,6 +261,14 @@ Persisted controls must state their scope clearly.
 - Actions snapshot read failures never collapse into successful empty/current data: empty
   failures replace the empty state, while retained runs/jobs remain with a visible stale-data alert
   (`frontend/src/lib/components/actions/ActionsPage.svelte::workflowReadErrorMessage`).
+- Run reads belong to the selected workflow: selection replaces the prior run
+  projection and every generated request carries that workflow ID
+  (`frontend/src/lib/stores/workflow-actions-workflow.ts::readRuns`).
+- Accepted dispatch wakes reconciliation, so a new run does not wait for the
+  prior idle interval (`frontend/src/lib/stores/workflow-actions-workflow.ts::restartRepositoryLoop`).
+- PR Actions defaults open same-repository pulls to the head branch, but forks
+  and non-open states to the target; workflows remain on merged pulls
+  (`frontend/src/lib/components/detail/PullDetail.svelte::workflowInitialRef`).
 - Server-backed settings belong in the API only when the preference should
   follow the user/config rather than one browser session.
 - Detail timelines apply the server-backed entry limit after filtering and grouping,

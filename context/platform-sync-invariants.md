@@ -31,6 +31,9 @@ combining repository-owned history
   exact ownership generation before snapshot, notification, or cache commits;
   same-identity freshness observations do not advance that generation
   (`internal/db/repository_catalog.go::RepositoryRouteFence`).
+- Workflow reads and dispatch fence route ownership after live provider work;
+  dispatch also re-reads definition state before its single write, so stale UI
+  authority cannot cross revisions (`internal/server/workflowapi/routes.go::Handler.dispatch`).
 - Repository provider metadata and merge settings have a single sync-path
   writer: commits go through the observation watermark so a delayed snapshot
   never overwrites a newer same-route observation, and reconciled direct item

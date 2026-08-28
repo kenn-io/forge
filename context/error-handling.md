@@ -70,6 +70,9 @@ branch. Keep the OpenAPI enum stable and regenerate API artifacts with
 - After dispatching a non-idempotent provider write, preserve only typed errors that prove rejection;
   unverified provider failures and local persistence failures after provider success return
   `mutationOutcomeUnknown` (`internal/server/httpapi/problems.go::ProviderMutationProblem`).
+- A stale manual-workflow definition is `conflict` with
+  `details.reason = "workflow_definition_changed"` and expected/live SHAs, so
+  clients can require a catalog reload (`internal/server/workflowapi/routes.go::Handler.dispatch`).
 
 ## Server Construction
 

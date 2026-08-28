@@ -331,10 +331,13 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
       );
     }
 
-    function readRuns(entry: RepositoryEntry) {
+    function readRuns(entry: RepositoryEntry, workflowId: string) {
       return api.execute("GET workflow runs", (signal) =>
         api.client.GET(providerActionsPath(entry.ref, "/runs"), {
-          params: { path: providerRouteParams(entry.ref), query: { per_page: 50 } },
+          params: {
+            path: providerRouteParams(entry.ref),
+            query: { workflow_id: workflowId, per_page: 50 },
+          },
           signal,
         }),
       );
@@ -359,6 +362,39 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
         }),
       );
     });
+
+    function workflowIdsForRead(entry: RepositoryEntry, now: number): readonly string[] {
+      const ids = entry.selectedWorkflowId === null ? [] : [entry.selectedWorkflowId];
+      for (const state of entry.snapshot.dispatches) {
+        if (dispatchNeedsPolling(state, now) && !ids.includes(state.request.workflowId)) {
+          ids.push(state.request.workflowId);
+        }
+      }
+      return ids;
+    }
+
+    function repositoryShouldRun(entry: RepositoryEntry, now: number): boolean {
+      const hasDispatchDemand = entry.snapshot.dispatches.some((state) => dispatchNeedsPolling(state, now));
+      if (entry.owners.size === 0 && !hasDispatchDemand) return false;
+      return entry.snapshot.catalog === null || workflowIdsForRead(entry, now).length > 0;
+    }
+
+    function reconcileWorkflowDispatchStates(
+      states: readonly WorkflowDispatchState[],
+      workflowId: string,
+      runs: readonly WorkflowRun[],
+      now: number,
+    ): readonly WorkflowDispatchState[] {
+      const reconciled = reconcileDispatchStates(
+        states.filter((state) => state.request.workflowId === workflowId),
+        runs,
+        now,
+      );
+      let matchingIndex = 0;
+      return states.map((state) =>
+        state.request.workflowId === workflowId ? reconciled[matchingIndex++]! : state
+      );
+    }
 
     const loadCatalog = Effect.fn("WorkflowActions.loadCatalog")(function* (entry: RepositoryEntry) {
       if (entry.snapshot.catalog !== null) return;
@@ -387,33 +423,58 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
       );
     });
 
-    const loadRuns = Effect.fn("WorkflowActions.loadRuns")(function* (entry: RepositoryEntry) {
-      yield* updateSnapshot(entry.key, (snapshot) => ({
-        ...snapshot,
-        loading: { ...snapshot.loading, runs: true },
-      }));
-      yield* readRuns(entry).pipe(
+    const loadRuns = Effect.fn("WorkflowActions.loadRuns")(function* (
+      entry: RepositoryEntry,
+      workflowId: string,
+    ) {
+      yield* updateSnapshot(entry.key, (snapshot, current) =>
+        current.selectedWorkflowId !== workflowId
+          ? snapshot
+          : {
+              ...snapshot,
+              loading: { ...snapshot.loading, runs: true },
+            }
+      );
+      yield* readRuns(entry, workflowId).pipe(
         Effect.matchEffect({
           onFailure: (error) =>
             Clock.currentTimeMillis.pipe(
               Effect.flatMap((now) =>
-                updateSnapshot(entry.key, (snapshot) => ({
+                updateSnapshot(entry.key, (snapshot, current) => ({
                   ...snapshot,
-                  dispatches: reconcileDispatchStates(snapshot.dispatches, snapshot.runs, now),
-                  error,
-                  loading: { ...snapshot.loading, runs: false },
+                  dispatches: reconcileWorkflowDispatchStates(
+                    snapshot.dispatches,
+                    workflowId,
+                    snapshot.runs,
+                    now,
+                  ),
+                  ...(current.selectedWorkflowId === workflowId
+                    ? {
+                        error,
+                        loading: { ...snapshot.loading, runs: false },
+                      }
+                    : {}),
                 })),
               ),
             ),
           onSuccess: (response) =>
             Clock.currentTimeMillis.pipe(
               Effect.flatMap((now) =>
-                updateSnapshot(entry.key, (snapshot) => ({
+                updateSnapshot(entry.key, (snapshot, current) => ({
                   ...snapshot,
-                  runs: response.items ?? [],
-                  dispatches: reconcileDispatchStates(snapshot.dispatches, response.items ?? [], now),
-                  error: null,
-                  loading: { ...snapshot.loading, runs: false },
+                  ...(current.selectedWorkflowId === workflowId
+                    ? {
+                        runs: response.items ?? [],
+                        error: null,
+                        loading: { ...snapshot.loading, runs: false },
+                      }
+                    : {}),
+                  dispatches: reconcileWorkflowDispatchStates(
+                    snapshot.dispatches,
+                    workflowId,
+                    response.items ?? [],
+                    now,
+                  ),
                 })),
               ),
             ),
@@ -429,12 +490,17 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
       if (entry === undefined) return;
       yield* loadCatalog(entry);
       while (yield* repositoryHasDemand(key)) {
-        yield* loadRuns(entry);
+        const now = yield* Clock.currentTimeMillis;
+        const workflowIds = workflowIdsForRead(entry, now);
+        if (workflowIds.length === 0) return;
+        for (const workflowId of workflowIds) {
+          yield* loadRuns(entry, workflowId);
+        }
         if (!(yield* repositoryHasDemand(key))) return;
         const active = yield* Clock.currentTimeMillis.pipe(
-          Effect.map((now) =>
+          Effect.map((currentTime) =>
             entry.snapshot.runs.some((candidate) => !isTerminalRun(candidate)) ||
-            entry.snapshot.dispatches.some((state) => dispatchNeedsPolling(state, now)),
+            entry.snapshot.dispatches.some((state) => dispatchNeedsPolling(state, currentTime)),
           ),
         );
         yield* waitForPoll(active);
@@ -449,10 +515,7 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
             Effect.sync(() => {
               const entry = repositories.get(key);
               if (entry === undefined || entry.loopRunning || !enabled) return undefined;
-              const hasDemand =
-                entry.owners.size > 0 ||
-                entry.snapshot.dispatches.some((state) => dispatchNeedsPolling(state, now));
-              if (!hasDemand) return undefined;
+              if (!repositoryShouldRun(entry, now)) return undefined;
               entry.loopRunning = true;
               entry.loopGeneration += 1;
               return entry.loopGeneration;
@@ -475,11 +538,7 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
                 const entry = repositories.get(key);
                 if (entry === undefined || entry.loopGeneration !== generation) return false;
                 entry.loopRunning = false;
-                const hasDemand =
-                  enabled &&
-                  (entry.owners.size > 0 ||
-                    entry.snapshot.dispatches.some((state) => dispatchNeedsPolling(state, now)));
-                return hasDemand;
+                return enabled && repositoryShouldRun(entry, now);
               }),
             );
             if (shouldRestart) {
@@ -507,6 +566,25 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
       );
       if (shouldStop) yield* FiberMap.remove(repositoryFibers, key);
     });
+
+    const restartRepositoryLoop = Effect.fn("WorkflowActions.restartRepositoryLoop")((key: string) =>
+      Effect.uninterruptible(
+        Effect.gen(function* () {
+          const now = yield* Clock.currentTimeMillis;
+          const shouldRestart = yield* registry.withPermit(
+            Effect.sync(() => {
+              const entry = repositories.get(key);
+              if (entry === undefined || !enabled) return false;
+              entry.loopRunning = false;
+              entry.loopGeneration += 1;
+              return repositoryShouldRun(entry, now);
+            }),
+          );
+          yield* FiberMap.remove(repositoryFibers, key);
+          if (shouldRestart) yield* ensureRepositoryLoop(key);
+        }),
+      ),
+    );
 
     const dispatchQueue = yield* makeOrderedCommandQueue<DispatchCommand, void, never, never>(
       "workflow actions dispatch",
@@ -544,7 +622,7 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
               })).pipe(
                 Effect.andThen(
                   isDispatchOutcomeUncertain(error)
-                    ? ensureRepositoryLoop(workflowRepositoryKey(command.request.ref))
+                    ? restartRepositoryLoop(workflowRepositoryKey(command.request.ref))
                     : Effect.void,
                 ),
               ),
@@ -561,7 +639,7 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
               })).pipe(
                 Effect.andThen(
                   response.run === undefined || !isTerminalRun(response.run)
-                    ? ensureRepositoryLoop(workflowRepositoryKey(command.request.ref))
+                    ? restartRepositoryLoop(workflowRepositoryKey(command.request.ref))
                     : Effect.void,
                 ),
               ),
@@ -811,8 +889,12 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
         return {
           ...snapshot,
           selectedWorkflow: snapshot.catalog?.workflows?.find((workflow) => workflow.id === workflowId) ?? null,
+          runs: [],
+          error: null,
+          loading: { ...snapshot.loading, runs: false },
         };
       });
+      yield* restartRepositoryLoop(entry.key);
     });
 
     const dispatch = Effect.fn("WorkflowActions.dispatch")(function* (input: WorkflowDispatchInput) {

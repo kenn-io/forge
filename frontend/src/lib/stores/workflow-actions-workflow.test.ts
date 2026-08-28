@@ -73,7 +73,10 @@ function run(overrides: Partial<WorkflowRun> = {}): WorkflowRun {
 }
 
 interface MockRequestOptions {
-  readonly params?: { readonly path?: unknown } | undefined;
+  readonly params?: {
+    readonly path?: unknown;
+    readonly query?: Readonly<Record<string, unknown>>;
+  } | undefined;
   readonly signal?: AbortSignal | undefined;
   readonly body?: unknown;
 }
@@ -167,6 +170,8 @@ it.effect("keys shared reads by canonical provider, resolved host, owner, name, 
     Effect.gen(function* () {
       const workflow = yield* WorkflowActionsWorkflow;
       assert.strictEqual(workflowRepositoryKey(github), "github\u0000github.com\u0000octo\u0000repo\u0000octo/repo");
+      yield* workflow.selectWorkflow(github, "deploy.yml");
+      yield* workflow.selectWorkflow(alternatePath, "deploy.yml");
       const first = yield* workflow.watchRepository("surface-a", github, () => {}).pipe(Effect.forkChild);
       const second = yield* workflow.watchRepository("surface-b", alternatePath, () => {}).pipe(Effect.forkChild);
       yield* settle;
@@ -183,6 +188,72 @@ it.effect("keys shared reads by canonical provider, resolved host, owner, name, 
   );
 });
 
+it.effect("reads and polls runs only for the currently selected workflow", () => {
+  const release = catalog();
+  release.workflows = [
+    ...(release.workflows ?? []),
+    {
+      available: true,
+      definition_sha: "definition-b",
+      id: "maintenance.yml",
+      inputs: [],
+      name: "Maintenance",
+      path: ".github/workflows/maintenance.yml",
+      state: "active",
+      web_url: "https://example.test/workflows/maintenance.yml",
+    },
+  ];
+  const probe = makeApiProbe({
+    catalog: () => release,
+    runs: (_call, options) => ({
+      repo: apiRepo(),
+      items: [run({
+        id: `run-${String(options.params?.query?.workflow_id)}`,
+        workflow_id: String(options.params?.query?.workflow_id),
+      })],
+      exhausted: true,
+    }),
+  });
+  return withWorkflow(
+    probe,
+    Effect.gen(function* () {
+      const workflow = yield* WorkflowActionsWorkflow;
+      const owner = yield* workflow.watchRepository("surface", github, () => {}).pipe(Effect.forkChild);
+      yield* settle;
+      assert.strictEqual(probe.calls.catalog, 1);
+      assert.strictEqual(probe.calls.runs, 0);
+
+      yield* workflow.selectWorkflow(github, "deploy.yml");
+      yield* settle;
+      assert.strictEqual(probe.calls.runs, 1);
+      let runReads = probe.observed.filter((entry) => entry.path.endsWith("/runs"));
+      assert.deepStrictEqual(runReads.map((entry) => entry.options.params?.query), [
+        { workflow_id: "deploy.yml", per_page: 50 },
+      ]);
+
+      yield* workflow.selectWorkflow(github, "maintenance.yml");
+      yield* settle;
+      assert.strictEqual(probe.calls.runs, 2);
+      let snapshot = yield* workflow.snapshot(github);
+      assert.deepStrictEqual(snapshot.runs.map((item) => item.workflow_id), ["maintenance.yml"]);
+
+      yield* TestClock.adjust("5 seconds");
+      yield* settle;
+      assert.strictEqual(probe.calls.runs, 3);
+      runReads = probe.observed.filter((entry) => entry.path.endsWith("/runs"));
+      assert.deepStrictEqual(runReads.map((entry) => entry.options.params?.query), [
+        { workflow_id: "deploy.yml", per_page: 50 },
+        { workflow_id: "maintenance.yml", per_page: 50 },
+        { workflow_id: "maintenance.yml", per_page: 50 },
+      ]);
+      assert.isTrue(runReads.every((entry) => entry.options.params?.query?.workflow_id !== ""));
+      snapshot = yield* workflow.snapshot(github);
+      assert.strictEqual(snapshot.selectedWorkflow?.id, "maintenance.yml");
+      yield* Fiber.interrupt(owner);
+    }),
+  );
+});
+
 it.effect("moves one owner's latest demand and shares a repository poll across other owners", () => {
   const probe = makeApiProbe();
   const other = { ...github, owner: "acme", name: "other", repoPath: "acme/other" };
@@ -190,6 +261,8 @@ it.effect("moves one owner's latest demand and shares a repository poll across o
     probe,
     Effect.gen(function* () {
       const workflow = yield* WorkflowActionsWorkflow;
+      yield* workflow.selectWorkflow(github, "deploy.yml");
+      yield* workflow.selectWorkflow(other, "deploy.yml");
       const first = yield* workflow.watchRepository("surface-a", github, () => {}).pipe(Effect.forkChild);
       const shared = yield* workflow.watchRepository("surface-b", github, () => {}).pipe(Effect.forkChild);
       yield* settle;
@@ -220,6 +293,7 @@ it.effect("polls non-terminal runs after 5 seconds and terminal-only runs after 
     probe,
     Effect.gen(function* () {
       const workflow = yield* WorkflowActionsWorkflow;
+      yield* workflow.selectWorkflow(github, "deploy.yml");
       const owner = yield* workflow.watchRepository("surface", github, () => {}).pipe(Effect.forkChild);
       yield* settle;
       assert.strictEqual(probe.calls.runs, 1);
@@ -240,12 +314,46 @@ it.effect("polls non-terminal runs after 5 seconds and terminal-only runs after 
   );
 });
 
+it.effect("wakes an idle selected-workflow poll when dispatch is accepted", () => {
+  const probe = makeApiProbe({
+    dispatch: () => ({
+      accepted: true,
+      locating_run: false,
+      run: run({ id: "run-2" }),
+    }),
+    runs: (call) => ({
+      repo: apiRepo(),
+      items: [run(call === 1
+        ? { status: "completed", conclusion: "success" }
+        : { id: "run-2" })],
+      exhausted: true,
+    }),
+  });
+  return withWorkflow(
+    probe,
+    Effect.gen(function* () {
+      const workflow = yield* WorkflowActionsWorkflow;
+      yield* workflow.selectWorkflow(github, "deploy.yml");
+      const owner = yield* workflow.watchRepository("surface", github, () => {}).pipe(Effect.forkChild);
+      yield* settle;
+      assert.strictEqual(probe.calls.runs, 1);
+
+      yield* workflow.dispatch(dispatchInput());
+      yield* settle;
+      assert.strictEqual(probe.calls.runs, 2);
+      assert.deepStrictEqual((yield* workflow.snapshot(github)).runs.map((item) => item.id), ["run-2"]);
+      yield* Fiber.interrupt(owner);
+    }),
+  );
+});
+
 it.effect("stops idle polling after the final repository owner releases", () => {
   const probe = makeApiProbe();
   return withWorkflow(
     probe,
     Effect.gen(function* () {
       const workflow = yield* WorkflowActionsWorkflow;
+      yield* workflow.selectWorkflow(github, "deploy.yml");
       const owner = yield* workflow.watchRepository("surface", github, () => {}).pipe(Effect.forkChild);
       yield* settle;
       yield* Fiber.interrupt(owner);
@@ -429,6 +537,7 @@ it.effect("setEnabled(false) releases reads but lets an admitted POST complete e
     probe,
     Effect.gen(function* () {
       const workflow = yield* WorkflowActionsWorkflow;
+      yield* workflow.selectWorkflow(github, "deploy.yml");
       const owner = yield* workflow.watchRepository("surface", github, () => {}).pipe(Effect.forkChild);
       yield* settle;
       const request = yield* workflow.dispatch(dispatchInput());
@@ -580,6 +689,7 @@ it.effect("restarts a repository loop when demand arrives as the prior loop exit
     probe,
     Effect.gen(function* () {
       const workflow = yield* WorkflowActionsWorkflow;
+      yield* workflow.selectWorkflow(github, "deploy.yml");
       yield* workflow.dispatch(dispatchInput());
       yield* settle;
 
@@ -609,6 +719,7 @@ it.effect("clears interrupted catalog, runs, and jobs loading markers when disab
     probe,
     Effect.gen(function* () {
       const workflow = yield* WorkflowActionsWorkflow;
+      yield* workflow.selectWorkflow(github, "deploy.yml");
       const repositoryOwner = yield* workflow.watchRepository("surface", github, () => {}).pipe(Effect.forkChild);
       const jobsOwner = yield* workflow.watchJobs("row", github, "run-1").pipe(Effect.forkChild);
       yield* settle;

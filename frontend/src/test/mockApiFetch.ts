@@ -303,6 +303,7 @@ export const mockSettings = {
   },
   modes: {
     activity: true,
+    actions: false,
     docs: true,
     issues: true,
     pulls: true,

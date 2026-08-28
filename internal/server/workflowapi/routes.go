@@ -99,9 +99,12 @@ func (h *Handler) listCatalog(ctx context.Context, input *repositoryInput) (*cat
 	if err != nil {
 		return nil, httpapi.ProviderCallProblem(err, string(ref.Platform), ref.Host)
 	}
-	environments, err := reader.ListWorkflowEnvironments(ctx, ref)
-	if err != nil {
-		return nil, httpapi.ProviderCallProblem(err, string(ref.Platform), ref.Host)
+	var environments []platform.WorkflowEnvironment
+	if workflowDefinitionsNeedEnvironments(workflows) {
+		environments, err = reader.ListWorkflowEnvironments(ctx, ref)
+		if err != nil {
+			return nil, httpapi.ProviderCallProblem(err, string(ref.Platform), ref.Host)
+		}
 	}
 	if err := h.confirm(ctx, resolved); err != nil {
 		return nil, err
@@ -230,10 +233,6 @@ func (h *Handler) dispatch(ctx context.Context, input *workflowDispatchInput) (*
 	if err != nil {
 		return nil, httpapi.ProviderCallProblem(err, string(ref.Platform), ref.Host)
 	}
-	environments, err := catalogReader.ListWorkflowEnvironments(ctx, ref)
-	if err != nil {
-		return nil, httpapi.ProviderCallProblem(err, string(ref.Platform), ref.Host)
-	}
 	definition, found := findWorkflow(workflows, workflowID)
 	if !found {
 		return nil, httpapi.NotFound(httpapi.CodeNotFound, "workflow not found", map[string]any{"workflowId": workflowID})
@@ -245,6 +244,13 @@ func (h *Handler) dispatch(ctx context.Context, input *workflowDispatchInput) (*
 	}
 	if !definition.Available {
 		return nil, httpapi.Conflict(httpapi.CodeConflict, "workflow is unavailable", map[string]any{"reason": definition.UnavailableReason})
+	}
+	var environments []platform.WorkflowEnvironment
+	if workflowInputsNeedEnvironments(definition.Inputs) {
+		environments, err = catalogReader.ListWorkflowEnvironments(ctx, ref)
+		if err != nil {
+			return nil, httpapi.ProviderCallProblem(err, string(ref.Platform), ref.Host)
+		}
 	}
 	if err := validateWorkflowInputs(definition.Inputs, environments, input.Body.Inputs); err != nil {
 		return nil, err
@@ -385,6 +391,24 @@ func isJSONNumber(value any) bool {
 	default:
 		return false
 	}
+}
+
+func workflowInputsNeedEnvironments(inputs []platform.WorkflowInput) bool {
+	for _, input := range inputs {
+		if input.Type == platform.WorkflowInputEnvironment {
+			return true
+		}
+	}
+	return false
+}
+
+func workflowDefinitionsNeedEnvironments(workflows []platform.WorkflowDefinition) bool {
+	for _, workflow := range workflows {
+		if workflowInputsNeedEnvironments(workflow.Inputs) {
+			return true
+		}
+	}
+	return false
 }
 
 func findWorkflow(workflows []platform.WorkflowDefinition, id string) (platform.WorkflowDefinition, bool) {

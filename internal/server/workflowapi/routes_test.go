@@ -26,6 +26,8 @@ type workflowTestProvider struct {
 	caps        platform.Capabilities
 	catalog     []platform.WorkflowDefinition
 	authenticatedUser string
+	catalogCalls int
+	environmentCalls int
 	environments []platform.WorkflowEnvironment
 	runs        platform.Page[platform.WorkflowRun]
 	jobs        []platform.WorkflowRunJob
@@ -45,10 +47,12 @@ func (p *workflowTestProvider) AuthenticatedUser(context.Context, platform.RepoR
 	return p.authenticatedUser, nil
 }
 func (p *workflowTestProvider) ListManualWorkflows(context.Context, platform.RepoRef) ([]platform.WorkflowDefinition, error) {
+	p.catalogCalls++
 	if p.onCatalog != nil { p.onCatalog() }
 	return p.catalog, p.catalogErr
 }
 func (p *workflowTestProvider) ListWorkflowEnvironments(context.Context, platform.RepoRef) ([]platform.WorkflowEnvironment, error) {
+	p.environmentCalls++
 	return p.environments, nil
 }
 func (p *workflowTestProvider) ListWorkflowRuns(_ context.Context, _ platform.RepoRef, query platform.WorkflowRunQuery) (platform.Page[platform.WorkflowRun], error) {
@@ -126,6 +130,18 @@ func workflowDefinitionFixture() platform.WorkflowDefinition {
 	}
 }
 
+func workflowDefinitionWithoutEnvironmentFixture() platform.WorkflowDefinition {
+	definition := workflowDefinitionFixture()
+	inputs := make([]platform.WorkflowInput, 0, len(definition.Inputs))
+	for _, input := range definition.Inputs {
+		if input.Type != platform.WorkflowInputEnvironment {
+			inputs = append(inputs, input)
+		}
+	}
+	definition.Inputs = inputs
+	return definition
+}
+
 func TestWorkflowCatalogRoutesUseStableRepositoryIdentity(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -151,6 +167,74 @@ func TestWorkflowCatalogRoutesUseStableRepositoryIdentity(t *testing.T) {
 		assert.Equal(false, workflow["inputs"].([]any)[1].(map[string]any)["default"])
 		assert.Equal(float64(2), workflow["inputs"].([]any)[2].(map[string]any)["default"])
 		assert.Equal("production", body["environments"].([]any)[0].(map[string]any)["name"])
+	}
+}
+
+func TestWorkflowRoutesLoadEnvironmentsOnlyForDefinitionsThatNeedThem(t *testing.T) {
+	tests := []struct {
+		name             string
+		definition       platform.WorkflowDefinition
+		method           string
+		path             string
+		body             map[string]any
+		wantEnvironments int
+	}{
+		{
+			name:       "catalog without environment input",
+			definition: workflowDefinitionWithoutEnvironmentFixture(),
+			method:     http.MethodGet,
+			path:       "/actions/github/acme/widget/workflows",
+		},
+		{
+			name:             "catalog with environment input",
+			definition:       workflowDefinitionFixture(),
+			method:           http.MethodGet,
+			path:             "/actions/github/acme/widget/workflows",
+			wantEnvironments: 1,
+		},
+		{
+			name:       "dispatch without environment input",
+			definition: workflowDefinitionWithoutEnvironmentFixture(),
+			method:     http.MethodPost,
+			path:       "/actions/github/acme/widget/workflows/release.yml/dispatch",
+			body: map[string]any{
+				"ref":                     "main",
+				"expected_definition_sha": "definition-v1",
+				"inputs":                  map[string]any{"version": "1"},
+			},
+		},
+		{
+			name:             "dispatch with environment input",
+			definition:       workflowDefinitionFixture(),
+			method:           http.MethodPost,
+			path:             "/actions/github/acme/widget/workflows/release.yml/dispatch",
+			body: map[string]any{
+				"ref":                     "main",
+				"expected_definition_sha": "definition-v1",
+				"inputs":                  map[string]any{"version": "1", "target": "production"},
+			},
+			wantEnvironments: 1,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			provider := &workflowTestProvider{
+				caps:         platform.Capabilities{ReadWorkflows: true, WorkflowDispatch: true},
+				catalog:      []platform.WorkflowDefinition{test.definition},
+				environments: []platform.WorkflowEnvironment{{Name: "production"}},
+				dispatch:     platform.WorkflowDispatchResult{Accepted: true},
+			}
+			mux, _ := workflowFixture(t, provider, httpapi.OperationAvailability{Available: true})
+			status, _ := workflowRequest(t, mux, test.method, test.path, test.body)
+			if test.method == http.MethodPost {
+				assert.Equal(t, http.StatusAccepted, status)
+				assert.Len(t, provider.dispatches, 1)
+			} else {
+				assert.Equal(t, http.StatusOK, status)
+			}
+			assert.Equal(t, 1, provider.catalogCalls)
+			assert.Equal(t, test.wantEnvironments, provider.environmentCalls)
+		})
 	}
 }
 func TestWorkflowRunRoutesRequireWorkflowIDInSchema(t *testing.T) {

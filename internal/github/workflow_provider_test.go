@@ -178,25 +178,20 @@ func TestGitHubWorkflowProviderCatalogPreservesPartialAvailability(t *testing.T)
 	assert.Equal([]platform.WorkflowEnvironment{{Name: "production"}}, environments)
 }
 
-func TestGitHubWorkflowEnvironmentsSkipTransportWithoutEnvironmentInput(t *testing.T) {
+func TestGitHubWorkflowEnvironmentsReadOnlyEnvironmentTransport(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	fake := &workflowProviderFake{
-		workflows: []*gh.Workflow{{
-			ID: gh.Ptr(int64(1)), Name: gh.Ptr("Release"),
-			Path: gh.Ptr(".github/workflows/release.yml"), State: gh.Ptr("active"),
-		}},
-		definitions: map[string]string{
-			".github/workflows/release.yml": "on:\n  workflow_dispatch:\n    inputs:\n      version:\n        type: string\n",
-		},
+		environments: []*gh.Environment{{Name: gh.Ptr("production")}},
 	}
 	provider := &gitHubClientProvider{host: "github.com", client: fake}
 	environments, err := provider.ListWorkflowEnvironments(
 		t.Context(), platform.RepoRef{Owner: "acme", Name: "widgets"},
 	)
 	require.NoError(err)
-	assert.Empty(environments)
-	assert.NotContains(fake.calls, "environments")
+	assert.Equal([]platform.WorkflowEnvironment{{Name: "production"}}, environments)
+	assert.Equal([]string{"environments"}, fake.calls)
+	assert.Empty(fake.definitionRefs)
 }
 
 func TestGitHubWorkflowProviderNormalizesRunsJobsAndDispatch(t *testing.T) {

@@ -2287,25 +2287,6 @@ func (p *gitHubClientProvider) ListWorkflowEnvironments(
 	if !ok {
 		return nil, platform.UnsupportedCapability(platform.KindGitHub, p.host, "read_workflows")
 	}
-	workflows, err := p.ListManualWorkflows(ctx, ref)
-	if err != nil {
-		return nil, err
-	}
-	needed := false
-	for _, workflow := range workflows {
-		if !workflow.Available {
-			continue
-		}
-		for _, input := range workflow.Inputs {
-			if input.Type == platform.WorkflowInputEnvironment {
-				needed = true
-				break
-			}
-		}
-	}
-	if !needed {
-		return []platform.WorkflowEnvironment{}, nil
-	}
 	environments, err := client.ListRepositoryEnvironments(ctx, ref.Owner, ref.Name)
 	if err != nil {
 		return nil, err

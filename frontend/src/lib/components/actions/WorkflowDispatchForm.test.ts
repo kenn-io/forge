@@ -17,6 +17,7 @@ function dropdown(name: string): HTMLElement {
 async function chooseDropdownOption(name: string, option: string): Promise<void> {
   await fireEvent.click(dropdown(name));
   await fireEvent.click(within(screen.getByRole("listbox")).getByRole("option", { name: option }));
+  expect(dropdown(name).textContent).toContain(option);
 }
 
 function workflow(inputs: NonNullable<Workflow["inputs"]> = []): Workflow {

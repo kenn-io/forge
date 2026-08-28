@@ -44,6 +44,15 @@ async function openReleaseFromPull(page: Page, number: number) {
   return dialog;
 }
 
+async function chooseWorkflowInput(page: Page, name: string, option: string): Promise<void> {
+  const combobox = page.getByRole("combobox", { name, exact: true });
+  await combobox.click();
+  const listbox = page.getByRole("listbox");
+  await expect(listbox).toBeVisible();
+  await listbox.getByRole("option", { name: option, exact: true }).click();
+  await expect(combobox).toContainText(option);
+}
+
 test("runs typed Actions workflows and applies pull request ref defaults until the mode is disabled", async ({
   page,
 }) => {
@@ -75,8 +84,8 @@ test("runs typed Actions workflows and applies pull request ref defaults until t
   await page.getByRole("textbox", { name: "Git ref" }).fill("main");
   await page.getByRole("textbox", { name: "version" }).fill("v2.4.0");
   await page.getByRole("checkbox", { name: "dry_run" }).check();
-  await page.getByRole("combobox", { name: "channel" }).selectOption("beta");
-  await page.getByRole("combobox", { name: "target" }).selectOption("production");
+  await chooseWorkflowInput(page, "channel", "beta");
+  await chooseWorkflowInput(page, "target", "production");
 
   const dispatchResponsePromise = page.waitForResponse(
     (response) => response.url().includes("/workflows/8101/dispatch") && response.request().method() === "POST",

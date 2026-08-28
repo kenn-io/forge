@@ -109,6 +109,7 @@
   function dropdownAccessibility(
     controlID: string,
     label: string,
+    _value: string,
     required: boolean,
     error: string | undefined,
   ): Attachment<HTMLDivElement> {
@@ -268,6 +269,7 @@
                 {@attach dropdownAccessibility(
                   inputControlId(input.name, index),
                   input.name,
+                  String(draft.values[input.name] ?? ""),
                   input.required,
                   errors[input.name],
                 )}

@@ -276,7 +276,7 @@
     </span>
   </div>
 </button>
-<SidebarTitlePopover target={el} title={pr.Title} repository={repoLabel} branch={pr.HeadBranch} />
+<SidebarTitlePopover target={el} title={pr.Title} repository={repoLabel} branch={pr.HeadBranch} truncationSelector=".title-text" />
 
 <style>
   .pull-item {

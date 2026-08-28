@@ -7,9 +7,13 @@
     title: string;
     repository: string;
     branch?: string | undefined;
+    // Selector for the row elements whose ellipsis truncation this popover
+    // reveals. The popover only opens while at least one match is actually
+    // truncated, so untruncated rows never grow a redundant tooltip.
+    truncationSelector: string;
   }
 
-  let { target, title, repository, branch = undefined }: Props = $props();
+  let { target, title, repository, branch = undefined, truncationSelector }: Props = $props();
 
   const tooltipId = $props.id();
   // kit-ui-check-ignore: kit Tooltip neither portals to body nor describes the focused row button
@@ -44,11 +48,21 @@
     side = top < target.getBoundingClientRect().top ? "top" : "bottom";
   }
 
+  // Measured at show time (not mount) so resizes since render are honored.
+  function hasTruncatedText(): boolean {
+    if (!target) return false;
+    for (const el of target.querySelectorAll(truncationSelector)) {
+      if (el.scrollWidth > el.clientWidth) return true;
+    }
+    return false;
+  }
+
   function showAfterDelay(): void {
     clearTimer();
     if (open) return;
     timer = setTimeout(() => {
       timer = undefined;
+      if (!hasTruncatedText()) return;
       open = true;
       void position();
     }, hoverDelayMs);
@@ -56,7 +70,7 @@
 
   function showNow(): void {
     clearTimer();
-    if (open) return;
+    if (open || !hasTruncatedText()) return;
     open = true;
     void position();
   }

@@ -1190,6 +1190,53 @@ describe("WorkspaceListSidebar", () => {
     expect(container.querySelectorAll(".ws-row")).toHaveLength(0);
   });
 
+  it("shows a full-detail popover on row focus only while the name is truncated", async () => {
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          workspaceFixture({
+            id: "ws-popover",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "kenn-io",
+            name: "kenn-forge",
+            number: 41,
+            title: "A workspace title too long for the sidebar rail",
+            branch: "feature/full-sidebar-popover-details",
+          }),
+        ],
+      },
+    });
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "" },
+    });
+    await waitFor(() => expect(container.querySelectorAll(".ws-row")).toHaveLength(1));
+    const row = container.querySelector<HTMLElement>(".ws-row")!;
+    const name = row.querySelector(".ws-name")!;
+
+    // jsdom reports zero layout widths, so the test chooses whether the name
+    // is ellipsis-truncated by stubbing the measurements the popover reads.
+    Object.defineProperty(name, "scrollWidth", { configurable: true, value: 180 });
+    Object.defineProperty(name, "clientWidth", { configurable: true, value: 180 });
+    await fireEvent.focusIn(row);
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    await fireEvent.focusOut(row);
+
+    Object.defineProperty(name, "scrollWidth", { configurable: true, value: 360 });
+    await fireEvent.focusIn(row);
+    const tooltip = screen.getByRole("tooltip");
+    expect(Array.from(tooltip.children, (line) => line.textContent)).toEqual([
+      "A workspace title too long for the sidebar rail",
+      "kenn-io/kenn-forge",
+      "feature/full-sidebar-popover-details",
+    ]);
+    expect(row.contains(tooltip)).toBe(false);
+
+    await fireEvent.focusOut(row);
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+
   it("sorts flat by creation time and drops group headers", async () => {
     mockGet.mockResolvedValue({
       data: { workspaces: sortFixtures() },

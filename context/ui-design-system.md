@@ -222,9 +222,12 @@ Use it inside left sidebar headers and collapsed strips. Pass a specific label s
 
 ### SidebarTitlePopover
 
-Use `SidebarTitlePopover` on truncated pull-request and issue sidebar rows so the full
-title and formatted repository remain readable; pull requests add the full head branch
-on its own line (`frontend/src/lib/components/sidebar/SidebarTitlePopover.svelte`).
+Use `SidebarTitlePopover` on pull-request, issue, and workspace sidebar rows so the full
+title and formatted repository remain readable; pull-request and workspace rows add the
+full head branch on its own line. The required `truncationSelector` prop names the row
+elements whose ellipsis truncation the popover reveals; it opens only while one of those
+is actually truncated, measured at show time
+(`frontend/src/lib/components/sidebar/SidebarTitlePopover.svelte`).
 
 ### GroupedSidebarSection
 

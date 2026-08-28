@@ -31,6 +31,7 @@
   import type { components } from "../../api/generated/schema.js";
   import { DiffStats, FilterDropdown, ScrollBox, SidebarToggle } from "@kenn-io/kit-ui";
   import GroupedSidebarSection from "../shared/GroupedSidebarSection.svelte";
+  import SidebarTitlePopover from "../sidebar/SidebarTitlePopover.svelte";
   import type { WorkspaceItemIdentity } from "../../workspace-inline.js";
   import {
     createRepoLabelFormatter,
@@ -164,6 +165,9 @@
     action: "push" | "pull" | "reveal" | "delete";
   } | null>(null);
   let contextMenuEl = $state<HTMLDivElement | null>(null);
+  // Row elements keyed by workspaceRowKey so the snippet-rendered rows can
+  // each anchor their own truncation popover.
+  let rowEls = $state<Record<string, HTMLElement | null>>({});
   let contextMenuStyle = $state("");
   let acknowledgedDoneStates = $state.raw<Record<string, string>>(
     loadDoneAcknowledgements(),
@@ -1483,6 +1487,7 @@
           {@const agentState = agentStatePresentation(ws)}
           <div
             class={["ws-row", { selected: isSelectedWorkspace(ws) }]}
+            bind:this={rowEls[workspaceRowKey(ws)]}
             onclick={(e) => {
               // The PR/issue bubble is a focusable child button; let
               // its own click handler run without the row also
@@ -1647,6 +1652,13 @@
               </div>
             {/if}
           </div>
+          <SidebarTitlePopover
+            target={rowEls[workspaceRowKey(ws)] ?? undefined}
+            title={displayName(ws)}
+            repository={repoLabel(ws)}
+            branch={shortBranch(ws.git_head_ref)}
+            truncationSelector=".ws-name"
+          />
     {/snippet}
     {#if workspaceListStatus === "loading" && workspaces.length === 0}
       <p class="filter-empty">Loading workspaces...</p>

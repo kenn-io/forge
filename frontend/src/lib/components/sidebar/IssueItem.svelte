@@ -108,7 +108,7 @@
     </span>
   </div>
 </button>
-<SidebarTitlePopover target={el} title={issue.Title} repository={repoLabel} />
+<SidebarTitlePopover target={el} title={issue.Title} repository={repoLabel} truncationSelector=".title-text" />
 
 <style>
   .issue-item {

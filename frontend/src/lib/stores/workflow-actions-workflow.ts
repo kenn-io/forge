@@ -118,6 +118,7 @@ interface RepositoryEntry {
   loopGeneration: number;
   loopRunning: boolean;
   readonly runPages: Map<string, WorkflowRunPagination>;
+  readonly catalogRefreshGenerations: Map<string, number>;
 }
 
 interface JobDemand {
@@ -320,6 +321,7 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
         loopGeneration: 0,
         loopRunning: false,
         runPages: new Map(),
+        catalogRefreshGenerations: new Map(),
       };
       repositories.set(key, created);
       return created;
@@ -722,17 +724,56 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
       workflowId: string,
     ) {
       const entry = entryFor(ref);
-      yield* clearCatalogRefreshError(entry.ref, workflowId);
-      const error = yield* loadCatalog(entry, true);
-      if (error !== null) {
-        yield* updateSnapshot(entry.key, (snapshot) => ({
+      let generation = 0;
+      yield* updateSnapshot(entry.key, (snapshot, current) => {
+        generation = (current.catalogRefreshGenerations.get(workflowId) ?? 0) + 1;
+        current.catalogRefreshGenerations.set(workflowId, generation);
+        const catalogRefreshErrors = { ...snapshot.catalogRefreshErrors };
+        delete catalogRefreshErrors[workflowId];
+        return {
           ...snapshot,
-          catalogRefreshErrors: { ...snapshot.catalogRefreshErrors, [workflowId]: error },
-        }));
-        return;
-      }
-      yield* newDispatchCycle(entry.ref, workflowId);
-      yield* restartRepositoryLoop(entry.key);
+          catalogRefreshErrors,
+          loading: { ...snapshot.loading, catalog: true },
+        };
+      });
+
+      let applied = false;
+      yield* readCatalog(entry).pipe(
+        Effect.matchEffect({
+          onFailure: (error) =>
+            updateSnapshot(entry.key, (snapshot, current) => {
+              if (current.catalogRefreshGenerations.get(workflowId) !== generation) return snapshot;
+              applied = true;
+              return {
+                ...snapshot,
+                error,
+                catalogRefreshErrors: { ...snapshot.catalogRefreshErrors, [workflowId]: error },
+                loading: { ...snapshot.loading, catalog: false },
+              };
+            }),
+          onSuccess: (catalog) =>
+            updateSnapshot(entry.key, (snapshot, current) => {
+              if (current.catalogRefreshGenerations.get(workflowId) !== generation) return snapshot;
+              applied = true;
+              const catalogRefreshErrors = { ...snapshot.catalogRefreshErrors };
+              delete catalogRefreshErrors[workflowId];
+              return {
+                ...snapshot,
+                catalog,
+                selectedWorkflow:
+                  catalog.workflows?.find((workflow) => workflow.id === current.selectedWorkflowId) ?? null,
+                catalogRefreshErrors,
+                dispatches: snapshot.dispatches.filter(
+                  (state) =>
+                    state.request.workflowId !== workflowId || state.kind === "pending" || state.kind === "locating",
+                ),
+                error: null,
+                loading: { ...snapshot.loading, catalog: false },
+              };
+            }),
+        }),
+      );
+      if (applied) yield* restartRepositoryLoop(entry.key);
     });
 
     const executeDispatchCommand = (command: DispatchCommand) =>

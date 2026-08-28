@@ -64,6 +64,9 @@ service is the supported tool here.
 - Definition-reload failures are workflow-cycle state, separate from general read errors;
   successful run polling cannot clear them, and only dialog close or the next reload cycle does
   (`frontend/src/lib/stores/workflow-actions-workflow.ts::clearCatalogRefreshError`).
+- Forced definition reloads are latest-cycle-wins per repository and workflow;
+  stale success or failure cannot replace catalog data, recovery error, or conflict state
+  (`frontend/src/lib/stores/workflow-actions-workflow.ts::refreshCatalog`).
 - Use Effect concurrency, queues, fibers, schedules, and interruption instead
   of bespoke Promise generations, overlapping timers, or boolean race guards.
   Preserve latest-wins, single-flight, ordered, or lossless semantics explicitly;

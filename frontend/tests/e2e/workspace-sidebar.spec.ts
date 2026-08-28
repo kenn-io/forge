@@ -2709,6 +2709,37 @@ test.describe("workspace launch home", () => {
     expect(activeBorder.overlayContent).toBe("none");
     expect(activeBorder.insetShadow).toContain("inset");
 
+    // The inset focus shadow paints beneath descendants, and a hosted terminal
+    // fills its pane with opaque layers. The marker survives only because the
+    // leaf reserves the outer 1px of its padding box, so no child may reach it.
+    const ringClearance = await codexLeaf.evaluate((leaf) => {
+      const rect = leaf.getBoundingClientRect();
+      const style = getComputedStyle(leaf);
+      const inner = {
+        left: rect.left + parseFloat(style.borderLeftWidth) + 1,
+        top: rect.top + parseFloat(style.borderTopWidth) + 1,
+        right: rect.right - parseFloat(style.borderRightWidth) - 1,
+        bottom: rect.bottom - parseFloat(style.borderBottomWidth) - 1,
+      };
+      const epsilon = 0.01;
+      return [...leaf.children].map((child) => {
+        const box = child.getBoundingClientRect();
+        return {
+          className: child.className,
+          insideRing:
+            box.width === 0 ||
+            box.height === 0 ||
+            (box.left >= inner.left - epsilon &&
+              box.top >= inner.top - epsilon &&
+              box.right <= inner.right + epsilon &&
+              box.bottom <= inner.bottom + epsilon),
+        };
+      });
+    });
+    for (const child of ringClearance) {
+      expect(child.insideRing, `${child.className} must not cover the focus ring`).toBe(true);
+    }
+
     await reviewerLeaf.getByRole("tab", { name: /^Reviewer/ }).focus();
     await expect(reviewerLeaf).toHaveClass(/input-active/);
     await expect(codexLeaf).not.toHaveClass(/input-active/);

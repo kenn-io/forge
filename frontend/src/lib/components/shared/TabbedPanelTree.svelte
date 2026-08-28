@@ -922,6 +922,13 @@
     overflow: hidden;
     border: var(--chrome-border-width) solid var(--border-default);
     border-top: 0;
+    /* The focus ring below is an inset shadow, which clips to the padding box.
+       This constant padding reserves that ring as pixels no descendant can
+       reach: children lay out in the content box, so the opaque tab strip,
+       scrolled diff surfaces, and terminal canvases cannot cover the ring,
+       while the shadow itself stays in the leaf's background layer, under
+       every popover, with no z-index involved. */
+    padding: var(--chrome-border-width);
     background: var(--bg-surface);
   }
 

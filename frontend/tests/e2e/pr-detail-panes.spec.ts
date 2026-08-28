@@ -322,6 +322,38 @@ test("routes page keys by focus while wheel input remains focus-neutral", async 
   expect(filesPaneChrome.tabAccentContent).toBe("none");
   expect(filesPaneChrome.toolbarZIndex).toBe("auto");
 
+  // The focus marker is an inset shadow, which paints beneath descendants. It
+  // stays visible only because the leaf reserves the outer 1px of its padding
+  // box: every child must lay out strictly inside that ring, even while the
+  // scrolled diff surface presses against the pane edges.
+  const ringClearance = await filesLeaf.evaluate((leaf) => {
+    const rect = leaf.getBoundingClientRect();
+    const style = getComputedStyle(leaf);
+    const inner = {
+      left: rect.left + parseFloat(style.borderLeftWidth) + 1,
+      top: rect.top + parseFloat(style.borderTopWidth) + 1,
+      right: rect.right - parseFloat(style.borderRightWidth) - 1,
+      bottom: rect.bottom - parseFloat(style.borderBottomWidth) - 1,
+    };
+    const epsilon = 0.01;
+    return [...leaf.children].map((child) => {
+      const box = child.getBoundingClientRect();
+      return {
+        className: child.className,
+        insideRing:
+          box.width === 0 ||
+          box.height === 0 ||
+          (box.left >= inner.left - epsilon &&
+            box.top >= inner.top - epsilon &&
+            box.right <= inner.right + epsilon &&
+            box.bottom <= inner.bottom + epsilon),
+      };
+    });
+  });
+  for (const child of ringClearance) {
+    expect(child.insideRing, `${child.className} must not cover the focus ring`).toBe(true);
+  }
+
   const afterFocus = await diffArea.evaluate((area) => Math.round(area.scrollTop));
   await page.keyboard.press("PageDown");
   await expect.poll(async () => diffArea.evaluate((area) => Math.round(area.scrollTop))).toBeGreaterThan(afterFocus);

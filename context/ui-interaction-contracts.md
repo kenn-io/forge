@@ -374,8 +374,12 @@ Keyboard handlers must have one clear owner for each key press.
   moves focus or changes the active pane. Mark actual focus with a subtle inset
   border without replacing control focus styling. Paint that marker as part of
   the pane itself, below descendants; a high-z generated overlay cuts through
-  popovers trapped in descendant stacking contexts
-  (`frontend/src/lib/components/shared/TabbedPanelTree.svelte`).
+  popovers trapped in descendant stacking contexts. Because it paints below
+  descendants, the leaf must reserve the marker's pixels: a constant 1px leaf
+  padding keeps every child inside the content box while the inset shadow
+  paints in the outer ring of the padding box, so opaque children (tab strip,
+  diff surfaces, terminal canvases) can never cover it and no z-index is
+  involved (`frontend/src/lib/components/shared/TabbedPanelTree.svelte`).
   A dedicated Files route keeps global diff shortcuts only while no pane or
   external dock has live focus; this fallback never paints active-pane styling
   (`frontend/src/lib/views/PRListView.svelte::diffKeyboardActive`).

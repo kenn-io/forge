@@ -29,6 +29,7 @@ import { createGroupingStore } from "./stores/grouping.svelte.js";
 import { createDetailActivityViewStore } from "./stores/detail-activity-view.svelte.js";
 import { createCollapsedReposStore } from "./stores/collapsedRepos.svelte.js";
 import { createSettingsStore } from "./stores/settings.svelte.js";
+import { createWorkflowActionsStore } from "./stores/workflow-actions.svelte.js";
 import { beginTerminalSettingsHydration } from "./stores/terminal-settings-persistence.js";
 import { beginWorkspaceSettingsHydration } from "./stores/workspace-settings-persistence.js";
 import { beginRoborevSettingsHydration } from "./stores/roborev-settings-persistence.js";
@@ -82,6 +83,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
   const detailActivityView = createDetailActivityViewStore();
   const collapsedRepos = createCollapsedReposStore();
   const settingsStore = createSettingsStore();
+  const workflowActions = createWorkflowActionsStore({ runtime: appRuntime });
   const detailStarProjection: {
     current?: (ref: ProviderRouteRef, number: number, starred: boolean, envelopeTick: number) => void;
   } = {};
@@ -363,6 +365,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
     collapsedRepos,
     settings: settingsStore,
     events: eventsStore,
+    workflowActions,
   };
 
   let roborevClient: RoborevClient | undefined;

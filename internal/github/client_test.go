@@ -2059,3 +2059,76 @@ func TestNewClientWiresETagTransport(t *testing.T) {
 	_, ok = guard.base.(*etagTransport)
 	require.Truef(ok, "expected *etagTransport under public GitHub guard, got %T", guard.base)
 }
+
+func TestWorkflowTransportShape(t *testing.T) {
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.Method+" "+r.URL.RequestURI())
+		switch {
+		case strings.Contains(r.URL.Path, "/contents/"):
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"type": "file", "sha": "blob-sha",
+				"content": base64.StdEncoding.EncodeToString([]byte("on: workflow_dispatch")),
+				"encoding": "base64",
+			})
+		case strings.HasSuffix(r.URL.Path, "/environments"):
+			_ = json.NewEncoder(w).Encode(map[string]any{"environments": []any{map[string]any{"name": "prod"}}})
+		case strings.HasSuffix(r.URL.Path, "/jobs"):
+			_ = json.NewEncoder(w).Encode(map[string]any{"jobs": []any{map[string]any{"id": 99}}})
+		case strings.HasSuffix(r.URL.Path, "/runs"):
+			w.Header().Set("Link", `<`+serverURL(r)+`?page=3>; rel="next"`)
+			_ = json.NewEncoder(w).Encode(map[string]any{"workflow_runs": []any{map[string]any{"id": 7}}})
+		case strings.HasSuffix(r.URL.Path, "/dispatches"):
+			var body map[string]any
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+			assert.Equal(t, true, body["return_run_details"])
+			assert.Equal(t, "main", body["ref"])
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"workflow_run_id":123,"html_url":"https://example.test/runs/123"}`))
+		default:
+			_ = json.NewEncoder(w).Encode(map[string]any{"workflows": []any{map[string]any{"id": 42}}})
+		}
+	}))
+	defer server.Close()
+	ghClient, err := newEnterpriseGHClient(server.Client(), server.URL+"/", server.URL+"/")
+	require.NoError(t, err)
+	client := &liveClient{gh: ghClient, ghWrite: ghClient}
+
+	workflows, err := client.ListRepositoryWorkflows(t.Context(), "acme", "widgets")
+	require.NoError(t, err)
+	require.Len(t, workflows, 1)
+	content, sha, err := client.GetWorkflowDefinition(t.Context(), "acme", "widgets", ".github/workflows/release.yml", "main")
+	require.NoError(t, err)
+	assert.Equal(t, "on: workflow_dispatch", content)
+	assert.Equal(t, "blob-sha", sha)
+	_, err = client.ListRepositoryEnvironments(t.Context(), "acme", "widgets")
+	require.NoError(t, err)
+	page, err := client.ListManualWorkflowRuns(t.Context(), "acme", "widgets", 42, platform.WorkflowRunQuery{
+		Cursor: "2", PerPage: 25, Event: "workflow_dispatch", Branch: "main",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "3", page.NextCursor)
+	_, err = client.ListManualWorkflowJobs(t.Context(), "acme", "widgets", 99)
+	require.NoError(t, err)
+	details, err := client.DispatchManualWorkflow(t.Context(), "acme", "widgets", 42, gh.CreateWorkflowDispatchEventRequest{
+		Ref: "main", Inputs: map[string]any{"version": "1.2.3"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, int64(123), details.GetWorkflowRunID())
+
+	assert.Contains(t, paths, "GET /api/v3/repos/acme/widgets/actions/workflows?per_page=100")
+	assert.Contains(t, paths, "GET /api/v3/repos/acme/widgets/contents/.github/workflows/release.yml?ref=main")
+	assert.Contains(t, paths, "GET /api/v3/repos/acme/widgets/actions/workflows/42/runs?branch=main&event=workflow_dispatch&page=2&per_page=25")
+	assert.Contains(t, paths, "POST /api/v3/repos/acme/widgets/actions/workflows/42/dispatches")
+}
+
+func serverURL(r *http.Request) string {
+	return "http://" + r.Host + r.URL.Path
+}
+
+func TestListManualWorkflowRunsRejectsInvalidCursor(t *testing.T) {
+	client := &liveClient{platformHost: "github.com"}
+	_, err := client.ListManualWorkflowRuns(t.Context(), "acme", "widgets", 42, platform.WorkflowRunQuery{Cursor: "zero"})
+	require.ErrorIs(t, err, platform.ErrInvalidArgument)
+}
+

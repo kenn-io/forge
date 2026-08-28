@@ -290,17 +290,49 @@ func (r *HostRouter) routeForRepoMode(owner, name string, archive bool) (*Route,
 		return r.RouteForRepo(owner, name)
 	}
 	if r != nil {
-		if route := r.archiveRepos[repoRouteMapKey(owner, name)]; route != nil {
+		if route := r.archiveRepos[repoRouteMapKey(owner, name)]; routeArchiveCovers(route, owner, name) {
 			return route, nil
 		}
-		if route := r.archiveOwners[ownerRouteMapKey(owner)]; route != nil {
+		if route := r.archiveOwners[ownerRouteMapKey(owner)]; routeArchiveCovers(route, owner, name) {
 			return route, nil
 		}
-		if r.archiveFallback != nil {
+		if routeArchiveCovers(r.archiveFallback, owner, name) {
 			return r.archiveFallback, nil
 		}
 	}
-	return r.RouteForRepo(owner, name)
+	// A normal route may be selected through a repository credential alias
+	// after GitHub transfers the repository to another owner. Its archive App
+	// route is scoped to the old owner/repository and must not follow that
+	// alias unless the archive key still covers the resolved identity.
+	route, err := r.RouteForRepo(owner, name)
+	if err != nil || routeArchiveCovers(route, owner, name) {
+		return route, err
+	}
+	return withoutArchiveRoute(route), err
+}
+
+func routeArchiveCovers(route *Route, owner, name string) bool {
+	if route == nil || route.ArchiveClient == nil {
+		return false
+	}
+	key := route.ArchiveKey
+	if key.Owner != "" && !strings.EqualFold(key.Owner, owner) {
+		return false
+	}
+	return key.Name == "" || strings.EqualFold(key.Name, name)
+}
+
+func withoutArchiveRoute(route *Route) *Route {
+	if route == nil {
+		return nil
+	}
+	copy := *route
+	copy.ArchiveKey = RouteKey{}
+	copy.ArchiveClient = nil
+	copy.ArchiveFetcher = nil
+	copy.ArchiveCredentialKey = ""
+	copy.ArchiveReadIdentity = IdentityKey{}
+	return &copy
 }
 
 func (r *HostRouter) WriteIdentityForRepo(owner, name string) (IdentityKey, error) {

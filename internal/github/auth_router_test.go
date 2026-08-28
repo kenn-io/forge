@@ -1433,6 +1433,33 @@ func TestHostRouterRepoCredentialAliasFollowsRename(t *testing.T) {
 	assert.Equal("widget-bot", identity.Principal)
 }
 
+func TestHostRouterArchiveAliasFallsBackWhenArchiveAppLosesCoverage(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	normal := &routeRecordingClient{marker: "normal"}
+	archive := &routeRecordingClient{marker: "archive"}
+	router, err := NewHostRouter("github.com",
+		&Route{
+			Key:           RouteKey{Host: "github.com", Owner: "acme", Name: "widget"},
+			Client:        normal,
+			ArchiveKey:    RouteKey{Host: "github.com", Owner: "acme", Name: "widget"},
+			ArchiveClient: archive,
+		},
+	)
+	require.NoError(err)
+	router.RegisterRepoCredentialAlias("acme", "gadget",
+		RouteKey{Host: "github.com", Owner: "acme", Name: "widget"}, "R_1")
+	routed, err := NewRoutedClient(router)
+	require.NoError(err)
+	_, err = routed.GetRepository(
+		WithArchiveSyncBudget(t.Context()), "acme", "gadget",
+	)
+	require.NoError(err)
+	assert.Equal([]string{"get:acme/gadget"}, normal.calls)
+	assert.Empty(archive.calls,
+		"an archive route scoped to the old repository must not follow its alias")
+}
+
 func TestRegisterConfiguredRepoCredentialAliasesRoutesRenamedRepo(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

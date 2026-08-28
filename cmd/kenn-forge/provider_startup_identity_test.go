@@ -139,6 +139,44 @@ func TestBuildProviderStartupAddsDedicatedArchiveGitHubRoute(t *testing.T) {
 	assert.NotNil(routes[0].ArchiveClient)
 }
 
+func TestBuildProviderStartupDoesNotRequirePATForArchiveOnlyApp(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	cfg := &config.Config{
+		SyncInterval: "5m", Host: "127.0.0.1", Port: 8091, BasePath: "/",
+		Activity: config.Activity{ViewMode: "flat", TimeRange: "7d"},
+		Repos:    []config.Repo{{Owner: "acme", Name: "widget"}},
+		GitHubApps: []config.GitHubAppConfig{{
+			Host: "github.com", AppID: 2, Role: config.GitHubAppRoleArchive,
+			PrivateKeyPath: "/keys/archive.pem", InstallationID: 20,
+			InstallationAccount: "acme", RepositorySelection: "all",
+		}},
+	}
+	require.NoError(cfg.Validate())
+	set := tokenauth.NewSourceSet(tokenauth.Options{
+		GitHubCLI: func(context.Context, string) (string, error) {
+			return "", tokenauth.ErrMissingToken
+		},
+		GitHubApp: func(context.Context, tokenauth.Candidate) (string, time.Time, error) {
+			return "archive-token", time.Now().Add(time.Hour), nil
+		},
+	})
+	sources, err := collectProviderTokenSources(t.Context(), cfg, set)
+	require.NoError(err)
+	startup, err := buildProviderStartup(
+		t.Context(), dbtest.Open(t), cfg, set, sources,
+		defaultProviderFactories(), fakeGitHubIdentityResolver{},
+	)
+	require.NoError(err)
+	route := startup.githubRoutes[tokenauth.Key{
+		Platform: "github", Host: "github.com", Scope: "owner:acme",
+	}]
+	assert.Equal("installation:20", route.archiveReadIdentity.Principal)
+	assert.Equal("github.com", route.readIdentity.Host)
+	assert.Empty(route.writeIdentity.Principal)
+	assert.NotNil(startup.githubClients["github.com"])
+}
+
 func TestBuildProviderStartupRetainsVerifiedPATForExactRoutes(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

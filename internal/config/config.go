@@ -2678,7 +2678,12 @@ type ProviderTokenSource struct {
 	Descriptor        tokenauth.Descriptor
 	ArchiveDescriptor tokenauth.Descriptor
 	Required          bool
-	GitHubOwner       string
+	// ArchiveOnly marks a route whose ordinary credential chain is not
+	// required for archive work. The startup path still registers the ordinary
+	// source so the host provider exists, but it must not make an absent PAT
+	// disable the independent archive App route.
+	ArchiveOnly bool
+	GitHubOwner string
 }
 
 func (c *Config) ProviderTokenSources() []ProviderTokenSource {
@@ -2720,6 +2725,7 @@ func (c *Config) ProviderTokenSources() []ProviderTokenSource {
 			Descriptor:        desc,
 			ArchiveDescriptor: archiveDesc,
 			Required:          !c.globServedBySelectedApp(repo),
+			ArchiveOnly:       archiveDesc.Key.Host != "" && !desc.HasActiveGitHubApp(),
 		}
 		if repo.PlatformOrDefault() == defaultPlatform {
 			plan.GitHubOwner = repo.Owner
@@ -2773,6 +2779,7 @@ func (c *Config) ProviderTokenSources() []ProviderTokenSource {
 					Descriptor:        desc,
 					ArchiveDescriptor: archiveDesc,
 					Required:          true,
+					ArchiveOnly:       archiveDesc.Key.Host != "" && !desc.HasActiveGitHubApp(),
 					GitHubOwner:       owner,
 				})
 			}
@@ -2796,6 +2803,7 @@ func (c *Config) ProviderTokenSources() []ProviderTokenSource {
 			Descriptor:        desc,
 			ArchiveDescriptor: archiveDesc,
 			Required:          true,
+			ArchiveOnly:       archiveDesc.Key.Host != "" && !desc.HasActiveGitHubApp(),
 			GitHubOwner:       app.InstallationAccount,
 		})
 	}

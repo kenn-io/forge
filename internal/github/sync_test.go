@@ -22260,6 +22260,46 @@ func TestGraphQLReadAllowedIsolatesCredentialGraphQLPools(t *testing.T) {
 		"healthy user credential must not inherit the App pool's exhaustion")
 }
 
+func TestGraphQLReadAllowedUsesArchiveCredentialPool(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+	normalIdentity := IdentityKey{Host: "github.com", Principal: "user:7"}
+	archiveIdentity := IdentityKey{Host: "github.com", Principal: "installation:20"}
+	client := &credentialRateLimitSnapshotMockClient{mockClient: &mockClient{}}
+	router, err := NewHostRouter("github.com", &Route{
+		Key: RouteKey{Host: "github.com", Owner: "acme"}, Client: client,
+		ReadIdentity:  normalIdentity,
+		ArchiveKey:    RouteKey{Host: "github.com", Owner: "acme"},
+		ArchiveClient: client, ArchiveFetcher: &GraphQLFetcher{},
+		ArchiveReadIdentity: archiveIdentity,
+	})
+	require.NoError(err)
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, d, nil, []RepoRef{repo},
+		time.Minute, nil, nil,
+	)
+	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
+	registry := NewQuotaRegistry()
+	reset := time.Now().UTC().Add(time.Hour)
+	registry.UpdateSnapshot(normalIdentity, QuotaResourceGraphQL, Rate{
+		Limit: 5000, Remaining: 0, Reset: reset,
+	})
+	registry.UpdateSnapshot(archiveIdentity, QuotaResourceGraphQL, Rate{
+		Limit: 5000, Remaining: 4000, Reset: reset,
+	})
+	syncer.SetQuotaRegistry(registry)
+	fetcher := &GraphQLFetcher{}
+
+	assert.False(syncer.graphQLReadAllowed(
+		WithSyncBudget(t.Context()), repo, fetcher,
+	), "ordinary GraphQL must honor the exhausted ordinary pool")
+	assert.True(syncer.graphQLReadAllowed(
+		WithArchiveSyncBudget(t.Context()), repo, fetcher,
+	), "archive GraphQL must use the healthy archive pool")
+}
+
 // Bulk GraphQL is an optional optimization with a REST fallback, so a
 // credential whose GraphQL pool is exhausted must keep syncing over REST
 // instead of being held out of background scheduling entirely.

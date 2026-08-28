@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -37,6 +38,23 @@ func TestRepositoryResolverOwnsCapabilityFallbackPolicy(t *testing.T) {
 	assert.True(github.MergeMutation)
 	assert.False(gitlab.ReadRepositories)
 	assert.False(gitlab.MergeMutation)
+}
+
+func TestProviderCapabilitiesFromPlatformMapsWorkflowWireFields(t *testing.T) {
+	response := ProviderCapabilitiesFromPlatform(platform.Capabilities{
+		ReadWorkflows:    true,
+		ReadWorkflowRuns: true,
+		WorkflowDispatch: true,
+	})
+
+	encoded, err := json.Marshal(response)
+	require.NoError(t, err)
+	var fields map[string]any
+	require.NoError(t, json.Unmarshal(encoded, &fields))
+
+	assert.Equal(t, true, fields["read_workflows"])
+	assert.Equal(t, true, fields["read_workflow_runs"])
+	assert.Equal(t, true, fields["workflow_dispatch"])
 }
 
 func TestRepositoryResolverBuildsCanonicalRef(t *testing.T) {

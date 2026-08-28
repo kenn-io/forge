@@ -65,6 +65,9 @@ Rules:
 - Capability flags and implemented interfaces must agree.
 - Handlers must check capabilities before performing mutations. A missing
   capability is a feature-level failure, not a whole-provider failure.
+- Keep workflow approval and workflow dispatch separate: approval advances an
+  existing run, while dispatch starts a new one; neither contract may assume
+  GitHub Actions semantics (`internal/platform/client.go::WorkflowDispatcher`).
 - Provider-backed comment deletes remove synchronized local rows only after upstream
   synchronization observes provider absence. DELETE itself changes no SQLite comment
   state; the UI hides a confirmed deletion while ordinary sync converges. Authoritative

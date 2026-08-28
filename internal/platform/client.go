@@ -117,6 +117,20 @@ type CIReader interface {
 	ListCIChecks(ctx context.Context, ref RepoRef, sha string) ([]CICheck, error)
 }
 
+type WorkflowCatalogReader interface {
+	ListManualWorkflows(context.Context, RepoRef) ([]WorkflowDefinition, error)
+	ListWorkflowEnvironments(context.Context, RepoRef) ([]WorkflowEnvironment, error)
+}
+
+type WorkflowRunReader interface {
+	ListWorkflowRuns(context.Context, RepoRef, WorkflowRunQuery) (Page[WorkflowRun], error)
+	ListWorkflowRunJobs(context.Context, RepoRef, string) ([]WorkflowRunJob, error)
+}
+
+type WorkflowDispatcher interface {
+	DispatchWorkflow(context.Context, RepoRef, WorkflowDispatchRequest) (WorkflowDispatchResult, error)
+}
+
 type CommentMutator interface {
 	CreateMergeRequestComment(
 		ctx context.Context,

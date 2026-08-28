@@ -165,22 +165,19 @@ func NewHostRouter(host string, routes ...*Route) (*HostRouter, error) {
 			}
 			switch {
 			case strings.TrimSpace(archiveKey.Owner) == "":
-				if router.archiveFallback != nil {
-					return nil, fmt.Errorf("duplicate GitHub archive fallback route for %s", router.host)
+				if router.archiveFallback == nil {
+					router.archiveFallback = route
 				}
-				router.archiveFallback = route
 			case strings.TrimSpace(archiveKey.Name) == "":
 				key := ownerRouteMapKey(archiveKey.Owner)
-				if router.archiveOwners[key] != nil {
-					return nil, fmt.Errorf("duplicate GitHub archive owner route for %s on %s", archiveKey.Owner, router.host)
+				if router.archiveOwners[key] == nil {
+					router.archiveOwners[key] = route
 				}
-				router.archiveOwners[key] = route
 			default:
 				key := repoRouteMapKey(archiveKey.Owner, archiveKey.Name)
-				if router.archiveRepos[key] != nil {
-					return nil, fmt.Errorf("duplicate GitHub archive repository route for %s/%s on %s", archiveKey.Owner, archiveKey.Name, router.host)
+				if router.archiveRepos[key] == nil {
+					router.archiveRepos[key] = route
 				}
-				router.archiveRepos[key] = route
 			}
 		}
 	}

@@ -60,6 +60,10 @@ type startupConfigSnapshot struct {
 	// bounded client pool and re-resolving authenticated identity. Token values
 	// may still rotate underneath an unchanged env/file descriptor.
 	GitHubCredentialRoutes []tokenauth.Descriptor
+	// GitHubArchiveCredentialRoutes records the dedicated archive client routes
+	// built at startup. Archive clients and their quota trackers are also
+	// startup-bound, so archive App changes require a restart.
+	GitHubArchiveCredentialRoutes []tokenauth.Descriptor
 	// GitHubAppSplitHosts lists hosts whose effective credential chain
 	// resolves sync reads through a GitHub App installation token.
 	// Split topology is startup-bound: write rate trackers and the
@@ -100,6 +104,7 @@ func snapshotStartupConfig(cfg *config.Config) startupConfigSnapshot {
 		TrustReverseProxy:               cfg.TrustReverseProxy,
 		ProviderHosts:                   startupProviderHosts(cfg),
 		GitHubCredentialRoutes:          githubCredentialRoutes(cfg),
+		GitHubArchiveCredentialRoutes:   githubArchiveCredentialRoutes(cfg),
 		GitHubAppSplitHosts:             githubAppSplitHosts(cfg),
 		RoborevEndpoint:                 cfg.RoborevEndpoint(),
 	}
@@ -178,6 +183,32 @@ func githubCredentialRoutes(cfg *config.Config) []tokenauth.Descriptor {
 		}
 		seen[key] = struct{}{}
 		routes = append(routes, plan.Descriptor)
+	}
+	slices.SortFunc(routes, func(a, b tokenauth.Descriptor) int {
+		if cmp := strings.Compare(a.Key.Host, b.Key.Host); cmp != 0 {
+			return cmp
+		}
+		return strings.Compare(a.Key.Scope, b.Key.Scope)
+	})
+	return routes
+}
+
+func githubArchiveCredentialRoutes(cfg *config.Config) []tokenauth.Descriptor {
+	if cfg == nil {
+		return nil
+	}
+	seen := make(map[tokenauth.Key]struct{})
+	var routes []tokenauth.Descriptor
+	for _, plan := range cfg.ProviderTokenSources() {
+		key := plan.ArchiveDescriptor.Key
+		if key.Platform != string(platform.KindGitHub) || key.Scope == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		routes = append(routes, plan.ArchiveDescriptor)
 	}
 	slices.SortFunc(routes, func(a, b tokenauth.Descriptor) int {
 		if cmp := strings.Compare(a.Key.Host, b.Key.Host); cmp != 0 {

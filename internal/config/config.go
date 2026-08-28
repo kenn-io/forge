@@ -2743,12 +2743,24 @@ func (c *Config) ProviderTokenSources() []ProviderTokenSource {
 					Owner: owner, Name: name,
 				}
 				desc := c.ResolveGitHubRepoTokenSource(repo)
+				archiveDesc := c.ResolveGitHubArchiveTokenSource(repo)
+				if githubAppRole(app) == GitHubAppRoleArchive &&
+					archiveDesc.Key.Host == "" {
+					continue
+				}
+				if strings.HasPrefix(archiveDesc.Key.Scope, "archive:repo:") &&
+					!strings.HasPrefix(desc.Key.Scope, "repo:") {
+					desc.Key.Scope = strings.TrimPrefix(archiveDesc.Key.Scope, "archive:")
+				}
 				if _, ok := seen[desc.Key]; ok {
 					continue
 				}
 				seen[desc.Key] = struct{}{}
 				out = append(out, ProviderTokenSource{
-					Descriptor: desc, Required: true, GitHubOwner: owner,
+					Descriptor:        desc,
+					ArchiveDescriptor: archiveDesc,
+					Required:          true,
+					GitHubOwner:       owner,
 				})
 			}
 			continue
@@ -2759,14 +2771,19 @@ func (c *Config) ProviderTokenSources() []ProviderTokenSource {
 			Owner:        app.InstallationAccount,
 		}
 		desc := c.ResolveGitHubRepoTokenSource(repo)
+		archiveDesc := c.ResolveGitHubArchiveTokenSource(repo)
+		if githubAppRole(app) == GitHubAppRoleArchive && archiveDesc.Key.Host == "" {
+			continue
+		}
 		if _, ok := seen[desc.Key]; ok {
 			continue
 		}
 		seen[desc.Key] = struct{}{}
 		out = append(out, ProviderTokenSource{
-			Descriptor:  desc,
-			Required:    true,
-			GitHubOwner: app.InstallationAccount,
+			Descriptor:        desc,
+			ArchiveDescriptor: archiveDesc,
+			Required:          true,
+			GitHubOwner:       app.InstallationAccount,
 		})
 	}
 	for _, ownerToken := range c.GitHubOwnerTokens {

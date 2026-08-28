@@ -737,6 +737,34 @@ func TestRoutedClientUsesDedicatedArchiveRoute(t *testing.T) {
 	)
 }
 
+func TestNewHostRouterDeduplicatesSharedArchiveRoutes(t *testing.T) {
+	require := require.New(t)
+	archive := &routeRecordingClient{marker: "archive"}
+	router, err := NewHostRouter(
+		"github.com",
+		&Route{
+			Key:           RouteKey{Host: "github.com", Owner: "acme"},
+			Client:        &routeRecordingClient{marker: "owner"},
+			ArchiveKey:    RouteKey{Host: "github.com", Owner: "acme"},
+			ArchiveClient: archive,
+		},
+		&Route{
+			Key:           RouteKey{Host: "github.com", Owner: "acme", Name: "widget"},
+			Client:        &routeRecordingClient{marker: "repo"},
+			ArchiveKey:    RouteKey{Host: "github.com", Owner: "acme"},
+			ArchiveClient: archive,
+		},
+	)
+	require.NoError(err)
+	routed, err := NewRoutedClient(router)
+	require.NoError(err)
+	_, err = routed.GetRepository(
+		WithArchiveSyncBudget(t.Context()), "acme", "widget",
+	)
+	require.NoError(err)
+	require.Len(archive.calls, 1)
+}
+
 func mustArchiveIdentity(t *testing.T, router *HostRouter, owner, name string) IdentityKey {
 	t.Helper()
 	require := require.New(t)

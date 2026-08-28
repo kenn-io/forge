@@ -615,6 +615,40 @@ selected_repos = ["kenn-io/one", "kenn-io/two"]
 	assert.ElementsMatch(t, []string{"repo:kenn-io/one", "repo:kenn-io/two"}, keys)
 }
 
+func TestProviderTokenSourcesExpandSelectedArchiveReposForGlob(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	cfg, err := Load(writeConfig(t, `
+[[repos]]
+owner = "acme"
+name = "widget-*"
+
+[[github_apps]]
+app_id = 2
+role = "archive"
+private_key_path = "archive.pem"
+installation_id = 20
+installation_account = "acme"
+repository_selection = "selected"
+selected_repos = ["acme/widget-a"]
+`))
+	require.NoError(err)
+
+	var selected *ProviderTokenSource
+	plans := cfg.ProviderTokenSources()
+	for i := range plans {
+		if plans[i].Descriptor.Key.Scope == "repo:acme/widget-a" {
+			selected = &plans[i]
+			break
+		}
+	}
+	require.NotNil(selected)
+	assert.False(selected.Descriptor.HasActiveGitHubApp())
+	assert.Equal("archive:repo:acme/widget-a", selected.ArchiveDescriptor.Key.Scope)
+	require.Len(selected.ArchiveDescriptor.Candidates, 1)
+	assert.Equal(int64(2), selected.ArchiveDescriptor.Candidates[0].AppID)
+}
+
 func TestFallbackTokenSourceExcludesAccountScopedGitHubApps(t *testing.T) {
 	cfg, err := Load(writeConfig(t, `
 github_token_env = "MY_PAT"

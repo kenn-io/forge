@@ -2281,6 +2281,25 @@ func TestRestartRequiredForMCPConfig(t *testing.T) {
 	}))
 }
 
+func TestRestartRequiredForGitHubArchiveRoutes(t *testing.T) {
+	assert := assert.New(t)
+	base := &config.Config{
+		Repos: []config.Repo{{Owner: "acme", Name: "widget"}},
+		GitHubApps: []config.GitHubAppConfig{{
+			Host: "github.com", Role: "archive", AppID: 1,
+			PrivateKeyPath: "archive.pem", InstallationID: 2,
+			InstallationAccount: "acme", RepositorySelection: "all",
+		}},
+	}
+	snap := snapshotStartupConfig(base)
+	assert.False(snap.restartRequiredFor(base))
+
+	changed := *base
+	changed.GitHubApps = slices.Clone(base.GitHubApps)
+	changed.GitHubApps[0].InstallationID = 3
+	assert.True(snap.restartRequiredFor(&changed))
+}
+
 func TestRestartRequiredForRoborevEndpointButNotManagedCloneInit(t *testing.T) {
 	assert := assert.New(t)
 	base := &config.Config{Roborev: config.Roborev{

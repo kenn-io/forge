@@ -1017,6 +1017,32 @@ it.effect("uses an accepted response actor to reconcile a locating run", () => {
   );
 });
 
+it.effect("keeps a locating dispatch fenced when two matching provider runs are ambiguous", () => {
+  const probe = makeApiProbe({
+    dispatch: () => ({ accepted: true, locating_run: true, actor: "octocat" }),
+    runs: () => ({
+      repo: apiRepo(),
+      exhausted: true,
+      items: [
+        run({ id: "matching-run-a", actor: "octocat" }),
+        run({ id: "matching-run-b", actor: "octocat", head_sha: "head-b" }),
+      ],
+    }),
+  });
+  return withWorkflow(
+    probe,
+    Effect.gen(function* () {
+      const workflow = yield* WorkflowActionsWorkflow;
+      yield* workflow.dispatch({ ...dispatchInput(), actor: undefined });
+      yield* settle;
+      const state = (yield* workflow.snapshot(github)).dispatches.at(-1);
+      assert.strictEqual(state?.kind, "locating");
+      assert.strictEqual(state?.kind === "succeeded" ? state.run?.id : undefined, undefined);
+      assert.strictEqual(probe.calls.dispatch, 1);
+    }),
+  );
+});
+
 it.effect("appends older run pages and preserves them while polling page one", () => {
   const observedCursors: unknown[] = [];
   let firstPageReads = 0;

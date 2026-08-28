@@ -257,7 +257,7 @@ function reconcileDispatchStates(
       }
       case "locating": {
         const candidates = matchingCandidates(state.request, runs);
-        const candidate = candidates[0];
+        const candidate = candidates.length === 1 ? candidates[0] : undefined;
         if (candidate !== undefined) return { kind: "succeeded", request: state.request, run: candidate };
         if (state.request.startedAt !== undefined && now >= state.request.startedAt + reconciliationWindowMs) {
           return { kind: "locating_timed_out", request: state.request };

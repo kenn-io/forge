@@ -237,6 +237,28 @@ func TestWorkflowRoutesLoadEnvironmentsOnlyForDefinitionsThatNeedThem(t *testing
 		})
 	}
 }
+
+func TestWorkflowCatalogIgnoresUnavailableEnvironmentInputs(t *testing.T) {
+	unavailable := workflowDefinitionFixture()
+	unavailable.ID = "broken.yml"
+	unavailable.Name = "Broken"
+	unavailable.Available = false
+	unavailable.UnavailableReason = "definition unavailable"
+	provider := &workflowTestProvider{
+		caps: platform.Capabilities{ReadWorkflows: true},
+		catalog: []platform.WorkflowDefinition{
+			workflowDefinitionWithoutEnvironmentFixture(),
+			unavailable,
+		},
+	}
+	mux, _ := workflowFixture(t, provider, httpapi.OperationAvailability{})
+	status, body := workflowRequest(t, mux, http.MethodGet, "/actions/github/acme/widget/workflows", nil)
+	require.Equal(t, http.StatusOK, status)
+	assert.Len(t, body["workflows"], 2)
+	assert.Equal(t, 1, provider.catalogCalls)
+	assert.Zero(t, provider.environmentCalls)
+}
+
 func TestWorkflowRunRoutesRequireWorkflowIDInSchema(t *testing.T) {
 	mux := http.NewServeMux()
 	config := huma.DefaultConfig("workflow schema test", "0")

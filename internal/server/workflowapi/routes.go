@@ -404,6 +404,9 @@ func workflowInputsNeedEnvironments(inputs []platform.WorkflowInput) bool {
 
 func workflowDefinitionsNeedEnvironments(workflows []platform.WorkflowDefinition) bool {
 	for _, workflow := range workflows {
+		if !workflow.Available {
+			continue
+		}
 		if workflowInputsNeedEnvironments(workflow.Inputs) {
 			return true
 		}

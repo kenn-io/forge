@@ -290,10 +290,10 @@ func (r *HostRouter) routeForRepoMode(owner, name string, archive bool) (*Route,
 		return r.RouteForRepo(owner, name)
 	}
 	if r != nil {
-		if route := r.archiveRepos[repoRouteMapKey(owner, name)]; routeArchiveCovers(route, owner, name) {
+		if route := r.archiveRepos[repoRouteMapKey(owner, name)]; route != nil && routeArchiveCovers(route, owner, name) {
 			return route, nil
 		}
-		if route := r.archiveOwners[ownerRouteMapKey(owner)]; routeArchiveCovers(route, owner, name) {
+		if route := r.archiveOwners[ownerRouteMapKey(owner)]; route != nil && routeArchiveCovers(route, owner, name) {
 			return route, nil
 		}
 		if routeArchiveCovers(r.archiveFallback, owner, name) {

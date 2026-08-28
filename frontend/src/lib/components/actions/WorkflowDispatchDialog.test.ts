@@ -52,3 +52,22 @@ it("reloads a conflict exactly once and closes only after acknowledgement", asyn
   await fireEvent.click(screen.getByRole("button", { name: "Close" }));
   expect(onclose).toHaveBeenCalledOnce();
 });
+
+it("allows one reload in each distinct conflict cycle", async () => {
+  const onreload = vi.fn();
+  const base = { open: true, workflow, environments: [], initialRef: "main", operation, trigger: null, onsubmit: vi.fn(), onclose: vi.fn(), onreload };
+  const view = render(WorkflowDispatchDialog, { ...base, state: { kind: "conflict" } as const });
+  await fireEvent.click(screen.getByRole("button", { name: "Reload workflows" }));
+  expect(onreload).toHaveBeenCalledTimes(1);
+  await view.rerender({ ...base, state: { kind: "idle" } });
+  await view.rerender({ ...base, state: { kind: "conflict" } });
+  await Promise.all([
+    fireEvent.click(screen.getByRole("button", { name: "Reload workflows" })),
+    fireEvent.click(screen.getByRole("button", { name: "Reload workflows" })),
+  ]);
+  expect(onreload).toHaveBeenCalledTimes(2);
+  await view.rerender({ ...base, open: false, state: { kind: "conflict" } });
+  await view.rerender({ ...base, state: { kind: "conflict" } });
+  await fireEvent.click(screen.getByRole("button", { name: "Reload workflows" }));
+  expect(onreload).toHaveBeenCalledTimes(3);
+});

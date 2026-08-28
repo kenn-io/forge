@@ -1,5 +1,6 @@
 <script lang="ts">
   import { tick } from "svelte";
+  import type { Attachment } from "svelte/attachments";
   import type { components } from "../../api/generated/schema.js";
   import type { OperationAvailability } from "../../api/types.js";
   import DialogButton from "../shared/DialogButton.svelte";
@@ -38,13 +39,28 @@
     reloadRequested = true;
     onreload();
   }
+
+  function reloadCycle(kind: WorkflowDispatchPresentationState["kind"]): Attachment {
+    return () => {
+      if (kind !== "conflict") reloadRequested = false;
+      return () => {
+        reloadRequested = false;
+      };
+    };
+  }
 </script>
 
 <Modal {open} title="Run workflow" width={520} frameId="workflow-dispatch" onClose={() => { void close(); }}>
-  <WorkflowDispatchForm {workflow} {environments} {initialRef} {operation} state={presentation} {onsubmit} />
+  <div class="dispatch-dialog-body" {@attach reloadCycle(presentation.kind)}>
+    <WorkflowDispatchForm {workflow} {environments} {initialRef} {operation} state={presentation} {onsubmit} />
+  </div>
   {#snippet footer()}
     {#if presentation.kind === "idle"}<DialogButton onclick={() => { void close(); }}>Cancel</DialogButton>{/if}
     {#if presentation.kind === "conflict"}<DialogButton tone="primary" disabled={reloadRequested} onclick={reload}>Reload workflows</DialogButton>{/if}
     {#if presentation.kind === "succeeded"}<DialogButton tone="primary" onclick={() => { void close(); }}>Close</DialogButton>{/if}
   {/snippet}
 </Modal>
+
+<style>
+  .dispatch-dialog-body { display: contents; }
+</style>

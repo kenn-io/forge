@@ -89,7 +89,7 @@ describe("WorkflowDispatchForm", () => {
     await fireEvent.input(input, { target: { value: "   " } });
     await fireEvent.click(screen.getByRole("button", { name: "Run workflow" }));
     const error = screen.getByText("release name is required.");
-    expect(error.id).toBe("workflow-input-release-name-error");
+    expect(error.id).toBe("workflow-input-release-name-0-error");
     expect(input.getAttribute("aria-describedby")).toBe(error.id);
   });
 
@@ -112,6 +112,62 @@ describe("WorkflowDispatchForm", () => {
     await view.rerender({ ...props, workflow: { ...definition, definition_sha: "definition-2" }, initialRef: "release" });
     expect((screen.getByRole("textbox", { name: "Git ref" }) as HTMLInputElement).value).toBe("release");
     expect((screen.getByRole("textbox", { name: "version" }) as HTMLInputElement).value).toBe("v1");
+  });
+
+  it.each([
+    [{ id: "release.yml" }, "identity"],
+    [{ definition_sha: "definition-2" }, "definition"],
+  ])("derives new inputs when only workflow %s changes at the same ref", async (replacement) => {
+    const original = workflow([{ name: "version", type: "string", required: false, has_default: true, default: "v1" }]);
+    const view = render(WorkflowDispatchForm, {
+      workflow: original, environments, initialRef: "main", operation: available, state: { kind: "idle" }, onsubmit: vi.fn(),
+    });
+    await fireEvent.input(screen.getByRole("textbox", { name: "version" }), { target: { value: "edited" } });
+    await view.rerender({
+      workflow: {
+        ...original,
+        ...replacement,
+        inputs: [{ name: "channel", type: "choice", required: false, has_default: true, default: "beta", options: ["beta", "stable"] }],
+      },
+      environments, initialRef: "main", operation: available, state: { kind: "idle" }, onsubmit: vi.fn(),
+    });
+    expect(screen.queryByRole("textbox", { name: "version" })).toBeNull();
+    expect((screen.getByRole("combobox", { name: "channel" }) as HTMLSelectElement).value).toBe("beta");
+  });
+
+  it("releases admission only after owner leaves idle and starts a fresh idle cycle", async () => {
+    const onsubmit = vi.fn();
+    const props = { workflow: workflow(), environments, initialRef: "main", operation: available, onsubmit };
+    const view = render(WorkflowDispatchForm, { ...props, state: { kind: "idle" } as const });
+    const run = screen.getByRole("button", { name: "Run workflow" });
+    await Promise.all([fireEvent.click(run), fireEvent.click(run)]);
+    expect(onsubmit).toHaveBeenCalledTimes(1);
+    await view.rerender({ ...props, state: { kind: "idle" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Running workflow…" }));
+    expect(onsubmit).toHaveBeenCalledTimes(1);
+    await view.rerender({ ...props, state: { kind: "pending" } });
+    await view.rerender({ ...props, state: { kind: "succeeded" } });
+    await view.rerender({ ...props, state: { kind: "idle" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Run workflow" }));
+    expect(onsubmit).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses collision-free declared-index IDs for labels and described errors", async () => {
+    render(WorkflowDispatchForm, {
+      workflow: workflow([
+        { name: "release-name", type: "string", required: true, has_default: false },
+        { name: "release_name", type: "string", required: true, has_default: false },
+      ]),
+      environments, initialRef: "main", operation: available, state: { kind: "idle" }, onsubmit: vi.fn(),
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Run workflow" }));
+    const first = screen.getByRole("textbox", { name: "release-name" });
+    const second = screen.getByRole("textbox", { name: "release_name" });
+    expect(first.id).not.toBe(second.id);
+    expect(first.getAttribute("aria-describedby")).toBe(`${first.id}-error`);
+    expect(second.getAttribute("aria-describedby")).toBe(`${second.id}-error`);
+    expect(document.getElementById(`${first.id}-error`)?.textContent).toBe("release-name is required.");
+    expect(document.getElementById(`${second.id}-error`)?.textContent).toBe("release_name is required.");
   });
 
   it("uses fallback messages for explicit unavailable booleans", async () => {

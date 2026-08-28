@@ -448,7 +448,7 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 	if s.syncer != nil {
 		previous = s.syncer.TrackedRepos()
 	}
-	resolved, skipped := s.resolveReposForReload(ctx, newCfg.Repos, previous)
+	resolved, skipped := s.resolveReposForReload(ctx, newCfg, previous)
 	if len(skipped) > 0 {
 		slog.Info(
 			"config reload: skipping repos for unknown platform hosts",
@@ -664,6 +664,11 @@ func (s *Server) validateReloadProviderTokenSources(
 			continue
 		}
 		desc := plan.Descriptor
+		if plan.ArchiveOnly {
+			// Archive-only routes deliberately have no ordinary PAT. Their
+			// required credential is the independent archive App source.
+			desc = plan.ArchiveDescriptor
+		}
 		if s.syncer != nil {
 			registry := s.syncer.Registry()
 			if registry == nil {
@@ -735,7 +740,7 @@ func cloneReloadedConfig(in *config.Config) config.Config {
 // display string for logging.
 func (s *Server) resolveReposForReload(
 	ctx context.Context,
-	repos []config.Repo,
+	cfg *config.Config,
 	previous []ghclient.RepoRef,
 ) ([]ghclient.RepoRef, []string) {
 	if s.syncer == nil {
@@ -744,7 +749,7 @@ func (s *Server) resolveReposForReload(
 	set := ghclient.NewExpandedRepoSet()
 	skipped := make([]string, 0)
 
-	for _, raw := range repos {
+	for _, raw := range cfg.Repos {
 		host := raw.PlatformHostOrDefault()
 		kind := platform.Kind(raw.PlatformOrDefault())
 		if _, err := s.syncer.RepositoryReader(kind, host); err != nil {
@@ -759,8 +764,13 @@ func (s *Server) resolveReposForReload(
 			))
 			continue
 		}
+		resolveCtx := ctx
+		if kind == platform.KindGitHub &&
+			cfg.ResolveGitHubArchiveTokenSource(raw).Key.Host != "" {
+			resolveCtx = ghclient.WithArchiveSyncBudget(ctx)
+		}
 		_, expanded, err := ghclient.ResolveConfiguredRepoWithRegistry(
-			ctx, s.syncer.SyncRegistry(), raw,
+			resolveCtx, s.syncer.SyncRegistry(), raw,
 		)
 		if err != nil {
 			// Network failure or transient API error: fall back to a

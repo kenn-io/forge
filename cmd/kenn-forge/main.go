@@ -1021,8 +1021,15 @@ func resolveStartupRepos(
 ) []ghclient.RepoRef {
 	set := ghclient.NewExpandedRepoSet()
 	for _, raw := range cfg.Repos {
+		resolveCtx := ctx
+		if raw.PlatformOrDefault() == string(platform.KindGitHub) &&
+			cfg.ResolveGitHubArchiveTokenSource(raw).Key.Host != "" {
+			// A repository with no ordinary PAT may still be discoverable
+			// through its dedicated archive App on a fresh startup.
+			resolveCtx = ghclient.WithArchiveSyncBudget(ctx)
+		}
 		_, expanded, err := ghclient.ResolveConfiguredRepoWithRegistry(
-			ctx, registry, raw,
+			resolveCtx, registry, raw,
 		)
 		if err != nil {
 			slog.Warn("resolve configured repo", "err", err)

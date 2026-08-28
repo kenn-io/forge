@@ -1418,6 +1418,39 @@ selected_repos = ["acme/widget-one", "acme/widget-two"]
 	assert.Equal(t, "acme", minted[0].InstallationAccount)
 }
 
+func TestValidateReloadProviderSourcesUsesArchiveDescriptorForArchiveOnlyRoute(t *testing.T) {
+	require := require.New(t)
+	cfg := &config.Config{
+		SyncInterval: "5m",
+		Host:         "127.0.0.1",
+		Port:         8091,
+		BasePath:     "/",
+		Activity:     config.Activity{ViewMode: "flat", TimeRange: "7d"},
+		Repos:        []config.Repo{{Owner: "acme", Name: "widget"}},
+		GitHubApps: []config.GitHubAppConfig{{
+			Host: "github.com", AppID: 2, Role: config.GitHubAppRoleArchive,
+			PrivateKeyPath: "/keys/archive.pem", InstallationID: 20,
+			InstallationAccount: "acme", RepositorySelection: "all",
+		}},
+	}
+	require.NoError(cfg.Validate())
+	set := tokenauth.NewSourceSet(tokenauth.Options{
+		GitHubApp: func(_ context.Context, candidate tokenauth.Candidate) (string, time.Time, error) {
+			if candidate.AppID != 2 {
+				return "", time.Time{}, errors.New("unexpected App")
+			}
+			return "archive-token", time.Now().Add(time.Hour), nil
+		},
+	})
+	for _, plan := range cfg.ProviderTokenSources() {
+		if plan.ArchiveOnly {
+			set.Upsert(plan.ArchiveDescriptor)
+		}
+	}
+	srv := &Server{tokenSources: set}
+	require.NoError(srv.validateReloadProviderTokenSources(t.Context(), cfg))
+}
+
 // newReloadServerWithTokenSources mirrors startup: one source per
 // provider token plan, registered in a SourceSet the server reloads
 // against.

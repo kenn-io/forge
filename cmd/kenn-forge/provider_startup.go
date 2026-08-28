@@ -292,27 +292,28 @@ func providerTokenSources(
 			if resolve {
 				if _, err := archiveSrc.Token(tokenCtx); err != nil {
 					if degradeFailedHosts {
-						failedHosts[key] = struct{}{}
-						delete(providerSources, key)
+						// Archive capacity is independent of ordinary sync.
+						// Keep processing the ordinary descriptor so a broken
+						// archive App cannot take the whole host offline.
 						slog.Warn(
 							"provider archive credentials unavailable; serving cached data for it without sync",
 							"platform", archiveDesc.Key.Platform,
 							"host", archiveDesc.Key.Host,
 							"err", err,
 						)
-						continue
+					} else {
+						label := fmt.Sprintf(
+							"%s host %s archive", archiveDesc.Key.Platform,
+							archiveDesc.Key.Host,
+						)
+						if plan.GitHubOwner != "" {
+							label = fmt.Sprintf("%s owner %s", label, plan.GitHubOwner)
+						}
+						return nil, fmt.Errorf(
+							"no token for %s via %s: %w",
+							label, archiveDesc.SafeString(), err,
+						)
 					}
-					label := fmt.Sprintf(
-						"%s host %s archive", archiveDesc.Key.Platform,
-						archiveDesc.Key.Host,
-					)
-					if plan.GitHubOwner != "" {
-						label = fmt.Sprintf("%s owner %s", label, plan.GitHubOwner)
-					}
-					return nil, fmt.Errorf(
-						"no token for %s via %s: %w",
-						label, archiveDesc.SafeString(), err,
-					)
 				}
 			}
 		}
@@ -769,6 +770,24 @@ func buildGitHubIdentityRuntimes(
 		var archiveKey tokenauth.Key
 		if plan.ArchiveDescriptor.Key.Host != "" {
 			archiveSource = set.Upsert(plan.ArchiveDescriptor)
+			archiveCtx := ctx
+			if plan.GitHubOwner != "" {
+				archiveCtx = tokenauth.WithGitHubOwner(archiveCtx, plan.GitHubOwner)
+			}
+			if _, err := archiveSource.Token(archiveCtx); err != nil {
+				// Archive capacity is independent from ordinary sync. A
+				// degraded startup may keep the ordinary route while leaving
+				// this route absent until the next restart or reload.
+				slog.Warn(
+					"GitHub archive credentials unavailable; disabling archive route",
+					"host", plan.ArchiveDescriptor.Key.Host,
+					"scope", plan.ArchiveDescriptor.Key.Scope,
+					"err", err,
+				)
+				archiveSource = nil
+			}
+		}
+		if archiveSource != nil {
 			archiveApp, archiveOK := activeGitHubAppCandidate(
 				plan.ArchiveDescriptor, plan.GitHubOwner,
 			)

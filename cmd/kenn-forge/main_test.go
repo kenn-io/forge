@@ -428,6 +428,41 @@ func TestResolveStartupReposExpandsConfiguredGlobs(t *testing.T) {
 	}, repos)
 }
 
+type archiveContextRepositoryReader struct {
+	mainTestRepositoryReader
+	sawArchiveContext *bool
+}
+
+func (r archiveContextRepositoryReader) GetRepository(
+	ctx context.Context, ref platform.RepoRef,
+) (platform.Repository, error) {
+	*r.sawArchiveContext = ghclient.IsArchiveSyncBudgetContext(ctx)
+	return r.mainTestRepositoryReader.GetRepository(ctx, ref)
+}
+
+func TestResolveStartupReposUsesArchiveRouteWithoutOrdinaryPAT(t *testing.T) {
+	require := require.New(t)
+	sawArchiveContext := false
+	cfg := &config.Config{
+		Repos: []config.Repo{{Owner: "acme", Name: "widget"}},
+		GitHubApps: []config.GitHubAppConfig{{
+			Host: "github.com", AppID: 2, Role: config.GitHubAppRoleArchive,
+			PrivateKeyPath: "/keys/archive.pem", InstallationID: 20,
+			InstallationAccount: "acme", RepositorySelection: "all",
+		}},
+	}
+	registry := mustProviderRegistry(t, nil, archiveContextRepositoryReader{
+		kind: platform.KindGitHub, host: "github.com",
+		sawArchiveContext: &sawArchiveContext,
+	})
+
+	repos := resolveStartupRepos(t.Context(), cfg, registry, nil, nil)
+
+	require.Len(repos, 1)
+	assert.True(t, sawArchiveContext,
+		"archive-covered startup resolution must use the archive route")
+}
+
 type getRepoFailingClient struct {
 	*testutil.FixtureClient
 }

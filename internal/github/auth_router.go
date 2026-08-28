@@ -217,6 +217,21 @@ func (r *HostRouter) RouteForOwner(owner string) (*Route, error) {
 	return nil, &MissingRouteError{Host: "github.com", Owner: owner}
 }
 
+func (r *HostRouter) routeForOwnerContext(
+	ctx context.Context, owner string,
+) (*Route, error) {
+	if IsArchiveSyncBudgetContext(ctx) && r != nil {
+		if route := r.archiveOwners[ownerRouteMapKey(owner)]; route != nil &&
+			routeArchiveCovers(route, owner, "") {
+			return route, nil
+		}
+		if routeArchiveCovers(r.archiveFallback, owner, "") {
+			return r.archiveFallback, nil
+		}
+	}
+	return r.RouteForOwner(owner)
+}
+
 func (r *HostRouter) RouteForRepo(owner, name string) (*Route, error) {
 	if r != nil {
 		if route := r.repos[repoRouteMapKey(owner, name)]; route != nil {
@@ -546,10 +561,13 @@ func (c *RoutedClient) fallbackClient() (Client, error) {
 	return route.Client, nil
 }
 
-func (c *RoutedClient) routeForOwner(owner string) (Client, error) {
-	route, err := c.routes.RouteForOwner(owner)
+func (c *RoutedClient) routeForOwnerContext(ctx context.Context, owner string) (Client, error) {
+	route, err := c.routes.routeForOwnerContext(ctx, owner)
 	if err != nil {
 		return nil, err
+	}
+	if IsArchiveSyncBudgetContext(ctx) && route.ArchiveClient != nil {
+		return route.ArchiveClient, nil
 	}
 	if route.Client == nil {
 		return nil, fmt.Errorf("GitHub route for %s on %s has no client", owner, c.routes.host)
@@ -567,10 +585,10 @@ func (c *RoutedClient) listRepositoriesByOwnerAcrossRoutes(
 	ctx context.Context, owner string,
 ) ([]*gh.Repository, error) {
 	var discovery Client
-	if c != nil && c.routes != nil {
+	if !IsArchiveSyncBudgetContext(ctx) && c != nil && c.routes != nil {
 		discovery = c.routes.discoveryOwners[ownerRouteMapKey(owner)]
 	}
-	routed, routeErr := c.routeForOwner(owner)
+	routed, routeErr := c.routeForOwnerContext(ctx, owner)
 	if routeErr != nil {
 		var missing *MissingRouteError
 		if errors.As(routeErr, &missing) && discovery != nil {

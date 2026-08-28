@@ -737,6 +737,30 @@ func TestRoutedClientUsesDedicatedArchiveRoute(t *testing.T) {
 	)
 }
 
+func TestRoutedClientUsesDedicatedArchiveRouteForOwnerDiscovery(t *testing.T) {
+	require := require.New(t)
+	normal := &routeRecordingClient{marker: "normal"}
+	archive := &routeRecordingClient{marker: "archive"}
+	router, err := NewHostRouter("github.com", &Route{
+		Key:           RouteKey{Host: "github.com", Owner: "acme"},
+		Client:        normal,
+		ArchiveKey:    RouteKey{Host: "github.com", Owner: "acme"},
+		ArchiveClient: archive,
+	})
+	require.NoError(err)
+	routed, err := NewRoutedClient(router)
+	require.NoError(err)
+
+	repos, err := routed.ListRepositoriesByOwner(
+		WithArchiveSyncBudget(t.Context()), "acme",
+	)
+	require.NoError(err)
+	require.Len(repos, 1)
+	assert.Equal(t, "archive", repos[0].GetName())
+	assert.Empty(t, normal.calls,
+		"archive owner discovery must not spend the ordinary route")
+}
+
 func TestNewHostRouterDeduplicatesSharedArchiveRoutes(t *testing.T) {
 	require := require.New(t)
 	archive := &routeRecordingClient{marker: "archive"}

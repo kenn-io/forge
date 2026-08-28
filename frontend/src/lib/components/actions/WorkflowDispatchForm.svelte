@@ -108,6 +108,7 @@
 
   function dropdownAccessibility(
     controlID: string,
+    label: string,
     required: boolean,
     error: string | undefined,
   ): Attachment<HTMLDivElement> {
@@ -115,6 +116,7 @@
       const control = container.querySelector<HTMLButtonElement>("[role='combobox']");
       if (control === null) return;
       control.id = controlID;
+      control.setAttribute("aria-label", label);
       if (required) control.setAttribute("aria-required", "true");
       else control.removeAttribute("aria-required");
       if (error) {
@@ -265,6 +267,7 @@
                 class="workflow-input-dropdown"
                 {@attach dropdownAccessibility(
                   inputControlId(input.name, index),
+                  input.name,
                   input.required,
                   errors[input.name],
                 )}

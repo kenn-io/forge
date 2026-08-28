@@ -11,7 +11,7 @@ const environments: Environment[] = [{ name: "staging" }, { name: "production" }
 const available: OperationAvailability = { available: true };
 
 function dropdown(name: string): HTMLElement {
-  return screen.getByRole("combobox", { name: new RegExp(`^${name}:`) });
+  return screen.getByRole("combobox", { name });
 }
 
 async function chooseDropdownOption(name: string, option: string): Promise<void> {
@@ -200,7 +200,8 @@ describe("WorkflowDispatchForm", () => {
       onsubmit: vi.fn(),
     });
     expect(screen.queryByRole("textbox", { name: "version" })).toBeNull();
-    expect(dropdown("channel").getAttribute("aria-label")).toBe("channel: beta");
+    expect(dropdown("channel").getAttribute("aria-label")).toBe("channel");
+    expect(dropdown("channel").textContent).toContain("beta");
   });
 
   it("releases admission only after owner leaves idle and starts a fresh idle cycle", async () => {

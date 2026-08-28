@@ -488,8 +488,13 @@ export const WorkflowActionsWorkflowLive = Layer.effect(WorkflowActionsWorkflow)
     ) {
       const entry = repositories.get(key);
       if (entry === undefined) return;
-      yield* loadCatalog(entry);
       while (yield* repositoryHasDemand(key)) {
+        yield* loadCatalog(entry);
+        if (entry.snapshot.catalog === null) {
+          if (!(yield* repositoryHasDemand(key))) return;
+          yield* waitForPoll(false);
+          continue;
+        }
         const now = yield* Clock.currentTimeMillis;
         const workflowIds = workflowIdsForRead(entry, now);
         if (workflowIds.length === 0) return;

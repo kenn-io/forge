@@ -254,6 +254,35 @@ it.effect("reads and polls runs only for the currently selected workflow", () =>
   );
 });
 
+it.effect("retries a failed visible catalog read only after the idle cadence", () => {
+  const probe = makeApiProbe({
+    catalog: (call) =>
+      call === 1
+        ? Promise.reject<WorkflowCatalog>(new Error("provider unavailable"))
+        : catalog(),
+  });
+  return withWorkflow(
+    probe,
+    Effect.gen(function* () {
+      const workflow = yield* WorkflowActionsWorkflow;
+      const owner = yield* workflow.watchRepository("surface", github, () => {}).pipe(Effect.forkChild);
+      yield* settle;
+      assert.strictEqual(probe.calls.catalog, 1);
+      assert.strictEqual(probe.calls.runs, 0);
+
+      yield* TestClock.adjust("29999 millis");
+      yield* settle;
+      assert.strictEqual(probe.calls.catalog, 1);
+
+      yield* TestClock.adjust("1 millis");
+      yield* settle;
+      assert.strictEqual(probe.calls.catalog, 2);
+      assert.strictEqual((yield* workflow.snapshot(github)).catalog?.workflows?.[0]?.id, "deploy.yml");
+      yield* Fiber.interrupt(owner);
+    }),
+  );
+});
+
 it.effect("moves one owner's latest demand and shares a repository poll across other owners", () => {
   const probe = makeApiProbe();
   const other = { ...github, owner: "acme", name: "other", repoPath: "acme/other" };

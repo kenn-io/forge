@@ -25,7 +25,7 @@
   } from "../../api/types.js";
   import type { DetailSyncMode } from "../../stores/detail.svelte.js";
   import type { MutationCallbacks } from "../../stores/ordered-mutations.js";
-  import { ProblemCodes, type ConflictReason } from "../../api/problems.js";
+  import type { ConflictReason } from "../../api/problems.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import {
     getStores, getActions,
@@ -33,10 +33,8 @@
   } from "../../context.js";
   import MarkdownHtml from "../shared/MarkdownHtml.svelte";
   import WorkflowDispatchDialog from "../actions/WorkflowDispatchDialog.svelte";
-  import type {
-    WorkflowDispatchPresentationState,
-    WorkflowDispatchRequest,
-  } from "../actions/WorkflowDispatchForm.svelte";
+  import type { WorkflowDispatchRequest } from "../actions/WorkflowDispatchForm.svelte";
+  import { workflowDispatchPresentation } from "../actions/workflow-dispatch-presentation.js";
   import { buildPullRequestFilesRoute } from "../../routes.js";
   import { moveTaskListItem, toggleTaskListItem } from "../../utils/task-list.js";
   import type { ApplySuggestionRequest } from "../../utils/markdown-suggestions.js";
@@ -127,11 +125,7 @@
     recordWorkspaceCreated,
     resolveControllerlessWorkspaceRef,
   } from "../../stores/workspace-create-pending.svelte.js";
-  import type {
-    WorkflowActionsError,
-    WorkflowDefinition,
-    WorkflowDispatchState,
-  } from "../../stores/workflow-actions-workflow.js";
+  import type { WorkflowDefinition } from "../../stores/workflow-actions-workflow.js";
 
   type ChipTrailing = ComponentProps<typeof Chip>["trailing"];
 
@@ -1352,63 +1346,12 @@
       ? detail.merge_request.HeadBranch
       : detail.merge_request.BaseBranch;
   });
-  const workflowDialogPresentation = $derived.by(
-    (): WorkflowDispatchPresentationState => {
-      const workflow = workflowDialogWorkflow;
-      if (!workflow) return { kind: "idle" };
-      const actionSnapshot = workflowActions.getSnapshot(routeRef);
-      const dispatch = [...(actionSnapshot?.dispatches ?? [])]
-        .reverse()
-        .find((candidate) => candidate.request.workflowId === workflow.id);
-      if (!dispatch) return { kind: "idle" };
-      if (dispatch.kind === "pending") return { kind: "pending" };
-      if (dispatch.kind === "locating") return { kind: "locating" };
-      if (dispatch.kind === "succeeded") return dispatch.run === undefined ? { kind: "succeeded" } : { kind: "succeeded", run: dispatch.run };
-      if (
-        dispatch.kind === "failed"
-        && dispatch.error._tag === "ApiProblemError"
-        && dispatch.error.problem.code === ProblemCodes.conflict
-        && dispatch.error.problem.details?.["reason"] === "workflow_definition_changed"
-      ) {
-        const reloadError = actionSnapshot?.catalogRefreshErrors[workflow.id];
-        return reloadError
-          ? { kind: "conflict", reloadError: workflowActionErrorMessage(reloadError, "Could not reload workflows.") }
-          : { kind: "conflict" };
-      }
-      if (dispatch.kind === "failed") {
-        return { kind: "failed", message: workflowDispatchFailureMessage(dispatch) };
-      }
-      if (dispatch.kind === "locating_timed_out") {
-        return {
-          kind: "succeeded",
-          message: "The provider accepted the workflow, but its run was not observed.",
-        };
-      }
-      return {
-        kind: "uncertain",
-        message: workflowDispatchFailureMessage(dispatch),
-        candidates: dispatch.candidates,
-      };
-    },
+  const workflowDialogPresentation = $derived.by(() =>
+    workflowDispatchPresentation(
+      workflowActions.getSnapshot(routeRef),
+      workflowDialogWorkflow?.id ?? null,
+    )
   );
-
-  function workflowActionErrorMessage(error: WorkflowActionsError, fallback: string): string {
-    if (error._tag === "ApiProblemError") {
-      return apiErrorMessage(error.problem, fallback);
-    }
-    if ("cause" in error && error.cause instanceof Error) return error.cause.message;
-    return fallback;
-  }
-
-  function workflowDispatchFailureMessage(dispatch: WorkflowDispatchState): string {
-    if (dispatch.kind === "locating_timed_out") {
-      return "The provider accepted the workflow, but its run was not observed.";
-    }
-    if (dispatch.kind === "failed" || dispatch.kind === "uncertain") {
-      return workflowActionErrorMessage(dispatch.error, "The workflow outcome could not be confirmed.");
-    }
-    return "The workflow outcome could not be confirmed.";
-  }
 
   function openWorkflowDialog(workflow: WorkflowDefinition): void {
     if (!workflowCatalogDemandEnabled || !workflow.available) return;

@@ -74,6 +74,9 @@ Rules:
 - Treat workflow dispatch as live-state mutation: re-read definitions/environments,
   validate SHA and typed inputs, then gate one provider call under a stable route fence;
   never retry uncertain writes or persist definitions (`internal/server/workflowapi/routes.go::Handler.dispatch`).
+- Workflow catalog partial availability is definition-specific: missing or undecodable files
+  become unavailable rows, while cancellation, auth, server, transport, and rate failures abort
+  the catalog (`internal/github/sync.go::workflowDefinitionReadMustAbort`).
 - Provider-backed comment deletes remove synchronized local rows only after upstream
   synchronization observes provider absence. DELETE itself changes no SQLite comment
   state; the UI hides a confirmed deletion while ordinary sync converges. Authoritative

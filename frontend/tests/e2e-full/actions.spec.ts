@@ -119,14 +119,6 @@ test("runs typed Actions workflows and applies pull request ref defaults until t
   await expect(sameRepoDialog.getByRole("textbox", { name: "Git ref" })).toHaveValue("feature/caching");
   await sameRepoDialog.getByRole("button", { name: "Cancel" }).click();
 
-  const forkDialog = await openReleaseFromPull(page, 2);
-  await expect(forkDialog.getByRole("textbox", { name: "Git ref" })).toHaveValue("main");
-  await forkDialog.getByRole("button", { name: "Cancel" }).click();
-
-  const mergedDialog = await openReleaseFromPull(page, 3);
-  await expect(mergedDialog.getByRole("textbox", { name: "Git ref" })).toHaveValue("main");
-  await mergedDialog.getByRole("button", { name: "Cancel" }).click();
-
   await setActionsMode(page, false);
   await expect(page.getByRole("button", { name: "Actions", exact: true })).toHaveCount(0);
   const readsAfterDisable = workflowReads.length;

@@ -149,7 +149,7 @@ These values set the initial Activity view and local default-branch retention.
 activity = true
 repos = true
 docs = false
-actions = true
+actions = false
 pulls = true
 issues = true
 reviews = true

@@ -2,8 +2,6 @@
 package workflowapi
 
 import (
-	"time"
-
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/httpapi"
@@ -24,26 +22,19 @@ type Deps struct {
 	Resolver       *httpapi.RepositoryResolver
 	Syncer         *ghclient.Syncer
 	RepoOperations func(db.Repo) httpapi.RepoOperations
-	Now            func() time.Time
 }
 
 type Handler struct {
 	resolver       *httpapi.RepositoryResolver
 	syncer         *ghclient.Syncer
 	repoOperations func(db.Repo) httpapi.RepoOperations
-	now            func() time.Time
 }
 
 func New(deps Deps) *Handler {
-	now := deps.Now
-	if now == nil {
-		now = time.Now
-	}
 	return &Handler{
 		resolver:       deps.Resolver,
 		syncer:         deps.Syncer,
 		repoOperations: deps.RepoOperations,
-		now:            now,
 	}
 }
 

@@ -490,6 +490,35 @@ describe("WorkflowDispatchForm", () => {
     },
   );
 
+  it.each([
+    ["choice", [], "channel"],
+    ["environment", [], "target"],
+  ] as const)("omits an optional %s input with zero provider options", async (type, environmentOptions, name) => {
+    const onsubmit = vi.fn();
+    render(WorkflowDispatchForm, {
+      workflow: workflow([
+        {
+          name,
+          type,
+          required: false,
+          has_default: false,
+          ...(type === "choice" && { options: [] }),
+        },
+      ]),
+      environments: environmentOptions,
+      initialRef: "trunk",
+      operation: available,
+      state: { kind: "idle" },
+      onsubmit,
+    });
+
+    expect(screen.queryByRole("alert")).toBeNull();
+    const run = screen.getByRole("button", { name: "Run workflow" }) as HTMLButtonElement;
+    expect(run.disabled).toBe(false);
+    await fireEvent.click(run);
+    expect(onsubmit).toHaveBeenCalledWith({ ref: "trunk", inputs: {} });
+  });
+
   it("announces locating and renders concrete accepted run details without a running submit label", async () => {
     const props = {
       workflow: workflow(),

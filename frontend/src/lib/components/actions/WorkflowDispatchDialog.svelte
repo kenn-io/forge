@@ -5,7 +5,8 @@
   import type { OperationAvailability } from "../../api/types.js";
   import DialogButton from "../shared/DialogButton.svelte";
   import Modal from "../shared/Modal.svelte";
-  import WorkflowDispatchForm, { type WorkflowDispatchPresentationState, type WorkflowDispatchRequest } from "./WorkflowDispatchForm.svelte";
+  import WorkflowDispatchForm, { type WorkflowDispatchRequest } from "./WorkflowDispatchForm.svelte";
+  import type { WorkflowDispatchPresentationState } from "./workflow-dispatch-presentation.js";
 
   type Workflow = components["schemas"]["WorkflowDefinitionResponse"];
   type Environment = components["schemas"]["WorkflowEnvironmentResponse"];

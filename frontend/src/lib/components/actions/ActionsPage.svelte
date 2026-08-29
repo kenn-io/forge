@@ -8,7 +8,6 @@
   import type { AppExecution } from "../../app/runtime.js";
   import type { ProviderRouteRef } from "../../api/provider-routes.js";
   import { apiErrorMessage } from "../../api/runtime.js";
-  import { ProblemCodes } from "../../api/problems.js";
   import { getStores } from "../../context.js";
   import {
     normalizeSummaries,
@@ -21,15 +20,11 @@
     type RepoSummaryReadError,
   } from "../repositories/repo-summary-workflow.js";
   import { getGlobalRepo, parseRepoFilterValue } from "../../stores/filter.svelte.js";
-  import type {
-    WorkflowActionsSnapshot,
-    WorkflowActionsError,
-    WorkflowDispatchState,
-  } from "../../stores/workflow-actions-workflow.js";
-  import WorkflowDispatchForm, {
-    type WorkflowDispatchPresentationState,
-    type WorkflowDispatchRequest,
-  } from "./WorkflowDispatchForm.svelte";
+  import WorkflowDispatchForm, { type WorkflowDispatchRequest } from "./WorkflowDispatchForm.svelte";
+  import {
+    workflowActionsErrorMessage,
+    workflowDispatchPresentation,
+  } from "./workflow-dispatch-presentation.js";
   import WorkflowRunList from "./WorkflowRunList.svelte";
 
   const repositoryOwner = "actions-page:repository";
@@ -128,65 +123,6 @@
     workflowActions.selectWorkflow(selectedRef, workflowId);
   }
 
-  function dispatchPresentation(
-    currentSnapshot: WorkflowActionsSnapshot | null,
-    workflowId: string,
-  ): WorkflowDispatchPresentationState {
-    const dispatch = [...(currentSnapshot?.dispatches ?? [])]
-      .reverse()
-      .find((candidate) => candidate.request.workflowId === workflowId);
-    if (!dispatch) return { kind: "idle" };
-    if (dispatch.kind === "pending") return { kind: "pending" };
-    if (dispatch.kind === "locating") return { kind: "locating" };
-    if (dispatch.kind === "succeeded") return dispatch.run === undefined ? { kind: "succeeded" } : { kind: "succeeded", run: dispatch.run };
-    if (
-      dispatch.kind === "failed"
-      && dispatch.error._tag === "ApiProblemError"
-      && dispatch.error.problem.code === ProblemCodes.conflict
-      && dispatch.error.problem.details?.["reason"] === "workflow_definition_changed"
-    ) {
-      const reloadError = currentSnapshot?.catalogRefreshErrors[workflowId];
-      return reloadError
-        ? { kind: "conflict", reloadError: workflowReadErrorMessage(reloadError) }
-        : { kind: "conflict" };
-    }
-    if (dispatch.kind === "failed") {
-      return { kind: "failed", message: dispatchFailureMessage(dispatch) };
-    }
-    if (dispatch.kind === "locating_timed_out") {
-      return {
-        kind: "succeeded",
-        message: "The provider accepted the workflow, but its run was not observed.",
-      };
-    }
-    return {
-      kind: "uncertain",
-      message: dispatchFailureMessage(dispatch),
-      candidates: dispatch.candidates,
-    };
-  }
-
-  function dispatchFailureMessage(dispatch: WorkflowDispatchState): string {
-    if (dispatch.kind === "locating_timed_out") {
-      return "The provider accepted the workflow, but its run was not observed.";
-    }
-    if (dispatch.kind === "failed" || dispatch.kind === "uncertain") {
-      const error = dispatch.error;
-      if (error._tag === "ApiProblemError") {
-        return apiErrorMessage(error.problem, "The workflow outcome could not be confirmed.");
-      }
-      if ("cause" in error && error.cause instanceof Error) return error.cause.message;
-    }
-    return "The workflow outcome could not be confirmed.";
-  }
-
-  function workflowReadErrorMessage(error: WorkflowActionsError): string {
-    if (error._tag === "ApiProblemError") {
-      return apiErrorMessage(error.problem, "Workflow data could not be refreshed.");
-    }
-    if ("cause" in error && error.cause instanceof Error) return error.cause.message;
-    return "Workflow data could not be refreshed.";
-  }
 
   function submitWorkflow(request: WorkflowDispatchRequest): void {
     if (!selectedRef || !selectedWorkflow) return;
@@ -231,8 +167,6 @@
     loadSummaries();
     return () => {
       summaryExecution?.interrupt();
-      releaseAllRunOwners();
-      workflowActions.releaseRepository(repositoryOwner);
     };
   });
 
@@ -363,7 +297,7 @@
                   environments={snapshot?.catalog?.environments ?? []}
                   initialRef={snapshot?.catalog?.repo.default_branch ?? ""}
                   operation={snapshot?.catalog?.repo.operations?.dispatch_workflow}
-                  state={dispatchPresentation(snapshot, selectedWorkflow.id)}
+                  state={workflowDispatchPresentation(snapshot, selectedWorkflow.id)}
                   onsubmit={submitWorkflow}
                   onreload={reloadWorkflowCatalog}
                   onnewcycle={newDispatchCycle}
@@ -384,7 +318,7 @@
             {#if snapshot?.error}
               <div class="workflow-data-error" role="alert">
                 <strong>Workflow data may be stale.</strong>
-                <span>{workflowReadErrorMessage(snapshot.error)}</span>
+                <span>{workflowActionsErrorMessage(snapshot.error, "Workflow data could not be refreshed.")}</span>
               </div>
             {/if}
             {#if snapshot?.loading.runs && snapshot.runs.length === 0}

@@ -354,6 +354,57 @@ it.effect("polls non-terminal runs after 5 seconds and terminal-only runs after 
   );
 });
 
+it.effect("does not treat a conclusion name in status as terminal", () => {
+  const probe = makeApiProbe({
+    runs: () => ({
+      repo: apiRepo(),
+      items: [run({ status: "success", conclusion: "" })],
+      exhausted: true,
+    }),
+  });
+  return withWorkflow(
+    probe,
+    Effect.gen(function* () {
+      const workflow = yield* WorkflowActionsWorkflow;
+      yield* workflow.selectWorkflow(github, "deploy.yml");
+      const owner = yield* workflow.watchRepository("surface", github, () => {}).pipe(Effect.forkChild);
+      yield* settle;
+      assert.strictEqual(probe.calls.runs, 1);
+      yield* TestClock.adjust("5 seconds");
+      yield* settle;
+      assert.strictEqual(probe.calls.runs, 2);
+      yield* Fiber.interrupt(owner);
+    }),
+  );
+});
+
+it.effect("treats a populated conclusion as terminal even before status convergence", () => {
+  const probe = makeApiProbe({
+    runs: () => ({
+      repo: apiRepo(),
+      items: [run({ status: "in_progress", conclusion: "failure" })],
+      exhausted: true,
+    }),
+  });
+  return withWorkflow(
+    probe,
+    Effect.gen(function* () {
+      const workflow = yield* WorkflowActionsWorkflow;
+      yield* workflow.selectWorkflow(github, "deploy.yml");
+      const owner = yield* workflow.watchRepository("surface", github, () => {}).pipe(Effect.forkChild);
+      yield* settle;
+      assert.strictEqual(probe.calls.runs, 1);
+      yield* TestClock.adjust("5 seconds");
+      yield* settle;
+      assert.strictEqual(probe.calls.runs, 1);
+      yield* TestClock.adjust("25 seconds");
+      yield* settle;
+      assert.strictEqual(probe.calls.runs, 2);
+      yield* Fiber.interrupt(owner);
+    }),
+  );
+});
+
 it.effect("wakes an idle selected-workflow poll when dispatch is accepted", () => {
   const probe = makeApiProbe({
     dispatch: () => ({

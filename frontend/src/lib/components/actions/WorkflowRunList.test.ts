@@ -53,6 +53,20 @@ it("exposes compact textual run data, local time, and secure provider links", ()
   expect(screen.getByRole("link", { name: "Open on GitHub" }).getAttribute("target")).toBe("_blank");
 });
 
+it.each([
+  ["https://gitlab.com/acme/app/-/pipelines/2", "GitLab"],
+  ["https://forge.acme.test/acme/app/actions/runs/2", "forge.acme.test"],
+])("labels provider links for %s", (webURL, providerLabel) => {
+  render(WorkflowRunList, {
+    runs: [{ ...runs[0]!, web_url: webURL }],
+    jobs: {},
+    loadingJobs: [],
+    onexpand: vi.fn(),
+    oncollapse: vi.fn(),
+  });
+  expect(screen.getByRole("link", { name: `Open on ${providerLabel}` })).toBeTruthy();
+});
+
 it("omits unsafe provider links", () => {
   render(WorkflowRunList, {
     runs: [{ ...runs[0]!, web_url: "javascript:alert(document.domain)" }],

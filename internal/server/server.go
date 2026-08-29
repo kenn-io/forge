@@ -1052,7 +1052,6 @@ func newServer(
 		Resolver:       repoResolver,
 		Syncer:         syncer,
 		RepoOperations: s.repoOperations,
-		Now:            s.now,
 	})
 	s.pullAPI = pullapi.New(pullapi.Deps{
 		DB:                     database,

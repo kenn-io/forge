@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
@@ -199,6 +200,25 @@ func TestGitHubWorkflowProviderAbortsCatalogOnFatalDefinitionErrors(t *testing.T
 			StatusCode: http.StatusForbidden,
 			Request:    httptest.NewRequest(http.MethodGet, "https://api.github.com/repos/acme/widgets/contents/workflow.yml", nil),
 		}}},
+		{name: "unauthorized", err: &gh.ErrorResponse{
+			Response: &http.Response{
+				StatusCode: http.StatusUnauthorized,
+				Request:    httptest.NewRequest(http.MethodGet, "https://api.github.com/repos/acme/widgets/contents/workflow.yml", nil),
+			},
+			Message: "bad credentials",
+		}},
+		{name: "server failure", err: &gh.ErrorResponse{
+			Response: &http.Response{
+				StatusCode: http.StatusServiceUnavailable,
+				Request:    httptest.NewRequest(http.MethodGet, "https://api.github.com/repos/acme/widgets/contents/workflow.yml", nil),
+			},
+			Message: "service unavailable",
+		}},
+		{name: "transport", err: &url.Error{
+			Op:  "Get",
+			URL: "https://api.github.com/repos/acme/widgets/contents/workflow.yml",
+			Err: errors.New("connection reset"),
+		}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -397,4 +417,31 @@ func TestRoutedClientRoutesWorkflowOperationsByRepository(t *testing.T) {
 		"workflows", "definition:release.yml@main", "environments", "runs", "jobs", "dispatch",
 	}, exact.calls)
 	assert.Empty(fallback.calls)
+}
+
+func TestRoutedClientWorkflowMethodsRejectClientsWithoutOptionalInterfaces(t *testing.T) {
+	require := require.New(t)
+	router, err := NewHostRouter(
+		"github.com",
+		&Route{Key: RouteKey{Host: "github.com"}, Client: &mockClient{}},
+		&Route{Key: RouteKey{Host: "github.com", Owner: "acme", Name: "widgets"}, Client: &mockClient{}},
+	)
+	require.NoError(err)
+	routed, err := NewRoutedClient(router)
+	require.NoError(err)
+
+	_, err = routed.ListRepositoryWorkflows(t.Context(), "acme", "widgets")
+	require.ErrorIs(err, platform.ErrUnsupportedCapability)
+	_, _, err = routed.GetWorkflowDefinition(t.Context(), "acme", "widgets", "release.yml", "main")
+	require.ErrorIs(err, platform.ErrUnsupportedCapability)
+	_, err = routed.ListRepositoryEnvironments(t.Context(), "acme", "widgets")
+	require.ErrorIs(err, platform.ErrUnsupportedCapability)
+	_, err = routed.ListManualWorkflowRuns(t.Context(), "acme", "widgets", 42, platform.WorkflowRunQuery{})
+	require.ErrorIs(err, platform.ErrUnsupportedCapability)
+	_, err = routed.ListManualWorkflowJobs(t.Context(), "acme", "widgets", 99)
+	require.ErrorIs(err, platform.ErrUnsupportedCapability)
+	_, err = routed.DispatchManualWorkflow(
+		t.Context(), "acme", "widgets", 42, gh.CreateWorkflowDispatchEventRequest{Ref: "main"},
+	)
+	require.ErrorIs(err, platform.ErrUnsupportedCapability)
 }

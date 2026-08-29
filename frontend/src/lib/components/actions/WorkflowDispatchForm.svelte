@@ -1,20 +1,7 @@
 <script module lang="ts">
-  import type { components as GeneratedComponents } from "../../api/generated/schema.js";
+  import type { WorkflowDispatchPresentationState as PresentationState } from "./workflow-dispatch-presentation.js";
 
-  type WorkflowRun = GeneratedComponents["schemas"]["WorkflowRunResponse"];
-
-  export type WorkflowDispatchPresentationState =
-    | { readonly kind: "idle" }
-    | { readonly kind: "pending" }
-    | { readonly kind: "locating" }
-    | { readonly kind: "succeeded"; readonly run?: WorkflowRun; readonly message?: string }
-    | { readonly kind: "failed"; readonly message: string }
-    | {
-        readonly kind: "uncertain";
-        readonly message: string;
-        readonly candidates: readonly WorkflowRun[];
-      }
-    | { readonly kind: "conflict"; readonly reloadError?: string };
+  export type WorkflowDispatchPresentationState = PresentationState;
 
   export interface WorkflowDispatchRequest {
     readonly ref: string;
@@ -81,10 +68,10 @@
   const controlsDisabled = $derived(pending || admitted);
   const unavailableInputReason = $derived.by(() => {
     for (const input of workflow.inputs ?? []) {
-      if (input.type === "choice" && (input.options?.length ?? 0) === 0) {
+      if (input.required && input.type === "choice" && (input.options?.length ?? 0) === 0) {
         return `No choices are available for ${input.name}. Reload workflows or choose another workflow.`;
       }
-      if (input.type === "environment" && environments.length === 0) {
+      if (input.required && input.type === "environment" && environments.length === 0) {
         return `No environments are available for ${input.name}. Configure a provider environment before running this workflow.`;
       }
     }
@@ -122,7 +109,7 @@
   function dropdownAccessibility(
     controlID: string,
     label: string,
-    _value: string,
+    selectedValue: string,
     required: boolean,
     error: string | undefined,
   ): Attachment<HTMLDivElement> {
@@ -131,6 +118,7 @@
       if (control === null) return;
       control.id = controlID;
       control.setAttribute("aria-label", label);
+      control.title = selectedValue ? `${label}: ${selectedValue}` : label;
       if (required) control.setAttribute("aria-required", "true");
       else control.removeAttribute("aria-required");
       if (error) {

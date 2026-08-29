@@ -195,8 +195,7 @@ function emptySnapshot(ref: ProviderRouteRef): WorkflowActionsSnapshot {
 }
 
 function isTerminalRun(run: WorkflowRun): boolean {
-  const status = run.status.toLowerCase();
-  return status === "completed" || status === "cancelled" || status === "failure" || status === "success";
+  return run.status.toLowerCase() === "completed" || run.conclusion.trim() !== "";
 }
 
 function dispatchNeedsPolling(state: WorkflowDispatchState, now: number): boolean {

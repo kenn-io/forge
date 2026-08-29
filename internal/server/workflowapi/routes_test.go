@@ -94,7 +94,6 @@ func workflowFixture(t *testing.T, provider *workflowTestProvider, operation htt
 		Resolver:       resolver,
 		Syncer:         syncer,
 		RepoOperations: func(db.Repo) httpapi.RepoOperations { return httpapi.RepoOperations{DispatchWorkflow: operation} },
-		Now:            func() time.Time { return time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC) },
 	})
 	mux := http.NewServeMux()
 	config := huma.DefaultConfig("workflow test", "0")

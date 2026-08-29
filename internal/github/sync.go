@@ -2240,8 +2240,18 @@ func workflowDefinitionReadMustAbort(err error) bool {
 	if _, ok := errors.AsType[*gh.RateLimitError](err); ok {
 		return true
 	}
-	_, abuseLimited := errors.AsType[*gh.AbuseRateLimitError](err)
-	return abuseLimited
+	if _, ok := errors.AsType[*gh.AbuseRateLimitError](err); ok {
+		return true
+	}
+	status := githubStatusCode(err)
+	if status == http.StatusNotFound {
+		return false
+	}
+	if status == http.StatusUnauthorized || status >= http.StatusInternalServerError {
+		return true
+	}
+	_, transportFailure := errors.AsType[*url.Error](err)
+	return transportFailure
 }
 
 func (p *gitHubClientProvider) ListManualWorkflows(

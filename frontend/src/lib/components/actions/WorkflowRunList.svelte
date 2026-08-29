@@ -30,10 +30,11 @@
   }
   function providerName(url: string): string {
     try {
-      const host = new URL(url).hostname;
-      if (host === "github.com" || host.endsWith(".github.com")) return "GitHub";
-      if (host === "gitlab.com" || host.endsWith(".gitlab.com")) return "GitLab";
-      return "provider";
+      const parsed = new URL(url);
+      const hostname = parsed.hostname;
+      if (hostname === "github.com" || hostname.endsWith(".github.com")) return "GitHub";
+      if (hostname === "gitlab.com" || hostname.endsWith(".gitlab.com")) return "GitLab";
+      return parsed.host || "provider";
     } catch { return "provider"; }
   }
 </script>

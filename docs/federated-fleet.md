@@ -1,6 +1,6 @@
 # Federated fleet
 
-A fleet combines several kenn-forge daemons in one UI. The daemon you open is
+A fleet combines several Kenn Forge daemons in one UI. The daemon you open is
 the **hub**. Remote daemons are **peers**.
 
 The hub shows repositories, worktrees, sessions, hosts, and live tmux state.
@@ -24,7 +24,7 @@ caller's authorization and cookies. An HTTP peer must leave
 Use SSH for any peer that requires API authentication. On Unix, the hub owns
 one SSH ControlMaster per peer through kit's shared OpenSSH lifecycle manager.
 When multiplexing is unavailable, including on Windows clients, it uses an
-explicit masterless connection instead. Both modes run the remote kenn-forge
+explicit masterless connection instead. Both modes run the remote Forge
 CLI through the user's system OpenSSH policy.
 
 ## Prepare each machine
@@ -96,7 +96,7 @@ Open the hub once with the token in the query string:
 http://127.0.0.1:8091/?auth_token=<token>
 ```
 
-kenn-forge exchanges the token for an HttpOnly browser cookie, then redirects
+Forge exchanges the token for an HttpOnly browser cookie, then redirects
 to the clean URL. The cookie also authenticates terminal WebSocket requests.
 Do not share the tokenized URL.
 
@@ -161,5 +161,5 @@ route.
 
 ### Attach is unavailable
 
-The session must exist in kenn-forge and in tmux. Non-tmux sessions do not
+The session must exist in Forge and in tmux. Non-tmux sessions do not
 provide native attach commands.

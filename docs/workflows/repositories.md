@@ -1,13 +1,13 @@
 # Browse repository source
 
-Open **Repos** to check the repositories kenn-forge knows about. Each card
+Open **Repos** to check the repositories Kenn Forge knows about. Each card
 summarizes open work and recent repository state. Choose **View source** on a
 card, or run **View repository source** from the command palette while a pull
 request, issue, activity item, or workspace supplies the repository context.
 
 <figure class="workflow-shot">
-  <img class="workflow-shot__image workflow-shot__image--light" src="../assets/generated/repository-source-light.svg" alt="kenn-forge repository source browser showing a Markdown file, file tree, and history in light mode">
-  <img class="workflow-shot__image workflow-shot__image--dark" src="../assets/generated/repository-source-dark.svg" alt="kenn-forge repository source browser showing a Markdown file, file tree, and history in dark mode">
+  <img class="workflow-shot__image workflow-shot__image--light" src="../assets/generated/repository-source-light.svg" alt="Forge repository source browser showing a Markdown file, file tree, and history in light mode">
+  <img class="workflow-shot__image workflow-shot__image--dark" src="../assets/generated/repository-source-dark.svg" alt="Forge repository source browser showing a Markdown file, file tree, and history in dark mode">
   <figcaption>The source browser keeps the ref, file tree, selected file, and file history in one view.</figcaption>
 </figure>
 
@@ -30,7 +30,7 @@ The browser URL records the provider host, repository, ref, file path, and
 preview mode. Copying the URL preserves that state, and browser Back and Forward
 return to earlier refs and files.
 
-Branch and tag names can move. kenn-forge resolves the selected ref to a commit
+Branch and tag names can move. Forge resolves the selected ref to a commit
 while loading the page so the tree, file, and history belong to the same
 revision.
 
@@ -39,7 +39,7 @@ revision.
 The source browser reads from its own local clone. It does not read from a
 workspace worktree, so uncommitted workspace changes do not appear here.
 
-kenn-forge creates the clone on first use and refreshes it automatically on the
+Forge creates the clone on first use and refreshes it automatically on the
 configured sync interval. This refresh is separate from repository sync. If a
 newly pushed branch or tag has not appeared yet, wait for the next source
 refresh, then reopen the ref picker.

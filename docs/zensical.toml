@@ -1,5 +1,5 @@
 [project]
-site_name = "kenn-forge"
+site_name = "Kenn Forge"
 site_description = "Integrated agent workspace with local-first code forge sync"
 site_author = "Kenn Software LLC"
 copyright = 'Copyright &copy; 2026 <a href="https://kenn.io">Kenn Software LLC</a>. Elastic License 2.0.'

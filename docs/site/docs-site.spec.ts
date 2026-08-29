@@ -41,7 +41,7 @@ test("keeps the site brand stable while scrolling", async ({ page }) => {
         transform: style.transform,
       };
     });
-    await expect(brand).toHaveText("kenn-forge");
+    await expect(brand).toHaveText("Kenn Forge");
     await expect(brand).toBeVisible();
     await expect(pageTitle).toBeHidden();
     expect(after.fontFamily).toBe(before.fontFamily);
@@ -66,7 +66,7 @@ test("opens only the active generated workflow screenshot in a lightbox", async 
   await page.goto("/docs/");
 
   const trigger = page.getByRole("button", {
-    name: /View kenn-forge Activity.*at full size/i,
+    name: /View Forge Activity.*at full size/i,
   });
   const dialog = page.getByRole("dialog", { name: "Expanded workflow screenshot" });
 
@@ -96,7 +96,7 @@ test("opens the dark generated workflow screenshot for the active theme", async 
   await page.goto("/docs/");
 
   const trigger = page.getByRole("button", {
-    name: /View kenn-forge Activity.*dark mode.*at full size/i,
+    name: /View Forge Activity.*dark mode.*at full size/i,
   });
   await trigger.click();
 

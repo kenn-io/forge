@@ -54,7 +54,7 @@ split, resize, hide, or maximize panes as the task changes.
 ## Track local pull-request state
 
 Set a workflow status from the pull-request detail and filter the list by one
-or more statuses. This status stays in kenn-forge. It does not change provider
+or more statuses. This status stays in Kenn Forge. It does not change provider
 labels, milestones, projects, or fields.
 
 ## Work with issues
@@ -80,7 +80,7 @@ workspace** action. A workspace creates a worktree. Choose an agent from the
 action menu to create and launch in one step.
 
 New workspaces can start from any tracked repository. Choose a branch name or
-let kenn-forge create one from the default branch.
+let Forge create one from the default branch.
 
 Workspaces use tmux-backed sessions for durable attachment. Launch more shells
 or agents from the workspace header. Promote a session into the detail layout
@@ -103,11 +103,11 @@ session layouts, tmux attachment, phone use, deletion, and recovery.
 
 Link a Kata issue from a pull request, provider issue, or workspace to view its
 read-only detail inline. Use **New workspace → Kata issue** to search a selected
-daemon and create or reopen a mapped workspace. If kenn-forge cannot match the
+daemon and create or reopen a mapped workspace. If Forge cannot match the
 Kata project to a configured repository, open **Settings → Kata mappings** and
 add an override. Open the task in Kata when you need to edit it.
 
-Kata remains the source of truth for task data. kenn-forge owns only the links
+Kata remains the source of truth for task data. Forge owns only the links
 to pull requests, issues, and workspaces. There is no separate Kata mode.
 
 ## Review Roborev jobs
@@ -132,7 +132,7 @@ pull and publish, and Kata reference behavior.
 
 ## Use a fleet
 
-A hub can combine snapshots from other kenn-forge daemons. Supported actions
+A hub can combine snapshots from other Forge daemons. Supported actions
 route back to the machine that owns the resource. Sessions expose local or
 remote attach commands.
 

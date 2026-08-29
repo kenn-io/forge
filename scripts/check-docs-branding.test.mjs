@@ -6,15 +6,29 @@ import { test } from "node:test";
 
 import { findForbiddenDocsBranding } from "./check-docs-branding.mjs";
 
-test("documentation branding check reports forbidden capitalization", async (t) => {
+test("docs branding check flags bare binary names in published prose", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "kenn-forge-branding-test-"));
   t.after(() => rm(root, { recursive: true, force: true }));
 
-  await mkdir(path.join(root, "docs"), { recursive: true });
-  await mkdir(path.join(root, "context"), { recursive: true });
-  await writeFile(path.join(root, "README.md"), "# kenn-forge\n");
-  await writeFile(path.join(root, "docs", "bad.md"), "Welcome to Kenn Forge.\n");
-  await writeFile(path.join(root, "context", "good.md"), "Use kenn-forge.\n");
+  await mkdir(path.join(root, "docs", "workflows"), { recursive: true });
+  await writeFile(
+    path.join(root, "docs", "index.md"),
+    [
+      "# Kenn Forge",
+      "",
+      "Forge syncs your repositories. Run `kenn-forge daemon start` to begin.",
+      "kenn-forge keeps data local.",
+      "",
+      "```sh",
+      "kenn-forge serve",
+      "```",
+      "",
+      "See [MCP companion](kenn-forge-mcp.md) and https://github.com/kenn-io/forge.",
+      "",
+    ].join("\n"),
+  );
+  await writeFile(path.join(root, "docs", "quickstart.md"), "Install Kenn Forge, then start Forge.\n");
+  await writeFile(path.join(root, "docs", "adr-notes.md"), "kenn-forge internal notes stay unchecked.\n");
 
-  assert.deepEqual(await findForbiddenDocsBranding(root), ["docs/bad.md:1: Welcome to Kenn Forge."]);
+  assert.deepEqual(await findForbiddenDocsBranding(root), ["docs/index.md:4: kenn-forge keeps data local."]);
 });

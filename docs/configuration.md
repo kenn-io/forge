@@ -1,11 +1,11 @@
 # Configuration
 
-kenn-forge reads `~/.kenn/forge/config.toml`. Set `KENN_FORGE_HOME` to move
+Kenn Forge reads `~/.kenn/forge/config.toml`. Set `KENN_FORGE_HOME` to move
 both config and app data. Most users only need repositories, credentials, and
 optional modes.
 
 Use Settings for routine changes. Edit TOML for provider hosts and advanced
-options. Restart kenn-forge after changing startup settings.
+options. Restart Forge after changing startup settings.
 
 ## Repositories
 
@@ -18,7 +18,7 @@ name = "service"
 ```
 
 You can paste a common HTTPS or SSH repository URL into `owner` or `name`.
-kenn-forge normalizes it.
+Forge normalizes it.
 
 Set the provider and host for other services or self-hosted instances:
 
@@ -68,7 +68,7 @@ An exact repository `token_file` or `token_env` takes priority over broader
 credentials. Empty files and variables are skipped. Token files are read on
 each request, so replacing a file atomically rotates that credential.
 
-For GitHub, kenn-forge can run `gh auth token --hostname HOST`. The unscoped
+For GitHub, Forge can run `gh auth token --hostname HOST`. The unscoped
 fallback applies only to `github.com`. Authenticate another host with:
 
 ```sh
@@ -135,10 +135,10 @@ explicitly as `role = "archive"` in `[[github_apps]]`.
 
 The CLI writes `[[github_apps]]` entries. Mutations still use a user PAT.
 After changing selected repository access on GitHub, run
-`kenn-forge-github-app install` again and restart kenn-forge.
+`kenn-forge-github-app install` again and restart Forge.
 
 Selected repository access is a startup routing snapshot. New grants use the
-PAT route until refresh. Revoked App access can return 404, and kenn-forge does
+PAT route until refresh. Revoked App access can return 404, and Forge does
 not retry that response with a PAT because 404 can also mean missing or private.
 
 ## Activity defaults
@@ -195,7 +195,7 @@ workflow.
 
 ## Workspace agents
 
-kenn-forge detects built-in agents on `PATH`. Add or override an agent with:
+Forge detects built-in agents on `PATH`. Add or override an agent with:
 
 ```toml
 [[agents]]
@@ -209,7 +209,7 @@ You can also edit agents under **Settings → Agents**.
 ## Workspace terminals and tmux
 
 Workspace terminals and agent sessions run on a dedicated tmux server
-(socket name `kenn-forge`), so busy kenn-forge sessions do not contend with
+(socket name `kenn-forge`), so busy Forge sessions do not contend with
 your personal tmux server. To inspect or attach from a regular terminal:
 
 ```sh
@@ -237,7 +237,7 @@ names may not reuse standard terminal variables such as `EDITOR` or
 `PATH`; configuration validation rejects the collision.
 
 Sessions started by versions that used the default tmux server keep
-running there after an upgrade, but kenn-forge no longer sees them.
+running there after an upgrade, but Forge no longer sees them.
 Reattach or clean them up with plain `tmux ls` and `tmux kill-session`.
 
 ## Docs folders
@@ -265,9 +265,9 @@ one Kata daemon.
 
 ## Kata daemons and repository mappings
 
-kenn-forge reads Kata daemon definitions from `$KATA_HOME/config.toml`, or
+Forge reads Kata daemon definitions from `$KATA_HOME/config.toml`, or
 `~/.kata/config.toml` when `KATA_HOME` is unset. Daemon credentials and URLs
-stay in Kata's catalog rather than kenn-forge configuration.
+stay in Kata's catalog rather than Forge configuration.
 
 Open **Settings → Kata mappings** to see which repository each Kata project
 will use for workspace creation. Add a manual mapping when automatic matching
@@ -340,12 +340,12 @@ allow_mid_stack_merges = false
 ```
 
 Native GitHub stack data improves read-only detection when complete. Branch
-relationships remain the fallback. kenn-forge does not create or reorder
+relationships remain the fallback. Forge does not create or reorder
 stacks. Mid-stack merges stay blocked by default.
 
 ## Telemetry
 
-kenn-forge sends limited anonymous telemetry by default: daemon activity, app
+Forge sends limited anonymous telemetry by default: daemon activity, app
 view names, version, commit, OS and architecture, and an anonymous install ID.
 It does not send repository names, item content, tokens, usernames, hostnames,
 or paths.

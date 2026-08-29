@@ -1,6 +1,6 @@
 # Quick start
 
-Install kenn-forge, connect a code forge, and open your first workspace.
+Install Kenn Forge, connect a code forge, and open your first workspace.
 
 ## Install a release
 
@@ -63,7 +63,7 @@ make build
 The build embeds the frontend in `./kenn-forge`. Run `make install` to install
 an optimized binary.
 
-## Start kenn-forge
+## Start Forge
 
 The commands below assume `kenn-forge` is on `PATH`. After `make build`, use
 `./kenn-forge` instead or run `make install`.
@@ -78,7 +78,7 @@ kenn-forge daemon start
 Use `kenn-forge serve` instead when you want foreground logs for development or
 diagnosis.
 
-Open `http://127.0.0.1:8091`. kenn-forge creates
+Open `http://127.0.0.1:8091`. Forge creates
 `~/.kenn/forge/config.toml` on first run.
 
 ## Complete first-run setup
@@ -87,8 +87,8 @@ The setup flow leads to a synced pull request and, on a host with Git and tmux,
 a working local workspace:
 
 <figure class="workflow-shot">
-  <img class="workflow-shot__image workflow-shot__image--light" src="assets/generated/first-run-light.svg" alt="kenn-forge code forge readiness step in light mode">
-  <img class="workflow-shot__image workflow-shot__image--dark" src="assets/generated/first-run-dark.svg" alt="kenn-forge code forge readiness step in dark mode">
+  <img class="workflow-shot__image workflow-shot__image--light" src="assets/generated/first-run-light.svg" alt="Forge code forge readiness step in light mode">
+  <img class="workflow-shot__image workflow-shot__image--dark" src="assets/generated/first-run-dark.svg" alt="Forge code forge readiness step in dark mode">
   <figcaption>First run checks the GitHub CLI and routes other providers through repository setup.</figcaption>
 </figure>
 
@@ -96,12 +96,12 @@ a working local workspace:
    open Settings for another provider or host.
 2. **Choose repositories.** GitHub users can select discovered repositories.
    Other providers use the Repositories panel in Settings.
-3. **Run the first sync.** kenn-forge loads pull requests, issues, and activity
+3. **Run the first sync.** Forge loads pull requests, issues, and activity
    for the configured repositories.
 4. **Open a pull request.** Choose an open item from the synced list.
 5. **Start a workspace.** Create a local worktree and open its working session.
 
-You can leave setup and return later. kenn-forge resumes unfinished setup after
+You can leave setup and return later. Forge resumes unfinished setup after
 you return to a provider view.
 
 If GitHub discovery cannot find what you need, open **Settings → Repositories**.
@@ -110,7 +110,7 @@ credential is available to the daemon.
 
 The Windows release supports the dashboard and provider actions. Local
 workspace sessions require Git and tmux on a Unix-like host. Use WSL or a remote
-Unix-like kenn-forge host for that step.
+Unix-like Forge host for that step.
 
 ## Use the main views
 
@@ -166,7 +166,7 @@ kenn-forge docs add-folder --name Notes ~/notes
 ```
 
 The **Reviews** page connects to a Roborev daemon. The default endpoint is
-`http://127.0.0.1:7373`. Kata has no top-level mode. Once kenn-forge finds a
+`http://127.0.0.1:7373`. Kata has no top-level mode. Once Forge finds a
 Kata daemon in `$KATA_HOME/config.toml` or `~/.kata/config.toml`, you can link
 Kata issues from pull requests, provider issues, and local workspaces. Remote
 fleet workspaces do not show Kata controls. You can also choose a Kata issue in

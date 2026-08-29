@@ -1,12 +1,12 @@
 # Integrations
 
 Roborev keeps review jobs, Kata keeps task data, and Docs reads files already
-on disk. kenn-forge puts each one beside the pull requests, issues, and
+on disk. Kenn Forge puts each one beside the pull requests, issues, and
 workspaces where you need it.
 
 ## Review Roborev jobs
 
-Roborev runs as a separate daemon. kenn-forge looks for it at
+Roborev runs as a separate daemon. Forge looks for it at
 `http://127.0.0.1:7373` unless you set another endpoint:
 
 ```toml
@@ -15,7 +15,7 @@ endpoint = "http://127.0.0.1:7373"
 init_managed_clones = true
 ```
 
-Restart kenn-forge after changing the endpoint. kenn-forge does not start the
+Restart Forge after changing the endpoint. Forge does not start the
 Roborev daemon for you. The optional managed-clone setting is off by default
 and can be changed live under **Settings → Workspaces**. It runs `roborev init
 --no-daemon` for new, retried, or recovered Forge-managed workspaces. This
@@ -35,9 +35,9 @@ branch, status, or Git ref. The table shows the agent, status, verdict, elapsed
 time, cost, job type, and queue time.
 
 <figure class="workflow-shot">
-  <img class="workflow-shot__image workflow-shot__image--light" src="assets/generated/roborev-reviews-light.svg" alt="kenn-forge Reviews with a selected Roborev job in light mode">
-  <img class="workflow-shot__image workflow-shot__image--dark" src="assets/generated/roborev-reviews-dark.svg" alt="kenn-forge Reviews with a selected Roborev job in dark mode">
-  <figcaption>Select a Roborev job to read the review, inspect its log and prompt, and respond without leaving kenn-forge.</figcaption>
+  <img class="workflow-shot__image workflow-shot__image--light" src="assets/generated/roborev-reviews-light.svg" alt="Forge Reviews with a selected Roborev job in light mode">
+  <img class="workflow-shot__image workflow-shot__image--dark" src="assets/generated/roborev-reviews-dark.svg" alt="Forge Reviews with a selected Roborev job in dark mode">
+  <figcaption>Select a Roborev job to read the review, inspect its log and prompt, and respond without leaving Forge.</figcaption>
 </figure>
 
 Select a job to open its review. The drawer also has the job log, the submitted
@@ -45,7 +45,7 @@ prompt, Roborev comments, token usage, and controls that apply to the current
 state. You can cancel queued or running work, rerun a job, close or reopen a
 review, add a comment, and copy the review output.
 
-Roborev still owns the jobs and review data. kenn-forge sends these reads and
+Roborev still owns the jobs and review data. Forge sends these reads and
 actions through its local server so the browser does not connect to the daemon
 directly. Set `reviews = false` under `[modes]` if you do not use Roborev.
 
@@ -58,11 +58,11 @@ workspaces hide Kata controls. Use **Open in Kata** when you need to edit the
 task.
 
 The **New workspace** dialog can search a selected Kata daemon and create or
-reopen the worktree for a task. kenn-forge reads the daemon catalog from
+reopen the worktree for a task. Forge reads the daemon catalog from
 `$KATA_HOME/config.toml`. Without `KATA_HOME`, it uses `~/.kata/config.toml`.
 The selected daemon must be connected and use a supported API schema.
 
-Kata projects need repository mappings before kenn-forge can create their
+Kata projects need repository mappings before Forge can create their
 workspaces. Open **Settings → Kata mappings** to inspect automatic matches and
 add an override when a project points at the wrong repository. A manual mapping
 looks like this:

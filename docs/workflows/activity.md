@@ -19,7 +19,7 @@ The filters can narrow the queue by:
 - human or bot activity
 
 Filter choices stay in the Activity URL. You can bookmark a useful queue or
-send the link to another kenn-forge user with access to the same repositories.
+send the link to another Kenn Forge user with access to the same repositories.
 
 ## Read an item without losing the queue
 

@@ -388,16 +388,16 @@ svg {
 }
 
 .hero .lockup svg {
-  width: 2.6rem;
-  height: 2.6rem;
-  border-radius: 10px;
+  width: 3.4rem;
+  height: 3.4rem;
+  border-radius: 12px;
   box-shadow: 0 0 34px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 .hero .wordmark {
   font-family: var(--font-mono);
   font-weight: 700;
-  font-size: 1.25rem;
+  font-size: clamp(1.5rem, 3vw, 2rem);
   letter-spacing: -0.02em;
 }
 

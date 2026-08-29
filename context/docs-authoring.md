@@ -26,10 +26,11 @@ screenshots, or the Zensical site.
 - Keep user guidance concise and workflow-oriented: describe UI capabilities
   and maintainer workflows without overexplaining internals. Treat the HTTP API
   as an internal or thin-client concern rather than regular user guidance.
-- Always write the product name as `kenn-forge` in documentation and prose;
-  never title-case it. The marketing tier under `website/` is the one
-  exception: its display text title-cases the product name, while binary and
-  CLI examples stay `kenn-forge`. (`scripts/check-docs-branding.mjs`)
+- In published docs and marketing prose, introduce the product by its full
+  title-cased name once per page, then say Forge; reserve `kenn-forge` for the
+  binary, CLI, config, and path references inside code spans. Internal docs
+  (`context/`, ADRs, reports, README) keep using `kenn-forge`.
+  (`scripts/check-docs-branding.mjs`)
 - The public site is tiered: hand-written static marketing pages in `website/`
   (`/` pitch page, `/guide/` visual tour; dark-only, JetBrains Mono headings,
   ember accent) lead into the Zensical docs under `/docs/`. Position the

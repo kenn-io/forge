@@ -401,6 +401,34 @@ test("marketing download links keep the canonical releases fallback", async ({ b
   await context.close();
 });
 
+test("cross-tier links leave the docs shell with a full navigation", async ({ page }) => {
+  type MarkedWindow = Window & { __instantMarker?: boolean };
+
+  await page.goto("/docs/");
+  await page.evaluate(() => {
+    (window as MarkedWindow).__instantMarker = true;
+  });
+  await page.locator(".md-sidebar--primary").getByRole("link", { name: "Quick start" }).click();
+  await page.waitForURL(/\/docs\/quickstart\/$/);
+  expect(await page.evaluate(() => (window as MarkedWindow).__instantMarker)).toBe(true);
+
+  await page.goto("/docs/");
+  await page.evaluate(() => {
+    (window as MarkedWindow).__instantMarker = true;
+  });
+  await page.getByRole("link", { name: "Guide to Forge" }).click();
+  await page.waitForURL(/\/guide\/$/);
+  expect(await page.evaluate(() => (window as MarkedWindow).__instantMarker)).toBeUndefined();
+  await expect(page.locator("header.site-header")).toBeVisible();
+  await expect(page.locator(".md-header")).toHaveCount(0);
+
+  await page.goto("/docs/");
+  await page.locator("a.md-header__button.md-logo").click();
+  await page.waitForURL("/");
+  await expect(page.locator("header.site-header")).toBeVisible();
+  await expect(page.locator(".md-header")).toHaveCount(0);
+});
+
 test("serves llms.txt and markdown twins for machine readers", async ({ page }) => {
   const llms = await page.request.get("/llms.txt");
   expect(llms.ok()).toBe(true);

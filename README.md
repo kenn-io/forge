@@ -11,14 +11,14 @@ Start with the [user guide](docs/index.md) for setup and workflows.
 <picture>
   <source
     media="(prefers-color-scheme: dark)"
-    srcset="https://forge.kenn.io/assets/generated/maintainer-overview-dark.svg"
+    srcset="https://forge.kenn.io/docs/assets/generated/maintainer-overview-dark.svg"
   >
   <source
     media="(prefers-color-scheme: light)"
-    srcset="https://forge.kenn.io/assets/generated/maintainer-overview-light.svg"
+    srcset="https://forge.kenn.io/docs/assets/generated/maintainer-overview-light.svg"
   >
   <img
-    src="https://forge.kenn.io/assets/generated/maintainer-overview-light.svg"
+    src="https://forge.kenn.io/docs/assets/generated/maintainer-overview-light.svg"
     alt="kenn-forge Activity with a selected pull request, live workspace, and coding-agent session"
   >
 </picture>

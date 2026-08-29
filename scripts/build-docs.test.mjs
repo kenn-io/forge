@@ -71,3 +71,69 @@ test("docs staging includes only public site inputs", async (t) => {
     await assert.rejects(readFile(path.join(staged, internalPath), "utf8"), { code: "ENOENT" });
   }
 });
+
+async function writeSiteFixture(root) {
+  const docsSource = path.join(root, "docs-source");
+  const websiteSource = path.join(root, "website-source");
+  const favicon = path.join(root, "favicon.svg");
+  const siteRoot = path.join(root, "site");
+
+  await mkdir(path.join(docsSource, "workflows"), { recursive: true });
+  for (const page of docsBuild.publishedMarkdownPages()) {
+    await mkdir(path.dirname(path.join(docsSource, page)), { recursive: true });
+    await writeFile(path.join(docsSource, page), `# ${page}\n`);
+  }
+  const llmsEntries = docsBuild
+    .publishedMarkdownPages()
+    .map((page) => `- [${page}](${docsBuild.twinURLFor(page)}): entry`)
+    .join("\n");
+  await writeFile(path.join(docsSource, "llms.txt"), `# Kenn Forge\n\n${llmsEntries}\n`);
+
+  await mkdir(path.join(websiteSource, "guide"), { recursive: true });
+  await writeFile(path.join(websiteSource, "index.html"), "<h1>pitch</h1>\n");
+  await writeFile(path.join(websiteSource, "guide", "index.html"), "<h1>guide</h1>\n");
+  await writeFile(favicon, "<svg />\n");
+
+  for (const page of docsBuild.publishedMarkdownPages()) {
+    const withoutExtension = page.slice(0, -".md".length);
+    const rendered =
+      page === "index.md"
+        ? path.join(siteRoot, "docs", "index.html")
+        : path.join(siteRoot, "docs", withoutExtension, "index.html");
+    await mkdir(path.dirname(rendered), { recursive: true });
+    await writeFile(rendered, "<html>rendered</html>\n");
+  }
+
+  return { docsSource, websiteSource, favicon, siteRoot };
+}
+
+test("site root staging pairs every published page with a markdown twin", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "kenn-forge-site-root-test-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const { docsSource, websiteSource, favicon, siteRoot } = await writeSiteFixture(root);
+
+  await docsBuild.stageSiteRoot(docsSource, websiteSource, favicon, siteRoot);
+  await docsBuild.verifySiteRoot(siteRoot);
+
+  assert.equal(await readFile(path.join(siteRoot, "index.html"), "utf8"), "<h1>pitch</h1>\n");
+  assert.equal(await readFile(path.join(siteRoot, "docs.md"), "utf8"), "# index.md\n");
+  assert.equal(
+    await readFile(path.join(siteRoot, "docs", "workflows", "activity.md"), "utf8"),
+    `# ${path.join("workflows", "activity.md")}\n`,
+  );
+  assert.ok((await readFile(path.join(siteRoot, "llms.txt"), "utf8")).includes("https://forge.kenn.io/docs.md"));
+});
+
+test("site verification fails when a markdown twin or llms.txt entry is missing", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "kenn-forge-site-root-test-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const { docsSource, websiteSource, favicon, siteRoot } = await writeSiteFixture(root);
+
+  await docsBuild.stageSiteRoot(docsSource, websiteSource, favicon, siteRoot);
+  await rm(path.join(siteRoot, "docs", "quickstart.md"));
+  await assert.rejects(docsBuild.verifySiteRoot(siteRoot), /markdown twin for quickstart\.md/);
+
+  await docsBuild.stageSiteRoot(docsSource, websiteSource, favicon, siteRoot);
+  await writeFile(path.join(siteRoot, "llms.txt"), "# Kenn Forge\n");
+  await assert.rejects(docsBuild.verifySiteRoot(siteRoot), /llms\.txt entry for/);
+});

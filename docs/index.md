@@ -1,8 +1,10 @@
 # kenn-forge
 
-kenn-forge gives maintainers one local console for repository activity, pull
-requests, issues, reviews, and working sessions. It syncs provider data into
+kenn-forge gives you one local console for repository activity, pull requests,
+issues, reviews, and agent working sessions. It syncs provider data into
 SQLite and serves the UI from a single binary.
+
+For a short visual introduction, start with the [Guide to Forge](/guide/).
 
 <div class="docs-actions">
   <a class="md-button md-button--primary" data-download-current href="https://github.com/kenn-io/forge/releases">Download latest release</a>

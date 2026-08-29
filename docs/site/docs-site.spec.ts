@@ -16,7 +16,7 @@ test("keeps the site brand stable while scrolling", async ({ page }) => {
     { width: 390, height: 844 },
   ]) {
     await page.setViewportSize(viewport);
-    await page.goto("/");
+    await page.goto("/docs/");
 
     const topics = page.locator(".md-header__topic");
     const brand = topics.first();
@@ -52,18 +52,18 @@ test("keeps the site brand stable while scrolling", async ({ page }) => {
 });
 
 test("serves the canonical favicon", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/docs/");
 
   const faviconHref = await page.locator("link[rel~='icon']").getAttribute("href");
   const faviconURL = new URL(faviconHref ?? "", page.url());
-  expect(faviconURL.pathname).toBe("/assets/favicon.svg");
+  expect(faviconURL.pathname).toBe("/docs/assets/favicon.svg");
   const response = await page.request.get(faviconURL.toString());
   expect(response.ok()).toBe(true);
   expect(await response.text()).toContain('aria-label="kenn-forge"');
 });
 
 test("opens only the active generated workflow screenshot in a lightbox", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/docs/");
 
   const trigger = page.getByRole("button", {
     name: /View kenn-forge Activity.*at full size/i,
@@ -93,7 +93,7 @@ test("opens only the active generated workflow screenshot in a lightbox", async 
 test("opens the dark generated workflow screenshot for the active theme", async ({ browser }) => {
   const context = await browser.newContext({ colorScheme: "dark" });
   const page = await context.newPage();
-  await page.goto("/");
+  await page.goto("/docs/");
 
   const trigger = page.getByRole("button", {
     name: /View kenn-forge Activity.*dark mode.*at full size/i,
@@ -114,7 +114,7 @@ test("keeps generated workflow screenshots inline without native dialog support"
     });
   });
   const page = await context.newPage();
-  await page.goto("/");
+  await page.goto("/docs/");
 
   await expect(page.locator("figure.workflow-shot img.workflow-shot__image--light")).toBeVisible();
   await expect(page.locator(".workflow-shot__trigger")).toHaveCount(0);
@@ -123,7 +123,7 @@ test("keeps generated workflow screenshots inline without native dialog support"
 });
 
 test("keeps generated workflow screenshots static", async ({ page }) => {
-  await page.goto("/assets/generated/maintainer-overview-light.svg");
+  await page.goto("/docs/assets/generated/maintainer-overview-light.svg");
 
   await expect
     .poll(() =>
@@ -165,7 +165,7 @@ test("links to the canonical kenn-forge downloads", async ({ browser }) => {
     });
   });
 
-  await page.goto("/");
+  await page.goto("/docs/");
   await expect(page.locator('a[href="https://github.com/kenn-io/forge"]').first()).toBeVisible();
   await expect(page.getByRole("link", { name: "Download latest release" })).toHaveAttribute(
     "href",
@@ -179,7 +179,7 @@ test("links to the canonical kenn-forge downloads", async ({ browser }) => {
   );
   await expect(page.locator("[data-download-version]")).toHaveText("v1.2.3 · ");
 
-  await page.goto("/quickstart/");
+  await page.goto("/docs/quickstart/");
   await expect(page.getByRole("link", { name: "forge_<version>_linux_amd64.tar.gz" })).toHaveAttribute(
     "href",
     "https://downloads.example/forge-linux-amd64.tar.gz",
@@ -197,7 +197,7 @@ test("links to the canonical kenn-forge downloads", async ({ browser }) => {
   const fallbackContext = await browser.newContext({ userAgent: linuxUserAgent });
   const fallbackPage = await fallbackContext.newPage();
   await fallbackPage.route("https://api.github.com/repos/kenn-io/forge/releases/latest", (route) => route.abort());
-  await fallbackPage.goto("/");
+  await fallbackPage.goto("/docs/");
   await expect(fallbackPage.getByRole("link", { name: "Download latest release" })).toHaveAttribute(
     "href",
     "https://github.com/kenn-io/forge/releases",
@@ -206,7 +206,7 @@ test("links to the canonical kenn-forge downloads", async ({ browser }) => {
 });
 
 test("places Fleet under advanced and experimental navigation", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/docs/");
 
   const primaryNav = page.locator(".md-sidebar--primary nav[data-md-level='0']");
   const advancedLabel = primaryNav.locator("label.md-nav__link", {
@@ -236,7 +236,7 @@ test("applies the browser theme before the runtime bundle", async ({ browser }) 
     const page = await context.newPage();
     await page.route("**/assets/javascripts/bundle.*.min.js", (route) => route.abort());
 
-    await page.goto("/");
+    await page.goto("/docs/");
     const firstFrameScheme = await page.evaluate(() => (window as FirstFrameWindow).__firstFrameScheme);
     expect(firstFrameScheme).toBe(preference.expected);
     await context.close();
@@ -246,7 +246,7 @@ test("applies the browser theme before the runtime bundle", async ({ browser }) 
 test("keeps following system theme changes until the reader chooses", async ({ browser }) => {
   const context = await browser.newContext({ colorScheme: "dark" });
   const page = await context.newPage();
-  await page.goto("/");
+  await page.goto("/docs/");
   await expect(page.locator("body")).toHaveAttribute("data-md-color-scheme", "slate");
 
   await page.emulateMedia({ colorScheme: "light" });
@@ -260,7 +260,7 @@ test("keeps following system theme changes until the reader chooses", async ({ b
 test("persists an explicit light override on a dark system", async ({ browser }) => {
   const context = await browser.newContext({ colorScheme: "dark" });
   const page = await context.newPage();
-  await page.goto("/");
+  await page.goto("/docs/");
   await expect(page.locator("body")).toHaveAttribute("data-md-color-scheme", "slate");
 
   await page.locator('label[title="Switch to light mode"]').click();
@@ -274,7 +274,7 @@ test("persists an explicit light override on a dark system", async ({ browser })
 test("[webkit] scales the complete generated workflow screenshot responsively", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "webkit-iphone");
 
-  await page.goto("/");
+  await page.goto("/docs/");
   await page.setContent(`
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
@@ -283,9 +283,9 @@ test("[webkit] scales the complete generated workflow screenshot responsively", 
       #responsive { display: block; width: 360px; height: auto; }
       #scaled-natural { display: block; width: 1280px; height: 820px; transform: scale(0.28125); transform-origin: top left; }
     </style>
-    <div class="frame"><img id="responsive" src="/assets/generated/maintainer-overview-light.svg" alt="Responsive rendering"></div>
+    <div class="frame"><img id="responsive" src="/docs/assets/generated/maintainer-overview-light.svg" alt="Responsive rendering"></div>
     <div style="height: 20px"></div>
-    <div class="frame"><img id="scaled-natural" src="/assets/generated/maintainer-overview-light.svg" alt="Scaled natural rendering"></div>
+    <div class="frame"><img id="scaled-natural" src="/docs/assets/generated/maintainer-overview-light.svg" alt="Scaled natural rendering"></div>
   `);
 
   const responsive = page.locator("#responsive");
@@ -348,4 +348,69 @@ test("[webkit] scales the complete generated workflow screenshot responsively", 
   );
 
   expect(meanPixelDifference).toBeLessThan(12);
+});
+
+test("serves the marketing pitch page at the site root", async ({ page }) => {
+  await page.goto("/");
+
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("agent workspace");
+  const hero = page.locator(".hero .shot img");
+  await expect(hero).toBeVisible();
+  const heroSrc = await hero.getAttribute("src");
+  expect(heroSrc).toMatch(/^\/docs\/assets\/generated\//);
+  const heroResponse = await page.request.get(new URL(heroSrc ?? "", page.url()).toString());
+  expect(heroResponse.ok()).toBe(true);
+  await expect(page.locator(".site-nav a[href='/guide/']")).toBeVisible();
+  await expect(page.locator(".site-nav a[href='/docs/']")).toBeVisible();
+});
+
+test("guide stops deep-link into the operating docs", async ({ page }) => {
+  await page.goto("/guide/");
+
+  const exploreLinks = page.locator(".steps .explore a");
+  await expect(exploreLinks).toHaveCount(7);
+  const hrefs = await exploreLinks.evaluateAll((links) => links.map((link) => link.getAttribute("href")));
+  for (const href of hrefs) {
+    expect(href).toMatch(/^\/docs\/.+\/$/);
+    const response = await page.request.get(new URL(href ?? "", page.url()).toString());
+    expect(response.ok()).toBe(true);
+  }
+});
+
+test("marketing screenshots open in a lightbox", async ({ page }) => {
+  await page.goto("/");
+
+  await page.locator(".hero .image-zoom").click();
+  const dialog = page.locator("dialog.image-lightbox");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator("img")).toHaveAttribute("src", /maintainer-overview-dark\.svg$/);
+  await dialog.click();
+  await expect(dialog).toBeHidden();
+});
+
+test("marketing download links keep the canonical releases fallback", async ({ browser }) => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await page.route("https://api.github.com/repos/kenn-io/forge/releases/latest", (route) => route.abort());
+
+  await page.goto("/");
+  await expect(page.getByRole("link", { name: "Download latest release" })).toHaveAttribute(
+    "href",
+    "https://github.com/kenn-io/forge/releases",
+  );
+  await context.close();
+});
+
+test("serves llms.txt and markdown twins for machine readers", async ({ page }) => {
+  const llms = await page.request.get("/llms.txt");
+  expect(llms.ok()).toBe(true);
+  const llmsBody = await llms.text();
+  expect(llmsBody).toContain("https://forge.kenn.io/docs.md");
+  expect(llmsBody).toContain("https://forge.kenn.io/docs/workflows/activity.md");
+
+  for (const twin of ["/docs.md", "/docs/quickstart.md", "/docs/workflows/activity.md"]) {
+    const response = await page.request.get(twin);
+    expect(response.ok()).toBe(true);
+    expect((await response.text()).length).toBeGreaterThan(0);
+  }
 });

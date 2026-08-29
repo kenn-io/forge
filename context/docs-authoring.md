@@ -27,14 +27,19 @@ screenshots, or the Zensical site.
   and maintainer workflows without overexplaining internals. Treat the HTTP API
   as an internal or thin-client concern rather than regular user guidance.
 - Always write the product name as `kenn-forge` in documentation and prose;
-  never title-case it. The marketing tier under `website/` is the one exception:
-  its display text uses the product name "Kenn Forge" (binary and CLI examples
-  stay `kenn-forge`).
+  never title-case it. The marketing tier under `website/` is the one
+  exception: its display text title-cases the product name, while binary and
+  CLI examples stay `kenn-forge`. (`scripts/check-docs-branding.mjs`)
 - The public site is tiered: hand-written static marketing pages in `website/`
   (`/` pitch page, `/guide/` visual tour; dark-only, JetBrains Mono headings,
-  ember accent) lead into the Zensical docs as the operational tier. Position
-  the product as an integrated agent workspace with local-first code forge
-  sync, not a maintainer-only console.
+  ember accent) lead into the Zensical docs under `/docs/`. Position the
+  product as an integrated agent workspace with local-first code forge sync,
+  not a maintainer-only console.
+- Every published docs page ships as a rendered/markdown pair (`/docs/<page>/`
+  plus `/docs/<page>.md`; index as `/docs.md`) listed in the hand-maintained
+  `docs/llms.txt`, and the build fails when any half or listing is missing —
+  a new page must be added to the file, nav, allowlist, and `llms.txt`.
+  (`scripts/build-docs.mjs::verifySiteRoot`)
 - User-facing workflow screenshots are generated into a staged docs tree by the
   docs build and must not be tracked in Git. Playwright captures in
   `docs/screenshots/` use the real seeded e2e backend, not mocked API fixtures

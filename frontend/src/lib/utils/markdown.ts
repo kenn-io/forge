@@ -19,7 +19,7 @@ import { codeFenceLanguage, codeHighlightPlan, escapeHtml, shikiStyleIsAllowed }
 import { mermaidCodeFence } from "@kenn-io/kit-ui/utils/markdown-mermaid";
 import { getSingletonHighlighter, type BundledLanguage, type Highlighter } from "shiki";
 import { canonicalProvider, providerRepoResourceURL } from "../api/provider-routes.js";
-import { itemReferenceAnchorAttributes } from "./item-reference.js";
+import { itemReferenceAnchorAttributes, parseProviderItemURL } from "./item-reference.js";
 import type { ItemReferenceType } from "./item-reference.js";
 
 export interface RepoContext {
@@ -280,6 +280,17 @@ function markTrustedShikiHtml(html: string): string {
 }
 
 const taskListRenderer: RendererObject = {
+  // A pasted provider URL for a pull request or issue on the rendering
+  // repository's host becomes an in-app item reference. Marked routes
+  // bare autolinked URLs and [text](url) links through this same hook, so
+  // both forms stay inside kenn-forge instead of opening the provider site.
+  link(token) {
+    const repo = renderState.repo;
+    const ref = repo ? parseProviderItemURL(token.href, repo) : null;
+    if (!ref) return false;
+    const text = this.parser.parseInline(token.tokens);
+    return `<a ${itemReferenceAnchorAttributes(ref)}>${text}</a>`;
+  },
   blockquote(token): string {
     renderState.blockquoteDepth++;
     const inner = this.parser.parse(token.tokens);

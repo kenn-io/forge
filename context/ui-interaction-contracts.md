@@ -43,6 +43,11 @@ Interactive surfaces must agree on which item is selected.
 - Use shared named route/item reference types from
   `frontend/src/lib/stores/router.svelte.ts` instead of repeating anonymous
   `{ owner, name, number }`-style shapes.
+- Markdown cross-references stay in-app on every surface: `#N`, `owner/repo#N`,
+  and pasted provider item URLs on the rendering repository's host all render as
+  `item-ref` anchors that resolve through the shared click handler, with the
+  provider URL kept as the untracked-repo fallback
+  (`frontend/src/lib/utils/item-reference.ts::parseProviderItemURL`).
 - When a view changes from item A to item B, reset transient action state that
   could otherwise submit or render against the wrong item.
 - A response confirming a server-side outcome (a completed delete or create)

@@ -55,7 +55,7 @@ token_env = "GITEA_PRIVATE_TOKEN"
 
 `host` remains the repository identity and must match Gitea's advertised clone
 URLs. `allow_insecure` acknowledges that API and Git credentials can travel
-without TLS. kenn-forge rejects plain-HTTP or mismatched clone URLs before
+without TLS. Forge rejects plain-HTTP or mismatched clone URLs before
 using them.
 
 To hide a repository from lists and pickers without removing it, open the gear

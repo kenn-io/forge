@@ -1634,6 +1634,11 @@
           if (responseIsStale() || !data?.id) return;
           if (inlineWorkspace) {
             refetchDetailForIdentity(requestIdentity);
+          } else if (onOpenWorkspace) {
+            // Hosts without an inline controller (phone-like PR routes)
+            // decide where a fresh workspace opens; the desktop terminal
+            // route is unusable from a phone shell.
+            onOpenWorkspace(data.id);
           } else {
             navigate(`/terminal/${data.id}`);
           }

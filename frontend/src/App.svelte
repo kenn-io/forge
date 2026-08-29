@@ -729,6 +729,21 @@
     else replaceUrl(buildMobileWorkspaceRoute(workspaceId, hostKey));
   }
 
+  // Phone-like PR detail routes have no inline workspace controller, so a
+  // created or opened workspace must land in the /m workspace shell rather
+  // than the desktop /terminal route. Desktop-narrow focus presentation
+  // keeps the desktop destinations.
+  function phoneWorkspaceCallbacks(): {
+    onOpenWorkspace?: (workspaceId: string) => void;
+    onViewWorkspaces?: () => void;
+  } {
+    if (!useFocusLayoutClass()) return {};
+    return {
+      onOpenWorkspace: (workspaceId) => navigate(buildMobileWorkspaceRoute(workspaceId)),
+      onViewWorkspaces: () => navigate("/m/workspaces"),
+    };
+  }
+
   function useDesktopView(): void {
     replaceUrl(`${desktopPathForMobileRoute()}${searchWithDesktopOptOut()}`);
   }
@@ -1123,6 +1138,7 @@
           isSidebarCollapsed={true}
           hideSidebar={true}
           routeFamily="focus"
+          {...phoneWorkspaceCallbacks()}
         />
       {:else if r.page === "focus"}
         <IssueListView
@@ -1144,6 +1160,7 @@
           isSidebarCollapsed={true}
           hideSidebar={true}
           onStackMemberNavigate={handleResponsiveStackMemberNavigate}
+          {...phoneWorkspaceCallbacks()}
         />
       {:else if r.page === "pulls"}
         <FocusListView

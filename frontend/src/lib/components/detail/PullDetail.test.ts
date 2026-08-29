@@ -223,6 +223,7 @@ function renderPullDetail(
   },
   options: {
     hideWorkspaceAction?: boolean;
+    onOpenWorkspace?: (workspaceId: string) => void;
     hideTabs?: boolean;
     actions?: { pull: unknown[] };
     detailLoading?: boolean;
@@ -363,6 +364,7 @@ function renderPullDetail(
     hideTabs: options.hideTabs ?? false,
     inlineWorkspace: options.inlineWorkspace ?? null,
     onDetailTabChange: options.onDetailTabChange,
+    onOpenWorkspace: options.onOpenWorkspace,
   };
   const rendered = render(PullDetailTestHarness, {
     props: {
@@ -2240,6 +2242,22 @@ describe("PullDetail inline workspace handoff", () => {
 
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/terminal/ws-new"));
     expect(discardWorkspaceLaunch("ws-new", undefined)).toBeNull();
+  });
+
+  it("opens a created workspace through the host callback when one is provided", async () => {
+    const { apiClient, resolvePost } = deferredWorkspaceApiClient();
+    const onOpenWorkspace = vi.fn();
+    const { navigate } = renderPullDetail(pullDetail(), undefined, apiClient, {
+      hideWorkspaceAction: false,
+      onOpenWorkspace,
+    });
+
+    await fireEvent.click(screen.getAllByRole("button", { name: "Create Workspace" })[0]!);
+    await waitFor(() => expect(apiClient.POST).toHaveBeenCalled());
+    resolvePost({ data: { id: "ws-new", status: "creating", created: true } });
+
+    await waitFor(() => expect(onOpenWorkspace).toHaveBeenCalledWith("ws-new"));
+    expect(navigate).not.toHaveBeenCalledWith("/terminal/ws-new");
   });
 
   it("queues the agent selected from Create Workspace options", async () => {

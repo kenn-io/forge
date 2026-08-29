@@ -155,6 +155,34 @@ describe("renderDocsMarkdown", () => {
     expect(html).not.toContain('data-kata-short-id="12"');
   });
 
+  test("renders same-host item URLs as provider item links when repo context is present", () => {
+    const html = renderDocsMarkdown(
+      "See https://github.com/acme/widgets/pull/7, [the issue](https://github.com/acme/tools/issues/13), and https://example.com/acme/widgets/pull/9.",
+      {
+        ...baseOptions,
+        repoContext: {
+          provider: "github",
+          platformHost: "github.com",
+          owner: "acme",
+          name: "widgets",
+          repoPath: "acme/widgets",
+        },
+      },
+    );
+
+    expect(html).toContain('class="item-ref" href="/pulls/github/acme/widgets/7"');
+    expect(html).toContain('data-number="7" data-item-type="pr"');
+    expect(html).toContain('class="item-ref" href="/issues/github/acme/tools/13"');
+    expect(html).toContain(">the issue</a>");
+    expect(html).toContain('href="https://example.com/acme/widgets/pull/9" target="_blank"');
+  });
+
+  test("keeps item URLs external without repo context", () => {
+    const html = renderDocsMarkdown("See https://github.com/acme/widgets/pull/7.", baseOptions);
+    expect(html).toContain('href="https://github.com/acme/widgets/pull/7" target="_blank"');
+    expect(html).not.toContain("item-ref");
+  });
+
   test("does not turn repo references inside raw code into provider item links", () => {
     const html = renderDocsMarkdown("<code>#12</code>", {
       ...baseOptions,

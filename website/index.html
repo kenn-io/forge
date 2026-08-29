@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Kenn Forge — the agent workspace with code forge sync</title>
+    <meta
+      name="description"
+      content="Kenn Forge is an integrated workspace for coding agents with local-first sync of pull requests, issues, and activity from GitHub, GitLab, Forgejo, and Gitea. Triage, delegate, review, and merge in one console on your machine."
+    />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="canonical" href="https://forge.kenn.io/" />
+    <meta property="og:title" content="Kenn Forge — the agent workspace with code forge sync" />
+    <meta
+      property="og:description"
+      content="Run coding agents in isolated worktree workspaces, with the pull requests, issues, and activity they're working on synced beside them. One binary, on your machine."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://forge.kenn.io/" />
+    <link
+      rel="preload"
+      href="/fonts/JetBrainsMono-Bold.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link rel="stylesheet" href="/styles/site.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container">
+        <a class="brand" href="/">
+          <svg viewBox="0 0 512 512" role="img" aria-hidden="true">
+            <rect width="512" height="512" rx="104" fill="#20272d" />
+            <g transform="translate(256 256) scale(1.153) translate(-256 -256)">
+              <path d="M186 120c-42 0-44 32-44 63v34c0 23-20 35-42 39 22 4 42 16 42 39v34c0 31 2 63 44 63" fill="none" stroke="#f7fbff" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" />
+              <path d="M326 120c42 0 44 32 44 63v34c0 23 20 35 42 39-22 4-42 16-42 39v34c0 31-2 63-44 63" fill="none" stroke="#f7fbff" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" />
+              <path d="M220 192h72" stroke="#4cc46c" stroke-linecap="round" stroke-width="24" />
+              <path d="M220 256h72" stroke="#f3b13f" stroke-linecap="round" stroke-width="24" />
+              <path d="M220 320h72" stroke="#e34b3f" stroke-linecap="round" stroke-width="24" />
+            </g>
+          </svg>
+          <span>Kenn Forge</span>
+        </a>
+        <nav class="site-nav" aria-label="Primary navigation">
+          <a href="/guide/">Guide</a>
+          <a href="/docs/">Docs</a>
+          <a class="repo" href="https://github.com/kenn-io/forge">
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
+            </svg>
+            <span class="repo-name">kenn-io/forge</span>
+          </a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="container">
+          <p class="lockup">
+            <svg viewBox="0 0 512 512" role="img" aria-hidden="true">
+              <rect width="512" height="512" rx="104" fill="#20272d" />
+              <g transform="translate(256 256) scale(1.153) translate(-256 -256)">
+                <path d="M186 120c-42 0-44 32-44 63v34c0 23-20 35-42 39 22 4 42 16 42 39v34c0 31 2 63 44 63" fill="none" stroke="#f7fbff" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="M326 120c42 0 44 32 44 63v34c0 23 20 35 42 39-22 4-42 16-42 39v34c0 31-2 63-44 63" fill="none" stroke="#f7fbff" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="M220 192h72" stroke="#4cc46c" stroke-linecap="round" stroke-width="24" />
+                <path d="M220 256h72" stroke="#f3b13f" stroke-linecap="round" stroke-width="24" />
+                <path d="M220 320h72" stroke="#e34b3f" stroke-linecap="round" stroke-width="24" />
+              </g>
+            </svg>
+            <span class="wordmark">Kenn Forge</span>
+          </p>
+          <h1>The agent workspace that <em>syncs with your code forge</em>.</h1>
+          <p class="sub">
+            Kenn Forge runs coding agents in isolated worktree workspaces with durable
+            terminal sessions — and syncs the pull requests, issues, and activity they're
+            working on from GitHub, GitLab, Forgejo, and Gitea into local SQLite beside
+            them. Triage, delegate, review, and merge without leaving one console.
+          </p>
+          <div class="actions">
+            <a class="button button-primary" data-download-current href="https://github.com/kenn-io/forge/releases">
+              Download latest release
+            </a>
+            <a class="button button-secondary" href="/guide/">Read the Guide</a>
+          </div>
+          <p class="meta"><span data-version></span>Linux, macOS, and Windows · single binary · bring your own agents · your forge stays the source of truth</p>
+          <figure class="shot">
+            <button class="image-zoom" type="button" aria-label="Zoom: Activity with a selected pull request, live workspace, and coding-agent session">
+              <img
+                src="/docs/assets/generated/maintainer-overview-dark.svg"
+                alt="Kenn Forge Activity view with a selected pull request beside its live workspace and coding-agent session"
+                fetchpriority="high"
+              />
+            </button>
+          </figure>
+        </div>
+      </section>
+
+      <section class="questions">
+        <div class="container">
+          <h2><b>Built to close the loop.</b> From overnight activity to merged pull request:</h2>
+          <ol>
+            <li>What changed overnight?<small>Comments, reviews, commits, and state changes across every repository, synced locally.</small></li>
+            <li>What can I hand to an agent?<small>One action creates a worktree workspace from a pull request or issue and launches the agent.</small></li>
+            <li>How are my agents doing?<small>Durable tmux sessions with lifecycle status — active work, approval requests, input requests.</small></li>
+            <li>What can I review and merge?<small>Full pull request detail with CI, branch state, changed files, and provider actions.</small></li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="features">
+        <div class="container">
+          <p class="eyebrow">What's inside</p>
+          <div class="grid">
+            <article class="feature">
+              <svg viewBox="0 0 28 28" aria-hidden="true"><rect x="3" y="4" width="22" height="20" rx="3" /><path d="M8 11l4 3.5L8 18M14 18h6" /></svg>
+              <h3>Agent workspaces, isolated by worktree</h3>
+              <p>Every workspace is a Git worktree with durable tmux sessions. Launch shells or coding agents in one step, run them in parallel, and pick any session back up later.</p>
+            </article>
+            <article class="feature">
+              <svg viewBox="0 0 28 28" aria-hidden="true"><circle cx="14" cy="14" r="4" /><path d="M14 3v4M14 21v4M3 14h4M21 14h4M6.2 6.2l2.8 2.8M19 19l2.8 2.8M21.8 6.2 19 9M9 19l-2.8 2.8" /></svg>
+              <h3>The missing forge sync</h3>
+              <p>Pull requests, issues, and a filterable activity stream from GitHub, GitLab, Forgejo, and Gitea land in SQLite on your machine — the context agent workspaces usually make you tab out for.</p>
+            </article>
+            <article class="feature">
+              <svg viewBox="0 0 28 28" aria-hidden="true"><circle cx="7" cy="6" r="3" /><circle cx="7" cy="22" r="3" /><circle cx="21" cy="22" r="3" /><path d="M7 9v10M21 19v-4a5 5 0 0 0-5-5h-3" /></svg>
+              <h3>Pull requests, end to end</h3>
+              <p>Description, discussion, CI, branch state, and changed files together. Review line by line, comment, approve, and merge — with stacked branches detected and ordered.</p>
+            </article>
+            <article class="feature">
+              <svg viewBox="0 0 28 28" aria-hidden="true"><circle cx="14" cy="14" r="3.2" /><circle cx="5" cy="5" r="2.6" /><circle cx="23" cy="5" r="2.6" /><circle cx="5" cy="23" r="2.6" /><circle cx="23" cy="23" r="2.6" /><path d="M7 7l4.6 4.6M21 7l-4.6 4.6M7 21l4.6-4.6M21 21l-4.6-4.6" /></svg>
+              <h3>Federated workspaces</h3>
+              <p>Connect Forge daemons into a hub-and-spoke fleet over authenticated HTTPS. The hub syncs your forges once and shows every workspace across your machines; each spoke keeps its agents, worktrees, and sessions local.</p>
+            </article>
+            <article class="feature">
+              <svg viewBox="0 0 28 28" aria-hidden="true"><ellipse cx="14" cy="6.5" rx="9" ry="3.5" /><path d="M5 6.5v15c0 1.9 4 3.5 9 3.5s9-1.6 9-3.5v-15M5 14c0 1.9 4 3.5 9 3.5s9-1.6 9-3.5" /></svg>
+              <h3>Local-first, by construction</h3>
+              <p>One binary serves the UI and owns the data on your machine. Fast offline reads, private by default, no hosted service in the loop — your forge stays the source of truth.</p>
+            </article>
+            <article class="feature">
+              <svg viewBox="0 0 28 28" aria-hidden="true"><rect x="3" y="3" width="9" height="9" rx="2" /><rect x="16" y="3" width="9" height="9" rx="2" /><rect x="3" y="16" width="9" height="9" rx="2" /><rect x="16" y="16" width="9" height="9" rx="2" /></svg>
+              <h3>Beyond the queue</h3>
+              <p>Browse repository source with file history, follow Roborev review jobs, link Kata tasks, edit local Markdown docs, and give your agents the console over MCP.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="providers">
+        <div class="container">
+          <span class="label">Syncs with</span>
+          <span class="pill">GitHub</span>
+          <span class="pill">GitLab</span>
+          <span class="pill">Forgejo</span>
+          <span class="pill">Gitea</span>
+        </div>
+      </section>
+
+      <section class="cta">
+        <div class="container">
+          <div class="panel">
+            <div>
+              <p class="eyebrow">Guide to Forge</p>
+              <h2>See the whole loop in seven stops.</h2>
+              <p>A visual tour from the morning activity queue to merged pull request — each stop links into the operating docs.</p>
+            </div>
+            <a class="button button-primary" href="/guide/">Start the tour</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container">
+        <nav aria-label="Footer">
+          <a href="/guide/">Guide</a>
+          <a href="/docs/">Docs</a>
+          <a href="https://github.com/kenn-io/forge">GitHub</a>
+        </nav>
+        <p class="legal">
+          © 2026 <a href="https://kenn.io">Kenn Software LLC</a> · Elastic License 2.0
+        </p>
+      </div>
+    </footer>
+
+    <dialog class="image-lightbox" aria-label="Enlarged screenshot"></dialog>
+    <script src="/scripts/site.js" defer></script>
+  </body>
+</html>

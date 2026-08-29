@@ -215,10 +215,12 @@ type DocFolder struct {
 }
 
 type PlatformConfig struct {
-	Type      string `toml:"type" json:"type"`
-	Host      string `toml:"host" json:"host"`
-	TokenEnv  string `toml:"token_env,omitempty" json:"token_env,omitempty"`
-	TokenFile string `toml:"token_file,omitempty" json:"token_file,omitempty"`
+	Type          string `toml:"type" json:"type"`
+	Host          string `toml:"host" json:"host"`
+	BaseURL       string `toml:"base_url,omitempty" json:"base_url,omitempty"`
+	AllowInsecure bool   `toml:"allow_insecure,omitempty" json:"allow_insecure,omitempty"`
+	TokenEnv      string `toml:"token_env,omitempty" json:"token_env,omitempty"`
+	TokenFile     string `toml:"token_file,omitempty" json:"token_file,omitempty"`
 }
 
 // GitHubOwnerTokenConfig maps one exact GitHub resource owner to a PAT
@@ -1459,6 +1461,9 @@ func (c *Config) validate() error {
 		}
 		p.TokenEnv = strings.TrimSpace(p.TokenEnv)
 		p.TokenFile = strings.TrimSpace(p.TokenFile)
+		if err := normalizePlatformTransport(p); err != nil {
+			return fmt.Errorf("config: platforms[%d]: %w", i, err)
+		}
 	}
 	if err := c.validatePlatforms(); err != nil {
 		return err
@@ -1778,6 +1783,41 @@ func (c *Config) validate() error {
 		)
 	}
 
+	return nil
+}
+
+func normalizePlatformTransport(p *PlatformConfig) error {
+	p.BaseURL = strings.TrimSpace(p.BaseURL)
+	if p.Type != string(platformpkg.KindGitea) {
+		if p.BaseURL != "" || p.AllowInsecure {
+			return fmt.Errorf("base_url and allow_insecure are supported only for gitea")
+		}
+		return nil
+	}
+	if p.BaseURL == "" {
+		return nil
+	}
+	u, err := url.Parse(p.BaseURL)
+	if err != nil || u.Scheme == "" || u.Host == "" || u.Hostname() == "" {
+		return fmt.Errorf("base_url must be an absolute http(s) URL")
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("base_url scheme must be http or https")
+	}
+	if u.User != nil {
+		return fmt.Errorf("base_url must not include user info")
+	}
+	if u.RawQuery != "" || u.ForceQuery {
+		return fmt.Errorf("base_url must not include a query string")
+	}
+	if u.Fragment != "" {
+		return fmt.Errorf("base_url must not include a fragment")
+	}
+	if u.Scheme == "http" && !p.AllowInsecure {
+		return fmt.Errorf("base_url uses plain HTTP; set allow_insecure = true to acknowledge that API tokens will be sent without TLS")
+	}
+	u.Path = strings.TrimRight(u.Path, "/")
+	p.BaseURL = u.String()
 	return nil
 }
 

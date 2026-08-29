@@ -21,6 +21,8 @@ type providerFactory func(providerFactoryInput) (providerFactoryOutput, error)
 
 type providerFactoryInput struct {
 	host          string
+	baseURL       string
+	allowInsecure bool
 	tokenSource   tokenauth.Source
 	rateTracker   *github.RateTracker
 	budget        *github.SyncBudget
@@ -225,6 +227,7 @@ func defaultProviderFactories() map[string]providerFactory {
 		string(platform.KindGitea): func(input providerFactoryInput) (providerFactoryOutput, error) {
 			client, err := giteaclient.NewClient(
 				input.host, input.tokenSource,
+				giteaclient.WithBaseURL(input.baseURL, input.allowInsecure),
 				giteaclient.WithRateTracker(input.rateTracker),
 				giteaclient.WithSyncBudget(input.budget),
 			)
@@ -511,8 +514,11 @@ func buildProviderStartup(
 		if !ok {
 			return providerStartup{}, fmt.Errorf("unsupported platform %q", platformName)
 		}
+		transportConfig := providerTransportConfig(cfg, platformName, host)
 		built, err := factory(providerFactoryInput{
 			host:          host,
+			baseURL:       transportConfig.BaseURL,
+			allowInsecure: transportConfig.AllowInsecure,
 			tokenSource:   tokenSource,
 			rateTracker:   startup.rateTrackers[rateKey],
 			budget:        startup.budgets[rateKey],
@@ -614,6 +620,17 @@ func buildProviderStartup(
 		)
 	}
 	return startup, nil
+}
+
+func providerTransportConfig(
+	cfg *config.Config, platformName, host string,
+) config.PlatformConfig {
+	for _, configured := range cfg.Platforms {
+		if configured.Type == platformName && configured.Host == host {
+			return configured
+		}
+	}
+	return config.PlatformConfig{}
 }
 
 func buildGitHubIdentityRuntimes(

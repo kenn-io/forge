@@ -632,7 +632,7 @@ func gitealikeLabelVariants() []gitealikeLabelVariant {
 				client, err := gitea.NewClient(
 					platform.DefaultGiteaHost,
 					staticTokenSource("token"),
-					gitea.WithBaseURLForTesting(upstreamURL),
+					gitea.WithBaseURL(upstreamURL, true),
 					gitea.WithServerVersionForTesting("1.26.0"),
 				)
 				require.NoError(t, err)

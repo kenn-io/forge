@@ -1571,7 +1571,7 @@ func (m *Manager) reuseExistingWorkspaceWorktreeDetails(
 		}
 		return existingWorkspaceWorktreeResult{}, fmt.Errorf("inspect existing worktree: %w", err)
 	}
-	if !gitDirMatchesWorkspaceRepo(ctx, commonDir, ws) {
+	if !m.gitDirMatchesWorkspaceRepo(ctx, commonDir, ws) {
 		return existingWorkspaceWorktreeResult{}, nil
 	}
 	owned, err := gitDirOwnsLinkedWorktree(ctx, commonDir, ws.WorktreePath)
@@ -1751,6 +1751,7 @@ func (m *Manager) existingWorkspaceWorktreeProvenance(
 	}
 	if _, err := ValidateWorktreeBasePath(
 		ctx, ws.WorktreePath, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+		m.allowsInsecureHTTP(ws.Platform, ws.PlatformHost),
 	); err != nil {
 		return false, false, err
 	}
@@ -1784,7 +1785,7 @@ func (m *Manager) existingWorktreeUsesManagedClone(
 	if err != nil {
 		return false
 	}
-	return actualDir == expectedDir && gitDirMatchesWorkspaceRepo(ctx, commonDir, ws)
+	return actualDir == expectedDir && m.gitDirMatchesWorkspaceRepo(ctx, commonDir, ws)
 }
 
 func (m *Manager) refreshExistingWorkspaceWorktree(
@@ -1934,6 +1935,7 @@ func (m *Manager) workspaceSetupGitDir(
 		if strings.TrimSpace(worktreeBasePath) != "" {
 			baseDir, err := ValidateWorktreeBasePath(
 				ctx, worktreeBasePath, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+				m.allowsInsecureHTTP(ws.Platform, ws.PlatformHost),
 			)
 			return baseDir, err == nil, err
 		}
@@ -2000,7 +2002,10 @@ func (m *Manager) localWorktreeBaseDir(
 	if !ok || raw == "" {
 		return "", false, nil
 	}
-	abs, err := ValidateWorktreeBasePath(ctx, raw, platformHost, owner, name)
+	abs, err := ValidateWorktreeBasePath(
+		ctx, raw, platformHost, owner, name,
+		m.allowsInsecureHTTP(platform, platformHost),
+	)
 	if err != nil {
 		return "", false, err
 	}
@@ -2019,6 +2024,7 @@ func (m *Manager) localWorktreeBaseLockRoot(path string) string {
 // worktree whose origin remote matches the tracked repository identity.
 func ValidateWorktreeBasePath(
 	ctx context.Context, path, platformHost, owner, name string,
+	allowInsecureHTTP bool,
 ) (string, error) {
 	abs, err := filepath.Abs(strings.TrimSpace(path))
 	if err != nil {
@@ -2056,11 +2062,15 @@ func ValidateWorktreeBasePath(
 		return "", err
 	}
 	if err := validateOriginRemoteURLs(
-		ctx, abs, platformHost, owner, name,
+		ctx, abs, platformHost, owner, name, allowInsecureHTTP,
 	); err != nil {
 		return "", err
 	}
 	return abs, nil
+}
+
+func (m *Manager) allowsInsecureHTTP(platform, platformHost string) bool {
+	return m.clones != nil && m.clones.AllowsInsecureHTTP(platform, platformHost)
 }
 
 func (m *Manager) workspaceRepo(
@@ -2155,6 +2165,7 @@ func localGitConfigKeyMayExecute(key string) bool {
 
 func validateOriginRemoteURLs(
 	ctx context.Context, dir, platformHost, owner, name string,
+	allowInsecureHTTP bool,
 ) error {
 	remoteURLs, err := gitConfigValues(ctx, dir, "remote.origin.url")
 	if err != nil {
@@ -2165,7 +2176,7 @@ func validateOriginRemoteURLs(
 	}
 	for _, remoteURL := range remoteURLs {
 		if err := validateOriginRemoteURL(
-			remoteURL, platformHost, owner, name,
+			remoteURL, platformHost, owner, name, allowInsecureHTTP,
 		); err != nil {
 			return err
 		}
@@ -2175,6 +2186,7 @@ func validateOriginRemoteURLs(
 
 func validateOriginRemoteURL(
 	remoteURL, platformHost, owner, name string,
+	allowInsecureHTTP bool,
 ) error {
 	if gitremote.RemoteHost(remoteURL) == "" ||
 		gitremote.RemoteRepoPath(remoteURL) == "" {
@@ -2182,7 +2194,7 @@ func validateOriginRemoteURL(
 			"origin remote must include a forge host and repository path",
 		)
 	}
-	if !originRemoteSchemeAllowed(remoteURL) {
+	if !originRemoteSchemeAllowed(remoteURL, allowInsecureHTTP) {
 		// Never include the raw remote URL: it can embed credentials
 		// (http://oauth2:token@host/...) and this error is persisted as
 		// workspace error state and returned through the API.
@@ -2211,7 +2223,7 @@ func remoteURLScheme(remoteURL string) string {
 	return strings.ToLower(scheme)
 }
 
-func originRemoteSchemeAllowed(remoteURL string) bool {
+func originRemoteSchemeAllowed(remoteURL string, allowInsecureHTTP bool) bool {
 	if !strings.Contains(remoteURL, "://") {
 		return true
 	}
@@ -2223,7 +2235,7 @@ func originRemoteSchemeAllowed(remoteURL string) bool {
 	case "", "https", "ssh":
 		return true
 	case "http":
-		return hostIsLoopback(parsed.Host)
+		return allowInsecureHTTP || hostIsLoopback(parsed.Host)
 	default:
 		return false
 	}
@@ -3787,11 +3799,12 @@ func pathContains(parent, child string) bool {
 			!strings.HasPrefix(rel, ".."+string(os.PathSeparator)))
 }
 
-func gitDirMatchesWorkspaceRepo(
+func (m *Manager) gitDirMatchesWorkspaceRepo(
 	ctx context.Context, dir string, ws *Workspace,
 ) bool {
 	return validateOriginRemoteURLs(
 		ctx, dir, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+		m.allowsInsecureHTTP(ws.Platform, ws.PlatformHost),
 	) == nil
 }
 

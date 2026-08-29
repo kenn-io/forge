@@ -1633,6 +1633,102 @@ name = %q
 	}
 }
 
+func TestLoadGiteaExplicitBaseURL(t *testing.T) {
+	path := writeConfig(t, `
+[[platforms]]
+type = "gitea"
+host = "gitea.example.test:3000"
+base_url = "http://gitea-api.example.test:3000/root/"
+allow_insecure = true
+token_env = "GITEA_PRIVATE_TOKEN"
+`)
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Platforms, 1)
+	assert.Equal(t, PlatformConfig{
+		Type:          "gitea",
+		Host:          "gitea.example.test:3000",
+		BaseURL:       "http://gitea-api.example.test:3000/root",
+		AllowInsecure: true,
+		TokenEnv:      "GITEA_PRIVATE_TOKEN",
+	}, cfg.Platforms[0])
+}
+
+func TestLoadRejectsInvalidGiteaExplicitBaseURL(t *testing.T) {
+	tests := []struct {
+		name          string
+		baseURL       string
+		allowInsecure bool
+		want          string
+	}{
+		{name: "relative", baseURL: "gitea.example.test:3000", want: "absolute http(s) URL"},
+		{name: "unsupported scheme", baseURL: "ssh://gitea.example.test", want: "scheme must be http or https"},
+		{name: "missing host", baseURL: "https:///api", want: "absolute http(s) URL"},
+		{name: "user info", baseURL: "https://user@gitea.example.test", want: "must not include user info"},
+		{name: "query", baseURL: "https://gitea.example.test?x=1", want: "must not include a query string"},
+		{name: "empty query", baseURL: "https://gitea.example.test?", want: "must not include a query string"},
+		{name: "fragment", baseURL: "https://gitea.example.test#api", want: "must not include a fragment"},
+		{name: "http without acknowledgement", baseURL: "http://gitea.example.test", want: "set allow_insecure = true"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := writeConfig(t, fmt.Sprintf(`
+[[platforms]]
+type = "gitea"
+host = "gitea.example.test"
+base_url = %q
+allow_insecure = %t
+`, tt.baseURL, tt.allowInsecure))
+
+			_, err := Load(path)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.want)
+		})
+	}
+}
+
+func TestLoadRejectsGiteaTransportFieldsForOtherProviders(t *testing.T) {
+	path := writeConfig(t, `
+[[platforms]]
+type = "forgejo"
+host = "forgejo.example.test"
+base_url = "https://api.example.test"
+`)
+
+	_, err := Load(path)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "supported only for gitea")
+}
+
+func TestSaveRoundTripGiteaExplicitBaseURL(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	path := filepath.Join(t.TempDir(), "config.toml")
+	cfg := &Config{
+		SyncInterval:        defaultSyncInterval,
+		GitHubTokenEnv:      defaultGitHubTokenEnv,
+		DefaultPlatformHost: defaultPlatformHost,
+		Host:                defaultHost,
+		Port:                defaultPort,
+		Platforms: []PlatformConfig{{
+			Type:          "gitea",
+			Host:          "gitea.example.test:3000",
+			BaseURL:       "http://gitea.example.test:3000/",
+			AllowInsecure: true,
+			TokenEnv:      "GITEA_PRIVATE_TOKEN",
+		}},
+	}
+
+	require.NoError(cfg.Save(path))
+	reloaded, err := Load(path)
+	require.NoError(err)
+	require.Len(reloaded.Platforms, 1)
+	assert.Equal("http://gitea.example.test:3000", reloaded.Platforms[0].BaseURL)
+	assert.True(reloaded.Platforms[0].AllowInsecure)
+}
+
 func TestLoadForgejoDefaultHostUsesDefaultTokenEnv(t *testing.T) {
 	path := writeConfig(t, `
 [[repos]]

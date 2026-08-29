@@ -60,6 +60,9 @@ screenshots, or the Zensical site.
   copied into `internal/web/dist`, then pass the prebuilt binary through
   `PLAYWRIGHT_E2E_SERVER_BINARY` so screenshot readiness excludes Go compile
   time. (`scripts/vercel-build-docs.sh`)
+- Direct Vercel CLI deployments use root `.vercelignore`, not `.gitignore`,
+  to keep local artifacts out of the upload while retaining remote build inputs.
+  (`.vercelignore`)
 - Vercel restricts rendered-site checks to Chromium because its runtime lacks
   Playwright WebKit dependencies; the browser-image docs CI lane runs Chromium
   and WebKit. (`scripts/vercel-build-docs.sh`, `.github/workflows/ci.yml::docs`)

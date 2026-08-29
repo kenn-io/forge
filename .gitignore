@@ -52,3 +52,5 @@ __pycache__/
 
 # ptyowner test artifacts
 .sessions
+.vercel
+.env*

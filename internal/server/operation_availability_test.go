@@ -113,11 +113,11 @@ func TestDeriveOperationAvailability(t *testing.T) {
 			},
 		},
 		{
-			name:     "dispatch_workflow is unavailable during a REST rate-limit window",
-			op:       descDispatchWorkflow,
-			caps:     allCaps,
-			repo:     repoCanMerge,
-			rate:     operationRateLimitForBuckets(
+			name: "dispatch_workflow is unavailable during a REST rate-limit window",
+			op:   descDispatchWorkflow,
+			caps: allCaps,
+			repo: repoCanMerge,
+			rate: operationRateLimitForBuckets(
 				descDispatchWorkflow.rateLimitBuckets(),
 				map[apiBucket]rateLimitAvailability{apiBucketREST: limitedRate},
 			),

@@ -40,10 +40,10 @@ func New(deps Deps) *Handler {
 		now = time.Now
 	}
 	return &Handler{
-		resolver: deps.Resolver,
-		syncer: deps.Syncer,
+		resolver:       deps.Resolver,
+		syncer:         deps.Syncer,
 		repoOperations: deps.RepoOperations,
-		now: now,
+		now:            now,
 	}
 }
 

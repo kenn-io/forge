@@ -392,7 +392,7 @@ func (c *e2eWorkflowClient) DispatchManualWorkflow(
 			{
 				Number: gh.Ptr(int64(1)), Name: gh.Ptr("Prepare"),
 				Status: gh.Ptr("completed"), Conclusion: gh.Ptr("success"),
-				StartedAt: &gh.Timestamp{Time: started},
+				StartedAt:   &gh.Timestamp{Time: started},
 				CompletedAt: &gh.Timestamp{Time: started.Add(time.Second)},
 			},
 			{
@@ -458,7 +458,6 @@ func cloneE2EWorkflowJob(job *gh.WorkflowJob) *gh.WorkflowJob {
 	}
 	return &clone
 }
-
 
 func seedWorkflowPullRefFixture(
 	ctx context.Context,

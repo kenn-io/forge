@@ -33131,11 +33131,11 @@ func TestAPIHeadRepoKindClassifiesSameRepoForkAndUnknown(t *testing.T) {
 		number := 900 + index
 		_, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
 			RepoID: repoID, PlatformID: int64(number), Number: number,
-			URL: "https://github.com/acme/widget/pull/" + strconv.Itoa(number),
+			URL:   "https://github.com/acme/widget/pull/" + strconv.Itoa(number),
 			Title: "Head repository classification", Author: "alice", State: "open",
 			HeadBranch: "feature/head-repo", BaseBranch: "main",
 			HeadRepoCloneURL: test.cloneURL,
-			CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+			CreatedAt:        now, UpdatedAt: now, LastActivityAt: now,
 		})
 		require.NoError(err)
 		response := doJSON(

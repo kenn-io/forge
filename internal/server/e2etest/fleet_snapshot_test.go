@@ -3,6 +3,8 @@ package e2etest
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"database/sql"
 	"encoding/json"
 	"io"
@@ -26,6 +28,8 @@ import (
 
 	"go.kenn.io/forge/internal/config"
 	dbpkg "go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/federation"
+	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/fleet"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
@@ -33,7 +37,25 @@ import (
 	"go.kenn.io/forge/internal/testutil/servertest"
 )
 
-func bootFleetServer(t *testing.T, cfg *config.Config) (*httptest.Server, *dbpkg.DB) {
+const (
+	e2eHubNodeID       = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	e2eMemberNodeID    = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	e2eDownNodeID      = "cccccccccccccccccccccccccccccccc"
+	e2eFederationToken = "dddddddddddddddddddddddddddddddddddddddddddddddd"
+)
+
+func bootFleetServer(
+	t *testing.T, cfg *config.Config, trusted ...*httptest.Server,
+) (*httptest.Server, *dbpkg.DB) {
+	return bootFleetServerWithNodeID(t, e2eHubNodeID, cfg, trusted...)
+}
+
+func bootFleetServerWithNodeID(
+	t *testing.T,
+	nodeID string,
+	cfg *config.Config,
+	trusted ...*httptest.Server,
+) (*httptest.Server, *dbpkg.DB) {
 	t.Helper()
 	database := dbtest.Open(t)
 	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
@@ -44,7 +66,32 @@ func bootFleetServer(t *testing.T, cfg *config.Config) (*httptest.Server, *dbpkg
 	if cfg.Tmux.Command == nil {
 		cfg.Tmux.Command = []string{"kenn-forge-no-such-tmux"}
 	}
+	credentials, err := federationauth.Open(filepath.Join(
+		t.TempDir(), "federation-credentials.json",
+	))
+	require.NoError(t, err)
+	require.NoError(t, credentials.StoreInbound(
+		e2eHubNodeID, e2eFederationToken,
+		federationauth.HubToSpokeScopes(),
+	))
+	for _, member := range cfg.Fleet.Members {
+		require.NoError(t, credentials.StoreOutbound(
+			member.NodeID, e2eFederationToken,
+			federationauth.HubToSpokeScopes(),
+		))
+	}
+	roots := x509.NewCertPool()
+	for _, peer := range trusted {
+		require.NotNil(t, peer.Certificate())
+		roots.AddCert(peer.Certificate())
+	}
+	federationClient := &http.Client{Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12},
+	}}
 	srv := servertest.New(t, database, syncer, nil, "/", cfg, server.ServerOptions{
+		FederationCredentials:              credentials,
+		FederationSpokeID:                  nodeID,
+		FederationHTTPClient:               federationClient,
 		WorktreeDir:                        t.TempDir(),
 		DisableWorkspaceBackgroundMonitors: true,
 		HostCheck: server.HostCheckOptions{
@@ -53,7 +100,7 @@ func bootFleetServer(t *testing.T, cfg *config.Config) (*httptest.Server, *dbpkg
 		},
 	})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	ts := httptest.NewServer(srv)
+	ts := httptest.NewTLSServer(srv)
 	t.Cleanup(ts.Close)
 	return ts, database
 }
@@ -142,10 +189,11 @@ func TestFleetSnapshotLocalE2E(t *testing.T) {
 		Status: "ready",
 	}))
 
-	// raw: scoped keys, schemaVersion, and NO enriched "hosts"/UUIDs.
+	// raw: scoped keys, exact protocolVersion, and NO enriched "hosts"/UUIDs.
 	var rawMap map[string]any
 	getJSON(t, ts, "/api/v1/snapshot/raw", &rawMap)
-	require.EqualValues(fleet.SchemaVersion, rawMap["schemaVersion"])
+	require.EqualValues(federation.ProtocolVersion, rawMap["protocolVersion"])
+	require.Equal(string(fleet.NodeID(e2eHubNodeID)), rawMap["nodeID"])
 	_, hasHosts := rawMap["hosts"]
 	require.False(hasHosts, "raw snapshot must not contain enriched hosts/UUIDs")
 	var raw fleet.RawSnapshot
@@ -279,8 +327,11 @@ func TestFleetSnapshotIssueWorkspaceLinksIssueOnlyE2E(t *testing.T) {
 	require.Equal([]int{42}, issueWT.LinkedIssueNumbers)
 	require.NotNil(issueWT.LinkedPRNumber, "associated PR number is still linked")
 	require.Equal(99, *issueWT.LinkedPRNumber)
-	require.Nil(issueWT.PRTitle, "issue title must not surface as prTitle")
-	require.Nil(issueWT.PRState, "issue state must not surface as prState")
+	require.NotNil(issueWT.PRTitle)
+	require.Equal("Fix flaky test", *issueWT.PRTitle,
+		"the associated PR, not the issue, supplies worktree PR details")
+	require.NotNil(issueWT.PRState)
+	require.Equal("open", *issueWT.PRState)
 }
 
 func TestFleetSnapshotFanOutE2E(t *testing.T) {
@@ -288,7 +339,7 @@ func TestFleetSnapshotFanOutE2E(t *testing.T) {
 	ctx := context.Background()
 
 	// PEER: real server with its own seeded project.
-	peerTS, peerDB := bootFleetServer(t, nil)
+	peerTS, peerDB := bootFleetServerWithNodeID(t, e2eMemberNodeID, nil)
 	_, err := peerDB.CreateProject(ctx, dbpkg.CreateProjectInput{
 		DisplayName: "peerapp", LocalPath: t.TempDir() + "/peerapp", DefaultBranch: "main",
 	})
@@ -299,15 +350,14 @@ func TestFleetSnapshotFanOutE2E(t *testing.T) {
 		BasePath: "/",
 		Fleet: config.Fleet{
 			Enabled:     true,
-			Key:         "hub",
 			PeerTimeout: "1s",
-			Peers: []config.FleetPeer{
-				{Key: "peer", Name: "peer", BaseURL: peerTS.URL},
-				{Key: "down", Name: "down", BaseURL: "http://127.0.0.1:1"}, // refused fast
+			Members: []config.FleetMember{
+				{NodeID: e2eMemberNodeID, Name: "peer", BaseURL: peerTS.URL, State: federation.EnrollmentActive},
+				{NodeID: e2eDownNodeID, Name: "down", BaseURL: "https://127.0.0.1:1", State: federation.EnrollmentActive}, // refused fast
 			},
 		},
 	}
-	hubTS, hubDB := bootFleetServer(t, hubCfg)
+	hubTS, hubDB := bootFleetServer(t, hubCfg, peerTS)
 	_, err = hubDB.CreateProject(ctx, dbpkg.CreateProjectInput{
 		DisplayName: "hubapp", LocalPath: t.TempDir() + "/hubapp", DefaultBranch: "main",
 	})
@@ -316,9 +366,9 @@ func TestFleetSnapshotFanOutE2E(t *testing.T) {
 	var snap fleet.Snapshot
 	getJSON(t, hubTS, "/api/v1/snapshot?include_peers=true", &snap)
 
-	self := findHost(snap.Hosts, "hub")
-	peer := findHost(snap.Hosts, "peer")
-	down := findHost(snap.Hosts, "down")
+	self := findHost(snap.Hosts, e2eHubNodeID)
+	peer := findHost(snap.Hosts, e2eMemberNodeID)
+	down := findHost(snap.Hosts, e2eDownNodeID)
 	require.NotNil(self, "self host present")
 	require.NotNil(peer, "peer host present")
 	require.NotNil(down, "unreachable host present")
@@ -332,10 +382,10 @@ func TestFleetSnapshotFanOutE2E(t *testing.T) {
 	var sawHub, sawPeer bool
 	for _, w := range snap.Worktrees {
 		require.Len(w.ID, 36)
-		if w.HostID == fleet.HostID("hub") {
+		if w.HostID == fleet.HostID(e2eHubNodeID) {
 			sawHub = true
 		}
-		if w.HostID == fleet.HostID("peer") {
+		if w.HostID == fleet.HostID(e2eMemberNodeID) {
 			sawPeer = true
 		}
 	}
@@ -350,13 +400,13 @@ func TestFleetDisabledBlocksRemoteSnapshotAndProxyE2E(t *testing.T) {
 
 	var peerCalls int
 	var peerCallsMu sync.Mutex
-	peerTS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	peerTS := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		peerCallsMu.Lock()
 		peerCalls++
 		peerCallsMu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(
-			`{"schemaVersion":2,"host":{"configKey":"peer","hostname":"peer","platform":"linux"}}`,
+			`{"protocolVersion":3,"nodeID":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","host":{"hostname":"peer","platform":"linux"}}`,
 		))
 	}))
 	t.Cleanup(peerTS.Close)
@@ -366,17 +416,13 @@ func TestFleetDisabledBlocksRemoteSnapshotAndProxyE2E(t *testing.T) {
 		DataDir:  t.TempDir(),
 		Fleet: config.Fleet{
 			Enabled:     false,
-			Key:         "hub",
 			PeerTimeout: "10ms",
-			Peers: []config.FleetPeer{
-				{Key: "peer", Name: "peer", BaseURL: peerTS.URL},
-			},
-			SSHPeers: []config.FleetSSHPeer{
-				{Key: "ssh-peer", Name: "ssh peer", Destination: "dev@ssh.local"},
+			Members: []config.FleetMember{
+				{NodeID: e2eMemberNodeID, Name: "peer", BaseURL: peerTS.URL, State: federation.EnrollmentActive},
 			},
 		},
 	}
-	hubTS, hubDB := bootFleetServer(t, hubCfg)
+	hubTS, hubDB := bootFleetServer(t, hubCfg, peerTS)
 	_, err := hubDB.CreateProject(ctx, dbpkg.CreateProjectInput{
 		DisplayName: "hubapp", LocalPath: t.TempDir() + "/hubapp", DefaultBranch: "main",
 	})
@@ -384,35 +430,26 @@ func TestFleetDisabledBlocksRemoteSnapshotAndProxyE2E(t *testing.T) {
 
 	var snap fleet.Snapshot
 	getJSON(t, hubTS, "/api/v1/snapshot?include_peers=true", &snap)
-	require.NotNil(findHost(snap.Hosts, "hub"), "self host remains visible")
-	assert.Nil(findHost(snap.Hosts, "peer"), "disabled federation hides configured peer")
-	assert.Nil(findHost(snap.Hosts, "ssh-peer"), "disabled federation hides configured ssh peer")
+	require.NotNil(findHost(snap.Hosts, e2eHubNodeID), "self host remains visible")
+	assert.Nil(findHost(snap.Hosts, e2eMemberNodeID), "disabled federation hides configured member")
 	peerCallsMu.Lock()
 	assert.Equal(0, peerCalls, "disabled federation must not fan out to peers")
 	peerCallsMu.Unlock()
 
 	status, body := getRaw(
 		t, hubTS.Client(),
-		hubTS.URL+"/api/v1/fleet/hosts/peer/workspaces",
+		hubTS.URL+"/api/v1/fleet/hosts/"+e2eMemberNodeID+"/workspaces",
 	)
 	assert.Equal(http.StatusNotFound, status)
 	assert.Contains(body, `"code":"notFound"`)
-	assert.Contains(body, `"hostKey":"peer"`)
+	assert.Contains(body, `"hostKey":"`+e2eMemberNodeID+`"`)
 	peerCallsMu.Lock()
 	assert.Equal(0, peerCalls, "disabled remote proxy must not call peers")
 	peerCallsMu.Unlock()
 
 	status, body = getRaw(
 		t, hubTS.Client(),
-		hubTS.URL+"/api/v1/fleet/hosts/ssh-peer/workspaces",
-	)
-	assert.Equal(http.StatusNotFound, status)
-	assert.Contains(body, `"code":"notFound"`)
-	assert.Contains(body, `"hostKey":"ssh-peer"`)
-
-	status, body = getRaw(
-		t, hubTS.Client(),
-		hubTS.URL+"/api/v1/fleet/hosts/hub/workspaces",
+		hubTS.URL+"/api/v1/fleet/hosts/self/workspaces",
 	)
 	assert.Equal(http.StatusOK, status)
 	assert.NotContains(body, "fleet host not found")
@@ -848,46 +885,45 @@ func TestFleetOperationProxyRoutesMutationsToPeerE2E(t *testing.T) {
 			http.NotFound(w, r)
 		}
 	})
-	peerTS := httptest.NewServer(peerMux)
+	peerTS := httptest.NewTLSServer(peerMux)
 	t.Cleanup(peerTS.Close)
 
 	hubCfg := &config.Config{
 		BasePath: "/",
 		Fleet: config.Fleet{
 			Enabled: true,
-			Key:     "hub",
 			// PeerTimeout is the read fan-out budget. Drive mutations
 			// deliberately forward the caller's request context instead
 			// of reusing this short read timeout.
 			PeerTimeout: "1ns",
-			Peers: []config.FleetPeer{
-				{Key: "peer", Name: "peer", BaseURL: peerTS.URL},
+			Members: []config.FleetMember{
+				{NodeID: e2eMemberNodeID, Name: "peer", BaseURL: peerTS.URL, State: federation.EnrollmentActive},
 			},
 		},
 	}
-	hubTS, _ := bootFleetServer(t, hubCfg)
+	hubTS, _ := bootFleetServer(t, hubCfg, peerTS)
 
-	status, body := getRaw(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/peer/workspaces")
+	status, body := getRaw(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/"+e2eMemberNodeID+"/workspaces")
 	assert.Equal(http.StatusOK, status)
 	req.JSONEq(`{"workspaces":[{"id":"peer-ws","status":"ready"}]}`, body)
 
-	status, body = getRaw(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/peer/workspaces/peer-ws")
+	status, body = getRaw(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/"+e2eMemberNodeID+"/workspaces/peer-ws")
 	assert.Equal(http.StatusOK, status)
 	req.JSONEq(`{"id":"peer-ws","status":"ready"}`, body)
 
-	status, body = postJSON(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/peer/workspaces/peer-ws/retry", nil)
+	status, body = postJSON(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/"+e2eMemberNodeID+"/workspaces/peer-ws/retry", nil)
 	assert.Equal(http.StatusAccepted, status)
 	req.JSONEq(`{"id":"peer-ws","status":"creating"}`, body)
 
-	status, body = postJSON(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/peer/workspaces/peer-ws/refresh", nil)
+	status, body = postJSON(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/"+e2eMemberNodeID+"/workspaces/peer-ws/refresh", nil)
 	assert.Equal(http.StatusOK, status)
 	req.JSONEq(`{"id":"peer-ws","status":"ready","refreshed":true}`, body)
 
-	status, body = getRaw(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/peer/workspaces/peer-ws/runtime")
+	status, body = getRaw(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/"+e2eMemberNodeID+"/workspaces/peer-ws/runtime")
 	assert.Equal(http.StatusOK, status)
 	req.JSONEq(`{"launch_targets":[],"sessions":[]}`, body)
 
-	status, body = postJSON(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/peer/workspaces", map[string]any{
+	status, body = postJSON(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/"+e2eMemberNodeID+"/workspaces", map[string]any{
 		"platform_host": "github.com",
 		"owner":         "acme",
 		"name":          "widget",
@@ -896,41 +932,41 @@ func TestFleetOperationProxyRoutesMutationsToPeerE2E(t *testing.T) {
 	assert.Equal(http.StatusAccepted, status)
 	req.JSONEq(`{"id":"peer-ws","status":"queued"}`, body)
 
-	status, body = postJSON(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/peer/workspaces/peer-ws/runtime/sessions", map[string]any{
+	status, body = postJSON(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/"+e2eMemberNodeID+"/workspaces/peer-ws/runtime/sessions", map[string]any{
 		"target_key": "helper",
 	})
 	assert.Equal(http.StatusOK, status)
 	req.JSONEq(`{"key":"peer-ws:helper","workspace_id":"peer-ws","target_key":"helper"}`, body)
 
-	status, body = patchJSON(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/peer/workspaces/peer-ws/runtime/sessions/sess-1", map[string]any{
+	status, body = patchJSON(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/"+e2eMemberNodeID+"/workspaces/peer-ws/runtime/sessions/sess-1", map[string]any{
 		"label": "renamed",
 	})
 	assert.Equal(http.StatusOK, status)
 	req.JSONEq(`{"key":"sess-1","workspace_id":"peer-ws","label":"renamed"}`, body)
 
-	status, body = deleteJSON(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/peer/workspaces/peer-ws/runtime/sessions/sess-1")
+	status, body = deleteJSON(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/"+e2eMemberNodeID+"/workspaces/peer-ws/runtime/sessions/sess-1")
 	assert.Equal(http.StatusNoContent, status)
 	assert.Empty(body)
 
-	status, body = getRaw(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/peer/projects/prj-peer/worktrees/wtr-peer/runtime")
+	status, body = getRaw(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/"+e2eMemberNodeID+"/projects/prj-peer/worktrees/wtr-peer/runtime")
 	assert.Equal(http.StatusOK, status)
 	req.JSONEq(`{"launch_targets":[],"sessions":[],"shell_session":null}`, body)
 
-	status, body = postJSON(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/peer/projects/prj-peer/worktrees/wtr-peer/runtime/shell", nil)
+	status, body = postJSON(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/"+e2eMemberNodeID+"/projects/prj-peer/worktrees/wtr-peer/runtime/shell", nil)
 	assert.Equal(http.StatusOK, status)
 	req.JSONEq(`{"key":"shell-peer","project_id":"prj-peer","worktree_id":"wtr-peer","target_key":"plain_shell"}`, body)
 
-	status, body = postJSON(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/peer/projects/prj-peer/worktrees/wtr-peer/runtime/sessions", map[string]any{
+	status, body = postJSON(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/"+e2eMemberNodeID+"/projects/prj-peer/worktrees/wtr-peer/runtime/sessions", map[string]any{
 		"target_key": "helper",
 	})
 	assert.Equal(http.StatusOK, status)
 	req.JSONEq(`{"key":"agent-peer","project_id":"prj-peer","worktree_id":"wtr-peer","target_key":"helper"}`, body)
 
-	status, body = deleteJSON(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/peer/projects/prj-peer/worktrees/wtr-peer/runtime/sessions/agent-peer")
+	status, body = deleteJSON(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/"+e2eMemberNodeID+"/projects/prj-peer/worktrees/wtr-peer/runtime/sessions/agent-peer")
 	assert.Equal(http.StatusNoContent, status)
 	assert.Empty(body)
 
-	status, body = deleteJSON(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/peer/workspaces/peer-ws?force=true")
+	status, body = deleteJSON(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/"+e2eMemberNodeID+"/workspaces/peer-ws?force=true")
 	assert.Equal(http.StatusNoContent, status)
 	assert.Empty(body)
 
@@ -970,7 +1006,6 @@ func TestFleetOperationProxyUnknownHostE2E(t *testing.T) {
 		BasePath: "/",
 		Fleet: config.Fleet{
 			Enabled: true,
-			Key:     "hub",
 		},
 	}
 	hubTS, _ := bootFleetServer(t, hubCfg)
@@ -983,7 +1018,7 @@ func TestFleetOperationProxyUnknownHostE2E(t *testing.T) {
 
 func TestFleetOperationProxyPeerDispatchFailureE2E(t *testing.T) {
 	assert := assert.New(t)
-	peerTS := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	peerTS := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	peerURL := peerTS.URL
 	peerTS.Close()
 
@@ -991,18 +1026,17 @@ func TestFleetOperationProxyPeerDispatchFailureE2E(t *testing.T) {
 		BasePath: "/",
 		Fleet: config.Fleet{
 			Enabled: true,
-			Key:     "hub",
-			Peers: []config.FleetPeer{
-				{Key: "peer", Name: "peer", BaseURL: peerURL},
+			Members: []config.FleetMember{
+				{NodeID: e2eMemberNodeID, Name: "peer", BaseURL: peerURL, State: federation.EnrollmentActive},
 			},
 		},
 	}
-	hubTS, _ := bootFleetServer(t, hubCfg)
+	hubTS, _ := bootFleetServer(t, hubCfg, peerTS)
 
 	status, body := postJSON(
 		t,
 		hubTS.Client(),
-		hubTS.URL+"/api/v1/fleet/hosts/peer/workspaces",
+		hubTS.URL+"/api/v1/fleet/hosts/"+e2eMemberNodeID+"/workspaces",
 		map[string]any{},
 	)
 	require.Equal(t, http.StatusBadGateway, status)
@@ -1010,7 +1044,7 @@ func TestFleetOperationProxyPeerDispatchFailureE2E(t *testing.T) {
 	assert.Equal(http.StatusBadGateway, problem.Status)
 	assert.Equal("upstreamError", problem.Code)
 	assert.Contains(problem.Detail, "fleet peer request failed")
-	assert.Equal("peer", problem.Details["hostKey"])
+	assert.Equal(e2eMemberNodeID, problem.Details["hostKey"])
 }
 
 func TestFleetOperationProxyRoutesSelfNestedOwnerE2E(t *testing.T) {
@@ -1020,7 +1054,6 @@ func TestFleetOperationProxyRoutesSelfNestedOwnerE2E(t *testing.T) {
 		BasePath: "/",
 		Fleet: config.Fleet{
 			Enabled: true,
-			Key:     "hub",
 		},
 	}
 	hubTS, database := bootFleetServer(t, hubCfg)
@@ -1052,7 +1085,7 @@ func TestFleetOperationProxyRoutesSelfNestedOwnerE2E(t *testing.T) {
 	status, body := postJSON(
 		t,
 		hubTS.Client(),
-		hubTS.URL+"/api/v1/fleet/hosts/hub/host/gitlab.com/issues/gitlab/group%2Fsubgroup/widget/7/workspace",
+		hubTS.URL+"/api/v1/fleet/hosts/self/host/gitlab.com/issues/gitlab/group%2Fsubgroup/widget/7/workspace",
 		map[string]any{},
 	)
 	require.Equal(http.StatusAccepted, status, body)
@@ -1119,29 +1152,28 @@ func TestFleetTerminalWebSocketProxyE2E(t *testing.T) {
 			recordHandlerError("write websocket: " + err.Error())
 		}
 	})
-	peerTS := httptest.NewServer(peerMux)
+	peerTS := httptest.NewTLSServer(peerMux)
 	t.Cleanup(peerTS.Close)
 
 	hubCfg := &config.Config{
 		BasePath: "/",
 		Fleet: config.Fleet{
 			Enabled: true,
-			Key:     "hub",
-			Peers: []config.FleetPeer{
-				{Key: "peer", Name: "peer", BaseURL: peerTS.URL},
+			Members: []config.FleetMember{
+				{NodeID: e2eMemberNodeID, Name: "peer", BaseURL: peerTS.URL, State: federation.EnrollmentActive},
 			},
 		},
 	}
-	hubTS, _ := bootFleetServer(t, hubCfg)
+	hubTS, _ := bootFleetServer(t, hubCfg, peerTS)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	wsURL := "ws" + strings.TrimPrefix(hubTS.URL, "http") +
-		"/ws/v1/fleet/hosts/peer/workspaces/ws-1/runtime/sessions/sess-1/terminal" +
+		"/ws/v1/fleet/hosts/" + e2eMemberNodeID + "/workspaces/ws-1/runtime/sessions/sess-1/terminal" +
 		"?cols=80&rows=24" +
 		"&traceparent=00-11111111111111111111111111111111-2222222222222222-01" +
-		"&baggage=interaction%3Dworkspace-switch%2Chost.key%3Dpeer"
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+		"&baggage=interaction%3Dworkspace-switch%2Chost.key%3D" + e2eMemberNodeID
+	conn, _, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{HTTPClient: hubTS.Client()})
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "test done")
 
@@ -1164,7 +1196,7 @@ func TestFleetTerminalWebSocketProxyE2E(t *testing.T) {
 	for _, kv := range attachSpan.Attributes() {
 		attrs[string(kv.Key)] = kv.Value.AsString()
 	}
-	assert.Equal("peer", attrs["host.key"])
+	assert.Equal(e2eMemberNodeID, attrs["host.key"])
 
 	handlerMu.Lock()
 	gotHandlerErrors := append([]string(nil), handlerErrors...)
@@ -1175,7 +1207,7 @@ func TestFleetTerminalWebSocketProxyE2E(t *testing.T) {
 func TestFleetTerminalWebSocketProxyPeerDialFailureE2E(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	peerTS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	peerTS := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "websocket unavailable", http.StatusServiceUnavailable)
 	}))
 	t.Cleanup(peerTS.Close)
@@ -1184,19 +1216,18 @@ func TestFleetTerminalWebSocketProxyPeerDialFailureE2E(t *testing.T) {
 		BasePath: "/",
 		Fleet: config.Fleet{
 			Enabled: true,
-			Key:     "hub",
-			Peers: []config.FleetPeer{
-				{Key: "peer", Name: "peer", BaseURL: peerTS.URL},
+			Members: []config.FleetMember{
+				{NodeID: e2eMemberNodeID, Name: "peer", BaseURL: peerTS.URL, State: federation.EnrollmentActive},
 			},
 		},
 	}
-	hubTS, _ := bootFleetServer(t, hubCfg)
+	hubTS, _ := bootFleetServer(t, hubCfg, peerTS)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	wsURL := "ws" + strings.TrimPrefix(hubTS.URL, "http") +
-		"/ws/v1/fleet/hosts/peer/workspaces/ws-1/runtime/sessions/sess-1/terminal"
-	conn, resp, err := websocket.Dial(ctx, wsURL, nil)
+		"/ws/v1/fleet/hosts/" + e2eMemberNodeID + "/workspaces/ws-1/runtime/sessions/sess-1/terminal"
+	conn, resp, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{HTTPClient: hubTS.Client()})
 	require.Error(err)
 	require.Nil(conn)
 	require.NotNil(resp)
@@ -1209,7 +1240,7 @@ func TestFleetTerminalWebSocketProxyPeerDialFailureE2E(t *testing.T) {
 	assert.Equal(http.StatusBadGateway, problem.Status)
 	assert.Equal("upstreamError", problem.Code)
 	assert.Contains(problem.Detail, "fleet peer websocket failed")
-	assert.Equal("peer", problem.Details["hostKey"])
+	assert.Equal(e2eMemberNodeID, problem.Details["hostKey"])
 }
 
 type fleetProblemBody struct {
@@ -1392,10 +1423,10 @@ func TestFleetSnapshotDraftFoldE2E(t *testing.T) {
 
 // TestFleetSnapshotPeerRichFieldsE2E exercises the full hub fan-out for a
 // reachable peer that serves a rich raw snapshot over HTTP: the hub fetches
-// /api/v1/snapshot/raw, validates schemaVersion, merges, enriches, and
+// /api/v1/snapshot/raw, validates protocolVersion, merges, enriches, and
 // serializes. It asserts the peer's host version + tmux inventory, degraded
-// platform coverage, canonicalized worktree timestamps, lowercased PR state,
-// session runtimeKind, and operation availability through the routed hub
+// platform coverage, hub-owned PR enrichment, session runtimeKind,
+// and operation availability through the routed hub
 // contract (routed capable peer mutations available, unrouted mutations
 // suppressed, offline peer reports "Host is offline.").
 func TestFleetSnapshotPeerRichFieldsE2E(t *testing.T) {
@@ -1406,7 +1437,8 @@ func TestFleetSnapshotPeerRichFieldsE2E(t *testing.T) {
 	backendNotReady := false
 	platformAuth := true
 	peerRaw := fleet.RawSnapshot{
-		SchemaVersion:         fleet.SchemaVersion,
+		ProtocolVersion:       federation.ProtocolVersion,
+		NodeID:                fleet.NodeID(e2eMemberNodeID),
 		PlatformAuthenticated: &platformAuth,
 		Capabilities: &fleet.Capabilities{
 			Dependencies: fleet.DependencyCapabilities{Git: true, Tmux: true, Gh: true},
@@ -1448,28 +1480,27 @@ func TestFleetSnapshotPeerRichFieldsE2E(t *testing.T) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	})
-	peerTS := httptest.NewServer(peerMux)
+	peerTS := httptest.NewTLSServer(peerMux)
 	t.Cleanup(peerTS.Close)
 
 	hubCfg := &config.Config{
 		BasePath: "/",
 		Fleet: config.Fleet{
 			Enabled:     true,
-			Key:         "hub",
 			PeerTimeout: "5s",
-			Peers: []config.FleetPeer{
-				{Key: "peer", Name: "peer", BaseURL: peerTS.URL},
-				{Key: "down", Name: "down", BaseURL: "http://127.0.0.1:1"},
+			Members: []config.FleetMember{
+				{NodeID: e2eMemberNodeID, Name: "peer", BaseURL: peerTS.URL, State: federation.EnrollmentActive},
+				{NodeID: e2eDownNodeID, Name: "down", BaseURL: "https://127.0.0.1:1", State: federation.EnrollmentActive},
 			},
 		},
 	}
-	hubTS, _ := bootFleetServer(t, hubCfg)
+	hubTS, _ := bootFleetServer(t, hubCfg, peerTS)
 
 	var snap fleet.Snapshot
 	getJSON(t, hubTS, "/api/v1/snapshot?include_peers=true", &snap)
 
 	// Peer host: version + tmux inventory folded from its raw host record.
-	peer := findHost(snap.Hosts, "peer")
+	peer := findHost(snap.Hosts, e2eMemberNodeID)
 	require.NotNil(peer, "reachable peer host present")
 	require.True(peer.Reachable)
 	require.Equal("linux", peer.Platform)
@@ -1493,7 +1524,7 @@ func TestFleetSnapshotPeerRichFieldsE2E(t *testing.T) {
 	require.Nil(clone.UnavailableReason)
 
 	// Offline peer: every op unavailable with the offline reason.
-	down := findHost(snap.Hosts, "down")
+	down := findHost(snap.Hosts, e2eDownNodeID)
 	require.NotNil(down)
 	require.False(down.Reachable)
 	require.NotEmpty(down.OperationAvailability)
@@ -1514,15 +1545,13 @@ func TestFleetSnapshotPeerRichFieldsE2E(t *testing.T) {
 	require.NotNil(peerProj.PlatformCoverage)
 	require.Equal("degraded", *peerProj.PlatformCoverage, "backendReady=false must degrade coverage")
 
-	// Peer worktree: lowercased PR state + canonicalized timestamps.
+	// Peer worktree: provider fields supplied by a spoke are discarded. Only the
+	// hub may enrich them, including provider-detail polling freshness.
 	peerWT := worktreeByScopedKey(snap.Worktrees, "worktree:/peer/a")
 	require.NotNil(peerWT, "peer worktree merged")
-	require.NotNil(peerWT.PRState)
-	require.Equal("open", *peerWT.PRState, "PR state must be lowercased through fan-out")
-	require.NotNil(peerWT.PRUpdatedAt)
-	require.Equal("2026-05-30T10:00:00.000Z", *peerWT.PRUpdatedAt, "PRUpdatedAt canonicalized through fan-out")
-	require.NotNil(peerWT.LastPolledAt)
-	require.Equal("2026-05-30T09:00:00.000Z", *peerWT.LastPolledAt, "LastPolledAt canonicalized through fan-out")
+	require.Nil(peerWT.PRState, "spoke-supplied provider state must not enter the aggregate")
+	require.Nil(peerWT.PRUpdatedAt, "spoke-supplied provider timestamps must not enter the aggregate")
+	require.Nil(peerWT.LastPolledAt, "spoke-supplied provider freshness must not enter the aggregate")
 
 	// Peer session: runtimeKind and role carried through fan-out.
 	var peerSess *fleet.SessionSummary

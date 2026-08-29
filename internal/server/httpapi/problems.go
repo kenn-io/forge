@@ -46,7 +46,9 @@ const (
 	CodeConflict                      ProblemCode = "conflict"
 	CodeDestinationExists             ProblemCode = "destinationExists"
 	CodeForbidden                     ProblemCode = "forbidden"
+	CodeGitCredentialUnavailable      ProblemCode = "gitCredentialUnavailable"
 	CodeHookFailed                    ProblemCode = "hookFailed"
+	CodeHubUnavailable                ProblemCode = "hubUnavailable"
 	CodeInternalError                 ProblemCode = "internalError"
 	CodeIssueNotFound                 ProblemCode = "issueNotFound"
 	CodeMutationOutcomeUnknown        ProblemCode = "mutationOutcomeUnknown"
@@ -59,6 +61,7 @@ const (
 	CodeResyncRequired                ProblemCode = "resyncRequired"
 	CodeServiceUnavailable            ProblemCode = "serviceUnavailable"
 	CodeSettingsUnavailable           ProblemCode = "settingsUnavailable"
+	CodeSpokePreparationInProgress    ProblemCode = "spokePreparationInProgress"
 	CodeToolMissing                   ProblemCode = "toolMissing"
 	CodeToolUnauthenticated           ProblemCode = "toolUnauthenticated"
 	CodeUnauthorized                  ProblemCode = "unauthorized"
@@ -86,7 +89,9 @@ func allProblemCodes() []ProblemCode {
 		CodeConflict,
 		CodeDestinationExists,
 		CodeForbidden,
+		CodeGitCredentialUnavailable,
 		CodeHookFailed,
+		CodeHubUnavailable,
 		CodeInternalError,
 		CodeIssueNotFound,
 		CodeMutationOutcomeUnknown,
@@ -99,6 +104,7 @@ func allProblemCodes() []ProblemCode {
 		CodeResyncRequired,
 		CodeServiceUnavailable,
 		CodeSettingsUnavailable,
+		CodeSpokePreparationInProgress,
 		CodeToolMissing,
 		CodeToolUnauthenticated,
 		CodeUnauthorized,
@@ -150,7 +156,7 @@ type ProblemError struct {
 
 	// Code is the machine-readable error code drawn from the closed enum
 	// in allProblemCodes(). Frontend logic branches on this value.
-	Code ProblemCode `json:"code" enum:"badRequest,branchConflict,branchInUse,branchProtected,commentNotFound,conflict,destinationExists,forbidden,hookFailed,internalError,issueNotFound,mutationOutcomeUnknown,notFound,payloadTooLarge,projectNotFound,pullNotFound,rateLimited,repoNotFound,resyncRequired,serviceUnavailable,settingsUnavailable,toolMissing,toolUnauthenticated,unauthorized,unsupportedCapability,upstreamError,validationError,workspaceAlreadyExists,workspaceDeletionInProgress,workspaceDirectoryNotReusable,workspaceNotFound,workspaceSetupInProgress,worktreeDirty" example:"badRequest" doc:"Machine-readable error code. Stable across occurrences."`
+	Code ProblemCode `json:"code" enum:"badRequest,branchConflict,branchInUse,branchProtected,commentNotFound,conflict,destinationExists,forbidden,gitCredentialUnavailable,hookFailed,hubUnavailable,internalError,issueNotFound,mutationOutcomeUnknown,notFound,payloadTooLarge,projectNotFound,pullNotFound,rateLimited,repoNotFound,resyncRequired,serviceUnavailable,settingsUnavailable,spokePreparationInProgress,toolMissing,toolUnauthenticated,unauthorized,unsupportedCapability,upstreamError,validationError,workspaceAlreadyExists,workspaceDeletionInProgress,workspaceDirectoryNotReusable,workspaceNotFound,workspaceSetupInProgress,worktreeDirty" example:"badRequest" doc:"Machine-readable error code. Stable across occurrences."`
 
 	// Details is a free-form map of machine-readable context for this
 	// occurrence (e.g. {capability: "merge_mutation"} or
@@ -368,6 +374,21 @@ func Forbidden(detail string, details map[string]any) huma.StatusError {
 	return NewProblem(http.StatusForbidden, CodeForbidden, detail, details)
 }
 
+// GitCredentialUnavailable reports that the executing spoke cannot admit
+// networked Git for an otherwise verified repository descriptor.
+func GitCredentialUnavailable(provider, host, repoPath string) huma.StatusError {
+	details := platformErrorDetails(provider, host)
+	if repoPath != "" {
+		details["repoPath"] = repoPath
+	}
+	return NewProblem(
+		http.StatusServiceUnavailable,
+		CodeGitCredentialUnavailable,
+		"Git credentials for this repository are unavailable on this Forge spoke.",
+		details,
+	)
+}
+
 // problemInternal returns a 500.
 func Internal(detail string) huma.StatusError {
 	return NewProblem(http.StatusInternalServerError, CodeInternalError, detail, nil)
@@ -392,7 +413,7 @@ func Upstream(detail, provider, host string) huma.StatusError {
 // MutationOutcomeUnknown returns a 502 for a non-idempotent operation whose
 // upstream side effect cannot be safely ruled out. Provider identity is
 // included so clients can fence and reconcile the exact affected resource.
-func MutationOutcomeUnknown(detail, provider, host string) huma.StatusError {
+func MutationOutcomeUnknown(detail, provider, host string) *ProblemError {
 	d := platformErrorDetails(provider, host)
 	if len(d) == 0 {
 		d = nil
@@ -403,6 +424,17 @@ func MutationOutcomeUnknown(detail, provider, host string) huma.StatusError {
 // problemServiceUnavailable returns a 503.
 func ServiceUnavailable(detail string) huma.StatusError {
 	return NewProblem(http.StatusServiceUnavailable, CodeServiceUnavailable, detail, nil)
+}
+
+// HubUnavailable reports that a spoke cannot reach its federation's
+// provider owner. Callers may retry, but must not read local provider tables.
+func HubUnavailable(detail string) *ProblemError {
+	return NewProblem(
+		http.StatusServiceUnavailable,
+		CodeHubUnavailable,
+		detail,
+		map[string]any{"retryable": true},
+	)
 }
 
 // problemPayloadTooLarge returns a 413 with maxBytes in details when known.

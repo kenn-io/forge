@@ -151,6 +151,73 @@ func TestPushedHeadObserverFirstObservationSkipsWhenProviderHeadMatches(t *testi
 	assert.Equal(1, reader.trackingCalls)
 }
 
+func TestLaunchSpecPushedHeadObserverUsesHubCandidatesWithoutProviderRows(
+	t *testing.T,
+) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := openTestDB(t)
+	insertPushedHeadWorkspace(
+		t, database, "ws-spoke-pr", db.WorkspaceItemTypePullRequest, 42, nil,
+	)
+	workspaceRow, err := database.GetWorkspace(t.Context(), "ws-spoke-pr")
+	require.NoError(err)
+	require.NotNil(workspaceRow)
+	issuedAt := time.Now().UTC()
+	require.NoError(database.PutWorkspaceLaunchSpec(
+		t.Context(), workspaceRow.ID, WorkspaceLaunchSpec{
+			Version: WorkspaceLaunchSpecVersion,
+			Repository: WorkspaceLaunchRepository{
+				Provider: "github", PlatformHost: "github.com",
+				PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
+				CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
+			},
+			ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 42,
+			ItemKey: "42", GitHeadRef: workspaceRow.GitHeadRef,
+			Pull: &WorkspaceLaunchPull{
+				HeadBranch: workspaceRow.GitHeadRef, HeadRepoKind: "same_repo",
+				SnapshotRevision: 9,
+			},
+			SourceVisible: true, IssuedAt: issuedAt,
+			SourceVisibleUntil: issuedAt.Add(WorkspaceLaunchSpecVisibilityLease),
+		},
+	))
+	source := &staticPullCandidateSource{candidates: []db.MergeRequest{{
+		Number: 42, State: db.MergeRequestStateOpen,
+		HeadBranch:       workspaceRow.GitHeadRef,
+		HeadRepoCloneURL: "https://github.com/acme/widget.git",
+		PlatformHeadSHA:  "1111111",
+	}}}
+	reader := &fakeRemoteHeadReader{
+		branch: workspaceRow.GitHeadRef,
+		upstream: upstreamState{
+			hasTracking: true, remoteName: "origin",
+			branchName: workspaceRow.GitHeadRef,
+		},
+		trackingSHA: "2222222",
+		trackingRef: "refs/remotes/origin/" + workspaceRow.GitHeadRef,
+		trackingOK:  true,
+	}
+	manager := NewManager(database, t.TempDir())
+	observer := NewPushedHeadObserver(database, PRMonitorOptions{
+		LaunchSpecs: manager, PullCandidates: source,
+	})
+	observer.setGitReaderForTest(reader)
+
+	result, err := observer.RunOnce(t.Context())
+	require.NoError(err)
+	require.Len(result.HeadChanges, 1)
+	assert.Equal("ws-spoke-pr", result.HeadChanges[0].WorkspaceID)
+	assert.Equal("1111111", result.HeadChanges[0].OldSHA)
+	assert.Equal("2222222", result.HeadChanges[0].NewSHA)
+	assert.Equal(1, source.calls)
+	repo, err := database.GetRepoByIdentity(t.Context(), db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", Owner: "acme", Name: "widget",
+	})
+	require.NoError(err)
+	assert.Nil(repo)
+}
+
 func TestPushedHeadObserverFirstObservationEnqueuesWhenProviderHeadDiffers(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

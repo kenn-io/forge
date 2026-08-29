@@ -1,5 +1,18 @@
 components:
   schemas:
+    AbortFederationSpokeInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/AbortFederationSpokeInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        force:
+          type: boolean
+      type: object
     ActionStatusBody:
       additionalProperties: false
       properties:
@@ -17,6 +30,25 @@ components:
           type: string
       required:
         - status
+      type: object
+    ActivateEnrollmentInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ActivateEnrollmentInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        preparation_seal:
+          type: string
+        protocol_version:
+          format: int64
+          type: integer
+      required:
+        - protocol_version
+        - preparation_seal
       type: object
     Activity:
       additionalProperties: false
@@ -73,8 +105,11 @@ components:
           type:
             - array
             - "null"
+        use_workspace_activity_for_recency:
+          type: boolean
       required:
         - authors
+        - use_workspace_activity_for_recency
       type: object
     ActivityItemResponse:
       additionalProperties: false
@@ -210,6 +245,8 @@ components:
             - "null"
         next_cursor:
           type: string
+        use_workspace_activity_for_recency:
+          type: boolean
         workspace_activity:
           items:
             $ref: "#/components/schemas/WorkspaceActivitySubjectResponse"
@@ -220,6 +257,7 @@ components:
         - items
         - item_activity
         - workspace_activity
+        - use_workspace_activity_for_recency
         - capped
         - item_activity_capped
         - event_cursor
@@ -1347,6 +1385,29 @@ components:
       required:
         - folder
       type: object
+    CreateEnrollmentTokenInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/CreateEnrollmentTokenInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        base_url:
+          type: string
+        expires_in_seconds:
+          format: int64
+          maximum: 86400
+          minimum: 1
+          type: integer
+        name:
+          type: string
+      required:
+        - base_url
+        - expires_in_seconds
+      type: object
     CreateIssueHostInputBody:
       additionalProperties: false
       properties:
@@ -1551,6 +1612,52 @@ components:
           type: integer
       required:
         - initial_timeline_entry_limit
+      type: object
+    DiffDescriptor:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/DiffDescriptor.json
+          format: uri
+          readOnly: true
+          type: string
+        diff_base_sha:
+          type: string
+        diff_head_sha:
+          type: string
+        merge_base_sha:
+          type: string
+        platform_base_sha:
+          type: string
+        platform_head_sha:
+          type: string
+        protocol_version:
+          format: int64
+          type: integer
+        pull_number:
+          format: int64
+          type: integer
+        repository:
+          $ref: "#/components/schemas/RepositoryDescriptor"
+        snapshot_revision:
+          format: int64
+          minimum: 0
+          type: integer
+        stale:
+          type: boolean
+      required:
+        - protocol_version
+        - repository
+        - pull_number
+        - snapshot_revision
+        - platform_head_sha
+        - platform_base_sha
+        - diff_head_sha
+        - diff_base_sha
+        - merge_base_sha
+        - stale
       type: object
     DiffFile:
       additionalProperties: false
@@ -2191,6 +2298,95 @@ components:
         title:
           type: string
       type: object
+    Enrollment:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/Enrollment.json
+          format: uri
+          readOnly: true
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        expires_at:
+          format: date-time
+          type: string
+        hub_base_url:
+          type: string
+        hub_name:
+          type: string
+        hub_node_id:
+          type: string
+        id:
+          type: string
+        node_id:
+          type: string
+        preparation_started:
+          type: boolean
+        protocol_version:
+          format: int64
+          type: integer
+        revoked_at:
+          format: date-time
+          type: string
+        spoke_base_url:
+          type: string
+        spoke_name:
+          type: string
+        spoke_platform:
+          type: string
+        state:
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+      required:
+        - id
+        - node_id
+        - spoke_platform
+        - spoke_base_url
+        - hub_node_id
+        - hub_base_url
+        - protocol_version
+        - state
+        - expires_at
+        - created_at
+        - updated_at
+      type: object
+    EnrollmentToken:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/EnrollmentToken.json
+          format: uri
+          readOnly: true
+          type: string
+        expires_at:
+          format: date-time
+          type: string
+        hub_base_url:
+          type: string
+        hub_name:
+          type: string
+        hub_node_id:
+          type: string
+        protocol_version:
+          format: int64
+          type: integer
+        token:
+          type: string
+      required:
+        - token
+        - expires_at
+        - hub_node_id
+        - hub_base_url
+        - protocol_version
+      type: object
     ErrorDetail:
       additionalProperties: false
       properties:
@@ -2221,6 +2417,261 @@ components:
         - setupHook
         - teardownHook
         - moshAttach
+      type: object
+    FederationDiffDescriptorRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/FederationDiffDescriptorRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        pull_number:
+          format: int64
+          minimum: 1
+          type: integer
+        repository:
+          $ref: "#/components/schemas/RepositoryRoute"
+      required:
+        - repository
+        - pull_number
+      type: object
+    FederationIdentityOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/FederationIdentityOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        node_id:
+          type: string
+        protocol_version:
+          format: int64
+          type: integer
+      required:
+        - node_id
+        - protocol_version
+      type: object
+    FederationSetWorkflowStateRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/FederationSetWorkflowStateRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        item:
+          $ref: "#/components/schemas/FederationWorkflowItemIdentity"
+        update:
+          $ref: "#/components/schemas/FederationWorkflowUpdate"
+      required:
+        - item
+        - update
+      type: object
+    FederationWorkflowItem:
+      additionalProperties: false
+      properties:
+        author:
+          type: string
+        identity:
+          $ref: "#/components/schemas/FederationWorkflowItemIdentity"
+        is_draft:
+          type: boolean
+        last_activity_at:
+          type: string
+        repository:
+          $ref: "#/components/schemas/FederationWorkflowRepositoryIdentity"
+        state:
+          type: string
+        title:
+          type: string
+        url:
+          type: string
+        workflow:
+          $ref: "#/components/schemas/FederationWorkflowState"
+      required:
+        - identity
+        - repository
+        - title
+        - state
+        - url
+        - author
+        - is_draft
+        - last_activity_at
+        - workflow
+      type: object
+    FederationWorkflowItemIdentity:
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        number:
+          format: int64
+          type: integer
+        owner:
+          type: string
+        platform_host:
+          type: string
+        platform_repo_id:
+          type: string
+        provider:
+          type: string
+        type:
+          type: string
+      required:
+        - type
+        - provider
+        - platform_host
+        - platform_repo_id
+        - owner
+        - name
+        - number
+      type: object
+    FederationWorkflowMutation:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/FederationWorkflowMutation.json
+          format: uri
+          readOnly: true
+          type: string
+        previous_status:
+          type: string
+        state:
+          $ref: "#/components/schemas/FederationWorkflowState"
+      required:
+        - previous_status
+        - state
+      type: object
+    FederationWorkflowPage:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/FederationWorkflowPage.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/FederationWorkflowItem"
+          type: array
+        next_cursor:
+          type: string
+      required:
+        - items
+        - next_cursor
+      type: object
+    FederationWorkflowQuery:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/FederationWorkflowQuery.json
+          format: uri
+          readOnly: true
+          type: string
+        cursor:
+          type: string
+        include_closed:
+          type: boolean
+        item_types:
+          items:
+            type: string
+          type: array
+        limit:
+          format: int64
+          type: integer
+        repository:
+          $ref: "#/components/schemas/FederationWorkflowRepositoryIdentity"
+        states:
+          items:
+            type: string
+          type: array
+      required:
+        - repository
+        - item_types
+        - states
+        - include_closed
+        - limit
+        - cursor
+      type: object
+    FederationWorkflowRepositoryIdentity:
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        owner:
+          type: string
+        platform_host:
+          type: string
+        platform_repo_id:
+          type: string
+        provider:
+          type: string
+        repo_path:
+          type: string
+      required:
+        - provider
+        - platform_host
+        - platform_repo_id
+        - repo_path
+        - owner
+        - name
+      type: object
+    FederationWorkflowState:
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+        updated_actor:
+          type: string
+        updated_at:
+          type: string
+        updated_reason:
+          type: string
+        updated_source:
+          type: string
+      required:
+        - status
+        - updated_at
+        - updated_source
+        - updated_actor
+        - updated_reason
+      type: object
+    FederationWorkflowUpdate:
+      additionalProperties: false
+      properties:
+        actor:
+          type: string
+        expected_status:
+          type: string
+        force:
+          type: boolean
+        reason:
+          type: string
+        source:
+          type: string
+        status:
+          type: string
+      required:
+        - status
+        - expected_status
+        - force
+        - source
+        - actor
+        - reason
       type: object
     FilePreviewResponse:
       additionalProperties: false
@@ -2317,55 +2768,34 @@ components:
       required:
         - is_valid
       type: object
-    FleetPeer:
+    FleetHub:
       additionalProperties: false
       properties:
         base_url:
           type: string
-        key:
-          type: string
         name:
           type: string
+        node_id:
+          type: string
       required:
-        - key
+        - node_id
         - base_url
       type: object
-    FleetSSHPeer:
+    FleetMember:
       additionalProperties: false
       properties:
-        destination:
-          type: string
-        key:
+        base_url:
           type: string
         name:
           type: string
-        platform:
+        node_id:
           type: string
-        remote_command:
+        state:
           type: string
       required:
-        - key
-        - destination
-      type: object
-    FleetSSHPeersBody:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - /api/v1/schemas/FleetSSHPeersBody.json
-          format: uri
-          readOnly: true
-          type: string
-        restart_required:
-          type: boolean
-        ssh_peers:
-          items:
-            $ref: "#/components/schemas/FleetSSHPeer"
-          type: array
-      required:
-        - ssh_peers
-        - restart_required
+        - node_id
+        - base_url
+        - state
       type: object
     FleetSessions:
       additionalProperties: false
@@ -2385,27 +2815,30 @@ components:
           type: string
         enabled:
           type: boolean
-        key:
-          type: string
+        enrollments:
+          items:
+            $ref: "#/components/schemas/Enrollment"
+          type: array
+        hub:
+          $ref: "#/components/schemas/FleetHub"
+        members:
+          items:
+            $ref: "#/components/schemas/FleetMember"
+          type: array
         peer_timeout:
           type: string
-        peers:
-          items:
-            $ref: "#/components/schemas/FleetPeer"
-          type: array
         restart_required:
           type: boolean
+        role:
+          type: string
         sessions:
           $ref: "#/components/schemas/FleetSessions"
-        ssh_peers:
-          items:
-            $ref: "#/components/schemas/FleetSSHPeer"
-          type: array
       required:
         - enabled
+        - role
+        - members
+        - enrollments
         - sessions
-        - peers
-        - ssh_peers
         - restart_required
       type: object
     GitChangesResponse:
@@ -2633,6 +3066,9 @@ components:
     HostSummary:
       additionalProperties: false
       properties:
+        baseURL:
+          format: uri
+          type: string
         capabilities:
           $ref: "#/components/schemas/Capabilities"
         configKey:
@@ -2647,6 +3083,11 @@ components:
             - "null"
         error:
           type: string
+        federationRole:
+          enum:
+            - hub
+            - spoke
+          type: string
         hostname:
           type: string
         id:
@@ -2656,6 +3097,8 @@ components:
         lastSeenAt:
           type: string
         name:
+          type: string
+        nodeID:
           type: string
         operationAvailability:
           additionalProperties:
@@ -2667,8 +3110,6 @@ components:
           type: string
         reachable:
           type: boolean
-        sshDestination:
-          type: string
         tmuxLastPolledAt:
           type: string
         tmuxMetricsError:
@@ -2686,8 +3127,10 @@ components:
       required:
         - id
         - configKey
+        - nodeID
         - name
         - kind
+        - federationRole
         - platform
         - preferredTransport
         - reachable
@@ -3128,6 +3571,79 @@ components:
             - "null"
       required:
         - reviewers
+      type: object
+    JoinRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/JoinRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        base_url:
+          type: string
+        enrollment_id:
+          type: string
+        hub_credential:
+          type: string
+        name:
+          type: string
+        node_id:
+          type: string
+        platform:
+          type: string
+        protocol_version:
+          format: int64
+          type: integer
+      required:
+        - enrollment_id
+        - node_id
+        - platform
+        - base_url
+        - protocol_version
+        - hub_credential
+      type: object
+    JoinResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/JoinResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        enrollment_id:
+          type: string
+        expires_at:
+          format: date-time
+          type: string
+        hub_base_url:
+          type: string
+        hub_name:
+          type: string
+        hub_node_id:
+          type: string
+        preparation_required:
+          type: boolean
+        protocol_version:
+          format: int64
+          type: integer
+        spoke_credential:
+          type: string
+        state:
+          type: string
+      required:
+        - enrollment_id
+        - hub_node_id
+        - hub_base_url
+        - spoke_credential
+        - protocol_version
+        - state
+        - expires_at
+        - preparation_required
       type: object
     KataCreateLinkRequest:
       additionalProperties: false
@@ -3821,6 +4337,104 @@ components:
       required:
         - worktrees
       type: object
+    LocalEnrollment:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/LocalEnrollment.json
+          format: uri
+          readOnly: true
+          type: string
+        enrollment_id:
+          type: string
+        expires_at:
+          format: date-time
+          type: string
+        hub_base_url:
+          type: string
+        hub_name:
+          type: string
+        hub_node_id:
+          type: string
+        node_id:
+          type: string
+        preparation:
+          $ref: "#/components/schemas/LocalPreparationSeal"
+        preparation_required:
+          type: boolean
+        preparation_started:
+          type: boolean
+        protocol_version:
+          format: int64
+          type: integer
+        spoke_base_url:
+          type: string
+        spoke_name:
+          type: string
+        spoke_platform:
+          type: string
+        state:
+          type: string
+      required:
+        - enrollment_id
+        - node_id
+        - spoke_platform
+        - spoke_base_url
+        - hub_base_url
+        - protocol_version
+        - state
+        - expires_at
+        - preparation_required
+      type: object
+    LocalJoinInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/LocalJoinInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        enrollment_token:
+          type: string
+        hub_base_url:
+          type: string
+        name:
+          type: string
+        spoke_base_url:
+          type: string
+      required:
+        - hub_base_url
+        - spoke_base_url
+        - enrollment_token
+      type: object
+    LocalPreparationSeal:
+      additionalProperties: false
+      properties:
+        enrollment_id:
+          type: string
+        hub_node_id:
+          type: string
+        node_id:
+          type: string
+        preparation_digest:
+          type: string
+        preparation_seal:
+          type: string
+        protocol_version:
+          format: int64
+          type: integer
+      required:
+        - enrollment_id
+        - node_id
+        - hub_node_id
+        - protocol_version
+        - preparation_digest
+        - preparation_seal
+      type: object
     LocalSyncCeilingStatus:
       additionalProperties: false
       properties:
@@ -4507,6 +5121,109 @@ components:
         - is_draft
         - title
       type: object
+    NeutralHost:
+      additionalProperties: false
+      properties:
+        baseURL:
+          type: string
+        capabilities:
+          $ref: "#/components/schemas/Capabilities"
+        error:
+          type: string
+        federationRole:
+          type: string
+        generation:
+          format: int64
+          minimum: 0
+          type: integer
+        hostname:
+          type: string
+        lastSeenAt:
+          type: string
+        name:
+          type: string
+        nodeID:
+          type: string
+        platform:
+          type: string
+        platformAuthenticated:
+          type: boolean
+        reachable:
+          type: boolean
+        tmuxLastPolledAt:
+          type: string
+        tmuxMetricsError:
+          type: string
+        tmuxProbeError:
+          type: string
+        tmuxSessions:
+          items:
+            $ref: "#/components/schemas/TmuxSessionInfo"
+          type:
+            - array
+            - "null"
+        version:
+          type: string
+      required:
+        - nodeID
+        - federationRole
+        - name
+        - reachable
+      type: object
+    NeutralSnapshot:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/NeutralSnapshot.json
+          format: uri
+          readOnly: true
+          type: string
+        generation:
+          format: int64
+          minimum: 0
+          type: integer
+        hosts:
+          items:
+            $ref: "#/components/schemas/NeutralHost"
+          type:
+            - array
+            - "null"
+        platformAuthenticated:
+          type: boolean
+        projects:
+          items:
+            $ref: "#/components/schemas/RawProject"
+          type:
+            - array
+            - "null"
+        protocolVersion:
+          format: int64
+          type: integer
+        sessions:
+          items:
+            $ref: "#/components/schemas/RawSession"
+          type:
+            - array
+            - "null"
+        workspaces:
+          items:
+            $ref: "#/components/schemas/RawWorkspace"
+          type:
+            - array
+            - "null"
+        worktrees:
+          items:
+            $ref: "#/components/schemas/RawWorktree"
+          type:
+            - array
+            - "null"
+      required:
+        - protocolVersion
+        - generation
+        - hosts
+      type: object
     Node:
       additionalProperties: false
       properties:
@@ -4882,7 +5599,9 @@ components:
             - conflict
             - destinationExists
             - forbidden
+            - gitCredentialUnavailable
             - hookFailed
+            - hubUnavailable
             - internalError
             - issueNotFound
             - mutationOutcomeUnknown
@@ -4895,6 +5614,7 @@ components:
             - resyncRequired
             - serviceUnavailable
             - settingsUnavailable
+            - spokePreparationInProgress
             - toolMissing
             - toolUnauthenticated
             - unauthorized
@@ -5196,6 +5916,276 @@ components:
         - mutation_head_binding
         - supported_review_actions
       type: object
+    ProviderRepositoryObservation:
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        observed_at:
+          format: date-time
+          type: string
+        owner:
+          type: string
+        platform_host:
+          type: string
+        platform_repo_id:
+          type: string
+        provider:
+          type: string
+        repo_path:
+          type: string
+      required:
+        - provider
+        - platform_host
+        - platform_repo_id
+        - owner
+        - name
+        - repo_path
+        - observed_at
+      type: object
+    ProviderSettingsResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ProviderSettingsResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        activity:
+          $ref: "#/components/schemas/Activity"
+        detail:
+          $ref: "#/components/schemas/Detail"
+        issues:
+          $ref: "#/components/schemas/Issues"
+        notifications:
+          $ref: "#/components/schemas/NotificationsSettingsResponse"
+        pull_requests:
+          $ref: "#/components/schemas/PullRequests"
+        repo_presets:
+          items:
+            $ref: "#/components/schemas/RepoPreset"
+          type: array
+        repos:
+          items:
+            $ref: "#/components/schemas/ConfiguredRepoStatus"
+          type: array
+        repository_observations:
+          items:
+            $ref: "#/components/schemas/ProviderRepositoryObservation"
+          type: array
+      required:
+        - repos
+        - repository_observations
+        - repo_presets
+        - activity
+        - detail
+        - pull_requests
+        - issues
+        - notifications
+      type: object
+    ProviderSettingsUpdate:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ProviderSettingsUpdate.json
+          format: uri
+          readOnly: true
+          type: string
+        activity:
+          $ref: "#/components/schemas/Activity"
+        detail:
+          $ref: "#/components/schemas/Detail"
+        issues:
+          $ref: "#/components/schemas/Issues"
+        pull_requests:
+          $ref: "#/components/schemas/PullRequests"
+      type: object
+    ProviderStateConflict:
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+        source_digest:
+          type: string
+        source_key:
+          type: string
+        target_digest:
+          type: string
+      required:
+        - kind
+        - source_key
+        - source_digest
+        - target_digest
+      type: object
+    ProviderStateImportResult:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ProviderStateImportResult.json
+          format: uri
+          readOnly: true
+          type: string
+        conflict:
+          $ref: "#/components/schemas/ProviderStateConflict"
+        imported:
+          type: boolean
+        receipt:
+          type: string
+      required:
+        - imported
+      type: object
+    ProviderStateRepository:
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        owner:
+          type: string
+        platform_host:
+          type: string
+        platform_repo_id:
+          type: string
+        provider:
+          type: string
+      required:
+        - provider
+        - platform_host
+        - platform_repo_id
+        - owner
+        - name
+      type: object
+    ProviderStateReviewComment:
+      additionalProperties: false
+      properties:
+        body:
+          type: string
+        commit_sha:
+          type: string
+        diff_head_sha:
+          type: string
+        line:
+          format: int64
+          type: integer
+        line_type:
+          type: string
+        new_line:
+          format: int64
+          type: integer
+        old_line:
+          format: int64
+          type: integer
+        old_path:
+          type: string
+        path:
+          type: string
+        side:
+          type: string
+        start_line:
+          format: int64
+          type: integer
+        start_side:
+          type: string
+      required:
+        - body
+        - path
+        - side
+        - line
+        - line_type
+        - diff_head_sha
+        - commit_sha
+      type: object
+    ProviderStateReviewDraftPayload:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ProviderStateReviewDraftPayload.json
+          format: uri
+          readOnly: true
+          type: string
+        action:
+          type: string
+        body:
+          type: string
+        comments:
+          items:
+            $ref: "#/components/schemas/ProviderStateReviewComment"
+          type: array
+        pull_number:
+          format: int64
+          type: integer
+        repository:
+          $ref: "#/components/schemas/ProviderStateRepository"
+      required:
+        - repository
+        - pull_number
+        - body
+        - action
+        - comments
+      type: object
+    ProviderStateWorkflowPayload:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ProviderStateWorkflowPayload.json
+          format: uri
+          readOnly: true
+          type: string
+        item_number:
+          format: int64
+          type: integer
+        item_type:
+          enum:
+            - pr
+            - issue
+          type: string
+        repository:
+          $ref: "#/components/schemas/ProviderStateRepository"
+        status:
+          type: string
+        updated_actor:
+          type: string
+        updated_reason:
+          type: string
+        updated_source:
+          type: string
+      required:
+        - repository
+        - item_type
+        - item_number
+        - status
+      type: object
+    ProviderWorkspaceItemRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ProviderWorkspaceItemRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        item_number:
+          format: int64
+          type: integer
+        item_type:
+          type: string
+        repository:
+          $ref: "#/components/schemas/RepositoryRoute"
+      required:
+        - repository
+        - item_type
+        - item_number
+      type: object
     PublishChange:
       additionalProperties: false
       properties:
@@ -5443,6 +6433,8 @@ components:
           type: string
         registryId:
           type: string
+        repository:
+          $ref: "#/components/schemas/RepositoryIdentity"
         repositoryKind:
           type: string
         rootPath:
@@ -5453,54 +6445,6 @@ components:
         - scopedKey
         - name
         - rootPath
-      type: object
-    RawRemoteHost:
-      additionalProperties: false
-      properties:
-        baseURL:
-          type: string
-        capabilities:
-          $ref: "#/components/schemas/Capabilities"
-        error:
-          type: string
-        generation:
-          format: int64
-          minimum: 0
-          type: integer
-        hostKey:
-          type: string
-        lastSeenAt:
-          type: string
-        name:
-          type: string
-        platform:
-          type: string
-        platformAuthenticated:
-          type: boolean
-        preferredTransport:
-          type: string
-        reachable:
-          type: boolean
-        sshDestination:
-          type: string
-        tmuxLastPolledAt:
-          type: string
-        tmuxMetricsError:
-          type: string
-        tmuxProbeError:
-          type: string
-        tmuxSessions:
-          items:
-            $ref: "#/components/schemas/TmuxSessionInfo"
-          type:
-            - array
-            - "null"
-        version:
-          type: string
-      required:
-        - hostKey
-        - name
-        - reachable
       type: object
     RawSession:
       additionalProperties: false
@@ -5552,6 +6496,8 @@ components:
           format: uri
           readOnly: true
           type: string
+        baseURL:
+          type: string
         capabilities:
           $ref: "#/components/schemas/Capabilities"
         generation:
@@ -5560,6 +6506,8 @@ components:
           type: integer
         host:
           $ref: "#/components/schemas/RawHost"
+        nodeID:
+          type: string
         platformAuthenticated:
           type: boolean
         projects:
@@ -5568,18 +6516,18 @@ components:
           type:
             - array
             - "null"
-        remoteHosts:
-          items:
-            $ref: "#/components/schemas/RawRemoteHost"
-          type:
-            - array
-            - "null"
-        schemaVersion:
+        protocolVersion:
           format: int64
           type: integer
         sessions:
           items:
             $ref: "#/components/schemas/RawSession"
+          type:
+            - array
+            - "null"
+        workspaces:
+          items:
+            $ref: "#/components/schemas/RawWorkspace"
           type:
             - array
             - "null"
@@ -5590,9 +6538,122 @@ components:
             - array
             - "null"
       required:
-        - schemaVersion
+        - protocolVersion
+        - nodeID
         - generation
         - host
+      type: object
+    RawWorkspace:
+      additionalProperties: false
+      properties:
+        agentState:
+          type: string
+        agentStateUpdatedAt:
+          type: string
+        associatedPRNumber:
+          format: int64
+          type: integer
+        commitsAhead:
+          format: int64
+          type: integer
+        commitsBehind:
+          format: int64
+          type: integer
+        createdAt:
+          type: string
+        enrichmentError:
+          type: string
+        enrichmentRefreshedAt:
+          type: string
+        enrichmentStatus:
+          type: string
+        errorMessage:
+          type: string
+        gitHeadRef:
+          type: string
+        hostKey:
+          type: string
+        id:
+          type: string
+        itemKey:
+          type: string
+        itemLastActivityAt:
+          type: string
+        itemNumber:
+          format: int64
+          type: integer
+        itemType:
+          type: string
+        kata:
+          $ref: "#/components/schemas/RawWorkspaceKata"
+        mrAdditions:
+          format: int64
+          type: integer
+        mrCIStatus:
+          type: string
+        mrDeletions:
+          format: int64
+          type: integer
+        mrIsDraft:
+          type: boolean
+        mrReviewDecision:
+          type: string
+        mrState:
+          type: string
+        mrTitle:
+          type: string
+        repository:
+          $ref: "#/components/schemas/RepositoryIdentity"
+        sessionBackend:
+          type: string
+        status:
+          type: string
+        tmuxActivitySource:
+          type: string
+        tmuxLastOutputAt:
+          type: string
+        tmuxPaneTitle:
+          type: string
+        tmuxSession:
+          type: string
+        tmuxWorking:
+          type: boolean
+        worktreeDirty:
+          type: boolean
+        worktreePath:
+          type: string
+      required:
+        - id
+        - repository
+        - itemType
+        - itemNumber
+        - gitHeadRef
+        - worktreePath
+        - tmuxWorking
+        - status
+        - createdAt
+      type: object
+    RawWorkspaceKata:
+      additionalProperties: false
+      properties:
+        daemonID:
+          type: string
+        issueUID:
+          type: string
+        projectName:
+          type: string
+        projectUID:
+          type: string
+        qualifiedID:
+          type: string
+        shortID:
+          type: string
+        title:
+          type: string
+      required:
+        - daemonID
+        - projectUID
+        - issueUID
       type: object
     RawWorktree:
       additionalProperties: false
@@ -6601,6 +7662,97 @@ components:
       required:
         - worktree_base_path
       type: object
+    RepositoryDescriptor:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/RepositoryDescriptor.json
+          format: uri
+          readOnly: true
+          type: string
+        clone_url:
+          type: string
+        default_branch:
+          type: string
+        name:
+          type: string
+        observed_at:
+          format: date-time
+          type: string
+        owner:
+          type: string
+        platform_host:
+          type: string
+        platform_repo_id:
+          type: string
+        protocol_version:
+          format: int64
+          type: integer
+        provider:
+          type: string
+        snapshot_revision:
+          format: int64
+          minimum: 0
+          type: integer
+        stale:
+          type: boolean
+      required:
+        - protocol_version
+        - provider
+        - platform_host
+        - platform_repo_id
+        - owner
+        - name
+        - clone_url
+        - default_branch
+        - snapshot_revision
+        - observed_at
+        - stale
+      type: object
+    RepositoryIdentity:
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        owner:
+          type: string
+        platformHost:
+          type: string
+        platformRepoID:
+          type: string
+        provider:
+          type: string
+      required:
+        - provider
+        - platformHost
+        - platformRepoID
+      type: object
+    RepositoryRoute:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/RepositoryRoute.json
+          format: uri
+          readOnly: true
+          type: string
+        name:
+          type: string
+        owner:
+          type: string
+        platform_host:
+          type: string
+        provider:
+          type: string
+      required:
+        - provider
+        - platform_host
+        - owner
+        - name
+      type: object
     RequestChangesPRHostInputBody:
       additionalProperties: false
       properties:
@@ -6802,6 +7954,42 @@ components:
         - tmux_session
         - command
         - requires_local_host
+      type: object
+    SealSpokePreparationInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/SealSpokePreparationInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        drained_ack_generation:
+          format: int64
+          type: integer
+        hub_node_id:
+          type: string
+        migration_version:
+          format: int64
+          type: integer
+        node_id:
+          type: string
+        preparation_digest:
+          type: string
+        protocol_version:
+          format: int64
+          type: integer
+        receipts_digest:
+          type: string
+      required:
+        - node_id
+        - hub_node_id
+        - protocol_version
+        - migration_version
+        - receipts_digest
+        - drained_ack_generation
+        - preparation_digest
       type: object
     SessionInfo:
       additionalProperties: false
@@ -7121,6 +8309,8 @@ components:
           type: string
         activePlatformHost:
           type: string
+        aggregateIncomplete:
+          type: boolean
         generation:
           format: int64
           minimum: 0
@@ -7143,12 +8333,18 @@ components:
           type:
             - array
             - "null"
-        schemaVersion:
+        protocolVersion:
           format: int64
           type: integer
         sessions:
           items:
             $ref: "#/components/schemas/SessionSummary"
+          type:
+            - array
+            - "null"
+        workspaces:
+          items:
+            $ref: "#/components/schemas/WorkspaceSummary"
           type:
             - array
             - "null"
@@ -7159,12 +8355,13 @@ components:
             - array
             - "null"
       required:
-        - schemaVersion
+        - protocolVersion
         - generation
         - hosts
         - projects
         - worktrees
         - sessions
+        - workspaces
       type: object
     SnippetRange:
       additionalProperties: false
@@ -7178,6 +8375,127 @@ components:
       required:
         - start
         - end
+      type: object
+    SpokePreparationAbortReport:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/SpokePreparationAbortReport.json
+          format: uri
+          readOnly: true
+          type: string
+        enrollment_id:
+          type: string
+        hub_revoked:
+          type: boolean
+        provider_writes_open:
+          type: boolean
+        restart_required:
+          type: boolean
+      required:
+        - enrollment_id
+        - hub_revoked
+        - provider_writes_open
+        - restart_required
+      type: object
+    SpokePreparationReport:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/SpokePreparationReport.json
+          format: uri
+          readOnly: true
+          type: string
+        active_deferred_merges:
+          format: int64
+          type: integer
+        handoff_conflicts:
+          items:
+            $ref: "#/components/schemas/ProviderStateConflict"
+          type: array
+        handoff_errors:
+          items:
+            type: string
+          type: array
+        in_flight_provider_writes:
+          format: int64
+          type: integer
+        preparation_seal:
+          type: string
+        ready_launch_specs:
+          format: int64
+          type: integer
+        ready_to_activate:
+          type: boolean
+        restart_required:
+          type: boolean
+        undrained_acks:
+          format: int64
+          type: integer
+        unprepared:
+          items:
+            $ref: "#/components/schemas/UnpreparedWorkspace"
+          type: array
+      required:
+        - ready_launch_specs
+        - unprepared
+        - handoff_conflicts
+        - handoff_errors
+        - in_flight_provider_writes
+        - active_deferred_merges
+        - undrained_acks
+        - ready_to_activate
+        - restart_required
+      type: object
+    SpokePreparationSeal:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/SpokePreparationSeal.json
+          format: uri
+          readOnly: true
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        drained_ack_generation:
+          format: int64
+          type: integer
+        enrollment_id:
+          type: string
+        hub_node_id:
+          type: string
+        migration_version:
+          format: int64
+          type: integer
+        node_id:
+          type: string
+        preparation_digest:
+          type: string
+        preparation_seal:
+          type: string
+        protocol_version:
+          format: int64
+          type: integer
+        receipts_digest:
+          type: string
+      required:
+        - preparation_seal
+        - created_at
+        - enrollment_id
+        - node_id
+        - hub_node_id
+        - protocol_version
+        - migration_version
+        - receipts_digest
+        - drained_ack_generation
+        - preparation_digest
       type: object
     StackContextResponse:
       additionalProperties: false
@@ -7533,6 +8851,17 @@ components:
         - gh
         - glab
       type: object
+    UnpreparedWorkspace:
+      additionalProperties: false
+      properties:
+        reason:
+          type: string
+        workspace:
+          $ref: "#/components/schemas/Workspace"
+      required:
+        - workspace
+        - reason
+      type: object
     UpdateDocsFolderInputBody:
       additionalProperties: false
       properties:
@@ -7546,23 +8875,6 @@ components:
         name:
           type: string
       type: object
-    UpdateFleetSSHPeersInputBody:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - /api/v1/schemas/UpdateFleetSSHPeersInputBody.json
-          format: uri
-          readOnly: true
-          type: string
-        ssh_peers:
-          items:
-            $ref: "#/components/schemas/FleetSSHPeer"
-          type: array
-      required:
-        - ssh_peers
-      type: object
     UpdateFleetSettingsInputBody:
       additionalProperties: false
       properties:
@@ -7575,25 +8887,13 @@ components:
           type: string
         enabled:
           type: boolean
-        key:
-          type: string
         peer_timeout:
           type: string
-        peers:
-          items:
-            $ref: "#/components/schemas/FleetPeer"
-          type: array
         sessions:
           $ref: "#/components/schemas/FleetSessions"
-        ssh_peers:
-          items:
-            $ref: "#/components/schemas/FleetSSHPeer"
-          type: array
       required:
         - enabled
         - sessions
-        - peers
-        - ssh_peers
       type: object
     UpdateRepoPresetInputBody:
       additionalProperties: false
@@ -7722,6 +9022,77 @@ components:
       required:
         - status
       type: object
+    Workspace:
+      additionalProperties: false
+      properties:
+        AssociatedPRNumber:
+          format: int64
+          type:
+            - integer
+            - "null"
+        CreatedAt:
+          format: date-time
+          type: string
+        ErrorMessage:
+          type:
+            - string
+            - "null"
+        GitHeadRef:
+          type: string
+        ID:
+          type: string
+        ItemKey:
+          type: string
+        ItemNumber:
+          format: int64
+          type: integer
+        ItemType:
+          type: string
+        KataMetadata:
+          $ref: "#/components/schemas/WorkspaceKataMetadata"
+        MRHeadRepo:
+          type:
+            - string
+            - "null"
+        Platform:
+          type: string
+        PlatformHost:
+          type: string
+        RepoName:
+          type: string
+        RepoOwner:
+          type: string
+        Status:
+          type: string
+        TerminalBackend:
+          type: string
+        TmuxSession:
+          type: string
+        WorkspaceBranch:
+          type: string
+        WorktreePath:
+          type: string
+      required:
+        - ID
+        - Platform
+        - PlatformHost
+        - RepoOwner
+        - RepoName
+        - ItemType
+        - ItemNumber
+        - ItemKey
+        - AssociatedPRNumber
+        - GitHeadRef
+        - MRHeadRepo
+        - WorkspaceBranch
+        - WorktreePath
+        - TmuxSession
+        - TerminalBackend
+        - Status
+        - ErrorMessage
+        - CreatedAt
+        - KataMetadata
+      type: object
     WorkspaceActivitySubjectResponse:
       additionalProperties: false
       properties:
@@ -7831,6 +9202,162 @@ components:
         - project_uid
         - issue_uid
       type: object
+    WorkspaceKataSummary:
+      additionalProperties: false
+      properties:
+        daemon_id:
+          type: string
+        issue_uid:
+          type: string
+        project_name:
+          type: string
+        project_uid:
+          type: string
+        qualified_id:
+          type: string
+        short_id:
+          type: string
+        title:
+          type: string
+      required:
+        - daemon_id
+        - project_uid
+        - issue_uid
+      type: object
+    WorkspaceLaunchPull:
+      additionalProperties: false
+      properties:
+        head_branch:
+          type: string
+        head_repo_clone_url:
+          type: string
+        head_repo_kind:
+          enum:
+            - same_repo
+            - fork
+            - unknown
+          type: string
+        snapshot_revision:
+          format: int64
+          minimum: 1
+          type: integer
+      required:
+        - head_branch
+        - head_repo_kind
+        - head_repo_clone_url
+        - snapshot_revision
+      type: object
+    WorkspaceLaunchRepository:
+      additionalProperties: false
+      properties:
+        clone_url:
+          type: string
+        default_branch:
+          type: string
+        name:
+          type: string
+        owner:
+          type: string
+        platform_host:
+          type: string
+        platform_repo_id:
+          type: string
+        provider:
+          type: string
+      required:
+        - provider
+        - platform_host
+        - platform_repo_id
+        - owner
+        - name
+        - clone_url
+        - default_branch
+      type: object
+    WorkspaceLaunchRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/WorkspaceLaunchRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        git_head_ref:
+          type: string
+        issue_branch_slug:
+          type: boolean
+        item_key:
+          type: string
+        item_number:
+          format: int64
+          type: integer
+        item_type:
+          type: string
+        platform_repo_id:
+          type: string
+        repository:
+          $ref: "#/components/schemas/RepositoryRoute"
+      required:
+        - repository
+        - item_type
+        - item_number
+      type: object
+    WorkspaceLaunchSpec:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/WorkspaceLaunchSpec.json
+          format: uri
+          readOnly: true
+          type: string
+        git_head_ref:
+          type: string
+        issued_at:
+          format: date-time
+          type: string
+        item_key:
+          type: string
+        item_number:
+          format: int64
+          minimum: 1
+          type: integer
+        item_type:
+          enum:
+            - pull_request
+            - issue
+          type: string
+        pull:
+          $ref: "#/components/schemas/WorkspaceLaunchPull"
+        repository:
+          $ref: "#/components/schemas/WorkspaceLaunchRepository"
+        source_title:
+          type: string
+        source_url:
+          type: string
+        source_visible:
+          type: boolean
+        source_visible_until:
+          format: date-time
+          type: string
+        version:
+          format: int64
+          type: integer
+      required:
+        - version
+        - repository
+        - item_type
+        - item_number
+        - item_key
+        - git_head_ref
+        - source_title
+        - source_url
+        - source_visible
+        - source_visible_until
+        - issued_at
+      type: object
     WorkspaceRef:
       additionalProperties: false
       properties:
@@ -7841,6 +9368,28 @@ components:
       required:
         - id
         - status
+      type: object
+    WorkspaceRepositorySummary:
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        owner:
+          type: string
+        platform_host:
+          type: string
+        platform_repo_id:
+          type: string
+        provider:
+          type: string
+        repo_path:
+          type: string
+      required:
+        - provider
+        - platform_host
+        - repo_path
+        - owner
+        - name
       type: object
     WorkspaceResponse:
       additionalProperties: false
@@ -8016,6 +9565,112 @@ components:
             - diff
             - item
           type: string
+      type: object
+    WorkspaceSummary:
+      additionalProperties: false
+      properties:
+        agent_state:
+          type: string
+        agent_state_updated_at:
+          type: string
+        associated_pr_number:
+          format: int64
+          type: integer
+        commits_ahead:
+          format: int64
+          type: integer
+        commits_behind:
+          format: int64
+          type: integer
+        created_at:
+          type: string
+        enrichment_error:
+          type: string
+        enrichment_refreshed_at:
+          type: string
+        enrichment_status:
+          type: string
+        error_message:
+          type: string
+        fleet_host_key:
+          type: string
+        fleet_host_name:
+          type: string
+        git_head_ref:
+          type: string
+        id:
+          type: string
+        item_key:
+          type: string
+        item_last_activity_at:
+          type: string
+        item_number:
+          format: int64
+          type: integer
+        item_type:
+          type: string
+        kata:
+          $ref: "#/components/schemas/WorkspaceKataSummary"
+        mr_additions:
+          format: int64
+          type: integer
+        mr_ci_status:
+          type: string
+        mr_deletions:
+          format: int64
+          type: integer
+        mr_is_draft:
+          type: boolean
+        mr_review_decision:
+          type: string
+        mr_state:
+          type: string
+        mr_title:
+          type: string
+        platform_host:
+          type: string
+        repo:
+          $ref: "#/components/schemas/WorkspaceRepositorySummary"
+        repo_name:
+          type: string
+        repo_owner:
+          type: string
+        status:
+          type: string
+        tmux_activity_source:
+          type: string
+        tmux_last_output_at:
+          type:
+            - string
+            - "null"
+        tmux_pane_title:
+          type: string
+        tmux_session:
+          type: string
+        tmux_working:
+          type: boolean
+        visible:
+          type: boolean
+        worktree_dirty:
+          type: boolean
+        worktree_path:
+          type: string
+      required:
+        - id
+        - repo
+        - platform_host
+        - repo_owner
+        - repo_name
+        - item_type
+        - item_number
+        - git_head_ref
+        - worktree_path
+        - tmux_working
+        - tmux_activity_source
+        - tmux_last_output_at
+        - status
+        - created_at
+        - visible
       type: object
     Workspaces:
       additionalProperties: false
@@ -9238,6 +10893,462 @@ paths:
       summary: Stream server events
       tags:
         - System
+  /federation/enrollments:
+    post:
+      operationId: begin-federation-enrollment
+      parameters:
+        - in: header
+          name: Authorization
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JoinRequest"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JoinResponse"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Begin or resume a federation enrollment
+      tags:
+        - Fleet
+  /federation/enrollments/{enrollment_id}/abort:
+    post:
+      operationId: abort-federation-enrollment
+      parameters:
+        - in: path
+          name: enrollment_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Abandon this spoke's pending federation enrollment
+      tags:
+        - Fleet
+  /federation/enrollments/{enrollment_id}/activate:
+    post:
+      operationId: activate-federation-enrollment
+      parameters:
+        - in: path
+          name: enrollment_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ActivateEnrollmentInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Enrollment"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Activate a prepared federation member
+      tags:
+        - Fleet
+  /federation/enrollments/{enrollment_id}/preparation/begin:
+    post:
+      operationId: begin-federation-spoke-preparation
+      parameters:
+        - in: path
+          name: enrollment_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Enrollment"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Pin a pending enrollment before spoke preparation
+      tags:
+        - Fleet
+  /federation/enrollments/{enrollment_id}/preparation/seal:
+    post:
+      operationId: seal-federation-spoke-preparation
+      parameters:
+        - in: path
+          name: enrollment_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SealSpokePreparationInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpokePreparationSeal"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Seal completed provider-state handoff for a spoke
+      tags:
+        - Fleet
+  /federation/events:
+    get:
+      operationId: stream-federation-provider-events
+      parameters:
+        - in: header
+          name: X-Kenn-Forge-Federation-Protocol
+          schema:
+            type: string
+        - in: header
+          name: Last-Event-ID
+          schema:
+            type: string
+        - in: header
+          name: Content-Length
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: since
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            text/event-stream: {}
+          description: Filtered provider event stream
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Stream hub-owned provider events
+      tags:
+        - Fleet
+  /federation/identity:
+    get:
+      operationId: get-federation-identity
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FederationIdentityOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Read the authenticated federation identity
+      tags:
+        - Fleet
+  /federation/provider-state/review-drafts/import:
+    post:
+      operationId: federation-import-review-draft
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProviderStateReviewDraftPayload"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderStateImportResult"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Import one review draft while preparing a Forge spoke
+      tags:
+        - Fleet
+  /federation/provider-state/workflow-states/import:
+    post:
+      operationId: federation-import-workflow-state
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProviderStateWorkflowPayload"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderStateImportResult"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Import one workflow row while preparing a Forge spoke
+      tags:
+        - Fleet
+  /federation/provider/diff-descriptor:
+    post:
+      operationId: federation-get-diff-descriptor
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FederationDiffDescriptorRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiffDescriptor"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Resolve a pull diff descriptor for a Forge spoke
+      tags:
+        - Fleet
+  /federation/provider/repository-descriptor:
+    post:
+      operationId: federation-get-repository-descriptor
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RepositoryRoute"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepositoryDescriptor"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Resolve a repository descriptor for a Forge spoke
+      tags:
+        - Fleet
+  /federation/provider/settings:
+    get:
+      operationId: federation-get-provider-settings
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderSettingsResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get hub-owned settings for a Forge spoke
+      tags:
+        - Fleet
+    put:
+      operationId: federation-update-provider-settings
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProviderSettingsUpdate"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderSettingsResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Update hub-owned settings for a Forge spoke
+      tags:
+        - Fleet
+  /federation/provider/workflow-state:
+    put:
+      operationId: federation-set-workflow-state
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FederationSetWorkflowStateRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FederationWorkflowMutation"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Set hub workflow state for a Forge spoke
+      tags:
+        - Fleet
+  /federation/provider/workflow-states/query:
+    post:
+      operationId: federation-list-workflow-states
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FederationWorkflowQuery"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FederationWorkflowPage"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: List hub workflow states for a Forge spoke
+      tags:
+        - Fleet
+  /federation/provider/workspace-auto-assign:
+    post:
+      operationId: federation-auto-assign-workspace-item
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProviderWorkspaceItemRequest"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Apply hub assignment policy to a workspace item
+      tags:
+        - Fleet
+  /federation/provider/workspace-launch-spec:
+    post:
+      operationId: federation-resolve-workspace-launch-spec
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspaceLaunchRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceLaunchSpec"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Resolve current provider facts for a workspace launch
+      tags:
+        - Fleet
+  /federation/provider/workspace-launch-spec/refresh:
+    post:
+      operationId: federation-refresh-workspace-launch-spec
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspaceLaunchRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceLaunchSpec"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Refresh provider facts for a Forge spoke workspace
+      tags:
+        - Fleet
   /filesystem/complete:
     get:
       operationId: complete-filesystem-path
@@ -9290,6 +11401,52 @@ paths:
       summary: Resolve a path to a repository root
       tags:
         - System
+  /fleet/enrollment-tokens:
+    post:
+      operationId: create-fleet-enrollment-token
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEnrollmentTokenInputBody"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnrollmentToken"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Create a one-time fleet enrollment token
+      tags:
+        - Fleet
+  /fleet/enrollments/{enrollment_id}:
+    delete:
+      operationId: revoke-federation-enrollment
+      parameters:
+        - in: path
+          name: enrollment_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Revoke a federation member
+      tags:
+        - Fleet
   /fleet/hosts/{host_key}/filesystem/complete:
     get:
       operationId: complete-fleet-filesystem-path
@@ -10819,6 +12976,75 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Response returned by the owning fleet host.
       summary: Get workspace session attach spec on fleet host
+      tags:
+        - Fleet
+  /fleet/join:
+    post:
+      operationId: join-federation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LocalJoinInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocalEnrollment"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Join this daemon to a federation hub
+      tags:
+        - Fleet
+  /fleet/prepare-spoke:
+    post:
+      operationId: prepare-federation-spoke
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpokePreparationReport"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Quiesce this daemon and prepare it to become a fleet spoke
+      tags:
+        - Fleet
+  /fleet/prepare-spoke/abort:
+    post:
+      operationId: abort-federation-spoke-preparation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AbortFederationSpokeInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpokePreparationAbortReport"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Abort pending spoke preparation and restore standalone writes
       tags:
         - Fleet
   /host/{platform_host}/issues/{provider}/{owner}/{name}:
@@ -19510,49 +21736,6 @@ paths:
       summary: Update fleet settings
       tags:
         - Settings
-  /settings/fleet/ssh-peers:
-    get:
-      operationId: get-fleet-ssh-peers
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/FleetSSHPeersBody"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ProblemError"
-          description: Error
-      summary: List SSH fleet peers
-      tags:
-        - Settings
-    put:
-      operationId: update-fleet-ssh-peers
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateFleetSSHPeersInputBody"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/FleetSSHPeersBody"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ProblemError"
-          description: Error
-      summary: Replace SSH fleet peers
-      tags:
-        - Settings
   /settings/repo-presets:
     post:
       operationId: create-repo-preset
@@ -19637,12 +21820,12 @@ paths:
     get:
       operationId: get-snapshot
       parameters:
-        - description: Fan out to configured fleet peers and include their hosts/worktrees.
+        - description: Include the federation aggregate projected for this spoke.
           explode: false
           in: query
           name: include_peers
           schema:
-            description: Fan out to configured fleet peers and include their hosts/worktrees.
+            description: Include the federation aggregate projected for this spoke.
             type: boolean
       responses:
         "200":
@@ -19658,6 +21841,25 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Read the workspace snapshot
+      tags:
+        - Fleet
+  /snapshot/aggregate:
+    get:
+      operationId: get-snapshot-aggregate
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NeutralSnapshot"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Read the hub's neutral fleet aggregate
       tags:
         - Fleet
   /snapshot/raw:

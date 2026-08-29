@@ -22,6 +22,7 @@ import (
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/projects"
+	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 	gitcmd "go.kenn.io/kit/git/cmd"
@@ -379,16 +380,30 @@ func (s *Handler) registerProjectAtPath(
 
 	var repoID sql.NullInt64
 	if identity != nil {
-		id, upsertErr := s.db.UpsertRepo(ctx, db.RepoIdentity{
-			Platform:     identity.Platform,
-			PlatformHost: identity.Host,
-			Owner:        identity.Owner,
-			Name:         identity.Name,
-		})
-		if upsertErr != nil {
-			return nil, httpapi.Internal(
-				"upsert repo identity: " + upsertErr.Error(),
-			)
+		var id int64
+		if s.resolveProjectRepository != nil {
+			repository, resolveErr := s.resolveProjectRepository(ctx, providerplane.RepositoryRoute{
+				Provider: identity.Platform, PlatformHost: identity.Host,
+				Owner: identity.Owner, Name: identity.Name,
+			})
+			if resolveErr != nil {
+				return nil, resolveErr
+			}
+			if repository == nil || strings.TrimSpace(repository.PlatformRepoID) == "" {
+				return nil, httpapi.Internal("hub returned an incomplete repository identity")
+			}
+			id = repository.ID
+		} else {
+			var upsertErr error
+			id, upsertErr = s.db.UpsertRepo(ctx, db.RepoIdentity{
+				Platform: identity.Platform, PlatformHost: identity.Host,
+				Owner: identity.Owner, Name: identity.Name,
+			})
+			if upsertErr != nil {
+				return nil, httpapi.Internal(
+					"upsert repo identity: " + upsertErr.Error(),
+				)
+			}
 		}
 		repoID = sql.NullInt64{Int64: id, Valid: true}
 	}
@@ -710,47 +725,11 @@ func (s *Handler) createProjectWorktreeFromMergeRequest(
 	if err != nil {
 		return nil, providerRouteLookupError(err)
 	}
-	removed, err := s.db.IsArchiveItemRemovedUpstream(
-		ctx, repo.ID, db.ArchiveItemTypeMergeRequest, input.Body.Number,
+	facts, err := s.resolveMergeRequestWorktreeFacts(
+		ctx, *repo, *identity, input.Body.Number,
 	)
 	if err != nil {
-		return nil, httpapi.Internal("failed to check merge request visibility")
-	}
-	if removed {
-		return nil, httpapi.NotFound(
-			httpapi.CodePullNotFound, "merge request not found", nil,
-		)
-	}
-	mr, err := s.db.GetVisibleMergeRequestByRepoIDAndNumber(
-		ctx, repo.ID, input.Body.Number,
-	)
-	if err != nil {
-		return nil, httpapi.Internal("failed to query merge request")
-	}
-	if mr == nil {
-		// Sync on demand so callers (e.g. a fleet hub proxying into
-		// this host) need no separate sync step. A diff-sync failure
-		// is non-fatal — the row itself is current after SyncMR.
-		var diffErr *ghclient.DiffSyncError
-		syncErr := s.syncer.SyncMROnProvider(
-			ctx, repoProviderKind(*repo), repoProviderHost(*repo),
-			repo.Owner, repo.Name, input.Body.Number,
-		)
-		if syncErr == nil || errors.As(syncErr, &diffErr) {
-			mr, err = s.db.GetVisibleMergeRequestByRepoIDAndNumber(
-				ctx, repo.ID, input.Body.Number,
-			)
-			if err != nil {
-				return nil, httpapi.Internal("failed to query merge request")
-			}
-		}
-	}
-	if mr == nil {
-		return nil, httpapi.NotFound(
-			httpapi.CodePullNotFound,
-			"merge request not found; sync it before importing",
-			nil,
-		)
+		return nil, err
 	}
 
 	created, err := managedworktree.CreateWorktreeFromMergeRequest(
@@ -764,10 +743,10 @@ func (s *Handler) createProjectWorktreeFromMergeRequest(
 			HookEnvironmentPrefix: "KENN_FORGE",
 			RunGit:                runManagedWorktreeGit,
 			RunHook:               runManagedWorktreeHook,
-			Number:                mr.Number,
-			HeadBranch:            mr.HeadBranch,
-			HeadRepoCloneURL:      mr.HeadRepoCloneURL,
-			ExpectedHeadSHA:       mr.PlatformHeadSHA,
+			Number:                facts.Number,
+			HeadBranch:            facts.HeadBranch,
+			HeadRepoCloneURL:      facts.HeadRepoCloneURL,
+			ExpectedHeadSHA:       facts.ExpectedHeadSHA,
 			Platform:              identity.Platform,
 			// This is the logical provider identity. The trusted project
 			// remote may be a local mirror of the same repository.
@@ -796,13 +775,65 @@ func (s *Handler) createProjectWorktreeFromMergeRequest(
 			CreatedAt:          wt.CreatedAt,
 			UpdatedAt:          wt.UpdatedAt,
 			MergeRequest: mergeRequestSummary{
-				Number:  mr.Number,
-				URL:     mr.URL,
-				State:   string(mr.State),
-				Title:   mr.Title,
-				IsDraft: mr.IsDraft,
+				Number:  facts.Number,
+				URL:     facts.URL,
+				State:   facts.State,
+				Title:   facts.Title,
+				IsDraft: facts.IsDraft,
 			},
 		},
+	}, nil
+}
+
+func (s *Handler) resolveMergeRequestWorktreeFacts(
+	ctx context.Context, repo db.Repo, identity db.PlatformIdentity, number int,
+) (MergeRequestWorktreeFacts, error) {
+	if s.mergeRequestWorktreeSource != nil {
+		return s.mergeRequestWorktreeSource.ResolveMergeRequestWorktreeFacts(
+			ctx, providerplane.RepositoryRoute{
+				Provider: identity.Platform, PlatformHost: identity.Host,
+				Owner: identity.Owner, Name: identity.Name,
+			}, number,
+		)
+	}
+	removed, err := s.db.IsArchiveItemRemovedUpstream(
+		ctx, repo.ID, db.ArchiveItemTypeMergeRequest, number,
+	)
+	if err != nil {
+		return MergeRequestWorktreeFacts{}, httpapi.Internal("failed to check merge request visibility")
+	}
+	if removed {
+		return MergeRequestWorktreeFacts{}, httpapi.NotFound(
+			httpapi.CodePullNotFound, "merge request not found", nil,
+		)
+	}
+	mr, err := s.db.GetVisibleMergeRequestByRepoIDAndNumber(ctx, repo.ID, number)
+	if err != nil {
+		return MergeRequestWorktreeFacts{}, httpapi.Internal("failed to query merge request")
+	}
+	if mr == nil && s.syncer != nil {
+		var diffErr *ghclient.DiffSyncError
+		syncErr := s.syncer.SyncMROnProvider(
+			ctx, repoProviderKind(repo), repoProviderHost(repo),
+			repo.Owner, repo.Name, number,
+		)
+		if syncErr == nil || errors.As(syncErr, &diffErr) {
+			mr, err = s.db.GetVisibleMergeRequestByRepoIDAndNumber(ctx, repo.ID, number)
+			if err != nil {
+				return MergeRequestWorktreeFacts{}, httpapi.Internal("failed to query merge request")
+			}
+		}
+	}
+	if mr == nil {
+		return MergeRequestWorktreeFacts{}, httpapi.NotFound(
+			httpapi.CodePullNotFound,
+			"merge request not found; sync it before importing", nil,
+		)
+	}
+	return MergeRequestWorktreeFacts{
+		Number: mr.Number, URL: mr.URL, State: string(mr.State),
+		Title: mr.Title, IsDraft: mr.IsDraft, HeadBranch: mr.HeadBranch,
+		HeadRepoCloneURL: mr.HeadRepoCloneURL, ExpectedHeadSHA: mr.PlatformHeadSHA,
 	}, nil
 }
 
@@ -1091,14 +1122,13 @@ func (s *Handler) setProjectWorktreeSessionBackend(
 	}
 	switch backend {
 	case "", fleet.SessionBackendLocalPTY,
-		fleet.SessionBackendLocalTmux, fleet.SessionBackendRemoteTmux:
+		fleet.SessionBackendLocalTmux:
 	default:
 		return nil, httpapi.Validation(
 			"body.session_backend",
 			"unsupported session backend "+strconv.Quote(backend),
 			fleet.SessionBackendLocalPTY,
 			fleet.SessionBackendLocalTmux,
-			fleet.SessionBackendRemoteTmux,
 		)
 	}
 	updated, err := s.db.SetProjectWorktreeSessionBackend(

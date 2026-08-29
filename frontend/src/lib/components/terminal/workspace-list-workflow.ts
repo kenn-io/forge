@@ -42,14 +42,12 @@ export const makeWorkspaceListWorkflow = Effect.sync(() => {
 
 export const WorkspaceListWorkflowLive = Layer.effect(WorkspaceListWorkflow)(makeWorkspaceListWorkflow);
 
-export interface WorkspaceRefreshCoordinator<R> {
+export interface WorkspaceRefreshHub<R> {
   readonly program: Effect.Effect<void, never, R | Scope>;
   readonly request: () => void;
 }
 
-export function makeWorkspaceRefreshCoordinator<R>(
-  load: Effect.Effect<void, never, R>,
-): WorkspaceRefreshCoordinator<R> {
+export function makeWorkspaceRefreshHub<R>(load: Effect.Effect<void, never, R>): WorkspaceRefreshHub<R> {
   let publish: () => void = () => {
     pending = true;
   };
@@ -83,8 +81,8 @@ export function makeWorkspaceRefreshCoordinator<R>(
 }
 
 export interface WorkspaceListLifecycleOptions<WorkspaceR, FleetR, EventR> {
-  readonly refreshWorkspaces: WorkspaceRefreshCoordinator<WorkspaceR>;
-  readonly refreshFleet: WorkspaceRefreshCoordinator<FleetR>;
+  readonly refreshWorkspaces: WorkspaceRefreshHub<WorkspaceR>;
+  readonly refreshFleet: WorkspaceRefreshHub<FleetR>;
   readonly workspaceEvents: Stream.Stream<unknown, never, EventR>;
 }
 
@@ -99,21 +97,21 @@ export function workspaceListLifecycle<WorkspaceR, FleetR, EventR>({
 > {
   const poll = (request: () => void, interval: Duration.Input) =>
     Stream.fromSchedule(Schedule.spaced(interval)).pipe(Stream.runForEach(() => Effect.sync(request)));
+  const sharedRefresh = refreshWorkspaces === (refreshFleet as unknown as WorkspaceRefreshHub<WorkspaceR>);
 
   return Effect.sync(() => {
     refreshWorkspaces.request();
-    refreshFleet.request();
+    if (!sharedRefresh) refreshFleet.request();
   }).pipe(
     Effect.andThen(
       Effect.all(
         [
           refreshWorkspaces.program,
-          refreshFleet.program,
           poll(refreshWorkspaces.request, "5 seconds"),
-          poll(refreshFleet.request, "15 seconds"),
           Stream.runForEach(workspaceEvents, () =>
             Effect.sync(refreshWorkspaces.request).pipe(Effect.andThen(Effect.yieldNow)),
           ),
+          ...(sharedRefresh ? [] : [refreshFleet.program, poll(refreshFleet.request, "15 seconds")]),
         ],
         { concurrency: "unbounded", discard: true },
       ),

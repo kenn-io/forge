@@ -4679,27 +4679,66 @@ func (d *DB) InsertWorkspace(
 		return err
 	}
 	defer release()
-	var repoOwnerKey, repoNameKey, repoPathKey string
-	ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
-		repoOwnerKey, repoNameKey, repoPathKey, err = d.canonicalizeWorkspaceRepo(
-		ctx,
-		ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
-	)
+	prepared, err := d.prepareWorkspaceInsert(ctx, ws)
 	if err != nil {
 		return err
+	}
+	if err := insertPreparedWorkspace(ctx, d.rw, ws, prepared); err != nil {
+		return err
+	}
+	ws.ItemKey = prepared.itemKey
+	return nil
+}
+
+type preparedWorkspaceInsert struct {
+	repoOwnerKey     string
+	repoNameKey      string
+	repoPathKey      string
+	itemKey          string
+	kataMetadataJSON string
+}
+
+func (d *DB) prepareWorkspaceInsert(
+	ctx context.Context, ws *Workspace,
+) (preparedWorkspaceInsert, error) {
+	if ws == nil {
+		return preparedWorkspaceInsert{}, errors.New("insert workspace: workspace is required")
+	}
+	var prepared preparedWorkspaceInsert
+	var err error
+	ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+		prepared.repoOwnerKey, prepared.repoNameKey, prepared.repoPathKey, err =
+		d.canonicalizeWorkspaceRepo(
+			ctx, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+		)
+	if err != nil {
+		return preparedWorkspaceInsert{}, err
 	}
 	if ws.TerminalBackend == "" {
 		ws.TerminalBackend = "tmux"
 	}
-	itemKey, err := workspaceItemKeyForInsert(ws)
+	prepared.itemKey, err = workspaceItemKeyForInsert(ws)
 	if err != nil {
-		return fmt.Errorf("insert workspace: %w", err)
+		return preparedWorkspaceInsert{}, fmt.Errorf("insert workspace: %w", err)
 	}
-	kataMetadataJSON, err := workspaceKataMetadataJSON(ws)
+	prepared.kataMetadataJSON, err = workspaceKataMetadataJSON(ws)
 	if err != nil {
-		return fmt.Errorf("encode workspace kata metadata: %w", err)
+		return preparedWorkspaceInsert{}, fmt.Errorf("encode workspace kata metadata: %w", err)
 	}
-	_, err = d.execContext(ctx, `
+	return prepared, nil
+}
+
+type workspaceInsertExecutor interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}
+
+func insertPreparedWorkspace(
+	ctx context.Context,
+	executor workspaceInsertExecutor,
+	ws *Workspace,
+	prepared preparedWorkspaceInsert,
+) error {
+	_, err := executor.ExecContext(ctx, `
 		INSERT INTO forge_workspaces
 		    (id, platform, platform_host, repo_owner, repo_name,
 		     repo_owner_key, repo_name_key, repo_path_key,
@@ -4709,16 +4748,15 @@ func (d *DB) InsertWorkspace(
 		     error_message, kata_metadata)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		ws.ID, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
-		repoOwnerKey, repoNameKey, repoPathKey,
-		ws.ItemType, ws.ItemNumber, itemKey, ws.AssociatedPRNumber,
+		prepared.repoOwnerKey, prepared.repoNameKey, prepared.repoPathKey,
+		ws.ItemType, ws.ItemNumber, prepared.itemKey, ws.AssociatedPRNumber,
 		ws.GitHeadRef, ws.MRHeadRepo, ws.WorkspaceBranch,
 		ws.WorktreePath, ws.TmuxSession, ws.TerminalBackend, ws.Status,
-		ws.ErrorMessage, kataMetadataJSON,
+		ws.ErrorMessage, prepared.kataMetadataJSON,
 	)
 	if err != nil {
 		return fmt.Errorf("insert workspace: %w", err)
 	}
-	ws.ItemKey = itemKey
 	return nil
 }
 

@@ -400,6 +400,296 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/federation/enrollments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Begin or resume a federation enrollment */
+        post: operations["begin-federation-enrollment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/federation/enrollments/{enrollment_id}/abort": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Abandon this spoke's pending federation enrollment */
+        post: operations["abort-federation-enrollment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/federation/enrollments/{enrollment_id}/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Activate a prepared federation member */
+        post: operations["activate-federation-enrollment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/federation/enrollments/{enrollment_id}/preparation/begin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pin a pending enrollment before spoke preparation */
+        post: operations["begin-federation-spoke-preparation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/federation/enrollments/{enrollment_id}/preparation/seal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Seal completed provider-state handoff for a spoke */
+        post: operations["seal-federation-spoke-preparation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/federation/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Stream hub-owned provider events */
+        get: operations["stream-federation-provider-events"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/federation/identity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the authenticated federation identity */
+        get: operations["get-federation-identity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/federation/provider-state/review-drafts/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import one review draft while preparing a Forge spoke */
+        post: operations["federation-import-review-draft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/federation/provider-state/workflow-states/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import one workflow row while preparing a Forge spoke */
+        post: operations["federation-import-workflow-state"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/federation/provider/diff-descriptor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resolve a pull diff descriptor for a Forge spoke */
+        post: operations["federation-get-diff-descriptor"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/federation/provider/repository-descriptor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resolve a repository descriptor for a Forge spoke */
+        post: operations["federation-get-repository-descriptor"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/federation/provider/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get hub-owned settings for a Forge spoke */
+        get: operations["federation-get-provider-settings"];
+        /** Update hub-owned settings for a Forge spoke */
+        put: operations["federation-update-provider-settings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/federation/provider/workflow-state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set hub workflow state for a Forge spoke */
+        put: operations["federation-set-workflow-state"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/federation/provider/workflow-states/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** List hub workflow states for a Forge spoke */
+        post: operations["federation-list-workflow-states"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/federation/provider/workspace-auto-assign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply hub assignment policy to a workspace item */
+        post: operations["federation-auto-assign-workspace-item"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/federation/provider/workspace-launch-spec": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resolve current provider facts for a workspace launch */
+        post: operations["federation-resolve-workspace-launch-spec"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/federation/provider/workspace-launch-spec/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refresh provider facts for a Forge spoke workspace */
+        post: operations["federation-refresh-workspace-launch-spec"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/filesystem/complete": {
         parameters: {
             query?: never;
@@ -429,6 +719,40 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/fleet/enrollment-tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create a one-time fleet enrollment token */
+        post: operations["create-fleet-enrollment-token"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/fleet/enrollments/{enrollment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke a federation member */
+        delete: operations["revoke-federation-enrollment"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1096,6 +1420,57 @@ export interface paths {
         get: operations["get-fleet-workspace-runtime-session-attach-spec"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/fleet/join": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Join this daemon to a federation hub */
+        post: operations["join-federation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/fleet/prepare-spoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Quiesce this daemon and prepare it to become a fleet spoke */
+        post: operations["prepare-federation-spoke"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/fleet/prepare-spoke/abort": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Abort pending spoke preparation and restore standalone writes */
+        post: operations["abort-federation-spoke-preparation"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4057,24 +4432,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/settings/fleet/ssh-peers": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List SSH fleet peers */
-        get: operations["get-fleet-ssh-peers"];
-        /** Replace SSH fleet peers */
-        put: operations["update-fleet-ssh-peers"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/settings/repo-presets": {
         parameters: {
             query?: never;
@@ -4119,6 +4476,23 @@ export interface paths {
         };
         /** Read the workspace snapshot */
         get: operations["get-snapshot"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/snapshot/aggregate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the hub's neutral fleet aggregate */
+        get: operations["get-snapshot-aggregate"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4664,6 +5038,15 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        AbortFederationSpokeInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/AbortFederationSpokeInputBody.json
+             */
+            readonly $schema?: string;
+            force?: boolean;
+        };
         ActionStatusBody: {
             /**
              * Format: uri
@@ -4674,6 +5057,17 @@ export interface components {
             /** Format: int64 */
             approved_count?: number;
             status: string;
+        };
+        ActivateEnrollmentInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ActivateEnrollmentInputBody.json
+             */
+            readonly $schema?: string;
+            preparation_seal: string;
+            /** Format: int64 */
+            protocol_version: number;
         };
         Activity: {
             collapse_threads: boolean;
@@ -4697,6 +5091,7 @@ export interface components {
              */
             readonly $schema?: string;
             authors: string[] | null;
+            use_workspace_activity_for_recency: boolean;
         };
         ActivityItemResponse: {
             activity_type: string;
@@ -4753,6 +5148,7 @@ export interface components {
             item_activity_capped: boolean;
             items: components["schemas"]["ActivityItemResponse"][] | null;
             next_cursor?: string;
+            use_workspace_activity_for_recency: boolean;
             workspace_activity: components["schemas"]["WorkspaceActivitySubjectResponse"][] | null;
         };
         ActivitySubjectResponse: {
@@ -5251,6 +5647,18 @@ export interface components {
             readonly $schema?: string;
             folder: components["schemas"]["DocsFolderResponse"];
         };
+        CreateEnrollmentTokenInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/CreateEnrollmentTokenInputBody.json
+             */
+            readonly $schema?: string;
+            base_url: string;
+            /** Format: int64 */
+            expires_in_seconds: number;
+            name?: string;
+        };
         CreateIssueHostInputBody: {
             /**
              * Format: uri
@@ -5356,6 +5764,27 @@ export interface components {
         Detail: {
             /** Format: int64 */
             initial_timeline_entry_limit: number;
+        };
+        DiffDescriptor: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/DiffDescriptor.json
+             */
+            readonly $schema?: string;
+            diff_base_sha: string;
+            diff_head_sha: string;
+            merge_base_sha: string;
+            platform_base_sha: string;
+            platform_head_sha: string;
+            /** Format: int64 */
+            protocol_version: number;
+            /** Format: int64 */
+            pull_number: number;
+            repository: components["schemas"]["RepositoryDescriptor"];
+            /** Format: int64 */
+            snapshot_revision: number;
+            stale: boolean;
         };
         DiffFile: {
             /** Format: int64 */
@@ -5686,6 +6115,50 @@ export interface components {
             body?: string;
             title?: string;
         };
+        Enrollment: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/Enrollment.json
+             */
+            readonly $schema?: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            expires_at: string;
+            hub_base_url: string;
+            hub_name?: string;
+            hub_node_id: string;
+            id: string;
+            node_id: string;
+            preparation_started?: boolean;
+            /** Format: int64 */
+            protocol_version: number;
+            /** Format: date-time */
+            revoked_at?: string;
+            spoke_base_url: string;
+            spoke_name?: string;
+            spoke_platform: string;
+            state: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        EnrollmentToken: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/EnrollmentToken.json
+             */
+            readonly $schema?: string;
+            /** Format: date-time */
+            expires_at: string;
+            hub_base_url: string;
+            hub_name?: string;
+            hub_node_id: string;
+            /** Format: int64 */
+            protocol_version: number;
+            token: string;
+        };
         ErrorDetail: {
             /** @description Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id' */
             location?: string;
@@ -5700,6 +6173,117 @@ export interface components {
             setupHook: boolean;
             teardownHook: boolean;
             tmuxVersion?: string;
+        };
+        FederationDiffDescriptorRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/FederationDiffDescriptorRequest.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            pull_number: number;
+            repository: components["schemas"]["RepositoryRoute"];
+        };
+        FederationIdentityOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/FederationIdentityOutputBody.json
+             */
+            readonly $schema?: string;
+            node_id: string;
+            /** Format: int64 */
+            protocol_version: number;
+        };
+        FederationSetWorkflowStateRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/FederationSetWorkflowStateRequest.json
+             */
+            readonly $schema?: string;
+            item: components["schemas"]["FederationWorkflowItemIdentity"];
+            update: components["schemas"]["FederationWorkflowUpdate"];
+        };
+        FederationWorkflowItem: {
+            author: string;
+            identity: components["schemas"]["FederationWorkflowItemIdentity"];
+            is_draft: boolean;
+            last_activity_at: string;
+            repository: components["schemas"]["FederationWorkflowRepositoryIdentity"];
+            state: string;
+            title: string;
+            url: string;
+            workflow: components["schemas"]["FederationWorkflowState"];
+        };
+        FederationWorkflowItemIdentity: {
+            name: string;
+            /** Format: int64 */
+            number: number;
+            owner: string;
+            platform_host: string;
+            platform_repo_id: string;
+            provider: string;
+            type: string;
+        };
+        FederationWorkflowMutation: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/FederationWorkflowMutation.json
+             */
+            readonly $schema?: string;
+            previous_status: string;
+            state: components["schemas"]["FederationWorkflowState"];
+        };
+        FederationWorkflowPage: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/FederationWorkflowPage.json
+             */
+            readonly $schema?: string;
+            items: components["schemas"]["FederationWorkflowItem"][];
+            next_cursor: string;
+        };
+        FederationWorkflowQuery: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/FederationWorkflowQuery.json
+             */
+            readonly $schema?: string;
+            cursor: string;
+            include_closed: boolean;
+            item_types: string[];
+            /** Format: int64 */
+            limit: number;
+            repository: components["schemas"]["FederationWorkflowRepositoryIdentity"];
+            states: string[];
+        };
+        FederationWorkflowRepositoryIdentity: {
+            name: string;
+            owner: string;
+            platform_host: string;
+            platform_repo_id: string;
+            provider: string;
+            repo_path: string;
+        };
+        FederationWorkflowState: {
+            status: string;
+            updated_actor: string;
+            updated_at: string;
+            updated_reason: string;
+            updated_source: string;
+        };
+        FederationWorkflowUpdate: {
+            actor: string;
+            expected_status: string;
+            force: boolean;
+            reason: string;
+            source: string;
+            status: string;
         };
         FilePreviewResponse: {
             /**
@@ -5749,27 +6333,16 @@ export interface components {
             message?: string;
             root_path?: string;
         };
-        FleetPeer: {
+        FleetHub: {
             base_url: string;
-            key: string;
             name?: string;
+            node_id: string;
         };
-        FleetSSHPeer: {
-            destination: string;
-            key: string;
+        FleetMember: {
+            base_url: string;
             name?: string;
-            platform?: string;
-            remote_command?: string;
-        };
-        FleetSSHPeersBody: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example /api/v1/schemas/FleetSSHPeersBody.json
-             */
-            readonly $schema?: string;
-            restart_required: boolean;
-            ssh_peers: components["schemas"]["FleetSSHPeer"][];
+            node_id: string;
+            state: string;
         };
         FleetSessions: {
             include_unmanaged_details?: boolean;
@@ -5782,12 +6355,13 @@ export interface components {
              */
             readonly $schema?: string;
             enabled: boolean;
-            key?: string;
+            enrollments: components["schemas"]["Enrollment"][];
+            hub?: components["schemas"]["FleetHub"];
+            members: components["schemas"]["FleetMember"][];
             peer_timeout?: string;
-            peers: components["schemas"]["FleetPeer"][];
             restart_required: boolean;
+            role: string;
             sessions: components["schemas"]["FleetSessions"];
-            ssh_peers: components["schemas"]["FleetSSHPeer"][];
         };
         GitChangesResponse: {
             /**
@@ -5898,23 +6472,27 @@ export interface components {
             tmux_session?: string;
         };
         HostSummary: {
+            /** Format: uri */
+            baseURL?: string;
             capabilities?: components["schemas"]["Capabilities"];
             configKey: string;
             connectionState?: string;
             diagnostics: components["schemas"]["HostDiagnostic"][] | null;
             error?: string;
+            /** @enum {string} */
+            federationRole: "hub" | "spoke";
             hostname?: string;
             id: string;
             kind: string;
             lastSeenAt?: string;
             name: string;
+            nodeID: string;
             operationAvailability: {
                 [key: string]: components["schemas"]["HostOperationAvailability"];
             };
             platform: string;
             preferredTransport: string;
             reachable: boolean;
-            sshDestination?: string;
             tmuxLastPolledAt?: string;
             tmuxMetricsError?: string;
             tmuxProbeError?: string;
@@ -6100,6 +6678,41 @@ export interface components {
              */
             readonly $schema?: string;
             reviewers: string[] | null;
+        };
+        JoinRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/JoinRequest.json
+             */
+            readonly $schema?: string;
+            base_url: string;
+            enrollment_id: string;
+            hub_credential: string;
+            name?: string;
+            node_id: string;
+            platform: string;
+            /** Format: int64 */
+            protocol_version: number;
+        };
+        JoinResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/JoinResponse.json
+             */
+            readonly $schema?: string;
+            enrollment_id: string;
+            /** Format: date-time */
+            expires_at: string;
+            hub_base_url: string;
+            hub_name?: string;
+            hub_node_id: string;
+            preparation_required: boolean;
+            /** Format: int64 */
+            protocol_version: number;
+            spoke_credential: string;
+            state: string;
         };
         KataCreateLinkRequest: {
             /**
@@ -6418,6 +7031,51 @@ export interface components {
             readonly $schema?: string;
             worktrees: components["schemas"]["WorktreeResponse"][] | null;
         };
+        LocalEnrollment: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/LocalEnrollment.json
+             */
+            readonly $schema?: string;
+            enrollment_id: string;
+            /** Format: date-time */
+            expires_at: string;
+            hub_base_url: string;
+            hub_name?: string;
+            hub_node_id?: string;
+            node_id: string;
+            preparation?: components["schemas"]["LocalPreparationSeal"];
+            preparation_required: boolean;
+            preparation_started?: boolean;
+            /** Format: int64 */
+            protocol_version: number;
+            spoke_base_url: string;
+            spoke_name?: string;
+            spoke_platform: string;
+            state: string;
+        };
+        LocalJoinInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/LocalJoinInputBody.json
+             */
+            readonly $schema?: string;
+            enrollment_token: string;
+            hub_base_url: string;
+            name?: string;
+            spoke_base_url: string;
+        };
+        LocalPreparationSeal: {
+            enrollment_id: string;
+            hub_node_id: string;
+            node_id: string;
+            preparation_digest: string;
+            preparation_seal: string;
+            /** Format: int64 */
+            protocol_version: number;
+        };
         LocalSyncCeilingStatus: {
             /** Format: int64 */
             background_limit: number;
@@ -6685,6 +7343,44 @@ export interface components {
             state: string;
             title: string;
         };
+        NeutralHost: {
+            baseURL?: string;
+            capabilities?: components["schemas"]["Capabilities"];
+            error?: string;
+            federationRole: string;
+            /** Format: int64 */
+            generation?: number;
+            hostname?: string;
+            lastSeenAt?: string;
+            name: string;
+            nodeID: string;
+            platform?: string;
+            platformAuthenticated?: boolean;
+            reachable: boolean;
+            tmuxLastPolledAt?: string;
+            tmuxMetricsError?: string;
+            tmuxProbeError?: string;
+            tmuxSessions?: components["schemas"]["TmuxSessionInfo"][] | null;
+            version?: string;
+        };
+        NeutralSnapshot: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/NeutralSnapshot.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            generation: number;
+            hosts: components["schemas"]["NeutralHost"][] | null;
+            platformAuthenticated?: boolean;
+            projects?: components["schemas"]["RawProject"][] | null;
+            /** Format: int64 */
+            protocolVersion: number;
+            sessions?: components["schemas"]["RawSession"][] | null;
+            workspaces?: components["schemas"]["RawWorkspace"][] | null;
+            worktrees?: components["schemas"]["RawWorktree"][] | null;
+        };
         Node: {
             /**
              * Format: uri
@@ -6853,7 +7549,7 @@ export interface components {
              * @example badRequest
              * @enum {string}
              */
-            code: "badRequest" | "branchConflict" | "branchInUse" | "branchProtected" | "commentNotFound" | "conflict" | "destinationExists" | "forbidden" | "hookFailed" | "internalError" | "issueNotFound" | "mutationOutcomeUnknown" | "notFound" | "payloadTooLarge" | "projectNotFound" | "pullNotFound" | "rateLimited" | "repoNotFound" | "resyncRequired" | "serviceUnavailable" | "settingsUnavailable" | "toolMissing" | "toolUnauthenticated" | "unauthorized" | "unsupportedCapability" | "upstreamError" | "validationError" | "workspaceAlreadyExists" | "workspaceDeletionInProgress" | "workspaceDirectoryNotReusable" | "workspaceNotFound" | "workspaceSetupInProgress" | "worktreeDirty";
+            code: "badRequest" | "branchConflict" | "branchInUse" | "branchProtected" | "commentNotFound" | "conflict" | "destinationExists" | "forbidden" | "gitCredentialUnavailable" | "hookFailed" | "hubUnavailable" | "internalError" | "issueNotFound" | "mutationOutcomeUnknown" | "notFound" | "payloadTooLarge" | "projectNotFound" | "pullNotFound" | "rateLimited" | "repoNotFound" | "resyncRequired" | "serviceUnavailable" | "settingsUnavailable" | "spokePreparationInProgress" | "toolMissing" | "toolUnauthenticated" | "unauthorized" | "unsupportedCapability" | "upstreamError" | "validationError" | "workspaceAlreadyExists" | "workspaceDeletionInProgress" | "workspaceDirectoryNotReusable" | "workspaceNotFound" | "workspaceSetupInProgress" | "worktreeDirty";
             /**
              * @description A human-readable explanation specific to this occurrence of the problem.
              * @example Property foo is required but is missing.
@@ -6987,6 +7683,129 @@ export interface components {
             thread_resolve: boolean;
             workflow_approval: boolean;
         };
+        ProviderRepositoryObservation: {
+            name: string;
+            /** Format: date-time */
+            observed_at: string;
+            owner: string;
+            platform_host: string;
+            platform_repo_id: string;
+            provider: string;
+            repo_path: string;
+        };
+        ProviderSettingsResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ProviderSettingsResponse.json
+             */
+            readonly $schema?: string;
+            activity: components["schemas"]["Activity"];
+            detail: components["schemas"]["Detail"];
+            issues: components["schemas"]["Issues"];
+            notifications: components["schemas"]["NotificationsSettingsResponse"];
+            pull_requests: components["schemas"]["PullRequests"];
+            repo_presets: components["schemas"]["RepoPreset"][];
+            repos: components["schemas"]["ConfiguredRepoStatus"][];
+            repository_observations: components["schemas"]["ProviderRepositoryObservation"][];
+        };
+        ProviderSettingsUpdate: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ProviderSettingsUpdate.json
+             */
+            readonly $schema?: string;
+            activity?: components["schemas"]["Activity"];
+            detail?: components["schemas"]["Detail"];
+            issues?: components["schemas"]["Issues"];
+            pull_requests?: components["schemas"]["PullRequests"];
+        };
+        ProviderStateConflict: {
+            kind: string;
+            source_digest: string;
+            source_key: string;
+            target_digest: string;
+        };
+        ProviderStateImportResult: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ProviderStateImportResult.json
+             */
+            readonly $schema?: string;
+            conflict?: components["schemas"]["ProviderStateConflict"];
+            imported: boolean;
+            receipt?: string;
+        };
+        ProviderStateRepository: {
+            name: string;
+            owner: string;
+            platform_host: string;
+            platform_repo_id: string;
+            provider: string;
+        };
+        ProviderStateReviewComment: {
+            body: string;
+            commit_sha: string;
+            diff_head_sha: string;
+            /** Format: int64 */
+            line: number;
+            line_type: string;
+            /** Format: int64 */
+            new_line?: number;
+            /** Format: int64 */
+            old_line?: number;
+            old_path?: string;
+            path: string;
+            side: string;
+            /** Format: int64 */
+            start_line?: number;
+            start_side?: string;
+        };
+        ProviderStateReviewDraftPayload: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ProviderStateReviewDraftPayload.json
+             */
+            readonly $schema?: string;
+            action: string;
+            body: string;
+            comments: components["schemas"]["ProviderStateReviewComment"][];
+            /** Format: int64 */
+            pull_number: number;
+            repository: components["schemas"]["ProviderStateRepository"];
+        };
+        ProviderStateWorkflowPayload: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ProviderStateWorkflowPayload.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            item_number: number;
+            /** @enum {string} */
+            item_type: "pr" | "issue";
+            repository: components["schemas"]["ProviderStateRepository"];
+            status: string;
+            updated_actor?: string;
+            updated_reason?: string;
+            updated_source?: string;
+        };
+        ProviderWorkspaceItemRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ProviderWorkspaceItemRequest.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            item_number: number;
+            item_type: string;
+            repository: components["schemas"]["RepositoryRoute"];
+        };
         PublishChange: {
             old_path?: string;
             path: string;
@@ -7101,29 +7920,10 @@ export interface components {
             platformHost?: string;
             platformRepo?: string;
             registryId?: string;
+            repository?: components["schemas"]["RepositoryIdentity"];
             repositoryKind?: string;
             rootPath: string;
             scopedKey: string;
-        };
-        RawRemoteHost: {
-            baseURL?: string;
-            capabilities?: components["schemas"]["Capabilities"];
-            error?: string;
-            /** Format: int64 */
-            generation?: number;
-            hostKey: string;
-            lastSeenAt?: string;
-            name: string;
-            platform?: string;
-            platformAuthenticated?: boolean;
-            preferredTransport?: string;
-            reachable: boolean;
-            sshDestination?: string;
-            tmuxLastPolledAt?: string;
-            tmuxMetricsError?: string;
-            tmuxProbeError?: string;
-            tmuxSessions?: components["schemas"]["TmuxSessionInfo"][] | null;
-            version?: string;
         };
         RawSession: {
             agentKind?: string;
@@ -7152,17 +7952,71 @@ export interface components {
              * @example /api/v1/schemas/RawSnapshot.json
              */
             readonly $schema?: string;
+            baseURL?: string;
             capabilities?: components["schemas"]["Capabilities"];
             /** Format: int64 */
             generation: number;
             host: components["schemas"]["RawHost"];
+            nodeID: string;
             platformAuthenticated?: boolean;
             projects?: components["schemas"]["RawProject"][] | null;
-            remoteHosts?: components["schemas"]["RawRemoteHost"][] | null;
             /** Format: int64 */
-            schemaVersion: number;
+            protocolVersion: number;
             sessions?: components["schemas"]["RawSession"][] | null;
+            workspaces?: components["schemas"]["RawWorkspace"][] | null;
             worktrees?: components["schemas"]["RawWorktree"][] | null;
+        };
+        RawWorkspace: {
+            agentState?: string;
+            agentStateUpdatedAt?: string;
+            /** Format: int64 */
+            associatedPRNumber?: number;
+            /** Format: int64 */
+            commitsAhead?: number;
+            /** Format: int64 */
+            commitsBehind?: number;
+            createdAt: string;
+            enrichmentError?: string;
+            enrichmentRefreshedAt?: string;
+            enrichmentStatus?: string;
+            errorMessage?: string;
+            gitHeadRef: string;
+            hostKey?: string;
+            id: string;
+            itemKey?: string;
+            itemLastActivityAt?: string;
+            /** Format: int64 */
+            itemNumber: number;
+            itemType: string;
+            kata?: components["schemas"]["RawWorkspaceKata"];
+            /** Format: int64 */
+            mrAdditions?: number;
+            mrCIStatus?: string;
+            /** Format: int64 */
+            mrDeletions?: number;
+            mrIsDraft?: boolean;
+            mrReviewDecision?: string;
+            mrState?: string;
+            mrTitle?: string;
+            repository: components["schemas"]["RepositoryIdentity"];
+            sessionBackend?: string;
+            status: string;
+            tmuxActivitySource?: string;
+            tmuxLastOutputAt?: string;
+            tmuxPaneTitle?: string;
+            tmuxSession?: string;
+            tmuxWorking: boolean;
+            worktreeDirty?: boolean;
+            worktreePath: string;
+        };
+        RawWorkspaceKata: {
+            daemonID: string;
+            issueUID: string;
+            projectName?: string;
+            projectUID: string;
+            qualifiedID?: string;
+            shortID?: string;
+            title?: string;
         };
         RawWorktree: {
             branch?: string;
@@ -7614,6 +8468,47 @@ export interface components {
             readonly $schema?: string;
             worktree_base_path: string;
         };
+        RepositoryDescriptor: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/RepositoryDescriptor.json
+             */
+            readonly $schema?: string;
+            clone_url: string;
+            default_branch: string;
+            name: string;
+            /** Format: date-time */
+            observed_at: string;
+            owner: string;
+            platform_host: string;
+            platform_repo_id: string;
+            /** Format: int64 */
+            protocol_version: number;
+            provider: string;
+            /** Format: int64 */
+            snapshot_revision: number;
+            stale: boolean;
+        };
+        RepositoryIdentity: {
+            name?: string;
+            owner?: string;
+            platformHost: string;
+            platformRepoID: string;
+            provider: string;
+        };
+        RepositoryRoute: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/RepositoryRoute.json
+             */
+            readonly $schema?: string;
+            name: string;
+            owner: string;
+            platform_host: string;
+            provider: string;
+        };
         RequestChangesPRHostInputBody: {
             /**
              * Format: uri
@@ -7714,6 +8609,24 @@ export interface components {
             tmux_session: string;
             /** Format: int64 */
             version: number;
+        };
+        SealSpokePreparationInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/SealSpokePreparationInputBody.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            drained_ack_generation: number;
+            hub_node_id: string;
+            /** Format: int64 */
+            migration_version: number;
+            node_id: string;
+            preparation_digest: string;
+            /** Format: int64 */
+            protocol_version: number;
+            receipts_digest: string;
         };
         SessionInfo: {
             /**
@@ -7869,6 +8782,7 @@ export interface components {
              */
             readonly $schema?: string;
             activePlatformHost?: string;
+            aggregateIncomplete?: boolean;
             /** Format: int64 */
             generation: number;
             hosts: components["schemas"]["HostSummary"][] | null;
@@ -7878,8 +8792,9 @@ export interface components {
             };
             projects: components["schemas"]["ProjectSummary"][] | null;
             /** Format: int64 */
-            schemaVersion: number;
+            protocolVersion: number;
             sessions: components["schemas"]["SessionSummary"][] | null;
+            workspaces: components["schemas"]["WorkspaceSummary"][] | null;
             worktrees: components["schemas"]["WorktreeSummary"][] | null;
         };
         SnippetRange: {
@@ -7887,6 +8802,62 @@ export interface components {
             end: number;
             /** Format: int64 */
             start: number;
+        };
+        SpokePreparationAbortReport: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/SpokePreparationAbortReport.json
+             */
+            readonly $schema?: string;
+            enrollment_id: string;
+            hub_revoked: boolean;
+            provider_writes_open: boolean;
+            restart_required: boolean;
+        };
+        SpokePreparationReport: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/SpokePreparationReport.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            active_deferred_merges: number;
+            handoff_conflicts: components["schemas"]["ProviderStateConflict"][];
+            handoff_errors: string[];
+            /** Format: int64 */
+            in_flight_provider_writes: number;
+            preparation_seal?: string;
+            /** Format: int64 */
+            ready_launch_specs: number;
+            ready_to_activate: boolean;
+            restart_required: boolean;
+            /** Format: int64 */
+            undrained_acks: number;
+            unprepared: components["schemas"]["UnpreparedWorkspace"][];
+        };
+        SpokePreparationSeal: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/SpokePreparationSeal.json
+             */
+            readonly $schema?: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: int64 */
+            drained_ack_generation: number;
+            enrollment_id: string;
+            hub_node_id: string;
+            /** Format: int64 */
+            migration_version: number;
+            node_id: string;
+            preparation_digest: string;
+            preparation_seal: string;
+            /** Format: int64 */
+            protocol_version: number;
+            receipts_digest: string;
         };
         StackContextResponse: {
             /**
@@ -8050,6 +9021,10 @@ export interface components {
             git: components["schemas"]["ToolingGitStatus"];
             glab: components["schemas"]["ToolingCLIStatus"];
         };
+        UnpreparedWorkspace: {
+            reason: string;
+            workspace: components["schemas"]["Workspace"];
+        };
         UpdateDocsFolderInputBody: {
             /**
              * Format: uri
@@ -8059,15 +9034,6 @@ export interface components {
             readonly $schema?: string;
             name?: string;
         };
-        UpdateFleetSSHPeersInputBody: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example /api/v1/schemas/UpdateFleetSSHPeersInputBody.json
-             */
-            readonly $schema?: string;
-            ssh_peers: components["schemas"]["FleetSSHPeer"][];
-        };
         UpdateFleetSettingsInputBody: {
             /**
              * Format: uri
@@ -8076,11 +9042,8 @@ export interface components {
              */
             readonly $schema?: string;
             enabled: boolean;
-            key?: string;
             peer_timeout?: string;
-            peers: components["schemas"]["FleetPeer"][];
             sessions: components["schemas"]["FleetSessions"];
-            ssh_peers: components["schemas"]["FleetSSHPeer"][];
         };
         UpdateRepoPresetInputBody: {
             /**
@@ -8142,6 +9105,30 @@ export interface components {
             updated_reason?: string;
             updated_source?: string;
         };
+        Workspace: {
+            /** Format: int64 */
+            AssociatedPRNumber: number | null;
+            /** Format: date-time */
+            CreatedAt: string;
+            ErrorMessage: string | null;
+            GitHeadRef: string;
+            ID: string;
+            ItemKey: string;
+            /** Format: int64 */
+            ItemNumber: number;
+            ItemType: string;
+            KataMetadata: components["schemas"]["WorkspaceKataMetadata"];
+            MRHeadRepo: string | null;
+            Platform: string;
+            PlatformHost: string;
+            RepoName: string;
+            RepoOwner: string;
+            Status: string;
+            TerminalBackend: string;
+            TmuxSession: string;
+            WorkspaceBranch: string;
+            WorktreePath: string;
+        };
         WorkspaceActivitySubjectResponse: {
             /** Format: date-time */
             activity_at: string;
@@ -8189,9 +9176,84 @@ export interface components {
             short_id?: string;
             title?: string;
         };
+        WorkspaceKataSummary: {
+            daemon_id: string;
+            issue_uid: string;
+            project_name?: string;
+            project_uid: string;
+            qualified_id?: string;
+            short_id?: string;
+            title?: string;
+        };
+        WorkspaceLaunchPull: {
+            head_branch: string;
+            head_repo_clone_url: string;
+            /** @enum {string} */
+            head_repo_kind: "same_repo" | "fork" | "unknown";
+            /** Format: int64 */
+            snapshot_revision: number;
+        };
+        WorkspaceLaunchRepository: {
+            clone_url: string;
+            default_branch: string;
+            name: string;
+            owner: string;
+            platform_host: string;
+            platform_repo_id: string;
+            provider: string;
+        };
+        WorkspaceLaunchRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/WorkspaceLaunchRequest.json
+             */
+            readonly $schema?: string;
+            git_head_ref?: string;
+            issue_branch_slug?: boolean;
+            item_key?: string;
+            /** Format: int64 */
+            item_number: number;
+            item_type: string;
+            platform_repo_id?: string;
+            repository: components["schemas"]["RepositoryRoute"];
+        };
+        WorkspaceLaunchSpec: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/WorkspaceLaunchSpec.json
+             */
+            readonly $schema?: string;
+            git_head_ref: string;
+            /** Format: date-time */
+            issued_at: string;
+            item_key: string;
+            /** Format: int64 */
+            item_number: number;
+            /** @enum {string} */
+            item_type: "pull_request" | "issue";
+            pull?: components["schemas"]["WorkspaceLaunchPull"];
+            repository: components["schemas"]["WorkspaceLaunchRepository"];
+            source_title: string;
+            source_url: string;
+            source_visible: boolean;
+            /** Format: date-time */
+            source_visible_until: string;
+            /** Format: int64 */
+            version: number;
+        };
         WorkspaceRef: {
             id: string;
             status: string;
+        };
+        WorkspaceRepositorySummary: {
+            name: string;
+            owner: string;
+            platform_host: string;
+            platform_repo_id?: string;
+            provider: string;
+            repo_path: string;
         };
         WorkspaceResponse: {
             /**
@@ -8279,6 +9341,53 @@ export interface components {
             auto_assign_on_create?: boolean;
             /** @enum {string} */
             default_sidebar_view?: "diff" | "item";
+        };
+        WorkspaceSummary: {
+            agent_state?: string;
+            agent_state_updated_at?: string;
+            /** Format: int64 */
+            associated_pr_number?: number;
+            /** Format: int64 */
+            commits_ahead?: number;
+            /** Format: int64 */
+            commits_behind?: number;
+            created_at: string;
+            enrichment_error?: string;
+            enrichment_refreshed_at?: string;
+            enrichment_status?: string;
+            error_message?: string;
+            fleet_host_key?: string;
+            fleet_host_name?: string;
+            git_head_ref: string;
+            id: string;
+            item_key?: string;
+            item_last_activity_at?: string;
+            /** Format: int64 */
+            item_number: number;
+            item_type: string;
+            kata?: components["schemas"]["WorkspaceKataSummary"];
+            /** Format: int64 */
+            mr_additions?: number;
+            mr_ci_status?: string;
+            /** Format: int64 */
+            mr_deletions?: number;
+            mr_is_draft?: boolean;
+            mr_review_decision?: string;
+            mr_state?: string;
+            mr_title?: string;
+            platform_host: string;
+            repo: components["schemas"]["WorkspaceRepositorySummary"];
+            repo_name: string;
+            repo_owner: string;
+            status: string;
+            tmux_activity_source: string;
+            tmux_last_output_at: string | null;
+            tmux_pane_title?: string;
+            tmux_session?: string;
+            tmux_working: boolean;
+            visible: boolean;
+            worktree_dirty?: boolean;
+            worktree_path: string;
         };
         Workspaces: {
             auto_assign_on_create: boolean;
@@ -9331,6 +10440,592 @@ export interface operations {
             };
         };
     };
+    "begin-federation-enrollment": {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JoinRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JoinResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "abort-federation-enrollment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                enrollment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "activate-federation-enrollment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                enrollment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActivateEnrollmentInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Enrollment"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "begin-federation-spoke-preparation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                enrollment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Enrollment"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "seal-federation-spoke-preparation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                enrollment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SealSpokePreparationInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpokePreparationSeal"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "stream-federation-provider-events": {
+        parameters: {
+            query?: {
+                since?: string;
+            };
+            header?: {
+                "X-Kenn-Forge-Federation-Protocol"?: string;
+                "Last-Event-ID"?: string;
+                "Content-Length"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Filtered provider event stream */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": unknown;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-federation-identity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FederationIdentityOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "federation-import-review-draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderStateReviewDraftPayload"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderStateImportResult"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "federation-import-workflow-state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderStateWorkflowPayload"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderStateImportResult"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "federation-get-diff-descriptor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FederationDiffDescriptorRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiffDescriptor"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "federation-get-repository-descriptor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RepositoryRoute"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepositoryDescriptor"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "federation-get-provider-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderSettingsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "federation-update-provider-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderSettingsUpdate"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderSettingsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "federation-set-workflow-state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FederationSetWorkflowStateRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FederationWorkflowMutation"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "federation-list-workflow-states": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FederationWorkflowQuery"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FederationWorkflowPage"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "federation-auto-assign-workspace-item": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderWorkspaceItemRequest"];
+            };
+        };
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "federation-resolve-workspace-launch-spec": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceLaunchRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceLaunchSpec"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "federation-refresh-workspace-launch-spec": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceLaunchRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceLaunchSpec"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
     "complete-filesystem-path": {
         parameters: {
             query: {
@@ -9381,6 +11076,68 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["FilesystemValidateRepoOutputBody"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "create-fleet-enrollment-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateEnrollmentTokenInputBody"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnrollmentToken"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "revoke-federation-enrollment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                enrollment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {
@@ -10698,6 +12455,101 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "join-federation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LocalJoinInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocalEnrollment"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "prepare-federation-spoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpokePreparationReport"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "abort-federation-spoke-preparation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AbortFederationSpokeInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpokePreparationAbortReport"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
                     "application/problem+json": components["schemas"]["ProblemError"];
                 };
             };
@@ -17745,68 +19597,6 @@ export interface operations {
             };
         };
     };
-    "get-fleet-ssh-peers": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FleetSSHPeersBody"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemError"];
-                };
-            };
-        };
-    };
-    "update-fleet-ssh-peers": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateFleetSSHPeersInputBody"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FleetSSHPeersBody"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemError"];
-                };
-            };
-        };
-    };
     "create-repo-preset": {
         parameters: {
             query?: never;
@@ -17909,7 +19699,7 @@ export interface operations {
     "get-snapshot": {
         parameters: {
             query?: {
-                /** @description Fan out to configured fleet peers and include their hosts/worktrees. */
+                /** @description Include the federation aggregate projected for this spoke. */
                 include_peers?: boolean;
             };
             header?: never;
@@ -17925,6 +19715,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Snapshot"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-snapshot-aggregate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NeutralSnapshot"];
                 };
             };
             /** @description Error */
@@ -19181,6 +21000,7 @@ export const archiveStatusResponseActive_phasesValues: ReadonlyArray<FlattenedDe
 export const archiveStatusResponseCollection_modeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveStatusResponse"]["collection_mode"]> = ["discovery", "full"];
 export const archiveStatusResponseOperator_stateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveStatusResponse"]["operator_state"]> = ["active", "paused"];
 export const archiveStatusResponseStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveStatusResponse"]["status"]> = ["running", "waiting_for_budget", "current", "partial", "paused", "blocked"];
+export const hostSummaryFederationRoleValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["HostSummary"]["federationRole"]> = ["hub", "spoke"];
 export const issueWorkflowStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Issue"]["WorkflowStatus"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
 export const issueResponseWorkflowStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["IssueResponse"]["WorkflowStatus"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
 export const kataEffectiveLinksResponseStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["KataEffectiveLinksResponse"]["state"]> = ["complete", "partial", "unavailable"];
@@ -19189,9 +21009,12 @@ export const mergeRequestKanbanStatusValues: ReadonlyArray<FlattenedDeepRequired
 export const mergeRequestStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequest"]["State"]> = ["open", "closed", "merged"];
 export const mergeRequestResponseKanbanStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequestResponse"]["KanbanStatus"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
 export const mergeRequestResponseStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequestResponse"]["State"]> = ["open", "closed", "merged"];
-export const problemErrorCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ProblemError"]["code"]> = ["badRequest", "branchConflict", "branchInUse", "branchProtected", "commentNotFound", "conflict", "destinationExists", "forbidden", "hookFailed", "internalError", "issueNotFound", "mutationOutcomeUnknown", "notFound", "payloadTooLarge", "projectNotFound", "pullNotFound", "rateLimited", "repoNotFound", "resyncRequired", "serviceUnavailable", "settingsUnavailable", "toolMissing", "toolUnauthenticated", "unauthorized", "unsupportedCapability", "upstreamError", "validationError", "workspaceAlreadyExists", "workspaceDeletionInProgress", "workspaceDirectoryNotReusable", "workspaceNotFound", "workspaceSetupInProgress", "worktreeDirty"];
+export const problemErrorCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ProblemError"]["code"]> = ["badRequest", "branchConflict", "branchInUse", "branchProtected", "commentNotFound", "conflict", "destinationExists", "forbidden", "gitCredentialUnavailable", "hookFailed", "hubUnavailable", "internalError", "issueNotFound", "mutationOutcomeUnknown", "notFound", "payloadTooLarge", "projectNotFound", "pullNotFound", "rateLimited", "repoNotFound", "resyncRequired", "serviceUnavailable", "settingsUnavailable", "spokePreparationInProgress", "toolMissing", "toolUnauthenticated", "unauthorized", "unsupportedCapability", "upstreamError", "validationError", "workspaceAlreadyExists", "workspaceDeletionInProgress", "workspaceDirectoryNotReusable", "workspaceNotFound", "workspaceSetupInProgress", "worktreeDirty"];
+export const providerStateWorkflowPayloadItem_typeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ProviderStateWorkflowPayload"]["item_type"]> = ["pr", "issue"];
 export const syncStatusLast_error_codeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["SyncStatus"]["last_error_code"]> = ["localSyncCeilingExhausted"];
 export const workflowStateMetaResponseStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkflowStateMetaResponse"]["status"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
+export const workspaceLaunchPullHead_repo_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkspaceLaunchPull"]["head_repo_kind"]> = ["same_repo", "fork", "unknown"];
+export const workspaceLaunchSpecItem_typeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkspaceLaunchSpec"]["item_type"]> = ["pull_request", "issue"];
 export const workspaceResponseAgent_stateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkspaceResponse"]["agent_state"]> = ["idle", "working", "input", "approval", "done"];
 export const workspaceResponseEnrichment_statusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkspaceResponse"]["enrichment_status"]> = ["not_applicable", "pending", "fresh", "stale", "failed"];
 export const workspaceResponseMr_head_repo_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkspaceResponse"]["mr_head_repo_kind"]> = ["same_repo", "fork", "unknown"];

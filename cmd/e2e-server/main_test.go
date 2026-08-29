@@ -195,6 +195,7 @@ esac
 }
 
 func TestWriteServerInfoFile(t *testing.T) {
+	require := require.New(t)
 	path := filepath.Join(t.TempDir(), "server-info.json")
 	info := e2eServerInfo{
 		Host:    "127.0.0.1",
@@ -203,15 +204,20 @@ func TestWriteServerInfoFile(t *testing.T) {
 		PID:     4242,
 	}
 
-	require.NoError(t, writeServerInfoFile(path, info))
+	require.NoError(writeServerInfoFile(path, info))
 
 	content, err := os.ReadFile(path)
-	require.NoError(t, err)
+	require.NoError(err)
 
 	var got e2eServerInfo
-	require.NoError(t, json.Unmarshal(content, &got))
+	require.NoError(json.Unmarshal(content, &got))
 	assert := assert.New(t)
 	assert.Equal(info, got)
+	if runtime.GOOS != "windows" {
+		fileInfo, err := os.Stat(path)
+		require.NoError(err)
+		assert.Equal(os.FileMode(0o600), fileInfo.Mode().Perm())
+	}
 }
 
 func TestCleanupServerInfoFileRemovesFile(t *testing.T) {
@@ -556,7 +562,7 @@ func TestRunDefaultRoborevFailsClosedThroughProxy(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", "", false, false)
+		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false, false)
 	}()
 
 	baseURL := waitForServerInfoBaseURL(t, serverInfoFile, done)
@@ -647,7 +653,7 @@ func TestRunPprofListenerFromEnv(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", "", false, false)
+		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false, false)
 	}()
 
 	info := waitForServerInfo(t, serverInfoFile, done)
@@ -682,7 +688,7 @@ func TestRunCancellationStopsPrivateTmuxBeforeShutdown(t *testing.T) {
 	serverInfoFile := filepath.Join(t.TempDir(), "server-info.json")
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", "", false, false)
+		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false, false)
 	}()
 	info := waitForServerInfo(t, serverInfoFile, done)
 	tmuxCommand := startPrivateE2ETmuxServer(t, info.ConfigPath)
@@ -785,7 +791,7 @@ func TestResetSwapsFixtureState(t *testing.T) {
 	serverInfoFile := filepath.Join(t.TempDir(), "server-info.json")
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", "", false, false)
+		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false, false)
 	}()
 	baseURL := waitForServerInfoBaseURL(t, serverInfoFile, done)
 
@@ -874,7 +880,7 @@ func TestResetStopsOldPrivateTmuxServerBeforeReturning(t *testing.T) {
 	serverInfoFile := filepath.Join(t.TempDir(), "server-info.json")
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", "", false, false)
+		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false, false)
 	}()
 	info := waitForServerInfo(t, serverInfoFile, done)
 	oldTmuxCommand := startPrivateE2ETmuxServer(t, info.ConfigPath)

@@ -52,6 +52,15 @@ func issueWorkspaceBranchWithTitle(issueNumber int, title string) string {
 	return bare + "-" + slug
 }
 
+// IssueWorkspaceBranch resolves the configured branch style from hub
+// issue facts so a spoke never needs a local issue row just to name a branch.
+func IssueWorkspaceBranch(issueNumber int, title string, slug bool) string {
+	if slug {
+		return issueWorkspaceBranchWithTitle(issueNumber, title)
+	}
+	return issueWorkspaceBranch(issueNumber)
+}
+
 // slugifyIssueTitle turns an arbitrary issue title into a safe slug:
 // lowercase ASCII letters, digits, and dashes. Non-ASCII letters with
 // canonical ASCII decompositions (Latin accented chars) are folded

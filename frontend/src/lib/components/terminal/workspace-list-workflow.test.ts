@@ -4,7 +4,7 @@ import { TestClock } from "effect/testing";
 
 import {
   makeWorkspaceListWorkflow,
-  makeWorkspaceRefreshCoordinator,
+  makeWorkspaceRefreshHub,
   workspaceListLifecycle,
 } from "./workspace-list-workflow.js";
 
@@ -52,7 +52,7 @@ it.effect("debounces each refresh burst without overlapping list loads", () =>
     const maximumActive = yield* Ref.make(0);
     const firstRelease = yield* Deferred.make<void>();
     const secondRelease = yield* Deferred.make<void>();
-    const coordinator = makeWorkspaceRefreshCoordinator(
+    const hub = makeWorkspaceRefreshHub(
       Effect.gen(function* () {
         const attempt = yield* Ref.updateAndGet(started, (count) => count + 1);
         const activeCount = yield* Ref.updateAndGet(active, (count) => count + 1);
@@ -61,12 +61,12 @@ it.effect("debounces each refresh burst without overlapping list loads", () =>
         yield* Ref.update(active, (count) => count - 1);
       }),
     );
-    const fiber = yield* Effect.forkChild(Effect.scoped(coordinator.program));
+    const fiber = yield* Effect.forkChild(Effect.scoped(hub.program));
     yield* Effect.yieldNow;
 
-    coordinator.request();
-    coordinator.request();
-    coordinator.request();
+    hub.request();
+    hub.request();
+    hub.request();
     yield* Effect.yieldNow;
     assert.strictEqual(yield* Ref.get(started), 0);
     yield* TestClock.adjust("24 millis");
@@ -74,8 +74,8 @@ it.effect("debounces each refresh burst without overlapping list loads", () =>
     yield* TestClock.adjust("1 millis");
     assert.strictEqual(yield* Ref.get(started), 1);
 
-    coordinator.request();
-    coordinator.request();
+    hub.request();
+    hub.request();
     yield* Deferred.succeed(firstRelease, undefined);
     yield* Effect.yieldNow;
     assert.strictEqual(yield* Ref.get(started), 1);
@@ -88,13 +88,13 @@ it.effect("debounces each refresh burst without overlapping list loads", () =>
   }),
 );
 
-it.effect("runs scheduled and event refreshes through the same coordinators", () =>
+it.effect("runs scheduled and event refreshes through the same hubs", () =>
   Effect.gen(function* () {
     const workspaceLoads = yield* Ref.make(0);
     const fleetLoads = yield* Ref.make(0);
     const events = yield* Queue.unbounded<void>();
-    const refreshWorkspaces = makeWorkspaceRefreshCoordinator(Ref.update(workspaceLoads, (count) => count + 1));
-    const refreshFleet = makeWorkspaceRefreshCoordinator(Ref.update(fleetLoads, (count) => count + 1));
+    const refreshWorkspaces = makeWorkspaceRefreshHub(Ref.update(workspaceLoads, (count) => count + 1));
+    const refreshFleet = makeWorkspaceRefreshHub(Ref.update(fleetLoads, (count) => count + 1));
     const fiber = yield* Effect.forkChild(
       Effect.scoped(
         workspaceListLifecycle({

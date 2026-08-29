@@ -117,6 +117,119 @@ func TestIssueDetailTreatsWorkspaceSnapshotFailureAsBestEffort(t *testing.T) {
 	assert.Nil(t, response.Workspace)
 }
 
+type stubIssueProviderSource struct {
+	rows   []IssueResponse
+	detail IssueDetailResponse
+}
+
+func (s stubIssueProviderSource) ListIssues(
+	context.Context, ListQuery,
+) ([]IssueResponse, error) {
+	return s.rows, nil
+}
+
+func (s stubIssueProviderSource) GetIssue(
+	context.Context, ItemIdentity,
+) (IssueDetailResponse, error) {
+	return s.detail, nil
+}
+
+func TestProviderFetchPreservesEmptyIssueList(t *testing.T) {
+	t.Parallel()
+	handler := New(Deps{
+		ProviderSource: stubIssueProviderSource{rows: []IssueResponse{}},
+	})
+
+	rows, err := handler.ListService(t.Context(), ListQuery{})
+	require.NoError(t, err)
+	require.NotNil(t, rows)
+	require.Empty(t, rows)
+}
+
+func TestProviderFetchOverlaysLocalIssueWorkspaceWithoutReordering(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	t.Parallel()
+
+	key := db.WorkspaceSubjectKey{
+		RepoID: 7, ItemType: db.WorkspaceItemTypeIssue, ItemNumber: 1,
+	}
+	ref := workspaceapi.WorkspaceRef{ID: "ws-local", Status: "ready"}
+	handler := New(Deps{
+		ProviderSource: stubIssueProviderSource{rows: []IssueResponse{
+			{RepoID: 91, Number: 2, Repo: httpapi.RepoRefResponse{
+				Provider: "github", PlatformHost: "github.com", PlatformRepoID: "repo-widget",
+			}},
+			{RepoID: 91, Number: 1, Repo: httpapi.RepoRefResponse{
+				Provider: "github", PlatformHost: "github.com", PlatformRepoID: "repo-widget",
+			}},
+		}},
+		WorkspaceSubjects: func(context.Context) (workspaceapi.WorkspaceSubjectSnapshot, error) {
+			return workspaceapi.WorkspaceSubjectSnapshot{
+				OwnReferences: map[db.WorkspaceSubjectKey]workspaceapi.WorkspaceRef{key: ref},
+				Subjects: map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{
+					key: {
+						Subject: db.WorkspaceSubjectMetadata{
+							Key: key, Platform: "github", PlatformHost: "github.com",
+							PlatformRepoID: "repo-widget",
+						},
+						Workspace: ref,
+					},
+				},
+			}, nil
+		},
+	})
+
+	rows, err := handler.ListService(t.Context(), ListQuery{})
+	require.NoError(err)
+	require.Len(rows, 2)
+	assert.Equal([]int{2, 1}, []int{rows[0].Number, rows[1].Number})
+	assert.Nil(rows[0].Workspace)
+	require.NotNil(rows[1].Workspace)
+	assert.Equal("ws-local", rows[1].Workspace.ID)
+}
+
+func TestProviderFetchReplacesHubIssueDetailWorkspaceWithLocalWorkspace(t *testing.T) {
+	t.Parallel()
+
+	key := db.WorkspaceSubjectKey{
+		RepoID: 7, ItemType: db.WorkspaceItemTypeIssue, ItemNumber: 42,
+	}
+	local := workspaceapi.WorkspaceRef{ID: "ws-local", Status: "ready"}
+	handler := New(Deps{
+		ProviderSource: stubIssueProviderSource{detail: IssueDetailResponse{
+			Issue: &db.Issue{RepoID: 91, Number: 42},
+			Repo: httpapi.RepoRefResponse{
+				Provider: "github", PlatformHost: "github.com", PlatformRepoID: "repo-widget",
+			},
+			Workspace: &workspaceapi.WorkspaceRef{ID: "ws-hub", Status: "ready"},
+		}},
+		WorkspaceSubjects: func(context.Context) (workspaceapi.WorkspaceSubjectSnapshot, error) {
+			return workspaceapi.WorkspaceSubjectSnapshot{
+				OwnReferences: map[db.WorkspaceSubjectKey]workspaceapi.WorkspaceRef{key: local},
+				Subjects: map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{
+					key: {
+						Subject: db.WorkspaceSubjectMetadata{
+							Key: key, Platform: "github", PlatformHost: "github.com",
+							PlatformRepoID: "repo-widget",
+						},
+						Workspace: local,
+					},
+				},
+			}, nil
+		},
+	})
+
+	detail, err := handler.GetService(t.Context(), ItemIdentity{
+		Provider: "github", PlatformHost: "github.com",
+		Owner: "acme", Name: "widget", Number: 42,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, detail.Workspace)
+	assert.Equal(t, "ws-local", detail.Workspace.ID)
+}
+
 func TestListIssuesWorkspaceActivityRecencyIsOptIn(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -142,7 +255,13 @@ func TestListIssuesWorkspaceActivityRecencyIsOptIn(t *testing.T) {
 			return workspaceapi.WorkspaceSubjectSnapshot{
 				OwnReferences: map[db.WorkspaceSubjectKey]workspaceapi.WorkspaceRef{key: ref},
 				Subjects: map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{
-					key: {Workspace: ref, ActivityAt: &workspaceAt},
+					key: {
+						Subject: db.WorkspaceSubjectMetadata{
+							Key: key, Platform: "github", PlatformHost: "github.com",
+							PlatformRepoID: identity.PlatformRepoID,
+						},
+						Workspace: ref, ActivityAt: &workspaceAt,
+					},
 				},
 			}, nil
 		},

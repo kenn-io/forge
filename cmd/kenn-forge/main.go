@@ -23,6 +23,8 @@ import (
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/daemonruntime"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/federation"
+	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/githubapp"
@@ -378,6 +380,21 @@ func run(opts serve.Options) error {
 	if err != nil {
 		return fmt.Errorf("ensure auth token: %w", err)
 	}
+	federationCredentials, err := federationauth.Open(
+		federationauth.DefaultStorePath(cfg.DataDir),
+	)
+	if err != nil {
+		return fmt.Errorf("open federation credential store: %w", err)
+	}
+	federationEnrollments, err := federation.Open(
+		federation.DefaultStorePath(cfg.DataDir), federation.StoreOptions{},
+	)
+	if err != nil {
+		return fmt.Errorf("open federation enrollment store: %w", err)
+	}
+	if err := validateFederationHubOrigin(cfg, federationEnrollments); err != nil {
+		return err
+	}
 	ln, mcpLn, err := bindDaemonListeners(cfg)
 	if err != nil {
 		return err
@@ -427,7 +444,9 @@ func run(opts serve.Options) error {
 	}
 	daemonAccess := server.DaemonAccessOptions{
 		Token: authToken, RequireAPIAuth: cfg.API.RequireAuth,
-		ProofHandler: daemonProofHandler,
+		ProofHandler:          daemonProofHandler,
+		TailscaleServeEnabled: cfg.API.TailscaleServe.Enabled,
+		TailscaleServeUsers:   cfg.API.TailscaleServe.AllowedUsers,
 	}
 
 	startupOptions := server.ServerOptions{DaemonAccess: daemonAccess, MCPURL: mcpURL}
@@ -632,30 +651,23 @@ func run(opts serve.Options) error {
 			)
 		},
 	})
-	var providerSources map[string]tokenauth.Source
-	if opts.DisableSync {
-		providerSources, err = registerProviderTokenSources(cfg, tokenSources)
-	} else {
-		providerSources, err = collectProviderTokenSourcesDegraded(ctx, cfg, tokenSources)
-		if err != nil {
-			slog.Warn(
-				"provider credentials unavailable; serving cached data without provider sync",
-				"err", err,
-			)
-			providerSources = nil
-		}
-	}
-	if err != nil && opts.DisableSync {
-		return err
+	spokeStartup := activateFederationSpokeAtStartup(
+		ctx, database, cfg, runtimeIdentity.LockMetadata.NodeID,
+		federationEnrollments, federationCredentials, nil,
+	)
+	if cfg.Fleet.RoleOrDefault() == config.FleetRoleSpoke && !spokeStartup.Active() {
+		slog.Warn(
+			"fleet spoke started with local execution only",
+			"state", spokeStartup.State, "reason", spokeStartup.Reason,
+		)
 	}
 	var identityResolver ghclient.IdentityResolver
-	if !opts.DisableSync && providerSources != nil {
+	if !opts.DisableSync {
 		identityResolver = ghclient.HTTPIdentityResolver{}
 	}
-
-	startup, err := buildProviderStartupForServe(
-		ctx, database, cfg, tokenSources, providerSources,
-		defaultProviderFactories(), identityResolver, opts.DisableSync,
+	controlPlanes, err := buildServeControlPlanes(
+		ctx, database, cfg, tokenSources, defaultProviderFactories(),
+		identityResolver, opts.DisableSync,
 	)
 	if err != nil {
 		if ctx.Err() != nil && errors.Is(err, context.Canceled) {
@@ -664,52 +676,54 @@ func run(opts serve.Options) error {
 		}
 		return err
 	}
-
 	if ctx.Err() != nil {
 		slog.Info("shutting down")
 		return nil
 	}
-
 	cloneMgr := gitclone.New(
-		filepath.Join(cfg.DataDir, "clones"), &startup,
+		filepath.Join(cfg.DataDir, "clones"), &controlPlanes.Git,
 	)
 	configureCloneTransportPolicy(cloneMgr, cfg)
 
-	syncer = ghclient.NewSyncerWithRegistry(
-		startup.registry, database, cloneMgr, nil,
-		cfg.SyncDuration(), startup.rateTrackers, startup.budgets,
-	)
-	if opts.DisableSync {
-		syncer.DisableSync()
-	}
-	repos := resolveStartupRepos(
-		ctx, cfg, syncer.SyncRegistry(), database, startup.githubRouters,
-	)
-	slog.Debug("startup repos resolved", "count", len(repos))
-	syncer.SetBranchActivityLimits(
-		cfg.BranchActivityRetention(),
-		cfg.Activity.DefaultBranchMaxCommits,
-	)
-	syncer.SetWatchInterval(cfg.ActivePRRefreshDuration())
-	syncer.SetActiveMRWindow(cfg.ActivePRWindowDuration())
-	syncer.SetPreferGitHubNativeStacks(cfg.PullRequests.PreferGitHubNativeStacks)
-	syncer.SetFetchers(startup.fetchers)
-	syncer.SetGitHubRouters(startup.githubRouters)
-	syncer.SetRatePrincipalLabels(startup.ratePrincipalLabels)
-	syncer.SetQuotaRegistry(startup.quotaRegistry)
-	syncer.SetWriteRateTrackers(startup.writeRateTrackers)
-	syncer.SetWriteGQLRateTrackers(startup.writeGQLRateTrackers)
-	archiveService, err := archive.NewService(
-		database, startup.registry, syncer, syncer, nil, nil,
-	)
-	if err != nil {
-		return fmt.Errorf("create archive service: %w", err)
-	}
-	archiveService.SetMaintenanceInterval(cfg.SyncDuration())
-	archiveService.SetWake(syncer.WakeArchive)
-	syncer.SetArchiveService(archiveService)
-	if err := syncer.SetReposWithContext(ctx, repos, false); err != nil {
-		return fmt.Errorf("prepare archive repositories: %w", err)
+	var archiveService *archive.Service
+	var repos []ghclient.RepoRef
+	if controlPlanes.Provider != nil {
+		controlPlane := controlPlanes.Provider
+		syncer = ghclient.NewSyncerWithRegistry(
+			controlPlane.registry, database, cloneMgr, nil,
+			cfg.SyncDuration(), controlPlane.rateTrackers, controlPlane.budgets,
+		)
+		if opts.DisableSync {
+			syncer.DisableSync()
+		}
+		repos = resolveStartupRepos(
+			ctx, cfg, syncer.SyncRegistry(), database, controlPlane.githubRouters,
+		)
+		slog.Debug("startup repos resolved", "count", len(repos))
+		syncer.SetBranchActivityLimits(
+			cfg.BranchActivityRetention(), cfg.Activity.DefaultBranchMaxCommits,
+		)
+		syncer.SetWatchInterval(cfg.ActivePRRefreshDuration())
+		syncer.SetActiveMRWindow(cfg.ActivePRWindowDuration())
+		syncer.SetPreferGitHubNativeStacks(cfg.PullRequests.PreferGitHubNativeStacks)
+		syncer.SetFetchers(controlPlane.fetchers)
+		syncer.SetGitHubRouters(controlPlane.githubRouters)
+		syncer.SetRatePrincipalLabels(controlPlane.ratePrincipalLabels)
+		syncer.SetQuotaRegistry(controlPlane.quotaRegistry)
+		syncer.SetWriteRateTrackers(controlPlane.writeRateTrackers)
+		syncer.SetWriteGQLRateTrackers(controlPlane.writeGQLRateTrackers)
+		archiveService, err = archive.NewService(
+			database, controlPlane.registry, syncer, syncer, nil, nil,
+		)
+		if err != nil {
+			return fmt.Errorf("create archive service: %w", err)
+		}
+		archiveService.SetMaintenanceInterval(cfg.SyncDuration())
+		archiveService.SetWake(syncer.WakeArchive)
+		syncer.SetArchiveService(archiveService)
+		if err := syncer.SetReposWithContext(ctx, repos, false); err != nil {
+			return fmt.Errorf("prepare archive repositories: %w", err)
+		}
 	}
 
 	telemetryReporter = telemetry.NewReporterOrDisabled(telemetry.Options{
@@ -728,14 +742,19 @@ func run(opts serve.Options) error {
 	srv = server.NewWithConfig(
 		database, syncer, cloneMgr, assets,
 		cfg, configPath, server.ServerOptions{
-			DaemonAccess:                    daemonAccess,
-			MCPURL:                          mcpURL,
-			WorktreeDir:                     filepath.Join(cfg.DataDir, "worktrees"),
-			PtyOwnerManagerPath:             os.Getenv("KENN_FORGE_PTY_MANAGER"),
-			Telemetry:                       telemetryReporter,
-			TokenSources:                    tokenSources,
-			Archive:                         archiveService,
-			DetachRuntimeSessionsForRestart: os.Getenv("KENN_FORGE_DEV_RESTART") == "1",
+			DaemonAccess:                     daemonAccess,
+			FederationCredentials:            federationCredentials,
+			FederationEnrollments:            federationEnrollments,
+			FederationSpokeID:                runtimeIdentity.LockMetadata.NodeID,
+			FederationSpokeActive:            spokeStartup.Active(),
+			FederationSpokeUnavailableReason: spokeStartup.Reason,
+			MCPURL:                           mcpURL,
+			WorktreeDir:                      filepath.Join(cfg.DataDir, "worktrees"),
+			PtyOwnerManagerPath:              os.Getenv("KENN_FORGE_PTY_MANAGER"),
+			Telemetry:                        telemetryReporter,
+			TokenSources:                     tokenSources,
+			Archive:                          archiveService,
+			DetachRuntimeSessionsForRestart:  os.Getenv("KENN_FORGE_DEV_RESTART") == "1",
 		},
 	)
 	srv.AttachHTTPServer(httpSrv, ln)
@@ -745,54 +764,36 @@ func run(opts serve.Options) error {
 		"worktree_dir", filepath.Join(cfg.DataDir, "worktrees"),
 	)
 
-	// Wire status callback and prime the SSE event hub so clients
-	// can show live sync state without polling.
-	syncer.SetOnStatusChange(func(status *ghclient.SyncStatus) {
-		srv.Hub().Broadcast(server.Event{
-			Type: "sync_status",
-			Data: status,
-		})
-		if !status.Running {
+	if syncer != nil {
+		// Wire status callbacks only when this process owns a provider plane.
+		syncer.SetOnStatusChange(func(status *ghclient.SyncStatus) {
 			srv.Hub().Broadcast(server.Event{
-				Type: "data_changed",
-				Data: struct{}{},
+				Type: "sync_status", Data: status,
 			})
+			if !status.Running {
+				srv.Hub().Broadcast(server.Event{Type: "data_changed", Data: struct{}{}})
+			}
+		})
+		srv.Hub().Broadcast(server.Event{
+			Type: "sync_status", Data: syncer.Status(),
+		})
+		syncer.SetOnNotificationSyncComplete(func() {
+			srv.Hub().Broadcast(server.Event{Type: "data_changed", Data: struct{}{}})
+		})
+		syncer.SetOnWatchedMRSyncCompleted(func() {
+			srv.Hub().Broadcast(server.Event{Type: "data_changed", Data: struct{}{}})
+		})
+		syncer.SetOnSyncCompleted(
+			fleetapi.WorktreeLinksSyncHook(
+				ctx, database, syncer,
+				srv.Fleet().NotifyWorktreeLinksChanged,
+				stacks.SyncCompletedHook(ctx, database, nil),
+			),
+		)
+		syncer.Start(ctx)
+		if !opts.DisableSync && cfg.NotificationsEnabled() {
+			notificationLoops = startNotificationLoops(ctx, syncer, cfg)
 		}
-	})
-	srv.Hub().Broadcast(server.Event{
-		Type: "sync_status",
-		Data: syncer.Status(),
-	})
-
-	// Notification sync runs on its own timer and can backfill rows older
-	// than the activity feed's top cursor, so broadcast the same
-	// data-change signal the normal sync uses to nudge a full reload.
-	syncer.SetOnNotificationSyncComplete(func() {
-		srv.Hub().Broadcast(server.Event{
-			Type: "data_changed",
-			Data: struct{}{},
-		})
-	})
-	syncer.SetOnWatchedMRSyncCompleted(func() {
-		srv.Hub().Broadcast(server.Event{
-			Type: "data_changed",
-			Data: struct{}{},
-		})
-	})
-
-	// The branch-match recompute runs first, then chains to stack
-	// detection, mirroring the embedding API wiring in forge.go. The
-	// syncer is the watched-MR setter.
-	syncer.SetOnSyncCompleted(
-		fleetapi.WorktreeLinksSyncHook(
-			ctx, database, syncer,
-			srv.Fleet().NotifyWorktreeLinksChanged,
-			stacks.SyncCompletedHook(ctx, database, nil),
-		),
-	)
-	syncer.Start(ctx)
-	if !opts.DisableSync && cfg.NotificationsEnabled() {
-		notificationLoops = startNotificationLoops(ctx, syncer, cfg)
 	}
 
 	otelShutdown, err := oteltelemetry.Init(ctx)

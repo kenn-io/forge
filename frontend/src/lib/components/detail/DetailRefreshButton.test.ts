@@ -25,10 +25,17 @@ describe("DetailRefreshButton", () => {
 
   it("can be disabled without presenting background work as a manual refresh", () => {
     render(DetailRefreshButton, {
-      props: { disabled: true, refreshing: false, onRefresh: vi.fn() },
+      props: {
+        disabled: true,
+        disabledReason: "Hub unavailable",
+        refreshing: false,
+        onRefresh: vi.fn(),
+      },
     });
 
-    expect((screen.getByRole("button", { name: "Refresh detail" }) as HTMLButtonElement).disabled).toBe(true);
+    const button = screen.getByRole("button", { name: "Refresh detail" }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.title).toBe("Hub unavailable");
     expect(screen.queryByLabelText("Refreshing detail")).toBeNull();
   });
 });

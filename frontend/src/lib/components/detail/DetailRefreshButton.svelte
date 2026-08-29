@@ -4,17 +4,18 @@
 
   interface Props {
     disabled?: boolean;
+    disabledReason?: string | undefined;
     refreshing: boolean;
     onRefresh: () => void;
   }
 
-  let { disabled = false, refreshing, onRefresh }: Props = $props();
+  let { disabled = false, disabledReason, refreshing, onRefresh }: Props = $props();
 </script>
 
 <IconButton
   size="sm"
   ariaLabel="Refresh detail"
-  title="Refresh detail"
+  title={disabled && disabledReason ? disabledReason : "Refresh detail"}
   disabled={disabled || refreshing}
   onclick={onRefresh}
 >

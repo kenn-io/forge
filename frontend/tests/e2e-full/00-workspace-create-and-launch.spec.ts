@@ -10,7 +10,11 @@ import {
   type BrowserContext,
   type Page,
 } from "@playwright/test";
-import { startIsolatedWorkspaceE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
+import {
+  startIsolatedWorkspaceE2EServer,
+  startIsolatedWorkspaceE2EServerWithOptions,
+  type IsolatedE2EServer,
+} from "./support/e2eServer";
 import { openSettingsPanel } from "./support/settingsPanel";
 
 type WorkspaceResponse = {
@@ -958,7 +962,10 @@ test.describe("workspace create-and-launch full stack", () => {
     let server: IsolatedE2EServer | null = null;
     let api: APIRequestContext | null = null;
     try {
-      server = await startIsolatedWorkspaceE2EServer();
+      // The fork fixture installs a process-local HTTP Git proxy so an exact
+      // github.com fork URL stays offline. Keep that environment in a
+      // dedicated server process rather than returning it to the worker pool.
+      server = await startIsolatedWorkspaceE2EServerWithOptions({ freshProcess: true });
       api = await playwrightRequest.newContext({
         baseURL: server.info.base_url,
       });

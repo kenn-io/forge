@@ -2,6 +2,7 @@ package workspaceapi
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -15,6 +16,76 @@ import (
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
+
+type recordingWorkspaceAutomation struct {
+	requests []ProviderWorkspaceItemRequest
+}
+
+func (a *recordingWorkspaceAutomation) AutoAssignWorkspaceItem(
+	_ context.Context, request ProviderWorkspaceItemRequest,
+) error {
+	a.requests = append(a.requests, request)
+	return nil
+}
+
+func TestLaunchSpecCreatePersistsBeforeSetupStarts(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := dbtest.Open(t)
+	_, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
+	})
+	require.NoError(err)
+	resolver := stubLaunchSpecResolver{}
+	manager := workspace.NewManager(database, t.TempDir())
+	manager.SetLaunchSpecResolver(resolver)
+	type setupObservation struct {
+		workspaceID string
+		spec        *db.WorkspaceLaunchSpec
+		err         error
+	}
+	setupStarted := make(chan setupObservation, 1)
+	manager.SetWorktreeBasePathResolver(func(
+		ctx context.Context, _, _, _, _ string,
+	) (string, bool, error) {
+		rows, readErr := database.ListWorkspaces(ctx)
+		if readErr != nil || len(rows) != 1 {
+			setupStarted <- setupObservation{err: readErr}
+			return "", false, errors.New("stop setup after launch-spec observation")
+		}
+		spec, readErr := database.GetWorkspaceLaunchSpec(ctx, rows[0].ID)
+		setupStarted <- setupObservation{
+			workspaceID: rows[0].ID, spec: spec, err: readErr,
+		}
+		return "", false, errors.New("stop setup after launch-spec observation")
+	})
+	handler := New(Deps{
+		DB: database, Workspaces: manager,
+		LaunchSpecResolver: resolver, EnrichmentDisabled: true,
+	})
+	t.Cleanup(func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		require.NoError(handler.Shutdown(shutdownCtx))
+	})
+
+	result, err := handler.CreatePullWorkspace(t.Context(), CreatePullWorkspaceRequest{
+		Provider: "github", PlatformHost: "github.com",
+		Owner: "acme", Name: "widget", Number: 42,
+	})
+	require.NoError(err)
+
+	select {
+	case observed := <-setupStarted:
+		require.NoError(observed.err)
+		assert.Equal(result.Workspace.ID, observed.workspaceID)
+		require.NotNil(observed.spec)
+		assert.Equal(42, observed.spec.ItemNumber)
+	case <-time.After(5 * time.Second):
+		require.FailNow("workspace setup did not start")
+	}
+}
 
 func TestCreatePullWorkspaceServiceSuppressesAutoAssign(t *testing.T) {
 	assert := assert.New(t)
@@ -41,11 +112,15 @@ func TestCreatePullWorkspaceServiceSuppressesAutoAssign(t *testing.T) {
 	require.NoError(err)
 	syncer := ghclient.NewSyncerWithRegistry(registry, database, nil, nil, time.Hour, nil, nil)
 	t.Cleanup(syncer.Stop)
+	launchSpecs := stubLaunchSpecResolver{}
+	workspaceManager := workspace.NewManager(database, t.TempDir())
+	workspaceManager.SetLaunchSpecResolver(launchSpecs)
 	handler := New(Deps{
 		DB:       database,
 		Resolver: httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{DB: database}),
 		Syncer:   syncer, Config: ConfigSnapshot{AutoAssignOnCreate: true},
-		Workspaces:         workspace.NewManager(database, t.TempDir()),
+		Workspaces:         workspaceManager,
+		LaunchSpecResolver: launchSpecs,
 		EnrichmentDisabled: true,
 	})
 	t.Cleanup(func() {
@@ -63,6 +138,67 @@ func TestCreatePullWorkspaceServiceSuppressesAutoAssign(t *testing.T) {
 	assert.NotEmpty(result.Workspace.ID)
 	assert.True(result.Workspace.Created)
 	assert.Empty(provider.pullAssigned)
+}
+
+func TestFederationWorkspaceCreationUsesHubAutoAssignment(t *testing.T) {
+	tests := []struct {
+		name     string
+		itemType string
+		number   int
+		create   func(*Handler) error
+	}{
+		{
+			name: "pull request", itemType: db.WorkspaceItemTypePullRequest, number: 7,
+			create: func(handler *Handler) error {
+				_, err := handler.CreatePullWorkspace(t.Context(), CreatePullWorkspaceRequest{
+					Provider: "github", PlatformHost: "github.com",
+					Owner: "acme", Name: "widget", Number: 7,
+				})
+				return err
+			},
+		},
+		{
+			name: "issue", itemType: db.WorkspaceItemTypeIssue, number: 8,
+			create: func(handler *Handler) error {
+				_, err := handler.CreateIssueWorkspaceService(t.Context(), CreateIssueWorkspaceRequest{
+					Provider: "github", PlatformHost: "github.com",
+					Owner: "acme", Name: "widget", Number: 8,
+				})
+				return err
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			database := dbtest.Open(t)
+			_, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
+				Platform: "github", PlatformHost: "github.com",
+				PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
+			})
+			require.NoError(err)
+			resolver := stubLaunchSpecResolver{}
+			manager := workspace.NewManager(database, t.TempDir())
+			automation := &recordingWorkspaceAutomation{}
+			handler := New(Deps{
+				DB: database, Workspaces: manager, LaunchSpecResolver: resolver,
+				ProviderWorkspaceAutomation: automation,
+				Config:                      ConfigSnapshot{AutoAssignOnCreate: true},
+				EnrichmentDisabled:          true,
+			})
+			t.Cleanup(func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				require.NoError(handler.Shutdown(ctx))
+			})
+
+			require.NoError(test.create(handler))
+			require.Len(automation.requests, 1)
+			assert.Equal(test.itemType, automation.requests[0].ItemType)
+			assert.Equal(test.number, automation.requests[0].ItemNumber)
+		})
+	}
 }
 
 func TestLaunchWorkspaceRuntimeServiceReturnsSession(t *testing.T) {

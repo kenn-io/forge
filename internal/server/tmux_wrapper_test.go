@@ -27,6 +27,7 @@ import (
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/procutil"
@@ -657,6 +658,86 @@ func TestActivityAuthorsIncludeWorkspaceOnlySubject(t *testing.T) {
 	require.NotNil(outOfRange.JSON200)
 	require.NotNil(outOfRange.JSON200.Authors)
 	assert.Empty(*outOfRange.JSON200.Authors)
+}
+
+func TestFederatedActivityIncludesNodeWorkspaceOnlySubject(t *testing.T) {
+	require := require.New(t)
+	script, record := writeTmuxRecorder(t)
+	setTmuxRecorderPaneOutput(t, record, "baseline output")
+	client, _, database, srv := setupWrapperServerWithScriptAndDBAndServer(t, script)
+	srv.cfgMu.Lock()
+	srv.cfg.Fleet.Enabled = true
+	srv.cfgMu.Unlock()
+
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
+		t.Context(),
+		generated.CreateWorkspaceInputBody{
+			Provider: "github", PlatformHost: "github.com",
+			Owner: "acme", Name: "widget", MrNumber: 1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+	waitForWorkspaceReady(t, t.Context(), client, createResp.JSON202.Id)
+	require.Eventually(func() bool {
+		activity := getRawWorkspaceActivity(t, client, t.Context(), createResp.JSON202.Id)
+		return activity.TmuxActivitySource == "none" && activity.TmuxLastOutputAt == nil
+	}, 3*time.Second, 50*time.Millisecond)
+
+	providerClient := providerPlaneClientFunc(func(
+		_ context.Context, scope federationauth.Scope, request *http.Request,
+	) (*http.Response, error) {
+		require.Equal(federationauth.ScopeProviderRead, scope)
+		body := `{"items":[],"item_activity":[],"workspace_activity":[],"use_workspace_activity_for_recency":true}`
+		if request.URL.Path == "/api/v1/activity/authors" {
+			body = `{"authors":["hub author"],"use_workspace_activity_for_recency":true}`
+		} else {
+			require.Equal("/api/v1/activity", request.URL.Path)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(body)),
+		}, nil
+	})
+	srv.providerSource = &hubProviderSource{client: providerClient}
+	srv.providerProxy = newProviderProxy(providerClient)
+	srv.providerRouteSpoke = true
+
+	since := time.Now().UTC().Format(time.RFC3339Nano)
+	setTmuxRecorderPaneOutput(t, record, "workspace-only activity")
+	var response *generated.ListActivityResponse
+	require.Eventually(func() bool {
+		got, requestErr := client.HTTP.ListActivityWithResponse(
+			t.Context(), &generated.ListActivityParams{Since: &since},
+		)
+		if requestErr != nil || got.JSON200 == nil || got.JSON200.WorkspaceActivity == nil {
+			return false
+		}
+		response = got
+		return len(*got.JSON200.WorkspaceActivity) == 1
+	}, 8*time.Second, 100*time.Millisecond)
+	require.NotNil(response)
+	require.Len(*response.JSON200.WorkspaceActivity, 1)
+	require.Equal(createResp.JSON202.Id, (*response.JSON200.WorkspaceActivity)[0].Workspace.Id)
+
+	repo, err := database.GetRepoByIdentity(
+		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	require.NotNil(repo)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repo.ID, 1)
+	require.NoError(err)
+	require.NotNil(mr)
+	authors, err := client.HTTP.ListActivityAuthorsWithResponse(
+		t.Context(), &generated.ListActivityAuthorsParams{Since: &since},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, authors.StatusCode())
+	require.NotNil(authors.JSON200)
+	require.NotNil(authors.JSON200.Authors)
+	require.ElementsMatch([]string{"hub author", mr.Author}, *authors.JSON200.Authors)
 }
 
 func TestWorkspaceActivityNumberSearchIncludesEventlessSubject(t *testing.T) {

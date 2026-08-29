@@ -22,7 +22,7 @@ func TestRepositoryResolverRejectsUnavailableStore(t *testing.T) {
 	require.ErrorIs(t, err, ErrRepositoryStoreUnavailable)
 }
 
-func TestRepositoryResolverOwnsCapabilityFallbackPolicy(t *testing.T) {
+func TestEmptyRegistryDoesNotAdvertiseProviderCapabilities(t *testing.T) {
 	assert := assert.New(t)
 	resolver := NewRepositoryResolver(RepositoryResolverDeps{
 		ProviderCapabilities: func(platform.Kind, string) (platform.Capabilities, error) {
@@ -33,8 +33,8 @@ func TestRepositoryResolverOwnsCapabilityFallbackPolicy(t *testing.T) {
 	github := resolver.Capabilities(platform.KindGitHub, platform.DefaultGitHubHost)
 	gitlab := resolver.Capabilities(platform.KindGitLab, platform.DefaultGitLabHost)
 
-	assert.True(github.ReadRepositories)
-	assert.True(github.MergeMutation)
+	assert.False(github.ReadRepositories)
+	assert.False(github.MergeMutation)
 	assert.False(gitlab.ReadRepositories)
 	assert.False(gitlab.MergeMutation)
 }

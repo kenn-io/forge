@@ -14,6 +14,12 @@ coherence, file history, previews, or refresh behavior.
 - Clone namespaces include provider, host, and canonical repository path so
   identical owner/name routes cannot collide across providers or hosts
   (`internal/gitclone/repo_browser.go::repoBrowserCloneNamespace`).
+- A federation spoke resolves a hub repository descriptor before every
+  provider-page browser read. The descriptor supplies the verified provider
+  repository ID, current route, clone URL, default branch, route generation,
+  and observation time; the spoke reconciles those facts into its repository
+  catalog before selecting a clone. Descriptors never populate spoke-local pull
+  or issue tables (`internal/server/provider_sources.go::hubProviderSource.GetRepositoryDescriptor`).
 
 ## Coherent Reads
 
@@ -51,6 +57,17 @@ coherence, file history, previews, or refresh behavior.
   advertised URL and any persisted origin against the exact provider-host
   cleartext policy before authenticated Git runs
   (`internal/gitclone/repo_browser.go::Manager.validateRepoBrowserRemote`).
+- Clone refresh is independent of provider sync. On a federation spoke it seeds
+  only catalog rows with verified stable IDs, and first-seen descriptors
+  register lazily created clones for later refresh even though the spoke has no
+  provider-item rows. Every spoke refresh stays credential-required and fails
+  closed if its exact repository route loses a Git credential
+  (`internal/server/repobrowserapi/refresh.go::Handler.SeedRefreshRepos`,
+  `internal/gitclone/repo_browser.go::RepoBrowserRepoRef.RequireCredential`).
+- Hub availability is part of provider-page admission: an existing
+  clone cannot serve a spoke browser request if the hub descriptor is
+  unavailable. Reads that are already scoped to a local workspace remain local
+  and do not acquire this dependency.
 - A missing clone may finish its single-flight initial fetch after the opening
   caller cancels; later callers share that bounded work rather than starting
   competing clones (`internal/gitclone/repo_browser.go::Manager.ensureRepoBrowserCloneLocal`).

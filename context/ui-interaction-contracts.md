@@ -198,6 +198,10 @@ Examples of transient state that should usually reset on identity change:
 
 Persisted controls must state their scope clearly.
 
+- Switching Forges is ordinary cross-origin link navigation. Do not keep a
+  fleet-global selected host or retarget the link in JavaScript: every open tab
+  and Forge origin owns its own route, filters, terminals, cursors, and browser
+  storage (`frontend/src/lib/components/layout/ForgeSelector.svelte`).
 - Browser-local preferences belong in `localStorage` only when the behavior is
   intentionally per-browser and not worth server settings.
 - `Involves me` is three independent browser-local preferences for Pulls, Issues, and
@@ -280,7 +284,7 @@ Persisted controls must state their scope clearly.
 - An idle settings queue must rebase from authoritative store values, excluding
   fields still owned by live preview; otherwise reloads are erased or drafts leak
   into unrelated saves (`frontend/src/lib/stores/terminal-settings-persistence.ts::settingsWithoutPreview`).
-- Settings hydration must share the mutation coordinator; a stale read must
+- Settings hydration must share the mutation hub; a stale read must
   preserve pending or newly confirmed fields and rebase active previews while
   retaining only generation-owned drafts
   (`frontend/src/lib/stores/terminal-settings-persistence.ts::hydrateTerminalSettings`).

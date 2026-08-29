@@ -250,11 +250,11 @@ describe("WorkspaceListSidebar", () => {
 
     render(WorkspaceListSidebar, { props: { selectedId: "" } });
 
-    await waitFor(() => expect(mockGet).toHaveBeenCalledWith("/workspaces", expect.anything()));
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith("/snapshot", expect.anything()));
     expect(screen.getByText("Workspaces")).toBeTruthy();
   });
 
-  it("shows fleet hosts when peers are present", async () => {
+  it("does not repeat fleet hosts in the workspace list", async () => {
     mockGet.mockImplementation((path: string) => {
       if (path === "/snapshot") {
         return Promise.resolve({
@@ -273,16 +273,30 @@ describe("WorkspaceListSidebar", () => {
                 tmuxSessions: [],
               },
               {
-                configKey: "member",
+                configKey: "79e90262-7426-4dd5-9ef1-0d511af84e12",
                 diagnostics: [],
-                id: "member",
+                id: "79e90262-7426-4dd5-9ef1-0d511af84e12",
                 kind: "remote",
-                name: "member",
+                name: "Build spoke",
                 operationAvailability: {},
                 platform: "linux",
                 preferredTransport: "http",
                 reachable: true,
                 tmuxSessions: [],
+              },
+            ],
+            workspaces: [
+              {
+                ...workspaceFixture({
+                  id: "remote-ws",
+                  provider: "github",
+                  platformHost: "github.com",
+                  owner: "acme",
+                  name: "service",
+                  number: 12,
+                  title: "Remote workspace",
+                }),
+                fleet_host_key: "79e90262-7426-4dd5-9ef1-0d511af84e12",
               },
             ],
           },
@@ -295,27 +309,24 @@ describe("WorkspaceListSidebar", () => {
       props: { selectedId: "" },
     });
 
-    await screen.findByText("Fleet");
-    expect(screen.getByText("2/2")).toBeTruthy();
-    expect(screen.getByText("hub")).toBeTruthy();
-    expect(screen.getByText("self")).toBeTruthy();
-    expect(screen.getByText("local")).toBeTruthy();
-    expect(screen.getByText("member")).toBeTruthy();
-    expect(screen.getByText("remote")).toBeTruthy();
-    expect(screen.getByText("http")).toBeTruthy();
+    await screen.findByText("Remote workspace");
+    expect(screen.queryByText("Build spoke")).toBeNull();
+    expect(screen.queryByLabelText("Fleet hosts")).toBeNull();
+    expect(screen.queryByText("79e90262-7426-4dd5-9ef1-0d511af84e12")).toBeNull();
   });
 
   it("coalesces workspace completion bursts into one list refresh", async () => {
     mockGet.mockResolvedValue({ data: { workspaces: [] } });
 
     render(WorkspaceListSidebar, { props: { selectedId: "" } });
-    await waitFor(() => expect(mockGet).toHaveBeenCalledWith("/workspaces", expect.anything()));
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith("/snapshot", expect.anything()));
+    await waitFor(() => expect(workspaceEventsSubscriber).toBeTypeOf("function"));
     mockGet.mockClear();
 
     emitWorkspaceStatus();
     emitWorkspaceStatus();
     emitWorkspaceStatus();
-    const workspaceRequestCount = () => mockGet.mock.calls.filter(([path]) => path === "/workspaces").length;
+    const workspaceRequestCount = () => mockGet.mock.calls.filter(([path]) => path === "/snapshot").length;
 
     await new Promise((resolve) => setTimeout(resolve, 15));
     expect(workspaceRequestCount()).toBe(0);
@@ -343,6 +354,7 @@ describe("WorkspaceListSidebar", () => {
                 tmuxSessions: [],
               },
             ],
+            workspaces: [],
           },
         });
       }
@@ -388,6 +400,7 @@ describe("WorkspaceListSidebar", () => {
                 tmuxSessions: [],
               },
             ],
+            workspaces: [],
           },
         });
       }
@@ -480,59 +493,56 @@ describe("WorkspaceListSidebar", () => {
                 tmuxSessions: [],
               },
             ],
-          },
-        });
-      }
-      if (path === "/fleet/hosts/{host_key}/workspaces") {
-        return Promise.resolve({
-          data: {
             workspaces: [
               workspaceFixture({
-                id: "remote-api",
-                provider: "gitlab",
-                platformHost: "gitlab.example.com",
-                owner: "platform",
+                id: "local-api",
+                provider: "github",
+                platformHost: "github.com",
+                owner: "acme",
                 name: "api",
-                number: 3,
-                title: "Remote API",
+                number: 1,
+                title: "Local API",
               }),
               workspaceFixture({
-                id: "remote-web",
-                provider: "gitlab",
-                platformHost: "gitlab.example.com",
-                owner: "platform",
+                id: "local-web",
+                provider: "github",
+                platformHost: "github.com",
+                owner: "acme",
                 name: "web",
-                number: 4,
-                title: "Remote Web",
+                number: 2,
+                title: "Local Web",
               }),
+              {
+                ...workspaceFixture({
+                  id: "remote-api",
+                  provider: "gitlab",
+                  platformHost: "gitlab.example.com",
+                  owner: "platform",
+                  name: "api",
+                  number: 3,
+                  title: "Remote API",
+                }),
+                fleet_host_key: "member",
+                fleet_host_name: "member",
+              },
+              {
+                ...workspaceFixture({
+                  id: "remote-web",
+                  provider: "gitlab",
+                  platformHost: "gitlab.example.com",
+                  owner: "platform",
+                  name: "web",
+                  number: 4,
+                  title: "Remote Web",
+                }),
+                fleet_host_key: "member",
+                fleet_host_name: "member",
+              },
             ],
           },
         });
       }
-      return Promise.resolve({
-        data: {
-          workspaces: [
-            workspaceFixture({
-              id: "local-api",
-              provider: "github",
-              platformHost: "github.com",
-              owner: "acme",
-              name: "api",
-              number: 1,
-              title: "Local API",
-            }),
-            workspaceFixture({
-              id: "local-web",
-              provider: "github",
-              platformHost: "github.com",
-              owner: "acme",
-              name: "web",
-              number: 2,
-              title: "Local Web",
-            }),
-          ],
-        },
-      });
+      return Promise.resolve({ data: {} });
     });
 
     render(WorkspaceListSidebar, {
@@ -546,89 +556,55 @@ describe("WorkspaceListSidebar", () => {
     expect(await screen.findByText("Remote API")).toBeTruthy();
     expect(screen.queryByText("Local Web")).toBeNull();
     expect(screen.queryByText("Remote Web")).toBeNull();
+    expect(mockGet).not.toHaveBeenCalledWith("/fleet/hosts/{host_key}/workspaces", expect.anything());
   });
 
-  it("keeps the repository catalog incomplete until fleet discovery and reachable peers load", async () => {
-    const fleet = deferred<{
-      data: { hosts: Array<Record<string, unknown>> };
+  it("keeps the repository catalog incomplete until the projected snapshot loads", async () => {
+    const snapshot = deferred<{
+      data: { hosts: Array<Record<string, unknown>>; workspaces: unknown[] };
     }>();
-    const peer = deferred<{ data: { workspaces: unknown[] } }>();
     mockGet.mockImplementation((path: string) => {
-      if (path === "/snapshot") return fleet.promise;
-      if (path === "/fleet/hosts/{host_key}/workspaces") return peer.promise;
-      return Promise.resolve({
-        data: {
-          workspaces: [
-            workspaceFixture({
-              id: "local-ws",
-              provider: "github",
-              platformHost: "github.com",
-              owner: "local",
-              name: "service",
-              number: 1,
-            }),
-          ],
-        },
-      });
+      if (path === "/snapshot") return snapshot.promise;
+      return Promise.resolve({ data: {} });
     });
 
     render(WorkspaceListSidebar, { props: { selectedId: "" } });
-    await waitFor(() => expect(getWorkspaceRepoCatalog()).toHaveLength(1));
     expect(isWorkspaceRepoCatalogReady()).toBe(false);
 
-    fleet.resolve({
+    snapshot.resolve({
       data: {
-        hosts: [
-          {
-            configKey: "hub",
-            diagnostics: [],
-            id: "hub",
-            kind: "self",
-            name: "hub",
-            operationAvailability: {},
-            platform: "darwin",
-            preferredTransport: "local",
-            reachable: true,
-            tmuxSessions: [],
-          },
-          {
-            configKey: "member",
-            diagnostics: [],
-            id: "member",
-            kind: "remote",
-            name: "member",
-            operationAvailability: {},
-            platform: "linux",
-            preferredTransport: "http",
-            reachable: true,
-            tmuxSessions: [],
-          },
-        ],
-      },
-    });
-    await waitFor(() => expect(mockGet).toHaveBeenCalledWith("/fleet/hosts/{host_key}/workspaces", expect.anything()));
-    expect(isWorkspaceRepoCatalogReady()).toBe(false);
-
-    peer.resolve({
-      data: {
+        hosts: [],
         workspaces: [
           workspaceFixture({
-            id: "remote-ws",
+            id: "local-ws",
             provider: "github",
             platformHost: "github.com",
-            owner: "remote",
+            owner: "local",
             name: "service",
-            number: 2,
+            number: 1,
           }),
+          {
+            ...workspaceFixture({
+              id: "remote-ws",
+              provider: "github",
+              platformHost: "github.com",
+              owner: "remote",
+              name: "service",
+              number: 2,
+            }),
+            fleet_host_key: "member",
+            fleet_host_name: "member",
+          },
         ],
       },
     });
+
     await waitFor(() => expect(isWorkspaceRepoCatalogReady()).toBe(true));
     expect(getWorkspaceRepoCatalog().map((repo) => repo.repo_path)).toEqual(["local/service", "remote/service"]);
   });
 
-  it("loads workspaces from reachable ssh fleet hosts", async () => {
-    mockGet.mockImplementation((path: string, options?: { params?: { path?: { host_key?: string } } }) => {
+  it("loads projected workspaces from reachable federation members without fan-out", async () => {
+    mockGet.mockImplementation((path: string) => {
       if (path === "/snapshot") {
         return Promise.resolve({
           data: {
@@ -653,56 +629,93 @@ describe("WorkspaceListSidebar", () => {
                 name: "epyc",
                 operationAvailability: {},
                 platform: "linux",
-                preferredTransport: "ssh",
+                preferredTransport: "http",
                 reachable: true,
                 tmuxSessions: [],
+              },
+            ],
+            workspaces: [
+              {
+                ...workspaceFixture({
+                  id: "remote-ws",
+                  provider: "github",
+                  platformHost: "github.com",
+                  owner: "remote",
+                  name: "service",
+                  number: 12,
+                  title: "Remote workspace",
+                }),
+                fleet_host_key: "epyc",
+                fleet_host_name: "epyc",
               },
             ],
           },
         });
       }
-      if (path === "/fleet/hosts/{host_key}/workspaces") {
-        expect(options?.params?.path?.host_key).toBe("epyc");
-        return Promise.resolve({
-          data: {
-            workspaces: [
-              workspaceFixture({
-                id: "remote-ws",
-                provider: "github",
-                platformHost: "github.com",
-                owner: "remote",
-                name: "service",
-                number: 12,
-                title: "Remote SSH workspace",
-              }),
-            ],
-          },
-        });
-      }
-      return Promise.resolve({ data: { workspaces: [] } });
+      return Promise.resolve({ data: {} });
     });
 
     render(WorkspaceListSidebar, {
       props: { selectedId: "" },
     });
 
-    await waitFor(() => {
-      expect(mockGet).toHaveBeenCalledWith(
-        "/fleet/hosts/{host_key}/workspaces",
-        expect.objectContaining({
-          params: { path: { host_key: "epyc" } },
-        }),
-      );
-    });
-    expect(await screen.findByText("Remote SSH workspace")).toBeTruthy();
+    expect(await screen.findByText("Remote workspace")).toBeTruthy();
+    expect(mockGet).not.toHaveBeenCalledWith("/fleet/hosts/{host_key}/workspaces", expect.anything());
   });
 
-  it("shows local workspaces while a reachable fleet peer is still loading", async () => {
-    const stalledPeer = deferred<never>();
-    let localLoads = 0;
-    let peerLoads = 0;
+  it("refreshes inline workspace summaries after a workspace event", async () => {
+    let snapshotLoads = 0;
     mockGet.mockImplementation((path: string) => {
       if (path === "/snapshot") {
+        snapshotLoads += 1;
+        return Promise.resolve({
+          data: {
+            hosts: [
+              {
+                configKey: "hub",
+                diagnostics: [],
+                id: "hub",
+                kind: "self",
+                name: "hub",
+                operationAvailability: {},
+                platform: "darwin",
+                preferredTransport: "local",
+                reachable: true,
+                tmuxSessions: [],
+              },
+            ],
+            workspaces: [
+              workspaceFixture({
+                id: "local-ws",
+                provider: "github",
+                platformHost: "github.com",
+                owner: "local",
+                name: "service",
+                number: 1,
+                title: snapshotLoads === 1 ? "Initial local workspace" : "Updated local workspace",
+              }),
+            ],
+          },
+        });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    render(WorkspaceListSidebar, { props: { selectedId: "" } });
+    expect(await screen.findByText("Initial local workspace")).toBeTruthy();
+    await waitFor(() => expect(workspaceEventsSubscriber).toBeTypeOf("function"));
+
+    emitWorkspaceStatus();
+
+    expect(await screen.findByText("Updated local workspace")).toBeTruthy();
+    expect(snapshotLoads).toBe(2);
+  });
+
+  it("keeps the last projected rows after an invalid snapshot refresh", async () => {
+    let snapshotLoads = 0;
+    mockGet.mockImplementation((path: string) => {
+      if (path === "/snapshot") {
+        snapshotLoads += 1;
         return Promise.resolve({
           data: {
             hosts: [
@@ -731,117 +744,217 @@ describe("WorkspaceListSidebar", () => {
                 tmuxSessions: [],
               },
             ],
+            workspaces:
+              snapshotLoads === 1
+                ? [
+                    {
+                      ...workspaceFixture({
+                        id: "remote-ws",
+                        provider: "github",
+                        platformHost: "github.com",
+                        owner: "remote",
+                        name: "service",
+                        number: 12,
+                        title: "Last known remote workspace",
+                      }),
+                      fleet_host_key: "member",
+                      fleet_host_name: "member",
+                    },
+                  ]
+                : [{ id: "malformed" }],
           },
         });
       }
-      if (path === "/fleet/hosts/{host_key}/workspaces") {
-        peerLoads += 1;
-        return peerLoads === 1 ? Promise.resolve({ data: { workspaces: [] } }) : stalledPeer.promise;
+      return Promise.resolve({ data: {} });
+    });
+
+    render(WorkspaceListSidebar, { props: { selectedId: "" } });
+    expect(await screen.findByText("Last known remote workspace")).toBeTruthy();
+    await waitFor(() => expect(workspaceEventsSubscriber).toBeTypeOf("function"));
+
+    emitWorkspaceStatus();
+
+    await waitFor(() => expect(snapshotLoads).toBe(2));
+    expect(screen.getByText("Last known remote workspace")).toBeTruthy();
+    expect(isWorkspaceRepoCatalogReady()).toBe(false);
+  });
+
+  it("keeps member workspaces when a spoke loses its hub aggregate", async () => {
+    let snapshotLoads = 0;
+    mockGet.mockImplementation((path: string) => {
+      if (path === "/snapshot") {
+        snapshotLoads += 1;
+        return Promise.resolve({
+          data: {
+            hosts: [
+              {
+                configKey: "spoke-a",
+                diagnostics: [],
+                id: "spoke-a",
+                kind: "self",
+                name: "spoke-a",
+                operationAvailability: {},
+                platform: "darwin",
+                preferredTransport: "local",
+                reachable: true,
+                tmuxSessions: [],
+              },
+              {
+                configKey: "hub",
+                diagnostics: [],
+                error: snapshotLoads === 1 ? undefined : "Hub aggregate unavailable",
+                id: "hub",
+                kind: "remote",
+                name: "hub",
+                operationAvailability: {},
+                platform: "linux",
+                preferredTransport: "http",
+                reachable: snapshotLoads === 1,
+                tmuxSessions: [],
+              },
+              ...(snapshotLoads === 1
+                ? [
+                    {
+                      configKey: "member",
+                      diagnostics: [],
+                      id: "member",
+                      kind: "remote",
+                      name: "member",
+                      operationAvailability: {},
+                      platform: "linux",
+                      preferredTransport: "http",
+                      reachable: true,
+                      tmuxSessions: [],
+                    },
+                  ]
+                : []),
+            ],
+            aggregateIncomplete: snapshotLoads !== 1,
+            workspaces:
+              snapshotLoads === 1
+                ? [
+                    {
+                      ...workspaceFixture({
+                        id: "remote-ws",
+                        provider: "github",
+                        platformHost: "github.com",
+                        owner: "remote",
+                        name: "service",
+                        number: 12,
+                        title: "Degraded remote workspace",
+                      }),
+                      fleet_host_key: "member",
+                      fleet_host_name: "member",
+                    },
+                  ]
+                : [],
+          },
+        });
       }
-      localLoads += 1;
+      return Promise.resolve({ data: {} });
+    });
+
+    render(WorkspaceListSidebar, { props: { selectedId: "" } });
+    expect(await screen.findByText("Degraded remote workspace")).toBeTruthy();
+    expect(isWorkspaceRepoCatalogReady()).toBe(true);
+    await waitFor(() => expect(workspaceEventsSubscriber).toBeTypeOf("function"));
+
+    emitWorkspaceStatus();
+
+    await waitFor(() => expect(snapshotLoads).toBe(2));
+    expect(screen.getByText("Degraded remote workspace")).toBeTruthy();
+    expect(screen.getByText(/Hub aggregate unavailable/)).toBeTruthy();
+    expect(isWorkspaceRepoCatalogReady()).toBe(false);
+  });
+
+  it("removes a revoked member while an enrolled member is degraded", async () => {
+    let snapshotLoads = 0;
+    mockGet.mockImplementation((path: string) => {
+      if (path !== "/snapshot") return Promise.resolve({ data: {} });
+      snapshotLoads += 1;
       return Promise.resolve({
         data: {
-          workspaces: [
-            workspaceFixture({
-              id: "local-ws",
-              provider: "github",
-              platformHost: "github.com",
-              owner: "local",
-              name: "service",
-              number: 1,
-              title: localLoads === 1 ? "Initial local workspace" : "Updated local workspace",
-            }),
+          aggregateIncomplete: false,
+          hosts: [
+            {
+              configKey: "hub",
+              diagnostics: [],
+              id: "hub",
+              kind: "self",
+              name: "hub",
+              operationAvailability: {},
+              platform: "linux",
+              preferredTransport: "local",
+              reachable: true,
+              tmuxSessions: [],
+            },
+            ...(snapshotLoads === 1
+              ? [
+                  {
+                    configKey: "revoked",
+                    diagnostics: [],
+                    id: "revoked",
+                    kind: "remote",
+                    name: "revoked",
+                    operationAvailability: {},
+                    platform: "linux",
+                    preferredTransport: "http",
+                    reachable: true,
+                    tmuxSessions: [],
+                  },
+                ]
+              : [
+                  {
+                    configKey: "offline",
+                    diagnostics: [],
+                    error: "timeout",
+                    id: "offline",
+                    kind: "remote",
+                    name: "offline",
+                    operationAvailability: {},
+                    platform: "linux",
+                    preferredTransport: "http",
+                    reachable: false,
+                    tmuxSessions: [],
+                  },
+                ]),
           ],
+          workspaces:
+            snapshotLoads === 1
+              ? [
+                  {
+                    ...workspaceFixture({
+                      id: "revoked-ws",
+                      provider: "github",
+                      platformHost: "github.com",
+                      owner: "old",
+                      name: "service",
+                      number: 12,
+                      title: "Revoked workspace",
+                    }),
+                    fleet_host_key: "revoked",
+                    fleet_host_name: "revoked",
+                  },
+                ]
+              : [],
         },
       });
     });
 
     render(WorkspaceListSidebar, { props: { selectedId: "" } });
-    expect(await screen.findByText("Initial local workspace")).toBeTruthy();
-    await waitFor(() => expect(peerLoads).toBe(1));
+    expect(await screen.findByText("Revoked workspace")).toBeTruthy();
+    await waitFor(() => expect(workspaceEventsSubscriber).toBeTypeOf("function"));
 
     emitWorkspaceStatus();
 
-    expect(await screen.findByText("Updated local workspace")).toBeTruthy();
-  });
-
-  it("keeps stale peer rows and marks the peer degraded after an invalid refresh", async () => {
-    let peerLoads = 0;
-    mockGet.mockImplementation((path: string) => {
-      if (path === "/snapshot") {
-        return Promise.resolve({
-          data: {
-            hosts: [
-              {
-                configKey: "hub",
-                diagnostics: [],
-                id: "hub",
-                kind: "self",
-                name: "hub",
-                operationAvailability: {},
-                platform: "darwin",
-                preferredTransport: "local",
-                reachable: true,
-                tmuxSessions: [],
-              },
-              {
-                configKey: "member",
-                diagnostics: [],
-                id: "member",
-                kind: "remote",
-                name: "member",
-                operationAvailability: {},
-                platform: "linux",
-                preferredTransport: "http",
-                reachable: true,
-                tmuxSessions: [],
-              },
-            ],
-          },
-        });
-      }
-      if (path === "/fleet/hosts/{host_key}/workspaces") {
-        peerLoads += 1;
-        return Promise.resolve({
-          data:
-            peerLoads === 1
-              ? {
-                  workspaces: [
-                    workspaceFixture({
-                      id: "remote-ws",
-                      provider: "github",
-                      platformHost: "github.com",
-                      owner: "remote",
-                      name: "service",
-                      number: 12,
-                      title: "Last known remote workspace",
-                    }),
-                  ],
-                }
-              : { workspaces: [{ id: "malformed" }] },
-        });
-      }
-      return Promise.resolve({ data: { workspaces: [] } });
-    });
-
-    render(WorkspaceListSidebar, { props: { selectedId: "" } });
-    expect(await screen.findByText("Last known remote workspace")).toBeTruthy();
-
-    emitWorkspaceStatus();
-
-    await waitFor(() => expect(peerLoads).toBe(2));
-    expect(screen.getByText("Last known remote workspace")).toBeTruthy();
-    expect(await screen.findByText("member degraded")).toBeTruthy();
-    expect(isWorkspaceRepoCatalogReady()).toBe(false);
+    await waitFor(() => expect(snapshotLoads).toBe(2));
+    expect(screen.queryByText("Revoked workspace")).toBeNull();
   });
 
   it("removes remote workspaces when the fleet snapshot becomes local-only", async () => {
-    vi.useFakeTimers();
-    const stalledLocalRefresh = deferred<{ data: { workspaces: unknown[] } }>();
-    let localWorkspaceCalls = 0;
     let snapshotCalls = 0;
 
-    mockGet.mockImplementation((path: string, options?: { params?: { path?: { host_key?: string } } }) => {
+    mockGet.mockImplementation((path: string) => {
       if (path === "/snapshot") {
         snapshotCalls += 1;
         return Promise.resolve({
@@ -869,7 +982,7 @@ describe("WorkspaceListSidebar", () => {
                       name: "epyc",
                       operationAvailability: {},
                       platform: "linux",
-                      preferredTransport: "ssh",
+                      preferredTransport: "http",
                       reachable: true,
                       tmuxSessions: [],
                     },
@@ -888,34 +1001,6 @@ describe("WorkspaceListSidebar", () => {
                       tmuxSessions: [],
                     },
                   ],
-          },
-        });
-      }
-      if (path === "/fleet/hosts/{host_key}/workspaces") {
-        expect(options?.params?.path?.host_key).toBe("epyc");
-        return Promise.resolve({
-          data: {
-            workspaces: [
-              workspaceFixture({
-                id: "remote-ws",
-                provider: "github",
-                platformHost: "github.com",
-                owner: "remote",
-                name: "service",
-                number: 12,
-                title: "Remote SSH workspace",
-              }),
-            ],
-          },
-        });
-      }
-      if (path === "/workspaces") {
-        localWorkspaceCalls += 1;
-        if (localWorkspaceCalls >= 3) {
-          return stalledLocalRefresh.promise;
-        }
-        return Promise.resolve({
-          data: {
             workspaces: [
               workspaceFixture({
                 id: "local-ws",
@@ -926,25 +1011,40 @@ describe("WorkspaceListSidebar", () => {
                 number: 1,
                 title: "Local workspace",
               }),
+              ...(snapshotCalls === 1
+                ? [
+                    {
+                      ...workspaceFixture({
+                        id: "remote-ws",
+                        provider: "github",
+                        platformHost: "github.com",
+                        owner: "remote",
+                        name: "service",
+                        number: 12,
+                        title: "Remote workspace",
+                      }),
+                      fleet_host_key: "epyc",
+                      fleet_host_name: "epyc",
+                    },
+                  ]
+                : []),
             ],
           },
         });
       }
-      return Promise.resolve({ data: { workspaces: [] } });
+      return Promise.resolve({ data: {} });
     });
 
     render(WorkspaceListSidebar, {
       props: { selectedId: "" },
     });
 
-    await vi.advanceTimersByTimeAsync(5_000);
-    expect(await screen.findByText("Remote SSH workspace")).toBeTruthy();
+    expect(await screen.findByText("Remote workspace")).toBeTruthy();
+    await waitFor(() => expect(workspaceEventsSubscriber).toBeTypeOf("function"));
 
-    await vi.advanceTimersByTimeAsync(10_000);
-    await vi.advanceTimersByTimeAsync(100);
-    await tick();
+    emitWorkspaceStatus();
 
-    expect(screen.queryByText("Remote SSH workspace")).toBeNull();
+    await waitFor(() => expect(screen.queryByText("Remote workspace")).toBeNull());
     expect(screen.getByText("Local workspace")).toBeTruthy();
   });
 
@@ -1653,24 +1753,21 @@ describe("WorkspaceListSidebar", () => {
                 tmuxSessions: [],
               },
             ],
+            workspaces: [
+              workspaceFixture({
+                id: "ws-local",
+                provider: "github",
+                platformHost: "github.com",
+                owner: "kenn-io",
+                name: "kenn-forge",
+                number: 555,
+                title: "Local mac workspace",
+              }),
+            ],
           },
         });
       }
-      return Promise.resolve({
-        data: {
-          workspaces: [
-            workspaceFixture({
-              id: "ws-local",
-              provider: "github",
-              platformHost: "github.com",
-              owner: "kenn-io",
-              name: "kenn-forge",
-              number: 555,
-              title: "Local mac workspace",
-            }),
-          ],
-        },
-      });
+      return Promise.resolve({ data: {} });
     });
 
     const { container } = render(WorkspaceListSidebar, {
@@ -2269,24 +2366,21 @@ describe("WorkspaceListSidebar", () => {
                 tmuxSessions: [],
               },
             ],
+            workspaces: [
+              workspaceFixture({
+                id: "ws-reveal",
+                provider: "github",
+                platformHost: "github.com",
+                owner: "kenn-io",
+                name: "kenn-forge",
+                number: 12,
+                title: "Reveal me",
+              }),
+            ],
           },
         });
       }
-      return Promise.resolve({
-        data: {
-          workspaces: [
-            workspaceFixture({
-              id: "ws-reveal",
-              provider: "github",
-              platformHost: "github.com",
-              owner: "kenn-io",
-              name: "kenn-forge",
-              number: 12,
-              title: "Reveal me",
-            }),
-          ],
-        },
-      });
+      return Promise.resolve({ data: {} });
     });
     mockPost.mockResolvedValue({
       data: undefined,
@@ -2335,24 +2429,21 @@ describe("WorkspaceListSidebar", () => {
                 tmuxSessions: [],
               },
             ],
+            workspaces: [
+              workspaceFixture({
+                id: "ws-delete",
+                provider: "github",
+                platformHost: "github.com",
+                owner: "kenn-io",
+                name: "kenn-forge",
+                number: 10,
+                title: "Delete me",
+              }),
+            ],
           },
         });
       }
-      return Promise.resolve({
-        data: {
-          workspaces: [
-            workspaceFixture({
-              id: "ws-delete",
-              provider: "github",
-              platformHost: "github.com",
-              owner: "kenn-io",
-              name: "kenn-forge",
-              number: 10,
-              title: "Delete me",
-            }),
-          ],
-        },
-      });
+      return Promise.resolve({ data: {} });
     });
     mockDelete.mockResolvedValue({
       data: undefined,
@@ -2423,7 +2514,7 @@ describe("WorkspaceListSidebar", () => {
   });
 
   it("omits local filesystem actions and offers force-delete recovery for remote workspaces", async () => {
-    mockGet.mockImplementation((path: string, options?: { params?: { path?: { host_key?: string } } }) => {
+    mockGet.mockImplementation((path: string) => {
       if (path === "/snapshot") {
         return Promise.resolve({
           data: {
@@ -2446,37 +2537,38 @@ describe("WorkspaceListSidebar", () => {
                 id: "epyc",
                 kind: "remote",
                 name: "epyc",
-                operationAvailability: {},
+                operationAvailability: {
+                  workspaceRead: { available: true },
+                  workspaceWrite: { available: true },
+                  terminalAttach: { available: true },
+                },
                 platform: "linux",
-                preferredTransport: "ssh",
+                preferredTransport: "http",
                 reachable: true,
                 tmuxSessions: [],
+              },
+            ],
+            workspaces: [
+              {
+                ...workspaceFixture({
+                  id: "ws-remote",
+                  provider: "github",
+                  platformHost: "github.com",
+                  owner: "remote",
+                  name: "service",
+                  number: 12,
+                  title: "Remote workspace",
+                  status: "deletion_failed",
+                  errorMessage: "workspace has uncommitted changes: notes.txt",
+                }),
+                fleet_host_key: "epyc",
+                fleet_host_name: "epyc",
               },
             ],
           },
         });
       }
-      if (path === "/fleet/hosts/{host_key}/workspaces") {
-        expect(options?.params?.path?.host_key).toBe("epyc");
-        return Promise.resolve({
-          data: {
-            workspaces: [
-              workspaceFixture({
-                id: "ws-remote",
-                provider: "github",
-                platformHost: "github.com",
-                owner: "remote",
-                name: "service",
-                number: 12,
-                title: "Remote workspace",
-                status: "deletion_failed",
-                errorMessage: "workspace has uncommitted changes: notes.txt",
-              }),
-            ],
-          },
-        });
-      }
-      return Promise.resolve({ data: { workspaces: [] } });
+      return Promise.resolve({ data: {} });
     });
     mockDelete.mockResolvedValue({
       data: undefined,

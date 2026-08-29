@@ -297,8 +297,8 @@ async function mockStackedPR(
       return;
     }
 
-    if (method === "GET" && pathname === "/api/v1/workspaces") {
-      await fulfillJson(route, []);
+    if (method === "GET" && pathname === "/api/v1/snapshot") {
+      await fulfillJson(route, { hosts: [], workspaces: [] });
       return;
     }
 

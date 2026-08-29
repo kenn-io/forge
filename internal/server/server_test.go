@@ -72,6 +72,8 @@ func TestServeRejectsRebindingHost(t *testing.T) {
 
 	validResp, err := http.Get("http://" + ln.Addr().String() + "/healthz")
 	require.NoError(err)
+	_, err = io.Copy(io.Discard, validResp.Body)
+	require.NoError(err)
 	require.NoError(validResp.Body.Close())
 	assert.Equal(http.StatusOK, validResp.StatusCode)
 
@@ -113,6 +115,8 @@ func TestServeAllowsBoundLoopbackHost(t *testing.T) {
 
 	validResp, err := http.Get("http://" + ln.Addr().String() + "/healthz")
 	require.NoError(err)
+	_, err = io.Copy(io.Discard, validResp.Body)
+	require.NoError(err)
 	require.NoError(validResp.Body.Close())
 	assert.Equal(http.StatusOK, validResp.StatusCode)
 
@@ -122,8 +126,10 @@ func TestServeAllowsBoundLoopbackHost(t *testing.T) {
 
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(err)
-	defer resp.Body.Close()
 	assert.Equal(http.StatusForbidden, resp.StatusCode)
+	_, err = io.Copy(io.Discard, resp.Body)
+	require.NoError(err)
+	require.NoError(resp.Body.Close())
 }
 
 func TestServeHTTPRejectsLoopbackHostFromNonLoopbackPeer(t *testing.T) {

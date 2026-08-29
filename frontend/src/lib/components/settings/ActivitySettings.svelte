@@ -7,6 +7,8 @@
   import { isEmbedded } from "../../stores/embed-config.svelte.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import { SettingsWorkflow, settingsErrorMessage } from "../../stores/settings-workflow.js";
+  import SettingsOwnerNotice from "./SettingsOwnerNotice.svelte";
+  import type { SettingsOwner } from "./settingsOwnership.js";
 
   const { activity: activityStore } = getStores();
   const runtime = getAppRuntime();
@@ -14,9 +16,10 @@
   interface Props {
     activity: ActivitySettingsType;
     onUpdate: (activity: ActivitySettingsType) => void;
+    owner?: SettingsOwner;
   }
 
-  let { activity, onUpdate }: Props = $props();
+  let { activity, onUpdate, owner = "local" }: Props = $props();
 
   const embedded = isEmbedded();
   let saveVersion = 0;
@@ -123,6 +126,8 @@
     }
   }
 </script>
+
+<SettingsOwnerNotice {owner} subject="Activity policy" />
 
 <div class="setting-row">
   <span class="setting-label">Default view mode</span>

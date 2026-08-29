@@ -341,7 +341,7 @@ test-fleet-container: ensure-embed-dir ensure-tmp-dir
 		echo "Set KENN_FORGE_FLEET_CONTAINER_E2E=1 to run the fleet container e2e fixture." >&2; \
 		exit 1; \
 	fi
-	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" $(GOTESTSUM)=tmp/test-fleet-container-output.json -- ./internal/server -run TestFleetContainerReadE2E -shuffle=on -timeout 10m
+	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" $(GOTESTSUM)=tmp/test-fleet-container-output.json -- ./internal/server/fleetapi -run TestFleetContainerReadE2E -shuffle=on -timeout 10m
 
 # Run opt-in fleet drive container tests.
 test-fleet-drive-container: ensure-embed-dir ensure-tmp-dir
@@ -349,7 +349,7 @@ test-fleet-drive-container: ensure-embed-dir ensure-tmp-dir
 		echo "Set KENN_FORGE_FLEET_DRIVE_CONTAINER_E2E=1 to run the fleet drive container e2e fixture." >&2; \
 		exit 1; \
 	fi
-	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" $(GOTESTSUM)=tmp/test-fleet-drive-container-output.json -- ./internal/server -run TestFleetContainerDriveE2E -shuffle=on -timeout 10m
+	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" $(GOTESTSUM)=tmp/test-fleet-drive-container-output.json -- ./internal/server/fleetapi -run TestFleetContainerDriveE2E -shuffle=on -timeout 10m
 
 # Run opt-in GitLab CE container compatibility tests.
 test-gitlab-container: ensure-embed-dir ensure-tmp-dir
@@ -390,7 +390,7 @@ lint-check: ensure-embed-dir check-mise
 nilaway: ensure-embed-dir
 	@if [ -z "$(NILAWAY_BIN)" ]; then \
 		echo "nilaway not found. Install with:" >&2; \
-		echo "go install go.uber.org/nilaway/cmd/nilaway@v0.0.0-20260808063849-8649a03c818a" >&2; \
+		echo "mise install" >&2; \
 		exit 1; \
 	fi
 	@module_path="$$(go list -m)" || { \

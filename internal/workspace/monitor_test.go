@@ -14,6 +14,19 @@ import (
 	"go.kenn.io/forge/internal/db"
 )
 
+type staticPullCandidateSource struct {
+	candidates []db.MergeRequest
+	err        error
+	calls      int
+}
+
+func (s *staticPullCandidateSource) ListOpenPullCandidates(
+	context.Context, Workspace,
+) ([]db.MergeRequest, error) {
+	s.calls++
+	return append([]db.MergeRequest(nil), s.candidates...), s.err
+}
+
 func setupMonitorRepo(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -146,6 +159,64 @@ func TestPRMonitorRunOnceUsesUpstreamBranchMatch(t *testing.T) {
 	require.NotNil(ws)
 	require.NotNil(ws.AssociatedPRNumber)
 	assert.Equal(42, *ws.AssociatedPRNumber)
+}
+
+func TestLaunchSpecMonitorUsesHubCandidatesWithoutProviderRows(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := openTestDB(t)
+	worktreePath := setupMonitorRepo(t)
+	runWorkspaceTestGit(t, worktreePath, "checkout", "-b", "feature/issue-7")
+	require.NoError(os.WriteFile(
+		filepath.Join(worktreePath, "feature.txt"), []byte("feature\n"), 0o644,
+	))
+	runWorkspaceTestGit(t, worktreePath, "add", ".")
+	runWorkspaceTestGit(t, worktreePath, "commit", "-m", "feature commit")
+	runWorkspaceTestGit(t, worktreePath, "push", "-u", "origin", "feature/issue-7")
+	runWorkspaceTestGit(
+		t, worktreePath, "remote", "set-url", "origin",
+		"git@github.com:acme/widget.git",
+	)
+	workspaceID := insertMonitorWorkspace(t, database, worktreePath, nil)
+	workspaceRow, err := database.GetWorkspace(t.Context(), workspaceID)
+	require.NoError(err)
+	require.NotNil(workspaceRow)
+	issuedAt := time.Now().UTC()
+	require.NoError(database.PutWorkspaceLaunchSpec(
+		t.Context(), workspaceID, WorkspaceLaunchSpec{
+			Version: WorkspaceLaunchSpecVersion,
+			Repository: WorkspaceLaunchRepository{
+				Provider: "github", PlatformHost: "github.com",
+				PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
+				CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
+			},
+			ItemType: db.WorkspaceItemTypeIssue, ItemNumber: 7,
+			ItemKey: "7", GitHeadRef: workspaceRow.GitHeadRef,
+			SourceVisible: true, IssuedAt: issuedAt,
+			SourceVisibleUntil: issuedAt.Add(WorkspaceLaunchSpecVisibilityLease),
+		},
+	))
+	manager := NewManager(database, t.TempDir())
+	source := &staticPullCandidateSource{candidates: []db.MergeRequest{{
+		Number: 42, State: db.MergeRequestStateOpen,
+		HeadBranch:       "feature/issue-7",
+		HeadRepoCloneURL: "https://github.com/acme/widget.git",
+	}}}
+
+	monitor := NewPRMonitor(database, PRMonitorOptions{
+		LaunchSpecs: manager, PullCandidates: source,
+	})
+	updates, err := monitor.RunOnce(t.Context())
+	require.NoError(err)
+	require.Len(updates, 1)
+	assert.Equal(workspaceID, updates[0].WorkspaceID)
+	assert.Equal(42, updates[0].PRNumber)
+	assert.Equal(1, source.calls)
+	repo, err := database.GetRepoByIdentity(t.Context(), db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", Owner: "acme", Name: "widget",
+	})
+	require.NoError(err)
+	assert.Nil(repo, "spoke lifecycle must not need a provider repository row")
 }
 
 func TestPRMonitorRunOnceFallsBackToLocalBranchNameAndHeadSHA(t *testing.T) {

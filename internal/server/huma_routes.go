@@ -17,9 +17,11 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 	gh "github.com/google/go-github/v89/github"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/ratelimit"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/issueapi"
@@ -277,6 +279,7 @@ func (s *Server) registerAPI(api huma.API) {
 	s.registerProviderRepoAPI(api)
 	s.repoBrowserAPI.Register(api)
 	s.fleetAPI.Register(api)
+	s.registerSpokePreparationAPI(api)
 
 	huma.Register(api, huma.Operation{
 		OperationID:   "list-repo-summaries",
@@ -322,6 +325,8 @@ func (s *Server) registerAPI(api huma.API) {
 		Tags:          []string{"Repositories"},
 	}, s.bulkAddRepos)
 	s.registerSettingsAPI(api)
+	s.registerProviderFederationAPI(api)
+	s.registerFederationEventAPI(api)
 	huma.Register(api, huma.Operation{
 		OperationID:   "trigger-sync",
 		Method:        http.MethodPost,
@@ -1375,11 +1380,145 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 func (s *Server) listActivityService(
 	ctx context.Context, input *listActivityInput,
 ) (activityResponse, error) {
+	if s.providerSource != nil {
+		response, err := s.providerSource.ListActivity(ctx, input)
+		if err != nil {
+			return activityResponse{}, err
+		}
+		return s.overlayLocalActivityWorkspaces(ctx, input, response)
+	}
 	output, err := s.listActivityRouteCore(ctx, input)
 	if err != nil {
 		return activityResponse{}, err
 	}
+	if _, federationRequest := federationauth.PrincipalFromContext(ctx); federationRequest {
+		return providerActivityResponse(output.Body), nil
+	}
 	return output.Body, nil
+}
+
+func providerActivityResponse(response activityResponse) activityResponse {
+	response.Items = append([]activityItemResponse(nil), response.Items...)
+	for i := range response.Items {
+		response.Items[i].Workspace = nil
+	}
+	response.ItemActivity = append([]activitySubjectResponse(nil), response.ItemActivity...)
+	for i := range response.ItemActivity {
+		response.ItemActivity[i].Workspace = nil
+	}
+	response.WorkspaceActivity = []workspaceActivitySubjectResponse{}
+	return response
+}
+
+func (s *Server) overlayLocalActivityWorkspaces(
+	ctx context.Context, input *listActivityInput, response activityResponse,
+) (activityResponse, error) {
+	response = providerActivityResponse(response)
+	if s.workspaceAPI == nil {
+		return response, nil
+	}
+	snapshot, err := s.workspaceAPI.WorkspaceSubjectSnapshot(ctx)
+	if err != nil {
+		return activityResponse{}, httpapi.Internal("list workspace activity failed")
+	}
+	overlays := activityWorkspaceOverlays(snapshot)
+	for i := range response.Items {
+		if workspace, ok := overlays[activityItemIdentity(response.Items[i])]; ok {
+			copy := workspace
+			response.Items[i].Workspace = &copy
+		}
+	}
+	for i := range response.ItemActivity {
+		if workspace, ok := overlays[activitySubjectIdentity(response.ItemActivity[i])]; ok {
+			copy := workspace
+			response.ItemActivity[i].Workspace = &copy
+		}
+	}
+	if input.Projection != "events" && !input.InvolvesMe {
+		opts, err := localWorkspaceActivityOptions(input, s.now())
+		if err != nil {
+			return activityResponse{}, err
+		}
+		response.WorkspaceActivity = s.workspaceActivityResponse(
+			input, opts, snapshot, nil, response.UseWorkspaceActivityForRecency,
+		)
+	}
+	return response, nil
+}
+
+func localWorkspaceActivityOptions(input *listActivityInput, now time.Time) (db.ListActivityOpts, error) {
+	opts := db.ListActivityOpts{
+		RepoFilters: parseRepoFilters(input.Repo),
+		ItemTypes:   input.ItemTypes,
+		Search:      strings.ToLower(strings.TrimSpace(input.Search)),
+		Author:      strings.TrimSpace(input.Author),
+	}
+	if input.Since == "" {
+		defaultSince := now.UTC().AddDate(0, 0, -7)
+		opts.Since = &defaultSince
+		return opts, nil
+	}
+	since, err := time.Parse(time.RFC3339, input.Since)
+	if err != nil {
+		return db.ListActivityOpts{}, httpapi.Validation("query.since", "invalid since: "+err.Error())
+	}
+	opts.Since = &since
+	return opts, nil
+}
+
+func activityWorkspaceOverlays(
+	snapshot workspaceapi.WorkspaceSubjectSnapshot,
+) map[providerplane.ItemIdentity]workspaceapi.WorkspaceRef {
+	overlays := make(map[providerplane.ItemIdentity]workspaceapi.WorkspaceRef)
+	for key, activity := range snapshot.Subjects {
+		itemType := ""
+		workspace := activity.Workspace
+		switch key.ItemType {
+		case db.WorkspaceItemTypePullRequest:
+			itemType = "pr"
+		case db.WorkspaceItemTypeIssue:
+			itemType = "issue"
+			var ok bool
+			workspace, ok = snapshot.OwnReferences[key]
+			if !ok {
+				continue
+			}
+		default:
+			continue
+		}
+		identity := providerplane.ItemIdentity{
+			Repository: providerplane.RepositoryIdentity{
+				Provider:       activity.Subject.Platform,
+				PlatformHost:   activity.Subject.PlatformHost,
+				PlatformRepoID: activity.Subject.PlatformRepoID,
+			},
+			ItemType: itemType, ItemNumber: key.ItemNumber,
+		}.Canonical()
+		if identity.Valid() {
+			overlays[identity] = workspace
+		}
+	}
+	return overlays
+}
+
+func activityItemIdentity(item activityItemResponse) providerplane.ItemIdentity {
+	return providerplane.ItemIdentity{
+		Repository: providerplane.RepositoryIdentity{
+			Provider: item.Repo.Provider, PlatformHost: item.Repo.PlatformHost,
+			PlatformRepoID: item.Repo.PlatformRepoID,
+		},
+		ItemType: item.ItemType, ItemNumber: item.ItemNumber,
+	}.Canonical()
+}
+
+func activitySubjectIdentity(item activitySubjectResponse) providerplane.ItemIdentity {
+	return providerplane.ItemIdentity{
+		Repository: providerplane.RepositoryIdentity{
+			Provider: item.Repo.Provider, PlatformHost: item.Repo.PlatformHost,
+			PlatformRepoID: item.Repo.PlatformRepoID,
+		},
+		ItemType: item.ItemType, ItemNumber: item.ItemNumber,
+	}.Canonical()
 }
 
 func (s *Server) listActivityRouteCore(ctx context.Context, input *listActivityInput) (*listActivityOutput, error) {
@@ -1710,19 +1849,24 @@ func (s *Server) listActivityRouteCore(ctx context.Context, input *listActivityI
 		itemActivityOut = []activitySubjectResponse{}
 	}
 
-	workspaceActivity := s.workspaceActivityResponse(input, opts, workspaceSnapshot, workspaceEventItems)
+	useWorkspaceActivityForRecency := s.useWorkspaceActivityForRecency()
+	workspaceActivity := s.workspaceActivityResponse(
+		input, opts, workspaceSnapshot, workspaceEventItems,
+		useWorkspaceActivityForRecency,
+	)
 	if projection == "events" {
 		workspaceActivity = []workspaceActivitySubjectResponse{}
 	}
 	return &listActivityOutput{
 		Body: activityResponse{
-			Items:              out,
-			ItemActivity:       itemActivityOut,
-			WorkspaceActivity:  workspaceActivity,
-			Capped:             eventsCapped,
-			ItemActivityCapped: itemActivityCapped,
-			EventCursor:        eventCursor,
-			NextCursor:         nextCursor,
+			Items:                          out,
+			ItemActivity:                   itemActivityOut,
+			WorkspaceActivity:              workspaceActivity,
+			UseWorkspaceActivityForRecency: useWorkspaceActivityForRecency,
+			Capped:                         eventsCapped,
+			ItemActivityCapped:             itemActivityCapped,
+			EventCursor:                    eventCursor,
+			NextCursor:                     nextCursor,
 		},
 	}, nil
 }
@@ -1788,8 +1932,9 @@ func (s *Server) workspaceActivityResponse(
 	opts db.ListActivityOpts,
 	snapshot workspaceapi.WorkspaceSubjectSnapshot,
 	providerItems []db.ActivityItem,
+	useWorkspaceActivityForRecency bool,
 ) []workspaceActivitySubjectResponse {
-	if !s.useWorkspaceActivityForRecency() {
+	if !useWorkspaceActivityForRecency {
 		return []workspaceActivitySubjectResponse{}
 	}
 	itemTypes := make(map[string]struct{}, len(input.ItemTypes))
@@ -1917,6 +2062,22 @@ func (s *Server) listActivityAuthors(
 		defaultSince := s.now().UTC().AddDate(0, 0, -7)
 		opts.Since = &defaultSince
 	}
+	if s.providerSource != nil {
+		response, err := s.providerSource.ListActivityAuthors(ctx, input)
+		if err != nil {
+			return nil, err
+		}
+		workspaceSnapshot, err := s.workspaceAPI.WorkspaceSubjectSnapshot(ctx)
+		if err != nil {
+			slog.Error("list workspace activity authors failed", "err", err)
+			return nil, httpapi.Internal("list activity authors failed")
+		}
+		response.Authors = s.activityAuthorsWithWorkspace(
+			response.Authors, workspaceSnapshot, opts,
+			response.UseWorkspaceActivityForRecency,
+		)
+		return &listActivityAuthorsOutput{Body: response}, nil
+	}
 	releaseReconciliation, err := s.db.LockRepositoryReconciliationRead(ctx)
 	if err != nil {
 		slog.Error("lock activity author repository snapshot failed", "err", err)
@@ -1933,14 +2094,28 @@ func (s *Server) listActivityAuthors(
 		slog.Error("list activity authors failed", "err", err)
 		return nil, httpapi.Internal("list activity authors failed")
 	}
+	if _, federationRequest := federationauth.PrincipalFromContext(ctx); federationRequest {
+		return &listActivityAuthorsOutput{
+			Body: activityAuthorsResponse{
+				Authors:                        authors,
+				UseWorkspaceActivityForRecency: s.useWorkspaceActivityForRecency(),
+			},
+		}, nil
+	}
 	workspaceSnapshot, err := s.workspaceAPI.WorkspaceSubjectSnapshotUnderRepositoryReconciliationRead(ctx)
 	if err != nil {
 		slog.Error("list workspace activity authors failed", "err", err)
 		return nil, httpapi.Internal("list activity authors failed")
 	}
-	authors = s.activityAuthorsWithWorkspace(authors, workspaceSnapshot, opts)
+	useWorkspaceActivityForRecency := s.useWorkspaceActivityForRecency()
+	authors = s.activityAuthorsWithWorkspace(
+		authors, workspaceSnapshot, opts, useWorkspaceActivityForRecency,
+	)
 	return &listActivityAuthorsOutput{
-		Body: activityAuthorsResponse{Authors: authors},
+		Body: activityAuthorsResponse{
+			Authors:                        authors,
+			UseWorkspaceActivityForRecency: useWorkspaceActivityForRecency,
+		},
 	}, nil
 }
 
@@ -1948,8 +2123,9 @@ func (s *Server) activityAuthorsWithWorkspace(
 	providerAuthors []string,
 	snapshot workspaceapi.WorkspaceSubjectSnapshot,
 	opts db.ListActivityAuthorsOpts,
+	useWorkspaceActivityForRecency bool,
 ) []string {
-	if !s.useWorkspaceActivityForRecency() {
+	if !useWorkspaceActivityForRecency {
 		return providerAuthors
 	}
 	return mergeWorkspaceActivityAuthors(providerAuthors, snapshot, opts)

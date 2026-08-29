@@ -85,6 +85,7 @@ export const nodeUnitTestFiles = [
   "src/lib/utils/ci-buckets-warn.test.ts",
   "src/lib/utils/ci-buckets.test.ts",
   "src/lib/utils/diff-categories.test.ts",
+  "src/lib/utils/e2eServerOwnership.test.ts",
   "src/lib/utils/exclusiveLock.test.ts",
   "src/lib/utils/markdown-suggestions.test.ts",
   "src/lib/utils/markdownTaskListStyle.test.ts",

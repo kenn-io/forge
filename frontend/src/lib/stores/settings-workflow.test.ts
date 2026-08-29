@@ -37,11 +37,8 @@ it.layer(SettingsTestLayer)("ordered settings writes", (it) => {
       const settings = makeSettings();
       const fleetUpdate = {
         enabled: true,
-        key: "hub",
         peer_timeout: "4s",
         sessions: { include_unmanaged_details: false },
-        peers: [],
-        ssh_peers: [],
       } satisfies FleetSettingsUpdate;
       let currentFleet = settings.fleet;
       const fetch: typeof globalThis.fetch = (input, init) => {

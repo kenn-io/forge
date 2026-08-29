@@ -592,6 +592,48 @@ require_auth = true
 	assert.True(cfg2.API.RequireAuth)
 }
 
+func TestLoadRoundTripsTailscaleServeUsers(t *testing.T) {
+	assert := assert.New(t)
+
+	cfg, cfg2 := roundTripConfigString(t, `
+[api]
+require_auth = true
+
+[api.tailscale_serve]
+enabled = true
+allowed_users = [" User-A@Example.COM ", "user-b@example.com"]
+`)
+
+	want := TailscaleServeAPI{
+		Enabled: true,
+		AllowedUsers: []string{
+			"user-a@example.com",
+			"user-b@example.com",
+		},
+	}
+	assert.Equal(want, cfg.API.TailscaleServe)
+	assert.Equal(want, cfg2.API.TailscaleServe)
+}
+
+func TestTailscaleServeUsersRejectInvalidConfiguration(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		block string
+	}{
+		{name: "enabled without users", block: "enabled = true"},
+		{name: "empty user", block: "enabled = true\nallowed_users = [\"\"]"},
+		{name: "display name", block: "enabled = true\nallowed_users = [\"User <user@example.com>\"]"},
+		{name: "multiple users in one header", block: "enabled = true\nallowed_users = [\"a@example.com,b@example.com\"]"},
+		{name: "multiple at signs", block: "enabled = true\nallowed_users = [\"a@b@example.com\"]"},
+		{name: "case insensitive duplicate", block: "enabled = true\nallowed_users = [\"USER@example.com\", \"user@example.com\"]"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := Load(writeConfig(t, "[api.tailscale_serve]\n"+test.block+"\n"))
+			require.ErrorContains(t, err, "api.tailscale_serve")
+		})
+	}
+}
+
 func TestLoadNormalizesDefaultPlatformHost(t *testing.T) {
 	assert := assert.New(t)
 	cfg, cfg2 := roundTripConfigString(t, `
@@ -2656,6 +2698,25 @@ initial_timeline_entry_limit = 80
 	assert.Equal(80, cfg2.Detail.InitialTimelineEntryLimit)
 }
 
+func TestRepositoryStableIdentitySurvivesConfigSave(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	path := writeConfig(t, `
+[[repos]]
+owner = "acme"
+name = "widget"
+platform_repo_id = "repo-widget"
+	`)
+	cfg, err := Load(path)
+	require.NoError(err)
+
+	savedPath := filepath.Join(t.TempDir(), "saved.toml")
+	require.NoError(cfg.Save(savedPath))
+	saved, err := os.ReadFile(savedPath)
+	require.NoError(err)
+	assert.Contains(string(saved), `platform_repo_id = "repo-widget"`)
+}
+
 func TestRepoPresetsConfigRoundTrip(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -3637,8 +3698,7 @@ func TestSavePreservesTmuxCommand(t *testing.T) {
 }
 
 // TestSaveRoundTripsFleet guards against Save silently dropping the
-// [fleet] section: peers, the local host key, peer timeout, and the
-// [fleet.sessions] toggle must all survive a Save/Load round trip.
+// spoke binding, peer timeout, or fleet session policy.
 func TestSaveRoundTripsFleet(t *testing.T) {
 	assert := assert.New(t)
 	dir := t.TempDir()
@@ -3651,15 +3711,18 @@ func TestSaveRoundTripsFleet(t *testing.T) {
 		Port:           8091,
 		DataDir:        dir,
 		Activity:       Activity{ViewMode: "threaded", TimeRange: "7d"},
+		API:            API{RequireAuth: true},
 		Fleet: Fleet{
-			Enabled:     true,
-			Key:         "studio",
+			Enabled: true,
+			Role:    FleetRoleSpoke,
+			BaseURL: "https://spoke.test:8443",
+			Hub: &FleetHub{
+				NodeID:  "0123456789abcdef0123456789abcdef",
+				Name:    "Studio",
+				BaseURL: "https://studio.test",
+			},
 			PeerTimeout: "3s",
 			Sessions:    FleetSessions{IncludeUnmanagedDetails: true},
-			Peers: []FleetPeer{
-				{Key: "laptop", Name: "Laptop", BaseURL: "http://laptop:8091"},
-				{Key: "server", BaseURL: "http://10.0.0.2:8091"},
-			},
 		},
 	}
 	require.NoError(t, cfg.Save(path))
@@ -3667,10 +3730,11 @@ func TestSaveRoundTripsFleet(t *testing.T) {
 	reloaded, err := Load(path)
 	require.NoError(t, err)
 	assert.True(reloaded.Fleet.Enabled)
-	assert.Equal("studio", reloaded.Fleet.Key)
+	assert.Equal(FleetRoleSpoke, reloaded.Fleet.RoleOrDefault())
+	assert.Equal("https://spoke.test:8443", reloaded.Fleet.BaseURL)
+	assert.Equal(cfg.Fleet.Hub, reloaded.Fleet.Hub)
 	assert.Equal("3s", reloaded.Fleet.PeerTimeout)
 	assert.True(reloaded.Fleet.Sessions.IncludeUnmanagedDetails)
-	assert.Equal(cfg.Fleet.Peers, reloaded.Fleet.Peers)
 }
 
 // TestSaveOmitsEmptyFleet keeps default configs clean: a daemon with no
@@ -4234,201 +4298,192 @@ func TestFleetConfigParsesAndValidates(t *testing.T) {
 	path := writeConfig(t, `
 [fleet]
 enabled = true
-key = "studio"
+role = "hub"
+base_url = "HTTPS://HUB.Example:443/"
 peer_timeout = "2s"
+[api]
+require_auth = true
 [fleet.sessions]
 include_unmanaged_details = true
-[[fleet.peers]]
-key = "mbp"
-name = "MacBook"
-base_url = "http://mbp:8091"
+[[fleet.members]]
+node_id = "fedcba9876543210fedcba9876543210"
+name = "Build Box"
+base_url = "https://spoke.example"
+state = "active"
 `)
 	cfg, err := Load(path)
 	require.NoError(err)
 	require.True(cfg.Fleet.Enabled)
-	require.Equal("studio", cfg.Fleet.Key)
-	require.Len(cfg.Fleet.Peers, 1)
-	require.Equal("mbp", cfg.Fleet.Peers[0].Key)
-	require.Equal("http://mbp:8091", cfg.Fleet.Peers[0].BaseURL)
+	require.Equal("https://hub.example", cfg.Fleet.BaseURL)
+	require.Equal(FleetRoleHub, cfg.Fleet.RoleOrDefault())
+	require.Len(cfg.Fleet.Members, 1)
+	require.Equal("fedcba9876543210fedcba9876543210", cfg.Fleet.Members[0].NodeID)
+	require.Equal("https://spoke.example", cfg.Fleet.Members[0].BaseURL)
 	require.Equal("2s", cfg.Fleet.PeerTimeoutOrDefault().String())
 	require.True(cfg.Fleet.Sessions.IncludeUnmanagedDetails)
+
+	_, err = Load(writeConfig(t, `
+base_path = "/forge/"
+[fleet]
+enabled = true
+base_url = "https://hub.example"
+[api]
+require_auth = true
+`))
+	require.ErrorContains(err, `fleet.enabled requires base_path = "/"`)
 }
 
-func TestFleetConfigNormalizesHostKeys(t *testing.T) {
+func TestFleetRoleDefaultsAndSpokeRequirements(t *testing.T) {
 	assert := assert.New(t)
-	path := writeConfig(t, `
-[fleet]
-key = " studio "
-[[fleet.peers]]
-key = " mbp "
-name = "MacBook"
-base_url = "http://mbp:8091"
-[[fleet.ssh_peers]]
-key = " epyc "
-destination = "dev@epyc.tail"
-`)
-	cfg, err := Load(path)
-	require.NoError(t, err)
+	require := require.New(t)
 
-	assert.Equal("studio", cfg.Fleet.Key)
-	require.Len(t, cfg.Fleet.Peers, 1)
-	assert.Equal("mbp", cfg.Fleet.Peers[0].Key)
-	require.Len(t, cfg.Fleet.SSHPeers, 1)
-	assert.Equal("epyc", cfg.Fleet.SSHPeers[0].Key)
-}
+	cfg, err := Load(writeConfig(t, ""))
+	require.NoError(err)
+	assert.Equal(FleetRoleHub, cfg.Fleet.RoleOrDefault())
 
-func TestFleetRejectsTrimmedEmptyAndDuplicatePeerKeys(t *testing.T) {
-	tests := []struct {
-		name    string
-		content string
-		want    string
-	}{
-		{
-			name: "empty http peer",
-			content: `
-[[fleet.peers]]
-key = "   "
-base_url = "http://empty:8091"
-`,
-			want: "key is required",
-		},
-		{
-			name: "duplicate http peers",
-			content: `
-[[fleet.peers]]
-key = "mini"
-base_url = "http://mini:8091"
-[[fleet.peers]]
-key = " mini "
-base_url = "http://mini2:8091"
-`,
-			want: "duplicate key",
-		},
-		{
-			name: "http peer collides with local key",
-			content: `
+	for _, role := range []FleetRole{FleetRoleHub, FleetRoleSpoke} {
+		t.Run(string(role), func(t *testing.T) {
+			hub := ""
+			if role == FleetRoleSpoke {
+				hub = `
+[fleet.hub]
+node_id = "0123456789abcdef0123456789abcdef"
+base_url = "https://hub.test"
+`
+			}
+			loaded, loadErr := Load(writeConfig(t, fmt.Sprintf(`
 [fleet]
-key = " hub "
-[[fleet.peers]]
-key = "hub"
-base_url = "http://hub:8091"
-`,
-			want: "collides with fleet.key",
-		},
-		{
-			name: "ssh peer collides with trimmed http peer",
-			content: `
-[[fleet.peers]]
-key = " mini "
-base_url = "http://mini:8091"
-[[fleet.ssh_peers]]
-key = "mini"
-destination = "dev@mini"
-`,
-			want: "collides with fleet.peers",
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			_, err := Load(writeConfig(t, tc.content))
-			require.Error(t, err)
-			require.Contains(t, err.Error(), tc.want)
+role = %q
+%s
+`, role, hub)))
+			require.NoError(loadErr)
+			assert.Equal(role, loaded.Fleet.RoleOrDefault())
 		})
 	}
+
+	_, err = Load(writeConfig(t, "[fleet]\nrole = \"worker\"\n"))
+	require.ErrorContains(err, "fleet.role")
+
+	_, err = Load(writeConfig(t, "[fleet]\nrole = \"spoke\"\n"))
+	require.ErrorContains(err, "fleet.hub")
 }
 
-func TestFleetConfigDefaultsToDisabledFederation(t *testing.T) {
+func TestFleetHubAndMembersUseCanonicalHTTPSOrigins(t *testing.T) {
+	assert := assert.New(t)
 	require := require.New(t)
-	path := writeConfig(t, `
+	cfg, err := Load(writeConfig(t, `
 [fleet]
-key = "studio"
-[[fleet.peers]]
-key = "mbp"
-base_url = "http://mbp:8091"
-`)
-	cfg, err := Load(path)
+role = "hub"
+
+[[fleet.members]]
+node_id = "fedcba9876543210fedcba9876543210"
+name = "Build Box"
+base_url = "HTTPS://SPOKE.Example:443/"
+state = "active"
+`))
 	require.NoError(err)
-	require.False(cfg.Fleet.Enabled)
-	require.Len(cfg.Fleet.Peers, 1)
+	require.Len(cfg.Fleet.Members, 1)
+	assert.Equal("https://spoke.example", cfg.Fleet.Members[0].BaseURL)
+
+	path := filepath.Join(t.TempDir(), "config.toml")
+	require.NoError(cfg.Save(path))
+	reloaded, err := Load(path)
+	require.NoError(err)
+	assert.Equal(cfg.Fleet.Members, reloaded.Fleet.Members)
+
+	_, err = Load(writeConfig(t, `
+[fleet]
+role = "spoke"
+[fleet.hub]
+node_id = "0123456789abcdef0123456789abcdef"
+base_url = "http://hub.example"
+`))
+	assert.ErrorContains(err, "HTTPS origin")
+}
+
+func TestFleetBaseURLIsRequiredAndCanonicalWhenEnabled(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	_, err := Load(writeConfig(t, `
+[fleet]
+enabled = true
+[api]
+require_auth = true
+`))
+	require.ErrorContains(err, "fleet.base_url")
+
+	_, err = Load(writeConfig(t, `
+[fleet]
+enabled = true
+base_url = "http://spoke.example"
+[api]
+require_auth = true
+`))
+	require.ErrorContains(err, "HTTPS origin")
+
+	cfg, err := Load(writeConfig(t, `
+[fleet]
+enabled = true
+base_url = "HTTPS://SPOKE.Example:443/"
+[api]
+require_auth = true
+`))
+	require.NoError(err)
+	assert.Equal("https://spoke.example", cfg.Fleet.BaseURL)
+
+	cfg, err = Load(writeConfig(t, `
+[fleet]
+enabled = true
+base_url = "https://spoke.example:8443"
+[api]
+require_auth = true
+`))
+	require.NoError(err)
+	assert.Equal("https://spoke.example:8443", cfg.Fleet.BaseURL)
+}
+
+func TestUnsupportedFleetConfigurationFailsClosed(t *testing.T) {
+	_, err := Load(writeConfig(t, "[fleet]\nremoved_option = 'old'\n"))
+	require.ErrorContains(t, err, "unsupported fleet configuration")
+}
+
+func TestFleetEnabledRequiresAPIAuth(t *testing.T) {
+	_, err := Load(writeConfig(t, "[fleet]\nenabled = true\nbase_url = \"https://spoke.example\"\n"))
+	require.ErrorContains(t, err, "api.require_auth")
+
+	cfg, err := Load(writeConfig(t, `
+[fleet]
+enabled = true
+base_url = "https://spoke.example"
+
+[api]
+require_auth = true
+`))
+	require.NoError(t, err)
+	assert.True(t, cfg.Fleet.Enabled)
 }
 
 func TestFleetSessionsConfigDefaultsToRedactedUnmanagedDetails(t *testing.T) {
-	path := writeConfig(t, `
-[fleet]
-key = "studio"
-`)
+	path := writeConfig(t, "[fleet]\n")
 	cfg, err := Load(path)
 	require.NoError(t, err)
 	require.False(t, cfg.Fleet.Sessions.IncludeUnmanagedDetails)
 }
 
-func TestFleetRejectsDuplicatePeerKeys(t *testing.T) {
-	path := writeConfig(t, `
-[[fleet.peers]]
-key = "dup"
-base_url = "http://a:8091"
-[[fleet.peers]]
-key = "dup"
-base_url = "http://b:8091"
-`)
-	_, err := Load(path)
-	require.Error(t, err, "expected duplicate peer key to fail validation")
-}
-
-func TestFleetRejectsReservedSelfKey(t *testing.T) {
-	tests := []struct {
-		name    string
-		content string
-		want    string
-	}{
-		{
-			name: "local key",
-			content: `
-[fleet]
-key = "self"
-`,
-			want: "fleet.key",
-		},
-		{
-			name: "http peer",
-			content: `
-[[fleet.peers]]
-key = "self"
-base_url = "http://forge.local:8091"
-`,
-			want: "fleet.peers[0]",
-		},
-		{
-			name: "ssh peer",
-			content: `
-[[fleet.ssh_peers]]
-key = "self"
-destination = "dev@forge.local"
-`,
-			want: "fleet.ssh_peers[0]",
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			path := writeConfig(t, tc.content)
-			_, err := Load(path)
-			require.Error(t, err)
-			require.Contains(t, err.Error(), tc.want)
-			require.Contains(t, err.Error(), "reserved")
-		})
-	}
-}
-
-func TestFleetRejectsSchemelessBaseURL(t *testing.T) {
-	path := writeConfig(t, "[[fleet.peers]]\nkey = \"p\"\nbase_url = \"localhost:8091\"\n")
-	_, err := Load(path)
-	require.Error(t, err, "expected scheme-less base_url to be rejected")
-}
-
-func TestFleetPeerTimeoutDefaults(t *testing.T) {
+func TestFleetMemberTimeoutDefaults(t *testing.T) {
 	var f Fleet
 	require.Equal(t, 2*time.Second, f.PeerTimeoutOrDefault(), "empty peer timeout must default to 2s")
+}
+
+func TestFleetPeerTimeoutMustBePositive(t *testing.T) {
+	for _, timeout := range []string{"0s", "-1s"} {
+		t.Run(timeout, func(t *testing.T) {
+			_, err := Load(writeConfig(t, fmt.Sprintf(
+				"[fleet]\npeer_timeout = %q\n", timeout,
+			)))
+			require.ErrorContains(t, err, "fleet.peer_timeout must be positive")
+		})
+	}
 }
 
 func TestValidateHostBinding(t *testing.T) {
@@ -4468,87 +4523,6 @@ func TestValidateHostBinding(t *testing.T) {
 			}
 			require.Error(err)
 			require.Contains(err.Error(), tc.wantErr)
-		})
-	}
-}
-
-// TestValidateFleetSSHPeers pins the load-time rejection of ssh peer
-// configs that would later surface as unroutable hosts or merge
-// collisions.
-func TestValidateFleetSSHPeers(t *testing.T) {
-	base := func() *Config {
-		return &Config{
-			Fleet: Fleet{
-				Key:   "studio",
-				Peers: []FleetPeer{{Key: "mbp", BaseURL: "http://x"}},
-			},
-		}
-	}
-
-	ok := base()
-	ok.Fleet.SSHPeers = []FleetSSHPeer{
-		{Key: "epyc", Destination: "wes@epyc.local"},
-	}
-	require.NoError(t, ok.validateFleetSSHPeers())
-
-	cases := []struct {
-		name  string
-		peers []FleetSSHPeer
-		want  string
-	}{
-		{"empty key", []FleetSSHPeer{{Destination: "x@y"}}, "key is required"},
-		{"empty destination", []FleetSSHPeer{{Key: "epyc"}}, "destination is required"},
-		{"unsafe destination", []FleetSSHPeer{{Key: "epyc", Destination: "wes;touch@host"}}, "unsafe SSH user"},
-		{"self collision", []FleetSSHPeer{{Key: "studio", Destination: "x@y"}}, "collides with fleet.key"},
-		{"http peer collision", []FleetSSHPeer{{Key: "mbp", Destination: "x@y"}}, "collides with fleet.peers"},
-		{"duplicate ssh key", []FleetSSHPeer{
-			{Key: "epyc", Destination: "x@y"},
-			{Key: "epyc", Destination: "x@z"},
-		}, "collides with fleet.ssh_peers"},
-		{"remote command with flags", []FleetSSHPeer{
-			{
-				Key: "epyc", Destination: "x@y",
-				RemoteCommand: "kenn-forge --config /etc/mm.toml",
-			},
-		}, "remote_command must be a bare executable"},
-		{"remote command with semicolon", []FleetSSHPeer{
-			{
-				Key: "epyc", Destination: "x@y",
-				RemoteCommand: "kenn-forge;rm",
-			},
-		}, "remote_command must be a bare executable"},
-		{"remote command with substitution", []FleetSSHPeer{
-			{
-				Key: "epyc", Destination: "x@y",
-				RemoteCommand: "$(which kenn-forge)",
-			},
-		}, "remote_command must be a bare executable"},
-		{"remote command with newline", []FleetSSHPeer{
-			{
-				Key: "epyc", Destination: "x@y",
-				RemoteCommand: "kenn-forge\nrm",
-			},
-		}, "remote_command must be a bare executable"},
-		{"remote command with trailing newline", []FleetSSHPeer{
-			{
-				Key: "epyc", Destination: "x@y",
-				RemoteCommand: "kenn-forge\n",
-			},
-		}, "remote_command must be a bare executable"},
-		{"remote command with trailing space", []FleetSSHPeer{
-			{
-				Key: "epyc", Destination: "x@y",
-				RemoteCommand: "kenn-forge ",
-			},
-		}, "remote_command must be a bare executable"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			cfg := base()
-			cfg.Fleet.SSHPeers = tc.peers
-			err := cfg.validateFleetSSHPeers()
-			require.Error(t, err)
-			require.Contains(t, err.Error(), tc.want)
 		})
 	}
 }

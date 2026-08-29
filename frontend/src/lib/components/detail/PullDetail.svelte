@@ -124,7 +124,7 @@
 
   const CLEAR_LABELS_PENDING = "__clear-label-selection__";
 
-  const { detail: detailStore, pulls, activity, diff: diffStore, detailActivityView, settings } = getStores();
+  const { detail: detailStore, pulls, activity, diff: diffStore, detailActivityView, settings, sync } = getStores();
   const runtime = getAppRuntime();
   const actions = getActions();
   const uiConfig = getUIConfig();
@@ -146,6 +146,7 @@
       manualRefreshPending
       || detailStore.isDetailLoading()
       || detailStore.isDetailSyncing()
+      || sync?.getProviderAvailable() === false
       || stalePR
     ) return;
     const requestIdentity = $state.snapshot(itemIdentity);
@@ -3045,7 +3046,8 @@
           <h3 class="section-title">Activity</h3>
           <div class="section-title-actions">
             <DetailRefreshButton
-              disabled={detailStore.isDetailLoading() || detailStore.isDetailSyncing() || stalePR}
+              disabled={detailStore.isDetailLoading() || detailStore.isDetailSyncing() || stalePR || sync?.getProviderAvailable() === false}
+              disabledReason={sync?.getProviderAvailable() === false ? "Hub unavailable" : undefined}
               refreshing={manualRefreshPending}
               onRefresh={refreshDetail}
             />

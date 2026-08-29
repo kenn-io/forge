@@ -7,6 +7,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/gitclone"
+	"go.kenn.io/forge/internal/providerplane"
+	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/workspace"
 )
@@ -35,4 +38,22 @@ func TestRevealWorkspaceOpensWorkspacePath(t *testing.T) {
 
 	require.NoError(err)
 	assert.Equal(path, opened)
+}
+
+func TestLaunchSpecBranchActionMapsHubOutage(t *testing.T) {
+	err := workspaceBranchActionProblem(&workspace.LaunchSpecRefreshError{
+		Cause: providerplane.ErrHubUnavailable,
+	})
+
+	problem, ok := err.(*httpapi.ProblemError)
+	require.True(t, ok)
+	assert.Equal(t, httpapi.CodeHubUnavailable, problem.Code)
+}
+
+func TestBranchActionMapsMissingGitCredential(t *testing.T) {
+	err := workspaceBranchActionProblem(gitclone.ErrCredentialUnavailable)
+
+	problem, ok := err.(*httpapi.ProblemError)
+	require.True(t, ok)
+	assert.Equal(t, httpapi.CodeGitCredentialUnavailable, problem.Code)
 }

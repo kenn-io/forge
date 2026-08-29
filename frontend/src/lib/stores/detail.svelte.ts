@@ -146,6 +146,12 @@ function apiErrorMessage(error: { detail?: string; title?: string }, fallback: s
 
 function detailReadErrorMessage(error: ApiProblemError | TransientTransportError): string {
   if (error._tag === "ApiProblemError") {
+    if (error.problem.code === ProblemCodes.repoNotFound) {
+      return "This repository is not available in Forge. Add it under Settings → Repositories, then retry.";
+    }
+    if (error.problem.code === ProblemCodes.pullNotFound) {
+      return "This pull request is not available from the provider.";
+    }
     return apiErrorMessage(error.problem, "failed to load pull request");
   }
   return "Could not reach Kenn Forge";
@@ -980,7 +986,31 @@ export function createDetailStore(opts: DetailStoreOptions) {
     );
     const program = Effect.gen(function* () {
       const workflow = yield* DetailWorkflow;
-      const data = yield* workflow.read(key, read);
+      const initialRead = yield* Effect.result(workflow.read(key, read));
+      let recoveredBySync = false;
+      let data: PullDetail;
+      if (Result.isSuccess(initialRead)) {
+        data = initialRead.success;
+      } else if (
+        currentLoad.syncMode !== false &&
+        initialRead.failure._tag === "ApiProblemError" &&
+        initialRead.failure.problem.code === ProblemCodes.pullNotFound
+      ) {
+        data = yield* executeGeneratedApiRequest("POST synchronize missing pull request", (client, signal) =>
+          client.POST(providerItemPath("pulls", requestRef, "/sync"), {
+            params: {
+              path: {
+                ...providerRouteParams(requestRef),
+                number: requestRef.number,
+              },
+            },
+            signal,
+          }),
+        ).pipe(Effect.map((synced): PullDetail => ({ ...synced, events: synced.events ?? [] })));
+        recoveredBySync = true;
+      } else {
+        return yield* Effect.fail(initialRead.failure);
+      }
       reconcileListsAfterDetailSync();
       if (gen !== syncGeneration) return;
       const applied = yield* rebasePullMutations(requestRef, data, () => {
@@ -992,7 +1022,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
         if (didApply) noteObservedFetchedAt(data.detail_fetched_at);
         return didApply;
       });
-      if (applied) {
+      if (applied && !recoveredBySync) {
         const finalSyncMode = currentLoad.syncMode;
         if (finalSyncMode === true) {
           launchDetailSync(owner, name, number, requestRef);

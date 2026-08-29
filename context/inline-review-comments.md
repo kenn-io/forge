@@ -3,10 +3,17 @@
 Use this document for inline pull-request diff comments, local review drafts,
 published review-thread ingestion, or review controls in shared diff UI.
 
-- Staged review comments are local kenn-forge data. Provider clients publish a
-  complete local draft; do not depend on provider-native pending drafts
+- Staged review comments are hub-owned kenn-forge data. Spokes forward
+  draft reads, writes, and publication so one fleet has one draft and conflict
+  domain; do not depend on provider-native pending drafts
   (`internal/db/queries_review.go::DB.GetOrCreateMRReviewDraft`,
-  `internal/server/pullapi/diff_review_handlers.go::Handler.publishDiffReviewDraft`).
+  `internal/server/provider_route_policy.go::providerRouteDeclarations`).
+- Before a standalone daemon becomes a spoke, its draft body, review action, and
+  ordered inline anchors are handed to the hub by stable repository ID
+  and pull number. Local row IDs and timestamps are excluded from the canonical
+  digest. Identical retries return the same receipt; divergent hub state
+  is a blocking conflict and neither side is overwritten
+  (`internal/db/queries_provider_state_handoff.go::DB.ImportProviderReviewDraft`).
 - Unsupported draft mutations, thread resolutions, and review actions return
   typed capability errors; thread ingestion is skipped when reads are unavailable
   (`internal/server/pullapi/diff_review_handlers.go::Handler.publishDiffReviewDraft`).

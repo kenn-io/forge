@@ -208,7 +208,7 @@ func (p *deferredMergeTestProvider) MergeMergeRequest(
 
 type deferredMergeTestOptions struct {
 	deferredMergeMaxWait   time.Duration
-	queueWorkspaceDeletion func(string) error
+	queueWorkspaceDeletion func(context.Context, string, string) error
 }
 
 type deferredMergeTestRecordedEvent struct {
@@ -458,7 +458,7 @@ func TestDeferMergeEndpointQueuesMergeAndBroadcastsCompletion(t *testing.T) {
 		now,
 		0,
 		deferredMergeTestOptions{
-			queueWorkspaceDeletion: func(id string) error {
+			queueWorkspaceDeletion: func(_ context.Context, _ string, id string) error {
 				deletedID = id
 				return nil
 			},

@@ -473,6 +473,24 @@ func (e ArchiveStatusResponseStatus) Valid() bool {
 	}
 }
 
+// Defines values for HostSummaryFederationRole.
+const (
+	Hub   HostSummaryFederationRole = "hub"
+	Spoke HostSummaryFederationRole = "spoke"
+)
+
+// Valid indicates whether the value is a known member of the HostSummaryFederationRole enum.
+func (e HostSummaryFederationRole) Valid() bool {
+	switch e {
+	case Hub:
+		return true
+	case Spoke:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for IssueWorkflowStatus.
 const (
 	IssueWorkflowStatusAwaitingMerge IssueWorkflowStatus = "awaiting_merge"
@@ -669,7 +687,9 @@ const (
 	Conflict                      ProblemErrorCode = "conflict"
 	DestinationExists             ProblemErrorCode = "destinationExists"
 	Forbidden                     ProblemErrorCode = "forbidden"
+	GitCredentialUnavailable      ProblemErrorCode = "gitCredentialUnavailable"
 	HookFailed                    ProblemErrorCode = "hookFailed"
+	HubUnavailable                ProblemErrorCode = "hubUnavailable"
 	InternalError                 ProblemErrorCode = "internalError"
 	IssueNotFound                 ProblemErrorCode = "issueNotFound"
 	MutationOutcomeUnknown        ProblemErrorCode = "mutationOutcomeUnknown"
@@ -682,6 +702,7 @@ const (
 	ResyncRequired                ProblemErrorCode = "resyncRequired"
 	ServiceUnavailable            ProblemErrorCode = "serviceUnavailable"
 	SettingsUnavailable           ProblemErrorCode = "settingsUnavailable"
+	SpokePreparationInProgress    ProblemErrorCode = "spokePreparationInProgress"
 	ToolMissing                   ProblemErrorCode = "toolMissing"
 	ToolUnauthenticated           ProblemErrorCode = "toolUnauthenticated"
 	Unauthorized                  ProblemErrorCode = "unauthorized"
@@ -715,7 +736,11 @@ func (e ProblemErrorCode) Valid() bool {
 		return true
 	case Forbidden:
 		return true
+	case GitCredentialUnavailable:
+		return true
 	case HookFailed:
+		return true
+	case HubUnavailable:
 		return true
 	case InternalError:
 		return true
@@ -741,6 +766,8 @@ func (e ProblemErrorCode) Valid() bool {
 		return true
 	case SettingsUnavailable:
 		return true
+	case SpokePreparationInProgress:
+		return true
 	case ToolMissing:
 		return true
 	case ToolUnauthenticated:
@@ -764,6 +791,24 @@ func (e ProblemErrorCode) Valid() bool {
 	case WorkspaceSetupInProgress:
 		return true
 	case WorktreeDirty:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProviderStateWorkflowPayloadItemType.
+const (
+	ProviderStateWorkflowPayloadItemTypeIssue ProviderStateWorkflowPayloadItemType = "issue"
+	ProviderStateWorkflowPayloadItemTypePr    ProviderStateWorkflowPayloadItemType = "pr"
+)
+
+// Valid indicates whether the value is a known member of the ProviderStateWorkflowPayloadItemType enum.
+func (e ProviderStateWorkflowPayloadItemType) Valid() bool {
+	switch e {
+	case ProviderStateWorkflowPayloadItemTypeIssue:
+		return true
+	case ProviderStateWorkflowPayloadItemTypePr:
 		return true
 	default:
 		return false
@@ -803,6 +848,45 @@ func (e WorkflowStateMetaResponseStatus) Valid() bool {
 	case WorkflowStateMetaResponseStatusReviewing:
 		return true
 	case WorkflowStateMetaResponseStatusWaiting:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WorkspaceLaunchPullHeadRepoKind.
+const (
+	WorkspaceLaunchPullHeadRepoKindFork     WorkspaceLaunchPullHeadRepoKind = "fork"
+	WorkspaceLaunchPullHeadRepoKindSameRepo WorkspaceLaunchPullHeadRepoKind = "same_repo"
+	WorkspaceLaunchPullHeadRepoKindUnknown  WorkspaceLaunchPullHeadRepoKind = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the WorkspaceLaunchPullHeadRepoKind enum.
+func (e WorkspaceLaunchPullHeadRepoKind) Valid() bool {
+	switch e {
+	case WorkspaceLaunchPullHeadRepoKindFork:
+		return true
+	case WorkspaceLaunchPullHeadRepoKindSameRepo:
+		return true
+	case WorkspaceLaunchPullHeadRepoKindUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WorkspaceLaunchSpecItemType.
+const (
+	WorkspaceLaunchSpecItemTypeIssue       WorkspaceLaunchSpecItemType = "issue"
+	WorkspaceLaunchSpecItemTypePullRequest WorkspaceLaunchSpecItemType = "pull_request"
+)
+
+// Valid indicates whether the value is a known member of the WorkspaceLaunchSpecItemType enum.
+func (e WorkspaceLaunchSpecItemType) Valid() bool {
+	switch e {
+	case WorkspaceLaunchSpecItemTypeIssue:
+		return true
+	case WorkspaceLaunchSpecItemTypePullRequest:
 		return true
 	default:
 		return false
@@ -1085,6 +1169,15 @@ func (e GetWorkspaceFilePreviewParamsSide) Valid() bool {
 	}
 }
 
+// AbortFederationSpokeInputBody defines model for AbortFederationSpokeInputBody.
+type AbortFederationSpokeInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: /api/v1/schemas/AbortFederationSpokeInputBody.json
+	Schema *string `json:"$schema,omitempty"`
+	Force  *bool   `json:"force,omitempty"`
+}
+
 // ActionStatusBody defines model for ActionStatusBody.
 type ActionStatusBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -1093,6 +1186,16 @@ type ActionStatusBody struct {
 	Schema        *string `json:"$schema,omitempty"`
 	ApprovedCount *int64  `json:"approved_count,omitempty"`
 	Status        string  `json:"status"`
+}
+
+// ActivateEnrollmentInputBody defines model for ActivateEnrollmentInputBody.
+type ActivateEnrollmentInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: /api/v1/schemas/ActivateEnrollmentInputBody.json
+	Schema          *string `json:"$schema,omitempty"`
+	PreparationSeal string  `json:"preparation_seal"`
+	ProtocolVersion int64   `json:"protocol_version"`
 }
 
 // Activity defines model for Activity.
@@ -1118,8 +1221,9 @@ type ActivityAuthorsResponse struct {
 	// Schema A URL to the JSON Schema for this object.
 	//
 	// Example: /api/v1/schemas/ActivityAuthorsResponse.json
-	Schema  *string   `json:"$schema,omitempty"`
-	Authors *[]string `json:"authors"`
+	Schema                         *string   `json:"$schema,omitempty"`
+	Authors                        *[]string `json:"authors"`
+	UseWorkspaceActivityForRecency bool      `json:"use_workspace_activity_for_recency"`
 }
 
 // ActivityItemResponse defines model for ActivityItemResponse.
@@ -1171,14 +1275,15 @@ type ActivityResponse struct {
 	// Schema A URL to the JSON Schema for this object.
 	//
 	// Example: /api/v1/schemas/ActivityResponse.json
-	Schema             *string                             `json:"$schema,omitempty"`
-	Capped             bool                                `json:"capped"`
-	EventCursor        string                              `json:"event_cursor"`
-	ItemActivity       *[]ActivitySubjectResponse          `json:"item_activity"`
-	ItemActivityCapped bool                                `json:"item_activity_capped"`
-	Items              *[]ActivityItemResponse             `json:"items"`
-	NextCursor         *string                             `json:"next_cursor,omitempty"`
-	WorkspaceActivity  *[]WorkspaceActivitySubjectResponse `json:"workspace_activity"`
+	Schema                         *string                             `json:"$schema,omitempty"`
+	Capped                         bool                                `json:"capped"`
+	EventCursor                    string                              `json:"event_cursor"`
+	ItemActivity                   *[]ActivitySubjectResponse          `json:"item_activity"`
+	ItemActivityCapped             bool                                `json:"item_activity_capped"`
+	Items                          *[]ActivityItemResponse             `json:"items"`
+	NextCursor                     *string                             `json:"next_cursor,omitempty"`
+	UseWorkspaceActivityForRecency bool                                `json:"use_workspace_activity_for_recency"`
+	WorkspaceActivity              *[]WorkspaceActivitySubjectResponse `json:"workspace_activity"`
 }
 
 // ActivitySubjectResponse defines model for ActivitySubjectResponse.
@@ -1724,6 +1829,17 @@ type CreateDocsFolderOutputBody struct {
 	Folder DocsFolderResponse `json:"folder"`
 }
 
+// CreateEnrollmentTokenInputBody defines model for CreateEnrollmentTokenInputBody.
+type CreateEnrollmentTokenInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: /api/v1/schemas/CreateEnrollmentTokenInputBody.json
+	Schema           *string `json:"$schema,omitempty"`
+	BaseUrl          string  `json:"base_url"`
+	ExpiresInSeconds int64   `json:"expires_in_seconds"`
+	Name             *string `json:"name,omitempty"`
+}
+
 // CreateIssueHostInputBody defines model for CreateIssueHostInputBody.
 type CreateIssueHostInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -1828,6 +1944,24 @@ type DependencyCapabilities struct {
 // Detail defines model for Detail.
 type Detail struct {
 	InitialTimelineEntryLimit int64 `json:"initial_timeline_entry_limit"`
+}
+
+// DiffDescriptor defines model for DiffDescriptor.
+type DiffDescriptor struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: /api/v1/schemas/DiffDescriptor.json
+	Schema           *string              `json:"$schema,omitempty"`
+	DiffBaseSha      string               `json:"diff_base_sha"`
+	DiffHeadSha      string               `json:"diff_head_sha"`
+	MergeBaseSha     string               `json:"merge_base_sha"`
+	PlatformBaseSha  string               `json:"platform_base_sha"`
+	PlatformHeadSha  string               `json:"platform_head_sha"`
+	ProtocolVersion  int64                `json:"protocol_version"`
+	PullNumber       int64                `json:"pull_number"`
+	Repository       RepositoryDescriptor `json:"repository"`
+	SnapshotRevision int64                `json:"snapshot_revision"`
+	Stale            bool                 `json:"stale"`
 }
 
 // DiffFile defines model for DiffFile.
@@ -2155,6 +2289,43 @@ type EditPRContentInputBody struct {
 	Title  *string `json:"title,omitempty"`
 }
 
+// Enrollment defines model for Enrollment.
+type Enrollment struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: /api/v1/schemas/Enrollment.json
+	Schema             *string    `json:"$schema,omitempty"`
+	CreatedAt          time.Time  `json:"created_at"`
+	ExpiresAt          time.Time  `json:"expires_at"`
+	HubBaseUrl         string     `json:"hub_base_url"`
+	HubName            *string    `json:"hub_name,omitempty"`
+	HubNodeId          string     `json:"hub_node_id"`
+	Id                 string     `json:"id"`
+	NodeId             string     `json:"node_id"`
+	PreparationStarted *bool      `json:"preparation_started,omitempty"`
+	ProtocolVersion    int64      `json:"protocol_version"`
+	RevokedAt          *time.Time `json:"revoked_at,omitempty"`
+	SpokeBaseUrl       string     `json:"spoke_base_url"`
+	SpokeName          *string    `json:"spoke_name,omitempty"`
+	SpokePlatform      string     `json:"spoke_platform"`
+	State              string     `json:"state"`
+	UpdatedAt          time.Time  `json:"updated_at"`
+}
+
+// EnrollmentToken defines model for EnrollmentToken.
+type EnrollmentToken struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: /api/v1/schemas/EnrollmentToken.json
+	Schema          *string   `json:"$schema,omitempty"`
+	ExpiresAt       time.Time `json:"expires_at"`
+	HubBaseUrl      string    `json:"hub_base_url"`
+	HubName         *string   `json:"hub_name,omitempty"`
+	HubNodeId       string    `json:"hub_node_id"`
+	ProtocolVersion int64     `json:"protocol_version"`
+	Token           string    `json:"token"`
+}
+
 // ErrorDetail defines model for ErrorDetail.
 type ErrorDetail struct {
 	// Location Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'
@@ -2174,6 +2345,123 @@ type FeatureCapabilities struct {
 	SetupHook       bool    `json:"setupHook"`
 	TeardownHook    bool    `json:"teardownHook"`
 	TmuxVersion     *string `json:"tmuxVersion,omitempty"`
+}
+
+// FederationDiffDescriptorRequest defines model for FederationDiffDescriptorRequest.
+type FederationDiffDescriptorRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: /api/v1/schemas/FederationDiffDescriptorRequest.json
+	Schema     *string         `json:"$schema,omitempty"`
+	PullNumber int64           `json:"pull_number"`
+	Repository RepositoryRoute `json:"repository"`
+}
+
+// FederationIdentityOutputBody defines model for FederationIdentityOutputBody.
+type FederationIdentityOutputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: /api/v1/schemas/FederationIdentityOutputBody.json
+	Schema          *string `json:"$schema,omitempty"`
+	NodeId          string  `json:"node_id"`
+	ProtocolVersion int64   `json:"protocol_version"`
+}
+
+// FederationSetWorkflowStateRequest defines model for FederationSetWorkflowStateRequest.
+type FederationSetWorkflowStateRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: /api/v1/schemas/FederationSetWorkflowStateRequest.json
+	Schema *string                        `json:"$schema,omitempty"`
+	Item   FederationWorkflowItemIdentity `json:"item"`
+	Update FederationWorkflowUpdate       `json:"update"`
+}
+
+// FederationWorkflowItem defines model for FederationWorkflowItem.
+type FederationWorkflowItem struct {
+	Author         string                               `json:"author"`
+	Identity       FederationWorkflowItemIdentity       `json:"identity"`
+	IsDraft        bool                                 `json:"is_draft"`
+	LastActivityAt string                               `json:"last_activity_at"`
+	Repository     FederationWorkflowRepositoryIdentity `json:"repository"`
+	State          string                               `json:"state"`
+	Title          string                               `json:"title"`
+	Url            string                               `json:"url"`
+	Workflow       FederationWorkflowState              `json:"workflow"`
+}
+
+// FederationWorkflowItemIdentity defines model for FederationWorkflowItemIdentity.
+type FederationWorkflowItemIdentity struct {
+	Name           string `json:"name"`
+	Number         int64  `json:"number"`
+	Owner          string `json:"owner"`
+	PlatformHost   string `json:"platform_host"`
+	PlatformRepoId string `json:"platform_repo_id"`
+	Provider       string `json:"provider"`
+	Type           string `json:"type"`
+}
+
+// FederationWorkflowMutation defines model for FederationWorkflowMutation.
+type FederationWorkflowMutation struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: /api/v1/schemas/FederationWorkflowMutation.json
+	Schema         *string                 `json:"$schema,omitempty"`
+	PreviousStatus string                  `json:"previous_status"`
+	State          FederationWorkflowState `json:"state"`
+}
+
+// FederationWorkflowPage defines model for FederationWorkflowPage.
+type FederationWorkflowPage struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: /api/v1/schemas/FederationWorkflowPage.json
+	Schema     *string                  `json:"$schema,omitempty"`
+	Items      []FederationWorkflowItem `json:"items"`
+	NextCursor string                   `json:"next_cursor"`
+}
+
+// FederationWorkflowQuery defines model for FederationWorkflowQuery.
+type FederationWorkflowQuery struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: /api/v1/schemas/FederationWorkflowQuery.json
+	Schema        *string                              `json:"$schema,omitempty"`
+	Cursor        string                               `json:"cursor"`
+	IncludeClosed bool                                 `json:"include_closed"`
+	ItemTypes     []string                             `json:"item_types"`
+	Limit         int64                                `json:"limit"`
+	Repository    FederationWorkflowRepositoryIdentity `json:"repository"`
+	States        []string                             `json:"states"`
+}
+
+// FederationWorkflowRepositoryIdentity defines model for FederationWorkflowRepositoryIdentity.
+type FederationWorkflowRepositoryIdentity struct {
+	Name           string `json:"name"`
+	Owner          string `json:"owner"`
+	PlatformHost   string `json:"platform_host"`
+	PlatformRepoId string `json:"platform_repo_id"`
+	Provider       string `json:"provider"`
+	RepoPath       string `json:"repo_path"`
+}
+
+// FederationWorkflowState defines model for FederationWorkflowState.
+type FederationWorkflowState struct {
+	Status        string `json:"status"`
+	UpdatedActor  string `json:"updated_actor"`
+	UpdatedAt     string `json:"updated_at"`
+	UpdatedReason string `json:"updated_reason"`
+	UpdatedSource string `json:"updated_source"`
+}
+
+// FederationWorkflowUpdate defines model for FederationWorkflowUpdate.
+type FederationWorkflowUpdate struct {
+	Actor          string `json:"actor"`
+	ExpectedStatus string `json:"expected_status"`
+	Force          bool   `json:"force"`
+	Reason         string `json:"reason"`
+	Source         string `json:"source"`
+	Status         string `json:"status"`
 }
 
 // FilePreviewResponse defines model for FilePreviewResponse.
@@ -2223,30 +2511,19 @@ type FilesystemValidateRepoOutputBody struct {
 	RootPath *string `json:"root_path,omitempty"`
 }
 
-// FleetPeer defines model for FleetPeer.
-type FleetPeer struct {
+// FleetHub defines model for FleetHub.
+type FleetHub struct {
 	BaseUrl string  `json:"base_url"`
-	Key     string  `json:"key"`
 	Name    *string `json:"name,omitempty"`
+	NodeId  string  `json:"node_id"`
 }
 
-// FleetSSHPeer defines model for FleetSSHPeer.
-type FleetSSHPeer struct {
-	Destination   string  `json:"destination"`
-	Key           string  `json:"key"`
-	Name          *string `json:"name,omitempty"`
-	Platform      *string `json:"platform,omitempty"`
-	RemoteCommand *string `json:"remote_command,omitempty"`
-}
-
-// FleetSSHPeersBody defines model for FleetSSHPeersBody.
-type FleetSSHPeersBody struct {
-	// Schema A URL to the JSON Schema for this object.
-	//
-	// Example: /api/v1/schemas/FleetSSHPeersBody.json
-	Schema          *string        `json:"$schema,omitempty"`
-	RestartRequired bool           `json:"restart_required"`
-	SshPeers        []FleetSSHPeer `json:"ssh_peers"`
+// FleetMember defines model for FleetMember.
+type FleetMember struct {
+	BaseUrl string  `json:"base_url"`
+	Name    *string `json:"name,omitempty"`
+	NodeId  string  `json:"node_id"`
+	State   string  `json:"state"`
 }
 
 // FleetSessions defines model for FleetSessions.
@@ -2259,14 +2536,15 @@ type FleetSettingsResponse struct {
 	// Schema A URL to the JSON Schema for this object.
 	//
 	// Example: /api/v1/schemas/FleetSettingsResponse.json
-	Schema          *string        `json:"$schema,omitempty"`
-	Enabled         bool           `json:"enabled"`
-	Key             *string        `json:"key,omitempty"`
-	PeerTimeout     *string        `json:"peer_timeout,omitempty"`
-	Peers           []FleetPeer    `json:"peers"`
-	RestartRequired bool           `json:"restart_required"`
-	Sessions        FleetSessions  `json:"sessions"`
-	SshPeers        []FleetSSHPeer `json:"ssh_peers"`
+	Schema          *string       `json:"$schema,omitempty"`
+	Enabled         bool          `json:"enabled"`
+	Enrollments     []Enrollment  `json:"enrollments"`
+	Hub             *FleetHub     `json:"hub,omitempty"`
+	Members         []FleetMember `json:"members"`
+	PeerTimeout     *string       `json:"peer_timeout,omitempty"`
+	RestartRequired bool          `json:"restart_required"`
+	Role            string        `json:"role"`
+	Sessions        FleetSessions `json:"sessions"`
 }
 
 // GitChangesResponse defines model for GitChangesResponse.
@@ -2381,27 +2659,32 @@ type HostRuntimeSession struct {
 
 // HostSummary defines model for HostSummary.
 type HostSummary struct {
+	BaseURL               *string                              `json:"baseURL,omitempty"`
 	Capabilities          *Capabilities                        `json:"capabilities,omitempty"`
 	ConfigKey             string                               `json:"configKey"`
 	ConnectionState       *string                              `json:"connectionState,omitempty"`
 	Diagnostics           *[]HostDiagnostic                    `json:"diagnostics"`
 	Error                 *string                              `json:"error,omitempty"`
+	FederationRole        HostSummaryFederationRole            `json:"federationRole"`
 	Hostname              *string                              `json:"hostname,omitempty"`
 	Id                    string                               `json:"id"`
 	Kind                  string                               `json:"kind"`
 	LastSeenAt            *string                              `json:"lastSeenAt,omitempty"`
 	Name                  string                               `json:"name"`
+	NodeID                string                               `json:"nodeID"`
 	OperationAvailability map[string]HostOperationAvailability `json:"operationAvailability"`
 	Platform              string                               `json:"platform"`
 	PreferredTransport    string                               `json:"preferredTransport"`
 	Reachable             bool                                 `json:"reachable"`
-	SshDestination        *string                              `json:"sshDestination,omitempty"`
 	TmuxLastPolledAt      *string                              `json:"tmuxLastPolledAt,omitempty"`
 	TmuxMetricsError      *string                              `json:"tmuxMetricsError,omitempty"`
 	TmuxProbeError        *string                              `json:"tmuxProbeError,omitempty"`
 	TmuxSessions          *[]TmuxSessionInfo                   `json:"tmuxSessions"`
 	Version               *string                              `json:"version,omitempty"`
 }
+
+// HostSummaryFederationRole defines model for HostSummary.FederationRole.
+type HostSummaryFederationRole string
 
 // Hunk defines model for Hunk.
 type Hunk struct {
@@ -2561,6 +2844,38 @@ type ItemReviewersResponse struct {
 	// Example: /api/v1/schemas/ItemReviewersResponse.json
 	Schema    *string   `json:"$schema,omitempty"`
 	Reviewers *[]string `json:"reviewers"`
+}
+
+// JoinRequest defines model for JoinRequest.
+type JoinRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: /api/v1/schemas/JoinRequest.json
+	Schema          *string `json:"$schema,omitempty"`
+	BaseUrl         string  `json:"base_url"`
+	EnrollmentId    string  `json:"enrollment_id"`
+	HubCredential   string  `json:"hub_credential"`
+	Name            *string `json:"name,omitempty"`
+	NodeId          string  `json:"node_id"`
+	Platform        string  `json:"platform"`
+	ProtocolVersion int64   `json:"protocol_version"`
+}
+
+// JoinResponse defines model for JoinResponse.
+type JoinResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: /api/v1/schemas/JoinResponse.json
+	Schema              *string   `json:"$schema,omitempty"`
+	EnrollmentId        string    `json:"enrollment_id"`
+	ExpiresAt           time.Time `json:"expires_at"`
+	HubBaseUrl          string    `json:"hub_base_url"`
+	HubName             *string   `json:"hub_name,omitempty"`
+	HubNodeId           string    `json:"hub_node_id"`
+	PreparationRequired bool      `json:"preparation_required"`
+	ProtocolVersion     int64     `json:"protocol_version"`
+	SpokeCredential     string    `json:"spoke_credential"`
+	State               string    `json:"state"`
 }
 
 // KataCreateLinkRequest defines model for KataCreateLinkRequest.
@@ -2898,6 +3213,50 @@ type ListWorktreesOutputBody struct {
 	Worktrees *[]WorktreeResponse `json:"worktrees"`
 }
 
+// LocalEnrollment defines model for LocalEnrollment.
+type LocalEnrollment struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: /api/v1/schemas/LocalEnrollment.json
+	Schema              *string               `json:"$schema,omitempty"`
+	EnrollmentId        string                `json:"enrollment_id"`
+	ExpiresAt           time.Time             `json:"expires_at"`
+	HubBaseUrl          string                `json:"hub_base_url"`
+	HubName             *string               `json:"hub_name,omitempty"`
+	HubNodeId           *string               `json:"hub_node_id,omitempty"`
+	NodeId              string                `json:"node_id"`
+	Preparation         *LocalPreparationSeal `json:"preparation,omitempty"`
+	PreparationRequired bool                  `json:"preparation_required"`
+	PreparationStarted  *bool                 `json:"preparation_started,omitempty"`
+	ProtocolVersion     int64                 `json:"protocol_version"`
+	SpokeBaseUrl        string                `json:"spoke_base_url"`
+	SpokeName           *string               `json:"spoke_name,omitempty"`
+	SpokePlatform       string                `json:"spoke_platform"`
+	State               string                `json:"state"`
+}
+
+// LocalJoinInputBody defines model for LocalJoinInputBody.
+type LocalJoinInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: /api/v1/schemas/LocalJoinInputBody.json
+	Schema          *string `json:"$schema,omitempty"`
+	EnrollmentToken string  `json:"enrollment_token"`
+	HubBaseUrl      string  `json:"hub_base_url"`
+	Name            *string `json:"name,omitempty"`
+	SpokeBaseUrl    string  `json:"spoke_base_url"`
+}
+
+// LocalPreparationSeal defines model for LocalPreparationSeal.
+type LocalPreparationSeal struct {
+	EnrollmentId      string `json:"enrollment_id"`
+	HubNodeId         string `json:"hub_node_id"`
+	NodeId            string `json:"node_id"`
+	PreparationDigest string `json:"preparation_digest"`
+	PreparationSeal   string `json:"preparation_seal"`
+	ProtocolVersion   int64  `json:"protocol_version"`
+}
+
 // LocalSyncCeilingStatus defines model for LocalSyncCeilingStatus.
 type LocalSyncCeilingStatus struct {
 	BackgroundLimit int64  `json:"background_limit"`
@@ -3143,6 +3502,43 @@ type MrImportMetadataResponse struct {
 	PlatformHeadSha  string  `json:"platform_head_sha"`
 	State            string  `json:"state"`
 	Title            string  `json:"title"`
+}
+
+// NeutralHost defines model for NeutralHost.
+type NeutralHost struct {
+	BaseURL               *string            `json:"baseURL,omitempty"`
+	Capabilities          *Capabilities      `json:"capabilities,omitempty"`
+	Error                 *string            `json:"error,omitempty"`
+	FederationRole        string             `json:"federationRole"`
+	Generation            *int64             `json:"generation,omitempty"`
+	Hostname              *string            `json:"hostname,omitempty"`
+	LastSeenAt            *string            `json:"lastSeenAt,omitempty"`
+	Name                  string             `json:"name"`
+	NodeID                string             `json:"nodeID"`
+	Platform              *string            `json:"platform,omitempty"`
+	PlatformAuthenticated *bool              `json:"platformAuthenticated,omitempty"`
+	Reachable             bool               `json:"reachable"`
+	TmuxLastPolledAt      *string            `json:"tmuxLastPolledAt,omitempty"`
+	TmuxMetricsError      *string            `json:"tmuxMetricsError,omitempty"`
+	TmuxProbeError        *string            `json:"tmuxProbeError,omitempty"`
+	TmuxSessions          *[]TmuxSessionInfo `json:"tmuxSessions,omitempty"`
+	Version               *string            `json:"version,omitempty"`
+}
+
+// NeutralSnapshot defines model for NeutralSnapshot.
+type NeutralSnapshot struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: /api/v1/schemas/NeutralSnapshot.json
+	Schema                *string         `json:"$schema,omitempty"`
+	Generation            int64           `json:"generation"`
+	Hosts                 *[]NeutralHost  `json:"hosts"`
+	PlatformAuthenticated *bool           `json:"platformAuthenticated,omitempty"`
+	Projects              *[]RawProject   `json:"projects,omitempty"`
+	ProtocolVersion       int64           `json:"protocolVersion"`
+	Sessions              *[]RawSession   `json:"sessions,omitempty"`
+	Workspaces            *[]RawWorkspace `json:"workspaces,omitempty"`
+	Worktrees             *[]RawWorktree  `json:"worktrees,omitempty"`
 }
 
 // Node defines model for Node.
@@ -3448,6 +3844,131 @@ type ProviderCapabilitiesResponse struct {
 	WorkflowApproval            bool      `json:"workflow_approval"`
 }
 
+// ProviderRepositoryObservation defines model for ProviderRepositoryObservation.
+type ProviderRepositoryObservation struct {
+	Name           string    `json:"name"`
+	ObservedAt     time.Time `json:"observed_at"`
+	Owner          string    `json:"owner"`
+	PlatformHost   string    `json:"platform_host"`
+	PlatformRepoId string    `json:"platform_repo_id"`
+	Provider       string    `json:"provider"`
+	RepoPath       string    `json:"repo_path"`
+}
+
+// ProviderSettingsResponse defines model for ProviderSettingsResponse.
+type ProviderSettingsResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: /api/v1/schemas/ProviderSettingsResponse.json
+	Schema                 *string                         `json:"$schema,omitempty"`
+	Activity               Activity                        `json:"activity"`
+	Detail                 Detail                          `json:"detail"`
+	Issues                 Issues                          `json:"issues"`
+	Notifications          NotificationsSettingsResponse   `json:"notifications"`
+	PullRequests           PullRequests                    `json:"pull_requests"`
+	RepoPresets            []RepoPreset                    `json:"repo_presets"`
+	Repos                  []ConfiguredRepoStatus          `json:"repos"`
+	RepositoryObservations []ProviderRepositoryObservation `json:"repository_observations"`
+}
+
+// ProviderSettingsUpdate defines model for ProviderSettingsUpdate.
+type ProviderSettingsUpdate struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: /api/v1/schemas/ProviderSettingsUpdate.json
+	Schema       *string       `json:"$schema,omitempty"`
+	Activity     *Activity     `json:"activity,omitempty"`
+	Detail       *Detail       `json:"detail,omitempty"`
+	Issues       *Issues       `json:"issues,omitempty"`
+	PullRequests *PullRequests `json:"pull_requests,omitempty"`
+}
+
+// ProviderStateConflict defines model for ProviderStateConflict.
+type ProviderStateConflict struct {
+	Kind         string `json:"kind"`
+	SourceDigest string `json:"source_digest"`
+	SourceKey    string `json:"source_key"`
+	TargetDigest string `json:"target_digest"`
+}
+
+// ProviderStateImportResult defines model for ProviderStateImportResult.
+type ProviderStateImportResult struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: /api/v1/schemas/ProviderStateImportResult.json
+	Schema   *string                `json:"$schema,omitempty"`
+	Conflict *ProviderStateConflict `json:"conflict,omitempty"`
+	Imported bool                   `json:"imported"`
+	Receipt  *string                `json:"receipt,omitempty"`
+}
+
+// ProviderStateRepository defines model for ProviderStateRepository.
+type ProviderStateRepository struct {
+	Name           string `json:"name"`
+	Owner          string `json:"owner"`
+	PlatformHost   string `json:"platform_host"`
+	PlatformRepoId string `json:"platform_repo_id"`
+	Provider       string `json:"provider"`
+}
+
+// ProviderStateReviewComment defines model for ProviderStateReviewComment.
+type ProviderStateReviewComment struct {
+	Body        string  `json:"body"`
+	CommitSha   string  `json:"commit_sha"`
+	DiffHeadSha string  `json:"diff_head_sha"`
+	Line        int64   `json:"line"`
+	LineType    string  `json:"line_type"`
+	NewLine     *int64  `json:"new_line,omitempty"`
+	OldLine     *int64  `json:"old_line,omitempty"`
+	OldPath     *string `json:"old_path,omitempty"`
+	Path        string  `json:"path"`
+	Side        string  `json:"side"`
+	StartLine   *int64  `json:"start_line,omitempty"`
+	StartSide   *string `json:"start_side,omitempty"`
+}
+
+// ProviderStateReviewDraftPayload defines model for ProviderStateReviewDraftPayload.
+type ProviderStateReviewDraftPayload struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: /api/v1/schemas/ProviderStateReviewDraftPayload.json
+	Schema     *string                      `json:"$schema,omitempty"`
+	Action     string                       `json:"action"`
+	Body       string                       `json:"body"`
+	Comments   []ProviderStateReviewComment `json:"comments"`
+	PullNumber int64                        `json:"pull_number"`
+	Repository ProviderStateRepository      `json:"repository"`
+}
+
+// ProviderStateWorkflowPayload defines model for ProviderStateWorkflowPayload.
+type ProviderStateWorkflowPayload struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: /api/v1/schemas/ProviderStateWorkflowPayload.json
+	Schema        *string                              `json:"$schema,omitempty"`
+	ItemNumber    int64                                `json:"item_number"`
+	ItemType      ProviderStateWorkflowPayloadItemType `json:"item_type"`
+	Repository    ProviderStateRepository              `json:"repository"`
+	Status        string                               `json:"status"`
+	UpdatedActor  *string                              `json:"updated_actor,omitempty"`
+	UpdatedReason *string                              `json:"updated_reason,omitempty"`
+	UpdatedSource *string                              `json:"updated_source,omitempty"`
+}
+
+// ProviderStateWorkflowPayloadItemType defines model for ProviderStateWorkflowPayload.ItemType.
+type ProviderStateWorkflowPayloadItemType string
+
+// ProviderWorkspaceItemRequest defines model for ProviderWorkspaceItemRequest.
+type ProviderWorkspaceItemRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: /api/v1/schemas/ProviderWorkspaceItemRequest.json
+	Schema     *string         `json:"$schema,omitempty"`
+	ItemNumber int64           `json:"item_number"`
+	ItemType   string          `json:"item_type"`
+	Repository RepositoryRoute `json:"repository"`
+}
+
 // PublishChange defines model for PublishChange.
 type PublishChange struct {
 	OldPath *string `json:"old_path,omitempty"`
@@ -3554,40 +4075,20 @@ type RawHost struct {
 
 // RawProject defines model for RawProject.
 type RawProject struct {
-	BackendReady   *bool   `json:"backendReady,omitempty"`
-	DefaultBranch  *string `json:"defaultBranch,omitempty"`
-	HostKey        *string `json:"hostKey,omitempty"`
-	IsStale        *bool   `json:"isStale,omitempty"`
-	IsSynthesized  *bool   `json:"isSynthesized,omitempty"`
-	Name           string  `json:"name"`
-	Platform       *string `json:"platform,omitempty"`
-	PlatformHost   *string `json:"platformHost,omitempty"`
-	PlatformRepo   *string `json:"platformRepo,omitempty"`
-	RegistryId     *string `json:"registryId,omitempty"`
-	RepositoryKind *string `json:"repositoryKind,omitempty"`
-	RootPath       string  `json:"rootPath"`
-	ScopedKey      string  `json:"scopedKey"`
-}
-
-// RawRemoteHost defines model for RawRemoteHost.
-type RawRemoteHost struct {
-	BaseURL               *string            `json:"baseURL,omitempty"`
-	Capabilities          *Capabilities      `json:"capabilities,omitempty"`
-	Error                 *string            `json:"error,omitempty"`
-	Generation            *int64             `json:"generation,omitempty"`
-	HostKey               string             `json:"hostKey"`
-	LastSeenAt            *string            `json:"lastSeenAt,omitempty"`
-	Name                  string             `json:"name"`
-	Platform              *string            `json:"platform,omitempty"`
-	PlatformAuthenticated *bool              `json:"platformAuthenticated,omitempty"`
-	PreferredTransport    *string            `json:"preferredTransport,omitempty"`
-	Reachable             bool               `json:"reachable"`
-	SshDestination        *string            `json:"sshDestination,omitempty"`
-	TmuxLastPolledAt      *string            `json:"tmuxLastPolledAt,omitempty"`
-	TmuxMetricsError      *string            `json:"tmuxMetricsError,omitempty"`
-	TmuxProbeError        *string            `json:"tmuxProbeError,omitempty"`
-	TmuxSessions          *[]TmuxSessionInfo `json:"tmuxSessions,omitempty"`
-	Version               *string            `json:"version,omitempty"`
+	BackendReady   *bool               `json:"backendReady,omitempty"`
+	DefaultBranch  *string             `json:"defaultBranch,omitempty"`
+	HostKey        *string             `json:"hostKey,omitempty"`
+	IsStale        *bool               `json:"isStale,omitempty"`
+	IsSynthesized  *bool               `json:"isSynthesized,omitempty"`
+	Name           string              `json:"name"`
+	Platform       *string             `json:"platform,omitempty"`
+	PlatformHost   *string             `json:"platformHost,omitempty"`
+	PlatformRepo   *string             `json:"platformRepo,omitempty"`
+	RegistryId     *string             `json:"registryId,omitempty"`
+	Repository     *RepositoryIdentity `json:"repository,omitempty"`
+	RepositoryKind *string             `json:"repositoryKind,omitempty"`
+	RootPath       string              `json:"rootPath"`
+	ScopedKey      string              `json:"scopedKey"`
 }
 
 // RawSession defines model for RawSession.
@@ -3614,16 +4115,68 @@ type RawSnapshot struct {
 	// Schema A URL to the JSON Schema for this object.
 	//
 	// Example: /api/v1/schemas/RawSnapshot.json
-	Schema                *string          `json:"$schema,omitempty"`
-	Capabilities          *Capabilities    `json:"capabilities,omitempty"`
-	Generation            int64            `json:"generation"`
-	Host                  RawHost          `json:"host"`
-	PlatformAuthenticated *bool            `json:"platformAuthenticated,omitempty"`
-	Projects              *[]RawProject    `json:"projects,omitempty"`
-	RemoteHosts           *[]RawRemoteHost `json:"remoteHosts,omitempty"`
-	SchemaVersion         int64            `json:"schemaVersion"`
-	Sessions              *[]RawSession    `json:"sessions,omitempty"`
-	Worktrees             *[]RawWorktree   `json:"worktrees,omitempty"`
+	Schema                *string         `json:"$schema,omitempty"`
+	BaseURL               *string         `json:"baseURL,omitempty"`
+	Capabilities          *Capabilities   `json:"capabilities,omitempty"`
+	Generation            int64           `json:"generation"`
+	Host                  RawHost         `json:"host"`
+	NodeID                string          `json:"nodeID"`
+	PlatformAuthenticated *bool           `json:"platformAuthenticated,omitempty"`
+	Projects              *[]RawProject   `json:"projects,omitempty"`
+	ProtocolVersion       int64           `json:"protocolVersion"`
+	Sessions              *[]RawSession   `json:"sessions,omitempty"`
+	Workspaces            *[]RawWorkspace `json:"workspaces,omitempty"`
+	Worktrees             *[]RawWorktree  `json:"worktrees,omitempty"`
+}
+
+// RawWorkspace defines model for RawWorkspace.
+type RawWorkspace struct {
+	AgentState            *string            `json:"agentState,omitempty"`
+	AgentStateUpdatedAt   *string            `json:"agentStateUpdatedAt,omitempty"`
+	AssociatedPRNumber    *int64             `json:"associatedPRNumber,omitempty"`
+	CommitsAhead          *int64             `json:"commitsAhead,omitempty"`
+	CommitsBehind         *int64             `json:"commitsBehind,omitempty"`
+	CreatedAt             string             `json:"createdAt"`
+	EnrichmentError       *string            `json:"enrichmentError,omitempty"`
+	EnrichmentRefreshedAt *string            `json:"enrichmentRefreshedAt,omitempty"`
+	EnrichmentStatus      *string            `json:"enrichmentStatus,omitempty"`
+	ErrorMessage          *string            `json:"errorMessage,omitempty"`
+	GitHeadRef            string             `json:"gitHeadRef"`
+	HostKey               *string            `json:"hostKey,omitempty"`
+	Id                    string             `json:"id"`
+	ItemKey               *string            `json:"itemKey,omitempty"`
+	ItemLastActivityAt    *string            `json:"itemLastActivityAt,omitempty"`
+	ItemNumber            int64              `json:"itemNumber"`
+	ItemType              string             `json:"itemType"`
+	Kata                  *RawWorkspaceKata  `json:"kata,omitempty"`
+	MrAdditions           *int64             `json:"mrAdditions,omitempty"`
+	MrCIStatus            *string            `json:"mrCIStatus,omitempty"`
+	MrDeletions           *int64             `json:"mrDeletions,omitempty"`
+	MrIsDraft             *bool              `json:"mrIsDraft,omitempty"`
+	MrReviewDecision      *string            `json:"mrReviewDecision,omitempty"`
+	MrState               *string            `json:"mrState,omitempty"`
+	MrTitle               *string            `json:"mrTitle,omitempty"`
+	Repository            RepositoryIdentity `json:"repository"`
+	SessionBackend        *string            `json:"sessionBackend,omitempty"`
+	Status                string             `json:"status"`
+	TmuxActivitySource    *string            `json:"tmuxActivitySource,omitempty"`
+	TmuxLastOutputAt      *string            `json:"tmuxLastOutputAt,omitempty"`
+	TmuxPaneTitle         *string            `json:"tmuxPaneTitle,omitempty"`
+	TmuxSession           *string            `json:"tmuxSession,omitempty"`
+	TmuxWorking           bool               `json:"tmuxWorking"`
+	WorktreeDirty         *bool              `json:"worktreeDirty,omitempty"`
+	WorktreePath          string             `json:"worktreePath"`
+}
+
+// RawWorkspaceKata defines model for RawWorkspaceKata.
+type RawWorkspaceKata struct {
+	DaemonID    string  `json:"daemonID"`
+	IssueUID    string  `json:"issueUID"`
+	ProjectName *string `json:"projectName,omitempty"`
+	ProjectUID  string  `json:"projectUID"`
+	QualifiedID *string `json:"qualifiedID,omitempty"`
+	ShortID     *string `json:"shortID,omitempty"`
+	Title       *string `json:"title,omitempty"`
 }
 
 // RawWorktree defines model for RawWorktree.
@@ -4084,6 +4637,46 @@ type RepoWorktreeBaseRequest struct {
 	WorktreeBasePath string  `json:"worktree_base_path"`
 }
 
+// RepositoryDescriptor defines model for RepositoryDescriptor.
+type RepositoryDescriptor struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: /api/v1/schemas/RepositoryDescriptor.json
+	Schema           *string   `json:"$schema,omitempty"`
+	CloneUrl         string    `json:"clone_url"`
+	DefaultBranch    string    `json:"default_branch"`
+	Name             string    `json:"name"`
+	ObservedAt       time.Time `json:"observed_at"`
+	Owner            string    `json:"owner"`
+	PlatformHost     string    `json:"platform_host"`
+	PlatformRepoId   string    `json:"platform_repo_id"`
+	ProtocolVersion  int64     `json:"protocol_version"`
+	Provider         string    `json:"provider"`
+	SnapshotRevision int64     `json:"snapshot_revision"`
+	Stale            bool      `json:"stale"`
+}
+
+// RepositoryIdentity defines model for RepositoryIdentity.
+type RepositoryIdentity struct {
+	Name           *string `json:"name,omitempty"`
+	Owner          *string `json:"owner,omitempty"`
+	PlatformHost   string  `json:"platformHost"`
+	PlatformRepoID string  `json:"platformRepoID"`
+	Provider       string  `json:"provider"`
+}
+
+// RepositoryRoute defines model for RepositoryRoute.
+type RepositoryRoute struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: /api/v1/schemas/RepositoryRoute.json
+	Schema       *string `json:"$schema,omitempty"`
+	Name         string  `json:"name"`
+	Owner        string  `json:"owner"`
+	PlatformHost string  `json:"platform_host"`
+	Provider     string  `json:"provider"`
+}
+
 // RequestChangesPRHostInputBody defines model for RequestChangesPRHostInputBody.
 type RequestChangesPRHostInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -4188,6 +4781,21 @@ type RuntimeAttachSpecResponse struct {
 	TargetKey         string    `json:"target_key"`
 	TmuxSession       string    `json:"tmux_session"`
 	Version           int64     `json:"version"`
+}
+
+// SealSpokePreparationInputBody defines model for SealSpokePreparationInputBody.
+type SealSpokePreparationInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: /api/v1/schemas/SealSpokePreparationInputBody.json
+	Schema               *string `json:"$schema,omitempty"`
+	DrainedAckGeneration int64   `json:"drained_ack_generation"`
+	HubNodeId            string  `json:"hub_node_id"`
+	MigrationVersion     int64   `json:"migration_version"`
+	NodeId               string  `json:"node_id"`
+	PreparationDigest    string  `json:"preparation_digest"`
+	ProtocolVersion      int64   `json:"protocol_version"`
+	ReceiptsDigest       string  `json:"receipts_digest"`
 }
 
 // SessionInfo defines model for SessionInfo.
@@ -4337,22 +4945,72 @@ type Snapshot struct {
 	// Schema A URL to the JSON Schema for this object.
 	//
 	// Example: /api/v1/schemas/Snapshot.json
-	Schema                *string            `json:"$schema,omitempty"`
-	ActivePlatformHost    *string            `json:"activePlatformHost,omitempty"`
-	Generation            int64              `json:"generation"`
-	Hosts                 *[]HostSummary     `json:"hosts"`
-	PlatformAuthenticated *bool              `json:"platformAuthenticated,omitempty"`
-	ProjectMap            *map[string]string `json:"projectMap,omitempty"`
-	Projects              *[]ProjectSummary  `json:"projects"`
-	SchemaVersion         int64              `json:"schemaVersion"`
-	Sessions              *[]SessionSummary  `json:"sessions"`
-	Worktrees             *[]WorktreeSummary `json:"worktrees"`
+	Schema                *string             `json:"$schema,omitempty"`
+	ActivePlatformHost    *string             `json:"activePlatformHost,omitempty"`
+	AggregateIncomplete   *bool               `json:"aggregateIncomplete,omitempty"`
+	Generation            int64               `json:"generation"`
+	Hosts                 *[]HostSummary      `json:"hosts"`
+	PlatformAuthenticated *bool               `json:"platformAuthenticated,omitempty"`
+	ProjectMap            *map[string]string  `json:"projectMap,omitempty"`
+	Projects              *[]ProjectSummary   `json:"projects"`
+	ProtocolVersion       int64               `json:"protocolVersion"`
+	Sessions              *[]SessionSummary   `json:"sessions"`
+	Workspaces            *[]WorkspaceSummary `json:"workspaces"`
+	Worktrees             *[]WorktreeSummary  `json:"worktrees"`
 }
 
 // SnippetRange defines model for SnippetRange.
 type SnippetRange struct {
 	End   int64 `json:"end"`
 	Start int64 `json:"start"`
+}
+
+// SpokePreparationAbortReport defines model for SpokePreparationAbortReport.
+type SpokePreparationAbortReport struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: /api/v1/schemas/SpokePreparationAbortReport.json
+	Schema             *string `json:"$schema,omitempty"`
+	EnrollmentId       string  `json:"enrollment_id"`
+	HubRevoked         bool    `json:"hub_revoked"`
+	ProviderWritesOpen bool    `json:"provider_writes_open"`
+	RestartRequired    bool    `json:"restart_required"`
+}
+
+// SpokePreparationReport defines model for SpokePreparationReport.
+type SpokePreparationReport struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: /api/v1/schemas/SpokePreparationReport.json
+	Schema                 *string                 `json:"$schema,omitempty"`
+	ActiveDeferredMerges   int64                   `json:"active_deferred_merges"`
+	HandoffConflicts       []ProviderStateConflict `json:"handoff_conflicts"`
+	HandoffErrors          []string                `json:"handoff_errors"`
+	InFlightProviderWrites int64                   `json:"in_flight_provider_writes"`
+	PreparationSeal        *string                 `json:"preparation_seal,omitempty"`
+	ReadyLaunchSpecs       int64                   `json:"ready_launch_specs"`
+	ReadyToActivate        bool                    `json:"ready_to_activate"`
+	RestartRequired        bool                    `json:"restart_required"`
+	UndrainedAcks          int64                   `json:"undrained_acks"`
+	Unprepared             []UnpreparedWorkspace   `json:"unprepared"`
+}
+
+// SpokePreparationSeal defines model for SpokePreparationSeal.
+type SpokePreparationSeal struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: /api/v1/schemas/SpokePreparationSeal.json
+	Schema               *string   `json:"$schema,omitempty"`
+	CreatedAt            time.Time `json:"created_at"`
+	DrainedAckGeneration int64     `json:"drained_ack_generation"`
+	EnrollmentId         string    `json:"enrollment_id"`
+	HubNodeId            string    `json:"hub_node_id"`
+	MigrationVersion     int64     `json:"migration_version"`
+	NodeId               string    `json:"node_id"`
+	PreparationDigest    string    `json:"preparation_digest"`
+	PreparationSeal      string    `json:"preparation_seal"`
+	ProtocolVersion      int64     `json:"protocol_version"`
+	ReceiptsDigest       string    `json:"receipts_digest"`
 }
 
 // StackContextResponse defines model for StackContextResponse.
@@ -4514,6 +5172,12 @@ type ToolingStatusBody struct {
 	Glab   ToolingCLIStatus `json:"glab"`
 }
 
+// UnpreparedWorkspace defines model for UnpreparedWorkspace.
+type UnpreparedWorkspace struct {
+	Reason    string    `json:"reason"`
+	Workspace Workspace `json:"workspace"`
+}
+
 // UpdateDocsFolderInputBody defines model for UpdateDocsFolderInputBody.
 type UpdateDocsFolderInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -4523,27 +5187,15 @@ type UpdateDocsFolderInputBody struct {
 	Name   *string `json:"name,omitempty"`
 }
 
-// UpdateFleetSSHPeersInputBody defines model for UpdateFleetSSHPeersInputBody.
-type UpdateFleetSSHPeersInputBody struct {
-	// Schema A URL to the JSON Schema for this object.
-	//
-	// Example: /api/v1/schemas/UpdateFleetSSHPeersInputBody.json
-	Schema   *string        `json:"$schema,omitempty"`
-	SshPeers []FleetSSHPeer `json:"ssh_peers"`
-}
-
 // UpdateFleetSettingsInputBody defines model for UpdateFleetSettingsInputBody.
 type UpdateFleetSettingsInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	//
 	// Example: /api/v1/schemas/UpdateFleetSettingsInputBody.json
-	Schema      *string        `json:"$schema,omitempty"`
-	Enabled     bool           `json:"enabled"`
-	Key         *string        `json:"key,omitempty"`
-	PeerTimeout *string        `json:"peer_timeout,omitempty"`
-	Peers       []FleetPeer    `json:"peers"`
-	Sessions    FleetSessions  `json:"sessions"`
-	SshPeers    []FleetSSHPeer `json:"ssh_peers"`
+	Schema      *string       `json:"$schema,omitempty"`
+	Enabled     bool          `json:"enabled"`
+	PeerTimeout *string       `json:"peer_timeout,omitempty"`
+	Sessions    FleetSessions `json:"sessions"`
 }
 
 // UpdateRepoPresetInputBody defines model for UpdateRepoPresetInputBody.
@@ -4612,6 +5264,29 @@ type WorkflowStateMetaResponse struct {
 // WorkflowStateMetaResponseStatus defines model for WorkflowStateMetaResponse.Status.
 type WorkflowStateMetaResponseStatus string
 
+// Workspace defines model for Workspace.
+type Workspace struct {
+	AssociatedPRNumber *int64                `json:"AssociatedPRNumber"`
+	CreatedAt          time.Time             `json:"CreatedAt"`
+	ErrorMessage       *string               `json:"ErrorMessage"`
+	GitHeadRef         string                `json:"GitHeadRef"`
+	ID                 string                `json:"ID"`
+	ItemKey            string                `json:"ItemKey"`
+	ItemNumber         int64                 `json:"ItemNumber"`
+	ItemType           string                `json:"ItemType"`
+	KataMetadata       WorkspaceKataMetadata `json:"KataMetadata"`
+	MRHeadRepo         *string               `json:"MRHeadRepo"`
+	Platform           string                `json:"Platform"`
+	PlatformHost       string                `json:"PlatformHost"`
+	RepoName           string                `json:"RepoName"`
+	RepoOwner          string                `json:"RepoOwner"`
+	Status             string                `json:"Status"`
+	TerminalBackend    string                `json:"TerminalBackend"`
+	TmuxSession        string                `json:"TmuxSession"`
+	WorkspaceBranch    string                `json:"WorkspaceBranch"`
+	WorktreePath       string                `json:"WorktreePath"`
+}
+
 // WorkspaceActivitySubjectResponse defines model for WorkspaceActivitySubjectResponse.
 type WorkspaceActivitySubjectResponse struct {
 	ActivityAt   time.Time               `json:"activity_at"`
@@ -4664,10 +5339,91 @@ type WorkspaceKataMetadata struct {
 	Title       *string `json:"title,omitempty"`
 }
 
+// WorkspaceKataSummary defines model for WorkspaceKataSummary.
+type WorkspaceKataSummary struct {
+	DaemonId    string  `json:"daemon_id"`
+	IssueUid    string  `json:"issue_uid"`
+	ProjectName *string `json:"project_name,omitempty"`
+	ProjectUid  string  `json:"project_uid"`
+	QualifiedId *string `json:"qualified_id,omitempty"`
+	ShortId     *string `json:"short_id,omitempty"`
+	Title       *string `json:"title,omitempty"`
+}
+
+// WorkspaceLaunchPull defines model for WorkspaceLaunchPull.
+type WorkspaceLaunchPull struct {
+	HeadBranch       string                          `json:"head_branch"`
+	HeadRepoCloneUrl string                          `json:"head_repo_clone_url"`
+	HeadRepoKind     WorkspaceLaunchPullHeadRepoKind `json:"head_repo_kind"`
+	SnapshotRevision int64                           `json:"snapshot_revision"`
+}
+
+// WorkspaceLaunchPullHeadRepoKind defines model for WorkspaceLaunchPull.HeadRepoKind.
+type WorkspaceLaunchPullHeadRepoKind string
+
+// WorkspaceLaunchRepository defines model for WorkspaceLaunchRepository.
+type WorkspaceLaunchRepository struct {
+	CloneUrl       string `json:"clone_url"`
+	DefaultBranch  string `json:"default_branch"`
+	Name           string `json:"name"`
+	Owner          string `json:"owner"`
+	PlatformHost   string `json:"platform_host"`
+	PlatformRepoId string `json:"platform_repo_id"`
+	Provider       string `json:"provider"`
+}
+
+// WorkspaceLaunchRequest defines model for WorkspaceLaunchRequest.
+type WorkspaceLaunchRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: /api/v1/schemas/WorkspaceLaunchRequest.json
+	Schema          *string         `json:"$schema,omitempty"`
+	GitHeadRef      *string         `json:"git_head_ref,omitempty"`
+	IssueBranchSlug *bool           `json:"issue_branch_slug,omitempty"`
+	ItemKey         *string         `json:"item_key,omitempty"`
+	ItemNumber      int64           `json:"item_number"`
+	ItemType        string          `json:"item_type"`
+	PlatformRepoId  *string         `json:"platform_repo_id,omitempty"`
+	Repository      RepositoryRoute `json:"repository"`
+}
+
+// WorkspaceLaunchSpec defines model for WorkspaceLaunchSpec.
+type WorkspaceLaunchSpec struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: /api/v1/schemas/WorkspaceLaunchSpec.json
+	Schema             *string                     `json:"$schema,omitempty"`
+	GitHeadRef         string                      `json:"git_head_ref"`
+	IssuedAt           time.Time                   `json:"issued_at"`
+	ItemKey            string                      `json:"item_key"`
+	ItemNumber         int64                       `json:"item_number"`
+	ItemType           WorkspaceLaunchSpecItemType `json:"item_type"`
+	Pull               *WorkspaceLaunchPull        `json:"pull,omitempty"`
+	Repository         WorkspaceLaunchRepository   `json:"repository"`
+	SourceTitle        string                      `json:"source_title"`
+	SourceUrl          string                      `json:"source_url"`
+	SourceVisible      bool                        `json:"source_visible"`
+	SourceVisibleUntil time.Time                   `json:"source_visible_until"`
+	Version            int64                       `json:"version"`
+}
+
+// WorkspaceLaunchSpecItemType defines model for WorkspaceLaunchSpec.ItemType.
+type WorkspaceLaunchSpecItemType string
+
 // WorkspaceRef defines model for WorkspaceRef.
 type WorkspaceRef struct {
 	Id     string `json:"id"`
 	Status string `json:"status"`
+}
+
+// WorkspaceRepositorySummary defines model for WorkspaceRepositorySummary.
+type WorkspaceRepositorySummary struct {
+	Name           string  `json:"name"`
+	Owner          string  `json:"owner"`
+	PlatformHost   string  `json:"platform_host"`
+	PlatformRepoId *string `json:"platform_repo_id,omitempty"`
+	Provider       string  `json:"provider"`
+	RepoPath       string  `json:"repo_path"`
 }
 
 // WorkspaceResponse defines model for WorkspaceResponse.
@@ -4759,6 +5515,49 @@ type WorkspaceSettingsUpdate struct {
 
 // WorkspaceSettingsUpdateDefaultSidebarView defines model for WorkspaceSettingsUpdate.DefaultSidebarView.
 type WorkspaceSettingsUpdateDefaultSidebarView string
+
+// WorkspaceSummary defines model for WorkspaceSummary.
+type WorkspaceSummary struct {
+	AgentState            *string                    `json:"agent_state,omitempty"`
+	AgentStateUpdatedAt   *string                    `json:"agent_state_updated_at,omitempty"`
+	AssociatedPrNumber    *int64                     `json:"associated_pr_number,omitempty"`
+	CommitsAhead          *int64                     `json:"commits_ahead,omitempty"`
+	CommitsBehind         *int64                     `json:"commits_behind,omitempty"`
+	CreatedAt             string                     `json:"created_at"`
+	EnrichmentError       *string                    `json:"enrichment_error,omitempty"`
+	EnrichmentRefreshedAt *string                    `json:"enrichment_refreshed_at,omitempty"`
+	EnrichmentStatus      *string                    `json:"enrichment_status,omitempty"`
+	ErrorMessage          *string                    `json:"error_message,omitempty"`
+	FleetHostKey          *string                    `json:"fleet_host_key,omitempty"`
+	FleetHostName         *string                    `json:"fleet_host_name,omitempty"`
+	GitHeadRef            string                     `json:"git_head_ref"`
+	Id                    string                     `json:"id"`
+	ItemKey               *string                    `json:"item_key,omitempty"`
+	ItemLastActivityAt    *string                    `json:"item_last_activity_at,omitempty"`
+	ItemNumber            int64                      `json:"item_number"`
+	ItemType              string                     `json:"item_type"`
+	Kata                  *WorkspaceKataSummary      `json:"kata,omitempty"`
+	MrAdditions           *int64                     `json:"mr_additions,omitempty"`
+	MrCiStatus            *string                    `json:"mr_ci_status,omitempty"`
+	MrDeletions           *int64                     `json:"mr_deletions,omitempty"`
+	MrIsDraft             *bool                      `json:"mr_is_draft,omitempty"`
+	MrReviewDecision      *string                    `json:"mr_review_decision,omitempty"`
+	MrState               *string                    `json:"mr_state,omitempty"`
+	MrTitle               *string                    `json:"mr_title,omitempty"`
+	PlatformHost          string                     `json:"platform_host"`
+	Repo                  WorkspaceRepositorySummary `json:"repo"`
+	RepoName              string                     `json:"repo_name"`
+	RepoOwner             string                     `json:"repo_owner"`
+	Status                string                     `json:"status"`
+	TmuxActivitySource    string                     `json:"tmux_activity_source"`
+	TmuxLastOutputAt      *string                    `json:"tmux_last_output_at"`
+	TmuxPaneTitle         *string                    `json:"tmux_pane_title,omitempty"`
+	TmuxSession           *string                    `json:"tmux_session,omitempty"`
+	TmuxWorking           bool                       `json:"tmux_working"`
+	Visible               bool                       `json:"visible"`
+	WorktreeDirty         *bool                      `json:"worktree_dirty,omitempty"`
+	WorktreePath          string                     `json:"worktree_path"`
+}
 
 // Workspaces defines model for Workspaces.
 type Workspaces struct {
@@ -4975,6 +5774,19 @@ type SearchDocsParams struct {
 type StreamEventsParams struct {
 	// WorkspaceId Optional selected local workspace to prewarm and validate while this stream is connected
 	WorkspaceId *string `form:"workspace_id,omitempty" json:"workspace_id,omitempty"`
+}
+
+// BeginFederationEnrollmentParams defines parameters for BeginFederationEnrollment.
+type BeginFederationEnrollmentParams struct {
+	Authorization *string `json:"Authorization,omitempty"`
+}
+
+// StreamFederationProviderEventsParams defines parameters for StreamFederationProviderEvents.
+type StreamFederationProviderEventsParams struct {
+	Since                        *string `form:"since,omitempty" json:"since,omitempty"`
+	XKennForgeFederationProtocol *string `json:"X-Kenn-Forge-Federation-Protocol,omitempty"`
+	LastEventID                  *string `json:"Last-Event-ID,omitempty"`
+	ContentLength                *string `json:"Content-Length,omitempty"`
 }
 
 // CompleteFilesystemPathParams defines parameters for CompleteFilesystemPath.
@@ -5433,7 +6245,7 @@ type ResolveRepoItemParamsItemType string
 
 // GetSnapshotParams defines parameters for GetSnapshot.
 type GetSnapshotParams struct {
-	// IncludePeers Fan out to configured fleet peers and include their hosts/worktrees.
+	// IncludePeers Include the federation aggregate projected for this spoke.
 	IncludePeers *bool `form:"include_peers,omitempty" json:"include_peers,omitempty"`
 }
 
@@ -5567,6 +6379,48 @@ type RenameDocsFileJSONRequestBody = DocsRenameFileInputBody
 // PublishDocsGitJSONRequestBody defines body for PublishDocsGit for application/json ContentType.
 type PublishDocsGitJSONRequestBody = DocsGitPublishInputBody
 
+// BeginFederationEnrollmentJSONRequestBody defines body for BeginFederationEnrollment for application/json ContentType.
+type BeginFederationEnrollmentJSONRequestBody = JoinRequest
+
+// ActivateFederationEnrollmentJSONRequestBody defines body for ActivateFederationEnrollment for application/json ContentType.
+type ActivateFederationEnrollmentJSONRequestBody = ActivateEnrollmentInputBody
+
+// SealFederationSpokePreparationJSONRequestBody defines body for SealFederationSpokePreparation for application/json ContentType.
+type SealFederationSpokePreparationJSONRequestBody = SealSpokePreparationInputBody
+
+// FederationImportReviewDraftJSONRequestBody defines body for FederationImportReviewDraft for application/json ContentType.
+type FederationImportReviewDraftJSONRequestBody = ProviderStateReviewDraftPayload
+
+// FederationImportWorkflowStateJSONRequestBody defines body for FederationImportWorkflowState for application/json ContentType.
+type FederationImportWorkflowStateJSONRequestBody = ProviderStateWorkflowPayload
+
+// FederationGetDiffDescriptorJSONRequestBody defines body for FederationGetDiffDescriptor for application/json ContentType.
+type FederationGetDiffDescriptorJSONRequestBody = FederationDiffDescriptorRequest
+
+// FederationGetRepositoryDescriptorJSONRequestBody defines body for FederationGetRepositoryDescriptor for application/json ContentType.
+type FederationGetRepositoryDescriptorJSONRequestBody = RepositoryRoute
+
+// FederationUpdateProviderSettingsJSONRequestBody defines body for FederationUpdateProviderSettings for application/json ContentType.
+type FederationUpdateProviderSettingsJSONRequestBody = ProviderSettingsUpdate
+
+// FederationSetWorkflowStateJSONRequestBody defines body for FederationSetWorkflowState for application/json ContentType.
+type FederationSetWorkflowStateJSONRequestBody = FederationSetWorkflowStateRequest
+
+// FederationListWorkflowStatesJSONRequestBody defines body for FederationListWorkflowStates for application/json ContentType.
+type FederationListWorkflowStatesJSONRequestBody = FederationWorkflowQuery
+
+// FederationAutoAssignWorkspaceItemJSONRequestBody defines body for FederationAutoAssignWorkspaceItem for application/json ContentType.
+type FederationAutoAssignWorkspaceItemJSONRequestBody = ProviderWorkspaceItemRequest
+
+// FederationResolveWorkspaceLaunchSpecJSONRequestBody defines body for FederationResolveWorkspaceLaunchSpec for application/json ContentType.
+type FederationResolveWorkspaceLaunchSpecJSONRequestBody = WorkspaceLaunchRequest
+
+// FederationRefreshWorkspaceLaunchSpecJSONRequestBody defines body for FederationRefreshWorkspaceLaunchSpec for application/json ContentType.
+type FederationRefreshWorkspaceLaunchSpecJSONRequestBody = WorkspaceLaunchRequest
+
+// CreateFleetEnrollmentTokenJSONRequestBody defines body for CreateFleetEnrollmentToken for application/json ContentType.
+type CreateFleetEnrollmentTokenJSONRequestBody = CreateEnrollmentTokenInputBody
+
 // CreateFleetIssueWorkspaceOnPlatformHostJSONRequestBody defines body for CreateFleetIssueWorkspaceOnPlatformHost for application/json ContentType.
 type CreateFleetIssueWorkspaceOnPlatformHostJSONRequestBody CreateFleetIssueWorkspaceOnPlatformHostJSONBody
 
@@ -5608,6 +6462,12 @@ type LaunchFleetWorkspaceRuntimeSessionJSONRequestBody LaunchFleetWorkspaceRunti
 
 // RenameFleetWorkspaceRuntimeSessionJSONRequestBody defines body for RenameFleetWorkspaceRuntimeSession for application/json ContentType.
 type RenameFleetWorkspaceRuntimeSessionJSONRequestBody RenameFleetWorkspaceRuntimeSessionJSONBody
+
+// JoinFederationJSONRequestBody defines body for JoinFederation for application/json ContentType.
+type JoinFederationJSONRequestBody = LocalJoinInputBody
+
+// AbortFederationSpokePreparationJSONRequestBody defines body for AbortFederationSpokePreparation for application/json ContentType.
+type AbortFederationSpokePreparationJSONRequestBody = AbortFederationSpokeInputBody
 
 // CreateIssueOnHostJSONRequestBody defines body for CreateIssueOnHost for application/json ContentType.
 type CreateIssueOnHostJSONRequestBody = CreateIssueHostInputBody
@@ -5851,9 +6711,6 @@ type UpdateSettingsJSONRequestBody = UpdateSettingsRequest
 
 // UpdateFleetSettingsJSONRequestBody defines body for UpdateFleetSettings for application/json ContentType.
 type UpdateFleetSettingsJSONRequestBody = UpdateFleetSettingsInputBody
-
-// UpdateFleetSshPeersJSONRequestBody defines body for UpdateFleetSshPeers for application/json ContentType.
-type UpdateFleetSshPeersJSONRequestBody = UpdateFleetSSHPeersInputBody
 
 // CreateRepoPresetJSONRequestBody defines body for CreateRepoPreset for application/json ContentType.
 type CreateRepoPresetJSONRequestBody = RepoPreset
@@ -6338,6 +7195,213 @@ type ClientInterface interface {
 	// Corresponds with GET /events (the `StreamEvents` operationId).
 	StreamEvents(ctx context.Context, params *StreamEventsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// BeginFederationEnrollmentWithBody Begin or resume a federation enrollment
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /federation/enrollments (the `BeginFederationEnrollment` operationId).
+	BeginFederationEnrollmentWithBody(ctx context.Context, params *BeginFederationEnrollmentParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// BeginFederationEnrollment Begin or resume a federation enrollment
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /federation/enrollments (the `BeginFederationEnrollment` operationId).
+	BeginFederationEnrollment(ctx context.Context, params *BeginFederationEnrollmentParams, body BeginFederationEnrollmentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// AbortFederationEnrollment Abandon this spoke's pending federation enrollment
+	//
+	// Corresponds with POST /federation/enrollments/{enrollment_id}/abort (the `AbortFederationEnrollment` operationId).
+	AbortFederationEnrollment(ctx context.Context, enrollmentId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ActivateFederationEnrollmentWithBody Activate a prepared federation member
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /federation/enrollments/{enrollment_id}/activate (the `ActivateFederationEnrollment` operationId).
+	ActivateFederationEnrollmentWithBody(ctx context.Context, enrollmentId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ActivateFederationEnrollment Activate a prepared federation member
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /federation/enrollments/{enrollment_id}/activate (the `ActivateFederationEnrollment` operationId).
+	ActivateFederationEnrollment(ctx context.Context, enrollmentId string, body ActivateFederationEnrollmentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// BeginFederationSpokePreparation Pin a pending enrollment before spoke preparation
+	//
+	// Corresponds with POST /federation/enrollments/{enrollment_id}/preparation/begin (the `BeginFederationSpokePreparation` operationId).
+	BeginFederationSpokePreparation(ctx context.Context, enrollmentId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SealFederationSpokePreparationWithBody Seal completed provider-state handoff for a spoke
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /federation/enrollments/{enrollment_id}/preparation/seal (the `SealFederationSpokePreparation` operationId).
+	SealFederationSpokePreparationWithBody(ctx context.Context, enrollmentId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SealFederationSpokePreparation Seal completed provider-state handoff for a spoke
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /federation/enrollments/{enrollment_id}/preparation/seal (the `SealFederationSpokePreparation` operationId).
+	SealFederationSpokePreparation(ctx context.Context, enrollmentId string, body SealFederationSpokePreparationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// StreamFederationProviderEvents Stream hub-owned provider events
+	//
+	// Corresponds with GET /federation/events (the `StreamFederationProviderEvents` operationId).
+	StreamFederationProviderEvents(ctx context.Context, params *StreamFederationProviderEventsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetFederationIdentity Read the authenticated federation identity
+	//
+	// Corresponds with GET /federation/identity (the `GetFederationIdentity` operationId).
+	GetFederationIdentity(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// FederationImportReviewDraftWithBody Import one review draft while preparing a Forge spoke
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /federation/provider-state/review-drafts/import (the `FederationImportReviewDraft` operationId).
+	FederationImportReviewDraftWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// FederationImportReviewDraft Import one review draft while preparing a Forge spoke
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /federation/provider-state/review-drafts/import (the `FederationImportReviewDraft` operationId).
+	FederationImportReviewDraft(ctx context.Context, body FederationImportReviewDraftJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// FederationImportWorkflowStateWithBody Import one workflow row while preparing a Forge spoke
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /federation/provider-state/workflow-states/import (the `FederationImportWorkflowState` operationId).
+	FederationImportWorkflowStateWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// FederationImportWorkflowState Import one workflow row while preparing a Forge spoke
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /federation/provider-state/workflow-states/import (the `FederationImportWorkflowState` operationId).
+	FederationImportWorkflowState(ctx context.Context, body FederationImportWorkflowStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// FederationGetDiffDescriptorWithBody Resolve a pull diff descriptor for a Forge spoke
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /federation/provider/diff-descriptor (the `FederationGetDiffDescriptor` operationId).
+	FederationGetDiffDescriptorWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// FederationGetDiffDescriptor Resolve a pull diff descriptor for a Forge spoke
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /federation/provider/diff-descriptor (the `FederationGetDiffDescriptor` operationId).
+	FederationGetDiffDescriptor(ctx context.Context, body FederationGetDiffDescriptorJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// FederationGetRepositoryDescriptorWithBody Resolve a repository descriptor for a Forge spoke
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /federation/provider/repository-descriptor (the `FederationGetRepositoryDescriptor` operationId).
+	FederationGetRepositoryDescriptorWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// FederationGetRepositoryDescriptor Resolve a repository descriptor for a Forge spoke
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /federation/provider/repository-descriptor (the `FederationGetRepositoryDescriptor` operationId).
+	FederationGetRepositoryDescriptor(ctx context.Context, body FederationGetRepositoryDescriptorJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// FederationGetProviderSettings Get hub-owned settings for a Forge spoke
+	//
+	// Corresponds with GET /federation/provider/settings (the `FederationGetProviderSettings` operationId).
+	FederationGetProviderSettings(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// FederationUpdateProviderSettingsWithBody Update hub-owned settings for a Forge spoke
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /federation/provider/settings (the `FederationUpdateProviderSettings` operationId).
+	FederationUpdateProviderSettingsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// FederationUpdateProviderSettings Update hub-owned settings for a Forge spoke
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PUT /federation/provider/settings (the `FederationUpdateProviderSettings` operationId).
+	FederationUpdateProviderSettings(ctx context.Context, body FederationUpdateProviderSettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// FederationSetWorkflowStateWithBody Set hub workflow state for a Forge spoke
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /federation/provider/workflow-state (the `FederationSetWorkflowState` operationId).
+	FederationSetWorkflowStateWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// FederationSetWorkflowState Set hub workflow state for a Forge spoke
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PUT /federation/provider/workflow-state (the `FederationSetWorkflowState` operationId).
+	FederationSetWorkflowState(ctx context.Context, body FederationSetWorkflowStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// FederationListWorkflowStatesWithBody List hub workflow states for a Forge spoke
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /federation/provider/workflow-states/query (the `FederationListWorkflowStates` operationId).
+	FederationListWorkflowStatesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// FederationListWorkflowStates List hub workflow states for a Forge spoke
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /federation/provider/workflow-states/query (the `FederationListWorkflowStates` operationId).
+	FederationListWorkflowStates(ctx context.Context, body FederationListWorkflowStatesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// FederationAutoAssignWorkspaceItemWithBody Apply hub assignment policy to a workspace item
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /federation/provider/workspace-auto-assign (the `FederationAutoAssignWorkspaceItem` operationId).
+	FederationAutoAssignWorkspaceItemWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// FederationAutoAssignWorkspaceItem Apply hub assignment policy to a workspace item
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /federation/provider/workspace-auto-assign (the `FederationAutoAssignWorkspaceItem` operationId).
+	FederationAutoAssignWorkspaceItem(ctx context.Context, body FederationAutoAssignWorkspaceItemJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// FederationResolveWorkspaceLaunchSpecWithBody Resolve current provider facts for a workspace launch
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /federation/provider/workspace-launch-spec (the `FederationResolveWorkspaceLaunchSpec` operationId).
+	FederationResolveWorkspaceLaunchSpecWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// FederationResolveWorkspaceLaunchSpec Resolve current provider facts for a workspace launch
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /federation/provider/workspace-launch-spec (the `FederationResolveWorkspaceLaunchSpec` operationId).
+	FederationResolveWorkspaceLaunchSpec(ctx context.Context, body FederationResolveWorkspaceLaunchSpecJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// FederationRefreshWorkspaceLaunchSpecWithBody Refresh provider facts for a Forge spoke workspace
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /federation/provider/workspace-launch-spec/refresh (the `FederationRefreshWorkspaceLaunchSpec` operationId).
+	FederationRefreshWorkspaceLaunchSpecWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// FederationRefreshWorkspaceLaunchSpec Refresh provider facts for a Forge spoke workspace
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /federation/provider/workspace-launch-spec/refresh (the `FederationRefreshWorkspaceLaunchSpec` operationId).
+	FederationRefreshWorkspaceLaunchSpec(ctx context.Context, body FederationRefreshWorkspaceLaunchSpecJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// CompleteFilesystemPath Complete a local filesystem path
 	//
 	// Corresponds with GET /filesystem/complete (the `CompleteFilesystemPath` operationId).
@@ -6347,6 +7411,25 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /filesystem/validate-repo (the `ValidateFilesystemRepo` operationId).
 	ValidateFilesystemRepo(ctx context.Context, params *ValidateFilesystemRepoParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateFleetEnrollmentTokenWithBody Create a one-time fleet enrollment token
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /fleet/enrollment-tokens (the `CreateFleetEnrollmentToken` operationId).
+	CreateFleetEnrollmentTokenWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateFleetEnrollmentToken Create a one-time fleet enrollment token
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /fleet/enrollment-tokens (the `CreateFleetEnrollmentToken` operationId).
+	CreateFleetEnrollmentToken(ctx context.Context, body CreateFleetEnrollmentTokenJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RevokeFederationEnrollment Revoke a federation member
+	//
+	// Corresponds with DELETE /fleet/enrollments/{enrollment_id} (the `RevokeFederationEnrollment` operationId).
+	RevokeFederationEnrollment(ctx context.Context, enrollmentId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CompleteFleetFilesystemPath Complete a filesystem path on fleet host
 	//
@@ -6693,6 +7776,39 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /fleet/hosts/{host_key}/workspaces/{id}/runtime/sessions/{session_key}/attach-spec (the `GetFleetWorkspaceRuntimeSessionAttachSpec` operationId).
 	GetFleetWorkspaceRuntimeSessionAttachSpec(ctx context.Context, hostKey string, id string, sessionKey string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// JoinFederationWithBody Join this daemon to a federation hub
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /fleet/join (the `JoinFederation` operationId).
+	JoinFederationWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// JoinFederation Join this daemon to a federation hub
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /fleet/join (the `JoinFederation` operationId).
+	JoinFederation(ctx context.Context, body JoinFederationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PrepareFederationSpoke Quiesce this daemon and prepare it to become a fleet spoke
+	//
+	// Corresponds with POST /fleet/prepare-spoke (the `PrepareFederationSpoke` operationId).
+	PrepareFederationSpoke(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// AbortFederationSpokePreparationWithBody Abort pending spoke preparation and restore standalone writes
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /fleet/prepare-spoke/abort (the `AbortFederationSpokePreparation` operationId).
+	AbortFederationSpokePreparationWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// AbortFederationSpokePreparation Abort pending spoke preparation and restore standalone writes
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /fleet/prepare-spoke/abort (the `AbortFederationSpokePreparation` operationId).
+	AbortFederationSpokePreparation(ctx context.Context, body AbortFederationSpokePreparationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CreateIssueOnHostWithBody Create issue
 	//
@@ -8412,25 +9528,6 @@ type ClientInterface interface {
 	// Corresponds with PUT /settings/fleet (the `UpdateFleetSettings` operationId).
 	UpdateFleetSettings(ctx context.Context, body UpdateFleetSettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetFleetSshPeers List SSH fleet peers
-	//
-	// Corresponds with GET /settings/fleet/ssh-peers (the `GetFleetSshPeers` operationId).
-	GetFleetSshPeers(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// UpdateFleetSshPeersWithBody Replace SSH fleet peers
-	//
-	// Takes any type of body and a specified content type.
-	//
-	// Corresponds with PUT /settings/fleet/ssh-peers (the `UpdateFleetSshPeers` operationId).
-	UpdateFleetSshPeersWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// UpdateFleetSshPeers Replace SSH fleet peers
-	//
-	// Takes a body of the `application/json` content type.
-	//
-	// Corresponds with PUT /settings/fleet/ssh-peers (the `UpdateFleetSshPeers` operationId).
-	UpdateFleetSshPeers(ctx context.Context, body UpdateFleetSshPeersJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
 	// CreateRepoPresetWithBody Create repository preset
 	//
 	// Takes any type of body and a specified content type.
@@ -8468,6 +9565,11 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /snapshot (the `GetSnapshot` operationId).
 	GetSnapshot(ctx context.Context, params *GetSnapshotParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetSnapshotAggregate Read the hub's neutral fleet aggregate
+	//
+	// Corresponds with GET /snapshot/aggregate (the `GetSnapshotAggregate` operationId).
+	GetSnapshotAggregate(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetSnapshotRaw Read the local raw inventory
 	//
@@ -9336,6 +10438,523 @@ func (c *Client) StreamEvents(ctx context.Context, params *StreamEventsParams, r
 	return c.Client.Do(req)
 }
 
+// BeginFederationEnrollmentWithBody Begin or resume a federation enrollment
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /federation/enrollments (the `BeginFederationEnrollment` operationId).
+func (c *Client) BeginFederationEnrollmentWithBody(ctx context.Context, params *BeginFederationEnrollmentParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewBeginFederationEnrollmentRequestWithBody(c.Server, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// BeginFederationEnrollment Begin or resume a federation enrollment
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /federation/enrollments (the `BeginFederationEnrollment` operationId).
+func (c *Client) BeginFederationEnrollment(ctx context.Context, params *BeginFederationEnrollmentParams, body BeginFederationEnrollmentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewBeginFederationEnrollmentRequest(c.Server, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// AbortFederationEnrollment Abandon this spoke's pending federation enrollment
+//
+// Corresponds with POST /federation/enrollments/{enrollment_id}/abort (the `AbortFederationEnrollment` operationId).
+func (c *Client) AbortFederationEnrollment(ctx context.Context, enrollmentId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAbortFederationEnrollmentRequest(c.Server, enrollmentId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ActivateFederationEnrollmentWithBody Activate a prepared federation member
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /federation/enrollments/{enrollment_id}/activate (the `ActivateFederationEnrollment` operationId).
+func (c *Client) ActivateFederationEnrollmentWithBody(ctx context.Context, enrollmentId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewActivateFederationEnrollmentRequestWithBody(c.Server, enrollmentId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ActivateFederationEnrollment Activate a prepared federation member
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /federation/enrollments/{enrollment_id}/activate (the `ActivateFederationEnrollment` operationId).
+func (c *Client) ActivateFederationEnrollment(ctx context.Context, enrollmentId string, body ActivateFederationEnrollmentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewActivateFederationEnrollmentRequest(c.Server, enrollmentId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// BeginFederationSpokePreparation Pin a pending enrollment before spoke preparation
+//
+// Corresponds with POST /federation/enrollments/{enrollment_id}/preparation/begin (the `BeginFederationSpokePreparation` operationId).
+func (c *Client) BeginFederationSpokePreparation(ctx context.Context, enrollmentId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewBeginFederationSpokePreparationRequest(c.Server, enrollmentId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SealFederationSpokePreparationWithBody Seal completed provider-state handoff for a spoke
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /federation/enrollments/{enrollment_id}/preparation/seal (the `SealFederationSpokePreparation` operationId).
+func (c *Client) SealFederationSpokePreparationWithBody(ctx context.Context, enrollmentId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSealFederationSpokePreparationRequestWithBody(c.Server, enrollmentId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SealFederationSpokePreparation Seal completed provider-state handoff for a spoke
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /federation/enrollments/{enrollment_id}/preparation/seal (the `SealFederationSpokePreparation` operationId).
+func (c *Client) SealFederationSpokePreparation(ctx context.Context, enrollmentId string, body SealFederationSpokePreparationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSealFederationSpokePreparationRequest(c.Server, enrollmentId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// StreamFederationProviderEvents Stream hub-owned provider events
+//
+// Corresponds with GET /federation/events (the `StreamFederationProviderEvents` operationId).
+func (c *Client) StreamFederationProviderEvents(ctx context.Context, params *StreamFederationProviderEventsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewStreamFederationProviderEventsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetFederationIdentity Read the authenticated federation identity
+//
+// Corresponds with GET /federation/identity (the `GetFederationIdentity` operationId).
+func (c *Client) GetFederationIdentity(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetFederationIdentityRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// FederationImportReviewDraftWithBody Import one review draft while preparing a Forge spoke
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /federation/provider-state/review-drafts/import (the `FederationImportReviewDraft` operationId).
+func (c *Client) FederationImportReviewDraftWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewFederationImportReviewDraftRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// FederationImportReviewDraft Import one review draft while preparing a Forge spoke
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /federation/provider-state/review-drafts/import (the `FederationImportReviewDraft` operationId).
+func (c *Client) FederationImportReviewDraft(ctx context.Context, body FederationImportReviewDraftJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewFederationImportReviewDraftRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// FederationImportWorkflowStateWithBody Import one workflow row while preparing a Forge spoke
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /federation/provider-state/workflow-states/import (the `FederationImportWorkflowState` operationId).
+func (c *Client) FederationImportWorkflowStateWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewFederationImportWorkflowStateRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// FederationImportWorkflowState Import one workflow row while preparing a Forge spoke
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /federation/provider-state/workflow-states/import (the `FederationImportWorkflowState` operationId).
+func (c *Client) FederationImportWorkflowState(ctx context.Context, body FederationImportWorkflowStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewFederationImportWorkflowStateRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// FederationGetDiffDescriptorWithBody Resolve a pull diff descriptor for a Forge spoke
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /federation/provider/diff-descriptor (the `FederationGetDiffDescriptor` operationId).
+func (c *Client) FederationGetDiffDescriptorWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewFederationGetDiffDescriptorRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// FederationGetDiffDescriptor Resolve a pull diff descriptor for a Forge spoke
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /federation/provider/diff-descriptor (the `FederationGetDiffDescriptor` operationId).
+func (c *Client) FederationGetDiffDescriptor(ctx context.Context, body FederationGetDiffDescriptorJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewFederationGetDiffDescriptorRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// FederationGetRepositoryDescriptorWithBody Resolve a repository descriptor for a Forge spoke
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /federation/provider/repository-descriptor (the `FederationGetRepositoryDescriptor` operationId).
+func (c *Client) FederationGetRepositoryDescriptorWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewFederationGetRepositoryDescriptorRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// FederationGetRepositoryDescriptor Resolve a repository descriptor for a Forge spoke
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /federation/provider/repository-descriptor (the `FederationGetRepositoryDescriptor` operationId).
+func (c *Client) FederationGetRepositoryDescriptor(ctx context.Context, body FederationGetRepositoryDescriptorJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewFederationGetRepositoryDescriptorRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// FederationGetProviderSettings Get hub-owned settings for a Forge spoke
+//
+// Corresponds with GET /federation/provider/settings (the `FederationGetProviderSettings` operationId).
+func (c *Client) FederationGetProviderSettings(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewFederationGetProviderSettingsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// FederationUpdateProviderSettingsWithBody Update hub-owned settings for a Forge spoke
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /federation/provider/settings (the `FederationUpdateProviderSettings` operationId).
+func (c *Client) FederationUpdateProviderSettingsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewFederationUpdateProviderSettingsRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// FederationUpdateProviderSettings Update hub-owned settings for a Forge spoke
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PUT /federation/provider/settings (the `FederationUpdateProviderSettings` operationId).
+func (c *Client) FederationUpdateProviderSettings(ctx context.Context, body FederationUpdateProviderSettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewFederationUpdateProviderSettingsRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// FederationSetWorkflowStateWithBody Set hub workflow state for a Forge spoke
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /federation/provider/workflow-state (the `FederationSetWorkflowState` operationId).
+func (c *Client) FederationSetWorkflowStateWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewFederationSetWorkflowStateRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// FederationSetWorkflowState Set hub workflow state for a Forge spoke
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PUT /federation/provider/workflow-state (the `FederationSetWorkflowState` operationId).
+func (c *Client) FederationSetWorkflowState(ctx context.Context, body FederationSetWorkflowStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewFederationSetWorkflowStateRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// FederationListWorkflowStatesWithBody List hub workflow states for a Forge spoke
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /federation/provider/workflow-states/query (the `FederationListWorkflowStates` operationId).
+func (c *Client) FederationListWorkflowStatesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewFederationListWorkflowStatesRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// FederationListWorkflowStates List hub workflow states for a Forge spoke
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /federation/provider/workflow-states/query (the `FederationListWorkflowStates` operationId).
+func (c *Client) FederationListWorkflowStates(ctx context.Context, body FederationListWorkflowStatesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewFederationListWorkflowStatesRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// FederationAutoAssignWorkspaceItemWithBody Apply hub assignment policy to a workspace item
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /federation/provider/workspace-auto-assign (the `FederationAutoAssignWorkspaceItem` operationId).
+func (c *Client) FederationAutoAssignWorkspaceItemWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewFederationAutoAssignWorkspaceItemRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// FederationAutoAssignWorkspaceItem Apply hub assignment policy to a workspace item
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /federation/provider/workspace-auto-assign (the `FederationAutoAssignWorkspaceItem` operationId).
+func (c *Client) FederationAutoAssignWorkspaceItem(ctx context.Context, body FederationAutoAssignWorkspaceItemJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewFederationAutoAssignWorkspaceItemRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// FederationResolveWorkspaceLaunchSpecWithBody Resolve current provider facts for a workspace launch
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /federation/provider/workspace-launch-spec (the `FederationResolveWorkspaceLaunchSpec` operationId).
+func (c *Client) FederationResolveWorkspaceLaunchSpecWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewFederationResolveWorkspaceLaunchSpecRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// FederationResolveWorkspaceLaunchSpec Resolve current provider facts for a workspace launch
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /federation/provider/workspace-launch-spec (the `FederationResolveWorkspaceLaunchSpec` operationId).
+func (c *Client) FederationResolveWorkspaceLaunchSpec(ctx context.Context, body FederationResolveWorkspaceLaunchSpecJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewFederationResolveWorkspaceLaunchSpecRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// FederationRefreshWorkspaceLaunchSpecWithBody Refresh provider facts for a Forge spoke workspace
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /federation/provider/workspace-launch-spec/refresh (the `FederationRefreshWorkspaceLaunchSpec` operationId).
+func (c *Client) FederationRefreshWorkspaceLaunchSpecWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewFederationRefreshWorkspaceLaunchSpecRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// FederationRefreshWorkspaceLaunchSpec Refresh provider facts for a Forge spoke workspace
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /federation/provider/workspace-launch-spec/refresh (the `FederationRefreshWorkspaceLaunchSpec` operationId).
+func (c *Client) FederationRefreshWorkspaceLaunchSpec(ctx context.Context, body FederationRefreshWorkspaceLaunchSpecJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewFederationRefreshWorkspaceLaunchSpecRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // CompleteFilesystemPath Complete a local filesystem path
 //
 // Corresponds with GET /filesystem/complete (the `CompleteFilesystemPath` operationId).
@@ -9356,6 +10975,55 @@ func (c *Client) CompleteFilesystemPath(ctx context.Context, params *CompleteFil
 // Corresponds with GET /filesystem/validate-repo (the `ValidateFilesystemRepo` operationId).
 func (c *Client) ValidateFilesystemRepo(ctx context.Context, params *ValidateFilesystemRepoParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewValidateFilesystemRepoRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateFleetEnrollmentTokenWithBody Create a one-time fleet enrollment token
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /fleet/enrollment-tokens (the `CreateFleetEnrollmentToken` operationId).
+func (c *Client) CreateFleetEnrollmentTokenWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateFleetEnrollmentTokenRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateFleetEnrollmentToken Create a one-time fleet enrollment token
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /fleet/enrollment-tokens (the `CreateFleetEnrollmentToken` operationId).
+func (c *Client) CreateFleetEnrollmentToken(ctx context.Context, body CreateFleetEnrollmentTokenJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateFleetEnrollmentTokenRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RevokeFederationEnrollment Revoke a federation member
+//
+// Corresponds with DELETE /fleet/enrollments/{enrollment_id} (the `RevokeFederationEnrollment` operationId).
+func (c *Client) RevokeFederationEnrollment(ctx context.Context, enrollmentId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRevokeFederationEnrollmentRequest(c.Server, enrollmentId)
 	if err != nil {
 		return nil, err
 	}
@@ -10282,6 +11950,89 @@ func (c *Client) RenameFleetWorkspaceRuntimeSession(ctx context.Context, hostKey
 // Corresponds with GET /fleet/hosts/{host_key}/workspaces/{id}/runtime/sessions/{session_key}/attach-spec (the `GetFleetWorkspaceRuntimeSessionAttachSpec` operationId).
 func (c *Client) GetFleetWorkspaceRuntimeSessionAttachSpec(ctx context.Context, hostKey string, id string, sessionKey string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetFleetWorkspaceRuntimeSessionAttachSpecRequest(c.Server, hostKey, id, sessionKey)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// JoinFederationWithBody Join this daemon to a federation hub
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /fleet/join (the `JoinFederation` operationId).
+func (c *Client) JoinFederationWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewJoinFederationRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// JoinFederation Join this daemon to a federation hub
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /fleet/join (the `JoinFederation` operationId).
+func (c *Client) JoinFederation(ctx context.Context, body JoinFederationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewJoinFederationRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PrepareFederationSpoke Quiesce this daemon and prepare it to become a fleet spoke
+//
+// Corresponds with POST /fleet/prepare-spoke (the `PrepareFederationSpoke` operationId).
+func (c *Client) PrepareFederationSpoke(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPrepareFederationSpokeRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// AbortFederationSpokePreparationWithBody Abort pending spoke preparation and restore standalone writes
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /fleet/prepare-spoke/abort (the `AbortFederationSpokePreparation` operationId).
+func (c *Client) AbortFederationSpokePreparationWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAbortFederationSpokePreparationRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// AbortFederationSpokePreparation Abort pending spoke preparation and restore standalone writes
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /fleet/prepare-spoke/abort (the `AbortFederationSpokePreparation` operationId).
+func (c *Client) AbortFederationSpokePreparation(ctx context.Context, body AbortFederationSpokePreparationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAbortFederationSpokePreparationRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -14790,55 +16541,6 @@ func (c *Client) UpdateFleetSettings(ctx context.Context, body UpdateFleetSettin
 	return c.Client.Do(req)
 }
 
-// GetFleetSshPeers List SSH fleet peers
-//
-// Corresponds with GET /settings/fleet/ssh-peers (the `GetFleetSshPeers` operationId).
-func (c *Client) GetFleetSshPeers(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetFleetSshPeersRequest(c.Server)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-// UpdateFleetSshPeersWithBody Replace SSH fleet peers
-//
-// Takes any type of body and a specified content type.
-//
-// Corresponds with PUT /settings/fleet/ssh-peers (the `UpdateFleetSshPeers` operationId).
-func (c *Client) UpdateFleetSshPeersWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewUpdateFleetSshPeersRequestWithBody(c.Server, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-// UpdateFleetSshPeers Replace SSH fleet peers
-//
-// Takes a body of the `application/json` content type.
-//
-// Corresponds with PUT /settings/fleet/ssh-peers (the `UpdateFleetSshPeers` operationId).
-func (c *Client) UpdateFleetSshPeers(ctx context.Context, body UpdateFleetSshPeersJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewUpdateFleetSshPeersRequest(c.Server, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
 // CreateRepoPresetWithBody Create repository preset
 //
 // Takes any type of body and a specified content type.
@@ -14927,6 +16629,21 @@ func (c *Client) UpdateRepoPreset(ctx context.Context, name string, body UpdateR
 // Corresponds with GET /snapshot (the `GetSnapshot` operationId).
 func (c *Client) GetSnapshot(ctx context.Context, params *GetSnapshotParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetSnapshotRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetSnapshotAggregate Read the hub's neutral fleet aggregate
+//
+// Corresponds with GET /snapshot/aggregate (the `GetSnapshotAggregate` operationId).
+func (c *Client) GetSnapshotAggregate(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSnapshotAggregateRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -17441,6 +19158,768 @@ func NewStreamEventsRequest(server string, params *StreamEventsParams) (*http.Re
 	return req, nil
 }
 
+// NewBeginFederationEnrollmentRequest calls the generic BeginFederationEnrollment builder with application/json body
+func NewBeginFederationEnrollmentRequest(server string, params *BeginFederationEnrollmentParams, body BeginFederationEnrollmentJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewBeginFederationEnrollmentRequestWithBody(server, params, "application/json", bodyReader)
+}
+
+// NewBeginFederationEnrollmentRequestWithBody constructs an http.Request for the BeginFederationEnrollment method, with any body, and a specified content type
+func NewBeginFederationEnrollmentRequestWithBody(server string, params *BeginFederationEnrollmentParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/federation/enrollments")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		if params.Authorization != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Authorization", *params.Authorization, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("Authorization", headerParam0)
+		}
+
+	}
+
+	return req, nil
+}
+
+// NewAbortFederationEnrollmentRequest constructs an http.Request for the AbortFederationEnrollment method
+func NewAbortFederationEnrollmentRequest(server string, enrollmentId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "enrollment_id", enrollmentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/federation/enrollments/%s/abort", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewActivateFederationEnrollmentRequest calls the generic ActivateFederationEnrollment builder with application/json body
+func NewActivateFederationEnrollmentRequest(server string, enrollmentId string, body ActivateFederationEnrollmentJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewActivateFederationEnrollmentRequestWithBody(server, enrollmentId, "application/json", bodyReader)
+}
+
+// NewActivateFederationEnrollmentRequestWithBody constructs an http.Request for the ActivateFederationEnrollment method, with any body, and a specified content type
+func NewActivateFederationEnrollmentRequestWithBody(server string, enrollmentId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "enrollment_id", enrollmentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/federation/enrollments/%s/activate", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewBeginFederationSpokePreparationRequest constructs an http.Request for the BeginFederationSpokePreparation method
+func NewBeginFederationSpokePreparationRequest(server string, enrollmentId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "enrollment_id", enrollmentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/federation/enrollments/%s/preparation/begin", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewSealFederationSpokePreparationRequest calls the generic SealFederationSpokePreparation builder with application/json body
+func NewSealFederationSpokePreparationRequest(server string, enrollmentId string, body SealFederationSpokePreparationJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSealFederationSpokePreparationRequestWithBody(server, enrollmentId, "application/json", bodyReader)
+}
+
+// NewSealFederationSpokePreparationRequestWithBody constructs an http.Request for the SealFederationSpokePreparation method, with any body, and a specified content type
+func NewSealFederationSpokePreparationRequestWithBody(server string, enrollmentId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "enrollment_id", enrollmentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/federation/enrollments/%s/preparation/seal", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewStreamFederationProviderEventsRequest constructs an http.Request for the StreamFederationProviderEvents method
+func NewStreamFederationProviderEventsRequest(server string, params *StreamFederationProviderEventsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/federation/events")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Since != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "since", *params.Since, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+
+		if params.XKennForgeFederationProtocol != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-Kenn-Forge-Federation-Protocol", *params.XKennForgeFederationProtocol, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("X-Kenn-Forge-Federation-Protocol", headerParam0)
+		}
+
+		if params.LastEventID != nil {
+			var headerParam1 string
+
+			headerParam1, err = runtime.StyleParamWithOptions("simple", false, "Last-Event-ID", *params.LastEventID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("Last-Event-ID", headerParam1)
+		}
+
+		if params.ContentLength != nil {
+			var headerParam2 string
+
+			headerParam2, err = runtime.StyleParamWithOptions("simple", false, "Content-Length", *params.ContentLength, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("Content-Length", headerParam2)
+		}
+
+	}
+
+	return req, nil
+}
+
+// NewGetFederationIdentityRequest constructs an http.Request for the GetFederationIdentity method
+func NewGetFederationIdentityRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/federation/identity")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewFederationImportReviewDraftRequest calls the generic FederationImportReviewDraft builder with application/json body
+func NewFederationImportReviewDraftRequest(server string, body FederationImportReviewDraftJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewFederationImportReviewDraftRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewFederationImportReviewDraftRequestWithBody constructs an http.Request for the FederationImportReviewDraft method, with any body, and a specified content type
+func NewFederationImportReviewDraftRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/federation/provider-state/review-drafts/import")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewFederationImportWorkflowStateRequest calls the generic FederationImportWorkflowState builder with application/json body
+func NewFederationImportWorkflowStateRequest(server string, body FederationImportWorkflowStateJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewFederationImportWorkflowStateRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewFederationImportWorkflowStateRequestWithBody constructs an http.Request for the FederationImportWorkflowState method, with any body, and a specified content type
+func NewFederationImportWorkflowStateRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/federation/provider-state/workflow-states/import")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewFederationGetDiffDescriptorRequest calls the generic FederationGetDiffDescriptor builder with application/json body
+func NewFederationGetDiffDescriptorRequest(server string, body FederationGetDiffDescriptorJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewFederationGetDiffDescriptorRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewFederationGetDiffDescriptorRequestWithBody constructs an http.Request for the FederationGetDiffDescriptor method, with any body, and a specified content type
+func NewFederationGetDiffDescriptorRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/federation/provider/diff-descriptor")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewFederationGetRepositoryDescriptorRequest calls the generic FederationGetRepositoryDescriptor builder with application/json body
+func NewFederationGetRepositoryDescriptorRequest(server string, body FederationGetRepositoryDescriptorJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewFederationGetRepositoryDescriptorRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewFederationGetRepositoryDescriptorRequestWithBody constructs an http.Request for the FederationGetRepositoryDescriptor method, with any body, and a specified content type
+func NewFederationGetRepositoryDescriptorRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/federation/provider/repository-descriptor")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewFederationGetProviderSettingsRequest constructs an http.Request for the FederationGetProviderSettings method
+func NewFederationGetProviderSettingsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/federation/provider/settings")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewFederationUpdateProviderSettingsRequest calls the generic FederationUpdateProviderSettings builder with application/json body
+func NewFederationUpdateProviderSettingsRequest(server string, body FederationUpdateProviderSettingsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewFederationUpdateProviderSettingsRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewFederationUpdateProviderSettingsRequestWithBody constructs an http.Request for the FederationUpdateProviderSettings method, with any body, and a specified content type
+func NewFederationUpdateProviderSettingsRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/federation/provider/settings")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewFederationSetWorkflowStateRequest calls the generic FederationSetWorkflowState builder with application/json body
+func NewFederationSetWorkflowStateRequest(server string, body FederationSetWorkflowStateJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewFederationSetWorkflowStateRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewFederationSetWorkflowStateRequestWithBody constructs an http.Request for the FederationSetWorkflowState method, with any body, and a specified content type
+func NewFederationSetWorkflowStateRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/federation/provider/workflow-state")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewFederationListWorkflowStatesRequest calls the generic FederationListWorkflowStates builder with application/json body
+func NewFederationListWorkflowStatesRequest(server string, body FederationListWorkflowStatesJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewFederationListWorkflowStatesRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewFederationListWorkflowStatesRequestWithBody constructs an http.Request for the FederationListWorkflowStates method, with any body, and a specified content type
+func NewFederationListWorkflowStatesRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/federation/provider/workflow-states/query")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewFederationAutoAssignWorkspaceItemRequest calls the generic FederationAutoAssignWorkspaceItem builder with application/json body
+func NewFederationAutoAssignWorkspaceItemRequest(server string, body FederationAutoAssignWorkspaceItemJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewFederationAutoAssignWorkspaceItemRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewFederationAutoAssignWorkspaceItemRequestWithBody constructs an http.Request for the FederationAutoAssignWorkspaceItem method, with any body, and a specified content type
+func NewFederationAutoAssignWorkspaceItemRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/federation/provider/workspace-auto-assign")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewFederationResolveWorkspaceLaunchSpecRequest calls the generic FederationResolveWorkspaceLaunchSpec builder with application/json body
+func NewFederationResolveWorkspaceLaunchSpecRequest(server string, body FederationResolveWorkspaceLaunchSpecJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewFederationResolveWorkspaceLaunchSpecRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewFederationResolveWorkspaceLaunchSpecRequestWithBody constructs an http.Request for the FederationResolveWorkspaceLaunchSpec method, with any body, and a specified content type
+func NewFederationResolveWorkspaceLaunchSpecRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/federation/provider/workspace-launch-spec")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewFederationRefreshWorkspaceLaunchSpecRequest calls the generic FederationRefreshWorkspaceLaunchSpec builder with application/json body
+func NewFederationRefreshWorkspaceLaunchSpecRequest(server string, body FederationRefreshWorkspaceLaunchSpecJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewFederationRefreshWorkspaceLaunchSpecRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewFederationRefreshWorkspaceLaunchSpecRequestWithBody constructs an http.Request for the FederationRefreshWorkspaceLaunchSpec method, with any body, and a specified content type
+func NewFederationRefreshWorkspaceLaunchSpecRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/federation/provider/workspace-launch-spec/refresh")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewCompleteFilesystemPathRequest constructs an http.Request for the CompleteFilesystemPath method
 func NewCompleteFilesystemPathRequest(server string, params *CompleteFilesystemPathParams) (*http.Request, error) {
 	var err error
@@ -17534,6 +20013,80 @@ func NewValidateFilesystemRepoRequest(server string, params *ValidateFilesystemR
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateFleetEnrollmentTokenRequest calls the generic CreateFleetEnrollmentToken builder with application/json body
+func NewCreateFleetEnrollmentTokenRequest(server string, body CreateFleetEnrollmentTokenJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateFleetEnrollmentTokenRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateFleetEnrollmentTokenRequestWithBody constructs an http.Request for the CreateFleetEnrollmentToken method, with any body, and a specified content type
+func NewCreateFleetEnrollmentTokenRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/enrollment-tokens")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewRevokeFederationEnrollmentRequest constructs an http.Request for the RevokeFederationEnrollment method
+func NewRevokeFederationEnrollmentRequest(server string, enrollmentId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "enrollment_id", enrollmentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/enrollments/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -20001,6 +22554,113 @@ func NewGetFleetWorkspaceRuntimeSessionAttachSpecRequest(server string, hostKey 
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewJoinFederationRequest calls the generic JoinFederation builder with application/json body
+func NewJoinFederationRequest(server string, body JoinFederationJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewJoinFederationRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewJoinFederationRequestWithBody constructs an http.Request for the JoinFederation method, with any body, and a specified content type
+func NewJoinFederationRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/join")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewPrepareFederationSpokeRequest constructs an http.Request for the PrepareFederationSpoke method
+func NewPrepareFederationSpokeRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/prepare-spoke")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewAbortFederationSpokePreparationRequest calls the generic AbortFederationSpokePreparation builder with application/json body
+func NewAbortFederationSpokePreparationRequest(server string, body AbortFederationSpokePreparationJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewAbortFederationSpokePreparationRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewAbortFederationSpokePreparationRequestWithBody constructs an http.Request for the AbortFederationSpokePreparation method, with any body, and a specified content type
+func NewAbortFederationSpokePreparationRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/prepare-spoke/abort")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -33133,73 +35793,6 @@ func NewUpdateFleetSettingsRequestWithBody(server string, contentType string, bo
 	return req, nil
 }
 
-// NewGetFleetSshPeersRequest constructs an http.Request for the GetFleetSshPeers method
-func NewGetFleetSshPeersRequest(server string) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/settings/fleet/ssh-peers")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewUpdateFleetSshPeersRequest calls the generic UpdateFleetSshPeers builder with application/json body
-func NewUpdateFleetSshPeersRequest(server string, body UpdateFleetSshPeersJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewUpdateFleetSshPeersRequestWithBody(server, "application/json", bodyReader)
-}
-
-// NewUpdateFleetSshPeersRequestWithBody constructs an http.Request for the UpdateFleetSshPeers method, with any body, and a specified content type
-func NewUpdateFleetSshPeersRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/settings/fleet/ssh-peers")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
 // NewCreateRepoPresetRequest calls the generic CreateRepoPreset builder with application/json body
 func NewCreateRepoPresetRequest(server string, body CreateRepoPresetJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -33365,6 +35958,33 @@ func NewGetSnapshotRequest(server string, params *GetSnapshotParams) (*http.Requ
 			rawQueryFragments = append(rawQueryFragments, encoded)
 		}
 		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetSnapshotAggregateRequest constructs an http.Request for the GetSnapshotAggregate method
+func NewGetSnapshotAggregateRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/snapshot/aggregate")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
@@ -35254,11 +37874,99 @@ type ClientWithResponsesInterface interface {
 	// SearchDocsWithResponse request
 	SearchDocsWithResponse(ctx context.Context, params *SearchDocsParams, reqEditors ...RequestEditorFn) (*SearchDocsResponse, error)
 
+	// BeginFederationEnrollmentWithBodyWithResponse request with any body
+	BeginFederationEnrollmentWithBodyWithResponse(ctx context.Context, params *BeginFederationEnrollmentParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*BeginFederationEnrollmentResponse, error)
+
+	BeginFederationEnrollmentWithResponse(ctx context.Context, params *BeginFederationEnrollmentParams, body BeginFederationEnrollmentJSONRequestBody, reqEditors ...RequestEditorFn) (*BeginFederationEnrollmentResponse, error)
+
+	// AbortFederationEnrollmentWithResponse request
+	AbortFederationEnrollmentWithResponse(ctx context.Context, enrollmentId string, reqEditors ...RequestEditorFn) (*AbortFederationEnrollmentResponse, error)
+
+	// ActivateFederationEnrollmentWithBodyWithResponse request with any body
+	ActivateFederationEnrollmentWithBodyWithResponse(ctx context.Context, enrollmentId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ActivateFederationEnrollmentResponse, error)
+
+	ActivateFederationEnrollmentWithResponse(ctx context.Context, enrollmentId string, body ActivateFederationEnrollmentJSONRequestBody, reqEditors ...RequestEditorFn) (*ActivateFederationEnrollmentResponse, error)
+
+	// BeginFederationSpokePreparationWithResponse request
+	BeginFederationSpokePreparationWithResponse(ctx context.Context, enrollmentId string, reqEditors ...RequestEditorFn) (*BeginFederationSpokePreparationResponse, error)
+
+	// SealFederationSpokePreparationWithBodyWithResponse request with any body
+	SealFederationSpokePreparationWithBodyWithResponse(ctx context.Context, enrollmentId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SealFederationSpokePreparationResponse, error)
+
+	SealFederationSpokePreparationWithResponse(ctx context.Context, enrollmentId string, body SealFederationSpokePreparationJSONRequestBody, reqEditors ...RequestEditorFn) (*SealFederationSpokePreparationResponse, error)
+
+	// StreamFederationProviderEventsWithResponse request
+	StreamFederationProviderEventsWithResponse(ctx context.Context, params *StreamFederationProviderEventsParams, reqEditors ...RequestEditorFn) (*StreamFederationProviderEventsResponse, error)
+
+	// GetFederationIdentityWithResponse request
+	GetFederationIdentityWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetFederationIdentityResponse, error)
+
+	// FederationImportReviewDraftWithBodyWithResponse request with any body
+	FederationImportReviewDraftWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*FederationImportReviewDraftResponse, error)
+
+	FederationImportReviewDraftWithResponse(ctx context.Context, body FederationImportReviewDraftJSONRequestBody, reqEditors ...RequestEditorFn) (*FederationImportReviewDraftResponse, error)
+
+	// FederationImportWorkflowStateWithBodyWithResponse request with any body
+	FederationImportWorkflowStateWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*FederationImportWorkflowStateResponse, error)
+
+	FederationImportWorkflowStateWithResponse(ctx context.Context, body FederationImportWorkflowStateJSONRequestBody, reqEditors ...RequestEditorFn) (*FederationImportWorkflowStateResponse, error)
+
+	// FederationGetDiffDescriptorWithBodyWithResponse request with any body
+	FederationGetDiffDescriptorWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*FederationGetDiffDescriptorResponse, error)
+
+	FederationGetDiffDescriptorWithResponse(ctx context.Context, body FederationGetDiffDescriptorJSONRequestBody, reqEditors ...RequestEditorFn) (*FederationGetDiffDescriptorResponse, error)
+
+	// FederationGetRepositoryDescriptorWithBodyWithResponse request with any body
+	FederationGetRepositoryDescriptorWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*FederationGetRepositoryDescriptorResponse, error)
+
+	FederationGetRepositoryDescriptorWithResponse(ctx context.Context, body FederationGetRepositoryDescriptorJSONRequestBody, reqEditors ...RequestEditorFn) (*FederationGetRepositoryDescriptorResponse, error)
+
+	// FederationGetProviderSettingsWithResponse request
+	FederationGetProviderSettingsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*FederationGetProviderSettingsResponse, error)
+
+	// FederationUpdateProviderSettingsWithBodyWithResponse request with any body
+	FederationUpdateProviderSettingsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*FederationUpdateProviderSettingsResponse, error)
+
+	FederationUpdateProviderSettingsWithResponse(ctx context.Context, body FederationUpdateProviderSettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*FederationUpdateProviderSettingsResponse, error)
+
+	// FederationSetWorkflowStateWithBodyWithResponse request with any body
+	FederationSetWorkflowStateWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*FederationSetWorkflowStateResponse, error)
+
+	FederationSetWorkflowStateWithResponse(ctx context.Context, body FederationSetWorkflowStateJSONRequestBody, reqEditors ...RequestEditorFn) (*FederationSetWorkflowStateResponse, error)
+
+	// FederationListWorkflowStatesWithBodyWithResponse request with any body
+	FederationListWorkflowStatesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*FederationListWorkflowStatesResponse, error)
+
+	FederationListWorkflowStatesWithResponse(ctx context.Context, body FederationListWorkflowStatesJSONRequestBody, reqEditors ...RequestEditorFn) (*FederationListWorkflowStatesResponse, error)
+
+	// FederationAutoAssignWorkspaceItemWithBodyWithResponse request with any body
+	FederationAutoAssignWorkspaceItemWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*FederationAutoAssignWorkspaceItemResponse, error)
+
+	FederationAutoAssignWorkspaceItemWithResponse(ctx context.Context, body FederationAutoAssignWorkspaceItemJSONRequestBody, reqEditors ...RequestEditorFn) (*FederationAutoAssignWorkspaceItemResponse, error)
+
+	// FederationResolveWorkspaceLaunchSpecWithBodyWithResponse request with any body
+	FederationResolveWorkspaceLaunchSpecWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*FederationResolveWorkspaceLaunchSpecResponse, error)
+
+	FederationResolveWorkspaceLaunchSpecWithResponse(ctx context.Context, body FederationResolveWorkspaceLaunchSpecJSONRequestBody, reqEditors ...RequestEditorFn) (*FederationResolveWorkspaceLaunchSpecResponse, error)
+
+	// FederationRefreshWorkspaceLaunchSpecWithBodyWithResponse request with any body
+	FederationRefreshWorkspaceLaunchSpecWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*FederationRefreshWorkspaceLaunchSpecResponse, error)
+
+	FederationRefreshWorkspaceLaunchSpecWithResponse(ctx context.Context, body FederationRefreshWorkspaceLaunchSpecJSONRequestBody, reqEditors ...RequestEditorFn) (*FederationRefreshWorkspaceLaunchSpecResponse, error)
+
 	// CompleteFilesystemPathWithResponse request
 	CompleteFilesystemPathWithResponse(ctx context.Context, params *CompleteFilesystemPathParams, reqEditors ...RequestEditorFn) (*CompleteFilesystemPathResponse, error)
 
 	// ValidateFilesystemRepoWithResponse request
 	ValidateFilesystemRepoWithResponse(ctx context.Context, params *ValidateFilesystemRepoParams, reqEditors ...RequestEditorFn) (*ValidateFilesystemRepoResponse, error)
+
+	// CreateFleetEnrollmentTokenWithBodyWithResponse request with any body
+	CreateFleetEnrollmentTokenWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateFleetEnrollmentTokenResponse, error)
+
+	CreateFleetEnrollmentTokenWithResponse(ctx context.Context, body CreateFleetEnrollmentTokenJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateFleetEnrollmentTokenResponse, error)
+
+	// RevokeFederationEnrollmentWithResponse request
+	RevokeFederationEnrollmentWithResponse(ctx context.Context, enrollmentId string, reqEditors ...RequestEditorFn) (*RevokeFederationEnrollmentResponse, error)
 
 	// CompleteFleetFilesystemPathWithResponse request
 	CompleteFleetFilesystemPathWithResponse(ctx context.Context, hostKey string, params *CompleteFleetFilesystemPathParams, reqEditors ...RequestEditorFn) (*CompleteFleetFilesystemPathResponse, error)
@@ -35419,6 +38127,19 @@ type ClientWithResponsesInterface interface {
 
 	// GetFleetWorkspaceRuntimeSessionAttachSpecWithResponse request
 	GetFleetWorkspaceRuntimeSessionAttachSpecWithResponse(ctx context.Context, hostKey string, id string, sessionKey string, reqEditors ...RequestEditorFn) (*GetFleetWorkspaceRuntimeSessionAttachSpecResponse, error)
+
+	// JoinFederationWithBodyWithResponse request with any body
+	JoinFederationWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*JoinFederationResponse, error)
+
+	JoinFederationWithResponse(ctx context.Context, body JoinFederationJSONRequestBody, reqEditors ...RequestEditorFn) (*JoinFederationResponse, error)
+
+	// PrepareFederationSpokeWithResponse request
+	PrepareFederationSpokeWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*PrepareFederationSpokeResponse, error)
+
+	// AbortFederationSpokePreparationWithBodyWithResponse request with any body
+	AbortFederationSpokePreparationWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AbortFederationSpokePreparationResponse, error)
+
+	AbortFederationSpokePreparationWithResponse(ctx context.Context, body AbortFederationSpokePreparationJSONRequestBody, reqEditors ...RequestEditorFn) (*AbortFederationSpokePreparationResponse, error)
 
 	// CreateIssueOnHostWithBodyWithResponse request with any body
 	CreateIssueOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateIssueOnHostResponse, error)
@@ -36173,14 +38894,6 @@ type ClientWithResponsesInterface interface {
 
 	UpdateFleetSettingsWithResponse(ctx context.Context, body UpdateFleetSettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateFleetSettingsResponse, error)
 
-	// GetFleetSshPeersWithResponse request
-	GetFleetSshPeersWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetFleetSshPeersResponse, error)
-
-	// UpdateFleetSshPeersWithBodyWithResponse request with any body
-	UpdateFleetSshPeersWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateFleetSshPeersResponse, error)
-
-	UpdateFleetSshPeersWithResponse(ctx context.Context, body UpdateFleetSshPeersJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateFleetSshPeersResponse, error)
-
 	// CreateRepoPresetWithBodyWithResponse request with any body
 	CreateRepoPresetWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateRepoPresetResponse, error)
 
@@ -36196,6 +38909,9 @@ type ClientWithResponsesInterface interface {
 
 	// GetSnapshotWithResponse request
 	GetSnapshotWithResponse(ctx context.Context, params *GetSnapshotParams, reqEditors ...RequestEditorFn) (*GetSnapshotResponse, error)
+
+	// GetSnapshotAggregateWithResponse request
+	GetSnapshotAggregateWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSnapshotAggregateResponse, error)
 
 	// GetSnapshotRawWithResponse request
 	GetSnapshotRawWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSnapshotRawResponse, error)
@@ -36947,6 +39663,417 @@ func (r SearchDocsResponse) StatusCode() int {
 	return 0
 }
 
+type BeginFederationEnrollmentResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON201                       *JoinResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r BeginFederationEnrollmentResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r BeginFederationEnrollmentResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type AbortFederationEnrollmentResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r AbortFederationEnrollmentResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r AbortFederationEnrollmentResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ActivateFederationEnrollmentResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *Enrollment
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ActivateFederationEnrollmentResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ActivateFederationEnrollmentResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type BeginFederationSpokePreparationResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *Enrollment
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r BeginFederationSpokePreparationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r BeginFederationSpokePreparationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type SealFederationSpokePreparationResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *SpokePreparationSeal
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r SealFederationSpokePreparationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SealFederationSpokePreparationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type StreamFederationProviderEventsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r StreamFederationProviderEventsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r StreamFederationProviderEventsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetFederationIdentityResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *FederationIdentityOutputBody
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetFederationIdentityResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetFederationIdentityResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type FederationImportReviewDraftResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ProviderStateImportResult
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r FederationImportReviewDraftResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r FederationImportReviewDraftResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type FederationImportWorkflowStateResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ProviderStateImportResult
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r FederationImportWorkflowStateResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r FederationImportWorkflowStateResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type FederationGetDiffDescriptorResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *DiffDescriptor
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r FederationGetDiffDescriptorResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r FederationGetDiffDescriptorResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type FederationGetRepositoryDescriptorResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *RepositoryDescriptor
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r FederationGetRepositoryDescriptorResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r FederationGetRepositoryDescriptorResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type FederationGetProviderSettingsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ProviderSettingsResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r FederationGetProviderSettingsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r FederationGetProviderSettingsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type FederationUpdateProviderSettingsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ProviderSettingsResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r FederationUpdateProviderSettingsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r FederationUpdateProviderSettingsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type FederationSetWorkflowStateResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *FederationWorkflowMutation
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r FederationSetWorkflowStateResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r FederationSetWorkflowStateResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type FederationListWorkflowStatesResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *FederationWorkflowPage
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r FederationListWorkflowStatesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r FederationListWorkflowStatesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type FederationAutoAssignWorkspaceItemResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r FederationAutoAssignWorkspaceItemResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r FederationAutoAssignWorkspaceItemResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type FederationResolveWorkspaceLaunchSpecResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *WorkspaceLaunchSpec
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r FederationResolveWorkspaceLaunchSpecResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r FederationResolveWorkspaceLaunchSpecResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type FederationRefreshWorkspaceLaunchSpecResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *WorkspaceLaunchSpec
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r FederationRefreshWorkspaceLaunchSpecResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r FederationRefreshWorkspaceLaunchSpecResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type CompleteFilesystemPathResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -36987,6 +40114,51 @@ func (r ValidateFilesystemRepoResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r ValidateFilesystemRepoResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CreateFleetEnrollmentTokenResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON201                       *EnrollmentToken
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateFleetEnrollmentTokenResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateFleetEnrollmentTokenResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type RevokeFederationEnrollmentResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r RevokeFederationEnrollmentResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RevokeFederationEnrollmentResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -37999,6 +41171,75 @@ func (r GetFleetWorkspaceRuntimeSessionAttachSpecResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetFleetWorkspaceRuntimeSessionAttachSpecResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type JoinFederationResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *LocalEnrollment
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r JoinFederationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r JoinFederationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PrepareFederationSpokeResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *SpokePreparationReport
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r PrepareFederationSpokeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PrepareFederationSpokeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type AbortFederationSpokePreparationResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *SpokePreparationAbortReport
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r AbortFederationSpokePreparationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r AbortFederationSpokePreparationResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -42500,52 +45741,6 @@ func (r UpdateFleetSettingsResponse) StatusCode() int {
 	return 0
 }
 
-type GetFleetSshPeersResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *FleetSSHPeersBody
-	ApplicationproblemJSONDefault *ProblemError
-}
-
-// Status returns HTTPResponse.Status
-func (r GetFleetSshPeersResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetFleetSshPeersResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type UpdateFleetSshPeersResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *FleetSSHPeersBody
-	ApplicationproblemJSONDefault *ProblemError
-}
-
-// Status returns HTTPResponse.Status
-func (r UpdateFleetSshPeersResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r UpdateFleetSshPeersResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
 type CreateRepoPresetResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -42632,6 +45827,29 @@ func (r GetSnapshotResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetSnapshotResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetSnapshotAggregateResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *NeutralSnapshot
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetSnapshotAggregateResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetSnapshotAggregateResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -43796,6 +47014,272 @@ func (c *ClientWithResponses) SearchDocsWithResponse(ctx context.Context, params
 	return ParseSearchDocsResponse(rsp)
 }
 
+// BeginFederationEnrollmentWithBodyWithResponse request with arbitrary body returning *BeginFederationEnrollmentResponse
+func (c *ClientWithResponses) BeginFederationEnrollmentWithBodyWithResponse(ctx context.Context, params *BeginFederationEnrollmentParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*BeginFederationEnrollmentResponse, error) {
+	rsp, err := c.BeginFederationEnrollmentWithBody(ctx, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseBeginFederationEnrollmentResponse(rsp)
+}
+
+func (c *ClientWithResponses) BeginFederationEnrollmentWithResponse(ctx context.Context, params *BeginFederationEnrollmentParams, body BeginFederationEnrollmentJSONRequestBody, reqEditors ...RequestEditorFn) (*BeginFederationEnrollmentResponse, error) {
+	rsp, err := c.BeginFederationEnrollment(ctx, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseBeginFederationEnrollmentResponse(rsp)
+}
+
+// AbortFederationEnrollmentWithResponse request returning *AbortFederationEnrollmentResponse
+func (c *ClientWithResponses) AbortFederationEnrollmentWithResponse(ctx context.Context, enrollmentId string, reqEditors ...RequestEditorFn) (*AbortFederationEnrollmentResponse, error) {
+	rsp, err := c.AbortFederationEnrollment(ctx, enrollmentId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAbortFederationEnrollmentResponse(rsp)
+}
+
+// ActivateFederationEnrollmentWithBodyWithResponse request with arbitrary body returning *ActivateFederationEnrollmentResponse
+func (c *ClientWithResponses) ActivateFederationEnrollmentWithBodyWithResponse(ctx context.Context, enrollmentId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ActivateFederationEnrollmentResponse, error) {
+	rsp, err := c.ActivateFederationEnrollmentWithBody(ctx, enrollmentId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseActivateFederationEnrollmentResponse(rsp)
+}
+
+func (c *ClientWithResponses) ActivateFederationEnrollmentWithResponse(ctx context.Context, enrollmentId string, body ActivateFederationEnrollmentJSONRequestBody, reqEditors ...RequestEditorFn) (*ActivateFederationEnrollmentResponse, error) {
+	rsp, err := c.ActivateFederationEnrollment(ctx, enrollmentId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseActivateFederationEnrollmentResponse(rsp)
+}
+
+// BeginFederationSpokePreparationWithResponse request returning *BeginFederationSpokePreparationResponse
+func (c *ClientWithResponses) BeginFederationSpokePreparationWithResponse(ctx context.Context, enrollmentId string, reqEditors ...RequestEditorFn) (*BeginFederationSpokePreparationResponse, error) {
+	rsp, err := c.BeginFederationSpokePreparation(ctx, enrollmentId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseBeginFederationSpokePreparationResponse(rsp)
+}
+
+// SealFederationSpokePreparationWithBodyWithResponse request with arbitrary body returning *SealFederationSpokePreparationResponse
+func (c *ClientWithResponses) SealFederationSpokePreparationWithBodyWithResponse(ctx context.Context, enrollmentId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SealFederationSpokePreparationResponse, error) {
+	rsp, err := c.SealFederationSpokePreparationWithBody(ctx, enrollmentId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSealFederationSpokePreparationResponse(rsp)
+}
+
+func (c *ClientWithResponses) SealFederationSpokePreparationWithResponse(ctx context.Context, enrollmentId string, body SealFederationSpokePreparationJSONRequestBody, reqEditors ...RequestEditorFn) (*SealFederationSpokePreparationResponse, error) {
+	rsp, err := c.SealFederationSpokePreparation(ctx, enrollmentId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSealFederationSpokePreparationResponse(rsp)
+}
+
+// StreamFederationProviderEventsWithResponse request returning *StreamFederationProviderEventsResponse
+func (c *ClientWithResponses) StreamFederationProviderEventsWithResponse(ctx context.Context, params *StreamFederationProviderEventsParams, reqEditors ...RequestEditorFn) (*StreamFederationProviderEventsResponse, error) {
+	rsp, err := c.StreamFederationProviderEvents(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseStreamFederationProviderEventsResponse(rsp)
+}
+
+// GetFederationIdentityWithResponse request returning *GetFederationIdentityResponse
+func (c *ClientWithResponses) GetFederationIdentityWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetFederationIdentityResponse, error) {
+	rsp, err := c.GetFederationIdentity(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetFederationIdentityResponse(rsp)
+}
+
+// FederationImportReviewDraftWithBodyWithResponse request with arbitrary body returning *FederationImportReviewDraftResponse
+func (c *ClientWithResponses) FederationImportReviewDraftWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*FederationImportReviewDraftResponse, error) {
+	rsp, err := c.FederationImportReviewDraftWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseFederationImportReviewDraftResponse(rsp)
+}
+
+func (c *ClientWithResponses) FederationImportReviewDraftWithResponse(ctx context.Context, body FederationImportReviewDraftJSONRequestBody, reqEditors ...RequestEditorFn) (*FederationImportReviewDraftResponse, error) {
+	rsp, err := c.FederationImportReviewDraft(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseFederationImportReviewDraftResponse(rsp)
+}
+
+// FederationImportWorkflowStateWithBodyWithResponse request with arbitrary body returning *FederationImportWorkflowStateResponse
+func (c *ClientWithResponses) FederationImportWorkflowStateWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*FederationImportWorkflowStateResponse, error) {
+	rsp, err := c.FederationImportWorkflowStateWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseFederationImportWorkflowStateResponse(rsp)
+}
+
+func (c *ClientWithResponses) FederationImportWorkflowStateWithResponse(ctx context.Context, body FederationImportWorkflowStateJSONRequestBody, reqEditors ...RequestEditorFn) (*FederationImportWorkflowStateResponse, error) {
+	rsp, err := c.FederationImportWorkflowState(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseFederationImportWorkflowStateResponse(rsp)
+}
+
+// FederationGetDiffDescriptorWithBodyWithResponse request with arbitrary body returning *FederationGetDiffDescriptorResponse
+func (c *ClientWithResponses) FederationGetDiffDescriptorWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*FederationGetDiffDescriptorResponse, error) {
+	rsp, err := c.FederationGetDiffDescriptorWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseFederationGetDiffDescriptorResponse(rsp)
+}
+
+func (c *ClientWithResponses) FederationGetDiffDescriptorWithResponse(ctx context.Context, body FederationGetDiffDescriptorJSONRequestBody, reqEditors ...RequestEditorFn) (*FederationGetDiffDescriptorResponse, error) {
+	rsp, err := c.FederationGetDiffDescriptor(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseFederationGetDiffDescriptorResponse(rsp)
+}
+
+// FederationGetRepositoryDescriptorWithBodyWithResponse request with arbitrary body returning *FederationGetRepositoryDescriptorResponse
+func (c *ClientWithResponses) FederationGetRepositoryDescriptorWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*FederationGetRepositoryDescriptorResponse, error) {
+	rsp, err := c.FederationGetRepositoryDescriptorWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseFederationGetRepositoryDescriptorResponse(rsp)
+}
+
+func (c *ClientWithResponses) FederationGetRepositoryDescriptorWithResponse(ctx context.Context, body FederationGetRepositoryDescriptorJSONRequestBody, reqEditors ...RequestEditorFn) (*FederationGetRepositoryDescriptorResponse, error) {
+	rsp, err := c.FederationGetRepositoryDescriptor(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseFederationGetRepositoryDescriptorResponse(rsp)
+}
+
+// FederationGetProviderSettingsWithResponse request returning *FederationGetProviderSettingsResponse
+func (c *ClientWithResponses) FederationGetProviderSettingsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*FederationGetProviderSettingsResponse, error) {
+	rsp, err := c.FederationGetProviderSettings(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseFederationGetProviderSettingsResponse(rsp)
+}
+
+// FederationUpdateProviderSettingsWithBodyWithResponse request with arbitrary body returning *FederationUpdateProviderSettingsResponse
+func (c *ClientWithResponses) FederationUpdateProviderSettingsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*FederationUpdateProviderSettingsResponse, error) {
+	rsp, err := c.FederationUpdateProviderSettingsWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseFederationUpdateProviderSettingsResponse(rsp)
+}
+
+func (c *ClientWithResponses) FederationUpdateProviderSettingsWithResponse(ctx context.Context, body FederationUpdateProviderSettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*FederationUpdateProviderSettingsResponse, error) {
+	rsp, err := c.FederationUpdateProviderSettings(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseFederationUpdateProviderSettingsResponse(rsp)
+}
+
+// FederationSetWorkflowStateWithBodyWithResponse request with arbitrary body returning *FederationSetWorkflowStateResponse
+func (c *ClientWithResponses) FederationSetWorkflowStateWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*FederationSetWorkflowStateResponse, error) {
+	rsp, err := c.FederationSetWorkflowStateWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseFederationSetWorkflowStateResponse(rsp)
+}
+
+func (c *ClientWithResponses) FederationSetWorkflowStateWithResponse(ctx context.Context, body FederationSetWorkflowStateJSONRequestBody, reqEditors ...RequestEditorFn) (*FederationSetWorkflowStateResponse, error) {
+	rsp, err := c.FederationSetWorkflowState(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseFederationSetWorkflowStateResponse(rsp)
+}
+
+// FederationListWorkflowStatesWithBodyWithResponse request with arbitrary body returning *FederationListWorkflowStatesResponse
+func (c *ClientWithResponses) FederationListWorkflowStatesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*FederationListWorkflowStatesResponse, error) {
+	rsp, err := c.FederationListWorkflowStatesWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseFederationListWorkflowStatesResponse(rsp)
+}
+
+func (c *ClientWithResponses) FederationListWorkflowStatesWithResponse(ctx context.Context, body FederationListWorkflowStatesJSONRequestBody, reqEditors ...RequestEditorFn) (*FederationListWorkflowStatesResponse, error) {
+	rsp, err := c.FederationListWorkflowStates(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseFederationListWorkflowStatesResponse(rsp)
+}
+
+// FederationAutoAssignWorkspaceItemWithBodyWithResponse request with arbitrary body returning *FederationAutoAssignWorkspaceItemResponse
+func (c *ClientWithResponses) FederationAutoAssignWorkspaceItemWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*FederationAutoAssignWorkspaceItemResponse, error) {
+	rsp, err := c.FederationAutoAssignWorkspaceItemWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseFederationAutoAssignWorkspaceItemResponse(rsp)
+}
+
+func (c *ClientWithResponses) FederationAutoAssignWorkspaceItemWithResponse(ctx context.Context, body FederationAutoAssignWorkspaceItemJSONRequestBody, reqEditors ...RequestEditorFn) (*FederationAutoAssignWorkspaceItemResponse, error) {
+	rsp, err := c.FederationAutoAssignWorkspaceItem(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseFederationAutoAssignWorkspaceItemResponse(rsp)
+}
+
+// FederationResolveWorkspaceLaunchSpecWithBodyWithResponse request with arbitrary body returning *FederationResolveWorkspaceLaunchSpecResponse
+func (c *ClientWithResponses) FederationResolveWorkspaceLaunchSpecWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*FederationResolveWorkspaceLaunchSpecResponse, error) {
+	rsp, err := c.FederationResolveWorkspaceLaunchSpecWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseFederationResolveWorkspaceLaunchSpecResponse(rsp)
+}
+
+func (c *ClientWithResponses) FederationResolveWorkspaceLaunchSpecWithResponse(ctx context.Context, body FederationResolveWorkspaceLaunchSpecJSONRequestBody, reqEditors ...RequestEditorFn) (*FederationResolveWorkspaceLaunchSpecResponse, error) {
+	rsp, err := c.FederationResolveWorkspaceLaunchSpec(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseFederationResolveWorkspaceLaunchSpecResponse(rsp)
+}
+
+// FederationRefreshWorkspaceLaunchSpecWithBodyWithResponse request with arbitrary body returning *FederationRefreshWorkspaceLaunchSpecResponse
+func (c *ClientWithResponses) FederationRefreshWorkspaceLaunchSpecWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*FederationRefreshWorkspaceLaunchSpecResponse, error) {
+	rsp, err := c.FederationRefreshWorkspaceLaunchSpecWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseFederationRefreshWorkspaceLaunchSpecResponse(rsp)
+}
+
+func (c *ClientWithResponses) FederationRefreshWorkspaceLaunchSpecWithResponse(ctx context.Context, body FederationRefreshWorkspaceLaunchSpecJSONRequestBody, reqEditors ...RequestEditorFn) (*FederationRefreshWorkspaceLaunchSpecResponse, error) {
+	rsp, err := c.FederationRefreshWorkspaceLaunchSpec(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseFederationRefreshWorkspaceLaunchSpecResponse(rsp)
+}
+
 // CompleteFilesystemPathWithResponse request returning *CompleteFilesystemPathResponse
 func (c *ClientWithResponses) CompleteFilesystemPathWithResponse(ctx context.Context, params *CompleteFilesystemPathParams, reqEditors ...RequestEditorFn) (*CompleteFilesystemPathResponse, error) {
 	rsp, err := c.CompleteFilesystemPath(ctx, params, reqEditors...)
@@ -43812,6 +47296,32 @@ func (c *ClientWithResponses) ValidateFilesystemRepoWithResponse(ctx context.Con
 		return nil, err
 	}
 	return ParseValidateFilesystemRepoResponse(rsp)
+}
+
+// CreateFleetEnrollmentTokenWithBodyWithResponse request with arbitrary body returning *CreateFleetEnrollmentTokenResponse
+func (c *ClientWithResponses) CreateFleetEnrollmentTokenWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateFleetEnrollmentTokenResponse, error) {
+	rsp, err := c.CreateFleetEnrollmentTokenWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateFleetEnrollmentTokenResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateFleetEnrollmentTokenWithResponse(ctx context.Context, body CreateFleetEnrollmentTokenJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateFleetEnrollmentTokenResponse, error) {
+	rsp, err := c.CreateFleetEnrollmentToken(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateFleetEnrollmentTokenResponse(rsp)
+}
+
+// RevokeFederationEnrollmentWithResponse request returning *RevokeFederationEnrollmentResponse
+func (c *ClientWithResponses) RevokeFederationEnrollmentWithResponse(ctx context.Context, enrollmentId string, reqEditors ...RequestEditorFn) (*RevokeFederationEnrollmentResponse, error) {
+	rsp, err := c.RevokeFederationEnrollment(ctx, enrollmentId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRevokeFederationEnrollmentResponse(rsp)
 }
 
 // CompleteFleetFilesystemPathWithResponse request returning *CompleteFleetFilesystemPathResponse
@@ -44320,6 +47830,49 @@ func (c *ClientWithResponses) GetFleetWorkspaceRuntimeSessionAttachSpecWithRespo
 		return nil, err
 	}
 	return ParseGetFleetWorkspaceRuntimeSessionAttachSpecResponse(rsp)
+}
+
+// JoinFederationWithBodyWithResponse request with arbitrary body returning *JoinFederationResponse
+func (c *ClientWithResponses) JoinFederationWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*JoinFederationResponse, error) {
+	rsp, err := c.JoinFederationWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseJoinFederationResponse(rsp)
+}
+
+func (c *ClientWithResponses) JoinFederationWithResponse(ctx context.Context, body JoinFederationJSONRequestBody, reqEditors ...RequestEditorFn) (*JoinFederationResponse, error) {
+	rsp, err := c.JoinFederation(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseJoinFederationResponse(rsp)
+}
+
+// PrepareFederationSpokeWithResponse request returning *PrepareFederationSpokeResponse
+func (c *ClientWithResponses) PrepareFederationSpokeWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*PrepareFederationSpokeResponse, error) {
+	rsp, err := c.PrepareFederationSpoke(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePrepareFederationSpokeResponse(rsp)
+}
+
+// AbortFederationSpokePreparationWithBodyWithResponse request with arbitrary body returning *AbortFederationSpokePreparationResponse
+func (c *ClientWithResponses) AbortFederationSpokePreparationWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AbortFederationSpokePreparationResponse, error) {
+	rsp, err := c.AbortFederationSpokePreparationWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAbortFederationSpokePreparationResponse(rsp)
+}
+
+func (c *ClientWithResponses) AbortFederationSpokePreparationWithResponse(ctx context.Context, body AbortFederationSpokePreparationJSONRequestBody, reqEditors ...RequestEditorFn) (*AbortFederationSpokePreparationResponse, error) {
+	rsp, err := c.AbortFederationSpokePreparation(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAbortFederationSpokePreparationResponse(rsp)
 }
 
 // CreateIssueOnHostWithBodyWithResponse request with arbitrary body returning *CreateIssueOnHostResponse
@@ -46743,32 +50296,6 @@ func (c *ClientWithResponses) UpdateFleetSettingsWithResponse(ctx context.Contex
 	return ParseUpdateFleetSettingsResponse(rsp)
 }
 
-// GetFleetSshPeersWithResponse request returning *GetFleetSshPeersResponse
-func (c *ClientWithResponses) GetFleetSshPeersWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetFleetSshPeersResponse, error) {
-	rsp, err := c.GetFleetSshPeers(ctx, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetFleetSshPeersResponse(rsp)
-}
-
-// UpdateFleetSshPeersWithBodyWithResponse request with arbitrary body returning *UpdateFleetSshPeersResponse
-func (c *ClientWithResponses) UpdateFleetSshPeersWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateFleetSshPeersResponse, error) {
-	rsp, err := c.UpdateFleetSshPeersWithBody(ctx, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseUpdateFleetSshPeersResponse(rsp)
-}
-
-func (c *ClientWithResponses) UpdateFleetSshPeersWithResponse(ctx context.Context, body UpdateFleetSshPeersJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateFleetSshPeersResponse, error) {
-	rsp, err := c.UpdateFleetSshPeers(ctx, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseUpdateFleetSshPeersResponse(rsp)
-}
-
 // CreateRepoPresetWithBodyWithResponse request with arbitrary body returning *CreateRepoPresetResponse
 func (c *ClientWithResponses) CreateRepoPresetWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateRepoPresetResponse, error) {
 	rsp, err := c.CreateRepoPresetWithBody(ctx, contentType, body, reqEditors...)
@@ -46819,6 +50346,15 @@ func (c *ClientWithResponses) GetSnapshotWithResponse(ctx context.Context, param
 		return nil, err
 	}
 	return ParseGetSnapshotResponse(rsp)
+}
+
+// GetSnapshotAggregateWithResponse request returning *GetSnapshotAggregateResponse
+func (c *ClientWithResponses) GetSnapshotAggregateWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSnapshotAggregateResponse, error) {
+	rsp, err := c.GetSnapshotAggregate(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetSnapshotAggregateResponse(rsp)
 }
 
 // GetSnapshotRawWithResponse request returning *GetSnapshotRawResponse
@@ -48110,6 +51646,585 @@ func ParseSearchDocsResponse(rsp *http.Response) (*SearchDocsResponse, error) {
 	return response, nil
 }
 
+// ParseBeginFederationEnrollmentResponse parses an HTTP response from a BeginFederationEnrollmentWithResponse call
+func ParseBeginFederationEnrollmentResponse(rsp *http.Response) (*BeginFederationEnrollmentResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &BeginFederationEnrollmentResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest JoinResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseAbortFederationEnrollmentResponse parses an HTTP response from a AbortFederationEnrollmentWithResponse call
+func ParseAbortFederationEnrollmentResponse(rsp *http.Response) (*AbortFederationEnrollmentResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &AbortFederationEnrollmentResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseActivateFederationEnrollmentResponse parses an HTTP response from a ActivateFederationEnrollmentWithResponse call
+func ParseActivateFederationEnrollmentResponse(rsp *http.Response) (*ActivateFederationEnrollmentResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ActivateFederationEnrollmentResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Enrollment
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseBeginFederationSpokePreparationResponse parses an HTTP response from a BeginFederationSpokePreparationWithResponse call
+func ParseBeginFederationSpokePreparationResponse(rsp *http.Response) (*BeginFederationSpokePreparationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &BeginFederationSpokePreparationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Enrollment
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSealFederationSpokePreparationResponse parses an HTTP response from a SealFederationSpokePreparationWithResponse call
+func ParseSealFederationSpokePreparationResponse(rsp *http.Response) (*SealFederationSpokePreparationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SealFederationSpokePreparationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SpokePreparationSeal
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseStreamFederationProviderEventsResponse parses an HTTP response from a StreamFederationProviderEventsWithResponse call
+func ParseStreamFederationProviderEventsResponse(rsp *http.Response) (*StreamFederationProviderEventsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &StreamFederationProviderEventsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetFederationIdentityResponse parses an HTTP response from a GetFederationIdentityWithResponse call
+func ParseGetFederationIdentityResponse(rsp *http.Response) (*GetFederationIdentityResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetFederationIdentityResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest FederationIdentityOutputBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseFederationImportReviewDraftResponse parses an HTTP response from a FederationImportReviewDraftWithResponse call
+func ParseFederationImportReviewDraftResponse(rsp *http.Response) (*FederationImportReviewDraftResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &FederationImportReviewDraftResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ProviderStateImportResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseFederationImportWorkflowStateResponse parses an HTTP response from a FederationImportWorkflowStateWithResponse call
+func ParseFederationImportWorkflowStateResponse(rsp *http.Response) (*FederationImportWorkflowStateResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &FederationImportWorkflowStateResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ProviderStateImportResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseFederationGetDiffDescriptorResponse parses an HTTP response from a FederationGetDiffDescriptorWithResponse call
+func ParseFederationGetDiffDescriptorResponse(rsp *http.Response) (*FederationGetDiffDescriptorResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &FederationGetDiffDescriptorResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DiffDescriptor
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseFederationGetRepositoryDescriptorResponse parses an HTTP response from a FederationGetRepositoryDescriptorWithResponse call
+func ParseFederationGetRepositoryDescriptorResponse(rsp *http.Response) (*FederationGetRepositoryDescriptorResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &FederationGetRepositoryDescriptorResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RepositoryDescriptor
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseFederationGetProviderSettingsResponse parses an HTTP response from a FederationGetProviderSettingsWithResponse call
+func ParseFederationGetProviderSettingsResponse(rsp *http.Response) (*FederationGetProviderSettingsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &FederationGetProviderSettingsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ProviderSettingsResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseFederationUpdateProviderSettingsResponse parses an HTTP response from a FederationUpdateProviderSettingsWithResponse call
+func ParseFederationUpdateProviderSettingsResponse(rsp *http.Response) (*FederationUpdateProviderSettingsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &FederationUpdateProviderSettingsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ProviderSettingsResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseFederationSetWorkflowStateResponse parses an HTTP response from a FederationSetWorkflowStateWithResponse call
+func ParseFederationSetWorkflowStateResponse(rsp *http.Response) (*FederationSetWorkflowStateResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &FederationSetWorkflowStateResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest FederationWorkflowMutation
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseFederationListWorkflowStatesResponse parses an HTTP response from a FederationListWorkflowStatesWithResponse call
+func ParseFederationListWorkflowStatesResponse(rsp *http.Response) (*FederationListWorkflowStatesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &FederationListWorkflowStatesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest FederationWorkflowPage
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseFederationAutoAssignWorkspaceItemResponse parses an HTTP response from a FederationAutoAssignWorkspaceItemWithResponse call
+func ParseFederationAutoAssignWorkspaceItemResponse(rsp *http.Response) (*FederationAutoAssignWorkspaceItemResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &FederationAutoAssignWorkspaceItemResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseFederationResolveWorkspaceLaunchSpecResponse parses an HTTP response from a FederationResolveWorkspaceLaunchSpecWithResponse call
+func ParseFederationResolveWorkspaceLaunchSpecResponse(rsp *http.Response) (*FederationResolveWorkspaceLaunchSpecResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &FederationResolveWorkspaceLaunchSpecResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorkspaceLaunchSpec
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseFederationRefreshWorkspaceLaunchSpecResponse parses an HTTP response from a FederationRefreshWorkspaceLaunchSpecWithResponse call
+func ParseFederationRefreshWorkspaceLaunchSpecResponse(rsp *http.Response) (*FederationRefreshWorkspaceLaunchSpecResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &FederationRefreshWorkspaceLaunchSpecResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorkspaceLaunchSpec
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseCompleteFilesystemPathResponse parses an HTTP response from a CompleteFilesystemPathWithResponse call
 func ParseCompleteFilesystemPathResponse(rsp *http.Response) (*CompleteFilesystemPathResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -48163,6 +52278,68 @@ func ParseValidateFilesystemRepoResponse(rsp *http.Response) (*ValidateFilesyste
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateFleetEnrollmentTokenResponse parses an HTTP response from a CreateFleetEnrollmentTokenWithResponse call
+func ParseCreateFleetEnrollmentTokenResponse(rsp *http.Response) (*CreateFleetEnrollmentTokenResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateFleetEnrollmentTokenResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest EnrollmentToken
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRevokeFederationEnrollmentResponse parses an HTTP response from a RevokeFederationEnrollmentWithResponse call
+func ParseRevokeFederationEnrollmentResponse(rsp *http.Response) (*RevokeFederationEnrollmentResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RevokeFederationEnrollmentResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ProblemError
@@ -49617,6 +53794,105 @@ func ParseGetFleetWorkspaceRuntimeSessionAttachSpecResponse(rsp *http.Response) 
 		response.JSONDefault = &dest
 
 	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseJoinFederationResponse parses an HTTP response from a JoinFederationWithResponse call
+func ParseJoinFederationResponse(rsp *http.Response) (*JoinFederationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &JoinFederationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest LocalEnrollment
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePrepareFederationSpokeResponse parses an HTTP response from a PrepareFederationSpokeWithResponse call
+func ParsePrepareFederationSpokeResponse(rsp *http.Response) (*PrepareFederationSpokeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PrepareFederationSpokeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SpokePreparationReport
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseAbortFederationSpokePreparationResponse parses an HTTP response from a AbortFederationSpokePreparationWithResponse call
+func ParseAbortFederationSpokePreparationResponse(rsp *http.Response) (*AbortFederationSpokePreparationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &AbortFederationSpokePreparationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SpokePreparationAbortReport
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
@@ -55973,72 +60249,6 @@ func ParseUpdateFleetSettingsResponse(rsp *http.Response) (*UpdateFleetSettingsR
 	return response, nil
 }
 
-// ParseGetFleetSshPeersResponse parses an HTTP response from a GetFleetSshPeersWithResponse call
-func ParseGetFleetSshPeersResponse(rsp *http.Response) (*GetFleetSshPeersResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetFleetSshPeersResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest FleetSSHPeersBody
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ProblemError
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseUpdateFleetSshPeersResponse parses an HTTP response from a UpdateFleetSshPeersWithResponse call
-func ParseUpdateFleetSshPeersResponse(rsp *http.Response) (*UpdateFleetSshPeersResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &UpdateFleetSshPeersResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest FleetSSHPeersBody
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ProblemError
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
 // ParseCreateRepoPresetResponse parses an HTTP response from a CreateRepoPresetWithResponse call
 func ParseCreateRepoPresetResponse(rsp *http.Response) (*CreateRepoPresetResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -56154,6 +60364,39 @@ func ParseGetSnapshotResponse(rsp *http.Response) (*GetSnapshotResponse, error) 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest Snapshot
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetSnapshotAggregateResponse parses an HTTP response from a GetSnapshotAggregateWithResponse call
+func ParseGetSnapshotAggregateResponse(rsp *http.Response) (*GetSnapshotAggregateResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetSnapshotAggregateResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest NeutralSnapshot
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

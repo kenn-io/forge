@@ -23,7 +23,6 @@
   import {
     executeGeneratedApiRequest,
     executeOpaqueGeneratedApiRequest,
-    type GeneratedApi,
   } from "../../api/generated-api.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { getStores } from "../../context.js";
@@ -53,17 +52,22 @@
   } from "./workspaceListSort.ts";
   import {
     WorkspaceListWorkflow,
-    makeWorkspaceRefreshCoordinator,
+    makeWorkspaceRefreshHub,
     workspaceListLifecycle,
   } from "./workspace-list-workflow.js";
   import { workspaceEventStream } from "./workspace-event-stream.js";
-  import { decodeWorkspaceList, type WorkspaceListItem } from "./workspace-list-schema.js";
+  import {
+    decodeWorkspaceList,
+    retainDegradedHostWorkspaces,
+    type WorkspaceListItem,
+  } from "./workspace-list-schema.js";
   import { parseRepoFilterValue } from "../../stores/filter.svelte.js";
   import {
     canonicalRepoFilterValue,
     type RepoFilterIdentity,
   } from "../../utils/repo-filter-values.js";
   import { setWorkspaceRepoCatalog } from "../../stores/workspace-repo-catalog.svelte.js";
+  import { loadFleetSnapshot } from "../../api/fleet-snapshot.js";
 
   type Workspace = WorkspaceListItem;
 
@@ -147,8 +151,6 @@
   let fleetHosts = $state.raw<HostSummary[]>([]);
   let fleetError = $state<string | null>(null);
   let fleetPeerErrors = $state.raw<Record<string, string>>({});
-  let fleetLoaded = $state(false);
-  const peerWorkspaceCache = new Map<string, Workspace[]>();
   let collapsedGroups = $state<string[]>([]);
   let searchQuery = $state("");
   let sortMode = $state<WorkspaceListSort>(loadWorkspaceListSort());
@@ -178,27 +180,19 @@
     loadWorkspaceListDisplayOptions(),
   );
 
-  const refreshWorkspaces = makeWorkspaceRefreshCoordinator(
+  const refreshWorkspaces = makeWorkspaceRefreshHub(
     Effect.suspend(loadWorkspaces).pipe(
       Effect.catch(() =>
         Effect.sync(() => {
           localCatalogStatus = "failed";
+          fleetCatalogStatus = "failed";
+          peerCatalogStatus = "failed";
           if (workspaces.length === 0) workspaceListStatus = "retrying";
         }),
       ),
     ),
   );
-  const refreshFleet = makeWorkspaceRefreshCoordinator(
-    Effect.suspend(loadFleetStatus).pipe(
-      Effect.catch((failure) =>
-        Effect.sync(() => {
-          fleetError = failureMessage(failure, "Fleet unavailable");
-          fleetLoaded = true;
-          fleetCatalogStatus = "failed";
-        }),
-      ),
-    ),
-  );
+  const refreshFleet = refreshWorkspaces;
   let requestApplicationWorkspaceRefresh = refreshWorkspaces.request;
   const workspaceRefreshOwner = $props.id();
 
@@ -310,18 +304,6 @@
     },
   ]);
 
-  const reachableFleetHosts = $derived(
-    fleetHosts.filter((host) => host.reachable).length,
-  );
-
-  const hasRemoteFleetHosts = $derived(
-    hasNonSelfFleetHost(fleetHosts),
-  );
-
-  const showFleetStatus = $derived(
-    fleetError !== null || Object.keys(fleetPeerErrors).length > 0 || (fleetLoaded && hasRemoteFleetHosts),
-  );
-
   const fleetDegraded = $derived(
     fleetError !== null || Object.keys(fleetPeerErrors).length > 0,
   );
@@ -405,12 +387,9 @@
     return Number.isNaN(ms) ? 0 : ms;
   }
 
-  function hasNonSelfFleetHost(hosts: HostSummary[]): boolean {
-    return hosts.some((host) => host.kind !== "self");
-  }
-
-  function localWorkspacesOnly(items: Workspace[]): Workspace[] {
-    return items.filter((ws) => !ws.fleet_host_key);
+  function fleetHostName(hostKey: string): string {
+    const name = fleetHosts.find((host) => host.configKey === hostKey)?.name.trim();
+    return name || hostKey;
   }
 
   const repoLabelFormatter = $derived.by(() =>
@@ -437,169 +416,41 @@
     return failure instanceof Error ? failure.message : fallback;
   }
 
-  function cachedPeerWorkspaces(): Workspace[] {
-    return fleetHosts
-      .filter((host) => host.kind !== "self")
-      .flatMap((host) => peerWorkspaceCache.get(host.configKey) ?? []);
-  }
-
-  function fetchPeerWorkspaces(): Effect.Effect<
-    { workspaces: Workspace[]; complete: boolean; peerKeys: Set<string> },
-    never,
-    GeneratedApi
-  > {
-    const peers = fleetHosts.filter(
-      (host) =>
-        host.reachable &&
-        host.kind !== "self",
-    );
-    const requestedPeerKeys = new Set(peers.map((host) => host.configKey));
-    return Effect.sync(() => {
-      peerCatalogStatus = "loading";
-    }).pipe(
-      Effect.andThen(Effect.forEach(
-        peers,
-        (host) =>
-          executeOpaqueGeneratedApiRequest("load peer workspaces", (generatedClient, signal) =>
-            generatedClient.GET("/fleet/hosts/{host_key}/workspaces", {
-              params: { path: { host_key: host.configKey } },
-              signal,
-            }),
-          ).pipe(
-            Effect.flatMap(decodeWorkspaceList),
-            Effect.map((workspaces) =>
-              workspaces.map(
-                (workspace): Workspace => ({
-                  ...workspace,
-                  fleet_host_key: host.configKey,
-                  fleet_host_name: host.name,
-                }),
-              ),
-            ),
-            Effect.timeout(`${workspaceListLoadTimeoutMs} millis`),
-            Effect.match({
-              onFailure: (failure) => ({
-                hostKey: host.configKey,
-                failure,
-                workspaces: undefined,
-              }),
-              onSuccess: (workspaces) => ({
-                hostKey: host.configKey,
-                failure: undefined,
-                workspaces,
-              }),
-            }),
-          ),
-        { concurrency: 4 },
-      )),
-      Effect.flatMap((results) =>
-        Effect.sync(() => {
-          const currentPeerKeys = new Set(
-            fleetHosts.filter((host) => host.kind !== "self").map((host) => host.configKey),
-          );
-          const currentReachablePeerKeys = new Set(
-            fleetHosts
-              .filter((host) => host.reachable && host.kind !== "self")
-              .map((host) => host.configKey),
-          );
-          const nextErrors: Record<string, string> = {};
-          for (const result of results) {
-            if (!currentPeerKeys.has(result.hostKey)) continue;
-            if (result.workspaces !== undefined) {
-              peerWorkspaceCache.set(result.hostKey, result.workspaces);
-            } else {
-              nextErrors[result.hostKey] = failureMessage(result.failure, "Workspace list unavailable");
-            }
-          }
-          fleetPeerErrors = nextErrors;
-          return {
-            workspaces: cachedPeerWorkspaces(),
-            complete:
-              Object.keys(nextErrors).length === 0 &&
-              currentReachablePeerKeys.size === requestedPeerKeys.size &&
-              [...requestedPeerKeys].every((hostKey) => currentReachablePeerKeys.has(hostKey)),
-            peerKeys: requestedPeerKeys,
-          };
-        }),
-      ),
-    );
-  }
-
   function loadWorkspaces() {
     return Effect.sync(() => {
       localCatalogStatus = "loading";
+      fleetCatalogStatus = "loading";
+      peerCatalogStatus = "loading";
     }).pipe(
       Effect.andThen(Effect.gen(function* () {
-        const data = yield* executeGeneratedApiRequest("load workspaces", (generatedClient, signal) =>
-          generatedClient.GET("/workspaces", { signal }),
-        ).pipe(Effect.timeout(`${workspaceListLoadTimeoutMs} millis`));
-        const local: Workspace[] = data.workspaces ?? [];
-        yield* Effect.sync(() => {
-          const nextWorkspaces = [...local, ...cachedPeerWorkspaces()];
-          reconcileDoneAcknowledgements(nextWorkspaces);
-          workspaces = nextWorkspaces;
-          workspaceListStatus = "loaded";
-        });
-        const remoteResult = fleetLoaded && !fleetError && hasRemoteFleetHosts
-          ? yield* fetchPeerWorkspaces()
-          : {
-              workspaces: cachedPeerWorkspaces(),
-              complete: fleetCatalogStatus === "loaded",
-              peerKeys: new Set<string>(),
-            };
-        const nextWorkspaces = [...local, ...remoteResult.workspaces];
+        const data = yield* loadFleetSnapshot().pipe(
+          Effect.timeout(`${workspaceListLoadTimeoutMs} millis`),
+        );
+        const decoded = yield* decodeWorkspaceList({ workspaces: data.workspaces });
+        const nextHosts = data.hosts ?? [];
+        const aggregateComplete = !(data.aggregateIncomplete ?? false);
+        const nextWorkspaces = retainDegradedHostWorkspaces(
+          workspaces,
+          decoded.filter((workspace) => workspace.visible !== false),
+          nextHosts,
+          data.aggregateIncomplete ?? false,
+        );
         yield* Effect.sync(() => {
           reconcileDoneAcknowledgements(nextWorkspaces);
           workspaces = nextWorkspaces;
+          fleetHosts = nextHosts;
+          fleetPeerErrors = Object.fromEntries(
+            fleetHosts
+              .filter((host) => host.kind !== "self" && host.error)
+              .map((host) => [host.configKey, host.error ?? "Host unavailable"]),
+          );
+          fleetError = null;
           workspaceListStatus = "loaded";
           localCatalogStatus = "loaded";
-          if (remoteResult.complete) {
-            peerCatalogStatus = "loaded";
-          } else if (peerCatalogStatus !== "loading" || remoteResult.peerKeys.size > 0) {
-            peerCatalogStatus = "failed";
-          }
+          fleetCatalogStatus = aggregateComplete ? "loaded" : "failed";
+          peerCatalogStatus = aggregateComplete ? "loaded" : "failed";
         });
       })),
-    );
-  }
-
-  function loadFleetStatus() {
-    return Effect.sync(() => {
-      fleetCatalogStatus = "loading";
-    }).pipe(
-      Effect.andThen(executeGeneratedApiRequest("load fleet status", (generatedClient, signal) =>
-        generatedClient.GET("/snapshot", {
-          params: { query: { include_peers: true } },
-          signal,
-        }),
-      )),
-      Effect.flatMap((data) =>
-        Effect.sync(() => {
-          const nextHosts: HostSummary[] = data.hosts ?? [];
-          const nextPeerKeys = new Set(
-            nextHosts.filter((host) => host.kind !== "self").map((host) => host.configKey),
-          );
-          for (const hostKey of peerWorkspaceCache.keys()) {
-            if (!nextPeerKeys.has(hostKey)) peerWorkspaceCache.delete(hostKey);
-          }
-          fleetPeerErrors = Object.fromEntries(
-            Object.entries(fleetPeerErrors).filter(([hostKey]) => nextPeerKeys.has(hostKey)),
-          );
-          fleetHosts = nextHosts;
-          fleetError = null;
-          fleetLoaded = true;
-          fleetCatalogStatus = "loaded";
-          peerCatalogStatus = nextHosts.some(
-            (host) => host.reachable && host.kind !== "self",
-          )
-            ? "loading"
-            : "loaded";
-          if (!hasNonSelfFleetHost(nextHosts)) {
-            workspaces = localWorkspacesOnly(workspaces);
-          }
-          refreshWorkspaces.request();
-        }),
-      ),
     );
   }
 
@@ -826,7 +677,11 @@
   }
 
   function openWorkspace(ws: Workspace): void {
-    if (ws.status === "deleting") return;
+    if (
+      ws.status === "deleting" ||
+      !workspaceOperationAvailable(ws, "workspaceRead") ||
+      !workspaceOperationAvailable(ws, "terminalAttach")
+    ) return;
     const doneVersion = doneStateVersion(ws);
     if (doneVersion !== null) {
       acknowledgedDoneStates = {
@@ -893,6 +748,14 @@
 
   function isRemoteWorkspace(ws: Workspace): boolean {
     return Boolean(ws.fleet_host_key);
+  }
+
+  function workspaceOperationAvailable(
+    ws: Workspace,
+    operation: "workspaceRead" | "workspaceWrite" | "terminalAttach",
+  ): boolean {
+    if (!isRemoteWorkspace(ws)) return true;
+    return workspaceHost(ws)?.operationAvailability[operation]?.available === true;
   }
 
   function revealLabel(ws: Workspace): string {
@@ -1053,6 +916,7 @@
 
   function workspaceActionsDisabled(ws: Workspace): boolean {
     return ws.status === "deleting" || ws.status === "deletion_failed" ||
+      !workspaceOperationAvailable(ws, "workspaceWrite") ||
       (isWorkspaceActionDisabled?.(ws.id, ws.fleet_host_key) ?? false);
   }
 
@@ -1071,7 +935,11 @@
   ): boolean {
     const externallyDisabled = isWorkspaceActionDisabled?.(ws.id, ws.fleet_host_key) ?? false;
     const deletionDisabled = ws.status === "deleting" || externallyDisabled;
-    if (workspaceAction !== null || (action === "delete" ? deletionDisabled : workspaceActionsDisabled(ws))) return false;
+    if (
+      workspaceAction !== null ||
+      !workspaceOperationAvailable(ws, "workspaceWrite") ||
+      (action === "delete" ? deletionDisabled : workspaceActionsDisabled(ws))
+    ) return false;
     workspaceAction = { workspaceKey: workspaceRowKey(ws), action };
     return true;
   }
@@ -1304,6 +1172,7 @@
   ): void {
     e.stopPropagation();
     e.preventDefault();
+    if (!workspaceOperationAvailable(ws, "workspaceRead")) return;
     const tab =
       ws.item_type === "kata_task"
         ? "kata"
@@ -1395,41 +1264,18 @@
       oninput={updateSearch}
     />
   </div>
-  {#if showFleetStatus}
+  {#if fleetDegraded}
     <section class="fleet-status" aria-label="Fleet hosts">
       <div class="fleet-status-heading">
         <span class="fleet-status-title">Fleet</span>
-        {#if fleetDegraded}
-          <span class="fleet-status-count error">degraded</span>
-        {:else}
-          <span class="fleet-status-count">
-            {reachableFleetHosts}/{fleetHosts.length}
-          </span>
-        {/if}
+        <span class="fleet-status-count">degraded</span>
       </div>
       {#if fleetError}
         <p class="fleet-status-error">{fleetError}</p>
       {:else}
-        <div class="fleet-hosts">
-          {#each fleetHosts as host (host.configKey)}
-            <span
-              class={[
-                "fleet-host",
-                host.kind === "self" ? "self" : "remote",
-                { unreachable: !host.reachable },
-              ]}
-              title={`${host.name} - ${host.kind} - ${host.preferredTransport}`}
-            >
-              <span class="fleet-host-dot" aria-hidden="true"></span>
-              <span class="fleet-host-name">{host.configKey}</span>
-              <span class="fleet-host-kind">{host.kind}</span>
-              <span class="fleet-host-transport">{host.preferredTransport}</span>
-            </span>
-          {/each}
-        </div>
         {#each Object.entries(fleetPeerErrors) as [hostKey, message] (hostKey)}
           <p class="fleet-status-error">
-            <span>{hostKey} degraded</span>: {message}
+            <span>{fleetHostName(hostKey)} degraded</span>: {message}
           </p>
         {/each}
       {/if}
@@ -1485,6 +1331,7 @@
           {@const behind = ws.commits_behind ?? 0}
           {@const showPush = ahead > 0 || behind > 0}
           {@const agentState = agentStatePresentation(ws)}
+          {@const workspaceReadable = workspaceOperationAvailable(ws, "workspaceRead") && workspaceOperationAvailable(ws, "terminalAttach")}
           <div
             class={["ws-row", { selected: isSelectedWorkspace(ws) }]}
             bind:this={rowEls[workspaceRowKey(ws)]}
@@ -1514,7 +1361,8 @@
             oncontextmenu={(e) => {
               void openContextMenu(e, ws);
             }}
-            tabindex="0"
+            aria-disabled={!workspaceReadable}
+            tabindex={workspaceReadable ? 0 : -1}
             role="button"
           >
             <div class="ws-row-text">
@@ -1550,14 +1398,6 @@
                 {/if}
               </div>
               <div class="ws-row-meta">
-                {#if ws.fleet_host_key}
-                  <span
-                    class="fleet-context"
-                    title={`Fleet host: ${ws.fleet_host_name ?? ws.fleet_host_key}`}
-                  >
-                    {ws.fleet_host_key}
-                  </span>
-                {/if}
                 {#if showRepo}
                   <span
                     class="repo-context"
@@ -1635,6 +1475,7 @@
                     ws.item_type === "kata_task" && "item-bubble--kata",
                   ]}
                   onclick={(e) => handleItemBubbleClick(e, ws)}
+                  disabled={!workspaceOperationAvailable(ws, "workspaceRead")}
                   onkeydown={(e) => {
                     // Stop Enter/Space from bubbling to the row,
                     // since the row's keyboard handler also navigates.
@@ -1816,7 +1657,7 @@
       class="kit-filter-dropdown__item active workspace-context-danger"
       role="menuitem"
       type="button"
-      disabled={actionBusy || menuWorkspace.status === "deleting" || (isWorkspaceActionDisabled?.(menuWorkspace.id, menuWorkspace.fleet_host_key) ?? false)}
+      disabled={actionBusy || !workspaceOperationAvailable(menuWorkspace, "workspaceWrite") || menuWorkspace.status === "deleting" || (isWorkspaceActionDisabled?.(menuWorkspace.id, menuWorkspace.fleet_host_key) ?? false)}
       onclick={() => {
         openDeleteWorkspaceDialog(menuWorkspace);
       }}
@@ -1829,7 +1670,7 @@
         class="kit-filter-dropdown__item active workspace-context-danger"
         role="menuitem"
         type="button"
-        disabled={actionBusy || (isWorkspaceActionDisabled?.(menuWorkspace.id, menuWorkspace.fleet_host_key) ?? false)}
+        disabled={actionBusy || !workspaceOperationAvailable(menuWorkspace, "workspaceWrite") || (isWorkspaceActionDisabled?.(menuWorkspace.id, menuWorkspace.fleet_host_key) ?? false)}
         onclick={() => openDeleteWorkspaceDialog(menuWorkspace, true)}
       >
         <span class="kit-filter-dropdown__dot filter-dot--danger"></span>
@@ -1957,10 +1798,6 @@
   .fleet-status-count {
     font-family: var(--font-mono);
     font-size: var(--font-size-2xs);
-    color: var(--accent-green);
-  }
-
-  .fleet-status-count.error {
     color: var(--accent-amber);
   }
 
@@ -1969,81 +1806,6 @@
     color: var(--accent-amber);
     font-size: var(--font-size-xs);
     line-height: 1.35;
-  }
-
-  .fleet-hosts {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-2);
-  }
-
-  .fleet-host {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    max-width: 100%;
-    min-width: 0;
-    padding: 2px 6px;
-    border: 1px solid var(--border-muted);
-    border-radius: 999px;
-    background: var(--bg-inset);
-    color: var(--text-secondary);
-    font-size: var(--font-size-xs);
-    line-height: 1.25;
-  }
-
-  .fleet-host.self {
-    border-color: color-mix(in srgb, var(--accent-blue) 38%, var(--border-muted));
-  }
-
-  .fleet-host.unreachable {
-    color: var(--text-muted);
-    opacity: 0.78;
-  }
-
-  .fleet-host-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--accent-green);
-    flex-shrink: 0;
-  }
-
-  .fleet-host.unreachable .fleet-host-dot {
-    background: var(--accent-red);
-  }
-
-  .fleet-host-name {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-weight: 600;
-  }
-
-  .fleet-host-kind {
-    flex-shrink: 0;
-    color: var(--text-muted);
-    font-family: var(--font-mono);
-    font-size: var(--font-size-2xs);
-  }
-
-  .fleet-host-transport {
-    flex-shrink: 0;
-    color: var(--text-subtle);
-    font-family: var(--font-mono);
-    font-size: var(--font-size-2xs);
-  }
-
-  .fleet-context {
-    max-width: 72px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    color: var(--accent-blue);
-    font-family: var(--font-mono);
-    font-size: var(--font-size-2xs);
-    font-weight: 600;
   }
 
   .filter-empty {

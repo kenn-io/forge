@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/fleet"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/workspace"
 )
@@ -192,13 +193,14 @@ func (s *fleetWorktreeStatsSampler) collectTargets(
 // (one with no registered project) from the synced repo row, or "" when the repo
 // is unknown — matching the snapshot's synthesized-project default branch.
 func (s *fleetWorktreeStatsSampler) workspaceDefaultBranch(
-	ctx context.Context, sum db.WorkspaceSummary,
+	ctx context.Context, sum fleet.RawWorkspace,
 ) string {
 	repo, err := s.db.GetRepoByIdentity(ctx, db.RepoIdentity{
-		Platform:     sum.Platform,
-		PlatformHost: sum.PlatformHost,
-		Owner:        sum.RepoOwner,
-		Name:         sum.RepoName,
+		Platform:       sum.Repository.Provider,
+		PlatformHost:   sum.Repository.PlatformHost,
+		PlatformRepoID: sum.Repository.PlatformRepoID,
+		Owner:          sum.Repository.Owner,
+		Name:           sum.Repository.Name,
 	})
 	if err != nil || repo == nil {
 		return ""

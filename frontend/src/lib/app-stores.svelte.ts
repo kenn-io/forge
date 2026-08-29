@@ -1,7 +1,9 @@
 import { Effect } from "effect";
+import { ApiProblemError } from "./api/effect-errors.js";
 import { createRoborevClient } from "./api/roborev/client.js";
 import type { RoborevClient } from "./api/roborev/client.js";
 import { executeGeneratedApiRequest } from "./api/generated-api.js";
+import { ProblemCodes } from "./api/problems.js";
 import type { ProviderRouteRef } from "./api/provider-routes.js";
 import { retryIdempotentRead } from "./api/retry-policy.js";
 import { createDaemonStore } from "./stores/roborev/daemon.svelte.js";
@@ -204,28 +206,68 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
     });
   }
 
+  function observeHubFailure<A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> {
+    return effect.pipe(
+      Effect.tapError((failure) =>
+        failure instanceof ApiProblemError && failure.problem.code === ProblemCodes.hubUnavailable
+          ? Effect.sync(() => syncStore.setProviderAvailable(false))
+          : Effect.void,
+      ),
+    );
+  }
+
   function refreshVisibleData() {
     switch (gp()) {
       case "pulls":
       case "mobile-pulls":
-        return pullsStore.reconcilePullsEffect();
+        return observeHubFailure(pullsStore.reconcilePullsEffect());
       case "issues":
       case "mobile-issues":
-        return issuesStore.reconcileIssuesEffect();
+        return observeHubFailure(issuesStore.reconcileIssuesEffect());
       case "activity":
       case "mobile-activity":
-        return Effect.all([activityStore.reconcileActivityEffect(), refreshSelectedActivityDetail()], {
-          concurrency: "unbounded",
-          discard: true,
-        });
+        return observeHubFailure(
+          Effect.all([activityStore.reconcileActivityEffect(), refreshSelectedActivityDetail()], {
+            concurrency: "unbounded",
+            discard: true,
+          }),
+        );
       case "focus":
-        return Effect.all([pullsStore.reconcilePullsEffect(), issuesStore.reconcileIssuesEffect()], {
-          concurrency: "unbounded",
-          discard: true,
-        });
+        return observeHubFailure(
+          Effect.all([pullsStore.reconcilePullsEffect(), issuesStore.reconcileIssuesEffect()], {
+            concurrency: "unbounded",
+            discard: true,
+          }),
+        );
       default:
         return Effect.void;
     }
+  }
+
+  function reconcileProviderState() {
+    return Effect.all(
+      [
+        pullsStore.reconcilePullsEffect(),
+        issuesStore.reconcileIssuesEffect(),
+        activityStore.reconcileActivityEffect(),
+        refreshSelectedActivityDetail(),
+        syncStore.reconcileSyncStatusEffect,
+      ],
+      { concurrency: "unbounded", discard: true },
+    );
+  }
+
+  function reconcileProviderStateAfterHubConnection() {
+    return reconcileProviderState().pipe(
+      Effect.tapError(() =>
+        executeGeneratedApiRequest("probe hub availability after projection refresh failure", (client, signal) =>
+          client.GET("/sync/status", { signal }),
+        ).pipe(
+          Effect.andThen(Effect.sync(() => syncStore.setProviderAvailable(true))),
+          Effect.catch(() => Effect.void),
+        ),
+      ),
+    );
   }
 
   const eventBasePath = cfg.basePath;
@@ -236,6 +278,15 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
     }),
     onDataChanged: refreshVisibleData,
     onSyncStatus: (status) => Effect.sync(() => syncStore.setSyncStatus(status)),
+    onHubConnectionChanged: ({ connected }) => {
+      if (!connected) {
+        return Effect.sync(() => syncStore.setProviderAvailable(false));
+      }
+      return Effect.sync(() => syncStore.setProviderAvailable(false)).pipe(
+        Effect.andThen(reconcileProviderStateAfterHubConnection()),
+        Effect.andThen(Effect.sync(() => syncStore.setProviderAvailable(true))),
+      );
+    },
     onConfigChanged: handleConfigChanged,
     onWorkspaceDeleted: (event) =>
       Effect.gen(function* () {
@@ -329,24 +380,18 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
           }
         });
       }),
-    onReconnectStale: () =>
-      Effect.gen(function* () {
-        // The replay ring rolled past the client's cursor while it
-        // was disconnected (long sleep, extended network outage).
-        // Refetch view state from scratch instead of relying on the
-        // missed broadcasts. sync.refreshSyncStatus() picks up the
-        // current daemon state since no sync_status frame will replay.
-        yield* Effect.all(
-          [
-            pullsStore.reconcilePullsEffect(),
-            issuesStore.reconcileIssuesEffect(),
-            activityStore.reconcileActivityEffect(),
-            refreshSelectedActivityDetail(),
-            syncStore.reconcileSyncStatusEffect,
-          ],
-          { concurrency: "unbounded", discard: true },
-        );
-      }),
+    onReconnectStale: ({ hub_connected }) => {
+      const markUnavailable = Effect.sync(() => syncStore.setProviderAvailable(false));
+      if (hub_connected === false) return markUnavailable;
+      // The replay ring rolled past the client's cursor while it was
+      // disconnected. Hide cached provider projections until every
+      // authoritative read succeeds because no missed event can be assumed
+      // to replay.
+      return markUnavailable.pipe(
+        Effect.andThen(reconcileProviderStateAfterHubConnection()),
+        Effect.andThen(Effect.sync(() => syncStore.setProviderAvailable(true))),
+      );
+    },
   });
 
   const si: StoreInstances = {

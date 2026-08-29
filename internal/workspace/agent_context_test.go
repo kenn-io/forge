@@ -398,7 +398,7 @@ func TestPrepareAgentLaunchContextSkipsSymlinkedFile(t *testing.T) {
 
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
 	seedMR(t, d, repoID, 42, "feature/widgets")
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	ws, err := mgr.Create(t.Context(), "github", "github.com", "acme", "widget", 42)
 	require.NoError(err)
 	worktree := ws.WorktreePath
@@ -423,7 +423,7 @@ func TestPrepareAgentLaunchContextSkipsSymlinkedFile(t *testing.T) {
 	assert.Equal("# User context\n", string(content))
 }
 
-func TestPrepareAgentLaunchContextUsesSyncedHeadBranchForPushTarget(t *testing.T) {
+func TestPrepareAgentLaunchContextUsesPersistedFactsWithoutProviderRefresh(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
@@ -431,7 +431,7 @@ func TestPrepareAgentLaunchContextUsesSyncedHeadBranchForPushTarget(t *testing.T
 
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
 	seedMR(t, d, repoID, 42, "feature/widgets")
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	ws, err := mgr.Create(t.Context(), "github", "github.com", "acme", "widget", 42)
 	require.NoError(err)
 	worktree := ws.WorktreePath
@@ -439,9 +439,16 @@ func TestPrepareAgentLaunchContextUsesSyncedHeadBranchForPushTarget(t *testing.T
 	require.NoError(d.UpdateWorkspaceBranch(t.Context(), ws.ID, "feature/widgets"))
 	require.NoError(d.UpdateWorkspaceStatus(t.Context(), ws.ID, "ready", nil))
 
-	// The head branch is renamed after workspace creation; launch-time
-	// context must follow the synced row, not the creation-time snapshot.
+	// The provider row changes and the visibility lease expires after workspace
+	// creation. Starting another local agent must use the persisted launch facts
+	// rather than becoming dependent on hub availability.
 	seedMR(t, d, repoID, 42, "feature/widgets-renamed")
+	spec, err := d.GetWorkspaceLaunchSpec(t.Context(), ws.ID)
+	require.NoError(err)
+	require.NotNil(spec)
+	refreshAt := spec.SourceVisibleUntil.Add(time.Second)
+	mgr.SetNow(func() time.Time { return refreshAt })
+	mgr.SetLaunchSpecResolver(unavailableLaunchSpecResolver{})
 
 	require.NoError(mgr.PrepareAgentLaunchContext(t.Context(), PrepareAgentLaunchContextOptions{
 		WorkspaceID: ws.ID,
@@ -450,146 +457,9 @@ func TestPrepareAgentLaunchContextUsesSyncedHeadBranchForPushTarget(t *testing.T
 
 	content, err := os.ReadFile(filepath.Join(worktree, "AGENTS.override.md"))
 	require.NoError(err)
-	assert.Contains(string(content), "Push branch: feature/widgets-renamed on origin (updates this PR)")
+	assert.Contains(string(content), "Push branch: feature/widgets on origin (updates this PR)")
+	assert.NotContains(string(content), "feature/widgets-renamed")
 	assert.NotContains(string(content), "Working branch")
-}
-
-func setupAgentContextRemovalDuringRefresh(
-	t *testing.T,
-) (*Manager, *Workspace, string, *bool) {
-	t.Helper()
-	require := require.New(t)
-	d := openTestDB(t)
-	ctx := t.Context()
-
-	repoID := seedRepo(t, d, "github.com", "acme", "widget")
-	seedMR(t, d, repoID, 42, "feature/widgets")
-	_, err := d.WriteDB().ExecContext(ctx, `
-		UPDATE forge_merge_requests
-		SET url = 'https://github.com/acme/widget/pull/42'
-		WHERE repo_id = ? AND number = 42`, repoID)
-	require.NoError(err)
-	mgr := NewManager(d, t.TempDir())
-	ws, err := mgr.Create(ctx, "github", "github.com", "acme", "widget", 42)
-	require.NoError(err)
-	worktree := ws.WorktreePath
-	initWorkspaceGitRepoAt(t, worktree)
-	require.NoError(d.UpdateWorkspaceBranch(ctx, ws.ID, "feature/widgets"))
-	require.NoError(d.UpdateWorkspaceStatus(ctx, ws.ID, "ready", nil))
-
-	removed := false
-	mgr.afterHeadRepoSnapshotRead = func() {
-		if removed {
-			return
-		}
-		removed = true
-		now := time.Date(2026, 8, 14, 12, 0, 0, 0, time.UTC)
-		_, insertErr := d.WriteDB().ExecContext(ctx, `
-			INSERT INTO forge_archive_items (
-				repo_id, item_type, item_number, provider_item_id,
-				provider_created_at, provider_updated_at, lifecycle_state
-			) VALUES (?, 'merge_request', 42, 'pull-42', ?, ?, 'removed_upstream')`,
-			repoID, now, now,
-		)
-		require.NoError(insertErr)
-	}
-	return mgr, ws, worktree, &removed
-}
-
-func TestPrepareAgentLaunchContextSuppressesRemovedPullPushTarget(t *testing.T) {
-	t.Parallel()
-	assert := assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	ctx := t.Context()
-
-	repoID := seedRepo(t, d, "github.com", "acme", "widget")
-	seedMR(t, d, repoID, 42, "feature/widgets")
-	mgr := NewManager(d, t.TempDir())
-	ws, err := mgr.Create(ctx, "github", "github.com", "acme", "widget", 42)
-	require.NoError(err)
-	worktree := ws.WorktreePath
-	initWorkspaceGitRepoAt(t, worktree)
-	require.NoError(d.UpdateWorkspaceBranch(ctx, ws.ID, "feature/widgets"))
-	require.NoError(d.UpdateWorkspaceStatus(ctx, ws.ID, "ready", nil))
-	now := time.Date(2026, 8, 14, 12, 0, 0, 0, time.UTC)
-	_, err = d.WriteDB().ExecContext(ctx, `
-		INSERT INTO forge_archive_items (
-			repo_id, item_type, item_number, provider_item_id,
-			provider_created_at, provider_updated_at, lifecycle_state
-		) VALUES (?, 'merge_request', 42, 'pull-42', ?, ?, 'removed_upstream')`,
-		repoID, now, now,
-	)
-	require.NoError(err)
-
-	require.NoError(mgr.PrepareAgentLaunchContext(ctx, PrepareAgentLaunchContextOptions{
-		WorkspaceID: ws.ID,
-		TargetKey:   "codex",
-	}))
-
-	content, err := os.ReadFile(filepath.Join(worktree, "AGENTS.override.md"))
-	require.NoError(err)
-	assert.NotContains(string(content), "updates this PR")
-	assert.NotContains(string(content), "PR head:")
-	stored, err := d.GetWorkspace(ctx, ws.ID)
-	require.NoError(err)
-	require.NotNil(stored)
-	require.NotNil(stored.MRHeadRepo)
-	assert.Empty(*stored.MRHeadRepo)
-}
-
-func TestPrepareAgentLaunchContextDropsMetadataRemovedDuringRefresh(t *testing.T) {
-	t.Parallel()
-	assert := assert.New(t)
-	require := require.New(t)
-	mgr, ws, worktree, removed := setupAgentContextRemovalDuringRefresh(t)
-
-	require.NoError(mgr.PrepareAgentLaunchContext(t.Context(), PrepareAgentLaunchContextOptions{
-		WorkspaceID: ws.ID,
-		TargetKey:   "codex",
-	}))
-	require.True(*removed)
-
-	content, err := os.ReadFile(filepath.Join(worktree, "AGENTS.override.md"))
-	require.NoError(err)
-	assert.NotContains(string(content), "Test PR")
-	assert.NotContains(string(content), "https://github.com/acme/widget/pull/42")
-	assert.NotContains(string(content), "feature/widgets")
-}
-
-func TestPrepareAgentLaunchContextRefreshesLegacyUnknownHeadRepo(t *testing.T) {
-	t.Parallel()
-	assert := assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-
-	repoID := seedRepo(t, d, "github.com", "acme", "widget")
-	seedMRWithHeadRepo(t, d, repoID, 42, "feature/widgets", "")
-	mgr := NewManager(d, t.TempDir())
-	ws, err := mgr.Create(t.Context(), "github", "github.com", "acme", "widget", 42)
-	require.NoError(err)
-	worktree := ws.WorktreePath
-	initWorkspaceGitRepoAt(t, worktree)
-	require.NoError(d.UpdateWorkspaceBranch(t.Context(), ws.ID, "feature/widgets"))
-	require.NoError(d.UpdateWorkspaceStatus(t.Context(), ws.ID, "ready", nil))
-	_, err = d.WriteDB().ExecContext(
-		t.Context(),
-		`UPDATE forge_workspaces SET mr_head_repo = NULL WHERE id = ?`,
-		ws.ID,
-	)
-	require.NoError(err)
-
-	require.NoError(mgr.PrepareAgentLaunchContext(t.Context(), PrepareAgentLaunchContextOptions{
-		WorkspaceID: ws.ID,
-		TargetKey:   "codex",
-	}))
-
-	content, err := os.ReadFile(filepath.Join(worktree, "AGENTS.override.md"))
-	require.NoError(err)
-	assert.Contains(
-		string(content),
-		"PR head: feature/widgets; repository identity unavailable; no push upstream configured",
-	)
 }
 
 func TestPrepareAgentLaunchContextPreservesUserFileAndRefreshesMarkedFile(t *testing.T) {
@@ -600,7 +470,7 @@ func TestPrepareAgentLaunchContextPreservesUserFileAndRefreshesMarkedFile(t *tes
 
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
 	seedMR(t, d, repoID, 42, "feature/widgets")
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	ws, err := mgr.Create(t.Context(), "github", "github.com", "acme", "widget", 42)
 	require.NoError(err)
 	worktree := ws.WorktreePath
@@ -641,7 +511,7 @@ func TestRenderAgentContextForWorktreeUsesPersistedWorkspace(t *testing.T) {
 	assert := assert.New(t)
 	database := openTestDB(t)
 	worktree := t.TempDir()
-	require.NoError(database.InsertWorkspace(t.Context(), &db.Workspace{
+	workspace := &db.Workspace{
 		ID:              "ws-hook-context",
 		Platform:        "github",
 		PlatformHost:    "github.com",
@@ -654,8 +524,24 @@ func TestRenderAgentContextForWorktreeUsesPersistedWorkspace(t *testing.T) {
 		WorktreePath:    worktree,
 		TmuxSession:     "kenn-forge-ws-hook-context",
 		Status:          "ready",
-	}))
-	manager := NewManager(database, t.TempDir())
+	}
+	require.NoError(database.InsertWorkspace(t.Context(), workspace))
+	issuedAt := time.Now().UTC()
+	require.NoError(database.PutWorkspaceLaunchSpec(
+		t.Context(), workspace.ID, WorkspaceLaunchSpec{
+			Version: WorkspaceLaunchSpecVersion,
+			Repository: WorkspaceLaunchRepository{
+				Provider: "github", PlatformHost: "github.com",
+				PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
+				CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
+			},
+			ItemType: db.WorkspaceItemTypeIssue, ItemNumber: 42,
+			ItemKey: "42", GitHeadRef: workspace.GitHeadRef,
+			SourceVisible: true, IssuedAt: issuedAt,
+			SourceVisibleUntil: issuedAt.Add(WorkspaceLaunchSpecVisibilityLease),
+		},
+	))
+	manager := newTestManager(t, database, t.TempDir())
 
 	rendered, err := manager.RenderAgentContextForWorktree(t.Context(), worktree)
 	require.NoError(err)
@@ -664,18 +550,4 @@ func TestRenderAgentContextForWorktreeUsesPersistedWorkspace(t *testing.T) {
 	assert.Contains(rendered, "Issue: #42")
 	assert.NotContains(rendered, generatedAgentContextMarker)
 	assert.NoFileExists(filepath.Join(worktree, "CLAUDE.local.md"))
-}
-
-func TestRenderAgentContextForWorktreeDropsMetadataRemovedDuringRefresh(t *testing.T) {
-	t.Parallel()
-	assert := assert.New(t)
-	require := require.New(t)
-	mgr, _, worktree, removed := setupAgentContextRemovalDuringRefresh(t)
-
-	rendered, err := mgr.RenderAgentContextForWorktree(t.Context(), worktree)
-	require.NoError(err)
-	require.True(*removed)
-	assert.NotContains(rendered, "Test PR")
-	assert.NotContains(rendered, "https://github.com/acme/widget/pull/42")
-	assert.NotContains(rendered, "feature/widgets")
 }

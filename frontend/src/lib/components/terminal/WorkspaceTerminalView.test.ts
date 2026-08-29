@@ -656,7 +656,7 @@ function installEventSourceRecorder(): RecordedEventSource[] {
       url: "shared-provider-events",
       listeners: {
         open: () => subscriber({ type: "open" }),
-        "reconnect.stale": () => subscriber({ type: "reconnect.stale" }),
+        "reconnect.stale": () => subscriber({ type: "reconnect.stale", payload: {} }),
         workspace_status: (event) => subscriber({ type: "workspace_status", payload: JSON.parse(event?.data ?? "{}") }),
         workspace_pr_associated: (event) =>
           subscriber({ type: "workspace_pr_associated", payload: JSON.parse(event?.data ?? "{}") }),
@@ -823,6 +823,7 @@ describe("WorkspaceTerminalView", () => {
         if (pathname.endsWith("/api/v1/snapshot")) {
           return Promise.resolve(
             Response.json({
+              workspaces: [],
               hosts: [
                 {
                   configKey: "local",

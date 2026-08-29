@@ -81,8 +81,16 @@ type startupConfigSnapshot struct {
 	Tmux            config.Tmux
 	Shell           config.Shell
 	FleetSessions   config.FleetSessions
+	FleetRole       config.FleetRole
+	FleetBaseURL    string
+	Hub             *fleetHubStartupBinding
 	RequireAuth     bool
-	SSHPeers        []config.FleetSSHPeer
+	TailscaleServe  config.TailscaleServeAPI
+}
+
+type fleetHubStartupBinding struct {
+	NodeID  string
+	BaseURL string
 }
 
 type startupPlatformTransport struct {
@@ -124,11 +132,22 @@ func snapshotStartupConfig(cfg *config.Config) startupConfigSnapshot {
 	}
 	snap.Shell.Command = slices.Clone(cfg.Shell.Command)
 	snap.TokenEnvNames = startupBoundTokenEnvNames(cfg)
-	// API auth, fleet session monitoring, and the ssh peer set are
-	// wired in newServer, so edits require a restart.
+	// API auth, private-ingress policy, fleet identity, and session monitoring
+	// are wired at startup, so edits require a restart.
 	snap.FleetSessions = cfg.Fleet.Sessions
+	snap.FleetRole = cfg.Fleet.RoleOrDefault()
+	snap.FleetBaseURL = cfg.Fleet.BaseURL
+	if cfg.Fleet.Hub != nil {
+		snap.Hub = &fleetHubStartupBinding{
+			NodeID:  cfg.Fleet.Hub.NodeID,
+			BaseURL: cfg.Fleet.Hub.BaseURL,
+		}
+	}
 	snap.RequireAuth = cfg.API.RequireAuth
-	snap.SSHPeers = slices.Clone(cfg.Fleet.SSHPeers)
+	snap.TailscaleServe = cfg.API.TailscaleServe
+	snap.TailscaleServe.AllowedUsers = slices.Clone(
+		cfg.API.TailscaleServe.AllowedUsers,
+	)
 	return snap
 }
 
@@ -759,8 +778,11 @@ func cloneReloadedConfig(in *config.Config) config.Config {
 		out.Tmux.AgentSessions = &v
 	}
 	out.Shell.Command = slices.Clone(in.Shell.Command)
-	out.Fleet.Peers = slices.Clone(in.Fleet.Peers)
-	out.Fleet.SSHPeers = slices.Clone(in.Fleet.SSHPeers)
+	out.Fleet.Members = slices.Clone(in.Fleet.Members)
+	if in.Fleet.Hub != nil {
+		hub := *in.Fleet.Hub
+		out.Fleet.Hub = &hub
+	}
 	return out
 }
 

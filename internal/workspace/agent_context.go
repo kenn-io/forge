@@ -214,19 +214,16 @@ func (m *Manager) PrepareAgentLaunchContext(
 	ctx context.Context,
 	opts PrepareAgentLaunchContextOptions,
 ) error {
-	summary, err := m.GetSummary(ctx, opts.WorkspaceID)
+	workspace, err := m.db.GetWorkspace(ctx, opts.WorkspaceID)
 	if err != nil {
-		return fmt.Errorf("get workspace summary: %w", err)
+		return fmt.Errorf("get workspace: %w", err)
 	}
-	if summary == nil {
+	if workspace == nil {
 		return ErrWorkspaceNotFound
 	}
-	if err := m.RefreshWorkspaceHeadRepo(ctx, &summary.Workspace); err != nil {
-		return fmt.Errorf("refresh workspace head repository: %w", err)
-	}
-	summary, err = m.GetSummary(ctx, opts.WorkspaceID)
+	summary, err := m.lifecycleSummary(ctx, workspace)
 	if err != nil {
-		return fmt.Errorf("reload workspace summary: %w", err)
+		return fmt.Errorf("validate workspace launch specification: %w", err)
 	}
 	if summary == nil {
 		return ErrWorkspaceNotFound
@@ -267,19 +264,16 @@ func (m *Manager) RenderAgentContextForWorktree(
 	if err != nil {
 		return "", err
 	}
-	summaries, err := m.ListSummaries(ctx)
+	workspaces, err := m.db.ListWorkspaces(ctx)
 	if err != nil {
 		return "", err
 	}
-	for i := range summaries {
-		candidate, err := canonicalFilesystemPath(summaries[i].WorktreePath)
+	for i := range workspaces {
+		candidate, err := canonicalFilesystemPath(workspaces[i].WorktreePath)
 		if err != nil || candidate != target {
 			continue
 		}
-		if err := m.RefreshWorkspaceHeadRepo(ctx, &summaries[i].Workspace); err != nil {
-			return "", err
-		}
-		refreshed, err := m.GetSummary(ctx, summaries[i].ID)
+		refreshed, err := m.lifecycleSummary(ctx, &workspaces[i])
 		if err != nil {
 			return "", err
 		}

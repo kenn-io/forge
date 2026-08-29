@@ -23,24 +23,26 @@
 - Tool implementations call the typed in-process Forge backend and never the
   daemon's public HTTP API (`internal/mcpserver/backend.go::Backend`,
   `internal/server/mcp_backend.go::Server.MCPBackend`).
+- The backend composes provider and spoke-local interfaces. Provider reads and
+  workflow state use the hub; clone, workspace, runtime, and
+  agent-session tools stay local, and hub outages remain typed
+  (`internal/mcpserver/backend.go::NewFederatedBackend`).
 - Every MCP repository and item reference carries provider-verified
   `platform_repo_id`. Resolve the mutable route and reject it unless the stable
   ID still matches; never fall back to route-only identity
   (`internal/mcpserver/types.go::repoFilterInput.repositoryIdentity`,
   `internal/server/mcp_backend.go::mcpBackend.resolveRepository`).
-- Preflight identity validation alone is check-then-use: route-addressed reads
-  re-verify the captured route fence after the read and fail closed on change;
-  workspace mutations bind the fence to the request context so guarded writes
-  reject a mid-request route reassignment
-  (`internal/server/mcp_backend.go::mcpBackend.confirmRepositoryRoute`,
-  `internal/server/mcp_backend.go::mcpBackend.routeFenceContext`).
+- Provider reads resolve and recheck stable routes at the hub. Local
+  route reads recheck the captured generation, and workspace writes carry that
+  fence in context (`internal/server/mcp_backend.go::mcpBackend.confirmProviderRepositoryRoute`).
 - Target MCP `2026-07-28`; do not advertise deprecated logging or catalog
   change notifications for the static surface (`internal/mcpserver/server.go::New`).
 - Use only canonical `kenn-forge` command/resource/prompt names and
   `kenn_forge_*` tools; do not add aliases (`internal/mcpserver/server.go::Server.registerTools`).
-- The surface may write local workflow/workspace state but must not expose
-  provider mutations, arbitrary commands, terminal bytes, lifecycle cleanup,
-  or `removed_upstream` items through workflow reads or writes
+- Workflow reads and writes are hub-owned provider-adjacent state;
+  workspace state stays local. The surface must not expose provider mutations,
+  arbitrary commands, terminal bytes, lifecycle cleanup, or `removed_upstream`
+  items through workflow reads or writes
   (`internal/server/mcp_backend.go::mcpBackend.ListWorkflowStates`,
   `internal/server/mcp_backend.go::mcpBackend.SetWorkflowState`).
 - Candidate output defaults to 25 and caps at 100. Apply candidate `item_types`

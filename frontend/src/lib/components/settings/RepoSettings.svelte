@@ -12,6 +12,8 @@
   import RepoConfigMenu from "./RepoConfigMenu.svelte";
   import RepoImportModal from "./RepoImportModal.svelte";
   import RepoPromoteModal from "./RepoPromoteModal.svelte";
+  import SettingsOwnerNotice from "./SettingsOwnerNotice.svelte";
+  import type { SettingsOwner } from "./settingsOwnership.js";
 
   const runtime = getAppRuntime();
   const { sync } = getStores();
@@ -19,9 +21,10 @@
   interface Props {
     repos: ConfigRepo[];
     onUpdate: (repos: ConfigRepo[]) => void;
+    owner?: SettingsOwner;
   }
 
-  let { repos, onUpdate }: Props = $props();
+  let { repos, onUpdate, owner = "local" }: Props = $props();
 
   import { isEmbedded } from "../../stores/embed-config.svelte.js";
   const embedded = isEmbedded();
@@ -251,6 +254,8 @@
     );
   }
 </script>
+
+<SettingsOwnerNotice {owner} subject="Repository sync inventory" />
 
 {#if !embedded}
   <div class="repo-import-entry">

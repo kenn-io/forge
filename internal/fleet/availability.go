@@ -8,7 +8,15 @@ const (
 	OpRepositoryClone = "repositoryClone"
 	OpProjectAdd      = "projectAdd"
 	OpProjectRemove   = "projectRemove"
+	OpWorkspaceRead   = "workspaceRead"
+	OpWorkspaceWrite  = "workspaceWrite"
+	OpTerminalAttach  = "terminalAttach"
 )
+
+// ReasonSummaryOnly explains why a spoke cannot route an operation through the
+// hub to another spoke. The summary remains useful, but the operation
+// must be performed from the hub or the owning spoke.
+const ReasonSummaryOnly = "This host is visible as a summary only."
 
 // operationDef maps an operation key to its
 // CommandCapabilities field check and fallback reason.
@@ -72,6 +80,18 @@ var operationDefs = map[string]operationDef{
 		},
 		reason: "Removing projects is currently unavailable.",
 	},
+	OpWorkspaceRead: {
+		capCheck: func(CommandCapabilities) bool { return true },
+		reason:   "Workspace reads are currently unavailable.",
+	},
+	OpWorkspaceWrite: {
+		capCheck: func(CommandCapabilities) bool { return true },
+		reason:   "Workspace changes are currently unavailable.",
+	},
+	OpTerminalAttach: {
+		capCheck: func(CommandCapabilities) bool { return true },
+		reason:   "Terminal attachment is currently unavailable.",
+	},
 }
 
 func unavailable(
@@ -97,6 +117,24 @@ type RealCapabilityPolicy struct{}
 
 func (RealCapabilityPolicy) Apply(map[string]HostOperationAvailability, bool) {}
 
+// SummaryOnlyPolicy suppresses every operation on a non-self host in a spoke
+// observer's view. Nodes consume the hub's aggregate for display but
+// deliberately do not create two-hop routing paths through the hub.
+type SummaryOnlyPolicy struct{}
+
+func (SummaryOnlyPolicy) Apply(
+	result map[string]HostOperationAvailability,
+	reachable bool,
+) {
+	reason := ReasonSummaryOnly
+	if !reachable {
+		reason = "Host is offline."
+	}
+	for op := range result {
+		result[op] = unavailable(reason)
+	}
+}
+
 // HubReadOnlyPolicy forces the named operations unavailable, modeling a hub
 // that has not routed those write operations to its peers. When the host is
 // offline it stamps the offline reason so the offline map stays uniform.
@@ -117,8 +155,8 @@ func (p HubReadOnlyPolicy) Apply(result map[string]HostOperationAvailability, re
 
 // HostKeyedPolicy resolves a per-host policy from the host key before the
 // standard Apply pass. A hub uses it to suppress operations it cannot route
-// to a specific host — configured HTTP and SSH peers take writes over the
-// fleet proxies, but a host the hub has no route to is read-only.
+// to a specific host — enrolled members take writes over the federation
+// proxies, but a host the hub has no route to is read-only.
 // Enrichment consults ForHost when the policy implements it; the returned
 // policy's Apply runs as usual.
 type HostKeyedPolicy interface {
@@ -141,6 +179,7 @@ func DefaultMutationOps() []string {
 		OpWorktreeCreate, OpPullRequestImport, OpWorktreeDelete,
 		OpSessionEnsure, OpSessionKill,
 		OpRepositoryClone, OpProjectAdd, OpProjectRemove,
+		OpWorkspaceWrite,
 	}
 }
 

@@ -94,6 +94,10 @@ provider versions (`internal/server/gitlab_container_e2e_test.go::TestGitLabCont
 Regenerate OpenAPI and generated clients with `make api-generate` after Huma
 route or API type changes.
 
+Fleet setup tests inject every host boundary and use temporary homes/data; they
+must never inspect or mutate the live daemon, service manager, network ingress,
+or credentials (`internal/fleetsetup/setup_test.go`).
+
 ## Frontend test lane selection
 
 Do not treat Playwright or full-stack e2e as a universal "must have" for every

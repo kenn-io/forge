@@ -2,8 +2,10 @@ package fleetapi
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -15,13 +17,32 @@ import (
 	"go.kenn.io/forge/internal/config"
 )
 
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
+
+type closeTrackingBody struct {
+	io.Reader
+	closed bool
+}
+
+func (b *closeTrackingBody) Close() error {
+	b.closed = true
+	return nil
+}
+
 func TestFleetWebSocketProxyNegotiatesContextTakeoverOnBothLegs(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	peerExtensions := make(chan string, 1)
+	peerHeaders := make(chan http.Header, 1)
+	peerPath := make(chan string, 1)
 	peerErrors := make(chan error, 1)
-	peer := httptest.NewServer(http.HandlerFunc(
+	peer := httptest.NewTLSServer(http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
+			peerPath <- r.URL.Path
 			conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 				InsecureSkipVerify: true,
 				CompressionMode:    websocket.CompressionContextTakeover,
@@ -32,6 +53,7 @@ func TestFleetWebSocketProxyNegotiatesContextTakeoverOnBothLegs(t *testing.T) {
 			}
 			defer conn.Close(websocket.StatusNormalClosure, "done")
 			peerExtensions <- w.Header().Get("Sec-WebSocket-Extensions")
+			peerHeaders <- r.Header.Clone()
 
 			typ, payload, err := conn.Read(r.Context())
 			if err != nil {
@@ -46,21 +68,25 @@ func TestFleetWebSocketProxyNegotiatesContextTakeoverOnBothLegs(t *testing.T) {
 	t.Cleanup(peer.Close)
 
 	srv, _ := setupTestServer(t)
-	setTestFleetConfig(srv, func(cfg *config.Config) {
-		cfg.Fleet.Enabled = true
-		cfg.Fleet.Peers = []config.FleetPeer{
-			{Key: "member", BaseURL: peer.URL},
-		}
+	tokens := configureTestMembers(t, srv, testTLSClient(t, peer), config.FleetMember{
+		NodeID: testMemberNodeID, BaseURL: peer.URL,
 	})
 	hub := httptest.NewServer(srv.localHandler())
 	t.Cleanup(hub.Close)
 
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
+	const sessionKey = "client:key one"
 	wsURL := "ws" + strings.TrimPrefix(hub.URL, "http") +
-		"/ws/v1/fleet/hosts/member/workspaces/ws_1/runtime/sessions/sess-1/terminal"
+		"/ws/v1/fleet/hosts/" + testMemberNodeID +
+		"/workspaces/ws_1/runtime/sessions/" + url.PathEscape(sessionKey) + "/terminal"
 	conn, resp, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{
 		CompressionMode: websocket.CompressionContextTakeover,
+		HTTPHeader: http.Header{
+			"Authorization": []string{"Bearer browser-secret"},
+			"Cookie":        []string{"session=browser"},
+			"Origin":        []string{"https://hub.example"},
+		},
 	})
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
@@ -81,6 +107,24 @@ func TestFleetWebSocketProxyNegotiatesContextTakeoverOnBothLegs(t *testing.T) {
 	case <-ctx.Done():
 		require.Fail("peer websocket handshake did not complete")
 	}
+	select {
+	case headers := <-peerHeaders:
+		assert.Equal("Bearer "+tokens[testMemberNodeID], headers.Get("Authorization"))
+		assert.Equal(testHubNodeID, headers.Get("X-Kenn-Forge-Node-ID"))
+		assert.Empty(headers.Get("Cookie"))
+		assert.Empty(headers.Get("Origin"))
+	case <-ctx.Done():
+		require.Fail("peer websocket headers were not captured")
+	}
+	select {
+	case path := <-peerPath:
+		assert.Equal(
+			"/ws/v1/workspaces/ws_1/runtime/sessions/"+sessionKey+"/terminal",
+			path,
+		)
+	case <-ctx.Done():
+		require.Fail("peer websocket path was not captured")
+	}
 
 	want := []byte("fleet-compression-round-trip")
 	require.NoError(conn.Write(ctx, websocket.MessageBinary, want))
@@ -88,6 +132,186 @@ func TestFleetWebSocketProxyNegotiatesContextTakeoverOnBothLegs(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(websocket.MessageBinary, typ)
 	assert.Equal(want, got)
+}
+
+func TestFleetProxyUsesOnlyDestinationCredentialAndRefusesRedirects(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	const otherNodeID = "cccccccccccccccccccccccccccccccc"
+
+	type capturedRequest struct {
+		authorization string
+		cookie        string
+		origin        string
+		forwarded     string
+		nodeID        string
+	}
+	var destinationRequests []capturedRequest
+	var otherRequests int
+	other := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		otherRequests++
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(other.Close)
+	redirect := false
+	destination := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		destinationRequests = append(destinationRequests, capturedRequest{
+			authorization: r.Header.Get("Authorization"),
+			cookie:        r.Header.Get("Cookie"),
+			origin:        r.Header.Get("Origin"),
+			forwarded:     r.Header.Get("Forwarded"),
+			nodeID:        r.Header.Get("X-Kenn-Forge-Node-ID"),
+		})
+		if redirect {
+			http.Redirect(w, r, other.URL+r.URL.Path, http.StatusTemporaryRedirect)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"workspaces":[]}`))
+	}))
+	t.Cleanup(destination.Close)
+
+	handler := New(Deps{})
+	tokens := configureTestMembers(
+		t, handler, testTLSClient(t, destination, other),
+		config.FleetMember{NodeID: testMemberNodeID, BaseURL: destination.URL},
+		config.FleetMember{NodeID: otherNodeID, BaseURL: other.URL},
+	)
+	api := newFleetTestAPI()
+	handler.Register(api)
+	request := func() *httptest.ResponseRecorder {
+		req := httptest.NewRequest(
+			http.MethodGet,
+			"/fleet/hosts/"+testMemberNodeID+"/workspaces",
+			nil,
+		)
+		req.Header.Set("Authorization", "Bearer browser-secret")
+		req.Header.Set("Cookie", "session=browser")
+		req.Header.Set("Origin", "https://hub.example")
+		req.Header.Set("Forwarded", "host=hub.example;proto=https")
+		recorder := httptest.NewRecorder()
+		api.Adapter().ServeHTTP(recorder, req)
+		return recorder
+	}
+
+	response := request()
+	require.Equal(http.StatusOK, response.Code, response.Body.String())
+	require.Len(destinationRequests, 1)
+	assert.Equal("Bearer "+tokens[testMemberNodeID], destinationRequests[0].authorization)
+	assert.Equal(testHubNodeID, destinationRequests[0].nodeID)
+	assert.Empty(destinationRequests[0].cookie)
+	assert.Empty(destinationRequests[0].origin)
+	assert.Empty(destinationRequests[0].forwarded)
+	assert.Zero(otherRequests)
+
+	redirect = true
+	response = request()
+	require.Equal(http.StatusTemporaryRedirect, response.Code, response.Body.String())
+	assert.Zero(otherRequests, "the destination credential must never cross an enrolled origin")
+	assert.NotEqual(tokens[otherNodeID], destinationRequests[1].authorization)
+}
+
+func TestFederationMemberClientsBoundRequestsAndStreamingHandshakes(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	baseTransport := &http.Transport{
+		TLSHandshakeTimeout:    time.Minute,
+		ResponseHeaderTimeout:  time.Minute,
+		ExpectContinueTimeout:  time.Minute,
+		MaxResponseHeaderBytes: 2 << 20,
+	}
+	base := &http.Client{Timeout: time.Minute, Transport: baseTransport}
+
+	clients := newFederationMemberClients(base)
+
+	assert.Equal(15*time.Second, clients.rest.Timeout)
+	assert.Zero(clients.proxy.Timeout,
+		"proxied operations own their request lifetime through the browser context")
+	assert.Zero(clients.websocket.Timeout,
+		"a websocket body may stream indefinitely after its bounded handshake")
+	restTransport, ok := clients.rest.Transport.(*http.Transport)
+	require.True(ok)
+	assert.NotSame(baseTransport, restTransport)
+	assert.Equal(5*time.Second, restTransport.TLSHandshakeTimeout)
+	assert.Equal(10*time.Second, restTransport.ResponseHeaderTimeout)
+	proxyTransport, ok := clients.proxy.Transport.(*http.Transport)
+	require.True(ok)
+	assert.Zero(proxyTransport.ResponseHeaderTimeout,
+		"long polls and synchronous clones may take longer than snapshot fan-out")
+	assert.Equal(time.Second, restTransport.ExpectContinueTimeout)
+	assert.Equal(int64(1<<20), restTransport.MaxResponseHeaderBytes)
+	assert.Equal(time.Minute, base.Timeout, "hardening must not mutate the shared client")
+	assert.Equal(time.Minute, baseTransport.ResponseHeaderTimeout,
+		"hardening must not mutate the shared transport")
+
+	timed := hardenedFederationHTTPClient(&http.Client{
+		Timeout: 25 * time.Millisecond,
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			<-r.Context().Done()
+			return nil, r.Context().Err()
+		}),
+	}, false)
+	req, err := http.NewRequest(http.MethodGet, "https://member.example/api/v1/snapshot", nil)
+	require.NoError(err)
+	started := time.Now()
+	_, err = timed.Do(req)
+	require.ErrorIs(err, context.DeadlineExceeded)
+	assert.Less(time.Since(started), time.Second)
+}
+
+func TestFleetProxyStripsPeerAuthorityResponseHeaders(t *testing.T) {
+	destination := make(http.Header)
+	source := http.Header{
+		"Content-Type":     []string{"application/json"},
+		"Connection":       []string{"X-Peer-Secret"},
+		"X-Peer-Secret":    []string{"hidden"},
+		"Set-Cookie":       []string{"forge_auth=attacker"},
+		"Location":         []string{"https://spoke.example/elsewhere"},
+		"Clear-Site-Data":  []string{`"cookies"`},
+		"Www-Authenticate": []string{`Bearer realm="spoke"`},
+	}
+
+	copyProxyResponseHeaders(destination, source)
+
+	assert.Equal(t, "application/json", destination.Get("Content-Type"))
+	for _, key := range []string{
+		"Connection", "X-Peer-Secret", "Set-Cookie", "Location",
+		"Clear-Site-Data", "Www-Authenticate",
+	} {
+		assert.Empty(t, destination.Values(key), key)
+	}
+}
+
+func TestFleetRESTProxyClosesMemberResponseBody(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	body := &closeTrackingBody{Reader: strings.NewReader(`{"workspaces":[]}`)}
+	client := &http.Client{Transport: roundTripFunc(
+		func(*http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       body,
+			}, nil
+		},
+	)}
+	handler := New(Deps{})
+	configureTestMembers(t, handler, client, config.FleetMember{
+		NodeID: testMemberNodeID, BaseURL: "https://member.example",
+	})
+	api := newFleetTestAPI()
+	handler.Register(api)
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/fleet/hosts/"+testMemberNodeID+"/workspaces",
+		nil,
+	)
+	recorder := httptest.NewRecorder()
+
+	api.Adapter().ServeHTTP(recorder, req)
+
+	require.Equal(http.StatusOK, recorder.Code, recorder.Body.String())
+	assert.True(body.closed, "the proxy must close every completed member response")
 }
 
 // TestCopyProxyRequestHeadersStripsBrowserHeaders verifies the hub does not
@@ -192,42 +416,36 @@ func TestIsPeerProxyCredentialHeader(t *testing.T) {
 	}
 }
 
-func TestResolveFleetHostTargetSkipsRemotePeersWhenFederationDisabled(t *testing.T) {
+func TestResolveFleetHostTargetSkipsRemoteMembersWhenFederationDisabled(t *testing.T) {
 	assert := assert.New(t)
 	srv := &Handler{
+		nodeID: testHubNodeID,
 		config: ConfigSnapshot{
 			Fleet: config.Fleet{
-				Key: "hub",
-				Peers: []config.FleetPeer{
-					{Key: "member", BaseURL: "http://member.test"},
+				Role: config.FleetRoleHub,
+				Members: []config.FleetMember{
+					{NodeID: testMemberNodeID, BaseURL: "https://member.test"},
 				},
 			},
 		},
 	}
 
-	_, ok := srv.resolveFleetHostTarget("member")
-	assert.False(ok, "disabled federation must not resolve remote HTTP peers")
+	_, ok := srv.resolveFleetHostTarget(testMemberNodeID)
+	assert.False(ok, "disabled federation must not resolve remote members")
 
 	self, ok := srv.resolveFleetHostTarget(fleetSelfHostAlias)
 	require.True(t, ok, "disabled federation must preserve self routing")
 	assert.True(self.self)
 }
 
-func TestResolveFleetHostTargetUsesRemotePeersWhenFederationEnabled(t *testing.T) {
+func TestResolveFleetHostTargetUsesActiveMembersWhenFederationEnabled(t *testing.T) {
 	assert := assert.New(t)
-	srv := &Handler{
-		config: ConfigSnapshot{
-			Fleet: config.Fleet{
-				Enabled: true,
-				Key:     "hub",
-				Peers: []config.FleetPeer{
-					{Key: "member", BaseURL: "http://member.test"},
-				},
-			},
-		},
-	}
+	srv := New(Deps{})
+	configureTestMembers(t, srv, nil, config.FleetMember{
+		NodeID: testMemberNodeID, BaseURL: "https://member.test",
+	})
 
-	target, ok := srv.resolveFleetHostTarget("member")
+	target, ok := srv.resolveFleetHostTarget(testMemberNodeID)
 	require.True(t, ok)
-	assert.Equal("member", target.peer.Key)
+	assert.Equal(testMemberNodeID, target.member.NodeID)
 }

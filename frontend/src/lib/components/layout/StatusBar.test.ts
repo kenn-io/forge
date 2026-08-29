@@ -8,6 +8,7 @@ const activityState = vi.hoisted(() => ({
   workspaceActivity: [] as WorkspaceActivitySubject[],
   enabledItemTypes: new Set<"pr" | "issue">(["pr", "issue"]),
   hideBots: false,
+  providerAvailable: true,
 }));
 
 const runtime = vi.hoisted(() => ({
@@ -36,6 +37,7 @@ vi.mock("../../context.js", () => ({
     sync: {
       getSyncState: () => null,
       getRateLimits: () => ({ provider_pools: {}, local_ceilings: {} }),
+      getProviderAvailable: () => activityState.providerAvailable,
     },
     events: {
       getConnectionState: () => "connected",
@@ -96,6 +98,7 @@ describe("StatusBar Activity counts", () => {
     activityState.workspaceActivity = [];
     activityState.enabledItemTypes = new Set(["pr", "issue"]);
     activityState.hideBots = false;
+    activityState.providerAvailable = true;
     runtime.runCommand.mockClear();
   });
 
@@ -146,5 +149,15 @@ describe("StatusBar Activity counts", () => {
     expect(screen.getByText("1 PRs")).toBeTruthy();
     expect(screen.getByText("0 issues")).toBeTruthy();
     expect(screen.getByText("1 repos")).toBeTruthy();
+  });
+
+  it("shows hub outage separately from the local event stream", () => {
+    activityState.providerAvailable = false;
+
+    render(StatusBar);
+
+    expect(screen.getByText("provider unavailable")).toBeTruthy();
+    expect(screen.getByTitle("This Forge spoke cannot reach its federation hub")).toBeTruthy();
+    expect(screen.queryByText(/synced/)).toBeNull();
   });
 });

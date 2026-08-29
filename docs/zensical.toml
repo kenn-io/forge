@@ -27,7 +27,7 @@ nav = [
   {"Configuration" = "configuration.md"},
   {"Commands" = "commands.md"},
   {"Advanced / experimental" = [
-    {"Fleet" = "federated-fleet.md"},
+    {"Federated Forge" = "federated-fleet.md"},
     {"MCP companion" = "kenn-forge-mcp.md"},
   ]},
   {"Archive" = "archive.md"},

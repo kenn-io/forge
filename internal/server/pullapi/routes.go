@@ -18,10 +18,12 @@ import (
 	gh "github.com/google/go-github/v89/github"
 	gitlabapi "gitlab.com/gitlab-org/api/client-go/v2"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/platform/gitealike"
+	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 )
@@ -298,6 +300,7 @@ type mergePRInputBody struct {
 	// mismatched reviewed-head assertions before provider mutation.
 	ExpectedHeadSHA   string `json:"expected_head_sha,omitempty"`
 	DeleteWorkspaceID string `json:"delete_workspace_id,omitempty"`
+	workspaceHostKey  string
 }
 
 type mergePRBody struct {
@@ -353,11 +356,18 @@ type listStacksOutput = httpapi.BodyOutput[[]stackResponse]
 type getStackForPROutput = httpapi.BodyOutput[stackContextResponse]
 
 func (s *Handler) listPulls(ctx context.Context, input *listPullsInput) (*listPullsOutput, error) {
-	rows, err := s.ListService(ctx, ListQuery{
+	query := ListQuery{
 		Repo: input.Repo, State: input.State, Kanban: input.Kanban,
 		Starred: input.Starred, InvolvesMe: input.InvolvesMe, Text: input.Q,
 		Limit: input.Limit, Offset: input.Offset,
-	})
+	}
+	var rows []MergeRequestResponse
+	var err error
+	if _, federationRequest := federationauth.PrincipalFromContext(ctx); federationRequest {
+		rows, err = s.ListProviderService(ctx, query)
+	} else {
+		rows, err = s.ListService(ctx, query)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -490,10 +500,17 @@ func (s *Handler) listPullsRouteCore(ctx context.Context, input *listPullsInput)
 }
 
 func (s *Handler) getPull(ctx context.Context, input *repoNumberInput) (*getPullOutput, error) {
-	body, err := s.GetService(ctx, ItemIdentity{
+	item := ItemIdentity{
 		Provider: input.Provider, PlatformHost: input.PlatformHost,
 		Owner: input.Owner, Name: input.Name, Number: input.Number,
-	})
+	}
+	var body MergeRequestDetailResponse
+	var err error
+	if _, federationRequest := federationauth.PrincipalFromContext(ctx); federationRequest {
+		body, err = s.GetProviderService(ctx, item)
+	} else {
+		body, err = s.GetService(ctx, item)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -1681,6 +1698,7 @@ func (s *Handler) mergePRWithBody(
 	number int,
 	body mergePRInputBody,
 ) (mergePRBody, error) {
+	body.bindWorkspaceHost(ctx)
 	repo, err := s.requireRepoRouteCapability(
 		ctx,
 		provider, platformHost, owner, name,
@@ -1805,7 +1823,9 @@ func (s *Handler) mergePRWithBody(
 		// (A deferred worker completing through this same path supersedes its
 		// own handle, which is a no-op by the time it broadcasts completion.)
 		s.supersedeDeferredMerge(deferredMergeKey(*repo, number))
-		workspaceCleanup = s.queueMergedWorkspaceCleanup(body.DeleteWorkspaceID)
+		workspaceCleanup = s.queueMergedWorkspaceCleanup(
+			ctx, body.workspaceHostKey, body.DeleteWorkspaceID,
+		)
 	}
 
 	return mergePRBody{
@@ -2222,31 +2242,163 @@ func (s *Handler) setPRGitHubState(
 
 type getCommitsOutput = httpapi.BodyOutput[commitsResponse]
 
-func (s *Handler) getCommits(ctx context.Context, input *repoNumberInput) (*getCommitsOutput, error) {
+type resolvedPullCloneSnapshot struct {
+	ctx   context.Context
+	repo  *db.Repo
+	shas  *db.DiffSHAs
+	stale bool
+}
+
+func (s *Handler) resolvePullCloneSnapshot(
+	ctx context.Context, item ItemIdentity,
+) (*resolvedPullCloneSnapshot, error) {
+	if s.providerSource == nil {
+		repo, err := s.lookupRepoByProviderRoute(
+			ctx, item.Provider, item.PlatformHost, item.Owner, item.Name,
+		)
+		if err != nil {
+			return nil, providerRouteLookupError(err)
+		}
+		shas, err := s.visibleDiffSHAs(ctx, repo.ID, item.Number)
+		if err != nil {
+			return nil, httpapi.Internal("failed to look up PR")
+		}
+		if shas == nil {
+			return nil, httpapi.NotFound(
+				httpapi.CodePullNotFound, "pull request not found", nil,
+			)
+		}
+		if s.clones == nil {
+			return nil, httpapi.ServiceUnavailable(
+				"clone-backed pull request reads are not configured",
+			)
+		}
+		return &resolvedPullCloneSnapshot{
+			ctx:  gitclone.WithRepositoryIdentity(ctx, repo.PlatformRepoID),
+			repo: repo, shas: shas, stale: shas.Stale(),
+		}, nil
+	}
+	if s.clones == nil {
+		return nil, httpapi.ServiceUnavailable(
+			"clone-backed pull request reads are not configured",
+		)
+	}
+
+	descriptor, err := s.providerSource.GetDiffDescriptor(ctx, item)
+	if err != nil {
+		return nil, err
+	}
+	repository := descriptor.Repository
 	repo, err := s.lookupRepoByProviderRoute(
-		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
+		ctx, repository.Provider, repository.PlatformHost,
+		repository.Owner, repository.Name,
 	)
 	if err != nil {
 		return nil, providerRouteLookupError(err)
 	}
-	shas, err := s.visibleDiffSHAs(ctx, repo.ID, input.Number)
+	if repo.PlatformRepoID != repository.PlatformRepoID {
+		return nil, httpapi.Upstream(
+			"hub descriptor did not resolve to its stable repository",
+			repository.Provider, repository.PlatformHost,
+		)
+	}
+	fence, found, err := s.resolver.CaptureRepositoryRouteFence(ctx, *repo)
 	if err != nil {
-		return nil, httpapi.Internal("failed to look up PR")
+		return nil, httpapi.Internal("capture repository route failed")
 	}
-	if shas == nil {
-		return nil, httpapi.NotFound(httpapi.CodePullNotFound, "pull request not found", nil)
+	if !found {
+		return nil, httpapi.NotFound(
+			httpapi.CodeRepoNotFound, "repository route changed", nil,
+		)
 	}
-	if s.clones == nil {
-		return nil, httpapi.ServiceUnavailable("commits not available: clone manager not configured")
+	if err := s.clones.RequireCredentialRoute(
+		ctx, repository.Provider, repository.PlatformHost,
+		repository.Owner, repository.Name,
+	); err != nil {
+		return nil, pullClonePreparationProblem(err, repository)
 	}
+	cloneCtx := gitclone.WithRequiredCredential(
+		gitclone.WithRepositoryIdentity(ctx, repository.PlatformRepoID),
+	)
+	validate := func(validationCtx context.Context) error {
+		matches, err := s.resolver.RepositoryRouteFenceMatches(
+			validationCtx, *repo, fence,
+		)
+		if err != nil {
+			return err
+		}
+		if !matches {
+			return db.ErrRepositoryRouteFenceChanged
+		}
+		return nil
+	}
+	if err := s.clones.EnsureCloneValidated(
+		cloneCtx, repository.Provider, repository.PlatformHost,
+		repository.Owner, repository.Name, repository.CloneURL, validate,
+	); err != nil {
+		return nil, pullClonePreparationProblem(err, repository)
+	}
+	if platform.Kind(repository.Provider) == platform.KindGitLab {
+		if err := s.clones.FetchMergeRequestHead(
+			cloneCtx, repository.Provider, repository.PlatformHost,
+			repository.Owner, repository.Name, item.Number,
+		); err != nil {
+			return nil, pullClonePreparationProblem(err, repository)
+		}
+		if err := validate(ctx); err != nil {
+			return nil, pullClonePreparationProblem(err, repository)
+		}
+	}
+	return &resolvedPullCloneSnapshot{
+		ctx:  cloneCtx,
+		repo: repo,
+		shas: &db.DiffSHAs{
+			PlatformHeadSHA: descriptor.PlatformHeadSHA,
+			PlatformBaseSHA: descriptor.PlatformBaseSHA,
+			DiffHeadSHA:     descriptor.DiffHeadSHA,
+			DiffBaseSHA:     descriptor.DiffBaseSHA,
+			MergeBaseSHA:    descriptor.MergeBaseSHA,
+		},
+		stale: descriptor.Stale,
+	}, nil
+}
+
+func pullClonePreparationProblem(
+	err error, repository providerplane.RepositoryDescriptor,
+) error {
+	if errors.Is(err, gitclone.ErrCredentialUnavailable) {
+		return httpapi.GitCredentialUnavailable(
+			repository.Provider, repository.PlatformHost,
+			repository.Owner+"/"+repository.Name,
+		)
+	}
+	if errors.Is(err, db.ErrRepositoryRouteFenceChanged) {
+		return httpapi.NotFound(
+			httpapi.CodeRepoNotFound, "repository route changed", nil,
+		)
+	}
+	return httpapi.Upstream(
+		"failed to prepare the spoke-local repository clone",
+		repository.Provider, repository.PlatformHost,
+	)
+}
+
+func (s *Handler) getCommits(ctx context.Context, input *repoNumberInput) (*getCommitsOutput, error) {
+	resolved, err := s.resolvePullCloneSnapshot(ctx, ItemIdentity{
+		Provider: input.Provider, PlatformHost: input.PlatformHost,
+		Owner: input.Owner, Name: input.Name, Number: input.Number,
+	})
+	if err != nil {
+		return nil, err
+	}
+	repo, shas := resolved.repo, resolved.shas
 	if shas.DiffHeadSHA == "" || shas.MergeBaseSHA == "" {
 		return nil, httpapi.NotFound(httpapi.CodeNotFound, "commits not available for this pull request", nil)
 	}
 
 	host := repoProviderHost(*repo)
-	ctx = gitclone.WithRepositoryIdentity(ctx, repo.PlatformRepoID)
 	commits, err := s.clones.ListCommits(
-		ctx, string(repoProviderKind(*repo)), host, repo.Owner, repo.Name,
+		resolved.ctx, string(repoProviderKind(*repo)), host, repo.Owner, repo.Name,
 		shas.MergeBaseSHA, shas.DiffHeadSHA,
 	)
 	if err != nil {
@@ -2288,42 +2440,35 @@ type getDiffInput struct {
 type getDiffOutput = httpapi.BodyOutput[diffResponse]
 
 type resolvedDiffRange struct {
-	platform       string
-	host           string
-	owner          string
-	name           string
-	providerRepoID string
-	fromSHA        string
-	toSHA          string
-	diffSHAs       *db.DiffSHAs
+	ctx      context.Context
+	platform string
+	host     string
+	owner    string
+	name     string
+	fromSHA  string
+	toSHA    string
+	diffSHAs *db.DiffSHAs
+	stale    bool
 }
 
 func (s *Handler) resolveDiffRange(
 	ctx context.Context,
 	input *getDiffInput,
 ) (*resolvedDiffRange, error) {
-	repo, err := s.lookupRepoByProviderRoute(
-		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
-	)
+	resolved, err := s.resolvePullCloneSnapshot(ctx, ItemIdentity{
+		Provider: input.Provider, PlatformHost: input.PlatformHost,
+		Owner: input.Owner, Name: input.Name, Number: input.Number,
+	})
 	if err != nil {
-		return nil, providerRouteLookupError(err)
+		return nil, err
 	}
-	shas, err := s.visibleDiffSHAs(ctx, repo.ID, input.Number)
-	if err != nil {
-		return nil, httpapi.Internal("failed to look up PR")
-	}
-	if shas == nil {
-		return nil, httpapi.NotFound(httpapi.CodePullNotFound, "pull request not found", nil)
-	}
-	if s.clones == nil {
-		return nil, httpapi.ServiceUnavailable("diff view not available: clone manager not configured")
-	}
+	repo, shas := resolved.repo, resolved.shas
 	if shas.DiffHeadSHA == "" || shas.MergeBaseSHA == "" {
 		return nil, httpapi.NotFound(httpapi.CodeNotFound, "diff not available for this pull request", nil)
 	}
 
 	host := repoProviderHost(*repo)
-	ctx = gitclone.WithRepositoryIdentity(ctx, repo.PlatformRepoID)
+	ctx = resolved.ctx
 	diffFrom := shas.MergeBaseSHA
 	diffTo := shas.DiffHeadSHA
 
@@ -2376,14 +2521,15 @@ func (s *Handler) resolveDiffRange(
 	}
 
 	return &resolvedDiffRange{
-		platform:       string(repoProviderKind(*repo)),
-		host:           host,
-		owner:          repo.Owner,
-		name:           repo.Name,
-		providerRepoID: repo.PlatformRepoID,
-		fromSHA:        diffFrom,
-		toSHA:          diffTo,
-		diffSHAs:       shas,
+		ctx:      ctx,
+		platform: string(repoProviderKind(*repo)),
+		host:     host,
+		owner:    repo.Owner,
+		name:     repo.Name,
+		fromSHA:  diffFrom,
+		toSHA:    diffTo,
+		diffSHAs: shas,
+		stale:    resolved.stale,
 	}, nil
 }
 
@@ -2405,7 +2551,7 @@ func (s *Handler) getDiffRouteCore(ctx context.Context, input *getDiffInput) (*g
 	if err != nil {
 		return nil, err
 	}
-	ctx = gitclone.WithRepositoryIdentity(ctx, resolved.providerRepoID)
+	ctx = resolved.ctx
 
 	hideWhitespace := input.Whitespace == "hide"
 	result, err := s.clones.Diff(
@@ -2420,7 +2566,7 @@ func (s *Handler) getDiffRouteCore(ctx context.Context, input *getDiffInput) (*g
 		return nil, httpapi.Upstream("failed to compute diff", "", "")
 	}
 
-	result.Stale = resolved.diffSHAs.Stale()
+	result.Stale = resolved.stale
 
 	return &getDiffOutput{Body: diffResponse{
 		Stale:               result.Stale,
@@ -2469,7 +2615,7 @@ func (s *Handler) getFilePreview(ctx context.Context, input *getFilePreviewInput
 	if err != nil {
 		return nil, err
 	}
-	ctx = gitclone.WithRepositoryIdentity(ctx, resolved.providerRepoID)
+	ctx = resolved.ctx
 
 	previewRef := resolved.toSHA
 	previewPath := input.Path
@@ -2598,30 +2744,21 @@ func (s *Handler) getFiles(ctx context.Context, input *getFilesInput) (*getFiles
 }
 
 func (s *Handler) getFilesRouteCore(ctx context.Context, input *getFilesInput) (*getFilesOutput, error) {
-	repo, err := s.lookupRepoByProviderRoute(
-		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
-	)
+	resolved, err := s.resolvePullCloneSnapshot(ctx, ItemIdentity{
+		Provider: input.Provider, PlatformHost: input.PlatformHost,
+		Owner: input.Owner, Name: input.Name, Number: input.Number,
+	})
 	if err != nil {
-		return nil, providerRouteLookupError(err)
+		return nil, err
 	}
-	shas, err := s.visibleDiffSHAs(ctx, repo.ID, input.Number)
-	if err != nil {
-		return nil, httpapi.Internal("failed to look up PR")
-	}
-	if shas == nil {
-		return nil, httpapi.NotFound(httpapi.CodePullNotFound, "pull request not found", nil)
-	}
-	if s.clones == nil {
-		return nil, httpapi.ServiceUnavailable("files view not available: clone manager not configured")
-	}
+	repo, shas := resolved.repo, resolved.shas
 	if shas.DiffHeadSHA == "" || shas.MergeBaseSHA == "" {
 		return nil, httpapi.NotFound(httpapi.CodeNotFound, "file list not available for this pull request", nil)
 	}
 
 	host := repoProviderHost(*repo)
-	ctx = gitclone.WithRepositoryIdentity(ctx, repo.PlatformRepoID)
 	files, err := s.clones.DiffFiles(
-		ctx, string(repoProviderKind(*repo)), host, repo.Owner, repo.Name,
+		resolved.ctx, string(repoProviderKind(*repo)), host, repo.Owner, repo.Name,
 		shas.MergeBaseSHA, shas.DiffHeadSHA,
 	)
 	if err != nil {
@@ -2633,7 +2770,7 @@ func (s *Handler) getFilesRouteCore(ctx context.Context, input *getFilesInput) (
 	}
 
 	return &getFilesOutput{Body: filesResponse{
-		Stale: shas.Stale(),
+		Stale: resolved.stale,
 		Files: files,
 	}}, nil
 }

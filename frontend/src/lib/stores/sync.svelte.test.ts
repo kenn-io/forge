@@ -22,6 +22,17 @@ afterEach(async () => {
 });
 
 describe("sync store", () => {
+  it("tracks hub availability independently of cached sync status", () => {
+    const store = createSyncStore({ GET: vi.fn(), POST: vi.fn() } as unknown as GeneratedClient);
+
+    expect(store.getProviderAvailable()).toBe(true);
+    store.setSyncStatus({ running: false, last_run_at: "2026-08-05T12:00:00Z", last_error: "" });
+    store.setProviderAvailable(false);
+
+    expect(store.getProviderAvailable()).toBe(false);
+    expect(store.getSyncState()?.last_run_at).toBe("2026-08-05T12:00:00Z");
+  });
+
   it("keeps an acknowledged trigger running through a stale idle status", async () => {
     const baseline = "2026-08-05T12:00:00Z";
     const get = vi.fn(async (path: string) =>

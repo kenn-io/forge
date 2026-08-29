@@ -297,6 +297,18 @@ func TestDaemonRestartValidatesBeforeSignaling(t *testing.T) {
 	assert.Empty(t, *events)
 }
 
+func TestDaemonRestartValidatesNodeIDBeforeSignaling(t *testing.T) {
+	deps, events := daemonLifecycleTestDeps(t)
+	deps.ensureNodeID = func(string) (string, error) {
+		return "", errors.New("invalid node ID")
+	}
+
+	err := newDaemonLifecycle(deps).Restart(t.Context(), "/config.toml", io.Discard)
+
+	require.ErrorContains(t, err, "invalid node ID")
+	assert.NotContains(t, *events, "signal")
+}
+
 func TestDaemonRestartStartsWhenNotRunning(t *testing.T) {
 	assert := assert.New(t)
 	deps, events := daemonLifecycleTestDeps(t)
@@ -438,6 +450,9 @@ func daemonLifecycleTestDeps(t *testing.T) (daemonLifecycleDeps, *[]string) {
 		readStatus: func(string) (runtimelock.Status, error) {
 			*events = append(*events, "status")
 			return runtimelock.Status{}, nil
+		},
+		ensureNodeID: func(string) (string, error) {
+			return "0123456789abcdef0123456789abcdef", nil
 		},
 		ensureBackground: func(context.Context, string, *config.Config) (daemon.RuntimeRecord, error) {
 			*events = append(*events, "start")

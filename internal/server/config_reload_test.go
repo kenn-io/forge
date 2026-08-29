@@ -2232,19 +2232,17 @@ func TestConfigReload_SubscriberAfterParseErrorGetsCachedEvent(t *testing.T) {
 	assert.NotEmpty(cached.Error)
 }
 
-// TestRestartRequiredForAuthFleetSessionsAndSSHPeers pins that the
-// startup-bound [api] auth gate, fleet session monitor settings, and
-// fleet ssh peer set participate in restart detection: they are wired
-// at newServer time, so editing them mid-run must surface
-// restart_required instead of silently not applying.
-func TestRestartRequiredForAuthFleetSessionsAndSSHPeers(t *testing.T) {
+// TestRestartRequiredForAuthFleetRoleAndSessions pins startup-bound settings
+// while member and timeout edits remain live.
+func TestRestartRequiredForAuthFleetRoleAndSessions(t *testing.T) {
 	require := require.New(t)
 	base := func() *config.Config {
 		cfg := &config.Config{}
-		cfg.API.RequireAuth = false
+		cfg.API.RequireAuth = true
+		cfg.Fleet.BaseURL = "https://hub.example"
 		cfg.Fleet.Sessions.IncludeUnmanagedDetails = false
-		cfg.Fleet.SSHPeers = []config.FleetSSHPeer{
-			{Key: "epyc", Destination: "wes@epyc.local"},
+		cfg.Fleet.Members = []config.FleetMember{
+			{NodeID: "fedcba9876543210fedcba9876543210", BaseURL: "https://spoke.example", State: "active"},
 		}
 		return cfg
 	}
@@ -2258,41 +2256,142 @@ func TestRestartRequiredForAuthFleetSessionsAndSSHPeers(t *testing.T) {
 	require.False(snap.restartRequiredFor(enabledFlipped),
 		"fleet.enabled changes apply without restart")
 
-	keyChanged := base()
-	keyChanged.Fleet.Key = "studio"
-	require.False(snap.restartRequiredFor(keyChanged),
-		"fleet.key changes apply without restart")
-
 	timeoutChanged := base()
 	timeoutChanged.Fleet.PeerTimeout = "4s"
 	require.False(snap.restartRequiredFor(timeoutChanged),
 		"fleet.peer_timeout changes apply without restart")
 
-	httpPeerAdded := base()
-	httpPeerAdded.Fleet.Peers = []config.FleetPeer{
-		{Key: "mini", BaseURL: "http://mini.local:8091"},
-	}
-	require.False(snap.restartRequiredFor(httpPeerAdded),
-		"HTTP fleet peer changes apply without restart")
+	memberAdded := base()
+	memberAdded.Fleet.Members = append(memberAdded.Fleet.Members, config.FleetMember{
+		NodeID: "0123456789abcdef0123456789abcdef", BaseURL: "https://mini.example", State: "active",
+	})
+	require.False(snap.restartRequiredFor(memberAdded),
+		"federation member changes apply without restart")
 
 	authFlipped := base()
-	authFlipped.API.RequireAuth = true
+	authFlipped.API.RequireAuth = false
 	require.True(snap.restartRequiredFor(authFlipped))
 
 	fleetSessionsFlipped := base()
 	fleetSessionsFlipped.Fleet.Sessions.IncludeUnmanagedDetails = true
 	require.True(snap.restartRequiredFor(fleetSessionsFlipped))
 
-	peerAdded := base()
-	peerAdded.Fleet.SSHPeers = append(
-		peerAdded.Fleet.SSHPeers,
-		config.FleetSSHPeer{Key: "mini", Destination: "wes@mini.local"},
-	)
-	require.True(snap.restartRequiredFor(peerAdded))
+	originChanged := base()
+	originChanged.Fleet.BaseURL = "https://new-hub.example"
+	require.True(snap.restartRequiredFor(originChanged))
 
-	peerEdited := base()
-	peerEdited.Fleet.SSHPeers[0].Destination = "wes@epyc.tail"
-	require.True(snap.restartRequiredFor(peerEdited))
+	tailscaleServeChanged := base()
+	tailscaleServeChanged.API.TailscaleServe = config.TailscaleServeAPI{
+		Enabled: true, AllowedUsers: []string{"user@example.com"},
+	}
+	require.True(snap.restartRequiredFor(tailscaleServeChanged))
+}
+
+func TestActiveFleetConfigSnapshotDefersHotEnableUntilRuntimeAuth(t *testing.T) {
+	assert := assert.New(t)
+	boot := &config.Config{}
+	srv := &Server{
+		cfg: &config.Config{
+			API:   config.API{RequireAuth: true},
+			Fleet: config.Fleet{Enabled: true, Role: config.FleetRoleHub},
+		},
+		bootCfgSnapshot: snapshotStartupConfig(boot),
+	}
+
+	assert.False(srv.activeFleetConfigSnapshotLocked().Fleet.Enabled)
+	assert.False(srv.federationEnabled())
+
+	// A restart installs the requested API authentication policy before
+	// federation becomes active.
+	srv.daemonRequests = newDaemonRequestPolicy(DaemonAccessOptions{
+		Token: "local-secret", RequireAPIAuth: true,
+	})
+	assert.True(srv.activeFleetConfigSnapshotLocked().Fleet.Enabled)
+	assert.True(srv.federationEnabled())
+}
+
+func TestActiveFleetConfigSnapshotKeepsBootIdentity(t *testing.T) {
+	assert := assert.New(t)
+	boot := &config.Config{Fleet: config.Fleet{
+		Role: config.FleetRoleSpoke, BaseURL: "https://spoke.example",
+		Hub: &config.FleetHub{
+			NodeID: "11111111111111111111111111111111",
+			Name:   "Hub", BaseURL: "https://hub.example",
+		},
+	}}
+	srv := &Server{
+		cfg: &config.Config{Fleet: config.Fleet{
+			Role: config.FleetRoleHub, BaseURL: "https://new-spoke.example",
+			Hub: &config.FleetHub{
+				NodeID: "22222222222222222222222222222222",
+				Name:   "Renamed hub", BaseURL: "https://new-hub.example",
+			},
+			Members: []config.FleetMember{{
+				NodeID:  "33333333333333333333333333333333",
+				BaseURL: "https://member.example", State: "active",
+			}},
+			PeerTimeout: "4s",
+		}},
+		bootCfgSnapshot: snapshotStartupConfig(boot),
+	}
+
+	snapshot := srv.activeFleetConfigSnapshotLocked()
+
+	assert.Equal(config.FleetRoleSpoke, snapshot.Fleet.Role)
+	assert.Equal(boot.Fleet.BaseURL, snapshot.Fleet.BaseURL)
+	require.NotNil(t, snapshot.Fleet.Hub)
+	assert.Equal(boot.Fleet.Hub.NodeID, snapshot.Fleet.Hub.NodeID)
+	assert.Equal(boot.Fleet.Hub.BaseURL, snapshot.Fleet.Hub.BaseURL)
+	assert.Equal("Renamed hub", snapshot.Fleet.Hub.Name)
+	assert.Equal(srv.cfg.Fleet.Members, snapshot.Fleet.Members)
+	assert.Equal("4s", snapshot.Fleet.PeerTimeout)
+}
+
+func TestRestartRequiredForFleetRoleAndHubBinding(t *testing.T) {
+	require := require.New(t)
+	base := &config.Config{
+		Fleet: config.Fleet{
+			Role: config.FleetRoleHub,
+			Members: []config.FleetMember{{
+				NodeID: "fedcba9876543210fedcba9876543210", Name: "Spoke A", BaseURL: "https://spoke.test", State: "active",
+			}},
+		},
+	}
+	snap := snapshotStartupConfig(base)
+
+	roleChanged := *base
+	roleChanged.Fleet = base.Fleet
+	roleChanged.Fleet.Role = config.FleetRoleSpoke
+	roleChanged.Fleet.Hub = &config.FleetHub{
+		NodeID:  "0123456789abcdef0123456789abcdef",
+		BaseURL: "https://hub.test",
+	}
+	require.True(snap.restartRequiredFor(&roleChanged))
+
+	bound := roleChanged
+	boundSnap := snapshotStartupConfig(&bound)
+	bindingChanged := bound
+	bindingChanged.Fleet = bound.Fleet
+	bindingChanged.Fleet.Hub = &config.FleetHub{
+		NodeID:  bound.Fleet.Hub.NodeID,
+		BaseURL: "https://new-hub.test",
+	}
+	require.True(boundSnap.restartRequiredFor(&bindingChanged))
+
+	hubNameChanged := bound
+	hubNameChanged.Fleet = bound.Fleet
+	hubNameChanged.Fleet.Hub = &config.FleetHub{
+		NodeID:  bound.Fleet.Hub.NodeID,
+		Name:    "Renamed hub",
+		BaseURL: bound.Fleet.Hub.BaseURL,
+	}
+	require.False(boundSnap.restartRequiredFor(&hubNameChanged))
+
+	displayChanged := *base
+	displayChanged.Fleet = base.Fleet
+	displayChanged.Fleet.Members = slices.Clone(base.Fleet.Members)
+	displayChanged.Fleet.Members[0].Name = "Renamed spoke"
+	require.False(snap.restartRequiredFor(&displayChanged))
 }
 
 func TestRestartRequiredForMCPConfig(t *testing.T) {
@@ -2429,6 +2528,11 @@ name = "widget"
 
 [api]
 require_auth = true
+
+[fleet]
+enabled = true
+role = "hub"
+base_url = "https://hub.example"
 `
 
 const validReloadConfigFleetSessions = `
@@ -2443,21 +2547,6 @@ name = "widget"
 
 [fleet.sessions]
 include_unmanaged_details = true
-`
-
-const validReloadConfigSSHPeer = `
-sync_interval = "5m"
-github_token_env = "KENN_FORGE_GITHUB_TOKEN"
-host = "127.0.0.1"
-port = 8091
-
-[[repos]]
-owner = "acme"
-name = "widget"
-
-[[fleet.ssh_peers]]
-key = "epyc"
-destination = "wes@epyc.local"
 `
 
 const validReloadConfigRestartRequiredFields = `
@@ -2478,10 +2567,6 @@ require_auth = true
 
 [fleet.sessions]
 include_unmanaged_details = true
-
-[[fleet.ssh_peers]]
-key = "studio"
-destination = "marius@studio.local"
 
 [roborev]
 endpoint = "http://127.0.0.1:7374"
@@ -2513,6 +2598,8 @@ func TestConfigReload_RestartRequiredOnAuthGateChange(t *testing.T) {
 	assert.True(ev.Valid)
 	assert.True(ev.RestartRequired,
 		"[api].require_auth change should mark restart_required")
+	assert.False(srv.federationEnabled(),
+		"fleet activation must wait for the requested auth policy to install")
 
 	srv.cfgMu.Lock()
 	savedCfg := *srv.cfg
@@ -2554,37 +2641,6 @@ func TestConfigReload_RestartRequiredOnFleetSessionsChange(t *testing.T) {
 		"later settings saves must preserve externally reloaded fleet session settings")
 }
 
-func TestConfigReload_RestartRequiredOnSSHPeerChange(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-
-	srv, _, cfgPath := setupTestServerWithConfigContent(
-		t, validReloadConfig, &mockGH{},
-	)
-	waitForConfigWatcher(t, srv, 2*time.Second)
-	stream := streamConfigEvents(t, srv)
-	defer stream.Close()
-
-	writeConfigToml(t, cfgPath, validReloadConfigSSHPeer)
-
-	ev := waitForConfigEvent(t, stream, 2*time.Second)
-	assert.True(ev.Valid)
-	assert.True(ev.RestartRequired,
-		"[[fleet.ssh_peers]] change should mark restart_required")
-
-	srv.cfgMu.Lock()
-	savedCfg := *srv.cfg
-	savedCfg.Fleet.SSHPeers = slices.Clone(srv.cfg.Fleet.SSHPeers)
-	srv.cfgMu.Unlock()
-	savePath := filepath.Join(t.TempDir(), "saved.toml")
-	require.NoError(savedCfg.Save(savePath))
-	reloaded, err := config.Load(savePath)
-	require.NoError(err)
-	require.Len(reloaded.Fleet.SSHPeers, 1)
-	assert.Equal("epyc", reloaded.Fleet.SSHPeers[0].Key)
-	assert.Equal("wes@epyc.local", reloaded.Fleet.SSHPeers[0].Destination)
-}
-
 func TestConfigReload_SettingsSavePreservesRestartRequiredFields(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -2621,8 +2677,6 @@ func TestConfigReload_SettingsSavePreservesRestartRequiredFields(t *testing.T) {
 	assert.True(reloaded.TrustReverseProxy)
 	assert.True(reloaded.API.RequireAuth)
 	assert.True(reloaded.Fleet.Sessions.IncludeUnmanagedDetails)
-	require.Len(reloaded.Fleet.SSHPeers, 1)
-	assert.Equal("studio", reloaded.Fleet.SSHPeers[0].Key)
 	assert.Equal("http://127.0.0.1:7374", reloaded.Roborev.Endpoint)
 	assert.Equal(
 		[]string{"systemd-run", "--user", "--scope", "tmux"},

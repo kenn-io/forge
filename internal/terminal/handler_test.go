@@ -25,43 +25,6 @@ func openTestDB(t *testing.T) *db.DB {
 	return dbtest.Open(t)
 }
 
-func seedRepo(
-	t *testing.T, d *db.DB,
-	host, owner, name string,
-) int64 {
-	t.Helper()
-	identity := db.GitHubRepoIdentity(host, owner, name)
-	identity.PlatformRepoID = "repo-" + owner + "-" + name
-	id, err := d.UpsertRepo(
-		t.Context(), identity,
-	)
-	require.NoError(t, err)
-	return id
-}
-
-func seedMR(
-	t *testing.T, d *db.DB,
-	repoID int64, number int, headBranch string,
-) {
-	t.Helper()
-	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
-	mr := &db.MergeRequest{
-		RepoID:         repoID,
-		PlatformID:     repoID*10000 + int64(number),
-		Number:         number,
-		Title:          "Test PR",
-		Author:         "author",
-		State:          "open",
-		HeadBranch:     headBranch,
-		BaseBranch:     "main",
-		CreatedAt:      now,
-		UpdatedAt:      now,
-		LastActivityAt: now,
-	}
-	_, err := d.UpsertMergeRequest(t.Context(), mr)
-	require.NoError(t, err)
-}
-
 func TestHandlerWorkspaceNotFound(t *testing.T) {
 	d := openTestDB(t)
 	mgr := workspace.NewManager(d, t.TempDir())
@@ -85,14 +48,15 @@ func TestHandlerWorkspaceNotReady(t *testing.T) {
 	d := openTestDB(t)
 	wtDir := t.TempDir()
 
-	repoID := seedRepo(t, d, "github.com", "acme", "widget")
-	seedMR(t, d, repoID, 42, "feature/thing")
-
 	mgr := workspace.NewManager(d, wtDir)
-	ws, err := mgr.Create(
-		t.Context(), "github", "github.com", "acme", "widget", 42,
-	)
-	require.NoError(t, err)
+	ws := &workspace.Workspace{
+		ID: "ws-creating", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget",
+		ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 42,
+		GitHeadRef: "feature/thing", WorktreePath: t.TempDir(),
+		TmuxSession: "forge-ws-creating", Status: "creating",
+	}
+	require.NoError(t, d.InsertWorkspace(t.Context(), ws))
 	require.Equal(t, "creating", ws.Status)
 
 	h := &Handler{Workspaces: mgr}

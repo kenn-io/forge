@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
 	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 )
@@ -29,6 +31,79 @@ const (
 type TransportInventory struct {
 	SchemaVersion int              `json:"schema_version"`
 	Routes        []TransportRoute `json:"routes"`
+}
+
+// RegisteredTransportOperation is one documented REST operation from the
+// same Huma registration graph used by the live server.
+type RegisteredTransportOperation struct {
+	ID           string
+	Method       string
+	Path         string
+	Tags         []string
+	PeerCallable bool
+	PeerScope    federationauth.Scope
+}
+
+// RegisteredTransportOperations returns every documented REST operation. The
+// list is sorted by operation ID and rejects duplicate IDs so ownership can be
+// a closed, one-entry-per-operation table.
+func RegisteredTransportOperations() ([]RegisteredTransportOperation, error) {
+	openAPI := NewOpenAPI()
+	operations := make([]RegisteredTransportOperation, 0)
+	seen := make(map[string]string)
+	paths := make([]string, 0, len(openAPI.Paths))
+	for path := range openAPI.Paths {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	for _, path := range paths {
+		item := openAPI.Paths[path]
+		if item == nil {
+			continue
+		}
+		for _, candidate := range []struct {
+			method    string
+			operation *huma.Operation
+		}{
+			{http.MethodGet, item.Get},
+			{http.MethodPut, item.Put},
+			{http.MethodPost, item.Post},
+			{http.MethodDelete, item.Delete},
+			{http.MethodOptions, item.Options},
+			{http.MethodHead, item.Head},
+			{http.MethodPatch, item.Patch},
+			{http.MethodTrace, item.Trace},
+		} {
+			if candidate.operation == nil {
+				continue
+			}
+			id := strings.TrimSpace(candidate.operation.OperationID)
+			if id == "" {
+				return nil, fmt.Errorf("%s %s has no operation ID", candidate.method, path)
+			}
+			canonicalPath := "/api/v1" + path
+			if previous, duplicate := seen[id]; duplicate {
+				return nil, fmt.Errorf(
+					"duplicate operation ID %q: %s and %s %s",
+					id, previous, candidate.method, canonicalPath,
+				)
+			}
+			seen[id] = candidate.method + " " + canonicalPath
+			scope, peerCallable := federationauth.RouteScope(
+				candidate.method, canonicalPath,
+			)
+			operations = append(operations, RegisteredTransportOperation{
+				ID: id, Method: candidate.method, Path: canonicalPath,
+				Tags:         slices.Clone(candidate.operation.Tags),
+				PeerCallable: peerCallable,
+				PeerScope:    scope,
+			})
+		}
+	}
+	sort.Slice(operations, func(i, j int) bool {
+		return operations[i].ID < operations[j].ID
+	})
+	return operations, nil
 }
 
 type transportRecorder struct {

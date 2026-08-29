@@ -48,6 +48,27 @@ func (r testRouteResolver) FallbackSource(host string) tokenauth.Source {
 	return r.fallback[host]
 }
 
+func TestDescriptorCloneRequiresCredentialOnExecutingNode(t *testing.T) {
+	mgr := New(t.TempDir(), testRouteResolver{})
+
+	err := mgr.RequireCredentialRoute(
+		t.Context(), "github", "github.com", "acme", "widgets",
+	)
+
+	require.ErrorIs(t, err, ErrCredentialUnavailable)
+}
+
+func TestDescriptorNetworkedGitNeverFallsBackToAnonymous(t *testing.T) {
+	mgr := New(t.TempDir(), testRouteResolver{})
+
+	_, err := mgr.gitNetworked(
+		WithRequiredCredential(t.Context()), nil, "github.com", "", nil,
+		"fetch",
+	)
+
+	require.ErrorIs(t, err, ErrCredentialUnavailable)
+}
+
 func TestGitOwnerRoutesSelectAndInvalidateOnlyTheirSource(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

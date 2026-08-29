@@ -215,13 +215,14 @@ type rateLimitsResponse struct {
 const activitySafetyCap = 5000
 
 type activityResponse struct {
-	Items              []activityItemResponse             `json:"items"`
-	ItemActivity       []activitySubjectResponse          `json:"item_activity"`
-	WorkspaceActivity  []workspaceActivitySubjectResponse `json:"workspace_activity"`
-	Capped             bool                               `json:"capped"`
-	ItemActivityCapped bool                               `json:"item_activity_capped"`
-	EventCursor        string                             `json:"event_cursor"`
-	NextCursor         string                             `json:"next_cursor,omitempty"`
+	Items                          []activityItemResponse             `json:"items"`
+	ItemActivity                   []activitySubjectResponse          `json:"item_activity"`
+	WorkspaceActivity              []workspaceActivitySubjectResponse `json:"workspace_activity"`
+	UseWorkspaceActivityForRecency bool                               `json:"use_workspace_activity_for_recency"`
+	Capped                         bool                               `json:"capped"`
+	ItemActivityCapped             bool                               `json:"item_activity_capped"`
+	EventCursor                    string                             `json:"event_cursor"`
+	NextCursor                     string                             `json:"next_cursor,omitempty"`
 }
 
 // activityRepoRefResponse carries only stable identity and current route
@@ -268,7 +269,8 @@ type workspaceActivitySubjectResponse struct {
 }
 
 type activityAuthorsResponse struct {
-	Authors []string `json:"authors"`
+	Authors                        []string `json:"authors"`
+	UseWorkspaceActivityForRecency bool     `json:"use_workspace_activity_for_recency"`
 }
 
 type activityItemResponse struct {

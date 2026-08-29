@@ -11,14 +11,26 @@ import (
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/providerplane"
+	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
+type spokePreparationRejectingAdmitter struct{}
+
+func (spokePreparationRejectingAdmitter) Admit(context.Context) (func(), error) {
+	return nil, providerplane.ErrSpokePreparationInProgress
+}
+
 type autoAssignProvider struct {
-	pull          platform.MergeRequest
-	issue         platform.Issue
-	pullAssigned  []string
-	issueAssigned []string
+	pull           platform.MergeRequest
+	issue          platform.Issue
+	pullAssigned   []string
+	issueAssigned  []string
+	listPullCalls  int
+	getPullCalls   int
+	listIssueCalls int
+	getIssueCalls  int
 }
 
 func (p *autoAssignProvider) Platform() platform.Kind { return platform.KindGitLab }
@@ -35,18 +47,22 @@ func (p *autoAssignProvider) AuthenticatedUser(context.Context, platform.RepoRef
 	return "maintainer", nil
 }
 func (p *autoAssignProvider) ListOpenMergeRequests(context.Context, platform.RepoRef) ([]platform.MergeRequest, error) {
+	p.listPullCalls++
 	return nil, nil
 }
 func (p *autoAssignProvider) GetMergeRequest(context.Context, platform.RepoRef, int) (platform.MergeRequest, error) {
+	p.getPullCalls++
 	return p.pull, nil
 }
 func (p *autoAssignProvider) ListMergeRequestEvents(context.Context, platform.RepoRef, int) ([]platform.MergeRequestEvent, error) {
 	return nil, nil
 }
 func (p *autoAssignProvider) ListOpenIssues(context.Context, platform.RepoRef) ([]platform.Issue, error) {
+	p.listIssueCalls++
 	return nil, nil
 }
 func (p *autoAssignProvider) GetIssue(context.Context, platform.RepoRef, int) (platform.Issue, error) {
+	p.getIssueCalls++
 	return p.issue, nil
 }
 func (p *autoAssignProvider) ListIssueEvents(context.Context, platform.RepoRef, int) ([]platform.IssueEvent, error) {
@@ -104,9 +120,10 @@ func TestAutoAssignWorkspaceItemPreservesExistingAssignees(t *testing.T) {
 	syncer := ghclient.NewSyncerWithRegistry(registry, database, nil, nil, time.Hour, nil, nil)
 	t.Cleanup(syncer.Stop)
 	handler := New(Deps{
-		DB:     database,
-		Syncer: syncer,
-		Config: ConfigSnapshot{AutoAssignOnCreate: true},
+		DB:       database,
+		Resolver: httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{DB: database}),
+		Syncer:   syncer,
+		Config:   ConfigSnapshot{AutoAssignOnCreate: true},
 	})
 	repo, err := database.GetRepoByIdentity(t.Context(), repoIdentity)
 	require.NoError(err)
@@ -155,6 +172,23 @@ func TestAutoAssignWorkspaceItemPreservesExistingAssignees(t *testing.T) {
 		})
 	}
 
+	// The spoke owns the auto-assignment preference and calls this service only
+	// after applying it. The hub must execute that request even when
+	// its own local workspace preference differs.
+	handler.config.AutoAssignOnCreate = false
+	provider.pullAssigned = nil
+	require.NoError(handler.AutoAssignProviderWorkspaceItem(
+		t.Context(), ProviderWorkspaceItemRequest{
+			Repository: providerplane.RepositoryRoute{
+				Provider: string(platform.KindGitLab), PlatformHost: "git.example.test",
+				Owner: "acme", Name: "widget",
+			},
+			ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 7,
+		},
+	))
+	assert.Equal([]string{"reviewer", "maintainer"}, provider.pullAssigned)
+	handler.config.AutoAssignOnCreate = true
+
 	_, err = database.WriteDB().ExecContext(t.Context(), `
 		INSERT INTO forge_archive_items (
 			repo_id, item_type, item_number, provider_item_id,
@@ -174,4 +208,16 @@ func TestAutoAssignWorkspaceItemPreservesExistingAssignees(t *testing.T) {
 	require.ErrorContains(err, "not visible")
 	assert.Empty(provider.pullAssigned)
 	assert.Empty(provider.issueAssigned)
+}
+
+func TestSpokePreparationBlocksWorkspaceAutoAssignBeforeProviderAccess(t *testing.T) {
+	handler := &Handler{
+		syncer:            &ghclient.Syncer{},
+		config:            ConfigSnapshot{AutoAssignOnCreate: true},
+		providerWriteGate: spokePreparationRejectingAdmitter{},
+	}
+	err := handler.autoAssignWorkspaceItem(
+		t.Context(), db.Repo{}, 7, false, false,
+	)
+	require.ErrorIs(t, err, providerplane.ErrSpokePreparationInProgress)
 }

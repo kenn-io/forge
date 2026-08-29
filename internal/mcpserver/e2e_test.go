@@ -354,7 +354,8 @@ func seedPull(t *testing.T, database *db.DB, number int, title string) (int64, i
 		RepoID: repoID, PlatformID: int64(number) * 1000, Number: number,
 		URL:   fmt.Sprintf("https://github.com/acme/widgets/pull/%d", number),
 		Title: title, Author: "testuser", State: db.MergeRequestStateOpen,
-		Body: "cached pull body", HeadBranch: "feature/caching", BaseBranch: "main",
+		Body: "cached pull body", HeadBranch: "feature/caching",
+		HeadRepoCloneURL: "https://github.com/acme/widgets.git", BaseBranch: "main",
 		Additions: 5, Deletions: 2, CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
 	})
 	require.NoError(t, err)

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -521,7 +522,9 @@ func TestRuntimeLaunchStripsReloadedAndImplicitTokenEnvsE2E(t *testing.T) {
 		map[string]string{"target_key": "envdump"},
 	)
 	defer resp.Body.Close()
-	require.Equal(http.StatusOK, resp.StatusCode)
+	responseBody, err := io.ReadAll(resp.Body)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode, string(responseBody))
 
 	var data string
 	require.Eventually(func() bool {
@@ -990,7 +993,7 @@ func seedReadyRuntimeWorkspace(t *testing.T, database *db.DB, worktreePath strin
 	require.NoError(t, os.WriteFile(filepath.Join(worktreePath, "README.md"), []byte("# Test\n"), 0o644))
 	runSettingsGit(t, worktreePath, "add", "README.md")
 	runSettingsGit(t, worktreePath, "commit", "-m", "initial")
-	require.NoError(t, database.InsertWorkspace(t.Context(), &db.Workspace{
+	workspace := &db.Workspace{
 		ID:              "ws-token-runtime",
 		Platform:        string(platform.KindGitHub),
 		PlatformHost:    "github.com",
@@ -1003,5 +1006,22 @@ func seedReadyRuntimeWorkspace(t *testing.T, database *db.DB, worktreePath strin
 		WorktreePath:    worktreePath,
 		Status:          "ready",
 		CreatedAt:       now,
-	}))
+	}
+	require.NoError(t, database.CreateWorkspaceWithLaunchSpec(
+		t.Context(), workspace, db.WorkspaceLaunchSpec{
+			Version: db.WorkspaceLaunchSpecVersion,
+			Repository: db.WorkspaceLaunchRepository{
+				Provider: "github", PlatformHost: "github.com",
+				PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
+				CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
+			},
+			ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 1,
+			ItemKey: "1", GitHeadRef: "feature",
+			Pull: &db.WorkspaceLaunchPull{
+				HeadBranch: "feature", HeadRepoKind: "same_repo", SnapshotRevision: 1,
+			},
+			SourceVisible: true, IssuedAt: now,
+			SourceVisibleUntil: now.Add(db.WorkspaceLaunchSpecVisibilityLease),
+		},
+	))
 }

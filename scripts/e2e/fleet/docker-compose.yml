@@ -8,16 +8,26 @@ services:
       KENN_FORGE_GO_BUILD_TAGS: kit_posthog_disabled
       KENN_FORGE_GITHUB_TOKEN_UNSET_FOR_FLEET_E2E: ""
       KENN_FORGE_FLEET_HOST_PORT: "${KENN_FORGE_FLEET_HUB_PORT:-18091}"
+      SSL_CERT_FILE: /pki/cert.pem
     expose:
       - "18091"
+      - "18092"
     ports:
-      - "127.0.0.1:${KENN_FORGE_FLEET_HUB_PORT:-18091}:18091"
+      - "127.0.0.1:${KENN_FORGE_FLEET_HUB_PORT:-18091}:18092"
     volumes:
       - ../../..:/app
       - hub-data:/data/hub
-      - fleet-ssh:/fleet-ssh
-      - go-mod-cache:/go/pkg/mod
-      - go-build-cache:/root/.cache/go-build
+      - fleet-pki:/pki
+      - type: volume
+        source: go-mod-cache
+        target: /go/pkg/mod
+        volume:
+          nocopy: true
+      - type: volume
+        source: go-build-cache
+        target: /root/.cache/go-build
+        volume:
+          nocopy: true
 
   member:
     build:
@@ -27,36 +37,28 @@ services:
     environment:
       KENN_FORGE_GO_BUILD_TAGS: kit_posthog_disabled
       KENN_FORGE_GITHUB_TOKEN_UNSET_FOR_FLEET_E2E: ""
+      KENN_FORGE_FLEET_E2E_GIT_TOKEN: "fleet-e2e-token"
+      SSL_CERT_FILE: /pki/cert.pem
     expose:
       - "18091"
     volumes:
       - ../../..:/app
       - member-data:/data/member
-      - go-mod-cache:/go/pkg/mod
-      - go-build-cache:/root/.cache/go-build
-
-  member-ssh:
-    build:
-      context: ../../..
-      dockerfile: Dockerfile.dev
-    command: ["./scripts/e2e/fleet/run-daemon.sh", "member-ssh"]
-    environment:
-      KENN_FORGE_GO_BUILD_TAGS: kit_posthog_disabled
-      KENN_FORGE_GITHUB_TOKEN_UNSET_FOR_FLEET_E2E: ""
-    expose:
-      - "22"
-      - "18091"
-    volumes:
-      - ../../..:/app
-      - member-ssh-data:/data/member-ssh
-      - fleet-ssh:/fleet-ssh
-      - go-mod-cache:/go/pkg/mod
-      - go-build-cache:/root/.cache/go-build
+      - fleet-pki:/pki
+      - type: volume
+        source: go-mod-cache
+        target: /go/pkg/mod
+        volume:
+          nocopy: true
+      - type: volume
+        source: go-build-cache
+        target: /root/.cache/go-build
+        volume:
+          nocopy: true
 
 volumes:
   hub-data:
   member-data:
-  member-ssh-data:
-  fleet-ssh:
+  fleet-pki:
   go-mod-cache:
   go-build-cache:

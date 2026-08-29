@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/workspace"
 )
@@ -57,7 +58,7 @@ func (s *Handler) runWorkspaceBranchAction(
 	id string,
 	action func(
 		ctx context.Context,
-		platformName, platformHost, owner, name, dir string,
+		workspaceID, platformName, platformHost, owner, name, dir string,
 	) error,
 ) (*workspaceBranchActionOutput, error) {
 	summary, err := s.getWorkspaceActionSummary(ctx, id)
@@ -65,7 +66,7 @@ func (s *Handler) runWorkspaceBranchAction(
 		return nil, err
 	}
 	if err := action(
-		ctx, summary.Platform, summary.PlatformHost,
+		ctx, summary.ID, summary.Platform, summary.PlatformHost,
 		summary.RepoOwner, summary.RepoName,
 		summary.WorktreePath,
 	); err != nil {
@@ -101,6 +102,11 @@ func (s *Handler) getWorkspaceActionSummary(
 
 func workspaceBranchActionProblem(err error) error {
 	switch {
+	case errors.Is(err, gitclone.ErrCredentialUnavailable):
+		return httpapi.GitCredentialUnavailable("", "", "")
+	case errors.Is(err, workspace.ErrLaunchSpecRefreshRequired),
+		errors.Is(err, workspace.ErrLaunchSpecSourceHidden):
+		return workspaceLaunchSpecProblem(err)
 	case errors.Is(err, workspace.ErrWorktreeDirty):
 		return httpapi.Conflict(httpapi.CodeWorktreeDirty, err.Error(), nil)
 	case errors.Is(err, workspace.ErrWorktreeDiverged):

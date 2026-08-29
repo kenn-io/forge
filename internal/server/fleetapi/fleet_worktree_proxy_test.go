@@ -24,7 +24,7 @@ func TestFleetWorktreeLifecycleProxiesToPeer(t *testing.T) {
 		body   string
 	}
 	var got []captured
-	peer := httptest.NewServer(http.HandlerFunc(
+	peer := httptest.NewTLSServer(http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
 			body, _ := io.ReadAll(r.Body)
 			got = append(got, captured{
@@ -39,15 +39,10 @@ func TestFleetWorktreeLifecycleProxiesToPeer(t *testing.T) {
 	))
 	defer peer.Close()
 
-	s := &Handler{config: ConfigSnapshot{
-		Fleet: config.Fleet{
-			Enabled: true,
-			Key:     "hub",
-			Peers: []config.FleetPeer{
-				{Key: "member", BaseURL: peer.URL},
-			},
-		},
-	}}
+	s := New(Deps{})
+	configureTestMembers(t, s, testTLSClient(t, peer), config.FleetMember{
+		NodeID: testMemberNodeID, BaseURL: peer.URL,
+	})
 	api := newFleetTestAPI()
 	s.Register(api)
 
@@ -62,21 +57,21 @@ func TestFleetWorktreeLifecycleProxiesToPeer(t *testing.T) {
 		{
 			name:       "get project",
 			method:     http.MethodGet,
-			path:       "/fleet/hosts/member/projects/prj_1",
+			path:       "/fleet/hosts/" + testMemberNodeID + "/projects/prj_1",
 			wantMethod: http.MethodGet,
 			wantPath:   "/api/v1/projects/prj_1",
 		},
 		{
 			name:       "list worktrees",
 			method:     http.MethodGet,
-			path:       "/fleet/hosts/member/projects/prj_1/worktrees",
+			path:       "/fleet/hosts/" + testMemberNodeID + "/projects/prj_1/worktrees",
 			wantMethod: http.MethodGet,
 			wantPath:   "/api/v1/projects/prj_1/worktrees",
 		},
 		{
 			name:       "create worktree",
 			method:     http.MethodPost,
-			path:       "/fleet/hosts/member/projects/prj_1/worktrees",
+			path:       "/fleet/hosts/" + testMemberNodeID + "/projects/prj_1/worktrees",
 			body:       `{"branch":"feature/x"}`,
 			wantMethod: http.MethodPost,
 			wantPath:   "/api/v1/projects/prj_1/worktrees",
@@ -84,7 +79,7 @@ func TestFleetWorktreeLifecycleProxiesToPeer(t *testing.T) {
 		{
 			name:       "create worktree from merge request",
 			method:     http.MethodPost,
-			path:       "/fleet/hosts/member/projects/prj_1/worktrees/from-merge-request",
+			path:       "/fleet/hosts/" + testMemberNodeID + "/projects/prj_1/worktrees/from-merge-request",
 			body:       `{"number":42}`,
 			wantMethod: http.MethodPost,
 			wantPath:   "/api/v1/projects/prj_1/worktrees/from-merge-request",
@@ -92,7 +87,7 @@ func TestFleetWorktreeLifecycleProxiesToPeer(t *testing.T) {
 		{
 			name:       "remove worktree",
 			method:     http.MethodPost,
-			path:       "/fleet/hosts/member/projects/prj_1/worktrees/wtr_9/delete",
+			path:       "/fleet/hosts/" + testMemberNodeID + "/projects/prj_1/worktrees/wtr_9/delete",
 			body:       `{"removeFromDisk":true}`,
 			wantMethod: http.MethodPost,
 			wantPath:   "/api/v1/projects/prj_1/worktrees/wtr_9/delete",
@@ -100,15 +95,15 @@ func TestFleetWorktreeLifecycleProxiesToPeer(t *testing.T) {
 		{
 			name:       "set worktree session backend",
 			method:     http.MethodPut,
-			path:       "/fleet/hosts/member/projects/prj_1/worktrees/wtr_9/session-backend",
-			body:       `{"session_backend":"remoteTmux"}`,
+			path:       "/fleet/hosts/" + testMemberNodeID + "/projects/prj_1/worktrees/wtr_9/session-backend",
+			body:       `{"session_backend":"localTmux"}`,
 			wantMethod: http.MethodPut,
 			wantPath:   "/api/v1/projects/prj_1/worktrees/wtr_9/session-backend",
 		},
 		{
 			name:       "set worktree linked issues",
 			method:     http.MethodPut,
-			path:       "/fleet/hosts/member/projects/prj_1/worktrees/wtr_9/linked-issues",
+			path:       "/fleet/hosts/" + testMemberNodeID + "/projects/prj_1/worktrees/wtr_9/linked-issues",
 			body:       `{"linked_issue_numbers":[7,12]}`,
 			wantMethod: http.MethodPut,
 			wantPath:   "/api/v1/projects/prj_1/worktrees/wtr_9/linked-issues",
@@ -116,7 +111,7 @@ func TestFleetWorktreeLifecycleProxiesToPeer(t *testing.T) {
 		{
 			name:       "refresh worktree stats",
 			method:     http.MethodPost,
-			path:       "/fleet/hosts/member/projects/prj_1/worktrees/wtr_9/refresh-stats",
+			path:       "/fleet/hosts/" + testMemberNodeID + "/projects/prj_1/worktrees/wtr_9/refresh-stats",
 			wantMethod: http.MethodPost,
 			wantPath:   "/api/v1/projects/prj_1/worktrees/wtr_9/refresh-stats",
 		},

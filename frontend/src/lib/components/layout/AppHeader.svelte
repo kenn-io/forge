@@ -29,6 +29,7 @@
   } from "../../utils/activitySelection.js";
   import RepoTypeahead from "../RepoTypeahead.svelte";
   import HeaderIconButton from "./HeaderIconButton.svelte";
+  import ForgeSelector from "./ForgeSelector.svelte";
   import ThemeToggle from "./ThemeToggle.svelte";
   import {
     ChevronDownIcon,
@@ -121,11 +122,12 @@
   ];
 
   function handleSync(): void {
-    if (sync.getSyncState()?.running) return;
+    if (sync.getSyncState()?.running || sync.getProviderAvailable() === false) return;
     sync.triggerSync();
   }
 
   const syncing = $derived(sync.getSyncState()?.running ?? false);
+  const providerAvailable = $derived(sync.getProviderAvailable());
   const currentSyncRepo = $derived.by(() => {
     const routeRepo = syncRepoForRoute(getRoute());
     if (routeRepo) return routeRepo;
@@ -392,17 +394,20 @@
       <img class="app-icon" src={appIconSrc} alt="" aria-hidden="true" />
       <span class="logo">kenn-forge</span>
     </span>
-    {#if showProviderRepoSelector}
-      <RepoTypeahead
-        selected={getGlobalRepo()}
-        onchange={setGlobalRepo}
-      />
-    {:else if reserveProviderRepoSelectorSlot}
-      <div
-        class="typeahead repo-selector-placeholder"
-        aria-hidden="true"
-      ></div>
-    {/if}
+    <div class="header-selectors">
+      <ForgeSelector />
+      {#if showProviderRepoSelector}
+        <RepoTypeahead
+          selected={getGlobalRepo()}
+          onchange={setGlobalRepo}
+        />
+      {:else if reserveProviderRepoSelectorSlot}
+        <div
+          class="typeahead repo-selector-placeholder"
+          aria-hidden="true"
+        ></div>
+      {/if}
+    </div>
   {/snippet}
 
   {#snippet right()}
@@ -417,10 +422,10 @@
         <button
           type="button"
           class="action-btn sync-btn sync-primary"
-          aria-label={syncing ? "Syncing" : "Sync"}
-          title={syncing ? "Syncing" : "Sync"}
+          aria-label={syncing ? "Syncing" : providerAvailable ? "Sync" : "Sync unavailable"}
+          title={syncing ? "Syncing" : providerAvailable ? "Sync" : "Hub unavailable"}
           onclick={handleSync}
-          disabled={syncing}
+          disabled={syncing || !providerAvailable}
         >
           {#if syncing}
             <span class="sync-icon sync-icon--spinning" aria-hidden="true">
@@ -446,12 +451,12 @@
           type="button"
           class="action-btn sync-menu-trigger"
           aria-label="Sync options"
-          title="Sync options"
+          title={providerAvailable ? "Sync options" : "Hub unavailable"}
           aria-haspopup="menu"
           aria-expanded={syncMenuOpen}
           onclick={toggleSyncMenu}
           onkeydown={handleSyncMenuTriggerKeydown}
-          disabled={syncing}
+          disabled={syncing || !providerAvailable}
         >
           <ChevronDownIcon size="12" strokeWidth="1.75" aria-hidden="true" />
         </button>
@@ -507,6 +512,14 @@
     align-items: center;
     gap: var(--space-3);
     flex-shrink: 0;
+  }
+
+  .header-selectors {
+    display: flex;
+    flex: 0 1 auto;
+    min-width: 0;
+    align-items: center;
+    gap: 8px;
   }
 
   .app-icon {
@@ -650,7 +663,12 @@
   /* Region sizing on kit's bar: the side regions never shrink (kit collapses
      the tabs first), so the repo typeahead gets an app-side width cap to keep
      the left region honest in tighter containers. */
-  :global(.kit-top-bar .kit-top-bar__left .typeahead) {
+  :global(.header-selectors > .forge-selector) {
+    flex: 0 1 180px;
+    max-width: 180px;
+  }
+
+  :global(.header-selectors > .typeahead) {
     flex: 1 1 150px;
     min-width: 128px;
     max-width: 220px;
@@ -692,6 +710,10 @@
     gap: 8px;
   }
 
+  :global(#app.container-narrow .kit-top-bar) .header-selectors {
+    flex: 0 1 220px;
+  }
+
   :global(#app.container-narrow .kit-top-bar) .brand {
     gap: 6px;
   }
@@ -701,7 +723,8 @@
     height: 20px;
   }
 
-  :global(#app.container-narrow .kit-top-bar .kit-top-bar__left .typeahead) {
+  :global(#app.container-narrow .kit-top-bar .header-selectors > .forge-selector),
+  :global(#app.container-narrow .kit-top-bar .header-selectors > .typeahead) {
     flex: 1 1 auto;
     min-width: 0;
     max-width: none;

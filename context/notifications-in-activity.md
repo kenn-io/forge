@@ -108,6 +108,9 @@ Provider-neutral storage fields:
 Rules:
 
 - GitHub remains only implemented notification provider today. Provider support is declared through `ReadNotifications`/`NotificationMutation` in `platform.Capabilities`; the sync engine selects providers by those flags, never by hard-coded platform kind.
+- Notification sync and acknowledgement propagation require a hub
+  provider plane. Spokes proxy provider work and retain preparation/drain state,
+  but never construct disabled local notification workers (`cmd/kenn-forge/main.go::run`).
 - GitLab and the gitealike (Forgejo/Gitea) providers ship notification stubs that return typed `unsupported_capability` errors until real support lands. Implementing a provider means replacing its stub bodies (GitLab: to-do items API; gitealike: `/notifications` endpoints on the transport) and flipping the two capability flags.
 - The registry's `NotificationReader`/`NotificationMutator` accessors gate on the declared capability flags, not interface satisfaction, because stubs satisfy the interfaces.
 - The sync engine intentionally requires BOTH `ReadNotifications` and `NotificationMutation` to select a provider: listing and read-ack propagation are treated as one feature today. A future read-only provider (list without upstream mark-read) would split this — select listing on `ReadNotifications` and propagation on `NotificationMutation` separately. Until such a provider exists the coupling keeps the path simple.
@@ -127,6 +130,16 @@ Rules:
 - Failure updates must be guarded by queued generation just like success updates.
 - Rate-limit/secondary-limit errors should pause retry without burning normal per-row attempts across batch.
 - Retry cap failures should stop automatic retries, clear `source_ack_next_attempt_at`, and preserve local done/read state.
+- Federation spoke preparation assigns every queued acknowledgement a durable
+  admission generation. After provider-write admissions and deferred merges
+  drain, preparation freezes the current generation; propagation may finish
+  only work at or below it, and sealing waits until no unsynced queued
+  acknowledgement remains. Dead-lettered or currently unroutable rows remain
+  blockers until preparation is aborted and the acknowledgement is requeued or
+  its route is restored. New read/done admissions are rejected by the shared
+  provider-write barrier while quiescing
+  (`internal/db/queries_notifications.go::DB.ListQueuedNotificationAcks`,
+  `internal/db/queries_spoke_preparation.go::DB.CountUndrainedNotificationAcks`).
 
 ## Sync Behavior
 

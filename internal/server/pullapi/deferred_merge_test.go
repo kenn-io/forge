@@ -5,6 +5,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/providerplane"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
 func TestDecodeCIChecks(t *testing.T) {
@@ -182,4 +184,32 @@ func TestClearDeferredMergeInFlightKeepsNewerHandle(t *testing.T) {
 	handler.deferredMergeMu.Lock()
 	require.Empty(handler.deferredMergeInFlight)
 	handler.deferredMergeMu.Unlock()
+}
+
+func TestSpokePreparationTracksDeferredMergeUntilClearOrSupersede(t *testing.T) {
+	require := require.New(t)
+	gate := providerplane.NewProviderWriteGate(dbtest.Open(t))
+	handler := New(Deps{ProviderWriteGate: gate})
+	key := "github:github.com:acme/widget#7"
+
+	release, err := gate.BeginDeferredMerge(t.Context())
+	require.NoError(err)
+	handle, marked := handler.markDeferredMergeInFlight(key, release)
+	require.True(marked)
+	status, err := gate.Status(t.Context())
+	require.NoError(err)
+	require.Equal(1, status.ActiveDeferredMerges)
+	handler.clearDeferredMergeInFlight(key, handle)
+	status, err = gate.Status(t.Context())
+	require.NoError(err)
+	require.Zero(status.ActiveDeferredMerges)
+
+	release, err = gate.BeginDeferredMerge(t.Context())
+	require.NoError(err)
+	_, marked = handler.markDeferredMergeInFlight(key, release)
+	require.True(marked)
+	handler.supersedeDeferredMerge(key)
+	status, err = gate.Status(t.Context())
+	require.NoError(err)
+	require.Zero(status.ActiveDeferredMerges)
 }

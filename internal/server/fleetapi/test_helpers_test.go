@@ -1,9 +1,10 @@
 package fleetapi
 
 import (
-	"bufio"
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,7 +18,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/coder/websocket"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 	"github.com/stretchr/testify/require"
@@ -26,10 +26,70 @@ import (
 
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/federation"
+	"go.kenn.io/forge/internal/federationauth"
+	"go.kenn.io/forge/internal/fleet"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/workspace"
 )
+
+const (
+	testHubNodeID    = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	testMemberNodeID = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+)
+
+func configureTestMembers(
+	t *testing.T,
+	h *Handler,
+	client *http.Client,
+	members ...config.FleetMember,
+) map[string]string {
+	t.Helper()
+	credentials, err := federationauth.Open(filepath.Join(
+		t.TempDir(), "federation-credentials.json",
+	))
+	require.NoError(t, err)
+	tokens := make(map[string]string, len(members))
+	for index, member := range members {
+		if member.State == "" {
+			member.State = federation.EnrollmentActive
+			members[index] = member
+		}
+		token := strings.Repeat(string(rune('a'+index)), 48)
+		require.NoError(t, credentials.StoreOutbound(
+			member.NodeID, token, federationauth.HubToSpokeScopes(),
+		))
+		tokens[member.NodeID] = token
+	}
+	h.nodeID = testHubNodeID
+	h.credentials = credentials
+	if client != nil {
+		h.federationHTTPClient = client
+	}
+	h.memberClientsMu.Lock()
+	h.memberClients = make(map[string]federationMemberClients)
+	h.memberClientsMu.Unlock()
+	snapshot := h.configSnapshot()
+	snapshot.Fleet = config.Fleet{
+		Enabled: true, Role: config.FleetRoleHub,
+		BaseURL: "https://hub.example", Members: members,
+	}
+	h.ApplyConfig(snapshot)
+	return tokens
+}
+
+func testTLSClient(t *testing.T, servers ...*httptest.Server) *http.Client {
+	t.Helper()
+	roots := x509.NewCertPool()
+	for _, server := range servers {
+		require.NotNil(t, server.Certificate())
+		roots.AddCert(server.Certificate())
+	}
+	return &http.Client{Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12},
+	}}
+}
 
 func setupTestServer(t *testing.T) (*Handler, *db.DB) {
 	t.Helper()
@@ -70,10 +130,11 @@ func newTestHandler(t *testing.T, database *db.DB, fleetConfig config.Fleet) *Ha
 			Fleet:       fleetConfig,
 			TmuxCommand: []string{"kenn-forge-no-such-tmux"},
 		},
-		BasePath:          "/",
-		LocalHandler:      func() http.Handler { return local },
-		WorkspaceSnapshot: workspaceAPI.FleetSnapshot,
-		RuntimeSnapshot:   workspaceAPI.RuntimeSnapshot,
+		BasePath:               "/",
+		LocalHandler:           func() http.Handler { return local },
+		WorkspaceSnapshot:      workspaceAPI.FleetSnapshot,
+		WorkspaceStatsSnapshot: workspaceAPI.FleetStatsSnapshot,
+		RuntimeSnapshot:        workspaceAPI.RuntimeSnapshot,
 	})
 	apiConfig := huma.DefaultConfig("fleet test", "0.0.0")
 	apiConfig.OpenAPIPath = ""
@@ -148,7 +209,43 @@ func workspaceSnapshotFromManager(manager interface {
 }) func(context.Context) (workspaceapi.FleetSnapshot, error) {
 	return func(ctx context.Context) (workspaceapi.FleetSnapshot, error) {
 		summaries, err := manager.ListSummaries(ctx)
-		return workspaceapi.FleetSnapshot{Workspaces: summaries}, err
+		if err != nil {
+			return workspaceapi.FleetSnapshot{}, err
+		}
+		workspaces := make([]fleet.RawWorkspace, len(summaries))
+		for index, summary := range summaries {
+			workspaces[index] = rawWorkspaceForAdapterTest(summary)
+		}
+		return workspaceapi.FleetSnapshot{Workspaces: workspaces}, nil
+	}
+}
+
+func rawWorkspaceForAdapterTest(summary db.WorkspaceSummary) fleet.RawWorkspace {
+	backend := ""
+	switch summary.TerminalBackend {
+	case workspace.TerminalBackendPtyOwner:
+		backend = fleet.SessionBackendLocalPTY
+	case workspace.TerminalBackendTmux:
+		backend = fleet.SessionBackendLocalTmux
+	}
+	associatedPR := summary.AssociatedPRNumber
+	if !summary.AssociatedPRVisible {
+		associatedPR = nil
+	}
+	return fleet.RawWorkspace{
+		ID: summary.ID,
+		Repository: fleet.RepositoryIdentity{
+			Provider: summary.Platform, PlatformHost: summary.PlatformHost,
+			PlatformRepoID: summary.RepoPlatformID,
+			Owner:          summary.RepoOwner, Name: summary.RepoName,
+		},
+		ItemType: summary.ItemType, ItemNumber: summary.ItemNumber,
+		ItemKey: summary.ItemKey, GitHeadRef: summary.GitHeadRef,
+		WorktreePath: summary.WorktreePath, TmuxSession: summary.TmuxSession,
+		SessionBackend: backend, Status: summary.Status,
+		ErrorMessage:       summary.ErrorMessage,
+		CreatedAt:          summary.CreatedAt.UTC().Format(time.RFC3339),
+		AssociatedPRNumber: associatedPR,
 	}
 }
 
@@ -230,64 +327,6 @@ func runGit(t *testing.T, dir string, args ...string) {
 	runner := gitcmd.New().WithConfig("init.defaultBranch", "main")
 	out, stderr, err := runner.Run(t.Context(), dir, nil, args...)
 	require.NoError(t, err, "git %v failed: %s%s", args, out, stderr)
-}
-
-const serverRuntimeHelperMarker = "kenn-forge-fleet-runtime-helper"
-
-func serverRuntimeHelperCommand(mode string) []string {
-	return []string{
-		os.Args[0],
-		"-test.run=TestServerRuntimeHelperProcess$",
-		"--",
-		serverRuntimeHelperMarker,
-		mode,
-	}
-}
-
-func TestServerRuntimeHelperProcess(t *testing.T) {
-	args := os.Args
-	for i, arg := range args {
-		if arg == "--" {
-			args = args[i+1:]
-			break
-		}
-	}
-	if len(args) < 2 || args[0] != serverRuntimeHelperMarker {
-		return
-	}
-	switch args[1] {
-	case "echo":
-		line, err := bufio.NewReader(os.Stdin).ReadString('\n')
-		if err == nil {
-			fmt.Print("echo:" + line)
-		}
-		select {}
-	default:
-		os.Exit(2)
-	}
-}
-
-func readWebSocketBinaryUntil(
-	t *testing.T,
-	ctx context.Context,
-	conn *websocket.Conn,
-	timeout time.Duration,
-	needle string,
-) string {
-	t.Helper()
-	readCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	var got strings.Builder
-	for {
-		typ, data, err := conn.Read(readCtx)
-		require.NoError(t, err)
-		if typ == websocket.MessageBinary {
-			got.Write(data)
-		}
-		if strings.Contains(got.String(), needle) {
-			return got.String()
-		}
-	}
 }
 
 func registerProjectForTest(

@@ -146,7 +146,7 @@ interface WorkspaceHost {
   key: string;
   label: string;
   connectionState: "connected" | "connecting" | "disconnected" | "error";
-  transport?: "ssh" | "local";
+  transport?: "http" | "local";
   platform?: string;
   projects: WorkspaceProject[];
   sessions: WorkspaceSession[];

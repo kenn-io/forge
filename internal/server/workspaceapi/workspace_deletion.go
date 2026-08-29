@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"go.kenn.io/forge/internal/db"
-	"go.kenn.io/forge/internal/workspace"
 )
 
 const (
@@ -63,7 +62,7 @@ func (s *Handler) QueueWorkspaceDeletion(id string) error {
 		return fmt.Errorf("get workspace: %w", err)
 	}
 	if ws == nil {
-		return workspace.ErrWorkspaceNotFound
+		return nil
 	}
 	if ws.Status == "deleting" {
 		return nil

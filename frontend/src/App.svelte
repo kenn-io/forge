@@ -42,6 +42,7 @@
   } from "./lib/context.js";
 
   import AppHeader from "./lib/components/layout/AppHeader.svelte";
+  import ForgeSelector from "./lib/components/layout/ForgeSelector.svelte";
   import StatusBar from "./lib/components/layout/StatusBar.svelte";
   import Palette from "./lib/components/keyboard/Palette.svelte";
   import Cheatsheet from "./lib/components/keyboard/Cheatsheet.svelte";
@@ -588,6 +589,23 @@
     return getPage() === "focus" || shouldUseResponsiveFocusPresentation();
   }
 
+  const providerPages = new Set([
+    "activity",
+    "focus",
+    "issues",
+    "mobile-activity",
+    "mobile-issues",
+    "mobile-pulls",
+    "pulls",
+    "repos",
+  ]);
+
+  function providerUnavailable(): boolean {
+    return appReady
+      && providerPages.has(getPage())
+      && stores?.sync.getProviderAvailable() === false;
+  }
+
   function useFocusLayoutClass(): boolean {
     return isPhoneLikeViewport() || shouldForceMobileRoutes();
   }
@@ -1095,6 +1113,9 @@
       class="focus-layout"
       class:focus-layout--phone={useFocusLayoutClass()}
     >
+      {#if providerUnavailable()}
+        {@render providerUnavailableState()}
+      {/if}
       {#if r.page === "focus" && r.itemType === "mrs"}
         <FocusListView
           listType="mrs"
@@ -1170,7 +1191,7 @@
       <header class="mobile-topbar" {@attach trackMobileHeaderHeight}>
         <span class="mobile-brand">
           <img class="mobile-app-icon" src={appIconSrc} alt="" aria-hidden="true" />
-          <span class="mobile-title">kenn-forge</span>
+          <ForgeSelector compact fallbackLabel="kenn-forge" />
         </span>
 
         <MobileModePicker
@@ -1196,12 +1217,16 @@
             <Spinner size={18} />
             Loading
           </div>
-        {:else if getPage() === "mobile-workspaces"}
+        {:else}
+          {#if providerUnavailable()}
+            {@render providerUnavailableState()}
+          {/if}
+          {#if getPage() === "mobile-workspaces"}
           <MobileWorkspaceList
             onOpen={openMobileWorkspaceFromList}
             onOpenItem={openMobileWorkspaceItemFromList}
           />
-        {:else if getPage() === "mobile-workspace-terminal" || getPage() === "mobile-workspace-item"}
+          {:else if getPage() === "mobile-workspace-terminal" || getPage() === "mobile-workspace-item"}
           {@const route = getRoute()}
           {#if route.page === "mobile-workspace-terminal" || route.page === "mobile-workspace-item"}
             <div class="mobile-workspace-route focus-layout--phone">
@@ -1254,6 +1279,7 @@
             onRepoChange={setGlobalRepo}
             onSelectItem={handleActivitySelect}
           />
+          {/if}
         {/if}
       </main>
       <SessionTerminalPool />
@@ -1271,9 +1297,13 @@
           <Spinner size={18} />
           Loading
         </div>
-      {:else if getPage() === "settings"}
+      {:else}
+        {#if providerUnavailable()}
+          {@render providerUnavailableState()}
+        {/if}
+        {#if getPage() === "settings"}
         <SettingsPage />
-      {:else if getPage() === "activity"}
+        {:else if getPage() === "activity"}
         <!-- Desktop shell only: focus-presentation and mobile branches of
              this view get no controller (structural eligibility). -->
         <ActivityFeedView
@@ -1362,6 +1392,7 @@
              WorkspaceHost reacts to workspaceId/route changes internally so
              the page doesn't flash on navigation. -->
         <div class="workspace-tab-slot" {@attach tabSlotAttachment}></div>
+        {/if}
       {/if}
 
       {#if appReady && DocsFeature}
@@ -1433,6 +1464,13 @@
 <!-- Handed to every detail view: the controls themselves come from the hosted
      workspace's live view, and this component is the popover that holds them in a
      pane's tab strip. Declared here because the root owns the workspace slot. -->
+{#snippet providerUnavailableState()}
+  <section class="provider-unavailable-state" role="status" aria-live="polite">
+    <h1>Hub unavailable</h1>
+    <p>Showing the last provider data loaded in this tab, when available. Sync and refresh are paused; provider changes are unavailable. Local workspaces remain available.</p>
+  </section>
+{/snippet}
+
 {#snippet workspacePaneControls(showStripActions: boolean)}
   <WorkspacePaneControls {showStripActions} />
 {/snippet}
@@ -1485,13 +1523,6 @@
     width: 19px;
     height: 19px;
     flex: 0 0 auto;
-  }
-
-  .mobile-title {
-    color: var(--text-primary);
-    font-size: var(--font-size-md);
-    font-weight: 700;
-    letter-spacing: -0.01em;
   }
 
   .mobile-desktop-link {
@@ -1732,6 +1763,31 @@
     color: var(--text-muted);
     font-size: var(--font-size-sm);
     animation: fade-in 0.3s ease;
+  }
+
+  .provider-unavailable-state {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid color-mix(in srgb, var(--accent-red) 28%, var(--border-subtle));
+    background: color-mix(in srgb, var(--accent-red) 7%, var(--bg-surface));
+  }
+
+  .provider-unavailable-state h1,
+  .provider-unavailable-state p {
+    margin: 0;
+  }
+
+  .provider-unavailable-state h1 {
+    color: var(--accent-red);
+    font-size: var(--font-size-sm);
+    white-space: nowrap;
+  }
+
+  .provider-unavailable-state p {
+    color: var(--text-muted);
+    font-size: var(--font-size-sm);
   }
 
   .feature-shell {

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -16,15 +17,20 @@ import (
 	"testing"
 	"time"
 
+	"github.com/danielgtaylor/huma/v2"
 	gh "github.com/google/go-github/v89/github"
 	shellquote "github.com/kballard/go-shellquote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/federation"
+	"go.kenn.io/forge/internal/federationauth"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/platform/gitealike"
+	"go.kenn.io/forge/internal/providerplane"
+	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/stacks"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/workspace/localruntime"
@@ -85,6 +91,7 @@ func setupTestServerWithConfigContentAndOptions(
 		database, syncer, nil, nil, cfg, cfgPath,
 		options,
 	)
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	return srv, database, cfgPath
 }
 
@@ -182,6 +189,7 @@ func setupTestServerWithConfigProviders(
 		database, syncer, nil, nil, cfg, cfgPath,
 		ServerOptions{HostCheckAllowLoopbackAnyPort: true},
 	)
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	return srv, database, cfgPath
 }
 
@@ -3402,6 +3410,153 @@ func TestWorktreeBasePathResolverMatchesProviderIdentity(t *testing.T) {
 	assert.Equal("/tmp/gitlab-widget", got)
 }
 
+func TestApplyProviderSettingsMatchesWorktreePathByStableIdentity(t *testing.T) {
+	local := settingsResponse{Repos: []ghclient.ConfiguredRepoStatus{
+		{
+			Provider: "github", PlatformHost: "github.com",
+			PlatformRepoID: "repo-widget", Owner: "acme", Name: "widget",
+			WorktreeBasePath: "/work/widget",
+		},
+		{
+			Provider: "github", PlatformHost: "github.com",
+			PlatformRepoID: "repo-old", Owner: "acme", Name: "reused",
+			WorktreeBasePath: "/work/old",
+		},
+	}}
+	provider := settingsResponse{Repos: []ghclient.ConfiguredRepoStatus{
+		{
+			Provider: "github", PlatformHost: "github.com",
+			PlatformRepoID: "repo-widget", Owner: "acme-renamed", Name: "widget-renamed",
+		},
+		{
+			Provider: "github", PlatformHost: "github.com",
+			PlatformRepoID: "repo-new", Owner: "acme", Name: "reused",
+		},
+	}}
+
+	local.applyProviderSettings(provider)
+
+	require.Len(t, local.Repos, 2)
+	assert.Equal(t, "/work/widget", local.Repos[0].WorktreeBasePath)
+	assert.Empty(t, local.Repos[1].WorktreeBasePath)
+}
+
+func TestProviderSettingsRepositoryObservationUsesHubTime(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	hubObservedAt := time.Date(2026, time.August, 24, 12, 0, 0, 0, time.UTC)
+	srv := &Server{
+		db:  database,
+		now: func() time.Time { return hubObservedAt.Add(24 * time.Hour) },
+	}
+	provider := providerSettingsProjection{
+		Settings: settingsResponse{Repos: []ghclient.ConfiguredRepoStatus{{
+			Provider: "github", PlatformHost: "github.com",
+			PlatformRepoID: "repo-widget", Owner: "acme", Name: "widget",
+			RepoPath: "acme/widget", TrackedRepoPath: "acme/widget",
+		}}},
+		RepositoryObservations: []providerRepositoryObservation{{
+			Provider: "github", PlatformHost: "github.com",
+			PlatformRepoID: "repo-widget", Owner: "acme", Name: "widget",
+			RepoPath: "acme/widget", ObservedAt: hubObservedAt,
+		}},
+	}
+
+	changed, err := srv.observeProviderSettingsRepositories(
+		t.Context(), provider.RepositoryObservations,
+	)
+	require.NoError(err)
+	require.True(changed)
+
+	source := hubProviderSource{db: database}
+	require.NoError(source.observeRepositoryDescriptor(t.Context(), providerplane.RepositoryDescriptor{
+		ProtocolVersion: federation.ProtocolVersion,
+		Provider:        "github", PlatformHost: "github.com", PlatformRepoID: "repo-widget",
+		Owner: "acme", Name: "widget", CloneURL: "https://github.com/acme/widget.git",
+		DefaultBranch: "main", ObservedAt: hubObservedAt.Add(time.Minute),
+	}))
+}
+
+func TestProviderSettingsProjectionCarriesCatalogObservationTime(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	observedAt := time.Date(2026, time.August, 24, 12, 0, 0, 0, time.UTC)
+	_, accepted, err := database.ReconcileRepositoryObservation(
+		t.Context(), db.RepoIdentity{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformRepoID: "repo-widget", Owner: "acme", Name: "widget",
+			RepoPath: "acme/widget",
+		}, observedAt,
+	)
+	require.NoError(err)
+	require.True(accepted)
+	srv := &Server{db: database}
+
+	projection, err := srv.buildProviderSettingsProjection(
+		t.Context(), settingsResponse{Repos: []ghclient.ConfiguredRepoStatus{{
+			Provider: "github", PlatformHost: "github.com",
+			PlatformRepoID: "repo-widget", Owner: "acme", Name: "widget",
+			RepoPath: "acme/widget", TrackedRepoPath: "acme/widget",
+		}}},
+	)
+
+	require.NoError(err)
+	require.Len(projection.RepositoryObservations, 1)
+	assert.Equal(t, observedAt, projection.RepositoryObservations[0].ObservedAt)
+}
+
+func TestLocalSettingsCorrelateRenamedRepositoryThroughCatalog(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, database, _ := setupTestServerWithConfig(t)
+	srv.cfg.Repos[0].WorktreeBasePath = "/work/widget"
+	observedAt := time.Now().UTC()
+	seedVerifiedRepo(t, database, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "repo-widget", Owner: "acme", Name: "widget",
+	})
+	_, accepted, err := database.ReconcileRepositoryObservation(
+		t.Context(), db.RepoIdentity{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformRepoID: "repo-widget", Owner: "acme-renamed", Name: "widget-renamed",
+		}, observedAt.Add(time.Minute),
+	)
+	require.NoError(err)
+	require.True(accepted)
+	srv.syncer = nil
+
+	settings, err := srv.buildLocalSettingsResponse(t.Context())
+	require.NoError(err)
+	require.Len(settings.Repos, 1)
+	assert.Equal("repo-widget", settings.Repos[0].PlatformRepoID)
+	assert.Equal("acme-renamed/widget-renamed", settings.Repos[0].TrackedRepoPath)
+}
+
+func TestLocalSettingsDoNotCorrelateReusedRepositoryRoute(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, database, _ := setupTestServerWithConfig(t)
+	seedVerifiedRepo(t, database, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "repo-old", Owner: "acme", Name: "widget",
+	})
+	_, accepted, err := database.ReconcileRepositoryObservation(
+		t.Context(), db.RepoIdentity{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformRepoID: "repo-new", Owner: "acme", Name: "widget",
+		}, time.Now().UTC().Add(time.Minute),
+	)
+	require.NoError(err)
+	require.True(accepted)
+	srv.syncer = nil
+
+	settings, err := srv.buildLocalSettingsResponse(t.Context())
+	require.NoError(err)
+	require.Len(settings.Repos, 1)
+	assert.Empty(settings.Repos[0].PlatformRepoID)
+	assert.Empty(settings.Repos[0].TrackedRepoPath)
+}
+
 func TestHandleBulkAddReposPersistsGiteaProviderIdentity(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -3698,6 +3853,463 @@ func TestSetActiveWorktreeRoute(t *testing.T) {
 	key, set = srv.ActiveWorktreeKey()
 	require.True(set)
 	require.Empty(key)
+}
+
+func TestFleetSettingsPreserveEnrollmentOwnedRoleAndMembers(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, _, cfgPath := setupTestServerWithConfigContent(t, `
+host = "127.0.0.1"
+port = 8091
+
+[api]
+require_auth = true
+
+[fleet]
+enabled = true
+role = "hub"
+base_url = "https://hub.example"
+
+[[fleet.members]]
+node_id = "fedcba9876543210fedcba9876543210"
+name = "Build Box"
+base_url = "https://spoke.example"
+state = "active"
+	`, &mockGH{})
+
+	get := func() fleetSettingsResponse {
+		response := doJSON(t, srv, http.MethodGet, "/api/v1/settings/fleet", nil)
+		require.Equal(http.StatusOK, response.Code)
+		var result fleetSettingsResponse
+		require.NoError(json.NewDecoder(response.Body).Decode(&result))
+		return result
+	}
+	initial := get()
+	assert.Equal(config.FleetRoleHub, initial.Role)
+	require.Len(initial.Members, 1)
+	assert.Equal("Build Box", initial.Members[0].Name)
+	assert.Empty(initial.Enrollments)
+
+	forbiddenLifecyclePayload := map[string]any{
+		"enabled": true, "role": "spoke",
+		"sessions": map[string]any{"include_unmanaged_details": false},
+		"members": []map[string]any{{
+			"node_id": "fedcba9876543210fedcba9876543210",
+			"name":    "Renamed Build Box", "base_url": "https://spoke.example",
+			"state": "active",
+		}},
+	}
+	response := doJSON(
+		t, srv, http.MethodPut, "/api/v1/settings/fleet", forbiddenLifecyclePayload,
+	)
+	require.Equal(http.StatusUnprocessableEntity, response.Code)
+
+	payload := map[string]any{
+		"enabled":  true,
+		"sessions": map[string]any{"include_unmanaged_details": false},
+	}
+	response = doJSON(t, srv, http.MethodPut, "/api/v1/settings/fleet", payload)
+	require.Equal(http.StatusOK, response.Code)
+	var updated fleetSettingsResponse
+	require.NoError(json.NewDecoder(response.Body).Decode(&updated))
+	assert.Equal(config.FleetRoleHub, updated.Role)
+	assert.Equal("Build Box", updated.Members[0].Name)
+	assert.False(updated.RestartRequired)
+
+	raw, err := os.ReadFile(cfgPath)
+	require.NoError(err)
+	assert.Contains(string(raw), "Build Box")
+	assert.NotContains(string(raw), "Renamed Build Box")
+	assert.NotContains(string(raw), `role = "spoke"`)
+}
+
+func TestFleetSettingsExposePendingEnrollmentWithoutCredentialMaterial(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	dataDir := t.TempDir()
+	enrollments, err := federation.Open(
+		filepath.Join(dataDir, "enrollments.json"), federation.StoreOptions{},
+	)
+	require.NoError(err)
+	credentials, err := federationauth.Open(filepath.Join(dataDir, "credentials.json"))
+	require.NoError(err)
+	const (
+		hubID        = "0123456789abcdef0123456789abcdef"
+		nodeID       = "fedcba9876543210fedcba9876543210"
+		enrollmentID = "11111111111111111111111111111111"
+		peerSecret   = "hub-calls-spoke-secret"
+	)
+	token, err := enrollments.CreateOneTimeToken(federation.Identity{
+		NodeID: hubID, BaseURL: "https://hub.example",
+	}, time.Now().Add(time.Minute))
+	require.NoError(err)
+	_, err = enrollments.Begin(t.Context(), token.Token, federation.JoinRequest{
+		EnrollmentID: enrollmentID, NodeID: nodeID, Platform: "linux",
+		BaseURL: "https://spoke.example", ProtocolVersion: federation.ProtocolVersion,
+		HubCredential: peerSecret,
+	})
+	require.NoError(err)
+
+	srv, _, _ := setupTestServerWithConfigContentAndOptions(t, `
+host = "127.0.0.1"
+port = 8091
+[api]
+require_auth = true
+[fleet]
+enabled = true
+role = "hub"
+base_url = "https://hub.example"
+`, &mockGH{}, ServerOptions{
+		HostCheckAllowLoopbackAnyPort: true,
+		FederationSpokeID:             hubID,
+		FederationEnrollments:         enrollments,
+		FederationCredentials:         credentials,
+	})
+	response := doJSON(t, srv, http.MethodGet, "/api/v1/settings/fleet", nil)
+	require.Equal(http.StatusOK, response.Code)
+	assert.Contains(response.Body.String(), enrollmentID)
+	assert.NotContains(response.Body.String(), token.Token)
+	assert.NotContains(response.Body.String(), peerSecret)
+}
+
+func TestRoleAwareSettingsRequireOneOwnerPerNodeWrite(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	hub, hubDB, _ := setupTestServerWithConfigContentAndOptions(t, `
+host = "127.0.0.1"
+port = 8091
+
+[detail]
+initial_timeline_entry_limit = 50
+
+[workspaces]
+auto_assign_on_create = false
+default_sidebar_view = "diff"
+
+[roborev]
+init_managed_clones = false
+
+[[repos]]
+platform = "github"
+platform_host = "github.com"
+owner = "acme"
+name = "widget"
+
+	[fleet]
+	role = "hub"
+	`, &mockGH{}, ServerOptions{HostCheckAllowLoopbackAnyPort: true})
+	seedVerifiedRepo(t, hubDB, verifiedGitHubRepoIdentity(
+		"github.com", "acme", "widget",
+	))
+	hubHTTP := httptest.NewTLSServer(hub)
+	t.Cleanup(hubHTTP.Close)
+
+	credentials, err := federationauth.Open(filepath.Join(t.TempDir(), "credentials.json"))
+	require.NoError(err)
+	require.NoError(credentials.StoreOutbound(
+		proxyTestHubID, "settings-spoke-secret", federationauth.SpokeToHubScopes(),
+	))
+	nodeConfigDir := t.TempDir()
+	nodeConfigPath := filepath.Join(nodeConfigDir, "config.toml")
+	nodeConfigBody := fmt.Sprintf(`
+host = "127.0.0.1"
+port = 8091
+
+[api]
+require_auth = true
+
+[detail]
+initial_timeline_entry_limit = 25
+
+[workspaces]
+auto_assign_on_create = false
+default_sidebar_view = "diff"
+
+[[repos]]
+platform = "github"
+platform_host = "github.com"
+owner = "acme"
+name = "widget"
+
+[fleet]
+enabled = true
+role = "spoke"
+base_url = "https://spoke.example"
+
+[fleet.hub]
+node_id = %q
+base_url = %q
+`, proxyTestHubID, hubHTTP.URL)
+	require.NoError(os.WriteFile(nodeConfigPath, []byte(nodeConfigBody), 0o600))
+	nodeConfig, err := config.Load(nodeConfigPath)
+	require.NoError(err)
+	spoke := NewWithConfig(
+		dbtest.Open(t), nil, nil, nil, nodeConfig, nodeConfigPath,
+		ServerOptions{
+			HostCheckAllowLoopbackAnyPort:      true,
+			FederationSpokeID:                  proxyTestNodeID,
+			FederationSpokeActive:              true,
+			FederationCredentials:              credentials,
+			FederationHTTPClient:               hubHTTP.Client(),
+			DisableWorkspaceBackgroundMonitors: true,
+		},
+	)
+	t.Cleanup(func() { gracefulShutdown(t, spoke) })
+
+	autoAssign := true
+	response := doJSON(t, spoke, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+		Detail:     &config.Detail{InitialTimelineEntryLimit: 75},
+		Workspaces: &workspaceSettingsUpdate{AutoAssignOnCreate: &autoAssign},
+	})
+	require.Equal(http.StatusBadRequest, response.Code, response.Body.String())
+	var problem httpapi.ProblemError
+	require.NoError(json.NewDecoder(response.Body).Decode(&problem))
+	assert.Equal(httpapi.CodeValidationError, problem.Code)
+	assert.Equal("mixedSettingsOwnership", problem.Details["reason"])
+	assert.Equal(50, hub.cfg.Detail.InitialTimelineEntryLimit)
+	assert.False(hub.cfg.Workspaces.AutoAssignOnCreate)
+	assert.Equal(25, spoke.cfg.Detail.InitialTimelineEntryLimit)
+	assert.False(spoke.cfg.Workspaces.AutoAssignOnCreate)
+
+	response = doJSON(t, spoke, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+		Detail: &config.Detail{InitialTimelineEntryLimit: 75},
+	})
+	require.Equal(http.StatusOK, response.Code, response.Body.String())
+	response = doJSON(t, spoke, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+		Workspaces: &workspaceSettingsUpdate{AutoAssignOnCreate: &autoAssign},
+	})
+	require.Equal(http.StatusOK, response.Code, response.Body.String())
+	response = doJSON(t, spoke, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+		Roborev: &roborevSettingsUpdate{InitManagedClones: new(true)},
+	})
+	require.Equal(http.StatusOK, response.Code, response.Body.String())
+
+	assert.Equal(75, hub.cfg.Detail.InitialTimelineEntryLimit)
+	assert.False(hub.cfg.Workspaces.AutoAssignOnCreate)
+	assert.Equal(25, spoke.cfg.Detail.InitialTimelineEntryLimit)
+	assert.True(spoke.cfg.Workspaces.AutoAssignOnCreate)
+	assert.True(spoke.cfg.Roborev.InitManagedClones)
+
+	worktreeBase := t.TempDir()
+	runGit(t, worktreeBase, "init", "--initial-branch=main")
+	runGit(t, worktreeBase, "remote", "add", "origin", "https://github.com/acme/widget.git")
+	response = doJSON(
+		t, spoke, http.MethodPut,
+		"/api/v1/repo/github/acme/widget/worktree-base",
+		repoWorktreeBaseRequest{WorktreeBasePath: worktreeBase},
+	)
+	require.Equal(http.StatusOK, response.Code, response.Body.String())
+	assert.Equal(worktreeBase, spoke.cfg.Repos[0].WorktreeBasePath)
+	assert.Empty(hub.cfg.Repos[0].WorktreeBasePath)
+
+	var settings settingsResponse
+	require.NoError(json.NewDecoder(response.Body).Decode(&settings))
+	require.Len(settings.Repos, 1)
+	assert.Equal(worktreeBase, settings.Repos[0].WorktreeBasePath)
+	assert.Equal(75, settings.Detail.InitialTimelineEntryLimit)
+	assert.True(settings.Workspaces.AutoAssignOnCreate)
+	assert.Equal(config.FleetRoleSpoke, settings.Fleet.Role)
+
+	response = doJSON(t, spoke, http.MethodGet, "/api/v1/settings", nil)
+	require.Equal(http.StatusOK, response.Code, response.Body.String())
+	require.NoError(json.NewDecoder(response.Body).Decode(&settings))
+	require.Len(settings.Repos, 1)
+	assert.Equal(worktreeBase, settings.Repos[0].WorktreeBasePath)
+}
+
+func TestNodeWorktreeBaseOverrideFollowsHubRepositoryIdentity(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, database, configPath := setupTestServerWithConfigContent(t, `
+host = "127.0.0.1"
+port = 8091
+`, &mockGH{})
+	srv.syncer = nil
+	observedAt := time.Now().UTC().Truncate(time.Second)
+	projection := providerSettingsResponse{
+		Repos: []ghclient.ConfiguredRepoStatus{{
+			Provider: "github", PlatformHost: "github.com",
+			PlatformRepoID: "repo-late", Owner: "acme", Name: "late",
+			RepoPath: "acme/late", TrackedRepoPath: "acme/late",
+		}},
+		RepositoryObservations: []providerRepositoryObservation{{
+			Provider: "github", PlatformHost: "github.com",
+			PlatformRepoID: "repo-late", Owner: "acme", Name: "late",
+			RepoPath: "acme/late", ObservedAt: observedAt,
+		}},
+		RepoPresets: []config.RepoPreset{},
+	}
+	var reads atomic.Int32
+	srv.providerSource = &hubProviderSource{
+		db: database,
+		client: providerPlaneClientFunc(func(
+			_ context.Context, scope federationauth.Scope, request *http.Request,
+		) (*http.Response, error) {
+			require.Equal(federationauth.ScopeProviderRead, scope)
+			require.Equal("/api/v1/federation/provider/settings", request.URL.Path)
+			reads.Add(1)
+			encoded, err := json.Marshal(projection)
+			require.NoError(err)
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(bytes.NewReader(encoded)),
+				Request:    request,
+			}, nil
+		}),
+	}
+	worktreeBase := t.TempDir()
+	runGit(t, worktreeBase, "init", "--initial-branch=main")
+	runGit(t, worktreeBase, "remote", "add", "origin", "https://github.com/acme/late.git")
+
+	response := doJSON(
+		t, srv, http.MethodPut, "/api/v1/repo/github/acme/late/worktree-base",
+		repoWorktreeBaseRequest{WorktreeBasePath: worktreeBase},
+	)
+	require.Equal(http.StatusOK, response.Code, response.Body.String())
+	require.Len(srv.cfg.Repos, 1)
+	assert.Equal(worktreeBase, srv.cfg.Repos[0].WorktreeBasePath)
+
+	projection.Repos[0].Owner = "renamed"
+	projection.Repos[0].Name = "late-renamed"
+	projection.Repos[0].RepoPath = "renamed/late-renamed"
+	projection.Repos[0].TrackedRepoPath = "renamed/late-renamed"
+	projection.RepositoryObservations[0].Owner = "renamed"
+	projection.RepositoryObservations[0].Name = "late-renamed"
+	projection.RepositoryObservations[0].RepoPath = "renamed/late-renamed"
+	projection.RepositoryObservations[0].ObservedAt = observedAt.Add(time.Minute)
+	response = doJSON(
+		t, srv, http.MethodPut,
+		"/api/v1/repo/github/renamed/late-renamed/worktree-base",
+		repoWorktreeBaseRequest{},
+	)
+	require.Equal(http.StatusOK, response.Code, response.Body.String())
+	assert.Equal(int32(2), reads.Load(), "each mutation uses one pre-commit hub snapshot")
+	require.Len(srv.cfg.Repos, 1)
+	assert.Equal("renamed", srv.cfg.Repos[0].Owner)
+	assert.Equal("late-renamed", srv.cfg.Repos[0].Name)
+	assert.Empty(srv.cfg.Repos[0].WorktreeBasePath)
+	contents, err := os.ReadFile(configPath)
+	require.NoError(err)
+	assert.Contains(string(contents), `platform_repo_id = "repo-late"`)
+	var settings settingsResponse
+	require.NoError(json.NewDecoder(response.Body).Decode(&settings))
+	require.Len(settings.Repos, 1)
+	assert.Equal("repo-late", settings.Repos[0].PlatformRepoID)
+	assert.Empty(settings.Repos[0].WorktreeBasePath)
+}
+
+func TestNodeLocalSettingsDoNotCommitWhenHubSnapshotIsUnavailable(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, _, configPath := setupTestServerWithConfigContent(t, `
+host = "127.0.0.1"
+port = 8091
+
+[workspaces]
+auto_assign_on_create = false
+`, &mockGH{})
+	srv.providerSource = &hubProviderSource{
+		client: providerPlaneClientFunc(func(
+			context.Context, federationauth.Scope, *http.Request,
+		) (*http.Response, error) {
+			return nil, providerplane.ErrHubUnavailable
+		}),
+	}
+	autoAssign := true
+
+	response := doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+		Workspaces: &workspaceSettingsUpdate{AutoAssignOnCreate: &autoAssign},
+	})
+
+	require.Equal(http.StatusServiceUnavailable, response.Code, response.Body.String())
+	assert.False(srv.cfg.Workspaces.AutoAssignOnCreate)
+	persisted, err := config.Load(configPath)
+	require.NoError(err)
+	assert.False(persisted.Workspaces.AutoAssignOnCreate)
+}
+
+func TestNodeSettingsLoadWhileFederationIsDisabled(t *testing.T) {
+	require := require.New(t)
+	srv, _, _ := setupTestServerWithConfig(t)
+	srv.cfg.Fleet.Enabled = false
+	srv.cfg.Fleet.Role = config.FleetRoleSpoke
+	srv.providerSource = &hubProviderSource{
+		client: providerPlaneClientFunc(func(
+			context.Context, federationauth.Scope, *http.Request,
+		) (*http.Response, error) {
+			require.Fail("disabled federation must not request hub settings")
+			return nil, nil
+		}),
+		enabled: srv.federationEnabled,
+	}
+
+	response := doJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
+
+	require.Equal(http.StatusOK, response.Code, response.Body.String())
+	var settings settingsResponse
+	require.NoError(json.NewDecoder(response.Body).Decode(&settings))
+	require.False(settings.Fleet.Enabled)
+}
+
+func TestInactiveSpokeSettingsStayLocal(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, _, configPath := setupTestServerWithConfigContentAndOptions(t, `
+host = "127.0.0.1"
+port = 8091
+
+[api]
+require_auth = true
+
+[workspaces]
+auto_assign_on_create = false
+
+[fleet]
+enabled = true
+role = "spoke"
+base_url = "https://spoke.example"
+
+[fleet.hub]
+node_id = "0123456789abcdef0123456789abcdef"
+base_url = "https://hub.example"
+`, &mockGH{}, ServerOptions{
+		HostCheckAllowLoopbackAnyPort: true,
+		FederationSpokeID:             proxyTestNodeID,
+	})
+	require.NotNil(srv.providerSource)
+	require.Nil(srv.providerSource.client)
+
+	response := doJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
+	require.Equal(http.StatusOK, response.Code, response.Body.String())
+
+	autoAssign := true
+	response = doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+		Workspaces: &workspaceSettingsUpdate{AutoAssignOnCreate: &autoAssign},
+	})
+	require.Equal(http.StatusOK, response.Code, response.Body.String())
+	assert.True(srv.cfg.Workspaces.AutoAssignOnCreate)
+	persisted, err := config.Load(configPath)
+	require.NoError(err)
+	assert.True(persisted.Workspaces.AutoAssignOnCreate)
+}
+
+func TestRoleAwareSettingsRejectFederationWriteToHubLocalPolicy(t *testing.T) {
+	srv, _, _ := setupTestServerWithConfig(t)
+	autoAssign := true
+	ctx := federationauth.WithPrincipal(t.Context(), federationauth.Principal{
+		NodeID: proxyTestNodeID,
+		Scopes: map[federationauth.Scope]struct{}{
+			federationauth.ScopeProviderWrite: {},
+		},
+	})
+	_, err := srv.updateSettings(ctx, &updateSettingsInput{Body: updateSettingsRequest{
+		Workspaces: &workspaceSettingsUpdate{AutoAssignOnCreate: &autoAssign},
+	}})
+	var statusErr huma.StatusError
+	require.ErrorAs(t, err, &statusErr)
+	assert.Equal(t, http.StatusForbidden, statusErr.GetStatus())
+	assert.False(t, srv.cfg.Workspaces.AutoAssignOnCreate)
 }
 
 // TestHandleUpdateSettingsRestoresProjectionAfterRequestCancellation covers the

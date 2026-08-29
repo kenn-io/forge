@@ -6,11 +6,13 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
+	"time"
 
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/fleet"
 	"go.kenn.io/forge/internal/server/workspaceapi"
-	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
@@ -24,12 +26,16 @@ import (
 // straight from the cached workspace summary, and live tmux state is reconciled
 // only from the bounded fleet tmux monitor cache.
 func (s *Handler) buildLocalRaw(ctx context.Context) (fleet.RawSnapshot, error) {
-	caps := fleet.Probe(ctx, s.configSnapshot().TmuxCommand)
+	configSnapshot := s.configSnapshot()
+	caps := fleet.Probe(ctx, configSnapshot.TmuxCommand)
+	hostname := hostnameOrEmpty()
 	raw := fleet.RawSnapshot{
-		SchemaVersion: fleet.SchemaVersion,
-		Capabilities:  &caps,
+		ProtocolVersion: federation.ProtocolVersion,
+		NodeID:          fleet.NodeID(s.fleetSelfKey(hostname)),
+		BaseURL:         configSnapshot.Fleet.BaseURL,
+		Capabilities:    &caps,
 		Host: fleet.RawHost{
-			Hostname: hostnameOrEmpty(),
+			Hostname: hostname,
 			Platform: platformString(),
 			Version:  s.currentBuildVersion(),
 		},
@@ -40,7 +46,8 @@ func (s *Handler) buildLocalRaw(ctx context.Context) (fleet.RawSnapshot, error) 
 	raw.PlatformAuthenticated = s.fleetPlatformAuthMonitor.authenticated()
 
 	projByScoped := map[string]bool{}
-	projByIdentity := map[string]string{} // platform identity -> project scoped key
+	projByStableIdentity := map[string]string{}
+	projByRoute := map[string]string{}
 	wtByPath := map[string]*fleet.RawWorktree{}
 	var order []string
 	var ownedTmux []fleetOwnedTmuxSession
@@ -78,10 +85,15 @@ func (s *Handler) buildLocalRaw(ctx context.Context) (fleet.RawSnapshot, error) 
 			rp.Platform = p.PlatformIdentity.Platform
 			rp.PlatformHost = p.PlatformIdentity.Host
 			rp.PlatformRepo = p.PlatformIdentity.Owner + "/" + p.PlatformIdentity.Name
-			projByIdentity[identityKey(
-				p.PlatformIdentity.Platform, p.PlatformIdentity.Host,
-				p.PlatformIdentity.Owner, p.PlatformIdentity.Name,
-			)] = key
+			repository, err := s.projectRepositoryIdentity(ctx, *p.PlatformIdentity)
+			if err != nil {
+				return fleet.RawSnapshot{}, err
+			}
+			rp.Repository = repository
+			if stableKey := stableIdentityKey(repository); stableKey != "" {
+				projByStableIdentity[stableKey] = key
+			}
+			projByRoute[routeIdentityKey(repository)] = key
 		}
 		raw.Projects = append(raw.Projects, rp)
 		projByScoped[key] = true
@@ -171,16 +183,27 @@ func (s *Handler) buildLocalRaw(ctx context.Context) (fleet.RawSnapshot, error) 
 			return fleet.RawSnapshot{}, err
 		}
 		summaries := snapshot.Workspaces
+		raw.Workspaces = slices.Clone(summaries)
 		for i := range summaries {
 			sum := summaries[i]
-			ident := identityKey(sum.Platform, sum.PlatformHost, sum.RepoOwner, sum.RepoName)
-			projKey, ok := projByIdentity[ident]
+			projKey, ok := "", false
+			if stableKey := stableIdentityKey(sum.Repository); stableKey != "" {
+				projKey, ok = projByStableIdentity[stableKey]
+			} else {
+				projKey, ok = projByRoute[routeIdentityKey(sum.Repository)]
+			}
 			if !ok {
-				projKey = "repo:" + sum.Platform + ":" + sum.PlatformHost + ":" + sum.RepoOwner + "/" + sum.RepoName
+				projKey = "repo:" + sum.Repository.Provider + ":" +
+					sum.Repository.PlatformHost + ":" + sum.Repository.Owner + "/" +
+					sum.Repository.Name
 				if !projByScoped[projKey] {
 					raw.Projects = append(raw.Projects, s.synthesizedWorkspaceProject(ctx, sum, projKey))
 					projByScoped[projKey] = true
-					projByIdentity[ident] = projKey
+					if stableKey := stableIdentityKey(sum.Repository); stableKey != "" {
+						projByStableIdentity[stableKey] = projKey
+					} else {
+						projByRoute[routeIdentityKey(sum.Repository)] = projKey
+					}
 				}
 			}
 			wtKey := "worktree:" + normPath(sum.WorktreePath)
@@ -240,14 +263,15 @@ func applyWorktreeStats(wt *fleet.RawWorktree, stats map[string]db.WorktreeGitSt
 // The default branch is filled from the synced repo row when known — a DB
 // read, never read-path git I/O.
 func (s *Handler) synthesizedWorkspaceProject(
-	ctx context.Context, sum db.WorkspaceSummary, projKey string,
+	ctx context.Context, sum fleet.RawWorkspace, projKey string,
 ) fleet.RawProject {
 	return fleet.RawProject{
 		ScopedKey:     projKey,
-		Name:          sum.RepoOwner + "/" + sum.RepoName,
-		Platform:      sum.Platform,
-		PlatformHost:  sum.PlatformHost,
-		PlatformRepo:  sum.RepoOwner + "/" + sum.RepoName,
+		Name:          sum.Repository.Owner + "/" + sum.Repository.Name,
+		Platform:      sum.Repository.Provider,
+		PlatformHost:  sum.Repository.PlatformHost,
+		PlatformRepo:  sum.Repository.Owner + "/" + sum.Repository.Name,
+		Repository:    sum.Repository,
 		DefaultBranch: s.syncedRepoDefaultBranch(ctx, sum),
 		IsSynthesized: true,
 	}
@@ -255,20 +279,55 @@ func (s *Handler) synthesizedWorkspaceProject(
 
 // syncedRepoDefaultBranch returns the default branch kenn-forge recorded for a
 // workspace's repo during sync, or "" when the repo is unknown or unsynced.
-func (s *Handler) syncedRepoDefaultBranch(ctx context.Context, sum db.WorkspaceSummary) string {
+func (s *Handler) syncedRepoDefaultBranch(ctx context.Context, sum fleet.RawWorkspace) string {
 	if s.db == nil {
 		return ""
 	}
 	repo, err := s.db.GetRepoByIdentity(ctx, db.RepoIdentity{
-		Platform:     sum.Platform,
-		PlatformHost: sum.PlatformHost,
-		Owner:        sum.RepoOwner,
-		Name:         sum.RepoName,
+		Platform:       sum.Repository.Provider,
+		PlatformHost:   sum.Repository.PlatformHost,
+		PlatformRepoID: sum.Repository.PlatformRepoID,
+		Owner:          sum.Repository.Owner,
+		Name:           sum.Repository.Name,
 	})
 	if err != nil || repo == nil {
 		return ""
 	}
 	return repo.DefaultBranch
+}
+
+func (s *Handler) projectRepositoryIdentity(
+	ctx context.Context,
+	identity db.PlatformIdentity,
+) (fleet.RepositoryIdentity, error) {
+	out := fleet.RepositoryIdentity{
+		Provider: identity.Platform, PlatformHost: identity.Host,
+		Owner: identity.Owner, Name: identity.Name,
+	}
+	if s.db == nil {
+		return out, nil
+	}
+	repository, err := s.db.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform: identity.Platform, PlatformHost: identity.Host,
+		Owner: identity.Owner, Name: identity.Name,
+	})
+	if err != nil {
+		return fleet.RepositoryIdentity{}, err
+	}
+	if repository != nil {
+		out.PlatformRepoID = repository.PlatformRepoID
+	}
+	return out, nil
+}
+
+func parseFleetWorkspaceTime(value string) time.Time {
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339} {
+		parsed, err := time.Parse(layout, value)
+		if err == nil {
+			return parsed
+		}
+	}
+	return time.Time{}
 }
 
 // worktreeFromWorkspace maps a workspace summary into a raw worktree
@@ -281,23 +340,23 @@ func (s *Handler) syncedRepoDefaultBranch(ctx context.Context, sum db.WorkspaceS
 // associated PR number) and PR display fields stay strictly PR-only. Kata task
 // workspaces have no provider issue/PR number, so they expose only their
 // worktree/session shell until the fleet contract grows Kata-specific fields.
-func worktreeFromWorkspace(sum db.WorkspaceSummary, wtKey, projKey string) fleet.RawWorktree {
+func worktreeFromWorkspace(sum fleet.RawWorkspace, wtKey, projKey string) fleet.RawWorktree {
 	wt := fleet.RawWorktree{
 		ScopedKey:      wtKey,
 		ProjectKey:     projKey,
 		Name:           filepath.Base(sum.WorktreePath),
 		Path:           normPath(sum.WorktreePath),
 		Branch:         sum.GitHeadRef,
-		SessionBackend: sessionBackendForWorkspace(sum),
+		SessionBackend: sum.SessionBackend,
 	}
 	if sum.ItemType == db.WorkspaceItemTypeIssue {
-		if sum.SourceItemVisible {
+		if sum.ItemNumber > 0 {
 			wt.LinkedIssueNumbers = []int{sum.ItemNumber}
 		}
 		// AssociatedPRNumber is the PR linked to the issue, if any. The
 		// summary does not carry that PR's title/state/checks, so only the
 		// number is surfaced, never PR display fields built from issue data.
-		if sum.AssociatedPRVisible {
+		if sum.AssociatedPRNumber != nil {
 			wt.LinkedPRNumber = sum.AssociatedPRNumber
 		}
 		return wt
@@ -308,65 +367,22 @@ func worktreeFromWorkspace(sum db.WorkspaceSummary, wtKey, projKey string) fleet
 	if sum.ItemType == db.WorkspaceItemTypeAdHoc {
 		// Ad-hoc workspaces have no provider item; only a PR later detected
 		// for the pushed branch can be linked.
-		if sum.AssociatedPRVisible {
+		if sum.AssociatedPRNumber != nil {
 			wt.LinkedPRNumber = sum.AssociatedPRNumber
 		}
 		return wt
 	}
-	if sum.ItemType == db.WorkspaceItemTypePullRequest && !sum.SourceItemVisible {
-		return wt
-	}
-	// Pull-request workspaces: the PR number is the item itself, and the
-	// joined MR metadata describes that PR. The worktree's own diff size
-	// (DiffAdded/DiffRemoved) still comes from the live git stats sampler,
-	// overlaid by path, so registered and orphan worktrees report it the same
-	// way; PRAdditions/PRDeletions below are the merge request's own
-	// platform-reported size, a separate enrichment metric.
+	// Pull-request workspaces carry only their stable link number. Provider
+	// display facts are overlaid by the hub after aggregation.
 	prNumber := sum.ItemNumber
 	wt.LinkedPRNumber = &prNumber
-	wt.PRState = foldedPRState(sum)
-	wt.PRTitle = sum.MRTitle
-	wt.ChecksStatus = sum.MRCIStatus
-	wt.PRReviewDecision = ptrStrOrNil(sum.MRReviewDecision)
-	wt.PRMergeable = ptrStrOrNil(sum.MRMergeableState)
-	wt.PRAdditions = ptrIntOrNil(sum.MRAdditions)
-	wt.PRDeletions = ptrIntOrNil(sum.MRDeletions)
-	wt.PRCommentCount = ptrIntOrNil(sum.MRCommentCount)
 	return wt
-}
-
-// sessionBackendForWorkspace translates a workspace's persisted terminal
-// backend into the generic fleet session-backend vocabulary. A workspace always
-// carries a backend (it defaults to tmux at creation), so the empty fallback
-// only guards a malformed row; the enrichment layer applies the local default
-// for worktrees that carry no backend of their own.
-func sessionBackendForWorkspace(sum db.WorkspaceSummary) string {
-	switch sum.TerminalBackend {
-	case workspace.TerminalBackendPtyOwner:
-		return fleet.SessionBackendLocalPTY
-	case workspace.TerminalBackendTmux:
-		return fleet.SessionBackendLocalTmux
-	default:
-		return ""
-	}
-}
-
-// foldedPRState returns a pull-request workspace's display state, folding an
-// open draft into "draft" while leaving terminal states (closed/merged)
-// untouched so a closed draft still reports its real state.
-func foldedPRState(sum db.WorkspaceSummary) *string {
-	if sum.MRIsDraft != nil && *sum.MRIsDraft &&
-		sum.MRState != nil && *sum.MRState == "open" {
-		draft := "draft"
-		return &draft
-	}
-	return sum.MRState
 }
 
 func ownedTmuxSessionsForWorkspace(
 	ctx context.Context,
 	s *Handler,
-	sum db.WorkspaceSummary,
+	sum fleet.RawWorkspace,
 	wtKey string,
 ) ([]fleetOwnedTmuxSession, error) {
 	var out []fleetOwnedTmuxSession
@@ -378,7 +394,7 @@ func ownedTmuxSessionsForWorkspace(
 			RuntimeKind:      "tmux",
 			Status:           "running",
 			Label:            sum.TmuxSession,
-			CreatedAt:        sum.CreatedAt,
+			CreatedAt:        parseFleetWorkspaceTime(sum.CreatedAt),
 		})
 	}
 	if s.db == nil {
@@ -465,7 +481,7 @@ func ownedTmuxSessionsForProjectWorktree(
 
 func nonTmuxRuntimeSessionsForWorkspace(
 	s *Handler,
-	sum db.WorkspaceSummary,
+	sum fleet.RawWorkspace,
 	wtKey string,
 ) []fleet.RawSession {
 	if s.runtimeSnapshot == nil {
@@ -576,8 +592,16 @@ func normPath(p string) string {
 	return fleet.NormPath(p)
 }
 
-func identityKey(platform, host, owner, name string) string {
-	return platform + "\x00" + host + "\x00" + owner + "\x00" + name
+func stableIdentityKey(identity fleet.RepositoryIdentity) string {
+	if strings.TrimSpace(identity.PlatformRepoID) == "" {
+		return ""
+	}
+	return identity.Provider + "\x00" + identity.PlatformHost + "\x00" + identity.PlatformRepoID
+}
+
+func routeIdentityKey(identity fleet.RepositoryIdentity) string {
+	return identity.Provider + "\x00" + identity.PlatformHost + "\x00" +
+		identity.Owner + "\x00" + identity.Name
 }
 
 func hostnameOrEmpty() string {

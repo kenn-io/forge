@@ -4,8 +4,13 @@ import (
 	"crypto/subtle"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/federation"
+	"go.kenn.io/forge/internal/federationauth"
+	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
 )
 
@@ -35,9 +40,18 @@ func hasValidBearer(r *http.Request, expected string) bool {
 	if expected == "" {
 		return false
 	}
+	token, ok := requestBearer(r)
+	return ok && tokenEqual(strings.TrimSpace(token), expected)
+}
+
+func requestBearer(r *http.Request) (string, bool) {
 	header := r.Header.Get("Authorization")
 	token, ok := strings.CutPrefix(header, "Bearer ")
-	return ok && tokenEqual(strings.TrimSpace(token), expected)
+	if !ok {
+		return "", false
+	}
+	token = strings.TrimSpace(token)
+	return token, token != ""
 }
 
 // handleAuthBootstrap converts a valid ?auth_token= query into the
@@ -78,6 +92,9 @@ func (s *Server) handleAuthBootstrap(
 func (s *Server) authorizeAPIRequest(
 	w http.ResponseWriter, r *http.Request,
 ) bool {
+	if s.isPreEnrollmentRequest(r) {
+		return true
+	}
 	if hasValidBearer(r, s.daemonRequests.token) {
 		return true
 	}
@@ -85,6 +102,17 @@ func (s *Server) authorizeAPIRequest(
 		if tokenEqual(cookie.Value, s.daemonRequests.token) {
 			return true
 		}
+	}
+	// Federation requests sent through Tailscale Serve also carry its user
+	// identity header. Authenticate the narrower bearer first so handlers retain
+	// the spoke principal and federation scope checks still apply.
+	if token, ok := requestBearer(r); ok && s.federationAuth != nil {
+		if principal, authenticated := s.federationAuth.Authenticate(token); authenticated {
+			return s.authorizeFederationRequest(w, r, principal)
+		}
+	}
+	if s.daemonRequests.acceptsTailscaleServeUser(r) {
+		return true
 	}
 	w.Header().Set("WWW-Authenticate", `Bearer realm="kenn-forge"`)
 	writeProblemResponse(w, httpapi.NewProblem(
@@ -94,6 +122,202 @@ func (s *Server) authorizeAPIRequest(
 		nil,
 	))
 	return false
+}
+
+func (s *Server) federationPrincipalEnrollmentState(
+	principal federationauth.Principal,
+) (federation.EnrollmentState, bool) {
+	if s.options.FederationEnrollments == nil {
+		return federation.EnrollmentActive, true
+	}
+	s.cfgMu.Lock()
+	if s.cfg == nil || !s.cfg.Fleet.Enabled {
+		s.cfgMu.Unlock()
+		return "", false
+	}
+	members := append([]config.FleetMember{}, s.cfg.Fleet.Members...)
+	s.cfgMu.Unlock()
+	role := s.bootCfgSnapshot.FleetRole
+	var hub *config.FleetHub
+	if s.bootCfgSnapshot.Hub != nil {
+		hub = &config.FleetHub{
+			NodeID:  s.bootCfgSnapshot.Hub.NodeID,
+			BaseURL: s.bootCfgSnapshot.Hub.BaseURL,
+		}
+	}
+	local, hasLocal := s.options.FederationEnrollments.Local()
+	if hasLocal && local.State == federation.EnrollmentPending &&
+		local.HubID == principal.NodeID {
+		return federation.EnrollmentPending,
+			local.PreparationStarted || local.ExpiresAt.After(s.now().UTC())
+	}
+
+	if role == config.FleetRoleSpoke {
+		if !hasLocal || hub == nil ||
+			hub.NodeID != principal.NodeID ||
+			local.HubID != principal.NodeID {
+			return "", false
+		}
+		if local.State == federation.EnrollmentPending {
+			return federation.EnrollmentPending,
+				local.PreparationStarted || local.ExpiresAt.After(s.now().UTC())
+		}
+		return federation.EnrollmentActive, s.options.FederationSpokeActive &&
+			local.State == federation.EnrollmentActive &&
+			hub.NodeID == principal.NodeID &&
+			local.HubID == principal.NodeID
+	}
+
+	enrollment, ok := s.options.FederationEnrollments.EnrollmentForSpoke(principal.NodeID)
+	if !ok || enrollment.State == federation.EnrollmentRevoked {
+		return "", false
+	}
+	if enrollment.State == federation.EnrollmentPending {
+		return federation.EnrollmentPending,
+			enrollment.PreparationStarted || enrollment.ExpiresAt.After(s.now().UTC())
+	}
+	if enrollment.State != federation.EnrollmentActive {
+		return "", false
+	}
+	for _, member := range members {
+		if member.NodeID == principal.NodeID &&
+			member.State == federation.EnrollmentActive {
+			return federation.EnrollmentActive, true
+		}
+	}
+	return "", false
+}
+
+func pendingProviderRouteAllowed(method, path string) bool {
+	if method != http.MethodPost {
+		return false
+	}
+	switch path {
+	case "/api/v1/federation/provider/repository-descriptor",
+		"/api/v1/federation/provider/workspace-launch-spec",
+		"/api/v1/federation/provider-state/review-drafts/import",
+		"/api/v1/federation/provider-state/workflow-states/import":
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Server) isPreEnrollmentRequest(r *http.Request) bool {
+	return r.Method == http.MethodPost &&
+		s.canonicalAPIPath(r) == "/api/v1/federation/enrollments"
+}
+
+func (s *Server) authorizeFederationRequest(
+	w http.ResponseWriter, r *http.Request, principal federationauth.Principal,
+) bool {
+	if claimed := r.Header.Get(federationauth.NodeIDHeader); claimed != "" &&
+		claimed != principal.NodeID {
+		writeFederationAuthProblem(
+			w,
+			"federation credential subject does not match the supplied node ID",
+			map[string]any{"reason": "federationSubjectMismatch"},
+		)
+		return false
+	}
+	canonicalPath := s.canonicalAPIPath(r)
+	enrollmentState, enrolled := s.federationPrincipalEnrollmentState(principal)
+	if !enrolled && s.allowsRevokedSpokeRevocation(r, canonicalPath, principal) {
+		enrollmentState = federation.EnrollmentRevoked
+		enrolled = true
+	}
+	if !enrolled {
+		writeFederationAuthProblem(
+			w,
+			"federation credential is not attached to an authorized enrollment",
+			map[string]any{"reason": "federationEnrollmentInactive"},
+		)
+		return false
+	}
+	required, listed := s.federationAuth.RequiredScope(r.Method, canonicalPath)
+	providerRule, providerOwned := providerRouteRuleForRequest(r.Method, canonicalPath)
+	providerOwned = providerOwned && providerRule.Owner != NodeLocal
+	if !listed && providerOwned {
+		required = providerRule.PeerScope
+		listed = true
+	}
+	if enrollmentState == federation.EnrollmentPending && providerOwned &&
+		!pendingProviderRouteAllowed(r.Method, canonicalPath) {
+		writeFederationAuthProblem(
+			w,
+			"pending federation credentials cannot access this provider route",
+			map[string]any{"reason": "federationEnrollmentPending"},
+		)
+		return false
+	}
+	if !listed {
+		writeFederationAuthProblem(
+			w,
+			"federation credentials cannot access this route",
+			map[string]any{"reason": "federationRouteNotAllowed"},
+		)
+		return false
+	}
+	if !principal.Has(required) {
+		writeFederationAuthProblem(
+			w,
+			"federation credential does not grant the required scope",
+			map[string]any{
+				"reason": "federationScopeDenied", "required_scope": required,
+			},
+		)
+		return false
+	}
+	if providerOwned && r.Header.Get(providerplane.ProtocolVersionHeader) !=
+		strconv.Itoa(federation.ProtocolVersion) {
+		writeProblemResponse(w, httpapi.NewProblem(
+			http.StatusConflict,
+			httpapi.CodeConflict,
+			"federation protocol version does not match",
+			map[string]any{
+				"reason":   "protocolMismatch",
+				"expected": federation.ProtocolVersion,
+			},
+		))
+		return false
+	}
+	*r = *r.WithContext(federationauth.WithPrincipal(r.Context(), principal))
+	return true
+}
+
+func (s *Server) allowsRevokedSpokeRevocation(
+	r *http.Request, canonicalPath string, principal federationauth.Principal,
+) bool {
+	if r.Method != http.MethodDelete || s.options.FederationEnrollments == nil {
+		return false
+	}
+	local, ok := s.options.FederationEnrollments.Local()
+	if !ok || local.State != federation.EnrollmentRevoked ||
+		local.HubID != principal.NodeID {
+		return false
+	}
+	s.cfgMu.Lock()
+	fleetEnabled := s.cfg != nil && s.cfg.Fleet.Enabled
+	s.cfgMu.Unlock()
+	return fleetEnabled && canonicalPath ==
+		"/api/v1/fleet/enrollments/"+url.PathEscape(local.EnrollmentID)
+}
+
+func writeFederationAuthProblem(
+	w http.ResponseWriter, detail string, details map[string]any,
+) {
+	writeProblemResponse(w, httpapi.NewProblem(
+		http.StatusForbidden, httpapi.CodeForbidden, detail, details,
+	))
+}
+
+func (s *Server) canonicalAPIPath(r *http.Request) string {
+	path := r.URL.EscapedPath()
+	if s.basePath == "/" {
+		return path
+	}
+	prefix := strings.TrimSuffix(s.basePath, "/")
+	return strings.TrimPrefix(path, prefix)
 }
 
 // isGatedAPIRequest reports whether the path is a route subject to

@@ -330,13 +330,13 @@ export const mockSettings = {
   },
   fleet: {
     enabled: false,
-    key: "",
+    role: "hub",
+    members: [],
+    enrollments: [],
     peer_timeout: "2s",
     sessions: {
       include_unmanaged_details: false,
     },
-    peers: [],
-    ssh_peers: [],
     restart_required: false,
   },
   mcp: {
@@ -696,6 +696,10 @@ export function createMockApiHandler(overrides: MockRouteOverride[] = []): MockA
 
     if (method === "GET" && pathname === "/api/v1/repos/summary") {
       return jsonResponse(repoSummaries);
+    }
+
+    if (method === "GET" && pathname === "/api/v1/snapshot") {
+      return jsonResponse({ hosts: [], workspaces: [] });
     }
 
     const singleRepoMatch = pathname.match(/^\/api\/v1\/repos\/([^/]+)\/([^/]+)$/);

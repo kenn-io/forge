@@ -51,6 +51,7 @@ type daemonLifecycleDeps struct {
 	findVerified       func(context.Context, daemon.RuntimeStore, string) (daemon.RuntimeRecord, daemon.PingInfo, bool, error)
 	findVerifiedRecord func(context.Context, daemon.RuntimeRecord, string) (daemon.PingInfo, bool, error)
 	readStatus         func(string) (runtimelock.Status, error)
+	ensureNodeID       func(string) (string, error)
 	ensureBackground   func(context.Context, string, *config.Config) (daemon.RuntimeRecord, error)
 	signal             func(int) error
 	waitForExit        func(context.Context, int, time.Duration) bool
@@ -98,6 +99,7 @@ func defaultDaemonLifecycleDeps() daemonLifecycleDeps {
 		findVerified:       daemonruntime.FindVerified,
 		findVerifiedRecord: daemonruntime.FindVerifiedRecord,
 		readStatus:         runtimelock.Read,
+		ensureNodeID:       runtimelock.EnsureNodeID,
 		ensureBackground:   ensureBackground,
 		signal:             signalDaemonProcess,
 		waitForExit:        waitForDaemonExit,
@@ -372,6 +374,12 @@ func (l *daemonLifecycle) prepareConfigMutation(
 				return nil, releaseConfigWith(err)
 			}
 			continue
+		}
+		if _, err := l.deps.ensureNodeID(cfg.DataDir); err != nil {
+			identityErr := fmt.Errorf("%s: ensure node ID: %w", operation, err)
+			return nil, errors.Join(
+				identityErr, releaseLifecycleLock(operation, locks),
+			)
 		}
 		return &preparedDaemonMutation{
 			config:     cfg,

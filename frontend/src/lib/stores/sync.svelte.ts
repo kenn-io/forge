@@ -22,6 +22,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
   const getPriorityRepos = opts.getPriorityRepos ?? (() => undefined);
 
   let status = $state<SyncStatus | null>(null);
+  let providerAvailable = $state(true);
   let rateLimits = $state.raw<RateLimitsResponse>({ provider_pools: {}, local_ceilings: {} });
   let wasRunning = false;
   let onSyncCompleteOnce: (() => void) | null = null;
@@ -40,6 +41,14 @@ export function createSyncStore(opts: SyncStoreOptions) {
 
   function getRateLimits(): RateLimitsResponse {
     return rateLimits;
+  }
+
+  function getProviderAvailable(): boolean {
+    return providerAvailable;
+  }
+
+  function setProviderAvailable(available: boolean): void {
+    providerAvailable = available;
   }
 
   function onNextSyncComplete(fn: () => void): void {
@@ -264,6 +273,8 @@ export function createSyncStore(opts: SyncStoreOptions) {
   return {
     getSyncState,
     getRateLimits,
+    getProviderAvailable,
+    setProviderAvailable,
     onNextSyncComplete,
     subscribeSyncComplete,
     refreshSyncStatus,

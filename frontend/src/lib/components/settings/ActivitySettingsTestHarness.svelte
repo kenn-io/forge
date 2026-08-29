@@ -9,17 +9,13 @@
   interface Props {
     activity: ActivitySettingsType;
     onUpdate: (activity: ActivitySettingsType) => void;
+    owner?: "hub" | "local";
   }
 
-  let { activity: initialActivity, onUpdate }: Props = $props();
-  // svelte-ignore state_referenced_locally
-  let activity = $state.raw(initialActivity);
+  let { activity: initialActivity, onUpdate, owner = "local" }: Props = $props();
+  let activity = $derived(initialActivity);
   const runtime = makeAppRuntime();
   setAppRuntime(untrack(() => runtime));
-
-  $effect(() => {
-    activity = initialActivity;
-  });
 
   onDestroy(() => {
     Effect.runFork(runtime.disposeEffect);
@@ -31,4 +27,4 @@
   }
 </script>
 
-<ActivitySettings {activity} onUpdate={update} />
+<ActivitySettings {activity} onUpdate={update} {owner} />

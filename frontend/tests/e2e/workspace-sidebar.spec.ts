@@ -293,7 +293,7 @@ async function setupTerminalMocks(
   // Playwright uses LIFO matching, so the specific
   // /workspaces/:id registered last takes priority
   // over the list-only pattern.
-  await page.route("**/api/v1/workspaces", async (route) => {
+  await page.route("**/api/v1/snapshot**", async (route) => {
     if (route.request().method() === "GET") {
       await route.fulfill({
         status: 200,
@@ -3670,7 +3670,7 @@ test.describe("sidebar toggle behavior", () => {
   test("workspace list polls while mounted", async ({ page }) => {
     await setupTerminalMocks(page);
     let listRequests = 0;
-    await page.route("**/api/v1/workspaces", async (route) => {
+    await page.route("**/api/v1/snapshot**", async (route) => {
       if (route.request().method() === "GET") {
         listRequests += 1;
         await route.fulfill({
@@ -4011,6 +4011,8 @@ test.describe("workspace list fleet inventory", () => {
   });
 
   test("shows remote workspaces from reachable fleet peers", async ({ page }) => {
+    const remoteHostKey = "a8f1c287d6be4fd9988d067e76d2554e";
+    const remoteHostName = "Build spoke";
     const remoteWorkspace = {
       ...testIssueWorkspace,
       id: "member-ws-23",
@@ -4021,15 +4023,10 @@ test.describe("workspace list fleet inventory", () => {
       repo_owner: "kenn-io",
       repo_name: "kit",
       repo: workspaceRepoRef("kenn-io", "kit"),
+      fleet_host_key: remoteHostKey,
+      fleet_host_name: remoteHostName,
     };
 
-    await page.route("**/api/v1/workspaces", async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ workspaces: [] }),
-      });
-    });
     await page.route(
       (url) => url.pathname === "/api/v1/snapshot",
       async (route) => {
@@ -4044,44 +4041,44 @@ test.describe("workspace list fleet inventory", () => {
                 id: "hub",
                 kind: "self",
                 name: "hub",
-                operationAvailability: {},
+                operationAvailability: {
+                  workspaceRead: { available: true },
+                  terminalAttach: { available: true },
+                },
                 platform: "linux",
                 preferredTransport: "local",
                 reachable: true,
                 tmuxSessions: [],
               },
               {
-                configKey: "member",
+                configKey: remoteHostKey,
                 diagnostics: [],
-                id: "member",
+                id: remoteHostKey,
                 kind: "remote",
-                name: "member",
-                operationAvailability: {},
+                name: remoteHostName,
+                operationAvailability: {
+                  workspaceRead: { available: true },
+                  terminalAttach: { available: true },
+                },
                 platform: "linux",
                 preferredTransport: "http",
                 reachable: true,
                 tmuxSessions: [],
               },
             ],
+            workspaces: [remoteWorkspace],
           }),
         });
       },
     );
-    await page.route("**/api/v1/fleet/hosts/member/workspaces", async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ workspaces: [remoteWorkspace] }),
-      });
-    });
-    await page.route("**/api/v1/fleet/hosts/member/workspaces/member-ws-23", async (route) => {
+    await page.route(`**/api/v1/fleet/hosts/${remoteHostKey}/workspaces/member-ws-23`, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify(remoteWorkspace),
       });
     });
-    await page.route("**/api/v1/fleet/hosts/member/workspaces/member-ws-23/runtime", async (route) => {
+    await page.route(`**/api/v1/fleet/hosts/${remoteHostKey}/workspaces/member-ws-23/runtime`, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -4095,32 +4092,19 @@ test.describe("workspace list fleet inventory", () => {
     await page.goto("/workspaces");
 
     const sidebar = page.locator(".workspace-list-sidebar");
-    await expect(sidebar).toContainText("Fleet");
-    await expect(sidebar).toContainText("2/2");
-    await expect(sidebar).toContainText("hub");
-    await expect(sidebar).toContainText("self");
-    await expect(sidebar).toContainText("local");
-    await expect(sidebar).toContainText("member");
-    await expect(sidebar).toContainText("remote");
-    await expect(sidebar).toContainText("http");
+    await expect(sidebar).not.toContainText("Fleet");
+    await expect(sidebar).not.toContainText(remoteHostKey);
 
     const row = sidebar.locator(".ws-row", { hasText: "Member workspace" });
     await expect(row).toBeVisible();
-    await expect(row).toContainText("member");
+    await expect(row).not.toContainText(remoteHostName);
     await row.click();
 
-    await expect(page).toHaveURL(/\/terminal\/fleet\/member\/member-ws-23$/);
+    await expect(page).toHaveURL(new RegExp(`/terminal/fleet/${remoteHostKey}/member-ws-23$`));
     await expect(page.locator(".workspace-home")).toContainText("Member workspace");
   });
 
   test("hides singleton self fleet host status", async ({ page }) => {
-    await page.route("**/api/v1/workspaces", async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ workspaces: [] }),
-      });
-    });
     await page.route(
       (url) => url.pathname === "/api/v1/snapshot",
       async (route) => {
@@ -4135,13 +4119,17 @@ test.describe("workspace list fleet inventory", () => {
                 id: "member",
                 kind: "self",
                 name: "member",
-                operationAvailability: {},
+                operationAvailability: {
+                  workspaceRead: { available: true },
+                  terminalAttach: { available: true },
+                },
                 platform: "linux",
                 preferredTransport: "local",
                 reachable: true,
                 tmuxSessions: [],
               },
             ],
+            workspaces: [],
           }),
         });
       },
@@ -4154,97 +4142,6 @@ test.describe("workspace list fleet inventory", () => {
     await expect(sidebar).not.toContainText("Fleet");
     await expect(sidebar).not.toContainText("1/1");
     await expect(sidebar).not.toContainText("member");
-  });
-
-  test("a hung fleet peer does not freeze local workspace updates", async ({ page }) => {
-    // Regression: the workspace-list load timeout only aborted the
-    // local /workspaces request. A reachable-but-hung peer left
-    // fetchPeerWorkspaces awaiting forever, so fetchInFlight stayed
-    // true and the sidebar never rendered the local workspace.
-    //
-    // page.clock makes this deterministic: the only timer that matters
-    // is the 10s list-load abort, which fastForward fires explicitly
-    // instead of waiting on wall-clock time or the 5s poll.
-    const localWorkspace = {
-      ...testWorkspace,
-      id: "ws-local-late",
-      mr_title: "Late local workspace",
-    };
-
-    await page.clock.install();
-
-    // Hold the local list until the fleet snapshot has loaded so the
-    // fetch that surfaces the workspace runs through the peer path —
-    // the path that has to survive the hung peer.
-    let resolveSnapshot: () => void = () => {};
-    const snapshotLoaded = new Promise<void>((resolve) => {
-      resolveSnapshot = resolve;
-    });
-    await page.route(
-      (url) => url.pathname === "/api/v1/snapshot",
-      async (route) => {
-        resolveSnapshot();
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({
-            hosts: [
-              {
-                configKey: "hub",
-                diagnostics: [],
-                id: "hub",
-                kind: "self",
-                name: "hub",
-                operationAvailability: {},
-                platform: "linux",
-                preferredTransport: "local",
-                reachable: true,
-                tmuxSessions: [],
-              },
-              {
-                configKey: "member",
-                diagnostics: [],
-                id: "member",
-                kind: "remote",
-                name: "member",
-                operationAvailability: {},
-                platform: "linux",
-                preferredTransport: "http",
-                reachable: true,
-                tmuxSessions: [],
-              },
-            ],
-          }),
-        });
-      },
-    );
-    await page.route("**/api/v1/workspaces", async (route) => {
-      if (route.request().method() !== "GET") {
-        await route.fulfill({ status: 200 });
-        return;
-      }
-      await snapshotLoaded;
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ workspaces: [localWorkspace] }),
-      });
-    });
-    // Peer request never responds. The 10s list timeout's abort signal
-    // must reach it so the fetch settles.
-    await page.route("**/api/v1/fleet/hosts/member/workspaces", async () => {
-      await new Promise(() => {});
-    });
-
-    await page.goto("/workspaces");
-
-    // The peer request firing means the list fetch is past the local
-    // request and stuck on the hung peer, with its abort timer armed.
-    await page.waitForRequest("**/api/v1/fleet/hosts/member/workspaces");
-    await page.clock.fastForward(11_000);
-
-    const sidebar = page.locator(".workspace-list-sidebar");
-    await expect(sidebar.locator(".ws-row", { hasText: "Late local workspace" })).toBeVisible();
   });
 });
 
@@ -4517,7 +4414,7 @@ test.describe("workspace list bubble opens right sidebar", () => {
         body: "",
       });
     });
-    await page.route("**/api/v1/workspaces", async (route) => {
+    await page.route("**/api/v1/snapshot**", async (route) => {
       if (route.request().method() === "GET") {
         await route.fulfill({
           status: 200,
@@ -4662,7 +4559,7 @@ test.describe("workspace list bubble opens right sidebar", () => {
         body: "",
       });
     });
-    await page.route("**/api/v1/workspaces", async (route) => {
+    await page.route("**/api/v1/snapshot**", async (route) => {
       if (route.request().method() === "GET") {
         await route.fulfill({
           status: 200,
@@ -4793,7 +4690,7 @@ test.describe("workspace list bubble opens right sidebar", () => {
         body: "",
       });
     });
-    await page.route("**/api/v1/workspaces", async (route) => {
+    await page.route("**/api/v1/snapshot**", async (route) => {
       if (route.request().method() === "GET") {
         await route.fulfill({
           status: 200,
@@ -4874,7 +4771,7 @@ test.describe("workspace list sorting", () => {
         body: "",
       });
     });
-    await page.route("**/api/v1/workspaces", async (route) => {
+    await page.route("**/api/v1/snapshot**", async (route) => {
       if (route.request().method() === "GET") {
         await route.fulfill({
           status: 200,
@@ -4952,7 +4849,7 @@ test.describe("workspace list sorting", () => {
       mr_deletions: 2,
     };
 
-    await page.route("**/api/v1/workspaces", async (route) => {
+    await page.route("**/api/v1/snapshot**", async (route) => {
       if (route.request().method() === "GET") {
         await route.fulfill({
           status: 200,
@@ -5073,7 +4970,7 @@ test.describe("delayed-response navigation", () => {
         body: "",
       });
     });
-    await page.route("**/api/v1/workspaces", async (route) => {
+    await page.route("**/api/v1/snapshot**", async (route) => {
       if (route.request().method() === "GET") {
         await route.fulfill({
           status: 200,
@@ -5199,7 +5096,7 @@ test.describe("delayed-response navigation", () => {
         body: "",
       });
     });
-    await page.route("**/api/v1/workspaces", async (route) => {
+    await page.route("**/api/v1/snapshot**", async (route) => {
       if (route.request().method() === "GET") {
         await route.fulfill({
           status: 200,
@@ -5289,7 +5186,7 @@ test.describe("delayed-response navigation", () => {
         body: "",
       });
     });
-    await page.route("**/api/v1/workspaces", async (route) => {
+    await page.route("**/api/v1/snapshot**", async (route) => {
       if (route.request().method() === "GET") {
         await route.fulfill({
           status: 200,
@@ -5401,7 +5298,7 @@ test.describe("delayed-response navigation", () => {
         body: "",
       });
     });
-    await page.route("**/api/v1/workspaces", async (route) => {
+    await page.route("**/api/v1/snapshot**", async (route) => {
       if (route.request().method() === "GET") {
         await route.fulfill({
           status: 200,
@@ -5480,6 +5377,8 @@ test.describe("delayed-response navigation", () => {
       item_number: 2,
       mr_title: "Member B",
       worktree_path: "/data/member/worktrees/ws-member",
+      fleet_host_key: "member",
+      fleet_host_name: "member",
     };
 
     const fleetMemberRequests: string[] = [];
@@ -5497,17 +5396,6 @@ test.describe("delayed-response navigation", () => {
         contentType: "text/event-stream",
         body: "",
       });
-    });
-    await page.route("**/api/v1/workspaces", async (route) => {
-      if (route.request().method() === "GET") {
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({ workspaces: [localWorkspace] }),
-        });
-        return;
-      }
-      await route.fulfill({ status: 200 });
     });
     await page.route(
       (url) => url.pathname === "/api/v1/snapshot",
@@ -5535,25 +5423,21 @@ test.describe("delayed-response navigation", () => {
                 id: "member",
                 kind: "remote",
                 name: "member",
-                operationAvailability: {},
+                operationAvailability: {
+                  workspaceRead: { available: true },
+                  terminalAttach: { available: true },
+                },
                 platform: "linux",
                 preferredTransport: "http",
                 reachable: true,
                 tmuxSessions: [],
               },
             ],
+            workspaces: [localWorkspace, memberWorkspace],
           }),
         });
       },
     );
-    await page.route("**/api/v1/fleet/hosts/member/workspaces", async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ workspaces: [memberWorkspace] }),
-      });
-    });
-
     // Local workspace A — instant.
     await page.route(`**/api/v1/workspaces/${localWorkspace.id}`, async (route) => {
       if (route.request().method() === "GET") {
@@ -5849,7 +5733,7 @@ test.describe("issue workspace sidebar", () => {
     });
 
     await mockApi(page);
-    await page.route("**/api/v1/workspaces", async (route) => {
+    await page.route("**/api/v1/snapshot**", async (route) => {
       if (route.request().method() !== "GET") {
         await route.fulfill({ status: 200 });
         return;

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"sort"
 	"sync"
 )
 
@@ -30,18 +31,19 @@ type RecordedEvent struct {
 // EventHub manages SSE subscribers with fan-out broadcasting, monotonic
 // event ids, and a ring buffer of recent events for replay on reconnect.
 type EventHub struct {
-	mu               sync.Mutex
-	subscribers      map[uint64]chan RecordedEvent
-	nextSubID        uint64
-	nextEventID      uint64
-	lastSyncStatus   *RecordedEvent
-	lastConfigStatus *RecordedEvent
-	ring             []RecordedEvent
-	ringHead         int
-	ringCount        int
-	done             chan struct{}
-	closeOnce        sync.Once
-	closed           bool // guarded by mu
+	mu                sync.Mutex
+	subscribers       map[uint64]chan RecordedEvent
+	nextSubID         uint64
+	nextEventID       uint64
+	lastSyncStatus    *RecordedEvent
+	lastConfigStatus  *RecordedEvent
+	lastHubConnection *RecordedEvent
+	ring              []RecordedEvent
+	ringHead          int
+	ringCount         int
+	done              chan struct{}
+	closeOnce         sync.Once
+	closed            bool // guarded by mu
 }
 
 // NewEventHub creates a ready-to-use hub with the default ring capacity.
@@ -74,8 +76,9 @@ func newEventHubWithCapacityAndGeneration(capacity int, generation uint64) *Even
 // channel so a fresh client with no cursor learns the latest sync state
 // without a round-trip. Callers that handle replay themselves (the
 // cursor-bearing SSE path) pass false to avoid duplicating cached
-// events with ring-replay copies. The latest config.changed event is
-// also pre-loaded for fresh subscribers when injectCached is true.
+// events with ring-replay copies. The latest config.changed and hub
+// connection events are also pre-loaded for fresh subscribers when
+// injectCached is true.
 //
 // Returns the event channel and the hub's done channel. If the hub is
 // already closed, returns an immediately-closed channel and the closed
@@ -119,9 +122,10 @@ func (h *EventHub) enqueueCachedLocked(ch chan<- RecordedEvent) {
 	if h.lastConfigStatus != nil {
 		cached = append(cached, *h.lastConfigStatus)
 	}
-	if len(cached) == 2 && cached[1].ID < cached[0].ID {
-		cached[0], cached[1] = cached[1], cached[0]
+	if h.lastHubConnection != nil {
+		cached = append(cached, *h.lastHubConnection)
 	}
+	sort.Slice(cached, func(i, j int) bool { return cached[i].ID < cached[j].ID })
 	for _, rec := range cached {
 		ch <- rec
 	}
@@ -181,6 +185,9 @@ func (h *EventHub) BroadcastBuildAtLeast(floor uint64, build func(uint64) Event)
 	case "config.changed":
 		copyRec := rec
 		h.lastConfigStatus = &copyRec
+	case "hub_connection_changed":
+		copyRec := rec
+		h.lastHubConnection = &copyRec
 	}
 
 	h.ringStoreLocked(rec)
@@ -203,6 +210,17 @@ func (h *EventHub) Generation() uint64 {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.nextEventID
+}
+
+// LatestHubConnection returns the cached hub availability
+// event, if one has been observed in this hub lifetime.
+func (h *EventHub) LatestHubConnection() (Event, bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.lastHubConnection == nil {
+		return Event{}, false
+	}
+	return h.lastHubConnection.Event, true
 }
 
 // ringStoreLocked appends rec to the ring buffer, overwriting the oldest

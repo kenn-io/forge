@@ -221,7 +221,7 @@ test.describe("phone routes", () => {
       const eventLabel = document.querySelector(".mobile-activity-event__body strong");
       const eventAuthor = document.querySelector(".mobile-activity-event__body span");
       const eventTime = document.querySelector(".mobile-activity-event time");
-      const mobileTitle = document.querySelector(".mobile-title");
+      const mobileBrandLabel = document.querySelector(".forge-selector-fallback");
       const mobileModePicker = document.querySelector(".mobile-mode-picker .kit-select-dropdown__trigger");
       const desktopButton = document.querySelector(".mobile-desktop-link");
       const desktopIcon = document.querySelector(".mobile-desktop-link svg");
@@ -287,7 +287,7 @@ test.describe("phone routes", () => {
         eventLabelFontSize: fontSize(eventLabel),
         eventAuthorFontSize: fontSize(eventAuthor),
         eventTimeFontSize: fontSize(eventTime),
-        mobileTitleFontSize: fontSize(mobileTitle),
+        mobileBrandFontSize: fontSize(mobileBrandLabel),
         mobileModePickerFontSize: fontSize(mobileModePicker),
         desktopButtonText: desktopButton?.textContent?.trim() ?? "",
         desktopButtonRect: compactRect(desktopButton),
@@ -334,7 +334,7 @@ test.describe("phone routes", () => {
     expect(metrics.eventLabelFontSize).toBeGreaterThanOrEqual(15);
     expect(metrics.eventAuthorFontSize).toBeGreaterThanOrEqual(14);
     expect(metrics.eventTimeFontSize).toBeGreaterThanOrEqual(14);
-    expect(metrics.mobileTitleFontSize).toBeGreaterThanOrEqual(16);
+    expect(metrics.mobileBrandFontSize).toBeGreaterThanOrEqual(16);
     expect(metrics.mobileModePickerFontSize).toBeGreaterThanOrEqual(16);
     expect(metrics.desktopButtonText).toBe("");
     expect(metrics.desktopButtonRect?.height ?? 0).toBeGreaterThanOrEqual(44);

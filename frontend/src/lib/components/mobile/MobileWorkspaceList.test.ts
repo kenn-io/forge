@@ -8,6 +8,7 @@ import MobileWorkspaceList from "./MobileWorkspaceListTestHarness.svelte";
 const mockGet = vi.fn();
 const mockPost = vi.fn();
 const mockDelete = vi.fn();
+let workspaceEventListener: EventListener | null = null;
 
 vi.mock("../../api/runtime.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../api/runtime.js")>();
@@ -20,7 +21,9 @@ vi.mock("../../api/runtime.js", async (importOriginal) => {
 });
 
 class MockEventSource {
-  addEventListener = vi.fn();
+  addEventListener = vi.fn((type: string, listener: EventListener) => {
+    if (type === "workspace_status") workspaceEventListener = listener;
+  });
   removeEventListener = vi.fn();
   close = vi.fn();
 }
@@ -57,13 +60,15 @@ describe("MobileWorkspaceList", () => {
     mockGet.mockReset();
     mockPost.mockReset();
     mockDelete.mockReset();
+    workspaceEventListener = null;
     localStorage.clear();
     resetModalStack();
     resetNewWorkspaceDialogState();
     vi.stubGlobal("EventSource", MockEventSource);
     mockGet.mockImplementation((path: string) => {
-      if (path === "/snapshot") return Promise.resolve({ data: { hosts: [] } });
-      if (path === "/workspaces") return Promise.resolve({ data: { workspaces: [fixture] } });
+      if (path === "/snapshot") {
+        return Promise.resolve({ data: { hosts: [], workspaces: [fixture] } });
+      }
       return Promise.resolve({ data: {} });
     });
   });
@@ -98,9 +103,10 @@ describe("MobileWorkspaceList", () => {
     ["done", "Done", "done"],
   ] as const)("shows the hook-reported %s agent state", async (agentState, label, announcement) => {
     mockGet.mockImplementation((path: string) => {
-      if (path === "/snapshot") return Promise.resolve({ data: { hosts: [] } });
-      if (path === "/workspaces") {
-        return Promise.resolve({ data: { workspaces: [{ ...fixture, agent_state: agentState }] } });
+      if (path === "/snapshot") {
+        return Promise.resolve({
+          data: { hosts: [], workspaces: [{ ...fixture, agent_state: agentState }] },
+        });
       }
       return Promise.resolve({ data: {} });
     });
@@ -115,10 +121,10 @@ describe("MobileWorkspaceList", () => {
 
   it("does not expose a dead linked-item action for Kata workspaces", async () => {
     mockGet.mockImplementation((path: string) => {
-      if (path === "/snapshot") return Promise.resolve({ data: { hosts: [] } });
-      if (path === "/workspaces") {
+      if (path === "/snapshot") {
         return Promise.resolve({
           data: {
+            hosts: [],
             workspaces: [
               {
                 ...fixture,
@@ -172,12 +178,9 @@ describe("MobileWorkspaceList", () => {
                 tmuxSessions: [],
               },
             ],
+            workspaces: [fleetWorkspace],
           },
         });
-      }
-      if (path === "/workspaces") return Promise.resolve({ data: { workspaces: [] } });
-      if (path === "/fleet/hosts/{host_key}/workspaces") {
-        return Promise.resolve({ data: { workspaces: [fleetWorkspace] } });
       }
       return Promise.resolve({ data: {} });
     });
@@ -186,11 +189,9 @@ describe("MobileWorkspaceList", () => {
 
     await screen.findByText("Fleet workspace");
     expect(screen.getByText("#42")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Open linked item #42" })).toBeNull();
-    const fleetItem = screen.getByRole("button", {
-      name: "Linked item #42 unavailable for Fleet workspace",
-    }) as HTMLButtonElement;
+    const fleetItem = screen.getByRole("button", { name: "Open linked item #42" }) as HTMLButtonElement;
     expect(fleetItem.disabled).toBe(true);
+    expect(mockGet).not.toHaveBeenCalledWith("/fleet/hosts/{host_key}/workspaces", expect.anything());
   });
 
   it("exposes the View sheet and persists display choices", async () => {
@@ -315,19 +316,20 @@ describe("MobileWorkspaceList", () => {
                 id: "peer-a",
                 kind: "remote",
                 name: "Peer A",
-                operationAvailability: {},
+                operationAvailability: {
+                  workspaceRead: { available: true },
+                  workspaceWrite: { available: true },
+                  terminalAttach: { available: true },
+                },
                 platform: "linux",
                 preferredTransport: "http",
                 reachable: true,
                 tmuxSessions: [],
               },
             ],
+            workspaces: [fleetWorkspace],
           },
         });
-      }
-      if (path === "/workspaces") return Promise.resolve({ data: { workspaces: [] } });
-      if (path === "/fleet/hosts/{host_key}/workspaces") {
-        return Promise.resolve({ data: { workspaces: [fleetWorkspace] } });
       }
       return Promise.resolve({ data: {} });
     });
@@ -361,10 +363,10 @@ describe("MobileWorkspaceList", () => {
     ["deletion_failed", "Retry deletion…", false],
   ] as const)("disables ordinary actions while workspace status is %s", async (status, deleteLabel, deleteDisabled) => {
     mockGet.mockImplementation((path: string) => {
-      if (path === "/snapshot") return Promise.resolve({ data: { hosts: [] } });
-      if (path === "/workspaces") {
+      if (path === "/snapshot") {
         return Promise.resolve({
           data: {
+            hosts: [],
             workspaces: [{ ...fixture, status, commits_ahead: 1 }],
           },
         });
@@ -390,7 +392,7 @@ describe("MobileWorkspaceList", () => {
     }
   });
 
-  it("does not restore a deleted Fleet workspace from a failed refresh cache", async () => {
+  it("renders and refreshes Fleet workspaces without workspace-list fan-out", async () => {
     const fleetWorkspace = {
       ...fixture,
       id: "fleet-ws-1",
@@ -398,9 +400,10 @@ describe("MobileWorkspaceList", () => {
       fleet_host_key: "peer-a",
       fleet_host_name: "Peer A",
     };
-    let peerReads = 0;
+    let snapshotReads = 0;
     mockGet.mockImplementation((path: string) => {
       if (path === "/snapshot") {
+        snapshotReads += 1;
         return Promise.resolve({
           data: {
             hosts: [
@@ -410,7 +413,11 @@ describe("MobileWorkspaceList", () => {
                 id: "self",
                 kind: "self",
                 name: "This device",
-                operationAvailability: {},
+                operationAvailability: {
+                  workspaceRead: { available: true },
+                  workspaceWrite: { available: true },
+                  terminalAttach: { available: true },
+                },
                 platform: "darwin",
                 preferredTransport: "local",
                 reachable: true,
@@ -422,21 +429,20 @@ describe("MobileWorkspaceList", () => {
                 id: "peer-a",
                 kind: "remote",
                 name: "Peer A",
-                operationAvailability: {},
+                operationAvailability: {
+                  workspaceRead: { available: true },
+                  workspaceWrite: { available: true },
+                  terminalAttach: { available: true },
+                },
                 platform: "linux",
                 preferredTransport: "http",
                 reachable: true,
                 tmuxSessions: [],
               },
             ],
+            workspaces: snapshotReads === 1 ? [fleetWorkspace] : [],
           },
         });
-      }
-      if (path === "/workspaces") return Promise.resolve({ data: { workspaces: [] } });
-      if (path === "/fleet/hosts/{host_key}/workspaces") {
-        peerReads += 1;
-        if (peerReads === 1) return Promise.resolve({ data: { workspaces: [fleetWorkspace] } });
-        return Promise.resolve({ error: { status: 503, detail: "Peer unavailable" } });
       }
       return Promise.resolve({ data: {} });
     });
@@ -460,7 +466,92 @@ describe("MobileWorkspaceList", () => {
       }),
     );
 
-    await waitFor(() => expect(peerReads).toBeGreaterThan(1));
+    await waitFor(() => expect(snapshotReads).toBeGreaterThan(1));
     expect(screen.queryByText("Fleet workspace")).toBeNull();
+    expect(mockGet).not.toHaveBeenCalledWith("/fleet/hosts/{host_key}/workspaces", expect.anything());
+  });
+
+  it("keeps member workspaces when a spoke loses its hub aggregate", async () => {
+    const onOpen = vi.fn();
+    const fleetWorkspace = {
+      ...fixture,
+      id: "fleet-ws-degraded",
+      mr_title: "Degraded Fleet workspace",
+      fleet_host_key: "peer-a",
+      fleet_host_name: "Peer A",
+    };
+    let snapshotReads = 0;
+    mockGet.mockImplementation((path: string) => {
+      if (path === "/snapshot") {
+        snapshotReads += 1;
+        return Promise.resolve({
+          data: {
+            aggregateIncomplete: snapshotReads !== 1,
+            hosts: [
+              {
+                configKey: "spoke-a",
+                diagnostics: [],
+                id: "spoke-a",
+                kind: "self",
+                name: "Spoke A",
+                operationAvailability: {},
+                platform: "linux",
+                preferredTransport: "local",
+                reachable: true,
+                tmuxSessions: [],
+              },
+              {
+                configKey: "hub",
+                diagnostics: [],
+                error: snapshotReads === 1 ? undefined : "Hub aggregate unavailable",
+                id: "hub",
+                kind: "remote",
+                name: "Hub",
+                operationAvailability: {},
+                platform: "linux",
+                preferredTransport: "http",
+                reachable: snapshotReads === 1,
+                tmuxSessions: [],
+              },
+              ...(snapshotReads === 1
+                ? [
+                    {
+                      configKey: "peer-a",
+                      diagnostics: [],
+                      id: "peer-a",
+                      kind: "remote",
+                      name: "Peer A",
+                      operationAvailability: {
+                        workspaceRead: { available: true },
+                        workspaceWrite: { available: true },
+                        terminalAttach: { available: true },
+                      },
+                      platform: "linux",
+                      preferredTransport: "http",
+                      reachable: true,
+                      tmuxSessions: [],
+                    },
+                  ]
+                : []),
+            ],
+            workspaces: snapshotReads === 1 ? [fleetWorkspace] : [],
+          },
+        });
+      }
+      return Promise.resolve({ data: {} });
+    });
+    render(MobileWorkspaceList, { props: { onOpen, onOpenItem: vi.fn() } });
+
+    await screen.findByText("Degraded Fleet workspace");
+    await waitFor(() => expect(workspaceEventListener).not.toBeNull());
+    workspaceEventListener?.(new MessageEvent("workspace_status"));
+
+    await waitFor(() => expect(snapshotReads).toBeGreaterThan(1));
+    expect(screen.getByText("Degraded Fleet workspace")).toBeTruthy();
+    expect(screen.getByText("Degraded")).toBeTruthy();
+    const open = screen.getByRole("button", { name: "Open workspace Degraded Fleet workspace" });
+    expect((open as HTMLButtonElement).disabled).toBe(true);
+    await fireEvent.click(open);
+    expect(onOpen).not.toHaveBeenCalled();
   });
 });

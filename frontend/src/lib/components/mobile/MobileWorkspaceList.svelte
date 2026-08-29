@@ -11,8 +11,8 @@
   import {
     executeGeneratedApiRequest,
     executeOpaqueGeneratedApiRequest,
-    type GeneratedApi,
   } from "../../api/generated-api.js";
+  import { loadFleetSnapshot } from "../../api/fleet-snapshot.js";
   import type { components } from "../../api/generated/schema.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { eventSourceStream } from "../../browser/event-source.js";
@@ -23,10 +23,14 @@
   import ConfirmDialog from "../shared/ConfirmDialog.svelte";
   import {
     WorkspaceListWorkflow,
-    makeWorkspaceRefreshCoordinator,
+    makeWorkspaceRefreshHub,
     workspaceListLifecycle,
   } from "../terminal/workspace-list-workflow.js";
-  import { decodeWorkspaceList, type WorkspaceListItem } from "../terminal/workspace-list-schema.js";
+  import {
+    decodeWorkspaceList,
+    retainDegradedHostWorkspaces,
+    type WorkspaceListItem,
+  } from "../terminal/workspace-list-schema.js";
   import {
     defaultWorkspaceListDisplayOptions,
     defaultWorkspaceListSort,
@@ -56,14 +60,12 @@
   let { onOpen, onOpenItem }: Props = $props();
   const appRuntime = getAppRuntime();
   const refreshOwner = $props.id();
-  const peerWorkspaceCache = new Map<string, WorkspaceListItem[]>();
   const loadTimeout = "10 seconds";
 
   let workspaces = $state.raw<WorkspaceListItem[]>([]);
   let fleetHosts = $state.raw<HostSummary[]>([]);
   let peerErrors = $state.raw<Record<string, string>>({});
   let fleetError = $state<string | null>(null);
-  let fleetLoaded = $state(false);
   let listStatus = $state<"loading" | "retrying" | "loaded">("loading");
   let searchQuery = $state("");
   let sortMode = $state<WorkspaceListSort>(loadWorkspaceListSort());
@@ -96,105 +98,68 @@
     return failure instanceof Error ? failure.message : fallback;
   }
 
-  function cachedPeerWorkspaces(): WorkspaceListItem[] {
-    return fleetHosts
-      .filter((host) => host.kind !== "self")
-      .flatMap((host) => peerWorkspaceCache.get(host.configKey) ?? []);
+  function workspaceHost(workspace: WorkspaceListItem): HostSummary | undefined {
+    if (workspace.fleet_host_key) {
+      return fleetHosts.find((host) => host.configKey === workspace.fleet_host_key);
+    }
+    return fleetHosts.find((host) => host.kind === "self");
   }
 
-  function fetchPeerWorkspaces(): Effect.Effect<WorkspaceListItem[], never, GeneratedApi> {
-    const peers = fleetHosts.filter((host) => host.kind !== "self" && host.reachable);
-    return Effect.forEach(
-      peers,
-      (host) =>
-        executeOpaqueGeneratedApiRequest("load mobile peer workspaces", (client, signal) =>
-          client.GET("/fleet/hosts/{host_key}/workspaces", {
-            params: { path: { host_key: host.configKey } },
-            signal,
-          }),
-        ).pipe(
-          Effect.flatMap(decodeWorkspaceList),
-          Effect.map((items) =>
-            items.map((workspace) => ({
-              ...workspace,
-              fleet_host_key: host.configKey,
-              fleet_host_name: host.name,
-            })),
-          ),
-          Effect.timeout(loadTimeout),
-          Effect.match({
-            onFailure: (failure) => ({ hostKey: host.configKey, failure, items: undefined }),
-            onSuccess: (items) => ({ hostKey: host.configKey, failure: undefined, items }),
-          }),
-        ),
-      { concurrency: 4 },
-    ).pipe(
-      Effect.map((results) => {
-        const nextErrors: Record<string, string> = {};
-        for (const result of results) {
-          if (result.items) peerWorkspaceCache.set(result.hostKey, result.items);
-          else nextErrors[result.hostKey] = failureMessage(result.failure, "Workspace list unavailable");
-        }
-        peerErrors = nextErrors;
-        return cachedPeerWorkspaces();
-      }),
-    );
+  function workspaceOperationAvailable(
+    workspace: WorkspaceListItem,
+    operation: "workspaceRead" | "workspaceWrite" | "terminalAttach",
+  ): boolean {
+    if (!workspace.fleet_host_key) return true;
+    return workspaceHost(workspace)?.operationAvailability[operation]?.available === true;
+  }
+
+  function openWorkspace(workspace: WorkspaceListItem): void {
+    if (
+      !workspaceOperationAvailable(workspace, "workspaceRead") ||
+      !workspaceOperationAvailable(workspace, "terminalAttach")
+    ) return;
+    onOpen(workspace.id, workspace.fleet_host_key);
+  }
+
+  function openWorkspaceItem(workspace: WorkspaceListItem): void {
+    if (!workspaceOperationAvailable(workspace, "workspaceRead")) return;
+    onOpenItem(workspace.id, workspace.fleet_host_key);
   }
 
   function loadWorkspaces() {
     return Effect.gen(function* () {
-      const payload = yield* executeGeneratedApiRequest("load mobile workspaces", (client, signal) =>
-        client.GET("/workspaces", { signal }),
-      ).pipe(Effect.timeout(loadTimeout));
-      const local = yield* decodeWorkspaceList(payload);
-      workspaces = [...local, ...cachedPeerWorkspaces()];
-      listStatus = "loaded";
-      if (!fleetLoaded || fleetError) return;
-      const remote = yield* fetchPeerWorkspaces();
-      workspaces = [...local, ...remote];
+      const payload = yield* loadFleetSnapshot().pipe(Effect.timeout(loadTimeout));
+      const decoded = yield* decodeWorkspaceList({ workspaces: payload.workspaces });
+      const nextHosts = payload.hosts ?? [];
+      workspaces = retainDegradedHostWorkspaces(
+        workspaces,
+        decoded.filter((workspace) => workspace.visible !== false),
+        nextHosts,
+        payload.aggregateIncomplete ?? false,
+      );
+      fleetHosts = nextHosts;
+      peerErrors = Object.fromEntries(
+        fleetHosts
+          .filter((host) => host.kind !== "self" && host.error)
+          .map((host) => [host.configKey, host.error ?? "Host unavailable"]),
+      );
+      fleetError = null;
       listStatus = "loaded";
     });
   }
 
-  const refreshWorkspaces = makeWorkspaceRefreshCoordinator(
+  const refreshWorkspaces = makeWorkspaceRefreshHub(
     Effect.suspend(loadWorkspaces).pipe(
-      Effect.catch(() =>
+      Effect.catch((failure) =>
         Effect.sync(() => {
+          fleetError = failureMessage(failure, "Fleet unavailable");
           if (workspaces.length === 0) listStatus = "retrying";
         }),
       ),
     ),
   );
 
-  function loadFleetStatus() {
-    return executeGeneratedApiRequest("load mobile fleet status", (client, signal) =>
-      client.GET("/snapshot", {
-        params: { query: { include_peers: true } },
-        signal,
-      }),
-    ).pipe(
-      Effect.tap((payload) =>
-        Effect.sync(() => {
-          fleetHosts = payload.hosts ?? [];
-          fleetError = null;
-          fleetLoaded = true;
-          refreshWorkspaces.request();
-        }),
-      ),
-      Effect.asVoid,
-    );
-  }
-
-  const refreshFleet = makeWorkspaceRefreshCoordinator(
-    Effect.suspend(loadFleetStatus).pipe(
-      Effect.catch((failure) =>
-        Effect.sync(() => {
-          fleetError = failureMessage(failure, "Fleet unavailable");
-          fleetLoaded = true;
-        }),
-      ),
-    ),
-  );
+  const refreshFleet = refreshWorkspaces;
 
   function setSort(sort: WorkspaceListSort): void {
     sortMode = sort;
@@ -319,7 +284,7 @@
 
   function confirmDelete(): void {
     const workspace = deleteWorkspace;
-    if (!workspace || actionBusy) return;
+    if (!workspace || actionBusy || !workspaceOperationAvailable(workspace, "workspaceWrite")) return;
     const force = deleteForce;
     actionBusy = `${workspace.fleet_host_key ?? "local"}:${workspace.id}:delete`;
     const hostKey = workspace.fleet_host_key;
@@ -355,15 +320,6 @@
               number: workspace.item_number,
               itemType: workspace.item_type,
             });
-            if (hostKey) {
-              const cached = peerWorkspaceCache.get(hostKey);
-              if (cached) {
-                peerWorkspaceCache.set(
-                  hostKey,
-                  cached.filter((candidate) => candidate.id !== workspace.id),
-                );
-              }
-            }
             workspaces = workspaces.filter(
               (candidate) => candidate.id !== workspace.id || candidate.fleet_host_key !== hostKey,
             );
@@ -405,7 +361,8 @@
   }
 
   function workspaceActionsDisabled(workspace: WorkspaceListItem): boolean {
-    return workspace.status === "deleting" || workspace.status === "deletion_failed";
+    return workspace.status === "deleting" || workspace.status === "deletion_failed" ||
+      !workspaceOperationAvailable(workspace, "workspaceWrite");
   }
 
   function runSheetAction(action: "push" | "pull" | "refresh" | "reveal"): void {
@@ -549,7 +506,8 @@
       class="mobile-workspace-row__main"
       type="button"
       aria-label={`Open workspace ${mobileWorkspaceDisplayName(workspace)}${agentState ? `, agent ${agentState.announcement}` : ""}`}
-      onclick={() => onOpen(workspace.id, workspace.fleet_host_key)}
+      disabled={!workspaceOperationAvailable(workspace, "workspaceRead") || !workspaceOperationAvailable(workspace, "terminalAttach")}
+      onclick={() => openWorkspace(workspace)}
     >
       <span class="mobile-workspace-row__title">
         <StatusDot status={status(workspace)} label={statusLabel(workspace)} size={7} />
@@ -576,12 +534,10 @@
       <button
         class="mobile-workspace-row__item"
         type="button"
-        aria-label={workspace.fleet_host_key
-          ? `Linked item ${label} unavailable for Fleet workspace`
-          : `Open linked item ${label}`}
-        onclick={() => onOpenItem(workspace.id, workspace.fleet_host_key)}
-        disabled={workspace.fleet_host_key !== undefined}
-        title={workspace.fleet_host_key ? "Linked item details are not available for Fleet workspaces" : undefined}
+        aria-label={`Open linked item ${label}`}
+        onclick={() => openWorkspaceItem(workspace)}
+        disabled={!workspaceOperationAvailable(workspace, "workspaceRead")}
+        title={!workspaceOperationAvailable(workspace, "workspaceRead") ? "Linked item details are unavailable from this Forge" : undefined}
       >{label}</button>
     {/if}
     <button
@@ -649,9 +605,9 @@
           <button type="button" onclick={() => openSheetProviderItem(itemURL)}>Open item on provider</button>
           <button type="button" onclick={() => copyText(itemURL, "Copied item URL.")}>Copy item URL</button>
         {/if}
-        <button class="danger" type="button" disabled={actionBusy !== null || actionsWorkspace.status === "deleting"} onclick={() => promptSheetDelete(false)}>{actionsWorkspace.status === "deletion_failed" ? "Retry deletion…" : "Delete workspace…"}</button>
+        <button class="danger" type="button" disabled={actionBusy !== null || !workspaceOperationAvailable(actionsWorkspace, "workspaceWrite") || actionsWorkspace.status === "deleting"} onclick={() => promptSheetDelete(false)}>{actionsWorkspace.status === "deletion_failed" ? "Retry deletion…" : "Delete workspace…"}</button>
         {#if actionsWorkspace.status === "deletion_failed"}
-          <button class="danger" type="button" disabled={actionBusy !== null} onclick={() => promptSheetDelete(true)}>Force delete workspace…</button>
+          <button class="danger" type="button" disabled={actionBusy !== null || !workspaceOperationAvailable(actionsWorkspace, "workspaceWrite")} onclick={() => promptSheetDelete(true)}>Force delete workspace…</button>
         {/if}
       </div>
     </div>

@@ -22,6 +22,7 @@ import (
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/fleet"
 	"go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
@@ -174,42 +175,64 @@ func TestSettingsAPIE2EReadUpdateAndValidation(t *testing.T) {
 func TestFleetSettingsPublishesOnlyCommittedRuntimeSnapshot(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-
-	// The peer answers slower than the committed peer timeout but faster than
-	// the "before" timeout still on file, so a probe that survives to a reply
-	// proves the committed timeout never took effect.
-	const peerReplyDelay = time.Second
+	const (
+		hubID          = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		memberID       = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+		token          = "cccccccccccccccccccccccccccccccccccccccccccccccc"
+		peerReplyDelay = time.Second
+	)
 
 	var peerRequests atomic.Int32
-	peer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	peer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		peerRequests.Add(1)
 		select {
 		case <-time.After(peerReplyDelay):
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"schemaVersion":2,"host":{"hostname":"remote","platform":"linux"}}`))
+			_, _ = w.Write([]byte(`{"protocolVersion":3,"nodeID":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","host":{"hostname":"remote","platform":"linux"}}`))
 		case <-r.Context().Done():
 		}
 	}))
 	defer peer.Close()
 
-	srv, _, cfgPath := setupTestServerWithConfigContent(t, `
+	credentials, err := federationauth.Open(filepath.Join(t.TempDir(), "credentials.json"))
+	require.NoError(err)
+	require.NoError(credentials.StoreOutbound(
+		memberID, token, federationauth.HubToSpokeScopes(),
+	))
+	configText := fmt.Sprintf(`
 host = "127.0.0.1"
 port = 8091
 
+[api]
+require_auth = true
+
 [fleet]
-enabled = false
-key = "before"
+enabled = true
+role = "hub"
+base_url = "https://hub.example"
 peer_timeout = "2s"
-`, &mockGH{})
+
+[[fleet.members]]
+node_id = "%s"
+name = "Remote"
+base_url = "%s"
+state = "active"
+`, memberID, peer.URL)
+	srv, _, cfgPath := setupTestServerWithConfigContentAndOptions(
+		t, configText, &mockGH{}, server.ServerOptions{
+			FederationCredentials: credentials,
+			FederationSpokeID:     hubID,
+			FederationHTTPClient:  peer.Client(),
+		},
+	)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
-	putFleet := func(key, timeout string, enabled bool, peers []map[string]any) *http.Response {
+	putFleet := func(timeout string, enabled bool) *http.Response {
 		return doServerJSON(t, ts.Client(), http.MethodPut,
 			ts.URL+"/api/v1/settings/fleet", map[string]any{
-				"enabled": enabled, "key": key, "peer_timeout": timeout,
+				"enabled": enabled, "peer_timeout": timeout,
 				"sessions": map[string]any{"include_unmanaged_details": false},
-				"peers":    peers, "ssh_peers": []map[string]any{},
 			})
 	}
 	readSnapshot := func() (fleet.Snapshot, time.Duration) {
@@ -222,13 +245,6 @@ peer_timeout = "2s"
 		require.NoError(json.NewDecoder(resp.Body).Decode(&snapshot))
 		return snapshot, time.Since(started)
 	}
-	hostKeys := func(snapshot fleet.Snapshot) []string {
-		keys := make([]string, 0, len(snapshot.Hosts))
-		for _, host := range snapshot.Hosts {
-			keys = append(keys, host.ConfigKey)
-		}
-		return keys
-	}
 	hostByKey := func(snapshot fleet.Snapshot, key string) *fleet.HostSummary {
 		for i := range snapshot.Hosts {
 			if snapshot.Hosts[i].ConfigKey == key {
@@ -238,43 +254,32 @@ peer_timeout = "2s"
 		return nil
 	}
 
-	// The committed timeout doubles as the whole budget for dialling and
-	// writing each probe, so it has to clear scheduling noise on a loaded
-	// runner as well as beat peerReplyDelay. At 40ms it did not: CI saw the
-	// probe abandoned before the peer ever received it.
-	update := putFleet("hub", "300ms", true, []map[string]any{{
-		"key": "remote", "name": "Remote", "base_url": peer.URL,
-	}})
+	update := putFleet("300ms", true)
 	defer update.Body.Close()
 	require.Equal(http.StatusOK, update.StatusCode)
 
 	snapshot, elapsed := readSnapshot()
-	assert.Contains(hostKeys(snapshot), "hub")
-	assert.Contains(hostKeys(snapshot), "remote")
-	awaitPeerRequest(t, &peerRequests, 0,
-		"the committed peer must be probed on the first read")
-	remote := hostByKey(snapshot, "remote")
+	require.NotNil(hostByKey(snapshot, hubID))
+	remote := hostByKey(snapshot, memberID)
 	require.NotNil(remote)
-	assert.False(remote.Reachable,
-		"the newly committed timeout must degrade the still-blocked peer")
-	assert.Less(elapsed, 1500*time.Millisecond,
-		"the newly committed peer timeout must bound the immediate read")
+	assert.False(remote.Reachable, "the committed timeout must degrade the blocked member")
+	awaitPeerRequest(t, &peerRequests, 0, "the committed member must be probed on the first read")
+	assert.Less(elapsed, 1500*time.Millisecond)
 
 	require.NoError(os.Remove(cfgPath))
 	require.NoError(os.Mkdir(cfgPath, 0o700))
-	failed := putFleet("unpublished", "3s", false, []map[string]any{})
+	failed := putFleet("3s", false)
 	defer failed.Body.Close()
 	require.Equal(http.StatusInternalServerError, failed.StatusCode)
 
 	requestsBefore := peerRequests.Load()
 	snapshot, elapsed = readSnapshot()
-	assert.Contains(hostKeys(snapshot), "hub")
-	assert.Contains(hostKeys(snapshot), "remote")
-	remote = hostByKey(snapshot, "remote")
-	require.NotNil(remote)
+	require.NotNil(hostByKey(snapshot, hubID))
+	remote = hostByKey(snapshot, memberID)
+	require.NotNil(remote, "failed persistence must leave the committed member published")
 	assert.False(remote.Reachable)
 	awaitPeerRequest(t, &peerRequests, requestsBefore,
-		"failed persistence must leave the committed peer published")
+		"failed persistence must leave the committed member published")
 	assert.Less(elapsed, 1500*time.Millisecond,
 		"failed persistence must leave the committed timeout published")
 }
@@ -387,7 +392,9 @@ name = "widget"
 		map[string]string{"target_key": "noop"},
 	)
 	defer launchResp.Body.Close()
-	require.Equal(http.StatusOK, launchResp.StatusCode)
+	launchBody, err := io.ReadAll(launchResp.Body)
+	require.NoError(err)
+	require.Equal(http.StatusOK, launchResp.StatusCode, string(launchBody))
 
 	require.Eventually(func() bool {
 		raw, err := os.ReadFile(record)
@@ -425,10 +432,6 @@ require_auth = true
 [fleet.sessions]
 include_unmanaged_details = true
 
-[[fleet.ssh_peers]]
-key = "studio"
-destination = "marius@studio.local"
-
 [roborev]
 endpoint = "http://127.0.0.1:7374"
 
@@ -465,8 +468,6 @@ command = ["systemd-run", "--user", "--scope", "--pty", "bash"]
 	assert.False(cfgAfterUpdate.TrustReverseProxy)
 	assert.True(cfgAfterUpdate.API.RequireAuth)
 	assert.True(cfgAfterUpdate.Fleet.Sessions.IncludeUnmanagedDetails)
-	require.Len(cfgAfterUpdate.Fleet.SSHPeers, 1)
-	assert.Equal("studio", cfgAfterUpdate.Fleet.SSHPeers[0].Key)
 	assert.Equal("http://127.0.0.1:7374", cfgAfterUpdate.Roborev.Endpoint)
 	assert.Equal(
 		[]string{"systemd-run", "--user", "--scope", "tmux"},
@@ -483,186 +484,108 @@ command = ["systemd-run", "--user", "--scope", "--pty", "bash"]
 func TestSettingsAPIE2EFleetReadUpdateAndValidation(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
+	const memberID = "fedcba9876543210fedcba9876543210"
 	srv, _, cfgPath := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
+[api]
+require_auth = true
+
 [fleet]
-key = "studio"
+enabled = true
+role = "hub"
+base_url = "https://hub.example"
 peer_timeout = "3s"
 
-[[fleet.peers]]
-key = "mini"
-name = "Mac mini"
-base_url = "http://mini.tail:8091"
-
-[[fleet.ssh_peers]]
-key = "epyc"
-name = "EPYC"
-destination = "wes@epyc.tail"
-platform = "linux"
+[[fleet.members]]
+node_id = "fedcba9876543210fedcba9876543210"
+name = "Build spoke"
+base_url = "https://spoke.example"
+state = "active"
 `, &mockGH{})
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
 	getResp := doServerJSON(
 		t, ts.Client(), http.MethodGet,
-		ts.URL+"/api/v1/settings", nil,
+		ts.URL+"/api/v1/settings/fleet", nil,
 	)
 	defer getResp.Body.Close()
 	require.Equal(http.StatusOK, getResp.StatusCode)
 
 	var settings struct {
-		Fleet struct {
-			Enabled     bool   `json:"enabled"`
-			Key         string `json:"key"`
-			PeerTimeout string `json:"peer_timeout"`
-			Peers       []struct {
-				Key     string `json:"key"`
-				Name    string `json:"name"`
-				BaseURL string `json:"base_url"`
-			} `json:"peers"`
-			SSHPeers []struct {
-				Key         string `json:"key"`
-				Name        string `json:"name"`
-				Destination string `json:"destination"`
-				Platform    string `json:"platform"`
-			} `json:"ssh_peers"`
-			RestartRequired bool `json:"restart_required"`
-		} `json:"fleet"`
-	}
-	require.NoError(json.NewDecoder(getResp.Body).Decode(&settings))
-	assert.False(settings.Fleet.Enabled)
-	assert.Equal("studio", settings.Fleet.Key)
-	assert.Equal("3s", settings.Fleet.PeerTimeout)
-	require.Len(settings.Fleet.Peers, 1)
-	assert.Equal("mini", settings.Fleet.Peers[0].Key)
-	require.Len(settings.Fleet.SSHPeers, 1)
-	assert.Equal("epyc", settings.Fleet.SSHPeers[0].Key)
-	assert.False(settings.Fleet.RestartRequired)
-
-	fleetGetResp := doServerJSON(
-		t, ts.Client(), http.MethodGet,
-		ts.URL+"/api/v1/settings/fleet", nil,
-	)
-	defer fleetGetResp.Body.Close()
-	require.Equal(http.StatusOK, fleetGetResp.StatusCode)
-
-	var fleetSettings struct {
-		Enabled     bool   `json:"enabled"`
-		Key         string `json:"key"`
-		PeerTimeout string `json:"peer_timeout"`
-		Peers       []struct {
-			Key     string `json:"key"`
+		Enabled     bool             `json:"enabled"`
+		Role        config.FleetRole `json:"role"`
+		PeerTimeout string           `json:"peer_timeout"`
+		Members     []struct {
+			NodeID  string `json:"node_id"`
 			Name    string `json:"name"`
 			BaseURL string `json:"base_url"`
-		} `json:"peers"`
-		SSHPeers []struct {
-			Key         string `json:"key"`
-			Name        string `json:"name"`
-			Destination string `json:"destination"`
-			Platform    string `json:"platform"`
-		} `json:"ssh_peers"`
+			State   string `json:"state"`
+		} `json:"members"`
 		RestartRequired bool `json:"restart_required"`
 	}
-	require.NoError(json.NewDecoder(fleetGetResp.Body).Decode(&fleetSettings))
-	assert.False(fleetSettings.Enabled)
-	assert.Equal("studio", fleetSettings.Key)
-	assert.Equal("3s", fleetSettings.PeerTimeout)
-	require.Len(fleetSettings.Peers, 1)
-	assert.Equal("mini", fleetSettings.Peers[0].Key)
-	assert.Equal("Mac mini", fleetSettings.Peers[0].Name)
-	assert.Equal("http://mini.tail:8091", fleetSettings.Peers[0].BaseURL)
-	require.Len(fleetSettings.SSHPeers, 1)
-	assert.Equal("epyc", fleetSettings.SSHPeers[0].Key)
-	assert.Equal("EPYC", fleetSettings.SSHPeers[0].Name)
-	assert.Equal("wes@epyc.tail", fleetSettings.SSHPeers[0].Destination)
-	assert.Equal("linux", fleetSettings.SSHPeers[0].Platform)
-	assert.False(fleetSettings.RestartRequired)
+	require.NoError(json.NewDecoder(getResp.Body).Decode(&settings))
+	assert.True(settings.Enabled)
+	assert.Equal(config.FleetRoleHub, settings.Role)
+	assert.Equal("3s", settings.PeerTimeout)
+	require.Len(settings.Members, 1)
+	assert.Equal(memberID, settings.Members[0].NodeID)
+	assert.Equal("Build spoke", settings.Members[0].Name)
+	assert.False(settings.RestartRequired)
 
 	updateResp := doServerJSON(
 		t, ts.Client(), http.MethodPut,
 		ts.URL+"/api/v1/settings/fleet",
 		map[string]any{
-			"enabled":      true,
-			"key":          " hub ",
-			"peer_timeout": "4s",
-			"sessions": map[string]any{
-				"include_unmanaged_details": false,
-			},
-			"peers": []map[string]any{{
-				"key":      " mini ",
-				"name":     "Mac mini",
-				"base_url": "http://mini.tail:8091",
-			}},
-			"ssh_peers": []map[string]any{
-				{
-					"key":         " studio-mac ",
-					"name":        "Studio Mac",
-					"destination": "dev@studio.local",
-					"platform":    "macos",
-				},
-				{
-					"key":         " freebsd-box ",
-					"name":        "FreeBSD box",
-					"destination": "dev@freebsd.local",
-					"platform":    "freebsd",
-				},
-			},
+			"enabled": true, "peer_timeout": "4s",
+			"sessions": map[string]any{"include_unmanaged_details": false},
 		},
 	)
 	defer updateResp.Body.Close()
 	require.Equal(http.StatusOK, updateResp.StatusCode)
 
-	var updatedSettings struct {
-		Enabled  bool `json:"enabled"`
-		SSHPeers []struct {
-			Key      string `json:"key"`
-			Platform string `json:"platform"`
-		} `json:"ssh_peers"`
-	}
-	require.NoError(json.NewDecoder(updateResp.Body).Decode(&updatedSettings))
-	assert.True(updatedSettings.Enabled)
-	require.Len(updatedSettings.SSHPeers, 2)
-	assert.Equal("studio-mac", updatedSettings.SSHPeers[0].Key)
-	assert.Equal("macos", updatedSettings.SSHPeers[0].Platform)
-	assert.Equal("freebsd-box", updatedSettings.SSHPeers[1].Key)
-	assert.Equal("freebsd", updatedSettings.SSHPeers[1].Platform)
-
 	cfgAfterUpdate, err := config.Load(cfgPath)
 	require.NoError(err)
 	assert.True(cfgAfterUpdate.Fleet.Enabled)
-	assert.Equal("hub", cfgAfterUpdate.Fleet.Key)
+	assert.Equal(config.FleetRoleHub, cfgAfterUpdate.Fleet.Role)
 	assert.Equal("4s", cfgAfterUpdate.Fleet.PeerTimeout)
-	require.Len(cfgAfterUpdate.Fleet.Peers, 1)
-	assert.Equal("mini", cfgAfterUpdate.Fleet.Peers[0].Key)
-	require.Len(cfgAfterUpdate.Fleet.SSHPeers, 2)
-	assert.Equal("studio-mac", cfgAfterUpdate.Fleet.SSHPeers[0].Key)
-	assert.Equal("macos", cfgAfterUpdate.Fleet.SSHPeers[0].Platform)
-	assert.Equal("freebsd-box", cfgAfterUpdate.Fleet.SSHPeers[1].Key)
-	assert.Equal("freebsd", cfgAfterUpdate.Fleet.SSHPeers[1].Platform)
+	require.Len(cfgAfterUpdate.Fleet.Members, 1)
+	assert.Equal(memberID, cfgAfterUpdate.Fleet.Members[0].NodeID)
+	assert.Equal("Build spoke", cfgAfterUpdate.Fleet.Members[0].Name)
+
+	for _, timeout := range []string{"0s", "-1s"} {
+		invalidTimeout := doServerJSON(
+			t, ts.Client(), http.MethodPut,
+			ts.URL+"/api/v1/settings/fleet",
+			map[string]any{
+				"enabled": true, "peer_timeout": timeout,
+				"sessions": map[string]any{"include_unmanaged_details": false},
+			},
+		)
+		assert.Equal(http.StatusBadRequest, invalidTimeout.StatusCode)
+		invalidTimeout.Body.Close()
+	}
 
 	invalidResp := doServerJSON(
 		t, ts.Client(), http.MethodPut,
 		ts.URL+"/api/v1/settings/fleet",
 		map[string]any{
-			"enabled":      true,
-			"key":          "mini",
-			"peer_timeout": "2s",
-			"sessions": map[string]any{
-				"include_unmanaged_details": false,
-			},
-			"peers": []map[string]any{{
-				"key":      "mini",
-				"base_url": "mini.tail:8091",
-			}},
-			"ssh_peers": []map[string]any{},
+			"enabled": true, "role": "spoke", "peer_timeout": "2s",
+			"sessions": map[string]any{"include_unmanaged_details": false},
+			"members":  []map[string]any{},
 		},
 	)
 	defer invalidResp.Body.Close()
-	require.Equal(http.StatusBadRequest, invalidResp.StatusCode)
+	require.Equal(http.StatusUnprocessableEntity, invalidResp.StatusCode)
+
+	afterInvalid, err := config.Load(cfgPath)
+	require.NoError(err)
+	assert.Equal(config.FleetRoleHub, afterInvalid.Fleet.Role)
+	assert.Equal("Build spoke", afterInvalid.Fleet.Members[0].Name)
 }
 
 func TestRepoConfigAPIE2EAddDeleteAndErrors(t *testing.T) {
@@ -912,6 +835,17 @@ name = "widget"
 		t.Context(), identity,
 	)
 	require.NoError(err)
+	cloneURL := strings.TrimSpace(string(runSettingsGitOutput(
+		t, localRepo, "remote", "get-url", "origin",
+	)))
+	require.NoError(database.UpdateRepoProviderMetadata(
+		t.Context(), repoID, db.RepoProviderMetadata{
+			PlatformRepoID: "repo-acme-widget",
+			WebURL:         strings.TrimSuffix(cloneURL, ".git"),
+			CloneURL:       cloneURL,
+			DefaultBranch:  "main",
+		},
+	))
 	seed(database, repoID)
 
 	syncer := github.NewSyncer(

@@ -32,6 +32,7 @@
     hydrateRoborevSettings,
   } from "../../stores/roborev-settings-persistence.js";
   import { SETTINGS_PANELS } from "./settingsPanels.js";
+  import type { SettingsOwner } from "./settingsOwnership.js";
 
   // Switched-panel model on kit SettingsLayout: this list is the single
   // source of category order, sidebar labels, and per-panel section header
@@ -48,15 +49,16 @@
   // The host owns search semantics: kit renders whatever category list it is
   // given, and its display falls back to the first visible category while the
   // bound `active` id is filtered out (the selection itself survives clearing
-  // the query). kit renders group headings between runs in array order, so
-  // `visiblePanels` keeps each group's entries contiguous.
-  const visiblePanels = SETTINGS_PANELS;
+  // the query).
+  const providerOwner: SettingsOwner = $derived(
+    settings?.fleet.role === "spoke" ? "hub" : "local",
+  );
   const categories: SettingsCategory[] = $derived.by(() => {
     const query = searchQuery.trim().toLowerCase();
     const visible =
       query === ""
-        ? visiblePanels
-        : visiblePanels.filter((p) =>
+        ? SETTINGS_PANELS
+        : SETTINGS_PANELS.filter((p) =>
             `${p.label} ${p.group} ${p.description} ${p.keywords}`.toLowerCase().includes(query),
           );
     return visible.map((p) => ({ id: p.id, label: p.label, group: p.group, summary: p.description }));
@@ -146,12 +148,13 @@
              components keep unsaved edits in local draft state, so switching
              categories must hide, not unmount, or drafts are silently lost. -->
         {#each SETTINGS_PANELS as meta (meta.id)}
-          {@const panelVisible = visiblePanels.some((panel) => panel.id === meta.id)}
+          {@const panelVisible = categories.some((panel) => panel.id === meta.id)}
           <div class="settings-panel" hidden={!panelVisible || meta.id !== activeId}>
             <SettingsSection title={meta.title} description={meta.description}>
               {#if meta.id === "settings-repositories"}
             <RepoSettings
               repos={loaded.repos}
+              owner={providerOwner}
               onUpdate={(repos) => {
                 settings = { ...settings!, repos };
                 settingsStore.setConfiguredRepos(repos);
@@ -160,6 +163,7 @@
           {:else if meta.id === "settings-activity"}
             <ActivitySettings
               activity={loaded.activity}
+              owner={providerOwner}
               onUpdate={(activity) => {
                 settings = { ...settings!, activity };
               }}
@@ -167,6 +171,7 @@
           {:else if meta.id === "settings-pull-requests"}
             <PullRequestSettings
               pullRequests={loaded.pull_requests}
+              owner={providerOwner}
               onUpdate={(pull_requests) => {
                 settings = { ...settings!, pull_requests };
                 settingsStore.setPullRequestSettings(pull_requests);
@@ -175,6 +180,7 @@
           {:else if meta.id === "settings-detail"}
             <DetailSettings
               detail={loaded.detail}
+              owner={providerOwner}
               onUpdate={(detail) => {
                 settings = { ...settings!, detail };
                 settingsStore.setDetailSettings(detail);

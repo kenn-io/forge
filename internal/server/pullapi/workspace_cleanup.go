@@ -1,11 +1,28 @@
 package pullapi
 
+import (
+	"context"
+
+	"go.kenn.io/forge/internal/federationauth"
+)
+
 type workspaceCleanupResult struct {
 	Pending bool
 	Warning string
 }
 
-func (s *Handler) queueMergedWorkspaceCleanup(workspaceID string) workspaceCleanupResult {
+func (body *mergePRInputBody) bindWorkspaceHost(ctx context.Context) {
+	if body.workspaceHostKey != "" {
+		return
+	}
+	if principal, ok := federationauth.PrincipalFromContext(ctx); ok {
+		body.workspaceHostKey = principal.NodeID
+	}
+}
+
+func (s *Handler) queueMergedWorkspaceCleanup(
+	ctx context.Context, hostKey, workspaceID string,
+) workspaceCleanupResult {
 	if workspaceID == "" {
 		return workspaceCleanupResult{}
 	}
@@ -13,7 +30,7 @@ func (s *Handler) queueMergedWorkspaceCleanup(workspaceID string) workspaceClean
 		return workspaceCleanupResult{Warning: "workspace cleanup is unavailable"}
 	}
 
-	err := s.queueWorkspaceDeletion(workspaceID)
+	err := s.queueWorkspaceDeletion(ctx, hostKey, workspaceID)
 	if err != nil {
 		return workspaceCleanupResult{Warning: err.Error()}
 	}

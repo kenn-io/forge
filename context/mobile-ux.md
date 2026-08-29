@@ -35,6 +35,10 @@ Think about mobile work in this order:
 ## Design rules
 
 - Build dedicated phone routes/components when the desktop interaction model does not fit. A `/m` route must not simply mount the desktop view inside a narrow wrapper.
+- The phone top bar may expose the same direct Forge selector as desktop. Keep
+  it within the phone viewport, retain the product name when only one Forge is
+  available, and navigate with ordinary origin links so other tabs are not
+  retargeted (`frontend/src/lib/components/layout/ForgeSelector.svelte`).
 - Preserve human-facing product copy. Remove text that sounds like an implementation note or model instruction.
 - Keep repository/provider identity visible enough to disambiguate similarly named repos, especially on activity cards and detail headers.
 - Give focused PR/issue detail pages their own phone shell treatment even when they reuse desktop detail components internally.
@@ -125,7 +129,7 @@ Avoid by default:
 - A local linked item opened from the workspace list returns to the list without mounting terminal runtime work; one opened from a terminal keeps that exact workspace and selected session mounted. Direct item tabs replace their direct-origin history entry before Back falls through to the terminal. Fleet linked-item numbers stay passive until detail routing can retain Fleet host identity (`frontend/src/App.svelte::leaveMobileWorkspaceItem`).
 - Keep launch and Stop out of the phone terminal header. Its touch-sized ellipsis opens a bottom Terminal options tray backed by the existing persisted terminal settings; New terminal opens the launcher, while Stop remains immediately discoverable in the tray and requires explicit confirmation before the runtime mutation begins (`frontend/src/lib/components/mobile/MobileWorkspaceTerminal.svelte::stopSelectedSession`).
 - Routes retain local or Fleet identity. Only authoritative deletion events invalidate shared workspace state. A `workspaceNotFound` response replaces matching phone routes with the list without publishing deletion or invalidating shared state. Unavailable Fleet hosts and generic connection failures remain in context with Retry or reconnect affordances (`frontend/src/lib/stores/workspace-host.svelte.ts::notifyWorkspaceDeleted`).
-- Mobile workspace screens may share data, persistence, runtime, and focused-item primitives with desktop, but must not depend on its pane tree, dock, sidebar, or resize coordinator.
+- Mobile workspace screens may share data, persistence, runtime, and focused-item primitives with desktop, but must not depend on its pane tree, dock, sidebar, or resize hub.
 - Verify phone routing, overflow, filters, touch input, session switching and exit, Fleet failures, item round trips, retained workspace actions, and desktop workspace regressions.
 
 ## Verification expectations

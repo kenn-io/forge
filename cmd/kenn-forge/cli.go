@@ -12,11 +12,14 @@ import (
 )
 
 type cliOptions struct {
-	Stdin        io.Reader
-	Stdout       io.Writer
-	Stderr       io.Writer
-	RunServer    serve.Runner
-	DaemonRunner daemonCommandRunner
+	Stdin                 io.Reader
+	Stdout                io.Writer
+	Stderr                io.Writer
+	RunServer             serve.Runner
+	DaemonRunner          daemonCommandRunner
+	FleetRunner           fleetCommandRunner
+	FleetSetupRunner      fleetSetupCommandRunner
+	ReadInteractiveSecret func(string) (string, error)
 }
 
 func newRootCommand(opts cliOptions) *cobra.Command {
@@ -64,6 +67,13 @@ func newRootCommand(opts cliOptions) *cobra.Command {
 		newArchiveCommand(opts.Stdout, time.Now),
 		newAgentHookCommand(opts.Stdin, opts.Stdout),
 		newDaemonCommand(opts.DaemonRunner),
+		newFleetCommand(fleetCLIOptions{
+			Stdin: opts.Stdin, Stdout: opts.Stdout, Stderr: opts.Stderr,
+			Runner:                opts.FleetRunner,
+			SetupRunner:           opts.FleetSetupRunner,
+			ReadInteractiveSecret: opts.ReadInteractiveSecret,
+			StdinIsTerminal:       stdinIsTerminal(opts.Stdin),
+		}),
 		newMCPCommand(opts.Stdout, loadMCPQuickstart),
 		newPtyOwnerCommand(),
 		serve.NewCommand(opts.RunServer),

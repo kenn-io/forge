@@ -1,4 +1,4 @@
-import { cleanup, render, waitFor } from "@testing-library/svelte";
+import { cleanup, render, screen, waitFor } from "@testing-library/svelte";
 import { Effect, Layer } from "effect";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { DEFAULT_TERMINAL_SETTINGS, type Settings } from "../../api/types.js";
@@ -151,5 +151,26 @@ describe("SettingsPage", () => {
     await waitFor(() => {
       expect(setDetailSettings).toHaveBeenCalledWith(settings.detail);
     });
+  });
+
+  it("keeps the declared settings groups on a fleet spoke", async () => {
+    const settings = makeSettings();
+    settings.fleet.role = "spoke";
+    settings.fleet.hub = {
+      node_id: "44444444444444444444444444444444",
+      base_url: "https://hub.example",
+    };
+    loadSettings.mockReturnValue(Effect.succeed(settings));
+
+    render(SettingsRuntimeHarness, {
+      props: { component: SettingsPage, componentProps: {} },
+    });
+
+    expect(await screen.findByText("Providers")).toBeTruthy();
+    expect(screen.getByText("Workflow")).toBeTruthy();
+    expect(screen.getByText("Workspace")).toBeTruthy();
+    expect(screen.getByText("Navigation")).toBeTruthy();
+    expect(screen.getByText("System")).toBeTruthy();
+    expect(screen.queryByText("Hub policy")).toBeNull();
   });
 });

@@ -12,7 +12,6 @@ const (
 // carries the operation names it blocks.
 func DiagnosticsFromCapabilities(
 	caps Capabilities,
-	platformAuthenticated *bool,
 ) []HostDiagnostic {
 	var out []HostDiagnostic
 
@@ -36,17 +35,6 @@ func DiagnosticsFromCapabilities(
 			Summary:  "Missing gh",
 			RecoverySuggestion: "Install GitHub CLI (gh) on" +
 				" the host to import pull requests.",
-			BlocksOperations: []string{
-				OpPullRequestImport,
-			},
-		})
-	} else if platformAuthenticated != nil && !*platformAuthenticated {
-		out = append(out, HostDiagnostic{
-			Code:     "ghNotAuthenticated",
-			Severity: "warning",
-			Summary:  "gh not authenticated",
-			RecoverySuggestion: "Run `gh auth login` on" +
-				" the host to enable pull request import.",
 			BlocksOperations: []string{
 				OpPullRequestImport,
 			},

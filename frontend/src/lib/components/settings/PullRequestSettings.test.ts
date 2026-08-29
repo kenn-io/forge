@@ -42,6 +42,17 @@ describe("PullRequestSettings", () => {
     mockPersistSettings.mockReset();
   });
 
+  it("labels hub-owned pull request policy", () => {
+    render(SettingsRuntimeHarness, {
+      props: {
+        component: PullRequestSettings,
+        componentProps: { pullRequests: initial, onUpdate: vi.fn(), owner: "hub" },
+      },
+    });
+
+    expect(screen.getByText("Pull request policy is managed by the fleet hub.")).toBeTruthy();
+  });
+
   it("saves the GitHub native stack preference", async () => {
     const onUpdate = vi.fn();
     const saved = { ...initial, prefer_github_native_stacks: true };

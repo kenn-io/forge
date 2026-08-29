@@ -111,8 +111,6 @@ export type FleetSettings = components["schemas"]["FleetSettingsResponse"];
 export type FleetSettingsUpdate = components["schemas"]["UpdateFleetSettingsInputBody"];
 export type MCPSettings = components["schemas"]["McpSettingsResponse"];
 export type MCPSettingsUpdate = components["schemas"]["McpSettingsUpdate"];
-export type FleetPeer = components["schemas"]["FleetPeer"];
-export type FleetSSHPeer = components["schemas"]["FleetSSHPeer"];
 
 export type FilePreview = components["schemas"]["FilePreviewResponse"];
 export type DiffResponseWire = components["schemas"]["DiffResponse"];
@@ -157,7 +155,7 @@ export interface WorkspaceHost {
   key: string;
   label: string;
   connectionState: "connected" | "connecting" | "disconnected" | "error";
-  transport?: "ssh" | "local";
+  transport?: "http" | "local";
   platform?: string;
   projects: WorkspaceProject[];
   sessions: WorkspaceSession[];

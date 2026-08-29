@@ -22,9 +22,10 @@ export function makeStartupSnapshot(overrides: Partial<StartupSnapshot> = {}): S
     detail: { ...DEFAULT_DETAIL_SETTINGS },
     fleet: {
       enabled: false,
+      role: "hub",
+      members: [],
+      enrollments: [],
       sessions: {},
-      peers: [],
-      ssh_peers: [],
       restart_required: false,
     },
     mcp: {

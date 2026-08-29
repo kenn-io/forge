@@ -20,22 +20,19 @@ func TestDiagnostics(t *testing.T) {
 	tests := []struct {
 		name         string
 		caps         Capabilities
-		platformAuth *bool
 		wantCodes    []string
 		wantBlocks   map[string][]string
 		wantSeverity map[string]string
 	}{
 		{
-			name:         "fully capable host",
-			caps:         fullCaps(),
-			platformAuth: new(true),
-			wantCodes:    nil,
+			name:      "fully capable host",
+			caps:      fullCaps(),
+			wantCodes: nil,
 		},
 		{
-			name:         "gh present, auth unknown (nil) emits no warning",
-			caps:         fullCaps(),
-			platformAuth: nil,
-			wantCodes:    nil,
+			name:      "provider authentication is not a host admission signal",
+			caps:      fullCaps(),
+			wantCodes: nil,
 		},
 		{
 			name: "missing git",
@@ -44,8 +41,7 @@ func TestDiagnostics(t *testing.T) {
 					Git: false, Gh: true, Tmux: true,
 				},
 			},
-			platformAuth: new(true),
-			wantCodes:    []string{"missingGit"},
+			wantCodes: []string{"missingGit"},
 			wantBlocks: map[string][]string{
 				"missingGit": {
 					OpWorktreeCreate,
@@ -63,27 +59,12 @@ func TestDiagnostics(t *testing.T) {
 					Git: true, Gh: false, Tmux: true,
 				},
 			},
-			platformAuth: new(true),
-			wantCodes:    []string{"missingGh"},
+			wantCodes: []string{"missingGh"},
 			wantBlocks: map[string][]string{
 				"missingGh": {OpPullRequestImport},
 			},
 			wantSeverity: map[string]string{
 				"missingGh": "warning",
-			},
-		},
-		{
-			name:         "gh present but not authenticated",
-			caps:         fullCaps(),
-			platformAuth: new(false),
-			wantCodes:    []string{"ghNotAuthenticated"},
-			wantBlocks: map[string][]string{
-				"ghNotAuthenticated": {
-					OpPullRequestImport,
-				},
-			},
-			wantSeverity: map[string]string{
-				"ghNotAuthenticated": "warning",
 			},
 		},
 		{
@@ -93,8 +74,7 @@ func TestDiagnostics(t *testing.T) {
 					Git: true, Gh: true, Tmux: false,
 				},
 			},
-			platformAuth: new(true),
-			wantCodes:    []string{"missingTmux"},
+			wantCodes: []string{"missingTmux"},
 			wantBlocks: map[string][]string{
 				"missingTmux": {OpDurableSessions},
 			},
@@ -109,28 +89,15 @@ func TestDiagnostics(t *testing.T) {
 					Git: false, Gh: false, Tmux: false,
 				},
 			},
-			platformAuth: new(false),
 			wantCodes: []string{
 				"missingGit", "missingGh", "missingTmux",
 			},
-		},
-		{
-			name: "gh missing suppresses auth check",
-			caps: Capabilities{
-				Dependencies: DependencyCapabilities{
-					Git: true, Gh: false, Tmux: true,
-				},
-			},
-			platformAuth: new(false),
-			wantCodes:    []string{"missingGh"},
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			diags := DiagnosticsFromCapabilities(
-				tc.caps, tc.platformAuth,
-			)
+			diags := DiagnosticsFromCapabilities(tc.caps)
 
 			var codes []string
 			for _, d := range diags {
@@ -158,7 +125,7 @@ func TestDiagnosticFields(t *testing.T) {
 			Git: false, Gh: true, Tmux: true,
 		},
 	}
-	diags := DiagnosticsFromCapabilities(caps, new(true))
+	diags := DiagnosticsFromCapabilities(caps)
 	assert.Len(t, diags, 1)
 
 	d := diags[0]

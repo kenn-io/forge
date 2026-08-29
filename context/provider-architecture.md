@@ -63,6 +63,13 @@ typed platform errors for missing providers or missing capabilities.
 Rules:
 
 - Capability flags and implemented interfaces must agree.
+- Advertise only capabilities returned by the live provider registry. An empty
+  or unavailable registry has no provider capabilities; do not synthesize a
+  full GitHub capability set. `PlatformAuthenticated` may still be displayed as
+  host telemetry, but it is not an operation-admission signal. Spoke-local Git
+  admission uses the descriptor's exact repository route instead
+  (`internal/server/httpapi/repository_resolver.go::RepositoryResolver.Capabilities`,
+  `internal/gitclone/clone.go::Manager.RequireCredentialRoute`).
 - Handlers must check capabilities before performing mutations. A missing
   capability is a feature-level failure, not a whole-provider failure.
 - Provider-backed comment deletes remove synchronized local rows only after upstream
@@ -200,6 +207,51 @@ Repository label editing is provider-neutral:
 
 ## Route Model
 
+- Every documented operation is hub-only provider, provider with a
+  spoke-local overlay, or spoke-local; live-registry coverage rejects gaps
+  (`internal/server/provider_route_policy.go::providerRouteDeclarations`).
+- Spokes proxy hub-only operations; mixed reads fetch provider rows and
+  attach only the connected spoke's workspace references. Federation callers get
+  provider-only responses (`internal/server/huma_routes.go::Server.providerActivityResponse`).
+- Mixed reads preserve hub membership, order, and cursors. Their local
+  overlay joins by provider item identity, never numeric SQLite IDs
+  (`internal/providerplane/descriptor.go::ItemIdentity`).
+- Spokes use the hub's provider identity; their federation bearer only
+  authenticates the spoke. The origin-bound client strips caller credentials,
+  refuses redirects, bounds bodies, preserves problem codes, and returns typed
+  unavailability on transport failure (`internal/providerplane/client.go::ReadJSON`).
+- `gitStartup` registers lazy local Git credentials without provider API work;
+  hub-only `providerControlPlane` owns provider clients, mutations,
+  accounting, and workers. `--disable-sync` retains that foreground plane
+  (`cmd/kenn-forge/provider_startup.go::buildServeControlPlanes`).
+- Spokes use absence, never an empty or disabled provider registry. Local
+  resolution advertises no provider capabilities; hub-owned HTTP/MCP
+  work requires a validated hub client (`internal/server/server.go::newServer`,
+  `internal/server/httpapi/repository_resolver.go::RepositoryResolver.Capabilities`).
+- Clone-backed provider pages remain spoke-local. Before pull diff, commit,
+  file, preview, or source-browser work, the spoke requests a scoped repository
+  or diff descriptor from the hub, validates its protocol and exact
+  route, records the provider observation in the local repository catalog, and
+  fetches the clone on the spoke. The hub sends metadata and SHAs, never
+  Git file content; the spoke never creates a provider-item cache from a
+  descriptor (`internal/server/provider_descriptors.go`,
+  `internal/server/pullapi/routes.go::Handler.resolvePullCloneSnapshot`).
+- Repository descriptors are route-generation snapshots. Diff descriptors add
+  all platform, diff, and merge-base SHAs plus the pull snapshot revision from
+  one serialized hub read. An invalid, mismatched, or older descriptor
+  fails closed, and hub outage returns `hubUnavailable` even
+  when an old spoke clone exists (`internal/providerplane/descriptor.go`,
+  `internal/db/repository_catalog.go::DB.GetPullDiffProviderSnapshot`).
+- Review drafts, MCP workflow state, notification state, and other
+  provider-adjacent records share the hub's ownership and provider
+  scopes (`internal/server/provider_route_policy.go::providerRouteDeclarations`).
+- Settings compose hub-owned provider policy with spoke-owned execution
+  policy for local users. Federation peers use a provider-only settings DTO;
+  the general settings route remains local-only, and peer mutations cannot
+  carry hub-local execution policy
+  (`internal/server/federation_provider_settings.go::providerSettingsResponse`,
+  `internal/server/settings_handlers.go::Server.updateSettings`).
+
 Repo-scoped REST routes are provider-aware. The default-host route shape omits
 host only when the provider default host applies; non-default/self-hosted
 instances use the `/host/{platform_host}/...` prefix.
@@ -272,7 +324,10 @@ Choose the smallest boundary that catches the regression:
 - DB tests for identity, provider IDs, and rename/reconciliation behavior;
 - server e2e tests for API shape, capability gating, and real SQLite flows;
 - frontend store/component tests for provider ref routing and response fields;
-- optional container/live tests when fakes cannot validate provider API drift.
+- a real-TLS multi-daemon test for federation authority, credential, protocol,
+  replay, and hub/spoke view contracts;
+- container/live tests when real CLI enrollment, restart, or provider API drift
+  cannot be validated by an in-process fixture.
 
 Run Go tests with `-shuffle=on`. Regenerate OpenAPI and generated clients with
 `make api-generate` after Huma route, route metadata, or API type changes.

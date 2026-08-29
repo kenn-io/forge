@@ -466,7 +466,7 @@ Provider live updates checkpoint only after their handler succeeds and preserve 
 
 Provider mutations share one app-scoped acknowledged queue: order commands by submission, key rollback versions by full item identity plus mutation family, never retry writes, and turn `stale_state` into refresh-and-review without replay (`frontend/src/lib/stores/ordered-mutations.ts::ProviderMutations`).
 
-Component lifetime owns polling and live-event subscriptions; teardown interrupts that owner. Accepted queued mutations remain application-runtime-owned, and post-teardown coordinator demand stays pending for a remounted owner (`frontend/src/lib/features/kata/kata-workflow.ts::KataWorkflow`, `frontend/src/lib/components/terminal/workspace-list-workflow.ts::WorkspaceListWorkflow`).
+Component lifetime owns polling and live-event subscriptions; teardown interrupts that owner. Accepted queued mutations remain application-runtime-owned, and post-teardown hub demand stays pending for a remounted owner (`frontend/src/lib/features/kata/kata-workflow.ts::KataWorkflow`, `frontend/src/lib/components/terminal/workspace-list-workflow.ts::WorkspaceListWorkflow`).
 
 A `$state` record written by full-object reassignment (`x = { ...x, k: v }`) that is also read inside the same reactive scope — an `$effect`, or a `{@attach ...}` callback, which Svelte runs as one — is a self-referential dependency: Svelte detects it as `effect_update_depth_exceeded` and the attachment tears itself down and reattaches forever. Mutate the specific key instead (`x[k] = v`) (`frontend/src/lib/stores/workspace-host.svelte.ts::registerSlotElement`).
 

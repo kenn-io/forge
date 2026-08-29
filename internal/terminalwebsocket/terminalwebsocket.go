@@ -23,8 +23,10 @@ func Dial(
 	ctx context.Context,
 	url string,
 	header http.Header,
+	client *http.Client,
 ) (*websocket.Conn, *http.Response, error) {
 	return websocket.Dial(ctx, url, &websocket.DialOptions{
+		HTTPClient:      client,
 		HTTPHeader:      header,
 		CompressionMode: websocket.CompressionContextTakeover,
 	})

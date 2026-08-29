@@ -12,6 +12,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 )
@@ -34,9 +35,11 @@ type Deps struct {
 	Config                 ConfigSnapshot
 	Now                    func() time.Time
 	DeferredMergeMaxWait   time.Duration
-	QueueWorkspaceDeletion func(string) error
+	QueueWorkspaceDeletion func(context.Context, string, string) error
 	WorkspaceSubjects      func(context.Context) (workspaceapi.WorkspaceSubjectSnapshot, error)
 	ViewerLogins           func(context.Context, []db.RepoFilter) ([]db.RepoViewerLogin, error)
+	ProviderSource         ProviderSource
+	ProviderWriteGate      *providerplane.ProviderWriteGate
 
 	FleetSelfKey                  func(string) string
 	FilterRepos                   func([]db.Repo) []db.Repo
@@ -56,10 +59,12 @@ type Handler struct {
 	resolver               *httpapi.RepositoryResolver
 	syncer                 *ghclient.Syncer
 	clones                 *gitclone.Manager
-	queueWorkspaceDeletion func(string) error
+	queueWorkspaceDeletion func(context.Context, string, string) error
 	now                    func() time.Time
 	workspaceSubjects      func(context.Context) (workspaceapi.WorkspaceSubjectSnapshot, error)
 	viewerLogins           func(context.Context, []db.RepoFilter) ([]db.RepoViewerLogin, error)
+	providerSource         ProviderSource
+	providerWriteGate      *providerplane.ProviderWriteGate
 
 	fleetSelfKey                  func(string) string
 	filterRepos                   func([]db.Repo) []db.Repo
@@ -107,6 +112,8 @@ func New(deps Deps) *Handler {
 		now:                           now,
 		workspaceSubjects:             deps.WorkspaceSubjects,
 		viewerLogins:                  deps.ViewerLogins,
+		providerSource:                deps.ProviderSource,
+		providerWriteGate:             deps.ProviderWriteGate,
 		fleetSelfKey:                  deps.FleetSelfKey,
 		filterRepos:                   deps.FilterRepos,
 		repoOperations:                deps.RepoOperations,

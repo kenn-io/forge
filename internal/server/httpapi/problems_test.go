@@ -132,6 +132,13 @@ func TestCodeForStatus(t *testing.T) {
 	}
 }
 
+func TestHubUnavailableProblemIsRetryable(t *testing.T) {
+	problem := HubUnavailable("hub did not answer")
+	require.Equal(t, http.StatusServiceUnavailable, problem.GetStatus())
+	require.Equal(t, CodeHubUnavailable, problem.Code)
+	assert.Equal(t, true, problem.Details["retryable"])
+}
+
 func TestProblemHelpersSetStatusCodeAndDetails(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

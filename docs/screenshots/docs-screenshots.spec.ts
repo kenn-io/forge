@@ -727,8 +727,15 @@ async function stabilizePage(page: Page): Promise<void> {
 }
 
 async function waitForIdleSync(page: Page): Promise<void> {
-  await expect(page.getByRole("button", { name: "Sync", exact: true })).toBeEnabled();
-  await expect(page.getByText(/syncing/i)).toHaveCount(0, { timeout: 15_000 });
+  const syncButton = page.getByRole("button", { name: "Sync", exact: true });
+  const syncingText = page.getByText(/syncing/i);
+  await expect(async () => {
+    await expect(syncButton).toBeEnabled();
+    await expect(syncingText).toHaveCount(0);
+    await page.waitForTimeout(250);
+    await expect(syncButton).toBeEnabled();
+    await expect(syncingText).toHaveCount(0);
+  }).toPass({ timeout: 15_000 });
 }
 
 async function configureSyntheticCodexAgent(page: Page, baseURL: string): Promise<void> {
@@ -1116,6 +1123,10 @@ async function captureCase(page: Page, baseURL: string, capture: CaptureCase): P
     await expect(navigation).toBeVisible();
     await expect(navigation.getByRole("button", { name: /^Repositories\b/ })).toBeVisible();
     await expect(navigation.getByRole("button", { name: /^Workspace agents\b/ })).toBeVisible();
+  }
+
+  if (capture.waitForSync) {
+    await waitForIdleSync(page);
   }
 
   const svg = await nativeSVGSnapshot(page, {

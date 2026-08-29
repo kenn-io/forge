@@ -60,6 +60,8 @@ func TestNewIdentityKeepsMCPListenAddrDiscoverySurfacesAligned(t *testing.T) {
 	assert.Equal(metadata.BasePath, record.Metadata[metadataBasePath])
 	assert.Equal("127.0.0.1:8092", identity.Record.Metadata["mcp_listen_addr"])
 	assert.Equal("127.0.0.1:8092", identity.LockMetadata.MCPListenAddr)
+	assert.Regexp(`^[0-9a-f]{32}$`, metadata.NodeID)
+	assert.Equal(metadata.NodeID, record.Metadata[metadataNodeID])
 	assert.True(metadata.RequireAuth)
 }
 

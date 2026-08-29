@@ -150,6 +150,9 @@ type RepoBrowserRepoRef struct {
 	// storage.
 	ProviderRepoID string
 	RemoteURL      string
+	// RequireCredential marks federation-node clones whose network work must
+	// never fall back to anonymous access if the exact route disappears.
+	RequireCredential bool
 
 	// The route-fence callbacks bind server-created browser work to the catalog
 	// generation that supplied RemoteURL. Standalone callers may leave all
@@ -1205,6 +1208,9 @@ func (m *Manager) refreshRepoBrowserClone(
 	repo RepoBrowserRepoRef,
 	mode repoBrowserRefreshWorkMode,
 ) error {
+	if repo.RequireCredential {
+		ctx = WithRequiredCredential(ctx)
+	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}

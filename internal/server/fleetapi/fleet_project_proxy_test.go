@@ -11,15 +11,13 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"go.kenn.io/forge/internal/config"
 )
 
-// hubServer builds a Handler whose fleet self key is "hub" (via
-// config), with no peers configured — exercising the self and
+// hubServer builds a Handler with a stable node ID and no members configured,
+// exercising the self and
 // unknown-host branches of the project write dispatch.
 func hubServer() *Handler {
-	return New(Deps{Config: ConfigSnapshot{Fleet: config.Fleet{Key: "hub"}}})
+	return New(Deps{NodeID: testHubNodeID})
 }
 
 func TestServeFleetProjectWrite_SelfRoutesToLocalHandler(t *testing.T) {
@@ -36,9 +34,9 @@ func TestServeFleetProjectWrite_SelfRoutesToLocalHandler(t *testing.T) {
 		})
 	}
 
-	r := httptest.NewRequest(http.MethodPost, "/api/v1/fleet/hosts/hub/projects",
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/fleet/hosts/self/projects",
 		strings.NewReader(`{"local_path":"/local/repo"}`))
-	r.SetPathValue("host_key", "hub")
+	r.SetPathValue("host_key", fleetSelfHostAlias)
 	w := httptest.NewRecorder()
 
 	s.serveFleetProjectWrite(w, r, "/api/v1/projects")
@@ -70,10 +68,7 @@ func TestFleetProjectIntakeSelfRoutePersistsProject(t *testing.T) {
 	assert := assert.New(t)
 
 	srv, database := setupTestServer(t)
-	setTestFleetConfig(srv, func(cfg *config.Config) {
-		cfg.Fleet.Enabled = true
-		cfg.Fleet.Key = "hub"
-	})
+	srv.nodeID = testHubNodeID
 
 	ts := httptest.NewServer(srv.localHandler())
 	defer ts.Close()
@@ -88,7 +83,7 @@ func TestFleetProjectIntakeSelfRoutePersistsProject(t *testing.T) {
 	})
 	resp := httpDo(
 		t, ts, http.MethodPost,
-		"/api/v1/fleet/hosts/hub/projects",
+		"/api/v1/fleet/hosts/self/projects",
 		registerBody,
 	)
 	require.Equal(http.StatusCreated, resp.StatusCode)

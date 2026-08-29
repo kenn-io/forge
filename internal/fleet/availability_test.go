@@ -4,7 +4,59 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+func TestProjectForObserverSuppressesTwoHopMutation(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	full := Capabilities{Commands: CommandCapabilities{
+		WorktreeCreate: true, WorktreeImportPR: true, WorktreeDelete: true,
+		SessionEnsure: true, SessionKill: true, RepositoryClone: true,
+		ProjectAdd: true, ProjectRemove: true,
+	}}
+	nodeA := NodeID("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	nodeB := NodeID("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+	nodeC := NodeID("cccccccccccccccccccccccccccccccc")
+	rawA := RawSnapshot{ProtocolVersion: 3, NodeID: nodeA,
+		Host: RawHost{Hostname: "hub", Platform: "linux"}, Capabilities: &full}
+	rawB := RawSnapshot{ProtocolVersion: 3, NodeID: nodeB,
+		Host: RawHost{Hostname: "spoke-b", Platform: "linux"}, Capabilities: &full}
+	rawC := RawSnapshot{ProtocolVersion: 3, NodeID: nodeC,
+		Host: RawHost{Hostname: "spoke-c", Platform: "linux"}, Capabilities: &full}
+	aggregate := BuildNeutralAggregate(rawA, []PeerResult{
+		{NodeID: nodeB, Name: "spoke-b", Reachable: true, Raw: &rawB},
+		{NodeID: nodeC, Name: "spoke-c", Reachable: true, Raw: &rawC},
+	})
+
+	projected := ProjectForObserver(aggregate, rawB, Observer{NodeID: nodeB, Role: RoleSpoke})
+	var self, remoteC *HostSummary
+	for index := range projected.Hosts {
+		host := &projected.Hosts[index]
+		switch host.ConfigKey {
+		case string(nodeB):
+			self = host
+		case string(nodeC):
+			remoteC = host
+		}
+	}
+	require.NotNil(self)
+	assert.Equal("self", self.Kind)
+	require.NotNil(remoteC)
+	write := remoteC.OperationAvailability[OpWorkspaceWrite]
+	assert.False(write.Available)
+	require.NotNil(write.UnavailableReason)
+	assert.Equal(ReasonSummaryOnly, *write.UnavailableReason)
+
+	hubView := ProjectForObserver(
+		aggregate, rawA, Observer{NodeID: nodeA, Role: RoleHub},
+	)
+	for _, host := range hubView.Hosts {
+		if host.ConfigKey == string(nodeC) {
+			assert.True(host.OperationAvailability[OpWorkspaceWrite].Available)
+		}
+	}
+}
 
 func fullCommandCaps() CommandCapabilities {
 	return CommandCapabilities{

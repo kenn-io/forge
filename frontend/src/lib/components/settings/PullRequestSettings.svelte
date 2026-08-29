@@ -6,13 +6,16 @@
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { isEmbedded } from "../../stores/embed-config.svelte.js";
   import { SettingsWorkflow, settingsErrorMessage } from "../../stores/settings-workflow.js";
+  import SettingsOwnerNotice from "./SettingsOwnerNotice.svelte";
+  import type { SettingsOwner } from "./settingsOwnership.js";
 
   interface Props {
     pullRequests: PullRequestSettingsType;
     onUpdate: (settings: PullRequestSettingsType) => void;
+    owner?: SettingsOwner;
   }
 
-  let { pullRequests, onUpdate }: Props = $props();
+  let { pullRequests, onUpdate, owner = "local" }: Props = $props();
   const runtime = getAppRuntime();
   const { settings: settingsStore } = getStores();
   const embedded = isEmbedded();
@@ -60,6 +63,8 @@
     );
   }
 </script>
+
+<SettingsOwnerNotice {owner} subject="Pull request policy" />
 
 <div class="settings-list">
   <div class="setting-row">

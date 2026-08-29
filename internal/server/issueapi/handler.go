@@ -35,6 +35,7 @@ type Deps struct {
 	Now               func() time.Time
 	Config            ConfigSnapshot
 	WorkspaceSubjects func(context.Context) (workspaceapi.WorkspaceSubjectSnapshot, error)
+	ProviderSource    ProviderSource
 	ViewerLogins      func(context.Context, []db.RepoFilter) ([]db.RepoViewerLogin, error)
 
 	FilterRepos                       func([]db.Repo) []db.Repo
@@ -48,6 +49,7 @@ type Handler struct {
 	syncer            *ghclient.Syncer
 	now               func() time.Time
 	workspaceSubjects func(context.Context) (workspaceapi.WorkspaceSubjectSnapshot, error)
+	providerSource    ProviderSource
 	viewerLogins      func(context.Context, []db.RepoFilter) ([]db.RepoViewerLogin, error)
 
 	filterRepos             func([]db.Repo) []db.Repo
@@ -69,6 +71,7 @@ func New(deps Deps) *Handler {
 		syncer:                  deps.Syncer,
 		now:                     now,
 		workspaceSubjects:       deps.WorkspaceSubjects,
+		providerSource:          deps.ProviderSource,
 		viewerLogins:            deps.ViewerLogins,
 		filterRepos:             deps.FilterRepos,
 		repoOperations:          deps.RepoOperations,

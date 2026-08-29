@@ -93,7 +93,7 @@ only routes to them.
 
 ## Git Workflow
 
-- **Commit every turn** — always commit your work at the end of each turn, no exceptions
+- **Commit and push every turn** — always commit and push your work at the end of each turn, after required checks
 - Superpowers design specs and implementation plans are temporary working artifacts; never commit
   or retain them. Before committing, distill current contracts into the matching `context/` topic
   docs and delete the artifacts. Do not convert a transient spec into an ADR to preserve it.
@@ -110,4 +110,3 @@ only routes to them.
 - Run tests before committing when applicable
 - Never push unless the repository's non-mutating lint check passes after the final relevant edit; keep local and CI linter versions aligned. (`Makefile`, `prek.toml`, `.github/workflows/ci.yml`)
 - Before pushing any frontend change, you must have run the full affected suite locally after the final frontend/test edit — the full `vp test` Vitest run, plus the full affected Playwright e2e suite whenever the change touches Playwright specs or the shared mock fixtures they rely on; type checks and CI-only verification are not enough.
-- Never push new workstreams unless explicitly asked. When addressing review feedback or CI failures on an existing PR, an agent may push after the fix is implemented and relevant local validation has run.

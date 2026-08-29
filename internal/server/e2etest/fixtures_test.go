@@ -105,6 +105,32 @@ func setupTestServerWithConfigContentAndSyncer(
 	cfgContent string,
 	mock *mockGH,
 ) (*server.Server, *db.DB, string, *ghclient.Syncer) {
+	return setupTestServerWithConfigContentOptionsAndSyncer(
+		t, cfgContent, mock, server.ServerOptions{
+			HostCheckAllowLoopbackAnyPort: true,
+		},
+	)
+}
+
+func setupTestServerWithConfigContentAndOptions(
+	t *testing.T,
+	cfgContent string,
+	mock *mockGH,
+	options server.ServerOptions,
+) (*server.Server, *db.DB, string) {
+	options.HostCheckAllowLoopbackAnyPort = true
+	srv, database, cfgPath, _ := setupTestServerWithConfigContentOptionsAndSyncer(
+		t, cfgContent, mock, options,
+	)
+	return srv, database, cfgPath
+}
+
+func setupTestServerWithConfigContentOptionsAndSyncer(
+	t *testing.T,
+	cfgContent string,
+	mock *mockGH,
+	options server.ServerOptions,
+) (*server.Server, *db.DB, string, *ghclient.Syncer) {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -124,9 +150,7 @@ func setupTestServerWithConfigContentAndSyncer(
 	t.Cleanup(syncer.Stop)
 
 	srv := servertest.NewWithConfig(
-		t, database, syncer, nil, nil, cfg, cfgPath, server.ServerOptions{
-			HostCheckAllowLoopbackAnyPort: true,
-		},
+		t, database, syncer, nil, nil, cfg, cfgPath, options,
 	)
 	return srv, database, cfgPath, syncer
 }

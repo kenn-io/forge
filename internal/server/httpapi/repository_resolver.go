@@ -318,36 +318,14 @@ func (r *RepositoryResolver) CapabilitiesForRepo(repo db.Repo) ProviderCapabilit
 	return r.Capabilities(ProviderKind(repo), ProviderHost(repo))
 }
 
-// Capabilities preserves the server's established fallback policy: a missing
-// live registry still exposes the baseline GitHub feature set, while unknown
-// non-GitHub providers report no capabilities. Every HTTP domain uses this
-// method so lookup failures cannot drift between route packages.
+// Capabilities returns only facts reported by the live provider registry. A
+// missing registry must not advertise operations the daemon cannot execute.
 func (r *RepositoryResolver) Capabilities(kind platform.Kind, host string) ProviderCapabilitiesResponse {
 	if r != nil && r.providerCapabilities != nil {
 		caps, err := r.providerCapabilities(kind, host)
 		if err == nil {
 			return ProviderCapabilitiesFromPlatform(caps)
 		}
-	}
-	if kind == platform.KindGitHub {
-		return ProviderCapabilitiesFromPlatform(platform.Capabilities{
-			ReadRepositories:            true,
-			ReadMergeRequests:           true,
-			ReadIssues:                  true,
-			ReadIssuePRReferences:       true,
-			ReadComments:                true,
-			ReadReleases:                true,
-			ReadCI:                      true,
-			CommentMutation:             true,
-			StateMutation:               true,
-			MergeMutation:               true,
-			ReviewMutation:              true,
-			WorkflowApproval:            true,
-			ReadyForReview:              true,
-			DraftMutation:               true,
-			IssueMutation:               true,
-			ReviewSuggestionApplication: true,
-		})
 	}
 	return ProviderCapabilitiesResponse{}
 }

@@ -333,6 +333,24 @@ sse_buffer_size = 256
 present accepted direct and forwarded hosts. `sse_buffer_size` defaults to 256
 and accepts 16 through 16384.
 
+When the reverse proxy preserves the browser's original `Host` header, keep
+forwarded-host trust disabled:
+
+```toml
+allowed_hosts = ["build-a.<tailnet>.ts.net"]
+trust_reverse_proxy = false
+```
+
+In this mode Forge validates the raw `Host` value and ignores forwarded-host
+headers. This is the simpler choice for a private Caddy or Tailscale proxy that
+does not rewrite `Host`.
+
+Set `trust_reverse_proxy = true` only when every browser request comes through
+a trusted proxy that supplies an accepted `Forwarded` or `X-Forwarded-Host`
+value. Direct browser requests without that forwarded authority are rejected.
+Host validation does not consume a forwarded scheme; configure HTTPS at the
+proxy and use HTTPS origins for federation.
+
 ### MCP companion
 
 Enable the daemon's optional loopback MCP listener with:

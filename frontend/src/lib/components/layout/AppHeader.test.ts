@@ -13,6 +13,7 @@ const mockedReviewsDaemonAvailable = vi.hoisted(() => ({ value: true }));
 
 const mockedSync = vi.hoisted(() => ({
   running: false,
+  providerAvailable: true,
   triggerSync: vi.fn(() => Promise.resolve()),
   triggerRepoSync: vi.fn((_repo: string) => Promise.resolve()),
 }));
@@ -54,6 +55,7 @@ vi.mock("../../context.js", async (importOriginal) => {
     getStores: () => ({
       sync: {
         getSyncState: () => (mockedSync.running ? { running: true } : null),
+        getProviderAvailable: () => mockedSync.providerAvailable,
         triggerSync: mockedSync.triggerSync,
         triggerRepoSync: mockedSync.triggerRepoSync,
       },
@@ -133,6 +135,7 @@ describe("AppHeader", () => {
     mockedContainerSize.value = "wide";
     mockedReviewsDaemonAvailable.value = true;
     mockedSync.running = false;
+    mockedSync.providerAvailable = true;
     mockedSync.triggerSync.mockClear();
     mockedSync.triggerRepoSync.mockClear();
     setGlobalRepo(undefined);
@@ -160,6 +163,7 @@ describe("AppHeader", () => {
     mockedContainerSize.value = "wide";
     mockedReviewsDaemonAvailable.value = true;
     mockedSync.running = false;
+    mockedSync.providerAvailable = true;
     setGlobalRepo(undefined);
     delete window.__kenn_forge_config;
     window.__kenn_forge_notify_config_changed?.();
@@ -183,6 +187,17 @@ describe("AppHeader", () => {
 
     expect(mockedSync.triggerSync).toHaveBeenCalledOnce();
     expect(mockedSync.triggerRepoSync).not.toHaveBeenCalled();
+  });
+
+  it("disables sync while the hub is unavailable", () => {
+    initTheme();
+    mockedSync.providerAvailable = false;
+    render(AppHeader);
+
+    const syncButton = screen.getByRole("button", { name: "Sync unavailable" }) as HTMLButtonElement;
+    expect(syncButton.disabled).toBe(true);
+    expect(syncButton.title).toBe("Hub unavailable");
+    expect((screen.getByRole("button", { name: "Sync options" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("keeps observing header height until the component unmounts", async () => {

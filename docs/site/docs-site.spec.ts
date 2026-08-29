@@ -405,10 +405,10 @@ test("serves llms.txt and markdown twins for machine readers", async ({ page }) 
   const llms = await page.request.get("/llms.txt");
   expect(llms.ok()).toBe(true);
   const llmsBody = await llms.text();
-  expect(llmsBody).toContain("https://forge.kenn.io/docs.md");
+  expect(llmsBody).toContain("https://forge.kenn.io/docs/index.md");
   expect(llmsBody).toContain("https://forge.kenn.io/docs/workflows/activity.md");
 
-  for (const twin of ["/docs.md", "/docs/quickstart.md", "/docs/workflows/activity.md"]) {
+  for (const twin of ["/docs/index.md", "/docs/quickstart.md", "/docs/workflows/activity.md"]) {
     const response = await page.request.get(twin);
     expect(response.ok()).toBe(true);
     expect((await response.text()).length).toBeGreaterThan(0);

@@ -9,11 +9,11 @@
 The Guide is a short visual product tour; the Docs links below are
 comprehensive task-oriented references. Markdown versions are canonical for
 machine readers: every rendered docs page at /docs/<page>/ is also served as
-raw markdown at /docs/<page>.md.
+raw markdown at /docs/<page>.md, and the docs index at /docs/index.md.
 
 ## Docs
 
-- [Documentation overview](https://forge.kenn.io/docs.md): Mental model, main views, and documentation map
+- [Documentation overview](https://forge.kenn.io/docs/index.md): Mental model, main views, and documentation map
 - [Quick start](https://forge.kenn.io/docs/quickstart.md): Installation, provider setup, first sync, and first workspace
 - [Workflows overview](https://forge.kenn.io/docs/workflows.md): Daily workflows across activity, review, triage, and sessions
 - [Follow activity](https://forge.kenn.io/docs/workflows/activity.md): The cross-repository activity queue, filters, and detail panes

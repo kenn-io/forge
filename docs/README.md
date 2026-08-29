@@ -18,7 +18,7 @@ The site is tiered: `site/` holds the static marketing pages copied from
 `website/` (the pitch page at `/` and the Guide at `/guide/`), and the Zensical
 build renders the docs under `site/docs/`. The build also copies `docs/llms.txt`
 to `/llms.txt` and places each published page's raw markdown beside its
-rendered directory (`/docs.md`, `/docs/<page>.md`) for machine readers, then
+rendered directory (`/docs/index.md`, `/docs/<page>.md`) for machine readers, then
 fails if any rendered page, markdown twin, or `llms.txt` entry is missing. New
 pages must be added in four places: the file itself, the `zensical.toml` nav,
 the allowlist in `scripts/build-docs.mjs`, and `docs/llms.txt`.

@@ -51,7 +51,6 @@ export function publishedMarkdownPages() {
 }
 
 function twinPathFor(siteRoot, page) {
-  if (page === "index.md") return path.join(siteRoot, "docs.md");
   return path.join(siteRoot, "docs", page);
 }
 
@@ -62,7 +61,6 @@ function renderedPathFor(siteRoot, page) {
 }
 
 export function twinURLFor(page) {
-  if (page === "index.md") return "https://forge.kenn.io/docs.md";
   return `https://forge.kenn.io/docs/${page.split(path.sep).join("/")}`;
 }
 

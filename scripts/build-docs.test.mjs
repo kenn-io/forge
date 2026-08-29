@@ -116,12 +116,12 @@ test("site root staging pairs every published page with a markdown twin", async 
   await docsBuild.verifySiteRoot(siteRoot);
 
   assert.equal(await readFile(path.join(siteRoot, "index.html"), "utf8"), "<h1>pitch</h1>\n");
-  assert.equal(await readFile(path.join(siteRoot, "docs.md"), "utf8"), "# index.md\n");
+  assert.equal(await readFile(path.join(siteRoot, "docs", "index.md"), "utf8"), "# index.md\n");
   assert.equal(
     await readFile(path.join(siteRoot, "docs", "workflows", "activity.md"), "utf8"),
     `# ${path.join("workflows", "activity.md")}\n`,
   );
-  assert.ok((await readFile(path.join(siteRoot, "llms.txt"), "utf8")).includes("https://forge.kenn.io/docs.md"));
+  assert.ok((await readFile(path.join(siteRoot, "llms.txt"), "utf8")).includes("https://forge.kenn.io/docs/index.md"));
 });
 
 test("site verification fails when a markdown twin or llms.txt entry is missing", async (t) => {

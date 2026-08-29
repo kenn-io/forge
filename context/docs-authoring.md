@@ -37,7 +37,8 @@ screenshots, or the Zensical site.
   product as an integrated agent workspace with local-first code forge sync,
   not a maintainer-only console.
 - Every published docs page ships as a rendered/markdown pair (`/docs/<page>/`
-  plus `/docs/<page>.md`; index as `/docs.md`) listed in the hand-maintained
+  plus `/docs/<page>.md`; index as `/docs/index.md`, so relative links resolve
+  from the page's own directory) listed in the hand-maintained
   `docs/llms.txt`, and the build fails when any half or listing is missing —
   a new page must be added to the file, nav, allowlist, and `llms.txt`.
   (`scripts/build-docs.mjs::verifySiteRoot`)

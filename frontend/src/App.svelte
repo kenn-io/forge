@@ -74,6 +74,7 @@
   import { showFlash } from "./lib/stores/flash.svelte.js";
   import { isSafeExternalHTTPURL } from "./lib/utils/safe-external-url.js";
   import { initItemRefHandler } from "./lib/utils/itemRefHandler.js";
+  import { isPhoneLikeViewport as isPhoneLikePresentation } from "./lib/utils/phone-presentation.js";
   import { globalRepoForSelectedRoute } from "./lib/utils/repoSelectionSync.js";
   import { runAppStartup } from "./lib/utils/appStartup.js";
   import {
@@ -555,8 +556,11 @@
   }
 
   function isPhoneLikeViewport(): boolean {
-    return viewportWidth <= 640
-      && (hasCoarsePointer || hasMobileUserAgent());
+    return isPhoneLikePresentation({
+      viewportWidth,
+      hasCoarsePointer,
+      hasMobileUserAgent: hasMobileUserAgent(),
+    });
   }
 
   function isCompactViewport(): boolean {

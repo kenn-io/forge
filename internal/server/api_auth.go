@@ -224,6 +224,7 @@ func (s *Server) federationPrincipalEnrollmentState(
 	}
 	for _, member := range members {
 		if member.NodeID == principal.NodeID &&
+			member.BaseURL == enrollment.SpokeBaseURL &&
 			member.State == federation.EnrollmentActive {
 			return federation.EnrollmentActive, true
 		}

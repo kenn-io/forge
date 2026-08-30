@@ -132,7 +132,8 @@ test("settings imports a selected subset from a repository glob", async ({ page 
   await apiOption.click();
   await expect(apiOption.locator("input[type='checkbox']")).toBeChecked();
   await page.keyboard.press("Escape");
-  await expect(selector).toContainText("github.com/import-lab/api");
+  await expect(selector).toContainText("import-lab/api");
+  await expect(selector).toHaveAttribute("aria-label", "Select repository: github/github.com/import-lab/api");
 
   await page.goto(`${isolatedServer!.info.base_url}/settings`);
   await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });

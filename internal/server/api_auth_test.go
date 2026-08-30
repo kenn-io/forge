@@ -547,6 +547,12 @@ func TestRemovedFleetMemberCredentialFailsOnNextRequest(t *testing.T) {
 	require.Equal(http.StatusOK, response.StatusCode)
 	response.Body.Close()
 	srv.cfgMu.Lock()
+	srv.cfg.Fleet.Members[0].BaseURL = "https://replacement-spoke.example"
+	srv.cfgMu.Unlock()
+	response = requestSnapshot()
+	response.Body.Close()
+	require.Equal(http.StatusForbidden, response.StatusCode)
+	srv.cfgMu.Lock()
 	srv.cfg.Fleet.Members = nil
 	srv.cfgMu.Unlock()
 	response = requestSnapshot()

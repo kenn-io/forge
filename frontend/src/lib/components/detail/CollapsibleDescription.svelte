@@ -20,49 +20,58 @@
   }
 </script>
 
-<div class="detail-description__header">
-  <span class="detail-description__title">Description</span>
-  <div class="detail-description__actions">
-    {#if headerActions}
-      {@render headerActions()}
-    {/if}
-    {#if isLong}
-      <button
-        type="button"
-        class="detail-description__toggle"
-        aria-label={isLong && collapsed ? "Expand description" : "Collapse description"}
-        aria-expanded={!(isLong && collapsed)}
-        onclick={toggleCollapsed}
-      >
-        {isLong && collapsed ? "Expand" : "Collapse"}
-      </button>
-    {/if}
+<div class="detail-description">
+  <div class="detail-description__header">
+    <span class="detail-description__title">Description</span>
+    <div class="detail-description__actions">
+      {#if headerActions}
+        {@render headerActions()}
+      {/if}
+      {#if isLong}
+        <button
+          type="button"
+          class="detail-description__toggle"
+          aria-label={isLong && collapsed ? "Expand description" : "Collapse description"}
+          aria-expanded={!(isLong && collapsed)}
+          onclick={toggleCollapsed}
+        >
+          {isLong && collapsed ? "Expand" : "Collapse"}
+        </button>
+      {/if}
+      <CopyButton
+        class={copied ? "body-copy body-copy--copied" : "body-copy"}
+        {copied}
+        onclick={oncopy}
+        revealOnHover
+        ariaLabel="Copy to clipboard"
+        copiedAriaLabel="Copied!"
+        title="Copy to clipboard"
+        copiedTitle="Copied!"
+      />
+    </div>
   </div>
-</div>
-<div class="detail-description__card-wrap">
-  <CopyButton
-    class={copied ? "body-copy body-copy--copied" : "body-copy"}
-    {copied}
-    onclick={oncopy}
-    revealOnHover
-    ariaLabel="Copy to clipboard"
-    copiedAriaLabel="Copied!"
-    title="Copy to clipboard"
-    copiedTitle="Copied!"
-  />
-  <Card
-    level="inset"
-    padding="none"
-    class={isLong && collapsed
-      ? "detail-description-card detail-description-card--compact"
-      : "detail-description-card"}
-  >
-    {@render children()}
-  </Card>
+  <div class="detail-description__card-wrap">
+    <Card
+      level="inset"
+      padding="none"
+      class={isLong && collapsed
+        ? "detail-description-card detail-description-card--compact"
+        : "detail-description-card"}
+    >
+      {@render children()}
+    </Card>
+  </div>
 </div>
 
 <style>
+  .detail-description {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+
   .detail-description__header {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -96,19 +105,15 @@
     color: var(--accent-blue);
   }
 
-  .detail-description__card-wrap {
-    position: relative;
-  }
-
-  .detail-description__card-wrap :global(.kit-copy-btn.body-copy) {
+  .detail-description__header :global(.kit-copy-btn.body-copy) {
     position: absolute;
-    top: var(--space-3);
+    top: calc(100% + var(--space-4) + var(--space-3));
     right: var(--space-3);
     z-index: 1;
   }
 
-  .detail-description__card-wrap:hover :global(.kit-copy-btn.body-copy),
-  .detail-description__card-wrap :global(.kit-copy-btn.body-copy--copied) {
+  .detail-description:hover :global(.kit-copy-btn.body-copy),
+  .detail-description :global(.kit-copy-btn.body-copy--copied) {
     opacity: 1;
   }
 
@@ -122,10 +127,6 @@
   }
 
   @media (max-width: 640px) {
-    .detail-description__card-wrap {
-      display: grid;
-    }
-
     .detail-description__toggle {
       display: inline-flex;
       align-items: center;
@@ -136,9 +137,8 @@
       font-size: var(--detail-mobile-type-sm, var(--font-size-sm));
     }
 
-    .detail-description__card-wrap :global(.kit-copy-btn.body-copy) {
+    .detail-description__header :global(.kit-copy-btn.body-copy) {
       position: static;
-      justify-self: end;
       min-width: var(--detail-mobile-hit-target, 37px);
       min-height: var(--detail-mobile-hit-target, 37px);
       padding: var(--detail-mobile-space-xs, var(--space-3));

@@ -40,19 +40,21 @@ describe("collapsible description browser layout", () => {
     }
   });
 
-  it("aligns the copy control with the card's right edge on mobile", async () => {
+  it("keeps the copy control in the description header on mobile", async () => {
     await page.viewport(390, 844);
     const { container, unmount } = render(CollapsibleDescriptionBrowserFixture);
 
     try {
       const copyButton = container.querySelector(".kit-copy-btn.body-copy");
-      const card = container.querySelector(".detail-description-card");
+      const editButton = container.querySelector(".fixture-edit");
       expect(copyButton).not.toBeNull();
-      expect(card).not.toBeNull();
+      expect(editButton).not.toBeNull();
 
-      const copyRight = (copyButton as Element).getBoundingClientRect().right;
-      const cardRight = (card as Element).getBoundingClientRect().right;
-      expect(Math.abs(copyRight - cardRight)).toBeLessThanOrEqual(1);
+      const copyBox = (copyButton as Element).getBoundingClientRect();
+      const editBox = (editButton as Element).getBoundingClientRect();
+      const copyCenter = copyBox.top + copyBox.height / 2;
+      const editCenter = editBox.top + editBox.height / 2;
+      expect(Math.abs(copyCenter - editCenter)).toBeLessThanOrEqual(1);
     } finally {
       unmount();
     }

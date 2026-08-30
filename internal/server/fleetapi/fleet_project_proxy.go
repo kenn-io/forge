@@ -20,23 +20,25 @@ func (s *Handler) registerFleetProjectRoutes(api huma.API) {
 		Parameters:   fleetProxyParams([]string{"host_key"}),
 		RequestBody:  fleetProxyRequestBody(),
 		Responses:    fleetProxyResponses(),
-		MaxBodyBytes: -1,
+		MaxBodyBytes: fleetProxyMaxBodyBytes,
 	}
 	api.OpenAPI().AddOperation(registerOp)
 	api.Adapter().Handle(registerOp, func(ctx huma.Context) {
 		r, w := humago.Unwrap(ctx)
+		if !bufferFleetProxyRequestBody(w, r) {
+			return
+		}
 		s.serveFleetProjectWrite(w, r, "/api/v1/projects")
 	})
 
 	deleteOp := &huma.Operation{
-		OperationID:  "delete-fleet-project",
-		Method:       http.MethodDelete,
-		Path:         "/fleet/hosts/{host_key}/projects/{project_id}",
-		Summary:      "Delete project on fleet host",
-		Tags:         []string{"Fleet"},
-		Parameters:   fleetProxyParams([]string{"host_key", "project_id"}),
-		Responses:    fleetProxyResponses(),
-		MaxBodyBytes: -1,
+		OperationID: "delete-fleet-project",
+		Method:      http.MethodDelete,
+		Path:        "/fleet/hosts/{host_key}/projects/{project_id}",
+		Summary:     "Delete project on fleet host",
+		Tags:        []string{"Fleet"},
+		Parameters:  fleetProxyParams([]string{"host_key", "project_id"}),
+		Responses:   fleetProxyResponses(),
 	}
 	api.OpenAPI().AddOperation(deleteOp)
 	api.Adapter().Handle(deleteOp, func(ctx huma.Context) {

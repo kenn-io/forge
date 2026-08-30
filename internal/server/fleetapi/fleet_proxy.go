@@ -1,6 +1,7 @@
 package fleetapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -34,6 +35,8 @@ type fleetRESTProxyRoute struct {
 	body        bool
 	targetPath  func(*http.Request) string
 }
+
+const fleetProxyMaxBodyBytes int64 = 1 << 20
 
 type fleetHostTarget struct {
 	self       bool
@@ -542,21 +545,24 @@ func (s *Handler) registerFleetOperationRoutes(api huma.API) {
 
 	for _, route := range routes {
 		op := &huma.Operation{
-			OperationID:  route.operationID,
-			Method:       route.method,
-			Path:         route.path,
-			Summary:      route.summary,
-			Tags:         []string{"Fleet"},
-			Parameters:   fleetProxyParams(route.pathParams, route.queryParams...),
-			Responses:    fleetProxyResponses(),
-			MaxBodyBytes: -1,
+			OperationID: route.operationID,
+			Method:      route.method,
+			Path:        route.path,
+			Summary:     route.summary,
+			Tags:        []string{"Fleet"},
+			Parameters:  fleetProxyParams(route.pathParams, route.queryParams...),
+			Responses:   fleetProxyResponses(),
 		}
 		if route.body {
 			op.RequestBody = fleetProxyRequestBody()
+			op.MaxBodyBytes = fleetProxyMaxBodyBytes
 		}
 		api.OpenAPI().AddOperation(op)
 		api.Adapter().Handle(op, func(ctx huma.Context) {
 			r, w := humago.Unwrap(ctx)
+			if route.body && !bufferFleetProxyRequestBody(w, r) {
+				return
+			}
 			s.serveFleetRESTProxy(w, r, route.targetPath(r))
 		})
 	}
@@ -686,6 +692,46 @@ func fleetProxyRequestBody() *huma.RequestBody {
 			},
 		},
 	}
+}
+
+// bufferFleetProxyRequestBody bounds and consumes the browser request before
+// the hub resolves or dials a fleet member. The fleet adapter handles raw
+// requests, so Huma's MaxBodyBytes metadata is not enforced automatically.
+func bufferFleetProxyRequestBody(w http.ResponseWriter, r *http.Request) bool {
+	if r.ContentLength > fleetProxyMaxBodyBytes {
+		writeProblemResponse(w, httpapi.NewProblem(
+			http.StatusRequestEntityTooLarge,
+			httpapi.CodePayloadTooLarge,
+			"fleet proxy request body is too large",
+			map[string]any{"maxBytes": fleetProxyMaxBodyBytes},
+		))
+		return false
+	}
+
+	body, err := io.ReadAll(io.LimitReader(r.Body, fleetProxyMaxBodyBytes+1))
+	if err != nil {
+		writeProblemResponse(w, httpapi.NewProblem(
+			http.StatusBadRequest,
+			httpapi.CodeBadRequest,
+			"could not read fleet proxy request body",
+			nil,
+		))
+		return false
+	}
+	if int64(len(body)) > fleetProxyMaxBodyBytes {
+		writeProblemResponse(w, httpapi.NewProblem(
+			http.StatusRequestEntityTooLarge,
+			httpapi.CodePayloadTooLarge,
+			"fleet proxy request body is too large",
+			map[string]any{"maxBytes": fleetProxyMaxBodyBytes},
+		))
+		return false
+	}
+
+	_ = r.Body.Close()
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	r.ContentLength = int64(len(body))
+	return true
 }
 
 func fleetProxyResponses() map[string]*huma.Response {

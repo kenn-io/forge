@@ -2,6 +2,7 @@ package fleetapi
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/server/httpapi"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -349,6 +351,61 @@ func TestFleetRESTProxyClosesMemberResponseBody(t *testing.T) {
 
 	require.Equal(http.StatusOK, recorder.Code, recorder.Body.String())
 	assert.True(body.closed, "the proxy must close every completed member response")
+}
+
+func TestFleetRESTProxyRejectsOversizedBodyBeforeDialingMember(t *testing.T) {
+	require := require.New(t)
+	peerRequests := 0
+	client := &http.Client{Transport: roundTripFunc(
+		func(*http.Request) (*http.Response, error) {
+			peerRequests++
+			return &http.Response{
+				StatusCode: http.StatusNoContent,
+				Header:     make(http.Header),
+				Body:       http.NoBody,
+			}, nil
+		},
+	)}
+	handler := New(Deps{})
+	configureTestMembers(t, handler, client, config.FleetMember{
+		NodeID: testMemberNodeID, BaseURL: "https://member.example",
+	})
+	api := newFleetTestAPI()
+	handler.Register(api)
+	body := strings.Repeat("x", int(fleetProxyMaxBodyBytes)+1)
+
+	for _, tc := range []struct {
+		name          string
+		path          string
+		contentLength int64
+	}{
+		{
+			name:          "known length workspace write",
+			path:          "/fleet/hosts/" + testMemberNodeID + "/workspaces",
+			contentLength: int64(len(body)),
+		},
+		{
+			name:          "chunked project write",
+			path:          "/fleet/hosts/" + testMemberNodeID + "/projects",
+			contentLength: -1,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(body))
+			request.ContentLength = tc.contentLength
+
+			api.Adapter().ServeHTTP(recorder, request)
+
+			require.Equal(http.StatusRequestEntityTooLarge, recorder.Code, recorder.Body.String())
+			var problem struct {
+				Code string `json:"code"`
+			}
+			require.NoError(json.Unmarshal(recorder.Body.Bytes(), &problem))
+			require.Equal(string(httpapi.CodePayloadTooLarge), problem.Code)
+		})
+	}
+	require.Zero(peerRequests, "oversized request bodies must be rejected before peer dialing")
 }
 
 // TestCopyProxyRequestHeadersStripsBrowserHeaders verifies the hub does not

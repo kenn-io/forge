@@ -149,6 +149,9 @@ or remote workspace and session operations.
   reads remain time-bounded; long REST proxies use request cancellation because
   clone and diff-watch handlers can legitimately exceed snapshot deadlines
   (`internal/server/fleetapi/fleet_enrollment.go::hardenedFederationProxyHTTPClient`).
+- Body-bearing REST proxies buffer and bound input before selecting or dialing a
+  member; raw Huma adapter handlers do not enforce operation body metadata
+  (`internal/server/fleetapi/fleet_proxy.go::bufferFleetProxyRequestBody`).
 - WebSocket attach tracing ends after bounded connection setup and before the
   long-lived bridge (`internal/server/fleetapi/fleet_proxy.go::startFleetAttachSpan`).
 - Remote terminals are WebSocket-to-WebSocket bridges. The hub does not

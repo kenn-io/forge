@@ -376,23 +376,32 @@ func TestFleetRESTProxyRejectsOversizedBodyBeforeDialingMember(t *testing.T) {
 
 	for _, tc := range []struct {
 		name          string
+		method        string
 		path          string
 		contentLength int64
 	}{
 		{
 			name:          "known length workspace write",
+			method:        http.MethodPost,
 			path:          "/fleet/hosts/" + testMemberNodeID + "/workspaces",
 			contentLength: int64(len(body)),
 		},
 		{
 			name:          "chunked project write",
+			method:        http.MethodPost,
 			path:          "/fleet/hosts/" + testMemberNodeID + "/projects",
+			contentLength: -1,
+		},
+		{
+			name:          "chunked workspace read",
+			method:        http.MethodGet,
+			path:          "/fleet/hosts/" + testMemberNodeID + "/workspaces",
 			contentLength: -1,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			recorder := httptest.NewRecorder()
-			request := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(body))
+			request := httptest.NewRequest(tc.method, tc.path, strings.NewReader(body))
 			request.ContentLength = tc.contentLength
 
 			api.Adapter().ServeHTTP(recorder, request)

@@ -545,22 +545,22 @@ func (s *Handler) registerFleetOperationRoutes(api huma.API) {
 
 	for _, route := range routes {
 		op := &huma.Operation{
-			OperationID: route.operationID,
-			Method:      route.method,
-			Path:        route.path,
-			Summary:     route.summary,
-			Tags:        []string{"Fleet"},
-			Parameters:  fleetProxyParams(route.pathParams, route.queryParams...),
-			Responses:   fleetProxyResponses(),
+			OperationID:  route.operationID,
+			Method:       route.method,
+			Path:         route.path,
+			Summary:      route.summary,
+			Tags:         []string{"Fleet"},
+			Parameters:   fleetProxyParams(route.pathParams, route.queryParams...),
+			Responses:    fleetProxyResponses(),
+			MaxBodyBytes: fleetProxyMaxBodyBytes,
 		}
 		if route.body {
 			op.RequestBody = fleetProxyRequestBody()
-			op.MaxBodyBytes = fleetProxyMaxBodyBytes
 		}
 		api.OpenAPI().AddOperation(op)
 		api.Adapter().Handle(op, func(ctx huma.Context) {
 			r, w := humago.Unwrap(ctx)
-			if route.body && !bufferFleetProxyRequestBody(w, r) {
+			if !bufferFleetProxyRequestBody(w, r) {
 				return
 			}
 			s.serveFleetRESTProxy(w, r, route.targetPath(r))
@@ -694,9 +694,9 @@ func fleetProxyRequestBody() *huma.RequestBody {
 	}
 }
 
-// bufferFleetProxyRequestBody bounds and consumes the browser request before
-// the hub resolves or dials a fleet member. The fleet adapter handles raw
-// requests, so Huma's MaxBodyBytes metadata is not enforced automatically.
+// bufferFleetProxyRequestBody bounds and consumes any browser request body
+// before the hub resolves or dials a fleet member. The fleet adapter handles
+// raw requests, so Huma's MaxBodyBytes metadata is not enforced automatically.
 func bufferFleetProxyRequestBody(w http.ResponseWriter, r *http.Request) bool {
 	if r.ContentLength > fleetProxyMaxBodyBytes {
 		writeProblemResponse(w, httpapi.NewProblem(

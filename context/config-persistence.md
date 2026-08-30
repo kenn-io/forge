@@ -15,6 +15,9 @@ back to TOML.
   (`internal/config/config.go::Fleet.Validate`,
   `internal/server/spoke_preparation.go::Server.persistPreparedSpokeRole`,
   `internal/server/settings_routes.go::Server.resetPreparedSpokeBinding`).
+- Enrollment-owned fleet mutations persist against the boot-pinned role,
+  origin, and hub binding; restart-required reload drift cannot redefine the
+  active topology (`internal/server/settings_routes.go::Server.mutatePersistedFleetChecked`).
 - Unsupported fleet fields fail config loading through the undecoded-key gate.
   Do not add migration parsing or derive spoke identity from removed display
   metadata; operators must remove unsupported fields and enroll spokes explicitly

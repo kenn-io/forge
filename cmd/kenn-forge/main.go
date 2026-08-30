@@ -1043,6 +1043,7 @@ func resolveStartupRepos(
 			// through its dedicated archive App on a fresh startup.
 			resolveCtx = ghclient.WithArchiveSyncBudget(ctx)
 		}
+		configuredProviderID := strings.TrimSpace(raw.PlatformRepoID)
 		_, expanded, err := ghclient.ResolveConfiguredRepoWithRegistry(
 			resolveCtx, registry, raw,
 		)
@@ -1055,7 +1056,9 @@ func resolveStartupRepos(
 			} else {
 				expanded = fallbackExactFromDB(ctx, database, raw)
 				if len(expanded) == 0 {
-					expanded = ghclient.FallbackConfiguredRepoRefs(nil, raw)
+					if configuredProviderID == "" {
+						expanded = ghclient.FallbackConfiguredRepoRefs(nil, raw)
+					}
 				} else {
 					// The catalog recovered a stable identity on a renamed
 					// route; without the alias, repo-scoped credentials for
@@ -1107,17 +1110,29 @@ func fallbackExactFromDB(
 	if repoPath == "" {
 		repoPath = raw.Owner + "/" + raw.Name
 	}
-	entries, err := database.ListRepositoryCatalog(ctx, db.RepositoryCatalogFilter{
+	filter := db.RepositoryCatalogFilter{
 		Platform:     raw.PlatformOrDefault(),
 		PlatformHost: raw.PlatformHostOrDefault(),
-		RepoPath:     repoPath,
 		Lifecycle:    db.RepositoryLifecycleActive,
-	})
+	}
+	if strings.TrimSpace(raw.PlatformRepoID) != "" {
+		filter.PlatformRepoID = raw.PlatformRepoID
+	} else {
+		filter.RepoPath = repoPath
+	}
+	entries, err := database.ListRepositoryCatalog(ctx, filter)
 	if err != nil {
 		slog.Warn("fallback exact from db", "err", err)
 		return nil
 	}
-	entry := catalogEntryForConfiguredRoute(entries, repoPath)
+	var entry *db.RepositoryCatalogEntry
+	if filter.PlatformRepoID != "" {
+		if len(entries) == 1 {
+			entry = &entries[0]
+		}
+	} else {
+		entry = catalogEntryForConfiguredRoute(entries, repoPath)
+	}
 	if entry == nil {
 		return nil
 	}

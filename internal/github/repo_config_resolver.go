@@ -247,9 +247,18 @@ func resolveConfiguredRepo(
 				raw.Owner, raw.Name, err,
 			)
 		}
+		resolved := repoRefFromRepository(raw, kind, host, repo)
+		configuredProviderID := strings.TrimSpace(raw.PlatformRepoID)
+		if configuredProviderID != "" &&
+			resolved.PlatformExternalID != configuredProviderID {
+			return status, nil, fmt.Errorf(
+				"resolve configured repo %s/%s: provider repository ID changed",
+				raw.Owner, raw.Name,
+			)
+		}
 		status.MatchedRepoCount = 1
-		status.PlatformRepoID = strings.TrimSpace(repo.PlatformExternalID)
-		return status, []RepoRef{repoRefFromRepository(raw, kind, host, repo)}, nil
+		status.PlatformRepoID = resolved.PlatformExternalID
+		return status, []RepoRef{resolved}, nil
 	}
 
 	repos, err := reader.ListRepositories(ctx, raw.Owner, platform.RepositoryListOptions{

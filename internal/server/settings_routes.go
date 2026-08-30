@@ -74,6 +74,10 @@ func (s *Server) mutatePersistedFleetChecked(
 	s.cfgMu.Lock()
 	defer s.cfgMu.Unlock()
 	candidate := cloneReloadedConfig(s.cfg)
+	active := s.activeFleetConfigSnapshotLocked().Fleet
+	candidate.Fleet.Role = active.Role
+	candidate.Fleet.BaseURL = active.BaseURL
+	candidate.Fleet.Hub = active.Hub
 	if err := mutate(&candidate.Fleet); err != nil {
 		return err
 	}

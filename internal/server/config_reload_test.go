@@ -2347,6 +2347,60 @@ func TestActiveFleetConfigSnapshotKeepsBootIdentity(t *testing.T) {
 	assert.Equal("4s", snapshot.Fleet.PeerTimeout)
 }
 
+func TestFleetMemberPersistenceUsesBootIdentityAfterReload(t *testing.T) {
+	require := require.New(t)
+	srv, _, cfgPath := setupTestServerWithConfigContent(t, `
+host = "127.0.0.1"
+port = 8091
+
+[api]
+require_auth = true
+
+[fleet]
+enabled = true
+role = "hub"
+base_url = "https://hub.example"
+`, &mockGH{})
+
+	writeConfigToml(t, cfgPath, `
+host = "127.0.0.1"
+port = 8091
+
+[api]
+require_auth = true
+
+[fleet]
+enabled = true
+role = "spoke"
+base_url = "https://spoke.example"
+
+[fleet.hub]
+node_id = "11111111111111111111111111111111"
+base_url = "https://replacement-hub.example"
+`)
+	event := srv.applyConfigChange(t.Context())
+	require.True(event.Valid, event.Error)
+	require.True(event.RestartRequired)
+	require.Equal(
+		config.FleetRoleHub,
+		srv.activeFleetConfigSnapshotLocked().Fleet.RoleOrDefault(),
+	)
+
+	member := config.FleetMember{
+		NodeID:  "22222222222222222222222222222222",
+		BaseURL: "https://spoke-a.example",
+		State:   "active",
+	}
+	require.NoError(srv.persistFleetMember(t.Context(), member))
+
+	persisted, err := config.Load(cfgPath)
+	require.NoError(err)
+	require.Equal(config.FleetRoleHub, persisted.Fleet.RoleOrDefault())
+	require.Equal("https://hub.example", persisted.Fleet.BaseURL)
+	require.Nil(persisted.Fleet.Hub)
+	require.Equal([]config.FleetMember{member}, persisted.Fleet.Members)
+}
+
 func TestRestartRequiredForFleetRoleAndHubBinding(t *testing.T) {
 	require := require.New(t)
 	base := &config.Config{

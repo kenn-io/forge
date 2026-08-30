@@ -590,6 +590,49 @@ func TestResolveStartupReposRecoversRenamedExactEntryFromCatalog(t *testing.T) {
 	assert.Equal("acme/tools", repos[0].ConfiguredRepoPath)
 }
 
+func TestResolveStartupReposUsesStableIdentityAfterRouteReuse(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := time.Now().UTC()
+	original := db.GitHubRepoIdentity("github.com", "acme", "tools")
+	original.PlatformRepoID = "repo-original"
+	_, _, err := database.ReconcileRepositoryObservation(
+		t.Context(), original, now.Add(-2*time.Hour),
+	)
+	require.NoError(err)
+	renamed := db.GitHubRepoIdentity("github.com", "acme", "tools-renamed")
+	renamed.PlatformRepoID = original.PlatformRepoID
+	_, _, err = database.ReconcileRepositoryObservation(
+		t.Context(), renamed, now.Add(-time.Hour),
+	)
+	require.NoError(err)
+	replacement := db.GitHubRepoIdentity("github.com", "acme", "tools")
+	replacement.PlatformRepoID = "repo-replacement"
+	_, _, err = database.ReconcileRepositoryObservation(t.Context(), replacement, now)
+	require.NoError(err)
+
+	cfg := &config.Config{Repos: []config.Repo{{
+		Owner: "acme", Name: "tools", PlatformRepoID: original.PlatformRepoID,
+	}}}
+	client := &testutil.FixtureClient{}
+	repos := resolveStartupRepos(
+		t.Context(), cfg,
+		mustProviderRegistry(t, map[string]ghclient.Client{"github.com": client}),
+		database, nil,
+	)
+
+	require.Len(repos, 1)
+	require.Equal(original.PlatformRepoID, repos[0].PlatformExternalID)
+	require.Equal("acme/tools-renamed", repos[0].RepoPath)
+
+	withoutCatalog := resolveStartupRepos(
+		t.Context(), cfg,
+		mustProviderRegistry(t, map[string]ghclient.Client{"github.com": client}),
+		nil, nil,
+	)
+	require.Empty(withoutCatalog, "a stable identity must not fall back to a reused route")
+}
+
 func TestResolveStartupReposRegistersCredentialAliasForCatalogFallback(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)

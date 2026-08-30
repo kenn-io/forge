@@ -901,7 +901,7 @@
 
   .preset-delete:disabled {
     cursor: not-allowed;
-    opacity: 0.5;
+    opacity: var(--opacity-disabled);
   }
 
   .typeahead-footer {

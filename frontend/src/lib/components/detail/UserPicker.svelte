@@ -262,7 +262,7 @@
 
   .user-picker__icon-button:disabled {
     cursor: default;
-    opacity: 0.42;
+    opacity: var(--opacity-disabled);
   }
 
   .user-picker__filter {
@@ -321,7 +321,7 @@
 
   .user-picker__row:disabled {
     cursor: wait;
-    opacity: 0.7;
+    opacity: var(--opacity-disabled);
   }
 
   .user-picker__avatar {

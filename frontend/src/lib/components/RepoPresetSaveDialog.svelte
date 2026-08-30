@@ -174,7 +174,7 @@
   }
 
   .preset-name-input:disabled {
-    opacity: 0.55;
+    opacity: var(--opacity-disabled);
   }
 
   :global(.preset-select) {

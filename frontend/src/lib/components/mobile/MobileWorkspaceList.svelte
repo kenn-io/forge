@@ -705,7 +705,7 @@
   .mobile-workspace-row__meta em { color: var(--accent-blue); font-style: normal; font-weight: 650; }
   .mobile-workspace-row__item, .mobile-workspace-row__more { align-self: center; min-width: 2.75rem; min-height: 2.75rem; margin: 0.25rem; border-radius: var(--radius-md) !important; }
   .mobile-workspace-row__item { height: 2rem; min-width: auto; min-height: 2rem; padding: 0 0.625rem !important; color: var(--text-on-accent) !important; background: var(--accent-green) !important; font-family: var(--font-mono) !important; font-weight: 700 !important; }
-  .mobile-workspace-row__item:disabled { cursor: not-allowed; opacity: 0.55; }
+  .mobile-workspace-row__item:disabled { cursor: not-allowed; opacity: var(--opacity-disabled); }
   .mobile-workspace-row__more { display: inline-flex; align-items: center; justify-content: center; color: var(--text-muted) !important; }
   .mobile-workspace-row button:focus-visible, .mobile-sheet-content button:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: -2px; }
   :global(.kit-modal-overlay:has(.mobile-sheet-content)) { align-items: flex-end; }

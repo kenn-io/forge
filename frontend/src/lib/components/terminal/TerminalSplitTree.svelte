@@ -611,7 +611,7 @@
   .leaf-title:disabled {
     color: var(--text-muted);
     cursor: default;
-    opacity: 0.65;
+    opacity: var(--opacity-disabled);
   }
 
   .terminal-leaf.active .leaf-title {
@@ -683,7 +683,7 @@
 
   .leaf-action:disabled {
     cursor: default;
-    opacity: 0.55;
+    opacity: var(--opacity-disabled);
   }
 
   .leaf-action:disabled:hover,

@@ -1015,7 +1015,7 @@
 
   .tabbed-panel-solo-actions :global(.tabbed-panel-tab-tool:disabled) {
     cursor: default;
-    opacity: 0.3;
+    opacity: var(--opacity-disabled);
   }
 
   .tabbed-panel-tabs {
@@ -1201,7 +1201,7 @@
 
   .tabbed-panel-leaf-actions :global(.tabbed-panel-tab-tool:disabled) {
     cursor: default;
-    opacity: 0.3;
+    opacity: var(--opacity-disabled);
   }
 
   .tabbed-panel-tab :global(.tabbed-panel-tab-tool:hover),

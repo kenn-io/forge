@@ -734,7 +734,7 @@
     font-weight: 600;
   }
 
-  .source-button:disabled { cursor: not-allowed; opacity: 0.55; }
+  .source-button:disabled { cursor: not-allowed; opacity: var(--opacity-disabled); }
 
   /* The picker defaults to a 300px cap, which reads as a misaligned control
      next to the full-width branch input. */

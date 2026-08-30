@@ -189,7 +189,7 @@
   }
 
   .save-btn:disabled {
-    opacity: 0.55;
+    opacity: var(--opacity-disabled);
     cursor: not-allowed;
   }
 

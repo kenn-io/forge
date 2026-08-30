@@ -61,6 +61,10 @@ otherwise fails only in the Vitest/Playwright transform tier, not in
   `high-contrast` classes on `<html>`. Frontend components additionally
   consume app tokens from `frontend/src/app.css` — style-asserting harnesses must load `app.css` like
   `browserAppHarness.ts`.
+- Disabled styling: native controls that dim when disabled use
+  `var(--opacity-disabled)` (kit's `hand-rolled-disabled-state` rule rejects a
+  literal); a deliberate no-dim rule uses `opacity: unset`, and hover rules
+  scoped to enabled buttons use `:enabled`, not `:not(:disabled)`.
 - Type scale: rem tokens self-adjust on coarse pointers; `kit-type-touch`
   on `<html>` forces the touch scale. Never pin `html { font-size }`.
 - Breakpoints are written in px (shared steps 640/760/900) — media-query
@@ -118,10 +122,13 @@ otherwise fails only in the Vitest/Playwright transform tier, not in
 - `AdaptiveActionGrid`: the phone PR primary-action surface. Phone-like PR
   routes (`phonePresentation` threaded from
   `frontend/src/App.svelte::phoneDetailProps`) render approve, merge, close,
-  reopen, ready, workflows, and the workspace action as one kit grid using
-  kit's joined mobile preset (`itemRadius="none"`, zero gaps and padding:
-  one rounded slab of shared-edge buttons), `collapseBelow={0}` (row or
-  equal tracks, never the disclosure), and the same per-action snippets the desktop `FitStages` row
+  reopen, ready, workflows, and the workspace action as one kit grid with
+  `layout="grid"` (kit's filled layout: equal tracks that span the container
+  at every width, balanced rows, never a natural-width row), the joined
+  preset (`itemRadius="none"`, zero gaps and padding: one rounded slab of
+  shared-edge buttons), `collapseBelow={0}` (never the disclosure),
+  `minTrackWidth={170}` so primary labels stay untruncated, and the same
+  per-action snippets the desktop `FitStages` row
   composes, so each stateful control still renders exactly once. Kit fills
   only its own direct controls in grid mode; compound wrappers
   (`approve-section`, `ready-section`, `workflow-approval-section`,

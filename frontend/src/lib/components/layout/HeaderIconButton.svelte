@@ -56,7 +56,7 @@
   }
 
   button:disabled {
-    opacity: 0.6;
+    opacity: var(--opacity-disabled);
     cursor: not-allowed;
   }
 

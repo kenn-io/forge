@@ -2757,13 +2757,14 @@
               class="phone-actions-grid"
               items={phoneActionItems}
               ariaLabel="Pull request actions"
+              layout="grid"
               radius="md"
               itemRadius="none"
               rowGap={0}
               columnGap={0}
               padding={0}
               collapseBelow={0}
-              minTrackWidth={140}
+              minTrackWidth={170}
             />
           {:else}
             <FitStages
@@ -3321,7 +3322,7 @@
   }
 
   .title-edit-save:disabled {
-    opacity: 0.5;
+    opacity: var(--opacity-disabled);
     cursor: not-allowed;
   }
 
@@ -3332,7 +3333,7 @@
   }
 
   .title-edit-cancel:disabled {
-    opacity: 0.5;
+    opacity: var(--opacity-disabled);
     cursor: not-allowed;
   }
 

@@ -172,7 +172,7 @@
 
   .review-suggestion__action:disabled {
     cursor: not-allowed;
-    opacity: 0.55;
+    opacity: var(--opacity-disabled);
   }
 
   .review-suggestion__action--primary {

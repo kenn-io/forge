@@ -226,7 +226,7 @@
   .launch-option:disabled {
     cursor: not-allowed;
     color: var(--text-muted);
-    opacity: 0.6;
+    opacity: var(--opacity-disabled);
   }
 
   .option-icon {

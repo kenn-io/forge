@@ -706,7 +706,7 @@
 
   .first-run-action__button:disabled {
     cursor: not-allowed;
-    opacity: 0.55;
+    opacity: var(--opacity-disabled);
   }
 
   .first-run-action__label {
@@ -778,7 +778,7 @@
   }
 
   .first-run-field input:disabled {
-    opacity: 0.6;
+    opacity: var(--opacity-disabled);
   }
 
   .first-run-field :global(.kit-select-dropdown) {
@@ -817,7 +817,7 @@
   .first-run-form__back:disabled,
   .first-run-form__body > button:disabled {
     cursor: not-allowed;
-    opacity: 0.55;
+    opacity: var(--opacity-disabled);
   }
 
   .first-run__error {

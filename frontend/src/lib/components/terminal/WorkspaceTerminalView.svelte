@@ -5092,7 +5092,7 @@
 
   .workspace-zero-inline-action :global(.workspace-zero-create-button:disabled) {
     cursor: default;
-    opacity: 0.72;
+    opacity: var(--opacity-disabled);
   }
 
   .workspace-zero-example-empty {
@@ -5158,7 +5158,7 @@
   }
 
   .retry-btn:disabled {
-    opacity: 0.6;
+    opacity: var(--opacity-disabled);
     cursor: wait;
   }
 
@@ -5250,7 +5250,7 @@
 
   .header-btn:disabled {
     cursor: not-allowed;
-    opacity: 0.6;
+    opacity: var(--opacity-disabled);
   }
 
   .header-btn.danger:hover:not(:disabled) {
@@ -5382,7 +5382,7 @@
     cursor: not-allowed;
     color: color-mix(in srgb, var(--text-muted) 75%, var(--bg-surface));
     background: var(--bg-surface);
-    opacity: 1;
+    opacity: unset;
   }
 
   .panel-toggle-group .panel-toggle-btn.active:disabled {

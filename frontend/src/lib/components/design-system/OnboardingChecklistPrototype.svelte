@@ -293,7 +293,7 @@
   .primary,
   .secondary { min-height: 32px; display: inline-flex; align-items: center; justify-content: center; gap: var(--space-3); padding: 0 var(--space-5); border-radius: var(--radius-md); font-weight: 650; }
   .primary { border: 1px solid var(--accent-blue); background: var(--accent-blue); color: var(--bg-primary); }
-  .primary:disabled { opacity: .45; cursor: not-allowed; }
+  .primary:disabled { opacity: var(--opacity-disabled); cursor: not-allowed; }
   .secondary { border: 1px solid var(--border-default); background: var(--bg-surface); color: var(--text-primary); }
   .surface-kicker { margin-bottom: var(--space-3) !important; color: var(--accent-blue) !important; font-size: var(--font-size-xs); font-weight: 700; letter-spacing: .08em; }
   .repo-chooser h2 { margin-bottom: var(--space-3); }

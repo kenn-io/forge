@@ -71,11 +71,14 @@ jobs:
               - scripts/run-roborev-e2e.sh
               - tests/integration/**
             docs:
+              - .vercelignore
               - docs/**
               - website/**
+              - vercel.json
               - scripts/build-docs.mjs
               - scripts/build-docs.test.mjs
               - scripts/docs-assets-sync.test.mjs
+              - scripts/docs-assets.ref
               - scripts/docs-assets.txt
               - scripts/docs-screenshots-command.test.mjs
               - scripts/generate-docs-screenshots.mjs

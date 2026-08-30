@@ -49,7 +49,7 @@ function sync(root, extraEnv = {}) {
   });
 }
 
-test("asset sync publishes one complete local generation", async (t) => {
+test("asset sync publishes the pinned generation instead of a newer branch tip", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "kenn-forge-docs-assets-test-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await initRepo(root);
@@ -59,6 +59,10 @@ test("asset sync publishes one complete local generation", async (t) => {
   await writeAssetSet(root);
   git(root, "add", ".");
   git(root, "commit", "-m", "assets");
+  const pinnedRef = git(root, "rev-parse", "HEAD").stdout.trim();
+  await writeFile(path.join(root, assets[0]), "<svg><title>newer unreviewed generation</title></svg>\n");
+  git(root, "add", assets[0]);
+  git(root, "commit", "-m", "newer assets");
   git(root, "checkout", "main");
   const manifest = path.join(root, "docs-assets-test.txt");
   await writeFile(manifest, `${assets.join("\n")}\n`);
@@ -67,7 +71,10 @@ test("asset sync publishes one complete local generation", async (t) => {
   await mkdir(destination, { recursive: true });
   await writeFile(path.join(destination, "stale.svg"), "stale\n");
 
-  const result = sync(root, { DOCS_ASSETS_MANIFEST: manifest });
+  const result = sync(root, {
+    DOCS_ASSETS_MANIFEST: manifest,
+    DOCS_ASSETS_REF: pinnedRef,
+  });
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.deepEqual(
     (await readdir(destination)).filter((entry) => entry.endsWith(".svg")).sort(),
@@ -82,6 +89,35 @@ test("asset sync publishes one complete local generation", async (t) => {
   assert.match(generationManifest, /second-workflow\.svg/);
 });
 
+test("asset sync rejects an unsafe pinned SVG without replacing the current generation", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "kenn-forge-docs-assets-test-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await initRepo(root);
+
+  git(root, "checkout", "--orphan", "docs-assets");
+  git(root, "rm", "-rf", ".");
+  await writeAssetSet(root);
+  await writeFile(path.join(root, assets[0]), '<svg><script>alert("unsafe")</script></svg>\n');
+  git(root, "add", ".");
+  git(root, "commit", "-m", "unsafe assets");
+  const pinnedRef = git(root, "rev-parse", "HEAD").stdout.trim();
+  git(root, "checkout", "main");
+  const manifest = path.join(root, "docs-assets-test.txt");
+  await writeFile(manifest, `${assets.join("\n")}\n`);
+
+  const destination = path.join(root, "docs", "assets", "generated");
+  await mkdir(destination, { recursive: true });
+  await writeFile(path.join(destination, "current.svg"), "current generation\n");
+
+  const result = sync(root, {
+    DOCS_ASSETS_MANIFEST: manifest,
+    DOCS_ASSETS_REF: pinnedRef,
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /unsafe SVG/);
+  assert.equal(await readFile(path.join(destination, "current.svg"), "utf8"), "current generation\n");
+});
+
 test("asset sync leaves the current generation intact when the fetched branch is incomplete", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "kenn-forge-docs-assets-test-"));
   const remote = await mkdtemp(path.join(os.tmpdir(), "kenn-forge-docs-assets-remote-"));
@@ -94,6 +130,7 @@ test("asset sync leaves the current generation intact when the fetched branch is
   await writeAssetSet(root, [assets[0]]);
   git(root, "add", ".");
   git(root, "commit", "-m", "incomplete assets");
+  const pinnedRef = git(root, "rev-parse", "HEAD").stdout.trim();
   git(root, "checkout", "main");
   const manifest = path.join(root, "docs-assets-test.txt");
   await writeFile(manifest, `${assets.join("\n")}\n`);
@@ -107,6 +144,7 @@ test("asset sync leaves the current generation intact when the fetched branch is
   const result = sync(root, {
     DOCS_ASSETS_MANIFEST: manifest,
     DOCS_ASSETS_REMOTE: "fixture-origin",
+    DOCS_ASSETS_REF: pinnedRef,
   });
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /incomplete/);

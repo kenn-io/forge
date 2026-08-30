@@ -44,10 +44,11 @@ screenshots, or the Zensical site.
   (`scripts/build-docs.mjs::verifySiteRoot`)
 - User-facing workflow screenshots are generated only by `make docs-screenshots`
   and must not be tracked on the main branch. Publish one complete current set
-  at the root of the orphan `docs-assets` branch; docs builds materialize that
-  set into the ignored `docs/assets/generated/` cache. Playwright captures in
-  `docs/screenshots/` use the real seeded e2e backend, not mocked API fixtures
-  or a developer daemon. (`scripts/sync-docs-assets.sh`)
+  at the root of the orphan `docs-assets` branch, then review its full commit
+  SHA through `scripts/docs-assets.ref`; docs builds validate and materialize
+  only that pinned set into the ignored `docs/assets/generated/` cache.
+  Playwright captures in `docs/screenshots/` use the real seeded e2e backend,
+  not mocked API fixtures or a developer daemon. (`scripts/sync-docs-assets.sh`)
 - Generated workflow screenshots must use native SVG geometry, not XHTML in
   `foreignObject`; WebKit clips responsive `foreignObject` images.
   (`docs/screenshots/docs-screenshots.spec.ts::nativeSVGSnapshot`)

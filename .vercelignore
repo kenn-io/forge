@@ -39,6 +39,7 @@
 !/scripts
 /scripts/*
 !/scripts/build-docs.mjs
+!/scripts/docs-assets.ref
 !/scripts/docs-assets.txt
 !/scripts/sync-docs-assets.sh
 !/scripts/vercel-build-docs.sh

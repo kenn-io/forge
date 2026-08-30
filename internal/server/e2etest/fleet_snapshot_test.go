@@ -66,6 +66,9 @@ func bootFleetServerWithNodeID(
 	if cfg.Tmux.Command == nil {
 		cfg.Tmux.Command = []string{"kenn-forge-no-such-tmux"}
 	}
+	enrollments := activeHubEnrollmentsForTest(
+		t, nodeID, cfg.Fleet.BaseURL, cfg.Fleet.Members,
+	)
 	credentials, err := federationauth.Open(filepath.Join(
 		t.TempDir(), "federation-credentials.json",
 	))
@@ -90,6 +93,7 @@ func bootFleetServerWithNodeID(
 	}}
 	srv := servertest.New(t, database, syncer, nil, "/", cfg, server.ServerOptions{
 		FederationCredentials:              credentials,
+		FederationEnrollments:              enrollments,
 		FederationSpokeID:                  nodeID,
 		FederationHTTPClient:               federationClient,
 		WorktreeDir:                        t.TempDir(),

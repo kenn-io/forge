@@ -30,6 +30,7 @@ import (
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/pullapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/federationtest"
 )
 
 const (
@@ -81,6 +82,7 @@ type federatedDaemonFixture struct {
 	LocalToken  string
 	Database    *db.DB
 	Credentials *federationauth.Store
+	Enrollments *federation.Store
 	Server      *server.Server
 	HTTP        *httptest.Server
 	Switch      *switchableFederationHandler
@@ -216,9 +218,14 @@ func newFederatedDaemonOrigin(
 		t.TempDir(), "federation-credentials.json",
 	))
 	require.NoError(t, err)
+	enrollments, err := federation.Open(
+		filepath.Join(t.TempDir(), "federation-enrollments.json"),
+		federation.StoreOptions{},
+	)
+	require.NoError(t, err)
 	return &federatedDaemonFixture{
 		NodeID: nodeID, Name: name, LocalToken: name + "-local-secret",
-		Database: dbtest.Open(t), Credentials: credentials,
+		Database: dbtest.Open(t), Credentials: credentials, Enrollments: enrollments,
 		HTTP: httpServer, Switch: handler,
 	}
 }
@@ -244,6 +251,20 @@ func connectFederationCredentials(
 	hub, spoke *federatedDaemonFixture,
 ) string {
 	t.Helper()
+	enrollment, err := federationtest.SeedActiveHubEnrollment(
+		t.Context(), hub.Enrollments,
+		federation.Identity{
+			NodeID: hub.NodeID, Name: hub.Name, BaseURL: hub.HTTP.URL,
+		},
+		federation.Identity{
+			NodeID: spoke.NodeID, Name: spoke.Name, BaseURL: spoke.HTTP.URL,
+		},
+		spoke.NodeID,
+	)
+	require.NoError(t, err)
+	require.NoError(t, federationtest.SeedActiveSpokeEnrollment(
+		t.Context(), spoke.Enrollments, enrollment,
+	))
 	spokeToHub, err := hub.Credentials.MintInbound(
 		spoke.NodeID, federationauth.SpokeToHubScopes(),
 	)
@@ -289,7 +310,9 @@ func newFederatedDaemonServer(
 			Token: daemon.LocalToken, RequireAPIAuth: true,
 		},
 		FederationSpokeID: daemon.NodeID, FederationSpokeActive: activeSpoke,
-		FederationCredentials: daemon.Credentials, FederationHTTPClient: client,
+		FederationCredentials:              daemon.Credentials,
+		FederationEnrollments:              daemon.Enrollments,
+		FederationHTTPClient:               client,
 		WorktreeDir:                        filepath.Join(t.TempDir(), "worktrees"),
 		DisableWorkspaceBackgroundMonitors: true,
 		HostCheck: server.HostCheckOptions{

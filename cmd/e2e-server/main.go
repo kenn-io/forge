@@ -43,6 +43,7 @@ import (
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/stacks"
 	"go.kenn.io/forge/internal/testutil"
+	"go.kenn.io/forge/internal/testutil/federationtest"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/internal/web"
 	"go.kenn.io/forge/internal/workspace"
@@ -879,6 +880,7 @@ type appOptions struct {
 type e2eFederationRuntime struct {
 	fleet       config.Fleet
 	credentials *federationauth.Store
+	enrollments *federation.Store
 	httpClient  *http.Client
 	activeSpoke bool
 	localToken  string
@@ -1747,6 +1749,7 @@ func buildAppState(
 			Token: opts.federation.localToken, RequireAPIAuth: true,
 		}
 		serverOptions.FederationCredentials = opts.federation.credentials
+		serverOptions.FederationEnrollments = opts.federation.enrollments
 		serverOptions.FederationHTTPClient = opts.federation.httpClient
 		serverOptions.FederationSpokeActive = opts.federation.activeSpoke
 		serverOptions.DisableWorkspaceBackgroundMonitors = true
@@ -3103,6 +3106,27 @@ func runFederatedForgesE2E(
 	if err != nil {
 		return err
 	}
+	hubEnrollments, err := federation.Open(
+		filepath.Join(credentialDir, "hub-enrollments.json"),
+		federation.StoreOptions{},
+	)
+	if err != nil {
+		return err
+	}
+	spokeAEnrollments, err := federation.Open(
+		filepath.Join(credentialDir, "spoke-a-enrollments.json"),
+		federation.StoreOptions{},
+	)
+	if err != nil {
+		return err
+	}
+	spokeBEnrollments, err := federation.Open(
+		filepath.Join(credentialDir, "spoke-b-enrollments.json"),
+		federation.StoreOptions{},
+	)
+	if err != nil {
+		return err
+	}
 	if err := connectE2EFederationCredentials(
 		hubCredentials, spokeACredentials,
 		e2eHubNodeID, e2eSpokeANodeID,
@@ -3112,6 +3136,18 @@ func runFederatedForgesE2E(
 	if err := connectE2EFederationCredentials(
 		hubCredentials, spokeBCredentials,
 		e2eHubNodeID, e2eSpokeBNodeID,
+	); err != nil {
+		return err
+	}
+	if err := seedE2EFederationEnrollment(
+		ctx, hubEnrollments, spokeAEnrollments,
+		e2eHubNodeID, hubHTTP.URL, e2eSpokeANodeID, spokeAHTTP.URL,
+	); err != nil {
+		return err
+	}
+	if err := seedE2EFederationEnrollment(
+		ctx, hubEnrollments, spokeBEnrollments,
+		e2eHubNodeID, hubHTTP.URL, e2eSpokeBNodeID, spokeBHTTP.URL,
 	); err != nil {
 		return err
 	}
@@ -3133,7 +3169,8 @@ func runFederatedForgesE2E(
 					{NodeID: e2eSpokeBNodeID, Name: "Spoke B", BaseURL: spokeBHTTP.URL, State: federation.EnrollmentActive},
 				},
 			},
-			credentials: hubCredentials, httpClient: federationClient,
+			credentials: hubCredentials, enrollments: hubEnrollments,
+			httpClient: federationClient,
 			localToken: hubToken,
 		},
 	})
@@ -3146,6 +3183,7 @@ func runFederatedForgesE2E(
 	spokeState := func(
 		nodeID, baseURL, workspaceID, token string,
 		credentials *federationauth.Store,
+		enrollments *federation.Store,
 		itemNumber int,
 	) (*appState, error) {
 		return buildAppState(ctx, assets, appOptions{
@@ -3160,7 +3198,8 @@ func runFederatedForgesE2E(
 						BaseURL: hubHTTP.URL,
 					},
 				},
-				credentials: credentials, httpClient: federationClient,
+				credentials: credentials, enrollments: enrollments,
+				httpClient:  federationClient,
 				activeSpoke: true, localToken: token,
 				workspaceID: workspaceID, itemNumber: itemNumber,
 			},
@@ -3168,7 +3207,7 @@ func runFederatedForgesE2E(
 	}
 	spokeAState, err := spokeState(
 		e2eSpokeANodeID, spokeAHTTP.URL, "federated-spoke-a-workspace",
-		spokeAToken, spokeACredentials, 1,
+		spokeAToken, spokeACredentials, spokeAEnrollments, 1,
 	)
 	if err != nil {
 		return err
@@ -3177,7 +3216,7 @@ func runFederatedForgesE2E(
 	spokeASwitch.Set(spokeAState.handler)
 	spokeBState, err := spokeState(
 		e2eSpokeBNodeID, spokeBHTTP.URL, "federated-spoke-b-workspace",
-		spokeBToken, spokeBCredentials, 2,
+		spokeBToken, spokeBCredentials, spokeBEnrollments, 2,
 	)
 	if err != nil {
 		return err
@@ -3223,6 +3262,23 @@ func e2eFederationHTTPClient(origins ...*httptest.Server) *http.Client {
 	return &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{
 		RootCAs: roots, MinVersion: tls.VersionTLS12,
 	}}, Timeout: 15 * time.Second}
+}
+
+func seedE2EFederationEnrollment(
+	ctx context.Context,
+	hub, spoke *federation.Store,
+	hubNodeID, hubBaseURL, spokeNodeID, spokeBaseURL string,
+) error {
+	enrollment, err := federationtest.SeedActiveHubEnrollment(
+		ctx, hub,
+		federation.Identity{NodeID: hubNodeID, BaseURL: hubBaseURL},
+		federation.Identity{NodeID: spokeNodeID, BaseURL: spokeBaseURL},
+		spokeNodeID,
+	)
+	if err != nil {
+		return err
+	}
+	return federationtest.SeedActiveSpokeEnrollment(ctx, spoke, enrollment)
 }
 
 func connectE2EFederationCredentials(

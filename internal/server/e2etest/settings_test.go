@@ -22,6 +22,7 @@ import (
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/fleet"
 	"go.kenn.io/forge/internal/github"
@@ -221,8 +222,14 @@ state = "active"
 	srv, _, cfgPath := setupTestServerWithConfigContentAndOptions(
 		t, configText, &mockGH{}, server.ServerOptions{
 			FederationCredentials: credentials,
-			FederationSpokeID:     hubID,
-			FederationHTTPClient:  peer.Client(),
+			FederationEnrollments: activeHubEnrollmentsForTest(
+				t, hubID, "https://hub.example", []config.FleetMember{{
+					NodeID: memberID, Name: "Remote", BaseURL: peer.URL,
+					State: federation.EnrollmentActive,
+				}},
+			),
+			FederationSpokeID:    hubID,
+			FederationHTTPClient: peer.Client(),
 		},
 	)
 	ts := httptest.NewServer(srv)

@@ -1873,6 +1873,9 @@ func buildAppState(
 					return
 				}
 			}
+			// This dedicated offline fixture intentionally serves the exact
+			// github.com fork URL through its process-local HTTP proxy.
+			diffRepo.Manager.SetAllowInsecureHTTP("github", "github.com", true)
 			forkSnapshot.HeadRepoCloneURL = "http://github.com/forker/widgets.git"
 			_, accepted, err := database.UpsertMergeRequestSnapshot(
 				r.Context(), &forkSnapshot,

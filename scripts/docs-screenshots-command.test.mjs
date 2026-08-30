@@ -3,11 +3,29 @@ import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 
+import { minifyNativeSVG } from "./generate-docs-screenshots.mjs";
+
 async function readJSON(path) {
   return JSON.parse(await readFile(path, "utf8"));
 }
 
-test("docs build uses root Playwright dependencies", async () => {
+test("published SVGs keep text while compacting path geometry", () => {
+  const source = [
+    '<?xml version="1.0"?>',
+    '<svg xmlns="http://www.w3.org/2000/svg">',
+    "  <title>Workflow screenshot</title>",
+    '  <path d="M 0.123456 0 L -0.654321 7.000000 Z"/>',
+    "</svg>",
+    "",
+  ].join("\n");
+
+  assert.equal(
+    minifyNativeSVG(source),
+    '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"><title>Workflow screenshot</title><path d="M.123 0L-.654 7Z"/></svg>\n',
+  );
+});
+
+test("docs screenshot generation is an independent Playwright command", async () => {
   const [rootPkg, spec, config, readme] = await Promise.all([
     readJSON("package.json"),
     readFile("docs/screenshots/docs-screenshots.spec.ts", "utf8"),
@@ -15,7 +33,6 @@ test("docs build uses root Playwright dependencies", async () => {
     readFile("docs/screenshots/README.md", "utf8"),
   ]);
 
-  assert.equal(rootPkg.scripts?.["docs:build"], "node scripts/build-docs.mjs");
   // The exact version is checked against the CI container by
   // scripts/check-playwright-version.mjs; here only the exact-pin shape
   // matters, so Playwright bumps don't have to touch this test.
@@ -25,21 +42,9 @@ test("docs build uses root Playwright dependencies", async () => {
     "root package.json must pin an exact @playwright/test version",
   );
 
-  const list = spawnSync(
-    process.execPath,
-    [
-      "node_modules/vite-plus/bin/vp",
-      "exec",
-      "--",
-      "playwright",
-      "test",
-      "--config",
-      "docs/screenshots/playwright.config.ts",
-      "--project=chromium",
-      "--list",
-    ],
-    { encoding: "utf8" },
-  );
+  const list = spawnSync(process.execPath, ["scripts/generate-docs-screenshots.mjs", "--list"], {
+    encoding: "utf8",
+  });
   assert.equal(list.status, 0, list.stderr || list.stdout);
   assert.match(list.stdout, /docs workflow screenshots/);
 

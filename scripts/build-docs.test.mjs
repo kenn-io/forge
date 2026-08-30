@@ -5,14 +5,13 @@ import path from "node:path";
 import { test } from "node:test";
 
 import * as docsBuild from "./build-docs.mjs";
+import { docsSiteProjectArgs } from "./verify-docs-site.mjs";
 
 const { stageDocsSource } = docsBuild;
 
-test("docs site browser projects can be restricted by the deployment environment", () => {
-  const projectArgs = docsBuild.docsSiteProjectArgs?.({ KENN_FORGE_DOCS_SITE_PROJECT: "chromium" }) ?? [];
-
-  assert.deepEqual(projectArgs, ["--project=chromium"]);
-  assert.deepEqual(docsBuild.docsSiteProjectArgs?.({ KENN_FORGE_DOCS_SITE_PROJECT: "all" }), []);
+test("docs site browser projects can be restricted by the verification environment", () => {
+  assert.deepEqual(docsSiteProjectArgs({ KENN_FORGE_DOCS_SITE_PROJECT: "chromium" }), ["--project=chromium"]);
+  assert.deepEqual(docsSiteProjectArgs({ KENN_FORGE_DOCS_SITE_PROJECT: "all" }), []);
 });
 
 test("docs staging includes only public site inputs", async (t) => {
@@ -21,6 +20,7 @@ test("docs staging includes only public site inputs", async (t) => {
 
   const source = path.join(root, "source");
   const staged = path.join(root, "staged");
+  const generatedAssets = path.join(root, "generated-assets");
   const favicon = path.join(root, "frontend", "public", "favicon.svg");
   await mkdir(path.join(source, "stylesheets"), { recursive: true });
   await mkdir(path.join(source, "workflows"), { recursive: true });
@@ -30,6 +30,7 @@ test("docs staging includes only public site inputs", async (t) => {
   await mkdir(path.join(source, "adr"), { recursive: true });
   await mkdir(path.join(source, "reports"), { recursive: true });
   await mkdir(path.join(source, "screenshots"), { recursive: true });
+  await mkdir(generatedAssets, { recursive: true });
   await mkdir(path.dirname(favicon), { recursive: true });
   await writeFile(path.join(source, "index.md"), "# Docs\n");
   await writeFile(path.join(source, "kenn-forge-mcp.md"), "# MCP\n");
@@ -44,9 +45,11 @@ test("docs staging includes only public site inputs", async (t) => {
   await writeFile(path.join(source, "screenshots", "README.md"), "# Build only\n");
   await writeFile(path.join(source, "workflows", "internal.md"), "# Private\n");
   await writeFile(path.join(source, "stylesheets", "internal.css"), ":root {}\n");
+  await writeFile(path.join(generatedAssets, "workflow.svg"), "<svg><title>workflow</title></svg>\n");
+  await writeFile(path.join(generatedAssets, ".docs-assets.synced"), "not public\n");
   await writeFile(favicon, "<svg><title>canonical favicon</title></svg>\n");
 
-  await stageDocsSource(source, staged, favicon);
+  await stageDocsSource(source, staged, favicon, generatedAssets);
 
   assert.equal(await readFile(path.join(staged, "index.md"), "utf8"), "# Docs\n");
   assert.equal(await readFile(path.join(staged, "kenn-forge-mcp.md"), "utf8"), "# MCP\n");
@@ -57,6 +60,13 @@ test("docs staging includes only public site inputs", async (t) => {
     await readFile(path.join(staged, "assets", "favicon.svg"), "utf8"),
     "<svg><title>canonical favicon</title></svg>\n",
   );
+  assert.equal(
+    await readFile(path.join(staged, "assets", "generated", "workflow.svg"), "utf8"),
+    "<svg><title>workflow</title></svg>\n",
+  );
+  await assert.rejects(readFile(path.join(staged, "assets", "generated", ".docs-assets.synced"), "utf8"), {
+    code: "ENOENT",
+  });
 
   for (const internalPath of [
     "assets/generated/stale.svg",

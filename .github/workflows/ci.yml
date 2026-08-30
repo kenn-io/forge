@@ -75,7 +75,12 @@ jobs:
               - website/**
               - scripts/build-docs.mjs
               - scripts/build-docs.test.mjs
+              - scripts/docs-assets-sync.test.mjs
+              - scripts/docs-assets.txt
               - scripts/docs-screenshots-command.test.mjs
+              - scripts/generate-docs-screenshots.mjs
+              - scripts/sync-docs-assets.sh
+              - scripts/verify-docs-site.mjs
               - scripts/vercel-build-docs.sh
               - scripts/vercel-install-docs.sh
             ci:
@@ -179,11 +184,6 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
-        with:
-          go-version-file: go.mod
-          cache: false
-
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           version: "0.12.3"
@@ -200,10 +200,13 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Build and verify documentation in Chromium and WebKit
+      - name: Build documentation from published assets
+        run: node scripts/build-docs.mjs
+
+      - name: Verify rendered documentation in Chromium and WebKit
         env:
           KENN_FORGE_DOCS_SITE_PROJECT: all
-        run: bash scripts/vercel-build-docs.sh
+        run: node scripts/verify-docs-site.mjs
 
   lint:
     runs-on: ${{ github.repository == 'kenn-io/forge' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && 'kenn-linux-x64-public' || 'ubuntu-latest' }}

@@ -1100,8 +1100,15 @@ async function captureCase(page: Page, baseURL: string, capture: CaptureCase): P
   if (capture.name === "mobile-workspace-session") {
     const workspace = page.getByRole("region", { name: "Workspace terminal" });
     await expect(workspace.getByRole("combobox", { name: /Terminal session/ })).toContainText("Codex");
-    await expect(workspace.getByRole("textbox", { name: "Terminal command" })).toHaveValue("Summarize recent commits");
+    const composer = workspace.getByRole("textbox", { name: "Terminal command" });
+    await expect(composer).toHaveValue("Summarize recent commits");
     await expect(workspace.locator(".docs-mobile-codex-transcript")).toContainText("3 passed, 0 failed");
+    await expect
+      .poll(async () => {
+        const box = await composer.boundingBox();
+        return box ? Math.ceil(box.y + box.height) : Number.POSITIVE_INFINITY;
+      })
+      .toBeLessThanOrEqual(page.viewportSize()?.height ?? 844);
   }
 
   if (capture.name === "workspace-pr-details") {

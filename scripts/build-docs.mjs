@@ -37,13 +37,17 @@ function isPublishedDocsInput(sourceDir, candidate) {
   return publishedFiles.has(relative) || publishedDirectoryEntries.has(relative);
 }
 
-export async function stageDocsSource(sourceDir, destinationDir, faviconSource) {
+export async function stageDocsSource(sourceDir, destinationDir, faviconSource, generatedAssetsSource) {
   await cp(sourceDir, destinationDir, {
     recursive: true,
     filter: (candidate) => isPublishedDocsInput(sourceDir, candidate),
   });
   await mkdir(path.join(destinationDir, "assets"), { recursive: true });
   await copyFile(faviconSource, path.join(destinationDir, "assets", "favicon.svg"));
+  await cp(generatedAssetsSource, path.join(destinationDir, "assets", "generated"), {
+    recursive: true,
+    filter: (candidate) => candidate === generatedAssetsSource || candidate.endsWith(".svg"),
+  });
 }
 
 export function publishedMarkdownPages() {
@@ -128,11 +132,6 @@ function run(command, args, options = {}) {
   });
 }
 
-export function docsSiteProjectArgs(env = process.env) {
-  const project = env.KENN_FORGE_DOCS_SITE_PROJECT;
-  return project && project !== "all" ? [`--project=${project}`] : [];
-}
-
 export async function buildDocs() {
   const sourceDir = path.join(repoRoot, "docs");
   const siteDir = path.join(repoRoot, "site");
@@ -140,31 +139,17 @@ export async function buildDocs() {
   const stagedDocs = path.join(stagingRoot, "docs");
 
   try {
-    await stageDocsSource(sourceDir, stagedDocs, path.join(repoRoot, "frontend", "public", "favicon.svg"));
-    await copyFile(path.join(sourceDir, "zensical.toml"), path.join(stagingRoot, "zensical.toml"));
-
-    await run(
-      process.execPath,
-      [
-        path.join(repoRoot, "node_modules", "vite-plus", "bin", "vp"),
-        "exec",
-        "--",
-        "playwright",
-        "test",
-        "--config",
-        path.join(repoRoot, "docs", "screenshots", "playwright.config.ts"),
-        "--project=chromium",
-        "--output",
-        path.join(stagingRoot, "test-results"),
-      ],
-      {
-        cwd: repoRoot,
-        env: {
-          ...process.env,
-          KENN_FORGE_DOCS_SCREENSHOT_DIR: path.join(stagedDocs, "assets", "generated"),
-        },
-      },
+    await run("bash", [path.join(repoRoot, "scripts", "sync-docs-assets.sh")], {
+      cwd: repoRoot,
+      env: process.env,
+    });
+    await stageDocsSource(
+      sourceDir,
+      stagedDocs,
+      path.join(repoRoot, "frontend", "public", "favicon.svg"),
+      path.join(sourceDir, "assets", "generated"),
     );
+    await copyFile(path.join(sourceDir, "zensical.toml"), path.join(stagingRoot, "zensical.toml"));
 
     await run("uvx", ["--from", `zensical==${zensicalVersion}`, "zensical", "build"], {
       cwd: stagingRoot,
@@ -178,29 +163,6 @@ export async function buildDocs() {
       path.join(stagingRoot, "site"),
     );
     await verifySiteRoot(path.join(stagingRoot, "site"));
-
-    await run(
-      process.execPath,
-      [
-        path.join(repoRoot, "node_modules", "vite-plus", "bin", "vp"),
-        "exec",
-        "--",
-        "playwright",
-        "test",
-        "--config",
-        path.join(repoRoot, "docs", "site", "playwright.config.ts"),
-        ...docsSiteProjectArgs(),
-        "--output",
-        path.join(stagingRoot, "site-test-results"),
-      ],
-      {
-        cwd: repoRoot,
-        env: {
-          ...process.env,
-          KENN_FORGE_DOCS_SITE_DIR: path.join(stagingRoot, "site"),
-        },
-      },
-    );
 
     await rm(siteDir, { recursive: true, force: true });
     await cp(path.join(stagingRoot, "site"), siteDir, { recursive: true });

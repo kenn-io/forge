@@ -620,6 +620,7 @@ func TestTailscaleServeUsersRejectInvalidConfiguration(t *testing.T) {
 		name  string
 		block string
 	}{
+		{name: "enabled without API auth", block: "enabled = true\nallowed_users = [\"user@example.com\"]"},
 		{name: "enabled without users", block: "enabled = true"},
 		{name: "empty user", block: "enabled = true\nallowed_users = [\"\"]"},
 		{name: "display name", block: "enabled = true\nallowed_users = [\"User <user@example.com>\"]"},

@@ -136,9 +136,9 @@ and the root event stream.
   named pipes are not lifecycle requirements. Background startup rejects
   non-loopback listeners before launching
   (`cmd/kenn-forge/start_background.go::validateBackgroundConfig`).
-- `[api.tailscale_serve]` authorizes allowlisted Tailscale users only for direct-loopback REST, SSE, and WebSocket requests with one valid identity header.
+- `[api.tailscale_serve]` requires API authentication and authorizes allowlisted Tailscale users only for direct-loopback REST, SSE, and WebSocket requests with one valid identity header.
   This startup-bound mode trusts every local process and suits only trusted hosts; policy edits require restart and never change federation credentials
-  (`internal/server/daemon_access.go::daemonRequestPolicy.acceptsTailscaleServeUser`, `internal/server/config_reload.go::startupConfigSnapshot`).
+  (`internal/config/config.go::Config.validate`, `internal/server/daemon_access.go::daemonRequestPolicy.acceptsTailscaleServeUser`).
 - `fleet setup` keeps Forge on loopback with API auth; `--tailscale` owns one
   Serve mapping, while `--origin` leaves ingress and browser auth to the operator
   (`internal/fleetsetup/setup.go::configureCandidate`).

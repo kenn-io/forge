@@ -1359,6 +1359,9 @@ func (c *Config) validate() error {
 	if err := c.API.TailscaleServe.Validate(); err != nil {
 		return err
 	}
+	if c.API.TailscaleServe.Enabled && !c.API.RequireAuth {
+		return errors.New("config: api.tailscale_serve.enabled requires api.require_auth = true")
+	}
 	if c.Fleet.Enabled && !c.API.RequireAuth {
 		return errors.New("config: fleet.enabled requires api.require_auth = true")
 	}

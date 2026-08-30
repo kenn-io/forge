@@ -168,14 +168,15 @@ type RawSession struct {
 }
 
 // RawWorkspace is a detached, spoke-owned workspace summary. The raw producer
-// fills execution fields only; provider fields are populated by the
-// hub after aggregate construction.
+// fills execution fields and source-link visibility; provider display fields
+// are populated by the hub after aggregate construction.
 type RawWorkspace struct {
 	HostKey               string             `json:"hostKey,omitempty"`
 	ID                    string             `json:"id"`
 	Repository            RepositoryIdentity `json:"repository"`
 	ItemType              string             `json:"itemType"`
 	ItemNumber            int                `json:"itemNumber"`
+	SourceItemVisible     bool               `json:"sourceItemVisible"`
 	ItemKey               string             `json:"itemKey,omitempty"`
 	GitHeadRef            string             `json:"gitHeadRef"`
 	WorktreePath          string             `json:"worktreePath"`

@@ -8000,6 +8000,7 @@ export interface components {
             mrTitle?: string;
             repository: components["schemas"]["RepositoryIdentity"];
             sessionBackend?: string;
+            sourceItemVisible: boolean;
             status: string;
             tmuxActivitySource?: string;
             tmuxLastOutputAt?: string;

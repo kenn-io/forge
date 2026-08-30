@@ -4158,6 +4158,7 @@ type RawWorkspace struct {
 	MrTitle               *string            `json:"mrTitle,omitempty"`
 	Repository            RepositoryIdentity `json:"repository"`
 	SessionBackend        *string            `json:"sessionBackend,omitempty"`
+	SourceItemVisible     bool               `json:"sourceItemVisible"`
 	Status                string             `json:"status"`
 	TmuxActivitySource    *string            `json:"tmuxActivitySource,omitempty"`
 	TmuxLastOutputAt      *string            `json:"tmuxLastOutputAt,omitempty"`

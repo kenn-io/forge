@@ -350,7 +350,7 @@ func worktreeFromWorkspace(sum fleet.RawWorkspace, wtKey, projKey string) fleet.
 		SessionBackend: sum.SessionBackend,
 	}
 	if sum.ItemType == db.WorkspaceItemTypeIssue {
-		if sum.ItemNumber > 0 {
+		if sum.SourceItemVisible && sum.ItemNumber > 0 {
 			wt.LinkedIssueNumbers = []int{sum.ItemNumber}
 		}
 		// AssociatedPRNumber is the PR linked to the issue, if any. The
@@ -370,6 +370,9 @@ func worktreeFromWorkspace(sum fleet.RawWorkspace, wtKey, projKey string) fleet.
 		if sum.AssociatedPRNumber != nil {
 			wt.LinkedPRNumber = sum.AssociatedPRNumber
 		}
+		return wt
+	}
+	if sum.ItemType == db.WorkspaceItemTypePullRequest && !sum.SourceItemVisible {
 		return wt
 	}
 	// Pull-request workspaces carry only their stable link number. Provider

@@ -6606,6 +6606,8 @@ components:
           $ref: "#/components/schemas/RepositoryIdentity"
         sessionBackend:
           type: string
+        sourceItemVisible:
+          type: boolean
         status:
           type: string
         tmuxActivitySource:
@@ -6627,6 +6629,7 @@ components:
         - repository
         - itemType
         - itemNumber
+        - sourceItemVisible
         - gitHeadRef
         - worktreePath
         - tmuxWorking

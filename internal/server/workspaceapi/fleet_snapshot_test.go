@@ -51,6 +51,7 @@ func TestFleetSnapshotUsesWorkspaceOwnedSummaryContract(t *testing.T) {
 	workspace := snapshot.Workspaces[0]
 	assert.Equal("ws-fleet", workspace.ID)
 	assert.Equal("R_widget", workspace.Repository.PlatformRepoID)
+	assert.True(workspace.SourceItemVisible)
 	assert.Nil(workspace.MRTitle, "spoke raw state must omit provider title")
 	assert.Nil(workspace.MRState, "spoke raw state must omit provider state")
 	encoded, err := json.Marshal(snapshot)

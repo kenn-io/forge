@@ -724,17 +724,9 @@ func TestWorktreeFromWorkspaceHidesRemovedSourceAndAssociatedItems(t *testing.T)
 				rawWorkspaceForAdapterTest(tt.summary),
 				"worktree:"+tt.summary.WorktreePath, "repo:/tmp",
 			)
-			if tt.summary.ItemType == db.WorkspaceItemTypeIssue {
-				require.Equal([]int{tt.summary.ItemNumber}, wt.LinkedIssueNumbers)
-			} else {
-				require.Empty(wt.LinkedIssueNumbers)
-			}
-			if tt.summary.ItemType == db.WorkspaceItemTypePullRequest {
-				require.NotNil(wt.LinkedPRNumber)
-				require.Equal(tt.summary.ItemNumber, *wt.LinkedPRNumber)
-			} else {
-				require.Nil(wt.LinkedPRNumber)
-			}
+			require.Equal(tt.summary.WorktreePath, wt.Path)
+			require.Empty(wt.LinkedIssueNumbers)
+			require.Nil(wt.LinkedPRNumber)
 			require.Nil(wt.PRTitle)
 			require.Nil(wt.PRState)
 		})

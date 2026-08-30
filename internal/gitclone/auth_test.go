@@ -17,9 +17,11 @@ import (
 type mutableTestTokenSource struct {
 	token       string
 	invalidated int
+	resolved    int
 }
 
 func (s *mutableTestTokenSource) Token(context.Context) (string, error) {
+	s.resolved++
 	return s.token, nil
 }
 
@@ -187,6 +189,37 @@ exit 1
 	)
 	require.Error(err)
 	assert.Contains(t, err.Error(), "repository-local URL rewrites")
+}
+
+func TestRunGitForRemoteRequiresAcknowledgedHTTPTransport(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	gitPath := filepath.Join(dir, "git")
+	require.NoError(os.WriteFile(gitPath, []byte("#!/bin/sh\nexit 0\n"), 0o755))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	const (
+		platform = "gitea"
+		host     = "git.example.test"
+		remote   = "http://git.example.test/acme/widgets.git"
+	)
+	source := &mutableTestTokenSource{token: "secret-token"}
+	mgr := New(t.TempDir(), testRouteResolver{repos: map[string]tokenauth.Source{
+		host + "/acme/widgets": source,
+	}})
+
+	_, err := mgr.RunGitForRemote(
+		t.Context(), platform, host, remote, dir, "fetch", remote,
+	)
+	require.ErrorContains(err, "allow_insecure = true")
+	assert.Zero(t, source.resolved)
+
+	mgr.SetAllowInsecureHTTP(platform, host, true)
+	_, err = mgr.RunGitForRemote(
+		t.Context(), platform, host, remote, dir, "fetch", remote,
+	)
+	require.NoError(err)
+	assert.Equal(t, 1, source.resolved)
 }
 
 func TestGitNetworkedResolvesTokenSourceForEachCall(t *testing.T) {

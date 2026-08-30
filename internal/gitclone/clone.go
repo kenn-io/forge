@@ -871,6 +871,9 @@ func (m *Manager) RunGitForRemote(
 	if err := validateRemoteURLHost(host, remoteURL); err != nil {
 		return nil, err
 	}
+	if err := m.validateRemoteTransport(platform, host, remoteURL); err != nil {
+		return nil, err
+	}
 	repoPath := gitremote.RemoteRepoPath(remoteURL)
 	owner, name, ok := strings.Cut(repoPath, "/")
 	if !ok || strings.TrimSpace(owner) == "" || strings.TrimSpace(name) == "" {

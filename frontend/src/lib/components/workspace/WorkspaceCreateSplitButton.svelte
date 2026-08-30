@@ -248,7 +248,7 @@
     min-height: 30px;
     overflow: hidden;
     padding-inline: var(--space-4);
-    border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+    border-radius: var(--kit-control-radius, var(--radius-sm)) 0 0 var(--kit-control-radius, var(--radius-sm));
   }
 
   .workspace-create-split :global(.create-primary span) {
@@ -270,7 +270,7 @@
     min-height: 30px;
     padding: 0;
     border-left: 0;
-    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    border-radius: 0 var(--kit-control-radius, var(--radius-sm)) var(--kit-control-radius, var(--radius-sm)) 0;
   }
 
   .create-menu {

@@ -118,9 +118,10 @@ otherwise fails only in the Vitest/Playwright transform tier, not in
 - `AdaptiveActionGrid`: the phone PR primary-action surface. Phone-like PR
   routes (`phonePresentation` threaded from
   `frontend/src/App.svelte::phoneDetailProps`) render approve, merge, close,
-  reopen, ready, workflows, and the workspace action as one kit grid with
-  `frame="none"`, `collapseBelow={0}` (row or equal tracks, never the
-  disclosure), and the same per-action snippets the desktop `FitStages` row
+  reopen, ready, workflows, and the workspace action as one kit grid using
+  kit's joined mobile preset (`itemRadius="none"`, zero gaps and padding:
+  one rounded slab of shared-edge buttons), `collapseBelow={0}` (row or
+  equal tracks, never the disclosure), and the same per-action snippets the desktop `FitStages` row
   composes, so each stateful control still renders exactly once. Kit fills
   only its own direct controls in grid mode; compound wrappers
   (`approve-section`, `ready-section`, `workflow-approval-section`,

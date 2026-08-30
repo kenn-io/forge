@@ -19730,7 +19730,10 @@ export interface operations {
     };
     "get-snapshot-aggregate": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Maximum member fan-out time requested by a spoke. */
+                member_timeout?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;

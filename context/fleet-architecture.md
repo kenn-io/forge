@@ -62,6 +62,9 @@ or remote workspace and session operations.
 - A failed, incompatible, or unauthenticated member degrades only that member to
   an unreachable summary; it must not fail local or other member results
   (`internal/server/fleetapi/fleet_hub.go::Handler.fetchMemberRaw`).
+- A spoke supplies its aggregate member budget; the hub uses the smaller local
+  or requested timeout, while the spoke reserves twice that budget for the full
+  response (`internal/server/fleetapi/fleet_routes.go::Handler.getSnapshotAggregate`).
 - Hubs show the fleet-wide workspace surface. Spokes retain the full host
   directory for navigation but project only their own actionable workspace data
   (`internal/fleet/enrich.go::ProjectForObserver`).

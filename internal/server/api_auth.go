@@ -145,7 +145,7 @@ func tailscaleWebSocketOriginAllowed(r *http.Request) bool {
 		return false
 	}
 	origin, err := url.Parse(strings.TrimSpace(origins[0]))
-	if err != nil || (origin.Scheme != "http" && origin.Scheme != "https") ||
+	if err != nil || origin.Scheme != "https" ||
 		origin.User != nil || origin.Host == "" || origin.Path != "" ||
 		origin.RawQuery != "" || origin.Fragment != "" {
 		return false
@@ -158,15 +158,11 @@ func tailscaleWebSocketOriginAllowed(r *http.Request) bool {
 	if err != nil {
 		return false
 	}
-	defaultPort := "80"
-	if origin.Scheme == "https" {
-		defaultPort = "443"
-	}
 	if originHost.Port == "" {
-		originHost.Port = defaultPort
+		originHost.Port = "443"
 	}
 	if requestHost.Port == "" {
-		requestHost.Port = defaultPort
+		requestHost.Port = "443"
 	}
 	return originHost.Equal(requestHost)
 }

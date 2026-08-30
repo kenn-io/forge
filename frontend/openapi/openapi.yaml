@@ -21846,6 +21846,14 @@ paths:
   /snapshot/aggregate:
     get:
       operationId: get-snapshot-aggregate
+      parameters:
+        - description: Maximum member fan-out time requested by a spoke.
+          explode: false
+          in: query
+          name: member_timeout
+          schema:
+            description: Maximum member fan-out time requested by a spoke.
+            type: string
       responses:
         "200":
           content:

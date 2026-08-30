@@ -265,6 +265,61 @@ func TestSpokeAggregateAllowsHubMemberFanoutToReachItsOwnDeadline(t *testing.T) 
 	assert.False(t, snapshot.AggregateIncomplete)
 }
 
+func TestSpokeAggregateNegotiatesHubMemberTimeout(t *testing.T) {
+	require := require.New(t)
+	const siblingNodeID = "cccccccccccccccccccccccccccccccc"
+	member := httptest.NewTLSServer(http.HandlerFunc(func(
+		writer http.ResponseWriter, request *http.Request,
+	) {
+		select {
+		case <-time.After(2 * time.Second):
+			writer.Header().Set("Content-Type", "application/json")
+			_, _ = writer.Write([]byte(`{"protocolVersion":3,"nodeID":"` +
+				siblingNodeID + `","host":{"hostname":"member","platform":"linux"}}`))
+		case <-request.Context().Done():
+		}
+	}))
+	defer member.Close()
+
+	hub := newTestHandler(t, dbtest.Open(t), config.Fleet{})
+	configureTestMembers(t, hub, testTLSClient(t, member), config.FleetMember{
+		NodeID: siblingNodeID, Name: "member", BaseURL: member.URL,
+	})
+	hubConfig := hub.configSnapshot()
+	hubConfig.Fleet.PeerTimeout = "3s"
+	hub.ApplyConfig(hubConfig)
+	hubServer := httptest.NewTLSServer(hub.localHandler())
+	defer hubServer.Close()
+
+	credentials, err := federationauth.Open(filepath.Join(t.TempDir(), "credentials.json"))
+	require.NoError(err)
+	require.NoError(credentials.StoreOutbound(
+		testHubNodeID, "spoke-calls-hub-token",
+		federationauth.SpokeToHubScopes(),
+	))
+	spoke := New(Deps{
+		DB: dbtest.Open(t), NodeID: testMemberNodeID, FederationActive: true,
+		Credentials: credentials, FederationHTTPClient: testTLSClient(t, hubServer),
+		Config: ConfigSnapshot{Fleet: config.Fleet{
+			Enabled: true, Role: config.FleetRoleSpoke, PeerTimeout: "500ms",
+			Hub: &config.FleetHub{
+				NodeID: testHubNodeID, BaseURL: hubServer.URL,
+			},
+		}},
+	})
+
+	snapshot, err := spoke.buildFleetSnapshot(t.Context(), true)
+
+	require.NoError(err)
+	assert.False(t, snapshot.AggregateIncomplete)
+	require.True(slices.ContainsFunc(snapshot.Hosts, func(host fleet.HostSummary) bool {
+		return host.ConfigKey == testHubNodeID && host.Reachable
+	}))
+	require.True(slices.ContainsFunc(snapshot.Hosts, func(host fleet.HostSummary) bool {
+		return host.ConfigKey == siblingNodeID && !host.Reachable
+	}))
+}
+
 func TestSpokeSnapshotMarksHubAggregateFailureIncomplete(t *testing.T) {
 	require := require.New(t)
 	credentials, err := federationauth.Open(filepath.Join(t.TempDir(), "credentials.json"))

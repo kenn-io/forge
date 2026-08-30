@@ -3,6 +3,7 @@ package fleetapi
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -25,6 +26,10 @@ type rawSnapshotOutput struct {
 
 type aggregateSnapshotOutput struct {
 	Body fleet.NeutralSnapshot
+}
+
+type aggregateSnapshotInput struct {
+	MemberTimeout string `query:"member_timeout" doc:"Maximum member fan-out time requested by a spoke."`
 }
 
 // Register registers Fleet snapshot, proxy, project, and terminal operations.
@@ -53,7 +58,7 @@ func (s *Handler) Register(api huma.API) {
 
 func (s *Handler) getSnapshotAggregate(
 	ctx context.Context,
-	_ *struct{},
+	input *aggregateSnapshotInput,
 ) (*aggregateSnapshotOutput, error) {
 	fleetConfig := s.configSnapshot().Fleet
 	if !fleetConfig.Enabled ||
@@ -68,7 +73,19 @@ func (s *Handler) getSnapshotAggregate(
 	if err != nil {
 		return nil, httpapi.Internal("build raw snapshot: " + err.Error())
 	}
-	aggregate, err := s.buildHubAggregate(ctx, local, true)
+	memberTimeout := fleetConfig.PeerTimeoutOrDefault()
+	if input.MemberTimeout != "" {
+		requestedTimeout, parseErr := time.ParseDuration(input.MemberTimeout)
+		if parseErr != nil || requestedTimeout <= 0 {
+			return nil, httpapi.BadRequest(
+				httpapi.CodeBadRequest,
+				"member_timeout must be a positive duration",
+				nil,
+			)
+		}
+		memberTimeout = min(memberTimeout, requestedTimeout)
+	}
+	aggregate, err := s.buildHubAggregate(ctx, local, true, memberTimeout)
 	if err != nil {
 		return nil, httpapi.Internal("build aggregate snapshot: " + err.Error())
 	}

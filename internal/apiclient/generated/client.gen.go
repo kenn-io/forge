@@ -6249,6 +6249,12 @@ type GetSnapshotParams struct {
 	IncludePeers *bool `form:"include_peers,omitempty" json:"include_peers,omitempty"`
 }
 
+// GetSnapshotAggregateParams defines parameters for GetSnapshotAggregate.
+type GetSnapshotAggregateParams struct {
+	// MemberTimeout Maximum member fan-out time requested by a spoke.
+	MemberTimeout *string `form:"member_timeout,omitempty" json:"member_timeout,omitempty"`
+}
+
 // ListStacksParams defines parameters for ListStacks.
 type ListStacksParams struct {
 	Repo *string `form:"repo,omitempty" json:"repo,omitempty"`
@@ -9569,7 +9575,7 @@ type ClientInterface interface {
 	// GetSnapshotAggregate Read the hub's neutral fleet aggregate
 	//
 	// Corresponds with GET /snapshot/aggregate (the `GetSnapshotAggregate` operationId).
-	GetSnapshotAggregate(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+	GetSnapshotAggregate(ctx context.Context, params *GetSnapshotAggregateParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetSnapshotRaw Read the local raw inventory
 	//
@@ -16642,8 +16648,8 @@ func (c *Client) GetSnapshot(ctx context.Context, params *GetSnapshotParams, req
 // GetSnapshotAggregate Read the hub's neutral fleet aggregate
 //
 // Corresponds with GET /snapshot/aggregate (the `GetSnapshotAggregate` operationId).
-func (c *Client) GetSnapshotAggregate(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetSnapshotAggregateRequest(c.Server)
+func (c *Client) GetSnapshotAggregate(ctx context.Context, params *GetSnapshotAggregateParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSnapshotAggregateRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -35969,7 +35975,7 @@ func NewGetSnapshotRequest(server string, params *GetSnapshotParams) (*http.Requ
 }
 
 // NewGetSnapshotAggregateRequest constructs an http.Request for the GetSnapshotAggregate method
-func NewGetSnapshotAggregateRequest(server string) (*http.Request, error) {
+func NewGetSnapshotAggregateRequest(server string, params *GetSnapshotAggregateParams) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -35985,6 +35991,33 @@ func NewGetSnapshotAggregateRequest(server string) (*http.Request, error) {
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.MemberTimeout != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "member_timeout", *params.MemberTimeout, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
@@ -38911,7 +38944,7 @@ type ClientWithResponsesInterface interface {
 	GetSnapshotWithResponse(ctx context.Context, params *GetSnapshotParams, reqEditors ...RequestEditorFn) (*GetSnapshotResponse, error)
 
 	// GetSnapshotAggregateWithResponse request
-	GetSnapshotAggregateWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSnapshotAggregateResponse, error)
+	GetSnapshotAggregateWithResponse(ctx context.Context, params *GetSnapshotAggregateParams, reqEditors ...RequestEditorFn) (*GetSnapshotAggregateResponse, error)
 
 	// GetSnapshotRawWithResponse request
 	GetSnapshotRawWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSnapshotRawResponse, error)
@@ -50349,8 +50382,8 @@ func (c *ClientWithResponses) GetSnapshotWithResponse(ctx context.Context, param
 }
 
 // GetSnapshotAggregateWithResponse request returning *GetSnapshotAggregateResponse
-func (c *ClientWithResponses) GetSnapshotAggregateWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSnapshotAggregateResponse, error) {
-	rsp, err := c.GetSnapshotAggregate(ctx, reqEditors...)
+func (c *ClientWithResponses) GetSnapshotAggregateWithResponse(ctx context.Context, params *GetSnapshotAggregateParams, reqEditors ...RequestEditorFn) (*GetSnapshotAggregateResponse, error) {
+	rsp, err := c.GetSnapshotAggregate(ctx, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}

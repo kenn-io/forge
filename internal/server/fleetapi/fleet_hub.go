@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -34,7 +35,9 @@ func (s *Handler) buildFleetSnapshot(
 	aggregateIncomplete := false
 
 	if fleetConfig.RoleOrDefault() == config.FleetRoleHub {
-		aggregate, err = s.buildHubAggregate(ctx, local, includePeers)
+		aggregate, err = s.buildHubAggregate(
+			ctx, local, includePeers, fleetConfig.PeerTimeoutOrDefault(),
+		)
 		if err != nil {
 			return fleet.Snapshot{}, err
 		}
@@ -56,9 +59,10 @@ func (s *Handler) buildFleetSnapshot(
 					Err:        &message,
 				}})
 			} else {
+				memberTimeout := fleetConfig.PeerTimeoutOrDefault()
 				aggregate, err = s.fetchHubAggregate(
 					ctx, *fleetConfig.Hub,
-					hubAggregateTimeout(fleetConfig.PeerTimeoutOrDefault()),
+					hubAggregateTimeout(memberTimeout), memberTimeout,
 				)
 				if err != nil {
 					aggregateIncomplete = true
@@ -93,11 +97,12 @@ func (s *Handler) buildHubAggregate(
 	ctx context.Context,
 	local fleet.RawSnapshot,
 	includeMembers bool,
+	memberTimeout time.Duration,
 ) (fleet.NeutralSnapshot, error) {
 	fleetConfig := s.configSnapshot().Fleet
 	var results []fleet.PeerResult
 	if includeMembers && fleetConfig.Enabled && len(fleetConfig.Members) > 0 {
-		results = s.fetchMemberResults(ctx, fleetConfig)
+		results = s.fetchMemberResults(ctx, fleetConfig, memberTimeout)
 	}
 	aggregate := fleet.BuildNeutralAggregate(local, results)
 	return fleet.EnrichProviderState(ctx, s.db, aggregate)
@@ -107,8 +112,8 @@ func (s *Handler) buildHubAggregate(
 func (s *Handler) fetchMemberResults(
 	ctx context.Context,
 	fleetConfig config.Fleet,
+	timeout time.Duration,
 ) []fleet.PeerResult {
-	timeout := fleetConfig.PeerTimeoutOrDefault()
 	results := make([]fleet.PeerResult, len(fleetConfig.Members))
 	var wait sync.WaitGroup
 	for index, member := range fleetConfig.Members {
@@ -162,7 +167,7 @@ func (s *Handler) fetchRawSnapshot(
 ) (fleet.RawSnapshot, error) {
 	var raw fleet.RawSnapshot
 	err := s.fetchFederationJSON(
-		ctx, target, timeout, "/api/v1/snapshot/raw", &raw,
+		ctx, target, target.clients.rest, timeout, "/api/v1/snapshot/raw", &raw,
 	)
 	if err != nil {
 		return fleet.RawSnapshot{}, err
@@ -179,6 +184,7 @@ func (s *Handler) fetchHubAggregate(
 	ctx context.Context,
 	hub config.FleetHub,
 	timeout time.Duration,
+	memberTimeout time.Duration,
 ) (fleet.NeutralSnapshot, error) {
 	member := config.FleetMember{
 		NodeID: hub.NodeID, Name: hub.Name,
@@ -189,8 +195,10 @@ func (s *Handler) fetchHubAggregate(
 		return fleet.NeutralSnapshot{}, fmt.Errorf("federation credential unavailable")
 	}
 	var aggregate fleet.NeutralSnapshot
+	query := url.Values{"member_timeout": {memberTimeout.String()}}
 	if err := s.fetchFederationJSON(
-		ctx, target, timeout, "/api/v1/snapshot/aggregate", &aggregate,
+		ctx, target, target.clients.proxy, timeout,
+		"/api/v1/snapshot/aggregate?"+query.Encode(), &aggregate,
 	); err != nil {
 		return fleet.NeutralSnapshot{}, err
 	}
@@ -210,6 +218,7 @@ func (s *Handler) fetchHubAggregate(
 func (s *Handler) fetchFederationJSON(
 	ctx context.Context,
 	target fleetHostTarget,
+	client *http.Client,
 	timeout time.Duration,
 	path string,
 	destination any,
@@ -223,7 +232,7 @@ func (s *Handler) fetchFederationJSON(
 		return err
 	}
 	s.authorizeFederationRequest(request.Header, target.credential)
-	response, err := target.clients.rest.Do(request)
+	response, err := client.Do(request)
 	if err != nil {
 		return err
 	}

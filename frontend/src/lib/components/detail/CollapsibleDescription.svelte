@@ -122,6 +122,10 @@
   }
 
   @media (max-width: 640px) {
+    .detail-description__card-wrap {
+      display: grid;
+    }
+
     .detail-description__toggle {
       display: inline-flex;
       align-items: center;
@@ -134,6 +138,7 @@
 
     .detail-description__card-wrap :global(.kit-copy-btn.body-copy) {
       position: static;
+      justify-self: end;
       min-width: var(--detail-mobile-hit-target, 37px);
       min-height: var(--detail-mobile-hit-target, 37px);
       padding: var(--detail-mobile-space-xs, var(--space-3));

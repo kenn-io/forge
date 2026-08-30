@@ -7,6 +7,7 @@ import CollapsibleDescriptionBrowserFixture from "./test/CollapsibleDescriptionB
 
 describe("collapsible description browser layout", () => {
   it("creates a 320px vertical scroll container when collapsed", async () => {
+    await page.viewport(1280, 900);
     const { container, unmount } = render(CollapsibleDescriptionBrowserFixture);
 
     try {
@@ -34,6 +35,24 @@ describe("collapsible description browser layout", () => {
       expect(restoredCard).not.toBeNull();
       expect((restoredCard as Element).clientHeight).toBe(expandedHeight);
       expect((restoredCard as Element).clientHeight).toBeGreaterThan(collapsedHeight);
+    } finally {
+      unmount();
+    }
+  });
+
+  it("aligns the copy control with the card's right edge on mobile", async () => {
+    await page.viewport(390, 844);
+    const { container, unmount } = render(CollapsibleDescriptionBrowserFixture);
+
+    try {
+      const copyButton = container.querySelector(".kit-copy-btn.body-copy");
+      const card = container.querySelector(".detail-description-card");
+      expect(copyButton).not.toBeNull();
+      expect(card).not.toBeNull();
+
+      const copyRight = (copyButton as Element).getBoundingClientRect().right;
+      const cardRight = (card as Element).getBoundingClientRect().right;
+      expect(Math.abs(copyRight - cardRight)).toBeLessThanOrEqual(1);
     } finally {
       unmount();
     }

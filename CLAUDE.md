@@ -74,7 +74,9 @@ only routes to them.
 - Local thin clients must not infer startup-bound daemon middleware policy from
   reloadable config; derive required request metadata from the runtime record or
   send it safely when the middleware ignores it (`cmd/kenn-forge/daemon_client.go::discoverDaemonHTTP`).
-- User-facing workflow screenshots are generated into a staged docs tree by the docs build and must not be tracked in Git; the Playwright captures in `docs/screenshots/` use the real seeded e2e backend, not mocked API fixtures or a developer daemon.
+- Generate workflow screenshots only with `make docs-screenshots`; docs builds
+  only sync a complete set from orphan `docs-assets`. Keep captures untracked on
+  `main` and use the real seeded e2e backend, not mocks or a developer daemon.
 - Stage Zensical input from an explicit public allowlist; internal plans, specs, ADRs, reports, and screenshot tooling must never enter the staged tree or rendered `site/` output.
 - Verify Zensical screenshot asset-path findings against rendered `site/` output; raw HTML source paths can be rewritten when `use_directory_urls` is enabled.
 - Zensical resolves `docs_dir`/`site_dir` relative to the config file's directory, so `uvx zensical build` cannot run in place against the checked-in `docs/zensical.toml`; stage a scratch project root containing a copy of the config beside a copy of `docs/`, then build there.

@@ -8,6 +8,20 @@ const scriptPath = fileURLToPath(import.meta.url);
 const repoRoot = path.resolve(path.dirname(scriptPath), "..");
 const defaultOutput = path.join(repoRoot, "docs", "assets", "generated");
 
+export function assertSafeOutputDirectory(
+  output,
+  allowedRoots = [path.join(repoRoot, "docs", "assets"), os.tmpdir(), "/tmp", "/private/tmp"],
+) {
+  const resolvedOutput = path.resolve(output);
+  const isAllowed = allowedRoots.some((directory) => {
+    const relative = path.relative(path.resolve(directory), resolvedOutput);
+    return relative !== "" && relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+  });
+  if (!isAllowed) {
+    throw new Error(`refusing to replace protected directory: ${resolvedOutput}`);
+  }
+}
+
 export function minifyNativeSVG(svg) {
   return `${svg
     .replace(/>\s+</g, "><")
@@ -60,6 +74,7 @@ export async function generateDocsScreenshots(args = process.argv.slice(2)) {
   const listOnly = args.includes("--list");
   const outputArg = args.find((arg) => !arg.startsWith("--"));
   const output = path.resolve(outputArg ?? process.env.DOCS_ASSETS_OUTPUT ?? defaultOutput);
+  assertSafeOutputDirectory(output);
   const stagingRoot = listOnly ? "" : await mkdtemp(path.join(os.tmpdir(), "kenn-forge-docs-assets-"));
   const stagedOutput = listOnly ? "" : path.join(stagingRoot, "generated");
 

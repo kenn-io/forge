@@ -3,7 +3,9 @@ import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 
-import { minifyNativeSVG } from "./generate-docs-screenshots.mjs";
+import * as screenshotTools from "./generate-docs-screenshots.mjs";
+
+const { minifyNativeSVG } = screenshotTools;
 
 async function readJSON(path) {
   return JSON.parse(await readFile(path, "utf8"));
@@ -23,6 +25,21 @@ test("published SVGs keep text while compacting path geometry", () => {
     minifyNativeSVG(source),
     '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"><title>Workflow screenshot</title><path d="M.123 0L-.654 7Z"/></svg>\n',
   );
+});
+
+test("screenshot generation rejects broad output directories", () => {
+  const allowedRoots = ["/workspace/docs/assets", "/tmp"];
+  assert.equal(typeof screenshotTools.assertSafeOutputDirectory, "function");
+
+  for (const directory of ["/", "/workspace", "/workspace/other", "/data", "/tmp"]) {
+    assert.throws(
+      () => screenshotTools.assertSafeOutputDirectory(directory, allowedRoots),
+      /refusing to replace protected directory/,
+    );
+  }
+  for (const directory of ["/workspace/docs/assets/generated", "/tmp/kenn-forge-docs-assets"]) {
+    assert.doesNotThrow(() => screenshotTools.assertSafeOutputDirectory(directory, allowedRoots));
+  }
 });
 
 test("docs screenshot generation is an independent Playwright command", async () => {

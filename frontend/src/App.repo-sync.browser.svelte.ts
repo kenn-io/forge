@@ -212,17 +212,17 @@ describe("deep-link repo dropdown + sidebar sync", () => {
     mounted = await mountBrowserApp("/pulls/github/acme/tools/1", { overrides: overrides() });
 
     await vi.waitFor(() => expect(document.querySelector(".pull-detail")).not.toBeNull(), WAIT);
-    await vi.waitFor(() => expect(typeaheadValue()).toBe("github/github.com/acme/tools"), WAIT);
+    await vi.waitFor(() => expect(typeaheadValue()).toBe("acme/tools"), WAIT);
     await vi.waitFor(() => expect(repoHeaderNames()).toEqual(["acme/tools"]), WAIT);
   });
 
   it("navigating between PRs in different repos updates the dropdown each time", async () => {
     setGlobalRepo("github|github.com/acme/widgets");
     mounted = await mountBrowserApp("/pulls/github/acme/widgets/1", { overrides: overrides() });
-    await vi.waitFor(() => expect(typeaheadValue()).toBe("github/github.com/acme/widgets"), WAIT);
+    await vi.waitFor(() => expect(typeaheadValue()).toBe("acme/widgets"), WAIT);
 
     firePopstate("/pulls/github/acme/tools/1");
-    await vi.waitFor(() => expect(typeaheadValue()).toBe("github/github.com/acme/tools"), WAIT);
+    await vi.waitFor(() => expect(typeaheadValue()).toBe("acme/tools"), WAIT);
   });
 
   it("selecting an item from Global keeps the all-repo filter", async () => {
@@ -241,6 +241,6 @@ describe("deep-link repo dropdown + sidebar sync", () => {
     mounted = await mountBrowserApp("/pulls", { overrides: overrides() });
 
     await vi.waitFor(() => expect(document.querySelector(".pull-item")).not.toBeNull(), WAIT);
-    await vi.waitFor(() => expect(typeaheadValue()).toBe("github/github.com/acme/widgets"), WAIT);
+    await vi.waitFor(() => expect(typeaheadValue()).toBe("acme/widgets"), WAIT);
   });
 });

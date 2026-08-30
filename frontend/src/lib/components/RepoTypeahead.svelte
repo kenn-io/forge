@@ -54,6 +54,7 @@
   } from "../stores/settings-workflow.js";
   import { registerCheatsheetEntries } from "../stores/keyboard/registry.svelte.js";
   import { showFlash } from "../stores/flash.svelte.js";
+  import { repoSelectorLabel, type RepoSelectorLabel } from "./repo-selector-label.js";
 
   interface Props {
     selected: string | undefined;
@@ -275,11 +276,12 @@
     preferredRepoPreset(repoPresets, selected, getGlobalRepoPresetAffinity(), options),
   );
   const selectedPresetRepos = $derived(repoPresetRepositoriesForSelection(selected, options));
-  const displayValue = $derived.by(() => {
-    if (selectedValues.length === 0) return "Global";
-    if (matchingPreset) return matchingPreset.name;
-    if (selectedValues.length === 1) return displayRepoFilterValue(selectedValues[0]!);
-    return `${selectedValues.length} repos`;
+  const displayLabel = $derived.by((): RepoSelectorLabel => {
+    if (selectedValues.length === 0) return { primary: "Global", full: "Global" };
+    if (matchingPreset) return { primary: matchingPreset.name, full: matchingPreset.name };
+    if (selectedValues.length === 1) return repoSelectorLabel(selectedValues[0]!, options);
+    const label = `${selectedValues.length} repos`;
+    return { primary: label, full: label };
   });
   const selectionSummary = $derived(
     selectedValues.length === 0
@@ -543,7 +545,7 @@
     <Button
       class="typeahead-trigger"
       size="sm"
-      ariaLabel={`Select repository: ${displayValue}`}
+      ariaLabel={`Select repository: ${displayLabel.full}`}
       ariaExpanded={open}
       onclick={mobile ? toggleDropdown : openDropdown}
     >
@@ -552,7 +554,16 @@
           <FolderGit2Icon size="16" strokeWidth="2" aria-hidden="true" />
         </span>
         <span class="typeahead-mobile-copy">
-          <span class="typeahead-value">{displayValue}</span>
+          <span class="typeahead-value" title={displayLabel.full}>
+            {#if displayLabel.name}
+              <span class="typeahead-repo-owner">{displayLabel.owner}/</span><span class="typeahead-repo-name">{displayLabel.name}</span>
+            {:else}
+              <span class="typeahead-label-text">{displayLabel.primary}</span>
+            {/if}
+            {#if displayLabel.qualifier}
+              <span class="typeahead-label-qualifier"> · {displayLabel.qualifier}</span>
+            {/if}
+          </span>
           <span class="typeahead-selection-summary">{selectionSummary}</span>
         </span>
         <ChevronRightIcon
@@ -562,7 +573,16 @@
           aria-hidden="true"
         />
       {:else}
-        <span class="typeahead-value">{displayValue}</span>
+        <span class="typeahead-value" title={displayLabel.full}>
+          {#if displayLabel.name}
+            <span class="typeahead-repo-owner">{displayLabel.owner}/</span><span class="typeahead-repo-name">{displayLabel.name}</span>
+          {:else}
+            <span class="typeahead-label-text">{displayLabel.primary}</span>
+          {/if}
+          {#if displayLabel.qualifier}
+            <span class="typeahead-label-qualifier"> · {displayLabel.qualifier}</span>
+          {/if}
+        </span>
         <ChevronDownIcon
           class="typeahead-chevron"
           size="10"
@@ -756,10 +776,35 @@
   }
 
   .typeahead-value {
+    display: flex;
     flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .typeahead-repo-owner,
+  .typeahead-label-text,
+  .typeahead-label-qualifier {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
+  }
+
+  .typeahead-repo-name {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .typeahead-label-qualifier {
+    flex: 0 2 auto;
+    color: var(--text-muted);
+  }
+
+  .typeahead-repo-owner {
+    flex: 0 10 auto;
   }
 
   :global(.typeahead-chevron) {

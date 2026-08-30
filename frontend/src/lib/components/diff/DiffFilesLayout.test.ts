@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { ProviderCapabilities, RepoOperations } from "../../api/types.js";
 
@@ -136,5 +136,21 @@ describe("DiffFilesLayout operation gates", () => {
 
     expect(screen.getByTestId("keyboard-active").textContent).toBe("false");
     expect(screen.getByTestId("page-keyboard-active").textContent).toBe("true");
+  });
+
+  it("collapses and restores the changed-file tree", async () => {
+    renderLayout(operations({}));
+
+    expect(screen.getByRole("complementary", { name: "Changed files" })).toBeTruthy();
+    expect(screen.getByRole("separator", { name: "Resize file tree" })).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Collapse file tree" }));
+
+    expect(screen.queryByRole("complementary", { name: "Changed files" })).toBeNull();
+    expect(screen.queryByRole("separator", { name: "Resize file tree" })).toBeNull();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Expand file tree" }));
+
+    expect(screen.getByRole("complementary", { name: "Changed files" })).toBeTruthy();
   });
 });

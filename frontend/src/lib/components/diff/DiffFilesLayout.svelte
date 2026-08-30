@@ -120,6 +120,11 @@
   let filesLayout: HTMLDivElement | undefined = $state();
   let filesLayoutWidth = $state(0);
   let fileTreeWidth = $state(loadFileTreeWidth());
+  let fileTreeHidden = $state(false);
+
+  function toggleFileTree(): void {
+    fileTreeHidden = !fileTreeHidden;
+  }
 
   function saveFileTreeWidth(width: number): void {
     safeSetItem(storageKey, String(width));
@@ -173,26 +178,34 @@
 </script>
 
 <div class="files-view">
-  <DiffToolbar />
+  <DiffToolbar
+    fileListHidden={fileTreeHidden}
+    onToggleFileList={toggleFileTree}
+  />
   <div class="files-layout" bind:this={filesLayout}>
-    <aside
-      class="files-sidebar"
-      aria-label="Changed files"
-      style:--diff-file-tree-width={`${fileTreeWidth}px`}
-    >
-      <DiffSidebar showCommits={false} />
-    </aside>
-    <SplitResizeHandle
-      class="files-resize-handle"
-      ariaLabel="Resize file tree"
-      orientation="horizontal"
-      ariaValueMin={minAllowedFileTreeWidth()}
-      ariaValueMax={maxAllowedFileTreeWidth()}
-      ariaValueNow={fileTreeWidth}
-      onResizeStart={handleFileTreeResizeStart}
-      onResize={handleFileTreeResize}
-      onResizeEnd={handleFileTreeResizeEnd}
-    />
+    {#if !fileTreeHidden}
+      <aside
+        class="files-sidebar"
+        aria-label="Changed files"
+        style:--diff-file-tree-width={`${fileTreeWidth}px`}
+      >
+        <DiffSidebar
+          showCommits={false}
+          onCollapseFileTree={toggleFileTree}
+        />
+      </aside>
+      <SplitResizeHandle
+        class="files-resize-handle"
+        ariaLabel="Resize file tree"
+        orientation="horizontal"
+        ariaValueMin={minAllowedFileTreeWidth()}
+        ariaValueMax={maxAllowedFileTreeWidth()}
+        ariaValueNow={fileTreeWidth}
+        onResizeStart={handleFileTreeResizeStart}
+        onResize={handleFileTreeResize}
+        onResizeEnd={handleFileTreeResizeEnd}
+      />
+    {/if}
     <div class="files-main">
       <DiffView
         {provider}

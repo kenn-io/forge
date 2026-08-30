@@ -70,12 +70,32 @@ async function minifyGeneration(directory) {
   }
 }
 
+export async function publishGeneration(stagedOutput, output, stagingRoot) {
+  const previousOutput = `${stagingRoot}-previous`;
+  let hasPreviousOutput = false;
+  try {
+    await rename(output, previousOutput);
+    hasPreviousOutput = true;
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+
+  try {
+    await rename(stagedOutput, output);
+  } catch (error) {
+    if (hasPreviousOutput) await rename(previousOutput, output);
+    throw error;
+  }
+  if (hasPreviousOutput) await rm(previousOutput, { recursive: true, force: true });
+}
+
 export async function generateDocsScreenshots(args = process.argv.slice(2)) {
   const listOnly = args.includes("--list");
   const outputArg = args.find((arg) => !arg.startsWith("--"));
   const output = path.resolve(outputArg ?? process.env.DOCS_ASSETS_OUTPUT ?? defaultOutput);
   assertSafeOutputDirectory(output);
-  const stagingRoot = listOnly ? "" : await mkdtemp(path.join(os.tmpdir(), "kenn-forge-docs-assets-"));
+  if (!listOnly) await mkdir(path.dirname(output), { recursive: true });
+  const stagingRoot = listOnly ? "" : await mkdtemp(path.join(path.dirname(output), ".kenn-forge-docs-assets-"));
   const stagedOutput = listOnly ? "" : path.join(stagingRoot, "generated");
 
   try {
@@ -104,9 +124,7 @@ export async function generateDocsScreenshots(args = process.argv.slice(2)) {
 
     await minifyGeneration(stagedOutput);
     await verifyGeneration(stagedOutput);
-    await rm(output, { recursive: true, force: true });
-    await mkdir(path.dirname(output), { recursive: true });
-    await rename(stagedOutput, output);
+    await publishGeneration(stagedOutput, output, stagingRoot);
     console.log(`Documentation screenshots generated at ${output}`);
   } finally {
     if (stagingRoot) await rm(stagingRoot, { recursive: true, force: true });

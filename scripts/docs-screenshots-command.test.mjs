@@ -1,8 +1,13 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { test } from "node:test";
 
-import { assertSafeOutputDirectory, minifyNativeSVG } from "./generate-docs-screenshots.mjs";
+import * as screenshotTools from "./generate-docs-screenshots.mjs";
+
+const { assertSafeOutputDirectory, minifyNativeSVG } = screenshotTools;
 
 test("published SVGs keep text while compacting path geometry", () => {
   const source = [
@@ -29,6 +34,22 @@ test("screenshot generation rejects broad output directories", () => {
   for (const directory of ["/workspace/docs/assets/generated", "/tmp/kenn-forge-docs-assets"]) {
     assert.doesNotThrow(() => assertSafeOutputDirectory(directory, allowedRoots));
   }
+});
+
+test("failed screenshot publication restores the previous generation", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "kenn-forge-docs-publication-test-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const output = path.join(root, "generated");
+  const stagingRoot = path.join(root, ".staging");
+  await mkdir(output);
+  await mkdir(stagingRoot);
+  await writeFile(path.join(output, "current.svg"), "current generation\n");
+
+  await assert.rejects(
+    () => screenshotTools.publishGeneration(path.join(stagingRoot, "missing"), output, stagingRoot),
+    { code: "ENOENT" },
+  );
+  assert.equal(await readFile(path.join(output, "current.svg"), "utf8"), "current generation\n");
 });
 
 test("docs screenshot command lists the capture suite", () => {

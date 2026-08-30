@@ -6,30 +6,8 @@ import path from "node:path";
 import { test } from "node:test";
 
 const assets = [
-  "code-reviewer-agent-launch-dark.svg",
-  "code-reviewer-agent-launch-light.svg",
-  "code-reviewer-dark.svg",
-  "code-reviewer-light.svg",
-  "docs-workspace-dark.svg",
-  "docs-workspace-light.svg",
-  "first-run-dark.svg",
-  "first-run-light.svg",
-  "issue-triager-dark.svg",
-  "issue-triager-light.svg",
-  "maintainer-overview-dark.svg",
-  "maintainer-overview-light.svg",
-  "mobile-workspace-session-dark.svg",
-  "mobile-workspace-session-light.svg",
-  "repository-source-dark.svg",
-  "repository-source-light.svg",
-  "roborev-reviews-dark.svg",
-  "roborev-reviews-light.svg",
-  "settings-overview-dark.svg",
-  "settings-overview-light.svg",
-  "workspace-codex-session-dark.svg",
-  "workspace-codex-session-light.svg",
-  "workspace-pr-details-dark.svg",
-  "workspace-pr-details-light.svg",
+  "first-workflow.svg",
+  "second-workflow.svg",
 ];
 
 function run(command, args, options = {}) {
@@ -82,18 +60,26 @@ test("asset sync publishes one complete local generation", async (t) => {
   git(root, "add", ".");
   git(root, "commit", "-m", "assets");
   git(root, "checkout", "main");
+  const manifest = path.join(root, "docs-assets-test.txt");
+  await writeFile(manifest, `${assets.join("\n")}\n`);
 
   const destination = path.join(root, "docs", "assets", "generated");
   await mkdir(destination, { recursive: true });
   await writeFile(path.join(destination, "stale.svg"), "stale\n");
 
-  const result = sync(root);
+  const result = sync(root, { DOCS_ASSETS_MANIFEST: manifest });
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.deepEqual(
     (await readdir(destination)).filter((entry) => entry.endsWith(".svg")).sort(),
     assets,
   );
-  assert.match(await readFile(path.join(destination, ".docs-assets.synced"), "utf8"), /first-run-dark\.svg/);
+  assert.equal(
+    await readFile(path.join(destination, assets[0]), "utf8"),
+    `<svg><title>${assets[0]}</title></svg>\n`,
+  );
+  const generationManifest = await readFile(path.join(destination, ".docs-assets.synced"), "utf8");
+  assert.match(generationManifest, /first-workflow\.svg/);
+  assert.match(generationManifest, /second-workflow\.svg/);
 });
 
 test("asset sync leaves the current generation intact when the fetched branch is incomplete", async (t) => {
@@ -109,6 +95,8 @@ test("asset sync leaves the current generation intact when the fetched branch is
   git(root, "add", ".");
   git(root, "commit", "-m", "incomplete assets");
   git(root, "checkout", "main");
+  const manifest = path.join(root, "docs-assets-test.txt");
+  await writeFile(manifest, `${assets.join("\n")}\n`);
   run("git", ["clone", "--bare", root, remote]);
   git(root, "remote", "add", "fixture-origin", remote);
 
@@ -116,7 +104,10 @@ test("asset sync leaves the current generation intact when the fetched branch is
   await mkdir(destination, { recursive: true });
   await writeFile(path.join(destination, "current.svg"), "current generation\n");
 
-  const result = sync(root, { DOCS_ASSETS_REMOTE: "fixture-origin" });
+  const result = sync(root, {
+    DOCS_ASSETS_MANIFEST: manifest,
+    DOCS_ASSETS_REMOTE: "fixture-origin",
+  });
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /incomplete/);
   assert.equal(await readFile(path.join(destination, "current.svg"), "utf8"), "current generation\n");

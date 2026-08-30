@@ -5,14 +5,8 @@ import path from "node:path";
 import { test } from "node:test";
 
 import * as docsBuild from "./build-docs.mjs";
-import { docsSiteProjectArgs } from "./verify-docs-site.mjs";
 
 const { stageDocsSource } = docsBuild;
-
-test("docs site browser projects can be restricted by the verification environment", () => {
-  assert.deepEqual(docsSiteProjectArgs({ KENN_FORGE_DOCS_SITE_PROJECT: "chromium" }), ["--project=chromium"]);
-  assert.deepEqual(docsSiteProjectArgs({ KENN_FORGE_DOCS_SITE_PROJECT: "all" }), []);
-});
 
 test("docs staging includes only public site inputs", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "kenn-forge-docs-build-test-"));

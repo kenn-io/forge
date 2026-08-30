@@ -183,10 +183,11 @@ or remote workspace and session operations.
   `internal/server/provider_route_policy.go::providerRouteDeclarations`).
 - A resolved specification is bound to the exact request and carries stable
   repository identity, base clone/default-branch facts, PR head-repository
-  semantics, and source visibility. Before admitting the workspace, a spoke
-  validates that binding and hosted clone URL, requires an exact Git credential
-  route, rejects a historically occupied mutable route, and records only
-  repository routing metadata in its spoke catalog (`internal/providerplane/client.go::ValidateFederationWorkspaceLaunchSpecResponse`,
+  semantics, and source visibility. Stable identity permits owner/name refresh
+  only within the requested provider and host. Before admitting the workspace,
+  a spoke validates that binding and hosted clone URL, requires an exact Git
+  credential route, rejects a historically occupied mutable route, and records
+  only repository routing metadata in its spoke catalog (`internal/providerplane/client.go::ValidateFederationWorkspaceLaunchSpecResponse`,
   `internal/server/provider_sources.go::hubProviderSource.ResolveWorkspaceLaunchSpec`).
 - Federated MCP workspace creation resolves a hub repository descriptor
   before capturing the spoke-local route fence, so repositories discovered after

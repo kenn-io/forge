@@ -112,6 +112,15 @@ func (s *Server) authorizeAPIRequest(
 		}
 	}
 	if s.daemonRequests.acceptsTailscaleServeUser(r) {
+		if !tailscaleWebSocketOriginAllowed(r) {
+			writeProblemResponse(w, httpapi.NewProblem(
+				http.StatusForbidden,
+				httpapi.CodeForbidden,
+				"cross-origin WebSocket access is not allowed",
+				nil,
+			))
+			return false
+		}
 		return true
 	}
 	w.Header().Set("WWW-Authenticate", `Bearer realm="kenn-forge"`)
@@ -122,6 +131,44 @@ func (s *Server) authorizeAPIRequest(
 		nil,
 	))
 	return false
+}
+
+func tailscaleWebSocketOriginAllowed(r *http.Request) bool {
+	if !strings.EqualFold(strings.TrimSpace(r.Header.Get("Upgrade")), "websocket") {
+		return true
+	}
+	origins := r.Header.Values("Origin")
+	if len(origins) == 0 {
+		return true
+	}
+	if len(origins) != 1 {
+		return false
+	}
+	origin, err := url.Parse(strings.TrimSpace(origins[0]))
+	if err != nil || (origin.Scheme != "http" && origin.Scheme != "https") ||
+		origin.User != nil || origin.Host == "" || origin.Path != "" ||
+		origin.RawQuery != "" || origin.Fragment != "" {
+		return false
+	}
+	originHost, err := config.ParseHostKey(origin.Host)
+	if err != nil {
+		return false
+	}
+	requestHost, err := config.ParseHostKey(r.Host)
+	if err != nil {
+		return false
+	}
+	defaultPort := "80"
+	if origin.Scheme == "https" {
+		defaultPort = "443"
+	}
+	if originHost.Port == "" {
+		originHost.Port = defaultPort
+	}
+	if requestHost.Port == "" {
+		requestHost.Port = defaultPort
+	}
+	return originHost.Equal(requestHost)
 }
 
 func (s *Server) federationPrincipalEnrollmentState(

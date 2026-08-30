@@ -111,10 +111,46 @@ func TestWorkspaceLaunchRefreshAcceptsRenamedStableRepository(t *testing.T) {
 	require.NoError(t, ValidateFederationWorkspaceLaunchSpecResponse(request, spec))
 
 	spec.Repository.PlatformRepoID = "different-repository"
-	assert.ErrorContains(
+	require.ErrorContains(
 		t, ValidateFederationWorkspaceLaunchSpecResponse(request, spec),
 		"repository identity",
 	)
+
+	for _, test := range []struct {
+		name string
+		edit func(*db.WorkspaceLaunchSpec)
+	}{
+		{
+			name: "provider mismatch",
+			edit: func(spec *db.WorkspaceLaunchSpec) {
+				spec.Repository.Provider = "gitlab"
+				spec.Repository.PlatformHost = "gitlab.com"
+				spec.Repository.CloneURL =
+					"https://gitlab.com/acme-renamed/widget-renamed.git"
+			},
+		},
+		{
+			name: "platform host mismatch",
+			edit: func(spec *db.WorkspaceLaunchSpec) {
+				spec.Repository.PlatformHost = "github.example.test"
+				spec.Repository.CloneURL =
+					"https://github.example.test/acme-renamed/widget-renamed.git"
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, candidate := workspaceLaunchResponseForTest()
+			candidate.Repository.Owner = "acme-renamed"
+			candidate.Repository.Name = "widget-renamed"
+			candidate.Repository.CloneURL =
+				"https://github.com/acme-renamed/widget-renamed.git"
+			test.edit(&candidate)
+			require.ErrorContains(
+				t, ValidateFederationWorkspaceLaunchSpecResponse(request, candidate),
+				"repository route",
+			)
+		})
+	}
 }
 
 func TestFederationNetworkRemoteRequiresEncryptedTransport(t *testing.T) {

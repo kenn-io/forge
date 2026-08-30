@@ -124,7 +124,13 @@ func ValidateWorkspaceLaunchSpecResponse(
 	if stableRepoID != "" && spec.Repository.PlatformRepoID != stableRepoID {
 		return errors.New("workspace launch repository identity does not match the request")
 	}
-	if (stableRepoID == "" && canonicalSpecRoute != requestedRoute) ||
+	if canonicalSpecRoute.Provider != requestedRoute.Provider ||
+		canonicalSpecRoute.PlatformHost != requestedRoute.PlatformHost {
+		return errors.New("workspace launch repository route does not match the request")
+	}
+	if (stableRepoID == "" &&
+		(canonicalSpecRoute.Owner != requestedRoute.Owner ||
+			canonicalSpecRoute.Name != requestedRoute.Name)) ||
 		spec.ItemType != request.ItemType ||
 		spec.ItemNumber != request.ItemNumber {
 		return errors.New("workspace launch specification does not match the request")

@@ -214,6 +214,7 @@ func TestTailscaleServeIdentityAuthorizesGatedTransports(t *testing.T) {
 
 	response = authGet(t, ts, "/ws/v1/workspaces/ws-1/terminal", func(request *http.Request) {
 		request.Header.Set("Tailscale-User-Login", "user@example.com")
+		request.Header.Set("Origin", ts.URL)
 		request.Header.Set("Connection", "Upgrade")
 		request.Header.Set("Upgrade", "websocket")
 		request.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
@@ -262,6 +263,16 @@ func TestTailscaleServeIdentityRejectsUntrustedRequests(t *testing.T) {
 		request.Header.Set("Sec-WebSocket-Version", "13")
 	})
 	assert.Equal(http.StatusUnauthorized, response.StatusCode)
+
+	response = authGet(t, ts, "/ws/v1/workspaces/ws-1/terminal", func(request *http.Request) {
+		request.Header.Set("Tailscale-User-Login", "user@example.com")
+		request.Header.Set("Origin", "https://attacker.example")
+		request.Header.Set("Connection", "Upgrade")
+		request.Header.Set("Upgrade", "websocket")
+		request.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+		request.Header.Set("Sec-WebSocket-Version", "13")
+	})
+	assert.Equal(http.StatusForbidden, response.StatusCode)
 }
 
 func TestFederationCredentialTakesPrecedenceOverTailscaleServeIdentity(t *testing.T) {

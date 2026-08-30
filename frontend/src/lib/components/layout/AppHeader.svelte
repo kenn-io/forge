@@ -148,7 +148,7 @@
         dismiss: closeSyncMenu,
         escapeFocus: () => syncMenuTriggerEl,
       }),
-      autoReposition(() => syncMenuEl, positionSyncMenu),
+      autoReposition(() => [syncMenuEl], positionSyncMenu),
     ];
     return () => cleanups.forEach((cleanup) => cleanup());
   });

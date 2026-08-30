@@ -37,6 +37,8 @@
     onDetailTabChange?: ((tab: "conversation" | "files") => void) | undefined;
     onOpenWorkspace?: ((workspaceId: string) => void) | undefined;
     onViewWorkspaces?: (() => void) | undefined;
+    /** Phone-like routes render PR actions as one kit action grid. */
+    phonePresentation?: boolean;
   }
 
   const {
@@ -53,6 +55,7 @@
     onDetailTabChange,
     onOpenWorkspace,
     onViewWorkspaces,
+    phonePresentation = false,
   }: Props = $props();
 
   // Provider capabilities are unknown until the detail lands. Assuming the
@@ -118,6 +121,7 @@
     {onOpenWorkspace}
     {onViewWorkspaces}
     {inlineWorkspace}
+    {phonePresentation}
   />
 {:else if tabKey === "files" && visible}
   <!-- Keyed on the PR because DiffFilesLayout holds per-file state that must not

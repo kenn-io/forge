@@ -160,7 +160,7 @@
         dismiss: closeMenu,
         escapeFocus: () => trigger,
       }),
-      autoReposition(() => menu, position),
+      autoReposition(() => [menu], position),
     ];
     document.addEventListener("pointerdown", dismissPointerDown);
     return () => {
@@ -257,10 +257,11 @@
     white-space: nowrap;
   }
 
+  /* Sized by its button: phone hit-target rules widen the button beyond
+   * 30px, and a fixed wrapper width would let it overflow the control. */
   .create-options {
     display: inline-flex;
-    flex: 0 0 30px;
-    width: 30px;
+    flex: 0 0 auto;
   }
 
   .create-options :global(.create-options-button) {

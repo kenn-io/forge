@@ -67,3 +67,12 @@ if (typeof globalThis.ResizeObserver === "undefined") {
     value: ResizeObserverStub,
   });
 }
+
+// jsdom has no CSS Font Loading API. kit-ui's AdaptiveActionGrid remeasures
+// on `document.fonts` load events, so the surface needs an inert event target.
+if (typeof document !== "undefined" && document.fonts === undefined) {
+  Object.defineProperty(document, "fonts", {
+    configurable: true,
+    value: new EventTarget(),
+  });
+}

@@ -49,6 +49,8 @@
     onStackMemberNavigate?: StackMemberNavigate;
     onOpenWorkspace?: ((workspaceId: string) => void) | undefined;
     onViewWorkspaces?: (() => void) | undefined;
+    /** Phone-like routes render PR actions as one kit action grid. */
+    phonePresentation?: boolean;
     inlineWorkspace?: InlineWorkspaceController | null;
     /**
      * The workspace's own controls, rendered in the tab strip of the leaf holding
@@ -75,6 +77,7 @@
     onStackMemberNavigate,
     onOpenWorkspace,
     onViewWorkspaces,
+    phonePresentation = false,
     inlineWorkspace = null,
     workspacePaneControls = undefined,
   }: Props = $props();
@@ -270,6 +273,7 @@
           {onOpenWorkspace}
           {onViewWorkspaces}
           {inlineWorkspace}
+          {phonePresentation}
         />
       {:else if paneLayout !== null}
       <DetailPaneLayout
@@ -325,6 +329,7 @@
               {onOpenWorkspace}
               {onViewWorkspaces}
               {inlineWorkspace}
+              {phonePresentation}
             />
           {/if}
         {/snippet}

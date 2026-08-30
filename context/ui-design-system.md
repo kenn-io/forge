@@ -49,7 +49,12 @@ kenn-forge consumes `@kenn-io/kit-ui` as source, pinned to one commit SHA in
 `frontend/package.json` (never a `file:` path — bun's store keys by
 name@version and goes stale). Its runtime deps are peers and its rune-module source cannot be
 prebundled: keep it in vite `optimizeDeps.exclude` with transitive deps as
-`"@kenn-io/kit-ui > <dep>"` includes. See kit-ui's `docs/migration.md` and
+`"@kenn-io/kit-ui > <dep>"` includes. Bun links the pinned checkout from its
+global cache outside the workspace root, so kit source that imports assets
+(`?inline` SVGs) needs kit's resolved source root in vite `server.fs.allow`
+(`frontend/vite.config.ts::kitUiSourceRoot`); a bump that adds such an import
+otherwise fails only in the Vitest/Playwright transform tier, not in
+`svelte-check`. See kit-ui's `docs/migration.md` and
 `docs/theming.md`. Invariants kenn-forge relies on:
 
 - Theme tokens come from kit `theme.css`; theming is `dark` /
@@ -110,6 +115,20 @@ prebundled: keep it in vite `optimizeDeps.exclude` with transitive deps as
   Provider-mode repo selector visibility must not move the tab row; non-provider
   modes reserve its footprint unless embed config hides it
   (`frontend/src/lib/components/layout/AppHeader.svelte::reserveProviderRepoSelectorSlot`).
+- `AdaptiveActionGrid`: the phone PR primary-action surface. Phone-like PR
+  routes (`phonePresentation` threaded from
+  `frontend/src/App.svelte::phoneDetailProps`) render approve, merge, close,
+  reopen, ready, workflows, and the workspace action as one kit grid with
+  `frame="none"`, `collapseBelow={0}` (row or equal tracks, never the
+  disclosure), and the same per-action snippets the desktop `FitStages` row
+  composes, so each stateful control still renders exactly once. Kit fills
+  only its own direct controls in grid mode; compound wrappers
+  (`approve-section`, `ready-section`, `workflow-approval-section`,
+  `workspace-create-split`) are custom items and `PullDetail` fills their
+  primary button itself. A wrapper around a kit control must not hardcode a
+  width smaller than the phone hit target (`--focus-detail-hit-target`), or
+  the control overflows its grid track. Desktop-narrow focus presentation
+  keeps `FitStages`.
 - `FitStages`: how an action row degrades under pressure (richest labelled
   `Button` row to compact labelled or `IconButton` rows, then a measured menu
   trigger when needed), never a media query, Button-internal overrides, or a

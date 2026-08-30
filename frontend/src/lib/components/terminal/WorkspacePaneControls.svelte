@@ -70,7 +70,7 @@
     }
     window.addEventListener("pointerdown", onPointerDown, true);
     window.addEventListener("keydown", onKeydown);
-    const stopRepositioning = autoReposition(() => panelEl, position);
+    const stopRepositioning = autoReposition(() => [panelEl], position);
     return () => {
       window.removeEventListener("pointerdown", onPointerDown, true);
       window.removeEventListener("keydown", onKeydown);

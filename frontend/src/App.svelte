@@ -735,16 +735,19 @@
 
   // Phone-like PR detail routes have no inline workspace controller, so a
   // created or opened workspace must land in the /m workspace shell rather
-  // than the desktop /terminal route. Desktop-narrow focus presentation
-  // keeps the desktop destinations.
-  function phoneWorkspaceCallbacks(): {
+  // than the desktop /terminal route, and the PR actions render as one kit
+  // action grid. Desktop-narrow focus presentation keeps the desktop
+  // destinations and layout.
+  function phoneDetailProps(): {
     onOpenWorkspace?: (workspaceId: string) => void;
     onViewWorkspaces?: () => void;
+    phonePresentation?: boolean;
   } {
     if (!useFocusLayoutClass()) return {};
     return {
       onOpenWorkspace: (workspaceId) => navigate(buildMobileWorkspaceRoute(workspaceId)),
       onViewWorkspaces: () => navigate("/m/workspaces"),
+      phonePresentation: true,
     };
   }
 
@@ -1142,7 +1145,7 @@
           isSidebarCollapsed={true}
           hideSidebar={true}
           routeFamily="focus"
-          {...phoneWorkspaceCallbacks()}
+          {...phoneDetailProps()}
         />
       {:else if r.page === "focus"}
         <IssueListView
@@ -1164,7 +1167,7 @@
           isSidebarCollapsed={true}
           hideSidebar={true}
           onStackMemberNavigate={handleResponsiveStackMemberNavigate}
-          {...phoneWorkspaceCallbacks()}
+          {...phoneDetailProps()}
         />
       {:else if r.page === "pulls"}
         <FocusListView

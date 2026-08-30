@@ -112,7 +112,7 @@
     if (!open || !target) return;
     target.setAttribute("aria-describedby", tooltipId);
     const stopRepositioning = autoReposition(
-      () => popoverEl,
+      () => [popoverEl],
       () => void position(),
     );
     return () => {

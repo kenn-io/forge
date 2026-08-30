@@ -66,7 +66,7 @@
         dismiss: close,
         escapeFocus: () => buttonRef,
       }),
-      autoReposition(() => panelRef, position),
+      autoReposition(() => [panelRef], position),
     ];
     return () => cleanups.forEach((cleanup) => cleanup());
   });

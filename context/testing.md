@@ -119,6 +119,10 @@ owner:
 - Browser specs live beside their components under `frontend/src`; the browser
   project includes `src/**/*.browser.svelte.ts`, while the jsdom unit project
   also includes GitHub App setup tests (`frontend/vite.config.ts::jsdomUnitTestProject`).
+- jsdom lacks `ResizeObserver` and the CSS Font Loading API; `frontend/src/test/setup.ts`
+  stubs both as inert so kit components that remeasure on resize or font load
+  (`AdaptiveActionGrid`, popover auto-reposition) mount in unit tests. Add a stub there,
+  not per suite, when a kit bump reaches a new browser primitive.
 - Frontend unit tests default to jsdom; promote a suite to the exact Node inventory only after
   A/B runs prove identical test identities and outcomes, so indirect browser dependencies fail safe
   (`frontend/vitest.node-files.ts::nodeUnitTestFiles`).

@@ -140,7 +140,7 @@ func (s *Handler) fetchMemberRaw(
 		Role:       fleet.RoleSpoke,
 		ObservedAt: s.now().UTC().Format(time.RFC3339),
 	}
-	target, ok := s.resolveEnrolledMember(member)
+	target, ok := s.resolveEnrolledSpoke(member)
 	if !ok {
 		result.Err = new("federation credential unavailable")
 		return result

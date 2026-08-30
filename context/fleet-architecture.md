@@ -8,6 +8,8 @@ or remote workspace and session operations.
 - Every data directory has one random 128-bit lowercase-hex node ID; hostnames,
   listener addresses, and mutable display names never establish fleet identity
   (`internal/runtimelock/node_id.go::EnsureNodeID`).
+- Hub and spoke identities must be distinct; enrollment rejects the hub's own
+  node ID before creating durable membership (`internal/federation/enrollment_store.go::Store.Begin`).
 - `fleet.role` defaults to `hub`. A `spoke` requires a validated
   hub binding; enabling federation requires API authentication, the
   root base path, and a canonical HTTPS `fleet.base_url`
@@ -76,10 +78,9 @@ or remote workspace and session operations.
 - Workspaces does not repeat host labels or healthy fleet inventory in its list;
   host navigation belongs to the global Forge selector, while fleet chrome is
   reserved for actionable degradation (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte`).
-- The reserved `self` alias and the daemon's stable node ID address the local
-  handler. An active member's node ID routes only while federation is enabled
-  on a hub and an outbound credential exists
-  (`internal/server/fleetapi/fleet_proxy.go::Handler.resolveFleetHostTarget`).
+- The reserved `self` alias and stable node ID address local. An active spoke routes
+  only when config matches its enrollment; that enrollment supplies the credential-bound destination
+  (`internal/server/fleetapi/fleet_proxy.go::Handler.resolveEnrolledSpoke`).
 - Proxy operations preserve the owning host's status, problem envelope, and
   safe end-to-end headers; browser-facing responses must not carry peer cookies,
   redirects, authentication challenges, or connection-nominated headers

@@ -147,6 +147,9 @@ func (s *Store) Begin(
 		if tokenRecord.ConsumedEnrollmentID != "" {
 			return ErrEnrollmentTokenConsumed
 		}
+		if request.NodeID == tokenRecord.HubID {
+			return ErrEnrollmentConflict
+		}
 
 		existingIndex := enrollmentIndexByID(state.Enrollments, request.EnrollmentID)
 		if existingIndex >= 0 {

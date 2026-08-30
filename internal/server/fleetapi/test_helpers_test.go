@@ -50,6 +50,11 @@ func configureTestMembers(
 		t.TempDir(), "federation-credentials.json",
 	))
 	require.NoError(t, err)
+	enrollments, err := federation.Open(
+		filepath.Join(t.TempDir(), "federation-enrollments.json"),
+		federation.StoreOptions{},
+	)
+	require.NoError(t, err)
 	tokens := make(map[string]string, len(members))
 	for index, member := range members {
 		if member.State == "" {
@@ -60,10 +65,30 @@ func configureTestMembers(
 		require.NoError(t, credentials.StoreOutbound(
 			member.NodeID, token, federationauth.HubToSpokeScopes(),
 		))
+		enrollmentToken, createErr := enrollments.CreateOneTimeToken(
+			federation.Identity{
+				NodeID: testHubNodeID, BaseURL: "https://hub.example",
+			},
+			time.Now().Add(time.Hour),
+		)
+		require.NoError(t, createErr)
+		enrollment, beginErr := enrollments.Begin(t.Context(), enrollmentToken.Token,
+			federation.JoinRequest{
+				EnrollmentID:    fmt.Sprintf("%032x", index+1),
+				NodeID:          member.NodeID,
+				Platform:        "linux",
+				BaseURL:         member.BaseURL,
+				ProtocolVersion: federation.ProtocolVersion,
+				HubCredential:   token,
+			},
+		)
+		require.NoError(t, beginErr)
+		require.NoError(t, enrollments.Activate(t.Context(), enrollment.ID))
 		tokens[member.NodeID] = token
 	}
 	h.nodeID = testHubNodeID
 	h.credentials = credentials
+	h.enrollments = enrollments
 	if client != nil {
 		h.federationHTTPClient = client
 	}

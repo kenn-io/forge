@@ -142,6 +142,23 @@ func TestEnrollmentRejectsDuplicateSpokeAtDifferentOriginAndProtocolMismatch(t *
 	require.ErrorIs(err, ErrProtocolMismatch)
 }
 
+func TestEnrollmentRejectsHubIdentityAsSpoke(t *testing.T) {
+	require := require.New(t)
+	now := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+	store := newEnrollmentStoreForTest(t, func() time.Time { return now })
+	token, err := store.CreateOneTimeToken(
+		hubIdentityForTest(), now.Add(time.Minute),
+	)
+	require.NoError(err)
+
+	_, err = store.Begin(t.Context(), token.Token, joinRequestForTest(
+		testEnrollmentID, testHubID, "https://spoke-a.example",
+	))
+
+	require.ErrorIs(err, ErrEnrollmentConflict)
+	require.Empty(store.List())
+}
+
 func TestEnrollmentRevocationPersistsAcrossReload(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

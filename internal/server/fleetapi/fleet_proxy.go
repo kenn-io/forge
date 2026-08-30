@@ -908,7 +908,7 @@ func (s *Handler) resolveFleetHostTarget(hostKey string) (fleetHostTarget, bool)
 	if fleetCfg.Enabled && fleetCfg.RoleOrDefault() == config.FleetRoleHub {
 		for _, member := range fleetCfg.Members {
 			if member.NodeID == hostKey {
-				return s.resolveEnrolledMember(member)
+				return s.resolveEnrolledSpoke(member)
 			}
 		}
 	}
@@ -925,6 +925,18 @@ func (s *Handler) fleetSelfKey(localHostname string) string {
 		return strings.TrimSpace(localHostname)
 	}
 	return hostnameOrEmpty()
+}
+
+func (s *Handler) resolveEnrolledSpoke(
+	member config.FleetMember,
+) (fleetHostTarget, bool) {
+	enrollment, ok := s.enrollments.EnrollmentForSpoke(member.NodeID)
+	if !ok || enrollment.State != federation.EnrollmentActive ||
+		enrollment.SpokeBaseURL != member.BaseURL {
+		return fleetHostTarget{}, false
+	}
+	member.BaseURL = enrollment.SpokeBaseURL
+	return s.resolveEnrolledMember(member)
 }
 
 func (s *Handler) resolveEnrolledMember(

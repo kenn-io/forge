@@ -211,6 +211,43 @@ func TestFleetProxyUsesOnlyDestinationCredentialAndRefusesRedirects(t *testing.T
 	assert.NotEqual(tokens[otherNodeID], destinationRequests[1].authorization)
 }
 
+func TestFleetProxyRejectsMemberOriginOutsideEnrollment(t *testing.T) {
+	require := require.New(t)
+	original := httptest.NewTLSServer(http.NotFoundHandler())
+	t.Cleanup(original.Close)
+	var substitutedRequests int
+	substituted := httptest.NewTLSServer(http.HandlerFunc(func(
+		w http.ResponseWriter, _ *http.Request,
+	) {
+		substitutedRequests++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"workspaces":[]}`))
+	}))
+	t.Cleanup(substituted.Close)
+
+	handler := New(Deps{})
+	configureTestMembers(
+		t, handler, testTLSClient(t, original, substituted),
+		config.FleetMember{NodeID: testMemberNodeID, BaseURL: original.URL},
+	)
+	snapshot := handler.configSnapshot()
+	snapshot.Fleet.Members[0].BaseURL = substituted.URL
+	handler.ApplyConfig(snapshot)
+	api := newFleetTestAPI()
+	handler.Register(api)
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/fleet/hosts/"+testMemberNodeID+"/workspaces",
+		nil,
+	)
+
+	api.Adapter().ServeHTTP(recorder, req)
+
+	require.Equal(http.StatusNotFound, recorder.Code, recorder.Body.String())
+	require.Zero(substitutedRequests, "credential must not reach an unenrolled origin")
+}
+
 func TestFederationMemberClientsBoundRequestsAndStreamingHandshakes(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

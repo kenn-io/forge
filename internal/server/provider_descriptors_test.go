@@ -1,10 +1,12 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -453,6 +455,59 @@ func TestWorkspaceLaunchSpecRoundTripSeedsNodeRepositoryCatalog(t *testing.T) {
 	problem, ok := err.(*httpapi.ProblemError)
 	require.True(ok)
 	assert.Equal(httpapi.CodeGitCredentialUnavailable, problem.Code)
+}
+
+func TestWorkspaceLaunchSpecRequiresForkCredentialRoute(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	issuedAt := time.Date(2026, time.August, 22, 16, 30, 0, 0, time.UTC)
+	spec := db.WorkspaceLaunchSpec{
+		Version: db.WorkspaceLaunchSpecVersion,
+		Repository: db.WorkspaceLaunchRepository{
+			Provider: "github", PlatformHost: "github.com",
+			PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
+			CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
+		},
+		ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 42,
+		ItemKey: "42", GitHeadRef: "feature/fork",
+		Pull: &db.WorkspaceLaunchPull{
+			HeadBranch: "feature/fork", HeadRepoKind: "fork",
+			HeadRepoCloneURL: "https://github.com/contributor/widget.git",
+			SnapshotRevision: 1,
+		},
+		SourceVisible: true, IssuedAt: issuedAt,
+		SourceVisibleUntil: issuedAt.Add(db.WorkspaceLaunchSpecVisibilityLease),
+	}
+	encoded, err := json.Marshal(spec)
+	require.NoError(err)
+	source := &hubProviderSource{
+		client: providerPlaneClientFunc(func(
+			_ context.Context, _ federationauth.Scope, _ *http.Request,
+		) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(bytes.NewReader(encoded)),
+			}, nil
+		}),
+		clones: gitclone.New(t.TempDir(), descriptorCloneRoutes{
+			source: testTokenSource("spoke-git-token"),
+		}),
+	}
+
+	_, err = source.ResolveWorkspaceLaunchSpec(
+		t.Context(), providerplane.WorkspaceLaunchRequest{
+			Repository: providerplane.RepositoryRoute{
+				Provider: "github", PlatformHost: "github.com",
+				Owner: "acme", Name: "widget",
+			},
+			ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 42,
+		},
+	)
+	require.Error(err)
+	problem, ok := err.(*httpapi.ProblemError)
+	require.True(ok)
+	assert.Equal(httpapi.CodeGitCredentialUnavailable, problem.Code)
+	assert.Equal("contributor/widget", problem.Details["repoPath"])
 }
 
 func TestNodeCloneReadsRequireFreshDescriptorAndComputeLocally(t *testing.T) {

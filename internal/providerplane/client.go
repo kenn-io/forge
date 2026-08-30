@@ -176,7 +176,7 @@ func ValidateFederationWorkspaceLaunchSpecResponse(
 		if err := validateFederationNetworkRemote(spec.Pull.HeadRepoCloneURL); err != nil {
 			return fmt.Errorf("workspace launch fork clone URL: %w", err)
 		}
-		if _, err := federationRemoteRepositoryRoute(
+		if _, err := FederationRemoteRepositoryRoute(
 			spec.Repository.Provider, spec.Repository.PlatformHost,
 			spec.Pull.HeadRepoCloneURL,
 		); err != nil {
@@ -217,7 +217,9 @@ func validateFederationNetworkRemote(remoteURL string) error {
 	return errors.New("federation clone URL must use HTTPS or SSH; HTTP is allowed only for loopback")
 }
 
-func federationRemoteRepositoryRoute(
+// FederationRemoteRepositoryRoute resolves the provider route that owns a
+// validated federation clone URL.
+func FederationRemoteRepositoryRoute(
 	provider, host, remoteURL string,
 ) (RepositoryRoute, error) {
 	repoPath := gitremote.RemoteRepoPath(remoteURL)

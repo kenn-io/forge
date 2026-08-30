@@ -59,20 +59,12 @@ func (s *hubProviderSource) resolveWorkspaceLaunchSpec(
 	if err := providerplane.ValidateFederationWorkspaceLaunchSpecResponse(request, spec); err != nil {
 		return db.WorkspaceLaunchSpec{}, invalidHubDescriptor(err)
 	}
-	if s.clones == nil {
-		return db.WorkspaceLaunchSpec{}, httpapi.GitCredentialUnavailable(
-			spec.Repository.Provider, spec.Repository.PlatformHost,
-			spec.Repository.Owner+"/"+spec.Repository.Name,
-		)
-	}
-	if err := s.clones.RequireCredentialRoute(
-		ctx, spec.Repository.Provider, spec.Repository.PlatformHost,
-		spec.Repository.Owner, spec.Repository.Name,
-	); err != nil {
+	credentialRoute, err := requireWorkspaceLaunchSpecCredentials(ctx, s.clones, spec)
+	if err != nil {
 		if errors.Is(err, gitclone.ErrCredentialUnavailable) {
 			return db.WorkspaceLaunchSpec{}, httpapi.GitCredentialUnavailable(
-				spec.Repository.Provider, spec.Repository.PlatformHost,
-				spec.Repository.Owner+"/"+spec.Repository.Name,
+				credentialRoute.Provider, credentialRoute.PlatformHost,
+				credentialRoute.Owner+"/"+credentialRoute.Name,
 			)
 		}
 		return db.WorkspaceLaunchSpec{}, err
@@ -81,6 +73,41 @@ func (s *hubProviderSource) resolveWorkspaceLaunchSpec(
 		return db.WorkspaceLaunchSpec{}, err
 	}
 	return spec, nil
+}
+
+func requireWorkspaceLaunchSpecCredentials(
+	ctx context.Context,
+	clones *gitclone.Manager,
+	spec db.WorkspaceLaunchSpec,
+) (providerplane.RepositoryRoute, error) {
+	base := providerplane.RepositoryRoute{
+		Provider: spec.Repository.Provider, PlatformHost: spec.Repository.PlatformHost,
+		Owner: spec.Repository.Owner, Name: spec.Repository.Name,
+	}
+	if clones == nil {
+		return base, gitclone.ErrCredentialUnavailable
+	}
+	if err := clones.RequireCredentialRoute(
+		ctx, base.Provider, base.PlatformHost, base.Owner, base.Name,
+	); err != nil {
+		return base, err
+	}
+	if spec.Pull == nil || spec.Pull.HeadRepoKind != "fork" {
+		return providerplane.RepositoryRoute{}, nil
+	}
+	fork, err := providerplane.FederationRemoteRepositoryRoute(
+		spec.Repository.Provider, spec.Repository.PlatformHost,
+		spec.Pull.HeadRepoCloneURL,
+	)
+	if err != nil {
+		return fork, err
+	}
+	if err := clones.RequireCredentialRoute(
+		ctx, fork.Provider, fork.PlatformHost, fork.Owner, fork.Name,
+	); err != nil {
+		return fork, err
+	}
+	return providerplane.RepositoryRoute{}, nil
 }
 
 func (s *hubProviderSource) observeWorkspaceLaunchSpec(

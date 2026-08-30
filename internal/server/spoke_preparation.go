@@ -19,7 +19,6 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/federationauth"
-	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
 )
@@ -382,15 +381,7 @@ func (s *Server) refreshSpokePreparationLaunchSpecs(
 				fmt.Sprintf("refresh workspace %s: invalid hub launch specification: %v", workspace.ID, err))
 			continue
 		}
-		var credentialErr error
-		if s.clones == nil {
-			credentialErr = gitclone.ErrCredentialUnavailable
-		} else {
-			credentialErr = s.clones.RequireCredentialRoute(
-				ctx, spec.Repository.Provider, spec.Repository.PlatformHost,
-				spec.Repository.Owner, spec.Repository.Name,
-			)
-		}
+		_, credentialErr := requireWorkspaceLaunchSpecCredentials(ctx, s.clones, spec)
 		if credentialErr != nil {
 			report.HandoffErrors = append(report.HandoffErrors,
 				fmt.Sprintf("refresh workspace %s: %v", workspace.ID, credentialErr))

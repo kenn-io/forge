@@ -540,6 +540,57 @@ func TestSpokePreparationRequiresCredentialBeforePersistingLaunchSpec(t *testing
 	assert.Nil(persisted)
 }
 
+func TestSpokePreparationRequiresForkCredentialBeforePersistingLaunchSpec(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	seedWorkspace(t, database, "missing-fork-credential", "acme", "widget", db.WorkspaceItemTypePullRequest, 42)
+	issuedAt := time.Now().UTC().Truncate(time.Second)
+	spec := db.WorkspaceLaunchSpec{
+		Version: db.WorkspaceLaunchSpecVersion,
+		Repository: db.WorkspaceLaunchRepository{
+			Provider: "github", PlatformHost: "github.com", PlatformRepoID: "repo-acme-widget",
+			Owner: "acme", Name: "widget", CloneURL: "https://github.com/acme/widget.git",
+			DefaultBranch: "main",
+		},
+		ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 42,
+		ItemKey: "42", GitHeadRef: "feature/missing-fork-credential",
+		Pull: &db.WorkspaceLaunchPull{
+			HeadBranch: "feature/missing-fork-credential", HeadRepoKind: "fork",
+			HeadRepoCloneURL: "https://github.com/contributor/widget.git",
+			SnapshotRevision: 1,
+		},
+		SourceVisible: true, IssuedAt: issuedAt,
+		SourceVisibleUntil: issuedAt.Add(db.WorkspaceLaunchSpecVisibilityLease),
+	}
+	encoded, err := json.Marshal(spec)
+	require.NoError(err)
+	client := providerPlaneClientFunc(func(
+		_ context.Context, _ federationauth.Scope, _ *http.Request,
+	) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewReader(encoded)),
+		}, nil
+	})
+	report := SpokePreparationReport{HandoffErrors: []string{}}
+	server := &Server{
+		db: database, now: time.Now,
+		clones: gitclone.New(t.TempDir(), descriptorCloneRoutes{
+			source: testTokenSource("spoke-git-token"),
+		}),
+	}
+
+	server.refreshSpokePreparationLaunchSpecs(t.Context(), client, &report)
+
+	require.Len(report.HandoffErrors, 1)
+	assert.Contains(report.HandoffErrors[0], "git credential unavailable")
+	assert.Contains(report.HandoffErrors[0], "contributor/widget")
+	persisted, err := database.GetWorkspaceLaunchSpec(t.Context(), "missing-fork-credential")
+	require.NoError(err)
+	assert.Nil(persisted)
+}
+
 func TestSpokePreparationRefreshFollowsStableRepositoryRename(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

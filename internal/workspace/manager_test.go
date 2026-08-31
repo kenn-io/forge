@@ -1274,7 +1274,7 @@ func TestSetupWithOptionsConfirmsRoborevBeforeTerminal(t *testing.T) {
 		response string
 		wantErr  string
 	}{
-		{name: "registered", response: "registered"},
+		{name: "registered repo without review jobs", response: "registered"},
 		{name: "malformed inventory", response: "malformed", wantErr: "invalid daemon response"},
 		{name: "absent registration", response: "absent", wantErr: "workspace is absent"},
 	}
@@ -1340,7 +1340,7 @@ chmod +x "$hooks/post-commit" "$hooks/post-rewrite"
 				case "registered":
 					_ = json.NewEncoder(w).Encode(map[string]any{
 						"repos":       []map[string]string{{"root_path": ws.WorktreePath}},
-						"total_count": 1,
+						"total_count": 0,
 					})
 				case "malformed":
 					_, _ = w.Write([]byte("{"))

@@ -1700,11 +1700,10 @@
     word-break: break-word;
   }
 
+  .focus-layout--phone :global(.edit-title-btn),
   .focus-layout--phone :global(.star-btn),
   .focus-layout--phone :global(.gh-link),
   .focus-layout--phone :global(.copy-icon-btn),
-  .focus-layout--phone :global(.copy-number-btn),
-  .focus-layout--phone :global(.pull-detail-content .meta-row .copy-number-btn),
   .focus-layout--phone :global(.detail-description__toggle),
   .focus-layout--phone :global(.kit-button),
   .focus-layout--phone :global(.detail-tab),
@@ -1712,6 +1711,26 @@
     min-width: var(--focus-detail-hit-target);
     min-height: var(--focus-detail-hit-target);
     font-size: var(--font-size-sm);
+  }
+
+  /* The header's title actions are bare icons on desktop; on a phone they
+   * become bordered, equal squares so the tap targets are visible. The
+   * inline number copy button stays text-sized: it sits in a text row. */
+  .focus-layout--phone :global(.edit-title-btn),
+  .focus-layout--phone :global(.star-btn),
+  .focus-layout--phone :global(.gh-link) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 0;
+    border: var(--border-width) solid var(--border-default);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+  }
+
+  .focus-layout--phone :global(.meta-row .copy-number-btn) {
+    min-width: 0;
+    min-height: 0;
   }
 
   .focus-layout--phone :global(.actions-row) {

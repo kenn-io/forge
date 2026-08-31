@@ -2142,7 +2142,7 @@
               </svg>
             </a>
           </div>
-          {#if !stalePR}
+          {#if !stalePR && !phonePresentation}
             <SelectDropdown
               class="kanban-select kanban-select--header kanban-select--{pr.KanbanStatus.replace('_', '-')}"
               value={pr.KanbanStatus}
@@ -2372,7 +2372,7 @@
         />
       </div>
 
-      {#if !stalePR}
+      {#if !stalePR && !phonePresentation}
         <SelectDropdown
           class="kanban-select kanban-select--below-chips kanban-select--{pr.KanbanStatus.replace('_', '-')}"
           value={pr.KanbanStatus}

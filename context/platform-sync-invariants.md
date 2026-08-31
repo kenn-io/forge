@@ -41,6 +41,9 @@ combining repository-owned history
   not create a catalog row from owner/name alone. Descriptor metadata writes
   remain fenced to the descriptor's observation time
   (`internal/server/provider_sources.go::hubProviderSource.observeRepositoryDescriptor`).
+- Parallel reads may receive same-identity, same-route descriptors out of order;
+  superseded metadata is skipped but the read remains usable. Identity or route
+  changes still fail closed (`internal/server/provider_sources.go::observeRepositoryDescriptor`).
 - Repository provider metadata and merge settings have a single sync-path
   writer: commits go through the observation watermark so a delayed snapshot
   never overwrites a newer same-route observation, and reconciled direct item

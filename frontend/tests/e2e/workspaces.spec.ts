@@ -27,6 +27,7 @@ const contextMenuWorkspace = {
   },
   item_type: "pull_request",
   item_number: 555,
+  source_item_visible: true,
   git_head_ref: "fix/issue-cross-reference-events",
   worktree_path: "/tmp/kenn-forge-ws-context-menu",
   tmux_session: "kenn-forge-ws-context-menu",

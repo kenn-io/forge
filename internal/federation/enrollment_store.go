@@ -495,6 +495,7 @@ func normalizeJoinRequest(request JoinRequest) (JoinRequest, error) {
 	}
 	request.BaseURL = baseURL
 	if request.HubCredential == "" ||
+		len(request.HubCredential) > MaxCredentialLength ||
 		strings.TrimSpace(request.HubCredential) != request.HubCredential ||
 		strings.ContainsAny(request.HubCredential, " \t\r\n") {
 		return JoinRequest{}, errors.New("hub-to-spoke credential is invalid")

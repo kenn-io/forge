@@ -319,6 +319,9 @@ func observeRepositoryDescriptor(
 		return invalidHubDescriptor(err)
 	}
 	if !accepted {
+		if repositoryDescriptorMatchesEntry(descriptor, entry) {
+			return nil
+		}
 		return invalidHubDescriptor(
 			errors.New("hub repository descriptor is older than the local route observation"),
 		)
@@ -335,11 +338,29 @@ func observeRepositoryDescriptor(
 		return invalidHubDescriptor(err)
 	}
 	if !applied {
+		current, lookupErr := database.GetRepositoryByProviderID(
+			ctx, descriptor.Provider, descriptor.PlatformHost, descriptor.PlatformRepoID,
+		)
+		if lookupErr == nil && repositoryDescriptorMatchesEntry(descriptor, current) {
+			return nil
+		}
 		return invalidHubDescriptor(
 			errors.New("hub repository descriptor lost its observation fence"),
 		)
 	}
 	return nil
+}
+
+func repositoryDescriptorMatchesEntry(
+	descriptor providerplane.RepositoryDescriptor,
+	entry *db.RepositoryCatalogEntry,
+) bool {
+	return entry != nil && entry.Lifecycle == db.RepositoryLifecycleActive &&
+		entry.Repository.Platform == descriptor.Provider &&
+		entry.Repository.PlatformHost == descriptor.PlatformHost &&
+		entry.Repository.PlatformRepoID == descriptor.PlatformRepoID &&
+		entry.Repository.Owner == descriptor.Owner &&
+		entry.Repository.Name == descriptor.Name
 }
 
 func invalidHubDescriptor(error) error {

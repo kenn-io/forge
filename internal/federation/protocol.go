@@ -18,6 +18,9 @@ import (
 // an exact match; there is no version translation.
 const ProtocolVersion = 3
 
+// MaxCredentialLength bounds opaque federation bearers on the wire and disk.
+const MaxCredentialLength = 256
+
 type EnrollmentState string
 
 const (
@@ -72,7 +75,7 @@ type JoinRequest struct {
 	Platform        string `json:"platform"`
 	BaseURL         string `json:"base_url"`
 	ProtocolVersion int    `json:"protocol_version"`
-	HubCredential   string `json:"hub_credential"`
+	HubCredential   string `json:"hub_credential" maxLength:"256"`
 }
 
 // JoinResponse gives the spoke its hub binding and outbound bearer.

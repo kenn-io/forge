@@ -18,6 +18,7 @@ const workspace = {
   },
   item_type: "pull_request",
   item_number: 42,
+  source_item_visible: true,
   git_head_ref: "feature/auth",
   worktree_path: "/tmp/worktrees/ws-9",
   tmux_session: "kenn-forge-ws-9",

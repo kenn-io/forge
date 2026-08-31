@@ -3587,6 +3587,7 @@ components:
         enrollment_id:
           type: string
         hub_credential:
+          maxLength: 256
           type: string
         name:
           type: string

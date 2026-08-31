@@ -3477,6 +3477,42 @@ func TestProviderSettingsRepositoryObservationUsesHubTime(t *testing.T) {
 	}))
 }
 
+func TestRepositoryDescriptorAcceptsSupersededSameRouteObservation(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	newer := time.Date(2026, time.August, 24, 12, 1, 0, 0, time.UTC)
+	identity := db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "repo-widget", Owner: "acme", Name: "widget",
+	}
+	_, accepted, err := database.ReconcileRepositoryObservation(
+		t.Context(), identity, newer,
+	)
+	require.NoError(err)
+	require.True(accepted)
+
+	source := hubProviderSource{db: database}
+	require.NoError(source.observeRepositoryDescriptor(t.Context(), providerplane.RepositoryDescriptor{
+		ProtocolVersion: federation.ProtocolVersion,
+		Provider:        "github", PlatformHost: "github.com", PlatformRepoID: "repo-widget",
+		Owner: "acme", Name: "widget", CloneURL: "https://github.com/acme/widget.git",
+		DefaultBranch: "main", SnapshotRevision: 1, ObservedAt: newer.Add(-time.Second),
+	}))
+
+	identity.Owner = "acme-renamed"
+	_, accepted, err = database.ReconcileRepositoryObservation(
+		t.Context(), identity, newer.Add(time.Minute),
+	)
+	require.NoError(err)
+	require.True(accepted)
+	require.Error(source.observeRepositoryDescriptor(t.Context(), providerplane.RepositoryDescriptor{
+		ProtocolVersion: federation.ProtocolVersion,
+		Provider:        "github", PlatformHost: "github.com", PlatformRepoID: "repo-widget",
+		Owner: "acme", Name: "widget", CloneURL: "https://github.com/acme/widget.git",
+		DefaultBranch: "main", SnapshotRevision: 1, ObservedAt: newer,
+	}))
+}
+
 func TestProviderSettingsProjectionCarriesCatalogObservationTime(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)

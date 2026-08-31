@@ -24,7 +24,10 @@ import (
 	"go.kenn.io/forge/internal/server/httpapi"
 )
 
-const maxFederationEnrollmentResponseBytes = 1 << 20
+const (
+	maxFederationEnrollmentRequestBytes  = 16 << 10
+	maxFederationEnrollmentResponseBytes = 1 << 20
+)
 
 type createEnrollmentTokenInput struct {
 	Body struct {
@@ -110,6 +113,7 @@ func (h *Handler) registerEnrollmentRoutes(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID: "begin-federation-enrollment",
 		Method:      http.MethodPost, Path: "/federation/enrollments",
+		MaxBodyBytes:  maxFederationEnrollmentRequestBytes,
 		DefaultStatus: http.StatusCreated,
 		Summary:       "Begin or resume a federation enrollment", Tags: []string{"Fleet"},
 	}, h.beginEnrollment)

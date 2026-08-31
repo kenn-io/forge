@@ -123,6 +123,49 @@ func TestEnrollmentHTTPExchangeConsumesTokenAndIsDirectional(t *testing.T) {
 	rejected.Body.Close()
 }
 
+func TestEnrollmentHTTPRejectsOversizedInputBeforePersistence(t *testing.T) {
+	tests := []struct {
+		name       string
+		credential string
+		wantStatus int
+	}{
+		{
+			name: "credential field", credential: strings.Repeat("x", federation.MaxCredentialLength+1),
+			wantStatus: http.StatusUnprocessableEntity,
+		},
+		{
+			name: "request body", credential: strings.Repeat("x", maxFederationEnrollmentRequestBytes),
+			wantStatus: http.StatusRequestEntityTooLarge,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			fixture := newEnrollmentHandlerFixture(t, enrollmentHubID, nil)
+			server := httptest.NewTLSServer(fixture.mux)
+			t.Cleanup(server.Close)
+			oneTime, err := fixture.enrollments.CreateOneTimeToken(federation.Identity{
+				NodeID: enrollmentHubID, Name: "Hub", BaseURL: server.URL,
+			}, time.Now().Add(time.Minute))
+			require.NoError(err)
+			request := federation.JoinRequest{
+				EnrollmentID: enrollmentRequestID,
+				NodeID:       enrollmentNodeID, Name: "Spoke", Platform: "linux",
+				BaseURL: "https://spoke.example", ProtocolVersion: federation.ProtocolVersion,
+				HubCredential: tt.credential,
+			}
+
+			response := postEnrollmentRequest(t, server.Client(), server.URL, oneTime.Token, request)
+			assert.Equal(tt.wantStatus, response.StatusCode)
+			response.Body.Close()
+			assert.Empty(fixture.enrollments.List())
+			_, persisted := fixture.credentials.Outbound(enrollmentNodeID)
+			assert.False(persisted)
+		})
+	}
+}
+
 func TestFleetJoinPersistsBothCredentialDirectionsAndHubBinding(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

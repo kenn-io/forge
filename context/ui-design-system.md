@@ -122,21 +122,19 @@ otherwise fails only in the Vitest/Playwright transform tier, not in
 - `AdaptiveActionGrid`: the phone PR primary-action surface. Phone-like PR
   routes (`phonePresentation` threaded from
   `frontend/src/App.svelte::phoneDetailProps`) render approve, merge, close,
-  reopen, ready, workflows, and the workspace action as one kit grid with
-  `layout="grid"` (kit's filled layout: equal tracks that span the container
-  at every width, balanced rows, never a natural-width row), the joined
-  preset (`itemRadius="none"`, zero gaps and padding: one rounded slab of
-  shared-edge buttons), `collapseBelow={0}` (never the disclosure),
-  `minTrackWidth={170}` so primary labels stay untruncated, and the same
-  per-action snippets the desktop `FitStages` row
-  composes, so each stateful control still renders exactly once. Kit fills
-  only its own direct controls in grid mode; compound wrappers
-  (`approve-section`, `ready-section`, `workflow-approval-section`,
-  `workspace-create-split`) are custom items and `PullDetail` fills their
-  primary button itself. A wrapper around a kit control must not hardcode a
-  width smaller than the phone hit target (`--focus-detail-hit-target`), or
-  the control overflows its grid track. Desktop-narrow focus presentation
-  keeps `FitStages`.
+  reopen, ready, workflows, and the workspace action with kit's
+  `layout="fill"`: each row is packed by the buttons' natural widths and then
+  stretched to span the content width, rows are independent of each other,
+  and no label is ever truncated. Gaps stay (`rowGap`/`columnGap` 2,
+  `frame="none"`, `padding={0}`); `collapseBelow={0}` disables the
+  disclosure. It reuses the same per-action snippets the desktop `FitStages`
+  row composes, so each stateful control still renders exactly once. Kit
+  fills only its own direct controls; compound wrappers (`approve-section`,
+  `ready-section`, `workflow-approval-section`, `workspace-create-split`)
+  are custom items and `PullDetail` fills their primary button itself. A
+  wrapper around a kit control must not hardcode a width smaller than the
+  phone hit target (`--focus-detail-hit-target`), or the control overflows
+  its cell. Desktop-narrow focus presentation keeps `FitStages`.
 - `FitStages`: how an action row degrades under pressure (richest labelled
   `Button` row to compact labelled or `IconButton` rows, then a measured menu
   trigger when needed), never a media query, Button-internal overrides, or a

@@ -2757,14 +2757,12 @@
               class="phone-actions-grid"
               items={phoneActionItems}
               ariaLabel="Pull request actions"
-              layout="grid"
-              radius="md"
-              itemRadius="none"
-              rowGap={0}
-              columnGap={0}
+              layout="fill"
+              frame="none"
               padding={0}
+              rowGap={2}
+              columnGap={2}
               collapseBelow={0}
-              minTrackWidth={170}
             />
           {:else}
             <FitStages

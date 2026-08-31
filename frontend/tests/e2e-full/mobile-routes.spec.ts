@@ -143,7 +143,9 @@ async function expectReadableDetail(page: Page): Promise<void> {
   expect(metrics.bodyFontSize).toBeGreaterThanOrEqual(16);
   expect(metrics.chipFontSize).toBeGreaterThanOrEqual(14);
   expect(metrics.copyNumberFontSize).toBeGreaterThanOrEqual(15);
-  expect(metrics.copyNumberRect?.height ?? 0).toBeGreaterThanOrEqual(44);
+  // The number button sits inside a text row, so it keeps text sizing with the
+  // WCAG 2.5.8 24px target floor rather than the standalone phone hit target.
+  expect(metrics.copyNumberRect?.height ?? 0).toBeGreaterThanOrEqual(24);
   expect(metrics.overflowingVisible).toEqual([]);
 }
 

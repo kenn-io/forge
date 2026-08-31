@@ -1729,8 +1729,10 @@
   }
 
   .focus-layout--phone :global(.meta-row .copy-number-btn) {
-    min-width: 0;
-    min-height: 0;
+    /* WCAG 2.5.8 target minimum; the full phone hit target belongs to
+     * standalone controls, not to a number sitting inside a text row. */
+    min-width: 24px;
+    min-height: 24px;
   }
 
   .focus-layout--phone :global(.actions-row) {

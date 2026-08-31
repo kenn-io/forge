@@ -2029,8 +2029,8 @@
     }
 
     .meta-row :global(.copy-number-btn) {
-      min-width: 0;
-      min-height: 0;
+      min-width: 24px;
+      min-height: 24px;
       padding: 0;
       font-size: var(--font-size-sm);
       line-height: 1.35;

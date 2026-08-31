@@ -4027,8 +4027,8 @@
     }
 
     .pull-detail-content .meta-row :global(.copy-number-btn) {
-      min-width: 0;
-      min-height: 0;
+      min-width: 24px;
+      min-height: 24px;
       padding: 0;
       border-radius: 3px;
       font-size: var(--font-size-sm);

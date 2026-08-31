@@ -9380,6 +9380,7 @@ export interface components {
             repo: components["schemas"]["WorkspaceRepositorySummary"];
             repo_name: string;
             repo_owner: string;
+            source_item_visible: boolean;
             status: string;
             tmux_activity_source: string;
             tmux_last_output_at: string | null;

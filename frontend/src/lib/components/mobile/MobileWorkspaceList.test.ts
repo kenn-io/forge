@@ -34,6 +34,7 @@ const fixture = {
   git_head_ref: "feature/mobile-workspaces",
   item_number: 42,
   item_type: "pull_request",
+  source_item_visible: true,
   platform_host: "github.com",
   repo_name: "widgets",
   repo_owner: "acme",
@@ -150,6 +151,26 @@ describe("MobileWorkspaceList", () => {
 
     await screen.findByText("Build mobile workspaces");
     expect(screen.queryByRole("button", { name: /Open linked item/ })).toBeNull();
+  });
+
+  it("hides actions for a removed workspace source item", async () => {
+    mockGet.mockImplementation((path: string) => {
+      if (path === "/snapshot") {
+        return Promise.resolve({
+          data: { hosts: [], workspaces: [{ ...fixture, source_item_visible: false }] },
+        });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    render(MobileWorkspaceList, { props: { onOpen: vi.fn(), onOpenItem: vi.fn() } });
+
+    await screen.findByText("Build mobile workspaces");
+    expect(screen.queryByRole("button", { name: /Open linked item/ })).toBeNull();
+    await fireEvent.click(screen.getByRole("button", { name: "Workspace actions for Build mobile workspaces" }));
+    const actions = await screen.findByRole("dialog", { name: "Workspace actions" });
+    expect(within(actions).queryByRole("button", { name: "Open item on provider" })).toBeNull();
+    expect(within(actions).queryByRole("button", { name: "Copy item URL" })).toBeNull();
   });
 
   it("keeps Fleet linked items as passive metadata", async () => {

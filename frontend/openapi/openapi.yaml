@@ -9638,6 +9638,8 @@ components:
           type: string
         repo_owner:
           type: string
+        source_item_visible:
+          type: boolean
         status:
           type: string
         tmux_activity_source:
@@ -9666,6 +9668,7 @@ components:
         - repo_name
         - item_type
         - item_number
+        - source_item_visible
         - git_head_ref
         - worktree_path
         - tmux_working

@@ -16,6 +16,7 @@ export type WorkspaceListItem = Pick<
   | "platform_host"
   | "repo_name"
   | "repo_owner"
+  | "source_item_visible"
   | "status"
   | "tmux_activity_source"
   | "tmux_last_output_at"
@@ -90,6 +91,7 @@ const Workspace = Schema.Struct({
   repo: Schema.optionalKey(Repo),
   repo_name: Schema.String,
   repo_owner: Schema.String,
+  source_item_visible: Schema.Boolean,
   status: Schema.String,
   tmux_activity_source: Schema.String,
   tmux_last_output_at: Schema.NullOr(Schema.String),

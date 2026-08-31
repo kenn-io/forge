@@ -5549,6 +5549,7 @@ type WorkspaceSummary struct {
 	Repo                  WorkspaceRepositorySummary `json:"repo"`
 	RepoName              string                     `json:"repo_name"`
 	RepoOwner             string                     `json:"repo_owner"`
+	SourceItemVisible     bool                       `json:"source_item_visible"`
 	Status                string                     `json:"status"`
 	TmuxActivitySource    string                     `json:"tmux_activity_source"`
 	TmuxLastOutputAt      *string                    `json:"tmux_last_output_at"`

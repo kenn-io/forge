@@ -277,6 +277,18 @@ func TestHubEnrichesWorkspaceByStableProviderIdentity(t *testing.T) {
 	assert.Equal("Fix race", *enriched.Worktrees[0].PRTitle)
 }
 
+func TestBuildWorkspaceSummariesPreservesSourceVisibility(t *testing.T) {
+	assert := assert.New(t)
+	workspaces := buildWorkspaceSummaries([]RawWorkspace{
+		{ID: "visible", SourceItemVisible: true},
+		{ID: "removed", SourceItemVisible: false},
+	}, nil, "")
+
+	require.Len(t, workspaces, 2)
+	assert.True(workspaces[0].SourceItemVisible)
+	assert.False(workspaces[1].SourceItemVisible)
+}
+
 func TestBuildEnrichedDerivesDistinctPerHostIDs(t *testing.T) {
 	raw := legacyRawSnapshot{
 		SchemaVersion: SchemaVersion,

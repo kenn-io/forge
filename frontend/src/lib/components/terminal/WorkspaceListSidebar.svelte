@@ -485,6 +485,12 @@
   }
 
   function itemBubbleNumber(ws: Workspace): number | null {
+    if (
+      (ws.item_type === "pull_request" || ws.item_type === "issue") &&
+      !ws.source_item_visible
+    ) {
+      return null;
+    }
     return ws.item_type === "adhoc" ? adHocPRNumber(ws) : ws.item_number;
   }
 

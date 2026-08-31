@@ -85,6 +85,7 @@ interface WorkspaceFixtureOptions {
   status?: string;
   errorMessage?: string | null;
   associatedPRNumber?: number | null;
+  sourceItemVisible?: boolean;
   worktreeDirty?: boolean;
 }
 
@@ -116,6 +117,7 @@ function workspaceFixture({
   status = "ready",
   errorMessage = null,
   associatedPRNumber = null,
+  sourceItemVisible = true,
   worktreeDirty,
 }: WorkspaceFixtureOptions) {
   // Kata and ad-hoc workspaces carry no joined provider item metadata.
@@ -157,6 +159,7 @@ function workspaceFixture({
     commits_ahead: commitsAhead,
     commits_behind: commitsBehind,
     associated_pr_number: associatedPRNumber,
+    source_item_visible: sourceItemVisible,
     ...(worktreeDirty === undefined ? {} : { worktree_dirty: worktreeDirty }),
   };
 }
@@ -2688,6 +2691,34 @@ describe("WorkspaceListSidebar", () => {
 
     await fireEvent.click(bubble!);
     expect(onOpenItemSidebar).toHaveBeenCalledWith("ws-adhoc", "pr", undefined);
+  });
+
+  it("hides actions for a removed workspace source item", async () => {
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          workspaceFixture({
+            id: "ws-removed",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "acme",
+            name: "widgets",
+            number: 840,
+            sourceItemVisible: false,
+          }),
+        ],
+      },
+    });
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-removed" },
+    });
+    await waitFor(() => expect(rowTitles(container)).toEqual(["PR 840"]));
+
+    expect(container.querySelector(".item-bubble")).toBeNull();
+    await fireEvent.contextMenu(container.querySelector(".ws-row")!);
+    expect(screen.queryByRole("menuitem", { name: "Open item on GitHub" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Copy item URL" })).toBeNull();
   });
 
   it("offers provider item actions for an ad-hoc workspace with a detected PR", async () => {

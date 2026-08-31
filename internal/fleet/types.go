@@ -452,6 +452,7 @@ type WorkspaceSummary struct {
 	RepoName              string                     `json:"repo_name"`
 	ItemType              string                     `json:"item_type"`
 	ItemNumber            int                        `json:"item_number"`
+	SourceItemVisible     bool                       `json:"source_item_visible"`
 	ItemKey               string                     `json:"item_key,omitempty"`
 	GitHeadRef            string                     `json:"git_head_ref"`
 	WorktreePath          string                     `json:"worktree_path"`

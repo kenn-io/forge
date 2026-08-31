@@ -668,6 +668,10 @@ func waitHTTP(
 	timeout time.Duration,
 	result any,
 ) error {
+	requestClient := *client
+	requestClient.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
 	deadline := time.NewTimer(timeout)
 	defer deadline.Stop()
 	ticker := time.NewTicker(200 * time.Millisecond)
@@ -681,7 +685,7 @@ func waitHTTP(
 		if bearer != "" {
 			request.Header.Set("Authorization", "Bearer "+bearer)
 		}
-		response, err := client.Do(request)
+		response, err := requestClient.Do(request)
 		if err == nil {
 			if response.StatusCode >= 200 && response.StatusCode < 300 {
 				if result == nil {

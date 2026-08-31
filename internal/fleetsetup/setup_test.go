@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -376,6 +377,29 @@ func TestApplyPublishesConfigServiceAndCanonicalIdentity(t *testing.T) {
 	assert.FileExists(plan.ServicePath)
 	assert.Contains(*commands, "tailscale serve --yes --bg --https=443 http://127.0.0.1:8091")
 	assert.NotContains(*commands, "tailscale serve --yes --https=443 --set-path=/ off")
+}
+
+func TestReadinessRefusesRedirectsBeforeForwardingDaemonBearer(t *testing.T) {
+	assert := assert.New(t)
+	redirected := false
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/redirected" {
+			redirected = true
+			assert.Empty(request.Header.Get("Authorization"))
+			_, _ = io.WriteString(w, `{"hosts":[]}`)
+			return
+		}
+		http.Redirect(w, request, "/redirected", http.StatusFound)
+	}))
+	t.Cleanup(server.Close)
+
+	err := waitHTTP(
+		t.Context(), server.Client(), server.URL+"/api/v1/snapshot",
+		"daemon-secret", 20*time.Millisecond, &struct{}{},
+	)
+
+	require.ErrorContains(t, err, "HTTP 302 Found")
+	assert.False(redirected)
 }
 
 func TestPlanSupportsExternalHTTPSWithoutTailscale(t *testing.T) {

@@ -331,11 +331,16 @@ func TestApplyPublishesConfigServiceAndCanonicalIdentity(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	runner, root, commands := testRunner(t, "linux")
+	dataDir := filepath.Join(root, "forge")
+	require.NoError(os.MkdirAll(dataDir, 0o700))
+	require.NoError(os.WriteFile(filepath.Join(dataDir, "auth_token"), []byte("daemon-secret\n"), 0o600))
 	var snapshotRequestURI string
+	var snapshotAuthorization string
 	runner.deps.httpClient = &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		body := `{"status":"ok"}`
 		if request.URL.Path == "/api/v1/snapshot" {
 			snapshotRequestURI = request.URL.RequestURI()
+			snapshotAuthorization = request.Header.Get("Authorization")
 			body = `{"hosts":[{"nodeID":"11111111111111111111111111111111","kind":"self","federationRole":"hub"}]}`
 		}
 		return &http.Response{
@@ -346,7 +351,7 @@ func TestApplyPublishesConfigServiceAndCanonicalIdentity(t *testing.T) {
 	plan := Plan{
 		Role:       RoleHub,
 		ConfigPath: filepath.Join(root, "forge", "config.toml"),
-		DataDir:    filepath.Join(root, "forge"), BinaryPath: filepath.Join(root, "kenn-forge"),
+		DataDir:    dataDir, BinaryPath: filepath.Join(root, "kenn-forge"),
 		User: "operator", UID: 1000, HomeDir: root, PathEnv: "/usr/bin",
 		TailscaleLogin: "operator@example.com", TailscaleDNS: "forge-spoke.example.ts.net",
 		Origin: "https://forge-spoke.example.ts.net", AllowedHost: "forge-spoke.example.ts.net",
@@ -361,6 +366,7 @@ func TestApplyPublishesConfigServiceAndCanonicalIdentity(t *testing.T) {
 	assert.Equal(plan.Origin, result.Origin)
 	assert.Equal("11111111111111111111111111111111", result.NodeID)
 	assert.Equal("/api/v1/snapshot?include_peers=true", snapshotRequestURI)
+	assert.Equal("Bearer daemon-secret", snapshotAuthorization)
 	cfg, err := config.Load(plan.ConfigPath)
 	require.NoError(err)
 	assert.Equal([]string{"forge-spoke.example.ts.net"}, cfg.AllowedHosts)

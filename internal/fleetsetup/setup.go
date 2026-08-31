@@ -629,7 +629,7 @@ func (r *Runner) verifyReadiness(ctx context.Context, plan Plan, nodeID string) 
 		} `json:"hosts"`
 	}
 	bearer := ""
-	if plan.Publication == publicationExternal {
+	if plan.Publication == publicationExternal || plan.Publication == publicationTailscale {
 		rawToken, err := r.deps.readFile(runtimelock.AuthTokenPath(plan.DataDir))
 		if err != nil {
 			return fmt.Errorf("read daemon bearer for HTTPS verification: %w", err)

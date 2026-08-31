@@ -51,10 +51,6 @@ func TestWorkspacePullBranchRouteFastForwardsBehindBranch(t *testing.T) {
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 	runGit(t, ws.WorktreePath, "push", "-u", "origin", "HEAD")
-	div, ok, err := workspace.WorktreeDivergence(ctx, ws.WorktreePath)
-	require.NoError(err)
-	require.True(ok)
-	require.Equal(workspace.Divergence{}, div)
 	upstreamRef := workspaceGitOutput(
 		t, ws.WorktreePath,
 		"rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}",

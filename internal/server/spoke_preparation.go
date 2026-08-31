@@ -295,7 +295,7 @@ func (s *Server) persistPreparedSpokeRole(
 		prepared.Preparation.Seal != seal.Seal {
 		return federation.ErrPreparationSealMismatch
 	}
-	return s.mutatePersistedFleetChecked(ctx, func(fleet *config.Fleet) error {
+	return s.mutatePersistedEnrollmentFleetChecked(ctx, func(fleet *config.Fleet) error {
 		if !fleet.Enabled || fleet.Hub == nil ||
 			fleet.Hub.NodeID != prepared.HubID ||
 			fleet.Hub.BaseURL != prepared.HubURL {

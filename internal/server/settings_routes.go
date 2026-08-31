@@ -63,6 +63,20 @@ func (s *Server) mutatePersistedFleet(
 func (s *Server) mutatePersistedFleetChecked(
 	ctx context.Context, mutate func(*config.Fleet) error,
 ) error {
+	return s.mutatePersistedFleetCandidateChecked(ctx, false, mutate)
+}
+
+func (s *Server) mutatePersistedEnrollmentFleetChecked(
+	ctx context.Context, mutate func(*config.Fleet) error,
+) error {
+	return s.mutatePersistedFleetCandidateChecked(ctx, true, mutate)
+}
+
+func (s *Server) mutatePersistedFleetCandidateChecked(
+	ctx context.Context,
+	keepEnrollmentHub bool,
+	mutate func(*config.Fleet) error,
+) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -77,7 +91,9 @@ func (s *Server) mutatePersistedFleetChecked(
 	active := s.activeFleetConfigSnapshotLocked().Fleet
 	candidate.Fleet.Role = active.Role
 	candidate.Fleet.BaseURL = active.BaseURL
-	candidate.Fleet.Hub = active.Hub
+	if !keepEnrollmentHub {
+		candidate.Fleet.Hub = active.Hub
+	}
 	if err := mutate(&candidate.Fleet); err != nil {
 		return err
 	}

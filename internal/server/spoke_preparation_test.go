@@ -450,6 +450,63 @@ state = "active"
 	assert.Len(unchanged.Fleet.Members, 1)
 }
 
+func TestPersistPreparedSpokeRoleKeepsEnrollmentHubBinding(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	enrollments, credentials := openFederationPreparationStores(t, "joined-spoke")
+	local := federation.LocalEnrollment{
+		EnrollmentID: preparationEnrollmentID, NodeID: preparationLocalNodeID,
+		SpokeBaseURL: "https://spoke.example",
+		HubID:        preparationHubNodeID, HubURL: "https://hub.example",
+		ProtocolVersion: federation.ProtocolVersion, State: federation.EnrollmentPending,
+		ExpiresAt: time.Now().Add(time.Minute), PreparationStarted: true,
+		PreparationRequired: true,
+	}
+	require.NoError(enrollments.SaveLocal(t.Context(), local))
+	require.NoError(enrollments.SaveLocalPreparationSeal(
+		t.Context(), federation.LocalPreparationSeal{
+			EnrollmentID: local.EnrollmentID, NodeID: local.NodeID,
+			HubID: local.HubID, ProtocolVersion: local.ProtocolVersion,
+			PreparationDigest: "digest", Seal: "sealed-proof",
+		},
+	))
+	configPath := filepath.Join(t.TempDir(), "forge.toml")
+	writeConfigToml(t, configPath, fmt.Sprintf(`
+host = "127.0.0.1"
+port = 8091
+data_dir = %q
+
+[api]
+require_auth = true
+
+[fleet]
+enabled = true
+role = "hub"
+base_url = "https://spoke.example"
+`, t.TempDir()))
+	cfg, err := config.Load(configPath)
+	require.NoError(err)
+	srv := NewWithConfig(dbtest.Open(t), nil, nil, nil, cfg, configPath, ServerOptions{
+		FederationEnrollments: enrollments, FederationCredentials: credentials,
+		FederationSpokeID: local.NodeID, DisableWorkspaceBackgroundMonitors: true,
+	})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	hub := config.FleetHub{NodeID: local.HubID, Name: "Hub", BaseURL: local.HubURL}
+	require.NoError(srv.persistHubBinding(t.Context(), hub))
+	seal := db.SpokePreparationSeal{
+		EnrollmentID: local.EnrollmentID, NodeID: local.NodeID,
+		HubNodeID: local.HubID, ProtocolVersion: local.ProtocolVersion,
+		Seal: "sealed-proof",
+	}
+
+	require.NoError(srv.persistPreparedSpokeRole(t.Context(), local, seal))
+
+	persisted, err := config.Load(configPath)
+	require.NoError(err)
+	assert.Equal(config.FleetRoleSpoke, persisted.Fleet.RoleOrDefault())
+	assert.Equal(&hub, persisted.Fleet.Hub)
+}
+
 func TestSpokePreparationRejectsFilesystemLaunchSpecBeforePersistence(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

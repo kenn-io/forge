@@ -127,6 +127,7 @@
   let clipboardFailureReported = false;
   let activePointerId: number | null = null;
   let pointerOrigin: { clientX: number; clientY: number } | null = null;
+  let lastTouchGesturePoint: { clientX: number; clientY: number } | null = null;
   let explicitFocusRequested = false;
   const encoder = new TextEncoder();
   let clipboardWriter: TerminalClipboardWriter | undefined;
@@ -362,6 +363,25 @@
   function isBrowserPasteShortcut(event: KeyboardEvent): boolean {
     const pasteModifierPressed = terminalLinkUsesMetaKey ? event.metaKey : event.ctrlKey;
     return !event.altKey && pasteModifierPressed && event.key.toLowerCase() === "v";
+  }
+
+  // xterm turns touch flings into momentum "gesturechange" events after the
+  // finger lifts. Those synthetic events carry a translation but no
+  // clientX/clientY, so when an app has mouse tracking on (Codex, tmux, vim)
+  // xterm reports the wheel at NaN;NaN and the app receives the tail of the
+  // malformed sequence as typed text. Capture runs before xterm's own listener
+  // on the screen element, so pin momentum reports to the last finger position.
+  const XTERM_GESTURE_CHANGE_EVENT = "-xterm-gesturechange";
+
+  function handleTerminalGestureChange(event: Event): void {
+    const gesture = event as Event & { clientX?: number; clientY?: number };
+    if (Number.isFinite(gesture.clientX) && Number.isFinite(gesture.clientY)) {
+      lastTouchGesturePoint = { clientX: gesture.clientX!, clientY: gesture.clientY! };
+      return;
+    }
+    if (lastTouchGesturePoint === null) return;
+    gesture.clientX = lastTouchGesturePoint.clientX;
+    gesture.clientY = lastTouchGesturePoint.clientY;
   }
 
   function handleInsecureTerminalRightMouse(event: MouseEvent): void {
@@ -923,6 +943,8 @@
     requestFirstPaint = () => {};
     publishClipboardWrite = () => {};
     containerEl?.removeEventListener("paste", handleTerminalPaste, true);
+    containerEl?.removeEventListener(XTERM_GESTURE_CHANGE_EVENT, handleTerminalGestureChange, true);
+    lastTouchGesturePoint = null;
     if (terminal) {
       unregisterTextureAtlasParticipant?.();
       unregisterTextureAtlasParticipant = null;
@@ -1090,6 +1112,7 @@
       term.parser.registerOscHandler(52, handleOsc52Clipboard);
       switchTimer.record("terminal-constructed");
       containerEl.addEventListener("paste", handleTerminalPaste, true);
+      containerEl.addEventListener(XTERM_GESTURE_CHANGE_EVENT, handleTerminalGestureChange, true);
 
       const fit = new FitAddon();
       fitAddon = fit;

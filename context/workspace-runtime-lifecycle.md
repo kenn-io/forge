@@ -293,6 +293,10 @@ stale tabs.
 - Agent TUIs in the normal buffer with no local scrollback receive vertical wheel gestures as cursor input; xterm/tmux
   keep ownership when scrollback, the alternate buffer, mouse tracking, or browser Ctrl-wheel zoom is active
   (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::handleTerminalWheel`).
+- Touch-fling momentum must never reach mouse-tracking apps as unpositioned wheel reports: xterm's post-lift
+  `-xterm-gesturechange` events omit `clientX`/`clientY`, so the pane pins them to the last finger position in a
+  capture listener before xterm encodes `ESC[<65;NaN;NaNM`
+  (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::handleTerminalGestureChange`).
 - macOS loopback clipboard fallback must run `pbcopy` with `LC_ALL=en_US.UTF-8`; service launchers may omit
   a UTF-8 locale and make `pbcopy` reinterpret unchanged UTF-8 input
   (`internal/systemclipboard/systemclipboard.go::nativeWriter.WriteText`).

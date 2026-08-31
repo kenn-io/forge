@@ -2056,6 +2056,11 @@
           onscroll={handlePullDetailScroll}
         >
         <div class="pull-detail">
+          {#if phonePresentation && detailStore.isDetailSyncing() && !manualRefreshPending}
+            <!-- Phones get a top progress bar instead of the inline "Syncing" row:
+                 the row wraps under the branch line and shifts the whole page. -->
+            <div class="sync-bar" role="status" aria-label="Syncing from GitHub"></div>
+          {/if}
           <div
             class="pull-detail-content"
             class:pull-detail-content--has-compact-actions={pr.State !== "merged" && !stalePR}
@@ -2184,7 +2189,7 @@
             >{pr.BaseBranch}</button>
           </span>
         {/if}
-        {#if detailStore.isDetailSyncing() && !manualRefreshPending}
+        {#if detailStore.isDetailSyncing() && !manualRefreshPending && !phonePresentation}
           <span class="meta-sep meta-sep--sync">·</span>
           <span class="sync-indicator" title="Syncing from GitHub">
             <Spinner size={12} label="Syncing" />
@@ -3204,6 +3209,7 @@
   }
 
   .pull-detail {
+    position: relative;
     padding: 20px 24px;
     display: flex;
     flex-direction: column;
@@ -3388,6 +3394,44 @@
   .meta-sep {
     font-size: var(--font-size-sm);
     color: var(--text-muted);
+  }
+
+  .sync-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    overflow: hidden;
+    pointer-events: none;
+    background: color-mix(in srgb, var(--accent-blue) 25%, transparent);
+  }
+
+  .sync-bar::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 40%;
+    background: var(--accent-blue);
+    animation: sync-bar-slide 1.2s ease-in-out infinite;
+  }
+
+  @keyframes sync-bar-slide {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(250%);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sync-bar::before {
+      animation: none;
+      width: 100%;
+    }
   }
 
   .sync-indicator {

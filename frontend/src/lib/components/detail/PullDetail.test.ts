@@ -2474,6 +2474,23 @@ describe("PullDetail inline workspace handoff", () => {
     expect(navigate).toHaveBeenCalledWith("/terminal/ws-1");
   });
 
+  it("phone presentation shows sync as a top bar instead of an inline row", async () => {
+    const detail = pullDetail();
+    renderPullDetail(detail, undefined, undefined, { phonePresentation: true, detailSyncing: true });
+
+    const bar = screen.getByRole("status", { name: "Syncing from GitHub" });
+    expect(bar.classList.contains("sync-bar")).toBe(true);
+    expect(document.querySelector(".sync-indicator")).toBeNull();
+  });
+
+  it("desktop presentation keeps the inline syncing indicator", async () => {
+    const detail = pullDetail();
+    renderPullDetail(detail, undefined, undefined, { detailSyncing: true });
+
+    expect(document.querySelector(".sync-indicator")).not.toBeNull();
+    expect(document.querySelector(".sync-bar")).toBeNull();
+  });
+
   it("without a controller open renders a single Open Workspace button that navigates", async () => {
     const detail = pullDetail();
     detail.workspace = { id: "ws-1", status: "ready" };

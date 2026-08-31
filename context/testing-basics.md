@@ -38,6 +38,12 @@ fixtures, or changing shell-script coverage.
 - Shell-script tests must execute the script against controlled inputs and
   assert observable output, side effects, or exit status. Do not grep scripts,
   workflows, config, or docs for expected implementation text.
+- JavaScript tests that create or mutate Git repositories must use the shared
+  isolated fixture; raw child processes can inherit hook bindings and mutate the
+  hosting checkout (`scripts/test-git-fixture.mjs::createGitTestRepository`).
+- Isolation must strip inherited Git variables, use scratch global and system
+  configuration, and keep the fixture outside every checkout; a working
+  directory or `git -C` alone does not isolate Git.
 - Private tmux tests retain markers on gate, read, validation, or identity errors;
   one deadline covers gate closure and startup draining, and cleanup never addresses
   the default server. (`internal/testutil/testtmux/owner.go::Owner`)

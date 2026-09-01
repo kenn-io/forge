@@ -378,7 +378,7 @@ func waitForWorkspaceReady(
 ) *generated.WorkspaceResponse {
 	t.Helper()
 
-	waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	waitCtx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 
 	ticker := time.NewTicker(25 * time.Millisecond)

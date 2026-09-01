@@ -403,13 +403,13 @@ func TestLoadRoborevRepositoryInventoryValidatesCompleteEnvelope(t *testing.T) {
 		want []roborevTrackedRepository
 	}{
 		{
-			name: "valid",
-			body: `{"repos":[{"root_path":"/repo","identity":"https://github.com/acme/widgets.git"}],"total_count":1}`,
+			name: "valid repo without review jobs",
+			body: `{"repos":[{"root_path":"/repo","identity":"https://github.com/acme/widgets.git"}],"total_count":0}`,
 			want: []roborevTrackedRepository{{RootPath: "/repo", Identity: "https://github.com/acme/widgets.git"}},
 		},
 		{
 			name: "valid mixed identity availability",
-			body: `{"repos":[{"root_path":"/repo","identity":"https://github.com/acme/widgets.git"},{"root_path":"/local"}],"total_count":2}`,
+			body: `{"repos":[{"root_path":"/repo","identity":"https://github.com/acme/widgets.git"},{"root_path":"/local"}],"total_count":3}`,
 			want: []roborevTrackedRepository{
 				{RootPath: "/repo", Identity: "https://github.com/acme/widgets.git"},
 				{RootPath: "/local"},
@@ -431,7 +431,6 @@ func TestLoadRoborevRepositoryInventoryValidatesCompleteEnvelope(t *testing.T) {
 
 	invalid := []string{
 		`{}`,
-		`{"repos":[],"total_count":1}`,
 		`{"repos":[{"identity":"https://github.com/acme/widgets.git"}],"total_count":1}`,
 		`{"repos":[],"total_count":0} trailing`,
 	}

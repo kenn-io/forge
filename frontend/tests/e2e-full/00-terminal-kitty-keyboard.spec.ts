@@ -17,7 +17,6 @@ type WorkspaceStatusResponse = {
 
 const terminalOutputTimeoutMs = 15_000;
 const workspaceTestTimeoutMs = 120_000;
-const shellPromptPattern = /[#$%]\s/;
 
 function hasCommand(command: string, args: string[] = ["--version"]): boolean {
   try {

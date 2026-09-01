@@ -24,6 +24,22 @@ Choose an agent from the create menu when you want to create the workspace and
 launch that agent in one step. Creating the same item or ad-hoc branch again
 reopens the existing workspace instead of making a duplicate.
 
+### Choose a machine in a fleet
+
+On a fleet hub, **New workspace** includes a **Run on** selector. Choose the hub
+or any spoke that currently allows workspace writes. An unavailable machine
+stays in the list with the reason it cannot be selected. The chosen machine
+owns the worktree, Git commands, agent processes, and tmux sessions.
+
+The hub workspace list adds a node badge to every row, so local and remote
+workspaces are easy to tell apart. A spoke shows only its local workspaces and
+creates new workspaces on itself.
+
+The workspace buttons on pull requests and issues create work on the Forge UI
+you opened. Use the hub's **New workspace** dialog when you need to choose a
+different execution machine. See [Federated fleet](../federated-fleet.md) for
+the complete ownership model and setup workflow.
+
 ## Use the workspace view
 
 The workspace sidebar can search, sort, and group workspaces. Rows show the

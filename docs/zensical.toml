@@ -22,12 +22,12 @@ nav = [
     {"Work in local sessions" = "workflows/workspaces.md"},
     {"Read and edit Docs" = "workflows/docs.md"},
   ]},
+  {"Federated fleet" = "federated-fleet.md"},
   {"Integrations" = "integrations.md"},
   {"Settings" = "settings.md"},
   {"Configuration" = "configuration.md"},
   {"Commands" = "commands.md"},
   {"Advanced / experimental" = [
-    {"Federated Forge" = "federated-fleet.md"},
     {"MCP companion" = "kenn-forge-mcp.md"},
   ]},
   {"Archive" = "archive.md"},

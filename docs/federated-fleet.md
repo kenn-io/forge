@@ -1,18 +1,101 @@
 # Federated Forge
 
-A Kenn Forge fleet gives several development machines one shared view without
-moving their local work to a central server.
+A Kenn Forge fleet gives several development machines one shared control point
+without moving their repositories, worktrees, or agent sessions to a central
+server.
 
-- One **hub** owns provider synchronization, provider mutations, and
-  the fleet-wide view.
-- Each **spoke** owns its local repositories, workspaces, processes, Git
-  traffic, and tmux sessions.
-- Every machine keeps its own directly accessible Forge UI.
-- Forge-to-Forge requests and terminal WebSockets use authenticated HTTPS.
+## Why use a fleet
 
-Every machine runs the same `kenn-forge` binary. The hub does not use
-SSH to start a spoke or attach to its tmux server. Start and supervise each
-daemon on its own machine.
+Use a fleet when one machine is not the right place for every task. For example,
+you may keep routine work on a laptop, run large builds on a workstation, and
+use a machine with a special operating system or GPU when a task needs it.
+
+- Open the hub to see workspaces from every machine and the node that owns each
+  one.
+- Create a repository workspace on the hub itself or any writable spoke.
+- Sync pull requests, issues, and activity once instead of spending provider
+  API budget on every machine.
+- Open a spoke directly for a local-only workspace view when you want to work
+  in that machine's environment.
+- Keep each repository, worktree, process, and tmux session on its execution
+  machine.
+
+If one machine already handles all your work, keep Forge standalone. A fleet
+adds value when the execution location matters.
+
+## The mental model
+
+One **hub** owns provider synchronization, provider changes, and the fleet-wide
+view. Each **spoke** owns its local repositories, workspaces, Git commands,
+processes, and tmux sessions. The hub can also own local workspaces, so it is an
+execution machine as well as the coordinator.
+
+<figure class="fleet-diagram">
+  <svg viewBox="0 0 960 560" role="img" aria-labelledby="fleet-topology-title fleet-topology-description">
+    <title id="fleet-topology-title">Forge hub-and-spoke topology</title>
+    <desc id="fleet-topology-description">A browser can open the hub or either spoke. The hub talks to the Git provider for synchronized provider data and sends workspace or terminal operations to the spoke that owns the work. Each spoke keeps its own repositories, workspaces, and agents.</desc>
+    <defs>
+      <marker id="fleet-arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+        <path d="M0,0 L0,6 L9,3 z" class="fleet-diagram__arrowhead" />
+      </marker>
+      <marker id="fleet-arrow-start" markerWidth="10" markerHeight="10" refX="1" refY="3" orient="auto-start-reverse" markerUnits="strokeWidth">
+        <path d="M9,0 L9,6 L0,3 z" class="fleet-diagram__arrowhead" />
+      </marker>
+    </defs>
+    <rect class="fleet-diagram__node" x="55" y="45" width="230" height="90" rx="14" />
+    <text class="fleet-diagram__title" x="170" y="82" text-anchor="middle">Your browser</text>
+    <text class="fleet-diagram__body" x="170" y="111" text-anchor="middle">Open any Forge directly</text>
+
+    <rect class="fleet-diagram__node" x="675" y="45" width="230" height="90" rx="14" />
+    <text class="fleet-diagram__title" x="790" y="82" text-anchor="middle">Git provider</text>
+    <text class="fleet-diagram__body" x="790" y="111" text-anchor="middle">Pull requests, issues, Git</text>
+
+    <rect class="fleet-diagram__node fleet-diagram__node--hub" x="330" y="210" width="300" height="130" rx="14" />
+    <text class="fleet-diagram__eyebrow" x="480" y="245" text-anchor="middle">HUB</text>
+    <text class="fleet-diagram__title" x="480" y="276" text-anchor="middle">Shared provider data + fleet view</text>
+    <text class="fleet-diagram__body" x="480" y="307" text-anchor="middle">Also owns its local workspaces</text>
+
+    <rect class="fleet-diagram__node" x="55" y="425" width="330" height="100" rx="14" />
+    <text class="fleet-diagram__eyebrow" x="220" y="458" text-anchor="middle">SPOKE A</text>
+    <text class="fleet-diagram__title" x="220" y="489" text-anchor="middle">Local repos, workspaces, agents</text>
+
+    <rect class="fleet-diagram__node" x="575" y="425" width="330" height="100" rx="14" />
+    <text class="fleet-diagram__eyebrow" x="740" y="458" text-anchor="middle">SPOKE B</text>
+    <text class="fleet-diagram__title" x="740" y="489" text-anchor="middle">Local repos, workspaces, agents</text>
+
+    <path class="fleet-diagram__line fleet-diagram__line--secondary" d="M282 115 C340 145 380 165 415 210" marker-end="url(#fleet-arrow)" />
+    <path class="fleet-diagram__line fleet-diagram__line--secondary" d="M145 135 C110 245 120 340 185 425" marker-end="url(#fleet-arrow)" />
+    <path class="fleet-diagram__line fleet-diagram__line--secondary" d="M215 135 C420 165 845 140 830 425" marker-end="url(#fleet-arrow)" />
+    <text class="fleet-diagram__label" x="177" y="220">private HTTPS</text>
+
+    <path class="fleet-diagram__line" d="M630 250 C690 225 745 185 775 136" marker-start="url(#fleet-arrow-start)" marker-end="url(#fleet-arrow)" />
+    <text class="fleet-diagram__label" x="700" y="214">provider API</text>
+
+    <path class="fleet-diagram__line" d="M405 340 C360 375 315 397 270 425" marker-start="url(#fleet-arrow-start)" marker-end="url(#fleet-arrow)" />
+    <path class="fleet-diagram__line" d="M555 340 C600 375 645 397 690 425" marker-start="url(#fleet-arrow-start)" marker-end="url(#fleet-arrow)" />
+    <text class="fleet-diagram__label" x="480" y="389" text-anchor="middle">authenticated Forge API</text>
+  </svg>
+  <figcaption>The hub coordinates the fleet. It does not become the filesystem or process owner for a spoke.</figcaption>
+</figure>
+
+Every machine runs the same `kenn-forge` binary and keeps its own directly
+accessible UI. Forge-to-Forge requests and terminal WebSockets use authenticated
+HTTPS. The hub does not use SSH to start a spoke or attach to its tmux server;
+start and supervise each daemon on its own machine.
+
+### Fleet rules at a glance
+
+| Question | Hub | Spoke |
+| --- | --- | --- |
+| Which workspaces appear? | Workspaces from the full fleet, each with an execution-node badge | Workspaces owned by this spoke |
+| Where can **New workspace** run? | The hub or any writable spoke selected in the dialog | This spoke only |
+| Where do pull-request and issue workspace buttons run? | On the hub | On this spoke |
+| Who runs Git and agent processes? | The machine that owns the workspace | This spoke |
+| Who syncs provider data and applies provider changes? | The hub | The spoke asks the hub |
+
+The pull-request and issue buttons stay local to the Forge UI you opened. To
+choose a different machine, open **Workspaces**, select **New workspace**, and
+use **Run on**.
 
 This guide uses the following example topology. Each name is a private HTTPS
 origin reachable from every fleet machine:
@@ -66,6 +149,57 @@ allowed; default `:443` is normalized away.
 
 Federation also requires Forge to use the root base path (`base_path = "/"`).
 Non-root UI prefixes are not part of the federation protocol.
+
+## Setup at a glance
+
+Set up the hub and spoke services first. Then enroll one spoke at a time. A
+spoke stays standalone until preparation has safely moved provider ownership to
+the hub and a service restart activates the enrollment.
+
+<figure class="fleet-diagram fleet-diagram--flow">
+  <svg viewBox="0 0 960 260" role="img" aria-labelledby="fleet-enrollment-title fleet-enrollment-description">
+    <title id="fleet-enrollment-title">Four steps to enroll one Forge spoke</title>
+    <desc id="fleet-enrollment-description">Set up a hub and standalone spoke, create a one-time token on the hub and join from the spoke, prepare the spoke so provider state moves to the hub, then restart and verify the active spoke.</desc>
+    <defs>
+      <marker id="fleet-flow-arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+        <path d="M0,0 L0,6 L9,3 z" class="fleet-diagram__arrowhead" />
+      </marker>
+    </defs>
+
+    <circle class="fleet-diagram__step" cx="75" cy="42" r="23" />
+    <text class="fleet-diagram__step-number" x="75" y="49" text-anchor="middle">1</text>
+    <rect class="fleet-diagram__node" x="35" y="78" width="200" height="125" rx="14" />
+    <text class="fleet-diagram__title" x="135" y="115" text-anchor="middle">Set up services</text>
+    <text class="fleet-diagram__body" x="135" y="146" text-anchor="middle">Hub + standalone spoke</text>
+    <text class="fleet-diagram__command" x="135" y="176" text-anchor="middle">fleet setup</text>
+
+    <circle class="fleet-diagram__step" cx="310" cy="42" r="23" />
+    <text class="fleet-diagram__step-number" x="310" y="49" text-anchor="middle">2</text>
+    <rect class="fleet-diagram__node" x="270" y="78" width="200" height="125" rx="14" />
+    <text class="fleet-diagram__title" x="370" y="115" text-anchor="middle">Join</text>
+    <text class="fleet-diagram__body" x="370" y="146" text-anchor="middle">One-time hub token</text>
+    <text class="fleet-diagram__command" x="370" y="176" text-anchor="middle">fleet join</text>
+
+    <circle class="fleet-diagram__step" cx="545" cy="42" r="23" />
+    <text class="fleet-diagram__step-number" x="545" y="49" text-anchor="middle">3</text>
+    <rect class="fleet-diagram__node" x="505" y="78" width="200" height="125" rx="14" />
+    <text class="fleet-diagram__title" x="605" y="115" text-anchor="middle">Prepare</text>
+    <text class="fleet-diagram__body" x="605" y="146" text-anchor="middle">Drain + hand off state</text>
+    <text class="fleet-diagram__command" x="605" y="176" text-anchor="middle">fleet prepare-spoke</text>
+
+    <circle class="fleet-diagram__step" cx="780" cy="42" r="23" />
+    <text class="fleet-diagram__step-number" x="780" y="49" text-anchor="middle">4</text>
+    <rect class="fleet-diagram__node fleet-diagram__node--hub" x="740" y="78" width="185" height="125" rx="14" />
+    <text class="fleet-diagram__title" x="832" y="115" text-anchor="middle">Activate</text>
+    <text class="fleet-diagram__body" x="832" y="146" text-anchor="middle">Restart + verify</text>
+    <text class="fleet-diagram__command" x="832" y="176" text-anchor="middle">active spoke</text>
+
+    <path class="fleet-diagram__line" d="M235 141 H265" marker-end="url(#fleet-flow-arrow)" />
+    <path class="fleet-diagram__line" d="M470 141 H500" marker-end="url(#fleet-flow-arrow)" />
+    <path class="fleet-diagram__line" d="M705 141 H735" marker-end="url(#fleet-flow-arrow)" />
+  </svg>
+  <figcaption>Complete all four steps for one spoke and verify it before enrolling the next.</figcaption>
+</figure>
 
 ## Set up the hub
 
@@ -334,10 +468,15 @@ cursors; changing one Forge tab does not retarget another.
 Open the hub UI for the aggregate workspace view and fleet-wide
 operations. Supported actions call the owning spoke's HTTPS API:
 
-- create, inspect, refresh, or remove a workspace;
+- create a repository workspace on the hub or a selected writable spoke;
+- inspect, refresh, or remove a workspace on its owning machine;
 - launch or stop a runtime session;
 - inspect local Git state;
 - open a terminal through the WebSocket bridge.
+
+Every hub workspace row shows its execution-node badge. The **Run on** selector
+in **New workspace** defaults to the hub, keeps unavailable spokes visible with
+their reason, and sends the create request directly to the selected owner.
 
 The hub never creates a local proxy process for a remote terminal.
 Input, output, resize messages, and close events pass between the two WebSocket
@@ -449,9 +588,18 @@ hub does not log in to start it.
 
 ### A request is forbidden
 
-Check that the enrollment is active and has not been revoked. A valid
-credential can still be forbidden when its direction does not grant the
-requested operation. Re-enroll instead of widening or copying a token by hand.
+Read the full degraded-host message in the hub. Forge preserves the peer's
+authorization reason instead of reducing it to an HTTP status.
+
+If the message says fleet authorization is inactive, inspect the spoke service's
+startup log and confirm it can resolve and reach the hub. An already active,
+sealed enrollment starts without a synchronous hub request and reconnects when
+the hub becomes reachable.
+
+If the peer rejects the hub identity, check that the enrollment is active and
+has not been revoked. Re-enroll instead of widening or copying a token by hand.
+A valid credential can still be forbidden when its direction does not grant the
+requested operation.
 
 ### A terminal does not open
 

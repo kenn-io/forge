@@ -20,6 +20,98 @@
   font-size: 0.78rem;
 }
 
+.md-typeset figure.fleet-diagram {
+  margin: 1.75rem 0;
+  overflow-x: auto;
+}
+
+.md-typeset .fleet-diagram svg {
+  display: block;
+  width: 100%;
+  min-width: 700px;
+  height: auto;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--md-default-bg-color) 94%, var(--md-accent-fg-color));
+}
+
+.md-typeset .fleet-diagram figcaption {
+  margin-top: 0.5rem;
+  color: var(--md-default-fg-color--light);
+  font-size: 0.78rem;
+}
+
+.fleet-diagram__node {
+  fill: var(--md-default-bg-color);
+  stroke: var(--md-default-fg-color--lighter);
+  stroke-width: 2;
+}
+
+.fleet-diagram__node--hub {
+  fill: color-mix(in srgb, var(--md-default-bg-color) 88%, var(--md-accent-fg-color));
+  stroke: var(--md-accent-fg-color);
+  stroke-width: 3;
+}
+
+.fleet-diagram__title,
+.fleet-diagram__body,
+.fleet-diagram__eyebrow,
+.fleet-diagram__label,
+.fleet-diagram__command,
+.fleet-diagram__step-number {
+  fill: var(--md-default-fg-color);
+  font-family: var(--md-text-font);
+}
+
+.fleet-diagram__title {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.fleet-diagram__body,
+.fleet-diagram__label {
+  font-size: 16px;
+}
+
+.fleet-diagram__eyebrow {
+  fill: var(--md-accent-fg-color);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+.fleet-diagram__command {
+  fill: var(--md-default-fg-color--light);
+  font-family: var(--md-code-font);
+  font-size: 14px;
+}
+
+.fleet-diagram__line {
+  fill: none;
+  stroke: var(--md-accent-fg-color);
+  stroke-linecap: round;
+  stroke-width: 3;
+}
+
+.fleet-diagram__line--secondary {
+  stroke: var(--md-default-fg-color--light);
+  stroke-dasharray: 7 7;
+}
+
+.fleet-diagram__arrowhead {
+  fill: var(--md-accent-fg-color);
+}
+
+.fleet-diagram__step {
+  fill: var(--md-accent-fg-color);
+}
+
+.fleet-diagram__step-number {
+  fill: var(--md-primary-bg-color);
+  font-size: 18px;
+  font-weight: 800;
+}
+
 .md-typeset figure.workflow-shot {
   margin: 1.5rem 0;
 }

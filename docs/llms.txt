@@ -26,7 +26,7 @@ raw markdown at /docs/<page>.md, and the docs index at /docs/index.md.
 - [Settings](https://forge.kenn.io/docs/settings.md): In-app settings for repositories, tokens, and modes
 - [Configuration](https://forge.kenn.io/docs/configuration.md): Config file reference and startup options
 - [Commands](https://forge.kenn.io/docs/commands.md): CLI command reference for the kenn-forge binary
-- [Federated fleet](https://forge.kenn.io/docs/federated-fleet.md): Hub-and-spoke federation across multiple machines
+- [Federated fleet](https://forge.kenn.io/docs/federated-fleet.md): Why to use a hub-and-spoke fleet, how ownership works, and how to set it up
 - [MCP companion](https://forge.kenn.io/docs/kenn-forge-mcp.md): Model Context Protocol server for agent access to the console
 - [Archive](https://forge.kenn.io/docs/archive.md): Historical activity archives beyond the live sync window
 - [Troubleshooting](https://forge.kenn.io/docs/troubleshooting.md): Startup, authentication, and sync problems

@@ -132,9 +132,13 @@ pull and publish, and Kata reference behavior.
 
 ## Use a fleet
 
-A hub combines snapshots from enrolled Forge spokes. Supported
-actions route back to the machine that owns the resource, and terminal traffic
-uses the spoke's WebSocket API.
+A hub combines snapshots from enrolled Forge spokes. Its workspace list shows
+which node owns each workspace, and **New workspace** can create repository
+work on the hub or a writable spoke. A spoke keeps workspace creation and its
+workspace list local.
+
+Supported actions route back to the machine that owns the resource, and
+terminal traffic uses the spoke's WebSocket API.
 
 Each daemon must have a reachable HTTPS origin. Forge does not use SSH for
 fleet transport or daemon startup. See [Federated fleet](federated-fleet.md).

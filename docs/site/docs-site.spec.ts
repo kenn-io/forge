@@ -205,21 +205,15 @@ test("links to the canonical kenn-forge downloads", async ({ browser }) => {
   await fallbackContext.close();
 });
 
-test("places Federated Forge under advanced and experimental navigation", async ({ page }) => {
+test("keeps the federated fleet in first-level navigation", async ({ page }) => {
   await page.goto("/docs/");
 
   const primaryNav = page.locator(".md-sidebar--primary nav[data-md-level='0']");
-  const advancedLabel = primaryNav.locator("label.md-nav__link", {
-    hasText: "Advanced / experimental",
-  });
-  await expect(advancedLabel).toBeVisible();
-
-  const advancedItem = advancedLabel.locator("xpath=ancestor::li[1]");
-  await expect(advancedItem.getByRole("link", { name: "Federated Forge" })).toHaveAttribute(
-    "href",
-    /federated-fleet\/$/,
-  );
-  await expect(primaryNav.locator(":scope > ul > li > a.md-nav__link", { hasText: "Fleet" })).toHaveCount(0);
+  await expect(
+    primaryNav.locator(":scope > ul > li > a.md-nav__link", {
+      hasText: "Federated fleet",
+    }),
+  ).toHaveAttribute("href", /federated-fleet\/$/);
 });
 
 test("applies the browser theme before the runtime bundle", async ({ browser }) => {

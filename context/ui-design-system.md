@@ -135,6 +135,10 @@ otherwise fails only in the Vitest/Playwright transform tier, not in
   wrapper around a kit control must not hardcode a width smaller than the
   phone hit target (`--focus-detail-hit-target`), or the control overflows
   its cell. Desktop-narrow focus presentation keeps `FitStages`.
+- `WorkspaceCreateSplitButton` takes its control height from the kit `size` it
+  is given, never a pinned `min-height`; detail action rows pass `sm` so it
+  matches the buttons beside it
+  (`frontend/src/lib/components/workspace/WorkspaceCreateSplitButton.svelte`).
 - `FitStages`: how an action row degrades under pressure (richest labelled
   `Button` row to compact labelled or `IconButton` rows, then a measured menu
   trigger when needed), never a media query, Button-internal overrides, or a

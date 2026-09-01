@@ -22,6 +22,7 @@
     disabledReason?: string;
     descriptionId?: string;
     surface?: "soft" | "solid";
+    size?: "sm" | "md";
     primaryType?: "button" | "submit";
     onCreate: (targetKey?: string) => void;
   }
@@ -35,6 +36,7 @@
     disabledReason = "",
     descriptionId = "",
     surface = "soft",
+    size = "md",
     primaryType = "button",
     onCreate,
   }: Props = $props();
@@ -174,12 +176,13 @@
   });
 </script>
 
-<div class="workspace-create-split" bind:this={root}>
+<div class="workspace-create-split workspace-create-split--{size}" bind:this={root}>
   <Button
     type={primaryType}
     class="create-primary"
     tone="info"
     {surface}
+    {size}
     ariaLabel={busy ? busyLabel : label}
     ariaDescribedby={descriptionId || undefined}
     title={disabledReason || label}
@@ -195,6 +198,7 @@
     <Button
       surface={surface === "solid" ? "solid" : "soft"}
       tone="info"
+      {size}
       class="create-options-button"
       ariaLabel={`${label} options`}
       title={disabledReason || "Create and launch an agent"}
@@ -236,16 +240,25 @@
 </div>
 
 <style>
+  /* The chevron segment is a square cap on the primary control, so its width
+   * tracks the kit control height for the requested size. Heights themselves
+   * come from kit: hardcoding one here made the split button taller than the
+   * `sm` siblings it sits beside in the detail action rows. */
   .workspace-create-split {
+    --create-options-width: var(--kit-control-height, 28px);
+
     display: inline-flex;
     min-width: 0;
     max-width: 100%;
   }
 
+  .workspace-create-split--sm {
+    --create-options-width: 24px;
+  }
+
   .workspace-create-split :global(.create-primary) {
     flex: 1 1 auto;
     min-width: 0;
-    min-height: 30px;
     overflow: hidden;
     padding-inline: var(--space-4);
     border-radius: var(--kit-control-radius, var(--radius-sm)) 0 0 var(--kit-control-radius, var(--radius-sm));
@@ -257,8 +270,8 @@
     white-space: nowrap;
   }
 
-  /* Sized by its button: phone hit-target rules widen the button beyond
-   * 30px, and a fixed wrapper width would let it overflow the control. */
+  /* Sized by its button: phone hit-target rules widen the button beyond the
+   * square cap, and a fixed wrapper width would let it overflow the control. */
   .create-options {
     display: inline-flex;
     flex: 0 0 auto;
@@ -266,8 +279,7 @@
 
   .create-options :global(.create-options-button) {
     flex-shrink: 0;
-    width: 30px;
-    min-height: 30px;
+    width: var(--create-options-width);
     padding: 0;
     border-left: 0;
     border-radius: 0 var(--kit-control-radius, var(--radius-sm)) var(--kit-control-radius, var(--radius-sm)) 0;

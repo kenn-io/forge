@@ -2629,6 +2629,7 @@
           <WorkspaceCreateSplitButton
             label="Create Workspace"
             busyLabel="Creating..."
+            size="sm"
             launchTargets={settings.getLaunchTargets()}
             busy={wsCreateBlocked}
             disabled={stalePR}

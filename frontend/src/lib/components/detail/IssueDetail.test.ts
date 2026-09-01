@@ -509,6 +509,20 @@ describe("IssueDetail activity view", () => {
     }
   });
 
+  it("sizes the create-workspace split button like the other action-row buttons", () => {
+    renderIssueDetail(issueDetail());
+
+    const create = screen.getByRole("button", { name: "Create Workspace" });
+    const options = screen.getByRole("button", { name: "Create Workspace options" });
+    const close = screen.getByRole("button", { name: "Close issue" });
+
+    // The split button used to fall back to the kit default size while every
+    // sibling asked for "sm", so it rendered visibly taller in the row.
+    expect(close.classList.contains("kit-button--sm")).toBe(true);
+    expect(create.classList.contains("kit-button--sm")).toBe(true);
+    expect(options.classList.contains("kit-button--sm")).toBe(true);
+  });
+
   it("labels an active stale-detail refresh", () => {
     renderIssueDetail(issueDetail(), undefined, { staleRefreshing: true });
 

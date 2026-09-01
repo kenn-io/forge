@@ -63,6 +63,45 @@ func TestBuildFleetSnapshotMergesMemberAndDegrades(t *testing.T) {
 	assert.Equal(1, down, "want 1 unreachable (epyc)")
 }
 
+func TestBuildFleetSnapshotExplainsInactivePeerFederation(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	peer := httptest.NewTLSServer(http.HandlerFunc(func(
+		writer http.ResponseWriter, _ *http.Request,
+	) {
+		writer.Header().Set("Content-Type", "application/problem+json")
+		writer.WriteHeader(http.StatusForbidden)
+		_, _ = writer.Write([]byte(`{
+			"title":"Forbidden",
+			"status":403,
+			"detail":"federation credential is not attached to an authorized enrollment",
+			"code":"forbidden",
+			"details":{"reason":"federationEnrollmentInactive"}
+		}`))
+	}))
+	t.Cleanup(peer.Close)
+
+	server := New(Deps{DB: dbtest.Open(t)})
+	configureTestMembers(t, server, testTLSClient(t, peer), config.FleetMember{
+		NodeID: testMemberNodeID, Name: "member", BaseURL: peer.URL,
+	})
+
+	snapshot, err := server.buildFleetSnapshot(t.Context(), true)
+	require.NoError(err)
+	for _, host := range snapshot.Hosts {
+		if host.ConfigKey != testMemberNodeID {
+			continue
+		}
+		require.NotNil(host.Error)
+		assert.Equal(
+			"peer fleet authorization is inactive; check its service startup logs and hub connectivity",
+			*host.Error,
+		)
+		return
+	}
+	require.FailNow("member host missing from hub projection")
+}
+
 func TestBuildFleetSnapshotSkipsMembersWhenFederationDisabled(t *testing.T) {
 	peerRequests := 0
 	peer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

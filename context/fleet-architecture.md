@@ -64,6 +64,9 @@ or remote workspace and session operations.
 - A failed, incompatible, or unauthenticated member degrades only that member to
   an unreachable summary; it must not fail local or other member results
   (`internal/server/fleetapi/fleet_hub.go::Handler.fetchMemberRaw`).
+- Structured peer rejections must retain an operator-actionable cause; do not
+  collapse enrollment or identity failures to an HTTP status alone
+  (`internal/server/fleetapi/fleet_hub.go::federationPeerResponseError`).
 - A spoke supplies its aggregate member budget; the hub uses the smaller local
   or requested timeout, while the spoke reserves twice that budget for the full
   response (`internal/server/fleetapi/fleet_routes.go::Handler.getSnapshotAggregate`).

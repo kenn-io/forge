@@ -95,13 +95,7 @@ func activateFederationSpokeAtStartup(
 	if !ok || !slices.Contains(credential.Scopes, federationauth.ScopeEnrollmentActivate) {
 		return fail(federationStartupActionRequired, "fleet spoke hub credential is unavailable")
 	}
-	if !cfg.Fleet.Enabled {
-		if local.State != federation.EnrollmentActive {
-			return fail(
-				federationStartupActionRequired,
-				"fleet spoke activation cannot complete while federation is disabled",
-			)
-		}
+	if local.State == federation.EnrollmentActive {
 		if err := promoteFederationSpokeCredentialScopes(
 			credentials, local.HubID,
 		); err != nil {
@@ -111,6 +105,12 @@ func activateFederationSpokeAtStartup(
 			)
 		}
 		return federationSpokeStartup{State: federationStartupActive}
+	}
+	if !cfg.Fleet.Enabled {
+		return fail(
+			federationStartupActionRequired,
+			"fleet spoke activation cannot complete while federation is disabled",
+		)
 	}
 
 	client := spokeActivationHTTPClient(httpClient)

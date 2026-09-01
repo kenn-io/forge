@@ -3,6 +3,7 @@ package fleetapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,7 +17,10 @@ import (
 	"go.kenn.io/forge/internal/fleet"
 )
 
-const maxFederationSnapshotBytes = 32 << 20
+const (
+	maxFederationSnapshotBytes = 32 << 20
+	maxFederationProblemBytes  = 64 << 10
+)
 
 // buildFleetSnapshot projects one observer-relative view. Hubs build
 // the neutral aggregate from member raw snapshots; nodes consume that one
@@ -238,7 +242,7 @@ func (s *Handler) fetchFederationJSON(
 	}
 	defer response.Body.Close()
 	if response.StatusCode/100 != 2 {
-		return fmt.Errorf("peer returned HTTP %d", response.StatusCode)
+		return federationPeerResponseError(response)
 	}
 	body, err := io.ReadAll(io.LimitReader(
 		response.Body, maxFederationSnapshotBytes+1,
@@ -253,6 +257,43 @@ func (s *Handler) fetchFederationJSON(
 		return fmt.Errorf("decode federation snapshot: %w", err)
 	}
 	return nil
+}
+
+func federationPeerResponseError(response *http.Response) error {
+	body, err := io.ReadAll(io.LimitReader(
+		response.Body, maxFederationProblemBytes+1,
+	))
+	if err != nil || len(body) > maxFederationProblemBytes {
+		return fmt.Errorf("peer returned HTTP %d", response.StatusCode)
+	}
+	var problem struct {
+		Detail  string `json:"detail"`
+		Details struct {
+			Reason string `json:"reason"`
+		} `json:"details"`
+	}
+	if json.Unmarshal(body, &problem) != nil {
+		return fmt.Errorf("peer returned HTTP %d", response.StatusCode)
+	}
+	detail := strings.Join(strings.Fields(problem.Detail), " ")
+	switch problem.Details.Reason {
+	case "federationEnrollmentInactive":
+		return errors.New(
+			"peer fleet authorization is inactive; check its service startup logs and hub connectivity",
+		)
+	case "federationSubjectMismatch":
+		return errors.New("peer rejected the hub identity; check its fleet enrollment")
+	}
+	if detail == "" {
+		return fmt.Errorf("peer returned HTTP %d", response.StatusCode)
+	}
+	if problem.Details.Reason != "" {
+		return fmt.Errorf(
+			"peer returned HTTP %d: %s (%s)",
+			response.StatusCode, detail, problem.Details.Reason,
+		)
+	}
+	return fmt.Errorf("peer returned HTTP %d: %s", response.StatusCode, detail)
 }
 
 func neutralSnapshotContainsNode(

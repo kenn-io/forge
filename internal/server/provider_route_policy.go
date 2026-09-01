@@ -54,6 +54,8 @@ var providerRouteDeclarations = []ProviderRouteRule{
 	{OperationID: "create-fleet-enrollment-token", Owner: NodeLocal},
 	{OperationID: "create-fleet-issue-workspace", Owner: NodeLocal},
 	{OperationID: "create-fleet-issue-workspace-on-platform-host", Owner: NodeLocal},
+	{OperationID: "create-fleet-repo-workspace", Owner: NodeLocal},
+	{OperationID: "create-fleet-repo-workspace-on-platform-host", Owner: NodeLocal},
 	{OperationID: "create-fleet-project-worktree", Owner: NodeLocal},
 	{OperationID: "create-fleet-project-worktree-from-merge-request", Owner: NodeLocal},
 	{OperationID: "create-fleet-workspace", Owner: NodeLocal},

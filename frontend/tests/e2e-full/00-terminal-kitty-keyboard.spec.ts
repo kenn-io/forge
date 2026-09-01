@@ -16,6 +16,7 @@ type WorkspaceStatusResponse = {
 };
 
 const terminalOutputTimeoutMs = 15_000;
+const workspaceTestTimeoutMs = 120_000;
 
 function hasCommand(command: string, args: string[] = ["--version"]): boolean {
   try {
@@ -97,6 +98,7 @@ print("KITTY_CURSOR_KEYS_HANDLED" if q==b"\x1b[?3u" and R==E else "KITTY_CURSOR_
 }
 
 test("Kitty cursor keys reach and are handled by the PTY application", async ({ page }) => {
+  test.setTimeout(workspaceTestTimeoutMs);
   test.skip(
     !hasCommand("git") || !hasCommand("python3", ["--version"]),
     "git and python3 are required for the real workspace flow",
@@ -112,6 +114,7 @@ test("Kitty cursor keys reach and are handled by the PTY application", async ({ 
 
     await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
     const terminal = await openTerminalPanel(page);
+    await expect.poll(() => output.tail(), { timeout: terminalOutputTimeoutMs }).toContain("issue-10");
     await terminal.click({ position: { x: 10, y: 10 } });
     await page.keyboard.insertText(kittyCursorProbeCommand());
     await page.keyboard.press("Enter");

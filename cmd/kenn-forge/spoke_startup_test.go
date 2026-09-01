@@ -165,6 +165,39 @@ func TestFederationSpokeStartupActivatesMatchingSealAndRetriesSafely(t *testing.
 	assert.False(local.PreparationRequired)
 }
 
+func TestFederationSpokeStartupKeepsActiveEnrollmentDuringHubOutage(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	var requests atomic.Int32
+	hub := httptest.NewTLSServer(http.HandlerFunc(func(
+		w http.ResponseWriter, _ *http.Request,
+	) {
+		requests.Add(1)
+		http.Error(w, "hub unavailable", http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(hub.Close)
+	database := dbtest.Open(t)
+	enrollments, credentials, cfg := spokeStartupFixture(
+		t, database, hub.URL, true,
+	)
+	require.NoError(enrollments.MarkLocalActive(t.Context(), startupEnrollmentID))
+	require.NoError(credentials.UpdateInboundScopes(
+		startupHubID, federationauth.HubToSpokeScopes(),
+	))
+	require.NoError(credentials.UpdateOutboundScopes(
+		startupHubID, federationauth.SpokeToHubScopes(),
+	))
+
+	status := activateFederationSpokeAtStartup(
+		t.Context(), database, cfg, startupNodeID,
+		enrollments, credentials, hub.Client(),
+	)
+
+	assert.Equal(federationStartupActive, status.State, status.Reason)
+	assert.Zero(requests.Load(),
+		"an active sealed enrollment must not depend on hub reachability at boot")
+}
+
 func TestFederationSpokeStartupKeepsActiveBindingDormantWhileDisabled(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

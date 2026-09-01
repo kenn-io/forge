@@ -17,6 +17,7 @@ type WorkspaceStatusResponse = {
 
 const terminalOutputTimeoutMs = 15_000;
 const workspaceTestTimeoutMs = 120_000;
+const shellPromptPattern = /[#$%]\s/;
 
 function hasCommand(command: string, args: string[] = ["--version"]): boolean {
   try {
@@ -114,7 +115,7 @@ test("Kitty cursor keys reach and are handled by the PTY application", async ({ 
 
     await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
     const terminal = await openTerminalPanel(page);
-    await expect.poll(() => output.tail(), { timeout: terminalOutputTimeoutMs }).toContain("issue-10");
+    await expect.poll(() => output.tail(), { timeout: terminalOutputTimeoutMs }).toMatch(shellPromptPattern);
     await terminal.click({ position: { x: 10, y: 10 } });
     await page.keyboard.insertText(kittyCursorProbeCommand());
     await page.keyboard.press("Enter");

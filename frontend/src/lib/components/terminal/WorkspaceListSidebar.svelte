@@ -307,6 +307,10 @@
   const fleetDegraded = $derived(
     fleetError !== null || Object.keys(fleetPeerErrors).length > 0,
   );
+  const showWorkspaceHostBadges = $derived(
+    fleetHosts.length > 1 &&
+      fleetHosts.find((host) => host.kind === "self")?.federationRole === "hub",
+  );
 
   // Flat ordering for timestamp sorts. The org/repo mode keeps
   // the API order (created_at DESC) inside each repo group.
@@ -390,6 +394,10 @@
   function fleetHostName(hostKey: string): string {
     const name = fleetHosts.find((host) => host.configKey === hostKey)?.name.trim();
     return name || hostKey;
+  }
+
+  function workspaceHostName(ws: Workspace): string {
+    return ws.fleet_host_name?.trim() || workspaceHost(ws)?.name.trim() || ws.fleet_host_key || "This machine";
   }
 
   const repoLabelFormatter = $derived.by(() =>
@@ -1379,6 +1387,12 @@
                   size={6}
                 />
                 <span class="ws-name">{displayName(ws)}</span>
+                {#if showWorkspaceHostBadges}
+                  <span
+                    class="workspace-host-badge"
+                    title={`Runs on ${workspaceHostName(ws)}`}
+                  >{workspaceHostName(ws)}</span>
+                {/if}
                 {#if ws.status === "deleting" || ws.status === "deletion_failed"}
                   <span
                     class={["workspace-lifecycle-state", `workspace-lifecycle-state--${ws.status}`]}
@@ -1902,6 +1916,24 @@
 
   .ws-row.selected .ws-name {
     font-weight: 600;
+  }
+
+  .workspace-host-badge {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 38%;
+    overflow: hidden;
+    padding: 1px 5px;
+    border: 1px solid var(--border-muted);
+    border-radius: var(--radius-sm);
+    background: var(--bg-subtle);
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-2xs);
+    font-weight: 600;
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .workspace-lifecycle-state {

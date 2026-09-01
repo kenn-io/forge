@@ -38,6 +38,11 @@ func TestFederationCredentialAuthorizationUsesExactRouteInventory(t *testing.T) 
 	require.True(listed)
 	assert.Equal(ScopeWorkspaceWrite, required)
 	required, listed = authenticator.RequiredScope(
+		http.MethodPost, "/api/v1/host/git.example.test/repo/gitlab/acme/widgets/workspaces",
+	)
+	require.True(listed)
+	assert.Equal(ScopeWorkspaceWrite, required)
+	required, listed = authenticator.RequiredScope(
 		http.MethodPost, "/api/v1/federation/workspaces/ws-1/cleanup",
 	)
 	require.True(listed)

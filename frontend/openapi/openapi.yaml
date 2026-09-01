@@ -11568,6 +11568,57 @@ paths:
       summary: Create issue workspace on fleet host
       tags:
         - Fleet
+  /fleet/hosts/{host_key}/host/{platform_host}/repo/{provider}/{owner}/{name}/workspaces:
+    post:
+      operationId: create-fleet-repo-workspace-on-platform-host
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              additionalProperties: true
+              type: object
+        description: JSON payload forwarded to the owning host.
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Create repository workspace on fleet host
+      tags:
+        - Fleet
   /fleet/hosts/{host_key}/issues/{provider}/{owner}/{name}/{number}/workspace:
     post:
       operationId: create-fleet-issue-workspace
@@ -12233,6 +12284,52 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Response returned by the owning fleet host.
       summary: Set project worktree session backend on fleet host
+      tags:
+        - Fleet
+  /fleet/hosts/{host_key}/repo/{provider}/{owner}/{name}/workspaces:
+    post:
+      operationId: create-fleet-repo-workspace
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              additionalProperties: true
+              type: object
+        description: JSON payload forwarded to the owning host.
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Create repository workspace on fleet host
       tags:
         - Fleet
   /fleet/hosts/{host_key}/runtime/sessions:

@@ -6,6 +6,7 @@
     Button,
     SearchInput,
     SelectDropdown,
+    type SelectDropdownOption,
     TextInput,
     Typeahead,
     type TypeaheadOption,
@@ -19,6 +20,8 @@
     type TransientTransportError,
   } from "../../api/effect-errors.js";
   import { executeGeneratedApiRequest } from "../../api/generated-api.js";
+  import { executeOpaqueGeneratedApiRequest } from "../../api/generated-api.js";
+  import { loadFleetSnapshot, type HostSummary } from "../../api/fleet-snapshot.js";
   import type { ProblemBody } from "../../api/problems.js";
   import type { AppExecution } from "../../app/runtime.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
@@ -58,7 +61,7 @@
     initialSource?: NewWorkspaceSource;
     // Overridable so callers embedding this dialog outside the app shell (and
     // tests) can observe the created workspace instead of navigating.
-    onCreated?: ((workspaceId: string) => void) | undefined;
+    onCreated?: ((workspaceId: string, hostKey?: string) => void) | undefined;
   }
 
   const {
@@ -80,6 +83,11 @@
     label: string;
   };
 
+  type CreatedWorkspacePayload = {
+    id?: string;
+    status?: string;
+  };
+
   let repos = $state<RepoOption[]>([]);
   let reposLoading = $state(false);
   let reposError = $state<string | null>(null);
@@ -89,6 +97,8 @@
   let error = $state<string | null>(null);
   let suggestedBranch = $state<string | null>(null);
   let pendingLaunchTargetKey = $state<string | null>(null);
+  let workspaceHosts = $state.raw<HostSummary[]>([]);
+  let selectedWorkspaceHostKey = $state("");
   let source = $state<NewWorkspaceSource>("repository");
   const kataDaemons = createKataDaemonsStore();
   let selectedDaemonID = $state("");
@@ -102,9 +112,48 @@
   let kataSearchGeneration = 0;
   let activeSession: object | null = null;
   let repoLoadExecution: AppExecution<void, ApiProblemError | TransientTransportError> | null = null;
+  let fleetLoadExecution: AppExecution<
+    void,
+    ApiProblemError | InvalidExternalPayload | TransientTransportError
+  > | null = null;
 
   function clearPendingLaunch(): void {
     pendingLaunchTargetKey = null;
+  }
+
+  function loadWorkspaceHosts(session: object): void {
+    fleetLoadExecution?.interrupt();
+    const execution = runtime.runCommand(
+      loadFleetSnapshot().pipe(
+        Effect.tap((snapshot) =>
+          Effect.sync(() => {
+            if (activeSession !== session) return;
+            const hosts = snapshot.hosts ?? [];
+            const self = hosts.find((host) => host.kind === "self");
+            workspaceHosts = self?.federationRole === "hub"
+              ? hosts
+              : self
+                ? [self]
+                : hosts.filter((host) => host.operationAvailability.workspaceWrite?.available === true);
+            selectedWorkspaceHostKey =
+              workspaceHosts.find((host) => host.kind === "self")?.configKey ??
+              workspaceHosts[0]?.configKey ??
+              "";
+          }),
+        ),
+        Effect.asVoid,
+      ),
+      {
+        operation: "load workspace execution hosts",
+        safeContext: {},
+        onFailure: () => {
+          if (activeSession !== session) return;
+          workspaceHosts = [];
+          selectedWorkspaceHostKey = "";
+        },
+      },
+    );
+    fleetLoadExecution = execution;
   }
 
   function cancelKataSearch(): void {
@@ -145,6 +194,15 @@
     return `${canonicalProvider(seed.provider)}/${seed.platformHost}/${seed.owner}/${seed.name}`;
   }
 
+  function normalizeCreatedWorkspace(value: unknown): CreatedWorkspacePayload {
+    if (typeof value !== "object" || value === null) return {};
+    const record = value as Record<string, unknown>;
+    return {
+      ...(typeof record.id === "string" ? { id: record.id } : {}),
+      ...(typeof record.status === "string" ? { status: record.status } : {}),
+    };
+  }
+
   // An explicit seed is a promise about which repository the workspace
   // targets. When it cannot be resolved (for example a repository hidden
   // from the UI), require a choice instead of silently diverting to another
@@ -168,6 +226,8 @@
       activeSession = null;
       repoLoadExecution?.interrupt();
       repoLoadExecution = null;
+      fleetLoadExecution?.interrupt();
+      fleetLoadExecution = null;
       kataRosterController?.abort();
       resetKataSelection();
       return;
@@ -180,6 +240,8 @@
     error = null;
     suggestedBranch = null;
     pendingLaunchTargetKey = null;
+    workspaceHosts = [];
+    selectedWorkspaceHostKey = "";
     submitting = false;
     repos = [];
     selectedKey = "";
@@ -200,6 +262,7 @@
         if (activeSession === session) activeSession = null;
       };
     }
+    loadWorkspaceHosts(session);
     const execution = runtime.runCommand(
       executeGeneratedApiRequest("load repositories", (client, signal) => client.GET("/repos", { signal })).pipe(
         Effect.flatMap((loaded) =>
@@ -236,6 +299,8 @@
     clearPendingLaunch();
     repoLoadExecution?.interrupt();
     repoLoadExecution = null;
+    fleetLoadExecution?.interrupt();
+    fleetLoadExecution = null;
     resetKataSelection();
     source = nextSource;
     branch = "";
@@ -257,6 +322,7 @@
       });
       return;
     }
+    loadWorkspaceHosts(session);
     reposLoading = true;
     const execution = runtime.runCommand(
       executeGeneratedApiRequest("load repositories", (client, signal) => client.GET("/repos", { signal })).pipe(
@@ -288,6 +354,28 @@
   );
 
   const selected = $derived(repos.find((repo) => repo.key === selectedKey) ?? null);
+  const selectedWorkspaceHost = $derived(
+    workspaceHosts.find((host) => host.configKey === selectedWorkspaceHostKey) ?? null,
+  );
+  const remoteWorkspaceHostKey = $derived(
+    source !== "repository" || selectedWorkspaceHost?.kind === "self"
+      ? undefined
+      : selectedWorkspaceHost?.configKey,
+  );
+  const workspaceHostOptions = $derived<SelectDropdownOption[]>(
+    workspaceHosts.map((host) => {
+      const writeAvailability = host.operationAvailability.workspaceWrite;
+      const unavailableReason = writeAvailability?.unavailableReason || "Workspace creation is unavailable.";
+      return {
+        value: host.configKey,
+        label: `${host.name.trim() || host.hostname?.trim() || host.configKey}${host.kind === "self" ? " (this machine)" : ""}`,
+        disabled: writeAvailability?.available !== true,
+        ...(writeAvailability?.available === true
+          ? {}
+          : { indicator: { tone: "danger" as const, title: unavailableReason } }),
+      };
+    }),
+  );
 
   const selectedDaemon = $derived(
     kataDaemons.daemons().find((daemon) => daemon.id === selectedDaemonID) ?? null,
@@ -413,10 +501,10 @@
     if (kataWorkspaceIdentity) {
       const created = createdKataWorkspaceRef(kataWorkspaceIdentity);
       if (created) {
-        if (launchTargetKey) queueWorkspaceLaunch(created.id, launchTargetKey, undefined);
+        if (launchTargetKey) queueWorkspaceLaunch(created.id, launchTargetKey, remoteWorkspaceHostKey);
         pendingLaunchTargetKey = null;
         onClose();
-        if (onCreated) onCreated(created.id);
+        if (onCreated) onCreated(created.id, remoteWorkspaceHostKey);
         else navigate(`/terminal/${created.id}`);
         return;
       }
@@ -434,13 +522,27 @@
             name: repo.name,
             repoPath: `${repo.owner}/${repo.name}`,
           };
+          const repoPath = providerRepoPath(ref, "/workspaces");
+          const routeParams = providerRouteParams(ref);
+          if (remoteWorkspaceHostKey) {
+            const fleetPath = repoPath.startsWith("/host/")
+              ? "/fleet/hosts/{host_key}/host/{platform_host}/repo/{provider}/{owner}/{name}/workspaces" as const
+              : "/fleet/hosts/{host_key}/repo/{provider}/{owner}/{name}/workspaces" as const;
+            return executeOpaqueGeneratedApiRequest("create fleet workspace", (client, signal) =>
+              client.POST(fleetPath, {
+                params: { path: { host_key: remoteWorkspaceHostKey, ...routeParams } },
+                body: requested ? { branch: requested } : {},
+                signal,
+              }),
+            ).pipe(Effect.map(normalizeCreatedWorkspace));
+          }
           return executeGeneratedApiRequest("create workspace", (client, signal) =>
-            client.POST(providerRepoPath(ref, "/workspaces"), {
-              params: { path: providerRouteParams(ref) },
+            client.POST(repoPath, {
+              params: { path: routeParams },
               body: requested ? { branch: requested } : {},
               signal,
             }),
-          );
+          ).pipe(Effect.map(normalizeCreatedWorkspace));
         })()
       : Effect.tryPromise({
           try: () => createOrOpenKataWorkspace({
@@ -453,7 +555,7 @@
             ...(kataReference!.title ? { title: kataReference!.title } : {}),
           }),
           catch: (cause) => cause,
-        });
+        }).pipe(Effect.map(normalizeCreatedWorkspace));
     const program = createProgram.pipe(
       Effect.tap((created) =>
         Effect.sync(() => {
@@ -476,7 +578,7 @@
       ),
       Effect.tap((workspaceId) =>
         Effect.sync(() => {
-          if (launchTargetKey) queueWorkspaceLaunch(workspaceId, launchTargetKey, undefined);
+          if (launchTargetKey) queueWorkspaceLaunch(workspaceId, launchTargetKey, remoteWorkspaceHostKey);
           // The workspace exists either way, so it stays the last-used repo; only
           // the navigation is abandoned when the user moved on.
           if (requestedSource === "repository" && repo) rememberNewWorkspaceRepoKey(repo.key);
@@ -487,8 +589,12 @@
           if (!open || activeSession !== session) return;
           pendingLaunchTargetKey = null;
           onClose();
-          if (onCreated) onCreated(workspaceId);
-          else navigate(`/terminal/${workspaceId}`);
+          if (onCreated) onCreated(workspaceId, remoteWorkspaceHostKey);
+          else if (remoteWorkspaceHostKey) {
+            navigate(`/terminal/fleet/${encodeURIComponent(remoteWorkspaceHostKey)}/${encodeURIComponent(workspaceId)}`);
+          } else {
+            navigate(`/terminal/${encodeURIComponent(workspaceId)}`);
+          }
         }),
       ),
       Effect.ensuring(
@@ -509,6 +615,7 @@
           platformHost: repo.platformHost,
           owner: repo.owner,
           name: repo.name,
+          remote: remoteWorkspaceHostKey !== undefined,
         } : { daemonId: daemonID }),
       },
       onFailure: (failure) => {
@@ -600,6 +707,23 @@
           Branches from the repository's default branch in a new worktree.
         </small>
       </label>
+
+      {#if workspaceHostOptions.length > 1}
+        <label class="field">
+          <span class="field-label">Run on</span>
+          <SelectDropdown
+            value={selectedWorkspaceHostKey}
+            options={workspaceHostOptions}
+            onchange={(hostKey) => {
+              clearPendingLaunch();
+              selectedWorkspaceHostKey = hostKey;
+            }}
+            title="Workspace machine"
+            disabled={submitting}
+          />
+          <small class="field-hint">The selected Forge owns the worktree and runtime sessions.</small>
+        </label>
+      {/if}
     {:else}
       <label class="field">
         <span class="field-label">Kata daemon</span>

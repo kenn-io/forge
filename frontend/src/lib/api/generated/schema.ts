@@ -809,6 +809,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/fleet/hosts/{host_key}/host/{platform_host}/repo/{provider}/{owner}/{name}/workspaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create repository workspace on fleet host */
+        post: operations["create-fleet-repo-workspace-on-platform-host"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/fleet/hosts/{host_key}/issues/{provider}/{owner}/{name}/{number}/workspace": {
         parameters: {
             query?: never;
@@ -1094,6 +1111,23 @@ export interface paths {
         /** Set project worktree session backend on fleet host */
         put: operations["set-fleet-project-worktree-session-backend"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/fleet/hosts/{host_key}/repo/{provider}/{owner}/{name}/workspaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create repository workspace on fleet host */
+        post: operations["create-fleet-repo-workspace"];
         delete?: never;
         options?: never;
         head?: never;
@@ -11245,6 +11279,42 @@ export interface operations {
             };
         };
     };
+    "create-fleet-repo-workspace-on-platform-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                host_key: string;
+                platform_host: string;
+                provider: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        /** @description JSON payload forwarded to the owning host. */
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Response returned by the owning fleet host. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
     "create-fleet-issue-workspace": {
         parameters: {
             query?: never;
@@ -11789,6 +11859,41 @@ export interface operations {
                 host_key: string;
                 project_id: string;
                 worktree_id: string;
+            };
+            cookie?: never;
+        };
+        /** @description JSON payload forwarded to the owning host. */
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Response returned by the owning fleet host. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "create-fleet-repo-workspace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                host_key: string;
+                provider: string;
+                owner: string;
+                name: string;
             };
             cookie?: never;
         };

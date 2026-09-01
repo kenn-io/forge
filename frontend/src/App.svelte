@@ -718,8 +718,8 @@
     navigate(buildMobileWorkspaceRoute(workspaceId, hostKey), mobileWorkspaceHistoryState("list"));
   }
 
-  function openCreatedMobileWorkspace(workspaceId: string): void {
-    navigate(buildMobileWorkspaceRoute(workspaceId));
+  function openCreatedMobileWorkspace(workspaceId: string, hostKey?: string): void {
+    navigate(buildMobileWorkspaceRoute(workspaceId, hostKey));
   }
 
   function openMobileWorkspaceItemFromList(workspaceId: string, hostKey?: string): void {
@@ -1477,9 +1477,13 @@
         seedRepo={getNewWorkspaceSeedRepo()}
         initialSource={getNewWorkspaceSource()}
         onClose={closeNewWorkspaceDialog}
-        onCreated={(workspaceId) => {
-          if (isMobilePage(getPage())) openCreatedMobileWorkspace(workspaceId);
-          else navigate(`/terminal/${encodeURIComponent(workspaceId)}`);
+        onCreated={(workspaceId, hostKey) => {
+          if (isMobilePage(getPage())) openCreatedMobileWorkspace(workspaceId, hostKey);
+          else if (hostKey) {
+            navigate(`/terminal/fleet/${encodeURIComponent(hostKey)}/${encodeURIComponent(workspaceId)}`);
+          } else {
+            navigate(`/terminal/${encodeURIComponent(workspaceId)}`);
+          }
         }}
       />
     {/if}

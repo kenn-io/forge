@@ -42,6 +42,8 @@ var authorizedRoutes = []authorizedRoute{
 	{method: http.MethodPatch, path: "/api/v1/workspaces/{id}/runtime/sessions/{session_key}", scope: ScopeWorkspaceWrite},
 	{method: http.MethodDelete, path: "/api/v1/workspaces/{id}/runtime/sessions/{session_key}", scope: ScopeWorkspaceWrite},
 	{method: http.MethodGet, path: "/api/v1/workspaces/{id}/runtime/sessions/{session_key}/attach-spec", scope: ScopeTerminalAttach},
+	{method: http.MethodPost, path: "/api/v1/repo/{provider}/{owner}/{name}/workspaces", scope: ScopeWorkspaceWrite},
+	{method: http.MethodPost, path: "/api/v1/host/{platform_host}/repo/{provider}/{owner}/{name}/workspaces", scope: ScopeWorkspaceWrite},
 	{method: http.MethodPost, path: "/api/v1/issues/{provider}/{owner}/{name}/{number}/workspace", scope: ScopeWorkspaceWrite},
 	{method: http.MethodPost, path: "/api/v1/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/workspace", scope: ScopeWorkspaceWrite},
 	{method: http.MethodGet, path: "/api/v1/filesystem/complete", scope: ScopeWorkspaceRead},

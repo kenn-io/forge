@@ -65,6 +65,8 @@ embedder protocol for arbitrary host state.
   (`internal/workspace/monitor.go::workspacePRMonitorEligible`); that number is
   the workspace's item identity for display, links, and search, so surfaces must
   never gate PR affordances on `item_type == "pull_request"` alone.
+  A hub may route this creation to itself or a writable spoke; a spoke offers
+  only itself as an execution target (`internal/server/fleetapi/fleet_proxy.go::Handler.registerFleetOperationRoutes`).
 - `GET /kata/daemons/{daemon_id}/references`: search canonical Kata issue references on an explicitly pinned daemon for link and workspace creation.
 - `GET /kata/daemons/{daemon_id}/issues/{issue_uid}`: return one read-only issue detail envelope plus the daemon health schema version. Forge does not cache or persist the task payload.
 - `GET /kata/daemons/{daemon_id}/issues/{issue_uid}/launch-target`: resolve Kata’s safe external browser target.

@@ -75,9 +75,9 @@ or remote workspace and session operations.
   Explicitly incomplete aggregates retain absent-host rows; authoritative views
   retain only explicitly degraded hosts and remove absent membership
   (`frontend/src/lib/components/terminal/workspace-list-schema.ts::retainDegradedHostWorkspaces`).
-- Workspaces does not repeat host labels or healthy fleet inventory in its list;
-  host navigation belongs to the global Forge selector, while fleet chrome is
-  reserved for actionable degradation (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte`).
+- Hub workspace rows show a compact execution-host badge; spoke rows remain
+  unlabeled because their actionable workspace surface is local-only. Fleet
+  chrome remains reserved for actionable degradation (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte`).
 - The reserved `self` alias and stable node ID address local. An active spoke routes
   only when config matches its enrollment; that enrollment supplies the credential-bound destination
   (`internal/server/fleetapi/fleet_proxy.go::Handler.resolveEnrolledSpoke`).

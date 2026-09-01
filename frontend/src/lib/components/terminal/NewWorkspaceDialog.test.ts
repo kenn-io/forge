@@ -338,6 +338,58 @@ describe("NewWorkspaceDialog", () => {
     expect(options.params.path.platform_host).toBe("git.example.test");
   });
 
+  it("creates and opens repository workspaces on the selected spoke", async () => {
+    mockGet.mockImplementation((path: string) => {
+      if (path === "/repos") return Promise.resolve({ data: [repoFixture("acme", "widget")] });
+      if (path === "/snapshot") {
+        return Promise.resolve({
+          data: {
+            hosts: [
+              {
+                configKey: "hub-node",
+                federationRole: "hub",
+                kind: "self",
+                name: "Studio hub",
+                operationAvailability: { workspaceWrite: { available: true } },
+              },
+              {
+                configKey: "build-node",
+                federationRole: "spoke",
+                kind: "remote",
+                name: "Build spoke",
+                operationAvailability: { workspaceWrite: { available: true } },
+              },
+            ],
+          },
+        });
+      }
+      throw new Error(`unexpected GET ${path}`);
+    });
+    await renderDialog();
+
+    const machine = await screen.findByRole("combobox", {
+      name: "Workspace machine: Studio hub (this machine)",
+    });
+    await fireEvent.click(machine);
+    await fireEvent.click(screen.getByRole("option", { name: "Build spoke" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
+    const [path, options] = mockPost.mock.calls[0] as [
+      string,
+      { params: { path: Record<string, string> }; body: Record<string, string> },
+    ];
+    expect(path).toBe("/fleet/hosts/{host_key}/repo/{provider}/{owner}/{name}/workspaces");
+    expect(options.params.path).toEqual({
+      host_key: "build-node",
+      provider: "github",
+      owner: "acme",
+      name: "widget",
+    });
+    expect(options.body).toEqual({});
+    expect(mockNavigate).toHaveBeenCalledWith("/terminal/fleet/build-node/ws-new");
+  });
+
   it("offers the suggested branch when the requested one already exists", async () => {
     mockPost.mockResolvedValue({
       error: {
@@ -429,7 +481,7 @@ describe("NewWorkspaceDialog", () => {
     expect(discardWorkspaceLaunch("ws-stale", undefined)).toBe("codex");
 
     await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
-    await waitFor(() => expect(onCreated).toHaveBeenCalledWith("ws-new"));
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith("ws-new", undefined));
     expect(discardWorkspaceLaunch("ws-new", undefined)).toBeNull();
   });
 

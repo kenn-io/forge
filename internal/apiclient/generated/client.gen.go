@@ -5816,6 +5816,9 @@ type ValidateFleetFilesystemRepoParams struct {
 // CreateFleetIssueWorkspaceOnPlatformHostJSONBody defines parameters for CreateFleetIssueWorkspaceOnPlatformHost.
 type CreateFleetIssueWorkspaceOnPlatformHostJSONBody map[string]interface{}
 
+// CreateFleetRepoWorkspaceOnPlatformHostJSONBody defines parameters for CreateFleetRepoWorkspaceOnPlatformHost.
+type CreateFleetRepoWorkspaceOnPlatformHostJSONBody map[string]interface{}
+
 // CreateFleetIssueWorkspaceJSONBody defines parameters for CreateFleetIssueWorkspace.
 type CreateFleetIssueWorkspaceJSONBody map[string]interface{}
 
@@ -5842,6 +5845,9 @@ type LaunchFleetProjectWorktreeRuntimeSessionJSONBody map[string]interface{}
 
 // SetFleetProjectWorktreeSessionBackendJSONBody defines parameters for SetFleetProjectWorktreeSessionBackend.
 type SetFleetProjectWorktreeSessionBackendJSONBody map[string]interface{}
+
+// CreateFleetRepoWorkspaceJSONBody defines parameters for CreateFleetRepoWorkspace.
+type CreateFleetRepoWorkspaceJSONBody map[string]interface{}
 
 // LaunchFleetHostRuntimeSessionJSONBody defines parameters for LaunchFleetHostRuntimeSession.
 type LaunchFleetHostRuntimeSessionJSONBody map[string]interface{}
@@ -6432,6 +6438,9 @@ type CreateFleetEnrollmentTokenJSONRequestBody = CreateEnrollmentTokenInputBody
 // CreateFleetIssueWorkspaceOnPlatformHostJSONRequestBody defines body for CreateFleetIssueWorkspaceOnPlatformHost for application/json ContentType.
 type CreateFleetIssueWorkspaceOnPlatformHostJSONRequestBody CreateFleetIssueWorkspaceOnPlatformHostJSONBody
 
+// CreateFleetRepoWorkspaceOnPlatformHostJSONRequestBody defines body for CreateFleetRepoWorkspaceOnPlatformHost for application/json ContentType.
+type CreateFleetRepoWorkspaceOnPlatformHostJSONRequestBody CreateFleetRepoWorkspaceOnPlatformHostJSONBody
+
 // CreateFleetIssueWorkspaceJSONRequestBody defines body for CreateFleetIssueWorkspace for application/json ContentType.
 type CreateFleetIssueWorkspaceJSONRequestBody CreateFleetIssueWorkspaceJSONBody
 
@@ -6458,6 +6467,9 @@ type LaunchFleetProjectWorktreeRuntimeSessionJSONRequestBody LaunchFleetProjectW
 
 // SetFleetProjectWorktreeSessionBackendJSONRequestBody defines body for SetFleetProjectWorktreeSessionBackend for application/json ContentType.
 type SetFleetProjectWorktreeSessionBackendJSONRequestBody SetFleetProjectWorktreeSessionBackendJSONBody
+
+// CreateFleetRepoWorkspaceJSONRequestBody defines body for CreateFleetRepoWorkspace for application/json ContentType.
+type CreateFleetRepoWorkspaceJSONRequestBody CreateFleetRepoWorkspaceJSONBody
 
 // LaunchFleetHostRuntimeSessionJSONRequestBody defines body for LaunchFleetHostRuntimeSession for application/json ContentType.
 type LaunchFleetHostRuntimeSessionJSONRequestBody LaunchFleetHostRuntimeSessionJSONBody
@@ -7463,6 +7475,20 @@ type ClientInterface interface {
 	// Corresponds with POST /fleet/hosts/{host_key}/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/workspace (the `CreateFleetIssueWorkspaceOnPlatformHost` operationId).
 	CreateFleetIssueWorkspaceOnPlatformHost(ctx context.Context, hostKey string, platformHost string, provider string, owner string, name string, number string, body CreateFleetIssueWorkspaceOnPlatformHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// CreateFleetRepoWorkspaceOnPlatformHostWithBody Create repository workspace on fleet host
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /fleet/hosts/{host_key}/host/{platform_host}/repo/{provider}/{owner}/{name}/workspaces (the `CreateFleetRepoWorkspaceOnPlatformHost` operationId).
+	CreateFleetRepoWorkspaceOnPlatformHostWithBody(ctx context.Context, hostKey string, platformHost string, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateFleetRepoWorkspaceOnPlatformHost Create repository workspace on fleet host
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /fleet/hosts/{host_key}/host/{platform_host}/repo/{provider}/{owner}/{name}/workspaces (the `CreateFleetRepoWorkspaceOnPlatformHost` operationId).
+	CreateFleetRepoWorkspaceOnPlatformHost(ctx context.Context, hostKey string, platformHost string, provider string, owner string, name string, body CreateFleetRepoWorkspaceOnPlatformHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// CreateFleetIssueWorkspaceWithBody Create issue workspace on fleet host
 	//
 	// Takes any type of body and a specified content type.
@@ -7638,6 +7664,20 @@ type ClientInterface interface {
 	//
 	// Corresponds with PUT /fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/session-backend (the `SetFleetProjectWorktreeSessionBackend` operationId).
 	SetFleetProjectWorktreeSessionBackend(ctx context.Context, hostKey string, projectId string, worktreeId string, body SetFleetProjectWorktreeSessionBackendJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateFleetRepoWorkspaceWithBody Create repository workspace on fleet host
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /fleet/hosts/{host_key}/repo/{provider}/{owner}/{name}/workspaces (the `CreateFleetRepoWorkspace` operationId).
+	CreateFleetRepoWorkspaceWithBody(ctx context.Context, hostKey string, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateFleetRepoWorkspace Create repository workspace on fleet host
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /fleet/hosts/{host_key}/repo/{provider}/{owner}/{name}/workspaces (the `CreateFleetRepoWorkspace` operationId).
+	CreateFleetRepoWorkspace(ctx context.Context, hostKey string, provider string, owner string, name string, body CreateFleetRepoWorkspaceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// LaunchFleetHostRuntimeSessionWithBody Launch host runtime session on fleet host
 	//
@@ -11106,6 +11146,40 @@ func (c *Client) CreateFleetIssueWorkspaceOnPlatformHost(ctx context.Context, ho
 	return c.Client.Do(req)
 }
 
+// CreateFleetRepoWorkspaceOnPlatformHostWithBody Create repository workspace on fleet host
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /fleet/hosts/{host_key}/host/{platform_host}/repo/{provider}/{owner}/{name}/workspaces (the `CreateFleetRepoWorkspaceOnPlatformHost` operationId).
+func (c *Client) CreateFleetRepoWorkspaceOnPlatformHostWithBody(ctx context.Context, hostKey string, platformHost string, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateFleetRepoWorkspaceOnPlatformHostRequestWithBody(c.Server, hostKey, platformHost, provider, owner, name, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateFleetRepoWorkspaceOnPlatformHost Create repository workspace on fleet host
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /fleet/hosts/{host_key}/host/{platform_host}/repo/{provider}/{owner}/{name}/workspaces (the `CreateFleetRepoWorkspaceOnPlatformHost` operationId).
+func (c *Client) CreateFleetRepoWorkspaceOnPlatformHost(ctx context.Context, hostKey string, platformHost string, provider string, owner string, name string, body CreateFleetRepoWorkspaceOnPlatformHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateFleetRepoWorkspaceOnPlatformHostRequest(c.Server, hostKey, platformHost, provider, owner, name, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // CreateFleetIssueWorkspaceWithBody Create issue workspace on fleet host
 //
 // Takes any type of body and a specified content type.
@@ -11552,6 +11626,40 @@ func (c *Client) SetFleetProjectWorktreeSessionBackendWithBody(ctx context.Conte
 // Corresponds with PUT /fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/session-backend (the `SetFleetProjectWorktreeSessionBackend` operationId).
 func (c *Client) SetFleetProjectWorktreeSessionBackend(ctx context.Context, hostKey string, projectId string, worktreeId string, body SetFleetProjectWorktreeSessionBackendJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewSetFleetProjectWorktreeSessionBackendRequest(c.Server, hostKey, projectId, worktreeId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateFleetRepoWorkspaceWithBody Create repository workspace on fleet host
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /fleet/hosts/{host_key}/repo/{provider}/{owner}/{name}/workspaces (the `CreateFleetRepoWorkspace` operationId).
+func (c *Client) CreateFleetRepoWorkspaceWithBody(ctx context.Context, hostKey string, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateFleetRepoWorkspaceRequestWithBody(c.Server, hostKey, provider, owner, name, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateFleetRepoWorkspace Create repository workspace on fleet host
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /fleet/hosts/{host_key}/repo/{provider}/{owner}/{name}/workspaces (the `CreateFleetRepoWorkspace` operationId).
+func (c *Client) CreateFleetRepoWorkspace(ctx context.Context, hostKey string, provider string, owner string, name string, body CreateFleetRepoWorkspaceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateFleetRepoWorkspaceRequest(c.Server, hostKey, provider, owner, name, body)
 	if err != nil {
 		return nil, err
 	}
@@ -20298,6 +20406,81 @@ func NewCreateFleetIssueWorkspaceOnPlatformHostRequestWithBody(server string, ho
 	return req, nil
 }
 
+// NewCreateFleetRepoWorkspaceOnPlatformHostRequest calls the generic CreateFleetRepoWorkspaceOnPlatformHost builder with application/json body
+func NewCreateFleetRepoWorkspaceOnPlatformHostRequest(server string, hostKey string, platformHost string, provider string, owner string, name string, body CreateFleetRepoWorkspaceOnPlatformHostJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateFleetRepoWorkspaceOnPlatformHostRequestWithBody(server, hostKey, platformHost, provider, owner, name, "application/json", bodyReader)
+}
+
+// NewCreateFleetRepoWorkspaceOnPlatformHostRequestWithBody constructs an http.Request for the CreateFleetRepoWorkspaceOnPlatformHost method, with any body, and a specified content type
+func NewCreateFleetRepoWorkspaceOnPlatformHostRequestWithBody(server string, hostKey string, platformHost string, provider string, owner string, name string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/host/%s/repo/%s/%s/%s/workspaces", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewCreateFleetIssueWorkspaceRequest calls the generic CreateFleetIssueWorkspace builder with application/json body
 func NewCreateFleetIssueWorkspaceRequest(server string, hostKey string, provider string, owner string, name string, number string, body CreateFleetIssueWorkspaceJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -21276,6 +21459,74 @@ func NewSetFleetProjectWorktreeSessionBackendRequestWithBody(server string, host
 	}
 
 	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewCreateFleetRepoWorkspaceRequest calls the generic CreateFleetRepoWorkspace builder with application/json body
+func NewCreateFleetRepoWorkspaceRequest(server string, hostKey string, provider string, owner string, name string, body CreateFleetRepoWorkspaceJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateFleetRepoWorkspaceRequestWithBody(server, hostKey, provider, owner, name, "application/json", bodyReader)
+}
+
+// NewCreateFleetRepoWorkspaceRequestWithBody constructs an http.Request for the CreateFleetRepoWorkspace method, with any body, and a specified content type
+func NewCreateFleetRepoWorkspaceRequestWithBody(server string, hostKey string, provider string, owner string, name string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/repo/%s/%s/%s/workspaces", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
 	if err != nil {
 		return nil, err
 	}
@@ -38014,6 +38265,11 @@ type ClientWithResponsesInterface interface {
 
 	CreateFleetIssueWorkspaceOnPlatformHostWithResponse(ctx context.Context, hostKey string, platformHost string, provider string, owner string, name string, number string, body CreateFleetIssueWorkspaceOnPlatformHostJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateFleetIssueWorkspaceOnPlatformHostResponse, error)
 
+	// CreateFleetRepoWorkspaceOnPlatformHostWithBodyWithResponse request with any body
+	CreateFleetRepoWorkspaceOnPlatformHostWithBodyWithResponse(ctx context.Context, hostKey string, platformHost string, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateFleetRepoWorkspaceOnPlatformHostResponse, error)
+
+	CreateFleetRepoWorkspaceOnPlatformHostWithResponse(ctx context.Context, hostKey string, platformHost string, provider string, owner string, name string, body CreateFleetRepoWorkspaceOnPlatformHostJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateFleetRepoWorkspaceOnPlatformHostResponse, error)
+
 	// CreateFleetIssueWorkspaceWithBodyWithResponse request with any body
 	CreateFleetIssueWorkspaceWithBodyWithResponse(ctx context.Context, hostKey string, provider string, owner string, name string, number string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateFleetIssueWorkspaceResponse, error)
 
@@ -38088,6 +38344,11 @@ type ClientWithResponsesInterface interface {
 	SetFleetProjectWorktreeSessionBackendWithBodyWithResponse(ctx context.Context, hostKey string, projectId string, worktreeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetFleetProjectWorktreeSessionBackendResponse, error)
 
 	SetFleetProjectWorktreeSessionBackendWithResponse(ctx context.Context, hostKey string, projectId string, worktreeId string, body SetFleetProjectWorktreeSessionBackendJSONRequestBody, reqEditors ...RequestEditorFn) (*SetFleetProjectWorktreeSessionBackendResponse, error)
+
+	// CreateFleetRepoWorkspaceWithBodyWithResponse request with any body
+	CreateFleetRepoWorkspaceWithBodyWithResponse(ctx context.Context, hostKey string, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateFleetRepoWorkspaceResponse, error)
+
+	CreateFleetRepoWorkspaceWithResponse(ctx context.Context, hostKey string, provider string, owner string, name string, body CreateFleetRepoWorkspaceJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateFleetRepoWorkspaceResponse, error)
 
 	// LaunchFleetHostRuntimeSessionWithBodyWithResponse request with any body
 	LaunchFleetHostRuntimeSessionWithBodyWithResponse(ctx context.Context, hostKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*LaunchFleetHostRuntimeSessionResponse, error)
@@ -40269,6 +40530,29 @@ func (r CreateFleetIssueWorkspaceOnPlatformHostResponse) StatusCode() int {
 	return 0
 }
 
+type CreateFleetRepoWorkspaceOnPlatformHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateFleetRepoWorkspaceOnPlatformHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateFleetRepoWorkspaceOnPlatformHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type CreateFleetIssueWorkspaceResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -40700,6 +40984,29 @@ func (r SetFleetProjectWorktreeSessionBackendResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r SetFleetProjectWorktreeSessionBackendResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CreateFleetRepoWorkspaceResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateFleetRepoWorkspaceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateFleetRepoWorkspaceResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -47394,6 +47701,23 @@ func (c *ClientWithResponses) CreateFleetIssueWorkspaceOnPlatformHostWithRespons
 	return ParseCreateFleetIssueWorkspaceOnPlatformHostResponse(rsp)
 }
 
+// CreateFleetRepoWorkspaceOnPlatformHostWithBodyWithResponse request with arbitrary body returning *CreateFleetRepoWorkspaceOnPlatformHostResponse
+func (c *ClientWithResponses) CreateFleetRepoWorkspaceOnPlatformHostWithBodyWithResponse(ctx context.Context, hostKey string, platformHost string, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateFleetRepoWorkspaceOnPlatformHostResponse, error) {
+	rsp, err := c.CreateFleetRepoWorkspaceOnPlatformHostWithBody(ctx, hostKey, platformHost, provider, owner, name, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateFleetRepoWorkspaceOnPlatformHostResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateFleetRepoWorkspaceOnPlatformHostWithResponse(ctx context.Context, hostKey string, platformHost string, provider string, owner string, name string, body CreateFleetRepoWorkspaceOnPlatformHostJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateFleetRepoWorkspaceOnPlatformHostResponse, error) {
+	rsp, err := c.CreateFleetRepoWorkspaceOnPlatformHost(ctx, hostKey, platformHost, provider, owner, name, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateFleetRepoWorkspaceOnPlatformHostResponse(rsp)
+}
+
 // CreateFleetIssueWorkspaceWithBodyWithResponse request with arbitrary body returning *CreateFleetIssueWorkspaceResponse
 func (c *ClientWithResponses) CreateFleetIssueWorkspaceWithBodyWithResponse(ctx context.Context, hostKey string, provider string, owner string, name string, number string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateFleetIssueWorkspaceResponse, error) {
 	rsp, err := c.CreateFleetIssueWorkspaceWithBody(ctx, hostKey, provider, owner, name, number, contentType, body, reqEditors...)
@@ -47635,6 +47959,23 @@ func (c *ClientWithResponses) SetFleetProjectWorktreeSessionBackendWithResponse(
 		return nil, err
 	}
 	return ParseSetFleetProjectWorktreeSessionBackendResponse(rsp)
+}
+
+// CreateFleetRepoWorkspaceWithBodyWithResponse request with arbitrary body returning *CreateFleetRepoWorkspaceResponse
+func (c *ClientWithResponses) CreateFleetRepoWorkspaceWithBodyWithResponse(ctx context.Context, hostKey string, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateFleetRepoWorkspaceResponse, error) {
+	rsp, err := c.CreateFleetRepoWorkspaceWithBody(ctx, hostKey, provider, owner, name, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateFleetRepoWorkspaceResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateFleetRepoWorkspaceWithResponse(ctx context.Context, hostKey string, provider string, owner string, name string, body CreateFleetRepoWorkspaceJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateFleetRepoWorkspaceResponse, error) {
+	rsp, err := c.CreateFleetRepoWorkspace(ctx, hostKey, provider, owner, name, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateFleetRepoWorkspaceResponse(rsp)
 }
 
 // LaunchFleetHostRuntimeSessionWithBodyWithResponse request with arbitrary body returning *LaunchFleetHostRuntimeSessionResponse
@@ -52487,6 +52828,39 @@ func ParseCreateFleetIssueWorkspaceOnPlatformHostResponse(rsp *http.Response) (*
 	return response, nil
 }
 
+// ParseCreateFleetRepoWorkspaceOnPlatformHostResponse parses an HTTP response from a CreateFleetRepoWorkspaceOnPlatformHostWithResponse call
+func ParseCreateFleetRepoWorkspaceOnPlatformHostResponse(rsp *http.Response) (*CreateFleetRepoWorkspaceOnPlatformHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateFleetRepoWorkspaceOnPlatformHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseCreateFleetIssueWorkspaceResponse parses an HTTP response from a CreateFleetIssueWorkspaceWithResponse call
 func ParseCreateFleetIssueWorkspaceResponse(rsp *http.Response) (*CreateFleetIssueWorkspaceResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -53090,6 +53464,39 @@ func ParseSetFleetProjectWorktreeSessionBackendResponse(rsp *http.Response) (*Se
 	}
 
 	response := &SetFleetProjectWorktreeSessionBackendResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateFleetRepoWorkspaceResponse parses an HTTP response from a CreateFleetRepoWorkspaceWithResponse call
+func ParseCreateFleetRepoWorkspaceResponse(rsp *http.Response) (*CreateFleetRepoWorkspaceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateFleetRepoWorkspaceResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}

@@ -75,6 +75,34 @@ func (s *Handler) registerFleetOperationRoutes(api huma.API) {
 			},
 		},
 		{
+			operationID: "create-fleet-repo-workspace",
+			method:      http.MethodPost,
+			path:        "/fleet/hosts/{host_key}/repo/{provider}/{owner}/{name}/workspaces",
+			summary:     "Create repository workspace on fleet host",
+			pathParams:  []string{"host_key", "provider", "owner", "name"},
+			body:        true,
+			targetPath: func(r *http.Request) string {
+				return "/api/v1/repo/" +
+					escapePath(r.PathValue("provider")) + "/" +
+					escapePath(r.PathValue("owner")) + "/" +
+					escapePath(r.PathValue("name")) + "/workspaces"
+			},
+		},
+		{
+			operationID: "create-fleet-repo-workspace-on-platform-host",
+			method:      http.MethodPost,
+			path:        "/fleet/hosts/{host_key}/host/{platform_host}/repo/{provider}/{owner}/{name}/workspaces",
+			summary:     "Create repository workspace on fleet host",
+			pathParams:  []string{"host_key", "platform_host", "provider", "owner", "name"},
+			body:        true,
+			targetPath: func(r *http.Request) string {
+				return "/api/v1/host/" + escapePath(r.PathValue("platform_host")) +
+					"/repo/" + escapePath(r.PathValue("provider")) + "/" +
+					escapePath(r.PathValue("owner")) + "/" +
+					escapePath(r.PathValue("name")) + "/workspaces"
+			},
+		},
+		{
 			operationID: "create-fleet-issue-workspace",
 			method:      http.MethodPost,
 			path:        "/fleet/hosts/{host_key}/issues/{provider}/{owner}/{name}/{number}/workspace",

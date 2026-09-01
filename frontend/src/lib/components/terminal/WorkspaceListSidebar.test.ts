@@ -257,7 +257,7 @@ describe("WorkspaceListSidebar", () => {
     expect(screen.getByText("Workspaces")).toBeTruthy();
   });
 
-  it("does not repeat fleet hosts in the workspace list", async () => {
+  it("labels workspace rows with their execution machine on the hub", async () => {
     mockGet.mockImplementation((path: string) => {
       if (path === "/snapshot") {
         return Promise.resolve({
@@ -268,7 +268,8 @@ describe("WorkspaceListSidebar", () => {
                 diagnostics: [],
                 id: "hub",
                 kind: "self",
-                name: "hub",
+                name: "Studio hub",
+                federationRole: "hub",
                 operationAvailability: {},
                 platform: "darwin",
                 preferredTransport: "local",
@@ -281,6 +282,7 @@ describe("WorkspaceListSidebar", () => {
                 id: "79e90262-7426-4dd5-9ef1-0d511af84e12",
                 kind: "remote",
                 name: "Build spoke",
+                federationRole: "spoke",
                 operationAvailability: {},
                 platform: "linux",
                 preferredTransport: "http",
@@ -289,6 +291,15 @@ describe("WorkspaceListSidebar", () => {
               },
             ],
             workspaces: [
+              workspaceFixture({
+                id: "local-ws",
+                provider: "github",
+                platformHost: "github.com",
+                owner: "acme",
+                name: "service",
+                number: 11,
+                title: "Local workspace",
+              }),
               {
                 ...workspaceFixture({
                   id: "remote-ws",
@@ -313,7 +324,9 @@ describe("WorkspaceListSidebar", () => {
     });
 
     await screen.findByText("Remote workspace");
-    expect(screen.queryByText("Build spoke")).toBeNull();
+    expect(screen.getByTitle("Runs on Studio hub")).toBeTruthy();
+    expect(screen.getByText("Build spoke")).toBeTruthy();
+    expect(screen.getByTitle("Runs on Build spoke")).toBeTruthy();
     expect(screen.queryByLabelText("Fleet hosts")).toBeNull();
     expect(screen.queryByText("79e90262-7426-4dd5-9ef1-0d511af84e12")).toBeNull();
   });

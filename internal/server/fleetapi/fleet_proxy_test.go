@@ -35,6 +35,47 @@ func (b *closeTrackingBody) Close() error {
 	return nil
 }
 
+func TestFleetRepositoryWorkspaceCreateRoutesToOwningHost(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	type receivedRequest struct {
+		path string
+		body string
+		err  error
+	}
+	received := make(chan receivedRequest, 1)
+	peer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		received <- receivedRequest{path: r.URL.Path, body: string(body), err: err}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"id":"remote-workspace"}`))
+	}))
+	t.Cleanup(peer.Close)
+
+	srv, _ := setupTestServer(t)
+	configureTestMembers(t, srv, testTLSClient(t, peer), config.FleetMember{
+		NodeID: testMemberNodeID, BaseURL: peer.URL,
+	})
+	hub := httptest.NewServer(srv.localHandler())
+	t.Cleanup(hub.Close)
+
+	resp := httpDo(
+		t,
+		hub,
+		http.MethodPost,
+		"/api/v1/fleet/hosts/"+testMemberNodeID+"/repo/github/acme/widgets/workspaces",
+		[]byte(`{"branch":"fleet-ux"}`),
+	)
+	defer resp.Body.Close()
+	require.Equal(http.StatusAccepted, resp.StatusCode)
+
+	request := <-received
+	require.NoError(request.err)
+	assert.Equal("/api/v1/repo/github/acme/widgets/workspaces", request.path)
+	assert.JSONEq(`{"branch":"fleet-ux"}`, request.body)
+}
+
 func TestFleetWebSocketProxyNegotiatesContextTakeoverOnBothLegs(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

@@ -781,6 +781,7 @@ type roborevRegistrationInventory struct {
 	Repos []struct {
 		RootPath string `json:"root_path"`
 	} `json:"repos"`
+	TotalCount *int `json:"total_count"`
 }
 
 func confirmRoborevRegistration(
@@ -807,7 +808,7 @@ func confirmRoborevRegistration(
 		return fmt.Errorf("confirm Roborev registration: invalid daemon response")
 	}
 	var inventory roborevRegistrationInventory
-	if err := json.Unmarshal(content, &inventory); err != nil {
+	if err := json.Unmarshal(content, &inventory); err != nil || inventory.TotalCount == nil {
 		return fmt.Errorf("confirm Roborev registration: invalid daemon response")
 	}
 	want, err := canonicalFilesystemPath(workspacePath)

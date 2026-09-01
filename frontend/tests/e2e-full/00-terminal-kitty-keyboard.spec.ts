@@ -57,21 +57,38 @@ async function openTerminalPanel(page: Page): Promise<Locator> {
   return container;
 }
 
-function observeTerminalOutput(page: Page): { tail(): string; cursorResult(): string | undefined } {
-  const streams: string[] = [];
+function observeTerminalOutput(page: Page): {
+  cursorResult(): string | undefined;
+  replayReady(): boolean;
+  tail(): string;
+} {
+  const streams: Array<{ output: string; replayReady: boolean }> = [];
   page.on("websocket", (socket) => {
-    const streamIndex = streams.push("") - 1;
+    const stream = { output: "", replayReady: false };
+    streams.push(stream);
     const decoder = new TextDecoder();
     socket.on("framereceived", ({ payload }) => {
+      if (typeof payload === "string") {
+        try {
+          if ((JSON.parse(payload) as { type?: string }).type === "replay_ready") stream.replayReady = true;
+        } catch {
+          // Terminal output can also arrive as text from non-runtime sockets.
+        }
+      }
       const chunk = typeof payload === "string" ? payload : decoder.decode(payload, { stream: true });
-      streams[streamIndex] = (streams[streamIndex] + chunk).slice(-64 * 1024);
+      stream.output = (stream.output + chunk).slice(-64 * 1024);
     });
   });
   return {
-    tail: () => streams.join("\n").slice(-2_000),
+    tail: () =>
+      streams
+        .map((stream) => stream.output)
+        .join("\n")
+        .slice(-2_000),
+    replayReady: () => streams.some((stream) => stream.replayReady),
     cursorResult: () =>
       streams
-        .map((stream) => stream.match(/KITTY_CURSOR_KEYS_(?:HANDLED|UNEXPECTED_[0-9a-f_]+)/)?.[0])
+        .map((stream) => stream.output.match(/KITTY_CURSOR_KEYS_(?:HANDLED|UNEXPECTED_[0-9a-f_]+)/)?.[0])
         .find((result) => result !== undefined),
   };
 }
@@ -115,7 +132,7 @@ test("Kitty cursor keys reach and are handled by the PTY application", async ({ 
 
     await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
     const terminal = await openTerminalPanel(page);
-    await expect.poll(() => output.tail(), { timeout: terminalOutputTimeoutMs }).toMatch(shellPromptPattern);
+    await expect.poll(() => output.replayReady(), { timeout: terminalOutputTimeoutMs }).toBe(true);
     await terminal.click({ position: { x: 10, y: 10 } });
     await page.keyboard.insertText(kittyCursorProbeCommand());
     await page.keyboard.press("Enter");

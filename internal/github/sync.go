@@ -1325,17 +1325,19 @@ func (s *Syncer) Admit(
 		retryAt := now.Add(time.Second)
 		return archive.AdmissionResult{RetryAt: &retryAt, Detail: "normal sync is active"}, nil
 	}
-	key, err := s.bucketKeyForRepo(RepoRef{
+	keyRepo := RepoRef{
 		Platform:       ref.Platform,
 		PlatformHost:   ref.Host,
 		Owner:          ref.Owner,
 		Name:           ref.Name,
 		RepoPath:       ref.RepoPath,
 		PlatformRepoID: ref.PlatformID,
-	}, false)
+	}
+	identity, err := s.archiveIdentityForRepo(keyRepo)
 	if err != nil {
 		return archive.AdmissionResult{}, err
 	}
+	key := RateBucketKey(string(repoPlatform(keyRepo)), identity.Host, identity.Principal)
 	if s.higherPriorityProviderWorkActive(key, archive.PriorityFullArchive) {
 		probe.abandon()
 		retryAt := now.Add(time.Second)
@@ -1345,7 +1347,7 @@ func (s *Syncer) Admit(
 	var providerResetAt *time.Time
 	var providerPacingWindow *QuotaPacingWindow
 	var providerResources []QuotaResource
-	identity, identityErr := s.identityForRepo(repo, false)
+	identity, identityErr := s.archiveIdentityForRepo(repo)
 	if ref.Platform == platform.KindGitHub && s.quotaRegistry != nil && identityErr == nil {
 		providerResources = []QuotaResource{QuotaResourceREST, QuotaResourceGraphQL}
 		pacingWindow, pacingKnown := s.quotaRegistry.PacingWindow(identity, providerResources)
@@ -2457,7 +2459,7 @@ func githubWorkflowTimestamp(timestamp *gh.Timestamp) time.Time {
 	if timestamp == nil {
 		return time.Time{}
 	}
-	return timestamp.Time.UTC()
+	return timestamp.UTC()
 }
 
 // gitHubPlatformRepository converts a GitHub REST repository into the
@@ -3950,14 +3952,18 @@ func (s *Syncer) SetGitHubRouters(routers map[string]*HostRouter) {
 // fetcherFor returns the GitHub GraphQL fetcher selected for a repository's
 // credential route, or the host fallback fetcher when no router is configured.
 func (s *Syncer) fetcherFor(repo RepoRef) *GraphQLFetcher {
+	return s.fetcherForContext(context.Background(), repo)
+}
+
+func (s *Syncer) fetcherForContext(ctx context.Context, repo RepoRef) *GraphQLFetcher {
 	if repoPlatform(repo) != platform.KindGitHub {
 		return nil
 	}
 	host := repoHost(repo)
 	if router := s.routers[host]; router != nil {
-		route, err := router.RouteForRepo(repo.Owner, repo.Name)
+		fetcher, err := router.FetcherForRepo(ctx, repo.Owner, repo.Name)
 		if err == nil {
-			return route.Fetcher
+			return fetcher
 		}
 		return nil
 	}
@@ -4105,6 +4111,12 @@ func repoHost(repo RepoRef) string {
 }
 
 func (s *Syncer) identityForRepo(repo RepoRef, write bool) (IdentityKey, error) {
+	return s.identityForRepoContext(context.Background(), repo, write)
+}
+
+func (s *Syncer) identityForRepoContext(
+	ctx context.Context, repo RepoRef, write bool,
+) (IdentityKey, error) {
 	if repoPlatform(repo) != platform.KindGitHub {
 		return HostIdentity(repoHost(repo)), nil
 	}
@@ -4113,14 +4125,35 @@ func (s *Syncer) identityForRepo(repo RepoRef, write bool) (IdentityKey, error) 
 	if router == nil {
 		return HostIdentity(host), nil
 	}
+	if IsArchiveSyncBudgetContext(ctx) && !write {
+		return router.ArchiveIdentityForRepo(repo.Owner, repo.Name)
+	}
 	if write {
 		return router.WriteIdentityForRepo(repo.Owner, repo.Name)
 	}
 	return router.ReadIdentityForRepo(repo.Owner, repo.Name)
 }
 
+func (s *Syncer) archiveIdentityForRepo(repo RepoRef) (IdentityKey, error) {
+	if repoPlatform(repo) != platform.KindGitHub {
+		return HostIdentity(repoHost(repo)), nil
+	}
+	host := repoHost(repo)
+	router := s.routers[host]
+	if router == nil {
+		return HostIdentity(host), nil
+	}
+	return router.ArchiveIdentityForRepo(repo.Owner, repo.Name)
+}
+
 func (s *Syncer) bucketKeyForRepo(repo RepoRef, write bool) (string, error) {
-	identity, err := s.identityForRepo(repo, write)
+	return s.bucketKeyForRepoContext(context.Background(), repo, write)
+}
+
+func (s *Syncer) bucketKeyForRepoContext(
+	ctx context.Context, repo RepoRef, write bool,
+) (string, error) {
+	identity, err := s.identityForRepoContext(ctx, repo, write)
 	if err != nil {
 		return "", err
 	}
@@ -4972,10 +5005,21 @@ func (s *Syncer) backgroundReserveExhausted(
 func (s *Syncer) reserveVerdictFor(
 	repo RepoRef, resource QuotaResource, writeIdentity, background bool,
 ) reserveVerdict {
+	return s.reserveVerdictForContext(
+		context.Background(), repo, resource, writeIdentity, background,
+	)
+}
+
+func (s *Syncer) reserveVerdictForContext(
+	ctx context.Context,
+	repo RepoRef,
+	resource QuotaResource,
+	writeIdentity, background bool,
+) reserveVerdict {
 	if repoPlatform(repo) != platform.KindGitHub || s.quotaRegistry == nil {
 		return reserveVerdict{}
 	}
-	bucket, err := s.bucketKeyForRepo(repo, writeIdentity)
+	bucket, err := s.bucketKeyForRepoContext(ctx, repo, writeIdentity)
 	if err != nil {
 		return reserveVerdict{}
 	}
@@ -4988,7 +5032,7 @@ func (s *Syncer) reserveVerdictFor(
 		return cached
 	}
 	availability := s.evaluateBackgroundReserve(
-		repo, resource, writeIdentity, background,
+		ctx, repo, resource, writeIdentity, background,
 	)
 	verdict := reserveVerdict{
 		exhausted: availability.Exhausted,
@@ -5038,9 +5082,10 @@ func (s *Syncer) nowUTC() time.Time {
 
 // evaluateBackgroundReserve is the single reserve computation the cache wraps.
 func (s *Syncer) evaluateBackgroundReserve(
+	ctx context.Context,
 	repo RepoRef, resource QuotaResource, writeIdentity, background bool,
 ) QuotaAvailability {
-	identity, err := s.identityForRepo(repo, writeIdentity)
+	identity, err := s.identityForRepoContext(ctx, repo, writeIdentity)
 	if err != nil {
 		return QuotaAvailability{Allowed: true}
 	}
@@ -5054,7 +5099,7 @@ func (s *Syncer) evaluateBackgroundReserve(
 	if availability.Known {
 		return availability
 	}
-	return s.persistedReserve(repo, resource, writeIdentity, reserve, availability)
+	return s.persistedReserve(ctx, repo, resource, writeIdentity, reserve, availability)
 }
 
 // persistedReserve answers from the SQLite-backed rate tracker when the
@@ -5064,17 +5109,18 @@ func (s *Syncer) evaluateBackgroundReserve(
 // repopulate the registry is exactly what fails when a credential is in
 // trouble.
 func (s *Syncer) persistedReserve(
+	ctx context.Context,
 	repo RepoRef,
 	resource QuotaResource,
 	writeIdentity bool,
 	reserve int,
 	unobserved QuotaAvailability,
 ) QuotaAvailability {
-	bucket, err := s.bucketKeyForRepo(repo, writeIdentity)
+	bucket, err := s.bucketKeyForRepoContext(ctx, repo, writeIdentity)
 	if err != nil {
 		return unobserved
 	}
-	tracker := s.reserveTracker(repo, bucket, resource, writeIdentity)
+	tracker := s.reserveTracker(ctx, repo, bucket, resource, writeIdentity)
 	if tracker == nil || !tracker.Known() {
 		return unobserved
 	}
@@ -5091,6 +5137,7 @@ func (s *Syncer) persistedReserve(
 }
 
 func (s *Syncer) reserveTracker(
+	ctx context.Context,
 	repo RepoRef, bucket string, resource QuotaResource, writeIdentity bool,
 ) *RateTracker {
 	if resource == QuotaResourceGraphQL {
@@ -5099,7 +5146,11 @@ func (s *Syncer) reserveTracker(
 		}
 		// GraphQL trackers hang off the route's fetcher rather than a
 		// syncer-level map.
-		return s.fetcherFor(repo).RateTracker()
+		fetcher := s.fetcherForContext(ctx, repo)
+		if fetcher == nil {
+			return nil
+		}
+		return fetcher.RateTracker()
 	}
 	if writeIdentity {
 		if tracker := s.writeRateTrackers[bucket]; tracker != nil {
@@ -5173,7 +5224,8 @@ func (s *Syncer) advanceNextSync(
 func (s *Syncer) graphQLReadAllowed(
 	ctx context.Context, repo RepoRef, fetcher *GraphQLFetcher,
 ) bool {
-	verdict := s.reserveVerdictFor(
+	verdict := s.reserveVerdictForContext(
+		ctx,
 		repo, QuotaResourceGraphQL, false, IsSyncBudgetContext(ctx),
 	)
 	// A known credential pool answers on its own. Falling through to the
@@ -5642,6 +5694,7 @@ func (s *Syncer) GQLRateTrackers() map[string]*RateTracker {
 	for _, router := range s.routers {
 		for _, route := range router.Routes() {
 			add(route.Fetcher)
+			add(route.ArchiveFetcher)
 		}
 	}
 	return result
@@ -5687,6 +5740,19 @@ func (s *Syncer) refreshRateLimitSnapshots(ctx context.Context) map[string]struc
 				fetcher: route.Fetcher, owner: route.Key.Owner,
 				credential: route.CredentialKey,
 			})
+			if route.ArchiveReadIdentity.Principal != "" {
+				archiveBucket := RateBucketKey(
+					string(platform.KindGitHub), route.ArchiveReadIdentity.Host,
+					route.ArchiveReadIdentity.Principal,
+				)
+				candidates[archiveBucket] = append(candidates[archiveBucket], snapshotCandidate{
+					client:     route.ArchiveClient,
+					tracker:    s.rateTrackers[archiveBucket],
+					fetcher:    route.ArchiveFetcher,
+					owner:      route.ArchiveKey.Owner,
+					credential: route.ArchiveCredentialKey,
+				})
+			}
 			if route.WriteIdentity.Principal != "" && route.WriteIdentity != route.ReadIdentity {
 				writeBucket := RateBucketKey(
 					string(platform.KindGitHub), route.WriteIdentity.Host,
@@ -8143,7 +8209,7 @@ func (s *Syncer) indexSyncRepo(
 			// the list phase updates timestamps and the detail drain
 			// conditionally fetches individual stale PRs.
 			graphQLDone := false
-			if fetcher := s.fetcherFor(repo); fetcher != nil &&
+			if fetcher := s.fetcherForContext(ctx, repo); fetcher != nil &&
 				s.shouldUseBulkGraphQLForMRs(ctx, repo, repoID, len(openMRs)) {
 				if s.graphQLReadAllowed(ctx, repo, fetcher) {
 					result, gqlErr := fetcher.FetchRepoPRs(
@@ -8297,7 +8363,7 @@ func (s *Syncer) indexSyncRepo(
 			}
 		} else {
 			graphQLIssuesDone := false
-			if fetcher := s.fetcherFor(repo); fetcher != nil &&
+			if fetcher := s.fetcherForContext(ctx, repo); fetcher != nil &&
 				s.shouldUseBulkGraphQLForIssues(ctx, repo, repoID, len(openIssues)+len(ghIssues)) {
 				if s.graphQLReadAllowed(ctx, repo, fetcher) {
 					issueResult, gqlErr := fetcher.FetchRepoIssues(
@@ -10391,7 +10457,7 @@ func (s *Syncer) markUnchangedMRDetailFetched(
 		}
 		return calls, err
 	}
-	if fetcher := s.fetcherFor(repo); fetcher != nil && s.graphQLReadAllowed(ctx, repo, fetcher) {
+	if fetcher := s.fetcherForContext(ctx, repo); fetcher != nil && s.graphQLReadAllowed(ctx, repo, fetcher) {
 		threadCalls, err := s.syncProviderMRReviewThreads(
 			ctx, repo, existing.ID, number, existing.SnapshotRevision, true,
 		)
@@ -11502,7 +11568,7 @@ func (s *Syncer) currentPRCommentVisibility(
 	repo RepoRef,
 	number int,
 ) (map[int64]CommentVisibility, bool) {
-	fetcher := s.fetcherFor(repo)
+	fetcher := s.fetcherForContext(ctx, repo)
 	if fetcher == nil || !s.graphQLReadAllowed(ctx, repo, fetcher) {
 		return nil, false
 	}
@@ -11525,7 +11591,7 @@ func (s *Syncer) currentIssueCommentVisibility(
 	repo RepoRef,
 	number int,
 ) (map[int64]CommentVisibility, bool) {
-	fetcher := s.fetcherFor(repo)
+	fetcher := s.fetcherForContext(ctx, repo)
 	if fetcher == nil || !s.graphQLReadAllowed(ctx, repo, fetcher) {
 		return nil, false
 	}

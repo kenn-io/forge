@@ -229,6 +229,8 @@ function renderPullDetail(
   },
   options: {
     hideWorkspaceAction?: boolean;
+    phonePresentation?: boolean;
+    onOpenWorkspace?: (workspaceId: string) => void;
     hideTabs?: boolean;
     actions?: { pull: unknown[] };
     detailLoading?: boolean;
@@ -376,9 +378,11 @@ function renderPullDetail(
     platformHost: "github.com",
     repoPath: "acme/widget",
     hideWorkspaceAction: options.hideWorkspaceAction ?? true,
+    phonePresentation: options.phonePresentation ?? false,
     hideTabs: options.hideTabs ?? false,
     inlineWorkspace: options.inlineWorkspace ?? null,
     onDetailTabChange: options.onDetailTabChange,
+    onOpenWorkspace: options.onOpenWorkspace,
     ...options.detailProps,
   };
   const rendered = render(PullDetailTestHarness, {
@@ -729,6 +733,27 @@ describe("PullDetail provider workflow actions", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Run workflow" }));
 
     expect(await screen.findByText("GitLab Actions")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Release" })).toBeTruthy();
+  });
+
+  it("keeps workflow dispatch available in the phone action grid", async () => {
+    const detail = pullDetail();
+    enableWorkflowActions(detail);
+    const api = workflowClient(detail);
+
+    renderPullDetail(detail, api.repoSettings, api.client, {
+      actionsModeVisible: true,
+      runtimeClient: api.client,
+      phonePresentation: true,
+    });
+
+    await waitFor(() => {
+      expect(api.GET.mock.calls.some(([path]) => String(path).endsWith("/workflows"))).toBe(true);
+    });
+    const grid = screen.getByRole("group", { name: "Pull request actions" });
+    await fireEvent.click(within(grid).getByRole("button", { name: "Run workflow" }));
+
+    expect(await screen.findByRole("region", { name: "GitHub Actions" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Release" })).toBeTruthy();
   });
 
@@ -2544,6 +2569,22 @@ describe("PullDetail inline workspace handoff", () => {
     expect(discardWorkspaceLaunch("ws-new", undefined)).toBeNull();
   });
 
+  it("opens a created workspace through the host callback when one is provided", async () => {
+    const { apiClient, resolvePost } = deferredWorkspaceApiClient();
+    const onOpenWorkspace = vi.fn();
+    const { navigate } = renderPullDetail(pullDetail(), undefined, apiClient, {
+      hideWorkspaceAction: false,
+      onOpenWorkspace,
+    });
+
+    await fireEvent.click(screen.getAllByRole("button", { name: "Create Workspace" })[0]!);
+    await waitFor(() => expect(apiClient.POST).toHaveBeenCalled());
+    resolvePost({ data: { id: "ws-new", status: "creating", created: true } });
+
+    await waitFor(() => expect(onOpenWorkspace).toHaveBeenCalledWith("ws-new"));
+    expect(navigate).not.toHaveBeenCalledWith("/terminal/ws-new");
+  });
+
   it("queues the agent selected from Create Workspace options", async () => {
     const { apiClient, resolvePost } = deferredWorkspaceApiClient();
     const { navigate } = renderPullDetail(pullDetail(), undefined, apiClient, {
@@ -2733,6 +2774,45 @@ describe("PullDetail inline workspace handoff", () => {
       expect(controller.openInWorkspaces).not.toHaveBeenCalled();
     },
   );
+
+  it("phone presentation renders the actions as one kit action grid instead of fit stages", async () => {
+    const detail = pullDetail();
+    detail.workspace = { id: "ws-1", status: "ready" };
+
+    const { navigate } = renderPullDetail(detail, undefined, undefined, {
+      hideWorkspaceAction: false,
+      phonePresentation: true,
+    });
+
+    const grid = screen.getByRole("group", { name: "Pull request actions" });
+    expect(grid.classList.contains("kit-adaptive-action-grid")).toBe(true);
+    expect(within(grid).getByRole("button", { name: "Approve" })).toBeTruthy();
+    expect(within(grid).getByRole("button", { name: "Close" })).toBeTruthy();
+    expect(document.querySelector(".actions-menu-trigger")).toBeNull();
+    expect(document.querySelector(".actions-row--measure")).toBeNull();
+    expect(document.querySelector(".kanban-select")).toBeNull();
+    expect(screen.getAllByRole("button", { name: "Open Workspace" })).toHaveLength(1);
+
+    await fireEvent.click(within(grid).getByRole("button", { name: "Open Workspace" }));
+    expect(navigate).toHaveBeenCalledWith("/terminal/ws-1");
+  });
+
+  it("phone presentation shows sync as a top bar instead of an inline row", async () => {
+    const detail = pullDetail();
+    renderPullDetail(detail, undefined, undefined, { phonePresentation: true, detailSyncing: true });
+
+    const bar = screen.getByRole("status", { name: "Syncing from GitHub" });
+    expect(bar.classList.contains("sync-bar")).toBe(true);
+    expect(document.querySelector(".sync-indicator")).toBeNull();
+  });
+
+  it("desktop presentation keeps the inline syncing indicator", async () => {
+    const detail = pullDetail();
+    renderPullDetail(detail, undefined, undefined, { detailSyncing: true });
+
+    expect(document.querySelector(".sync-indicator")).not.toBeNull();
+    expect(document.querySelector(".sync-bar")).toBeNull();
+  });
 
   it("without a controller open renders a single Open Workspace button that navigates", async () => {
     const detail = pullDetail();

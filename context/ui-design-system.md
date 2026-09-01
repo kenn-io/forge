@@ -49,13 +49,22 @@ kenn-forge consumes `@kenn-io/kit-ui` as source, pinned to one commit SHA in
 `frontend/package.json` (never a `file:` path — bun's store keys by
 name@version and goes stale). Its runtime deps are peers and its rune-module source cannot be
 prebundled: keep it in vite `optimizeDeps.exclude` with transitive deps as
-`"@kenn-io/kit-ui > <dep>"` includes. See kit-ui's `docs/migration.md` and
+`"@kenn-io/kit-ui > <dep>"` includes. Bun links the pinned checkout from its
+global cache outside the workspace root, so kit source that imports assets
+(`?inline` SVGs) needs kit's resolved source root in vite `server.fs.allow`
+(`frontend/vite.config.ts::kitUiSourceRoot`); a bump that adds such an import
+otherwise fails only in the Vitest/Playwright transform tier, not in
+`svelte-check`. See kit-ui's `docs/migration.md` and
 `docs/theming.md`. Invariants kenn-forge relies on:
 
 - Theme tokens come from kit `theme.css`; theming is `dark` /
   `high-contrast` classes on `<html>`. Frontend components additionally
   consume app tokens from `frontend/src/app.css` — style-asserting harnesses must load `app.css` like
   `browserAppHarness.ts`.
+- Disabled styling: native controls that dim when disabled use
+  `var(--opacity-disabled)` (kit's `hand-rolled-disabled-state` rule rejects a
+  literal); a deliberate no-dim rule uses `opacity: unset`, and hover rules
+  scoped to enabled buttons use `:enabled`, not `:not(:disabled)`.
 - Type scale: rem tokens self-adjust on coarse pointers; `kit-type-touch`
   on `<html>` forces the touch scale. Never pin `html { font-size }`.
 - Breakpoints are written in px (shared steps 640/760/900) — media-query
@@ -110,6 +119,22 @@ prebundled: keep it in vite `optimizeDeps.exclude` with transitive deps as
   Provider-mode repo selector visibility must not move the tab row; non-provider
   modes reserve its footprint unless embed config hides it
   (`frontend/src/lib/components/layout/AppHeader.svelte::reserveProviderRepoSelectorSlot`).
+- `AdaptiveActionGrid`: the phone PR primary-action surface. Phone-like PR
+  routes (`phonePresentation` threaded from
+  `frontend/src/App.svelte::phoneDetailProps`) render approve, merge, close,
+  reopen, ready, workflows, and the workspace action with kit's
+  `layout="fill"`: each row is packed by the buttons' natural widths and then
+  stretched to span the content width, rows are independent of each other,
+  and no label is ever truncated. Gaps stay (`rowGap`/`columnGap` 2,
+  `frame="none"`, `padding={0}`); `collapseBelow={0}` disables the
+  disclosure. It reuses the same per-action snippets the desktop `FitStages`
+  row composes, so each stateful control still renders exactly once. Kit
+  fills only its own direct controls; compound wrappers (`approve-section`,
+  `ready-section`, `workflow-approval-section`, `workspace-create-split`)
+  are custom items and `PullDetail` fills their primary button itself. A
+  wrapper around a kit control must not hardcode a width smaller than the
+  phone hit target (`--focus-detail-hit-target`), or the control overflows
+  its cell. Desktop-narrow focus presentation keeps `FitStages`.
 - `FitStages`: how an action row degrades under pressure (richest labelled
   `Button` row to compact labelled or `IconButton` rows, then a measured menu
   trigger when needed), never a media query, Button-internal overrides, or a
@@ -225,9 +250,12 @@ Use it inside left sidebar headers and collapsed strips. Pass a specific label s
 
 ### SidebarTitlePopover
 
-Use `SidebarTitlePopover` on truncated pull-request and issue sidebar rows so the full
-title and formatted repository remain readable; pull requests add the full head branch
-on its own line (`frontend/src/lib/components/sidebar/SidebarTitlePopover.svelte`).
+Use `SidebarTitlePopover` on pull-request, issue, and workspace sidebar rows so the full
+title and formatted repository remain readable; pull-request and workspace rows add the
+full head branch on its own line. The required `truncationSelector` prop names the row
+elements whose ellipsis truncation the popover reveals; it opens only while one of those
+is actually truncated, measured at show time
+(`frontend/src/lib/components/sidebar/SidebarTitlePopover.svelte`).
 
 ### GroupedSidebarSection
 
@@ -466,7 +494,7 @@ Provider live updates checkpoint only after their handler succeeds and preserve 
 
 Provider mutations share one app-scoped acknowledged queue: order commands by submission, key rollback versions by full item identity plus mutation family, never retry writes, and turn `stale_state` into refresh-and-review without replay (`frontend/src/lib/stores/ordered-mutations.ts::ProviderMutations`).
 
-Component lifetime owns polling and live-event subscriptions; teardown interrupts that owner. Accepted queued mutations remain application-runtime-owned, and post-teardown coordinator demand stays pending for a remounted owner (`frontend/src/lib/features/kata/kata-workflow.ts::KataWorkflow`, `frontend/src/lib/components/terminal/workspace-list-workflow.ts::WorkspaceListWorkflow`).
+Component lifetime owns polling and live-event subscriptions; teardown interrupts that owner. Accepted queued mutations remain application-runtime-owned, and post-teardown hub demand stays pending for a remounted owner (`frontend/src/lib/features/kata/kata-workflow.ts::KataWorkflow`, `frontend/src/lib/components/terminal/workspace-list-workflow.ts::WorkspaceListWorkflow`).
 
 A `$state` record written by full-object reassignment (`x = { ...x, k: v }`) that is also read inside the same reactive scope — an `$effect`, or a `{@attach ...}` callback, which Svelte runs as one — is a self-referential dependency: Svelte detects it as `effect_update_depth_exceeded` and the attachment tears itself down and reattaches forever. Mutate the specific key instead (`x[k] = v`) (`frontend/src/lib/stores/workspace-host.svelte.ts::registerSlotElement`).
 

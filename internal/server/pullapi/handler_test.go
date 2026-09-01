@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
@@ -127,7 +128,13 @@ func TestListPullsTreatsAssociatedWorkspaceSubjectAsHasWorkspace(t *testing.T) {
 			return workspaceapi.WorkspaceSubjectSnapshot{
 				OwnReferences: map[db.WorkspaceSubjectKey]workspaceapi.WorkspaceRef{},
 				Subjects: map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{
-					key: {Workspace: workspaceapi.WorkspaceRef{ID: "ws-adhoc", Status: "ready"}},
+					key: {
+						Subject: db.WorkspaceSubjectMetadata{
+							Key: key, Platform: "github", PlatformHost: "github.com",
+							PlatformRepoID: identity.PlatformRepoID,
+						},
+						Workspace: workspaceapi.WorkspaceRef{ID: "ws-adhoc", Status: "ready"},
+					},
 				},
 			}, nil
 		},
@@ -138,6 +145,150 @@ func TestListPullsTreatsAssociatedWorkspaceSubjectAsHasWorkspace(t *testing.T) {
 	require.Len(result.Body, 1)
 	require.NotNil(result.Body[0].Workspace)
 	assert.Equal(t, "ws-adhoc", result.Body[0].Workspace.ID)
+}
+
+type stubPullProviderSource struct {
+	rows   []MergeRequestResponse
+	detail MergeRequestDetailResponse
+}
+
+func (s stubPullProviderSource) ListPulls(
+	context.Context, ListQuery,
+) ([]MergeRequestResponse, error) {
+	return s.rows, nil
+}
+
+func (s stubPullProviderSource) GetPull(
+	context.Context, ItemIdentity,
+) (MergeRequestDetailResponse, error) {
+	return s.detail, nil
+}
+
+func (stubPullProviderSource) GetDiffDescriptor(
+	context.Context, ItemIdentity,
+) (providerplane.DiffDescriptor, error) {
+	return providerplane.DiffDescriptor{}, errors.New("unexpected diff descriptor request")
+}
+
+func TestProviderFetchPreservesEmptyPullList(t *testing.T) {
+	t.Parallel()
+	handler := New(Deps{
+		ProviderSource: stubPullProviderSource{rows: []MergeRequestResponse{}},
+	})
+
+	rows, err := handler.ListService(t.Context(), ListQuery{})
+	require.NoError(t, err)
+	require.NotNil(t, rows)
+	require.Empty(t, rows)
+}
+
+func TestProviderFetchOverlaysLocalPullWorkspaceWithoutReordering(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	t.Parallel()
+
+	key := db.WorkspaceSubjectKey{
+		RepoID: 7, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 1,
+	}
+	handler := New(Deps{
+		ProviderSource: stubPullProviderSource{rows: []MergeRequestResponse{
+			{RepoID: 91, Number: 2, Repo: httpapi.RepoRefResponse{
+				Provider: "github", PlatformHost: "github.com", PlatformRepoID: "repo-widget",
+			}},
+			{RepoID: 91, Number: 1, Repo: httpapi.RepoRefResponse{
+				Provider: "github", PlatformHost: "github.com", PlatformRepoID: "repo-widget",
+			}},
+		}},
+		WorkspaceSubjects: func(context.Context) (workspaceapi.WorkspaceSubjectSnapshot, error) {
+			return workspaceapi.WorkspaceSubjectSnapshot{Subjects: map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{
+				key: {
+					Subject: db.WorkspaceSubjectMetadata{
+						Key: key, Platform: "github", PlatformHost: "github.com",
+						PlatformRepoID: "repo-widget",
+					},
+					Workspace: workspaceapi.WorkspaceRef{ID: "ws-local", Status: "ready"},
+				},
+			}}, nil
+		},
+	})
+
+	rows, err := handler.ListService(t.Context(), ListQuery{})
+	require.NoError(err)
+	require.Len(rows, 2)
+	assert.Equal([]int{2, 1}, []int{rows[0].Number, rows[1].Number})
+	assert.Nil(rows[0].Workspace)
+	require.NotNil(rows[1].Workspace)
+	assert.Equal("ws-local", rows[1].Workspace.ID)
+}
+
+func TestProviderFetchReplacesHubPullDetailWorkspaceWithLocalWorkspace(t *testing.T) {
+	t.Parallel()
+
+	key := db.WorkspaceSubjectKey{
+		RepoID: 7, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 42,
+	}
+	handler := New(Deps{
+		ProviderSource: stubPullProviderSource{detail: MergeRequestDetailResponse{
+			MergeRequest: &db.MergeRequest{RepoID: 91, Number: 42},
+			Repo: httpapi.RepoRefResponse{
+				Provider: "github", PlatformHost: "github.com", PlatformRepoID: "repo-widget",
+			},
+			Workspace: &workspaceapi.WorkspaceRef{ID: "ws-hub", Status: "ready"},
+		}},
+		WorkspaceSubjects: func(context.Context) (workspaceapi.WorkspaceSubjectSnapshot, error) {
+			return workspaceapi.WorkspaceSubjectSnapshot{Subjects: map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{
+				key: {
+					Subject: db.WorkspaceSubjectMetadata{
+						Key: key, Platform: "github", PlatformHost: "github.com",
+						PlatformRepoID: "repo-widget",
+					},
+					Workspace: workspaceapi.WorkspaceRef{ID: "ws-local", Status: "ready"},
+				},
+			}}, nil
+		},
+	})
+
+	detail, err := handler.GetService(t.Context(), ItemIdentity{
+		Provider: "github", PlatformHost: "github.com",
+		Owner: "acme", Name: "widget", Number: 42,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, detail.Workspace)
+	assert.Equal(t, "ws-local", detail.Workspace.ID)
+}
+
+func TestLocalPullOverlayNeverJoinsByNumericRepoID(t *testing.T) {
+	t.Parallel()
+
+	key := db.WorkspaceSubjectKey{
+		RepoID: 1, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 42,
+	}
+	handler := New(Deps{
+		ProviderSource: stubPullProviderSource{rows: []MergeRequestResponse{{
+			RepoID: 1,
+			Number: 42,
+			Repo: httpapi.RepoRefResponse{
+				Provider: "github", PlatformHost: "github.com", PlatformRepoID: "repo-hub",
+			},
+		}}},
+		WorkspaceSubjects: func(context.Context) (workspaceapi.WorkspaceSubjectSnapshot, error) {
+			return workspaceapi.WorkspaceSubjectSnapshot{Subjects: map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{
+				key: {
+					Subject: db.WorkspaceSubjectMetadata{
+						Key: key, Platform: "github", PlatformHost: "github.com",
+						PlatformRepoID: "repo-spoke",
+					},
+					Workspace: workspaceapi.WorkspaceRef{ID: "ws-wrong-repo", Status: "ready"},
+				},
+			}}, nil
+		},
+	})
+
+	rows, err := handler.ListService(t.Context(), ListQuery{})
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.Nil(t, rows[0].Workspace)
 }
 
 func TestListPullsWorkspaceActivityRecencyIsOptIn(t *testing.T) {
@@ -163,7 +314,14 @@ func TestListPullsWorkspaceActivityRecencyIsOptIn(t *testing.T) {
 		WorkspaceSubjects: func(context.Context) (workspaceapi.WorkspaceSubjectSnapshot, error) {
 			return workspaceapi.WorkspaceSubjectSnapshot{
 				Subjects: map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{
-					key: {Workspace: workspaceapi.WorkspaceRef{ID: "ws-1", Status: "ready"}, ActivityAt: &workspaceAt},
+					key: {
+						Subject: db.WorkspaceSubjectMetadata{
+							Key: key, Platform: "github", PlatformHost: "github.com",
+							PlatformRepoID: identity.PlatformRepoID,
+						},
+						Workspace:  workspaceapi.WorkspaceRef{ID: "ws-1", Status: "ready"},
+						ActivityAt: &workspaceAt,
+					},
 				},
 			}, nil
 		},

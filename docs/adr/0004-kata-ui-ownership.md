@@ -304,7 +304,7 @@ Forge removes:
   projection, event stream, and Kata browser persistence;
 - the generic `/kata/proxy` browser route;
 - the full task snapshot and task event-stream server routes, caches,
-  coordinators, loaders, and enrichment pipeline; and
+  hubs, loaders, and enrichment pipeline; and
 - docs, screenshots, tests, fixtures, and generated contracts that describe
   Forge's Kata mode.
 

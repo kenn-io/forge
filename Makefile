@@ -38,7 +38,7 @@ DEV_CLONE_FRONTEND_PORT ?= 5175
 
 .PHONY: ensure-embed-dir ensure-tmp-dir check-air air-install build build-release install \
         rust-pty-manager rust-test vite-plus-install frontend-deps check-vite-plus-bin frontend githubapp-frontend frontend-dev frontend-dev-bun frontend-check frontend-check-no-deps frontend-check-core-no-deps frontend-effect-diagnostics api-generate roborev-api-generate \
-        docs-build docs-vercel-build docs-branding-check docs-deploy-staging docs-deploy \
+        docs-build docs-check docs-screenshots docs-vercel-build docs-branding-check docs-deploy-staging docs-deploy \
         dev dev-ephemeral dev-ephemeral-stop test test-short test-integration test-e2e test-e2e-roborev test-fleet-container test-fleet-drive-container test-gitlab-container gitlab-fixture-bake vet check-mise lint lint-check nilaway testify-helper-check \
         profile-workspace-switch otel-lgtm \
         frontend-api-client-check font-size-token-check huma-route-check migration-history-check playwright-version-check script-tests guardrail-check race-times tidy svelte-skills svelte-skills-sync clean install-hooks help \
@@ -174,13 +174,21 @@ frontend-check-core-no-deps: check-vite-plus-bin
 frontend-effect-diagnostics: check-vite-plus-bin
 	cd frontend && NODE_PATH=../node_modules node node_modules/@effect/language-service/cli.js diagnostics --project tsconfig.json --format text --severity error
 
-# Build and verify the public documentation, including generated screenshots.
-docs-build: frontend-deps
+# Build the public documentation from the published screenshot assets.
+docs-build:
 	node scripts/build-docs.mjs
 
-# Reproduce Vercel's remote docs build after its install command has populated
-# frozen dependencies and the repository-local Go/uv tool directory.
-docs-vercel-build: check-vite-plus-bin
+# Verify the rendered site independently from its static build.
+docs-check: frontend-deps docs-build
+	node scripts/verify-docs-site.mjs
+
+# Generate the complete screenshot set for publication on docs-assets.
+docs-screenshots: frontend-deps
+	node scripts/generate-docs-screenshots.mjs $(OUTPUT_DIR)
+
+# Reproduce Vercel's remote static docs build after its install command has
+# populated the repository-local uv tool directory.
+docs-vercel-build:
 	bash scripts/vercel-build-docs.sh
 
 docs-branding-check: check-vite-plus-bin
@@ -341,7 +349,7 @@ test-fleet-container: ensure-embed-dir ensure-tmp-dir
 		echo "Set KENN_FORGE_FLEET_CONTAINER_E2E=1 to run the fleet container e2e fixture." >&2; \
 		exit 1; \
 	fi
-	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" $(GOTESTSUM)=tmp/test-fleet-container-output.json -- ./internal/server -run TestFleetContainerReadE2E -shuffle=on -timeout 10m
+	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" $(GOTESTSUM)=tmp/test-fleet-container-output.json -- ./internal/server/fleetapi -run TestFleetContainerReadE2E -shuffle=on -timeout 10m
 
 # Run opt-in fleet drive container tests.
 test-fleet-drive-container: ensure-embed-dir ensure-tmp-dir
@@ -349,7 +357,7 @@ test-fleet-drive-container: ensure-embed-dir ensure-tmp-dir
 		echo "Set KENN_FORGE_FLEET_DRIVE_CONTAINER_E2E=1 to run the fleet drive container e2e fixture." >&2; \
 		exit 1; \
 	fi
-	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" $(GOTESTSUM)=tmp/test-fleet-drive-container-output.json -- ./internal/server -run TestFleetContainerDriveE2E -shuffle=on -timeout 10m
+	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" $(GOTESTSUM)=tmp/test-fleet-drive-container-output.json -- ./internal/server/fleetapi -run TestFleetContainerDriveE2E -shuffle=on -timeout 10m
 
 # Run opt-in GitLab CE container compatibility tests.
 test-gitlab-container: ensure-embed-dir ensure-tmp-dir
@@ -390,7 +398,7 @@ lint-check: ensure-embed-dir check-mise
 nilaway: ensure-embed-dir
 	@if [ -z "$(NILAWAY_BIN)" ]; then \
 		echo "nilaway not found. Install with:" >&2; \
-		echo "go install go.uber.org/nilaway/cmd/nilaway@v0.0.0-20260808063849-8649a03c818a" >&2; \
+		echo "mise install" >&2; \
 		exit 1; \
 	fi
 	@module_path="$$(go list -m)" || { \
@@ -443,7 +451,9 @@ help:
 	@echo "  frontend-dev   - Install deps and run Vite dev server, logging to tmp/logs/frontend-dev.log (honors KENN_FORGE_CONFIG)"
 	@echo "  frontend-dev-bun - Install deps with Bun and run Vite+ dev server (honors KENN_FORGE_CONFIG)"
 	@echo "  frontend-check - Run Vite+ format, lint, type, and Svelte checks for frontend packages"
-	@echo "  docs-build     - Build and verify the public documentation site"
+	@echo "  docs-build     - Build the public documentation site from published assets"
+	@echo "  docs-check     - Build and verify the rendered documentation site"
+	@echo "  docs-screenshots - Generate the screenshot set for docs-assets"
 	@echo "  docs-vercel-build - Reproduce the direct Vercel documentation build"
 	@echo "  docs-branding-check - Enforce lowercase kenn-forge documentation branding"
 	@echo "  docs-deploy-staging - Start a remote Vercel preview build"

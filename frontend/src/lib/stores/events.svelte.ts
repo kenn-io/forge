@@ -4,6 +4,7 @@ import type { SyncStatus } from "../api/types.js";
 import {
   providerEventsProgram,
   type ConfigChangedEvent,
+  type HubConnectionChangedEvent,
   type DeferredMergeCompletedEvent,
   type PRCIRefreshedEvent,
   type PRCIRefreshQueuedEvent,
@@ -11,6 +12,7 @@ import {
   type ProviderEvent,
   type ProviderEventsConnectionState,
   type ProviderEventsError,
+  type ReconnectStaleEvent,
   type WorkspacePRAssociatedEvent,
   type WorkspacePRRefreshQueuedEvent,
   type WorkspacePushedHeadChangedEvent,
@@ -24,8 +26,11 @@ export interface EventsStoreOptions {
   readonly getBasePath?: () => string;
   readonly onDataChanged?: () => Effect.Effect<void, ProviderEventsError, AppServices>;
   readonly onSyncStatus?: (status: SyncStatus) => Effect.Effect<void, ProviderEventsError, AppServices>;
+  readonly onHubConnectionChanged?: (
+    event: HubConnectionChangedEvent,
+  ) => Effect.Effect<void, ProviderEventsError, AppServices>;
   readonly onConfigChanged?: (event: ConfigChangedEvent) => Effect.Effect<void, ProviderEventsError, AppServices>;
-  readonly onReconnectStale?: () => Effect.Effect<void, ProviderEventsError, AppServices>;
+  readonly onReconnectStale?: (event: ReconnectStaleEvent) => Effect.Effect<void, ProviderEventsError, AppServices>;
   readonly onWorkspaceCreated?: (event: WorkspaceCreatedEvent) => Effect.Effect<void, ProviderEventsError, AppServices>;
   readonly onWorkspaceStatus?: (event: WorkspaceStatusEvent) => Effect.Effect<void, ProviderEventsError, AppServices>;
   readonly onWorkspaceDeleted?: (event: WorkspaceDeletedEvent) => Effect.Effect<void, ProviderEventsError, AppServices>;
@@ -86,10 +91,12 @@ export function createEventsStore(opts: EventsStoreOptions) {
           return opts.onDataChanged?.() ?? Effect.void;
         case "sync_status":
           return opts.onSyncStatus?.(event.payload) ?? Effect.void;
+        case "hub_connection_changed":
+          return opts.onHubConnectionChanged?.(event.payload) ?? Effect.void;
         case "config.changed":
           return opts.onConfigChanged?.(event.payload) ?? Effect.void;
         case "reconnect.stale":
-          return opts.onReconnectStale?.() ?? Effect.void;
+          return opts.onReconnectStale?.(event.payload) ?? Effect.void;
         case "workspace_created":
           return opts.onWorkspaceCreated?.(event.payload) ?? Effect.void;
         case "workspace_status":

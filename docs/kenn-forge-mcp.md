@@ -1,6 +1,6 @@
-# kenn-forge MCP
+# Kenn Forge MCP
 
-kenn-forge can expose cached maintainer workflows to local MCP clients from the
+Forge can expose cached maintainer workflows to local MCP clients from the
 running daemon. The companion reads the same in-process repository, activity,
 workflow, and workspace services as the UI. It does not force provider refreshes
 or add provider mutations.

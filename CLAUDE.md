@@ -74,7 +74,9 @@ only routes to them.
 - Local thin clients must not infer startup-bound daemon middleware policy from
   reloadable config; derive required request metadata from the runtime record or
   send it safely when the middleware ignores it (`cmd/kenn-forge/daemon_client.go::discoverDaemonHTTP`).
-- User-facing workflow screenshots are generated into a staged docs tree by the docs build and must not be tracked in Git; the Playwright captures in `docs/screenshots/` use the real seeded e2e backend, not mocked API fixtures or a developer daemon.
+- Generate workflow screenshots only with `make docs-screenshots`; docs builds
+  only sync a complete set from orphan `docs-assets`. Keep captures untracked on
+  `main` and use the real seeded e2e backend, not mocks or a developer daemon.
 - Stage Zensical input from an explicit public allowlist; internal plans, specs, ADRs, reports, and screenshot tooling must never enter the staged tree or rendered `site/` output.
 - Verify Zensical screenshot asset-path findings against rendered `site/` output; raw HTML source paths can be rewritten when `use_directory_urls` is enabled.
 - Zensical resolves `docs_dir`/`site_dir` relative to the config file's directory, so `uvx zensical build` cannot run in place against the checked-in `docs/zensical.toml`; stage a scratch project root containing a copy of the config beside a copy of `docs/`, then build there.
@@ -93,7 +95,7 @@ only routes to them.
 
 ## Git Workflow
 
-- **Commit every turn** — always commit your work at the end of each turn, no exceptions
+- **Commit and push every turn** — always commit and push your work at the end of each turn, after required checks
 - Superpowers design specs and implementation plans are temporary working artifacts; never commit
   or retain them. Before committing, distill current contracts into the matching `context/` topic
   docs and delete the artifacts. Do not convert a transient spec into an ADR to preserve it.
@@ -110,4 +112,3 @@ only routes to them.
 - Run tests before committing when applicable
 - Never push unless the repository's non-mutating lint check passes after the final relevant edit; keep local and CI linter versions aligned. (`Makefile`, `prek.toml`, `.github/workflows/ci.yml`)
 - Before pushing any frontend change, you must have run the full affected suite locally after the final frontend/test edit — the full `vp test` Vitest run, plus the full affected Playwright e2e suite whenever the change touches Playwright specs or the shared mock fixtures they rely on; type checks and CI-only verification are not enough.
-- Never push new workstreams unless explicitly asked. When addressing review feedback or CI failures on an existing PR, an agent may push after the fix is implemented and relevant local validation has run.

@@ -61,6 +61,7 @@ not an exhaustive enum.
 | `internalError` | 500 | Generic kenn-forge bug or unexpected local failure. |
 | `mutationOutcomeUnknown` | 502 | A non-idempotent upstream mutation may have been applied despite transport failure. Clients fence related writes, reconcile fresh authority, and never replay the request automatically. |
 | `upstreamError` | 502 | Provider API, auth, network, or upstream service failure. Include provider identity when known. |
+| `hubUnavailable` | 503 | A spoke cannot reach the federation's provider owner. It is retryable; provider reads and writes must not fall back to spoke-local provider tables. |
 | `serviceUnavailable` | 503 | Temporarily unavailable local service or health dependency. |
 
 Add new codes only when the frontend or an API client needs a distinct recovery
@@ -68,8 +69,9 @@ branch. Keep the OpenAPI enum stable and regenerate API artifacts with
 `make api-generate` after changing the taxonomy.
 
 - After dispatching a non-idempotent provider write, preserve only typed errors that prove rejection;
-  unverified provider failures and local persistence failures after provider success return
-  `mutationOutcomeUnknown` (`internal/server/httpapi/problems.go::ProviderMutationProblem`).
+  unverified provider failures, unreadable or oversized hub responses, and local persistence
+  failures after provider success return `mutationOutcomeUnknown`
+  (`internal/server/httpapi/problems.go::ProviderMutationProblem`, `internal/server/provider_proxy.go::providerProxy.ServeHTTP`).
 - A stale manual-workflow definition is `conflict` with
   `details.reason = "workflow_definition_changed"` and expected/live SHAs, so
   clients can require a catalog reload (`internal/server/workflowapi/routes.go::Handler.dispatch`).
@@ -131,6 +133,21 @@ helpers should provide:
 Components may still display `detail` as user-facing text, but behavior must use
 the typed code. Examples: disable or explain unavailable provider operations
 from `unsupportedCapability`, and show retry timing from `rateLimited`.
+
+On a federation spoke, hub reachability is state carried on the existing
+local browser event stream as `hub_connection_changed`; it is not a
+second EventSource and is distinct from local live-update connectivity. A
+disconnect marks provider data unavailable immediately. Reconnection refreshes
+pull, issue, activity, selected-detail, and sync-status projections before
+clearing that state. If a projection refresh fails but an independent
+sync-status probe succeeds, the hub is available and the projection error is
+reported separately; a failed probe keeps provider data unavailable. A stale
+replay cursor follows the same rule; cached hub state suppresses refetch during
+a known outage.
+Provider pages must not present stale cached state as current during the outage,
+while local workspace navigation remains available
+(`frontend/src/lib/app-stores.svelte.ts::reconcileProviderState`,
+`frontend/src/App.svelte::providerUnavailable`).
 
 ## Tests
 

@@ -34,6 +34,36 @@ Rules:
   supported reports joined by canonical worktree and runtime key to a live `agent`
   runtime (`internal/server/workspaceapi/agent_sessions.go::Handler.listWorkspaceAgentSessions`).
 
+## Provider-Backed Lifecycle Facts
+
+Provider-backed workspace execution is local, but its provider facts remain
+hub-owned.
+
+- Creation commits the workspace and its versioned launch specification in one
+  transaction before starting asynchronous setup. The specification preserves
+  the exact base clone, default branch, requested workspace branch, PR head
+  kind, and fork clone URL selected at admission
+  (`internal/db/queries_workspace_launch_specs.go::DB.CreateWorkspaceWithLaunchSpec`).
+- Initial setup, retry, crash recovery, pull/push branch synchronization, PR
+  association, and pushed-head monitoring pass through
+  `internal/workspace/launch_spec.go::Manager.RequireWorkspaceLaunchSpec`.
+  These paths must not reconstruct provider facts from repository, pull, or
+  issue cache rows on a spoke.
+- A source-visibility lease is valid only while `now < source_visible_until`.
+  There is no grace period. An unexpired specification permits the lifecycle
+  operation after local route and Git checks; expiry requires hub
+  refresh before setup or provider-backed network Git. An unavailable
+  hub yields a typed retryable `LaunchSpecRefreshError`, and an
+  explicitly hidden source fails closed for those operations.
+- Starting a new local shell or agent session does not contact the hub.
+  Generated agent context uses the last validated launch specification and may
+  therefore contain stale provider labels while the hub is unavailable.
+- Same-repository PRs fetch the hub-issued synthetic pull ref from the
+  base clone. Fork PRs fetch the exact persisted fork clone URL and head branch;
+  a spoke never derives a fork URL from provider cache state. Issue workspaces
+  start from the persisted base clone/default branch. Ad-hoc and Kata workspaces
+  continue through their local resolution paths.
+
 ## Terminal Transport
 
 - Every terminal WebSocket leg negotiates RFC 7692 `permessage-deflate` with
@@ -45,6 +75,10 @@ Rules:
 - The browser pane that claims resize authority owns the complete character and
   pixel geometry; hidden or non-owning panes cannot overwrite it. Retained PTYs use
   an 8x16 fallback only until claimed browser geometry arrives (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::resizeVisibleTerminal`).
+- A hub terminates the browser WebSocket and opens a separately
+  authenticated WebSocket to the owning spoke. It forwards bytes and resize
+  messages only; the spoke still owns tmux/ptyowner state, persistence, exit
+  observation, and cleanup (`internal/server/fleetapi/fleet_proxy.go`).
 
 ## Natural Exit Rules
 
@@ -97,6 +131,10 @@ Workspace deletion is intentionally conservative.
 - A confirmed delete publishes workspace absence from the application workflow before presenter-specific navigation
   or failure UI; releasing the initiating presenter must not suppress tombstones, hosted-session cleanup, or route invalidation
   (`frontend/src/lib/components/terminal/workspace-runtime-workflow.ts::executeMutation`).
+- Workspace `DELETE` and merge-cleanup admission are idempotent after
+  authoritative absence; stale projections and retries succeed without
+  publishing another deletion
+  (`internal/server/workspaceapi/workspace_deletion.go::Handler.QueueWorkspaceDeletion`).
 
 This ordering prevents a rejected delete from silently killing the user's live
 workspace sessions.
@@ -104,20 +142,18 @@ workspace sessions.
 ## Server Shutdown Ordering
 
 Workspace and Fleet own independent idempotent, context-bounded lifecycles;
-Fleet starts after Workspace and shuts down its workers and SSH transport before
-Workspace stops (`internal/server/fleetapi/handler.go::Handler.Shutdown`). Root closes
+Fleet starts after Workspace and shuts down its workers before Workspace stops
+(`internal/server/fleetapi/handler.go::Handler.Shutdown`). Root closes
 Pull admission and cancels its workers before HTTP drain, then waits for Pull before
 Fleet in the post-drain dependency stage (`internal/server/server.go::Server.Shutdown`,
 `internal/server/pullapi/handler.go::Handler.Stop`).
 If any stage times out, shutdown must not advance; a later call resumes at the
 blocked stage (`internal/server/workspace_dependency_shutdown.go::workspaceDependencyShutdown`).
 
-Fleet SSH persistence belongs to `go.kenn.io/kit/openssh`; Forge consumes a
-generation-bound connection and falls back to explicit masterless SSH when mux
-is unavailable, rather than owning socket adoption or teardown policy
-(`internal/sshfleet/connection.go::Connection`).
-Masterless mode has no persistent lifecycle state, so Forge derives its host
-state and events from relay outcomes (`internal/server/fleetapi/fleet_ssh.go::sshFleetTransport.setMasterlessState`).
+Federated terminal sessions stay spoke-owned. The hub bridges the
+browser WebSocket directly to the enrolled spoke's HTTPS origin and does not
+create a local process, PTY, or durable transport session
+(`internal/server/fleetapi/fleet_proxy.go::Handler.serveFleetWebSocketProxy`).
 
 ## Tmux Persistence Rules
 
@@ -148,12 +184,14 @@ still exists.
 - During kenn-forge shutdown, detach/restart behavior is different: do not treat
   normal server shutdown as a natural user exit that should erase recoverable
   base runtime state.
-- Air-based development launchers opt into restart-detach classification via
-  `KENN_FORGE_DEV_RESTART`; terminal bridges close without an `exited` frame so
-  the browser reconnects to the surviving tmux or ptyowner session. Genuine
-  process exits and non-development shutdown behavior remain unchanged
-  (`Makefile::dev`, `scripts/dev-stack-backend.sh`,
-  `docker/backend-dev-entrypoint.sh`,
+- Development launchers and Forge-managed systemd services opt into
+  restart-detach classification via `KENN_FORGE_DEV_RESTART`; managed systemd
+  units also use `KillMode=process` so the supervisor does not kill durable
+  tmux or ptyowner processes with the daemon. Terminal bridges close without an
+  `exited` frame so the browser reconnects after restart. Genuine process exits
+  and non-supervised shutdown behavior remain unchanged (`Makefile::dev`,
+  `scripts/dev-stack-backend.sh`, `docker/backend-dev-entrypoint.sh`,
+  `internal/fleetsetup/service.go`,
   `internal/workspace/localruntime/manager.go::Manager.Shutdown`).
 - New tmux sessions use the `forge-` prefix; persisted `middleman-` session
   names remain valid and must not be rewritten (`internal/workspace/`).
@@ -175,13 +213,10 @@ still exists.
   resolves `-L` sockets beneath it, so dropping it routes tmux clients to a
   different server than the manager owns. Attach commands returned to external
   callers always wrap in `env`, unsetting the caller's `TMUX` and setting or
-  unsetting `TMUX_TMPDIR` to match the daemon; the hub's SSH wrapping must
-  collapse that argv into one shell-quoted remote command because OpenSSH
-  re-splits remote arguments through the remote shell. Fake tmux test fixtures
-  bake their control paths into the script instead of smuggling them through
-  the client environment
-  (`internal/config/config.go::IsTmuxNonSecretEnvVar`,
-  `internal/server/fleetapi/fleet_ssh.go::wrapAttachSpecForSSH`).
+  unsetting `TMUX_TMPDIR` to match the daemon. Fake tmux test fixtures bake
+  their control paths into the script instead of smuggling them through the
+  client environment
+  (`internal/config/config.go::IsTmuxNonSecretEnvVar`).
 - The non-secret terminal environment and credential names are disjoint by
   construction: config and Kata catalog validation reject `token_env` names
   that appear in the allowlist, because the tmux server's retained spawn
@@ -293,6 +328,10 @@ stale tabs.
 - Agent TUIs in the normal buffer with no local scrollback receive vertical wheel gestures as cursor input; xterm/tmux
   keep ownership when scrollback, the alternate buffer, mouse tracking, or browser Ctrl-wheel zoom is active
   (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::handleTerminalWheel`).
+- Touch-fling momentum must never reach mouse-tracking apps as unpositioned wheel reports: xterm's post-lift
+  `-xterm-gesturechange` events omit `clientX`/`clientY`, so the pane pins them to the last finger position in a
+  capture listener before xterm encodes `ESC[<65;NaN;NaNM`
+  (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::handleTerminalGestureChange`).
 - macOS loopback clipboard fallback must run `pbcopy` with `LC_ALL=en_US.UTF-8`; service launchers may omit
   a UTF-8 locale and make `pbcopy` reinterpret unchanged UTF-8 input
   (`internal/systemclipboard/systemclipboard.go::nativeWriter.WriteText`).
@@ -383,8 +422,8 @@ via `OTEL_TRACES_EXPORTER`.
 - Automatic HTTP tracing excludes only exact long-lived stream routes/modes;
   short endpoints such as telemetry event capture remain traced
   (`internal/server/otel_middleware.go::otelTraceable`).
-- Fleet proxy and SSH terminal WebSockets need their own bounded attach span,
-  ending after setup and before the long-lived bridge
+- Federated terminal WebSockets need their own bounded attach span, ending
+  after setup and before the long-lived spoke-to-browser bridge
   (`internal/server/fleetapi/fleet_proxy.go::startFleetAttachSpan`).
 
 ## Testing Expectations
@@ -405,6 +444,12 @@ behavior.
   runs clone/setup in a background goroutine; if the test returns first, that
   goroutine can keep writing into the test's `t.TempDir` clone path and race
   `RemoveAll` teardown, failing intermittently with "directory not empty".
+- Workspace `ready` can precede the post-setup pushed-head observer pass. Tests
+  that mutate upstream state after readiness must use a state that observer
+  cannot repair (`internal/server/workspaceapi/routes_handlers.go::Handler.runWorkspaceSetupWithBasePath`).
+- Spoke lifecycle tests for provider-backed workspaces seed a launch specification
+  and leave provider-item tables empty. Lease-expiry tests use the handler clock
+  so admission, setup, and HTTP error mapping observe the same instant.
 - Kata API fixtures must use their package-private tmux server and force-delete
   created workspaces; shutdown preserves durable base sessions, so temp-dir
   cleanup alone leaks (`internal/server/kata/testmain_test.go::TestMain`).
@@ -415,6 +460,9 @@ behavior.
   (`internal/server/workspacetest/default_tmux_socket_test.go`).
 - Add frontend or Playwright coverage when the regression is visible in tab
   selection, shell drawer state, or workspace navigation.
+- Federation terminal tests must cross an authenticated TLS boundary; a
+  handler-only test cannot prove credential forwarding, WebSocket proxying, or
+  spoke-owned runtime behavior.
 
 Related intent docs:
 

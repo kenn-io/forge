@@ -1,31 +1,26 @@
 package fleetapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/coder/websocket"
-	"github.com/creack/pty/v2"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
 	"go.kenn.io/forge/internal/config"
-	"go.kenn.io/forge/internal/procutil"
-	"go.kenn.io/forge/internal/ptysize"
+	"go.kenn.io/forge/internal/federation"
+	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/server/httpapi"
-	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/terminalwebsocket"
 	"go.kenn.io/forge/internal/tracing"
 )
@@ -41,10 +36,19 @@ type fleetRESTProxyRoute struct {
 	targetPath  func(*http.Request) string
 }
 
+const fleetProxyMaxBodyBytes int64 = 1 << 20
+
 type fleetHostTarget struct {
-	self    bool
-	peer    config.FleetPeer
-	sshPeer *config.FleetSSHPeer
+	self       bool
+	member     config.FleetMember
+	credential federationauth.Credential
+	clients    federationMemberClients
+}
+
+type federationMemberClients struct {
+	rest      *http.Client
+	proxy     *http.Client
+	websocket *http.Client
 }
 
 func (s *Handler) registerFleetOperationRoutes(api huma.API) {
@@ -548,7 +552,7 @@ func (s *Handler) registerFleetOperationRoutes(api huma.API) {
 			Tags:         []string{"Fleet"},
 			Parameters:   fleetProxyParams(route.pathParams, route.queryParams...),
 			Responses:    fleetProxyResponses(),
-			MaxBodyBytes: -1,
+			MaxBodyBytes: fleetProxyMaxBodyBytes,
 		}
 		if route.body {
 			op.RequestBody = fleetProxyRequestBody()
@@ -556,6 +560,9 @@ func (s *Handler) registerFleetOperationRoutes(api huma.API) {
 		api.OpenAPI().AddOperation(op)
 		api.Adapter().Handle(op, func(ctx huma.Context) {
 			r, w := humago.Unwrap(ctx)
+			if !bufferFleetProxyRequestBody(w, r) {
+				return
+			}
 			s.serveFleetRESTProxy(w, r, route.targetPath(r))
 		})
 	}
@@ -687,6 +694,46 @@ func fleetProxyRequestBody() *huma.RequestBody {
 	}
 }
 
+// bufferFleetProxyRequestBody bounds and consumes any browser request body
+// before the hub resolves or dials a fleet member. The fleet adapter handles
+// raw requests, so Huma's MaxBodyBytes metadata is not enforced automatically.
+func bufferFleetProxyRequestBody(w http.ResponseWriter, r *http.Request) bool {
+	if r.ContentLength > fleetProxyMaxBodyBytes {
+		writeProblemResponse(w, httpapi.NewProblem(
+			http.StatusRequestEntityTooLarge,
+			httpapi.CodePayloadTooLarge,
+			"fleet proxy request body is too large",
+			map[string]any{"maxBytes": fleetProxyMaxBodyBytes},
+		))
+		return false
+	}
+
+	body, err := io.ReadAll(io.LimitReader(r.Body, fleetProxyMaxBodyBytes+1))
+	if err != nil {
+		writeProblemResponse(w, httpapi.NewProblem(
+			http.StatusBadRequest,
+			httpapi.CodeBadRequest,
+			"could not read fleet proxy request body",
+			nil,
+		))
+		return false
+	}
+	if int64(len(body)) > fleetProxyMaxBodyBytes {
+		writeProblemResponse(w, httpapi.NewProblem(
+			http.StatusRequestEntityTooLarge,
+			httpapi.CodePayloadTooLarge,
+			"fleet proxy request body is too large",
+			map[string]any{"maxBytes": fleetProxyMaxBodyBytes},
+		))
+		return false
+	}
+
+	_ = r.Body.Close()
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	r.ContentLength = int64(len(body))
+	return true
+}
+
 func fleetProxyResponses() map[string]*huma.Response {
 	return map[string]*huma.Response{
 		"default": {
@@ -722,11 +769,7 @@ func (s *Handler) serveFleetRESTProxy(
 		s.serveLocalFleetRESTProxy(w, r, targetPath)
 		return
 	}
-	if target.sshPeer != nil {
-		s.serveSSHFleetRESTProxy(w, r, *target.sshPeer, targetPath)
-		return
-	}
-	s.serveRemoteFleetRESTProxy(w, r, target.peer, targetPath)
+	s.serveRemoteFleetRESTProxy(w, r, target, targetPath)
 }
 
 func (s *Handler) serveLocalFleetRESTProxy(
@@ -750,13 +793,13 @@ func (s *Handler) serveLocalFleetRESTProxy(
 func (s *Handler) serveRemoteFleetRESTProxy(
 	w http.ResponseWriter,
 	r *http.Request,
-	peer config.FleetPeer,
+	target fleetHostTarget,
 	targetPath string,
 ) {
 	req, err := http.NewRequestWithContext(
 		r.Context(),
 		r.Method,
-		remoteHTTPURL(peer.BaseURL, targetPath, r.URL.RawQuery),
+		remoteHTTPURL(target.member.BaseURL, targetPath, r.URL.RawQuery),
 		r.Body,
 	)
 	if err != nil {
@@ -764,20 +807,20 @@ func (s *Handler) serveRemoteFleetRESTProxy(
 			http.StatusBadGateway,
 			httpapi.CodeUpstreamError,
 			"build fleet peer request: "+err.Error(),
-			map[string]any{"hostKey": peer.Key},
+			map[string]any{"hostKey": target.member.NodeID},
 		))
 		return
 	}
 	copyProxyRequestHeaders(req.Header, r.Header)
-	req.Header.Set("X-Kenn-Forge-Fleet-Host", peer.Key)
+	s.authorizeFederationRequest(req.Header, target.credential)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := target.clients.proxy.Do(req)
 	if err != nil {
 		writeProblemResponse(w, httpapi.NewProblem(
 			http.StatusBadGateway,
 			httpapi.CodeUpstreamError,
 			"fleet peer request failed: "+err.Error(),
-			map[string]any{"hostKey": peer.Key},
+			map[string]any{"hostKey": target.member.NodeID},
 		))
 		return
 	}
@@ -788,7 +831,7 @@ func (s *Handler) serveRemoteFleetRESTProxy(
 	if _, err := io.Copy(w, resp.Body); err != nil {
 		slog.Debug(
 			"copy fleet peer response",
-			"host_key", peer.Key,
+			"host_key", target.member.NodeID,
 			"target", targetPath,
 			"err", err,
 		)
@@ -820,25 +863,23 @@ func (s *Handler) serveFleetWebSocketProxy(
 		return
 	}
 
-	if target.sshPeer != nil {
-		s.serveSSHFleetWebSocketTerminal(w, r, *target.sshPeer, targetPath)
-		return
-	}
 	r, attachSpan, endAttachSpan := startFleetAttachSpan(r)
 	defer endAttachSpan()
 
-	peerURL := remoteWebSocketURL(target.peer.BaseURL, targetPath, r.URL.RawQuery)
+	peerURL := remoteWebSocketURL(target.member.BaseURL, targetPath, r.URL.RawQuery)
 	dialHeader := make(http.Header)
 	copyProxyWebSocketRequestHeaders(dialHeader, r.Header)
-	dialHeader.Set("X-Kenn-Forge-Fleet-Host", target.peer.Key)
-	peerConn, _, err := terminalwebsocket.Dial(r.Context(), peerURL, dialHeader)
+	s.authorizeFederationRequest(dialHeader, target.credential)
+	peerConn, _, err := terminalwebsocket.Dial(
+		r.Context(), peerURL, dialHeader, target.clients.websocket,
+	)
 	if err != nil {
 		attachSpan.SetAttributes(attribute.Bool("error", true))
 		writeProblemResponse(w, httpapi.NewProblem(
 			http.StatusBadGateway,
 			httpapi.CodeUpstreamError,
 			"fleet peer websocket failed: "+err.Error(),
-			map[string]any{"hostKey": target.peer.Key},
+			map[string]any{"hostKey": target.member.NodeID},
 		))
 		return
 	}
@@ -849,7 +890,7 @@ func (s *Handler) serveFleetWebSocketProxy(
 		attachSpan.SetAttributes(attribute.Bool("error", true))
 		slog.Debug(
 			"fleet websocket accept failed",
-			"host_key", target.peer.Key,
+			"host_key", target.member.NodeID,
 			"err", err,
 		)
 		return
@@ -864,500 +905,6 @@ func startFleetAttachSpan(r *http.Request) (*http.Request, trace.Span, func()) {
 	ctx, attachSpan := tracing.StartAttachSpan(r, "terminal.attach")
 	endAttachSpan := sync.OnceFunc(func() { attachSpan.End() })
 	return r.WithContext(ctx), attachSpan, endAttachSpan
-}
-
-func (s *Handler) serveSSHFleetWebSocketTerminal(
-	w http.ResponseWriter,
-	r *http.Request,
-	peer config.FleetSSHPeer,
-	targetPath string,
-) {
-	r, attachSpan, endAttachSpan := startFleetAttachSpan(r)
-	defer endAttachSpan()
-
-	attachSpecPath, ok := attachSpecPathForFleetTerminalTarget(targetPath)
-	if !ok {
-		attachSpan.SetAttributes(attribute.Bool("error", true))
-		writeProblemResponse(w, httpapi.NewProblem(
-			http.StatusNotImplemented,
-			httpapi.CodeUnsupportedCapability,
-			"workspace-level WebSocket terminals are not supported for ssh fleet hosts; use a runtime session terminal",
-			map[string]any{"hostKey": peer.Key},
-		))
-		return
-	}
-	if s.sshFleet == nil {
-		attachSpan.SetAttributes(attribute.Bool("error", true))
-		writeProblemResponse(w, fleetHostNotFoundProblem(peer.Key))
-		return
-	}
-
-	result, err := s.sshFleet.relay(
-		r.Context(), peer, http.MethodGet, attachSpecPath, nil,
-	)
-	if err != nil {
-		attachSpan.SetAttributes(attribute.Bool("error", true))
-		writeProblemResponse(w, httpapi.NewProblem(
-			http.StatusBadGateway,
-			httpapi.CodeUpstreamError,
-			"fleet ssh relay failed: "+err.Error(),
-			map[string]any{"hostKey": peer.Key},
-		))
-		return
-	}
-	resp := result.response
-	out := resp.Body
-	if resp.Status/100 == 2 {
-		command, commandErr := s.sshFleet.runner.SSHCommand(
-			result.connection, true,
-		)
-		if commandErr != nil {
-			attachSpan.SetAttributes(attribute.Bool("error", true))
-			writeProblemResponse(w, httpapi.NewProblem(
-				http.StatusBadGateway,
-				httpapi.CodeUpstreamError,
-				"fleet ssh connection changed: "+commandErr.Error(),
-				map[string]any{"hostKey": peer.Key},
-			))
-			return
-		}
-		if wrapped, ok := wrapAttachSpecForSSH(out, command); ok {
-			out = wrapped
-		}
-	}
-	if resp.Status/100 != 2 {
-		attachSpan.SetAttributes(attribute.Bool("error", true))
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(resp.Status)
-		_, _ = w.Write(out)
-		return
-	}
-
-	var spec workspaceapi.RuntimeAttachSpecResponse
-	if err := json.Unmarshal(out, &spec); err != nil {
-		attachSpan.SetAttributes(attribute.Bool("error", true))
-		writeProblemResponse(w, httpapi.NewProblem(
-			http.StatusBadGateway,
-			httpapi.CodeUpstreamError,
-			"fleet ssh attach-spec was invalid: "+err.Error(),
-			map[string]any{"hostKey": peer.Key},
-		))
-		return
-	}
-	attach, err := startFleetSSHAttachPTY(r.Context(), spec, r)
-	if err != nil {
-		attachSpan.SetAttributes(attribute.Bool("error", true))
-		writeProblemResponse(w, httpapi.NewProblem(
-			http.StatusBadGateway,
-			httpapi.CodeUpstreamError,
-			"start fleet ssh terminal attach: "+err.Error(),
-			map[string]any{"hostKey": peer.Key},
-		))
-		return
-	}
-
-	clientConn, err := terminalwebsocket.Accept(w, r)
-	if err != nil {
-		attachSpan.SetAttributes(attribute.Bool("error", true))
-		attach.close()
-		slog.Debug(
-			"fleet ssh websocket accept failed",
-			"host_key", peer.Key,
-			"err", err,
-		)
-		return
-	}
-	defer clientConn.Close(websocket.StatusNormalClosure, "hub detached")
-	endAttachSpan()
-	geometry, sizeOK := workspaceapi.ParseRuntimeTerminalGeometry(r)
-	if !sizeOK {
-		geometry = ptysize.Geometry{Cols: 120, Rows: 30}
-	}
-	resizeMember := s.registerFleetSSHResizeMember(
-		peer.Key+"\x00"+targetPath,
-		attach,
-		workspaceapi.ParseRuntimeTerminalResizeActive(r),
-		geometry,
-	)
-	defer resizeMember.close()
-	bridgeFleetSSHAttachPTY(r.Context(), clientConn, attach, resizeMember)
-}
-
-func attachSpecPathForFleetTerminalTarget(targetPath string) (string, bool) {
-	const wsPrefix = "/ws/v1/"
-	if !strings.HasPrefix(targetPath, wsPrefix) ||
-		!strings.HasSuffix(targetPath, "/terminal") ||
-		!strings.Contains(targetPath, "/runtime/sessions/") {
-		return "", false
-	}
-	path := "/api/v1/" + strings.TrimPrefix(targetPath, wsPrefix)
-	path = strings.TrimSuffix(path, "/terminal") + "/attach-spec"
-	return path, true
-}
-
-type fleetSSHPTYAttachment struct {
-	cmd  *os.Process
-	ptmx *os.File
-	done <-chan int
-}
-
-func startFleetSSHAttachPTY(
-	ctx context.Context,
-	spec workspaceapi.RuntimeAttachSpecResponse,
-	r *http.Request,
-) (*fleetSSHPTYAttachment, error) {
-	if len(spec.Command) == 0 || strings.TrimSpace(spec.Command[0]) == "" {
-		return nil, errors.New("attach-spec command is empty")
-	}
-	active := workspaceapi.ParseRuntimeTerminalResizeActive(r)
-	geometry, ok := workspaceapi.ParseRuntimeTerminalGeometry(r)
-	if !ok || !active {
-		geometry = ptysize.Geometry{Cols: 120, Rows: 30}
-	}
-	release, err := procutil.TryAcquire(ctx, "fleet ssh terminal attach")
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := procutil.Command(spec.Command[0], spec.Command[1:]...)
-	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
-	ptmx, err := pty.StartWithSize(cmd, ptysize.Winsize(geometry))
-	if err != nil {
-		release()
-		return nil, fmt.Errorf("start attach pty: %w", err)
-	}
-	done := make(chan int, 1)
-	go func() {
-		err := cmd.Wait()
-		release()
-		code := -1
-		if cmd.ProcessState != nil {
-			code = cmd.ProcessState.ExitCode()
-		} else if err == nil {
-			code = 0
-		}
-		done <- code
-		close(done)
-	}()
-	return &fleetSSHPTYAttachment{
-		cmd:  cmd.Process,
-		ptmx: ptmx,
-		done: done,
-	}, nil
-}
-
-func (a *fleetSSHPTYAttachment) close() {
-	if a == nil {
-		return
-	}
-	if a.ptmx != nil {
-		_ = a.ptmx.Close()
-	}
-	if a.cmd != nil {
-		_ = a.cmd.Kill()
-	}
-}
-
-func (a *fleetSSHPTYAttachment) resize(geometry ptysize.Geometry) {
-	if a == nil || geometry.Cols <= 0 || geometry.Rows <= 0 {
-		return
-	}
-	_ = ptysize.Resize(a.ptmx, geometry)
-}
-
-type fleetSSHResizeGroup struct {
-	mu        sync.Mutex
-	nextID    uint64
-	nextClaim uint64
-	ownerID   uint64
-	members   map[uint64]*fleetSSHResizeMember
-}
-
-type fleetSSHResizeMember struct {
-	group      *fleetSSHResizeGroup
-	id         uint64
-	attachment *fleetSSHPTYAttachment
-	active     bool
-	claim      uint64
-	geometry   ptysize.Geometry
-	hasSize    bool
-	unregister func() bool
-}
-
-func (s *Handler) registerFleetSSHResizeMember(
-	key string,
-	attachment *fleetSSHPTYAttachment,
-	active bool,
-	geometry ptysize.Geometry,
-) *fleetSSHResizeMember {
-	s.sshResizeMu.Lock()
-	defer s.sshResizeMu.Unlock()
-	if s.sshResizeGroups == nil {
-		s.sshResizeGroups = make(map[string]*fleetSSHResizeGroup)
-	}
-	group := s.sshResizeGroups[key]
-	if group == nil {
-		group = &fleetSSHResizeGroup{}
-		s.sshResizeGroups[key] = group
-	}
-	member := group.register(attachment, active, geometry)
-	member.unregister = func() bool {
-		s.sshResizeMu.Lock()
-		defer s.sshResizeMu.Unlock()
-		empty := group.unregisterMember(member.id)
-		if empty && s.sshResizeGroups[key] == group {
-			delete(s.sshResizeGroups, key)
-		}
-		return empty
-	}
-	return member
-}
-
-func (g *fleetSSHResizeGroup) register(
-	attachment *fleetSSHPTYAttachment,
-	active bool,
-	geometry ptysize.Geometry,
-) *fleetSSHResizeMember {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	g.nextID++
-	geometry = ptysize.Normalize(geometry)
-	member := &fleetSSHResizeMember{
-		group:      g,
-		id:         g.nextID,
-		attachment: attachment,
-		active:     active,
-		geometry:   geometry,
-		hasSize:    geometry.Cols > 0 && geometry.Rows > 0,
-	}
-	if g.members == nil {
-		g.members = make(map[uint64]*fleetSSHResizeMember)
-	}
-	g.members[member.id] = member
-	if active && g.ownerID == 0 {
-		g.ownerID = member.id
-	}
-	owner := g.members[g.ownerID]
-	if owner != nil && owner.hasSize {
-		attachment.resize(owner.geometry)
-	}
-	return member
-}
-
-func (m *fleetSSHResizeMember) close() {
-	if m == nil || m.unregister == nil {
-		return
-	}
-	m.unregister()
-	m.unregister = nil
-}
-
-func (g *fleetSSHResizeGroup) unregisterMember(id uint64) bool {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	delete(g.members, id)
-	if g.ownerID == id {
-		g.ownerID = 0
-		g.selectOwnerLocked()
-		g.applyOwnerSizeLocked()
-	}
-	return len(g.members) == 0
-}
-
-func (m *fleetSSHResizeMember) setActive(active bool) {
-	if m == nil || m.group == nil {
-		return
-	}
-	g := m.group
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	if g.members[m.id] != m {
-		return
-	}
-	m.active = active
-	if active {
-		if g.ownerID == 0 {
-			g.ownerID = m.id
-			g.applyOwnerSizeLocked()
-		}
-		return
-	}
-	if g.ownerID == m.id {
-		g.ownerID = 0
-		g.selectOwnerLocked()
-		g.applyOwnerSizeLocked()
-	}
-}
-
-func (m *fleetSSHResizeMember) resize(geometry ptysize.Geometry, claim bool) {
-	if m == nil || m.group == nil || geometry.Cols <= 0 || geometry.Rows <= 0 {
-		return
-	}
-	g := m.group
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	if g.members[m.id] != m || (!m.active && !claim) {
-		return
-	}
-	if claim {
-		m.active = true
-	}
-	geometry = ptysize.Normalize(geometry)
-	sizeChanged := !m.hasSize || m.geometry != geometry
-	m.geometry = geometry
-	m.hasSize = true
-	ownerChanged := false
-	if claim {
-		g.nextClaim++
-		m.claim = g.nextClaim
-		ownerChanged = g.ownerID != m.id
-		g.ownerID = m.id
-	}
-	if g.ownerID == m.id && (!claim || ownerChanged || sizeChanged) {
-		g.applySizeLocked(m.geometry)
-	}
-}
-
-func (g *fleetSSHResizeGroup) selectOwnerLocked() {
-	for id, member := range g.members {
-		if !member.active {
-			continue
-		}
-		if g.ownerID == 0 {
-			g.ownerID = id
-			continue
-		}
-		owner := g.members[g.ownerID]
-		if owner == nil || member.claim > owner.claim ||
-			(member.claim == owner.claim && id < g.ownerID) {
-			g.ownerID = id
-		}
-	}
-}
-
-func (g *fleetSSHResizeGroup) applyOwnerSizeLocked() {
-	owner := g.members[g.ownerID]
-	if owner != nil && owner.hasSize {
-		g.applySizeLocked(owner.geometry)
-	}
-}
-
-func (g *fleetSSHResizeGroup) applySizeLocked(geometry ptysize.Geometry) {
-	for _, member := range g.members {
-		member.attachment.resize(geometry)
-	}
-}
-
-func bridgeFleetSSHAttachPTY(
-	ctx context.Context,
-	conn *websocket.Conn,
-	attach *fleetSSHPTYAttachment,
-	resizeMember *fleetSSHResizeMember,
-) {
-	defer attach.close()
-
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	inputDone := make(chan struct{})
-	go func() {
-		defer close(inputDone)
-		for {
-			typ, data, err := conn.Read(ctx)
-			if err != nil {
-				return
-			}
-			switch typ {
-			case websocket.MessageBinary:
-				if _, err := attach.ptmx.Write(data); err != nil {
-					return
-				}
-			case websocket.MessageText:
-				handleFleetSSHAttachControl(resizeMember, data)
-			}
-		}
-	}()
-
-	outputDone := make(chan bool, 1)
-	go func() {
-		buf := make([]byte, 32*1024)
-		for {
-			n, err := attach.ptmx.Read(buf)
-			if n > 0 {
-				if writeErr := conn.Write(ctx, websocket.MessageBinary, buf[:n]); writeErr != nil {
-					outputDone <- false
-					return
-				}
-			}
-			if err != nil {
-				outputDone <- true
-				return
-			}
-		}
-	}()
-
-	select {
-	case code := <-attach.done:
-		select {
-		case <-outputDone:
-		case <-time.After(100 * time.Millisecond):
-		}
-		writeTerminalExitFrame(conn, code)
-		cancel()
-	case <-inputDone:
-		cancel()
-	case ptyEOF := <-outputDone:
-		if !ptyEOF {
-			cancel()
-			return
-		}
-		select {
-		case code := <-attach.done:
-			writeTerminalExitFrame(conn, code)
-		case <-time.After(100 * time.Millisecond):
-			writeTerminalExitFrame(conn, -1)
-		}
-		cancel()
-	case <-ctx.Done():
-	}
-}
-
-func handleFleetSSHAttachControl(member *fleetSSHResizeMember, data []byte) {
-	var msg workspaceapi.RuntimeTerminalControlMsg
-	if err := json.Unmarshal(data, &msg); err != nil {
-		slog.Warn("bad fleet ssh terminal control message", "err", err)
-		return
-	}
-	switch msg.Type {
-	case "refresh", "resize":
-		member.resize(ptysize.Geometry{
-			Cols:        msg.Cols,
-			Rows:        msg.Rows,
-			PixelWidth:  msg.PixelWidth,
-			PixelHeight: msg.PixelHeight,
-		}, false)
-	case "claim_resize":
-		member.resize(ptysize.Geometry{
-			Cols:        msg.Cols,
-			Rows:        msg.Rows,
-			PixelWidth:  msg.PixelWidth,
-			PixelHeight: msg.PixelHeight,
-		}, true)
-	case "resize_active":
-		if msg.Active != nil {
-			member.setActive(*msg.Active)
-		}
-	}
-}
-
-func writeTerminalExitFrame(conn *websocket.Conn, code int) {
-	exitMsg, _ := json.Marshal(map[string]any{
-		"type": "exited",
-		"code": code,
-	})
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	_ = conn.Write(ctx, websocket.MessageText, exitMsg)
 }
 
 func bridgeWebSocketProxy(ctx context.Context, client, peer *websocket.Conn) {
@@ -1391,12 +938,8 @@ func proxyWebSocketMessages(
 	}
 }
 
-// fleetSelfHostAlias is a reserved host-key path segment that always
-// addresses the local host: a daemon with no fleet.key (anonymous,
-// hostname-derived self key) cannot put an empty key in a
-// /fleet/hosts/{host_key}/... path, so clients route local operations
-// through this alias instead. Config validation reserves this key so
-// configured peers cannot shadow local self routing.
+// fleetSelfHostAlias always addresses the local host without exposing callers
+// to the daemon's stable node ID.
 const fleetSelfHostAlias = "self"
 
 func (s *Handler) resolveFleetHostTarget(hostKey string) (fleetHostTarget, bool) {
@@ -1404,37 +947,78 @@ func (s *Handler) resolveFleetHostTarget(hostKey string) (fleetHostTarget, bool)
 	if hostKey == "" {
 		return fleetHostTarget{}, false
 	}
-	if hostKey == s.fleetSelfKey("") {
+	if hostKey == fleetSelfHostAlias || hostKey == s.fleetSelfKey("") {
 		return fleetHostTarget{self: true}, true
 	}
 	fleetCfg := s.configSnapshot().Fleet
-	federationEnabled := fleetCfg.Enabled
-	if federationEnabled {
-		for _, peer := range fleetCfg.Peers {
-			if peer.Key == hostKey {
-				return fleetHostTarget{peer: peer}, true
+	if fleetCfg.Enabled && fleetCfg.RoleOrDefault() == config.FleetRoleHub {
+		for _, member := range fleetCfg.Members {
+			if member.NodeID == hostKey {
+				return s.resolveEnrolledSpoke(member)
 			}
 		}
-	}
-	if federationEnabled && s.sshFleet != nil {
-		if peer, ok := s.sshFleet.peer(hostKey); ok {
-			return fleetHostTarget{sshPeer: &peer}, true
-		}
-	}
-	if hostKey == fleetSelfHostAlias {
-		return fleetHostTarget{self: true}, true
 	}
 	return fleetHostTarget{}, false
 }
 
 func (s *Handler) fleetSelfKey(localHostname string) string {
-	if key := strings.TrimSpace(s.configSnapshot().Fleet.Key); key != "" {
-		return key
+	if federation.ValidNodeID(s.nodeID) {
+		return s.nodeID
 	}
+	// Production startup always supplies the persisted node ID. The hostname
+	// fallback keeps isolated package fixtures useful without inventing identity.
 	if strings.TrimSpace(localHostname) != "" {
 		return strings.TrimSpace(localHostname)
 	}
 	return hostnameOrEmpty()
+}
+
+func (s *Handler) resolveEnrolledSpoke(
+	member config.FleetMember,
+) (fleetHostTarget, bool) {
+	enrollment, ok := s.enrollments.EnrollmentForSpoke(member.NodeID)
+	if !ok || enrollment.State != federation.EnrollmentActive ||
+		enrollment.SpokeBaseURL != member.BaseURL {
+		return fleetHostTarget{}, false
+	}
+	member.BaseURL = enrollment.SpokeBaseURL
+	return s.resolveEnrolledMember(member)
+}
+
+func (s *Handler) resolveEnrolledMember(
+	member config.FleetMember,
+) (fleetHostTarget, bool) {
+	if member.State != federation.EnrollmentActive || s.credentials == nil {
+		return fleetHostTarget{}, false
+	}
+	credential, ok := s.credentials.Outbound(member.NodeID)
+	if !ok {
+		return fleetHostTarget{}, false
+	}
+	return fleetHostTarget{
+		member: member, credential: credential,
+		clients: s.memberClientsForOrigin(member.BaseURL),
+	}, true
+}
+
+func (s *Handler) memberClientsForOrigin(origin string) federationMemberClients {
+	s.memberClientsMu.Lock()
+	defer s.memberClientsMu.Unlock()
+	if clients, ok := s.memberClients[origin]; ok {
+		return clients
+	}
+	clients := newFederationMemberClients(s.federationHTTPClient)
+	s.memberClients[origin] = clients
+	return clients
+}
+
+func (s *Handler) authorizeFederationRequest(
+	header http.Header, credential federationauth.Credential,
+) {
+	header.Set("Authorization", "Bearer "+credential.Token)
+	if federation.ValidNodeID(s.nodeID) {
+		header.Set(federationauth.NodeIDHeader, s.nodeID)
+	}
 }
 
 func (s *Handler) localProxyPath(targetPath string) string {
@@ -1468,9 +1052,9 @@ func remoteHTTPURL(baseURL, targetPath, rawQuery string) string {
 }
 
 func remoteWebSocketURL(baseURL, targetPath, rawQuery string) string {
-	u, err := url.Parse(baseURL)
+	u, err := url.Parse(remoteHTTPURL(baseURL, targetPath, rawQuery))
 	if err != nil {
-		return remoteHTTPURL(baseURL, targetPath, rawQuery)
+		return ""
 	}
 	switch u.Scheme {
 	case "https":
@@ -1478,9 +1062,6 @@ func remoteWebSocketURL(baseURL, targetPath, rawQuery string) string {
 	default:
 		u.Scheme = "ws"
 	}
-	u.Path = strings.TrimRight(u.Path, "/") + targetPath
-	u.RawPath = ""
-	u.RawQuery = rawQuery
 	return u.String()
 }
 
@@ -1523,12 +1104,8 @@ func copyProxyWebSocketRequestHeaders(dst, src http.Header) {
 
 // isPeerProxyCredentialHeader reports whether key carries the caller's
 // credentials, which must never ride along on a server-to-server fleet proxy
-// request. The hub's Authorization bearer and session cookie (including
-// forge_auth) authenticate the *hub*, not the peer: each daemon mints its
-// own token, so forwarding them cannot authenticate to the peer and would only
-// leak the hub credential to it. HTTP fleet peers are therefore credential-free
-// and must sit behind a trusted transport boundary; SSH peers are the
-// authenticated peer path.
+// request. The browser bearer and cookie authenticate the local daemon; the
+// proxy adds only the enrolled destination credential after resolving a member.
 func isPeerProxyCredentialHeader(key string) bool {
 	switch strings.ToLower(key) {
 	case "authorization", "cookie":
@@ -1553,13 +1130,38 @@ func isPeerProxyClientHeader(key string) bool {
 }
 
 func copyProxyResponseHeaders(dst, src http.Header) {
+	connectionHeaders := proxyConnectionTokens(src)
 	for key, values := range src {
-		if isHopByHopHeader(key) {
+		lower := strings.ToLower(key)
+		if isHopByHopHeader(lower) || connectionHeaders[lower] ||
+			isUnsafePeerResponseHeader(lower) {
 			continue
 		}
 		for _, value := range values {
 			dst.Add(key, value)
 		}
+	}
+}
+
+func proxyConnectionTokens(header http.Header) map[string]bool {
+	tokens := make(map[string]bool)
+	for _, value := range header.Values("Connection") {
+		for token := range strings.SplitSeq(value, ",") {
+			token = strings.ToLower(strings.TrimSpace(token))
+			if token != "" {
+				tokens[token] = true
+			}
+		}
+	}
+	return tokens
+}
+
+func isUnsafePeerResponseHeader(lower string) bool {
+	switch lower {
+	case "set-cookie", "location", "clear-site-data", "www-authenticate":
+		return true
+	default:
+		return false
 	}
 }
 

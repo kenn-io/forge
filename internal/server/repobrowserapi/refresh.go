@@ -53,6 +53,9 @@ func (h *Handler) SeedRefreshRepos(ctx context.Context) {
 		return
 	}
 	for _, repo := range repos {
+		if h.descriptors != nil && strings.TrimSpace(repo.PlatformRepoID) == "" {
+			continue
+		}
 		if strings.TrimSpace(repo.CloneURL) == "" {
 			continue
 		}

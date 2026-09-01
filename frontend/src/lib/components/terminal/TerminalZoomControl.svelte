@@ -97,7 +97,7 @@
   button:disabled {
     color: var(--text-muted);
     cursor: not-allowed;
-    opacity: 0.55;
+    opacity: var(--opacity-disabled);
   }
 
   .font-size {

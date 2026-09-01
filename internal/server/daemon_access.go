@@ -10,20 +10,54 @@ import (
 
 // DaemonAccessOptions configures startup-bound daemon authentication and proof.
 type DaemonAccessOptions struct {
-	Token          string
-	RequireAPIAuth bool
-	ProofHandler   http.Handler
+	Token                 string
+	RequireAPIAuth        bool
+	ProofHandler          http.Handler
+	TailscaleServeEnabled bool
+	TailscaleServeUsers   []string
 }
 
 type daemonRequestPolicy struct {
-	token          string
-	requireAPIAuth bool
-	proof          http.Handler
+	token                 string
+	requireAPIAuth        bool
+	proof                 http.Handler
+	tailscaleServeEnabled bool
+	tailscaleServeUsers   map[string]struct{}
 }
 
 type daemonRequestAdmission struct {
 	bypassProxyHostCheck bool
 	handled              bool
+}
+
+func newDaemonRequestPolicy(options DaemonAccessOptions) daemonRequestPolicy {
+	users := make(map[string]struct{}, len(options.TailscaleServeUsers))
+	for _, login := range options.TailscaleServeUsers {
+		users[login] = struct{}{}
+	}
+	return daemonRequestPolicy{
+		token:                 options.Token,
+		requireAPIAuth:        options.RequireAPIAuth,
+		proof:                 options.ProofHandler,
+		tailscaleServeEnabled: options.TailscaleServeEnabled,
+		tailscaleServeUsers:   users,
+	}
+}
+
+func (p daemonRequestPolicy) acceptsTailscaleServeUser(r *http.Request) bool {
+	if !p.tailscaleServeEnabled || !isLoopbackRemoteAddr(r.RemoteAddr) {
+		return false
+	}
+	values := r.Header.Values("Tailscale-User-Login")
+	if len(values) != 1 {
+		return false
+	}
+	login, err := config.NormalizeTailscaleLogin(values[0])
+	if err != nil {
+		return false
+	}
+	_, allowed := p.tailscaleServeUsers[login]
+	return allowed
 }
 
 func (p daemonRequestPolicy) admit(

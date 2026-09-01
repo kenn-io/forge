@@ -2577,7 +2577,7 @@
   }
 
   .thread-toggle:disabled {
-    opacity: 0.55;
+    opacity: var(--opacity-disabled);
     cursor: not-allowed;
   }
 
@@ -2782,7 +2782,7 @@
   }
 
   .event-body--with-inline-reply :global(.thread-reply-action--inline:disabled) {
-    opacity: 0.55;
+    opacity: var(--opacity-disabled);
     cursor: not-allowed;
   }
 
@@ -2831,7 +2831,7 @@
   }
 
   .edit-action:disabled {
-    opacity: 0.55;
+    opacity: var(--opacity-disabled);
     cursor: not-allowed;
   }
 

@@ -91,6 +91,26 @@ kenn-forge config read --config /path/to/config.toml port
 
 Use Settings or edit TOML for normal configuration changes.
 
+## Set up and manage a fleet
+
+```sh
+kenn-forge fleet setup hub --tailscale
+kenn-forge fleet setup spoke --tailscale
+kenn-forge fleet setup hub --origin https://forge.internal.example
+kenn-forge fleet setup spoke --origin https://spoke.internal.example
+kenn-forge fleet enrollment-token --base-url https://forge.internal.example
+kenn-forge fleet join https://forge.internal.example \
+  --base-url https://spoke.internal.example
+kenn-forge fleet prepare-spoke
+kenn-forge fleet abort-preparation
+kenn-forge fleet revoke ENROLLMENT_ID
+```
+
+Setup requires exactly one publication mode. `--tailscale` manages a Tailscale
+Serve mapping and browser identity; `--origin` uses operator-managed private
+HTTPS and never invokes Tailscale. See [Federated Forge](federated-fleet.md) for
+the complete enrollment and verification workflow.
+
 ## Manage Docs folders
 
 ```sh
@@ -119,6 +139,7 @@ the installed commands through `/hooks` once.
 
 ```sh
 kenn-forge-github-app create
+kenn-forge-github-app create --role archive
 kenn-forge-github-app list
 kenn-forge-github-app install
 kenn-forge-github-app uninstall
@@ -126,6 +147,7 @@ kenn-forge-github-app delete
 kenn-forge-github-app open
 ```
 
-Use this companion CLI when sync reads should use GitHub App installation
-tokens. Comments, reviews, state changes, and merges still use the user PAT
-chain.
+Use this companion CLI when sync or archive reads should use GitHub App
+installation tokens. `--role archive` creates a separate installation route
+for historical archive work. Comments, reviews, state changes, and merges
+still use the user PAT chain.

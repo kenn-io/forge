@@ -8,7 +8,7 @@ Check the daemon:
 kenn-forge daemon status
 ```
 
-If another kenn-forge process uses the same `data_dir`, the startup
+If another Kenn Forge process uses the same `data_dir`, the startup
 banner shows the existing daemon. Use the reported URL instead of starting a
 second daemon with the same data directory.
 
@@ -35,7 +35,7 @@ kenn-forge daemon restart
 ```
 
 If you need isolated state for a test run, set `KENN_FORGE_HOME` before starting
-kenn-forge.
+Forge.
 
 ## Repositories do not sync
 
@@ -60,7 +60,7 @@ without exposing token material.
 
 Actions such as approve, merge, close, reopen, or comment require both provider
 support and token permission. If the provider does not support an action,
-kenn-forge reports an unsupported capability instead of trying a GitHub-specific
+Forge reports an unsupported capability instead of trying a GitHub-specific
 fallback.
 
 ## GitHub sync hits rate limits
@@ -73,27 +73,33 @@ kenn-forge-github-app install
 kenn-forge-github-app list
 ```
 
+If ordinary sync is healthy but historical archive work is competing for the
+same installation budget, add a separate App with
+`kenn-forge-github-app create --role archive`, install it on the repository
+account, and restart Forge. `kenn-forge-github-app list` shows each App's
+role and independent rate-limit state.
+
 Mutating actions still use the user credential chain so comments, approvals, and
 merges are attributed to you. Multiple PAT entries issued to the same GitHub
 user do not create additional capacity: they share one rate limit and one
-kenn-forge sync budget. Distinct users and App installations have separate
+Forge sync budget. Distinct users and App installations have separate
 identity-scoped budgets.
 
 If App-backed reads work but mutations or notifications are disabled, restart
-kenn-forge after adding the user PAT. App-only routes intentionally remain
+Forge after adding the user PAT. App-only routes intentionally remain
 read-only until startup establishes a stable write identity.
 
 ## A repository feature stays unavailable
 
 When a provider definitively reports that issues or pull requests are disabled,
-kenn-forge cools that repository feature down for 24 hours instead of retrying a
+Forge cools that repository feature down for 24 hours instead of retrying a
 permanent failure every sync. Other repository data continues syncing. Use an
 explicit repository sync after re-enabling the feature to bypass the cooldown
 and clear it on success.
 
 ## An issue workspace directory already exists
 
-If an issue workspace row was lost but its expected kenn-forge worktree is still
+If an issue workspace row was lost but its expected Forge worktree is still
 on disk, choose **Use Existing Directory** in the branch-conflict dialog. This
 only re-registers the deterministic kenn-forge-managed directory after verifying
 its repository and branch. It does not reset the branch, clean files, or remove
@@ -117,22 +123,22 @@ docs = true
 
 ## Kata actions show no daemons
 
-kenn-forge does not store Kata daemon definitions. Check Kata's own config:
+Forge does not store Kata daemon definitions. Check Kata's own config:
 
 ```text
 ~/.kata/config.toml
 ```
 
-or set `KATA_HOME` before starting kenn-forge.
+or set `KATA_HOME` before starting Forge.
 
 The catalog entry must be connected and report a supported Kata API schema.
 The UI keeps an incompatible daemon visible and explains whether Kata or
-kenn-forge needs an upgrade.
+Forge needs an upgrade.
 
 ## A Kata workspace has no repository
 
 Open **Settings → Kata mappings**. The effective mappings table shows how each
-project resolves and whether kenn-forge found an automatic match. Add a manual
+project resolves and whether Forge found an automatic match. Add a manual
 override for any project with no repository or the wrong repository.
 
 Choose an exact repository identity available in Settings. The list can include
@@ -141,14 +147,14 @@ registered projects. A glob expression is not a valid mapping target.
 
 ## The Roborev daemon is not reachable
 
-kenn-forge does not start Roborev. Confirm the daemon is running, then check its
+Forge does not start Roborev. Confirm the daemon is running, then check its
 status endpoint:
 
 ```sh
 curl http://127.0.0.1:7373/api/status
 ```
 
-If Roborev listens elsewhere, update the endpoint and restart kenn-forge:
+If Roborev listens elsewhere, update the endpoint and restart Forge:
 
 ```toml
 [roborev]
@@ -166,20 +172,20 @@ worktree but waits to start the terminal until hook setup succeeds.
 
 ## The database will not migrate
 
-kenn-forge stores synced data in:
+Forge stores synced data in:
 
 ```text
 ~/.kenn/forge/forge.db
 ```
 
-If startup reports a dirty failed migration, stop kenn-forge, make a backup copy,
+If startup reports a dirty failed migration, stop Forge, make a backup copy,
 then move `forge.db` and any `forge.db-wal` or `forge.db-shm`
 sidecars out of the data directory before starting again. Provider data will
 sync again from a fresh database, but local-only state such as stars, PR
 workflow statuses, and workspace links is only available in the saved copy.
 
 If startup reports that the database is newer than the binary, upgrade
-kenn-forge.
+Forge.
 
 ## Need more logs
 

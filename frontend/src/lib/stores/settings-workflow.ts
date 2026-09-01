@@ -226,11 +226,8 @@ function settingsMatchRequest(settings: SettingsSnapshot, request: UpdateSetting
 function fleetMatchesRequest(fleet: FleetSettingsSnapshot, request: FleetSettingsUpdate): boolean {
   return (
     fleet.enabled === request.enabled &&
-    (request.key === undefined || fleet.key === request.key) &&
     (request.peer_timeout === undefined || fleet.peer_timeout === request.peer_timeout) &&
-    sameValue(fleet.sessions, request.sessions) &&
-    sameValue(fleet.peers, request.peers) &&
-    sameValue(fleet.ssh_peers, request.ssh_peers)
+    sameValue(fleet.sessions, request.sessions)
   );
 }
 

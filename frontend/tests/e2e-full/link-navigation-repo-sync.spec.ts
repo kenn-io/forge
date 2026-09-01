@@ -20,7 +20,9 @@ test("navigating to an issue in a different repo updates the dropdown", async ({
   await page.goto("/issues/github/acme/widgets/10");
   await waitForIssueDetail(page);
 
-  await expect(page.locator(".typeahead-value")).toHaveText("github/github.com/acme/widgets", {
+  const selectedRepo = page.locator(".typeahead-value");
+  await expect(selectedRepo).toContainText("acme/widgets", {
     timeout: 5_000,
   });
+  await expect(selectedRepo).toHaveAttribute("title", "github/github.com/acme/widgets");
 });

@@ -63,6 +63,70 @@ export function buildCanonicalProviderItemURL(ref: ResolvableItemReference): str
   return `https://${host}/${repoPath}${itemPath}`;
 }
 
+// Recognizes a pasted provider URL that points at a pull request or issue on
+// the same host as the repository being rendered, so it can become an
+// in-app item reference instead of an external link. Returns null for any
+// other URL, including other hosts and non-item pages.
+export function parseProviderItemURL(
+  raw: string,
+  repo: { provider: string; platformHost?: string | undefined },
+): ResolvableItemReference | null {
+  const host = providerHost(repo.provider, repo.platformHost);
+  if (!host) return null;
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:" || url.host.toLowerCase() !== host.toLowerCase()) return null;
+  const provider = canonicalProvider(repo.provider);
+  const segments = url.pathname
+    .split("/")
+    .filter(Boolean)
+    .map((part) => {
+      try {
+        return decodeURIComponent(part);
+      } catch {
+        return part;
+      }
+    });
+  let itemType: ItemReferenceType;
+  let repoSegments: string[];
+  let numberText: string;
+  if (provider === "gitlab") {
+    const marker = segments.lastIndexOf("-");
+    if (marker < 1 || segments.length !== marker + 3) return null;
+    const kind = segments[marker + 1];
+    if (kind === "merge_requests") itemType = "pr";
+    else if (kind === "issues") itemType = "issue";
+    else return null;
+    repoSegments = segments.slice(0, marker);
+    numberText = segments[marker + 2]!;
+  } else {
+    if (segments.length !== 4) return null;
+    const kind = segments[2];
+    if (kind === "issues") itemType = "issue";
+    else if (kind === (provider === "github" ? "pull" : "pulls")) itemType = "pr";
+    else return null;
+    repoSegments = segments.slice(0, 2);
+    numberText = segments[3]!;
+  }
+  if (!/^\d+$/.test(numberText) || repoSegments.length < 2) return null;
+  const name = repoSegments[repoSegments.length - 1]!;
+  const owner = repoSegments.slice(0, -1).join("/");
+  return {
+    provider: repo.provider,
+    platformHost: repo.platformHost,
+    owner,
+    name,
+    repoPath: repoSegments.join("/"),
+    number: parseInt(numberText, 10),
+    itemType,
+    externalUrl: url.toString(),
+  };
+}
+
 export function buildItemReferenceHref(ref: ResolvableItemReference): string {
   if (ref.itemType === "pr") {
     return buildRoutedItemRoute({ ...ref, itemType: "pr" });

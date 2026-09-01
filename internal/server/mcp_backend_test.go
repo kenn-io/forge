@@ -1,14 +1,22 @@
 package server
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/federation"
+	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/mcpserver"
+	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
@@ -154,6 +162,54 @@ func TestMCPBackendRejectsMismatchedStableRepositoryID(t *testing.T) {
 	assert.Equal(t, string(httpapi.CodeRepoNotFound), backendErr.Code)
 }
 
+func TestMCPWorkspaceRepositoryFenceReconcilesHubIdentity(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	observedAt := time.Date(2026, time.August, 24, 12, 0, 0, 0, time.UTC)
+	descriptor := providerplane.RepositoryDescriptor{
+		ProtocolVersion: federation.ProtocolVersion,
+		Provider:        "github", PlatformHost: "github.com", PlatformRepoID: "repo-new",
+		Owner: "acme", Name: "new-repo", CloneURL: "https://github.com/acme/new-repo.git",
+		DefaultBranch: "main", SnapshotRevision: 1, ObservedAt: observedAt,
+	}
+	encoded, err := json.Marshal(descriptor)
+	require.NoError(err)
+	client := providerPlaneClientFunc(func(
+		_ context.Context, scope federationauth.Scope, request *http.Request,
+	) (*http.Response, error) {
+		require.Equal(federationauth.ScopeProviderRead, scope)
+		require.Equal("/api/v1/federation/provider/repository-descriptor", request.URL.Path)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(bytes.NewReader(encoded)),
+			Request:    request,
+		}, nil
+	})
+	srv := New(database, nil, nil, "/", nil, ServerOptions{
+		DisableWorkspaceBackgroundMonitors: true,
+	})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	srv.providerSource = &hubProviderSource{client: client, db: database}
+	backend := mcpBackend{server: srv}
+	identity := mcpserver.RepositoryIdentity{
+		Provider: "github", PlatformHost: "github.com", PlatformRepoID: "repo-new",
+		Owner: "acme", Name: "new-repo",
+	}
+
+	resolved, err := backend.resolveWorkspaceRepositoryFence(t.Context(), identity)
+
+	require.NoError(err)
+	require.NotNil(resolved.repo)
+	assert.Equal(t, "repo-new", resolved.repo.PlatformRepoID)
+	assert.False(t, resolved.hub)
+	observed, err := database.GetRepositoryByProviderID(
+		t.Context(), "github", "github.com", "repo-new",
+	)
+	require.NoError(err)
+	require.NotNil(observed)
+}
+
 func TestMCPBackendReadFailsClosedWhenRouteReassignedMidRead(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -163,8 +219,7 @@ func TestMCPBackendReadFailsClosedWhenRouteReassignedMidRead(t *testing.T) {
 	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
-	backend, ok := srv.MCPBackend().(mcpBackend)
-	require.True(ok)
+	backend := mcpBackend{server: srv}
 
 	resolved, err := backend.resolveRepositoryFence(ctx, mcpserver.RepositoryIdentity{
 		Provider: "github", PlatformHost: "github.com",
@@ -240,4 +295,28 @@ func TestMCPBackendWorkflowDoesNotExposeOrMutateRemovedUpstreamItems(t *testing.
 	require.NoError(err)
 	require.NotNil(stored)
 	assert.Equal("new", stored.Status)
+}
+
+func TestSpokePreparationBlocksMCPWorkflowMutation(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	seedPR(t, database, "acme", "widget", 7)
+	repo, err := database.GetRepoByIdentity(
+		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	require.NotNil(repo)
+	_, err = srv.providerWriteGate.BeginQuiesce(t.Context(), db.SpokePreparationBinding{
+		EnrollmentID: "enrollment-1", HubNodeID: "hub-1",
+		LocalNodeID: "spoke-1", ProtocolVersion: 3,
+	})
+	require.NoError(err)
+
+	_, err = srv.MCPBackend().SetWorkflowState(t.Context(), mcpserver.ItemIdentity{
+		Type: "pr", Provider: "github", PlatformHost: "github.com",
+		PlatformRepoID: repo.PlatformRepoID, Owner: "acme", Name: "widget", Number: 7,
+	}, mcpserver.WorkflowUpdate{Status: "reviewing", ExpectedStatus: "new"})
+	var backendErr *mcpserver.Error
+	require.ErrorAs(err, &backendErr)
+	assert.Equal(t, string(httpapi.CodeSpokePreparationInProgress), backendErr.Code)
 }

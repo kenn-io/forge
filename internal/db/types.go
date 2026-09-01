@@ -3,7 +3,9 @@ package db
 import (
 	"cmp"
 	"encoding/base64"
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -1280,6 +1282,172 @@ type Workspace struct {
 	ErrorMessage    *string
 	CreatedAt       time.Time
 	KataMetadata    *WorkspaceKataMetadata
+}
+
+const (
+	WorkspaceLaunchSpecVersion          = 1
+	WorkspaceLaunchSpecMigrationVersion = 54
+	WorkspaceLaunchSpecVisibilityLease  = 15 * time.Minute
+)
+
+var (
+	ErrLaunchSpecRefreshRequired = errors.New("workspace launch specification requires hub refresh")
+	ErrLaunchSpecSourceHidden    = errors.New("workspace launch source is not visible")
+)
+
+type WorkspaceLaunchRepository struct {
+	Provider       string `json:"provider"`
+	PlatformHost   string `json:"platform_host"`
+	PlatformRepoID string `json:"platform_repo_id"`
+	Owner          string `json:"owner"`
+	Name           string `json:"name"`
+	CloneURL       string `json:"clone_url"`
+	DefaultBranch  string `json:"default_branch"`
+}
+
+type WorkspaceLaunchPull struct {
+	HeadBranch       string `json:"head_branch"`
+	HeadRepoKind     string `json:"head_repo_kind" enum:"same_repo,fork,unknown"`
+	HeadRepoCloneURL string `json:"head_repo_clone_url"`
+	SnapshotRevision int64  `json:"snapshot_revision" minimum:"1"`
+}
+
+// WorkspaceLaunchSpec is the immutable provider fact set used by every
+// provider-backed workspace lifecycle operation. Request intent such as branch
+// reuse and worktree placement deliberately does not belong here.
+type WorkspaceLaunchSpec struct {
+	Version            int                       `json:"version"`
+	Repository         WorkspaceLaunchRepository `json:"repository"`
+	ItemType           string                    `json:"item_type" enum:"pull_request,issue"`
+	ItemNumber         int                       `json:"item_number" minimum:"1"`
+	ItemKey            string                    `json:"item_key"`
+	GitHeadRef         string                    `json:"git_head_ref"`
+	SourceTitle        string                    `json:"source_title"`
+	SourceURL          string                    `json:"source_url"`
+	Pull               *WorkspaceLaunchPull      `json:"pull,omitempty"`
+	SourceVisible      bool                      `json:"source_visible"`
+	SourceVisibleUntil time.Time                 `json:"source_visible_until"`
+	IssuedAt           time.Time                 `json:"issued_at"`
+}
+
+func (spec WorkspaceLaunchSpec) Validate() error {
+	if spec.Version != WorkspaceLaunchSpecVersion {
+		return fmt.Errorf("workspace launch specification version must be %d", WorkspaceLaunchSpecVersion)
+	}
+	repositoryFields := []struct {
+		name  string
+		value string
+	}{
+		{name: "provider", value: spec.Repository.Provider},
+		{name: "platform_host", value: spec.Repository.PlatformHost},
+		{name: "platform_repo_id", value: spec.Repository.PlatformRepoID},
+		{name: "owner", value: spec.Repository.Owner},
+		{name: "name", value: spec.Repository.Name},
+		{name: "clone_url", value: spec.Repository.CloneURL},
+		{name: "default_branch", value: spec.Repository.DefaultBranch},
+	}
+	for _, field := range repositoryFields {
+		if strings.TrimSpace(field.value) == "" {
+			return fmt.Errorf("workspace launch repository %s is required", field.name)
+		}
+	}
+	if spec.ItemType != WorkspaceItemTypePullRequest &&
+		spec.ItemType != WorkspaceItemTypeIssue {
+		return fmt.Errorf("workspace launch item type must be %q or %q", WorkspaceItemTypePullRequest, WorkspaceItemTypeIssue)
+	}
+	if spec.ItemNumber <= 0 {
+		return errors.New("workspace launch item number must be positive")
+	}
+	if strings.TrimSpace(spec.ItemKey) == "" {
+		return errors.New("workspace launch item key is required")
+	}
+	if spec.ItemKey != strconv.Itoa(spec.ItemNumber) {
+		return errors.New("workspace launch item key must match the item number")
+	}
+	if strings.TrimSpace(spec.GitHeadRef) == "" {
+		return errors.New("workspace launch git head ref is required")
+	}
+	if spec.ItemType == WorkspaceItemTypeIssue {
+		if spec.Pull != nil {
+			return errors.New("issue workspace launch specification cannot contain pull metadata")
+		}
+	} else {
+		if spec.Pull == nil {
+			return errors.New("pull-request workspace launch specification requires pull metadata")
+		}
+		if strings.TrimSpace(spec.Pull.HeadBranch) == "" {
+			return errors.New("workspace launch pull head branch is required")
+		}
+		if spec.Pull.SnapshotRevision <= 0 {
+			return errors.New("workspace launch pull snapshot revision must be positive")
+		}
+		switch spec.Pull.HeadRepoKind {
+		case "same_repo", "unknown":
+			if strings.TrimSpace(spec.Pull.HeadRepoCloneURL) != "" {
+				return fmt.Errorf("%s pull head cannot include a clone URL", spec.Pull.HeadRepoKind)
+			}
+		case "fork":
+			if strings.TrimSpace(spec.Pull.HeadRepoCloneURL) == "" {
+				return errors.New("fork pull head clone URL is required")
+			}
+		default:
+			return errors.New("workspace launch pull head repository kind is invalid")
+		}
+	}
+	if spec.IssuedAt.IsZero() || spec.SourceVisibleUntil.IsZero() {
+		return errors.New("workspace launch visibility lease timestamps are required")
+	}
+	issuedAt := spec.IssuedAt.UTC()
+	visibleUntil := spec.SourceVisibleUntil.UTC()
+	if !visibleUntil.Equal(issuedAt.Add(WorkspaceLaunchSpecVisibilityLease)) {
+		return fmt.Errorf("workspace launch visibility lease must be %s", WorkspaceLaunchSpecVisibilityLease)
+	}
+	return nil
+}
+
+func (spec WorkspaceLaunchSpec) ValidateWorkspace(workspace Workspace) error {
+	if err := spec.Validate(); err != nil {
+		return err
+	}
+	if workspace.ID == "" {
+		return errors.New("workspace ID is required")
+	}
+	if !strings.EqualFold(canonicalWorkspacePlatform(workspace.Platform), strings.TrimSpace(spec.Repository.Provider)) ||
+		!strings.EqualFold(strings.TrimSpace(workspace.PlatformHost), strings.TrimSpace(spec.Repository.PlatformHost)) ||
+		!strings.EqualFold(workspace.RepoOwner, spec.Repository.Owner) ||
+		!strings.EqualFold(workspace.RepoName, spec.Repository.Name) ||
+		workspace.ItemType != spec.ItemType || workspace.ItemNumber != spec.ItemNumber ||
+		workspaceItemKeyForComparison(workspace) != spec.ItemKey ||
+		strings.TrimSpace(workspace.GitHeadRef) != strings.TrimSpace(spec.GitHeadRef) {
+		return errors.New("workspace launch specification does not match workspace identity")
+	}
+	return nil
+}
+
+func workspaceItemKeyForComparison(workspace Workspace) string {
+	if key := strings.TrimSpace(workspace.ItemKey); key != "" {
+		return key
+	}
+	return strconv.Itoa(workspace.ItemNumber)
+}
+
+func (spec WorkspaceLaunchSpec) RequireVisible(now time.Time) error {
+	if err := spec.Validate(); err != nil {
+		return err
+	}
+	if !spec.SourceVisible {
+		return ErrLaunchSpecSourceHidden
+	}
+	if !now.UTC().Before(spec.SourceVisibleUntil.UTC()) {
+		return ErrLaunchSpecRefreshRequired
+	}
+	return nil
+}
+
+type UnpreparedWorkspace struct {
+	Workspace      Workspace `json:"workspace"`
+	Reason         string    `json:"reason"`
+	PlatformRepoID string    `json:"-"`
 }
 
 // WorkspaceSummary extends Workspace with joined source-item metadata.

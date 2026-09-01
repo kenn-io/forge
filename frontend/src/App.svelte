@@ -42,6 +42,7 @@
   } from "./lib/context.js";
 
   import AppHeader from "./lib/components/layout/AppHeader.svelte";
+  import ForgeSelector from "./lib/components/layout/ForgeSelector.svelte";
   import StatusBar from "./lib/components/layout/StatusBar.svelte";
   import Palette from "./lib/components/keyboard/Palette.svelte";
   import Cheatsheet from "./lib/components/keyboard/Cheatsheet.svelte";
@@ -75,6 +76,7 @@
   import { showFlash } from "./lib/stores/flash.svelte.js";
   import { isSafeExternalHTTPURL } from "./lib/utils/safe-external-url.js";
   import { initItemRefHandler } from "./lib/utils/itemRefHandler.js";
+  import { isPhoneLikeViewport as isPhoneLikePresentation } from "./lib/utils/phone-presentation.js";
   import { globalRepoForSelectedRoute } from "./lib/utils/repoSelectionSync.js";
   import { runAppStartup } from "./lib/utils/appStartup.js";
   import {
@@ -574,8 +576,11 @@
   }
 
   function isPhoneLikeViewport(): boolean {
-    return viewportWidth <= 640
-      && (hasCoarsePointer || hasMobileUserAgent());
+    return isPhoneLikePresentation({
+      viewportWidth,
+      hasCoarsePointer,
+      hasMobileUserAgent: hasMobileUserAgent(),
+    });
   }
 
   function isCompactViewport(): boolean {
@@ -605,6 +610,23 @@
 
   function shouldUseFocusPresentation(): boolean {
     return getPage() === "focus" || shouldUseResponsiveFocusPresentation();
+  }
+
+  const providerPages = new Set([
+    "activity",
+    "focus",
+    "issues",
+    "mobile-activity",
+    "mobile-issues",
+    "mobile-pulls",
+    "pulls",
+    "repos",
+  ]);
+
+  function providerUnavailable(): boolean {
+    return appReady
+      && providerPages.has(getPage())
+      && stores?.sync.getProviderAvailable() === false;
   }
 
   function useFocusLayoutClass(): boolean {
@@ -746,6 +768,24 @@
     if (mobileHistory?.origin === "direct") replaceUrl(buildMobileWorkspaceRoute(workspaceId, hostKey));
     else if (mobileHistory) history.go(-mobileHistory.backDepth);
     else replaceUrl(buildMobileWorkspaceRoute(workspaceId, hostKey));
+  }
+
+  // Phone-like PR detail routes have no inline workspace controller, so a
+  // created or opened workspace must land in the /m workspace shell rather
+  // than the desktop /terminal route, and the PR actions render as one kit
+  // action grid. Desktop-narrow focus presentation keeps the desktop
+  // destinations and layout.
+  function phoneDetailProps(): {
+    onOpenWorkspace?: (workspaceId: string) => void;
+    onViewWorkspaces?: () => void;
+    phonePresentation?: boolean;
+  } {
+    if (!useFocusLayoutClass()) return {};
+    return {
+      onOpenWorkspace: (workspaceId) => navigate(buildMobileWorkspaceRoute(workspaceId)),
+      onViewWorkspaces: () => navigate("/m/workspaces"),
+      phonePresentation: true,
+    };
   }
 
   function useDesktopView(): void {
@@ -1114,6 +1154,9 @@
       class="focus-layout"
       class:focus-layout--phone={useFocusLayoutClass()}
     >
+      {#if providerUnavailable()}
+        {@render providerUnavailableState()}
+      {/if}
       {#if r.page === "focus" && r.itemType === "mrs"}
         <FocusListView
           listType="mrs"
@@ -1142,6 +1185,7 @@
           isSidebarCollapsed={true}
           hideSidebar={true}
           routeFamily="focus"
+          {...phoneDetailProps()}
         />
       {:else if r.page === "focus"}
         <IssueListView
@@ -1163,6 +1207,7 @@
           isSidebarCollapsed={true}
           hideSidebar={true}
           onStackMemberNavigate={handleResponsiveStackMemberNavigate}
+          {...phoneDetailProps()}
         />
       {:else if r.page === "pulls"}
         <FocusListView
@@ -1189,7 +1234,7 @@
       <header class="mobile-topbar" {@attach trackMobileHeaderHeight}>
         <span class="mobile-brand">
           <img class="mobile-app-icon" src={appIconSrc} alt="" aria-hidden="true" />
-          <span class="mobile-title">kenn-forge</span>
+          <ForgeSelector compact fallbackLabel="kenn-forge" />
         </span>
 
         <MobileModePicker
@@ -1215,12 +1260,16 @@
             <Spinner size={18} />
             Loading
           </div>
-        {:else if getPage() === "mobile-workspaces"}
+        {:else}
+          {#if providerUnavailable()}
+            {@render providerUnavailableState()}
+          {/if}
+          {#if getPage() === "mobile-workspaces"}
           <MobileWorkspaceList
             onOpen={openMobileWorkspaceFromList}
             onOpenItem={openMobileWorkspaceItemFromList}
           />
-        {:else if getPage() === "mobile-workspace-terminal" || getPage() === "mobile-workspace-item"}
+          {:else if getPage() === "mobile-workspace-terminal" || getPage() === "mobile-workspace-item"}
           {@const route = getRoute()}
           {#if route.page === "mobile-workspace-terminal" || route.page === "mobile-workspace-item"}
             <div class="mobile-workspace-route focus-layout--phone">
@@ -1273,6 +1322,7 @@
             onRepoChange={setGlobalRepo}
             onSelectItem={handleActivitySelect}
           />
+          {/if}
         {/if}
       </main>
       <SessionTerminalPool />
@@ -1290,9 +1340,13 @@
           <Spinner size={18} />
           Loading
         </div>
-      {:else if getPage() === "settings"}
+      {:else}
+        {#if providerUnavailable()}
+          {@render providerUnavailableState()}
+        {/if}
+        {#if getPage() === "settings"}
         <SettingsPage />
-      {:else if getPage() === "activity"}
+        {:else if getPage() === "activity"}
         <!-- Desktop shell only: focus-presentation and mobile branches of
              this view get no controller (structural eligibility). -->
         <ActivityFeedView
@@ -1386,6 +1440,7 @@
              WorkspaceHost reacts to workspaceId/route changes internally so
              the page doesn't flash on navigation. -->
         <div class="workspace-tab-slot" {@attach tabSlotAttachment}></div>
+        {/if}
       {/if}
 
       {#if appReady && DocsFeature}
@@ -1457,6 +1512,13 @@
 <!-- Handed to every detail view: the controls themselves come from the hosted
      workspace's live view, and this component is the popover that holds them in a
      pane's tab strip. Declared here because the root owns the workspace slot. -->
+{#snippet providerUnavailableState()}
+  <section class="provider-unavailable-state" role="status" aria-live="polite">
+    <h1>Hub unavailable</h1>
+    <p>Showing the last provider data loaded in this tab, when available. Sync and refresh are paused; provider changes are unavailable. Local workspaces remain available.</p>
+  </section>
+{/snippet}
+
 {#snippet workspacePaneControls(showStripActions: boolean)}
   <WorkspacePaneControls {showStripActions} />
 {/snippet}
@@ -1509,13 +1571,6 @@
     width: 19px;
     height: 19px;
     flex: 0 0 auto;
-  }
-
-  .mobile-title {
-    color: var(--text-primary);
-    font-size: var(--font-size-md);
-    font-weight: 700;
-    letter-spacing: -0.01em;
   }
 
   .mobile-desktop-link {
@@ -1700,11 +1755,10 @@
     word-break: break-word;
   }
 
+  .focus-layout--phone :global(.edit-title-btn),
   .focus-layout--phone :global(.star-btn),
   .focus-layout--phone :global(.gh-link),
   .focus-layout--phone :global(.copy-icon-btn),
-  .focus-layout--phone :global(.copy-number-btn),
-  .focus-layout--phone :global(.pull-detail-content .meta-row .copy-number-btn),
   .focus-layout--phone :global(.detail-description__toggle),
   .focus-layout--phone :global(.kit-button),
   .focus-layout--phone :global(.detail-tab),
@@ -1712,6 +1766,28 @@
     min-width: var(--focus-detail-hit-target);
     min-height: var(--focus-detail-hit-target);
     font-size: var(--font-size-sm);
+  }
+
+  /* The header's title actions are bare icons on desktop; on a phone they
+   * become bordered, equal squares so the tap targets are visible. The
+   * inline number copy button stays text-sized: it sits in a text row. */
+  .focus-layout--phone :global(.edit-title-btn),
+  .focus-layout--phone :global(.star-btn),
+  .focus-layout--phone :global(.gh-link) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 0;
+    border: var(--border-width) solid var(--border-default);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+  }
+
+  .focus-layout--phone :global(.meta-row .copy-number-btn) {
+    /* WCAG 2.5.8 target minimum; the full phone hit target belongs to
+     * standalone controls, not to a number sitting inside a text row. */
+    min-width: 24px;
+    min-height: 24px;
   }
 
   .focus-layout--phone :global(.actions-row) {
@@ -1756,6 +1832,31 @@
     color: var(--text-muted);
     font-size: var(--font-size-sm);
     animation: fade-in 0.3s ease;
+  }
+
+  .provider-unavailable-state {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid color-mix(in srgb, var(--accent-red) 28%, var(--border-subtle));
+    background: color-mix(in srgb, var(--accent-red) 7%, var(--bg-surface));
+  }
+
+  .provider-unavailable-state h1,
+  .provider-unavailable-state p {
+    margin: 0;
+  }
+
+  .provider-unavailable-state h1 {
+    color: var(--accent-red);
+    font-size: var(--font-size-sm);
+    white-space: nowrap;
+  }
+
+  .provider-unavailable-state p {
+    color: var(--text-muted);
+    font-size: var(--font-size-sm);
   }
 
   .feature-shell {

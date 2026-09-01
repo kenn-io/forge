@@ -31,7 +31,7 @@ type workflowProviderFake struct {
 }
 
 func (f *workflowProviderFake) GetRepository(context.Context, string, string) (*gh.Repository, error) {
-	return &gh.Repository{Name: gh.Ptr("widgets"), DefaultBranch: gh.Ptr("trunk")}, nil
+	return &gh.Repository{Name: new("widgets"), DefaultBranch: new("trunk")}, nil
 }
 func (f *workflowProviderFake) AuthenticatedViewerLogin(context.Context) (string, error) {
 	return f.actor, nil
@@ -150,18 +150,18 @@ func TestGitHubWorkflowProviderCatalogPreservesPartialAvailability(t *testing.T)
 	require := require.New(t)
 	fake := &workflowProviderFake{
 		workflows: []*gh.Workflow{
-			{ID: gh.Ptr(int64(1)), Name: gh.Ptr("Release"), Path: gh.Ptr(".github/workflows/release.yml"), State: gh.Ptr("active"), HTMLURL: gh.Ptr("https://example.test/release")},
-			{ID: gh.Ptr(int64(2)), Name: gh.Ptr("Broken"), Path: gh.Ptr(".github/workflows/broken.yml"), State: gh.Ptr("active")},
-			{ID: gh.Ptr(int64(3)), Name: gh.Ptr("CI"), Path: gh.Ptr(".github/workflows/ci.yml"), State: gh.Ptr("active")},
-			{ID: gh.Ptr(int64(5)), Name: gh.Ptr("Malformed"), Path: gh.Ptr(".github/workflows/malformed.yml"), State: gh.Ptr("active")},
-			{ID: gh.Ptr(int64(4)), Name: gh.Ptr("Disabled"), Path: gh.Ptr("disabled.yml"), State: gh.Ptr("disabled_manually")},
+			{ID: new(int64(1)), Name: new("Release"), Path: new(".github/workflows/release.yml"), State: new("active"), HTMLURL: new("https://example.test/release")},
+			{ID: new(int64(2)), Name: new("Broken"), Path: new(".github/workflows/broken.yml"), State: new("active")},
+			{ID: new(int64(3)), Name: new("CI"), Path: new(".github/workflows/ci.yml"), State: new("active")},
+			{ID: new(int64(5)), Name: new("Malformed"), Path: new(".github/workflows/malformed.yml"), State: new("active")},
+			{ID: new(int64(4)), Name: new("Disabled"), Path: new("disabled.yml"), State: new("disabled_manually")},
 		},
 		definitions: map[string]string{
 			".github/workflows/release.yml":   "on:\n  workflow_dispatch:\n    inputs:\n      target:\n        type: environment\n",
 			".github/workflows/ci.yml":        "on: [push]\n",
 			".github/workflows/malformed.yml": "on: workflow_dispatch\n---\non: workflow_dispatch\n",
 		},
-		environments: []*gh.Environment{{Name: gh.Ptr("production")}},
+		environments: []*gh.Environment{{Name: new("production")}},
 	}
 	provider := &gitHubClientProvider{host: "github.com", client: fake}
 	caps := provider.Capabilities()
@@ -225,8 +225,8 @@ func TestGitHubWorkflowProviderAbortsCatalogOnFatalDefinitionErrors(t *testing.T
 			assert := assert.New(t)
 			fake := &workflowProviderFake{
 				workflows: []*gh.Workflow{
-					{ID: gh.Ptr(int64(1)), Name: gh.Ptr("Blocked"), Path: gh.Ptr(".github/workflows/blocked.yml"), State: gh.Ptr("active")},
-					{ID: gh.Ptr(int64(2)), Name: gh.Ptr("Release"), Path: gh.Ptr(".github/workflows/release.yml"), State: gh.Ptr("active")},
+					{ID: new(int64(1)), Name: new("Blocked"), Path: new(".github/workflows/blocked.yml"), State: new("active")},
+					{ID: new(int64(2)), Name: new("Release"), Path: new(".github/workflows/release.yml"), State: new("active")},
 				},
 				definitions: map[string]string{
 					".github/workflows/release.yml": "on: workflow_dispatch\n",
@@ -271,8 +271,8 @@ func TestGitHubWorkflowProviderKeepsPerDefinitionFailuresPartial(t *testing.T) {
 			assert := assert.New(t)
 			fake := &workflowProviderFake{
 				workflows: []*gh.Workflow{
-					{ID: gh.Ptr(int64(1)), Name: gh.Ptr("Broken"), Path: gh.Ptr(".github/workflows/broken.yml"), State: gh.Ptr("active")},
-					{ID: gh.Ptr(int64(2)), Name: gh.Ptr("Release"), Path: gh.Ptr(".github/workflows/release.yml"), State: gh.Ptr("active")},
+					{ID: new(int64(1)), Name: new("Broken"), Path: new(".github/workflows/broken.yml"), State: new("active")},
+					{ID: new(int64(2)), Name: new("Release"), Path: new(".github/workflows/release.yml"), State: new("active")},
 				},
 				definitions: map[string]string{
 					".github/workflows/release.yml": "on: workflow_dispatch\n",
@@ -302,7 +302,7 @@ func TestGitHubWorkflowEnvironmentsReadOnlyEnvironmentTransport(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	fake := &workflowProviderFake{
-		environments: []*gh.Environment{{Name: gh.Ptr("production")}},
+		environments: []*gh.Environment{{Name: new("production")}},
 	}
 	provider := &gitHubClientProvider{host: "github.com", client: fake}
 	environments, err := provider.ListWorkflowEnvironments(
@@ -317,19 +317,20 @@ func TestGitHubWorkflowEnvironmentsReadOnlyEnvironmentTransport(t *testing.T) {
 func TestGitHubWorkflowProviderNormalizesRunsJobsAndDispatch(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	created := time.Date(2026, 8, 27, 12, 0, 0, 0, time.FixedZone("offset", 3600))
+	created, err := time.Parse(time.RFC3339, "2026-08-27T12:00:00+01:00")
+	require.NoError(err)
 	updated := created.Add(time.Minute)
 	started := created.Add(time.Second)
 	completed := created.Add(2 * time.Second)
 	fake := &workflowProviderFake{
 		actor: "maintainer",
 		runs: platform.Page[*gh.WorkflowRun]{NextCursor: "3", Exhausted: true, Items: []*gh.WorkflowRun{{
-			ID: gh.Ptr(int64(100)), WorkflowID: gh.Ptr(int64(42)), RunNumber: gh.Ptr(7), Name: gh.Ptr("Release"),
-			Event: gh.Ptr("workflow_dispatch"), HeadBranch: gh.Ptr("main"), HeadSHA: gh.Ptr("abc"), Actor: &gh.User{Login: gh.Ptr("octocat")},
-			Status: gh.Ptr("completed"), Conclusion: gh.Ptr("success"), CreatedAt: &gh.Timestamp{Time: created}, UpdatedAt: &gh.Timestamp{Time: updated}, HTMLURL: gh.Ptr("https://example.test/runs/100"),
+			ID: new(int64(100)), WorkflowID: new(int64(42)), RunNumber: new(7), Name: new("Release"),
+			Event: new("workflow_dispatch"), HeadBranch: new("main"), HeadSHA: new("abc"), Actor: &gh.User{Login: new("octocat")},
+			Status: new("completed"), Conclusion: new("success"), CreatedAt: &gh.Timestamp{Time: created}, UpdatedAt: &gh.Timestamp{Time: updated}, HTMLURL: new("https://example.test/runs/100"),
 		}}},
-		jobs:     []*gh.WorkflowJob{{ID: gh.Ptr(int64(9)), Name: gh.Ptr("deploy"), Status: gh.Ptr("completed"), Conclusion: gh.Ptr("success"), StartedAt: &gh.Timestamp{Time: started}, CompletedAt: &gh.Timestamp{Time: completed}, HTMLURL: gh.Ptr("https://example.test/jobs/9"), Steps: []*gh.TaskStep{{Number: gh.Ptr(int64(1)), Name: gh.Ptr("ship"), Status: gh.Ptr("completed"), Conclusion: gh.Ptr("success"), StartedAt: &gh.Timestamp{Time: started}, CompletedAt: &gh.Timestamp{Time: completed}}}}},
-		dispatch: &gh.WorkflowDispatchRunDetails{WorkflowRunID: gh.Ptr(int64(101)), HTMLURL: gh.Ptr("https://example.test/runs/101")},
+		jobs:     []*gh.WorkflowJob{{ID: new(int64(9)), Name: new("deploy"), Status: new("completed"), Conclusion: new("success"), StartedAt: &gh.Timestamp{Time: started}, CompletedAt: &gh.Timestamp{Time: completed}, HTMLURL: new("https://example.test/jobs/9"), Steps: []*gh.TaskStep{{Number: new(int64(1)), Name: new("ship"), Status: new("completed"), Conclusion: new("success"), StartedAt: &gh.Timestamp{Time: started}, CompletedAt: &gh.Timestamp{Time: completed}}}}},
+		dispatch: &gh.WorkflowDispatchRunDetails{WorkflowRunID: new(int64(101)), HTMLURL: new("https://example.test/runs/101")},
 	}
 	provider := &gitHubClientProvider{host: "github.com", client: fake}
 	page, err := provider.ListWorkflowRuns(t.Context(), platform.RepoRef{Owner: "acme", Name: "widgets"}, platform.WorkflowRunQuery{WorkflowID: "42"})
@@ -391,7 +392,7 @@ func TestRoutedClientRoutesWorkflowOperationsByRepository(t *testing.T) {
 	fallback := &workflowProviderFake{}
 	exact := &workflowProviderFake{
 		definitions: map[string]string{"release.yml": "on: workflow_dispatch"},
-		dispatch:    &gh.WorkflowDispatchRunDetails{WorkflowRunID: gh.Ptr(int64(8))},
+		dispatch:    &gh.WorkflowDispatchRunDetails{WorkflowRunID: new(int64(8))},
 	}
 	router, err := NewHostRouter(
 		"github.com",

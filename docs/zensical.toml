@@ -1,10 +1,11 @@
 [project]
-site_name = "kenn-forge"
-site_description = "Local-first maintainer console"
+site_name = "Kenn Forge"
+site_description = "Integrated agent workspace with local-first code forge sync"
 site_author = "Kenn Software LLC"
 copyright = 'Copyright &copy; 2026 <a href="https://kenn.io">Kenn Software LLC</a>. Elastic License 2.0.'
+site_url = "https://forge.kenn.io/docs/"
 docs_dir = "docs"
-site_dir = "site"
+site_dir = "site/docs"
 repo_url = "https://github.com/kenn-io/forge"
 repo_name = "kenn-io/forge"
 extra_css = ["stylesheets/extra.css"]
@@ -26,7 +27,7 @@ nav = [
   {"Configuration" = "configuration.md"},
   {"Commands" = "commands.md"},
   {"Advanced / experimental" = [
-    {"Fleet" = "federated-fleet.md"},
+    {"Federated Forge" = "federated-fleet.md"},
     {"MCP companion" = "kenn-forge-mcp.md"},
   ]},
   {"Archive" = "archive.md"},

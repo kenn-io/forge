@@ -34,8 +34,8 @@ const path = require("node:path");
 
 const infoFlag = process.argv.indexOf("-server-info-file");
 const infoFile = process.argv[infoFlag + 1];
-const fleetFlag = process.argv.indexOf("-fleet-key");
-const slowShutdown = fleetFlag >= 0 && process.argv[fleetFlag + 1] === "slow";
+const hostFlag = process.argv.indexOf("-default-platform-host");
+const slowShutdown = hostFlag >= 0 && process.argv[hostFlag + 1] === "slow.example";
 const server = createServer((_req, response) => {
   response.writeHead(200);
   response.end("ok");
@@ -810,7 +810,10 @@ describe("owned server lifecycle", () => {
     process.env.FAKE_E2E_LATE_MARKER = lateMarker;
     delete process.env.PLAYWRIGHT_E2E_TMUX_DIR;
 
-    const server = await e2eServerModule.startIsolatedE2EServerWithOptions({ freshProcess: true, fleetKey: "slow" });
+    const server = await e2eServerModule.startIsolatedE2EServerWithOptions({
+      freshProcess: true,
+      defaultPlatformHost: "slow.example",
+    });
     const tmuxDir = process.env.PLAYWRIGHT_E2E_TMUX_DIR;
     expect(tmuxDir).toBeTruthy();
 
@@ -849,7 +852,7 @@ describe("owned server lifecycle", () => {
       `import { writeFile } from "node:fs/promises";
 import process from "node:process";
 import { startIsolatedE2EServerWithOptions } from ${JSON.stringify(moduleURL)};
-await startIsolatedE2EServerWithOptions({ freshProcess: true, fleetKey: "slow" });
+await startIsolatedE2EServerWithOptions({ freshProcess: true, defaultPlatformHost: "slow.example" });
 await writeFile(process.env.FAKE_OWNER_READY_FILE, "ready");
 process.exit(0);
 `,
@@ -915,7 +918,10 @@ process.exit(0);
     process.env.FAKE_E2E_LATE_MARKER = lateMarker;
     delete process.env.PLAYWRIGHT_E2E_TMUX_DIR;
 
-    const first = await e2eServerModule.startIsolatedE2EServerWithOptions({ freshProcess: true, fleetKey: "slow" });
+    const first = await e2eServerModule.startIsolatedE2EServerWithOptions({
+      freshProcess: true,
+      defaultPlatformHost: "slow.example",
+    });
     const second = await e2eServerModule.startIsolatedE2EServerWithOptions({ freshProcess: true });
     const tmuxDir = process.env.PLAYWRIGHT_E2E_TMUX_DIR;
     expect(tmuxDir).toBeTruthy();
@@ -968,7 +974,10 @@ process.exit(0);
     process.env.FAKE_E2E_LATE_MARKER = lateMarker;
     delete process.env.PLAYWRIGHT_E2E_TMUX_DIR;
 
-    await e2eServerModule.startIsolatedE2EServerWithOptions({ freshProcess: true, fleetKey: "slow" });
+    await e2eServerModule.startIsolatedE2EServerWithOptions({
+      freshProcess: true,
+      defaultPlatformHost: "slow.example",
+    });
     const tmuxDir = process.env.PLAYWRIGHT_E2E_TMUX_DIR;
     expect(tmuxDir).toBeTruthy();
 
@@ -994,7 +1003,7 @@ process.exit(0);
       `import { writeFile } from "node:fs/promises";
 import process from "node:process";
 import { startIsolatedE2EServerWithOptions } from ${JSON.stringify(moduleURL)};
-await startIsolatedE2EServerWithOptions({ freshProcess: true, fleetKey: "slow" });
+await startIsolatedE2EServerWithOptions({ freshProcess: true, defaultPlatformHost: "slow.example" });
 await writeFile(process.env.FAKE_OWNER_READY_FILE, JSON.stringify({ tmuxDir: process.env.PLAYWRIGHT_E2E_TMUX_DIR }));
 setInterval(() => {}, 1000);
 `,

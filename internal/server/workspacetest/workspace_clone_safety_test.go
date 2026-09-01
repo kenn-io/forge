@@ -858,7 +858,7 @@ func requireGitRefMissing(t *testing.T, dir, ref string) {
 	require.Equal(t, 1, exitErr.ExitCode(), "git show-ref failed: %s", stderr)
 }
 
-func TestWorkspaceRetryLegacyUnknownHeadRepoLeavesBranchUntrackedE2E(t *testing.T) {
+func TestWorkspaceRetryUnknownHeadRepoFailsClosedE2E(t *testing.T) {
 	t.Parallel()
 	acquireWorkspaceGitSlot(t)
 
@@ -867,8 +867,6 @@ func TestWorkspaceRetryLegacyUnknownHeadRepoLeavesBranchUntrackedE2E(t *testing.
 	fixture := setupWorkspaceServerFixture(t, nil)
 	ctx := t.Context()
 
-	headSHA := testGitSHA(t, fixture.remote, "refs/heads/feature")
-	runGit(t, fixture.remote, "update-ref", "refs/pull/2/head", headSHA)
 	seedPRWithoutHeadRepo(t, fixture.database, "github.com", "acme", "widget", 2)
 	errMessage := "retry legacy workspace"
 	const workspaceID = "legacy-unknown-head-repo"
@@ -888,41 +886,48 @@ func TestWorkspaceRetryLegacyUnknownHeadRepoLeavesBranchUntrackedE2E(t *testing.
 		Status:          "error",
 		ErrorMessage:    &errMessage,
 	}))
+	issuedAt := time.Now().UTC().Truncate(time.Second)
+	require.NoError(fixture.database.PutWorkspaceLaunchSpec(ctx, workspaceID, db.WorkspaceLaunchSpec{
+		Version: db.WorkspaceLaunchSpecVersion,
+		Repository: db.WorkspaceLaunchRepository{
+			Provider: "github", PlatformHost: "github.com",
+			PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
+			CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
+		},
+		ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 2,
+		ItemKey: "2", GitHeadRef: "feature",
+		Pull: &db.WorkspaceLaunchPull{
+			HeadBranch: "feature", HeadRepoKind: "unknown", SnapshotRevision: 1,
+		},
+		SourceVisible: true, IssuedAt: issuedAt,
+		SourceVisibleUntil: issuedAt.Add(db.WorkspaceLaunchSpecVisibilityLease),
+	}))
 
 	retryResp, err := fixture.client.HTTP.RetryWorkspaceWithResponse(ctx, workspaceID)
 	require.NoError(err)
 	require.Equal(http.StatusAccepted, retryResp.StatusCode())
 
-	ready := waitForWorkspaceReady(t, ctx, fixture.client, workspaceID)
-	assert.Equal(headSHA, testGitSHA(t, ready.WorktreePath, "HEAD"))
-
-	// The workspace row was inserted with a stale MRHeadRepo of nil (the
-	// legacy shape from before refreshWorkspaceHeadRepo persisted its
-	// result). Retry recomputes "unknown" from the seeded PR's empty
-	// HeadRepoCloneURL and must persist that reclassification: the stored
-	// row and the wire response must both reflect it rather than the
-	// stale same_repo classification the nil default implies.
-	require.NotNil(ready.MrHeadRepoKind)
-	assert.Equal(generated.WorkspaceResponseMrHeadRepoKindUnknown, *ready.MrHeadRepoKind)
-	stored, err := fixture.database.GetWorkspace(ctx, workspaceID)
-	require.NoError(err)
+	var stored *db.Workspace
+	require.Eventually(func() bool {
+		stored, err = fixture.database.GetWorkspace(ctx, workspaceID)
+		return err == nil && stored != nil && stored.Status == "error" &&
+			stored.ErrorMessage != nil && strings.Contains(
+			*stored.ErrorMessage, "head repository identity is unavailable",
+		)
+	}, 5*time.Second, 10*time.Millisecond)
 	require.NotNil(stored)
 	require.NotNil(stored.MRHeadRepo)
 	assert.Empty(*stored.MRHeadRepo)
+	assert.NoDirExists(stored.WorktreePath)
 
-	branch := workspaceGitOutput(t, ready.WorktreePath, "branch", "--show-current")
-	remoteOut, remoteErrOut, upstreamErr := gitcmd.New().Run(
-		ctx, ready.WorktreePath, nil,
-		"config", "--get", "branch."+branch+".remote",
-	)
-	mergeOut, _, _ := gitcmd.New().Run(
-		ctx, ready.WorktreePath, nil,
-		"config", "--get", "branch."+branch+".merge",
-	)
-	assert.Error(
-		upstreamErr,
-		"legacy unknown workspace must remain untracked after retry; branch=%q remote=%q merge=%q stderr=%q",
-		branch, strings.TrimSpace(string(remoteOut)), strings.TrimSpace(string(mergeOut)), strings.TrimSpace(string(remoteErrOut)),
+	response, err := fixture.client.HTTP.GetWorkspaceWithResponse(ctx, workspaceID)
+	require.NoError(err)
+	require.Equal(http.StatusOK, response.StatusCode())
+	require.NotNil(response.JSON200)
+	require.NotNil(response.JSON200.MrHeadRepoKind)
+	assert.Equal(
+		generated.WorkspaceResponseMrHeadRepoKindUnknown,
+		*response.JSON200.MrHeadRepoKind,
 	)
 }
 

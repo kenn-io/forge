@@ -12,6 +12,7 @@ import (
 	"go.kenn.io/forge/internal/agentactivity"
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/systemclipboard"
 	"go.kenn.io/forge/internal/workspace"
@@ -89,13 +90,21 @@ type Deps struct {
 	Subscribe          func(context.Context, bool) (<-chan RecordedEvent, <-chan struct{})
 	Generation         func() uint64
 
-	RecomputeWorktreeLinks  func(context.Context)
-	RefreshWorktreeStats    func(context.Context, string, string) error
-	RefreshProjectInventory func(context.Context, string) error
-	LookupRepo              func(context.Context, string, string, string, string) (*db.Repo, error)
-	EnqueueDetailSync       func(
+	RecomputeWorktreeLinks   func(context.Context)
+	RefreshWorktreeStats     func(context.Context, string, string) error
+	RefreshProjectInventory  func(context.Context, string) error
+	LookupRepo               func(context.Context, string, string, string, string) (*db.Repo, error)
+	ResolveProjectRepository func(
+		context.Context, providerplane.RepositoryRoute,
+	) (*db.Repo, error)
+	EnqueueDetailSync func(
 		string, []any, func(context.Context) error, func(context.Context),
 	) bool
+	ProviderWriteGate           providerplane.WriteAdmitter
+	LaunchSpecResolver          providerplane.WorkspaceLaunchSpecResolver
+	PullCandidates              workspace.PullCandidateSource
+	ProviderWorkspaceAutomation ProviderWorkspaceAutomation
+	MergeRequestWorktreeSource  MergeRequestWorktreeSource
 }
 
 // Handler implements both the workspace and local-project services so their
@@ -120,7 +129,13 @@ type Handler struct {
 	refreshWorktreeStats           func(context.Context, string, string) error
 	refreshProjectInventory        func(context.Context, string) error
 	lookupRepo                     func(context.Context, string, string, string, string) (*db.Repo, error)
+	resolveProjectRepository       func(context.Context, providerplane.RepositoryRoute) (*db.Repo, error)
 	enqueueDetailSync              func(string, []any, func(context.Context) error, func(context.Context)) bool
+	providerWriteGate              providerplane.WriteAdmitter
+	launchSpecResolver             providerplane.WorkspaceLaunchSpecResolver
+	pullCandidates                 workspace.PullCandidateSource
+	providerWorkspaceAutomation    ProviderWorkspaceAutomation
+	mergeRequestWorktreeSource     MergeRequestWorktreeSource
 	hub                            *eventHubAdapter
 	workspacePRMonitor             *workspace.PRMonitor
 	workspacePushedHeadObserver    *workspace.PushedHeadObserver
@@ -164,6 +179,12 @@ func New(deps Deps) *Handler {
 	if now == nil {
 		now = time.Now
 	}
+	if deps.Workspaces != nil {
+		deps.Workspaces.SetNow(now)
+		if deps.LaunchSpecResolver != nil {
+			deps.Workspaces.SetLaunchSpecResolver(deps.LaunchSpecResolver)
+		}
+	}
 	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
 	h := &Handler{
 		db:                             deps.DB,
@@ -183,7 +204,13 @@ func New(deps Deps) *Handler {
 		refreshWorktreeStats:           deps.RefreshWorktreeStats,
 		refreshProjectInventory:        deps.RefreshProjectInventory,
 		lookupRepo:                     deps.LookupRepo,
+		resolveProjectRepository:       deps.ResolveProjectRepository,
 		enqueueDetailSync:              deps.EnqueueDetailSync,
+		providerWriteGate:              deps.ProviderWriteGate,
+		launchSpecResolver:             deps.LaunchSpecResolver,
+		pullCandidates:                 deps.PullCandidates,
+		providerWorkspaceAutomation:    deps.ProviderWorkspaceAutomation,
+		mergeRequestWorktreeSource:     deps.MergeRequestWorktreeSource,
 		hub:                            &eventHubAdapter{broadcast: deps.Broadcast, subscribe: deps.Subscribe, generation: deps.Generation},
 		workspaceEnrichmentCache:       make(map[string]workspaceEnrichmentCacheEntry),
 		workspaceEnrichmentInFlight:    make(map[string]uint64),
@@ -202,8 +229,13 @@ func New(deps Deps) *Handler {
 		lifecycleDone:                  make(chan struct{}),
 	}
 	if deps.DB != nil && deps.Workspaces != nil {
-		h.workspacePRMonitor = workspace.NewPRMonitor(deps.DB)
-		h.workspacePushedHeadObserver = workspace.NewPushedHeadObserver(deps.DB)
+		monitorOptions := workspace.PRMonitorOptions{
+			LaunchSpecs: deps.Workspaces, PullCandidates: deps.PullCandidates,
+		}
+		h.workspacePRMonitor = workspace.NewPRMonitor(deps.DB, monitorOptions)
+		h.workspacePushedHeadObserver = workspace.NewPushedHeadObserver(
+			deps.DB, monitorOptions,
+		)
 	}
 	h.workspaceDiffCache = newWorkspaceDiffCache(lifecycleCtx, workspaceDiffCacheDeps{
 		onReady: func(workspaceID string, revision uint64, version string) {

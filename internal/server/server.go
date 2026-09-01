@@ -28,11 +28,14 @@ import (
 	"go.kenn.io/forge/internal/configwatch"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/docs"
+	"go.kenn.io/forge/internal/federation"
+	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
 	katacatalog "go.kenn.io/forge/internal/kata"
 	"go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/projects"
+	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/ptyowner"
 	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
 	"go.kenn.io/forge/internal/server/docsapi"
@@ -66,6 +69,13 @@ type versionOutput = httpapi.BodyOutput[versionOutputBody]
 
 type ServerOptions struct {
 	DaemonAccess                       DaemonAccessOptions
+	FederationCredentials              *federationauth.Store
+	FederationEnrollments              *federation.Store
+	FederationSpokeID                  string
+	FederationSpokeActive              bool
+	FederationSpokeUnavailableReason   string
+	FederationHTTPClient               *http.Client
+	ProviderWriteGate                  *providerplane.ProviderWriteGate
 	MCPURL                             string
 	Clones                             *gitclone.Manager // optional clone manager for diff view
 	WorktreeDir                        string            // base dir for workspace worktrees
@@ -187,6 +197,7 @@ type Server struct {
 	// config-file watcher reload can detect when those changed and
 	// surface restart_required to the UI without ever mutating them.
 	bootCfgSnapshot     startupConfigSnapshot
+	fleetEnabledAtBoot  bool
 	runtimeStripEnvVars []string
 	ptyOwnerClient      *ptyowner.Client
 	configWatcher       *configwatch.Watcher
@@ -202,6 +213,9 @@ type Server struct {
 	now                    func() time.Time
 	handler                http.Handler
 	hub                    *EventHub
+	federationStreamsMu    sync.Mutex
+	federationStreamsNext  uint64
+	federationStreams      map[string]map[uint64]context.CancelFunc
 	activeWorktreeMu       sync.Mutex
 	activeWorktreeKey      string
 	activeWorktreeSet      bool
@@ -224,11 +238,19 @@ type Server struct {
 	workflowAPI            *workflowapi.Handler
 	pullLifecycle          pullLifecycle
 	workspaceAPI           *workspaceapi.Handler
+	providerSource         *hubProviderSource
+	providerProxy          *providerProxy
+	hubEvents              *hubEventLifecycle
+	providerRouteSpoke     bool
+	providerWriteGate      *providerplane.ProviderWriteGate
 	// activityAfterItemsForTest pauses Activity between its two identity reads
 	// so tests can prove the request-wide repository reconciliation fence.
 	activityAfterItemsForTest func()
-	markdownImages            *markdownImageCache
-	roborevRepositories       *roborevRepositoryProbe
+	// providerDescriptorBeforeSnapshotForTest marks descriptor admission before
+	// the reconciliation lease so tests can queue an identity writer first.
+	providerDescriptorBeforeSnapshotForTest func()
+	markdownImages                          *markdownImageCache
+	roborevRepositories                     *roborevRepositoryProbe
 
 	// toolingStatus caches the assembled CLI tooling probe;
 	// toolingRun overrides the probe subprocess runner in tests.
@@ -236,6 +258,7 @@ type Server struct {
 	toolingRun    toolingRunner
 
 	daemonRequests daemonRequestPolicy
+	federationAuth *federationauth.Authenticator
 
 	// bg tracks short-lived goroutines that HTTP handlers spawn
 	// outside of the Syncer's own wait group (e.g. mergePR's
@@ -616,13 +639,16 @@ func fallbackHostCheckOptions() HostCheckOptions {
 func workspaceConfigSnapshot(
 	cfg *config.Config, tmuxCommand []string,
 ) workspaceapi.ConfigSnapshot {
-	snapshot := workspaceapi.ConfigSnapshot{TmuxCommand: slices.Clone(tmuxCommand)}
+	snapshot := workspaceapi.ConfigSnapshot{
+		TmuxCommand: slices.Clone(tmuxCommand), IssueBranchSlug: true,
+	}
 	if cfg == nil {
 		return snapshot
 	}
 	snapshot.Agents = cloneConfigAgents(cfg.Agents)
 	snapshot.AutoAssignOnCreate = cfg.Workspaces.AutoAssignOnCreate
 	snapshot.RoborevInitManagedClones = cfg.Roborev.InitManagedClones
+	snapshot.IssueBranchSlug = cfg.IssueWorkspaceBranchSlugEnabled()
 	snapshot.KnownPlatformHosts = make(
 		[]projects.KnownPlatformHost, 0, len(cfg.Platforms)+len(cfg.Repos)+1,
 	)
@@ -690,16 +716,11 @@ func fleetConfigSnapshot(cfg *config.Config, tmuxCommand []string) fleetapi.Conf
 		GitHubOwnerTokens: slices.Clone(cfg.GitHubOwnerTokens),
 		GitHubApps:        slices.Clone(cfg.GitHubApps),
 	}
-	sshSocketDir := ""
-	if cfg.DataDir != "" {
-		sshSocketDir = filepath.Join(cfg.DataDir, "ssh-sockets")
-	}
 	return fleetapi.ConfigSnapshot{
 		Fleet:               cfg.Fleet,
 		PlatformAuthConfig:  platformAuth,
 		PlatformAuthEnabled: true,
 		TmuxCommand:         slices.Clone(tmuxCommand),
-		SSHSocketDir:        sshSocketDir,
 	}
 }
 
@@ -729,9 +750,36 @@ func (s *Server) applyWorkspaceConfigLocked() {
 }
 
 func (s *Server) applyFleetConfigLocked() {
+	active := s.activeFleetConfigSnapshotLocked()
 	if s.fleetAPI != nil {
-		s.fleetAPI.ApplyConfig(fleetConfigSnapshot(s.cfg, s.tmuxCmd))
+		s.fleetAPI.ApplyConfig(active)
 	}
+	if s.hubEvents != nil {
+		s.hubEvents.SetEnabled(active.Fleet.Enabled)
+	}
+}
+
+func (s *Server) activeFleetConfigSnapshotLocked() fleetapi.ConfigSnapshot {
+	snapshot := fleetConfigSnapshot(s.cfg, s.tmuxCmd)
+	// A daemon that booted outside a fleet may activate federation only when
+	// its startup request policy already required API authentication.
+	snapshot.Fleet.Enabled = snapshot.Fleet.Enabled &&
+		(s.fleetEnabledAtBoot || s.daemonRequests.requireAPIAuth)
+	snapshot.Fleet.Role = s.bootCfgSnapshot.FleetRole
+	snapshot.Fleet.BaseURL = s.bootCfgSnapshot.FleetBaseURL
+	if s.bootCfgSnapshot.Hub == nil {
+		snapshot.Fleet.Hub = nil
+	} else {
+		name := ""
+		if snapshot.Fleet.Hub != nil {
+			name = snapshot.Fleet.Hub.Name
+		}
+		snapshot.Fleet.Hub = &config.FleetHub{
+			NodeID: s.bootCfgSnapshot.Hub.NodeID,
+			Name:   name, BaseURL: s.bootCfgSnapshot.Hub.BaseURL,
+		}
+	}
+	return snapshot
 }
 
 func (s *Server) applyKataConfigLocked() {
@@ -791,24 +839,22 @@ func newServer(
 	})
 
 	s := &Server{
-		db:                  database,
-		repoResolver:        repoResolver,
-		basePath:            basePath,
-		syncer:              syncer,
-		archive:             options.Archive,
-		clones:              clones,
-		telemetry:           options.Telemetry,
-		cfg:                 cfg,
-		cfgPath:             cfgPath,
-		tokenSources:        options.TokenSources,
-		bootCfgSnapshot:     snapshotStartupConfig(cfg),
-		runtimeStripEnvVars: initialRuntimeStripEnvNames(cfg),
-		options:             options,
-		daemonRequests: daemonRequestPolicy{
-			token:          options.DaemonAccess.Token,
-			requireAPIAuth: options.DaemonAccess.RequireAPIAuth,
-			proof:          options.DaemonAccess.ProofHandler,
-		},
+		db:                     database,
+		repoResolver:           repoResolver,
+		basePath:               basePath,
+		syncer:                 syncer,
+		archive:                options.Archive,
+		clones:                 clones,
+		telemetry:              options.Telemetry,
+		cfg:                    cfg,
+		cfgPath:                cfgPath,
+		tokenSources:           options.TokenSources,
+		bootCfgSnapshot:        snapshotStartupConfig(cfg),
+		fleetEnabledAtBoot:     cfg != nil && cfg.Fleet.Enabled,
+		runtimeStripEnvVars:    initialRuntimeStripEnvNames(cfg),
+		options:                options,
+		daemonRequests:         newDaemonRequestPolicy(options.DaemonAccess),
+		federationAuth:         federationauth.NewAuthenticator(options.FederationCredentials),
 		now:                    time.Now,
 		hub:                    NewEventHubWithCapacity(cfg.SSEBufferSizeOrDefault()),
 		labelCatalogRefreshIDs: make(map[int64]struct{}),
@@ -820,6 +866,49 @@ func newServer(
 		bgCancel:                bgCancel,
 		bgDeadline:              bgDeadline,
 		workspaceDependentsDone: make(chan struct{}),
+	}
+	s.providerWriteGate = options.ProviderWriteGate
+	if s.providerWriteGate == nil {
+		s.providerWriteGate = providerplane.NewProviderWriteGate(database)
+	}
+	if cfg != nil && cfg.Fleet.RoleOrDefault() == config.FleetRoleSpoke {
+		s.providerRouteSpoke = true
+		s.providerSource = &hubProviderSource{
+			db: database, clones: clones, enabled: s.federationEnabled,
+		}
+		if options.FederationSpokeActive && cfg.Fleet.Hub != nil {
+			client, err := providerplane.NewClient(providerplane.Options{
+				LocalNodeID: options.FederationSpokeID,
+				Hub: providerplane.Hub{
+					NodeID:  cfg.Fleet.Hub.NodeID,
+					BaseURL: cfg.Fleet.Hub.BaseURL,
+				},
+				Credentials: options.FederationCredentials,
+				HTTPClient:  options.FederationHTTPClient,
+			})
+			if err != nil {
+				slog.Error("configure hub provider client", "err", err)
+			} else {
+				s.providerSource.client = client
+				s.providerProxy = newProviderProxy(client)
+				events, eventsErr := providerplane.NewEventClient(providerplane.EventClientOptions{
+					Client:              client,
+					OnEvent:             s.receiveHubEvent,
+					OnResync:            s.resynchronizeHubProviderState,
+					OnConnectionChanged: s.broadcastHubConnection,
+				})
+				if eventsErr != nil {
+					slog.Error("configure hub event client", "err", eventsErr)
+				} else {
+					s.hubEvents = newHubEventLifecycle(
+						cfg.Fleet.Enabled, events.Run,
+					)
+				}
+			}
+		}
+		if s.hubEvents == nil || !cfg.Fleet.Enabled {
+			s.broadcastHubConnection(false)
+		}
 	}
 	roborevConfig := cfg
 	if roborevConfig == nil {
@@ -864,10 +953,15 @@ func newServer(
 	if cfg != nil {
 		docsapi.WarnDaemonBindings(cfg.DocFolders)
 	}
+	var repositoryDescriptorSource repobrowserapi.RepositoryDescriptorSource
+	if s.providerSource != nil {
+		repositoryDescriptorSource = s.providerSource
+	}
 	s.repoBrowserAPI = repobrowserapi.New(repobrowserapi.Deps{
-		Resolver: repoResolver,
-		Clones:   clones,
-		Config:   cfg,
+		Resolver:         repoResolver,
+		Clones:           clones,
+		Config:           cfg,
+		DescriptorSource: repositoryDescriptorSource,
 	})
 	s.hostOpts.Store(&hostOpts)
 	if hostOpts.TrustReverseProxy && len(hostOpts.Allowed) == 0 {
@@ -911,6 +1005,18 @@ func newServer(
 			}
 			return s.workspaceAPI.FleetSnapshot(ctx)
 		},
+		WorkspaceStatsSnapshot: func(ctx context.Context) (workspaceapi.FleetSnapshot, error) {
+			if s.workspaceAPI == nil {
+				return workspaceapi.FleetSnapshot{}, nil
+			}
+			return s.workspaceAPI.FleetStatsSnapshot(ctx)
+		},
+		QueueWorkspaceDeletion: func(id string) error {
+			if s.workspaceAPI == nil {
+				return errors.New("workspace cleanup is unavailable")
+			}
+			return s.workspaceAPI.QueueWorkspaceDeletion(id)
+		},
 		RuntimeSnapshot: func(scope string) workspaceapi.RuntimeSnapshot {
 			if s.workspaceAPI == nil {
 				return nil
@@ -922,9 +1028,28 @@ func newServer(
 				s.workspaceAPI.RevalidateSelectedDiffs()
 			}
 		},
+		NodeID:                      options.FederationSpokeID,
+		FederationActive:            options.FederationSpokeActive,
+		FederationUnavailableReason: options.FederationSpokeUnavailableReason,
+		Credentials:                 options.FederationCredentials,
+		Enrollments:                 options.FederationEnrollments,
+		FederationHTTPClient:        options.FederationHTTPClient,
+		PersistMember:               s.persistFleetMember,
+		PersistHubBinding:           s.persistHubBinding,
+		RemoveMember:                s.removeFleetMember,
+		CancelEventStreams:          s.cancelFederationEventStreams,
 	})
+	var launchSpecResolver providerplane.WorkspaceLaunchSpecResolver = s
+	var workspacePullCandidates workspace.PullCandidateSource
+	if s.providerSource != nil {
+		launchSpecResolver = s.providerSource
+		workspacePullCandidates = s.providerSource
+	}
 	if options.WorktreeDir != "" {
 		s.workspaces = workspace.NewManager(database, options.WorktreeDir)
+		s.workspaces.SetNow(workspaceNow)
+		s.workspaces.SetLaunchSpecResolver(launchSpecResolver)
+		s.workspaces.SetRequireProviderCredential(s.providerRouteSpoke)
 		s.workspaces.SetTmuxCommand(tmuxCmd)
 		s.workspaces.UpdateTmuxStripEnvVars(s.runtimeStripEnvVars)
 		s.workspaces.SetHideTmuxStatus(hideTmuxStatus)
@@ -1001,6 +1126,18 @@ func newServer(
 			DetachSessionsForServerRestart: options.DetachRuntimeSessionsForRestart,
 		})
 	}
+	var providerWorkspaceAutomation workspaceapi.ProviderWorkspaceAutomation
+	var mergeRequestWorktreeSource workspaceapi.MergeRequestWorktreeSource
+	var resolveProjectRepository func(
+		context.Context, providerplane.RepositoryRoute,
+	) (*db.Repo, error)
+	if s.providerSource != nil {
+		providerWorkspaceAutomation = s.providerSource
+		mergeRequestWorktreeSource = s.providerSource
+		if s.providerSource.client != nil {
+			resolveProjectRepository = s.providerSource.ResolveProjectRepository
+		}
+	}
 	s.workspaceAPI = workspaceapi.New(workspaceapi.Deps{
 		DB:                database,
 		Resolver:          repoResolver,
@@ -1018,13 +1155,19 @@ func newServer(
 		Broadcast: func(event workspaceapi.Event) uint64 {
 			return s.hub.Broadcast(Event{Type: event.Type, Data: event.Data})
 		},
-		Subscribe:               s.subscribeWorkspaceEvents,
-		Generation:              s.hub.Generation,
-		RecomputeWorktreeLinks:  s.fleetAPI.RecomputeWorktreeLinks,
-		RefreshWorktreeStats:    s.fleetAPI.RefreshWorktreeStats,
-		RefreshProjectInventory: s.fleetAPI.RefreshProjectInventory,
-		LookupRepo:              repoResolver.LookupRoute,
-		EnqueueDetailSync:       s.enqueueDetailSyncWithCompletion,
+		Subscribe:                   s.subscribeWorkspaceEvents,
+		Generation:                  s.hub.Generation,
+		RecomputeWorktreeLinks:      s.fleetAPI.RecomputeWorktreeLinks,
+		RefreshWorktreeStats:        s.fleetAPI.RefreshWorktreeStats,
+		RefreshProjectInventory:     s.fleetAPI.RefreshProjectInventory,
+		LookupRepo:                  repoResolver.LookupRoute,
+		ResolveProjectRepository:    resolveProjectRepository,
+		EnqueueDetailSync:           s.enqueueDetailSyncWithCompletion,
+		ProviderWriteGate:           s.providerWriteGate,
+		LaunchSpecResolver:          launchSpecResolver,
+		PullCandidates:              workspacePullCandidates,
+		ProviderWorkspaceAutomation: providerWorkspaceAutomation,
+		MergeRequestWorktreeSource:  mergeRequestWorktreeSource,
 	})
 	s.kataAPI = kata.New(kata.Deps{
 		DB:                     database,
@@ -1053,18 +1196,33 @@ func newServer(
 		Syncer:         syncer,
 		RepoOperations: s.repoOperations,
 	})
+	var pullProviderSource pullapi.ProviderSource
+	var issueProviderSource issueapi.ProviderSource
+	if s.providerSource != nil {
+		pullProviderSource = s.providerSource
+		issueProviderSource = s.providerSource
+	}
 	s.pullAPI = pullapi.New(pullapi.Deps{
-		DB:                     database,
-		Resolver:               repoResolver,
-		Syncer:                 syncer,
-		Clones:                 clones,
-		Config:                 pullConfigSnapshot(cfg),
-		Now:                    func() time.Time { return s.now() },
-		DeferredMergeMaxWait:   deferredMergeMaxWait,
-		QueueWorkspaceDeletion: s.workspaceAPI.QueueWorkspaceDeletion,
-		WorkspaceSubjects:      s.workspaceAPI.WorkspaceSubjectSnapshot,
-		ViewerLogins:           s.resolveAuthenticatedViewerLogins,
-		FleetSelfKey:           s.fleetAPI.SelfKey,
+		DB:                   database,
+		Resolver:             repoResolver,
+		Syncer:               syncer,
+		Clones:               clones,
+		Config:               pullConfigSnapshot(cfg),
+		Now:                  func() time.Time { return s.now() },
+		DeferredMergeMaxWait: deferredMergeMaxWait,
+		QueueWorkspaceDeletion: func(
+			ctx context.Context, hostKey, workspaceID string,
+		) error {
+			if hostKey == "" || hostKey == s.fleetAPI.SelfKey("") {
+				return s.workspaceAPI.QueueWorkspaceDeletion(workspaceID)
+			}
+			return s.fleetAPI.RequestWorkspaceCleanup(ctx, hostKey, workspaceID)
+		},
+		WorkspaceSubjects: s.workspaceAPI.WorkspaceSubjectSnapshot,
+		ViewerLogins:      s.resolveAuthenticatedViewerLogins,
+		ProviderSource:    pullProviderSource,
+		ProviderWriteGate: s.providerWriteGate,
+		FleetSelfKey:      s.fleetAPI.SelfKey,
 		FilterRepos: func(repos []db.Repo) []db.Repo {
 			if s.cfg == nil {
 				return repos
@@ -1087,6 +1245,7 @@ func newServer(
 		Config:            issueConfigSnapshot(cfg),
 		WorkspaceSubjects: s.workspaceAPI.WorkspaceSubjectSnapshot,
 		ViewerLogins:      s.resolveAuthenticatedViewerLogins,
+		ProviderSource:    issueProviderSource,
 		FilterRepos: func(repos []db.Repo) []db.Repo {
 			if s.cfg == nil {
 				return repos
@@ -1144,6 +1303,9 @@ func newServer(
 		tmuxAvailable && s.workspaces != nil,
 		options.DisableWorkspaceBackgroundMonitors,
 	)
+	if s.hubEvents != nil {
+		s.runWorkspaceDependent(s.hubEvents.Run)
+	}
 	if clones != nil {
 		// Seed even when background refresh is disabled: startup also adopts
 		// safe pre-stable-ID clone paths so cached reads survive an upgrade.
@@ -1440,7 +1602,51 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		))
 		return
 	}
+	if release, handled := s.admitProviderWrite(w, r); handled {
+		return
+	} else if release != nil {
+		defer release()
+	}
+	if s.serveProviderRoute(w, r) {
+		return
+	}
 	s.handler.ServeHTTP(w, r)
+}
+
+func (s *Server) serveProviderRoute(w http.ResponseWriter, r *http.Request) bool {
+	if !s.providerRouteSpoke {
+		return false
+	}
+	canonicalPath := s.canonicalAPIPath(r)
+	rule, ok := providerRouteRuleForRequest(r.Method, canonicalPath)
+	if !ok || rule.Owner != ProviderHubOnly {
+		return false
+	}
+	if !s.federationEnabled() || s.providerProxy == nil {
+		writeProblemResponse(w, httpapi.HubUnavailable(
+			"provider data is unavailable because the federation hub cannot be reached",
+		))
+		return true
+	}
+	request := r.Clone(r.Context())
+	requestURL := *r.URL
+	requestURL.Path = r.URL.Path
+	if s.basePath != "/" {
+		prefix := strings.TrimSuffix(s.basePath, "/")
+		requestURL.Path = strings.TrimPrefix(requestURL.Path, prefix)
+	}
+	requestURL.RawPath = canonicalPath
+	request.URL = &requestURL
+	s.providerProxy.ServeHTTP(w, request, rule)
+	return true
+}
+
+func (s *Server) federationEnabled() bool {
+	s.cfgMu.Lock()
+	defer s.cfgMu.Unlock()
+	return s.cfg == nil ||
+		s.cfg.Fleet.Enabled &&
+			(s.fleetEnabledAtBoot || s.daemonRequests.requireAPIAuth)
 }
 
 func (s *Server) checkHost(w http.ResponseWriter, r *http.Request) bool {
@@ -1772,8 +1978,8 @@ func (s *Server) serveSSESubscribed(
 		hasCursor,
 		ch,
 		done,
-		func(id uint64) Event {
-			return Event{Type: "reconnect.stale", Data: struct{}{}}
+		func(uint64) Event {
+			return s.reconnectStaleEvent()
 		},
 	)
 }
@@ -1792,6 +1998,7 @@ func serveSSESubscribedFromHub(
 	serveSSESubscribedFromHubTransformed(
 		ctx, w, rc, hub, cursor, hasCursor, ch, done, staleEvent,
 		func(rec RecordedEvent) (RecordedEvent, bool) { return rec, true },
+		nil,
 		nil,
 	)
 }
@@ -1813,6 +2020,7 @@ func serveSSESubscribedFromHubTransformed(
 	done <-chan struct{},
 	staleEvent func(uint64) Event,
 	transform func(RecordedEvent) (RecordedEvent, bool),
+	afterReplay func(io.Writer, sseController) bool,
 	preparedReplay *sseReplaySnapshot,
 ) {
 
@@ -1850,6 +2058,9 @@ func serveSSESubscribedFromHubTransformed(
 				}
 			}
 		}
+	}
+	if afterReplay != nil && !afterReplay(w, rc) {
+		return
 	}
 
 	ticker := time.NewTicker(30 * time.Second)

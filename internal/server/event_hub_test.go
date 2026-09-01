@@ -178,6 +178,25 @@ func TestEventHub_CachedStatusesPreserveIDOrder(t *testing.T) {
 	assert.Equal("sync_status", second.Event.Type)
 }
 
+func TestEventHub_CachesHubConnectionWithOtherStatusesInIDOrder(t *testing.T) {
+	hub := NewEventHub()
+	defer hub.Close()
+
+	connectionID := hub.Broadcast(Event{
+		Type: "hub_connection_changed", Data: map[string]bool{"connected": false},
+	})
+	configID := hub.Broadcast(Event{Type: "config.changed", Data: map[string]bool{"valid": true}})
+	syncID := hub.Broadcast(Event{Type: "sync_status", Data: map[string]bool{"running": false}})
+
+	ch, _ := hub.Subscribe(t.Context(), true)
+	first, second, third := <-ch, <-ch, <-ch
+
+	assert.Equal(t, []uint64{connectionID, configID, syncID}, []uint64{first.ID, second.ID, third.ID})
+	assert.Equal(t, []string{
+		"hub_connection_changed", "config.changed", "sync_status",
+	}, []string{first.Event.Type, second.Event.Type, third.Event.Type})
+}
+
 func TestEventHub_SubscribeOrderingWithBroadcast(t *testing.T) {
 	assert := assert.New(t)
 

@@ -80,15 +80,11 @@ func NewStartupHandler(
 	}
 
 	return &startupHandler{
-		hostOpts:     hostOpts,
-		allowedHosts: allowedHostsForListener(ln),
-		daemonRequests: daemonRequestPolicy{
-			token:          options.DaemonAccess.Token,
-			requireAPIAuth: options.DaemonAccess.RequireAPIAuth,
-			proof:          options.DaemonAccess.ProofHandler,
-		},
-		basePath: basePath,
-		spa:      spa,
+		hostOpts:       hostOpts,
+		allowedHosts:   allowedHostsForListener(ln),
+		daemonRequests: newDaemonRequestPolicy(options.DaemonAccess),
+		basePath:       basePath,
+		spa:            spa,
 	}
 }
 

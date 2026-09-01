@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -51,6 +52,7 @@ func TestLaunchWorkspaceRuntimeSessionPreparesAgentContext(t *testing.T) {
 		Status:          "ready",
 	}
 	require.NoError(d.InsertWorkspace(t.Context(), ws))
+	seedServerWorkspaceLaunchSpec(t, d, ws, repoID)
 	require.NoError(os.WriteFile(
 		filepath.Join(worktree, "AGENTS.md"),
 		[]byte("# Repository Agent Rules\n\nKeep this guidance.\n"), 0o644,
@@ -97,7 +99,7 @@ func TestLaunchWorkspaceRuntimeSessionPreparesAgentContext(t *testing.T) {
 	content := string(override)
 	assert.Contains(content, "Source kind: pull request")
 	assert.Contains(content, "PR: #42")
-	assert.Contains(content, "Launch context")
+	assert.Contains(content, "Push branch: feature/widgets")
 	assert.NotContains(content, "stale")
 	assert.Less(
 		strings.Index(content, "# Kenn Forge Workspace Context"),
@@ -224,13 +226,19 @@ func TestWorkspaceRuntimeLaunchWritesIssueAndKataAgentContextE2E(t *testing.T) {
 
 	issueWorktree := initServerWorkspaceGitRepo(t)
 	seedIssue(t, database, "acme", "widget", 7, "open")
-	require.NoError(database.InsertWorkspace(t.Context(), &db.Workspace{
+	issueWorkspace := &db.Workspace{
 		ID: "ws-issue-context", Platform: "github", PlatformHost: "github.com",
 		RepoOwner: "acme", RepoName: "widget",
 		ItemType: db.WorkspaceItemTypeIssue, ItemNumber: 7,
 		GitHeadRef: "kenn-forge/issue-7", WorkspaceBranch: "kenn-forge/issue-7",
 		WorktreePath: issueWorktree, Status: "ready",
-	}))
+	}
+	require.NoError(database.InsertWorkspace(t.Context(), issueWorkspace))
+	issueRepo, err := database.GetRepoByIdentity(
+		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	seedServerWorkspaceLaunchSpec(t, database, issueWorkspace, issueRepo.ID)
 
 	kataWorktree := initServerWorkspaceGitRepo(t)
 	require.NoError(database.InsertWorkspace(t.Context(), &db.Workspace{
@@ -266,8 +274,7 @@ func TestWorkspaceRuntimeLaunchWritesIssueAndKataAgentContextE2E(t *testing.T) {
 	require.NoError(err)
 	assert.Contains(string(issueContext), "Source kind: provider issue")
 	assert.Contains(string(issueContext), "Issue: #7")
-	assert.Contains(string(issueContext), "https://github.com/acme/widget/issues/7")
-	assert.Contains(string(issueContext), "<untrusted-source-text>Test Issue</untrusted-source-text>")
+	assert.NotContains(string(issueContext), "Test Issue")
 	issueStatus := strings.TrimSpace(string(runServerWorkspaceTestGit(t, issueWorktree, "status", "--porcelain")))
 	assert.Empty(issueStatus)
 
@@ -297,7 +304,42 @@ func seedServerWorkspaceRepo(t *testing.T, d *db.DB) int64 {
 	t.Helper()
 	repoID, err := d.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(t, err)
+	seedRepoLaunchMetadata(t, d, repoID)
 	return repoID
+}
+
+func seedServerWorkspaceLaunchSpec(
+	t *testing.T, database *db.DB, ws *db.Workspace, repoID int64,
+) {
+	t.Helper()
+	repo, err := database.GetRepoByID(t.Context(), repoID)
+	require.NoError(t, err)
+	require.NotNil(t, repo)
+	issuedAt := time.Now().UTC()
+	spec := db.WorkspaceLaunchSpec{
+		Version: db.WorkspaceLaunchSpecVersion,
+		Repository: db.WorkspaceLaunchRepository{
+			Provider: repo.Platform, PlatformHost: repo.PlatformHost,
+			PlatformRepoID: repo.PlatformRepoID, Owner: repo.Owner, Name: repo.Name,
+			CloneURL: repo.CloneURL, DefaultBranch: repo.DefaultBranch,
+		},
+		ItemType: ws.ItemType, ItemNumber: ws.ItemNumber,
+		ItemKey: strconv.Itoa(ws.ItemNumber), GitHeadRef: ws.GitHeadRef,
+		SourceVisible: true, IssuedAt: issuedAt,
+		SourceVisibleUntil: issuedAt.Add(db.WorkspaceLaunchSpecVisibilityLease),
+	}
+	if ws.ItemType == db.WorkspaceItemTypePullRequest {
+		pull, readErr := database.GetMergeRequestByRepoIDAndNumber(
+			t.Context(), repoID, ws.ItemNumber,
+		)
+		require.NoError(t, readErr)
+		require.NotNil(t, pull)
+		spec.Pull = &db.WorkspaceLaunchPull{
+			HeadBranch: pull.HeadBranch, HeadRepoKind: "same_repo",
+			SnapshotRevision: pull.SnapshotRevision,
+		}
+	}
+	require.NoError(t, database.PutWorkspaceLaunchSpec(t.Context(), ws.ID, spec))
 }
 
 func seedServerWorkspaceMR(t *testing.T, d *db.DB, repoID int64) {

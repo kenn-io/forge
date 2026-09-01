@@ -175,6 +175,32 @@ it.layer(ProviderEventsTest)("workspace lifecycle events", (it) => {
   );
 });
 
+it.layer(ProviderEventsTest)("hub availability events", (it) => {
+  it.effect("decodes hub connection state on the existing provider stream", () =>
+    Effect.gen(function* () {
+      const probe = yield* ProviderEventsProbe;
+      const events = yield* Queue.unbounded<ProviderEvent>();
+      const fiber = yield* Effect.forkChild(
+        providerEventsProgram({
+          url: "/api/v1/events",
+          onEvent: (event) => Queue.offer(events, event),
+        }),
+      );
+      const source = yield* probe.awaitSource;
+      emitOpen(source);
+
+      emitFrame(source, "hub_connection_changed", { connected: false }, "4");
+
+      const event = yield* Queue.take(events);
+      assert.strictEqual(event.type, "hub_connection_changed");
+      if (event.type === "hub_connection_changed") {
+        assert.isFalse(event.payload.connected);
+      }
+      yield* Fiber.interrupt(fiber);
+    }),
+  );
+});
+
 it.layer(ProviderEventsTest)("provider event acknowledgement", (it) => {
   it.effect("advances the checkpoint only after event handling succeeds", () =>
     Effect.gen(function* () {
@@ -396,7 +422,7 @@ it.layer(ProviderEventsTest)("provider event checkpoint monotonicity", (it) => {
 });
 
 it.layer(ProviderEventsTest)("provider event consequence recovery", (it) => {
-  it.effect("replays a transient API consequence before advancing its checkpoint", () =>
+  it.effect("replays hub unavailability before advancing its checkpoint", () =>
     Effect.gen(function* () {
       const probe = yield* ProviderEventsProbe;
       const attempts = yield* Ref.make(0);
@@ -412,9 +438,9 @@ it.layer(ProviderEventsTest)("provider event consequence recovery", (it) => {
                       new ApiProblemError({
                         operation: "refresh pull request after provider event",
                         problem: {
-                          code: "upstreamError",
-                          detail: "provider is temporarily unavailable",
-                          title: "Upstream unavailable",
+                          code: "hubUnavailable",
+                          detail: "the federation hub is temporarily unavailable",
+                          title: "Hub unavailable",
                           type: "about:blank",
                         },
                       }),

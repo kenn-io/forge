@@ -17,8 +17,24 @@ func (s *Handler) autoAssignWorkspaceItem(
 	issue bool,
 	suppress bool,
 ) error {
-	if suppress || !s.configSnapshot().AutoAssignOnCreate || s.syncer == nil {
+	if suppress || !s.configSnapshot().AutoAssignOnCreate {
 		return nil
+	}
+	return s.applyWorkspaceAutoAssignment(ctx, repo, number, issue)
+}
+
+func (s *Handler) applyWorkspaceAutoAssignment(
+	ctx context.Context, repo db.Repo, number int, issue bool,
+) error {
+	if s.syncer == nil {
+		return nil
+	}
+	if s.providerWriteGate != nil {
+		release, err := s.providerWriteGate.Admit(ctx)
+		if err != nil {
+			return err
+		}
+		defer release()
 	}
 	if issue {
 		stored, err := s.db.GetVisibleIssueByRepoIDAndNumber(ctx, repo.ID, number)
@@ -71,6 +87,49 @@ func (s *Handler) autoAssignWorkspaceItem(
 		return s.assignIssueWorkspaceUser(ctx, repo, ref, number, username, registry, mutator)
 	}
 	return s.assignPullWorkspaceUser(ctx, repo, ref, number, username, registry, mutator)
+}
+
+func (s *Handler) autoAssignWorkspaceItemForRoute(
+	ctx context.Context,
+	request ProviderWorkspaceItemRequest,
+	suppress bool,
+) error {
+	if suppress || !s.configSnapshot().AutoAssignOnCreate {
+		return nil
+	}
+	if s.providerWorkspaceAutomation != nil {
+		return s.providerWorkspaceAutomation.AutoAssignWorkspaceItem(ctx, request)
+	}
+	return s.AutoAssignProviderWorkspaceItem(ctx, request)
+}
+
+// AutoAssignProviderWorkspaceItem applies hub-owned assignment policy.
+// Federation callers reach it through the provider plane; local workspaces use
+// the same service directly.
+func (s *Handler) AutoAssignProviderWorkspaceItem(
+	ctx context.Context, request ProviderWorkspaceItemRequest,
+) error {
+	var issue bool
+	switch request.ItemType {
+	case db.WorkspaceItemTypePullRequest:
+	case db.WorkspaceItemTypeIssue:
+		issue = true
+	default:
+		return httpapi.BadRequest(
+			httpapi.CodeValidationError,
+			"workspace item type must be pull_request or issue", nil,
+		)
+	}
+	repo, err := s.lookupRepoByProviderRoute(
+		ctx, request.Repository.Provider, request.Repository.PlatformHost,
+		request.Repository.Owner, request.Repository.Name,
+	)
+	if err != nil {
+		return providerRouteLookupError(err)
+	}
+	return s.applyWorkspaceAutoAssignment(
+		ctx, *repo, request.ItemNumber, issue,
+	)
 }
 
 func (s *Handler) assignPullWorkspaceUser(

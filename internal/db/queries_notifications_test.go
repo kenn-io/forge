@@ -383,6 +383,92 @@ func TestNotificationsQueueReadPropagation(t *testing.T) {
 	assert.Empty(readItems[0].SourceAckError)
 }
 
+func TestSpokePreparationDrainsOnlyFrozenNotificationAckGeneration(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	seedNotificationRepo(t, database)
+	now := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+	first := notificationFixture("before-quiesce", "mention", now)
+	second := notificationFixture("after-freeze", "mention", now.Add(time.Second))
+	require.NoError(database.UpsertNotifications(t.Context(), []Notification{first, second}))
+	items, err := database.ListNotifications(t.Context(), ListNotificationsOpts{State: "unread"})
+	require.NoError(err)
+	require.Len(items, 2)
+	ids := make(map[string]int64, len(items))
+	for _, item := range items {
+		ids[item.PlatformNotificationID] = item.ID
+	}
+	_, err = database.QueueNotificationIDsRead(
+		t.Context(), []int64{ids["before-quiesce"]}, now.Add(time.Minute),
+	)
+	require.NoError(err)
+	_, err = database.BeginSpokePreparation(t.Context(), spokePreparationBindingForTest())
+	require.NoError(err)
+	generation, err := database.FreezeSpokePreparationAckGeneration(t.Context())
+	require.NoError(err)
+	assert.Equal(int64(1), generation)
+
+	// The HTTP admission gate prevents this in production. A later DB-level
+	// admission remains visible as a blocker but is never mistaken for work
+	// admitted into the frozen drain generation.
+	_, err = database.QueueNotificationIDsRead(
+		t.Context(), []int64{ids["after-freeze"]}, now.Add(2*time.Minute),
+	)
+	require.NoError(err)
+	queued, err := database.ListQueuedNotificationAcks(
+		t.Context(), "github", "github.com", 10, now.Add(3*time.Minute),
+	)
+	require.NoError(err)
+	require.Len(queued, 1)
+	assert.Equal("before-quiesce", queued[0].PlatformNotificationID)
+	undrained, err := database.CountUndrainedNotificationAcks(t.Context())
+	require.NoError(err)
+	assert.Equal(1, undrained)
+}
+
+func TestSpokePreparationCountsUndeliverableNotificationAcks(t *testing.T) {
+	require := require.New(t)
+	database := openTestDB(t)
+	repoID := seedNotificationRepo(t, database)
+	now := time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
+	require.NoError(database.UpsertNotifications(
+		t.Context(), []Notification{notificationFixture("dead-letter", "mention", now)},
+	))
+	items, err := database.ListNotifications(t.Context(), ListNotificationsOpts{State: "unread"})
+	require.NoError(err)
+	require.Len(items, 1)
+	_, err = database.QueueNotificationIDsRead(
+		t.Context(), []int64{items[0].ID}, now.Add(time.Minute),
+	)
+	require.NoError(err)
+	_, err = database.BeginSpokePreparation(t.Context(), spokePreparationBindingForTest())
+	require.NoError(err)
+	_, err = database.FreezeSpokePreparationAckGeneration(t.Context())
+	require.NoError(err)
+	queued, err := database.ListQueuedNotificationAcks(
+		t.Context(), "github", "github.com", 10, now.Add(2*time.Minute),
+	)
+	require.NoError(err)
+	require.Len(queued, 1)
+	require.NoError(database.MarkNotificationAckPropagationResult(
+		t.Context(), queued[0].ID, queued[0].SourceAckQueuedAt,
+		queued[0].SourceUpdatedAt, nil, "max_attempts_exceeded", nil,
+	))
+	repo, err := database.GetRepoByID(t.Context(), repoID)
+	require.NoError(err)
+	require.NotNil(repo)
+	_, err = database.DeactivateRepositoryObservation(
+		t.Context(), repo.Platform, repo.PlatformHost, repo.PlatformRepoID,
+		now.Add(3*time.Minute),
+	)
+	require.NoError(err)
+
+	undrained, err := database.CountUndrainedNotificationAcks(t.Context())
+	require.NoError(err)
+	require.Equal(1, undrained)
+}
+
 func TestReadPropagationGenerationPreservesReadStateForStaleUnreadSync(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

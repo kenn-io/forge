@@ -14,6 +14,7 @@ import (
 
 type appStatus struct {
 	Host                string `json:"host"`
+	Role                string `json:"role"`
 	AppID               int64  `json:"app_id"`
 	Slug                string `json:"slug"`
 	Owner               string `json:"owner,omitempty"`
@@ -51,12 +52,16 @@ func runList(args []string, env *appEnv) error {
 	for _, app := range cfg.GitHubApps {
 		status := appStatus{
 			Host:                app.Host,
+			Role:                app.Role,
 			AppID:               app.AppID,
 			Slug:                app.Slug,
 			Owner:               app.Owner,
 			OwnerType:           app.OwnerType,
 			InstallationID:      app.InstallationID,
 			InstallationAccount: app.InstallationAccount,
+		}
+		if status.Role == "" {
+			status.Role = config.GitHubAppRoleSync
 		}
 		if err := env.fillLiveStatus(ctx, cfg, app, &status); err != nil {
 			status.Error = err.Error()
@@ -70,7 +75,7 @@ func runList(args []string, env *appEnv) error {
 		return enc.Encode(statuses)
 	}
 	w := tabwriter.NewWriter(env.stdout, 2, 4, 2, ' ', 0)
-	fmt.Fprintln(w, "HOST\tAPP ID\tSLUG\tOWNER\tINSTALLATION\tACCOUNT\tRATE (CORE)\tSTATUS")
+	fmt.Fprintln(w, "HOST\tROLE\tAPP ID\tSLUG\tOWNER\tINSTALLATION\tACCOUNT\tRATE (CORE)\tSTATUS")
 	for _, s := range statuses {
 		rate, owner, install, account := "-", "-", "-", "-"
 		if s.Owner != "" {
@@ -91,18 +96,19 @@ func runList(args []string, env *appEnv) error {
 		} else if s.InstallationID == 0 {
 			status = "not installed"
 		}
-		fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			s.Host, s.AppID, s.Slug, owner, install, account, rate, status)
+		fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			s.Host, s.Role, s.AppID, s.Slug, owner, install, account, rate, status)
 	}
 	return w.Flush()
 }
 
 // fillLiveStatus queries GitHub for the app's current installation
 // and, when installed, the rate budget of a freshly minted token.
-// Installations limited to selected repositories are checked against
-// the configured repos: a manually edited or restored config can
-// carry an installation the CLI never verified, and surfacing the gap
-// here beats discovering it as sync-time 404s.
+// Sync installations limited to selected repositories are checked against
+// the configured repos: a manually edited or restored config can carry an
+// installation the CLI never verified, and surfacing the gap here beats
+// discovering it as sync-time 404s. Archive installations intentionally allow
+// partial coverage and use normal routes elsewhere.
 func (env *appEnv) fillLiveStatus(
 	ctx context.Context, cfg *config.Config, app config.GitHubAppConfig, status *appStatus,
 ) error {
@@ -142,13 +148,15 @@ func (env *appEnv) fillLiveStatus(
 		if err != nil {
 			return err
 		}
-		if missing := missingSelectedRepos(
-			cfg, app.Host, install.Account.Login, accessible,
-		); len(missing) > 0 {
-			return fmt.Errorf(
-				"installation does not cover %s; edit its repository access on GitHub",
-				strings.Join(missing, ", "),
-			)
+		if app.Role != config.GitHubAppRoleArchive {
+			if missing := missingSelectedRepos(
+				cfg, app.Host, install.Account.Login, accessible,
+			); len(missing) > 0 {
+				return fmt.Errorf(
+					"installation does not cover %s; edit its repository access on GitHub",
+					strings.Join(missing, ", "),
+				)
+			}
 		}
 	}
 	return nil

@@ -21,7 +21,7 @@ import (
 
 const (
 	responseCompressionMinSize  = 1024
-	responseCompressionMaxBytes = 1 << 20
+	responseCompressionMaxBytes = 4 << 20
 )
 
 type bufferedHumaContext struct {
@@ -196,7 +196,8 @@ func shouldBypassCompression(ctx huma.Context, r *http.Request) bool {
 		r.Header.Get("Upgrade") != "" {
 		return true
 	}
-	if ctx.Operation() != nil && ctx.Operation().Path == "/events" {
+	if ctx.Operation() != nil && (ctx.Operation().Path == "/events" ||
+		ctx.Operation().Path == "/federation/events") {
 		return true
 	}
 	return false

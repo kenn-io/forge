@@ -92,6 +92,40 @@ describe("renderMarkdown task lists", () => {
     expect(html).toContain('data-external-url="https://github.com/acme/tools/issues/13"');
   });
 
+  it("turns pasted provider item URLs into in-app item references", async () => {
+    const html = await renderMarkdown(
+      "See https://github.com/acme/widgets/pull/7 and [the fix](https://github.com/acme/tools/issues/13) but not https://github.com/acme/widgets/commit/abc or https://example.com/acme/widgets/pull/9",
+      { provider: "github", platformHost: "github.com", owner: "acme", name: "widgets", repoPath: "acme/widgets" },
+    );
+
+    expect(html).toContain('class="item-ref" href="/pulls/github/acme/widgets/7"');
+    expect(html).toContain('data-item-type="pr"');
+    expect(html).toContain('data-external-url="https://github.com/acme/widgets/pull/7"');
+    expect(html).toContain('class="item-ref" href="/issues/github/acme/tools/13"');
+    expect(html).toContain(">the fix</a>");
+    expect(html).toContain('href="https://github.com/acme/widgets/commit/abc"');
+    expect(html).toContain('href="https://example.com/acme/widgets/pull/9"');
+    expect(html).not.toContain('data-number="9"');
+  });
+
+  it("turns pasted gitlab merge request and issue URLs into item references", async () => {
+    const html = await renderMarkdown(
+      "See https://gitlab.example.com/group/sub/project/-/merge_requests/5 and https://gitlab.example.com/group/project/-/issues/6",
+      {
+        provider: "gitlab",
+        platformHost: "gitlab.example.com",
+        owner: "group",
+        name: "project",
+        repoPath: "group/project",
+      },
+    );
+
+    expect(html).toContain('href="/host/gitlab.example.com/pulls/gitlab/group%2Fsub/project/5"');
+    expect(html).toContain('data-repo-path="group/sub/project"');
+    expect(html).toContain('data-item-type="pr"');
+    expect(html).toContain('href="/host/gitlab.example.com/issues/gitlab/group/project/6"');
+  });
+
   it("renders gitlab issue and merge request references with provider fallback links", async () => {
     const html = await renderMarkdown("See #41 and group/project#42 and group/project!43 and !44", {
       provider: "gitlab",

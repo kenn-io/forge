@@ -1,8 +1,14 @@
-# kenn-forge
+---
+title: Overview
+---
 
-kenn-forge gives maintainers one local console for repository activity, pull
-requests, issues, reviews, and working sessions. It syncs provider data into
+# Kenn Forge
+
+Forge gives you one local console for repository activity, pull requests,
+issues, reviews, and agent working sessions. It syncs provider data into
 SQLite and serves the UI from a single binary.
+
+For a short visual introduction, start with the [Guide to Forge](/guide/).
 
 <div class="docs-actions">
   <a class="md-button md-button--primary" data-download-current href="https://github.com/kenn-io/forge/releases">Download latest release</a>
@@ -11,7 +17,7 @@ SQLite and serves the UI from a single binary.
 
 <p class="docs-download-meta"><span data-download-version></span>Linux, macOS, and Windows</p>
 
-Use kenn-forge to answer four daily questions:
+Use Forge to answer four daily questions:
 
 - What changed across the repositories I maintain?
 - Which pull requests and issues need attention?
@@ -19,8 +25,8 @@ Use kenn-forge to answer four daily questions:
 - Which branch or task should I open locally?
 
 <figure class="workflow-shot">
-  <img class="workflow-shot__image workflow-shot__image--light" src="assets/generated/maintainer-overview-light.svg" alt="kenn-forge Activity with a selected pull request, live workspace, and coding-agent session in light mode">
-  <img class="workflow-shot__image workflow-shot__image--dark" src="assets/generated/maintainer-overview-dark.svg" alt="kenn-forge Activity with a selected pull request, live workspace, and coding-agent session in dark mode">
+  <img class="workflow-shot__image workflow-shot__image--light" src="assets/generated/maintainer-overview-light.svg" alt="Forge Activity with a selected pull request, live workspace, and coding-agent session in light mode">
+  <img class="workflow-shot__image workflow-shot__image--dark" src="assets/generated/maintainer-overview-dark.svg" alt="Forge Activity with a selected pull request, live workspace, and coding-agent session in dark mode">
   <figcaption>Activity keeps the selected pull request beside its live workspace and coding-agent session.</figcaption>
 </figure>
 
@@ -66,5 +72,5 @@ than in a separate mode.
 - [Historical activity archives](archive.md)
 - [Federated fleets](federated-fleet.md)
 
-kenn-forge runs on your machine. Your provider, Kata daemons, and local files
+Forge runs on your machine. Your provider, Kata daemons, and local files
 remain the source of truth.

@@ -45,6 +45,27 @@ func TestMetadataMCPListenAddrAtomicWriteRoundTrip(t *testing.T) {
 	require.Equal(meta, got)
 }
 
+func TestMetadataPersistsNodeID(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	meta := Metadata{
+		PID:    4242,
+		NodeID: "0123456789abcdef0123456789abcdef",
+	}
+
+	require.NoError(writeMetadata(dir, meta))
+
+	data, err := os.ReadFile(MetadataPath(dir))
+	require.NoError(err)
+	var encoded map[string]any
+	require.NoError(json.Unmarshal(data, &encoded))
+	require.Equal(meta.NodeID, encoded["node_id"])
+
+	got, err := readMetadata(dir)
+	require.NoError(err)
+	require.Equal(meta, got)
+}
+
 func TestMetadataWriteOverwritesStaleTempFile(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()

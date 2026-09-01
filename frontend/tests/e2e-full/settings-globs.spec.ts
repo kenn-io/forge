@@ -132,7 +132,8 @@ test("settings imports a selected subset from a repository glob", async ({ page 
   await apiOption.click();
   await expect(apiOption.locator("input[type='checkbox']")).toBeChecked();
   await page.keyboard.press("Escape");
-  await expect(selector).toContainText("github.com/import-lab/api");
+  await expect(selector).toContainText("import-lab/api");
+  await expect(selector).toHaveAttribute("aria-label", "Select repository: github/github.com/import-lab/api");
 
   await page.goto(`${isolatedServer!.info.base_url}/settings`);
   await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
@@ -413,7 +414,7 @@ test("fleet and activity settings stay ordered and persist through the real serv
   await page.goto(`${isolatedServer!.info.base_url}/settings`);
   await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
   await page.getByRole("button", { name: /^Fleet federation / }).click();
-  await page.getByLabel("Local fleet key").fill("test-hub");
+  await page.getByLabel("Member request timeout").fill("4s");
   await page.getByRole("button", { name: "Save fleet federation" }).click();
   await fleetCommitted;
 
@@ -434,16 +435,16 @@ test("fleet and activity settings stay ordered and persist through the real serv
       expect(response.ok()).toBe(true);
       const settings = (await response.json()) as {
         activity: { hide_bots: boolean };
-        fleet: { key?: string };
+        fleet: { peer_timeout?: string };
       };
-      return `${settings.fleet.key ?? ""}:${settings.activity.hide_bots}`;
+      return `${settings.fleet.peer_timeout ?? ""}:${settings.activity.hide_bots}`;
     })
-    .toBe(`test-hub:${previousHideBots !== "true"}`);
+    .toBe(`4s:${previousHideBots !== "true"}`);
 
   await page.reload();
   await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
   await page.getByRole("button", { name: /^Fleet federation / }).click();
-  await expect(page.getByLabel("Local fleet key")).toHaveValue("test-hub");
+  await expect(page.getByLabel("Member request timeout")).toHaveValue("4s");
 });
 
 test("repository import can hide forks and private repositories before adding", async ({ page }) => {

@@ -170,7 +170,7 @@ func TestWorkflowCatalogRoutesUseStableRepositoryIdentity(t *testing.T) {
 		workflow := body["workflows"].([]any)[0].(map[string]any)
 		assert.Equal("definition-v1", workflow["definition_sha"])
 		assert.Equal(false, workflow["inputs"].([]any)[1].(map[string]any)["default"])
-		assert.Equal(float64(2), workflow["inputs"].([]any)[2].(map[string]any)["default"])
+		assert.InDelta(float64(2), workflow["inputs"].([]any)[2].(map[string]any)["default"], 0)
 		assert.Equal("production", body["environments"].([]any)[0].(map[string]any)["name"])
 	}
 }
@@ -294,7 +294,8 @@ func TestWorkflowRunRoutesRequireWorkflowIDInSchema(t *testing.T) {
 func TestWorkflowRunsAndJobsPreserveProviderContracts(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	started := time.Date(2026, 8, 27, 14, 30, 0, 0, time.FixedZone("CEST", 2*60*60))
+	started, err := time.Parse(time.RFC3339, "2026-08-27T14:30:00+02:00")
+	require.NoError(err)
 	provider := &workflowTestProvider{
 		caps: platform.Capabilities{ReadWorkflows: true, ReadWorkflowRuns: true, WorkflowDispatch: true},
 		runs: platform.Page[platform.WorkflowRun]{Items: []platform.WorkflowRun{{ID: "41", WorkflowID: "release.yml", RunNumber: 7, CreatedAt: started, UpdatedAt: started.Add(time.Minute)}}, NextCursor: "cursor-2", Exhausted: false},

@@ -2,7 +2,9 @@ package server
 
 import (
 	"io/fs"
+	"mime"
 	"net/http"
+	"path"
 	"strings"
 )
 
@@ -67,6 +69,10 @@ func newSPAAssetHandler(
 			if strings.HasPrefix(r.URL.Path, "/assets/") {
 				w.Header().Set("Cache-Control",
 					"public, max-age=31536000, immutable")
+				addVaryHeader(w.Header(), "Accept-Encoding")
+				if serveCompressedAsset(w, r, frontend, name) {
+					return
+				}
 			}
 			fileServer.ServeHTTP(w, r)
 			return
@@ -81,6 +87,39 @@ func newSPAAssetHandler(
 		}
 		serveIndex(w, r)
 	})
+}
+
+func serveCompressedAsset(
+	w http.ResponseWriter,
+	r *http.Request,
+	frontend fs.FS,
+	name string,
+) bool {
+	if r.Method != http.MethodGet || r.Header.Get("Range") != "" {
+		return false
+	}
+	encoding := selectResponseEncoding(r.Header.Get("Accept-Encoding"))
+	if encoding == "" {
+		return false
+	}
+	body, err := fs.ReadFile(frontend, name)
+	if err != nil {
+		return false
+	}
+	contentType := mime.TypeByExtension(path.Ext(name))
+	if contentType == "" {
+		contentType = http.DetectContentType(body)
+	}
+	if !isCompressibleContentType(contentType) {
+		return false
+	}
+
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Encoding", encoding)
+	w.Header().Del("Content-Length")
+	w.WriteHeader(http.StatusOK)
+	_ = writeCompressedBody(w, encoding, body)
+	return true
 }
 
 func isWorkspaceEmbedRoute(path string) bool {

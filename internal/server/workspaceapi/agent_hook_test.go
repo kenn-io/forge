@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
@@ -15,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/agentactivity"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/workspace"
 )
@@ -39,6 +41,19 @@ func TestReceiveAgentHookRecordsActivityAndGeneratesClaudeContext(t *testing.T) 
 		TmuxSession:     "kenn-forge-ws-agent-hook",
 		Status:          "ready",
 	}))
+	require.NoError(database.PutWorkspaceLaunchSpec(
+		t.Context(), "ws-agent-hook", workspaceLaunchSpecForRequest(
+			providerplane.WorkspaceLaunchRequest{
+				Repository: providerplane.RepositoryRoute{
+					Provider: "github", PlatformHost: "github.com",
+					Owner: "acme", Name: "widget",
+				},
+				ItemType: db.WorkspaceItemTypeIssue, ItemNumber: 42,
+				ItemKey: "42", GitHeadRef: "kenn-forge/issue-42",
+			},
+			time.Now().UTC(),
+		),
+	))
 	require.NoError(os.WriteFile(
 		filepath.Join(worktree, "CLAUDE.local.md"),
 		[]byte("private user context that must never be forwarded\n"), 0o644,

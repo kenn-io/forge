@@ -43,6 +43,11 @@ Interactive surfaces must agree on which item is selected.
 - Use shared named route/item reference types from
   `frontend/src/lib/stores/router.svelte.ts` instead of repeating anonymous
   `{ owner, name, number }`-style shapes.
+- Markdown cross-references stay in-app on every surface: `#N`, `owner/repo#N`,
+  and pasted provider item URLs on the rendering repository's host all render as
+  `item-ref` anchors that resolve through the shared click handler, with the
+  provider URL kept as the untracked-repo fallback
+  (`frontend/src/lib/utils/item-reference.ts::parseProviderItemURL`).
 - When a view changes from item A to item B, reset transient action state that
   could otherwise submit or render against the wrong item.
 - A response confirming a server-side outcome (a completed delete or create)
@@ -198,6 +203,10 @@ Examples of transient state that should usually reset on identity change:
 
 Persisted controls must state their scope clearly.
 
+- Switching Forges is ordinary cross-origin link navigation. Do not keep a
+  fleet-global selected host or retarget the link in JavaScript: every open tab
+  and Forge origin owns its own route, filters, terminals, cursors, and browser
+  storage (`frontend/src/lib/components/layout/ForgeSelector.svelte`).
 - Browser-local preferences belong in `localStorage` only when the behavior is
   intentionally per-browser and not worth server settings.
 - `Involves me` is three independent browser-local preferences for Pulls, Issues, and
@@ -296,7 +305,7 @@ Persisted controls must state their scope clearly.
 - An idle settings queue must rebase from authoritative store values, excluding
   fields still owned by live preview; otherwise reloads are erased or drafts leak
   into unrelated saves (`frontend/src/lib/stores/terminal-settings-persistence.ts::settingsWithoutPreview`).
-- Settings hydration must share the mutation coordinator; a stale read must
+- Settings hydration must share the mutation hub; a stale read must
   preserve pending or newly confirmed fields and rebase active previews while
   retaining only generation-owned drafts
   (`frontend/src/lib/stores/terminal-settings-persistence.ts::hydrateTerminalSettings`).
@@ -390,8 +399,12 @@ Keyboard handlers must have one clear owner for each key press.
   moves focus or changes the active pane. Mark actual focus with a subtle inset
   border without replacing control focus styling. Paint that marker as part of
   the pane itself, below descendants; a high-z generated overlay cuts through
-  popovers trapped in descendant stacking contexts
-  (`frontend/src/lib/components/shared/TabbedPanelTree.svelte`).
+  popovers trapped in descendant stacking contexts. Because it paints below
+  descendants, the leaf must reserve the marker's pixels: a constant 1px leaf
+  padding keeps every child inside the content box while the inset shadow
+  paints in the outer ring of the padding box, so opaque children (tab strip,
+  diff surfaces, terminal canvases) can never cover it and no z-index is
+  involved (`frontend/src/lib/components/shared/TabbedPanelTree.svelte`).
   A dedicated Files route keeps global diff shortcuts only while no pane or
   external dock has live focus; this fallback never paints active-pane styling
   (`frontend/src/lib/views/PRListView.svelte::diffKeyboardActive`).

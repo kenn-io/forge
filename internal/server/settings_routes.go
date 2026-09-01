@@ -2,13 +2,111 @@ package server
 
 import (
 	"context"
+	"errors"
 	"net/http"
+	"slices"
 
 	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/server/httpapi"
 
 	"github.com/danielgtaylor/huma/v2"
 )
+
+func (s *Server) persistFleetMember(
+	ctx context.Context, member config.FleetMember,
+) error {
+	return s.mutatePersistedFleet(ctx, func(fleet *config.Fleet) {
+		for index := range fleet.Members {
+			if fleet.Members[index].NodeID == member.NodeID {
+				fleet.Members[index] = member
+				return
+			}
+		}
+		fleet.Members = append(fleet.Members, member)
+	})
+}
+
+func (s *Server) persistHubBinding(
+	ctx context.Context, hub config.FleetHub,
+) error {
+	return s.mutatePersistedFleet(ctx, func(fleet *config.Fleet) {
+		fleet.Hub = &hub
+	})
+}
+
+func (s *Server) resetPreparedSpokeBinding(ctx context.Context) error {
+	return s.mutatePersistedFleet(ctx, func(fleet *config.Fleet) {
+		fleet.Role = config.FleetRoleHub
+		fleet.Hub = nil
+	})
+}
+
+func (s *Server) removeFleetMember(ctx context.Context, nodeID string) error {
+	return s.mutatePersistedFleet(ctx, func(fleet *config.Fleet) {
+		fleet.Members = slices.DeleteFunc(
+			fleet.Members,
+			func(member config.FleetMember) bool { return member.NodeID == nodeID },
+		)
+	})
+}
+
+func (s *Server) mutatePersistedFleet(
+	ctx context.Context, mutate func(*config.Fleet),
+) error {
+	return s.mutatePersistedFleetChecked(ctx, func(fleet *config.Fleet) error {
+		mutate(fleet)
+		return nil
+	})
+}
+
+func (s *Server) mutatePersistedFleetChecked(
+	ctx context.Context, mutate func(*config.Fleet) error,
+) error {
+	return s.mutatePersistedFleetCandidateChecked(ctx, false, mutate)
+}
+
+func (s *Server) mutatePersistedEnrollmentFleetChecked(
+	ctx context.Context, mutate func(*config.Fleet) error,
+) error {
+	return s.mutatePersistedFleetCandidateChecked(ctx, true, mutate)
+}
+
+func (s *Server) mutatePersistedFleetCandidateChecked(
+	ctx context.Context,
+	keepEnrollmentHub bool,
+	mutate func(*config.Fleet) error,
+) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if s.cfgPath == "" || s.cfg == nil {
+		return errors.New("fleet settings persistence is unavailable")
+	}
+	s.configReloadMu.Lock()
+	defer s.configReloadMu.Unlock()
+	s.cfgMu.Lock()
+	defer s.cfgMu.Unlock()
+	candidate := cloneReloadedConfig(s.cfg)
+	active := s.activeFleetConfigSnapshotLocked().Fleet
+	candidate.Fleet.Role = active.Role
+	candidate.Fleet.BaseURL = active.BaseURL
+	if !keepEnrollmentHub {
+		candidate.Fleet.Hub = active.Hub
+	}
+	if err := mutate(&candidate.Fleet); err != nil {
+		return err
+	}
+	if err := candidate.Validate(); err != nil {
+		return err
+	}
+	if err := candidate.Save(s.cfgPath); err != nil {
+		return err
+	}
+	s.cfg.Fleet = candidate.Fleet
+	s.applyFleetConfigLocked()
+	return nil
+}
 
 type getSettingsOutput = httpapi.BodyOutput[settingsResponse]
 
@@ -116,43 +214,24 @@ func (s *Server) setActiveWorktree(
 	return &struct{}{}, nil
 }
 
-type fleetSSHPeersBody struct {
-	SSHPeers []config.FleetSSHPeer `json:"ssh_peers" nullable:"false"`
-	// RestartRequired reports whether the persisted peer set differs
-	// from the one the running SSH transport was wired with — the
-	// transport is constructed at startup, so edits apply on the
-	// next daemon start.
-	RestartRequired bool `json:"restart_required"`
-}
-
-type fleetSSHPeersOutput = httpapi.BodyOutput[fleetSSHPeersBody]
-
 type fleetSettingsResponse struct {
-	Enabled         bool                  `json:"enabled"`
-	Key             string                `json:"key,omitempty"`
-	PeerTimeout     string                `json:"peer_timeout,omitempty"`
-	Sessions        config.FleetSessions  `json:"sessions"`
-	Peers           []config.FleetPeer    `json:"peers" nullable:"false"`
-	SSHPeers        []config.FleetSSHPeer `json:"ssh_peers" nullable:"false"`
-	RestartRequired bool                  `json:"restart_required"`
+	Enabled         bool                    `json:"enabled"`
+	Role            config.FleetRole        `json:"role"`
+	Hub             *config.FleetHub        `json:"hub,omitempty"`
+	Members         []config.FleetMember    `json:"members" nullable:"false"`
+	Enrollments     []federation.Enrollment `json:"enrollments" nullable:"false"`
+	PeerTimeout     string                  `json:"peer_timeout,omitempty"`
+	Sessions        config.FleetSessions    `json:"sessions"`
+	RestartRequired bool                    `json:"restart_required"`
 }
 
 type getFleetSettingsOutput = httpapi.BodyOutput[fleetSettingsResponse]
 
 type updateFleetSettingsInput struct {
 	Body struct {
-		Enabled     bool                  `json:"enabled"`
-		Key         string                `json:"key,omitempty"`
-		PeerTimeout string                `json:"peer_timeout,omitempty"`
-		Sessions    config.FleetSessions  `json:"sessions"`
-		Peers       []config.FleetPeer    `json:"peers" nullable:"false"`
-		SSHPeers    []config.FleetSSHPeer `json:"ssh_peers" nullable:"false"`
-	}
-}
-
-type updateFleetSSHPeersInput struct {
-	Body struct {
-		SSHPeers []config.FleetSSHPeer `json:"ssh_peers" nullable:"false"`
+		Enabled     bool                 `json:"enabled"`
+		PeerTimeout string               `json:"peer_timeout,omitempty"`
+		Sessions    config.FleetSessions `json:"sessions"`
 	}
 }
 
@@ -160,18 +239,20 @@ func (s *Server) buildFleetSettingsResponseLocked() fleetSettingsResponse {
 	fleet := s.cfg.Fleet
 	return fleetSettingsResponse{
 		Enabled:         fleet.Enabled,
-		Key:             fleet.Key,
+		Role:            fleet.RoleOrDefault(),
+		Hub:             cloneFleetHub(fleet.Hub),
+		Members:         append([]config.FleetMember{}, fleet.Members...),
+		Enrollments:     append([]federation.Enrollment{}, s.fleetAPI.Enrollments()...),
 		PeerTimeout:     fleet.PeerTimeout,
 		Sessions:        fleet.Sessions,
-		Peers:           cloneFleetPeers(fleet.Peers),
-		SSHPeers:        cloneFleetSSHPeers(fleet.SSHPeers),
 		RestartRequired: s.fleetSettingsRestartRequiredLocked(fleet),
 	}
 }
 
 func (s *Server) fleetSettingsRestartRequiredLocked(fleet config.Fleet) bool {
-	return fleet.Sessions != s.bootCfgSnapshot.FleetSessions ||
-		s.fleetSSHPeersRestartRequired(fleet.SSHPeers)
+	candidate := cloneReloadedConfig(s.cfg)
+	candidate.Fleet = fleet
+	return s.bootCfgSnapshot.restartRequiredFor(&candidate)
 }
 
 // getFleetSettings returns the complete fleet federation settings shape.
@@ -189,9 +270,9 @@ func (s *Server) getFleetSettings(
 	return &getFleetSettingsOutput{Body: out}, nil
 }
 
-// updateFleetSettings replaces the complete fleet federation settings shape.
-// Validation happens against the whole config so key collisions across local,
-// HTTP, and SSH membership stay consistent with file loading.
+// updateFleetSettings changes only operator preferences. Enrollment owns role,
+// hub binding, and membership, so an ordinary settings save cannot
+// overwrite those lifecycle fields with a stale browser snapshot.
 func (s *Server) updateFleetSettings(
 	_ context.Context, input *updateFleetSettingsInput,
 ) (*getFleetSettingsOutput, error) {
@@ -203,18 +284,11 @@ func (s *Server) updateFleetSettings(
 	s.configReloadMu.Lock()
 	defer s.configReloadMu.Unlock()
 
-	next := config.Fleet{
-		Enabled:     input.Body.Enabled,
-		Key:         input.Body.Key,
-		PeerTimeout: input.Body.PeerTimeout,
-		Sessions:    input.Body.Sessions,
-		Peers:       cloneFleetPeers(input.Body.Peers),
-		SSHPeers:    cloneFleetSSHPeers(input.Body.SSHPeers),
-	}
-
 	s.cfgMu.Lock()
 	candidate := cloneReloadedConfig(s.cfg)
-	candidate.Fleet = next
+	candidate.Fleet.Enabled = input.Body.Enabled
+	candidate.Fleet.PeerTimeout = input.Body.PeerTimeout
+	candidate.Fleet.Sessions = input.Body.Sessions
 	if err := candidate.Validate(); err != nil {
 		s.cfgMu.Unlock()
 		return nil, httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
@@ -230,76 +304,12 @@ func (s *Server) updateFleetSettings(
 	return &getFleetSettingsOutput{Body: out}, nil
 }
 
-// getFleetSSHPeers lists the configured ssh fleet peers.
-func (s *Server) getFleetSSHPeers(
-	_ context.Context, _ *struct{},
-) (*fleetSSHPeersOutput, error) {
-	if s.cfgPath == "" {
-		return nil, httpapi.NotFound(
-			httpapi.CodeSettingsUnavailable, "settings not available", nil,
-		)
+func cloneFleetHub(in *config.FleetHub) *config.FleetHub {
+	if in == nil {
+		return nil
 	}
-	s.cfgMu.Lock()
-	peers := append(
-		[]config.FleetSSHPeer(nil), s.cfg.Fleet.SSHPeers...,
-	)
-	s.cfgMu.Unlock()
-	return &fleetSSHPeersOutput{Body: fleetSSHPeersBody{
-		SSHPeers:        peers,
-		RestartRequired: s.fleetSSHPeersRestartRequired(peers),
-	}}, nil
-}
-
-// updateFleetSSHPeers replaces the configured ssh peer set. The set
-// is validated as a whole and persisted before updating live config.
-func (s *Server) updateFleetSSHPeers(
-	_ context.Context, input *updateFleetSSHPeersInput,
-) (*fleetSSHPeersOutput, error) {
-	if s.cfgPath == "" {
-		return nil, httpapi.NotFound(
-			httpapi.CodeSettingsUnavailable, "settings not available", nil,
-		)
-	}
-	s.configReloadMu.Lock()
-	defer s.configReloadMu.Unlock()
-	next := append(
-		[]config.FleetSSHPeer(nil), input.Body.SSHPeers...,
-	)
-	s.cfgMu.Lock()
-	candidate := cloneReloadedConfig(s.cfg)
-	candidate.Fleet.SSHPeers = next
-	if err := candidate.Validate(); err != nil {
-		s.cfgMu.Unlock()
-		return nil, httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
-	}
-	if err := candidate.Save(s.cfgPath); err != nil {
-		s.cfgMu.Unlock()
-		return nil, httpapi.Internal("save config: " + err.Error())
-	}
-	s.cfg.Fleet.SSHPeers = candidate.Fleet.SSHPeers
-	persisted := append([]config.FleetSSHPeer(nil), candidate.Fleet.SSHPeers...)
-	s.cfgMu.Unlock()
-	return &fleetSSHPeersOutput{Body: fleetSSHPeersBody{
-		SSHPeers:        persisted,
-		RestartRequired: s.fleetSSHPeersRestartRequired(persisted),
-	}}, nil
-}
-
-// fleetSSHPeersRestartRequired compares the persisted peer set with
-// the one the running transport was constructed from.
-func (s *Server) fleetSSHPeersRestartRequired(
-	persisted []config.FleetSSHPeer,
-) bool {
-	running := s.fleetAPI.SSHPeers()
-	if len(persisted) != len(running) {
-		return len(persisted) != 0 || len(running) != 0
-	}
-	for i := range persisted {
-		if persisted[i] != running[i] {
-			return true
-		}
-	}
-	return false
+	clone := *in
+	return &clone
 }
 
 func (s *Server) registerSettingsAPI(api huma.API) {
@@ -317,20 +327,6 @@ func (s *Server) registerSettingsAPI(api huma.API) {
 		Summary:     "Update fleet settings",
 		Tags:        []string{"Settings"},
 	}, s.updateFleetSettings)
-	huma.Register(api, huma.Operation{
-		OperationID: "get-fleet-ssh-peers",
-		Method:      http.MethodGet,
-		Path:        "/settings/fleet/ssh-peers",
-		Summary:     "List SSH fleet peers",
-		Tags:        []string{"Settings"},
-	}, s.getFleetSSHPeers)
-	huma.Register(api, huma.Operation{
-		OperationID: "update-fleet-ssh-peers",
-		Method:      http.MethodPut,
-		Path:        "/settings/fleet/ssh-peers",
-		Summary:     "Replace SSH fleet peers",
-		Tags:        []string{"Settings"},
-	}, s.updateFleetSSHPeers)
 	huma.Register(api, huma.Operation{
 		OperationID:   "set-active-worktree",
 		Method:        http.MethodPut,

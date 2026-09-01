@@ -2107,7 +2107,10 @@ func TestWorkflowTransportShape(t *testing.T) {
 		w.Header().Set("X-RateLimit-Limit", "5000")
 		w.Header().Set("X-RateLimit-Remaining", "4800")
 		var body map[string]any
-		require.NoError(json.NewDecoder(r.Body).Decode(&body))
+		if !assert.NoError(json.NewDecoder(r.Body).Decode(&body)) {
+			http.Error(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
 		dispatchBodies = append(dispatchBodies, body)
 		dispatchCount++
 		if dispatchCount == 1 {

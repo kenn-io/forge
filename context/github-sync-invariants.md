@@ -15,6 +15,11 @@ and provider capability rules, start with
 - Prevent review-only regressions around `platform_host`, head-SHA drift,
   timeline parity, and fallback fetch paths.
 
+GitHub API clients, sync, quota tracking, and mutations exist only on a
+hub; spokes retain lazy smart-HTTP Git credentials only. `--disable-sync`
+suppresses hub refresh without removing foreground provider operations
+(`cmd/kenn-forge/provider_startup.go::buildServeControlPlanes`).
+
 ## Identity Rules
 
 GitHub entities in kenn-forge are not identified by owner/name/number alone.
@@ -110,7 +115,7 @@ For pull requests, that means:
   provider snapshot with authoritative head-repository data clears that marker
   (`internal/github/sync.go::CommitMergeRequestParentSnapshot`,
   `internal/db/queries.go::UpsertRepoByProviderID`,
-  `internal/workspace/manager.go::RefreshWorkspaceHeadRepoSnapshot`).
+  `internal/github/sync.go::reclassifyWorkspaceHeadRepoTrustUnderRepositoryReconciliationRead`).
 
 ## Timeline Event Rules
 

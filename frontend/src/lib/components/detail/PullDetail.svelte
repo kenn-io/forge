@@ -39,7 +39,7 @@
   import { moveTaskListItem, toggleTaskListItem } from "../../utils/task-list.js";
   import type { ApplySuggestionRequest } from "../../utils/markdown-suggestions.js";
   import { firstUnavailableGate, operationGate } from "./operation-gates.js";
-  import { FitStages, copyToClipboard, formatRelativeTime } from "@kenn-io/kit-ui";
+  import { AdaptiveActionGrid, FitStages, copyToClipboard, formatRelativeTime } from "@kenn-io/kit-ui";
   import EventTimeline from "./EventTimeline.svelte";
   import CollapsibleDescription from "./CollapsibleDescription.svelte";
   import DetailActivityViewMenu from "./DetailActivityViewMenu.svelte";
@@ -138,6 +138,7 @@
     diff: diffStore,
     detailActivityView,
     settings,
+    sync,
     workflowActions,
   } = getStores();
   const runtime = getAppRuntime();
@@ -161,6 +162,7 @@
       manualRefreshPending
       || detailStore.isDetailLoading()
       || detailStore.isDetailSyncing()
+      || sync?.getProviderAvailable() === false
       || stalePR
     ) return;
     const requestIdentity = $state.snapshot(itemIdentity);
@@ -236,6 +238,11 @@
     repoPath: string;
     hideTabs?: boolean;
     hideWorkspaceAction?: boolean;
+    /**
+     * Phone-like PR routes render the primary actions as one kit
+     * AdaptiveActionGrid instead of the desktop fit stages and actions menu.
+     */
+    phonePresentation?: boolean;
     hideStaleWhileLoading?: boolean;
     autoSync?: DetailSyncMode;
     workflowApprovalSync?: boolean;
@@ -255,6 +262,7 @@
     repoPath,
     hideTabs = false,
     hideWorkspaceAction = false,
+    phonePresentation = false,
     hideStaleWhileLoading = false,
     autoSync = "background",
     workflowApprovalSync = true,
@@ -1301,6 +1309,7 @@
   let actionMenuOpen = $state(false);
   let primaryActionStage = $state(0);
   let actionMenuWrapEl = $state<HTMLDivElement>();
+  let workflowActionControlEl = $state<HTMLDivElement>();
   let stateMenuOpen = $state(false);
   let stateMenuWrapEl = $state<HTMLSpanElement>();
 
@@ -1672,7 +1681,9 @@
 
   function onDocumentMousedown(e: MouseEvent): void {
     const target = e.target as Node;
-    if (actionMenuOpen && !actionMenuWrapEl?.contains(target)) {
+    if (actionMenuOpen
+      && !actionMenuWrapEl?.contains(target)
+      && !workflowActionControlEl?.contains(target)) {
       closeActionMenu();
     }
     if (stateMenuOpen && !stateMenuWrapEl?.contains(target)) {
@@ -1747,6 +1758,11 @@
           if (responseIsStale() || !data?.id) return;
           if (inlineWorkspace) {
             refetchDetailForIdentity(requestIdentity);
+          } else if (onOpenWorkspace) {
+            // Hosts without an inline controller (phone-like PR routes)
+            // decide where a fresh workspace opens; the desktop terminal
+            // route is unusable from a phone shell.
+            onOpenWorkspace(data.id);
           } else {
             navigate(`/terminal/${data.id}`);
           }
@@ -2087,6 +2103,19 @@
   {#if detail !== null}
     {@const pr = detail.merge_request}
     {@const capabilities = detail.repo?.capabilities ?? defaultProviderCapabilities}
+    {@const canReadyAction = pr.State === "open" && pr.IsDraft && capabilities.ready_for_review}
+    {@const canApproveAction = pr.State === "open" && capabilities.review_mutation}
+    {@const canWorkflowsAction = pr.State === "open"
+      && capabilities.workflow_approval
+      && workflowApproval?.checked === true
+      && workflowApproval.required === true}
+    {@const canMergeAction = pr.State === "open"
+      && repoSettings !== null
+      && hasEnabledMergeMethod(repoSettings)
+      && (repoOperations?.merge_pr !== undefined
+        || (capabilities.merge_mutation && repoSettings.viewerCanMerge))}
+    {@const canCloseAction = pr.State === "open" && capabilities.state_mutation}
+    {@const canReopenAction = pr.State === "closed" && capabilities.state_mutation}
     {@const lockedSupported = supportsLocked(
       detail.repo?.provider ?? provider,
       detail.repo?.platform_host ?? detail.platform_host,
@@ -2145,10 +2174,15 @@
           onscroll={handlePullDetailScroll}
         >
         <div class="pull-detail">
+          {#if phonePresentation && detailStore.isDetailSyncing() && !manualRefreshPending}
+            <!-- Phones get a top progress bar instead of the inline "Syncing" row:
+                 the row wraps under the branch line and shifts the whole page. -->
+            <div class="sync-bar" role="status" aria-label="Syncing from GitHub"></div>
+          {/if}
           <div
             class="pull-detail-content"
             class:pull-detail-content--has-compact-actions={showActionSurface}
-            class:pull-detail-content--actions-menu={hasPrimaryPRActions && primaryActionStage === 2}
+            class:pull-detail-content--actions-menu={!phonePresentation && hasPrimaryPRActions && primaryActionStage === 2}
           >
             {#snippet labelActionButton(iconSize = 16)}
               <Button
@@ -2231,7 +2265,7 @@
               </svg>
             </a>
           </div>
-          {#if !stalePR}
+          {#if !stalePR && !phonePresentation}
             <SelectDropdown
               class="kanban-select kanban-select--header kanban-select--{pr.KanbanStatus.replace('_', '-')}"
               value={pr.KanbanStatus}
@@ -2273,7 +2307,7 @@
             >{pr.BaseBranch}</button>
           </span>
         {/if}
-        {#if detailStore.isDetailSyncing() && !manualRefreshPending}
+        {#if detailStore.isDetailSyncing() && !manualRefreshPending && !phonePresentation}
           <span class="meta-sep meta-sep--sync">·</span>
           <span class="sync-indicator" title="Syncing from GitHub">
             <Spinner size={12} label="Syncing" />
@@ -2461,7 +2495,7 @@
         />
       </div>
 
-      {#if !stalePR}
+      {#if !stalePR && !phonePresentation}
         <SelectDropdown
           class="kanban-select kanban-select--below-chips kanban-select--{pr.KanbanStatus.replace('_', '-')}"
           value={pr.KanbanStatus}
@@ -2472,157 +2506,168 @@
       {/if}
 
 
-      {#snippet primaryActionButtons(compactLabels = false)}
-        {#if pr.State === "open"}
-          {#if pr.IsDraft && capabilities.ready_for_review}
-            {@const readyGate = operationGate(repoOperations?.mark_ready_for_review)}
-            <ReadyForReviewButton
-              {owner}
-              {name}
-              {number}
-              {provider}
-              {platformHost}
-              {repoPath}
-              size="sm"
-              compactLabel={compactLabels}
-              disabled={stalePR || readyGate.unavailable}
-              title={readyGate.unavailable ? readyGate.reason : undefined}
-              oncompleted={closeActionMenu}
-            />
-          {/if}
-          {#if capabilities.review_mutation}
-            {@const approveGate = operationGate(repoOperations?.submit_review)}
-            <ApproveButton
-              {owner}
-              {name}
-              {number}
-              {provider}
-              {platformHost}
-              {repoPath}
-              size="sm"
-              disabled={stalePR || headActionsBlocked || approveGate.unavailable}
-              expectedHeadSha={detailHeadSha}
-              platformHeadSha={latestPlatformHeadSha}
-              requireHeadPin={capabilities.mutation_head_binding}
-              supportedReviewActions={capabilities.supported_review_actions ?? []}
-              routeGeneration={mutationRouteGeneration}
-              title={approveGate.unavailable ? approveGate.reason : undefined}
-              onheadconflict={handleHeadConflict}
-            />
-          {/if}
-          {#if capabilities.workflow_approval && workflowApproval?.checked && workflowApproval.required}
-            {@const workflowGate = operationGate(repoOperations?.approve_workflow)}
-            <ApproveWorkflowsButton
-              {owner}
-              {name}
-              {number}
-              {provider}
-              {platformHost}
-              {repoPath}
-              count={workflowApproval.count ?? 0}
-              size="sm"
-              compactLabel={compactLabels}
-              disabled={stalePR || workflowGate.unavailable}
-              title={workflowGate.unavailable ? workflowGate.reason : undefined}
-              oncompleted={closeActionMenu}
-            />
-          {/if}
-          {@const mergeOp = repoOperations?.merge_pr}
-          {@const mergeGate = operationGate(mergeOp)}
-          {@const mergeOpUnavailable = mergeGate.unavailable}
-          {#if repoSettings && hasEnabledMergeMethod(repoSettings) && (mergeOp !== undefined
-              || (capabilities.merge_mutation && repoSettings.viewerCanMerge))}
-            {@const mergeSettings = repoSettings}
-            {@const mergeDisabledByConflicts = hasMergeConflicts(pr)}
-            {@const mergeTitle = midStackMergeBlocked
-              ? `Merge #${midStackBlocker?.number ?? "the bottom branch"} first; mid-stack merges are disabled in settings`
-              : mergeDisabledByConflicts
-                ? "Resolve merge conflicts before merging"
-              : stateConflict
-                ? "Refresh and re-review the pull request before merging"
-                : headPinMissing
-                ? "The reviewed head commit has not been synced yet; merging is disabled until the next sync records it"
-                : mergeOpUnavailable
-                  ? mergeGate.reason
-                  : deferredMergePending
-                    ? "A background merge is queued to run if its pending CI checks pass. Click to merge immediately; close the pull request to cancel."
-                    : ""}
-            <Button
-              class={deferredMergePending ? "btn--merge btn--merge-queued" : "btn--merge"}
-              disabled={stalePR || midStackMergeBlocked || mergeDisabledByConflicts || mergeOpUnavailable || headActionsBlocked || headPinMissing}
-              title={mergeTitle}
-              onclick={() => {
-                if (stalePR || midStackMergeBlocked || mergeOpUnavailable || headActionsBlocked || headPinMissing) return;
-                runOpenMerge(buildOpenMergeInput(pr, capabilities));
-              }}
-              tone="success"
-              surface={deferredMergePending ? "soft" : "solid"}
-              size="sm"
-              ariaLabel={compactLabels
-                ? deferredMergePending
-                  ? "Merge queued"
-                  : mergeActionLabel(mergeSettings)
-                : undefined}
-              label={compactLabels
-                ? deferredMergePending
-                  ? "Queued"
-                  : mergeActionShortLabel(mergeSettings)
+      {#snippet readyAction(compactLabels = false)}
+        {@const readyGate = operationGate(repoOperations?.mark_ready_for_review)}
+        <ReadyForReviewButton
+          {owner}
+          {name}
+          {number}
+          {provider}
+          {platformHost}
+          {repoPath}
+          size="sm"
+          compactLabel={compactLabels}
+          disabled={stalePR || readyGate.unavailable}
+          title={readyGate.unavailable ? readyGate.reason : undefined}
+          oncompleted={closeActionMenu}
+        />
+      {/snippet}
+
+      {#snippet approveAction(compactLabels = false)}
+        {@const approveGate = operationGate(repoOperations?.submit_review)}
+        <ApproveButton
+          {owner}
+          {name}
+          {number}
+          {provider}
+          {platformHost}
+          {repoPath}
+          size="sm"
+          disabled={stalePR || headActionsBlocked || approveGate.unavailable}
+          expectedHeadSha={detailHeadSha}
+          platformHeadSha={latestPlatformHeadSha}
+          requireHeadPin={capabilities.mutation_head_binding}
+          supportedReviewActions={capabilities.supported_review_actions ?? []}
+          routeGeneration={mutationRouteGeneration}
+          title={approveGate.unavailable ? approveGate.reason : undefined}
+          onheadconflict={handleHeadConflict}
+        />
+      {/snippet}
+
+      {#snippet workflowsAction(compactLabels = false)}
+        {@const workflowGate = operationGate(repoOperations?.approve_workflow)}
+        <ApproveWorkflowsButton
+          {owner}
+          {name}
+          {number}
+          {provider}
+          {platformHost}
+          {repoPath}
+          count={workflowApproval?.count ?? 0}
+          size="sm"
+          compactLabel={compactLabels}
+          disabled={stalePR || workflowGate.unavailable}
+          title={workflowGate.unavailable ? workflowGate.reason : undefined}
+          oncompleted={closeActionMenu}
+        />
+      {/snippet}
+
+      {#snippet mergeAction(compactLabels = false)}
+        {@const mergeOp = repoOperations?.merge_pr}
+        {@const mergeGate = operationGate(mergeOp)}
+        {@const mergeOpUnavailable = mergeGate.unavailable}
+        {#if repoSettings && hasEnabledMergeMethod(repoSettings) && (mergeOp !== undefined
+            || (capabilities.merge_mutation && repoSettings.viewerCanMerge))}
+          {@const mergeSettings = repoSettings}
+          {@const mergeDisabledByConflicts = hasMergeConflicts(pr)}
+          {@const mergeTitle = midStackMergeBlocked
+            ? `Merge #${midStackBlocker?.number ?? "the bottom branch"} first; mid-stack merges are disabled in settings`
+            : mergeDisabledByConflicts
+              ? "Resolve merge conflicts before merging"
+            : stateConflict
+              ? "Refresh and re-review the pull request before merging"
+              : headPinMissing
+              ? "The reviewed head commit has not been synced yet; merging is disabled until the next sync records it"
+              : mergeOpUnavailable
+                ? mergeGate.reason
                 : deferredMergePending
-                  ? "Merge queued"
-                  : mergeActionLabel(mergeSettings)}
-            >
-              {#if deferredMergePending}
-                <ClockIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-              {:else}
-                <GitMergeIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+                  ? "A background merge is queued to run if its pending CI checks pass. Click to merge immediately; close the pull request to cancel."
+                  : ""}
+          <Button
+            class={deferredMergePending ? "btn--merge btn--merge-queued" : "btn--merge"}
+            disabled={stalePR || midStackMergeBlocked || mergeDisabledByConflicts || mergeOpUnavailable || headActionsBlocked || headPinMissing}
+            title={mergeTitle}
+            onclick={() => {
+              if (stalePR || midStackMergeBlocked || mergeOpUnavailable || headActionsBlocked || headPinMissing) return;
+              runOpenMerge(buildOpenMergeInput(pr, capabilities));
+            }}
+            tone="success"
+            surface={deferredMergePending ? "soft" : "solid"}
+            size="sm"
+            ariaLabel={compactLabels
+              ? deferredMergePending
+                ? "Merge queued"
+                : mergeActionLabel(mergeSettings)
+              : undefined}
+            label={compactLabels
+              ? deferredMergePending
+                ? "Queued"
+                : mergeActionShortLabel(mergeSettings)
+              : deferredMergePending
+                ? "Merge queued"
+                : mergeActionLabel(mergeSettings)}
+          >
+            {#if deferredMergePending}
+              <ClockIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+            {:else}
+              <GitMergeIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+            {/if}
+            {#snippet trailing()}
+              {#if !deferredMergePending && mergeActionHasMenu(mergeSettings)}
+                <ChevronDownIcon size="13" strokeWidth="2.2" aria-hidden="true" />
               {/if}
-              {#snippet trailing()}
-                {#if !deferredMergePending && mergeActionHasMenu(mergeSettings)}
-                  <ChevronDownIcon size="13" strokeWidth="2.2" aria-hidden="true" />
-                {/if}
-              {/snippet}
-            </Button>
-          {/if}
-          {#if capabilities.state_mutation}
-            {@const closeGate = operationGate(repoOperations?.close_pr)}
-            <Button
-              class="btn--close"
-              disabled={stateSubmitting || stalePR || closeGate.unavailable}
-              title={closeGate.unavailable ? closeGate.reason : undefined}
-              onclick={() => {
-                if (stalePR || closeGate.unavailable) return;
-                closeActionMenu();
-                handleStateChange("closed");
-              }}
-              tone="danger"
-              surface="outline"
-              size="sm"
-              label={stateSubmitting ? "Closing..." : "Close"}
-            >
-              <XIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-            </Button>
-          {/if}
-        {:else if pr.State === "closed"}
-          {#if capabilities.state_mutation}
-            {@const reopenGate = operationGate(repoOperations?.reopen_pr)}
-            <Button
-              class="btn--reopen"
-              disabled={stateSubmitting || stalePR || reopenGate.unavailable}
-              title={reopenGate.unavailable ? reopenGate.reason : undefined}
-              onclick={() => {
-                if (stalePR || reopenGate.unavailable) return;
-                closeActionMenu();
-                handleStateChange("open");
-              }}
-              tone="success"
-              surface="solid"
-              size="sm"
-              label={stateSubmitting ? "Reopening..." : "Reopen"}
-            >
-              <RefreshCwIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-            </Button>
-          {/if}
+            {/snippet}
+          </Button>
         {/if}
+      {/snippet}
+
+      {#snippet closeAction(compactLabels = false)}
+        {@const closeGate = operationGate(repoOperations?.close_pr)}
+        <Button
+          class="btn--close"
+          disabled={stateSubmitting || stalePR || closeGate.unavailable}
+          title={closeGate.unavailable ? closeGate.reason : undefined}
+          onclick={() => {
+            if (stalePR || closeGate.unavailable) return;
+            closeActionMenu();
+            handleStateChange("closed");
+          }}
+          tone="danger"
+          surface="outline"
+          size="sm"
+          label={stateSubmitting ? "Closing..." : "Close"}
+        >
+          <XIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+        </Button>
+      {/snippet}
+
+      {#snippet reopenAction(compactLabels = false)}
+        {@const reopenGate = operationGate(repoOperations?.reopen_pr)}
+        <Button
+          class="btn--reopen"
+          disabled={stateSubmitting || stalePR || reopenGate.unavailable}
+          title={reopenGate.unavailable ? reopenGate.reason : undefined}
+          onclick={() => {
+            if (stalePR || reopenGate.unavailable) return;
+            closeActionMenu();
+            handleStateChange("open");
+          }}
+          tone="success"
+          surface="solid"
+          size="sm"
+          label={stateSubmitting ? "Reopening..." : "Reopen"}
+        >
+          <RefreshCwIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+        </Button>
+      {/snippet}
+
+      {#snippet primaryActionButtons(compactLabels = false)}
+        {#if canReadyAction}{@render readyAction(compactLabels)}{/if}
+        {#if canApproveAction}{@render approveAction(compactLabels)}{/if}
+        {#if canWorkflowsAction}{@render workflowsAction(compactLabels)}{/if}
+        {#if canMergeAction}{@render mergeAction(compactLabels)}{/if}
+        {#if canCloseAction}{@render closeAction(compactLabels)}{/if}
+        {#if canReopenAction}{@render reopenAction(compactLabels)}{/if}
       {/snippet}
 
       {#snippet workspaceActionButton(compactLabels = false)}
@@ -2737,6 +2782,25 @@
           {/each}
         </section>
       {/snippet}
+      {#snippet workflowDispatchAction(compactLabels = false)}
+        <div class="workflow-actions-control" bind:this={workflowActionControlEl}>
+          <button
+            {@attach captureActionMenuTrigger}
+            type="button"
+            class="actions-menu-trigger"
+            aria-haspopup="true"
+            aria-expanded={actionMenuOpen}
+            onclick={() => { actionMenuOpen = !actionMenuOpen; }}
+          >
+            <WorkflowIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+            <span>{compactLabels ? "Workflow" : "Run workflow"}</span>
+            <ChevronDownIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+          </button>
+          {#if actionMenuOpen}
+            {@render workflowActionsMenu(true)}
+          {/if}
+        </div>
+      {/snippet}
 
       {#snippet measuredPrimaryActions(compactLabels = false)}
         <div
@@ -2846,7 +2910,30 @@
       {/if}
       {#if showActionSurface}
         <div class="primary-actions-wrap">
-          {#if hasPrimaryPRActions}
+          {#if phonePresentation}
+            {@const phoneActionItems = [
+              ...(canReadyAction ? [{ id: "ready", content: readyAction }] : []),
+              ...(canApproveAction ? [{ id: "approve", content: approveAction }] : []),
+              ...(canWorkflowsAction ? [{ id: "workflows", content: workflowsAction }] : []),
+              ...(canMergeAction ? [{ id: "merge", content: mergeAction }] : []),
+              ...(canCloseAction ? [{ id: "close", content: closeAction }] : []),
+              ...(canReopenAction ? [{ id: "reopen", content: reopenAction }] : []),
+              ...(hideWorkspaceAction ? [] : [{ id: "workspace", content: workspaceActionButton }]),
+              ...(hasWorkflowActions ? [{ id: "dispatch-workflow", content: workflowDispatchAction }] : []),
+            ]}
+            <AdaptiveActionGrid
+              class="phone-actions-grid"
+              items={phoneActionItems}
+              ariaLabel="Pull request actions"
+              layout="fill"
+              frame="none"
+              padding={0}
+              rowGap={2}
+              columnGap={2}
+              collapseBelow={0}
+            />
+          {:else}
+            {#if hasPrimaryPRActions}
             <FitStages
               class="primary-actions-fit"
               bind:stage={primaryActionStage}
@@ -2893,28 +2980,15 @@
               {/if}
               {#if !hideWorkspaceAction
                 || (hasWorkflowActions && (!hasPrimaryPRActions || primaryActionStage !== 2))}
-                <div class="actions-row actions-row--utility">
+                <div
+                  class="actions-row actions-row--utility"
+                  class:actions-row--workspace={!hideWorkspaceAction}
+                >
                   {#if !hideWorkspaceAction}
                     {@render workspaceActionButton(primaryActionStage === 1)}
                   {/if}
                   {#if hasWorkflowActions && (!hasPrimaryPRActions || primaryActionStage !== 2)}
-                    <div class="workflow-actions-control">
-                      <button
-                        {@attach captureActionMenuTrigger}
-                        type="button"
-                        class="actions-menu-trigger"
-                        aria-haspopup="true"
-                        aria-expanded={actionMenuOpen}
-                        onclick={() => { actionMenuOpen = !actionMenuOpen; }}
-                      >
-                        <WorkflowIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-                        <span>Run workflow</span>
-                        <ChevronDownIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-                      </button>
-                      {#if actionMenuOpen}
-                        {@render workflowActionsMenu(true)}
-                      {/if}
-                    </div>
+                    {@render workflowDispatchAction()}
                   {/if}
                 </div>
               {/if}
@@ -2937,6 +3011,7 @@
               </button>
             {/if}
           </div>
+          {/if}
           {#if hasPrimaryPRActions}
             {#if stateConflict === "stale_state"}
               <span class="action-error action-error--state" role="status">
@@ -3233,7 +3308,8 @@
           <h3 class="section-title">Activity</h3>
           <div class="section-title-actions">
             <DetailRefreshButton
-              disabled={detailStore.isDetailLoading() || detailStore.isDetailSyncing() || stalePR}
+              disabled={detailStore.isDetailLoading() || detailStore.isDetailSyncing() || stalePR || sync?.getProviderAvailable() === false}
+              disabledReason={sync?.getProviderAvailable() === false ? "Hub unavailable" : undefined}
               refreshing={manualRefreshPending}
               onRefresh={refreshDetail}
             />
@@ -3334,6 +3410,7 @@
   }
 
   .pull-detail {
+    position: relative;
     padding: 20px 24px;
     display: flex;
     flex-direction: column;
@@ -3450,7 +3527,7 @@
   }
 
   .title-edit-save:disabled {
-    opacity: 0.5;
+    opacity: var(--opacity-disabled);
     cursor: not-allowed;
   }
 
@@ -3461,7 +3538,7 @@
   }
 
   .title-edit-cancel:disabled {
-    opacity: 0.5;
+    opacity: var(--opacity-disabled);
     cursor: not-allowed;
   }
 
@@ -3518,6 +3595,44 @@
   .meta-sep {
     font-size: var(--font-size-sm);
     color: var(--text-muted);
+  }
+
+  .sync-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    overflow: hidden;
+    pointer-events: none;
+    background: color-mix(in srgb, var(--accent-blue) 25%, transparent);
+  }
+
+  .sync-bar::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 40%;
+    background: var(--accent-blue);
+    animation: sync-bar-slide 1.2s ease-in-out infinite;
+  }
+
+  @keyframes sync-bar-slide {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(250%);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sync-bar::before {
+      animation: none;
+      width: 100%;
+    }
   }
 
   .sync-indicator {
@@ -3749,6 +3864,28 @@
     max-width: 100%;
   }
 
+  /* Phone routes: one kit action grid. Kit stretches its own direct controls in
+   * grid mode; the compound wrappers here (approve, ready, workflows, create
+   * split button) are custom items and need the same fill. */
+  .primary-actions-wrap :global(.phone-actions-grid .kit-adaptive-action-grid__item > .approve-section),
+  .primary-actions-wrap :global(.phone-actions-grid .kit-adaptive-action-grid__item > .ready-section),
+  .primary-actions-wrap :global(.phone-actions-grid .kit-adaptive-action-grid__item > .workflow-approval-section),
+  .primary-actions-wrap :global(.phone-actions-grid .kit-adaptive-action-grid__item > .workspace-create-split) {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .primary-actions-wrap :global(.phone-actions-grid.kit-adaptive-action-grid--grid .approve-section > .kit-button),
+  .primary-actions-wrap :global(.phone-actions-grid.kit-adaptive-action-grid--grid .ready-section > .kit-button),
+  .primary-actions-wrap :global(.phone-actions-grid.kit-adaptive-action-grid--grid .workflow-approval-section > .kit-button),
+  .primary-actions-wrap :global(.phone-actions-grid.kit-adaptive-action-grid--grid .workspace-create-split > .create-primary) {
+    width: 100%;
+  }
+
+  .primary-actions-wrap :global(.phone-actions-grid .kit-button) {
+    min-height: var(--detail-mobile-hit-target, 37px);
+  }
+
   .primary-actions-live {
     display: flex;
     flex-direction: column;
@@ -3883,7 +4020,7 @@
   .workflow-actions-menu__item:disabled {
     color: var(--text-muted);
     cursor: not-allowed;
-    opacity: 0.65;
+    opacity: var(--opacity-disabled);
   }
 
   .actions-menu-popover :global(.kit-button) {
@@ -4158,8 +4295,8 @@
     }
 
     .pull-detail-content .meta-row :global(.copy-number-btn) {
-      min-width: 0;
-      min-height: 0;
+      min-width: 24px;
+      min-height: 24px;
       padding: 0;
       border-radius: 3px;
       font-size: var(--font-size-sm);

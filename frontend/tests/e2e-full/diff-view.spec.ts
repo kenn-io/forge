@@ -1753,6 +1753,36 @@ test.describe("diff view", () => {
       .toBe(beforeWidth + 80);
   });
 
+  test("collapses and restores the changed-file tree", async ({ page }) => {
+    await mockDiffApi(page, largeDiff);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+    await waitForSidebarFilesLoaded(page);
+
+    const fileTree = page.getByRole("complementary", {
+      name: "Changed files",
+    });
+    const resizeHandle = page.getByRole("separator", {
+      name: "Resize file tree",
+    });
+    const fileTreeControls = fileTree.locator(".diff-files-controls");
+    await expect(fileTreeControls.getByRole("searchbox", { name: "Filter files" })).toBeVisible();
+    const initialWidth = await fileTree.evaluate((element) => element.getBoundingClientRect().width);
+
+    await fileTreeControls.getByRole("button", { name: "Collapse file tree" }).click();
+
+    await expect(fileTree).toBeHidden();
+    await expect(resizeHandle).toBeHidden();
+
+    await page.getByRole("button", { name: "Expand file tree" }).click();
+
+    await expect(fileTree).toBeVisible();
+    await expect(resizeHandle).toBeVisible();
+    await expect
+      .poll(async () => fileTree.evaluate((element) => element.getBoundingClientRect().width))
+      .toBe(initialWidth);
+  });
+
   test("clamps persisted file tree width inside narrow split panes", async ({ page }) => {
     await page.setViewportSize({ width: 780, height: 720 });
     await page.addInitScript(() => {

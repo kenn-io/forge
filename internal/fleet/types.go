@@ -1,12 +1,27 @@
 package fleet
 
-// SchemaVersion is the fleet snapshot contract version (raw + enriched).
-// v2 covers the breaking session backend->runtimeKind rename plus the
-// expanded session/host/worktree fields; the hub rejects peers whose
-// schemaVersion differs (see internal/server fan-out).
-const SchemaVersion = 2
+// NodeID is one daemon's stable federation identity.
+type NodeID string
 
-// ---- raw layer (scoped keys, no UUIDs; hub<->peer wire shape) ----
+// Role controls how a daemon projects a neutral fleet aggregate.
+type Role string
+
+const (
+	RoleHub   Role = "hub"
+	RoleSpoke Role = "spoke"
+)
+
+// RepositoryIdentity is the provider-verified cross-spoke repository key.
+// Local numeric repository IDs never enter a federation payload.
+type RepositoryIdentity struct {
+	Provider       string `json:"provider"`
+	PlatformHost   string `json:"platformHost"`
+	PlatformRepoID string `json:"platformRepoID"`
+	Owner          string `json:"owner,omitempty"`
+	Name           string `json:"name,omitempty"`
+}
+
+// ---- raw layer (scoped keys, no UUIDs; spoke-to-hub wire shape) ----
 
 type RawHost struct {
 	Hostname         string            `json:"hostname"`
@@ -37,15 +52,17 @@ type TmuxSessionInfo struct {
 }
 
 type RawSnapshot struct {
-	SchemaVersion         int             `json:"schemaVersion"`
-	Generation            uint64          `json:"generation"`
-	Host                  RawHost         `json:"host"`
-	PlatformAuthenticated *bool           `json:"platformAuthenticated,omitempty"`
-	Capabilities          *Capabilities   `json:"capabilities,omitempty"`
-	Projects              []RawProject    `json:"projects,omitempty"`
-	Worktrees             []RawWorktree   `json:"worktrees,omitempty"`
-	Sessions              []RawSession    `json:"sessions,omitempty"`
-	RemoteHosts           []RawRemoteHost `json:"remoteHosts,omitempty"`
+	ProtocolVersion       int            `json:"protocolVersion"`
+	NodeID                NodeID         `json:"nodeID"`
+	BaseURL               string         `json:"baseURL,omitempty"`
+	Generation            uint64         `json:"generation"`
+	Host                  RawHost        `json:"host"`
+	PlatformAuthenticated *bool          `json:"platformAuthenticated,omitempty"`
+	Capabilities          *Capabilities  `json:"capabilities,omitempty"`
+	Projects              []RawProject   `json:"projects,omitempty"`
+	Worktrees             []RawWorktree  `json:"worktrees,omitempty"`
+	Sessions              []RawSession   `json:"sessions,omitempty"`
+	Workspaces            []RawWorkspace `json:"workspaces,omitempty"`
 }
 
 type RawProject struct {
@@ -62,12 +79,13 @@ type RawProject struct {
 	// "gitea") of the project's platform identity. Together with
 	// PlatformHost and PlatformRepo it lets a client build provider-aware
 	// routes and distinguish same-host identities across providers.
-	Platform       string `json:"platform,omitempty"`
-	PlatformRepo   string `json:"platformRepo,omitempty"`
-	PlatformHost   string `json:"platformHost,omitempty"`
-	IsStale        bool   `json:"isStale,omitempty"`
-	RepositoryKind string `json:"repositoryKind,omitempty"`
-	BackendReady   *bool  `json:"backendReady,omitempty"`
+	Platform       string             `json:"platform,omitempty"`
+	PlatformRepo   string             `json:"platformRepo,omitempty"`
+	PlatformHost   string             `json:"platformHost,omitempty"`
+	Repository     RepositoryIdentity `json:"repository,omitzero"`
+	IsStale        bool               `json:"isStale,omitempty"`
+	RepositoryKind string             `json:"repositoryKind,omitempty"`
+	BackendReady   *bool              `json:"backendReady,omitempty"`
 	// IsSynthesized marks a project with no registered local checkout —
 	// synthesized only to anchor an orphan workspace's worktree. Such a
 	// project has no rootPath or repositoryKind; consumers must treat it as
@@ -123,14 +141,12 @@ type RawWorktree struct {
 
 // Session backend vocabulary for RawWorktree.SessionBackend and
 // WorktreeSummary.SessionBackend. These are generic terminal-backend
-// descriptors: a local PTY-owner-managed terminal, a local tmux session, or a
-// tmux session reached on a remote host over SSH. The producer emits the local
-// variants from a worktree's own backend; the remote variant is stamped when a
-// worktree is surfaced from a remote peer.
+// descriptors: a local PTY-owner-managed terminal or a local tmux session.
+// Federation preserves the owning spoke's backend because terminal traffic is
+// bridged over WebSocket without changing the spoke-local session model.
 const (
-	SessionBackendLocalPTY   = "localPTY"
-	SessionBackendLocalTmux  = "localTmux"
-	SessionBackendRemoteTmux = "remoteTmux"
+	SessionBackendLocalPTY  = "localPTY"
+	SessionBackendLocalTmux = "localTmux"
 )
 
 type RawSession struct {
@@ -151,9 +167,65 @@ type RawSession struct {
 	LastActiveAt   *string  `json:"lastActiveAt,omitempty"`
 }
 
-type RawRemoteHost struct {
-	HostKey               string            `json:"hostKey"`
+// RawWorkspace is a detached, spoke-owned workspace summary. The raw producer
+// fills execution fields and source-link visibility; provider display fields
+// are populated by the hub after aggregate construction.
+type RawWorkspace struct {
+	HostKey               string             `json:"hostKey,omitempty"`
+	ID                    string             `json:"id"`
+	Repository            RepositoryIdentity `json:"repository"`
+	ItemType              string             `json:"itemType"`
+	ItemNumber            int                `json:"itemNumber"`
+	SourceItemVisible     bool               `json:"sourceItemVisible"`
+	ItemKey               string             `json:"itemKey,omitempty"`
+	GitHeadRef            string             `json:"gitHeadRef"`
+	WorktreePath          string             `json:"worktreePath"`
+	TmuxSession           string             `json:"tmuxSession,omitempty"`
+	SessionBackend        string             `json:"sessionBackend,omitempty"`
+	TmuxPaneTitle         *string            `json:"tmuxPaneTitle,omitempty"`
+	TmuxWorking           bool               `json:"tmuxWorking"`
+	TmuxActivitySource    string             `json:"tmuxActivitySource,omitempty"`
+	TmuxLastOutputAt      *string            `json:"tmuxLastOutputAt,omitempty"`
+	AgentState            *string            `json:"agentState,omitempty"`
+	AgentStateUpdatedAt   *string            `json:"agentStateUpdatedAt,omitempty"`
+	Status                string             `json:"status"`
+	ErrorMessage          *string            `json:"errorMessage,omitempty"`
+	CreatedAt             string             `json:"createdAt"`
+	CommitsAhead          *int               `json:"commitsAhead,omitempty"`
+	CommitsBehind         *int               `json:"commitsBehind,omitempty"`
+	WorktreeDirty         *bool              `json:"worktreeDirty,omitempty"`
+	EnrichmentStatus      string             `json:"enrichmentStatus,omitempty"`
+	EnrichmentRefreshedAt *string            `json:"enrichmentRefreshedAt,omitempty"`
+	EnrichmentError       *string            `json:"enrichmentError,omitempty"`
+	AssociatedPRNumber    *int               `json:"associatedPRNumber,omitempty"`
+	Kata                  *RawWorkspaceKata  `json:"kata,omitempty"`
+	ItemLastActivityAt    *string            `json:"itemLastActivityAt,omitempty"`
+	MRTitle               *string            `json:"mrTitle,omitempty"`
+	MRState               *string            `json:"mrState,omitempty"`
+	MRIsDraft             *bool              `json:"mrIsDraft,omitempty"`
+	MRCIStatus            *string            `json:"mrCIStatus,omitempty"`
+	MRReviewDecision      *string            `json:"mrReviewDecision,omitempty"`
+	MRAdditions           *int               `json:"mrAdditions,omitempty"`
+	MRDeletions           *int               `json:"mrDeletions,omitempty"`
+}
+
+type RawWorkspaceKata struct {
+	DaemonID    string `json:"daemonID"`
+	ProjectUID  string `json:"projectUID"`
+	ProjectName string `json:"projectName,omitempty"`
+	IssueUID    string `json:"issueUID"`
+	ShortID     string `json:"shortID,omitempty"`
+	QualifiedID string `json:"qualifiedID,omitempty"`
+	Title       string `json:"title,omitempty"`
+}
+
+// NeutralHost is one host record in the hub's observer-independent
+// aggregate. It carries source facts, never projected kind or permissions.
+type NeutralHost struct {
+	NodeID                NodeID            `json:"nodeID"`
+	FederationRole        Role              `json:"federationRole"`
 	Name                  string            `json:"name"`
+	Hostname              string            `json:"hostname,omitempty"`
 	BaseURL               string            `json:"baseURL,omitempty"`
 	Platform              string            `json:"platform,omitempty"`
 	Reachable             bool              `json:"reachable"`
@@ -166,9 +238,26 @@ type RawRemoteHost struct {
 	TmuxMetricsError      string            `json:"tmuxMetricsError,omitempty"`
 	Error                 *string           `json:"error,omitempty"`
 	Capabilities          *Capabilities     `json:"capabilities,omitempty"`
-	PreferredTransport    string            `json:"preferredTransport,omitempty"`
-	SSHDestination        *string           `json:"sshDestination,omitempty"`
 	TmuxSessions          []TmuxSessionInfo `json:"tmuxSessions,omitempty"`
+}
+
+// NeutralSnapshot is the hub-owned aggregate before a serving daemon
+// projects self/remote kind and operation availability for its own observer.
+type NeutralSnapshot struct {
+	ProtocolVersion       int            `json:"protocolVersion"`
+	Generation            uint64         `json:"generation"`
+	PlatformAuthenticated *bool          `json:"platformAuthenticated,omitempty"`
+	Hosts                 []NeutralHost  `json:"hosts"`
+	Projects              []RawProject   `json:"projects,omitempty"`
+	Worktrees             []RawWorktree  `json:"worktrees,omitempty"`
+	Sessions              []RawSession   `json:"sessions,omitempty"`
+	Workspaces            []RawWorkspace `json:"workspaces,omitempty"`
+}
+
+// Observer identifies the daemon serving a projected fleet snapshot.
+type Observer struct {
+	NodeID NodeID
+	Role   Role
 }
 
 // ---- capabilities + diagnostics ----
@@ -223,24 +312,28 @@ type HostOperationAvailability struct {
 // Snapshot is the enriched client-ready snapshot envelope.
 // Populated by the snapshot builder.
 type Snapshot struct {
-	SchemaVersion         int               `json:"schemaVersion"`
-	Generation            uint64            `json:"generation"`
-	PlatformAuthenticated *bool             `json:"platformAuthenticated,omitempty"`
-	ActivePlatformHost    *string           `json:"activePlatformHost,omitempty"`
-	Hosts                 []HostSummary     `json:"hosts"`
-	Projects              []ProjectSummary  `json:"projects"`
-	Worktrees             []WorktreeSummary `json:"worktrees"`
-	Sessions              []SessionSummary  `json:"sessions"`
-	ProjectMap            map[string]string `json:"projectMap,omitempty"`
+	ProtocolVersion       int                `json:"protocolVersion"`
+	Generation            uint64             `json:"generation"`
+	AggregateIncomplete   bool               `json:"aggregateIncomplete,omitempty"`
+	PlatformAuthenticated *bool              `json:"platformAuthenticated,omitempty"`
+	ActivePlatformHost    *string            `json:"activePlatformHost,omitempty"`
+	Hosts                 []HostSummary      `json:"hosts"`
+	Projects              []ProjectSummary   `json:"projects"`
+	Worktrees             []WorktreeSummary  `json:"worktrees"`
+	Sessions              []SessionSummary   `json:"sessions"`
+	Workspaces            []WorkspaceSummary `json:"workspaces"`
+	ProjectMap            map[string]string  `json:"projectMap,omitempty"`
 }
 
 type HostSummary struct {
 	ID                    string                               `json:"id"`
 	ConfigKey             string                               `json:"configKey"`
+	NodeID                string                               `json:"nodeID"`
 	Name                  string                               `json:"name"`
 	Kind                  string                               `json:"kind"`
+	FederationRole        Role                                 `json:"federationRole" enum:"hub,spoke"`
+	BaseURL               string                               `json:"baseURL,omitempty" format:"uri"`
 	Platform              string                               `json:"platform"`
-	SSHDestination        *string                              `json:"sshDestination,omitempty"`
 	PreferredTransport    string                               `json:"preferredTransport"`
 	Reachable             bool                                 `json:"reachable"`
 	LastSeenAt            *string                              `json:"lastSeenAt,omitempty"`
@@ -328,6 +421,70 @@ type CheckDetail struct {
 	Status     string `json:"status"`
 	URL        string `json:"url,omitempty"`
 	Conclusion string `json:"conclusion,omitempty"`
+}
+
+type WorkspaceRepositorySummary struct {
+	Provider       string `json:"provider"`
+	PlatformHost   string `json:"platform_host"`
+	PlatformRepoID string `json:"platform_repo_id,omitempty"`
+	RepoPath       string `json:"repo_path"`
+	Owner          string `json:"owner"`
+	Name           string `json:"name"`
+}
+
+type WorkspaceKataSummary struct {
+	DaemonID    string `json:"daemon_id"`
+	ProjectUID  string `json:"project_uid"`
+	ProjectName string `json:"project_name,omitempty"`
+	IssueUID    string `json:"issue_uid"`
+	ShortID     string `json:"short_id,omitempty"`
+	QualifiedID string `json:"qualified_id,omitempty"`
+	Title       string `json:"title,omitempty"`
+}
+
+// WorkspaceSummary is the projected workspace-list contract. Remote host
+// attribution is omitted for the observer's own local workspaces.
+type WorkspaceSummary struct {
+	ID                    string                     `json:"id"`
+	Repo                  WorkspaceRepositorySummary `json:"repo"`
+	PlatformHost          string                     `json:"platform_host"`
+	RepoOwner             string                     `json:"repo_owner"`
+	RepoName              string                     `json:"repo_name"`
+	ItemType              string                     `json:"item_type"`
+	ItemNumber            int                        `json:"item_number"`
+	SourceItemVisible     bool                       `json:"source_item_visible"`
+	ItemKey               string                     `json:"item_key,omitempty"`
+	GitHeadRef            string                     `json:"git_head_ref"`
+	WorktreePath          string                     `json:"worktree_path"`
+	TmuxSession           string                     `json:"tmux_session,omitempty"`
+	TmuxPaneTitle         *string                    `json:"tmux_pane_title,omitempty"`
+	TmuxWorking           bool                       `json:"tmux_working"`
+	TmuxActivitySource    string                     `json:"tmux_activity_source"`
+	TmuxLastOutputAt      *string                    `json:"tmux_last_output_at"`
+	AgentState            *string                    `json:"agent_state,omitempty"`
+	AgentStateUpdatedAt   *string                    `json:"agent_state_updated_at,omitempty"`
+	Status                string                     `json:"status"`
+	ErrorMessage          *string                    `json:"error_message,omitempty"`
+	CreatedAt             string                     `json:"created_at"`
+	ItemLastActivityAt    *string                    `json:"item_last_activity_at,omitempty"`
+	MRTitle               *string                    `json:"mr_title,omitempty"`
+	MRState               *string                    `json:"mr_state,omitempty"`
+	MRIsDraft             *bool                      `json:"mr_is_draft,omitempty"`
+	MRCIStatus            *string                    `json:"mr_ci_status,omitempty"`
+	MRReviewDecision      *string                    `json:"mr_review_decision,omitempty"`
+	MRAdditions           *int                       `json:"mr_additions,omitempty"`
+	MRDeletions           *int                       `json:"mr_deletions,omitempty"`
+	CommitsAhead          *int                       `json:"commits_ahead,omitempty"`
+	CommitsBehind         *int                       `json:"commits_behind,omitempty"`
+	WorktreeDirty         *bool                      `json:"worktree_dirty,omitempty"`
+	EnrichmentStatus      string                     `json:"enrichment_status,omitempty"`
+	EnrichmentRefreshedAt *string                    `json:"enrichment_refreshed_at,omitempty"`
+	EnrichmentError       *string                    `json:"enrichment_error,omitempty"`
+	AssociatedPRNumber    *int                       `json:"associated_pr_number,omitempty"`
+	Kata                  *WorkspaceKataSummary      `json:"kata,omitempty"`
+	FleetHostKey          string                     `json:"fleet_host_key,omitempty"`
+	FleetHostName         string                     `json:"fleet_host_name,omitempty"`
+	Visible               bool                       `json:"visible"`
 }
 
 type SessionSummary struct {

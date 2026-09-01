@@ -68,7 +68,7 @@ func TestListMergeRequestReviewThreadsReadsBeyondTenthReviewPage(t *testing.T) {
 	}))
 	defer server.Close()
 	client, err := NewClient(
-		"gitea.test", testTokenSource("token"), WithBaseURLForTesting(server.URL),
+		"gitea.test", testTokenSource("token"), WithBaseURL(server.URL, true),
 		WithServerVersionForTesting(testGiteaServerVersion),
 	)
 	require.NoError(err)
@@ -140,7 +140,7 @@ func TestListMergeRequestReviewThreadsReadsEveryReviewPageAndComment(t *testing.
 	}))
 	defer server.Close()
 
-	client, err := NewClient("gitea.test", testTokenSource("token"), WithBaseURLForTesting(server.URL), WithServerVersionForTesting(testGiteaServerVersion))
+	client, err := NewClient("gitea.test", testTokenSource("token"), WithBaseURL(server.URL, true), WithServerVersionForTesting(testGiteaServerVersion))
 	require.NoError(err)
 	threads, err := client.ListMergeRequestReviewThreads(t.Context(), platform.RepoRef{
 		Platform: platform.KindGitea, Host: "gitea.test", Owner: "acme", Name: "widgets",
@@ -194,7 +194,7 @@ func TestListMergeRequestReviewThreadsRejectsPartialDataset(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient("gitea.test", testTokenSource("token"), WithBaseURLForTesting(server.URL), WithServerVersionForTesting(testGiteaServerVersion))
+	client, err := NewClient("gitea.test", testTokenSource("token"), WithBaseURL(server.URL, true), WithServerVersionForTesting(testGiteaServerVersion))
 	require.NoError(err)
 	threads, err := client.ListMergeRequestReviewThreads(t.Context(), platform.RepoRef{
 		Owner: "acme", Name: "widgets",
@@ -215,7 +215,7 @@ func TestListMergeRequestReviewThreadsMapsAuthenticationErrors(t *testing.T) {
 
 			client, err := NewClient(
 				"gitea.test", testTokenSource("token"),
-				WithBaseURLForTesting(server.URL),
+				WithBaseURL(server.URL, true),
 				WithServerVersionForTesting(testGiteaServerVersion),
 			)
 			require.NoError(err)
@@ -256,7 +256,7 @@ func TestListMergeRequestReviewThreadsReadsEveryLargeDatasetReview(t *testing.T)
 
 	client, err := NewClient(
 		"gitea.test", testTokenSource("token"),
-		WithBaseURLForTesting(server.URL),
+		WithBaseURL(server.URL, true),
 		WithServerVersionForTesting(testGiteaServerVersion),
 	)
 	require.NoError(err)
@@ -293,7 +293,7 @@ func TestListMergeRequestReviewThreadsReadsEveryLargeDatasetComment(t *testing.T
 
 	client, err := NewClient(
 		"gitea.test", testTokenSource("token"),
-		WithBaseURLForTesting(server.URL),
+		WithBaseURL(server.URL, true),
 		WithServerVersionForTesting(testGiteaServerVersion),
 	)
 	require.NoError(err)
@@ -337,7 +337,7 @@ func TestListMergeRequestReviewThreadsRejectsReviewPageCycleBeforeFanout(t *test
 
 	client, err := NewClient(
 		"gitea.test", testTokenSource("token"),
-		WithBaseURLForTesting(server.URL),
+		WithBaseURL(server.URL, true),
 		WithServerVersionForTesting(testGiteaServerVersion),
 	)
 	require.NoError(err)
@@ -374,7 +374,7 @@ func TestListMergeRequestReviewThreadsRejectsDatasetBeyondArchiveAttemptAllowanc
 	budget := ghsync.NewSyncBudget(20)
 	client, err := NewClient(
 		"gitea.test", testTokenSource("token"),
-		WithBaseURLForTesting(server.URL),
+		WithBaseURL(server.URL, true),
 		WithServerVersionForTesting(testGiteaServerVersion),
 		WithSyncBudget(budget),
 	)

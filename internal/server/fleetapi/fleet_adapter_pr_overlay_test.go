@@ -18,9 +18,8 @@ import (
 )
 
 // TestBuildLocalRawOverlaysBranchMatchedPR proves a registered worktree's
-// durable branch-match link surfaces the linked PR's number, folded state,
-// title, and checks status on the raw snapshot worktree — the snapshot half of
-// kenn-forge owning worktree-to-PR links.
+// durable branch-match link surfaces only the linked PR number. Provider
+// display facts are deliberately absent until hub enrichment.
 func TestBuildLocalRawOverlaysBranchMatchedPR(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -62,12 +61,9 @@ func TestBuildLocalRawOverlaysBranchMatchedPR(t *testing.T) {
 	got := requireRawWorktree(t, raw.Worktrees, normPath(wtPath))
 	require.NotNil(got.LinkedPRNumber)
 	require.Equal(42, *got.LinkedPRNumber)
-	require.NotNil(got.PRState)
-	require.Equal("draft", *got.PRState, "open draft folds to draft")
-	require.NotNil(got.PRTitle)
-	require.Equal("Add feature", *got.PRTitle)
-	require.NotNil(got.ChecksStatus)
-	require.Equal("success", *got.ChecksStatus)
+	require.Nil(got.PRState)
+	require.Nil(got.PRTitle)
+	require.Nil(got.ChecksStatus)
 }
 
 // TestRecomputeThenSnapshotShowsBranchMatchedPR proves the link writer and the

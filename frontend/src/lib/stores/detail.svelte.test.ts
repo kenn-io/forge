@@ -169,6 +169,68 @@ describe("createDetailStore", () => {
     if (runtime !== undefined) await Effect.runPromise(runtime.disposeEffect);
   });
 
+  it("recovers a missing cached pull with one targeted synchronization", async () => {
+    const get = vi.fn().mockResolvedValue({
+      error: {
+        code: ProblemCodes.pullNotFound,
+        type: "about:blank",
+        title: "Not Found",
+        detail: "pull request not found",
+      },
+    });
+    const post = vi.fn().mockResolvedValue({ data: pullDetail("fresh-head") });
+    const store = createDetailStore({ client: mockClient({ GET: get, POST: post }) });
+
+    await loadDetail(store, "acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+      sync: "background",
+    });
+
+    expect(store.getDetail()?.platform_head_sha).toBe("fresh-head");
+    expect(store.getDetailError()).toBeNull();
+    expect(post).toHaveBeenCalledOnce();
+    expect(post).toHaveBeenCalledWith("/pulls/{provider}/{owner}/{name}/{number}/sync", {
+      params: {
+        path: {
+          provider: "github",
+          owner: "acme",
+          name: "widget",
+          number: 7,
+        },
+      },
+      signal: expect.any(AbortSignal),
+    });
+  });
+
+  it("explains how to recover when the repository is unavailable", async () => {
+    const store = createDetailStore({
+      client: mockClient({
+        GET: vi.fn().mockResolvedValue({
+          error: {
+            code: ProblemCodes.repoNotFound,
+            type: "about:blank",
+            title: "Not Found",
+            detail: "repo not found",
+          },
+        }),
+      }),
+    });
+
+    await loadDetail(store, "acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+      sync: "background",
+    });
+
+    expect(store.getDetail()).toBeNull();
+    expect(store.getDetailError()).toBe(
+      "This repository is not available in Forge. Add it under Settings → Repositories, then retry.",
+    );
+  });
+
   it("keeps the displayed detail object when a refresh returns identical content", async () => {
     const routeIdentity = {
       provider: "github",

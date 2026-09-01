@@ -7,17 +7,25 @@ import (
 	"strings"
 
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 )
 
 func (s *Handler) listIssues(ctx context.Context, input *listIssuesInput) (*listIssuesOutput, error) {
-	rows, err := s.ListService(ctx, ListQuery{
+	query := ListQuery{
 		Repo: input.Repo, State: input.State, Starred: input.Starred,
 		InvolvesMe: input.InvolvesMe, ReferencedByPR: input.ReferencedByPR,
 		Text: input.Q, Assignee: input.Assignee, Limit: input.Limit, Offset: input.Offset,
-	})
+	}
+	var rows []IssueResponse
+	var err error
+	if _, federationRequest := federationauth.PrincipalFromContext(ctx); federationRequest {
+		rows, err = s.ListProviderService(ctx, query)
+	} else {
+		rows, err = s.ListService(ctx, query)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -161,10 +169,17 @@ func createIssuePersistenceProblem(repo db.Repo) error {
 }
 
 func (s *Handler) getIssue(ctx context.Context, input *issueRepoNumberInput) (*getIssueOutput, error) {
-	body, err := s.GetService(ctx, ItemIdentity{
+	item := ItemIdentity{
 		Provider: input.Provider, PlatformHost: input.PlatformHost,
 		Owner: input.Owner, Name: input.Name, Number: input.Number,
-	})
+	}
+	var body IssueDetailResponse
+	var err error
+	if _, federationRequest := federationauth.PrincipalFromContext(ctx); federationRequest {
+		body, err = s.GetProviderService(ctx, item)
+	} else {
+		body, err = s.GetService(ctx, item)
+	}
 	if err != nil {
 		return nil, err
 	}

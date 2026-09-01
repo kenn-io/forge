@@ -57,7 +57,11 @@ func TestWorkspaceDeleteRecreatesForkBranchName(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(repo)
 	headSHA := testGitSHA(t, fixture.remote, "feature")
-	runGit(t, fixture.remote, "update-ref", "refs/pull/2/head", headSHA)
+	runGit(t, fixture.remote, "update-ref", "refs/heads/fork-feature", headSHA)
+	runGit(
+		t, fixture.bare, "config", "--add",
+		"url."+fixture.remote+".insteadOf", "https://github.com/fork/widget.git",
+	)
 	now := time.Now().UTC().Truncate(time.Second)
 	prID, err := fixture.database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
 		RepoID: repo.ID, PlatformID: 2000, Number: 2,

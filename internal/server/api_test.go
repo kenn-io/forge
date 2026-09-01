@@ -1125,6 +1125,38 @@ func verifiedGitHubRepoIdentity(host, owner, name string) db.RepoIdentity {
 	return identity
 }
 
+func seedRepoLaunchMetadata(t *testing.T, database *db.DB, repoID int64) {
+	t.Helper()
+	ctx := t.Context()
+	repo, err := database.GetRepoByID(ctx, repoID)
+	require.NoError(t, err)
+	require.NotNil(t, repo)
+	require.NotEmpty(t, repo.PlatformRepoID)
+
+	cloneURL := strings.TrimSpace(repo.CloneURL)
+	if cloneURL == "" {
+		repoPath := strings.Trim(strings.TrimSpace(repo.RepoPath), "/")
+		if repoPath == "" {
+			repoPath = strings.Trim(repo.Owner, "/") + "/" + strings.Trim(repo.Name, "/")
+		}
+		cloneURL = "https://" + repo.PlatformHost + "/" + repoPath + ".git"
+	}
+	defaultBranch := strings.TrimSpace(repo.DefaultBranch)
+	if defaultBranch == "" {
+		defaultBranch = "main"
+	}
+	err = database.UpdateRepoProviderMetadata(
+		ctx, repoID,
+		db.RepoProviderMetadata{
+			PlatformRepoID: repo.PlatformRepoID,
+			WebURL:         strings.TrimSuffix(cloneURL, ".git"),
+			CloneURL:       cloneURL,
+			DefaultBranch:  defaultBranch,
+		},
+	)
+	require.NoError(t, err)
+}
+
 func markArchiveItemRemovedUpstreamForServerTest(
 	t *testing.T,
 	database *db.DB,
@@ -1405,6 +1437,7 @@ func seedPR(t *testing.T, database *db.DB, owner, name string, number int, opts 
 
 	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", owner, name))
 	require.NoError(t, err)
+	seedRepoLaunchMetadata(t, database, repoID)
 
 	numberText := strconv.Itoa(number)
 	now := time.Now().UTC().Truncate(time.Second)
@@ -8791,7 +8824,7 @@ func TestAPIGiteaDisabledIssueCooldownPersistsThroughHTTPAndSQLite(t *testing.T)
 			_, _ = io.WriteString(w, `{
 				"id":101,"name":"kettle","full_name":"tea/kettle",
 				"html_url":"https://gitea.test/tea/kettle",
-				"clone_url":"https://gitea.test/tea/kettle.git",
+				"clone_url":"http://gitea.test/tea/kettle.git",
 				"default_branch":"main","owner":{"login":"tea"},
 				"has_issues":false,"has_pull_requests":true,
 				"created_at":"2026-07-22T12:00:00Z",
@@ -8825,7 +8858,7 @@ func TestAPIGiteaDisabledIssueCooldownPersistsThroughHTTPAndSQLite(t *testing.T)
 	provider, err := giteaplatform.NewClient(
 		"gitea.test",
 		testTokenSource("token"),
-		giteaplatform.WithBaseURLForTesting(providerServer.URL),
+		giteaplatform.WithBaseURL(providerServer.URL, true),
 		giteaplatform.WithServerVersionForTesting("1.26.0"),
 	)
 	require.NoError(err)
@@ -8858,6 +8891,7 @@ func TestAPIGiteaDisabledIssueCooldownPersistsThroughHTTPAndSQLite(t *testing.T)
 	require.NoError(err)
 	require.NotNil(repo)
 	assert.Empty(repo.LastSyncError)
+	assert.Equal("http://gitea.test/tea/kettle.git", repo.CloneURL)
 	stored, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
 	require.NoError(err)
 	require.NotNil(stored)
@@ -9148,6 +9182,7 @@ func seedIssue(t *testing.T, database *db.DB, owner, name string, number int, st
 	ctx := t.Context()
 	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", owner, name))
 	require.NoError(t, err)
+	seedRepoLaunchMetadata(t, database, repoID)
 
 	now := time.Now().UTC().Truncate(time.Second)
 	issue := &db.Issue{
@@ -9218,6 +9253,7 @@ func seedIssueForRepo(
 ) int64 {
 	t.Helper()
 	ctx := t.Context()
+	seedRepoLaunchMetadata(t, database, repoID)
 
 	now := time.Now().UTC().Truncate(time.Second)
 	issue := &db.Issue{
@@ -19761,7 +19797,7 @@ func TestAPIGitealikeHTTPMergeabilityPersistsThroughServer(t *testing.T) {
 				return giteaplatform.NewClient(
 					host,
 					testTokenSource(token),
-					giteaplatform.WithBaseURLForTesting(baseURL),
+					giteaplatform.WithBaseURL(baseURL, true),
 					giteaplatform.WithServerVersionForTesting("1.26.0"),
 				)
 			},
@@ -24352,6 +24388,7 @@ func TestWorkspaceActivitySearchKeepsSubjectsWithMatchingProviderEvents(t *testi
 			RepoID: repoID, ItemType: "pr", ItemNumber: matchedKey.ItemNumber,
 			Author: "reviewer", BodyPreview: "matches the search",
 		}},
+		true,
 	)
 
 	require.Len(got, 1)
@@ -24405,6 +24442,7 @@ func TestWorkspaceActivityAuthorMatchesTheSubjectInsteadOfProviderEventActors(t 
 			RepoID: repoID, ItemType: "pr", ItemNumber: matchedKey.ItemNumber,
 			Author: "reviewer", ItemAuthor: "alice",
 		}},
+		true,
 	)
 
 	require.Len(byAuthor, 2)
@@ -24421,6 +24459,7 @@ func TestWorkspaceActivityAuthorMatchesTheSubjectInsteadOfProviderEventActors(t 
 			RepoID: repoID, ItemType: "pr", ItemNumber: matchedKey.ItemNumber,
 			Author: "reviewer", ItemAuthor: "alice",
 		}},
+		true,
 	)
 	require.Empty(byCommenter)
 }
@@ -24473,7 +24512,7 @@ func TestMergeWorkspaceActivityAuthorsDeduplicatesCaseInsensitively(t *testing.T
 	assert.Equal(t, []string{"Provider Owner", "Workspace Owner", "Fresh Owner"}, got)
 }
 
-func TestWorkspaceActivityProjectionRequiresOptIn(t *testing.T) {
+func TestWorkspaceActivityProjectionUsesHubPolicy(t *testing.T) {
 	require := require.New(t)
 	now := time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC)
 	key := db.WorkspaceSubjectKey{
@@ -24494,22 +24533,23 @@ func TestWorkspaceActivityProjectionRequiresOptIn(t *testing.T) {
 	}
 	srv := &Server{
 		repoResolver: httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{}),
-		cfg:          &config.Config{},
+		cfg: &config.Config{Activity: config.Activity{
+			UseWorkspaceActivityForRecency: true,
+		}},
 	}
 
 	require.Empty(srv.workspaceActivityResponse(
-		&listActivityInput{}, db.ListActivityOpts{}, snapshot, nil,
+		&listActivityInput{}, db.ListActivityOpts{}, snapshot, nil, false,
 	))
 	require.Equal([]string{"provider author"}, srv.activityAuthorsWithWorkspace(
-		[]string{"provider author"}, snapshot, db.ListActivityAuthorsOpts{},
+		[]string{"provider author"}, snapshot, db.ListActivityAuthorsOpts{}, false,
 	))
 
-	srv.cfg.Activity.UseWorkspaceActivityForRecency = true
 	require.Len(srv.workspaceActivityResponse(
-		&listActivityInput{}, db.ListActivityOpts{}, snapshot, nil,
+		&listActivityInput{}, db.ListActivityOpts{}, snapshot, nil, true,
 	), 1)
 	require.ElementsMatch([]string{"provider author", "workspace owner"}, srv.activityAuthorsWithWorkspace(
-		[]string{"provider author"}, snapshot, db.ListActivityAuthorsOpts{},
+		[]string{"provider author"}, snapshot, db.ListActivityAuthorsOpts{}, true,
 	))
 }
 
@@ -32147,7 +32187,7 @@ func TestWorkspaceCreateGitLabUsesSpecificMergeRequestHeadRefE2E(
 	seedPRForRepo(
 		t, fixture.database, repoID, platformHost, "acme", "widget", mrNumber,
 		withSeedPRHeadBranch(headBranch),
-		withSeedPRHeadRepoCloneURL("https://"+platformHost+"/fork/widget.git"),
+		withSeedPRHeadRepoCloneURL("http://"+platformHost+"/acme/widget.git"),
 	)
 	provider := string(platform.KindGitLab)
 
@@ -32167,13 +32207,16 @@ func TestWorkspaceCreateGitLabUsesSpecificMergeRequestHeadRefE2E(
 
 	ready := waitForWorkspaceReady(t, ctx, fixture.client, createResp.JSON202.Id)
 	require.NotNil(ready.MrHeadRepoKind)
-	assert.Equal(generated.WorkspaceResponseMrHeadRepoKindFork, *ready.MrHeadRepoKind)
+	assert.Equal(generated.WorkspaceResponseMrHeadRepoKindSameRepo, *ready.MrHeadRepoKind)
 	stored, err := fixture.database.GetWorkspace(ctx, ready.Id)
 	require.NoError(err)
 	require.NotNil(stored)
 	assert.Equal("ready", stored.Status)
-	assert.Equal(headBranch, stored.WorkspaceBranch)
-	assert.Equal(headBranch, gitOutput(t, ready.WorktreePath, "branch", "--show-current"))
+	assert.Equal(syntheticPRWorktreeBranchForTest(mrNumber), stored.WorkspaceBranch)
+	assert.Equal(
+		syntheticPRWorktreeBranchForTest(mrNumber),
+		gitOutput(t, ready.WorktreePath, "branch", "--show-current"),
+	)
 	assert.Equal(wantSHA, testGitSHA(t, ready.WorktreePath, "HEAD"))
 }
 
@@ -32572,6 +32615,7 @@ func seedPRForRepo(
 ) int64 {
 	t.Helper()
 	ctx := t.Context()
+	seedRepoLaunchMetadata(t, database, repoID)
 	now := time.Now().UTC().Truncate(time.Second)
 	pr := &db.MergeRequest{
 		RepoID:         repoID,

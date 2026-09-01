@@ -1,150 +1,127 @@
 package fleet
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestMergeStampsKeysAndHandlesDegraded(t *testing.T) {
-	local := RawSnapshot{Host: RawHost{Hostname: "studio"}, Projects: []RawProject{{ScopedKey: "repo:/a", Name: "a"}}}
-	ok := PeerResult{Key: "mbp", Name: "mbp", BaseURL: "http://mbp:8091", Reachable: true, ObservedAt: "T",
-		Raw: &RawSnapshot{Projects: []RawProject{{ScopedKey: "repo:/b", Name: "b"}}}}
-	down := PeerResult{Key: "epyc", Name: "epyc", BaseURL: "http://epyc:8091", Reachable: false, ObservedAt: "T", Err: new("timeout")}
-	dup := PeerResult{Key: "mbp", Name: "mbp2", BaseURL: "http://other:8091", Reachable: true, ObservedAt: "T",
-		Raw: &RawSnapshot{Projects: []RawProject{{ScopedKey: "repo:/c", Name: "c"}}}}
-
+func TestNeutralAggregateContainsNoObserverProjection(t *testing.T) {
 	assert := assert.New(t)
-	merged := Merge(local, "studio", []PeerResult{ok, down, dup})
-
-	assert.Empty(local.Projects[0].HostKey, "Merge must not mutate local input")
-	assert.Empty(ok.Raw.Projects[0].HostKey, "Merge must not mutate peer input")
-
-	assert.Equal("studio", merged.Projects[0].HostKey, "local project hostKey")
-	var sawB bool
-	for _, p := range merged.Projects {
-		if p.ScopedKey == "repo:/b" {
-			assert.Equal("mbp", p.HostKey, "peer project hostKey")
-			sawB = true
-		}
-		assert.NotEqual("repo:/c", p.ScopedKey, "duplicate-key peer entities must be dropped")
-	}
-	assert.True(sawB, "reachable peer entities must be merged")
-	var down1, demoted int
-	for _, h := range merged.RemoteHosts {
-		if !h.Reachable {
-			down1++
-		}
-		if h.Error != nil && *h.Error == "duplicate host key mbp" {
-			demoted++
-		}
-	}
-	assert.Equal(2, down1, "want 2 unreachable incl 1 demoted-dup")
-	assert.Equal(1, demoted, "want 1 demoted-dup")
-}
-
-// TestMergeStampsPeerWorktreesAsRemoteTmux proves a reachable peer's
-// worktrees are reframed as remote-tmux attaches from the hub's view,
-// while the local worktree's own backend is left untouched.
-func TestMergeStampsPeerWorktreesAsRemoteTmux(t *testing.T) {
+	require := require.New(t)
 	local := RawSnapshot{
-		Host:      RawHost{Hostname: "studio"},
-		Worktrees: []RawWorktree{{ScopedKey: "worktree:/a", Name: "a", SessionBackend: "localTmux"}},
+		ProtocolVersion: 3,
+		NodeID:          NodeID("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+		Host:            RawHost{Hostname: "hub", Platform: "linux"},
+		Workspaces:      []RawWorkspace{{ID: "ws-a", Status: "ready"}},
 	}
-	peer := PeerResult{Key: "mbp", Name: "mbp", BaseURL: "http://mbp:8091", Reachable: true, ObservedAt: "T",
-		Raw: &RawSnapshot{Worktrees: []RawWorktree{{ScopedKey: "worktree:/b", Name: "b", SessionBackend: "localPTY"}}}}
-
-	assert := assert.New(t)
-	merged := Merge(local, "studio", []PeerResult{peer})
-
-	assert.Equal("localPTY", peer.Raw.Worktrees[0].SessionBackend, "Merge must not mutate peer input")
-	var sawLocal, sawPeer bool
-	for _, w := range merged.Worktrees {
-		switch w.ScopedKey {
-		case "worktree:/a":
-			assert.Equal("studio", w.HostKey)
-			assert.Equal("localTmux", w.SessionBackend, "local worktree backend is untouched")
-			sawLocal = true
-		case "worktree:/b":
-			assert.Equal("mbp", w.HostKey)
-			assert.Equal(SessionBackendRemoteTmux, w.SessionBackend, "peer worktree backend becomes remoteTmux")
-			sawPeer = true
-		}
+	memberRaw := RawSnapshot{
+		ProtocolVersion: 3,
+		NodeID:          NodeID("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+		Host:            RawHost{Hostname: "spoke-b", Platform: "linux"},
+		Workspaces:      []RawWorkspace{{ID: "ws-b", Status: "ready"}},
 	}
-	assert.True(sawLocal, "local worktree must be present")
-	assert.True(sawPeer, "peer worktree must be present")
+	aggregate := BuildNeutralAggregate(local, []PeerResult{{
+		NodeID: memberRaw.NodeID, Name: "spoke-b", Reachable: true, Raw: &memberRaw,
+	}})
+
+	require.Len(aggregate.Hosts, 2)
+	require.Len(aggregate.Workspaces, 2)
+	raw, err := json.Marshal(aggregate)
+	require.NoError(err)
+	assert.NotContains(string(raw), "operationAvailability")
+	assert.NotContains(string(raw), `"kind"`)
+	assert.Equal(NodeID("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), local.NodeID,
+		"aggregate construction must not mutate its local input")
 }
 
-// TestMergeFoldsPeerVersionAndTmux proves a reachable peer's host version
-// and tmux inventory fold into its RawRemoteHost record, so the hub can
-// surface a peer's version and live tmux sessions in the merged graph.
-func TestMergeFoldsPeerVersionAndTmux(t *testing.T) {
-	local := RawSnapshot{Host: RawHost{Hostname: "studio"}}
-	peer := PeerResult{
-		Key: "mbp", Name: "mbp", BaseURL: "http://mbp:8091", Reachable: true, ObservedAt: "T",
-		Raw: &RawSnapshot{Host: RawHost{
-			Hostname:         "mbp",
-			Version:          "9.9.9",
+func TestBuildNeutralAggregateStampsNodeIDsAndRetainsDegradedMembers(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	localID := NodeID("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	memberID := NodeID("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+	downID := NodeID("cccccccccccccccccccccccccccccccc")
+	local := RawSnapshot{
+		ProtocolVersion: 3, NodeID: localID,
+		Host:     RawHost{Hostname: "studio"},
+		Projects: []RawProject{{ScopedKey: "repo:/a", Name: "a"}},
+	}
+	member := RawSnapshot{
+		ProtocolVersion: 3, NodeID: memberID,
+		Host:     RawHost{Hostname: "mbp"},
+		Projects: []RawProject{{ScopedKey: "repo:/b", Name: "b"}},
+	}
+	timeout := "timeout"
+	aggregate := BuildNeutralAggregate(local, []PeerResult{
+		{NodeID: memberID, Name: "mbp", Reachable: true, Raw: &member},
+		{NodeID: downID, Name: "epyc", Reachable: false, Err: &timeout},
+		{NodeID: memberID, Name: "duplicate", Reachable: true, Raw: &member},
+	})
+
+	assert.Empty(local.Projects[0].HostKey)
+	assert.Empty(member.Projects[0].HostKey)
+	require.Len(aggregate.Projects, 2)
+	assert.Equal(string(localID), aggregate.Projects[0].HostKey)
+	assert.Equal(string(memberID), aggregate.Projects[1].HostKey)
+	require.Len(aggregate.Hosts, 4)
+	assert.False(aggregate.Hosts[2].Reachable)
+	assert.Equal("timeout", *aggregate.Hosts[2].Error)
+	assert.False(aggregate.Hosts[3].Reachable)
+	assert.Contains(*aggregate.Hosts[3].Error, "duplicate node ID")
+}
+
+func TestBuildNeutralAggregateRejectsSelfReportedNodeMismatch(t *testing.T) {
+	assert := assert.New(t)
+	localID := NodeID("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	enrolledID := NodeID("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+	reportedID := NodeID("cccccccccccccccccccccccccccccccc")
+	member := RawSnapshot{
+		ProtocolVersion: 3, NodeID: reportedID,
+		Projects: []RawProject{{ScopedKey: "repo:/member"}},
+	}
+	aggregate := BuildNeutralAggregate(
+		RawSnapshot{ProtocolVersion: 3, NodeID: localID},
+		[]PeerResult{{NodeID: enrolledID, Reachable: true, Raw: &member}},
+	)
+
+	require.Len(t, aggregate.Hosts, 2)
+	assert.False(aggregate.Hosts[1].Reachable)
+	assert.Contains(*aggregate.Hosts[1].Error, "does not match enrollment")
+	assert.Empty(aggregate.Projects)
+}
+
+func TestBuildNeutralAggregatePreservesMemberTerminalFacts(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	localID := NodeID("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	memberID := NodeID("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+	member := RawSnapshot{
+		ProtocolVersion: 3, NodeID: memberID,
+		Host: RawHost{
+			Hostname: "mbp", Version: "9.9.9",
 			TmuxLastPolledAt: "2026-05-31T10:00:00Z",
-			TmuxProbeError:   "inventory failed",
-			TmuxMetricsError: "ps failed",
-			TmuxSessions:     []TmuxSessionInfo{{Name: "w-1", Managed: true, WorktreeKey: "worktree:/x"}},
+			TmuxProbeError:   "inventory failed", TmuxMetricsError: "ps failed",
+			TmuxSessions: []TmuxSessionInfo{{Name: "w-1", Managed: true}},
+		},
+		Worktrees: []RawWorktree{{
+			ScopedKey: "worktree:/b", SessionBackend: SessionBackendLocalPTY,
 		}},
 	}
+	aggregate := BuildNeutralAggregate(
+		RawSnapshot{ProtocolVersion: 3, NodeID: localID},
+		[]PeerResult{{NodeID: memberID, Reachable: true, Raw: &member}},
+	)
 
-	require := require.New(t)
-	assert := assert.New(t)
-	merged := Merge(local, "studio", []PeerResult{peer})
-
-	var rh *RawRemoteHost
-	for i := range merged.RemoteHosts {
-		if merged.RemoteHosts[i].HostKey == "mbp" {
-			rh = &merged.RemoteHosts[i]
-		}
-	}
-	require.NotNil(rh, "reachable peer must yield a remote host record")
-	assert.Equal("9.9.9", rh.Version, "peer host version must fold into the remote host record")
-	assert.Equal("2026-05-31T10:00:00Z", rh.TmuxLastPolledAt, "peer tmux freshness must fold into the remote host record")
-	assert.Equal("inventory failed", rh.TmuxProbeError, "peer tmux probe error must fold into the remote host record")
-	assert.Equal("ps failed", rh.TmuxMetricsError, "peer tmux metrics error must fold into the remote host record")
-	require.Len(rh.TmuxSessions, 1, "peer tmux inventory must fold into the remote host record")
-	assert.Equal("w-1", rh.TmuxSessions[0].Name)
-}
-
-// TestMergeFoldsPeerSSHDestinationAndTransport proves a peer's SSH destination
-// and preferred transport fold into its RawRemoteHost record for both reachable
-// and unreachable peers. The SSH fleet transport supplies these so the merged remote host stays
-// routable; an unreachable peer keeps its destination so a client can reconnect.
-func TestMergeFoldsPeerSSHDestinationAndTransport(t *testing.T) {
-	local := RawSnapshot{Host: RawHost{Hostname: "studio"}}
-	dest := "rpi5-ssd"
-	reachable := PeerResult{
-		Key: "rpi5", Name: "rpi5", Reachable: true, ObservedAt: "T",
-		SSHDestination: &dest, PreferredTransport: "ssh",
-		Raw: &RawSnapshot{Host: RawHost{Hostname: "rpi5"}},
-	}
-	downDest := "epyc.local"
-	unreachable := PeerResult{
-		Key: "epyc", Name: "epyc", Reachable: false,
-		SSHDestination: &downDest, PreferredTransport: "ssh",
-	}
-
-	require := require.New(t)
-	assert := assert.New(t)
-	merged := Merge(local, "studio", []PeerResult{reachable, unreachable})
-
-	byKey := map[string]RawRemoteHost{}
-	for _, rh := range merged.RemoteHosts {
-		byKey[rh.HostKey] = rh
-	}
-	require.Contains(byKey, "rpi5")
-	require.Contains(byKey, "epyc")
-	require.NotNil(byKey["rpi5"].SSHDestination)
-	assert.Equal("rpi5-ssd", *byKey["rpi5"].SSHDestination, "reachable peer ssh destination must fold in")
-	assert.Equal("ssh", byKey["rpi5"].PreferredTransport)
-	require.NotNil(byKey["epyc"].SSHDestination,
-		"unreachable peer must keep its ssh destination so a client can reconnect")
-	assert.Equal("epyc.local", *byKey["epyc"].SSHDestination)
-	assert.Equal("ssh", byKey["epyc"].PreferredTransport)
+	require.Len(aggregate.Hosts, 2)
+	host := aggregate.Hosts[1]
+	assert.Equal("9.9.9", host.Version)
+	assert.Equal("2026-05-31T10:00:00Z", host.TmuxLastPolledAt)
+	assert.Equal("inventory failed", host.TmuxProbeError)
+	assert.Equal("ps failed", host.TmuxMetricsError)
+	require.Len(host.TmuxSessions, 1)
+	require.Len(aggregate.Worktrees, 1)
+	assert.Equal(SessionBackendLocalPTY, aggregate.Worktrees[0].SessionBackend)
+	assert.Equal(string(memberID), aggregate.Worktrees[0].HostKey)
 }

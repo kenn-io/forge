@@ -25,12 +25,22 @@ supersession, completion events, or pending-state presentation.
 - In-flight cleanup is compare-and-delete on the per-key handle: terminal
   paths clear before broadcasting, so a stale worker's deferred cleanup must
   not remove a newer queue's handle for the same key.
+- Spoke preparation rejects new deferred-merge admission and counts every
+  already-admitted handle until compare-and-delete cleanup or immediate-merge
+  supersession reaches a known terminal outcome. The preparation acknowledgement
+  generation cannot freeze while this count is nonzero
+  (`internal/server/pullapi/deferred_merge.go::deferredMergeHandle.finish`).
+- Spoke role never constructs local provider or deferred-merge workers. Active
+  spokes proxy deferred merges through a validated hub client;
+  inactive or incompatible spokes reject them without federation egress
+  (`cmd/kenn-forge/provider_startup.go::buildServeControlPlanes`,
+  `internal/server/server.go::Server.serveProviderRoute`).
 - Closing the pull request is the user's only cancel for a queued deferred
   merge; queueing a second one returns 409 `already_pending`, so the UI must
   not offer deferred actions while `deferred_merge_pending` is true.
-- Deferred merge requests retain the selected workspace ID; only a successful
-  provider merge reaches durable background-deletion admission
-  (`internal/server/pullapi/deferred_merge.go::completeDeferredMerge`).
+- Deferred merges retain workspace ID and authenticated originating spoke before
+  background execution; only success admits cleanup on the owning daemon
+  (`internal/server/pullapi/deferred_merge.go::Handler.enqueueDeferredMerge`).
 - Successful completion can carry `workspace_cleanup_pending`; cleanup completion
   is reported independently by workspace lifecycle events, so the merge event
   never infers deletion (`internal/server/pullapi/deferred_merge.go::DeferredMergeCompletedPayload`).

@@ -119,7 +119,7 @@ func TestHumaResponseCompressionStreamsUncompressedWhenBodyExceedsCap(t *testing
 	api.UseMiddleware(newResponseCompressionMiddleware(128))
 	registerCompressionTestRoutes(api)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/huge", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/oversized", nil)
 	req.Header.Set("Accept-Encoding", "br")
 	rr := httptest.NewRecorder()
 
@@ -129,7 +129,23 @@ func TestHumaResponseCompressionStreamsUncompressedWhenBodyExceedsCap(t *testing
 	assert.Equal(http.StatusOK, rr.Code)
 	assert.Empty(rr.Header().Get("Content-Encoding"))
 	assert.Equal("Accept-Encoding", rr.Header().Get("Vary"))
-	assert.Contains(rr.Body.String(), strings.Repeat("huge-payload ", 20))
+	assert.Contains(rr.Body.String(), strings.Repeat("oversized-payload ", 20))
+}
+
+func TestHumaResponseCompressionIncludesMultiMiBPayloads(t *testing.T) {
+	mux := http.NewServeMux()
+	api := humago.NewWithPrefix(mux, "/api/v1", apiConfig("/"))
+	api.UseMiddleware(newResponseCompressionMiddleware(128))
+	registerCompressionTestRoutes(api)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/huge", nil)
+	req.Header.Set("Accept-Encoding", "br")
+	rr := httptest.NewRecorder()
+
+	mux.ServeHTTP(rr, req)
+
+	assert.Equal(t, "br", rr.Header().Get("Content-Encoding"))
+	assert.Contains(t, decodeBrotliBody(t, rr.Body), strings.Repeat("huge-payload ", 20))
 }
 
 func TestServerUsesResponseCompressionMiddleware(t *testing.T) {
@@ -170,6 +186,11 @@ func registerCompressionTestRoutes(api huma.API) {
 	huma.Get(api, "/huge", func(ctx context.Context, input *struct{}) (*output, error) {
 		resp := &output{}
 		resp.Body.Text = strings.Repeat("huge-payload ", 100_000)
+		return resp, nil
+	})
+	huma.Get(api, "/oversized", func(ctx context.Context, input *struct{}) (*output, error) {
+		resp := &output{}
+		resp.Body.Text = strings.Repeat("oversized-payload ", 300_000)
 		return resp, nil
 	})
 }

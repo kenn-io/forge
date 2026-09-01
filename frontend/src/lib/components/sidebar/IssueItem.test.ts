@@ -26,6 +26,13 @@ const mkIssue = (overrides: Record<string, unknown>): Issue =>
     ...overrides,
   }) as unknown as Issue;
 
+// jsdom reports zero layout widths, so tests choose whether the title is
+// ellipsis-truncated by stubbing the measurements the popover gate reads.
+function setElementWidths(el: Element, widths: { scrollWidth: number; clientWidth: number }): void {
+  Object.defineProperty(el, "scrollWidth", { configurable: true, value: widths.scrollWidth });
+  Object.defineProperty(el, "clientWidth", { configurable: true, value: widths.clientWidth });
+}
+
 function renderItem(issue: Issue, useWorkspaceActivityForRecency = false): void {
   render(IssueItem, {
     props: {
@@ -138,9 +145,10 @@ describe("IssueItem", () => {
     expect(screen.getByText("Closed")).toBeTruthy();
   });
 
-  it("shows the full title while the row has keyboard focus", async () => {
+  it("shows the full title while the row has keyboard focus and the title is truncated", async () => {
     renderItem(mkIssue({ Title: "An issue title too long for the sidebar" }));
     const row = screen.getByRole("button", { name: /An issue title too long for the sidebar/i });
+    setElementWidths(row.querySelector(".title-text")!, { scrollWidth: 320, clientWidth: 160 });
 
     await fireEvent.focusIn(row);
     const tooltip = screen.getByRole("tooltip");
@@ -151,6 +159,15 @@ describe("IssueItem", () => {
     expect(row.getAttribute("aria-describedby")).toBe(tooltip.id);
 
     await fireEvent.focusOut(row);
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+
+  it("shows no focus popover when the title fits the row", async () => {
+    renderItem(mkIssue({ Title: "Short issue" }));
+    const row = screen.getByRole("button", { name: /Short issue/i });
+    setElementWidths(row.querySelector(".title-text")!, { scrollWidth: 160, clientWidth: 160 });
+
+    await fireEvent.focusIn(row);
     expect(screen.queryByRole("tooltip")).toBeNull();
   });
 });

@@ -65,9 +65,9 @@ test.describe("workspace sidebar full-stack", () => {
     let isolatedServer: IsolatedE2EServer | null = null;
     try {
       isolatedServer = await startIsolatedWorkspaceE2EServer();
-      await page.route("**/api/v1/workspaces", async () => {
-        // Keep the first list request pending so the real app shell
-        // exercises the workspace rail's hung-request state.
+      await page.route("**/api/v1/snapshot**", async () => {
+        // Keep the federated snapshot pending so the real app shell exercises
+        // the workspace rail's hung-request state.
       });
 
       await page.goto(`${isolatedServer.info.base_url}/workspaces`);
@@ -272,13 +272,6 @@ test.describe("workspace sidebar full-stack", () => {
       await expect(dialog).toBeVisible();
       await expect(dialog).toContainText("Widget rendering broken on Safari");
 
-      const requestOrder: string[] = [];
-      page.on("request", (request) => {
-        const pathname = new URL(request.url()).pathname;
-        if (pathname === "/api/v1/workspaces" || pathname === `/api/v1/workspaces/${deletedWorkspace.id}`) {
-          requestOrder.push(`${request.method()} ${pathname}`);
-        }
-      });
       const deleteResponse = page.waitForResponse(
         (response) =>
           response.request().method() === "DELETE" &&
@@ -291,11 +284,6 @@ test.describe("workspace sidebar full-stack", () => {
       await expect(rows).toHaveCount(1);
       await expect(rows).not.toContainText("Widget rendering broken on Safari");
       await expect(rows).toContainText("Add dark mode support");
-
-      const deleteRequestIndex = requestOrder.indexOf(`DELETE /api/v1/workspaces/${deletedWorkspace.id}`);
-      const listRefreshIndex = requestOrder.indexOf("GET /api/v1/workspaces", deleteRequestIndex + 1);
-      expect(deleteRequestIndex).toBeGreaterThanOrEqual(0);
-      expect(listRefreshIndex).toBeGreaterThan(deleteRequestIndex);
 
       const workspacesResponse = await api.get("/api/v1/workspaces");
       expect(workspacesResponse.ok()).toBe(true);

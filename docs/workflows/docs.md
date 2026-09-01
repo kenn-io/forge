@@ -1,12 +1,12 @@
 # Read and edit local Docs
 
 Docs turns registered Markdown folders into a local reading and editing
-workspace. The files stay in those folders. kenn-forge does not copy them into
+workspace. The files stay in those folders. Kenn Forge does not copy them into
 its database.
 
 <figure class="workflow-shot">
-  <img class="workflow-shot__image workflow-shot__image--light" src="../assets/generated/docs-workspace-light.svg" alt="kenn-forge Docs workspace with a Markdown file, folder tree, and document outline in light mode">
-  <img class="workflow-shot__image workflow-shot__image--dark" src="../assets/generated/docs-workspace-dark.svg" alt="kenn-forge Docs workspace with a Markdown file, folder tree, and document outline in dark mode">
+  <img class="workflow-shot__image workflow-shot__image--light" src="../assets/generated/docs-workspace-light.svg" alt="Forge Docs workspace with a Markdown file, folder tree, and document outline in light mode">
+  <img class="workflow-shot__image workflow-shot__image--dark" src="../assets/generated/docs-workspace-dark.svg" alt="Forge Docs workspace with a Markdown file, folder tree, and document outline in dark mode">
   <figcaption>Docs keeps the folder tree, rendered Markdown, and document outline together.</figcaption>
 </figure>
 

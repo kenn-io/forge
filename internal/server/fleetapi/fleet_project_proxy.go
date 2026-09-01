@@ -9,7 +9,7 @@ import (
 
 // registerFleetProjectRoutes registers host-targeted project
 // register/delete on the hub, dispatched like every other fleet
-// write: local handler, HTTP peer proxy, or SSH relay.
+// write: local handler or authenticated member proxy.
 func (s *Handler) registerFleetProjectRoutes(api huma.API) {
 	registerOp := &huma.Operation{
 		OperationID:  "register-fleet-project",
@@ -20,11 +20,14 @@ func (s *Handler) registerFleetProjectRoutes(api huma.API) {
 		Parameters:   fleetProxyParams([]string{"host_key"}),
 		RequestBody:  fleetProxyRequestBody(),
 		Responses:    fleetProxyResponses(),
-		MaxBodyBytes: -1,
+		MaxBodyBytes: fleetProxyMaxBodyBytes,
 	}
 	api.OpenAPI().AddOperation(registerOp)
 	api.Adapter().Handle(registerOp, func(ctx huma.Context) {
 		r, w := humago.Unwrap(ctx)
+		if !bufferFleetProxyRequestBody(w, r) {
+			return
+		}
 		s.serveFleetProjectWrite(w, r, "/api/v1/projects")
 	})
 
@@ -36,11 +39,14 @@ func (s *Handler) registerFleetProjectRoutes(api huma.API) {
 		Tags:         []string{"Fleet"},
 		Parameters:   fleetProxyParams([]string{"host_key", "project_id"}),
 		Responses:    fleetProxyResponses(),
-		MaxBodyBytes: -1,
+		MaxBodyBytes: fleetProxyMaxBodyBytes,
 	}
 	api.OpenAPI().AddOperation(deleteOp)
 	api.Adapter().Handle(deleteOp, func(ctx huma.Context) {
 		r, w := humago.Unwrap(ctx)
+		if !bufferFleetProxyRequestBody(w, r) {
+			return
+		}
 		projectID := r.PathValue("project_id")
 		s.serveFleetProjectWrite(
 			w, r, "/api/v1/projects/"+escapePath(projectID),
@@ -49,9 +55,8 @@ func (s *Handler) registerFleetProjectRoutes(api huma.API) {
 }
 
 // serveFleetProjectWrite routes a host-targeted project write: the
-// local host runs the existing local handler, a configured HTTP peer
-// is forwarded over HTTP, an SSH peer rides the CLI relay, and an
-// unknown host is a 404.
+// local host runs the existing local handler, an active member is forwarded
+// over authenticated HTTP, and an unknown host is a 404.
 func (s *Handler) serveFleetProjectWrite(
 	w http.ResponseWriter,
 	r *http.Request,
@@ -67,9 +72,5 @@ func (s *Handler) serveFleetProjectWrite(
 		s.serveLocalFleetRESTProxy(w, r, localPath)
 		return
 	}
-	if target.sshPeer != nil {
-		s.serveSSHFleetRESTProxy(w, r, *target.sshPeer, localPath)
-		return
-	}
-	s.serveRemoteFleetRESTProxy(w, r, target.peer, localPath)
+	s.serveRemoteFleetRESTProxy(w, r, target, localPath)
 }

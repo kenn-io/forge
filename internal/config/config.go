@@ -19,10 +19,10 @@ import (
 	"unicode"
 
 	"github.com/BurntSushi/toml"
+	"go.kenn.io/forge/internal/federation"
 	platformpkg "go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/tokenauth"
-	"go.kenn.io/kit/openssh"
 )
 
 const (
@@ -53,6 +53,23 @@ const (
 	maxSSEBufferSize                       = 16384
 )
 
+func githubAppRole(app GitHubAppConfig) string {
+	role := strings.ToLower(strings.TrimSpace(app.Role))
+	if role == "" {
+		return GitHubAppRoleSync
+	}
+	return role
+}
+
+const (
+	// GitHubAppRoleSync is the default GitHub App role for ordinary sync and
+	// user-facing reads.
+	GitHubAppRoleSync = "sync"
+	// GitHubAppRoleArchive reserves an installation for historical archive
+	// work. Archive requests use this App's independent GitHub quota.
+	GitHubAppRoleArchive = "archive"
+)
+
 const (
 	// IssueWorkspaceBranchStyleSlug appends a slug derived from the
 	// issue title onto kenn-forge/issue-<n>, producing recognizable
@@ -71,6 +88,7 @@ type Repo struct {
 	RepoPath         string `toml:"repo_path,omitempty" json:"repo_path,omitempty"`
 	Platform         string `toml:"platform,omitempty" json:"platform,omitempty"`
 	PlatformHost     string `toml:"platform_host,omitempty" json:"platform_host,omitempty"`
+	PlatformRepoID   string `toml:"platform_repo_id,omitempty" json:"platform_repo_id,omitempty"`
 	TokenEnv         string `toml:"token_env,omitempty" json:"token_env,omitempty"`
 	TokenFile        string `toml:"token_file,omitempty" json:"token_file,omitempty"`
 	WorktreeBasePath string `toml:"worktree_base_path,omitempty" json:"worktree_base_path,omitempty"`
@@ -198,10 +216,12 @@ type DocFolder struct {
 }
 
 type PlatformConfig struct {
-	Type      string `toml:"type" json:"type"`
-	Host      string `toml:"host" json:"host"`
-	TokenEnv  string `toml:"token_env,omitempty" json:"token_env,omitempty"`
-	TokenFile string `toml:"token_file,omitempty" json:"token_file,omitempty"`
+	Type          string `toml:"type" json:"type"`
+	Host          string `toml:"host" json:"host"`
+	BaseURL       string `toml:"base_url,omitempty" json:"base_url,omitempty"`
+	AllowInsecure bool   `toml:"allow_insecure,omitempty" json:"allow_insecure,omitempty"`
+	TokenEnv      string `toml:"token_env,omitempty" json:"token_env,omitempty"`
+	TokenFile     string `toml:"token_file,omitempty" json:"token_file,omitempty"`
 }
 
 // GitHubOwnerTokenConfig maps one exact GitHub resource owner to a PAT
@@ -218,15 +238,18 @@ type GitHubOwnerTokenConfig struct {
 // private key carry their own rate-limit budget, taking sync traffic
 // off the host's PAT.
 //
-// Scope decision: one app per GitHub host with one recorded
-// installation, and one active credential chain per host. An
-// installation token only reaches repos the installation covers. "All
-// repositories" installations build owner routes; "Only select repositories"
-// installations build exact routes for the recorded selected set, while
-// uncovered repos fall through to the owner or host PAT chain. An entry without
-// an installation_id is dormant and the PAT chain stays in effect.
+// Scope decision: one sync app and one archive app may serve each GitHub host
+// and installation account. An installation token only reaches repos the
+// installation covers. "All repositories" installations build owner routes;
+// "Only select repositories" installations build exact routes for the recorded
+// selected set, while uncovered repos fall through to the owner or host PAT
+// chain. An entry without an installation_id is dormant and the PAT chain
+// stays in effect.
 type GitHubAppConfig struct {
-	Host                string `toml:"host" json:"host"`
+	Host string `toml:"host" json:"host"`
+	// Role selects which Forge workload uses this App. Empty values retain
+	// the normal sync role for backwards-compatible configuration files.
+	Role                string `toml:"role,omitempty" json:"role,omitempty"`
 	AppID               int64  `toml:"app_id" json:"app_id"`
 	Slug                string `toml:"slug,omitempty" json:"slug,omitempty"`
 	Owner               string `toml:"owner,omitempty" json:"owner,omitempty"`
@@ -340,6 +363,7 @@ func (r *Repo) normalize(defaultGitHubHost string) error {
 	if r.Owner == "" || r.Name == "" {
 		return errors.New("must have owner and name")
 	}
+	r.PlatformRepoID = strings.TrimSpace(r.PlatformRepoID)
 	r.WorktreeBasePath = strings.TrimSpace(r.WorktreeBasePath)
 	if r.WorktreeBasePath != "" && r.HasNameGlob() {
 		return errors.New("worktree_base_path is only supported for exact repositories")
@@ -810,50 +834,47 @@ type Tmux struct {
 	AgentSessions *bool    `toml:"agent_sessions,omitempty"`
 }
 
-// FleetPeer is a remote kenn-forge daemon this hub federates with over HTTP.
-type FleetPeer struct {
-	Key     string `toml:"key" json:"key"`
-	Name    string `toml:"name,omitempty" json:"name,omitempty"`
-	BaseURL string `toml:"base_url" json:"base_url"`
-}
-
 type FleetSessions struct {
 	IncludeUnmanagedDetails bool `toml:"include_unmanaged_details,omitempty" json:"include_unmanaged_details,omitempty"`
 }
 
-// FleetSSHPeer is a fleet peer reached over ssh(1) instead of HTTP. The hub
-// uses kit's persistent manager when OpenSSH multiplexing is supported and a
-// direct masterless connection otherwise. API exchanges execute the peer's CLI
-// api verb, so the remote listener never leaves its host.
-type FleetSSHPeer struct {
-	Key         string `toml:"key" json:"key"`
-	Name        string `toml:"name,omitempty" json:"name,omitempty"`
-	Destination string `toml:"destination" json:"destination"`
-	Platform    string `toml:"platform,omitempty" json:"platform,omitempty"`
-	// RemoteCommand invokes the peer's CLI; defaults to "kenn-forge".
-	// Must be a bare executable name or path — no flags, since CLI
-	// subcommands are appended right after it. A custom remote config
-	// location is set via KENN_FORGE_HOME in the remote shell profile.
-	RemoteCommand string `toml:"remote_command,omitempty" json:"remote_command,omitempty"`
+type FleetRole string
+
+const (
+	FleetRoleHub   FleetRole = "hub"
+	FleetRoleSpoke FleetRole = "spoke"
+)
+
+type FleetHub struct {
+	NodeID  string `toml:"node_id" json:"node_id"`
+	Name    string `toml:"name,omitempty" json:"name,omitempty"`
+	BaseURL string `toml:"base_url" json:"base_url"`
 }
 
-// RemoteCommandOrDefault returns the CLI invocation for the peer.
-func (p FleetSSHPeer) RemoteCommandOrDefault() string {
-	if strings.TrimSpace(p.RemoteCommand) == "" {
-		return "kenn-forge"
-	}
-	return p.RemoteCommand
+type FleetMember struct {
+	NodeID  string                     `toml:"node_id" json:"node_id"`
+	Name    string                     `toml:"name,omitempty" json:"name,omitempty"`
+	BaseURL string                     `toml:"base_url" json:"base_url"`
+	State   federation.EnrollmentState `toml:"state" json:"state"`
 }
 
-// Fleet configures this daemon's federation: an optional local host key
-// and the peers whose snapshots the hub fans out to.
+// Fleet configures this daemon's role and enrolled HTTP membership.
 type Fleet struct {
-	Enabled     bool           `toml:"enabled,omitempty" json:"enabled"`
-	Key         string         `toml:"key,omitempty" json:"key,omitempty"`
-	PeerTimeout string         `toml:"peer_timeout,omitempty" json:"peer_timeout,omitempty"`
-	Sessions    FleetSessions  `toml:"sessions" json:"sessions"`
-	Peers       []FleetPeer    `toml:"peers,omitempty" json:"peers,omitempty"`
-	SSHPeers    []FleetSSHPeer `toml:"ssh_peers,omitempty" json:"ssh_peers,omitempty"`
+	Enabled     bool          `toml:"enabled,omitempty" json:"enabled"`
+	Role        FleetRole     `toml:"role,omitempty" json:"role,omitempty"`
+	BaseURL     string        `toml:"base_url,omitempty" json:"base_url,omitempty"`
+	Hub         *FleetHub     `toml:"hub,omitempty" json:"hub,omitempty"`
+	Members     []FleetMember `toml:"members,omitempty" json:"members,omitempty"`
+	PeerTimeout string        `toml:"peer_timeout,omitempty" json:"peer_timeout,omitempty"`
+	Sessions    FleetSessions `toml:"sessions" json:"sessions"`
+}
+
+func (f Fleet) RoleOrDefault() FleetRole {
+	role := FleetRole(strings.TrimSpace(string(f.Role)))
+	if role == "" {
+		return FleetRoleHub
+	}
+	return role
 }
 
 // PeerTimeoutOrDefault returns the per-peer fetch timeout, defaulting to
@@ -957,91 +978,15 @@ type API struct {
 	// start; browsers bootstrap a session cookie via the tokenized
 	// URL recorded in the runtime metadata. Health probes stay open.
 	RequireAuth bool `toml:"require_auth,omitempty" json:"require_auth,omitempty"`
+	// TailscaleServe authorizes selected Tailscale Serve users at the local
+	// loopback request boundary. It does not alter federation credentials.
+	TailscaleServe TailscaleServeAPI `toml:"tailscale_serve,omitempty" json:"tailscale_serve,omitzero"`
 }
 
-// isBareExecutable reports whether s is safe to embed unquoted in a
-// shell fragment as a command name or path: a conservative whitelist
-// rather than a blocklist of metacharacters.
-func isBareExecutable(s string) bool {
-	for _, r := range s {
-		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z',
-			r >= '0' && r <= '9':
-		case r == '_', r == '-', r == '.', r == '/', r == '+':
-		default:
-			return false
-		}
-	}
-	return true
-}
-
-// validateFleetSSHPeers rejects ssh peers that would later produce
-// unroutable hosts or merge collisions: invalid keys/destinations,
-// duplicate keys, the reserved self alias, and keys colliding with
-// HTTP peers or the local fleet key.
-func (c *Config) validateFleetSSHPeers() error {
-	seen := make(map[string]string, len(c.Fleet.Peers))
-	for _, p := range c.Fleet.Peers {
-		seen[p.Key] = "fleet.peers"
-	}
-	for i, p := range c.Fleet.SSHPeers {
-		key := strings.TrimSpace(p.Key)
-		if key == "" {
-			return fmt.Errorf(
-				"config: fleet.ssh_peers[%d]: key is required", i,
-			)
-		}
-		if key == "self" {
-			return fmt.Errorf(
-				"config: fleet.ssh_peers[%d]: key %q is reserved for local self routing",
-				i, key,
-			)
-		}
-		if strings.TrimSpace(p.Destination) == "" {
-			return fmt.Errorf(
-				"config: fleet.ssh_peers[%d] (%s): destination is required",
-				i, key,
-			)
-		}
-		if _, err := openssh.ParseTarget(p.Destination); err != nil {
-			return fmt.Errorf(
-				"config: fleet.ssh_peers[%d] (%s): invalid destination: %w",
-				i, key, err,
-			)
-		}
-		if key == strings.TrimSpace(c.Fleet.Key) {
-			return fmt.Errorf(
-				"config: fleet.ssh_peers[%d] (%s): key collides with fleet.key",
-				i, key,
-			)
-		}
-		if origin, dup := seen[key]; dup {
-			return fmt.Errorf(
-				"config: fleet.ssh_peers[%d] (%s): key collides with %s",
-				i, key, origin,
-			)
-		}
-		// The relay embeds this value unquoted in a remote shell
-		// fragment and appends CLI subcommands directly after it, and
-		// the CLI only dispatches a subcommand in argv[0] position —
-		// so flags, whitespace, or shell metacharacters would change
-		// meaning. Custom remote config goes through KENN_FORGE_HOME
-		// in the remote login profile instead.
-		// Validate the RAW value: the relay embeds it untrimmed, so
-		// even leading/trailing whitespace changes the remote shell
-		// fragment.
-		if p.RemoteCommand != "" && !isBareExecutable(p.RemoteCommand) {
-			return fmt.Errorf(
-				"config: fleet.ssh_peers[%d] (%s): remote_command must be"+
-					" a bare executable name or path (no flags or shell"+
-					" metacharacters); set KENN_FORGE_HOME in the remote"+
-					" shell profile for a custom config location",
-				i, key,
-			)
-		}
-		seen[key] = "fleet.ssh_peers"
-	}
-	return nil
+// TailscaleServeAPI configures the optional Tailscale Serve user principal.
+type TailscaleServeAPI struct {
+	Enabled      bool     `toml:"enabled,omitempty" json:"enabled,omitempty"`
+	AllowedUsers []string `toml:"allowed_users,omitempty" json:"allowed_users,omitempty"`
 }
 
 // SSEBufferSizeOrDefault returns the configured SSE replay ring size,
@@ -1125,20 +1070,11 @@ default_platform_host = "github.com"
 host = "127.0.0.1"
 port = 8091
 
-# Per-peer snapshot fetch timeout for fleet fan-out (default "2s").
-# A peer that does not answer in time degrades (reachable=false)
-# instead of stalling the snapshot.
+# Per-member request timeout for an enrolled federation (default "2s").
 # [fleet]
 # enabled = false
+# role = "hub"
 # peer_timeout = "2s"
-
-# Federate with fleet peers reached over SSH: the daemon holds a
-# ControlMaster per peer and relays API calls by executing the
-# peer's own CLI remotely, so the peer's listener stays private.
-# [[fleet.ssh_peers]]
-# key = "studio"
-# destination = "user@studio.local"
-# # remote_command = "kenn-forge"   # bare executable, no flags; use KENN_FORGE_HOME remotely for custom config
 
 # Gate the HTTP API behind a bearer token (minted to
 # <data_dir>/auth_token; browsers bootstrap a session cookie via the
@@ -1302,7 +1238,7 @@ func load(path string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parsing config %s: %w", path, err)
 	}
-	if err := rejectDeprecatedConfigKeys(meta); err != nil {
+	if err := rejectUnsupportedConfigKeys(meta); err != nil {
 		// The decode succeeded, so return the populated config with the
 		// rejection: a reload must still see a rejected candidate's
 		// declared token env names to keep stripping them.
@@ -1394,10 +1330,16 @@ func LoadForGitHubAppRepair(path string) (*Config, error) {
 	return cfg, cfg.validate()
 }
 
-func rejectDeprecatedConfigKeys(meta toml.MetaData) error {
+func rejectUnsupportedConfigKeys(meta toml.MetaData) error {
 	for _, key := range meta.Undecoded() {
 		if len(key) >= 1 && (key[0] == "notebooks" || key[0] == "vaults") {
 			return fmt.Errorf("[[%s]] is not supported; use [[doc_folders]]", key[0])
+		}
+		if len(key) >= 2 && key[0] == "fleet" {
+			return fmt.Errorf(
+				"unsupported fleet configuration %q; enroll federation members instead",
+				key.String(),
+			)
 		}
 	}
 	return nil
@@ -1419,8 +1361,17 @@ func (c *Config) validate() error {
 	if err := c.Fleet.Validate(); err != nil {
 		return err
 	}
-	if err := c.validateFleetSSHPeers(); err != nil {
+	if err := c.API.TailscaleServe.Validate(); err != nil {
 		return err
+	}
+	if c.API.TailscaleServe.Enabled && !c.API.RequireAuth {
+		return errors.New("config: api.tailscale_serve.enabled requires api.require_auth = true")
+	}
+	if c.Fleet.Enabled && !c.API.RequireAuth {
+		return errors.New("config: fleet.enabled requires api.require_auth = true")
+	}
+	if c.Fleet.Enabled && c.BasePath != "" && c.BasePath != defaultBasePath {
+		return errors.New("config: fleet.enabled requires base_path = \"/\"")
 	}
 	c.DefaultPlatformHost, err = normalizePlatformHost(
 		defaultPlatform, c.DefaultPlatformHost,
@@ -1444,6 +1395,9 @@ func (c *Config) validate() error {
 		}
 		p.TokenEnv = strings.TrimSpace(p.TokenEnv)
 		p.TokenFile = strings.TrimSpace(p.TokenFile)
+		if err := normalizePlatformTransport(p); err != nil {
+			return fmt.Errorf("config: platforms[%d]: %w", i, err)
+		}
 	}
 	if err := c.validatePlatforms(); err != nil {
 		return err
@@ -1766,52 +1720,170 @@ func (c *Config) validate() error {
 	return nil
 }
 
-// Validate checks and canonicalizes the fleet section: peer keys must be
-// unique, non-empty, distinct from the local fleet key, and not shadow the
-// reserved self alias; base URLs must be absolute http(s); peer_timeout must
-// parse when set. Embedders that supply peers through Options share this
-// validation with the config-file path.
+func normalizePlatformTransport(p *PlatformConfig) error {
+	p.BaseURL = strings.TrimSpace(p.BaseURL)
+	if p.Type != string(platformpkg.KindGitea) {
+		if p.BaseURL != "" || p.AllowInsecure {
+			return fmt.Errorf("base_url and allow_insecure are supported only for gitea")
+		}
+		return nil
+	}
+	if p.BaseURL == "" {
+		return nil
+	}
+	u, err := url.Parse(p.BaseURL)
+	if err != nil || u.Scheme == "" || u.Host == "" || u.Hostname() == "" {
+		return fmt.Errorf("base_url must be an absolute http(s) URL")
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("base_url scheme must be http or https")
+	}
+	if u.User != nil {
+		return fmt.Errorf("base_url must not include user info")
+	}
+	if u.RawQuery != "" || u.ForceQuery {
+		return fmt.Errorf("base_url must not include a query string")
+	}
+	if u.Fragment != "" {
+		return fmt.Errorf("base_url must not include a fragment")
+	}
+	if u.Scheme == "http" && !p.AllowInsecure {
+		return fmt.Errorf("base_url uses plain HTTP; set allow_insecure = true to acknowledge that API tokens will be sent without TLS")
+	}
+	u.Path = strings.TrimRight(u.Path, "/")
+	p.BaseURL = u.String()
+	return nil
+}
+
+// Validate checks and normalizes the Tailscale Serve user allowlist.
+func (t *TailscaleServeAPI) Validate() error {
+	seen := make(map[string]struct{}, len(t.AllowedUsers))
+	for index, raw := range t.AllowedUsers {
+		login, err := NormalizeTailscaleLogin(raw)
+		if err != nil {
+			return fmt.Errorf("api.tailscale_serve.allowed_users[%d]: %w", index, err)
+		}
+		if _, duplicate := seen[login]; duplicate {
+			return fmt.Errorf(
+				"api.tailscale_serve.allowed_users contains duplicate login %q",
+				login,
+			)
+		}
+		seen[login] = struct{}{}
+		t.AllowedUsers[index] = login
+	}
+	if t.Enabled && len(t.AllowedUsers) == 0 {
+		return errors.New("api.tailscale_serve.enabled requires at least one allowed user")
+	}
+	return nil
+}
+
+// NormalizeTailscaleLogin returns the exact case-insensitive login identity
+// used by Tailscale Serve. Forge accepts the email-shaped login names emitted
+// for user-owned tailnet devices, not display-name or list syntax.
+func NormalizeTailscaleLogin(raw string) (string, error) {
+	login := strings.ToLower(strings.TrimSpace(raw))
+	if login == "" || len(login) > 320 || strings.ContainsAny(login, " ,\t\r\n") {
+		return "", errors.New("login must be one email-shaped identity")
+	}
+	if strings.Count(login, "@") != 1 {
+		return "", errors.New("login must be one email-shaped identity")
+	}
+	at := strings.IndexByte(login, '@')
+	if at <= 0 || at == len(login)-1 {
+		return "", errors.New("login must be one email-shaped identity")
+	}
+	return login, nil
+}
+
+// Validate checks and canonicalizes the fleet role and membership.
 func (f *Fleet) Validate() error {
-	const reservedSelfKey = "self"
-	f.Key = strings.TrimSpace(f.Key)
-	for i := range f.Peers {
-		f.Peers[i].Key = strings.TrimSpace(f.Peers[i].Key)
+	role := f.RoleOrDefault()
+	if role != FleetRoleHub && role != FleetRoleSpoke {
+		return fmt.Errorf("fleet.role must be %q or %q, got %q", FleetRoleHub, FleetRoleSpoke, f.Role)
 	}
-	for i := range f.SSHPeers {
-		f.SSHPeers[i].Key = strings.TrimSpace(f.SSHPeers[i].Key)
+	if f.Role != "" {
+		f.Role = role
 	}
-	if f.Key == reservedSelfKey {
-		return fmt.Errorf("fleet.key %q is reserved for local self routing", reservedSelfKey)
+	f.BaseURL = strings.TrimSpace(f.BaseURL)
+	if f.Enabled && f.BaseURL == "" {
+		return errors.New("fleet.base_url is required when federation is enabled")
 	}
-	seenFleetPeers := map[string]bool{}
-	for i, p := range f.Peers {
-		if p.Key == "" {
-			return fmt.Errorf("fleet.peers[%d]: key is required", i)
+	if f.BaseURL != "" {
+		baseURL, err := federation.CanonicalOrigin(f.BaseURL)
+		if err != nil {
+			return fmt.Errorf("fleet.base_url: %w", err)
 		}
-		if strings.TrimSpace(p.Key) == reservedSelfKey {
-			return fmt.Errorf("fleet.peers[%d]: key %q is reserved for local self routing", i, reservedSelfKey)
+		f.BaseURL = baseURL
+	}
+	if role == FleetRoleSpoke && f.Hub == nil {
+		return errors.New("fleet.hub is required when fleet.role is spoke")
+	}
+	if f.Hub != nil {
+		f.Hub.NodeID = strings.TrimSpace(f.Hub.NodeID)
+		f.Hub.Name = strings.TrimSpace(f.Hub.Name)
+		f.Hub.BaseURL = strings.TrimSpace(f.Hub.BaseURL)
+		if !validFleetNodeID(f.Hub.NodeID) {
+			return errors.New("fleet.hub.node_id must be 32 lowercase hexadecimal characters")
 		}
-		if seenFleetPeers[p.Key] {
-			return fmt.Errorf("fleet.peers: duplicate key %q", p.Key)
+		baseURL, err := federation.CanonicalOrigin(f.Hub.BaseURL)
+		if err != nil {
+			return fmt.Errorf("fleet.hub.base_url: %w", err)
 		}
-		seenFleetPeers[p.Key] = true
-		if p.BaseURL == "" {
-			return fmt.Errorf("fleet.peers[%d]: base_url is required", i)
+		f.Hub.BaseURL = baseURL
+	}
+	if role == FleetRoleSpoke && len(f.Members) > 0 {
+		return errors.New("fleet.members is only valid when fleet.role is hub")
+	}
+	memberIDs := make(map[string]struct{}, len(f.Members))
+	memberOrigins := make(map[string]struct{}, len(f.Members))
+	for index := range f.Members {
+		member := &f.Members[index]
+		member.NodeID = strings.TrimSpace(member.NodeID)
+		member.Name = strings.TrimSpace(member.Name)
+		member.State = federation.EnrollmentState(strings.TrimSpace(string(member.State)))
+		if !validFleetNodeID(member.NodeID) {
+			return fmt.Errorf("fleet.members[%d].node_id must be 32 lowercase hexadecimal characters", index)
 		}
-		u, err := url.Parse(p.BaseURL)
-		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-			return fmt.Errorf("fleet.peers[%d]: base_url must be an absolute http(s) URL, got %q", i, p.BaseURL)
+		if member.State != federation.EnrollmentActive {
+			return fmt.Errorf("fleet.members[%d].state must be %q", index, federation.EnrollmentActive)
 		}
-		if f.Key != "" && p.Key == f.Key {
-			return fmt.Errorf("fleet.peers[%d]: key %q collides with fleet.key", i, p.Key)
+		baseURL, err := federation.CanonicalOrigin(member.BaseURL)
+		if err != nil {
+			return fmt.Errorf("fleet.members[%d].base_url: %w", index, err)
 		}
+		member.BaseURL = baseURL
+		if _, duplicate := memberIDs[member.NodeID]; duplicate {
+			return fmt.Errorf("fleet.members contains duplicate node ID %q", member.NodeID)
+		}
+		memberIDs[member.NodeID] = struct{}{}
+		if _, duplicate := memberOrigins[member.BaseURL]; duplicate {
+			return fmt.Errorf("fleet.members contains duplicate origin %q", member.BaseURL)
+		}
+		memberOrigins[member.BaseURL] = struct{}{}
 	}
 	if f.PeerTimeout != "" {
-		if _, err := time.ParseDuration(f.PeerTimeout); err != nil {
+		peerTimeout, err := time.ParseDuration(f.PeerTimeout)
+		if err != nil {
 			return fmt.Errorf("fleet.peer_timeout %q: %w", f.PeerTimeout, err)
+		}
+		if peerTimeout <= 0 {
+			return errors.New("fleet.peer_timeout must be positive")
 		}
 	}
 	return nil
+}
+
+func validFleetNodeID(nodeID string) bool {
+	if len(nodeID) != 32 {
+		return false
+	}
+	for _, char := range nodeID {
+		if (char < '0' || char > '9') && (char < 'a' || char > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 // docFolderIDPattern constrains a docs folder id to characters that
@@ -1967,9 +2039,20 @@ func (c *Config) validateGitHubOwnerTokens() error {
 func (c *Config) validateGitHubApps() error {
 	seenOwners := make(map[string]struct{}, len(c.GitHubApps))
 	seenInstallations := make(map[string]struct{}, len(c.GitHubApps))
+	seenInstallationIdentities := make(map[string]string, len(c.GitHubApps))
 	for i := range c.GitHubApps {
 		app := &c.GitHubApps[i]
 		app.Host = strings.TrimSpace(app.Host)
+		app.Role = strings.ToLower(strings.TrimSpace(app.Role))
+		if app.Role == "" {
+			app.Role = GitHubAppRoleSync
+		}
+		if app.Role != GitHubAppRoleSync && app.Role != GitHubAppRoleArchive {
+			return fmt.Errorf(
+				"config: github_apps[%d]: role must be %q or %q (got %q)",
+				i, GitHubAppRoleSync, GitHubAppRoleArchive, app.Role,
+			)
+		}
 		app.Slug = strings.TrimSpace(app.Slug)
 		app.Owner = strings.TrimSpace(app.Owner)
 		app.PrivateKeyPath = strings.TrimSpace(app.PrivateKeyPath)
@@ -2019,7 +2102,7 @@ func (c *Config) validateGitHubApps() error {
 		if owner == "" {
 			owner = fmt.Sprintf("app:%d", app.AppID)
 		}
-		ownerKey := host + "\x00" + owner
+		ownerKey := host + "\x00" + app.Role + "\x00" + owner
 		if _, ok := seenOwners[ownerKey]; ok {
 			label := app.Owner
 			if label == "" {
@@ -2032,7 +2115,7 @@ func (c *Config) validateGitHubApps() error {
 		}
 		seenOwners[ownerKey] = struct{}{}
 		if app.InstallationAccount != "" {
-			installKey := host + "\x00" + strings.ToLower(app.InstallationAccount)
+			installKey := host + "\x00" + app.Role + "\x00" + strings.ToLower(app.InstallationAccount)
 			if _, ok := seenInstallations[installKey]; ok {
 				return fmt.Errorf(
 					"config: github_apps[%d]: duplicate github app installation for host %q and account %q",
@@ -2040,6 +2123,18 @@ func (c *Config) validateGitHubApps() error {
 				)
 			}
 			seenInstallations[installKey] = struct{}{}
+			identityKey := host + "\x00" + strconv.FormatInt(app.AppID, 10) +
+				"\x00" + strconv.FormatInt(app.InstallationID, 10) +
+				"\x00" + strings.ToLower(app.InstallationAccount)
+			if previousRole, ok := seenInstallationIdentities[identityKey]; ok &&
+				previousRole != app.Role {
+				return fmt.Errorf(
+					"config: github_apps[%d]: installation for host %q, app id %d, and account %q cannot be configured for both %q and %q roles",
+					i, host, app.AppID, app.InstallationAccount,
+					previousRole, app.Role,
+				)
+			}
+			seenInstallationIdentities[identityKey] = app.Role
 		}
 	}
 	return nil
@@ -2367,6 +2462,7 @@ func (c *Config) globServedBySelectedApp(repo Repo) bool {
 	for _, app := range c.GitHubAppsForHost(host) {
 		if app.AppID <= 0 || app.InstallationID <= 0 ||
 			app.PrivateKeyPath == "" ||
+			githubAppRole(app) != GitHubAppRoleSync ||
 			!strings.EqualFold(app.InstallationAccount, repo.Owner) ||
 			!strings.EqualFold(strings.TrimSpace(app.RepositorySelection), "selected") {
 			continue
@@ -2500,12 +2596,72 @@ func (c *Config) ResolveGitHubRepoTokenSource(r Repo) tokenauth.Descriptor {
 	return desc
 }
 
+// ResolveGitHubArchiveTokenSource builds the optional, App-only credential
+// route for archive reads of one GitHub repository. It deliberately has no
+// PAT or gh fallback: when configured, archive work either uses the dedicated
+// installation budget or fails closed instead of spending ordinary capacity.
+func (c *Config) ResolveGitHubArchiveTokenSource(r Repo) tokenauth.Descriptor {
+	if c == nil || r.PlatformOrDefault() != defaultPlatform {
+		return tokenauth.Descriptor{}
+	}
+	host := r.PlatformHostOrDefault()
+	app, covered := c.gitHubArchiveAppForRepo(host, r.Owner, r.Name)
+	if !covered {
+		return tokenauth.Descriptor{}
+	}
+	exact := strings.EqualFold(app.RepositorySelection, "selected")
+	desc := tokenauth.Descriptor{Key: tokenauth.Key{
+		Platform: defaultPlatform,
+		Host:     host,
+		Scope:    "archive:" + githubCredentialScope(r.Owner, r.Name, exact),
+	}}
+	desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
+		Kind:                tokenauth.SourceKindGitHubApp,
+		Host:                host,
+		FilePath:            app.PrivateKeyPath,
+		AppID:               app.AppID,
+		InstallationID:      app.InstallationID,
+		InstallationAccount: app.InstallationAccount,
+	})
+	return desc
+}
+
 func (c *Config) gitHubAppForRepo(
 	host, owner, name string,
 ) (GitHubAppConfig, bool) {
 	for _, app := range c.GitHubAppsForHost(host) {
 		if app.AppID <= 0 || app.InstallationID <= 0 ||
 			app.PrivateKeyPath == "" ||
+			githubAppRole(app) != GitHubAppRoleSync ||
+			!strings.EqualFold(app.InstallationAccount, owner) {
+			continue
+		}
+		switch strings.ToLower(strings.TrimSpace(app.RepositorySelection)) {
+		case "all":
+			return app, true
+		case "selected":
+			fullName := strings.ToLower(strings.TrimSpace(owner)) + "/" +
+				strings.ToLower(strings.TrimSpace(name))
+			if strings.TrimSpace(name) == "" {
+				continue
+			}
+			for _, selected := range app.SelectedRepos {
+				if strings.EqualFold(strings.TrimSpace(selected), fullName) {
+					return app, true
+				}
+			}
+		}
+	}
+	return GitHubAppConfig{}, false
+}
+
+func (c *Config) gitHubArchiveAppForRepo(
+	host, owner, name string,
+) (GitHubAppConfig, bool) {
+	for _, app := range c.GitHubAppsForHost(host) {
+		if app.AppID <= 0 || app.InstallationID <= 0 ||
+			app.PrivateKeyPath == "" ||
+			githubAppRole(app) != GitHubAppRoleArchive ||
 			!strings.EqualFold(app.InstallationAccount, owner) {
 			continue
 		}
@@ -2576,8 +2732,14 @@ func (c *Config) appendGitHubDefaultCandidates(
 }
 
 type ProviderTokenSource struct {
-	Descriptor  tokenauth.Descriptor
-	Required    bool
+	Descriptor        tokenauth.Descriptor
+	ArchiveDescriptor tokenauth.Descriptor
+	Required          bool
+	// ArchiveOnly marks a route whose ordinary credential chain is not
+	// required for archive work. The startup path still registers the ordinary
+	// source so the host provider exists, but it must not make an absent PAT
+	// disable the independent archive App route.
+	ArchiveOnly bool
 	GitHubOwner string
 }
 
@@ -2606,9 +2768,21 @@ func (c *Config) ProviderTokenSources() []ProviderTokenSource {
 		})
 	}
 	for _, repo := range c.Repos {
+		desc := c.ResolveRepoTokenSource(repo)
+		archiveDesc := c.ResolveGitHubArchiveTokenSource(repo)
+		// A selected archive installation is repository-exact. Keep the
+		// ordinary route exact too, so several selected archive repositories
+		// cannot collapse onto one owner route while startup builds the paired
+		// archive routes.
+		if strings.HasPrefix(archiveDesc.Key.Scope, "archive:repo:") &&
+			!strings.HasPrefix(desc.Key.Scope, "repo:") {
+			desc.Key.Scope = strings.TrimPrefix(archiveDesc.Key.Scope, "archive:")
+		}
 		plan := ProviderTokenSource{
-			Descriptor: c.ResolveRepoTokenSource(repo),
-			Required:   !c.globServedBySelectedApp(repo),
+			Descriptor:        desc,
+			ArchiveDescriptor: archiveDesc,
+			Required:          !c.globServedBySelectedApp(repo),
+			ArchiveOnly:       archiveDesc.Key.Host != "" && !desc.HasActiveGitHubApp(),
 		}
 		if repo.PlatformOrDefault() == defaultPlatform {
 			plan.GitHubOwner = repo.Owner
@@ -2645,12 +2819,25 @@ func (c *Config) ProviderTokenSources() []ProviderTokenSource {
 					Owner: owner, Name: name,
 				}
 				desc := c.ResolveGitHubRepoTokenSource(repo)
+				archiveDesc := c.ResolveGitHubArchiveTokenSource(repo)
+				if githubAppRole(app) == GitHubAppRoleArchive &&
+					archiveDesc.Key.Host == "" {
+					continue
+				}
+				if strings.HasPrefix(archiveDesc.Key.Scope, "archive:repo:") &&
+					!strings.HasPrefix(desc.Key.Scope, "repo:") {
+					desc.Key.Scope = strings.TrimPrefix(archiveDesc.Key.Scope, "archive:")
+				}
 				if _, ok := seen[desc.Key]; ok {
 					continue
 				}
 				seen[desc.Key] = struct{}{}
 				out = append(out, ProviderTokenSource{
-					Descriptor: desc, Required: true, GitHubOwner: owner,
+					Descriptor:        desc,
+					ArchiveDescriptor: archiveDesc,
+					Required:          true,
+					ArchiveOnly:       archiveDesc.Key.Host != "" && !desc.HasActiveGitHubApp(),
+					GitHubOwner:       owner,
 				})
 			}
 			continue
@@ -2661,14 +2848,20 @@ func (c *Config) ProviderTokenSources() []ProviderTokenSource {
 			Owner:        app.InstallationAccount,
 		}
 		desc := c.ResolveGitHubRepoTokenSource(repo)
+		archiveDesc := c.ResolveGitHubArchiveTokenSource(repo)
+		if githubAppRole(app) == GitHubAppRoleArchive && archiveDesc.Key.Host == "" {
+			continue
+		}
 		if _, ok := seen[desc.Key]; ok {
 			continue
 		}
 		seen[desc.Key] = struct{}{}
 		out = append(out, ProviderTokenSource{
-			Descriptor:  desc,
-			Required:    true,
-			GitHubOwner: app.InstallationAccount,
+			Descriptor:        desc,
+			ArchiveDescriptor: archiveDesc,
+			Required:          true,
+			ArchiveOnly:       archiveDesc.Key.Host != "" && !desc.HasActiveGitHubApp(),
+			GitHubOwner:       app.InstallationAccount,
 		})
 	}
 	for _, ownerToken := range c.GitHubOwnerTokens {
@@ -3383,6 +3576,12 @@ func (c *Config) copyForSave() Config {
 	}
 	cfg.DocFolders = slices.Clone(c.DocFolders)
 	cfg.Agents = slices.Clone(c.Agents)
+	cfg.API.TailscaleServe.AllowedUsers = slices.Clone(c.API.TailscaleServe.AllowedUsers)
+	if c.Fleet.Hub != nil {
+		hub := *c.Fleet.Hub
+		cfg.Fleet.Hub = &hub
+	}
+	cfg.Fleet.Members = slices.Clone(c.Fleet.Members)
 	if cfg.SyncInterval == "" {
 		cfg.SyncInterval = defaultSyncInterval
 	}

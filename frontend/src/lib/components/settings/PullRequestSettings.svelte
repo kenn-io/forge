@@ -6,13 +6,16 @@
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { isEmbedded } from "../../stores/embed-config.svelte.js";
   import { SettingsWorkflow, settingsErrorMessage } from "../../stores/settings-workflow.js";
+  import SettingsOwnerNotice from "./SettingsOwnerNotice.svelte";
+  import type { SettingsOwner } from "./settingsOwnership.js";
 
   interface Props {
     pullRequests: PullRequestSettingsType;
     onUpdate: (settings: PullRequestSettingsType) => void;
+    owner?: SettingsOwner;
   }
 
-  let { pullRequests, onUpdate }: Props = $props();
+  let { pullRequests, onUpdate, owner = "local" }: Props = $props();
   const runtime = getAppRuntime();
   const { settings: settingsStore } = getStores();
   const embedded = isEmbedded();
@@ -60,6 +63,8 @@
     );
   }
 </script>
+
+<SettingsOwnerNotice {owner} subject="Pull request policy" />
 
 <div class="settings-list">
   <div class="setting-row">
@@ -111,7 +116,7 @@
   .setting-label { color: var(--text-secondary); font-size: var(--font-size-md); }
   .setting-description { max-width: 64ch; color: var(--text-muted); font-size: var(--font-size-sm); line-height: 1.4; }
   .toggle-btn { flex: 0 0 auto; cursor: pointer; padding: 0; background: none; }
-  .toggle-btn:disabled { cursor: wait; opacity: 0.6; }
+  .toggle-btn:disabled { cursor: wait; opacity: var(--opacity-disabled); }
   .toggle-track { display: block; width: 36px; height: 20px; border-radius: 10px; background: var(--bg-inset); border: 1px solid var(--border-muted); position: relative; transition: background 0.15s, border-color 0.15s; }
   .toggle-on .toggle-track { background: var(--accent-blue); border-color: var(--accent-blue); }
   .toggle-thumb { display: block; width: 14px; height: 14px; border-radius: 50%; background: white; position: absolute; top: 2px; left: 2px; transition: transform 0.15s; box-shadow: var(--shadow-sm); }

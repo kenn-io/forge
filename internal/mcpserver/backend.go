@@ -5,18 +5,22 @@ import (
 	"time"
 )
 
-// Backend is the in-process Forge service boundary used by MCP tools.
-type Backend interface {
+// ProviderBackend owns provider data shared by every Forge node.
+type ProviderBackend interface {
 	ListRepositories(context.Context) ([]RepositorySummary, error)
 	ListActivity(context.Context, ActivityQuery) (ActivityPage, error)
 	ListPulls(context.Context, ItemListQuery) ([]Pull, error)
 	ListIssues(context.Context, ItemListQuery) ([]Issue, error)
 	GetPull(context.Context, ItemIdentity) (PullDetail, error)
 	GetIssue(context.Context, ItemIdentity) (IssueDetail, error)
-	GetPullDiff(context.Context, ItemIdentity, bool) (Diff, error)
 	GetPullStack(context.Context, ItemIdentity) (Stack, error)
 	ListWorkflowStates(context.Context, WorkflowQuery) (WorkflowPage, error)
 	SetWorkflowState(context.Context, ItemIdentity, WorkflowUpdate) (WorkflowMutation, error)
+}
+
+// LocalBackend owns data and execution that belong to the connected node.
+type LocalBackend interface {
+	GetPullDiff(context.Context, ItemIdentity, bool) (Diff, error)
 	ListLaunchTargets(context.Context) ([]LaunchTarget, error)
 	PreferredWorkspaceAgentTarget(context.Context, time.Time, []string) (string, bool, error)
 	ListWorkspaceAgentSessions(context.Context, string) ([]WorkspaceAgentSession, error)
@@ -30,13 +34,31 @@ type Backend interface {
 	GetInitialMessage(context.Context, string, string) (InitialMessageStatus, error)
 }
 
+// Backend is the complete in-process Forge service boundary used by MCP tools.
+type Backend interface {
+	ProviderBackend
+	LocalBackend
+}
+
+type federatedBackend struct {
+	ProviderBackend
+	LocalBackend
+}
+
+// NewFederatedBackend combines the provider owner with the connected node's
+// local execution backend. The interfaces have disjoint method sets so MCP
+// tools cannot accidentally select the wrong owner at runtime.
+func NewFederatedBackend(provider ProviderBackend, local LocalBackend) Backend {
+	return federatedBackend{ProviderBackend: provider, LocalBackend: local}
+}
+
 type RepositoryIdentity struct {
-	Provider       string
-	PlatformHost   string
-	PlatformRepoID string
-	RepoPath       string
-	Owner          string
-	Name           string
+	Provider       string `json:"provider"`
+	PlatformHost   string `json:"platform_host"`
+	PlatformRepoID string `json:"platform_repo_id"`
+	RepoPath       string `json:"repo_path"`
+	Owner          string `json:"owner"`
+	Name           string `json:"name"`
 }
 
 type RepositorySummary struct {
@@ -135,13 +157,13 @@ type Issue struct {
 }
 
 type ItemIdentity struct {
-	Type           string
-	Provider       string
-	PlatformHost   string
-	PlatformRepoID string
-	Owner          string
-	Name           string
-	Number         int
+	Type           string `json:"type"`
+	Provider       string `json:"provider"`
+	PlatformHost   string `json:"platform_host"`
+	PlatformRepoID string `json:"platform_repo_id"`
+	Owner          string `json:"owner"`
+	Name           string `json:"name"`
+	Number         int    `json:"number"`
 }
 
 type DetailEvent struct {
@@ -212,51 +234,51 @@ type StackMember struct {
 }
 
 type WorkflowQuery struct {
-	Repository    RepositoryIdentity
-	ItemTypes     []string
-	States        []string
-	IncludeClosed bool
-	Limit         int
-	Cursor        string
+	Repository    RepositoryIdentity `json:"repository"`
+	ItemTypes     []string           `json:"item_types" nullable:"false"`
+	States        []string           `json:"states" nullable:"false"`
+	IncludeClosed bool               `json:"include_closed"`
+	Limit         int                `json:"limit"`
+	Cursor        string             `json:"cursor"`
 }
 
 type WorkflowPage struct {
-	Items      []WorkflowItem
-	NextCursor string
+	Items      []WorkflowItem `json:"items" nullable:"false"`
+	NextCursor string         `json:"next_cursor"`
 }
 
 type WorkflowItem struct {
-	Identity       ItemIdentity
-	Repository     RepositoryIdentity
-	Title          string
-	State          string
-	URL            string
-	Author         string
-	IsDraft        bool
-	LastActivityAt string
-	Workflow       WorkflowState
+	Identity       ItemIdentity       `json:"identity"`
+	Repository     RepositoryIdentity `json:"repository"`
+	Title          string             `json:"title"`
+	State          string             `json:"state"`
+	URL            string             `json:"url"`
+	Author         string             `json:"author"`
+	IsDraft        bool               `json:"is_draft"`
+	LastActivityAt string             `json:"last_activity_at"`
+	Workflow       WorkflowState      `json:"workflow"`
 }
 
 type WorkflowState struct {
-	Status        string
-	UpdatedAt     string
-	UpdatedSource string
-	UpdatedActor  string
-	UpdatedReason string
+	Status        string `json:"status"`
+	UpdatedAt     string `json:"updated_at"`
+	UpdatedSource string `json:"updated_source"`
+	UpdatedActor  string `json:"updated_actor"`
+	UpdatedReason string `json:"updated_reason"`
 }
 
 type WorkflowUpdate struct {
-	Status         string
-	ExpectedStatus string
-	Force          bool
-	Source         string
-	Actor          string
-	Reason         string
+	Status         string `json:"status"`
+	ExpectedStatus string `json:"expected_status"`
+	Force          bool   `json:"force"`
+	Source         string `json:"source"`
+	Actor          string `json:"actor"`
+	Reason         string `json:"reason"`
 }
 
 type WorkflowMutation struct {
-	PreviousStatus string
-	State          WorkflowState
+	PreviousStatus string        `json:"previous_status"`
+	State          WorkflowState `json:"state"`
 }
 
 type LaunchTarget struct {

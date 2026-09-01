@@ -23,6 +23,7 @@ import (
 	"go.kenn.io/forge/internal/cli/serve"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/server"
@@ -428,6 +429,41 @@ func TestResolveStartupReposExpandsConfiguredGlobs(t *testing.T) {
 	}, repos)
 }
 
+type archiveContextRepositoryReader struct {
+	mainTestRepositoryReader
+	sawArchiveContext *bool
+}
+
+func (r archiveContextRepositoryReader) GetRepository(
+	ctx context.Context, ref platform.RepoRef,
+) (platform.Repository, error) {
+	*r.sawArchiveContext = ghclient.IsArchiveSyncBudgetContext(ctx)
+	return r.mainTestRepositoryReader.GetRepository(ctx, ref)
+}
+
+func TestResolveStartupReposUsesArchiveRouteWithoutOrdinaryPAT(t *testing.T) {
+	require := require.New(t)
+	sawArchiveContext := false
+	cfg := &config.Config{
+		Repos: []config.Repo{{Owner: "acme", Name: "widget"}},
+		GitHubApps: []config.GitHubAppConfig{{
+			Host: "github.com", AppID: 2, Role: config.GitHubAppRoleArchive,
+			PrivateKeyPath: "/keys/archive.pem", InstallationID: 20,
+			InstallationAccount: "acme", RepositorySelection: "all",
+		}},
+	}
+	registry := mustProviderRegistry(t, nil, archiveContextRepositoryReader{
+		kind: platform.KindGitHub, host: "github.com",
+		sawArchiveContext: &sawArchiveContext,
+	})
+
+	repos := resolveStartupRepos(t.Context(), cfg, registry, nil, nil)
+
+	require.Len(repos, 1)
+	assert.True(t, sawArchiveContext,
+		"archive-covered startup resolution must use the archive route")
+}
+
 type getRepoFailingClient struct {
 	*testutil.FixtureClient
 }
@@ -554,6 +590,49 @@ func TestResolveStartupReposRecoversRenamedExactEntryFromCatalog(t *testing.T) {
 	assert.Equal("acme/tools", repos[0].ConfiguredRepoPath)
 }
 
+func TestResolveStartupReposUsesStableIdentityAfterRouteReuse(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := time.Now().UTC()
+	original := db.GitHubRepoIdentity("github.com", "acme", "tools")
+	original.PlatformRepoID = "repo-original"
+	_, _, err := database.ReconcileRepositoryObservation(
+		t.Context(), original, now.Add(-2*time.Hour),
+	)
+	require.NoError(err)
+	renamed := db.GitHubRepoIdentity("github.com", "acme", "tools-renamed")
+	renamed.PlatformRepoID = original.PlatformRepoID
+	_, _, err = database.ReconcileRepositoryObservation(
+		t.Context(), renamed, now.Add(-time.Hour),
+	)
+	require.NoError(err)
+	replacement := db.GitHubRepoIdentity("github.com", "acme", "tools")
+	replacement.PlatformRepoID = "repo-replacement"
+	_, _, err = database.ReconcileRepositoryObservation(t.Context(), replacement, now)
+	require.NoError(err)
+
+	cfg := &config.Config{Repos: []config.Repo{{
+		Owner: "acme", Name: "tools", PlatformRepoID: original.PlatformRepoID,
+	}}}
+	client := &testutil.FixtureClient{}
+	repos := resolveStartupRepos(
+		t.Context(), cfg,
+		mustProviderRegistry(t, map[string]ghclient.Client{"github.com": client}),
+		database, nil,
+	)
+
+	require.Len(repos, 1)
+	require.Equal(original.PlatformRepoID, repos[0].PlatformExternalID)
+	require.Equal("acme/tools-renamed", repos[0].RepoPath)
+
+	withoutCatalog := resolveStartupRepos(
+		t.Context(), cfg,
+		mustProviderRegistry(t, map[string]ghclient.Client{"github.com": client}),
+		nil, nil,
+	)
+	require.Empty(withoutCatalog, "a stable identity must not fall back to a reused route")
+}
+
 func TestResolveStartupReposRegistersCredentialAliasForCatalogFallback(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -670,7 +749,28 @@ func TestDefaultProviderFactoriesRegisterForgejoAndGitea(t *testing.T) {
 	assert.Contains(factories, string(platform.KindGitea))
 }
 
-func TestBuildProviderStartupKeepsForgeProviderHostsDistinct(t *testing.T) {
+func TestConfigureCloneTransportPolicyUsesExactProviderIdentity(t *testing.T) {
+	clones := gitclone.New(t.TempDir(), nil)
+	configureCloneTransportPolicy(clones, &config.Config{
+		Platforms: []config.PlatformConfig{
+			{
+				Type:          "gitea",
+				Host:          "gitea.example.test:3000",
+				AllowInsecure: true,
+			},
+			{
+				Type: "gitea",
+				Host: "secure-gitea.example.test",
+			},
+		},
+	})
+
+	assert.True(t, clones.AllowsInsecureHTTP("gitea", "gitea.example.test:3000"))
+	assert.False(t, clones.AllowsInsecureHTTP("forgejo", "gitea.example.test:3000"))
+	assert.False(t, clones.AllowsInsecureHTTP("gitea", "secure-gitea.example.test"))
+}
+
+func TestBuildProviderControlPlaneKeepsForgeProviderHostsDistinct(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -699,9 +799,22 @@ func TestBuildProviderStartupKeepsForgeProviderHostsDistinct(t *testing.T) {
 	}
 
 	set := tokenauth.NewSourceSet(tokenauth.Options{})
-	startup, err := buildProviderStartup(
+	cfg := &config.Config{
+		SyncBudgetPerHour: 200,
+		Platforms: []config.PlatformConfig{
+			{Type: string(platform.KindForgejo), Host: "codeberg.org", TokenEnv: "FORGEJO_TEST_TOKEN"},
+			{
+				Type:          string(platform.KindGitea),
+				Host:          "gitea.example.com",
+				BaseURL:       "http://gitea-api.example.com:3000",
+				AllowInsecure: true,
+				TokenEnv:      "GITEA_TEST_TOKEN",
+			},
+		},
+	}
+	startup, err := buildProviderControlPlane(
 		t.Context(), database,
-		&config.Config{SyncBudgetPerHour: 200},
+		cfg,
 		set,
 		map[string]tokenauth.Source{
 			providerHostKey(string(platform.KindForgejo), "codeberg.org"): mainTestTokenSource(
@@ -714,6 +827,9 @@ func TestBuildProviderStartupKeepsForgeProviderHostsDistinct(t *testing.T) {
 		factories, nil,
 	)
 	require.NoError(err)
+	gitRoutes, err := buildGitStartup(cfg, set)
+	require.NoError(err)
+	gitRoutes.ApplyProviderControlPlane(&startup)
 
 	forgejoCalls := callsByProvider[string(platform.KindForgejo)]
 	giteaCalls := callsByProvider[string(platform.KindGitea)]
@@ -724,13 +840,15 @@ func TestBuildProviderStartupKeepsForgeProviderHostsDistinct(t *testing.T) {
 	require.NoError(err)
 	assert.Equal("codeberg-token", forgejoFactoryToken)
 	assert.Equal("gitea.example.com", giteaCalls[0].host)
+	assert.Equal("http://gitea-api.example.com:3000", giteaCalls[0].baseURL)
+	assert.True(giteaCalls[0].allowInsecure)
 	giteaFactoryToken, err := giteaCalls[0].tokenSource.Token(t.Context())
 	require.NoError(err)
 	assert.Equal("gitea-token", giteaFactoryToken)
 	assert.NotSame(forgejoCalls[0].rateTracker, giteaCalls[0].rateTracker)
 	assert.NotSame(forgejoCalls[0].budget, giteaCalls[0].budget)
-	forgejoCloneSource := startup.cloneAuth["codeberg.org"]
-	giteaCloneSource := startup.cloneAuth["gitea.example.com"]
+	forgejoCloneSource := gitRoutes.cloneAuth["codeberg.org"]
+	giteaCloneSource := gitRoutes.cloneAuth["gitea.example.com"]
 	require.NotNil(forgejoCloneSource)
 	require.NotNil(giteaCloneSource)
 	forgejoToken, err := forgejoCloneSource.Token(t.Context())
@@ -739,14 +857,12 @@ func TestBuildProviderStartupKeepsForgeProviderHostsDistinct(t *testing.T) {
 	require.NoError(err)
 	assert.Equal("codeberg-token", forgejoToken)
 	assert.Equal("gitea-token", giteaToken)
-	assert.Same(
-		forgejoCalls[0].tokenSource,
-		startup.cloneSources[tokenauth.Key{Platform: string(platform.KindForgejo), Host: "codeberg.org"}],
-	)
-	assert.Same(
-		giteaCalls[0].tokenSource,
-		startup.cloneSources[tokenauth.Key{Platform: string(platform.KindGitea), Host: "gitea.example.com"}],
-	)
+	assert.NotNil(gitRoutes.cloneSources[tokenauth.Key{
+		Platform: string(platform.KindForgejo), Host: "codeberg.org",
+	}])
+	assert.NotNil(gitRoutes.cloneSources[tokenauth.Key{
+		Platform: string(platform.KindGitea), Host: "gitea.example.com",
+	}])
 	// Clone auth is the dedicated host-level source registered in the
 	// SourceSet, not the provider's own source, so config reload can
 	// re-point it via tokenauth.CloneKey.
@@ -765,11 +881,11 @@ func TestBuildProviderStartupKeepsForgeProviderHostsDistinct(t *testing.T) {
 	assert.NotNil(giteaReader)
 }
 
-func TestBuildProviderStartupOrDegradedKeepsHealthyProviderWhenFactoryFails(t *testing.T) {
+func TestBuildProviderControlPlaneOrDegradedKeepsHealthyProviderWhenFactoryFails(t *testing.T) {
 	require := require.New(t)
 
 	set := tokenauth.NewSourceSet(tokenauth.Options{})
-	startup, err := buildProviderStartupOrDegraded(
+	startup, err := buildProviderControlPlaneOrDegraded(
 		t.Context(), dbtest.Open(t), &config.Config{}, set,
 		map[string]tokenauth.Source{
 			providerHostKey(string(platform.KindForgejo), "forge.example.com"): mainTestTokenSource(
@@ -797,11 +913,11 @@ func TestBuildProviderStartupOrDegradedKeepsHealthyProviderWhenFactoryFails(t *t
 	require.NoError(err)
 }
 
-func TestBuildProviderStartupForServeReturnsFactoryErrorWhenSyncDisabled(t *testing.T) {
+func TestBuildProviderControlPlaneForServeReturnsFactoryErrorWhenSyncDisabled(t *testing.T) {
 	require := require.New(t)
 
 	set := tokenauth.NewSourceSet(tokenauth.Options{})
-	_, err := buildProviderStartupForServe(
+	_, err := buildProviderControlPlaneForServe(
 		t.Context(), dbtest.Open(t), &config.Config{}, set,
 		map[string]tokenauth.Source{
 			providerHostKey(string(platform.KindForgejo), "forge.example.com"): mainTestTokenSource(
@@ -818,7 +934,7 @@ func TestBuildProviderStartupForServeReturnsFactoryErrorWhenSyncDisabled(t *test
 	require.ErrorContains(err, "create Forgejo client for forge.example.com: provider API unavailable")
 }
 
-func TestBuildProviderStartupUsesRegisteredFactoryForFutureProvider(t *testing.T) {
+func TestBuildProviderControlPlaneUsesRegisteredFactoryForFutureProvider(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -829,7 +945,7 @@ func TestBuildProviderStartupUsesRegisteredFactoryForFutureProvider(t *testing.T
 	codebergSource := mainTestTokenSource(
 		t, "codeberg", "codeberg.org", "CODEBERG_TEST_TOKEN", "codeberg-token",
 	)
-	startup, err := buildProviderStartup(
+	startup, err := buildProviderControlPlane(
 		t.Context(), database,
 		&config.Config{},
 		set,
@@ -854,25 +970,13 @@ func TestBuildProviderStartupUsesRegisteredFactoryForFutureProvider(t *testing.T
 	)
 	require.NoError(err)
 	assert.True(called)
-	src := startup.cloneAuth["codeberg.org"]
-	require.NotNil(src)
-	token, err := src.Token(t.Context())
-	require.NoError(err)
-	assert.Equal("codeberg-token", token)
-	assert.Same(
-		codebergSource,
-		startup.cloneSources[tokenauth.Key{Platform: "codeberg", Host: "codeberg.org"}],
-	)
-	cloneManaged, ok := set.Get(tokenauth.CloneKey("codeberg.org"))
-	require.True(ok)
-	assert.Same(cloneManaged, src)
 
 	reader, err := startup.registry.RepositoryReader(platform.Kind("codeberg"), "codeberg.org")
 	require.NoError(err)
 	assert.NotNil(reader)
 }
 
-func TestBuildProviderStartupSharedHostCloneAuthUsesHostLevelSource(t *testing.T) {
+func TestBuildProviderControlPlaneSharedHostCloneAuthUsesHostLevelSource(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -915,15 +1019,18 @@ func TestBuildProviderStartupSharedHostCloneAuthUsesHostLevelSource(t *testing.T
 			}}, nil
 		},
 	}
-	startup, err := buildProviderStartup(t.Context(), database, cfg, set, providerSources, factories, nil)
+	startup, err := buildProviderControlPlane(t.Context(), database, cfg, set, providerSources, factories, nil)
 	require.NoError(err)
+	gitRoutes, err := buildGitStartup(cfg, set)
+	require.NoError(err)
+	gitRoutes.ApplyProviderControlPlane(&startup)
 
 	// Clone auth must be the host-level source under tokenauth.CloneKey,
 	// not whichever provider source map iteration yielded first: reload
 	// updates the host key from the config's effective per-host chain, so
 	// pointing git at a provider source would detach clone auth from
 	// reload whenever that provider entry is removed or loses its token.
-	cloneSource := startup.cloneAuth["code.example.com"]
+	cloneSource := gitRoutes.cloneAuth["code.example.com"]
 	require.NotNil(cloneSource)
 	cloneManaged, ok := set.Get(tokenauth.CloneKey("code.example.com"))
 	require.True(ok)

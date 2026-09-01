@@ -15,6 +15,19 @@ export type E2EServerInfo = {
   base_url: string;
   pid: number;
   config_path: string;
+  node_id: string;
+  federation?: {
+    hub_url: string;
+    spoke_a_url: string;
+    spoke_b_url: string;
+    control_url: string;
+    hub_token: string;
+    spoke_a_token: string;
+    spoke_b_token: string;
+    hub_node_id: string;
+    spoke_a_node_id: string;
+    spoke_b_node_id: string;
+  };
   // Present when the server was spawned with KENN_FORGE_PPROF_ADDR set
   // (the workspace-switch profiling harness does this).
   pprof_addr?: string;
@@ -27,7 +40,7 @@ export type IsolatedE2EServer = {
 
 export type IsolatedE2EServerOptions = {
   defaultPlatformHost?: string;
-  fleetKey?: string;
+  federatedForges?: boolean;
   visibleImportedModes?: boolean;
   providerCollision?: boolean;
   preferPtyOwner?: boolean;
@@ -571,12 +584,16 @@ function readServerInfoSync(filePath: string): E2EServerInfo | null {
   }
 }
 
-async function isServerReachable(baseURL: string): Promise<boolean> {
+async function isServerReachable(baseURL: string, allowSelfSigned = false): Promise<boolean> {
   return await new Promise<boolean>((resolve) => {
     const url = new URL(baseURL);
     const request = (url.protocol === "https:" ? httpsRequest : httpRequest)(
       url,
-      { method: "GET", timeout: reachabilityTimeoutMs },
+      {
+        method: "GET",
+        timeout: reachabilityTimeoutMs,
+        ...(url.protocol === "https:" && allowSelfSigned ? { rejectUnauthorized: false } : {}),
+      },
       (response) => {
         response.resume();
         resolve((response.statusCode ?? 0) >= 200 && (response.statusCode ?? 0) < 300);
@@ -599,7 +616,7 @@ export async function getReusableServerInfo(filePath: string): Promise<E2EServer
   if (!info) {
     return null;
   }
-  if (!(await isServerReachable(info.base_url))) {
+  if (!(await isServerReachable(info.base_url, info.federation !== undefined))) {
     return null;
   }
   return info;
@@ -612,7 +629,7 @@ export async function waitForServerInfo(
   const deadline = Date.now() + startupTimeoutMs;
   while (Date.now() < deadline) {
     const info = await readServerInfo(filePath);
-    if (info && (await isServerReachable(info.base_url))) {
+    if (info && (await isServerReachable(info.base_url, info.federation !== undefined))) {
       return info;
     }
     if (childHasExited(child)) {
@@ -678,8 +695,8 @@ async function spawnServer(
   if (options.defaultPlatformHost) {
     args.push("-default-platform-host", options.defaultPlatformHost);
   }
-  if (options.fleetKey) {
-    args.push("-fleet-key", options.fleetKey);
+  if (options.federatedForges) {
+    args.push("-federated-forges");
   }
   if (options.visibleImportedModes) {
     args.push("-visible-imported-modes");
@@ -987,7 +1004,6 @@ export async function ensureE2EServer(): Promise<E2EServerInfo> {
       // with all imported app modes visible.
       const server = await spawnPooledServer({
         host: defaultPlatformHost,
-        fleetKey: "",
         visibleImportedModes: true,
         providerCollision: false,
         preferPtyOwner: false,
@@ -1056,7 +1072,6 @@ export async function stopE2EServer(): Promise<void> {
 
 type PooledServerOptions = {
   host: string;
-  fleetKey: string;
   visibleImportedModes: boolean;
   providerCollision: boolean;
   preferPtyOwner: boolean;
@@ -1074,7 +1089,6 @@ type PooledServer = {
 
 const defaultPooledOptions: PooledServerOptions = {
   host: defaultPlatformHost,
-  fleetKey: "",
   visibleImportedModes: false,
   providerCollision: false,
   preferPtyOwner: false,
@@ -1106,7 +1120,6 @@ function assertPooledLeaseEnvUnchanged(): void {
 function normalizedPooledOptions(options: IsolatedE2EServerOptions): PooledServerOptions {
   return {
     host: options.defaultPlatformHost ?? defaultPlatformHost,
-    fleetKey: options.fleetKey ?? "",
     visibleImportedModes: options.visibleImportedModes ?? false,
     providerCollision: options.providerCollision ?? false,
     preferPtyOwner: options.preferPtyOwner ?? false,
@@ -1116,7 +1129,6 @@ function normalizedPooledOptions(options: IsolatedE2EServerOptions): PooledServe
 function samePooledOptions(a: PooledServerOptions, b: PooledServerOptions): boolean {
   return (
     a.host === b.host &&
-    a.fleetKey === b.fleetKey &&
     a.visibleImportedModes === b.visibleImportedModes &&
     a.providerCollision === b.providerCollision &&
     a.preferPtyOwner === b.preferPtyOwner
@@ -1163,7 +1175,6 @@ async function postReset(baseURL: string, options: PooledServerOptions): Promise
     request.end(
       JSON.stringify({
         default_platform_host: options.host,
-        fleet_key: options.fleetKey,
         visible_imported_modes: options.visibleImportedModes,
         provider_collision: options.providerCollision,
         prefer_pty_owner: options.preferPtyOwner,
@@ -1203,7 +1214,6 @@ async function spawnPooledServer(options: PooledServerOptions): Promise<PooledSe
   const infoFile = path.join(infoDir, "server-info.json");
   const started = await spawnServer(infoFile, {
     ...(options.host === defaultPlatformHost ? {} : { defaultPlatformHost: options.host }),
-    ...(options.fleetKey ? { fleetKey: options.fleetKey } : {}),
     ...(options.visibleImportedModes ? { visibleImportedModes: true } : {}),
     ...(options.providerCollision ? { providerCollision: true } : {}),
   });
@@ -1233,7 +1243,7 @@ export async function startIsolatedE2EServer(): Promise<IsolatedE2EServer> {
 export async function startIsolatedE2EServerWithOptions(
   options: IsolatedE2EServerOptions = {},
 ): Promise<IsolatedE2EServer> {
-  if (options.freshProcess) {
+  if (options.freshProcess || options.federatedForges) {
     const infoDir = mkdtempSync(path.join(os.tmpdir(), "kenn-forge-e2e-"));
     const infoFile = path.join(infoDir, "server-info.json");
     const started = await spawnServer(infoFile, options);

@@ -160,7 +160,7 @@
         dismiss: closeMenu,
         escapeFocus: () => trigger,
       }),
-      autoReposition(() => menu, position),
+      autoReposition(() => [menu], position),
     ];
     document.addEventListener("pointerdown", dismissPointerDown);
     return () => {
@@ -248,7 +248,7 @@
     min-height: 30px;
     overflow: hidden;
     padding-inline: var(--space-4);
-    border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+    border-radius: var(--kit-control-radius, var(--radius-sm)) 0 0 var(--kit-control-radius, var(--radius-sm));
   }
 
   .workspace-create-split :global(.create-primary span) {
@@ -257,10 +257,11 @@
     white-space: nowrap;
   }
 
+  /* Sized by its button: phone hit-target rules widen the button beyond
+   * 30px, and a fixed wrapper width would let it overflow the control. */
   .create-options {
     display: inline-flex;
-    flex: 0 0 30px;
-    width: 30px;
+    flex: 0 0 auto;
   }
 
   .create-options :global(.create-options-button) {
@@ -269,7 +270,7 @@
     min-height: 30px;
     padding: 0;
     border-left: 0;
-    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    border-radius: 0 var(--kit-control-radius, var(--radius-sm)) var(--kit-control-radius, var(--radius-sm)) 0;
   }
 
   .create-menu {

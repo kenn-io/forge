@@ -984,12 +984,21 @@ func (d *DB) ListQueuedNotificationAcks(ctx context.Context, platform, host stri
 	}
 	limit = normalizedNotificationLimit(limit)
 	rows, err := d.ro.QueryContext(ctx, fmt.Sprintf(`SELECT %s FROM forge_notification_items n
+		JOIN forge_notification_ack_admissions admission
+		  ON admission.notification_id = n.id
+		JOIN forge_spoke_preparation preparation
+		  ON preparation.singleton_id = 1
 		WHERE n.platform = ?
 		  AND n.platform_host = ?
 		  AND n.source_ack_queued_at IS NOT NULL
 		  AND n.source_ack_synced_at IS NULL
 		  AND n.source_ack_error != 'max_attempts_exceeded'
 		  AND COALESCE(n.source_ack_next_attempt_at, n.source_ack_queued_at) <= ?
+		  AND (
+		      preparation.phase = 'open'
+		      OR preparation.drain_ack_generation IS NULL
+		      OR admission.generation <= preparation.drain_ack_generation
+		  )
 		  AND (
 		      n.repo_id IS NULL
 		      OR EXISTS (

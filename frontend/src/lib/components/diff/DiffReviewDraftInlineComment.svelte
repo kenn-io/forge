@@ -245,7 +245,7 @@
   }
 
   .draft-comment-action:disabled {
-    opacity: 0.55;
+    opacity: var(--opacity-disabled);
     cursor: default;
   }
 

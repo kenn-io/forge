@@ -11,7 +11,27 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"go.kenn.io/forge/internal/federationauth"
+	"go.kenn.io/forge/internal/providerplane"
 )
+
+type blockingHubEventTransport struct {
+	started  chan struct{}
+	canceled chan struct{}
+	release  chan struct{}
+	once     sync.Once
+}
+
+func (c *blockingHubEventTransport) Do(
+	ctx context.Context, _ federationauth.Scope, _ *http.Request,
+) (*http.Response, error) {
+	c.once.Do(func() { close(c.started) })
+	<-ctx.Done()
+	close(c.canceled)
+	<-c.release
+	return nil, ctx.Err()
+}
 
 type pullLifecycleRecorder struct {
 	stopOnce      sync.Once
@@ -264,6 +284,44 @@ func TestServerShutdownDoesNotAdvancePastActiveWorkspaceConsumers(t *testing.T) 
 	require.NoError(srv.Shutdown(longCtx))
 	require.Equal(int32(1), workspaceStops.Load())
 	require.Equal(int32(1), runtimeStops.Load())
+}
+
+func TestServerShutdownWaitsForHubEventClient(t *testing.T) {
+	require := require.New(t)
+	srv, _ := setupTestServer(t)
+	transport := &blockingHubEventTransport{
+		started: make(chan struct{}), canceled: make(chan struct{}), release: make(chan struct{}),
+	}
+	events, err := providerplane.NewEventClient(providerplane.EventClientOptions{
+		Client: transport,
+	})
+	require.NoError(err)
+	srv.runWorkspaceDependent(events.Run)
+	select {
+	case <-transport.started:
+	case <-time.After(time.Second):
+		require.FailNow("hub event client did not start")
+	}
+
+	shutdownDone := make(chan error, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+		defer cancel()
+		shutdownDone <- srv.Shutdown(ctx)
+	}()
+	select {
+	case <-transport.canceled:
+	case <-time.After(time.Second):
+		require.FailNow("hub event client was not canceled")
+	}
+	select {
+	case <-shutdownDone:
+		require.FailNow("shutdown returned before hub event client exited")
+	case <-time.After(25 * time.Millisecond):
+	}
+
+	close(transport.release)
+	require.NoError(<-shutdownDone)
 }
 
 func TestWorkspaceDependencyShutdownPreservesOrderAcrossTimeoutRetry(t *testing.T) {

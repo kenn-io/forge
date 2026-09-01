@@ -23,6 +23,7 @@ function workspace(
     platform_host: "github.com",
     repo_name: name,
     repo_owner: owner,
+    source_item_visible: true,
     status: "ready",
     tmux_activity_source: "unknown",
     tmux_last_output_at: terminalActivity,

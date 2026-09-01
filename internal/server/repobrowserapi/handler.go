@@ -11,25 +11,35 @@ import (
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
+	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
 )
+
+type RepositoryDescriptorSource interface {
+	GetRepositoryDescriptor(
+		context.Context, providerplane.RepositoryRoute,
+	) (providerplane.RepositoryDescriptor, error)
+}
 
 type Handler struct {
 	resolver     *httpapi.RepositoryResolver
 	clones       *gitclone.Manager
+	descriptors  RepositoryDescriptorSource
 	refreshEvery time.Duration
 }
 
 type Deps struct {
-	Resolver *httpapi.RepositoryResolver
-	Clones   *gitclone.Manager
-	Config   *config.Config
+	Resolver         *httpapi.RepositoryResolver
+	Clones           *gitclone.Manager
+	Config           *config.Config
+	DescriptorSource RepositoryDescriptorSource
 }
 
 func New(deps Deps) *Handler {
 	return &Handler{
 		resolver:     deps.Resolver,
 		clones:       deps.Clones,
+		descriptors:  deps.DescriptorSource,
 		refreshEvery: refreshIntervalForConfig(deps.Config),
 	}
 }
@@ -499,6 +509,27 @@ func (h *Handler) ensureRepoBrowserClone(
 		return nil, gitclone.RepoBrowserRepoRef{}, httpapi.ErrRepositoryStoreUnavailable
 	}
 	repoPath = canonicalRepoBrowserRepoPath(owner, name, repoPath)
+	requireCredential := false
+	descriptorProviderRepoID := ""
+	if h.descriptors != nil {
+		route, err := providerplane.CanonicalRepositoryRoute(
+			repositoryRouteForBrowser(provider, platformHost, repoPath),
+		)
+		if err != nil {
+			return nil, gitclone.RepoBrowserRepoRef{}, err
+		}
+		descriptor, err := h.descriptors.GetRepositoryDescriptor(ctx, route)
+		if err != nil {
+			return nil, gitclone.RepoBrowserRepoRef{}, err
+		}
+		provider = descriptor.Provider
+		platformHost = descriptor.PlatformHost
+		owner = descriptor.Owner
+		name = descriptor.Name
+		repoPath = owner + "/" + name
+		descriptorProviderRepoID = descriptor.PlatformRepoID
+		requireCredential = true
+	}
 	repo, err := h.resolver.Lookup(ctx, provider, platformHost, repoPath)
 	if err != nil {
 		return nil, gitclone.RepoBrowserRepoRef{}, err
@@ -506,14 +537,55 @@ func (h *Handler) ensureRepoBrowserClone(
 	if strings.TrimSpace(repo.CloneURL) == "" {
 		return nil, gitclone.RepoBrowserRepoRef{}, errRepoBrowserCloneUnavailable
 	}
+	if requireCredential {
+		if strings.TrimSpace(repo.PlatformRepoID) !=
+			strings.TrimSpace(descriptorProviderRepoID) {
+			return nil, gitclone.RepoBrowserRepoRef{}, db.ErrRepositoryRouteFenceChanged
+		}
+		if err := h.clones.RequireCredentialRoute(
+			ctx, repo.Platform, repo.PlatformHost, repo.Owner, repo.Name,
+		); err != nil {
+			return nil, gitclone.RepoBrowserRepoRef{}, repoBrowserCredentialProblem(
+				err, *repo,
+			)
+		}
+	}
 	repoRef, err := h.repoBrowserRepoRef(ctx, *repo)
 	if err != nil {
 		return nil, gitclone.RepoBrowserRepoRef{}, err
 	}
 	if err := h.clones.EnsureRepoBrowserClone(ctx, repoRef); err != nil {
+		if errors.Is(err, gitclone.ErrCredentialUnavailable) {
+			return nil, gitclone.RepoBrowserRepoRef{}, repoBrowserCredentialProblem(
+				err, *repo,
+			)
+		}
 		return nil, gitclone.RepoBrowserRepoRef{}, err
 	}
 	return repo, repoRef, nil
+}
+
+func repoBrowserCredentialProblem(err error, repo db.Repo) error {
+	if !errors.Is(err, gitclone.ErrCredentialUnavailable) {
+		return err
+	}
+	return httpapi.GitCredentialUnavailable(
+		repo.Platform, repo.PlatformHost, repo.RepoPath,
+	)
+}
+
+func repositoryRouteForBrowser(
+	provider, platformHost, repoPath string,
+) providerplane.RepositoryRoute {
+	repoPath = strings.Trim(repoPath, "/ ")
+	owner, name := "", repoPath
+	if split := strings.LastIndex(repoPath, "/"); split >= 0 {
+		owner, name = repoPath[:split], repoPath[split+1:]
+	}
+	return providerplane.RepositoryRoute{
+		Provider: provider, PlatformHost: platformHost,
+		Owner: owner, Name: name,
+	}
 }
 
 func (h *Handler) repoBrowserRepoRef(
@@ -530,14 +602,15 @@ func (h *Handler) repoBrowserRepoRef(
 		fence.RouteID, fence.RepoID, fence.Generation,
 	)
 	return gitclone.RepoBrowserRepoRef{
-		Provider:       repo.Platform,
-		Host:           repo.PlatformHost,
-		Owner:          repo.Owner,
-		Name:           repo.Name,
-		RepoPath:       repo.RepoPath,
-		ProviderRepoID: repo.PlatformRepoID,
-		RemoteURL:      repo.CloneURL,
-		RouteFence:     token,
+		Provider:          repo.Platform,
+		Host:              repo.PlatformHost,
+		Owner:             repo.Owner,
+		Name:              repo.Name,
+		RepoPath:          repo.RepoPath,
+		ProviderRepoID:    repo.PlatformRepoID,
+		RemoteURL:         repo.CloneURL,
+		RequireCredential: h.descriptors != nil,
+		RouteFence:        token,
 		ValidateRouteFence: func(
 			validationCtx context.Context,
 			got gitclone.RepoBrowserRouteFence,
@@ -615,6 +688,9 @@ func repoBrowserProblem(err error) error {
 	if err == nil {
 		return nil
 	}
+	if problem, ok := errors.AsType[*httpapi.ProblemError](err); ok {
+		return problem
+	}
 	if errors.Is(err, httpapi.ErrRepoPathRequired) {
 		return httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), map[string]any{"reason": "missing_repo_path"})
 	}
@@ -627,6 +703,9 @@ func repoBrowserProblem(err error) error {
 	}
 	if errors.Is(err, errRepoBrowserCloneUnavailable) {
 		return httpapi.NotFound(httpapi.CodeNotFound, "repo browser clone unavailable", map[string]any{"reason": "clone_unavailable"})
+	}
+	if errors.Is(err, gitclone.ErrCredentialUnavailable) {
+		return httpapi.GitCredentialUnavailable("", "", "")
 	}
 	if errors.Is(err, errRepoBrowserMutableAssetRef) {
 		return httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), map[string]any{"reason": "mutable_ref_not_allowed"})

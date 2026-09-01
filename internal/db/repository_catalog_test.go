@@ -691,6 +691,41 @@ func TestReconcileRepositoryObservationReplacesAndReactivates(t *testing.T) {
 	assert.Equal(oldRepo.Repository.ID, issueRepoID)
 }
 
+func TestRepositoryObservationPreservesAToBToARouteHistory(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := openTestDB(t)
+	ctx := t.Context()
+	observedAt := baseTime()
+
+	for index, providerRepoID := range []string{"R_1", "R_2", "R_1"} {
+		_, accepted, err := database.ReconcileRepositoryObservation(ctx, RepoIdentity{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformRepoID: providerRepoID,
+			Owner:          "acme", Name: "widget", RepoPath: "acme/widget",
+		}, observedAt.Add(time.Duration(index)*time.Minute))
+		require.NoError(err)
+		assert.True(accepted)
+	}
+
+	first, err := database.GetRepositoryByProviderID(
+		ctx, "github", "github.com", "R_1",
+	)
+	require.NoError(err)
+	require.NotNil(first)
+	second, err := database.GetRepositoryByProviderID(
+		ctx, "github", "github.com", "R_2",
+	)
+	require.NoError(err)
+	require.NotNil(second)
+	require.Len(first.Routes, 1)
+	require.Len(second.Routes, 1)
+	assert.Equal(int64(2), first.Routes[0].Generation)
+	assert.Equal(int64(1), second.Routes[0].Generation)
+	assert.True(first.Routes[0].Current)
+	assert.False(second.Routes[0].Current)
+}
+
 func TestReconcileRepositoryObservationAdoptionKeepsLegacyContent(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

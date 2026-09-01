@@ -100,9 +100,8 @@ test.describe("mobile activity repository selector", () => {
     await expect(page.getByRole("option", { name: "acme/*" })).toHaveCount(0);
 
     await page.getByRole("option", { name: "gitea/github.com/acme/widgets" }).click();
-    await expect(page.getByRole("button", { name: "Select repository: gitea/github.com/acme/widgets" })).toContainText(
-      "gitea/github.com/acme/widgets",
-    );
+    const selectedRepo = page.getByRole("button", { name: "Select repository: gitea/github.com/acme/widgets" });
+    await expect(selectedRepo.locator(".typeahead-value")).toContainText("acme/widgets · gitea/github.com");
     await expect.poll(() => activityRepos).toContain("gitea|github.com/acme/widgets");
   });
 

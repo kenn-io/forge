@@ -1,4 +1,6 @@
+import { realpathSync } from "node:fs";
 import { createRequire } from "node:module";
+import path from "node:path";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { svelteTesting } from "@testing-library/svelte/vite";
 import { defaultClientConditions, searchForWorkspaceRoot, type Plugin, type ProxyOptions, type UserConfig } from "vite";
@@ -12,6 +14,11 @@ const require = createRequire(import.meta.url);
 const testingLibrarySvelteEntry = require.resolve("@testing-library/svelte");
 const kitUiMarkdownEntry = require.resolve("@kenn-io/kit-ui/utils/markdown");
 const kitUiTimeEntry = require.resolve("@kenn-io/kit-ui/utils/time");
+// kit-ui is consumed as source and Bun links it from its global cache, which
+// sits outside the workspace root. Its asset imports (`?inline` SVGs) go
+// through Vite's fs allowlist by realpath, so the resolved source root must
+// be allowed explicitly.
+const kitUiSourceRoot = path.resolve(realpathSync(path.dirname(kitUiMarkdownEntry)), "..");
 
 // resolveDevApiUrl() prefers KENN_FORGE_API_URL, which dev-ephemeral sets
 // to the generated backend URL before starting Vite.
@@ -296,6 +303,7 @@ const config = {
       "@kenn-io/kit-ui > @lucide/svelte/icons/copy",
       "@kenn-io/kit-ui > @lucide/svelte/icons/ellipsis",
       "@kenn-io/kit-ui > @lucide/svelte/icons/funnel",
+      "@kenn-io/kit-ui > @lucide/svelte/icons/key-round",
       "@kenn-io/kit-ui > @lucide/svelte/icons/maximize-2",
       "@kenn-io/kit-ui > @lucide/svelte/icons/monitor",
       "@kenn-io/kit-ui > @lucide/svelte/icons/moon",
@@ -446,7 +454,7 @@ const config = {
     strictPort: true,
     ...(devServerAllowedHosts ? { allowedHosts: devServerAllowedHosts } : {}),
     hmr: devServerHmr,
-    fs: { allow: [workspaceRoot] },
+    fs: { allow: [workspaceRoot, kitUiSourceRoot] },
     proxy: {
       "/api": {
         target: apiUrl,

@@ -249,6 +249,177 @@ func TestOpenBackfillsIssuePRReferences(t *testing.T) {
 	assertDatabaseIntegrityForTest(t, migrated.ReadDB())
 }
 
+func TestMigration54BackfillsWorkspaceLaunchSpecs(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	dbPath := filepath.Join(t.TempDir(), "workspace-launch-spec-v53.db")
+	openAtVersionForTest(t, dbPath, 53, func(raw *sql.DB) {
+		_, err := raw.Exec(`
+			INSERT INTO forge_repos (
+				id, platform, platform_host, platform_repo_id,
+				owner, name, repo_path, owner_key, name_key, repo_path_key,
+				clone_url, default_branch, lifecycle_state, created_at
+			) VALUES
+			(
+				1, 'github', 'github.com', 'provider-repo-1',
+				'acme', 'widget', 'acme/widget', 'acme', 'widget', 'acme/widget',
+				'https://github.com/acme/widget.git', 'main', 'active', datetime('now')
+			),
+			(
+				2, 'github', 'github.com', 'provider-repo-renamed',
+				'acme', 'renamed', 'acme/renamed', 'acme', 'renamed', 'acme/renamed',
+				'https://github.com/acme/renamed.git', 'main', 'active', datetime('now')
+			);
+			INSERT INTO forge_repo_routes (
+				repo_id, platform, platform_host, owner, name, repo_path,
+				owner_key, name_key, repo_path_key, is_current,
+				first_seen_at, last_seen_at, generation
+			) VALUES
+			(
+				1, 'github', 'github.com', 'acme', 'widget', 'acme/widget',
+				'acme', 'widget', 'acme/widget', 1,
+				datetime('now'), datetime('now'), 1
+			),
+			(
+				2, 'github', 'github.com', 'acme', 'legacy', 'acme/legacy',
+				'acme', 'legacy', 'acme/legacy', 0,
+				datetime('now', '-1 day'), datetime('now', '-1 hour'), 1
+			),
+			(
+				2, 'github', 'github.com', 'acme', 'renamed', 'acme/renamed',
+				'acme', 'renamed', 'acme/renamed', 1,
+				datetime('now'), datetime('now'), 1
+			);
+			INSERT INTO forge_merge_requests (
+				id, repo_id, platform_id, number, head_branch, snapshot_revision,
+				created_at, updated_at, last_activity_at
+			) VALUES
+				(11, 1, 101, 7, 'feature/seven', 2,
+				 datetime('now'), datetime('now'), datetime('now')),
+				(13, 1, 103, 9, 'contributor/nine', 3,
+				 datetime('now'), datetime('now'), datetime('now')),
+				(14, 2, 104, 10, 'feature/ten', 1,
+				 datetime('now'), datetime('now'), datetime('now'));
+			INSERT INTO forge_issues (
+				id, repo_id, platform_id, number, snapshot_revision,
+				created_at, updated_at, last_activity_at
+			) VALUES (
+				12, 1, 102, 8, 2,
+				datetime('now'), datetime('now'), datetime('now')
+			);
+			INSERT INTO forge_workspaces (
+				id, platform, platform_host, repo_owner, repo_name,
+				repo_owner_key, repo_name_key, repo_path_key,
+				item_type, item_number, item_key, git_head_ref,
+				workspace_branch, worktree_path, tmux_session, status
+			) VALUES
+				('ws-pr', 'github', 'github.com', 'acme', 'widget',
+				 'acme', 'widget', 'acme/widget',
+				 'pull_request', 7, '7', 'feature/seven',
+				 'feature/seven', '/tmp/ws-pr', 'ws-pr', 'ready'),
+				('ws-issue', 'github', 'github.com', 'acme', 'widget',
+				 'acme', 'widget', 'acme/widget',
+				 'issue', 8, '8', 'work/issue-8',
+				 'work/issue-8', '/tmp/ws-issue', 'ws-issue', 'ready'),
+				('ws-fork', 'github', 'github.com', 'acme', 'widget',
+				 'acme', 'widget', 'acme/widget',
+				 'pull_request', 9, '9', 'contributor/nine',
+				 'contributor/nine', '/tmp/ws-fork', 'ws-fork', 'ready'),
+				('ws-incomplete', 'github', 'github.com', 'acme', 'widget',
+				 'acme', 'widget', 'acme/widget',
+				 'pull_request', 99, '99', 'missing',
+				 'missing', '/tmp/ws-incomplete', 'ws-incomplete', 'ready'),
+				('ws-renamed', 'github', 'github.com', 'acme', 'legacy',
+				 'acme', 'legacy', 'acme/legacy',
+				 'pull_request', 10, '10', 'feature/ten',
+				 'feature/ten', '/tmp/ws-renamed', 'ws-renamed', 'ready'),
+				('ws-renamed-incomplete', 'github', 'github.com', 'acme', 'legacy',
+				 'acme', 'legacy', 'acme/legacy',
+				 'pull_request', 11, '11', 'feature/eleven',
+				 'feature/eleven', '/tmp/ws-renamed-incomplete', 'ws-renamed-incomplete', 'ready'),
+				('ws-adhoc', 'github', 'github.com', 'acme', 'widget',
+				 'acme', 'widget', 'acme/widget',
+				 'adhoc', 0, 'adhoc:work/local', 'work/local',
+				 'work/local', '/tmp/ws-adhoc', 'ws-adhoc', 'ready')
+		`)
+		require.NoError(err)
+		_, err = raw.Exec(`
+			UPDATE forge_workspaces
+			SET mr_head_repo = 'https://github.com/contributor/widget.git'
+			WHERE id = 'ws-fork'`)
+		require.NoError(err)
+	})
+
+	database, err := Open(dbPath)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(database.Close()) })
+	for _, workspaceID := range []string{"ws-pr", "ws-issue", "ws-fork", "ws-renamed"} {
+		spec, err := database.GetWorkspaceLaunchSpec(t.Context(), workspaceID)
+		require.NoError(err)
+		require.NotNil(spec)
+		assert.Equal(WorkspaceLaunchSpecVersion, spec.Version)
+	}
+	fork, err := database.GetWorkspaceLaunchSpec(t.Context(), "ws-fork")
+	require.NoError(err)
+	require.NotNil(fork)
+	require.NotNil(fork.Pull)
+	assert.Equal("fork", fork.Pull.HeadRepoKind)
+	assert.Equal("https://github.com/contributor/widget.git", fork.Pull.HeadRepoCloneURL)
+	renamed, err := database.GetWorkspaceLaunchSpec(t.Context(), "ws-renamed")
+	require.NoError(err)
+	require.NotNil(renamed)
+	assert.Equal("provider-repo-renamed", renamed.Repository.PlatformRepoID)
+	assert.Equal("renamed", renamed.Repository.Name)
+	adhoc, err := database.GetWorkspaceLaunchSpec(t.Context(), "ws-adhoc")
+	require.NoError(err)
+	assert.Nil(adhoc)
+	unprepared, err := database.ListUnpreparedProviderWorkspaces(t.Context())
+	require.NoError(err)
+	require.Len(unprepared, 6)
+	reasons := make(map[string]string, len(unprepared))
+	stableIDs := make(map[string]string, len(unprepared))
+	for _, item := range unprepared {
+		reasons[item.Workspace.ID] = item.Reason
+		stableIDs[item.Workspace.ID] = item.PlatformRepoID
+	}
+	assert.Equal(map[string]string{
+		"ws-pr":                 "sourceVisibilityExpired",
+		"ws-issue":              "sourceVisibilityExpired",
+		"ws-fork":               "sourceVisibilityExpired",
+		"ws-incomplete":         "launchSpecMissing",
+		"ws-renamed":            "launchSpecMismatch",
+		"ws-renamed-incomplete": "launchSpecMissing",
+	}, reasons)
+	assert.Equal("provider-repo-renamed", stableIDs["ws-renamed-incomplete"])
+	assertDatabaseIntegrityForTest(t, database.ReadDB())
+}
+
+func TestMigration54DownDropsOnlyPreparationTables(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	dbPath := filepath.Join(t.TempDir(), "node-preparation-down.db")
+	database, err := Open(dbPath)
+	require.NoError(err)
+	require.NoError(database.Close())
+
+	raw, migrator := openMigratorForTest(t, dbPath)
+	require.NoError(migrator.Migrate(53))
+	for _, table := range []string{
+		"forge_workspace_launch_specs", "forge_spoke_preparation",
+		"forge_spoke_preparation_receipts", "forge_spoke_preparation_seals",
+		"forge_notification_ack_admissions",
+	} {
+		assert.False(tableExistsForTest(t, raw, table), table)
+	}
+	for _, table := range []string{
+		"forge_workspaces", "forge_repos", "forge_notification_items",
+	} {
+		assert.True(tableExistsForTest(t, raw, table), table)
+	}
+	assertDatabaseIntegrityForTest(t, raw)
+	require.NoError(raw.Close())
+}
+
 func TestKataIssueLinksMigration48IsReversible(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

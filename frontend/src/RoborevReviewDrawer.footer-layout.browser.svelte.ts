@@ -185,8 +185,10 @@ describe("review drawer footer layout", () => {
 
   function assertActionsInsideFooter(actions: DOMRect[]): void {
     const footer = footerRect();
-    expect(actions[0]!.left).toBeGreaterThanOrEqual(footer.left - 0.5);
-    expect(Math.max(...actions.map((r) => r.right))).toBeLessThanOrEqual(footer.right + 0.5);
+    // Browser layout may place a one-device-pixel antialiased edge on the
+    // fractional boundary. Anything beyond that is genuine clipped overflow.
+    expect(actions[0]!.left).toBeGreaterThanOrEqual(footer.left - 1);
+    expect(Math.max(...actions.map((r) => r.right))).toBeLessThanOrEqual(footer.right + 1);
   }
 
   it("keeps the actions beside the usage summary when the footer has room", async () => {

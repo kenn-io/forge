@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Guide to Forge — a visual tour of Kenn Forge</title>
+    <meta
+      name="description"
+      content="A seven-stop visual tour of Kenn Forge: the activity queue, issue triage, agent workspaces, pull request review, source browsing, integrations, and fleets. Each stop links into the operating docs."
+    />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="canonical" href="https://forge.kenn.io/guide/" />
+    <meta property="og:title" content="Guide to Forge" />
+    <meta
+      property="og:description"
+      content="A seven-stop visual tour of the Kenn Forge loop, from overnight activity to merged pull request."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://forge.kenn.io/guide/" />
+    <link
+      rel="preload"
+      href="/fonts/JetBrainsMono-Bold.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link rel="stylesheet" href="/styles/site.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container">
+        <a class="brand" href="/">
+          <svg viewBox="0 0 512 512" role="img" aria-hidden="true">
+            <rect width="512" height="512" rx="104" fill="#20272d" />
+            <g transform="translate(256 256) scale(1.153) translate(-256 -256)">
+              <path d="M186 120c-42 0-44 32-44 63v34c0 23-20 35-42 39 22 4 42 16 42 39v34c0 31 2 63 44 63" fill="none" stroke="#f7fbff" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" />
+              <path d="M326 120c42 0 44 32 44 63v34c0 23 20 35 42 39-22 4-42 16-42 39v34c0 31-2 63-44 63" fill="none" stroke="#f7fbff" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" />
+              <path d="M220 192h72" stroke="#4cc46c" stroke-linecap="round" stroke-width="24" />
+              <path d="M220 256h72" stroke="#f3b13f" stroke-linecap="round" stroke-width="24" />
+              <path d="M220 320h72" stroke="#e34b3f" stroke-linecap="round" stroke-width="24" />
+            </g>
+          </svg>
+          <span>Kenn Forge</span>
+        </a>
+        <nav class="site-nav" aria-label="Primary navigation">
+          <a href="/guide/" aria-current="page">Guide</a>
+          <a href="/docs/">Docs</a>
+          <a class="repo" href="https://github.com/kenn-io/forge">
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
+            </svg>
+            <span class="repo-name">kenn-io/forge</span>
+          </a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section class="guide-hero">
+        <div class="container">
+          <p class="eyebrow">Seven-stop tour</p>
+          <h1>Guide to Forge</h1>
+          <p class="sub">
+            How a day's work runs through Kenn Forge: scan what changed, hand
+            implementation to an agent, supervise its session, then review and merge the
+            result — without leaving one console. Every stop links into the operating docs.
+          </p>
+          <p class="docs-callout">
+            Ready for setup and operating detail? Start with the
+            <a href="/docs/quickstart/">Quick start</a> or browse the <a href="/docs/">Docs</a>.
+          </p>
+          <nav class="contents container" aria-label="On this page" style="padding: 0">
+            <a href="#activity"><b>01</b> The queue</a>
+            <a href="#triage"><b>02</b> Triage</a>
+            <a href="#workspaces"><b>03</b> Agents</a>
+            <a href="#review"><b>04</b> Review &amp; merge</a>
+            <a href="#source"><b>05</b> Source</a>
+            <a href="#integrations"><b>06</b> Your tools</a>
+            <a href="#fleet"><b>07</b> Federation</a>
+          </nav>
+        </div>
+      </section>
+
+      <ol class="steps">
+        <li id="activity">
+          <div class="container">
+            <div class="step-copy">
+              <span class="number" aria-hidden="true">01</span>
+              <div>
+                <h2>Start in the queue</h2>
+                <p>
+                  <strong>Activity</strong> collects recent comments, reviews, commits, and
+                  state changes across every repository you track. Threaded mode groups
+                  events by pull request or issue; flat mode keeps exact order. Filter by
+                  time, event type, repository, text, or bot activity — then select a row
+                  and its detail opens beside the queue, so you never lose your place.
+                </p>
+                <p>
+                  When you need to move faster than the mouse, the command palette is
+                  everywhere:
+                </p>
+                <div class="palette-hints">
+                  <span><kbd>Cmd/Ctrl+K</kbd> open palette</span>
+                  <span><code>&gt;</code> commands</span>
+                  <span><code>pr:</code> pull requests</span>
+                  <span><code>issue:</code> issues</span>
+                  <span><kbd>?</kbd> shortcuts for the current view</span>
+                </div>
+                <figure class="shot">
+                  <button class="image-zoom" type="button" aria-label="Zoom: Activity with a selected pull request and live workspace">
+                    <img src="/docs/assets/generated/maintainer-overview-dark.svg" alt="Activity queue with a selected pull request open beside its live workspace and coding-agent session" loading="lazy" />
+                  </button>
+                </figure>
+                <p class="explore"><a href="/docs/workflows/activity/">Explore the activity workflow →</a></p>
+              </div>
+            </div>
+          </div>
+        </li>
+
+        <li id="triage">
+          <div class="container">
+            <div class="step-copy">
+              <span class="number" aria-hidden="true">02</span>
+              <div>
+                <h2>Triage issues into work</h2>
+                <p>
+                  <strong>Issues</strong> is a queue, not a list: search, filter, comment,
+                  star, close, or reopen without leaving the view. When an issue is ready
+                  for implementation, create a workspace from it directly — the branch,
+                  worktree, and context arrive together, ready for you or an agent to
+                  pick up.
+                </p>
+                <figure class="shot">
+                  <button class="image-zoom" type="button" aria-label="Zoom: issue triage view">
+                    <img src="/docs/assets/generated/issue-triager-dark.svg" alt="Issue queue with detail pane and triage actions" loading="lazy" />
+                  </button>
+                </figure>
+                <p class="explore"><a href="/docs/workflows/issue-triager/">Explore the issue triager workflow →</a></p>
+              </div>
+            </div>
+          </div>
+        </li>
+
+        <li id="workspaces">
+          <div class="container">
+            <div class="step-copy">
+              <span class="number" aria-hidden="true">03</span>
+              <div>
+                <h2>Hand the work to an agent</h2>
+                <p>
+                  Create a workspace from a pull request, issue, or from scratch: each one
+                  is a Git worktree with durable, tmux-backed sessions. Choose an agent
+                  from the action menu to create the workspace and launch it in one step,
+                  then promote the session into the detail layout so it sits beside the
+                  discussion and files it is working on.
+                </p>
+                <p>
+                  Lifecycle hooks (<code style="font-family: var(--font-mono); color: var(--accent)">kenn-forge agent-hook install</code>)
+                  surface agent activity in workspace rows — active work, approval
+                  requests, and input requests — while the sidebar is open.
+                </p>
+                <figure class="shot">
+                  <button class="image-zoom" type="button" aria-label="Zoom: coding-agent session inside a workspace">
+                    <img src="/docs/assets/generated/workspace-codex-session-dark.svg" alt="Workspace with a running coding-agent terminal session beside pull request context" loading="lazy" />
+                  </button>
+                </figure>
+                <p class="explore"><a href="/docs/workflows/workspaces/">Explore the workspaces workflow →</a></p>
+              </div>
+            </div>
+          </div>
+        </li>
+
+        <li id="review">
+          <div class="container">
+            <div class="step-copy">
+              <span class="number" aria-hidden="true">04</span>
+              <div>
+                <h2>Review and merge without tab-hopping</h2>
+                <p>
+                  When the agent's work comes back as a pull request, its detail view
+                  combines description, discussion, CI, branch state, review state,
+                  changed files, and provider actions. Open the file tree for
+                  line-by-line review, comment, approve, and merge when the provider
+                  allows it. Detected <strong>stacks</strong> show member order, and
+                  mid-stack merges stay blocked until earlier members land.
+                </p>
+                <p>
+                  Conversation, files, and a workspace can share one pane layout —
+                  reorder, split, resize, or maximize panes as the task changes. A local
+                  <strong>workflow status</strong> tracks where each pull request sits in
+                  your process without touching provider labels.
+                </p>
+                <figure class="shot">
+                  <button class="image-zoom" type="button" aria-label="Zoom: pull request review with changed files">
+                    <img src="/docs/assets/generated/code-reviewer-dark.svg" alt="Pull request detail with discussion, changed files, and review actions in one layout" loading="lazy" />
+                  </button>
+                </figure>
+                <p class="explore"><a href="/docs/workflows/code-reviewer/">Explore the code reviewer workflow →</a></p>
+              </div>
+            </div>
+          </div>
+        </li>
+
+        <li id="source">
+          <div class="container">
+            <div class="step-copy">
+              <span class="number" aria-hidden="true">05</span>
+              <div>
+                <h2>Browse source without cloning in your head</h2>
+                <p>
+                  <strong>Repos</strong> opens any tracked repository: switch among
+                  branches and tags, filter the path tree, read files with rendered
+                  Markdown previews, and follow a file's commit history in the side rail.
+                  The URL records repository, ref, path, and preview mode, so copied
+                  links restore the exact view.
+                </p>
+                <figure class="shot">
+                  <button class="image-zoom" type="button" aria-label="Zoom: repository source browser">
+                    <img src="/docs/assets/generated/repository-source-dark.svg" alt="Repository source browser with branch selector, path tree, and file history" loading="lazy" />
+                  </button>
+                </figure>
+                <p class="explore"><a href="/docs/workflows/repositories/">Explore the repositories workflow →</a></p>
+              </div>
+            </div>
+          </div>
+        </li>
+
+        <li id="integrations">
+          <div class="container">
+            <div class="step-copy">
+              <span class="number" aria-hidden="true">06</span>
+              <div>
+                <h2>Bring your other tools with you</h2>
+                <p>
+                  <strong>Reviews</strong> follows Roborev jobs — filter the queue, read
+                  reviews, inspect logs and prompts. <strong>Kata</strong> tasks link to
+                  pull requests, issues, and workspaces with read-only detail inline.
+                  <strong>Docs</strong> registers local Markdown folders you can browse,
+                  search, edit, pull, and publish from the console. External systems stay
+                  the source of truth; Forge owns only the links.
+                </p>
+                <figure class="shot">
+                  <button class="image-zoom" type="button" aria-label="Zoom: Roborev review queue">
+                    <img src="/docs/assets/generated/roborev-reviews-dark.svg" alt="Roborev review queue with a selected job's review and log" loading="lazy" />
+                  </button>
+                </figure>
+                <p class="explore"><a href="/docs/integrations/">Explore integrations →</a></p>
+              </div>
+            </div>
+          </div>
+        </li>
+
+        <li id="fleet">
+          <div class="container">
+            <div class="step-copy">
+              <span class="number" aria-hidden="true">07</span>
+              <div>
+                <h2>Federate your workspaces across machines</h2>
+                <p>
+                  When one machine stops being enough, connect full Forge daemons into a
+                  <strong>hub-and-spoke fleet</strong> over authenticated HTTPS. The hub
+                  syncs your forges once and shows workspaces across every machine;
+                  remote actions route one hop to the spoke that owns them. Each spoke
+                  keeps its own repositories, worktrees, agents, and tmux sessions — and
+                  stays usable even when the hub is unreachable.
+                </p>
+                <p>
+                  Enrollment uses one-time tokens with separate credentials per
+                  direction, and Tailscale Serve is a first-class setup path — any
+                  mutually reachable private HTTPS ingress works. Alongside the fleet,
+                  the <a href="/docs/kenn-forge-mcp/">MCP companion</a> gives your agents
+                  the same console over the Model Context Protocol, and
+                  <a href="/docs/archive/">activity archives</a> keep history beyond the
+                  live sync window.
+                </p>
+                <p class="explore"><a href="/docs/federated-fleet/">Explore federated fleets →</a></p>
+              </div>
+            </div>
+          </div>
+        </li>
+      </ol>
+
+      <section class="guide-closer">
+        <div class="container">
+          <div class="panel cta">
+            <div>
+              <p class="eyebrow">Next</p>
+              <h2>Install it and point it at your repositories.</h2>
+              <p>The Quick start covers installation, forge setup, the first sync, and your first agent workspace.</p>
+            </div>
+            <div class="actions">
+              <a class="button button-primary" data-download-current href="https://github.com/kenn-io/forge/releases">Download</a>
+              <a class="button button-secondary" href="/docs/quickstart/">Quick start</a>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container">
+        <nav aria-label="Footer">
+          <a href="/guide/">Guide</a>
+          <a href="/docs/">Docs</a>
+          <a href="https://github.com/kenn-io/forge">GitHub</a>
+        </nav>
+        <p class="legal">
+          © 2026 <a href="https://kenn.io">Kenn Software LLC</a> · Elastic License 2.0
+        </p>
+      </div>
+    </footer>
+
+    <dialog class="image-lightbox" aria-label="Enlarged screenshot"></dialog>
+    <script src="/scripts/site.js" defer></script>
+  </body>
+</html>

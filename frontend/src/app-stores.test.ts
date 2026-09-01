@@ -76,6 +76,7 @@ const loadActivity = vi.fn(async () => undefined);
 const loadActivityEffect = vi.fn(() => Effect.promise(() => loadActivity()));
 const reconcileActivityEffect = vi.fn(() => Effect.promise(() => loadActivity()));
 const setSyncStatus = vi.fn();
+const setProviderAvailable = vi.fn();
 const refreshDetailOnly = vi.fn(async () => undefined);
 const refreshDetailOnlyEffect = vi.fn((...args: Parameters<typeof refreshDetailOnly>) =>
   Effect.promise(() => refreshDetailOnly(...args)),
@@ -123,6 +124,8 @@ vi.mock("./lib/stores/activity.svelte.js", () => ({
 vi.mock("./lib/stores/sync.svelte.js", () => ({
   createSyncStore: () => ({
     getSyncState: () => null,
+    getProviderAvailable: () => true,
+    setProviderAvailable,
     onNextSyncComplete: vi.fn(),
     subscribeSyncComplete: vi.fn(() => () => undefined),
     refreshSyncStatus: vi.fn(async () => undefined),
@@ -240,6 +243,7 @@ beforeEach(() => {
   loadActivityEffect.mockClear();
   reconcileActivityEffect.mockClear();
   setSyncStatus.mockClear();
+  setProviderAvailable.mockClear();
   refreshDetailOnly.mockClear();
   refreshDetailOnlyEffect.mockClear();
   notifyWorkspaceDeleted.mockClear();
@@ -427,7 +431,7 @@ describe("app store event wiring", () => {
       }),
     });
 
-    await acceptEvent(captured.store?.options.onReconnectStale?.());
+    await acceptEvent(captured.store?.options.onReconnectStale?.({}));
 
     expect(loadPulls).toHaveBeenCalledTimes(1);
     expect(loadIssues).toHaveBeenCalledTimes(1);
@@ -438,6 +442,20 @@ describe("app store event wiring", () => {
       platformHost: "github.com",
       repoPath: "acme/widget",
     });
+    expect(setProviderAvailable).toHaveBeenNthCalledWith(1, false);
+    expect(setProviderAvailable).toHaveBeenLastCalledWith(true);
+  });
+
+  it("keeps provider projections unavailable after a stale reconnect during hub outage", async () => {
+    compose({ getPage: () => "pulls" });
+
+    await acceptEvent(captured.store?.options.onReconnectStale?.({ hub_connected: false }));
+
+    expect(setProviderAvailable).toHaveBeenCalledOnce();
+    expect(setProviderAvailable).toHaveBeenCalledWith(false);
+    expect(loadPulls).not.toHaveBeenCalled();
+    expect(loadIssues).not.toHaveBeenCalled();
+    expect(loadActivity).not.toHaveBeenCalled();
   });
 
   it("passes onSyncStatus that pushes the received status into sync store", async () => {
@@ -455,6 +473,33 @@ describe("app store event wiring", () => {
 
     expect(setSyncStatus).toHaveBeenCalledTimes(1);
     expect(setSyncStatus).toHaveBeenCalledWith(status);
+  });
+
+  it("restores provider availability after refreshing the selected projection", async () => {
+    const refresh = Promise.withResolvers<void>();
+    loadPulls.mockImplementationOnce(() => refresh.promise);
+    compose({ getPage: () => "pulls" });
+    const callback = captured.store?.options.onHubConnectionChanged;
+    expect(callback).toBeTypeOf("function");
+
+    await acceptEvent(callback?.({ connected: false }));
+    expect(setProviderAvailable).toHaveBeenLastCalledWith(false);
+
+    const effect = callback?.({ connected: true });
+    expect(effect).toBeDefined();
+    const execution = runtime.runCommand(effect ?? Effect.void, {
+      operation: "test hub recovery",
+      safeContext: {},
+      onFailure: () => undefined,
+    });
+    await vi.waitFor(() => expect(loadPulls).toHaveBeenCalledOnce());
+    expect(setProviderAvailable).toHaveBeenLastCalledWith(false);
+
+    refresh.resolve();
+    await Effect.runPromise(execution.await.pipe(Effect.flatMap((exit) => exit)));
+    expect(loadIssues).toHaveBeenCalledOnce();
+    expect(loadActivity).toHaveBeenCalledOnce();
+    expect(setProviderAvailable).toHaveBeenLastCalledWith(true);
   });
 
   it("refreshes only the visible PR detail for matching targeted refresh events", async () => {

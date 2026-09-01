@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -23,78 +24,51 @@ import (
 	tcexec "github.com/testcontainers/testcontainers-go/exec"
 	"github.com/testcontainers/testcontainers-go/modules/compose"
 	"github.com/testcontainers/testcontainers-go/wait"
+	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/fleet"
 )
 
 var fleetContainerUUIDPattern = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
+const (
+	fleetContainerDownNodeID = "cccccccccccccccccccccccccccccccc"
+	fleetContainerGitHost    = "member:9418"
+)
+
+type fleetContainerFixture struct {
+	HubURL       string
+	HubToken     string
+	MemberToken  string
+	HubNodeID    string
+	MemberNodeID string
+	Hub          testcontainers.Container
+	Member       testcontainers.Container
+}
 
 func TestFleetContainerReadE2E(t *testing.T) {
 	if os.Getenv("KENN_FORGE_FLEET_CONTAINER_E2E") != "1" {
 		t.Skip("set KENN_FORGE_FLEET_CONTAINER_E2E=1 to run fleet container e2e")
 	}
 
-	assert := assert.New(t)
-	require := require.New(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 8*time.Minute)
 	defer cancel()
-
-	hubPort := envOrDefault("KENN_FORGE_FLEET_HUB_PORT", freeLoopbackPort(t))
-	memberPort := envOrDefault("KENN_FORGE_FLEET_MEMBER_PORT", freeLoopbackPort(t))
-	stackID := compose.StackIdentifier(envOrDefault("KENN_FORGE_FLEET_COMPOSE_PROJECT", "kenn-forge-fleet-e2e"))
-	stack, err := compose.NewDockerComposeWith(
-		compose.WithStackFiles(filepath.Join(repoRoot(t), "scripts/e2e/fleet/docker-compose.yml")),
-		stackID,
-	)
-	require.NoError(err)
-
-	composeStack := stack.
-		WithEnv(map[string]string{
-			"KENN_FORGE_FLEET_HUB_PORT":    hubPort,
-			"KENN_FORGE_FLEET_MEMBER_PORT": memberPort,
-		}).
-		WaitForService("hub", waitForFleetContainerPublishedHTTP()).
-		WaitForService("member", waitForFleetContainerInternalHTTP()).
-		WaitForService("member-ssh", waitForFleetContainerInternalHTTP())
-	err = composeStack.Up(ctx, compose.Wait(true))
-	hubContainer, hubContainerErr := composeStack.ServiceContainer(ctx, "hub")
-	memberContainer, memberContainerErr := composeStack.ServiceContainer(ctx, "member")
-	memberSSHContainer, memberSSHContainerErr := composeStack.ServiceContainer(ctx, "member-ssh")
-	if err != nil {
-		if hubContainerErr == nil {
-			t.Logf("hub logs:\n%s", containerLogs(ctx, hubContainer))
-		}
-		if memberContainerErr == nil {
-			t.Logf("member logs:\n%s", containerLogs(ctx, memberContainer))
-		}
-		if memberSSHContainerErr == nil {
-			t.Logf("member-ssh logs:\n%s", containerLogs(ctx, memberSSHContainer))
-		}
-		require.NoError(err)
-	}
-	require.NoError(hubContainerErr)
-	require.NoError(memberContainerErr)
-	require.NoError(memberSSHContainerErr)
-	if os.Getenv("KENN_FORGE_KEEP_FLEET_FIXTURE") == "1" {
-		t.Logf("keeping fleet Compose stack %s at http://127.0.0.1:%s", stackID, hubPort)
-	} else {
-		t.Cleanup(func() {
-			assert.NoError(composeStack.Down(
-				context.Background(),
-				compose.RemoveOrphans(true),
-				compose.RemoveVolumes(true),
-			))
-		})
-	}
-
-	seedFleetContainerMember(t, ctx, memberContainer)
-
-	hubURL, err := hubContainer.PortEndpoint(ctx, "18091/tcp", "http")
-	require.NoError(err)
+	fixture := startFleetContainerStack(t, ctx, fleetContainerStackOptions{
+		HubPortEnv:     "KENN_FORGE_FLEET_HUB_PORT",
+		ProjectEnv:     "KENN_FORGE_FLEET_COMPOSE_PROJECT",
+		DefaultProject: "kenn-forge-fleet-e2e",
+	})
+	assert := assert.New(t)
+	require := require.New(t)
 	var snap fleet.Snapshot
 	require.Eventually(func() bool {
-		resp, getErr := (&http.Client{Timeout: 10 * time.Second}).Get(
-			hubURL + "/api/v1/snapshot?include_peers=true",
+		req, requestErr := http.NewRequest(
+			http.MethodGet, fixture.HubURL+"/api/v1/snapshot?include_peers=true", http.NoBody,
 		)
+		if requestErr != nil {
+			return false
+		}
+		req.Header.Set("Authorization", "Bearer "+fixture.HubToken)
+		resp, getErr := (&http.Client{Timeout: 10 * time.Second}).Do(req)
 		if getErr != nil {
 			return false
 		}
@@ -106,7 +80,7 @@ func TestFleetContainerReadE2E(t *testing.T) {
 		if err := json.NewDecoder(resp.Body).Decode(&next); err != nil {
 			return false
 		}
-		member := fleetContainerHostByKey(next.Hosts, "member")
+		member := fleetContainerHostByKey(next.Hosts, fixture.MemberNodeID)
 		if member == nil || len(member.TmuxSessions) != 1 {
 			return false
 		}
@@ -114,22 +88,22 @@ func TestFleetContainerReadE2E(t *testing.T) {
 		return true
 	}, 20*time.Second, 500*time.Millisecond, "member tmux inventory must fan out")
 
-	hub := fleetContainerHostByKey(snap.Hosts, "hub")
+	hub := fleetContainerHostByKey(snap.Hosts, fixture.HubNodeID)
 	require.NotNil(hub, "hub host present")
 	assert.True(hub.Reachable)
 	assertFleetContainerUUID(t, hub.ID)
-	assert.NotEqual("hub", hub.ID)
+	assert.NotEqual(fixture.HubNodeID, hub.ID)
 
-	member := fleetContainerHostByKey(snap.Hosts, "member")
+	member := fleetContainerHostByKey(snap.Hosts, fixture.MemberNodeID)
 	require.NotNil(member, "member host present")
 	assert.True(member.Reachable)
 	assertFleetContainerUUID(t, member.ID)
-	assert.NotEqual("member", member.ID)
+	assert.NotEqual(fixture.MemberNodeID, member.ID)
 	require.Len(member.TmuxSessions, 1, "member host tmux inventory must fan out from its raw snapshot")
 	assert.Equal("kenn-forge-fleet-member-ws-7", member.TmuxSessions[0].Name)
 	assert.Equal("worktree:/data/member/worktrees/widget-pr-7", member.TmuxSessions[0].WorktreeKey)
 
-	down := fleetContainerHostByKey(snap.Hosts, "down")
+	down := fleetContainerHostByKey(snap.Hosts, fleetContainerDownNodeID)
 	require.NotNil(down, "unreachable peer host present")
 	assert.False(down.Reachable)
 	require.NotNil(down.Error)
@@ -171,11 +145,12 @@ func TestFleetContainerDriveE2E(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 8*time.Minute)
 	defer cancel()
 
-	hubURL, memberContainer, memberSSHContainer := startFleetDriveContainerStack(t, ctx)
-	seedFleetContainerMemberForDrive(t, ctx, memberContainer)
-	seedFleetContainerMemberSSHForDrive(t, ctx, memberSSHContainer)
-	assertFleetContainerWorkspaceDiffSurface(t, hubURL, "member")
-	assertFleetContainerWorkspaceDiffSurface(t, hubURL, "member-ssh")
+	fixture := startFleetDriveContainerStack(t, ctx)
+	hubURL := fixture.HubURL
+	memberContainer := fixture.Member
+	assertFleetContainerWorkspaceDiffSurface(
+		t, hubURL, fixture.HubToken, fixture.MemberNodeID,
+	)
 
 	var launched struct {
 		Key         string `json:"key"`
@@ -185,7 +160,8 @@ func TestFleetContainerDriveE2E(t *testing.T) {
 	}
 	status, body := postFleetContainerJSON(
 		t,
-		hubURL+"/api/v1/fleet/hosts/member/workspaces/fleet-member-ws-7/runtime/sessions",
+		hubURL+"/api/v1/fleet/hosts/"+fixture.MemberNodeID+"/workspaces/fleet-member-ws-7/runtime/sessions",
+		fixture.HubToken,
 		map[string]any{"target_key": "drive-helper"},
 		&launched,
 	)
@@ -202,9 +178,10 @@ func TestFleetContainerDriveE2E(t *testing.T) {
 		terminalCtx,
 		fleetContainerWSURL(
 			hubURL,
-			"/ws/v1/fleet/hosts/member/workspaces/fleet-member-ws-7/runtime/sessions/"+
+			"/ws/v1/fleet/hosts/"+fixture.MemberNodeID+"/workspaces/fleet-member-ws-7/runtime/sessions/"+
 				escapePath(launched.Key)+"/terminal?cols=80&rows=24",
 		),
+		fixture.HubToken,
 		"drive-helper-ready",
 	)
 	fleetContainerWebSocketWriteRead(
@@ -212,68 +189,22 @@ func TestFleetContainerDriveE2E(t *testing.T) {
 		terminalCtx,
 		fleetContainerWSURL(
 			hubURL,
-			"/ws/v1/fleet/hosts/member/workspaces/fleet-member-ws-7/terminal?cols=80&rows=24",
+			"/ws/v1/fleet/hosts/"+fixture.MemberNodeID+"/workspaces/fleet-member-ws-7/terminal?cols=80&rows=24",
 		),
+		fixture.HubToken,
 		"printf tmux-drive-ok\\n",
 		"tmux-drive-ok",
 	)
 
 	status, body = deleteFleetContainer(
 		t,
-		hubURL+"/api/v1/fleet/hosts/member/workspaces/fleet-member-ws-7/runtime/sessions/"+escapePath(launched.Key),
-	)
-	require.Equal(http.StatusNoContent, status, string(body))
-
-	var sshLaunch struct {
-		Key         string `json:"key"`
-		WorkspaceID string `json:"workspace_id"`
-		TargetKey   string `json:"target_key"`
-		Status      string `json:"status"`
-	}
-	status, body = postFleetContainerJSON(
-		t,
-		hubURL+"/api/v1/fleet/hosts/member-ssh/workspaces/fleet-member-ws-7/runtime/sessions",
-		map[string]any{"target_key": "ssh-interactive-helper"},
-		&sshLaunch,
-	)
-	require.Equal(http.StatusOK, status, string(body))
-	assert.Equal("fleet-member-ws-7", sshLaunch.WorkspaceID)
-	assert.Equal("ssh-interactive-helper", sshLaunch.TargetKey)
-	assert.Equal("running", sshLaunch.Status)
-	require.NotEmpty(sshLaunch.Key)
-
-	sshTerminalCtx, sshTerminalCancel := context.WithTimeout(ctx, 45*time.Second)
-	defer sshTerminalCancel()
-	fleetContainerWebSocketReadUntil(
-		t,
-		sshTerminalCtx,
-		fleetContainerWSURL(
-			hubURL,
-			"/ws/v1/fleet/hosts/member-ssh/workspaces/fleet-member-ws-7/runtime/sessions/"+
-				escapePath(sshLaunch.Key)+"/terminal?cols=80&rows=24",
-		),
-		"ssh-helper-ready",
-	)
-	fleetContainerWebSocketWriteRead(
-		t,
-		sshTerminalCtx,
-		fleetContainerWSURL(
-			hubURL,
-			"/ws/v1/fleet/hosts/member-ssh/workspaces/fleet-member-ws-7/runtime/sessions/"+
-				escapePath(sshLaunch.Key)+"/terminal?cols=80&rows=24",
-		),
-		"hello-over-ssh\n",
-		"ssh:hello-over-ssh",
-	)
-
-	status, body = deleteFleetContainer(
-		t,
-		hubURL+"/api/v1/fleet/hosts/member-ssh/workspaces/fleet-member-ws-7/runtime/sessions/"+escapePath(sshLaunch.Key),
+		hubURL+"/api/v1/fleet/hosts/"+fixture.MemberNodeID+"/workspaces/fleet-member-ws-7/runtime/sessions/"+escapePath(launched.Key),
+		fixture.HubToken,
 	)
 	require.Equal(http.StatusNoContent, status, string(body))
 
 	projectID, worktreeID := fleetContainerRegisteredWorktreeIDs(
-		t, ctx, memberContainer,
+		t, ctx, memberContainer, fixture.MemberToken,
 	)
 	var registeredLaunch struct {
 		Key        string `json:"key"`
@@ -284,8 +215,9 @@ func TestFleetContainerDriveE2E(t *testing.T) {
 	}
 	status, body = postFleetContainerJSON(
 		t,
-		hubURL+"/api/v1/fleet/hosts/member/projects/"+escapePath(projectID)+
+		hubURL+"/api/v1/fleet/hosts/"+fixture.MemberNodeID+"/projects/"+escapePath(projectID)+
 			"/worktrees/"+escapePath(worktreeID)+"/runtime/sessions",
+		fixture.HubToken,
 		map[string]any{"target_key": "drive-helper"},
 		&registeredLaunch,
 	)
@@ -302,7 +234,8 @@ func TestFleetContainerDriveE2E(t *testing.T) {
 	require.Equal(
 		0,
 		fleetContainerExecCode(
-			t, ctx, memberContainer, "tmux", "has-session", "-t", registeredTmux,
+			t, ctx, memberContainer,
+			"tmux", "-L", "kenn-forge", "has-session", "-t", registeredTmux,
 		),
 	)
 
@@ -315,9 +248,9 @@ func TestFleetContainerDriveE2E(t *testing.T) {
 	sessionScopedKey := "session:" + registeredLaunch.Key
 	require.Eventually(func() bool {
 		getFleetContainerJSON(
-			t, hubURL+"/api/v1/snapshot?include_peers=true", &driveSnap,
+			t, hubURL+"/api/v1/snapshot?include_peers=true", fixture.HubToken, &driveSnap,
 		)
-		member = fleetContainerHostByKey(driveSnap.Hosts, "member")
+		member = fleetContainerHostByKey(driveSnap.Hosts, fixture.MemberNodeID)
 		registeredWorktree = fleetContainerWorktreeByName(
 			driveSnap.Worktrees, "registered-runtime",
 		)
@@ -339,28 +272,33 @@ func TestFleetContainerDriveE2E(t *testing.T) {
 
 	status, body = deleteFleetContainer(
 		t,
-		hubURL+"/api/v1/fleet/hosts/member/projects/"+escapePath(projectID)+
+		hubURL+"/api/v1/fleet/hosts/"+fixture.MemberNodeID+"/projects/"+escapePath(projectID)+
 			"/worktrees/"+escapePath(worktreeID)+"/runtime/sessions/"+
 			escapePath(registeredLaunch.Key),
+		fixture.HubToken,
 	)
 	require.Equal(http.StatusNoContent, status, string(body))
 	require.NotEqual(
 		0,
 		fleetContainerExecCode(
-			t, ctx, memberContainer, "tmux", "has-session", "-t", registeredTmux,
+			t, ctx, memberContainer,
+			"tmux", "-L", "kenn-forge", "has-session", "-t", registeredTmux,
 		),
 	)
 
 	status, body = deleteFleetContainer(
 		t,
-		hubURL+"/api/v1/fleet/hosts/member/workspaces/fleet-member-ws-7?force=true",
+		hubURL+"/api/v1/fleet/hosts/"+fixture.MemberNodeID+"/workspaces/fleet-member-ws-7?force=true",
+		fixture.HubToken,
 	)
 	require.Equal(http.StatusNoContent, status, string(body))
 
 	var snap fleet.Snapshot
-	getFleetContainerJSON(t, hubURL+"/api/v1/snapshot?include_peers=true", &snap)
+	getFleetContainerJSON(
+		t, hubURL+"/api/v1/snapshot?include_peers=true", fixture.HubToken, &snap,
+	)
 
-	memberAfterDelete := fleetContainerHostByKey(snap.Hosts, "member")
+	memberAfterDelete := fleetContainerHostByKey(snap.Hosts, fixture.MemberNodeID)
 	require.NotNil(memberAfterDelete)
 	assert.Nil(fleetContainerWorktreeByHostAndName(
 		snap.Worktrees, memberAfterDelete.ID, "widget-pr-7",
@@ -371,7 +309,7 @@ func TestFleetContainerDriveE2E(t *testing.T) {
 }
 
 func waitForFleetContainerPublishedHTTP() wait.Strategy {
-	return wait.ForListeningPort("18091/tcp").WithStartupTimeout(5 * time.Minute)
+	return wait.ForListeningPort("18092/tcp").WithStartupTimeout(5 * time.Minute)
 }
 
 func waitForFleetContainerInternalHTTP() wait.Strategy {
@@ -380,17 +318,25 @@ func waitForFleetContainerInternalHTTP() wait.Strategy {
 	}).WithStartupTimeout(5 * time.Minute)
 }
 
-func startFleetDriveContainerStack(
+type fleetContainerStackOptions struct {
+	HubPortEnv     string
+	ProjectEnv     string
+	DefaultProject string
+}
+
+func startFleetContainerStack(
 	t *testing.T,
 	ctx context.Context,
-) (string, testcontainers.Container, testcontainers.Container) {
+	options fleetContainerStackOptions,
+) *fleetContainerFixture {
 	t.Helper()
 	assert := assert.New(t)
 	require := require.New(t)
 
-	hubPort := envOrDefault("KENN_FORGE_FLEET_DRIVE_HUB_PORT", freeLoopbackPort(t))
-	memberPort := envOrDefault("KENN_FORGE_FLEET_DRIVE_MEMBER_PORT", freeLoopbackPort(t))
-	stackID := compose.StackIdentifier(envOrDefault("KENN_FORGE_FLEET_DRIVE_COMPOSE_PROJECT", "kenn-forge-fleet-drive-e2e"))
+	hubPort := envOrDefault(options.HubPortEnv, freeLoopbackPort(t))
+	stackID := compose.StackIdentifier(envOrDefault(
+		options.ProjectEnv, fmt.Sprintf("%s-%d", options.DefaultProject, os.Getpid()),
+	))
 	stack, err := compose.NewDockerComposeWith(
 		compose.WithStackFiles(filepath.Join(repoRoot(t), "scripts/e2e/fleet/docker-compose.yml")),
 		stackID,
@@ -399,34 +345,12 @@ func startFleetDriveContainerStack(
 
 	composeStack := stack.
 		WithEnv(map[string]string{
-			"KENN_FORGE_FLEET_HUB_PORT":    hubPort,
-			"KENN_FORGE_FLEET_MEMBER_PORT": memberPort,
+			"KENN_FORGE_FLEET_HUB_PORT": hubPort,
 		}).
 		WaitForService("hub", waitForFleetContainerPublishedHTTP()).
-		WaitForService("member", waitForFleetContainerInternalHTTP()).
-		WaitForService("member-ssh", waitForFleetContainerInternalHTTP())
-	err = composeStack.Up(ctx, compose.Wait(true))
-	hubContainer, hubContainerErr := composeStack.ServiceContainer(ctx, "hub")
-	memberContainer, memberContainerErr := composeStack.ServiceContainer(ctx, "member")
-	memberSSHContainer, memberSSHContainerErr := composeStack.ServiceContainer(ctx, "member-ssh")
-	if err != nil {
-		if hubContainerErr == nil {
-			t.Logf("hub logs:\n%s", containerLogs(ctx, hubContainer))
-		}
-		if memberContainerErr == nil {
-			t.Logf("member logs:\n%s", containerLogs(ctx, memberContainer))
-		}
-		if memberSSHContainerErr == nil {
-			t.Logf("member-ssh logs:\n%s", containerLogs(ctx, memberSSHContainer))
-		}
-		require.NoError(err)
-	}
-	require.NoError(hubContainerErr)
-	require.NoError(memberContainerErr)
-	require.NoError(memberSSHContainerErr)
-	if os.Getenv("KENN_FORGE_KEEP_FLEET_FIXTURE") == "1" {
-		t.Logf("keeping fleet drive Compose stack %s at http://127.0.0.1:%s", stackID, hubPort)
-	} else {
+		WaitForService("member", waitForFleetContainerInternalHTTP())
+	keepFixture := os.Getenv("KENN_FORGE_KEEP_FLEET_FIXTURE") == "1"
+	if !keepFixture {
 		t.Cleanup(func() {
 			assert.NoError(composeStack.Down(
 				context.Background(),
@@ -435,10 +359,176 @@ func startFleetDriveContainerStack(
 			))
 		})
 	}
+	err = composeStack.Up(ctx, compose.Wait(true))
+	hubContainer, hubContainerErr := composeStack.ServiceContainer(ctx, "hub")
+	memberContainer, memberContainerErr := composeStack.ServiceContainer(ctx, "member")
+	if err != nil {
+		if hubContainerErr == nil {
+			t.Logf("hub logs:\n%s", containerLogs(ctx, hubContainer))
+		}
+		if memberContainerErr == nil {
+			t.Logf("member logs:\n%s", containerLogs(ctx, memberContainer))
+		}
+		require.NoError(err)
+	}
+	require.NoError(hubContainerErr)
+	require.NoError(memberContainerErr)
+	if keepFixture {
+		t.Logf("keeping fleet Compose stack %s at http://127.0.0.1:%s", stackID, hubPort)
+	}
 
-	hubURL, err := hubContainer.PortEndpoint(ctx, "18091/tcp", "http")
+	seedFleetContainerMember(t, ctx, memberContainer)
+	seedFleetContainerHubProvider(t, ctx, hubContainer)
+	activateFleetContainerMember(t, ctx, hubContainer, memberContainer)
+
+	hubURL, err := hubContainer.PortEndpoint(ctx, "18092/tcp", "http")
 	require.NoError(err)
-	return hubURL, memberContainer, memberSSHContainer
+	fixture := &fleetContainerFixture{
+		HubURL: hubURL, Hub: hubContainer, Member: memberContainer,
+		HubNodeID:    fleetContainerReadFile(t, ctx, hubContainer, "/data/hub/node_id"),
+		MemberNodeID: fleetContainerReadFile(t, ctx, memberContainer, "/data/member/node_id"),
+		HubToken:     fleetContainerReadFile(t, ctx, hubContainer, "/data/hub/auth_token"),
+		MemberToken:  fleetContainerReadFile(t, ctx, memberContainer, "/data/member/auth_token"),
+	}
+	require.True(federation.ValidNodeID(fixture.HubNodeID))
+	require.True(federation.ValidNodeID(fixture.MemberNodeID))
+	return fixture
+}
+
+func startFleetDriveContainerStack(
+	t *testing.T,
+	ctx context.Context,
+) *fleetContainerFixture {
+	t.Helper()
+	return startFleetContainerStack(t, ctx, fleetContainerStackOptions{
+		HubPortEnv:     "KENN_FORGE_FLEET_DRIVE_HUB_PORT",
+		ProjectEnv:     "KENN_FORGE_FLEET_DRIVE_COMPOSE_PROJECT",
+		DefaultProject: "kenn-forge-fleet-drive-e2e",
+	})
+}
+
+func activateFleetContainerMember(
+	t *testing.T,
+	ctx context.Context,
+	hub, member testcontainers.Container,
+) {
+	t.Helper()
+	token := fleetContainerEnrollmentToken(t, ctx, hub)
+	const tokenPath = "/data/member/enrollment-token"
+	require.NoError(t, member.CopyToContainer(
+		ctx, []byte(token+"\n"), tokenPath, 0o600,
+	))
+	tokenFilePresent := true
+	defer func() {
+		if !tokenFilePresent {
+			return
+		}
+		code, reader, err := member.Exec(
+			context.Background(), []string{"rm", "-f", tokenPath},
+			tcexec.Multiplexed(),
+		)
+		if err == nil {
+			_, _ = io.Copy(io.Discard, reader)
+		}
+		if err != nil || code != 0 {
+			t.Logf("could not remove the one-time enrollment token from the fixture")
+		}
+	}()
+
+	fleetContainerExecOutput(t, ctx, member,
+		"/data/member/kenn-forge", "fleet", "join", "https://hub:18091",
+		"--config", "/data/member/member.toml",
+		"--base-url", "https://member:18091", "--name", "member",
+		"--token-file", tokenPath,
+	)
+	code, reader, err := member.Exec(
+		ctx, []string{"rm", "-f", tokenPath}, tcexec.Multiplexed(),
+	)
+	require.NoError(t, err)
+	_, err = io.Copy(io.Discard, reader)
+	require.NoError(t, err)
+	require.Equal(t, 0, code)
+	tokenFilePresent = false
+	fleetContainerExecOutput(t, ctx, member,
+		"/data/member/kenn-forge", "fleet", "prepare-spoke",
+		"--config", "/data/member/member.toml",
+	)
+
+	stopTimeout := 30 * time.Second
+	require.NoError(t, member.Stop(ctx, &stopTimeout))
+	require.NoError(t, member.Start(ctx))
+	require.Eventually(t, func() bool {
+		code, reader, err := member.Exec(ctx, []string{
+			"curl", "--cacert", "/pki/cert.pem", "-fsS",
+			"https://member:18091/healthz",
+		}, tcexec.Multiplexed())
+		if err != nil {
+			return false
+		}
+		_, _ = io.Copy(io.Discard, reader)
+		return code == 0
+	}, 5*time.Minute, time.Second,
+		"prepared member must restart with its federation TLS listener ready",
+	)
+	fleetContainerExecOutput(t, ctx, member,
+		"tmux", "-L", "kenn-forge", "new-session", "-d",
+		"-s", "kenn-forge-fleet-member-ws-7",
+		"-c", "/data/member/worktrees/widget-pr-7", "sh",
+	)
+}
+
+func fleetContainerEnrollmentToken(
+	t *testing.T,
+	ctx context.Context,
+	hub testcontainers.Container,
+) string {
+	t.Helper()
+	code, reader, err := hub.Exec(ctx, []string{
+		"/data/hub/kenn-forge", "fleet", "enrollment-token",
+		"--config", "/data/hub/hub.toml",
+		"--base-url", "https://hub:18091", "--name", "hub",
+	}, tcexec.Multiplexed())
+	require.NoError(t, err)
+	raw, readErr := io.ReadAll(io.LimitReader(reader, 8<<10))
+	require.NoError(t, readErr)
+	require.Equal(t, 0, code, "enrollment-token command failed; hub logs:\n%s", containerLogs(ctx, hub))
+	token := strings.TrimSpace(string(raw))
+	require.NotEmpty(t, token)
+	require.NotContains(t, token, " ")
+	require.NotContains(t, token, "\n")
+	return token
+}
+
+func fleetContainerExecOutput(
+	t *testing.T,
+	ctx context.Context,
+	container testcontainers.Container,
+	args ...string,
+) string {
+	t.Helper()
+	code, reader, err := container.Exec(ctx, args, tcexec.Multiplexed())
+	require.NoError(t, err)
+	raw, readErr := io.ReadAll(reader)
+	require.NoError(t, readErr)
+	require.Equal(t, 0, code, "%s\n%s", string(raw), containerLogs(ctx, container))
+	return strings.TrimSpace(string(raw))
+}
+
+func fleetContainerReadFile(
+	t *testing.T,
+	ctx context.Context,
+	container testcontainers.Container,
+	path string,
+) string {
+	t.Helper()
+	reader, err := container.CopyFileFromContainer(ctx, path)
+	require.NoError(t, err, "copy fixture file %s", path)
+	defer reader.Close()
+	raw, err := io.ReadAll(io.LimitReader(reader, 64<<10))
+	require.NoError(t, err, "read fixture file %s", path)
+	value := strings.TrimSpace(string(raw))
+	require.NotEmpty(t, value, "fixture file %s is empty", path)
+	return value
 }
 
 func seedFleetContainerMember(
@@ -447,16 +537,23 @@ func seedFleetContainerMember(
 	container testcontainers.Container,
 ) {
 	t.Helper()
-	seedFleetContainerMemberWithArgs(t, ctx, container, "-start-tmux")
+	seedFleetContainerMemberWithArgs(
+		t, ctx, container, "-platform-host", fleetContainerGitHost,
+	)
 }
 
-func seedFleetContainerMemberForDrive(
+func seedFleetContainerHubProvider(
 	t *testing.T,
 	ctx context.Context,
 	container testcontainers.Container,
 ) {
 	t.Helper()
-	seedFleetContainerMemberWithArgs(t, ctx, container, "-start-tmux")
+	seedFleetContainerWithArgs(
+		t, ctx, container, "/data/hub",
+		"-provider-only",
+		"-platform-host", fleetContainerGitHost,
+		"-clone-url", "git://"+fleetContainerGitHost+"/acme/fleet-widget.git",
+	)
 }
 
 func seedFleetContainerMemberWithArgs(
@@ -467,15 +564,6 @@ func seedFleetContainerMemberWithArgs(
 ) {
 	t.Helper()
 	seedFleetContainerWithArgs(t, ctx, container, "/data/member", extraArgs...)
-}
-
-func seedFleetContainerMemberSSHForDrive(
-	t *testing.T,
-	ctx context.Context,
-	container testcontainers.Container,
-) {
-	t.Helper()
-	seedFleetContainerWithArgs(t, ctx, container, "/data/member-ssh", "-start-tmux")
 }
 
 func seedFleetContainerWithArgs(
@@ -504,6 +592,7 @@ func fleetContainerRegisteredWorktreeIDs(
 	t *testing.T,
 	ctx context.Context,
 	container testcontainers.Container,
+	token string,
 ) (string, string) {
 	t.Helper()
 	var projects struct {
@@ -512,7 +601,9 @@ func fleetContainerRegisteredWorktreeIDs(
 			DisplayName string `json:"display_name"`
 		} `json:"projects"`
 	}
-	getFleetContainerJSONFromContainer(t, ctx, container, "/api/v1/projects", &projects)
+	getFleetContainerJSONFromContainer(
+		t, ctx, container, token, "/api/v1/projects", &projects,
+	)
 	var projectID string
 	for _, project := range projects.Projects {
 		if project.DisplayName == "fleet-widget" {
@@ -529,7 +620,7 @@ func fleetContainerRegisteredWorktreeIDs(
 		} `json:"worktrees"`
 	}
 	getFleetContainerJSONFromContainer(
-		t, ctx, container,
+		t, ctx, container, token,
 		"/api/v1/projects/"+escapePath(projectID)+"/worktrees",
 		&worktrees,
 	)
@@ -546,13 +637,17 @@ func getFleetContainerJSONFromContainer(
 	t *testing.T,
 	ctx context.Context,
 	container testcontainers.Container,
+	token string,
 	targetPath string,
 	out any,
 ) {
 	t.Helper()
 	code, reader, err := container.Exec(
 		ctx,
-		[]string{"curl", "-fsS", "http://127.0.0.1:8091" + targetPath},
+		[]string{
+			"curl", "-fsS", "-H", "Authorization: Bearer " + token,
+			"http://127.0.0.1:8091" + targetPath,
+		},
 		tcexec.Multiplexed(),
 	)
 	require.NoError(t, err)
@@ -562,10 +657,16 @@ func getFleetContainerJSONFromContainer(
 	require.NoError(t, json.Unmarshal(body, out), string(body))
 }
 
-func getFleetContainerJSON(t *testing.T, targetURL string, out any) {
+func getFleetContainerJSON(
+	t *testing.T,
+	targetURL string,
+	token string,
+	out any,
+) {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodGet, targetURL, http.NoBody)
 	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+token)
 	resp := doFleetContainerHTTPRequest(t, req, nil)
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
@@ -577,6 +678,7 @@ func getFleetContainerJSON(t *testing.T, targetURL string, out any) {
 func assertFleetContainerWorkspaceDiffSurface(
 	t *testing.T,
 	hubURL string,
+	token string,
 	hostKey string,
 ) {
 	t.Helper()
@@ -588,7 +690,7 @@ func assertFleetContainerWorkspaceDiffSurface(
 	var files struct {
 		Files []fleetContainerDiffFile `json:"files"`
 	}
-	getFleetContainerJSON(t, baseURL+"/files?base=head", &files)
+	getFleetContainerJSON(t, baseURL+"/files?base=head", token, &files)
 	dirtyFile := fleetContainerDiffFileByPath(files.Files, "dirty.txt")
 	require.NotNil(dirtyFile)
 	assert.Equal("added", dirtyFile.Status)
@@ -596,7 +698,7 @@ func assertFleetContainerWorkspaceDiffSurface(
 	var diff struct {
 		Files []fleetContainerDiffFile `json:"files"`
 	}
-	getFleetContainerJSON(t, baseURL+"/diff?base=merge-target", &diff)
+	getFleetContainerJSON(t, baseURL+"/diff?base=merge-target", token, &diff)
 	featureFile := fleetContainerDiffFileByPath(diff.Files, "feature.txt")
 	require.NotNil(featureFile)
 	assert.Contains(featureFile.Patch, "+feature")
@@ -606,7 +708,7 @@ func assertFleetContainerWorkspaceDiffSurface(
 			Message string `json:"message"`
 		} `json:"commits"`
 	}
-	getFleetContainerJSON(t, baseURL+"/commits", &commits)
+	getFleetContainerJSON(t, baseURL+"/commits", token, &commits)
 	require.NotEmpty(commits.Commits)
 	assert.Equal("feature commit", commits.Commits[len(commits.Commits)-1].Message)
 
@@ -615,7 +717,9 @@ func assertFleetContainerWorkspaceDiffSurface(
 		Encoding string `json:"encoding"`
 		Content  string `json:"content"`
 	}
-	getFleetContainerJSON(t, baseURL+"/file-preview?base=head&path=dirty.txt", &preview)
+	getFleetContainerJSON(
+		t, baseURL+"/file-preview?base=head&path=dirty.txt", token, &preview,
+	)
 	assert.Equal("dirty.txt", preview.Path)
 	assert.Equal("base64", preview.Encoding)
 	content, err := base64.StdEncoding.DecodeString(preview.Content)
@@ -654,7 +758,7 @@ func fleetContainerExecCode(
 
 func fleetContainerRuntimeTmuxSessionName(scope, sessionKey string) string {
 	sum := sha256.Sum256([]byte(sessionKey))
-	return "kenn-forge-" + fleetContainerTmuxSessionSafeComponent(scope) + "-" +
+	return "forge-" + fleetContainerTmuxSessionSafeComponent(scope) + "-" +
 		hex.EncodeToString(sum[:8])
 }
 
@@ -683,6 +787,7 @@ func fleetContainerTmuxSessionSafeComponent(value string) string {
 func postFleetContainerJSON(
 	t *testing.T,
 	targetURL string,
+	token string,
 	body any,
 	out any,
 ) (int, []byte) {
@@ -692,6 +797,7 @@ func postFleetContainerJSON(
 	req, err := http.NewRequest(http.MethodPost, targetURL, bytes.NewReader(payload))
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
 	resp := doFleetContainerHTTPRequest(t, req, payload)
 	defer resp.Body.Close()
 	respBody, err := io.ReadAll(resp.Body)
@@ -702,11 +808,16 @@ func postFleetContainerJSON(
 	return resp.StatusCode, respBody
 }
 
-func deleteFleetContainer(t *testing.T, targetURL string) (int, []byte) {
+func deleteFleetContainer(
+	t *testing.T,
+	targetURL string,
+	token string,
+) (int, []byte) {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodDelete, targetURL, http.NoBody)
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
 	resp := doFleetContainerHTTPRequest(t, req, nil)
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
@@ -747,10 +858,13 @@ func fleetContainerWebSocketReadUntil(
 	t *testing.T,
 	ctx context.Context,
 	wsURL string,
+	token string,
 	needle string,
 ) {
 	t.Helper()
-	conn, resp, err := websocket.Dial(ctx, wsURL, nil)
+	conn, resp, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{
+		HTTPHeader: http.Header{"Authorization": []string{"Bearer " + token}},
+	})
 	if err != nil && resp != nil && resp.Body != nil {
 		body, readErr := io.ReadAll(resp.Body)
 		require.NoError(t, readErr)
@@ -765,11 +879,14 @@ func fleetContainerWebSocketWriteRead(
 	t *testing.T,
 	ctx context.Context,
 	wsURL string,
+	token string,
 	input string,
 	needle string,
 ) {
 	t.Helper()
-	conn, resp, err := websocket.Dial(ctx, wsURL, nil)
+	conn, resp, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{
+		HTTPHeader: http.Header{"Authorization": []string{"Bearer " + token}},
+	})
 	if err != nil && resp != nil && resp.Body != nil {
 		body, readErr := io.ReadAll(resp.Body)
 		require.NoError(t, readErr)

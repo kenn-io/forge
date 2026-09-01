@@ -1,6 +1,6 @@
 # Historical activity archive
 
-kenn-forge can backfill provider activity into its local SQLite database.
+Kenn Forge can backfill provider activity into its local SQLite database.
 Archive work uses spare provider capacity, so normal sync stays ahead of
 historical requests.
 

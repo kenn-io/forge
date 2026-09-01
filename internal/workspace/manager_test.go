@@ -27,6 +27,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/ptyowner"
 	"go.kenn.io/forge/internal/ptysize"
 	"go.kenn.io/forge/internal/testutil/dbtest"
@@ -114,6 +115,32 @@ func seedMRWithHeadRepo(
 	require.NoError(t, err)
 }
 
+func pullLaunchSpecForWorkspace(
+	ws *Workspace, headRepoKind, headRepoCloneURL string,
+) *WorkspaceLaunchSpec {
+	issuedAt := time.Now().UTC()
+	return &WorkspaceLaunchSpec{
+		Version: WorkspaceLaunchSpecVersion,
+		Repository: WorkspaceLaunchRepository{
+			Provider: ws.Platform, PlatformHost: ws.PlatformHost,
+			PlatformRepoID: "repo-test", Owner: firstNonEmpty(ws.RepoOwner, "acme"),
+			Name: firstNonEmpty(ws.RepoName, "widget"),
+			CloneURL: "https://" + ws.PlatformHost + "/" +
+				firstNonEmpty(ws.RepoOwner, "acme") + "/" +
+				firstNonEmpty(ws.RepoName, "widget") + ".git",
+			DefaultBranch: "main",
+		},
+		ItemType: ws.ItemType, ItemNumber: ws.ItemNumber,
+		ItemKey: strconv.Itoa(ws.ItemNumber), GitHeadRef: ws.GitHeadRef,
+		Pull: &WorkspaceLaunchPull{
+			HeadBranch: ws.GitHeadRef, HeadRepoKind: headRepoKind,
+			HeadRepoCloneURL: headRepoCloneURL, SnapshotRevision: 1,
+		},
+		SourceVisible: true, IssuedAt: issuedAt,
+		SourceVisibleUntil: issuedAt.Add(WorkspaceLaunchSpecVisibilityLease),
+	}
+}
+
 func recordRuntimeTmuxSessionForTest(
 	t *testing.T,
 	d *db.DB,
@@ -151,7 +178,7 @@ func TestCreate(t *testing.T) {
 	)
 	seedMR(t, d, repoID, 42, "feature/thing")
 
-	mgr := NewManager(d, wtDir)
+	mgr := newTestManager(t, d, wtDir)
 
 	ws, err := mgr.Create(
 		ctx, "github", "github.com", "acme", "widget", 42,
@@ -187,7 +214,7 @@ func TestListSummariesUsesCacheWhenStoreHasNoRows(t *testing.T) {
 	assert := assert.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 
 	mgr.setWorkspaceSummaryCache([]WorkspaceSummary{{
 		ID:           "cached-workspace",
@@ -215,7 +242,7 @@ func TestWorkspaceSummaryCacheDoesNotResurrectDeletedWorkspace(t *testing.T) {
 	d := openTestDB(t)
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
 	seedMR(t, d, repoID, 7, "feature/cache-workspace")
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 
 	ws, err := mgr.Create(ctx, "github", "github.com", "acme", "widget", 7)
 	require.NoError(err)
@@ -314,7 +341,7 @@ func TestCreatePRHeadRepoClassification(t *testing.T) {
 				t, d, repoID, tt.number, tt.headBranch, tt.headRepoURL,
 			)
 
-			mgr := NewManager(d, t.TempDir())
+			mgr := newTestManager(t, d, t.TempDir())
 			ws, err := mgr.Create(
 				t.Context(), provider, platformHost, owner, repoName, tt.number,
 			)
@@ -338,422 +365,6 @@ func TestCreatePRHeadRepoClassification(t *testing.T) {
 			assert.Equal(tt.wantMRHeadRepo, *ws.MRHeadRepo)
 		})
 	}
-}
-
-func TestRefreshWorkspaceHeadRepo(t *testing.T) {
-	tests := []struct {
-		name        string
-		cloneURL    string
-		wantUnknown bool
-		wantFork    string
-	}{
-		{
-			name:     "current same-repo metadata",
-			cloneURL: "https://github.com/acme/widget.git",
-		},
-		{
-			name:        "missing current metadata",
-			wantUnknown: true,
-		},
-		{
-			name:     "current fork metadata",
-			cloneURL: "https://github.com/contributor/widget.git",
-			wantFork: "https://github.com/contributor/widget.git",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert := assert.New(t)
-			require := require.New(t)
-			d := openTestDB(t)
-			repoID := seedRepo(t, d, "github.com", "acme", "widget")
-			seedMRWithHeadRepo(t, d, repoID, 42, "feature/thing", tt.cloneURL)
-			ws := &Workspace{
-				Platform:     "github",
-				PlatformHost: "github.com",
-				RepoOwner:    "acme",
-				RepoName:     "widget",
-				ItemType:     db.WorkspaceItemTypePullRequest,
-				ItemNumber:   42,
-				GitHeadRef:   "feature/thing",
-			}
-			mgr := NewManager(d, t.TempDir())
-
-			err := mgr.RefreshWorkspaceHeadRepo(t.Context(), ws)
-
-			require.NoError(err)
-			switch {
-			case tt.wantUnknown:
-				require.NotNil(ws.MRHeadRepo)
-				assert.Empty(*ws.MRHeadRepo)
-			case tt.wantFork != "":
-				require.NotNil(ws.MRHeadRepo)
-				assert.Equal(tt.wantFork, *ws.MRHeadRepo)
-			default:
-				assert.Nil(ws.MRHeadRepo)
-			}
-		})
-	}
-}
-
-func TestRefreshWorkspaceHeadRepoPersistsUnknownWhenRepoIsMissing(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	d := openTestDB(t)
-	ws := &Workspace{
-		ID:           "ws-missing-repo",
-		Platform:     "github",
-		PlatformHost: "github.com",
-		RepoOwner:    "acme",
-		RepoName:     "missing",
-		ItemType:     db.WorkspaceItemTypePullRequest,
-		ItemNumber:   42,
-		GitHeadRef:   "feature/thing",
-		WorktreePath: t.TempDir(),
-		Status:       "ready",
-	}
-	require.NoError(d.InsertWorkspace(t.Context(), ws))
-	mgr := NewManager(d, t.TempDir())
-
-	require.NoError(mgr.RefreshWorkspaceHeadRepo(t.Context(), ws))
-
-	require.NotNil(ws.MRHeadRepo)
-	assert.Empty(*ws.MRHeadRepo)
-	stored, err := d.GetWorkspace(t.Context(), ws.ID)
-	require.NoError(err)
-	require.NotNil(stored)
-	require.NotNil(stored.MRHeadRepo)
-	assert.Empty(*stored.MRHeadRepo)
-}
-
-func TestRefreshWorkspaceHeadRepoLeavesRouteKeyedWorkspaceAfterRepositoryRename(
-	t *testing.T,
-) {
-	require := require.New(t)
-	assert := assert.New(t)
-	d := openTestDB(t)
-	ctx := t.Context()
-	providerRepoID := "gid://gitlab/Project/42"
-	repoID, err := d.UpsertRepoByProviderID(ctx, db.RepoIdentity{
-		Platform:       "gitlab",
-		PlatformHost:   "gitlab.com",
-		PlatformRepoID: providerRepoID,
-		Owner:          "old-group",
-		Name:           "old-name",
-	})
-	require.NoError(err)
-	oldSameRepoURL := "https://gitlab.com/old-group/old-name.git"
-	seedMRWithHeadRepo(t, d, repoID, 42, "feature/thing", oldSameRepoURL)
-	ws := &Workspace{
-		ID:           "ws-renamed-repo",
-		Platform:     "gitlab",
-		PlatformHost: "gitlab.com",
-		RepoOwner:    "old-group",
-		RepoName:     "old-name",
-		ItemType:     db.WorkspaceItemTypePullRequest,
-		ItemNumber:   42,
-		GitHeadRef:   "feature/thing",
-		WorktreePath: t.TempDir(),
-		Status:       "ready",
-	}
-	require.NoError(d.InsertWorkspace(ctx, ws))
-
-	_, _, err = d.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
-		Platform:       "gitlab",
-		PlatformHost:   "gitlab.com",
-		PlatformRepoID: providerRepoID,
-		Owner:          "new-group",
-		Name:           "new-name",
-	}, time.Now().UTC())
-	require.NoError(err)
-
-	mgr := NewManager(d, t.TempDir())
-	require.NoError(mgr.RefreshWorkspaceHeadRepo(ctx, ws))
-
-	assert.Equal("old-group", ws.RepoOwner)
-	assert.Equal("old-name", ws.RepoName)
-	require.NotNil(ws.MRHeadRepo)
-	assert.Empty(*ws.MRHeadRepo)
-	stored, err := d.GetWorkspace(ctx, ws.ID)
-	require.NoError(err)
-	require.NotNil(stored)
-	assert.Equal("old-group", stored.RepoOwner)
-	assert.Equal("old-name", stored.RepoName)
-	require.NotNil(stored.MRHeadRepo)
-	assert.Empty(*stored.MRHeadRepo)
-}
-
-func TestRefreshWorkspaceHeadRepoBlocksRepositoryReconciliation(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	d := openTestDB(t)
-	ctx := t.Context()
-	providerRepoID := "gid://gitlab/Project/42"
-	sourceID, err := d.UpsertRepoByProviderID(ctx, db.RepoIdentity{
-		Platform:       "gitlab",
-		PlatformHost:   "gitlab.com",
-		PlatformRepoID: providerRepoID,
-		Owner:          "old-group",
-		Name:           "old-name",
-	})
-	require.NoError(err)
-	forkURL := "https://gitlab.com/contributor/widget.git"
-	seedMRWithHeadRepo(t, d, sourceID, 42, "feature/thing", forkURL)
-	_, err = d.UpsertRepo(ctx, db.RepoIdentity{
-		Platform:     "gitlab",
-		PlatformHost: "gitlab.com",
-		Owner:        "new-group",
-		Name:         "new-name",
-	})
-	require.NoError(err)
-	ws := &Workspace{
-		ID:           "ws-reconciliation-barrier",
-		Platform:     "gitlab",
-		PlatformHost: "gitlab.com",
-		RepoOwner:    "old-group",
-		RepoName:     "old-name",
-		ItemType:     db.WorkspaceItemTypePullRequest,
-		ItemNumber:   42,
-		GitHeadRef:   "feature/thing",
-		WorktreePath: t.TempDir(),
-		Status:       "ready",
-	}
-	require.NoError(d.InsertWorkspace(ctx, ws))
-
-	snapshotRead := make(chan struct{})
-	continueRefresh := make(chan struct{})
-	var signalSnapshot sync.Once
-	mgr := NewManager(d, t.TempDir())
-	mgr.afterHeadRepoSnapshotRead = func() {
-		signalSnapshot.Do(func() { close(snapshotRead) })
-		<-continueRefresh
-	}
-	refreshDone := make(chan error, 1)
-	go func() {
-		refreshDone <- mgr.RefreshWorkspaceHeadRepo(ctx, ws)
-	}()
-	select {
-	case <-snapshotRead:
-	case <-time.After(5 * time.Second):
-		require.Fail("head-repository refresh did not reach snapshot read")
-	}
-
-	writeLockAttempted := make(chan struct{})
-	restoreWriteLockHook := d.SetBeforeRepositoryReconciliationWriteLockForTest(
-		func() { close(writeLockAttempted) },
-	)
-	defer restoreWriteLockHook()
-	reconciliationDone := make(chan error, 1)
-	go func() {
-		_, _, reconcileErr := d.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
-			Platform:       "gitlab",
-			PlatformHost:   "gitlab.com",
-			PlatformRepoID: providerRepoID,
-			Owner:          "new-group",
-			Name:           "new-name",
-		}, time.Now().UTC())
-		reconciliationDone <- reconcileErr
-	}()
-	select {
-	case <-writeLockAttempted:
-	case <-time.After(5 * time.Second):
-		require.Fail("repository reconciliation did not attempt its write lock")
-	}
-	select {
-	case upsertErr := <-reconciliationDone:
-		require.NoError(upsertErr)
-		require.Fail("repository reconciliation bypassed the active refresh barrier")
-	default:
-	}
-
-	close(continueRefresh)
-	select {
-	case refreshErr := <-refreshDone:
-		require.NoError(refreshErr)
-	case <-time.After(5 * time.Second):
-		require.Fail("head-repository refresh did not finish")
-	}
-	select {
-	case upsertErr := <-reconciliationDone:
-		require.NoError(upsertErr)
-	case <-time.After(5 * time.Second):
-		require.Fail("repository reconciliation did not resume")
-	}
-
-	stored, err := d.GetWorkspace(ctx, ws.ID)
-	require.NoError(err)
-	require.NotNil(stored)
-	assert.Equal("old-group", stored.RepoOwner)
-	assert.Equal("old-name", stored.RepoName)
-	require.NotNil(stored.MRHeadRepo)
-	assert.Equal(forkURL, *stored.MRHeadRepo)
-}
-
-func TestRefreshWorkspaceHeadRepoRefreshesWhenMissingRepoAppearsLater(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	d := openTestDB(t)
-	ws := &Workspace{
-		ID:           "ws-repo-appears",
-		Platform:     "github",
-		PlatformHost: "github.com",
-		RepoOwner:    "acme",
-		RepoName:     "widget",
-		ItemType:     db.WorkspaceItemTypePullRequest,
-		ItemNumber:   42,
-		GitHeadRef:   "feature/thing",
-		WorktreePath: t.TempDir(),
-		Status:       "ready",
-	}
-	require.NoError(d.InsertWorkspace(t.Context(), ws))
-	mgr := NewManager(d, t.TempDir())
-	forkURL := "https://github.com/contributor/widget.git"
-
-	require.NoError(mgr.RefreshWorkspaceHeadRepo(t.Context(), ws))
-	require.NotNil(ws.MRHeadRepo)
-	assert.Empty(*ws.MRHeadRepo)
-
-	repoID := seedRepo(t, d, "github.com", "acme", "widget")
-	seedMRWithHeadRepo(
-		t, d, repoID, ws.ItemNumber, ws.GitHeadRef, forkURL,
-	)
-
-	require.NoError(mgr.RefreshWorkspaceHeadRepo(t.Context(), ws))
-
-	require.NotNil(ws.MRHeadRepo)
-	assert.Equal(forkURL, *ws.MRHeadRepo)
-	stored, err := d.GetWorkspace(t.Context(), ws.ID)
-	require.NoError(err)
-	require.NotNil(stored)
-	require.NotNil(stored.MRHeadRepo)
-	assert.Equal(forkURL, *stored.MRHeadRepo)
-}
-
-func TestRefreshWorkspaceHeadRepoSnapshotRetriesAfterRevisionChange(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	repoID := seedRepo(t, d, "github.com", "acme", "widget")
-	seedMRWithHeadRepo(
-		t,
-		d,
-		repoID,
-		42,
-		"feature/thing",
-		"https://github.com/acme/widget.git",
-	)
-	ws := &Workspace{
-		ID:           "ws-refresh-head-repo-race",
-		Platform:     "github",
-		PlatformHost: "github.com",
-		RepoOwner:    "acme",
-		RepoName:     "widget",
-		ItemType:     db.WorkspaceItemTypePullRequest,
-		ItemNumber:   42,
-		GitHeadRef:   "feature/thing",
-		WorktreePath: t.TempDir(),
-		Status:       "ready",
-	}
-	require.NoError(d.InsertWorkspace(t.Context(), ws))
-
-	mgr := NewManager(d, t.TempDir())
-	var advanced bool
-	mgr.afterHeadRepoSnapshotRead = func() {
-		if advanced {
-			return
-		}
-		advanced = true
-		current, err := d.GetMergeRequestByRepoIDAndNumber(
-			t.Context(), repoID, ws.ItemNumber,
-		)
-		require.NoError(err)
-		require.NotNil(current)
-		updated := *current
-		updated.HeadRepoCloneURL = "https://github.com/forker/widget.git"
-		updated.UpdatedAt = updated.UpdatedAt.Add(time.Minute)
-		updated.LastActivityAt = updated.UpdatedAt
-		_, accepted, err := d.UpsertMergeRequestSnapshot(t.Context(), &updated)
-		require.NoError(err)
-		require.True(accepted)
-	}
-
-	snapshot, err := mgr.RefreshWorkspaceHeadRepoSnapshot(t.Context(), ws)
-
-	require.NoError(err)
-	require.NotNil(snapshot)
-	require.NotNil(snapshot.MRHeadRepo)
-	assert.Equal("https://github.com/forker/widget.git", *snapshot.MRHeadRepo)
-	latest, err := d.GetMergeRequestByRepoIDAndNumber(
-		t.Context(), repoID, ws.ItemNumber,
-	)
-	require.NoError(err)
-	require.NotNil(latest)
-	assert.Equal(latest.SnapshotRevision, snapshot.SnapshotRevision)
-	stored, err := d.GetWorkspace(t.Context(), ws.ID)
-	require.NoError(err)
-	require.NotNil(stored)
-	require.NotNil(stored.MRHeadRepo)
-	assert.Equal("https://github.com/forker/widget.git", *stored.MRHeadRepo)
-}
-
-func TestRefreshWorkspaceHeadRepoSnapshotRetriesAfterRemoval(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	ctx := t.Context()
-	repoID := seedRepo(t, d, "github.com", "acme", "widget")
-	seedMRWithHeadRepo(
-		t,
-		d,
-		repoID,
-		42,
-		"feature/thing",
-		"https://github.com/acme/widget.git",
-	)
-	ws := &Workspace{
-		ID:           "ws-refresh-head-repo-removal-race",
-		Platform:     "github",
-		PlatformHost: "github.com",
-		RepoOwner:    "acme",
-		RepoName:     "widget",
-		ItemType:     db.WorkspaceItemTypePullRequest,
-		ItemNumber:   42,
-		GitHeadRef:   "feature/thing",
-		WorktreePath: t.TempDir(),
-		Status:       "ready",
-	}
-	require.NoError(d.InsertWorkspace(ctx, ws))
-
-	mgr := NewManager(d, t.TempDir())
-	var removed bool
-	mgr.afterHeadRepoSnapshotRead = func() {
-		if removed {
-			return
-		}
-		removed = true
-		now := time.Date(2026, 8, 14, 12, 0, 0, 0, time.UTC)
-		_, err := d.WriteDB().ExecContext(ctx, `
-			INSERT INTO forge_archive_items (
-				repo_id, item_type, item_number, provider_item_id,
-				provider_created_at, provider_updated_at, lifecycle_state
-			) VALUES (?, 'merge_request', 42, 'pull-42', ?, ?, 'removed_upstream')`,
-			repoID, now, now,
-		)
-		require.NoError(err)
-	}
-
-	snapshot, err := mgr.RefreshWorkspaceHeadRepoSnapshot(ctx, ws)
-
-	require.NoError(err)
-	require.NotNil(snapshot)
-	require.NotNil(snapshot.MRHeadRepo)
-	assert.Empty(*snapshot.MRHeadRepo)
-	stored, err := d.GetWorkspace(ctx, ws.ID)
-	require.NoError(err)
-	require.NotNil(stored)
-	require.NotNil(stored.MRHeadRepo)
-	assert.Empty(*stored.MRHeadRepo)
 }
 
 func TestCreateIssueDefaultBranchSluggified(t *testing.T) {
@@ -799,7 +410,7 @@ func TestCreateIssueDefaultBranchSluggified(t *testing.T) {
 			repoID := seedRepo(t, d, "github.com", "acme", "widget")
 			seedIssue(t, d, repoID, 7, tt.title)
 
-			mgr := NewManager(d, t.TempDir())
+			mgr := newTestManager(t, d, t.TempDir())
 			mgr.SetIssueBranchSlugEnabled(tt.slugStyle)
 
 			ws, err := mgr.CreateIssue(
@@ -824,7 +435,7 @@ func TestCreateIssueExplicitGitHeadRefBypassesSlug(t *testing.T) {
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
 	seedIssue(t, d, repoID, 7, "Add foo to bar")
 
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 
 	ws, err := mgr.CreateIssue(
 		ctx, "github.com", "acme", "widget", 7,
@@ -843,7 +454,7 @@ func TestCreateKataTaskDoesNotRequireProviderIssue(t *testing.T) {
 	ctx := t.Context()
 	seedRepo(t, d, "github.com", "acme", "widget")
 
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	metadata := db.WorkspaceKataMetadata{
 		DaemonID:    "desktop",
 		ProjectUID:  "project-kata",
@@ -888,7 +499,7 @@ func TestCreateKataTaskNormalizesRelativeWorktreeDir(t *testing.T) {
 	ctx := t.Context()
 	seedRepo(t, d, "github.com", "acme", "widget")
 
-	mgr := NewManager(d, "relative-worktrees")
+	mgr := newTestManager(t, d, "relative-worktrees")
 	metadata := db.WorkspaceKataMetadata{
 		DaemonID:   "desktop",
 		ProjectUID: "project-kata",
@@ -918,7 +529,7 @@ func TestCreateKataTaskScopesItemKeyByDaemonAndProject(t *testing.T) {
 	ctx := t.Context()
 	seedRepo(t, d, "github.com", "acme", "widget")
 
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	first := db.WorkspaceKataMetadata{
 		DaemonID:   "desktop",
 		ProjectUID: "project-kata",
@@ -965,7 +576,7 @@ func TestCreateIssueReuseLocalBaseBranchCheckedOutReturnsConflict(t *testing.T) 
 		"-b", branch, "HEAD",
 	)
 
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 
 	ws, err := mgr.CreateIssue(
@@ -1011,7 +622,7 @@ func TestCreateIssueRecoversExpectedExistingDirectory(t *testing.T) {
 		t, expectedPath, "rev-parse", "HEAD",
 	)))
 
-	mgr := NewManager(d, worktreeRoot)
+	mgr := newTestManager(t, d, worktreeRoot)
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 	ws, err := mgr.CreateIssue(
 		t.Context(), platformHost, "acme", "widget", 7,
@@ -1070,7 +681,7 @@ func TestIssueWorkspaceBranchDoesNotCollideWithRecoveryState(t *testing.T) {
 				)
 			}
 
-			mgr := NewManager(d, worktreeRoot)
+			mgr := newTestManager(t, d, worktreeRoot)
 			mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 			tmuxScript, _ := writeRecorderScript(t)
 			mgr.SetTmuxCommand([]string{tmuxScript})
@@ -1170,7 +781,7 @@ func TestCreateIssueRecoveryRejectsInvalidExpectedDirectory(t *testing.T) {
 			)
 			tt.prepare(t, localRepo, expectedPath, branch)
 
-			mgr := NewManager(d, worktreeRoot)
+			mgr := newTestManager(t, d, worktreeRoot)
 			mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 			ws, err := mgr.CreateIssue(
 				t.Context(), platformHost, "acme", "widget", 7,
@@ -1226,7 +837,7 @@ func TestCreateIssueRecoveryRejectsManagedCloneWithWrongOrigin(t *testing.T) {
 		"worktree", "add", expectedPath, "-b", branch, "HEAD",
 	)
 
-	mgr := NewManager(d, worktreeRoot)
+	mgr := newTestManager(t, d, worktreeRoot)
 	mgr.SetClones(clones)
 	ws, err := mgr.CreateIssue(
 		t.Context(), host, owner, name, 7,
@@ -1274,7 +885,7 @@ func TestSetupRecoveryRejectsManagedCloneWhoseOriginChanged(t *testing.T) {
 		"worktree", "add", expectedPath, "-b", branch, "HEAD",
 	)
 
-	mgr := NewManager(d, worktreeRoot)
+	mgr := newTestManager(t, d, worktreeRoot)
 	mgr.SetClones(clones)
 	ws, err := mgr.CreateIssue(
 		t.Context(), host, owner, name, 7,
@@ -1323,7 +934,7 @@ func TestCreateIssueReportsRecoverableDirectoryBranch(t *testing.T) {
 		"worktree", "add", expectedPath, "-b", existingBranch, "HEAD",
 	)
 
-	mgr := NewManager(d, worktreeRoot)
+	mgr := newTestManager(t, d, worktreeRoot)
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 	ws, err := mgr.CreateIssue(
 		t.Context(), platformHost, "acme", "widget", 7,
@@ -1363,7 +974,7 @@ func TestSetupDirectoryRecoveryNeverCreatesReplacement(t *testing.T) {
 		"worktree", "add", expectedPath, "-b", branch, "HEAD",
 	)
 
-	mgr := NewManager(d, worktreeRoot)
+	mgr := newTestManager(t, d, worktreeRoot)
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 	tmuxScript, _ := writeRecorderScript(t)
 	mgr.SetTmuxCommand([]string{tmuxScript})
@@ -1428,7 +1039,7 @@ func TestRetryDirectoryRecoveryPreservesExistingWorktree(t *testing.T) {
 		"exit 0\n"
 	require.NoError(os.WriteFile(tmuxScript, []byte(response), 0o755))
 
-	mgr := NewManager(d, worktreeRoot)
+	mgr := newTestManager(t, d, worktreeRoot)
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 	mgr.SetTmuxCommand([]string{tmuxScript})
 	ws, err := mgr.CreateIssue(
@@ -1476,7 +1087,7 @@ func TestDeletePendingDirectoryRecoveryPreservesExistingWorktree(t *testing.T) {
 		filepath.Join(expectedPath, "untracked.txt"), []byte("keep\n"), 0o644,
 	))
 
-	mgr := NewManager(d, worktreeRoot)
+	mgr := newTestManager(t, d, worktreeRoot)
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 	tmuxScript, _ := writeRecorderScript(t)
 	mgr.SetTmuxCommand([]string{tmuxScript})
@@ -1504,7 +1115,7 @@ func TestDeletePendingDirectoryRecoveryPreservesExistingWorktree(t *testing.T) {
 
 func TestCreateRepoNotTracked(t *testing.T) {
 	d := openTestDB(t)
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 
 	_, err := mgr.Create(
 		t.Context(), "github", "github.com", "unknown", "repo", 1,
@@ -1524,7 +1135,7 @@ func TestCreateDuplicate(t *testing.T) {
 	)
 	seedMR(t, d, repoID, 42, "feature/thing")
 
-	mgr := NewManager(d, wtDir)
+	mgr := newTestManager(t, d, wtDir)
 
 	// First create succeeds.
 	ws, err := mgr.Create(
@@ -1546,7 +1157,7 @@ func TestCreateMRNotSynced(t *testing.T) {
 
 	seedRepo(t, d, "github.com", "acme", "widget")
 
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 
 	_, err := mgr.Create(
 		t.Context(), "github", "github.com", "acme", "widget", 999,
@@ -1566,7 +1177,7 @@ func TestSetupFailurePersistsStatusWhenContextCanceled(t *testing.T) {
 	)
 	seedMR(t, d, repoID, 42, "feature/thing")
 
-	mgr := NewManager(d, wtDir)
+	mgr := newTestManager(t, d, wtDir)
 	ws, err := mgr.Create(
 		t.Context(), "github", "github.com", "acme", "widget", 42,
 	)
@@ -1620,7 +1231,7 @@ func TestSetupUsesConfiguredWorktreeBasePath(t *testing.T) {
 
 	tmuxScript, _ := writeRecorderScript(t)
 
-	mgr := NewManager(d, wtDir)
+	mgr := newTestManager(t, d, wtDir)
 	mgr.SetTmuxCommand([]string{tmuxScript})
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 
@@ -1907,7 +1518,7 @@ func TestSetupReusesExistingWorkspaceWorktree(t *testing.T) {
 
 	tmuxScript, tmuxRecord := writeRecorderScript(t)
 
-	mgr := NewManager(d, wtDir)
+	mgr := newTestManager(t, d, wtDir)
 	mgr.SetTmuxCommand([]string{tmuxScript})
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 
@@ -1947,7 +1558,7 @@ func TestReuseExistingWorkspaceWorktreeRechecksSymlinkAfterLock(t *testing.T) {
 	repoID := seedRepo(t, d, platformHost, "acme", "widget")
 	seedMR(t, d, repoID, 42, "feature/thing")
 
-	mgr := NewManager(d, wtDir)
+	mgr := newTestManager(t, d, wtDir)
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 	readyForRepoLock := make(chan struct{})
 	continueToRepoLock := make(chan struct{})
@@ -1976,7 +1587,7 @@ func TestReuseExistingWorkspaceWorktreeRechecksSymlinkAfterLock(t *testing.T) {
 	}
 	done := make(chan reuseResult, 1)
 	go func() {
-		_, reused, reuseErr := mgr.reuseExistingWorkspaceWorktree(t.Context(), ws)
+		_, reused, reuseErr := mgr.reuseExistingWorkspaceWorktree(t.Context(), ws, nil)
 		done <- reuseResult{reused: reused, err: reuseErr}
 	}()
 
@@ -2026,7 +1637,7 @@ func TestSetupReusesExistingUniquifiedSyntheticPRWorktree(t *testing.T) {
 
 	tmuxScript, _ := writeRecorderScript(t)
 
-	mgr := NewManager(d, wtDir)
+	mgr := newTestManager(t, d, wtDir)
 	mgr.SetTmuxCommand([]string{tmuxScript})
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 
@@ -2061,7 +1672,7 @@ func TestSetupDoesNotReuseUnconfiguredMatchingOriginWorktree(t *testing.T) {
 
 	tmuxScript, _ := writeRecorderScript(t)
 
-	mgr := NewManager(d, wtDir)
+	mgr := newTestManager(t, d, wtDir)
 	mgr.SetTmuxCommand([]string{tmuxScript})
 
 	ws, err := mgr.Create(t.Context(), "github", platformHost, "acme", "widget", 42)
@@ -2098,7 +1709,7 @@ func TestSetupRejectsExistingLocalBaseWorktreeWithExecutableConfig(t *testing.T)
 
 	tmuxScript, _ := writeRecorderScript(t)
 
-	mgr := NewManager(d, wtDir)
+	mgr := newTestManager(t, d, wtDir)
 	mgr.SetTmuxCommand([]string{tmuxScript})
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 
@@ -2141,7 +1752,7 @@ func TestSetupRejectsExistingSyntheticPRWorktreeOnStaleHead(t *testing.T) {
 
 	tmuxScript, _ := writeRecorderScript(t)
 
-	mgr := NewManager(d, wtDir)
+	mgr := newTestManager(t, d, wtDir)
 	mgr.SetTmuxCommand([]string{tmuxScript})
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 
@@ -2197,7 +1808,7 @@ func TestSetupReusesExistingLocalBasePRHeadBranchWithoutManagingIt(t *testing.T)
 
 	tmuxScript, _ := writeRecorderScript(t)
 
-	mgr := NewManager(d, wtDir)
+	mgr := newTestManager(t, d, wtDir)
 	mgr.SetTmuxCommand([]string{tmuxScript})
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 
@@ -2238,7 +1849,7 @@ func TestSetupRejectsOrphanedWorkspacePathBeforeCreatingBranches(t *testing.T) {
 	repoID := seedRepo(t, d, platformHost, "acme", "widget")
 	seedMR(t, d, repoID, 42, "feature/thing")
 
-	mgr := NewManager(d, wtDir)
+	mgr := newTestManager(t, d, wtDir)
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 	ws, err := mgr.Create(
 		t.Context(), "github", platformHost, "acme", "widget", 42,
@@ -2285,7 +1896,7 @@ func TestSetupRejectsExistingPRWorktreeOnUnexpectedBranch(t *testing.T) {
 
 	tmuxScript, _ := writeRecorderScript(t)
 
-	mgr := NewManager(d, wtDir)
+	mgr := newTestManager(t, d, wtDir)
 	mgr.SetTmuxCommand([]string{tmuxScript})
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 
@@ -2327,8 +1938,7 @@ func TestValidateWorktreeBasePathRejectsLocalRemotes(t *testing.T) {
 			)
 
 			got, err := ValidateWorktreeBasePath(
-				t.Context(), localRepo, "github.com", "acme", "widget",
-			)
+				t.Context(), localRepo, "github.com", "acme", "widget", false)
 
 			require.Empty(got)
 			require.Error(err)
@@ -2377,8 +1987,7 @@ func TestValidateWorktreeBasePathRejectsExecutableLocalConfig(t *testing.T) {
 			runWorkspaceTestGit(t, localRepo, "config", tt.key, tt.value)
 
 			got, err := ValidateWorktreeBasePath(
-				t.Context(), localRepo, "github.com", "acme", "widget",
-			)
+				t.Context(), localRepo, "github.com", "acme", "widget", false)
 
 			require.Empty(got)
 			require.Error(err)
@@ -2404,8 +2013,7 @@ func TestValidateWorktreeBasePathAcceptsConfiguredHooksPath(t *testing.T) {
 	require.NoError(os.WriteFile(hookPath, []byte("#!/bin/sh\nexit 0\n"), 0o755))
 
 	got, err := ValidateWorktreeBasePath(
-		t.Context(), localRepo, "github.com", "acme", "widget",
-	)
+		t.Context(), localRepo, "github.com", "acme", "widget", false)
 
 	require.NoError(err)
 	canonicalLocalRepo, err := filepath.EvalSymlinks(localRepo)
@@ -2446,8 +2054,7 @@ func TestValidateWorktreeBasePathRejectsUnsafeOriginSchemes(t *testing.T) {
 			)
 
 			got, err := ValidateWorktreeBasePath(
-				t.Context(), localRepo, "github.com", "acme", "widget",
-			)
+				t.Context(), localRepo, "github.com", "acme", "widget", false)
 
 			require.Empty(got)
 			require.Error(err)
@@ -2476,7 +2083,25 @@ func TestValidateWorktreeBasePathAcceptsLoopbackHTTPOrigin(t *testing.T) {
 	)
 
 	got, err := ValidateWorktreeBasePath(
-		t.Context(), localRepo, "127.0.0.1", "acme", "widget",
+		t.Context(), localRepo, "127.0.0.1", "acme", "widget", false)
+
+	require.NoError(err)
+	canonicalLocalRepo, err := filepath.EvalSymlinks(localRepo)
+	require.NoError(err)
+	require.Equal(canonicalLocalRepo, got)
+}
+
+func TestValidateWorktreeBasePathAcceptsExplicitlyAllowedHTTPOrigin(t *testing.T) {
+	require := require.New(t)
+
+	localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/thing")
+	runWorkspaceTestGit(
+		t, localRepo, "remote", "set-url", "origin",
+		"http://gitea.example.test:3000/acme/widget.git",
+	)
+
+	got, err := ValidateWorktreeBasePath(
+		t.Context(), localRepo, "gitea.example.test:3000", "acme", "widget", true,
 	)
 
 	require.NoError(err)
@@ -2495,8 +2120,7 @@ func TestValidateWorktreeBasePathAcceptsSCPStyleSSHOrigin(t *testing.T) {
 	)
 
 	got, err := ValidateWorktreeBasePath(
-		t.Context(), localRepo, "github.com", "acme", "widget",
-	)
+		t.Context(), localRepo, "github.com", "acme", "widget", false)
 
 	require.NoError(err)
 	canonicalLocalRepo, err := filepath.EvalSymlinks(localRepo)
@@ -2533,8 +2157,7 @@ func TestValidateWorktreeBasePathCanonicalizesSymlinkPath(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := ValidateWorktreeBasePath(
-				t.Context(), tt.path, "github.com", "acme", "widget",
-			)
+				t.Context(), tt.path, "github.com", "acme", "widget", false)
 
 			require.NoError(err)
 			assert.Equal(canonicalLocalRepo, got)
@@ -2553,8 +2176,7 @@ func TestValidateWorktreeBasePathRejectsAdditionalOriginURLs(t *testing.T) {
 	)
 
 	got, err := ValidateWorktreeBasePath(
-		t.Context(), localRepo, "github.com", "acme", "widget",
-	)
+		t.Context(), localRepo, "github.com", "acme", "widget", false)
 
 	require.Empty(got)
 	require.Error(err)
@@ -2577,8 +2199,7 @@ func TestValidateWorktreeBasePathRejectsUnsafeOriginFetchRefspec(t *testing.T) {
 	)
 
 	got, err := ValidateWorktreeBasePath(
-		t.Context(), localRepo, "github.com", "acme", "widget",
-	)
+		t.Context(), localRepo, "github.com", "acme", "widget", false)
 
 	require.Empty(got)
 	require.Error(err)
@@ -2601,8 +2222,7 @@ func TestValidateWorktreeBasePathAcceptsSingleBranchOriginFetchRefspec(t *testin
 	)
 
 	got, err := ValidateWorktreeBasePath(
-		t.Context(), localRepo, "github.com", "acme", "widget",
-	)
+		t.Context(), localRepo, "github.com", "acme", "widget", false)
 
 	require.NoError(err)
 	canonicalLocalRepo, err := filepath.EvalSymlinks(localRepo)
@@ -2623,8 +2243,7 @@ func TestValidateWorktreeBasePathRejectsBareRepositories(t *testing.T) {
 	)
 
 	got, err := ValidateWorktreeBasePath(
-		t.Context(), bareRepo, "github.com", "acme", "widget",
-	)
+		t.Context(), bareRepo, "github.com", "acme", "widget", false)
 
 	require.Empty(got)
 	require.Error(err)
@@ -2643,8 +2262,7 @@ func TestValidateWorktreeBasePathRejectsExecutableWorktreeConfig(t *testing.T) {
 	)
 
 	got, err := ValidateWorktreeBasePath(
-		t.Context(), localRepo, "github.com", "acme", "widget",
-	)
+		t.Context(), localRepo, "github.com", "acme", "widget", false)
 
 	require.Empty(got)
 	require.Error(err)
@@ -2676,7 +2294,7 @@ func TestCreateIssueUsesProviderQualifiedRepo(t *testing.T) {
 	require.NoError(err)
 	seedIssue(t, d, gitlabRepoID, 7, "GitLab issue")
 
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	ws, err := mgr.CreateIssue(
 		ctx, "forge.example.com", "acme", "widget", 7,
 		CreateIssueOptions{Provider: "gitlab"},
@@ -2713,7 +2331,7 @@ func TestCreateIssueUsesProviderCloneURLForNamespacedManagedClone(t *testing.T) 
 	seedIssue(t, d, repoID, 11, "GitLab issue")
 
 	clones := gitclone.New(filepath.Join(t.TempDir(), "clones"), nil)
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	mgr.SetClones(clones)
 
 	ws, err := mgr.CreateIssue(
@@ -2735,6 +2353,54 @@ func TestCreateIssueUsesProviderCloneURLForNamespacedManagedClone(t *testing.T) 
 			t, cloneDir, "config", "--get", "remote.origin.url",
 		))),
 	)
+}
+
+func TestCreateIssueClonesExplicitlyAllowedGiteaHTTPRemote(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	_, _, platformHost := setupHTTPWorktreeBaseForWorkspaceGitTest(
+		t, "feature/thing",
+	)
+	cloneURL := "http://" + platformHost + "/acme/widget.git"
+
+	repoID, err := d.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:       "gitea",
+		PlatformHost:   platformHost,
+		PlatformRepoID: "repo-gitea-widget",
+		Owner:          "acme",
+		Name:           "widget",
+	})
+	require.NoError(err)
+	require.NoError(d.UpdateRepoProviderMetadata(
+		ctx, repoID, db.RepoProviderMetadata{
+			CloneURL:      cloneURL,
+			DefaultBranch: "main",
+		},
+	))
+	seedIssue(t, d, repoID, 11, "Gitea issue")
+
+	clones := gitclone.New(filepath.Join(t.TempDir(), "clones"), nil)
+	clones.SetAllowInsecureHTTP("gitea", platformHost, true)
+	mgr := newTestManager(t, d, t.TempDir())
+	mgr.SetClones(clones)
+
+	ws, err := mgr.CreateIssue(
+		ctx, platformHost, "acme", "widget", 11,
+		CreateIssueOptions{Provider: "gitea"},
+	)
+
+	require.NoError(err)
+	require.NotNil(ws)
+	cloneDir, err := clones.ClonePathInNamespace(
+		"gitea", platformHost, "acme", "widget",
+	)
+	require.NoError(err)
+	assert.DirExists(cloneDir)
+	assert.Equal(cloneURL, strings.TrimSpace(string(runWorkspaceTestGit(
+		t, cloneDir, "config", "--get", "remote.origin.url",
+	))))
 }
 
 func TestCreateUsesProviderQualifiedRepo(t *testing.T) {
@@ -2762,7 +2428,7 @@ func TestCreateUsesProviderQualifiedRepo(t *testing.T) {
 	require.NoError(err)
 	seedMR(t, d, gitlabRepoID, 42, "feature/gitlab")
 
-	mgr := NewManager(d, worktreeDir)
+	mgr := newTestManager(t, d, worktreeDir)
 	ws, err := mgr.Create(
 		ctx, "gitlab", "forge.example.com", "acme", "widget", 42,
 	)
@@ -2794,13 +2460,12 @@ func TestSetupUsesManagedCloneForForkPRWithConfiguredWorktreeBasePath(t *testing
 		branch   = "fork/thing"
 	)
 	repoID := seedRepo(t, d, host, owner, name)
-	seedMRWithHeadRepo(
-		t, d, repoID, prNumber, branch,
-		"https://github.com/contributor/widget.git",
-	)
-
 	remote, pullSHA := setupRemoteForForkPRWorktreeTest(
 		t, branch, prNumber,
+	)
+	seedMRWithHeadRepo(
+		t, d, repoID, prNumber, branch,
+		"https://github.com/acme/widget.git",
 	)
 	clones := gitclone.New(cloneBaseDir, nil)
 	cloneDir, err := clones.ClonePath("github", host, owner, name)
@@ -2820,12 +2485,23 @@ func TestSetupUsesManagedCloneForForkPRWithConfiguredWorktreeBasePath(t *testing
 	localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, branch)
 	tmuxScript, _ := writeRecorderScript(t)
 
-	mgr := NewManager(d, wtDir)
+	mgr := newTestManager(t, d, wtDir)
 	mgr.SetClones(clones)
 	mgr.SetTmuxCommand([]string{tmuxScript})
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 
-	ws, err := mgr.Create(t.Context(), "github", host, owner, name, prNumber)
+	spec, err := databaseLaunchSpecResolver{db: d}.ResolveWorkspaceLaunchSpec(
+		t.Context(), providerplane.WorkspaceLaunchRequest{
+			Repository: providerplane.RepositoryRoute{
+				Provider: "github", PlatformHost: host, Owner: owner, Name: name,
+			},
+			ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: prNumber,
+		},
+	)
+	require.NoError(err)
+	spec.Pull.HeadRepoKind = "fork"
+	spec.Pull.HeadRepoCloneURL = remote
+	ws, err := mgr.CreateFromLaunchSpec(t.Context(), spec)
 	require.NoError(err)
 	require.NoError(mgr.Setup(t.Context(), ws))
 
@@ -2881,7 +2557,7 @@ func TestSetupFetchesConfiguredWorktreeBasePathBeforeAdd(t *testing.T) {
 	runWorkspaceTestGit(t, remote, "update-server-info")
 
 	tmuxScript, _ := writeRecorderScript(t)
-	mgr := NewManager(d, wtDir)
+	mgr := newTestManager(t, d, wtDir)
 	mgr.SetTmuxCommand([]string{tmuxScript})
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 
@@ -2908,7 +2584,7 @@ func TestSetupRefreshesConfiguredWorktreeBaseOriginHead(t *testing.T) {
 	seedIssue(t, d, repoID, 7, "")
 
 	tmuxScript, _ := writeRecorderScript(t)
-	mgr := NewManager(d, wtDir)
+	mgr := newTestManager(t, d, wtDir)
 	mgr.SetTmuxCommand([]string{tmuxScript})
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 
@@ -2961,11 +2637,199 @@ func TestFetchWorkspaceBaseRequiresOriginHeadOnlyForIssueWorkspaces(t *testing.T
 	runWorkspaceTestGit(t, remote, "update-server-info")
 	runWorkspaceTestGit(
 		t, localRepo,
-		"symbolic-ref", "--delete", "refs/remotes/origin/HEAD",
+		"update-ref", "--no-deref", "-d", "refs/remotes/origin/HEAD",
 	)
 
 	require.NoError(fetchWorkspaceBaseWithGit(t.Context(), runGitWithoutHooks, localRepo, false))
 	require.Error(fetchWorkspaceBaseWithGit(t.Context(), runGitWithoutHooks, localRepo, true))
+}
+
+func TestAddAndRefreshPRWorktreeFastForwardLocalBaseBranch(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	const branch = "feature/base-sync"
+	localRepo, remote, platformHost := setupHTTPWorktreeBaseForWorkspaceGitTest(
+		t, branch,
+	)
+	runWorkspaceTestGit(t, localRepo, "checkout", "--detach")
+	runWorkspaceTestGit(t, remote, "config", "user.email", "test@test.com")
+	runWorkspaceTestGit(t, remote, "config", "user.name", "Test")
+	firstBaseSHA := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, remote, "commit-tree", "refs/heads/main^{tree}",
+		"-p", "refs/heads/main", "-m", "advance base once",
+	)))
+	runWorkspaceTestGit(t, remote, "update-ref", "refs/heads/main", firstBaseSHA)
+	runWorkspaceTestGit(t, remote, "update-server-info")
+
+	d := openTestDB(t)
+	repoID := seedRepo(t, d, platformHost, "acme", "widget")
+	seedMR(t, d, repoID, 968, branch)
+	mgr := newTestManager(t, d, t.TempDir())
+	ws, err := mgr.Create(
+		t.Context(), "github", platformHost, "acme", "widget", 968,
+	)
+	require.NoError(err)
+	launchSpec, err := mgr.RequireWorkspaceLaunchSpec(t.Context(), ws)
+	require.NoError(err)
+
+	_, err = mgr.addWorktree(t.Context(), localRepo, true, ws, launchSpec)
+	require.NoError(err)
+	localBaseSHA := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "rev-parse", "refs/heads/main",
+	)))
+	assert.Equal(firstBaseSHA, localBaseSHA)
+
+	secondBaseSHA := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, remote, "commit-tree", firstBaseSHA+"^{tree}",
+		"-p", firstBaseSHA, "-m", "advance base twice",
+	)))
+	runWorkspaceTestGit(t, remote, "update-ref", "refs/heads/main", secondBaseSHA)
+	runWorkspaceTestGit(t, remote, "update-server-info")
+
+	_, err = mgr.refreshExistingWorkspaceWorktree(
+		t.Context(), localRepo, ws, launchSpec,
+	)
+	require.NoError(err)
+	localBaseSHA = strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "rev-parse", "refs/heads/main",
+	)))
+	assert.Equal(secondBaseSHA, localBaseSHA)
+}
+
+func TestSyncLocalBaseBranchSkipsCheckedOutAndDivergedBranches(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	const branch = "main"
+	localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/base-sync")
+	originalSHA := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "rev-parse", "refs/heads/main",
+	)))
+	firstRemoteSHA := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "commit-tree", originalSHA+"^{tree}",
+		"-p", originalSHA, "-m", "first remote base",
+	)))
+	runWorkspaceTestGit(
+		t, localRepo, "update-ref", "refs/remotes/origin/main", firstRemoteSHA,
+	)
+	runWorkspaceTestGit(t, localRepo, "checkout", "--detach")
+
+	require.NoError(syncLocalBaseBranch(
+		t.Context(), localRepo, "ws-base-sync-safety", branch,
+	))
+	assert.Equal(firstRemoteSHA, strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "rev-parse", "refs/heads/main",
+	))))
+
+	secondRemoteSHA := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "commit-tree", firstRemoteSHA+"^{tree}",
+		"-p", firstRemoteSHA, "-m", "second remote base",
+	)))
+	runWorkspaceTestGit(
+		t, localRepo, "update-ref", "refs/remotes/origin/main", secondRemoteSHA,
+	)
+	runWorkspaceTestGit(t, localRepo, "checkout", branch)
+	require.NoError(syncLocalBaseBranch(
+		t.Context(), localRepo, "ws-base-sync-safety", branch,
+	))
+	assert.Equal(firstRemoteSHA, strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "rev-parse", "refs/heads/main",
+	))))
+
+	runWorkspaceTestGit(t, localRepo, "checkout", "--detach")
+	divergentSHA := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "commit-tree", firstRemoteSHA+"^{tree}",
+		"-p", firstRemoteSHA, "-m", "divergent local base",
+	)))
+	thirdRemoteSHA := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "commit-tree", secondRemoteSHA+"^{tree}",
+		"-p", secondRemoteSHA, "-m", "third remote base",
+	)))
+	runWorkspaceTestGit(
+		t, localRepo, "update-ref", "refs/heads/main", divergentSHA,
+	)
+	runWorkspaceTestGit(
+		t, localRepo, "update-ref", "refs/remotes/origin/main", thirdRemoteSHA,
+	)
+	require.NoError(syncLocalBaseBranch(
+		t.Context(), localRepo, "ws-base-sync-safety", branch,
+	))
+	assert.Equal(divergentSHA, strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "rev-parse", "refs/heads/main",
+	))))
+}
+
+func TestSyncLocalBaseBranchSkipsOccupiedRefNamespace(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/base-sync")
+	mainSHA := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "rev-parse", "refs/heads/main",
+	)))
+	runWorkspaceTestGit(t, localRepo, "checkout", "--detach")
+	runWorkspaceTestGit(t, localRepo, "branch", "-D", "main")
+	runWorkspaceTestGit(t, localRepo, "branch", "main/topic", mainSHA)
+
+	require.NoError(syncLocalBaseBranch(
+		t.Context(), localRepo, "ws-base-sync-namespace", "main",
+	))
+	_, mainExists, err := gitRefSHA(t.Context(), localRepo, "refs/heads/main")
+	require.NoError(err)
+	assert.False(mainExists)
+	assert.Equal(mainSHA, strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "rev-parse", "refs/heads/main/topic",
+	))))
+}
+
+func TestSyncWorkspaceBaseBranchRejectsReplacedRepositoryRoute(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/base-sync")
+	localMainSHA := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "rev-parse", "refs/heads/main",
+	)))
+	remoteMainSHA := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "commit-tree", localMainSHA+"^{tree}",
+		"-p", localMainSHA, "-m", "replacement base",
+	)))
+	runWorkspaceTestGit(
+		t, localRepo, "update-ref", "refs/remotes/origin/main", remoteMainSHA,
+	)
+	runWorkspaceTestGit(t, localRepo, "checkout", "--detach")
+
+	d := openTestDB(t)
+	seedRepo(t, d, "github.com", "acme", "widget")
+	replacement, _, err := d.ReconcileRepositoryObservation(
+		t.Context(), db.RepoIdentity{
+			Platform:       "github",
+			PlatformHost:   "github.com",
+			PlatformRepoID: "repo-acme-widget-replacement",
+			Owner:          "acme",
+			Name:           "widget",
+		}, time.Now().UTC(),
+	)
+	require.NoError(err)
+	require.NotNil(replacement)
+	seedMR(t, d, replacement.Repository.ID, 968, "feature/base-sync")
+	mgr := NewManager(d, t.TempDir())
+	ws := &Workspace{
+		ID:           "ws-base-sync-replaced-route",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   968,
+	}
+
+	err = mgr.syncWorkspaceBaseBranch(t.Context(), localRepo, ws)
+	require.ErrorContains(err, "historical occupants")
+	assert.Equal(localMainSHA, strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "rev-parse", "refs/heads/main",
+	))))
 }
 
 func TestFetchWorkspaceBaseConstrainsNegotiationTips(t *testing.T) {
@@ -3026,7 +2890,7 @@ func TestCleanupPreservesExistingWorktreeWhenConfiguredBaseChanges(t *testing.T)
 	)
 	runWorkspaceTestGit(t, wrongRepo, "branch", branch, "HEAD")
 
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(wrongRepo))
 	ws := &Workspace{
 		ID:              "ws-cleanup-existing-worktree",
@@ -3062,7 +2926,7 @@ func TestCleanupDeletesLiveRegisteredWorktreeWithoutOwnershipMarker(t *testing.T
 		"worktree", "add", worktreePath, "-b", branch, "HEAD",
 	)
 
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 	ws := &Workspace{
 		ID:              "ws-unmarked-live-registration",
@@ -3098,7 +2962,7 @@ func TestCleanupDoesNotTrustReplacementCloneAtWorkspacePath(t *testing.T) {
 	)
 	runWorkspaceTestGit(t, worktreePath, "branch", branch, "HEAD")
 
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 	ws := &Workspace{
 		ID:              "ws-replaced-clone",
 		Platform:        "github",
@@ -3143,7 +3007,7 @@ func TestCleanupDoesNotTrustStaleLocalBaseRegistrationForReplacementClone(t *tes
 	)
 	runWorkspaceTestGit(t, worktreePath, "branch", branch, "HEAD")
 
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 	ws := &Workspace{
 		ID:              "ws-stale-local-base-replaced-clone",
@@ -3173,7 +3037,7 @@ func TestCleanupDoesNotTrustStaleLocalBaseRegistrationForReplacementClone(t *tes
 func TestCleanupIgnoresInvalidConfiguredBaseWhenWorktreeAbsent(t *testing.T) {
 	require := require.New(t)
 
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(filepath.Join(t.TempDir(), "missing")))
 	ws := &Workspace{
 		ID:              "ws-cleanup-invalid-base",
@@ -3228,7 +3092,7 @@ func TestCleanupSucceedsWhenWorkspacePathReplacedByNonGitDirectory(t *testing.T)
 			require.NoError(os.MkdirAll(worktreePath, 0o755))
 			tt.corrupt(t, worktreePath)
 
-			mgr := NewManager(openTestDB(t), t.TempDir())
+			mgr := newTestManager(t, openTestDB(t), t.TempDir())
 			mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 			ws := &Workspace{
 				ID:              "ws-cleanup-non-git-dir",
@@ -3330,6 +3194,9 @@ func TestRemoveStaleWorktreeRegistrationMetadataResolvesRelativeGitdir(
 	metadataDir := filepath.Join(metadataRoot, entries[0].Name())
 	gitFile, err := os.ReadFile(filepath.Join(metadataDir, "gitdir"))
 	require.NoError(err)
+	if filepath.IsAbs(strings.TrimSpace(string(gitFile))) {
+		t.Skip("installed Git does not support relative worktree metadata")
+	}
 	assert.False(filepath.IsAbs(strings.TrimSpace(string(gitFile))))
 	require.NoError(os.RemoveAll(worktreePath))
 
@@ -3359,7 +3226,7 @@ func TestCleanupQuarantinesPlainWorkspaceNestedInRepository(t *testing.T) {
 		filepath.Join(worktreePath, "leftover.txt"), []byte("preserve me\n"), 0o644,
 	))
 
-	mgr := NewManager(openTestDB(t), filepath.Join(parentRepo, "managed"))
+	mgr := newTestManager(t, openTestDB(t), filepath.Join(parentRepo, "managed"))
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(parentRepo))
 	ws := &Workspace{
 		ID:              "ws-cleanup-nested-plain-dir",
@@ -3424,7 +3291,7 @@ func TestCleanupFallsBackToManagedCloneWhenConfiguredBaseInvalid(t *testing.T) {
 	)
 	require.NoError(os.RemoveAll(worktreePath))
 
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 	mgr.SetClones(clones)
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(filepath.Join(t.TempDir(), "missing")))
 	ws := &Workspace{
@@ -3471,7 +3338,7 @@ func TestCleanupUsesProviderScopedManagedClone(t *testing.T) {
 	)
 	require.NoError(os.RemoveAll(worktreePath))
 
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 	mgr.SetClones(clones)
 	ws := &Workspace{
 		ID:              "ws-cleanup-provider-scoped-managed",
@@ -3505,7 +3372,7 @@ func TestCleanupSkipsReplacedWorktreeFromWrongRepo(t *testing.T) {
 	)
 	runWorkspaceTestGit(t, unrelatedRepo, "branch", branch, "HEAD")
 
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 	ws := &Workspace{
 		ID:              "ws-cleanup-replaced-worktree",
 		Platform:        "github",
@@ -3537,7 +3404,7 @@ func TestFailSetupUsesSinglePersistenceBudget(t *testing.T) {
 	)
 	seedMR(t, d, repoID, 42, "feature/thing")
 
-	mgr := NewManager(d, wtDir)
+	mgr := newTestManager(t, d, wtDir)
 	ws, err := mgr.Create(
 		t.Context(), "github", "github.com", "acme", "widget", 42,
 	)
@@ -3579,7 +3446,7 @@ func TestFailSetupRespectsParentDeadline(t *testing.T) {
 	)
 	seedMR(t, d, repoID, 42, "feature/thing")
 
-	mgr := NewManager(d, wtDir)
+	mgr := newTestManager(t, d, wtDir)
 	ws, err := mgr.Create(
 		t.Context(), "github", "github.com", "acme", "widget", 42,
 	)
@@ -3616,7 +3483,7 @@ func TestAddPreferredWorktreeRejectsUnsafeBranchName(t *testing.T) {
 	require := require.New(t)
 
 	cloneDir := setupBareCloneForWorkspaceGitTest(t)
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 	ws := &Workspace{
 		ID:           "ws-unsafe-branch",
 		ItemType:     db.WorkspaceItemTypePullRequest,
@@ -3673,7 +3540,7 @@ func TestAddWorktreeUsesFallbackWhenLocalBasePreferredBranchCheckedOut(t *testin
 		t, localRepo, "worktree", "add", existingWorktree,
 		"-b", branch, "refs/remotes/origin/"+branch,
 	)
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 	ws := &Workspace{
 		ID:           "ws-local-base-fallback",
 		ItemType:     db.WorkspaceItemTypePullRequest,
@@ -3682,7 +3549,7 @@ func TestAddWorktreeUsesFallbackWhenLocalBasePreferredBranchCheckedOut(t *testin
 		WorktreePath: filepath.Join(t.TempDir(), "worktree"),
 	}
 
-	gotBranch, err := mgr.addWorktreeLocked(t.Context(), localRepo, true, ws)
+	gotBranch, err := mgr.addWorktreeLocked(t.Context(), localRepo, true, ws, nil)
 
 	require.NoError(err)
 	assert.Equal(syntheticPRWorktreeBranch(42), gotBranch)
@@ -3740,9 +3607,9 @@ func TestAddWorktreeFallbackBranchTracksPRHeadBranch(t *testing.T) {
 		TmuxSession:     "ws-fallback-tracks-head",
 		Status:          "creating",
 	}
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 
-	branch, err := mgr.addWorktreeLocked(t.Context(), cloneDir, false, ws)
+	branch, err := mgr.addWorktreeLocked(t.Context(), cloneDir, false, ws, nil)
 
 	require.NoError(err)
 	require.Equal(syntheticPRWorktreeBranch(prNumber), branch)
@@ -3783,9 +3650,9 @@ func TestAddWorktreeLockedRecordsOwnershipBeforeReturning(t *testing.T) {
 		WorkspaceBranch: workspaceBranchUnknown,
 		WorktreePath:    filepath.Join(t.TempDir(), "worktree"),
 	}
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 
-	_, err := mgr.addWorktreeLocked(t.Context(), cloneDir, false, ws)
+	_, err := mgr.addWorktreeLocked(t.Context(), cloneDir, false, ws, nil)
 	require.NoError(err)
 	owned, err := workspaceRegistrationMatches(
 		t.Context(), cloneDir, ws.WorktreePath, ws.ID,
@@ -3804,7 +3671,7 @@ func TestOwnedWorktreeAddRollsBackWhenOwnershipMarkerFails(t *testing.T) {
 		ItemNumber:   46,
 		WorktreePath: filepath.Join(t.TempDir(), "worktree"),
 	}
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 
 	_, err := mgr.runOwnedGitWorktreeAddCreatingBranch(
 		t.Context(), cloneDir, ws, branch, "main",
@@ -3882,9 +3749,9 @@ func TestAddWorktreeUniquifiesFallbackBranchWhenSyntheticNameTaken(t *testing.T)
 		TmuxSession:     "ws-uniquified-fallback",
 		Status:          "creating",
 	}
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 
-	branch, err := mgr.addWorktreeLocked(t.Context(), cloneDir, false, ws)
+	branch, err := mgr.addWorktreeLocked(t.Context(), cloneDir, false, ws, nil)
 
 	require.NoError(err)
 	assert.Equal(takenBranch+"-2", branch)
@@ -3956,9 +3823,9 @@ func TestAddWorktreeFallsBackToDetachedWorktreeWhenBranchNamesExhausted(
 		TmuxSession:     "ws-detached-last-resort",
 		Status:          "creating",
 	}
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 
-	branch, err := mgr.addWorktreeLocked(t.Context(), cloneDir, false, ws)
+	branch, err := mgr.addWorktreeLocked(t.Context(), cloneDir, false, ws, nil)
 
 	require.NoError(err)
 	// No managed branch: cleanup and delete must not remove anyone else's.
@@ -3997,21 +3864,18 @@ func TestAddWorktreeUnknownHeadRepoDoesNotTrackMatchingOriginBranch(t *testing.T
 	d := openTestDB(t)
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
 	seedMRWithHeadRepo(t, d, repoID, prNumber, headBranch, "")
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	ws, err := mgr.Create(
 		t.Context(), "github", "github.com", "acme", "widget", prNumber,
 	)
 	require.NoError(err)
 
-	branch, err := mgr.addWorktreeLocked(t.Context(), cloneDir, false, ws)
-	require.NoError(err)
-	gotSHA, err := gitHeadSHA(t.Context(), ws.WorktreePath)
-	require.NoError(err)
-	assert.Equal(headSHA, gotSHA)
-	_, err = gitConfigValue(
-		t.Context(), ws.WorktreePath, "branch."+branch+".remote",
+	_, err = mgr.addWorktreeLocked(
+		t.Context(), cloneDir, false, ws,
+		pullLaunchSpecForWorkspace(ws, "unknown", ""),
 	)
-	assert.Error(err, "unknown repository identity must leave the branch untracked")
+	require.Error(err)
+	assert.ErrorContains(err, "head repository identity is unavailable")
 }
 
 func TestAddWorktreeLocalBaseFetchesPullRefWhenHeadBranchDeleted(t *testing.T) {
@@ -4045,7 +3909,7 @@ func TestAddWorktreeLocalBaseFetchesPullRefWhenHeadBranchDeleted(t *testing.T) {
 	require.NoError(err)
 	require.False(exists)
 
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 	ws := &Workspace{
 		ID:           "ws-add-fetches-pull-ref",
 		Platform:     "github",
@@ -4056,7 +3920,10 @@ func TestAddWorktreeLocalBaseFetchesPullRefWhenHeadBranchDeleted(t *testing.T) {
 		WorktreePath: filepath.Join(t.TempDir(), "worktree"),
 	}
 
-	gotBranch, err := mgr.addWorktree(t.Context(), localRepo, true, ws)
+	gotBranch, err := mgr.addWorktree(
+		t.Context(), localRepo, true, ws,
+		pullLaunchSpecForWorkspace(ws, "same_repo", ""),
+	)
 
 	require.NoError(err)
 	assert.Equal(syntheticPRWorktreeBranch(prNumber), gotBranch)
@@ -4094,7 +3961,7 @@ func TestAddWorktreeLocalBaseIgnoresStalePullRefWhenFetchFails(t *testing.T) {
 		t, localRepo, "worktree", "add", existingWorktree,
 		"-b", branch, "refs/remotes/origin/"+branch,
 	)
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 	ws := &Workspace{
 		ID:           "ws-add-ignores-stale-pull-ref",
 		Platform:     "github",
@@ -4105,7 +3972,10 @@ func TestAddWorktreeLocalBaseIgnoresStalePullRefWhenFetchFails(t *testing.T) {
 		WorktreePath: filepath.Join(t.TempDir(), "worktree"),
 	}
 
-	gotBranch, err := mgr.addWorktree(t.Context(), localRepo, true, ws)
+	gotBranch, err := mgr.addWorktree(
+		t.Context(), localRepo, true, ws,
+		pullLaunchSpecForWorkspace(ws, "same_repo", ""),
+	)
 
 	require.NoError(err)
 	assert.Equal(syntheticPRWorktreeBranch(prNumber), gotBranch)
@@ -4121,7 +3991,7 @@ func TestLocalBaseExistingPRBranchIsNotDeletedOnCleanup(t *testing.T) {
 	const branch = "feature/thing"
 	localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, branch)
 	runWorkspaceTestGit(t, localRepo, "branch", branch, "refs/remotes/origin/"+branch)
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 	ws := &Workspace{
 		ID:              "ws-existing-local-pr-branch",
 		Platform:        "github",
@@ -4137,7 +4007,7 @@ func TestLocalBaseExistingPRBranchIsNotDeletedOnCleanup(t *testing.T) {
 		Status:          "ready",
 	}
 
-	managedBranch, err := mgr.addWorktreeLocked(t.Context(), localRepo, true, ws)
+	managedBranch, err := mgr.addWorktreeLocked(t.Context(), localRepo, true, ws, nil)
 	require.NoError(err)
 	require.Empty(managedBranch)
 	ws.WorkspaceBranch = managedBranch
@@ -4158,7 +4028,7 @@ func TestLocalBaseExistingPRBranchPreservesUpstream(t *testing.T) {
 	runWorkspaceTestGit(t, localRepo, "branch", branch, "refs/remotes/origin/"+branch)
 	runWorkspaceTestGit(t, localRepo, "config", "branch."+branch+".remote", "upstream")
 	runWorkspaceTestGit(t, localRepo, "config", "branch."+branch+".merge", "refs/heads/main")
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 	ws := &Workspace{
 		ID:              "ws-existing-local-pr-branch-upstream",
 		Platform:        "github",
@@ -4174,7 +4044,7 @@ func TestLocalBaseExistingPRBranchPreservesUpstream(t *testing.T) {
 		Status:          "ready",
 	}
 
-	managedBranch, err := mgr.addWorktreeLocked(t.Context(), localRepo, true, ws)
+	managedBranch, err := mgr.addWorktreeLocked(t.Context(), localRepo, true, ws, nil)
 
 	require.NoError(err)
 	assert.Empty(managedBranch)
@@ -4262,7 +4132,7 @@ func TestAddPreferredWorktreeHeadRepoRouting(t *testing.T) {
 			seedMRWithHeadRepo(
 				t, d, repoID, tt.number, tt.headBranch, tt.headRepoURL,
 			)
-			mgr := NewManager(d, t.TempDir())
+			mgr := newTestManager(t, d, t.TempDir())
 			ws, err := mgr.Create(
 				t.Context(), "github", "github.com", "acme", "widget", tt.number,
 			)
@@ -4313,7 +4183,13 @@ func TestAddWorktreeGitLabForkMRFetchesHeadBeforePreferredBranch(t *testing.T) {
 		t, cloneDir, "push", "origin",
 		fmt.Sprintf("%s:refs/merge-requests/%d/head", headSHA, mrNumber),
 	)
-	headRepo := "https://gitlab.com/contributor/widget.git"
+	forkRemote := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, cloneDir, "remote", "get-url", "origin",
+	)))
+	runWorkspaceTestGit(
+		t, cloneDir, "push", "origin", headSHA+":refs/heads/"+headBranch,
+	)
+	headRepo := forkRemote
 	ws := &Workspace{
 		ID:              "ws-gitlab-fork-mr-preferred",
 		Platform:        "gitlab",
@@ -4329,9 +4205,12 @@ func TestAddWorktreeGitLabForkMRFetchesHeadBeforePreferredBranch(t *testing.T) {
 		TmuxSession:     "ws-gitlab-fork-mr-preferred",
 		Status:          "creating",
 	}
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 
-	branch, err := mgr.addWorktreeLocked(t.Context(), cloneDir, false, ws)
+	branch, err := mgr.addWorktreeLocked(
+		t.Context(), cloneDir, false, ws,
+		pullLaunchSpecForWorkspace(ws, "fork", forkRemote),
+	)
 
 	require.NoError(err)
 	assert.Equal(headBranch, branch)
@@ -4373,9 +4252,12 @@ func TestAddWorktreeMergedSameRepoPRUsesPullRefWhenHeadBranchDeleted(
 		TmuxSession:     "ws-merged-same-repo-pr",
 		Status:          "creating",
 	}
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 
-	branch, err := mgr.addWorktreeLocked(t.Context(), cloneDir, false, ws)
+	branch, err := mgr.addWorktreeLocked(
+		t.Context(), cloneDir, false, ws,
+		pullLaunchSpecForWorkspace(ws, "same_repo", ""),
+	)
 
 	require.NoError(err)
 	assert.Equal(syntheticPRWorktreeBranch(prNumber), branch)
@@ -4423,9 +4305,12 @@ func TestAddWorktreeGitLabMRUsesMergeRequestRefWhenHeadBranchDeleted(
 		TmuxSession:     "ws-merged-gitlab-mr",
 		Status:          "creating",
 	}
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 
-	branch, err := mgr.addWorktreeLocked(t.Context(), cloneDir, false, ws)
+	branch, err := mgr.addWorktreeLocked(
+		t.Context(), cloneDir, false, ws,
+		pullLaunchSpecForWorkspace(ws, "same_repo", ""),
+	)
 
 	require.NoError(err)
 	assert.Equal(syntheticPRWorktreeBranch(mrNumber), branch)
@@ -4467,9 +4352,12 @@ func TestAddWorktreeGitLabMRFetchesSpecificMergeRequestRef(t *testing.T) {
 		TmuxSession:     "ws-merged-gitlab-mr-specific-fetch",
 		Status:          "creating",
 	}
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 
-	branch, err := mgr.addWorktreeLocked(t.Context(), cloneDir, false, ws)
+	branch, err := mgr.addWorktreeLocked(
+		t.Context(), cloneDir, false, ws,
+		pullLaunchSpecForWorkspace(ws, "same_repo", ""),
+	)
 
 	require.NoError(err)
 	assert.Equal(syntheticPRWorktreeBranch(mrNumber), branch)
@@ -4500,7 +4388,7 @@ func TestRollbackWorktreeDeletesBranchWhenContextCanceled(t *testing.T) {
 		"worktree", "add", ws.WorktreePath, "-b", branch, "main",
 	)
 	require.NoError(writeWorkspaceOwnershipMarker(t.Context(), cloneDir, ws))
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
@@ -4540,7 +4428,7 @@ func TestRollbackWorktreePreservesReplacementWithoutOwnershipMarker(t *testing.T
 		[]byte("uncommitted replacement\n"), 0o644,
 	))
 
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 	mgr.rollbackWorktree(t.Context(), cloneDir, ws, branch)
 
 	contents, err := os.ReadFile(filepath.Join(ws.WorktreePath, "replacement.txt"))
@@ -4788,7 +4676,7 @@ func setupRemoteForForkPRWorktreeTest(
 	require.NotEqual(t, originSHA, pullSHA)
 	runWorkspaceTestGit(
 		t, work, "push", "origin",
-		originSHA+":refs/heads/"+branch,
+		pullSHA+":refs/heads/"+branch,
 		pullSHA+":refs/pull/"+strconv.Itoa(prNumber)+"/head",
 	)
 	return remote, pullSHA
@@ -5001,7 +4889,7 @@ func TestManagerEnsureTmuxHasSessionPrefix(t *testing.T) {
 	script, record := writeRecorderScript(t)
 
 	d := openTestDB(t)
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script, "wrap"})
 	mgr.SetTmuxGraphics(true)
 	mgr.SetTmuxMouse(true)
@@ -5156,7 +5044,7 @@ func TestManagerEnsureTerminalUsesPtyOwnerWhenConfigured(t *testing.T) {
 
 	script, record := writeRecorderScript(t)
 	owner := &fakePtyOwnerClient{}
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 	mgr.SetTmuxCommand([]string{script, "wrap"})
 	mgr.SetPtyOwnerClient(owner)
 
@@ -5181,7 +5069,7 @@ func TestManagerTerminalPaneSnapshotIncludesPtyOwnerTitle(t *testing.T) {
 		SnapshotOutput: []byte("recent output"),
 		SnapshotTitle:  "⠴ t3code-b5014b03",
 	}
-	mgr := NewManager(nil, t.TempDir())
+	mgr := newTestManager(t, nil, t.TempDir())
 	mgr.SetPtyOwnerClient(owner)
 	ws := &db.Workspace{
 		ID:              "ws-1",
@@ -5207,7 +5095,7 @@ func TestManagerCleanupTerminalUsesPtyOwnerForBaseSession(t *testing.T) {
 	d := openTestDB(t)
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
 	seedMR(t, d, repoID, 42, "feature/thing")
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script, "wrap"})
 	mgr.SetPtyOwnerClient(owner)
 
@@ -5232,7 +5120,7 @@ func TestManagerCleanupPtyOwnerWorkspaceStopsStoredRuntimeTmuxSessions(t *testin
 	d := openTestDB(t)
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
 	seedMR(t, d, repoID, 42, "feature/thing")
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script, "wrap"})
 	mgr.SetPtyOwnerClient(owner)
 
@@ -5270,7 +5158,7 @@ func TestManagerDeleteUsesTmuxPrefix(t *testing.T) {
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
 	seedMR(t, d, repoID, 42, "feature/thing")
 
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script, "wrap"})
 
 	ctx := t.Context()
@@ -5318,7 +5206,7 @@ func TestManagerDeleteAllowsMissingTmuxSession(t *testing.T) {
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
 	seedMR(t, d, repoID, 42, "feature/thing")
 
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script, "wrap"})
 
 	ctx := context.Background()
@@ -5364,7 +5252,7 @@ func TestManagerDeleteFailsWhenTmuxKillFails(t *testing.T) {
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
 	seedMR(t, d, repoID, 42, "feature/thing")
 
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script, "wrap"})
 
 	ctx := context.Background()
@@ -5401,7 +5289,7 @@ func TestManagerDeleteStopsBeforeTeardownWhenAdmissionFails(t *testing.T) {
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
 	seedMR(t, d, repoID, 42, "feature/thing")
 
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script, "wrap"})
 
 	ctx := context.Background()
@@ -5446,7 +5334,7 @@ func TestManagerDeleteTreatsTmuxServerExitDuringKillAsGone(t *testing.T) {
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
 	seedMR(t, d, repoID, 42, "feature/thing")
 
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script, "wrap"})
 
 	ctx := context.Background()
@@ -5475,7 +5363,7 @@ func TestManagerDeleteAllowsErroredWorkspaceWhenTmuxUnavailable(t *testing.T) {
 	require := require.New(t)
 
 	d := openTestDB(t)
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	mgr.SetTmuxCommand([]string{
 		filepath.Join(t.TempDir(), "missing-tmux"),
 	})
@@ -5509,7 +5397,7 @@ func TestManagerReapOrphanTmuxSessionsIgnoresUnavailableTmux(t *testing.T) {
 	require := require.New(t)
 
 	d := openTestDB(t)
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	mgr.SetTmuxCommand([]string{filepath.Join(t.TempDir(), "missing-tmux")})
 
 	require.NoError(mgr.ReapOrphanTmuxSessions(context.Background()))
@@ -5523,7 +5411,7 @@ func TestManagerReapOrphanTmuxSessionsKillsUnknownManagedSessions(t *testing.T) 
 	record := filepath.Join(dir, "record")
 	script := filepath.Join(dir, "fake-tmux")
 	d := openTestDB(t)
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	body := "#!/bin/sh\n" +
 		"TMUX_RECORD=" + shellquote.Join(record) + "\n" +
 		"TMUX_TEST_OWNER_MARKER=" + shellquote.Join(mgr.tmuxOwnerMarker()) + "\n" +
@@ -5594,7 +5482,7 @@ func TestManagerReapOrphanTmuxSessionsKeepsStoredRuntimeSessions(
 	record := filepath.Join(dir, "record")
 	script := filepath.Join(dir, "fake-tmux")
 	d := openTestDB(t)
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	storedHostSession := "forge-host-1111111111111111"
 	orphanHostSession := "forge-host-2222222222222222"
 
@@ -5714,7 +5602,7 @@ func TestManagerPruneMissingTmuxSessionsRemovesStaleRecords(
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
 
 	d := openTestDB(t)
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script, "wrap"})
 	mgr.SetPtyOwnerFallbackClient(&fakePtyOwnerClient{
 		StateSessions: map[string]bool{
@@ -5822,7 +5710,7 @@ func TestManagerTmuxSessionListSurvivesTmux36Sanitization(t *testing.T) {
 	record := filepath.Join(dir, "record")
 	script := filepath.Join(dir, "fake-tmux")
 	d := openTestDB(t)
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	body := "#!/bin/sh\n" +
 		"TMUX_RECORD=" + shellquote.Join(record) + "\n" +
 		"TMUX_TEST_OWNER_MARKER=" + shellquote.Join(mgr.tmuxOwnerMarker()) + "\n" +
@@ -5915,7 +5803,7 @@ func TestManagerListTmuxSessionInfosRealTmux(t *testing.T) {
 	run("new-session", "-d", "-s", unowned, "sleep 30")
 
 	d := openTestDB(t)
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	mgr.SetTmuxCommand(tmuxCommand)
 	run("set-option", "-t", owned, "@forge_owner", mgr.tmuxOwnerMarker())
 
@@ -5938,7 +5826,7 @@ func TestManagerTmuxSessionsForWorkspaceReadsStoredRuntimeSessions(
 	require := require.New(t)
 
 	d := openTestDB(t)
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	require.NoError(d.InsertWorkspace(context.Background(), &Workspace{
 		ID:           "0000000000000001",
 		PlatformHost: "github.com",
@@ -6021,7 +5909,7 @@ func TestManagerCleanupTmuxSessionKillsRuntimeSessionsForWorkspace(
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
 
 	d := openTestDB(t)
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script})
 	ws := &Workspace{
 		ID:           "0000000000000001",
@@ -6104,7 +5992,7 @@ func TestManagerCleanupTmuxSessionPreservesStoredRowsAfterRuntimeKillFailure(
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
 
 	d := openTestDB(t)
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script})
 	ws := &Workspace{
 		ID:           "0000000000000001",
@@ -6163,7 +6051,7 @@ func TestManagerForgetRuntimeSessionCreatedAtPreservesRecreatedRow(
 	require := require.New(t)
 
 	d := openTestDB(t)
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	require.NoError(d.InsertWorkspace(context.Background(), &Workspace{
 		ID:           "ws-1",
 		TmuxSession:  "kenn-forge-ws-1",
@@ -6207,7 +6095,7 @@ func TestManagerForgetRuntimeSessionAfterExitKeepsLiveTmuxSession(
 	require := require.New(t)
 
 	d := openTestDB(t)
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	require.NoError(d.InsertWorkspace(context.Background(), &Workspace{
 		ID:           "ws-1",
 		TmuxSession:  "kenn-forge-ws-1",
@@ -6289,7 +6177,7 @@ func TestManagerRequestRetryFailsWhenTmuxCleanupFails(t *testing.T) {
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
 
 	d := openTestDB(t)
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script, "wrap"})
 	ctx := context.Background()
 	errMsg := "tmux new-session failed"
@@ -6370,7 +6258,7 @@ func TestManagerRequestRetryConsumesQueuedRetryWhenCleanupFails(t *testing.T) {
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
 
 	d := openTestDB(t)
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script, "wrap"})
 	ctx := context.Background()
 	errMsg := "tmux new-session failed"
@@ -6467,7 +6355,7 @@ func TestManagerRequestRetrySkipsGitCleanupWhenCloneMissing(t *testing.T) {
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
 
 	d := openTestDB(t)
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script, "wrap"})
 	mgr.SetClones(gitclone.New(filepath.Join(dir, "clones"), nil))
 	ctx := context.Background()
@@ -6509,7 +6397,7 @@ func TestIssueRetryCleansLeakedUnknownBranchAndUsesIssueBranch(t *testing.T) {
 
 	host, owner, name := "github.com", "acme", "widget"
 	baseDir := t.TempDir()
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 	mgr.SetClones(gitclone.New(baseDir, nil))
 
 	cloneDir, err := mgr.clones.ClonePath("github", host, owner, name)
@@ -6569,7 +6457,7 @@ func TestManagerRequestRetryQueuesWhileCreatingAndStartsIfErrored(t *testing.T) 
 	require := require.New(t)
 
 	d := openTestDB(t)
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	ctx := context.Background()
 	ws := &Workspace{
 		ID:              "ws-queued-retry",
@@ -6620,7 +6508,7 @@ func TestManagerRequestRetryPreservesReusedIssueBranchSentinel(t *testing.T) {
 	require := require.New(t)
 
 	d := openTestDB(t)
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	ctx := context.Background()
 	errMsg := "setup failed"
 	ws := &Workspace{
@@ -6660,7 +6548,7 @@ func TestManagerRequestRetryStartsWhenSetupFailedBeforeQueue(t *testing.T) {
 	require := require.New(t)
 
 	d := openTestDB(t)
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	ctx := context.Background()
 	errMsg := "ensure clone failed"
 	ws := &Workspace{
@@ -6705,7 +6593,7 @@ func TestManagerRequestRetryDiscardsQueuedRetryWhenSetupSucceeds(t *testing.T) {
 	require := require.New(t)
 
 	d := openTestDB(t)
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	ctx := context.Background()
 	ws := &Workspace{
 		ID:              "ws-discard-retry",
@@ -6765,7 +6653,7 @@ func TestManagerEnsureTmuxCreatesSessionOnMiss(t *testing.T) {
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
 
 	d := openTestDB(t)
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script})
 	mgr.SetHideTmuxStatus(true)
 	mgr.SetTmuxGraphics(true)
@@ -6830,7 +6718,7 @@ func TestManagerEnsureTmuxCreatesSessionOnMacOSMissingServer(t *testing.T) {
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
 
 	d := openTestDB(t)
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script})
 	mgr.SetTmuxGraphics(true)
 	mgr.SetTmuxMouse(true)
@@ -6892,7 +6780,7 @@ func TestReadRecorderArgvPreservesEmptyArgs(t *testing.T) {
 func TestManagerEnsureTmuxPropagatesBinaryError(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	// Path that cannot possibly exist — exec returns a non-exit
 	// error (ENOENT), not an *exec.ExitError.
 	mgr.SetTmuxCommand(
@@ -6922,7 +6810,7 @@ func TestManagerEnsureTmuxPropagatesNon1ExitCode(t *testing.T) {
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
 
 	d := openTestDB(t)
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script})
 
 	err := mgr.EnsureTmux(t.Context(), "sess-Y", "/tmp")
@@ -6945,7 +6833,7 @@ func TestManagerEnsureTmuxPropagatesExit1NonTmuxError(t *testing.T) {
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
 
 	d := openTestDB(t)
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script})
 
 	err := mgr.EnsureTmux(t.Context(), "sess-Q", "/tmp")
@@ -6971,7 +6859,7 @@ func TestManagerEnsureTmuxIgnoresAbsencePhraseOnStdout(t *testing.T) {
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
 
 	d := openTestDB(t)
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script})
 
 	err := mgr.EnsureTmux(t.Context(), "sess-R", "/tmp")
@@ -7224,7 +7112,7 @@ func TestFileLockManagerDoubleUnlock(t *testing.T) {
 
 func TestManagerWithRepoLockReleaseOnSuccess(t *testing.T) {
 	require := require.New(t)
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 	repo := t.TempDir()
 
 	calls := 0
@@ -7241,7 +7129,7 @@ func TestManagerWithRepoLockReleaseOnSuccess(t *testing.T) {
 
 func TestManagerWithRepoLockReleaseOnError(t *testing.T) {
 	require := require.New(t)
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 	repo := t.TempDir()
 
 	sentinel := errors.New("inner failed")
@@ -7259,7 +7147,7 @@ func TestManagerAddWorktreeAcquiresRepoLock(t *testing.T) {
 	require := require.New(t)
 	cloneDir := setupBareCloneForWorkspaceGitTest(t)
 	configureSameRepoPRRefs(t, cloneDir, "feature/lock-probe", 7)
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 
 	// Hold the per-repo lock from outside addWorktree; it must wait.
 	held, err := mgr.locks.Acquire(t.Context(), cloneDir)
@@ -7274,7 +7162,7 @@ func TestManagerAddWorktreeAcquiresRepoLock(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() {
-		_, err := mgr.addWorktree(t.Context(), cloneDir, false, ws)
+		_, err := mgr.addWorktree(t.Context(), cloneDir, false, ws, nil)
 		done <- err
 	}()
 
@@ -7302,7 +7190,7 @@ func TestManagerAddWorktreeRechecksOccupiedPathAfterWaitingForLock(t *testing.T)
 		prNumber        = 73
 	)
 	configureSameRepoPRRefs(t, cloneDir, preferredBranch, prNumber)
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 	ws := &Workspace{
 		ID:           "ws-add-worktree-occupied-after-preflight",
 		ItemType:     db.WorkspaceItemTypePullRequest,
@@ -7315,7 +7203,7 @@ func TestManagerAddWorktreeRechecksOccupiedPathAfterWaitingForLock(t *testing.T)
 	require.NoError(err)
 	done := make(chan error, 1)
 	go func() {
-		_, err := mgr.addWorktree(t.Context(), cloneDir, false, ws)
+		_, err := mgr.addWorktree(t.Context(), cloneDir, false, ws, nil)
 		done <- err
 	}()
 
@@ -7371,7 +7259,7 @@ func TestAddPreferredWorktreeRemovesBranchCreatedByFailedAdd(t *testing.T) {
 	require.NoError(os.WriteFile(
 		filepath.Join(ws.WorktreePath, "keep.txt"), []byte("preserve me\n"), 0o644,
 	))
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 
 	_, err := mgr.addPreferredWorktree(t.Context(), cloneDir, false, ws)
 
@@ -7446,7 +7334,7 @@ func TestManagerCleanupForDeleteAcquiresRepoLock(t *testing.T) {
 		t, baseDir, "clone", "--bare", work, cloneDir,
 	)
 
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 	mgr.SetClones(gitclone.New(baseDir, nil))
 	worktreePath := filepath.Join(t.TempDir(), "missing-wt")
 	runWorkspaceTestGit(
@@ -7506,6 +7394,22 @@ func TestSetupFailsClosedWhenRepositoryRouteReused(t *testing.T) {
 		Status:       "creating",
 	}
 	require.NoError(d.InsertWorkspace(t.Context(), ws))
+	issuedAt := time.Now().UTC()
+	require.NoError(d.PutWorkspaceLaunchSpec(t.Context(), ws.ID, WorkspaceLaunchSpec{
+		Version: WorkspaceLaunchSpecVersion,
+		Repository: WorkspaceLaunchRepository{
+			Provider: "github", PlatformHost: "github.com",
+			PlatformRepoID: "provider-old", Owner: "acme", Name: "widget",
+			CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
+		},
+		ItemType: ws.ItemType, ItemNumber: ws.ItemNumber,
+		ItemKey: "7", GitHeadRef: ws.GitHeadRef,
+		Pull: &WorkspaceLaunchPull{
+			HeadBranch: ws.GitHeadRef, HeadRepoKind: "same_repo", SnapshotRevision: 1,
+		},
+		SourceVisible: true, IssuedAt: issuedAt,
+		SourceVisibleUntil: issuedAt.Add(WorkspaceLaunchSpecVisibilityLease),
+	}))
 	_, _, err = d.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
 		PlatformRepoID: "provider-new",
@@ -7513,7 +7417,7 @@ func TestSetupFailsClosedWhenRepositoryRouteReused(t *testing.T) {
 	}, observedAt.Add(time.Hour))
 	require.NoError(err)
 
-	mgr := NewManager(d, t.TempDir())
+	mgr := newTestManager(t, d, t.TempDir())
 	err = mgr.Setup(t.Context(), ws)
 	require.ErrorContains(err, "historical occupants")
 	stored, getErr := d.GetWorkspace(t.Context(), ws.ID)
@@ -7537,7 +7441,7 @@ func TestSetupFailsBeforeGitWhenSourceItemWasRemovedUpstream(t *testing.T) {
 				seedIssue(t, d, repoID, 7, "Removed issue")
 			}
 
-			mgr := NewManager(d, t.TempDir())
+			mgr := newTestManager(t, d, t.TempDir())
 			var resolverCalls atomic.Int32
 			var ws *Workspace
 			var err error
@@ -7552,6 +7456,9 @@ func TestSetupFailsBeforeGitWhenSourceItemWasRemovedUpstream(t *testing.T) {
 				)
 			}
 			require.NoError(err)
+			spec, specErr := d.GetWorkspaceLaunchSpec(t.Context(), ws.ID)
+			require.NoError(specErr)
+			require.NotNil(spec)
 			require.NotNil(ws)
 			mgr.SetWorktreeBasePathResolver(func(
 				context.Context, string, string, string, string,
@@ -7573,10 +7480,15 @@ func TestSetupFailsBeforeGitWhenSourceItemWasRemovedUpstream(t *testing.T) {
 				repoID, archiveType, 7, string(archiveType)+"-7", now, now,
 			)
 			require.NoError(err)
+			refreshAt := spec.SourceVisibleUntil.Add(time.Second)
+			mgr.SetNow(func() time.Time { return refreshAt })
+			mgr.SetLaunchSpecResolver(databaseLaunchSpecResolver{
+				db: d, now: func() time.Time { return refreshAt },
+			})
 
 			err = mgr.Setup(t.Context(), ws)
 
-			require.ErrorContains(err, "source item")
+			require.ErrorIs(err, ErrLaunchSpecSourceHidden)
 			require.Zero(resolverCalls.Load(),
 				"workspace setup must stop before resolving a Git base")
 			require.NoDirExists(ws.WorktreePath)
@@ -7585,72 +7497,5 @@ func TestSetupFailsBeforeGitWhenSourceItemWasRemovedUpstream(t *testing.T) {
 			require.NotNil(stored)
 			require.Equal("error", stored.Status)
 		})
-	}
-}
-
-func TestRefreshWorkspaceHeadRepoSnapshotSurvivesQueuedReconciliation(t *testing.T) {
-	require := require.New(t)
-	d := openTestDB(t)
-	repoID := seedRepo(t, d, "github.com", "acme", "widget")
-	seedMRWithHeadRepo(
-		t, d, repoID, 42, "feature/thing", "https://github.com/acme/widget.git",
-	)
-	ws := &Workspace{
-		ID:           "ws-refresh-queued-writer",
-		Platform:     "github",
-		PlatformHost: "github.com",
-		RepoOwner:    "acme",
-		RepoName:     "widget",
-		ItemType:     db.WorkspaceItemTypePullRequest,
-		ItemNumber:   42,
-		GitHeadRef:   "feature/thing",
-		WorktreePath: t.TempDir(),
-		Status:       "ready",
-	}
-	require.NoError(d.InsertWorkspace(t.Context(), ws))
-
-	mgr := NewManager(d, t.TempDir())
-	writerQueued := make(chan struct{})
-	restoreHook := d.SetBeforeRepositoryReconciliationWriteLockForTest(func() {
-		close(writerQueued)
-	})
-	defer restoreHook()
-	writerDone := make(chan error, 1)
-	var interleaved bool
-	mgr.beforeHeadRepoSnapshotRepoLookup = func() {
-		if interleaved {
-			return
-		}
-		interleaved = true
-		go func() {
-			_, _, err := d.ReconcileRepositoryObservation(
-				context.Background(), db.RepoIdentity{
-					Platform: "github", PlatformHost: "github.com",
-					PlatformRepoID: "repo-acme-other",
-					Owner:          "acme", Name: "other",
-					RepoPath: "acme/other",
-				}, time.Now().UTC(),
-			)
-			writerDone <- err
-		}()
-		<-writerQueued
-	}
-
-	refreshDone := make(chan error, 1)
-	go func() {
-		_, err := mgr.RefreshWorkspaceHeadRepoSnapshot(context.Background(), ws)
-		refreshDone <- err
-	}()
-	select {
-	case err := <-refreshDone:
-		require.NoError(err)
-	case <-time.After(10 * time.Second):
-		require.Fail("head-repo refresh deadlocked behind a queued reconciliation writer")
-	}
-	select {
-	case err := <-writerDone:
-		require.NoError(err)
-	case <-time.After(10 * time.Second):
-		require.Fail("reconciliation writer never completed")
 	}
 }

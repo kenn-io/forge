@@ -9,6 +9,8 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	providerplatform "go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/tokenauth"
 	gitcmd "go.kenn.io/kit/git/cmd"
@@ -34,6 +37,10 @@ const ensureCloneTimeout = 15 * time.Minute
 
 // ErrNotFound is returned when a git ref or object cannot be resolved.
 var ErrNotFound = errors.New("git object not found")
+
+// ErrCredentialUnavailable reports that a daemon-local networked Git operation
+// has no exact credential route for its verified repository.
+var ErrCredentialUnavailable = errors.New("git credential unavailable")
 
 // RouteResolver selects mutation-capable credentials for managed Git.
 type RouteResolver interface {
@@ -73,6 +80,8 @@ type Manager struct {
 	ancestryVisitBudget  int
 	repoBrowserBarrierMu sync.Mutex
 	repoBrowserBarriers  map[string]*repoBrowserBarrier
+	transportPolicyMu    sync.RWMutex
+	allowInsecureHTTP    map[string]struct{}
 
 	// Deterministic synchronization and failure-injection hooks for
 	// repository-browser concurrency tests and clone cleanup tests. Tests set
@@ -107,6 +116,7 @@ func (e *cloneValidationError) Error() string { return e.err.Error() }
 func (e *cloneValidationError) Unwrap() error { return e.err }
 
 type repositoryIdentityContextKey struct{}
+type requiredCredentialContextKey struct{}
 
 // WithRepositoryIdentity partitions clone-backed work by the provider's
 // stable repository identity. Callers should set this after reconciling a
@@ -115,6 +125,37 @@ type repositoryIdentityContextKey struct{}
 func WithRepositoryIdentity(ctx context.Context, providerRepoID string) context.Context {
 	providerRepoID = strings.TrimSpace(providerRepoID)
 	return context.WithValue(ctx, repositoryIdentityContextKey{}, providerRepoID)
+}
+
+// WithRequiredCredential makes every networked Git command in ctx fail closed
+// instead of falling back to anonymous access when an exact route disappears.
+func WithRequiredCredential(ctx context.Context) context.Context {
+	return context.WithValue(ctx, requiredCredentialContextKey{}, true)
+}
+
+// RequireCredentialRoute admits daemon-local clone work only when the executing
+// daemon has an exact repository credential that resolves to a non-empty token.
+func (m *Manager) RequireCredentialRoute(
+	ctx context.Context, platform, host, owner, name string,
+) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	source := m.sourceForRepo(platform, host, owner, name)
+	if source == nil {
+		return fmt.Errorf("%w for %s/%s", ErrCredentialUnavailable, owner, name)
+	}
+	token, err := source.Token(ctx)
+	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
+		return fmt.Errorf("%w: %v", ErrCredentialUnavailable, err)
+	}
+	if strings.TrimSpace(token) == "" {
+		return fmt.Errorf("%w for %s/%s", ErrCredentialUnavailable, owner, name)
+	}
+	return nil
 }
 
 // New creates a Manager that stores bare clones under baseDir. A nil resolver
@@ -126,7 +167,36 @@ func New(baseDir string, routes RouteResolver) *Manager {
 		ensureFlights:       make(map[string]*ensureCloneFlight),
 		repoBrowserRepos:    make(map[string]RepoBrowserRepoRef),
 		repoBrowserBarriers: make(map[string]*repoBrowserBarrier),
+		allowInsecureHTTP:   make(map[string]struct{}),
 	}
+}
+
+// SetAllowInsecureHTTP records the explicit, host-scoped acknowledgement
+// required before authenticated Git may use plain HTTP.
+func (m *Manager) SetAllowInsecureHTTP(platform, host string, allowed bool) {
+	key := insecureHTTPPolicyKey(platform, host)
+	m.transportPolicyMu.Lock()
+	defer m.transportPolicyMu.Unlock()
+	if allowed {
+		m.allowInsecureHTTP[key] = struct{}{}
+		return
+	}
+	delete(m.allowInsecureHTTP, key)
+}
+
+// AllowsInsecureHTTP reports whether plain HTTP was explicitly acknowledged
+// for one provider identity. Loopback HTTP is handled separately.
+func (m *Manager) AllowsInsecureHTTP(platform, host string) bool {
+	key := insecureHTTPPolicyKey(platform, host)
+	m.transportPolicyMu.RLock()
+	defer m.transportPolicyMu.RUnlock()
+	_, ok := m.allowInsecureHTTP[key]
+	return ok
+}
+
+func insecureHTTPPolicyKey(platform, host string) string {
+	return strings.ToLower(strings.TrimSpace(platform)) + "\x00" +
+		strings.ToLower(strings.TrimSpace(host))
 }
 
 // ClonePath returns the filesystem path for a repo's bare clone.
@@ -301,6 +371,9 @@ func (m *Manager) ensureCloneInNamespaceValidated(
 	if err := validateRemoteURLIdentity(host, owner, name, remoteURL); err != nil {
 		return err
 	}
+	if err := m.validateRemoteTransport(platform, host, remoteURL); err != nil {
+		return err
+	}
 	clonePath, err := m.ClonePathInNamespace(namespace, host, owner, name)
 	if err != nil {
 		return err
@@ -357,6 +430,28 @@ func (m *Manager) ensureCloneInNamespaceValidated(
 		}
 	}
 	return nil
+}
+
+func (m *Manager) validateRemoteTransport(platform, host, remoteURL string) error {
+	u, err := url.Parse(strings.TrimSpace(remoteURL))
+	if err != nil || !strings.EqualFold(u.Scheme, "http") {
+		return nil
+	}
+	if m.AllowsInsecureHTTP(platform, host) {
+		return nil
+	}
+	hostname := strings.Trim(strings.ToLower(u.Hostname()), "[]")
+	if !strings.EqualFold(strings.TrimSpace(platform), "gitea") && hostname == "localhost" {
+		return nil
+	}
+	if ip := net.ParseIP(hostname); !strings.EqualFold(strings.TrimSpace(platform), "gitea") &&
+		ip != nil && ip.IsLoopback() {
+		return nil
+	}
+	return fmt.Errorf(
+		"plain HTTP clone transport for %s host %q requires allow_insecure = true",
+		strings.ToLower(strings.TrimSpace(platform)), host,
+	)
 }
 
 func validateEnsureCloneCaller(
@@ -684,6 +779,35 @@ func (m *Manager) RevParse(
 	return strings.TrimSpace(string(out)), nil
 }
 
+// FetchMergeRequestHead fetches only the provider-owned head ref for one
+// merge request. GitLab merge-request refs are intentionally excluded from
+// the clone's default refspec to keep ordinary refreshes bounded.
+func (m *Manager) FetchMergeRequestHead(
+	ctx context.Context,
+	platform, host, owner, name string,
+	number int,
+) error {
+	if number <= 0 {
+		return errors.New("merge request number must be positive")
+	}
+	clonePath, err := m.clonePathForContext(ctx, platform, host, owner, name)
+	if err != nil {
+		return err
+	}
+	ref := providerplatform.MergeRequestHeadRef(providerplatform.Kind(platform), number)
+	_, err = retryTransient(ctx, "git fetch merge request head", func() ([]byte, error) {
+		return m.RunGitForRepo(
+			ctx, platform, host, owner, name, clonePath,
+			"fetch", "--no-tags", "--recurse-submodules=no",
+			"origin", "+"+ref+":"+ref,
+		)
+	})
+	if err != nil {
+		return fmt.Errorf("fetch merge request head %d: %w", number, err)
+	}
+	return nil
+}
+
 // MergeBase computes the merge base between two commits.
 func (m *Manager) MergeBase(
 	ctx context.Context, platform, host, owner, name, sha1, sha2 string,
@@ -736,6 +860,31 @@ func (m *Manager) RunGitForRepo(
 		}
 	}
 	return m.gitNetworked(ctx, source, host, dir, nil, args...)
+}
+
+// RunGitForRemote runs a networked Git command against an explicit hosted
+// repository URL using credentials resolved for that URL's repository owner,
+// rather than credentials for the checkout's origin.
+func (m *Manager) RunGitForRemote(
+	ctx context.Context, platform, host, remoteURL, dir string, args ...string,
+) ([]byte, error) {
+	if err := validateRemoteURLHost(host, remoteURL); err != nil {
+		return nil, err
+	}
+	if err := m.validateRemoteTransport(platform, host, remoteURL); err != nil {
+		return nil, err
+	}
+	repoPath := gitremote.RemoteRepoPath(remoteURL)
+	owner, name, ok := strings.Cut(repoPath, "/")
+	if !ok || strings.TrimSpace(owner) == "" || strings.TrimSpace(name) == "" {
+		return nil, errors.New("remote repository owner and name are required")
+	}
+	if index := strings.LastIndex(repoPath, "/"); index >= 0 {
+		owner, name = repoPath[:index], repoPath[index+1:]
+	}
+	return m.gitNetworked(
+		ctx, m.sourceForRepo(platform, host, owner, name), host, dir, nil, args...,
+	)
 }
 
 // RunGitForHost runs a genuinely ownerless networked Git command with the
@@ -817,9 +966,18 @@ func (m *Manager) gitNetworked(
 	cleanupBeforeAuthRetry func() error,
 	args ...string,
 ) ([]byte, error) {
-	out, stderr, rejectedToken, err := m.runGitAuthed(ctx, source, host, dir, args...)
+	required, _ := ctx.Value(requiredCredentialContextKey{}).(bool)
+	if required && source == nil {
+		return nil, ErrCredentialUnavailable
+	}
+	out, stderr, rejectedToken, err := m.runGitAuthed(
+		ctx, source, host, dir, required, args...,
+	)
 	if err == nil {
 		return out, nil
+	}
+	if errors.Is(err, ErrCredentialUnavailable) {
+		return nil, err
 	}
 	wrapped := wrapGitError(err, stderr)
 	if isAuthGitError(wrapped) && invalidateTokenSource(source, rejectedToken) {
@@ -828,11 +986,16 @@ func (m *Manager) gitNetworked(
 				return nil, err
 			}
 		}
-		out, stderr, _, err = m.runGitAuthed(ctx, source, host, dir, args...)
+		out, stderr, _, err = m.runGitAuthed(
+			ctx, source, host, dir, required, args...,
+		)
 		if err == nil {
 			return out, nil
 		}
 		wrapped = wrapGitError(err, stderr)
+	}
+	if required && errors.Is(wrapped, tokenauth.ErrMissingToken) {
+		return nil, fmt.Errorf("%w: %v", ErrCredentialUnavailable, wrapped)
 	}
 	return nil, wrapped
 }
@@ -840,9 +1003,13 @@ func (m *Manager) gitNetworked(
 // runGitAuthed builds a runner with the host credential attached and runs the
 // command. Networked git has no stdin, so it takes no input.
 func (m *Manager) runGitAuthed(
-	ctx context.Context, source tokenauth.Source, host, dir string, args ...string,
+	ctx context.Context,
+	source tokenauth.Source,
+	host, dir string,
+	required bool,
+	args ...string,
 ) ([]byte, []byte, string, error) {
-	runner, token, err := m.gitRunnerAuthed(ctx, source, host)
+	runner, token, err := m.gitRunnerAuthed(ctx, source, host, required)
 	if err != nil {
 		return nil, nil, "", err
 	}
@@ -962,15 +1129,25 @@ func (m *Manager) fallbackSource(host string) tokenauth.Source {
 // gitRunnerAuthed returns a runner with the selected token attached for
 // networked operations. With no source configured it returns the plain runner.
 func (m *Manager) gitRunnerAuthed(
-	ctx context.Context, source tokenauth.Source, host string,
+	ctx context.Context, source tokenauth.Source, host string, required bool,
 ) (gitcmd.Runner, string, error) {
 	runner := newGitRunner()
 	if source == nil {
+		if required {
+			return runner, "", ErrCredentialUnavailable
+		}
 		return runner, "", nil
 	}
 	token, err := source.Token(ctx)
 	if err != nil {
+		if required && !errors.Is(err, context.Canceled) &&
+			!errors.Is(err, context.DeadlineExceeded) {
+			return runner, "", fmt.Errorf("%w: %v", ErrCredentialUnavailable, err)
+		}
 		return runner, "", fmt.Errorf("resolve git token for host %s: %w", host, err)
+	}
+	if required && strings.TrimSpace(token) == "" {
+		return runner, "", ErrCredentialUnavailable
 	}
 	if token != "" {
 		// GitHub's smart HTTP endpoint expects Basic auth credentials.

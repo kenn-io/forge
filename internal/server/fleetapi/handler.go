@@ -4,13 +4,14 @@ package fleetapi
 import (
 	"context"
 	"net/http"
-	"path/filepath"
 	"slices"
 	"sync"
 	"time"
 
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/federation"
+	"go.kenn.io/forge/internal/federationauth"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 )
@@ -22,7 +23,6 @@ type ConfigSnapshot struct {
 	PlatformAuthConfig  config.Config
 	PlatformAuthEnabled bool
 	TmuxCommand         []string
-	SSHSocketDir        string
 }
 
 // Event is Fleet's event-hub-neutral broadcast payload.
@@ -33,33 +33,59 @@ type Event struct {
 
 // Deps contains Fleet's durable services and root-owned integration hooks.
 type Deps struct {
-	DB                *db.DB
-	Syncer            *ghclient.Syncer
-	Config            ConfigSnapshot
-	BasePath          string
-	BuildVersion      func() string
-	Now               func() time.Time
-	LocalHandler      func() http.Handler
-	Broadcast         func(Event) uint64
-	Generation        func() uint64
-	WorkspaceSnapshot func(context.Context) (workspaceapi.FleetSnapshot, error)
-	RuntimeSnapshot   func(string) workspaceapi.RuntimeSnapshot
-	RevalidateDiffs   func()
+	DB                          *db.DB
+	Syncer                      *ghclient.Syncer
+	Config                      ConfigSnapshot
+	BasePath                    string
+	BuildVersion                func() string
+	Now                         func() time.Time
+	LocalHandler                func() http.Handler
+	Broadcast                   func(Event) uint64
+	Generation                  func() uint64
+	WorkspaceSnapshot           func(context.Context) (workspaceapi.FleetSnapshot, error)
+	WorkspaceStatsSnapshot      func(context.Context) (workspaceapi.FleetSnapshot, error)
+	QueueWorkspaceDeletion      func(string) error
+	RuntimeSnapshot             func(string) workspaceapi.RuntimeSnapshot
+	RevalidateDiffs             func()
+	NodeID                      string
+	FederationActive            bool
+	FederationUnavailableReason string
+	Credentials                 *federationauth.Store
+	Enrollments                 *federation.Store
+	FederationHTTPClient        *http.Client
+	PersistMember               func(context.Context, config.FleetMember) error
+	PersistHubBinding           func(context.Context, config.FleetHub) error
+	RemoveMember                func(context.Context, string) error
+	CancelEventStreams          func(string)
 }
 
 // Handler implements Fleet routes, caches, transports, and workers.
 type Handler struct {
-	db                *db.DB
-	syncer            *ghclient.Syncer
-	basePath          string
-	buildVersion      func() string
-	now               func() time.Time
-	localHandler      func() http.Handler
-	broadcast         func(Event) uint64
-	generation        func() uint64
-	workspaceSnapshot func(context.Context) (workspaceapi.FleetSnapshot, error)
-	runtimeSnapshot   func(string) workspaceapi.RuntimeSnapshot
-	revalidateDiffs   func()
+	db                          *db.DB
+	syncer                      *ghclient.Syncer
+	basePath                    string
+	buildVersion                func() string
+	now                         func() time.Time
+	localHandler                func() http.Handler
+	broadcast                   func(Event) uint64
+	generation                  func() uint64
+	workspaceSnapshot           func(context.Context) (workspaceapi.FleetSnapshot, error)
+	queueWorkspaceDeletion      func(string) error
+	runtimeSnapshot             func(string) workspaceapi.RuntimeSnapshot
+	revalidateDiffs             func()
+	nodeID                      string
+	federationActive            bool
+	federationUnavailableReason string
+	credentials                 *federationauth.Store
+	enrollments                 *federation.Store
+	federationHTTPClient        *http.Client
+	persistMember               func(context.Context, config.FleetMember) error
+	persistHubBinding           func(context.Context, config.FleetHub) error
+	removeMember                func(context.Context, string) error
+	cancelEventStreams          func(string)
+	enrollmentMu                sync.Mutex
+	memberClientsMu             sync.Mutex
+	memberClients               map[string]federationMemberClients
 
 	configMu sync.RWMutex
 	config   ConfigSnapshot
@@ -68,18 +94,13 @@ type Handler struct {
 	fleetWorktreeDiscoverer   *fleetWorktreeDiscoverer
 	fleetWorktreeStatsSampler *fleetWorktreeStatsSampler
 	fleetPlatformAuthMonitor  *fleetPlatformAuthMonitor
-	sshFleet                  *sshFleetTransport
-	sshResizeMu               sync.Mutex
-	sshResizeGroups           map[string]*fleetSSHResizeGroup
-
-	lifecycleMu       sync.Mutex
-	lifecycleCtx      context.Context
-	lifecycleCancel   context.CancelFunc
-	lifecycleWG       sync.WaitGroup
-	lifecycleStopping bool
-	lifecycleDone     chan struct{}
-	lifecycleStarted  bool
-	shutdownOnce      sync.Once
+	lifecycleMu               sync.Mutex
+	lifecycleCtx              context.Context
+	lifecycleCancel           context.CancelFunc
+	lifecycleWG               sync.WaitGroup
+	lifecycleStopping         bool
+	lifecycleDone             chan struct{}
+	lifecycleStarted          bool
 }
 
 // New constructs a Fleet handler without starting its workers.
@@ -90,22 +111,37 @@ func New(deps Deps) *Handler {
 		now = time.Now
 	}
 	h := &Handler{
-		db:                deps.DB,
-		syncer:            deps.Syncer,
-		basePath:          deps.BasePath,
-		buildVersion:      deps.BuildVersion,
-		now:               now,
-		localHandler:      deps.LocalHandler,
-		broadcast:         deps.Broadcast,
-		generation:        deps.Generation,
-		workspaceSnapshot: deps.WorkspaceSnapshot,
-		runtimeSnapshot:   deps.RuntimeSnapshot,
-		revalidateDiffs:   deps.RevalidateDiffs,
-		config:            cloneConfigSnapshot(deps.Config),
-		lifecycleCtx:      ctx,
-		lifecycleCancel:   cancel,
-		lifecycleDone:     make(chan struct{}),
+		db:                          deps.DB,
+		syncer:                      deps.Syncer,
+		basePath:                    deps.BasePath,
+		buildVersion:                deps.BuildVersion,
+		now:                         now,
+		localHandler:                deps.LocalHandler,
+		broadcast:                   deps.Broadcast,
+		generation:                  deps.Generation,
+		workspaceSnapshot:           deps.WorkspaceSnapshot,
+		queueWorkspaceDeletion:      deps.QueueWorkspaceDeletion,
+		runtimeSnapshot:             deps.RuntimeSnapshot,
+		revalidateDiffs:             deps.RevalidateDiffs,
+		nodeID:                      deps.NodeID,
+		federationActive:            deps.FederationActive,
+		federationUnavailableReason: deps.FederationUnavailableReason,
+		credentials:                 deps.Credentials,
+		enrollments:                 deps.Enrollments,
+		federationHTTPClient:        deps.FederationHTTPClient,
+		persistMember:               deps.PersistMember,
+		persistHubBinding:           deps.PersistHubBinding,
+		removeMember:                deps.RemoveMember,
+		cancelEventStreams:          deps.CancelEventStreams,
+		config:                      cloneConfigSnapshot(deps.Config),
+		lifecycleCtx:                ctx,
+		lifecycleCancel:             cancel,
+		lifecycleDone:               make(chan struct{}),
 	}
+	if h.federationHTTPClient == nil {
+		h.federationHTTPClient = newFederationHTTPClient()
+	}
+	h.memberClients = make(map[string]federationMemberClients)
 	h.fleetTmuxMonitor = newFleetTmuxMonitor(
 		deps.Config.TmuxCommand,
 		deps.Config.Fleet.Sessions.IncludeUnmanagedDetails,
@@ -113,25 +149,17 @@ func New(deps Deps) *Handler {
 	)
 	h.fleetWorktreeDiscoverer = newFleetWorktreeDiscoverer(deps.DB)
 	h.fleetWorktreeStatsSampler = newFleetWorktreeStatsSampler(
-		deps.DB, deps.WorkspaceSnapshot, h.notifyWorktreeStatsChanged,
+		deps.DB, deps.WorkspaceStatsSnapshot, h.notifyWorktreeStatsChanged,
 	)
 	h.fleetPlatformAuthMonitor = newFleetPlatformAuthMonitor(
 		h.snapshotPlatformAuthConfig,
 	)
-	if len(deps.Config.Fleet.SSHPeers) > 0 && deps.Config.SSHSocketDir != "" {
-		h.sshFleet = newSSHFleetTransport(
-			filepath.Clean(deps.Config.SSHSocketDir),
-			deps.Config.Fleet.SSHPeers,
-			h.broadcastEvent,
-		)
-	}
 	return h
 }
 
 func cloneConfigSnapshot(in ConfigSnapshot) ConfigSnapshot {
 	out := in
-	out.Fleet.Peers = slices.Clone(in.Fleet.Peers)
-	out.Fleet.SSHPeers = slices.Clone(in.Fleet.SSHPeers)
+	out.Fleet.Members = slices.Clone(in.Fleet.Members)
 	out.TmuxCommand = slices.Clone(in.TmuxCommand)
 	out.PlatformAuthConfig.Repos = slices.Clone(in.PlatformAuthConfig.Repos)
 	out.PlatformAuthConfig.Platforms = slices.Clone(in.PlatformAuthConfig.Platforms)
@@ -142,13 +170,6 @@ func cloneConfigSnapshot(in ConfigSnapshot) ConfigSnapshot {
 		in.PlatformAuthConfig.GitHubApps,
 	)
 	return out
-}
-
-func (h *Handler) broadcastEvent(event Event) uint64 {
-	if h == nil || h.broadcast == nil {
-		return 0
-	}
-	return h.broadcast(event)
 }
 
 func (h *Handler) currentBuildVersion() string {
@@ -175,6 +196,15 @@ func (h *Handler) configSnapshot() ConfigSnapshot {
 	h.configMu.RLock()
 	defer h.configMu.RUnlock()
 	return cloneConfigSnapshot(h.config)
+}
+
+// Enrollments returns a detached hub membership snapshot without any
+// credential material.
+func (h *Handler) Enrollments() []federation.Enrollment {
+	if h == nil || h.enrollments == nil {
+		return nil
+	}
+	return h.enrollments.List()
 }
 
 func (h *Handler) runBackground(run func(context.Context)) bool {
@@ -208,7 +238,6 @@ func (h *Handler) stopBackground() {
 	h.lifecycleMu.Unlock()
 	go func() {
 		h.lifecycleWG.Wait()
-		h.shutdownOnce.Do(func() { h.sshFleet.shutdown() })
 		close(done)
 	}()
 }
@@ -228,7 +257,6 @@ func (h *Handler) Start(parent context.Context, tmuxAvailable, disableMonitors b
 	}
 	h.lifecycleStarted = true
 	h.lifecycleMu.Unlock()
-	h.sshFleet.start()
 	h.runBackground(func(ctx context.Context) {
 		select {
 		case <-parent.Done():
@@ -269,17 +297,9 @@ func (h *Handler) RecomputeWorktreeLinks(ctx context.Context) {
 	h.recomputeWorktreeLinksNow(ctx)
 }
 
-// SelfKey returns Fleet's configured or hostname-derived local host key.
+// SelfKey returns Fleet's stable local daemon identity.
 func (h *Handler) SelfKey(localHostname string) string {
 	return h.fleetSelfKey(localHostname)
-}
-
-// SSHPeers returns the peer set owned by the running SSH transport.
-func (h *Handler) SSHPeers() []config.FleetSSHPeer {
-	if h == nil || h.sshFleet == nil {
-		return nil
-	}
-	return h.sshFleet.snapshotPeers()
 }
 
 // Shutdown stops Fleet workers and waits within ctx. Calls are idempotent and

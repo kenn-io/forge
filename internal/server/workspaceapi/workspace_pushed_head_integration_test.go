@@ -16,6 +16,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/workspace"
@@ -398,6 +399,19 @@ func insertPushedHeadIntegrationWorkspace(
 		GitHeadRef: "feature", WorkspaceBranch: "feature",
 		WorktreePath: worktreePath, TmuxSession: "kenn-forge-ws-pr", Status: "ready",
 	}))
+	require.NoError(t, database.PutWorkspaceLaunchSpec(
+		t.Context(), "ws-pr", workspaceLaunchSpecForRequest(
+			providerplane.WorkspaceLaunchRequest{
+				Repository: providerplane.RepositoryRoute{
+					Provider: "github", PlatformHost: "github.com",
+					Owner: "acme", Name: "widget",
+				},
+				ItemType:   db.WorkspaceItemTypePullRequest,
+				ItemNumber: 1, ItemKey: "1", GitHeadRef: "feature",
+			},
+			time.Now().UTC(),
+		),
+	))
 }
 
 func markPushedHeadIntegrationPRRemoved(

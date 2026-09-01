@@ -289,7 +289,7 @@
   summary { cursor: pointer; }
   details code { display: block; margin-top: var(--space-3); padding: var(--space-4); border-radius: var(--radius-md); background: var(--bg-inset); }
   .primary { min-height: 32px; margin-top: var(--space-5); display: inline-flex; align-items: center; padding: 0 var(--space-5); border: 1px solid var(--accent-blue); border-radius: var(--radius-md); background: var(--accent-blue); color: var(--bg-primary); font-weight: 650; }
-  .primary:disabled { opacity: .45; cursor: not-allowed; }
+  .primary:disabled { opacity: var(--opacity-disabled); cursor: not-allowed; }
   .inline-picker { margin-top: var(--space-5); border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--bg-surface); }
   .inline-picker :global(.kit-checkbox.guide-repo-choice) { width: 100%; box-sizing: border-box; min-height: 38px; display: flex; align-items: center; gap: var(--space-3); padding: 0 var(--space-4); border-bottom: 1px solid var(--border-muted); cursor: pointer; font-family: var(--font-mono); font-size: var(--font-size-sm); }
   .inline-picker :global(.guide-repo-choice:last-child) { border-bottom: 0; }

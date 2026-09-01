@@ -1,0 +1,8 @@
+DROP TRIGGER forge_notification_ack_admission_clear;
+DROP TRIGGER forge_notification_ack_admission_update;
+DROP TRIGGER forge_notification_ack_admission_insert;
+DROP TABLE forge_notification_ack_admissions;
+DROP TABLE forge_spoke_preparation_seals;
+DROP TABLE forge_spoke_preparation_receipts;
+DROP TABLE forge_spoke_preparation;
+DROP TABLE forge_workspace_launch_specs;

@@ -288,7 +288,7 @@
   }
 
   .load-more-btn:disabled {
-    opacity: 0.5;
+    opacity: var(--opacity-disabled);
     cursor: default;
   }
 </style>

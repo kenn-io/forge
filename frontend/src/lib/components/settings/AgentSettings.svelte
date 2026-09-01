@@ -565,13 +565,13 @@
     background: var(--accent-blue);
   }
 
-  .save-btn:hover:not(:disabled) {
+  .save-btn:hover:enabled {
     opacity: 0.9;
   }
 
   .save-btn:disabled,
   .add-btn:disabled {
-    opacity: 0.5;
+    opacity: var(--opacity-disabled);
     cursor: not-allowed;
   }
 

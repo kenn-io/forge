@@ -117,10 +117,12 @@ type PushedHeadObserver struct {
 	failures map[string]int
 }
 
-func NewPushedHeadObserver(database *db.DB) *PushedHeadObserver {
+func NewPushedHeadObserver(
+	database *db.DB, monitorOptions ...PRMonitorOptions,
+) *PushedHeadObserver {
 	return &PushedHeadObserver{
 		db:       database,
-		monitor:  NewPRMonitor(database),
+		monitor:  NewPRMonitor(database, monitorOptions...),
 		git:      gitRemoteHeadReader{},
 		now:      time.Now,
 		observed: make(map[remoteHeadKey]remoteHeadObservation),
@@ -231,15 +233,20 @@ func pushedHeadWorkspaceEligible(ws *Workspace) bool {
 		ws.ItemType == db.WorkspaceItemTypeAdHoc
 }
 
-func (o *PushedHeadObserver) resolveWorkspacePR(ctx context.Context, ws *Workspace) (*WorkspacePRAssociation, *db.Repo, *db.MergeRequest, bool, error) {
-	repo, err := o.db.GetRepoByIdentity(ctx, db.RepoIdentity{
-		Platform:     workspaceProvider(ws),
-		PlatformHost: ws.PlatformHost,
-		Owner:        ws.RepoOwner,
-		Name:         ws.RepoName,
-	})
+func (o *PushedHeadObserver) resolveWorkspacePR(
+	ctx context.Context, ws *Workspace,
+) (*WorkspacePRAssociation, *db.Repo, *db.MergeRequest, bool, error) {
+	var launchSpec *WorkspaceLaunchSpec
+	if o.monitor.launchSpecs != nil && providerBackedWorkspace(ws) {
+		var err error
+		launchSpec, err = o.monitor.launchSpecs.RequireWorkspaceLaunchSpec(ctx, ws)
+		if err != nil {
+			return nil, nil, nil, false, err
+		}
+	}
+	repo, err := o.workspaceRepository(ctx, ws, launchSpec)
 	if err != nil {
-		return nil, nil, nil, false, fmt.Errorf("get repo: %w", err)
+		return nil, nil, nil, false, err
 	}
 	if repo == nil {
 		return nil, nil, nil, false, nil
@@ -289,14 +296,45 @@ func (o *PushedHeadObserver) resolveWorkspacePR(ctx context.Context, ws *Workspa
 		return assoc, repo, nil, false, nil
 	}
 
-	mr, err := o.db.GetVisibleMergeRequestByRepoIDAndNumber(ctx, repo.ID, prNumber)
+	candidates, err := o.monitor.listOpenPullCandidates(ctx, ws)
 	if err != nil {
-		return assoc, repo, nil, false, fmt.Errorf("get merge request: %w", err)
+		return assoc, repo, nil, false, fmt.Errorf("list open pull candidates: %w", err)
 	}
-	if mr == nil || mr.State != db.MergeRequestStateOpen {
-		return assoc, repo, nil, false, nil
+	for i := range candidates {
+		if candidates[i].Number == prNumber {
+			return assoc, repo, &candidates[i], true, nil
+		}
 	}
-	return assoc, repo, mr, true, nil
+	return assoc, repo, nil, false, nil
+}
+
+func (o *PushedHeadObserver) workspaceRepository(
+	ctx context.Context,
+	ws *Workspace,
+	launchSpec *WorkspaceLaunchSpec,
+) (*db.Repo, error) {
+	if launchSpec != nil {
+		return &db.Repo{
+			Platform:       launchSpec.Repository.Provider,
+			PlatformHost:   launchSpec.Repository.PlatformHost,
+			PlatformRepoID: launchSpec.Repository.PlatformRepoID,
+			Owner:          launchSpec.Repository.Owner,
+			Name:           launchSpec.Repository.Name,
+			RepoPath:       launchSpec.Repository.Owner + "/" + launchSpec.Repository.Name,
+			CloneURL:       launchSpec.Repository.CloneURL,
+			DefaultBranch:  launchSpec.Repository.DefaultBranch,
+		}, nil
+	}
+	repo, err := o.db.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     workspaceProvider(ws),
+		PlatformHost: ws.PlatformHost,
+		Owner:        ws.RepoOwner,
+		Name:         ws.RepoName,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("get repo: %w", err)
+	}
+	return repo, nil
 }
 
 type trackingLookup struct {

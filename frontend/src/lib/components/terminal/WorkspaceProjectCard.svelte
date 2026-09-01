@@ -510,7 +510,7 @@
 
   .project-card__cta:disabled {
     cursor: not-allowed;
-    opacity: 0.7;
+    opacity: var(--opacity-disabled);
   }
 
   .project-card__error {

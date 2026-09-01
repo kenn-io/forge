@@ -320,7 +320,7 @@
   .launch-card:disabled {
     cursor: not-allowed;
     color: var(--text-muted);
-    opacity: 0.6;
+    opacity: var(--opacity-disabled);
   }
 
   .card-icon {

@@ -17,29 +17,28 @@ func TestHandlerConfigSnapshotIsImmutable(t *testing.T) {
 
 	initial := ConfigSnapshot{
 		Fleet: config.Fleet{
-			Enabled: true,
-			Key:     "local",
-			Peers: []config.FleetPeer{{
-				Key:     "peer-a",
-				BaseURL: "http://peer-a.test",
+			Enabled: true, Role: config.FleetRoleHub,
+			Members: []config.FleetMember{{
+				NodeID:  testMemberNodeID,
+				BaseURL: "https://peer-a.test",
 			}},
 		},
 		TmuxCommand: []string{"tmux"},
 	}
 	h := New(Deps{Config: initial})
-	initial.Fleet.Peers[0].Key = "mutated"
+	initial.Fleet.Members[0].NodeID = "cccccccccccccccccccccccccccccccc"
 	initial.TmuxCommand[0] = "mutated"
 
 	snapshot := h.configSnapshot()
-	assert.Equal("peer-a", snapshot.Fleet.Peers[0].Key)
+	assert.Equal(testMemberNodeID, snapshot.Fleet.Members[0].NodeID)
 	assert.Equal("tmux", snapshot.TmuxCommand[0])
 
 	h.ApplyConfig(ConfigSnapshot{
-		Fleet:       config.Fleet{Key: "next"},
+		Fleet:       config.Fleet{Role: config.FleetRoleHub},
 		TmuxCommand: []string{"custom-tmux"},
 	})
 	snapshot = h.configSnapshot()
-	assert.Equal("next", snapshot.Fleet.Key)
+	assert.Equal(config.FleetRoleHub, snapshot.Fleet.Role)
 	assert.Equal([]string{"custom-tmux"}, snapshot.TmuxCommand)
 }
 

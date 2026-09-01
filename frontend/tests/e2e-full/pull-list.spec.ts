@@ -199,7 +199,11 @@ test.describe("PR list view", () => {
       const scrollportWidth = await scroller.evaluate((el) => el.clientWidth);
       const scrollportCenter = detailBox.x + scrollportWidth / 2;
       const headerCenter = headerBox.x + headerBox.width / 2;
-      expect(Math.abs(detailBox.x + detailBox.width - (areaBox.x + areaBox.width))).toBeLessThan(2);
+      // Pane chrome allowance: leaf border plus the 1px ring the leaf
+      // reserves for the pane focus marker (see TabbedPanelTree), plus
+      // sub-pixel slack. Anything larger means the scroller shrank to the
+      // centered content column instead of spanning the pane.
+      expect(Math.abs(detailBox.x + detailBox.width - (areaBox.x + areaBox.width))).toBeLessThan(3);
       expect(Math.abs(headerCenter - scrollportCenter)).toBeLessThan(2);
       expect(headerBox.width).toBeLessThanOrEqual(800);
     }

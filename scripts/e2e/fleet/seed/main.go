@@ -27,6 +27,9 @@ func run(ctx context.Context, args []string) error {
 	dbPath := fs.String("db", "", "path to the kenn-forge SQLite database")
 	projectPath := fs.String("project-path", "", "project path to seed")
 	worktreePath := fs.String("worktree-path", "", "workspace worktree path to seed")
+	providerOnly := fs.Bool("provider-only", false, "seed hub provider state without a local workspace")
+	cloneURL := fs.String("clone-url", "", "clone URL recorded in provider repository metadata")
+	platformHost := fs.String("platform-host", "github.com", "provider host recorded in fixture state")
 	startTmux := fs.Bool("start-tmux", false, "start the seeded workspace tmux session")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -34,26 +37,36 @@ func run(ctx context.Context, args []string) error {
 	if *dbPath == "" {
 		return fmt.Errorf("-db is required")
 	}
-	if *projectPath == "" {
+	if !*providerOnly && *projectPath == "" {
 		return fmt.Errorf("-project-path is required")
 	}
-	if *worktreePath == "" {
+	if !*providerOnly && *worktreePath == "" {
 		return fmt.Errorf("-worktree-path is required")
 	}
+	if *providerOnly && *cloneURL == "" {
+		return fmt.Errorf("-clone-url is required with -provider-only")
+	}
+	if *cloneURL == "" {
+		*cloneURL = filepath.Join(filepath.Dir(*worktreePath), "origin.git")
+	}
 
-	registeredWorktreePath := filepath.Join(
-		filepath.Dir(*worktreePath), "registered-runtime",
-	)
-	for _, path := range []string{
-		filepath.Dir(*dbPath), *projectPath, *worktreePath,
-		registeredWorktreePath,
-	} {
+	paths := []string{filepath.Dir(*dbPath)}
+	registeredWorktreePath := ""
+	if !*providerOnly {
+		registeredWorktreePath = filepath.Join(
+			filepath.Dir(*worktreePath), "registered-runtime",
+		)
+		paths = append(paths, *projectPath, *worktreePath, registeredWorktreePath)
+	}
+	for _, path := range paths {
 		if err := os.MkdirAll(path, 0o700); err != nil {
 			return fmt.Errorf("create %s: %w", path, err)
 		}
 	}
-	if err := ensureWorkspaceGitFixture(ctx, *worktreePath); err != nil {
-		return err
+	if !*providerOnly {
+		if err := ensureWorkspaceGitFixture(ctx, *worktreePath); err != nil {
+			return err
+		}
 	}
 
 	database, err := db.Open(*dbPath)
@@ -62,37 +75,15 @@ func run(ctx context.Context, args []string) error {
 	}
 	defer database.Close()
 
-	if err := resetFixtureRows(ctx, database, *projectPath); err != nil {
+	if err := seedProviderState(ctx, database, *platformHost, *cloneURL); err != nil {
 		return err
 	}
-	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   "github.com",
-		PlatformRepoID: "e2e-fleet-widget",
-		Owner:          "acme",
-		Name:           "fleet-widget",
-		RepoPath:       "acme/fleet-widget",
-	})
-	if err != nil {
-		return fmt.Errorf("upsert repo: %w", err)
+	if *providerOnly {
+		return nil
 	}
-	now := time.Now().UTC()
-	if _, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
-		RepoID:          repoID,
-		Number:          7,
-		URL:             "https://github.com/acme/fleet-widget/pull/7",
-		Title:           "Fleet widget",
-		Author:          "fleet",
-		State:           db.MergeRequestStateOpen,
-		HeadBranch:      "feature/fleet-read",
-		BaseBranch:      "main",
-		PlatformHeadSHA: "fleet-head",
-		PlatformBaseSHA: "fleet-base",
-		CreatedAt:       now,
-		UpdatedAt:       now,
-		LastActivityAt:  now,
-	}); err != nil {
-		return fmt.Errorf("upsert merge request: %w", err)
+
+	if err := resetFixtureRows(ctx, database, *projectPath); err != nil {
+		return err
 	}
 	project, err := database.CreateProject(ctx, db.CreateProjectInput{
 		DisplayName:   "fleet-widget",
@@ -118,7 +109,7 @@ func run(ctx context.Context, args []string) error {
 	if err := database.InsertWorkspace(ctx, &db.Workspace{
 		ID:              "fleet-member-ws-7",
 		Platform:        "github",
-		PlatformHost:    "github.com",
+		PlatformHost:    *platformHost,
 		RepoOwner:       "acme",
 		RepoName:        "fleet-widget",
 		ItemType:        db.WorkspaceItemTypePullRequest,
@@ -141,11 +132,58 @@ func run(ctx context.Context, args []string) error {
 	return nil
 }
 
+func seedProviderState(
+	ctx context.Context, database *db.DB, platformHost, cloneURL string,
+) error {
+	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   platformHost,
+		PlatformRepoID: "e2e-fleet-widget",
+		Owner:          "acme",
+		Name:           "fleet-widget",
+		RepoPath:       "acme/fleet-widget",
+	})
+	if err != nil {
+		return fmt.Errorf("upsert repo: %w", err)
+	}
+	if err := database.UpdateRepoProviderMetadata(ctx, repoID, db.RepoProviderMetadata{
+		PlatformRepoID: "e2e-fleet-widget",
+		WebURL:         "https://" + platformHost + "/acme/fleet-widget",
+		CloneURL:       cloneURL,
+		DefaultBranch:  "main",
+	}); err != nil {
+		return fmt.Errorf("update repo provider metadata: %w", err)
+	}
+	now := time.Now().UTC()
+	if _, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:          repoID,
+		Number:          7,
+		URL:             "https://github.com/acme/fleet-widget/pull/7",
+		Title:           "Fleet widget",
+		Author:          "fleet",
+		State:           db.MergeRequestStateOpen,
+		HeadBranch:      "feature/fleet-read",
+		BaseBranch:      "main",
+		PlatformHeadSHA: "fleet-head",
+		PlatformBaseSHA: "fleet-base",
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		LastActivityAt:  now,
+	}); err != nil {
+		return fmt.Errorf("upsert merge request: %w", err)
+	}
+	return nil
+}
+
 func ensureWorkspaceGitFixture(ctx context.Context, worktreePath string) error {
 	root := filepath.Dir(worktreePath)
 	remotePath := filepath.Join(root, "origin.git")
+	networkRemotePath := filepath.Join(root, "acme", "fleet-widget.git")
 	if err := os.RemoveAll(remotePath); err != nil {
 		return fmt.Errorf("reset origin: %w", err)
+	}
+	if err := os.RemoveAll(networkRemotePath); err != nil {
+		return fmt.Errorf("reset network origin: %w", err)
 	}
 	if err := os.RemoveAll(worktreePath); err != nil {
 		return fmt.Errorf("reset worktree: %w", err)
@@ -190,6 +228,12 @@ func ensureWorkspaceGitFixture(ctx context.Context, worktreePath string) error {
 		return err
 	}
 	if err := runGit(ctx, worktreePath, "push", "-u", "origin", "feature/fleet-read"); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(networkRemotePath), 0o700); err != nil {
+		return fmt.Errorf("create network origin parent: %w", err)
+	}
+	if err := runGit(ctx, root, "clone", "--bare", remotePath, networkRemotePath); err != nil {
 		return err
 	}
 	if err := os.WriteFile(filepath.Join(worktreePath, "dirty.txt"), []byte("dirty\n"), 0o600); err != nil {

@@ -74,6 +74,22 @@ migrate ticker-driven sync or refresh loops into `backoff/v5`
 - Selected runs poll every 5 seconds while active; idle runs and failed catalog
   reads wait 30 seconds. Removing demand or disabling Actions interrupts it
   (`frontend/src/lib/stores/workflow-actions-workflow.ts::waitForPoll`).
+## Long-lived stream recovery
+
+Hub event-stream recovery is connection lifecycle policy, not a retry
+budget for one idempotent provider request. A spoke reconnects indefinitely at
+1s, 2s, then a jittered 4s ceiling. Opening a valid SSE response resets the
+failure count; authorization, protocol, framing, and transport failures all use
+the same bounded wait so none can hot-loop. Context cancellation interrupts
+both an active read and the reconnect timer immediately
+(`internal/providerplane/events.go::EventClient.Run`).
+
+Every successful connection requests provider reconciliation and refreshes
+sync status after the replay-complete barrier and before it is reported
+healthy. A stale cursor or poison frame
+updates only the private hub cursor and repeats that recovery; it never
+copies a remote ID into the spoke's local browser cursor
+(`internal/providerplane/events.go::EventClient.resynchronize`).
 
 - Provider-index sync keeps at most one coalesced follow-up, atomically transfers
   its single-flight slot, and preserves nil-versus-empty scope; bursts neither

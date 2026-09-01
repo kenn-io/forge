@@ -785,13 +785,13 @@ test.describe.serial("Roborev", () => {
       expect(statuses).toEqual(sorted);
     });
 
-    test("click Elapsed header sorts by elapsed duration", async ({ page }) => {
+    test("click Elapsed header places missing time before zero duration", async ({ page }) => {
+      await page.route("**/api/roborev/api/stream/events", (route) => route.abort());
       await waitForReviewsReady(page);
       await waitForJobRows(page, 10);
 
       const elapsedHeader = page.locator("th.sortable").filter({ hasText: "Elapsed" });
       await elapsedHeader.click();
-      await page.waitForTimeout(300);
 
       const elapsedRows = await page.locator(".job-row").evaluateAll((rows) =>
         rows.map((row) => ({

@@ -87,13 +87,19 @@ func TestFleetWorktreeStatsCollectTargetsDedupesByPath(t *testing.T) {
 	sampler := &fleetWorktreeStatsSampler{
 		db: database,
 		workspaceSnapshot: func(context.Context) (workspaceapi.FleetSnapshot, error) {
-			return workspaceapi.FleetSnapshot{Workspaces: []db.WorkspaceSummary{
+			return workspaceapi.FleetSnapshot{Workspaces: []fleet.RawWorkspace{
 				{
-					ID: "ws-feat", Platform: "github", PlatformHost: "github.com",
-					RepoOwner: "o", RepoName: "app", WorktreePath: featPath, Status: "ready"},
+					ID: "ws-feat", Repository: fleet.RepositoryIdentity{
+						Provider: "github", PlatformHost: "github.com", Owner: "o", Name: "app",
+					},
+					WorktreePath: featPath, Status: "ready",
+				},
 				{
-					ID: "ws-orphan", Platform: "github", PlatformHost: "github.com",
-					RepoOwner: "o", RepoName: "orphan", WorktreePath: orphanPath, Status: "ready"},
+					ID: "ws-orphan", Repository: fleet.RepositoryIdentity{
+						Provider: "github", PlatformHost: "github.com", Owner: "o", Name: "orphan",
+					},
+					WorktreePath: orphanPath, Status: "ready",
+				},
 			}}, nil
 		},
 	}
@@ -119,9 +125,12 @@ func TestFleetWorktreeStatsCollectTargetsUsesWorkspaceSnapshot(t *testing.T) {
 	sampler := &fleetWorktreeStatsSampler{
 		db: database,
 		workspaceSnapshot: func(context.Context) (workspaceapi.FleetSnapshot, error) {
-			return workspaceapi.FleetSnapshot{Workspaces: []db.WorkspaceSummary{{
-				ID: "snapshot-only", Platform: "github", PlatformHost: "github.com",
-				RepoOwner: "o", RepoName: "snapshot-only", WorktreePath: orphanPath,
+			return workspaceapi.FleetSnapshot{Workspaces: []fleet.RawWorkspace{{
+				ID: "snapshot-only", Repository: fleet.RepositoryIdentity{
+					Provider: "github", PlatformHost: "github.com",
+					Owner: "o", Name: "snapshot-only",
+				},
+				WorktreePath: orphanPath,
 			}}}, nil
 		},
 	}

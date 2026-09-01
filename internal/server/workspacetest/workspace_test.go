@@ -346,28 +346,20 @@ func TestWorkspaceCommitsOmitsPushStatusWithoutUpstreamE2E(t *testing.T) {
 	fixture := setupWorkspaceServerFixture(t, nil)
 	ctx := t.Context()
 
-	// A PR whose merge-request row carries no head-repo identity classifies
-	// as unknown provenance: setup resolves it through the fork-safe
-	// refs/pull/<n>/head path and leaves the branch untracked. @{upstream}
-	// never resolves, so push status is unknowable and the endpoint must omit
-	// it rather than report every commit as unpushed (the false "Not pushed
-	// to remote" regression roborev flagged).
-	headSHA := testGitSHA(t, fixture.remote, "refs/heads/feature")
-	runGit(t, fixture.remote, "update-ref", "refs/pull/2/head", headSHA)
-	seedPRWithoutHeadRepo(t, fixture.database, "github.com", "acme", "widget", 2)
-
+	// A fork pull has a valid provider identity but its branch remains
+	// untracked, so provider reconciliation cannot add a base-repository
+	// upstream while this request runs.
+	forkURL := "https://github.com/fork/widget.git"
+	runGit(t, fixture.bare, "config", "--add", "url."+fixture.remote+".insteadOf", forkURL)
+	seedPRWithHeadRepo(t, fixture.database, "github.com", "acme", "widget", 2, forkURL)
 	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     2,
+		ctx, generated.CreateWorkspaceInputBody{
+			Provider: "github", PlatformHost: "github.com",
+			Owner: "acme", Name: "widget", MrNumber: 2,
 		},
 	)
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode(), string(createResp.Body))
 	require.NotNil(createResp.JSON202)
 	ws := waitForWorkspaceReady(t, ctx, fixture.client, createResp.JSON202.Id)
 	require.NotEmpty(ws.WorktreePath)

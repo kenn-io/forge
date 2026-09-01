@@ -1,53 +1,61 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { test } from "node:test";
 
-async function readJSON(path) {
-  return JSON.parse(await readFile(path, "utf8"));
-}
+import * as screenshotTools from "./generate-docs-screenshots.mjs";
 
-test("docs build uses root Playwright dependencies", async () => {
-  const [rootPkg, spec, config, readme] = await Promise.all([
-    readJSON("package.json"),
-    readFile("docs/screenshots/docs-screenshots.spec.ts", "utf8"),
-    readFile("docs/screenshots/playwright.config.ts", "utf8"),
-    readFile("docs/screenshots/README.md", "utf8"),
-  ]);
+const { assertSafeOutputDirectory, minifyNativeSVG } = screenshotTools;
 
-  assert.equal(rootPkg.scripts?.["docs:build"], "node scripts/build-docs.mjs");
-  // The exact version is checked against the CI container by
-  // scripts/check-playwright-version.mjs; here only the exact-pin shape
-  // matters, so Playwright bumps don't have to touch this test.
-  assert.match(
-    rootPkg.devDependencies?.["@playwright/test"] ?? "",
-    /^\d+\.\d+\.\d+$/,
-    "root package.json must pin an exact @playwright/test version",
+test("published SVGs keep text while compacting path geometry", () => {
+  const source = [
+    '<?xml version="1.0"?>',
+    '<svg xmlns="http://www.w3.org/2000/svg">',
+    "  <title>Workflow screenshot</title>",
+    '  <path d="M 0.123456 0 L -0.654321 7.000000 Z"/>',
+    "</svg>",
+    "",
+  ].join("\n");
+
+  assert.equal(
+    minifyNativeSVG(source),
+    '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"><title>Workflow screenshot</title><path d="M.123 0L-.654 7Z"/></svg>\n',
   );
+});
 
-  const list = spawnSync(
-    process.execPath,
-    [
-      "node_modules/vite-plus/bin/vp",
-      "exec",
-      "--",
-      "playwright",
-      "test",
-      "--config",
-      "docs/screenshots/playwright.config.ts",
-      "--project=chromium",
-      "--list",
-    ],
-    { encoding: "utf8" },
+test("screenshot generation rejects broad output directories", () => {
+  const allowedRoots = ["/workspace/docs/assets", "/tmp"];
+
+  for (const directory of ["/", "/workspace", "/workspace/other", "/data", "/tmp"]) {
+    assert.throws(() => assertSafeOutputDirectory(directory, allowedRoots), /refusing to replace protected directory/);
+  }
+  for (const directory of ["/workspace/docs/assets/generated", "/tmp/kenn-forge-docs-assets"]) {
+    assert.doesNotThrow(() => assertSafeOutputDirectory(directory, allowedRoots));
+  }
+});
+
+test("failed screenshot publication restores the previous generation", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "kenn-forge-docs-publication-test-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const output = path.join(root, "generated");
+  const stagingRoot = path.join(root, ".staging");
+  await mkdir(output);
+  await mkdir(stagingRoot);
+  await writeFile(path.join(output, "current.svg"), "current generation\n");
+
+  await assert.rejects(
+    () => screenshotTools.publishGeneration(path.join(stagingRoot, "missing"), output, stagingRoot),
+    { code: "ENOENT" },
   );
+  assert.equal(await readFile(path.join(output, "current.svg"), "utf8"), "current generation\n");
+});
+
+test("docs screenshot command lists the capture suite", () => {
+  const list = spawnSync(process.execPath, ["scripts/generate-docs-screenshots.mjs", "--list"], {
+    encoding: "utf8",
+  });
   assert.equal(list.status, 0, list.stderr || list.stdout);
   assert.match(list.stdout, /docs workflow screenshots/);
-
-  for (const [path, contents] of [
-    ["docs/screenshots/docs-screenshots.spec.ts", spec],
-    ["docs/screenshots/playwright.config.ts", config],
-    ["docs/screenshots/README.md", readme],
-  ]) {
-    assert.doesNotMatch(contents, /frontend\/node_modules/, `${path} must not assume nested frontend/node_modules`);
-  }
 });

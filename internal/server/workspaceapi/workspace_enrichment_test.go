@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/agentactivity"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
@@ -155,6 +156,22 @@ func TestWorkspaceEnrichmentRestoresDivergenceAfterObserverHealsUpstream(t *test
 		Status:          "ready",
 		CreatedAt:       now,
 	}))
+	launchSpec := workspaceLaunchSpecForRequest(
+		providerplane.WorkspaceLaunchRequest{
+			Repository: providerplane.RepositoryRoute{
+				Provider: "github", PlatformHost: "github.com",
+				Owner: "acme", Name: "widget",
+			},
+			ItemType:   db.WorkspaceItemTypePullRequest,
+			ItemNumber: 1, ItemKey: "1", GitHeadRef: "feature",
+		},
+		now,
+	)
+	launchSpec.Pull.HeadRepoKind = "fork"
+	launchSpec.Pull.HeadRepoCloneURL = "https://github.com/contributor/widget.git"
+	require.NoError(database.PutWorkspaceLaunchSpec(
+		t.Context(), "ws-upstream-heal", launchSpec,
+	))
 	summary, err := database.GetWorkspaceSummary(t.Context(), "ws-upstream-heal")
 	require.NoError(err)
 	require.NotNil(summary)
@@ -182,6 +199,11 @@ func TestWorkspaceEnrichmentRestoresDivergenceAfterObserverHealsUpstream(t *test
 
 	seedMR("https://github.com/acme/widget.git")
 	handler.runWorkspacePushedHeadObserverPass(t.Context())
+	assert.Equal("origin", runGitOutput(t, worktree, "config", "--get", "branch.feature.remote"))
+	assert.Equal(
+		"refs/heads/feature",
+		runGitOutput(t, worktree, "config", "--get", "branch.feature.merge"),
+	)
 	clockNow = now.Add(workspaceEnrichmentTTL + time.Second)
 
 	var healed workspaceResponse

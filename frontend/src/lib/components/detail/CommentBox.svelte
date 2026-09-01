@@ -156,12 +156,12 @@
     transition: opacity 0.15s;
   }
 
-  .submit-btn:hover:not(:disabled) {
+  .submit-btn:hover:enabled {
     opacity: 0.85;
   }
 
   .submit-btn:disabled {
-    opacity: 0.45;
+    opacity: var(--opacity-disabled);
     cursor: not-allowed;
   }
 </style>

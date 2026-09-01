@@ -3587,7 +3587,7 @@ func (c *liveClient) ListManualWorkflowRuns(
 	runs, resp, err := c.gh.Actions.ListWorkflowRunsByID(
 		ctx, owner, repo, workflowID, &gh.ListWorkflowRunsOptions{
 			Event: query.Event, Branch: query.Branch,
-			ListOptions: gh.ListOptions{Page: page, PerPage: query.PerPage},
+			Page: page, PerPage: query.PerPage,
 		},
 	)
 	c.trackRate(resp)
@@ -3623,7 +3623,7 @@ func (c *liveClient) DispatchManualWorkflow(
 	workflowID int64,
 	request gh.CreateWorkflowDispatchEventRequest,
 ) (*gh.WorkflowDispatchRunDetails, error) {
-	request.ReturnRunDetails = gh.Ptr(true)
+	request.ReturnRunDetails = new(true)
 	details, resp, err := c.writeGH().Actions.CreateWorkflowDispatchEventByID(
 		ctx, owner, repo, workflowID, request,
 	)

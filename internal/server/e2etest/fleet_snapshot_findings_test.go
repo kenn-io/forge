@@ -120,8 +120,9 @@ func findRawWorktreeByPath(
 
 // TestFleetSnapshotBranchMatchLinkE2E drives the branch-match worktree-link
 // flow over the wire: registering a worktree whose branch matches an open
-// merge request recomputes the durable links, and both raw and enriched
-// snapshots overlay the linked PR onto the registered worktree.
+// merge request recomputes the durable links. The raw execution snapshot
+// carries only the link; the hub enriches provider details in the
+// observer-facing snapshot.
 func TestFleetSnapshotBranchMatchLinkE2E(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -150,10 +151,8 @@ func TestFleetSnapshotBranchMatchLinkE2E(t *testing.T) {
 	require.NotNil(rawWt, "registered worktree must appear in the raw snapshot")
 	require.NotNil(rawWt.LinkedPRNumber, "branch-matched PR must overlay the raw worktree")
 	assert.Equal(77, *rawWt.LinkedPRNumber)
-	require.NotNil(rawWt.PRState)
-	assert.Equal("draft", *rawWt.PRState, "an open draft folds to the draft display state")
-	require.NotNil(rawWt.PRTitle)
-	assert.Equal("Add feature", *rawWt.PRTitle)
+	assert.Nil(rawWt.PRState, "raw snapshots cannot export provider state")
+	assert.Nil(rawWt.PRTitle, "raw snapshots cannot export provider details")
 
 	var snap fleet.Snapshot
 	getJSON(t, ts, "/api/v1/snapshot", &snap)
@@ -161,6 +160,10 @@ func TestFleetSnapshotBranchMatchLinkE2E(t *testing.T) {
 	require.NotNil(wt, "registered worktree must appear in the enriched snapshot")
 	require.NotNil(wt.LinkedPRNumber)
 	assert.Equal(77, *wt.LinkedPRNumber)
+	require.NotNil(wt.PRState)
+	assert.Equal("draft", *wt.PRState, "an open draft folds to the draft display state")
+	require.NotNil(wt.PRTitle)
+	assert.Equal("Add feature", *wt.PRTitle)
 
 	// Deleting the worktree recomputes the links away again.
 	status, body := deleteJSON(

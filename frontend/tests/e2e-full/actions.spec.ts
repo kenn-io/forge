@@ -35,7 +35,7 @@ async function setActionsMode(page: Page, enabled: boolean): Promise<void> {
 async function openReleaseFromPull(page: Page, number: number) {
   await page.goto(`${server!.info.base_url}/pulls/github/acme/widgets/${number}`);
   await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 10_000 });
-  await page.getByLabel("Pull request conversation").getByRole("button", { name: "Actions", exact: true }).click();
+  await page.getByLabel("Pull request conversation").getByRole("button", { name: "Run workflow", exact: true }).click();
   const workflowMenu = page.getByRole("region", { name: "GitHub Actions" });
   await expect(workflowMenu).toBeVisible();
   await workflowMenu.getByRole("button", { name: "Release", exact: true }).click();

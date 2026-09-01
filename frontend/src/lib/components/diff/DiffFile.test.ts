@@ -2210,7 +2210,7 @@ describe("DiffFile", () => {
     expect(selectedPierreLines()).toHaveLength(0);
   });
 
-  it("loads and expands hidden context from a single Pierre expander click", async () => {
+  it("loads and expands hidden context without clearing an inline composer draft", async () => {
     const oldText = Array.from({ length: 90 }, (_, index) => `shared ${index + 1}`);
     const newText = [...oldText];
     oldText[1] = "old early";
@@ -2282,7 +2282,10 @@ describe("DiffFile", () => {
         },
       ],
     });
-    const { diff } = renderDiffFile(file);
+    const { diff } = renderDiffFile(file, {
+      reviewEnabled: true,
+      diffHeadSHA: "diff-head",
+    });
     const loadFileContextPreviews = vi
       .spyOn(diff, "loadFileContextPreviews")
       .mockImplementation((_owner, _name, _number, source, callbacks: FilePreviewPairCallbacks) => {
@@ -2301,6 +2304,11 @@ describe("DiffFile", () => {
       return button!;
     });
 
+    await clickLineCommentButton(2, "right");
+    await fireEvent.input(screen.getByPlaceholderText("Leave a comment"), {
+      target: { value: "Keep this draft while expanding context." },
+    });
+
     await fireEvent.click(expandButton);
 
     await waitFor(() => {
@@ -2312,6 +2320,9 @@ describe("DiffFile", () => {
       expect(expandedLines.every((line) => line.length > 0)).toBe(true);
       expect(expandedLines.some((line) => line.includes("shared 10"))).toBe(true);
     });
+    expect((screen.getByPlaceholderText("Leave a comment") as HTMLTextAreaElement).value).toBe(
+      "Keep this draft while expanding context.",
+    );
     expect(loadFileContextPreviews).toHaveBeenCalledTimes(1);
   });
 

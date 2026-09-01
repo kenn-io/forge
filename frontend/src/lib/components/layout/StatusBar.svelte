@@ -293,7 +293,16 @@
       </span>
       <span class="status-sep">&middot;</span>
     {/if}
-    {#if hasLocalCeilingFailure}
+    {#if !sync.getProviderAvailable()}
+      <span
+        class="status-item status-item--error status-item--provider-unavailable"
+        title="This Forge spoke cannot reach its federation hub"
+      >
+        <StatusDot status="stale" label="Provider unavailable" size={5} />
+        provider unavailable
+      </span>
+      <span class="status-sep">&middot;</span>
+    {:else if hasLocalCeilingFailure}
       <span
         class="status-item status-item--error status-item--local-ceiling"
         title={localCeilingFailureTitle()}
@@ -323,12 +332,14 @@
       {/if}
       <span class="status-sep">&middot;</span>
     {/if}
-    <span class="status-item" class:status-item--active={sync.getSyncState()?.running}>
-      {#if sync.getSyncState()?.running}
-        <StatusDot status="working" label="Syncing" size={5} />
-      {/if}
-      {syncText()}
-    </span>
+    {#if sync.getProviderAvailable()}
+      <span class="status-item" class:status-item--active={sync.getSyncState()?.running}>
+        {#if sync.getSyncState()?.running}
+          <StatusDot status="working" label="Syncing" size={5} />
+        {/if}
+        {syncText()}
+      </span>
+    {/if}
     {#if appVersion}
       <span class="status-sep">&middot;</span>
       <span class="status-item status-item--version">{appVersion}</span>
@@ -350,6 +361,11 @@
     gap: 4px;
   }
   .status-item--live-updates {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .status-item--provider-unavailable {
     display: flex;
     align-items: center;
     gap: 4px;

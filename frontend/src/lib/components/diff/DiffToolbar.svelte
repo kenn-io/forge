@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Toggle } from "@kenn-io/kit-ui";
+  import { SidebarToggle, Toggle } from "@kenn-io/kit-ui";
   import MoreHorizontalIcon from "@lucide/svelte/icons/more-horizontal";
   import { getStores } from "../../context.js";
   import {
@@ -177,6 +177,14 @@
 <svelte:document onclick={handleDocumentClick} onkeydown={handleDocumentKeydown} />
 
 <div class={["diff-toolbar", compact && "diff-toolbar--compact"]}>
+  {#if fileListHidden && onToggleFileList}
+    <SidebarToggle
+      state="collapsed"
+      label="file tree"
+      onclick={onToggleFileList}
+      class="kit-sidebar-toggle--compact"
+    />
+  {/if}
   {#if compact}
     <div class="compact-summary">
       <span class="toolbar-label">Files</span>

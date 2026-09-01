@@ -1,0 +1,38 @@
+# Kenn Forge
+
+> Kenn Forge (binary: `kenn-forge`) is an integrated workspace for coding
+> agents with local-first sync of pull requests, issues, and activity from
+> GitHub, GitLab, Forgejo, and Gitea. One binary runs a local daemon that
+> syncs provider data into SQLite, serves the console UI, and manages
+> worktree-backed workspaces with durable tmux sessions for agents.
+
+The Guide is a short visual product tour; the Docs links below are
+comprehensive task-oriented references. Markdown versions are canonical for
+machine readers: every rendered docs page at /docs/<page>/ is also served as
+raw markdown at /docs/<page>.md, and the docs index at /docs/index.md.
+
+## Docs
+
+- [Documentation overview](https://forge.kenn.io/docs/index.md): Mental model, main views, and documentation map
+- [Quick start](https://forge.kenn.io/docs/quickstart.md): Installation, provider setup, first sync, and first workspace
+- [Workflows overview](https://forge.kenn.io/docs/workflows.md): Daily workflows across activity, review, triage, and sessions
+- [Follow activity](https://forge.kenn.io/docs/workflows/activity.md): The cross-repository activity queue, filters, and detail panes
+- [Triage issues](https://forge.kenn.io/docs/workflows/issue-triager.md): Issue queue, triage actions, and creating workspaces from issues
+- [Review pull requests](https://forge.kenn.io/docs/workflows/code-reviewer.md): Pull request detail, line-by-line review, stacks, and merging
+- [Browse repositories](https://forge.kenn.io/docs/workflows/repositories.md): Repository source browser, refs, previews, and file history
+- [Work in local sessions](https://forge.kenn.io/docs/workflows/workspaces.md): Worktree workspaces, tmux sessions, and coding agents
+- [Read and edit Docs](https://forge.kenn.io/docs/workflows/docs.md): Registered Markdown folders, editing, and git publishing
+- [Integrations](https://forge.kenn.io/docs/integrations.md): Roborev reviews, Kata tasks, and Docs folder setup
+- [Settings](https://forge.kenn.io/docs/settings.md): In-app settings for repositories, tokens, and modes
+- [Configuration](https://forge.kenn.io/docs/configuration.md): Config file reference and startup options
+- [Commands](https://forge.kenn.io/docs/commands.md): CLI command reference for the kenn-forge binary
+- [Federated fleet](https://forge.kenn.io/docs/federated-fleet.md): Hub-and-spoke federation across multiple machines
+- [MCP companion](https://forge.kenn.io/docs/kenn-forge-mcp.md): Model Context Protocol server for agent access to the console
+- [Archive](https://forge.kenn.io/docs/archive.md): Historical activity archives beyond the live sync window
+- [Troubleshooting](https://forge.kenn.io/docs/troubleshooting.md): Startup, authentication, and sync problems
+
+## Other
+
+- [Kenn Forge home](https://forge.kenn.io/): Product pitch page
+- [Guide to Forge](https://forge.kenn.io/guide/): Seven-stop visual tour of the daily workflow
+- [Source repository](https://github.com/kenn-io/forge): Issues and releases

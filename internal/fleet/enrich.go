@@ -1,38 +1,192 @@
 package fleet
 
 import (
+	"slices"
 	"strings"
 	"time"
 )
 
-// BuildEnriched transforms a raw, host-key-stamped snapshot into the
-// enriched, client-ready Snapshot. Every entity ID is a deterministic
-// UUID-v5 derived from that entity's own host key, so the same scoped key
-// on two hosts yields distinct IDs (no cross-host collisions). selfKey
-// identifies the local host. connectionState, when non-nil, resolves a
-// per-host connection-state string by host key (nil in local-only builds).
-func BuildEnriched(
-	raw RawSnapshot,
-	selfKey string,
-	connectionState func(hostKey string) *string,
-	policy AvailabilityPolicy,
-	identity Identity,
+// ProjectForObserver replaces the observer's aggregate entries with fresh
+// local authority, then derives all observer-relative IDs and permissions.
+// The neutral input is copied and never mutated.
+func ProjectForObserver(
+	aggregate NeutralSnapshot,
+	local RawSnapshot,
+	observer Observer,
 ) Snapshot {
-	active := ActivePlatformHost(raw.Projects)
-
+	view := withFreshObserverState(aggregate, local, observer)
+	if observer.Role == RoleSpoke {
+		view = localSpokeProjection(view, string(observer.NodeID))
+	}
+	active := ActivePlatformHost(view.Projects)
+	identity := DefaultIdentity()
 	resp := Snapshot{
-		SchemaVersion:         SchemaVersion,
-		Generation:            raw.Generation,
-		PlatformAuthenticated: raw.PlatformAuthenticated,
+		ProtocolVersion:       view.ProtocolVersion,
+		Generation:            view.Generation,
+		PlatformAuthenticated: view.PlatformAuthenticated,
 		ActivePlatformHost:    active,
 	}
-	resp.Hosts = buildHosts(raw, selfKey, connectionState, policy, identity)
-	resp.Projects = buildProjects(raw.Projects, active, identity)
+	resp.Hosts = buildHosts(view.Hosts, observer, identity)
+	resp.Projects = buildProjects(view.Projects, active, identity)
 	resp.ProjectMap = buildProjectMap(resp.Projects)
-	worktrees, filteredKeys := buildWorktrees(raw.Worktrees, identity)
+	worktrees, filteredKeys := buildWorktrees(view.Worktrees, identity)
 	resp.Worktrees = worktrees
-	resp.Sessions = buildSessions(raw.Sessions, filteredKeys, identity)
+	resp.Sessions = buildSessions(view.Sessions, filteredKeys, identity)
+	resp.Workspaces = buildWorkspaceSummaries(view.Workspaces, view.Hosts, observer.NodeID)
 	return resp
+}
+
+// localSpokeProjection keeps the fleet host directory available for direct
+// navigation while limiting a spoke's workspace surface to state it can act
+// on locally. The hub remains the one place that projects the full fleet.
+func localSpokeProjection(view NeutralSnapshot, observer string) NeutralSnapshot {
+	view.Projects = slices.DeleteFunc(slices.Clone(view.Projects), func(project RawProject) bool {
+		return project.HostKey != observer
+	})
+	view.Worktrees = slices.DeleteFunc(slices.Clone(view.Worktrees), func(worktree RawWorktree) bool {
+		return worktree.HostKey != observer
+	})
+	view.Sessions = slices.DeleteFunc(slices.Clone(view.Sessions), func(session RawSession) bool {
+		return session.HostKey != observer
+	})
+	view.Workspaces = slices.DeleteFunc(slices.Clone(view.Workspaces), func(workspace RawWorkspace) bool {
+		return workspace.HostKey != observer
+	})
+	return view
+}
+
+func withFreshObserverState(
+	aggregate NeutralSnapshot,
+	local RawSnapshot,
+	observer Observer,
+) NeutralSnapshot {
+	view := aggregate
+	if view.ProtocolVersion == 0 {
+		view.ProtocolVersion = local.ProtocolVersion
+	}
+	if len(view.Hosts) == 0 {
+		view.Generation = local.Generation
+		view.PlatformAuthenticated = local.PlatformAuthenticated
+	}
+	view.Hosts = replaceObserverHost(
+		aggregate.Hosts, neutralLocalHost(local, observer.Role), observer.NodeID,
+	)
+	key := string(observer.NodeID)
+	view.Projects = replaceObserverProjects(aggregate.Projects, local.Projects, key)
+	view.Worktrees = replaceObserverWorktrees(aggregate.Worktrees, local.Worktrees, key)
+	view.Sessions = replaceObserverSessions(aggregate.Sessions, local.Sessions, key)
+	view.Workspaces = replaceObserverWorkspaces(aggregate.Workspaces, local.Workspaces, key)
+	return view
+}
+
+func replaceObserverHost(hosts []NeutralHost, local NeutralHost, observer NodeID) []NeutralHost {
+	out := make([]NeutralHost, 0, len(hosts)+1)
+	found := false
+	for _, host := range hosts {
+		if host.NodeID == observer {
+			if !found {
+				local.NodeID = observer
+				out = append(out, local)
+				found = true
+			}
+			continue
+		}
+		out = append(out, host)
+	}
+	if !found {
+		local.NodeID = observer
+		out = append(out, local)
+	}
+	return out
+}
+
+func replaceObserverProjects(all, local []RawProject, observer string) []RawProject {
+	out := filterProjectsForOtherNodes(all, observer)
+	return append(out, stampedProjects(local, observer)...)
+}
+
+func filterProjectsForOtherNodes(all []RawProject, observer string) []RawProject {
+	out := make([]RawProject, 0, len(all))
+	for _, project := range all {
+		if project.HostKey != observer {
+			out = append(out, project)
+		}
+	}
+	return out
+}
+
+func replaceObserverWorktrees(all, local []RawWorktree, observer string) []RawWorktree {
+	provider := make(map[string]RawWorktree)
+	out := make([]RawWorktree, 0, len(all)+len(local))
+	for _, worktree := range all {
+		if worktree.HostKey == observer {
+			provider[worktree.ScopedKey] = worktree
+			continue
+		}
+		out = append(out, worktree)
+	}
+	local = stampedWorktrees(local, observer)
+	for index := range local {
+		if enriched, ok := provider[local[index].ScopedKey]; ok {
+			copyProviderWorktreeFields(&local[index], enriched)
+		}
+	}
+	return append(out, local...)
+}
+
+func copyProviderWorktreeFields(target *RawWorktree, source RawWorktree) {
+	target.PRState = source.PRState
+	target.PRTitle = source.PRTitle
+	target.ChecksStatus = source.ChecksStatus
+	target.PRReviewDecision = source.PRReviewDecision
+	target.PRMergeable = source.PRMergeable
+	target.PRAdditions = source.PRAdditions
+	target.PRDeletions = source.PRDeletions
+	target.PRCommentCount = source.PRCommentCount
+	target.PRURL = source.PRURL
+	target.PRUpdatedAt = source.PRUpdatedAt
+	target.ChecksDetail = source.ChecksDetail
+	target.LastPolledAt = source.LastPolledAt
+}
+
+func replaceObserverSessions(all, local []RawSession, observer string) []RawSession {
+	out := make([]RawSession, 0, len(all)+len(local))
+	for _, session := range all {
+		if session.HostKey != observer {
+			out = append(out, session)
+		}
+	}
+	return append(out, stampedSessions(local, observer)...)
+}
+
+func replaceObserverWorkspaces(all, local []RawWorkspace, observer string) []RawWorkspace {
+	provider := make(map[string]RawWorkspace)
+	out := make([]RawWorkspace, 0, len(all)+len(local))
+	for _, workspace := range all {
+		if workspace.HostKey == observer {
+			provider[workspace.ID] = workspace
+			continue
+		}
+		out = append(out, workspace)
+	}
+	local = stampedWorkspaces(local, observer)
+	for index := range local {
+		if enriched, ok := provider[local[index].ID]; ok {
+			copyProviderWorkspaceFields(&local[index], enriched)
+		}
+	}
+	return append(out, local...)
+}
+
+func copyProviderWorkspaceFields(target *RawWorkspace, source RawWorkspace) {
+	target.ItemLastActivityAt = source.ItemLastActivityAt
+	target.MRTitle = source.MRTitle
+	target.MRState = source.MRState
+	target.MRIsDraft = source.MRIsDraft
+	target.MRCIStatus = source.MRCIStatus
+	target.MRReviewDecision = source.MRReviewDecision
+	target.MRAdditions = source.MRAdditions
+	target.MRDeletions = source.MRDeletions
 }
 
 // MapConnectionState maps internal connection states to the protocol enum
@@ -54,105 +208,60 @@ func MapConnectionState(internalState string) *string {
 	return &mapped
 }
 
-func buildHosts(
-	raw RawSnapshot,
-	selfKey string,
-	connectionState func(hostKey string) *string,
-	policy AvailabilityPolicy,
-	identity Identity,
-) []HostSummary {
-	hosts := make([]HostSummary, 0, 1+len(raw.RemoteHosts))
-
-	local := HostSummary{
-		ID:                    identity.HostID(selfKey),
-		ConfigKey:             selfKey,
-		Name:                  raw.Host.Hostname,
-		Kind:                  "self",
-		Platform:              raw.Host.Platform,
-		Reachable:             true,
-		PreferredTransport:    "local",
-		Capabilities:          raw.Capabilities,
-		Diagnostics:           []HostDiagnostic{},
-		OperationAvailability: map[string]HostOperationAvailability{},
+func buildHosts(hosts []NeutralHost, observer Observer, identity Identity) []HostSummary {
+	out := make([]HostSummary, 0, len(hosts))
+	for _, host := range hosts {
+		out = append(out, buildHost(host, observer, identity))
 	}
-	if raw.Host.Hostname != "" {
-		local.Hostname = &raw.Host.Hostname
-	}
-	if raw.Host.Version != "" {
-		local.Version = &raw.Host.Version
-	}
-	if raw.Host.TmuxLastPolledAt != "" {
-		ts := normalizeDateValue(raw.Host.TmuxLastPolledAt)
-		local.TmuxLastPolledAt = &ts
-	}
-	local.TmuxProbeError = raw.Host.TmuxProbeError
-	local.TmuxMetricsError = raw.Host.TmuxMetricsError
-	localDiags := tmuxProbeDiagnostics(
-		raw.Host.TmuxProbeError,
-		raw.Host.TmuxMetricsError,
-	)
-	if raw.Capabilities != nil {
-		localDiags = append(
-			DiagnosticsFromCapabilities(*raw.Capabilities, raw.PlatformAuthenticated),
-			localDiags...,
-		)
-	}
-	if localDiags == nil {
-		localDiags = []HostDiagnostic{}
-	}
-	local.Diagnostics = localDiags
-	if raw.Capabilities != nil {
-		local.OperationAvailability = OperationAvailabilityFromState(
-			localDiags, raw.Capabilities.Commands, true, policy,
-		)
-	}
-	local.TmuxSessions = tmuxOrEmpty(raw.Host.TmuxSessions)
-	if raw.Host.LastSeenAt != "" {
-		ts := normalizeDateValue(raw.Host.LastSeenAt)
-		local.LastSeenAt = &ts
-	}
-	hosts = append(hosts, local)
-
-	for _, rh := range raw.RemoteHosts {
-		var cs *string
-		if connectionState != nil {
-			cs = connectionState(rh.HostKey)
-		}
-		hosts = append(hosts, buildRemoteHost(rh, cs, policy, identity))
-	}
-	return hosts
+	return out
 }
 
-func buildRemoteHost(rh RawRemoteHost, connectionState *string, policy AvailabilityPolicy, identity Identity) HostSummary {
+func buildHost(host NeutralHost, observer Observer, identity Identity) HostSummary {
+	isSelf := host.NodeID == observer.NodeID
+	kind := "remote"
+	transport := "http"
+	policy := AvailabilityPolicy(RealCapabilityPolicy{})
+	if isSelf {
+		kind = "self"
+		transport = "local"
+	} else if observer.Role == RoleSpoke {
+		policy = SummaryOnlyPolicy{}
+	}
 	h := HostSummary{
-		ID:                    identity.HostID(rh.HostKey),
-		ConfigKey:             rh.HostKey,
-		Name:                  rh.Name,
-		Kind:                  "remote",
-		Platform:              strings.ToLower(rh.Platform),
-		Reachable:             rh.Reachable,
-		PreferredTransport:    remoteTransport(rh.PreferredTransport),
-		Capabilities:          rh.Capabilities,
+		ID:                    identity.HostID(string(host.NodeID)),
+		ConfigKey:             string(host.NodeID),
+		NodeID:                string(host.NodeID),
+		Name:                  host.Name,
+		Kind:                  kind,
+		FederationRole:        host.FederationRole,
+		BaseURL:               host.BaseURL,
+		Platform:              strings.ToLower(host.Platform),
+		Reachable:             host.Reachable,
+		PreferredTransport:    transport,
+		Capabilities:          host.Capabilities,
 		Diagnostics:           []HostDiagnostic{},
 		OperationAvailability: map[string]HostOperationAvailability{},
 	}
-	if rh.LastSeenAt != "" {
-		ts := normalizeDateValue(rh.LastSeenAt)
+	if host.Hostname != "" {
+		h.Hostname = &host.Hostname
+	}
+	if host.LastSeenAt != "" {
+		ts := normalizeDateValue(host.LastSeenAt)
 		h.LastSeenAt = &ts
 	}
-	if rh.TmuxLastPolledAt != "" {
-		ts := normalizeDateValue(rh.TmuxLastPolledAt)
+	if host.TmuxLastPolledAt != "" {
+		ts := normalizeDateValue(host.TmuxLastPolledAt)
 		h.TmuxLastPolledAt = &ts
 	}
-	h.TmuxProbeError = rh.TmuxProbeError
-	h.TmuxMetricsError = rh.TmuxMetricsError
+	h.TmuxProbeError = host.TmuxProbeError
+	h.TmuxMetricsError = host.TmuxMetricsError
 	diags := tmuxProbeDiagnostics(
-		rh.TmuxProbeError,
-		rh.TmuxMetricsError,
+		host.TmuxProbeError,
+		host.TmuxMetricsError,
 	)
-	if rh.Capabilities != nil {
+	if host.Capabilities != nil {
 		diags = append(
-			DiagnosticsFromCapabilities(*rh.Capabilities, rh.PlatformAuthenticated),
+			DiagnosticsFromCapabilities(*host.Capabilities),
 			diags...,
 		)
 	}
@@ -160,23 +269,20 @@ func buildRemoteHost(rh RawRemoteHost, connectionState *string, policy Availabil
 		diags = []HostDiagnostic{}
 	}
 	h.Diagnostics = diags
-	hostPolicy := policyForHost(policy, rh.HostKey)
-	if rh.Capabilities != nil {
+	if host.Capabilities != nil {
 		h.OperationAvailability = OperationAvailabilityFromState(
-			diags, rh.Capabilities.Commands, rh.Reachable, hostPolicy,
+			diags, host.Capabilities.Commands, host.Reachable, policy,
 		)
 	} else {
 		h.OperationAvailability = OperationAvailabilityFromState(
-			nil, CommandCapabilities{}, rh.Reachable, hostPolicy,
+			nil, CommandCapabilities{}, host.Reachable, policy,
 		)
 	}
-	h.Error = rh.Error
-	h.ConnectionState = connectionState
-	h.SSHDestination = rh.SSHDestination
-	if rh.Version != "" {
-		h.Version = &rh.Version
+	h.Error = host.Error
+	if host.Version != "" {
+		h.Version = &host.Version
 	}
-	h.TmuxSessions = tmuxOrEmpty(rh.TmuxSessions)
+	h.TmuxSessions = tmuxOrEmpty(host.TmuxSessions)
 	return h
 }
 
@@ -288,8 +394,74 @@ func buildWorktree(wt RawWorktree, identity Identity) WorktreeSummary {
 	return w
 }
 
+func buildWorkspaceSummaries(
+	raw []RawWorkspace,
+	hosts []NeutralHost,
+	self NodeID,
+) []WorkspaceSummary {
+	hostNames := make(map[string]string, len(hosts))
+	for _, host := range hosts {
+		hostNames[string(host.NodeID)] = host.Name
+	}
+	out := make([]WorkspaceSummary, 0, len(raw))
+	for _, workspace := range raw {
+		repository := workspace.Repository
+		summary := WorkspaceSummary{
+			ID: workspace.ID,
+			Repo: WorkspaceRepositorySummary{
+				Provider: repository.Provider, PlatformHost: repository.PlatformHost,
+				PlatformRepoID: repository.PlatformRepoID,
+				RepoPath:       repository.Owner + "/" + repository.Name,
+				Owner:          repository.Owner, Name: repository.Name,
+			},
+			PlatformHost: repository.PlatformHost,
+			RepoOwner:    repository.Owner, RepoName: repository.Name,
+			ItemType: workspace.ItemType, ItemNumber: workspace.ItemNumber,
+			SourceItemVisible: workspace.SourceItemVisible,
+			ItemKey:           workspace.ItemKey, GitHeadRef: workspace.GitHeadRef,
+			WorktreePath: workspace.WorktreePath, TmuxSession: workspace.TmuxSession,
+			TmuxPaneTitle: workspace.TmuxPaneTitle, TmuxWorking: workspace.TmuxWorking,
+			TmuxActivitySource:  workspace.TmuxActivitySource,
+			TmuxLastOutputAt:    workspace.TmuxLastOutputAt,
+			AgentState:          workspace.AgentState,
+			AgentStateUpdatedAt: workspace.AgentStateUpdatedAt,
+			Status:              workspace.Status, ErrorMessage: workspace.ErrorMessage,
+			CreatedAt:          workspace.CreatedAt,
+			ItemLastActivityAt: workspace.ItemLastActivityAt,
+			MRTitle:            workspace.MRTitle, MRState: lowerPtr(workspace.MRState),
+			MRIsDraft: workspace.MRIsDraft, MRCIStatus: lowerPtr(workspace.MRCIStatus),
+			MRReviewDecision: lowerPtr(workspace.MRReviewDecision),
+			MRAdditions:      workspace.MRAdditions, MRDeletions: workspace.MRDeletions,
+			CommitsAhead: workspace.CommitsAhead, CommitsBehind: workspace.CommitsBehind,
+			WorktreeDirty:         workspace.WorktreeDirty,
+			EnrichmentStatus:      workspace.EnrichmentStatus,
+			EnrichmentRefreshedAt: workspace.EnrichmentRefreshedAt,
+			EnrichmentError:       workspace.EnrichmentError,
+			AssociatedPRNumber:    workspace.AssociatedPRNumber,
+			Visible:               true,
+		}
+		if workspace.Kata != nil {
+			summary.Kata = &WorkspaceKataSummary{
+				DaemonID:    workspace.Kata.DaemonID,
+				ProjectUID:  workspace.Kata.ProjectUID,
+				ProjectName: workspace.Kata.ProjectName,
+				IssueUID:    workspace.Kata.IssueUID,
+				ShortID:     workspace.Kata.ShortID,
+				QualifiedID: workspace.Kata.QualifiedID,
+				Title:       workspace.Kata.Title,
+			}
+		}
+		if workspace.HostKey != string(self) {
+			summary.FleetHostKey = workspace.HostKey
+			summary.FleetHostName = hostNames[workspace.HostKey]
+		}
+		out = append(out, summary)
+	}
+	return out
+}
+
 // sessionBackendOrDefault normalizes a raw worktree session backend onto the
-// exported canonical vocabulary (localPTY, localTmux, remoteTmux), defaulting
+// exported canonical vocabulary (localPTY, localTmux), defaulting
 // an empty value to localPTY. A registered worktree with no active session
 // carries no backend; emitting an empty string forces strict consumers to
 // special-case it, so default it to the local-PTY attach instead. Values
@@ -302,7 +474,6 @@ func sessionBackendOrDefault(raw string) string {
 	for _, canonical := range []string{
 		SessionBackendLocalPTY,
 		SessionBackendLocalTmux,
-		SessionBackendRemoteTmux,
 	} {
 		if strings.EqualFold(raw, canonical) {
 			return canonical
@@ -340,15 +511,6 @@ func tmuxOrEmpty(in []TmuxSessionInfo) []TmuxSessionInfo {
 		return []TmuxSessionInfo{}
 	}
 	return in
-}
-
-// remoteTransport defaults an unset remote transport to "http" so a hub peer's
-// preferred transport is unchanged while a local daemon can advertise ssh/mosh.
-func remoteTransport(t string) string {
-	if t == "" {
-		return "http"
-	}
-	return t
 }
 
 func buildSessions(raw []RawSession, filteredWorktreeKeys map[worktreeKey]bool, identity Identity) []SessionSummary {

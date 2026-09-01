@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { SearchInput } from "@kenn-io/kit-ui";
+  import { SearchInput, SidebarToggle } from "@kenn-io/kit-ui";
   import { getStores } from "../../context.js";
   import CommitListSection from "./CommitListSection.svelte";
   import PierreFileTree from "./PierreFileTree.svelte";
@@ -13,9 +13,14 @@
   interface Props {
     showCommits?: boolean;
     resetKey?: string;
+    onCollapseFileTree?: (() => void) | undefined;
   }
 
-  const { showCommits = true, resetKey = "" }: Props = $props();
+  const {
+    showCommits = true,
+    resetKey = "",
+    onCollapseFileTree,
+  }: Props = $props();
 
   function handleTreeSelection(path: string): void {
     diff.requestScrollToFile(path);
@@ -60,15 +65,27 @@
   {#if diff.isFileListLoading() && !diff.getFileList()}
     <div class="diff-files-state diff-files-state--loading">Loading files</div>
   {:else if filteredDiffFiles}
-    {#if showFileFilter}
-      <div class="diff-files-filter">
-        <SearchInput
-          size="sm"
-          block
-          placeholder="Filter files..."
-          ariaLabel="Filter files"
-          bind:value={fileFilterText}
-        />
+    {#if showFileFilter || onCollapseFileTree}
+      <div class="diff-files-controls">
+        {#if showFileFilter}
+          <div class="diff-files-filter">
+            <SearchInput
+              size="sm"
+              block
+              placeholder="Filter files..."
+              ariaLabel="Filter files"
+              bind:value={fileFilterText}
+            />
+          </div>
+        {/if}
+        {#if onCollapseFileTree}
+          <SidebarToggle
+            state="expanded"
+            label="file tree"
+            onclick={onCollapseFileTree}
+            class="kit-sidebar-toggle--compact"
+          />
+        {/if}
       </div>
     {/if}
     <PierreFileTree
@@ -91,8 +108,17 @@
     overflow: hidden;
   }
 
+  .diff-files-controls {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-1);
+    padding: var(--space-2) var(--space-5) var(--space-3) var(--space-7);
+  }
+
   .diff-files-filter {
-    padding: 4px 10px 6px 24px;
+    flex: 1;
+    min-width: 0;
   }
 
   .diff-files-state {

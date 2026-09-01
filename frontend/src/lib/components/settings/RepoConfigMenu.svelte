@@ -69,7 +69,7 @@
         dismiss: close,
         escapeFocus: trigger,
       }),
-      autoReposition(() => panel, position),
+      autoReposition(() => [panel], position),
     ];
     return () => cleanups.forEach((cleanup) => cleanup());
   });

@@ -21,6 +21,8 @@ type providerFactory func(providerFactoryInput) (providerFactoryOutput, error)
 
 type providerFactoryInput struct {
 	host          string
+	baseURL       string
+	allowInsecure bool
 	tokenSource   tokenauth.Source
 	rateTracker   *github.RateTracker
 	budget        *github.SyncBudget
@@ -54,6 +56,18 @@ type mutationTokenSource struct {
 
 func (s mutationTokenSource) Token(ctx context.Context) (string, error) {
 	return s.Source.Token(tokenauth.WithMutationAuth(ctx))
+}
+
+type optionalMutationTokenSource struct {
+	tokenauth.Source
+}
+
+func (s optionalMutationTokenSource) Token(ctx context.Context) (string, error) {
+	token, err := s.Source.Token(tokenauth.WithMutationAuth(ctx))
+	if errors.Is(err, tokenauth.ErrMissingToken) {
+		return "", nil
+	}
+	return token, err
 }
 
 type identityBoundMutationTokenSource struct {
@@ -92,33 +106,98 @@ func (missingRouteTokenSource) Descriptor() tokenauth.Descriptor {
 }
 
 type githubCredentialRoute struct {
-	key            tokenauth.Key
-	source         tokenauth.Source
-	client         github.Client
-	fetcher        *github.GraphQLFetcher
-	discoveryOwner string
-	readIdentity   github.IdentityKey
-	writeIdentity  github.IdentityKey
+	key                 tokenauth.Key
+	source              tokenauth.Source
+	client              github.Client
+	fetcher             *github.GraphQLFetcher
+	discoveryOwner      string
+	readIdentity        github.IdentityKey
+	writeIdentity       github.IdentityKey
+	archiveKey          tokenauth.Key
+	archiveSource       tokenauth.Source
+	archiveReadIdentity github.IdentityKey
 }
 
-type providerStartup struct {
-	registry             *platform.Registry
-	rateTrackers         map[string]*github.RateTracker
-	writeRateTrackers    map[string]*github.RateTracker
-	writeGQLRateTrackers map[string]*github.RateTracker
-	budgets              map[string]*github.SyncBudget
-	cloneSources         map[tokenauth.Key]tokenauth.Source
-	cloneAuth            map[string]tokenauth.Source
-	fetchers             map[string]*github.GraphQLFetcher
-	githubRoutes         map[tokenauth.Key]githubCredentialRoute
-	githubIdentities     map[string]*githubIdentityRuntime
-	githubRouters        map[string]*github.HostRouter
-	githubClients        map[string]github.Client
-	ratePrincipalLabels  map[string]string
-	quotaRegistry        *github.QuotaRegistry
+type gitCredentialRoute struct {
+	source        tokenauth.Source
+	writeIdentity github.IdentityKey
+	identityBound bool
+	required      bool
 }
 
-func (s *providerStartup) SourceForRepo(
+// gitStartup owns only spoke-local Git authentication. Building it registers
+// lazy credential sources but never resolves an identity or calls a provider
+// API, so spokes can retain clone/fetch/push without constructing the
+// provider control plane.
+type gitStartup struct {
+	cloneSources map[tokenauth.Key]tokenauth.Source
+	cloneAuth    map[string]tokenauth.Source
+	githubRoutes map[tokenauth.Key]gitCredentialRoute
+	githubHosts  map[string]struct{}
+}
+
+func buildGitStartup(cfg *config.Config, set *tokenauth.SourceSet) (gitStartup, error) {
+	if cfg == nil || set == nil {
+		return gitStartup{}, errors.New("git startup requires config and token sources")
+	}
+	if err := cfg.ValidateRepoTokenSourceConsistency(); err != nil {
+		return gitStartup{}, err
+	}
+	startup := gitStartup{
+		cloneSources: make(map[tokenauth.Key]tokenauth.Source),
+		cloneAuth:    make(map[string]tokenauth.Source),
+		githubRoutes: make(map[tokenauth.Key]gitCredentialRoute),
+		githubHosts:  make(map[string]struct{}),
+	}
+	for _, plan := range cfg.ProviderTokenSources() {
+		desc := plan.Descriptor
+		source := set.Upsert(desc)
+		hostKey := tokenauth.Key{Platform: desc.Key.Platform, Host: desc.Key.Host}
+		if startup.cloneSources[hostKey] == nil {
+			startup.cloneSources[hostKey] = source
+		}
+		if desc.Key.Platform == string(platform.KindGitHub) {
+			startup.githubHosts[desc.Key.Host] = struct{}{}
+			startup.githubRoutes[desc.Key] = gitCredentialRoute{
+				source: source, required: plan.Required,
+			}
+		}
+	}
+	for _, desc := range cfg.CloneTokenDescriptors() {
+		startup.cloneAuth[desc.Key.Host] = set.Upsert(desc)
+	}
+	for _, source := range startup.cloneSources {
+		if source == nil {
+			continue
+		}
+		desc := source.Descriptor()
+		host := desc.Key.Host
+		if startup.cloneAuth[host] != nil ||
+			(desc.Key.Platform == string(platform.KindGitHub) && desc.Key.Scope != "") {
+			continue
+		}
+		desc.Key = tokenauth.CloneKey(host)
+		startup.cloneAuth[host] = set.Upsert(desc)
+	}
+	return startup, nil
+}
+
+// ApplyProviderControlPlane upgrades healthy GitHub routes with their verified
+// mutation identity. Git remains usable when a provider host is degraded; in
+// that case its lazy config-derived route remains in place.
+func (s *gitStartup) ApplyProviderControlPlane(control *providerControlPlane) {
+	if s == nil || control == nil {
+		return
+	}
+	for key, route := range control.githubRoutes {
+		s.githubRoutes[key] = gitCredentialRoute{
+			source: route.source, writeIdentity: route.writeIdentity,
+			identityBound: true, required: true,
+		}
+	}
+}
+
+func (s *gitStartup) SourceForRepo(
 	platformName, host, owner, name string,
 ) tokenauth.Source {
 	if s == nil {
@@ -126,56 +205,73 @@ func (s *providerStartup) SourceForRepo(
 	}
 	platformName = strings.ToLower(strings.TrimSpace(platformName))
 	host = strings.ToLower(strings.TrimSpace(host))
-	providerSource := s.cloneSources[tokenauth.Key{
-		Platform: platformName,
-		Host:     host,
-	}]
+	providerSource := s.cloneSources[tokenauth.Key{Platform: platformName, Host: host}]
 	if platformName != string(platform.KindGitHub) {
 		return providerSource
 	}
 	owner = strings.ToLower(strings.TrimSpace(owner))
 	name = strings.ToLower(strings.TrimSpace(name))
-	for _, scope := range []string{
-		"repo:" + owner + "/" + name,
-		"owner:" + owner,
-		"",
-	} {
-		if route, ok := s.githubRoutes[tokenauth.Key{
+	for _, scope := range []string{"repo:" + owner + "/" + name, "owner:" + owner, ""} {
+		route, ok := s.githubRoutes[tokenauth.Key{
 			Platform: string(platform.KindGitHub), Host: host, Scope: scope,
-		}]; ok && route.source != nil {
+		}]
+		if !ok || route.source == nil {
+			continue
+		}
+		if route.identityBound {
 			return identityBoundMutationTokenSource{
 				Source: route.source, writeIdentity: route.writeIdentity,
 			}
 		}
+		if route.required {
+			return mutationTokenSource{Source: route.source}
+		}
+		return optionalMutationTokenSource{Source: route.source}
 	}
-	if s.githubRouters[host] != nil {
+	if _, routed := s.githubHosts[host]; routed {
 		return missingRouteTokenSource{host: host, owner: owner, name: name}
 	}
 	return providerSource
 }
 
-func (s *providerStartup) FallbackSource(host string) tokenauth.Source {
+func (s *gitStartup) FallbackSource(host string) tokenauth.Source {
 	if s == nil {
 		return nil
 	}
 	host = strings.ToLower(strings.TrimSpace(host))
 	clone := s.cloneAuth[host]
-	// A present-but-empty host chain means providers sharing this hostname
-	// disagree (Config.CloneTokenDescriptors disabled the ownerless
-	// fallback); the GitHub fallback route must not resurrect it, or an
-	// ownerless operation would expose GitHub's credential for work that may
-	// belong to another provider.
 	if clone != nil && len(clone.Descriptor().Candidates) == 0 {
 		return clone
 	}
 	if route, ok := s.githubRoutes[tokenauth.Key{
 		Platform: string(platform.KindGitHub), Host: host,
 	}]; ok && route.source != nil {
-		return identityBoundMutationTokenSource{
-			Source: route.source, writeIdentity: route.writeIdentity,
+		if route.identityBound {
+			return identityBoundMutationTokenSource{
+				Source: route.source, writeIdentity: route.writeIdentity,
+			}
 		}
+		if route.required {
+			return mutationTokenSource{Source: route.source}
+		}
+		return optionalMutationTokenSource{Source: route.source}
 	}
 	return clone
+}
+
+type providerControlPlane struct {
+	registry             *platform.Registry
+	rateTrackers         map[string]*github.RateTracker
+	writeRateTrackers    map[string]*github.RateTracker
+	writeGQLRateTrackers map[string]*github.RateTracker
+	budgets              map[string]*github.SyncBudget
+	fetchers             map[string]*github.GraphQLFetcher
+	githubRoutes         map[tokenauth.Key]githubCredentialRoute
+	githubIdentities     map[string]*githubIdentityRuntime
+	githubRouters        map[string]*github.HostRouter
+	githubClients        map[string]github.Client
+	ratePrincipalLabels  map[string]string
+	quotaRegistry        *github.QuotaRegistry
 }
 
 func defaultProviderFactories() map[string]providerFactory {
@@ -222,6 +318,7 @@ func defaultProviderFactories() map[string]providerFactory {
 		string(platform.KindGitea): func(input providerFactoryInput) (providerFactoryOutput, error) {
 			client, err := giteaclient.NewClient(
 				input.host, input.tokenSource,
+				giteaclient.WithBaseURL(input.baseURL, input.allowInsecure),
 				giteaclient.WithRateTracker(input.rateTracker),
 				giteaclient.WithSyncBudget(input.budget),
 			)
@@ -279,13 +376,54 @@ func providerTokenSources(
 			continue
 		}
 		_, seen := providerSources[key]
+		tokenCtx := ctx
+		if plan.GitHubOwner != "" {
+			tokenCtx = tokenauth.WithGitHubOwner(tokenCtx, plan.GitHubOwner)
+		}
+		if plan.ArchiveDescriptor.Key.Host != "" {
+			archiveDesc := plan.ArchiveDescriptor
+			archiveSrc := set.Upsert(archiveDesc)
+			if resolve {
+				if _, err := archiveSrc.Token(tokenCtx); err != nil {
+					if degradeFailedHosts {
+						// Archive capacity is independent of ordinary sync.
+						// Keep processing the ordinary descriptor so a broken
+						// archive App cannot take the whole host offline.
+						slog.Warn(
+							"provider archive credentials unavailable; serving cached data for it without sync",
+							"platform", archiveDesc.Key.Platform,
+							"host", archiveDesc.Key.Host,
+							"err", err,
+						)
+					} else {
+						label := fmt.Sprintf(
+							"%s host %s archive", archiveDesc.Key.Platform,
+							archiveDesc.Key.Host,
+						)
+						if plan.GitHubOwner != "" {
+							label = fmt.Sprintf("%s owner %s", label, plan.GitHubOwner)
+						}
+						return nil, fmt.Errorf(
+							"no token for %s via %s: %w",
+							label, archiveDesc.SafeString(), err,
+						)
+					}
+				}
+			}
+		}
 		src := set.Upsert(desc)
 		if resolve {
-			tokenCtx := ctx
-			if plan.GitHubOwner != "" {
-				tokenCtx = tokenauth.WithGitHubOwner(tokenCtx, plan.GitHubOwner)
-			}
 			if _, err := src.Token(tokenCtx); err != nil {
+				if plan.ArchiveOnly && errors.Is(err, tokenauth.ErrMissingToken) {
+					// An archive-only App is intentionally independent of the
+					// ordinary PAT chain. Keep the host provider present so its
+					// routed client can serve archive requests, while the route
+					// builder omits the unusable ordinary client.
+					if !seen {
+						providerSources[key] = src
+					}
+					continue
+				}
 				if !plan.Required && errors.Is(err, tokenauth.ErrMissingToken) {
 					continue
 				}
@@ -323,6 +461,61 @@ func providerTokenSources(
 	return providerSources, nil
 }
 
+type serveControlPlanes struct {
+	Git      gitStartup
+	Provider *providerControlPlane
+}
+
+// buildServeControlPlanes is the role boundary for external provider work.
+// Nodes return after constructing lazy Git routing; only hubs resolve
+// provider credentials and construct API clients, rate trackers, and budgets.
+func buildServeControlPlanes(
+	ctx context.Context,
+	database *db.DB,
+	cfg *config.Config,
+	set *tokenauth.SourceSet,
+	factories map[string]providerFactory,
+	resolver github.IdentityResolver,
+	disableSync bool,
+) (serveControlPlanes, error) {
+	gitRoutes, err := buildGitStartup(cfg, set)
+	if err != nil {
+		return serveControlPlanes{}, err
+	}
+	result := serveControlPlanes{Git: gitRoutes}
+	if cfg.Fleet.RoleOrDefault() == config.FleetRoleSpoke {
+		return result, nil
+	}
+	var providerSources map[string]tokenauth.Source
+	if disableSync {
+		providerSources, err = registerProviderTokenSources(cfg, set)
+	} else {
+		providerSources, err = collectProviderTokenSourcesDegraded(ctx, cfg, set)
+		if err != nil {
+			slog.Warn(
+				"provider credentials unavailable; serving cached data without provider sync",
+				"err", err,
+			)
+			providerSources = nil
+		}
+	}
+	if err != nil && disableSync {
+		return serveControlPlanes{}, err
+	}
+	if disableSync || providerSources == nil {
+		resolver = nil
+	}
+	control, err := buildProviderControlPlaneForServe(
+		ctx, database, cfg, set, providerSources, factories, resolver, disableSync,
+	)
+	if err != nil {
+		return serveControlPlanes{}, err
+	}
+	result.Provider = &control
+	result.Git.ApplyProviderControlPlane(result.Provider)
+	return result, nil
+}
+
 // providerHostStartupError marks a startup failure attributable to one
 // provider host so degraded startup can drop that host and keep the rest.
 type providerHostStartupError struct {
@@ -335,7 +528,7 @@ func (e *providerHostStartupError) Error() string { return e.err.Error() }
 
 func (e *providerHostStartupError) Unwrap() error { return e.err }
 
-func buildProviderStartupForServe(
+func buildProviderControlPlaneForServe(
 	ctx context.Context,
 	database *db.DB,
 	cfg *config.Config,
@@ -344,24 +537,24 @@ func buildProviderStartupForServe(
 	factories map[string]providerFactory,
 	resolver github.IdentityResolver,
 	disableSync bool,
-) (providerStartup, error) {
+) (providerControlPlane, error) {
 	if disableSync {
-		return buildProviderStartup(
+		return buildProviderControlPlane(
 			ctx, database, cfg, set, providerSources, factories, resolver,
 		)
 	}
-	return buildProviderStartupOrDegraded(
+	return buildProviderControlPlaneOrDegraded(
 		ctx, database, cfg, set, providerSources, factories, resolver,
 	)
 }
 
-// buildProviderStartupOrDegraded keeps the local UI available when a remote
+// buildProviderControlPlaneOrDegraded keeps the local UI available when a remote
 // provider cannot be initialized. Failures attributable to one provider host
 // drop only that host, so healthy hosts keep syncing; anything else falls
 // back to an empty provider registry. The database already contains the last
 // successful sync, and dropped hosts serve cached data until the daemon is
 // restarted after the provider recovers.
-func buildProviderStartupOrDegraded(
+func buildProviderControlPlaneOrDegraded(
 	ctx context.Context,
 	database *db.DB,
 	cfg *config.Config,
@@ -369,10 +562,10 @@ func buildProviderStartupOrDegraded(
 	providerSources map[string]tokenauth.Source,
 	factories map[string]providerFactory,
 	resolver github.IdentityResolver,
-) (providerStartup, error) {
+) (providerControlPlane, error) {
 	sources := providerSources
 	for {
-		startup, err := buildProviderStartup(
+		startup, err := buildProviderControlPlane(
 			ctx, database, cfg, set, sources, factories, resolver,
 		)
 		if err == nil {
@@ -401,11 +594,11 @@ func buildProviderStartupOrDegraded(
 			"provider startup unavailable; serving cached data without provider sync",
 			"err", err,
 		)
-		return buildProviderStartup(ctx, database, cfg, set, nil, factories, nil)
+		return buildProviderControlPlane(ctx, database, cfg, set, nil, factories, nil)
 	}
 }
 
-func buildProviderStartup(
+func buildProviderControlPlane(
 	ctx context.Context,
 	database *db.DB,
 	cfg *config.Config,
@@ -413,18 +606,16 @@ func buildProviderStartup(
 	providerSources map[string]tokenauth.Source,
 	factories map[string]providerFactory,
 	resolver github.IdentityResolver,
-) (providerStartup, error) {
+) (providerControlPlane, error) {
 	if err := cfg.ValidateRepoTokenSourceConsistency(); err != nil {
-		return providerStartup{}, err
+		return providerControlPlane{}, err
 	}
 	budgetPerHour := cfg.BudgetPerHour()
-	startup := providerStartup{
+	startup := providerControlPlane{
 		rateTrackers:         make(map[string]*github.RateTracker, len(providerSources)),
 		writeRateTrackers:    make(map[string]*github.RateTracker, len(providerSources)),
 		writeGQLRateTrackers: make(map[string]*github.RateTracker, len(providerSources)),
 		budgets:              make(map[string]*github.SyncBudget, len(providerSources)),
-		cloneSources:         make(map[tokenauth.Key]tokenauth.Source, len(providerSources)),
-		cloneAuth:            make(map[string]tokenauth.Source, len(providerSources)),
 		fetchers:             make(map[string]*github.GraphQLFetcher, len(providerSources)),
 		githubRoutes:         make(map[tokenauth.Key]githubCredentialRoute),
 		githubIdentities:     make(map[string]*githubIdentityRuntime),
@@ -438,10 +629,10 @@ func buildProviderStartup(
 			ctx, database, cfg, set, resolver, budgetPerHour,
 			providerSources, &startup,
 		); err != nil {
-			return providerStartup{}, err
+			return providerControlPlane{}, err
 		}
 		if err := buildGitHubRouteClients(&startup); err != nil {
-			return providerStartup{}, err
+			return providerControlPlane{}, err
 		}
 	}
 	clients := make(map[string]github.Client, len(providerSources))
@@ -465,17 +656,20 @@ func buildProviderStartup(
 		}
 		factory, ok := factories[platformName]
 		if !ok {
-			return providerStartup{}, fmt.Errorf("unsupported platform %q", platformName)
+			return providerControlPlane{}, fmt.Errorf("unsupported platform %q", platformName)
 		}
+		transportConfig := providerTransportConfig(cfg, platformName, host)
 		built, err := factory(providerFactoryInput{
 			host:          host,
+			baseURL:       transportConfig.BaseURL,
+			allowInsecure: transportConfig.AllowInsecure,
 			tokenSource:   tokenSource,
 			rateTracker:   startup.rateTrackers[rateKey],
 			budget:        startup.budgets[rateKey],
 			quotaRegistry: startup.quotaRegistry,
 		})
 		if err != nil {
-			return providerStartup{}, &providerHostStartupError{
+			return providerControlPlane{}, &providerHostStartupError{
 				platformName: platformName,
 				host:         host,
 				err: fmt.Errorf(
@@ -494,33 +688,10 @@ func buildProviderStartup(
 		if built.provider != nil {
 			providers = append(providers, built.provider)
 		}
-		startup.cloneSources[tokenauth.Key{Platform: platformName, Host: host}] = tokenSource
-	}
-	// Ownerless Git operations may use only the explicit host fallback chain.
-	// Never derive this map from the first provider source on a host because
-	// that source can be an owner-scoped GitHub PAT. Scoped repository Git
-	// operations select their own route through providerStartup.SourceForRepo.
-	for _, desc := range cfg.CloneTokenDescriptors() {
-		startup.cloneAuth[desc.Key.Host] = set.Upsert(desc)
-	}
-	for _, source := range providerSources {
-		if source == nil {
-			continue
-		}
-		desc := source.Descriptor()
-		host := desc.Key.Host
-		if startup.cloneAuth[host] != nil {
-			continue
-		}
-		if desc.Key.Platform == string(platform.KindGitHub) && desc.Key.Scope != "" {
-			continue
-		}
-		desc.Key = tokenauth.CloneKey(host)
-		startup.cloneAuth[host] = set.Upsert(desc)
 	}
 	registry, err := github.NewProviderRegistry(clients, providers...)
 	if err != nil {
-		return providerStartup{}, fmt.Errorf("create provider registry: %w", err)
+		return providerControlPlane{}, fmt.Errorf("create provider registry: %w", err)
 	}
 	startup.registry = registry
 	for host := range githubHosts {
@@ -540,10 +711,9 @@ func buildProviderStartup(
 		// host whose repos all carry terminal token overrides never
 		// uses the app candidate, and an empty write tracker would
 		// shadow the shared trackers exhausted sync had observed.
-		hostSource := startup.cloneSources[tokenauth.Key{
-			Platform: string(platform.KindGitHub),
-			Host:     host,
-		}]
+		hostSource := providerSources[providerHostKey(
+			string(platform.KindGitHub), host,
+		)]
 		if hostSource != nil && hostSource.Descriptor().HasActiveGitHubApp() {
 			if setter, ok := clients[host].(writeRateTrackerSetter); ok {
 				writeRT := github.NewPlatformRateTracker(
@@ -558,10 +728,9 @@ func buildProviderStartup(
 				startup.writeGQLRateTrackers[rateKey] = writeGQLRT
 			}
 		}
-		source := startup.cloneSources[tokenauth.Key{
-			Platform: string(platform.KindGitHub),
-			Host:     host,
-		}]
+		source := providerSources[providerHostKey(
+			string(platform.KindGitHub), host,
+		)]
 		startup.fetchers[host] = github.NewGraphQLFetcher(
 			source, host, gqlRT, startup.budgets[rateKey],
 			github.WithGraphQLQuotaAccounting(
@@ -572,6 +741,17 @@ func buildProviderStartup(
 	return startup, nil
 }
 
+func providerTransportConfig(
+	cfg *config.Config, platformName, host string,
+) config.PlatformConfig {
+	for _, configured := range cfg.Platforms {
+		if configured.Type == platformName && configured.Host == host {
+			return configured
+		}
+	}
+	return config.PlatformConfig{}
+}
+
 func buildGitHubIdentityRuntimes(
 	ctx context.Context,
 	database *db.DB,
@@ -580,7 +760,7 @@ func buildGitHubIdentityRuntimes(
 	resolver github.IdentityResolver,
 	budgetPerHour int,
 	providerSources map[string]tokenauth.Source,
-	startup *providerStartup,
+	startup *providerControlPlane,
 ) error {
 	if cfg == nil || set == nil || resolver == nil {
 		return nil
@@ -613,26 +793,21 @@ func buildGitHubIdentityRuntimes(
 		// failing startup. Explicit host fallbacks still fail hard.
 		bestEffort := !plan.Required && desc.Key.Scope == "" &&
 			len(requiredHosts) > 0 && !hasExplicitGitHubFallback(cfg, desc.Key.Host)
-		var source tokenauth.Source = set.Upsert(desc)
+		var source tokenauth.Source
 		app, hasApp := activeGitHubAppCandidate(desc, plan.GitHubOwner)
-		resolvedWrite, err := resolveGitHubPATIdentity(
-			ctx, resolver, desc.Key.Host, source, resolvedPATs,
-		)
-		writeIdentity := resolvedWrite.identity
-		if err != nil {
-			if errors.Is(err, tokenauth.ErrMissingToken) && hasApp {
-				writeIdentity = github.GitHubIdentity{}
-			} else if !plan.Required && errors.Is(err, tokenauth.ErrMissingToken) {
-				continue
-			} else if bestEffort {
-				slog.Warn(
-					"skipping implicit GitHub host fallback; ownerless APIs stay unrouted until it resolves",
-					"host", desc.Key.Host,
-					"source", desc.SafeString(),
-					"error", err,
-				)
-				continue
-			} else {
+		var writeIdentity, readIdentity github.GitHubIdentity
+		ordinaryUnavailable := false
+		if plan.ArchiveOnly {
+			// Archive-only routes are allowed to have no ordinary PAT. Keep
+			// building the route so the independent archive client remains
+			// available; ordinary operations fail closed through the router.
+			source = set.Upsert(desc)
+			resolvedWrite, err := resolveGitHubPATIdentity(
+				ctx, resolver, desc.Key.Host, source, resolvedPATs,
+			)
+			if err != nil && errors.Is(err, tokenauth.ErrMissingToken) {
+				ordinaryUnavailable = true
+			} else if err != nil {
 				return &providerHostStartupError{
 					platformName: desc.Key.Platform,
 					host:         desc.Key.Host,
@@ -641,43 +816,148 @@ func buildGitHubIdentityRuntimes(
 						desc.Key.Scope, desc.SafeString(), err,
 					),
 				}
+			} else {
+				writeIdentity = resolvedWrite.identity
+				if writeIdentity.Key.Principal != "" {
+					source = github.BindSourceIdentity(
+						source, desc.Key.Host, writeIdentity.Key,
+						resolvedWrite.token, resolver,
+					)
+				}
 			}
 		}
-		readIdentity := writeIdentity
-		if hasApp {
-			if app.InstallationID <= 0 {
-				return fmt.Errorf(
-					"resolve GitHub identity for %s via %s: invalid installation id %d",
-					desc.Key.Scope, desc.SafeString(), app.InstallationID,
+		if !ordinaryUnavailable {
+			if !plan.ArchiveOnly {
+				source = set.Upsert(desc)
+				resolvedWrite, err := resolveGitHubPATIdentity(
+					ctx, resolver, desc.Key.Host, source, resolvedPATs,
+				)
+				writeIdentity = resolvedWrite.identity
+				if err != nil {
+					if errors.Is(err, tokenauth.ErrMissingToken) && hasApp {
+						writeIdentity = github.GitHubIdentity{}
+					} else if !plan.Required && errors.Is(err, tokenauth.ErrMissingToken) {
+						continue
+					} else if bestEffort {
+						slog.Warn(
+							"skipping implicit GitHub host fallback; ownerless APIs stay unrouted until it resolves",
+							"host", desc.Key.Host,
+							"source", desc.SafeString(),
+							"error", err,
+						)
+						continue
+					} else {
+						return &providerHostStartupError{
+							platformName: desc.Key.Platform,
+							host:         desc.Key.Host,
+							err: fmt.Errorf(
+								"resolve GitHub identity for %s via %s: %w",
+								desc.Key.Scope, desc.SafeString(), err,
+							),
+						}
+					}
+				}
+				if writeIdentity.Key.Principal != "" {
+					source = github.BindSourceIdentity(
+						source, desc.Key.Host, writeIdentity.Key,
+						resolvedWrite.token, resolver,
+					)
+				}
+			}
+			if hasApp {
+				if app.InstallationID <= 0 {
+					return fmt.Errorf(
+						"resolve GitHub identity for %s via %s: invalid installation id %d",
+						desc.Key.Scope, desc.SafeString(), app.InstallationID,
+					)
+				}
+				readIdentity = github.InstallationIdentity(
+					desc.Key.Host, app.InstallationID,
+				)
+			} else {
+				readIdentity = writeIdentity
+			}
+			ensureGitHubIdentityRuntime(
+				database, budgetPerHour, readIdentity, startup,
+			)
+			if writeIdentity.Key.Principal != "" {
+				ensureGitHubIdentityRuntime(
+					database, budgetPerHour, writeIdentity, startup,
 				)
 			}
-			readIdentity = github.InstallationIdentity(
-				desc.Key.Host, app.InstallationID,
-			)
-		}
-		ensureGitHubIdentityRuntime(
-			database, budgetPerHour, readIdentity, startup,
-		)
-		if writeIdentity.Key.Principal != "" {
+		} else {
+			// Keep the ordinary side of the route present but unusable. The
+			// host provider and router still need a route object for archive
+			// requests; ordinary calls fail closed without borrowing the
+			// archive App's identity.
+			source = missingRouteTokenSource{
+				host:  desc.Key.Host,
+				owner: strings.TrimPrefix(desc.Key.Scope, "owner:"),
+			}
+			readIdentity = github.GitHubIdentity{
+				Key: github.HostIdentity(desc.Key.Host),
+			}
 			ensureGitHubIdentityRuntime(
-				database, budgetPerHour, writeIdentity, startup,
+				database, budgetPerHour, readIdentity, startup,
 			)
 		}
-		if writeIdentity.Key.Principal != "" {
-			source = github.BindSourceIdentity(
-				source, desc.Key.Host, writeIdentity.Key, resolvedWrite.token, resolver,
+		var archiveSource tokenauth.Source
+		var archiveIdentity github.IdentityKey
+		var archiveKey tokenauth.Key
+		if plan.ArchiveDescriptor.Key.Host != "" {
+			archiveSource = set.Upsert(plan.ArchiveDescriptor)
+			archiveCtx := ctx
+			if plan.GitHubOwner != "" {
+				archiveCtx = tokenauth.WithGitHubOwner(archiveCtx, plan.GitHubOwner)
+			}
+			if _, err := archiveSource.Token(archiveCtx); err != nil {
+				// Archive capacity is independent from ordinary sync. A
+				// degraded startup may keep the ordinary route while leaving
+				// this route absent until the next restart or reload.
+				slog.Warn(
+					"GitHub archive credentials unavailable; disabling archive route",
+					"host", plan.ArchiveDescriptor.Key.Host,
+					"scope", plan.ArchiveDescriptor.Key.Scope,
+					"err", err,
+				)
+				archiveSource = nil
+			}
+		}
+		if archiveSource != nil {
+			archiveApp, archiveOK := activeGitHubAppCandidate(
+				plan.ArchiveDescriptor, plan.GitHubOwner,
 			)
+			if archiveOK {
+				if archiveApp.InstallationID <= 0 {
+					return fmt.Errorf(
+						"resolve GitHub archive identity for %s via %s: invalid installation id %d",
+						plan.ArchiveDescriptor.Key.Scope,
+						plan.ArchiveDescriptor.SafeString(), archiveApp.InstallationID,
+					)
+				}
+				archiveIdentity = github.InstallationIdentity(
+					plan.ArchiveDescriptor.Key.Host, archiveApp.InstallationID,
+				).Key
+				archiveKey = plan.ArchiveDescriptor.Key
+				ensureGitHubIdentityRuntime(
+					database, budgetPerHour,
+					github.GitHubIdentity{Key: archiveIdentity}, startup,
+				)
+			}
 		}
 		discoveryOwner := ""
 		if hasApp && strings.HasPrefix(desc.Key.Scope, "repo:") {
 			discoveryOwner = app.InstallationAccount
 		}
 		startup.githubRoutes[desc.Key] = githubCredentialRoute{
-			key:            desc.Key,
-			source:         source,
-			discoveryOwner: discoveryOwner,
-			readIdentity:   readIdentity.Key,
-			writeIdentity:  writeIdentity.Key,
+			key:                 desc.Key,
+			source:              source,
+			discoveryOwner:      discoveryOwner,
+			readIdentity:        readIdentity.Key,
+			writeIdentity:       writeIdentity.Key,
+			archiveKey:          archiveKey,
+			archiveSource:       archiveSource,
+			archiveReadIdentity: archiveIdentity,
 		}
 	}
 	return nil
@@ -726,7 +1006,7 @@ func writeCredentialKey(desc tokenauth.Descriptor) string {
 	return strings.Join(parts, " -> ")
 }
 
-func buildGitHubRouteClients(startup *providerStartup) error {
+func buildGitHubRouteClients(startup *providerControlPlane) error {
 	if startup == nil || len(startup.githubRoutes) == 0 {
 		return nil
 	}
@@ -780,6 +1060,36 @@ func buildGitHubRouteClients(startup *providerStartup) error {
 				startup.quotaRegistry, configured.readIdentity,
 			),
 		)
+		var archiveClient github.Client
+		var archiveFetcher *github.GraphQLFetcher
+		if configured.archiveSource != nil && configured.archiveReadIdentity.Principal != "" {
+			archiveRuntime := startup.githubIdentities[configured.archiveReadIdentity.String()]
+			if archiveRuntime == nil {
+				return fmt.Errorf("create GitHub route %s archive client: missing identity runtime", key.Scope)
+			}
+			archiveClient, err = github.NewClient(
+				configured.archiveSource, key.Host, archiveRuntime.rest,
+				archiveRuntime.budget,
+				github.WithMutationsDisabled(),
+				github.WithQuotaAccounting(
+					startup.quotaRegistry,
+					configured.archiveReadIdentity, configured.archiveReadIdentity,
+				),
+			)
+			if err != nil {
+				return fmt.Errorf("create GitHub route %s archive client: %w", key.Scope, err)
+			}
+			if setter, ok := archiveClient.(graphQLRateTrackerSetter); ok {
+				setter.SetGraphQLRateTracker(archiveRuntime.graphql)
+			}
+			archiveFetcher = github.NewGraphQLFetcher(
+				configured.archiveSource, key.Host, archiveRuntime.graphql,
+				archiveRuntime.budget,
+				github.WithGraphQLQuotaAccounting(
+					startup.quotaRegistry, configured.archiveReadIdentity,
+				),
+			)
+		}
 		var writeSnapshotClient github.Client
 		if writeRuntime != nil && configured.writeIdentity != configured.readIdentity {
 			writeSnapshotClient, err = github.NewClient(
@@ -820,6 +1130,10 @@ func buildGitHubRouteClients(startup *providerStartup) error {
 			WriteSnapshotClient: writeSnapshotClient,
 			Fetcher:             fetcher, ReadIdentity: configured.readIdentity,
 			WriteIdentity: configured.writeIdentity,
+			ArchiveKey:    archiveRouteKey(configured.archiveKey, key.Host),
+			ArchiveClient: archiveClient, ArchiveFetcher: archiveFetcher,
+			ArchiveCredentialKey: archiveCredentialKey(configured.archiveSource),
+			ArchiveReadIdentity:  configured.archiveReadIdentity,
 		})
 	}
 	for host, routes := range byHost {
@@ -847,6 +1161,22 @@ func githubRouteOwnerAndName(scope string) (string, string) {
 	default:
 		return "", ""
 	}
+}
+
+func archiveRouteOwnerAndName(scope string) (string, string) {
+	return githubRouteOwnerAndName(strings.TrimPrefix(scope, "archive:"))
+}
+
+func archiveRouteKey(key tokenauth.Key, host string) github.RouteKey {
+	owner, name := archiveRouteOwnerAndName(key.Scope)
+	return github.RouteKey{Host: host, Owner: owner, Name: name}
+}
+
+func archiveCredentialKey(source tokenauth.Source) string {
+	if source == nil {
+		return ""
+	}
+	return source.Descriptor().CanonicalSourceString()
 }
 
 func githubCredentialPlans(cfg *config.Config) []config.ProviderTokenSource {
@@ -936,7 +1266,7 @@ func ensureGitHubIdentityRuntime(
 	database *db.DB,
 	budgetPerHour int,
 	identity github.GitHubIdentity,
-	startup *providerStartup,
+	startup *providerControlPlane,
 ) *githubIdentityRuntime {
 	key := identity.Key.String()
 	if runtime, ok := startup.githubIdentities[key]; ok {

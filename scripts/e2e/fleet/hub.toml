@@ -12,21 +12,15 @@ time_range = "7d"
 
 [fleet]
 enabled = true
-key = "hub"
+role = "hub"
+base_url = "https://hub:18091"
 peer_timeout = "1s"
 
-[[fleet.peers]]
-key = "member"
-name = "member"
-base_url = "http://member:18091"
-
-[[fleet.peers]]
-key = "down"
+[[fleet.members]]
+node_id = "cccccccccccccccccccccccccccccccc"
 name = "down"
-base_url = "http://127.0.0.1:1"
+base_url = "https://127.0.0.1:1"
+state = "active"
 
-[[fleet.ssh_peers]]
-key = "member-ssh"
-name = "member-ssh"
-destination = "root@member-ssh"
-remote_command = "/app/scripts/e2e/fleet/remote-kenn-forge-member-ssh.sh"
+[api]
+require_auth = true

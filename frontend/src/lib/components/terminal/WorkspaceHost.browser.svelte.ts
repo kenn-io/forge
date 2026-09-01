@@ -49,6 +49,7 @@ const workspace = {
   },
   item_type: "pull_request",
   item_number: 7,
+  source_item_visible: true,
   git_head_ref: "feature/inline-host",
   worktree_path: "/tmp/worktree",
   tmux_session: "kenn-forge-ws-1",

@@ -39,6 +39,17 @@ describe("DetailSettings", () => {
     mockPersistSettings.mockReset();
   });
 
+  it("labels hub-owned detail policy", () => {
+    render(SettingsRuntimeHarness, {
+      props: {
+        component: DetailSettings,
+        componentProps: { detail: initial, onUpdate: vi.fn(), owner: "hub" },
+      },
+    });
+
+    expect(screen.getByText("Detail policy is managed by the fleet hub.")).toBeTruthy();
+  });
+
   it("saves the initial timeline entry limit", async () => {
     const onUpdate = vi.fn();
     const saved = { initial_timeline_entry_limit: 80 };

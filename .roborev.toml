@@ -27,6 +27,11 @@ Report security findings only when a skill accepts unapproved external input,
 listens beyond loopback, publishes artifacts, or accesses undeclared state.
 Correctness, data loss, and unsafe shell behavior remain in scope.
 
+Treat every new or changed `git init` in tests or automation as CRITICAL
+severity. Reject the change unless it strips inherited Git variables, uses
+scratch global and system configuration, and creates the fixture outside every
+repository and worktree. A working directory or `git -C` is not isolation.
+
 The root-level kenn-forge package (forge.go) is the embedding API.
 It does not have a stable API and can be changed arbitrarily until it
 stabilizes. Do not flag breaking changes to its exported surface.

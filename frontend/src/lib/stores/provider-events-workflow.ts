@@ -122,11 +122,23 @@ export class SyncStatusEvent extends Schema.Class<SyncStatusEvent>("SyncStatusEv
   progress: Schema.optionalKey(Schema.String),
 }) {}
 
+export class HubConnectionChangedEvent extends Schema.Class<HubConnectionChangedEvent>("HubConnectionChangedEvent")({
+  connected: Schema.Boolean,
+}) {}
+
+export class ReconnectStaleEvent extends Schema.Class<ReconnectStaleEvent>("ReconnectStaleEvent")({
+  hub_connected: Schema.optionalKey(Schema.Boolean),
+}) {}
+
 export type ProviderEvent =
   | { readonly type: "data_changed" }
   | { readonly type: "sync_status"; readonly payload: SyncStatusEvent }
+  | {
+      readonly type: "hub_connection_changed";
+      readonly payload: HubConnectionChangedEvent;
+    }
   | { readonly type: "config.changed"; readonly payload: ConfigChangedEvent }
-  | { readonly type: "reconnect.stale" }
+  | { readonly type: "reconnect.stale"; readonly payload: ReconnectStaleEvent }
   | { readonly type: "workspace_created"; readonly payload: WorkspaceCreatedEvent }
   | { readonly type: "workspace_status"; readonly payload: WorkspaceStatusEvent }
   | { readonly type: "workspace_diff_ready"; readonly payload: WorkspaceDiffEvent }
@@ -213,6 +225,7 @@ export interface ProviderEventsProgramOptions<Requirements = never> {
 }
 
 const retryableConsequenceProblemCodes = new Set<ProblemCode>([
+  ProblemCodes.hubUnavailable,
   ProblemCodes.rateLimited,
   ProblemCodes.serviceUnavailable,
   ProblemCodes.upstreamError,
@@ -231,6 +244,7 @@ type ProviderEventType = ProviderEvent["type"];
 const providerEventTypes: ReadonlyArray<ProviderEventType> = [
   "data_changed",
   "sync_status",
+  "hub_connection_changed",
   "config.changed",
   "reconnect.stale",
   "workspace_created",
@@ -302,6 +316,13 @@ const decodeProviderEvent = Effect.fn("ProviderEvents.decodeFrame")(function* (f
           Effect.mapError((cause) => invalidFrame(frame, cause)),
         ),
       } satisfies ProviderEvent;
+    case "hub_connection_changed":
+      return {
+        type: "hub_connection_changed",
+        payload: yield* Schema.decodeUnknownEffect(HubConnectionChangedEvent)(payload).pipe(
+          Effect.mapError((cause) => invalidFrame(frame, cause)),
+        ),
+      } satisfies ProviderEvent;
     case "config.changed":
       return {
         type: "config.changed",
@@ -310,10 +331,12 @@ const decodeProviderEvent = Effect.fn("ProviderEvents.decodeFrame")(function* (f
         ),
       } satisfies ProviderEvent;
     case "reconnect.stale":
-      yield* Schema.decodeUnknownEffect(Schema.Struct({}))(payload).pipe(
-        Effect.mapError((cause) => invalidFrame(frame, cause)),
-      );
-      return { type: "reconnect.stale" } satisfies ProviderEvent;
+      return {
+        type: "reconnect.stale",
+        payload: yield* Schema.decodeUnknownEffect(ReconnectStaleEvent)(payload).pipe(
+          Effect.mapError((cause) => invalidFrame(frame, cause)),
+        ),
+      } satisfies ProviderEvent;
     case "workspace_created":
       return {
         type: "workspace_created",

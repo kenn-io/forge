@@ -15,6 +15,7 @@ import (
 // readers; the default encoding/json behavior already does this.
 type Metadata struct {
 	PID           int    `json:"pid"`
+	NodeID        string `json:"node_id,omitempty"`
 	Host          string `json:"host"`
 	Port          int    `json:"port"`
 	ListenAddr    string `json:"listen_addr"`

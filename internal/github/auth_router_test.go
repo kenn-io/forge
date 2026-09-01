@@ -709,6 +709,94 @@ func TestRoutedClientPreservesAndRoutesArchiveInventory(t *testing.T) {
 	)
 }
 
+func TestRoutedClientUsesDedicatedArchiveRoute(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	normal := &routeRecordingClient{marker: "normal"}
+	archive := &routeRecordingClient{marker: "archive"}
+	router, err := NewHostRouter("github.com", &Route{
+		Key: RouteKey{Host: "github.com", Owner: "acme"}, Client: normal,
+		Fetcher:       &GraphQLFetcher{},
+		ArchiveKey:    RouteKey{Host: "github.com", Owner: "acme"},
+		ArchiveClient: archive, ArchiveFetcher: &GraphQLFetcher{},
+		ArchiveReadIdentity: IdentityKey{Host: "github.com", Principal: "installation:2"},
+	})
+	require.NoError(err)
+	routed, err := NewRoutedClient(router)
+	require.NoError(err)
+	_, err = routed.GetRepository(t.Context(), "acme", "widget")
+	require.NoError(err)
+	_, err = routed.GetRepository(WithArchiveSyncBudget(t.Context()), "acme", "widget")
+	require.NoError(err)
+	assert.Equal([]string{"get:acme/widget"}, normal.calls)
+	assert.Equal([]string{"get:acme/widget"}, archive.calls)
+
+	assert.Equal(
+		IdentityKey{Host: "github.com", Principal: "installation:2"},
+		mustArchiveIdentity(t, router, "acme", "widget"),
+	)
+}
+
+func TestRoutedClientUsesDedicatedArchiveRouteForOwnerDiscovery(t *testing.T) {
+	require := require.New(t)
+	normal := &routeRecordingClient{marker: "normal"}
+	archive := &routeRecordingClient{marker: "archive"}
+	router, err := NewHostRouter("github.com", &Route{
+		Key:           RouteKey{Host: "github.com", Owner: "acme"},
+		Client:        normal,
+		ArchiveKey:    RouteKey{Host: "github.com", Owner: "acme"},
+		ArchiveClient: archive,
+	})
+	require.NoError(err)
+	routed, err := NewRoutedClient(router)
+	require.NoError(err)
+
+	repos, err := routed.ListRepositoriesByOwner(
+		WithArchiveSyncBudget(t.Context()), "acme",
+	)
+	require.NoError(err)
+	require.Len(repos, 1)
+	assert.Equal(t, "archive", repos[0].GetName())
+	assert.Empty(t, normal.calls,
+		"archive owner discovery must not spend the ordinary route")
+}
+
+func TestNewHostRouterDeduplicatesSharedArchiveRoutes(t *testing.T) {
+	require := require.New(t)
+	archive := &routeRecordingClient{marker: "archive"}
+	router, err := NewHostRouter(
+		"github.com",
+		&Route{
+			Key:           RouteKey{Host: "github.com", Owner: "acme"},
+			Client:        &routeRecordingClient{marker: "owner"},
+			ArchiveKey:    RouteKey{Host: "github.com", Owner: "acme"},
+			ArchiveClient: archive,
+		},
+		&Route{
+			Key:           RouteKey{Host: "github.com", Owner: "acme", Name: "widget"},
+			Client:        &routeRecordingClient{marker: "repo"},
+			ArchiveKey:    RouteKey{Host: "github.com", Owner: "acme"},
+			ArchiveClient: archive,
+		},
+	)
+	require.NoError(err)
+	routed, err := NewRoutedClient(router)
+	require.NoError(err)
+	_, err = routed.GetRepository(
+		WithArchiveSyncBudget(t.Context()), "acme", "widget",
+	)
+	require.NoError(err)
+	require.Len(archive.calls, 1)
+}
+
+func mustArchiveIdentity(t *testing.T, router *HostRouter, owner, name string) IdentityKey {
+	t.Helper()
+	require := require.New(t)
+	identity, err := router.ArchiveIdentityForRepo(owner, name)
+	require.NoError(err)
+	return identity
+}
+
 func TestRoutedClientWithoutFallbackRejectsOwnerlessAPIs(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -1367,6 +1455,33 @@ func TestHostRouterRepoCredentialAliasFollowsRename(t *testing.T) {
 	identity, err = router.ReadIdentityForRepo("acme", "gizmo")
 	require.NoError(err)
 	assert.Equal("widget-bot", identity.Principal)
+}
+
+func TestHostRouterArchiveAliasFallsBackWhenArchiveAppLosesCoverage(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	normal := &routeRecordingClient{marker: "normal"}
+	archive := &routeRecordingClient{marker: "archive"}
+	router, err := NewHostRouter("github.com",
+		&Route{
+			Key:           RouteKey{Host: "github.com", Owner: "acme", Name: "widget"},
+			Client:        normal,
+			ArchiveKey:    RouteKey{Host: "github.com", Owner: "acme", Name: "widget"},
+			ArchiveClient: archive,
+		},
+	)
+	require.NoError(err)
+	router.RegisterRepoCredentialAlias("acme", "gadget",
+		RouteKey{Host: "github.com", Owner: "acme", Name: "widget"}, "R_1")
+	routed, err := NewRoutedClient(router)
+	require.NoError(err)
+	_, err = routed.GetRepository(
+		WithArchiveSyncBudget(t.Context()), "acme", "gadget",
+	)
+	require.NoError(err)
+	assert.Equal([]string{"get:acme/gadget"}, normal.calls)
+	assert.Empty(archive.calls,
+		"an archive route scoped to the old repository must not follow its alias")
 }
 
 func TestRegisterConfiguredRepoCredentialAliasesRoutesRenamedRepo(t *testing.T) {

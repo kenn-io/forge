@@ -81,7 +81,11 @@ function settingsResponse(repos: ConfigRepo[] = []) {
   });
 }
 
-function renderRepoSettings(props: { repos: ConfigRepo[]; onUpdate: (repos: ConfigRepo[]) => void }): void {
+function renderRepoSettings(props: {
+  repos: ConfigRepo[];
+  onUpdate: (repos: ConfigRepo[]) => void;
+  owner?: "hub" | "local";
+}): void {
   render(SettingsRuntimeHarness, {
     props: { component: RepoSettings, componentProps: props },
   });
@@ -99,6 +103,12 @@ describe("RepoSettings", () => {
     mockBulkAddRepos.mockReset();
     mockPromoteRepo.mockReset();
     for (const item of flash.getFlashes()) flash.dismissFlash(item.id);
+  });
+
+  it("labels hub-owned repository sync inventory", () => {
+    renderRepoSettings({ repos: [], onUpdate: vi.fn(), owner: "hub" });
+
+    expect(screen.getByText("Repository sync inventory is managed by the fleet hub.")).toBeTruthy();
   });
 
   it("renders the glob count and refresh action", () => {

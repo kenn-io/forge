@@ -31,6 +31,34 @@ func TestListWorkspaceSubjectMetadataReturnsPullRequestAndIssue(t *testing.T) {
 	}].Title)
 }
 
+func TestListWorkspaceSubjectMetadataUsesLaunchSpecWithoutProviderReplica(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := openTestDB(t)
+	workspace, spec := workspaceLaunchFixture(t, database, "ws-node-overlay")
+	require.NoError(database.CreateWorkspaceWithLaunchSpec(
+		t.Context(), workspace, spec,
+	))
+	repo, err := database.GetRepoByIdentity(
+		t.Context(), GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	require.NotNil(repo)
+
+	key := WorkspaceSubjectKey{
+		RepoID: repo.ID, ItemType: WorkspaceItemTypePullRequest, ItemNumber: 7,
+	}
+	got, err := database.ListWorkspaceSubjectMetadata(
+		t.Context(), []WorkspaceSubjectKey{key},
+	)
+	require.NoError(err)
+	require.Contains(got, key)
+	assert.Equal("github", got[key].Platform)
+	assert.Equal("github.com", got[key].PlatformHost)
+	assert.Equal(spec.Repository.PlatformRepoID, got[key].PlatformRepoID)
+	assert.Empty(got[key].Title, "provider details stay hub-owned")
+}
+
 func TestListWorkspaceSubjectMetadataHidesOnlyRemovedUpstreamItems(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)

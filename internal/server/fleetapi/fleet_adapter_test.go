@@ -2,6 +2,7 @@ package fleetapi
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
 	"testing"
 	"time"
@@ -10,9 +11,49 @@ import (
 
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/fleet"
+	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/workspace"
 )
+
+func TestBuildLocalRawCorrelatesRenamedRepositoryByStableIdentity(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	ctx := t.Context()
+	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-acme-widget",
+		Owner: "acme", Name: "widget-renamed", RepoPath: "acme/widget-renamed",
+	})
+	require.NoError(err)
+	project, err := database.CreateProject(ctx, db.CreateProjectInput{
+		DisplayName: "widget", LocalPath: filepath.Join(t.TempDir(), "widget"),
+		RepoID: sql.NullInt64{Int64: repoID, Valid: true}, DefaultBranch: "main",
+	})
+	require.NoError(err)
+
+	srv := newTestHandlerWithWorkspaceManager(t, database)
+	srv.workspaceSnapshot = func(context.Context) (workspaceapi.FleetSnapshot, error) {
+		return workspaceapi.FleetSnapshot{Workspaces: []fleet.RawWorkspace{{
+			ID: "ws-renamed",
+			Repository: fleet.RepositoryIdentity{
+				Provider: "github", PlatformHost: "github.com",
+				PlatformRepoID: "repo-acme-widget",
+				Owner:          "acme", Name: "widget",
+			},
+			ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 7, ItemKey: "7",
+			WorktreePath: filepath.Join(t.TempDir(), "workspace"),
+		}}}, nil
+	}
+	raw, err := srv.buildLocalRaw(ctx)
+	require.NoError(err)
+	require.Len(raw.Projects, 1)
+	require.Equal(project.ID, raw.Projects[0].RegistryID)
+	require.Len(raw.Worktrees, 2)
+	registeredKey := "repo:" + normPath(project.LocalPath)
+	for _, worktree := range raw.Worktrees {
+		require.Equal(registeredKey, worktree.ProjectKey)
+	}
+}
 
 func TestBuildLocalRawSynthesizesAndDedupes(t *testing.T) {
 	require := require.New(t)
@@ -495,10 +536,9 @@ func requireRawProjectScoped(
 	return fleet.RawProject{}
 }
 
-// TestApplyLinkPRPopulatesEnrichment confirms the branch-match overlay carries
-// the linked merge request's review/mergeable/size/comment enrichment onto the
-// registered worktree.
-func TestApplyLinkPRPopulatesEnrichment(t *testing.T) {
+// TestApplyLinkPRCarriesIdentityOnly confirms raw spoke inventory cannot leak
+// provider display facts alongside its durable item link.
+func TestApplyLinkPRCarriesIdentityOnly(t *testing.T) {
 	require := require.New(t)
 	wt := fleet.RawWorktree{}
 	applyLinkPR(&wt, db.WorktreeLinkPR{
@@ -515,16 +555,13 @@ func TestApplyLinkPRPopulatesEnrichment(t *testing.T) {
 	})
 	require.NotNil(wt.LinkedPRNumber)
 	require.Equal(7, *wt.LinkedPRNumber)
-	require.NotNil(wt.PRReviewDecision)
-	require.Equal("changes_requested", *wt.PRReviewDecision)
-	require.NotNil(wt.PRMergeable)
-	require.Equal("dirty", *wt.PRMergeable)
-	require.NotNil(wt.PRAdditions)
-	require.Equal(12, *wt.PRAdditions)
-	require.NotNil(wt.PRDeletions)
-	require.Equal(3, *wt.PRDeletions)
-	require.NotNil(wt.PRCommentCount)
-	require.Equal(5, *wt.PRCommentCount)
+	require.Nil(wt.PRState)
+	require.Nil(wt.PRTitle)
+	require.Nil(wt.PRReviewDecision)
+	require.Nil(wt.PRMergeable)
+	require.Nil(wt.PRAdditions)
+	require.Nil(wt.PRDeletions)
+	require.Nil(wt.PRCommentCount)
 }
 
 // TestApplyLinkPROmitsZeroAndEmptyEnrichment confirms an undetailed linked PR
@@ -545,7 +582,7 @@ func TestApplyLinkPROmitsZeroAndEmptyEnrichment(t *testing.T) {
 	require.Nil(wt.PRCommentCount)
 }
 
-func TestWorktreeFromWorkspaceFoldsDraft(t *testing.T) {
+func TestWorktreeFromWorkspaceOmitsDraftProviderState(t *testing.T) {
 	open := "open"
 	draftFlag := true
 	sum := db.WorkspaceSummary{
@@ -553,15 +590,14 @@ func TestWorktreeFromWorkspaceFoldsDraft(t *testing.T) {
 		MRState:      &open,
 		MRIsDraft:    &draftFlag,
 	}
-	wt := worktreeFromWorkspace(sum, "worktree:/tmp/wt-draft", "repo:/tmp")
-	require.NotNil(t, wt.PRState)
-	require.Equal(t, "draft", *wt.PRState, "an open draft PR folds into PRState=draft")
+	wt := worktreeFromWorkspace(rawWorkspaceForAdapterTest(sum), "worktree:/tmp/wt-draft", "repo:/tmp")
+	require.Nil(t, wt.PRState)
 }
 
 // TestWorktreeFromWorkspaceClosedDraftKeepsTerminalState guards the fix for
 // draft folding: the draft flag only overrides while the PR is open, so a
 // closed (or merged) draft must report its terminal state, not "draft".
-func TestWorktreeFromWorkspaceClosedDraftKeepsTerminalState(t *testing.T) {
+func TestWorktreeFromWorkspaceOmitsClosedProviderState(t *testing.T) {
 	closed := "closed"
 	draftFlag := true
 	sum := db.WorkspaceSummary{
@@ -569,9 +605,8 @@ func TestWorktreeFromWorkspaceClosedDraftKeepsTerminalState(t *testing.T) {
 		MRState:      &closed,
 		MRIsDraft:    &draftFlag,
 	}
-	wt := worktreeFromWorkspace(sum, "worktree:/tmp/wt-closed", "repo:/tmp")
-	require.NotNil(t, wt.PRState)
-	require.Equal(t, "closed", *wt.PRState, "a closed draft must keep its terminal state, not draft")
+	wt := worktreeFromWorkspace(rawWorkspaceForAdapterTest(sum), "worktree:/tmp/wt-closed", "repo:/tmp")
+	require.Nil(t, wt.PRState)
 }
 
 // TestWorktreeFromWorkspaceIssueExposesIssueLink guards the fix for issue
@@ -593,7 +628,7 @@ func TestWorktreeFromWorkspaceIssueExposesIssueLink(t *testing.T) {
 		SourceItemVisible:   true,
 		AssociatedPRVisible: true,
 	}
-	wt := worktreeFromWorkspace(sum, "worktree:/tmp/wt-issue", "repo:/tmp")
+	wt := worktreeFromWorkspace(rawWorkspaceForAdapterTest(sum), "worktree:/tmp/wt-issue", "repo:/tmp")
 	require.Equal([]int{42}, wt.LinkedIssueNumbers, "issue number must surface as the issue link")
 	require.Nil(wt.PRTitle, "issue title must not surface as a PR title")
 	require.Nil(wt.PRState, "issue state must not surface as a PR state")
@@ -601,9 +636,9 @@ func TestWorktreeFromWorkspaceIssueExposesIssueLink(t *testing.T) {
 	require.Equal(99, *wt.LinkedPRNumber)
 }
 
-// TestWorktreeFromWorkspacePRPopulatesPRFields confirms PR workspaces still
-// carry their PR metadata and never gain a spurious issue link.
-func TestWorktreeFromWorkspacePRPopulatesPRFields(t *testing.T) {
+// TestWorktreeFromWorkspacePRCarriesLinkOnly confirms PR workspaces carry the
+// stable item link but leave provider metadata to hub enrichment.
+func TestWorktreeFromWorkspacePRCarriesLinkOnly(t *testing.T) {
 	require := require.New(t)
 	title := "Add widget"
 	state := "open"
@@ -625,24 +660,17 @@ func TestWorktreeFromWorkspacePRPopulatesPRFields(t *testing.T) {
 		MRCommentCount:    &comments,
 		SourceItemVisible: true,
 	}
-	wt := worktreeFromWorkspace(sum, "worktree:/tmp/wt-pr", "repo:/tmp")
+	wt := worktreeFromWorkspace(rawWorkspaceForAdapterTest(sum), "worktree:/tmp/wt-pr", "repo:/tmp")
 	require.Empty(wt.LinkedIssueNumbers, "PR workspaces carry no issue link")
 	require.NotNil(wt.LinkedPRNumber)
 	require.Equal(7, *wt.LinkedPRNumber)
-	require.NotNil(wt.PRTitle)
-	require.Equal("Add widget", *wt.PRTitle)
-	require.NotNil(wt.PRState)
-	require.Equal("open", *wt.PRState)
-	require.NotNil(wt.PRReviewDecision)
-	require.Equal("approved", *wt.PRReviewDecision)
-	require.NotNil(wt.PRMergeable)
-	require.Equal("clean", *wt.PRMergeable)
-	require.NotNil(wt.PRAdditions)
-	require.Equal(40, *wt.PRAdditions)
-	require.NotNil(wt.PRDeletions)
-	require.Equal(9, *wt.PRDeletions)
-	require.NotNil(wt.PRCommentCount)
-	require.Equal(4, *wt.PRCommentCount)
+	require.Nil(wt.PRTitle)
+	require.Nil(wt.PRState)
+	require.Nil(wt.PRReviewDecision)
+	require.Nil(wt.PRMergeable)
+	require.Nil(wt.PRAdditions)
+	require.Nil(wt.PRDeletions)
+	require.Nil(wt.PRCommentCount)
 }
 
 func TestWorktreeFromWorkspaceHidesRemovedSourceAndAssociatedItems(t *testing.T) {
@@ -693,8 +721,10 @@ func TestWorktreeFromWorkspaceHidesRemovedSourceAndAssociatedItems(t *testing.T)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			wt := worktreeFromWorkspace(
-				tt.summary, "worktree:"+tt.summary.WorktreePath, "repo:/tmp",
+				rawWorkspaceForAdapterTest(tt.summary),
+				"worktree:"+tt.summary.WorktreePath, "repo:/tmp",
 			)
+			require.Equal(tt.summary.WorktreePath, wt.Path)
 			require.Empty(wt.LinkedIssueNumbers)
 			require.Nil(wt.LinkedPRNumber)
 			require.Nil(wt.PRTitle)
@@ -725,7 +755,7 @@ func TestWorktreeFromWorkspacePREnrichmentOmitsZeroAndEmpty(t *testing.T) {
 		MRDeletions:      &zero,
 		MRCommentCount:   &zero,
 	}
-	wt := worktreeFromWorkspace(sum, "worktree:/tmp/wt-pr", "repo:/tmp")
+	wt := worktreeFromWorkspace(rawWorkspaceForAdapterTest(sum), "worktree:/tmp/wt-pr", "repo:/tmp")
 	require.Nil(wt.PRReviewDecision, "empty review decision is omitted")
 	require.Nil(wt.PRMergeable, "absent mergeable state is omitted")
 	require.Nil(wt.PRAdditions, "zero additions are omitted")
@@ -762,7 +792,7 @@ func TestWorktreeFromWorkspaceMapsSessionBackend(t *testing.T) {
 			ItemNumber:      1,
 			TerminalBackend: tc.backend,
 		}
-		wt := worktreeFromWorkspace(sum, "worktree:/tmp/wt", "repo:/tmp")
+		wt := worktreeFromWorkspace(rawWorkspaceForAdapterTest(sum), "worktree:/tmp/wt", "repo:/tmp")
 		require.Equal(tc.want, wt.SessionBackend, tc.name)
 	}
 }

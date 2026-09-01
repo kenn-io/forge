@@ -245,9 +245,7 @@ func seedPROnHost(
 }
 
 // seedPRWithoutHeadRepo seeds a merge request whose head-repo identity is
-// unknown (legacy rows synced before HeadRepoCloneURL existed, or providers
-// that omit it). Workspaces for it take the fork-safe ref path and stay
-// untracked.
+// unknown. Workspace setup for such a row must fail closed before Git access.
 func seedPRWithoutHeadRepo(
 	t *testing.T, database *db.DB,
 	host, owner, name string, number int,
@@ -266,6 +264,12 @@ func seedPRWithHeadRepo(
 
 	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity(host, owner, name))
 	require.NoError(t, err)
+	require.NoError(t, database.UpdateRepoProviderMetadata(ctx, repoID, db.RepoProviderMetadata{
+		PlatformRepoID: "repo-" + owner + "-" + name,
+		WebURL:         fmt.Sprintf("https://%s/%s/%s", host, owner, name),
+		CloneURL:       fmt.Sprintf("https://%s/%s/%s.git", host, owner, name),
+		DefaultBranch:  "main",
+	}))
 
 	now := time.Now().UTC().Truncate(time.Second)
 	pr := &db.MergeRequest{
@@ -309,6 +313,12 @@ func seedIssue(
 		ctx, verifiedGitHubRepoIdentity("github.com", owner, name),
 	)
 	require.NoError(t, err)
+	require.NoError(t, database.UpdateRepoProviderMetadata(ctx, repoID, db.RepoProviderMetadata{
+		PlatformRepoID: "repo-" + owner + "-" + name,
+		WebURL:         fmt.Sprintf("https://github.com/%s/%s", owner, name),
+		CloneURL:       fmt.Sprintf("https://github.com/%s/%s.git", owner, name),
+		DefaultBranch:  "main",
+	}))
 
 	now := time.Now().UTC().Truncate(time.Second)
 	issue := &db.Issue{

@@ -182,7 +182,7 @@
   }
 
   .preset-trigger:disabled {
-    opacity: 0.6;
+    opacity: var(--opacity-disabled);
     cursor: wait;
   }
 
@@ -246,7 +246,7 @@
 
   .preset-command:disabled,
   .preset-apply:disabled {
-    opacity: 0.5;
+    opacity: var(--opacity-disabled);
     cursor: not-allowed;
   }
 

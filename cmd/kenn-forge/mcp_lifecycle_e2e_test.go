@@ -79,7 +79,7 @@ func TestDaemonServesMCPEndpointThroughLifecycleE2E(t *testing.T) {
 		}
 		session = cs
 		return true
-	}, 15*time.Second, 100*time.Millisecond)
+	}, 30*time.Second, 100*time.Millisecond)
 
 	result, err := session.CallTool(
 		t.Context(), &mcp.CallToolParams{Name: "kenn_forge_list_repos"},

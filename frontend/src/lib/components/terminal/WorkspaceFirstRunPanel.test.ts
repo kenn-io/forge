@@ -195,7 +195,7 @@ describe("WorkspaceFirstRunPanel", () => {
           name: "EPYC",
           operationAvailability: {},
           platform: "github",
-          preferredTransport: "ssh",
+          preferredTransport: "http",
           reachable: true,
           tmuxSessions: [],
         },

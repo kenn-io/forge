@@ -205,7 +205,7 @@
 
   .label-picker__icon-button:disabled {
     cursor: default;
-    opacity: 0.42;
+    opacity: var(--opacity-disabled);
   }
 
   .label-picker__filter {
@@ -256,7 +256,7 @@
 
   .label-picker__row:disabled {
     cursor: wait;
-    opacity: 0.7;
+    opacity: var(--opacity-disabled);
   }
 
   .label-picker__color {

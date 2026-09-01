@@ -2,8 +2,9 @@ import { Effect, Schema } from "effect";
 import type { components } from "../../api/generated/schema.js";
 import { InvalidExternalPayload } from "../../api/effect-errors.js";
 
-type GeneratedWorkspace = components["schemas"]["WorkspaceResponse"];
-type GeneratedRepo = components["schemas"]["RepoRefResponse"];
+type GeneratedWorkspace = components["schemas"]["WorkspaceSummary"];
+type GeneratedRepo = components["schemas"]["WorkspaceRepositorySummary"];
+type HostSummary = components["schemas"]["HostSummary"];
 
 export type WorkspaceListItem = Pick<
   GeneratedWorkspace,
@@ -15,6 +16,7 @@ export type WorkspaceListItem = Pick<
   | "platform_host"
   | "repo_name"
   | "repo_owner"
+  | "source_item_visible"
   | "status"
   | "tmux_activity_source"
   | "tmux_last_output_at"
@@ -41,6 +43,7 @@ export type WorkspaceListItem = Pick<
     readonly tmux_pane_title?: string | null;
     readonly fleet_host_key?: string;
     readonly fleet_host_name?: string;
+    readonly visible?: boolean;
   };
 
 const Repo = Schema.Struct({
@@ -70,6 +73,8 @@ const Workspace = Schema.Struct({
   commits_behind: Schema.optionalKey(Schema.NullOr(Schema.Number)),
   created_at: Schema.String,
   error_message: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  fleet_host_key: Schema.optionalKey(Schema.String),
+  fleet_host_name: Schema.optionalKey(Schema.String),
   git_head_ref: Schema.String,
   id: Schema.String,
   item_key: Schema.optionalKey(Schema.String),
@@ -86,11 +91,13 @@ const Workspace = Schema.Struct({
   repo: Schema.optionalKey(Repo),
   repo_name: Schema.String,
   repo_owner: Schema.String,
+  source_item_visible: Schema.Boolean,
   status: Schema.String,
   tmux_activity_source: Schema.String,
   tmux_last_output_at: Schema.NullOr(Schema.String),
   tmux_pane_title: Schema.optionalKey(Schema.NullOr(Schema.String)),
   tmux_working: Schema.Boolean,
+  visible: Schema.optionalKey(Schema.Boolean),
   worktree_path: Schema.String,
   worktree_dirty: Schema.optionalKey(Schema.Boolean),
 });
@@ -111,3 +118,30 @@ export const decodeWorkspaceList = Effect.fn("WorkspaceList.decode")(function* (
   const workspaces: readonly WorkspaceListItem[] = decoded.workspaces ?? [];
   return workspaces;
 });
+
+export function retainDegradedHostWorkspaces(
+  previous: readonly WorkspaceListItem[],
+  current: readonly WorkspaceListItem[],
+  hosts: readonly HostSummary[],
+  aggregateIncomplete: boolean,
+): WorkspaceListItem[] {
+  const degradedHosts = new Set(
+    hosts.filter((host) => host.kind !== "self" && (host.error || !host.reachable)).map((host) => host.configKey),
+  );
+  if (degradedHosts.size === 0) return [...current];
+
+  const currentHosts = new Set(hosts.map((host) => host.configKey));
+  const currentKeys = new Set(current.map(workspaceProjectionKey));
+  const retained = previous.filter(
+    (workspace) =>
+      workspace.fleet_host_key !== undefined &&
+      (degradedHosts.has(workspace.fleet_host_key) ||
+        (aggregateIncomplete && !currentHosts.has(workspace.fleet_host_key))) &&
+      !currentKeys.has(workspaceProjectionKey(workspace)),
+  );
+  return [...current, ...retained];
+}
+
+function workspaceProjectionKey(workspace: WorkspaceListItem): string {
+  return `${workspace.fleet_host_key ?? "self"}\u0000${workspace.id}`;
+}

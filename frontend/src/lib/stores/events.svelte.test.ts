@@ -204,8 +204,24 @@ describe("createEventsStore event dispatch", () => {
     const onReconnectStale = vi.fn(() => Effect.void);
     const store = createEventsStore({ onReconnectStale });
     start(store);
-    emit(await awaitSource(), "reconnect.stale", { data: "{}" });
-    await vi.waitFor(() => expect(onReconnectStale).toHaveBeenCalledTimes(1));
+    emit(await awaitSource(), "reconnect.stale", {
+      data: JSON.stringify({ hub_connected: false }),
+    });
+    await vi.waitFor(() => expect(onReconnectStale).toHaveBeenCalledWith({ hub_connected: false }));
+  });
+
+  it("routes hub availability through the shared event source", async () => {
+    const onHubConnectionChanged = vi.fn(() => Effect.void);
+    const store = createEventsStore({ onHubConnectionChanged });
+    start(store);
+    const source = await awaitSource();
+
+    emit(source, "hub_connection_changed", {
+      data: JSON.stringify({ connected: false }),
+    });
+
+    await vi.waitFor(() => expect(onHubConnectionChanged).toHaveBeenCalledWith({ connected: false }));
+    expect(instances).toHaveLength(1);
   });
 
   it("parses pushed-head refresh events and routes them to callbacks", async () => {

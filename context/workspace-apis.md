@@ -30,6 +30,10 @@ embedder protocol for arbitrary host state.
 - Managed clones keep `core.bare=true` in shared config and override it per
   linked worktree; repository tools use the shared value to identify this layout
   (`internal/workspace/manager.go::configureBareLinkedWorktree`).
+- Managed clones and existing local base checkouts use the same exact
+  provider-host cleartext acknowledgement when validating their origin; local
+  bases do not silently weaken or ignore the configured transport policy
+  (`internal/workspace/manager.go::ValidateWorktreeBasePath`).
 
 ## Endpoint Intent
 
@@ -75,7 +79,42 @@ embedder protocol for arbitrary host state.
     (`internal/server/kata/workspace.go::Handler.createKataWorkspace`).
 - `GET /workspaces`: list kenn-forge's persisted workspaces for the workspaces
   page and terminal picker.
+- Terminal and mobile pickers read inline workspaces from the projected snapshot;
+  they never fan out per-host list reads, and remote actions require advertised
+  availability (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::loadWorkspaces`).
+- A hub may proxy workspace operations to an active member by stable
+  node ID. A spoke may operate on `self` only; other spokes remain summary-only.
+  The same workspace therefore has local affordances on its owner, routed
+  affordances on the hub, and no mutation affordances on another spoke
+  (`internal/server/fleetapi/fleet_proxy.go::Handler.resolveFleetHostTarget`).
+- Spoke raw workspaces carry stable repository identity but no provider overlay or
+  local numeric repository ID; the hub owns enrichment
+  (`internal/server/workspaceapi/fleet_snapshot.go::Handler.FleetSnapshot`).
 - `GET /workspaces/{id}`: load one persisted workspace for terminal view.
+- Provider-backed workspaces have a one-to-one, versioned launch specification
+  containing stable repository identity, clone/default-branch facts, item
+  identity, PR head-repository semantics, and a hub-issued source
+  visibility lease. Workspace and specification creation is one transaction;
+  reads never reconstruct a missing specification from provider cache tables
+  (`internal/db/queries_workspace_launch_specs.go::DB.CreateWorkspaceWithLaunchSpec`).
+- PR and issue create routes resolve that specification before persistence and
+  validate its exact request, Git identity, credential route, and mutable route
+  occupancy. The atomic workspace/specification commit precedes asynchronous
+  setup. Issue branch overrides, existing-branch/directory reuse, worktree base
+  paths, and automatic-assignment suppression remain spoke-local request policy
+  and are not smuggled into hub provider facts
+  (`internal/providerplane/client.go::ValidateWorkspaceLaunchSpecResponse`,
+  `internal/server/workspaceapi/routes_handlers.go`).
+- Source visibility leases last exactly 15 minutes. They are usable only while
+  `now < source_visible_until`; expiry requires a hub refresh, and an
+  explicitly hidden source remains unavailable. Branch-reuse and worktree-path
+  request intent is local and is never persisted in the provider fact envelope
+  (`internal/db/types.go::WorkspaceLaunchSpec.RequireVisible`).
+- During hub outage, provider-backed creation and expired launch-spec
+  work fail with `hubUnavailable`; the spoke must not fall back to stale
+  provider replicas. Existing local execution plus ad-hoc and Kata creation
+  remain available because their authority is spoke-local
+  (`internal/server/provider_sources.go`, `internal/workspace/launch_spec.go`).
 - Workspace creation is event-confirmed rather than response-owned. After accepting a purpose payload, the backend emits
   `workspace_created` with the persisted ID and a `created` boolean that distinguishes a new workspace from task-scoped
   reuse; clients load that ID through the generated workspace API to recover canonical identity.
@@ -90,6 +129,9 @@ embedder protocol for arbitrary host state.
 - Activity and Issue/Pull Request list and detail responses share one cached
   subject snapshot: every resolvable subject keeps a workspace reference, while
   tmux activity remains optional and ephemeral (`internal/server/workspaceapi/subject_activity.go::Handler.WorkspaceSubjectSnapshot`).
+- Spokes overlay their subject snapshot onto hub pull, issue, and Activity
+  rows by stable provider identity, preserving membership, order, and cursors
+  (`internal/server/pullapi/services.go::Handler.overlayLocalPullWorkspaces`).
 - Workspace enrichment is best-effort on Issue/PR detail: snapshot failures log
   and omit optional workspace metadata rather than hiding a valid item; list and
   Activity reads stay fail-fast because the snapshot affects ordering and identity (`internal/server/pullapi/routes.go::Handler.buildPullDetailResponse`, `internal/server/issueapi/routes.go::Handler.BuildDetail`).
@@ -111,9 +153,9 @@ embedder protocol for arbitrary host state.
   across both its workspace-summary and subject-metadata reads, so a route move
   cannot split one response across repository identities
   (`internal/server/workspaceapi/subject_activity.go::Handler.WorkspaceSubjectSnapshot`).
-- Activity holds one reconciliation barrier across provider events and the
-  under-lock workspace-subject snapshot, keeping routes and stable IDs in one epoch
-  (`internal/server/huma_routes.go::Server.listActivity`).
+- Hub and standalone Activity reads hold one reconciliation barrier
+  across events and workspace subjects; spokes overlay a separate local snapshot
+  by stable identity (`internal/server/huma_routes.go::Server.listActivity`).
 - Subject metadata and opt-in Issue/PR activity ordering use JSON-backed SQLite
   relations, so retained workspaces cannot exhaust bind variables. Lists always
   expose `last_workspace_activity_at`; provider activity is authoritative by default
@@ -321,18 +363,18 @@ Before writing, kenn-forge ignores the generated path through the worktree's
 private exclude file, not tracked `.gitignore`. If the path would remain
 visible to Git, the write fails.
 
-The recomputed head-repo trust classification must be persisted back to the
-workspace row, not just held on the in-memory struct: a sync that turns a
-same-repo PR into a fork must not leave a stale same-repo row readable over
-the API. Setup/retry fails rather than reaching "ready" on a persist error
-(`internal/workspace/manager.go::RefreshWorkspaceHeadRepo`). The
-provider-neutral sync engine also funnels every accepted provider MR snapshot,
+Head-repo trust for a provider-backed workspace is projected from its persisted
+launch specification on every lifecycle admission. Setup, retry/recovery,
+branch synchronization, agent launch, and hook-rendered worktree context fail
+instead of continuing when that projection cannot be validated or persisted
+(`internal/workspace/launch_spec.go::Manager.RequireWorkspaceLaunchSpec`). The
+hub's provider-neutral sync engine still funnels accepted MR snapshots,
 including action responses, through one choke point that reclassifies tracking
-workspaces from the post-upsert stored row, so an unknown-head snapshot cannot
-downgrade an already-known fork classification. Unlike setup/retry, this path
-is best-effort — failures log and do not fail the sync
-(`internal/github/sync.go::CommitMergeRequestParentSnapshot` calls
-`reclassifyWorkspaceHeadRepoTrust`; exported classifier at
+workspace rows from the post-upsert snapshot; an unknown-head snapshot cannot
+downgrade an already-known fork classification. This cache projection is
+best-effort, while the launch-specification lifecycle path is fail-closed
+(`internal/github/sync.go::CommitMergeRequestParentSnapshot`,
+`internal/github/sync.go::reclassifyWorkspaceHeadRepoTrustUnderRepositoryReconciliationRead`,
 `internal/workspace/manager.go::WorkspaceHeadRepo`).
 
 Head-repo classification writes retry under an MR revision guard, or an
@@ -342,12 +384,16 @@ holds the exclusive side of the stable barrier that every snapshot lock holds
 shared, so moving an MR cannot change its lock identity during a snapshot
 commit (`internal/db/db.go::LockMergeRequestSnapshot`,
 `internal/db/queries.go::UpdateWorkspaceMRHeadRepoForMissingRepo`).
-Persisted-workspace refreshes reload by workspace ID while holding that same
-barrier through classification persistence, so repository renames cannot turn
-a known head into `unknown` (`internal/workspace/manager.go::RefreshWorkspaceHeadRepoSnapshot`).
-Head-trust refresh and generated-context rendering both recheck removed-upstream
-visibility; removed PRs contribute no provider title, URL, branch, or push target
-(`internal/workspace/agent_context.go::PrepareAgentLaunchContext`).
+Launch-spec refresh preserves the workspace's stable repository and branch
+identity while renewing hub-owned head and visibility facts. A changed
+repository identity conflicts; an expired lease followed by a hub
+outage is retryable, while removed or inaccessible PRs fail closed before generated
+context can expose a branch or push target
+(`internal/server/provider_state_handoff.go::Server.RefreshWorkspaceLaunchSpec`,
+`internal/workspace/agent_context.go::PrepareAgentLaunchContext`).
+Branch push and pull use the workspace route returned by launch-spec
+validation, never a route captured before a lease refresh
+(`internal/workspace/branch_sync.go::Manager.validateBranchSyncLaunchSpec`).
 Workspace summaries expose provider links and head metadata only when the mutable
 route resolves to one active repository; unresolved or reused routes keep local
 workspace state but hide provider projections (`internal/db/queries.go::workspaceSummaryColumns`).
@@ -358,8 +404,10 @@ workspace ID; primary creation never launches, while an explicit fork-PR choice
 shares the ordinary manual Launch-menu trust boundary
 (`frontend/src/lib/stores/workspace-create-pending.svelte.ts::queueWorkspaceLaunch`).
 The launch API accepts only the target and display region. Agent launches
-refresh and persist head-repository classification while preparing generated
-context, but classification does not authorize or block the launch
+validate the persisted launch specification and renew an expired visibility
+lease while preparing generated context. A retryable hub outage or a
+hidden source blocks that provider-backed launch; ad-hoc and Kata launches keep
+their local behavior
 (`internal/server/workspaceapi/routes_handlers.go::Handler.launchWorkspaceRuntimeSession`,
 `internal/workspace/agent_context.go::Manager.PrepareAgentLaunchContext`).
 Each recorded workspace agent runtime contributes one durable launch event per
@@ -544,6 +592,10 @@ synthetic name and its numbered variants and may delete them during cleanup;
 any other pre-existing branch is user-owned and must keep pointing where it did.
 Ad-hoc workspaces instead reserve their final hashed branch identity before
 setup; a later external Git ref collision is an explicit setup error.
+PR worktree creation and reuse fast-forward the fetched local base branch while
+holding repository route identity stable; checked-out, diverged, or ref-namespace-
+blocked base branches stay untouched and emit a warning
+(`internal/workspace/manager.go::syncLocalBaseBranch`).
 
 ## Branch Upstream
 
@@ -558,16 +610,18 @@ same-named remote ref is not authority to adopt an upstream
 (`internal/workspace/manager.go::configureFallbackBranchUpstream`). PR upstream
 wiring requires a non-empty head-repository identity whose
 provider, host, and full repository path match the base repository; matching
-commit SHAs are not identity evidence
-because forks preserve commit IDs. Unknown and fork heads stay untracked. The
-pushed-head observer may repair a missing upstream only when the current MR row
-proves the head is in the base repository, the checked-out branch is the PR
-head or synthetic branch, and the remote-tracking ref exists.
+commit SHAs are not identity evidence because forks preserve commit IDs. Fork
+heads stay untracked, while unknown heads fail closed before Git access. The
+pushed-head observer may repair a missing upstream only when a current
+hub candidate proves the head is in the base repository, the
+checked-out branch is the PR head or synthetic branch, and the remote-tracking
+ref exists.
 
-Test fixtures that seed PR rows must either carry a same-repo
-`HeadRepoCloneURL` or publish `refs/pull/<n>/head` on the fixture remote:
-unknown-provenance setup resolves heads exclusively through the fork-safe ref
-and fails outright when the remote does not serve it.
+Test fixtures exercising a provider-backed lifecycle must seed the matching
+launch specification even when they also seed hub PR rows. A same-repo
+specification requires the synthetic `refs/pull/<n>/head` on the fixture base
+remote; an unknown-head specification fails closed before Git, while a fork
+specification carries the exact fork clone URL and branch that setup must fetch.
 
 ## Pushed-Head Refresh Convergence
 

@@ -4,133 +4,270 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
 	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/fleet"
 )
 
-// buildFleetSnapshot builds the enriched snapshot. When includePeers
-// is true it fans out to every configured peer's raw snapshot
-// concurrently — HTTP peers over their base URLs, SSH peers over the
-// CLI relay. All peers merge through the same path and enrich once.
-// The hub never asks peers to fan out, so federation cannot loop; the
-// raw endpoint never includes peers.
-func (s *Handler) buildFleetSnapshot(ctx context.Context, includePeers bool) (fleet.Snapshot, error) {
+const maxFederationSnapshotBytes = 32 << 20
+
+// buildFleetSnapshot projects one observer-relative view. Hubs build
+// the neutral aggregate from member raw snapshots; nodes consume that one
+// aggregate and replace their own entries with fresh local authority.
+func (s *Handler) buildFleetSnapshot(
+	ctx context.Context,
+	includePeers bool,
+) (fleet.Snapshot, error) {
 	local, err := s.buildLocalRaw(ctx)
 	if err != nil {
 		return fleet.Snapshot{}, err
 	}
+	fleetConfig := s.configSnapshot().Fleet
+	role := fleet.RoleHub
+	aggregate := fleet.BuildNeutralAggregate(local, nil)
+	aggregateIncomplete := false
 
-	fleetCfg := s.configSnapshot().Fleet
-	selfKey := s.fleetSelfKey(local.Host.Hostname)
-
-	var results []fleet.PeerResult
-	if includePeers && fleetCfg.Enabled && len(fleetCfg.Peers) > 0 {
-		results = append(results, s.fetchPeerResults(ctx, fleetCfg)...)
+	if fleetConfig.RoleOrDefault() == config.FleetRoleHub {
+		aggregate, err = s.buildHubAggregate(
+			ctx, local, includePeers, fleetConfig.PeerTimeoutOrDefault(),
+		)
+		if err != nil {
+			return fleet.Snapshot{}, err
+		}
+	} else {
+		role = fleet.RoleSpoke
+		if includePeers && fleetConfig.Enabled && fleetConfig.Hub != nil {
+			if !s.federationActive {
+				aggregateIncomplete = true
+				message := strings.TrimSpace(s.federationUnavailableReason)
+				if message == "" {
+					message = "hub activation required"
+				}
+				aggregate = fleet.BuildNeutralAggregate(local, []fleet.PeerResult{{
+					NodeID:     fleet.NodeID(fleetConfig.Hub.NodeID),
+					Name:       fleetConfig.Hub.Name,
+					BaseURL:    fleetConfig.Hub.BaseURL,
+					Role:       fleet.RoleHub,
+					ObservedAt: s.now().UTC().Format(time.RFC3339),
+					Err:        &message,
+				}})
+			} else {
+				memberTimeout := fleetConfig.PeerTimeoutOrDefault()
+				aggregate, err = s.fetchHubAggregate(
+					ctx, *fleetConfig.Hub,
+					hubAggregateTimeout(memberTimeout), memberTimeout,
+				)
+				if err != nil {
+					aggregateIncomplete = true
+					message := "hub aggregate unavailable: " + err.Error()
+					aggregate = fleet.BuildNeutralAggregate(local, []fleet.PeerResult{{
+						NodeID:     fleet.NodeID(fleetConfig.Hub.NodeID),
+						Name:       fleetConfig.Hub.Name,
+						BaseURL:    fleetConfig.Hub.BaseURL,
+						Role:       fleet.RoleHub,
+						ObservedAt: s.now().UTC().Format(time.RFC3339),
+						Err:        &message,
+					}})
+				}
+			}
+		}
 	}
-	if includePeers && fleetCfg.Enabled {
-		results = append(results, s.fetchSSHPeerResults(ctx)...)
-	}
 
-	merged := fleet.Merge(local, selfKey, results)
-	return fleet.BuildEnriched(merged, selfKey,
-		s.sshFleet.connectionState,
-		s.fleetAvailabilityPolicy(),
-		fleet.DefaultIdentity()), nil
+	snapshot := fleet.ProjectForObserver(
+		aggregate,
+		local,
+		fleet.Observer{NodeID: local.NodeID, Role: role},
+	)
+	snapshot.AggregateIncomplete = aggregateIncomplete
+	return snapshot, nil
 }
 
-// fetchPeerResults fans out to each configured HTTP peer's /raw concurrently,
-// returning one result per peer (degraded results for unreachable peers).
-func (s *Handler) fetchPeerResults(ctx context.Context, fleetCfg config.Fleet) []fleet.PeerResult {
-	timeout := fleetCfg.PeerTimeoutOrDefault()
-	results := make([]fleet.PeerResult, len(fleetCfg.Peers))
-	var wg sync.WaitGroup
-	for i, p := range fleetCfg.Peers {
-		wg.Add(1)
-		go func(i int, p config.FleetPeer) {
-			defer wg.Done()
-			results[i] = s.fetchPeerRaw(ctx, p, timeout)
-		}(i, p)
+func hubAggregateTimeout(memberTimeout time.Duration) time.Duration {
+	return 2 * memberTimeout
+}
+
+func (s *Handler) buildHubAggregate(
+	ctx context.Context,
+	local fleet.RawSnapshot,
+	includeMembers bool,
+	memberTimeout time.Duration,
+) (fleet.NeutralSnapshot, error) {
+	fleetConfig := s.configSnapshot().Fleet
+	var results []fleet.PeerResult
+	if includeMembers && fleetConfig.Enabled && len(fleetConfig.Members) > 0 {
+		results = s.fetchMemberResults(ctx, fleetConfig, memberTimeout)
 	}
-	wg.Wait()
+	aggregate := fleet.BuildNeutralAggregate(local, results)
+	return fleet.EnrichProviderState(ctx, s.db, aggregate)
+}
+
+// fetchMemberResults fans out to each active member's raw endpoint.
+func (s *Handler) fetchMemberResults(
+	ctx context.Context,
+	fleetConfig config.Fleet,
+	timeout time.Duration,
+) []fleet.PeerResult {
+	results := make([]fleet.PeerResult, len(fleetConfig.Members))
+	var wait sync.WaitGroup
+	for index, member := range fleetConfig.Members {
+		wait.Add(1)
+		go func(index int, member config.FleetMember) {
+			defer wait.Done()
+			results[index] = s.fetchMemberRaw(ctx, member, timeout)
+		}(index, member)
+	}
+	wait.Wait()
 	return results
 }
 
-// fleetAvailabilityPolicy reflects actual routing per host. The local host
-// and configured peers take every operation over the local API or the
-// fleet proxies, so they fall through to real capabilities. A host the
-// hub cannot route to (e.g. one that appeared in a peer's snapshot but
-// is not configured here) is read-only: advertising mutations would
-// 404 at dispatch, so they are suppressed here.
-func (s *Handler) fleetAvailabilityPolicy() fleet.AvailabilityPolicy {
-	return hubRoutabilityPolicy{s: s}
-}
-
-type hubRoutabilityPolicy struct {
-	s *Handler
-}
-
-// Apply is the uniform (local-host) pass: the local host serves
-// every operation directly, so no overrides apply. Remote hosts go
-// through ForHost instead.
-func (hubRoutabilityPolicy) Apply(map[string]fleet.HostOperationAvailability, bool) {}
-
-// ForHost suppresses unroutable operations for hosts the hub cannot reach
-// over a fleet proxy route.
-func (p hubRoutabilityPolicy) ForHost(hostKey string) fleet.AvailabilityPolicy {
-	if _, ok := p.s.resolveFleetHostTarget(hostKey); ok {
-		return fleet.RealCapabilityPolicy{}
+// fetchMemberRaw captures every peer failure as a degraded result so one bad
+// member cannot fail the hub's aggregate.
+func (s *Handler) fetchMemberRaw(
+	ctx context.Context,
+	member config.FleetMember,
+	timeout time.Duration,
+) fleet.PeerResult {
+	result := fleet.PeerResult{
+		NodeID: fleet.NodeID(member.NodeID), Name: member.Name,
+		BaseURL:    member.BaseURL,
+		Role:       fleet.RoleSpoke,
+		ObservedAt: s.now().UTC().Format(time.RFC3339),
 	}
-	return fleet.HubReadOnlyPolicy{
-		Ops:    fleet.DefaultMutationOps(),
-		Reason: "This host is read-only from here: the hub has no route to carry this operation to it.",
+	target, ok := s.resolveEnrolledSpoke(member)
+	if !ok {
+		result.Err = new("federation credential unavailable")
+		return result
 	}
-}
-
-// fetchPeerRaw fetches a single peer's raw snapshot over HTTP. Any failure
-// (request, transport, non-2xx, decode, schema mismatch) is captured as a
-// degraded result with Reachable=false and Err set — never an error return,
-// so one bad peer cannot fail the whole fan-out.
-func (s *Handler) fetchPeerRaw(ctx context.Context, p config.FleetPeer, timeout time.Duration) fleet.PeerResult {
-	res := fleet.PeerResult{
-		Key:        p.Key,
-		Name:       p.Name,
-		BaseURL:    p.BaseURL,
-		ObservedAt: time.Now().UTC().Format(time.RFC3339),
-	}
-	cctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	req, err := http.NewRequestWithContext(cctx, http.MethodGet, p.BaseURL+"/api/v1/snapshot/raw", nil)
+	raw, err := s.fetchRawSnapshot(ctx, target, timeout)
 	if err != nil {
-		res.Err = errPtr(err)
-		return res
+		result.Err = errPtr(err)
+		return result
 	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		res.Err = errPtr(err)
-		return res
+	if raw.NodeID != result.NodeID {
+		result.Err = new("member snapshot node ID does not match enrollment")
+		return result
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode/100 != 2 {
-		res.Err = new(fmt.Sprintf("peer returned HTTP %d", resp.StatusCode))
-		return res
-	}
+	result.Reachable = true
+	result.Platform = raw.Host.Platform
+	result.Raw = &raw
+	return result
+}
+
+func (s *Handler) fetchRawSnapshot(
+	ctx context.Context,
+	target fleetHostTarget,
+	timeout time.Duration,
+) (fleet.RawSnapshot, error) {
 	var raw fleet.RawSnapshot
-	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
-		res.Err = new("decode raw snapshot: " + err.Error())
-		return res
+	err := s.fetchFederationJSON(
+		ctx, target, target.clients.rest, timeout, "/api/v1/snapshot/raw", &raw,
+	)
+	if err != nil {
+		return fleet.RawSnapshot{}, err
 	}
-	if raw.SchemaVersion != fleet.SchemaVersion {
-		res.Err = new(fmt.Sprintf("unsupported schemaVersion %d", raw.SchemaVersion))
-		return res
+	if raw.ProtocolVersion != federation.ProtocolVersion {
+		return fleet.RawSnapshot{}, fmt.Errorf(
+			"unsupported protocolVersion %d", raw.ProtocolVersion,
+		)
 	}
-	res.Reachable = true
-	res.Platform = raw.Host.Platform
-	res.Raw = &raw
-	return res
+	return raw, nil
 }
 
-func errPtr(e error) *string { s := e.Error(); return &s }
+func (s *Handler) fetchHubAggregate(
+	ctx context.Context,
+	hub config.FleetHub,
+	timeout time.Duration,
+	memberTimeout time.Duration,
+) (fleet.NeutralSnapshot, error) {
+	member := config.FleetMember{
+		NodeID: hub.NodeID, Name: hub.Name,
+		BaseURL: hub.BaseURL, State: federation.EnrollmentActive,
+	}
+	target, ok := s.resolveEnrolledMember(member)
+	if !ok {
+		return fleet.NeutralSnapshot{}, fmt.Errorf("federation credential unavailable")
+	}
+	var aggregate fleet.NeutralSnapshot
+	query := url.Values{"member_timeout": {memberTimeout.String()}}
+	if err := s.fetchFederationJSON(
+		ctx, target, target.clients.proxy, timeout,
+		"/api/v1/snapshot/aggregate?"+query.Encode(), &aggregate,
+	); err != nil {
+		return fleet.NeutralSnapshot{}, err
+	}
+	if aggregate.ProtocolVersion != federation.ProtocolVersion {
+		return fleet.NeutralSnapshot{}, fmt.Errorf(
+			"unsupported protocolVersion %d", aggregate.ProtocolVersion,
+		)
+	}
+	if !neutralSnapshotContainsNode(aggregate, fleet.NodeID(hub.NodeID)) {
+		return fleet.NeutralSnapshot{}, fmt.Errorf(
+			"hub aggregate does not contain its enrolled node ID",
+		)
+	}
+	return aggregate, nil
+}
+
+func (s *Handler) fetchFederationJSON(
+	ctx context.Context,
+	target fleetHostTarget,
+	client *http.Client,
+	timeout time.Duration,
+	path string,
+	destination any,
+) error {
+	requestContext, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	request, err := http.NewRequestWithContext(
+		requestContext, http.MethodGet, target.member.BaseURL+path, nil,
+	)
+	if err != nil {
+		return err
+	}
+	s.authorizeFederationRequest(request.Header, target.credential)
+	response, err := client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode/100 != 2 {
+		return fmt.Errorf("peer returned HTTP %d", response.StatusCode)
+	}
+	body, err := io.ReadAll(io.LimitReader(
+		response.Body, maxFederationSnapshotBytes+1,
+	))
+	if err != nil {
+		return fmt.Errorf("read federation snapshot: %w", err)
+	}
+	if len(body) > maxFederationSnapshotBytes {
+		return fmt.Errorf("federation snapshot exceeds response limit")
+	}
+	if err := json.Unmarshal(body, destination); err != nil {
+		return fmt.Errorf("decode federation snapshot: %w", err)
+	}
+	return nil
+}
+
+func neutralSnapshotContainsNode(
+	aggregate fleet.NeutralSnapshot,
+	nodeID fleet.NodeID,
+) bool {
+	for _, host := range aggregate.Hosts {
+		if host.NodeID == nodeID {
+			return true
+		}
+	}
+	return false
+}
+
+func errPtr(err error) *string {
+	message := err.Error()
+	return &message
+}

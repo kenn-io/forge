@@ -27,6 +27,7 @@ const (
 
 	metadataHost          = "host"
 	metadataPort          = "port"
+	metadataNodeID        = "node_id"
 	metadataReadOnly      = "read_only"
 	metadataRequireAuth   = "require_auth"
 	metadataDataDir       = "data_dir"
@@ -203,6 +204,10 @@ func NewIdentity(address net.Addr, opts IdentityOptions) (Identity, error) {
 	if err != nil {
 		return Identity{}, err
 	}
+	nodeID, err := runtimelock.EnsureNodeID(dataDir)
+	if err != nil {
+		return Identity{}, fmt.Errorf("ensure daemon node ID: %w", err)
+	}
 	host := tcpAddress.IP.String()
 	port := strconv.Itoa(tcpAddress.Port)
 	basePath := canonicalBasePath(opts.BasePath)
@@ -214,6 +219,7 @@ func NewIdentity(address net.Addr, opts IdentityOptions) (Identity, error) {
 	record.Metadata = map[string]string{
 		metadataHost:        host,
 		metadataPort:        port,
+		metadataNodeID:      nodeID,
 		metadataReadOnly:    strconv.FormatBool(false),
 		metadataRequireAuth: strconv.FormatBool(opts.RequireAuth),
 		metadataDataDir:     dataDir,
@@ -231,6 +237,7 @@ func NewIdentity(address net.Addr, opts IdentityOptions) (Identity, error) {
 		Record: record,
 		LockMetadata: runtimelock.Metadata{
 			PID:           record.PID,
+			NodeID:        nodeID,
 			Host:          host,
 			Port:          tcpAddress.Port,
 			ListenAddr:    record.Address,

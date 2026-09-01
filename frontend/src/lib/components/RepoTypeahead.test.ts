@@ -84,6 +84,38 @@ describe("RepoTypeahead", () => {
     expect(trigger.querySelector(".typeahead-mobile-icon")).toBeTruthy();
   });
 
+  it("renders a selected repository as owner/name with its full identity available", () => {
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "example-labs",
+        name: "atlas",
+        repo_path: "example-labs/atlas",
+        is_glob: false,
+        matched_repo_count: 1,
+        hidden_from_ui: false,
+      },
+    ]);
+
+    const { container } = render(RepoTypeahead, {
+      props: {
+        selected: "github|github.com/example-labs/atlas",
+        onchange: vi.fn(),
+      },
+    });
+
+    const trigger = screen.getByRole("button", {
+      name: "Select repository: github/github.com/example-labs/atlas",
+    });
+    expect(trigger.textContent?.trim()).toBe("example-labs/atlas");
+    expect(container.querySelector(".typeahead-value")?.getAttribute("title")).toBe(
+      "github/github.com/example-labs/atlas",
+    );
+    expect(container.querySelector(".typeahead-repo-owner")?.textContent).toBe("example-labs/");
+    expect(container.querySelector(".typeahead-repo-name")?.textContent).toBe("atlas");
+  });
+
   it("updates dropdown options when configured repos change", async () => {
     render(RepoTypeahead, {
       props: {

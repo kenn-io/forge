@@ -7,13 +7,16 @@
   import { isEmbedded } from "../../stores/embed-config.svelte.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import { SettingsWorkflow, settingsErrorMessage } from "../../stores/settings-workflow.js";
+  import SettingsOwnerNotice from "./SettingsOwnerNotice.svelte";
+  import type { SettingsOwner } from "./settingsOwnership.js";
 
   interface Props {
     detail: DetailSettingsType;
     onUpdate: (detail: DetailSettingsType) => void;
+    owner?: SettingsOwner;
   }
 
-  let { detail, onUpdate }: Props = $props();
+  let { detail, onUpdate, owner = "local" }: Props = $props();
   const runtime = getAppRuntime();
   const { settings: settingsStore } = getStores();
   const embedded = isEmbedded();
@@ -60,6 +63,8 @@
     );
   }
 </script>
+
+<SettingsOwnerNotice {owner} subject="Detail policy" />
 
 <div class="setting-row">
   <div class="setting-copy">

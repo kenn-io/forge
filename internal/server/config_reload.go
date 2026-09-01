@@ -55,11 +55,16 @@ type startupConfigSnapshot struct {
 	AllowedHosts                    []config.HostKey
 	TrustReverseProxy               bool
 	ProviderHosts                   []tokenauth.Key
+	PlatformTransports              []startupPlatformTransport
 	// GitHubCredentialRoutes records the scoped client routes built at startup.
 	// Adding, removing, or changing a route descriptor requires rebuilding the
 	// bounded client pool and re-resolving authenticated identity. Token values
 	// may still rotate underneath an unchanged env/file descriptor.
 	GitHubCredentialRoutes []tokenauth.Descriptor
+	// GitHubArchiveCredentialRoutes records the dedicated archive client routes
+	// built at startup. Archive clients and their quota trackers are also
+	// startup-bound, so archive App changes require a restart.
+	GitHubArchiveCredentialRoutes []tokenauth.Descriptor
 	// GitHubAppSplitHosts lists hosts whose effective credential chain
 	// resolves sync reads through a GitHub App installation token.
 	// Split topology is startup-bound: write rate trackers and the
@@ -76,8 +81,23 @@ type startupConfigSnapshot struct {
 	Tmux            config.Tmux
 	Shell           config.Shell
 	FleetSessions   config.FleetSessions
+	FleetRole       config.FleetRole
+	FleetBaseURL    string
+	Hub             *fleetHubStartupBinding
 	RequireAuth     bool
-	SSHPeers        []config.FleetSSHPeer
+	TailscaleServe  config.TailscaleServeAPI
+}
+
+type fleetHubStartupBinding struct {
+	NodeID  string
+	BaseURL string
+}
+
+type startupPlatformTransport struct {
+	Platform      string
+	Host          string
+	BaseURL       string
+	AllowInsecure bool
 }
 
 func snapshotStartupConfig(cfg *config.Config) startupConfigSnapshot {
@@ -99,7 +119,9 @@ func snapshotStartupConfig(cfg *config.Config) startupConfigSnapshot {
 		AllowedHosts:                    startupAllowedHosts(cfg),
 		TrustReverseProxy:               cfg.TrustReverseProxy,
 		ProviderHosts:                   startupProviderHosts(cfg),
+		PlatformTransports:              startupPlatformTransports(cfg),
 		GitHubCredentialRoutes:          githubCredentialRoutes(cfg),
+		GitHubArchiveCredentialRoutes:   githubArchiveCredentialRoutes(cfg),
 		GitHubAppSplitHosts:             githubAppSplitHosts(cfg),
 		RoborevEndpoint:                 cfg.RoborevEndpoint(),
 	}
@@ -110,12 +132,45 @@ func snapshotStartupConfig(cfg *config.Config) startupConfigSnapshot {
 	}
 	snap.Shell.Command = slices.Clone(cfg.Shell.Command)
 	snap.TokenEnvNames = startupBoundTokenEnvNames(cfg)
-	// API auth, fleet session monitoring, and the ssh peer set are
-	// wired in newServer, so edits require a restart.
+	// API auth, private-ingress policy, fleet identity, and session monitoring
+	// are wired at startup, so edits require a restart.
 	snap.FleetSessions = cfg.Fleet.Sessions
+	snap.FleetRole = cfg.Fleet.RoleOrDefault()
+	snap.FleetBaseURL = cfg.Fleet.BaseURL
+	if cfg.Fleet.Hub != nil {
+		snap.Hub = &fleetHubStartupBinding{
+			NodeID:  cfg.Fleet.Hub.NodeID,
+			BaseURL: cfg.Fleet.Hub.BaseURL,
+		}
+	}
 	snap.RequireAuth = cfg.API.RequireAuth
-	snap.SSHPeers = slices.Clone(cfg.Fleet.SSHPeers)
+	snap.TailscaleServe = cfg.API.TailscaleServe
+	snap.TailscaleServe.AllowedUsers = slices.Clone(
+		cfg.API.TailscaleServe.AllowedUsers,
+	)
 	return snap
+}
+
+func startupPlatformTransports(cfg *config.Config) []startupPlatformTransport {
+	if cfg == nil {
+		return nil
+	}
+	transports := make([]startupPlatformTransport, 0, len(cfg.Platforms))
+	for _, configured := range cfg.Platforms {
+		transports = append(transports, startupPlatformTransport{
+			Platform:      configured.Type,
+			Host:          configured.Host,
+			BaseURL:       configured.BaseURL,
+			AllowInsecure: configured.AllowInsecure,
+		})
+	}
+	slices.SortFunc(transports, func(a, b startupPlatformTransport) int {
+		if cmp := strings.Compare(a.Platform, b.Platform); cmp != 0 {
+			return cmp
+		}
+		return strings.Compare(a.Host, b.Host)
+	})
+	return transports
 }
 
 func startupAllowedHosts(cfg *config.Config) []config.HostKey {
@@ -178,6 +233,32 @@ func githubCredentialRoutes(cfg *config.Config) []tokenauth.Descriptor {
 		}
 		seen[key] = struct{}{}
 		routes = append(routes, plan.Descriptor)
+	}
+	slices.SortFunc(routes, func(a, b tokenauth.Descriptor) int {
+		if cmp := strings.Compare(a.Key.Host, b.Key.Host); cmp != 0 {
+			return cmp
+		}
+		return strings.Compare(a.Key.Scope, b.Key.Scope)
+	})
+	return routes
+}
+
+func githubArchiveCredentialRoutes(cfg *config.Config) []tokenauth.Descriptor {
+	if cfg == nil {
+		return nil
+	}
+	seen := make(map[tokenauth.Key]struct{})
+	var routes []tokenauth.Descriptor
+	for _, plan := range cfg.ProviderTokenSources() {
+		key := plan.ArchiveDescriptor.Key
+		if key.Platform != string(platform.KindGitHub) || key.Scope == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		routes = append(routes, plan.ArchiveDescriptor)
 	}
 	slices.SortFunc(routes, func(a, b tokenauth.Descriptor) int {
 		if cmp := strings.Compare(a.Key.Host, b.Key.Host); cmp != 0 {
@@ -417,7 +498,7 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 	if s.syncer != nil {
 		previous = s.syncer.TrackedRepos()
 	}
-	resolved, skipped := s.resolveReposForReload(ctx, newCfg.Repos, previous)
+	resolved, skipped := s.resolveReposForReload(ctx, newCfg, previous)
 	if len(skipped) > 0 {
 		slog.Info(
 			"config reload: skipping repos for unknown platform hosts",
@@ -633,6 +714,11 @@ func (s *Server) validateReloadProviderTokenSources(
 			continue
 		}
 		desc := plan.Descriptor
+		if plan.ArchiveOnly {
+			// Archive-only routes deliberately have no ordinary PAT. Their
+			// required credential is the independent archive App source.
+			desc = plan.ArchiveDescriptor
+		}
 		if s.syncer != nil {
 			registry := s.syncer.Registry()
 			if registry == nil {
@@ -692,8 +778,11 @@ func cloneReloadedConfig(in *config.Config) config.Config {
 		out.Tmux.AgentSessions = &v
 	}
 	out.Shell.Command = slices.Clone(in.Shell.Command)
-	out.Fleet.Peers = slices.Clone(in.Fleet.Peers)
-	out.Fleet.SSHPeers = slices.Clone(in.Fleet.SSHPeers)
+	out.Fleet.Members = slices.Clone(in.Fleet.Members)
+	if in.Fleet.Hub != nil {
+		hub := *in.Fleet.Hub
+		out.Fleet.Hub = &hub
+	}
 	return out
 }
 
@@ -704,7 +793,7 @@ func cloneReloadedConfig(in *config.Config) config.Config {
 // display string for logging.
 func (s *Server) resolveReposForReload(
 	ctx context.Context,
-	repos []config.Repo,
+	cfg *config.Config,
 	previous []ghclient.RepoRef,
 ) ([]ghclient.RepoRef, []string) {
 	if s.syncer == nil {
@@ -713,7 +802,7 @@ func (s *Server) resolveReposForReload(
 	set := ghclient.NewExpandedRepoSet()
 	skipped := make([]string, 0)
 
-	for _, raw := range repos {
+	for _, raw := range cfg.Repos {
 		host := raw.PlatformHostOrDefault()
 		kind := platform.Kind(raw.PlatformOrDefault())
 		if _, err := s.syncer.RepositoryReader(kind, host); err != nil {
@@ -728,8 +817,13 @@ func (s *Server) resolveReposForReload(
 			))
 			continue
 		}
+		resolveCtx := ctx
+		if kind == platform.KindGitHub &&
+			cfg.ResolveGitHubArchiveTokenSource(raw).Key.Host != "" {
+			resolveCtx = ghclient.WithArchiveSyncBudget(ctx)
+		}
 		_, expanded, err := ghclient.ResolveConfiguredRepoWithRegistry(
-			ctx, s.syncer.SyncRegistry(), raw,
+			resolveCtx, s.syncer.SyncRegistry(), raw,
 		)
 		if err != nil {
 			// Network failure or transient API error: fall back to a

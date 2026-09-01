@@ -35,6 +35,13 @@ const mkPR = (overrides: Record<string, unknown>): PullRequest =>
     ...overrides,
   }) as unknown as PullRequest;
 
+// jsdom reports zero layout widths, so tests choose whether the title is
+// ellipsis-truncated by stubbing the measurements the popover gate reads.
+function setElementWidths(el: Element, widths: { scrollWidth: number; clientWidth: number }): void {
+  Object.defineProperty(el, "scrollWidth", { configurable: true, value: widths.scrollWidth });
+  Object.defineProperty(el, "clientWidth", { configurable: true, value: widths.clientWidth });
+}
+
 function renderItem(pr: PullRequest, useWorkspaceActivityForRecency = false): void {
   render(PullItem, {
     props: {
@@ -418,7 +425,7 @@ describe("PullItem compact layout", () => {
     expect(document.querySelector(".meta-left .meta-text")?.textContent).toBe("alice");
   });
 
-  it("shows the full title after sustained row hover", async () => {
+  it("shows the full title after sustained row hover when the title is truncated", async () => {
     vi.useFakeTimers();
     try {
       renderItem(
@@ -428,6 +435,7 @@ describe("PullItem compact layout", () => {
         }),
       );
       const row = screen.getByRole("button", { name: /A pull request title too long for the sidebar/i });
+      setElementWidths(row.querySelector(".title-text")!, { scrollWidth: 320, clientWidth: 160 });
 
       await fireEvent.mouseEnter(row);
       await vi.advanceTimersByTimeAsync(599);
@@ -443,6 +451,21 @@ describe("PullItem compact layout", () => {
       expect(row.contains(tooltip)).toBe(false);
 
       await fireEvent.mouseLeave(row);
+      expect(screen.queryByRole("tooltip")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows no hover popover when the title fits the row", async () => {
+    vi.useFakeTimers();
+    try {
+      renderItem(mkPR({ Title: "Short title" }));
+      const row = screen.getByRole("button", { name: /Short title/i });
+      setElementWidths(row.querySelector(".title-text")!, { scrollWidth: 160, clientWidth: 160 });
+
+      await fireEvent.mouseEnter(row);
+      await vi.advanceTimersByTimeAsync(1000);
       expect(screen.queryByRole("tooltip")).toBeNull();
     } finally {
       vi.useRealTimers();

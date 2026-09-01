@@ -16,6 +16,7 @@ import (
 	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/internal/workspace"
@@ -243,16 +244,24 @@ func (s *Handler) createPullWorkspaceRouteCore(
 	if err != nil {
 		return nil, err
 	}
-
-	ws, err := s.workspaces.Create(
+	spec, err := s.resolveWorkspaceLaunchSpec(
 		ctx,
-		provider,
-		input.Body.PlatformHost,
-		input.Body.Owner,
-		input.Body.Name,
-		input.Body.MRNumber,
+		providerplane.RepositoryRoute{
+			Provider: provider, PlatformHost: input.Body.PlatformHost,
+			Owner: input.Body.Owner, Name: input.Body.Name,
+		},
+		db.WorkspaceItemTypePullRequest, input.Body.MRNumber, "", false,
 	)
 	if err != nil {
+		return nil, workspaceLaunchSpecProblem(err)
+	}
+
+	ws, err := s.workspaces.CreateFromLaunchSpec(ctx, spec)
+	if err != nil {
+		if errors.Is(err, workspace.ErrLaunchSpecSourceHidden) ||
+			errors.Is(err, workspace.ErrLaunchSpecRefreshRequired) {
+			return nil, workspaceLaunchSpecProblem(err)
+		}
 		if problem := repositoryRouteFenceProblem(err); problem != nil {
 			return nil, problem
 		}
@@ -269,31 +278,21 @@ func (s *Handler) createPullWorkspaceRouteCore(
 		return nil, httpapi.Internal("create workspace: " + err.Error())
 	}
 
-	if s.configSnapshot().AutoAssignOnCreate && !input.Body.SuppressAutoAssign {
-		repo, lookupErr := s.lookupRepoByProviderRoute(
-			ctx, provider, input.Body.PlatformHost, input.Body.Owner, input.Body.Name,
+	if assignErr := s.autoAssignWorkspaceItemForRoute(ctx, ProviderWorkspaceItemRequest{
+		Repository: providerplane.RepositoryRoute{
+			Provider: spec.Repository.Provider, PlatformHost: spec.Repository.PlatformHost,
+			Owner: spec.Repository.Owner, Name: spec.Repository.Name,
+		},
+		ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: input.Body.MRNumber,
+	}, input.Body.SuppressAutoAssign); assignErr != nil {
+		slog.Warn("automatically assign pull request workspace",
+			"provider", spec.Repository.Provider,
+			"platform_host", spec.Repository.PlatformHost,
+			"owner", spec.Repository.Owner,
+			"name", spec.Repository.Name,
+			"number", input.Body.MRNumber,
+			"err", assignErr,
 		)
-		if lookupErr != nil {
-			slog.Warn("lookup pull request for automatic workspace assignment",
-				"provider", provider,
-				"platform_host", input.Body.PlatformHost,
-				"owner", input.Body.Owner,
-				"name", input.Body.Name,
-				"number", input.Body.MRNumber,
-				"err", lookupErr,
-			)
-		} else if assignErr := s.autoAssignWorkspaceItem(
-			ctx, *repo, input.Body.MRNumber, false, input.Body.SuppressAutoAssign,
-		); assignErr != nil {
-			slog.Warn("automatically assign pull request workspace",
-				"provider", repo.Platform,
-				"platform_host", repo.PlatformHost,
-				"owner", repo.Owner,
-				"name", repo.Name,
-				"number", input.Body.MRNumber,
-				"err", assignErr,
-			)
-		}
 	}
 
 	s.runWorkspaceSetup(ws)
@@ -311,6 +310,27 @@ func (s *Handler) createPullWorkspaceRouteCore(
 		Status: http.StatusAccepted,
 		Body:   resp,
 	}, nil
+}
+
+func workspaceLaunchSpecProblem(err error) error {
+	if problem, ok := errors.AsType[*httpapi.ProblemError](err); ok {
+		return problem
+	}
+	switch {
+	case errors.Is(err, workspace.ErrLaunchSpecSourceHidden):
+		return httpapi.NotFound(
+			httpapi.CodeNotFound, "workspace source item is not visible", nil,
+		)
+	case errors.Is(err, providerplane.ErrHubUnavailable),
+		errors.Is(err, providerplane.ErrCredentialUnavailable),
+		errors.Is(err, workspace.ErrLaunchSpecResolverMissing),
+		errors.Is(err, workspace.ErrLaunchSpecRefreshRequired):
+		return httpapi.HubUnavailable(
+			"workspace provider facts are unavailable because the federation hub cannot be reached",
+		)
+	default:
+		return httpapi.Internal("resolve workspace launch specification: " + err.Error())
+	}
 }
 
 func (s *Handler) createWorkspaceProvider(
@@ -580,19 +600,14 @@ func (s *Handler) createIssueWorkspaceRouteCore(
 			"reuse_existing_branch and reuse_existing_directory are mutually exclusive",
 		)
 	}
-	repo, err := s.lookupRepoByProviderRoute(
-		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
-	)
+	provider, err := normalizeRouteProvider(input.Provider)
 	if err != nil {
-		return nil, providerRouteLookupError(err)
+		return nil, httpapi.Validation("path.provider", err.Error())
 	}
 
 	existing, err := s.workspaces.GetByIssueForProvider(
 		ctx,
-		repo.Platform,
-		repo.PlatformHost,
-		repo.Owner,
-		repo.Name,
+		provider, input.PlatformHost, input.Owner, input.Name,
 		input.Number,
 	)
 	if err != nil {
@@ -611,21 +626,51 @@ func (s *Handler) createIssueWorkspaceRouteCore(
 			Body:   s.toWorkspaceResponse(ctx, summary),
 		}, nil
 	}
-
-	ws, err := s.workspaces.CreateIssue(
+	spec, err := s.resolveWorkspaceLaunchSpec(
 		ctx,
-		repo.PlatformHost,
-		repo.Owner,
-		repo.Name,
-		input.Number,
+		providerplane.RepositoryRoute{
+			Provider: provider, PlatformHost: input.PlatformHost,
+			Owner: input.Owner, Name: input.Name,
+		},
+		db.WorkspaceItemTypeIssue, input.Number,
+		strings.TrimSpace(derefString(input.Body.GitHeadRef)),
+		s.configSnapshot().IssueBranchSlug,
+	)
+	if err != nil {
+		return nil, workspaceLaunchSpecProblem(err)
+	}
+	existing, err = s.workspaces.GetByLaunchSpecIdentity(ctx, spec)
+	if err != nil {
+		return nil, httpapi.Internal("lookup existing issue workspace identity: " + err.Error())
+	}
+	if existing != nil {
+		summary, getErr := s.workspaces.GetSummary(ctx, existing.ID)
+		if getErr != nil {
+			return nil, httpapi.Internal("get workspace summary: " + getErr.Error())
+		}
+		if summary == nil {
+			return nil, httpapi.Internal("workspace summary missing for existing workspace")
+		}
+		return &createWorkspaceOutput{
+			Status: http.StatusAccepted,
+			Body:   s.toWorkspaceResponse(ctx, summary),
+		}, nil
+	}
+
+	ws, err := s.workspaces.CreateIssueFromLaunchSpec(
+		ctx, spec,
 		workspace.CreateIssueOptions{
-			Provider:               input.Provider,
+			Provider:               provider,
 			GitHeadRef:             strings.TrimSpace(derefString(input.Body.GitHeadRef)),
 			ReuseExistingBranch:    input.Body.ReuseExistingBranch,
 			ReuseExistingDirectory: input.Body.ReuseExistingDirectory,
 		},
 	)
 	if err != nil {
+		if errors.Is(err, workspace.ErrLaunchSpecSourceHidden) ||
+			errors.Is(err, workspace.ErrLaunchSpecRefreshRequired) {
+			return nil, workspaceLaunchSpecProblem(err)
+		}
 		if problem := repositoryRouteFenceProblem(err); problem != nil {
 			return nil, problem
 		}
@@ -688,10 +733,10 @@ func (s *Handler) createIssueWorkspaceRouteCore(
 		if strings.Contains(msg, "UNIQUE constraint") {
 			existing, getErr := s.workspaces.GetByIssueForProvider(
 				ctx,
-				repo.Platform,
-				repo.PlatformHost,
-				repo.Owner,
-				repo.Name,
+				spec.Repository.Provider,
+				spec.Repository.PlatformHost,
+				spec.Repository.Owner,
+				spec.Repository.Name,
 				input.Number,
 			)
 			if getErr == nil && existing != nil {
@@ -708,14 +753,18 @@ func (s *Handler) createIssueWorkspaceRouteCore(
 	}
 
 	createdBranch := ws.WorkspaceBranch != ""
-	if assignErr := s.autoAssignWorkspaceItem(
-		ctx, *repo, input.Number, true, input.Body.SuppressAutoAssign,
-	); assignErr != nil {
+	if assignErr := s.autoAssignWorkspaceItemForRoute(ctx, ProviderWorkspaceItemRequest{
+		Repository: providerplane.RepositoryRoute{
+			Provider: spec.Repository.Provider, PlatformHost: spec.Repository.PlatformHost,
+			Owner: spec.Repository.Owner, Name: spec.Repository.Name,
+		},
+		ItemType: db.WorkspaceItemTypeIssue, ItemNumber: input.Number,
+	}, input.Body.SuppressAutoAssign); assignErr != nil {
 		slog.Warn("automatically assign issue workspace",
-			"provider", repo.Platform,
-			"platform_host", repo.PlatformHost,
-			"owner", repo.Owner,
-			"name", repo.Name,
+			"provider", spec.Repository.Provider,
+			"platform_host", spec.Repository.PlatformHost,
+			"owner", spec.Repository.Owner,
+			"name", spec.Repository.Name,
 			"number", input.Number,
 			"err", assignErr,
 		)
@@ -1009,9 +1058,6 @@ func (s *Handler) refreshWorkspace(
 	if s.workspaces == nil {
 		return nil, httpapi.ServiceUnavailable("workspace manager not configured")
 	}
-	if s.syncer == nil {
-		return nil, httpapi.ServiceUnavailable("syncer not configured")
-	}
 
 	summary, err := s.workspaces.GetSummary(ctx, input.ID)
 	if err != nil {
@@ -1024,6 +1070,25 @@ func (s *Handler) refreshWorkspace(
 	}
 	if s.workspaceDiffCache != nil {
 		s.workspaceDiffCache.RevalidateWorkspace(input.ID)
+	}
+	if s.syncer == nil {
+		workspace := summary.Workspace
+		if _, err := s.workspaces.RefreshWorkspaceLaunchSpec(ctx, &workspace); err != nil {
+			return nil, workspaceLaunchSpecProblem(err)
+		}
+		refreshed, err := s.workspaces.GetSummary(ctx, input.ID)
+		if err != nil {
+			return nil, httpapi.Internal("get workspace failed")
+		}
+		if refreshed == nil {
+			return nil, httpapi.NotFound(
+				httpapi.CodeWorkspaceNotFound, "workspace not found", nil,
+			)
+		}
+		resp := s.refreshWorkspaceResponse(ctx, refreshed)
+		s.hub.Broadcast(Event{Type: "workspace_status", Data: resp})
+		s.hub.Broadcast(Event{Type: "data_changed", Data: struct{}{}})
+		return &refreshWorkspaceOutput{Body: resp}, nil
 	}
 
 	provider := strings.TrimSpace(summary.Platform)
@@ -2360,6 +2425,10 @@ func (s *Handler) launchWorkspaceRuntimeService(
 				WorkspaceID: summary.ID, TargetKey: targetKey,
 			},
 		); err != nil {
+			if errors.Is(err, workspace.ErrLaunchSpecRefreshRequired) ||
+				errors.Is(err, workspace.ErrLaunchSpecSourceHidden) {
+				return localruntime.SessionInfo{}, workspaceLaunchSpecProblem(err)
+			}
 			return localruntime.SessionInfo{}, httpapi.Internal("prepare agent context: " + err.Error())
 		}
 	}
@@ -2737,7 +2806,10 @@ func (s *Handler) DeleteWorkspace(
 		return nil, httpapi.Internal("get workspace: " + err.Error())
 	}
 	if ws == nil {
-		return nil, httpapi.NotFound(httpapi.CodeWorkspaceNotFound, "workspace not found", nil)
+		// DELETE is idempotent. A stale projection or a lost response can leave
+		// the caller retrying after the workspace has already been removed.
+		deleted = true
+		return nil, nil
 	}
 	if problem := workspaceDeletionLifecycleProblem(ws.Status); problem != nil {
 		return nil, problem

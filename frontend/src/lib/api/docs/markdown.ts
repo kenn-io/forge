@@ -14,6 +14,7 @@ import { Marked, type MarkedExtension, type Tokens } from "marked";
 import { codeFenceLanguage, escapeHtml } from "@kenn-io/kit-ui/utils/markdown";
 import { mermaidCodeFence } from "@kenn-io/kit-ui/utils/markdown-mermaid";
 import { providerItemRefExtension, type RepoContext } from "../../utils/markdown.js";
+import { itemReferenceAnchorAttributes, parseProviderItemURL } from "../../utils/item-reference.js";
 import {
   joinFolderPath,
   parseWikilink,
@@ -424,6 +425,10 @@ function docsRenderer(options: DocsMarkdownOptions, imageToken: string) {
         return `<a href="#" data-kata-link="issue"` + ` data-kata-uid="${escapeHtml(uid)}"${title}>${inner}</a>`;
       }
       if (isUnsafeUri(href)) return `<span>${inner}</span>`;
+      // A same-host PR or issue URL stays in-app, matching how `#12` renders
+      // when the document belongs to a repository.
+      const itemRef = options.repoContext ? parseProviderItemURL(href, options.repoContext) : null;
+      if (itemRef) return `<a ${itemReferenceAnchorAttributes(itemRef)}${title}>${inner}</a>`;
       if (isExternal(href)) {
         const externalHref = cleanURIForScheme(href);
         return `<a href="${escapeHtml(externalHref)}" target="_blank" rel="noreferrer"${title}>${inner}</a>`;

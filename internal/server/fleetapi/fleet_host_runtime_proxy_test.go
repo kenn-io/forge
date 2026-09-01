@@ -25,7 +25,7 @@ func TestFleetHostRuntimeSessionProxiesToPeer(t *testing.T) {
 		body   string
 	}
 	var got []captured
-	peer := httptest.NewServer(http.HandlerFunc(
+	peer := httptest.NewTLSServer(http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
 			body, _ := io.ReadAll(r.Body)
 			got = append(got, captured{
@@ -40,15 +40,10 @@ func TestFleetHostRuntimeSessionProxiesToPeer(t *testing.T) {
 	))
 	defer peer.Close()
 
-	s := &Handler{config: ConfigSnapshot{
-		Fleet: config.Fleet{
-			Enabled: true,
-			Key:     "hub",
-			Peers: []config.FleetPeer{
-				{Key: "member", BaseURL: peer.URL},
-			},
-		},
-	}}
+	s := New(Deps{})
+	configureTestMembers(t, s, testTLSClient(t, peer), config.FleetMember{
+		NodeID: testMemberNodeID, BaseURL: peer.URL,
+	})
 	api := newFleetTestAPI()
 	s.Register(api)
 
@@ -63,7 +58,7 @@ func TestFleetHostRuntimeSessionProxiesToPeer(t *testing.T) {
 		{
 			name:       "clone project",
 			method:     http.MethodPost,
-			path:       "/fleet/hosts/member/projects/clone",
+			path:       "/fleet/hosts/" + testMemberNodeID + "/projects/clone",
 			body:       `{"url":"https://example.com/r.git","path":"~/clones/r"}`,
 			wantMethod: http.MethodPost,
 			wantPath:   "/api/v1/projects/clone",
@@ -71,7 +66,7 @@ func TestFleetHostRuntimeSessionProxiesToPeer(t *testing.T) {
 		{
 			name:       "launch host runtime session",
 			method:     http.MethodPost,
-			path:       "/fleet/hosts/member/runtime/sessions",
+			path:       "/fleet/hosts/" + testMemberNodeID + "/runtime/sessions",
 			body:       `{"command":["vim"],"session_key":"console:member"}`,
 			wantMethod: http.MethodPost,
 			wantPath:   "/api/v1/runtime/sessions",
@@ -79,14 +74,14 @@ func TestFleetHostRuntimeSessionProxiesToPeer(t *testing.T) {
 		{
 			name:       "stop host runtime session",
 			method:     http.MethodDelete,
-			path:       "/fleet/hosts/member/runtime/sessions/console%3Amember",
+			path:       "/fleet/hosts/" + testMemberNodeID + "/runtime/sessions/console%3Amember",
 			wantMethod: http.MethodDelete,
 			wantPath:   "/api/v1/runtime/sessions/console:member",
 		},
 		{
 			name:       "host runtime session attach spec",
 			method:     http.MethodGet,
-			path:       "/fleet/hosts/member/runtime/sessions/console%3Amember/attach-spec",
+			path:       "/fleet/hosts/" + testMemberNodeID + "/runtime/sessions/console%3Amember/attach-spec",
 			wantMethod: http.MethodGet,
 			wantPath:   "/api/v1/runtime/sessions/console:member/attach-spec",
 		},
@@ -127,7 +122,7 @@ func TestFleetFilesystemProxiesToPeer(t *testing.T) {
 		query string
 	}
 	var got []captured
-	peer := httptest.NewServer(http.HandlerFunc(
+	peer := httptest.NewTLSServer(http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
 			got = append(got, captured{
 				path:  r.URL.Path,
@@ -140,15 +135,10 @@ func TestFleetFilesystemProxiesToPeer(t *testing.T) {
 	))
 	defer peer.Close()
 
-	s := &Handler{config: ConfigSnapshot{
-		Fleet: config.Fleet{
-			Enabled: true,
-			Key:     "hub",
-			Peers: []config.FleetPeer{
-				{Key: "member", BaseURL: peer.URL},
-			},
-		},
-	}}
+	s := New(Deps{})
+	configureTestMembers(t, s, testTLSClient(t, peer), config.FleetMember{
+		NodeID: testMemberNodeID, BaseURL: peer.URL,
+	})
 	api := newFleetTestAPI()
 	s.Register(api)
 
@@ -160,24 +150,24 @@ func TestFleetFilesystemProxiesToPeer(t *testing.T) {
 	}{
 		{
 			name:      "complete filesystem path",
-			path:      "/fleet/hosts/member/filesystem/complete?path=%2Fsrv%2Fpro",
+			path:      "/fleet/hosts/" + testMemberNodeID + "/filesystem/complete?path=%2Fsrv%2Fpro",
 			wantPath:  "/api/v1/filesystem/complete",
 			wantQuery: "path=%2Fsrv%2Fpro",
 		},
 		{
 			name:      "validate filesystem repo",
-			path:      "/fleet/hosts/member/filesystem/validate-repo?path=%2Fsrv%2Fapp",
+			path:      "/fleet/hosts/" + testMemberNodeID + "/filesystem/validate-repo?path=%2Fsrv%2Fapp",
 			wantPath:  "/api/v1/filesystem/validate-repo",
 			wantQuery: "path=%2Fsrv%2Fapp",
 		},
 		{
 			name:     "list project branches",
-			path:     "/fleet/hosts/member/projects/prj_1/branches",
+			path:     "/fleet/hosts/" + testMemberNodeID + "/projects/prj_1/branches",
 			wantPath: "/api/v1/projects/prj_1/branches",
 		},
 		{
 			name:     "inspect project worktree",
-			path:     "/fleet/hosts/member/projects/prj_1/worktrees/wtr_9/inspect",
+			path:     "/fleet/hosts/" + testMemberNodeID + "/projects/prj_1/worktrees/wtr_9/inspect",
 			wantPath: "/api/v1/projects/prj_1/worktrees/wtr_9/inspect",
 		},
 	}

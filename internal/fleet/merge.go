@@ -1,137 +1,153 @@
 package fleet
 
-// PeerResult is the hub's per-peer fetch outcome. Key is the configured
-// peer key and is AUTHORITATIVE: it overwrites any host key a peer
-// self-reports, so a misconfigured or hostile peer cannot impersonate
-// another host in the merged graph.
+// PeerResult is the hub's fetch result for one enrolled member.
+// NodeID comes from enrollment and remains authoritative over self-reported
+// payload fields.
 type PeerResult struct {
-	Key        string
+	NodeID     NodeID
 	Name       string
 	BaseURL    string
+	Role       Role
 	Platform   string
 	ObservedAt string
 	Reachable  bool
-	Raw        *RawSnapshot // nil when unreachable
+	Raw        *RawSnapshot
 	Err        *string
-	// SSHDestination and PreferredTransport describe how to reach a peer
-	// over SSH. The SSH fleet transport sets them so the merged remote
-	// host stays routable; they fold in even for an unreachable peer so
-	// a client can still reconnect.
-	SSHDestination     *string
-	PreferredTransport string
 }
 
-// Merge stamps host keys and folds peers into one raw graph. Pure: no
-// network, no clock, and no mutation of inputs — local and each peer's
-// Raw snapshot are left untouched (host keys are stamped onto copies).
-// Local entities are stamped with selfKey; each reachable peer's
-// entities are stamped (overwriting any self-reported key) with the
-// configured peer key. Unreachable peers and peers whose key collides
-// with an already-seen host become RawRemoteHost diagnostics with their
-// entities dropped.
-func Merge(local RawSnapshot, selfKey string, peers []PeerResult) RawSnapshot {
-	out := local
-	out.Projects = stampedProjects(local.Projects, selfKey)
-	out.Worktrees = stampedWorktrees(local.Worktrees, selfKey)
-	out.Sessions = stampedSessions(local.Sessions, selfKey)
-	out.RemoteHosts = append([]RawRemoteHost(nil), local.RemoteHosts...)
+// BuildNeutralAggregate combines local authority with direct member raw
+// snapshots. It stamps every entity with its enrolled node ID and never adds
+// observer-relative kind, transport, or operation availability.
+func BuildNeutralAggregate(local RawSnapshot, members []PeerResult) NeutralSnapshot {
+	out := NeutralSnapshot{
+		ProtocolVersion:       local.ProtocolVersion,
+		Generation:            local.Generation,
+		PlatformAuthenticated: local.PlatformAuthenticated,
+		Hosts:                 []NeutralHost{neutralLocalHost(local, RoleHub)},
+		Projects:              stampedProjects(local.Projects, string(local.NodeID)),
+		Worktrees:             stampedWorktrees(local.Worktrees, string(local.NodeID)),
+		Sessions:              stampedSessions(local.Sessions, string(local.NodeID)),
+		Workspaces:            stampedWorkspaces(local.Workspaces, string(local.NodeID)),
+	}
 
-	seen := map[string]bool{selfKey: true}
-	for _, p := range peers {
-		if !p.Reachable || p.Raw == nil {
-			out.RemoteHosts = append(out.RemoteHosts, remoteHost(p, false))
+	seen := map[NodeID]bool{local.NodeID: true}
+	for _, member := range members {
+		if seen[member.NodeID] {
+			duplicate := member
+			duplicate.Reachable = false
+			message := "duplicate node ID " + string(member.NodeID)
+			duplicate.Err = &message
+			out.Hosts = append(out.Hosts, neutralMemberHost(duplicate))
 			continue
 		}
-		if seen[p.Key] {
-			dupErr := "duplicate host key " + p.Key
-			rh := remoteHost(p, false)
-			rh.Error = &dupErr
-			out.RemoteHosts = append(out.RemoteHosts, rh)
+		seen[member.NodeID] = true
+		if !member.Reachable || member.Raw == nil {
+			out.Hosts = append(out.Hosts, neutralMemberHost(member))
 			continue
 		}
-		seen[p.Key] = true
-		out.Projects = append(out.Projects, stampedProjects(p.Raw.Projects, p.Key)...)
-		out.Worktrees = append(out.Worktrees, stampedRemoteWorktrees(p.Raw.Worktrees, p.Key)...)
-		out.Sessions = append(out.Sessions, stampedSessions(p.Raw.Sessions, p.Key)...)
-		rh := remoteHost(p, true)
-		rh.Generation = p.Raw.Generation
-		rh.Capabilities = p.Raw.Capabilities
-		rh.PlatformAuthenticated = p.Raw.PlatformAuthenticated
-		rh.Version = p.Raw.Host.Version
-		rh.TmuxLastPolledAt = p.Raw.Host.TmuxLastPolledAt
-		rh.TmuxProbeError = p.Raw.Host.TmuxProbeError
-		rh.TmuxMetricsError = p.Raw.Host.TmuxMetricsError
-		rh.TmuxSessions = p.Raw.Host.TmuxSessions
-		out.RemoteHosts = append(out.RemoteHosts, rh)
+		if member.Raw.NodeID != member.NodeID {
+			mismatch := member
+			mismatch.Reachable = false
+			message := "member snapshot node ID does not match enrollment"
+			mismatch.Err = &message
+			out.Hosts = append(out.Hosts, neutralMemberHost(mismatch))
+			continue
+		}
+		out.Hosts = append(out.Hosts, neutralMemberHost(member))
+		key := string(member.NodeID)
+		out.Projects = append(out.Projects, stampedProjects(member.Raw.Projects, key)...)
+		out.Worktrees = append(out.Worktrees, stampedWorktrees(member.Raw.Worktrees, key)...)
+		out.Sessions = append(out.Sessions, stampedSessions(member.Raw.Sessions, key)...)
+		out.Workspaces = append(out.Workspaces, stampedWorkspaces(member.Raw.Workspaces, key)...)
 	}
 	return out
 }
 
-func remoteHost(p PeerResult, reachable bool) RawRemoteHost {
-	// fleet.peers[].name is optional: fall back to the hostname the peer
-	// reports about itself, then to the peer key, so a nameless peer never
-	// surfaces as an empty host name.
-	name := p.Name
-	if name == "" && p.Raw != nil {
-		name = p.Raw.Host.Hostname
+func neutralLocalHost(raw RawSnapshot, role Role) NeutralHost {
+	name := raw.Host.Hostname
+	if name == "" {
+		name = string(raw.NodeID)
+	}
+	return NeutralHost{
+		NodeID: raw.NodeID, FederationRole: role, Name: name,
+		Hostname: raw.Host.Hostname, BaseURL: raw.BaseURL,
+		Platform:  raw.Host.Platform,
+		Reachable: true, PlatformAuthenticated: raw.PlatformAuthenticated,
+		Generation: raw.Generation, Version: raw.Host.Version,
+		LastSeenAt:       raw.Host.LastSeenAt,
+		TmuxLastPolledAt: raw.Host.TmuxLastPolledAt,
+		TmuxProbeError:   raw.Host.TmuxProbeError,
+		TmuxMetricsError: raw.Host.TmuxMetricsError,
+		Capabilities:     raw.Capabilities,
+		TmuxSessions:     append([]TmuxSessionInfo(nil), raw.Host.TmuxSessions...),
+	}
+}
+
+func neutralMemberHost(member PeerResult) NeutralHost {
+	name := member.Name
+	if name == "" && member.Raw != nil {
+		name = member.Raw.Host.Hostname
 	}
 	if name == "" {
-		name = p.Key
+		name = string(member.NodeID)
 	}
-	return RawRemoteHost{
-		HostKey:            p.Key,
-		Name:               name,
-		BaseURL:            p.BaseURL,
-		Platform:           p.Platform,
-		Reachable:          reachable,
-		LastSeenAt:         p.ObservedAt,
-		Error:              p.Err,
-		SSHDestination:     p.SSHDestination,
-		PreferredTransport: p.PreferredTransport,
+	role := member.Role
+	if role == "" {
+		role = RoleSpoke
 	}
+	host := NeutralHost{
+		NodeID: member.NodeID, FederationRole: role, Name: name, BaseURL: member.BaseURL,
+		Platform: member.Platform, Reachable: member.Reachable, Error: member.Err,
+		LastSeenAt: member.ObservedAt,
+	}
+	if member.Raw == nil {
+		return host
+	}
+	host.Platform = member.Raw.Host.Platform
+	host.Hostname = member.Raw.Host.Hostname
+	host.PlatformAuthenticated = member.Raw.PlatformAuthenticated
+	host.Generation = member.Raw.Generation
+	host.Version = member.Raw.Host.Version
+	host.TmuxLastPolledAt = member.Raw.Host.TmuxLastPolledAt
+	host.TmuxProbeError = member.Raw.Host.TmuxProbeError
+	host.TmuxMetricsError = member.Raw.Host.TmuxMetricsError
+	host.Capabilities = member.Raw.Capabilities
+	host.TmuxSessions = append([]TmuxSessionInfo(nil), member.Raw.Host.TmuxSessions...)
+	return host
 }
 
-// stampedProjects returns a copy of ps with every HostKey set to key,
-// leaving the input slice and its backing array untouched. The shallow
-// copy is sufficient: only the HostKey string is rewritten; pointer
-// fields are shared but never written through.
-func stampedProjects(ps []RawProject, key string) []RawProject {
-	out := make([]RawProject, len(ps))
-	copy(out, ps)
-	for i := range out {
-		out[i].HostKey = key
+func stampedProjects(projects []RawProject, nodeID string) []RawProject {
+	out := make([]RawProject, len(projects))
+	copy(out, projects)
+	for index := range out {
+		out[index].HostKey = nodeID
 	}
 	return out
 }
 
-func stampedWorktrees(ws []RawWorktree, key string) []RawWorktree {
-	out := make([]RawWorktree, len(ws))
-	copy(out, ws)
-	for i := range out {
-		out[i].HostKey = key
+func stampedWorktrees(worktrees []RawWorktree, nodeID string) []RawWorktree {
+	out := make([]RawWorktree, len(worktrees))
+	copy(out, worktrees)
+	for index := range out {
+		out[index].HostKey = nodeID
 	}
 	return out
 }
 
-func stampedSessions(ss []RawSession, key string) []RawSession {
-	out := make([]RawSession, len(ss))
-	copy(out, ss)
-	for i := range out {
-		out[i].HostKey = key
+func stampedSessions(sessions []RawSession, nodeID string) []RawSession {
+	out := make([]RawSession, len(sessions))
+	copy(out, sessions)
+	for index := range out {
+		out[index].HostKey = nodeID
 	}
 	return out
 }
 
-// stampedRemoteWorktrees copies ws with HostKey set to key and SessionBackend
-// forced to remoteTmux. From the hub's view a peer worktree is reached over a
-// remote tmux attach, regardless of the backend the peer reports for its own
-// local sessions, so the hub-side backend is always remote.
-func stampedRemoteWorktrees(ws []RawWorktree, key string) []RawWorktree {
-	out := make([]RawWorktree, len(ws))
-	copy(out, ws)
-	for i := range out {
-		out[i].HostKey = key
-		out[i].SessionBackend = SessionBackendRemoteTmux
+func stampedWorkspaces(workspaces []RawWorkspace, nodeID string) []RawWorkspace {
+	out := make([]RawWorkspace, len(workspaces))
+	copy(out, workspaces)
+	for index := range out {
+		out[index].HostKey = nodeID
 	}
 	return out
 }

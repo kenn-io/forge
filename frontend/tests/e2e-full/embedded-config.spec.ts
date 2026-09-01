@@ -122,7 +122,8 @@ test.describe("embedded config", () => {
   });
 
   test("project intake uses snapshot host metadata and host-scoped registration", async ({ page }) => {
-    const server = await startIsolatedE2EServerWithOptions({ fleetKey: "hub" });
+    const server = await startIsolatedE2EServerWithOptions();
+    const hostKey = server.info.node_id;
     const localRepo = realpathSync(mkdtempSync(path.join(os.tmpdir(), "kenn-forge-hosted-intake-")));
     try {
       execFileSync("git", ["init", "-b", "main"], { cwd: localRepo, stdio: "ignore" });
@@ -142,7 +143,7 @@ test.describe("embedded config", () => {
       const snapshotResponse = await page.request.get(`${server.info.base_url}/api/v1/snapshot?include_peers=true`);
       expect(snapshotResponse.status(), await snapshotResponse.text()).toBe(200);
       const snapshot = (await snapshotResponse.json()) as SnapshotResponse;
-      const hubHost = snapshot.hosts.find((host) => host.configKey === "hub");
+      const hubHost = snapshot.hosts.find((host) => host.configKey === hostKey);
       expect(hubHost).toBeDefined();
       expect(hubHost?.kind).toBe("self");
 
@@ -150,7 +151,7 @@ test.describe("embedded config", () => {
         const url = new URL(response.url());
         return url.pathname === "/api/v1/snapshot" && url.searchParams.get("include_peers") === "true";
       });
-      await page.goto(`${server.info.base_url}/project-intake?host=hub`);
+      await page.goto(`${server.info.base_url}/project-intake?host=${encodeURIComponent(hostKey)}`);
       await snapshotLoaded;
       await expect(page.getByText(`Host: ${hubHost?.name ?? "hub"}`)).toBeVisible();
 
@@ -159,7 +160,7 @@ test.describe("embedded config", () => {
 
       const registerFinished = page.waitForResponse((response) => {
         const url = new URL(response.url());
-        return response.request().method() === "POST" && url.pathname === "/api/v1/fleet/hosts/hub/projects";
+        return response.request().method() === "POST" && url.pathname === `/api/v1/fleet/hosts/${hostKey}/projects`;
       });
       await page.getByRole("button", { name: "Add repository" }).click();
       const registerResponse = await registerFinished;
@@ -184,7 +185,8 @@ test.describe("embedded config", () => {
   });
 
   test("accepted project registration survives host replacement without a duplicate", async ({ page }) => {
-    const server = await startIsolatedE2EServerWithOptions({ fleetKey: "hub" });
+    const server = await startIsolatedE2EServerWithOptions();
+    const hostKey = server.info.node_id;
     const localRepo = realpathSync(mkdtempSync(path.join(os.tmpdir(), "kenn-forge-retained-intake-")));
     try {
       execFileSync("git", ["init", "-b", "main"], { cwd: localRepo, stdio: "ignore" });
@@ -210,7 +212,7 @@ test.describe("embedded config", () => {
       const responseGate = new Promise<void>((resolve) => {
         releaseResponse = resolve;
       });
-      await page.route("**/api/v1/fleet/hosts/hub/projects", async (route) => {
+      await page.route(`**/api/v1/fleet/hosts/${hostKey}/projects`, async (route) => {
         if (route.request().method() !== "POST") {
           await route.fallback();
           return;
@@ -222,7 +224,7 @@ test.describe("embedded config", () => {
         await route.fulfill({ response });
       });
 
-      await page.goto(`${server.info.base_url}/project-intake?host=hub`);
+      await page.goto(`${server.info.base_url}/project-intake?host=${encodeURIComponent(hostKey)}`);
       await page.getByRole("button", { name: /Add an existing repository/ }).click();
       await page.getByLabel("Repository path").fill(localRepo);
       await page.getByRole("button", { name: "Add repository" }).click();
@@ -236,10 +238,10 @@ test.describe("embedded config", () => {
       releaseResponse();
       await expect(page).toHaveURL(/\/project-intake$/);
 
-      await page.evaluate(() => {
-        history.pushState({}, "", "/project-intake?host=hub");
+      await page.evaluate((key) => {
+        history.pushState({}, "", `/project-intake?host=${encodeURIComponent(key)}`);
         window.dispatchEvent(new PopStateEvent("popstate"));
-      });
+      }, hostKey);
       await page.getByRole("button", { name: /Add an existing repository/ }).click();
       await page.getByLabel("Repository path").fill(localRepo);
       await page.getByRole("button", { name: "Add repository" }).click();
@@ -257,7 +259,8 @@ test.describe("embedded config", () => {
   });
 
   test("embed project card preserves host key in project actions", async ({ page }) => {
-    const server = await startIsolatedE2EServerWithOptions({ fleetKey: "hub" });
+    const server = await startIsolatedE2EServerWithOptions();
+    const hostKey = server.info.node_id;
     const localRepo = realpathSync(mkdtempSync(path.join(os.tmpdir(), "kenn-forge-hosted-card-")));
     try {
       execFileSync("git", ["init"], { cwd: localRepo, stdio: "ignore" });
@@ -293,7 +296,9 @@ test.describe("embedded config", () => {
         };
       });
 
-      await page.goto(`${server.info.base_url}/workspaces/embed/project/${encodeURIComponent(project.id)}?host=hub`);
+      await page.goto(
+        `${server.info.base_url}/workspaces/embed/project/${encodeURIComponent(project.id)}?host=${encodeURIComponent(hostKey)}`,
+      );
       await expect(page.locator("header.app-top-bar")).toHaveCount(0);
       await expect(page.getByText("Fleet Project")).toBeVisible();
 
@@ -315,7 +320,7 @@ test.describe("embedded config", () => {
         .toEqual({
           surface: "project-card",
           projectId: project.id,
-          hostKey: "hub",
+          hostKey,
         });
     } finally {
       rmSync(localRepo, { recursive: true, force: true });

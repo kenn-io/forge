@@ -19,6 +19,7 @@ const (
 type RepositoryRoute struct {
 	ID           int64
 	RepoID       int64
+	Generation   int64
 	Platform     string
 	PlatformHost string
 	Owner        string
@@ -54,6 +55,27 @@ type RepositoryCatalogFilter struct {
 	PlatformRepoID string
 	RepoPath       string
 	Lifecycle      RepositoryLifecycleState
+}
+
+// RepositoryProviderSnapshot binds repository metadata to the exact current
+// route generation that supplied it.
+type RepositoryProviderSnapshot struct {
+	Repository Repo
+	Route      RepositoryRoute
+}
+
+// PullDiffProviderSnapshot extends a repository snapshot with the complete
+// set of pull SHA fields from one serialized parent snapshot.
+type PullDiffProviderSnapshot struct {
+	Repository       RepositoryProviderSnapshot
+	PullNumber       int
+	SnapshotRevision int64
+	PlatformHeadSHA  string
+	PlatformBaseSHA  string
+	DiffHeadSHA      string
+	DiffBaseSHA      string
+	MergeBaseSHA     string
+	State            string
 }
 
 type repositoryCatalogQueryer interface {
@@ -162,6 +184,123 @@ func (d *DB) ResolveActiveRepositoryRoute(
 	}
 	defer release()
 	return d.resolveActiveRepositoryRoute(ctx, identity)
+}
+
+// GetRepositoryProviderSnapshot returns current provider metadata and route
+// generation while repository reconciliation is held stable.
+func (d *DB) GetRepositoryProviderSnapshot(
+	ctx context.Context, identity RepoIdentity,
+) (*RepositoryProviderSnapshot, error) {
+	release, err := d.LockRepositoryReconciliationRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	return d.GetRepositoryProviderSnapshotUnderRepositoryReconciliationRead(
+		ctx, identity,
+	)
+}
+
+// GetRepositoryProviderSnapshotUnderRepositoryReconciliationRead is
+// GetRepositoryProviderSnapshot for callers that already hold
+// LockRepositoryReconciliationRead.
+func (d *DB) GetRepositoryProviderSnapshotUnderRepositoryReconciliationRead(
+	ctx context.Context, identity RepoIdentity,
+) (*RepositoryProviderSnapshot, error) {
+	entry, err := d.resolveActiveRepositoryRoute(ctx, identity)
+	if err != nil || entry == nil {
+		return nil, err
+	}
+	route, ok := currentRoute(entry.Routes)
+	if !ok {
+		return nil, errors.New("active repository is missing its current route")
+	}
+	return &RepositoryProviderSnapshot{
+		Repository: entry.Repository,
+		Route:      route,
+	}, nil
+}
+
+// GetPullDiffProviderSnapshot holds both the repository reconciliation lock
+// and the pull's parent-snapshot lock while reading every descriptor field.
+func (d *DB) GetPullDiffProviderSnapshot(
+	ctx context.Context, identity RepoIdentity, number int,
+) (*PullDiffProviderSnapshot, error) {
+	releaseRepository, err := d.LockRepositoryReconciliationRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer releaseRepository()
+	return d.GetPullDiffProviderSnapshotUnderRepositoryReconciliationRead(
+		ctx, identity, number,
+	)
+}
+
+// GetPullDiffProviderSnapshotUnderRepositoryReconciliationRead is
+// GetPullDiffProviderSnapshot for callers that already hold
+// LockRepositoryReconciliationRead. It still acquires the pull's
+// parent-snapshot lock.
+func (d *DB) GetPullDiffProviderSnapshotUnderRepositoryReconciliationRead(
+	ctx context.Context, identity RepoIdentity, number int,
+) (*PullDiffProviderSnapshot, error) {
+	entry, err := d.resolveActiveRepositoryRoute(ctx, identity)
+	if err != nil || entry == nil {
+		return nil, err
+	}
+	route, ok := currentRoute(entry.Routes)
+	if !ok {
+		return nil, errors.New("active repository is missing its current route")
+	}
+	releasePull, err := d.lockMergeRequestSnapshotUnderRepositoryReconciliationRead(
+		ctx, entry.Repository.ID, number,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer releasePull()
+
+	snapshot := PullDiffProviderSnapshot{
+		Repository: RepositoryProviderSnapshot{
+			Repository: entry.Repository,
+			Route:      route,
+		},
+	}
+	err = d.ro.QueryRowContext(ctx, `
+		SELECT p.number, p.snapshot_revision,
+		       p.platform_head_sha, p.platform_base_sha,
+		       p.diff_head_sha, p.diff_base_sha, p.merge_base_sha, p.state
+		FROM forge_merge_requests p
+		WHERE p.repo_id = ? AND p.number = ?
+		  AND NOT EXISTS (
+			SELECT 1 FROM forge_archive_items ai
+			WHERE ai.repo_id = p.repo_id
+			  AND ai.item_type = 'merge_request'
+			  AND ai.item_number = p.number
+			  AND ai.lifecycle_state = 'removed_upstream'
+		  )`,
+		entry.Repository.ID, number,
+	).Scan(
+		&snapshot.PullNumber, &snapshot.SnapshotRevision,
+		&snapshot.PlatformHeadSHA, &snapshot.PlatformBaseSHA,
+		&snapshot.DiffHeadSHA, &snapshot.DiffBaseSHA,
+		&snapshot.MergeBaseSHA, &snapshot.State,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load pull diff provider snapshot: %w", err)
+	}
+	return &snapshot, nil
+}
+
+func currentRoute(routes []RepositoryRoute) (RepositoryRoute, bool) {
+	for _, route := range routes {
+		if route.Current {
+			return route, true
+		}
+	}
+	return RepositoryRoute{}, false
 }
 
 // CurrentRepositoryRouteFence captures the active route generation when it is
@@ -1255,7 +1394,7 @@ func loadRepositoryRoutes(
 		args[i] = repoID
 	}
 	rows, err := q.QueryContext(ctx, `
-		SELECT id, repo_id, platform, platform_host,
+		SELECT id, repo_id, generation, platform, platform_host,
 		       owner, name, repo_path, owner_key, name_key, repo_path_key,
 		       is_current, first_seen_at, last_seen_at
 		FROM forge_repo_routes
@@ -1270,6 +1409,7 @@ func loadRepositoryRoutes(
 		if err := rows.Scan(
 			&route.ID,
 			&route.RepoID,
+			&route.Generation,
 			&route.Platform,
 			&route.PlatformHost,
 			&route.Owner,

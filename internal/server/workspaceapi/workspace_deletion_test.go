@@ -137,6 +137,16 @@ func TestQueueWorkspaceDeletionPersistsFailure(t *testing.T) {
 	assert.Contains(*got.ErrorMessage, "notes.txt")
 }
 
+func TestQueueWorkspaceDeletionIsIdempotentAfterRemoval(t *testing.T) {
+	database := dbtest.Open(t)
+	handler := New(Deps{
+		DB:         database,
+		Workspaces: workspace.NewManager(database, t.TempDir()),
+	})
+
+	require.NoError(t, handler.QueueWorkspaceDeletion("already-removed"))
+}
+
 func TestDeleteWorkspaceDirtyPreservesReadyStatus(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -252,6 +262,12 @@ func TestDeleteWorkspacePublishesConfirmedIdentity(t *testing.T) {
 		ItemType:     db.WorkspaceItemTypePullRequest,
 	}, deleted)
 	assert.Equal("workspace_status", events[2].Type)
+
+	_, err = handler.DeleteWorkspace(t.Context(), &DeleteWorkspaceInput{
+		ID: "ws-delete", Force: true,
+	})
+	require.NoError(err)
+	assert.Len(events, 3, "an idempotent retry must not publish a second deletion")
 }
 
 func TestStartMarksInterruptedWorkspaceDeletionFailed(t *testing.T) {

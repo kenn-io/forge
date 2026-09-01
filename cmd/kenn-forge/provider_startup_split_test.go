@@ -15,7 +15,7 @@ import (
 	"go.kenn.io/forge/internal/tokenauth"
 )
 
-// TestBuildProviderStartupScopesWriteTrackersToAppChains pins the
+// TestBuildProviderControlPlaneScopesWriteTrackersToAppChains pins the
 // split-credential decision to the host's effective token chain, not
 // [[github_apps]] config: a host whose chain carries an active
 // github_app candidate gets dedicated write trackers, while a host
@@ -23,7 +23,7 @@ import (
 // repo carries a terminal token override) must not — an empty write
 // tracker would shadow the shared trackers that already observed the
 // exhausted credential.
-func TestBuildProviderStartupScopesWriteTrackersToAppChains(t *testing.T) {
+func TestBuildProviderControlPlaneScopesWriteTrackersToAppChains(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	database := dbtest.Open(t)
@@ -54,7 +54,7 @@ func TestBuildProviderStartupScopesWriteTrackersToAppChains(t *testing.T) {
 		},
 	})
 
-	startup, err := buildProviderStartup(
+	startup, err := buildProviderControlPlane(
 		t.Context(), database,
 		&config.Config{SyncBudgetPerHour: 200},
 		set,

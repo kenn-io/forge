@@ -32,11 +32,15 @@ const workspace = {
   },
   item_type: "pull_request",
   item_number: 7,
+  source_item_visible: true,
   git_head_ref: "feature/host-visible",
   worktree_path: "/tmp/worktree",
   tmux_session: "kenn-forge-ws-1",
   status: "ready",
   enrichment_status: "fresh",
+  tmux_activity_source: "none",
+  tmux_last_output_at: null,
+  tmux_working: false,
   created_at: "2026-04-29T00:00:00Z",
 };
 
@@ -100,6 +104,9 @@ function workspaceRoutes(): MockRouteOverride {
     }
     if (req.url.pathname === "/api/v1/workspaces" && req.method === "GET") {
       return jsonResponse({ workspaces: [workspace] });
+    }
+    if (req.url.pathname === "/api/v1/snapshot" && req.method === "GET") {
+      return jsonResponse({ hosts: [], workspaces: [workspace] });
     }
     // "Delete" always fires a real DELETE first; a 409 here is what opens
     // the force-delete confirmation dialog under test — there is no

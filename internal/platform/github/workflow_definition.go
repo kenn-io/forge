@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"slices"
 
 	"go.kenn.io/forge/internal/platform"
 	"go.yaml.in/yaml/v3"
@@ -406,10 +407,5 @@ func isNull(node *yaml.Node) bool {
 }
 
 func contains(values []string, wanted string) bool {
-	for _, value := range values {
-		if value == wanted {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(values, wanted)
 }

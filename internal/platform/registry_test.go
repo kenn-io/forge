@@ -158,15 +158,14 @@ func TestRegistryFindsOptionalRepositoryReader(t *testing.T) {
 
 func TestRegistryFindsWorkflowCapabilities(t *testing.T) {
 	require := require.New(t)
-	provider := testWorkflowProvider{testProvider: testProvider{
+	provider := testWorkflowProvider{
 		kind: KindGitLab,
 		host: "gitlab.com",
 		caps: Capabilities{
 			ReadWorkflows:    true,
 			ReadWorkflowRuns: true,
 			WorkflowDispatch: true,
-		},
-	}}
+		}}
 	registry, err := NewRegistry(provider)
 	require.NoError(err)
 
@@ -184,10 +183,9 @@ func TestRegistryFindsWorkflowCapabilities(t *testing.T) {
 
 func TestRegistryReturnsUnsupportedCapabilityForMissingWorkflowCapabilities(t *testing.T) {
 	require := require.New(t)
-	registry, err := NewRegistry(testWorkflowProvider{testProvider: testProvider{
+	registry, err := NewRegistry(testWorkflowProvider{
 		kind: KindGitLab,
-		host: "gitlab.com",
-	}})
+		host: "gitlab.com"})
 	require.NoError(err)
 
 	tests := []struct {

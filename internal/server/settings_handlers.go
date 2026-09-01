@@ -12,6 +12,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/federationauth"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/server/httpapi"
@@ -151,6 +152,12 @@ func (s *Server) buildLocalSettingsResponse(
 		[]ghclient.ConfiguredRepoStatus, len(repos),
 	)
 	for i, raw := range repos {
+		platformRepoID, trackedRepoPath, err := s.configuredRepoProjection(
+			ctx, raw, tracked,
+		)
+		if err != nil {
+			return settingsResponse{}, err
+		}
 		hiddenFromUI, err := s.configEntryHidden(ctx, raw, tracked, hiddenSet)
 		if err != nil {
 			return settingsResponse{}, err
@@ -161,11 +168,11 @@ func (s *Server) buildLocalSettingsResponse(
 		configured[i] = ghclient.ConfiguredRepoStatus{
 			Provider:          raw.PlatformOrDefault(),
 			PlatformHost:      raw.PlatformHostOrDefault(),
-			PlatformRepoID:    trackedPlatformRepoIDForConfig(raw, tracked),
+			PlatformRepoID:    platformRepoID,
 			Owner:             raw.Owner,
 			Name:              raw.Name,
 			RepoPath:          configRepoPath(raw),
-			TrackedRepoPath:   trackedPathForConfig(raw, tracked),
+			TrackedRepoPath:   trackedRepoPath,
 			WorktreeBasePath:  raw.WorktreeBasePath,
 			IsGlob:            raw.HasNameGlob(),
 			MatchedRepoCount:  matchedRepoCount(raw, tracked),
@@ -202,6 +209,54 @@ func (s *Server) buildLocalSettingsResponse(
 			InitManagedClones: roborev.InitManagedClones,
 		},
 	}, nil
+}
+
+func (s *Server) configuredRepoProjection(
+	ctx context.Context,
+	raw config.Repo,
+	tracked []ghclient.RepoRef,
+) (string, string, error) {
+	if raw.HasNameGlob() {
+		return "", "", nil
+	}
+	platformRepoID := strings.TrimSpace(raw.PlatformRepoID)
+	if platformRepoID != "" {
+		if s.db != nil {
+			entry, err := s.db.GetRepositoryByProviderID(
+				ctx, raw.PlatformOrDefault(), raw.PlatformHostOrDefault(), platformRepoID,
+			)
+			if err != nil {
+				return "", "", fmt.Errorf(
+					"resolve configured repo %s: %w", configRepoPath(raw), err,
+				)
+			}
+			if entry != nil && entry.Lifecycle == db.RepositoryLifecycleActive {
+				return platformRepoID, entry.Repository.RepoPath, nil
+			}
+		}
+		return platformRepoID, configRepoPath(raw), nil
+	}
+	if s.db != nil {
+		entries, err := s.db.ListRepositoryCatalog(ctx, db.RepositoryCatalogFilter{
+			Platform: raw.PlatformOrDefault(), PlatformHost: raw.PlatformHostOrDefault(),
+			RepoPath: configRepoPath(raw),
+		})
+		if err != nil {
+			return "", "", fmt.Errorf(
+				"resolve configured repo %s: %w", configRepoPath(raw), err,
+			)
+		}
+		if len(entries) == 1 &&
+			strings.TrimSpace(entries[0].Repository.PlatformRepoID) != "" {
+			return entries[0].Repository.PlatformRepoID,
+				entries[0].Repository.RepoPath, nil
+		}
+		if len(entries) > 1 {
+			return "", "", nil
+		}
+	}
+	return trackedPlatformRepoIDForConfig(raw, tracked),
+		trackedPathForConfig(raw, tracked), nil
 }
 
 // hiddenRepoCorrelation carries the two addresses of every catalog row with a
@@ -474,28 +529,32 @@ func sameConfiguredRepo(left, right config.Repo) bool {
 func (s *Server) worktreeBasePathForRepo(
 	ctx context.Context, provider, platformHost, owner, name string,
 ) (string, bool, error) {
+	target := config.Repo{
+		Platform: provider, PlatformHost: platformHost, Owner: owner, Name: name,
+	}
 	if s.cfg != nil {
-		target := config.Repo{
-			Platform:     provider,
-			PlatformHost: platformHost,
-			Owner:        owner,
-			Name:         name,
+		s.cfgMu.Lock()
+		configuredRepos := slices.Clone(s.cfg.Repos)
+		s.cfgMu.Unlock()
+		targetID, _, err := s.configuredRepoProjection(ctx, target, nil)
+		if err != nil {
+			return "", false, err
 		}
-		configuredPath := func() string {
-			s.cfgMu.Lock()
-			defer s.cfgMu.Unlock()
-			for _, repo := range s.cfg.Repos {
-				if repo.HasNameGlob() || strings.TrimSpace(repo.WorktreeBasePath) == "" {
-					continue
-				}
-				if sameConfiguredRepo(repo, target) {
-					return repo.WorktreeBasePath
-				}
+		for _, repo := range configuredRepos {
+			if repo.HasNameGlob() || strings.TrimSpace(repo.WorktreeBasePath) == "" {
+				continue
 			}
-			return ""
-		}()
-		if configuredPath != "" {
-			return configuredPath, true, nil
+			repoID, _, err := s.configuredRepoProjection(ctx, repo, nil)
+			if err != nil {
+				return "", false, err
+			}
+			stableMatch := targetID != "" && repoID == targetID &&
+				strings.EqualFold(repo.PlatformOrDefault(), target.PlatformOrDefault()) &&
+				samePlatformHost(repo.PlatformHostOrDefault(), target.PlatformHostOrDefault())
+			routeMatch := targetID == "" && sameConfiguredRepo(repo, target)
+			if stableMatch || routeMatch {
+				return repo.WorktreeBasePath, true, nil
+			}
 		}
 	}
 	if s.db == nil {
@@ -775,6 +834,9 @@ func (s *Server) getSettings(
 	if s.cfg == nil {
 		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
+	if s.providerSource != nil && !s.federationEnabled() {
+		return s.settingsOutputResponseWithProvider(ctx, nil)
+	}
 
 	return s.settingsOutputResponse(ctx)
 }
@@ -854,18 +916,128 @@ func (s *Server) deleteRepoPreset(
 func (s *Server) settingsOutputResponse(
 	ctx context.Context,
 ) (*settingsOutput, error) {
+	provider, err := s.fetchProviderSettings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.settingsOutputResponseWithProvider(ctx, provider)
+}
+
+func (s *Server) fetchProviderSettings(
+	ctx context.Context,
+) (*providerSettingsProjection, error) {
+	if s.providerSource == nil || s.providerSource.client == nil ||
+		(s.providerSource.enabled != nil && !s.providerSource.enabled()) {
+		return nil, nil
+	}
+	provider, err := s.providerSource.GetSettings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.observeProviderSettingsRepositories(
+		ctx, provider.RepositoryObservations,
+	); err != nil {
+		return nil, httpapi.Internal(err.Error())
+	}
+	return &provider, nil
+}
+
+func (s *Server) settingsOutputResponseWithProvider(
+	ctx context.Context, provider *providerSettingsProjection,
+) (*settingsOutput, error) {
 	body, err := s.buildLocalSettingsResponse(ctx)
 	if err != nil {
 		return nil, httpapi.Internal(err.Error())
 	}
+	if provider != nil {
+		body.applyProviderSettings(provider.Settings)
+	}
 	return &settingsOutput{Body: body}, nil
+}
+
+func (s *Server) observeProviderSettingsRepositories(
+	ctx context.Context,
+	observations []providerRepositoryObservation,
+) (bool, error) {
+	if s.db == nil {
+		return false, nil
+	}
+	changed := false
+	for _, observation := range observations {
+		platformRepoID := strings.TrimSpace(observation.PlatformRepoID)
+		if platformRepoID == "" || observation.ObservedAt.IsZero() {
+			continue
+		}
+		repoPath := strings.Trim(strings.TrimSpace(observation.RepoPath), "/")
+		owner, name := strings.TrimSpace(observation.Owner), strings.TrimSpace(observation.Name)
+		current, err := s.db.GetRepositoryByProviderID(
+			ctx, observation.Provider, observation.PlatformHost, platformRepoID,
+		)
+		if err != nil {
+			return false, fmt.Errorf("read provider settings repository: %w", err)
+		}
+		unchanged := current != nil && current.Lifecycle == db.RepositoryLifecycleActive &&
+			strings.EqualFold(current.Repository.Owner, owner) &&
+			strings.EqualFold(current.Repository.Name, name)
+		_, accepted, err := s.db.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
+			Platform: observation.Provider, PlatformHost: observation.PlatformHost,
+			PlatformRepoID: platformRepoID, Owner: owner, Name: name,
+			RepoPath: repoPath,
+		}, observation.ObservedAt)
+		if err != nil {
+			return false, fmt.Errorf("observe provider settings repository: %w", err)
+		}
+		changed = changed || (accepted && !unchanged)
+	}
+	return changed, nil
 }
 
 func (s *Server) updateSettings(
 	ctx context.Context, input *updateSettingsInput,
 ) (*settingsOutput, error) {
+	if _, federationRequest := federationauth.PrincipalFromContext(ctx); federationRequest {
+		providerUpdate, localUpdate := splitSettingsUpdate(input.Body)
+		if hasSettingsUpdate(localUpdate) {
+			return nil, httpapi.Forbidden(
+				"federation credentials cannot change hub-local settings",
+				map[string]any{"reason": "nodeLocalSettings"},
+			)
+		}
+		return s.updateLocalSettings(ctx, &updateSettingsInput{Body: providerUpdate})
+	}
+	if s.providerSource == nil {
+		return s.updateLocalSettings(ctx, input)
+	}
+	providerUpdate, localUpdate := splitSettingsUpdate(input.Body)
+	providerChanged := hasSettingsUpdate(providerUpdate)
+	localChanged := hasSettingsUpdate(localUpdate)
+	if providerChanged && localChanged {
+		return nil, httpapi.BadRequest(
+			httpapi.CodeValidationError,
+			"a spoke settings update cannot mix hub-owned and spoke-owned fields",
+			map[string]any{"reason": "mixedSettingsOwnership"},
+		)
+	}
+	if providerChanged {
+		if _, err := s.providerSource.UpdateSettings(ctx, providerUpdate); err != nil {
+			return nil, err
+		}
+	}
+	if localChanged {
+		return s.updateLocalSettings(ctx, &updateSettingsInput{Body: localUpdate})
+	}
+	return s.settingsOutputResponse(ctx)
+}
+
+func (s *Server) updateLocalSettings(
+	ctx context.Context, input *updateSettingsInput,
+) (*settingsOutput, error) {
 	if s.cfgPath == "" {
 		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
+	}
+	provider, err := s.fetchProviderSettings(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	s.configReloadMu.Lock()
@@ -986,7 +1158,56 @@ func (s *Server) updateSettings(
 	s.applyTmuxMouse(ctx)
 	s.reconcileGitHubNativeStackProjection(nativeStacksPrevious, nativeStacksEnabled)
 
-	return s.settingsOutputResponse(ctx)
+	return s.settingsOutputResponseWithProvider(ctx, provider)
+}
+
+func (s *settingsResponse) applyProviderSettings(provider settingsResponse) {
+	localRepos := s.Repos
+	s.Repos = provider.Repos
+	for i := range s.Repos {
+		for _, local := range localRepos {
+			if s.Repos[i].PlatformRepoID != "" &&
+				local.PlatformRepoID != "" &&
+				s.Repos[i].PlatformRepoID == local.PlatformRepoID &&
+				strings.EqualFold(s.Repos[i].Provider, local.Provider) &&
+				samePlatformHost(s.Repos[i].PlatformHost, local.PlatformHost) {
+				s.Repos[i].WorktreeBasePath = local.WorktreeBasePath
+				break
+			}
+		}
+	}
+	s.RepoPresets = provider.RepoPresets
+	s.Activity = provider.Activity
+	s.Detail = provider.Detail
+	s.PullRequests = provider.PullRequests
+	s.Issues = provider.Issues
+	s.Notifications = provider.Notifications
+}
+
+func splitSettingsUpdate(
+	update updateSettingsRequest,
+) (provider updateSettingsRequest, local updateSettingsRequest) {
+	provider.Activity = update.Activity
+	provider.Detail = update.Detail
+	provider.PullRequests = update.PullRequests
+	provider.Issues = update.Issues
+	local.Workspaces = update.Workspaces
+	local.Terminal = update.Terminal
+	local.Modes = update.Modes
+	local.Agents = update.Agents
+	local.KataProjects = update.KataProjects
+	local.MCP = update.MCP
+	local.Roborev = update.Roborev
+	return provider, local
+}
+
+func hasSettingsUpdate(update updateSettingsRequest) bool {
+	return update.Activity != nil || update.Detail != nil ||
+		update.PullRequests != nil || update.Workspaces != nil ||
+		update.Issues != nil || update.Terminal != nil ||
+		update.Modes != nil || update.Agents != nil ||
+		update.KataProjects != nil || update.MCP != nil ||
+		update.Roborev != nil
 }
 
 func cloneRepoPresets(presets []config.RepoPreset) []config.RepoPreset {
@@ -1047,20 +1268,6 @@ func cloneConfigAgents(agents []config.Agent) []config.Agent {
 		cloned[i].Command = slices.Clone(agent.Command)
 	}
 	return cloned
-}
-
-func cloneFleetPeers(peers []config.FleetPeer) []config.FleetPeer {
-	if peers == nil {
-		return []config.FleetPeer{}
-	}
-	return slices.Clone(peers)
-}
-
-func cloneFleetSSHPeers(peers []config.FleetSSHPeer) []config.FleetSSHPeer {
-	if peers == nil {
-		return []config.FleetSSHPeer{}
-	}
-	return slices.Clone(peers)
 }
 
 func (s *Server) refreshRuntimeTargetsLocked() {
@@ -1330,12 +1537,23 @@ func (s *Server) updateConfiguredRepoWorktreeBasePath(
 		Owner:        ref.Owner,
 		Name:         ref.Name,
 	}
+	providerSettings, err := s.fetchProviderSettings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	targetRef, err = worktreeBaseMutationTarget(targetRef, providerSettings)
+	if err != nil {
+		return nil, err
+	}
 
 	worktreeBasePath := strings.TrimSpace(rawPath)
 	if worktreeBasePath != "" {
+		allowInsecureHTTP := s.clones != nil && s.clones.AllowsInsecureHTTP(
+			provider, targetRef.PlatformHostOrDefault(),
+		)
 		abs, err := workspace.ValidateWorktreeBasePath(
 			ctx, worktreeBasePath, targetRef.PlatformHostOrDefault(),
-			ref.Owner, ref.Name,
+			targetRef.Owner, targetRef.Name, allowInsecureHTTP,
 		)
 		if err != nil {
 			return nil, httpapi.Validation("body.worktree_base_path", err.Error())
@@ -1343,18 +1561,24 @@ func (s *Server) updateConfiguredRepoWorktreeBasePath(
 		worktreeBasePath = abs
 	}
 
+	s.configReloadMu.Lock()
+	defer s.configReloadMu.Unlock()
 	s.cfgMu.Lock()
-	idx := -1
-	for i, rp := range s.cfg.Repos {
-		if sameConfiguredRepo(rp, targetRef) {
-			idx = i
-			break
-		}
-	}
-	if idx == -1 {
+	idx, err := s.worktreeBaseRepoIndexLocked(ctx, targetRef)
+	if err != nil {
 		s.cfgMu.Unlock()
-		return nil, httpapi.NotFound(httpapi.CodeRepoNotFound,
-			ref.Owner+"/"+ref.Name+" is not configured", nil)
+		return nil, httpapi.Internal(err.Error())
+	}
+	appended := false
+	if idx == -1 {
+		if providerSettings == nil {
+			s.cfgMu.Unlock()
+			return nil, httpapi.NotFound(httpapi.CodeRepoNotFound,
+				ref.Owner+"/"+ref.Name+" is not configured", nil)
+		}
+		s.cfg.Repos = append(s.cfg.Repos, targetRef)
+		idx = len(s.cfg.Repos) - 1
+		appended = true
 	}
 	if s.cfg.Repos[idx].HasNameGlob() {
 		s.cfgMu.Unlock()
@@ -1365,21 +1589,91 @@ func (s *Server) updateConfiguredRepoWorktreeBasePath(
 		)
 	}
 
-	prev := s.cfg.Repos[idx].WorktreeBasePath
+	prev := s.cfg.Repos[idx]
+	restore := func() {
+		if appended {
+			s.cfg.Repos = s.cfg.Repos[:idx]
+			return
+		}
+		s.cfg.Repos[idx] = prev
+	}
+	s.cfg.Repos[idx].Platform = targetRef.Platform
+	s.cfg.Repos[idx].PlatformHost = targetRef.PlatformHost
+	s.cfg.Repos[idx].PlatformRepoID = targetRef.PlatformRepoID
+	s.cfg.Repos[idx].Owner = targetRef.Owner
+	s.cfg.Repos[idx].Name = targetRef.Name
+	s.cfg.Repos[idx].RepoPath = targetRef.RepoPath
 	s.cfg.Repos[idx].WorktreeBasePath = worktreeBasePath
 	if err := s.cfg.Validate(); err != nil {
-		s.cfg.Repos[idx].WorktreeBasePath = prev
+		restore()
 		s.cfgMu.Unlock()
 		return nil, httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
 	}
 	if err := s.cfg.Save(s.cfgPath); err != nil {
-		s.cfg.Repos[idx].WorktreeBasePath = prev
+		restore()
 		s.cfgMu.Unlock()
 		return nil, httpapi.Internal("save config: " + err.Error())
 	}
 	s.cfgMu.Unlock()
 
-	return s.settingsOutputResponse(ctx)
+	return s.settingsOutputResponseWithProvider(ctx, providerSettings)
+}
+
+func worktreeBaseMutationTarget(
+	target config.Repo, provider *providerSettingsProjection,
+) (config.Repo, error) {
+	if provider == nil {
+		return target, nil
+	}
+	for _, candidate := range provider.Settings.Repos {
+		if candidate.IsGlob ||
+			!strings.EqualFold(candidate.Provider, target.PlatformOrDefault()) ||
+			!samePlatformHost(candidate.PlatformHost, target.PlatformHostOrDefault()) ||
+			!strings.EqualFold(candidate.Owner, target.Owner) ||
+			!strings.EqualFold(candidate.Name, target.Name) {
+			continue
+		}
+		if strings.TrimSpace(candidate.PlatformRepoID) == "" {
+			return config.Repo{}, invalidHubDescriptor(
+				errors.New("hub repository settings omitted stable identity"),
+			)
+		}
+		return config.Repo{
+			Platform: candidate.Provider, PlatformHost: candidate.PlatformHost,
+			PlatformRepoID: candidate.PlatformRepoID,
+			Owner:          candidate.Owner, Name: candidate.Name, RepoPath: candidate.RepoPath,
+		}, nil
+	}
+	return config.Repo{}, httpapi.NotFound(
+		httpapi.CodeRepoNotFound, target.Owner+"/"+target.Name+" is not configured", nil,
+	)
+}
+
+func (s *Server) worktreeBaseRepoIndexLocked(
+	ctx context.Context, target config.Repo,
+) (int, error) {
+	for i, repo := range s.cfg.Repos {
+		if target.PlatformRepoID == "" {
+			if sameConfiguredRepo(repo, target) {
+				return i, nil
+			}
+			continue
+		}
+		platformRepoID := strings.TrimSpace(repo.PlatformRepoID)
+		if platformRepoID == "" && !repo.HasNameGlob() {
+			var err error
+			platformRepoID, _, err = s.configuredRepoProjection(ctx, repo, nil)
+			if err != nil {
+				return -1, err
+			}
+		}
+		if platformRepoID == target.PlatformRepoID &&
+			strings.EqualFold(repo.PlatformOrDefault(), target.PlatformOrDefault()) &&
+			samePlatformHost(repo.PlatformHostOrDefault(), target.PlatformHostOrDefault()) {
+			return i, nil
+		}
+	}
+	return -1, nil
 }
 
 func (s *Server) updateConfiguredRepoUIVisibility(

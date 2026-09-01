@@ -79,7 +79,7 @@ export const SETTINGS_PANELS: SettingsPanelMeta[] = [
     title: "Fleet federation",
     group: "Workspace",
     description: "Remote hosts and fleet membership",
-    keywords: "fleet federation remote hosts peers ssh http membership",
+    keywords: "fleet federation hub spokes https enrollment membership",
   },
   {
     id: "settings-modes",

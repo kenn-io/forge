@@ -732,6 +732,38 @@ func TestInstallAcceptsSelectedInstallCoveringConfiguredRepos(t *testing.T) {
 	assert.Equal([]string{"kenn-io/kenn-forge"}, cfg.GitHubApps[0].SelectedRepos)
 }
 
+func TestInstallAllowsPartialSelectedArchiveCoverage(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	fake := githubapptest.NewFake()
+	t.Cleanup(fake.Close)
+	configPath := writeTestConfig(t)
+
+	env, _ := newTestEnv(t, fake, configPath)
+	env.openBrowser = scriptBrowser(t, fake, "kenn-io")
+	require.NoError(runCLI([]string{
+		"create", "--role", "archive", "--name", "kenn-forge-archive", "--timeout", "10s",
+	}, env))
+
+	env, _ = newTestEnv(t, fake, configPath)
+	require.NoError(runCLI([]string{"uninstall", "--yes"}, env))
+
+	env, _ = newTestEnv(t, fake, configPath)
+	env.openBrowser = scriptBrowserWithInstall(t, fake, func(appID int64) error {
+		_, err := fake.InstallSelected(appID, "kenn-io", "kenn-io/other-repo")
+		return err
+	})
+	require.NoError(runCLI([]string{"install", "--timeout", "10s"}, env))
+
+	cfg, err := config.Load(configPath)
+	require.NoError(err)
+	require.Len(cfg.GitHubApps, 1)
+	assert := assert.New(t)
+	assert.Equal(config.GitHubAppRoleArchive, cfg.GitHubApps[0].Role)
+	assert.NotZero(cfg.GitHubApps[0].InstallationID)
+	assert.Equal([]string{"kenn-io/other-repo"}, cfg.GitHubApps[0].SelectedRepos)
+}
+
 func TestInstallRefreshesStaleSelectedRepoSnapshot(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)

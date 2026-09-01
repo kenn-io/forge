@@ -4,6 +4,13 @@ import { mockApi, mockSettings as defaultSettings } from "./support/mockApi";
 
 test.beforeEach(async ({ page }) => {
   await mockApi(page);
+  await page.route("**/api/v1/snapshot**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ hosts: [], workspaces: [] }),
+    });
+  });
 });
 
 const contextMenuWorkspace = {
@@ -20,6 +27,7 @@ const contextMenuWorkspace = {
   },
   item_type: "pull_request",
   item_number: 555,
+  source_item_visible: true,
   git_head_ref: "fix/issue-cross-reference-events",
   worktree_path: "/tmp/kenn-forge-ws-context-menu",
   tmux_session: "kenn-forge-ws-context-menu",
@@ -59,20 +67,14 @@ async function mockWorkspaceContextMenuRoutes(page: import("@playwright/test").P
             tmuxSessions: [],
           },
         ],
+        workspaces: [contextMenuWorkspace],
       }),
-    });
-  });
-
-  await page.route("**/api/v1/workspaces", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ workspaces: [contextMenuWorkspace] }),
     });
   });
 }
 
 test("workspaces route renders the terminal workspace list shell", async ({ page }) => {
+  await mockWorkspaceContextMenuRoutes(page);
   await page.goto("/workspaces");
   await expect(page.getByText("Select a workspace from the sidebar")).toBeVisible();
 });
@@ -131,15 +133,6 @@ test("repository selector filters Workspaces and keeps preset actions fixed", as
       body: JSON.stringify(repos),
     });
   });
-  await page.route("**/api/v1/workspaces", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        workspaces: [workspace("api", "API workspace", 1), workspace("web", "Web workspace", 2)],
-      }),
-    });
-  });
   await page.route("**/api/v1/snapshot**", async (route) => {
     await route.fulfill({
       status: 200,
@@ -159,15 +152,11 @@ test("repository selector filters Workspaces and keeps preset actions fixed", as
             tmuxSessions: [],
           },
         ],
-      }),
-    });
-  });
-  await page.route("**/api/v1/fleet/hosts/peer-one/workspaces", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        workspaces: [workspace("fleet-only", "Fleet workspace", 3)],
+        workspaces: [
+          workspace("api", "API workspace", 1),
+          workspace("web", "Web workspace", 2),
+          workspace("fleet-only", "Fleet workspace", 3),
+        ],
       }),
     });
   });

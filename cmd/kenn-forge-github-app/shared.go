@@ -173,8 +173,7 @@ func removeAppFromConfig(cfg *config.Config, configPath string, app config.GitHu
 // account that a "selected repositories" installation cannot reach,
 // given the full names its token reported accessible. Repos with
 // their own credential override never resolve to the app token and
-// are exempt; glob patterns expand to an open-ended set only an "All
-// repositories" install can satisfy.
+// are exempt; callers apply the role-specific policy to the result.
 func missingSelectedRepos(
 	cfg *config.Config, host, account string, accessible []string,
 ) []string {

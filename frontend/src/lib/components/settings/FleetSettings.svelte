@@ -1,219 +1,81 @@
 <script lang="ts">
-  import { Checkbox, Typeahead, type TypeaheadOption } from "@kenn-io/kit-ui";
-  import { Effect } from "effect";
-  import PlusIcon from "@lucide/svelte/icons/plus";
+  import { Button, Card, Checkbox, EmptyState } from "@kenn-io/kit-ui";
   import RotateCcwIcon from "@lucide/svelte/icons/rotate-ccw";
-  import TrashIcon from "@lucide/svelte/icons/trash-2";
-  import { Button } from "@kenn-io/kit-ui";
+  import { Effect } from "effect";
   import type {
-    FleetPeer,
-    FleetSSHPeer,
     FleetSettings as FleetSettingsType,
     FleetSettingsUpdate,
   } from "../../api/types.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
-  import { showFlash } from "../../stores/flash.svelte.js";
-  import { SettingsWorkflow, settingsErrorMessage } from "../../stores/settings-workflow.js";
   import { isEmbedded } from "../../stores/embed-config.svelte.js";
+  import { showFlash } from "../../stores/flash.svelte.js";
+  import {
+    SettingsWorkflow,
+    settingsErrorMessage,
+  } from "../../stores/settings-workflow.js";
 
   interface Props {
     fleet: FleetSettingsType;
     onUpdate: (fleet: FleetSettingsType) => void;
   }
 
-  interface HTTPPeerDraft {
-    id: string;
-    key: string;
-    name: string;
-    baseURL: string;
-  }
-
-  interface SSHPeerDraft {
-    id: string;
-    key: string;
-    name: string;
-    destination: string;
-    platform: string;
-    remoteCommand: string;
-  }
-
   let { fleet, onUpdate }: Props = $props();
 
   const runtime = getAppRuntime();
   const embedded = isEmbedded();
-  const basePlatformOptions: TypeaheadOption[] = [
-    { name: "macos", label: "macOS" },
-    { name: "linux", label: "linux" },
-    { name: "windows", label: "windows" },
-  ];
   // svelte-ignore state_referenced_locally
   let currentFleet = $state(fleet);
-  let nextID = 0;
   let saving = $state(false);
   // svelte-ignore state_referenced_locally
   let enabledDraft = $state(currentFleet.enabled);
-  // svelte-ignore state_referenced_locally
-  let keyDraft = $state(currentFleet.key ?? "");
   // svelte-ignore state_referenced_locally
   let peerTimeoutDraft = $state(currentFleet.peer_timeout ?? "");
   // svelte-ignore state_referenced_locally
   let includeUnmanagedDetailsDraft = $state(
     currentFleet.sessions.include_unmanaged_details ?? false,
   );
-  // svelte-ignore state_referenced_locally
-  let httpPeerDrafts = $state<HTTPPeerDraft[]>(httpDraftsFromFleet(currentFleet));
-  // svelte-ignore state_referenced_locally
-  let sshPeerDrafts = $state<SSHPeerDraft[]>(sshDraftsFromFleet(currentFleet));
 
   const pendingFleet = $derived(buildPendingFleet());
   const savedFleet = $derived(normalizeFleetForCompare(currentFleet));
   const isDirty = $derived(
     JSON.stringify(pendingFleet) !== JSON.stringify(savedFleet),
   );
-  const hasInvalidDraft = $derived(
-    httpPeerDrafts.some((peer) => peer.key.trim() === "" || peer.baseURL.trim() === "") ||
-      sshPeerDrafts.some((peer) => peer.key.trim() === "" || peer.destination.trim() === ""),
-  );
-  const canSave = $derived(!embedded && !saving && isDirty && !hasInvalidDraft);
-
-  function nextDraftID(prefix: string): string {
-    nextID += 1;
-    return `${prefix}:${nextID}`;
-  }
-
-  function httpDraftsFromFleet(value: FleetSettingsType): HTTPPeerDraft[] {
-    return value.peers.map((peer, index) => ({
-      id: `http:${peer.key || index}:${nextID++}`,
-      key: peer.key,
-      name: peer.name ?? "",
-      baseURL: peer.base_url,
-    }));
-  }
-
-  function sshDraftsFromFleet(value: FleetSettingsType): SSHPeerDraft[] {
-    return value.ssh_peers.map((peer, index) => ({
-      id: `ssh:${peer.key || index}:${nextID++}`,
-      key: peer.key,
-      name: peer.name ?? "",
-      destination: peer.destination,
-      platform: peer.platform ?? "",
-      remoteCommand: peer.remote_command ?? "",
-    }));
-  }
-
-  function compactHTTPPeer(peer: HTTPPeerDraft): FleetPeer {
-    const out: FleetPeer = {
-      key: peer.key.trim(),
-      base_url: peer.baseURL.trim(),
-    };
-    const name = peer.name.trim();
-    if (name !== "") out.name = name;
-    return out;
-  }
-
-  function compactSSHPeer(peer: SSHPeerDraft): FleetSSHPeer {
-    const out: FleetSSHPeer = {
-      key: peer.key.trim(),
-      destination: peer.destination.trim(),
-    };
-    const name = peer.name.trim();
-    const platform = peer.platform.trim();
-    const remoteCommand = peer.remoteCommand.trim();
-    if (name !== "") out.name = name;
-    if (platform !== "") out.platform = platform;
-    if (remoteCommand !== "") out.remote_command = remoteCommand;
-    return out;
-  }
+  const canSave = $derived(!embedded && !saving && isDirty);
+  const isHub = $derived(currentFleet.role === "hub");
 
   function buildPendingFleet(): FleetSettingsUpdate {
     return {
       enabled: enabledDraft,
-      key: keyDraft.trim(),
       peer_timeout: peerTimeoutDraft.trim(),
       sessions: {
         include_unmanaged_details: includeUnmanagedDetailsDraft,
       },
-      peers: httpPeerDrafts.map(compactHTTPPeer),
-      ssh_peers: sshPeerDrafts.map(compactSSHPeer),
     };
   }
 
-  function normalizeFleetForCompare(value: FleetSettingsType): FleetSettingsUpdate {
+  function normalizeFleetForCompare(
+    value: FleetSettingsType,
+  ): FleetSettingsUpdate {
     return {
       enabled: value.enabled,
-      key: value.key ?? "",
       peer_timeout: value.peer_timeout ?? "",
       sessions: {
         include_unmanaged_details:
           value.sessions.include_unmanaged_details ?? false,
       },
-      peers: value.peers.map((peer) => compactHTTPPeer({
-        id: "",
-        key: peer.key,
-        name: peer.name ?? "",
-        baseURL: peer.base_url,
-      })),
-      ssh_peers: value.ssh_peers.map((peer) => compactSSHPeer({
-        id: "",
-        key: peer.key,
-        name: peer.name ?? "",
-        destination: peer.destination,
-        platform: peer.platform ?? "",
-        remoteCommand: peer.remote_command ?? "",
-      })),
     };
   }
 
   function resetDraft(): void {
     enabledDraft = currentFleet.enabled;
-    keyDraft = currentFleet.key ?? "";
     peerTimeoutDraft = currentFleet.peer_timeout ?? "";
     includeUnmanagedDetailsDraft =
       currentFleet.sessions.include_unmanaged_details ?? false;
-    httpPeerDrafts = httpDraftsFromFleet(currentFleet);
-    sshPeerDrafts = sshDraftsFromFleet(currentFleet);
   }
 
-  function addHTTPPeer(): void {
-    httpPeerDrafts = [
-      ...httpPeerDrafts,
-      { id: nextDraftID("http"), key: "", name: "", baseURL: "" },
-    ];
-  }
-
-  function removeHTTPPeer(id: string): void {
-    httpPeerDrafts = httpPeerDrafts.filter((peer) => peer.id !== id);
-  }
-
-  function addSSHPeer(): void {
-    sshPeerDrafts = [
-      ...sshPeerDrafts,
-      {
-        id: nextDraftID("ssh"),
-        key: "",
-        name: "",
-        destination: "",
-        platform: "",
-        remoteCommand: "",
-      },
-    ];
-  }
-
-  function removeSSHPeer(id: string): void {
-    sshPeerDrafts = sshPeerDrafts.filter((peer) => peer.id !== id);
-  }
-
-  function peerLabel(prefix: string, key: string, index: number): string {
-    const trimmed = key.trim();
-    return trimmed === "" ? `${prefix} ${index + 1}` : trimmed;
-  }
-
-  function platformOptions(value: string): TypeaheadOption[] {
-    const trimmed = value.trim();
-    if (trimmed === "" || basePlatformOptions.some((option) => option.name === trimmed)) {
-      return basePlatformOptions;
-    }
-    return [...basePlatformOptions, { name: trimmed, label: trimmed }];
+  function displayName(name: string | undefined, fallback: string): string {
+    const trimmed = name?.trim() ?? "";
+    return trimmed === "" ? fallback : trimmed;
   }
 
   function save(): void {
@@ -229,11 +91,11 @@
             Effect.sync(() => {
               showFlash(settingsErrorMessage(failure), { tone: "danger" });
             }),
-          onSuccess: (fleet) =>
+          onSuccess: (updatedFleet) =>
             Effect.sync(() => {
-              currentFleet = fleet;
+              currentFleet = updatedFleet;
               resetDraft();
-              onUpdate(fleet);
+              onUpdate(updatedFleet);
             }),
         }),
         Effect.ensuring(
@@ -252,6 +114,16 @@
 </script>
 
 <div class="fleet-settings">
+  <Card level="inset" padding="sm" class="role-card">
+    <div>
+      <span class="eyebrow">This Forge</span>
+      <strong>{isHub ? "Federation hub" : "Federation spoke"}</strong>
+    </div>
+    <span class:enabled={currentFleet.enabled} class="state-badge">
+      {currentFleet.enabled ? "Enabled" : "Disabled"}
+    </span>
+  </Card>
+
   <Checkbox
     class="toggle-row"
     bind:checked={enabledDraft}
@@ -261,7 +133,9 @@
     <span>
       <span class="field-label">Enable fleet federation</span>
       <span class="field-help">
-        Remote hosts stay unavailable while federation is off.
+        {isHub
+          ? "The hub can reach active members while federation is enabled."
+          : "This spoke can use its hub binding while federation is enabled."}
       </span>
     </span>
   </Checkbox>
@@ -270,26 +144,9 @@
     <p class="restart-banner">Restart required</p>
   {/if}
 
-
   <div class="settings-grid">
     <label class="field">
-      <span class="field-label">Local fleet key</span>
-      <input
-        value={keyDraft}
-        oninput={(event) => {
-          keyDraft = event.currentTarget instanceof HTMLInputElement
-            ? event.currentTarget.value
-            : "";
-        }}
-        placeholder="Optional stable hub key"
-        disabled={embedded || saving}
-        aria-label="Local fleet key"
-      />
-      <span class="field-help">Hubs should use a stable key; empty keeps the current hostname fallback.</span>
-    </label>
-
-    <label class="field">
-      <span class="field-label">Peer timeout</span>
+      <span class="field-label">Member request timeout</span>
       <input
         value={peerTimeoutDraft}
         oninput={(event) => {
@@ -299,8 +156,9 @@
         }}
         placeholder="2s"
         disabled={embedded || saving}
-        aria-label="Peer timeout"
+        aria-label="Member request timeout"
       />
+      <span class="field-help">Bounds snapshot and health requests to another Forge.</span>
     </label>
   </div>
 
@@ -316,201 +174,99 @@
     </span>
   </Checkbox>
 
-  <section class="peer-section" aria-label="HTTP fleet peers">
-    <div class="peer-section-header">
-      <div>
-        <h3>HTTP peers</h3>
-        <p>Use only on a trusted network boundary; hub credentials are not forwarded.</p>
+  {#if isHub}
+    <section class="membership-section" aria-label="Federation members">
+      <div class="section-heading">
+        <div>
+          <h3>Enrolled spokes</h3>
+          <p>Membership is managed by the one-time enrollment workflow.</p>
+        </div>
+        <span class="count">{currentFleet.members.length}</span>
       </div>
-      <Button
-        size="sm"
-        type="button"
-        onclick={addHTTPPeer}
-        disabled={embedded || saving}
-      >
-        <PlusIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-        Add HTTP peer
-      </Button>
-    </div>
 
-    {#if httpPeerDrafts.length === 0}
-      <p class="empty-peers">No HTTP peers configured.</p>
-    {:else}
-      <div class="peer-table-wrap">
-        <table class="peer-table http" aria-label="HTTP peer membership">
-          <colgroup>
-            <col class="http-key-col" />
-            <col class="http-name-col" />
-            <col class="http-url-col" />
-            <col class="peer-action-col" />
-          </colgroup>
-          <thead>
-            <tr>
-              <th scope="col">Key</th>
-              <th scope="col">Name</th>
-              <th scope="col">Base URL</th>
-              <th scope="col" aria-label="HTTP peer actions"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each httpPeerDrafts as peer, index (peer.id)}
-              {@const label = peerLabel("HTTP peer", peer.key, index)}
+      {#if currentFleet.members.length === 0}
+        <EmptyState title="No active spokes are enrolled." />
+      {:else}
+        <div class="table-wrap">
+          <table aria-label="Federation member status">
+            <thead>
               <tr>
-                <td>
-                  <input
-                    bind:value={peer.key}
-                    disabled={embedded || saving}
-                    aria-label={`HTTP peer ${label} key`}
-                  />
-                </td>
-                <td>
-                  <input
-                    bind:value={peer.name}
-                    disabled={embedded || saving}
-                    aria-label={`HTTP peer ${label} name`}
-                  />
-                </td>
-                <td>
-                  <input
-                    bind:value={peer.baseURL}
-                    disabled={embedded || saving}
-                    aria-label={`HTTP peer ${label} base URL`}
-                  />
-                </td>
-                <td class="action-cell">
-                  <Button
-                    size="sm"
-                    tone="danger"
-                    surface="outline"
-                    type="button"
-                    onclick={() => removeHTTPPeer(peer.id)}
-                    disabled={embedded || saving}
-                    ariaLabel={`Remove HTTP peer ${label}`}
-                    title={`Remove HTTP peer ${label}`}
-                  >
-                    <TrashIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-                  </Button>
-                </td>
+                <th scope="col">Spoke</th>
+                <th scope="col">HTTPS endpoint</th>
+                <th scope="col">State</th>
               </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
-    {/if}
-  </section>
+            </thead>
+            <tbody>
+              {#each currentFleet.members as member (member.node_id)}
+                <tr>
+                  <td>
+                    <strong>{displayName(member.name, "Unnamed spoke")}</strong>
+                    <code>{member.node_id}</code>
+                  </td>
+                  <td><a class="endpoint-link" href={member.base_url}>{member.base_url}</a></td>
+                  <td><span class="state-badge enabled">{member.state}</span></td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {/if}
+    </section>
 
-  <section class="peer-section" aria-label="SSH fleet peers">
-    <div class="peer-section-header">
-      <div>
-        <h3>SSH peers</h3>
-        <p>Private relay members reached by running the peer CLI remotely.</p>
-      </div>
-      <Button
-        size="sm"
-        type="button"
-        onclick={addSSHPeer}
-        disabled={embedded || saving}
-      >
-        <PlusIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-        Add SSH peer
-      </Button>
-    </div>
-
-    {#if sshPeerDrafts.length === 0}
-      <p class="empty-peers">No SSH peers configured.</p>
-    {:else}
-      <div class="peer-table-wrap">
-        <table class="peer-table ssh" aria-label="SSH peer membership">
-          <colgroup>
-            <col class="ssh-key-col" />
-            <col class="ssh-name-col" />
-            <col class="ssh-destination-col" />
-            <col class="ssh-platform-col" />
-            <col class="ssh-command-col" />
-            <col class="peer-action-col" />
-          </colgroup>
-          <thead>
-            <tr>
-              <th scope="col">Key</th>
-              <th scope="col">Name</th>
-              <th scope="col">Destination</th>
-              <th scope="col">Platform</th>
-              <th scope="col">Remote command</th>
-              <th scope="col" aria-label="SSH peer actions"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each sshPeerDrafts as peer, index (peer.id)}
-              {@const label = peerLabel("SSH peer", peer.key, index)}
-              <tr>
-                <td>
-                  <input
-                    bind:value={peer.key}
-                    disabled={embedded || saving}
-                    aria-label={`SSH peer ${label} key`}
-                  />
-                </td>
-                <td>
-                  <input
-                    bind:value={peer.name}
-                    disabled={embedded || saving}
-                    aria-label={`SSH peer ${label} name`}
-                  />
-                </td>
-                <td>
-                  <input
-                    bind:value={peer.destination}
-                    disabled={embedded || saving}
-                    aria-label={`SSH peer ${label} destination`}
-                  />
-                </td>
-                <td class="platform-cell">
-                  <Typeahead
-                    value={peer.platform}
-                    fallbackLabel="Unspecified"
-                    options={platformOptions(peer.platform)}
-                    triggerPrefix={`SSH peer ${label} platform:`}
-                    allowClear
-                    allowCustom
-                    clearLabel="Unspecified"
-                    placeholder={`SSH peer ${label} platform`}
-                    emptyLabel="Enter a platform"
-                    placement="top"
-                    onselect={(value) => {
-                      peer.platform = value;
-                    }}
-                    disabled={embedded || saving}
-                  />
-                </td>
-                <td>
-                  <input
-                    bind:value={peer.remoteCommand}
-                    placeholder="kenn-forge"
-                    disabled={embedded || saving}
-                    aria-label={`SSH peer ${label} remote command`}
-                  />
-                </td>
-                <td class="action-cell">
-                  <Button
-                    size="sm"
-                    tone="danger"
-                    surface="outline"
-                    type="button"
-                    onclick={() => removeSSHPeer(peer.id)}
-                    disabled={embedded || saving}
-                    ariaLabel={`Remove SSH peer ${label}`}
-                    title={`Remove SSH peer ${label}`}
-                  >
-                    <TrashIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-                  </Button>
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
+    {#if currentFleet.enrollments.length > 0}
+      <section class="membership-section" aria-label="Enrollment activity">
+        <div class="section-heading">
+          <div>
+            <h3>Enrollment activity</h3>
+            <p>Prepared, pending, and revoked enrollment records.</p>
+          </div>
+          <span class="count">{currentFleet.enrollments.length}</span>
+        </div>
+        <ul class="enrollment-list">
+          {#each currentFleet.enrollments as enrollment (enrollment.id)}
+            <li>
+              <span>
+                <strong>{displayName(enrollment.spoke_name, enrollment.node_id)}</strong>
+                <code>{enrollment.spoke_base_url}</code>
+              </span>
+              <span class="state-badge">{enrollment.state}</span>
+            </li>
+          {/each}
+        </ul>
+      </section>
     {/if}
-  </section>
+  {:else}
+    <section class="membership-section" aria-label="Hub binding">
+      <div class="section-heading">
+        <div>
+          <h3>Hub</h3>
+          <p>This binding is written by enrollment and changes after restart.</p>
+        </div>
+      </div>
+      {#if currentFleet.hub}
+        <dl class="binding">
+          <div>
+            <dt>Name</dt>
+            <dd>{displayName(currentFleet.hub.name, "Unnamed hub")}</dd>
+          </div>
+          <div>
+            <dt>Node ID</dt>
+            <dd><code>{currentFleet.hub.node_id}</code></dd>
+          </div>
+          <div>
+            <dt>HTTPS endpoint</dt>
+            <dd>
+              <a class="endpoint-link" href={currentFleet.hub.base_url}>
+                {currentFleet.hub.base_url}
+              </a>
+            </dd>
+          </div>
+        </dl>
+      {:else}
+        <EmptyState title="This spoke has not enrolled with a hub." />
+      {/if}
+    </section>
+  {/if}
 
   <div class="settings-actions">
     <Button
@@ -526,7 +282,7 @@
       tone="info"
       surface="solid"
       type="button"
-      onclick={() => void save()}
+      onclick={save}
       disabled={!canSave}
     >
       Save fleet federation
@@ -541,10 +297,55 @@
     gap: var(--space-5);
   }
 
+  :global(.role-card),
+  .section-heading,
+  .enrollment-list li {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  :global(.role-card strong),
+  .field-label,
+  .section-heading h3,
+  .enrollment-list strong {
+    display: block;
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
+    font-weight: 700;
+  }
+
+  .eyebrow {
+    display: block;
+    margin-bottom: 2px;
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .state-badge,
+  .count {
+    flex: 0 0 auto;
+    padding: 2px 7px;
+    border: 1px solid var(--border-default);
+    border-radius: 999px;
+    color: var(--text-secondary);
+    background: var(--bg-primary);
+    font-size: var(--font-size-xs);
+  }
+
+  .state-badge.enabled {
+    border-color: var(--status-success-border, var(--border-default));
+    color: var(--status-success-text, var(--text-primary));
+    background: var(--status-success-bg, var(--bg-primary));
+  }
+
   :global(.toggle-row) {
     display: flex;
-    justify-content: space-between;
     align-items: flex-start;
+    justify-content: space-between;
     gap: 16px;
   }
 
@@ -561,16 +362,8 @@
     margin-top: 2px;
   }
 
-  .field-label {
-    display: block;
-    color: var(--text-primary);
-    font-size: var(--font-size-sm);
-    font-weight: 600;
-  }
-
   .field-help,
-  .peer-section-header p,
-  .empty-peers {
+  .section-heading p {
     color: var(--text-muted);
     font-size: var(--font-size-xs);
     line-height: 1.4;
@@ -589,10 +382,7 @@
     min-width: 0;
   }
 
-  .field input,
-  .peer-table input,
-  .platform-cell :global(.kit-typeahead__trigger),
-  .platform-cell :global(.kit-typeahead__input) {
+  .field input {
     width: 100%;
     min-height: 30px;
     padding: 4px 8px;
@@ -601,44 +391,24 @@
     background: var(--bg-primary);
     color: var(--text-primary);
     font-size: var(--font-size-sm);
-    font-weight: 400;
   }
 
-  .field input:disabled,
-  .peer-table input:disabled,
-  .platform-cell :global(.kit-typeahead__trigger:disabled) {
+  .field input:disabled {
     color: var(--text-muted);
     background: var(--bg-inset);
-  }
-
-  .platform-cell :global(.kit-typeahead) {
-    width: 100%;
-    min-width: 0;
-  }
-
-  .platform-cell :global(.kit-typeahead__prefix) {
-    display: none;
-  }
-
-  .platform-cell :global(.kit-typeahead__trigger),
-  .platform-cell :global(.kit-typeahead__input) {
-    height: 30px;
   }
 
   .restart-banner {
     margin: 0;
     padding: 8px 10px;
+    border: 1px solid var(--diff-stale-border);
     border-radius: var(--radius-sm);
+    color: var(--diff-stale-text);
+    background: var(--diff-stale-bg);
     font-size: var(--font-size-sm);
   }
 
-  .restart-banner {
-    border: 1px solid var(--diff-stale-border);
-    background: var(--diff-stale-bg);
-    color: var(--diff-stale-text);
-  }
-
-  .peer-section {
+  .membership-section {
     display: flex;
     flex-direction: column;
     gap: var(--space-4);
@@ -646,112 +416,108 @@
     border-top: 1px solid var(--border-muted);
   }
 
-  .peer-section-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 12px;
-  }
-
-  .peer-section-header h3 {
+  .section-heading h3,
+  .section-heading p {
     margin: 0;
-    color: var(--text-primary);
-    font-size: var(--font-size-sm);
-    font-weight: 700;
   }
 
-  .peer-section-header p {
-    margin: 2px 0 0;
+  .section-heading p {
+    margin-top: 2px;
   }
 
-  .peer-table-wrap {
-    overflow: visible;
+  .table-wrap {
+    overflow-x: auto;
     border: 1px solid var(--border-muted);
     border-radius: var(--radius-sm);
   }
 
-  .peer-table {
+  table {
     width: 100%;
-    min-width: 620px;
+    min-width: 600px;
     border-collapse: collapse;
-    table-layout: fixed;
   }
 
-  .peer-table.ssh {
-    min-width: 680px;
-  }
-
-  .peer-table th,
-  .peer-table td {
+  th,
+  td {
     padding: 8px;
     border-bottom: 1px solid var(--border-muted);
     vertical-align: top;
+    text-align: left;
   }
 
-  .peer-table tbody tr:last-child td {
+  tbody tr:last-child td {
     border-bottom: 0;
   }
 
-  .peer-table th {
+  th {
     color: var(--text-secondary);
+    background: var(--bg-inset);
     font-size: var(--font-size-xs);
     font-weight: 700;
-    text-align: left;
-    background: var(--bg-inset);
   }
 
-  .http-key-col {
-    width: 20%;
+  td strong,
+  td code,
+  .enrollment-list code {
+    display: block;
   }
 
-  .http-name-col {
-    width: 26%;
+  code {
+    overflow-wrap: anywhere;
+    color: var(--text-secondary);
+    font-size: var(--font-size-xs);
   }
 
-  .http-url-col,
-  .ssh-command-col {
-    width: auto;
+  .endpoint-link {
+    display: block;
+    overflow-wrap: anywhere;
+    color: var(--accent-blue);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
   }
 
-  .ssh-key-col {
-    width: 14%;
+  .enrollment-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
   }
 
-  .ssh-name-col {
-    width: 18%;
+  .enrollment-list li {
+    padding: 9px 10px;
+    border: 1px solid var(--border-muted);
+    border-radius: var(--radius-sm);
   }
 
-  .ssh-destination-col {
-    width: 24%;
+  .binding {
+    display: grid;
+    gap: 8px;
+    margin: 0;
   }
 
-  .ssh-platform-col {
-    width: 15%;
+  .binding div {
+    display: grid;
+    grid-template-columns: minmax(100px, 0.35fr) minmax(0, 1fr);
+    gap: 12px;
   }
 
-  .peer-action-col {
-    width: 46px;
+  .binding dt {
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
   }
 
-  .action-cell {
-    text-align: right;
+  .binding dd {
+    min-width: 0;
+    margin: 0;
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
   }
 
   .settings-actions {
     display: flex;
     justify-content: flex-end;
     gap: 8px;
-  }
-
-  @media (min-width: 760px) {
-    .settings-grid {
-      grid-template-columns: minmax(0, 1fr) minmax(160px, 0.5fr);
-    }
-  }
-
-  @media (max-width: 759px) {
-    .peer-table-wrap {
-      overflow-x: auto;
-    }
   }
 </style>

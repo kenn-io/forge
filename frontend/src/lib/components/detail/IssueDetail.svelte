@@ -2023,13 +2023,20 @@
     }
 
     .star-btn,
-    .gh-link,
-    .meta-row :global(.copy-number-btn) {
+    .gh-link {
       min-width: var(--detail-mobile-hit-target);
       min-height: var(--detail-mobile-hit-target);
       justify-content: center;
       padding: var(--detail-mobile-space-xs);
       margin-top: 0;
+    }
+
+    .meta-row :global(.copy-number-btn) {
+      min-width: 24px;
+      min-height: 24px;
+      padding: 0;
+      font-size: var(--font-size-sm);
+      line-height: 1.35;
     }
 
     .meta-row {

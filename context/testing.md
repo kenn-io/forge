@@ -94,6 +94,10 @@ provider versions (`internal/server/gitlab_container_e2e_test.go::TestGitLabCont
 Regenerate OpenAPI and generated clients with `make api-generate` after Huma
 route or API type changes.
 
+Fleet setup tests inject every host boundary and use temporary homes/data; they
+must never inspect or mutate the live daemon, service manager, network ingress,
+or credentials (`internal/fleetsetup/setup_test.go`).
+
 ## Frontend test lane selection
 
 Do not treat Playwright or full-stack e2e as a universal "must have" for every
@@ -119,6 +123,10 @@ owner:
 - Browser specs live beside their components under `frontend/src`; the browser
   project includes `src/**/*.browser.svelte.ts`, while the jsdom unit project
   also includes GitHub App setup tests (`frontend/vite.config.ts::jsdomUnitTestProject`).
+- jsdom lacks `ResizeObserver` and the CSS Font Loading API; `frontend/src/test/setup.ts`
+  stubs both as inert so kit components that remeasure on resize or font load
+  (`AdaptiveActionGrid`, popover auto-reposition) mount in unit tests. Add a stub there,
+  not per suite, when a kit bump reaches a new browser primitive.
 - Frontend unit tests default to jsdom; promote a suite to the exact Node inventory only after
   A/B runs prove identical test identities and outcomes, so indirect browser dependencies fail safe
   (`frontend/vitest.node-files.ts::nodeUnitTestFiles`).
@@ -224,6 +232,9 @@ sources. The Playwright runner must prepare those assets and build one run-owned
 cleanup targets the server instead of a `go run` wrapper. An explicit binary remains
 externally owned
 and must not be rebuilt or removed (`frontend/tests/e2e-full/support/e2eServer.ts::ensureE2EServerBinary`).
+
+- E2E provider decorators must embed concrete fixtures rather than base interfaces;
+  narrowing erases optional capability interfaces (`cmd/e2e-server/main_test.go::TestE2EWorkflowClientExercisesProviderWorkflowContract`).
 
 - Full-stack Playwright workers must publish child ownership in the shared tmux root;
   the root removes it only after every published child exits (`frontend/tests/e2e-full/support/e2eServer.ts::waitForSharedServerOwners`).

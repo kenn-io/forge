@@ -254,7 +254,7 @@
     cursor: not-allowed;
     color: color-mix(in srgb, var(--text-muted) 75%, var(--bg-surface));
     background: var(--bg-surface);
-    opacity: 1;
+    opacity: unset;
   }
 
   .scope-btn--active:disabled {

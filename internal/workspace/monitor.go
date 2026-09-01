@@ -17,12 +17,31 @@ type PRAssociationUpdate struct {
 	PRNumber    int
 }
 
-type PRMonitor struct {
-	db *db.DB
+// PullCandidateSource supplies hub-owned open pull-request facts for
+// associating a local issue, Kata, or ad-hoc workspace with a newly opened PR.
+// A spoke must provide this source because it has no provider item replicas.
+type PullCandidateSource interface {
+	ListOpenPullCandidates(context.Context, Workspace) ([]db.MergeRequest, error)
 }
 
-func NewPRMonitor(database *db.DB) *PRMonitor {
-	return &PRMonitor{db: database}
+type PRMonitorOptions struct {
+	LaunchSpecs    *Manager
+	PullCandidates PullCandidateSource
+}
+
+type PRMonitor struct {
+	db             *db.DB
+	launchSpecs    *Manager
+	pullCandidates PullCandidateSource
+}
+
+func NewPRMonitor(database *db.DB, options ...PRMonitorOptions) *PRMonitor {
+	monitor := &PRMonitor{db: database}
+	if len(options) > 0 {
+		monitor.launchSpecs = options[0].LaunchSpecs
+		monitor.pullCandidates = options[0].PullCandidates
+	}
+	return monitor
 }
 
 func (m *PRMonitor) RunOnce(
@@ -132,6 +151,11 @@ func (m *PRMonitor) detectAssociatedPR(
 	ctx context.Context,
 	ws *Workspace,
 ) (int, bool, error) {
+	if m.launchSpecs != nil && providerBackedWorkspace(ws) {
+		if _, err := m.launchSpecs.RequireWorkspaceLaunchSpec(ctx, ws); err != nil {
+			return 0, false, err
+		}
+	}
 	currentBranch, err := gitBranchName(ctx, ws.WorktreePath)
 	if err != nil {
 		return 0, false, err
@@ -139,22 +163,7 @@ func (m *PRMonitor) detectAssociatedPR(
 	if currentBranch == "" {
 		return 0, false, nil
 	}
-	repo, err := m.db.GetRepoByIdentity(ctx, db.RepoIdentity{
-		Platform:     workspaceProvider(ws),
-		PlatformHost: ws.PlatformHost,
-		Owner:        ws.RepoOwner,
-		Name:         ws.RepoName,
-	})
-	if err != nil {
-		return 0, false, fmt.Errorf("get repo: %w", err)
-	}
-	if repo == nil {
-		return 0, false, nil
-	}
-	candidates, err := m.db.ListMergeRequests(ctx, db.ListMergeRequestsOpts{
-		RepoID: repo.ID,
-		State:  "open",
-	})
+	candidates, err := m.listOpenPullCandidates(ctx, ws)
 	if err != nil {
 		return 0, false, fmt.Errorf("list merge requests: %w", err)
 	}
@@ -179,6 +188,27 @@ func (m *PRMonitor) detectAssociatedPR(
 		return prNumber, true, nil
 	}
 	return 0, false, nil
+}
+
+func (m *PRMonitor) listOpenPullCandidates(
+	ctx context.Context, workspace *Workspace,
+) ([]db.MergeRequest, error) {
+	if m.pullCandidates != nil {
+		return m.pullCandidates.ListOpenPullCandidates(ctx, *workspace)
+	}
+	repo, err := m.db.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     workspaceProvider(workspace),
+		PlatformHost: workspace.PlatformHost,
+		Owner:        workspace.RepoOwner,
+		Name:         workspace.RepoName,
+	})
+	if err != nil || repo == nil {
+		return nil, err
+	}
+	return m.db.ListMergeRequests(ctx, db.ListMergeRequestsOpts{
+		RepoID: repo.ID,
+		State:  "open",
+	})
 }
 
 func selectPRByUpstream(

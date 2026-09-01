@@ -16,6 +16,7 @@ type ConfigSnapshot struct {
 	TmuxCommand              []string
 	AutoAssignOnCreate       bool
 	RoborevInitManagedClones bool
+	IssueBranchSlug          bool
 }
 
 func cloneConfigSnapshot(snapshot ConfigSnapshot) ConfigSnapshot {
@@ -25,6 +26,7 @@ func cloneConfigSnapshot(snapshot ConfigSnapshot) ConfigSnapshot {
 		TmuxCommand:              slices.Clone(snapshot.TmuxCommand),
 		AutoAssignOnCreate:       snapshot.AutoAssignOnCreate,
 		RoborevInitManagedClones: snapshot.RoborevInitManagedClones,
+		IssueBranchSlug:          snapshot.IssueBranchSlug,
 	}
 	for i := range snapshot.Agents {
 		out.Agents[i] = snapshot.Agents[i]

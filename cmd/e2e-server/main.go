@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	cryptorand "crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -12,8 +14,10 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -28,6 +32,8 @@ import (
 	gh "github.com/google/go-github/v89/github"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/federation"
+	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/platform"
@@ -38,6 +44,7 @@ import (
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/stacks"
 	"go.kenn.io/forge/internal/testutil"
+	"go.kenn.io/forge/internal/testutil/federationtest"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/internal/web"
 	"go.kenn.io/forge/internal/workspace"
@@ -56,6 +63,13 @@ const defaultRoborevEndpoint = "http://127.0.0.1:1"
 
 const e2eTmuxDirEnv = "PLAYWRIGHT_E2E_TMUX_DIR"
 
+const (
+	e2eStandaloneNodeID = "e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0"
+	e2eHubNodeID        = "e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1"
+	e2eSpokeANodeID     = "e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2"
+	e2eSpokeBNodeID     = "e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3"
+)
+
 func main() {
 	port := flag.Int("port", 0, "port to listen on (0 selects a random free port)")
 	roborev := flag.String(
@@ -66,9 +80,9 @@ func main() {
 		"default-platform-host", "github.com",
 		"default platform host for seeded config",
 	)
-	fleetKey := flag.String(
-		"fleet-key", "",
-		"fleet self key for seeded config",
+	federatedForges := flag.Bool(
+		"federated-forges", false,
+		"serve an isolated hub and two federation spokes",
 	)
 	visibleImportedModes := flag.Bool(
 		"visible-imported-modes", false,
@@ -92,28 +106,48 @@ func main() {
 	)
 	defer stop()
 
-	if err := run(
-		ctx,
-		*port,
-		*roborev,
-		*serverInfoFile,
-		*defaultPlatformHost,
-		*fleetKey,
-		*visibleImportedModes,
-		*providerCollision,
-	); err != nil {
+	var err error
+	if *federatedForges {
+		err = runFederatedForgesE2E(ctx, *roborev, *serverInfoFile)
+	} else {
+		err = run(
+			ctx,
+			*port,
+			*roborev,
+			*serverInfoFile,
+			*defaultPlatformHost,
+			*visibleImportedModes,
+			*providerCollision,
+		)
+	}
+	if err != nil {
 		slog.Error("fatal", "err", err)
 		os.Exit(1)
 	}
 }
 
 type e2eServerInfo struct {
-	Host       string `json:"host"`
-	Port       int    `json:"port"`
-	BaseURL    string `json:"base_url"`
-	PID        int    `json:"pid"`
-	ConfigPath string `json:"config_path"`
-	PprofAddr  string `json:"pprof_addr,omitempty"`
+	Host       string             `json:"host"`
+	Port       int                `json:"port"`
+	BaseURL    string             `json:"base_url"`
+	PID        int                `json:"pid"`
+	ConfigPath string             `json:"config_path"`
+	PprofAddr  string             `json:"pprof_addr,omitempty"`
+	NodeID     string             `json:"node_id"`
+	Federation *e2eFederationInfo `json:"federation,omitempty"`
+}
+
+type e2eFederationInfo struct {
+	HubURL       string `json:"hub_url"`
+	SpokeAURL    string `json:"spoke_a_url"`
+	SpokeBURL    string `json:"spoke_b_url"`
+	ControlURL   string `json:"control_url"`
+	HubToken     string `json:"hub_token"`
+	SpokeAToken  string `json:"spoke_a_token"`
+	SpokeBToken  string `json:"spoke_b_token"`
+	HubNodeID    string `json:"hub_node_id"`
+	SpokeANodeID string `json:"spoke_a_node_id"`
+	SpokeBNodeID string `json:"spoke_b_node_id"`
 }
 
 type staticTokenSource string
@@ -177,7 +211,7 @@ type e2eWorkflowDispatch struct {
 }
 
 type e2eWorkflowClient struct {
-	ghclient.Client
+	*testutil.FixtureClient
 
 	mu         sync.RWMutex
 	runs       []*gh.WorkflowRun
@@ -186,33 +220,33 @@ type e2eWorkflowClient struct {
 	nextRunID  int64
 }
 
-func newE2EWorkflowClient(client ghclient.Client) *e2eWorkflowClient {
+func newE2EWorkflowClient(client *testutil.FixtureClient) *e2eWorkflowClient {
 	successCreated := time.Date(2026, 8, 27, 9, 0, 0, 0, time.UTC)
 	failureCreated := successCreated.Add(-time.Hour)
 	return &e2eWorkflowClient{
-		Client: client,
+		FixtureClient: client,
 		runs: []*gh.WorkflowRun{
 			{
-				ID: gh.Ptr(int64(82001)), WorkflowID: gh.Ptr(int64(8101)),
-				RunNumber: gh.Ptr(41), Name: gh.Ptr("Release"),
-				Event: gh.Ptr("workflow_dispatch"), HeadBranch: gh.Ptr("main"),
-				HeadSHA: gh.Ptr("e2e-success-head-sha"),
-				Actor:   &gh.User{Login: gh.Ptr("release-bot")},
-				Status:  gh.Ptr("completed"), Conclusion: gh.Ptr("success"),
+				ID: new(int64(82001)), WorkflowID: new(int64(8101)),
+				RunNumber: new(41), Name: new("Release"),
+				Event: new("workflow_dispatch"), HeadBranch: new("main"),
+				HeadSHA: new("e2e-success-head-sha"),
+				Actor:   &gh.User{Login: new("release-bot")},
+				Status:  new("completed"), Conclusion: new("success"),
 				CreatedAt: &gh.Timestamp{Time: successCreated},
 				UpdatedAt: &gh.Timestamp{Time: successCreated.Add(2 * time.Minute)},
-				HTMLURL:   gh.Ptr("https://github.com/acme/widgets/actions/runs/82001"),
+				HTMLURL:   new("https://github.com/acme/widgets/actions/runs/82001"),
 			},
 			{
-				ID: gh.Ptr(int64(82002)), WorkflowID: gh.Ptr(int64(8101)),
-				RunNumber: gh.Ptr(40), Name: gh.Ptr("Release"),
-				Event: gh.Ptr("workflow_dispatch"), HeadBranch: gh.Ptr("release/previous"),
-				HeadSHA: gh.Ptr("e2e-failure-head-sha"),
-				Actor:   &gh.User{Login: gh.Ptr("fixture-viewer")},
-				Status:  gh.Ptr("completed"), Conclusion: gh.Ptr("failure"),
+				ID: new(int64(82002)), WorkflowID: new(int64(8101)),
+				RunNumber: new(40), Name: new("Release"),
+				Event: new("workflow_dispatch"), HeadBranch: new("release/previous"),
+				HeadSHA: new("e2e-failure-head-sha"),
+				Actor:   &gh.User{Login: new("fixture-viewer")},
+				Status:  new("completed"), Conclusion: new("failure"),
 				CreatedAt: &gh.Timestamp{Time: failureCreated},
 				UpdatedAt: &gh.Timestamp{Time: failureCreated.Add(time.Minute)},
-				HTMLURL:   gh.Ptr("https://github.com/acme/widgets/actions/runs/82002"),
+				HTMLURL:   new("https://github.com/acme/widgets/actions/runs/82002"),
 			},
 		},
 		jobs:      make(map[int64][]*gh.WorkflowJob),
@@ -228,19 +262,19 @@ func (c *e2eWorkflowClient) ListRepositoryWorkflows(
 	}
 	return []*gh.Workflow{
 		{
-			ID: gh.Ptr(int64(8101)), Name: gh.Ptr("Release"),
-			Path: gh.Ptr(".github/workflows/release.yml"), State: gh.Ptr("active"),
-			HTMLURL: gh.Ptr("https://github.com/acme/widgets/actions/workflows/release.yml"),
+			ID: new(int64(8101)), Name: new("Release"),
+			Path: new(".github/workflows/release.yml"), State: new("active"),
+			HTMLURL: new("https://github.com/acme/widgets/actions/workflows/release.yml"),
 		},
 		{
-			ID: gh.Ptr(int64(8102)), Name: gh.Ptr("Maintenance"),
-			Path: gh.Ptr(".github/workflows/maintenance.yml"), State: gh.Ptr("active"),
-			HTMLURL: gh.Ptr("https://github.com/acme/widgets/actions/workflows/maintenance.yml"),
+			ID: new(int64(8102)), Name: new("Maintenance"),
+			Path: new(".github/workflows/maintenance.yml"), State: new("active"),
+			HTMLURL: new("https://github.com/acme/widgets/actions/workflows/maintenance.yml"),
 		},
 		{
-			ID: gh.Ptr(int64(8103)), Name: gh.Ptr("Push checks"),
-			Path: gh.Ptr(".github/workflows/push.yml"), State: gh.Ptr("active"),
-			HTMLURL: gh.Ptr("https://github.com/acme/widgets/actions/workflows/push.yml"),
+			ID: new(int64(8103)), Name: new("Push checks"),
+			Path: new(".github/workflows/push.yml"), State: new("active"),
+			HTMLURL: new("https://github.com/acme/widgets/actions/workflows/push.yml"),
 		},
 	}, nil
 }
@@ -270,8 +304,8 @@ func (c *e2eWorkflowClient) ListRepositoryEnvironments(
 		return []*gh.Environment{}, nil
 	}
 	return []*gh.Environment{
-		{Name: gh.Ptr("staging")},
-		{Name: gh.Ptr("production")},
+		{Name: new("staging")},
+		{Name: new("production")},
 	}, nil
 }
 
@@ -367,44 +401,44 @@ func (c *e2eWorkflowClient) DispatchManualWorkflow(
 		name = "Maintenance"
 	}
 	run := &gh.WorkflowRun{
-		ID: gh.Ptr(runID), WorkflowID: gh.Ptr(workflowID),
-		RunNumber: gh.Ptr(runNumber), Name: gh.Ptr(name),
-		Event: gh.Ptr("workflow_dispatch"), HeadBranch: gh.Ptr(request.Ref),
-		HeadSHA: gh.Ptr("e2e-dispatched-head-sha"),
-		Actor:   &gh.User{Login: gh.Ptr("fixture-viewer")},
-		Status:  gh.Ptr("in_progress"), Conclusion: gh.Ptr(""),
+		ID: new(runID), WorkflowID: new(workflowID),
+		RunNumber: new(runNumber), Name: new(name),
+		Event: new("workflow_dispatch"), HeadBranch: new(request.Ref),
+		HeadSHA: new("e2e-dispatched-head-sha"),
+		Actor:   &gh.User{Login: new("fixture-viewer")},
+		Status:  new("in_progress"), Conclusion: new(""),
 		CreatedAt: &gh.Timestamp{Time: created},
 		UpdatedAt: &gh.Timestamp{Time: created},
-		HTMLURL:   gh.Ptr(runURL),
+		HTMLURL:   new(runURL),
 	}
 	c.runs = append([]*gh.WorkflowRun{run}, c.runs...)
 	jobID := runID + 1000
 	started := created.Add(time.Second)
 	c.jobs[runID] = []*gh.WorkflowJob{{
-		ID: gh.Ptr(jobID), Name: gh.Ptr("publish-release"),
-		Status: gh.Ptr("in_progress"), Conclusion: gh.Ptr(""),
+		ID: new(jobID), Name: new("publish-release"),
+		Status: new("in_progress"), Conclusion: new(""),
 		StartedAt: &gh.Timestamp{Time: started},
-		HTMLURL: gh.Ptr(fmt.Sprintf(
+		HTMLURL: new(fmt.Sprintf(
 			"https://github.com/%s/%s/actions/runs/%d/job/%d",
 			owner, repo, runID, jobID,
 		)),
 		Steps: []*gh.TaskStep{
 			{
-				Number: gh.Ptr(int64(1)), Name: gh.Ptr("Prepare"),
-				Status: gh.Ptr("completed"), Conclusion: gh.Ptr("success"),
+				Number: new(int64(1)), Name: new("Prepare"),
+				Status: new("completed"), Conclusion: new("success"),
 				StartedAt:   &gh.Timestamp{Time: started},
 				CompletedAt: &gh.Timestamp{Time: started.Add(time.Second)},
 			},
 			{
-				Number: gh.Ptr(int64(2)), Name: gh.Ptr("Publish"),
-				Status: gh.Ptr("in_progress"), Conclusion: gh.Ptr(""),
+				Number: new(int64(2)), Name: new("Publish"),
+				Status: new("in_progress"), Conclusion: new(""),
 				StartedAt: &gh.Timestamp{Time: started.Add(time.Second)},
 			},
 		},
 	}}
 	return &gh.WorkflowDispatchRunDetails{
-		WorkflowRunID: gh.Ptr(runID),
-		HTMLURL:       gh.Ptr(runURL),
+		WorkflowRunID: new(runID),
+		HTMLURL:       new(runURL),
 	}, nil
 }
 
@@ -424,9 +458,7 @@ func cloneE2EWorkflowInputs(inputs map[string]any) map[string]any {
 		return nil
 	}
 	clone := make(map[string]any, len(inputs))
-	for key, value := range inputs {
-		clone[key] = value
-	}
+	maps.Copy(clone, inputs)
 	return clone
 }
 
@@ -1210,10 +1242,22 @@ func setPR1CIState(
 type appOptions struct {
 	roborevEndpoint      string
 	defaultPlatformHost  string
-	fleetKey             string
 	visibleImportedModes bool
 	providerCollision    bool
 	preferPtyOwner       bool
+	nodeID               string
+	federation           *e2eFederationRuntime
+}
+
+type e2eFederationRuntime struct {
+	fleet       config.Fleet
+	credentials *federationauth.Store
+	enrollments *federation.Store
+	httpClient  *http.Client
+	activeSpoke bool
+	localToken  string
+	workspaceID string
+	itemNumber  int
 }
 
 // appState bundles everything one logical e2e server instance owns:
@@ -1478,6 +1522,44 @@ func (st *appState) close() {
 	}
 }
 
+func seedFederatedE2EWorkspace(
+	ctx context.Context,
+	database *db.DB,
+	tmpDir, workspaceID string,
+	itemNumber int,
+) error {
+	repo, err := database.GetRepoByIdentity(
+		ctx, db.GitHubRepoIdentity("github.com", "acme", "widgets"),
+	)
+	if err != nil {
+		return fmt.Errorf("read federated fixture repository: %w", err)
+	}
+	if repo == nil {
+		return errors.New("federated fixture repository is missing")
+	}
+	pull, err := database.GetMergeRequestByRepoIDAndNumber(
+		ctx, repo.ID, itemNumber,
+	)
+	if err != nil {
+		return fmt.Errorf("read federated fixture pull: %w", err)
+	}
+	if pull == nil {
+		return fmt.Errorf("federated fixture pull %d is missing", itemNumber)
+	}
+	worktreePath := filepath.Join(tmpDir, "federated-workspaces", workspaceID)
+	if err := os.MkdirAll(worktreePath, 0o755); err != nil {
+		return fmt.Errorf("create federated fixture workspace: %w", err)
+	}
+	return database.InsertWorkspace(ctx, &db.Workspace{
+		ID: workspaceID, Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widgets",
+		ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: itemNumber,
+		ItemKey: strconv.Itoa(itemNumber), GitHeadRef: pull.HeadBranch,
+		WorkspaceBranch: pull.HeadBranch, WorktreePath: worktreePath,
+		Status: "ready", CreatedAt: time.Now().UTC(),
+	})
+}
+
 // buildAppState seeds a complete e2e server state: fixture DB, git
 // repos, config file, provider registry, and the HTTP handler with
 // the /__e2e fixture endpoints. It runs at startup and on every
@@ -1517,6 +1599,14 @@ func buildAppState(
 	result, err := testutil.SeedFixtures(ctx, database)
 	if err != nil {
 		return nil, fmt.Errorf("seed fixtures: %w", err)
+	}
+	if opts.federation != nil && opts.federation.workspaceID != "" {
+		if err := seedFederatedE2EWorkspace(
+			ctx, database, tmpDir,
+			opts.federation.workspaceID, opts.federation.itemNumber,
+		); err != nil {
+			return nil, err
+		}
 	}
 	gitLabCloneURL, err := createBareRepoFixture(
 		ctx,
@@ -1616,7 +1706,10 @@ func buildAppState(
 		// tests run unserialized.
 		Tmux: config.Tmux{Command: guardedTmuxCommand},
 	}
-	cfg.Fleet.Key = strings.TrimSpace(opts.fleetKey)
+	if opts.federation != nil {
+		cfg.Fleet = opts.federation.fleet
+		cfg.API.RequireAuth = true
+	}
 	if opts.visibleImportedModes {
 		modes := config.DefaultModeVisibility()
 		*modes.Docs = true
@@ -2019,14 +2112,30 @@ func buildAppState(
 	syncer.SetWatchInterval(cfg.ActivePRRefreshDuration())
 	syncer.SetActiveMRWindow(cfg.ActivePRWindowDuration())
 
+	serverSyncer := syncer
+	serverOptions := server.ServerOptions{
+		Clones:                        diffRepo.Manager,
+		WorktreeDir:                   e2eWorktreeDir,
+		HostCheckAllowLoopbackAnyPort: true,
+		PtyOwnerInProcess:             opts.preferPtyOwner,
+		FederationSpokeID:             opts.nodeID,
+	}
+	if opts.federation != nil {
+		serverOptions.DaemonAccess = server.DaemonAccessOptions{
+			Token: opts.federation.localToken, RequireAPIAuth: true,
+		}
+		serverOptions.FederationCredentials = opts.federation.credentials
+		serverOptions.FederationEnrollments = opts.federation.enrollments
+		serverOptions.FederationHTTPClient = opts.federation.httpClient
+		serverOptions.FederationSpokeActive = opts.federation.activeSpoke
+		serverOptions.DisableWorkspaceBackgroundMonitors = true
+		if opts.federation.fleet.RoleOrDefault() == config.FleetRoleSpoke {
+			serverSyncer = nil
+		}
+	}
 	srv := server.NewWithConfig(
-		database, syncer, diffRepo.Manager, assets, cfg, cfgPath,
-		server.ServerOptions{
-			Clones:                        diffRepo.Manager,
-			WorktreeDir:                   e2eWorktreeDir,
-			HostCheckAllowLoopbackAnyPort: true,
-			PtyOwnerInProcess:             opts.preferPtyOwner,
-		},
+		database, serverSyncer, diffRepo.Manager, assets, cfg, cfgPath,
+		serverOptions,
 	)
 	// Mirror production wiring so notification syncs nudge an open activity
 	// feed to reload (the feed's incremental poll skips backfilled rows).
@@ -2038,7 +2147,15 @@ func buildAppState(
 	})
 	var failNextRepoBrowserTree atomic.Bool
 	var failNextNotificationRead atomic.Bool
+	forkGitRoot := filepath.Join(tmpDir, "forks")
+	forkGitHandler := http.FileServer(http.Dir(forkGitRoot))
 	rootHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if (r.Method == http.MethodGet || r.Method == http.MethodHead) &&
+			strings.EqualFold(r.Host, "github.com") &&
+			strings.HasPrefix(r.URL.Path, "/forker/widgets.git/") {
+			forkGitHandler.ServeHTTP(w, r)
+			return
+		}
 		if r.Method == http.MethodPost &&
 			r.URL.Path == "/__e2e/issue-workspace/reused-branch" {
 			identityClonePath, err := diffRepo.Manager.ClonePathForContext(
@@ -2088,7 +2205,6 @@ func buildAppState(
 				return
 			}
 			forkSnapshot := *mr
-			forkSnapshot.HeadRepoCloneURL = "https://github.com/forker/widgets.git"
 			forkSnapshot.UpdatedAt = time.Now().UTC()
 			clonePath, err := diffRepo.Manager.ClonePathForContext(
 				gitclone.WithRepositoryIdentity(r.Context(), diffRepo.PlatformRepoID),
@@ -2107,18 +2223,39 @@ func buildAppState(
 				return
 			}
 			originPath := strings.TrimSpace(string(originOutput))
-			_, stderr, err := gitcmd.New().Run(
-				r.Context(), originPath, nil,
-				"update-ref", "refs/pull/1/head", diffRepo.HeadSHA,
-			)
-			if err != nil {
+			forkPath := filepath.Join(forkGitRoot, "forker", "widgets.git")
+			if err := os.MkdirAll(filepath.Dir(forkPath), 0o755); err != nil {
+				http.Error(w, "create fixture fork parent", http.StatusInternalServerError)
+				return
+			}
+			if err := e2eGit(
+				r.Context(), "", "clone", "--bare", originPath, forkPath,
+			); err != nil {
 				http.Error(
 					w,
-					"create fixture pull ref: "+string(stderr),
+					"create fixture fork: "+err.Error(),
 					http.StatusInternalServerError,
 				)
 				return
 			}
+			if err := e2eGit(r.Context(), forkPath, "update-server-info"); err != nil {
+				http.Error(w, "prepare fixture fork: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+			proxyURL := "http://" + r.Host
+			for key, value := range map[string]string{
+				"HTTP_PROXY": proxyURL, "http_proxy": proxyURL,
+				"NO_PROXY": "127.0.0.1,localhost,::1", "no_proxy": "127.0.0.1,localhost,::1",
+			} {
+				if err := os.Setenv(key, value); err != nil {
+					http.Error(w, "configure fixture git proxy", http.StatusInternalServerError)
+					return
+				}
+			}
+			// This dedicated offline fixture intentionally serves the exact
+			// github.com fork URL through its process-local HTTP proxy.
+			diffRepo.Manager.SetAllowInsecureHTTP("github", "github.com", true)
+			forkSnapshot.HeadRepoCloneURL = "http://github.com/forker/widgets.git"
 			_, accepted, err := database.UpsertMergeRequestSnapshot(
 				r.Context(), &forkSnapshot,
 			)
@@ -3238,13 +3375,323 @@ func buildAppState(
 	}, nil
 }
 
+type e2eFederationHandlerBox struct {
+	handler http.Handler
+}
+
+type e2eFederationSwitch struct {
+	current atomic.Pointer[e2eFederationHandlerBox]
+	offline atomic.Bool
+}
+
+func newE2EFederationSwitch() *e2eFederationSwitch {
+	switcher := &e2eFederationSwitch{}
+	switcher.Set(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "federated e2e daemon is starting", http.StatusServiceUnavailable)
+	}))
+	return switcher
+}
+
+func (s *e2eFederationSwitch) Set(handler http.Handler) {
+	s.current.Store(&e2eFederationHandlerBox{handler: handler})
+}
+
+func (s *e2eFederationSwitch) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if s.offline.Load() {
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status": http.StatusServiceUnavailable,
+			"code":   "hubUnavailable",
+			"detail": "the federated e2e hub is offline",
+		})
+		return
+	}
+	s.current.Load().handler.ServeHTTP(w, r)
+}
+
+func writeFederatedE2EControlResponse(w http.ResponseWriter, status string) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": status})
+}
+
+func runFederatedForgesE2E(
+	ctx context.Context,
+	roborevEndpoint, serverInfoFile string,
+) error {
+	assets, err := web.Assets()
+	if err != nil {
+		return fmt.Errorf("load frontend assets: %w", err)
+	}
+
+	hubSwitch := newE2EFederationSwitch()
+	spokeASwitch := newE2EFederationSwitch()
+	spokeBSwitch := newE2EFederationSwitch()
+	hubHTTP := httptest.NewUnstartedServer(hubSwitch)
+	spokeAHTTP := httptest.NewUnstartedServer(spokeASwitch)
+	spokeBHTTP := httptest.NewUnstartedServer(spokeBSwitch)
+	for _, origin := range []*httptest.Server{hubHTTP, spokeAHTTP, spokeBHTTP} {
+		origin.StartTLS()
+		defer origin.Close()
+	}
+	controlHTTP := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		switch r.URL.Path {
+		case "/hub/offline":
+			hubSwitch.offline.Store(true)
+			hubHTTP.CloseClientConnections()
+			writeFederatedE2EControlResponse(w, "offline")
+		case "/hub/online":
+			hubSwitch.offline.Store(false)
+			writeFederatedE2EControlResponse(w, "online")
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer controlHTTP.Close()
+
+	federationClient := e2eFederationHTTPClient(
+		hubHTTP, spokeAHTTP, spokeBHTTP,
+	)
+	if transport, ok := federationClient.Transport.(*http.Transport); ok {
+		defer transport.CloseIdleConnections()
+	}
+	credentialDir, err := os.MkdirTemp("", "kenn-forge-e2e-federation-credentials-*")
+	if err != nil {
+		return fmt.Errorf("create federation credential directory: %w", err)
+	}
+	defer os.RemoveAll(credentialDir)
+	hubCredentials, err := federationauth.Open(
+		filepath.Join(credentialDir, "hub.json"),
+	)
+	if err != nil {
+		return err
+	}
+	spokeACredentials, err := federationauth.Open(
+		filepath.Join(credentialDir, "spoke-a.json"),
+	)
+	if err != nil {
+		return err
+	}
+	spokeBCredentials, err := federationauth.Open(
+		filepath.Join(credentialDir, "spoke-b.json"),
+	)
+	if err != nil {
+		return err
+	}
+	hubEnrollments, err := federation.Open(
+		filepath.Join(credentialDir, "hub-enrollments.json"),
+		federation.StoreOptions{},
+	)
+	if err != nil {
+		return err
+	}
+	spokeAEnrollments, err := federation.Open(
+		filepath.Join(credentialDir, "spoke-a-enrollments.json"),
+		federation.StoreOptions{},
+	)
+	if err != nil {
+		return err
+	}
+	spokeBEnrollments, err := federation.Open(
+		filepath.Join(credentialDir, "spoke-b-enrollments.json"),
+		federation.StoreOptions{},
+	)
+	if err != nil {
+		return err
+	}
+	if err := connectE2EFederationCredentials(
+		hubCredentials, spokeACredentials,
+		e2eHubNodeID, e2eSpokeANodeID,
+	); err != nil {
+		return err
+	}
+	if err := connectE2EFederationCredentials(
+		hubCredentials, spokeBCredentials,
+		e2eHubNodeID, e2eSpokeBNodeID,
+	); err != nil {
+		return err
+	}
+	if err := seedE2EFederationEnrollment(
+		ctx, hubEnrollments, spokeAEnrollments,
+		e2eHubNodeID, hubHTTP.URL, e2eSpokeANodeID, spokeAHTTP.URL,
+	); err != nil {
+		return err
+	}
+	if err := seedE2EFederationEnrollment(
+		ctx, hubEnrollments, spokeBEnrollments,
+		e2eHubNodeID, hubHTTP.URL, e2eSpokeBNodeID, spokeBHTTP.URL,
+	); err != nil {
+		return err
+	}
+
+	const (
+		hubToken    = "federated-e2e-hub-local-token"
+		spokeAToken = "federated-e2e-spoke-a-local-token"
+		spokeBToken = "federated-e2e-spoke-b-local-token"
+	)
+	hubState, err := buildAppState(ctx, assets, appOptions{
+		roborevEndpoint: roborevEndpoint, defaultPlatformHost: "github.com",
+		nodeID: e2eHubNodeID,
+		federation: &e2eFederationRuntime{
+			fleet: config.Fleet{
+				Enabled: true, Role: config.FleetRoleHub,
+				BaseURL: hubHTTP.URL, PeerTimeout: "1s",
+				Members: []config.FleetMember{
+					{NodeID: e2eSpokeANodeID, Name: "Spoke A", BaseURL: spokeAHTTP.URL, State: federation.EnrollmentActive},
+					{NodeID: e2eSpokeBNodeID, Name: "Spoke B", BaseURL: spokeBHTTP.URL, State: federation.EnrollmentActive},
+				},
+			},
+			credentials: hubCredentials, enrollments: hubEnrollments,
+			httpClient: federationClient,
+			localToken: hubToken,
+		},
+	})
+	if err != nil {
+		return err
+	}
+	defer hubState.close()
+	hubSwitch.Set(hubState.handler)
+
+	spokeState := func(
+		nodeID, baseURL, workspaceID, token string,
+		credentials *federationauth.Store,
+		enrollments *federation.Store,
+		itemNumber int,
+	) (*appState, error) {
+		return buildAppState(ctx, assets, appOptions{
+			roborevEndpoint: roborevEndpoint, defaultPlatformHost: "github.com",
+			nodeID: nodeID,
+			federation: &e2eFederationRuntime{
+				fleet: config.Fleet{
+					Enabled: true, Role: config.FleetRoleSpoke,
+					BaseURL: baseURL, PeerTimeout: "1s",
+					Hub: &config.FleetHub{
+						NodeID: e2eHubNodeID, Name: "Hub",
+						BaseURL: hubHTTP.URL,
+					},
+				},
+				credentials: credentials, enrollments: enrollments,
+				httpClient:  federationClient,
+				activeSpoke: true, localToken: token,
+				workspaceID: workspaceID, itemNumber: itemNumber,
+			},
+		})
+	}
+	spokeAState, err := spokeState(
+		e2eSpokeANodeID, spokeAHTTP.URL, "federated-spoke-a-workspace",
+		spokeAToken, spokeACredentials, spokeAEnrollments, 1,
+	)
+	if err != nil {
+		return err
+	}
+	defer spokeAState.close()
+	spokeASwitch.Set(spokeAState.handler)
+	spokeBState, err := spokeState(
+		e2eSpokeBNodeID, spokeBHTTP.URL, "federated-spoke-b-workspace",
+		spokeBToken, spokeBCredentials, spokeBEnrollments, 2,
+	)
+	if err != nil {
+		return err
+	}
+	defer spokeBState.close()
+	spokeBSwitch.Set(spokeBState.handler)
+
+	hubAddress, ok := hubHTTP.Listener.Addr().(*net.TCPAddr)
+	if !ok {
+		return fmt.Errorf("unexpected federation listener address %T", hubHTTP.Listener.Addr())
+	}
+	info := e2eServerInfo{
+		Host: "127.0.0.1", Port: hubAddress.Port,
+		BaseURL: hubHTTP.URL, PID: os.Getpid(),
+		ConfigPath: hubState.cfgPath, NodeID: e2eHubNodeID,
+		Federation: &e2eFederationInfo{
+			HubURL:    hubHTTP.URL,
+			SpokeAURL: spokeAHTTP.URL, SpokeBURL: spokeBHTTP.URL,
+			ControlURL:  controlHTTP.URL,
+			HubToken:    hubToken,
+			SpokeAToken: spokeAToken, SpokeBToken: spokeBToken,
+			HubNodeID:    e2eHubNodeID,
+			SpokeANodeID: e2eSpokeANodeID, SpokeBNodeID: e2eSpokeBNodeID,
+		},
+	}
+	if err := writeServerInfoFile(serverInfoFile, info); err != nil {
+		return fmt.Errorf("write server info file: %w", err)
+	}
+	defer cleanupServerInfoFile(serverInfoFile)
+	slog.Info("starting federated e2e servers",
+		"hub", hubHTTP.URL,
+		"spoke_a", spokeAHTTP.URL, "spoke_b", spokeBHTTP.URL,
+	)
+	<-ctx.Done()
+	return nil
+}
+
+func e2eFederationHTTPClient(origins ...*httptest.Server) *http.Client {
+	roots := x509.NewCertPool()
+	for _, origin := range origins {
+		roots.AddCert(origin.Certificate())
+	}
+	return &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{
+		RootCAs: roots, MinVersion: tls.VersionTLS12,
+	}}, Timeout: 15 * time.Second}
+}
+
+func seedE2EFederationEnrollment(
+	ctx context.Context,
+	hub, spoke *federation.Store,
+	hubNodeID, hubBaseURL, spokeNodeID, spokeBaseURL string,
+) error {
+	enrollment, err := federationtest.SeedActiveHubEnrollment(
+		ctx, hub,
+		federation.Identity{NodeID: hubNodeID, BaseURL: hubBaseURL},
+		federation.Identity{NodeID: spokeNodeID, BaseURL: spokeBaseURL},
+		spokeNodeID,
+	)
+	if err != nil {
+		return err
+	}
+	return federationtest.SeedActiveSpokeEnrollment(ctx, spoke, enrollment)
+}
+
+func connectE2EFederationCredentials(
+	hub, spoke *federationauth.Store,
+	hubNodeID, nodeID string,
+) error {
+	spokeToHub, err := hub.MintInbound(
+		nodeID, federationauth.SpokeToHubScopes(),
+	)
+	if err != nil {
+		return err
+	}
+	if err := spoke.StoreOutbound(
+		hubNodeID, spokeToHub,
+		federationauth.SpokeToHubScopes(),
+	); err != nil {
+		return err
+	}
+	hubToSpoke, err := spoke.MintInbound(
+		hubNodeID, federationauth.HubToSpokeScopes(),
+	)
+	if err != nil {
+		return err
+	}
+	return hub.StoreOutbound(
+		nodeID, hubToSpoke,
+		federationauth.HubToSpokeScopes(),
+	)
+}
+
 // run starts the e2e server and blocks until ctx is canceled or the
 // HTTP server errors out. Tests call it directly with a cancellable
 // context; main() wires it to SIGINT/SIGTERM.
 func run(
 	ctx context.Context,
 	port int,
-	roborevEndpoint, serverInfoFile, defaultPlatformHost, fleetKey string,
+	roborevEndpoint, serverInfoFile, defaultPlatformHost string,
 	visibleImportedModes bool,
 	providerCollision bool,
 ) error {
@@ -3256,9 +3703,9 @@ func run(
 	baseOpts := appOptions{
 		roborevEndpoint:      roborevEndpoint,
 		defaultPlatformHost:  defaultPlatformHost,
-		fleetKey:             fleetKey,
 		visibleImportedModes: visibleImportedModes,
 		providerCollision:    providerCollision,
+		nodeID:               e2eStandaloneNodeID,
 	}
 
 	state, err := buildAppState(ctx, assets, baseOpts)
@@ -3292,6 +3739,7 @@ func run(
 		BaseURL:    fmt.Sprintf("http://127.0.0.1:%d", tcpAddr.Port),
 		PID:        os.Getpid(),
 		ConfigPath: state.cfgPath,
+		NodeID:     e2eStandaloneNodeID,
 	}
 
 	// OTel export is opt-in via OTEL_TRACES_EXPORTER; a malformed value
@@ -3357,11 +3805,10 @@ func run(
 
 			opts := baseOpts
 			var req struct {
-				DefaultPlatformHost  string  `json:"default_platform_host"`
-				FleetKey             *string `json:"fleet_key"`
-				VisibleImportedModes *bool   `json:"visible_imported_modes"`
-				ProviderCollision    *bool   `json:"provider_collision"`
-				PreferPtyOwner       *bool   `json:"prefer_pty_owner"`
+				DefaultPlatformHost  string `json:"default_platform_host"`
+				VisibleImportedModes *bool  `json:"visible_imported_modes"`
+				ProviderCollision    *bool  `json:"provider_collision"`
+				PreferPtyOwner       *bool  `json:"prefer_pty_owner"`
 			}
 			// An empty body resets to the startup options; a
 			// non-empty body must be valid JSON so option typos
@@ -3383,9 +3830,6 @@ func run(
 			}
 			if strings.TrimSpace(req.DefaultPlatformHost) != "" {
 				opts.defaultPlatformHost = req.DefaultPlatformHost
-			}
-			if req.FleetKey != nil {
-				opts.fleetKey = strings.TrimSpace(*req.FleetKey)
 			}
 			if req.VisibleImportedModes != nil {
 				opts.visibleImportedModes = *req.VisibleImportedModes
@@ -3514,7 +3958,9 @@ func writeServerInfoFile(path string, info e2eServerInfo) error {
 	}
 
 	tmpPath := path + ".tmp"
-	if err := os.WriteFile(tmpPath, append(content, '\n'), 0o644); err != nil {
+	// Federation-mode server info contains local API bearers for its three
+	// isolated daemons. Keep the file private even in a caller-supplied directory.
+	if err := os.WriteFile(tmpPath, append(content, '\n'), 0o600); err != nil {
 		return fmt.Errorf("write temp server info file: %w", err)
 	}
 	if err := os.Rename(tmpPath, path); err != nil {

@@ -21,14 +21,31 @@ export function mobileWorkspaceDisplayName(workspace: WorkspaceListItem): string
   return workspace.mr_title?.trim() || workspace.git_head_ref;
 }
 
-export function mobileWorkspaceItemNumber(workspace: WorkspaceListItem): number | null {
+// Mirrors mobileWorkspaceLinkedItem for list rows: the PR a workspace produced
+// outranks the issue it was created from, so the badge, search, and provider
+// link all point at the same item the detail route opens.
+export function mobileWorkspaceLinkedItem(workspace: WorkspaceListItem): {
+  itemType: "pr" | "issue";
+  number: number;
+} | null {
   if (workspace.item_type === "kata_task") return null;
-  if ((workspace.item_type === "pull_request" || workspace.item_type === "issue") && !workspace.source_item_visible) {
-    return null;
+  if (workspace.item_type === "pull_request") {
+    return workspace.source_item_visible && workspace.item_number > 0
+      ? { itemType: "pr", number: workspace.item_number }
+      : null;
   }
-  if (workspace.item_type !== "adhoc") return workspace.item_number;
-  const number = workspace.associated_pr_number;
-  return number !== null && number !== undefined && number > 0 ? number : null;
+  const associated = workspace.associated_pr_number;
+  if (associated !== null && associated !== undefined && associated > 0) {
+    return { itemType: "pr", number: associated };
+  }
+  if (workspace.item_type === "issue" && workspace.source_item_visible && workspace.item_number > 0) {
+    return { itemType: "issue", number: workspace.item_number };
+  }
+  return null;
+}
+
+export function mobileWorkspaceItemNumber(workspace: WorkspaceListItem): number | null {
+  return mobileWorkspaceLinkedItem(workspace)?.number ?? null;
 }
 
 export function workspaceMatchesMobileSearch(workspace: WorkspaceListItem, rawQuery: string): boolean {

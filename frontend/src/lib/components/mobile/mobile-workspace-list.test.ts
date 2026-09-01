@@ -3,6 +3,7 @@ import type { WorkspaceListItem } from "../terminal/workspace-list-schema.js";
 import {
   groupMobileWorkspaces,
   mobileWorkspaceItemNumber,
+  mobileWorkspaceLinkedItem,
   sortMobileWorkspaces,
   workspaceMatchesMobileSearch,
 } from "./mobile-workspace-list.js";
@@ -63,6 +64,20 @@ describe("mobile workspace list model", () => {
     expect(workspaceMatchesMobileSearch(items[1]!, "#42")).toBe(true);
     expect(workspaceMatchesMobileSearch(remote, "phone-dev")).toBe(true);
     expect(workspaceMatchesMobileSearch(items[1]!, "unrelated")).toBe(false);
+  });
+
+  it("links an issue workspace to the PR it produced once one exists", () => {
+    const fromIssue = { ...items[0]!, item_type: "issue" as const, item_number: 7, associated_pr_number: 99 };
+    expect(mobileWorkspaceLinkedItem(fromIssue)).toEqual({ itemType: "pr", number: 99 });
+    expect(mobileWorkspaceItemNumber(fromIssue)).toBe(99);
+    expect(workspaceMatchesMobileSearch(fromIssue, "#99")).toBe(true);
+    expect(mobileWorkspaceLinkedItem({ ...fromIssue, associated_pr_number: null })).toEqual({
+      itemType: "issue",
+      number: 7,
+    });
+    expect(
+      mobileWorkspaceLinkedItem({ ...fromIssue, source_item_visible: false, associated_pr_number: null }),
+    ).toBeNull();
   });
 
   it("does not expose Kata tasks as mobile linked items", () => {

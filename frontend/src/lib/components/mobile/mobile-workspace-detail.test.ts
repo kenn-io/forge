@@ -34,6 +34,17 @@ describe("mobile workspace linked item", () => {
     expect(mobileWorkspaceLinkedItem(detail("adhoc", 0))).toEqual({ itemType: "pr", number: 99 });
   });
 
+  it("prefers the PR a workspace produced over the issue it was created from", () => {
+    expect(mobileWorkspaceLinkedItem({ ...detail("issue", 7), associated_pr_number: 99 })).toEqual({
+      itemType: "pr",
+      number: 99,
+    });
+    expect(mobileWorkspaceLinkedItem({ ...detail("issue", 7), associated_pr_number: 0 })).toEqual({
+      itemType: "issue",
+      number: 7,
+    });
+  });
+
   it("hides missing linked items", () => {
     expect(mobileWorkspaceLinkedItem({ ...detail("kata_task", 7), associated_pr_number: 99 })).toBeNull();
   });

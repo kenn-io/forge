@@ -46,6 +46,7 @@
     groupMobileWorkspaces,
     mobileWorkspaceDisplayName,
     mobileWorkspaceItemNumber,
+    mobileWorkspaceLinkedItem,
     sortMobileWorkspaces,
     workspaceMatchesMobileSearch,
   } from "./mobile-workspace-list.js";
@@ -216,13 +217,13 @@
   }
 
   function providerItemURL(workspace: WorkspaceListItem): string | null {
-    if (workspace.item_type === "kata_task") return null;
-    const number = mobileWorkspaceItemNumber(workspace);
+    const linked = mobileWorkspaceLinkedItem(workspace);
     const provider = workspace.repo?.provider.toLowerCase();
     const repoPath = workspace.repo?.repo_path ?? `${workspace.repo_owner}/${workspace.repo_name}`;
-    if (number === null || !provider || !workspace.platform_host || !repoPath) return null;
+    if (linked === null || !provider || !workspace.platform_host || !repoPath) return null;
+    const number = linked.number;
     const encodedPath = repoPath.split("/").map(encodeURIComponent).join("/");
-    const kind = workspace.item_type === "issue" ? "issues" : provider === "github" ? "pull" : provider === "gitlab" ? "merge_requests" : "pulls";
+    const kind = linked.itemType === "issue" ? "issues" : provider === "github" ? "pull" : provider === "gitlab" ? "merge_requests" : "pulls";
     const separator = provider === "gitlab" ? "/-/" : "/";
     return `https://${workspace.platform_host}/${encodedPath}${separator}${kind}/${number}`;
   }

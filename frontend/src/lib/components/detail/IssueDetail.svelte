@@ -28,7 +28,7 @@
   import DetailRefreshButton from "./DetailRefreshButton.svelte";
   import IssueCommentBox from "./IssueCommentBox.svelte";
   import WorkspaceCreateSplitButton from "../workspace/WorkspaceCreateSplitButton.svelte";
-    import { Button, Chip, Modal } from "@kenn-io/kit-ui";
+    import { AdaptiveActionGrid, Button, Chip, Modal } from "@kenn-io/kit-ui";
   import { Spinner } from "@kenn-io/kit-ui";
   import LabelRow from "../shared/LabelRow.svelte";
   import { ScrollBox } from "@kenn-io/kit-ui";
@@ -1328,8 +1328,10 @@
         {/if}
       </div>
 
-      <!-- Actions -->
-      <div class="actions-row">
+      <!-- Actions. The kit grid owns the row geometry: every control inherits
+           its 28px control height and md type from the grid item, so no
+           button here asks for its own size. -->
+      {#snippet workspaceAction()}
         {#if workspace}
           {#if inlineWorkspace}
             <Button
@@ -1341,30 +1343,10 @@
               }}
               tone="info"
               surface="soft"
-              size="sm"
               label="Focus Terminal"
               shortLabel="Terminal"
             >
               <MonitorUpIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-            </Button>
-            <Button
-              class="btn--workspace-secondary"
-              disabled={staleIssue}
-              onclick={() => {
-                if (staleIssue) return;
-                if (workspaceDeletionLifecycle) {
-                  navigate("/workspaces");
-                } else {
-                  inlineWorkspace.openInWorkspaces(workspace);
-                }
-              }}
-              tone="neutral"
-              surface="soft"
-              size="sm"
-              label={workspaceDeletionLifecycle ? "View in Workspaces" : "Open in Workspaces"}
-              shortLabel="Workspaces"
-            >
-              <ExternalLinkIcon size="14" strokeWidth="2.2" aria-hidden="true" />
             </Button>
           {:else}
             <Button
@@ -1383,7 +1365,6 @@
               }}
               tone="info"
               surface="soft"
-              size="sm"
               label={workspaceDeletionLifecycle ? "View in Workspaces" : "Open Workspace"}
               shortLabel={workspaceDeletionLifecycle ? "Workspaces" : "Workspace"}
             >
@@ -1394,7 +1375,6 @@
           <WorkspaceCreateSplitButton
             label="Create Workspace"
             busyLabel="Creating..."
-            size="sm"
             launchTargets={settings.getLaunchTargets()}
             busy={workspaceCreateBlocked}
             disabled={staleIssue}
@@ -1407,13 +1387,30 @@
             )}
           />
         {/if}
-        {#if !workspace}
-          <span id={createWorkspaceDescriptionId} class="kit-sr-only">
-            {staleIssue
-              ? "Refresh details before creating a workspace."
-              : createWorkspaceTitle}
-          </span>
+      {/snippet}
+      {#snippet workspaceSecondaryAction()}
+        {#if workspace && inlineWorkspace}
+          <Button
+            class="btn--workspace-secondary"
+            disabled={staleIssue}
+            onclick={() => {
+              if (staleIssue) return;
+              if (workspaceDeletionLifecycle) {
+                navigate("/workspaces");
+              } else {
+                inlineWorkspace.openInWorkspaces(workspace);
+              }
+            }}
+            tone="neutral"
+            surface="soft"
+            label={workspaceDeletionLifecycle ? "View in Workspaces" : "Open in Workspaces"}
+            shortLabel="Workspaces"
+          >
+            <ExternalLinkIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+          </Button>
         {/if}
+      {/snippet}
+      {#snippet stateAction()}
         {#if issue.State === "open" && capabilities.state_mutation}
           {@const closeGate = operationGate(repoOperations?.close_issue)}
           <Button
@@ -1426,7 +1423,6 @@
             }}
             tone="danger"
             surface="outline"
-            size="sm"
             label={stateSubmitting ? "Closing..." : "Close issue"}
             shortLabel={stateSubmitting ? "Closing..." : "Close"}
           >
@@ -1444,31 +1440,54 @@
             }}
             tone="success"
             surface="solid"
-            size="sm"
             label={stateSubmitting ? "Reopening..." : "Reopen issue"}
             shortLabel={stateSubmitting ? "Reopening..." : "Reopen"}
           >
             <RefreshCwIcon size="14" strokeWidth="2.2" aria-hidden="true" />
           </Button>
         {/if}
-        {#each actions.issue ?? [] as action (action.id)}
-          <Button
-            class="btn--embedding-action"
-            onclick={() => {
-              if (staleIssue) return;
-              action.handler({
-                surface: "issue-detail", owner, name, number,
-              });
-            }}
-            disabled={staleIssue}
-            tone="neutral"
-            surface="outline"
-            size="sm"
-          >
-            {action.label}
-          </Button>
-        {/each}
-      </div>
+      {/snippet}
+      {#snippet embeddingActions()}
+        <div class="embedding-actions">
+          {#each actions.issue ?? [] as action (action.id)}
+            <Button
+              class="btn--embedding-action"
+              onclick={() => {
+                if (staleIssue) return;
+                action.handler({
+                  surface: "issue-detail", owner, name, number,
+                });
+              }}
+              disabled={staleIssue}
+              tone="neutral"
+              surface="outline"
+            >
+              {action.label}
+            </Button>
+          {/each}
+        </div>
+      {/snippet}
+      {#if !workspace}
+        <span id={createWorkspaceDescriptionId} class="kit-sr-only">
+          {staleIssue
+            ? "Refresh details before creating a workspace."
+            : createWorkspaceTitle}
+        </span>
+      {/if}
+      <AdaptiveActionGrid
+        class="issue-actions-grid"
+        ariaLabel="Issue actions"
+        frame="none"
+        padding={0}
+        rowGap={4}
+        columnGap={4}
+        items={[
+          { id: "workspace", content: workspaceAction },
+          ...(workspace && inlineWorkspace ? [{ id: "workspace-secondary", content: workspaceSecondaryAction }] : []),
+          ...(capabilities.state_mutation ? [{ id: "state", content: stateAction }] : []),
+          ...((actions.issue ?? []).length > 0 ? [{ id: "embedding", content: embeddingActions }] : []),
+        ]}
+      />
 
       <!-- Issue body -->
       {#if issue.Body}
@@ -1882,11 +1901,16 @@
     line-height: 1.6;
   }
 
-  .actions-row {
+  .issue-detail :global(.issue-actions-grid) {
+    padding: var(--space-4) 0;
+  }
+
+  /* Embed-host actions are one custom grid item so each host action stays a
+   * separate button; the wrapper lays them out like the grid's own row. */
+  .issue-detail :global(.embedding-actions) {
     display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 0;
+    flex-wrap: wrap;
+    gap: var(--space-4);
   }
 
   .refresh-banner {
@@ -2091,11 +2115,7 @@
       line-height: 1.25;
     }
 
-    .actions-row {
-      gap: var(--detail-mobile-space-sm);
-    }
-
-    .actions-row :global(.kit-button),
+    .issue-detail :global(.issue-actions-grid .kit-button),
     .field-input {
       min-height: var(--detail-mobile-hit-target);
       font-size: var(--font-size-sm);

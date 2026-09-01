@@ -119,7 +119,12 @@ otherwise fails only in the Vitest/Playwright transform tier, not in
   Provider-mode repo selector visibility must not move the tab row; non-provider
   modes reserve its footprint unless embed config hides it
   (`frontend/src/lib/components/layout/AppHeader.svelte::reserveProviderRepoSelectorSlot`).
-- `AdaptiveActionGrid`: the phone PR primary-action surface. Phone-like PR
+- `AdaptiveActionGrid`: the issue detail action row on every layout
+  (`frontend/src/lib/components/detail/IssueDetail.svelte::issue-actions-grid`,
+  adaptive layout, `frame="none"`, `padding={0}`) and the phone PR
+  primary-action surface. Controls inside a grid never pass their own `size`:
+  the grid item supplies the shared control height and type, and an explicit
+  `sm` opts out and misaligns. Phone-like PR
   routes (`phonePresentation` threaded from
   `frontend/src/App.svelte::phoneDetailProps`) render approve, merge, close,
   reopen, ready, workflows, and the workspace action with kit's
@@ -136,8 +141,8 @@ otherwise fails only in the Vitest/Playwright transform tier, not in
   phone hit target (`--focus-detail-hit-target`), or the control overflows
   its cell. Desktop-narrow focus presentation keeps `FitStages`.
 - `WorkspaceCreateSplitButton` takes its control height from the kit `size` it
-  is given, never a pinned `min-height`; detail action rows pass `sm` so it
-  matches the buttons beside it
+  is given (or the surrounding grid item), never a pinned `min-height`; the
+  desktop PR `FitStages` row passes `sm` to match the buttons beside it
   (`frontend/src/lib/components/workspace/WorkspaceCreateSplitButton.svelte`).
 - `FitStages`: how an action row degrades under pressure (richest labelled
   `Button` row to compact labelled or `IconButton` rows, then a measured menu

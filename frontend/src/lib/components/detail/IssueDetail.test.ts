@@ -509,18 +509,21 @@ describe("IssueDetail activity view", () => {
     }
   });
 
-  it("sizes the create-workspace split button like the other action-row buttons", () => {
+  it("renders every issue action inside one kit action grid at the grid's size", () => {
     renderIssueDetail(issueDetail());
 
-    const create = screen.getByRole("button", { name: "Create Workspace" });
-    const options = screen.getByRole("button", { name: "Create Workspace options" });
-    const close = screen.getByRole("button", { name: "Close issue" });
+    const grid = screen.getByRole("group", { name: "Issue actions" });
+    expect(grid.classList.contains("kit-adaptive-action-grid")).toBe(true);
 
-    // The split button used to fall back to the kit default size while every
-    // sibling asked for "sm", so it rendered visibly taller in the row.
-    expect(close.classList.contains("kit-button--sm")).toBe(true);
-    expect(create.classList.contains("kit-button--sm")).toBe(true);
-    expect(options.classList.contains("kit-button--sm")).toBe(true);
+    // The grid owns control geometry through its item context. A button that
+    // asks for its own size (the old size="sm" row, the split button's pinned
+    // height) opts out of that and renders taller or shorter than its
+    // neighbours, which is the misalignment this row shipped with.
+    for (const name of ["Create Workspace", "Create Workspace options", "Close issue"]) {
+      const button = screen.getByRole("button", { name });
+      expect(grid.contains(button)).toBe(true);
+      expect(button.classList.contains("kit-button--md")).toBe(true);
+    }
   });
 
   it("labels an active stale-detail refresh", () => {

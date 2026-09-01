@@ -37,13 +37,13 @@ function pullDetail(): PullDetail {
     read_workflows: true,
     read_workflow_runs: true,
     workflow_dispatch: true,
-    read_labels: false,
+    read_labels: true,
     read_markdown_images: true,
     read_authenticated_user: true,
     comment_mutation: false,
     state_mutation: true,
     merge_mutation: true,
-    label_mutation: false,
+    label_mutation: true,
     assignee_mutation: false,
     reviewer_mutation: false,
     review_mutation: true,
@@ -64,7 +64,7 @@ function pullDetail(): PullDetail {
   const unavailable = { available: false } as const;
   const operations: NonNullable<PullDetail["repo"]["operations"]> = {
     add_comment: unavailable,
-    add_label: unavailable,
+    add_label: { available: true },
     apply_review_suggestion: unavailable,
     approve_workflow: unavailable,
     close_issue: unavailable,
@@ -76,7 +76,7 @@ function pullDetail(): PullDetail {
     mark_draft: unavailable,
     mark_ready_for_review: unavailable,
     merge_pr: { available: true },
-    remove_label: unavailable,
+    remove_label: { available: true },
     reopen_issue: unavailable,
     reopen_pr: unavailable,
     reply_review_thread: unavailable,
@@ -185,7 +185,7 @@ afterEach(async () => {
 });
 
 describe("PullDetail provider workflow action geometry", () => {
-  it("uses one Actions trigger while primary pull actions move into that menu only under pressure", async () => {
+  it("places workflow dispatch beside workspace tools while primary actions collapse only under pressure", async () => {
     const detail = pullDetail();
     const apiClient = {
       GET: vi.fn(async () => ({
@@ -271,7 +271,7 @@ describe("PullDetail provider workflow action geometry", () => {
           platformHost: "github.com",
           repoPath: "acme/widgets",
           hideTabs: true,
-          hideWorkspaceAction: true,
+          hideWorkspaceAction: false,
           autoSync: false,
         },
       },
@@ -293,40 +293,60 @@ describe("PullDetail provider workflow action geometry", () => {
       ]),
     });
 
+    let workflowTrigger: HTMLButtonElement | null = null;
+    let workspaceTrigger: HTMLButtonElement | null = null;
     await vi.waitFor(() => {
       expect(visibleActionsTriggers()).toHaveLength(1);
+      workflowTrigger = visibleButton("Run workflow");
+      workspaceTrigger = visibleButton("Create Workspace");
+      expect(workflowTrigger).not.toBeNull();
+      expect(workspaceTrigger).not.toBeNull();
+      expect(workflowTrigger!.closest(".actions-row--utility")).toBe(
+        workspaceTrigger!.closest(".actions-row--utility"),
+      );
+      expect(visibleButton("Actions")).toBeNull();
       expect(visibleButton("Approve")).not.toBeNull();
       expect(visibleButton("Squash and merge")).not.toBeNull();
       expect(visibleButton("Close")).not.toBeNull();
     }, WAIT);
 
-    visibleActionsTriggers()[0]!.click();
+    workflowTrigger!.click();
     await vi.waitFor(() => {
-      const workflowMenu = document.querySelector<HTMLElement>(".workflow-actions-menu");
+      const workflowMenu = document.querySelector<HTMLElement>(".workflow-actions-menu--floating");
       expect(workflowMenu).not.toBeNull();
       expect(workflowMenu!.textContent).toContain("GitHub Actions");
       expect(visibleButton("Release")).not.toBeNull();
-      expect(visibleButton("Approve")).not.toBeNull();
-      expect(visibleButton("Squash and merge")).not.toBeNull();
-      expect(visibleButton("Close")).not.toBeNull();
+      const triggerRect = workflowTrigger!.getBoundingClientRect();
+      const menuRect = workflowMenu!.getBoundingClientRect();
+      expect(Math.abs(menuRect.left - triggerRect.left)).toBeLessThanOrEqual(1);
+      expect(menuRect.top).toBeGreaterThanOrEqual(triggerRect.bottom);
+      expect(menuRect.width).toBeGreaterThanOrEqual(220);
     }, WAIT);
 
-    visibleActionsTriggers()[0]!.click();
+    workflowTrigger!.click();
     wrapper.style.width = "180px";
     await vi.waitFor(() => {
       expect(document.querySelector(".pull-detail-content--actions-menu")).not.toBeNull();
       expect(visibleActionsTriggers()).toHaveLength(1);
+      expect(visibleButton("Actions")).not.toBeNull();
+      expect(visibleButton("Run workflow")).toBeNull();
+      expect(visibleButton("Create Workspace")).toBeNull();
       expect(visibleButton("Approve")).toBeNull();
       expect(visibleButton("Squash and merge")).toBeNull();
       expect(visibleButton("Close")).toBeNull();
     }, WAIT);
 
-    visibleActionsTriggers()[0]!.click();
+    visibleButton("Actions")!.click();
     await vi.waitFor(() => {
       const menu = document.querySelector<HTMLElement>(".actions-menu-popover");
       expect(menu).not.toBeNull();
-      const labels = Array.from(menu!.querySelectorAll("button"), (button) => button.textContent?.trim());
-      expect(labels).toEqual(expect.arrayContaining(["Approve", "Squash and merge", "Close", "Release"]));
+      const labels = Array.from(
+        menu!.querySelectorAll("button"),
+        (button) => button.getAttribute("aria-label") ?? button.textContent?.trim(),
+      );
+      expect(labels).toEqual(
+        expect.arrayContaining(["Approve", "Squash and merge", "Close", "Labels", "Create Workspace", "Release"]),
+      );
       expect(menu!.textContent).toContain("GitHub Actions");
       expect(visibleActionsTriggers()).toHaveLength(1);
     }, WAIT);

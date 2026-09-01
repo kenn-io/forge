@@ -2712,6 +2712,31 @@
           />
         {/if}
       {/snippet}
+      {#snippet workflowActionsMenu(floating: boolean)}
+        <section
+          class={[
+            "workflow-actions-menu",
+            {
+              "actions-menu-popover workflow-actions-menu--floating": floating,
+            },
+          ]}
+          aria-label={workflowProviderLabel}
+        >
+          <div class="workflow-actions-menu__label">{workflowProviderLabel}</div>
+          {#each workflowCatalog as workflow (workflow.id)}
+            <button
+              type="button"
+              class="workflow-actions-menu__item"
+              disabled={!workflow.available}
+              title={!workflow.available ? workflow.unavailable_reason || "Unavailable" : undefined}
+              onclick={() => openWorkflowDialog(workflow)}
+            >
+              <WorkflowIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+              <span>{workflow.name}</span>
+            </button>
+          {/each}
+        </section>
+      {/snippet}
 
       {#snippet measuredPrimaryActions(compactLabels = false)}
         <div
@@ -2789,12 +2814,6 @@
               <RefreshCwIcon size="14" strokeWidth="2.2" aria-hidden="true" />
             </Button>
           {/if}
-          {#if hasWorkflowActions}
-            <button type="button" class="actions-menu-trigger">
-              <span>Actions</span>
-              <ChevronDownIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-            </button>
-          {/if}
         </div>
       {/snippet}
 
@@ -2845,7 +2864,6 @@
             class={[
               "actions-menu-wrap",
               {
-                "actions-menu-wrap--workflows": hasWorkflowActions,
                 "actions-menu-wrap--menu": hasPrimaryPRActions && primaryActionStage === 2,
               },
             ]}
@@ -2855,9 +2873,7 @@
               class={[
                 "primary-actions-live",
                 {
-                  "actions-menu-popover":
-                    (hasPrimaryPRActions && primaryActionStage === 2)
-                    || (actionMenuOpen && !hasWorkflowActions),
+                  "actions-menu-popover": hasPrimaryPRActions && primaryActionStage === 2,
                   "primary-actions-live--open":
                     hasPrimaryPRActions && primaryActionStage === 2 && actionMenuOpen,
                 },
@@ -2874,50 +2890,52 @@
                     {@render labelActionButton(14)}
                   </div>
                 {/if}
-                {#if !hideWorkspaceAction}
-                  <div class="actions-row actions-row--workspace">
-                    {@render workspaceActionButton(primaryActionStage === 1)}
-                  </div>
-                {/if}
               {/if}
-              {#if actionMenuOpen && hasWorkflowActions}
-                <section
-                  class={[
-                    "workflow-actions-menu",
-                    {
-                      "actions-menu-popover workflow-actions-menu--floating":
-                        !hasPrimaryPRActions || primaryActionStage !== 2,
-                    },
-                  ]}
-                  aria-label={workflowProviderLabel}
-                >
-                  <div class="workflow-actions-menu__label">{workflowProviderLabel}</div>
-                  {#each workflowCatalog as workflow (workflow.id)}
-                    <button
-                      type="button"
-                      class="workflow-actions-menu__item"
-                      disabled={!workflow.available}
-                      title={!workflow.available ? workflow.unavailable_reason || "Unavailable" : undefined}
-                      onclick={() => openWorkflowDialog(workflow)}
-                    >
-                      <WorkflowIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-                      <span>{workflow.name}</span>
-                    </button>
-                  {/each}
-                </section>
+              {#if !hideWorkspaceAction
+                || (hasWorkflowActions && (!hasPrimaryPRActions || primaryActionStage !== 2))}
+                <div class="actions-row actions-row--utility">
+                  {#if !hideWorkspaceAction}
+                    {@render workspaceActionButton(primaryActionStage === 1)}
+                  {/if}
+                  {#if hasWorkflowActions && (!hasPrimaryPRActions || primaryActionStage !== 2)}
+                    <div class="workflow-actions-control">
+                      <button
+                        {@attach captureActionMenuTrigger}
+                        type="button"
+                        class="actions-menu-trigger"
+                        aria-haspopup="true"
+                        aria-expanded={actionMenuOpen}
+                        onclick={() => { actionMenuOpen = !actionMenuOpen; }}
+                      >
+                        <WorkflowIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+                        <span>Run workflow</span>
+                        <ChevronDownIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+                      </button>
+                      {#if actionMenuOpen}
+                        {@render workflowActionsMenu(true)}
+                      {/if}
+                    </div>
+                  {/if}
+                </div>
+              {/if}
+              {#if actionMenuOpen && hasWorkflowActions
+                && hasPrimaryPRActions && primaryActionStage === 2}
+                {@render workflowActionsMenu(false)}
               {/if}
             </div>
-            <button
-              {@attach captureActionMenuTrigger}
-              type="button"
-              class="actions-menu-trigger"
-              aria-haspopup="true"
-              aria-expanded={actionMenuOpen}
-              onclick={() => { actionMenuOpen = !actionMenuOpen; }}
-            >
-              <span>Actions</span>
-              <ChevronDownIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-            </button>
+            {#if hasPrimaryPRActions && primaryActionStage === 2}
+              <button
+                {@attach captureActionMenuTrigger}
+                type="button"
+                class="actions-menu-trigger"
+                aria-haspopup="true"
+                aria-expanded={actionMenuOpen}
+                onclick={() => { actionMenuOpen = !actionMenuOpen; }}
+              >
+                <span>Actions</span>
+                <ChevronDownIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+              </button>
+            {/if}
           </div>
           {#if hasPrimaryPRActions}
             {#if stateConflict === "stale_state"}
@@ -3742,12 +3760,10 @@
     display: contents;
   }
 
-  .actions-menu-wrap--workflows {
-    display: flex;
+
+  .workflow-actions-control {
     position: relative;
-    z-index: 65;
-    align-items: flex-start;
-    gap: var(--space-4);
+    min-width: 0;
   }
 
   .actions-menu-wrap--menu {
@@ -3771,7 +3787,7 @@
     cursor: pointer;
   }
 
-  .actions-menu-wrap--workflows > .actions-menu-trigger {
+  .workflow-actions-control > .actions-menu-trigger {
     display: inline-flex;
   }
 
@@ -3825,9 +3841,9 @@
   }
 
   .workflow-actions-menu--floating {
-    right: 0;
-    left: auto;
-    width: max-content;
+    right: auto;
+    left: 0;
+    width: min(240px, calc(100cqw - 48px));
     padding-top: var(--space-4);
   }
 

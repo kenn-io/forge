@@ -639,7 +639,7 @@ async function openReleaseWorkflow(detail: PullDetail, options: Parameters<typeo
   await waitFor(() => {
     expect(api.GET.mock.calls.some(([path]) => String(path).endsWith("/workflows"))).toBe(true);
   });
-  await fireEvent.click(screen.getByRole("button", { name: "Actions" }));
+  await fireEvent.click(screen.getByRole("button", { name: "Run workflow" }));
   const release = await screen.findByRole("button", { name: "Release" });
   await fireEvent.click(release);
   return { ...rendered, api };
@@ -726,7 +726,7 @@ describe("PullDetail provider workflow actions", () => {
         }),
       );
     });
-    await fireEvent.click(screen.getByRole("button", { name: "Actions" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Run workflow" }));
 
     expect(await screen.findByText("GitLab Actions")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Release" })).toBeTruthy();
@@ -782,7 +782,7 @@ describe("PullDetail provider workflow actions", () => {
       expect(api.GET.mock.calls.some(([path]) => String(path).endsWith("/workflows"))).toBe(true);
     });
 
-    expect(screen.getByRole("button", { name: "Actions" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Run workflow" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
     expect(screen.queryByRole("button", { name: /merge/i })).toBeNull();
     expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
@@ -803,7 +803,11 @@ describe("PullDetail provider workflow actions", () => {
       response: new Response(null, { status: 409 }),
     });
 
-    await fireEvent.click(screen.getByRole("button", { name: "Run workflow" }));
+    await fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Run workflow" })).getByRole("button", {
+        name: "Run workflow",
+      }),
+    );
     const reload = await screen.findByRole("button", { name: "Reload workflows" });
     await fireEvent.click(reload);
 
@@ -1441,7 +1445,7 @@ describe("PullDetail approvals", () => {
     expect(screen.queryByText("old-route")).toBeNull();
   });
 
-  it("closes the label picker when the actions menu Labels action is clicked after reopening the menu", async () => {
+  it("toggles the label picker from the visible Labels action", async () => {
     const detail = pullDetail();
     detail.repo.capabilities = {
       ...capabilities,
@@ -1451,28 +1455,21 @@ describe("PullDetail approvals", () => {
 
     renderPullDetail(detail);
 
-    const actionsTrigger = screen.getByRole("button", {
-      name: "Actions",
+    const labelsTrigger = screen.getByRole("button", {
+      name: "Labels",
     });
-    await fireEvent.click(actionsTrigger);
-    await fireEvent.click(getActionMenuLabelsButton());
+    await fireEvent.click(labelsTrigger);
 
     expect(await screen.findByRole("dialog", { name: "Edit labels" })).toBeTruthy();
     expect(document.querySelector(".actions-menu-popover")).toBeNull();
 
-    await fireEvent.mouseDown(actionsTrigger);
-    await fireEvent.click(actionsTrigger);
-    expect(document.querySelector(".actions-menu-popover")).not.toBeNull();
-
-    const labelsAction = getActionMenuLabelsButton();
-    await fireEvent.mouseDown(labelsAction);
-    await fireEvent.click(labelsAction);
+    await fireEvent.mouseDown(labelsTrigger);
+    await fireEvent.click(labelsTrigger);
 
     expect(screen.queryByRole("dialog", { name: "Edit labels" })).toBeNull();
-    expect(document.querySelector(".actions-menu-popover")).toBeNull();
   });
 
-  it("opens the actions-menu label picker as a non-modal popover", async () => {
+  it("opens the visible Labels action as a non-modal popover", async () => {
     const detail = pullDetail();
     detail.repo.capabilities = {
       ...capabilities,
@@ -1482,8 +1479,7 @@ describe("PullDetail approvals", () => {
 
     renderPullDetail(detail);
 
-    await fireEvent.click(screen.getByRole("button", { name: "Actions" }));
-    await fireEvent.click(getActionMenuLabelsButton());
+    await fireEvent.click(screen.getByRole("button", { name: "Labels" }));
 
     expect(await screen.findByRole("dialog", { name: "Edit labels" })).toBeTruthy();
     expect(document.querySelector(".label-editor-backdrop")).toBeNull();
@@ -1492,7 +1488,7 @@ describe("PullDetail approvals", () => {
     expect(screen.queryByRole("dialog", { name: "Edit labels" })).toBeNull();
   });
 
-  it("keeps the actions menu Labels button on the compact action geometry", async () => {
+  it("keeps the visible Labels action on small button geometry", async () => {
     const detail = pullDetail();
     detail.repo.capabilities = {
       ...capabilities,
@@ -1502,17 +1498,12 @@ describe("PullDetail approvals", () => {
 
     renderPullDetail(detail);
 
-    await fireEvent.click(screen.getByRole("button", { name: "Actions" }));
-
-    const labelsAction = getActionMenuLabelsButton();
+    const labelsAction = screen.getByRole("button", { name: "Labels" });
     const labelsIcon = labelsAction.querySelector("svg");
-    const labelsItem = labelsAction.closest(".actions-menu-popover__item--labels");
 
     expect(labelsAction.classList.contains("kit-button--sm")).toBe(true);
-    expect(labelsAction.parentElement).toBe(labelsItem);
-    expect(labelsItem?.classList.contains("label-editor-anchor")).toBe(true);
-    expect(labelsIcon?.getAttribute("width")).toBe("14");
-    expect(labelsIcon?.getAttribute("height")).toBe("14");
+    expect(labelsIcon?.getAttribute("width")).toBe("16");
+    expect(labelsIcon?.getAttribute("height")).toBe("16");
   });
 
   it("uses the shared View menu to persist compact activity rows", async () => {

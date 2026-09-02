@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.kenn.io/forge/internal/db"
@@ -26,18 +27,29 @@ type Scheduler struct{}
 
 func NewScheduler() *Scheduler { return &Scheduler{} }
 
-func (s *Scheduler) Run(ctx context.Context, groups map[string][]resolvedRepository, work func(context.Context, []resolvedRepository) error) error {
+// Run executes work for every provider-host group concurrently and reports
+// whether any group attempted provider work.
+func (s *Scheduler) Run(
+	ctx context.Context,
+	groups map[string][]resolvedRepository,
+	work func(context.Context, []resolvedRepository) (bool, error),
+) (bool, error) {
 	keys := make([]string, 0, len(groups))
 	for key := range groups {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
 	errCh := make(chan error, len(keys))
+	var worked atomic.Bool
 	var wg sync.WaitGroup
 	for _, key := range keys {
 		key, repos := key, groups[key]
 		wg.Go(func() {
-			if err := work(ctx, repos); err != nil {
+			handled, err := work(ctx, repos)
+			if handled {
+				worked.Store(true)
+			}
+			if err != nil {
 				errCh <- fmt.Errorf("archive provider worker %s: %w", key, err)
 			}
 		})
@@ -48,7 +60,7 @@ func (s *Scheduler) Run(ctx context.Context, groups map[string][]resolvedReposit
 	for err := range errCh {
 		errs = append(errs, err)
 	}
-	return errors.Join(errs...)
+	return worked.Load(), errors.Join(errs...)
 }
 
 var errAdmissionDeferred = errors.New("archive request deferred by admission")
@@ -66,114 +78,38 @@ func featureDeferredBeforeProvider(err error) bool {
 	return errors.As(err, &deferred) && deferred != nil && !deferred.providerAttempted
 }
 
-// NextWake tells the worker loop when to run its next pass.
-type NextWake struct {
-	// At is the earliest moment known archive work can become eligible. It is
-	// zero when nothing is scheduled: every configured repository is paused,
-	// complete, or waiting on an explicit action such as a credential retry.
-	At time.Time
-	// Worked reports that this pass attempted provider work, so more work may
-	// be eligible right away and the loop should pace by its work interval
-	// rather than sleep until At.
-	Worked bool
-}
-
-// wakeCollector gathers the eligibility times one provider-host pass learns
-// about while it looks for work: deferral deadlines, feature cooldowns,
-// maintenance due times, and hydration retry times.
-type wakeCollector struct {
-	at time.Time
-}
-
-func (c *wakeCollector) add(at time.Time) {
-	if at.IsZero() {
-		return
-	}
-	if c.at.IsZero() || at.Before(c.at) {
-		c.at = at
-	}
-}
-
-func (c *wakeCollector) addPtr(at *time.Time) {
-	if at != nil {
-		c.add(at.UTC())
-	}
-}
-
-func (c *wakeCollector) addDeferral(err error) {
-	var deferred *featureDeferredError
-	if errors.As(err, &deferred) && deferred != nil {
-		c.add(deferred.RetryAt.UTC())
-	}
-}
-
-// RunEligible performs one worker pass and discards the wake computation. Tests
-// and one-shot callers use it; the worker loop calls RunPass.
+// RunEligible performs one worker pass. Tests and one-shot callers use it;
+// the worker loop calls RunPass to learn whether the pass attempted work.
 func (s *Service) RunEligible(ctx context.Context) error {
 	_, err := s.RunPass(ctx)
 	return err
 }
 
 // RunPass performs one worker pass over every configured repository grouped by
-// provider host and reports when the next pass can find work. A pass with
-// unchanged configuration performs no repository resolution queries, and a
-// pass that finds no eligible work reads only the archive repository states
-// and one hydration due summary.
-func (s *Service) RunPass(ctx context.Context) (NextWake, error) {
+// provider host and reports whether any provider work was attempted, so the
+// loop can back off while nothing is eligible. A pass with unchanged
+// configuration performs no repository resolution queries.
+func (s *Service) RunPass(ctx context.Context) (bool, error) {
 	resolved, err := s.workerRepositories(ctx)
 	if err != nil {
-		return NextWake{}, err
-	}
-	if len(resolved) == 0 {
-		return NextWake{}, nil
-	}
-	states, err := s.db.ListArchiveRepoStates(ctx, resolvedRepoIDs(resolved))
-	if err != nil {
-		return NextWake{}, err
-	}
-	stateByID := make(map[int64]db.ArchiveRepoState, len(states))
-	for _, state := range states {
-		stateByID[state.RepoID] = state
+		return false, err
 	}
 	groups := make(map[string][]resolvedRepository)
 	for _, repo := range resolved {
 		key := string(repo.Ref.Platform) + "\x00" + repo.Ref.Host
 		groups[key] = append(groups[key], repo)
 	}
-	var mu sync.Mutex
-	var next NextWake
-	err = s.scheduler.Run(ctx, groups, func(ctx context.Context, repos []resolvedRepository) error {
-		wake, err := s.runProviderHostWork(ctx, repos, stateByID)
-		mu.Lock()
-		defer mu.Unlock()
-		if wake.Worked {
-			next.Worked = true
-		}
-		if !wake.At.IsZero() && (next.At.IsZero() || wake.At.Before(next.At)) {
-			next.At = wake.At
-		}
-		return err
-	})
-	return next, err
+	return s.scheduler.Run(ctx, groups, s.runProviderHostWork)
 }
 
-func (s *Service) runProviderHostWork(
-	ctx context.Context,
-	repos []resolvedRepository,
-	stateByID map[int64]db.ArchiveRepoState,
-) (NextWake, error) {
-	worked := NextWake{Worked: true}
-	var wake wakeCollector
-	now := s.now()
-	for _, repo := range repos {
-		state := stateByID[repo.ID]
-		if state.OperatorState == db.ArchiveOperatorStateActive &&
-			state.NextRetryAt != nil && state.NextRetryAt.After(now) {
-			// A deferred repository becomes eligible again at its retry time.
-			// Authentication and blocked repositories wait for an explicit
-			// retry, which wakes the worker itself.
-			wake.addPtr(state.NextRetryAt)
-		}
+func (s *Service) runProviderHostWork(ctx context.Context, repos []resolvedRepository) (bool, error) {
+	states, err := s.db.ListArchiveRepoStates(ctx, resolvedRepoIDs(repos))
+	if err != nil {
+		return false, err
+	}
+	stateByID := make(map[int64]db.ArchiveRepoState, len(states))
+	for _, state := range states {
+		stateByID[state.RepoID] = state
 	}
 
 	// Give both independent inventories their first bounded page before
@@ -181,23 +117,21 @@ func (s *Service) runProviderHostWork(
 	for _, repo := range repos {
 		state := stateByID[repo.ID]
 		if state.OperatorState != db.ArchiveOperatorStateActive ||
-			state.CollectionMode != db.ArchiveCollectionModeFull || archiveRepoDeferred(state, now) {
+			state.CollectionMode != db.ArchiveCollectionModeFull || archiveRepoDeferred(state, s.now()) {
 			continue
 		}
 		if archiveScanNotStarted(state.IssueInventory) {
 			err := s.inventoryPage(ctx, repo, state, db.ArchiveItemTypeIssue)
 			if !featureDeferredBeforeProvider(err) {
-				return worked, s.swallowAdmissionDeferred(err)
+				return true, s.swallowAdmissionDeferred(err)
 			}
-			wake.addDeferral(err)
 		}
 		if archiveScanNotStarted(state.MergeRequestInventory) {
 			err := s.inventoryPage(ctx, repo, state, db.ArchiveItemTypeMergeRequest)
 			if featureDeferredBeforeProvider(err) {
-				wake.addDeferral(err)
 				continue
 			}
-			return worked, s.swallowAdmissionDeferred(err)
+			return true, s.swallowAdmissionDeferred(err)
 		}
 	}
 
@@ -207,20 +141,19 @@ func (s *Service) runProviderHostWork(
 	// admitted request and indefinitely delay a persisted inventory cursor.
 	// The boundary only holds priority while it can actually advance: a
 	// boundary whose streams are all blocked stays durable for reporting but
-	// must not consume every pass and starve hydration and other
+	// must not consume every poll and starve hydration and other
 	// repositories on the same provider host.
 	for _, repo := range repos {
 		state := stateByID[repo.ID]
 		if state.CollectionMode == db.ArchiveCollectionModeFull &&
 			state.OperatorState == db.ArchiveOperatorStateActive &&
-			state.PromptScanStartedAt != nil && !archiveRepoDeferred(state, now) &&
+			state.PromptScanStartedAt != nil && !archiveRepoDeferred(state, s.now()) &&
 			maintenanceBoundaryActionable(state) {
 			err := s.promptMaintenance(ctx, repo, state)
 			if featureDeferredBeforeProvider(err) {
-				wake.addDeferral(err)
 				continue
 			}
-			return worked, s.swallowAdmissionDeferred(err)
+			return true, s.swallowAdmissionDeferred(err)
 		}
 	}
 
@@ -228,44 +161,39 @@ func (s *Service) runProviderHostWork(
 	for _, repo := range repos {
 		state := stateByID[repo.ID]
 		if state.CollectionMode == db.ArchiveCollectionModeFull &&
-			state.OperatorState == db.ArchiveOperatorStateActive && !archiveRepoDeferred(state, now) {
+			state.OperatorState == db.ArchiveOperatorStateActive && !archiveRepoDeferred(state, s.now()) {
 			fullIDs = append(fullIDs, repo.ID)
 		}
 	}
-	if handled, err := s.runNextHydrationWork(ctx, repos, fullIDs, &wake); handled || err != nil {
-		return worked, err
+	if handled, err := s.runNextHydrationWork(ctx, repos, fullIDs); handled || err != nil {
+		return handled, err
 	}
 
 	if handled, err := s.runNextInventoryWork(
-		ctx, repos, stateByID, db.ArchiveCollectionModeFull, &wake,
+		ctx, repos, stateByID, db.ArchiveCollectionModeFull,
 	); handled || err != nil {
-		return worked, err
+		return handled, err
 	}
 	for _, repo := range repos {
 		state := stateByID[repo.ID]
 		if state.CollectionMode != db.ArchiveCollectionModeFull ||
-			state.OperatorState != db.ArchiveOperatorStateActive || archiveRepoDeferred(state, now) {
+			state.OperatorState != db.ArchiveOperatorStateActive || archiveRepoDeferred(state, s.now()) {
 			continue
 		}
-		if !maintenanceBoundaryActionable(state) {
-			continue
-		}
-		if promptMaintenanceDue(state, now, s.maintenanceInterval) {
+		if promptMaintenanceDue(state, s.now(), s.maintenanceInterval) && maintenanceBoundaryActionable(state) {
 			err := s.promptMaintenance(ctx, repo, state)
 			if featureDeferredBeforeProvider(err) {
-				wake.addDeferral(err)
 				continue
 			}
-			return worked, s.swallowAdmissionDeferred(err)
+			return true, s.swallowAdmissionDeferred(err)
 		}
-		wake.addPtr(nextPromptMaintenanceAt(state, s.maintenanceInterval))
 	}
 	if handled, err := s.runNextInventoryWork(
-		ctx, repos, stateByID, db.ArchiveCollectionModeDiscovery, &wake,
+		ctx, repos, stateByID, db.ArchiveCollectionModeDiscovery,
 	); handled || err != nil {
-		return worked, err
+		return handled, err
 	}
-	return NextWake{At: wake.at}, nil
+	return false, nil
 }
 
 type archiveInventoryScope struct {
@@ -273,38 +201,15 @@ type archiveInventoryScope struct {
 	itemType db.ArchiveItemType
 }
 
-// runNextHydrationWork claims and hydrates the oldest due item across the
-// eligible repositories. One due summary decides whether any claim is worth
-// making; when nothing is due it records the earliest item retry time so the
-// worker sleeps until then instead of re-checking every repository.
 func (s *Service) runNextHydrationWork(
 	ctx context.Context,
 	repos []resolvedRepository,
 	repoIDs []int64,
-	wake *wakeCollector,
 ) (bool, error) {
-	if len(repoIDs) == 0 {
-		return false, nil
-	}
-	summaries, err := s.db.SummarizeArchiveItemsDue(ctx, repoIDs, s.now())
-	if err != nil {
-		return false, err
-	}
-	dueIDs := make([]int64, 0, len(summaries))
-	for _, summary := range summaries {
-		if summary.Due > 0 {
-			dueIDs = append(dueIDs, summary.RepoID)
-			continue
-		}
-		wake.addPtr(summary.NextRetryAt)
-	}
-	if len(dueIDs) == 0 {
-		return false, nil
-	}
 	var excluded []db.ArchiveItemScope
 	for {
 		item, err := s.db.ClaimArchiveItem(ctx, db.ClaimArchiveItemOpts{
-			RepoIDs: dueIDs, Now: s.now(), ExcludedScopes: excluded,
+			RepoIDs: repoIDs, Now: s.now(), ExcludedScopes: excluded,
 		})
 		if err != nil {
 			return false, err
@@ -315,7 +220,6 @@ func (s *Service) runNextHydrationWork(
 		repo := resolvedRepoByID(repos, item.RepoID)
 		err = s.hydrateItem(ctx, repo, *item)
 		if featureDeferredBeforeProvider(err) {
-			wake.addDeferral(err)
 			excluded = append(excluded, db.ArchiveItemScope{
 				RepoID: item.RepoID, ItemType: item.ItemType,
 			})
@@ -330,7 +234,6 @@ func (s *Service) runNextInventoryWork(
 	repos []resolvedRepository,
 	states map[int64]db.ArchiveRepoState,
 	mode db.ArchiveCollectionMode,
-	wake *wakeCollector,
 ) (bool, error) {
 	skipped := make(map[archiveInventoryScope]struct{})
 	for {
@@ -342,7 +245,6 @@ func (s *Service) runNextInventoryWork(
 		}
 		err := s.inventoryPage(ctx, repo, state, itemType)
 		if featureDeferredBeforeProvider(err) {
-			wake.addDeferral(err)
 			skipped[archiveInventoryScope{repoID: repo.ID, itemType: itemType}] = struct{}{}
 			continue
 		}

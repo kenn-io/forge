@@ -164,16 +164,6 @@ func (s *Service) SetMaintenanceInterval(interval time.Duration) {
 
 func (s *Service) SetWake(wake func()) { s.wake = wake }
 
-// InvalidateRepositories drops the worker's cached repository resolution so
-// the next pass resolves configured repositories again. Configuration
-// reconciliation and archive state changes call it; repository reconciliation
-// in the store is detected through its generation instead.
-func (s *Service) InvalidateRepositories() {
-	s.reposMu.Lock()
-	s.repos = nil
-	s.reposMu.Unlock()
-}
-
 // workerRepositories returns the configured repositories the worker should
 // schedule, resolving them only when the configuration or the store's
 // repository reconciliation generation changed since the cached resolution.
@@ -198,10 +188,12 @@ func (s *Service) workerRepositories(ctx context.Context) ([]resolvedRepository,
 	if cached != nil && cached.generation == generation && slices.Equal(cached.refKeys, refKeys) {
 		return cached.resolved, nil
 	}
-	// Configuration reconciliation runs at startup and on configuration reload.
-	// The worker pass must remain read-only when no work is eligible.
-	// Resolution failures are repository-scoped: a configured entry that seeding
-	// skipped must not block archive work for every healthy repository.
+	// Configuration reconciliation runs at startup and on configuration reload;
+	// its catalog writes advance the generation, so a seeded ref is resolved
+	// on the next pass. The pass itself stays read-only when nothing is
+	// eligible. Resolution failures are repository-scoped: a configured entry
+	// that seeding skipped must not block archive work for every healthy
+	// repository.
 	resolved, err := s.resolveRepositoriesTolerant(ctx, refs, true)
 	if err != nil {
 		return nil, err
@@ -220,7 +212,6 @@ func (s *Service) workerRepositories(ctx context.Context) ([]resolvedRepository,
 // the rest (or crash-loop the daemon at startup); only batch reconciliation
 // errors (a broken store) are returned.
 func (s *Service) EnsureConfigured(ctx context.Context, refs []platform.RepoRef) ([]platform.RepoRef, error) {
-	defer s.InvalidateRepositories()
 	seededRefs := make([]platform.RepoRef, 0, len(refs))
 	resolved := make([]resolvedRepository, 0, len(refs))
 	protectedIDs := make([]int64, 0, len(refs))
@@ -342,7 +333,6 @@ func (s *Service) seedArchiveRepository(ctx context.Context, ref platform.RepoRe
 // RetryAuthentication makes credential-blocked repositories eligible after a
 // config reload without resetting their durable archive progress.
 func (s *Service) RetryAuthentication(ctx context.Context, refs []platform.RepoRef) error {
-	defer s.InvalidateRepositories()
 	resolved, err := s.resolveRepositories(ctx, refs, false)
 	if err != nil {
 		return err
@@ -351,7 +341,6 @@ func (s *Service) RetryAuthentication(ctx context.Context, refs []platform.RepoR
 }
 
 func (s *Service) Start(ctx context.Context, refs []platform.RepoRef) ([]Status, error) {
-	defer s.InvalidateRepositories()
 	resolved, err := s.resolveRepositories(ctx, refs, true)
 	if err != nil {
 		return nil, err
@@ -386,7 +375,6 @@ func (s *Service) StartAll(ctx context.Context) ([]Status, error) {
 }
 
 func (s *Service) Pause(ctx context.Context, refs []platform.RepoRef) ([]Status, error) {
-	defer s.InvalidateRepositories()
 	resolved, err := s.resolveRepositories(ctx, refs, false)
 	if err != nil {
 		return nil, err

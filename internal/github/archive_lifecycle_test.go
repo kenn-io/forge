@@ -751,9 +751,7 @@ func TestArchiveDisabledIssueHydrationRecoversAfterManualProbe(t *testing.T) {
 	assert.Equal(int32(2), fixture.hydrationCalls.Load())
 }
 
-func (*archiveLifecycleRecorder) RunPass(context.Context) (archive.NextWake, error) {
-	return archive.NextWake{}, nil
-}
+func (*archiveLifecycleRecorder) RunPass(context.Context) (bool, error) { return false, nil }
 
 func (r *archiveLifecycleRecorder) EnsureConfigured(_ context.Context, refs []platform.RepoRef) ([]platform.RepoRef, error) {
 	r.ensured = append(r.ensured, refs...)
@@ -772,7 +770,7 @@ func newBlockingArchiveRunner() *blockingArchiveRunner {
 	return &blockingArchiveRunner{started: make(chan struct{}), done: make(chan struct{})}
 }
 
-func (r *blockingArchiveRunner) RunPass(ctx context.Context) (archive.NextWake, error) {
+func (r *blockingArchiveRunner) RunPass(ctx context.Context) (bool, error) {
 	if r.calls.Add(1) == 1 {
 		close(r.started)
 	}
@@ -782,7 +780,7 @@ func (r *blockingArchiveRunner) RunPass(ctx context.Context) (archive.NextWake, 
 	default:
 		close(r.done)
 	}
-	return archive.NextWake{}, ctx.Err()
+	return false, ctx.Err()
 }
 
 func TestArchiveWorkerJoinsSyncerShutdown(t *testing.T) {

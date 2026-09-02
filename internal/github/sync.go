@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/cenkalti/backoff/v7"
 	gh "github.com/google/go-github/v89/github"
 	"go.kenn.io/forge/internal/archive"
 	"go.kenn.io/forge/internal/config"
@@ -959,7 +960,9 @@ type archiveProviderRequest struct {
 }
 
 type archiveRunner interface {
-	RunPass(context.Context) (archive.NextWake, error)
+	// RunPass performs one worker pass and reports whether it attempted
+	// provider work.
+	RunPass(context.Context) (bool, error)
 }
 
 type archiveRepositoryLifecycle interface {
@@ -1265,8 +1268,8 @@ func (s *Syncer) WakeArchive() {
 }
 
 // SetArchivePollIntervalForTesting shortens the pacing between archive worker
-// passes that attempted work or failed. Idle passes still sleep until the
-// service reports work can become eligible.
+// passes. It is the wait after a pass that attempted work or failed and the
+// starting point of the idle backoff.
 func (s *Syncer) SetArchivePollIntervalForTesting(interval time.Duration) {
 	if interval > 0 {
 		s.archivePollInterval = interval
@@ -4689,16 +4692,34 @@ func (s *Syncer) runArchiveLoop(ctx context.Context, ready <-chan struct{}) {
 	case <-ctx.Done():
 		return
 	}
+	interval := s.archivePollInterval
+	if interval <= 0 {
+		interval = time.Second
+	}
+	// Idle passes back off exponentially from the pacing interval to
+	// archiveIdleWait. A pass that attempted work or failed, or a wake from
+	// config reload, sync completion, a budget reset, or an archive start,
+	// returns the loop to the pacing interval.
+	idle := backoff.NewExponentialBackOff()
+	idle.InitialInterval = interval
+	idle.MaxInterval = archiveIdleWait
+	idle.Multiplier = 2
+	idle.RandomizationFactor = 0
+	idle.Reset()
 	for {
-		wake, err := s.archiveRunner.RunPass(ctx)
+		worked, err := s.archiveRunner.RunPass(ctx)
 		if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 			slog.Warn("archive worker iteration failed", "err", err)
 		}
-		timer := time.NewTimer(s.archiveWait(wake, err))
+		if worked || err != nil {
+			idle.Reset()
+		}
+		timer := time.NewTimer(idle.NextBackOff())
 		select {
 		case <-timer.C:
 		case <-s.archiveWake:
 			timer.Stop()
+			idle.Reset()
 		case <-s.stopCh:
 			timer.Stop()
 			return
@@ -4709,30 +4730,11 @@ func (s *Syncer) runArchiveLoop(ctx context.Context, ready <-chan struct{}) {
 	}
 }
 
-// archiveIdleWait bounds how long the archive worker sleeps when the service
-// reports nothing scheduled or a distant eligibility time. It is a safety net
-// against a missed wake, not the normal way work resumes: configuration
-// reloads, sync completion, budget resets, and explicit wakes all interrupt
-// the sleep through archiveWake.
+// archiveIdleWait caps the archive worker's idle backoff. Every source of
+// time-driven archive work waits at least a minute, so a bounded delay in
+// noticing it costs little, while an idle daemon stops paying for a pass
+// every second.
 const archiveIdleWait = 5 * time.Minute
-
-// archiveWait converts the service's wake computation into the sleep before
-// the next pass. A pass that attempted work or failed re-runs after the work
-// pacing interval; an idle pass sleeps until the earliest known eligibility
-// time, bounded below by the pacing interval and above by archiveIdleWait.
-func (s *Syncer) archiveWait(wake archive.NextWake, err error) time.Duration {
-	interval := s.archivePollInterval
-	if interval <= 0 {
-		interval = time.Second
-	}
-	if err != nil || wake.Worked {
-		return interval
-	}
-	if wake.At.IsZero() {
-		return archiveIdleWait
-	}
-	return min(max(wake.At.Sub(s.now()), interval), archiveIdleWait)
-}
 
 // backgroundReserveCost is the request allowance every background reserve check
 // asks for. One constant rather than a per-caller cost: against a 200-request
@@ -6037,6 +6039,10 @@ func (s *Syncer) runOnceWithSlot(
 				s.publishStatusLocked(terminalStatus)
 			}
 			s.statusMu.Unlock()
+			// A completed sync can change archive eligibility, for example by
+			// clearing a repository feature cooldown, so the idle archive
+			// worker must not wait out its backoff to notice.
+			s.WakeArchive()
 			return
 		}
 		s.statusMu.Unlock()

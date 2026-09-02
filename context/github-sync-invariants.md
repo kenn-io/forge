@@ -436,10 +436,11 @@ fallback repository listing.
   any other infrastructure error still surfaces — an empty pass reported as
   success would hide a dead worker. (`internal/archive/scheduler.go::RunPass`,
   `internal/archive/service.go::resolveRepositoriesTolerant`)
-- The archive worker is wake-driven, not a ticker: each pass reports the earliest
-  eligibility time (deferral deadlines, feature cooldowns, maintenance due, hydration
-  retries) and the loop sleeps until then, capped at five minutes; only a pass that
-  attempted work or failed re-runs on the pacing interval. (`internal/github/sync.go::archiveWait`)
+- The archive worker backs off while idle instead of ticking every second: after a pass
+  that attempted no work the wait doubles from the pacing interval to a five-minute cap,
+  and a pass that worked or failed, or a wake, returns it to the pacing interval. Every
+  completed sync run wakes it, since a sync can clear a feature cooldown and make archive
+  work eligible. (`internal/github/sync.go::runArchiveLoop`, `internal/github/sync.go::runOnceWithSlot`)
 - Initial issue and pull-request inventory includes all states in stable created-time ascending order; issue enumeration excludes PR-shaped rows. (`internal/github/pages.go::ListIssuesPage`, `internal/github/pages.go::ListMergeRequestsPage`)
 - GitHub issue-only repositories return pulls API 404; normal and archive paths
   classify it as feature-disabled only for explicit `has_pull_requests=false`;

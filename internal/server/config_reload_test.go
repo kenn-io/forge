@@ -20,7 +20,6 @@ import (
 	gh "github.com/google/go-github/v89/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/forge/internal/archive"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
@@ -37,9 +36,7 @@ type reloadArchiveLifecycleRecorder struct {
 	retried []platform.RepoRef
 }
 
-func (*reloadArchiveLifecycleRecorder) RunPass(context.Context) (archive.NextWake, error) {
-	return archive.NextWake{}, nil
-}
+func (*reloadArchiveLifecycleRecorder) RunPass(context.Context) (bool, error) { return false, nil }
 
 func (r *reloadArchiveLifecycleRecorder) EnsureConfigured(_ context.Context, refs []platform.RepoRef) ([]platform.RepoRef, error) {
 	r.ensured = append([]platform.RepoRef(nil), refs...)

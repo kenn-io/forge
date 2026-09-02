@@ -826,85 +826,21 @@ func (d *DB) claimArchiveItem(
 	return &oldest, nil
 }
 
-// pendingArchiveItemsFrom selects every hydration lookup that is still open
-// for an active, unblocked full-archive repository, regardless of whether its
-// own retry time has arrived. Claiming and the due summary share it so the
-// worker's "is anything due" answer and the claim it then makes agree.
-const pendingArchiveItemsFrom = `
+const dueArchiveItemsQuery = `
+	SELECT ai.repo_id, ai.item_type, ai.item_number, ai.provider_created_at,
+		p.scan_generation, p.attempt_count
 	FROM forge_archive_dataset_progress p
 	JOIN forge_archive_items ai
 	  ON ai.repo_id = p.repo_id AND ai.item_type = p.item_type AND ai.item_number = p.item_number
 	JOIN forge_archive_repos ar ON ar.repo_id = p.repo_id
-	WHERE ar.collection_mode = 'full'
+	WHERE p.repo_id = ?
+	  AND ar.collection_mode = 'full'
 	  AND ar.operator_state = 'active'
 	  AND (ar.next_retry_at IS NULL OR ar.next_retry_at <= ?)
 	  AND ai.lifecycle_state = 'active'
 	  AND p.dataset = 'lookup'
-	  AND p.status IN ('pending', 'running', 'failed')`
-
-const dueArchiveItemsQuery = `
-	SELECT ai.repo_id, ai.item_type, ai.item_number, ai.provider_created_at,
-		p.scan_generation, p.attempt_count` + pendingArchiveItemsFrom + `
-	  AND p.repo_id = ?
+	  AND p.status IN ('pending', 'running', 'failed')
 	  AND (p.next_retry_at IS NULL OR p.next_retry_at <= ?)`
-
-// ArchiveItemDueSummary reports, for one repository, how many hydration
-// lookups are due now and the earliest retry time among those that are not.
-type ArchiveItemDueSummary struct {
-	RepoID      int64
-	Due         int
-	NextRetryAt *time.Time
-}
-
-// SummarizeArchiveItemsDue answers in one statement whether any hydration
-// lookup is claimable now for the given repositories and, when none is, the
-// earliest moment one becomes claimable. Repositories with no open lookups
-// are omitted. The worker uses it to skip per-repository claims on idle passes
-// and to sleep until the next retry instead of polling.
-func (d *DB) SummarizeArchiveItemsDue(
-	ctx context.Context,
-	repoIDs []int64,
-	now time.Time,
-) ([]ArchiveItemDueSummary, error) {
-	repoIDs = normalizedArchiveRepoIDs(repoIDs)
-	if len(repoIDs) == 0 {
-		return nil, nil
-	}
-	now = now.UTC()
-	dueAt := formatDatasetProgressTime(now)
-	query := `
-	SELECT p.repo_id,
-		SUM(CASE WHEN p.next_retry_at IS NULL OR p.next_retry_at <= ? THEN 1 ELSE 0 END),
-		MIN(CASE WHEN p.next_retry_at > ? THEN p.next_retry_at END)` +
-		pendingArchiveItemsFrom + `
-	  AND p.repo_id IN (` + sqlPlaceholders(len(repoIDs)) + `)
-	GROUP BY p.repo_id
-	ORDER BY p.repo_id`
-	args := []any{dueAt, dueAt, now}
-	args = append(args, archiveRepoIDArgs(repoIDs)...)
-	rows, err := d.ro.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, fmt.Errorf("summarize due archive items: %w", err)
-	}
-	defer rows.Close()
-	summaries := make([]ArchiveItemDueSummary, 0)
-	for rows.Next() {
-		var summary ArchiveItemDueSummary
-		var nextRetry sql.NullString
-		if err := rows.Scan(&summary.RepoID, &summary.Due, &nextRetry); err != nil {
-			return nil, fmt.Errorf("scan due archive item summary: %w", err)
-		}
-		summary.NextRetryAt, err = parseDatasetProgressTimePtr(nextRetry)
-		if err != nil {
-			return nil, fmt.Errorf("parse due archive item retry time: %w", err)
-		}
-		summaries = append(summaries, summary)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("summarize due archive items: %w", err)
-	}
-	return summaries, nil
-}
 
 func claimArchiveItemForRepo(
 	ctx context.Context,
@@ -914,7 +850,7 @@ func claimArchiveItemForRepo(
 	excludedItemTypes []ArchiveItemType,
 ) (*ArchiveItemWork, error) {
 	query := dueArchiveItemsQuery
-	args := []any{now, repoID, formatDatasetProgressTime(now)}
+	args := []any{repoID, now, formatDatasetProgressTime(now)}
 	if len(excludedItemTypes) > 0 {
 		query += fmt.Sprintf(" AND ai.item_type NOT IN (%s)", sqlPlaceholders(len(excludedItemTypes)))
 		for _, itemType := range excludedItemTypes {

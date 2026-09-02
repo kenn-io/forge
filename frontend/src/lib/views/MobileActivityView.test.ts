@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { ActivityItem, ActivitySubject, WorkspaceActivitySubject } from "../api/types.js";
 import MobileActivityView from "./MobileActivityViewRuntimeHarness.svelte";
+import { takeMobileListPosition } from "../stores/mobile-list-return.js";
 
 function branchActivityItem(id: string, overrides: Partial<ActivityItem> = {}): ActivityItem {
   return {
@@ -667,6 +668,24 @@ describe("MobileActivityView workspace activity", () => {
         item_type: "pr",
       }),
     );
+  });
+
+  it("parks the feed position before a timeline event opens its item", async () => {
+    items.value = [
+      pullActivityItem("first", "Grouped pull", "2026-04-27T12:00:00Z", 1),
+      pullActivityItem("second", "Grouped pull", "2026-04-27T13:00:00Z", 1),
+    ];
+
+    const { container } = render(MobileActivityView, { props: { onSelectItem } });
+
+    const event = container.querySelector<HTMLButtonElement>(".mobile-activity-event");
+    expect(event).not.toBeNull();
+    await fireEvent.click(event!);
+
+    expect(onSelectItem).toHaveBeenCalledWith(expect.objectContaining({ item_number: 1, item_type: "pr" }));
+    // Back after that detail restores the rows the reader left, exactly as
+    // the card header path does.
+    expect(takeMobileListPosition("activity")).toEqual({ scrollTop: 0, pageLimit: expect.any(Number) });
   });
 
   it("hides cached workspace-only subjects when workspace recency is disabled", () => {

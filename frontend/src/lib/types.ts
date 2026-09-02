@@ -43,6 +43,12 @@ export interface NavigateOptions {
    * user is in, so moving between them does not fill the Back stack.
    */
   replace?: boolean;
+  /**
+   * History state to store on the entry this navigation writes, such as the
+   * phone list origin that a detail's Back control reads. Left off the entry
+   * when omitted.
+   */
+  state?: Record<string, unknown>;
 }
 
 export type NavigateCallback = (event: string | NavigateEvent, options?: NavigateOptions) => void;

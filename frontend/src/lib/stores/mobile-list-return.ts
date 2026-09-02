@@ -7,15 +7,37 @@
 export type MobileListOrigin = "activity" | "pulls" | "issues";
 
 const originKey = "kennForgeMobileListOrigin";
+const backDepthKey = "kennForgeMobileListBackDepth";
 
-export function mobileListOriginState(origin: MobileListOrigin): Record<string, unknown> {
-  return { [originKey]: origin };
+// The detail header's Back returns to the list in one tap, however many
+// entries the detail pushed on top of the list's (a tab switch, a stack
+// member), so the state also counts how far back that list entry sits.
+export function mobileListOriginState(origin: MobileListOrigin, backDepth = 1): Record<string, unknown> {
+  return { [originKey]: origin, [backDepthKey]: backDepth };
+}
+
+export function readMobileListBackDepth(state: unknown): number {
+  if (typeof state !== "object" || state === null) return 1;
+  const depth: unknown = Reflect.get(state, backDepthKey);
+  return typeof depth === "number" && depth >= 1 ? depth : 1;
 }
 
 export function readMobileListOrigin(state: unknown): MobileListOrigin | undefined {
   if (typeof state !== "object" || state === null) return undefined;
   const origin: unknown = Reflect.get(state, originKey);
   return origin === "activity" || origin === "pulls" || origin === "issues" ? origin : undefined;
+}
+
+// A detail route that navigates again (a tab switch, a stack member) must
+// carry the origin onto the entry it creates, or Back from that entry loses
+// the list that opened the item. A pushed entry sits one step further from
+// the list; a replaced entry keeps its distance. Only these keys travel:
+// other history state belongs to the entry that wrote it.
+export function carryMobileListOrigin(state: unknown, step: "push" | "replace"): Record<string, unknown> | undefined {
+  const origin = readMobileListOrigin(state);
+  if (origin === undefined) return undefined;
+  const depth = readMobileListBackDepth(state) + (step === "push" ? 1 : 0);
+  return mobileListOriginState(origin, depth);
 }
 
 export function mobileListRoute(origin: MobileListOrigin): string {

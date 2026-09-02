@@ -192,7 +192,7 @@
       routeFamily === "canonical"
         ? buildPullRequestRoute(ref)
         : buildFocusPullRequestRoute(ref),
-      mobileListOriginState("pulls"),
+      { state: mobileListOriginState("pulls") },
     );
   }
 
@@ -202,7 +202,7 @@
       routeFamily === "canonical"
         ? buildIssueRoute(ref)
         : buildFocusIssueRoute(ref),
-      mobileListOriginState("issues"),
+      { state: mobileListOriginState("issues") },
     );
   }
 

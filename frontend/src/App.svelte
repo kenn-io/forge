@@ -114,9 +114,11 @@
     type RoutableItemRef,
   } from "./lib/stores/router.svelte.ts";
   import {
+    carryMobileListOrigin,
     mobileListBackLabel,
     mobileListOriginState,
     mobileListRoute,
+    readMobileListBackDepth,
     readMobileListOrigin,
     type MobileListOrigin,
   } from "./lib/stores/mobile-list-return.js";
@@ -205,8 +207,8 @@
   };
   const appNavigate: NavigateCallback = (event, options) => {
     const path = typeof event === "string" ? event : event.path;
-    if (options?.replace) replaceUrl(path);
-    else navigate(path);
+    if (options?.replace) replaceUrl(path, options.state);
+    else navigate(path, options?.state);
   };
   const appComposition = createAppStores({
     runtime: appRuntime,
@@ -678,9 +680,10 @@
       tab === "files" ? buildFocusPullRequestFilesRoute(ref) : buildFocusPullRequestRoute(ref);
     // Replace when the view says this only records which of two simultaneously
     // visible panes the user is in, so moving between them does not fill the
-    // Back stack.
-    if (options?.replace) replaceUrl(path);
-    else navigate(path);
+    // Back stack. Either way the entry keeps the phone list origin, so Back
+    // from the new tab still returns to the list that opened the item.
+    if (options?.replace) replaceUrl(path, carryMobileListOrigin(history.state, "replace"));
+    else navigate(path, carryMobileListOrigin(history.state, "push"));
   }
 
   // Phone-like PR and issue detail routes live inside the phone shell. The
@@ -702,7 +705,7 @@
   }
 
   function leavePhoneDetail(): void {
-    if (readMobileListOrigin(history.state)) history.back();
+    if (readMobileListOrigin(history.state)) history.go(-readMobileListBackDepth(history.state));
     else replaceUrl(mobileListRoute(phoneDetailOrigin()));
   }
 
@@ -1015,7 +1018,7 @@
     ref: PullRequestRouteRef,
   ): boolean | void {
     if (shouldUseResponsiveFocusPresentation()) {
-      navigate(buildFocusPullRequestRoute(ref));
+      navigate(buildFocusPullRequestRoute(ref), carryMobileListOrigin(history.state, "push"));
       return true;
     }
     return undefined;

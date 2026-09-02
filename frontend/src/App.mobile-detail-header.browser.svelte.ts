@@ -50,6 +50,17 @@ describe("phone detail header", () => {
     expect(count(".app-top-bar")).toBe(0);
     expect(text(".mobile-detail-header__badge")).toMatch(/^PR #\d+$/);
     expect(text(".mobile-detail-header__back")).toBe("Pull requests");
+    // The list recorded itself on the detail's history entry: Back pops that
+    // entry rather than replacing the detail with a fresh list.
+    expect((history.state as Record<string, unknown> | null)?.kennForgeMobileListOrigin).toBe("pulls");
+
+    // Switching to the Files tab writes a new history entry; it must keep the
+    // list origin, or Back from that tab falls back to a fresh list instead of
+    // returning to the entry the list left behind.
+    document.querySelector<HTMLElement>("[role='tab'][aria-label='Files changed']")!.click();
+    await vi.waitFor(() => expect(window.location.pathname).toMatch(/\/files$/), WAIT);
+    expect((history.state as Record<string, unknown> | null)?.kennForgeMobileListOrigin).toBe("pulls");
+    expect(text(".mobile-detail-header__back")).toBe("Pull requests");
 
     document.querySelector<HTMLElement>(".mobile-detail-header__back")!.click();
 

@@ -472,9 +472,12 @@
     );
   }
 
-  function handleCardClick(group: ActivityGroup): void {
-    if (isDefaultBranchActivity(group.representative)) {
-      const url = group.representative.activity_url;
+  // Every path that leaves the feed for a detail parks the feed position
+  // first, so Back lands on the same rows whether the card header or one of
+  // its timeline events opened the item.
+  function openItem(item: ActivityItem): void {
+    if (isDefaultBranchActivity(item)) {
+      const url = item.activity_url;
       if (url) window.open(url, "_blank", "noopener");
       return;
     }
@@ -482,7 +485,11 @@
       scrollTop: scrollViewportOf(inboxRoot)?.scrollTop ?? 0,
       pageLimit: activityPageLimit,
     });
-    onSelectItem?.(group.representative);
+    onSelectItem?.(item);
+  }
+
+  function handleCardClick(group: ActivityGroup): void {
+    openItem(group.representative);
   }
 
   $effect(() => {
@@ -622,12 +629,7 @@
   }
 
   function handleEventClick(event: ActivityItem): void {
-    if (isDefaultBranchActivity(event)) {
-      const url = event.activity_url;
-      if (url) window.open(url, "_blank", "noopener");
-      return;
-    }
-    onSelectItem?.(event);
+    openItem(event);
   }
 
   function isUnreadNotification(item: ActivityItem): boolean {

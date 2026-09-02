@@ -261,3 +261,33 @@ func reportAgentHook(
 	require.NoError(t, err)
 	require.NoError(t, store.HandleHook(agent, strings.NewReader(string(data)), runtimeKey))
 }
+
+func TestStoreTreatsIdlePromptAsDone(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	store := NewStore(t.TempDir())
+	workspace := t.TempDir()
+
+	reportHook(t, store, "runtime-a", map[string]any{
+		"session_id": "agent-a", "cwd": workspace,
+		"hook_event_name": "Stop",
+	})
+	// Claude Code raises idle_prompt roughly a minute after Stop when the
+	// turn ended with nothing pending; it must not turn done into input.
+	reportHook(t, store, "runtime-a", map[string]any{
+		"session_id": "agent-a", "cwd": workspace,
+		"hook_event_name": "Notification", "notification_type": "idle_prompt",
+	})
+	snapshot, ok := store.SnapshotForWorkspace(workspace, []string{"runtime-a"})
+	require.True(ok)
+	assert.Equal(StateDone, snapshot.State)
+
+	// A real question for the user still surfaces as input.
+	reportHook(t, store, "runtime-a", map[string]any{
+		"session_id": "agent-a", "cwd": workspace,
+		"hook_event_name": "Notification", "notification_type": "elicitation_dialog",
+	})
+	snapshot, ok = store.SnapshotForWorkspace(workspace, []string{"runtime-a"})
+	require.True(ok)
+	assert.Equal(StateInput, snapshot.State)
+}

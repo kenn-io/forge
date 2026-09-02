@@ -347,8 +347,13 @@ func stateForHook(input HookEvent) (State, bool, bool) {
 		switch input.NotificationType {
 		case "permission_prompt":
 			return StateApproval, false, true
-		case "idle_prompt", "elicitation_dialog":
+		case "elicitation_dialog":
 			return StateInput, false, true
+		case "idle_prompt":
+			// Claude Code raises idle_prompt about a minute after a turn
+			// ends with nothing pending. It follows Stop and would otherwise
+			// flip a finished session from done to input.
+			return StateDone, false, true
 		default:
 			return "", false, false
 		}

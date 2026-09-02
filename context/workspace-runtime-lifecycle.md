@@ -33,6 +33,13 @@ Rules:
 - Coding-agent session IDs are hook-authoritative and live-only: expose only fresh,
   supported reports joined by canonical worktree and runtime key to a live `agent`
   runtime (`internal/server/workspaceapi/agent_sessions.go::Handler.listWorkspaceAgentSessions`).
+- Hook reports own workspace activity where they exist: a workspace with a
+  fresh hook report for a live agent runtime is never probed through tmux pane
+  capture, and regains the tmux probe only when that coverage lapses
+  (`internal/server/workspaceapi/routes_handlers.go::Handler.applyWorkspaceTmuxEnrichment`).
+- Claude Code's `idle_prompt` notification follows Stop on a finished turn and
+  maps to `done`, not `input`; only `elicitation_dialog` and user-input tools
+  mean the agent is waiting on a person (`internal/agentactivity/store.go::stateForHook`).
 
 ## Provider-Backed Lifecycle Facts
 

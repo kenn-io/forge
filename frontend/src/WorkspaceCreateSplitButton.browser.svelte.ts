@@ -3,9 +3,10 @@ import { page } from "vite-plus/test/browser";
 import { cleanup, render } from "vitest-browser-svelte";
 import "./app.css";
 
-import { setThemeMode } from "@kenn-io/kit-ui";
+import { Button, setThemeMode } from "@kenn-io/kit-ui";
 import type { LaunchTarget } from "./lib/api/types.js";
 import { STORES_KEY } from "./lib/context.js";
+import WorkspaceCreateSplitButtonRuntimeHarness from "./lib/components/workspace/WorkspaceCreateSplitButtonRuntimeHarness.svelte";
 import { createMockApiFetch, jsonResponse } from "./test/mockApiFetch.js";
 import NewWorkspaceDialogRuntimeHarness from "./test/NewWorkspaceDialogRuntimeHarness.svelte";
 
@@ -29,6 +30,34 @@ function resolvedColor(value: string): string {
   probe.remove();
   return color;
 }
+
+describe("workspace create split button control height", () => {
+  afterEach(cleanup);
+
+  // The detail action rows put this split button beside plain "sm" kit buttons
+  // (Close issue, Reopen issue, Open Workspace). It used to pin its own 30px
+  // min-height and ignore the requested size, so it stood taller than every
+  // neighbour. Both segments must now measure exactly like a sibling button of
+  // the same size, which only real CSS can tell us.
+  for (const size of ["sm", "md"] as const) {
+    it(`matches a sibling ${size} kit button on both segments`, async () => {
+      render(WorkspaceCreateSplitButtonRuntimeHarness, {
+        props: { label: "Create Workspace", size, launchTargets, onCreate: () => {} },
+      });
+      render(Button, { props: { size, label: "Close issue" } });
+
+      const sibling = page.getByRole("button", { name: "Close issue" });
+      await expect.element(sibling).toBeVisible();
+
+      const expected = sibling.element().getBoundingClientRect().height;
+      const primary = page.getByRole("button", { name: "Create Workspace", exact: true }).element();
+      const options = page.getByRole("button", { name: "Create Workspace options" }).element();
+
+      expect(primary.getBoundingClientRect().height).toBeCloseTo(expected, 1);
+      expect(options.getBoundingClientRect().height).toBeCloseTo(expected, 1);
+    });
+  }
+});
 
 describe("workspace create split button in the New workspace dialog", () => {
   const originalFetch = globalThis.fetch;

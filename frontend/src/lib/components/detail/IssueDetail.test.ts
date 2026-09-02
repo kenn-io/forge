@@ -509,6 +509,23 @@ describe("IssueDetail activity view", () => {
     }
   });
 
+  it("renders every issue action inside one kit action grid at the grid's size", () => {
+    renderIssueDetail(issueDetail());
+
+    const grid = screen.getByRole("group", { name: "Issue actions" });
+    expect(grid.classList.contains("kit-adaptive-action-grid")).toBe(true);
+
+    // The grid owns control geometry through its item context. A button that
+    // asks for its own size (the old size="sm" row, the split button's pinned
+    // height) opts out of that and renders taller or shorter than its
+    // neighbours, which is the misalignment this row shipped with.
+    for (const name of ["Create Workspace", "Create Workspace options", "Close issue"]) {
+      const button = screen.getByRole("button", { name });
+      expect(grid.contains(button)).toBe(true);
+      expect(button.classList.contains("kit-button--md")).toBe(true);
+    }
+  });
+
   it("labels an active stale-detail refresh", () => {
     renderIssueDetail(issueDetail(), undefined, { staleRefreshing: true });
 

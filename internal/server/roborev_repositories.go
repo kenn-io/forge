@@ -54,7 +54,7 @@ type roborevTrackedRepository struct {
 
 type roborevRepositoryInventory struct {
 	Repos      json.RawMessage `json:"repos"`
-	TotalCount *int            `json:"total_count"`
+	TotalCount *int            `json:"total_count"` // Total review jobs, not repositories.
 }
 
 type roborevRepositoryProbeDeps struct {
@@ -429,9 +429,6 @@ func loadRoborevRepositoryInventory(
 		}
 		if repositories == nil {
 			repositories = []roborevTrackedRepository{}
-		}
-		if *inventory.TotalCount != len(repositories) {
-			return nil, errors.New("decode roborev repository inventory")
 		}
 		for i := range repositories {
 			repositories[i].RootPath = strings.TrimSpace(repositories[i].RootPath)

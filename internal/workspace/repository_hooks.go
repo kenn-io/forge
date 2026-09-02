@@ -808,7 +808,7 @@ func confirmRoborevRegistration(
 		return fmt.Errorf("confirm Roborev registration: invalid daemon response")
 	}
 	var inventory roborevRegistrationInventory
-	if err := json.Unmarshal(content, &inventory); err != nil || inventory.TotalCount == nil || *inventory.TotalCount != len(inventory.Repos) {
+	if err := json.Unmarshal(content, &inventory); err != nil || inventory.TotalCount == nil {
 		return fmt.Errorf("confirm Roborev registration: invalid daemon response")
 	}
 	want, err := canonicalFilesystemPath(workspacePath)

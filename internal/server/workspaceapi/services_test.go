@@ -11,6 +11,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/workspace"
@@ -19,6 +20,64 @@ import (
 
 type recordingWorkspaceAutomation struct {
 	requests []ProviderWorkspaceItemRequest
+}
+
+func TestCreateAdHocWorkspaceResolvesMissingRepositoryBeforeLocalCreate(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	manager := workspace.NewManager(database, t.TempDir())
+	resolved := false
+	handler := New(Deps{
+		DB: database,
+		Resolver: httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{
+			DB: database,
+		}),
+		Workspaces: manager,
+		ResolveRepository: func(
+			ctx context.Context, route providerplane.RepositoryRoute,
+		) (*db.Repo, error) {
+			resolved = true
+			assert.Equal(providerplane.RepositoryRoute{
+				Provider: "github", PlatformHost: "github.com",
+				Owner: "acme", Name: "widget",
+			}, route)
+			entry, _, err := database.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
+				Platform: route.Provider, PlatformHost: route.PlatformHost,
+				PlatformRepoID: "stable-provider-id",
+				Owner:          route.Owner, Name: route.Name,
+			}, time.Now().UTC())
+			if err != nil {
+				return nil, err
+			}
+			return &entry.Repository, nil
+		},
+		EnrichmentDisabled: true,
+	})
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		require.NoError(handler.Shutdown(ctx))
+	})
+	branch := "work/remote-create"
+
+	result, err := handler.CreateAdHocWorkspaceService(
+		t.Context(), CreateAdHocWorkspaceRequest{
+			Provider: "github", PlatformHost: "github.com",
+			Owner: "acme", Name: "widget", Branch: &branch,
+		},
+	)
+
+	require.NoError(err)
+	assert.True(resolved)
+	assert.NotEmpty(result.Workspace.ID)
+	entry, err := database.GetRepositoryByProviderID(
+		t.Context(), "github", "github.com", "stable-provider-id",
+	)
+	require.NoError(err)
+	require.NotNil(entry)
+	assert.Equal("acme", entry.Repository.Owner)
+	assert.Equal("widget", entry.Repository.Name)
 }
 
 func (a *recordingWorkspaceAutomation) AutoAssignWorkspaceItem(

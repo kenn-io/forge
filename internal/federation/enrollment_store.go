@@ -385,13 +385,21 @@ func (s *Store) SaveLocalPreparationSeal(
 	})
 }
 
-// MarkLocalActive records the hub's idempotent activation response.
-// It refuses to activate a different local enrollment.
-func (s *Store) MarkLocalActive(ctx context.Context, enrollmentID string) error {
+// MarkLocalActive records the hub's idempotent activation response and the
+// bounded lease during which the spoke may accept requests from that hub. It
+// refuses to activate a different local enrollment or persist an expired
+// lease.
+func (s *Store) MarkLocalActive(
+	ctx context.Context, enrollmentID string, activationValidUntil time.Time,
+) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	enrollmentID = strings.TrimSpace(enrollmentID)
+	activationValidUntil = activationValidUntil.UTC()
+	if !activationValidUntil.After(s.now().UTC()) {
+		return errors.New("federation activation lease must expire in the future")
+	}
 	return s.mutate(func(state *persistedEnrollmentStore) error {
 		if state.Local == nil || state.Local.EnrollmentID != enrollmentID ||
 			state.Local.Preparation == nil {
@@ -399,6 +407,25 @@ func (s *Store) MarkLocalActive(ctx context.Context, enrollmentID string) error 
 		}
 		state.Local.State = EnrollmentActive
 		state.Local.PreparationRequired = false
+		state.Local.ActivationValidUntil = activationValidUntil
+		return nil
+	})
+}
+
+// InvalidateLocalActivationLease stops an active spoke from accepting hub
+// requests after the hub definitively rejects the enrollment.
+func (s *Store) InvalidateLocalActivationLease(
+	ctx context.Context, enrollmentID string,
+) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	enrollmentID = strings.TrimSpace(enrollmentID)
+	return s.mutate(func(state *persistedEnrollmentStore) error {
+		if state.Local == nil || state.Local.EnrollmentID != enrollmentID {
+			return ErrEnrollmentConflict
+		}
+		state.Local.ActivationValidUntil = time.Time{}
 		return nil
 	})
 }
@@ -542,6 +569,9 @@ func normalizeLocalEnrollmentVersioned(
 	}
 	if !local.ExpiresAt.IsZero() {
 		local.ExpiresAt = local.ExpiresAt.UTC()
+	}
+	if !local.ActivationValidUntil.IsZero() {
+		local.ActivationValidUntil = local.ActivationValidUntil.UTC()
 	}
 	var err error
 	local.SpokeBaseURL, err = CanonicalOrigin(local.SpokeBaseURL)

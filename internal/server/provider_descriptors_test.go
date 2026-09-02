@@ -284,6 +284,80 @@ func TestDiffDescriptorRoundTripSeedsNodeRepositoryCatalog(t *testing.T) {
 	assert.Nil(nodePull, "descriptors must not become a spoke-side provider item cache")
 }
 
+func TestRemoteAdHocWorkspaceCreationSeedsSpokeRepositoryCatalog(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	hubDB := dbtest.Open(t)
+	repoID, err := hubDB.UpsertRepo(t.Context(), db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
+	})
+	require.NoError(err)
+	require.NoError(hubDB.UpdateRepoProviderMetadata(
+		t.Context(), repoID, db.RepoProviderMetadata{
+			PlatformRepoID: "repo-acme-widget",
+			CloneURL:       "https://github.com/acme/widget.git",
+			DefaultBranch:  "main",
+		},
+	))
+
+	hubCredentials, err := federationauth.Open(
+		filepath.Join(t.TempDir(), "hub-credentials.json"),
+	)
+	require.NoError(err)
+	token, err := hubCredentials.MintInbound(
+		proxyTestNodeID, federationauth.SpokeToHubScopes(),
+	)
+	require.NoError(err)
+	hubServer := New(hubDB, nil, nil, "/", nil, ServerOptions{
+		DaemonAccess: DaemonAccessOptions{
+			Token: "hub-local-secret", RequireAPIAuth: true,
+		},
+		FederationSpokeID:                  proxyTestHubID,
+		FederationCredentials:              hubCredentials,
+		DisableWorkspaceBackgroundMonitors: true,
+	})
+	t.Cleanup(func() { gracefulShutdown(t, hubServer) })
+	hub := httptest.NewTLSServer(hubServer)
+	t.Cleanup(hub.Close)
+
+	spokeCredentials, err := federationauth.Open(
+		filepath.Join(t.TempDir(), "spoke-credentials.json"),
+	)
+	require.NoError(err)
+	require.NoError(spokeCredentials.StoreOutbound(
+		proxyTestHubID, token, federationauth.SpokeToHubScopes(),
+	))
+	spokeDB := dbtest.Open(t)
+	spokeConfig := &config.Config{Fleet: config.Fleet{
+		Enabled: true, Role: config.FleetRoleSpoke,
+		Hub: &config.FleetHub{NodeID: proxyTestHubID, BaseURL: hub.URL},
+	}}
+	spokeServer := New(spokeDB, nil, nil, "/", spokeConfig, ServerOptions{
+		FederationSpokeID:                  proxyTestNodeID,
+		FederationSpokeActive:              true,
+		FederationCredentials:              spokeCredentials,
+		FederationHTTPClient:               hub.Client(),
+		WorktreeDir:                        t.TempDir(),
+		DisableWorkspaceBackgroundMonitors: true,
+	})
+	t.Cleanup(func() { gracefulShutdown(t, spokeServer) })
+
+	response := doJSON(
+		t, spokeServer, http.MethodPost,
+		"/api/v1/host/github.com/repo/github/acme/widget/workspaces",
+		map[string]any{"branch": "work/remote-create"},
+	)
+	require.Equal(http.StatusAccepted, response.Code, response.Body.String())
+	observed, err := spokeDB.GetRepositoryByProviderID(
+		t.Context(), "github", "github.com", "repo-acme-widget",
+	)
+	require.NoError(err)
+	require.NotNil(observed)
+	assert.Equal("acme", observed.Repository.Owner)
+	assert.Equal("widget", observed.Repository.Name)
+}
+
 func TestRepositoryDescriptorOrdersObservationTimeWithRepositoryIdentity(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

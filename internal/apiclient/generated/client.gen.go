@@ -2294,22 +2294,23 @@ type Enrollment struct {
 	// Schema A URL to the JSON Schema for this object.
 	//
 	// Example: /api/v1/schemas/Enrollment.json
-	Schema             *string    `json:"$schema,omitempty"`
-	CreatedAt          time.Time  `json:"created_at"`
-	ExpiresAt          time.Time  `json:"expires_at"`
-	HubBaseUrl         string     `json:"hub_base_url"`
-	HubName            *string    `json:"hub_name,omitempty"`
-	HubNodeId          string     `json:"hub_node_id"`
-	Id                 string     `json:"id"`
-	NodeId             string     `json:"node_id"`
-	PreparationStarted *bool      `json:"preparation_started,omitempty"`
-	ProtocolVersion    int64      `json:"protocol_version"`
-	RevokedAt          *time.Time `json:"revoked_at,omitempty"`
-	SpokeBaseUrl       string     `json:"spoke_base_url"`
-	SpokeName          *string    `json:"spoke_name,omitempty"`
-	SpokePlatform      string     `json:"spoke_platform"`
-	State              string     `json:"state"`
-	UpdatedAt          time.Time  `json:"updated_at"`
+	Schema               *string    `json:"$schema,omitempty"`
+	ActivationValidUntil *time.Time `json:"activation_valid_until,omitempty"`
+	CreatedAt            time.Time  `json:"created_at"`
+	ExpiresAt            time.Time  `json:"expires_at"`
+	HubBaseUrl           string     `json:"hub_base_url"`
+	HubName              *string    `json:"hub_name,omitempty"`
+	HubNodeId            string     `json:"hub_node_id"`
+	Id                   string     `json:"id"`
+	NodeId               string     `json:"node_id"`
+	PreparationStarted   *bool      `json:"preparation_started,omitempty"`
+	ProtocolVersion      int64      `json:"protocol_version"`
+	RevokedAt            *time.Time `json:"revoked_at,omitempty"`
+	SpokeBaseUrl         string     `json:"spoke_base_url"`
+	SpokeName            *string    `json:"spoke_name,omitempty"`
+	SpokePlatform        string     `json:"spoke_platform"`
+	State                string     `json:"state"`
+	UpdatedAt            time.Time  `json:"updated_at"`
 }
 
 // EnrollmentToken defines model for EnrollmentToken.
@@ -3218,21 +3219,22 @@ type LocalEnrollment struct {
 	// Schema A URL to the JSON Schema for this object.
 	//
 	// Example: /api/v1/schemas/LocalEnrollment.json
-	Schema              *string               `json:"$schema,omitempty"`
-	EnrollmentId        string                `json:"enrollment_id"`
-	ExpiresAt           time.Time             `json:"expires_at"`
-	HubBaseUrl          string                `json:"hub_base_url"`
-	HubName             *string               `json:"hub_name,omitempty"`
-	HubNodeId           *string               `json:"hub_node_id,omitempty"`
-	NodeId              string                `json:"node_id"`
-	Preparation         *LocalPreparationSeal `json:"preparation,omitempty"`
-	PreparationRequired bool                  `json:"preparation_required"`
-	PreparationStarted  *bool                 `json:"preparation_started,omitempty"`
-	ProtocolVersion     int64                 `json:"protocol_version"`
-	SpokeBaseUrl        string                `json:"spoke_base_url"`
-	SpokeName           *string               `json:"spoke_name,omitempty"`
-	SpokePlatform       string                `json:"spoke_platform"`
-	State               string                `json:"state"`
+	Schema               *string               `json:"$schema,omitempty"`
+	ActivationValidUntil *time.Time            `json:"activation_valid_until,omitempty"`
+	EnrollmentId         string                `json:"enrollment_id"`
+	ExpiresAt            time.Time             `json:"expires_at"`
+	HubBaseUrl           string                `json:"hub_base_url"`
+	HubName              *string               `json:"hub_name,omitempty"`
+	HubNodeId            *string               `json:"hub_node_id,omitempty"`
+	NodeId               string                `json:"node_id"`
+	Preparation          *LocalPreparationSeal `json:"preparation,omitempty"`
+	PreparationRequired  bool                  `json:"preparation_required"`
+	PreparationStarted   *bool                 `json:"preparation_started,omitempty"`
+	ProtocolVersion      int64                 `json:"protocol_version"`
+	SpokeBaseUrl         string                `json:"spoke_base_url"`
+	SpokeName            *string               `json:"spoke_name,omitempty"`
+	SpokePlatform        string                `json:"spoke_platform"`
+	State                string                `json:"state"`
 }
 
 // LocalJoinInputBody defines model for LocalJoinInputBody.

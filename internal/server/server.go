@@ -73,6 +73,7 @@ type ServerOptions struct {
 	FederationSpokeID                  string
 	FederationSpokeActive              bool
 	FederationSpokeUnavailableReason   string
+	MaintainFederationSpokeActivation  func(context.Context)
 	FederationHTTPClient               *http.Client
 	ProviderWriteGate                  *providerplane.ProviderWriteGate
 	MCPURL                             string
@@ -239,6 +240,7 @@ type Server struct {
 	providerSource         *hubProviderSource
 	providerProxy          *providerProxy
 	hubEvents              *hubEventLifecycle
+	spokeActivationLease   *hubEventLifecycle
 	providerRouteSpoke     bool
 	providerWriteGate      *providerplane.ProviderWriteGate
 	// activityAfterItemsForTest pauses Activity between its two identity reads
@@ -755,6 +757,9 @@ func (s *Server) applyFleetConfigLocked() {
 	if s.hubEvents != nil {
 		s.hubEvents.SetEnabled(active.Fleet.Enabled)
 	}
+	if s.spokeActivationLease != nil {
+		s.spokeActivationLease.SetEnabled(active.Fleet.Enabled)
+	}
 }
 
 func (s *Server) activeFleetConfigSnapshotLocked() fleetapi.ConfigSnapshot {
@@ -873,6 +878,12 @@ func newServer(
 		s.providerRouteSpoke = true
 		s.providerSource = &hubProviderSource{
 			db: database, clones: clones, enabled: s.federationEnabled,
+		}
+		if options.FederationSpokeActive &&
+			options.MaintainFederationSpokeActivation != nil {
+			s.spokeActivationLease = newHubEventLifecycle(
+				cfg.Fleet.Enabled, options.MaintainFederationSpokeActivation,
+			)
 		}
 		if options.FederationSpokeActive && cfg.Fleet.Hub != nil {
 			client, err := providerplane.NewClient(providerplane.Options{
@@ -1126,14 +1137,14 @@ func newServer(
 	}
 	var providerWorkspaceAutomation workspaceapi.ProviderWorkspaceAutomation
 	var mergeRequestWorktreeSource workspaceapi.MergeRequestWorktreeSource
-	var resolveProjectRepository func(
+	var resolveRepository func(
 		context.Context, providerplane.RepositoryRoute,
 	) (*db.Repo, error)
 	if s.providerSource != nil {
 		providerWorkspaceAutomation = s.providerSource
 		mergeRequestWorktreeSource = s.providerSource
 		if s.providerSource.client != nil {
-			resolveProjectRepository = s.providerSource.ResolveProjectRepository
+			resolveRepository = s.providerSource.ResolveRepositoryRoute
 		}
 	}
 	s.workspaceAPI = workspaceapi.New(workspaceapi.Deps{
@@ -1159,7 +1170,7 @@ func newServer(
 		RefreshWorktreeStats:        s.fleetAPI.RefreshWorktreeStats,
 		RefreshProjectInventory:     s.fleetAPI.RefreshProjectInventory,
 		LookupRepo:                  repoResolver.LookupRoute,
-		ResolveProjectRepository:    resolveProjectRepository,
+		ResolveRepository:           resolveRepository,
 		EnqueueDetailSync:           s.enqueueDetailSyncWithCompletion,
 		ProviderWriteGate:           s.providerWriteGate,
 		LaunchSpecResolver:          launchSpecResolver,
@@ -1298,6 +1309,9 @@ func newServer(
 	)
 	if s.hubEvents != nil {
 		s.runWorkspaceDependent(s.hubEvents.Run)
+	}
+	if s.spokeActivationLease != nil {
+		s.runWorkspaceDependent(s.spokeActivationLease.Run)
 	}
 	if clones != nil {
 		// Seed even when background refresh is disabled: startup also adopts

@@ -18,6 +18,10 @@ import (
 // an exact match; there is no version translation.
 const ProtocolVersion = 3
 
+// SpokeActivationLeaseDuration bounds how long a spoke may accept hub-issued
+// federation requests without successfully revalidating its enrollment.
+const SpokeActivationLeaseDuration = 24 * time.Hour
+
 // MaxCredentialLength bounds opaque federation bearers on the wire and disk.
 const MaxCredentialLength = 256
 
@@ -95,40 +99,42 @@ type JoinResponse struct {
 // Enrollment is the hub's durable membership record. Bearers are
 // deliberately absent and live only in federationauth.
 type Enrollment struct {
-	ID                 string          `json:"id"`
-	NodeID             string          `json:"node_id"`
-	SpokeName          string          `json:"spoke_name,omitempty"`
-	SpokePlatform      string          `json:"spoke_platform"`
-	SpokeBaseURL       string          `json:"spoke_base_url"`
-	HubID              string          `json:"hub_node_id"`
-	HubName            string          `json:"hub_name,omitempty"`
-	HubURL             string          `json:"hub_base_url"`
-	ProtocolVersion    int             `json:"protocol_version"`
-	State              EnrollmentState `json:"state"`
-	ExpiresAt          time.Time       `json:"expires_at"`
-	PreparationStarted bool            `json:"preparation_started,omitempty"`
-	CreatedAt          time.Time       `json:"created_at"`
-	UpdatedAt          time.Time       `json:"updated_at"`
-	RevokedAt          time.Time       `json:"revoked_at,omitzero"`
+	ID                   string          `json:"id"`
+	NodeID               string          `json:"node_id"`
+	SpokeName            string          `json:"spoke_name,omitempty"`
+	SpokePlatform        string          `json:"spoke_platform"`
+	SpokeBaseURL         string          `json:"spoke_base_url"`
+	HubID                string          `json:"hub_node_id"`
+	HubName              string          `json:"hub_name,omitempty"`
+	HubURL               string          `json:"hub_base_url"`
+	ProtocolVersion      int             `json:"protocol_version"`
+	State                EnrollmentState `json:"state"`
+	ExpiresAt            time.Time       `json:"expires_at"`
+	PreparationStarted   bool            `json:"preparation_started,omitempty"`
+	CreatedAt            time.Time       `json:"created_at"`
+	UpdatedAt            time.Time       `json:"updated_at"`
+	RevokedAt            time.Time       `json:"revoked_at,omitzero"`
+	ActivationValidUntil time.Time       `json:"activation_valid_until,omitzero"`
 }
 
 // LocalEnrollment is the joining daemon's durable view of its pending or
 // active hub binding. It never contains either bearer credential.
 type LocalEnrollment struct {
-	EnrollmentID        string                `json:"enrollment_id"`
-	NodeID              string                `json:"node_id"`
-	SpokeName           string                `json:"spoke_name,omitempty"`
-	SpokePlatform       string                `json:"spoke_platform"`
-	SpokeBaseURL        string                `json:"spoke_base_url"`
-	HubID               string                `json:"hub_node_id,omitempty"`
-	HubName             string                `json:"hub_name,omitempty"`
-	HubURL              string                `json:"hub_base_url"`
-	ProtocolVersion     int                   `json:"protocol_version"`
-	State               EnrollmentState       `json:"state"`
-	ExpiresAt           time.Time             `json:"expires_at"`
-	PreparationStarted  bool                  `json:"preparation_started,omitempty"`
-	PreparationRequired bool                  `json:"preparation_required"`
-	Preparation         *LocalPreparationSeal `json:"preparation,omitempty"`
+	EnrollmentID         string                `json:"enrollment_id"`
+	NodeID               string                `json:"node_id"`
+	SpokeName            string                `json:"spoke_name,omitempty"`
+	SpokePlatform        string                `json:"spoke_platform"`
+	SpokeBaseURL         string                `json:"spoke_base_url"`
+	HubID                string                `json:"hub_node_id,omitempty"`
+	HubName              string                `json:"hub_name,omitempty"`
+	HubURL               string                `json:"hub_base_url"`
+	ProtocolVersion      int                   `json:"protocol_version"`
+	State                EnrollmentState       `json:"state"`
+	ExpiresAt            time.Time             `json:"expires_at"`
+	PreparationStarted   bool                  `json:"preparation_started,omitempty"`
+	PreparationRequired  bool                  `json:"preparation_required"`
+	Preparation          *LocalPreparationSeal `json:"preparation,omitempty"`
+	ActivationValidUntil time.Time             `json:"activation_valid_until,omitzero"`
 }
 
 // LocalPreparationSeal is the joining daemon's durable proof that the

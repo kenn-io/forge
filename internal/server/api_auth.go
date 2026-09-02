@@ -207,6 +207,7 @@ func (s *Server) federationPrincipalEnrollmentState(
 		}
 		return federation.EnrollmentActive, s.options.FederationSpokeActive &&
 			local.State == federation.EnrollmentActive &&
+			local.ActivationValidUntil.After(s.now().UTC()) &&
 			hub.NodeID == principal.NodeID &&
 			local.HubID == principal.NodeID
 	}

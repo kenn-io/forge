@@ -2308,6 +2308,9 @@ components:
           format: uri
           readOnly: true
           type: string
+        activation_valid_until:
+          format: date-time
+          type: string
         created_at:
           format: date-time
           type: string
@@ -4347,6 +4350,9 @@ components:
             - /api/v1/schemas/LocalEnrollment.json
           format: uri
           readOnly: true
+          type: string
+        activation_valid_until:
+          format: date-time
           type: string
         enrollment_id:
           type: string

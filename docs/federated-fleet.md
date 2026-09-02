@@ -592,9 +592,11 @@ Read the full degraded-host message in the hub. Forge preserves the peer's
 authorization reason instead of reducing it to an HTTP status.
 
 If the message says fleet authorization is inactive, inspect the spoke service's
-startup log and confirm it can resolve and reach the hub. An already active,
-sealed enrollment starts without a synchronous hub request and reconnects when
-the hub becomes reachable.
+startup log and confirm it can resolve and reach the hub. An active spoke
+revalidates its sealed enrollment with the hub at startup and every six hours.
+If the hub is temporarily unavailable, the spoke can use its last confirmed
+activation lease for up to 24 hours. Once that lease expires, hub requests are
+rejected until the spoke reaches the hub and renews it.
 
 If the peer rejects the hub identity, check that the enrollment is active and
 has not been revoked. Re-enroll instead of widening or copying a token by hand.

@@ -300,12 +300,24 @@ func TestLocalPreparationSealIsBoundAndActivationIsIdempotent(t *testing.T) {
 	require.True(ok)
 	require.NotNil(detached.Preparation)
 	assert.Equal(seal.Seal, detached.Preparation.Seal)
-	require.NoError(reopened.MarkLocalActive(t.Context(), testEnrollmentID))
-	require.NoError(reopened.MarkLocalActive(t.Context(), testEnrollmentID))
+	activationValidUntil := time.Now().Add(time.Hour)
+	require.NoError(reopened.MarkLocalActive(
+		t.Context(), testEnrollmentID, activationValidUntil,
+	))
+	require.NoError(reopened.MarkLocalActive(
+		t.Context(), testEnrollmentID, activationValidUntil,
+	))
 	got, ok = reopened.Local()
 	require.True(ok)
 	assert.Equal(EnrollmentActive, got.State)
 	assert.False(got.PreparationRequired)
+	assert.Equal(activationValidUntil.UTC(), got.ActivationValidUntil)
+	require.NoError(reopened.InvalidateLocalActivationLease(
+		t.Context(), testEnrollmentID,
+	))
+	got, ok = reopened.Local()
+	require.True(ok)
+	assert.True(got.ActivationValidUntil.IsZero())
 }
 
 func newEnrollmentStoreForTest(t *testing.T, now func() time.Time) *Store {

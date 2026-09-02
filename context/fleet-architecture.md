@@ -116,9 +116,9 @@ or remote workspace and session operations.
   Activation upgrades both directions
   (`internal/federationauth/scope.go::HubToSpokeScopes`,
   `internal/server/api_auth.go::Server.federationPrincipalEnrollmentState`).
-- An active hub bearer is accepted by a spoke only when that daemon's
-  startup activation succeeded. This is a local lifecycle gate inside the
-  trusted fleet, not isolation from a malicious activated hub.
+- An active hub bearer is accepted by a spoke only after startup activation
+  and while its renewable 24-hour activation lease is current; explicit hub
+  rejection never falls back to a cached lease (`internal/server/api_auth.go::Server.federationPrincipalEnrollmentState`).
 - The credential store persists inbound bearers only as SHA-256 digests and
   keeps outbound bearers readable for request construction. Atomic 0600 writes
   publish immutable in-memory snapshots only after persistence, so revocation
@@ -199,10 +199,9 @@ or remote workspace and session operations.
   credential route, rejects a historically occupied mutable route, and records
   only repository routing metadata in its spoke catalog (`internal/providerplane/client.go::ValidateFederationWorkspaceLaunchSpecResponse`,
   `internal/server/provider_sources.go::hubProviderSource.ResolveWorkspaceLaunchSpec`).
-- Federated MCP workspace creation resolves a hub repository descriptor
-  before capturing the spoke-local route fence, so repositories discovered after
-  activation become locally executable without a prior settings refresh
-  (`internal/server/mcp_backend.go::mcpBackend.resolveWorkspaceRepositoryFence`).
+- Federated ad-hoc and MCP workspace creation resolve a hub repository descriptor
+  before local lookup or route fencing, so newly discovered repositories do not
+  require a settings refresh (`internal/server/provider_sources.go::hubProviderSource.ResolveRepositoryRoute`).
 - Registered spoke projects resolve stable hub repository identity during
   preparation and future registration; raw fleet snapshots remain read-only
   (`internal/server/spoke_preparation.go::Server.reconcileSpokePreparationProjects`).

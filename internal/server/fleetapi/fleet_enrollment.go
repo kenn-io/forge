@@ -497,6 +497,9 @@ func (h *Handler) activateEnrollment(
 		); err != nil {
 			return nil, httpapi.Internal("activate hub credential: " + err.Error())
 		}
+		enrollment.ActivationValidUntil = h.now().UTC().Add(
+			federation.SpokeActivationLeaseDuration,
+		)
 		return &activateEnrollmentOutput{Body: enrollment}, nil
 	}
 	if enrollment.State == federation.EnrollmentRevoked {
@@ -546,6 +549,9 @@ func (h *Handler) activateEnrollment(
 	if err != nil {
 		return nil, enrollmentProblem(err)
 	}
+	enrollment.ActivationValidUntil = h.now().UTC().Add(
+		federation.SpokeActivationLeaseDuration,
+	)
 	return &activateEnrollmentOutput{Body: enrollment}, nil
 }
 

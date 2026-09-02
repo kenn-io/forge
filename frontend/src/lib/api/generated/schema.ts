@@ -6157,6 +6157,8 @@ export interface components {
              */
             readonly $schema?: string;
             /** Format: date-time */
+            activation_valid_until?: string;
+            /** Format: date-time */
             created_at: string;
             /** Format: date-time */
             expires_at: string;
@@ -7072,6 +7074,8 @@ export interface components {
              * @example /api/v1/schemas/LocalEnrollment.json
              */
             readonly $schema?: string;
+            /** Format: date-time */
+            activation_valid_until?: string;
             enrollment_id: string;
             /** Format: date-time */
             expires_at: string;

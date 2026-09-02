@@ -381,8 +381,8 @@ func (s *Handler) registerProjectAtPath(
 	var repoID sql.NullInt64
 	if identity != nil {
 		var id int64
-		if s.resolveProjectRepository != nil {
-			repository, resolveErr := s.resolveProjectRepository(ctx, providerplane.RepositoryRoute{
+		if s.resolveRepository != nil {
+			repository, resolveErr := s.resolveRepository(ctx, providerplane.RepositoryRoute{
 				Provider: identity.Platform, PlatformHost: identity.Host,
 				Owner: identity.Owner, Name: identity.Name,
 			})

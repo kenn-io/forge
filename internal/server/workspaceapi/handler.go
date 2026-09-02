@@ -90,11 +90,11 @@ type Deps struct {
 	Subscribe          func(context.Context, bool) (<-chan RecordedEvent, <-chan struct{})
 	Generation         func() uint64
 
-	RecomputeWorktreeLinks   func(context.Context)
-	RefreshWorktreeStats     func(context.Context, string, string) error
-	RefreshProjectInventory  func(context.Context, string) error
-	LookupRepo               func(context.Context, string, string, string, string) (*db.Repo, error)
-	ResolveProjectRepository func(
+	RecomputeWorktreeLinks  func(context.Context)
+	RefreshWorktreeStats    func(context.Context, string, string) error
+	RefreshProjectInventory func(context.Context, string) error
+	LookupRepo              func(context.Context, string, string, string, string) (*db.Repo, error)
+	ResolveRepository       func(
 		context.Context, providerplane.RepositoryRoute,
 	) (*db.Repo, error)
 	EnqueueDetailSync func(
@@ -129,7 +129,7 @@ type Handler struct {
 	refreshWorktreeStats           func(context.Context, string, string) error
 	refreshProjectInventory        func(context.Context, string) error
 	lookupRepo                     func(context.Context, string, string, string, string) (*db.Repo, error)
-	resolveProjectRepository       func(context.Context, providerplane.RepositoryRoute) (*db.Repo, error)
+	resolveRepository              func(context.Context, providerplane.RepositoryRoute) (*db.Repo, error)
 	enqueueDetailSync              func(string, []any, func(context.Context) error, func(context.Context)) bool
 	providerWriteGate              providerplane.WriteAdmitter
 	launchSpecResolver             providerplane.WorkspaceLaunchSpecResolver
@@ -204,7 +204,7 @@ func New(deps Deps) *Handler {
 		refreshWorktreeStats:           deps.RefreshWorktreeStats,
 		refreshProjectInventory:        deps.RefreshProjectInventory,
 		lookupRepo:                     deps.LookupRepo,
-		resolveProjectRepository:       deps.ResolveProjectRepository,
+		resolveRepository:              deps.ResolveRepository,
 		enqueueDetailSync:              deps.EnqueueDetailSync,
 		providerWriteGate:              deps.ProviderWriteGate,
 		launchSpecResolver:             deps.LaunchSpecResolver,

@@ -819,6 +819,14 @@ func (s *Handler) createAdHocWorkspace(
 func (s *Handler) CreateAdHocWorkspaceService(
 	ctx context.Context, req CreateAdHocWorkspaceRequest,
 ) (WorkspaceResult, error) {
+	if s.resolveRepository != nil {
+		if _, err := s.resolveRepository(ctx, providerplane.RepositoryRoute{
+			Provider: req.Provider, PlatformHost: req.PlatformHost,
+			Owner: req.Owner, Name: req.Name,
+		}); err != nil {
+			return WorkspaceResult{}, err
+		}
+	}
 	input := &createAdHocWorkspaceInput{
 		Provider: req.Provider, PlatformHost: req.PlatformHost,
 		Owner: req.Owner, Name: req.Name,

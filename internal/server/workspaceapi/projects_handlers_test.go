@@ -36,7 +36,7 @@ func TestRegisterProjectUsesHubRepositoryIdentity(t *testing.T) {
 	observedAt := time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
 	handler := New(Deps{
 		DB: database,
-		ResolveProjectRepository: func(
+		ResolveRepository: func(
 			ctx context.Context, route providerplane.RepositoryRoute,
 		) (*db.Repo, error) {
 			entry, _, err := database.ReconcileRepositoryObservation(ctx, db.RepoIdentity{

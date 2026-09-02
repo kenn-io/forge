@@ -544,12 +544,22 @@ func TestEnrollmentActivationRequiresPreparationAndIsIdempotent(t *testing.T) {
 	require.NoError(json.NewDecoder(active.Body).Decode(&enrollment))
 	active.Body.Close()
 	assert.Equal(federation.EnrollmentActive, enrollment.State)
+	assert.WithinDuration(
+		time.Now().Add(federation.SpokeActivationLeaseDuration),
+		enrollment.ActivationValidUntil, time.Second,
+	)
 	require.Len(persisted, 1)
 	assert.Equal(enrollmentNodeID, persisted[0].NodeID)
 
 	retried := activate()
-	assert.Equal(http.StatusOK, retried.StatusCode)
+	require.Equal(http.StatusOK, retried.StatusCode)
+	var retriedEnrollment federation.Enrollment
+	require.NoError(json.NewDecoder(retried.Body).Decode(&retriedEnrollment))
 	retried.Body.Close()
+	assert.WithinDuration(
+		time.Now().Add(federation.SpokeActivationLeaseDuration),
+		retriedEnrollment.ActivationValidUntil, time.Second,
+	)
 	assert.Len(persisted, 1, "an already-active retry does not persist membership twice")
 
 	replayedJoin := postEnrollmentRequest(

@@ -59,6 +59,9 @@ func SeedActiveSpokeEnrollment(
 		ProtocolVersion: federation.ProtocolVersion,
 		State:           federation.EnrollmentActive,
 		ExpiresAt:       enrollment.ExpiresAt,
+		ActivationValidUntil: time.Now().UTC().Add(
+			federation.SpokeActivationLeaseDuration,
+		),
 	}); err != nil {
 		return fmt.Errorf("save active spoke enrollment: %w", err)
 	}

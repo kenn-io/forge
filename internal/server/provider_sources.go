@@ -237,7 +237,7 @@ func (s *hubProviderSource) GetRepositoryDescriptor(
 	return descriptor, nil
 }
 
-func (s *hubProviderSource) ResolveProjectRepository(
+func (s *hubProviderSource) ResolveRepositoryRoute(
 	ctx context.Context, route providerplane.RepositoryRoute,
 ) (*db.Repo, error) {
 	descriptor, err := s.GetRepositoryDescriptor(ctx, route)

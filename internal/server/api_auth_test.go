@@ -738,12 +738,23 @@ func TestActiveHubCredentialRequiresActiveSpokeStartup(t *testing.T) {
 		enrollmentID = "11111111111111111111111111111111"
 	)
 	for _, test := range []struct {
-		name       string
-		nodeActive bool
-		wantDenied bool
+		name            string
+		nodeActive      bool
+		leaseValidUntil time.Time
+		wantDenied      bool
 	}{
-		{name: "validated startup", nodeActive: true},
-		{name: "local-only startup", wantDenied: true},
+		{
+			name: "validated startup with current lease", nodeActive: true,
+			leaseValidUntil: time.Now().Add(time.Hour),
+		},
+		{
+			name: "validated startup with expired lease", nodeActive: true,
+			leaseValidUntil: time.Now().Add(-time.Hour), wantDenied: true,
+		},
+		{
+			name: "local-only startup", leaseValidUntil: time.Now().Add(time.Hour),
+			wantDenied: true,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			assert := assert.New(t)
@@ -757,7 +768,8 @@ func TestActiveHubCredentialRequiresActiveSpokeStartup(t *testing.T) {
 				SpokePlatform: "linux", SpokeBaseURL: "https://spoke.example",
 				HubID: hubID, HubURL: "https://hub.example",
 				ProtocolVersion: federation.ProtocolVersion, State: federation.EnrollmentActive,
-				ExpiresAt: time.Now().Add(time.Hour),
+				ExpiresAt:            time.Now().Add(time.Hour),
+				ActivationValidUntil: test.leaseValidUntil,
 			}))
 			credentials, err := federationauth.Open(filepath.Join(t.TempDir(), "credentials.json"))
 			require.NoError(err)
@@ -817,7 +829,8 @@ func TestFederationAuthenticationKeepsBootTopologyUntilRestart(t *testing.T) {
 		SpokePlatform: "linux", SpokeBaseURL: "https://spoke.example",
 		HubID: hubID, HubURL: "https://hub.example",
 		ProtocolVersion: federation.ProtocolVersion, State: federation.EnrollmentActive,
-		ExpiresAt: time.Now().Add(time.Hour),
+		ExpiresAt:            time.Now().Add(time.Hour),
+		ActivationValidUntil: time.Now().Add(time.Hour),
 	}))
 	credentials, err := federationauth.Open(filepath.Join(t.TempDir(), "credentials.json"))
 	require.NoError(err)

@@ -13,6 +13,8 @@ import (
 )
 
 func TestOpenAppliesConnectionPragmasToEveryPooledConnection(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
 
@@ -21,7 +23,7 @@ func TestOpenAppliesConnectionPragmasToEveryPooledConnection(t *testing.T) {
 		got := map[string]int64{}
 		for _, name := range []string{"cache_size", "mmap_size", "temp_store", "foreign_keys", "synchronous"} {
 			var value int64
-			require.NoError(t, conn.QueryRowContext(ctx, "PRAGMA "+name).Scan(&value))
+			require.NoError(conn.QueryRowContext(ctx, "PRAGMA "+name).Scan(&value))
 			got[name] = value
 		}
 		return got
@@ -39,22 +41,22 @@ func TestOpenAppliesConnectionPragmasToEveryPooledConnection(t *testing.T) {
 	var readConns []*sql.Conn
 	for range readPoolSize {
 		conn, err := d.ReadDB().Conn(ctx)
-		require.NoError(t, err)
+		require.NoError(err)
 		readConns = append(readConns, conn)
 	}
 	for i, conn := range readConns {
-		assert.Equal(t, want, readPragmas(t, conn), "read connection %d", i)
-		require.NoError(t, conn.Close())
+		assert.Equal(want, readPragmas(t, conn), "read connection %d", i)
+		require.NoError(conn.Close())
 	}
 
 	writeConn, err := d.WriteDB().Conn(ctx)
-	require.NoError(t, err)
-	assert.Equal(t, want, readPragmas(t, writeConn), "write connection")
-	require.NoError(t, writeConn.Close())
+	require.NoError(err)
+	assert.Equal(want, readPragmas(t, writeConn), "write connection")
+	require.NoError(writeConn.Close())
 
-	assert.Equal(t, readPoolSize, d.ReadDB().Stats().MaxOpenConnections)
-	assert.Equal(t, writePoolSize, d.WriteDB().Stats().MaxOpenConnections)
-	assert.Zero(t, d.ReadDB().Stats().MaxIdleClosed, "read pool must not close idle connections")
+	assert.Equal(readPoolSize, d.ReadDB().Stats().MaxOpenConnections)
+	assert.Equal(writePoolSize, d.WriteDB().Stats().MaxOpenConnections)
+	assert.Zero(d.ReadDB().Stats().MaxIdleClosed, "read pool must not close idle connections")
 }
 
 func seedStatementCacheRepos(t testing.TB, d *DB) RepoIdentity {
@@ -74,13 +76,14 @@ func seedStatementCacheRepos(t testing.TB, d *DB) RepoIdentity {
 
 func TestRepositoryLookupCompilesEachStatementOncePerConnection(t *testing.T) {
 	assert := assert.New(t)
+	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
 	identity := seedStatementCacheRepos(t, d)
 
 	repo, err := d.GetRepoByIdentity(ctx, identity)
-	require.NoError(t, err)
-	require.NotNil(t, repo)
+	require.NoError(err)
+	require.NotNil(repo)
 	warm := d.roStmts.preparedCount()
 	assert.Positive(warm)
 	assert.Equal(int(warm), d.roStmts.len())
@@ -88,8 +91,8 @@ func TestRepositoryLookupCompilesEachStatementOncePerConnection(t *testing.T) {
 	const repeats = 200
 	for range repeats {
 		again, err := d.GetRepoByIdentity(ctx, identity)
-		require.NoError(t, err)
-		require.Equal(t, repo, again)
+		require.NoError(err)
+		require.Equal(repo, again)
 	}
 	assert.Equal(warm, d.roStmts.preparedCount(),
 		"%d repeated lookups must reuse the statements compiled by the first", repeats)
@@ -185,19 +188,20 @@ func TestStmtCacheServesConcurrentCallersUnderEviction(t *testing.T) {
 
 func TestDBCloseFinalizesCachedStatements(t *testing.T) {
 	assert := assert.New(t)
+	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
 	identity := seedStatementCacheRepos(t, d)
 	_, err := d.GetRepoByIdentity(ctx, identity)
-	require.NoError(t, err)
-	require.Positive(t, d.roStmts.len())
+	require.NoError(err)
+	require.Positive(d.roStmts.len())
 
-	require.NoError(t, d.Close())
+	require.NoError(d.Close())
 	assert.Zero(d.roStmts.len())
 	assert.Zero(d.rwStmts.len())
 	_, _, err = d.roStmts.acquire(ctx, "SELECT 1")
-	require.ErrorIs(t, err, errStmtCacheClosed)
-	require.NoError(t, d.Close(), "closing twice stays safe for test cleanup")
+	require.ErrorIs(err, errStmtCacheClosed)
+	require.NoError(d.Close(), "closing twice stays safe for test cleanup")
 }
 
 // BenchmarkRepositoryCatalogLookup compares a hot read with the per-pool

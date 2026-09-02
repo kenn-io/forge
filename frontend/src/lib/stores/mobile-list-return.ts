@@ -58,18 +58,29 @@ export interface MobileListPosition {
 }
 
 const positions = new Map<string, MobileListPosition>();
+const returnKey = "kennForgeMobileListReturn";
 
+// Parking happens right before the list pushes a detail entry, so the list
+// also stamps its own history entry with its identity. Only a return to that
+// entry (the detail header's Back or the browser's Back) carries the stamp;
+// a fresh visit to the same list (the mode picker, a deep link) lands on a
+// new entry without it.
 export function rememberMobileListPosition(key: string, position: MobileListPosition): void {
   positions.set(key, position);
+  const current: unknown = history.state;
+  const carried = typeof current === "object" && current !== null ? current : {};
+  history.replaceState({ ...carried, [returnKey]: key }, "");
 }
 
-// Reading a parked position consumes it: a later fresh visit to the same
-// list (for example from the mode picker) starts at the top like any other
-// first visit, and only the Back round trip restores the offset.
+// Reading a parked position consumes it either way: the offset is restored
+// only when the list mounts back on the entry it stamped, and a fresh visit
+// discards it so the list starts at the top like any other first visit.
 export function takeMobileListPosition(key: string): MobileListPosition | undefined {
   const position = positions.get(key);
   positions.delete(key);
-  return position;
+  const state: unknown = history.state;
+  const stamped: unknown = typeof state === "object" && state !== null ? Reflect.get(state, returnKey) : undefined;
+  return stamped === key ? position : undefined;
 }
 
 export function scrollViewportOf(root: HTMLElement | null | undefined): HTMLElement | null {

@@ -1198,7 +1198,10 @@
 {:else}
   {#snippet focusPresentation(phone: boolean)}
   {@const r = getRoute()}
-  <main
+  <!-- The phone shell's mobile-main is the page's only main landmark, so the
+       phone presentation renders as a plain container inside it. -->
+  <svelte:element
+    this={phone ? "div" : "main"}
     class="focus-layout"
     class:focus-layout--phone={phone}
   >
@@ -1281,7 +1284,7 @@
           chunked={useFocusLayoutClass()}
         />
       {/if}
-  </main>
+  </svelte:element>
 {/snippet}
 
 {#snippet mobileTopBar(pickerPage: Page)}

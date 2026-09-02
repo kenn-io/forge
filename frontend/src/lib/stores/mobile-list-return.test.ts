@@ -27,11 +27,22 @@ describe("mobile list return", () => {
     expect(mobileListBackLabel("activity")).toBe("Activity");
   });
 
-  it("hands a parked list position back exactly once", () => {
+  it("hands a parked list position back exactly once, on the entry that parked it", () => {
+    history.replaceState({ other: 1 }, "");
     rememberMobileListPosition("mrs:all", { scrollTop: 640, pageLimit: 90 });
+    // The stamp rides along with whatever state the entry already carried.
+    expect(history.state).toEqual({ other: 1, kennForgeMobileListReturn: "mrs:all" });
+    expect(takeMobileListPosition("issues:all")).toBeUndefined();
     expect(takeMobileListPosition("mrs:all")).toEqual({ scrollTop: 640, pageLimit: 90 });
     expect(takeMobileListPosition("mrs:all")).toBeUndefined();
-    expect(takeMobileListPosition("issues:all")).toBeUndefined();
+  });
+
+  it("discards a parked position when the list mounts on a fresh entry", () => {
+    history.replaceState(null, "");
+    rememberMobileListPosition("mrs:all", { scrollTop: 640, pageLimit: 90 });
+    // A mode-picker visit or deep link pushes an entry the list never stamped.
+    history.pushState(null, "", location.href);
+    expect(takeMobileListPosition("mrs:all")).toBeUndefined();
   });
 });
 

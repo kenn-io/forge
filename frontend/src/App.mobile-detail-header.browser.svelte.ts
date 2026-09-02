@@ -50,6 +50,10 @@ describe("phone detail header", () => {
     expect(count(".app-top-bar")).toBe(0);
     expect(text(".mobile-detail-header__badge")).toMatch(/^PR #\d+$/);
     expect(text(".mobile-detail-header__back")).toBe("Pull requests");
+    // The shell's main is the page's only main landmark: the detail renders
+    // inside it as a plain container, never as a nested main.
+    expect(count("main")).toBe(1);
+    expect(count("main.mobile-main .focus-layout--phone")).toBe(1);
     // The list recorded itself on the detail's history entry: Back pops that
     // entry rather than replacing the detail with a fresh list.
     expect((history.state as Record<string, unknown> | null)?.kennForgeMobileListOrigin).toBe("pulls");
@@ -67,6 +71,41 @@ describe("phone detail header", () => {
     await vi.waitFor(() => expect(window.location.pathname).toBe("/m/pulls"), WAIT);
     await vi.waitFor(() => expect(count(".mobile-shell .pull-item")).toBeGreaterThan(0), WAIT);
     expect(count(".mobile-detail-header")).toBe(0);
+  });
+
+  it("restores the list's scroll offset through Back and starts a fresh visit at the top", async () => {
+    // Short enough that the five fixture rows overflow the list viewport.
+    await page.viewport(390, 360);
+    mounted = await mountBrowserApp("/m/pulls");
+    await vi.waitFor(() => expect(count(".mobile-shell .pull-item")).toBeGreaterThan(0), WAIT);
+    const rows = count(".mobile-shell .pull-item");
+
+    const viewport = () => document.querySelector<HTMLElement>(".mobile-shell .focus-list .kit-scrollbox__viewport")!;
+    await vi.waitFor(() => expect(viewport().scrollHeight).toBeGreaterThan(viewport().clientHeight), WAIT);
+    viewport().scrollTop = 80;
+    const scrolled = viewport().scrollTop;
+    expect(scrolled).toBeGreaterThan(0);
+
+    document.querySelector<HTMLElement>(".mobile-shell .pull-item")!.click();
+    await vi.waitFor(() => expect(count(".mobile-shell .focus-layout--phone .pull-detail")).toBe(1), WAIT);
+    document.querySelector<HTMLElement>(".mobile-detail-header__back")!.click();
+
+    // Back remounts the list on the entry it left: same rows, same offset.
+    await vi.waitFor(() => expect(window.location.pathname).toBe("/m/pulls"), WAIT);
+    await vi.waitFor(() => expect(count(".mobile-shell .pull-item")).toBe(rows), WAIT);
+    await vi.waitFor(() => expect(viewport().scrollTop).toBe(scrolled), WAIT);
+
+    // Leaving the detail any other way (here the Activity route, as the mode
+    // picker does) and coming back is a fresh visit, so the parked offset is
+    // discarded and the list starts at the top.
+    document.querySelector<HTMLElement>(".mobile-shell .pull-item")!.click();
+    await vi.waitFor(() => expect(count(".mobile-shell .focus-layout--phone .pull-detail")).toBe(1), WAIT);
+    window.__kenn_forge_navigate_to_route!("/m");
+    await vi.waitFor(() => expect(count(".mobile-shell .focus-list")).toBe(0), WAIT);
+    window.__kenn_forge_navigate_to_route!("/m/pulls");
+    await vi.waitFor(() => expect(count(".mobile-shell .pull-item")).toBe(rows), WAIT);
+    await vi.waitFor(() => expect(viewport().scrollHeight).toBeGreaterThan(viewport().clientHeight), WAIT);
+    expect(viewport().scrollTop).toBe(0);
   });
 
   it("gives a deep-linked issue the shell, an issue badge, and a Back that lands on the issue list", async () => {

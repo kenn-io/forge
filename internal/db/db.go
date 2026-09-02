@@ -83,7 +83,15 @@ const (
 //     well over 100 MB, and the 2 MB default kept hot reads on pread.
 //   - mmap_size lets reads share the OS page cache instead of copying through
 //     SQLite's own cache; 256 MiB covers the whole file for typical installs.
+//     SQLite clamps the value to its compile-time maximum and ignores it on
+//     hosts without memory mapping, so no fallback path is needed.
 //   - temp_store keeps sort and materialization scratch space in memory.
+//
+// Memory envelope: the five pooled connections can retain at most 320 MiB of
+// private page cache, but with mmap active reads come straight from the shared
+// file mapping and only written pages land in the private cache, so the
+// writer's cache is the one that fills. The mapping itself is pageable, not
+// resident.
 //
 // synchronous stays at the WAL default (FULL) so every committed transaction
 // is durable across power loss, not just process crashes. The values are

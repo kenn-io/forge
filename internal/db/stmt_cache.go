@@ -42,12 +42,19 @@ type stmtCacheEntry struct {
 	evicted bool
 }
 
+// newStmtCache wraps pool. A limit of zero or less disables caching: every
+// call goes straight to the pool, which compiles and finalizes per call.
 func newStmtCache(pool *sql.DB, limit int) *stmtCache {
 	return &stmtCache{pool: pool, limit: limit, entries: make(map[string]*list.Element)}
 }
 
+func (c *stmtCache) disabled() bool { return c.limit <= 0 }
+
 // ExecContext executes query through a cached prepared statement.
 func (c *stmtCache) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	if c.disabled() {
+		return c.pool.ExecContext(ctx, query, args...)
+	}
 	stmt, release, err := c.acquire(ctx, query)
 	if err != nil {
 		return nil, err
@@ -60,6 +67,9 @@ func (c *stmtCache) ExecContext(ctx context.Context, query string, args ...any) 
 // rows keep the statement alive inside database/sql until they are closed, so
 // a later eviction cannot invalidate an open result set.
 func (c *stmtCache) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	if c.disabled() {
+		return c.pool.QueryContext(ctx, query, args...)
+	}
 	stmt, release, err := c.acquire(ctx, query)
 	if err != nil {
 		return nil, err
@@ -71,6 +81,9 @@ func (c *stmtCache) QueryContext(ctx context.Context, query string, args ...any)
 // QueryRowContext runs query through a cached prepared statement. A prepare
 // failure is surfaced by the row's Scan, matching *sql.DB.QueryRowContext.
 func (c *stmtCache) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+	if c.disabled() {
+		return c.pool.QueryRowContext(ctx, query, args...)
+	}
 	stmt, release, err := c.acquire(ctx, query)
 	if err != nil {
 		// database/sql exposes no way to build a *sql.Row carrying err, so

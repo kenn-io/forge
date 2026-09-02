@@ -25,7 +25,7 @@ type hotReadVariant struct {
 
 func hotReadVariants() []hotReadVariant {
 	return []hotReadVariant{
-		{name: "baseline", dsn: legacyConnectionDSN, cacheLimit: 0},
+		{name: "baseline", dsn: legacyConnectionDSN, cacheLimit: 0}, // raw pools, per-call compile
 		{name: "pragmas-only", dsn: connectionDSN, cacheLimit: 0},
 		{name: "stmt-cache-only", dsn: legacyConnectionDSN, cacheLimit: stmtCacheLimit},
 		{name: "pragmas+stmt-cache", dsn: connectionDSN, cacheLimit: stmtCacheLimit},
@@ -87,7 +87,7 @@ func seedHotReadDatabase(b *testing.B, repos, mrsPerRepo, eventsPerMR int) strin
 				events = append(events, MREvent{
 					MergeRequestID:     mrID,
 					PlatformExternalID: fmt.Sprintf("evt-%d-%d", mrID, e),
-					EventType:          "comment",
+					EventType:          "issue_comment",
 					Author:             fmt.Sprintf("user-%d", e%7),
 					Summary:            "commented",
 					Body:               string(body),
@@ -103,16 +103,21 @@ func seedHotReadDatabase(b *testing.B, repos, mrsPerRepo, eventsPerMR int) strin
 }
 
 // hotReadDatabase returns the file to benchmark. Set KENN_FORGE_BENCH_DB to a
-// private snapshot of a real store to measure against production-shaped
-// data; the snapshot is migrated in place, so never point it at a live file.
+// SQLite backup of a real store to measure against production-shaped data.
+// The file is copied into the benchmark's private temp dir first, and only
+// the copy is migrated and opened; the supplied file is never written.
 // Without it the benchmark seeds a synthetic store.
 func hotReadDatabase(b *testing.B) string {
 	b.Helper()
 	if snapshot := os.Getenv("KENN_FORGE_BENCH_DB"); snapshot != "" {
-		d, err := Open(snapshot)
+		path := filepath.Join(b.TempDir(), "snapshot.db")
+		content, err := os.ReadFile(snapshot)
+		require.NoError(b, err)
+		require.NoError(b, os.WriteFile(path, content, 0o600))
+		d, err := Open(path)
 		require.NoError(b, err)
 		require.NoError(b, d.Close())
-		return snapshot
+		return path
 	}
 	const repos, mrsPerRepo, eventsPerMR = 50, 100, 10
 	return seedHotReadDatabase(b, repos, mrsPerRepo, eventsPerMR)
@@ -142,8 +147,12 @@ func BenchmarkHotReads(b *testing.B) {
 	detailRepo, err := probe.GetRepoByID(ctx, detail.RepoID)
 	require.NoError(b, err)
 	require.NotNil(b, detailRepo)
+	activity, err := probe.ListActivity(ctx, ListActivityOpts{Limit: 50})
+	require.NoError(b, err)
+	require.NotEmpty(b, activity, "benchmark store needs activity rows")
 	require.NoError(b, probe.Close())
-	b.Logf("store: %d repos, %d merge requests, %d events, %.1f MB", repos, mrs, events, float64(info.Size())/1e6)
+	b.Logf("store: %d repos, %d merge requests, %d events, %.1f MB; newest activity is %q",
+		repos, mrs, events, float64(info.Size())/1e6, activity[0].ActivityType)
 
 	reads := []struct {
 		name string

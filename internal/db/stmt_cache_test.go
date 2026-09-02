@@ -205,9 +205,8 @@ func TestDBCloseFinalizesCachedStatements(t *testing.T) {
 }
 
 // BenchmarkRepositoryCatalogLookup compares a hot read with the per-pool
-// statement cache against the previous behavior of compiling every statement
-// on each call. The uncached variant uses a zero-capacity cache, which
-// prepares and finalizes on every call exactly like a raw *sql.DB query.
+// statement cache against the previous behavior of querying the pool
+// directly, which compiles and finalizes every statement on each call.
 func BenchmarkRepositoryCatalogLookup(b *testing.B) {
 	for _, variant := range []struct {
 		name  string
@@ -229,8 +228,6 @@ func BenchmarkRepositoryCatalogLookup(b *testing.B) {
 				_, err := d.GetRepoByIdentity(ctx, identity)
 				require.NoError(b, err)
 			}
-			b.StopTimer()
-			b.ReportMetric(float64(d.roStmts.preparedCount())/float64(b.N), "prepares/op")
 		})
 	}
 }

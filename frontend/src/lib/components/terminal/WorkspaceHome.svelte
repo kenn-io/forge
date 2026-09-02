@@ -6,9 +6,7 @@
   import GitBranchIcon from "@lucide/svelte/icons/git-branch";
   import FolderIcon from "@lucide/svelte/icons/folder";
   import PlayIcon from "@lucide/svelte/icons/play";
-  import TerminalIcon from "@lucide/svelte/icons/terminal";
-  import SparklesIcon from "@lucide/svelte/icons/sparkles";
-  import BoxIcon from "@lucide/svelte/icons/box";
+  import LaunchTargetName from "./LaunchTargetName.svelte";
   import { isVisibleLaunchTarget } from "./launchTargets";
 
   interface WorkspaceHomeWorkspace {
@@ -101,8 +99,6 @@
     </div>
     <div class="launch-grid">
       {#each visibleTargets as target (target.key)}
-        {@const isShell = target.kind === "plain_shell"}
-        {@const isAgent = target.kind === "agent"}
         {@const isLaunching = launchingKey === target.key}
         <button
           class="launch-card"
@@ -111,16 +107,7 @@
           aria-label={targetLabel(target)}
           onclick={() => onLaunch?.(target.key)}
         >
-          <span class="card-icon" aria-hidden="true">
-            {#if isShell}
-              <TerminalIcon size="14" strokeWidth="2" />
-            {:else if isAgent}
-              <SparklesIcon size="14" strokeWidth="2" />
-            {:else}
-              <BoxIcon size="14" strokeWidth="2" />
-            {/if}
-          </span>
-          <span class="card-label">{targetLabel(target)}</span>
+          <LaunchTargetName {target} label={targetLabel(target)} markSize={13} iconSize={14} />
           {#if isLaunching}
             <span class="card-status">starting…</span>
           {/if}
@@ -282,8 +269,11 @@
   }
 
   .launch-card {
+    --launch-target-gap: 8px;
+    --launch-target-icon-color: var(--text-secondary);
+
     display: grid;
-    grid-template-columns: 16px 1fr;
+    grid-template-columns: minmax(0, 1fr);
     align-items: center;
     gap: 4px 8px;
     /* min-height instead of fixed height: when a card flips into the
@@ -313,8 +303,8 @@
     );
   }
 
-  .launch-card:hover:not(:disabled) .card-icon {
-    color: var(--accent-blue);
+  .launch-card:hover:not(:disabled) {
+    --launch-target-icon-color: var(--accent-blue);
   }
 
   .launch-card:disabled {
@@ -323,18 +313,7 @@
     opacity: var(--opacity-disabled);
   }
 
-  .card-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--text-secondary);
-    transition: color 80ms ease;
-  }
-
-  .card-label {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .launch-card :global(.launch-target-label) {
     font-weight: 600;
     letter-spacing: 0.005em;
   }

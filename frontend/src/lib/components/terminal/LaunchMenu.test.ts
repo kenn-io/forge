@@ -58,4 +58,35 @@ describe("LaunchMenu", () => {
     await fireEvent.click(codexOption);
     expect(onLaunch).toHaveBeenCalledWith("codex");
   });
+
+  it("draws a harness wordmark for agents whose key matches one and keeps the generic icon otherwise", async () => {
+    render(LaunchMenu, {
+      props: {
+        launchTargets: [
+          { key: "claude", label: "Claude", kind: "agent", source: "builtin", available: true },
+          { key: "codex-review", label: "Review Agent", kind: "agent", source: "config", available: true },
+          { key: "aider", label: "aider", kind: "agent", source: "builtin", available: true },
+        ],
+        onLaunch: vi.fn(),
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Launch" }));
+
+    // The Claude Code wordmark already names the built-in, so its label is only
+    // exposed to assistive tech; the button still reads "Claude".
+    const claude = screen.getByRole("button", { name: "Claude" });
+    expect(claude.querySelector(".kit-harness-mark--claude-code svg")).not.toBeNull();
+    expect(claude.querySelector(".launch-target-label")?.classList.contains("kit-sr-only")).toBe(true);
+
+    // A configured label that says more than the harness name stays visible
+    // beside the mark resolved from the key's leading segment.
+    const review = screen.getByRole("button", { name: "Review Agent" });
+    expect(review.querySelector(".kit-harness-mark--codex")).not.toBeNull();
+    expect(review.querySelector(".launch-target-label")?.classList.contains("kit-sr-only")).toBe(false);
+
+    const aider = screen.getByRole("button", { name: "aider" });
+    expect(aider.querySelector(".kit-harness-mark")).toBeNull();
+    expect(aider.querySelector(".launch-target-icon svg")).not.toBeNull();
+  });
 });

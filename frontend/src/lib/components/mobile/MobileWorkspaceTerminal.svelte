@@ -41,6 +41,7 @@
     sessionHostKey,
     type SessionHostKey,
   } from "../../stores/session-host.svelte.js";
+  import LaunchTargetName from "../terminal/LaunchTargetName.svelte";
   import SessionTerminalSlot from "../terminal/SessionTerminalSlot.svelte";
   import TerminalSettings from "../settings/TerminalSettings.svelte";
   import ConfirmDialog from "../shared/ConfirmDialog.svelte";
@@ -938,7 +939,7 @@
       <div class="mobile-terminal-sheet__targets">
         {#each launchTargets as target (target.key)}
           <button type="button" disabled={!target.available || launchingTarget !== null || pendingLaunch !== null} title={target.disabled_reason} onclick={() => launch(target.key)}>
-            <span><strong>{target.kind === "plain_shell" ? "Shell" : target.label}</strong><small>{target.available ? target.source : target.disabled_reason}</small></span>
+            <span><strong><LaunchTargetName {target} label={target.kind === "plain_shell" ? "Shell" : target.label} markSize={16} /></strong><small>{target.available ? target.source : target.disabled_reason}</small></span>
             {#if launchingTarget === target.key}<Spinner size={16} />{:else}<PlusIcon size="18" aria-hidden="true" />{/if}
           </button>
         {/each}

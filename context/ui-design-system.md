@@ -79,6 +79,10 @@ otherwise fails only in the Vitest/Playwright transform tier, not in
 - Chip: icons go in `children` (kit centers them), dropdown chevrons in
   `trailing`; no downstream `.kit-chip__label` overrides — repo chips
   depend on its ellipsis.
+- Agent launch targets draw kit `HarnessMark` wordmarks via `LaunchTargetName`
+  (key → harness by shared leading segments; `frontend/src/lib/components/terminal/agentHarness.ts::harnessForAgentKey`).
+  Marks are wide wordmarks, so they replace icon and label together; the label
+  stays as `kit-sr-only` for the accessible name unless it adds information.
 - Theme resolution: kit's theme store owns dark/light/system resolution
   and persistence (`kenn-forge-theme` key); `theme.svelte.ts` adapts it. A
   host-forced mode applies classes directly and never persists via

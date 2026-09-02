@@ -2,9 +2,7 @@
   import type { LaunchTarget } from "../../api/types.js";
   import PlayIcon from "@lucide/svelte/icons/play";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
-  import TerminalIcon from "@lucide/svelte/icons/terminal";
-  import SparklesIcon from "@lucide/svelte/icons/sparkles";
-  import BoxIcon from "@lucide/svelte/icons/box";
+  import LaunchTargetName from "./LaunchTargetName.svelte";
   import { isVisibleLaunchTarget } from "./launchTargets";
 
   interface LaunchMenuProps {
@@ -97,24 +95,13 @@
     <div class="launch-popover">
       <div class="popover-heading">Run configurations</div>
       {#each visibleTargets as target (target.key)}
-        {@const isShell = target.kind === "plain_shell"}
-        {@const isAgent = target.kind === "agent"}
         <button
           class="launch-option"
           disabled={disabled || !target.available || launchingKey === target.key}
           title={target.disabled_reason ?? targetLabel(target)}
           onclick={() => launch(target.key)}
         >
-          <span class="option-icon" aria-hidden="true">
-            {#if isShell}
-              <TerminalIcon size="13" strokeWidth="2" />
-            {:else if isAgent}
-              <SparklesIcon size="13" strokeWidth="2" />
-            {:else}
-              <BoxIcon size="13" strokeWidth="2" />
-            {/if}
-          </span>
-          <span class="option-label">{targetLabel(target)}</span>
+          <LaunchTargetName {target} label={targetLabel(target)} markSize={12} iconSize={13} />
         </button>
       {/each}
     </div>
@@ -190,10 +177,11 @@
   }
 
   .launch-option {
-    display: grid;
-    grid-template-columns: 16px 1fr;
+    --launch-target-gap: 8px;
+    --launch-target-icon-color: var(--text-muted);
+
+    display: flex;
     align-items: center;
-    gap: 8px;
     width: 100%;
     height: 26px;
     padding: 0 8px;
@@ -218,9 +206,9 @@
     outline: none;
   }
 
-  .launch-option:hover:not(:disabled) .option-icon,
-  .launch-option:focus-visible .option-icon {
-    color: var(--accent-blue);
+  .launch-option:hover:not(:disabled),
+  .launch-option:focus-visible {
+    --launch-target-icon-color: var(--accent-blue);
   }
 
   .launch-option:disabled {
@@ -229,17 +217,7 @@
     opacity: var(--opacity-disabled);
   }
 
-  .option-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--text-muted);
-  }
-
-  .option-label {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .launch-option :global(.launch-target-label) {
     font-weight: 500;
   }
 

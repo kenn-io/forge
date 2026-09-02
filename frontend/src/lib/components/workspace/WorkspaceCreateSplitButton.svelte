@@ -7,6 +7,7 @@
   } from "@kenn-io/kit-ui";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import PackagePlusIcon from "@lucide/svelte/icons/package-plus";
+  import LaunchTargetName from "../terminal/LaunchTargetName.svelte";
   import { Effect } from "effect";
   import { tick } from "svelte";
   import type { LaunchTarget } from "../../api/types.js";
@@ -231,7 +232,7 @@
             onclick={() => selectTarget(target.key)}
             onkeydown={handleItemKeydown}
           >
-            {target.label}
+            <LaunchTargetName {target} label={target.label} markSize={12} />
           </button>
         </li>
       {/each}

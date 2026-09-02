@@ -2,6 +2,7 @@ package archive
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -104,4 +105,42 @@ func TestWorkerRepositoriesCacheFollowsConfigurationAndReconciliation(t *testing
 	require.NoError(err)
 	require.Len(resolved, 1)
 	assert.Equal(second.Name, resolved[0].Ref.Name)
+}
+
+func TestRunPassReportsAdmissionDenialAsIdle(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := archiveTestTime()
+	ref := archiveServiceRef(platform.KindGitHub, "github.test", "repo")
+	repoID := archiveServiceSeedRepo(t, database, ref)
+	provider := newArchiveServiceProvider(ref.Platform, ref.Host)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	retryAt := now.Add(time.Second)
+	admission := &archiveTestAdmission{deny: true, retryAt: retryAt}
+	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, admission, now)
+	requireEnsureConfigured(t, service, []platform.RepoRef{ref})
+	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
+	require.NoError(err)
+
+	// Live sync holding the provider denies admission before any request is
+	// made. That is not work: the loop must back off rather than re-run at
+	// the pacing interval for the whole sync.
+	worked, err := service.RunPass(t.Context())
+	require.NoError(err)
+	assert.False(worked)
+	states, err := database.ListArchiveRepoStates(t.Context(), []int64{repoID})
+	require.NoError(err)
+	require.Len(states, 1)
+	require.NotNil(states[0].NextRetryAt)
+	assert.Equal(retryAt, *states[0].NextRetryAt)
+	assert.Equal(1, admission.calls)
+
+	// Once admission opens again the pass reaches the provider and reports work.
+	admission.deny = false
+	service.clock = fixedClock{value: retryAt}
+	worked, err = service.RunPass(t.Context())
+	require.NoError(err)
+	assert.True(worked)
 }

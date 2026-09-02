@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -15,6 +16,7 @@ import (
 // configurable "attempted work" result.
 type pacedArchiveRunner struct {
 	worked atomic.Bool
+	fail   atomic.Bool
 	mu     sync.Mutex
 	passes []time.Time
 }
@@ -23,6 +25,9 @@ func (r *pacedArchiveRunner) RunPass(context.Context) (bool, error) {
 	r.mu.Lock()
 	r.passes = append(r.passes, time.Now())
 	r.mu.Unlock()
+	if r.fail.Load() {
+		return false, errors.New("store unavailable")
+	}
 	return r.worked.Load(), nil
 }
 
@@ -134,5 +139,45 @@ func TestArchiveLoopIdleBackoffIsCapped(t *testing.T) {
 		last := passes[len(passes)-1]
 		previous := passes[len(passes)-2]
 		require.Equal(archiveIdleWait, last.Sub(previous))
+	})
+}
+
+func TestArchiveLoopKeepsPacingIntervalWhilePassesFail(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		require := require.New(t)
+		runner := &pacedArchiveRunner{}
+		runner.fail.Store(true)
+		start := time.Now()
+		_, stop := startPacedArchiveLoop(t, runner)
+		defer stop()
+
+		// A failing store must keep retrying at the pacing interval so
+		// recovery is prompt, not exponentially delayed.
+		time.Sleep(4 * time.Second)
+		synctest.Wait()
+		require.Equal([]time.Duration{
+			0, time.Second, 2 * time.Second, 3 * time.Second, 4 * time.Second,
+		}, runner.offsetsFrom(start))
+	})
+}
+
+func TestArchiveLoopWakesWhenSyncRunCompletes(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		require := require.New(t)
+		runner := &pacedArchiveRunner{}
+		syncer, stop := startPacedArchiveLoop(t, runner)
+		defer stop()
+
+		// Let the idle backoff grow well past the pacing interval.
+		time.Sleep(16 * time.Second)
+		synctest.Wait()
+		backedOff := runner.reset()
+
+		// A completed sync run (here with no repositories) must wake the
+		// worker immediately and restart the backoff from the pacing interval.
+		syncer.RunOnce(context.Background())
+		time.Sleep(time.Second)
+		synctest.Wait()
+		require.Equal([]time.Duration{0, time.Second}, runner.offsetsFrom(backedOff))
 	})
 }

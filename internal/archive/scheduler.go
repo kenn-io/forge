@@ -123,7 +123,7 @@ func (s *Service) runProviderHostWork(ctx context.Context, repos []resolvedRepos
 		if archiveScanNotStarted(state.IssueInventory) {
 			err := s.inventoryPage(ctx, repo, state, db.ArchiveItemTypeIssue)
 			if !featureDeferredBeforeProvider(err) {
-				return true, s.swallowAdmissionDeferred(err)
+				return s.finishWork(err)
 			}
 		}
 		if archiveScanNotStarted(state.MergeRequestInventory) {
@@ -131,7 +131,7 @@ func (s *Service) runProviderHostWork(ctx context.Context, repos []resolvedRepos
 			if featureDeferredBeforeProvider(err) {
 				continue
 			}
-			return true, s.swallowAdmissionDeferred(err)
+			return s.finishWork(err)
 		}
 	}
 
@@ -153,7 +153,7 @@ func (s *Service) runProviderHostWork(ctx context.Context, repos []resolvedRepos
 			if featureDeferredBeforeProvider(err) {
 				continue
 			}
-			return true, s.swallowAdmissionDeferred(err)
+			return s.finishWork(err)
 		}
 	}
 
@@ -185,7 +185,7 @@ func (s *Service) runProviderHostWork(ctx context.Context, repos []resolvedRepos
 			if featureDeferredBeforeProvider(err) {
 				continue
 			}
-			return true, s.swallowAdmissionDeferred(err)
+			return s.finishWork(err)
 		}
 	}
 	if handled, err := s.runNextInventoryWork(
@@ -225,7 +225,7 @@ func (s *Service) runNextHydrationWork(
 			})
 			continue
 		}
-		return true, s.swallowAdmissionDeferred(err)
+		return s.finishWork(err)
 	}
 }
 
@@ -248,15 +248,20 @@ func (s *Service) runNextInventoryWork(
 			skipped[archiveInventoryScope{repoID: repo.ID, itemType: itemType}] = struct{}{}
 			continue
 		}
-		return true, s.swallowAdmissionDeferred(err)
+		return s.finishWork(err)
 	}
 }
 
-func (s *Service) swallowAdmissionDeferred(err error) error {
+// finishWork converts a work unit's outcome into the pass result. An
+// admission deferral is not attempted work: nothing reached the provider and
+// the deferral names when to look again, so the worker may back off. A
+// completed or failed unit did reach the provider and is reported as work so
+// the loop keeps its pacing interval while work flows.
+func (s *Service) finishWork(err error) (bool, error) {
 	if errors.Is(err, errAdmissionDeferred) {
-		return nil
+		return false, nil
 	}
-	return err
+	return true, err
 }
 
 // archiveScanNotStarted reports a scan generation that has not committed any

@@ -82,6 +82,26 @@ func TestListRepoSummariesIncludesOverviewSnapshot(t *testing.T) {
 	assert.Equal(timelineUpdatedAt, *overview.TimelineUpdatedAt)
 }
 
+func TestListRepoSummariesExcludesLockedPullRequestsFromOpenCounts(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	repoID := insertTestRepo(t, d, "acme", "widgets")
+	insertTestMR(t, d, repoID, 1, "open", baseTime())
+	locked := testMR(repoID, 2)
+	locked.IsDraft = true
+	locked.IsLocked = true
+	_, err := d.UpsertMergeRequest(t.Context(), locked)
+	require.NoError(err)
+
+	summaries, err := d.ListRepoSummaries(t.Context())
+	require.NoError(err)
+	require.Len(summaries, 1)
+	assert.Equal(2, summaries[0].CachedPRCount)
+	assert.Equal(1, summaries[0].OpenPRCount)
+	assert.Zero(summaries[0].DraftPRCount)
+}
+
 func TestUpsertRepoOverviewClearsTimelineWhenReleaseChangesWithoutCloneData(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

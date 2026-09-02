@@ -250,6 +250,9 @@ registry helpers return typed errors for missing providers or capabilities.
 - Every issue or merge-request read boundary that can receive a disabled-feature
   candidate must route through definitive classification: GitHub's disabled 410,
   or GitLab/Gitea/Forgejo repository metadata confirmation. (`internal/platform/gitlab/feature_disabled.go::Client.repositoryFeatureError`, `internal/platform/gitealike/feature_disabled.go::Provider.ClassifyRepositoryFeatureError`)
+- Locked pull requests retain their upstream state for detail and sync, but list
+  filters and repository counts classify them as closed because they cannot enter
+  an open interaction workflow. (`internal/db/queries.go::DB.ListMergeRequests`)
 - Mutation routes must check provider capabilities before posting comments,
   changing state, merging, requesting review, or approving workflows.
   Server handlers translate these typed platform errors into the stable problem

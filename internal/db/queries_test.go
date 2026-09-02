@@ -1903,6 +1903,26 @@ func TestListPullRequests(t *testing.T) {
 	assert.Equal(t, []int{3, 2, 1}, []int{prs[0].Number, prs[1].Number, prs[2].Number})
 }
 
+func TestListPullRequestsTreatsLockedAsClosed(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	repoID := insertTestRepo(t, d, "owner", "repo")
+	locked := testMR(repoID, 1)
+	locked.IsLocked = true
+	_, err := d.UpsertMergeRequest(t.Context(), locked)
+	require.NoError(err)
+
+	open, err := d.ListMergeRequests(t.Context(), ListMergeRequestsOpts{State: "open"})
+	require.NoError(err)
+	assert.Empty(open)
+
+	closed, err := d.ListMergeRequests(t.Context(), ListMergeRequestsOpts{State: "closed"})
+	require.NoError(err)
+	require.Len(closed, 1)
+	assert.Equal(locked.Number, closed[0].Number)
+}
+
 func TestListPullRequestsFilterByRepo(t *testing.T) {
 	d := openTestDB(t)
 

@@ -47,8 +47,8 @@ func (d *DB) loadRepoSummaryStats(
 		WITH pr_stats AS (
 			SELECT repo_id,
 			       COUNT(*) AS cached_pr_count,
-			       SUM(CASE WHEN state = 'open' THEN 1 ELSE 0 END) AS open_pr_count,
-			       SUM(CASE WHEN state = 'open' AND is_draft THEN 1 ELSE 0 END) AS draft_pr_count,
+			       SUM(CASE WHEN state = 'open' AND NOT is_locked THEN 1 ELSE 0 END) AS open_pr_count,
+			       SUM(CASE WHEN state = 'open' AND NOT is_locked AND is_draft THEN 1 ELSE 0 END) AS draft_pr_count,
 			       MAX(last_activity_at) AS last_pr_activity_at
 			FROM forge_merge_requests
 			WHERE NOT EXISTS (

@@ -2027,10 +2027,13 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 	case "all":
 		// no state filter
 	case "closed":
-		conds = append(conds, "p.state IN ('closed', 'merged')")
+		conds = append(conds, "(p.state IN ('closed', 'merged') OR p.is_locked)")
 	default:
 		conds = append(conds, "p.state = ?")
 		args = append(args, state)
+		if state == "open" {
+			conds = append(conds, "NOT p.is_locked")
+		}
 	}
 
 	if opts.RepoID != 0 {

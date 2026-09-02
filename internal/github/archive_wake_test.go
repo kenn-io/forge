@@ -105,29 +105,43 @@ func TestArchiveWorkerIdleWakesRunNoRepositoryResolution(t *testing.T) {
 				return false
 			}
 		}
-		before := runner.passes.Load()
-		time.Sleep(50 * time.Millisecond)
-		return runner.passes.Load() == before
+		return true
 	}, 5*time.Second, 10*time.Millisecond)
+	idle := runner.awaitQuiescence(t)
 
 	// Hide the repository catalog so any resolution query fails loudly.
 	_, err = database.WriteDB().ExecContext(t.Context(),
 		`ALTER TABLE forge_repos RENAME TO forge_repos_hidden`)
 	require.NoError(err)
 
+	// Each wake runs exactly one pass. Waiting for quiescence after every
+	// wake keeps a wake from landing while the previous pass is still running,
+	// where the buffered channel would carry it into an extra pass.
 	for range 3 {
-		before := runner.passes.Load()
 		syncer.WakeArchive()
 		require.Eventually(func() bool {
-			return runner.passes.Load() > before
+			return runner.passes.Load() > idle
 		}, time.Second, time.Millisecond)
+		idle = runner.awaitQuiescence(t)
 	}
 	select {
 	case err := <-runner.errs:
 		require.NoError(err, "idle wakes must not resolve repositories")
 	default:
 	}
-	before := runner.passes.Load()
-	time.Sleep(50 * time.Millisecond)
-	require.Equal(before, runner.passes.Load(), "an idle worker must not poll between wakes")
+	require.Equal(idle, runner.passes.Load(), "an idle worker must not poll between wakes")
+}
+
+// awaitQuiescence waits until no pass has completed for a full quiet window
+// and returns the settled pass count.
+func (r *countingArchiveRunner) awaitQuiescence(t *testing.T) int32 {
+	t.Helper()
+	var settled int32
+	require.Eventually(t, func() bool {
+		before := r.passes.Load()
+		time.Sleep(200 * time.Millisecond)
+		settled = r.passes.Load()
+		return settled == before
+	}, 5*time.Second, 10*time.Millisecond)
+	return settled
 }

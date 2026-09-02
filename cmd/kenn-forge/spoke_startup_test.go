@@ -130,6 +130,10 @@ func TestFederationSpokeStartupActivatesMatchingSealAndRetriesSafely(t *testing.
 			var body map[string]any
 			assert.NoError(json.NewDecoder(r.Body).Decode(&body))
 			assert.Equal(startupSeal, body["preparation_seal"])
+			assert.InDelta(
+				float64(federation.ActivationLeaseVersion),
+				body["activation_lease_version"], 0,
+			)
 			if hubActive.CompareAndSwap(false, true) {
 				membershipWrites.Add(1)
 				_, _ = w.Write([]byte("{"))
@@ -137,9 +141,10 @@ func TestFederationSpokeStartupActivatesMatchingSealAndRetriesSafely(t *testing.
 			}
 			_ = json.NewEncoder(w).Encode(federation.Enrollment{
 				ID: startupEnrollmentID, NodeID: startupNodeID,
-				HubID:           startupHubID,
-				ProtocolVersion: federation.ProtocolVersion,
-				State:           federation.EnrollmentActive,
+				HubID:                  startupHubID,
+				ProtocolVersion:        federation.ProtocolVersion,
+				ActivationLeaseVersion: federation.ActivationLeaseVersion,
+				State:                  federation.EnrollmentActive,
 				ActivationValidUntil: time.Now().Add(
 					federation.SpokeActivationLeaseDuration,
 				),
@@ -273,6 +278,107 @@ func TestFederationSpokeStartupDoesNotUseLeaseAfterHubRejectsEnrollment(t *testi
 	assert.False(principal.Has(federationauth.ScopeTerminalAttach))
 }
 
+func TestFederationSpokeRenewalCannotReactivateRevokedEnrollment(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	activationStarted := make(chan struct{})
+	releaseActivation := make(chan struct{})
+	hub := httptest.NewTLSServer(http.HandlerFunc(func(
+		w http.ResponseWriter, r *http.Request,
+	) {
+		switch r.URL.Path {
+		case "/api/v1/federation/identity":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"node_id": startupHubID, "protocol_version": federation.ProtocolVersion,
+			})
+		case "/api/v1/federation/enrollments/" + startupEnrollmentID + "/activate":
+			close(activationStarted)
+			<-releaseActivation
+			_ = json.NewEncoder(w).Encode(federation.Enrollment{
+				ID: startupEnrollmentID, NodeID: startupNodeID, HubID: startupHubID,
+				ProtocolVersion:        federation.ProtocolVersion,
+				ActivationLeaseVersion: federation.ActivationLeaseVersion,
+				State:                  federation.EnrollmentActive,
+				ActivationValidUntil: time.Now().Add(
+					federation.SpokeActivationLeaseDuration,
+				),
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(hub.Close)
+	enrollments, credentials, _ := spokeStartupFixture(
+		t, dbtest.Open(t), hub.URL, true,
+	)
+	require.NoError(enrollments.MarkLocalActive(
+		t.Context(), startupEnrollmentID, time.Now().Add(time.Hour),
+	))
+	renewed := make(chan error, 1)
+	go func() {
+		renewed <- renewFederationSpokeActivation(
+			t.Context(), enrollments, credentials, hub.Client(),
+		)
+	}()
+	<-activationStarted
+	local, ok := enrollments.Local()
+	require.True(ok)
+	local.State = federation.EnrollmentRevoked
+	require.NoError(enrollments.SaveLocal(t.Context(), local))
+	close(releaseActivation)
+
+	require.ErrorIs(<-renewed, federation.ErrEnrollmentRevoked)
+	local, ok = enrollments.Local()
+	require.True(ok)
+	assert.Equal(federation.EnrollmentRevoked, local.State)
+	principal, ok := credentials.Authenticate("hub-to-spoke")
+	require.True(ok)
+	assert.False(principal.Has(federationauth.ScopeWorkspaceWrite))
+	assert.False(principal.Has(federationauth.ScopeTerminalAttach))
+}
+
+func TestFederationSpokeRenewalSuspendsAfterHubRejection(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	hub := httptest.NewTLSServer(http.HandlerFunc(func(
+		w http.ResponseWriter, r *http.Request,
+	) {
+		if r.URL.Path == "/api/v1/federation/identity" {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"node_id": startupHubID, "protocol_version": federation.ProtocolVersion,
+			})
+			return
+		}
+		http.Error(w, "revoked", http.StatusForbidden)
+	}))
+	t.Cleanup(hub.Close)
+	enrollments, credentials, _ := spokeStartupFixture(
+		t, dbtest.Open(t), hub.URL, true,
+	)
+	require.NoError(enrollments.MarkLocalActive(
+		t.Context(), startupEnrollmentID, time.Now().Add(time.Hour),
+	))
+	require.NoError(promoteFederationSpokeCredentialScopes(credentials, startupHubID))
+
+	err := renewFederationSpokeActivation(
+		t.Context(), enrollments, credentials, hub.Client(),
+	)
+
+	require.ErrorIs(err, errSpokeActivationSuspended)
+	local, ok := enrollments.Local()
+	require.True(ok)
+	assert.True(local.ActivationValidUntil.IsZero())
+	principal, ok := credentials.Authenticate("hub-to-spoke")
+	require.True(ok)
+	assert.False(principal.Has(federationauth.ScopeWorkspaceWrite))
+	assert.False(principal.Has(federationauth.ScopeTerminalAttach))
+}
+
+func TestMissingOrExpiredSpokeLeaseRetriesAfterBackoff(t *testing.T) {
+	now := time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC)
+	assert.Equal(t, spokeActivationRetryInterval, nextSpokeActivationRenewal(nil, now))
+}
+
 func TestFederationSpokeStartupKeepsActiveBindingDormantWhileDisabled(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -386,6 +492,51 @@ func TestFederationSpokeStartupSuppressesIncompatibleHub(t *testing.T) {
 		enrollments, credentials, hub.Client(),
 	)
 	assert.Equal(t, federationStartupIncompatible, status.State)
+}
+
+func TestFederationSpokeStartupRejectsLeaseUnawareHub(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	hub := httptest.NewTLSServer(http.HandlerFunc(func(
+		w http.ResponseWriter, r *http.Request,
+	) {
+		switch r.URL.Path {
+		case "/api/v1/federation/identity":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"node_id": startupHubID, "protocol_version": federation.ProtocolVersion,
+			})
+		case "/api/v1/federation/enrollments/" + startupEnrollmentID + "/activate":
+			_ = json.NewEncoder(w).Encode(federation.Enrollment{
+				ID: startupEnrollmentID, NodeID: startupNodeID, HubID: startupHubID,
+				ProtocolVersion: federation.ProtocolVersion,
+				State:           federation.EnrollmentActive,
+				ActivationValidUntil: time.Now().Add(
+					federation.SpokeActivationLeaseDuration,
+				),
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(hub.Close)
+	database := dbtest.Open(t)
+	enrollments, credentials, cfg := spokeStartupFixture(
+		t, database, hub.URL, true,
+	)
+	require.NoError(enrollments.MarkLocalActive(
+		t.Context(), startupEnrollmentID, time.Now().Add(time.Hour),
+	))
+
+	status := activateFederationSpokeAtStartup(
+		t.Context(), database, cfg, startupNodeID,
+		enrollments, credentials, hub.Client(),
+	)
+
+	assert.Equal(federationStartupActionRequired, status.State)
+	assert.Contains(status.Reason, "response does not match")
+	local, ok := enrollments.Local()
+	require.True(ok)
+	assert.True(local.ActivationValidUntil.IsZero())
 }
 
 func TestFederationSpokeStartupLoadsOldProtocolAsIncompatibleWithoutTraffic(t *testing.T) {

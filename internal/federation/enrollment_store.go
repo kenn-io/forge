@@ -277,9 +277,15 @@ func (s *Store) MarkLocalPreparationStarted(
 	})
 }
 
-func (s *Store) Activate(ctx context.Context, enrollmentID string) error {
+func (s *Store) Activate(
+	ctx context.Context, enrollmentID string, activationValidUntil time.Time,
+) error {
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	activationValidUntil = activationValidUntil.UTC()
+	if !activationValidUntil.After(s.now().UTC()) {
+		return errors.New("federation activation lease must expire in the future")
 	}
 	return s.mutate(func(state *persistedEnrollmentStore) error {
 		index := enrollmentIndexByID(state.Enrollments, enrollmentID)
@@ -291,6 +297,8 @@ func (s *Store) Activate(ctx context.Context, enrollmentID string) error {
 			return ErrEnrollmentRevoked
 		}
 		enrollment.State = EnrollmentActive
+		enrollment.ActivationLeaseVersion = ActivationLeaseVersion
+		enrollment.ActivationValidUntil = activationValidUntil
 		enrollment.UpdatedAt = s.now().UTC()
 		return nil
 	})
@@ -405,8 +413,42 @@ func (s *Store) MarkLocalActive(
 			state.Local.Preparation == nil {
 			return ErrPreparationSealMismatch
 		}
+		if state.Local.State == EnrollmentRevoked {
+			return ErrEnrollmentRevoked
+		}
 		state.Local.State = EnrollmentActive
 		state.Local.PreparationRequired = false
+		state.Local.ActivationLeaseVersion = ActivationLeaseVersion
+		state.Local.ActivationValidUntil = activationValidUntil
+		return nil
+	})
+}
+
+// RenewLocalActivationLease updates only the currently active lease. A stale
+// response cannot reactivate a local enrollment that was revoked while its
+// hub request was in flight.
+func (s *Store) RenewLocalActivationLease(
+	ctx context.Context, enrollmentID string, activationValidUntil time.Time,
+) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	enrollmentID = strings.TrimSpace(enrollmentID)
+	activationValidUntil = activationValidUntil.UTC()
+	if !activationValidUntil.After(s.now().UTC()) {
+		return errors.New("federation activation lease must expire in the future")
+	}
+	return s.mutate(func(state *persistedEnrollmentStore) error {
+		if state.Local == nil || state.Local.EnrollmentID != enrollmentID {
+			return ErrEnrollmentConflict
+		}
+		if state.Local.State == EnrollmentRevoked {
+			return ErrEnrollmentRevoked
+		}
+		if state.Local.State != EnrollmentActive || state.Local.Preparation == nil ||
+			state.Local.ActivationLeaseVersion != ActivationLeaseVersion {
+			return ErrEnrollmentConflict
+		}
 		state.Local.ActivationValidUntil = activationValidUntil
 		return nil
 	})
@@ -573,6 +615,14 @@ func normalizeLocalEnrollmentVersioned(
 	if !local.ActivationValidUntil.IsZero() {
 		local.ActivationValidUntil = local.ActivationValidUntil.UTC()
 	}
+	if local.ActivationLeaseVersion != 0 &&
+		local.ActivationLeaseVersion != ActivationLeaseVersion {
+		return LocalEnrollment{}, errors.New("local federation enrollment has unsupported activation lease version")
+	}
+	if !local.ActivationValidUntil.IsZero() &&
+		local.ActivationLeaseVersion != ActivationLeaseVersion {
+		return LocalEnrollment{}, errors.New("local federation enrollment lease has no supported version")
+	}
 	var err error
 	local.SpokeBaseURL, err = CanonicalOrigin(local.SpokeBaseURL)
 	if err != nil {
@@ -734,7 +784,8 @@ func validateEnrollmentStore(state *persistedEnrollmentStore) error {
 	ids := make(map[string]struct{}, len(state.Enrollments))
 	nodeIDs := make(map[string]struct{}, len(state.Enrollments))
 	origins := make(map[string]struct{}, len(state.Enrollments))
-	for index, enrollment := range state.Enrollments {
+	for index := range state.Enrollments {
+		enrollment := &state.Enrollments[index]
 		if !validID(enrollment.ID) || !validID(enrollment.NodeID) || !validID(enrollment.HubID) {
 			return fmt.Errorf("federation enrollment %d has invalid identity", index)
 		}
@@ -744,6 +795,16 @@ func validateEnrollmentStore(state *persistedEnrollmentStore) error {
 		if enrollment.State != EnrollmentPending && enrollment.State != EnrollmentActive &&
 			enrollment.State != EnrollmentRevoked {
 			return fmt.Errorf("federation enrollment %d has invalid state %q", index, enrollment.State)
+		}
+		if enrollment.ActivationLeaseVersion != 0 &&
+			enrollment.ActivationLeaseVersion != ActivationLeaseVersion {
+			return fmt.Errorf("federation enrollment %d has unsupported activation lease version", index)
+		}
+		if !enrollment.ActivationValidUntil.IsZero() {
+			enrollment.ActivationValidUntil = enrollment.ActivationValidUntil.UTC()
+			if enrollment.ActivationLeaseVersion != ActivationLeaseVersion {
+				return fmt.Errorf("federation enrollment %d lease has no supported version", index)
+			}
 		}
 		spokeOrigin, err := CanonicalOrigin(enrollment.SpokeBaseURL)
 		if err != nil || spokeOrigin != enrollment.SpokeBaseURL {

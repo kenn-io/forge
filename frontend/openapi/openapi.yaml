@@ -41,6 +41,9 @@ components:
           format: uri
           readOnly: true
           type: string
+        activation_lease_version:
+          format: int64
+          type: integer
         preparation_seal:
           type: string
         protocol_version:
@@ -48,6 +51,7 @@ components:
           type: integer
       required:
         - protocol_version
+        - activation_lease_version
         - preparation_seal
       type: object
     Activity:
@@ -2308,6 +2312,9 @@ components:
           format: uri
           readOnly: true
           type: string
+        activation_lease_version:
+          format: int64
+          type: integer
         activation_valid_until:
           format: date-time
           type: string
@@ -4351,6 +4358,9 @@ components:
           format: uri
           readOnly: true
           type: string
+        activation_lease_version:
+          format: int64
+          type: integer
         activation_valid_until:
           format: date-time
           type: string

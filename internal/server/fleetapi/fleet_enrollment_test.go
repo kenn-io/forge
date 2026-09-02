@@ -516,12 +516,24 @@ func TestEnrollmentActivationRequiresPreparationAndIsIdempotent(t *testing.T) {
 			t, server.Client(), http.MethodPost,
 			server.URL+"/api/v1/federation/enrollments/"+enrollmentRequestID+"/activate",
 			map[string]any{
-				"protocol_version": federation.ProtocolVersion,
-				"preparation_seal": preparationSeal,
+				"protocol_version":         federation.ProtocolVersion,
+				"activation_lease_version": federation.ActivationLeaseVersion,
+				"preparation_seal":         preparationSeal,
 			},
 			joinResponse.SpokeCredential,
 		)
 	}
+	leaseUnaware := doEnrollmentJSON(
+		t, server.Client(), http.MethodPost,
+		server.URL+"/api/v1/federation/enrollments/"+enrollmentRequestID+"/activate",
+		map[string]any{
+			"protocol_version": federation.ProtocolVersion,
+			"preparation_seal": preparationSeal,
+		},
+		joinResponse.SpokeCredential,
+	)
+	assert.Equal(http.StatusUnprocessableEntity, leaseUnaware.StatusCode)
+	leaseUnaware.Body.Close()
 	blocked := activate()
 	assert.Equal(http.StatusConflict, blocked.StatusCode)
 	blocked.Body.Close()
@@ -544,10 +556,15 @@ func TestEnrollmentActivationRequiresPreparationAndIsIdempotent(t *testing.T) {
 	require.NoError(json.NewDecoder(active.Body).Decode(&enrollment))
 	active.Body.Close()
 	assert.Equal(federation.EnrollmentActive, enrollment.State)
+	assert.Equal(federation.ActivationLeaseVersion, enrollment.ActivationLeaseVersion)
 	assert.WithinDuration(
 		time.Now().Add(federation.SpokeActivationLeaseDuration),
 		enrollment.ActivationValidUntil, time.Second,
 	)
+	storedEnrollment, err := fixture.enrollments.Get(t.Context(), enrollmentRequestID)
+	require.NoError(err)
+	assert.Equal(federation.ActivationLeaseVersion, storedEnrollment.ActivationLeaseVersion)
+	assert.Equal(enrollment.ActivationValidUntil, storedEnrollment.ActivationValidUntil)
 	require.Len(persisted, 1)
 	assert.Equal(enrollmentNodeID, persisted[0].NodeID)
 
@@ -727,7 +744,9 @@ func TestEnrollmentRevocationRecoversAfterPartialHubCleanup(t *testing.T) {
 	var joinResponse federation.JoinResponse
 	require.NoError(json.NewDecoder(joined.Body).Decode(&joinResponse))
 	joined.Body.Close()
-	require.NoError(hub.enrollments.Activate(t.Context(), enrollmentRequestID))
+	require.NoError(hub.enrollments.Activate(
+		t.Context(), enrollmentRequestID, time.Now().Add(time.Hour),
+	))
 	require.NoError(hub.credentials.UpdateInboundScopes(
 		enrollmentNodeID, federationauth.SpokeToHubScopes(),
 	))

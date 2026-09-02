@@ -34,10 +34,13 @@ func SeedActiveHubEnrollment(
 	if err != nil {
 		return federation.Enrollment{}, fmt.Errorf("begin enrollment: %w", err)
 	}
-	if err := store.Activate(ctx, enrollment.ID); err != nil {
+	activationValidUntil := time.Now().UTC().Add(federation.SpokeActivationLeaseDuration)
+	if err := store.Activate(ctx, enrollment.ID, activationValidUntil); err != nil {
 		return federation.Enrollment{}, fmt.Errorf("activate enrollment: %w", err)
 	}
 	enrollment.State = federation.EnrollmentActive
+	enrollment.ActivationLeaseVersion = federation.ActivationLeaseVersion
+	enrollment.ActivationValidUntil = activationValidUntil
 	return enrollment, nil
 }
 
@@ -48,17 +51,18 @@ func SeedActiveSpokeEnrollment(
 	enrollment federation.Enrollment,
 ) error {
 	if err := store.SaveLocal(ctx, federation.LocalEnrollment{
-		EnrollmentID:    enrollment.ID,
-		NodeID:          enrollment.NodeID,
-		SpokeName:       enrollment.SpokeName,
-		SpokePlatform:   enrollment.SpokePlatform,
-		SpokeBaseURL:    enrollment.SpokeBaseURL,
-		HubID:           enrollment.HubID,
-		HubName:         enrollment.HubName,
-		HubURL:          enrollment.HubURL,
-		ProtocolVersion: federation.ProtocolVersion,
-		State:           federation.EnrollmentActive,
-		ExpiresAt:       enrollment.ExpiresAt,
+		EnrollmentID:           enrollment.ID,
+		NodeID:                 enrollment.NodeID,
+		SpokeName:              enrollment.SpokeName,
+		SpokePlatform:          enrollment.SpokePlatform,
+		SpokeBaseURL:           enrollment.SpokeBaseURL,
+		HubID:                  enrollment.HubID,
+		HubName:                enrollment.HubName,
+		HubURL:                 enrollment.HubURL,
+		ProtocolVersion:        federation.ProtocolVersion,
+		State:                  federation.EnrollmentActive,
+		ExpiresAt:              enrollment.ExpiresAt,
+		ActivationLeaseVersion: federation.ActivationLeaseVersion,
 		ActivationValidUntil: time.Now().UTC().Add(
 			federation.SpokeActivationLeaseDuration,
 		),

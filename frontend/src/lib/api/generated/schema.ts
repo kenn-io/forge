@@ -5099,6 +5099,8 @@ export interface components {
              * @example /api/v1/schemas/ActivateEnrollmentInputBody.json
              */
             readonly $schema?: string;
+            /** Format: int64 */
+            activation_lease_version: number;
             preparation_seal: string;
             /** Format: int64 */
             protocol_version: number;
@@ -6156,6 +6158,8 @@ export interface components {
              * @example /api/v1/schemas/Enrollment.json
              */
             readonly $schema?: string;
+            /** Format: int64 */
+            activation_lease_version?: number;
             /** Format: date-time */
             activation_valid_until?: string;
             /** Format: date-time */
@@ -7074,6 +7078,8 @@ export interface components {
              * @example /api/v1/schemas/LocalEnrollment.json
              */
             readonly $schema?: string;
+            /** Format: int64 */
+            activation_lease_version?: number;
             /** Format: date-time */
             activation_valid_until?: string;
             enrollment_id: string;

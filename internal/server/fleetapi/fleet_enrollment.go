@@ -60,8 +60,9 @@ type localJoinOutput = httpapi.BodyOutput[federation.LocalEnrollment]
 type activateEnrollmentInput struct {
 	EnrollmentID string `path:"enrollment_id"`
 	Body         struct {
-		ProtocolVersion int    `json:"protocol_version"`
-		PreparationSeal string `json:"preparation_seal"`
+		ProtocolVersion        int    `json:"protocol_version"`
+		ActivationLeaseVersion int    `json:"activation_lease_version"`
+		PreparationSeal        string `json:"preparation_seal"`
 	}
 }
 
@@ -482,57 +483,53 @@ func (h *Handler) activateEnrollment(
 			federation.ProtocolVersion, input.Body.ProtocolVersion,
 		))
 	}
+	if input.Body.ActivationLeaseVersion != federation.ActivationLeaseVersion {
+		return nil, enrollmentProblem(fmt.Errorf(
+			"%w: activation lease expected %d, got %d",
+			federation.ErrProtocolMismatch,
+			federation.ActivationLeaseVersion,
+			input.Body.ActivationLeaseVersion,
+		))
+	}
 	enrollment, err := h.enrollments.Resume(ctx, input.EnrollmentID, principal.NodeID)
 	if err != nil {
 		return nil, enrollmentProblem(err)
 	}
-	if enrollment.State == federation.EnrollmentActive {
-		if err := h.credentials.UpdateInboundScopes(
-			enrollment.NodeID, federationauth.SpokeToHubScopes(),
-		); err != nil {
-			return nil, httpapi.Internal("activate spoke credential: " + err.Error())
-		}
-		if err := h.credentials.UpdateOutboundScopes(
-			enrollment.NodeID, federationauth.HubToSpokeScopes(),
-		); err != nil {
-			return nil, httpapi.Internal("activate hub credential: " + err.Error())
-		}
-		enrollment.ActivationValidUntil = h.now().UTC().Add(
-			federation.SpokeActivationLeaseDuration,
-		)
-		return &activateEnrollmentOutput{Body: enrollment}, nil
-	}
 	if enrollment.State == federation.EnrollmentRevoked {
 		return nil, enrollmentProblem(federation.ErrEnrollmentRevoked)
 	}
-	if enrollment.State != federation.EnrollmentPending {
+	if enrollment.State != federation.EnrollmentPending &&
+		enrollment.State != federation.EnrollmentActive {
 		return nil, enrollmentProblem(federation.ErrEnrollmentConflict)
 	}
-	if h.db == nil {
-		return nil, httpapi.ServiceUnavailable("spoke preparation seal store unavailable")
+	if enrollment.State == federation.EnrollmentPending {
+		if h.db == nil {
+			return nil, httpapi.ServiceUnavailable("spoke preparation seal store unavailable")
+		}
+		seal, err := h.db.GetSpokePreparationSeal(ctx, enrollment.ID)
+		if err != nil {
+			return nil, httpapi.Internal("read spoke preparation seal: " + err.Error())
+		}
+		presented := strings.TrimSpace(input.Body.PreparationSeal)
+		if seal == nil || presented == "" ||
+			seal.NodeID != principal.NodeID || seal.NodeID != enrollment.NodeID ||
+			seal.HubNodeID != h.nodeID ||
+			seal.ProtocolVersion != federation.ProtocolVersion ||
+			subtle.ConstantTimeCompare([]byte(seal.Seal), []byte(presented)) != 1 {
+			return nil, enrollmentProblem(federation.ErrPreparationRequired)
+		}
+		if h.persistMember == nil {
+			return nil, httpapi.ServiceUnavailable("fleet membership persistence unavailable")
+		}
+		if err := h.persistMember(ctx, config.FleetMember{
+			NodeID: enrollment.NodeID, Name: enrollment.SpokeName,
+			BaseURL: enrollment.SpokeBaseURL, State: federation.EnrollmentActive,
+		}); err != nil {
+			return nil, httpapi.Internal("persist active fleet member: " + err.Error())
+		}
 	}
-	seal, err := h.db.GetSpokePreparationSeal(ctx, enrollment.ID)
-	if err != nil {
-		return nil, httpapi.Internal("read spoke preparation seal: " + err.Error())
-	}
-	presented := strings.TrimSpace(input.Body.PreparationSeal)
-	if seal == nil || presented == "" ||
-		seal.NodeID != principal.NodeID || seal.NodeID != enrollment.NodeID ||
-		seal.HubNodeID != h.nodeID ||
-		seal.ProtocolVersion != federation.ProtocolVersion ||
-		subtle.ConstantTimeCompare([]byte(seal.Seal), []byte(presented)) != 1 {
-		return nil, enrollmentProblem(federation.ErrPreparationRequired)
-	}
-	if h.persistMember == nil {
-		return nil, httpapi.ServiceUnavailable("fleet membership persistence unavailable")
-	}
-	if err := h.persistMember(ctx, config.FleetMember{
-		NodeID: enrollment.NodeID, Name: enrollment.SpokeName,
-		BaseURL: enrollment.SpokeBaseURL, State: federation.EnrollmentActive,
-	}); err != nil {
-		return nil, httpapi.Internal("persist active fleet member: " + err.Error())
-	}
-	if err := h.enrollments.Activate(ctx, enrollment.ID); err != nil {
+	validUntil := h.now().UTC().Add(federation.SpokeActivationLeaseDuration)
+	if err := h.enrollments.Activate(ctx, enrollment.ID, validUntil); err != nil {
 		return nil, enrollmentProblem(err)
 	}
 	if err := h.credentials.UpdateInboundScopes(
@@ -549,9 +546,6 @@ func (h *Handler) activateEnrollment(
 	if err != nil {
 		return nil, enrollmentProblem(err)
 	}
-	enrollment.ActivationValidUntil = h.now().UTC().Add(
-		federation.SpokeActivationLeaseDuration,
-	)
 	return &activateEnrollmentOutput{Body: enrollment}, nil
 }
 

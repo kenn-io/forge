@@ -204,7 +204,9 @@ func TestEnrollmentRevocationClosesExistingFederationEventStream(t *testing.T) {
 		HubCredential:   "hub-credential",
 	})
 	require.NoError(err)
-	require.NoError(enrollments.Activate(t.Context(), enrollmentID))
+	require.NoError(enrollments.Activate(
+		t.Context(), enrollmentID, time.Now().Add(time.Hour),
+	))
 
 	credentials, err := federationauth.Open(filepath.Join(dir, "credentials.json"))
 	require.NoError(err)

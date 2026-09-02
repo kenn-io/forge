@@ -83,7 +83,9 @@ func configureTestMembers(
 			},
 		)
 		require.NoError(t, beginErr)
-		require.NoError(t, enrollments.Activate(t.Context(), enrollment.ID))
+		require.NoError(t, enrollments.Activate(
+			t.Context(), enrollment.ID, time.Now().Add(time.Hour),
+		))
 		tokens[member.NodeID] = token
 	}
 	h.nodeID = testHubNodeID

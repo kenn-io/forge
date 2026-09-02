@@ -116,9 +116,12 @@ or remote workspace and session operations.
   Activation upgrades both directions
   (`internal/federationauth/scope.go::HubToSpokeScopes`,
   `internal/server/api_auth.go::Server.federationPrincipalEnrollmentState`).
-- An active hub bearer is accepted by a spoke only after startup activation
-  and while its renewable 24-hour activation lease is current; explicit hub
-  rejection never falls back to a cached lease (`internal/server/api_auth.go::Server.federationPrincipalEnrollmentState`).
+- Active peer bearers are accepted only after the versioned activation-lease
+  handshake and while the hub and spoke copies of the renewable 24-hour lease
+  are current. Lease-unaware peers may reach only activation or revocation;
+  explicit hub rejection never falls back to a cached lease
+  (`internal/server/api_auth.go::Server.federationPrincipalEnrollmentState`,
+  `internal/server/api_auth.go::Server.allowsActivationLeaseRenewal`).
 - The credential store persists inbound bearers only as SHA-256 digests and
   keeps outbound bearers readable for request construction. Atomic 0600 writes
   publish immutable in-memory snapshots only after persistence, so revocation
@@ -273,6 +276,12 @@ or remote workspace and session operations.
 - Federation protocol version 3 requires an exact match; there is no
   translation or compatibility fallback
   (`internal/federation/protocol.go::ProtocolVersion`).
+- Activation leases negotiate their own version 1 inside protocol 3. This
+  keeps snapshot compatibility separate from the authorization handshake:
+  upgraded hubs isolate lease-unaware active spokes until they upgrade and
+  activate again, without rewriting enrollment storage or requiring
+  re-enrollment (`internal/federation/protocol.go::ActivationLeaseVersion`,
+  `internal/server/fleetapi/fleet_enrollment.go::Handler.activateEnrollment`).
 - Enrollment accepts only canonical HTTPS origins. Each token is consumed by
   its first accepted request; retry or rekey requires a new token
   (`internal/federation/enrollment_store.go::Store.Begin`).
@@ -320,8 +329,11 @@ or remote workspace and session operations.
   (`internal/server/spoke_preparation.go::Server.persistPreparedSpokeRole`).
 - Activation retries are bounded and reuse the sealed enrollment; the
   hub validates its issued seal, and already-active retries never
-  duplicate membership. Invalid state is `action_required`, protocol mismatch
-  is `incompatible`, and both preserve local execution while suppressing routes
+  duplicate membership. Renewal is conditional on the enrollment remaining
+  active, so a response that races revocation cannot restore the lease.
+  Retryable failures back off for one minute; definitive rejection clears the
+  lease and stops renewal until restart. Invalid state is `action_required`,
+  protocol mismatch is `incompatible`, and both preserve local execution while suppressing routes
   (`cmd/kenn-forge/spoke_startup.go::activateFederationSpokeAtStartup`,
   `internal/server/fleetapi/fleet_enrollment.go::Handler.activateEnrollment`).
 - Hub-initiated revocation makes each side retry-safe. The spoke marks its local

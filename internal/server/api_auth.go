@@ -207,6 +207,7 @@ func (s *Server) federationPrincipalEnrollmentState(
 		}
 		return federation.EnrollmentActive, s.options.FederationSpokeActive &&
 			local.State == federation.EnrollmentActive &&
+			local.ActivationLeaseVersion == federation.ActivationLeaseVersion &&
 			local.ActivationValidUntil.After(s.now().UTC()) &&
 			hub.NodeID == principal.NodeID &&
 			local.HubID == principal.NodeID
@@ -220,7 +221,9 @@ func (s *Server) federationPrincipalEnrollmentState(
 		return federation.EnrollmentPending,
 			enrollment.PreparationStarted || enrollment.ExpiresAt.After(s.now().UTC())
 	}
-	if enrollment.State != federation.EnrollmentActive {
+	if enrollment.State != federation.EnrollmentActive ||
+		enrollment.ActivationLeaseVersion != federation.ActivationLeaseVersion ||
+		!enrollment.ActivationValidUntil.After(s.now().UTC()) {
 		return "", false
 	}
 	for _, member := range members {
@@ -267,7 +270,11 @@ func (s *Server) authorizeFederationRequest(
 	}
 	canonicalPath := s.canonicalAPIPath(r)
 	enrollmentState, enrolled := s.federationPrincipalEnrollmentState(principal)
-	if !enrolled && s.allowsRevokedSpokeRevocation(r, canonicalPath, principal) {
+	if !enrolled && s.allowsActivationLeaseRenewal(r, canonicalPath, principal) {
+		enrollmentState = federation.EnrollmentActive
+		enrolled = true
+	}
+	if !enrolled && s.allowsSpokeEnrollmentRevocation(r, canonicalPath, principal) {
 		enrollmentState = federation.EnrollmentRevoked
 		enrolled = true
 	}
@@ -330,14 +337,28 @@ func (s *Server) authorizeFederationRequest(
 	return true
 }
 
-func (s *Server) allowsRevokedSpokeRevocation(
+func (s *Server) allowsActivationLeaseRenewal(
+	r *http.Request, canonicalPath string, principal federationauth.Principal,
+) bool {
+	if r.Method != http.MethodPost || s.options.FederationEnrollments == nil ||
+		s.bootCfgSnapshot.FleetRole != config.FleetRoleHub {
+		return false
+	}
+	enrollment, ok := s.options.FederationEnrollments.EnrollmentForSpoke(principal.NodeID)
+	return ok && enrollment.State == federation.EnrollmentActive &&
+		canonicalPath == "/api/v1/federation/enrollments/"+
+			url.PathEscape(enrollment.ID)+"/activate"
+}
+
+func (s *Server) allowsSpokeEnrollmentRevocation(
 	r *http.Request, canonicalPath string, principal federationauth.Principal,
 ) bool {
 	if r.Method != http.MethodDelete || s.options.FederationEnrollments == nil {
 		return false
 	}
 	local, ok := s.options.FederationEnrollments.Local()
-	if !ok || local.State != federation.EnrollmentRevoked ||
+	if !ok || (local.State != federation.EnrollmentActive &&
+		local.State != federation.EnrollmentRevoked) ||
 		local.HubID != principal.NodeID {
 		return false
 	}

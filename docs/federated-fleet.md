@@ -598,6 +598,13 @@ If the hub is temporarily unavailable, the spoke can use its last confirmed
 activation lease for up to 24 hours. Once that lease expires, hub requests are
 rejected until the spoke reaches the hub and renews it.
 
+The lease handshake is versioned separately from fleet snapshots. During a
+rolling upgrade, upgrade the hub first, then each spoke. A lease-unaware spoke
+is isolated from fleet reads and writes until it is upgraded and restarted;
+its existing enrollment is reused, so you do not need to re-enroll it. If a
+spoke was upgraded before its hub, upgrade the hub and restart that spoke so it
+can complete the lease handshake.
+
 If the peer rejects the hub identity, check that the enrollment is active and
 has not been revoked. Re-enroll instead of widening or copying a token by hand.
 A valid credential can still be forbidden when its direction does not grant the

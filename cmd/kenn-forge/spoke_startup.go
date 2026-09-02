@@ -36,8 +36,9 @@ const (
 )
 
 var (
-	errHubProtocolMismatch  = errors.New("hub federation protocol is incompatible")
-	errHubActivationInvalid = errors.New("hub federation activation response is invalid")
+	errHubProtocolMismatch      = errors.New("hub federation protocol is incompatible")
+	errHubActivationInvalid     = errors.New("hub federation activation response is invalid")
+	errSpokeActivationSuspended = errors.New("fleet spoke activation renewal is suspended")
 )
 
 type federationSpokeStartup struct {
@@ -289,8 +290,9 @@ func validateAndActivateFederationSpoke(
 			local.EnrollmentID+"/activate",
 		local.NodeID, credential.Token,
 		map[string]any{
-			"protocol_version": federation.ProtocolVersion,
-			"preparation_seal": local.Preparation.Seal,
+			"protocol_version":         federation.ProtocolVersion,
+			"activation_lease_version": federation.ActivationLeaseVersion,
+			"preparation_seal":         local.Preparation.Seal,
 		},
 		&active,
 	); err != nil {
@@ -299,6 +301,7 @@ func validateAndActivateFederationSpoke(
 	if active.ID != local.EnrollmentID || active.NodeID != local.NodeID ||
 		active.HubID != local.HubID ||
 		active.ProtocolVersion != federation.ProtocolVersion ||
+		active.ActivationLeaseVersion != federation.ActivationLeaseVersion ||
 		active.State != federation.EnrollmentActive {
 		return time.Time{}, fmt.Errorf(
 			"%w: response does not match the sealed enrollment",
@@ -336,10 +339,11 @@ func maintainFederationSpokeActivation(
 		if err := renewFederationSpokeActivation(
 			ctx, enrollments, credentials, spokeActivationHTTPClient(httpClient),
 		); err != nil {
-			delay = min(
-				spokeActivationRetryInterval,
-				nextSpokeActivationRenewal(enrollments, time.Now().UTC()),
-			)
+			if errors.Is(err, errSpokeActivationSuspended) {
+				slog.Warn("suspend fleet spoke activation lease renewal", "err", err)
+				return
+			}
+			delay = spokeActivationRetryInterval
 			slog.Warn("renew fleet spoke activation lease", "err", err)
 		}
 		timer.Reset(delay)
@@ -351,7 +355,7 @@ func nextSpokeActivationRenewal(
 ) time.Duration {
 	local, ok := enrollments.Local()
 	if !ok || !local.ActivationValidUntil.After(now) {
-		return time.Second
+		return spokeActivationRetryInterval
 	}
 	delay := local.ActivationValidUntil.Sub(now) / 2
 	if delay > spokeActivationRenewalInterval {
@@ -382,14 +386,29 @@ func renewFederationSpokeActivation(
 			); suspendErr != nil {
 				return errors.Join(err, suspendErr)
 			}
+			return errors.Join(errSpokeActivationSuspended, err)
 		}
 		return err
 	}
-	if err := enrollments.MarkLocalActive(ctx, local.EnrollmentID, validUntil); err != nil {
+	if err := enrollments.RenewLocalActivationLease(
+		ctx, local.EnrollmentID, validUntil,
+	); err != nil {
 		return fmt.Errorf("persist fleet spoke activation lease: %w", err)
 	}
 	if err := promoteFederationSpokeCredentialScopes(credentials, local.HubID); err != nil {
 		return fmt.Errorf("restore fleet spoke credential scopes: %w", err)
+	}
+	current, ok := enrollments.Local()
+	if !ok || current.EnrollmentID != local.EnrollmentID ||
+		current.State != federation.EnrollmentActive ||
+		current.ActivationLeaseVersion != federation.ActivationLeaseVersion ||
+		!current.ActivationValidUntil.After(time.Now().UTC()) {
+		if err := suspendFederationSpokeActivation(
+			ctx, enrollments, credentials, local,
+		); err != nil {
+			return errors.Join(errSpokeActivationSuspended, err)
+		}
+		return errSpokeActivationSuspended
 	}
 	return nil
 }

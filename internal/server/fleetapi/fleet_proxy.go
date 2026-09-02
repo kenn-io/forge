@@ -1006,6 +1006,8 @@ func (s *Handler) resolveEnrolledSpoke(
 ) (fleetHostTarget, bool) {
 	enrollment, ok := s.enrollments.EnrollmentForSpoke(member.NodeID)
 	if !ok || enrollment.State != federation.EnrollmentActive ||
+		enrollment.ActivationLeaseVersion != federation.ActivationLeaseVersion ||
+		!enrollment.ActivationValidUntil.After(s.now().UTC()) ||
 		enrollment.SpokeBaseURL != member.BaseURL {
 		return fleetHostTarget{}, false
 	}

@@ -34,14 +34,16 @@ func TestEnrollmentActivationIsIdempotentAfterLostResponse(t *testing.T) {
 	resumed, err := store.Resume(t.Context(), first.ID, request.NodeID)
 	require.NoError(err)
 	assert.Equal(first, resumed)
-	require.NoError(store.Activate(t.Context(), first.ID))
-	require.NoError(store.Activate(t.Context(), first.ID))
+	require.NoError(store.Activate(t.Context(), first.ID, now.Add(time.Hour)))
+	require.NoError(store.Activate(t.Context(), first.ID, now.Add(time.Hour)))
 	_, err = store.Begin(t.Context(), token.Token, request)
 	require.ErrorIs(err, ErrEnrollmentTokenConsumed)
 
 	active, err := store.Resume(t.Context(), first.ID, request.NodeID)
 	require.NoError(err)
 	assert.Equal(EnrollmentActive, active.State)
+	assert.Equal(ActivationLeaseVersion, active.ActivationLeaseVersion)
+	assert.Equal(now.Add(time.Hour), active.ActivationValidUntil)
 	_, err = store.Begin(t.Context(), token.Token,
 		joinRequestForTest("22222222222222222222222222222222",
 			"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "https://spoke-b.example"))
@@ -311,13 +313,59 @@ func TestLocalPreparationSealIsBoundAndActivationIsIdempotent(t *testing.T) {
 	require.True(ok)
 	assert.Equal(EnrollmentActive, got.State)
 	assert.False(got.PreparationRequired)
+	assert.Equal(ActivationLeaseVersion, got.ActivationLeaseVersion)
 	assert.Equal(activationValidUntil.UTC(), got.ActivationValidUntil)
+	renewedUntil := activationValidUntil.Add(time.Hour)
+	require.NoError(reopened.RenewLocalActivationLease(
+		t.Context(), testEnrollmentID, renewedUntil,
+	))
+	got, ok = reopened.Local()
+	require.True(ok)
+	assert.Equal(renewedUntil.UTC(), got.ActivationValidUntil)
 	require.NoError(reopened.InvalidateLocalActivationLease(
 		t.Context(), testEnrollmentID,
 	))
 	got, ok = reopened.Local()
 	require.True(ok)
 	assert.True(got.ActivationValidUntil.IsZero())
+}
+
+func TestLocalActivationCannotResumeAfterRevocation(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	store := newEnrollmentStoreForTest(t, time.Now)
+	require.NoError(store.SaveLocal(t.Context(), LocalEnrollment{
+		EnrollmentID: testEnrollmentID, NodeID: testNodeID,
+		SpokePlatform: "linux", SpokeBaseURL: "https://spoke-a.example",
+		HubID: testHubID, HubURL: "https://hub.example",
+		ProtocolVersion: ProtocolVersion, State: EnrollmentActive,
+		ExpiresAt:              time.Now().Add(time.Hour),
+		PreparationStarted:     true,
+		ActivationLeaseVersion: ActivationLeaseVersion,
+		ActivationValidUntil:   time.Now().Add(time.Hour),
+		Preparation: &LocalPreparationSeal{
+			EnrollmentID: testEnrollmentID, NodeID: testNodeID,
+			HubID: testHubID, ProtocolVersion: ProtocolVersion,
+			PreparationDigest: "digest", Seal: "opaque-seal",
+		},
+	}))
+	local, ok := store.Local()
+	require.True(ok)
+	local.State = EnrollmentRevoked
+	require.NoError(store.SaveLocal(t.Context(), local))
+
+	validUntil := time.Now().Add(2 * time.Hour)
+	require.ErrorIs(
+		store.MarkLocalActive(t.Context(), testEnrollmentID, validUntil),
+		ErrEnrollmentRevoked,
+	)
+	require.ErrorIs(
+		store.RenewLocalActivationLease(t.Context(), testEnrollmentID, validUntil),
+		ErrEnrollmentRevoked,
+	)
+	local, ok = store.Local()
+	require.True(ok)
+	assert.Equal(EnrollmentRevoked, local.State)
 }
 
 func newEnrollmentStoreForTest(t *testing.T, now func() time.Time) *Store {

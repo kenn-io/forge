@@ -12,6 +12,7 @@ import (
 	"github.com/coder/websocket"
 
 	"go.kenn.io/forge/internal/ptysize"
+	"go.kenn.io/forge/internal/terminalwebsocket"
 )
 
 type controlMsg struct {
@@ -77,6 +78,13 @@ func wsToPTY(
 			var msg controlMsg
 			if jsonErr := json.Unmarshal(data, &msg); jsonErr != nil {
 				slog.Warn("bad control message", "err", jsonErr)
+				continue
+			}
+			if msg.Type == "heartbeat" {
+				if wErr := terminalwebsocket.WriteHeartbeat(ctx, conn); wErr != nil {
+					logWebsocketDebug("terminal heartbeat write ended", "err", wErr)
+					return
+				}
 				continue
 			}
 			handleControl(ptmx, &msg)

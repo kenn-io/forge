@@ -315,7 +315,7 @@ func bridgeRuntimeAttachment(
 					return
 				}
 				if heartbeat {
-					if err := conn.Write(ctx, websocket.MessageText, []byte(`{"type":"heartbeat"}`)); err != nil {
+					if err := terminalwebsocket.WriteHeartbeat(ctx, conn); err != nil {
 						logWebsocketDebug("runtime terminal heartbeat write ended", "err", err)
 						return
 					}

@@ -2428,7 +2428,9 @@ test.describe("inline workspace pane continuity", () => {
             this.addEventListener("message", (event) => {
               if (typeof event.data !== "string") return;
               try {
-                entry.replayReady = (JSON.parse(event.data) as { type?: string }).type === "replay_ready";
+                if ((JSON.parse(event.data) as { type?: string }).type === "replay_ready") {
+                  entry.replayReady = true;
+                }
               } catch {
                 // Non-JSON text frame; the renderer ignores it too.
               }

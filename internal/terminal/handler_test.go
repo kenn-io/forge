@@ -16,6 +16,7 @@ import (
 
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/ptyowner"
+	"go.kenn.io/forge/internal/terminalwebsocket"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/workspace"
 )
@@ -184,6 +185,20 @@ func TestHandlerAttachesPtyOwnerTerminal(t *testing.T) {
 	require.Contains(readWebSocketUntil(t, conn, "ready"), "ready")
 	require.NoError(conn.Write(
 		t.Context(), websocket.MessageText,
+		[]byte(terminalwebsocket.HeartbeatMessage),
+	))
+	heartbeatCtx, cancelHeartbeat := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancelHeartbeat()
+	for {
+		typ, data, err := conn.Read(heartbeatCtx)
+		require.NoError(err)
+		if typ == websocket.MessageText {
+			require.JSONEq(terminalwebsocket.HeartbeatMessage, string(data))
+			break
+		}
+	}
+	require.NoError(conn.Write(
+		t.Context(), websocket.MessageText,
 		[]byte(`{"type":"claim_resize","cols":101,"rows":33}`),
 	))
 	require.NoError(conn.Write(
@@ -217,6 +232,46 @@ func TestHandleControlAppliesResizeClaim(t *testing.T) {
 		X:    824,
 		Y:    560,
 	}, size)
+}
+
+func TestWSToPTYAnswersHeartbeat(t *testing.T) {
+	require := require.New(t)
+	ptmx, tty, err := pty.Open()
+	require.NoError(err)
+	t.Cleanup(func() {
+		_ = ptmx.Close()
+		_ = tty.Close()
+	})
+
+	handlerDone := make(chan error, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, acceptErr := terminalwebsocket.Accept(w, r)
+		if acceptErr != nil {
+			handlerDone <- acceptErr
+			return
+		}
+		defer conn.CloseNow()
+		wsToPTY(r.Context(), ptmx, conn)
+		handlerDone <- nil
+	}))
+	t.Cleanup(server.Close)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+	conn, _, err := websocket.Dial(
+		ctx, "ws"+strings.TrimPrefix(server.URL, "http"), nil,
+	)
+	require.NoError(err)
+	require.NoError(conn.Write(
+		ctx, websocket.MessageText,
+		[]byte(terminalwebsocket.HeartbeatMessage),
+	))
+	typ, data, err := conn.Read(ctx)
+	require.NoError(err)
+	require.Equal(websocket.MessageText, typ)
+	require.JSONEq(terminalwebsocket.HeartbeatMessage, string(data))
+	require.NoError(conn.Close(websocket.StatusNormalClosure, "done"))
+	require.NoError(<-handlerDone)
 }
 
 func TestProcessExitCode(t *testing.T) {

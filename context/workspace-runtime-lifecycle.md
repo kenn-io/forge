@@ -299,9 +299,9 @@ stale tabs.
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::presentRuntimeMutation`).
 - Workspace terminals use xterm.js exclusively; there is no renderer setting
   or alternate renderer path (`frontend/src/lib/components/terminal/TerminalPane.svelte`).
-- Terminal clients must replace silent half-open sockets without a page reload;
-  round-trip liveness must traverse Fleet bridges so idle tmux output is not required for recovery
-  (`frontend/src/lib/components/terminal/terminal-session.ts::makeTerminalSessionController`, `internal/server/workspaceapi/workspace_runtime_terminal.go::bridgeRuntimeAttachment`).
+- Terminal clients must replace silent half-open sockets without a page reload; every local terminal backend must answer the shared round-trip heartbeat, and Fleet bridges must pass it through so idle output is not required for recovery
+  (`frontend/src/lib/components/terminal/terminal-session.ts::makeTerminalSessionController`,
+  `internal/terminalwebsocket/terminalwebsocket.go::WriteHeartbeat`).
 - Own every non-empty browser text paste at the terminal container boundary,
   sanitize and send it once, and do not delegate single-line paste to xterm;
   this event path must remain usable on insecure HTTP origins without the async

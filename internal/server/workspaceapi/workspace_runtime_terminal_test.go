@@ -16,6 +16,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"go.kenn.io/forge/internal/ptysize"
+	"go.kenn.io/forge/internal/terminalwebsocket"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
@@ -63,11 +64,14 @@ func TestServeRuntimeTerminalAnswersHeartbeat(t *testing.T) {
 	defer cancel()
 	conn, _, err := websocket.Dial(ctx, wsURL, nil)
 	require.NoError(err)
-	require.NoError(conn.Write(ctx, websocket.MessageText, []byte(`{"type":"heartbeat"}`)))
+	require.NoError(conn.Write(
+		ctx, websocket.MessageText,
+		[]byte(terminalwebsocket.HeartbeatMessage),
+	))
 	typ, data, err := conn.Read(ctx)
 	require.NoError(err)
 	require.Equal(websocket.MessageText, typ)
-	require.JSONEq(`{"type":"heartbeat"}`, string(data))
+	require.JSONEq(terminalwebsocket.HeartbeatMessage, string(data))
 
 	require.NoError(conn.Close(websocket.StatusNormalClosure, "done"))
 	select {

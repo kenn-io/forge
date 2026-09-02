@@ -1,26 +1,20 @@
-import { HARNESSES, harnessInfo, type HarnessId } from "@kenn-io/kit-ui";
+import { HARNESS_ICONS, type HarnessIconId } from "@kenn-io/kit-ui";
 
 import type { LaunchTarget } from "../../api/types.js";
 
 /**
- * The kit-ui harness wordmark a launch target should be drawn with.
+ * The kit-ui harness glyph a launch target should be drawn with.
  *
  * Agent launch targets are keyed by the maintainer (built-ins such as `claude`
- * and `codex`, or config entries like `codex-review`), while kit-ui's harness
- * ids follow the agentsview naming (`claude-code`). The two are matched on a
- * shared leading prefix, segment by segment, so `claude`, `claude-code` and
- * `claude-fast` all resolve to the Claude Code mark and `codex-review` to
- * Codex, but `pixel` never resolves to `pi`.
+ * and `codex`, or config entries like `codex-review`), while kit-ui's glyphs
+ * are keyed by brand (`openai` for Codex, `snowflake` for Cortex Code). Each
+ * glyph therefore matches on its own id and on the agent products kit-ui lists
+ * for it, both slugged the same way as the key: first segment by segment, so
+ * `codex-review` resolves to the OpenAI glyph and `claude-fast` to Claude;
+ * then, for names long enough to be unambiguous, as a plain string prefix of
+ * the key's first segment, so a `claudex` wrapper still gets the Claude glyph
+ * while `pixel` never resolves to `pi`.
  */
-export interface LaunchTargetMark {
-  harness: HarnessId;
-  /**
-   * Whether the target's own label still adds information beside the
-   * wordmark. A built-in `Claude` under the `Claude Code` mark does not; a
-   * config `Review Agent` under the Codex mark does.
-   */
-  showLabel: boolean;
-}
 
 function segments(value: string): string[] {
   return value
@@ -29,32 +23,50 @@ function segments(value: string): string[] {
     .filter((segment) => segment !== "");
 }
 
-/** Resolve an agent launch-target key to the harness whose id shares its prefix. */
-export function harnessForAgentKey(key: string): HarnessId | null {
+/** Shortest name segment that may match a key as a bare string prefix. */
+const LOOSE_PREFIX_MIN_LENGTH = 4;
+
+interface Candidate {
+  id: HarnessIconId;
+  segments: string[];
+}
+
+const CANDIDATES: readonly Candidate[] = HARNESS_ICONS.flatMap((icon) =>
+  [icon.id, ...icon.agents].map((name) => ({ id: icon.id, segments: segments(name) })),
+);
+
+/** Resolve an agent launch-target key to the glyph whose name shares its prefix. */
+export function harnessForAgentKey(key: string): HarnessIconId | null {
   const keySegments = segments(key);
-  if (keySegments.length === 0) return null;
-  let best: { id: HarnessId; matched: number } | null = null;
-  for (const harness of HARNESSES) {
-    const idSegments = segments(harness.id);
-    if (idSegments[0] !== keySegments[0]) continue;
+  const keyHead = keySegments[0];
+  if (keyHead === undefined) return null;
+  let best: { id: HarnessIconId; matched: number } | null = null;
+  for (const candidate of CANDIDATES) {
+    if (candidate.segments[0] !== keyHead) continue;
     let matched = 0;
     while (
-      matched < idSegments.length &&
+      matched < candidate.segments.length &&
       matched < keySegments.length &&
-      idSegments[matched] === keySegments[matched]
+      candidate.segments[matched] === keySegments[matched]
     ) {
       matched += 1;
     }
-    if (best === null || matched > best.matched) best = { id: harness.id, matched };
+    if (best === null || matched > best.matched) best = { id: candidate.id, matched };
   }
-  return best?.id ?? null;
+  if (best !== null) return best.id;
+
+  let loose: { id: HarnessIconId; length: number } | null = null;
+  for (const candidate of CANDIDATES) {
+    const head = candidate.segments[0];
+    if (head === undefined || head.length < LOOSE_PREFIX_MIN_LENGTH) continue;
+    if (!keyHead.startsWith(head)) continue;
+    if (loose === null || head.length > loose.length) loose = { id: candidate.id, length: head.length };
+  }
+  return loose?.id ?? null;
 }
 
-export function launchTargetMark(target: Pick<LaunchTarget, "kind" | "key" | "label">): LaunchTargetMark | null {
+/** The glyph for a launch target, or null for shells and unmatched agents. */
+export function launchTargetHarness(target: Pick<LaunchTarget, "kind" | "key">): HarnessIconId | null {
   if (target.kind !== "agent") return null;
-  const harness = harnessForAgentKey(target.key);
-  if (harness === null) return null;
-  const label = target.label.trim().toLowerCase();
-  const harnessLabel = harnessInfo(harness).label.toLowerCase();
-  return { harness, showLabel: label !== "" && !harnessLabel.startsWith(label) };
+  return harnessForAgentKey(target.key);
 }

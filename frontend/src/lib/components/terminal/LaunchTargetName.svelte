@@ -1,51 +1,46 @@
 <script lang="ts">
-  import { HarnessMark } from "@kenn-io/kit-ui";
+  import { HarnessIcon } from "@kenn-io/kit-ui";
   import BoxIcon from "@lucide/svelte/icons/box";
   import SparklesIcon from "@lucide/svelte/icons/sparkles";
   import TerminalIcon from "@lucide/svelte/icons/terminal";
 
   import type { LaunchTarget } from "../../api/types.js";
-  import { launchTargetMark } from "./agentHarness";
+  import { launchTargetHarness } from "./agentHarness";
 
   /**
-   * A launch target's visible name: the kit-ui harness wordmark when the
-   * target's key resolves to one, otherwise a generic kind icon beside the
-   * label. The label text is always in the DOM so the enclosing button keeps
-   * its accessible name; it is only hidden visually when the wordmark already
-   * says the same thing.
+   * A launch target's icon and label. The icon is the kit-ui harness glyph
+   * when the target's key resolves to one, otherwise the generic kind icon.
+   * The label is always the target's own.
    */
   interface Props {
-    target: Pick<LaunchTarget, "kind" | "key" | "label">;
+    target: Pick<LaunchTarget, "kind" | "key">;
     label: string;
-    /** Wordmark height in px. */
-    markSize?: number;
-    /** Generic icon size in px for targets without a mark; omit to render text only. */
-    iconSize?: number | null;
+    /** Icon size in px, for the harness glyph and the generic fallback alike. */
+    iconSize?: number;
+    /** Render the generic kind icon when no glyph matches; off by default. */
+    fallbackIcon?: boolean;
   }
 
-  const { target, label, markSize = 14, iconSize = null }: Props = $props();
+  const { target, label, iconSize = 14, fallbackIcon = false }: Props = $props();
 
-  const mark = $derived(launchTargetMark(target));
+  const harness = $derived(launchTargetHarness(target));
 </script>
 
 <span class="launch-target-name">
-  {#if mark}
-    <HarnessMark harness={mark.harness} size={markSize} decorative class="launch-target-mark" />
-    <span class={["launch-target-label", !mark.showLabel && "kit-sr-only"]}>{label}</span>
-  {:else}
-    {#if iconSize !== null}
-      <span class="launch-target-icon" aria-hidden="true">
-        {#if target.kind === "plain_shell"}
-          <TerminalIcon size={iconSize} strokeWidth="2" />
-        {:else if target.kind === "agent"}
-          <SparklesIcon size={iconSize} strokeWidth="2" />
-        {:else}
-          <BoxIcon size={iconSize} strokeWidth="2" />
-        {/if}
-      </span>
-    {/if}
-    <span class="launch-target-label">{label}</span>
+  {#if harness}
+    <HarnessIcon {harness} size={iconSize} decorative class="launch-target-icon" />
+  {:else if fallbackIcon}
+    <span class="launch-target-icon" aria-hidden="true">
+      {#if target.kind === "plain_shell"}
+        <TerminalIcon size={iconSize} strokeWidth="2" />
+      {:else if target.kind === "agent"}
+        <SparklesIcon size={iconSize} strokeWidth="2" />
+      {:else}
+        <BoxIcon size={iconSize} strokeWidth="2" />
+      {/if}
+    </span>
   {/if}
+  <span class="launch-target-label">{label}</span>
 </span>
 
 <style>

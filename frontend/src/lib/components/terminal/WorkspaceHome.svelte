@@ -107,7 +107,7 @@
           aria-label={targetLabel(target)}
           onclick={() => onLaunch?.(target.key)}
         >
-          <LaunchTargetName {target} label={targetLabel(target)} markSize={13} iconSize={14} />
+          <LaunchTargetName {target} label={targetLabel(target)} iconSize={14} fallbackIcon />
           {#if isLaunching}
             <span class="card-status">starting…</span>
           {/if}

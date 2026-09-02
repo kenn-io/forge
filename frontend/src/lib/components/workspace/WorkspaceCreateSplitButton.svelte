@@ -232,7 +232,7 @@
             onclick={() => selectTarget(target.key)}
             onkeydown={handleItemKeydown}
           >
-            <LaunchTargetName {target} label={target.label} markSize={12} />
+            <LaunchTargetName {target} label={target.label} iconSize={12} />
           </button>
         </li>
       {/each}

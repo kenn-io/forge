@@ -101,7 +101,7 @@
           title={target.disabled_reason ?? targetLabel(target)}
           onclick={() => launch(target.key)}
         >
-          <LaunchTargetName {target} label={targetLabel(target)} markSize={12} iconSize={13} />
+          <LaunchTargetName {target} label={targetLabel(target)} iconSize={13} fallbackIcon />
         </button>
       {/each}
     </div>

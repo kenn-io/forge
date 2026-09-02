@@ -939,7 +939,7 @@
       <div class="mobile-terminal-sheet__targets">
         {#each launchTargets as target (target.key)}
           <button type="button" disabled={!target.available || launchingTarget !== null || pendingLaunch !== null} title={target.disabled_reason} onclick={() => launch(target.key)}>
-            <span><strong><LaunchTargetName {target} label={target.kind === "plain_shell" ? "Shell" : target.label} markSize={16} /></strong><small>{target.available ? target.source : target.disabled_reason}</small></span>
+            <span><strong><LaunchTargetName {target} label={target.kind === "plain_shell" ? "Shell" : target.label} iconSize={16} /></strong><small>{target.available ? target.source : target.disabled_reason}</small></span>
             {#if launchingTarget === target.key}<Spinner size={16} />{:else}<PlusIcon size="18" aria-hidden="true" />{/if}
           </button>
         {/each}

@@ -5,9 +5,11 @@ packages=("$@")
 if [ "${#packages[@]}" -eq 0 ]; then
   packages=(
     ./internal/server
+    ./internal/server/apitest
     ./internal/github
     ./internal/db
     ./internal/workspace
+    ./internal/workspace/gitstatustest
     ./internal/ratelimit
     .
   )

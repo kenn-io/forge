@@ -1115,6 +1115,24 @@ func (e ResolveRepoItemParamsItemType) Valid() bool {
 	}
 }
 
+// Defines values for UnsetStarredParamsItemType.
+const (
+	UnsetStarredParamsItemTypeIssue UnsetStarredParamsItemType = "issue"
+	UnsetStarredParamsItemTypePr    UnsetStarredParamsItemType = "pr"
+)
+
+// Valid indicates whether the value is a known member of the UnsetStarredParamsItemType enum.
+func (e UnsetStarredParamsItemType) Valid() bool {
+	switch e {
+	case UnsetStarredParamsItemTypeIssue:
+		return true
+	case UnsetStarredParamsItemTypePr:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GetWorkspaceFilePreviewParamsBase.
 const (
 	Head        GetWorkspaceFilePreviewParamsBase = "head"
@@ -6320,6 +6338,19 @@ type ListStacksParams struct {
 	Repo *string `form:"repo,omitempty" json:"repo,omitempty"`
 }
 
+// UnsetStarredParams defines parameters for UnsetStarred.
+type UnsetStarredParams struct {
+	ItemType     UnsetStarredParamsItemType `form:"item_type" json:"item_type"`
+	Provider     string                     `form:"provider" json:"provider"`
+	PlatformHost string                     `form:"platform_host" json:"platform_host"`
+	Owner        string                     `form:"owner" json:"owner"`
+	Name         string                     `form:"name" json:"name"`
+	Number       int64                      `form:"number" json:"number"`
+}
+
+// UnsetStarredParamsItemType defines parameters for UnsetStarred.
+type UnsetStarredParamsItemType string
+
 // TriggerSyncParams defines parameters for TriggerSync.
 type TriggerSyncParams struct {
 	// PriorityRepo Optional repository filters to sync first. Accepts repeated provider|platform_host/repo_path values or comma-separated values.
@@ -6792,9 +6823,6 @@ type CreateRepoPresetJSONRequestBody = RepoPreset
 
 // UpdateRepoPresetJSONRequestBody defines body for UpdateRepoPreset for application/json ContentType.
 type UpdateRepoPresetJSONRequestBody = UpdateRepoPresetInputBody
-
-// UnsetStarredJSONRequestBody defines body for UnsetStarred for application/json ContentType.
-type UnsetStarredJSONRequestBody = StarredRequest
 
 // SetStarredJSONRequestBody defines body for SetStarred for application/json ContentType.
 type SetStarredJSONRequestBody = StarredRequest
@@ -9703,19 +9731,10 @@ type ClientInterface interface {
 	// Corresponds with GET /stacks (the `ListStacks` operationId).
 	ListStacks(ctx context.Context, params *ListStacksParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// UnsetStarredWithBody Unstar repository
-	//
-	// Takes any type of body and a specified content type.
-	//
-	// Corresponds with DELETE /starred (the `UnsetStarred` operationId).
-	UnsetStarredWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
 	// UnsetStarred Unstar repository
 	//
-	// Takes a body of the `application/json` content type.
-	//
 	// Corresponds with DELETE /starred (the `UnsetStarred` operationId).
-	UnsetStarred(ctx context.Context, body UnsetStarredJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	UnsetStarred(ctx context.Context, params *UnsetStarredParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// SetStarredWithBody Star repository
 	//
@@ -16918,30 +16937,11 @@ func (c *Client) ListStacks(ctx context.Context, params *ListStacksParams, reqEd
 	return c.Client.Do(req)
 }
 
-// UnsetStarredWithBody Unstar repository
-//
-// Takes any type of body and a specified content type.
-//
-// Corresponds with DELETE /starred (the `UnsetStarred` operationId).
-func (c *Client) UnsetStarredWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewUnsetStarredRequestWithBody(c.Server, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
 // UnsetStarred Unstar repository
 //
-// Takes a body of the `application/json` content type.
-//
 // Corresponds with DELETE /starred (the `UnsetStarred` operationId).
-func (c *Client) UnsetStarred(ctx context.Context, body UnsetStarredJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewUnsetStarredRequest(c.Server, body)
+func (c *Client) UnsetStarred(ctx context.Context, params *UnsetStarredParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUnsetStarredRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -36580,19 +36580,8 @@ func NewListStacksRequest(server string, params *ListStacksParams) (*http.Reques
 	return req, nil
 }
 
-// NewUnsetStarredRequest calls the generic UnsetStarred builder with application/json body
-func NewUnsetStarredRequest(server string, body UnsetStarredJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewUnsetStarredRequestWithBody(server, "application/json", bodyReader)
-}
-
-// NewUnsetStarredRequestWithBody constructs an http.Request for the UnsetStarred method, with any body, and a specified content type
-func NewUnsetStarredRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+// NewUnsetStarredRequest constructs an http.Request for the UnsetStarred method
+func NewUnsetStarredRequest(server string, params *UnsetStarredParams) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -36610,12 +36599,73 @@ func NewUnsetStarredRequestWithBody(server string, contentType string, body io.R
 		return nil, err
 	}
 
-	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), body)
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", false, "item_type", params.ItemType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", false, "provider", params.Provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", false, "platform_host", params.PlatformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", false, "owner", params.Owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", false, "name", params.Name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", false, "number", params.Number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
-
-	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -39414,10 +39464,8 @@ type ClientWithResponsesInterface interface {
 	// ListStacksWithResponse request
 	ListStacksWithResponse(ctx context.Context, params *ListStacksParams, reqEditors ...RequestEditorFn) (*ListStacksResponse, error)
 
-	// UnsetStarredWithBodyWithResponse request with any body
-	UnsetStarredWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UnsetStarredResponse, error)
-
-	UnsetStarredWithResponse(ctx context.Context, body UnsetStarredJSONRequestBody, reqEditors ...RequestEditorFn) (*UnsetStarredResponse, error)
+	// UnsetStarredWithResponse request
+	UnsetStarredWithResponse(ctx context.Context, params *UnsetStarredParams, reqEditors ...RequestEditorFn) (*UnsetStarredResponse, error)
 
 	// SetStarredWithBodyWithResponse request with any body
 	SetStarredWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetStarredResponse, error)
@@ -50996,17 +51044,9 @@ func (c *ClientWithResponses) ListStacksWithResponse(ctx context.Context, params
 	return ParseListStacksResponse(rsp)
 }
 
-// UnsetStarredWithBodyWithResponse request with arbitrary body returning *UnsetStarredResponse
-func (c *ClientWithResponses) UnsetStarredWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UnsetStarredResponse, error) {
-	rsp, err := c.UnsetStarredWithBody(ctx, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseUnsetStarredResponse(rsp)
-}
-
-func (c *ClientWithResponses) UnsetStarredWithResponse(ctx context.Context, body UnsetStarredJSONRequestBody, reqEditors ...RequestEditorFn) (*UnsetStarredResponse, error) {
-	rsp, err := c.UnsetStarred(ctx, body, reqEditors...)
+// UnsetStarredWithResponse request returning *UnsetStarredResponse
+func (c *ClientWithResponses) UnsetStarredWithResponse(ctx context.Context, params *UnsetStarredParams, reqEditors ...RequestEditorFn) (*UnsetStarredResponse, error) {
+	rsp, err := c.UnsetStarred(ctx, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}

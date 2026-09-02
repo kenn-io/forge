@@ -22186,12 +22186,47 @@ paths:
   /starred:
     delete:
       operationId: unset-starred
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/StarredRequest"
-        required: true
+      parameters:
+        - explode: false
+          in: query
+          name: item_type
+          required: true
+          schema:
+            enum:
+              - pr
+              - issue
+            type: string
+        - explode: false
+          in: query
+          name: provider
+          required: true
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: owner
+          required: true
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: name
+          required: true
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
       responses:
         "200":
           description: OK

@@ -60,6 +60,15 @@ type starredInput struct {
 	Body starredRequest
 }
 
+type unsetStarredInput struct {
+	ItemType     string `query:"item_type" enum:"pr,issue" required:"true"`
+	Provider     string `query:"provider" required:"true"`
+	PlatformHost string `query:"platform_host" required:"true"`
+	Owner        string `query:"owner" required:"true"`
+	Name         string `query:"name" required:"true"`
+	Number       int    `query:"number" required:"true"`
+}
+
 type getRepoInput struct {
 	Provider     string `path:"provider"`
 	PlatformHost string
@@ -615,12 +624,20 @@ func (s *Server) setStarred(ctx context.Context, input *starredInput) (*statusOn
 	return &statusOnlyOutput{Status: http.StatusOK}, nil
 }
 
-func (s *Server) unsetStarred(ctx context.Context, input *starredInput) (*statusOnlyOutput, error) {
-	repoID, err := s.lookupStarredRepoID(ctx, input.Body)
+func (s *Server) unsetStarred(ctx context.Context, input *unsetStarredInput) (*statusOnlyOutput, error) {
+	request := starredRequest{
+		ItemType:     input.ItemType,
+		Provider:     input.Provider,
+		PlatformHost: input.PlatformHost,
+		Owner:        input.Owner,
+		Name:         input.Name,
+		Number:       input.Number,
+	}
+	repoID, err := s.lookupStarredRepoID(ctx, request)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.db.UnsetStarred(ctx, input.Body.ItemType, repoID, input.Body.Number); err != nil {
+	if err := s.db.UnsetStarred(ctx, request.ItemType, repoID, request.Number); err != nil {
 		return nil, httpapi.Internal("unset starred failed")
 	}
 	return &statusOnlyOutput{Status: http.StatusOK}, nil

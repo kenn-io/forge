@@ -210,6 +210,44 @@ describe("pulls store display order", () => {
     expect(store.getError()).toBeNull();
   });
 
+  it("sends unstar identity without a DELETE request body", async () => {
+    const listed = pull(7, "api", "2026-05-20T15:00:00Z", { Starred: true });
+    const remove = vi.fn().mockResolvedValue({ data: undefined, error: undefined });
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ data: [listed], error: undefined })
+      .mockResolvedValue({ data: [{ ...listed, Starred: false }], error: undefined });
+    const store = createPullsStore({
+      client: { DELETE: remove, GET: get } as unknown as GeneratedClient,
+    });
+    const ref = {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "api",
+      repoPath: "acme/api",
+    };
+
+    await loadPulls(store);
+    store.togglePRStar(ref, 7, true);
+
+    await vi.waitFor(() => expect(remove).toHaveBeenCalledTimes(1));
+    expect(remove).toHaveBeenCalledWith("/starred", {
+      params: {
+        query: {
+          item_type: "pr",
+          provider: "github",
+          platform_host: "github.com",
+          owner: "acme",
+          name: "api",
+          number: 7,
+        },
+      },
+      signal: expect.any(AbortSignal),
+    });
+    expect(remove.mock.calls[0]?.[1]).not.toHaveProperty("body");
+  });
+
   it("orders opposite star requests for the same provider item", async () => {
     const first = Promise.withResolvers<{ data: undefined; error: undefined }>();
     const remove = vi.fn(() => first.promise);

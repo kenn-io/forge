@@ -11,7 +11,7 @@ import type {
   IssuesParams,
   IssueSettings,
   Label,
-  StarredRequest,
+  UnsetStarredParams,
 } from "../api/types.js";
 import { retryIdempotentRead } from "../api/retry-policy.js";
 import {
@@ -1649,7 +1649,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   function toggleIssueStar(ref: ProviderRouteRef, number: number, currentlyStarred: boolean): void {
     const platformHost = concretePlatformHost(ref);
     const detailRef = issueDetailRequestRef(ref.owner, ref.name, number, ref);
-    const body: StarredRequest = {
+    const starredItem: UnsetStarredParams = {
       item_type: "issue",
       provider: ref.provider,
       platform_host: platformHost,
@@ -1670,10 +1670,10 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       const commit = (
         currentlyStarred
           ? executeGeneratedApiRequest<void>("DELETE issue star", (client, signal) =>
-              client.DELETE("/starred", { body, signal }),
+              client.DELETE("/starred", { params: { query: starredItem }, signal }),
             )
           : executeGeneratedApiRequest<void>("PUT issue star", (client, signal) =>
-              client.PUT("/starred", { body, signal }),
+              client.PUT("/starred", { body: starredItem, signal }),
             )
       ).pipe(Effect.as(nextStarred));
       const refreshOnStale = readIssueDetail(detailRef, "GET issue after stale star mutation").pipe(

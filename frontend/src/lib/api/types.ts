@@ -43,6 +43,7 @@ export type RequestChangesPRInputBody = components["schemas"]["RequestChangesPRI
 export type MergeParams = components["schemas"]["MergePRInputBody"];
 export type EditPRContentInputBody = components["schemas"]["EditPRContentInputBody"];
 export type StarredRequest = components["schemas"]["StarredRequest"];
+export type UnsetStarredParams = operations["unset-starred"]["parameters"]["query"];
 export type GithubStateInputBody = components["schemas"]["GithubStateInputBody"];
 
 export type LaunchTarget = components["schemas"]["LaunchTarget"];

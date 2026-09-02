@@ -13,7 +13,7 @@ import type {
   PREvent,
   PullDetail,
   RequestChangesPRInputBody,
-  StarredRequest,
+  UnsetStarredParams,
 } from "../api/types.js";
 import type { ApplySuggestionRequest } from "../utils/markdown-suggestions.js";
 import {
@@ -2035,7 +2035,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
         optimisticDetailStarUpdate(ref, number, starred, mutationTick);
         pullsDep?.optimisticStarUpdate?.(ref, number, starred);
       });
-    const body: StarredRequest = {
+    const starredItem: UnsetStarredParams = {
       item_type: "pr",
       provider: ref.provider,
       platform_host: concretePlatformHost(ref),
@@ -2049,10 +2049,10 @@ export function createDetailStore(opts: DetailStoreOptions) {
       const commit = (
         baseline
           ? executeGeneratedApiRequest<void>("DELETE pull request star", (client, signal) =>
-              client.DELETE("/starred", { body, signal }),
+              client.DELETE("/starred", { params: { query: starredItem }, signal }),
             )
           : executeGeneratedApiRequest<void>("PUT pull request star", (client, signal) =>
-              client.PUT("/starred", { body, signal }),
+              client.PUT("/starred", { body: starredItem, signal }),
             )
       ).pipe(Effect.as(optimistic));
       const refreshOnStale = executeGeneratedApiRequest(

@@ -135,6 +135,9 @@ and the root event stream.
 
 ## Transport Trust Boundary
 
+- Mutation identity must not depend on DELETE request bodies: the native desktop
+  transport drops them before requests reach the daemon. Use path or query identity
+  instead (`internal/server/huma_routes.go::unsetStarred`).
 - Loopback TCP is the required cross-platform transport; Unix sockets and
   named pipes are not lifecycle requirements. Background startup rejects
   non-loopback listeners before launching

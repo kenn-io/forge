@@ -2,7 +2,7 @@ import { Effect } from "effect";
 import { executeGeneratedApiRequest, GeneratedApi } from "../api/generated-api.js";
 import { TransientTransportError, type ApiProblemError } from "../api/effect-errors.js";
 import { retryIdempotentRead } from "../api/retry-policy.js";
-import type { KanbanStatus, PullRequest, PullsParams, StarredRequest } from "../api/types.js";
+import type { KanbanStatus, PullRequest, PullsParams, UnsetStarredParams } from "../api/types.js";
 import type { AppRuntime } from "../app/runtime.js";
 import {
   providerDefaultHost,
@@ -325,7 +325,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
 
   function togglePRStar(ref: PullIdentityRef, number: number, currentlyStarred: boolean): void {
     const platformHost = concretePlatformHost(ref);
-    const body: StarredRequest = {
+    const starredItem: UnsetStarredParams = {
       item_type: "pr",
       provider: ref.provider,
       platform_host: platformHost,
@@ -341,10 +341,10 @@ export function createPullsStore(opts: PullsStoreOptions) {
       const commit = (
         currentlyStarred
           ? executeGeneratedApiRequest<void>("DELETE pull request star", (client, signal) =>
-              client.DELETE("/starred", { body, signal }),
+              client.DELETE("/starred", { params: { query: starredItem }, signal }),
             )
           : executeGeneratedApiRequest<void>("PUT pull request star", (client, signal) =>
-              client.PUT("/starred", { body, signal }),
+              client.PUT("/starred", { body: starredItem, signal }),
             )
       ).pipe(Effect.as(nextStarred));
       const refreshOnStale = executeGeneratedApiRequest(

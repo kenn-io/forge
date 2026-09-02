@@ -21,7 +21,7 @@ func (d *DB) ListPRsForNativeStackMembers(ctx context.Context, repoID int64) ([]
 }
 
 func (d *DB) listPRsForStacks(ctx context.Context, repoID int64, stateFilter string) ([]MergeRequest, error) {
-	rows, err := d.ro.QueryContext(ctx, `
+	rows, err := d.roQueryContext(ctx, `
 		SELECT id, number, title, head_branch, base_branch, state, ci_status, review_decision,
 		       head_repo_clone_url
 		FROM forge_merge_requests
@@ -70,7 +70,7 @@ func (d *DB) UpsertStack(ctx context.Context, repoID int64, baseNumber int, name
 		return 0, fmt.Errorf("upsert stack: %w", err)
 	}
 	var id int64
-	err = d.ro.QueryRowContext(ctx,
+	err = d.roQueryRowContext(ctx,
 		`SELECT id FROM forge_stacks WHERE repo_id = ? AND base_number = ?`,
 		repoID, baseNumber,
 	).Scan(&id)
@@ -131,7 +131,7 @@ func (d *DB) ListStacksWithMembers(ctx context.Context, repoFilter string) ([]St
 		}
 		if strings.Count(pathKey, "/") > 1 {
 			var exists int
-			err := d.ro.QueryRowContext(ctx,
+			err := d.roQueryRowContext(ctx,
 				`SELECT 1 FROM forge_repos
 				 WHERE repo_path_key = ? AND lifecycle_state = 'active'
 				 LIMIT 1`,
@@ -170,7 +170,7 @@ func (d *DB) ListStacksWithMembers(ctx context.Context, repoFilter string) ([]St
 		%s
 		ORDER BY s.updated_at DESC`, where)
 
-	rows, err := d.ro.QueryContext(ctx, stackQuery, args...)
+	rows, err := d.roQueryContext(ctx, stackQuery, args...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("list stacks: %w", err)
 	}
@@ -216,7 +216,7 @@ func (d *DB) ListStacksWithMembers(ctx context.Context, repoFilter string) ([]St
 		  )
 		ORDER BY sm.stack_id, sm.position`
 
-	mRows, err := d.ro.QueryContext(ctx, memberQuery, memberArgs...)
+	mRows, err := d.roQueryContext(ctx, memberQuery, memberArgs...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("list stack members: %w", err)
 	}
@@ -307,7 +307,7 @@ func (d *DB) GetStackForPRByRepoID(ctx context.Context, repoID int64, number int
 
 func (d *DB) getStackForPRWhere(ctx context.Context, where string, args ...any) (*Stack, []StackMemberWithPR, error) {
 	var stack Stack
-	err := d.ro.QueryRowContext(ctx, `
+	err := d.roQueryRowContext(ctx, `
 		SELECT s.id, s.repo_id, s.base_number, s.name, s.created_at, s.updated_at
 		FROM forge_stacks s
 		JOIN forge_stack_members sm ON sm.stack_id = s.id
@@ -323,7 +323,7 @@ func (d *DB) getStackForPRWhere(ctx context.Context, where string, args ...any) 
 		return nil, nil, fmt.Errorf("get stack for pr: %w", err)
 	}
 
-	rows, err := d.ro.QueryContext(ctx, `
+	rows, err := d.roQueryContext(ctx, `
 		SELECT sm.stack_id, sm.merge_request_id, sm.position,
 		       p.number, p.title, p.state, p.ci_status, p.review_decision,
 		       p.is_draft, p.base_branch, p.mergeable_state
@@ -374,7 +374,7 @@ func (d *DB) ListMRsBlockedByStackConflicts(ctx context.Context, mrIDs []int64) 
 		args[i] = id
 	}
 
-	rows, err := d.ro.QueryContext(ctx, `
+	rows, err := d.roQueryContext(ctx, `
 		SELECT DISTINCT target.merge_request_id
 		FROM forge_stack_members target
 		JOIN forge_merge_requests target_pr ON target_pr.id = target.merge_request_id

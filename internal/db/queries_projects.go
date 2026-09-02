@@ -137,7 +137,7 @@ const projectFromJoin = `FROM forge_projects p
 // GetProjectByID returns one project by its server-assigned id, joining the
 // linked forge_repos row to populate PlatformIdentity when present.
 func (d *DB) GetProjectByID(ctx context.Context, id string) (*Project, error) {
-	row := d.ro.QueryRowContext(ctx,
+	row := d.roQueryRowContext(ctx,
 		`SELECT `+projectSelectColumns+` `+projectFromJoin+`
 		 WHERE p.id = ?`,
 		id,
@@ -148,7 +148,7 @@ func (d *DB) GetProjectByID(ctx context.Context, id string) (*Project, error) {
 // GetProjectByLocalPath returns the project registered at the given absolute
 // path, or ErrProjectNotFound if no record matches.
 func (d *DB) GetProjectByLocalPath(ctx context.Context, localPath string) (*Project, error) {
-	row := d.ro.QueryRowContext(ctx,
+	row := d.roQueryRowContext(ctx,
 		`SELECT `+projectSelectColumns+` `+projectFromJoin+`
 		 WHERE p.local_path = ?`,
 		localPath,
@@ -158,7 +158,7 @@ func (d *DB) GetProjectByLocalPath(ctx context.Context, localPath string) (*Proj
 
 // ListProjects returns all registered projects ordered by display_name.
 func (d *DB) ListProjects(ctx context.Context) ([]Project, error) {
-	rows, err := d.ro.QueryContext(ctx,
+	rows, err := d.roQueryContext(ctx,
 		`SELECT `+projectSelectColumns+` `+projectFromJoin+`
 		 ORDER BY p.display_name COLLATE NOCASE, p.id`,
 	)
@@ -284,7 +284,7 @@ func (d *DB) adoptProjectWorktreeByPath(
 	ctx context.Context, projectID, branch, path string,
 ) (*ProjectWorktree, error) {
 	var id, owner string
-	if err := d.ro.QueryRowContext(ctx,
+	if err := d.roQueryRowContext(ctx,
 		`SELECT id, project_id FROM forge_project_worktrees WHERE path = ?`,
 		path,
 	).Scan(&id, &owner); err != nil {
@@ -306,7 +306,7 @@ func (d *DB) adoptProjectWorktreeByPath(
 
 // GetProjectWorktreeByID returns one worktree by id.
 func (d *DB) GetProjectWorktreeByID(ctx context.Context, id string) (*ProjectWorktree, error) {
-	row := d.ro.QueryRowContext(ctx,
+	row := d.roQueryRowContext(ctx,
 		`SELECT id, project_id, branch, path, is_stale, is_hidden, session_backend, linked_issue_numbers, created_at, updated_at
 		 FROM forge_project_worktrees WHERE id = ?`,
 		id,
@@ -318,7 +318,7 @@ func (d *DB) GetProjectWorktreeByID(ctx context.Context, id string) (*ProjectWor
 // unique across the registry, so the owning project need not be known — the
 // stale-removal route resolves a worktree from its fleet scoped key this way.
 func (d *DB) GetProjectWorktreeByPath(ctx context.Context, path string) (*ProjectWorktree, error) {
-	row := d.ro.QueryRowContext(ctx,
+	row := d.roQueryRowContext(ctx,
 		`SELECT id, project_id, branch, path, is_stale, is_hidden, session_backend, linked_issue_numbers, created_at, updated_at
 		 FROM forge_project_worktrees WHERE path = ?`,
 		path,
@@ -332,7 +332,7 @@ func (d *DB) ListProjectWorktrees(ctx context.Context, projectID string) ([]Proj
 	if _, err := d.GetProjectByID(ctx, projectID); err != nil {
 		return nil, err
 	}
-	rows, err := d.ro.QueryContext(ctx,
+	rows, err := d.roQueryContext(ctx,
 		`SELECT id, project_id, branch, path, is_stale, is_hidden, session_backend, linked_issue_numbers, created_at, updated_at
 		 FROM forge_project_worktrees
 		 WHERE project_id = ?
@@ -586,7 +586,7 @@ func (d *DB) ListProjectWorktreeTmuxSessions(
 	ctx context.Context,
 	worktreeID string,
 ) ([]ProjectWorktreeTmuxSession, error) {
-	rows, err := d.ro.QueryContext(ctx, `
+	rows, err := d.roQueryContext(ctx, `
 		SELECT s.worktree_id, s.session_key, COALESCE(s.backend_session_key, ''),
 		       s.target_key,
 		       s.label, s.created_at, w.path, w.project_id
@@ -620,7 +620,7 @@ func (d *DB) ListProjectWorktreeTmuxSessions(
 func (d *DB) ListAllProjectWorktreeTmuxSessions(
 	ctx context.Context,
 ) ([]ProjectWorktreeTmuxSession, error) {
-	rows, err := d.ro.QueryContext(ctx, `
+	rows, err := d.roQueryContext(ctx, `
 		SELECT s.worktree_id, s.session_key, COALESCE(s.backend_session_key, ''),
 		       s.target_key,
 		       s.label, s.created_at, w.path, w.project_id

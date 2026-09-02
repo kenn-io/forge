@@ -43,7 +43,7 @@ func (d *DB) UpsertWorktreeStats(
 	}
 
 	var prev WorktreeGitStats
-	readErr := d.ro.QueryRowContext(ctx, `
+	readErr := d.roQueryRowContext(ctx, `
 		SELECT diff_added, diff_removed, sync_ahead, sync_behind
 		FROM forge_worktree_stats WHERE path = ?`, path,
 	).Scan(&prev.DiffAdded, &prev.DiffRemoved, &prev.SyncAhead, &prev.SyncBehind)
@@ -89,7 +89,7 @@ func worktreeStatsCountsEqual(a, b WorktreeGitStats) bool {
 func (d *DB) ListWorktreeStats(
 	ctx context.Context,
 ) (map[string]WorktreeGitStats, error) {
-	rows, err := d.ro.QueryContext(ctx, `
+	rows, err := d.roQueryContext(ctx, `
 		SELECT path, diff_added, diff_removed, sync_ahead, sync_behind, sampled_at
 		FROM forge_worktree_stats`,
 	)

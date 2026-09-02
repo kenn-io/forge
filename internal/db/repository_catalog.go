@@ -166,7 +166,7 @@ func (d *DB) getRepositoryByProviderID(
 	})
 	return loadRepositoryCatalogEntry(
 		ctx,
-		d.ro,
+		d.roStmts,
 		`r.platform = ? AND r.platform_host = ? AND r.platform_repo_id = ?`,
 		identity.Platform,
 		identity.PlatformHost,
@@ -265,7 +265,7 @@ func (d *DB) GetPullDiffProviderSnapshotUnderRepositoryReconciliationRead(
 			Route:      route,
 		},
 	}
-	err = d.ro.QueryRowContext(ctx, `
+	err = d.roQueryRowContext(ctx, `
 		SELECT p.number, p.snapshot_revision,
 		       p.platform_head_sha, p.platform_base_sha,
 		       p.diff_head_sha, p.diff_base_sha, p.merge_base_sha, p.state
@@ -334,7 +334,7 @@ func (d *DB) ResolveCurrentRepositoryRouteFence(
 	defer release()
 
 	fence, found, err := currentRepositoryRouteFence(
-		ctx, d.ro, identity,
+		ctx, d.roStmts, identity,
 	)
 	if err != nil {
 		return RepositoryRouteFence{}, false, err
@@ -350,7 +350,7 @@ func (d *DB) RepositoryRouteFenceMatchesUnderRepositoryReconciliationRead(
 	fence RepositoryRouteFence,
 ) (bool, error) {
 	identity = canonicalRepoIdentity(identity)
-	current, found, err := currentRepositoryRouteFence(ctx, d.ro, identity)
+	current, found, err := currentRepositoryRouteFence(ctx, d.roStmts, identity)
 	if err != nil || !found {
 		return false, err
 	}
@@ -375,7 +375,7 @@ func (d *DB) resolveActiveRepositoryRoute(
 	}
 	return loadRepositoryCatalogEntry(
 		ctx,
-		d.ro,
+		d.roStmts,
 		`r.lifecycle_state = 'active' AND EXISTS (
 			SELECT 1
 			FROM forge_repo_routes rr
@@ -485,7 +485,7 @@ func (d *DB) ListRepositoryCatalog(
 		query += " WHERE " + strings.Join(clauses, " AND ")
 	}
 	query += ` ORDER BY r.platform, r.platform_host, r.owner_key, r.name_key, r.id`
-	rows, err := d.ro.QueryContext(ctx, query, args...)
+	rows, err := d.roQueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list repository catalog: %w", err)
 	}
@@ -504,7 +504,7 @@ func (d *DB) ListRepositoryCatalog(
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate repository catalog: %w", err)
 	}
-	routes, err := loadRepositoryRoutes(ctx, d.ro, repoIDs)
+	routes, err := loadRepositoryRoutes(ctx, d.roStmts, repoIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -837,7 +837,7 @@ func (d *DB) RepositoryRouteHasOtherRepository(
 		return false, err
 	}
 	defer release()
-	return repositoryRouteHasOtherRepository(ctx, d.ro, identity, repoID)
+	return repositoryRouteHasOtherRepository(ctx, d.roStmts, identity, repoID)
 }
 
 // AdoptLegacyClonesIfSafe runs adopt while repoID remains the verified current
@@ -864,7 +864,7 @@ func (d *DB) AdoptLegacyClonesIfSafe(
 	defer release()
 
 	var allowed bool
-	err = d.ro.QueryRowContext(ctx, `
+	err = d.roQueryRowContext(ctx, `
 		SELECT EXISTS (
 			SELECT 1
 			FROM forge_repo_routes AS current

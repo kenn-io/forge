@@ -797,7 +797,7 @@ func (d *DB) ReplaceRepoLabelCatalog(ctx context.Context, repoID int64, labels [
 }
 
 func (d *DB) ListRepoLabelCatalog(ctx context.Context, repoID int64) ([]Label, LabelCatalogFreshness, error) {
-	rows, err := d.ro.QueryContext(ctx, `
+	rows, err := d.roQueryContext(ctx, `
 		SELECT id, repo_id, COALESCE(platform_id, 0), platform_external_id,
 		       name, description, color, is_default, updated_at,
 		       catalog_present, catalog_seen_at
@@ -841,7 +841,7 @@ func (d *DB) ListRepoLabelCatalog(ctx context.Context, repoID int64) ([]Label, L
 
 func (d *DB) GetRepoLabelCatalogFreshness(ctx context.Context, repoID int64) (LabelCatalogFreshness, error) {
 	var freshness LabelCatalogFreshness
-	err := d.ro.QueryRowContext(ctx, `
+	err := d.roQueryRowContext(ctx, `
 		SELECT label_catalog_synced_at, label_catalog_checked_at, label_catalog_sync_error
 		FROM forge_repos
 		WHERE id = ?`, repoID,
@@ -927,7 +927,7 @@ func (d *DB) loadLabelsForMergeRequests(ctx context.Context, ids []int64) (map[i
 		JOIN forge_labels l ON l.id = ml.label_id
 		WHERE ml.merge_request_id IN (%s)
 		ORDER BY l.name, l.id`, sqlPlaceholders(len(ids)))
-	rows, err := d.ro.QueryContext(ctx, query, args...)
+	rows, err := d.roQueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query merge request labels: %w", err)
 	}
@@ -963,7 +963,7 @@ func (d *DB) loadLabelsForIssues(ctx context.Context, ids []int64) (map[int64][]
 		JOIN forge_labels l ON l.id = il.label_id
 		WHERE il.issue_id IN (%s)
 		ORDER BY l.name, l.id`, sqlPlaceholders(len(ids)))
-	rows, err := d.ro.QueryContext(ctx, query, args...)
+	rows, err := d.roQueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query issue labels: %w", err)
 	}
@@ -1190,7 +1190,7 @@ func lookupRepoIdentityByIDTx(
 }
 
 func (d *DB) ListRepos(ctx context.Context) ([]Repo, error) {
-	rows, err := d.ro.QueryContext(ctx,
+	rows, err := d.roQueryContext(ctx,
 		`SELECT id, platform, platform_host, platform_repo_id,
 		        owner, name, repo_path,
 		        owner_key, name_key, repo_path_key,
@@ -1424,7 +1424,7 @@ func (d *DB) getRepoByID(ctx context.Context, id int64, activeOnly bool) (*Repo,
 	if activeOnly {
 		query += ` AND lifecycle_state = 'active'`
 	}
-	err := d.ro.QueryRowContext(ctx, query, id).Scan(
+	err := d.roQueryRowContext(ctx, query, id).Scan(
 		&r.ID, &r.Platform, &r.PlatformHost, &r.PlatformRepoID,
 		&r.Owner, &r.Name, &r.RepoPath,
 		&r.OwnerKey, &r.NameKey, &r.RepoPathKey,
@@ -1851,7 +1851,7 @@ func (d *DB) GetMergeRequest(
 	platform = canonicalRepoPlatform(platform)
 	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
 	var mr MergeRequest
-	err := d.ro.QueryRowContext(ctx, `
+	err := d.roQueryRowContext(ctx, `
 		SELECT p.id, p.snapshot_revision, p.repo_id, p.platform_id, p.platform_external_id, p.number, p.url, p.title,
 		       p.author, p.author_display_name, p.state, p.is_draft, p.is_locked,
 		       p.body, p.head_branch, p.base_branch,
@@ -1948,7 +1948,7 @@ func (d *DB) getMergeRequestByRepoIDAndNumber(
 			  AND ai.lifecycle_state = 'removed_upstream'
 		)`
 	}
-	err := d.ro.QueryRowContext(ctx, `
+	err := d.roQueryRowContext(ctx, `
 		SELECT p.id, p.snapshot_revision, p.repo_id, p.platform_id, p.platform_external_id, p.number, p.url, p.title,
 		       p.author, p.author_display_name, p.state, p.is_draft, p.is_locked,
 		       p.body, p.head_branch, p.base_branch,
@@ -2125,7 +2125,7 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 		ORDER BY %s DESC, p.id DESC`, activityCTE, activityJoin, where, activityOrder)
 	query = appendLimitOffset(query, &args, opts.Limit, opts.Offset)
 
-	rows, err := d.ro.QueryContext(ctx, query, args...)
+	rows, err := d.roQueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list merge requests: %w", err)
 	}
@@ -2423,7 +2423,7 @@ func (d *DB) MRCommentEventExists(
 	platformID int64,
 ) (bool, error) {
 	var exists bool
-	err := d.ro.QueryRowContext(ctx, `
+	err := d.roQueryRowContext(ctx, `
 		SELECT EXISTS (
 			SELECT 1
 			FROM forge_mr_events
@@ -2487,7 +2487,7 @@ func replaceMRCommentEventsTx(
 
 // ListMREvents returns all events for a merge request ordered by created_at DESC.
 func (d *DB) ListMREvents(ctx context.Context, mrID int64) ([]MREvent, error) {
-	return listMREvents(ctx, d.ro, mrID)
+	return listMREvents(ctx, d.roStmts, mrID)
 }
 
 type mrEventQueryer interface {
@@ -2552,7 +2552,7 @@ func (d *DB) UpdateThreadResolved(ctx context.Context, mrID int64, threadID stri
 func (d *DB) mergeRequestWorkflowRef(ctx context.Context, mrID int64) (int64, int, error) {
 	var repoID int64
 	var number int
-	err := d.ro.QueryRowContext(ctx,
+	err := d.roQueryRowContext(ctx,
 		`SELECT repo_id, number FROM forge_merge_requests WHERE id = ?`,
 		mrID,
 	).Scan(&repoID, &number)
@@ -2590,7 +2590,7 @@ func (d *DB) SetKanbanState(ctx context.Context, mrID int64, status string) erro
 // GetKanbanState returns the PR workflow state for a merge request, or nil if not found.
 func (d *DB) GetKanbanState(ctx context.Context, mrID int64) (*KanbanState, error) {
 	var k KanbanState
-	err := d.ro.QueryRowContext(ctx,
+	err := d.roQueryRowContext(ctx,
 		`SELECT p.id, w.status, w.updated_at
 		   FROM forge_merge_requests p
 		   JOIN forge_item_workflow_state w
@@ -2614,7 +2614,7 @@ func (d *DB) GetPreviouslyOpenMRNumbers(
 	repoID int64,
 	stillOpen map[int]bool,
 ) ([]int, error) {
-	rows, err := d.ro.QueryContext(ctx,
+	rows, err := d.roQueryContext(ctx,
 		`SELECT mr.number FROM forge_merge_requests mr
 		 WHERE mr.repo_id = ? AND mr.state = 'open'
 		   AND NOT EXISTS (
@@ -2677,7 +2677,7 @@ func (d *DB) GetMergedMRNumbersMissingMergedActor(
 	before MergedMRMissingActorCursor,
 	limit int,
 ) ([]MergedMRMissingActor, error) {
-	rows, err := d.ro.QueryContext(ctx,
+	rows, err := d.roQueryContext(ctx,
 		`SELECT mr.id, mr.number, mr.merged_at FROM forge_merge_requests mr
 		 WHERE mr.repo_id = ? AND mr.state = 'merged'
 		   AND mr.merged_at >= ?
@@ -2717,7 +2717,7 @@ func (d *DB) GetMergedMRNumbersMissingMergedActor(
 
 func (d *DB) CountOpenMergeRequestsForRepo(ctx context.Context, repoID int64) (int, error) {
 	var count int
-	err := d.ro.QueryRowContext(ctx,
+	err := d.roQueryRowContext(ctx,
 		`SELECT COUNT(*) FROM forge_merge_requests
 		WHERE repo_id = ? AND state = 'open'`,
 		repoID,
@@ -3015,7 +3015,7 @@ func (d *DB) GetDiffSHAsByRepoID(ctx context.Context, repoID int64, number int) 
 
 func (d *DB) getDiffSHAs(ctx context.Context, where string, args ...any) (*DiffSHAs, error) {
 	var s DiffSHAs
-	err := d.ro.QueryRowContext(ctx, `
+	err := d.roQueryRowContext(ctx, `
 		SELECT p.platform_head_sha, p.platform_base_sha,
 		       p.diff_head_sha, p.diff_base_sha, p.merge_base_sha,
 		       p.state
@@ -3206,7 +3206,7 @@ func (d *DB) GetIssue(
 	platform = canonicalRepoPlatform(platform)
 	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
 	var issue Issue
-	err := d.ro.QueryRowContext(ctx, `
+	err := d.roQueryRowContext(ctx, `
 		SELECT i.id, i.snapshot_revision, i.repo_id, i.platform_id, i.platform_external_id, i.number, i.url, i.title,
 		       i.author, i.state, i.body, i.comment_count, i.labels_json, i.assignees_json,
 		       i.detail_fetched_at,
@@ -3286,7 +3286,7 @@ func (d *DB) getIssueByRepoIDAndNumber(
 			  AND ai.lifecycle_state = 'removed_upstream'
 		)`
 	}
-	err := d.ro.QueryRowContext(ctx, `
+	err := d.roQueryRowContext(ctx, `
 		SELECT i.id, i.snapshot_revision, i.repo_id, i.platform_id, i.platform_external_id, i.number, i.url, i.title,
 		       i.author, i.state, i.body, i.comment_count, i.labels_json, i.assignees_json,
 		       i.detail_fetched_at,
@@ -3432,7 +3432,7 @@ func (d *DB) ListIssues(
 		ORDER BY %s DESC, i.id DESC`, activityCTE, activityJoin, where, activityOrder)
 	query = appendLimitOffset(query, &args, opts.Limit, opts.Offset)
 
-	rows, err := d.ro.QueryContext(ctx, query, args...)
+	rows, err := d.roQueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list issues: %w", err)
 	}
@@ -3481,7 +3481,7 @@ func (d *DB) ResolveItemNumber(
 	ctx context.Context, repoID int64, number int,
 ) (itemType string, found bool, err error) {
 	var exists int
-	err = d.ro.QueryRowContext(ctx,
+	err = d.roQueryRowContext(ctx,
 		`SELECT 1 FROM forge_merge_requests
 		 WHERE repo_id = ? AND number = ?
 		   AND NOT EXISTS (
@@ -3500,7 +3500,7 @@ func (d *DB) ResolveItemNumber(
 		return "", false, fmt.Errorf("check merge_requests: %w", err)
 	}
 
-	err = d.ro.QueryRowContext(ctx,
+	err = d.roQueryRowContext(ctx,
 		`SELECT 1 FROM forge_issues
 		 WHERE repo_id = ? AND number = ?
 		   AND NOT EXISTS (
@@ -3553,7 +3553,7 @@ func (d *DB) ResolveItemNumberOfType(
 	}
 
 	var exists int
-	err := d.ro.QueryRowContext(ctx, query, repoID, number).Scan(&exists)
+	err := d.roQueryRowContext(ctx, query, repoID, number).Scan(&exists)
 	if err == nil {
 		return itemType, true, nil
 	}
@@ -3591,7 +3591,7 @@ func (d *DB) GetPreviouslyOpenIssueNumbers(
 	repoID int64,
 	stillOpen map[int]bool,
 ) ([]int, error) {
-	rows, err := d.ro.QueryContext(ctx,
+	rows, err := d.roQueryContext(ctx,
 		`SELECT i.number FROM forge_issues i
 		 WHERE i.repo_id = ? AND i.state = 'open'
 		   AND NOT EXISTS (
@@ -3623,7 +3623,7 @@ func (d *DB) GetPreviouslyOpenIssueNumbers(
 
 func (d *DB) CountOpenIssuesForRepo(ctx context.Context, repoID int64) (int, error) {
 	var count int
-	err := d.ro.QueryRowContext(ctx,
+	err := d.roQueryRowContext(ctx,
 		`SELECT COUNT(*) FROM forge_issues
 		WHERE repo_id = ? AND state = 'open'`,
 		repoID,
@@ -3641,7 +3641,7 @@ func (d *DB) GetHTTPEtag(
 ) (string, error) {
 	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
 	var etag string
-	err := d.ro.QueryRowContext(ctx,
+	err := d.roQueryRowContext(ctx,
 		`SELECT etag FROM forge_http_etags
 		WHERE platform = ?
 		  AND platform_host = ?
@@ -3955,7 +3955,7 @@ func (d *DB) IssueCommentEventExists(
 	platformID int64,
 ) (bool, error) {
 	var exists bool
-	err := d.ro.QueryRowContext(ctx, `
+	err := d.roQueryRowContext(ctx, `
 		SELECT EXISTS (
 			SELECT 1
 			FROM forge_issue_events
@@ -4021,7 +4021,7 @@ func replaceIssueCommentEventsTx(
 
 // ListIssueEvents returns all events for an issue ordered by created_at DESC.
 func (d *DB) ListIssueEvents(ctx context.Context, issueID int64) ([]IssueEvent, error) {
-	rows, err := d.ro.QueryContext(ctx, `
+	rows, err := d.roQueryContext(ctx, `
 		SELECT id, issue_id, platform_id, platform_external_id, event_type, author, summary, body,
 		       metadata_json, created_at, dedupe_key, direct_url, thread_id
 		FROM forge_issue_events
@@ -4070,7 +4070,7 @@ func (d *DB) ListCommentAutocompleteUsers(
 	containsQuery := "%" + strings.ToLower(query) + "%"
 	prefixQuery := strings.ToLower(query) + "%"
 
-	rows, err := d.ro.QueryContext(ctx, `
+	rows, err := d.roQueryContext(ctx, `
 		WITH repo AS (
 			SELECT id
 			FROM forge_repos
@@ -4176,7 +4176,7 @@ func (d *DB) ListCommentAutocompleteReferences(
 	titleQuery := "%" + strings.ToLower(query) + "%"
 	numberPrefix := query + "%"
 
-	rows, err := d.ro.QueryContext(ctx, `
+	rows, err := d.roQueryContext(ctx, `
 		WITH repo AS (
 			SELECT id
 			FROM forge_repos
@@ -4283,7 +4283,7 @@ func (d *DB) IsStarred(
 	ctx context.Context, itemType string, repoID int64, number int,
 ) (bool, error) {
 	var count int
-	err := d.ro.QueryRowContext(ctx, `
+	err := d.roQueryRowContext(ctx, `
 		SELECT COUNT(*) FROM forge_starred_items
 		WHERE item_type = ? AND repo_id = ? AND number = ?`,
 		itemType, repoID, number,
@@ -4325,7 +4325,7 @@ func (d *DB) UpsertPlatformRateLimit(
 	rateLimit int,
 	rateResetAt *time.Time,
 ) error {
-	_, err := d.rw.Exec(`
+	_, err := d.rwExecContext(context.Background(), `
 		INSERT INTO forge_rate_limits
 		    (platform, platform_host, rate_principal, api_type, requests_hour,
 		     hour_start, rate_remaining, rate_limit, rate_reset_at, updated_at)
@@ -4363,7 +4363,7 @@ func (d *DB) GetPlatformRateLimit(
 	apiType string,
 ) (*RateLimit, error) {
 	var r RateLimit
-	err := d.ro.QueryRow(`
+	err := d.roQueryRowContext(context.Background(), `
 		SELECT id, platform, platform_host, rate_principal, api_type,
 		       requests_hour, hour_start, rate_remaining, rate_limit,
 		       rate_reset_at, updated_at
@@ -4432,7 +4432,7 @@ func (d *DB) SetWorktreeLinks(
 func (d *DB) GetWorktreeLinksForMR(
 	ctx context.Context, mergeRequestID int64,
 ) ([]WorktreeLink, error) {
-	rows, err := d.ro.QueryContext(ctx, `
+	rows, err := d.roQueryContext(ctx, `
 		SELECT id, merge_request_id, worktree_key,
 		       worktree_path, worktree_branch, linked_at
 		FROM forge_mr_worktree_links
@@ -4476,7 +4476,7 @@ func (d *DB) GetWorktreeLinksForMRs(
 			WHERE merge_request_id IN (` +
 			strings.Join(placeholders, ",") + `)
 			ORDER BY linked_at DESC`
-		rows, err := d.ro.QueryContext(ctx, query, args...)
+		rows, err := d.roQueryContext(ctx, query, args...)
 		if err != nil {
 			return nil, fmt.Errorf(
 				"get worktree links for MRs: %w", err,
@@ -4497,7 +4497,7 @@ func (d *DB) GetWorktreeLinksForMRs(
 func (d *DB) GetAllWorktreeLinks(
 	ctx context.Context,
 ) ([]WorktreeLink, error) {
-	rows, err := d.ro.QueryContext(ctx, `
+	rows, err := d.roQueryContext(ctx, `
 		SELECT id, merge_request_id, worktree_key,
 		       worktree_path, worktree_branch, linked_at
 		FROM forge_mr_worktree_links
@@ -4534,7 +4534,7 @@ func (d *DB) workspaceRouteHasHistoricalOccupants(
 	// cataloged). Legacy route-only repositories (no provider ID) record
 	// their route as non-current without being vacated, so a record with
 	// no occupant counts only when its repository is cataloged.
-	err := d.ro.QueryRowContext(ctx, `
+	err := d.roQueryRowContext(ctx, `
 		SELECT EXISTS (
 			SELECT 1
 			FROM forge_repo_routes historical
@@ -4601,7 +4601,7 @@ func (d *DB) canonicalizeWorkspaceRepo(
 
 	var matchedProvider, displayOwner, displayName, repoOwnerKey, repoNameKey, repoPathKey string
 	var repoID int64
-	err := d.ro.QueryRowContext(ctx, `
+	err := d.roQueryRowContext(ctx, `
 		SELECT platform, owner, name, owner_key, name_key, repo_path_key, id
 		FROM forge_repos
 		WHERE platform_host = ? AND repo_path_key = ?
@@ -4779,7 +4779,7 @@ func (d *DB) InsertWorkspace(
 	if err != nil {
 		return err
 	}
-	if err := insertPreparedWorkspace(ctx, d.rw, ws, prepared); err != nil {
+	if err := insertPreparedWorkspace(ctx, d.rwStmts, ws, prepared); err != nil {
 		return err
 	}
 	ws.ItemKey = prepared.itemKey
@@ -4886,7 +4886,7 @@ func insertPreparedWorkspace(
 func (d *DB) GetWorkspace(
 	ctx context.Context, id string,
 ) (*Workspace, error) {
-	ws, err := d.scanWorkspace(ctx, d.ro.QueryRowContext(ctx, `
+	ws, err := d.scanWorkspace(ctx, d.roQueryRowContext(ctx, `
 		SELECT id, platform, platform_host, repo_owner, repo_name, repo_id,
 		       item_type, item_number, item_key, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
@@ -4975,7 +4975,7 @@ func (d *DB) GetWorkspaceLinkedToMRForProvider(
 		mrNumber,
 		WorkspaceItemTypePullRequest, mrNumber,
 	)
-	ws, err := d.scanWorkspace(ctx, d.ro.QueryRowContext(ctx, query, args...))
+	ws, err := d.scanWorkspace(ctx, d.roQueryRowContext(ctx, query, args...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -5012,7 +5012,7 @@ func (d *DB) getWorkspaceByMR(
 			WHERE item_type = ? AND item_number = ?
 			  AND (` + predicate + `)`
 	args := append([]any{WorkspaceItemTypePullRequest, mrNumber}, lookupArgs...)
-	ws, err := d.scanWorkspace(ctx, d.ro.QueryRowContext(ctx, query, args...))
+	ws, err := d.scanWorkspace(ctx, d.roQueryRowContext(ctx, query, args...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -5071,7 +5071,7 @@ func (d *DB) getWorkspaceByIssue(
 		WHERE item_type = ? AND item_number = ?
 		  AND (` + predicate + `)`
 	args := append([]any{WorkspaceItemTypeIssue, issueNumber}, lookupArgs...)
-	ws, err := d.scanWorkspace(ctx, d.ro.QueryRowContext(ctx, query, args...))
+	ws, err := d.scanWorkspace(ctx, d.roQueryRowContext(ctx, query, args...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -5112,7 +5112,7 @@ func (d *DB) GetWorkspaceByItemKeyForProvider(
 		WHERE item_type = ? AND item_key = ?
 		  AND (` + predicate + `)`
 	args := append([]any{itemType, itemKey}, lookupArgs...)
-	ws, err := d.scanWorkspace(ctx, d.ro.QueryRowContext(ctx, query, args...))
+	ws, err := d.scanWorkspace(ctx, d.roQueryRowContext(ctx, query, args...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -5134,7 +5134,7 @@ func (d *DB) GetKataWorkspaceByIssue(
 	if daemonID == "" || issueUID == "" {
 		return nil, nil
 	}
-	ws, err := d.scanWorkspace(ctx, d.ro.QueryRowContext(ctx, `
+	ws, err := d.scanWorkspace(ctx, d.roQueryRowContext(ctx, `
 		SELECT id, platform, platform_host, repo_owner, repo_name, repo_id,
 		       item_type, item_number, item_key, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
@@ -5161,7 +5161,7 @@ func (d *DB) GetKataWorkspaceByIssue(
 func (d *DB) ListWorkspaces(
 	ctx context.Context,
 ) ([]Workspace, error) {
-	rows, err := d.ro.QueryContext(ctx, `
+	rows, err := d.roQueryContext(ctx, `
 		SELECT w.id,
 		       COALESCE(r.platform, w.platform),
 		       COALESCE(r.platform_host, w.platform_host),
@@ -5272,7 +5272,7 @@ func (d *DB) beginWorkspaceDeletion(
 		return true, nil
 	}
 	var status string
-	err = d.ro.QueryRowContext(ctx, `SELECT status FROM forge_workspaces WHERE id = ?`, id).Scan(&status)
+	err = d.roQueryRowContext(ctx, `SELECT status FROM forge_workspaces WHERE id = ?`, id).Scan(&status)
 	if errors.Is(err, sql.ErrNoRows) || status == "deleting" ||
 		(!retryFailure && status == "deletion_failed") {
 		return false, nil
@@ -5456,7 +5456,7 @@ func (d *DB) UpdateWorkspaceMRHeadRepoForSnapshot(
 		return true, nil
 	}
 	var workspaceExists bool
-	if err := d.ro.QueryRowContext(
+	if err := d.roQueryRowContext(
 		ctx,
 		`SELECT EXISTS(
 		    SELECT 1 FROM forge_workspaces WHERE id = ?
@@ -5547,7 +5547,7 @@ func (d *DB) InsertWorkspaceSetupEvent(
 func (d *DB) ListWorkspaceSetupEvents(
 	ctx context.Context, workspaceID string,
 ) ([]WorkspaceSetupEvent, error) {
-	rows, err := d.ro.QueryContext(ctx, `
+	rows, err := d.roQueryContext(ctx, `
 		SELECT id, workspace_id, stage, outcome, message,
 		       created_at
 		FROM forge_workspace_setup_events
@@ -5595,7 +5595,7 @@ func (d *DB) ListWorkspaceRuntimeSessions(
 	ctx context.Context,
 	workspaceID string,
 ) ([]WorkspaceRuntimeSession, error) {
-	rows, err := d.ro.QueryContext(ctx, `
+	rows, err := d.roQueryContext(ctx, `
 		SELECT workspace_id, session_key, target_key, label, kind, display_region, scope,
 		       tmux_session, created_at
 		FROM forge_workspace_runtime_sessions
@@ -5615,7 +5615,7 @@ func (d *DB) ListWorkspaceRuntimeSessions(
 func (d *DB) ListAllWorkspaceRuntimeSessions(
 	ctx context.Context,
 ) ([]WorkspaceRuntimeSession, error) {
-	rows, err := d.ro.QueryContext(ctx, `
+	rows, err := d.roQueryContext(ctx, `
 		SELECT workspace_id, session_key, target_key, label, kind, display_region, scope,
 		       tmux_session, created_at
 		FROM forge_workspace_runtime_sessions
@@ -5635,7 +5635,7 @@ func (d *DB) ListWorkspaceRuntimeTmuxSessions(
 	ctx context.Context,
 	workspaceID string,
 ) ([]WorkspaceRuntimeSession, error) {
-	rows, err := d.ro.QueryContext(ctx, `
+	rows, err := d.roQueryContext(ctx, `
 		SELECT workspace_id, session_key, target_key, label, kind, display_region, scope,
 		       tmux_session, created_at
 		FROM forge_workspace_runtime_sessions
@@ -5655,7 +5655,7 @@ func (d *DB) ListWorkspaceRuntimeTmuxSessions(
 func (d *DB) ListAllWorkspaceRuntimeTmuxSessions(
 	ctx context.Context,
 ) ([]WorkspaceRuntimeSession, error) {
-	rows, err := d.ro.QueryContext(ctx, `
+	rows, err := d.roQueryContext(ctx, `
 		SELECT workspace_id, session_key, target_key, label, kind, display_region, scope,
 		       tmux_session, created_at
 		FROM forge_workspace_runtime_sessions
@@ -5967,7 +5967,7 @@ func (d *DB) ListWorkspaceSummaries(
 	query := "SELECT " + workspaceSummaryColumns +
 		workspaceSummaryJoins +
 		"\nORDER BY w.created_at DESC"
-	rows, err := d.ro.QueryContext(ctx, query)
+	rows, err := d.roQueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"list workspace summaries: %w", err,
@@ -5997,7 +5997,7 @@ func (d *DB) GetWorkspaceSummary(
 		workspaceSummaryJoins +
 		"\nWHERE w.id = ?"
 	s, err := scanWorkspaceSummary(
-		d.ro.QueryRowContext(ctx, query, id),
+		d.roQueryRowContext(ctx, query, id),
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil

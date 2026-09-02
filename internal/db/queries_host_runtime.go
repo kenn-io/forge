@@ -52,7 +52,7 @@ func (d *DB) UpsertHostRuntimeTmuxSession(
 func (d *DB) ListHostRuntimeTmuxSessions(
 	ctx context.Context,
 ) ([]HostRuntimeTmuxSession, error) {
-	rows, err := d.ro.QueryContext(ctx, `
+	rows, err := d.roQueryContext(ctx, `
 		SELECT session_key, COALESCE(backend_session_key, ''), label, cwd,
 		       created_at
 		FROM forge_host_runtime_sessions

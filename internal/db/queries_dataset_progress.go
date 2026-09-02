@@ -339,7 +339,7 @@ func (d *DB) GetDatasetProgress(
 	var nextRetryAt, lastErrorCode, lastErrorDetail sql.NullString
 	var startedAt, completedAt sql.NullString
 	var updatedAt string
-	err := d.ro.QueryRowContext(ctx, `
+	err := d.roQueryRowContext(ctx, `
 		SELECT repo_id, item_type, item_number, dataset,
 			parent_revision, scan_generation, next_cursor, last_input_cursor,
 			page_count, status, observed_count, attempt_count,

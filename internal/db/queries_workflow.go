@@ -45,7 +45,7 @@ func (d *DB) GetItemWorkflowState(
 		return nil, err
 	}
 	var w ItemWorkflowState
-	err := d.ro.QueryRowContext(ctx,
+	err := d.roQueryRowContext(ctx,
 		`SELECT repo_id, item_type, item_number, status, updated_at,
 		        updated_source, updated_actor, updated_reason
 		   FROM forge_item_workflow_state
@@ -382,7 +382,7 @@ func (d *DB) ListItemWorkflowStates(
 		         t.platform, t.platform_host, t.owner, t.name, t.item_type, t.number
 		LIMIT ?`, prWhere, issueWhere, where)
 
-	rows, err := d.ro.QueryContext(ctx, query, args...)
+	rows, err := d.roQueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, "", fmt.Errorf("list item workflow states: %w", err)
 	}

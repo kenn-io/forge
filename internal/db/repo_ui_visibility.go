@@ -15,7 +15,7 @@ func (d *DB) SetRepoHiddenFromUI(
 	ctx context.Context, repoID int64, hidden bool,
 ) error {
 	if hidden {
-		if _, err := d.rw.ExecContext(ctx,
+		if _, err := d.rwExecContext(ctx,
 			`INSERT INTO forge_hidden_repos (repo_id) VALUES (?)
 			 ON CONFLICT(repo_id) DO NOTHING`,
 			repoID,
@@ -24,7 +24,7 @@ func (d *DB) SetRepoHiddenFromUI(
 		}
 		return nil
 	}
-	if _, err := d.rw.ExecContext(ctx,
+	if _, err := d.rwExecContext(ctx,
 		`DELETE FROM forge_hidden_repos WHERE repo_id = ?`, repoID,
 	); err != nil {
 		return fmt.Errorf("show repo %d in UI: %w", repoID, err)
@@ -37,7 +37,7 @@ func (d *DB) SetRepoHiddenFromUI(
 // to exclude repositories from interactive catalogs and to mark configured
 // entries as hidden on the settings surface.
 func (d *DB) HiddenRepos(ctx context.Context) ([]Repo, error) {
-	rows, err := d.ro.QueryContext(ctx,
+	rows, err := d.roQueryContext(ctx,
 		`SELECT r.id, r.platform, r.platform_host, r.platform_repo_id,
 		        r.owner, r.name, r.repo_path
 		 FROM forge_repos r

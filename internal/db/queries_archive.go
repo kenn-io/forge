@@ -669,7 +669,7 @@ func (d *DB) QueueArchivePromptByIdentity(
 	identity RepoIdentity,
 	now time.Time,
 ) error {
-	return queueArchivePromptByIdentity(ctx, d.rw, identity, now)
+	return queueArchivePromptByIdentity(ctx, d.rwStmts, identity, now)
 }
 
 type archiveExecer interface {
@@ -706,7 +706,7 @@ func queueArchivePromptByIdentity(
 // ListArchiveRepoStates returns stored archive state in repository ID order.
 func (d *DB) ListArchiveRepoStates(ctx context.Context, repoIDs []int64) ([]ArchiveRepoState, error) {
 	repoIDs = normalizedArchiveRepoIDs(repoIDs)
-	return listArchiveRepoStates(ctx, d.ro, repoIDs)
+	return listArchiveRepoStates(ctx, d.roStmts, repoIDs)
 }
 
 func listArchiveRepoStates(
@@ -926,7 +926,7 @@ func (d *DB) IsArchiveItemRemovedUpstream(
 	itemNumber int,
 ) (bool, error) {
 	var exists int
-	err := d.ro.QueryRowContext(ctx, `
+	err := d.roQueryRowContext(ctx, `
 		SELECT 1
 		FROM forge_archive_items
 		WHERE repo_id = ? AND item_type = ? AND item_number = ?

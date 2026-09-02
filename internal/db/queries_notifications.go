@@ -393,7 +393,7 @@ func (d *DB) LatestOpenPRNotificationActivity(
 	ctx context.Context,
 	since time.Time,
 ) ([]MergeRequestNotificationActivity, error) {
-	rows, err := d.ro.QueryContext(ctx, `
+	rows, err := d.roQueryContext(ctx, `
 		SELECT mr.id, MAX(n.source_updated_at)
 		FROM forge_notification_items n
 		LEFT JOIN forge_repo_routes rr
@@ -445,7 +445,7 @@ func (d *DB) FilterNotificationIDs(ctx context.Context, ids []int64, repos []Not
 	for _, id := range ids {
 		args = append(args, id)
 	}
-	rows, err := d.ro.QueryContext(ctx, fmt.Sprintf("SELECT n.id FROM forge_notification_items n WHERE %s AND n.id IN (%s)", where, sqlPlaceholders(len(ids))), args...)
+	rows, err := d.roQueryContext(ctx, fmt.Sprintf("SELECT n.id FROM forge_notification_items n WHERE %s AND n.id IN (%s)", where, sqlPlaceholders(len(ids))), args...)
 	if err != nil {
 		return nil, fmt.Errorf("filter notification ids: %w", err)
 	}
@@ -650,7 +650,7 @@ func (d *DB) ListNotifications(ctx context.Context, opts ListNotificationsOpts) 
 	}
 	query := fmt.Sprintf("SELECT %s FROM forge_notification_items n WHERE %s ORDER BY %s LIMIT ? OFFSET ?", notificationSelectColumns, where, notificationOrder(opts.Sort))
 	args = append(args, limit, opts.Offset)
-	rows, err := d.ro.QueryContext(ctx, query, args...)
+	rows, err := d.roQueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list notifications: %w", err)
 	}
@@ -673,7 +673,7 @@ func (d *DB) NotificationSummary(ctx context.Context, opts ListNotificationsOpts
 		return NotificationSummary{}, err
 	}
 	summary := NotificationSummary{ByReason: map[string]int{}, ByRepo: map[string]int{}}
-	row := d.ro.QueryRowContext(ctx, fmt.Sprintf(`SELECT
+	row := d.roQueryRowContext(ctx, fmt.Sprintf(`SELECT
 		COALESCE(SUM(CASE WHEN n.done_at IS NULL THEN 1 ELSE 0 END), 0),
 		COALESCE(SUM(CASE WHEN n.done_at IS NULL AND n.unread = 1 THEN 1 ELSE 0 END), 0),
 		COALESCE(SUM(CASE WHEN n.done_at IS NOT NULL THEN 1 ELSE 0 END), 0)
@@ -681,12 +681,12 @@ func (d *DB) NotificationSummary(ctx context.Context, opts ListNotificationsOpts
 	if err := row.Scan(&summary.TotalActive, &summary.Unread, &summary.Done); err != nil {
 		return summary, fmt.Errorf("notification summary totals: %w", err)
 	}
-	if err := scanNotificationCounts(ctx, d.ro, fmt.Sprintf("SELECT n.reason, COUNT(*) FROM forge_notification_items n WHERE %s GROUP BY n.reason", where), args, summary.ByReason); err != nil {
+	if err := scanNotificationCounts(ctx, d.roStmts, fmt.Sprintf("SELECT n.reason, COUNT(*) FROM forge_notification_items n WHERE %s GROUP BY n.reason", where), args, summary.ByReason); err != nil {
 		return summary, err
 	}
 	// Linked rows group under their canonical route so renames don't split
 	// counts between old and new names; cached fields serve unlinked rows.
-	if err := scanNotificationCounts(ctx, d.ro, fmt.Sprintf(`SELECT
+	if err := scanNotificationCounts(ctx, d.roStmts, fmt.Sprintf(`SELECT
 		COALESCE(
 			r.platform_host || '/' || r.owner_key || '/' || r.name_key,
 			n.platform_host || '/' || n.repo_owner || '/' || n.repo_name
@@ -735,7 +735,7 @@ func (d *DB) MarkNotificationsDone(ctx context.Context, ids []int64, doneAt time
 	for _, id := range ids {
 		args = append(args, id)
 	}
-	rows, err := d.rw.QueryContext(ctx, fmt.Sprintf("UPDATE forge_notification_items SET done_at = ?, done_reason = CASE WHEN done_reason = '' THEN 'user' ELSE done_reason END%s WHERE id IN (%s) RETURNING id", setRead, sqlPlaceholders(len(ids))), args...)
+	rows, err := d.rwQueryContext(ctx, fmt.Sprintf("UPDATE forge_notification_items SET done_at = ?, done_reason = CASE WHEN done_reason = '' THEN 'user' ELSE done_reason END%s WHERE id IN (%s) RETURNING id", setRead, sqlPlaceholders(len(ids))), args...)
 	if err != nil {
 		return nil, fmt.Errorf("mark notifications done: %w", err)
 	}
@@ -750,7 +750,7 @@ func (d *DB) MarkNotificationsUndone(ctx context.Context, ids []int64) ([]int64,
 	for _, id := range ids {
 		args = append(args, id)
 	}
-	rows, err := d.rw.QueryContext(ctx, fmt.Sprintf("UPDATE forge_notification_items SET done_at = NULL, done_reason = '' WHERE id IN (%s) RETURNING id", sqlPlaceholders(len(ids))), args...)
+	rows, err := d.rwQueryContext(ctx, fmt.Sprintf("UPDATE forge_notification_items SET done_at = NULL, done_reason = '' WHERE id IN (%s) RETURNING id", sqlPlaceholders(len(ids))), args...)
 	if err != nil {
 		return nil, fmt.Errorf("mark notifications undone: %w", err)
 	}
@@ -765,7 +765,7 @@ func (d *DB) MarkNotificationIDsReadLocal(ctx context.Context, ids []int64) ([]i
 	for _, id := range ids {
 		args = append(args, id)
 	}
-	rows, err := d.rw.QueryContext(ctx, fmt.Sprintf(`UPDATE forge_notification_items
+	rows, err := d.rwQueryContext(ctx, fmt.Sprintf(`UPDATE forge_notification_items
 		SET unread = 0, source_ack_queued_at = NULL, source_ack_synced_at = NULL, source_ack_generation_at = NULL,
 		    source_ack_error = '', source_ack_attempts = 0, source_ack_last_attempt_at = NULL, source_ack_next_attempt_at = NULL
 		WHERE id IN (%s)
@@ -785,7 +785,7 @@ func (d *DB) QueueNotificationIDsRead(ctx context.Context, ids []int64, readAt t
 	for _, id := range ids {
 		args = append(args, id)
 	}
-	rows, err := d.rw.QueryContext(ctx, fmt.Sprintf(`UPDATE forge_notification_items
+	rows, err := d.rwQueryContext(ctx, fmt.Sprintf(`UPDATE forge_notification_items
 		SET unread = 0, source_ack_queued_at = ?, source_ack_synced_at = NULL, source_ack_generation_at = source_updated_at,
 		    source_ack_error = '', source_ack_attempts = 0, source_ack_last_attempt_at = NULL, source_ack_next_attempt_at = NULL
 		WHERE id IN (%s)
@@ -833,7 +833,7 @@ func (d *DB) GetNotificationSyncWatermark(ctx context.Context, platform, host, o
 	}
 	var rawLastSuccessful string
 	var rawLastFull sql.NullString
-	err = d.ro.QueryRowContext(ctx, `
+	err = d.roQueryRowContext(ctx, `
 		SELECT last_successful_sync_at, last_full_sync_at
 		FROM forge_notification_sync_watermarks
 		WHERE platform = ? AND platform_host = ? AND repo_owner = ? AND repo_name = ?`,
@@ -983,7 +983,7 @@ func (d *DB) ListQueuedNotificationAcks(ctx context.Context, platform, host stri
 		return nil, err
 	}
 	limit = normalizedNotificationLimit(limit)
-	rows, err := d.ro.QueryContext(ctx, fmt.Sprintf(`SELECT %s FROM forge_notification_items n
+	rows, err := d.roQueryContext(ctx, fmt.Sprintf(`SELECT %s FROM forge_notification_items n
 		JOIN forge_notification_ack_admissions admission
 		  ON admission.notification_id = n.id
 		JOIN forge_spoke_preparation preparation
@@ -1059,7 +1059,7 @@ func (d *DB) ListQueuedNotificationAcks(ctx context.Context, platform, host stri
 
 func (d *DB) NotificationAckPropagationCurrent(ctx context.Context, id int64, queuedAt *time.Time, sourceUpdatedAt time.Time) (bool, error) {
 	var matched int
-	err := d.ro.QueryRowContext(ctx, `SELECT 1 FROM forge_notification_items
+	err := d.roQueryRowContext(ctx, `SELECT 1 FROM forge_notification_items
 		WHERE id = ?
 		  AND source_ack_queued_at = ?
 		  AND source_updated_at = ?

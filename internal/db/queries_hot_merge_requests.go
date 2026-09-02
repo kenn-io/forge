@@ -63,7 +63,7 @@ func (d *DB) ListHotMergeRequestIDs(ctx context.Context, limit int) ([]int64, er
 	if limit <= 0 {
 		return []int64{}, nil
 	}
-	rows, err := d.ro.QueryContext(ctx, `
+	rows, err := d.roQueryContext(ctx, `
 		SELECT hot.merge_request_id
 		FROM forge_hot_merge_requests hot
 		JOIN forge_merge_requests mr ON mr.id = hot.merge_request_id

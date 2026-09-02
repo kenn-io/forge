@@ -31,7 +31,7 @@ type WorktreeRepoRef struct {
 // so the recompute can both scope the merge-request lookup and build watched-MR
 // entries from one read.
 func (d *DB) ListWorktreesForBranchMatch(ctx context.Context) ([]WorktreeRepoRef, error) {
-	rows, err := d.ro.QueryContext(ctx, `
+	rows, err := d.roQueryContext(ctx, `
 		SELECT w.path, w.branch,
 		       r.id, r.platform, r.platform_host, r.owner, r.name
 		FROM forge_project_worktrees w
@@ -93,7 +93,7 @@ type WorktreeLinkPR struct {
 // state and CI status current as of the last sync without re-deriving the
 // branch match at snapshot time.
 func (d *DB) ListWorktreeLinkPRs(ctx context.Context) ([]WorktreeLinkPR, error) {
-	rows, err := d.ro.QueryContext(ctx, `
+	rows, err := d.roQueryContext(ctx, `
 		SELECT l.worktree_key, m.number, m.state, m.is_draft, m.title, m.ci_status,
 		       m.review_decision, m.mergeable_state, m.additions, m.deletions, m.comment_count
 		FROM forge_mr_worktree_links l

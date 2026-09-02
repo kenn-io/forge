@@ -61,7 +61,7 @@ func (d *DB) GetOrCreateMRReviewDraft(ctx context.Context, mrID int64) (*MRRevie
 func (d *DB) GetMRReviewDraft(ctx context.Context, mrID int64) (*MRReviewDraft, error) {
 	var draft MRReviewDraft
 	var createdAt, updatedAt string
-	err := d.ro.QueryRowContext(ctx, `
+	err := d.roQueryRowContext(ctx, `
 		SELECT id, merge_request_id, body, action, created_at, updated_at
 		FROM forge_mr_review_drafts
 		WHERE merge_request_id = ?`,
@@ -91,7 +91,7 @@ func (d *DB) GetMRReviewDraft(ctx context.Context, mrID int64) (*MRReviewDraft, 
 }
 
 func (d *DB) ListMRReviewDraftComments(ctx context.Context, draftID int64) ([]MRReviewDraftComment, error) {
-	rows, err := d.ro.QueryContext(ctx, `
+	rows, err := d.roQueryContext(ctx, `
 		SELECT id, draft_id, body, path, old_path, side, start_side, start_line,
 			line, old_line, new_line, line_type, diff_head_sha, commit_sha,
 			created_at, updated_at
@@ -222,7 +222,7 @@ func (d *DB) DeleteMRReviewDraft(ctx context.Context, mrID int64) error {
 }
 
 func (d *DB) getMRReviewDraftComment(ctx context.Context, draftID, commentID int64) (*MRReviewDraftComment, error) {
-	row := d.ro.QueryRowContext(ctx, `
+	row := d.roQueryRowContext(ctx, `
 		SELECT id, draft_id, body, path, old_path, side, start_side, start_line,
 			line, old_line, new_line, line_type, diff_head_sha, commit_sha,
 			created_at, updated_at
@@ -383,7 +383,7 @@ func deleteMissingMRReviewThreadsTx(
 }
 
 func (d *DB) ListMRReviewThreads(ctx context.Context, mrID int64) ([]MRReviewThread, error) {
-	rows, err := d.ro.QueryContext(ctx, `
+	rows, err := d.roQueryContext(ctx, `
 		SELECT id, merge_request_id, provider_thread_id, provider_review_id,
 			provider_comment_id, path, old_path, side, start_side, start_line,
 			line, old_line, new_line, line_type, diff_head_sha, commit_sha,
@@ -414,7 +414,7 @@ func (d *DB) ListMRReviewThreads(ctx context.Context, mrID int64) ([]MRReviewThr
 }
 
 func (d *DB) GetMRReviewThread(ctx context.Context, mrID, threadID int64) (*MRReviewThread, error) {
-	row := d.ro.QueryRowContext(ctx, `
+	row := d.roQueryRowContext(ctx, `
 		SELECT id, merge_request_id, provider_thread_id, provider_review_id,
 			provider_comment_id, path, old_path, side, start_side, start_line,
 			line, old_line, new_line, line_type, diff_head_sha, commit_sha,

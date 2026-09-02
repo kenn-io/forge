@@ -91,7 +91,7 @@ func (d *DB) PreferredWorkspaceAgentTarget(
 		return "", false, nil
 	}
 
-	rows, err := d.ro.QueryContext(ctx, `
+	rows, err := d.roQueryContext(ctx, `
 		SELECT target_key
 		FROM forge_workspace_agent_launches
 		WHERE created_at >= ?

@@ -91,7 +91,7 @@ func issueEventLedgerRevisionExpr(issue string) string {
 func (d *DB) ListActivity(
 	ctx context.Context, opts ListActivityOpts,
 ) ([]ActivityItem, error) {
-	return listActivityWithQueryer(ctx, d.ro, opts)
+	return listActivityWithQueryer(ctx, d.roStmts, opts)
 }
 
 type activityQueryer interface {
@@ -580,7 +580,7 @@ func listActivityWithQueryer(
 func (d *DB) ListActivitySubjects(
 	ctx context.Context, opts ListActivitySubjectsOpts,
 ) ([]ActivitySubject, error) {
-	return listActivitySubjectsWithQueryer(ctx, d.ro, opts)
+	return listActivitySubjectsWithQueryer(ctx, d.roStmts, opts)
 }
 
 func listActivitySubjectsWithQueryer(
@@ -945,7 +945,7 @@ func (d *DB) ListActivityAuthors(
 	queryArgs := make([]any, 0, len(notificationArgs)+len(args))
 	queryArgs = append(queryArgs, notificationArgs...)
 	queryArgs = append(queryArgs, args...)
-	rows, err := d.ro.QueryContext(ctx, query, queryArgs...)
+	rows, err := d.roQueryContext(ctx, query, queryArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("list activity authors: %w", err)
 	}

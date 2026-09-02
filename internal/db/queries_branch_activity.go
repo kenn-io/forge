@@ -87,7 +87,7 @@ func (d *DB) GetBranchTip(
 	var observedAt string
 	var createdAt string
 	var updatedAt string
-	err := d.ro.QueryRowContext(ctx, `
+	err := d.roQueryRowContext(ctx, `
 		SELECT repo_id, branch_name, tip_sha, observed_at, created_at, updated_at
 		FROM forge_branch_tips
 		WHERE repo_id = ? AND branch_name = ?`,

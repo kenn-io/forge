@@ -93,7 +93,7 @@ func (d *DB) ListWorkspaceSubjectMetadata(
 			  AND w.item_number = q.item_number
 			  AND json_extract(launch.spec_json, '$.source_visible') = 1
 		)`
-	rows, err := d.ro.QueryContext(ctx, query, string(requestedJSON))
+	rows, err := d.roQueryContext(ctx, query, string(requestedJSON))
 	if err != nil {
 		return nil, fmt.Errorf("list workspace subject metadata: %w", err)
 	}

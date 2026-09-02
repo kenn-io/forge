@@ -15,6 +15,8 @@ import (
 type DB struct {
 	rw                *sql.DB
 	ro                *sql.DB
+	rwStmts           *stmtCache
+	roStmts           *stmtCache
 	mrReconcileMu     sync.RWMutex
 	mrReconcileGate   sync.Mutex
 	mrSnapshotLocksMu sync.Mutex
@@ -63,21 +65,54 @@ func OpenPreparedForTest(path string) (*DB, error) {
 	return open(path, false)
 }
 
+// Connection pool sizing. The writer is a single connection because SQLite
+// serializes writers anyway; readers run concurrently under WAL.
+const (
+	writePoolSize = 1
+	readPoolSize  = 4
+)
+
+// connectionDSN carries the per-connection pragmas. modernc.org/sqlite runs
+// each _pragma entry when it opens a connection, so every pooled connection
+// gets the same settings without a connect hook.
+//
+//   - busy_timeout keeps writers from failing immediately on a locked file.
+//   - foreign_keys enforces the schema's referential integrity.
+//   - cache_size is negative KiB: 64 MiB per connection. A maintainer
+//     database with tens of thousands of merge requests and their events is
+//     well over 100 MB, and the 2 MB default kept hot reads on pread.
+//   - mmap_size lets reads share the OS page cache instead of copying through
+//     SQLite's own cache; 256 MiB covers the whole file for typical installs.
+//   - temp_store keeps sort and materialization scratch space in memory.
+//
+// synchronous stays at the WAL default (FULL) so every committed transaction
+// is durable across power loss, not just process crashes. The values are
+// constants rather than config: they are tuning for the daemon's own store,
+// not a user-facing preference, and config persistence has no I/O section.
+const connectionDSN = "?_pragma=busy_timeout(5000)" +
+	"&_pragma=foreign_keys(1)" +
+	"&_pragma=cache_size(-65536)" +
+	"&_pragma=mmap_size(268435456)" +
+	"&_pragma=temp_store(MEMORY)"
+
 func open(path string, initialize bool) (*DB, error) {
-	rw, err := sql.Open("sqlite", path+"?_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)")
+	rw, err := openPool(path, writePoolSize)
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
-	rw.SetMaxOpenConns(1)
 
-	ro, err := sql.Open("sqlite", path+"?_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)")
+	ro, err := openPool(path, readPoolSize)
 	if err != nil {
 		rw.Close()
 		return nil, fmt.Errorf("open db read-only: %w", err)
 	}
-	ro.SetMaxOpenConns(4)
 
-	d := &DB{rw: rw, ro: ro}
+	d := &DB{
+		rw:      rw,
+		ro:      ro,
+		rwStmts: newStmtCache(rw, stmtCacheLimit),
+		roStmts: newStmtCache(ro, stmtCacheLimit),
+	}
 	if initialize {
 		err = d.init()
 	}
@@ -86,6 +121,19 @@ func open(path string, initialize bool) (*DB, error) {
 		return nil, err
 	}
 	return d, nil
+}
+
+// openPool opens one connection pool whose idle limit matches its open limit,
+// so connections (and the statements compiled on them) survive idle periods
+// instead of being closed and re-opened with the DSN pragmas on every burst.
+func openPool(path string, size int) (*sql.DB, error) {
+	pool, err := sql.Open("sqlite", path+connectionDSN)
+	if err != nil {
+		return nil, err
+	}
+	pool.SetMaxOpenConns(size)
+	pool.SetMaxIdleConns(size)
+	return pool, nil
 }
 
 func (d *DB) init() error {
@@ -107,10 +155,14 @@ func (d *DB) init() error {
 	return nil
 }
 
-// Close closes both database connections.
+// Close finalizes cached statements and closes both connection pools.
 func (d *DB) Close() error {
-	d.ro.Close()
-	return d.rw.Close()
+	return errors.Join(
+		d.roStmts.Close(),
+		d.rwStmts.Close(),
+		d.ro.Close(),
+		d.rw.Close(),
+	)
 }
 
 // ReadDB returns the read-only connection pool.
@@ -224,7 +276,36 @@ func (d *DB) execContext(
 		return nil, err
 	}
 	defer release()
-	return d.rw.ExecContext(lockedCtx, query, args...)
+	return d.rwStmts.ExecContext(lockedCtx, query, args...)
+}
+
+// rwExecContext writes through the write pool without the repository route
+// fence. Callers that hold reconciliation locks themselves, or that write
+// tables outside repository identity, use it exactly as they previously used
+// the raw pool.
+func (d *DB) rwExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	return d.rwStmts.ExecContext(ctx, query, args...)
+}
+
+// rwQueryContext runs a RETURNING or read-your-writes query on the write pool.
+func (d *DB) rwQueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	return d.rwStmts.QueryContext(ctx, query, args...)
+}
+
+// rwQueryRowContext runs a single-row RETURNING query on the write pool.
+func (d *DB) rwQueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+	return d.rwStmts.QueryRowContext(ctx, query, args...)
+}
+
+// roQueryContext runs a read on the read pool through the statement cache.
+func (d *DB) roQueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	return d.roStmts.QueryContext(ctx, query, args...)
+}
+
+// roQueryRowContext runs a single-row read on the read pool through the
+// statement cache.
+func (d *DB) roQueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+	return d.roStmts.QueryRowContext(ctx, query, args...)
 }
 
 func (d *DB) lockRepositoryReconciliationWrite() func() {

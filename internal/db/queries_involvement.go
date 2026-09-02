@@ -36,7 +36,7 @@ func (d *DB) ListInvolvedWorkspaceSubjectKeys(
 			WHERE r.lifecycle_state = 'active'
 			  AND %[3]s
 			  AND %[4]s`, subject.alias, subject.table, candidateCondition, involvementCondition)
-		rows, err := d.ro.QueryContext(ctx, query, args...)
+		rows, err := d.roQueryContext(ctx, query, args...)
 		if err != nil {
 			return nil, fmt.Errorf("list involved workspace %s subjects: %w", subject.itemType, err)
 		}

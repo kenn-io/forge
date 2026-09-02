@@ -67,7 +67,7 @@ func (d *DB) ReplaceGitHubNativeStack(ctx context.Context, stack GitHubNativeSta
 // ListGitHubNativeStacks returns cached native stacks for one repository,
 // newest stack number first and members bottom-to-top.
 func (d *DB) ListGitHubNativeStacks(ctx context.Context, repoID int64) ([]GitHubNativeStack, error) {
-	rows, err := d.ro.QueryContext(ctx, `
+	rows, err := d.roQueryContext(ctx, `
 		SELECT id, repo_id, github_id, stack_number, size, base_ref, is_open,
 		       github_created_at, content_fingerprint, last_observed_at
 		FROM github_native_stacks
@@ -99,7 +99,7 @@ func (d *DB) ListGitHubNativeStacks(ctx context.Context, repoID int64) ([]GitHub
 		return stacks, nil
 	}
 
-	memberRows, err := d.ro.QueryContext(ctx, `
+	memberRows, err := d.roQueryContext(ctx, `
 		SELECT m.stack_id, m.position, m.pull_request_number, m.state,
 		       m.is_draft, m.merged_at, m.head_ref, m.head_sha
 		FROM github_native_stack_members m

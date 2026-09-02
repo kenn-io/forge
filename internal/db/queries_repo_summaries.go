@@ -43,7 +43,7 @@ func (d *DB) loadRepoSummaryStats(
 	ctx context.Context,
 	summaryByRepoID map[int64]*RepoSummary,
 ) error {
-	rows, err := d.ro.QueryContext(ctx, `
+	rows, err := d.roQueryContext(ctx, `
 		WITH pr_stats AS (
 			SELECT repo_id,
 			       COUNT(*) AS cached_pr_count,
@@ -278,7 +278,7 @@ func (d *DB) loadRepoSummaryOverviews(
 	ctx context.Context,
 	summaryByRepoID map[int64]*RepoSummary,
 ) error {
-	rows, err := d.ro.QueryContext(ctx, `
+	rows, err := d.roQueryContext(ctx, `
 		SELECT repo_id,
 		       latest_release_tag,
 		       latest_release_name,
@@ -431,7 +431,7 @@ func (d *DB) loadRepoSummaryAuthors(
 	ctx context.Context,
 	summaryByRepoID map[int64]*RepoSummary,
 ) error {
-	rows, err := d.ro.QueryContext(ctx, `
+	rows, err := d.roQueryContext(ctx, `
 		WITH author_items AS (
 			SELECT repo_id, author, last_activity_at
 			FROM forge_merge_requests
@@ -510,7 +510,7 @@ func (d *DB) loadRepoSummaryIssues(
 	ctx context.Context,
 	summaryByRepoID map[int64]*RepoSummary,
 ) error {
-	rows, err := d.ro.QueryContext(ctx, `
+	rows, err := d.roQueryContext(ctx, `
 		WITH ranked AS (
 			SELECT repo_id,
 			       number,

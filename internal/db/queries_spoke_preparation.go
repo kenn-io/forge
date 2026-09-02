@@ -88,7 +88,7 @@ func (d *DB) GetSpokePreparation(
 	var drain sql.NullInt64
 	var started, sealed sql.NullString
 	var updated string
-	err := d.ro.QueryRowContext(ctx, `
+	err := d.roQueryRowContext(ctx, `
 		SELECT phase, enrollment_id, hub_node_id, local_node_id,
 		       protocol_version, migration_version, ack_generation,
 		       drain_ack_generation, preparation_digest, preparation_seal,
@@ -236,7 +236,7 @@ func (d *DB) CountUndrainedNotificationAcks(
 	ctx context.Context,
 ) (int, error) {
 	var count int
-	err := d.ro.QueryRowContext(ctx, `
+	err := d.roQueryRowContext(ctx, `
 		SELECT COUNT(*)
 		FROM forge_notification_ack_admissions admission
 		JOIN forge_notification_items notification
@@ -271,7 +271,7 @@ func (d *DB) RecordSpokePreparationReceipt(
 	if receipt.ImportedAt.IsZero() {
 		receipt.ImportedAt = time.Now().UTC()
 	}
-	result, err := d.rw.ExecContext(ctx, `
+	result, err := d.rwExecContext(ctx, `
 		INSERT INTO forge_spoke_preparation_receipts (
 			state_kind, source_key, content_digest,
 			hub_receipt, imported_at
@@ -301,7 +301,7 @@ func (d *DB) RecordSpokePreparationReceipt(
 func (d *DB) ListSpokePreparationReceipts(
 	ctx context.Context,
 ) ([]SpokePreparationReceipt, error) {
-	rows, err := d.ro.QueryContext(ctx, `
+	rows, err := d.roQueryContext(ctx, `
 		SELECT state_kind, source_key, content_digest,
 		       hub_receipt, imported_at
 		FROM forge_spoke_preparation_receipts
@@ -390,7 +390,7 @@ func (d *DB) IssueSpokePreparationSeal(
 		SpokePreparationSealRequest: request,
 		Seal:                        hex.EncodeToString(raw), CreatedAt: time.Now().UTC(),
 	}
-	_, err = d.rw.ExecContext(ctx, `
+	_, err = d.rwExecContext(ctx, `
 		INSERT INTO forge_spoke_preparation_seals (
 			enrollment_id, node_id, hub_node_id,
 			protocol_version, migration_version, receipts_digest,
@@ -420,7 +420,7 @@ func (d *DB) GetSpokePreparationSeal(
 ) (*SpokePreparationSeal, error) {
 	var seal SpokePreparationSeal
 	var createdAt string
-	err := d.ro.QueryRowContext(ctx, `
+	err := d.roQueryRowContext(ctx, `
 		SELECT enrollment_id, node_id, hub_node_id,
 		       protocol_version, migration_version, receipts_digest,
 		       drained_ack_generation, preparation_digest,
@@ -456,7 +456,7 @@ func (d *DB) StoreLocalSpokePreparationSeal(
 		return errors.New("spoke preparation digest and seal are required")
 	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
-	result, err := d.rw.ExecContext(ctx, `
+	result, err := d.rwExecContext(ctx, `
 		UPDATE forge_spoke_preparation
 		SET phase = 'sealed', preparation_digest = ?, preparation_seal = ?,
 		    sealed_at = COALESCE(sealed_at, ?), updated_at = ?

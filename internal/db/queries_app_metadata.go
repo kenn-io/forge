@@ -15,7 +15,7 @@ func (d *DB) AppMetadataValue(ctx context.Context, key string) (string, bool, er
 	}
 
 	var value string
-	err := d.ro.QueryRowContext(ctx,
+	err := d.roQueryRowContext(ctx,
 		`SELECT value FROM forge_app_metadata WHERE key = ?`,
 		key,
 	).Scan(&value)

@@ -24,7 +24,7 @@ func (d *DB) CreateKataIssueLink(
 	var row *sql.Row
 	switch link.Subject.Kind {
 	case KataLinkSubjectPullRequest, KataLinkSubjectIssue:
-		row = d.rw.QueryRowContext(ctx, `
+		row = d.rwQueryRowContext(ctx, `
 			INSERT INTO kata_issue_links (
 				subject_kind, repo_id, provider_item_external_id, workspace_id,
 				daemon_id, project_uid, issue_uid
@@ -42,7 +42,7 @@ func (d *DB) CreateKataIssueLink(
 			link.DaemonID, link.ProjectUID, link.IssueUID,
 		)
 	case KataLinkSubjectWorkspace:
-		row = d.rw.QueryRowContext(ctx, `
+		row = d.rwQueryRowContext(ctx, `
 			INSERT INTO kata_issue_links (
 				subject_kind, repo_id, provider_item_external_id, workspace_id,
 				daemon_id, project_uid, issue_uid
@@ -81,14 +81,14 @@ func (d *DB) ListKataIssueLinks(
 	var rows *sql.Rows
 	switch subject.Kind {
 	case KataLinkSubjectPullRequest, KataLinkSubjectIssue:
-		rows, err = d.ro.QueryContext(ctx, kataIssueLinkSelect+`
+		rows, err = d.roQueryContext(ctx, kataIssueLinkSelect+`
 			WHERE subject_kind = ?
 			  AND repo_id = ?
 			  AND provider_item_external_id = ?
 			  AND workspace_id IS NULL
 			ORDER BY id`, subject.Kind, subject.RepoID, subject.ProviderItemExternalID)
 	case KataLinkSubjectWorkspace:
-		rows, err = d.ro.QueryContext(ctx, kataIssueLinkSelect+`
+		rows, err = d.roQueryContext(ctx, kataIssueLinkSelect+`
 			WHERE subject_kind = ?
 			  AND repo_id IS NULL
 			  AND provider_item_external_id IS NULL
@@ -132,7 +132,7 @@ func (d *DB) DeleteKataIssueLink(
 	var result sql.Result
 	switch subject.Kind {
 	case KataLinkSubjectPullRequest, KataLinkSubjectIssue:
-		result, err = d.rw.ExecContext(ctx, `
+		result, err = d.rwExecContext(ctx, `
 			DELETE FROM kata_issue_links
 			WHERE id = ?
 			  AND subject_kind = ?
@@ -142,7 +142,7 @@ func (d *DB) DeleteKataIssueLink(
 			linkID, subject.Kind, subject.RepoID, subject.ProviderItemExternalID,
 		)
 	case KataLinkSubjectWorkspace:
-		result, err = d.rw.ExecContext(ctx, `
+		result, err = d.rwExecContext(ctx, `
 			DELETE FROM kata_issue_links
 			WHERE id = ?
 			  AND subject_kind = ?

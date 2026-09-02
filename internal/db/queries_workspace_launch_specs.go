@@ -152,7 +152,7 @@ func (d *DB) PutWorkspaceLaunchSpec(
 	); err != nil {
 		return err
 	}
-	return insertWorkspaceLaunchSpec(ctx, d.rw, workspaceID, spec)
+	return insertWorkspaceLaunchSpec(ctx, d.rwStmts, workspaceID, spec)
 }
 
 // GetWorkspaceByLaunchSpecIdentity finds a provider-backed workspace by the
@@ -171,7 +171,7 @@ func (d *DB) GetWorkspaceByLaunchSpecIdentity(
 		itemType == "" || itemKey == "" {
 		return nil, nil
 	}
-	workspace, err := d.scanWorkspace(ctx, d.ro.QueryRowContext(ctx, `
+	workspace, err := d.scanWorkspace(ctx, d.roQueryRowContext(ctx, `
 		SELECT w.id, w.platform, w.platform_host, w.repo_owner, w.repo_name,
 		       w.repo_id,
 		       w.item_type, w.item_number, w.item_key, w.associated_pr_number,
@@ -207,7 +207,7 @@ func (d *DB) ResolveUnambiguousHistoricalWorkspaceRepoID(
 	platform = strings.ToLower(strings.TrimSpace(platform))
 	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
 	var platformRepoID string
-	err := d.ro.QueryRowContext(ctx, `
+	err := d.roQueryRowContext(ctx, `
 		SELECT r.platform_repo_id
 		FROM forge_repo_routes route
 		JOIN forge_repos r ON r.id = route.repo_id
@@ -381,7 +381,7 @@ func (d *DB) GetWorkspaceLaunchSpec(
 	var version int
 	var encoded string
 	var visibleUntil, createdAt string
-	err := d.ro.QueryRowContext(ctx, `
+	err := d.roQueryRowContext(ctx, `
 		SELECT version, spec_json, source_visible_until, created_at
 		FROM forge_workspace_launch_specs
 		WHERE workspace_id = ?`, workspaceID,
@@ -428,7 +428,7 @@ func (d *DB) ListUnpreparedProviderWorkspacesAt(
 	ctx context.Context,
 	now time.Time,
 ) ([]UnpreparedWorkspace, error) {
-	rows, err := d.ro.QueryContext(ctx, `
+	rows, err := d.roQueryContext(ctx, `
 		SELECT id, platform, platform_host, repo_owner, repo_name, repo_id,
 		       item_type, item_number, item_key, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
@@ -500,7 +500,7 @@ func (d *DB) ListUnpreparedProviderWorkspacesAt(
 
 func (d *DB) CountProviderBackedWorkspaces(ctx context.Context) (int, error) {
 	var count int
-	err := d.ro.QueryRowContext(ctx, `
+	err := d.roQueryRowContext(ctx, `
 		SELECT COUNT(*) FROM forge_workspaces
 		WHERE item_type IN ('pull_request', 'issue')`).Scan(&count)
 	if err != nil {

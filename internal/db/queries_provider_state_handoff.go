@@ -243,7 +243,7 @@ func (d *DB) ListProviderStateForHandoff(
 func (d *DB) listReviewDraftStateForHandoff(
 	ctx context.Context,
 ) ([]ProviderStateRecord, error) {
-	rows, err := d.ro.QueryContext(ctx, `
+	rows, err := d.roQueryContext(ctx, `
 		SELECT draft.id, r.platform, r.platform_host, r.platform_repo_id,
 		       r.owner, r.name, mr.number, draft.body, draft.action
 		FROM forge_mr_review_drafts draft
@@ -294,7 +294,7 @@ func (d *DB) listReviewDraftStateForHandoff(
 func (d *DB) listWorkflowStateForHandoff(
 	ctx context.Context,
 ) ([]ProviderStateRecord, error) {
-	rows, err := d.ro.QueryContext(ctx, `
+	rows, err := d.roQueryContext(ctx, `
 		SELECT r.platform, r.platform_host, r.platform_repo_id,
 		       r.owner, r.name, state.item_type, state.item_number,
 		       state.status, state.updated_source, state.updated_actor,

@@ -309,3 +309,44 @@ func TestPushedHeadObserverPassSpawnsNoGitWhenUnchanged(t *testing.T) {
 	assert.Equal("refs/remotes/origin/feature", result.HeadChanges[0].TrackingRef)
 	assert.Empty(gitInvocations(), "detecting a pushed head must not spawn git")
 }
+
+// TestGitdirReaderDoesNotLeakDescriptorsOnLinkedWorktree guards the storage
+// construction in openWorktreeRepository: go-git's EnableDotGitCommonDir
+// option opens the linked worktree's commondir file without closing it, and
+// the observer opens every workspace several times a minute, so a leak there
+// exhausts the daemon's descriptors and keeps worktrees undeletable on
+// Windows.
+func TestGitdirReaderDoesNotLeakDescriptorsOnLinkedWorktree(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("descriptor table is read through /dev/fd")
+	}
+	assert := assert.New(t)
+	require := require.New(t)
+	fixture := newPushedHeadFixture(t)
+	worktree := filepath.Join(filepath.Dir(fixture.clone), "linked")
+	runWorkspaceTestGit(t, fixture.clone, "worktree", "add", "-b", "topic", worktree, "main")
+	runWorkspaceTestGit(t, worktree, "push", "-u", "origin", "topic")
+	reader, fallback := newGitdirReaderForTest()
+	ctx := t.Context()
+
+	openDescriptors := func() int {
+		entries, err := os.ReadDir("/dev/fd")
+		require.NoError(err)
+		return len(entries)
+	}
+	read := func() {
+		_, err := reader.BranchName(ctx, worktree)
+		require.NoError(err)
+		_, err = reader.UpstreamState(ctx, worktree, "topic")
+		require.NoError(err)
+		_, _, _, err = reader.RemoteTrackingSHA(ctx, worktree, "origin", "topic")
+		require.NoError(err)
+	}
+	read()
+	before := openDescriptors()
+	for range 20 {
+		read()
+	}
+	assert.Equal(before, openDescriptors(), "reading a linked worktree must not leave descriptors open")
+	assert.Equal(0, fallback.calls)
+}

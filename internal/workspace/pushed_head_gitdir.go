@@ -4,12 +4,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 
+	"github.com/go-git/go-billy/v5/osfs"
 	gogit "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/cache"
+	"github.com/go-git/go-git/v5/storage/filesystem"
+	"github.com/go-git/go-git/v5/storage/filesystem/dotgit"
 )
 
 // gitdirRemoteHeadReader answers the pushed-head observer's read-only
@@ -106,8 +113,22 @@ var errGitdirUnsupported = errors.New("repository layout not readable in process
 // openWorktreeRepository opens dir as a main or linked worktree and returns
 // its repository config, rejecting layouts whose answers go-git would get
 // wrong.
+//
+// The git directory and common directory are resolved here rather than with
+// go-git's EnableDotGitCommonDir: that option reads the worktree's
+// `commondir` file without closing it, and the observer opens every
+// workspace several times a minute, so the daemon would leak a descriptor per
+// open and keep linked worktrees undeletable on Windows.
 func openWorktreeRepository(dir string) (*gogit.Repository, *config.Config, error) {
-	repo, err := gogit.PlainOpenWithOptions(dir, &gogit.PlainOpenOptions{EnableDotGitCommonDir: true})
+	gitDir, commonDir, err := resolveWorktreeGitDirs(dir)
+	if err != nil {
+		return nil, nil, err
+	}
+	var repoFS = osfs.New(gitDir)
+	if commonDir != gitDir {
+		repoFS = dotgit.NewRepositoryFilesystem(repoFS, osfs.New(commonDir))
+	}
+	repo, err := gogit.Open(filesystem.NewStorage(repoFS, cache.NewObjectLRUDefault()), osfs.New(dir))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -122,4 +143,44 @@ func openWorktreeRepository(dir string) (*gogit.Repository, *config.Config, erro
 		return nil, nil, fmt.Errorf("%w: ref storage %q", errGitdirUnsupported, storage)
 	}
 	return repo, cfg, nil
+}
+
+// resolveWorktreeGitDirs locates the worktree's private git directory (a
+// `.git` directory, or the target of the `.git` file written by
+// `git worktree add`) and the common directory holding refs, packed-refs,
+// and config for every worktree of the repository.
+func resolveWorktreeGitDirs(worktree string) (gitDir, commonDir string, err error) {
+	dotGit := filepath.Join(worktree, ".git")
+	info, err := os.Stat(dotGit)
+	if err != nil {
+		return "", "", err
+	}
+	gitDir = dotGit
+	if !info.IsDir() {
+		data, err := os.ReadFile(dotGit)
+		if err != nil {
+			return "", "", err
+		}
+		line, _, _ := strings.Cut(string(data), "\n")
+		target, ok := strings.CutPrefix(line, "gitdir:")
+		if !ok {
+			return "", "", fmt.Errorf("%w: %s is neither a directory nor a gitdir file", errGitdirUnsupported, dotGit)
+		}
+		gitDir = strings.TrimSpace(target)
+		if !filepath.IsAbs(gitDir) {
+			gitDir = filepath.Join(worktree, gitDir)
+		}
+	}
+	commonDir = gitDir
+	data, err := os.ReadFile(filepath.Join(gitDir, "commondir"))
+	switch {
+	case err == nil:
+		commonDir = strings.TrimSpace(string(data))
+		if !filepath.IsAbs(commonDir) {
+			commonDir = filepath.Join(gitDir, commonDir)
+		}
+	case !errors.Is(err, fs.ErrNotExist):
+		return "", "", err
+	}
+	return filepath.Clean(gitDir), filepath.Clean(commonDir), nil
 }

@@ -685,6 +685,11 @@ through the procutil capacity guard, for layouts go-git cannot answer
 faithfully: config includes, reftable ref storage, or unparsable files.
 Upstream repair remains a git write
 (`internal/workspace/pushed_head_gitdir.go::gitdirRemoteHeadReader`).
+Open go-git storage from a locally resolved gitdir and common directory, never
+with `EnableDotGitCommonDir`: that option leaks the linked worktree's
+`commondir` file handle on every open, which exhausts descriptors under
+periodic polling and blocks worktree deletion on Windows
+(`internal/workspace/pushed_head_gitdir.go::openWorktreeRepository`).
 
 ## Sidebar Ordering
 

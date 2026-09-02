@@ -516,6 +516,25 @@ test.describe("workspace create-and-launch full stack", () => {
         .poll(async () => (await sessionWebSockets(phonePage, created.id)).flatMap((socket) => socket.sent))
         .toContain("\x1b[200~printf 'mobile-input-ok\\n'\rprintf 'second-line\\n'\x1b[201~\r");
 
+      await phonePage.getByRole("button", { name: "Show special terminal keys" }).tap();
+      const specialKeys = phonePage.getByRole("group", { name: "Special terminal keys" });
+      await expect(specialKeys).toBeVisible();
+      for (const keyName of [
+        "Escape",
+        "Tab",
+        "Arrow up",
+        "Enter",
+        "Arrow left",
+        "Arrow down",
+        "Arrow right",
+        "Space",
+      ]) {
+        await specialKeys.getByRole("button", { name: keyName, exact: true }).tap();
+      }
+      await expect
+        .poll(async () => (await sessionWebSockets(phonePage, created.id)).flatMap((socket) => socket.sent))
+        .toEqual(expect.arrayContaining(["\x1b", "\t", "\x1b[A", "\r", "\x1b[D", "\x1b[B", "\x1b[C", " "]));
+
       expect(ready.worktree_path).toBeTruthy();
       const hookResponse = await api.post("/api/v1/agent-hooks/claude", {
         headers: { "X-Kenn-Forge-Runtime-Session-Key": launchedSession.key },

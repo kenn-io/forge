@@ -2,6 +2,7 @@ package testtmux
 
 import (
 	"os"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -37,4 +38,23 @@ func TestReadProcessStatFromProcPreservesMissingStatAsIndeterminate(t *testing.T
 	)
 	require.Same(t, statErr, err)
 	require.NotErrorIs(t, err, errProcessAbsent)
+}
+
+func TestReadProcessStatFromProcTreatsVanishedTaskAsMissing(t *testing.T) {
+	statErr := &os.PathError{
+		Op:   "read",
+		Path: "/proc/31415/stat",
+		Err:  syscall.ESRCH,
+	}
+	_, err := readProcessStatFromProc(
+		31415,
+		func(string) ([]byte, error) {
+			return nil, statErr
+		},
+		func(int) error {
+			require.Fail(t, "probe must not run when the kernel already reported the task gone")
+			return nil
+		},
+	)
+	require.ErrorIs(t, err, errProcessAbsent)
 }

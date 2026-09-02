@@ -165,6 +165,7 @@ Rules:
 - GitHub notification pagination must run until the provider reports no next page; do not use a fixed page cap for either the primary repo notification list or the participating-only annotation scan. A fixed cap can pin the watermark forever on large backlogs. The guardrail is the shared sync budget/rate reserve (`internal/github/notifications_sync.go::Syncer.ensureNotificationBudget`), which should stop sync explicitly when upstream budget is exhausted (`internal/github/sync_test.go::TestSyncNotificationsReadsAllRepositoryNotificationPages`, `internal/github/sync_test.go::TestSyncNotificationsReadsAllParticipatingNotificationPages`).
 - Notification sync and read propagation should stop with server lifecycle before shared services are torn down.
 - Closed/merged linked notification completion must run after repo/detail/list paths that persist closed PR or issue state, not only after notification sync.
+- Per-item PR/issue sync paths close out only the item they just persisted; the full sweep is reserved for the repository sync pass, notification sync, and request handlers. Both sweep branches must stay on the item tables' `UNIQUE(repo_id, number)` index: legacy null-`repo_id` rows resolve the repository first, because one OR across linked and route-matched rows makes SQLite scan every merge request per active notification (`internal/db/queries_notifications.go::closedLinkedNotificationSubject.sweepStatements`).
 
 ## Subject Links
 

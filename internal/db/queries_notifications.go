@@ -1219,53 +1219,168 @@ func (d *DB) DeferQueuedNotificationAcksForRepos(
 	return nil
 }
 
+// closedLinkedNotificationSubject describes how one notification item type
+// joins its linked provider item and which stored state counts as closed.
+type closedLinkedNotificationSubject struct {
+	itemType string
+	table    string
+	closed   string
+}
+
+var (
+	closedLinkedPRNotificationSubject = closedLinkedNotificationSubject{
+		itemType: "pr",
+		table:    "forge_merge_requests",
+		closed:   "(item.state IN ('closed', 'merged') OR item.merged_at IS NOT NULL OR item.closed_at IS NOT NULL)",
+	}
+	closedLinkedIssueNotificationSubject = closedLinkedNotificationSubject{
+		itemType: "issue",
+		table:    "forge_issues",
+		closed:   "(item.state = 'closed' OR item.closed_at IS NOT NULL)",
+	}
+	closedLinkedNotificationSubjects = [...]closedLinkedNotificationSubject{
+		closedLinkedPRNotificationSubject,
+		closedLinkedIssueNotificationSubject,
+	}
+)
+
+// sweepStatements returns the full-sweep UPDATEs for this subject. Both take
+// the arguments (now, item_type). The linked statement joins the item table on
+// its UNIQUE(repo_id, number) index by the notification's own repo_id; the
+// unlinked statement resolves a legacy row without repo_id through forge_repos
+// keys first (an IN subquery, because forge_repos has no key index and a plain
+// join let SQLite pick the item table as the outer loop) and then probes the
+// same unique index. A single OR across both branches forced SQLite to scan
+// the whole item table once per active notification.
+func (s closedLinkedNotificationSubject) sweepStatements() (linked, unlinked string) {
+	linked = `
+		UPDATE forge_notification_items
+		SET done_at = COALESCE(done_at, ?), done_reason = 'closed'
+		WHERE done_at IS NULL
+		  AND item_type = ?
+		  AND item_number IS NOT NULL
+		  AND repo_id IS NOT NULL
+		  AND EXISTS (
+		    SELECT 1 FROM ` + s.table + ` item
+		    JOIN forge_repos r ON r.id = item.repo_id
+		    WHERE item.repo_id = forge_notification_items.repo_id
+		      AND item.number = forge_notification_items.item_number
+		      AND r.lifecycle_state = 'active'
+		      AND ` + s.closed + `
+		  )`
+	unlinked = `
+		UPDATE forge_notification_items
+		SET done_at = COALESCE(done_at, ?), done_reason = 'closed'
+		WHERE done_at IS NULL
+		  AND item_type = ?
+		  AND item_number IS NOT NULL
+		  AND repo_id IS NULL
+		  AND EXISTS (
+		    SELECT 1 FROM ` + s.table + ` item
+		    WHERE item.repo_id IN (
+		      SELECT r.id FROM forge_repos r
+		      WHERE r.platform = forge_notification_items.platform
+		        AND r.platform_host = forge_notification_items.platform_host
+		        AND r.owner_key = forge_notification_items.repo_owner
+		        AND r.name_key = forge_notification_items.repo_name
+		        AND r.lifecycle_state = 'active'
+		    )
+		      AND item.number = forge_notification_items.item_number
+		      AND ` + s.closed + `
+		  )`
+	return linked, unlinked
+}
+
+// itemStatements returns the single-item UPDATEs for this subject. Both take
+// the arguments (now, repo_id, item_type, number, repo_id, number).
+func (s closedLinkedNotificationSubject) itemStatements() (linked, unlinked string) {
+	closedItem := `EXISTS (
+		    SELECT 1 FROM ` + s.table + ` item
+		    JOIN forge_repos r ON r.id = item.repo_id
+		    WHERE item.repo_id = ?
+		      AND item.number = ?
+		      AND r.lifecycle_state = 'active'
+		      AND ` + s.closed + `
+		  )`
+	linked = `
+		UPDATE forge_notification_items
+		SET done_at = COALESCE(done_at, ?), done_reason = 'closed'
+		WHERE done_at IS NULL
+		  AND repo_id = ?
+		  AND item_type = ?
+		  AND item_number = ?
+		  AND ` + closedItem
+	unlinked = `
+		UPDATE forge_notification_items
+		SET done_at = COALESCE(done_at, ?), done_reason = 'closed'
+		WHERE done_at IS NULL
+		  AND repo_id IS NULL
+		  AND (platform, platform_host, repo_owner, repo_name) = (
+		    SELECT platform, platform_host, owner_key, name_key
+		    FROM forge_repos WHERE id = ?
+		  )
+		  AND item_type = ?
+		  AND item_number = ?
+		  AND ` + closedItem
+	return linked, unlinked
+}
+
+// MarkClosedLinkedNotificationsDone sweeps every active notification and
+// marks it done with reason "closed" when its linked pull request or issue in
+// an active repository is closed or merged. The notification sync pass and
+// explicit request paths use this sweep; per-item sync paths use the scoped
+// variants below.
 func (d *DB) MarkClosedLinkedNotificationsDone(ctx context.Context, now time.Time) error {
 	now = canonicalUTCTime(now)
-	_, err := d.execContext(ctx, `
-		UPDATE forge_notification_items
-		SET done_at = COALESCE(done_at, ?), done_reason = 'closed'
-		WHERE done_at IS NULL
-		  AND item_type = 'pr'
-		  AND item_number IS NOT NULL
-		  AND EXISTS (
-		    SELECT 1 FROM forge_repos r
-		    JOIN forge_merge_requests mr ON mr.repo_id = r.id AND mr.number = forge_notification_items.item_number
-		    WHERE r.lifecycle_state = 'active'
-		      AND (
-		          forge_notification_items.repo_id = r.id
-		          OR (forge_notification_items.repo_id IS NULL
-		              AND r.platform = forge_notification_items.platform
-		              AND r.platform_host = forge_notification_items.platform_host
-		              AND r.owner_key = forge_notification_items.repo_owner
-		              AND r.name_key = forge_notification_items.repo_name)
-		      )
-		      AND (mr.state IN ('closed', 'merged') OR mr.merged_at IS NOT NULL OR mr.closed_at IS NOT NULL)
-		  )`, now)
-	if err != nil {
-		return fmt.Errorf("mark closed pr notifications done: %w", err)
+	for _, subject := range closedLinkedNotificationSubjects {
+		linked, unlinked := subject.sweepStatements()
+		if _, err := d.execContext(ctx, linked, now, subject.itemType); err != nil {
+			return fmt.Errorf("mark closed linked %s notifications done: %w", subject.itemType, err)
+		}
+		if _, err := d.execContext(ctx, unlinked, now, subject.itemType); err != nil {
+			return fmt.Errorf("mark closed unlinked %s notifications done: %w", subject.itemType, err)
+		}
 	}
-	_, err = d.execContext(ctx, `
-		UPDATE forge_notification_items
-		SET done_at = COALESCE(done_at, ?), done_reason = 'closed'
-		WHERE done_at IS NULL
-		  AND item_type = 'issue'
-		  AND item_number IS NOT NULL
-		  AND EXISTS (
-		    SELECT 1 FROM forge_repos r
-		    JOIN forge_issues i ON i.repo_id = r.id AND i.number = forge_notification_items.item_number
-		    WHERE r.lifecycle_state = 'active'
-		      AND (
-		          forge_notification_items.repo_id = r.id
-		          OR (forge_notification_items.repo_id IS NULL
-		              AND r.platform = forge_notification_items.platform
-		              AND r.platform_host = forge_notification_items.platform_host
-		              AND r.owner_key = forge_notification_items.repo_owner
-		              AND r.name_key = forge_notification_items.repo_name)
-		      )
-		      AND (i.state = 'closed' OR i.closed_at IS NOT NULL)
-		  )`, now)
-	if err != nil {
-		return fmt.Errorf("mark closed issue notifications done: %w", err)
+	return nil
+}
+
+// MarkClosedLinkedPRNotificationsDone marks active notifications for one pull
+// request done with reason "closed" when that pull request is closed or merged
+// in an active repository. Per-item sync paths use it instead of the full
+// sweep because they already know which item just changed.
+func (d *DB) MarkClosedLinkedPRNotificationsDone(
+	ctx context.Context, now time.Time, repoID int64, number int,
+) error {
+	return d.markClosedLinkedItemNotificationsDone(
+		ctx, now, closedLinkedPRNotificationSubject, repoID, number,
+	)
+}
+
+// MarkClosedLinkedIssueNotificationsDone is the issue counterpart of
+// MarkClosedLinkedPRNotificationsDone.
+func (d *DB) MarkClosedLinkedIssueNotificationsDone(
+	ctx context.Context, now time.Time, repoID int64, number int,
+) error {
+	return d.markClosedLinkedItemNotificationsDone(
+		ctx, now, closedLinkedIssueNotificationSubject, repoID, number,
+	)
+}
+
+func (d *DB) markClosedLinkedItemNotificationsDone(
+	ctx context.Context,
+	now time.Time,
+	subject closedLinkedNotificationSubject,
+	repoID int64,
+	number int,
+) error {
+	now = canonicalUTCTime(now)
+	linked, unlinked := subject.itemStatements()
+	args := []any{now, repoID, subject.itemType, number, repoID, number}
+	if _, err := d.execContext(ctx, linked, args...); err != nil {
+		return fmt.Errorf("mark closed linked %s #%d notifications done: %w", subject.itemType, number, err)
+	}
+	if _, err := d.execContext(ctx, unlinked, args...); err != nil {
+		return fmt.Errorf("mark closed unlinked %s #%d notifications done: %w", subject.itemType, number, err)
 	}
 	return nil
 }

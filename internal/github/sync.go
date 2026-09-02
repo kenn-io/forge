@@ -6826,13 +6826,31 @@ func (s *Syncer) clearDisplacedCredentialAlias(resolved RepoRef) {
 	)
 }
 
-// syncRepo syncs one repository: open PRs, timeline events, and stale closures.
+// markClosedLinkedNotificationsDone sweeps every active notification for a
+// closed or merged linked item. Per-item sync paths use the scoped variants
+// below because they already know which item changed.
 func (s *Syncer) markClosedLinkedNotificationsDone(ctx context.Context) error {
 	if err := s.db.MarkClosedLinkedNotificationsDone(ctx, time.Now().UTC()); err != nil {
 		return fmt.Errorf("mark closed linked notifications done: %w", err)
 	}
 	return nil
 }
+
+func (s *Syncer) markClosedLinkedPRNotificationsDone(ctx context.Context, repoID int64, number int) error {
+	if err := s.db.MarkClosedLinkedPRNotificationsDone(ctx, time.Now().UTC(), repoID, number); err != nil {
+		return fmt.Errorf("mark closed linked notifications done for PR #%d: %w", number, err)
+	}
+	return nil
+}
+
+func (s *Syncer) markClosedLinkedIssueNotificationsDone(ctx context.Context, repoID int64, number int) error {
+	if err := s.db.MarkClosedLinkedIssueNotificationsDone(ctx, time.Now().UTC(), repoID, number); err != nil {
+		return fmt.Errorf("mark closed linked notifications done for issue #%d: %w", number, err)
+	}
+	return nil
+}
+
+// syncRepo syncs one repository: open PRs, timeline events, and stale closures.
 
 func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 	bucket, err := s.bucketKeyForRepo(repo, false)
@@ -12157,7 +12175,7 @@ func (s *Syncer) fetchAndUpdateClosedIssue(
 		return nil
 	}
 
-	return s.markClosedLinkedNotificationsDone(ctx)
+	return s.markClosedLinkedIssueNotificationsDone(ctx, repoID, number)
 }
 
 // lookupDestination extracts the transfer destination from a typed lookup
@@ -13089,7 +13107,7 @@ func (s *Syncer) syncMRForRepoResolved(
 	ctx = s.db.WithRepositoryRouteFence(
 		ctx, platform.DBRepoIdentity(platformRepoRef(repo)), routeFence,
 	)
-	if err := s.markClosedLinkedNotificationsDone(ctx); err != nil {
+	if err := s.markClosedLinkedPRNotificationsDone(ctx, repoID, number); err != nil {
 		if errors.Is(err, db.ErrRepositoryRouteFenceChanged) {
 			return nil
 		}
@@ -13238,7 +13256,7 @@ func (s *Syncer) syncMRForRepoResolved(
 		}
 	}
 
-	if err := s.markClosedLinkedNotificationsDone(ctx); err != nil {
+	if err := s.markClosedLinkedPRNotificationsDone(ctx, repoID, number); err != nil {
 		if diffErr != nil {
 			return errors.Join(diffErr, err)
 		}
@@ -13594,7 +13612,7 @@ func (s *Syncer) syncIssueForRepo(
 	if err != nil {
 		return err
 	}
-	return s.markClosedLinkedNotificationsDone(ctx)
+	return s.markClosedLinkedIssueNotificationsDone(ctx, repoID, number)
 }
 
 // ArchiveItemSyncCost returns the provider-aware admission estimate for the
@@ -13928,7 +13946,7 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 	if _, err := s.persistMergedTransitionEvent(ctx, mrID, revision, ghPR, normalized.MergedAt); err != nil {
 		return fmt.Errorf("persist merged lifecycle event for MR #%d: %w", number, err)
 	}
-	if err := s.markClosedLinkedNotificationsDone(ctx); err != nil {
+	if err := s.markClosedLinkedPRNotificationsDone(ctx, repoID, number); err != nil {
 		return err
 	}
 
@@ -13984,7 +14002,7 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 			}
 		}
 	}
-	return s.markClosedLinkedNotificationsDone(ctx)
+	return s.markClosedLinkedPRNotificationsDone(ctx, repoID, number)
 }
 
 func (s *Syncer) filterDuplicateMergedLifecycleEvents(

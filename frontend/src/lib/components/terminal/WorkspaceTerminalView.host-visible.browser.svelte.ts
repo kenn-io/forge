@@ -245,6 +245,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
 
     let hostVisible = $state(true);
     const target = document.createElement("div");
+    target.tabIndex = -1;
     document.body.appendChild(target);
     const settingsStore = createSettingsStore();
     const instance = mount(WorkspaceTerminalView, {
@@ -262,11 +263,18 @@ describe("WorkspaceTerminalView hostVisible", () => {
     });
 
     try {
-      await vi.waitFor(() => expect(target.querySelector(".xterm-helper-textarea")).not.toBeNull(), WAIT);
-      const terminalInput = target.querySelector<HTMLElement>(".xterm-helper-textarea");
-      if (terminalInput === null) throw new Error("agent terminal focus target was not created");
+      const workflowTab = await vi.waitFor(() => {
+        const element = target.querySelector<HTMLElement>(".workspace-stage [data-tabbed-panel-tab-key] [role='tab']");
+        expect(element).not.toBeNull();
+        return element!;
+      }, WAIT);
 
-      terminalInput.focus();
+      // Move focus outside the pane first so the workflow tab always emits the
+      // focus event that establishes ownership.
+      target.focus();
+      expect(document.activeElement).toBe(target);
+      workflowTab.focus();
+      expect(document.activeElement).toBe(workflowTab);
       await vi.waitFor(() => expect(target.querySelectorAll(".workspace-stage .input-active")).toHaveLength(1), WAIT);
 
       hostVisible = false;

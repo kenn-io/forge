@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"maps"
 	"os"
 	"os/exec"
@@ -32,9 +33,10 @@ const (
 	// listing may reuse the previous window inventory, so window renames and
 	// activity stamps still converge without a per-pass list-windows spawn.
 	fleetTmuxWindowRefreshInterval = 60 * time.Second
-	// fleetTmuxProcessTreeDepth bounds how many generations below a pane's
-	// process the metrics probe follows.
-	fleetTmuxProcessTreeDepth = 6
+	// fleetTmuxProcessTableLimit caps how many processes the metrics probe
+	// will collect across every pane tree before it stops descending, so a
+	// runaway fork tree cannot turn the probe into an unbounded walk.
+	fleetTmuxProcessTableLimit = 4096
 	// tmux 3.5a renders literal tabs in -F output as underscores, so use a
 	// printable separator the real command preserves.
 	fleetTmuxFieldSeparator = "|"
@@ -392,14 +394,20 @@ func panePIDs(panes []fleetTmuxPaneInfo) []int {
 // probeFleetProcessTrees builds a process table covering only the given pane
 // processes and their descendants, instead of enumerating the whole host. Each
 // generation costs one ps for the known pids and one pgrep for their children;
-// the walk stops when a generation has no children or the depth bound is hit.
-// An empty pid set spawns nothing.
+// the walk descends until a generation has no children, or stops early once
+// the table reaches its size cap and logs that the metrics are partial. An
+// empty pid set spawns nothing.
 func probeFleetProcessTrees(
 	ctx context.Context, roots []int,
 ) (map[int]fleetProcessInfo, error) {
 	processes := map[int]fleetProcessInfo{}
 	pending := slices.Clone(roots)
-	for depth := 0; len(pending) > 0 && depth <= fleetTmuxProcessTreeDepth; depth++ {
+	for len(pending) > 0 {
+		if len(processes) >= fleetTmuxProcessTableLimit {
+			slog.Warn("fleet tmux metrics: process tree truncated",
+				"limit", fleetTmuxProcessTableLimit, "pending", len(pending))
+			break
+		}
 		list := joinPIDs(pending)
 		psOut, err := fleetProcessProbeOutput(ctx, "fleet process probe",
 			"ps", "-o", "pid=,ppid=,%cpu=,rss=,comm=", "-p", list)
@@ -428,9 +436,11 @@ func probeFleetProcessTrees(
 }
 
 // fleetProcessProbeOutput runs one ps or pgrep query through the process
-// limiter. Both tools exit non-zero when no listed pid exists, which is a
-// normal outcome for a pane whose process just exited, so a clean exit
-// status failure yields whatever they printed rather than an error.
+// limiter. Both BSD and procps implementations exit 1 when nothing matched,
+// which is a normal outcome for a pane whose process just exited, so exit
+// status 1 yields whatever was printed. Any other failure, including the
+// usage errors both tools report with status 2, surfaces as an error so a
+// broken probe is not published as an empty process tree.
 func fleetProcessProbeOutput(
 	ctx context.Context, reason, name string, args ...string,
 ) ([]byte, error) {
@@ -438,7 +448,7 @@ func fleetProcessProbeOutput(
 	out, err := procutil.Output(ctx, cmd, reason)
 	if err != nil {
 		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) && ctx.Err() == nil {
+		if errors.As(err, &exitErr) && ctx.Err() == nil && exitErr.ExitCode() == 1 {
 			return out, nil
 		}
 		return nil, err

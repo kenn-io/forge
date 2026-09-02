@@ -13,6 +13,11 @@ import (
 // itself is a mutex-guarded map length, not a subprocess.
 const fleetMonitorIdleProbeInterval = 2 * time.Second
 
+// fleetMonitorDemandWindow is how long a snapshot read keeps the monitors
+// active after it. Hubs consume spokes through raw snapshot fetches without
+// opening a spoke-local event stream, so a read is demand in its own right.
+const fleetMonitorDemandWindow = 90 * time.Second
+
 // fleetMonitorGate decides whether a background monitor may run an expensive
 // pass. The fleet monitors exist to keep the live snapshot fresh for connected
 // clients, so while nobody is subscribed to the event stream they only record

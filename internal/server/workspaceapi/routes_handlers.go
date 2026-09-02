@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	"go.kenn.io/forge/internal/agentactivity"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
@@ -2087,14 +2088,17 @@ func (s *Handler) workspaceResponseWithTmuxEnrichment(
 // pane probe. A workspace whose live agent session has reported through the
 // hook integration is not probed at all: the lifecycle events are the
 // authoritative activity signal there, and the pane capture would only spend
-// tmux spawns to second-guess them. Such a workspace counts as a complete,
-// activity-free tmux sample.
+// tmux spawns to second-guess them. Such a workspace counts as a complete
+// tmux sample whose last-activity time is the hook report's own timestamp, so
+// subject activity feeds still see hook-driven work move.
 func (s *Handler) applyWorkspaceTmuxEnrichment(
 	ctx context.Context,
 	summary *db.WorkspaceSummary,
 	resp *workspaceResponse,
 ) error {
-	if s.hookActivityCoversWorkspace(summary) {
+	if hook, ok := s.hookActivityCoveringWorkspace(summary); ok {
+		activityAt := hook.UpdatedAt.UTC().Format(time.RFC3339)
+		resp.TmuxLastOutputAt = &activityAt
 		return nil
 	}
 	sessions, sessionsErr := s.workspaceTmuxActivitySessions(ctx, summary)
@@ -2105,16 +2109,17 @@ func (s *Handler) applyWorkspaceTmuxEnrichment(
 	return errors.Join(sessionsErr, activityErr)
 }
 
-// hookActivityCoversWorkspace reports whether a fresh hook report exists for
-// one of the workspace's live agent sessions.
-func (s *Handler) hookActivityCoversWorkspace(summary *db.WorkspaceSummary) bool {
+// hookActivityCoveringWorkspace returns the hook activity snapshot for one of
+// the workspace's live agent sessions, when one exists.
+func (s *Handler) hookActivityCoveringWorkspace(
+	summary *db.WorkspaceSummary,
+) (agentactivity.Snapshot, bool) {
 	if s.agentActivity == nil || s.runtime == nil || summary == nil {
-		return false
+		return agentactivity.Snapshot{}, false
 	}
-	_, ok := s.agentActivity.SnapshotForWorkspace(
+	return s.agentActivity.SnapshotForWorkspace(
 		summary.WorktreePath, s.liveAgentSessionKeys(summary.ID),
 	)
-	return ok
 }
 
 // liveAgentSessionKeys lists the runtime session keys of the workspace's

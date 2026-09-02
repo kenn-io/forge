@@ -34,9 +34,16 @@ Rules:
   supported reports joined by canonical worktree and runtime key to a live `agent`
   runtime (`internal/server/workspaceapi/agent_sessions.go::Handler.listWorkspaceAgentSessions`).
 - Hook reports own workspace activity where they exist: a workspace with a
-  fresh hook report for a live agent runtime is never probed through tmux pane
-  capture, and regains the tmux probe only when that coverage lapses
-  (`internal/server/workspaceapi/routes_handlers.go::Handler.applyWorkspaceTmuxEnrichment`).
+  hook report for a live agent runtime is never probed through tmux pane
+  capture, its last-activity time is the report's timestamp, and the tmux
+  probe returns only when the session ends or its runtime is removed. Reports
+  have no time-based expiry; a launched agent keeps reporting until teardown
+  (`internal/server/workspaceapi/routes_handlers.go::Handler.applyWorkspaceTmuxEnrichment`,
+  `internal/agentactivity/store.go::Store.LiveReportsForWorkspace`).
+- A completion keeps its first timestamp: `done` written over `done` for the
+  same session preserves `UpdatedAt`, so the sidebar's acknowledged Done badge
+  does not reappear when Claude Code's `idle_prompt` follows Stop
+  (`internal/agentactivity/store.go::Store.HandleEvent`).
 - Claude Code's `idle_prompt` notification follows Stop on a finished turn and
   maps to `done`, not `input`; only `elicitation_dialog` and user-input tools
   mean the agent is waiting on a person (`internal/agentactivity/store.go::stateForHook`).

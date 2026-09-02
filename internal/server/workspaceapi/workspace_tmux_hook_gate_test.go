@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -98,7 +99,11 @@ func TestTmuxEnrichmentSkipsWorkspacesCoveredByHookReports(t *testing.T) {
 	assert.Empty(tmuxCalls(), "a hook-covered workspace spawns no tmux probe")
 	assert.True(result.tmuxComplete, "hook coverage counts as a complete sample")
 	assert.False(result.response.TmuxWorking)
-	assert.Nil(result.response.TmuxLastOutputAt)
+	hook, ok := activity.SnapshotForWorkspace(worktree, []string{agentRuntime.Key})
+	require.True(ok)
+	require.NotNil(result.response.TmuxLastOutputAt)
+	assert.Equal(hook.UpdatedAt.UTC().Format(time.RFC3339), *result.response.TmuxLastOutputAt,
+		"the hook report's timestamp stands in for last activity")
 
 	full := handler.workspaceResponseWithEnrichment(ctx, summary)
 	assert.Empty(tmuxCalls(), "the full enrichment pass honours the same gate")

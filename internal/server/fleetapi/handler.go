@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.kenn.io/forge/internal/config"
@@ -59,7 +60,7 @@ type Deps struct {
 	CancelEventStreams          func(string)
 	// SubscriberCount reports how many event-stream clients are connected.
 	// The fleet background monitors skip their expensive passes while it is
-	// zero; nil means always run.
+	// zero and no snapshot was read recently; nil means always run.
 	SubscriberCount func() int
 }
 
@@ -105,6 +106,10 @@ type Handler struct {
 	lifecycleStopping         bool
 	lifecycleDone             chan struct{}
 	lifecycleStarted          bool
+	// snapshotDemandAt is the UnixNano time of the last snapshot read served
+	// by this handler; it keeps the monitors active for hub-driven spokes
+	// that never open a local event stream.
+	snapshotDemandAt atomic.Int64
 }
 
 // New constructs a Fleet handler without starting its workers.
@@ -148,7 +153,9 @@ func New(deps Deps) *Handler {
 	h.memberClients = make(map[string]federationMemberClients)
 	var hasSubscribers func() bool
 	if deps.SubscriberCount != nil {
-		hasSubscribers = func() bool { return deps.SubscriberCount() > 0 }
+		hasSubscribers = func() bool {
+			return deps.SubscriberCount() > 0 || h.recentSnapshotDemand()
+		}
 	}
 	h.fleetTmuxMonitor = newFleetTmuxMonitor(
 		deps.Config.TmuxCommand,
@@ -283,6 +290,28 @@ func (h *Handler) Start(parent context.Context, tmuxAvailable, disableMonitors b
 	h.runBackground(h.fleetWorktreeDiscoverer.run)
 	h.runBackground(h.fleetWorktreeStatsSampler.run)
 	h.runBackground(h.fleetPlatformAuthMonitor.run)
+}
+
+// noteSnapshotDemand records that a client read a snapshot, which counts as
+// demand for fresh monitor data even without an event-stream subscription.
+func (h *Handler) noteSnapshotDemand() {
+	if h == nil {
+		return
+	}
+	h.snapshotDemandAt.Store(h.now().UnixNano())
+}
+
+// recentSnapshotDemand reports whether a snapshot was read within the demand
+// window.
+func (h *Handler) recentSnapshotDemand() bool {
+	if h == nil {
+		return false
+	}
+	at := h.snapshotDemandAt.Load()
+	if at == 0 {
+		return false
+	}
+	return h.now().Sub(time.Unix(0, at)) < fleetMonitorDemandWindow
 }
 
 // RefreshWorktreeStats refreshes the cached git statistics for one worktree.

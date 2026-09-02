@@ -101,14 +101,15 @@ func withCommonDir(gitDir string) (gitDirs, error) {
 	return dirs, nil
 }
 
-// worktreeStatsFingerprint summarizes every git-directory input the stats
+// worktreeStatsFingerprint summarizes the git-directory inputs the stats
 // sampler's diff and divergence probes depend on: the checked-out commit
-// (HEAD), staged content (index), and every ref the merge base or upstream can
-// resolve through (loose refs and packed-refs). Two equal fingerprints mean
-// the sampled numbers cannot have changed through git, so the probes and the
-// database write can be skipped. Unstaged edits to tracked files and new
-// untracked files do not touch the git directory and are deliberately outside
-// this fingerprint; the on-demand refresh path measures them unconditionally.
+// (HEAD), staged content (index), the upstream and remote configuration
+// (config), and every ref the merge base or upstream can resolve through
+// (loose refs and packed-refs). It is a change hint, not proof: unstaged edits
+// to tracked files and new untracked files do not touch the git directory,
+// and a same-size rewrite inside the filesystem's timestamp resolution is
+// invisible. The sampler bounds that blind spot with a maximum fingerprint
+// age, and the on-demand refresh paths measure unconditionally.
 func worktreeStatsFingerprint(path string) (string, error) {
 	dirs, err := resolveGitDirs(path)
 	if err != nil {
@@ -117,6 +118,7 @@ func worktreeStatsFingerprint(path string) (string, error) {
 	h := newGitFingerprintHasher()
 	h.file("HEAD", filepath.Join(dirs.gitDir, "HEAD"))
 	h.file("index", filepath.Join(dirs.gitDir, "index"))
+	h.file("config", filepath.Join(dirs.commonDir, "config"))
 	h.file("packed-refs", filepath.Join(dirs.commonDir, "packed-refs"))
 	h.tree("refs", filepath.Join(dirs.commonDir, "refs"))
 	if dirs.gitDir != dirs.commonDir {

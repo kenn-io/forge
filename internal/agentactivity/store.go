@@ -27,10 +27,6 @@ const (
 
 const RuntimeSessionKeyEnv = "KENN_FORGE_RUNTIME_SESSION_KEY"
 
-// ReportFreshness bounds how long a hook state can override tmux activity
-// without another lifecycle event confirming it.
-const ReportFreshness = 30 * time.Minute
-
 type Report struct {
 	Agent             string    `json:"agent"`
 	SessionID         string    `json:"session_id"`
@@ -61,10 +57,9 @@ type Store struct {
 	root string
 	now  func() time.Time
 
-	cacheMu         sync.Mutex
-	cacheFiles      map[string]os.FileInfo
-	cacheValidUntil time.Time
-	cacheReports    []Report
+	cacheMu      sync.Mutex
+	cacheFiles   map[string]os.FileInfo
+	cacheReports []Report
 }
 
 func NewStore(root string) *Store {
@@ -125,6 +120,15 @@ func (s *Store) HandleEvent(agent string, hook HookEvent, runtimeSessionKey stri
 		State:             state,
 		UpdatedAt:         s.now().UTC(),
 	}
+	// A completion that is already recorded keeps its original timestamp:
+	// Claude Code follows Stop with an idle_prompt notification, and a fresh
+	// timestamp would make an acknowledged "done" reappear as new.
+	if state == StateDone {
+		if previous, ok := s.readReport(s.reportPath(agent, hook.SessionID)); ok &&
+			previous.State == StateDone && previous.RuntimeSessionKey == runtimeSessionKey {
+			report.UpdatedAt = previous.UpdatedAt
+		}
+	}
 	return s.writeReport(report)
 }
 
@@ -142,8 +146,11 @@ func (s *Store) SnapshotForWorkspace(cwd string, liveSessionKeys []string) (Snap
 	return Snapshot{State: reports[0].State, UpdatedAt: reports[0].UpdatedAt}, true
 }
 
-// LiveReportsForWorkspace returns fresh reports whose canonical worktree and
-// runtime-session key match the supplied live inventory.
+// LiveReportsForWorkspace returns reports whose canonical worktree and
+// runtime-session key match the supplied live inventory. A report lives until
+// its session ends or its runtime session is removed; there is no time-based
+// expiry, because a launched agent keeps reporting until it is torn down and
+// its hook state must not lapse back to weaker signals in between.
 func (s *Store) LiveReportsForWorkspace(cwd string, liveSessionKeys []string) []Report {
 	if s == nil || strings.TrimSpace(s.root) == "" || len(liveSessionKeys) == 0 {
 		return nil
@@ -236,7 +243,6 @@ func (s *Store) reports() []Report {
 		s.clearCacheLocked()
 		return nil
 	}
-	now := s.now().UTC()
 	files := make(map[string]os.FileInfo)
 	metadataComplete := true
 	for _, entry := range entries {
@@ -250,13 +256,11 @@ func (s *Store) reports() []Report {
 		}
 		files[entry.Name()] = info
 	}
-	if metadataComplete && sameReportFiles(files, s.cacheFiles) &&
-		(s.cacheValidUntil.IsZero() || now.Before(s.cacheValidUntil)) {
+	if metadataComplete && sameReportFiles(files, s.cacheFiles) {
 		return slices.Clone(s.cacheReports)
 	}
 
 	reports := make([]Report, 0, len(entries))
-	validUntil := time.Time{}
 	cleanupPending := false
 	for _, entry := range entries {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
@@ -277,26 +281,12 @@ func (s *Store) reports() []Report {
 			}
 			continue
 		}
-		expiresAt := report.UpdatedAt.Add(ReportFreshness)
-		if !now.Before(expiresAt) {
-			if removeErr := os.Remove(path); removeErr == nil ||
-				errors.Is(removeErr, os.ErrNotExist) {
-				delete(files, entry.Name())
-			} else {
-				cleanupPending = true
-			}
-			continue
-		}
-		if validUntil.IsZero() || expiresAt.Before(validUntil) {
-			validUntil = expiresAt
-		}
 		reports = append(reports, report)
 	}
 	s.cacheFiles = files
 	if cleanupPending || !metadataComplete {
 		s.cacheFiles = nil
 	}
-	s.cacheValidUntil = validUntil
 	s.cacheReports = slices.Clone(reports)
 	return reports
 }
@@ -309,7 +299,6 @@ func (s *Store) invalidateCache() {
 
 func (s *Store) clearCacheLocked() {
 	s.cacheFiles = nil
-	s.cacheValidUntil = time.Time{}
 	s.cacheReports = nil
 }
 

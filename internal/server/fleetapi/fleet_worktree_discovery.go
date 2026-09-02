@@ -22,6 +22,11 @@ import (
 // only spawns git when that fingerprint moved.
 const fleetWorktreeDiscoveryInterval = 15 * time.Second
 
+// fleetWorktreeDiscoveryFingerprintMaxAge bounds how long a matching
+// fingerprint may keep a project from being re-inspected, so a change the
+// stat-based fingerprint missed is corrected within bounded time.
+const fleetWorktreeDiscoveryFingerprintMaxAge = 10 * time.Minute
+
 // fleetWorktreeDiscoverer keeps the project registry's on-disk facts fresh.
 // On a fixed interval it inspects each registered project's git checkout — its
 // repository kind, default branch, and linked worktrees — and reconciles the
@@ -33,14 +38,30 @@ type fleetWorktreeDiscoverer struct {
 	db       *db.DB
 	interval time.Duration
 	gate     *fleetMonitorGate
+	// now is the discoverer's clock; nil means time.Now.
+	now func() time.Time
 
 	// fingerprints remembers, per project ID, the git-directory fingerprint
-	// observed by the last successful reconcile. A background pass whose
-	// fingerprint still matches skips both the git spawns and the database
-	// write; a failed or stale-marking pass drops the entry so recovery is
-	// re-inspected in full.
+	// observed by the last successful reconcile and when. A background pass
+	// whose fingerprint still matches and is younger than the max age skips
+	// both the git spawns and the database write; a failed or stale-marking
+	// pass drops the entry so recovery is re-inspected in full.
 	fingerprintsMu sync.Mutex
-	fingerprints   map[string]string
+	fingerprints   map[string]projectDiscoveryFingerprintEntry
+}
+
+// projectDiscoveryFingerprintEntry is one remembered fingerprint and when it
+// was recorded.
+type projectDiscoveryFingerprintEntry struct {
+	value string
+	at    time.Time
+}
+
+func (d *fleetWorktreeDiscoverer) clock() time.Time {
+	if d.now != nil {
+		return d.now()
+	}
+	return time.Now()
 }
 
 func newFleetWorktreeDiscoverer(
@@ -50,7 +71,7 @@ func newFleetWorktreeDiscoverer(
 		db:           database,
 		interval:     fleetWorktreeDiscoveryInterval,
 		gate:         newFleetMonitorGate("worktree discovery", hasSubscribers),
-		fingerprints: map[string]string{},
+		fingerprints: map[string]projectDiscoveryFingerprintEntry{},
 	}
 }
 
@@ -100,7 +121,8 @@ func (d *fleetWorktreeDiscoverer) refreshProjectIfChanged(
 		d.fingerprintsMu.Lock()
 		previous, seen := d.fingerprints[projectID]
 		d.fingerprintsMu.Unlock()
-		if seen && previous == fingerprint {
+		if seen && previous.value == fingerprint &&
+			d.clock().Sub(previous.at) < fleetWorktreeDiscoveryFingerprintMaxAge {
 			return
 		}
 	}
@@ -151,7 +173,12 @@ func (d *fleetWorktreeDiscoverer) reconcileProject(
 	}
 	if haveFingerprint {
 		d.fingerprintsMu.Lock()
-		d.fingerprints[projectID] = fingerprint
+		if d.fingerprints == nil {
+			d.fingerprints = map[string]projectDiscoveryFingerprintEntry{}
+		}
+		d.fingerprints[projectID] = projectDiscoveryFingerprintEntry{
+			value: fingerprint, at: d.clock(),
+		}
 		d.fingerprintsMu.Unlock()
 	}
 }

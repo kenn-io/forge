@@ -340,7 +340,10 @@ func (s *Server) authorizeFederationRequest(
 func (s *Server) allowsActivationLeaseHandshake(
 	r *http.Request, canonicalPath string, principal federationauth.Principal,
 ) bool {
-	if s.options.FederationEnrollments == nil ||
+	s.cfgMu.Lock()
+	fleetEnabled := s.cfg != nil && s.cfg.Fleet.Enabled
+	s.cfgMu.Unlock()
+	if !fleetEnabled || s.options.FederationEnrollments == nil ||
 		s.bootCfgSnapshot.FleetRole != config.FleetRoleHub {
 		return false
 	}

@@ -118,9 +118,9 @@ or remote workspace and session operations.
   `internal/server/api_auth.go::Server.federationPrincipalEnrollmentState`).
 - Active peer bearers are accepted only after the versioned activation-lease
   handshake and while the hub and spoke copies of the renewable 24-hour lease
-  are current. Lease-unaware or expired peers may reach only the identity
-  preflight and activation handshake, or revocation; explicit hub rejection
-  never falls back to a cached lease
+  are current and federation remains enabled. Lease-unaware or expired peers
+  may reach only the identity preflight and activation handshake, or revocation;
+  explicit hub rejection never falls back to a cached lease
   (`internal/server/api_auth.go::Server.federationPrincipalEnrollmentState`,
   `internal/server/api_auth.go::Server.allowsActivationLeaseHandshake`).
 - The credential store persists inbound bearers only as SHA-256 digests and

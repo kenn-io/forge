@@ -781,10 +781,27 @@ func TestLeaseUnawareHubEnrollmentCredentialIsInactive(t *testing.T) {
 	t.Cleanup(ts.Close)
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 
-	identityResponse := authGet(t, ts, "/api/v1/federation/identity", func(r *http.Request) {
-		r.Header.Set("Authorization", "Bearer "+token)
-		r.Header.Set(federationauth.NodeIDHeader, nodeID)
-	})
+	requestIdentity := func() *http.Response {
+		return authGet(t, ts, "/api/v1/federation/identity", func(r *http.Request) {
+			r.Header.Set("Authorization", "Bearer "+token)
+			r.Header.Set(federationauth.NodeIDHeader, nodeID)
+		})
+	}
+	requestActivation := func() *http.Response {
+		request, requestErr := http.NewRequest(
+			http.MethodPost,
+			ts.URL+"/api/v1/federation/enrollments/"+enrollmentID+"/activate",
+			strings.NewReader(`{"protocol_version":3,"preparation_seal":"legacy"}`),
+		)
+		require.NoError(requestErr)
+		request.Header.Set("Authorization", "Bearer "+token)
+		request.Header.Set("Content-Type", "application/json")
+		response, requestErr := ts.Client().Do(request)
+		require.NoError(requestErr)
+		return response
+	}
+
+	identityResponse := requestIdentity()
 	identityResponse.Body.Close()
 	require.Equal(http.StatusOK, identityResponse.StatusCode,
 		"lease-unaware peers need identity preflight access before activation")
@@ -795,19 +812,20 @@ func TestLeaseUnawareHubEnrollmentCredentialIsInactive(t *testing.T) {
 	defer response.Body.Close()
 	require.Equal(http.StatusForbidden, response.StatusCode)
 
-	activationRequest, err := http.NewRequest(
-		http.MethodPost,
-		ts.URL+"/api/v1/federation/enrollments/"+enrollmentID+"/activate",
-		strings.NewReader(`{"protocol_version":3,"preparation_seal":"legacy"}`),
-	)
-	require.NoError(err)
-	activationRequest.Header.Set("Authorization", "Bearer "+token)
-	activationRequest.Header.Set("Content-Type", "application/json")
-	activationResponse, err := ts.Client().Do(activationRequest)
-	require.NoError(err)
-	defer activationResponse.Body.Close()
+	activationResponse := requestActivation()
+	activationResponse.Body.Close()
 	require.Equal(http.StatusUnprocessableEntity, activationResponse.StatusCode,
 		"lease-unaware peers may reach only the activation handshake")
+
+	srv.cfgMu.Lock()
+	srv.cfg.Fleet.Enabled = false
+	srv.cfgMu.Unlock()
+	identityResponse = requestIdentity()
+	identityResponse.Body.Close()
+	require.Equal(http.StatusForbidden, identityResponse.StatusCode)
+	activationResponse = requestActivation()
+	activationResponse.Body.Close()
+	require.Equal(http.StatusForbidden, activationResponse.StatusCode)
 }
 
 func TestActiveHubCredentialRequiresActiveSpokeStartup(t *testing.T) {

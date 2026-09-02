@@ -109,8 +109,10 @@ otherwise fails only in the Vitest/Playwright transform tier, not in
   Left/Right/Home/End move focus and selection via
   `shared/tablist-keyboard.ts` (`TabbedPanelTree`, `MobileWorkspaceItem`,
   the `PullDetail` fallback strip), and Tab continues into the panel.
-  `TabbedPanelTree` reports the leaf's active tab for any focus inside the
-  leaf, so landing on a tab's "Hide" tool does not activate that pane.
+  In `TabbedPanelTree` a focused tab button reports its own tab (an
+  arrow-key switch must not lag one render behind); any other focus in the
+  leaf reports the active tab, so landing on a tab's "Hide" tool does not
+  activate that pane.
 - jsdom lacks `offsetParent` / `scrollIntoView` / `ResizeObserver`:
   `test/setup.ts` stubs the latter two, focus-trap tests install
   `stubOffsetParent.ts`, and synthetic Tab only exercises kit's trap at

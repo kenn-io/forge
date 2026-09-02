@@ -122,6 +122,22 @@ describe("TabbedPanelTree", () => {
     expect(activeLeaves()[0]?.contains(screen.getByTestId("panel-files"))).toBe(true);
   });
 
+  it("reports a focused tab button as its own tab and strip tools as the active tab", async () => {
+    const onFocusPane = vi.fn();
+    render(TabbedPanelTreeTestHarness, {
+      props: { node: leafNode(), onFocusPane, withLeafActions: true },
+    });
+
+    await fireEvent.focusIn(screen.getByRole("tab", { name: "Feed, Feed updating" }));
+    expect(onFocusPane).toHaveBeenLastCalledWith("feed", "leaf-1");
+
+    const strip = screen.getByRole("tablist");
+    const tool = strip.querySelector<HTMLElement>(".tabbed-panel-leaf-actions button");
+    expect(tool).not.toBeNull();
+    await fireEvent.focusIn(tool!);
+    expect(onFocusPane).toHaveBeenLastCalledWith("detail", "leaf-1");
+  });
+
   it("keeps nested tab focus scoped to the outer leaf", async () => {
     const onFocusPane = vi.fn();
     render(TabbedPanelTreeTestHarness, {

@@ -514,14 +514,20 @@
     return `--dragged-tab-width: ${width}px;`;
   }
 
-  // Focus anywhere in the leaf reports the leaf's active tab. Inactive panels
-  // are visibility-hidden and cannot take focus, so panel focus always means
-  // the active one; and focus inside the strip (a tab reached by arrow key,
-  // or a tab's "Hide" tool reached by Tab) is not focus in that tab's pane.
-  // Reporting the tool's own tab used to make a plain Tab past the strip
-  // activate the pane whose tool it landed on.
-  function handleLeafFocusIn(_event: FocusEvent, leaf: TabbedPanelLeaf): void {
-    onFocusPane?.(leaf.activeTabKey, leaf.id);
+  // A focused tab button reports its own tab: after an arrow-key switch the
+  // selection has already moved there, and the report must not lag one tab
+  // behind the strip's next render. Everything else in the leaf reports the
+  // active tab. Inactive panels are visibility-hidden and cannot take focus,
+  // so panel focus always means the active one; and a strip tool such as a
+  // tab's "Hide" button reached by Tab must not activate the pane it belongs
+  // to. Only this leaf's own strip counts, not a nested tree's.
+  function handleLeafFocusIn(event: FocusEvent, leaf: TabbedPanelLeaf): void {
+    const target = event.target;
+    const tabEl = target instanceof Element
+      ? target.closest<HTMLElement>("[role='tab']")?.closest<HTMLElement>("[data-tabbed-panel-tab-key]") ?? null
+      : null;
+    const ownTabKey = tabEl?.closest(".tabbed-panel-leaf") === event.currentTarget ? tabEl.dataset.tabbedPanelTabKey : undefined;
+    onFocusPane?.(ownTabKey ?? leaf.activeTabKey, leaf.id);
   }
 
   function measureSplit(): number {

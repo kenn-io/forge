@@ -1039,7 +1039,9 @@
     ref: PullRequestRouteRef,
   ): boolean | void {
     if (shouldUseResponsiveFocusPresentation()) {
-      navigate(buildFocusPullRequestRoute(ref), carryMobileListOrigin(history.state, "push"));
+      // Stay in the canonical route family the list opened, as the tab
+      // switch does; the phone shell renders both families the same way.
+      navigate(buildPullRequestRoute(ref), carryMobileListOrigin(history.state, "push"));
       return true;
     }
     return undefined;

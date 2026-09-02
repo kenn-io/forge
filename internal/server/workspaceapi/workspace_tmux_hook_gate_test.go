@@ -105,6 +105,32 @@ func TestTmuxEnrichmentSkipsWorkspacesCoveredByHookReports(t *testing.T) {
 	assert.Equal(hook.UpdatedAt.UTC().Format(time.RFC3339), *result.response.TmuxLastOutputAt,
 		"the hook report's timestamp stands in for last activity")
 
+	// A second agent whose older report outranks the first by state priority
+	// must not hide the newer event: last activity follows the newest report.
+	secondRuntime, err := runtime.Launch(ctx, workspaceID, worktree, "claude")
+	require.NoError(err)
+	require.NoError(activity.HandleEvent("claude", agentactivity.HookEvent{
+		SessionID: "second-session", CWD: worktree, HookEventName: "PermissionRequest",
+	}, secondRuntime.Key))
+	time.Sleep(1100 * time.Millisecond)
+	require.NoError(activity.HandleEvent("claude", agentactivity.HookEvent{
+		SessionID: "claude-session", CWD: worktree, HookEventName: "PostToolUse",
+	}, agentRuntime.Key))
+	reports := activity.LiveReportsForWorkspace(worktree, []string{agentRuntime.Key, secondRuntime.Key})
+	require.Len(reports, 2)
+	newest := reports[0]
+	assert.Equal("claude-session", newest.SessionID)
+	badge, ok := activity.SnapshotForWorkspace(worktree, []string{agentRuntime.Key, secondRuntime.Key})
+	require.True(ok)
+	assert.Equal(agentactivity.StateApproval, badge.State, "the badge still shows the pending approval")
+	result = handler.workspaceResponseWithTmuxEnrichment(ctx, summary)
+	require.NotNil(result.response.TmuxLastOutputAt)
+	assert.Equal(newest.UpdatedAt.UTC().Format(time.RFC3339), *result.response.TmuxLastOutputAt,
+		"last activity comes from the newest report, not the priority pick")
+	require.NoError(activity.HandleEvent("claude", agentactivity.HookEvent{
+		SessionID: "second-session", CWD: worktree, HookEventName: "SessionEnd",
+	}, secondRuntime.Key))
+
 	full := handler.workspaceResponseWithEnrichment(ctx, summary)
 	assert.Empty(tmuxCalls(), "the full enrichment pass honours the same gate")
 	assert.True(full.tmuxComplete)

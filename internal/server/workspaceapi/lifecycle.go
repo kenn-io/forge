@@ -150,6 +150,10 @@ func (h *Handler) RestoreRuntimeSessions(ctx context.Context) error {
 			); forgetErr != nil {
 				return forgetErr
 			}
+			// The agent exited while the daemon was down, so no exit hook
+			// removed its activity report; reports do not expire on their
+			// own, so the forgotten runtime takes its report with it.
+			h.removeAgentActivityRuntimeSession(session.SessionKey)
 			continue
 		}
 		if errors.Is(err, localruntime.ErrSessionUnavailable) {

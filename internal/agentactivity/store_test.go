@@ -3,6 +3,7 @@ package agentactivity
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -340,4 +341,33 @@ func TestStoreKeepsDoneTimestampAcrossIdlePrompt(t *testing.T) {
 	require.True(ok)
 	assert.Equal(StateDone, snapshot.State)
 	assert.Equal(now, snapshot.UpdatedAt)
+}
+
+func TestStoreIdlePromptKeepsPendingInputAndApproval(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	store := NewStore(t.TempDir())
+	workspace := t.TempDir()
+
+	for _, tc := range []struct {
+		name  string
+		event map[string]any
+		want  State
+	}{
+		{"question", map[string]any{"hook_event_name": "PreToolUse", "tool_name": "AskUserQuestion"}, StateInput},
+		{"permission", map[string]any{"hook_event_name": "PermissionRequest"}, StateApproval},
+	} {
+		event := map[string]any{"session_id": "agent-" + tc.name, "cwd": workspace}
+		maps.Copy(event, tc.event)
+		reportHook(t, store, "runtime-"+tc.name, event)
+		// Claude Code raises idle_prompt after a minute of waiting for an
+		// answer; the question is still pending.
+		reportHook(t, store, "runtime-"+tc.name, map[string]any{
+			"session_id": "agent-" + tc.name, "cwd": workspace,
+			"hook_event_name": "Notification", "notification_type": "idle_prompt",
+		})
+		snapshot, ok := store.SnapshotForWorkspace(workspace, []string{"runtime-" + tc.name})
+		require.True(ok, tc.name)
+		assert.Equal(tc.want, snapshot.State, tc.name)
+	}
 }

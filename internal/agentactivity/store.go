@@ -120,16 +120,29 @@ func (s *Store) HandleEvent(agent string, hook HookEvent, runtimeSessionKey stri
 		State:             state,
 		UpdatedAt:         s.now().UTC(),
 	}
-	// A completion that is already recorded keeps its original timestamp:
-	// Claude Code follows Stop with an idle_prompt notification, and a fresh
-	// timestamp would make an acknowledged "done" reappear as new.
 	if state == StateDone {
-		if previous, ok := s.readReport(s.reportPath(agent, hook.SessionID)); ok &&
-			previous.State == StateDone && previous.RuntimeSessionKey == runtimeSessionKey {
-			report.UpdatedAt = previous.UpdatedAt
+		previous, ok := s.readReport(s.reportPath(agent, hook.SessionID))
+		if ok && previous.RuntimeSessionKey == runtimeSessionKey {
+			switch {
+			case isIdlePrompt(hook) && (previous.State == StateInput ||
+				previous.State == StateApproval):
+				// Claude Code raises idle_prompt after a minute of waiting for
+				// input whatever it is waiting for; an unanswered question or
+				// permission prompt is still pending, not finished.
+				return nil
+			case previous.State == StateDone:
+				// A completion that is already recorded keeps its original
+				// timestamp: idle_prompt follows Stop, and a fresh timestamp
+				// would make an acknowledged "done" reappear as new.
+				report.UpdatedAt = previous.UpdatedAt
+			}
 		}
 	}
 	return s.writeReport(report)
+}
+
+func isIdlePrompt(hook HookEvent) bool {
+	return hook.HookEventName == "Notification" && hook.NotificationType == "idle_prompt"
 }
 
 func (s *Store) SnapshotForWorkspace(cwd string, liveSessionKeys []string) (Snapshot, bool) {
@@ -147,7 +160,7 @@ func (s *Store) SnapshotForWorkspace(cwd string, liveSessionKeys []string) (Snap
 }
 
 // LiveReportsForWorkspace returns reports whose canonical worktree and
-// runtime-session key match the supplied live inventory. A report lives until
+// runtime-session key match the supplied live inventory, newest first. A report lives until
 // its session ends or its runtime session is removed; there is no time-based
 // expiry, because a launched agent keeps reporting until it is torn down and
 // its hook state must not lapse back to weaker signals in between.

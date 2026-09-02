@@ -2096,8 +2096,8 @@ func (s *Handler) applyWorkspaceTmuxEnrichment(
 	summary *db.WorkspaceSummary,
 	resp *workspaceResponse,
 ) error {
-	if hook, ok := s.hookActivityCoveringWorkspace(summary); ok {
-		activityAt := hook.UpdatedAt.UTC().Format(time.RFC3339)
+	if latest, ok := s.latestHookReportForWorkspace(summary); ok {
+		activityAt := latest.UpdatedAt.UTC().Format(time.RFC3339)
 		resp.TmuxLastOutputAt = &activityAt
 		return nil
 	}
@@ -2109,17 +2109,24 @@ func (s *Handler) applyWorkspaceTmuxEnrichment(
 	return errors.Join(sessionsErr, activityErr)
 }
 
-// hookActivityCoveringWorkspace returns the hook activity snapshot for one of
-// the workspace's live agent sessions, when one exists.
-func (s *Handler) hookActivityCoveringWorkspace(
+// latestHookReportForWorkspace returns the most recent hook report among the
+// workspace's live agent sessions, when one exists. It is deliberately the
+// newest report rather than the state-priority pick behind AgentState: with
+// two live agents an older approval must not hide a newer event when the
+// workspace's last activity is derived.
+func (s *Handler) latestHookReportForWorkspace(
 	summary *db.WorkspaceSummary,
-) (agentactivity.Snapshot, bool) {
+) (agentactivity.Report, bool) {
 	if s.agentActivity == nil || s.runtime == nil || summary == nil {
-		return agentactivity.Snapshot{}, false
+		return agentactivity.Report{}, false
 	}
-	return s.agentActivity.SnapshotForWorkspace(
+	reports := s.agentActivity.LiveReportsForWorkspace(
 		summary.WorktreePath, s.liveAgentSessionKeys(summary.ID),
 	)
+	if len(reports) == 0 {
+		return agentactivity.Report{}, false
+	}
+	return reports[0], true
 }
 
 // liveAgentSessionKeys lists the runtime session keys of the workspace's

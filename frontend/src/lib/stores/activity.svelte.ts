@@ -904,6 +904,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       limit: loadAllPages ? 100 : 10,
       ...(filterTypes.length > 0 ? { types: [...filterTypes] } : {}),
       ...(searchQuery ? { search: searchQuery } : {}),
+      ...(unassigned ? { unassigned: true } : {}),
       ...(hideClosedMerged ? { hide_closed_merged: true } : {}),
       ...(hideBots ? { hide_bots: true } : {}),
       ...(hideDefaultBranchActivity ? { hide_default_branch: true } : {}),

@@ -157,6 +157,7 @@ type listActivityThreadEventsInput struct {
 	ItemNumber        int      `query:"item_number" minimum:"1"`
 	Types             []string `query:"types"`
 	Search            string   `query:"search"`
+	Unassigned        bool     `query:"unassigned" doc:"Only include activity for pull requests and issues with no assignees."`
 	Since             string   `query:"since"`
 	Before            string   `query:"before"`
 	AtOrBefore        string   `query:"at_or_before"`
@@ -1964,6 +1965,7 @@ func (s *Server) listActivityThreadEvents(
 	return s.listActivity(ctx, &listActivityInput{
 		Types:                input.Types,
 		Search:               input.Search,
+		Unassigned:           input.Unassigned,
 		Since:                input.Since,
 		Before:               input.Before,
 		AtOrBefore:           input.AtOrBefore,

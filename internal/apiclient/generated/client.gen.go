@@ -5698,20 +5698,23 @@ type ListActivityAuthorsParams struct {
 
 // ListActivityThreadEventsParams defines parameters for ListActivityThreadEvents.
 type ListActivityThreadEventsParams struct {
-	Provider          *string                                 `form:"provider,omitempty" json:"provider,omitempty"`
-	PlatformHost      *string                                 `form:"platform_host,omitempty" json:"platform_host,omitempty"`
-	PlatformRepoId    *string                                 `form:"platform_repo_id,omitempty" json:"platform_repo_id,omitempty"`
-	ItemType          *ListActivityThreadEventsParamsItemType `form:"item_type,omitempty" json:"item_type,omitempty"`
-	ItemNumber        *int64                                  `form:"item_number,omitempty" json:"item_number,omitempty"`
-	Types             *[]string                               `form:"types,omitempty" json:"types,omitempty"`
-	Search            *string                                 `form:"search,omitempty" json:"search,omitempty"`
-	Since             *string                                 `form:"since,omitempty" json:"since,omitempty"`
-	Before            *string                                 `form:"before,omitempty" json:"before,omitempty"`
-	AtOrBefore        *string                                 `form:"at_or_before,omitempty" json:"at_or_before,omitempty"`
-	Limit             *int64                                  `form:"limit,omitempty" json:"limit,omitempty"`
-	HideClosedMerged  *bool                                   `form:"hide_closed_merged,omitempty" json:"hide_closed_merged,omitempty"`
-	HideBots          *bool                                   `form:"hide_bots,omitempty" json:"hide_bots,omitempty"`
-	HideDefaultBranch *bool                                   `form:"hide_default_branch,omitempty" json:"hide_default_branch,omitempty"`
+	Provider       *string                                 `form:"provider,omitempty" json:"provider,omitempty"`
+	PlatformHost   *string                                 `form:"platform_host,omitempty" json:"platform_host,omitempty"`
+	PlatformRepoId *string                                 `form:"platform_repo_id,omitempty" json:"platform_repo_id,omitempty"`
+	ItemType       *ListActivityThreadEventsParamsItemType `form:"item_type,omitempty" json:"item_type,omitempty"`
+	ItemNumber     *int64                                  `form:"item_number,omitempty" json:"item_number,omitempty"`
+	Types          *[]string                               `form:"types,omitempty" json:"types,omitempty"`
+	Search         *string                                 `form:"search,omitempty" json:"search,omitempty"`
+
+	// Unassigned Only include activity for pull requests and issues with no assignees.
+	Unassigned        *bool   `form:"unassigned,omitempty" json:"unassigned,omitempty"`
+	Since             *string `form:"since,omitempty" json:"since,omitempty"`
+	Before            *string `form:"before,omitempty" json:"before,omitempty"`
+	AtOrBefore        *string `form:"at_or_before,omitempty" json:"at_or_before,omitempty"`
+	Limit             *int64  `form:"limit,omitempty" json:"limit,omitempty"`
+	HideClosedMerged  *bool   `form:"hide_closed_merged,omitempty" json:"hide_closed_merged,omitempty"`
+	HideBots          *bool   `form:"hide_bots,omitempty" json:"hide_bots,omitempty"`
+	HideDefaultBranch *bool   `form:"hide_default_branch,omitempty" json:"hide_default_branch,omitempty"`
 }
 
 // ListActivityThreadEventsParamsItemType defines parameters for ListActivityThreadEvents.
@@ -17935,6 +17938,18 @@ func NewListActivityThreadEventsRequest(server string, params *ListActivityThrea
 		if params.Search != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "search", *params.Search, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Unassigned != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "unassigned", *params.Unassigned, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {

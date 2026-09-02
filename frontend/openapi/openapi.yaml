@@ -10136,6 +10136,13 @@ paths:
           name: search
           schema:
             type: string
+        - description: Only include activity for pull requests and issues with no assignees.
+          explode: false
+          in: query
+          name: unassigned
+          schema:
+            description: Only include activity for pull requests and issues with no assignees.
+            type: boolean
         - explode: false
           in: query
           name: since

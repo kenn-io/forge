@@ -405,6 +405,7 @@ describe("activity store collapse state", () => {
     });
     const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
     store.hydrateDefaults(settings(true));
+    store.setUnassigned(true);
     store.loadActivity();
     await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
 
@@ -421,9 +422,10 @@ describe("activity store collapse state", () => {
         platform_repo_id: "repo-7",
         item_type: "pr",
         item_number: 7,
+        unassigned: true,
         at_or_before: "hidden:9",
       }),
-      expect.objectContaining({ before: "thread-page-2", at_or_before: "hidden:9" }),
+      expect.objectContaining({ before: "thread-page-2", at_or_before: "hidden:9", unassigned: true }),
     ]);
   });
 

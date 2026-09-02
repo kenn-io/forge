@@ -23865,6 +23865,10 @@ func TestAPIListActivity(t *testing.T) {
 
 	prID := seedPR(t, database, "acme", "widget", 1)
 	ctx := t.Context()
+	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	require.NoError(database.UpdateMergeRequestAssignees(ctx, repo.ID, prID, nil))
 
 	require.NoError(database.UpsertMREvents(ctx, []db.MREvent{
 		{
@@ -23893,7 +23897,7 @@ func TestAPIListActivity(t *testing.T) {
 		t,
 		srv,
 		http.MethodGet,
-		"/api/v1/activity?since="+url.QueryEscape(since)+"&projection=collapsed",
+		"/api/v1/activity?since="+url.QueryEscape(since)+"&projection=collapsed&unassigned=true",
 		nil,
 	)
 	require.Equal(http.StatusOK, collapsed.Code)
@@ -23942,6 +23946,21 @@ func TestAPIListActivity(t *testing.T) {
 	require.NoError(json.NewDecoder(thread.Body).Decode(&threadBody))
 	require.Len(threadBody.Items, 2)
 	assert.Empty(threadBody.ItemActivity)
+
+	require.NoError(database.UpdateMergeRequestAssignees(ctx, repo.ID, prID, []string{"alice"}))
+	assignedThread := doJSON(
+		t,
+		srv,
+		http.MethodGet,
+		"/api/v1/activity/thread-events?provider=github&platform_host=github.com"+
+			"&platform_repo_id=repo-acme-widget&item_type=pr&item_number=1&since="+
+			url.QueryEscape(since)+"&unassigned=true",
+		nil,
+	)
+	require.Equal(http.StatusOK, assignedThread.Code)
+	var assignedThreadBody activityResponse
+	require.NoError(json.NewDecoder(assignedThread.Body).Decode(&assignedThreadBody))
+	assert.Empty(assignedThreadBody.Items)
 
 	filteredThread := doJSON(
 		t,

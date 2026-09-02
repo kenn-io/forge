@@ -9634,6 +9634,8 @@ export interface operations {
                 item_number?: number;
                 types?: string[] | null;
                 search?: string;
+                /** @description Only include activity for pull requests and issues with no assignees. */
+                unassigned?: boolean;
                 since?: string;
                 before?: string;
                 at_or_before?: string;

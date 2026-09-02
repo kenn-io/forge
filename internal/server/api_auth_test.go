@@ -781,6 +781,14 @@ func TestLeaseUnawareHubEnrollmentCredentialIsInactive(t *testing.T) {
 	t.Cleanup(ts.Close)
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 
+	identityResponse := authGet(t, ts, "/api/v1/federation/identity", func(r *http.Request) {
+		r.Header.Set("Authorization", "Bearer "+token)
+		r.Header.Set(federationauth.NodeIDHeader, nodeID)
+	})
+	identityResponse.Body.Close()
+	require.Equal(http.StatusOK, identityResponse.StatusCode,
+		"lease-unaware peers need identity preflight access before activation")
+
 	response := authGet(t, ts, "/api/v1/snapshot/raw", func(r *http.Request) {
 		r.Header.Set("Authorization", "Bearer "+token)
 	})

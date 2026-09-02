@@ -1,6 +1,8 @@
-import { Context, Effect, Layer, Queue, Schedule, Stream } from "effect";
+import { Context, Effect, Layer, Queue, Stream } from "effect";
 import type * as Duration from "effect/Duration";
 import type { Scope } from "effect/Scope";
+
+import { pollWhileVisible } from "../../effect/poll-while-visible.js";
 
 export interface WorkspaceListWorkflowService {
   readonly claim: (owner: string, refresh: () => void) => Effect.Effect<void, never, Scope>;
@@ -95,8 +97,9 @@ export function workspaceListLifecycle<WorkspaceR, FleetR, EventR>({
   never,
   WorkspaceR | FleetR | EventR | Scope
 > {
-  const poll = (request: () => void, interval: Duration.Input) =>
-    Stream.fromSchedule(Schedule.spaced(interval)).pipe(Stream.runForEach(() => Effect.sync(request)));
+  // Timer polls pause while the document is hidden and refresh at once when
+  // it is shown again; workspaceEvents keeps refreshing regardless.
+  const poll = (request: () => void, interval: Duration.Input) => pollWhileVisible(Effect.sync(request), interval);
   const sharedRefresh = refreshWorkspaces === (refreshFleet as unknown as WorkspaceRefreshHub<WorkspaceR>);
 
   return Effect.sync(() => {

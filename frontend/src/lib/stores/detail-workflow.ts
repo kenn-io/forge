@@ -1,5 +1,6 @@
-import { Context, Effect, Fiber, FiberHandle, FiberMap, Layer, Option, Schedule, Semaphore, Stream } from "effect";
+import { Context, Effect, Fiber, FiberHandle, FiberMap, Layer, Option, Semaphore } from "effect";
 import type * as Duration from "effect/Duration";
+import { pollWhileVisible } from "../effect/poll-while-visible.js";
 import type { ApiProblemError, TransientTransportError } from "../api/effect-errors.js";
 import { GeneratedApi } from "../api/generated-api.js";
 import type { PullDetail } from "../api/types.js";
@@ -51,7 +52,7 @@ export const DetailWorkflowLive = Layer.effect(DetailWorkflow)(
       return yield* Fiber.join(fiber);
     });
     function poll<E, R>(pollOnce: Effect.Effect<void, E, R>, interval: Duration.Input): Effect.Effect<void, E, R> {
-      const program = Stream.fromEffectSchedule(pollOnce, Schedule.spaced(interval)).pipe(Stream.runDrain);
+      const program = pollWhileVisible(pollOnce, interval, { immediate: true });
       return FiberHandle.run(pollingHandle, program).pipe(Effect.flatMap(Fiber.join));
     }
     return {

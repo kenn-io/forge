@@ -46,6 +46,9 @@ service is the supported tool here.
   of bespoke Promise generations, overlapping timers, or boolean race guards.
   Preserve latest-wins, single-flight, ordered, or lossless semantics explicitly;
   these are different contracts.
+- Timer polls use the shared visibility-aware helper: hidden documents stop
+  polling and refresh at once when shown; event-driven refreshes ignore
+  visibility (`frontend/src/lib/effect/poll-while-visible.ts::pollWhileVisible`).
 - Run Effects only at host boundaries through the application runtime. Reusable
   business operations return `Effect` and normally use `Effect.fn`; inline
   orchestration may use `Effect.gen`.

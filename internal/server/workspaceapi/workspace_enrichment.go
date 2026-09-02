@@ -10,9 +10,22 @@ import (
 )
 
 const (
-	workspaceEnrichmentTTL            = 5 * time.Second
+	// workspaceEnrichmentTTL is how long a divergence result stays fresh
+	// before the background worker re-checks it. The re-check compares a
+	// stat-only git-directory fingerprint first and only spawns git when
+	// that fingerprint moved or the forced interval elapsed, so polling
+	// clients no longer keep every workspace on a git probe cycle.
+	workspaceEnrichmentTTL = 30 * time.Second
+	// workspaceEnrichmentForcedProbeInterval bounds how long an unchanged
+	// fingerprint may suppress git. Worktree edits that never touch the
+	// index are invisible to the fingerprint, so dirty state still
+	// converges within this interval.
+	workspaceEnrichmentForcedProbeInterval = 3 * time.Minute
+	// workspaceTmuxEnrichmentTTL is the separate, slower cadence for tmux
+	// activity probes; the tracker's own sample interval bounds it further.
+	workspaceTmuxEnrichmentTTL        = 15 * time.Second
 	workspaceEnrichmentRefreshTimeout = 2 * time.Second
-	workspaceTmuxPruneInterval        = 5 * time.Second
+	workspaceTmuxPruneInterval        = 30 * time.Second
 	workspaceTmuxRecencyMinInterval   = time.Minute
 	workspaceEnrichmentNotApplicable  = "not_applicable"
 	workspaceEnrichmentPending        = "pending"
@@ -34,10 +47,14 @@ type workspaceEnrichmentCacheEntry struct {
 	tmuxPublishedOutputAt  time.Time
 	tmuxRecencyPublishedAt time.Time
 	lastAttemptAt          time.Time
-	divergenceError        string
-	tmuxError              string
-	divergenceAttemptAt    time.Time
-	tmuxAttemptAt          time.Time
+	// divergenceProbedAt is when git last actually ran for this entry;
+	// divergenceRefreshedAt also advances on fingerprint-verified skips.
+	divergenceProbedAt  time.Time
+	gitFingerprint      string
+	divergenceError     string
+	tmuxError           string
+	divergenceAttemptAt time.Time
+	tmuxAttemptAt       time.Time
 }
 
 type workspaceEnrichmentKind uint8
@@ -57,11 +74,18 @@ type workspaceEnrichmentJob struct {
 type workspaceEnrichmentProbeResult struct {
 	response           workspaceResponse
 	divergenceComplete bool
-	tmuxComplete       bool
-	divergenceErr      error
-	tmuxErr            error
-	err                error
-	kind               workspaceEnrichmentKind
+	// divergenceUnchanged reports that the git fingerprint matched the
+	// cached one, so the cached divergence was re-validated without git.
+	divergenceUnchanged bool
+	gitFingerprint      string
+	tmuxComplete        bool
+	// tmuxSkipped reports that no tmux probe was attempted because the
+	// cached tmux component was still within its own cadence.
+	tmuxSkipped   bool
+	divergenceErr error
+	tmuxErr       error
+	err           error
+	kind          workspaceEnrichmentKind
 }
 
 func (s *Handler) toCachedWorkspaceResponse(
@@ -108,8 +132,12 @@ func (s *Handler) workspaceResponseFromEnrichmentCacheEntry(
 		errMessage := entry.errorMessage()
 		resp.EnrichmentError = &errMessage
 	case hasResponse:
-		refreshedAt, _ := entry.oldestRefreshedAt()
-		if s.now().Sub(refreshedAt) >= workspaceEnrichmentTTL {
+		now := s.now()
+		divergenceStale := entry.hasDivergence &&
+			now.Sub(entry.divergenceRefreshedAt) >= workspaceEnrichmentTTL
+		tmuxStale := entry.hasTmux &&
+			now.Sub(entry.tmuxRefreshedAt) >= workspaceTmuxEnrichmentTTL
+		if divergenceStale || tmuxStale {
 			resp.EnrichmentStatus = workspaceEnrichmentStale
 		} else if entry.hasDivergence && entry.hasTmux {
 			resp.EnrichmentStatus = workspaceEnrichmentFresh
@@ -227,20 +255,43 @@ func (s *Handler) cachedWorkspaceEnrichment(
 		return nil, true
 	}
 	copy := entry
-	componentDue := func(attemptedAt, refreshedAt time.Time) bool {
+	tmuxDue, divergenceDue := entry.componentsDue(s.now())
+	if kind == workspaceEnrichmentTmux {
+		return &copy, tmuxDue
+	}
+	return &copy, tmuxDue || divergenceDue
+}
+
+// componentsDue reports which enrichment components have aged past their
+// own cadence: tmux against workspaceTmuxEnrichmentTTL and divergence
+// against workspaceEnrichmentTTL. Each uses only its own attempt and
+// refresh times.
+func (entry workspaceEnrichmentCacheEntry) componentsDue(now time.Time) (tmux, divergence bool) {
+	componentDue := func(attemptedAt, refreshedAt time.Time, ttl time.Duration) bool {
 		latest := attemptedAt
 		if refreshedAt.After(latest) {
 			latest = refreshedAt
 		}
-		return latest.IsZero() || s.now().Sub(latest) >= workspaceEnrichmentTTL
+		return latest.IsZero() || now.Sub(latest) >= ttl
 	}
-	tmuxDue := componentDue(entry.tmuxAttemptAt, entry.tmuxRefreshedAt)
-	if kind == workspaceEnrichmentTmux {
-		return &copy, tmuxDue
-	}
-	return &copy, tmuxDue || componentDue(
-		entry.divergenceAttemptAt, entry.divergenceRefreshedAt,
+	tmux = componentDue(entry.tmuxAttemptAt, entry.tmuxRefreshedAt, workspaceTmuxEnrichmentTTL)
+	divergence = componentDue(
+		entry.divergenceAttemptAt, entry.divergenceRefreshedAt, workspaceEnrichmentTTL,
 	)
+	return tmux, divergence
+}
+
+// gitProbeSkippable reports whether a full refresh may re-validate the cached
+// divergence from an unchanged git fingerprint instead of spawning git: the
+// cache must hold a successful result, the fingerprint must match, and the
+// last real probe must be younger than the forced interval.
+func (entry workspaceEnrichmentCacheEntry) gitProbeSkippable(fingerprint string, now time.Time) bool {
+	return fingerprint != "" &&
+		entry.hasDivergence &&
+		entry.divergenceError == "" &&
+		entry.gitFingerprint == fingerprint &&
+		!entry.divergenceProbedAt.IsZero() &&
+		now.Sub(entry.divergenceProbedAt) < workspaceEnrichmentForcedProbeInterval
 }
 
 func (s *Handler) refreshWorkspaceResponse(
@@ -413,7 +464,7 @@ func (s *Handler) runWorkspaceEnrichmentJob(
 	if job.kind == workspaceEnrichmentTmux {
 		result = s.workspaceResponseWithTmuxEnrichment(probeCtx, &job.summary)
 	} else {
-		result = s.workspaceResponseWithEnrichment(probeCtx, &job.summary)
+		result = s.workspaceResponseWithChangeAwareEnrichment(probeCtx, &job.summary)
 	}
 	result.kind = job.kind
 	if _, recorded, changed := s.recordWorkspaceEnrichmentResult(
@@ -474,6 +525,10 @@ func (s *Handler) recordWorkspaceEnrichmentResult(
 		entry.response.WorktreeDirty = result.response.WorktreeDirty
 		entry.hasDivergence = true
 		entry.divergenceRefreshedAt = now
+		entry.divergenceProbedAt = now
+		entry.gitFingerprint = result.gitFingerprint
+	} else if result.divergenceUnchanged && prior.hasDivergence {
+		entry.divergenceRefreshedAt = now
 	}
 	if result.kind == workspaceEnrichmentFull {
 		entry.divergenceAttemptAt = now
@@ -488,7 +543,9 @@ func (s *Handler) recordWorkspaceEnrichmentResult(
 		entry.hasTmux = true
 		entry.tmuxRefreshedAt = now
 	}
-	entry.tmuxAttemptAt = now
+	if !result.tmuxSkipped {
+		entry.tmuxAttemptAt = now
+	}
 	entry.lastAttemptAt = now
 	if result.tmuxErr != nil {
 		entry.tmuxError = result.tmuxErr.Error()

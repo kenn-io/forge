@@ -207,9 +207,17 @@ embedder protocol for arbitrary host state.
 - Aggregate enrichment is fresh only after divergence and tmux both complete;
   partial results remain pending or stale
   (`internal/server/workspaceapi/workspace_enrichment.go::workspaceResponseFromEnrichmentCacheEntry`).
-- Divergence and tmux freshness use only their own attempt and refresh times;
-  an unattempted component remains immediately due after unrelated component work
-  (`internal/server/workspaceapi/workspace_enrichment.go::cachedWorkspaceEnrichment`).
+- Divergence and tmux freshness use only their own attempt and refresh times
+  against separate cadences (30s divergence, 15s tmux); an unattempted
+  component remains immediately due after unrelated component work
+  (`internal/server/workspaceapi/workspace_enrichment.go::componentsDue`).
+- Background divergence refreshes re-validate from a stat-only git-directory
+  fingerprint and spawn git only when it moved or the forced interval elapsed;
+  explicit refreshes and invalidation hooks always probe
+  (`internal/server/workspaceapi/workspace_enrichment.go::workspaceEnrichmentCacheEntry.gitProbeSkippable`).
+- Worktree-only edits never move the fingerprint, so the forced interval is
+  the dirty-state staleness bound; fingerprinting must never spawn git
+  (`internal/server/workspaceapi/worktree_fingerprint.go::worktreeGitFingerprint`).
 - Failed enrichment retains last-known-good values and component-owned errors;
   one component's success clears only its own error
   (`internal/server/workspaceapi/workspace_enrichment.go::recordWorkspaceEnrichmentResult`).

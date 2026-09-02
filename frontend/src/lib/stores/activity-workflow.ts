@@ -1,5 +1,6 @@
-import { Context, Effect, Fiber, FiberHandle, Layer, Ref, Schedule, Stream } from "effect";
+import { Context, Effect, Fiber, FiberHandle, Layer, Ref } from "effect";
 import type * as Duration from "effect/Duration";
+import { pollWhileVisible } from "../effect/poll-while-visible.js";
 import { TransientTransportError } from "../api/effect-errors.js";
 
 type ProjectActivityResult<A, E, R> = (value: A) => Effect.Effect<void, E, R>;
@@ -192,7 +193,7 @@ export const ActivityWorkflowLive = Layer.effect(ActivityWorkflow)(
     // @effect-diagnostics effect/missingEffectError:error
 
     function poll<E, R>(pollOnce: Effect.Effect<void, E, R>, interval: Duration.Input): Effect.Effect<void, E, R> {
-      const program = Stream.fromEffectSchedule(pollOnce, Schedule.spaced(interval)).pipe(Stream.runDrain);
+      const program = pollWhileVisible(pollOnce, interval, { immediate: true });
       return FiberHandle.run(pollingHandle, program).pipe(Effect.flatMap(Fiber.join));
     }
 

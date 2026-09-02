@@ -46,6 +46,11 @@ back to TOML.
 - `detail.initial_timeline_entry_limit` is a global PR/issue presentation preference.
   Omitted or zero values default to 50; explicit values must remain within 10-250
   in both config loading and settings writes (`internal/config/config.go::Detail`).
+- `detail.collapse_single_line_breaks` is a false-by-default PR/issue presentation opt-in
+  that renders descriptions, comments, and commit bodies with CommonMark soft breaks. It
+  never changes Docs mode or editor previews, and Detail settings writes replace the
+  whole section, so the UI must send every Detail field
+  (`internal/config/config.go::Detail`, `frontend/src/lib/utils/markdown.ts::getMarked`).
 - When zero is meaningful, represent the saved value as optional so TOML `omitempty` cannot turn explicit zero into an unset default; the round-trip test must cover zero (`internal/config/config.go::Terminal`).
 - Whole-file settings mutations must hold `configReloadMu` before `cfgMu` while applying and saving changes, or the watcher can restore a stale snapshot between writes (`internal/server/settings_handlers.go::updateSettings`).
 - Partial settings request objects must use pointer fields and merge only fields that were present; reusing persisted value structs collapses omission into zero values (`internal/server/settings_handlers.go::mcpSettingsUpdate`).

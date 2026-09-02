@@ -23,6 +23,7 @@
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { transientClipboardFeedback } from "../../browser/clipboard-feedback.js";
   import MarkdownHtml from "../shared/MarkdownHtml.svelte";
+  import { collapsePlainTextLineBreaks } from "../../utils/markdown.js";
   import {
     Button,
     Card,
@@ -130,6 +131,10 @@
   const stores = getStores() as StoreInstances | undefined;
   const runtime = getAppRuntime();
   const detailStore = stores?.detail;
+  const collapseSingleLineBreaks = $derived(
+    stores?.settings?.getDetailSettings().collapse_single_line_breaks ?? false,
+  );
+  const markdownOptions = $derived({ collapseSingleLineBreaks });
   const diffStore = stores?.diff;
   const diffReviewDraft = stores?.diffReviewDraft;
   const diff = $derived(diffStore?.getDiff() ?? null);
@@ -819,7 +824,8 @@
   }
 
   function commitDetailsBody(body: string): string {
-    return body.trim();
+    const trimmed = body.trim();
+    return collapseSingleLineBreaks ? collapsePlainTextLineBreaks(trimmed) : trimmed;
   }
 
   function systemEventLabel(eventType: string): string {
@@ -1676,7 +1682,7 @@
                   {#if block.type === "markdown"}
                     {#if block.text.trim().length > 0}
                       <div class="event-body-segment">
-                        <MarkdownHtml raw={block.text} repo={markdownRepo} />
+                        <MarkdownHtml raw={block.text} repo={markdownRepo} options={markdownOptions} />
                       </div>
                     {/if}
                   {:else if reviewThread}
@@ -1700,7 +1706,7 @@
                   {:else}
                     {@const fallback = "```suggestion\n" + block.replacement + "\n```"}
                     <div class="event-body-segment">
-                      <MarkdownHtml raw={fallback} repo={markdownRepo} />
+                      <MarkdownHtml raw={fallback} repo={markdownRepo} options={markdownOptions} />
                     </div>
                   {/if}
                 {/each}
@@ -1721,6 +1727,7 @@
               <MarkdownHtml
                 raw={event.Body}
                 repo={markdownRepo}
+                options={markdownOptions}
                 transformHtml={inlineReplyEntry
                   ? (html) => withInlineReplyButton(html, inlineReplyEntry)
                   : undefined}

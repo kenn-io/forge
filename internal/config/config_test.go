@@ -2686,10 +2686,12 @@ name = "b"
 
 [detail]
 initial_timeline_entry_limit = 80
+collapse_single_line_breaks = true
 	`)
 	cfg, err := Load(path)
 	require.NoError(err)
 	assert.Equal(80, cfg.Detail.InitialTimelineEntryLimit)
+	assert.True(cfg.Detail.CollapseSingleLineBreaks)
 
 	savePath := filepath.Join(t.TempDir(), "saved.toml")
 	require.NoError(cfg.Save(savePath))
@@ -2697,6 +2699,7 @@ initial_timeline_entry_limit = 80
 	cfg2, err := Load(savePath)
 	require.NoError(err)
 	assert.Equal(80, cfg2.Detail.InitialTimelineEntryLimit)
+	assert.True(cfg2.Detail.CollapseSingleLineBreaks)
 }
 
 func TestRepositoryStableIdentitySurvivesConfigSave(t *testing.T) {

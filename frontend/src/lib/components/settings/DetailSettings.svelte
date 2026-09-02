@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Effect } from "effect";
-  import { Button } from "@kenn-io/kit-ui";
+  import { Button, Checkbox } from "@kenn-io/kit-ui";
   import type { DetailSettings as DetailSettingsType } from "../../api/types.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { getStores } from "../../context.js";
@@ -22,6 +22,7 @@
   const embedded = isEmbedded();
   let saving = $state(false);
   let draft = $derived(String(detail.initial_timeline_entry_limit));
+  let collapseDraft = $derived(detail.collapse_single_line_breaks);
   const parsedLimit = $derived(Number(draft));
   const valid = $derived(
     Number.isInteger(parsedLimit) && parsedLimit >= 10 && parsedLimit <= 250,
@@ -29,9 +30,18 @@
   const changed = $derived(valid && parsedLimit !== detail.initial_timeline_entry_limit);
 
   function save(): void {
-    if (embedded || saving || !changed) return;
+    if (!changed) return;
+    persist({ ...detail, initial_timeline_entry_limit: parsedLimit });
+  }
+
+  function toggleCollapseSingleLineBreaks(checked: boolean): void {
+    if (checked === detail.collapse_single_line_breaks) return;
+    persist({ ...detail, collapse_single_line_breaks: checked });
+  }
+
+  function persist(pending: DetailSettingsType): void {
+    if (embedded || saving) return;
     const previous = detail;
-    const pending = { initial_timeline_entry_limit: parsedLimit };
     saving = true;
     runtime.runCommand(
       Effect.gen(function* () {
@@ -43,6 +53,7 @@
             Effect.sync(() => {
               onUpdate(previous);
               draft = String(previous.initial_timeline_entry_limit);
+              collapseDraft = previous.collapse_single_line_breaks;
               showFlash(settingsErrorMessage(failure), { tone: "danger" });
             }),
           onSuccess: (settings) =>
@@ -96,7 +107,25 @@
   </div>
 </div>
 
+<Checkbox
+  class="toggle-row"
+  bind:checked={collapseDraft}
+  disabled={embedded || saving}
+  onchange={toggleCollapseSingleLineBreaks}
+  ariaLabel="Collapse single line breaks"
+>
+  <span class="setting-copy">
+    <span class="setting-label">Collapse single line breaks</span>
+    <span class="setting-description">
+      Render descriptions, comments, and commit messages with soft line breaks:
+      a single newline joins the paragraph and only a blank line starts a new one.
+    </span>
+  </span>
+</Checkbox>
+
 <style>
+  :global(.toggle-row) { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-5); }
+  :global(.toggle-row .kit-checkbox__box) { order: 2; margin-top: 2px; }
   .setting-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-5); min-height: 44px; }
   .setting-copy { display: flex; flex-direction: column; gap: 4px; }
   .setting-label { color: var(--text-secondary); font-size: var(--font-size-md); }

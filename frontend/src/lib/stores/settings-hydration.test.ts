@@ -38,7 +38,7 @@ const settingsPayload = makeStartupSnapshot({
     },
   ],
   activity: activitySettings,
-  detail: { initial_timeline_entry_limit: 75 },
+  detail: { initial_timeline_entry_limit: 75, collapse_single_line_breaks: true },
   launch_targets: [codexTarget],
   workspaces: { auto_assign_on_create: false, default_sidebar_view: "item" },
   roborev: { init_managed_clones: true },
@@ -86,7 +86,10 @@ describe("applySettingsHydration", () => {
 
   it("hydrates the detail timeline limit into the settings store", () => {
     const { settingsStore } = hydrate();
-    expect(settingsStore.getDetailSettings()).toEqual({ initial_timeline_entry_limit: 75 });
+    expect(settingsStore.getDetailSettings()).toEqual({
+      initial_timeline_entry_limit: 75,
+      collapse_single_line_breaks: true,
+    });
   });
 
   it("clears stale launch targets when settings reports an empty inventory", () => {

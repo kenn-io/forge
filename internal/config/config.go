@@ -710,6 +710,11 @@ type PullRequests struct {
 // Detail configures presentation shared by pull-request and issue detail.
 type Detail struct {
 	InitialTimelineEntryLimit int `toml:"initial_timeline_entry_limit,omitempty" json:"initial_timeline_entry_limit" minimum:"10" maximum:"250"`
+	// CollapseSingleLineBreaks renders descriptions, comments, and commit
+	// messages with CommonMark soft breaks: a single newline joins the
+	// paragraph and only a blank line separates paragraphs. False keeps
+	// GitHub comment-style hard breaks.
+	CollapseSingleLineBreaks bool `toml:"collapse_single_line_breaks,omitempty" json:"collapse_single_line_breaks"`
 }
 
 // Workspaces configures behavior shared by PR- and issue-backed workspaces.
@@ -1098,6 +1103,7 @@ default_branch_max_commits = 5000
 
 [detail]
 initial_timeline_entry_limit = 50
+collapse_single_line_breaks = false
 
 [terminal]
 

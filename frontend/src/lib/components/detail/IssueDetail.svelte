@@ -1513,7 +1513,10 @@
                 <MarkdownHtml
                   raw={issue.Body}
                   repo={{ provider, platformHost, owner, name, repoPath }}
-                  options={{ interactiveTasks: capabilities.state_mutation && !contentGate.unavailable }}
+                  options={{
+                    interactiveTasks: capabilities.state_mutation && !contentGate.unavailable,
+                    collapseSingleLineBreaks: settings.getDetailSettings().collapse_single_line_breaks,
+                  }}
                 />
               </div>
             </CollapsibleDescription>

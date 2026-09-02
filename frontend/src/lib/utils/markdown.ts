@@ -160,6 +160,11 @@ export interface RenderMarkdownOpts {
   // caller is responsible for intercepting clicks and persisting state —
   // unhandled clicks toggle visually but do not save.
   interactiveTasks?: boolean;
+  // When true, a single newline inside a paragraph is a CommonMark soft
+  // break that joins the surrounding text; only a blank line separates
+  // paragraphs. When false (the default), newlines render as hard <br>
+  // breaks the way GitHub renders comments.
+  collapseSingleLineBreaks?: boolean;
 }
 
 // Per-render state for the custom checkbox renderer. Marked is single-
@@ -352,11 +357,12 @@ const taskListRenderer: RendererObject = {
   },
 };
 
-function getMarked(repo?: RepoContext): Marked {
-  const key = repo ? `${repo.provider}/${repo.platformHost ?? ""}/${repo.repoPath}` : "";
+function getMarked(repo?: RepoContext, opts: RenderMarkdownOpts = {}): Marked {
+  const collapse = !!opts.collapseSingleLineBreaks;
+  const key = `${collapse ? 1 : 0}\0${repo ? `${repo.provider}/${repo.platformHost ?? ""}/${repo.repoPath}` : ""}`;
   let instance = markedCache.get(key);
   if (!instance) {
-    instance = new Marked({ breaks: true, gfm: true });
+    instance = new Marked({ breaks: !collapse, gfm: true });
     instance.use({ extensions: [providerItemRefExtension(repo)] });
     instance.use({
       renderer: taskListRenderer,
@@ -583,8 +589,9 @@ export function extractMarkdownDefinitionLines(raw: string, repo?: RepoContext):
 export function renderMarkdown(raw: string, repo?: RepoContext, opts: RenderMarkdownOpts = {}): Promise<string> {
   if (!raw) return Promise.resolve("");
   const interactiveTasks = !!opts.interactiveTasks;
+  const collapse = !!opts.collapseSingleLineBreaks;
   const repoKey = repo ? `${repo.provider}/${repo.platformHost ?? ""}/${repo.repoPath}` : "";
-  const key = `${repoKey}\0${interactiveTasks ? 1 : 0}\0${raw}`;
+  const key = `${repoKey}\0${interactiveTasks ? 1 : 0}\0${collapse ? 1 : 0}\0${raw}`;
   const cached = htmlCache.get(key);
   if (cached !== undefined) return cached;
 
@@ -613,7 +620,7 @@ async function renderMarkdownUncached(
   repo: RepoContext | undefined,
   opts: RenderMarkdownOpts,
 ): Promise<string> {
-  const marked = getMarked(repo);
+  const marked = getMarked(repo, opts);
   const tokens = marked.lexer(raw) as Tokens.Generic[];
   // Mermaid fences render as diagram markup, so they never spend the
   // shared highlight budget.
@@ -624,7 +631,7 @@ async function renderMarkdownUncached(
 
 export function renderMarkdownSync(raw: string, repo?: RepoContext, opts: RenderMarkdownOpts = {}): string {
   if (!raw) return "";
-  const marked = getMarked(repo);
+  const marked = getMarked(repo, opts);
   const tokens = marked.lexer(raw) as Tokens.Generic[];
   return renderMarkdownTokens(marked, tokens, opts, repo, false);
 }
@@ -639,4 +646,25 @@ function renderMarkdownTokens(
 ): string {
   resetRenderState(opts, repo, highlightCode, highlightedCodeTokens);
   return sanitizeMarkdownHtml(marked.parser(tokens) as string);
+}
+
+// Plain-text counterpart of the collapseSingleLineBreaks render option for
+// bodies that are not rendered as markdown, such as commit messages. A
+// single newline joins the paragraph; blank lines still separate
+// paragraphs, and lines that look like list items, headings, quotes, or
+// indented blocks keep their own line.
+const PLAIN_TEXT_LINE_START = /^(\s|[-*+>#]|\d+[.)]\s)/;
+
+export function collapsePlainTextLineBreaks(text: string): string {
+  return text
+    .split(/\n{2,}/)
+    .map((paragraph) =>
+      paragraph.split("\n").reduce((joined, line, index) => {
+        if (index === 0) return line;
+        if (line.trim() === "") return joined;
+        if (PLAIN_TEXT_LINE_START.test(line)) return `${joined}\n${line}`;
+        return `${joined} ${line.trim()}`;
+      }, ""),
+    )
+    .join("\n\n");
 }

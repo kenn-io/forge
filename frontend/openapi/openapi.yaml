@@ -1609,6 +1609,8 @@ components:
     Detail:
       additionalProperties: false
       properties:
+        collapse_single_line_breaks:
+          type: boolean
         initial_timeline_entry_limit:
           format: int64
           maximum: 250
@@ -1616,6 +1618,7 @@ components:
           type: integer
       required:
         - initial_timeline_entry_limit
+        - collapse_single_line_breaks
       type: object
     DiffDescriptor:
       additionalProperties: false

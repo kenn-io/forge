@@ -1944,6 +1944,7 @@ type DependencyCapabilities struct {
 
 // Detail defines model for Detail.
 type Detail struct {
+	CollapseSingleLineBreaks  bool  `json:"collapse_single_line_breaks"`
 	InitialTimelineEntryLimit int64 `json:"initial_timeline_entry_limit"`
 }
 

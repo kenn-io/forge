@@ -8,6 +8,8 @@ frontend_spec="frontend/openapi/openapi.yaml"
 backend_spec="internal/apiclient/spec/openapi.json"
 frontend_schema="frontend/src/lib/api/generated/schema.ts"
 frontend_client="frontend/src/lib/api/generated/client.ts"
+frontend_constraints="frontend/src/lib/api/generated/schema-constraints.ts"
+constraints_generator="scripts/generate-schema-constraints.mjs"
 
 mkdir -p "$state_dir"
 
@@ -46,7 +48,7 @@ fi
 
 compute_inputs_hash() {
   {
-    printf '%s\n' "go.mod" "go.sum"
+    printf '%s\n' "go.mod" "go.sum" "$constraints_generator"
     find cmd/kenn-forge-openapi internal/server -type f -name '*.go' | sort
   } | while IFS= read -r path; do
     [ -f "$path" ] || continue
@@ -102,6 +104,12 @@ generate_api_artifacts() {
   fi
 
   write_if_changed "$backend_spec" "$tmp_backend_spec" >/dev/null 2>&1 || true
+
+  # Numeric bounds for frontend validation come from the backend JSON spec,
+  # so regenerate them alongside the other frontend artifacts.
+  tmp_constraints="$(mktemp "$state_dir/frontend-schema-constraints.XXXXXX")"
+  "$NODE_BIN" "$constraints_generator" "$backend_spec" "$tmp_constraints"
+  write_if_changed "$frontend_constraints" "$tmp_constraints" >/dev/null 2>&1 || true
 
   if [ "$frontend_changed" -eq 1 ]; then
     tmp_schema="$(mktemp "$state_dir/frontend-schema.XXXXXX")"

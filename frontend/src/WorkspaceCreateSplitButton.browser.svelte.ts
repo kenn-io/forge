@@ -81,7 +81,7 @@ describe("workspace create split button in the New workspace dialog", () => {
     expect(item.element() === hit || item.element().contains(hit)).toBe(true);
 
     await item.click();
-    await vi.waitFor(() => expect(onCreated).toHaveBeenCalledWith("ws-new"));
+    await vi.waitFor(() => expect(onCreated).toHaveBeenCalledWith("ws-new", undefined));
   });
 
   it("uses kit-ui primary colors for both solid segments", async () => {
@@ -186,6 +186,6 @@ describe("workspace create split button in the New workspace dialog", () => {
     await dialog.getByRole("button", { name: "Create or open workspace options" }).click();
     await page.getByRole("menuitem", { name: "Codex" }).click();
 
-    await vi.waitFor(() => expect(onCreated).toHaveBeenCalledWith("ws-kata"));
+    await vi.waitFor(() => expect(onCreated).toHaveBeenCalledWith("ws-kata", undefined));
   });
 });

@@ -15,6 +15,7 @@ node_modules/
 packages/*/node_modules/
 frontend/playwright-report/
 frontend/test-results/
+/test-results/
 frontend/tests/demo/screenshots/
 frontend/.vitest-attachments/
 frontend/src/**/__screenshots__/

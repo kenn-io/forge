@@ -427,15 +427,19 @@ fallback repository listing.
   While an unresolvable ref persists in config, genuinely removed repos keep
   collecting; the recurring deferral warning is the operator signal.
   (`internal/archive/service.go::EnsureConfigured`)
-- The archive worker poll resolves configured repositories tolerantly: a ref
+- The archive worker pass resolves configured repositories tolerantly: a ref
   that seeding skipped stays in the syncer's tracked set, so an all-or-nothing
-  resolve would fail every one-second pass and starve archive work for all
+  resolve would fail every pass and starve archive work for all
   healthy repositories. Only provider-classified failures (invalid ref,
   provider not configured, missing capability) are dropped as
   repository-scoped (debug-logged; seeding already warned); a broken store or
   any other infrastructure error still surfaces — an empty pass reported as
-  success would hide a dead worker. (`internal/archive/scheduler.go::RunEligible`,
+  success would hide a dead worker. (`internal/archive/scheduler.go::RunPass`,
   `internal/archive/service.go::resolveRepositoriesTolerant`)
+- The archive worker is wake-driven, not a ticker: each pass reports the earliest
+  eligibility time (deferral deadlines, feature cooldowns, maintenance due, hydration
+  retries) and the loop sleeps until then, capped at five minutes; only a pass that
+  attempted work or failed re-runs on the pacing interval. (`internal/github/sync.go::archiveWait`)
 - Initial issue and pull-request inventory includes all states in stable created-time ascending order; issue enumeration excludes PR-shaped rows. (`internal/github/pages.go::ListIssuesPage`, `internal/github/pages.go::ListMergeRequestsPage`)
 - GitHub issue-only repositories return pulls API 404; normal and archive paths
   classify it as feature-disabled only for explicit `has_pull_requests=false`;

@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"go.kenn.io/forge/internal/db"
@@ -101,6 +103,19 @@ type Service struct {
 	scheduler           *Scheduler
 	maintenanceInterval time.Duration
 	wake                func()
+
+	reposMu sync.Mutex
+	repos   *resolvedRepositoryCache
+}
+
+// resolvedRepositoryCache remembers the worker's resolved configured
+// repositories so an idle pass performs no repository resolution queries. It
+// is valid only while the configured refs and the store's repository
+// reconciliation generation both match what it was built from.
+type resolvedRepositoryCache struct {
+	refKeys    []string
+	generation uint64
+	resolved   []resolvedRepository
 }
 
 type Status struct {
@@ -149,12 +164,63 @@ func (s *Service) SetMaintenanceInterval(interval time.Duration) {
 
 func (s *Service) SetWake(wake func()) { s.wake = wake }
 
+// InvalidateRepositories drops the worker's cached repository resolution so
+// the next pass resolves configured repositories again. Configuration
+// reconciliation and archive state changes call it; repository reconciliation
+// in the store is detected through its generation instead.
+func (s *Service) InvalidateRepositories() {
+	s.reposMu.Lock()
+	s.repos = nil
+	s.reposMu.Unlock()
+}
+
+// workerRepositories returns the configured repositories the worker should
+// schedule, resolving them only when the configuration or the store's
+// repository reconciliation generation changed since the cached resolution.
+func (s *Service) workerRepositories(ctx context.Context) ([]resolvedRepository, error) {
+	if s.configured == nil {
+		return nil, errors.New("run eligible archives: configured repository source is required")
+	}
+	refs, err := s.configured.ConfiguredRepositories(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list configured archive repositories: %w", err)
+	}
+	refKeys := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		refKeys = append(refKeys, archiveRepoIdentityKey(ref))
+	}
+	// Sample the generation before resolving: a reconciliation write that
+	// starts during resolution advances it, so the next pass re-resolves.
+	generation := s.db.RepositoryReconciliationGeneration()
+	s.reposMu.Lock()
+	cached := s.repos
+	s.reposMu.Unlock()
+	if cached != nil && cached.generation == generation && slices.Equal(cached.refKeys, refKeys) {
+		return cached.resolved, nil
+	}
+	// Configuration reconciliation runs at startup and on configuration reload.
+	// The worker pass must remain read-only when no work is eligible.
+	// Resolution failures are repository-scoped: a configured entry that seeding
+	// skipped must not block archive work for every healthy repository.
+	resolved, err := s.resolveRepositoriesTolerant(ctx, refs, true)
+	if err != nil {
+		return nil, err
+	}
+	s.reposMu.Lock()
+	s.repos = &resolvedRepositoryCache{
+		refKeys: refKeys, generation: generation, resolved: resolved,
+	}
+	s.reposMu.Unlock()
+	return resolved, nil
+}
+
 // EnsureConfigured seeds archive state for the configured repositories and
 // returns the refs that seeded successfully. Failures scoped to a single
 // repository are logged and skipped so one bad configured entry cannot block
 // the rest (or crash-loop the daemon at startup); only batch reconciliation
 // errors (a broken store) are returned.
 func (s *Service) EnsureConfigured(ctx context.Context, refs []platform.RepoRef) ([]platform.RepoRef, error) {
+	defer s.InvalidateRepositories()
 	seededRefs := make([]platform.RepoRef, 0, len(refs))
 	resolved := make([]resolvedRepository, 0, len(refs))
 	protectedIDs := make([]int64, 0, len(refs))
@@ -276,6 +342,7 @@ func (s *Service) seedArchiveRepository(ctx context.Context, ref platform.RepoRe
 // RetryAuthentication makes credential-blocked repositories eligible after a
 // config reload without resetting their durable archive progress.
 func (s *Service) RetryAuthentication(ctx context.Context, refs []platform.RepoRef) error {
+	defer s.InvalidateRepositories()
 	resolved, err := s.resolveRepositories(ctx, refs, false)
 	if err != nil {
 		return err
@@ -284,6 +351,7 @@ func (s *Service) RetryAuthentication(ctx context.Context, refs []platform.RepoR
 }
 
 func (s *Service) Start(ctx context.Context, refs []platform.RepoRef) ([]Status, error) {
+	defer s.InvalidateRepositories()
 	resolved, err := s.resolveRepositories(ctx, refs, true)
 	if err != nil {
 		return nil, err
@@ -318,6 +386,7 @@ func (s *Service) StartAll(ctx context.Context) ([]Status, error) {
 }
 
 func (s *Service) Pause(ctx context.Context, refs []platform.RepoRef) ([]Status, error) {
+	defer s.InvalidateRepositories()
 	resolved, err := s.resolveRepositories(ctx, refs, false)
 	if err != nil {
 		return nil, err
@@ -465,8 +534,9 @@ func (s *Service) resolveRepositories(ctx context.Context, refs []platform.RepoR
 // resolveRepositoriesTolerant resolves each reference independently and drops
 // the ones that fail, so a configured entry whose seeding was skipped cannot
 // starve archive work for every healthy repository. Failures are logged at
-// debug level: the worker polls every second and EnsureConfigured already
-// warns once per reconciliation for the same repositories.
+// debug level: the worker re-resolves after every configuration or
+// reconciliation change and EnsureConfigured already warns once per
+// reconciliation for the same repositories.
 func (s *Service) resolveRepositoriesTolerant(ctx context.Context, refs []platform.RepoRef, requireArchive bool) ([]resolvedRepository, error) {
 	resolved := make([]resolvedRepository, 0, len(refs))
 	seen := make(map[string]struct{}, len(refs))

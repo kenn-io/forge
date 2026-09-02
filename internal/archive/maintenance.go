@@ -182,6 +182,18 @@ func (s *Service) promptPages(
 	}
 }
 
+// nextPromptMaintenanceAt reports when a repository's next maintenance pass
+// becomes due, or nil when maintenance is not scheduled (initial archive
+// incomplete) or is already due.
+func nextPromptMaintenanceAt(state db.ArchiveRepoState, interval time.Duration) *time.Time {
+	if state.InitialCompletedAt == nil ||
+		state.MaintenanceWatermark == nil || state.MaintenanceSucceededAt == nil {
+		return nil
+	}
+	due := state.MaintenanceSucceededAt.Add(interval).UTC()
+	return &due
+}
+
 func promptMaintenanceDue(state db.ArchiveRepoState, now time.Time, interval time.Duration) bool {
 	if state.InitialCompletedAt == nil {
 		return false

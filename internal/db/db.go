@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"go.kenn.io/forge/internal/db/dbupgrade"
 	_ "modernc.org/sqlite"
@@ -19,6 +20,11 @@ type DB struct {
 	mrReconcileGate   sync.Mutex
 	mrSnapshotLocksMu sync.Mutex
 	mrSnapshotLocks   map[mergeRequestSnapshotLockKey]*mergeRequestSnapshotLock
+
+	// repositoryReconciliationGeneration counts repository reconciliation
+	// writes so caches keyed on repository identity can detect that a
+	// repository row, route, or replacement may have changed.
+	repositoryReconciliationGeneration atomic.Uint64
 
 	beforeRepositoryReconciliationWriteLock func()
 }
@@ -234,7 +240,17 @@ func (d *DB) lockRepositoryReconciliationWrite() func() {
 	}
 	d.mrReconcileMu.Lock()
 	d.mrReconcileGate.Unlock()
+	d.repositoryReconciliationGeneration.Add(1)
 	return d.mrReconcileMu.Unlock
+}
+
+// RepositoryReconciliationGeneration reports a process-local counter that
+// advances whenever a repository reconciliation write begins. A reader that
+// samples it before resolving repository identity and finds it unchanged later
+// knows no reconciliation write started in between, so cached repository rows
+// resolved under the reconciliation read lock are still current.
+func (d *DB) RepositoryReconciliationGeneration() uint64 {
+	return d.repositoryReconciliationGeneration.Load()
 }
 
 // SetBeforeRepositoryReconciliationWriteLockForTest installs a hook after

@@ -959,7 +959,7 @@ type archiveProviderRequest struct {
 }
 
 type archiveRunner interface {
-	RunEligible(context.Context) error
+	RunPass(context.Context) (archive.NextWake, error)
 }
 
 type archiveRepositoryLifecycle interface {
@@ -1264,6 +1264,9 @@ func (s *Syncer) WakeArchive() {
 	}
 }
 
+// SetArchivePollIntervalForTesting shortens the pacing between archive worker
+// passes that attempted work or failed. Idle passes still sleep until the
+// service reports work can become eligible.
 func (s *Syncer) SetArchivePollIntervalForTesting(interval time.Duration) {
 	if interval > 0 {
 		s.archivePollInterval = interval
@@ -4686,26 +4689,49 @@ func (s *Syncer) runArchiveLoop(ctx context.Context, ready <-chan struct{}) {
 	case <-ctx.Done():
 		return
 	}
+	for {
+		wake, err := s.archiveRunner.RunPass(ctx)
+		if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+			slog.Warn("archive worker iteration failed", "err", err)
+		}
+		timer := time.NewTimer(s.archiveWait(wake, err))
+		select {
+		case <-timer.C:
+		case <-s.archiveWake:
+			timer.Stop()
+		case <-s.stopCh:
+			timer.Stop()
+			return
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		}
+	}
+}
+
+// archiveIdleWait bounds how long the archive worker sleeps when the service
+// reports nothing scheduled or a distant eligibility time. It is a safety net
+// against a missed wake, not the normal way work resumes: configuration
+// reloads, sync completion, budget resets, and explicit wakes all interrupt
+// the sleep through archiveWake.
+const archiveIdleWait = 5 * time.Minute
+
+// archiveWait converts the service's wake computation into the sleep before
+// the next pass. A pass that attempted work or failed re-runs after the work
+// pacing interval; an idle pass sleeps until the earliest known eligibility
+// time, bounded below by the pacing interval and above by archiveIdleWait.
+func (s *Syncer) archiveWait(wake archive.NextWake, err error) time.Duration {
 	interval := s.archivePollInterval
 	if interval <= 0 {
 		interval = time.Second
 	}
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		if err := s.archiveRunner.RunEligible(ctx); err != nil &&
-			!errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-			slog.Warn("archive worker iteration failed", "err", err)
-		}
-		select {
-		case <-ticker.C:
-		case <-s.archiveWake:
-		case <-s.stopCh:
-			return
-		case <-ctx.Done():
-			return
-		}
+	if err != nil || wake.Worked {
+		return interval
 	}
+	if wake.At.IsZero() {
+		return archiveIdleWait
+	}
+	return min(max(wake.At.Sub(s.now()), interval), archiveIdleWait)
 }
 
 // backgroundReserveCost is the request allowance every background reserve check

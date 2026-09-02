@@ -11,7 +11,6 @@ import (
 
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/platform"
-	"go.kenn.io/forge/internal/procutil"
 )
 
 type remoteHeadKey struct {
@@ -80,62 +79,6 @@ const (
 	pushedHeadRefreshRetryInterval = 30 * time.Second
 )
 
-// gitRemoteHeadReader answers through git subprocesses. It is the fallback
-// behind gitdirRemoteHeadReader for repository layouts the direct reader
-// cannot interpret, and the only writer (SetBranchUpstream). Every spawn
-// takes the shared procutil capacity guard because the observer fans out
-// across all ready workspaces on one pass.
-type gitRemoteHeadReader struct{}
-
-const pushedHeadSubprocessReason = "git pushed-head observer subprocess capacity"
-
-func (gitRemoteHeadReader) BranchName(ctx context.Context, dir string) (string, error) {
-	gitCtx, cancel := context.WithTimeout(ctx, pushedHeadGitTimeout)
-	defer cancel()
-	release, err := procutil.TryAcquire(gitCtx, pushedHeadSubprocessReason)
-	if err != nil {
-		return "", err
-	}
-	defer release()
-	return gitBranchName(gitCtx, dir)
-}
-
-func (gitRemoteHeadReader) UpstreamState(ctx context.Context, dir, branch string) (upstreamState, error) {
-	gitCtx, cancel := context.WithTimeout(ctx, pushedHeadGitTimeout)
-	defer cancel()
-	release, err := procutil.TryAcquire(gitCtx, pushedHeadSubprocessReason)
-	if err != nil {
-		return upstreamState{}, err
-	}
-	defer release()
-	return gitUpstreamState(gitCtx, dir, branch)
-}
-
-// SetBranchUpstream takes no limiter slot of its own: setBranchUpstream's
-// git commands each acquire the guard, and an outer acquisition around them
-// would nest and stall until the git timeout whenever the limiter is full.
-func (gitRemoteHeadReader) SetBranchUpstream(ctx context.Context, dir, branch, remote, mergeRef string) error {
-	gitCtx, cancel := context.WithTimeout(ctx, pushedHeadGitTimeout)
-	defer cancel()
-	return setBranchUpstream(gitCtx, dir, branch, remote, mergeRef)
-}
-
-func (gitRemoteHeadReader) RemoteTrackingSHA(ctx context.Context, dir, remote, branch string) (string, string, bool, error) {
-	trackingRef := "refs/remotes/" + remote + "/" + branch
-	gitCtx, cancel := context.WithTimeout(ctx, pushedHeadGitTimeout)
-	defer cancel()
-	release, err := procutil.TryAcquire(gitCtx, pushedHeadSubprocessReason)
-	if err != nil {
-		return "", trackingRef, false, err
-	}
-	defer release()
-	out, err := gitOutput(gitCtx, dir, "rev-parse", "--verify", "--quiet", trackingRef+"^{commit}")
-	if err != nil {
-		return "", trackingRef, false, nil
-	}
-	return strings.TrimSpace(out), trackingRef, true, nil
-}
-
 type PushedHeadObserver struct {
 	db       *db.DB
 	monitor  *PRMonitor
@@ -152,7 +95,7 @@ func NewPushedHeadObserver(
 	return &PushedHeadObserver{
 		db:       database,
 		monitor:  NewPRMonitor(database, monitorOptions...),
-		git:      &gitdirRemoteHeadReader{fallback: gitRemoteHeadReader{}},
+		git:      gitdirRemoteHeadReader{},
 		now:      time.Now,
 		observed: make(map[remoteHeadKey]remoteHeadObservation),
 		failures: make(map[string]int),

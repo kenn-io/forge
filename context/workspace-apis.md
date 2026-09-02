@@ -681,11 +681,11 @@ move restarts the cycle.
 The observer's steady state spawns no processes. It reads the worktree's
 current branch, upstream config, and remote-tracking SHA in process through
 go-git's reference store and config parser, layering `config.worktree` over
-the shared config when `extensions.worktreeConfig` is on, and only asks git,
-through the procutil capacity guard, for layouts it cannot answer faithfully:
-config includes, reftable ref storage, or unparsable files. Upstream repair
-remains a git write whose commands each take one guard slot; never wrap them
-in an outer acquisition
+the shared config when `extensions.worktreeConfig` is on. Layouts go-git
+cannot answer faithfully (config includes, reftable ref storage) are skipped
+like a detached HEAD, never re-read through git. Upstream repair is the one
+git write; its commands each take one procutil slot, so never wrap them in an
+outer acquisition
 (`internal/workspace/pushed_head_gitdir.go::gitdirRemoteHeadReader`).
 Build go-git storage from a locally resolved gitdir and common directory and
 use it as a reference store directly: `EnableDotGitCommonDir` leaks the linked

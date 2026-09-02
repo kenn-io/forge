@@ -1,7 +1,6 @@
 package workspace
 
 import (
-	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -63,43 +62,11 @@ func (f pushedHeadFixture) revParse(t *testing.T, ref string) string {
 	return strings.TrimSpace(string(runWorkspaceTestGit(t, f.clone, "rev-parse", "--verify", ref)))
 }
 
-// countingRemoteHeadReader records fallback use so tests can prove the direct
-// reader answered from the git directory alone.
-type countingRemoteHeadReader struct {
-	inner remoteHeadGitReader
-	calls int
-}
-
-func (c *countingRemoteHeadReader) BranchName(ctx context.Context, dir string) (string, error) {
-	c.calls++
-	return c.inner.BranchName(ctx, dir)
-}
-
-func (c *countingRemoteHeadReader) UpstreamState(ctx context.Context, dir, branch string) (upstreamState, error) {
-	c.calls++
-	return c.inner.UpstreamState(ctx, dir, branch)
-}
-
-func (c *countingRemoteHeadReader) RemoteTrackingSHA(ctx context.Context, dir, remote, branch string) (string, string, bool, error) {
-	c.calls++
-	return c.inner.RemoteTrackingSHA(ctx, dir, remote, branch)
-}
-
-func (c *countingRemoteHeadReader) SetBranchUpstream(ctx context.Context, dir, branch, remote, mergeRef string) error {
-	c.calls++
-	return c.inner.SetBranchUpstream(ctx, dir, branch, remote, mergeRef)
-}
-
-func newGitdirReaderForTest() (*gitdirRemoteHeadReader, *countingRemoteHeadReader) {
-	fallback := &countingRemoteHeadReader{inner: gitRemoteHeadReader{}}
-	return &gitdirRemoteHeadReader{fallback: fallback}, fallback
-}
-
 func TestGitdirReaderSymbolicHeadWithUpstream(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	fixture := newPushedHeadFixture(t)
-	reader, fallback := newGitdirReaderForTest()
+	reader := gitdirRemoteHeadReader{}
 	ctx := t.Context()
 
 	branch, err := reader.BranchName(ctx, fixture.clone)
@@ -120,18 +87,16 @@ func TestGitdirReaderSymbolicHeadWithUpstream(t *testing.T) {
 	assert.True(ok)
 	assert.Equal("refs/remotes/origin/feature", ref)
 	assert.Equal(fixture.revParse(t, "refs/remotes/origin/feature"), sha)
-	assert.Equal(0, fallback.calls, "a plain clone must be answered without git")
 }
 
 func TestGitdirReaderDetachedHead(t *testing.T) {
 	fixture := newPushedHeadFixture(t)
 	runWorkspaceTestGit(t, fixture.clone, "checkout", "--detach")
-	reader, fallback := newGitdirReaderForTest()
+	reader := gitdirRemoteHeadReader{}
 
 	branch, err := reader.BranchName(t.Context(), fixture.clone)
 	require.NoError(t, err)
 	assert.Empty(t, branch, "detached HEAD has no current branch")
-	assert.Equal(t, 0, fallback.calls)
 }
 
 func TestGitdirReaderBranchWithoutUpstream(t *testing.T) {
@@ -139,7 +104,7 @@ func TestGitdirReaderBranchWithoutUpstream(t *testing.T) {
 	require := require.New(t)
 	fixture := newPushedHeadFixture(t)
 	runWorkspaceTestGit(t, fixture.clone, "checkout", "-b", "scratch")
-	reader, fallback := newGitdirReaderForTest()
+	reader := gitdirRemoteHeadReader{}
 	ctx := t.Context()
 
 	upstream, err := reader.UpstreamState(ctx, fixture.clone, "scratch")
@@ -151,14 +116,13 @@ func TestGitdirReaderBranchWithoutUpstream(t *testing.T) {
 	assert.False(ok)
 	assert.Empty(sha)
 	assert.Equal("refs/remotes/origin/scratch", ref)
-	assert.Equal(0, fallback.calls)
 }
 
 func TestGitdirReaderPackedAndLooseRefs(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	fixture := newPushedHeadFixture(t)
-	reader, fallback := newGitdirReaderForTest()
+	reader := gitdirRemoteHeadReader{}
 	ctx := t.Context()
 	gitDir := filepath.Join(fixture.clone, ".git")
 	looseRef := filepath.Join(gitDir, "refs", "remotes", "origin", "feature")
@@ -182,7 +146,6 @@ func TestGitdirReaderPackedAndLooseRefs(t *testing.T) {
 	require.NoError(err)
 	assert.True(ok)
 	assert.Equal(pushed, sha)
-	assert.Equal(0, fallback.calls)
 }
 
 func TestGitdirReaderLinkedWorktree(t *testing.T) {
@@ -192,7 +155,7 @@ func TestGitdirReaderLinkedWorktree(t *testing.T) {
 	worktree := filepath.Join(filepath.Dir(fixture.clone), "linked")
 	runWorkspaceTestGit(t, fixture.clone, "worktree", "add", "-b", "topic", worktree, "main")
 	runWorkspaceTestGit(t, worktree, "push", "-u", "origin", "topic")
-	reader, fallback := newGitdirReaderForTest()
+	reader := gitdirRemoteHeadReader{}
 	ctx := t.Context()
 
 	branch, err := reader.BranchName(ctx, worktree)
@@ -213,29 +176,27 @@ func TestGitdirReaderLinkedWorktree(t *testing.T) {
 	assert.True(ok)
 	assert.Equal("refs/remotes/origin/topic", ref)
 	assert.Equal(fixture.revParse(t, "refs/remotes/origin/topic"), sha)
-	assert.Equal(0, fallback.calls)
 }
 
-func TestGitdirReaderFallsBackForConfigIncludes(t *testing.T) {
+func TestGitdirReaderSkipsConfigIncludes(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	fixture := newPushedHeadFixture(t)
 	included := filepath.Join(filepath.Dir(fixture.clone), "included.gitconfig")
 	require.NoError(os.WriteFile(included, []byte("[branch \"feature\"]\n\tremote = origin\n\tmerge = refs/heads/feature\n"), 0o600))
-	runWorkspaceTestGit(t, fixture.clone, "config", "--unset", "branch.feature.remote")
-	runWorkspaceTestGit(t, fixture.clone, "config", "--unset", "branch.feature.merge")
 	runWorkspaceTestGit(t, fixture.clone, "config", "include.path", included)
-	reader, fallback := newGitdirReaderForTest()
+	reader := gitdirRemoteHeadReader{}
+	ctx := t.Context()
 
-	upstream, err := reader.UpstreamState(t.Context(), fixture.clone, "feature")
+	// go-git does not expand includes, so the effective config is unknowable
+	// in process; the observer treats the workspace as unobservable rather
+	// than guessing from the partial file or spawning git.
+	branch, err := reader.BranchName(ctx, fixture.clone)
 	require.NoError(err)
-	assert.Equal(upstreamState{
-		branchName:  "feature",
-		remoteName:  "origin",
-		remoteURL:   fixture.remote,
-		hasTracking: true,
-	}, upstream, "included config is only visible through git")
-	assert.Equal(1, fallback.calls)
+	assert.Empty(branch)
+	upstream, err := reader.UpstreamState(ctx, fixture.clone, "feature")
+	require.NoError(err)
+	assert.Equal(upstreamState{}, upstream)
 }
 
 // TestPushedHeadObserverPassSpawnsNoGitWhenUnchanged runs the real observer
@@ -327,7 +288,7 @@ func TestGitdirReaderDoesNotLeakDescriptorsOnLinkedWorktree(t *testing.T) {
 	worktree := filepath.Join(filepath.Dir(fixture.clone), "linked")
 	runWorkspaceTestGit(t, fixture.clone, "worktree", "add", "-b", "topic", worktree, "main")
 	runWorkspaceTestGit(t, worktree, "push", "-u", "origin", "topic")
-	reader, fallback := newGitdirReaderForTest()
+	reader := gitdirRemoteHeadReader{}
 	ctx := t.Context()
 
 	openDescriptors := func() int {
@@ -349,7 +310,6 @@ func TestGitdirReaderDoesNotLeakDescriptorsOnLinkedWorktree(t *testing.T) {
 		read()
 	}
 	assert.Equal(before, openDescriptors(), "reading a linked worktree must not leave descriptors open")
-	assert.Equal(0, fallback.calls)
 }
 
 func TestGitdirReaderOverlaysWorktreeConfig(t *testing.T) {
@@ -366,7 +326,7 @@ func TestGitdirReaderOverlaysWorktreeConfig(t *testing.T) {
 	runWorkspaceTestGit(t, fixture.clone, "config", "branch.topic.merge", "refs/heads/topic")
 	runWorkspaceTestGit(t, fixture.clone, "config", "extensions.worktreeConfig", "2")
 	runWorkspaceTestGit(t, worktree, "config", "--worktree", "branch.topic.merge", "refs/heads/feature")
-	reader, fallback := newGitdirReaderForTest()
+	reader := gitdirRemoteHeadReader{}
 	ctx := t.Context()
 
 	upstream, err := reader.UpstreamState(ctx, worktree, "topic")
@@ -381,14 +341,13 @@ func TestGitdirReaderOverlaysWorktreeConfig(t *testing.T) {
 	shared, err := reader.UpstreamState(ctx, fixture.clone, "topic")
 	require.NoError(err)
 	assert.Equal("topic", shared.branchName, "the main worktree keeps the shared value")
-	assert.Equal(0, fallback.calls)
 }
 
-// TestSubprocessReaderRepairsUpstreamWithOneLimiterSlot proves upstream
+// TestGitdirReaderRepairsUpstreamWithOneLimiterSlot proves upstream
 // repair holds one subprocess slot per git command rather than nesting an
 // outer acquisition around guarded commands, which stalls until the git
 // timeout whenever the limiter is at capacity.
-func TestSubprocessReaderRepairsUpstreamWithOneLimiterSlot(t *testing.T) {
+func TestGitdirReaderRepairsUpstreamWithOneLimiterSlot(t *testing.T) {
 	require := require.New(t)
 	fixture := newPushedHeadFixture(t)
 	runWorkspaceTestGit(t, fixture.clone, "checkout", "-b", "scratch")
@@ -397,7 +356,7 @@ func TestSubprocessReaderRepairsUpstreamWithOneLimiterSlot(t *testing.T) {
 	)
 	defer restore()
 
-	err := gitRemoteHeadReader{}.SetBranchUpstream(
+	err := gitdirRemoteHeadReader{}.SetBranchUpstream(
 		t.Context(), fixture.clone, "scratch", "origin", "refs/heads/feature",
 	)
 	require.NoError(err)

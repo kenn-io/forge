@@ -29,44 +29,39 @@ import (
 // image per workspace.
 //
 // go-git reads the worktree's HEAD, loose and packed refs (through the
-// linked-worktree common directory), and the repository config. Layouts it
-// cannot interpret fall back to git for that question so the observer never
-// answers differently from git, only more cheaply: config include/includeIf
-// (go-git does not expand includes), reftable ref storage, or files it fails
-// to parse.
+// linked-worktree common directory), and the repository config, with
+// config.worktree layered on top when extensions.worktreeConfig is on.
+// Layouts it cannot answer faithfully (config include/includeIf, which go-git
+// does not expand, or reftable ref storage) are skipped like a detached HEAD:
+// no kenn-forge workspace uses them, and spawning git for them would restore
+// the churn this reader exists to remove. Upstream repair is the one git
+// write, guarded per command by procutil.
 //
 // remoteURL is the configured remote.<name>.url; url.<base>.insteadOf
 // rewriting is not applied. The observer does not consume the URL.
-type gitdirRemoteHeadReader struct {
-	fallback remoteHeadGitReader
-}
+type gitdirRemoteHeadReader struct{}
 
-func (r *gitdirRemoteHeadReader) BranchName(ctx context.Context, dir string) (string, error) {
+func (gitdirRemoteHeadReader) BranchName(_ context.Context, dir string) (string, error) {
 	refs, _, err := openWorktreeRepository(dir)
-	if err == nil {
-		var head *plumbing.Reference
-		head, err = refs.Reference(plumbing.HEAD)
-		if err == nil {
-			// Mirrors `git branch --show-current`: the branch name for a
-			// symbolic HEAD under refs/heads, empty when detached.
-			if head.Type() == plumbing.HashReference {
-				return "", nil
-			}
-			if head.Target().IsBranch() {
-				return head.Target().Short(), nil
-			}
-			return "", nil
-		}
+	if err != nil {
+		return "", skipUnsupportedGitdir(dir, "branch", err)
 	}
-	logGitdirFallback(dir, "branch", err)
-	return r.fallback.BranchName(ctx, dir)
+	head, err := refs.Reference(plumbing.HEAD)
+	if err != nil {
+		return "", fmt.Errorf("read HEAD: %w", err)
+	}
+	// Mirrors `git branch --show-current`: the branch name for a symbolic
+	// HEAD under refs/heads, empty when detached.
+	if head.Type() == plumbing.SymbolicReference && head.Target().IsBranch() {
+		return head.Target().Short(), nil
+	}
+	return "", nil
 }
 
-func (r *gitdirRemoteHeadReader) UpstreamState(ctx context.Context, dir, branch string) (upstreamState, error) {
+func (gitdirRemoteHeadReader) UpstreamState(_ context.Context, dir, branch string) (upstreamState, error) {
 	_, cfg, err := openWorktreeRepository(dir)
 	if err != nil {
-		logGitdirFallback(dir, "upstream", err)
-		return r.fallback.UpstreamState(ctx, dir, branch)
+		return upstreamState{}, skipUnsupportedGitdir(dir, "upstream", err)
 	}
 	tracked := cfg.Branches[branch]
 	if tracked == nil || tracked.Remote == "" || tracked.Merge == "" {
@@ -83,34 +78,45 @@ func (r *gitdirRemoteHeadReader) UpstreamState(ctx context.Context, dir, branch 
 	return state, nil
 }
 
-func (r *gitdirRemoteHeadReader) RemoteTrackingSHA(ctx context.Context, dir, remote, branch string) (string, string, bool, error) {
+func (gitdirRemoteHeadReader) RemoteTrackingSHA(_ context.Context, dir, remote, branch string) (string, string, bool, error) {
 	trackingRef := "refs/remotes/" + remote + "/" + branch
 	refs, _, err := openWorktreeRepository(dir)
-	if err == nil {
-		var ref *plumbing.Reference
-		ref, err = storer.ResolveReference(refs, plumbing.ReferenceName(trackingRef))
-		switch {
-		case err == nil:
-			return ref.Hash().String(), trackingRef, true, nil
-		case errors.Is(err, plumbing.ErrReferenceNotFound):
-			return "", trackingRef, false, nil
-		}
+	if err != nil {
+		return "", trackingRef, false, skipUnsupportedGitdir(dir, "tracking ref", err)
 	}
-	logGitdirFallback(dir, "tracking ref", err)
-	return r.fallback.RemoteTrackingSHA(ctx, dir, remote, branch)
+	ref, err := storer.ResolveReference(refs, plumbing.ReferenceName(trackingRef))
+	switch {
+	case err == nil:
+		return ref.Hash().String(), trackingRef, true, nil
+	case errors.Is(err, plumbing.ErrReferenceNotFound):
+		return "", trackingRef, false, nil
+	default:
+		return "", trackingRef, false, fmt.Errorf("resolve %s: %w", trackingRef, err)
+	}
 }
 
-func (r *gitdirRemoteHeadReader) SetBranchUpstream(ctx context.Context, dir, branch, remote, mergeRef string) error {
-	return r.fallback.SetBranchUpstream(ctx, dir, branch, remote, mergeRef)
+// SetBranchUpstream is the observer's only git write. setBranchUpstream's
+// commands each take one procutil slot; wrapping them in an outer acquisition
+// would nest and stall until the git timeout whenever the limiter is full.
+func (gitdirRemoteHeadReader) SetBranchUpstream(ctx context.Context, dir, branch, remote, mergeRef string) error {
+	gitCtx, cancel := context.WithTimeout(ctx, pushedHeadGitTimeout)
+	defer cancel()
+	return setBranchUpstream(gitCtx, dir, branch, remote, mergeRef)
 }
 
-func logGitdirFallback(dir, question string, reason error) {
-	slog.Debug("workspace pushed-head observer reading git state through git",
-		"dir", dir, "question", question, "reason", reason)
+// skipUnsupportedGitdir turns an unsupported-layout error into a silent skip
+// (nil error, zero answer) and passes every other error through.
+func skipUnsupportedGitdir(dir, question string, err error) error {
+	if errors.Is(err, errGitdirUnsupported) {
+		slog.Debug("workspace pushed-head observer skipping unsupported repository layout",
+			"dir", dir, "question", question, "reason", err)
+		return nil
+	}
+	return err
 }
 
 // errGitdirUnsupported marks repository layouts go-git cannot interpret
-// faithfully; callers answer through git instead.
+// faithfully; the observer skips them.
 var errGitdirUnsupported = errors.New("repository layout not readable in process")
 
 // openWorktreeRepository opens dir as a main or linked worktree and returns

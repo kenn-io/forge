@@ -692,6 +692,9 @@ jobs:
 
   e2e-roborev:
     runs-on: ${{ github.repository == 'kenn-io/forge' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && 'kenn-linux-x64-public' || 'ubuntu-latest' }}
+    # A healthy run takes about five minutes. A stalled Debian mirror during the
+    # roborev image build once held this job for the six-hour default limit.
+    timeout-minutes: 30
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
     env:

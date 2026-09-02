@@ -1840,6 +1840,39 @@
     background: var(--bg-surface);
   }
 
+  /* One control family for the phone status row. State, CI, diff stat,
+   * review decision, labels, assignees, and reviewers all render as the same
+   * rounded-rectangle control at the action-grid height, one size, one
+   * weight, plain case. Tone tints still carry status; the pill shape and
+   * uppercase label treatment are desktop density devices that read as
+   * mismatched badges next to phone buttons. */
+  .focus-layout--phone :global(.chips-row .kit-chip),
+  .focus-layout--phone :global(.chips-row .kit-button),
+  .focus-layout--phone :global(.chips-row .diff-summary-trigger) {
+    min-height: var(--detail-mobile-hit-target, 37px);
+    min-width: 0;
+    padding: 0 12px;
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium, 500);
+    letter-spacing: normal;
+    line-height: normal;
+    text-transform: none;
+  }
+
+  .focus-layout--phone :global(.chips-row .btn--labels svg) {
+    width: 16px;
+    height: 16px;
+  }
+
+  /* Branch names are identifiers, so they keep the app mono face, at the
+   * inline-code ratio the markdown body already uses so the mono line reads
+   * the same size as the sans repository line above it. */
+  .focus-layout--phone :global(.branch-name-btn) {
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+  }
+
   .focus-layout--phone :global(.meta-row .copy-number-btn) {
     /* WCAG 2.5.8 target minimum; the full phone hit target belongs to
      * standalone controls, not to a number sitting inside a text row. */

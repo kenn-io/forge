@@ -3460,7 +3460,7 @@
   .branch-name-btn {
     position: relative;
     color: var(--text-secondary);
-    font-family: "SFMono-Regular", "Consolas", "Liberation Mono", "Menlo", monospace;
+    font-family: var(--font-mono);
     font-size: var(--font-size-sm);
     background: none;
     border: none;

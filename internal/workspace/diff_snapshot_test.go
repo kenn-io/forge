@@ -10,13 +10,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/gitclone"
+	"go.kenn.io/forge/internal/testutil/gitfixture"
 )
 
 func TestResolveDiffSnapshotSpec(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
-	work := setupDivergenceWorktree(t)
+	work := gitfixture.DivergenceWorktree(t)
 
 	resolved, ok, err := ResolveDiffSnapshotSpec(t.Context(), DiffSnapshotSpec{
 		WorktreePath: work,
@@ -36,7 +37,7 @@ func TestResolveDiffSnapshotSpec(t *testing.T) {
 func TestFingerprintDiffSnapshotDetectsDirtyContentWithoutSizeChange(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
-	work := setupDivergenceWorktree(t)
+	work := gitfixture.DivergenceWorktree(t)
 	path := filepath.Join(work, "f.txt")
 
 	require.NoError(os.WriteFile(path, []byte("a1\n"), 0o644))
@@ -70,7 +71,7 @@ func TestDiffContentDigestHonorsCancellation(t *testing.T) {
 func TestFingerprintDiffSnapshotDetectsUntrackedContentChange(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
-	work := setupDivergenceWorktree(t)
+	work := gitfixture.DivergenceWorktree(t)
 	path := filepath.Join(work, "new.txt")
 
 	require.NoError(os.WriteFile(path, []byte("a1\n"), 0o644))
@@ -121,7 +122,7 @@ func TestFingerprintDiffSnapshotRejectsIntermediateSymlink(t *testing.T) {
 func TestFingerprintDiffSnapshotDetectsRepositoryAttributeChange(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
-	work := setupDivergenceWorktree(t)
+	work := gitfixture.DivergenceWorktree(t)
 	require.NoError(os.WriteFile(filepath.Join(work, "f.txt"), []byte("dirty\n"), 0o644))
 
 	resolved, ok, err := ResolveDiffSnapshotSpec(t.Context(), DiffSnapshotSpec{
@@ -151,7 +152,7 @@ func TestFingerprintDiffSnapshotDetectsRepositoryAttributeChange(t *testing.T) {
 func TestFingerprintDiffSnapshotRangeIgnoresWorktree(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
-	work := setupDivergenceWorktree(t)
+	work := gitfixture.DivergenceWorktree(t)
 	from := strings.TrimSpace(string(runWorkspaceTestGit(t, work, "rev-parse", "HEAD^")))
 	to := strings.TrimSpace(string(runWorkspaceTestGit(t, work, "rev-parse", "HEAD")))
 
@@ -175,7 +176,7 @@ func TestFingerprintDiffSnapshotRangeDetectsRepositoryAttributeChange(t *testing
 	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
-	work := setupDivergenceWorktree(t)
+	work := gitfixture.DivergenceWorktree(t)
 	from := strings.TrimSpace(string(runWorkspaceTestGit(t, work, "rev-parse", "HEAD^")))
 	to := strings.TrimSpace(string(runWorkspaceTestGit(t, work, "rev-parse", "HEAD")))
 
@@ -203,7 +204,7 @@ func TestFingerprintDiffSnapshotRangeDetectsRepositoryAttributeChange(t *testing
 func TestPrepareDiffSnapshotRangeUsesCommittedAttributes(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
-	work := setupDivergenceWorktree(t)
+	work := gitfixture.DivergenceWorktree(t)
 	from := strings.TrimSpace(string(runWorkspaceTestGit(t, work, "rev-parse", "HEAD^")))
 	to := strings.TrimSpace(string(runWorkspaceTestGit(t, work, "rev-parse", "HEAD")))
 	require.NoError(os.WriteFile(
@@ -249,7 +250,7 @@ func TestPrepareDiffSnapshotUsesResolvedInputs(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
-	work := setupDivergenceWorktree(t)
+	work := gitfixture.DivergenceWorktree(t)
 	require.NoError(os.WriteFile(filepath.Join(work, "f.txt"), []byte("f1  \n"), 0o644))
 
 	resolved, ok, err := ResolveDiffSnapshotSpec(t.Context(), DiffSnapshotSpec{

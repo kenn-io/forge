@@ -13,6 +13,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/testutil/gitfixture"
 )
 
 func TestRunUntrackedPathReadsDoesNotSerializeFiles(t *testing.T) {
@@ -146,7 +147,7 @@ func TestReadUntrackedFileContentRejectsIntermediateSymlink(t *testing.T) {
 func TestWorktreeDiffFilesAgainstHead(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	work := setupDivergenceWorktree(t)
+	work := gitfixture.DivergenceWorktree(t)
 
 	require.NoError(os.WriteFile(
 		filepath.Join(work, "f.txt"), []byte("dirty\n"), 0o644,
@@ -172,7 +173,7 @@ func TestWorktreeDiffFilesAgainstHead(t *testing.T) {
 func TestWorktreeDiffFilesHidesWhitespaceOnlyChanges(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	work := setupDivergenceWorktree(t)
+	work := gitfixture.DivergenceWorktree(t)
 
 	require.NoError(os.WriteFile(
 		filepath.Join(work, "f.txt"), []byte("f1  \n"), 0o644,
@@ -193,7 +194,7 @@ func TestWorktreeDiffFilesHidesWhitespaceOnlyChanges(t *testing.T) {
 func TestWorktreeDiffFilesHidesWhitespaceOnlyUntrackedFiles(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	work := setupDivergenceWorktree(t)
+	work := gitfixture.DivergenceWorktree(t)
 
 	require.NoError(os.WriteFile(
 		filepath.Join(work, "dirty-test.txt"), []byte("test\n"), 0o644,
@@ -218,7 +219,7 @@ func TestWorktreeDiffFilesHidesWhitespaceOnlyUntrackedFiles(t *testing.T) {
 func TestWorktreeDiffFilesMarksGeneratedFiles(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	work := setupDivergenceWorktree(t)
+	work := gitfixture.DivergenceWorktree(t)
 
 	require.NoError(os.WriteFile(
 		filepath.Join(work, ".gitattributes"),
@@ -251,7 +252,7 @@ func TestWorktreeDiffFilesMarksGeneratedFiles(t *testing.T) {
 func TestWorktreeDiffIgnoresExternalDiffConfig(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	work := setupDivergenceWorktree(t)
+	work := gitfixture.DivergenceWorktree(t)
 
 	scriptDir := t.TempDir()
 	script := filepath.Join(scriptDir, "external-diff.sh")
@@ -280,7 +281,7 @@ func TestWorktreeDiffIgnoresExternalDiffConfig(t *testing.T) {
 func TestWorktreeDiffIgnoresTextconvConfig(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	work := setupDivergenceWorktree(t)
+	work := gitfixture.DivergenceWorktree(t)
 
 	scriptDir := t.TempDir()
 	script := filepath.Join(scriptDir, "textconv.sh")
@@ -314,7 +315,7 @@ func TestWorktreeDiffIgnoresTextconvConfig(t *testing.T) {
 func TestWorktreeFileDiffAgainstHeadScopesPatchToOnePath(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	work := setupDivergenceWorktree(t)
+	work := gitfixture.DivergenceWorktree(t)
 
 	require.NoError(os.WriteFile(
 		filepath.Join(work, "f.txt"), []byte("dirty\n"), 0o644,
@@ -343,7 +344,7 @@ func TestWorktreeFileDiffAgainstHeadScopesPatchToOnePath(t *testing.T) {
 func TestWorktreeFileDiffAgainstHeadBuildsPatchForUntrackedPath(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	work := setupDivergenceWorktree(t)
+	work := gitfixture.DivergenceWorktree(t)
 
 	require.NoError(os.WriteFile(
 		filepath.Join(work, "first.go"), []byte("package first\n"), 0o644,
@@ -378,7 +379,7 @@ func TestWorktreeFileDiffAgainstHeadBuildsPatchForUntrackedPath(t *testing.T) {
 func TestWorktreeDiffAgainstPushedBranchIncludesLocalCommitsAndDirtyChanges(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	work := setupDivergenceWorktree(t)
+	work := gitfixture.DivergenceWorktree(t)
 
 	require.NoError(os.WriteFile(
 		filepath.Join(work, "committed.go"), []byte("package committed\n"), 0o644,
@@ -407,7 +408,7 @@ func TestWorktreeDiffAgainstPushedBranchIncludesLocalCommitsAndDirtyChanges(t *t
 
 func TestWorktreeDiffWhitespaceOnlyCountBetweenUsesRangeRefs(t *testing.T) {
 	require := require.New(t)
-	work := setupDivergenceWorktree(t)
+	work := gitfixture.DivergenceWorktree(t)
 	baseSHA := strings.TrimSpace(
 		string(runWorkspaceTestGit(t, work, "rev-parse", "HEAD")),
 	)
@@ -437,7 +438,7 @@ func TestWorktreeDiffWhitespaceOnlyCountBetweenUsesRangeRefs(t *testing.T) {
 func TestWorktreeDiffAgainstMergeTargetUsesMergeBase(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	work := setupDivergenceWorktree(t)
+	work := gitfixture.DivergenceWorktree(t)
 
 	other := filepath.Join(filepath.Dir(work), "other")
 	remote := filepath.Join(filepath.Dir(work), "remote.git")
@@ -564,7 +565,7 @@ func requireSymlink(t *testing.T, oldname string, newname string) {
 func TestWorktreeDiffMarksLargeUntrackedFileBinary(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	work := setupDivergenceWorktree(t)
+	work := gitfixture.DivergenceWorktree(t)
 	require.NoError(os.WriteFile(
 		filepath.Join(work, "large.txt"),
 		bytes.Repeat([]byte("x"), maxUntrackedTextFileBytes+1),

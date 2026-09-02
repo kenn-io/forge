@@ -1,4 +1,4 @@
-package gitstatustest
+package workspace
 
 import (
 	"context"
@@ -14,6 +14,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/testutil/gitfake"
+	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/tokenauth"
 )
 
@@ -29,7 +30,7 @@ func branchSyncTestManager(t *testing.T) *Manager {
 func TestPushWorktreeBranchPushesAheadCommitsAndRunsHooks(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	work := setupDivergenceWorktree(t)
+	work := gitfixture.DivergenceWorktree(t)
 	marker := filepath.Join(filepath.Dir(work), "pre-push-ran")
 	hook := filepath.Join(work, ".git", "hooks", "pre-push")
 	require.NoError(os.WriteFile(
@@ -55,7 +56,7 @@ func TestPushWorktreeBranchPushesAheadCommitsAndRunsHooks(t *testing.T) {
 func TestPullWorktreeBranchFastForwardsBehindBranch(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	work := setupDivergenceWorktree(t)
+	work := gitfixture.DivergenceWorktree(t)
 	other := filepath.Join(filepath.Dir(work), "other")
 	remote := filepath.Join(filepath.Dir(work), "remote.git")
 	runWorkspaceTestGit(t, filepath.Dir(work), "clone", remote, other)
@@ -82,7 +83,7 @@ func TestPullWorktreeBranchFastForwardsBehindBranch(t *testing.T) {
 
 func TestPushWorktreeBranchRejectsDivergedBranch(t *testing.T) {
 	require := require.New(t)
-	work := setupDivergenceWorktree(t)
+	work := gitfixture.DivergenceWorktree(t)
 	require.NoError(os.WriteFile(
 		filepath.Join(work, "f.txt"), []byte("local\n"), 0o644,
 	))
@@ -109,7 +110,7 @@ func TestPushWorktreeBranchRejectsDivergedBranch(t *testing.T) {
 }
 
 func TestPushWorktreeBranchRejectsNonOriginUpstream(t *testing.T) {
-	work := setupDivergenceWorktree(t)
+	work := gitfixture.DivergenceWorktree(t)
 	runWorkspaceTestGit(t, work, "remote", "add", "other", "https://github.com/other/repo.git")
 	runWorkspaceTestGit(t, work, "config", "branch.feature.remote", "other")
 
@@ -124,7 +125,7 @@ func TestPushWorktreeBranchRejectsNonOriginUpstream(t *testing.T) {
 
 func TestPullWorktreeBranchRejectsDirtyWorktree(t *testing.T) {
 	require := require.New(t)
-	work := setupDivergenceWorktree(t)
+	work := gitfixture.DivergenceWorktree(t)
 	require.NoError(os.WriteFile(
 		filepath.Join(work, "dirty.txt"), []byte("dirty\n"), 0o644,
 	))
@@ -146,7 +147,7 @@ func TestPullWorktreeBranchRejectsDirtyWorktree(t *testing.T) {
 func TestPushWorktreeBranchUsesAuthenticatedRunnerAndMutationAuth(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	work := setupDivergenceWorktree(t)
+	work := gitfixture.DivergenceWorktree(t)
 	require.NoError(os.WriteFile(
 		filepath.Join(work, "f.txt"), []byte("ahead\n"), 0o644,
 	))
@@ -312,7 +313,7 @@ func TestLaunchSpecBranchSyncRefreshesExpiredLeaseBeforeGit(t *testing.T) {
 func TestLaunchSpecBranchSyncUsesRefreshedRepositoryRoute(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	work := setupDivergenceWorktree(t)
+	work := gitfixture.DivergenceWorktree(t)
 	database := openTestDB(t)
 	original := launchSpecForTest()
 	_, accepted, err := database.ReconcileRepositoryObservation(
@@ -371,7 +372,7 @@ func TestLaunchSpecBranchSyncUsesRefreshedRepositoryRoute(t *testing.T) {
 
 func TestProviderBackedBranchSyncDoesNotFallBackToAnonymousGit(t *testing.T) {
 	require := require.New(t)
-	work := setupDivergenceWorktree(t)
+	work := gitfixture.DivergenceWorktree(t)
 	require.NoError(os.WriteFile(
 		filepath.Join(work, "f.txt"), []byte("ahead\n"), 0o644,
 	))

@@ -4,13 +4,49 @@ package gitfixture
 import (
 	"bytes"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	gitcmd "go.kenn.io/kit/git/cmd"
 )
+
+// DivergenceWorktree creates a local feature branch that tracks a bare remote.
+func DivergenceWorktree(t *testing.T) string {
+	t.Helper()
+	require := require.New(t)
+
+	root := t.TempDir()
+	remote := filepath.Join(root, "remote.git")
+	work := filepath.Join(root, "work")
+	Run(t, root, "init", "--bare", "--initial-branch=main", remote)
+	Run(t, root, "clone", remote, work)
+	Run(t, work, "config", "user.email", "t@test.com")
+	Run(t, work, "config", "user.name", "Test")
+	require.NoError(os.WriteFile(filepath.Join(work, "base.txt"), []byte("base\n"), 0o644))
+	Run(t, work, "add", ".")
+	Run(t, work, "commit", "-m", "base")
+	Run(t, work, "push", "origin", "main")
+	Run(t, work, "checkout", "-b", "feature")
+	require.NoError(os.WriteFile(filepath.Join(work, "f.txt"), []byte("f1\n"), 0o644))
+	Run(t, work, "add", ".")
+	Run(t, work, "commit", "-m", "feature 1")
+	Run(t, work, "push", "-u", "origin", "feature")
+	return work
+}
+
+// Run executes Git with a per-test isolated configuration.
+func Run(t *testing.T, dir string, args ...string) []byte {
+	t.Helper()
+	runner := gitsafe.MutableRunner(t).WithConfig("init.defaultBranch", "main")
+	out, stderr, err := runner.Run(t.Context(), dir, nil, args...)
+	require.NoError(t, err, "git %v failed: %s%s", args, out, stderr)
+	return out
+}
 
 // AppendFileCommits adds count commits that successively replace path on ref.
 // It uses one fast-import process so boundary-size histories do not exhaust

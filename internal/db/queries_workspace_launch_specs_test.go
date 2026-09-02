@@ -81,6 +81,7 @@ func TestListUnpreparedProviderWorkspacesUsesOneReadConnection(t *testing.T) {
 }
 
 func TestCreateWorkspaceWithLaunchSpecRejectsCatalogIdentityMismatch(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	database := openTestDB(t)
 	workspace, spec := workspaceLaunchFixture(t, database, "ws-catalog-mismatch")

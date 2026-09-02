@@ -11,6 +11,7 @@ import (
 )
 
 func TestWorkspaceAgentLaunchesMigrationUpgradesV52(t *testing.T) {
+	t.Parallel()
 	databasePath := filepath.Join(t.TempDir(), "forge-v52.db")
 	openAtVersionForTest(t, databasePath, 52, func(*sql.DB) {})
 

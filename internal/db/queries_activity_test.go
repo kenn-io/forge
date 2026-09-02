@@ -12,6 +12,7 @@ import (
 )
 
 func TestListActivity(t *testing.T) {
+	t.Parallel()
 	d := openTestDB(t)
 	ctx := t.Context()
 	base := baseTime()

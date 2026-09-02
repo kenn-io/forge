@@ -36,6 +36,7 @@ func openDBWithMigrations(t *testing.T) *DB {
 }
 
 func TestOpenAndSchema(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	d := openDBWithMigrations(t)
 	tables := []string{
@@ -215,6 +216,7 @@ func TestOpenAndSchema(t *testing.T) {
 }
 
 func TestOpenBackfillsIssuePRReferences(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	dbPath := filepath.Join(t.TempDir(), "issue-pr-reference-backfill.db")
 	openAtVersionForTest(t, dbPath, 51, func(*sql.DB) {})
@@ -250,6 +252,7 @@ func TestOpenBackfillsIssuePRReferences(t *testing.T) {
 }
 
 func TestMigration54BackfillsWorkspaceLaunchSpecs(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	dbPath := filepath.Join(t.TempDir(), "workspace-launch-spec-v53.db")
@@ -395,6 +398,7 @@ func TestMigration54BackfillsWorkspaceLaunchSpecs(t *testing.T) {
 }
 
 func TestMigration54DownDropsOnlyPreparationTables(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	dbPath := filepath.Join(t.TempDir(), "node-preparation-down.db")
@@ -423,6 +427,7 @@ func TestMigration54DownDropsOnlyPreparationTables(t *testing.T) {
 func TestWorkspaceRepositoryIdentityMigration55BackfillsOnlyUnambiguousRoutes(
 	t *testing.T,
 ) {
+	t.Parallel()
 	require := require.New(t)
 	dbPath := filepath.Join(t.TempDir(), "workspace-repository-identity-v54.db")
 
@@ -567,6 +572,7 @@ func TestWorkspaceRepositoryIdentityMigration55BackfillsOnlyUnambiguousRoutes(
 }
 
 func TestKataIssueLinksMigration48IsReversible(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	dbPath := filepath.Join(t.TempDir(), "kata-issue-links-v47.db")
@@ -589,6 +595,7 @@ func TestKataIssueLinksMigration48IsReversible(t *testing.T) {
 }
 
 func TestKataIssueLinksMigration48EnforcesIdentityConstraints(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	req := require.New(t)
 	database := openDBWithMigrations(t)
@@ -878,6 +885,7 @@ func TestOpenNormalizesInvalidWorkflowStatusesDuringCutover(t *testing.T) {
 }
 
 func TestOpenIdempotent(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.db")
 	d1, err := Open(path)
@@ -889,6 +897,7 @@ func TestOpenIdempotent(t *testing.T) {
 }
 
 func TestArchivePromotionBoundaryMigrationReopensMaintenanceGap(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	dbPath := filepath.Join(t.TempDir(), "archive-promotion-gap-v49.db")
@@ -944,6 +953,7 @@ func TestArchivePromotionBoundaryMigrationReopensMaintenanceGap(t *testing.T) {
 }
 
 func TestActivityEventMutationRevisionMigrationUpgradesPopulatedV50Database(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	dbPath := filepath.Join(t.TempDir(), "activity-event-revision-v50.db")
@@ -1108,6 +1118,7 @@ func TestActivityEventMutationRevisionMigrationUpgradesPopulatedV50Database(t *t
 }
 
 func TestOpenMigratesLegacyDatabase(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name    string
 		version int
@@ -1155,6 +1166,7 @@ func TestOpenMigratesLegacyDatabase(t *testing.T) {
 }
 
 func TestSchemaIdentityMigrationPreservesDataAndIsReversible(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	path := filepath.Join(t.TempDir(), "schema-identity-v43.db")
@@ -1244,6 +1256,7 @@ func TestSchemaIdentityMigrationPreservesDataAndIsReversible(t *testing.T) {
 }
 
 func TestRepositoryCatalogMigrationPreservesDataAndIndexes(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	dbPath := filepath.Join(t.TempDir(), "repository-catalog-v44.db")
@@ -1403,6 +1416,7 @@ func TestRepositoryCatalogMigrationPreservesDataAndIndexes(t *testing.T) {
 }
 
 func TestRepositoryRouteGenerationMigrationClearsHistoricallyReusedRouteState(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	dbPath := filepath.Join(t.TempDir(), "repository-route-generation-v46.db")
@@ -1533,6 +1547,7 @@ func TestRepositoryRouteGenerationMigrationClearsHistoricallyReusedRouteState(t 
 }
 
 func TestRepositoryCatalogMigrationDownRestoresRouteIdentity(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	dbPath := filepath.Join(t.TempDir(), "repository-catalog-v45.db")
 	database, err := Open(dbPath)
@@ -1584,6 +1599,7 @@ func TestRepositoryCatalogMigrationDownRestoresRouteIdentity(t *testing.T) {
 }
 
 func TestRepositoryCatalogMigrationDownRejectsRouteCollisions(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	dbPath := filepath.Join(t.TempDir(), "repository-catalog-collision-v45.db")
 	database, err := Open(dbPath)
@@ -1646,6 +1662,7 @@ func TestRepositoryCatalogMigrationDownRejectsRouteCollisions(t *testing.T) {
 }
 
 func TestOpenMigratesRateLimitsToPrincipals(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	path := filepath.Join(t.TempDir(), "rate-v38.db")
 	openAtVersionForTest(t, path, 38, func(raw *sql.DB) {
@@ -1708,6 +1725,7 @@ func TestOpenMigratesRateLimitsToPrincipals(t *testing.T) {
 }
 
 func TestOpenBackfillsLegacyIssueLabelsIntoNormalizedTables(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	path, raw := openSchemaVersion4DBForTest(t)
 	defer func() { require.NoError(raw.Close()) }()
@@ -1745,6 +1763,7 @@ func TestOpenBackfillsLegacyIssueLabelsIntoNormalizedTables(t *testing.T) {
 }
 
 func TestOpenIgnoresMalformedLegacyIssueLabelsJSON(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	path, raw := openSchemaVersion4DBForTest(t)
 	defer func() { require.NoError(raw.Close()) }()
@@ -1767,6 +1786,7 @@ func TestOpenIgnoresMalformedLegacyIssueLabelsJSON(t *testing.T) {
 }
 
 func TestOpenBackfillsDuplicateLegacyIssueLabelsDeterministically(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	path, raw := openSchemaVersion4DBForTest(t)
 	defer func() { require.NoError(raw.Close()) }()
@@ -1794,6 +1814,7 @@ func TestOpenBackfillsDuplicateLegacyIssueLabelsDeterministically(t *testing.T) 
 }
 
 func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "legacy.db")
@@ -2091,6 +2112,7 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 }
 
 func TestOpenRepairsCurrentSchemaMissingWorkspaceTerminalBackend(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	ctx := t.Context()
 	dir := t.TempDir()
@@ -2137,6 +2159,7 @@ func TestOpenRepairsCurrentSchemaMissingWorkspaceTerminalBackend(t *testing.T) {
 }
 
 func TestOpenInitializesBranchActivitySchema(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	ctx := t.Context()
 	dir := t.TempDir()

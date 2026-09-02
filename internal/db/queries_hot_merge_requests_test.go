@@ -10,6 +10,7 @@ import (
 )
 
 func TestRecordHotMergeRequestViewMaintainsPersistedMRU(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	ctx := t.Context()
 	dbPath := filepath.Join(t.TempDir(), "hot-merge-requests.db")

@@ -135,6 +135,7 @@ func TestListWorkspaceSubjectMetadataHidesOnlyRemovedUpstreamItems(t *testing.T)
 }
 
 func TestListWorkspaceSubjectMetadataSupportsLargeSubjectSets(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)

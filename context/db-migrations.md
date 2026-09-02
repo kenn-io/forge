@@ -15,7 +15,6 @@ schema migrations.
 - Do not add compatibility columns, dual-read/write paths, repair gates, or backfills for schema states that have never shipped. Amend the PR-local migration and current code paths directly.
 - Keep `.down.sql` honest. If the data cleanup is one-way, say that in the down migration and only undo reversible schema artifacts such as triggers or indexes.
 - Validate migrations through `db.Open()` and application-level tests. Do not test `golang-migrate` internals.
-- Connections run WAL with `synchronous=NORMAL`: a daemon crash loses nothing and only power loss can drop the last commits. Do not restore `FULL`; it fsyncs every commit, and each migration commit then costs a disk flush, which pushed the package past CI's test timeout (`internal/db/db.go::connectionPragmas`).
 - For SQLite, remember that adding constraints to existing columns usually requires a table rebuild. Do not add fill, repair, or validation triggers as a shortcut around fixing current write paths or rebuilding a table when a real schema invariant is required.
 - SQLite `CHECK` expressions accept a `NULL` result; when a nullable value is
   conditionally required, assert `IS NOT NULL` before validating its content

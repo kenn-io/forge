@@ -281,6 +281,7 @@
         active={grouping.getHideOrgName()
           || issues.getHideBots()
           || issues.getInvolvesMe()
+          || issues.getUnassigned()
           || issues.getReferencedByPR()}
         showBadge={false}
         sections={[visibilityFilterSection]}

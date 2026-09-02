@@ -387,14 +387,20 @@
         title: "Group",
         items: [
           {
+            id: "group-by-repo",
+            label: "By repo",
+            active: groupingMode === "byRepo",
+            onSelect: () => grouping.setGroupingMode("byRepo"),
+          },
+          {
             id: "group-by-workflow",
-            label: "Status",
+            label: "By status",
             active: groupingMode === "byWorkflow",
             onSelect: () => grouping.setGroupingMode("byWorkflow"),
           },
           {
             id: "group-flat",
-            label: "All",
+            label: "Flat list",
             active: groupingMode === "flat",
             onSelect: () => grouping.setGroupingMode("flat"),
           },

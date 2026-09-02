@@ -1736,6 +1736,7 @@
     --focus-detail-space-sm: 9px;
     --focus-detail-space-md: 12px;
     --focus-detail-hit-target: 49px;
+    --focus-mobile-hit-target: 44px;
     --detail-mobile-type-xs: var(--focus-detail-type-xs);
     --detail-mobile-type-sm: var(--focus-detail-type-sm);
     --detail-mobile-type-body: var(--focus-detail-type-body);
@@ -1753,6 +1754,12 @@
 
   .focus-layout--phone :global(.kit-sidebar-layout__main) {
     overflow-y: auto;
+  }
+
+  .focus-layout--phone :global(.focus-list .compact-filter-menu .kit-filter-dropdown__btn) {
+    width: var(--focus-mobile-hit-target);
+    min-width: var(--focus-mobile-hit-target);
+    min-height: var(--focus-mobile-hit-target);
   }
 
   .focus-layout--phone :global(.pull-detail),

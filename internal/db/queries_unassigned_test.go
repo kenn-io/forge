@@ -54,29 +54,21 @@ func TestUnassignedFiltersPullsIssuesAndActivityBeforeLimit(t *testing.T) {
 	require.Len(issues, 1)
 	assert.Equal(3, issues[0].Number)
 
-	activity, err := d.ListActivity(ctx, ListActivityOpts{Unassigned: true, Limit: 100})
+	activity, err := d.ListActivity(ctx, ListActivityOpts{Unassigned: true, Limit: 1})
 	require.NoError(err)
-	require.Len(activity, 4)
-	activityKeys := make([]string, 0, len(activity))
-	for _, item := range activity {
-		activityKeys = append(activityKeys, fmt.Sprintf("%s:%d", item.ItemType, item.ItemNumber))
-	}
-	assert.ElementsMatch([]string{"pr:1", "pr:1", "issue:3", "issue:3"}, activityKeys)
+	require.Len(activity, 1)
+	assert.Equal("issue:3", fmt.Sprintf("%s:%d", activity[0].ItemType, activity[0].ItemNumber))
 
 	projection, err := d.ListCollapsedActivityProjection(ctx, ListActivityProjectionOpts{
 		Unassigned:   true,
-		Limit:        100,
-		SubjectLimit: 100,
+		Limit:        1,
+		SubjectLimit: 1,
 	})
 	require.NoError(err)
-	require.Len(projection.Subjects, 2)
-	assert.ElementsMatch([]WorkspaceSubjectKey{
-		{RepoID: repoID, ItemType: "pr", ItemNumber: 1},
-		{RepoID: repoID, ItemType: WorkspaceItemTypeIssue, ItemNumber: 3},
-	}, []WorkspaceSubjectKey{
-		projection.Subjects[0].Subject.Key,
-		projection.Subjects[1].Subject.Key,
-	})
+	require.Len(projection.Subjects, 1)
+	assert.Equal(WorkspaceSubjectKey{
+		RepoID: repoID, ItemType: WorkspaceItemTypeIssue, ItemNumber: 3,
+	}, projection.Subjects[0].Subject.Key)
 
 	workspaceKeys, err := d.ListUnassignedWorkspaceSubjectKeys(ctx, []WorkspaceSubjectKey{
 		{RepoID: repoID, ItemType: WorkspaceItemTypePullRequest, ItemNumber: 1},

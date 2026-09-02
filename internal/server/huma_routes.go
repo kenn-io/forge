@@ -1414,13 +1414,28 @@ func providerActivityResponse(response activityResponse) activityResponse {
 func (s *Server) overlayLocalActivityWorkspaces(
 	ctx context.Context, input *listActivityInput, response activityResponse,
 ) (activityResponse, error) {
-	response = providerActivityResponse(response)
 	if s.workspaceAPI == nil {
-		return response, nil
+		return providerActivityResponse(response), nil
 	}
 	snapshot, err := s.workspaceAPI.WorkspaceSubjectSnapshot(ctx)
 	if err != nil {
 		return activityResponse{}, httpapi.Internal("list workspace activity failed")
+	}
+	return s.overlayLocalActivityWorkspaceSnapshot(ctx, input, response, snapshot)
+}
+
+func (s *Server) overlayLocalActivityWorkspaceSnapshot(
+	ctx context.Context,
+	input *listActivityInput,
+	response activityResponse,
+	snapshot workspaceapi.WorkspaceSubjectSnapshot,
+) (activityResponse, error) {
+	response = providerActivityResponse(response)
+	if input.Unassigned {
+		if err := s.retainUnassignedWorkspaceSubjects(ctx, &snapshot); err != nil {
+			slog.Error("list unassigned workspace subjects failed", "err", err)
+			return activityResponse{}, httpapi.Internal("list workspace activity failed")
+		}
 	}
 	overlays := activityWorkspaceOverlays(snapshot)
 	for i := range response.Items {
@@ -1435,7 +1450,7 @@ func (s *Server) overlayLocalActivityWorkspaces(
 			response.ItemActivity[i].Workspace = &copy
 		}
 	}
-	if input.Projection != "events" && !input.InvolvesMe && !input.Unassigned {
+	if input.Projection != "events" && !input.InvolvesMe {
 		opts, err := localWorkspaceActivityOptions(input, s.now())
 		if err != nil {
 			return activityResponse{}, err
@@ -1721,49 +1736,29 @@ func (s *Server) listActivityRouteCore(ctx context.Context, input *listActivityI
 		slog.Error("list workspace activity failed", "err", err)
 		return nil, httpapi.Internal("list workspace activity failed")
 	}
-	if opts.ViewerLogins != nil || opts.Unassigned {
-		workspaceSubjectKeys := make([]db.WorkspaceSubjectKey, 0,
-			len(workspaceSnapshot.Subjects)+len(workspaceSnapshot.OwnReferences))
+	if opts.Unassigned {
+		if err := s.retainUnassignedWorkspaceSubjects(ctx, &workspaceSnapshot); err != nil {
+			slog.Error("list unassigned workspace subjects failed", "err", err)
+			return nil, httpapi.Internal("list workspace activity failed")
+		}
+	}
+	if opts.ViewerLogins != nil {
+		workspaceSubjectKeys := workspaceSnapshotSubjectKeys(workspaceSnapshot)
+		involvedSubjects, err := s.db.ListInvolvedWorkspaceSubjectKeys(
+			ctx, opts.ViewerLogins, workspaceSubjectKeys,
+		)
+		if err != nil {
+			slog.Error("list involved workspace subjects failed", "err", err)
+			return nil, httpapi.Internal("list workspace activity failed")
+		}
 		for key := range workspaceSnapshot.Subjects {
-			workspaceSubjectKeys = append(workspaceSubjectKeys, key)
+			if _, ok := involvedSubjects[key]; !ok {
+				delete(workspaceSnapshot.Subjects, key)
+			}
 		}
 		for key := range workspaceSnapshot.OwnReferences {
-			workspaceSubjectKeys = append(workspaceSubjectKeys, key)
-		}
-		if opts.Unassigned {
-			unassignedSubjects, err := s.db.ListUnassignedWorkspaceSubjectKeys(ctx, workspaceSubjectKeys)
-			if err != nil {
-				slog.Error("list unassigned workspace subjects failed", "err", err)
-				return nil, httpapi.Internal("list workspace activity failed")
-			}
-			for key := range workspaceSnapshot.Subjects {
-				if _, ok := unassignedSubjects[key]; !ok {
-					delete(workspaceSnapshot.Subjects, key)
-				}
-			}
-			for key := range workspaceSnapshot.OwnReferences {
-				if _, ok := unassignedSubjects[key]; !ok {
-					delete(workspaceSnapshot.OwnReferences, key)
-				}
-			}
-		}
-		if opts.ViewerLogins != nil {
-			involvedSubjects, err := s.db.ListInvolvedWorkspaceSubjectKeys(
-				ctx, opts.ViewerLogins, workspaceSubjectKeys,
-			)
-			if err != nil {
-				slog.Error("list involved workspace subjects failed", "err", err)
-				return nil, httpapi.Internal("list workspace activity failed")
-			}
-			for key := range workspaceSnapshot.Subjects {
-				if _, ok := involvedSubjects[key]; !ok {
-					delete(workspaceSnapshot.Subjects, key)
-				}
-			}
-			for key := range workspaceSnapshot.OwnReferences {
-				if _, ok := involvedSubjects[key]; !ok {
-					delete(workspaceSnapshot.OwnReferences, key)
-				}
+			if _, ok := involvedSubjects[key]; !ok {
+				delete(workspaceSnapshot.OwnReferences, key)
 			}
 		}
 	}
@@ -1892,6 +1887,41 @@ func (s *Server) listActivityRouteCore(ctx context.Context, input *listActivityI
 			NextCursor:                     nextCursor,
 		},
 	}, nil
+}
+
+func workspaceSnapshotSubjectKeys(
+	snapshot workspaceapi.WorkspaceSubjectSnapshot,
+) []db.WorkspaceSubjectKey {
+	keys := make([]db.WorkspaceSubjectKey, 0, len(snapshot.Subjects)+len(snapshot.OwnReferences))
+	for key := range snapshot.Subjects {
+		keys = append(keys, key)
+	}
+	for key := range snapshot.OwnReferences {
+		keys = append(keys, key)
+	}
+	return keys
+}
+
+func (s *Server) retainUnassignedWorkspaceSubjects(
+	ctx context.Context, snapshot *workspaceapi.WorkspaceSubjectSnapshot,
+) error {
+	unassignedSubjects, err := s.db.ListUnassignedWorkspaceSubjectKeys(
+		ctx, workspaceSnapshotSubjectKeys(*snapshot),
+	)
+	if err != nil {
+		return err
+	}
+	for key := range snapshot.Subjects {
+		if _, ok := unassignedSubjects[key]; !ok {
+			delete(snapshot.Subjects, key)
+		}
+	}
+	for key := range snapshot.OwnReferences {
+		if _, ok := unassignedSubjects[key]; !ok {
+			delete(snapshot.OwnReferences, key)
+		}
+	}
+	return nil
 }
 
 func activityRepoIDAllowed(repoID int64, allowed []int64) bool {

@@ -23,7 +23,9 @@ import (
 	"go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/issueapi"
 	"go.kenn.io/forge/internal/server/pullapi"
+	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/workspace"
 )
@@ -313,6 +315,86 @@ func TestHubPullCandidatesUseProviderQualifiedRepositoryFilter(t *testing.T) {
 	assert.Equal("gitlab|gitlab.example.com/group/project", gotRepo)
 	require.Len(candidates, 1)
 	assert.Equal(7, candidates[0].Number)
+}
+
+func TestHubListFiltersForwardUnassigned(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	seen := make(map[string]bool)
+	source := &hubProviderSource{client: providerPlaneClientFunc(func(
+		_ context.Context, scope federationauth.Scope, request *http.Request,
+	) (*http.Response, error) {
+		assert.Equal(federationauth.ScopeProviderRead, scope)
+		seen[request.URL.Path] = request.URL.Query().Get("unassigned") == "true"
+		body := "[]"
+		if request.URL.Path == "/api/v1/activity" {
+			body = "{}"
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(bytes.NewBufferString(body)),
+			Request:    request,
+		}, nil
+	})}
+
+	_, err := source.ListPulls(t.Context(), pullapi.ListQuery{Unassigned: true})
+	require.NoError(err)
+	_, err = source.ListIssues(t.Context(), issueapi.ListQuery{Unassigned: true})
+	require.NoError(err)
+	_, err = source.ListActivity(t.Context(), &listActivityInput{Unassigned: true})
+	require.NoError(err)
+
+	assert.Equal(map[string]bool{
+		"/api/v1/pulls": true, "/api/v1/issues": true, "/api/v1/activity": true,
+	}, seen)
+}
+
+func TestSpokeUnassignedActivityKeepsMatchingLocalWorkspaceSubject(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	unassignedID := seedPR(t, database, "acme", "widget", 1)
+	assignedID := seedPR(t, database, "acme", "widget", 2)
+	repo, err := database.GetRepoByIdentity(
+		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	require.NotNil(repo)
+	require.NoError(database.UpdateMergeRequestAssignees(t.Context(), repo.ID, unassignedID, nil))
+	require.NoError(database.UpdateMergeRequestAssignees(t.Context(), repo.ID, assignedID, []string{"reviewer"}))
+
+	snapshot := workspaceapi.WorkspaceSubjectSnapshot{
+		OwnReferences: map[db.WorkspaceSubjectKey]workspaceapi.WorkspaceRef{},
+		Subjects:      map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{},
+	}
+	for number, workspaceID := range map[int]string{1: "ws-unassigned", 2: "ws-assigned"} {
+		key := db.WorkspaceSubjectKey{
+			RepoID: repo.ID, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: number,
+		}
+		snapshot.Subjects[key] = workspaceapi.SubjectActivity{
+			Subject: db.WorkspaceSubjectMetadata{
+				Key: key, Platform: repo.Platform, PlatformHost: repo.PlatformHost,
+				PlatformRepoID: repo.PlatformRepoID, RepoOwner: repo.Owner, RepoName: repo.Name,
+				RepoPath: repo.RepoPath, Title: "Local workspace", State: "open",
+				URL: "https://github.com/acme/widget/pull/1", Author: "author",
+			},
+			Workspace:  workspaceapi.WorkspaceRef{ID: workspaceID, Status: "ready"},
+			ActivityAt: &now,
+		}
+	}
+
+	response, err := srv.overlayLocalActivityWorkspaceSnapshot(
+		t.Context(),
+		&listActivityInput{Unassigned: true},
+		activityResponse{UseWorkspaceActivityForRecency: true},
+		snapshot,
+	)
+	require.NoError(err)
+	require.Len(response.WorkspaceActivity, 1)
+	assert.Equal(1, response.WorkspaceActivity[0].ItemNumber)
+	assert.Equal("ws-unassigned", response.WorkspaceActivity[0].Workspace.ID)
 }
 
 func TestNodeServerRoutesProviderReadsWithoutUsingLocalTables(t *testing.T) {

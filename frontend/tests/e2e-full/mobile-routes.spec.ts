@@ -619,6 +619,23 @@ test.describe("phone routes", () => {
     await expect(page.locator(".mobile-shell .mobile-detail-header__badge")).toHaveText("Issue #10");
   });
 
+  test("phone canonical lists keep the shared filter menu touch-sized and complete", async ({ page }) => {
+    for (const route of ["pulls", "issues"]) {
+      await page.goto(`/${route}`);
+      await expectPathname(page, `/${route}`);
+      const trigger = page.getByRole("button", { name: "Filters" });
+      await expect(trigger).toBeVisible();
+      const bounds = await trigger.boundingBox();
+      expect(bounds?.width ?? 0).toBeGreaterThanOrEqual(44);
+      expect(bounds?.height ?? 0).toBeGreaterThanOrEqual(44);
+      await trigger.click();
+      await expect(page.getByRole("button", { name: "Unassigned" })).toBeVisible();
+      if (route === "pulls") {
+        await expect(page.getByRole("button", { name: "By repo" })).toBeVisible();
+      }
+    }
+  });
+
   test("phone users can opt out of automatic mobile redirect", async ({ page }) => {
     await page.goto("/?desktop=1");
 

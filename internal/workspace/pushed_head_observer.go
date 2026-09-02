@@ -95,7 +95,7 @@ func NewPushedHeadObserver(
 	return &PushedHeadObserver{
 		db:       database,
 		monitor:  NewPRMonitor(database, monitorOptions...),
-		git:      gitdirRemoteHeadReader{},
+		git:      newGitdirRemoteHeadReader(),
 		now:      time.Now,
 		observed: make(map[remoteHeadKey]remoteHeadObservation),
 		failures: make(map[string]int),

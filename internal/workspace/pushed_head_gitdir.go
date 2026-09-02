@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5/config"
@@ -20,6 +22,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/go-git/go-git/v5/storage/filesystem/dotgit"
+	lru "github.com/hashicorp/golang-lru/v2"
 )
 
 // gitdirRemoteHeadReader answers the pushed-head observer's read-only
@@ -39,10 +42,24 @@ import (
 //
 // remoteURL is the configured remote.<name>.url; url.<base>.insteadOf
 // rewriting is not applied. The observer does not consume the URL.
-type gitdirRemoteHeadReader struct{}
+type gitdirRemoteHeadReader struct {
+	handles *lru.Cache[string, *worktreeGitHandle]
+}
 
-func (gitdirRemoteHeadReader) BranchName(_ context.Context, dir string) (string, error) {
-	refs, _, err := openWorktreeRepository(dir)
+// gitdirHandleCacheSize bounds cached worktrees; a daemon polls tens of
+// workspaces, and eviction only costs one re-open.
+const gitdirHandleCacheSize = 256
+
+func newGitdirRemoteHeadReader() gitdirRemoteHeadReader {
+	handles, err := lru.New[string, *worktreeGitHandle](gitdirHandleCacheSize)
+	if err != nil {
+		panic(err) // only for a non-positive size
+	}
+	return gitdirRemoteHeadReader{handles: handles}
+}
+
+func (r gitdirRemoteHeadReader) BranchName(_ context.Context, dir string) (string, error) {
+	refs, _, err := r.open(dir)
 	if err != nil {
 		return "", skipUnsupportedGitdir(dir, "branch", err)
 	}
@@ -58,8 +75,8 @@ func (gitdirRemoteHeadReader) BranchName(_ context.Context, dir string) (string,
 	return "", nil
 }
 
-func (gitdirRemoteHeadReader) UpstreamState(_ context.Context, dir, branch string) (upstreamState, error) {
-	_, cfg, err := openWorktreeRepository(dir)
+func (r gitdirRemoteHeadReader) UpstreamState(_ context.Context, dir, branch string) (upstreamState, error) {
+	_, cfg, err := r.open(dir)
 	if err != nil {
 		return upstreamState{}, skipUnsupportedGitdir(dir, "upstream", err)
 	}
@@ -78,9 +95,9 @@ func (gitdirRemoteHeadReader) UpstreamState(_ context.Context, dir, branch strin
 	return state, nil
 }
 
-func (gitdirRemoteHeadReader) RemoteTrackingSHA(_ context.Context, dir, remote, branch string) (string, string, bool, error) {
+func (r gitdirRemoteHeadReader) RemoteTrackingSHA(_ context.Context, dir, remote, branch string) (string, string, bool, error) {
 	trackingRef := "refs/remotes/" + remote + "/" + branch
-	refs, _, err := openWorktreeRepository(dir)
+	refs, _, err := r.open(dir)
 	if err != nil {
 		return "", trackingRef, false, skipUnsupportedGitdir(dir, "tracking ref", err)
 	}
@@ -119,9 +136,67 @@ func skipUnsupportedGitdir(dir, question string, err error) error {
 // faithfully; the observer skips them.
 var errGitdirUnsupported = errors.New("repository layout not readable in process")
 
-// openWorktreeRepository opens dir as a main or linked worktree and returns
-// a reference store over its git directory plus the effective repository
-// config, rejecting layouts whose answers go-git would get wrong.
+// worktreeGitHandle is one worktree's resolved layout, go-git reference
+// store, and parsed config. Layout and store are fixed for the life of the
+// entry; config is re-read only when its files change on disk. Refs are
+// never cached here: go-git reads them from disk on every lookup, which is
+// what lets the observer notice a push.
+type worktreeGitHandle struct {
+	gitDir    string
+	commonDir string
+	refs      storer.ReferenceStorer
+
+	mu          sync.Mutex
+	cfg         *config.Config
+	sharedStamp fileStamp
+	localStamp  fileStamp
+}
+
+type fileStamp struct {
+	modTime time.Time
+	size    int64
+	exists  bool
+}
+
+func stampFile(path string) (fileStamp, error) {
+	info, err := os.Stat(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return fileStamp{}, nil
+	}
+	if err != nil {
+		return fileStamp{}, err
+	}
+	return fileStamp{modTime: info.ModTime(), size: info.Size(), exists: true}, nil
+}
+
+// open returns the worktree's reference store and effective config,
+// rejecting layouts whose answers go-git would get wrong. A handle that
+// fails is dropped so a moved or deleted worktree is re-resolved next time.
+func (r gitdirRemoteHeadReader) open(dir string) (storer.ReferenceStorer, *config.Config, error) {
+	handle, ok := r.handles.Get(dir)
+	if !ok {
+		var err error
+		handle, err = newWorktreeGitHandle(dir)
+		if err != nil {
+			return nil, nil, err
+		}
+		r.handles.Add(dir, handle)
+	}
+	cfg, err := handle.effectiveConfig()
+	if err != nil {
+		r.handles.Remove(dir)
+		return nil, nil, err
+	}
+	if cfg.Raw.HasSection("include") || cfg.Raw.HasSection("includeIf") {
+		return nil, nil, fmt.Errorf("%w: config uses includes", errGitdirUnsupported)
+	}
+	if storage := cfg.Raw.Section("extensions").Option("refStorage"); storage != "" && !strings.EqualFold(storage, "files") {
+		return nil, nil, fmt.Errorf("%w: ref storage %q", errGitdirUnsupported, storage)
+	}
+	return handle.refs, cfg, nil
+}
+
+// newWorktreeGitHandle resolves the layout and builds the reference store.
 //
 // The git directory and common directory are resolved here rather than with
 // go-git's EnableDotGitCommonDir: that option reads the worktree's
@@ -131,35 +206,54 @@ var errGitdirUnsupported = errors.New("repository layout not readable in process
 // directly instead of through gogit.Open because Open rejects any
 // version-0 repository declaring extensions.worktreeConfig (its allow list
 // is case-mismatched), and ref lookups do not need that validation.
-func openWorktreeRepository(dir string) (storer.ReferenceStorer, *config.Config, error) {
+func newWorktreeGitHandle(dir string) (*worktreeGitHandle, error) {
 	gitDir, commonDir, err := resolveWorktreeGitDirs(dir)
 	if err != nil {
-		return nil, nil, err
-	}
-	cfg, err := effectiveRepositoryConfig(gitDir, commonDir)
-	if err != nil {
-		return nil, nil, err
-	}
-	if cfg.Raw.HasSection("include") || cfg.Raw.HasSection("includeIf") {
-		return nil, nil, fmt.Errorf("%w: config uses includes", errGitdirUnsupported)
-	}
-	if storage := cfg.Raw.Section("extensions").Option("refStorage"); storage != "" && !strings.EqualFold(storage, "files") {
-		return nil, nil, fmt.Errorf("%w: ref storage %q", errGitdirUnsupported, storage)
+		return nil, err
 	}
 	var repoFS = osfs.New(gitDir)
 	if commonDir != gitDir {
 		repoFS = dotgit.NewRepositoryFilesystem(repoFS, osfs.New(commonDir))
 	}
-	return filesystem.NewStorage(repoFS, cache.NewObjectLRUDefault()), cfg, nil
+	return &worktreeGitHandle{
+		gitDir:    gitDir,
+		commonDir: commonDir,
+		refs:      filesystem.NewStorage(repoFS, cache.NewObjectLRUDefault()),
+	}, nil
 }
 
-// effectiveRepositoryConfig reads the shared config and, when
-// extensions.worktreeConfig is on, layers the worktree's own config.worktree
+// effectiveConfig returns the shared config with, when
+// extensions.worktreeConfig is on, the worktree's own config.worktree layered
 // over it the way git does. Managed clones enable that extension to override
-// core.bare per linked worktree, so any branch setting stored there must win
-// over the shared value.
-func effectiveRepositoryConfig(gitDir, commonDir string) (*config.Config, error) {
-	shared, err := os.ReadFile(filepath.Join(commonDir, "config"))
+// core.bare per linked worktree, and kit's managed merge-request worktrees
+// store branch tracking there, so worktree values must win. The parse is
+// reused until either file's size or mtime changes.
+func (h *worktreeGitHandle) effectiveConfig() (*config.Config, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	sharedPath := filepath.Join(h.commonDir, "config")
+	localPath := filepath.Join(h.gitDir, "config.worktree")
+	shared, err := stampFile(sharedPath)
+	if err != nil {
+		return nil, err
+	}
+	local, err := stampFile(localPath)
+	if err != nil {
+		return nil, err
+	}
+	if h.cfg != nil && shared == h.sharedStamp && local == h.localStamp {
+		return h.cfg, nil
+	}
+	cfg, err := readEffectiveConfig(sharedPath, localPath)
+	if err != nil {
+		return nil, err
+	}
+	h.cfg, h.sharedStamp, h.localStamp = cfg, shared, local
+	return cfg, nil
+}
+
+func readEffectiveConfig(sharedPath, localPath string) (*config.Config, error) {
+	shared, err := os.ReadFile(sharedPath)
 	if err != nil {
 		return nil, err
 	}
@@ -171,7 +265,7 @@ func effectiveRepositoryConfig(gitDir, commonDir string) (*config.Config, error)
 	if !extensions.HasOption("worktreeConfig") || !gitConfigTrue(extensions.Option("worktreeConfig")) {
 		return cfg, nil
 	}
-	local, err := os.ReadFile(filepath.Join(gitDir, "config.worktree"))
+	local, err := os.ReadFile(localPath)
 	if errors.Is(err, fs.ErrNotExist) {
 		return cfg, nil
 	}

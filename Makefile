@@ -241,6 +241,7 @@ api-generate: frontend-deps
 	mkdir -p internal/apiclient/spec
 	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; go run ./cmd/kenn-forge-openapi -out "$$tmp" -version 3.0 -format json; if [ -f internal/apiclient/spec/openapi.json ] && cmp -s "$$tmp" internal/apiclient/spec/openapi.json; then rm "$$tmp"; else mv "$$tmp" internal/apiclient/spec/openapi.json; fi; trap - EXIT
 	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; node frontend/node_modules/openapi-typescript/bin/cli.js frontend/openapi/openapi.yaml --enum-values -o "$$tmp"; if [ -f frontend/src/lib/api/generated/schema.ts ] && cmp -s "$$tmp" frontend/src/lib/api/generated/schema.ts; then rm "$$tmp"; else mv "$$tmp" frontend/src/lib/api/generated/schema.ts; fi; trap - EXIT
+	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; node scripts/generate-schema-constraints.mjs internal/apiclient/spec/openapi.json "$$tmp"; if [ -f frontend/src/lib/api/generated/schema-constraints.ts ] && cmp -s "$$tmp" frontend/src/lib/api/generated/schema-constraints.ts; then rm "$$tmp"; else mv "$$tmp" frontend/src/lib/api/generated/schema-constraints.ts; fi; trap - EXIT
 	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; printf '%s\n' \
 		'/**' \
 		' * This file was auto-generated from frontend/openapi/openapi.yaml.' \

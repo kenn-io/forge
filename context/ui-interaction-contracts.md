@@ -264,10 +264,14 @@ Persisted controls must state their scope clearly.
   (`frontend/src/lib/stores/activity.svelte.ts::loadActivity`).
 - Server-backed settings belong in the API only when the preference should
   follow the user/config rather than one browser session.
-- Settings controls persist on change. Do not add a Save button or hold a dirty
-  draft for a setting; validate on change, persist, and reset the control to the
-  saved value when validation or the save fails
-  (`frontend/src/lib/components/settings/DetailSettings.svelte::saveLimit`).
+- Settings controls persist on change. Do not add a Save button, a dirty draft,
+  or a saving state that disables sibling controls; queue saves serially and
+  build each payload from the latest persisted values
+  (`frontend/src/lib/components/settings/DetailSettings.svelte::persist`).
+- Bounded numeric settings take their limits from the generated
+  `schema-constraints` module, never from hand-copied numbers, and show an inline
+  invalid state instead of sending a request the server would reject
+  (`scripts/generate-schema-constraints.mjs`, `frontend/src/lib/components/settings/DetailSettings.svelte::validateLimit`).
 - Detail timelines apply the server-backed entry limit after filtering and grouping,
   then make the remainder explicit and mount it in bounded idle batches; harnesses
   that require every fixture row pass a large limit. An explicit full-timeline request

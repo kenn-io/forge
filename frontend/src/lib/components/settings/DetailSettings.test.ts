@@ -74,16 +74,57 @@ describe("DetailSettings", () => {
     expect(mockSetDetailSettings).toHaveBeenCalledWith(saved);
   });
 
-  it("resets an out-of-range limit without saving", async () => {
+  it("flags an out-of-range limit inline and sends no request", async () => {
     render(SettingsRuntimeHarness, {
       props: { component: DetailSettings, componentProps: { detail: initial, onUpdate: vi.fn() } },
     });
 
     const input = screen.getByRole("spinbutton", { name: "Initial timeline entries" }) as HTMLInputElement;
+    expect(input.getAttribute("min")).toBe("10");
+    expect(input.getAttribute("max")).toBe("250");
+    await fireEvent.input(input, { target: { value: "5" } });
     await fireEvent.change(input, { target: { value: "5" } });
 
     expect(mockPersistSettings).not.toHaveBeenCalled();
-    expect(input.value).toBe("50");
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(screen.getByRole("alert").textContent).toContain("from 10 to 250");
+
+    await fireEvent.input(input, { target: { value: "50" } });
+    expect(input.getAttribute("aria-invalid")).toBe("false");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("keeps a checkbox click that lands while a limit save is in flight", async () => {
+    const onUpdate = vi.fn();
+    const afterLimit = { ...initial, initial_timeline_entry_limit: 80 };
+    const afterToggle = { ...afterLimit, collapse_single_line_breaks: true };
+    let releaseLimit: (() => void) | undefined;
+    mockPersistSettings
+      .mockReturnValueOnce(
+        Effect.promise(
+          () =>
+            new Promise<{ detail: typeof afterLimit }>((resolve) => {
+              releaseLimit = () => resolve({ detail: afterLimit });
+            }),
+        ),
+      )
+      .mockReturnValueOnce(Effect.succeed({ detail: afterToggle }));
+    render(SettingsRuntimeHarness, {
+      props: { component: DetailSettings, componentProps: { detail: initial, onUpdate } },
+    });
+
+    const input = screen.getByRole("spinbutton", { name: "Initial timeline entries" });
+    await fireEvent.change(input, { target: { value: "80" } });
+    const checkbox = screen.getByRole("checkbox", { name: "Collapse single line breaks" }) as HTMLInputElement;
+    expect(checkbox.disabled).toBe(false);
+    await fireEvent.click(checkbox);
+
+    await waitFor(() => expect(mockPersistSettings).toHaveBeenCalledOnce());
+    releaseLimit?.();
+    await waitFor(() => expect(mockPersistSettings).toHaveBeenCalledTimes(2));
+    expect(mockPersistSettings.mock.calls[0]?.[0]()).toEqual({ detail: afterLimit });
+    expect(mockPersistSettings.mock.calls[1]?.[0]()).toEqual({ detail: afterToggle });
+    await waitFor(() => expect(onUpdate).toHaveBeenLastCalledWith(afterToggle));
   });
 
   it("restores the prior limit when saving fails", async () => {

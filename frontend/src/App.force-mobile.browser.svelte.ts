@@ -1,7 +1,7 @@
 // Browser-tier reimplementation of frontend/tests/e2e-full/force-mobile-routes.spec.ts.
 // The __KENN_FORGE_FORCE_MOBILE_ROUTES__ global forces the responsive focus
 // presentation even on a desktop-width viewport, so the canonical /issues route
-// renders the focus layout (no mobile shell, no app header). App.svelte reads
+// renders the focus layout inside the phone shell (no app header). App.svelte reads
 // the flag at render time via shouldForceMobileRoutes(), so the value present
 // before mount is the one the initial render sees.
 //
@@ -55,7 +55,7 @@ describe("force-mobile routes", () => {
     expect(rect.width).toBeGreaterThan(0);
     expect(rect.height).toBeGreaterThan(0);
     expect(window.location.pathname).toBe("/issues");
-    expect(count(".mobile-shell")).toBe(0);
+    expect(count(".mobile-shell .mobile-topbar")).toBe(1);
     expect(count(".app-top-bar")).toBe(0);
   });
 

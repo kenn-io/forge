@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Effect } from "effect";
-  import { onDestroy, onMount } from "svelte";
+  import { onDestroy, onMount, tick } from "svelte";
   import type { Attachment } from "svelte/attachments";
   import { SvelteMap, SvelteSet } from "svelte/reactivity";
   import { getAppRuntime } from "../app/runtime-context.js";
@@ -27,6 +27,11 @@
     type TimelineTone,
   } from "@kenn-io/kit-ui";
   import { showFlash } from "../stores/flash.svelte.js";
+  import {
+    rememberMobileListPosition,
+    scrollViewportOf,
+    takeMobileListPosition,
+  } from "../stores/mobile-list-return.js";
   import { parseAPITimestamp } from "../utils/time.js";
   import { latestActivityAt } from "../utils/effective-activity.js";
   import ItemKindChip from "../components/shared/ItemKindChip.svelte";
@@ -89,6 +94,10 @@
   let searchInput = $state("");
   let activityPageLimit = $state(30);
   let filtersExpanded = $state(false);
+  let inboxRoot = $state<HTMLElement | null>(null);
+  // Scroll offset parked when a card opened a detail, applied once cards are
+  // on screen so Back lands on the same cards.
+  let pendingScrollTop = $state<number | null>(null);
   let flashedActivityError: string | null = null;
   let paginationArmed = true;
   let paginationIntersecting = false;
@@ -98,7 +107,9 @@
   onMount(() => {
     activity.initializeFromMount();
     searchInput = activity.getActivitySearch() ?? "";
-    activityPageLimit = 30;
+    const parked = takeMobileListPosition("activity");
+    activityPageLimit = parked?.pageLimit ?? 30;
+    pendingScrollTop = parked?.scrollTop ?? null;
     activity.setActivityPageLimit(activityPageLimit);
     activity.loadActivity(true);
     activity.startActivityPolling();
@@ -467,8 +478,22 @@
       if (url) window.open(url, "_blank", "noopener");
       return;
     }
+    rememberMobileListPosition("activity", {
+      scrollTop: scrollViewportOf(inboxRoot)?.scrollTop ?? 0,
+      pageLimit: activityPageLimit,
+    });
     onSelectItem?.(group.representative);
   }
+
+  $effect(() => {
+    if (pendingScrollTop === null || visibleGroups.length === 0) return;
+    const top = pendingScrollTop;
+    pendingScrollTop = null;
+    void tick().then(() => {
+      const viewport = scrollViewportOf(inboxRoot);
+      if (viewport) viewport.scrollTop = top;
+    });
+  });
 
   function loadPreviewWhenVisible(key: string, previewRevision: string): Attachment<HTMLElement> {
     return (node) => {
@@ -717,7 +742,7 @@
   }
 </script>
 
-<section class="mobile-activity-inbox" aria-label="Mobile activity inbox">
+<section class="mobile-activity-inbox" aria-label="Mobile activity inbox" bind:this={inboxRoot}>
   <ScrollBox label="Activity inbox">
   <div class="mobile-activity-scroll">
     <div

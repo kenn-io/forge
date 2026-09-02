@@ -14,6 +14,7 @@
   import MobileWorkspaceList from "./lib/components/mobile/MobileWorkspaceList.svelte";
   import MobileWorkspaceTerminal from "./lib/components/mobile/MobileWorkspaceTerminal.svelte";
   import MobileWorkspaceItem from "./lib/components/mobile/MobileWorkspaceItem.svelte";
+  import MobileDetailHeader from "./lib/components/mobile/MobileDetailHeader.svelte";
   import ReviewsView from "./lib/views/ReviewsView.svelte";
   import FocusListView from "./lib/views/FocusListView.svelte";
   import { normalizeGlobalRepoSelection } from "./lib/utils/repo-filter-values.js";
@@ -22,6 +23,8 @@
   import {
     buildFocusPullRequestFilesRoute,
     buildFocusPullRequestRoute,
+    buildIssueRoute,
+    buildPullRequestRoute,
     buildRepoBrowserRoute,
     buildRoutedItemRoute,
     type PullRequestRouteRef,
@@ -107,8 +110,16 @@
     getSelectedPRFromRoute,
     buildMobileWorkspaceRoute,
     buildMobileWorkspaceItemRoute,
+    type Page,
     type RoutableItemRef,
   } from "./lib/stores/router.svelte.ts";
+  import {
+    mobileListBackLabel,
+    mobileListOriginState,
+    mobileListRoute,
+    readMobileListOrigin,
+    type MobileListOrigin,
+  } from "./lib/stores/mobile-list-return.js";
   import { getInlineWorkspaceController, tabSlotAttachment } from "./lib/stores/workspace-host.svelte.ts";
   import {
     buildActivitySelectionSearch,
@@ -646,8 +657,13 @@
 
   function flashTopOffset(): string {
     if (onboardingActive) return "0";
-    if (shouldUseFocusPresentation() || isHeaderHidden()) return "0";
-    if (isMobilePage(getPage()) || shouldUseResponsiveMobileActivityPresentation()) {
+    if (shouldUseFocusPresentation() && !useFocusLayoutClass()) return "0";
+    if (isHeaderHidden()) return "0";
+    if (
+      isMobilePage(getPage())
+      || shouldUseResponsiveMobileActivityPresentation()
+      || shouldUseFocusPresentation()
+    ) {
       return renderedMobileHeaderHeight > 0 ? `${renderedMobileHeaderHeight}px` : "0";
     }
     return renderedHeaderHeight > 0 ? `${renderedHeaderHeight}px` : "var(--header-height)";
@@ -667,12 +683,49 @@
     else navigate(path);
   }
 
+  // Phone-like PR and issue detail routes live inside the phone shell. The
+  // header names the item, and Back returns to the list that opened it: the
+  // history entry recorded by that list when it navigated, or the matching
+  // phone list for a deep link that has no such entry.
+  function phoneDetailItem(): { itemType: "pr" | "issue"; number: number } | null {
+    const route = getRoute();
+    if (route.page === "focus" && route.itemType === "pr") return { itemType: "pr", number: route.number };
+    if (route.page === "focus" && route.itemType === "issue") return { itemType: "issue", number: route.number };
+    if (route.page === "pulls" && route.selected) return { itemType: "pr", number: route.selected.number };
+    if (route.page === "issues" && route.selected) return { itemType: "issue", number: route.selected.number };
+    return null;
+  }
+
+  function phoneDetailOrigin(): MobileListOrigin {
+    const item = phoneDetailItem();
+    return readMobileListOrigin(history.state) ?? (item?.itemType === "issue" ? "issues" : "pulls");
+  }
+
+  function leavePhoneDetail(): void {
+    if (readMobileListOrigin(history.state)) history.back();
+    else replaceUrl(mobileListRoute(phoneDetailOrigin()));
+  }
+
+  function mobileModePickerPage(): Page {
+    const route = getRoute();
+    if (route.page === "focus") {
+      return route.itemType === "issue" || route.itemType === "issues" ? "mobile-issues" : "mobile-pulls";
+    }
+    if (route.page === "pulls") return "mobile-pulls";
+    if (route.page === "issues") return "mobile-issues";
+    return getPage();
+  }
+
   function desktopPathForMobileRoute(): string {
     const page = getPage();
     if (page === "mobile-pulls") return "/pulls";
     if (page === "mobile-issues") return "/issues";
     if (page === "mobile-workspaces") return "/workspaces";
     const route = getRoute();
+    if (route.page === "focus" && route.itemType === "pr") return buildPullRequestRoute(route);
+    if (route.page === "focus" && route.itemType === "issue") return buildIssueRoute(route);
+    if (route.page === "focus") return route.itemType === "issues" ? "/issues" : "/pulls";
+    if (route.page === "pulls" || route.page === "issues") return window.location.pathname;
     if (
       route.page === "mobile-workspace-terminal" ||
       route.page === "mobile-workspace-item"
@@ -932,7 +985,7 @@
     } satisfies RoutedItemRef;
 
     if (isMobilePage(getPage()) || shouldUseResponsiveMobileActivityPresentation()) {
-      navigate(buildRoutedItemRoute(selectedItem, { focus: true }));
+      navigate(buildRoutedItemRoute(selectedItem, { focus: true }), mobileListOriginState("activity"));
       return;
     }
 
@@ -1117,27 +1170,15 @@
 {#if !shouldUseFullAppShell(getPage())}
   <WorkspaceEmbedShell />
 {:else}
-  <!-- Mounted once above the focus/full-shell branching so flashes raised
-       through the shared store stay visible in every presentation, not just
-       the desktop shell. -->
-  <FlashBanner top={flashTopOffset()} />
-  {#if onboardingActive && stores}
-    <OnboardingFlow
-      {stores}
-      iconSrc={appIconSrc}
-      onStart={startOnboarding}
-      onDismiss={dismissOnboarding}
-      onComplete={completeOnboarding}
-    />
-  {:else if shouldUseFocusPresentation()}
-    {@const r = getRoute()}
-    <main
-      class="focus-layout"
-      class:focus-layout--phone={useFocusLayoutClass()}
-    >
-      {#if providerUnavailable()}
-        {@render providerUnavailableState()}
-      {/if}
+  {#snippet focusPresentation(phone: boolean)}
+  {@const r = getRoute()}
+  <main
+    class="focus-layout"
+    class:focus-layout--phone={phone}
+  >
+    {#if providerUnavailable()}
+      {@render providerUnavailableState()}
+    {/if}
       {#if r.page === "focus" && r.itemType === "mrs"}
         <FocusListView
           listType="mrs"
@@ -1209,9 +1250,10 @@
           chunked={useFocusLayoutClass()}
         />
       {/if}
-    </main>
-  {:else if isMobilePage(getPage()) || shouldUseResponsiveMobileActivityPresentation()}
-    <section class="mobile-shell" aria-label="Phone view">
+  </main>
+{/snippet}
+
+{#snippet mobileTopBar(pickerPage: Page)}
       <header class="mobile-topbar" {@attach trackMobileHeaderHeight}>
         <span class="mobile-brand">
           <img class="mobile-app-icon" src={appIconSrc} alt="" aria-hidden="true" />
@@ -1219,7 +1261,7 @@
         </span>
 
         <MobileModePicker
-          page={getPage()}
+          page={pickerPage}
           {isModeVisible}
           onNavigate={navigateMobile}
         />
@@ -1234,6 +1276,41 @@
           <MonitorIcon size="18" strokeWidth="1.75" aria-hidden="true" />
         </button>
       </header>
+{/snippet}
+
+<!-- Mounted once above the focus/full-shell branching so flashes raised
+       through the shared store stay visible in every presentation, not just
+       the desktop shell. -->
+  <FlashBanner top={flashTopOffset()} />
+  {#if onboardingActive && stores}
+    <OnboardingFlow
+      {stores}
+      iconSrc={appIconSrc}
+      onStart={startOnboarding}
+      onDismiss={dismissOnboarding}
+      onComplete={completeOnboarding}
+    />
+  {:else if shouldUseFocusPresentation() && useFocusLayoutClass()}
+    {@const detailItem = phoneDetailItem()}
+    <section class="mobile-shell" aria-label="Phone view">
+      {@render mobileTopBar(mobileModePickerPage())}
+      <main class="mobile-main">
+        {#if detailItem}
+          <MobileDetailHeader
+            itemType={detailItem.itemType}
+            number={detailItem.number}
+            backLabel={mobileListBackLabel(phoneDetailOrigin())}
+            onBack={leavePhoneDetail}
+          />
+        {/if}
+        {@render focusPresentation(true)}
+      </main>
+    </section>
+  {:else if shouldUseFocusPresentation()}
+    {@render focusPresentation(false)}
+  {:else if isMobilePage(getPage()) || shouldUseResponsiveMobileActivityPresentation()}
+    <section class="mobile-shell" aria-label="Phone view">
+      {@render mobileTopBar(getPage())}
 
       <main class="mobile-main">
         {#if !appReady}
@@ -1569,6 +1646,10 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+  }
+
+  .mobile-main > .focus-layout--phone {
+    padding-bottom: env(safe-area-inset-bottom);
   }
 
   .mobile-workspace-route,

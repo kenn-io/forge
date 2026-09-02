@@ -41,7 +41,8 @@ Think about mobile work in this order:
   retargeted (`frontend/src/lib/components/layout/ForgeSelector.svelte`).
 - Preserve human-facing product copy. Remove text that sounds like an implementation note or model instruction.
 - Keep repository/provider identity visible enough to disambiguate similarly named repos, especially on activity cards and detail headers.
-- Give focused PR/issue detail pages their own phone shell treatment even when they reuse desktop detail components internally.
+- Give focused PR/issue detail pages their own phone shell treatment even when they reuse desktop detail components internally. Phone-like focus presentation, whether reached from `/m` lists, the activity feed, `/focus/...`, or a narrow canonical URL, renders inside the same `.mobile-shell` top bar as every other phone view, and detail routes add a header with the item badge and a Back control. Desktop-narrow focus presentation stays chrome-free (`frontend/src/App.svelte::phoneDetailItem`).
+- Back on a phone detail returns to the list that opened it, at the same rows. Phone lists record their origin in history state when they open an item and park their scroll offset and loaded chunk size; the remount after Back restores both, and a deep link with no origin falls back to the matching `/m` list (`frontend/src/lib/stores/mobile-list-return.ts`, `frontend/src/lib/views/FocusListView.svelte::parkListPosition`).
 - Mobile escape hatches to desktop views are allowed, but they must be intentional and not the default path.
 
 ## Responsive route and presentation model

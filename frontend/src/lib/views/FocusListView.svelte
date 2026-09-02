@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Effect, Schedule } from "effect";
-  import { onDestroy, untrack } from "svelte";
+  import { onDestroy, tick, untrack } from "svelte";
   import type { Attachment } from "svelte/attachments";
   import { ScrollBox, StatusDot } from "@kenn-io/kit-ui";
   import { getAppRuntime } from "../app/runtime-context.js";
@@ -14,6 +14,12 @@
   import RepoTypeahead from "../components/RepoTypeahead.svelte";
   import MobileTriageSearchBar from "../components/mobile/MobileTriageSearchBar.svelte";
   import { getGlobalRepo, setGlobalRepo } from "../stores/filter.svelte.js";
+  import {
+    mobileListOriginState,
+    rememberMobileListPosition,
+    scrollViewportOf,
+    takeMobileListPosition,
+  } from "../stores/mobile-list-return.js";
   import { observeIntersection } from "../browser/observers.js";
   import {
     buildFocusIssueRoute,
@@ -60,6 +66,10 @@
   let searchInput = $state("");
   let filtersExpanded = $state(false);
   let pageLimit = $state(30);
+  let listRoot = $state<HTMLDivElement | null>(null);
+  // Scroll offset parked by a previous visit to this exact list, applied once
+  // rows are on screen so Back from a detail lands on the same rows.
+  let pendingScrollTop = $state<number | null>(null);
   let paginationArmed = true;
   let paginationIntersecting = false;
   let searchExecution: AppExecution<void, never> | null = null;
@@ -95,9 +105,20 @@
         },
   );
 
+  const listIdentity = $derived(`${listType}:${selectedRepo ?? ""}:${chunked}`);
+
+  function parkListPosition(): void {
+    rememberMobileListPosition(listIdentity, {
+      scrollTop: scrollViewportOf(listRoot)?.scrollTop ?? 0,
+      pageLimit,
+    });
+  }
+
   $effect(() => {
-    const identity = `${listType}:${selectedRepo ?? ""}:${chunked}`;
-    pageLimit = 30;
+    const identity = listIdentity;
+    const parked = takeMobileListPosition(identity);
+    pageLimit = parked?.pageLimit ?? 30;
+    pendingScrollTop = parked?.scrollTop ?? null;
     paginationArmed = true;
     filtersExpanded = false;
     searchInput = untrack(() => listType === "mrs"
@@ -166,20 +187,35 @@
   }
 
   function handlePRSelect(ref: PullRequestRouteRef): void {
+    parkListPosition();
     navigate(
       routeFamily === "canonical"
         ? buildPullRequestRoute(ref)
         : buildFocusPullRequestRoute(ref),
+      mobileListOriginState("pulls"),
     );
   }
 
   function handleIssueSelect(ref: IssueRouteRef): void {
+    parkListPosition();
     navigate(
       routeFamily === "canonical"
         ? buildIssueRoute(ref)
         : buildFocusIssueRoute(ref),
+      mobileListOriginState("issues"),
     );
   }
+
+  $effect(() => {
+    const rowCount = listType === "mrs" ? prItems.length : issueItems.length;
+    if (pendingScrollTop === null || rowCount === 0) return;
+    const top = pendingScrollTop;
+    pendingScrollTop = null;
+    void tick().then(() => {
+      const viewport = scrollViewportOf(listRoot);
+      if (viewport) viewport.scrollTop = top;
+    });
+  });
 
   // Filter state accessors for PRs.
   const prFilterState = $derived(pulls.getFilterState());
@@ -300,7 +336,7 @@
   );
 </script>
 
-<div class="focus-list">
+<div class="focus-list" bind:this={listRoot}>
   {#if !showRepoSelector}
     <div class="header">
       <span class="header-label">{repoLabel}</span>

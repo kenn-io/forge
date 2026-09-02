@@ -528,7 +528,13 @@ test.describe("phone routes", () => {
       page.locator(".focus-layout .pull-detail .detail-title, .focus-layout .issue-detail .detail-title"),
     ).toBeVisible();
     await expectReadableDetail(page);
-    await expect(page.locator(".mobile-shell")).toHaveCount(0);
+    await expect(page.locator(".mobile-shell .mobile-topbar")).toBeVisible();
+    await expect(page.locator(".mobile-detail-header__back")).toHaveText("Activity");
+
+    await page.locator(".mobile-detail-header__back").click();
+
+    await expect(page).toHaveURL(/\/m(\?|$)/);
+    await expect(page.locator(".mobile-activity-card__button").first()).toBeVisible();
   });
 
   test("canonical activity phone presentation opens thread detail", async ({ page }) => {
@@ -545,7 +551,8 @@ test.describe("phone routes", () => {
     await expect(
       page.locator(".focus-layout .pull-detail .detail-title, .focus-layout .issue-detail .detail-title"),
     ).toBeVisible();
-    await expect(page.locator(".mobile-shell")).toHaveCount(0);
+    await expect(page.locator(".mobile-shell .mobile-topbar")).toBeVisible();
+    await expect(page.locator(".mobile-detail-header__back")).toHaveText("Activity");
   });
 
   test("focused PR files tab stays on the phone detail route", async ({ page }) => {
@@ -557,7 +564,7 @@ test.describe("phone routes", () => {
     await expect(page).toHaveURL(/\/focus\/pulls\/github\/acme\/widgets\/1\/files$/);
     await expect(page.locator(".focus-layout .files-layout")).toBeVisible();
     await expect(page.locator(".focus-layout .diff-view")).toBeVisible();
-    await expect(page.locator(".mobile-shell")).toHaveCount(0);
+    await expect(page.locator(".mobile-shell .mobile-detail-header__badge")).toHaveText("PR #1");
   });
 
   test("phone canonical PR files tab stays on the canonical detail route", async ({ page }) => {
@@ -570,7 +577,7 @@ test.describe("phone routes", () => {
     await expectPathname(page, "/pulls/github/acme/widgets/1/files");
     await expect(page.locator(".focus-layout .files-layout")).toBeVisible();
     await expect(page.locator(".focus-layout .diff-view")).toBeVisible();
-    await expect(page.locator(".mobile-shell")).toHaveCount(0);
+    await expect(page.locator(".mobile-shell .mobile-detail-header__badge")).toHaveText("PR #1");
   });
 
   test("long description collapse toggle has a phone-sized hit target", async ({ page }) => {
@@ -601,7 +608,7 @@ test.describe("phone routes", () => {
     await expectPathname(page, "/pulls/github/acme/widgets/1/files");
     await expect(page.locator(".focus-layout .files-layout")).toBeVisible();
     await expect(page.locator(".focus-layout .diff-view")).toBeVisible();
-    await expect(page.locator(".mobile-shell")).toHaveCount(0);
+    await expect(page.locator(".mobile-shell .mobile-detail-header__badge")).toHaveText("PR #1");
   });
 
   test("phone canonical issue deep link renders focus presentation without changing URL", async ({ page }) => {
@@ -609,7 +616,7 @@ test.describe("phone routes", () => {
 
     await expectPathname(page, "/issues/github/acme/widgets/10");
     await expect(page.locator(".focus-layout .issue-detail .detail-title")).toBeVisible();
-    await expect(page.locator(".mobile-shell")).toHaveCount(0);
+    await expect(page.locator(".mobile-shell .mobile-detail-header__badge")).toHaveText("Issue #10");
   });
 
   test("phone users can opt out of automatic mobile redirect", async ({ page }) => {

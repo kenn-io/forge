@@ -252,7 +252,8 @@ registry helpers return typed errors for missing providers or capabilities.
   or GitLab/Gitea/Forgejo repository metadata confirmation. (`internal/platform/gitlab/feature_disabled.go::Client.repositoryFeatureError`, `internal/platform/gitealike/feature_disabled.go::Provider.ClassifyRepositoryFeatureError`)
 - Locked pull requests retain their upstream state for detail and sync, but list
   filters and repository counts classify them as closed because they cannot enter
-  an open interaction workflow. (`internal/db/queries.go::DB.ListMergeRequests`)
+  an open interaction workflow; detail presents only the Locked chip, not the
+  upstream Open chip. (`internal/db/queries.go::DB.ListMergeRequests`, `frontend/src/lib/components/detail/PullDetail.svelte`)
 - Mutation routes must check provider capabilities before posting comments,
   changing state, merging, requesting review, or approving workflows.
   Server handlers translate these typed platform errors into the stable problem

@@ -246,7 +246,10 @@ describe("provider capabilities: locked PR chip", () => {
     });
 
     await expect.element(page.getByText("Locked pull request")).toBeVisible();
-    await vi.waitFor(() => expect(chipsRowText()).toContain("Locked"), WAIT);
+    await vi.waitFor(() => {
+      expect(chipsRowText()).toContain("Locked");
+      expect(chipsRowText()).not.toContain("Open");
+    }, WAIT);
   });
 });
 

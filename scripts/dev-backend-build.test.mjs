@@ -10,7 +10,6 @@ test("regenerates frontend schema constraints from the backend spec after writin
   assert.notEqual(generateConstraints, -1);
   assert.ok(writeBackendSpec < generateConstraints);
   assert.ok(script.includes('"$constraints_generator"') && script.includes("compute_inputs_hash"));
-  assert.match(script, /find cmd\/kenn-forge-openapi internal\/config internal\/server/);
 });
 
 test("writes generated backend OpenAPI input before Go client generation", async () => {

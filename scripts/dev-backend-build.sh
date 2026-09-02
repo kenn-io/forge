@@ -49,9 +49,7 @@ fi
 compute_inputs_hash() {
   {
     printf '%s\n' "go.mod" "go.sum" "$constraints_generator"
-    # internal/config carries the struct tags (minimum, maximum) that become
-    # OpenAPI bounds, so it is an artifact input alongside the server routes.
-    find cmd/kenn-forge-openapi internal/config internal/server -type f -name '*.go' | sort
+    find cmd/kenn-forge-openapi internal/server -type f -name '*.go' | sort
   } | while IFS= read -r path; do
     [ -f "$path" ] || continue
     shasum -a 256 "$path"

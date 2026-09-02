@@ -441,9 +441,13 @@ fallback repository listing.
   and a pass that worked or failed, or a wake, returns it to the pacing interval. Every
   completed sync run wakes it, since a sync can clear a feature cooldown and make archive
   work eligible. (`internal/github/sync.go::runArchiveLoop`, `internal/github/sync.go::runOnceWithSlot`)
-- A pass "worked" only when a unit reached the provider or failed; an admission deferral
-  before any provider request is idle, so a long live sync backs the worker off instead of
-  writing a one-second deferral every second. (`internal/archive/scheduler.go::finishWork`)
+- A pass "worked" when a unit reached the provider, including a provider-answered feature
+  deferral or a preempted request, or failed; only an admission denial before any provider
+  request is idle, so a long live sync backs the worker off instead of writing a one-second
+  deferral every second. (`internal/archive/scheduler.go::finishWork`)
+- Releasing the last live provider operation on a host wakes the archive worker, so work
+  denied behind a notification refresh or active-detail fetch resumes when the host frees
+  rather than after its backoff. (`internal/github/sync.go::beginProviderWork`)
 - Initial issue and pull-request inventory includes all states in stable created-time ascending order; issue enumeration excludes PR-shaped rows. (`internal/github/pages.go::ListIssuesPage`, `internal/github/pages.go::ListMergeRequestsPage`)
 - GitHub issue-only repositories return pulls API 404; normal and archive paths
   classify it as feature-disabled only for explicit `has_pull_requests=false`;

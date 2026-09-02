@@ -65,6 +65,11 @@ func (s *Scheduler) Run(
 
 var errAdmissionDeferred = errors.New("archive request deferred by admission")
 
+// errRequestPreempted marks an admitted provider request that live work
+// canceled mid-flight. It is an admission deferral for retry purposes, but the
+// provider was reached, so the pass counts as work.
+var errRequestPreempted = fmt.Errorf("archive request preempted by live work: %w", errAdmissionDeferred)
+
 type featureDeferredError struct {
 	FeatureDeferral
 	providerAttempted bool
@@ -252,13 +257,20 @@ func (s *Service) runNextInventoryWork(
 	}
 }
 
-// finishWork converts a work unit's outcome into the pass result. An
-// admission deferral is not attempted work: nothing reached the provider and
-// the deferral names when to look again, so the worker may back off. A
-// completed or failed unit did reach the provider and is reported as work so
-// the loop keeps its pacing interval while work flows.
+// finishWork converts a work unit's outcome into the pass result. A unit that
+// reached the provider is work, even when the provider answered with a feature
+// deferral or live work preempted the request: other repositories on the host
+// may be eligible right now, so the loop keeps its pacing interval. Only an
+// admission denial before any provider request is idle: nothing was attempted
+// and the deferral names when to look again, so the worker may back off.
 func (s *Service) finishWork(err error) (bool, error) {
-	if errors.Is(err, errAdmissionDeferred) {
+	var deferred *featureDeferredError
+	switch {
+	case errors.As(err, &deferred):
+		return deferred.providerAttempted, nil
+	case errors.Is(err, errRequestPreempted):
+		return true, nil
+	case errors.Is(err, errAdmissionDeferred):
 		return false, nil
 	}
 	return true, err

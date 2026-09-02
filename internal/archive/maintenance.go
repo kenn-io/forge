@@ -126,7 +126,7 @@ func (s *Service) promptPages(
 			}
 			if err != nil {
 				if preempted {
-					return errAdmissionDeferred
+					return errRequestPreempted
 				}
 				return s.recordScanFailure(ctx, repo, kind, scan.Generation, fmt.Errorf(
 					"list updated issues for %s: %w", archiveRepoIdentityKey(repo.Ref), err,
@@ -152,7 +152,7 @@ func (s *Service) promptPages(
 			}
 			if err != nil {
 				if preempted {
-					return errAdmissionDeferred
+					return errRequestPreempted
 				}
 				return s.recordScanFailure(ctx, repo, kind, scan.Generation, fmt.Errorf(
 					"list updated merge requests for %s: %w", archiveRepoIdentityKey(repo.Ref), err,

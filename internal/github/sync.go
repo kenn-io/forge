@@ -1532,14 +1532,20 @@ func (s *Syncer) beginProviderWork(key string, priority archive.WorkPriority) fu
 	return func() {
 		once.Do(func() {
 			s.providerWorkMu.Lock()
-			defer s.providerWorkMu.Unlock()
 			active := s.providerWork[key]
 			active[priority]--
 			if active[priority] == 0 {
 				delete(active, priority)
 			}
-			if len(active) == 0 {
+			hostFree := len(active) == 0
+			if hostFree {
 				delete(s.providerWork, key)
+			}
+			s.providerWorkMu.Unlock()
+			if hostFree {
+				// Archive admission was denied while this work held the host;
+				// the worker backed off, so tell it the host is free again.
+				s.WakeArchive()
 			}
 		})
 	}

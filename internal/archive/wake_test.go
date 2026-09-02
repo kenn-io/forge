@@ -1,11 +1,14 @@
 package archive
 
 import (
+	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
@@ -143,4 +146,64 @@ func TestRunPassReportsAdmissionDenialAsIdle(t *testing.T) {
 	worked, err = service.RunPass(t.Context())
 	require.NoError(err)
 	assert.True(worked)
+}
+
+// preemptingAdmission admits every request with an already-canceled context,
+// the shape live work leaves behind when it preempts an archive request.
+type preemptingAdmission struct{}
+
+func (preemptingAdmission) Admit(
+	context.Context,
+	platform.RepoRef,
+	db.ArchiveItemType,
+	int,
+) (AdmissionResult, error) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	return AdmissionResult{
+		Allowed: true, Context: ctx,
+		Complete: func(error, bool) *FeatureDeferral { return nil },
+	}, nil
+}
+
+func TestRunPassReportsProviderAttemptedDeferralsAsWork(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	now := archiveTestTime()
+	ref := archiveServiceRef(platform.KindGitHub, "github.test", "repo")
+
+	t.Run("feature deferral after a provider request", func(t *testing.T) {
+		database := dbtest.Open(t)
+		archiveServiceSeedRepo(t, database, ref)
+		provider := newArchiveServiceProvider(ref.Platform, ref.Host)
+		provider.issueInventoryErr = errors.New("issues disabled for repository")
+		registry, err := platform.NewRegistry(provider)
+		require.NoError(err)
+		admission := &archiveTestAdmission{deferCompletedErrors: true, retryAt: now.Add(24 * time.Hour)}
+		service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, admission, now)
+		requireEnsureConfigured(t, service, []platform.RepoRef{ref})
+		_, err = service.Start(t.Context(), []platform.RepoRef{ref})
+		require.NoError(err)
+
+		worked, err := service.RunPass(t.Context())
+		require.NoError(err)
+		assert.True(worked, "the provider was contacted, so sibling work must not wait out a backoff")
+	})
+
+	t.Run("request preempted by live work", func(t *testing.T) {
+		database := dbtest.Open(t)
+		archiveServiceSeedRepo(t, database, ref)
+		provider := newArchiveServiceProvider(ref.Platform, ref.Host)
+		provider.issueInventoryErr = context.Canceled
+		registry, err := platform.NewRegistry(provider)
+		require.NoError(err)
+		service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, preemptingAdmission{}, now)
+		requireEnsureConfigured(t, service, []platform.RepoRef{ref})
+		_, err = service.Start(t.Context(), []platform.RepoRef{ref})
+		require.NoError(err)
+
+		worked, err := service.RunPass(t.Context())
+		require.NoError(err)
+		assert.True(worked, "a preempted request reached the provider and stays claimable")
+	})
 }

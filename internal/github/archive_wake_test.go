@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/archive"
 )
 
 // pacedArchiveRunner records when each pass ran and answers with a
@@ -176,6 +177,31 @@ func TestArchiveLoopWakesWhenSyncRunCompletes(t *testing.T) {
 		// A completed sync run (here with no repositories) must wake the
 		// worker immediately and restart the backoff from the pacing interval.
 		syncer.RunOnce(context.Background())
+		time.Sleep(time.Second)
+		synctest.Wait()
+		require.Equal([]time.Duration{0, time.Second}, runner.offsetsFrom(backedOff))
+	})
+}
+
+func TestArchiveLoopWakesWhenHostProviderWorkFinishes(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		require := require.New(t)
+		runner := &pacedArchiveRunner{}
+		syncer, stop := startPacedArchiveLoop(t, runner)
+		defer stop()
+
+		time.Sleep(16 * time.Second)
+		synctest.Wait()
+		backedOff := runner.reset()
+
+		// Two overlapping live operations on one host: only the release that
+		// frees the host wakes the worker, and it wakes it immediately.
+		releaseFirst := syncer.beginProviderWork("github\x00github.test", archive.PriorityNormalIndex)
+		releaseSecond := syncer.beginProviderWork("github\x00github.test", archive.PriorityActiveDetail)
+		releaseFirst()
+		synctest.Wait()
+		require.Empty(runner.offsetsFrom(backedOff), "a host still busy must not wake the worker")
+		releaseSecond()
 		time.Sleep(time.Second)
 		synctest.Wait()
 		require.Equal([]time.Duration{0, time.Second}, runner.offsetsFrom(backedOff))

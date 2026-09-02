@@ -33,7 +33,7 @@ func (s *Service) hydrateItem(
 	preempted := archivePreempted(ctx, requestCtx)
 	deferred := complete(syncErr, syncResult.ProviderAttempted)
 	if preempted {
-		return errAdmissionDeferred
+		return errRequestPreempted
 	}
 	if deferred != nil {
 		return &featureDeferredError{FeatureDeferral: *deferred, providerAttempted: true}

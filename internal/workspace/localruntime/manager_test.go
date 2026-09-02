@@ -2462,6 +2462,97 @@ func TestManagerSubmitInitialMessageHonorsContextWithoutHoldingSessionLock(t *te
 	}
 }
 
+func TestManagerSubmitInitialMessageStillSendsEnterWhenCallerStopsWaiting(t *testing.T) {
+	require := require.New(t)
+	writeRelease := make(chan struct{})
+	writeObserved := make(chan []byte)
+	pty := &fakeRuntimePTY{
+		output: make(chan []byte), done: make(chan struct{}),
+		writeRelease: writeRelease, writeObserved: writeObserved,
+	}
+	s := &session{
+		info: SessionInfo{
+			Key: "agent-1", WorkspaceID: "ws-1", Kind: LaunchTargetAgent,
+			Status: SessionStatusRunning,
+		},
+		pty: pty, done: make(chan struct{}),
+		subscribers: make(map[chan []byte]struct{}),
+	}
+	mgr := NewManager(Options{})
+	mgr.sessions[s.info.Key] = s
+	s.broadcast([]byte("\x1b[?2004h"))
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	result := make(chan error, 1)
+	go func() {
+		result <- mgr.SubmitInitialMessage(ctx, "ws-1", "agent-1", "review this")
+	}()
+	select {
+	case err := <-result:
+		require.ErrorIs(err, context.DeadlineExceeded)
+	case <-time.After(time.Second):
+		require.FailNow("initial message write ignored context deadline")
+	}
+
+	// The paste completes after the caller gave up. A paste without its
+	// Enter leaves the prompt sitting in the agent's input box, so the
+	// keystroke must still follow.
+	close(writeRelease)
+	observe := func() []byte {
+		select {
+		case data := <-writeObserved:
+			return data
+		case <-time.After(2 * time.Second):
+			require.FailNow("expected a terminal write after the caller stopped waiting")
+			return nil
+		}
+	}
+	require.Equal([]byte("\x1b[200~review this\x1b[201~"), observe())
+	require.Equal([]byte("\r"), observe())
+}
+
+func TestManagerSubmitInitialMessageSerializesAttachmentInputUntilEnter(t *testing.T) {
+	require := require.New(t)
+	writeObserved := make(chan []byte)
+	pty := &fakeRuntimePTY{
+		output: make(chan []byte), done: make(chan struct{}),
+		writeObserved: writeObserved,
+	}
+	s := &session{
+		info: SessionInfo{
+			Key: "agent-1", WorkspaceID: "ws-1", Kind: LaunchTargetAgent,
+			Status: SessionStatusRunning,
+		},
+		pty: pty, done: make(chan struct{}),
+		subscribers: make(map[chan []byte]struct{}),
+	}
+	mgr := NewManager(Options{})
+	mgr.sessions[s.info.Key] = s
+	s.broadcast([]byte("\x1b[?2004h"))
+	attachment, err := attachToSession(s, "ws-1", "agent-1", nil, AttachSessionOptions{})
+	require.NoError(err)
+	defer attachment.Close()
+
+	go func() {
+		_ = mgr.SubmitInitialMessage(t.Context(), "ws-1", "agent-1", "review this")
+	}()
+	observe := func() []byte {
+		select {
+		case data := <-writeObserved:
+			return data
+		case <-time.After(2 * time.Second):
+			require.FailNow("expected a terminal write")
+			return nil
+		}
+	}
+	require.Equal([]byte("\x1b[200~review this\x1b[201~"), observe())
+	// Typed input arriving during the settle window must not land between
+	// the paste and its Enter, where it would alter or submit the prompt.
+	go func() { _ = attachment.Write([]byte("x")) }()
+	require.Equal([]byte("\r"), observe())
+	require.Equal([]byte("x"), observe())
+}
+
 func TestManagerSubmitInitialMessageRejectsMultilineWithoutBracketedPaste(t *testing.T) {
 	require := require.New(t)
 	pty := &fakeRuntimePTY{output: make(chan []byte), done: make(chan struct{})}
@@ -2612,7 +2703,14 @@ func (f *fakeRuntimePTY) Write(data []byte) error {
 		writeObserved <- slices.Clone(data)
 	}
 	if writeFinished != nil {
-		close(writeFinished)
+		// A handoff may write again after the caller stopped waiting, so
+		// signal completion of the blocked write only once.
+		f.mu.Lock()
+		if f.writeFinished == writeFinished {
+			f.writeFinished = nil
+			close(writeFinished)
+		}
+		f.mu.Unlock()
 	}
 	return nil
 }

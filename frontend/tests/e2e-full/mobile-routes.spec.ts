@@ -580,6 +580,42 @@ test.describe("phone routes", () => {
     await expect(page.locator(".mobile-shell .mobile-detail-header__badge")).toHaveText("PR #1");
   });
 
+  test("long PR head branches keep the branch icon on the first text line", async ({ page }) => {
+    await page.route("**/api/v1/pulls/github/acme/widgets/1", async (route) => {
+      const response = await route.fetch();
+      const detail = await response.json();
+      detail.merge_request.HeadBranch = "feature/keep-branch-icon-attached-to-long-wrapped-branch-name";
+      await route.fulfill({ response, json: detail });
+    });
+
+    await page.goto("/pulls/github/acme/widgets/1");
+
+    const headBranch = page.locator(".meta-branch .branch-name-btn").first();
+    const branchIcon = page.locator(".meta-branch .branch-icon");
+    await expect(headBranch).toBeVisible();
+    await expect(branchIcon).toBeVisible();
+
+    const alignment = await page.locator(".meta-branch").evaluate((metaBranch) => {
+      const icon = metaBranch.querySelector(".branch-icon");
+      const head = metaBranch.querySelector(".branch-name-btn");
+      if (!icon || !head) throw new Error("branch metadata is incomplete");
+
+      const iconBounds = icon.getBoundingClientRect();
+      const headBounds = head.getBoundingClientRect();
+      const firstLineBottom = headBounds.top + Number.parseFloat(getComputedStyle(head).lineHeight);
+      return {
+        headWraps: headBounds.height > Number.parseFloat(getComputedStyle(head).lineHeight) * 1.5,
+        iconTop: iconBounds.top,
+        firstLineTop: headBounds.top,
+        firstLineBottom,
+      };
+    });
+
+    expect(alignment.headWraps).toBe(true);
+    expect(alignment.iconTop).toBeGreaterThanOrEqual(alignment.firstLineTop - 1);
+    expect(alignment.iconTop).toBeLessThan(alignment.firstLineBottom);
+  });
+
   test("long description collapse toggle has a phone-sized hit target", async ({ page }) => {
     const server = await startIsolatedE2EServerWithOptions();
     try {

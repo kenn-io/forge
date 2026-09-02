@@ -74,6 +74,23 @@ describe("DetailSettings", () => {
     expect(mockSetDetailSettings).toHaveBeenCalledWith(saved);
   });
 
+  it("accepts any integer in range even when it is not a multiple of the spinner step", async () => {
+    const saved = { ...initial, initial_timeline_entry_limit: 11 };
+    mockPersistSettings.mockReturnValue(Effect.succeed({ detail: saved }));
+    render(SettingsRuntimeHarness, {
+      props: { component: DetailSettings, componentProps: { detail: initial, onUpdate: vi.fn() } },
+    });
+
+    const input = screen.getByRole("spinbutton", { name: "Initial timeline entries" }) as HTMLInputElement;
+    expect(input.getAttribute("step")).toBe("10");
+    await fireEvent.input(input, { target: { value: "11" } });
+    await fireEvent.change(input, { target: { value: "11" } });
+
+    expect(input.getAttribute("aria-invalid")).toBe("false");
+    await waitFor(() => expect(mockPersistSettings).toHaveBeenCalledOnce());
+    expect(mockPersistSettings.mock.calls[0]?.[0]()).toEqual({ detail: saved });
+  });
+
   it("flags an out-of-range limit inline and sends no request", async () => {
     render(SettingsRuntimeHarness, {
       props: { component: DetailSettings, componentProps: { detail: initial, onUpdate: vi.fn() } },

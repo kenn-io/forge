@@ -38,10 +38,12 @@
   // is in flight neither clobbers that save nor gets dropped.
   let queue: Promise<void> = Promise.resolve();
 
+  // The browser's step check is deliberately ignored: step="10" only makes
+  // the spinner move in tens, while the API accepts any integer in range.
   function validateLimit(input: HTMLInputElement): boolean {
     const limit = Number(input.value);
     limitValid =
-      input.validity.valid
+      !input.validity.badInput
       && Number.isInteger(limit)
       && limit >= limitBounds.minimum
       && limit <= limitBounds.maximum;

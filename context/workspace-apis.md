@@ -680,15 +680,18 @@ move restarts the cycle.
 
 The observer's steady state spawns no processes. It reads the worktree's
 current branch, upstream config, and remote-tracking SHA in process through
-go-git (linked-worktree common directories included) and only asks git,
-through the procutil capacity guard, for layouts go-git cannot answer
-faithfully: config includes, reftable ref storage, or unparsable files.
-Upstream repair remains a git write
+go-git's reference store and config parser, layering `config.worktree` over
+the shared config when `extensions.worktreeConfig` is on, and only asks git,
+through the procutil capacity guard, for layouts it cannot answer faithfully:
+config includes, reftable ref storage, or unparsable files. Upstream repair
+remains a git write whose commands each take one guard slot; never wrap them
+in an outer acquisition
 (`internal/workspace/pushed_head_gitdir.go::gitdirRemoteHeadReader`).
-Open go-git storage from a locally resolved gitdir and common directory, never
-with `EnableDotGitCommonDir`: that option leaks the linked worktree's
-`commondir` file handle on every open, which exhausts descriptors under
-periodic polling and blocks worktree deletion on Windows
+Build go-git storage from a locally resolved gitdir and common directory and
+use it as a reference store directly: `EnableDotGitCommonDir` leaks the linked
+worktree's `commondir` file handle on every open (descriptor exhaustion under
+polling, undeletable worktrees on Windows), and `gogit.Open` rejects version-0
+repositories that declare `extensions.worktreeConfig`
 (`internal/workspace/pushed_head_gitdir.go::openWorktreeRepository`).
 
 ## Sidebar Ordering

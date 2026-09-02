@@ -111,14 +111,12 @@ func (gitRemoteHeadReader) UpstreamState(ctx context.Context, dir, branch string
 	return gitUpstreamState(gitCtx, dir, branch)
 }
 
+// SetBranchUpstream takes no limiter slot of its own: setBranchUpstream's
+// git commands each acquire the guard, and an outer acquisition around them
+// would nest and stall until the git timeout whenever the limiter is full.
 func (gitRemoteHeadReader) SetBranchUpstream(ctx context.Context, dir, branch, remote, mergeRef string) error {
 	gitCtx, cancel := context.WithTimeout(ctx, pushedHeadGitTimeout)
 	defer cancel()
-	release, err := procutil.TryAcquire(gitCtx, pushedHeadSubprocessReason)
-	if err != nil {
-		return err
-	}
-	defer release()
 	return setBranchUpstream(gitCtx, dir, branch, remote, mergeRef)
 }
 

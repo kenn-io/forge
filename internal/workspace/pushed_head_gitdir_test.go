@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/procutil"
 )
 
 // pushedHeadFixture is a bare remote with one clone whose "feature" branch
@@ -349,4 +350,58 @@ func TestGitdirReaderDoesNotLeakDescriptorsOnLinkedWorktree(t *testing.T) {
 	}
 	assert.Equal(before, openDescriptors(), "reading a linked worktree must not leave descriptors open")
 	assert.Equal(0, fallback.calls)
+}
+
+func TestGitdirReaderOverlaysWorktreeConfig(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	fixture := newPushedHeadFixture(t)
+	worktree := filepath.Join(filepath.Dir(fixture.clone), "linked")
+	runWorkspaceTestGit(t, fixture.clone, "worktree", "add", "-b", "topic", worktree, "main")
+	// Shared config says topic tracks origin/topic; the worktree's own
+	// config.worktree overrides that to origin/feature, which is what git
+	// reports once extensions.worktreeConfig is on. Git accepts any nonzero
+	// integer as true for that extension.
+	runWorkspaceTestGit(t, fixture.clone, "config", "branch.topic.remote", "origin")
+	runWorkspaceTestGit(t, fixture.clone, "config", "branch.topic.merge", "refs/heads/topic")
+	runWorkspaceTestGit(t, fixture.clone, "config", "extensions.worktreeConfig", "2")
+	runWorkspaceTestGit(t, worktree, "config", "--worktree", "branch.topic.merge", "refs/heads/feature")
+	reader, fallback := newGitdirReaderForTest()
+	ctx := t.Context()
+
+	upstream, err := reader.UpstreamState(ctx, worktree, "topic")
+	require.NoError(err)
+	assert.Equal(upstreamState{
+		branchName:  "feature",
+		remoteName:  "origin",
+		remoteURL:   fixture.remote,
+		hasTracking: true,
+	}, upstream, "config.worktree must override the shared config")
+
+	shared, err := reader.UpstreamState(ctx, fixture.clone, "topic")
+	require.NoError(err)
+	assert.Equal("topic", shared.branchName, "the main worktree keeps the shared value")
+	assert.Equal(0, fallback.calls)
+}
+
+// TestSubprocessReaderRepairsUpstreamWithOneLimiterSlot proves upstream
+// repair holds one subprocess slot per git command rather than nesting an
+// outer acquisition around guarded commands, which stalls until the git
+// timeout whenever the limiter is at capacity.
+func TestSubprocessReaderRepairsUpstreamWithOneLimiterSlot(t *testing.T) {
+	require := require.New(t)
+	fixture := newPushedHeadFixture(t)
+	runWorkspaceTestGit(t, fixture.clone, "checkout", "-b", "scratch")
+	restore := procutil.SetDefaultLimiterForTest(
+		procutil.NewLimiterWithAcquireTimeout(1, 200*time.Millisecond),
+	)
+	defer restore()
+
+	err := gitRemoteHeadReader{}.SetBranchUpstream(
+		t.Context(), fixture.clone, "scratch", "origin", "refs/heads/feature",
+	)
+	require.NoError(err)
+	restore()
+	merge := strings.TrimSpace(string(runWorkspaceTestGit(t, fixture.clone, "config", "--get", "branch.scratch.merge")))
+	assert.Equal(t, "refs/heads/feature", merge)
 }

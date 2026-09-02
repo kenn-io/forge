@@ -55,6 +55,9 @@ schema migrations.
 - Per-connection pragmas live only in `connectionDSN`; idle limits equal open
   limits so pooled connections and their compiled statements persist
   (`internal/db/db.go::openPool`).
+- `Open` refreshes planner statistics with `PRAGMA optimize`; migrations must
+  never drop or rebuild `sqlite_stat1`, and a query-plan assertion needs seeded
+  rows plus `DB.Optimize` first (`internal/db/db.go::Optimize`).
 
 ## Federation Spoke Preparation
 

@@ -160,6 +160,20 @@ func (d *DB) init() error {
 			return fmt.Errorf("repair legacy timestamp storage: %w", err)
 		}
 	}
+	return d.Optimize(context.Background())
+}
+
+// Optimize refreshes the statistics the SQLite query planner uses to choose
+// indexes. A store that has never been analyzed gets a full ANALYZE, which
+// takes a few hundred milliseconds on a 160 MB file; once sqlite_stat1
+// exists the pragma only re-analyzes tables whose shape changed enough to
+// matter and returns in well under a millisecond. Without statistics the
+// planner guesses, and on a large event table it guessed wrong for the
+// activity feed and merge request detail reads.
+func (d *DB) Optimize(ctx context.Context) error {
+	if _, err := d.rw.ExecContext(ctx, "PRAGMA optimize"); err != nil {
+		return fmt.Errorf("optimize db: %w", err)
+	}
 	return nil
 }
 

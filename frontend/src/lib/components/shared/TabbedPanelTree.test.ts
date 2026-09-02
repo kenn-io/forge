@@ -566,3 +566,30 @@ describe("zoom and leaf actions", () => {
     expect(screen.getByTestId("leaf-action-leaf-a").hasAttribute("disabled")).toBe(false);
   });
 });
+
+describe("TabbedPanelTree keyboard", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it("keeps one tab stop per strip and moves selection with the arrow keys", async () => {
+    const onSelectTab = vi.fn();
+    render(TabbedPanelTreeTestHarness, { node: leafNode(), onSelectTab });
+
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs.map((tab) => tab.tabIndex)).toEqual([-1, 0]);
+
+    const detailTab = screen.getByRole("tab", { name: "Detail" });
+    detailTab.focus();
+    await fireEvent.keyDown(detailTab, { key: "ArrowLeft" });
+    expect(onSelectTab).toHaveBeenCalledWith("feed");
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "Feed, Feed updating" }));
+
+    await fireEvent.keyDown(document.activeElement as HTMLElement, { key: "ArrowLeft" });
+    expect(onSelectTab).toHaveBeenLastCalledWith("detail");
+
+    await fireEvent.keyDown(detailTab, { key: "Tab" });
+    expect(onSelectTab).toHaveBeenCalledTimes(2);
+  });
+});

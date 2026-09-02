@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tablistKeyTarget } from "../shared/tablist-keyboard.js";
   import { Spinner } from "@kenn-io/kit-ui";
   import ArrowLeftIcon from "@lucide/svelte/icons/arrow-left";
   import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
@@ -38,6 +39,21 @@
     onOpenWorkspace,
     onViewWorkspaces,
   }: Props = $props();
+
+  const itemTabs = ["conversation", "files"] as const;
+
+  // The strip is one tab stop: arrows move between the two tabs and select
+  // them, so Tab from the active tab continues into the item content.
+  function handleTabKeydown(event: KeyboardEvent, current: (typeof itemTabs)[number]): void {
+    const target = tablistKeyTarget(event.key, itemTabs.indexOf(current), itemTabs.length);
+    if (target === null) return;
+    event.preventDefault();
+    const next = itemTabs[target];
+    if (next === undefined || next === current) return;
+    onTabChange(next);
+    const strip = (event.currentTarget as HTMLElement).parentElement;
+    strip?.querySelectorAll<HTMLElement>("[role='tab']")[target]?.focus();
+  }
   const appRuntime = getAppRuntime();
 
   let workspace = $state.raw<WorkspaceDetail | null>(null);
@@ -154,15 +170,19 @@
           type="button"
           role="tab"
           aria-selected={tab !== "files"}
+          tabindex={tab !== "files" ? 0 : -1}
           class:active={tab !== "files"}
           onclick={() => onTabChange("conversation")}
+          onkeydown={(event) => handleTabKeydown(event, "conversation")}
         >Conversation</button>
         <button
           type="button"
           role="tab"
           aria-selected={tab === "files"}
+          tabindex={tab === "files" ? 0 : -1}
           class:active={tab === "files"}
           onclick={() => onTabChange("files")}
+          onkeydown={(event) => handleTabKeydown(event, "files")}
         >Files changed</button>
       </div>
     {/if}

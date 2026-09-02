@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tablistKeyTarget } from "./tablist-keyboard.js";
   import { SplitResizeHandle, StatusDot, type SplitResizeEvent } from "@kenn-io/kit-ui";
   import { Effect } from "effect";
   import { onDestroy, untrack, type Snippet } from "svelte";
@@ -340,6 +341,25 @@
     clearExternalTabDragState();
   }
 
+  // One tab stop per strip: arrows move focus and selection between the tabs
+  // this leaf renders, so Tab from the active tab continues into the panel.
+  function handleTabKeydown(event: KeyboardEvent, leafTabs: string[], tabKey: string): void {
+    const keys = leafTabs.filter((key) => tabForKey(key) !== undefined);
+    const target = tablistKeyTarget(event.key, keys.indexOf(tabKey), keys.length);
+    if (target === null) return;
+    event.preventDefault();
+    const nextKey = keys[target];
+    if (nextKey === undefined || nextKey === tabKey) return;
+    onSelectTab?.(nextKey);
+    const strip = (event.currentTarget as HTMLElement).closest<HTMLElement>("[role='tablist']");
+    for (const tabEl of strip?.querySelectorAll<HTMLElement>("[data-tabbed-panel-tab-key]") ?? []) {
+      if (tabEl.dataset.tabbedPanelTabKey === nextKey) {
+        tabEl.querySelector<HTMLElement>("[role='tab']")?.focus();
+        return;
+      }
+    }
+  }
+
   function sortPreviewFromPoint(
     tablist: HTMLElement,
     sourceTabKey: string,
@@ -494,11 +514,14 @@
     return `--dragged-tab-width: ${width}px;`;
   }
 
-  function handleLeafFocusIn(event: FocusEvent, leaf: TabbedPanelLeaf): void {
-    const target = event.target;
-    const focusedTab = target instanceof Element ? target.closest<HTMLElement>("[data-tabbed-panel-tab-key]") : null;
-    const focusedOuterTab = focusedTab?.closest(".tabbed-panel-leaf") === event.currentTarget ? focusedTab : null;
-    onFocusPane?.(focusedOuterTab?.dataset.tabbedPanelTabKey ?? leaf.activeTabKey, leaf.id);
+  // Focus anywhere in the leaf reports the leaf's active tab. Inactive panels
+  // are visibility-hidden and cannot take focus, so panel focus always means
+  // the active one; and focus inside the strip (a tab reached by arrow key,
+  // or a tab's "Hide" tool reached by Tab) is not focus in that tab's pane.
+  // Reporting the tool's own tab used to make a plain Tab past the strip
+  // activate the pane whose tool it landed on.
+  function handleLeafFocusIn(_event: FocusEvent, leaf: TabbedPanelLeaf): void {
+    onFocusPane?.(leaf.activeTabKey, leaf.id);
   }
 
   function measureSplit(): number {
@@ -645,7 +668,9 @@
               aria-selected={node.activeTabKey === tab.key}
               aria-label={tab.status ? `${tab.label}, ${tab.status.label}` : tab.label}
               role="tab"
+              tabindex={node.activeTabKey === tab.key ? 0 : -1}
               onclick={() => onSelectTab?.(tab.key)}
+              onkeydown={(event) => handleTabKeydown(event, node.tabs, tab.key)}
             >
               {#if tabIcon}
                 <span class="tabbed-panel-tab-icon" aria-hidden="true">

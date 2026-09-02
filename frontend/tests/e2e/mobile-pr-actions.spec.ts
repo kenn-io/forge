@@ -74,3 +74,28 @@ test("phone PR list keyboard focus moves row to row and the search field shows o
   await page.keyboard.press("Tab");
   await expect(rows.nth(1)).toBeFocused();
 });
+
+test("phone PR detail tabs are one tab stop and switch with the arrow keys", async ({ page }) => {
+  await mockApi(page);
+
+  await page.goto("/pulls/github/acme/widgets/42");
+  const conversation = page.getByRole("tab", { name: "Conversation" });
+  const files = page.getByRole("tab", { name: /Files changed/ });
+  await expect(conversation).toHaveAttribute("aria-selected", "true");
+
+  // Tab from the detail header's Back control lands on the active tab, and
+  // the next Tab leaves the strip for the panel instead of walking the tabs.
+  await page.locator(".mobile-detail-header__back").focus();
+  await page.keyboard.press("Tab");
+  await expect(conversation).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(files).not.toBeFocused();
+  await expect(conversation).toHaveAttribute("aria-selected", "true");
+
+  // Arrow keys are what switch tabs.
+  await conversation.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(files).toBeFocused();
+  await expect(files).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator(".files-view")).toBeVisible();
+});

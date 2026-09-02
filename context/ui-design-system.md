@@ -105,6 +105,12 @@ otherwise fails only in the Vitest/Playwright transform tier, not in
   text field is `:focus-visible`). Hover-only controls nested inside a
   list row button (`.star-btn`, `.import-btn`) carry `tabindex="-1"` so
   Tab moves row to row instead of stopping on an invisible target.
+- Tab strips are one tab stop: only the selected tab has `tabindex="0"`,
+  Left/Right/Home/End move focus and selection via
+  `shared/tablist-keyboard.ts` (`TabbedPanelTree`, `MobileWorkspaceItem`,
+  the `PullDetail` fallback strip), and Tab continues into the panel.
+  `TabbedPanelTree` reports the leaf's active tab for any focus inside the
+  leaf, so landing on a tab's "Hide" tool does not activate that pane.
 - jsdom lacks `offsetParent` / `scrollIntoView` / `ResizeObserver`:
   `test/setup.ts` stubs the latter two, focus-trap tests install
   `stubOffsetParent.ts`, and synthetic Tab only exercises kit's trap at

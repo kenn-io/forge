@@ -3,6 +3,7 @@
 </script>
 
 <script lang="ts">
+  import { tablistKeyTarget } from "../shared/tablist-keyboard.js";
   import { Effect, Schedule } from "effect";
   import { onDestroy, tick, untrack, type ComponentProps } from "svelte";
   import type { ApiProblemError, TransientTransportError } from "../../api/effect-errors.js";
@@ -284,6 +285,20 @@
   );
 
   let activeTab = $state<"conversation" | "files">("conversation");
+  const detailTabKeys = ["conversation", "files"] as const;
+
+  // The tab strip is one tab stop: arrows move between the tabs and select
+  // them, so Tab from the active tab continues into the panel below.
+  function handleDetailTabKeydown(event: KeyboardEvent): void {
+    const target = tablistKeyTarget(event.key, detailTabKeys.indexOf(activeTab), detailTabKeys.length);
+    if (target === null) return;
+    event.preventDefault();
+    const next = detailTabKeys[target];
+    if (next === undefined || next === activeTab) return;
+    activeTab = next;
+    const strip = (event.currentTarget as HTMLElement).parentElement;
+    strip?.querySelectorAll<HTMLElement>("[role='tab']")[target]?.focus();
+  }
   let expandedPanel = $state<"ci" | "stack" | "merge" | null>(null);
   let pullDetailScroller: HTMLDivElement | undefined = $state();
   let pullDetailScrollRestoreExecution: AppExecution<void, never> | undefined;
@@ -2012,12 +2027,16 @@
         </div>
       {/if}
       {#if !hideTabs}
-        <div class="detail-tabs">
+        <div class="detail-tabs" role="tablist" aria-label="Pull request detail">
           <button
             type="button"
             class="detail-tab"
             class:detail-tab--active={activeTab === "conversation"}
+            role="tab"
+            aria-selected={activeTab === "conversation"}
+            tabindex={activeTab === "conversation" ? 0 : -1}
             onclick={() => { activeTab = "conversation"; }}
+            onkeydown={handleDetailTabKeydown}
           >
             Conversation
           </button>
@@ -2025,7 +2044,11 @@
             type="button"
             class="detail-tab"
             class:detail-tab--active={activeTab === "files"}
+            role="tab"
+            aria-selected={activeTab === "files"}
+            tabindex={activeTab === "files" ? 0 : -1}
             onclick={() => { activeTab = "files"; }}
+            onkeydown={handleDetailTabKeydown}
           >
             Files changed
             {#if pr.Additions > 0}

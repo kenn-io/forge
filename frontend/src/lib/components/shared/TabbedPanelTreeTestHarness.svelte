@@ -26,6 +26,7 @@
       | undefined;
     onRatioChange?: ((splitID: string, ratio: number) => void) | undefined;
     onFocusPane?: ((tabKey: string, leafID: string) => void) | undefined;
+    onSelectTab?: ((tabKey: string) => void) | undefined;
     disabled?: boolean;
     zoomedLeafID?: string | null;
     /** Render the per-leaf action cluster; off by default so existing cases are unaffected. */
@@ -47,6 +48,7 @@
     onSplitTab,
     onRatioChange,
     onFocusPane,
+    onSelectTab,
     disabled = false,
     zoomedLeafID = null,
     withLeafActions = false,
@@ -84,6 +86,7 @@
   {onSplitTab}
   {onRatioChange}
   {onFocusPane}
+  {onSelectTab}
   leafActions={withLeafActions ? leafActions : undefined}
 >
   {#snippet renderTab(tabKey, active)}

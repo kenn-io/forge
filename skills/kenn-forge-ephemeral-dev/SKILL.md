@@ -30,7 +30,7 @@ Use `make dev-ephemeral` when the user wants a local kenn-forge dev stack withou
 
    ```sh
    make dev-ephemeral ARGS="-work-dir tmp/my-run"
-   make dev-ephemeral ARGS="-backend-port 19091 -frontend-port 15174"
+   make dev-ephemeral ARGS="-backend-port 19091 -frontend-port 15174 -mcp-port 19092"
    ```
 
 4. Use a fresh empty DB only when requested:
@@ -44,6 +44,10 @@ Use `make dev-ephemeral` when the user wants a local kenn-forge dev stack withou
 - The launcher starts both backend and frontend.
 - The backend disables provider sync by default; `-sync` explicitly enables it.
 - It writes a generated config at `<work-dir>/config.toml`.
+- When the source config enables MCP, the generated config moves the MCP
+  listener to a free port (or `-mcp-port`) so the ephemeral backend never
+  fights the live daemon for the configured one; the status JSON reports it as
+  `mcp_port` and `mcp_url`, omitted when MCP is disabled.
 - It copies the configured source SQLite DB by default into `<work-dir>/data/forge.db`.
 - It passes `KENN_FORGE_CONFIG=<work-dir>/config.toml` to both processes.
 - It passes `KENN_FORGE_API_URL=<backend-url>` to the frontend.
@@ -62,10 +66,12 @@ Read `<work-dir>/dev-ephemeral.json` when another tool or response needs process
   "frontend_pid": 1003,
   "backend_port": 19091,
   "frontend_port": 15174,
+  "mcp_port": 19092,
   "config_path": "tmp/my-run/config.toml",
   "data_dir": "tmp/my-run/data",
   "backend_url": "http://127.0.0.1:19091",
-  "frontend_url": "http://127.0.0.1:15174"
+  "frontend_url": "http://127.0.0.1:15174",
+  "mcp_url": "http://127.0.0.1:19092"
 }
 ```
 

@@ -69,6 +69,91 @@ func TestPrepareEphemeralConfigOverridesPortAndDataDir(t *testing.T) {
 	assert.Equal(sourceDataDir, source.DataDir)
 }
 
+func TestPrepareEphemeralConfigMovesEnabledMCPListenerOffTheSourcePort(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.toml")
+	workDir := filepath.Join(dir, "run")
+	require.NoError(os.MkdirAll(workDir, 0o700))
+
+	source := config.Config{
+		SyncInterval:        "5m",
+		GitHubTokenEnv:      "KENN_FORGE_GITHUB_TOKEN",
+		DefaultPlatformHost: "github.com",
+		Host:                "127.0.0.1",
+		Port:                8091,
+		DataDir:             filepath.Join(dir, "source-data"),
+		Activity:            config.Activity{ViewMode: "threaded", TimeRange: "7d"},
+		MCP:                 config.MCP{Enabled: true, Port: 6661},
+	}
+	require.NoError(source.Save(sourcePath))
+
+	prepared, err := prepareEphemeralConfig(ephemeralOptions{
+		sourceConfigPath: sourcePath,
+		workDir:          workDir,
+		backendPort:      39101,
+		frontendPort:     39102,
+		mcpPort:          39103,
+		freshDB:          true,
+	})
+	require.NoError(err)
+
+	reloaded, err := config.Load(prepared.configPath)
+	require.NoError(err)
+	assert.True(reloaded.MCP.Enabled)
+	assert.Equal(39103, reloaded.MCP.Port)
+	assert.Equal("127.0.0.1:39103", reloaded.MCPListenAddr())
+	assert.Equal(39103, prepared.mcpPort)
+	assert.Equal("http://127.0.0.1:39103", prepared.mcpURL)
+}
+
+func TestPrepareEphemeralConfigLeavesDisabledMCPAlone(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.toml")
+	workDir := filepath.Join(dir, "run")
+	require.NoError(os.MkdirAll(workDir, 0o700))
+
+	source := config.Config{
+		SyncInterval:        "5m",
+		GitHubTokenEnv:      "KENN_FORGE_GITHUB_TOKEN",
+		DefaultPlatformHost: "github.com",
+		Host:                "127.0.0.1",
+		Port:                8091,
+		DataDir:             filepath.Join(dir, "source-data"),
+		Activity:            config.Activity{ViewMode: "threaded", TimeRange: "7d"},
+	}
+	require.NoError(source.Save(sourcePath))
+
+	prepared, err := prepareEphemeralConfig(ephemeralOptions{
+		sourceConfigPath: sourcePath,
+		workDir:          workDir,
+		backendPort:      39101,
+		frontendPort:     39102,
+		mcpPort:          39103,
+		freshDB:          true,
+	})
+	require.NoError(err)
+
+	reloaded, err := config.Load(prepared.configPath)
+	require.NoError(err)
+	assert.False(reloaded.MCP.Enabled)
+	assert.Empty(reloaded.MCPListenAddr())
+	assert.Equal(0, prepared.mcpPort)
+	assert.Empty(prepared.mcpURL)
+}
+
+func TestRequireDistinctPortsRejectsAnyCollision(t *testing.T) {
+	require := require.New(t)
+
+	require.NoError(requireDistinctPorts(1, 2, 3))
+	require.Error(requireDistinctPorts(1, 1, 3))
+	require.Error(requireDistinctPorts(1, 2, 1))
+	require.Error(requireDistinctPorts(1, 2, 2))
+}
+
 func TestPrepareEphemeralConfigForcesBackendToLoopback(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -471,10 +556,12 @@ func TestWriteStatusFileRecordsPIDsAndPortsNextToConfig(t *testing.T) {
 		FrontendPID:  1003,
 		BackendPort:  39401,
 		FrontendPort: 39402,
+		MCPPort:      39403,
 		ConfigPath:   filepath.Join(dir, "config.toml"),
 		DataDir:      filepath.Join(dir, "data"),
 		BackendURL:   "http://127.0.0.1:39401",
 		FrontendURL:  "http://127.0.0.1:39402",
+		MCPURL:       "http://127.0.0.1:39403",
 	})
 	require.NoError(err)
 
@@ -488,6 +575,8 @@ func TestWriteStatusFileRecordsPIDsAndPortsNextToConfig(t *testing.T) {
 	assert.Equal(1003, got.FrontendPID)
 	assert.Equal(39401, got.BackendPort)
 	assert.Equal(39402, got.FrontendPort)
+	assert.Equal(39403, got.MCPPort)
+	assert.Equal("http://127.0.0.1:39403", got.MCPURL)
 	assert.Equal(filepath.Join(dir, "config.toml"), got.ConfigPath)
 }
 

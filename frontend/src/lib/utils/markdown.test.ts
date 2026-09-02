@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import { buildCanonicalProviderItemURL } from "./item-reference.js";
-import { collapsePlainTextLineBreaks, renderMarkdown, renderMarkdownBlocks, renderMarkdownSync } from "./markdown.js";
+import { renderMarkdown, renderMarkdownBlocks, renderMarkdownSync } from "./markdown.js";
 
 describe("renderMarkdown task lists", () => {
   it("proxies private GitHub attachment images through the repo-scoped API", async () => {
@@ -518,37 +518,5 @@ describe("renderMarkdown line breaks", () => {
     expect(soft).not.toContain("<br>");
     expect(renderMarkdownSync(raw)).toContain("<br>");
     expect(renderMarkdownSync(raw, undefined, { collapseSingleLineBreaks: true })).not.toContain("<br>");
-  });
-});
-
-describe("collapsePlainTextLineBreaks", () => {
-  it("joins wrapped lines but keeps paragraphs and list-like lines", () => {
-    const text = [
-      "fix: restrict tools",
-      "",
-      "Pi enables command execution by default, which let",
-      "reviews cross the boundary.",
-      "",
-      "Changes:",
-      "- restrict tools",
-      "- keep unsafe runs",
-      "",
-      "    indented block",
-      "    stays",
-    ].join("\n");
-    expect(collapsePlainTextLineBreaks(text)).toBe(
-      [
-        "fix: restrict tools",
-        "",
-        "Pi enables command execution by default, which let reviews cross the boundary.",
-        "",
-        "Changes:",
-        "- restrict tools",
-        "- keep unsafe runs",
-        "",
-        "    indented block",
-        "    stays",
-      ].join("\n"),
-    );
   });
 });

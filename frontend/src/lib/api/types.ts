@@ -97,6 +97,7 @@ export const DEFAULT_PULL_REQUEST_SETTINGS: PullRequestSettings = {
 export const DEFAULT_DETAIL_SETTINGS: DetailSettings = {
   initial_timeline_entry_limit: 50,
   collapse_single_line_breaks: false,
+  render_commit_messages_as_markdown: false,
 };
 
 export type AgentSettings = components["schemas"]["Agent"];

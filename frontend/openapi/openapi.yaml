@@ -1616,9 +1616,12 @@ components:
           maximum: 250
           minimum: 10
           type: integer
+        render_commit_messages_as_markdown:
+          type: boolean
       required:
         - initial_timeline_entry_limit
         - collapse_single_line_breaks
+        - render_commit_messages_as_markdown
       type: object
     DiffDescriptor:
       additionalProperties: false

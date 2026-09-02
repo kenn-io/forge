@@ -5801,6 +5801,7 @@ export interface components {
             collapse_single_line_breaks: boolean;
             /** Format: int64 */
             initial_timeline_entry_limit: number;
+            render_commit_messages_as_markdown: boolean;
         };
         DiffDescriptor: {
             /**

@@ -1836,6 +1836,38 @@ describe("EventTimeline", () => {
     expect(document.querySelector(".event-card--commit .event-time")?.textContent).toBe("4h ago");
   });
 
+  it("renders commit bodies as markdown when the detail setting is on", async () => {
+    renderTimeline({
+      props: {
+        events: [
+          makeEvent({
+            EventType: "commit",
+            Summary: "abcdef1234567890",
+            Body: "feat: add filters\n\nSee the **release notes**.",
+          }),
+        ],
+      },
+      context: new Map([
+        [
+          STORES_KEY,
+          {
+            settings: {
+              getDetailSettings: () => ({
+                initial_timeline_entry_limit: 50,
+                collapse_single_line_breaks: false,
+                render_commit_messages_as_markdown: true,
+              }),
+            },
+          },
+        ],
+      ]),
+    });
+
+    const details = document.querySelector(".commit-body-details");
+    expect(details?.classList.contains("markdown-body")).toBe(true);
+    await waitFor(() => expect(details?.querySelector("strong")?.textContent).toBe("release notes"));
+  });
+
   it("expands single-line commit messages when commit details are shown", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2024-06-01T16:00:00Z"));

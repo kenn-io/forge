@@ -23,7 +23,6 @@
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { transientClipboardFeedback } from "../../browser/clipboard-feedback.js";
   import MarkdownHtml from "../shared/MarkdownHtml.svelte";
-  import { collapsePlainTextLineBreaks } from "../../utils/markdown.js";
   import {
     Button,
     Card,
@@ -135,6 +134,9 @@
     stores?.settings?.getDetailSettings().collapse_single_line_breaks ?? false,
   );
   const markdownOptions = $derived({ collapseSingleLineBreaks });
+  const renderCommitMessagesAsMarkdown = $derived(
+    stores?.settings?.getDetailSettings().render_commit_messages_as_markdown ?? false,
+  );
   const diffStore = stores?.diff;
   const diffReviewDraft = stores?.diffReviewDraft;
   const diff = $derived(diffStore?.getDiff() ?? null);
@@ -824,8 +826,7 @@
   }
 
   function commitDetailsBody(body: string): string {
-    const trimmed = body.trim();
-    return collapseSingleLineBreaks ? collapsePlainTextLineBreaks(trimmed) : trimmed;
+    return body.trim();
   }
 
   function systemEventLabel(eventType: string): string {
@@ -1595,6 +1596,29 @@
   </div>
 {/snippet}
 
+{#snippet commitBody(body: string, animated: boolean)}
+  {#if animated}
+    <div
+      class={["event-body", "commit-body-details", { "markdown-body": renderCommitMessagesAsMarkdown }]}
+      transition:slide={{ duration: 100 }}
+    >
+      {#if renderCommitMessagesAsMarkdown}
+        <MarkdownHtml raw={body} repo={markdownRepo} options={markdownOptions} />
+      {:else}
+        {body}
+      {/if}
+    </div>
+  {:else}
+    <div class={["event-body", "commit-body-details", { "markdown-body": renderCommitMessagesAsMarkdown }]}>
+      {#if renderCommitMessagesAsMarkdown}
+        <MarkdownHtml raw={body} repo={markdownRepo} options={markdownOptions} />
+      {:else}
+        {body}
+      {/if}
+    </div>
+  {/if}
+{/snippet}
+
 {#snippet eventBody(
   event: PREvent | IssueEvent,
   nested = false,
@@ -1990,9 +2014,7 @@
             {#if (canExpandCompact && compactExpanded) || editingId === event.ID}
               <div class="compact-expanded-content">
                 {#if event.EventType === "commit"}
-                  <div class="event-body commit-body-details">
-                    {commitDetailsBody(event.Body)}
-                  </div>
+                  {@render commitBody(commitDetailsBody(event.Body), false)}
                 {:else}
                   {@render eventBody(event, false, entry.reviewThread, hasReplyOnlyAction ? entry : undefined)}
                 {/if}
@@ -2036,9 +2058,7 @@
                 <span class="event-time">{formatRelativeTime(event.CreatedAt)}</span>
               </div>
               {#if showCommitDetails && commitDetails}
-                <div class="event-body commit-body-details" transition:slide={{ duration: 100 }}>
-                  {commitDetails}
-                </div>
+                {@render commitBody(commitDetails, true)}
               {/if}
             </Card>
           {:else if event.EventType === "cross_referenced"}

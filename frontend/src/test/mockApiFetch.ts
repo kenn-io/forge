@@ -290,6 +290,7 @@ export const mockSettings = {
   detail: {
     initial_timeline_entry_limit: 50,
     collapse_single_line_breaks: false,
+    render_commit_messages_as_markdown: false,
   },
   issues: {
     hide_bots: false,

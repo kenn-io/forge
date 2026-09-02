@@ -23,6 +23,7 @@
   let saving = $state(false);
   let draft = $derived(String(detail.initial_timeline_entry_limit));
   let collapseDraft = $derived(detail.collapse_single_line_breaks);
+  let commitMarkdownDraft = $derived(detail.render_commit_messages_as_markdown);
   const parsedLimit = $derived(Number(draft));
   const valid = $derived(
     Number.isInteger(parsedLimit) && parsedLimit >= 10 && parsedLimit <= 250,
@@ -37,6 +38,11 @@
   function toggleCollapseSingleLineBreaks(checked: boolean): void {
     if (checked === detail.collapse_single_line_breaks) return;
     persist({ ...detail, collapse_single_line_breaks: checked });
+  }
+
+  function toggleCommitMarkdown(checked: boolean): void {
+    if (checked === detail.render_commit_messages_as_markdown) return;
+    persist({ ...detail, render_commit_messages_as_markdown: checked });
   }
 
   function persist(pending: DetailSettingsType): void {
@@ -54,6 +60,7 @@
               onUpdate(previous);
               draft = String(previous.initial_timeline_entry_limit);
               collapseDraft = previous.collapse_single_line_breaks;
+              commitMarkdownDraft = previous.render_commit_messages_as_markdown;
               showFlash(settingsErrorMessage(failure), { tone: "danger" });
             }),
           onSuccess: (settings) =>
@@ -117,8 +124,24 @@
   <span class="setting-copy">
     <span class="setting-label">Collapse single line breaks</span>
     <span class="setting-description">
-      Render descriptions, comments, and commit messages with soft line breaks:
-      a single newline joins the paragraph and only a blank line starts a new one.
+      Render markdown with soft line breaks: a single newline joins the paragraph
+      and only a blank line starts a new one.
+    </span>
+  </span>
+</Checkbox>
+
+<Checkbox
+  class="toggle-row"
+  bind:checked={commitMarkdownDraft}
+  disabled={embedded || saving}
+  onchange={toggleCommitMarkdown}
+  ariaLabel="Render commit messages as markdown"
+>
+  <span class="setting-copy">
+    <span class="setting-label">Render commit messages as markdown</span>
+    <span class="setting-description">
+      Show commit bodies in the timeline with the same markdown rendering as comments
+      instead of plain text.
     </span>
   </span>
 </Checkbox>

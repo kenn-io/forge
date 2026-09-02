@@ -2687,11 +2687,13 @@ name = "b"
 [detail]
 initial_timeline_entry_limit = 80
 collapse_single_line_breaks = true
+render_commit_messages_as_markdown = true
 	`)
 	cfg, err := Load(path)
 	require.NoError(err)
 	assert.Equal(80, cfg.Detail.InitialTimelineEntryLimit)
 	assert.True(cfg.Detail.CollapseSingleLineBreaks)
+	assert.True(cfg.Detail.RenderCommitMessagesAsMarkdown)
 
 	savePath := filepath.Join(t.TempDir(), "saved.toml")
 	require.NoError(cfg.Save(savePath))
@@ -2700,6 +2702,7 @@ collapse_single_line_breaks = true
 	require.NoError(err)
 	assert.Equal(80, cfg2.Detail.InitialTimelineEntryLimit)
 	assert.True(cfg2.Detail.CollapseSingleLineBreaks)
+	assert.True(cfg2.Detail.RenderCommitMessagesAsMarkdown)
 }
 
 func TestRepositoryStableIdentitySurvivesConfigSave(t *testing.T) {

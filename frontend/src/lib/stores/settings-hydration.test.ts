@@ -38,7 +38,11 @@ const settingsPayload = makeStartupSnapshot({
     },
   ],
   activity: activitySettings,
-  detail: { initial_timeline_entry_limit: 75, collapse_single_line_breaks: true },
+  detail: {
+    initial_timeline_entry_limit: 75,
+    collapse_single_line_breaks: true,
+    render_commit_messages_as_markdown: true,
+  },
   launch_targets: [codexTarget],
   workspaces: { auto_assign_on_create: false, default_sidebar_view: "item" },
   roborev: { init_managed_clones: true },
@@ -89,6 +93,7 @@ describe("applySettingsHydration", () => {
     expect(settingsStore.getDetailSettings()).toEqual({
       initial_timeline_entry_limit: 75,
       collapse_single_line_breaks: true,
+      render_commit_messages_as_markdown: true,
     });
   });
 

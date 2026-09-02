@@ -647,24 +647,3 @@ function renderMarkdownTokens(
   resetRenderState(opts, repo, highlightCode, highlightedCodeTokens);
   return sanitizeMarkdownHtml(marked.parser(tokens) as string);
 }
-
-// Plain-text counterpart of the collapseSingleLineBreaks render option for
-// bodies that are not rendered as markdown, such as commit messages. A
-// single newline joins the paragraph; blank lines still separate
-// paragraphs, and lines that look like list items, headings, quotes, or
-// indented blocks keep their own line.
-const PLAIN_TEXT_LINE_START = /^(\s|[-*+>#]|\d+[.)]\s)/;
-
-export function collapsePlainTextLineBreaks(text: string): string {
-  return text
-    .split(/\n{2,}/)
-    .map((paragraph) =>
-      paragraph.split("\n").reduce((joined, line, index) => {
-        if (index === 0) return line;
-        if (line.trim() === "") return joined;
-        if (PLAIN_TEXT_LINE_START.test(line)) return `${joined}\n${line}`;
-        return `${joined} ${line.trim()}`;
-      }, ""),
-    )
-    .join("\n\n");
-}

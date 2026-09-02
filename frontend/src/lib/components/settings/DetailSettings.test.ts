@@ -30,7 +30,11 @@ vi.mock("../../stores/embed-config.svelte.js", async (importOriginal) => ({
 import DetailSettings from "./DetailSettings.svelte";
 import SettingsRuntimeHarness from "./SettingsRuntimeHarness.svelte";
 
-const initial = { initial_timeline_entry_limit: 50, collapse_single_line_breaks: false };
+const initial = {
+  initial_timeline_entry_limit: 50,
+  collapse_single_line_breaks: false,
+  render_commit_messages_as_markdown: false,
+};
 
 describe("DetailSettings", () => {
   afterEach(() => {
@@ -52,7 +56,7 @@ describe("DetailSettings", () => {
 
   it("saves the initial timeline entry limit", async () => {
     const onUpdate = vi.fn();
-    const saved = { initial_timeline_entry_limit: 80, collapse_single_line_breaks: false };
+    const saved = { ...initial, initial_timeline_entry_limit: 80 };
     mockPersistSettings.mockReturnValue(Effect.succeed({ detail: saved }));
     render(SettingsRuntimeHarness, {
       props: { component: DetailSettings, componentProps: { detail: initial, onUpdate } },
@@ -90,7 +94,7 @@ describe("DetailSettings", () => {
 
   it("persists the collapse single line breaks toggle alongside the current limit", async () => {
     const onUpdate = vi.fn();
-    const saved = { initial_timeline_entry_limit: 50, collapse_single_line_breaks: true };
+    const saved = { ...initial, collapse_single_line_breaks: true };
     mockPersistSettings.mockReturnValue(Effect.succeed({ detail: saved }));
     render(SettingsRuntimeHarness, {
       props: { component: DetailSettings, componentProps: { detail: initial, onUpdate } },
@@ -104,6 +108,21 @@ describe("DetailSettings", () => {
     expect(mockPersistSettings.mock.calls[0]?.[0]()).toEqual({ detail: saved });
     expect(onUpdate).toHaveBeenLastCalledWith(saved);
     expect(mockSetDetailSettings).toHaveBeenCalledWith(saved);
+  });
+
+  it("persists the commit markdown toggle", async () => {
+    const onUpdate = vi.fn();
+    const saved = { ...initial, render_commit_messages_as_markdown: true };
+    mockPersistSettings.mockReturnValue(Effect.succeed({ detail: saved }));
+    render(SettingsRuntimeHarness, {
+      props: { component: DetailSettings, componentProps: { detail: initial, onUpdate } },
+    });
+
+    await fireEvent.click(screen.getByRole("checkbox", { name: "Render commit messages as markdown" }));
+
+    await waitFor(() => expect(mockPersistSettings).toHaveBeenCalledOnce());
+    expect(mockPersistSettings.mock.calls[0]?.[0]()).toEqual({ detail: saved });
+    expect(onUpdate).toHaveBeenLastCalledWith(saved);
   });
 
   it("unchecks the toggle again when saving fails", async () => {

@@ -1944,8 +1944,9 @@ type DependencyCapabilities struct {
 
 // Detail defines model for Detail.
 type Detail struct {
-	CollapseSingleLineBreaks  bool  `json:"collapse_single_line_breaks"`
-	InitialTimelineEntryLimit int64 `json:"initial_timeline_entry_limit"`
+	CollapseSingleLineBreaks       bool  `json:"collapse_single_line_breaks"`
+	InitialTimelineEntryLimit      int64 `json:"initial_timeline_entry_limit"`
+	RenderCommitMessagesAsMarkdown bool  `json:"render_commit_messages_as_markdown"`
 }
 
 // DiffDescriptor defines model for DiffDescriptor.

@@ -18,6 +18,7 @@ import { ProviderMutations, providerMutationFailureMessage } from "./ordered-mut
 import { providerItemKey, providerMutationKey } from "./provider-key.js";
 import { nextWorkspaceLifecycleTick } from "./workspace-create-pending.svelte.js";
 import { readInvolvesMeFilter, writeInvolvesMeFilter } from "./involves-me-filter.js";
+import { readUnassignedFilter, writeUnassignedFilter } from "./unassigned-filter.js";
 
 export type { FetchPullResult } from "./pulls-workflow.js";
 
@@ -68,6 +69,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
   let kanbanStatusFilters = $state<KanbanStatus[]>([]);
   let filterStarred = $state(false);
   let involvesMe = $state(readInvolvesMeFilter("pulls"));
+  let unassigned = $state(readUnassignedFilter("pulls"));
   let filterState = $state<string>("open");
   let searchQuery = $state<string | undefined>(undefined);
   let selectedPR = $state<PullSelection | null>(null);
@@ -162,7 +164,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
   }
 
   function getLocalFilterCount(): number {
-    return attributeFilters.length + kanbanStatusFilters.length + Number(involvesMe);
+    return attributeFilters.length + kanbanStatusFilters.length + Number(involvesMe) + Number(unassigned);
   }
 
   function getFilterStarred(): boolean {
@@ -180,6 +182,15 @@ export function createPullsStore(opts: PullsStoreOptions) {
   function setInvolvesMe(value: boolean): void {
     involvesMe = value;
     writeInvolvesMeFilter("pulls", value);
+  }
+
+  function getUnassigned(): boolean {
+    return unassigned;
+  }
+
+  function setUnassigned(value: boolean): void {
+    unassigned = value;
+    writeUnassignedFilter("pulls", value);
   }
 
   function getFilterState(): string {
@@ -259,6 +270,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
     attributeFilters = [];
     kanbanStatusFilters = [];
     setInvolvesMe(false);
+    setUnassigned(false);
   }
 
   function getSearchQuery(): string | undefined {
@@ -470,6 +482,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
       ...(filterKanban !== undefined && { kanban: filterKanban }),
       ...(filterStarred && { starred: true }),
       ...(involvesMe && { involves_me: true }),
+      ...(unassigned && { unassigned: true }),
       ...(searchQuery !== undefined && { q: searchQuery }),
       ...params,
     };
@@ -514,6 +527,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
         ...(filterKanban !== undefined && { kanban: filterKanban }),
         ...(filterStarred && { starred: true }),
         ...(involvesMe && { involves_me: true }),
+        ...(unassigned && { unassigned: true }),
         ...(searchQuery !== undefined && { q: searchQuery }),
         ...params,
       };
@@ -608,6 +622,8 @@ export function createPullsStore(opts: PullsStoreOptions) {
     setFilterStarred,
     getInvolvesMe,
     setInvolvesMe,
+    getUnassigned,
+    setUnassigned,
     getFilterState,
     setFilterState,
     getDisplayOrderPRs,

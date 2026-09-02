@@ -36,6 +36,7 @@ import { providerItemKey } from "./provider-key.js";
 import { SettingsWorkflow, settingsErrorMessage } from "./settings-workflow.js";
 import { nextWorkspaceLifecycleTick } from "./workspace-create-pending.svelte.js";
 import { readInvolvesMeFilter, writeInvolvesMeFilter } from "./involves-me-filter.js";
+import { readUnassignedFilter, writeUnassignedFilter } from "./unassigned-filter.js";
 import { readIssuePRReferenceFilter, writeIssuePRReferenceFilter } from "./issue-pr-reference-filter.js";
 
 export type { IssueDetailSyncMode } from "./issues-workflow.js";
@@ -140,6 +141,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   let storeError = $state<string | null>(null);
   let filterStarred = $state(false);
   let involvesMe = $state(readInvolvesMeFilter("issues"));
+  let unassigned = $state(readUnassignedFilter("issues"));
   let referencedByPR = $state(readIssuePRReferenceFilter());
   let filterState = $state<string>("open");
   let searchQuery = $state<string | undefined>(undefined);
@@ -211,6 +213,9 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   }
   function getInvolvesMe(): boolean {
     return involvesMe;
+  }
+  function getUnassigned(): boolean {
+    return unassigned;
   }
   function getReferencedByPR(): boolean {
     return referencedByPR;
@@ -327,6 +332,10 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     involvesMe = value;
     writeInvolvesMeFilter("issues", value);
   }
+  function setUnassigned(value: boolean): void {
+    unassigned = value;
+    writeUnassignedFilter("issues", value);
+  }
   function setReferencedByPR(value: boolean): void {
     referencedByPR = value;
     writeIssuePRReferenceFilter(value);
@@ -396,6 +405,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       ...(globalRepo !== undefined && { repo: globalRepo }),
       ...(filterStarred && { starred: true }),
       ...(involvesMe && { involves_me: true }),
+      ...(unassigned && { unassigned: true }),
       ...(referencedByPR && canFilterReferencedByPR() && { referenced_by_pr: true }),
       ...(searchQuery !== undefined && { q: searchQuery }),
       ...params,
@@ -440,6 +450,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         ...(globalRepo !== undefined && { repo: globalRepo }),
         ...(filterStarred && { starred: true }),
         ...(involvesMe && { involves_me: true }),
+        ...(unassigned && { unassigned: true }),
         ...(referencedByPR && canFilterReferencedByPR() && { referenced_by_pr: true }),
         ...(searchQuery !== undefined && { q: searchQuery }),
         ...params,
@@ -1878,6 +1889,8 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     setIssueFilterStarred,
     getInvolvesMe,
     setInvolvesMe,
+    getUnassigned,
+    setUnassigned,
     getReferencedByPR,
     setReferencedByPR,
     canFilterReferencedByPR,

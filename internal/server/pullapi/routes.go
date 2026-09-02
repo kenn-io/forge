@@ -41,6 +41,7 @@ type listPullsInput struct {
 	Kanban     string `query:"kanban"`
 	Starred    bool   `query:"starred"`
 	InvolvesMe bool   `query:"involves_me" doc:"Only include pull requests involving the authenticated viewer."`
+	Unassigned bool   `query:"unassigned" doc:"Only include pull requests with no assignees."`
 	Q          string `query:"q"`
 	Limit      int    `query:"limit"`
 	Offset     int    `query:"offset"`
@@ -358,7 +359,7 @@ type getStackForPROutput = httpapi.BodyOutput[stackContextResponse]
 func (s *Handler) listPulls(ctx context.Context, input *listPullsInput) (*listPullsOutput, error) {
 	query := ListQuery{
 		Repo: input.Repo, State: input.State, Kanban: input.Kanban,
-		Starred: input.Starred, InvolvesMe: input.InvolvesMe, Text: input.Q,
+		Starred: input.Starred, InvolvesMe: input.InvolvesMe, Unassigned: input.Unassigned, Text: input.Q,
 		Limit: input.Limit, Offset: input.Offset,
 	}
 	var rows []MergeRequestResponse
@@ -417,6 +418,7 @@ func (s *Handler) listPullsRouteCore(ctx context.Context, input *listPullsInput)
 		State:             input.State,
 		KanbanState:       input.Kanban,
 		Starred:           input.Starred,
+		Unassigned:        input.Unassigned,
 		Search:            input.Q,
 		Limit:             input.Limit,
 		Offset:            input.Offset,

@@ -9980,6 +9980,13 @@ paths:
           schema:
             description: Only include activity for pull requests and issues involving the authenticated viewer.
             type: boolean
+        - description: Only include activity for pull requests and issues with no assignees.
+          explode: false
+          in: query
+          name: unassigned
+          schema:
+            description: Only include activity for pull requests and issues with no assignees.
+            type: boolean
         - explode: false
           in: query
           name: after
@@ -16953,6 +16960,13 @@ paths:
           schema:
             description: Only include issues involving the authenticated viewer.
             type: boolean
+        - description: Only include issues with no assignees.
+          explode: false
+          in: query
+          name: unassigned
+          schema:
+            description: Only include issues with no assignees.
+            type: boolean
         - description: Only include issues referenced by a pull request.
           explode: false
           in: query
@@ -18758,6 +18772,13 @@ paths:
           name: involves_me
           schema:
             description: Only include pull requests involving the authenticated viewer.
+            type: boolean
+        - description: Only include pull requests with no assignees.
+          explode: false
+          in: query
+          name: unassigned
+          schema:
+            description: Only include pull requests with no assignees.
             type: boolean
         - explode: false
           in: query

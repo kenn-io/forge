@@ -5671,7 +5671,10 @@ type ListActivityParams struct {
 	Author *string `form:"author,omitempty" json:"author,omitempty"`
 
 	// InvolvesMe Only include activity for pull requests and issues involving the authenticated viewer.
-	InvolvesMe        *bool                         `form:"involves_me,omitempty" json:"involves_me,omitempty"`
+	InvolvesMe *bool `form:"involves_me,omitempty" json:"involves_me,omitempty"`
+
+	// Unassigned Only include activity for pull requests and issues with no assignees.
+	Unassigned        *bool                         `form:"unassigned,omitempty" json:"unassigned,omitempty"`
 	After             *string                       `form:"after,omitempty" json:"after,omitempty"`
 	Before            *string                       `form:"before,omitempty" json:"before,omitempty"`
 	AtOrBefore        *string                       `form:"at_or_before,omitempty" json:"at_or_before,omitempty"`
@@ -6077,6 +6080,9 @@ type ListIssuesParams struct {
 	// InvolvesMe Only include issues involving the authenticated viewer.
 	InvolvesMe *bool `form:"involves_me,omitempty" json:"involves_me,omitempty"`
 
+	// Unassigned Only include issues with no assignees.
+	Unassigned *bool `form:"unassigned,omitempty" json:"unassigned,omitempty"`
+
 	// ReferencedByPr Only include issues referenced by a pull request.
 	ReferencedByPr *bool   `form:"referenced_by_pr,omitempty" json:"referenced_by_pr,omitempty"`
 	Q              *string `form:"q,omitempty" json:"q,omitempty"`
@@ -6133,7 +6139,10 @@ type ListPullsParams struct {
 	Starred *bool   `form:"starred,omitempty" json:"starred,omitempty"`
 
 	// InvolvesMe Only include pull requests involving the authenticated viewer.
-	InvolvesMe *bool   `form:"involves_me,omitempty" json:"involves_me,omitempty"`
+	InvolvesMe *bool `form:"involves_me,omitempty" json:"involves_me,omitempty"`
+
+	// Unassigned Only include pull requests with no assignees.
+	Unassigned *bool   `form:"unassigned,omitempty" json:"unassigned,omitempty"`
 	Q          *string `form:"q,omitempty" json:"q,omitempty"`
 	Limit      *int64  `form:"limit,omitempty" json:"limit,omitempty"`
 	Offset     *int64  `form:"offset,omitempty" json:"offset,omitempty"`
@@ -17623,6 +17632,18 @@ func NewListActivityRequest(server string, params *ListActivityParams) (*http.Re
 
 		}
 
+		if params.Unassigned != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "unassigned", *params.Unassigned, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if params.After != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "after", *params.After, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
@@ -28587,6 +28608,18 @@ func NewListIssuesRequest(server string, params *ListIssuesParams) (*http.Reques
 
 		}
 
+		if params.Unassigned != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "unassigned", *params.Unassigned, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if params.ReferencedByPr != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "referenced_by_pr", *params.ReferencedByPr, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
@@ -31358,6 +31391,18 @@ func NewListPullsRequest(server string, params *ListPullsParams) (*http.Request,
 		if params.InvolvesMe != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "involves_me", *params.InvolvesMe, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Unassigned != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "unassigned", *params.Unassigned, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {

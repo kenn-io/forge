@@ -132,6 +132,7 @@ type listActivityInput struct {
 	Search               string   `query:"search"`
 	Author               string   `query:"author" doc:"Exact, case-insensitive pull request or issue author filter."`
 	InvolvesMe           bool     `query:"involves_me" doc:"Only include activity for pull requests and issues involving the authenticated viewer."`
+	Unassigned           bool     `query:"unassigned" doc:"Only include activity for pull requests and issues with no assignees."`
 	After                string   `query:"after"`
 	Before               string   `query:"before"`
 	AtOrBefore           string   `query:"at_or_before"`
@@ -1434,7 +1435,7 @@ func (s *Server) overlayLocalActivityWorkspaces(
 			response.ItemActivity[i].Workspace = &copy
 		}
 	}
-	if input.Projection != "events" && !input.InvolvesMe {
+	if input.Projection != "events" && !input.InvolvesMe && !input.Unassigned {
 		opts, err := localWorkspaceActivityOptions(input, s.now())
 		if err != nil {
 			return activityResponse{}, err
@@ -1452,6 +1453,7 @@ func localWorkspaceActivityOptions(input *listActivityInput, now time.Time) (db.
 		ItemTypes:   input.ItemTypes,
 		Search:      strings.ToLower(strings.TrimSpace(input.Search)),
 		Author:      strings.TrimSpace(input.Author),
+		Unassigned:  input.Unassigned,
 	}
 	if input.Since == "" {
 		defaultSince := now.UTC().AddDate(0, 0, -7)
@@ -1533,6 +1535,7 @@ func (s *Server) listActivityRouteCore(ctx context.Context, input *listActivityI
 		ItemTypes:   input.ItemTypes,
 		Search:      strings.ToLower(strings.TrimSpace(input.Search)),
 		Author:      strings.TrimSpace(input.Author),
+		Unassigned:  input.Unassigned,
 		// Notifications are always on; this only drops notification rows in
 		// SQL when no config is loaded (the nil-config safety guard), so the
 		// safety-cap window is filled by real activity, not stale notifications.
@@ -1698,6 +1701,7 @@ func (s *Server) listActivityRouteCore(ctx context.Context, input *listActivityI
 			Search:                   opts.Search,
 			SearchMatchedSubjectKeys: searchMatchedSubjectKeys,
 			Author:                   opts.Author,
+			Unassigned:               opts.Unassigned,
 			ViewerLogins:             opts.ViewerLogins,
 			HideClosedMerged:         opts.HideClosedMerged,
 			HideBots:                 opts.HideBots,
@@ -1717,7 +1721,7 @@ func (s *Server) listActivityRouteCore(ctx context.Context, input *listActivityI
 		slog.Error("list workspace activity failed", "err", err)
 		return nil, httpapi.Internal("list workspace activity failed")
 	}
-	if opts.ViewerLogins != nil {
+	if opts.ViewerLogins != nil || opts.Unassigned {
 		workspaceSubjectKeys := make([]db.WorkspaceSubjectKey, 0,
 			len(workspaceSnapshot.Subjects)+len(workspaceSnapshot.OwnReferences))
 		for key := range workspaceSnapshot.Subjects {
@@ -1726,21 +1730,40 @@ func (s *Server) listActivityRouteCore(ctx context.Context, input *listActivityI
 		for key := range workspaceSnapshot.OwnReferences {
 			workspaceSubjectKeys = append(workspaceSubjectKeys, key)
 		}
-		involvedSubjects, err := s.db.ListInvolvedWorkspaceSubjectKeys(
-			ctx, opts.ViewerLogins, workspaceSubjectKeys,
-		)
-		if err != nil {
-			slog.Error("list involved workspace subjects failed", "err", err)
-			return nil, httpapi.Internal("list workspace activity failed")
-		}
-		for key := range workspaceSnapshot.Subjects {
-			if _, ok := involvedSubjects[key]; !ok {
-				delete(workspaceSnapshot.Subjects, key)
+		if opts.Unassigned {
+			unassignedSubjects, err := s.db.ListUnassignedWorkspaceSubjectKeys(ctx, workspaceSubjectKeys)
+			if err != nil {
+				slog.Error("list unassigned workspace subjects failed", "err", err)
+				return nil, httpapi.Internal("list workspace activity failed")
+			}
+			for key := range workspaceSnapshot.Subjects {
+				if _, ok := unassignedSubjects[key]; !ok {
+					delete(workspaceSnapshot.Subjects, key)
+				}
+			}
+			for key := range workspaceSnapshot.OwnReferences {
+				if _, ok := unassignedSubjects[key]; !ok {
+					delete(workspaceSnapshot.OwnReferences, key)
+				}
 			}
 		}
-		for key := range workspaceSnapshot.OwnReferences {
-			if _, ok := involvedSubjects[key]; !ok {
-				delete(workspaceSnapshot.OwnReferences, key)
+		if opts.ViewerLogins != nil {
+			involvedSubjects, err := s.db.ListInvolvedWorkspaceSubjectKeys(
+				ctx, opts.ViewerLogins, workspaceSubjectKeys,
+			)
+			if err != nil {
+				slog.Error("list involved workspace subjects failed", "err", err)
+				return nil, httpapi.Internal("list workspace activity failed")
+			}
+			for key := range workspaceSnapshot.Subjects {
+				if _, ok := involvedSubjects[key]; !ok {
+					delete(workspaceSnapshot.Subjects, key)
+				}
+			}
+			for key := range workspaceSnapshot.OwnReferences {
+				if _, ok := involvedSubjects[key]; !ok {
+					delete(workspaceSnapshot.OwnReferences, key)
+				}
 			}
 		}
 	}

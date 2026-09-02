@@ -18,6 +18,7 @@ import { ActivityWorkflow } from "./activity-workflow.js";
 import { showFlash } from "./flash.svelte.js";
 import { ProviderMutations, providerMutationFailureMessage } from "./ordered-mutations.js";
 import { readInvolvesMeFilter, writeInvolvesMeFilter } from "./involves-me-filter.js";
+import { readUnassignedFilter, writeUnassignedFilter } from "./unassigned-filter.js";
 
 export type TimeRange = "24h" | "7d" | "30d" | "90d";
 export type ViewMode = "flat" | "threaded";
@@ -239,6 +240,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   let enabledEvents = $state<Set<string>>(new Set(DEFAULT_EVENT_TYPES));
   let showNotifications = $state(true);
   let involvesMe = $state(readInvolvesMeFilter("activity"));
+  let unassigned = $state(readUnassignedFilter("activity"));
   let initialized = false;
 
   // --- reads ---
@@ -334,6 +336,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   function getInvolvesMe(): boolean {
     return involvesMe;
   }
+  function getUnassigned(): boolean {
+    return unassigned;
+  }
   function isInitialized(): boolean {
     return initialized;
   }
@@ -421,6 +426,11 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     invalidatePagedActivityRequests();
     writeInvolvesMeFilter("activity", value);
   }
+  function setUnassigned(value: boolean): void {
+    unassigned = value;
+    invalidatePagedActivityRequests();
+    writeUnassignedFilter("activity", value);
+  }
   // --- hydration ---
 
   function hydrateDefaults(activity: ActivitySettings): void {
@@ -472,6 +482,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     if (searchQuery) p.search = searchQuery;
     if (authorFilter) p.author = authorFilter;
     if (involvesMe) p.involves_me = true;
+    if (unassigned) p.unassigned = true;
     if (hideClosedMerged) p.hide_closed_merged = true;
     if (hideBots) p.hide_bots = true;
     if (hideDefaultBranchActivity) p.hide_default_branch = true;
@@ -492,6 +503,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       params.search ?? "",
       params.author ?? "",
       params.involves_me ?? false,
+      params.unassigned ?? false,
       params.hide_closed_merged ?? false,
       params.hide_bots ?? false,
       params.hide_default_branch ?? false,
@@ -715,6 +727,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       searchQuery !== undefined ||
       authorFilter !== undefined ||
       involvesMe ||
+      unassigned ||
       hideClosedMerged ||
       hideBots ||
       enabledItemTypes.size !== DEFAULT_ACTIVITY_ITEM_TYPES.length;
@@ -1329,6 +1342,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     getEnabledEvents,
     getShowNotifications,
     getInvolvesMe,
+    getUnassigned,
     isInitialized,
     setActivityFilterTypes,
     setActivitySearch,
@@ -1350,6 +1364,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     setEnabledEvents,
     setShowNotifications,
     setInvolvesMe,
+    setUnassigned,
     hydrateDefaults,
     initializeFromMount,
     loadActivityAuthors,

@@ -88,6 +88,15 @@
     resetPageAndLoad();
   }
 
+  function toggleUnassigned(): void {
+    if (listType === "mrs") {
+      pulls.setUnassigned(!pulls.getUnassigned());
+    } else {
+      issues.setUnassigned(!issues.getUnassigned());
+    }
+    resetPageAndLoad();
+  }
+
   function toggleReferencedByPR(): void {
     issues.setReferencedByPR(!issues.getReferencedByPR());
     resetPageAndLoad();
@@ -403,6 +412,13 @@
         aria-pressed={involvesMe}
         onclick={toggleInvolvesMe}
       >Involves me</button>
+      <button
+        type="button"
+        class="visibility-btn"
+        class:visibility-btn--active={listType === "mrs" ? pulls.getUnassigned() : issues.getUnassigned()}
+        aria-pressed={listType === "mrs" ? pulls.getUnassigned() : issues.getUnassigned()}
+        onclick={toggleUnassigned}
+      >Unassigned</button>
       {#if listType === "mrs"}
         <div class="group-toggle">
           <button

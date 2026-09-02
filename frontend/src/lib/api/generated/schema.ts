@@ -9553,6 +9553,8 @@ export interface operations {
                 author?: string;
                 /** @description Only include activity for pull requests and issues involving the authenticated viewer. */
                 involves_me?: boolean;
+                /** @description Only include activity for pull requests and issues with no assignees. */
+                unassigned?: boolean;
                 after?: string;
                 before?: string;
                 at_or_before?: string;
@@ -15384,6 +15386,8 @@ export interface operations {
                 starred?: boolean;
                 /** @description Only include issues involving the authenticated viewer. */
                 involves_me?: boolean;
+                /** @description Only include issues with no assignees. */
+                unassigned?: boolean;
                 /** @description Only include issues referenced by a pull request. */
                 referenced_by_pr?: boolean;
                 q?: string;
@@ -17113,6 +17117,8 @@ export interface operations {
                 starred?: boolean;
                 /** @description Only include pull requests involving the authenticated viewer. */
                 involves_me?: boolean;
+                /** @description Only include pull requests with no assignees. */
+                unassigned?: boolean;
                 q?: string;
                 limit?: number;
                 offset?: number;

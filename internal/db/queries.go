@@ -2077,6 +2077,9 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 	if opts.Starred {
 		conds = append(conds, "s.number IS NOT NULL")
 	}
+	if opts.Unassigned {
+		conds = append(conds, unassignedCondition("p"))
+	}
 	if opts.Search != "" {
 		cond, condArgs := listSearchCondition("p", opts.Search)
 		if cond != "" {
@@ -3378,6 +3381,9 @@ func (d *DB) ListIssues(
 	}
 	if opts.Starred {
 		conds = append(conds, "s.number IS NOT NULL")
+	}
+	if opts.Unassigned {
+		conds = append(conds, unassignedCondition("i"))
 	}
 	if opts.Search != "" {
 		cond, condArgs := listSearchCondition("i", opts.Search)

@@ -211,6 +211,15 @@
             pulls.loadPulls();
           },
         },
+        {
+          id: "unassigned",
+          label: "Unassigned",
+          active: pulls.getUnassigned(),
+          onSelect: () => {
+            pulls.setUnassigned(!pulls.getUnassigned());
+            pulls.loadPulls();
+          },
+        },
         ...attributeFilterOptions.map((option) => ({
           id: `pr-${option.value}`,
           label: option.label,

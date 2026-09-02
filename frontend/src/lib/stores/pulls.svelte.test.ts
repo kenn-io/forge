@@ -11,6 +11,7 @@ import {
 } from "./pulls.svelte.js";
 import { dismissFlash, getFlash, getFlashes } from "./flash.svelte.js";
 import { involvesMeFilterStorageKey } from "./involves-me-filter.js";
+import { unassignedFilterStorageKey } from "./unassigned-filter.js";
 
 let runtime: OwnedAppRuntime | undefined;
 
@@ -145,6 +146,22 @@ describe("pulls store display order", () => {
       "/pulls",
       expect.objectContaining({
         params: { query: expect.objectContaining({ involves_me: true }) },
+      }),
+    );
+  });
+
+  it("persists and sends the Unassigned filter", async () => {
+    const get = vi.fn(async () => ({ data: [], error: undefined }));
+    const store = createPullsStore({ client: { GET: get } as unknown as GeneratedClient });
+
+    store.setUnassigned(true);
+    await loadPulls(store);
+
+    expect(localStorage.getItem(unassignedFilterStorageKey("pulls"))).toBe("1");
+    expect(get).toHaveBeenCalledWith(
+      "/pulls",
+      expect.objectContaining({
+        params: { query: expect.objectContaining({ unassigned: true }) },
       }),
     );
   });

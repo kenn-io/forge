@@ -854,6 +854,7 @@ type ListMergeRequestsOpts struct {
 	State             string
 	KanbanState       string
 	Starred           bool
+	Unassigned        bool
 	Search            string
 	Limit             int
 	Offset            int
@@ -965,6 +966,7 @@ type ListIssuesOpts struct {
 	RepoFilters       []RepoFilter
 	State             string
 	Starred           bool
+	Unassigned        bool
 	Search            string
 	Assignee          string
 	Limit             int
@@ -1513,6 +1515,9 @@ type ListActivityOpts struct {
 	ItemTypes []string
 	Search    string // title/body search
 	Author    string // exact, case-insensitive PR or issue author filter
+	// Unassigned limits rows to PR and issue subjects with no assignees.
+	// Repository-only rows never match.
+	Unassigned bool
 	// ViewerLogins limits rows to PR and issue subjects involving the
 	// authenticated viewer. Repository-only rows never match.
 	ViewerLogins []RepoViewerLogin
@@ -1566,6 +1571,7 @@ type ListActivitySubjectsOpts struct {
 	// Search. The parent title and author do not necessarily contain that term.
 	SearchMatchedSubjectKeys []WorkspaceSubjectKey
 	Author                   string
+	Unassigned               bool
 	ViewerLogins             []RepoViewerLogin
 	HideClosedMerged         bool
 	HideBots                 bool

@@ -10,6 +10,7 @@ import { dismissFlash, getFlash, getFlashes } from "./flash.svelte.js";
 import { createIssuesStore as createRuntimeIssuesStore, type IssuesStoreOptions } from "./issues.svelte.js";
 import { involvesMeFilterStorageKey } from "./involves-me-filter.js";
 import { issuePRReferenceFilterStorageKey } from "./issue-pr-reference-filter.js";
+import { unassignedFilterStorageKey } from "./unassigned-filter.js";
 
 let runtime: OwnedAppRuntime | undefined;
 
@@ -313,6 +314,23 @@ describe("createIssuesStore", () => {
       "/issues",
       expect.objectContaining({
         params: { query: expect.objectContaining({ involves_me: true }) },
+      }),
+    );
+  });
+
+  it("persists and sends the Unassigned filter", async () => {
+    const get = vi.fn(async () => ({ data: [], error: undefined }));
+    const store = createIssuesStore({ client: { GET: get } as unknown as GeneratedClient });
+
+    store.setUnassigned(true);
+    store.loadIssues();
+    await vi.waitFor(() => expect(store.isIssuesLoading()).toBe(false));
+
+    expect(localStorage.getItem(unassignedFilterStorageKey("issues"))).toBe("1");
+    expect(get).toHaveBeenCalledWith(
+      "/issues",
+      expect.objectContaining({
+        params: { query: expect.objectContaining({ unassigned: true }) },
       }),
     );
   });

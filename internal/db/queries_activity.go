@@ -174,6 +174,9 @@ func listActivityWithQueryer(
 		whereClauses = append(whereClauses, "LOWER(item_author) = LOWER(?)")
 		args = append(args, opts.Author)
 	}
+	if opts.Unassigned {
+		whereClauses = append(whereClauses, activityUnassignedCondition())
+	}
 	if opts.HideClosedMerged {
 		whereClauses = append(whereClauses,
 			"((source = 'ntf' AND (subject_state = '' OR subject_state NOT IN ('closed', 'merged'))) OR "+
@@ -662,6 +665,9 @@ func listActivitySubjectsWithQueryer(
 	if opts.Author != "" {
 		whereClauses = append(whereClauses, "LOWER(item_author) = LOWER(?)")
 		args = append(args, opts.Author)
+	}
+	if opts.Unassigned {
+		whereClauses = append(whereClauses, activityUnassignedCondition())
 	}
 	if opts.HideClosedMerged {
 		whereClauses = append(whereClauses, "item_state NOT IN ('closed', 'merged')")

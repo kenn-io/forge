@@ -44,6 +44,7 @@ type listIssuesInput struct {
 	State          string `query:"state"`
 	Starred        bool   `query:"starred"`
 	InvolvesMe     bool   `query:"involves_me" doc:"Only include issues involving the authenticated viewer."`
+	Unassigned     bool   `query:"unassigned" doc:"Only include issues with no assignees."`
 	ReferencedByPR bool   `query:"referenced_by_pr" doc:"Only include issues referenced by a pull request."`
 	Q              string `query:"q"`
 	Assignee       string `query:"assignee"`

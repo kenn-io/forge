@@ -344,6 +344,7 @@ func setupWrapperServerWithScriptAndDBAndServer(
 }
 
 func TestTmuxWrapperNewSession(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	client, _, record := setupWrapperServer(t)
@@ -402,6 +403,7 @@ func TestTmuxWrapperNewSession(t *testing.T) {
 }
 
 func TestWorkspaceResponseIncludesTmuxWorkingState(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	client, _, record := setupWrapperServer(t)
@@ -466,6 +468,7 @@ func TestWorkspaceResponseIncludesTmuxWorkingState(t *testing.T) {
 }
 
 func TestFilteredActivityIncrementalPollRetainsWorkspaceSubject(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	script, record := writeTmuxRecorder(t)
@@ -584,6 +587,7 @@ func TestFilteredActivityIncrementalPollRetainsWorkspaceSubject(t *testing.T) {
 }
 
 func TestActivityAuthorsIncludeWorkspaceOnlySubject(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	script, record := writeTmuxRecorder(t)
@@ -663,6 +667,7 @@ func TestActivityAuthorsIncludeWorkspaceOnlySubject(t *testing.T) {
 }
 
 func TestFederatedActivityIncludesNodeWorkspaceOnlySubject(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	script, record := writeTmuxRecorder(t)
 	setTmuxRecorderPaneOutput(t, record, "baseline output")
@@ -743,6 +748,7 @@ func TestFederatedActivityIncludesNodeWorkspaceOnlySubject(t *testing.T) {
 }
 
 func TestWorkspaceActivityNumberSearchIncludesEventlessSubject(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	script, record := writeTmuxRecorder(t)

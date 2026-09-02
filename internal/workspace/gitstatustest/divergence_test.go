@@ -1,4 +1,4 @@
-package workspace
+package gitstatustest
 
 import (
 	"os"

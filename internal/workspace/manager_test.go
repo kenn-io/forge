@@ -4806,6 +4806,7 @@ func TestAddWorktreeUniquifiesFallbackBranchWhenSyntheticNameTaken(t *testing.T)
 func TestAddWorktreeFallsBackToDetachedWorktreeWhenBranchNamesExhausted(
 	t *testing.T,
 ) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 

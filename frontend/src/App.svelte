@@ -24,6 +24,7 @@
     buildFocusPullRequestFilesRoute,
     buildFocusPullRequestRoute,
     buildIssueRoute,
+    buildPullRequestFilesRoute,
     buildPullRequestRoute,
     buildRepoBrowserRoute,
     buildRoutedItemRoute,
@@ -671,19 +672,29 @@
     return renderedHeaderHeight > 0 ? `${renderedHeaderHeight}px` : "var(--header-height)";
   }
 
-  function navigateFocusPRDetailTab(
+  function navigatePhonePRDetailTab(
     ref: Parameters<typeof buildFocusPullRequestRoute>[0],
     tab: "conversation" | "files",
-    options?: { replace?: boolean },
+    options: { replace?: boolean } | undefined,
+    family: "focus" | "canonical",
   ): void {
     const path =
-      tab === "files" ? buildFocusPullRequestFilesRoute(ref) : buildFocusPullRequestRoute(ref);
+      family === "focus"
+        ? tab === "files" ? buildFocusPullRequestFilesRoute(ref) : buildFocusPullRequestRoute(ref)
+        : tab === "files" ? buildPullRequestFilesRoute(ref) : buildPullRequestRoute(ref);
     // Replace when the view says this only records which of two simultaneously
     // visible panes the user is in, so moving between them does not fill the
     // Back stack. Either way the entry keeps the phone list origin, so Back
     // from the new tab still returns to the list that opened the item.
     if (options?.replace) replaceUrl(path, carryMobileListOrigin(history.state, "replace"));
     else navigate(path, carryMobileListOrigin(history.state, "push"));
+  }
+
+  // A stack member opened from a phone PR detail is one more entry above the
+  // list, so it carries the origin forward the same way a tab switch does.
+  function navigatePhoneStackMember(ref: PullRequestRouteRef): boolean {
+    navigate(buildFocusPullRequestRoute(ref), carryMobileListOrigin(history.state, "push"));
+    return true;
   }
 
   // Phone-like PR and issue detail routes live inside the phone shell. The
@@ -823,6 +834,16 @@
       onViewWorkspaces: () => navigate("/m/workspaces"),
       phonePresentation: true,
     };
+  }
+
+  // The issue list view takes the same workspace callbacks but has no
+  // phone-presentation switch of its own.
+  function phoneIssueDetailProps(): {
+    onOpenWorkspace?: (workspaceId: string) => void;
+    onViewWorkspaces?: () => void;
+  } {
+    const { onOpenWorkspace, onViewWorkspaces } = phoneDetailProps();
+    return onOpenWorkspace && onViewWorkspaces ? { onOpenWorkspace, onViewWorkspaces } : {};
   }
 
   function useDesktopView(): void {
@@ -1206,7 +1227,8 @@
         <PRListView
           {selectedPR}
           detailTab={r.tab === "files" ? "files" : "conversation"}
-          onDetailTabChange={(tab, options) => navigateFocusPRDetailTab(selectedPR, tab, options)}
+          onDetailTabChange={(tab, options) => navigatePhonePRDetailTab(selectedPR, tab, options, "focus")}
+          onStackMemberNavigate={navigatePhoneStackMember}
           isSidebarCollapsed={true}
           hideSidebar={true}
           routeFamily="focus"
@@ -1224,11 +1246,14 @@
           }}
           isSidebarCollapsed={true}
           hideSidebar={true}
+          {...phoneIssueDetailProps()}
         />
       {:else if r.page === "pulls" && r.selected}
+        {@const canonicalPR = r.selected}
         <PRListView
-          selectedPR={r.selected}
+          selectedPR={canonicalPR}
           detailTab={r.tab === "files" ? "files" : "conversation"}
+          onDetailTabChange={(tab, options) => navigatePhonePRDetailTab(canonicalPR, tab, options, "canonical")}
           isSidebarCollapsed={true}
           hideSidebar={true}
           onStackMemberNavigate={handleResponsiveStackMemberNavigate}
@@ -1245,6 +1270,7 @@
           selectedIssue={r.selected}
           isSidebarCollapsed={true}
           hideSidebar={true}
+          {...phoneIssueDetailProps()}
         />
       {:else if r.page === "issues"}
         <FocusListView

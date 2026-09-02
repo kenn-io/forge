@@ -186,6 +186,7 @@ function renderIssueDetail(
     deferRefresh?: boolean;
     refreshFailure?: string;
     inlineWorkspace?: InlineWorkspaceController | null;
+    onOpenWorkspace?: (workspaceId: string) => void;
     actions?: ActionRegistry;
     runtimeClient?: GeneratedClient;
   } = {},
@@ -243,6 +244,7 @@ function renderIssueDetail(
     platformHost: "github.com",
     repoPath: "acme/widget",
     inlineWorkspace: options.inlineWorkspace ?? null,
+    onOpenWorkspace: options.onOpenWorkspace,
   };
   const result = render(IssueDetailTestHarness, {
     props: {
@@ -984,6 +986,22 @@ describe("IssueDetail inline workspace handoff", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Create Workspace" }));
 
     await vi.waitFor(() => expect(navigate).toHaveBeenCalledWith("/terminal/ws-new"));
+  });
+
+  it("opens a created workspace through the host callback when one is provided", async () => {
+    const apiClient = {
+      GET: vi.fn(),
+      POST: vi.fn(async () => ({ data: { id: "ws-new", status: "provisioning" } })),
+    };
+    const onOpenWorkspace = vi.fn();
+    const { navigate } = renderIssueDetail(issueDetail(), undefined, { onOpenWorkspace }, apiClient);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Create Workspace" }));
+
+    // Phone-like issue routes hand the host the new workspace; the desktop
+    // terminal route is unusable from the phone shell.
+    await vi.waitFor(() => expect(onOpenWorkspace).toHaveBeenCalledWith("ws-new"));
+    expect(navigate).not.toHaveBeenCalledWith("/terminal/ws-new");
   });
 
   it("discards a create failure that lands after the component unmounted (no flash)", async () => {

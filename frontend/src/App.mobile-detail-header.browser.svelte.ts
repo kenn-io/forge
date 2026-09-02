@@ -84,6 +84,25 @@ describe("phone detail header", () => {
     await vi.waitFor(() => expect(window.location.pathname).toBe("/m/issues"), WAIT);
   });
 
+  it("carries the origin through a canonical tab switch so Back returns to the canonical list", async () => {
+    mounted = await mountBrowserApp("/pulls");
+    await vi.waitFor(() => expect(count(".mobile-shell .pull-item")).toBeGreaterThan(0), WAIT);
+
+    document.querySelector<HTMLElement>(".mobile-shell .pull-item")!.click();
+    await vi.waitFor(() => expect(count(".mobile-shell .focus-layout--phone .pull-detail")).toBe(1), WAIT);
+    expect(window.location.pathname).toMatch(/^\/pulls\/github\//);
+    expect((history.state as Record<string, unknown> | null)?.kennForgeMobileListOrigin).toBe("pulls");
+
+    document.querySelector<HTMLElement>("[role='tab'][aria-label='Files changed']")!.click();
+    await vi.waitFor(() => expect(window.location.pathname).toMatch(/\/files$/), WAIT);
+    expect((history.state as Record<string, unknown> | null)?.kennForgeMobileListOrigin).toBe("pulls");
+    expect((history.state as Record<string, unknown> | null)?.kennForgeMobileListBackDepth).toBe(2);
+
+    document.querySelector<HTMLElement>(".mobile-detail-header__back")!.click();
+    await vi.waitFor(() => expect(window.location.pathname).toBe("/pulls"), WAIT);
+    await vi.waitFor(() => expect(count(".mobile-shell .pull-item")).toBeGreaterThan(0), WAIT);
+  });
+
   it("keeps the phone list routes free of the detail header", async () => {
     mounted = await mountBrowserApp("/pulls");
     await vi.waitFor(() => expect(count(".mobile-shell .focus-list")).toBe(1), WAIT);

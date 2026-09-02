@@ -37,6 +37,9 @@ class TerminalDisconnected extends Data.TaggedError("TerminalDisconnected")<{
 const terminalReconnectSchedule = Schedule.exponential("1 second").pipe(
   Schedule.modifyDelay(({ duration }) => Effect.succeed(Duration.min(duration, Duration.seconds(30)))),
 );
+const terminalHeartbeatInterval = Duration.seconds(15);
+const terminalLivenessTimeout = Duration.seconds(45);
+const terminalHeartbeatMessage = '{"type":"heartbeat"}';
 
 function isAttachableInitialStatus(status: string | undefined): boolean {
   return status === undefined || status === "running" || status === "starting";
@@ -70,6 +73,7 @@ export function makeTerminalSessionController(options: TerminalSessionOptions): 
     const inbound = yield* Queue.unbounded<
       { readonly kind: "frame"; readonly data: string | Uint8Array } | { readonly kind: "done" }
     >();
+    const heartbeatReplies = yield* Queue.unbounded<void>();
     let opened = false;
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
@@ -77,6 +81,7 @@ export function makeTerminalSessionController(options: TerminalSessionOptions): 
       }).pipe(
         Effect.andThen(Queue.shutdown(outbound)),
         Effect.andThen(Queue.shutdown(inbound)),
+        Effect.andThen(Queue.shutdown(heartbeatReplies)),
         Effect.andThen(
           Effect.sync(() => {
             connected = false;
@@ -97,7 +102,11 @@ export function makeTerminalSessionController(options: TerminalSessionOptions): 
     const receiveLoop = socket.runRaw(
       (data) => {
         const frame = normalizeTerminalFrame(data);
-        if (frame !== null) Queue.offerUnsafe(inbound, { kind: "frame", data: frame });
+        if (frame === terminalHeartbeatMessage) {
+          Queue.offerUnsafe(heartbeatReplies, undefined);
+        } else if (frame !== null) {
+          Queue.offerUnsafe(inbound, { kind: "frame", data: frame });
+        }
       },
       {
         onOpen: Effect.sync(() => {
@@ -121,8 +130,27 @@ export function makeTerminalSessionController(options: TerminalSessionOptions): 
       yield* messageLoop;
       yield* Fiber.join(receiver);
     });
+    const heartbeatLoop = Effect.forever(
+      Queue.offer(outbound, terminalHeartbeatMessage).pipe(
+        Effect.andThen(
+          Queue.take(heartbeatReplies).pipe(
+            Effect.timeoutOrElse({
+              duration: terminalLivenessTimeout,
+              orElse: () =>
+                Effect.fail(
+                  new TerminalDisconnected({
+                    cause: new Error("terminal heartbeat timed out"),
+                    opened,
+                  }),
+                ),
+            }),
+          ),
+        ),
+        Effect.andThen(Effect.sleep(terminalHeartbeatInterval)),
+      ),
+    );
 
-    return yield* Effect.raceFirst(readLoop, writeLoop).pipe(
+    return yield* Effect.raceAllFirst([readLoop, writeLoop, heartbeatLoop]).pipe(
       Effect.andThen(
         Effect.suspend(() =>
           Effect.fail(new TerminalDisconnected({ cause: new Error("terminal socket closed"), opened })),

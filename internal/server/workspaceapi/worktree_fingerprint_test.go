@@ -153,9 +153,8 @@ func TestBackgroundEnrichmentSkipsGitWhileFingerprintUnchanged(t *testing.T) {
 		require.NoError(handler.Shutdown(shutdownCtx))
 	})
 
-	summary := &db.WorkspaceSummary{Workspace: db.Workspace{
-		ID: "ws-fingerprint", Status: "ready", WorktreePath: worktree,
-	}}
+	summary := &db.WorkspaceSummary{
+		ID: "ws-fingerprint", Status: "ready", WorktreePath: worktree}
 	waitForRefresh := func(after time.Time) workspaceResponse {
 		t.Helper()
 		var resp workspaceResponse

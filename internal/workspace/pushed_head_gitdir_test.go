@@ -134,21 +134,23 @@ func TestGitdirReaderDetachedHead(t *testing.T) {
 }
 
 func TestGitdirReaderBranchWithoutUpstream(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	fixture := newPushedHeadFixture(t)
 	runWorkspaceTestGit(t, fixture.clone, "checkout", "-b", "scratch")
 	reader, fallback := newGitdirReaderForTest()
 	ctx := t.Context()
 
 	upstream, err := reader.UpstreamState(ctx, fixture.clone, "scratch")
-	require.NoError(t, err)
-	assert.Equal(t, upstreamState{}, upstream)
+	require.NoError(err)
+	assert.Equal(upstreamState{}, upstream)
 
 	sha, ref, ok, err := reader.RemoteTrackingSHA(ctx, fixture.clone, "origin", "scratch")
-	require.NoError(t, err)
-	assert.False(t, ok)
-	assert.Empty(t, sha)
-	assert.Equal(t, "refs/remotes/origin/scratch", ref)
-	assert.Equal(t, 0, fallback.calls)
+	require.NoError(err)
+	assert.False(ok)
+	assert.Empty(sha)
+	assert.Equal("refs/remotes/origin/scratch", ref)
+	assert.Equal(0, fallback.calls)
 }
 
 func TestGitdirReaderPackedAndLooseRefs(t *testing.T) {
@@ -214,23 +216,25 @@ func TestGitdirReaderLinkedWorktree(t *testing.T) {
 }
 
 func TestGitdirReaderFallsBackForConfigIncludes(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	fixture := newPushedHeadFixture(t)
 	included := filepath.Join(filepath.Dir(fixture.clone), "included.gitconfig")
-	require.NoError(t, os.WriteFile(included, []byte("[branch \"feature\"]\n\tremote = origin\n\tmerge = refs/heads/feature\n"), 0o600))
+	require.NoError(os.WriteFile(included, []byte("[branch \"feature\"]\n\tremote = origin\n\tmerge = refs/heads/feature\n"), 0o600))
 	runWorkspaceTestGit(t, fixture.clone, "config", "--unset", "branch.feature.remote")
 	runWorkspaceTestGit(t, fixture.clone, "config", "--unset", "branch.feature.merge")
 	runWorkspaceTestGit(t, fixture.clone, "config", "include.path", included)
 	reader, fallback := newGitdirReaderForTest()
 
 	upstream, err := reader.UpstreamState(t.Context(), fixture.clone, "feature")
-	require.NoError(t, err)
-	assert.Equal(t, upstreamState{
+	require.NoError(err)
+	assert.Equal(upstreamState{
 		branchName:  "feature",
 		remoteName:  "origin",
 		remoteURL:   fixture.remote,
 		hasTracking: true,
 	}, upstream, "included config is only visible through git")
-	assert.Equal(t, 1, fallback.calls)
+	assert.Equal(1, fallback.calls)
 }
 
 // TestPushedHeadObserverPassSpawnsNoGitWhenUnchanged runs the real observer

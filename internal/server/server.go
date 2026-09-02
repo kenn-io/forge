@@ -1007,7 +1007,8 @@ func newServer(
 		Broadcast: func(event fleetapi.Event) uint64 {
 			return s.hub.Broadcast(Event{Type: event.Type, Data: event.Data})
 		},
-		Generation: s.hub.Generation,
+		Generation:      s.hub.Generation,
+		SubscriberCount: s.hub.SubscriberCount,
 		WorkspaceSnapshot: func(ctx context.Context) (workspaceapi.FleetSnapshot, error) {
 			if s.workspaceAPI == nil {
 				return workspaceapi.FleetSnapshot{}, nil

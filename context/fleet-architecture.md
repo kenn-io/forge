@@ -89,6 +89,41 @@ or remote workspace and session operations.
   redirects, authentication challenges, or connection-nominated headers
   (`internal/server/fleetapi/fleet_proxy.go::Handler.serveRemoteFleetRESTProxy`).
 
+## Background Monitors
+
+The local snapshot never does git or tmux I/O on the read path; three
+Fleet-owned monitors keep the store and caches it reads fresh. They are
+change-driven and idle-cheap:
+
+- Every monitor pass is gated on live event-stream subscribers. With no
+  subscriber a wake-up records a skip and re-checks on a short idle probe, so
+  the first client after an idle stretch is served within seconds rather than
+  a full interval; a nil subscriber source means always run
+  (`internal/server/fleetapi/fleet_monitor_gate.go::runFleetMonitorLoop`,
+  `internal/server/fleetapi/handler.go::Deps.SubscriberCount`).
+- Worktree discovery and worktree stats fingerprint the git directory (sizes
+  and mtimes of `HEAD`, `index`, `packed-refs`, the `refs/` tree, and for
+  discovery `config` and `worktrees/`) without spawning git, and re-run their
+  git commands and database writes only when the fingerprint moved. A checkout
+  whose fingerprint cannot be computed always takes the full path so it is
+  marked stale; a failed pass drops the fingerprint so recovery is re-inspected
+  (`internal/server/fleetapi/fleet_git_fingerprint.go::worktreeStatsFingerprint`,
+  `internal/server/fleetapi/fleet_worktree_discovery.go::fleetWorktreeDiscoverer.refreshProjectIfChanged`,
+  `internal/server/fleetapi/fleet_worktree_stats.go::fleetWorktreeStatsSampler.sampleTargets`).
+- Unstaged edits and untracked files do not touch the git directory, so the
+  background stats pass does not see them. The on-demand refresh paths
+  (`RefreshWorktreeStats`, `RefreshProjectInventory`) ignore the fingerprint
+  and always measure; lifecycle mutations that change the working tree must
+  keep calling them.
+- Every discovery git spawn goes through `internal/procutil`; the stats probes
+  already did.
+- The tmux monitor runs one pass per interval: `list-sessions` always, then
+  `list-windows` only when the session listing is not byte-identical to the
+  previous pass or the window refresh bound elapsed, then `list-panes` plus
+  process metrics only when managed sessions exist. Process metrics query the
+  pane PIDs and their descendants (`ps -p`, `pgrep -P` per generation) rather
+  than the whole host (`internal/server/fleetapi/fleet_tmux_monitor.go::probeFleetProcessTrees`).
+
 ## Transport Trust Boundary
 
 - Supported fleets expose every Forge peer only through operator-controlled

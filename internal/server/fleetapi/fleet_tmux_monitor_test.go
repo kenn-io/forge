@@ -96,7 +96,7 @@ func TestFleetTmuxMonitorKeepsPreviousInventorySample(t *testing.T) {
 	secondAt := firstAt.Add(4 * time.Second)
 	mon := newFleetTmuxMonitor([]string{"tmux"}, false, func() time.Time {
 		return secondAt
-	})
+	}, nil)
 	mon.recordInventorySample(fleetTmuxInventorySample{
 		PolledAt: firstAt,
 		Sessions: map[string]fleetTmuxLiveSession{
@@ -156,7 +156,7 @@ exit 0
 			require := require.New(t)
 			assert := assert.New(t)
 			mon := newFleetTmuxMonitor(
-				[]string{writeFleetTmuxMonitorScript(t, tc.script)}, false, nil,
+				[]string{writeFleetTmuxMonitorScript(t, tc.script)}, false, nil, nil,
 			)
 			mon.probeTimeout = 5 * time.Second
 
@@ -172,7 +172,7 @@ exit 0
 }
 
 func TestFleetTmuxMonitorReportsFirstInventoryError(t *testing.T) {
-	mon := newFleetTmuxMonitor([]string{"tmux"}, false, nil)
+	mon := newFleetTmuxMonitor([]string{"tmux"}, false, nil, nil)
 
 	mon.recordInventorySample(fleetTmuxInventorySample{
 		Error:     "tmux exploded",
@@ -200,9 +200,11 @@ func TestParseFleetTmuxMetricsAggregatesPaneDescendants(t *testing.T) {
 		"301 300 2.0 2048 sh\n" +
 		"200 1 99.0 99999 vim\n"
 
-	got := parseFleetTmuxMetrics(panes, processes, map[string]struct{}{
-		"managed-1": {},
-	}, sampledAt)
+	got := aggregateFleetTmuxMetrics(
+		parseFleetTmuxPanes(panes, map[string]struct{}{"managed-1": {}}),
+		parseFleetProcessTable(processes),
+		sampledAt,
+	)
 
 	require.Len(got, 1)
 	metric := got["managed-1"]
@@ -227,9 +229,11 @@ func TestParseFleetTmuxMetricsUsesAggregateCPUForActivity(t *testing.T) {
 		"100 1 0.06 1024 codex\n" +
 		"200 1 0.06 1024 helper\n"
 
-	got := parseFleetTmuxMetrics(panes, processes, map[string]struct{}{
-		"managed-aggregate": {},
-	}, sampledAt)
+	got := aggregateFleetTmuxMetrics(
+		parseFleetTmuxPanes(panes, map[string]struct{}{"managed-aggregate": {}}),
+		parseFleetProcessTable(processes),
+		sampledAt,
+	)
 
 	require.Len(got, 1)
 	metric := got["managed-aggregate"]

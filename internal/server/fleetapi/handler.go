@@ -57,6 +57,10 @@ type Deps struct {
 	PersistHubBinding           func(context.Context, config.FleetHub) error
 	RemoveMember                func(context.Context, string) error
 	CancelEventStreams          func(string)
+	// SubscriberCount reports how many event-stream clients are connected.
+	// The fleet background monitors skip their expensive passes while it is
+	// zero; nil means always run.
+	SubscriberCount func() int
 }
 
 // Handler implements Fleet routes, caches, transports, and workers.
@@ -142,14 +146,20 @@ func New(deps Deps) *Handler {
 		h.federationHTTPClient = newFederationHTTPClient()
 	}
 	h.memberClients = make(map[string]federationMemberClients)
+	var hasSubscribers func() bool
+	if deps.SubscriberCount != nil {
+		hasSubscribers = func() bool { return deps.SubscriberCount() > 0 }
+	}
 	h.fleetTmuxMonitor = newFleetTmuxMonitor(
 		deps.Config.TmuxCommand,
 		deps.Config.Fleet.Sessions.IncludeUnmanagedDetails,
 		nil,
+		hasSubscribers,
 	)
-	h.fleetWorktreeDiscoverer = newFleetWorktreeDiscoverer(deps.DB)
+	h.fleetWorktreeDiscoverer = newFleetWorktreeDiscoverer(deps.DB, hasSubscribers)
 	h.fleetWorktreeStatsSampler = newFleetWorktreeStatsSampler(
 		deps.DB, deps.WorkspaceStatsSnapshot, h.notifyWorktreeStatsChanged,
+		hasSubscribers,
 	)
 	h.fleetPlatformAuthMonitor = newFleetPlatformAuthMonitor(
 		h.snapshotPlatformAuthConfig,

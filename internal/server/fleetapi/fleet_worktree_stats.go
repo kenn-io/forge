@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"sync"
 	"time"
 
 	"go.kenn.io/forge/internal/db"
@@ -15,7 +16,9 @@ import (
 // fleetWorktreeStatsInterval is how often the sampler re-measures every
 // worktree's git stats. It is longer than the discovery interval because the
 // work is heavier (a diff plus an ahead/behind probe per worktree) and the
-// numbers drift more slowly than the structural worktree set.
+// numbers drift more slowly than the structural worktree set. A worktree whose
+// git-directory fingerprint has not moved since its last sample costs only the
+// stat calls behind that fingerprint.
 const fleetWorktreeStatsInterval = 30 * time.Second
 
 // fleetWorktreeStatsSampler keeps live git stats fresh for every worktree the
@@ -31,39 +34,40 @@ type fleetWorktreeStatsSampler struct {
 	// payload-free signal — a refetch hint — not a stats carrier. May be nil.
 	onChanged         func()
 	workspaceSnapshot func(context.Context) (workspaceapi.FleetSnapshot, error)
+	gate              *fleetMonitorGate
+
+	// fingerprints remembers, per normalized worktree path, the git-directory
+	// fingerprint observed by the last sample that reached the store. A
+	// background pass whose fingerprint still matches skips the git probes and
+	// the upsert; the entry is dropped when the path leaves the target set.
+	fingerprintsMu sync.Mutex
+	fingerprints   map[string]string
 }
 
 func newFleetWorktreeStatsSampler(
 	database *db.DB,
 	workspaceSnapshot func(context.Context) (workspaceapi.FleetSnapshot, error),
 	onChanged func(),
+	hasSubscribers func() bool,
 ) *fleetWorktreeStatsSampler {
 	return &fleetWorktreeStatsSampler{
 		db:                database,
 		interval:          fleetWorktreeStatsInterval,
 		onChanged:         onChanged,
 		workspaceSnapshot: workspaceSnapshot,
+		gate:              newFleetMonitorGate("worktree stats", hasSubscribers),
+		fingerprints:      map[string]string{},
 	}
 }
 
-// run drives sampling passes until ctx is cancelled, starting with an immediate
-// pass so a freshly started daemon reports stats without waiting a full
-// interval.
+// run drives sampling passes until ctx is cancelled. The first pass runs as
+// soon as a client is subscribed so a freshly started daemon reports stats
+// without waiting a full interval.
 func (s *fleetWorktreeStatsSampler) run(ctx context.Context) {
 	if s == nil || s.db == nil {
 		return
 	}
-	s.runOnce(ctx)
-	ticker := time.NewTicker(s.interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			s.runOnce(ctx)
-		}
-	}
+	runFleetMonitorLoop(ctx, s.interval, s.gate, s.runOnce)
 }
 
 // worktreeStatsTarget is one worktree to sample: its normalized path and the
@@ -88,6 +92,7 @@ func (s *fleetWorktreeStatsSampler) runOnce(ctx context.Context) {
 	if err := s.db.PruneWorktreeStats(ctx, keep); err != nil {
 		slog.Warn("fleet worktree stats: prune failed", "err", err)
 	}
+	s.pruneFingerprints(keep)
 	if anyChanged {
 		s.fireChanged()
 	}
@@ -95,8 +100,9 @@ func (s *fleetWorktreeStatsSampler) runOnce(ctx context.Context) {
 
 // sampleTargets measures and upserts each target's git stats, reporting whether
 // any sample's counts changed and the set of paths to keep (for pruning). A
-// target whose path is gone or whose probe fails leaves its prior sample in
-// place and does not count as a change.
+// target whose git-directory fingerprint matches its last stored sample is
+// skipped outright. A target whose path is gone or whose probe fails leaves its
+// prior sample in place and does not count as a change.
 func (s *fleetWorktreeStatsSampler) sampleTargets(
 	ctx context.Context, targets []worktreeStatsTarget,
 ) (anyChanged bool, keep []string) {
@@ -104,19 +110,75 @@ func (s *fleetWorktreeStatsSampler) sampleTargets(
 	keep = make([]string, 0, len(targets))
 	for _, target := range targets {
 		keep = append(keep, target.path)
-		stats, ok := sampleWorktreeGitStats(ctx, target.path, target.defaultBranch)
+		fingerprint, fingerprintErr := worktreeStatsFingerprint(target.path)
+		if fingerprintErr == nil && s.fingerprintMatches(target.path, fingerprint) {
+			continue
+		}
+		changed, ok := s.sampleAndStore(ctx, target.path, target.defaultBranch, now)
 		if !ok {
 			continue
 		}
-		changed, err := s.db.UpsertWorktreeStats(ctx, target.path, stats, now)
-		if err != nil {
-			slog.Warn("fleet worktree stats: upsert failed",
-				"path", target.path, "err", err)
-			continue
+		if fingerprintErr == nil {
+			s.rememberFingerprint(target.path, fingerprint)
 		}
 		anyChanged = anyChanged || changed
 	}
 	return anyChanged, keep
+}
+
+// sampleAndStore measures one worktree and upserts the result. ok is false
+// when the sample could not be taken or stored, in which case any prior row
+// stays untouched.
+func (s *fleetWorktreeStatsSampler) sampleAndStore(
+	ctx context.Context, path, defaultBranch string, now time.Time,
+) (changed, ok bool) {
+	s.forgetFingerprint(path)
+	stats, ok := sampleWorktreeGitStats(ctx, path, defaultBranch)
+	if !ok {
+		return false, false
+	}
+	changed, err := s.db.UpsertWorktreeStats(ctx, path, stats, now)
+	if err != nil {
+		slog.Warn("fleet worktree stats: upsert failed", "path", path, "err", err)
+		return false, false
+	}
+	return changed, true
+}
+
+func (s *fleetWorktreeStatsSampler) fingerprintMatches(path, fingerprint string) bool {
+	s.fingerprintsMu.Lock()
+	defer s.fingerprintsMu.Unlock()
+	previous, seen := s.fingerprints[path]
+	return seen && previous == fingerprint
+}
+
+func (s *fleetWorktreeStatsSampler) rememberFingerprint(path, fingerprint string) {
+	s.fingerprintsMu.Lock()
+	defer s.fingerprintsMu.Unlock()
+	if s.fingerprints == nil {
+		s.fingerprints = map[string]string{}
+	}
+	s.fingerprints[path] = fingerprint
+}
+
+func (s *fleetWorktreeStatsSampler) forgetFingerprint(path string) {
+	s.fingerprintsMu.Lock()
+	defer s.fingerprintsMu.Unlock()
+	delete(s.fingerprints, path)
+}
+
+func (s *fleetWorktreeStatsSampler) pruneFingerprints(keep []string) {
+	s.fingerprintsMu.Lock()
+	defer s.fingerprintsMu.Unlock()
+	live := make(map[string]struct{}, len(keep))
+	for _, path := range keep {
+		live[path] = struct{}{}
+	}
+	for path := range s.fingerprints {
+		if _, ok := live[path]; !ok {
+			delete(s.fingerprints, path)
+		}
+	}
 }
 
 // fireChanged invokes the onChanged refetch hint if one is registered. It is the
@@ -245,13 +307,14 @@ func sampleWorktreeGitStats(
 }
 
 // refreshWorktreeStats re-measures a single worktree's git stats and upserts
-// them immediately, bypassing the interval wait. It lets a lifecycle mutation
-// (or an on-demand refresh) make the fleet snapshot's diff/sync fields coherent
-// for the affected worktree without a full sampler pass; the background sampler
-// remains the eventual-consistency fallback. It mirrors runOnce's per-target
-// work — a path that is gone or whose diff probe fails leaves any prior sample
-// in place — and normalizes the path so the upserted row matches the snapshot
-// overlay's lookup key.
+// them immediately, bypassing the interval wait and the change fingerprint. It
+// lets a lifecycle mutation (or an on-demand refresh) make the fleet snapshot's
+// diff/sync fields coherent for the affected worktree without a full sampler
+// pass, including working-tree edits the fingerprint cannot see; the
+// background sampler remains the eventual-consistency fallback. It mirrors
+// runOnce's per-target work — a path that is gone or whose diff probe fails
+// leaves any prior sample in place — and normalizes the path so the upserted
+// row matches the snapshot overlay's lookup key.
 func (s *fleetWorktreeStatsSampler) refreshWorktreeStats(
 	ctx context.Context, path, defaultBranch string,
 ) error {
@@ -262,6 +325,8 @@ func (s *fleetWorktreeStatsSampler) refreshWorktreeStats(
 	if path == "" {
 		return nil
 	}
+	fingerprint, fingerprintErr := worktreeStatsFingerprint(path)
+	s.forgetFingerprint(path)
 	stats, ok := sampleWorktreeGitStats(ctx, path, defaultBranch)
 	if !ok {
 		return nil
@@ -269,6 +334,9 @@ func (s *fleetWorktreeStatsSampler) refreshWorktreeStats(
 	changed, err := s.db.UpsertWorktreeStats(ctx, path, stats, time.Now())
 	if err != nil {
 		return err
+	}
+	if fingerprintErr == nil {
+		s.rememberFingerprint(path, fingerprint)
 	}
 	if changed {
 		s.fireChanged()

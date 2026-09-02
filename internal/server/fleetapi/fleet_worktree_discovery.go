@@ -6,9 +6,11 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/procutil"
 	gitcmd "go.kenn.io/kit/git/cmd"
 	gitworktree "go.kenn.io/kit/git/worktree"
 )
@@ -16,6 +18,8 @@ import (
 // fleetWorktreeDiscoveryInterval is how often the discoverer re-inspects every
 // registered project's checkout. It is short because the result feeds the live
 // fleet snapshot; a missing or newly added worktree should surface quickly.
+// Each pass is cheap for an unchanged project: it stats the git directory and
+// only spawns git when that fingerprint moved.
 const fleetWorktreeDiscoveryInterval = 15 * time.Second
 
 // fleetWorktreeDiscoverer keeps the project registry's on-disk facts fresh.
@@ -28,56 +32,108 @@ const fleetWorktreeDiscoveryInterval = 15 * time.Second
 type fleetWorktreeDiscoverer struct {
 	db       *db.DB
 	interval time.Duration
+	gate     *fleetMonitorGate
+
+	// fingerprints remembers, per project ID, the git-directory fingerprint
+	// observed by the last successful reconcile. A background pass whose
+	// fingerprint still matches skips both the git spawns and the database
+	// write; a failed or stale-marking pass drops the entry so recovery is
+	// re-inspected in full.
+	fingerprintsMu sync.Mutex
+	fingerprints   map[string]string
 }
 
-func newFleetWorktreeDiscoverer(database *db.DB) *fleetWorktreeDiscoverer {
+func newFleetWorktreeDiscoverer(
+	database *db.DB, hasSubscribers func() bool,
+) *fleetWorktreeDiscoverer {
 	return &fleetWorktreeDiscoverer{
-		db:       database,
-		interval: fleetWorktreeDiscoveryInterval,
+		db:           database,
+		interval:     fleetWorktreeDiscoveryInterval,
+		gate:         newFleetMonitorGate("worktree discovery", hasSubscribers),
+		fingerprints: map[string]string{},
 	}
 }
 
-// run drives discovery passes until ctx is cancelled, starting with an
-// immediate pass so a freshly started daemon does not wait a full interval
-// before its worktrees appear.
+// run drives discovery passes until ctx is cancelled. The first pass runs as
+// soon as a client is subscribed so a freshly started daemon does not wait a
+// full interval before its worktrees appear.
 func (d *fleetWorktreeDiscoverer) run(ctx context.Context) {
 	if d == nil || d.db == nil {
 		return
 	}
-	d.runOnce(ctx)
-	ticker := time.NewTicker(d.interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			d.runOnce(ctx)
-		}
-	}
+	runFleetMonitorLoop(ctx, d.interval, d.gate, d.runOnce)
 }
 
-// runOnce reconciles every registered project once.
+// runOnce reconciles every registered project whose git directory changed
+// since its last successful reconcile, and prunes fingerprints of projects
+// that left the registry.
 func (d *fleetWorktreeDiscoverer) runOnce(ctx context.Context) {
 	projects, err := d.db.ListProjects(ctx)
 	if err != nil {
 		slog.Warn("fleet worktree discovery: list projects failed", "err", err)
 		return
 	}
+	keep := make(map[string]struct{}, len(projects))
 	for i := range projects {
-		d.refreshProject(ctx, projects[i].ID, projects[i].LocalPath)
+		keep[projects[i].ID] = struct{}{}
+		d.refreshProjectIfChanged(ctx, projects[i].ID, projects[i].LocalPath)
 	}
+	d.fingerprintsMu.Lock()
+	for id := range d.fingerprints {
+		if _, ok := keep[id]; !ok {
+			delete(d.fingerprints, id)
+		}
+	}
+	d.fingerprintsMu.Unlock()
 }
 
-// refreshProject inspects one project and reconciles the result. A checkout
-// that cannot be inspected (moved or deleted) is marked stale rather than
-// dropped, so a temporarily missing repository recovers on a later pass.
+// refreshProjectIfChanged is the background variant of refreshProject: it
+// inspects the project only when its git-directory fingerprint differs from
+// the one recorded by the last successful reconcile. A checkout whose
+// fingerprint cannot be computed (moved or deleted) always goes through the
+// full path so it is marked stale.
+func (d *fleetWorktreeDiscoverer) refreshProjectIfChanged(
+	ctx context.Context, projectID, localPath string,
+) {
+	fingerprint, err := projectDiscoveryFingerprint(normPath(localPath))
+	if err == nil {
+		d.fingerprintsMu.Lock()
+		previous, seen := d.fingerprints[projectID]
+		d.fingerprintsMu.Unlock()
+		if seen && previous == fingerprint {
+			return
+		}
+	}
+	d.reconcileProject(ctx, projectID, localPath, fingerprint, err == nil)
+}
+
+// refreshProject inspects one project and reconciles the result
+// unconditionally. It is the on-demand path used after registration and
+// lifecycle mutations, so it never consults the change fingerprint; it does
+// record the fingerprint it observed so the next background pass can skip.
 func (d *fleetWorktreeDiscoverer) refreshProject(
 	ctx context.Context, projectID, localPath string,
 ) {
 	if d == nil || d.db == nil {
 		return
 	}
+	fingerprint, err := projectDiscoveryFingerprint(normPath(localPath))
+	d.reconcileProject(ctx, projectID, localPath, fingerprint, err == nil)
+}
+
+// reconcileProject runs the git inspection and writes the result. A checkout
+// that cannot be inspected (moved or deleted) is marked stale rather than
+// dropped, so a temporarily missing repository recovers on a later pass. The
+// fingerprint is remembered only after a successful reconcile; the
+// fingerprint is taken before inspection so a change that lands mid-pass
+// shows up as a mismatch next time instead of being lost.
+func (d *fleetWorktreeDiscoverer) reconcileProject(
+	ctx context.Context, projectID, localPath, fingerprint string, haveFingerprint bool,
+) {
+	if d == nil || d.db == nil {
+		return
+	}
+	d.forgetFingerprint(projectID)
 	inv, err := discoverProjectInventory(ctx, localPath)
 	if err != nil {
 		slog.Warn("fleet worktree discovery: inspect failed, marking stale",
@@ -91,7 +147,19 @@ func (d *fleetWorktreeDiscoverer) refreshProject(
 	if err := d.db.ReconcileProjectInventory(ctx, projectID, inv, time.Now()); err != nil {
 		slog.Warn("fleet worktree discovery: reconcile failed",
 			"project_id", projectID, "err", err)
+		return
 	}
+	if haveFingerprint {
+		d.fingerprintsMu.Lock()
+		d.fingerprints[projectID] = fingerprint
+		d.fingerprintsMu.Unlock()
+	}
+}
+
+func (d *fleetWorktreeDiscoverer) forgetFingerprint(projectID string) {
+	d.fingerprintsMu.Lock()
+	delete(d.fingerprints, projectID)
+	d.fingerprintsMu.Unlock()
 }
 
 // discoverProjectInventory inspects a project's git checkout and returns its
@@ -228,8 +296,12 @@ func gitSymbolicRef(ctx context.Context, dir, ref string) string {
 	return strings.TrimSpace(out)
 }
 
+// gitDiscoveryOutput runs one git command for discovery through the shared
+// subprocess limiter, so a registry of many projects cannot fan out past the
+// host process budget the rest of the daemon respects.
 func gitDiscoveryOutput(ctx context.Context, dir string, args ...string) (string, error) {
-	out, err := gitcmd.New().Output(ctx, dir, args...)
+	cmd := gitcmd.New().Command(ctx, dir, args...)
+	out, err := procutil.Output(ctx, cmd, "fleet worktree discovery")
 	if err != nil {
 		return "", err
 	}

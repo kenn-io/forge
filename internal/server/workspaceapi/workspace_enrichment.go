@@ -17,13 +17,17 @@ const (
 	// clients no longer keep every workspace on a git probe cycle.
 	workspaceEnrichmentTTL = 30 * time.Second
 	// workspaceEnrichmentForcedProbeInterval bounds how long an unchanged
-	// fingerprint may suppress git. Worktree edits that never touch the
-	// index are invisible to the fingerprint, so dirty state still
-	// converges within this interval.
+	// fingerprint may suppress git: the first refresh a read requests after
+	// it elapses runs git again. Worktree edits that never touch the index
+	// are invisible to the fingerprint, so this is how dirty state from
+	// them is eventually observed. No timer probes an unread workspace.
 	workspaceEnrichmentForcedProbeInterval = 3 * time.Minute
-	// workspaceTmuxEnrichmentTTL is the separate, slower cadence for tmux
-	// activity probes; the tracker's own sample interval bounds it further.
-	workspaceTmuxEnrichmentTTL        = 15 * time.Second
+	// workspaceTmuxEnrichmentTTL is the tmux activity cadence, kept apart
+	// from the git cadence. Activity and workspace reads promise that
+	// changed tmux output shows up within a few seconds, so it stays short;
+	// hidden tabs stop requesting it, and the tracker's own sample interval
+	// bounds the actual tmux spawns.
+	workspaceTmuxEnrichmentTTL        = 5 * time.Second
 	workspaceEnrichmentRefreshTimeout = 2 * time.Second
 	workspaceTmuxPruneInterval        = 30 * time.Second
 	workspaceTmuxRecencyMinInterval   = time.Minute
@@ -289,6 +293,13 @@ func (entry workspaceEnrichmentCacheEntry) componentsDue(now time.Time) (tmux, d
 	divergence = componentDue(
 		entry.divergenceAttemptAt, entry.divergenceRefreshedAt, workspaceEnrichmentTTL,
 	)
+	// An elapsed forced interval makes divergence due regardless of a recent
+	// fingerprint-only re-validation, so a read just past the boundary does
+	// not queue tmux-only work and delay git by another TTL.
+	if entry.hasDivergence && !entry.divergenceProbedAt.IsZero() &&
+		now.Sub(entry.divergenceProbedAt) >= workspaceEnrichmentForcedProbeInterval {
+		divergence = true
+	}
 	return tmux, divergence
 }
 

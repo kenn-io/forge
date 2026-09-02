@@ -208,7 +208,7 @@ embedder protocol for arbitrary host state.
   partial results remain pending or stale
   (`internal/server/workspaceapi/workspace_enrichment.go::workspaceResponseFromEnrichmentCacheEntry`).
 - Divergence and tmux freshness use only their own attempt and refresh times
-  against separate cadences (30s divergence, 15s tmux); an unattempted
+  against separate cadences (30s divergence, 5s tmux); an unattempted
   component remains immediately due after unrelated component work
   (`internal/server/workspaceapi/workspace_enrichment.go::componentsDue`).
 - Background divergence refreshes re-validate from a stat-only git-directory

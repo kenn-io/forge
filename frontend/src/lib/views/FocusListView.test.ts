@@ -169,6 +169,39 @@ describe("FocusListView search", () => {
     expect(screen.getByLabelText<HTMLInputElement>("Search PRs").value).toBe("owned by me");
   });
 
+  it("stops polling while the document is hidden and refreshes at once when it is shown", async () => {
+    let visibilityState: DocumentVisibilityState = "visible";
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => visibilityState,
+    });
+    const setVisibility = (state: DocumentVisibilityState) => {
+      visibilityState = state;
+      document.dispatchEvent(new Event("visibilitychange"));
+    };
+    try {
+      const view = render(FocusListView, { props: { listType: "mrs", repo: "acme/one" } });
+      expect(loadPulls).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(loadPulls).toHaveBeenCalledTimes(2);
+
+      setVisibility("hidden");
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(loadPulls).toHaveBeenCalledTimes(2);
+
+      setVisibility("visible");
+      await vi.advanceTimersByTimeAsync(0);
+      expect(loadPulls).toHaveBeenCalledTimes(3);
+
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(loadPulls).toHaveBeenCalledTimes(4);
+      view.unmount();
+    } finally {
+      visibilityState = "visible";
+    }
+  });
+
   it("publishes one debounced search without restarting polling ownership", async () => {
     const view = render(FocusListView, { props: { listType: "mrs", repo: "acme/one" } });
     expect(loadPulls).toHaveBeenCalledTimes(1);

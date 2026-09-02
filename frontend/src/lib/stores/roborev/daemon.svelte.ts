@@ -1,4 +1,5 @@
-import { Duration, Effect, Option, Schedule } from "effect";
+import { Duration, Effect, Option } from "effect";
+import { pollWhileVisible } from "../../effect/poll-while-visible.js";
 import type { AppRuntime } from "../../app/runtime.js";
 import { TransientTransportError } from "../../api/effect-errors.js";
 import type { RoborevClient } from "../../api/roborev/client.js";
@@ -109,13 +110,10 @@ export function createDaemonStore(opts: DaemonStoreOptions) {
     }
   });
 
-  const pollingSchedule = Schedule.forever.pipe(
-    Schedule.addDelay(() =>
-      Effect.succeed(Duration.millis(available ? AVAILABLE_POLL_INTERVAL_MS : UNAVAILABLE_POLL_INTERVAL_MS)),
-    ),
+  const waitForNextPoll = Effect.suspend(() =>
+    Effect.sleep(Duration.millis(available ? AVAILABLE_POLL_INTERVAL_MS : UNAVAILABLE_POLL_INTERVAL_MS)),
   );
-  const pollingEffect = pollOnce.pipe(
-    Effect.repeat(pollingSchedule),
+  const pollingEffect = pollWhileVisible(pollOnce, waitForNextPoll, { immediate: true }).pipe(
     Effect.ensuring(
       Effect.sync(() => {
         loading = false;

@@ -287,3 +287,25 @@ func TestChangeAwareRefreshLeavesFreshDivergenceUntouched(t *testing.T) {
 	require.NotNil(entry.response.CommitsAhead)
 	assert.Equal(3, *entry.response.CommitsAhead)
 }
+
+func TestElapsedForcedIntervalMakesDivergenceDueDespiteRecentRevalidation(t *testing.T) {
+	assert := assert.New(t)
+	now := time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC)
+	entry := workspaceEnrichmentCacheEntry{
+		hasDivergence: true,
+		hasTmux:       true,
+		// Git last ran just past the forced interval; a fingerprint-only
+		// re-validation happened moments ago.
+		divergenceProbedAt:    now.Add(-workspaceEnrichmentForcedProbeInterval - time.Second),
+		divergenceRefreshedAt: now.Add(-time.Second),
+		divergenceAttemptAt:   now.Add(-time.Second),
+		tmuxRefreshedAt:       now.Add(-workspaceTmuxEnrichmentTTL),
+		tmuxAttemptAt:         now.Add(-workspaceTmuxEnrichmentTTL),
+	}
+
+	tmuxDue, divergenceDue := entry.componentsDue(now)
+
+	assert.True(tmuxDue)
+	assert.True(divergenceDue, "the forced interval must make git due even after a recent re-validation")
+	assert.False(entry.gitProbeSkippable("same", now), "an elapsed forced interval must not be skippable")
+}

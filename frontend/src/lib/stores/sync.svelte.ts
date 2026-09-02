@@ -1,4 +1,5 @@
 import { Deferred, Duration, Effect, Option } from "effect";
+import { pollWhileVisible } from "../effect/poll-while-visible.js";
 import type { AppRuntime } from "../app/runtime.js";
 import { executeGeneratedApiRequest, type GeneratedApi } from "../api/generated-api.js";
 import { retryIdempotentRead } from "../api/retry-policy.js";
@@ -260,9 +261,9 @@ export function createSyncStore(opts: SyncStoreOptions) {
     );
   });
 
-  const pollingEffect = Effect.forever(
-    Effect.suspend(refreshSyncStatusProgram).pipe(Effect.andThen(waitForPollingCadence)),
-  ).pipe(
+  const pollingEffect = pollWhileVisible(Effect.suspend(refreshSyncStatusProgram), waitForPollingCadence, {
+    immediate: true,
+  }).pipe(
     Effect.ensuring(
       Effect.sync(() => {
         pollWakeSignal = null;

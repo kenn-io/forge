@@ -678,21 +678,10 @@ provider head still differs (`LastRefreshSucceededAt >= LastRefreshEnqueuedAt`)
 — otherwise the visible PR is re-synced and re-rendered forever. A tracking-ref
 move restarts the cycle.
 
-The observer's steady state spawns no processes. It reads the worktree's
-current branch, upstream config, and remote-tracking SHA in process through
-go-git's reference store and config parser, layering `config.worktree` over
-the shared config when `extensions.worktreeConfig` is on. Layouts go-git
-cannot answer faithfully (config includes, reftable ref storage) are skipped
-like a detached HEAD, never re-read through git. Upstream repair is the one
-git write; its commands each take one procutil slot, so never wrap them in an
-outer acquisition
+The observer's read path spawns no processes: it reads branch, upstream, and
+remote-tracking state in process through go-git, and only upstream repair runs
+git. Do not reintroduce per-pass git subprocesses there
 (`internal/workspace/pushed_head_gitdir.go::gitdirRemoteHeadReader`).
-Build go-git storage from a locally resolved gitdir and common directory and
-use it as a reference store directly: `EnableDotGitCommonDir` leaks the linked
-worktree's `commondir` file handle on every open (descriptor exhaustion under
-polling, undeletable worktrees on Windows), and `gogit.Open` rejects version-0
-repositories that declare `extensions.worktreeConfig`
-(`internal/workspace/pushed_head_gitdir.go::openWorktreeRepository`).
 
 ## Sidebar Ordering
 

@@ -102,19 +102,48 @@ func seedHotReadDatabase(b *testing.B, repos, mrsPerRepo, eventsPerMR int) strin
 	return path
 }
 
+// hotReadDatabase returns the file to benchmark. Set KENN_FORGE_BENCH_DB to a
+// private snapshot of a real store to measure against production-shaped
+// data; the snapshot is migrated in place, so never point it at a live file.
+// Without it the benchmark seeds a synthetic store.
+func hotReadDatabase(b *testing.B) string {
+	b.Helper()
+	if snapshot := os.Getenv("KENN_FORGE_BENCH_DB"); snapshot != "" {
+		d, err := Open(snapshot)
+		require.NoError(b, err)
+		require.NoError(b, d.Close())
+		return snapshot
+	}
+	const repos, mrsPerRepo, eventsPerMR = 50, 100, 10
+	return seedHotReadDatabase(b, repos, mrsPerRepo, eventsPerMR)
+}
+
 // BenchmarkHotReads measures the read paths a running daemon repeats most:
 // the repository summary list, the open merge request list, one merge
 // request detail with its timeline, and the activity feed. Each variant
 // toggles the connection pragmas and the statement cache independently so
 // the contribution of each is visible.
 func BenchmarkHotReads(b *testing.B) {
-	const repos, mrsPerRepo, eventsPerMR = 50, 100, 10
-	path := seedHotReadDatabase(b, repos, mrsPerRepo, eventsPerMR)
+	path := hotReadDatabase(b)
 	info, err := os.Stat(path)
 	require.NoError(b, err)
-	b.Logf("seeded %d repos, %d merge requests, %d events: %.1f MB",
-		repos, repos*mrsPerRepo, repos*mrsPerRepo*eventsPerMR, float64(info.Size())/1e6)
 	ctx := context.Background()
+
+	probe, err := Open(path)
+	require.NoError(b, err)
+	var repos, mrs, events int
+	require.NoError(b, probe.ReadDB().QueryRowContext(ctx, "SELECT COUNT(*) FROM forge_repos").Scan(&repos))
+	require.NoError(b, probe.ReadDB().QueryRowContext(ctx, "SELECT COUNT(*) FROM forge_merge_requests").Scan(&mrs))
+	require.NoError(b, probe.ReadDB().QueryRowContext(ctx, "SELECT COUNT(*) FROM forge_mr_events").Scan(&events))
+	openMRs, err := probe.ListMergeRequests(ctx, ListMergeRequestsOpts{State: "open", Limit: 1})
+	require.NoError(b, err)
+	require.NotEmpty(b, openMRs, "benchmark store needs at least one open merge request")
+	detail := openMRs[0]
+	detailRepo, err := probe.GetRepoByID(ctx, detail.RepoID)
+	require.NoError(b, err)
+	require.NotNil(b, detailRepo)
+	require.NoError(b, probe.Close())
+	b.Logf("store: %d repos, %d merge requests, %d events, %.1f MB", repos, mrs, events, float64(info.Size())/1e6)
 
 	reads := []struct {
 		name string
@@ -129,7 +158,7 @@ func BenchmarkHotReads(b *testing.B) {
 			return err
 		}},
 		{name: "MergeRequestDetail", run: func(d *DB) error {
-			mr, err := d.GetMergeRequest(ctx, "github", "github.com", "acme", "service-025", 42)
+			mr, err := d.GetMergeRequest(ctx, detailRepo.Platform, detailRepo.PlatformHost, detailRepo.Owner, detailRepo.Name, detail.Number)
 			if err != nil {
 				return err
 			}

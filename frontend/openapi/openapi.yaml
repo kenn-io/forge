@@ -9062,6 +9062,9 @@ components:
           type: string
         PlatformHost:
           type: string
+        RepoID:
+          format: int64
+          type: integer
         RepoName:
           type: string
         RepoOwner:
@@ -9082,6 +9085,7 @@ components:
         - PlatformHost
         - RepoOwner
         - RepoName
+        - RepoID
         - ItemType
         - ItemNumber
         - ItemKey

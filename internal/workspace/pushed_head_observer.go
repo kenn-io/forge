@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -14,6 +15,7 @@ import (
 
 type remoteHeadKey struct {
 	WorkspaceID  string
+	RepoID       int64
 	Provider     platform.Kind
 	PlatformHost string
 	RepoPath     string
@@ -33,6 +35,7 @@ type remoteHeadObservation struct {
 
 type PushedHeadUpdate struct {
 	WorkspaceID  string
+	RepoID       int64
 	Provider     platform.Kind
 	PlatformHost string
 	RepoPath     string
@@ -170,6 +173,7 @@ func (o *PushedHeadObserver) MarkRefreshSucceeded(update PushedHeadUpdate, at ti
 func (u PushedHeadUpdate) remoteHeadKey() remoteHeadKey {
 	return remoteHeadKey{
 		WorkspaceID:  u.WorkspaceID,
+		RepoID:       u.RepoID,
 		Provider:     u.Provider,
 		PlatformHost: u.PlatformHost,
 		RepoPath:     u.RepoPath,
@@ -191,6 +195,12 @@ func (o *PushedHeadObserver) RunOnce(ctx context.Context) (PushedHeadPassResult,
 	trackingCache := make(map[string]trackingLookup)
 	for i := range workspaces {
 		ws := workspaces[i]
+		if retired, retireErr := o.monitor.retireUnresolvedRepositoryWorkspace(ctx, &ws); retired {
+			if retireErr != nil {
+				o.recordFailure(ws.ID, retireErr)
+			}
+			continue
+		}
 		if !pushedHeadWorkspaceEligible(&ws) {
 			continue
 		}
@@ -313,6 +323,25 @@ func (o *PushedHeadObserver) workspaceRepository(
 	ws *Workspace,
 	launchSpec *WorkspaceLaunchSpec,
 ) (*db.Repo, error) {
+	if ws.RepoID != 0 {
+		repo, err := o.db.GetActiveRepoByID(ctx, ws.RepoID)
+		if err != nil || repo == nil {
+			return repo, err
+		}
+		if launchSpec != nil {
+			if repo.PlatformRepoID != launchSpec.Repository.PlatformRepoID {
+				return nil, errors.New("workspace launch repository identity changed")
+			}
+			repo.Platform = launchSpec.Repository.Provider
+			repo.PlatformHost = launchSpec.Repository.PlatformHost
+			repo.Owner = launchSpec.Repository.Owner
+			repo.Name = launchSpec.Repository.Name
+			repo.RepoPath = launchSpec.Repository.Owner + "/" + launchSpec.Repository.Name
+			repo.CloneURL = launchSpec.Repository.CloneURL
+			repo.DefaultBranch = launchSpec.Repository.DefaultBranch
+		}
+		return repo, nil
+	}
 	if launchSpec != nil {
 		return &db.Repo{
 			Platform:       launchSpec.Repository.Provider,
@@ -324,6 +353,12 @@ func (o *PushedHeadObserver) workspaceRepository(
 			CloneURL:       launchSpec.Repository.CloneURL,
 			DefaultBranch:  launchSpec.Repository.DefaultBranch,
 		}, nil
+	}
+	collision, err := o.db.WorkspaceRepoRouteHasHistoricalOccupants(
+		ctx, workspaceProvider(ws), ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+	)
+	if err != nil || collision {
+		return nil, err
 	}
 	repo, err := o.db.GetRepoByIdentity(ctx, db.RepoIdentity{
 		Platform:     workspaceProvider(ws),
@@ -394,6 +429,7 @@ func (o *PushedHeadObserver) observeWorkspacePR(ctx context.Context, ws *Workspa
 	observedAt := o.now().UTC()
 	key := remoteHeadKey{
 		WorkspaceID:  ws.ID,
+		RepoID:       repo.ID,
 		Provider:     provider,
 		PlatformHost: host,
 		RepoPath:     repo.RepoPath,
@@ -405,6 +441,7 @@ func (o *PushedHeadObserver) observeWorkspacePR(ctx context.Context, ws *Workspa
 	}
 	update := PushedHeadUpdate{
 		WorkspaceID:  ws.ID,
+		RepoID:       repo.ID,
 		Provider:     provider,
 		PlatformHost: host,
 		RepoPath:     repo.RepoPath,

@@ -20,10 +20,24 @@ type databaseLaunchSpecResolver struct {
 func (r databaseLaunchSpecResolver) ResolveWorkspaceLaunchSpec(
 	ctx context.Context, request providerplane.WorkspaceLaunchRequest,
 ) (db.WorkspaceLaunchSpec, error) {
-	repo, err := r.db.GetRepoByIdentity(ctx, db.RepoIdentity{
-		Platform: request.Repository.Provider, PlatformHost: request.Repository.PlatformHost,
-		Owner: request.Repository.Owner, Name: request.Repository.Name,
-	})
+	var repo *db.Repo
+	var err error
+	if strings.TrimSpace(request.PlatformRepoID) != "" {
+		entry, lookupErr := r.db.GetRepositoryByProviderID(
+			ctx, request.Repository.Provider, request.Repository.PlatformHost,
+			request.PlatformRepoID,
+		)
+		err = lookupErr
+		if entry != nil {
+			resolved := entry.Repository
+			repo = &resolved
+		}
+	} else {
+		repo, err = r.db.GetRepoByIdentity(ctx, db.RepoIdentity{
+			Platform: request.Repository.Provider, PlatformHost: request.Repository.PlatformHost,
+			Owner: request.Repository.Owner, Name: request.Repository.Name,
+		})
+	}
 	if err != nil {
 		return db.WorkspaceLaunchSpec{}, err
 	}
@@ -121,7 +135,8 @@ func (r databaseLaunchSpecResolver) RefreshWorkspaceLaunchSpec(
 			Provider: current.Repository.Provider, PlatformHost: current.Repository.PlatformHost,
 			Owner: current.Repository.Owner, Name: current.Repository.Name,
 		},
-		ItemType: current.ItemType, ItemNumber: current.ItemNumber,
+		PlatformRepoID: current.Repository.PlatformRepoID,
+		ItemType:       current.ItemType, ItemNumber: current.ItemNumber,
 		ItemKey: current.ItemKey, GitHeadRef: current.GitHeadRef,
 	})
 }

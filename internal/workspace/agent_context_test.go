@@ -511,8 +511,10 @@ func TestRenderAgentContextForWorktreeUsesPersistedWorkspace(t *testing.T) {
 	assert := assert.New(t)
 	database := openTestDB(t)
 	worktree := t.TempDir()
+	repoID := seedRepo(t, database, "github.com", "acme", "widget")
 	workspace := &db.Workspace{
 		ID:              "ws-hook-context",
+		RepoID:          repoID,
 		Platform:        "github",
 		PlatformHost:    "github.com",
 		RepoOwner:       "acme",

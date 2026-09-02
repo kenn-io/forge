@@ -102,6 +102,9 @@ func (m *Manager) RequireWorkspaceLaunchSpec(
 	if m == nil || m.db == nil {
 		return nil, &LaunchSpecRefreshError{Cause: ErrLaunchSpecResolverMissing}
 	}
+	if workspace.RepoID == 0 {
+		return nil, ErrWorkspaceRepositoryUnresolved
+	}
 	spec, err := m.db.GetWorkspaceLaunchSpec(ctx, workspace.ID)
 	if err != nil {
 		return nil, fmt.Errorf("read workspace launch specification: %w", err)
@@ -114,11 +117,15 @@ func (m *Manager) RequireWorkspaceLaunchSpec(
 			return nil, err
 		}
 	}
-	if err := spec.ValidateWorkspace(*workspace); err != nil {
-		return nil, fmt.Errorf("validate workspace launch specification: %w", err)
+	routeChanged, err := m.validateWorkspaceLaunchSpec(ctx, workspace, *spec)
+	if err != nil {
+		return nil, err
 	}
-	if err := validateLaunchSpecForCreation(*spec); err != nil {
-		return nil, fmt.Errorf("validate workspace launch Git identity: %w", err)
+	if routeChanged {
+		spec, err = m.refreshWorkspaceLaunchSpec(ctx, workspace, *spec)
+		if err != nil {
+			return nil, err
+		}
 	}
 	visibilityErr := spec.RequireVisible(m.launchSpecNow())
 	switch {
@@ -134,10 +141,48 @@ func (m *Manager) RequireWorkspaceLaunchSpec(
 	default:
 		return nil, visibilityErr
 	}
+	if _, err := m.validateWorkspaceLaunchSpec(ctx, workspace, *spec); err != nil {
+		return nil, err
+	}
+	if err := validateLaunchSpecForCreation(*spec); err != nil {
+		return nil, fmt.Errorf("validate workspace launch Git identity: %w", err)
+	}
 	if err := m.applyWorkspaceLaunchSpec(ctx, workspace, *spec); err != nil {
 		return nil, err
 	}
 	return spec, nil
+}
+
+func (m *Manager) validateWorkspaceLaunchSpec(
+	ctx context.Context, workspace *Workspace, spec WorkspaceLaunchSpec,
+) (bool, error) {
+	if workspace.RepoID == 0 {
+		return false, ErrWorkspaceRepositoryUnresolved
+	}
+	repo, err := m.db.GetActiveRepoByID(ctx, workspace.RepoID)
+	if err != nil {
+		return false, fmt.Errorf("resolve workspace launch repository: %w", err)
+	}
+	if repo == nil ||
+		!strings.EqualFold(repo.Platform, spec.Repository.Provider) ||
+		!strings.EqualFold(repo.PlatformHost, spec.Repository.PlatformHost) ||
+		strings.TrimSpace(repo.PlatformRepoID) != strings.TrimSpace(spec.Repository.PlatformRepoID) {
+		return false, fmt.Errorf(
+			"%w: workspace launch specification repository identity changed",
+			db.ErrRepositoryRouteFenceChanged,
+		)
+	}
+	routeChanged := !strings.EqualFold(repo.Owner, spec.Repository.Owner) ||
+		!strings.EqualFold(repo.Name, spec.Repository.Name)
+	comparison := *workspace
+	comparison.Platform = spec.Repository.Provider
+	comparison.PlatformHost = spec.Repository.PlatformHost
+	comparison.RepoOwner = spec.Repository.Owner
+	comparison.RepoName = spec.Repository.Name
+	if err := spec.ValidateWorkspace(comparison); err != nil {
+		return false, fmt.Errorf("validate workspace launch specification: %w", err)
+	}
+	return routeChanged, nil
 }
 
 // RefreshWorkspaceLaunchSpec forces a hub refresh even while the
@@ -313,8 +358,8 @@ func (m *Manager) lifecycleSummary(
 	if spec == nil {
 		return &summary, nil
 	}
-	if err := spec.ValidateWorkspace(*workspace); err != nil {
-		return nil, fmt.Errorf("validate workspace launch specification: %w", err)
+	if _, err := m.validateWorkspaceLaunchSpec(ctx, workspace, *spec); err != nil {
+		return nil, err
 	}
 	if err := validateLaunchSpecForCreation(*spec); err != nil {
 		return nil, fmt.Errorf("validate workspace launch Git identity: %w", err)

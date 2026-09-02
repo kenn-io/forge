@@ -14,6 +14,38 @@ embedder protocol for arbitrary host state.
 - Materialize that entry as a local Git worktree plus tmux session.
 - Let the UI reopen the same workspace from `/workspaces` or `/terminal/:id`.
 - Carry enough item metadata to render the correct sidebar behavior.
+- Persist provider workspaces by the internal repository catalog ID. Route
+  requests resolve their current occupant before lookup or creation; a rename
+  follows the same repository, while route reuse creates a separate workspace
+  identity. Migration backfills every unambiguous catalog route, including
+  route-only repositories. Provider lifecycle code retires legacy rows through
+  dirty-aware deletion and leaves failures stable for explicit user action; it
+  must neither discard uncommitted work nor resolve them through the current
+  occupant
+  (`internal/server/workspaceapi/handler.go::New`,
+  `internal/workspace/launch_spec.go::Manager.RequireWorkspaceLaunchSpec`).
+- A repository referenced by a workspace is a durable identity tombstone.
+  Provider-host purge deactivates that repository and releases its current
+  route instead of deleting it or nulling the workspace `repo_id`
+  (`internal/db/queries.go::DB.PurgeOtherHosts`).
+- Stable-identity migration keeps the newest workspace when pre-rename and
+  post-rename routes contain the same item, then deletes the older workspace
+  and its owned state instead of adding another legacy path (`internal/db/migrations/000055_workspace_repository_identity.up.sql:15`).
+- Setup verifies the stable repository ID independently of its mutable route.
+  Managed clones partition storage by that ID, and configured bases must match
+  it; route reuse must not share checkout state. Network Git work also captures
+  the route generation and fails closed if that route changes before setup
+  completes, restoring refs and retargeted origins after a rejected fetch.
+  Recovery and cleanup discover identity-scoped clones across every route
+  owned by that repository; network reuse retargets a historical origin to the
+  fenced current route
+  (`internal/workspace/manager.go::Manager.workspaceSetupGitDir`,
+  `internal/gitclone/clone.go::Manager.EnsureCloneValidated`,
+  `internal/server/settings_handlers.go::Server.worktreeBasePathForRepo`,
+  `internal/workspace/manager.go::Manager.workspaceManagedCloneCandidates`).
+- A backfilled workspace may keep a route-keyed managed clone from any current
+  or historical route that has one stable owner; route reuse excludes that path
+  (`internal/workspace/manager.go::Manager.workspaceManagedClonePaths`).
 - Keep Workspace and Projects request state below the root server composition
   boundary. The handler receives deep-copied committed config snapshots; it
   never retains the root mutable config pointer or mutex
@@ -97,6 +129,9 @@ embedder protocol for arbitrary host state.
   visibility lease. Workspace and specification creation is one transaction;
   reads never reconstruct a missing specification from provider cache tables
   (`internal/db/queries_workspace_launch_specs.go::DB.CreateWorkspaceWithLaunchSpec`).
+- Preparation inventory must close its SQLite result cursor before per-workspace
+  repository or launch-spec reads; the bounded read pool cannot nest these queries
+  (`internal/db/queries_workspace_launch_specs.go::DB.ListUnpreparedProviderWorkspacesAt`).
 - PR and issue create routes resolve that specification before persistence and
   validate its exact request, Git identity, credential route, and mutable route
   occupancy. The atomic workspace/specification commit precedes asynchronous
@@ -377,13 +412,13 @@ best-effort, while the launch-specification lifecycle path is fail-closed
 `internal/github/sync.go::reclassifyWorkspaceHeadRepoTrustUnderRepositoryReconciliationRead`,
 `internal/workspace/manager.go::WorkspaceHeadRepo`).
 
-Head-repo classification writes retry under an MR revision guard, or an
-absence-aware repository guard when the repository row is missing. Parent
-snapshot commits use the per-MR snapshot lock; repository-ID reconciliation
-holds the exclusive side of the stable barrier that every snapshot lock holds
-shared, so moving an MR cannot change its lock identity during a snapshot
-commit (`internal/db/db.go::LockMergeRequestSnapshot`,
-`internal/db/queries.go::UpdateWorkspaceMRHeadRepoForMissingRepo`).
+Head-repo classification reads and writes stay on the workspace repository ID;
+persisted provider workspaces without one fail unresolved. Parent snapshot
+commits use the per-MR snapshot lock; repository-ID reconciliation holds the
+exclusive side of the stable barrier that every snapshot lock holds shared, so
+moving an MR cannot change its lock identity during a snapshot commit
+(`internal/workspace/manager.go::Manager.RefreshWorkspaceHeadRepoSnapshot`,
+`internal/db/queries.go::UpdateWorkspaceMRHeadRepoForSnapshot`).
 Launch-spec refresh preserves the workspace's stable repository and branch
 identity while renewing hub-owned head and visibility facts. A changed
 repository identity conflicts; an expired lease followed by a hub
@@ -394,9 +429,16 @@ context can expose a branch or push target
 Branch push and pull use the workspace route returned by launch-spec
 validation, never a route captured before a lease refresh
 (`internal/workspace/branch_sync.go::Manager.validateBranchSyncLaunchSpec`).
-Workspace summaries expose provider links and head metadata only when the mutable
-route resolves to one active repository; unresolved or reused routes keep local
-workspace state but hide provider projections (`internal/db/queries.go::workspaceSummaryColumns`).
+Persisted-workspace refreshes reload by workspace ID while holding that same
+barrier through classification persistence, so repository renames cannot turn
+a known head into `unknown` (`internal/workspace/manager.go::RefreshWorkspaceHeadRepoSnapshot`).
+Head-trust refresh and generated-context rendering both recheck removed-upstream
+visibility; removed PRs contribute no provider title, URL, branch, or push target
+(`internal/workspace/agent_context.go::PrepareAgentLaunchContext`).
+Workspace summaries resolve identified repositories by stored stable ID, so
+renames retain provider projections while inactive repositories do not.
+Unresolved legacy rows require an unambiguous active route
+(`internal/db/queries.go::workspaceSummaryJoins`).
 
 Workspace creation launches an agent only after an explicit target choice on
 the create split button. The one-shot target is reactive session state keyed by

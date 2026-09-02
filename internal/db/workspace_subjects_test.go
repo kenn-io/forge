@@ -59,6 +59,41 @@ func TestListWorkspaceSubjectMetadataUsesLaunchSpecWithoutProviderReplica(t *tes
 	assert.Empty(got[key].Title, "provider details stay hub-owned")
 }
 
+func TestListWorkspaceSubjectMetadataUsesStableRepositoryAfterRename(t *testing.T) {
+	require := require.New(t)
+	database := openTestDB(t)
+	workspace, spec := workspaceLaunchFixture(t, database, "ws-renamed-overlay")
+	require.NoError(database.CreateWorkspaceWithLaunchSpec(
+		t.Context(), workspace, spec,
+	))
+	repo, err := database.GetRepoByIdentity(
+		t.Context(), GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	require.NotNil(repo)
+	_, accepted, err := database.ReconcileRepositoryObservation(
+		t.Context(), RepoIdentity{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformRepoID: spec.Repository.PlatformRepoID,
+			Owner:          "acme-renamed", Name: "widget-renamed",
+		}, time.Now().UTC().Add(time.Hour),
+	)
+	require.NoError(err)
+	require.True(accepted)
+	key := WorkspaceSubjectKey{
+		RepoID: repo.ID, ItemType: WorkspaceItemTypePullRequest, ItemNumber: 7,
+	}
+
+	got, err := database.ListWorkspaceSubjectMetadata(
+		t.Context(), []WorkspaceSubjectKey{key},
+	)
+
+	require.NoError(err)
+	require.Contains(got, key)
+	require.Equal("acme-renamed", got[key].RepoOwner)
+	require.Equal("widget-renamed", got[key].RepoName)
+}
+
 func TestListWorkspaceSubjectMetadataHidesOnlyRemovedUpstreamItems(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)

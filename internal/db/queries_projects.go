@@ -19,10 +19,11 @@ import (
 // linked repo (a local-only directory with no parseable remote), in which case
 // PlatformIdentity is nil.
 type PlatformIdentity struct {
-	Platform string `json:"platform"`
-	Host     string `json:"platform_host"`
-	Owner    string `json:"owner"`
-	Name     string `json:"name"`
+	Platform       string `json:"platform"`
+	Host           string `json:"platform_host"`
+	PlatformRepoID string `json:"-"`
+	Owner          string `json:"owner"`
+	Name           string `json:"name"`
 }
 
 // Project is the registry record for a local repository checkout kenn-forge
@@ -128,7 +129,7 @@ func (d *DB) CreateProject(ctx context.Context, in CreateProjectInput) (*Project
 const projectSelectColumns = `p.id, p.display_name, p.local_path,
         p.default_branch, p.repository_kind, p.is_stale,
         p.created_at, p.updated_at,
-        r.platform, r.platform_host, r.owner, r.name`
+        r.platform, r.platform_host, r.platform_repo_id, r.owner, r.name`
 
 const projectFromJoin = `FROM forge_projects p
         LEFT JOIN forge_repos r ON r.id = p.repo_id`
@@ -724,13 +725,14 @@ func scanProjectFields(scanner interface{ Scan(...any) error }) (*Project, error
 		isStale      int64
 		platform     sql.NullString
 		platformHost sql.NullString
+		platformID   sql.NullString
 		repoOwner    sql.NullString
 		repoName     sql.NullString
 	)
 	err := scanner.Scan(
 		&p.ID, &p.DisplayName, &p.LocalPath,
 		&defaultBr, &repoKind, &isStale, &p.CreatedAt, &p.UpdatedAt,
-		&platform, &platformHost, &repoOwner, &repoName,
+		&platform, &platformHost, &platformID, &repoOwner, &repoName,
 	)
 	if err != nil {
 		return nil, err
@@ -745,10 +747,11 @@ func scanProjectFields(scanner interface{ Scan(...any) error }) (*Project, error
 	p.IsStale = isStale != 0
 	if platformHost.Valid {
 		p.PlatformIdentity = &PlatformIdentity{
-			Platform: platform.String,
-			Host:     platformHost.String,
-			Owner:    repoOwner.String,
-			Name:     repoName.String,
+			Platform:       platform.String,
+			Host:           platformHost.String,
+			PlatformRepoID: platformID.String,
+			Owner:          repoOwner.String,
+			Name:           repoName.String,
 		}
 	}
 	return &p, nil

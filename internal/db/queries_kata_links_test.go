@@ -225,9 +225,12 @@ func TestKataIssueLinksSurviveRepoRenameAndCascadeWithOwners(t *testing.T) {
 	assert.Len(repoLinks, 1)
 
 	_, err = database.WriteDB().ExecContext(t.Context(), `DELETE FROM forge_repos WHERE id = ?`, repoID)
+	require.Error(err, "a workspace keeps its stable repository identity alive")
+	assert.Equal(2, kataIssueLinkCountForTest(t, database))
+	_, err = database.WriteDB().ExecContext(t.Context(), `DELETE FROM forge_workspaces WHERE id = ?`, workspaceID)
 	require.NoError(err)
 	assert.Equal(1, kataIssueLinkCountForTest(t, database))
-	_, err = database.WriteDB().ExecContext(t.Context(), `DELETE FROM forge_workspaces WHERE id = ?`, workspaceID)
+	_, err = database.WriteDB().ExecContext(t.Context(), `DELETE FROM forge_repos WHERE id = ?`, repoID)
 	require.NoError(err)
 	assert.Zero(kataIssueLinkCountForTest(t, database))
 	assertDatabaseIntegrityForTest(t, database.ReadDB())

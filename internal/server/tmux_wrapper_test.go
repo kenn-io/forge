@@ -245,9 +245,12 @@ func setupWrapperServerWithScriptAndDBAndServer(
 
 	bareDir := filepath.Join(dir, "clones")
 	require.NoError(t, os.MkdirAll(bareDir, 0o755))
-	bare := filepath.Join(
-		bareDir, "github.com", "acme", "widget.git",
+	clones := gitclone.New(bareDir, nil)
+	bare, err := clones.ClonePathForContext(
+		gitclone.WithRepositoryIdentity(t.Context(), "repo-acme-widget"),
+		"github", "github.com", "acme", "widget",
 	)
+	require.NoError(t, err)
 	tmpWork := filepath.Join(dir, "work")
 	runGit(t, dir, "init", "--bare", "--initial-branch=main", bare)
 	runGit(t, dir, "clone", bare, tmpWork)
@@ -272,7 +275,6 @@ func setupWrapperServerWithScriptAndDBAndServer(
 	// Point bare origin at itself so EnsureClone fetch works.
 	runGit(t, bare, "remote", "add", "origin", bare)
 
-	clones := gitclone.New(bareDir, nil)
 	worktreeDir := filepath.Join(dir, "worktrees")
 
 	repos := []ghclient.RepoRef{
@@ -1105,7 +1107,10 @@ func TestWorkspaceSetupFailureRollbackCleansWorktreeViaAPI(t *testing.T) {
 		t, script,
 	)
 	ctx := t.Context()
-	clonePath, err := srv.clones.ClonePath("github", "github.com", "acme", "widget")
+	clonePath, err := srv.clones.ClonePathForContext(
+		gitclone.WithRepositoryIdentity(ctx, "repo-acme-widget"),
+		"github", "github.com", "acme", "widget",
+	)
 	require.NoError(err)
 	featureSHA := testGitSHA(t, clonePath, "refs/heads/feature")
 

@@ -11019,6 +11019,32 @@ func (s *Syncer) RefreshMRCIStatusOnProvider(
 	return nil, nil
 }
 
+// RefreshMRCIStatusForRepository refreshes CI only while repo still owns its
+// captured route. Delayed background work uses this entry point so route reuse
+// cannot write a replacement repository's provider response under repoID.
+func (s *Syncer) RefreshMRCIStatusForRepository(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	number int,
+	headSHA string,
+) ([]string, error) {
+	identity := platform.DBRepoIdentity(platformRepoRef(repo))
+	routeFence, found, err := s.db.CurrentRepositoryRouteFence(ctx, identity, repoID)
+	if err != nil {
+		return nil, fmt.Errorf("capture repository route for CI refresh %s/%s: %w", repo.Owner, repo.Name, err)
+	}
+	if !found {
+		return nil, nil
+	}
+	ctx = s.db.WithRepositoryRouteFence(ctx, identity, routeFence)
+	warnings, err := s.RefreshMRCIStatusOnProvider(ctx, repo, repoID, number, headSHA)
+	if errors.Is(err, db.ErrRepositoryRouteFenceChanged) {
+		return nil, nil
+	}
+	return warnings, err
+}
+
 // refreshCIStatus fetches combined status and check runs for a PR's head SHA.
 // Called on every sync cycle for open PRs, since check runs change independently
 // of the PR's updated_at field. Takes headSHA and number directly so it can be
@@ -12687,6 +12713,20 @@ func (s *Syncer) SyncMROnProvider(
 	return s.syncMRForRepo(ctx, repo, number, false, nil)
 }
 
+// SyncMRForRepository refreshes an MR only while repoID still owns repo's
+// route. It is intended for delayed work that was queued for a stable
+// repository identity rather than for an owner/name route.
+func (s *Syncer) SyncMRForRepository(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	number int,
+) error {
+	return s.syncMRForRepoResolved(
+		ctx, repo, number, false, nil, nil, nil, nil, &repoID,
+	)
+}
+
 // syncMRWithHost is the internal implementation of SyncMR.
 // When hostHint is non-empty it is used instead of resolving via
 // s.hostFor, avoiding ambiguity when the same owner/name exists on
@@ -12759,7 +12799,7 @@ func (s *Syncer) syncMRForRepo(
 	providerAttempted *bool,
 ) error {
 	return s.syncMRForRepoResolved(
-		ctx, repo, number, useConditionalPRDetail, providerAttempted, nil, nil, nil,
+		ctx, repo, number, useConditionalPRDetail, providerAttempted, nil, nil, nil, nil,
 	)
 }
 
@@ -12795,6 +12835,7 @@ func (s *Syncer) syncMRForRepoResolved(
 	resolvedRepoID *int64,
 	fetchedEvidence *mergeRequestFetchEvidence,
 	lifecyclePersisted *bool,
+	expectedRepoID *int64,
 ) error {
 	if resolvedRepoID != nil {
 		*resolvedRepoID = 0
@@ -12829,6 +12870,9 @@ func (s *Syncer) syncMRForRepoResolved(
 		return err
 	}
 	if !found {
+		return nil
+	}
+	if expectedRepoID != nil && repoID != *expectedRepoID {
 		return nil
 	}
 	if resolvedRepoID != nil {
@@ -13597,7 +13641,7 @@ func (s *Syncer) SyncArchiveItem(
 		var lifecyclePersisted bool
 		err := s.syncMRForRepoResolved(
 			ctx, repo, number, false, &providerAttempted, &resolvedRepoID, &fetchedEvidence,
-			&lifecyclePersisted,
+			&lifecyclePersisted, nil,
 		)
 		if _, onlyDiffFailed := err.(*DiffSyncError); onlyDiffFailed { //nolint:errorlint // joined hard failures must propagate
 			err = nil

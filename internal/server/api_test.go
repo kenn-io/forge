@@ -9206,8 +9206,13 @@ func seedWorkspace(
 	number int,
 ) {
 	t.Helper()
+	repoID, err := database.UpsertRepo(
+		t.Context(), verifiedGitHubRepoIdentity("github.com", owner, name),
+	)
+	require.NoError(t, err)
 	require.NoError(t, database.InsertWorkspace(t.Context(), &db.Workspace{
 		ID:              id,
+		RepoID:          repoID,
 		Platform:        "github",
 		PlatformHost:    "github.com",
 		RepoOwner:       owner,
@@ -26534,13 +26539,15 @@ func setupWorkspaceServerFixtureWithMockHostAndOptions(
 
 	bareDir := filepath.Join(dir, "clones")
 	require.NoError(t, os.MkdirAll(bareDir, 0o755))
-	bare := filepath.Join(
-		bareDir, platformHost, "acme", "widget.git",
+	clones := gitclone.New(bareDir, nil)
+	bare, err := clones.ClonePathForContext(
+		gitclone.WithRepositoryIdentity(t.Context(), "repo-acme-widget"),
+		"github", platformHost, "acme", "widget",
 	)
+	require.NoError(t, err)
 	runGit(t, dir, "clone", "--bare", remote, bare)
 	runGit(t, bare, "remote", "set-url", "origin", gitLocalRemoteURL(remote))
 
-	clones := gitclone.New(bareDir, nil)
 	worktreeDir := filepath.Join(dir, "worktrees")
 	repos := []ghclient.RepoRef{
 		{Owner: "acme", Name: "widget", PlatformHost: platformHost},
@@ -32240,22 +32247,21 @@ func TestWorkspaceCreateReusesExistingWorktreeThroughAPI(t *testing.T) {
 	}}}
 	fixture := setupWorkspaceServerFixture(t, cfg)
 	ctx := t.Context()
+	repoID := seedPROnHost(
+		t, fixture.database,
+		platformHost, "acme", "widget", prNumber,
+		withSeedPRHeadRepoCloneURL("https://"+platformHost+"/acme/widget.git"),
+	)
 	existingBranch := syntheticPRWorktreeBranchForTest(prNumber)
 	worktreePath := filepath.Join(
 		fixture.worktrees, "github", platformHost, "acme", "widget",
-		fmt.Sprintf("pr-%d", prNumber),
+		fmt.Sprintf("repo-%d", repoID), fmt.Sprintf("pr-%d", prNumber),
 	)
 	runGit(
 		t, localRepo,
 		"worktree", "add", worktreePath, "-b", existingBranch, "main",
 	)
 	wantSHA := testGitSHA(t, worktreePath, "HEAD")
-	seedPROnHost(
-		t, fixture.database,
-		platformHost, "acme", "widget", prNumber,
-		withSeedPRHeadRepoCloneURL("https://"+platformHost+"/acme/widget.git"),
-	)
-
 	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
@@ -32302,9 +32308,14 @@ func TestWorkspaceRetryReusesExistingLocalHeadBranchThroughAPI(t *testing.T) {
 	}}}
 	fixture := setupWorkspaceServerFixture(t, cfg)
 	ctx := t.Context()
+	repoID := seedPROnHost(
+		t, fixture.database,
+		platformHost, "acme", "widget", prNumber,
+		withSeedPRHeadRepoCloneURL("https://"+platformHost+"/acme/widget.git"),
+	)
 	worktreePath := filepath.Join(
 		fixture.worktrees, "github", platformHost, "acme", "widget",
-		fmt.Sprintf("pr-%d", prNumber),
+		fmt.Sprintf("repo-%d", repoID), fmt.Sprintf("pr-%d", prNumber),
 	)
 	runGit(
 		t, localRepo,
@@ -32312,12 +32323,6 @@ func TestWorkspaceRetryReusesExistingLocalHeadBranchThroughAPI(t *testing.T) {
 		"-b", "feature", "refs/remotes/origin/feature",
 	)
 	wantSHA := testGitSHA(t, worktreePath, "HEAD")
-	seedPROnHost(
-		t, fixture.database,
-		platformHost, "acme", "widget", prNumber,
-		withSeedPRHeadRepoCloneURL("https://"+platformHost+"/acme/widget.git"),
-	)
-
 	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{

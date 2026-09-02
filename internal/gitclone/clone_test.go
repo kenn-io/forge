@@ -206,6 +206,62 @@ func TestIntegrationEnsureCloneValidatedRemovesCloneAfterRouteChange(t *testing.
 		"invalidation must not leave a renamed-aside clone behind")
 }
 
+func TestIntegrationEnsureCloneValidatedRestoresExistingCloneAfterRouteChange(
+	t *testing.T,
+) {
+	remote, work := setupTestRepo(t)
+	mgr := New(t.TempDir(), nil)
+	ctx := WithRepositoryIdentity(t.Context(), "provider-repo-a")
+	require.NoError(t, mgr.EnsureClone(
+		ctx, "github", "github.com", "acme", "widget", remote,
+	))
+	clonePath, err := mgr.ClonePathForContext(
+		ctx, "github", "github.com", "acme", "widget",
+	)
+	require.NoError(t, err)
+	originalSHABytes, err := gitcmd.New().Output(
+		t.Context(), clonePath, "rev-parse", "refs/remotes/origin/main",
+	)
+	require.NoError(t, err)
+	originalSHA := strings.TrimSpace(string(originalSHABytes))
+	worktreePath := filepath.Join(t.TempDir(), "linked-worktree")
+	run(t, clonePath, "git", "worktree", "add", "-b", "workspace-test",
+		worktreePath, "refs/remotes/origin/main")
+	run(t, clonePath, "git", "config", "--unset-all", "remote.origin.fetch")
+	run(t, clonePath, "git", "config", "--add", "remote.origin.fetch", legacyBranchRefspec)
+
+	newSHA := commitAndPush(t, work, "replacement.go", "package replacement\n", "replacement")
+	require.NotEqual(t, originalSHA, newSHA)
+	validationErr := errors.New("repository route changed")
+	var validations atomic.Int64
+	err = mgr.EnsureCloneValidated(
+		ctx, "github", "github.com", "acme", "widget", remote,
+		func(context.Context) error {
+			if validations.Add(1) == 1 {
+				return nil
+			}
+			return validationErr
+		},
+	)
+
+	require.ErrorIs(t, err, validationErr)
+	assert.DirExists(t, clonePath)
+	assert.NoDirExists(t, clonePath+".removing")
+	restoredSHABytes, err := gitcmd.New().Output(
+		t.Context(), clonePath, "rev-parse", "refs/remotes/origin/main",
+	)
+	require.NoError(t, err)
+	assert.Equal(t, originalSHA, strings.TrimSpace(string(restoredSHABytes)))
+	worktreeSHABytes, err := gitcmd.New().Output(t.Context(), worktreePath, "rev-parse", "HEAD")
+	require.NoError(t, err)
+	assert.Equal(t, originalSHA, strings.TrimSpace(string(worktreeSHABytes)))
+	refspecBytes, err := gitcmd.New().Output(
+		t.Context(), clonePath, "config", "--get-all", "remote.origin.fetch",
+	)
+	require.NoError(t, err)
+	assert.Equal(t, legacyBranchRefspec, strings.TrimSpace(string(refspecBytes)))
+}
+
 func TestIntegrationEnsureCloneValidatedRejectsStaleCallerBeforeUnvalidatedFetch(t *testing.T) {
 	remote, _ := setupTestRepo(t)
 	routes := &blockingRouteResolver{

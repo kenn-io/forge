@@ -124,6 +124,66 @@ func newPushedHeadObserverForTest(
 	return observer
 }
 
+func TestPushedHeadObserverSkipsWorkspaceForInactiveRepository(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	seedRepo(t, d, "github.com", "acme", "widget")
+	insertPushedHeadWorkspace(
+		t, d, "ws-pr", db.WorkspaceItemTypePullRequest, 42, nil,
+	)
+	replacementID := replaceMonitorRepoRoute(t, d)
+	seedMRWithPlatformHead(
+		t, d, replacementID, 42, "feature/remote-head", "1111111", "",
+	)
+	reader := &fakeRemoteHeadReader{
+		branch:      "feature/remote-head",
+		trackingSHA: "2222222",
+		trackingRef: "refs/remotes/origin/feature/remote-head",
+		trackingOK:  true,
+	}
+	observer := newPushedHeadObserverForTest(t, d, reader)
+
+	result, err := observer.RunOnce(t.Context())
+	require.NoError(err)
+	require.Empty(result.Associations)
+	require.Empty(result.HeadChanges)
+	require.Zero(reader.branchCalls)
+}
+
+func TestPushedHeadObserverLegacyWorkspaceSkipsHistoricallyReusedRoute(t *testing.T) {
+	require := require.New(t)
+	database := openTestDB(t)
+	insertPushedHeadWorkspace(
+		t, database, "ws-legacy-pr", db.WorkspaceItemTypePullRequest, 42, nil,
+	)
+	workspace, err := database.GetWorkspace(t.Context(), "ws-legacy-pr")
+	require.NoError(err)
+	require.Zero(workspace.RepoID)
+
+	observedAt := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	_, _, err = database.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-original",
+		Owner: "acme", Name: "widget",
+	}, observedAt)
+	require.NoError(err)
+	_, _, err = database.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-original",
+		Owner: "acme", Name: "moved-away",
+	}, observedAt.Add(time.Minute))
+	require.NoError(err)
+	_, _, err = database.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-replacement",
+		Owner: "acme", Name: "widget",
+	}, observedAt.Add(2*time.Minute))
+	require.NoError(err)
+
+	repo, err := NewPushedHeadObserver(database).workspaceRepository(
+		t.Context(), workspace, nil,
+	)
+	require.NoError(err)
+	require.Nil(repo)
+}
+
 func TestPushedHeadObserverFirstObservationSkipsWhenProviderHeadMatches(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -151,12 +211,13 @@ func TestPushedHeadObserverFirstObservationSkipsWhenProviderHeadMatches(t *testi
 	assert.Equal(1, reader.trackingCalls)
 }
 
-func TestLaunchSpecPushedHeadObserverUsesHubCandidatesWithoutProviderRows(
+func TestLaunchSpecPushedHeadObserverUsesHubCandidatesWithoutProviderItemRows(
 	t *testing.T,
 ) {
 	require := require.New(t)
 	assert := assert.New(t)
 	database := openTestDB(t)
+	seedRepo(t, database, "github.com", "acme", "widget")
 	insertPushedHeadWorkspace(
 		t, database, "ws-spoke-pr", db.WorkspaceItemTypePullRequest, 42, nil,
 	)
@@ -211,11 +272,6 @@ func TestLaunchSpecPushedHeadObserverUsesHubCandidatesWithoutProviderRows(
 	assert.Equal("1111111", result.HeadChanges[0].OldSHA)
 	assert.Equal("2222222", result.HeadChanges[0].NewSHA)
 	assert.Equal(1, source.calls)
-	repo, err := database.GetRepoByIdentity(t.Context(), db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", Owner: "acme", Name: "widget",
-	})
-	require.NoError(err)
-	assert.Nil(repo)
 }
 
 func TestPushedHeadObserverFirstObservationEnqueuesWhenProviderHeadDiffers(t *testing.T) {
@@ -243,6 +299,7 @@ func TestPushedHeadObserverFirstObservationEnqueuesWhenProviderHeadDiffers(t *te
 	require.Len(result.HeadChanges, 1)
 	change := result.HeadChanges[0]
 	assert.Equal("ws-pr", change.WorkspaceID)
+	assert.Equal(repoID, change.RepoID)
 	assert.Equal("github", string(change.Provider))
 	assert.Equal("github.com", change.PlatformHost)
 	assert.Equal("acme/widget", change.RepoPath)

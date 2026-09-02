@@ -5279,6 +5279,7 @@ type Workspace struct {
 	MRHeadRepo         *string               `json:"MRHeadRepo"`
 	Platform           string                `json:"Platform"`
 	PlatformHost       string                `json:"PlatformHost"`
+	RepoID             int64                 `json:"RepoID"`
 	RepoName           string                `json:"RepoName"`
 	RepoOwner          string                `json:"RepoOwner"`
 	Status             string                `json:"Status"`

@@ -45,7 +45,7 @@ func TestPublishWorkspacePushedHeadResultBroadcastsDomainEvents(t *testing.T) {
 			AssociatedAt: observedAt,
 		}},
 		HeadChanges: []workspace.PushedHeadUpdate{{
-			WorkspaceID: "ws-pr", Provider: platform.KindGitHub,
+			WorkspaceID: "ws-pr", RepoID: 1, Provider: platform.KindGitHub,
 			PlatformHost: "github.com", RepoPath: "acme/widget",
 			Owner: "acme", Name: "widget", Number: 42,
 			OldSHA: "old", NewSHA: "new", RemoteName: "origin",

@@ -387,7 +387,7 @@ func TestMigration54BackfillsWorkspaceLaunchSpecs(t *testing.T) {
 		"ws-issue":              "sourceVisibilityExpired",
 		"ws-fork":               "sourceVisibilityExpired",
 		"ws-incomplete":         "launchSpecMissing",
-		"ws-renamed":            "launchSpecMismatch",
+		"ws-renamed":            "sourceVisibilityExpired",
 		"ws-renamed-incomplete": "launchSpecMissing",
 	}, reasons)
 	assert.Equal("provider-repo-renamed", stableIDs["ws-renamed-incomplete"])
@@ -416,6 +416,152 @@ func TestMigration54DownDropsOnlyPreparationTables(t *testing.T) {
 	} {
 		assert.True(tableExistsForTest(t, raw, table), table)
 	}
+	assertDatabaseIntegrityForTest(t, raw)
+	require.NoError(raw.Close())
+}
+
+func TestWorkspaceRepositoryIdentityMigration55BackfillsOnlyUnambiguousRoutes(
+	t *testing.T,
+) {
+	require := require.New(t)
+	dbPath := filepath.Join(t.TempDir(), "workspace-repository-identity-v54.db")
+
+	openAtVersionForTest(t, dbPath, 54, func(raw *sql.DB) {
+		_, err := raw.Exec(`
+			INSERT INTO forge_repos (
+				id, platform, platform_host, platform_repo_id,
+				owner, name, repo_path, owner_key, name_key, repo_path_key,
+				lifecycle_state
+			) VALUES
+				(1, 'github', 'github.com', 'repo-safe',
+				 'acme', 'safe', 'acme/safe', 'acme', 'safe', 'acme/safe', 'active'),
+				(5, 'github', 'github.com', '',
+				 'acme', 'route-only', 'acme/route-only', 'acme', 'route-only', 'acme/route-only', 'active'),
+				(2, 'github', 'github.com', 'repo-displaced',
+				 'acme', 'reused', 'acme/reused', 'acme', 'reused', 'acme/reused', 'inactive'),
+				(3, 'github', 'github.com', 'repo-current',
+				 'acme', 'reused', 'acme/reused', 'acme', 'reused', 'acme/reused', 'active'),
+				(4, 'github', 'github.com', 'repo-renamed',
+				 'acme', 'renamed', 'acme/renamed', 'acme', 'renamed', 'acme/renamed', 'active');
+
+			INSERT INTO forge_repo_routes (
+				repo_id, platform, platform_host,
+				owner, name, repo_path, owner_key, name_key, repo_path_key,
+				is_current, first_seen_at, last_seen_at
+			) VALUES
+				(1, 'github', 'github.com',
+				 'acme', 'safe', 'acme/safe', 'acme', 'safe', 'acme/safe',
+				 1, '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z'),
+				(5, 'github', 'github.com',
+				 'acme', 'route-only', 'acme/route-only', 'acme', 'route-only', 'acme/route-only',
+				 1, '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z'),
+				(2, 'github', 'github.com',
+				 'acme', 'reused', 'acme/reused', 'acme', 'reused', 'acme/reused',
+				 0, '2026-08-01T00:00:00Z', '2026-08-02T00:00:00Z'),
+				(3, 'github', 'github.com',
+				 'acme', 'reused', 'acme/reused', 'acme', 'reused', 'acme/reused',
+				 1, '2026-08-03T00:00:00Z', '2026-08-03T00:00:00Z'),
+				(4, 'github', 'github.com',
+				 'acme', 'before-rename', 'acme/before-rename', 'acme', 'before-rename', 'acme/before-rename',
+				 0, '2026-08-01T00:00:00Z', '2026-08-02T00:00:00Z'),
+				(4, 'github', 'github.com',
+				 'acme', 'renamed', 'acme/renamed', 'acme', 'renamed', 'acme/renamed',
+				 1, '2026-08-03T00:00:00Z', '2026-08-03T00:00:00Z');
+
+			INSERT INTO forge_workspaces (
+				id, platform, platform_host, repo_owner, repo_name,
+				repo_owner_key, repo_name_key, repo_path_key,
+				item_type, item_number, item_key, git_head_ref,
+				worktree_path, tmux_session, status, created_at
+			) VALUES
+				('workspace-safe', 'github', 'github.com', 'acme', 'safe',
+				 'acme', 'safe', 'acme/safe',
+				 'pull_request', 7, '7', 'feature/safe',
+				 '/tmp/workspace-safe', 'workspace-safe', 'ready', '2026-08-01T00:00:00Z'),
+				('workspace-route-only', 'github', 'github.com', 'acme', 'route-only',
+				 'acme', 'route-only', 'acme/route-only',
+				 'pull_request', 11, '11', 'feature/route-only',
+				 '/tmp/workspace-route-only', 'workspace-route-only', 'ready', '2026-08-01T00:00:00Z'),
+				('workspace-contested', 'github', 'github.com', 'acme', 'reused',
+				 'acme', 'reused', 'acme/reused',
+				 'pull_request', 8, '8', 'feature/contested',
+				 '/tmp/workspace-contested', 'workspace-contested', 'ready', '2026-08-01T00:00:00Z'),
+				('workspace-renamed-old', 'github', 'github.com', 'acme', 'before-rename',
+				 'acme', 'before-rename', 'acme/before-rename',
+				 'pull_request', 9, '9', 'feature/old',
+				 '/tmp/workspace-renamed-old', 'workspace-renamed-old', 'ready', '2026-08-03T00:00:00Z'),
+				('workspace-renamed-new', 'github', 'github.com', 'acme', 'renamed',
+				 'acme', 'renamed', 'acme/renamed',
+				 'pull_request', 9, '9', 'feature/new',
+				 '/tmp/workspace-renamed-new', 'workspace-renamed-new', 'ready', '2026-08-03T00:00:00Z');
+
+			INSERT INTO forge_workspace_setup_events (
+				workspace_id, stage, outcome, message
+			) VALUES
+				('workspace-safe', 'setup', 'success', 'ready'),
+				('workspace-contested', 'setup', 'success', 'ready'),
+				('workspace-renamed-old', 'setup', 'success', 'ready'),
+				('workspace-renamed-new', 'setup', 'success', 'ready');
+		`)
+		require.NoError(err)
+	})
+
+	database, err := Open(dbPath)
+	require.NoError(err)
+
+	var safeRepoID sql.NullInt64
+	require.NoError(database.ReadDB().QueryRow(`
+		SELECT repo_id FROM forge_workspaces WHERE id = 'workspace-safe'
+	`).Scan(&safeRepoID))
+	require.True(safeRepoID.Valid)
+	require.Equal(int64(1), safeRepoID.Int64)
+
+	var routeOnlyRepoID sql.NullInt64
+	require.NoError(database.ReadDB().QueryRow(`
+		SELECT repo_id FROM forge_workspaces WHERE id = 'workspace-route-only'
+	`).Scan(&routeOnlyRepoID))
+	require.True(routeOnlyRepoID.Valid)
+	require.Equal(int64(5), routeOnlyRepoID.Int64)
+
+	var contestedRepoID sql.NullInt64
+	require.NoError(database.ReadDB().QueryRow(`
+		SELECT repo_id FROM forge_workspaces WHERE id = 'workspace-contested'
+	`).Scan(&contestedRepoID))
+	require.False(contestedRepoID.Valid)
+
+	var renamedRepoID int64
+	require.NoError(database.ReadDB().QueryRow(`
+		SELECT repo_id FROM forge_workspaces WHERE id = 'workspace-renamed-new'
+	`).Scan(&renamedRepoID))
+	require.Equal(int64(4), renamedRepoID)
+	var deletedDuplicateCount int
+	require.NoError(database.ReadDB().QueryRow(`
+		SELECT COUNT(*) FROM forge_workspaces WHERE id = 'workspace-renamed-old'
+	`).Scan(&deletedDuplicateCount))
+	require.Zero(deletedDuplicateCount)
+
+	var setupEventCount int
+	require.NoError(database.ReadDB().QueryRow(`
+		SELECT COUNT(*) FROM forge_workspace_setup_events
+	`).Scan(&setupEventCount))
+	require.Equal(3, setupEventCount)
+	assertDatabaseIntegrityForTest(t, database.ReadDB())
+	require.NoError(database.Close())
+
+	raw, migrator := openMigratorForTest(t, dbPath)
+	require.NoError(migrator.Migrate(54))
+	var repoIDColumnCount int
+	require.NoError(raw.QueryRow(`
+		SELECT COUNT(*)
+		FROM pragma_table_info('forge_workspaces')
+		WHERE name = 'repo_id'
+	`).Scan(&repoIDColumnCount))
+	require.Zero(repoIDColumnCount)
+	require.True(hasIndex(raw, "idx_workspaces_provider_item_key"))
+	require.NoError(raw.QueryRow(`
+		SELECT COUNT(*) FROM forge_workspace_setup_events
+	`).Scan(&setupEventCount))
+	require.Equal(3, setupEventCount)
 	assertDatabaseIntegrityForTest(t, raw)
 	require.NoError(raw.Close())
 }

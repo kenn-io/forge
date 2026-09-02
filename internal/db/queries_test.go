@@ -158,6 +158,28 @@ func TestPurgeOtherHosts(t *testing.T) {
 	gheRepoID := insertTestRepoWithHost(
 		t, d, "corp", "internal", "ghes.company.com",
 	)
+	require.NoError(d.InsertWorkspace(ctx, &Workspace{
+		ID: "ws-ghe-identified", Platform: "github",
+		PlatformHost: "ghes.company.com", RepoOwner: "corp", RepoName: "internal",
+		RepoID: gheRepoID, ItemType: WorkspaceItemTypePullRequest, ItemNumber: 2,
+		GitHeadRef: "feature/two", WorkspaceBranch: "kenn-forge/pr-2",
+		WorktreePath: "/tmp/ws-ghe-identified", TmuxSession: "forge-ws-ghe-identified",
+		Status: "ready",
+	}))
+	_, err := d.WriteDB().ExecContext(ctx, `
+		INSERT INTO forge_workspaces (
+			id, platform, platform_host, repo_owner, repo_name, repo_id,
+			repo_owner_key, repo_name_key, repo_path_key,
+			item_type, item_number, item_key, git_head_ref, workspace_branch,
+			worktree_path, tmux_session, status
+		)
+		SELECT
+			'ws-ghe-legacy', platform, platform_host, repo_owner, repo_name, NULL,
+			repo_owner_key, repo_name_key, repo_path_key,
+			item_type, item_number, item_key, git_head_ref, workspace_branch,
+			'/tmp/ws-ghe-legacy', 'forge-ws-ghe-legacy', status
+		FROM forge_workspaces WHERE id = 'ws-ghe-identified'`)
+	require.NoError(err)
 
 	// Insert MRs for both hosts.
 	ghMRID := insertTestMR(
@@ -243,14 +265,25 @@ func TestPurgeOtherHosts(t *testing.T) {
 	require.NoError(err)
 	assert.True(starred)
 
-	// ghes.company.com repo should be gone.
+	// The ghes.company.com repository survives only as an inactive identity
+	// tombstone for its workspace.
 	var gheCount int
 	err = d.ReadDB().QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM forge_repos
-		 WHERE platform_host = 'ghes.company.com'`,
+		 WHERE platform_host = 'ghes.company.com'
+		   AND id = ? AND lifecycle_state = 'inactive'`, gheRepoID,
 	).Scan(&gheCount)
 	require.NoError(err)
-	assert.Equal(0, gheCount)
+	assert.Equal(1, gheCount)
+	var identifiedRepoID int64
+	require.NoError(d.ReadDB().QueryRowContext(ctx, `
+		SELECT repo_id FROM forge_workspaces WHERE id = 'ws-ghe-identified'`,
+	).Scan(&identifiedRepoID))
+	assert.Equal(gheRepoID, identifiedRepoID)
+	_, err = d.WriteDB().ExecContext(ctx,
+		`DELETE FROM forge_repos WHERE id = ?`, gheRepoID,
+	)
+	require.Error(err, "workspace repository identities must not be nulled by deletion")
 
 	// ghes.company.com MR should be gone.
 	var gheMRCount int
@@ -4199,6 +4232,38 @@ func TestWorkspaceCRUD(t *testing.T) {
 	assert.Nil(noSuch)
 }
 
+func TestListWorkspacesUsesOneReadConnection(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	now := baseTime()
+
+	identity := GitHubRepoIdentity("github.com", "acme", "widget")
+	identity.PlatformRepoID = "repo-acme-widget"
+	repo, accepted, err := d.ReconcileRepositoryObservation(t.Context(), identity, now)
+	require.NoError(err)
+	require.True(accepted)
+	require.NoError(d.InsertWorkspace(t.Context(), &Workspace{
+		ID: "ws-list-one-connection", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget", RepoID: repo.Repository.ID,
+		ItemType: WorkspaceItemTypePullRequest, ItemNumber: 42,
+		WorktreePath: "/tmp/ws-list-one-connection", Status: "ready",
+	}))
+
+	renamed := GitHubRepoIdentity("github.com", "acme", "gadget")
+	renamed.PlatformRepoID = identity.PlatformRepoID
+	_, accepted, err = d.ReconcileRepositoryObservation(t.Context(), renamed, now.Add(time.Minute))
+	require.NoError(err)
+	require.True(accepted)
+
+	d.ReadDB().SetMaxOpenConns(1)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+	workspaces, err := d.ListWorkspaces(ctx)
+	require.NoError(err)
+	require.Len(workspaces, 1)
+	require.Equal("gadget", workspaces[0].RepoName)
+}
+
 func TestWorkspaceDeletionLifecycle(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -4243,6 +4308,16 @@ func TestWorkspaceDeletionLifecycle(t *testing.T) {
 	require.NotNil(got.ErrorMessage)
 	assert.Equal("worktree is dirty", *got.ErrorMessage)
 
+	started, err = d.BeginWorkspaceRetirement(ctx, "ws-delete")
+	require.NoError(err)
+	assert.False(started)
+	got, err = d.GetWorkspace(ctx, "ws-delete")
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal("deletion_failed", got.Status)
+	require.NotNil(got.ErrorMessage)
+	assert.Equal("worktree is dirty", *got.ErrorMessage)
+
 	started, err = d.BeginWorkspaceDeletion(ctx, "ws-delete")
 	require.NoError(err)
 	assert.True(started)
@@ -4259,6 +4334,60 @@ func TestWorkspaceDeletionLifecycle(t *testing.T) {
 		require.NotNil(got.ErrorMessage)
 		assert.Equal("deletion interrupted by server restart", *got.ErrorMessage)
 	}
+}
+
+func TestBeginWorkspaceRetirementPreservesFailureConcurrently(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	message := "worktree is dirty"
+	require.NoError(d.InsertWorkspace(ctx, &Workspace{
+		ID:              "ws-retirement-failure",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        WorkspaceItemTypePullRequest,
+		ItemNumber:      42,
+		GitHeadRef:      "feature/delete",
+		WorkspaceBranch: "kenn-forge/pr-42",
+		WorktreePath:    "/tmp/ws-retirement-failure",
+		TmuxSession:     "kenn-forge-ws-retirement-failure",
+		Status:          "deletion_failed",
+		ErrorMessage:    &message,
+	}))
+
+	const callers = 16
+	start := make(chan struct{})
+	results := make(chan bool, callers)
+	errs := make(chan error, callers)
+	var wg sync.WaitGroup
+	wg.Add(callers)
+	for range callers {
+		go func() {
+			defer wg.Done()
+			<-start
+			started, err := d.BeginWorkspaceRetirement(ctx, "ws-retirement-failure")
+			results <- started
+			errs <- err
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	close(errs)
+
+	for err := range errs {
+		require.NoError(err)
+	}
+	for started := range results {
+		require.False(started)
+	}
+	got, err := d.GetWorkspace(ctx, "ws-retirement-failure")
+	require.NoError(err)
+	require.NotNil(got)
+	require.Equal("deletion_failed", got.Status)
+	require.NotNil(got.ErrorMessage)
+	require.Equal(message, *got.ErrorMessage)
 }
 
 func TestFailInterruptedWorkspaceSetups(t *testing.T) {
@@ -4532,6 +4661,40 @@ func TestUpdateWorkspaceMRHeadRepoForSnapshotRejectsStaleRevision(t *testing.T) 
 	)
 	require.Error(err)
 	assert.Contains(err.Error(), "workspace \"missing-workspace\" not found")
+}
+
+func TestUpdateWorkspaceMRHeadRepoForSnapshotRejectsRepositoryMismatch(t *testing.T) {
+	require := require.New(t)
+	database := openTestDB(t)
+	originalRepoID := insertTestRepo(t, database, "acme", "original")
+	replacementRepoID := insertTestRepo(t, database, "acme", "replacement")
+	insertTestMR(t, database, replacementRepoID, 7, "replacement pull", baseTime())
+	replacementMR, err := database.GetMergeRequestByRepoIDAndNumber(
+		t.Context(), replacementRepoID, 7,
+	)
+	require.NoError(err)
+	require.NotNil(replacementMR)
+	workspace := &Workspace{
+		ID: "ws-repository-mismatch", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "original",
+		ItemType: WorkspaceItemTypePullRequest, ItemNumber: 7,
+		WorktreePath: t.TempDir(), Status: "ready",
+	}
+	require.NoError(database.InsertWorkspace(t.Context(), workspace))
+	require.Equal(originalRepoID, workspace.RepoID)
+	forkURL := "https://github.com/contributor/replacement.git"
+
+	applied, err := database.UpdateWorkspaceMRHeadRepoForSnapshot(
+		t.Context(), workspace.ID, replacementRepoID, 7,
+		replacementMR.SnapshotRevision, false, &forkURL,
+	)
+
+	require.NoError(err)
+	require.False(applied)
+	stored, err := database.GetWorkspace(t.Context(), workspace.ID)
+	require.NoError(err)
+	require.NotNil(stored)
+	require.Nil(stored.MRHeadRepo)
 }
 
 func TestWorkspaceItemKeyDefaultsFromItemNumber(t *testing.T) {
@@ -5527,11 +5690,11 @@ func TestWorkspaceSummariesRetainWorkspaceWithoutRemovedPullMetadata(t *testing.
 	require.Nil(summaries[0].MRTitle)
 }
 
-func TestWorkspaceSummariesHideProviderMetadataForReusedRoute(t *testing.T) {
+func TestWorkspaceSummariesFollowStableRepositoryAcrossReusedRoute(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
 	observedAt := baseTime()
-	reconcileCatalogRepository(
+	original := reconcileCatalogRepository(
 		t, d, "provider-original", "org-a", "project-a", observedAt,
 	)
 	associatedPR := 42
@@ -5556,15 +5719,16 @@ func TestWorkspaceSummariesHideProviderMetadataForReusedRoute(t *testing.T) {
 	summary, err := d.GetWorkspaceSummary(t.Context(), "ws-reused-route")
 	require.NoError(err)
 	require.NotNil(summary)
-	require.Zero(summary.RepoID)
-	require.False(summary.SourceItemVisible)
-	require.False(summary.AssociatedPRVisible)
+	require.Equal(original.Repository.ID, summary.RepoID)
+	require.Equal("renamed-project", summary.RepoName)
+	require.True(summary.SourceItemVisible)
+	require.True(summary.AssociatedPRVisible)
 
 	summaries, err := d.ListWorkspaceSummaries(t.Context())
 	require.NoError(err)
 	require.Len(summaries, 1)
-	require.False(summaries[0].SourceItemVisible)
-	require.False(summaries[0].AssociatedPRVisible)
+	require.True(summaries[0].SourceItemVisible)
+	require.True(summaries[0].AssociatedPRVisible)
 }
 
 func TestSetWorkspaceAssociatedPRNumberIfNull(t *testing.T) {

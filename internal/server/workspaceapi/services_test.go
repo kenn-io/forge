@@ -3,6 +3,8 @@ package workspaceapi
 import (
 	"context"
 	"errors"
+	"fmt"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -47,7 +49,7 @@ func TestLaunchSpecCreatePersistsBeforeSetupStarts(t *testing.T) {
 	}
 	setupStarted := make(chan setupObservation, 1)
 	manager.SetWorktreeBasePathResolver(func(
-		ctx context.Context, _, _, _, _ string,
+		ctx context.Context, _ workspace.WorktreeBaseRepository,
 	) (string, bool, error) {
 		rows, readErr := database.ListWorkspaces(ctx)
 		if readErr != nil || len(rows) != 1 {
@@ -85,6 +87,78 @@ func TestLaunchSpecCreatePersistsBeforeSetupStarts(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		require.FailNow("workspace setup did not start")
 	}
+}
+
+func TestCreatePullWorkspacePreservesDisplacedRouteOwner(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := dbtest.Open(t)
+	base := t.TempDir()
+	observedAt := time.Now().UTC().Add(-3 * time.Minute)
+	oldIdentity := db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "repo-old-widget", Owner: "acme", Name: "widget",
+	}
+	oldRepo, accepted, err := database.ReconcileRepositoryObservation(
+		t.Context(), oldIdentity, observedAt,
+	)
+	require.NoError(err)
+	require.True(accepted)
+	require.NotNil(oldRepo)
+	displacedPath := filepath.Join(
+		base, "github", "github.com", "acme", "widget",
+		fmt.Sprintf("repo-%d", oldRepo.Repository.ID), "pr-42",
+	)
+	require.NoError(database.InsertWorkspace(t.Context(), &db.Workspace{
+		ID: "ws-displaced", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget",
+		ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 42, ItemKey: "42",
+		GitHeadRef: "feature/old", WorkspaceBranch: "kenn-forge/pr-42",
+		WorktreePath: displacedPath, TmuxSession: "forge-ws-displaced", Status: "ready",
+	}))
+	oldIdentity.Owner = "acme-archive"
+	oldIdentity.Name = "widget-old"
+	_, accepted, err = database.ReconcileRepositoryObservation(
+		t.Context(), oldIdentity, observedAt.Add(time.Minute),
+	)
+	require.NoError(err)
+	require.True(accepted)
+	_, accepted, err = database.ReconcileRepositoryObservation(
+		t.Context(), db.RepoIdentity{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
+		}, observedAt.Add(2*time.Minute),
+	)
+	require.NoError(err)
+	require.True(accepted)
+
+	resolver := stubLaunchSpecResolver{}
+	manager := workspace.NewManager(database, base)
+	manager.SetLaunchSpecResolver(resolver)
+	handler := New(Deps{
+		DB: database, Workspaces: manager,
+		LaunchSpecResolver: resolver, EnrichmentDisabled: true,
+	})
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+	require.NoError(handler.Shutdown(shutdownCtx))
+	cancel()
+
+	result, err := handler.CreatePullWorkspace(t.Context(), CreatePullWorkspaceRequest{
+		Provider: "github", PlatformHost: "github.com",
+		Owner: "acme", Name: "widget", Number: 42,
+	})
+
+	require.NoError(err)
+	assert.NotEqual("ws-displaced", result.Workspace.ID)
+	preserved, err := database.GetWorkspace(t.Context(), "ws-displaced")
+	require.NoError(err)
+	require.NotNil(preserved)
+	assert.Equal(displacedPath, preserved.WorktreePath)
+	replacement, err := database.GetWorkspace(t.Context(), result.Workspace.ID)
+	require.NoError(err)
+	require.NotNil(replacement)
+	assert.NotEqual(displacedPath, replacement.WorktreePath)
+	assert.Equal("pr-42", filepath.Base(replacement.WorktreePath))
 }
 
 func TestCreatePullWorkspaceServiceSuppressesAutoAssign(t *testing.T) {

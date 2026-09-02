@@ -752,6 +752,8 @@ case "$*" in
 		echo "+refs/heads/*:refs/remotes/origin/*"
 		echo "+refs/pull/*/head:refs/pull/*/head"
 		;;
+	"for-each-ref --format=%(refname)%09%(objectname)%09%(symref)")
+		;;
 	"fetch --prune --no-tags origin")
 		;;
 	"remote set-head origin -a")
@@ -6819,8 +6821,8 @@ func TestCommitMergeRequestParentSnapshotKeepsHistoryBoundDuringReconciliation(
 	reclassified, err := d.GetWorkspace(ctx, ws.ID)
 	require.NoError(err)
 	require.NotNil(reclassified)
-	assert.Equal("old-group", reclassified.RepoOwner)
-	assert.Equal("old-name", reclassified.RepoName)
+	assert.Equal("new-group", reclassified.RepoOwner)
+	assert.Equal("new-name", reclassified.RepoName)
 	require.NotNil(reclassified.MRHeadRepo)
 	assert.Equal(forkURL, *reclassified.MRHeadRepo)
 
@@ -7058,8 +7060,8 @@ func TestReclassifyWorkspaceHeadRepoTrustKeepsHistoryBoundDuringReconciliation(t
 	reclassified, err := d.GetWorkspace(ctx, ws.ID)
 	require.NoError(err)
 	require.NotNil(reclassified)
-	assert.Equal("old-group", reclassified.RepoOwner)
-	assert.Equal("old-name", reclassified.RepoName)
+	assert.Equal("new-group", reclassified.RepoOwner)
+	assert.Equal("new-name", reclassified.RepoName)
 	require.NotNil(reclassified.MRHeadRepo)
 	assert.Equal(forkURL, *reclassified.MRHeadRepo)
 

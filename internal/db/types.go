@@ -1263,6 +1263,7 @@ type Workspace struct {
 	PlatformHost       string
 	RepoOwner          string
 	RepoName           string
+	RepoID             int64
 	ItemType           string
 	ItemNumber         int
 	ItemKey            string
@@ -1412,10 +1413,11 @@ func (spec WorkspaceLaunchSpec) ValidateWorkspace(workspace Workspace) error {
 	if workspace.ID == "" {
 		return errors.New("workspace ID is required")
 	}
+	routeChanged := !strings.EqualFold(workspace.RepoOwner, spec.Repository.Owner) ||
+		!strings.EqualFold(workspace.RepoName, spec.Repository.Name)
 	if !strings.EqualFold(canonicalWorkspacePlatform(workspace.Platform), strings.TrimSpace(spec.Repository.Provider)) ||
 		!strings.EqualFold(strings.TrimSpace(workspace.PlatformHost), strings.TrimSpace(spec.Repository.PlatformHost)) ||
-		!strings.EqualFold(workspace.RepoOwner, spec.Repository.Owner) ||
-		!strings.EqualFold(workspace.RepoName, spec.Repository.Name) ||
+		(workspace.RepoID == 0 && routeChanged) ||
 		workspace.ItemType != spec.ItemType || workspace.ItemNumber != spec.ItemNumber ||
 		workspaceItemKeyForComparison(workspace) != spec.ItemKey ||
 		strings.TrimSpace(workspace.GitHeadRef) != strings.TrimSpace(spec.GitHeadRef) {

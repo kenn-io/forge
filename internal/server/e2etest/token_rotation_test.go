@@ -986,6 +986,11 @@ func waitForTokenRotationConfigEvent(
 func seedReadyRuntimeWorkspace(t *testing.T, database *db.DB, worktreePath string) {
 	t.Helper()
 	now := time.Now().UTC().Truncate(time.Second)
+	_, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
+	})
+	require.NoError(t, err)
 	require.NoError(t, os.MkdirAll(worktreePath, 0o755))
 	runSettingsGit(t, worktreePath, "init", "--initial-branch=main")
 	runSettingsGit(t, worktreePath, "config", "user.email", "test@example.test")

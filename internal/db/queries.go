@@ -984,9 +984,11 @@ func (d *DB) loadLabelsForIssues(ctx context.Context, ids []int64) (map[int64][]
 	return out, nil
 }
 
-// PurgeOtherHosts deletes all data for platform hosts other
-// than keepHost. Deletes in FK-dependency order so it works
-// on existing DBs where CASCADE may not be retrofitted.
+// PurgeOtherHosts deletes data for platform hosts other than keepHost. A
+// repository referenced by a workspace survives as an inactive identity
+// tombstone so purging provider data cannot detach the local checkout from its
+// stable repository identity. Deletes otherwise run in FK-dependency order so
+// this works on existing DBs where CASCADE may not be retrofitted.
 func (d *DB) PurgeOtherHosts(ctx context.Context, keepHost string) error {
 	releaseReconciliation := d.lockRepositoryReconciliationWrite()
 	defer releaseReconciliation()
@@ -1002,7 +1004,16 @@ func (d *DB) PurgeOtherHosts(ctx context.Context, keepHost string) error {
 			`DELETE FROM forge_merge_requests WHERE repo_id IN (SELECT id FROM forge_repos WHERE platform_host != ?)`,
 			`DELETE FROM forge_issue_events WHERE issue_id IN (SELECT id FROM forge_issues WHERE repo_id IN (SELECT id FROM forge_repos WHERE platform_host != ?))`,
 			`DELETE FROM forge_issues WHERE repo_id IN (SELECT id FROM forge_repos WHERE platform_host != ?)`,
-			`DELETE FROM forge_repos WHERE platform_host != ?`,
+			`UPDATE forge_repo_routes SET is_current = 0
+			 WHERE repo_id IN (
+				 SELECT id FROM forge_repos WHERE platform_host != ?
+				   AND id IN (SELECT repo_id FROM forge_workspaces WHERE repo_id IS NOT NULL)
+			 )`,
+			`UPDATE forge_repos SET lifecycle_state = 'inactive'
+			 WHERE platform_host != ?
+			   AND id IN (SELECT repo_id FROM forge_workspaces WHERE repo_id IS NOT NULL)`,
+			`DELETE FROM forge_repos WHERE platform_host != ?
+			   AND id NOT IN (SELECT repo_id FROM forge_workspaces WHERE repo_id IS NOT NULL)`,
 			`DELETE FROM forge_rate_limits WHERE platform_host != ?`,
 		}
 		for _, q := range queries {
@@ -1387,8 +1398,18 @@ func repoFromCatalogEntry(entry *RepositoryCatalogEntry, err error) (*Repo, erro
 
 // GetRepoByID returns the repo with the given ID, or nil if not found.
 func (d *DB) GetRepoByID(ctx context.Context, id int64) (*Repo, error) {
+	return d.getRepoByID(ctx, id, false)
+}
+
+// GetActiveRepoByID returns the active repo with the given ID, or nil if the
+// repo does not exist or is inactive.
+func (d *DB) GetActiveRepoByID(ctx context.Context, id int64) (*Repo, error) {
+	return d.getRepoByID(ctx, id, true)
+}
+
+func (d *DB) getRepoByID(ctx context.Context, id int64, activeOnly bool) (*Repo, error) {
 	var r Repo
-	err := d.ro.QueryRowContext(ctx,
+	query :=
 		`SELECT id, platform, platform_host, platform_repo_id,
 		        owner, name, repo_path,
 		        owner_key, name_key, repo_path_key,
@@ -1399,8 +1420,11 @@ func (d *DB) GetRepoByID(ctx context.Context, id int64) (*Repo, error) {
 		        label_catalog_synced_at, label_catalog_checked_at,
 		        label_catalog_sync_error,
 		        created_at
-		 FROM forge_repos WHERE id = ?`, id,
-	).Scan(
+		 FROM forge_repos WHERE id = ?`
+	if activeOnly {
+		query += ` AND lifecycle_state = 'active'`
+	}
+	err := d.ro.QueryRowContext(ctx, query, id).Scan(
 		&r.ID, &r.Platform, &r.PlatformHost, &r.PlatformRepoID,
 		&r.Owner, &r.Name, &r.RepoPath,
 		&r.OwnerKey, &r.NameKey, &r.RepoPathKey,
@@ -4567,26 +4591,15 @@ func (d *DB) WorkspaceRepoRouteHasHistoricalOccupants(
 func (d *DB) canonicalizeWorkspaceRepo(
 	ctx context.Context,
 	provider, platformHost, owner, name string,
-) (string, string, string, string, string, string, string, error) {
+) (string, string, string, string, string, string, string, int64, error) {
 	provider = strings.ToLower(strings.TrimSpace(provider))
 	host, ownerKey, nameKey := canonicalRepoLookupIdentifier(platformHost, owner, name)
 	pathKey := ownerKey + "/" + nameKey
-	collision, err := d.workspaceRouteHasHistoricalOccupants(
-		ctx, provider, host, pathKey,
-	)
-	if err != nil {
-		return "", "", "", "", "", "", "", err
-	}
-	if collision {
-		return "", "", "", "", "", "", "", fmt.Errorf(
-			"workspace repository route has historical occupants: %s/%s",
-			ownerKey, nameKey,
-		)
-	}
 
 	var matchedProvider, displayOwner, displayName, repoOwnerKey, repoNameKey, repoPathKey string
-	err = d.ro.QueryRowContext(ctx, `
-		SELECT platform, owner, name, owner_key, name_key, repo_path_key
+	var repoID int64
+	err := d.ro.QueryRowContext(ctx, `
+		SELECT platform, owner, name, owner_key, name_key, repo_path_key, id
 		FROM forge_repos
 		WHERE platform_host = ? AND repo_path_key = ?
 		  AND lifecycle_state = 'active'
@@ -4594,14 +4607,57 @@ func (d *DB) canonicalizeWorkspaceRepo(
 		ORDER BY CASE WHEN platform <> 'github' THEN 0 ELSE 1 END, id
 		LIMIT 1`,
 		host, pathKey, provider, provider,
-	).Scan(&matchedProvider, &displayOwner, &displayName, &repoOwnerKey, &repoNameKey, &repoPathKey)
+	).Scan(
+		&matchedProvider, &displayOwner, &displayName,
+		&repoOwnerKey, &repoNameKey, &repoPathKey, &repoID,
+	)
 	if errors.Is(err, sql.ErrNoRows) {
-		return canonicalWorkspacePlatform(provider), host, ownerKey, nameKey, ownerKey, nameKey, pathKey, nil
+		return canonicalWorkspacePlatform(provider), host, ownerKey, nameKey,
+			ownerKey, nameKey, pathKey, 0, nil
 	}
 	if err != nil {
-		return "", "", "", "", "", "", "", fmt.Errorf("lookup workspace repo identity: %w", err)
+		return "", "", "", "", "", "", "", 0,
+			fmt.Errorf("lookup workspace repo identity: %w", err)
 	}
-	return matchedProvider, host, displayOwner, displayName, repoOwnerKey, repoNameKey, repoPathKey, nil
+	return matchedProvider, host, displayOwner, displayName,
+		repoOwnerKey, repoNameKey, repoPathKey, repoID, nil
+}
+
+func (d *DB) resolveWorkspaceLookupRoute(
+	ctx context.Context,
+	provider, platformHost, owner, name string,
+) (string, string, string, int64, bool, error) {
+	_, host, _, _, ownerKey, nameKey, pathKey, repoID, err :=
+		d.canonicalizeWorkspaceRepo(ctx, provider, platformHost, owner, name)
+	if err != nil {
+		return "", "", "", 0, false, err
+	}
+	if repoID != 0 {
+		return host, ownerKey, nameKey, repoID, false, nil
+	}
+	collision, err := d.workspaceRouteHasHistoricalOccupants(
+		ctx, provider, host, pathKey,
+	)
+	if err != nil {
+		return "", "", "", 0, false, err
+	}
+	return host, ownerKey, nameKey, 0, !collision, nil
+}
+
+func workspaceRepositoryLookupPredicate(
+	provider, platformHost, owner, name string, repoID int64,
+) (string, []any) {
+	if repoID != 0 {
+		return "repo_id = ?", []any{repoID}
+	}
+	predicate := `repo_id IS NULL
+		AND platform_host = ? AND repo_owner_key = ? AND repo_name_key = ?`
+	args := []any{platformHost, owner, name}
+	if provider != "" {
+		predicate += " AND platform = ?"
+		args = append(args, provider)
+	}
+	return predicate, args
 }
 
 func workspaceItemKeyForInsert(ws *Workspace) (string, error) {
@@ -4640,11 +4696,45 @@ func workspaceKataMetadataJSON(ws *Workspace) (string, error) {
 	return string(data), nil
 }
 
-func scanWorkspace(scanner interface{ Scan(...any) error }) (*Workspace, error) {
+func (d *DB) scanWorkspace(
+	ctx context.Context,
+	scanner interface{ Scan(...any) error },
+) (*Workspace, error) {
+	ws, err := scanWorkspaceRow(scanner)
+	if err != nil {
+		return nil, err
+	}
+	return d.resolveWorkspaceRepository(ctx, ws)
+}
+
+func (d *DB) resolveWorkspaceRepository(
+	ctx context.Context, ws *Workspace,
+) (*Workspace, error) {
+	if ws.RepoID == 0 {
+		return ws, nil
+	}
+	repo, err := d.GetActiveRepoByID(ctx, ws.RepoID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve workspace repository route: %w", err)
+	}
+	if repo != nil {
+		ws.Platform = repo.Platform
+		ws.PlatformHost = repo.PlatformHost
+		ws.RepoOwner = repo.Owner
+		ws.RepoName = repo.Name
+	}
+	return ws, nil
+}
+
+func scanWorkspaceRow(
+	scanner interface{ Scan(...any) error },
+) (*Workspace, error) {
 	var ws Workspace
 	var kataMetadataJSON string
+	var repoID sql.NullInt64
 	err := scanner.Scan(
 		&ws.ID, &ws.Platform, &ws.PlatformHost, &ws.RepoOwner, &ws.RepoName,
+		&repoID,
 		&ws.ItemType, &ws.ItemNumber, &ws.ItemKey, &ws.AssociatedPRNumber,
 		&ws.GitHeadRef, &ws.MRHeadRepo, &ws.WorkspaceBranch,
 		&ws.WorktreePath, &ws.TmuxSession, &ws.TerminalBackend, &ws.Status,
@@ -4652,6 +4742,9 @@ func scanWorkspace(scanner interface{ Scan(...any) error }) (*Workspace, error) 
 	)
 	if err != nil {
 		return nil, err
+	}
+	if repoID.Valid {
+		ws.RepoID = repoID.Int64
 	}
 	if ws.ItemKey == "" && workspaceItemTypeKeysByNumber(ws.ItemType) {
 		ws.ItemKey = strconv.Itoa(ws.ItemNumber)
@@ -4694,6 +4787,7 @@ type preparedWorkspaceInsert struct {
 	repoOwnerKey     string
 	repoNameKey      string
 	repoPathKey      string
+	repoID           int64
 	itemKey          string
 	kataMetadataJSON string
 }
@@ -4706,14 +4800,38 @@ func (d *DB) prepareWorkspaceInsert(
 	}
 	var prepared preparedWorkspaceInsert
 	var err error
+	requestedRepoID := ws.RepoID
 	ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
-		prepared.repoOwnerKey, prepared.repoNameKey, prepared.repoPathKey, err =
+		prepared.repoOwnerKey, prepared.repoNameKey, prepared.repoPathKey,
+		prepared.repoID, err =
 		d.canonicalizeWorkspaceRepo(
 			ctx, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 		)
 	if err != nil {
 		return preparedWorkspaceInsert{}, err
 	}
+	if requestedRepoID != 0 && requestedRepoID != prepared.repoID {
+		return preparedWorkspaceInsert{}, fmt.Errorf(
+			"%w: workspace repository identity changed for route: %s/%s",
+			ErrRepositoryRouteFenceChanged,
+			ws.RepoOwner, ws.RepoName,
+		)
+	}
+	if prepared.repoID == 0 {
+		collision, err := d.workspaceRouteHasHistoricalOccupants(
+			ctx, ws.Platform, ws.PlatformHost, prepared.repoPathKey,
+		)
+		if err != nil {
+			return preparedWorkspaceInsert{}, err
+		}
+		if collision {
+			return preparedWorkspaceInsert{}, fmt.Errorf(
+				"workspace repository route has historical occupants: %s/%s",
+				prepared.repoOwnerKey, prepared.repoNameKey,
+			)
+		}
+	}
+	ws.RepoID = prepared.repoID
 	if ws.TerminalBackend == "" {
 		ws.TerminalBackend = "tmux"
 	}
@@ -4740,14 +4858,15 @@ func insertPreparedWorkspace(
 ) error {
 	_, err := executor.ExecContext(ctx, `
 		INSERT INTO forge_workspaces
-		    (id, platform, platform_host, repo_owner, repo_name,
+		    (id, platform, platform_host, repo_owner, repo_name, repo_id,
 		     repo_owner_key, repo_name_key, repo_path_key,
 		     item_type, item_number, item_key, associated_pr_number,
 		     git_head_ref, mr_head_repo, workspace_branch,
 		     worktree_path, tmux_session, terminal_backend, status,
 		     error_message, kata_metadata)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		ws.ID, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+		sql.NullInt64{Int64: prepared.repoID, Valid: prepared.repoID != 0},
 		prepared.repoOwnerKey, prepared.repoNameKey, prepared.repoPathKey,
 		ws.ItemType, ws.ItemNumber, prepared.itemKey, ws.AssociatedPRNumber,
 		ws.GitHeadRef, ws.MRHeadRepo, ws.WorkspaceBranch,
@@ -4764,8 +4883,8 @@ func insertPreparedWorkspace(
 func (d *DB) GetWorkspace(
 	ctx context.Context, id string,
 ) (*Workspace, error) {
-	ws, err := scanWorkspace(d.ro.QueryRowContext(ctx, `
-		SELECT id, platform, platform_host, repo_owner, repo_name,
+	ws, err := d.scanWorkspace(ctx, d.ro.QueryRowContext(ctx, `
+		SELECT id, platform, platform_host, repo_owner, repo_name, repo_id,
 		       item_type, item_number, item_key, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, terminal_backend, status,
@@ -4814,25 +4933,25 @@ func (d *DB) GetWorkspaceLinkedToMRForProvider(
 	mrNumber int,
 ) (*Workspace, error) {
 	provider = strings.ToLower(strings.TrimSpace(provider))
-	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
-	collision, err := d.workspaceRouteHasHistoricalOccupants(
-		ctx, provider, platformHost, owner+"/"+name,
-	)
+	platformHost, owner, name, repoID, legacySafe, err :=
+		d.resolveWorkspaceLookupRoute(ctx, provider, platformHost, owner, name)
 	if err != nil {
 		return nil, err
 	}
-	if collision {
+	if repoID == 0 && !legacySafe {
 		return nil, nil
 	}
-	ws, err := scanWorkspace(d.ro.QueryRowContext(ctx, `
-		SELECT id, platform, platform_host, repo_owner, repo_name,
+	predicate, args := workspaceRepositoryLookupPredicate(
+		provider, platformHost, owner, name, repoID,
+	)
+	query := `
+		SELECT id, platform, platform_host, repo_owner, repo_name, repo_id,
 		       item_type, item_number, item_key, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, terminal_backend, status,
 		       error_message, created_at, kata_metadata
 			FROM forge_workspaces
-			WHERE platform_host = ? AND repo_owner_key = ?
-			  AND repo_name_key = ?
+			WHERE (` + predicate + `)
 			  AND (
 			    (item_type = ? AND item_number = ?)
 			    OR (
@@ -4840,21 +4959,20 @@ func (d *DB) GetWorkspaceLinkedToMRForProvider(
 			      AND associated_pr_number = ?
 			    )
 			  )
-			  AND (? = '' OR platform = ?)
 			ORDER BY CASE
 			           WHEN item_type = ? AND item_number = ? THEN 0
 			           ELSE 1
 			         END,
 			         created_at DESC,
 			         id DESC
-			LIMIT 1`,
-		platformHost, owner, name,
+			LIMIT 1`
+	args = append(args,
 		WorkspaceItemTypePullRequest, mrNumber,
 		WorkspaceItemTypeIssue, WorkspaceItemTypeKataTask, WorkspaceItemTypeAdHoc,
 		mrNumber,
-		provider, provider,
 		WorkspaceItemTypePullRequest, mrNumber,
-	))
+	)
+	ws, err := d.scanWorkspace(ctx, d.ro.QueryRowContext(ctx, query, args...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -4870,29 +4988,28 @@ func (d *DB) getWorkspaceByMR(
 	mrNumber int,
 ) (*Workspace, error) {
 	provider = strings.ToLower(strings.TrimSpace(provider))
-	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
-	collision, err := d.workspaceRouteHasHistoricalOccupants(
-		ctx, provider, platformHost, owner+"/"+name,
-	)
+	platformHost, owner, name, repoID, legacySafe, err :=
+		d.resolveWorkspaceLookupRoute(ctx, provider, platformHost, owner, name)
 	if err != nil {
 		return nil, err
 	}
-	if collision {
+	if repoID == 0 && !legacySafe {
 		return nil, nil
 	}
-	ws, err := scanWorkspace(d.ro.QueryRowContext(ctx, `
-		SELECT id, platform, platform_host, repo_owner, repo_name,
+	predicate, lookupArgs := workspaceRepositoryLookupPredicate(
+		provider, platformHost, owner, name, repoID,
+	)
+	query := `
+		SELECT id, platform, platform_host, repo_owner, repo_name, repo_id,
 		       item_type, item_number, item_key, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, terminal_backend, status,
 		       error_message, created_at, kata_metadata
 			FROM forge_workspaces
-			WHERE platform_host = ? AND repo_owner_key = ?
-			  AND repo_name_key = ? AND item_type = ? AND item_number = ?
-			  AND (? = '' OR platform = ?)`,
-		platformHost, owner, name, WorkspaceItemTypePullRequest, mrNumber,
-		provider, provider,
-	))
+			WHERE item_type = ? AND item_number = ?
+			  AND (` + predicate + `)`
+	args := append([]any{WorkspaceItemTypePullRequest, mrNumber}, lookupArgs...)
+	ws, err := d.scanWorkspace(ctx, d.ro.QueryRowContext(ctx, query, args...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -4930,29 +5047,28 @@ func (d *DB) getWorkspaceByIssue(
 	issueNumber int,
 ) (*Workspace, error) {
 	provider = strings.ToLower(strings.TrimSpace(provider))
-	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
-	collision, err := d.workspaceRouteHasHistoricalOccupants(
-		ctx, provider, platformHost, owner+"/"+name,
-	)
+	platformHost, owner, name, repoID, legacySafe, err :=
+		d.resolveWorkspaceLookupRoute(ctx, provider, platformHost, owner, name)
 	if err != nil {
 		return nil, err
 	}
-	if collision {
+	if repoID == 0 && !legacySafe {
 		return nil, nil
 	}
-	ws, err := scanWorkspace(d.ro.QueryRowContext(ctx, `
-		SELECT id, platform, platform_host, repo_owner, repo_name,
+	predicate, lookupArgs := workspaceRepositoryLookupPredicate(
+		provider, platformHost, owner, name, repoID,
+	)
+	query := `
+		SELECT id, platform, platform_host, repo_owner, repo_name, repo_id,
 		       item_type, item_number, item_key, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, terminal_backend, status,
 		       error_message, created_at, kata_metadata
 		FROM forge_workspaces
-		WHERE platform_host = ? AND repo_owner_key = ?
-		  AND repo_name_key = ? AND item_type = ? AND item_number = ?
-		  AND (? = '' OR platform = ?)`,
-		platformHost, owner, name, WorkspaceItemTypeIssue, issueNumber,
-		provider, provider,
-	))
+		WHERE item_type = ? AND item_number = ?
+		  AND (` + predicate + `)`
+	args := append([]any{WorkspaceItemTypeIssue, issueNumber}, lookupArgs...)
+	ws, err := d.scanWorkspace(ctx, d.ro.QueryRowContext(ctx, query, args...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -4972,28 +5088,28 @@ func (d *DB) GetWorkspaceByItemKeyForProvider(
 	if itemType == "" || itemKey == "" {
 		return nil, nil
 	}
-	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
-	collision, err := d.workspaceRouteHasHistoricalOccupants(
-		ctx, provider, platformHost, owner+"/"+name,
-	)
+	platformHost, owner, name, repoID, legacySafe, err :=
+		d.resolveWorkspaceLookupRoute(ctx, provider, platformHost, owner, name)
 	if err != nil {
 		return nil, err
 	}
-	if collision {
+	if repoID == 0 && !legacySafe {
 		return nil, nil
 	}
-	ws, err := scanWorkspace(d.ro.QueryRowContext(ctx, `
-		SELECT id, platform, platform_host, repo_owner, repo_name,
+	predicate, lookupArgs := workspaceRepositoryLookupPredicate(
+		provider, platformHost, owner, name, repoID,
+	)
+	query := `
+		SELECT id, platform, platform_host, repo_owner, repo_name, repo_id,
 		       item_type, item_number, item_key, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, terminal_backend, status,
 		       error_message, created_at, kata_metadata
 		FROM forge_workspaces
-		WHERE platform_host = ? AND repo_owner_key = ?
-		  AND repo_name_key = ? AND item_type = ? AND item_key = ?
-		  AND (? = '' OR platform = ?)`,
-		platformHost, owner, name, itemType, itemKey, provider, provider,
-	))
+		WHERE item_type = ? AND item_key = ?
+		  AND (` + predicate + `)`
+	args := append([]any{itemType, itemKey}, lookupArgs...)
+	ws, err := d.scanWorkspace(ctx, d.ro.QueryRowContext(ctx, query, args...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -5015,8 +5131,8 @@ func (d *DB) GetKataWorkspaceByIssue(
 	if daemonID == "" || issueUID == "" {
 		return nil, nil
 	}
-	ws, err := scanWorkspace(d.ro.QueryRowContext(ctx, `
-		SELECT id, platform, platform_host, repo_owner, repo_name,
+	ws, err := d.scanWorkspace(ctx, d.ro.QueryRowContext(ctx, `
+		SELECT id, platform, platform_host, repo_owner, repo_name, repo_id,
 		       item_type, item_number, item_key, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, terminal_backend, status,
@@ -5043,13 +5159,20 @@ func (d *DB) ListWorkspaces(
 	ctx context.Context,
 ) ([]Workspace, error) {
 	rows, err := d.ro.QueryContext(ctx, `
-		SELECT id, platform, platform_host, repo_owner, repo_name,
-		       item_type, item_number, item_key, associated_pr_number,
-		       git_head_ref, mr_head_repo, workspace_branch,
-		       worktree_path, tmux_session, terminal_backend, status,
-		       error_message, created_at, kata_metadata
-		FROM forge_workspaces
-		ORDER BY created_at DESC`,
+		SELECT w.id,
+		       COALESCE(r.platform, w.platform),
+		       COALESCE(r.platform_host, w.platform_host),
+		       COALESCE(r.owner, w.repo_owner),
+		       COALESCE(r.name, w.repo_name),
+		       w.repo_id,
+		       w.item_type, w.item_number, w.item_key, w.associated_pr_number,
+		       w.git_head_ref, w.mr_head_repo, w.workspace_branch,
+		       w.worktree_path, w.tmux_session, w.terminal_backend, w.status,
+		       w.error_message, w.created_at, w.kata_metadata
+		FROM forge_workspaces w
+		LEFT JOIN forge_repos r
+		  ON r.id = w.repo_id AND r.lifecycle_state = 'active'
+		ORDER BY w.created_at DESC`,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list workspaces: %w", err)
@@ -5058,7 +5181,7 @@ func (d *DB) ListWorkspaces(
 
 	var out []Workspace
 	for rows.Next() {
-		ws, err := scanWorkspace(rows)
+		ws, err := scanWorkspaceRow(rows)
 		if err != nil {
 			return nil, fmt.Errorf("scan workspace: %w", err)
 		}
@@ -5112,12 +5235,29 @@ func (d *DB) MarkReadyWorkspaceError(
 // workspace state and clears any error left by an earlier attempt. A false
 // result means another deletion is already responsible for the workspace.
 func (d *DB) BeginWorkspaceDeletion(ctx context.Context, id string) (bool, error) {
-	result, err := d.execContext(ctx, `
+	return d.beginWorkspaceDeletion(ctx, id, true)
+}
+
+// BeginWorkspaceRetirement atomically admits an automatic deletion attempt,
+// but leaves a prior deletion failure for explicit user action.
+func (d *DB) BeginWorkspaceRetirement(ctx context.Context, id string) (bool, error) {
+	return d.beginWorkspaceDeletion(ctx, id, false)
+}
+
+func (d *DB) beginWorkspaceDeletion(
+	ctx context.Context, id string, retryFailure bool,
+) (bool, error) {
+	query := `
 		UPDATE forge_workspaces
 		SET status = 'deleting', error_message = NULL
-		WHERE id = ? AND status IN ('ready', 'error', 'deletion_failed')`,
-		id,
-	)
+		WHERE id = ? AND status IN ('ready', 'error')`
+	if retryFailure {
+		query = `
+			UPDATE forge_workspaces
+			SET status = 'deleting', error_message = NULL
+			WHERE id = ? AND status IN ('ready', 'error', 'deletion_failed')`
+	}
+	result, err := d.execContext(ctx, query, id)
 	if err != nil {
 		return false, fmt.Errorf("begin workspace deletion: %w", err)
 	}
@@ -5130,7 +5270,8 @@ func (d *DB) BeginWorkspaceDeletion(ctx context.Context, id string) (bool, error
 	}
 	var status string
 	err = d.ro.QueryRowContext(ctx, `SELECT status FROM forge_workspaces WHERE id = ?`, id).Scan(&status)
-	if errors.Is(err, sql.ErrNoRows) || status == "deleting" {
+	if errors.Is(err, sql.ErrNoRows) || status == "deleting" ||
+		(!retryFailure && status == "deletion_failed") {
 		return false, nil
 	}
 	if err != nil {
@@ -5257,68 +5398,6 @@ func (d *DB) UpdateWorkspaceMRHeadRepo(
 	return nil
 }
 
-// UpdateWorkspaceMRHeadRepoForMissingRepo persists an unknown classification
-// only while the repository identity used to derive that absence is still
-// missing. A false result tells the caller to reread and retry after the
-// repository appeared concurrently.
-func (d *DB) UpdateWorkspaceMRHeadRepoForMissingRepo(
-	ctx context.Context,
-	id string,
-	identity RepoIdentity,
-	mrHeadRepo *string,
-) (bool, error) {
-	identity = canonicalRepoIdentity(identity)
-	result, err := d.execContext(ctx, `
-		UPDATE forge_workspaces
-		SET mr_head_repo = ?
-		WHERE id = ?
-		  AND NOT EXISTS (
-		      SELECT 1
-		      FROM forge_repos
-		      WHERE platform = ?
-		        AND platform_host = ?
-		        AND repo_path_key = ?
-		        AND lifecycle_state = 'active'
-		  )`,
-		mrHeadRepo,
-		id,
-		identity.Platform,
-		identity.PlatformHost,
-		identity.RepoPathKey,
-	)
-	if err != nil {
-		return false, fmt.Errorf(
-			"update workspace mr head repo for missing repo: %w", err,
-		)
-	}
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return false, fmt.Errorf(
-			"read missing-repo head classification update result: %w", err,
-		)
-	}
-	if rowsAffected > 0 {
-		return true, nil
-	}
-	var workspaceExists bool
-	if err := d.ro.QueryRowContext(
-		ctx,
-		`SELECT EXISTS(
-		    SELECT 1 FROM forge_workspaces WHERE id = ?
-		)`,
-		id,
-	).Scan(&workspaceExists); err != nil {
-		return false, fmt.Errorf(
-			"check workspace after missing-repo head classification update: %w",
-			err,
-		)
-	}
-	if !workspaceExists {
-		return false, fmt.Errorf("workspace %q not found", id)
-	}
-	return false, nil
-}
-
 // UpdateWorkspaceMRHeadRepoForSnapshot persists a classification only while
 // the merge-request revision and removed-upstream visibility that produced it
 // remain current. A false result tells the caller to reread and retry.
@@ -5335,6 +5414,7 @@ func (d *DB) UpdateWorkspaceMRHeadRepoForSnapshot(
 		UPDATE forge_workspaces
 		SET mr_head_repo = ?
 		WHERE id = ?
+		  AND repo_id = ?
 		  AND COALESCE((
 		      SELECT snapshot_revision
 		      FROM forge_merge_requests
@@ -5350,6 +5430,7 @@ func (d *DB) UpdateWorkspaceMRHeadRepoForSnapshot(
 		  ) = ?`,
 		mrHeadRepo,
 		id,
+		repoID,
 		repoID,
 		mrNumber,
 		expectedRevision,
@@ -5702,7 +5783,12 @@ func (d *DB) DeleteWorkspace(
 // workspaceSummaryColumns is the SELECT list shared by
 // ListWorkspaceSummaries and GetWorkspaceSummary.
 const workspaceSummaryColumns = `
-	w.id, w.platform, w.platform_host, w.repo_owner, w.repo_name,
+	w.id,
+	COALESCE(r.platform, w.platform),
+	COALESCE(r.platform_host, w.platform_host),
+	COALESCE(r.owner, w.repo_owner),
+	COALESCE(r.name, w.repo_name),
+	w.repo_id,
 	w.item_type, w.item_number, w.item_key, w.associated_pr_number,
 	w.git_head_ref, w.mr_head_repo, w.workspace_branch,
 	w.worktree_path, w.tmux_session, w.terminal_backend, w.status,
@@ -5764,7 +5850,8 @@ const workspaceSummaryColumns = `
 const workspaceSummaryJoins = `
 	FROM forge_workspaces w
 	LEFT JOIN forge_repo_routes rr
-	    ON rr.platform = w.platform
+	    ON w.repo_id IS NULL
+	   AND rr.platform = w.platform
 	   AND rr.platform_host = w.platform_host
 	   AND rr.owner_key = w.repo_owner_key
 	   AND rr.name_key = w.repo_name_key
@@ -5777,7 +5864,7 @@ const workspaceSummaryJoins = `
 	         AND historical.repo_id <> rr.repo_id
 	   )
 	LEFT JOIN forge_repos r
-	    ON r.id = rr.repo_id
+	    ON r.id = COALESCE(w.repo_id, rr.repo_id)
 	   AND r.lifecycle_state = 'active'
 	LEFT JOIN forge_merge_requests m
 	    ON m.repo_id = r.id
@@ -5810,10 +5897,12 @@ func scanWorkspaceSummary(
 	var s WorkspaceSummary
 	var kataMetadataJSON string
 	var itemLastActivityAt sql.NullString
+	var workspaceRepoID sql.NullInt64
 	var repoID sql.NullInt64
 	var repoPlatformID sql.NullString
 	err := scanner.Scan(
 		&s.ID, &s.Platform, &s.PlatformHost, &s.RepoOwner, &s.RepoName,
+		&workspaceRepoID,
 		&s.ItemType, &s.ItemNumber, &s.ItemKey, &s.AssociatedPRNumber,
 		&s.GitHeadRef, &s.MRHeadRepo, &s.WorkspaceBranch,
 		&s.WorktreePath, &s.TmuxSession, &s.TerminalBackend, &s.Status,
@@ -5829,6 +5918,9 @@ func scanWorkspaceSummary(
 	)
 	if err != nil {
 		return nil, err
+	}
+	if workspaceRepoID.Valid {
+		s.Workspace.RepoID = workspaceRepoID.Int64
 	}
 	if repoID.Valid {
 		s.RepoID = repoID.Int64

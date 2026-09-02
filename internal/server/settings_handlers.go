@@ -527,10 +527,12 @@ func sameConfiguredRepo(left, right config.Repo) bool {
 }
 
 func (s *Server) worktreeBasePathForRepo(
-	ctx context.Context, provider, platformHost, owner, name string,
+	ctx context.Context, repo workspace.WorktreeBaseRepository,
 ) (string, bool, error) {
 	target := config.Repo{
-		Platform: provider, PlatformHost: platformHost, Owner: owner, Name: name,
+		Platform: repo.Platform, PlatformHost: repo.PlatformHost,
+		PlatformRepoID: repo.PlatformRepoID,
+		Owner:          repo.Owner, Name: repo.Name,
 	}
 	if s.cfg != nil {
 		s.cfgMu.Lock()
@@ -567,11 +569,17 @@ func (s *Server) worktreeBasePathForRepo(
 	var matchedPath string
 	for _, project := range projects {
 		identity := project.PlatformIdentity
-		if project.IsStale || identity == nil ||
-			!strings.EqualFold(identity.Platform, provider) ||
-			!samePlatformHost(identity.Host, platformHost) ||
-			!strings.EqualFold(identity.Owner, owner) ||
-			!strings.EqualFold(identity.Name, name) {
+		if project.IsStale || identity == nil {
+			continue
+		}
+		stableMatch := strings.TrimSpace(repo.PlatformRepoID) != "" &&
+			strings.TrimSpace(identity.PlatformRepoID) == strings.TrimSpace(repo.PlatformRepoID)
+		routeMatch := strings.TrimSpace(repo.PlatformRepoID) == "" &&
+			strings.EqualFold(identity.Owner, repo.Owner) &&
+			strings.EqualFold(identity.Name, repo.Name)
+		if !strings.EqualFold(identity.Platform, repo.Platform) ||
+			!samePlatformHost(identity.Host, repo.PlatformHost) ||
+			(!stableMatch && !routeMatch) {
 			continue
 		}
 		if matchedPath != "" && matchedPath != project.LocalPath {

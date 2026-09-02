@@ -53,6 +53,20 @@ func workspaceDeletedEvent(ws *db.Workspace) workspaceDeletedEventData {
 // QueueWorkspaceDeletion durably admits teardown before returning, then runs
 // the destructive work under the workspace domain's lifecycle.
 func (s *Handler) QueueWorkspaceDeletion(id string) error {
+	return s.queueWorkspaceDeletion(id, false, false)
+}
+
+func (s *Handler) queueWorkspaceForceDeletion(id string) error {
+	return s.queueWorkspaceDeletion(id, true, false)
+}
+
+func (s *Handler) queueWorkspaceRetirement(id string) error {
+	return s.queueWorkspaceDeletion(id, false, true)
+}
+
+func (s *Handler) queueWorkspaceDeletion(
+	id string, force, preserveDeletionFailure bool,
+) error {
 	if s == nil || s.workspaces == nil || s.db == nil {
 		return errors.New("workspace cleanup is unavailable")
 	}
@@ -70,7 +84,12 @@ func (s *Handler) QueueWorkspaceDeletion(id string) error {
 	if ws.Status == "creating" {
 		return db.ErrWorkspaceSetupInProgress
 	}
-	started, err := s.db.BeginWorkspaceDeletion(ctx, id)
+	var started bool
+	if preserveDeletionFailure {
+		started, err = s.db.BeginWorkspaceRetirement(ctx, id)
+	} else {
+		started, err = s.db.BeginWorkspaceDeletion(ctx, id)
+	}
 	if err != nil {
 		return err
 	}
@@ -80,7 +99,7 @@ func (s *Handler) QueueWorkspaceDeletion(id string) error {
 	setupDone := s.markWorkspaceDeleting(id)
 	s.broadcastWorkspaceStatus(id)
 	if s.runBackground(func(ctx context.Context) {
-		s.finishQueuedWorkspaceDeletion(ctx, ws, setupDone, false)
+		s.finishQueuedWorkspaceDeletion(ctx, ws, setupDone, force)
 	}) {
 		return nil
 	}

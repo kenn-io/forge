@@ -6,10 +6,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/apiclient/generated"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/gitclone"
 )
 
 // Starting new work needs no provider item: a tracked repository plus an
@@ -44,6 +47,56 @@ func TestCreateAdHocWorkspaceMaterializesRequestedBranch(t *testing.T) {
 	checkedOut, err := os.ReadFile(filepath.Join(ready.WorktreePath, "base.txt"))
 	require.NoError(err)
 	assert.Equal("base\n", string(checkedOut))
+}
+
+func TestCreateAdHocWorkspaceAfterRepositoryRouteReuse(t *testing.T) {
+	require := require.New(t)
+
+	fixture := setupWorkspaceServerFixture(t, nil)
+	replacementBare, err := fixture.clones.ClonePathForContext(
+		gitclone.WithRepositoryIdentity(t.Context(), "repo-current-occupant"),
+		"github", "github.com", "acme", "widget",
+	)
+	require.NoError(err)
+	require.NotEqual(fixture.bare, replacementBare)
+	runGit(t, t.TempDir(), "clone", "--bare", fixture.remote, replacementBare)
+	runGit(
+		t, replacementBare, "remote", "set-url", "origin",
+		"https://github.com/acme/widget.git",
+	)
+	runGit(
+		t, replacementBare, "config", "--add",
+		"url."+fixture.remote+".insteadOf", "https://github.com/acme/widget.git",
+	)
+	current, _, err := fixture.database.ReconcileRepositoryObservation(
+		t.Context(),
+		db.RepoIdentity{
+			Platform:       "github",
+			PlatformHost:   "github.com",
+			PlatformRepoID: "repo-current-occupant",
+			Owner:          "acme",
+			Name:           "widget",
+		},
+		time.Now().UTC().Add(time.Hour),
+	)
+	require.NoError(err)
+	require.NotNil(current)
+
+	branch := "spike/route-reuse"
+	resp, err := fixture.client.HTTP.CreateRepoWorkspaceWithResponse(
+		t.Context(), "gh", "acme", "widget",
+		generated.CreateRepoWorkspaceJSONRequestBody{Branch: &branch},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, resp.StatusCode(), string(resp.Body))
+	require.NotNil(resp.JSON202)
+
+	ready := waitForWorkspaceReady(t, t.Context(), fixture.client, resp.JSON202.Id)
+	require.Equal(branch, ready.GitHeadRef)
+	workspace, err := fixture.database.GetWorkspace(t.Context(), ready.Id)
+	require.NoError(err)
+	require.NotNil(workspace)
+	require.Equal(current.Repository.ID, workspace.RepoID)
 }
 
 func TestCreateAdHocWorkspaceGeneratesBranchWhenOmitted(t *testing.T) {

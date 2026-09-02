@@ -9122,6 +9122,8 @@ export interface components {
             MRHeadRepo: string | null;
             Platform: string;
             PlatformHost: string;
+            /** Format: int64 */
+            RepoID: number;
             RepoName: string;
             RepoOwner: string;
             Status: string;

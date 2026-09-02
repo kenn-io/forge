@@ -255,7 +255,6 @@ func (s *Handler) createPullWorkspaceRouteCore(
 	if err != nil {
 		return nil, workspaceLaunchSpecProblem(err)
 	}
-
 	ws, err := s.workspaces.CreateFromLaunchSpec(ctx, spec)
 	if err != nil {
 		if errors.Is(err, workspace.ErrLaunchSpecSourceHidden) ||
@@ -397,6 +396,12 @@ func (s *Handler) runWorkspaceSetupWithBasePath(ws *workspace.Workspace, basePat
 			})
 			if setupErr == nil {
 				s.runWorkspacePushedHeadObserverPass(bgCtx)
+			}
+			if errors.Is(setupErr, workspace.ErrWorkspaceRepositoryUnresolved) {
+				if deleteErr := s.queueWorkspaceRetirement(ws.ID); deleteErr != nil {
+					slog.Warn("delete unresolved workspace", "id", ws.ID, "err", deleteErr)
+				}
+				return
 			}
 
 			next, queued, queueErr := s.workspaces.StartQueuedRetryIfErrored(
@@ -656,7 +661,6 @@ func (s *Handler) createIssueWorkspaceRouteCore(
 			Body:   s.toWorkspaceResponse(ctx, summary),
 		}, nil
 	}
-
 	ws, err := s.workspaces.CreateIssueFromLaunchSpec(
 		ctx, spec,
 		workspace.CreateIssueOptions{

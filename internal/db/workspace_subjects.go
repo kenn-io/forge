@@ -88,10 +88,7 @@ func (d *DB) ListWorkspaceSubjectMetadata(
 			SELECT 1
 			FROM forge_workspaces w
 			JOIN forge_workspace_launch_specs launch ON launch.workspace_id = w.id
-			WHERE w.platform = r.platform
-			  AND w.platform_host = r.platform_host
-			  AND w.repo_owner_key = r.owner_key
-			  AND w.repo_name_key = r.name_key
+			WHERE w.repo_id = q.repo_id
 			  AND w.item_type = q.item_type
 			  AND w.item_number = q.item_number
 			  AND json_extract(launch.spec_json, '$.source_visible') = 1

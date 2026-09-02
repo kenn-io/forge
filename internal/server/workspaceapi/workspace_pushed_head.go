@@ -114,16 +114,24 @@ func (s *Handler) enqueueWorkspacePushedHeadRefresh(change workspace.PushedHeadU
 		key,
 		attrs,
 		func(ctx context.Context) error {
-			_, mr := s.lookupPushedHeadMR(ctx, change)
-			if mr == nil {
+			repo, mr := s.lookupPushedHeadMR(ctx, change)
+			if repo == nil || mr == nil {
 				return nil
 			}
-			return s.syncer.SyncMROnProvider(
+			return s.syncer.SyncMRForRepository(
 				ctx,
-				change.Provider,
-				change.PlatformHost,
-				change.Owner,
-				change.Name,
+				ghclient.RepoRef{
+					Platform:           repoProviderKind(*repo),
+					Owner:              repo.Owner,
+					Name:               repo.Name,
+					PlatformHost:       repoProviderHost(*repo),
+					RepoPath:           repo.RepoPath,
+					PlatformExternalID: repo.PlatformRepoID,
+					WebURL:             repo.WebURL,
+					CloneURL:           repo.CloneURL,
+					DefaultBranch:      repo.DefaultBranch,
+				},
+				repo.ID,
 				change.Number,
 			)
 		},
@@ -203,7 +211,7 @@ func (s *Handler) maybeEnqueuePushedHeadCIRefresh(ctx context.Context, change wo
 		headSHA = change.NewSHA
 	}
 	queuedAt := s.now().UTC()
-	key := "pr-ci:" + string(change.Provider) + ":" + change.PlatformHost + ":" + change.RepoPath + "#" + strconv.Itoa(change.Number)
+	key := "pr-ci:" + strconv.FormatInt(change.RepoID, 10) + "#" + strconv.Itoa(change.Number)
 	started := s.enqueueDetailSyncWithCompletion(
 		key,
 		[]any{"type", "pr-ci", "provider", string(change.Provider), "platform_host", change.PlatformHost, "repo_path", change.RepoPath, "number", change.Number},
@@ -216,7 +224,7 @@ func (s *Handler) maybeEnqueuePushedHeadCIRefresh(ctx context.Context, change wo
 			if currentHeadSHA == "" {
 				currentHeadSHA = change.NewSHA
 			}
-			_, err := s.syncer.RefreshMRCIStatusOnProvider(
+			_, err := s.syncer.RefreshMRCIStatusForRepository(
 				ctx,
 				ghclient.RepoRef{
 					Platform:           repoProviderKind(*currentRepo),
@@ -280,11 +288,7 @@ func (s *Handler) maybeEnqueuePushedHeadCIRefresh(ctx context.Context, change wo
 }
 
 func (s *Handler) lookupPushedHeadMR(ctx context.Context, change workspace.PushedHeadUpdate) (*db.Repo, *db.MergeRequest) {
-	repo, err := s.db.GetRepoByIdentity(ctx, db.RepoIdentity{
-		Platform:     string(change.Provider),
-		PlatformHost: change.PlatformHost,
-		RepoPath:     change.RepoPath,
-	})
+	repo, err := s.db.GetActiveRepoByID(ctx, change.RepoID)
 	if err != nil || repo == nil {
 		return nil, nil
 	}
@@ -300,5 +304,5 @@ func pushedHeadMRNeedsCIRefresh(status string, hadPending, approvalRequired bool
 }
 
 func pushedHeadPRKey(change workspace.PushedHeadUpdate) string {
-	return "pr:" + string(change.Provider) + ":" + change.PlatformHost + ":" + change.RepoPath + "#" + strconv.Itoa(change.Number)
+	return "pr:" + strconv.FormatInt(change.RepoID, 10) + "#" + strconv.Itoa(change.Number)
 }

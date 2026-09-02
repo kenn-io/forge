@@ -542,9 +542,96 @@ func TestSetupFailsClosedWhenRouteReplacedMidSetup(t *testing.T) {
 	}
 
 	err = mgr.Setup(t.Context(), ws)
-	require.ErrorContains(err, "historical occupants")
+	require.ErrorIs(err, db.ErrRepositoryRouteFenceChanged)
 	stored, getErr := d.GetWorkspace(t.Context(), ws.ID)
 	require.NoError(getErr)
 	require.NotNil(stored)
 	assert.Equal("error", stored.Status)
+}
+
+func TestSetupFailsClosedWhenRepositoryRenamedAndRouteReplacedMidSetup(t *testing.T) {
+	require := require.New(t)
+
+	d := openTestDB(t)
+	localRepo, _, platformHost := setupHTTPWorktreeBaseForWorkspaceGitTest(
+		t, "feature/other",
+	)
+	seedRepo(t, d, platformHost, "acme", "widget")
+
+	tmuxScript, _ := writeRecorderScript(t)
+	mgr := NewManager(d, t.TempDir())
+	mgr.SetTmuxCommand([]string{tmuxScript})
+	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
+
+	ws, err := mgr.CreateAdHoc(
+		t.Context(), "github", platformHost, "acme", "widget",
+		CreateAdHocOptions{BranchName: "spike/renamed-and-replaced"},
+	)
+	require.NoError(err)
+
+	mgr.beforeSetupRouteRevalidation = func() {
+		_, _, renameErr := d.ReconcileRepositoryObservation(
+			t.Context(), db.RepoIdentity{
+				Platform: "github", PlatformHost: platformHost,
+				PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "renamed",
+			}, time.Now().UTC(),
+		)
+		require.NoError(renameErr)
+		_, _, replaceErr := d.ReconcileRepositoryObservation(
+			t.Context(), db.RepoIdentity{
+				Platform: "github", PlatformHost: platformHost,
+				PlatformRepoID: "repo-acme-widget-replacement", Owner: "acme", Name: "widget",
+			}, time.Now().UTC().Add(time.Second),
+		)
+		require.NoError(replaceErr)
+	}
+
+	err = mgr.Setup(t.Context(), ws)
+	require.ErrorIs(err, db.ErrRepositoryRouteFenceChanged)
+	stored, getErr := d.GetWorkspace(t.Context(), ws.ID)
+	require.NoError(getErr)
+	require.NotNil(stored)
+	require.Equal("error", stored.Status)
+}
+
+func TestSetupUsesCurrentRepositoryAfterRouteReuse(t *testing.T) {
+	require := require.New(t)
+
+	d := openTestDB(t)
+	localRepo, _, platformHost := setupHTTPWorktreeBaseForWorkspaceGitTest(
+		t, "feature/other",
+	)
+	observedAt := time.Date(2026, 8, 29, 0, 0, 0, 0, time.UTC)
+	_, _, err := d.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   platformHost,
+		PlatformRepoID: "repo-original",
+		Owner:          "acme",
+		Name:           "widget",
+	}, observedAt)
+	require.NoError(err)
+	current, _, err := d.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   platformHost,
+		PlatformRepoID: "repo-current",
+		Owner:          "acme",
+		Name:           "widget",
+	}, observedAt.Add(time.Hour))
+	require.NoError(err)
+	require.NotNil(current)
+
+	tmuxScript, _ := writeRecorderScript(t)
+	mgr := NewManager(d, t.TempDir())
+	mgr.SetTmuxCommand([]string{tmuxScript})
+	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
+
+	ws, err := mgr.CreateAdHoc(
+		t.Context(), "github", platformHost, "acme", "widget",
+		CreateAdHocOptions{BranchName: "spike/current-repository"},
+	)
+	require.NoError(err)
+	require.Equal(current.Repository.ID, ws.RepoID)
+
+	require.NoError(mgr.Setup(t.Context(), ws))
+	require.Equal("ready", ws.Status)
 }

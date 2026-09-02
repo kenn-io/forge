@@ -284,6 +284,7 @@ func TestLaunchSpecBranchSyncRefreshesExpiredLeaseBeforeGit(t *testing.T) {
 	require := require.New(t)
 	database := openTestDB(t)
 	spec := launchSpecForTest()
+	seedLaunchSpecRepository(t, database, spec)
 	workspace := &db.Workspace{
 		ID: "ws-expired-branch-sync", Platform: spec.Repository.Provider,
 		PlatformHost: spec.Repository.PlatformHost,
@@ -378,6 +379,7 @@ func TestProviderBackedBranchSyncDoesNotFallBackToAnonymousGit(t *testing.T) {
 	runWorkspaceTestGit(t, work, "commit", "-m", "ahead")
 	database := openTestDB(t)
 	spec := launchSpecForTest()
+	seedLaunchSpecRepository(t, database, spec)
 	workspace := &db.Workspace{
 		ID: "ws-required-branch-credential", Platform: spec.Repository.Provider,
 		PlatformHost: spec.Repository.PlatformHost,

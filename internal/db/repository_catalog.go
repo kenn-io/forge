@@ -789,8 +789,17 @@ func historicalRouteHasOtherRepositoryTx(
 	identity RepoIdentity,
 	repoID int64,
 ) (bool, error) {
+	return repositoryRouteHasOtherRepository(ctx, tx, identity, repoID)
+}
+
+func repositoryRouteHasOtherRepository(
+	ctx context.Context,
+	queryer repositoryCatalogQueryer,
+	identity RepoIdentity,
+	repoID int64,
+) (bool, error) {
 	var reused bool
-	err := tx.QueryRowContext(ctx, `
+	err := queryer.QueryRowContext(ctx, `
 		SELECT EXISTS (
 			SELECT 1
 			FROM forge_repo_routes AS route
@@ -805,6 +814,30 @@ func historicalRouteHasOtherRepositoryTx(
 		return false, fmt.Errorf("check historical repository route reuse: %w", err)
 	}
 	return reused, nil
+}
+
+// RepositoryRouteHasOtherRepository reports whether any other stable
+// repository identity has occupied the route. Callers use this to decide whether
+// a pre-identity, route-keyed clone can be associated safely.
+func (d *DB) RepositoryRouteHasOtherRepository(
+	ctx context.Context,
+	identity RepoIdentity,
+	repoID int64,
+) (bool, error) {
+	identity = canonicalRepoIdentity(identity)
+	if repoID <= 0 {
+		return false, errors.New("repository route owner id is required")
+	}
+	if identity.Platform == "" || identity.PlatformHost == "" ||
+		identity.RepoPathKey == "" {
+		return false, errors.New("repository route identity is required")
+	}
+	release, err := d.LockRepositoryReconciliationRead(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer release()
+	return repositoryRouteHasOtherRepository(ctx, d.ro, identity, repoID)
 }
 
 // AdoptLegacyClonesIfSafe runs adopt while repoID remains the verified current

@@ -231,6 +231,9 @@ func New(deps Deps) *Handler {
 	if deps.DB != nil && deps.Workspaces != nil {
 		monitorOptions := workspace.PRMonitorOptions{
 			LaunchSpecs: deps.Workspaces, PullCandidates: deps.PullCandidates,
+			RetireUnresolvedWorkspace: func(_ context.Context, workspaceID string) error {
+				return h.queueWorkspaceRetirement(workspaceID)
+			},
 		}
 		h.workspacePRMonitor = workspace.NewPRMonitor(deps.DB, monitorOptions)
 		h.workspacePushedHeadObserver = workspace.NewPushedHeadObserver(

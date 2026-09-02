@@ -58,6 +58,26 @@ func insertWorkspaceLaunchSpec(
 	return nil
 }
 
+func (d *DB) validateWorkspaceLaunchSpecRepository(
+	ctx context.Context, repoID int64, spec WorkspaceLaunchSpec,
+) error {
+	repo, err := d.GetActiveRepoByID(ctx, repoID)
+	if err != nil {
+		return fmt.Errorf("resolve workspace launch repository: %w", err)
+	}
+	if repo == nil ||
+		!strings.EqualFold(repo.Platform, spec.Repository.Provider) ||
+		!strings.EqualFold(repo.PlatformHost, spec.Repository.PlatformHost) ||
+		strings.TrimSpace(repo.PlatformRepoID) !=
+			strings.TrimSpace(spec.Repository.PlatformRepoID) {
+		return fmt.Errorf(
+			"%w: workspace launch specification repository identity changed",
+			ErrRepositoryRouteFenceChanged,
+		)
+	}
+	return nil
+}
+
 // CreateWorkspaceWithLaunchSpec inserts a provider-backed workspace and its
 // immutable launch facts in one transaction. Validation happens before either
 // row is written.
@@ -84,6 +104,11 @@ func (d *DB) CreateWorkspaceWithLaunchSpec(
 	if prepared.itemKey != spec.ItemKey {
 		return errors.New("workspace launch specification item key does not match persisted workspace key")
 	}
+	if err := d.validateWorkspaceLaunchSpecRepository(
+		ctx, prepared.repoID, spec,
+	); err != nil {
+		return err
+	}
 	tx, err := d.rw.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("create workspace with launch specification: begin: %w", err)
@@ -107,6 +132,11 @@ func (d *DB) PutWorkspaceLaunchSpec(
 	workspaceID string,
 	spec WorkspaceLaunchSpec,
 ) error {
+	release, err := d.LockRepositoryReconciliationRead(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
 	workspace, err := d.GetWorkspace(ctx, workspaceID)
 	if err != nil {
 		return err
@@ -115,6 +145,11 @@ func (d *DB) PutWorkspaceLaunchSpec(
 		return sql.ErrNoRows
 	}
 	if err := spec.ValidateWorkspace(*workspace); err != nil {
+		return err
+	}
+	if err := d.validateWorkspaceLaunchSpecRepository(
+		ctx, workspace.RepoID, spec,
+	); err != nil {
 		return err
 	}
 	return insertWorkspaceLaunchSpec(ctx, d.rw, workspaceID, spec)
@@ -136,8 +171,9 @@ func (d *DB) GetWorkspaceByLaunchSpecIdentity(
 		itemType == "" || itemKey == "" {
 		return nil, nil
 	}
-	workspace, err := scanWorkspace(d.ro.QueryRowContext(ctx, `
+	workspace, err := d.scanWorkspace(ctx, d.ro.QueryRowContext(ctx, `
 		SELECT w.id, w.platform, w.platform_host, w.repo_owner, w.repo_name,
+		       w.repo_id,
 		       w.item_type, w.item_number, w.item_key, w.associated_pr_number,
 		       w.git_head_ref, w.mr_head_repo, w.workspace_branch,
 		       w.worktree_path, w.tmux_session, w.terminal_backend, w.status,
@@ -220,6 +256,11 @@ func (d *DB) PutRefreshedWorkspaceLaunchSpec(
 	if workspace == nil {
 		return nil, sql.ErrNoRows
 	}
+	if err := d.validateWorkspaceLaunchSpecRepository(
+		ctx, workspace.RepoID, spec,
+	); err != nil {
+		return nil, err
+	}
 	current, err := d.GetWorkspaceLaunchSpec(ctx, workspaceID)
 	if err != nil {
 		return nil, err
@@ -228,12 +269,12 @@ func (d *DB) PutRefreshedWorkspaceLaunchSpec(
 	originalHost := workspace.PlatformHost
 	originalOwner := workspace.RepoOwner
 	originalName := workspace.RepoName
-	routeChanged := !strings.EqualFold(
-		canonicalWorkspacePlatform(workspace.Platform), spec.Repository.Provider,
+	routeChanged := current != nil && (!strings.EqualFold(
+		canonicalWorkspacePlatform(current.Repository.Provider), spec.Repository.Provider,
 	) ||
-		!strings.EqualFold(workspace.PlatformHost, spec.Repository.PlatformHost) ||
-		!strings.EqualFold(workspace.RepoOwner, spec.Repository.Owner) ||
-		!strings.EqualFold(workspace.RepoName, spec.Repository.Name)
+		!strings.EqualFold(current.Repository.PlatformHost, spec.Repository.PlatformHost) ||
+		!strings.EqualFold(current.Repository.Owner, spec.Repository.Owner) ||
+		!strings.EqualFold(current.Repository.Name, spec.Repository.Name))
 	if routeChanged {
 		if current == nil ||
 			current.Repository.PlatformRepoID != spec.Repository.PlatformRepoID ||
@@ -253,15 +294,17 @@ func (d *DB) PutRefreshedWorkspaceLaunchSpec(
 			!strings.EqualFold(entry.Repository.Name, spec.Repository.Name) {
 			return nil, errors.New("refreshed workspace route is not the active repository route")
 		}
-		collision, collisionErr := d.workspaceRouteHasHistoricalOccupants(
-			ctx, entry.Repository.Platform, entry.Repository.PlatformHost,
-			entry.Repository.RepoPathKey,
-		)
-		if collisionErr != nil {
-			return nil, collisionErr
-		}
-		if collision {
-			return nil, errors.New("refreshed workspace route has historical occupants")
+		if workspace.RepoID == 0 {
+			collision, collisionErr := d.workspaceRouteHasHistoricalOccupants(
+				ctx, entry.Repository.Platform, entry.Repository.PlatformHost,
+				entry.Repository.RepoPathKey,
+			)
+			if collisionErr != nil {
+				return nil, collisionErr
+			}
+			if collision {
+				return nil, errors.New("refreshed workspace route has historical occupants")
+			}
 		}
 		workspace.Platform = entry.Repository.Platform
 		workspace.PlatformHost = entry.Repository.PlatformHost
@@ -278,7 +321,16 @@ func (d *DB) PutRefreshedWorkspaceLaunchSpec(
 	}
 	defer func() { _ = tx.Rollback() }()
 	var result sql.Result
-	if routeChanged {
+	if workspace.RepoID != 0 {
+		result, err = tx.ExecContext(ctx, `
+			UPDATE forge_workspaces SET status = status
+			WHERE id = ? AND repo_id = ?`,
+			workspace.ID, workspace.RepoID,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("guard workspace repository identity: %w", err)
+		}
+	} else if routeChanged {
 		ownerKey := strings.ToLower(strings.TrimSpace(workspace.RepoOwner))
 		nameKey := strings.ToLower(strings.TrimSpace(workspace.RepoName))
 		result, err = tx.ExecContext(ctx, `
@@ -377,7 +429,7 @@ func (d *DB) ListUnpreparedProviderWorkspacesAt(
 	now time.Time,
 ) ([]UnpreparedWorkspace, error) {
 	rows, err := d.ro.QueryContext(ctx, `
-		SELECT id, platform, platform_host, repo_owner, repo_name,
+		SELECT id, platform, platform_host, repo_owner, repo_name, repo_id,
 		       item_type, item_number, item_key, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, terminal_backend, status,
@@ -389,9 +441,24 @@ func (d *DB) ListUnpreparedProviderWorkspacesAt(
 		return nil, fmt.Errorf("list provider-backed workspaces for preparation: %w", err)
 	}
 	defer rows.Close()
-	var unprepared []UnpreparedWorkspace
+	var workspaces []*Workspace
 	for rows.Next() {
-		workspace, err := scanWorkspace(rows)
+		workspace, err := scanWorkspaceRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		workspaces = append(workspaces, workspace)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("close provider-backed workspace rows: %w", err)
+	}
+
+	var unprepared []UnpreparedWorkspace
+	for _, workspace := range workspaces {
+		workspace, err := d.resolveWorkspaceRepository(ctx, workspace)
 		if err != nil {
 			return nil, err
 		}
@@ -402,12 +469,12 @@ func (d *DB) ListUnpreparedProviderWorkspacesAt(
 			reason = err.Error()
 		case spec == nil:
 			reason = "launchSpecMissing"
-		case spec.ValidateWorkspace(*workspace) != nil:
-			reason = "launchSpecMismatch"
 		case errors.Is(spec.RequireVisible(now), ErrLaunchSpecSourceHidden):
 			reason = "sourceNotVisible"
 		case errors.Is(spec.RequireVisible(now), ErrLaunchSpecRefreshRequired):
 			reason = "sourceVisibilityExpired"
+		case spec.ValidateWorkspace(*workspace) != nil:
+			reason = "launchSpecMismatch"
 		}
 		if reason != "" {
 			platformRepoID := ""
@@ -427,9 +494,6 @@ func (d *DB) ListUnpreparedProviderWorkspacesAt(
 				PlatformRepoID: platformRepoID,
 			})
 		}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
 	}
 	return unprepared, nil
 }

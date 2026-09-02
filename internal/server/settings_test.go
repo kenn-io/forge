@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -33,6 +34,7 @@ import (
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/stacks"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
@@ -3388,6 +3390,7 @@ func TestWorktreeBasePathResolverMatchesProviderIdentity(t *testing.T) {
 		{
 			Platform:         "github",
 			PlatformHost:     "forge.example.com",
+			PlatformRepoID:   "github-widget",
 			Owner:            "acme",
 			Name:             "widget",
 			WorktreeBasePath: "/tmp/github-widget",
@@ -3395,6 +3398,7 @@ func TestWorktreeBasePathResolverMatchesProviderIdentity(t *testing.T) {
 		{
 			Platform:         "gitlab",
 			PlatformHost:     "forge.example.com",
+			PlatformRepoID:   "gitlab-widget",
 			Owner:            "acme",
 			Name:             "widget",
 			WorktreeBasePath: "/tmp/gitlab-widget",
@@ -3402,12 +3406,60 @@ func TestWorktreeBasePathResolverMatchesProviderIdentity(t *testing.T) {
 	}}}
 
 	got, ok, err := srv.worktreeBasePathForRepo(
-		t.Context(), "gitlab", "forge.example.com", "acme", "widget",
+		t.Context(), workspace.WorktreeBaseRepository{
+			Platform: "gitlab", PlatformHost: "forge.example.com",
+			PlatformRepoID: "gitlab-widget", Owner: "acme", Name: "widget",
+		},
 	)
 
 	require.NoError(err)
 	require.True(ok)
 	assert.Equal("/tmp/gitlab-widget", got)
+
+	_, ok, err = srv.worktreeBasePathForRepo(
+		t.Context(), workspace.WorktreeBaseRepository{
+			Platform: "gitlab", PlatformHost: "forge.example.com",
+			PlatformRepoID: "replacement-widget", Owner: "acme", Name: "widget",
+		},
+	)
+	require.NoError(err)
+	assert.False(ok)
+}
+
+func TestWorktreeBasePathResolverMatchesRegisteredProjectIdentity(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := dbtest.Open(t)
+	repoID, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "provider-widget", Owner: "acme", Name: "widget",
+	})
+	require.NoError(err)
+	_, err = database.CreateProject(t.Context(), db.CreateProjectInput{
+		DisplayName: "widget", LocalPath: "/work/widget",
+		RepoID: sql.NullInt64{Int64: repoID, Valid: true},
+	})
+	require.NoError(err)
+	srv := &Server{db: database}
+
+	got, ok, err := srv.worktreeBasePathForRepo(
+		t.Context(), workspace.WorktreeBaseRepository{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformRepoID: "provider-widget", Owner: "acme", Name: "widget",
+		},
+	)
+	require.NoError(err)
+	require.True(ok)
+	assert.Equal("/work/widget", got)
+
+	_, ok, err = srv.worktreeBasePathForRepo(
+		t.Context(), workspace.WorktreeBaseRepository{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformRepoID: "replacement-widget", Owner: "acme", Name: "widget",
+		},
+	)
+	require.NoError(err)
+	assert.False(ok)
 }
 
 func TestApplyProviderSettingsMatchesWorktreePathByStableIdentity(t *testing.T) {
@@ -4127,6 +4179,8 @@ base_url = %q
 	assert.True(spoke.cfg.Roborev.InitManagedClones)
 
 	worktreeBase := t.TempDir()
+	canonicalWorktreeBase, err := filepath.EvalSymlinks(worktreeBase)
+	require.NoError(err)
 	runGit(t, worktreeBase, "init", "--initial-branch=main")
 	runGit(t, worktreeBase, "remote", "add", "origin", "https://github.com/acme/widget.git")
 	response = doJSON(
@@ -4135,13 +4189,13 @@ base_url = %q
 		repoWorktreeBaseRequest{WorktreeBasePath: worktreeBase},
 	)
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
-	assert.Equal(worktreeBase, spoke.cfg.Repos[0].WorktreeBasePath)
+	assert.Equal(canonicalWorktreeBase, spoke.cfg.Repos[0].WorktreeBasePath)
 	assert.Empty(hub.cfg.Repos[0].WorktreeBasePath)
 
 	var settings settingsResponse
 	require.NoError(json.NewDecoder(response.Body).Decode(&settings))
 	require.Len(settings.Repos, 1)
-	assert.Equal(worktreeBase, settings.Repos[0].WorktreeBasePath)
+	assert.Equal(canonicalWorktreeBase, settings.Repos[0].WorktreeBasePath)
 	assert.Equal(75, settings.Detail.InitialTimelineEntryLimit)
 	assert.True(settings.Workspaces.AutoAssignOnCreate)
 	assert.Equal(config.FleetRoleSpoke, settings.Fleet.Role)
@@ -4150,7 +4204,7 @@ base_url = %q
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
 	require.NoError(json.NewDecoder(response.Body).Decode(&settings))
 	require.Len(settings.Repos, 1)
-	assert.Equal(worktreeBase, settings.Repos[0].WorktreeBasePath)
+	assert.Equal(canonicalWorktreeBase, settings.Repos[0].WorktreeBasePath)
 }
 
 func TestNodeWorktreeBaseOverrideFollowsHubRepositoryIdentity(t *testing.T) {
@@ -4195,6 +4249,8 @@ port = 8091
 		}),
 	}
 	worktreeBase := t.TempDir()
+	canonicalWorktreeBase, err := filepath.EvalSymlinks(worktreeBase)
+	require.NoError(err)
 	runGit(t, worktreeBase, "init", "--initial-branch=main")
 	runGit(t, worktreeBase, "remote", "add", "origin", "https://github.com/acme/late.git")
 
@@ -4204,7 +4260,7 @@ port = 8091
 	)
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
 	require.Len(srv.cfg.Repos, 1)
-	assert.Equal(worktreeBase, srv.cfg.Repos[0].WorktreeBasePath)
+	assert.Equal(canonicalWorktreeBase, srv.cfg.Repos[0].WorktreeBasePath)
 
 	projection.Repos[0].Owner = "renamed"
 	projection.Repos[0].Name = "late-renamed"

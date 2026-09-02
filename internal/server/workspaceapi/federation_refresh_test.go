@@ -124,6 +124,11 @@ func TestRefreshWorkspaceUsesHubProjectionWithoutLocalSyncer(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
 	issuedAt := time.Now().UTC().Truncate(time.Second)
+	_, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
+	})
+	require.NoError(err)
 	ws := &db.Workspace{
 		ID: "ws-federated-refresh", Platform: "github", PlatformHost: "github.com",
 		RepoOwner: "acme", RepoName: "widget",

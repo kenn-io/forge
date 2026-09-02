@@ -120,6 +120,106 @@ func seedIssue(
 	require.NoError(t, err)
 }
 
+func replaceMonitorRepoRoute(t *testing.T, d *db.DB) int64 {
+	t.Helper()
+	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
+	identity.PlatformRepoID = "repo-acme-widget-replacement"
+	replacement, _, err := d.ReconcileRepositoryObservation(
+		t.Context(), identity, time.Now().UTC().Add(time.Hour),
+	)
+	require.NoError(t, err)
+	require.NotNil(t, replacement)
+	return replacement.Repository.ID
+}
+
+func TestPRMonitorRunOnceSkipsWorkspaceForInactiveRepository(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	seedRepo(t, d, "github.com", "acme", "widget")
+	worktreePath := setupMonitorRepo(t)
+	runWorkspaceTestGit(t, worktreePath, "checkout", "-b", "feature/replacement")
+	insertMonitorWorkspace(t, d, worktreePath, nil)
+
+	replacementID := replaceMonitorRepoRoute(t, d)
+	seedMRWithHeadRepo(
+		t, d, replacementID, 42,
+		"feature/replacement", "https://github.com/acme/widget.git",
+	)
+
+	updates, err := NewPRMonitor(d).RunOnce(t.Context())
+	require.NoError(err)
+	require.Empty(updates)
+	workspace, err := d.GetWorkspace(t.Context(), "ws-issue")
+	require.NoError(err)
+	require.Nil(workspace.AssociatedPRNumber)
+}
+
+func TestPRMonitorLegacyWorkspaceSkipsHistoricallyReusedRoute(t *testing.T) {
+	require := require.New(t)
+	database := openTestDB(t)
+	insertMonitorWorkspace(t, database, t.TempDir(), nil)
+	workspace, err := database.GetWorkspace(t.Context(), "ws-issue")
+	require.NoError(err)
+	require.Zero(workspace.RepoID)
+
+	observedAt := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	_, _, err = database.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-original",
+		Owner: "acme", Name: "widget",
+	}, observedAt)
+	require.NoError(err)
+	_, _, err = database.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-original",
+		Owner: "acme", Name: "moved-away",
+	}, observedAt.Add(time.Minute))
+	require.NoError(err)
+	replacement, _, err := database.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-replacement",
+		Owner: "acme", Name: "widget",
+	}, observedAt.Add(2*time.Minute))
+	require.NoError(err)
+	require.NotNil(replacement)
+	seedMRWithHeadRepo(
+		t, database, replacement.Repository.ID, 42,
+		"feature/replacement", "https://github.com/acme/widget.git",
+	)
+
+	candidates, err := NewPRMonitor(database).listOpenPullCandidates(t.Context(), workspace)
+	require.NoError(err)
+	require.Empty(candidates)
+}
+
+func TestPRMonitorRetiresWorkspaceWithoutRepositoryIdentity(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := openTestDB(t)
+	workspaceID := insertMonitorWorkspaceWithIdentity(
+		t, database, "ws-unresolved", "github", "github.com",
+		"acme", "widget", t.TempDir(),
+	)
+	replacementID := seedRepo(t, database, "github.com", "acme", "widget")
+	seedMRWithHeadRepo(
+		t, database, replacementID, 42,
+		"feature/replacement", "https://github.com/acme/widget.git",
+	)
+	source := &staticPullCandidateSource{}
+	var retired []string
+	monitor := NewPRMonitor(database, PRMonitorOptions{
+		PullCandidates: source,
+		RetireUnresolvedWorkspace: func(_ context.Context, id string) error {
+			retired = append(retired, id)
+			return nil
+		},
+	})
+
+	updates, err := monitor.RunOnce(t.Context())
+
+	require.NoError(err)
+	assert.Empty(updates)
+	assert.Equal([]string{workspaceID}, retired)
+	assert.Zero(source.calls)
+}
+
 func TestPRMonitorRunOnceUsesUpstreamBranchMatch(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -161,10 +261,11 @@ func TestPRMonitorRunOnceUsesUpstreamBranchMatch(t *testing.T) {
 	assert.Equal(42, *ws.AssociatedPRNumber)
 }
 
-func TestLaunchSpecMonitorUsesHubCandidatesWithoutProviderRows(t *testing.T) {
+func TestLaunchSpecMonitorUsesHubCandidatesWithoutProviderItemRows(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	database := openTestDB(t)
+	seedRepo(t, database, "github.com", "acme", "widget")
 	worktreePath := setupMonitorRepo(t)
 	runWorkspaceTestGit(t, worktreePath, "checkout", "-b", "feature/issue-7")
 	require.NoError(os.WriteFile(
@@ -212,11 +313,6 @@ func TestLaunchSpecMonitorUsesHubCandidatesWithoutProviderRows(t *testing.T) {
 	assert.Equal(workspaceID, updates[0].WorkspaceID)
 	assert.Equal(42, updates[0].PRNumber)
 	assert.Equal(1, source.calls)
-	repo, err := database.GetRepoByIdentity(t.Context(), db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", Owner: "acme", Name: "widget",
-	})
-	require.NoError(err)
-	assert.Nil(repo, "spoke lifecycle must not need a provider repository row")
 }
 
 func TestPRMonitorRunOnceFallsBackToLocalBranchNameAndHeadSHA(t *testing.T) {

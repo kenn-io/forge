@@ -5,6 +5,7 @@ import (
 	"os"
 	"testing"
 
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/testsignal"
 	"go.kenn.io/forge/internal/testutil/testtmux"
 )
@@ -34,7 +35,7 @@ func TestMain(m *testing.M) {
 			fmt.Fprintf(os.Stderr, "cleanup private test tmux servers: %v\n", cleanupErr)
 		},
 	)
-	code := m.Run()
+	code := gitsafe.RunIsolatedMain(m)
 	if cleanupErr := runCleanup(); cleanupErr != nil {
 		fmt.Fprintf(os.Stderr, "cleanup private test tmux servers: %v\n", cleanupErr)
 		if code == 0 {

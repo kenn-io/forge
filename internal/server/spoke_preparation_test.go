@@ -672,15 +672,6 @@ func TestSpokePreparationRefreshFollowsStableRepositoryRename(t *testing.T) {
 		IssuedAt:      now.Add(-db.WorkspaceLaunchSpecVisibilityLease - time.Minute),
 	}
 	current.SourceVisibleUntil = current.IssuedAt.Add(db.WorkspaceLaunchSpecVisibilityLease)
-	_, accepted, err := database.ReconcileRepositoryObservation(
-		t.Context(), db.RepoIdentity{
-			Platform: "github", PlatformHost: "github.com",
-			PlatformRepoID: current.Repository.PlatformRepoID,
-			Owner:          current.Repository.Owner, Name: current.Repository.Name,
-		}, current.IssuedAt,
-	)
-	require.NoError(err)
-	require.True(accepted)
 	require.NoError(database.PutWorkspaceLaunchSpec(t.Context(), workspaceID, current))
 
 	refreshed := current
@@ -689,12 +680,12 @@ func TestSpokePreparationRefreshFollowsStableRepositoryRename(t *testing.T) {
 	refreshed.Repository.CloneURL = "https://github.com/acme-renamed/widget-renamed.git"
 	refreshed.IssuedAt = now
 	refreshed.SourceVisibleUntil = now.Add(db.WorkspaceLaunchSpecVisibilityLease)
-	_, accepted, err = database.ReconcileRepositoryObservation(
+	_, accepted, err := database.ReconcileRepositoryObservation(
 		t.Context(), db.RepoIdentity{
 			Platform: "github", PlatformHost: "github.com",
 			PlatformRepoID: refreshed.Repository.PlatformRepoID,
 			Owner:          refreshed.Repository.Owner, Name: refreshed.Repository.Name,
-		}, now,
+		}, time.Now().UTC().Add(time.Second),
 	)
 	require.NoError(err)
 	require.True(accepted)

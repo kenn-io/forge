@@ -217,12 +217,12 @@ func TestOperationalAssociationsDoNotCrossRepositoryIncarnations(t *testing.T) {
 	assert.Nil(summary.SourceTitle)
 }
 
-func TestWorkspaceRouteLookupAndCreationFailClosedAfterReplacement(t *testing.T) {
+func TestWorkspaceRouteLookupBindsCurrentRepositoryAfterReplacement(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	firstObservedAt := baseTime()
-	reconcileCatalogRepository(
+	original := reconcileCatalogRepository(
 		t, d, "provider-old", "org-a", "project-a", firstObservedAt,
 	)
 	require.NoError(d.InsertWorkspace(t.Context(), &Workspace{
@@ -231,10 +231,14 @@ func TestWorkspaceRouteLookupAndCreationFailClosedAfterReplacement(t *testing.T)
 		ItemType: WorkspaceItemTypePullRequest, ItemNumber: 7,
 		WorktreePath: "/tmp/historical-workspace", TmuxSession: "historical-workspace",
 	}))
-	reconcileCatalogRepository(
+	current := reconcileCatalogRepository(
 		t, d, "provider-new", "org-a", "project-a",
 		firstObservedAt.Add(time.Hour),
 	)
+	originalWorkspace, err := d.GetWorkspace(t.Context(), "historical-workspace")
+	require.NoError(err)
+	require.NotNil(originalWorkspace)
+	assert.Equal(original.Repository.ID, originalWorkspace.RepoID)
 
 	byRoute, err := d.GetWorkspaceByMRForProvider(
 		t.Context(), "github", "github.com", "org-a", "project-a", 7,
@@ -250,8 +254,101 @@ func TestWorkspaceRouteLookupAndCreationFailClosedAfterReplacement(t *testing.T)
 	err = d.InsertWorkspace(t.Context(), &Workspace{
 		ID: "replacement-workspace", Platform: "github",
 		PlatformHost: "github.com", RepoOwner: "org-a", RepoName: "project-a",
-		ItemType: WorkspaceItemTypePullRequest, ItemNumber: 8,
+		ItemType: WorkspaceItemTypePullRequest, ItemNumber: 7,
 		WorktreePath: "/tmp/replacement-workspace", TmuxSession: "replacement-workspace",
+	})
+	require.NoError(err)
+	replacementWorkspace, err := d.GetWorkspace(t.Context(), "replacement-workspace")
+	require.NoError(err)
+	require.NotNil(replacementWorkspace)
+	assert.Equal(current.Repository.ID, replacementWorkspace.RepoID)
+	byRoute, err = d.GetWorkspaceByMRForProvider(
+		t.Context(), "github", "github.com", "org-a", "project-a", 7,
+	)
+	require.NoError(err)
+	require.NotNil(byRoute)
+	assert.Equal("replacement-workspace", byRoute.ID)
+}
+
+func TestInsertWorkspaceRejectsChangedExplicitRepositoryIdentity(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	originalID, _ := seedRepositoryCatalogCollision(t, d)
+
+	err := d.InsertWorkspace(t.Context(), &Workspace{
+		ID: "stale-repository-workspace", Platform: "github",
+		PlatformHost: "github.com", RepoOwner: "org-a", RepoName: "project-a",
+		RepoID:   originalID,
+		ItemType: WorkspaceItemTypePullRequest, ItemNumber: 9,
+		WorktreePath: "/tmp/stale-repository-workspace",
+		TmuxSession:  "stale-repository-workspace",
+	})
+	require.ErrorContains(err, "repository identity changed")
+	require.ErrorIs(err, ErrRepositoryRouteFenceChanged)
+}
+
+func TestInactiveWorkspaceRepositoryKeepsPersistedRoute(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	observedAt := baseTime()
+	repo := reconcileCatalogRepository(
+		t, d, "provider-retired", "org-a", "project-a", observedAt,
+	)
+	require.NoError(d.InsertWorkspace(t.Context(), &Workspace{
+		ID: "retired-workspace", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "org-a", RepoName: "project-a",
+		ItemType: WorkspaceItemTypePullRequest, ItemNumber: 7,
+		WorktreePath: "/tmp/retired-workspace", TmuxSession: "retired-workspace",
+	}))
+	_, _, err := d.ReconcileRepositoryObservation(t.Context(), RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "provider-retired", Owner: "org-a", Name: "renamed",
+	}, observedAt.Add(time.Minute))
+	require.NoError(err)
+	retired, err := d.DeactivateRepositoryObservation(
+		t.Context(), "github", "github.com", "provider-retired",
+		observedAt.Add(2*time.Minute),
+	)
+	require.NoError(err)
+	require.NotNil(retired)
+	require.Equal(repo.Repository.ID, retired.Repository.ID)
+
+	workspace, err := d.GetWorkspace(t.Context(), "retired-workspace")
+	require.NoError(err)
+	require.NotNil(workspace)
+	require.Equal("project-a", workspace.RepoName)
+
+	workspaces, err := d.ListWorkspaces(t.Context())
+	require.NoError(err)
+	require.Len(workspaces, 1)
+	require.Equal("project-a", workspaces[0].RepoName)
+
+	summary, err := d.GetWorkspaceSummary(t.Context(), "retired-workspace")
+	require.NoError(err)
+	require.NotNil(summary)
+	require.Equal("project-a", summary.RepoName)
+}
+
+func TestInsertWorkspaceWithoutActiveRepositoryRetainsHistoricalRouteFence(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	observedAt := baseTime()
+	reconcileCatalogRepository(
+		t, d, "provider-retired", "org-a", "project-a", observedAt,
+	)
+	retired, err := d.DeactivateRepositoryObservation(
+		t.Context(), "github", "github.com", "provider-retired",
+		observedAt.Add(time.Hour),
+	)
+	require.NoError(err)
+	require.NotNil(retired)
+
+	err = d.InsertWorkspace(t.Context(), &Workspace{
+		ID: "unresolved-repository-workspace", Platform: "github",
+		PlatformHost: "github.com", RepoOwner: "org-a", RepoName: "project-a",
+		ItemType: WorkspaceItemTypePullRequest, ItemNumber: 10,
+		WorktreePath: "/tmp/unresolved-repository-workspace",
+		TmuxSession:  "unresolved-repository-workspace",
 	})
 	require.ErrorContains(err, "repository route has historical occupants")
 }
@@ -455,8 +552,8 @@ func TestDeactivateRepositoryObservationIgnoresStaleAbsence(t *testing.T) {
 }
 
 // TestInsertWorkspaceWaitsForReconciliation verifies workspace creation holds
-// the reconciliation read lock, so a replacement that makes the route
-// historically ambiguous cannot interleave with the collision check.
+// the reconciliation read lock, then binds the repository that owns the route
+// after a pending replacement finishes.
 func TestInsertWorkspaceWaitsForReconciliation(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
@@ -514,7 +611,16 @@ func TestInsertWorkspaceWaitsForReconciliation(t *testing.T) {
 
 	close(releaseWriter)
 	require.NoError(<-writerDone)
-	require.ErrorContains(<-insertDone, "historical occupants")
+	require.NoError(<-insertDone)
+	workspace, err := d.GetWorkspace(t.Context(), "ws-reconcile-race")
+	require.NoError(err)
+	require.NotNil(workspace)
+	current, err := d.GetRepositoryByProviderID(
+		t.Context(), "github", "github.com", "provider-2",
+	)
+	require.NoError(err)
+	require.NotNil(current)
+	require.Equal(current.Repository.ID, workspace.RepoID)
 }
 
 func TestReconcileRepositoryObservationRejectsStaleReplacement(t *testing.T) {

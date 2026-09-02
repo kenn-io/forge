@@ -232,7 +232,7 @@ func TestWorkspaceSubjectSnapshotUsesStableRepositoryIdentityAfterRename(t *test
 	assert.Equal(WorkspaceRef{ID: "ws-renamed", Status: "ready"}, snapshot.Subjects[key].Workspace)
 }
 
-func TestWorkspaceSubjectSnapshotRejectsAmbiguousReusedRoute(t *testing.T) {
+func TestWorkspaceSubjectSnapshotKeepsStableIdentityAcrossReusedRoute(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	h := newEnrichmentTestHandler(t, "")
@@ -277,9 +277,12 @@ func TestWorkspaceSubjectSnapshotRejectsAmbiguousReusedRoute(t *testing.T) {
 
 	snapshot, err := h.WorkspaceSubjectSnapshot(t.Context())
 	require.NoError(err)
-	assert.Empty(snapshot.OwnReferences,
-		"ambiguous historical routes must not bind the workspace to the replacement repository")
-	assert.Empty(snapshot.Subjects)
+	key := db.WorkspaceSubjectKey{
+		RepoID: oldRepo.Repository.ID, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 45,
+	}
+	assert.Equal(WorkspaceRef{ID: "ws-old-route", Status: "ready"}, snapshot.OwnReferences[key])
+	require.Contains(snapshot.Subjects, key)
+	assert.Equal("gadget", snapshot.Subjects[key].Subject.RepoName)
 }
 
 func TestWorkspaceSubjectSnapshotKeepsNonReadyReferenceWithoutCachedActivity(t *testing.T) {

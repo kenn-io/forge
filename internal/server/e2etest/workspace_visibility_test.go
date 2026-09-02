@@ -73,7 +73,7 @@ func TestWorkspaceAPIHidesRemovedAssociatedPullRequestE2E(t *testing.T) {
 	require.Equal(42, *stored.AssociatedPRNumber)
 }
 
-func TestWorkspaceAPIHidesProviderMetadataForReusedRouteE2E(t *testing.T) {
+func TestWorkspaceAPIRetainsProviderMetadataAcrossReusedRouteE2E(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()
 	ts, database := bootFleetServer(t, nil)
@@ -129,11 +129,11 @@ func TestWorkspaceAPIHidesProviderMetadataForReusedRouteE2E(t *testing.T) {
 	pullSummary, err := database.GetWorkspaceSummary(ctx, "ws-pull")
 	require.NoError(err)
 	require.NotNil(pullSummary)
-	require.False(pullSummary.SourceItemVisible)
+	require.True(pullSummary.SourceItemVisible)
 	associatedSummary, err := database.GetWorkspaceSummary(ctx, "ws-associated")
 	require.NoError(err)
 	require.NotNil(associatedSummary)
-	require.False(associatedSummary.AssociatedPRVisible)
+	require.True(associatedSummary.AssociatedPRVisible)
 
 	client, err := apiclient.NewWithHTTPClient(ts.URL, ts.Client())
 	require.NoError(err)
@@ -147,7 +147,10 @@ func TestWorkspaceAPIHidesProviderMetadataForReusedRouteE2E(t *testing.T) {
 	for _, workspace := range *list.JSON200.Workspaces {
 		byID[workspace.Id] = workspace
 	}
-	require.Nil(byID["ws-associated"].AssociatedPrNumber)
-	require.Nil(byID["ws-pull"].MrHeadRepoKind)
-	require.Nil(byID["ws-pull"].MrTitle)
+	require.NotNil(byID["ws-associated"].AssociatedPrNumber)
+	require.Equal(int64(42), *byID["ws-associated"].AssociatedPrNumber)
+	require.NotNil(byID["ws-pull"].MrHeadRepoKind)
+	require.Equal(generated.WorkspaceResponseMrHeadRepoKindFork, *byID["ws-pull"].MrHeadRepoKind)
+	require.NotNil(byID["ws-pull"].MrTitle)
+	require.Equal("Original pull", *byID["ws-pull"].MrTitle)
 }

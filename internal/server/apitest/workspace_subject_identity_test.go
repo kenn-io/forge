@@ -43,7 +43,7 @@ func TestWorkspaceReferencesUseStableRepositoryIdentityAcrossRenameAndRouteReuse
 		t, database, replacement.Repository.ID, "acme", "widget", "replacement", now.Add(2*time.Minute),
 	)
 
-	assertWorkspaceIdentitySurfaces(t, client.HTTP, "gadget", false)
+	assertWorkspaceIdentitySurfaces(t, client.HTTP, "gadget", true)
 	assertWorkspaceIdentitySurfaces(t, client.HTTP, "widget", false)
 }
 

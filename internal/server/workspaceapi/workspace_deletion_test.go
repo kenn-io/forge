@@ -147,6 +147,119 @@ func TestQueueWorkspaceDeletionIsIdempotentAfterRemoval(t *testing.T) {
 	require.NoError(t, handler.QueueWorkspaceDeletion("already-removed"))
 }
 
+func TestQueueWorkspaceForceDeletionRemovesDirtyWorkspaceRecord(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := dbtest.Open(t)
+	base := t.TempDir()
+	worktreePath := filepath.Join(base, "ws-dirty-force")
+	require.NoError(os.MkdirAll(worktreePath, 0o755))
+	runGit(t, worktreePath, "init")
+	require.NoError(os.WriteFile(
+		filepath.Join(worktreePath, "notes.txt"), []byte("discard me\n"), 0o644,
+	))
+	insertDeletionTestWorkspace(t, database, "ws-dirty-force", worktreePath, "ready")
+	handler := New(Deps{
+		DB:         database,
+		Workspaces: workspace.NewManager(database, base),
+	})
+	handler.Start(t.Context(), true)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		require.NoError(handler.Shutdown(ctx))
+	})
+
+	require.NoError(handler.queueWorkspaceForceDeletion("ws-dirty-force"))
+	require.Eventually(func() bool {
+		got, err := database.GetWorkspace(t.Context(), "ws-dirty-force")
+		return err == nil && got == nil
+	}, 3*time.Second, 10*time.Millisecond)
+	assert.DirExists(worktreePath, "an unregistered Git root is not a managed worktree")
+}
+
+func TestPRMonitorPreservesDirtyUnresolvedWorkspace(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := dbtest.Open(t)
+	base := t.TempDir()
+	worktreePath := filepath.Join(base, "ws-unresolved-dirty")
+	require.NoError(os.MkdirAll(worktreePath, 0o755))
+	runGit(t, worktreePath, "init")
+	require.NoError(os.WriteFile(
+		filepath.Join(worktreePath, "notes.txt"), []byte("keep me\n"), 0o644,
+	))
+	insertDeletionTestWorkspace(
+		t, database, "ws-unresolved-dirty", worktreePath, "ready",
+	)
+	observedAt := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	original := db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "repo-original", Owner: "acme", Name: "widget",
+	}
+	_, _, err := database.ReconcileRepositoryObservation(
+		t.Context(), original, observedAt,
+	)
+	require.NoError(err)
+	original.Name = "widget-original"
+	_, _, err = database.ReconcileRepositoryObservation(
+		t.Context(), original, observedAt.Add(time.Minute),
+	)
+	require.NoError(err)
+	_, _, err = database.ReconcileRepositoryObservation(
+		t.Context(), db.RepoIdentity{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformRepoID: "repo-replacement", Owner: "acme", Name: "widget",
+		}, observedAt.Add(2*time.Minute),
+	)
+	require.NoError(err)
+
+	var eventsMu sync.Mutex
+	var events []Event
+	handler := New(Deps{
+		DB: database, Workspaces: workspace.NewManager(database, base),
+		Broadcast: func(event Event) uint64 {
+			eventsMu.Lock()
+			defer eventsMu.Unlock()
+			events = append(events, event)
+			return uint64(len(events))
+		},
+	})
+	handler.Start(t.Context(), true)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		require.NoError(handler.Shutdown(ctx))
+	})
+	require.NotNil(handler.workspacePRMonitor)
+	_, err = handler.workspacePRMonitor.RunOnce(t.Context())
+	require.NoError(err)
+
+	require.Eventually(func() bool {
+		got, getErr := database.GetWorkspace(t.Context(), "ws-unresolved-dirty")
+		return getErr == nil && got != nil && got.Status == "deletion_failed"
+	}, 3*time.Second, 10*time.Millisecond)
+	require.Eventually(func() bool {
+		eventsMu.Lock()
+		defer eventsMu.Unlock()
+		return len(events) >= 2
+	}, 3*time.Second, 10*time.Millisecond)
+	got, err := database.GetWorkspace(t.Context(), "ws-unresolved-dirty")
+	require.NoError(err)
+	require.NotNil(got)
+	require.NotNil(got.ErrorMessage)
+	assert.Contains(*got.ErrorMessage, "notes.txt")
+	assert.FileExists(filepath.Join(worktreePath, "notes.txt"))
+	eventsMu.Lock()
+	events = nil
+	eventsMu.Unlock()
+	_, err = handler.workspacePRMonitor.RunOnce(t.Context())
+	require.NoError(err)
+	eventsMu.Lock()
+	assert.Empty(events, "automatic retirement must not re-admit a deletion failure")
+	eventsMu.Unlock()
+}
+
 func TestDeleteWorkspaceDirtyPreservesReadyStatus(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

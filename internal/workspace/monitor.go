@@ -25,14 +25,16 @@ type PullCandidateSource interface {
 }
 
 type PRMonitorOptions struct {
-	LaunchSpecs    *Manager
-	PullCandidates PullCandidateSource
+	LaunchSpecs               *Manager
+	PullCandidates            PullCandidateSource
+	RetireUnresolvedWorkspace func(context.Context, string) error
 }
 
 type PRMonitor struct {
-	db             *db.DB
-	launchSpecs    *Manager
-	pullCandidates PullCandidateSource
+	db                        *db.DB
+	launchSpecs               *Manager
+	pullCandidates            PullCandidateSource
+	retireUnresolvedWorkspace func(context.Context, string) error
 }
 
 func NewPRMonitor(database *db.DB, options ...PRMonitorOptions) *PRMonitor {
@@ -40,6 +42,7 @@ func NewPRMonitor(database *db.DB, options ...PRMonitorOptions) *PRMonitor {
 	if len(options) > 0 {
 		monitor.launchSpecs = options[0].LaunchSpecs
 		monitor.pullCandidates = options[0].PullCandidates
+		monitor.retireUnresolvedWorkspace = options[0].RetireUnresolvedWorkspace
 	}
 	return monitor
 }
@@ -55,6 +58,12 @@ func (m *PRMonitor) RunOnce(
 	var updates []PRAssociationUpdate
 	for i := range workspaces {
 		ws := workspaces[i]
+		if retired, retireErr := m.retireUnresolvedRepositoryWorkspace(ctx, &ws); retired {
+			if retireErr != nil {
+				slog.Warn("retire unresolved workspace", "workspace_id", ws.ID, "err", retireErr)
+			}
+			continue
+		}
 		if !workspacePRMonitorEligible(&ws) {
 			continue
 		}
@@ -92,7 +101,25 @@ func (m *PRMonitor) RefreshWorkspaceAssociation(
 			"workspace %q not found", workspaceID,
 		)
 	}
+	if retired, err := m.retireUnresolvedRepositoryWorkspace(ctx, ws); retired {
+		return PRAssociationUpdate{}, false, err
+	}
 	return m.refreshWorkspaceAssociation(ctx, ws)
+}
+
+func (m *PRMonitor) retireUnresolvedRepositoryWorkspace(
+	ctx context.Context, ws *Workspace,
+) (bool, error) {
+	if ws == nil || ws.RepoID != 0 ||
+		strings.TrimSpace(ws.PlatformHost) == "" ||
+		strings.TrimSpace(ws.RepoOwner) == "" ||
+		strings.TrimSpace(ws.RepoName) == "" {
+		return false, nil
+	}
+	if m.retireUnresolvedWorkspace == nil {
+		return true, nil
+	}
+	return true, m.retireUnresolvedWorkspace(ctx, ws.ID)
 }
 
 func (m *PRMonitor) refreshWorkspaceAssociation(
@@ -195,6 +222,23 @@ func (m *PRMonitor) listOpenPullCandidates(
 ) ([]db.MergeRequest, error) {
 	if m.pullCandidates != nil {
 		return m.pullCandidates.ListOpenPullCandidates(ctx, *workspace)
+	}
+	if workspace.RepoID != 0 {
+		repo, err := m.db.GetActiveRepoByID(ctx, workspace.RepoID)
+		if err != nil || repo == nil {
+			return nil, err
+		}
+		return m.db.ListMergeRequests(ctx, db.ListMergeRequestsOpts{
+			RepoID: repo.ID,
+			State:  "open",
+		})
+	}
+	collision, err := m.db.WorkspaceRepoRouteHasHistoricalOccupants(
+		ctx, workspaceProvider(workspace), workspace.PlatformHost,
+		workspace.RepoOwner, workspace.RepoName,
+	)
+	if err != nil || collision {
+		return nil, err
 	}
 	repo, err := m.db.GetRepoByIdentity(ctx, db.RepoIdentity{
 		Platform:     workspaceProvider(workspace),

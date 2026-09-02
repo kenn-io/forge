@@ -29,8 +29,10 @@ type workspaceServerFixture struct {
 	server           *server.Server
 	client           *apiclient.Client
 	database         *db.DB
+	clones           *gitclone.Manager
 	bare             string
 	remote           string
+	repoID           int64
 	agentActivityDir string
 	worktreeDir      string
 }
@@ -114,7 +116,12 @@ func setupWorkspaceServerFixtureWithTmuxInjection(
 
 	bareDir := filepath.Join(dir, "clones")
 	require.NoError(t, os.MkdirAll(bareDir, 0o755))
-	bare := filepath.Join(bareDir, "github.com", "acme", "widget.git")
+	clones := gitclone.New(bareDir, nil)
+	bare, err := clones.ClonePathForContext(
+		gitclone.WithRepositoryIdentity(t.Context(), "repo-acme-widget"),
+		"github", "github.com", "acme", "widget",
+	)
+	require.NoError(t, err)
 	runGit(t, dir, "clone", "--bare", remote, bare)
 	runGit(
 		t, bare, "remote", "set-url", "origin",
@@ -125,7 +132,6 @@ func setupWorkspaceServerFixtureWithTmuxInjection(
 		"url."+remote+".insteadOf", "https://github.com/acme/widget.git",
 	)
 
-	clones := gitclone.New(bareDir, nil)
 	worktreeDir := filepath.Join(dir, "worktrees")
 	repos := []ghclient.RepoRef{
 		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
@@ -136,7 +142,7 @@ func setupWorkspaceServerFixtureWithTmuxInjection(
 	if cfg != nil && cfg.BasePath != "" {
 		basePath = cfg.BasePath
 	}
-	seedPROnHost(t, database, "github.com", "acme", "widget", 1)
+	repoID := seedPROnHost(t, database, "github.com", "acme", "widget", 1)
 	options := server.ServerOptions{
 		DisableWorkspaceBackgroundMonitors: true,
 		PtyOwnerInProcess:                  true,
@@ -166,8 +172,10 @@ func setupWorkspaceServerFixtureWithTmuxInjection(
 		server:           srv,
 		client:           client,
 		database:         database,
+		clones:           clones,
 		bare:             bare,
 		remote:           remote,
+		repoID:           repoID,
 		agentActivityDir: filepath.Join(dir, "agent-activity"),
 		worktreeDir:      worktreeDir,
 	}

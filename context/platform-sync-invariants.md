@@ -107,9 +107,12 @@ opts into case folding (`internal/platform/metadata.go::LowercaseRepoNames`).
 URL-parsed config or provider responses.
 
 Scope repository-owned data by internal repository ID; route-facing requests
-still carry the full provider ref. Provider workspaces remain route-keyed and
-must fail closed once a route has historical occupants
-(`internal/db/queries.go::DB.workspaceRouteHasHistoricalOccupants`).
+still carry the full provider ref. New provider workspaces persist that internal
+ID, so renames follow the same repository and a replacement repository can use
+the old route without inheriting workspaces. Unresolved legacy workspaces and
+route-only Git operations still fail closed once a route has historical
+occupants (`internal/db/queries.go::DB.workspaceRouteHasHistoricalOccupants`,
+`internal/workspace/manager.go::Manager.verifyWorkspaceRepository`).
 
 ## Provider Hosts And Tokens
 

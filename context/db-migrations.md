@@ -67,7 +67,7 @@ generations.
 
 - [ ] The migration runs from the previous schema version to the new version.
 - [ ] Existing rows are transformed before new constraints or triggers are installed.
-- [ ] Foreign-key child rows are moved or merged before parent rows are deleted.
+- [ ] Foreign-key child rows are moved or merged before parent rows are deleted, unless the product decision deletes the parent and its owned state as one unit.
 - [ ] Unique-index conflicts are handled intentionally: true duplicates are deleted, non-duplicate children are preserved.
 - [ ] `PRAGMA integrity_check` and `PRAGMA foreign_key_check` are clean on migrated test data.
 - [ ] Any real-data validation uses a copy or SQLite backup, never the live database.

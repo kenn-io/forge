@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -104,11 +105,10 @@ type ensureCloneFlight struct {
 }
 
 // cloneValidationError marks a slot whose fetch succeeded but whose
-// starter's route validation failed, removing the fetched clone. Followers
-// distinguish it from a fetch failure so a caller whose own route still owns
-// the path can retry with a fresh, self-validated fetch. Unwrap keeps
-// errors.Is checks (for example db.ErrRepositoryRouteFenceChanged) working
-// through the marker.
+// starter's route validation failed, removing a new clone or rolling an
+// existing clone back. Followers distinguish it from a fetch failure so a
+// caller whose own route still owns the path can retry with a self-validated
+// fetch. Unwrap keeps errors.Is checks working through the marker.
 type cloneValidationError struct{ err error }
 
 func (e *cloneValidationError) Error() string { return e.err.Error() }
@@ -387,6 +387,15 @@ func (m *Manager) ensureCloneInNamespaceValidated(
 			context.WithoutCancel(ctx), ensureCloneTimeout,
 		)
 		defer cancel()
+		var previous existingCloneState
+		var existed bool
+		if validate != nil {
+			var err error
+			previous, existed, err = m.snapshotExistingClone(opCtx, clonePath)
+			if err != nil {
+				return err
+			}
+		}
 		if err := m.ensureCloneNowInNamespace(
 			opCtx, namespace, platform, host, owner, name, remoteURL,
 		); err != nil {
@@ -396,13 +405,20 @@ func (m *Manager) ensureCloneInNamespaceValidated(
 			return nil
 		}
 		// The slot starter's validation spans the whole fetch window, so a
-		// route that changed ownership during the fetch fails here and the
-		// possibly cross-repository clone is removed before any waiter can
-		// observe it.
+		// route that changed ownership during the fetch fails here. A new
+		// clone is removed; an existing clone is restored so linked worktrees
+		// keep their repository while no fetched replacement refs remain.
 		if err := validate(opCtx); err != nil {
-			if cleanupErr := m.removeCloneAside(clonePath); cleanupErr != nil {
+			cleanupCtx := context.WithoutCancel(opCtx)
+			var cleanupErr error
+			if existed {
+				cleanupErr = m.restoreExistingClone(cleanupCtx, clonePath, previous)
+			} else {
+				cleanupErr = m.removeCloneAside(clonePath)
+			}
+			if cleanupErr != nil {
 				return errors.Join(err, fmt.Errorf(
-					"remove clone after failed validation: %w", cleanupErr,
+					"clean clone after failed validation: %w", cleanupErr,
 				))
 			}
 			return &cloneValidationError{err: err}
@@ -430,6 +446,136 @@ func (m *Manager) ensureCloneInNamespaceValidated(
 		}
 	}
 	return nil
+}
+
+type cloneRefState struct {
+	objectName string
+	symref     string
+}
+
+type existingCloneState struct {
+	refs          map[string]cloneRefState
+	fetchRefspecs []string
+}
+
+func (m *Manager) snapshotExistingClone(
+	ctx context.Context, clonePath string,
+) (existingCloneState, bool, error) {
+	if _, err := os.Stat(filepath.Join(clonePath, "HEAD")); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return existingCloneState{}, false, nil
+		}
+		return existingCloneState{}, false, fmt.Errorf("inspect existing clone: %w", err)
+	}
+	refs, err := m.snapshotCloneRefs(ctx, clonePath)
+	if err != nil {
+		return existingCloneState{}, false, err
+	}
+	refspecs, err := m.cloneFetchRefspecs(ctx, clonePath)
+	if err != nil {
+		return existingCloneState{}, false, err
+	}
+	return existingCloneState{refs: refs, fetchRefspecs: refspecs}, true, nil
+}
+
+func (m *Manager) snapshotCloneRefs(
+	ctx context.Context, clonePath string,
+) (map[string]cloneRefState, error) {
+	out, err := m.git(
+		ctx, clonePath, "for-each-ref", "--format=%(refname)%09%(objectname)%09%(symref)",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("snapshot clone refs: %w", err)
+	}
+	refs := make(map[string]cloneRefState)
+	for line := range strings.SplitSeq(strings.TrimSuffix(string(out), "\n"), "\n") {
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "\t", 3)
+		if len(parts) != 3 {
+			return nil, fmt.Errorf("snapshot clone refs: malformed ref record %q", line)
+		}
+		refs[parts[0]] = cloneRefState{objectName: parts[1], symref: parts[2]}
+	}
+	return refs, nil
+}
+
+func (m *Manager) cloneFetchRefspecs(
+	ctx context.Context, clonePath string,
+) ([]string, error) {
+	out, err := m.git(ctx, clonePath, "config", "--get-all", "remote.origin.fetch")
+	if err != nil {
+		if code, ok := gitExitCode(err); ok && code == 1 {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("snapshot clone fetch refspecs: %w", err)
+	}
+	value := strings.TrimSuffix(string(out), "\n")
+	if value == "" {
+		return nil, nil
+	}
+	return strings.Split(value, "\n"), nil
+}
+
+func (m *Manager) restoreExistingClone(
+	ctx context.Context, clonePath string, before existingCloneState,
+) error {
+	currentRefs, err := m.snapshotCloneRefs(ctx, clonePath)
+	if err != nil {
+		return err
+	}
+	var restoreErr error
+	var deleteRefs []string
+	for ref := range currentRefs {
+		if _, ok := before.refs[ref]; !ok {
+			deleteRefs = append(deleteRefs, ref)
+		}
+	}
+	slices.Sort(deleteRefs)
+	slices.Reverse(deleteRefs)
+	for _, ref := range deleteRefs {
+		_, err := m.git(ctx, clonePath, "update-ref", "--no-deref", "-d", ref)
+		restoreErr = errors.Join(restoreErr, err)
+	}
+	refs := make([]string, 0, len(before.refs))
+	for ref := range before.refs {
+		refs = append(refs, ref)
+	}
+	slices.Sort(refs)
+	for _, ref := range refs {
+		state := before.refs[ref]
+		if current, ok := currentRefs[ref]; ok && current == state {
+			continue
+		}
+		var err error
+		if state.symref != "" {
+			_, err = m.git(ctx, clonePath, "symbolic-ref", ref, state.symref)
+		} else {
+			_, err = m.git(
+				ctx, clonePath, "update-ref", "--no-deref", ref, state.objectName,
+			)
+		}
+		restoreErr = errors.Join(restoreErr, err)
+	}
+	currentRefspecs, err := m.cloneFetchRefspecs(ctx, clonePath)
+	if err != nil {
+		return errors.Join(restoreErr, err)
+	}
+	if slices.Equal(currentRefspecs, before.fetchRefspecs) {
+		return restoreErr
+	}
+	if len(currentRefspecs) > 0 {
+		_, err = m.git(ctx, clonePath, "config", "--unset-all", "remote.origin.fetch")
+		restoreErr = errors.Join(restoreErr, err)
+	}
+	for _, refspec := range before.fetchRefspecs {
+		_, err = m.git(
+			ctx, clonePath, "config", "--add", "remote.origin.fetch", refspec,
+		)
+		restoreErr = errors.Join(restoreErr, err)
+	}
+	return restoreErr
 }
 
 func (m *Manager) validateRemoteTransport(platform, host, remoteURL string) error {

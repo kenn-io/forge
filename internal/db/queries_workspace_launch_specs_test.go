@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -56,6 +57,77 @@ func TestWorkspaceAndLaunchSpecPersistAtomically(t *testing.T) {
 	storedSpec, readErr := database.GetWorkspaceLaunchSpec(t.Context(), workspace.ID)
 	require.NoError(readErr)
 	assert.Nil(storedSpec)
+}
+
+func TestListUnpreparedProviderWorkspacesUsesOneReadConnection(t *testing.T) {
+	require := require.New(t)
+	database := openTestDB(t)
+	workspace, spec := workspaceLaunchFixture(t, database, "ws-unprepared-one-connection")
+	require.NoError(database.CreateWorkspaceWithLaunchSpec(
+		t.Context(), workspace, spec,
+	))
+
+	database.ReadDB().SetMaxOpenConns(1)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+	unprepared, err := database.ListUnpreparedProviderWorkspacesAt(
+		ctx, spec.SourceVisibleUntil,
+	)
+
+	require.NoError(err)
+	require.Len(unprepared, 1)
+	require.Equal(workspace.ID, unprepared[0].Workspace.ID)
+	require.Equal("sourceVisibilityExpired", unprepared[0].Reason)
+}
+
+func TestCreateWorkspaceWithLaunchSpecRejectsCatalogIdentityMismatch(t *testing.T) {
+	require := require.New(t)
+	database := openTestDB(t)
+	workspace, spec := workspaceLaunchFixture(t, database, "ws-catalog-mismatch")
+	spec.Repository.PlatformRepoID = "replacement-repository"
+
+	err := database.CreateWorkspaceWithLaunchSpec(t.Context(), workspace, spec)
+
+	require.ErrorIs(err, ErrRepositoryRouteFenceChanged)
+	stored, readErr := database.GetWorkspace(t.Context(), workspace.ID)
+	require.NoError(readErr)
+	require.Nil(stored)
+}
+
+func TestPutWorkspaceLaunchSpecRejectsCatalogIdentityMismatch(t *testing.T) {
+	require := require.New(t)
+	database := openTestDB(t)
+	workspace, spec := workspaceLaunchFixture(t, database, "ws-put-mismatch")
+	require.NoError(database.InsertWorkspace(t.Context(), workspace))
+	spec.Repository.PlatformRepoID = "replacement-repository"
+
+	err := database.PutWorkspaceLaunchSpec(t.Context(), workspace.ID, spec)
+
+	require.ErrorIs(err, ErrRepositoryRouteFenceChanged)
+	stored, readErr := database.GetWorkspaceLaunchSpec(t.Context(), workspace.ID)
+	require.NoError(readErr)
+	require.Nil(stored)
+}
+
+func TestRefreshWorkspaceLaunchSpecRejectsSameRouteIdentityMismatch(t *testing.T) {
+	require := require.New(t)
+	database := openTestDB(t)
+	workspace, spec := workspaceLaunchFixture(t, database, "ws-refresh-mismatch")
+	require.NoError(database.CreateWorkspaceWithLaunchSpec(t.Context(), workspace, spec))
+	refreshed := spec
+	refreshed.Repository.PlatformRepoID = "replacement-repository"
+	refreshed.IssuedAt = spec.IssuedAt.Add(time.Minute)
+	refreshed.SourceVisibleUntil = refreshed.IssuedAt.Add(WorkspaceLaunchSpecVisibilityLease)
+
+	_, err := database.PutRefreshedWorkspaceLaunchSpec(
+		t.Context(), workspace.ID, refreshed,
+	)
+
+	require.ErrorIs(err, ErrRepositoryRouteFenceChanged)
+	stored, readErr := database.GetWorkspaceLaunchSpec(t.Context(), workspace.ID)
+	require.NoError(readErr)
+	require.NotNil(stored)
+	require.Equal(spec.Repository.PlatformRepoID, stored.Repository.PlatformRepoID)
 }
 
 func TestWorkspaceLaunchSpecRoundTripsCanonicalUTCTimestamps(t *testing.T) {

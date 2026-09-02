@@ -192,6 +192,10 @@ func TestWorkspaceDiffEndpointsReturnPierreTreeOrderE2E(t *testing.T) {
 	runGit(t, worktreePath, "commit", "-m", "base commit")
 
 	database := dbtest.Open(t)
+	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
+	identity.PlatformRepoID = "repo-acme-widget"
+	_, err := database.UpsertRepo(t.Context(), identity)
+	require.NoError(err)
 	srv := server.New(database, nil, nil, "/", nil, server.ServerOptions{
 		WorktreeDir: filepath.Join(dir, "managed-worktrees"),
 	})

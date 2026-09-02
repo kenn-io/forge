@@ -57,6 +57,7 @@
     repo?: string;
     routeFamily?: "focus" | "canonical";
     showRepoSelector?: boolean;
+    phonePresentation?: boolean;
     chunked?: boolean;
   }
 
@@ -65,6 +66,7 @@
     repo,
     routeFamily = "focus",
     showRepoSelector = false,
+    phonePresentation = false,
     chunked = false,
   }: Props = $props();
 
@@ -446,6 +448,20 @@
   });
 </script>
 
+{#snippet compactPhoneFilters()}
+  <div class="compact-phone-filter-menu">
+    <FilterDropdown
+      label="Filters"
+      title="Filters"
+      active={compactFiltersActive}
+      showBadge={false}
+      sections={compactFilterSections}
+      minWidth="180px"
+      align="end"
+    />
+  </div>
+{/snippet}
+
 <div class="focus-list" bind:this={listRoot}>
   {#if !showRepoSelector}
     <div class="header">
@@ -469,7 +485,7 @@
         />
       </div>
     {/if}
-    {#if !showRepoSelector}
+    {#if !showRepoSelector && !phonePresentation}
       <div class="compact-filter-menu">
         <FilterDropdown
           label="List filters"
@@ -567,6 +583,7 @@
     searchAriaLabel="Search {itemLabel}"
     filterControls="focus-list-filters"
     {filtersExpanded}
+    filterControl={!showRepoSelector && phonePresentation ? compactPhoneFilters : undefined}
     oninput={onSearchInput}
     ontoggle={() => filtersExpanded = !filtersExpanded}
   />
@@ -768,6 +785,11 @@
 
   .compact-filter-menu :global(.kit-filter-dropdown__trigger-label),
   .compact-filter-menu :global(.kit-filter-dropdown__trigger-detail) {
+    display: none;
+  }
+
+  .compact-phone-filter-menu :global(.kit-filter-dropdown__trigger-label),
+  .compact-phone-filter-menu :global(.kit-filter-dropdown__trigger-detail) {
     display: none;
   }
 

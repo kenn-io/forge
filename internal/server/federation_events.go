@@ -71,7 +71,7 @@ func (l *hubEventLifecycle) Run(ctx context.Context) {
 		l.mu.Lock()
 		enabled := l.enabled
 		changed := l.changed
-		var runCtx context.Context
+		runCtx := ctx
 		if enabled {
 			var cancel context.CancelFunc
 			runCtx, cancel = context.WithCancel(ctx)

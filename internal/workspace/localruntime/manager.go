@@ -38,6 +38,12 @@ const (
 
 const initialMessageWriteTimeout = 30 * time.Second
 
+// initialMessageEnterDelay separates the bracketed paste from the Enter
+// keystroke that submits it. Terminal UIs that collapse a multi-line paste
+// treat bytes arriving in the same chunk as the paste-end marker as part of
+// the paste, so a carriage return in that chunk never submits the prompt.
+const initialMessageEnterDelay = 150 * time.Millisecond
+
 var (
 	errManagerShutdown    = errors.New("runtime manager is shut down")
 	ErrSessionNotFound    = errors.New("runtime session not found")
@@ -2952,10 +2958,10 @@ func (s *session) submitInitialMessage(ctx context.Context, message string) erro
 		s.mu.Unlock()
 		return ErrBracketedPasteInactive
 	}
-	data := make([]byte, 0, len(message)+13)
-	data = append(data, "\x1b[200~"...)
-	data = append(data, message...)
-	data = append(data, "\x1b[201~\r"...)
+	paste := make([]byte, 0, len(message)+12)
+	paste = append(paste, "\x1b[200~"...)
+	paste = append(paste, message...)
+	paste = append(paste, "\x1b[201~"...)
 	pty := s.pty
 	ptmx := s.ptmx
 	s.mu.Unlock()
@@ -2974,19 +2980,28 @@ func (s *session) submitInitialMessage(ctx context.Context, message string) erro
 	if err := context.Cause(writeCtx); err != nil {
 		return fmt.Errorf("%w: %w", ErrInitialMessageNotWritten, err)
 	}
-	result := make(chan error, 1)
-	go func() {
-		if pty != nil {
-			result <- pty.Write(data)
-			return
+	write := func(data []byte) error {
+		result := make(chan error, 1)
+		go func() {
+			if pty != nil {
+				result <- pty.Write(data)
+				return
+			}
+			_, err := ptmx.Write(data)
+			result <- err
+		}()
+		select {
+		case err := <-result:
+			return err
+		case <-writeCtx.Done():
+			return context.Cause(writeCtx)
 		}
-		_, err := ptmx.Write(data)
-		result <- err
-	}()
-	select {
-	case err := <-result:
-		return err
-	case <-writeCtx.Done():
-		return context.Cause(writeCtx)
 	}
+	if err := write(paste); err != nil {
+		return err
+	}
+	// The paste is on the terminal now; only the submitting keystroke
+	// remains, so the settle delay is bounded and not cancellable.
+	time.Sleep(initialMessageEnterDelay)
+	return write([]byte("\r"))
 }

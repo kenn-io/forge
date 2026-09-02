@@ -258,9 +258,12 @@ still exists.
   and paste DEC modes from session-wide PTY state, not bounded screen replay
   (`internal/workspace/localruntime/manager.go::session.subscribe`).
 - Initial agent handoff requires observed bracketed-paste mode, then sends the
-  opening frame, prompt, closing frame, and Enter in one bounded terminal write.
-  Do not gate Enter on terminal echo: Claude renders pasted input only after the
-  Enter event (`internal/workspace/localruntime/manager.go::session.submitInitialMessage`).
+  opening frame, prompt, and closing frame in one bounded terminal write and,
+  after a short fixed settle delay, Enter as a separate write. Agent TUIs treat
+  bytes in the same chunk as the paste-end marker as part of the paste, so an
+  Enter in that chunk leaves the prompt unsubmitted. Do not gate Enter on
+  terminal echo: Claude renders pasted input only after the Enter event
+  (`internal/workspace/localruntime/manager.go::session.submitInitialMessage`).
 - Mode transitions precede one session-wide UTF-8-aware VT tail even in the
   alternate screen; retain split-rune introducers and decoded C1 controls/ST
   (`internal/workspace/localruntime/terminal_sequence_tail.go::trailingIncompleteTerminalDataLen`).

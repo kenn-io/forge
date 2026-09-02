@@ -2360,7 +2360,7 @@ func TestAttachmentResizeOwnerFallbackRestoresLatestRemainingClaim(t *testing.T)
 	}, pty.resizes())
 }
 
-func TestManagerSubmitInitialMessageWritesFramedPromptAndEnterTogether(t *testing.T) {
+func TestManagerSubmitInitialMessageWritesEnterAsSeparateKeystrokeAfterPaste(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	pty := &fakeRuntimePTY{
@@ -2384,14 +2384,17 @@ func TestManagerSubmitInitialMessageWritesFramedPromptAndEnterTogether(t *testin
 	s.broadcast([]byte("\x1b[?2004h"))
 	submit := func(message, framed string) {
 		pty.resetWrites()
-		ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		require.NoError(mgr.SubmitInitialMessage(ctx, "ws-1", "agent-1", message))
 		pty.mu.Lock()
 		writeCalls := slices.Clone(pty.writeCalls)
 		pty.mu.Unlock()
-		assert.Equal([][]byte{[]byte(framed + "\r")}, writeCalls)
+		// A terminal UI that collapses a multi-line paste treats bytes arriving
+		// in the same chunk as the paste-end marker as part of the paste, so
+		// the Enter keystroke must arrive as its own later write.
+		assert.Equal([][]byte{[]byte(framed), []byte("\r")}, writeCalls)
 	}
 
 	submit("review this", "\x1b[200~review this\x1b[201~")

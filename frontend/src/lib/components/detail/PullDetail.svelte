@@ -2195,24 +2195,26 @@
         {#if pr.HeadBranch}
           <span class="meta-sep meta-sep--branch">·</span>
           <span class="meta-branch">
-            <span class="branch-head">
+            <button
+              class="branch-name-btn branch-name-btn--head"
+              class:branch-name-btn--copied={copiedBranch === pr.HeadBranch}
+              title={copiedBranch === pr.HeadBranch ? "Copied!" : "Click to copy"}
+              onclick={() => copyBranch(pr.HeadBranch)}
+            >
               <svg class="branch-icon" width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
                 <path d="M11.75 2.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.25.75a2.25 2.25 0 113 2.122V6c0 .73-.593 1.322-1.325 1.322H9.457A4.377 4.377 0 006.5 8.579V11.128a2.251 2.251 0 11-1.5 0V4.872a2.251 2.251 0 111.5 0v1.836A5.877 5.877 0 0111.175 5.5h.075V5.372A2.25 2.25 0 019.5 3.25zM4.75 12a.75.75 0 100 1.5.75.75 0 000-1.5zM4 3.25a.75.75 0 111.5 0 .75.75 0 01-1.5 0z"/>
               </svg>
+              {pr.HeadBranch}
+            </button>
+            <span class="branch-target">
+              <span class="branch-arrow">&rarr;</span>
               <button
                 class="branch-name-btn"
-                class:branch-name-btn--copied={copiedBranch === pr.HeadBranch}
-                title={copiedBranch === pr.HeadBranch ? "Copied!" : "Click to copy"}
-                onclick={() => copyBranch(pr.HeadBranch)}
-              >{pr.HeadBranch}</button>
+                class:branch-name-btn--copied={copiedBranch === pr.BaseBranch}
+                title={copiedBranch === pr.BaseBranch ? "Copied!" : "Click to copy"}
+                onclick={() => copyBranch(pr.BaseBranch)}
+              >{pr.BaseBranch}</button>
             </span>
-            <span class="branch-arrow">&rarr;</span>
-            <button
-              class="branch-name-btn"
-              class:branch-name-btn--copied={copiedBranch === pr.BaseBranch}
-              title={copiedBranch === pr.BaseBranch ? "Copied!" : "Click to copy"}
-              onclick={() => copyBranch(pr.BaseBranch)}
-            >{pr.BaseBranch}</button>
           </span>
         {/if}
         {#if detailStore.isDetailSyncing() && !manualRefreshPending && !phonePresentation}
@@ -3482,15 +3484,15 @@
 
   .branch-icon {
     color: var(--text-muted);
-    flex-shrink: 0;
+    margin-right: var(--space-1);
+    vertical-align: -0.1em;
   }
 
-  .branch-head {
+  .branch-target {
     display: inline-flex;
-    align-items: flex-start;
+    align-items: baseline;
     gap: var(--space-1);
-    min-width: 0;
-    max-width: 100%;
+    white-space: nowrap;
   }
 
   .branch-name-btn {

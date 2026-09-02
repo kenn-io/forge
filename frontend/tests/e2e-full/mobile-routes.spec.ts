@@ -597,23 +597,41 @@ test.describe("phone routes", () => {
 
     const alignment = await page.locator(".meta-branch").evaluate((metaBranch) => {
       const icon = metaBranch.querySelector(".branch-icon");
-      const head = metaBranch.querySelector(".branch-name-btn");
-      if (!icon || !head) throw new Error("branch metadata is incomplete");
+      const head = metaBranch.querySelector(".branch-name-btn--head");
+      const target = metaBranch.querySelector(".branch-target");
+      if (!icon || !head || !target) throw new Error("branch metadata is incomplete");
 
       const iconBounds = icon.getBoundingClientRect();
-      const headBounds = head.getBoundingClientRect();
-      const firstLineBottom = headBounds.top + Number.parseFloat(getComputedStyle(head).lineHeight);
+      const headText = [...head.childNodes].find(
+        (node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim(),
+      );
+      if (!headText) throw new Error("head branch text did not render");
+      const headTextRange = document.createRange();
+      headTextRange.selectNodeContents(headText);
+      const headLines = [...headTextRange.getClientRects()];
+      const firstHeadLine = headLines.at(0);
+      const lastHeadLine = headLines.at(-1);
+      const targetBounds = target.getBoundingClientRect();
+      if (!firstHeadLine || !lastHeadLine) throw new Error("head branch did not render");
+
       return {
-        headWraps: headBounds.height > Number.parseFloat(getComputedStyle(head).lineHeight) * 1.5,
+        headLineCount: headLines.length,
         iconTop: iconBounds.top,
-        firstLineTop: headBounds.top,
-        firstLineBottom,
+        iconBottom: iconBounds.bottom,
+        firstLineTop: firstHeadLine.top,
+        firstLineBottom: firstHeadLine.bottom,
+        lastLineTop: lastHeadLine.top,
+        lastLineRight: lastHeadLine.right,
+        targetTop: targetBounds.top,
+        targetLeft: targetBounds.left,
       };
     });
 
-    expect(alignment.headWraps).toBe(true);
+    expect(alignment.headLineCount).toBeGreaterThan(1);
     expect(alignment.iconTop).toBeGreaterThanOrEqual(alignment.firstLineTop - 1);
-    expect(alignment.iconTop).toBeLessThan(alignment.firstLineBottom);
+    expect(alignment.iconBottom).toBeLessThanOrEqual(alignment.firstLineBottom + 1);
+    expect(Math.abs(alignment.targetTop - alignment.lastLineTop)).toBeLessThan(5);
+    expect(alignment.targetLeft).toBeGreaterThanOrEqual(alignment.lastLineRight - 1);
   });
 
   test("long description collapse toggle has a phone-sized hit target", async ({ page }) => {

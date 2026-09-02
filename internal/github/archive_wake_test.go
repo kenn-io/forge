@@ -183,21 +183,40 @@ func TestArchiveLoopWakesWhenSyncRunCompletes(t *testing.T) {
 	})
 }
 
-func TestArchiveLoopWakesWhenHostProviderWorkFinishes(t *testing.T) {
+func TestArchiveLoopWakesOnlyHostsThatDeniedArchiveWork(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		require := require.New(t)
 		runner := &pacedArchiveRunner{}
 		syncer, stop := startPacedArchiveLoop(t, runner)
 		defer stop()
+		const key = "github\x00github.test"
 
 		time.Sleep(16 * time.Second)
 		synctest.Wait()
 		backedOff := runner.reset()
 
-		// Two overlapping live operations on one host: only the release that
-		// frees the host wakes the worker, and it wakes it immediately.
-		releaseFirst := syncer.beginProviderWork("github\x00github.test", archive.PriorityNormalIndex)
-		releaseSecond := syncer.beginProviderWork("github\x00github.test", archive.PriorityActiveDetail)
+		// A normal stream of live work on a host that never turned archive
+		// work away must not wake the worker, or every sync would trigger a
+		// denied pass and a deferral write per release.
+		release := syncer.beginProviderWork(key, archive.PriorityNormalIndex)
+		release()
+		synctest.Wait()
+		require.Empty(runner.offsetsFrom(backedOff), "releasing a host that denied nothing must stay quiet")
+
+		// Live work preempting an admitted archive request marks the host.
+		// Only the release that frees the host wakes the worker, immediately.
+		_, releaseArchive, ok := syncer.tryBeginArchiveProviderRequest(context.Background(), key)
+		require.True(ok)
+		started := make(chan struct{})
+		var releaseFirst func()
+		go func() {
+			releaseFirst = syncer.beginProviderWork(key, archive.PriorityActiveDetail)
+			close(started)
+		}()
+		synctest.Wait()
+		releaseArchive()
+		<-started
+		releaseSecond := syncer.beginProviderWork(key, archive.PriorityNotificationRefresh)
 		releaseFirst()
 		synctest.Wait()
 		require.Empty(runner.offsetsFrom(backedOff), "a host still busy must not wake the worker")
@@ -205,5 +224,12 @@ func TestArchiveLoopWakesWhenHostProviderWorkFinishes(t *testing.T) {
 		time.Sleep(time.Second)
 		synctest.Wait()
 		require.Equal([]time.Duration{0, time.Second}, runner.offsetsFrom(backedOff))
+
+		// The mark is consumed by the wake: the next quiet release stays quiet.
+		quiet := runner.reset()
+		release = syncer.beginProviderWork(key, archive.PriorityNormalIndex)
+		release()
+		synctest.Wait()
+		require.Empty(runner.offsetsFrom(quiet))
 	})
 }

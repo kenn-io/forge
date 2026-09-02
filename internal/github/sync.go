@@ -845,13 +845,17 @@ type Syncer struct {
 	pendingRun               *pendingSyncRun // guarded by runMu
 	providerWorkMu           sync.Mutex
 	providerWork             map[string]map[archive.WorkPriority]int
-	archiveProviderRequests  map[string]archiveProviderRequest
-	status                   atomic.Value // stores *SyncStatus
-	stopCh                   chan struct{}
-	notificationSyncMu       sync.RWMutex
-	notificationSync         NotificationSyncStatus
-	stopOnce                 sync.Once
-	wg                       sync.WaitGroup
+	// archiveDeniedHosts records provider hosts whose live work denied or
+	// preempted an archive request; releasing such a host wakes the archive
+	// worker, while hosts that never turned archive work away stay quiet.
+	archiveDeniedHosts      map[string]struct{}
+	archiveProviderRequests map[string]archiveProviderRequest
+	status                  atomic.Value // stores *SyncStatus
+	stopCh                  chan struct{}
+	notificationSyncMu      sync.RWMutex
+	notificationSync        NotificationSyncStatus
+	stopOnce                sync.Once
+	wg                      sync.WaitGroup
 	// lifecycleMu serializes TriggerRun registration with Stop so
 	// no wg.Add can happen after Stop begins wg.Wait.
 	lifecycleMu        sync.Mutex
@@ -1346,6 +1350,7 @@ func (s *Syncer) Admit(
 	key := RateBucketKey(string(repoPlatform(keyRepo)), identity.Host, identity.Principal)
 	if s.higherPriorityProviderWorkActive(key, archive.PriorityFullArchive) {
 		probe.abandon()
+		s.noteArchiveDenied(key)
 		retryAt := now.Add(time.Second)
 		return archive.AdmissionResult{RetryAt: &retryAt, Detail: "higher-priority sync work is active"}, nil
 	}
@@ -1455,6 +1460,21 @@ func (s *Syncer) Admit(
 	}, nil
 }
 
+// noteArchiveDenied records that live work on key turned an archive request
+// away, so releasing the host later wakes the archive worker.
+func (s *Syncer) noteArchiveDenied(key string) {
+	s.providerWorkMu.Lock()
+	s.markArchiveDeniedLocked(key)
+	s.providerWorkMu.Unlock()
+}
+
+func (s *Syncer) markArchiveDeniedLocked(key string) {
+	if s.archiveDeniedHosts == nil {
+		s.archiveDeniedHosts = make(map[string]struct{})
+	}
+	s.archiveDeniedHosts[key] = struct{}{}
+}
+
 func (s *Syncer) tryBeginArchiveProviderRequest(
 	ctx context.Context,
 	key string,
@@ -1522,6 +1542,7 @@ func (s *Syncer) beginProviderWork(key string, priority archive.WorkPriority) fu
 	archiveRequest, waitForArchive := s.archiveProviderRequests[key]
 	if waitForArchive {
 		archiveRequest.cancel()
+		s.markArchiveDeniedLocked(key)
 	}
 	s.providerWorkMu.Unlock()
 	if waitForArchive {
@@ -1541,10 +1562,16 @@ func (s *Syncer) beginProviderWork(key string, priority archive.WorkPriority) fu
 			if hostFree {
 				delete(s.providerWork, key)
 			}
+			_, wake := s.archiveDeniedHosts[key]
+			if hostFree && wake {
+				delete(s.archiveDeniedHosts, key)
+			}
 			s.providerWorkMu.Unlock()
-			if hostFree {
-				// Archive admission was denied while this work held the host;
-				// the worker backed off, so tell it the host is free again.
+			if hostFree && wake {
+				// This host turned archive work away while live work held it
+				// and the worker backed off; tell it the host is free again.
+				// Hosts that never denied archive work stay quiet, so a normal
+				// sync's stream of releases does not trigger denied passes.
 				s.WakeArchive()
 			}
 		})

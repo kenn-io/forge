@@ -445,9 +445,9 @@ fallback repository listing.
   deferral or a preempted request, or failed; only an admission denial before any provider
   request is idle, so a long live sync backs the worker off instead of writing a one-second
   deferral every second. (`internal/archive/scheduler.go::finishWork`)
-- Releasing the last live provider operation on a host wakes the archive worker, so work
-  denied behind a notification refresh or active-detail fetch resumes when the host frees
-  rather than after its backoff. (`internal/github/sync.go::beginProviderWork`)
+- Releasing the last live provider operation on a host wakes the archive worker only when
+  that host denied or preempted an archive request; a normal sync's stream of releases
+  must not trigger denied passes and deferral writes. (`internal/github/sync.go::beginProviderWork`)
 - Initial issue and pull-request inventory includes all states in stable created-time ascending order; issue enumeration excludes PR-shaped rows. (`internal/github/pages.go::ListIssuesPage`, `internal/github/pages.go::ListMergeRequestsPage`)
 - GitHub issue-only repositories return pulls API 404; normal and archive paths
   classify it as feature-disabled only for explicit `has_pull_requests=false`;

@@ -6,12 +6,12 @@ RUN git checkout ${ROBOREV_REF} && \
     go build -o /roborev ./cmd/roborev/
 
 FROM debian:bookworm-slim
-RUN apt-get \
+RUN timeout --signal=TERM --kill-after=5s 2m apt-get \
       -o Acquire::Retries=5 \
       -o Acquire::http::Timeout=10 \
       -o APT::Update::Error-Mode=any \
       update && \
-    apt-get \
+    timeout --signal=TERM --kill-after=5s 2m apt-get \
       -o Acquire::Retries=5 \
       -o Acquire::http::Timeout=10 \
       install -y --no-install-recommends curl git socat && \

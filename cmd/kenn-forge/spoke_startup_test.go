@@ -379,6 +379,12 @@ func TestMissingOrExpiredSpokeLeaseRetriesAfterBackoff(t *testing.T) {
 	assert.Equal(t, spokeActivationRetryInterval, nextSpokeActivationRenewal(nil, now))
 }
 
+func TestFederationSpokeRenewalStopsWhenEnrollmentIsInactive(t *testing.T) {
+	err := renewFederationSpokeActivation(t.Context(), nil, nil, nil)
+
+	require.ErrorIs(t, err, errSpokeActivationInactive)
+}
+
 func TestFederationSpokeStartupKeepsActiveBindingDormantWhileDisabled(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

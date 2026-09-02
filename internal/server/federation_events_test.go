@@ -342,6 +342,17 @@ func TestHubEventLifecyclePausesUntilFleetIsEnabled(t *testing.T) {
 	}, time.Second, time.Millisecond)
 }
 
+func TestHubEventLifecycleCanStopAfterCleanReturn(t *testing.T) {
+	runs := 0
+	lifecycle := newHubEventLifecycleStoppingOnCleanReturn(true, func(context.Context) {
+		runs++
+	})
+
+	lifecycle.Run(t.Context())
+
+	assert.Equal(t, 1, runs)
+}
+
 func TestDisabledFederationSpokeSeedsDisconnectedStateForFreshSubscriber(t *testing.T) {
 	const hubID = "66666666666666666666666666666666"
 	require := require.New(t)

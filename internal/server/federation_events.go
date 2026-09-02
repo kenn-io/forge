@@ -18,18 +18,32 @@ import (
 const maxFederationCursorLength = 32
 
 type hubEventLifecycle struct {
-	mu           sync.Mutex
-	run          func(context.Context)
-	enabled      bool
-	changed      chan struct{}
-	activeCancel context.CancelFunc
+	mu                   sync.Mutex
+	run                  func(context.Context)
+	restartOnCleanReturn bool
+	enabled              bool
+	changed              chan struct{}
+	activeCancel         context.CancelFunc
 }
 
 func newHubEventLifecycle(
 	enabled bool, run func(context.Context),
 ) *hubEventLifecycle {
+	return newHubEventLifecycleWithRestart(enabled, run, true)
+}
+
+func newHubEventLifecycleStoppingOnCleanReturn(
+	enabled bool, run func(context.Context),
+) *hubEventLifecycle {
+	return newHubEventLifecycleWithRestart(enabled, run, false)
+}
+
+func newHubEventLifecycleWithRestart(
+	enabled bool, run func(context.Context), restartOnCleanReturn bool,
+) *hubEventLifecycle {
 	return &hubEventLifecycle{
-		run: run, enabled: enabled, changed: make(chan struct{}),
+		run: run, restartOnCleanReturn: restartOnCleanReturn,
+		enabled: enabled, changed: make(chan struct{}),
 	}
 }
 
@@ -74,9 +88,13 @@ func (l *hubEventLifecycle) Run(ctx context.Context) {
 			}
 		}
 		l.run(runCtx)
+		cleanReturn := runCtx.Err() == nil
 		l.mu.Lock()
 		l.activeCancel = nil
 		l.mu.Unlock()
+		if cleanReturn && !l.restartOnCleanReturn {
+			return
+		}
 	}
 }
 

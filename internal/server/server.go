@@ -881,7 +881,7 @@ func newServer(
 		}
 		if options.FederationSpokeActive &&
 			options.MaintainFederationSpokeActivation != nil {
-			s.spokeActivationLease = newHubEventLifecycle(
+			s.spokeActivationLease = newHubEventLifecycleStoppingOnCleanReturn(
 				cfg.Fleet.Enabled, options.MaintainFederationSpokeActivation,
 			)
 		}

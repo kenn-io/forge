@@ -678,6 +678,14 @@ provider head still differs (`LastRefreshSucceededAt >= LastRefreshEnqueuedAt`)
 — otherwise the visible PR is re-synced and re-rendered forever. A tracking-ref
 move restarts the cycle.
 
+The observer's steady state spawns no processes. It reads the worktree's
+current branch, upstream config, and remote-tracking SHA straight from the git
+directory (`.git` or the linked-worktree gitdir file, `HEAD`, loose refs,
+`packed-refs`, and the common `config`), and only asks git, through the
+procutil capacity guard, for layouts the files cannot express: config
+includes, reftable ref storage, or unparsable content. Upstream repair remains
+a git write (`internal/workspace/pushed_head_gitdir.go::gitdirRemoteHeadReader`).
+
 ## Sidebar Ordering
 
 The workspace sidebar has two separate activity concepts:

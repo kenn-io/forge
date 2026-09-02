@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { Effect, Schedule } from "effect";
+  import { Effect } from "effect";
+  import { pollWhileVisible } from "../../effect/poll-while-visible.js";
   import { onDestroy, untrack } from "svelte";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import type { AppExecution } from "../../app/runtime.js";
@@ -58,7 +59,7 @@
 
   $effect(() => {
     const execution = untrack(() => runtime.runCommand(
-      Effect.sync(issues.loadIssues).pipe(Effect.repeat(Schedule.spaced("15 seconds")), Effect.asVoid),
+      pollWhileVisible(Effect.sync(issues.loadIssues), "15 seconds", { immediate: true }),
       { operation: "poll issue sidebar", safeContext: {}, onFailure: () => {} },
     ));
     const unsubscribeSync = sync.subscribeSyncComplete(issues.loadIssues);

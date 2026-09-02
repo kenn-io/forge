@@ -41,7 +41,13 @@ export function pollWhileVisible<E, R>(
         Effect.as(Effect.sleep(interval), false),
         Effect.as(visibility.untilHidden, true),
       );
-      if (hiddenDuringWait) continue;
+      if (hiddenDuringWait) {
+        // Latch the refresh now: the document may already be visible again
+        // by the time this fiber resumes, and that transition still owes an
+        // immediate poll.
+        runBeforeWait = true;
+        continue;
+      }
       yield* pollOnce;
     }
   });

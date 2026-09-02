@@ -15,9 +15,14 @@ export interface DocumentVisibilitySource {
 function awaitVisibilityState(target: DocumentVisibilityState): Effect.Effect<void> {
   return Effect.suspend(() => {
     if (document.visibilityState === target) return Effect.void;
+    // Effect.callback runs the returned cleanup only on interruption, so a
+    // waiter that completes normally must detach its own listener first or
+    // every hide/show cycle leaks one.
     return Effect.callback<void>((resume) => {
       const handleVisibilityChange = () => {
-        if (document.visibilityState === target) resume(Effect.void);
+        if (document.visibilityState !== target) return;
+        document.removeEventListener("visibilitychange", handleVisibilityChange);
+        resume(Effect.void);
       };
       document.addEventListener("visibilitychange", handleVisibilityChange);
       return Effect.sync(() => document.removeEventListener("visibilitychange", handleVisibilityChange));
@@ -63,7 +68,10 @@ export function makeManualDocumentVisibility(initiallyVisible = true): DocumentV
     Effect.suspend(() => {
       if (visible === target) return Effect.void;
       return Effect.callback<void>((resume) => {
-        const wake = () => resume(Effect.void);
+        const wake = () => {
+          waiters.delete(wake);
+          resume(Effect.void);
+        };
         waiters.add(wake);
         return Effect.sync(() => {
           waiters.delete(wake);

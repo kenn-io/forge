@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { Effect, Schedule } from "effect";
+  import { Effect } from "effect";
+  import { pollWhileVisible } from "../effect/poll-while-visible.js";
   import { onDestroy, tick, untrack } from "svelte";
   import type { Attachment } from "svelte/attachments";
   import { ScrollBox, StatusDot } from "@kenn-io/kit-ui";
@@ -125,7 +126,7 @@
       ? pulls.getSearchQuery() ?? ""
       : issues.getIssueSearchQuery() ?? "");
     const execution = untrack(() => runtime.runCommand(
-      Effect.sync(loadList).pipe(Effect.repeat(Schedule.spaced("15 seconds")), Effect.asVoid),
+      pollWhileVisible(Effect.sync(loadList), "15 seconds", { immediate: true }),
       {
         operation: "poll focus list",
         safeContext: { listType, identity },

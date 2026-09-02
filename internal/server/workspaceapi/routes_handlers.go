@@ -1988,12 +1988,25 @@ func (s *Handler) workspaceResponseWithChangeAwareEnrichment(
 	if s.workspaces == nil || summary.Status != "ready" {
 		return s.probeWorkspaceEnrichment(ctx, summary, plan)
 	}
-	plan.gitFingerprint = s.workspaceGitFingerprint(summary)
-	if entry, _ := s.cachedWorkspaceEnrichment(summary.ID, workspaceEnrichmentFull); entry != nil {
-		tmuxDue, _ := entry.componentsDue(s.now())
-		plan.tmux = tmuxDue
-		plan.git = !entry.gitProbeSkippable(plan.gitFingerprint, s.now())
+	entry, _ := s.cachedWorkspaceEnrichment(summary.ID, workspaceEnrichmentFull)
+	if entry == nil {
+		plan.gitFingerprint = s.workspaceGitFingerprint(summary)
+		return s.probeWorkspaceEnrichment(ctx, summary, plan)
 	}
+	now := s.now()
+	tmuxDue, divergenceDue := entry.componentsDue(now)
+	plan.tmux = tmuxDue
+	if !divergenceDue {
+		// A full job that was upgraded from tmux-only work must not touch
+		// the divergence component before its own cadence elapses.
+		plan.git = false
+		result := s.probeWorkspaceEnrichment(ctx, summary, plan)
+		result.divergenceUnchanged = false
+		result.divergenceSkipped = true
+		return result
+	}
+	plan.gitFingerprint = s.workspaceGitFingerprint(summary)
+	plan.git = !entry.gitProbeSkippable(plan.gitFingerprint, now)
 	return s.probeWorkspaceEnrichment(ctx, summary, plan)
 }
 

@@ -212,3 +212,78 @@ func TestBackgroundEnrichmentSkipsGitWhileFingerprintUnchanged(t *testing.T) {
 	assert.True(*fifth.WorktreeDirty)
 	assert.Greater(gitSpawns(), spawnsBeforeForced)
 }
+
+func TestListReadSchedulesTmuxOnlyWorkWhenDivergenceIsStillFresh(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv := newEnrichmentTestHandler(t, "")
+	now := time.Date(2026, 8, 12, 12, 0, 0, 0, time.UTC)
+	srv.now = func() time.Time { return now }
+	// Fill every worker slot so scheduled jobs stay queued for inspection.
+	for range cap(srv.workspaceEnrichmentSlots) {
+		srv.workspaceEnrichmentSlots <- struct{}{}
+	}
+	t.Cleanup(func() {
+		for range cap(srv.workspaceEnrichmentSlots) {
+			<-srv.workspaceEnrichmentSlots
+		}
+	})
+	summary := db.WorkspaceSummary{ID: "ws-cadence", Status: "ready"}
+	srv.workspaceEnrichmentCache[summary.ID] = workspaceEnrichmentCacheEntry{
+		hasDivergence:         true,
+		hasTmux:               true,
+		divergenceRefreshedAt: now,
+		divergenceAttemptAt:   now,
+		tmuxRefreshedAt:       now.Add(-workspaceTmuxEnrichmentTTL),
+		tmuxAttemptAt:         now.Add(-workspaceTmuxEnrichmentTTL),
+	}
+
+	srv.toCachedWorkspaceResponse(&summary)
+
+	srv.workspaceEnrichmentMu.Lock()
+	job, queued := srv.workspaceEnrichmentPending[summary.ID]
+	srv.workspaceEnrichmentMu.Unlock()
+	require.True(queued, "a tmux-due read must queue work")
+	assert.Equal(workspaceEnrichmentTmux, job.kind, "only tmux is due, so only tmux work may be queued")
+}
+
+func TestChangeAwareRefreshLeavesFreshDivergenceUntouched(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	gitSpawns := installGitSpawnCounter(t)
+	worktree := t.TempDir()
+	initFingerprintRepo(t, worktree)
+	srv := newEnrichmentTestHandler(t, "")
+	now := time.Date(2026, 8, 12, 12, 0, 0, 0, time.UTC)
+	srv.now = func() time.Time { return now }
+	summary := db.WorkspaceSummary{ID: "ws-fresh-divergence", Status: "ready", WorktreePath: worktree}
+	srv.workspaceEnrichmentGenerations[summary.ID] = 0
+	ahead := 3
+	divergenceAt := now.Add(-workspaceEnrichmentTTL / 2)
+	srv.workspaceEnrichmentCache[summary.ID] = workspaceEnrichmentCacheEntry{
+		response:              workspaceResponse{CommitsAhead: &ahead},
+		hasDivergence:         true,
+		hasTmux:               true,
+		divergenceRefreshedAt: divergenceAt,
+		divergenceAttemptAt:   divergenceAt,
+		divergenceProbedAt:    divergenceAt,
+		tmuxRefreshedAt:       now.Add(-workspaceTmuxEnrichmentTTL),
+		tmuxAttemptAt:         now.Add(-workspaceTmuxEnrichmentTTL),
+	}
+	spawnsBefore := gitSpawns()
+
+	// A full job that runs while only tmux is due (for example after an
+	// upgrade from queued tmux work) must not probe or re-stamp divergence.
+	result := srv.workspaceResponseWithChangeAwareEnrichment(t.Context(), &summary)
+	entry, recorded, _ := srv.recordWorkspaceEnrichmentResult(
+		summary.ID, srv.workspaceEnrichmentGeneration(summary.ID), result,
+	)
+
+	require.True(recorded)
+	assert.Equal(spawnsBefore, gitSpawns(), "fresh divergence must not spawn git")
+	assert.Equal(divergenceAt, entry.divergenceAttemptAt, "divergence attempt time must not advance")
+	assert.Equal(divergenceAt, entry.divergenceRefreshedAt, "divergence refresh time must not advance")
+	assert.Equal(now, entry.tmuxAttemptAt, "tmux was due and must be stamped")
+	require.NotNil(entry.response.CommitsAhead)
+	assert.Equal(3, *entry.response.CommitsAhead)
+}

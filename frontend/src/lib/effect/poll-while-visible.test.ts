@@ -111,3 +111,30 @@ it.effect("runs an immediate poll first when requested and never overlaps polls"
     yield* Fiber.interrupt(fiber);
   }),
 );
+
+it.effect("still refreshes immediately when the document is hidden and shown before the poller resumes", () =>
+  Effect.gen(function* () {
+    const visibility = makeManualDocumentVisibility();
+    const polls = yield* Ref.make(0);
+    const fiber = yield* Effect.forkChild(
+      pollWhileVisible(
+        Ref.update(polls, (count) => count + 1),
+        "5 seconds",
+      ).pipe(Effect.provideService(DocumentVisibility, visibility)),
+    );
+    yield* Effect.yieldNow;
+    yield* TestClock.adjust("3 seconds");
+
+    // No scheduler yield between the two transitions: the poller observes
+    // "hidden" only after the document is already visible again.
+    visibility.hide();
+    visibility.show();
+    yield* Effect.repeat(Effect.yieldNow, { times: 3 });
+    assert.strictEqual(yield* Ref.get(polls), 1, "the visible transition still owes an immediate poll");
+
+    yield* TestClock.adjust("5 seconds");
+    assert.strictEqual(yield* Ref.get(polls), 2);
+
+    yield* Fiber.interrupt(fiber);
+  }),
+);

@@ -79,13 +79,15 @@ type workspaceEnrichmentProbeResult struct {
 	divergenceUnchanged bool
 	gitFingerprint      string
 	tmuxComplete        bool
-	// tmuxSkipped reports that no tmux probe was attempted because the
-	// cached tmux component was still within its own cadence.
-	tmuxSkipped   bool
-	divergenceErr error
-	tmuxErr       error
-	err           error
-	kind          workspaceEnrichmentKind
+	// tmuxSkipped and divergenceSkipped report that a component was not
+	// attempted because it was still within its own cadence; the record
+	// step must leave that component's attempt time untouched.
+	tmuxSkipped       bool
+	divergenceSkipped bool
+	divergenceErr     error
+	tmuxErr           error
+	err               error
+	kind              workspaceEnrichmentKind
 }
 
 func (s *Handler) toCachedWorkspaceResponse(
@@ -105,9 +107,18 @@ func (s *Handler) toCachedWorkspaceResponse(
 
 	entry, refreshDue := s.cachedWorkspaceEnrichment(summary.ID, workspaceEnrichmentFull)
 	resp = s.workspaceResponseFromEnrichmentCacheEntry(summary, entry)
-	if refreshDue {
-		s.scheduleWorkspaceEnrichment(*summary)
+	if !refreshDue {
+		return
 	}
+	// Keep the cadences independent: a read that finds only tmux due
+	// schedules tmux-only work so it cannot advance the divergence clock.
+	if entry != nil {
+		if _, divergenceDue := entry.componentsDue(s.now()); !divergenceDue {
+			s.scheduleWorkspaceTmuxEnrichment(*summary)
+			return
+		}
+	}
+	s.scheduleWorkspaceEnrichment(*summary)
 	return
 }
 
@@ -530,7 +541,7 @@ func (s *Handler) recordWorkspaceEnrichmentResult(
 	} else if result.divergenceUnchanged && prior.hasDivergence {
 		entry.divergenceRefreshedAt = now
 	}
-	if result.kind == workspaceEnrichmentFull {
+	if result.kind == workspaceEnrichmentFull && !result.divergenceSkipped {
 		entry.divergenceAttemptAt = now
 		if result.divergenceErr != nil {
 			entry.divergenceError = result.divergenceErr.Error()

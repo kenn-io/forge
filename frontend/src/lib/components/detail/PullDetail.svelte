@@ -4,7 +4,8 @@
 
 <script lang="ts">
   import { tablistKeyTarget } from "../shared/tablist-keyboard.js";
-  import { Effect, Schedule } from "effect";
+  import { Effect } from "effect";
+  import { pollWhileVisible } from "../../effect/poll-while-visible.js";
   import { onDestroy, tick, untrack, type ComponentProps } from "svelte";
   import type { ApiProblemError, TransientTransportError } from "../../api/effect-errors.js";
   import { executeGeneratedApiRequest } from "../../api/generated-api.js";
@@ -591,14 +592,18 @@
     if (!shouldAutoRefreshCI) return;
     const execution = untrack(() =>
       runtime.runCommand(
-        Effect.sync(() => {
-          detailStore.refreshPendingCI(owner, name, number, {
-            provider,
-            platformHost,
-            repoPath,
-            workflowApprovalSync,
-          });
-        }).pipe(Effect.repeat(Schedule.spaced("15 seconds")), Effect.asVoid),
+        pollWhileVisible(
+          Effect.sync(() => {
+            detailStore.refreshPendingCI(owner, name, number, {
+              provider,
+              platformHost,
+              repoPath,
+              workflowApprovalSync,
+            });
+          }),
+          "15 seconds",
+          { immediate: true },
+        ),
         {
           operation: "refresh pending pull request checks",
           safeContext: { owner, name, number },

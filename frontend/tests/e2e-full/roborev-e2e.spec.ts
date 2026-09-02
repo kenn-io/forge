@@ -920,9 +920,9 @@ test.describe.serial("Roborev", () => {
       }).toPass({ timeout: 10_000 });
     });
 
-    test("a committed comment with a lost response is reconciled without replay", async ({ page }) => {
+    test("a committed comment with a lost response is reconciled without replay", async ({ page }, testInfo) => {
       await openDrawer(page, 72);
-      const comment = "Lost response reconciliation comment";
+      const comment = `Lost response reconciliation comment (attempt ${testInfo.retry})`;
       await page.route(
         "**/api/roborev/api/comment",
         async (route) => {

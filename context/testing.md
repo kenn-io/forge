@@ -255,6 +255,7 @@ Roborev `hide_classify_jobs` e2e fixtures must cover skipped design rows and cla
 Seed classify rows terminal unless testing worker mutation; live workers can rewrite queued/running rows during browser assertions (`internal/testutil/roborev_fixtures.go::seedRoborevMutationFixtures`).
 Keep injected Roborev `panel_run` failures controlled until the assertion observes them; drawer/list refresh demand can immediately retry member fetches and clear transient panel errors (`frontend/src/lib/stores/roborev/jobs.svelte.ts::wantsPanelMembers`).
 Roborev `/api/stream/events` is NDJSON, not SSE: use an abortable Fetch reader with bounded reconnects, and abort both pre-header and active-body requests on teardown (`frontend/src/lib/stores/roborev/jobs.svelte.ts::connectEventStream`).
+Playwright retries that write to a persistent authority must use per-attempt mutation identities or reset state; a committed first attempt otherwise poisons its retry (`frontend/tests/e2e-full/roborev-e2e.spec.ts:923`).
 The `e2e-roborev` daemon pin (`ROBOREV_REF` in `.github/workflows/ci.yml`) must be at or after the roborev commit the generated schema (`frontend/src/lib/api/roborev/generated/`) was produced from; a stale pin makes the daemon silently omit newer response fields while seed inserts still succeed, because the seeder creates its own schema.
 Managed-clone initialization must exercise the pinned real Roborev CLI and daemon;
 a fake hook writer cannot validate linked-worktree registration

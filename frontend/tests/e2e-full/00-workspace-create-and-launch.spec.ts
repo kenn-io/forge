@@ -519,6 +519,7 @@ test.describe("workspace create-and-launch full stack", () => {
       await phonePage.getByRole("button", { name: "Show special terminal keys" }).tap();
       const specialKeys = phonePage.getByRole("group", { name: "Special terminal keys" });
       await expect(specialKeys).toBeVisible();
+      await expect.poll(async () => (await specialKeys.boundingBox())?.height).toBeLessThanOrEqual(44);
       for (const keyName of [
         "Escape",
         "Tab",

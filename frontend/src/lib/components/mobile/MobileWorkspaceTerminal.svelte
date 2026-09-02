@@ -858,7 +858,6 @@
               </button>
               <button type="button" aria-label="Enter" onclick={() => sendSpecialKey("\r")}>
                 <CornerDownLeftIcon size="18" aria-hidden="true" />
-                <span>Enter</span>
               </button>
               <button type="button" aria-label="Arrow left" onclick={() => sendSpecialKey("\x1b[D")}>
                 <ArrowLeftIcon size="18" aria-hidden="true" />
@@ -871,7 +870,6 @@
               </button>
               <button type="button" aria-label="Space" onclick={() => sendSpecialKey(" ")}>
                 <SpaceIcon size="18" aria-hidden="true" />
-                <span>Space</span>
               </button>
             </div>
           {/if}
@@ -1050,8 +1048,9 @@
   .mobile-workspace-terminal__special-keys-toggle { display: inline-flex; align-items: center; justify-content: center; padding: 0; color: var(--text-secondary); background: var(--bg-inset); }
   .mobile-workspace-terminal__special-keys-toggle[aria-expanded="true"] { color: var(--accent-blue); border-color: var(--accent-blue); background: color-mix(in srgb, var(--accent-blue) 12%, var(--bg-inset)); }
   .mobile-workspace-terminal__send { padding: 0 1rem; color: var(--text-on-accent); border-color: var(--accent-blue); background: var(--accent-blue); font-weight: 700; }
-  .mobile-workspace-terminal__special-keys { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.375rem; }
-  .mobile-workspace-terminal__special-keys button { min-width: 0; min-height: 2.75rem; display: inline-flex; align-items: center; justify-content: center; gap: 0.375rem; padding: 0 0.375rem; color: var(--text-primary); border: thin solid var(--border-default); border-radius: var(--radius-sm); background: var(--bg-inset); font: inherit; font-family: var(--font-mono); font-size: var(--font-size-sm); font-weight: 650; }
+  .mobile-workspace-terminal__special-keys { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(8, minmax(2.75rem, 1fr)); gap: 0.125rem; overflow-x: auto; scrollbar-width: none; }
+  .mobile-workspace-terminal__special-keys::-webkit-scrollbar { display: none; }
+  .mobile-workspace-terminal__special-keys button { min-width: 2.75rem; min-height: 2.75rem; display: inline-flex; align-items: center; justify-content: center; padding: 0; color: var(--text-primary); border: thin solid var(--border-default); border-radius: var(--radius-sm); background: var(--bg-inset); font: inherit; font-family: var(--font-mono); font-size: var(--font-size-sm); font-weight: 650; }
   .mobile-workspace-terminal__special-keys button:active { border-color: var(--accent-blue); background: color-mix(in srgb, var(--accent-blue) 16%, var(--bg-inset)); }
   .mobile-workspace-terminal__composer-handle { grid-column: 1 / -1; width: 100%; min-height: 1.5rem; display: flex; align-items: center; justify-content: center; gap: 0.375rem; padding: 0; color: var(--text-muted); border: 0; background: transparent; touch-action: none; }
   .mobile-workspace-terminal__composer-handle > span, .mobile-workspace-terminal__composer-toggle > span { width: 2.25rem; height: 0.25rem; border-radius: 999px; background: var(--border-strong); }

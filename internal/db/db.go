@@ -63,14 +63,22 @@ func OpenPreparedForTest(path string) (*DB, error) {
 	return open(path, false)
 }
 
+// connectionPragmas apply to every connection. synchronous=NORMAL is the
+// documented setting for WAL mode: the database stays consistent through any
+// crash and a daemon crash loses nothing, while only a power loss or kernel
+// crash can drop the last committed transactions. FULL instead fsyncs the WAL
+// on every commit, which dominated migration time on slow CI disks and adds a
+// fsync to every daemon write.
+const connectionPragmas = "?_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)&_pragma=synchronous(NORMAL)"
+
 func open(path string, initialize bool) (*DB, error) {
-	rw, err := sql.Open("sqlite", path+"?_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)")
+	rw, err := sql.Open("sqlite", path+connectionPragmas)
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
 	rw.SetMaxOpenConns(1)
 
-	ro, err := sql.Open("sqlite", path+"?_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)")
+	ro, err := sql.Open("sqlite", path+connectionPragmas)
 	if err != nil {
 		rw.Close()
 		return nil, fmt.Errorf("open db read-only: %w", err)

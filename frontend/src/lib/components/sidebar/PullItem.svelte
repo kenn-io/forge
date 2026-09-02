@@ -187,7 +187,7 @@
         <span
           class="import-btn"
           role="button"
-          tabindex="0"
+          tabindex="-1"
           onclick={handleImportClick}
           onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleImportClick(e as unknown as MouseEvent); } }}
           title="Import to worktree"
@@ -253,7 +253,7 @@
       <span
         class="star-btn"
         role="button"
-        tabindex="0"
+        tabindex="-1"
         onclick={handleStarClick}
         onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleStarClick(e as unknown as MouseEvent); } }}
         title={pr.Starred ? "Unstar" : "Star"}

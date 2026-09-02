@@ -82,7 +82,7 @@
       <span
         class="star-btn"
         role="button"
-        tabindex="0"
+        tabindex="-1"
         onclick={handleStarClick}
         onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleStarClick(e as unknown as MouseEvent); } }}
         title={issue.Starred ? "Unstar" : "Star"}

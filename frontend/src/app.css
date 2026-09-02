@@ -167,6 +167,16 @@ a:hover {
   outline-offset: 1px;
 }
 
+/* kit text fields signal focus with the wrapper's accent border alone
+   (kit-ui docs/theming.md, "Focus"): the shipped TextInput also draws the
+   focus ring on the same wrapper once the inner control is :focus-visible,
+   which every tap or Tab into a text field triggers, so the field read as
+   two nested rings. Keep the border, drop the ring. The extra :root and
+   :focus-within terms outrank the component's scoped :has() rule. */
+:root .kit-text-input:focus-within:has(.kit-text-input__control:focus-visible) {
+  outline: none;
+}
+
 /* Markdown body rendering */
 .markdown-body {
   overflow-x: auto;

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Effect } from "effect";
-  import { Button, Checkbox } from "@kenn-io/kit-ui";
+  import { Checkbox } from "@kenn-io/kit-ui";
   import type { DetailSettings as DetailSettingsType } from "../../api/types.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { getStores } from "../../context.js";
@@ -21,18 +21,21 @@
   const { settings: settingsStore } = getStores();
   const embedded = isEmbedded();
   let saving = $state(false);
-  let draft = $derived(String(detail.initial_timeline_entry_limit));
-  let collapseDraft = $derived(detail.collapse_single_line_breaks);
-  let commitMarkdownDraft = $derived(detail.render_commit_messages_as_markdown);
-  const parsedLimit = $derived(Number(draft));
-  const valid = $derived(
-    Number.isInteger(parsedLimit) && parsedLimit >= 10 && parsedLimit <= 250,
-  );
-  const changed = $derived(valid && parsedLimit !== detail.initial_timeline_entry_limit);
+  // Every control saves on change. The checkboxes keep local checked state
+  // so a failed save can flip them back to the persisted value.
+  let collapseSingleLineBreaks = $derived(detail.collapse_single_line_breaks);
+  let renderCommitMessagesAsMarkdown = $derived(detail.render_commit_messages_as_markdown);
 
-  function save(): void {
-    if (!changed) return;
-    persist({ ...detail, initial_timeline_entry_limit: parsedLimit });
+  function saveLimit(event: Event): void {
+    const input = event.currentTarget as HTMLInputElement;
+    const limit = Number(input.value);
+    if (!Number.isInteger(limit) || limit < 10 || limit > 250) {
+      input.value = String(detail.initial_timeline_entry_limit);
+      showFlash("Initial timeline entries must be between 10 and 250", { tone: "danger" });
+      return;
+    }
+    if (limit === detail.initial_timeline_entry_limit) return;
+    persist({ ...detail, initial_timeline_entry_limit: limit });
   }
 
   function toggleCollapseSingleLineBreaks(checked: boolean): void {
@@ -58,9 +61,8 @@
           onFailure: (failure) =>
             Effect.sync(() => {
               onUpdate(previous);
-              draft = String(previous.initial_timeline_entry_limit);
-              collapseDraft = previous.collapse_single_line_breaks;
-              commitMarkdownDraft = previous.render_commit_messages_as_markdown;
+              collapseSingleLineBreaks = previous.collapse_single_line_breaks;
+              renderCommitMessagesAsMarkdown = previous.render_commit_messages_as_markdown;
               showFlash(settingsErrorMessage(failure), { tone: "danger" });
             }),
           onSuccess: (settings) =>
@@ -98,25 +100,16 @@
       min="10"
       max="250"
       step="10"
-      bind:value={draft}
+      value={detail.initial_timeline_entry_limit}
       disabled={embedded || saving}
-      aria-invalid={!valid}
+      onchange={saveLimit}
     />
-    <Button
-      type="button"
-      size="sm"
-      disabled={embedded || saving || !changed}
-      onclick={save}
-      ariaLabel="Save timeline limit"
-    >
-      {saving ? "Saving..." : "Save"}
-    </Button>
   </div>
 </div>
 
 <Checkbox
   class="toggle-row"
-  bind:checked={collapseDraft}
+  bind:checked={collapseSingleLineBreaks}
   disabled={embedded || saving}
   onchange={toggleCollapseSingleLineBreaks}
   ariaLabel="Collapse single line breaks"
@@ -132,7 +125,7 @@
 
 <Checkbox
   class="toggle-row"
-  bind:checked={commitMarkdownDraft}
+  bind:checked={renderCommitMessagesAsMarkdown}
   disabled={embedded || saving}
   onchange={toggleCommitMarkdown}
   ariaLabel="Render commit messages as markdown"

@@ -54,7 +54,7 @@ describe("DetailSettings", () => {
     expect(screen.getByText("Detail policy is managed by the fleet hub.")).toBeTruthy();
   });
 
-  it("saves the initial timeline entry limit", async () => {
+  it("saves the initial timeline entry limit when the input changes", async () => {
     const onUpdate = vi.fn();
     const saved = { ...initial, initial_timeline_entry_limit: 80 };
     mockPersistSettings.mockReturnValue(Effect.succeed({ detail: saved }));
@@ -65,13 +65,25 @@ describe("DetailSettings", () => {
     const input = screen.getByRole("spinbutton", { name: "Initial timeline entries" });
     expect(input.getAttribute("min")).toBe("10");
     expect(input.getAttribute("max")).toBe("250");
-    await fireEvent.input(input, { target: { value: "80" } });
-    await fireEvent.click(screen.getByRole("button", { name: "Save timeline limit" }));
+    expect(screen.queryByRole("button", { name: /save/i })).toBeNull();
+    await fireEvent.change(input, { target: { value: "80" } });
 
     await waitFor(() => expect(mockPersistSettings).toHaveBeenCalledOnce());
     expect(mockPersistSettings.mock.calls[0]?.[0]()).toEqual({ detail: saved });
     expect(onUpdate).toHaveBeenLastCalledWith(saved);
     expect(mockSetDetailSettings).toHaveBeenCalledWith(saved);
+  });
+
+  it("resets an out-of-range limit without saving", async () => {
+    render(SettingsRuntimeHarness, {
+      props: { component: DetailSettings, componentProps: { detail: initial, onUpdate: vi.fn() } },
+    });
+
+    const input = screen.getByRole("spinbutton", { name: "Initial timeline entries" }) as HTMLInputElement;
+    await fireEvent.change(input, { target: { value: "5" } });
+
+    expect(mockPersistSettings).not.toHaveBeenCalled();
+    expect(input.value).toBe("50");
   });
 
   it("restores the prior limit when saving fails", async () => {
@@ -84,8 +96,7 @@ describe("DetailSettings", () => {
     });
 
     const input = screen.getByRole("spinbutton", { name: "Initial timeline entries" });
-    await fireEvent.input(input, { target: { value: "90" } });
-    await fireEvent.click(screen.getByRole("button", { name: "Save timeline limit" }));
+    await fireEvent.change(input, { target: { value: "90" } });
 
     await waitFor(() => expect(onUpdate).toHaveBeenCalled());
     expect(onUpdate).toHaveBeenLastCalledWith(initial);

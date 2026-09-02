@@ -264,6 +264,10 @@ Persisted controls must state their scope clearly.
   (`frontend/src/lib/stores/activity.svelte.ts::loadActivity`).
 - Server-backed settings belong in the API only when the preference should
   follow the user/config rather than one browser session.
+- Settings controls persist on change. Do not add a Save button or hold a dirty
+  draft for a setting; validate on change, persist, and reset the control to the
+  saved value when validation or the save fails
+  (`frontend/src/lib/components/settings/DetailSettings.svelte::saveLimit`).
 - Detail timelines apply the server-backed entry limit after filtering and grouping,
   then make the remainder explicit and mount it in bounded idle batches; harnesses
   that require every fixture row pass a large limit. An explicit full-timeline request

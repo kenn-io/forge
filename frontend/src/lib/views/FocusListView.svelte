@@ -623,6 +623,7 @@
 
   .filter-bar {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 8px;
     padding: 6px 10px;
@@ -641,9 +642,12 @@
 
   .visibility-controls {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
+    justify-content: flex-end;
     gap: 8px;
     margin-left: auto;
+    min-width: 0;
   }
 
   .group-btn,

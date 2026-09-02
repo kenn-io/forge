@@ -19,6 +19,26 @@ function waitForInvolvesMeRequest(page: Page, path: string): ReturnType<Page["wa
   });
 }
 
+function waitForUnassignedRequest(page: Page, path: string): ReturnType<Page["waitForResponse"]> {
+  return page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname === path && url.searchParams.get("unassigned") === "true";
+  });
+}
+
+async function expectFilterItemInViewport(page: Page, label: string): Promise<void> {
+  const item = page.locator(".kit-filter-dropdown__item, .activity-filters__item", { hasText: label });
+  await expect(item).toBeVisible();
+  const box = await item.boundingBox();
+  const viewport = page.viewportSize();
+  expect(box).not.toBeNull();
+  expect(viewport).not.toBeNull();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(viewport!.width);
+  expect(box!.y).toBeGreaterThanOrEqual(0);
+  expect(box!.y + box!.height).toBeLessThanOrEqual(viewport!.height);
+}
+
 test.describe("Involves me standard filters", () => {
   let server: IsolatedE2EServer | undefined;
 
@@ -81,5 +101,65 @@ test.describe("Involves me standard filters", () => {
     await page.getByRole("button", { name: "Involves me" }).click();
     expect((await issuesResponse).ok()).toBe(true);
     await expect(page.getByRole("button", { name: "Involves me" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("keeps Unassigned reachable in the regular Pulls, Issues, and Activity menus", async ({ page }) => {
+    const baseURL = server!.info.base_url;
+
+    await page.goto(`${baseURL}/pulls`);
+    await expect(page.locator(".pull-item").first()).toBeVisible();
+    await page.locator(".compact-filter-menu .kit-filter-dropdown__btn").click();
+    await expectFilterItemInViewport(page, "Unassigned");
+    const pullsResponse = waitForUnassignedRequest(page, "/api/v1/pulls");
+    await page.locator(".kit-filter-dropdown__item", { hasText: "Unassigned" }).click();
+    expect((await pullsResponse).ok()).toBe(true);
+
+    await page.goto(`${baseURL}/issues`);
+    await expect(page.locator(".issue-item").first()).toBeVisible();
+    await page.locator(".compact-filter-menu .kit-filter-dropdown__btn").click();
+    await expectFilterItemInViewport(page, "Unassigned");
+    const issuesResponse = waitForUnassignedRequest(page, "/api/v1/issues");
+    await page.locator(".kit-filter-dropdown__item", { hasText: "Unassigned" }).click();
+    expect((await issuesResponse).ok()).toBe(true);
+
+    await page.goto(baseURL);
+    await expect(page.locator(".activity-row").first()).toBeVisible();
+    await page.locator(".activity-filters__trigger").click();
+    await expectFilterItemInViewport(page, "Unassigned");
+    const activityResponse = waitForUnassignedRequest(page, "/api/v1/activity");
+    await page.locator(".activity-filters__item", { hasText: "Unassigned" }).click();
+    expect((await activityResponse).ok()).toBe(true);
+  });
+
+  test("keeps every pull and issue filter reachable in a narrow focus presentation", async ({ page }) => {
+    const baseURL = server!.info.base_url;
+    await page.setViewportSize({ width: 390, height: 844 });
+
+    for (const list of [
+      { route: "mrs", item: ".pull-item" },
+      { route: "issues", item: ".issue-item" },
+    ]) {
+      await page.goto(`${baseURL}/focus/${list.route}?repo=github%7Cgithub.com%2Facme%2Fwidgets`);
+      await expect(page.locator(`.focus-list ${list.item}`).first()).toBeVisible();
+      await expect(page.getByRole("button", { name: "Unassigned" })).toBeVisible();
+
+      const bounds = await page.locator("#focus-list-filters").evaluate((filters) => {
+        const filterBounds = filters.getBoundingClientRect();
+        const clippedButtons = [...filters.querySelectorAll<HTMLButtonElement>("button")]
+          .filter((button) => {
+            const bounds = button.getBoundingClientRect();
+            return bounds.left < filterBounds.left || bounds.right > filterBounds.right;
+          })
+          .map((button) => button.textContent?.trim());
+        return {
+          clientWidth: filters.clientWidth,
+          scrollWidth: filters.scrollWidth,
+          clippedButtons,
+        };
+      });
+
+      expect(bounds.scrollWidth).toBeLessThanOrEqual(bounds.clientWidth);
+      expect(bounds.clippedButtons).toEqual([]);
+    }
   });
 });

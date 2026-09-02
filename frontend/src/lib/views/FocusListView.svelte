@@ -2,7 +2,12 @@
   import { Effect, Schedule } from "effect";
   import { onDestroy, tick, untrack } from "svelte";
   import type { Attachment } from "svelte/attachments";
-  import { ScrollBox, StatusDot } from "@kenn-io/kit-ui";
+  import {
+    FilterDropdown,
+    ScrollBox,
+    StatusDot,
+    type FilterDropdownSection,
+  } from "@kenn-io/kit-ui";
   import { getAppRuntime } from "../app/runtime-context.js";
   import type { AppExecution } from "../app/runtime.js";
   import { getStores, getNavigate, getActions } from "../context.js";
@@ -99,6 +104,12 @@
 
   function toggleReferencedByPR(): void {
     issues.setReferencedByPR(!issues.getReferencedByPR());
+    resetPageAndLoad();
+  }
+
+  function setListState(state: string): void {
+    if (listType === "mrs") pulls.setFilterState(state);
+    else issues.setIssueFilterState(state);
     resetPageAndLoad();
   }
 
@@ -343,6 +354,90 @@
   const involvesMe = $derived(
     listType === "mrs" ? pulls.getInvolvesMe() : issues.getInvolvesMe(),
   );
+  const unassigned = $derived(
+    listType === "mrs" ? pulls.getUnassigned() : issues.getUnassigned(),
+  );
+  const compactFiltersActive = $derived(
+    listType === "mrs"
+      ? prFilterState !== "open"
+        || groupingMode !== "byRepo"
+        || involvesMe
+        || unassigned
+      : issueFilterState !== "open"
+        || involvesMe
+        || unassigned
+        || issues.getReferencedByPR()
+        || issues.getHideBots(),
+  );
+  const compactFilterSections = $derived.by((): FilterDropdownSection[] => {
+    const sections: FilterDropdownSection[] = [
+      {
+        title: "State",
+        items: ["open", "closed", "all"].map((state) => ({
+          id: `state-${state}`,
+          label: state === "open" ? "Open" : state === "closed" ? "Closed" : "All",
+          active: (listType === "mrs" ? prFilterState : issueFilterState) === state,
+          onSelect: () => setListState(state),
+        })),
+      },
+    ];
+
+    if (listType === "mrs") {
+      sections.push({
+        title: "Group",
+        items: [
+          {
+            id: "group-by-workflow",
+            label: "Status",
+            active: groupingMode === "byWorkflow",
+            onSelect: () => grouping.setGroupingMode("byWorkflow"),
+          },
+          {
+            id: "group-flat",
+            label: "All",
+            active: groupingMode === "flat",
+            onSelect: () => grouping.setGroupingMode("flat"),
+          },
+        ],
+      });
+    }
+
+    sections.push({
+      title: listType === "mrs" ? "PR" : "Issue",
+      items: [
+        {
+          id: "involves-me",
+          label: "Involves me",
+          active: involvesMe,
+          onSelect: toggleInvolvesMe,
+        },
+        {
+          id: "unassigned",
+          label: "Unassigned",
+          active: unassigned,
+          onSelect: toggleUnassigned,
+        },
+        ...(listType === "issues" && issues.canFilterReferencedByPR()
+          ? [{
+              id: "referenced-by-pr",
+              label: "Referenced by PR",
+              active: issues.getReferencedByPR(),
+              onSelect: toggleReferencedByPR,
+            }]
+          : []),
+        ...(listType === "issues"
+          ? [{
+              id: "hide-bot-authored-issues",
+              label: "Hide bot-authored issues",
+              active: issues.getHideBots(),
+              onSelect: () => void issues.setHideBots(!issues.getHideBots()),
+            }]
+          : []),
+      ],
+    });
+
+    return sections;
+  });
 </script>
 
 <div class="focus-list" bind:this={listRoot}>
@@ -356,6 +451,7 @@
     id="focus-list-filters"
     class="filter-bar"
     class:filter-bar--expanded={filtersExpanded}
+    class:filter-bar--compactable={!showRepoSelector}
   >
     {#if showRepoSelector && filtersExpanded}
       <div class="mobile-repo-filter">
@@ -367,16 +463,25 @@
         />
       </div>
     {/if}
+    {#if !showRepoSelector}
+      <div class="compact-filter-menu">
+        <FilterDropdown
+          label="List filters"
+          title="Filters"
+          active={compactFiltersActive}
+          showBadge={false}
+          sections={compactFilterSections}
+          minWidth="180px"
+        />
+      </div>
+    {/if}
     <div class="state-toggle">
       {#if listType === "mrs"}
         {#each ["open", "closed", "all"] as s (s)}
           <button
             class="state-btn"
             class:state-btn--active={prFilterState === s}
-            onclick={() => {
-              pulls.setFilterState(s);
-              resetPageAndLoad();
-            }}
+            onclick={() => setListState(s)}
           >
             {s === "open"
               ? "Open"
@@ -390,10 +495,7 @@
           <button
             class="state-btn"
             class:state-btn--active={issueFilterState === s}
-            onclick={() => {
-              issues.setIssueFilterState(s);
-              resetPageAndLoad();
-            }}
+            onclick={() => setListState(s)}
           >
             {s === "open"
               ? "Open"
@@ -415,8 +517,8 @@
       <button
         type="button"
         class="visibility-btn"
-        class:visibility-btn--active={listType === "mrs" ? pulls.getUnassigned() : issues.getUnassigned()}
-        aria-pressed={listType === "mrs" ? pulls.getUnassigned() : issues.getUnassigned()}
+        class:visibility-btn--active={unassigned}
+        aria-pressed={unassigned}
         onclick={toggleUnassigned}
       >Unassigned</button>
       {#if listType === "mrs"}
@@ -587,6 +689,7 @@
     flex-direction: column;
     height: 100%;
     width: 100%;
+    container: focus-list / inline-size;
   }
 
   .header {
@@ -623,7 +726,6 @@
 
   .filter-bar {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
     gap: 8px;
     padding: 6px 10px;
@@ -642,12 +744,25 @@
 
   .visibility-controls {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
-    justify-content: flex-end;
     gap: 8px;
     margin-left: auto;
-    min-width: 0;
+  }
+
+  .compact-filter-menu {
+    display: none;
+    flex-shrink: 0;
+  }
+
+  .compact-filter-menu :global(.kit-filter-dropdown__btn) {
+    width: 26px;
+    justify-content: center;
+    padding: 3px;
+  }
+
+  .compact-filter-menu :global(.kit-filter-dropdown__trigger-label),
+  .compact-filter-menu :global(.kit-filter-dropdown__trigger-detail) {
+    display: none;
   }
 
   .group-btn,
@@ -751,6 +866,17 @@
 
   .focus-list-loading-sentinel {
     min-height: 1px;
+  }
+
+  @container focus-list (max-width: 640px) {
+    .filter-bar--compactable .state-toggle,
+    .filter-bar--compactable .visibility-controls {
+      display: none;
+    }
+
+    .filter-bar--compactable .compact-filter-menu {
+      display: block;
+    }
   }
 
   :global(.mobile-main) .focus-list {

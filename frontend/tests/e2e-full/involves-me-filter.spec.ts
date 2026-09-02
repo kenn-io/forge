@@ -88,15 +88,17 @@ test.describe("Involves me standard filters", () => {
     const baseURL = server!.info.base_url;
     await page.setViewportSize({ width: 390, height: 844 });
 
-    await page.goto(`${baseURL}/focus/mrs?repo=github%7Cgithub.com%2Facme%2Fwidgets`);
+    await page.goto(`${baseURL}/m/pulls`);
     await expect(page.locator(".focus-list .pull-item").first()).toBeVisible();
+    await page.getByRole("button", { name: "Filters" }).click();
     const pullsResponse = waitForInvolvesMeRequest(page, "/api/v1/pulls");
     await page.getByRole("button", { name: "Involves me" }).click();
     expect((await pullsResponse).ok()).toBe(true);
     await expect(page.getByRole("button", { name: "Involves me" })).toHaveAttribute("aria-pressed", "true");
 
-    await page.goto(`${baseURL}/focus/issues?repo=github%7Cgithub.com%2Facme%2Fwidgets`);
+    await page.goto(`${baseURL}/m/issues`);
     await expect(page.locator(".focus-list .issue-item").first()).toBeVisible();
+    await page.getByRole("button", { name: "Filters" }).click();
     const issuesResponse = waitForInvolvesMeRequest(page, "/api/v1/issues");
     await page.getByRole("button", { name: "Involves me" }).click();
     expect((await issuesResponse).ok()).toBe(true);
@@ -131,35 +133,24 @@ test.describe("Involves me standard filters", () => {
     expect((await activityResponse).ok()).toBe(true);
   });
 
-  test("keeps every pull and issue filter reachable in a narrow focus presentation", async ({ page }) => {
+  test("collapses pull and issue controls into the filter menu on compact canonical routes", async ({ page }) => {
     const baseURL = server!.info.base_url;
     await page.setViewportSize({ width: 390, height: 844 });
 
     for (const list of [
-      { route: "mrs", item: ".pull-item" },
+      { route: "pulls", item: ".pull-item" },
       { route: "issues", item: ".issue-item" },
     ]) {
-      await page.goto(`${baseURL}/focus/${list.route}?repo=github%7Cgithub.com%2Facme%2Fwidgets`);
+      await page.goto(`${baseURL}/${list.route}`);
       await expect(page.locator(`.focus-list ${list.item}`).first()).toBeVisible();
-      await expect(page.getByRole("button", { name: "Unassigned" })).toBeVisible();
+      expect(new URL(page.url()).pathname).toBe(`/${list.route}`);
+      await expect(page.locator("#focus-list-filters .state-toggle")).toBeHidden();
+      await expect(page.locator("#focus-list-filters .visibility-controls")).toBeHidden();
 
-      const bounds = await page.locator("#focus-list-filters").evaluate((filters) => {
-        const filterBounds = filters.getBoundingClientRect();
-        const clippedButtons = [...filters.querySelectorAll<HTMLButtonElement>("button")]
-          .filter((button) => {
-            const bounds = button.getBoundingClientRect();
-            return bounds.left < filterBounds.left || bounds.right > filterBounds.right;
-          })
-          .map((button) => button.textContent?.trim());
-        return {
-          clientWidth: filters.clientWidth,
-          scrollWidth: filters.scrollWidth,
-          clippedButtons,
-        };
-      });
-
-      expect(bounds.scrollWidth).toBeLessThanOrEqual(bounds.clientWidth);
-      expect(bounds.clippedButtons).toEqual([]);
+      const trigger = page.locator("#focus-list-filters .compact-filter-menu .kit-filter-dropdown__btn");
+      await expect(trigger).toBeVisible();
+      await trigger.click();
+      await expectFilterItemInViewport(page, "Unassigned");
     }
   });
 });

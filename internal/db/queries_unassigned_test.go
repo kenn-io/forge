@@ -17,12 +17,15 @@ func TestUnassignedFiltersPullsIssuesAndActivityBeforeLimit(t *testing.T) {
 	repoID := insertTestRepo(t, d, "acme", "widget")
 	base := baseTime()
 
-	unassignedPRID := insertTestMRWithOptions(t, d, testMR(
-		repoID, 1, withMRActivity(base),
-	))
+	unassignedPR := testMR(repoID, 1, withMRActivity(base))
+	unassignedPR.AssigneesJSON = `[]`
+	unassignedPRID := insertTestMRWithOptions(t, d, unassignedPR)
 	assignedPR := testMR(repoID, 2, withMRActivity(base.Add(4*time.Minute)))
 	assignedPR.AssigneesJSON = `["alice"]`
 	assignedPRID := insertTestMRWithOptions(t, d, assignedPR)
+	unknownAssigneesPRID := insertTestMRWithOptions(t, d, testMR(
+		repoID, 5, withMRActivity(base.Add(8*time.Minute)),
+	))
 
 	unassignedIssueID := insertTestIssueWithOptions(t, d, testIssue(
 		repoID, 3, withIssueActivity(base.Add(time.Minute)),
@@ -34,6 +37,7 @@ func TestUnassignedFiltersPullsIssuesAndActivityBeforeLimit(t *testing.T) {
 	require.NoError(d.UpsertMREvents(ctx, []MREvent{
 		{MergeRequestID: unassignedPRID, EventType: "review", Author: "reviewer", CreatedAt: base.Add(2 * time.Minute), DedupeKey: "unassigned-review"},
 		{MergeRequestID: assignedPRID, EventType: "review", Author: "reviewer", CreatedAt: base.Add(6 * time.Minute), DedupeKey: "assigned-review"},
+		{MergeRequestID: unknownAssigneesPRID, EventType: "review", Author: "reviewer", CreatedAt: base.Add(9 * time.Minute), DedupeKey: "unknown-assignees-review"},
 	}))
 	require.NoError(d.UpsertIssueEvents(ctx, []IssueEvent{
 		{IssueID: unassignedIssueID, EventType: "issue_comment", Author: "commenter", CreatedAt: base.Add(3 * time.Minute), DedupeKey: "unassigned-comment"},
@@ -77,6 +81,7 @@ func TestUnassignedFiltersPullsIssuesAndActivityBeforeLimit(t *testing.T) {
 	workspaceKeys, err := d.ListUnassignedWorkspaceSubjectKeys(ctx, []WorkspaceSubjectKey{
 		{RepoID: repoID, ItemType: WorkspaceItemTypePullRequest, ItemNumber: 1},
 		{RepoID: repoID, ItemType: WorkspaceItemTypePullRequest, ItemNumber: 2},
+		{RepoID: repoID, ItemType: WorkspaceItemTypePullRequest, ItemNumber: 5},
 		{RepoID: repoID, ItemType: WorkspaceItemTypeIssue, ItemNumber: 3},
 		{RepoID: repoID, ItemType: WorkspaceItemTypeIssue, ItemNumber: 4},
 	})

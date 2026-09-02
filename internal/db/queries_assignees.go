@@ -6,9 +6,7 @@ import (
 )
 
 func unassignedCondition(alias string) string {
-	return fmt.Sprintf(`NOT EXISTS (
-		SELECT 1 FROM json_each(COALESCE(NULLIF(%[1]s.assignees_json, ''), '[]'))
-	)`, alias)
+	return fmt.Sprintf(`%s.assignees_json = '[]'`, alias)
 }
 
 func activityUnassignedCondition() string {

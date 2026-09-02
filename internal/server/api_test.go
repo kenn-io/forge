@@ -2018,11 +2018,13 @@ func TestAPIUnassignedFiltersPullsIssuesAndActivity(t *testing.T) {
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Second)
 
-	seedPR(t, database, "acme", "widget", 1, withSeedPRTimes(now, now, now))
+	unassignedPRID := seedPR(t, database, "acme", "widget", 1, withSeedPRTimes(now, now, now))
 	assignedPRID := seedPR(t, database, "acme", "widget", 2, withSeedPRTimes(now, now, now))
+	seedPR(t, database, "acme", "widget", 5, withSeedPRTimes(now, now, now))
 	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
+	require.NoError(database.UpdateMergeRequestAssignees(ctx, repo.ID, unassignedPRID, nil))
 	require.NoError(database.UpdateMergeRequestAssignees(ctx, repo.ID, assignedPRID, []string{"alice"}))
 
 	seedIssue(t, database, "acme", "widget", 3, "open")

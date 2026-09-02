@@ -4,27 +4,21 @@ COPY . /src
 WORKDIR /src
 RUN git checkout ${ROBOREV_REF} && \
     go build -o /roborev ./cmd/roborev/
+COPY --from=forge tests/integration/roborev/tcp-forward.go /tcp-forward.go
+RUN go build -o /tcp-forward /tcp-forward.go
 
-FROM debian:bookworm-slim
-RUN timeout --signal=TERM --kill-after=5s 2m apt-get \
-      -o Acquire::Retries=5 \
-      -o Acquire::http::Timeout=10 \
-      -o APT::Update::Error-Mode=any \
-      update && \
-    timeout --signal=TERM --kill-after=5s 2m apt-get \
-      -o Acquire::Retries=5 \
-      -o Acquire::http::Timeout=10 \
-      install -y --no-install-recommends curl git socat && \
-    rm -rf /var/lib/apt/lists/*
+FROM golang:1.27.0
+RUN command -v git && command -v curl
 COPY --from=builder /roborev /usr/local/bin/roborev
+COPY --from=builder /tcp-forward /usr/local/bin/tcp-forward
 RUN mkdir -p /data
 ENV ROBOREV_DATA_DIR=/data
 
 # The daemon enforces loopback-only bind addresses.
 # Docker port mapping requires 0.0.0.0 inside the container.
-# Workaround: bind daemon to 127.0.0.1:7374 and use socat
+# Workaround: bind daemon to 127.0.0.1:7374 and use a small Go proxy
 # to relay 0.0.0.0:7373 -> 127.0.0.1:7374.
 EXPOSE 7373
 ENTRYPOINT ["/bin/sh", "-c", "\
-  socat TCP-LISTEN:7373,fork,reuseaddr,bind=0.0.0.0 TCP:127.0.0.1:7374 & \
+  tcp-forward & \
   exec roborev \"$@\"" , "--"]

@@ -260,8 +260,9 @@ The `e2e-roborev` daemon pin (`ROBOREV_REF` in `.github/workflows/ci.yml`) must 
 Managed-clone initialization must exercise the pinned real Roborev CLI and daemon;
 a fake hook writer cannot validate linked-worktree registration
 (`scripts/run-roborev-e2e.sh:72`).
-Container fixture package downloads must bound both transfers and total wall
-time; package-manager retry backoff can otherwise monopolize a public CI runner.
+Container fixtures must not fetch operating-system packages from public mirrors
+during CI. Build small fixture-only helpers from the repository and reuse an
+already-required toolchain base image instead (`tests/integration/roborev/Dockerfile`).
 
 Playwright waits must observe the state consumed by the next assertion. Direct API reads after an optimistic
 mutation wait for its response; rendered assertions wait for rendered state, since route refinement can pair new

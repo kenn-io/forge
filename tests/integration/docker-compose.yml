@@ -3,6 +3,8 @@ services:
     build:
       context: ${ROBOREV_SRC:?Set ROBOREV_SRC}
       dockerfile: ${COMPOSE_DIR:?Set COMPOSE_DIR}/roborev/Dockerfile
+      additional_contexts:
+        forge: ${COMPOSE_DIR}/../..
       args:
         ROBOREV_REF: ${ROBOREV_REF:-main}
     ports:

@@ -2747,7 +2747,7 @@ describe("WorkspaceListSidebar", () => {
 
   it("labels an ad-hoc workspace by branch and shows no item bubble", async () => {
     mockGet.mockResolvedValue({
-      data: { workspaces: [adHocWorkspaceFixture()] },
+      data: { workspaces: [adHocWorkspaceFixture({ worktreeDirty: true })] },
     });
 
     const { container } = render(WorkspaceListSidebar, {
@@ -2758,6 +2758,8 @@ describe("WorkspaceListSidebar", () => {
     // No provider item and no Kata task: there is nothing for a bubble to
     // open, and the row must never advertise #0.
     expect(container.querySelector(".item-bubble")).toBeNull();
+    expect(container.querySelector(".ws-row-aside > .item-bubble-slot")).toBeTruthy();
+    expect(container.querySelector(".ws-row-aside > .item-bubble-slot + .worktree-dirty")).toBeTruthy();
     expect(container.textContent).not.toContain("#0");
   });
 

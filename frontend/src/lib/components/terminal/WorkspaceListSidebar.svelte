@@ -1496,15 +1496,13 @@
                     />
                   </span>
                 {/if}
-                {#if ws.worktree_dirty && !hasItemBubble(ws)}
-                  {@render worktreeDirtyIndicator()}
-                {/if}
               </div>
             </div>
-            <!-- An ad-hoc workspace with no detected PR has nothing for a
-                 bubble to open, so it renders none rather than an empty one. -->
-            {#if hasItemBubble(ws)}
-              <div class="ws-row-aside">
+            <div class="ws-row-aside">
+              <!-- Keep the item column stable when a workspace has no linked
+                   provider item. The empty slot is layout only, never a
+                   disabled or misleading #0 control. -->
+              {#if hasItemBubble(ws)}
                 <button
                   class={[
                     "item-bubble",
@@ -1524,19 +1522,21 @@
                 >
                   {itemBubbleLabel(ws)}
                 </button>
-                {#if sortTimestamp}
-                  <time
-                    class="workspace-sort-time"
-                    datetime={sortTimestamp.at}
-                    title={`${sortTimestamp.label}: ${formatTimestamp(sortTimestamp.at)}`}
-                    aria-label={`${sortTimestamp.label}: ${formatRelativeTime(sortTimestamp.at)}`}
-                  >{formatRelativeTime(sortTimestamp.at)}</time>
-                {/if}
-                {#if ws.worktree_dirty}
-                  {@render worktreeDirtyIndicator()}
-                {/if}
-              </div>
-            {/if}
+              {:else}
+                <span class="item-bubble-slot" aria-hidden="true"></span>
+              {/if}
+              {#if sortTimestamp}
+                <time
+                  class="workspace-sort-time"
+                  datetime={sortTimestamp.at}
+                  title={`${sortTimestamp.label}: ${formatTimestamp(sortTimestamp.at)}`}
+                  aria-label={`${sortTimestamp.label}: ${formatRelativeTime(sortTimestamp.at)}`}
+                >{formatRelativeTime(sortTimestamp.at)}</time>
+              {/if}
+              {#if ws.worktree_dirty}
+                {@render worktreeDirtyIndicator()}
+              {/if}
+            </div>
           </div>
           <SidebarTitlePopover
             target={rowEls[workspaceRowKey(ws)] ?? undefined}
@@ -2077,8 +2077,16 @@
     align-self: flex-start;
     display: flex;
     flex-direction: column;
-    align-items: flex-start;
+    align-items: flex-end;
     gap: var(--space-1);
+    min-width: 44px;
+  }
+
+  .item-bubble-slot {
+    display: block;
+    width: 100%;
+    height: 16px;
+    margin-top: 1px;
   }
 
   .workspace-sort-time {

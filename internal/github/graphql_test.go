@@ -357,8 +357,10 @@ func TestAdaptCommit(t *testing.T) {
 	assert.Equal("sha123", c.GetSHA())
 	assert.Equal("fix: something", c.GetCommit().GetMessage())
 	assert.Equal("Dave", c.GetCommit().GetAuthor().GetName())
+	assert.Equal(now, c.GetCommit().GetAuthor().GetDate().Time)
 	assert.Equal("dave", c.GetAuthor().GetLogin())
 	assert.Equal("Eve", c.GetCommit().GetCommitter().GetName())
+	assert.Equal(committedAt, c.GetCommit().GetCommitter().GetDate().Time)
 	assert.Equal("eve", c.GetCommitter().GetLogin())
 
 	gql.Commit.Committer.Date = nil

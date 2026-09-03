@@ -2352,6 +2352,20 @@ type FeatureCapabilities struct {
 	TmuxVersion     *string `json:"tmuxVersion,omitempty"`
 }
 
+// FederationActivityRepositoryIdentity defines model for FederationActivityRepositoryIdentity.
+type FederationActivityRepositoryIdentity struct {
+	PlatformHost   string `json:"platform_host"`
+	PlatformRepoId string `json:"platform_repo_id"`
+	Provider       string `json:"provider"`
+}
+
+// FederationActivitySubjectIdentity defines model for FederationActivitySubjectIdentity.
+type FederationActivitySubjectIdentity struct {
+	ItemNumber int64                                `json:"item_number"`
+	ItemType   string                               `json:"item_type"`
+	Repository FederationActivityRepositoryIdentity `json:"repository"`
+}
+
 // FederationDiffDescriptorRequest defines model for FederationDiffDescriptorRequest.
 type FederationDiffDescriptorRequest struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -2380,6 +2394,24 @@ type FederationSetWorkflowStateRequest struct {
 	Schema *string                        `json:"$schema,omitempty"`
 	Item   FederationWorkflowItemIdentity `json:"item"`
 	Update FederationWorkflowUpdate       `json:"update"`
+}
+
+// FederationUnassignedActivitySubjectsRequest defines model for FederationUnassignedActivitySubjectsRequest.
+type FederationUnassignedActivitySubjectsRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: /api/v1/schemas/FederationUnassignedActivitySubjectsRequest.json
+	Schema   *string                             `json:"$schema,omitempty"`
+	Subjects []FederationActivitySubjectIdentity `json:"subjects"`
+}
+
+// FederationUnassignedActivitySubjectsResponse defines model for FederationUnassignedActivitySubjectsResponse.
+type FederationUnassignedActivitySubjectsResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: /api/v1/schemas/FederationUnassignedActivitySubjectsResponse.json
+	Schema   *string                             `json:"$schema,omitempty"`
+	Subjects []FederationActivitySubjectIdentity `json:"subjects"`
 }
 
 // FederationWorkflowItem defines model for FederationWorkflowItem.
@@ -6428,6 +6460,9 @@ type FederationImportReviewDraftJSONRequestBody = ProviderStateReviewDraftPayloa
 // FederationImportWorkflowStateJSONRequestBody defines body for FederationImportWorkflowState for application/json ContentType.
 type FederationImportWorkflowStateJSONRequestBody = ProviderStateWorkflowPayload
 
+// FederationFilterUnassignedActivitySubjectsJSONRequestBody defines body for FederationFilterUnassignedActivitySubjects for application/json ContentType.
+type FederationFilterUnassignedActivitySubjectsJSONRequestBody = FederationUnassignedActivitySubjectsRequest
+
 // FederationGetDiffDescriptorJSONRequestBody defines body for FederationGetDiffDescriptor for application/json ContentType.
 type FederationGetDiffDescriptorJSONRequestBody = FederationDiffDescriptorRequest
 
@@ -7324,6 +7359,20 @@ type ClientInterface interface {
 	//
 	// Corresponds with POST /federation/provider-state/workflow-states/import (the `FederationImportWorkflowState` operationId).
 	FederationImportWorkflowState(ctx context.Context, body FederationImportWorkflowStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// FederationFilterUnassignedActivitySubjectsWithBody Filter activity subjects by hub assignment state
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /federation/provider/activity/unassigned-subjects/query (the `FederationFilterUnassignedActivitySubjects` operationId).
+	FederationFilterUnassignedActivitySubjectsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// FederationFilterUnassignedActivitySubjects Filter activity subjects by hub assignment state
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /federation/provider/activity/unassigned-subjects/query (the `FederationFilterUnassignedActivitySubjects` operationId).
+	FederationFilterUnassignedActivitySubjects(ctx context.Context, body FederationFilterUnassignedActivitySubjectsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// FederationGetDiffDescriptorWithBody Resolve a pull diff descriptor for a Forge spoke
 	//
@@ -10726,6 +10775,40 @@ func (c *Client) FederationImportWorkflowStateWithBody(ctx context.Context, cont
 // Corresponds with POST /federation/provider-state/workflow-states/import (the `FederationImportWorkflowState` operationId).
 func (c *Client) FederationImportWorkflowState(ctx context.Context, body FederationImportWorkflowStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewFederationImportWorkflowStateRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// FederationFilterUnassignedActivitySubjectsWithBody Filter activity subjects by hub assignment state
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /federation/provider/activity/unassigned-subjects/query (the `FederationFilterUnassignedActivitySubjects` operationId).
+func (c *Client) FederationFilterUnassignedActivitySubjectsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewFederationFilterUnassignedActivitySubjectsRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// FederationFilterUnassignedActivitySubjects Filter activity subjects by hub assignment state
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /federation/provider/activity/unassigned-subjects/query (the `FederationFilterUnassignedActivitySubjects` operationId).
+func (c *Client) FederationFilterUnassignedActivitySubjects(ctx context.Context, body FederationFilterUnassignedActivitySubjectsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewFederationFilterUnassignedActivitySubjectsRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -19714,6 +19797,46 @@ func NewFederationImportWorkflowStateRequestWithBody(server string, contentType 
 	}
 
 	operationPath := fmt.Sprintf("/federation/provider-state/workflow-states/import")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewFederationFilterUnassignedActivitySubjectsRequest calls the generic FederationFilterUnassignedActivitySubjects builder with application/json body
+func NewFederationFilterUnassignedActivitySubjectsRequest(server string, body FederationFilterUnassignedActivitySubjectsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewFederationFilterUnassignedActivitySubjectsRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewFederationFilterUnassignedActivitySubjectsRequestWithBody constructs an http.Request for the FederationFilterUnassignedActivitySubjects method, with any body, and a specified content type
+func NewFederationFilterUnassignedActivitySubjectsRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/federation/provider/activity/unassigned-subjects/query")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -38265,6 +38388,11 @@ type ClientWithResponsesInterface interface {
 
 	FederationImportWorkflowStateWithResponse(ctx context.Context, body FederationImportWorkflowStateJSONRequestBody, reqEditors ...RequestEditorFn) (*FederationImportWorkflowStateResponse, error)
 
+	// FederationFilterUnassignedActivitySubjectsWithBodyWithResponse request with any body
+	FederationFilterUnassignedActivitySubjectsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*FederationFilterUnassignedActivitySubjectsResponse, error)
+
+	FederationFilterUnassignedActivitySubjectsWithResponse(ctx context.Context, body FederationFilterUnassignedActivitySubjectsJSONRequestBody, reqEditors ...RequestEditorFn) (*FederationFilterUnassignedActivitySubjectsResponse, error)
+
 	// FederationGetDiffDescriptorWithBodyWithResponse request with any body
 	FederationGetDiffDescriptorWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*FederationGetDiffDescriptorResponse, error)
 
@@ -40226,6 +40354,29 @@ func (r FederationImportWorkflowStateResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r FederationImportWorkflowStateResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type FederationFilterUnassignedActivitySubjectsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *FederationUnassignedActivitySubjectsResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r FederationFilterUnassignedActivitySubjectsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r FederationFilterUnassignedActivitySubjectsResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -47545,6 +47696,23 @@ func (c *ClientWithResponses) FederationImportWorkflowStateWithResponse(ctx cont
 	return ParseFederationImportWorkflowStateResponse(rsp)
 }
 
+// FederationFilterUnassignedActivitySubjectsWithBodyWithResponse request with arbitrary body returning *FederationFilterUnassignedActivitySubjectsResponse
+func (c *ClientWithResponses) FederationFilterUnassignedActivitySubjectsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*FederationFilterUnassignedActivitySubjectsResponse, error) {
+	rsp, err := c.FederationFilterUnassignedActivitySubjectsWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseFederationFilterUnassignedActivitySubjectsResponse(rsp)
+}
+
+func (c *ClientWithResponses) FederationFilterUnassignedActivitySubjectsWithResponse(ctx context.Context, body FederationFilterUnassignedActivitySubjectsJSONRequestBody, reqEditors ...RequestEditorFn) (*FederationFilterUnassignedActivitySubjectsResponse, error) {
+	rsp, err := c.FederationFilterUnassignedActivitySubjects(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseFederationFilterUnassignedActivitySubjectsResponse(rsp)
+}
+
 // FederationGetDiffDescriptorWithBodyWithResponse request with arbitrary body returning *FederationGetDiffDescriptorResponse
 func (c *ClientWithResponses) FederationGetDiffDescriptorWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*FederationGetDiffDescriptorResponse, error) {
 	rsp, err := c.FederationGetDiffDescriptorWithBody(ctx, contentType, body, reqEditors...)
@@ -52359,6 +52527,39 @@ func ParseFederationImportWorkflowStateResponse(rsp *http.Response) (*Federation
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest ProviderStateImportResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseFederationFilterUnassignedActivitySubjectsResponse parses an HTTP response from a FederationFilterUnassignedActivitySubjectsWithResponse call
+func ParseFederationFilterUnassignedActivitySubjectsResponse(rsp *http.Response) (*FederationFilterUnassignedActivitySubjectsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &FederationFilterUnassignedActivitySubjectsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest FederationUnassignedActivitySubjectsResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

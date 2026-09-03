@@ -397,6 +397,74 @@ func TestSpokeUnassignedActivityKeepsMatchingLocalWorkspaceSubject(t *testing.T)
 	assert.Equal("ws-unassigned", response.WorkspaceActivity[0].Workspace.ID)
 }
 
+func TestSpokeUnassignedActivityUsesHubAssignmentWithoutLocalProviderRows(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	hub, hubDatabase := setupTestServer(t)
+	unassignedID := seedPR(t, hubDatabase, "acme", "widget", 1)
+	assignedID := seedPR(t, hubDatabase, "acme", "widget", 2)
+	hubRepo, err := hubDatabase.GetRepoByIdentity(
+		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	require.NotNil(hubRepo)
+	require.NoError(hubDatabase.UpdateMergeRequestAssignees(
+		t.Context(), hubRepo.ID, unassignedID, nil,
+	))
+	require.NoError(hubDatabase.UpdateMergeRequestAssignees(
+		t.Context(), hubRepo.ID, assignedID, []string{"reviewer"},
+	))
+
+	spoke, spokeDatabase := setupTestServer(t)
+	spokeRepoID, err := spokeDatabase.UpsertRepo(
+		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	spoke.providerSource = &hubProviderSource{client: providerPlaneClientFunc(func(
+		_ context.Context, scope federationauth.Scope, request *http.Request,
+	) (*http.Response, error) {
+		assert.Equal(federationauth.ScopeProviderRead, scope)
+		request.Host = "127.0.0.1"
+		request.RemoteAddr = "127.0.0.1:1234"
+		recorder := httptest.NewRecorder()
+		hub.ServeHTTP(recorder, request)
+		assert.Equal(http.StatusOK, recorder.Code, recorder.Body.String())
+		return recorder.Result(), nil
+	})}
+
+	snapshot := workspaceapi.WorkspaceSubjectSnapshot{
+		OwnReferences: map[db.WorkspaceSubjectKey]workspaceapi.WorkspaceRef{},
+		Subjects:      map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{},
+	}
+	now := time.Now().UTC()
+	for number, workspaceID := range map[int]string{1: "ws-unassigned", 2: "ws-assigned"} {
+		key := db.WorkspaceSubjectKey{
+			RepoID: spokeRepoID, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: number,
+		}
+		snapshot.Subjects[key] = workspaceapi.SubjectActivity{
+			Subject: db.WorkspaceSubjectMetadata{
+				Key: key, Platform: "github", PlatformHost: "github.com",
+				PlatformRepoID: "repo-acme-widget", RepoOwner: "acme", RepoName: "widget",
+				RepoPath: "acme/widget", Title: "Local workspace", State: "open",
+				URL: "https://github.com/acme/widget/pull/1", Author: "author",
+			},
+			Workspace:  workspaceapi.WorkspaceRef{ID: workspaceID, Status: "ready"},
+			ActivityAt: &now,
+		}
+	}
+
+	response, err := spoke.overlayLocalActivityWorkspaceSnapshot(
+		t.Context(),
+		&listActivityInput{Unassigned: true},
+		activityResponse{UseWorkspaceActivityForRecency: true},
+		snapshot,
+	)
+	require.NoError(err)
+	require.Len(response.WorkspaceActivity, 1)
+	assert.Equal(1, response.WorkspaceActivity[0].ItemNumber)
+	assert.Equal("ws-unassigned", response.WorkspaceActivity[0].Workspace.ID)
+}
+
 func TestNodeServerRoutesProviderReadsWithoutUsingLocalTables(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

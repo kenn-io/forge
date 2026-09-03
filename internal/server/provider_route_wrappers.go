@@ -145,6 +145,7 @@ func (s *Server) registerProviderFederationAPI(api huma.API) {
 	s.registerProviderStateHandoffAPI(api)
 	s.registerFederationProviderSettingsAPI(api)
 	s.registerFederationProviderWorkspaceAPI(api)
+	s.registerProviderActivitySubjectAPI(api)
 	huma.Register(api, huma.Operation{
 		OperationID: "federation-list-workflow-states",
 		Method:      http.MethodPost,

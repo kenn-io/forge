@@ -1906,6 +1906,15 @@ func workspaceSnapshotSubjectKeys(
 func (s *Server) retainUnassignedWorkspaceSubjects(
 	ctx context.Context, snapshot *workspaceapi.WorkspaceSubjectSnapshot,
 ) error {
+	if s.providerSource != nil {
+		identitiesByKey, candidates := workspaceActivitySubjectIdentities(*snapshot)
+		unassigned, err := s.providerSource.FilterUnassignedActivitySubjects(ctx, candidates)
+		if err != nil {
+			return err
+		}
+		retainActivitySubjectsByIdentity(snapshot, identitiesByKey, unassigned)
+		return nil
+	}
 	unassignedSubjects, err := s.db.ListUnassignedWorkspaceSubjectKeys(
 		ctx, workspaceSnapshotSubjectKeys(*snapshot),
 	)

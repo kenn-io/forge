@@ -639,6 +639,32 @@ func (s *hubProviderSource) ListActivity(
 	return response, nil
 }
 
+func (s *hubProviderSource) FilterUnassignedActivitySubjects(
+	ctx context.Context, subjects []providerplane.ItemIdentity,
+) ([]providerplane.ItemIdentity, error) {
+	requestSubjects := make([]federationActivitySubjectIdentity, 0, len(subjects))
+	for _, subject := range subjects {
+		requestSubjects = append(requestSubjects, federationActivitySubjectIdentityFromProvider(subject))
+	}
+	request := federationUnassignedActivitySubjectsRequest{Subjects: requestSubjects}
+	var response federationUnassignedActivitySubjectsResponse
+	if err := s.exchange(
+		ctx,
+		http.MethodPost,
+		"/api/v1/federation/provider/activity/unassigned-subjects/query",
+		federationauth.ScopeProviderRead,
+		request,
+		&response,
+	); err != nil {
+		return nil, err
+	}
+	result := make([]providerplane.ItemIdentity, 0, len(response.Subjects))
+	for _, subject := range response.Subjects {
+		result = append(result, subject.provider())
+	}
+	return result, nil
+}
+
 func (s *hubProviderSource) ListActivityAuthors(
 	ctx context.Context, input *listActivityAuthorsInput,
 ) (activityAuthorsResponse, error) {

@@ -2434,6 +2434,35 @@ components:
         - teardownHook
         - moshAttach
       type: object
+    FederationActivityRepositoryIdentity:
+      additionalProperties: false
+      properties:
+        platform_host:
+          type: string
+        platform_repo_id:
+          type: string
+        provider:
+          type: string
+      required:
+        - provider
+        - platform_host
+        - platform_repo_id
+      type: object
+    FederationActivitySubjectIdentity:
+      additionalProperties: false
+      properties:
+        item_number:
+          format: int64
+          type: integer
+        item_type:
+          type: string
+        repository:
+          $ref: "#/components/schemas/FederationActivityRepositoryIdentity"
+      required:
+        - repository
+        - item_type
+        - item_number
+      type: object
     FederationDiffDescriptorRequest:
       additionalProperties: false
       properties:
@@ -2490,6 +2519,40 @@ components:
       required:
         - item
         - update
+      type: object
+    FederationUnassignedActivitySubjectsRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/FederationUnassignedActivitySubjectsRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        subjects:
+          items:
+            $ref: "#/components/schemas/FederationActivitySubjectIdentity"
+          type: array
+      required:
+        - subjects
+      type: object
+    FederationUnassignedActivitySubjectsResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/FederationUnassignedActivitySubjectsResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        subjects:
+          items:
+            $ref: "#/components/schemas/FederationActivitySubjectIdentity"
+          type: array
+      required:
+        - subjects
       type: object
     FederationWorkflowItem:
       additionalProperties: false
@@ -11180,6 +11243,31 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Import one workflow row while preparing a Forge spoke
+      tags:
+        - Fleet
+  /federation/provider/activity/unassigned-subjects/query:
+    post:
+      operationId: federation-filter-unassigned-activity-subjects
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FederationUnassignedActivitySubjectsRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FederationUnassignedActivitySubjectsResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Filter activity subjects by hub assignment state
       tags:
         - Fleet
   /federation/provider/diff-descriptor:

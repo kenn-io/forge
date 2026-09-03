@@ -553,6 +553,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/federation/provider/activity/unassigned-subjects/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Filter activity subjects by hub assignment state */
+        post: operations["federation-filter-unassigned-activity-subjects"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/federation/provider/diff-descriptor": {
         parameters: {
             query?: never;
@@ -6216,6 +6233,17 @@ export interface components {
             teardownHook: boolean;
             tmuxVersion?: string;
         };
+        FederationActivityRepositoryIdentity: {
+            platform_host: string;
+            platform_repo_id: string;
+            provider: string;
+        };
+        FederationActivitySubjectIdentity: {
+            /** Format: int64 */
+            item_number: number;
+            item_type: string;
+            repository: components["schemas"]["FederationActivityRepositoryIdentity"];
+        };
         FederationDiffDescriptorRequest: {
             /**
              * Format: uri
@@ -6247,6 +6275,24 @@ export interface components {
             readonly $schema?: string;
             item: components["schemas"]["FederationWorkflowItemIdentity"];
             update: components["schemas"]["FederationWorkflowUpdate"];
+        };
+        FederationUnassignedActivitySubjectsRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/FederationUnassignedActivitySubjectsRequest.json
+             */
+            readonly $schema?: string;
+            subjects: components["schemas"]["FederationActivitySubjectIdentity"][];
+        };
+        FederationUnassignedActivitySubjectsResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/FederationUnassignedActivitySubjectsResponse.json
+             */
+            readonly $schema?: string;
+            subjects: components["schemas"]["FederationActivitySubjectIdentity"][];
         };
         FederationWorkflowItem: {
             author: string;
@@ -10776,6 +10822,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProviderStateImportResult"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "federation-filter-unassigned-activity-subjects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FederationUnassignedActivitySubjectsRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FederationUnassignedActivitySubjectsResponse"];
                 };
             };
             /** @description Error */

@@ -35,7 +35,7 @@ func acquireWorkspaceGitSlot(t *testing.T) {
 }
 
 func TestWorkspaceDiffEndpointsReportHeadAndPushedE2E(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -129,7 +129,7 @@ func TestWorkspaceDiffEndpointsReportHeadAndPushedE2E(t *testing.T) {
 }
 
 func TestWorkspaceFilePreviewEndpointReturnsRequestedDiffSideContentE2E(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -173,7 +173,7 @@ func TestWorkspaceFilePreviewEndpointReturnsRequestedDiffSideContentE2E(t *testi
 }
 
 func TestWorkspaceDiffEndpointsReturnPierreTreeOrderE2E(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -247,7 +247,7 @@ func TestWorkspaceDiffEndpointsReturnPierreTreeOrderE2E(t *testing.T) {
 }
 
 func TestWorkspaceCommitsEndpointListsBranchCommitsE2E(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -283,7 +283,7 @@ func TestWorkspaceCommitsEndpointListsBranchCommitsE2E(t *testing.T) {
 }
 
 func TestWorkspaceDiffEndpointsAcceptCommitAndRangeScopesE2E(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -359,7 +359,7 @@ func TestWorkspaceDiffEndpointsAcceptCommitAndRangeScopesE2E(t *testing.T) {
 }
 
 func TestWorkspaceDiffEndpointReportsMergeTargetE2E(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -414,7 +414,7 @@ func TestWorkspaceDiffEndpointReportsMergeTargetE2E(t *testing.T) {
 }
 
 func TestWorkspaceDiffEndpointReportsMergeTargetForAssociatedKataWorkspaceE2E(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -479,7 +479,7 @@ func TestWorkspaceDiffEndpointReportsMergeTargetForAssociatedKataWorkspaceE2E(t 
 }
 
 func TestWorkspaceDiffEndpointRejectsOriginBaseE2E(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -507,7 +507,7 @@ func TestWorkspaceDiffEndpointRejectsOriginBaseE2E(t *testing.T) {
 }
 
 func TestWorkspaceDiffEndpointHandlesUntrackedSymlinkAndLargeFileE2E(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -555,7 +555,7 @@ func TestWorkspaceDiffEndpointHandlesUntrackedSymlinkAndLargeFileE2E(t *testing.
 }
 
 func TestWorkspaceDiffEndpointMarksGeneratedFilesE2E(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -598,7 +598,7 @@ func TestWorkspaceDiffEndpointMarksGeneratedFilesE2E(t *testing.T) {
 }
 
 func TestWorkspaceDiffEndpointScopesPatchByPathE2E(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -623,7 +623,7 @@ func TestWorkspaceDiffEndpointScopesPatchByPathE2E(t *testing.T) {
 }
 
 func TestWorkspaceDiffPathPrefersCurrentPathOverEarlierRenameE2E(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -653,7 +653,7 @@ func TestWorkspaceDiffPathPrefersCurrentPathOverEarlierRenameE2E(t *testing.T) {
 }
 
 func TestWorkspaceDiffEndpointKeepsModifiedSourcePatchSeparateFromCopyE2E(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -694,7 +694,7 @@ func TestWorkspaceDiffEndpointKeepsModifiedSourcePatchSeparateFromCopyE2E(t *tes
 }
 
 func TestWorkspaceDiffEndpointQuotesDangerousPathsE2E(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)

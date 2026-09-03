@@ -16,7 +16,7 @@ import (
 )
 
 func TestWorkspacePushBranchRoutePushesAheadBranch(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 	require := require.New(t)
 	assert := assert.New(t)
@@ -42,7 +42,7 @@ func TestWorkspacePushBranchRoutePushesAheadBranch(t *testing.T) {
 }
 
 func TestWorkspacePullBranchRouteFastForwardsBehindBranch(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 	require := require.New(t)
 	assert := assert.New(t)
@@ -79,7 +79,7 @@ func TestWorkspacePullBranchRouteFastForwardsBehindBranch(t *testing.T) {
 }
 
 func TestWorkspacePullBranchRouteRejectsDirtyWorktree(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 	require := require.New(t)
 	fixture := setupWorkspaceServerFixture(t, nil)

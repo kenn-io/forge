@@ -16,7 +16,6 @@ import (
 )
 
 func TestWorkspaceListReportsCommitsAheadBehindE2E(t *testing.T) {
-	t.Parallel()
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)

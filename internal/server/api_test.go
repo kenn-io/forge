@@ -51,7 +51,6 @@ import (
 	platformgitlab "go.kenn.io/forge/internal/platform/gitlab"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/ptyowner"
-	"go.kenn.io/forge/internal/ptysize"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/issueapi"
 	"go.kenn.io/forge/internal/server/pullapi"
@@ -78,6 +77,7 @@ const (
 
 var (
 	privateTmuxOwner        *testtmux.Owner
+	parallelServerTestSlots = semaphore.NewWeighted(4)
 	ptyE2ESemaphore         = semaphore.NewWeighted(1)
 	serverPtyOwnerParentPID = flag.Int(
 		"server-pty-owner-parent-pid",
@@ -147,9 +147,15 @@ func isServerHelperProcess() bool {
 			args[0] == "pty-owner")
 }
 
-func runParallelPTYE2E(t *testing.T) {
+func runParallelServerTest(t *testing.T) {
 	t.Helper()
 	t.Parallel()
+	require.NoError(t, parallelServerTestSlots.Acquire(t.Context(), 1))
+	t.Cleanup(func() { parallelServerTestSlots.Release(1) })
+}
+
+func runSerialPTYE2E(t *testing.T) {
+	t.Helper()
 	releasePTYSlot := acquirePTYE2ESlot(t)
 	t.Cleanup(releasePTYSlot)
 }
@@ -1213,9 +1219,15 @@ func setupTestServerWithReposAndOptions(
 	// cleanup so LIFO ordering runs Stop first: without this, a
 	// leaked goroutine from one test's handler can outlive its DB.
 	t.Cleanup(syncer.Stop)
+	var cfg *config.Config
+	if options.WorktreeDir != "" {
+		cfg = &config.Config{Tmux: config.Tmux{
+			Command: []string{filepath.Join(t.TempDir(), "missing-tmux")},
+		}}
+	}
 	srv := New(
 		database, syncer, nil, "/",
-		nil, options,
+		cfg, options,
 	)
 	// Registered after the DB cleanup so LIFO ordering runs Shutdown
 	// first and lets background goroutines finish before DB close.
@@ -1515,6 +1527,7 @@ func seedPRWithHeadSHA(t *testing.T, database *db.DB, owner, name string, number
 }
 
 func TestAPIReplyToGitHubReviewThreadUsesProviderCommentID(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -1618,6 +1631,7 @@ func TestAPIReplyToGitHubReviewThreadUsesProviderCommentID(t *testing.T) {
 }
 
 func TestAPIMergePR405ReturnsGitHubMessage(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 
 	mock := &mockGH{
@@ -1649,6 +1663,7 @@ func TestAPIMergePR405ReturnsGitHubMessage(t *testing.T) {
 }
 
 func TestAPIMergePR409ReturnsGitHubMessage(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 
 	mock := &mockGH{
@@ -1680,6 +1695,7 @@ func TestAPIMergePR409ReturnsGitHubMessage(t *testing.T) {
 }
 
 func TestAPIMergePRNetworkErrorReturns502(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 
 	mock := &mockGH{
@@ -1708,6 +1724,7 @@ func TestAPIMergePRNetworkErrorReturns502(t *testing.T) {
 }
 
 func TestAPIMergePR422ForwardsGitHubMessage(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 
 	mock := &mockGH{
@@ -1739,6 +1756,7 @@ func TestAPIMergePR422ForwardsGitHubMessage(t *testing.T) {
 }
 
 func TestAPIMergePR403ForwardsGitHubMessage(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 
 	mock := &mockGH{
@@ -1770,6 +1788,7 @@ func TestAPIMergePR403ForwardsGitHubMessage(t *testing.T) {
 }
 
 func TestAPIMergePR5xxReturns502WithGitHubMessage(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 
 	mock := &mockGH{
@@ -1856,6 +1875,7 @@ func TestAPIMergePRForwardsGitHubErrorDetailsAndLogsError(t *testing.T) {
 }
 
 func TestAPIMergePRStoresUTCTimestamps(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 
 	// The provider reports the merge in a non-UTC zone; the canonical
@@ -1896,6 +1916,7 @@ func TestAPIMergePRStoresUTCTimestamps(t *testing.T) {
 }
 
 func TestAPIGetVersionReturnsBuildMetadata(t *testing.T) {
+	runParallelServerTest(t)
 	srv, _ := setupTestServer(t)
 	srv.SetBuildInfo(BuildInfo{
 		Name:      "kenn-forge",
@@ -1919,6 +1940,7 @@ func TestAPIGetVersionReturnsBuildMetadata(t *testing.T) {
 }
 
 func TestAPIListPulls(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
@@ -1934,7 +1956,7 @@ func TestAPIListPulls(t *testing.T) {
 	assert.Equal("widget", (*resp.JSON200)[0].RepoName)
 	assert.Equal("github.com", (*resp.JSON200)[0].PlatformHost)
 
-	raw := doJSON(t, srv, http.MethodGet, "/api/v1/pulls", nil)
+	raw := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls", nil)
 	require.Equal(http.StatusOK, raw.Code)
 	var body []struct {
 		Repo httpapi.RepoRefResponse `json:"repo"`
@@ -1947,6 +1969,7 @@ func TestAPIListPulls(t *testing.T) {
 }
 
 func TestAPIInvolvesMeFiltersPullsIssuesAndActivity(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	mock := &mockGH{
@@ -1974,21 +1997,21 @@ func TestAPIInvolvesMeFiltersPullsIssuesAndActivity(t *testing.T) {
 	})
 	require.NoError(err)
 
-	pullsRR := doJSON(t, srv, http.MethodGet, "/api/v1/pulls?state=all&involves_me=true", nil)
+	pullsRR := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls?state=all&involves_me=true", nil)
 	require.Equal(http.StatusOK, pullsRR.Code, pullsRR.Body.String())
 	var pulls []pullapi.MergeRequestResponse
 	require.NoError(json.Unmarshal(pullsRR.Body.Bytes(), &pulls))
 	require.Len(pulls, 1)
 	assert.Equal(1, pulls[0].Number)
 
-	issuesRR := doJSON(t, srv, http.MethodGet, "/api/v1/issues?state=all&involves_me=true", nil)
+	issuesRR := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/issues?state=all&involves_me=true", nil)
 	require.Equal(http.StatusOK, issuesRR.Code, issuesRR.Body.String())
 	var issues []issueapi.IssueResponse
 	require.NoError(json.Unmarshal(issuesRR.Body.Bytes(), &issues))
 	require.Len(issues, 1)
 	assert.Equal(3, issues[0].Number)
 
-	activityRR := doJSON(t, srv, http.MethodGet, "/api/v1/activity?involves_me=true", nil)
+	activityRR := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?involves_me=true", nil)
 	require.Equal(http.StatusOK, activityRR.Code, activityRR.Body.String())
 	var activity activityResponse
 	require.NoError(json.Unmarshal(activityRR.Body.Bytes(), &activity))
@@ -2020,21 +2043,21 @@ func TestAPIUnassignedFiltersPullsIssuesAndActivity(t *testing.T) {
 	assignedIssueID := seedIssue(t, database, "acme", "widget", 4, "open")
 	require.NoError(database.UpdateIssueAssignees(ctx, repo.ID, assignedIssueID, []string{"bob"}))
 
-	pullsRR := doJSON(t, srv, http.MethodGet, "/api/v1/pulls?state=all&unassigned=true", nil)
+	pullsRR := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls?state=all&unassigned=true", nil)
 	require.Equal(http.StatusOK, pullsRR.Code, pullsRR.Body.String())
 	var pulls []pullapi.MergeRequestResponse
 	require.NoError(json.Unmarshal(pullsRR.Body.Bytes(), &pulls))
 	require.Len(pulls, 1)
 	assert.Equal(1, pulls[0].Number)
 
-	issuesRR := doJSON(t, srv, http.MethodGet, "/api/v1/issues?state=all&unassigned=true", nil)
+	issuesRR := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/issues?state=all&unassigned=true", nil)
 	require.Equal(http.StatusOK, issuesRR.Code, issuesRR.Body.String())
 	var issues []issueapi.IssueResponse
 	require.NoError(json.Unmarshal(issuesRR.Body.Bytes(), &issues))
 	require.Len(issues, 1)
 	assert.Equal(3, issues[0].Number)
 
-	activityRR := doJSON(t, srv, http.MethodGet, "/api/v1/activity?unassigned=true", nil)
+	activityRR := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?unassigned=true", nil)
 	require.Equal(http.StatusOK, activityRR.Code, activityRR.Body.String())
 	var activity activityResponse
 	require.NoError(json.Unmarshal(activityRR.Body.Bytes(), &activity))
@@ -2048,6 +2071,7 @@ func TestAPIUnassignedFiltersPullsIssuesAndActivity(t *testing.T) {
 }
 
 func TestAPIListIssuesFiltersPullRequestReferences(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
 	referencedID := seedIssue(t, database, "acme", "widget", 1, "open")
@@ -2066,7 +2090,7 @@ func TestAPIListIssuesFiltersPullRequestReferences(t *testing.T) {
 		DedupeKey: "cross-reference-42",
 	}}))
 
-	rr := doJSON(t, srv, http.MethodGet, "/api/v1/issues?state=all&referenced_by_pr=true", nil)
+	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/issues?state=all&referenced_by_pr=true", nil)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	var issues []issueapi.IssueResponse
 	require.NoError(json.Unmarshal(rr.Body.Bytes(), &issues))
@@ -2075,6 +2099,7 @@ func TestAPIListIssuesFiltersPullRequestReferences(t *testing.T) {
 }
 
 func TestAPIPullResponsesNormalizeMissingKanbanStateToNew(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database := setupTestServer(t)
@@ -2102,21 +2127,21 @@ func TestAPIPullResponsesNormalizeMissingKanbanStateToNew(t *testing.T) {
 	require.NoError(err)
 	require.Nil(kanbanState)
 
-	rawList := doJSON(t, srv, http.MethodGet, "/api/v1/pulls", nil)
+	rawList := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls", nil)
 	require.Equal(http.StatusOK, rawList.Code)
 	var list []pullapi.MergeRequestResponse
 	require.NoError(json.Unmarshal(rawList.Body.Bytes(), &list))
 	require.Len(list, 1)
 	assert.Equal(db.KanbanStatusNew, list[0].KanbanStatus)
 
-	rawNewList := doJSON(t, srv, http.MethodGet, "/api/v1/pulls?kanban=new", nil)
+	rawNewList := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls?kanban=new", nil)
 	require.Equal(http.StatusOK, rawNewList.Code)
 	var newList []pullapi.MergeRequestResponse
 	require.NoError(json.Unmarshal(rawNewList.Body.Bytes(), &newList))
 	require.Len(newList, 1)
 	assert.Equal(db.KanbanStatusNew, newList[0].KanbanStatus)
 
-	rawDetail := doJSON(t, srv, http.MethodGet, "/api/v1/pulls/gh/acme/widget/7", nil)
+	rawDetail := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls/gh/acme/widget/7", nil)
 	require.Equal(http.StatusOK, rawDetail.Code)
 	var detail pullapi.MergeRequestDetailResponse
 	require.NoError(json.Unmarshal(rawDetail.Body.Bytes(), &detail))
@@ -2127,6 +2152,7 @@ func TestAPIPullResponsesNormalizeMissingKanbanStateToNew(t *testing.T) {
 // TestAPIGetPullIncludesCIChecks confirms the PR-detail response decodes the
 // merge request's cached ci_checks_json into a top-level checks array.
 func TestAPIGetPullIncludesCIChecks(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database := setupTestServer(t)
@@ -2155,7 +2181,7 @@ func TestAPIGetPullIncludesCIChecks(t *testing.T) {
 	})
 	require.NoError(err)
 
-	rawDetail := doJSON(t, srv, http.MethodGet, "/api/v1/pulls/gh/acme/widget/7", nil)
+	rawDetail := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls/gh/acme/widget/7", nil)
 	require.Equal(http.StatusOK, rawDetail.Code)
 	var detail pullapi.MergeRequestDetailResponse
 	require.NoError(json.Unmarshal(rawDetail.Body.Bytes(), &detail))
@@ -2171,6 +2197,7 @@ func TestAPIGetPullIncludesCIChecks(t *testing.T) {
 // TestAPIGetPullToleratesMalformedCIChecks confirms a corrupt ci_checks_json
 // cache does not fail the detail response: checks are simply omitted.
 func TestAPIGetPullToleratesMalformedCIChecks(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
 	ctx := t.Context()
@@ -2195,7 +2222,7 @@ func TestAPIGetPullToleratesMalformedCIChecks(t *testing.T) {
 	})
 	require.NoError(err)
 
-	rawDetail := doJSON(t, srv, http.MethodGet, "/api/v1/pulls/gh/acme/widget/7", nil)
+	rawDetail := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls/gh/acme/widget/7", nil)
 	require.Equal(http.StatusOK, rawDetail.Code)
 	var detail pullapi.MergeRequestDetailResponse
 	require.NoError(json.Unmarshal(rawDetail.Body.Bytes(), &detail))
@@ -2203,6 +2230,7 @@ func TestAPIGetPullToleratesMalformedCIChecks(t *testing.T) {
 }
 
 func TestAPIListItemsIncludeWorkspaceRefs(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database := setupTestServer(t)
@@ -2259,6 +2287,7 @@ func TestAPIListItemsIncludeWorkspaceRefs(t *testing.T) {
 }
 
 func TestAPIListPullsOrdersByLastActivityDescending(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
 	base := time.Date(2026, 5, 20, 12, 0, 0, 0, time.UTC)
@@ -2285,6 +2314,7 @@ func TestAPIListPullsOrdersByLastActivityDescending(t *testing.T) {
 }
 
 func TestAPIListPullsUsesProviderActivityAfterIndexSync(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -2352,6 +2382,7 @@ func TestAPIListPullsUsesProviderActivityAfterIndexSync(t *testing.T) {
 }
 
 func TestAPISyncPRUsesProviderActivityAfterForcePush(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -2425,6 +2456,7 @@ func TestAPISyncPRUsesProviderActivityAfterForcePush(t *testing.T) {
 }
 
 func TestAPIListPullsKeepsCachedCIDecorationsAfterIndexSync(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -2475,6 +2507,7 @@ func TestAPIListPullsKeepsCachedCIDecorationsAfterIndexSync(t *testing.T) {
 }
 
 func TestAPIGitHubSyncPersistsReviewThreadsThroughPullDetail(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -2576,6 +2609,7 @@ func TestAPIGitHubSyncPersistsReviewThreadsThroughPullDetail(t *testing.T) {
 }
 
 func TestAPIRepoFilterAcceptsMultipleRepos(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database := setupTestServer(t)
@@ -2589,7 +2623,7 @@ func TestAPIRepoFilterAcceptsMultipleRepos(t *testing.T) {
 
 	filter := url.QueryEscape("github|github.com/acme/widget,github|github.com/acme/worker")
 
-	rawPulls := doJSON(t, srv, http.MethodGet, "/api/v1/pulls?repo="+filter, nil)
+	rawPulls := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls?repo="+filter, nil)
 	require.Equal(http.StatusOK, rawPulls.Code)
 	var pulls []pullapi.MergeRequestResponse
 	require.NoError(json.Unmarshal(rawPulls.Body.Bytes(), &pulls))
@@ -2599,7 +2633,7 @@ func TestAPIRepoFilterAcceptsMultipleRepos(t *testing.T) {
 		pulls[1].RepoName,
 	})
 
-	rawIssues := doJSON(t, srv, http.MethodGet, "/api/v1/issues?repo="+filter, nil)
+	rawIssues := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/issues?repo="+filter, nil)
 	require.Equal(http.StatusOK, rawIssues.Code)
 	var issues []issueapi.IssueResponse
 	require.NoError(json.Unmarshal(rawIssues.Body.Bytes(), &issues))
@@ -2610,7 +2644,7 @@ func TestAPIRepoFilterAcceptsMultipleRepos(t *testing.T) {
 	})
 
 	since := url.QueryEscape(time.Now().UTC().Add(-time.Hour).Format(time.RFC3339))
-	rawActivity := doJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since+"&repo="+filter, nil)
+	rawActivity := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since+"&repo="+filter, nil)
 	require.Equal(http.StatusOK, rawActivity.Code)
 	var activity activityResponse
 	require.NoError(json.Unmarshal(rawActivity.Body.Bytes(), &activity))
@@ -2621,6 +2655,7 @@ func TestAPIRepoFilterAcceptsMultipleRepos(t *testing.T) {
 }
 
 func TestAPIGetPullIsDBOnly(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	mock := &mockGH{
@@ -2657,6 +2692,7 @@ func TestAPIGetPullIsDBOnly(t *testing.T) {
 }
 
 func TestAPIGetPullIncludesLifecycleTimelineEvents(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database := setupTestServer(t)
@@ -2806,6 +2842,7 @@ func TestAPIGetPullIncludesLifecycleTimelineEvents(t *testing.T) {
 }
 
 func TestAPISyncPRIncludesWorkflowApproval(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	mock := &mockGH{
@@ -2861,6 +2898,7 @@ func TestAPISyncPRIncludesWorkflowApproval(t *testing.T) {
 }
 
 func TestAPISyncPRPersistsMergeableState(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	now := time.Now().UTC().Truncate(time.Second)
@@ -2911,6 +2949,7 @@ func TestAPISyncPRPersistsMergeableState(t *testing.T) {
 }
 
 func TestAPISyncPRPersistsMergedActorInDetail(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -2973,6 +3012,7 @@ func TestAPISyncPRPersistsMergedActorInDetail(t *testing.T) {
 }
 
 func TestAPIIndexSyncPersistsMergedActorForImmediateDetail(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -3058,6 +3098,7 @@ func TestAPIIndexSyncPersistsMergedActorForImmediateDetail(t *testing.T) {
 }
 
 func TestAPIGetPullDoesNotFetchProviderForMissingMergedActor(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -3100,6 +3141,7 @@ func TestAPIGetPullDoesNotFetchProviderForMissingMergedActor(t *testing.T) {
 }
 
 func TestAPISyncPRPreservesMergeableStateWhenRefreshHasNoAnswer(t *testing.T) {
+	runParallelServerTest(t)
 	tests := []struct {
 		name  string
 		state *string
@@ -3161,6 +3203,7 @@ func TestAPISyncPRPreservesMergeableStateWhenRefreshHasNoAnswer(t *testing.T) {
 }
 
 func TestAPIEnqueuePRSyncQueuesOneRerun(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	firstStarted := make(chan struct{})
@@ -3246,6 +3289,7 @@ func TestAPIEnqueuePRSyncQueuesOneRerun(t *testing.T) {
 }
 
 func TestAPIEnqueueItemSyncRejectsRemovedUpstreamWithoutProviderCalls(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	var pullCalls atomic.Int64
 	var issueCalls atomic.Int64
@@ -3303,6 +3347,7 @@ func TestAPIEnqueueItemSyncRejectsRemovedUpstreamWithoutProviderCalls(t *testing
 }
 
 func TestAPIQueuedPRSyncRechecksRemovedUpstreamBeforeProviderCall(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	var providerCalls atomic.Int64
 	mock := &mockGH{
@@ -3366,6 +3411,7 @@ func TestAPIQueuedPRSyncRechecksRemovedUpstreamBeforeProviderCall(t *testing.T) 
 // frontend's default detail-load flow uses this path, so without
 // persistence the Approve Workflows button never appears.
 func TestAPIEnqueuePRSyncPersistsWorkflowApproval(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	mock := &mockGH{
@@ -3435,6 +3481,7 @@ func TestAPIEnqueuePRSyncPersistsWorkflowApproval(t *testing.T) {
 // onto the new head. After a sync that moves the head forward (and
 // finds no pending runs), GET must report checked=true, required=false.
 func TestAPIGetPullClearsWorkflowApprovalWhenHeadMoves(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -3509,6 +3556,7 @@ func TestAPIGetPullClearsWorkflowApprovalWhenHeadMoves(t *testing.T) {
 }
 
 func TestAPIApproveWorkflows(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	approvedRunIDs := []int64{}
@@ -3596,6 +3644,7 @@ func TestAPIApproveWorkflows(t *testing.T) {
 }
 
 func TestAPIApproveWorkflowsZeroMatchesStillSyncsPR(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	mock := &mockGH{
@@ -3644,6 +3693,7 @@ func TestAPIApproveWorkflowsZeroMatchesStillSyncsPR(t *testing.T) {
 }
 
 func TestAPIApproveWorkflowsReturnsUnderlyingApprovalErrorAfterPartialFailure(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	approvedRunIDs := []int64{}
@@ -3719,6 +3769,7 @@ func TestAPIApproveWorkflowsReturnsUnderlyingApprovalErrorAfterPartialFailure(t 
 // The sync path must still flag workflow approval as required, otherwise the
 // UI never shows the approve button for the exact case it was built for.
 func TestAPISyncPRIncludesWorkflowApprovalForForkPR(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	mock := &mockGH{
@@ -3782,6 +3833,7 @@ func TestAPISyncPRIncludesWorkflowApprovalForForkPR(t *testing.T) {
 // ApproveWorkflowRun for a fork-triggered run when the run's head repo and
 // branch match the PR.
 func TestAPIApproveWorkflowsForForkPR(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	approvedRunIDs := []int64{}
@@ -3850,6 +3902,7 @@ func TestAPIApproveWorkflowsForForkPR(t *testing.T) {
 // points at the other PR. The sync path must not flag workflow approval as
 // required for the wrong PR.
 func TestAPISyncPRIgnoresWorkflowRunsForOtherPRAtSameSHA(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	mock := &mockGH{
@@ -3906,6 +3959,7 @@ func TestAPISyncPRIgnoresWorkflowRunsForOtherPRAtSameSHA(t *testing.T) {
 // endpoint does not call ApproveWorkflowRun for runs whose pull_requests
 // association points at a different PR sharing the same head SHA.
 func TestAPIApproveWorkflowsIgnoresRunsForOtherPRAtSameSHA(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	approvedRunIDs := []int64{}
@@ -3973,6 +4027,7 @@ func TestAPIApproveWorkflowsIgnoresRunsForOtherPRAtSameSHA(t *testing.T) {
 // cross-approve. The PR's head repo is alice/widget; the run's head repo is
 // bob/widget. ApproveWorkflowRun must not be called.
 func TestAPIApproveWorkflowsRejectsRunFromDifferentForkAtSameSHA(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	approvedRunIDs := []int64{}
@@ -4040,6 +4095,7 @@ func TestAPIApproveWorkflowsRejectsRunFromDifferentForkAtSameSHA(t *testing.T) {
 // the diff is unavailable is the next getPull call. This regression
 // test pins that behavior so the warning can't silently disappear.
 func TestAPIGetPullEmitsDiffWarningWhenSHAsMissing(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -4083,6 +4139,7 @@ func TestAPIGetPullEmitsDiffWarningWhenSHAsMissing(t *testing.T) {
 // not fire when the row already carries valid diff SHAs that match the
 // latest platform head.
 func TestAPIGetPullNoDiffWarningWhenSHAsPresent(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -4132,6 +4189,7 @@ func TestAPIGetPullNoDiffWarningWhenSHAsPresent(t *testing.T) {
 // previous revision without any indication of drift. The warning must
 // fire in that case.
 func TestAPIGetPullEmitsStaleDiffWarning(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -4183,6 +4241,7 @@ func TestAPIGetPullEmitsStaleDiffWarning(t *testing.T) {
 // mirror getDiff staleness logic, which treats base drift as stale
 // for open PRs.
 func TestAPIGetPullEmitsStaleDiffWarningOnBaseDrift(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -4237,6 +4296,7 @@ func TestAPIGetPullEmitsStaleDiffWarningOnBaseDrift(t *testing.T) {
 // PR with a stale recorded diff would render outdated content with no
 // indication.
 func TestAPIGetPullEmitsStaleDiffWarningOnMergedPR(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -4290,6 +4350,7 @@ func TestAPIGetPullEmitsStaleDiffWarningOnMergedPR(t *testing.T) {
 // previous diffWarnings implementation suppressed warnings for any
 // non-open/non-merged state and the user would silently see no diff.
 func TestAPIGetPullEmitsDiffWarningWhenSHAsMissingClosed(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -4337,6 +4398,7 @@ func TestAPIGetPullEmitsDiffWarningWhenSHAsMissingClosed(t *testing.T) {
 // detail page shows a warning instead of silently rendering an old
 // diff.
 func TestAPIGetPullEmitsStaleDiffWarningOnClosedPR(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -4388,6 +4450,7 @@ func TestAPIGetPullEmitsStaleDiffWarningOnClosedPR(t *testing.T) {
 // merge. A merged PR whose head matches but base differs must NOT
 // emit a warning.
 func TestAPIGetPullNoDiffWarningOnMergedPRWithBaseDrift(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -4444,6 +4507,7 @@ func TestAPIGetPullNoDiffWarningOnMergedPRWithBaseDrift(t *testing.T) {
 // is unreadable, so EnsureClone fails and the handler must surface
 // only the sanitized warning.
 func TestAPISyncPRSanitizesDiffFailureWarning(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -4527,6 +4591,7 @@ func TestAPISyncPRSanitizesDiffFailureWarning(t *testing.T) {
 }
 
 func TestAPIRouteReuseServesOnlyCurrentRepository(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
@@ -4566,28 +4631,28 @@ func TestAPIRouteReuseServesOnlyCurrentRepository(t *testing.T) {
 		"github.com", "acme", "widget", 8, "open", "current issue",
 	)
 
-	repos := doJSON(t, srv, http.MethodGet, "/api/v1/repos", nil)
+	repos := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/repos", nil)
 	require.Equal(http.StatusOK, repos.Code, repos.Body.String())
 	var repoBody []map[string]any
 	require.NoError(json.NewDecoder(repos.Body).Decode(&repoBody))
 	require.Len(repoBody, 1)
 
-	pulls := doJSON(t, srv, http.MethodGet, "/api/v1/pulls", nil)
+	pulls := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls", nil)
 	require.Equal(http.StatusOK, pulls.Code, pulls.Body.String())
 	var pullBody []pullapi.MergeRequestResponse
 	require.NoError(json.NewDecoder(pulls.Body).Decode(&pullBody))
 	require.Len(pullBody, 1)
 	assert.Equal("current pull request", pullBody[0].Title)
-	pullDetail := doJSON(
-		t, srv, http.MethodGet, "/api/v1/pulls/gh/acme/widget/7", nil,
-	)
+	pullDetail := testutil.DoJSON(
+		t, srv, http.MethodGet, "/api/v1/pulls/gh/acme/widget/7", nil)
+
 	require.Equal(http.StatusOK, pullDetail.Code, pullDetail.Body.String())
 	var pullDetailBody pullapi.MergeRequestDetailResponse
 	require.NoError(json.NewDecoder(pullDetail.Body).Decode(&pullDetailBody))
 	require.NotNil(pullDetailBody.MergeRequest)
 	assert.Equal("current pull request", pullDetailBody.MergeRequest.Title)
 
-	issues := doJSON(t, srv, http.MethodGet, "/api/v1/issues", nil)
+	issues := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/issues", nil)
 	require.Equal(http.StatusOK, issues.Code, issues.Body.String())
 	var issueBody []issueapi.IssueResponse
 	require.NoError(json.NewDecoder(issues.Body).Decode(&issueBody))
@@ -4603,6 +4668,7 @@ func TestAPIRouteReuseServesOnlyCurrentRepository(t *testing.T) {
 }
 
 func TestAPIConfiguredRepoFiltersUseProviderIdentity(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -4657,6 +4723,7 @@ func TestAPIConfiguredRepoFiltersUseProviderIdentity(t *testing.T) {
 }
 
 func TestAPIGitLabConfiguredRepoSyncThroughProviderRegistry(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -4772,6 +4839,7 @@ func TestAPIGitLabConfiguredRepoSyncThroughProviderRegistry(t *testing.T) {
 }
 
 func TestAPIGitLabClosedSyncPersistsMergedActorForImmediateDetail(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -4839,7 +4907,9 @@ func TestAPIGitLabClosedSyncPersistsMergedActorForImmediateDetail(t *testing.T) 
 		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil,
 	)
 	t.Cleanup(syncer.Stop)
-	srv := New(database, syncer, nil, "/", nil, ServerOptions{
+	srv := New(database, syncer, nil, "/", &config.Config{Tmux: config.Tmux{
+		Command: []string{filepath.Join(t.TempDir(), "missing-tmux")},
+	}}, ServerOptions{
 		WorktreeDir:                        t.TempDir(),
 		DisableWorkspaceBackgroundMonitors: true,
 	})
@@ -4866,6 +4936,7 @@ func TestAPIGitLabClosedSyncPersistsMergedActorForImmediateDetail(t *testing.T) 
 }
 
 func TestAPIScheduledMergedActorRepairRefreshesOpenDetail(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -5013,6 +5084,7 @@ func TestAPIScheduledMergedActorRepairRefreshesOpenDetail(t *testing.T) {
 }
 
 func TestAPIGitLabDirectSyncPersistsMergedActorForImmediateDetail(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -5112,6 +5184,7 @@ func TestAPIGitLabDirectSyncPersistsMergedActorForImmediateDetail(t *testing.T) 
 }
 
 func TestAPIGitLabDirectSyncDoesNotDuplicateMergedActorAfterClosedFallback(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -5229,6 +5302,7 @@ func TestAPIGitLabDirectSyncDoesNotDuplicateMergedActorAfterClosedFallback(t *te
 }
 
 func TestAPIGitLabSyncReadsTokenFileAfterRotation(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -5322,11 +5396,11 @@ func TestAPIGitLabSyncReadsTokenFileAfterRotation(t *testing.T) {
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 
-	firstRR := doJSON(
+	firstRR := testutil.DoJSON(
 		t, srv, http.MethodPost,
 		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/sync",
-		nil,
-	)
+		nil)
+
 	require.Equal(http.StatusOK, firstRR.Code, firstRR.Body.String())
 	firstCallCount := len(tokens)
 	require.Positive(firstCallCount)
@@ -5335,11 +5409,11 @@ func TestAPIGitLabSyncReadsTokenFileAfterRotation(t *testing.T) {
 	}
 
 	require.NoError(os.WriteFile(tokenPath, []byte("second-token\n"), 0o600))
-	secondRR := doJSON(
+	secondRR := testutil.DoJSON(
 		t, srv, http.MethodPost,
 		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/sync",
-		nil,
-	)
+		nil)
+
 	require.Equal(http.StatusOK, secondRR.Code, secondRR.Body.String())
 	require.Greater(len(tokens), firstCallCount)
 	for _, token := range tokens[firstCallCount:] {
@@ -5454,7 +5528,7 @@ func TestAPIGitHubSyncReadsCloneTokenFileAfterRotation(t *testing.T) {
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{Clones: clones})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 
-	firstRR := doJSON(t, srv, http.MethodPost, "/api/v1/pulls/gh/acme/widget/7/sync", nil)
+	firstRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/pulls/gh/acme/widget/7/sync", nil)
 	require.Equal(http.StatusOK, firstRR.Code, firstRR.Body.String())
 	firstCredentials := readCapturedCredentials(t, capturePath)
 	require.NotEmpty(firstCredentials)
@@ -5463,7 +5537,7 @@ func TestAPIGitHubSyncReadsCloneTokenFileAfterRotation(t *testing.T) {
 	}
 
 	require.NoError(os.WriteFile(tokenPath, []byte("second-token\n"), 0o600))
-	secondRR := doJSON(t, srv, http.MethodPost, "/api/v1/pulls/gh/acme/widget/7/sync", nil)
+	secondRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/pulls/gh/acme/widget/7/sync", nil)
 	require.Equal(http.StatusOK, secondRR.Code, secondRR.Body.String())
 	allCredentials := readCapturedCredentials(t, capturePath)
 	require.Greater(len(allCredentials), len(firstCredentials))
@@ -5611,7 +5685,7 @@ func TestAPISharedHostCloneFetchFollowsReloadedHostToken(t *testing.T) {
 	// fetch into the next phase's assertions.
 	identity := platform.DBRepoIdentity(giteaRef)
 	runSync := func(prevCompleted *time.Time) *time.Time {
-		rr := doJSON(t, srv, http.MethodPost, "/api/v1/sync", nil)
+		rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/sync", nil)
 		require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
 		var completed *time.Time
 		require.Eventually(func() bool {
@@ -5729,6 +5803,7 @@ func parseCapturedCredentials(raw string) []string {
 }
 
 func TestGitLabSyncCoversRepositoryItemsEventsOverviewAndCI(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -5961,6 +6036,7 @@ func TestGitLabSyncCoversRepositoryItemsEventsOverviewAndCI(t *testing.T) {
 }
 
 func TestAPICIRefreshWarnsAndPreservesCIWhenProviderFails(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -6051,6 +6127,7 @@ func TestAPICIRefreshWarnsAndPreservesCIWhenProviderFails(t *testing.T) {
 }
 
 func TestAPISyncRefreshesStaleCachedChecksWhenAggregateCIChanges(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -6168,6 +6245,7 @@ func TestAPISyncRefreshesStaleCachedChecksWhenAggregateCIChanges(t *testing.T) {
 }
 
 func TestAPISyncRefreshesCachedPendingChecksThroughDetailDrain(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -6286,6 +6364,7 @@ func TestAPISyncRefreshesCachedPendingChecksThroughDetailDrain(t *testing.T) {
 }
 
 func TestProviderRefSyncEndpointsUseGitLabNestedRepoPath(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -6509,6 +6588,7 @@ func TestProviderRefSyncEndpointsUseGitLabNestedRepoPath(t *testing.T) {
 }
 
 func TestGitLabSyncUsesTagsForRepoOverviewWhenReleasesAreAbsent(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	ctx := t.Context()
 	database := dbtest.Open(t)
@@ -6577,6 +6657,7 @@ func TestGitLabSyncUsesTagsForRepoOverviewWhenReleasesAreAbsent(t *testing.T) {
 }
 
 func TestAPIListRepoSummaries(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -6678,6 +6759,7 @@ func TestAPIListRepoSummaries(t *testing.T) {
 }
 
 func TestAPIListRepoSummariesIncludesDefaultPlatformHost(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -6700,7 +6782,7 @@ platform_host = "ghe.example.com"
 		PlatformHost: "ghe.example.com",
 	}})
 
-	rr := doJSON(t, srv, http.MethodGet, "/api/v1/repos/summary", nil)
+	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/repos/summary", nil)
 	require.Equal(http.StatusOK, rr.Code)
 
 	var summaries []repoSummaryResponse
@@ -6711,6 +6793,7 @@ platform_host = "ghe.example.com"
 }
 
 func TestAPIListRepoSummariesIncludesSyncedReleaseTimeline(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -6843,6 +6926,7 @@ func TestAPIListRepoSummariesIncludesSyncedReleaseTimeline(t *testing.T) {
 }
 
 func TestAPIListRepoSummariesUsesTagsWhenNoReleases(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -6911,6 +6995,7 @@ func TestAPIListRepoSummariesUsesTagsWhenNoReleases(t *testing.T) {
 }
 
 func TestAPIListRepoSummariesClearsStaleOverviewWhenTagFallbackFails(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -6999,6 +7084,7 @@ func TestAPIListRepoSummariesClearsStaleOverviewWhenTagFallbackFails(t *testing.
 }
 
 func TestAPICreateIssue(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -7084,6 +7170,7 @@ func TestAPICreateIssue(t *testing.T) {
 }
 
 func TestAPICreateIssueRejectsNilProviderPayload(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 
 	mock := &mockGH{
@@ -7118,6 +7205,7 @@ func TestAPICreateIssueRejectsNilProviderPayload(t *testing.T) {
 }
 
 func TestAPICreateIssueReportsUnknownOutcomeForUnverifiedProviderFailure(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv := setupGitLabIssueMutatorServer(t, errors.New("provider response unavailable"))
@@ -7138,6 +7226,7 @@ func TestAPICreateIssueReportsUnknownOutcomeForUnverifiedProviderFailure(t *test
 }
 
 func TestAPICreateIssueReportsUnknownOutcomeWhenPersistenceFailsAfterProviderSuccess(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	var database *db.DB
@@ -7185,6 +7274,7 @@ func TestAPICreateIssueReportsUnknownOutcomeWhenPersistenceFailsAfterProviderSuc
 }
 
 func TestAPIEditPRContentRejectsNilProviderPayload(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -7222,6 +7312,7 @@ func TestAPIEditPRContentRejectsNilProviderPayload(t *testing.T) {
 }
 
 func TestAPIPostPRCommentRejectsNilProviderPayload(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 
 	mock := &mockGH{
@@ -7249,6 +7340,7 @@ func TestAPIPostPRCommentRejectsNilProviderPayload(t *testing.T) {
 }
 
 func TestAPIPostIssueCommentRejectsNilProviderPayload(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 
 	mock := &mockGH{
@@ -7276,6 +7368,7 @@ func TestAPIPostIssueCommentRejectsNilProviderPayload(t *testing.T) {
 }
 
 func TestAPIEditPRCommentRejectsNilProviderPayload(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -7315,6 +7408,7 @@ func TestAPIEditPRCommentRejectsNilProviderPayload(t *testing.T) {
 }
 
 func TestAPIEditIssueCommentRejectsNilProviderPayload(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -7354,6 +7448,7 @@ func TestAPIEditIssueCommentRejectsNilProviderPayload(t *testing.T) {
 }
 
 func TestAPIApprovePRSubmitsGitHubReview(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -7406,6 +7501,7 @@ func TestAPIApprovePRSubmitsGitHubReview(t *testing.T) {
 }
 
 func TestAPIMergePRRejectsNilProviderPayload(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -7448,6 +7544,7 @@ func TestAPIMergePRRejectsNilProviderPayload(t *testing.T) {
 }
 
 func TestAPICreateIssueUsesPlatformHost(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -7533,6 +7630,7 @@ func TestAPICreateIssueUsesPlatformHost(t *testing.T) {
 }
 
 func TestAPIPostPrCommentAllowsMixedCaseTrackedRepo(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	srv, database := setupTestServerWithRepos(
 		t,
@@ -7560,6 +7658,7 @@ func TestAPIPostPrCommentAllowsMixedCaseTrackedRepo(t *testing.T) {
 }
 
 func TestAPIEditPrCommentUpdatesGitHubAndLocalTimeline(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	commentID := int64(9876)
@@ -7615,6 +7714,7 @@ func TestAPIEditPrCommentUpdatesGitHubAndLocalTimeline(t *testing.T) {
 }
 
 func TestAPIEditPrCommentRejectsCommentFromDifferentPR(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	commentID := int64(5555)
 	var editCalls atomic.Int32
@@ -7653,6 +7753,7 @@ func TestAPIEditPrCommentRejectsCommentFromDifferentPR(t *testing.T) {
 }
 
 func TestAPIEditIssueCommentUpdatesGitHubAndLocalTimeline(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	commentID := int64(1234)
@@ -7708,6 +7809,7 @@ func TestAPIEditIssueCommentUpdatesGitHubAndLocalTimeline(t *testing.T) {
 }
 
 func TestAPIEditIssueCommentRejectsCommentFromDifferentIssue(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	commentID := int64(6666)
 	var editCalls atomic.Int32
@@ -7746,6 +7848,7 @@ func TestAPIEditIssueCommentRejectsCommentFromDifferentIssue(t *testing.T) {
 }
 
 func TestAPIDeletePrCommentLeavesLocalStateForSync(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	commentID := int64(9876)
@@ -7785,6 +7888,7 @@ func TestAPIDeletePrCommentLeavesLocalStateForSync(t *testing.T) {
 }
 
 func TestAPIDeleteIssueCommentKeepsLocalCommentWhenProviderRejects(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	commentID := int64(1234)
@@ -7818,6 +7922,7 @@ func TestAPIDeleteIssueCommentKeepsLocalCommentWhenProviderRejects(t *testing.T)
 }
 
 func TestAPIDeletePrCommentKeepsLocalCommentWhenProviderReportsNotFound(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	commentID := int64(4321)
@@ -7851,6 +7956,7 @@ func TestAPIDeletePrCommentKeepsLocalCommentWhenProviderReportsNotFound(t *testi
 }
 
 func TestAPIDeleteIssueCommentKeepsLocalCommentWhenProviderReportsNotFound(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	commentID := int64(4321)
@@ -7884,6 +7990,7 @@ func TestAPIDeleteIssueCommentKeepsLocalCommentWhenProviderReportsNotFound(t *te
 }
 
 func TestAPIDeleteIssueCommentLeavesLocalStateForSync(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	commentID := int64(5432)
@@ -7924,6 +8031,7 @@ func TestAPIDeleteIssueCommentLeavesLocalStateForSync(t *testing.T) {
 }
 
 func TestAPIDeletePrCommentRejectsAnotherParentBeforeProviderCall(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	commentID := int64(6543)
@@ -7957,6 +8065,7 @@ func TestAPIDeletePrCommentRejectsAnotherParentBeforeProviderCall(t *testing.T) 
 }
 
 func TestAPICommentAutocomplete(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
@@ -8090,6 +8199,7 @@ func TestAPICommentAutocomplete(t *testing.T) {
 }
 
 func TestAPICommentAutocompleteUsesRepoPlatformHost(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
@@ -8142,6 +8252,7 @@ func TestAPICommentAutocompleteUsesRepoPlatformHost(t *testing.T) {
 }
 
 func TestAPICommentAutocompleteReferencesScopesByProvider(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
@@ -8208,6 +8319,7 @@ func TestAPICommentAutocompleteReferencesScopesByProvider(t *testing.T) {
 }
 
 func TestAPICommentAutocompleteGitLabMergeRequestReferencesScopesByProvider(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
@@ -8278,6 +8390,7 @@ func TestAPICommentAutocompleteGitLabMergeRequestReferencesScopesByProvider(t *t
 }
 
 func TestAPISyncStatus(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 
 	srv, _ := setupTestServer(t)
@@ -8294,6 +8407,7 @@ func TestAPISyncStatus(t *testing.T) {
 }
 
 func TestAPITriggerSyncIgnoresRequestCancellation(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
 
@@ -8345,6 +8459,7 @@ func TestAPITriggerSyncIgnoresRequestCancellation(t *testing.T) {
 // If the route returns 202 after admission is refused, the client believes a
 // sync was retained even though no worker can execute it.
 func TestAPITriggerSyncRejectsAfterSyncerStops(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
 	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
@@ -8352,11 +8467,12 @@ func TestAPITriggerSyncRejectsAfterSyncerStops(t *testing.T) {
 
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/sync", nil)
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/sync", nil)
 	require.Equal(http.StatusServiceUnavailable, rr.Code, rr.Body.String())
 }
 
 func TestAPITriggerSyncOnlyRepoRestrictsRun(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -8398,13 +8514,13 @@ func TestAPITriggerSyncOnlyRepoRestrictsRun(t *testing.T) {
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodPost,
 		"/api/v1/sync?only_repo=gh|github.com/acme/second",
-		nil,
-	)
+		nil)
+
 	require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
 	select {
 	case <-done:
@@ -8419,17 +8535,18 @@ func TestAPITriggerSyncOnlyRepoRestrictsRun(t *testing.T) {
 }
 
 func TestAPITriggerSyncRejectsUnknownOnlyRepo(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
 	srv, _ := setupTestServer(t)
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodPost,
 		"/api/v1/sync?only_repo=github|github.com/acme/missing",
-		nil,
-	)
+		nil)
+
 	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
 
 	var problem httpapi.ProblemError
@@ -8439,6 +8556,7 @@ func TestAPITriggerSyncRejectsUnknownOnlyRepo(t *testing.T) {
 }
 
 func TestAPITriggerSyncBypassesNextSyncAfter(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 
 	database := dbtest.Open(t)
@@ -8499,6 +8617,7 @@ func TestAPITriggerSyncBypassesNextSyncAfter(t *testing.T) {
 }
 
 func TestAPITriggerSyncStopsDetailDrainAfterDisabledIndexResult(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -8560,7 +8679,7 @@ func TestAPITriggerSyncStopsDetailDrainAfterDisabledIndexResult(t *testing.T) {
 			}
 		}
 	})
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/sync", nil)
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/sync", nil)
 	require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
 	select {
 	case <-done:
@@ -8575,7 +8694,7 @@ func TestAPITriggerSyncStopsDetailDrainAfterDisabledIndexResult(t *testing.T) {
 }
 
 func TestAPIRepositorySyncRecoversDisabledIssueScopeThroughSQLite(t *testing.T) {
-	t.Parallel()
+	runParallelServerTest(t)
 
 	assert := assert.New(t)
 	require := require.New(t)
@@ -8631,13 +8750,13 @@ func TestAPIRepositorySyncRecoversDisabledIssueScopeThroughSQLite(t *testing.T) 
 			}
 		}
 	})
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodPost,
 		"/api/v1/sync?only_repo=gh|github.com/acme/widget",
-		nil,
-	)
+		nil)
+
 	require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
 	select {
 	case <-done:
@@ -8656,7 +8775,7 @@ func TestAPIRepositorySyncRecoversDisabledIssueScopeThroughSQLite(t *testing.T) 
 }
 
 func TestAPIGitLabDisabledIssueCooldownPersistsThroughHTTPAndSQLite(t *testing.T) {
-	t.Parallel()
+	runParallelServerTest(t)
 
 	assert := assert.New(t)
 	require := require.New(t)
@@ -8743,7 +8862,7 @@ func TestAPIGitLabDisabledIssueCooldownPersistsThroughHTTPAndSQLite(t *testing.T
 }
 
 func TestAPIGiteaDisabledIssueCooldownPersistsThroughHTTPAndSQLite(t *testing.T) {
-	t.Parallel()
+	runParallelServerTest(t)
 
 	assert := assert.New(t)
 	require := require.New(t)
@@ -8834,6 +8953,7 @@ func TestAPIGiteaDisabledIssueCooldownPersistsThroughHTTPAndSQLite(t *testing.T)
 }
 
 func TestMatchPriorityRepoRequiresProviderQualifiedRepoPaths(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 
 	tracked := []ghclient.RepoRef{
@@ -8886,6 +9006,7 @@ func TestMatchPriorityRepoRequiresProviderQualifiedRepoPaths(t *testing.T) {
 }
 
 func TestAPIReadyForReview(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
 
@@ -8963,6 +9084,7 @@ func TestAPIReadyForReview(t *testing.T) {
 }
 
 func TestAPIReadyForReviewReclassifiesWorkspaceHeadRepo(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	const forkURL = "https://github.com/contributor/widget.git"
 
@@ -9120,6 +9242,7 @@ func seedIssueForRepo(
 }
 
 func TestAPIClosePR(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -9188,6 +9311,7 @@ func TestAPIClosePR(t *testing.T) {
 }
 
 func TestAPIReopenPR(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	mock := &mockGH{
 		editPullRequestFn: func(
@@ -9225,6 +9349,7 @@ func TestAPIReopenPR(t *testing.T) {
 }
 
 func TestAPICloseIssue(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 
 	srv, database := setupTestServer(t)
@@ -9247,6 +9372,7 @@ func TestAPICloseIssue(t *testing.T) {
 }
 
 func TestAPIReopenIssue(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
 	seedIssue(t, database, "acme", "widget", 5, "closed")
@@ -9266,6 +9392,7 @@ func TestAPIReopenIssue(t *testing.T) {
 }
 
 func TestAPISyncPRDoesNotOverwriteNewerStateChange(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -9373,6 +9500,7 @@ func TestAPISyncPRDoesNotOverwriteNewerStateChange(t *testing.T) {
 }
 
 func TestAPISyncPRPreservesCIStatusWhileRefreshingCI(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -9475,6 +9603,7 @@ func TestAPISyncPRPreservesCIStatusWhileRefreshingCI(t *testing.T) {
 }
 
 func TestAPISyncPRBypassesPullRequestETagForCIRefresh(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -9542,7 +9671,7 @@ func TestAPISyncPRBypassesPullRequestETagForCIRefresh(t *testing.T) {
 		"pull_request", 1, `"etag-v1"`,
 	))
 
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/pulls/gh/acme/widget/1/sync", nil)
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/pulls/gh/acme/widget/1/sync", nil)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
 	stored, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repo.ID, 1)
@@ -9559,6 +9688,7 @@ func TestAPISyncPRBypassesPullRequestETagForCIRefresh(t *testing.T) {
 // then fails, the detail must show "no CI" rather than stale checks
 // attached to a different commit.
 func TestAPISyncPRClearsCIWhenHeadSHAChanges(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -9634,6 +9764,7 @@ func TestAPISyncPRClearsCIWhenHeadSHAChanges(t *testing.T) {
 }
 
 func TestAPIEnqueuePRSyncReturnsBeforeGitHubFetchCompletes(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 
 	syncStarted := make(chan struct{}, 1)
@@ -9694,6 +9825,7 @@ func TestAPIEnqueuePRSyncReturnsBeforeGitHubFetchCompletes(t *testing.T) {
 }
 
 func TestAPIEnqueueIssueSyncReturnsBeforeGitHubFetchCompletes(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 
 	syncStarted := make(chan struct{}, 1)
@@ -9748,6 +9880,7 @@ func TestAPIEnqueueIssueSyncReturnsBeforeGitHubFetchCompletes(t *testing.T) {
 }
 
 func TestAPIReadyForReviewDoesNotGetRevertedByStaleSync(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -9895,6 +10028,7 @@ func TestAPIReadyForReviewDoesNotGetRevertedByStaleSync(t *testing.T) {
 }
 
 func TestAPIMarkDraftDoesNotGetRevertedByStaleSync(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -10028,6 +10162,7 @@ func TestAPIMarkDraftDoesNotGetRevertedByStaleSync(t *testing.T) {
 }
 
 func TestAPISyncIssueDoesNotOverwriteNewerStateChange(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -10119,6 +10254,7 @@ func TestAPISyncIssueDoesNotOverwriteNewerStateChange(t *testing.T) {
 // unit tests cover the same logic at the syncer layer; this test
 // covers the request path users actually hit in production.
 func TestAPISyncIssueNilUpdatedAtFallsBackToCreatedAt(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -10183,6 +10319,7 @@ func TestAPISyncIssueNilUpdatedAtFallsBackToCreatedAt(t *testing.T) {
 }
 
 func TestAPIListPullsSearchByNumber(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database := setupTestServer(t)
@@ -10248,6 +10385,7 @@ func TestAPIListPullsSearchByNumber(t *testing.T) {
 }
 
 func TestAPIListIssuesSearchByNumber(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database := setupTestServer(t)
@@ -10313,6 +10451,7 @@ func TestAPIListIssuesSearchByNumber(t *testing.T) {
 }
 
 func TestAPIListPullsReportsHistoricalMergedPRFromMergedAt(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -10364,6 +10503,7 @@ func TestAPIListPullsReportsHistoricalMergedPRFromMergedAt(t *testing.T) {
 }
 
 func TestAPIListPullsCasefoldsRepoNames(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database := setupTestServerWithRepos(t, &mockGH{}, []ghclient.RepoRef{
@@ -10384,6 +10524,7 @@ func TestAPIListPullsCasefoldsRepoNames(t *testing.T) {
 }
 
 func TestAPIListPullsFiltersProviderQualifiedHostedNestedRepoPath(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database := setupTestServerWithRepos(t, &mockGH{}, []ghclient.RepoRef{
@@ -10408,6 +10549,7 @@ func TestAPIListPullsFiltersProviderQualifiedHostedNestedRepoPath(t *testing.T) 
 }
 
 func TestAPIListPullsAcceptsProviderQualifiedRepoFilter(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
@@ -10447,6 +10589,7 @@ func TestAPIListPullsAcceptsProviderQualifiedRepoFilter(t *testing.T) {
 }
 
 func TestAPIListIssuesAcceptsProviderAndHostQualifiedRepoFilter(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -10470,6 +10613,7 @@ func TestAPIListIssuesAcceptsProviderAndHostQualifiedRepoFilter(t *testing.T) {
 }
 
 func TestAPIListIssuesFiltersProviderQualifiedHostedNestedRepoPath(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -10504,6 +10648,7 @@ func TestAPIListIssuesFiltersProviderQualifiedHostedNestedRepoPath(t *testing.T)
 }
 
 func TestAPIListIssuesAcceptsProviderQualifiedRepoFilter(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
@@ -10543,6 +10688,7 @@ func TestAPIListIssuesAcceptsProviderQualifiedRepoFilter(t *testing.T) {
 }
 
 func TestAPIGetIssueUsesPlatformHostQuery(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -10605,6 +10751,7 @@ func TestAPIGetIssueUsesPlatformHostQuery(t *testing.T) {
 }
 
 func TestAPIGetIssueWorkspaceUsesProviderScopedLookup(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -10664,7 +10811,9 @@ func TestAPIGetIssueWorkspaceUsesProviderScopedLookup(t *testing.T) {
 
 	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
-	srv := New(database, syncer, nil, "/", nil, ServerOptions{
+	srv := New(database, syncer, nil, "/", &config.Config{Tmux: config.Tmux{
+		Command: []string{filepath.Join(t.TempDir(), "missing-tmux")},
+	}}, ServerOptions{
 		WorktreeDir:                        t.TempDir(),
 		DisableWorkspaceBackgroundMonitors: true,
 	})
@@ -10690,6 +10839,7 @@ func TestAPIGetIssueWorkspaceUsesProviderScopedLookup(t *testing.T) {
 }
 
 func TestAPIGetPRWorkspaceUsesProviderScopedLookup(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -10751,7 +10901,9 @@ func TestAPIGetPRWorkspaceUsesProviderScopedLookup(t *testing.T) {
 
 	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
-	srv := New(database, syncer, nil, "/", nil, ServerOptions{
+	srv := New(database, syncer, nil, "/", &config.Config{Tmux: config.Tmux{
+		Command: []string{filepath.Join(t.TempDir(), "missing-tmux")},
+	}}, ServerOptions{
 		WorktreeDir:                        t.TempDir(),
 		DisableWorkspaceBackgroundMonitors: true,
 	})
@@ -10777,6 +10929,7 @@ func TestAPIGetPRWorkspaceUsesProviderScopedLookup(t *testing.T) {
 }
 
 func TestAPICreateWorkspaceRejectsEmptyProviderForAmbiguousRepo(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -10835,6 +10988,7 @@ func TestAPICreateWorkspaceRejectsEmptyProviderForAmbiguousRepo(t *testing.T) {
 }
 
 func TestAPICreateWorkspaceRejectsOmittedProviderForUnambiguousRepo(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	ctx := t.Context()
 
@@ -10883,6 +11037,7 @@ func TestAPICreateWorkspaceRejectsOmittedProviderForUnambiguousRepo(t *testing.T
 }
 
 func TestAPISyncIssueUsesPlatformHostQuery(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := context.Background()
@@ -11015,6 +11170,7 @@ func TestAPISyncIssueUsesPlatformHostQuery(t *testing.T) {
 }
 
 func TestAPISetIssueStateUsesPlatformHostBody(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := context.Background()
@@ -11134,6 +11290,7 @@ func TestAPISetIssueStateUsesPlatformHostBody(t *testing.T) {
 // path itself (GraphQL fetch → normalize → DB upsert) is tested in
 // internal/github/sync_test.go; this test covers the DB → API layer.
 func TestAPIIssueDataFromGraphQLSync(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -11213,6 +11370,7 @@ func TestAPIIssueDataFromGraphQLSync(t *testing.T) {
 // the HTTP API. Exercises: GraphQL HTTP → adapter → NormalizeIssue →
 // UpsertIssue → HTTP API handler → JSON response.
 func TestE2EGraphQLIssueSyncThroughAPI(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -11322,6 +11480,7 @@ func TestE2EGraphQLIssueSyncThroughAPI(t *testing.T) {
 }
 
 func TestE2ELargeRepoSkipsGraphQLAndUsesConditionalPRDetail(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -11489,6 +11648,7 @@ func TestE2ELargeRepoSkipsGraphQLAndUsesConditionalPRDetail(t *testing.T) {
 }
 
 func TestE2EConditionalPRDetailRefreshesInlineModerationThroughAPI(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -11638,6 +11798,7 @@ func TestE2EConditionalPRDetailRefreshesInlineModerationThroughAPI(t *testing.T)
 }
 
 func TestE2ELargeRepoSkipsGraphQLAndUsesConditionalIssueDetail(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -11806,6 +11967,7 @@ func TestE2ELargeRepoSkipsGraphQLAndUsesConditionalIssueDetail(t *testing.T) {
 // GraphQL's TotalCount, not the stale existing.CommentCount.
 // Regression test for the "preserve existing.CommentCount" overwrite.
 func TestE2EGraphQLIssueSyncTrustsTotalCount(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -11933,6 +12095,7 @@ func TestE2EGraphQLIssueSyncTrustsTotalCount(t *testing.T) {
 }
 
 func TestE2EPRDetailRefreshesEditedCommentBody(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -12066,6 +12229,7 @@ func TestE2EPRDetailRefreshesEditedCommentBody(t *testing.T) {
 }
 
 func TestE2EPRDetailRemovesDeletedCommentWhenPRListIsUnchanged(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -12196,6 +12360,7 @@ func TestE2EPRDetailRemovesDeletedCommentWhenPRListIsUnchanged(t *testing.T) {
 }
 
 func TestE2EPRDetailRemovesDeletedCommentWhenAnotherPRChanges(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -12345,6 +12510,7 @@ func TestE2EPRDetailRemovesDeletedCommentWhenAnotherPRChanges(t *testing.T) {
 }
 
 func TestE2EIssueDetailRefreshesEditedCommentBody(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -12460,6 +12626,7 @@ func TestE2EIssueDetailRefreshesEditedCommentBody(t *testing.T) {
 }
 
 func TestE2EIssueDetailRemovesDeletedCommentWhenIssueListIsUnchanged(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -12574,6 +12741,7 @@ func TestE2EIssueDetailRemovesDeletedCommentWhenIssueListIsUnchanged(t *testing.
 }
 
 func TestE2EIssueDetailRemovesDeletedCommentWhenAnotherIssueChanges(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -12714,6 +12882,7 @@ func TestE2EIssueDetailRemovesDeletedCommentWhenAnotherIssueChanges(t *testing.T
 }
 
 func TestE2EPRDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -12818,6 +12987,7 @@ func TestE2EPRDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
 }
 
 func TestE2EIssueDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -12914,6 +13084,7 @@ func TestE2EIssueDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
 }
 
 func TestE2EIssueDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -13031,6 +13202,7 @@ func TestE2EIssueDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 }
 
 func TestE2EIssueDetailPreservesHiddenCommentsAcrossIncompleteGraphQLRefresh(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -13224,6 +13396,7 @@ func TestE2EIssueDetailPreservesHiddenCommentsAcrossIncompleteGraphQLRefresh(t *
 }
 
 func TestE2EGraphQLBulkSyncPersistsIssueTimelineEvents(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -13369,6 +13542,7 @@ func TestE2EGraphQLBulkSyncPersistsIssueTimelineEvents(t *testing.T) {
 }
 
 func TestE2EGraphQLBulkSyncPersistsIssueLifecycleTimelineAfterReopen(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -13547,6 +13721,7 @@ func TestE2EGraphQLBulkSyncPersistsIssueLifecycleTimelineAfterReopen(t *testing.
 }
 
 func TestE2EPRDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -13672,6 +13847,7 @@ func TestE2EPRDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 }
 
 func TestE2EPRDetailPersistsCombinedGraphQLDiscussions(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -13919,6 +14095,7 @@ func TestE2EPRDetailPersistsCombinedGraphQLDiscussions(t *testing.T) {
 // over the PR's whole review history, so nested-connection truncation must not
 // gate it: the changed decision must reach the HTTP API.
 func TestE2EGraphQLBulkSyncAppliesAuthoritativeReviewDecisionOverIncompleteReviews(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -14043,6 +14220,7 @@ func TestE2EGraphQLBulkSyncAppliesAuthoritativeReviewDecisionOverIncompleteRevie
 // without ever populating workflow_approval_checked_at, leaving the
 // DB-only GET unable to surface the Approve workflows button.
 func TestE2EGraphQLBulkSyncPersistsWorkflowApproval(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -14159,6 +14337,7 @@ func TestE2EGraphQLBulkSyncPersistsWorkflowApproval(t *testing.T) {
 // removing that fallback would leave the Approve workflows button
 // hidden for every fork PR synced through bulk.
 func TestE2EGraphQLBulkSyncPersistsWorkflowApprovalForForkPR(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -14276,6 +14455,7 @@ func TestE2EGraphQLBulkSyncPersistsWorkflowApprovalForForkPR(t *testing.T) {
 }
 
 func TestE2EGraphQLBulkSyncKeepsNewestCICheckBySuiteCreatedAt(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := context.Background()
@@ -14403,6 +14583,7 @@ func make422Error() error {
 }
 
 func TestAPISetIssueGitHubStateReturns404WhenNoClientConfigured(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	repos := []ghclient.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "ghe.corp.com"}}
 	srv, database := setupTestServerWithRepos(t, &mockGH{}, repos)
@@ -14434,6 +14615,7 @@ func TestAPISetIssueGitHubStateReturns404WhenNoClientConfigured(t *testing.T) {
 }
 
 func TestAPIClosePR422NilFallbackPayloadDoesNotCorruptDB(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	mock := &mockGH{
@@ -14467,6 +14649,7 @@ func TestAPIClosePR422NilFallbackPayloadDoesNotCorruptDB(t *testing.T) {
 }
 
 func TestAPICloseIssue422NilFallbackPayloadDoesNotCorruptDB(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	mock := &mockGH{
@@ -14500,6 +14683,7 @@ func TestAPICloseIssue422NilFallbackPayloadDoesNotCorruptDB(t *testing.T) {
 }
 
 func TestAPIStateMutationDoesNotRecoverFromProviderWhenSyncDisabled(t *testing.T) {
+	runParallelServerTest(t)
 	for _, itemType := range []string{"pull request", "issue"} {
 		t.Run(itemType, func(t *testing.T) {
 			require := require.New(t)
@@ -14548,6 +14732,7 @@ func TestAPIStateMutationDoesNotRecoverFromProviderWhenSyncDisabled(t *testing.T
 }
 
 func TestAPIClosePR422AlreadyClosed(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	// EditPullRequest returns 422, but re-fetch shows PR is already closed.
 	// Should succeed since the requested state matches.
@@ -14586,6 +14771,7 @@ func TestAPIClosePR422AlreadyClosed(t *testing.T) {
 }
 
 func TestAPIMarkPRDraftPersistsDraftFlag(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	var gotOwner string
@@ -14666,6 +14852,7 @@ func TestAPIMarkPRDraftPersistsDraftFlag(t *testing.T) {
 // When MarkPullRequestReadyForReview returns (nil, nil) the handler
 // must return 502 rather than claiming success with no PR payload.
 func TestAPIReadyForReview502OnNilPR(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	mock := &mockGH{
 		markReadyForReviewFn: func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
@@ -14684,6 +14871,7 @@ func TestAPIReadyForReview502OnNilPR(t *testing.T) {
 }
 
 func TestAPIReadyForReviewReturnsUnderlyingErrorDetail(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	mock := &mockGH{
 		markReadyForReviewFn: func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
@@ -14708,6 +14896,7 @@ func TestAPIReadyForReviewReturnsUnderlyingErrorDetail(t *testing.T) {
 }
 
 func TestAPIReadyForReviewStaleStateRefreshesAndReturnsSuccess(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 
 	staleErr := &staleReadyForReviewError{
@@ -14771,6 +14960,7 @@ func TestAPIReadyForReviewStaleStateRefreshesAndReturnsSuccess(t *testing.T) {
 }
 
 func TestAPIReadyForReview404RefreshesStaleDraftState(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	notFound := &gh.ErrorResponse{
 		Response: &http.Response{StatusCode: http.StatusNotFound, Status: "404 Not Found"},
@@ -14824,6 +15014,7 @@ func TestAPIReadyForReview404RefreshesStaleDraftState(t *testing.T) {
 }
 
 func TestAPIClosePR422Merged(t *testing.T) {
+	runParallelServerTest(t)
 	// EditPullRequest returns 422, re-fetch shows PR is merged.
 	// Should return 409.
 	merged := "closed"
@@ -14858,6 +15049,7 @@ func TestAPIClosePR422Merged(t *testing.T) {
 }
 
 func TestResolveItem_PR(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	repos := []ghclient.RepoRef{{Owner: "acme", Name: "widget"}}
 	srv, database := setupTestServerWithRepos(t, &mockGH{}, repos)
@@ -14876,6 +15068,7 @@ func TestResolveItem_PR(t *testing.T) {
 }
 
 func TestResolveItem_Issue(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	repos := []ghclient.RepoRef{{Owner: "acme", Name: "widget"}}
 	srv, database := setupTestServerWithRepos(t, &mockGH{}, repos)
@@ -14894,6 +15087,7 @@ func TestResolveItem_Issue(t *testing.T) {
 }
 
 func TestResolveItem_UsesItemTypeHintForGitLab(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	repos := []ghclient.RepoRef{{
 		Platform:     platform.KindGitLab,
@@ -14954,6 +15148,7 @@ func TestResolveItem_UsesItemTypeHintForGitLab(t *testing.T) {
 }
 
 func TestResolveItem_NotFoundOnGitHub(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	mock := &mockGH{
 		getIssueFn: func(_ context.Context, _, _ string, _ int) (*gh.Issue, error) {
@@ -14977,6 +15172,7 @@ func TestResolveItem_NotFoundOnGitHub(t *testing.T) {
 }
 
 func TestResolveItem_GitHubServerError(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	mock := &mockGH{
 		getIssueFn: func(_ context.Context, _, _ string, _ int) (*gh.Issue, error) {
@@ -15000,6 +15196,7 @@ func TestResolveItem_GitHubServerError(t *testing.T) {
 }
 
 func TestAPICloseIssue422AlreadyClosed(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	state := "closed"
 	mock := &mockGH{
@@ -15034,6 +15231,7 @@ func TestAPICloseIssue422AlreadyClosed(t *testing.T) {
 }
 
 func TestMRListIncludesWorktreeLinks(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
 	prID := seedPR(t, database, "acme", "widget", 1)
@@ -15065,6 +15263,7 @@ func TestMRListIncludesWorktreeLinks(t *testing.T) {
 }
 
 func TestMRDetailIncludesWorktreeLinks(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
 	prID := seedPR(t, database, "acme", "widget", 1)
@@ -15094,6 +15293,7 @@ func TestMRDetailIncludesWorktreeLinks(t *testing.T) {
 }
 
 func TestProviderPullRouteResolvesEscapedGitLabRepoPath(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database := setupTestServer(t)
@@ -15128,7 +15328,7 @@ func TestProviderPullRouteResolvesEscapedGitLabRepoPath(t *testing.T) {
 
 	path := "/api/v1/host/gitlab.example.com:8443/pulls/gl/" +
 		"Group%2FSubGroup%2FSubGroup%202/My_Project.v2/12"
-	rr := doJSON(t, srv, http.MethodGet, path, nil)
+	rr := testutil.DoJSON(t, srv, http.MethodGet, path, nil)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
 	var body generated.MergeRequestDetailResponse
@@ -15142,12 +15342,13 @@ func TestProviderPullRouteResolvesEscapedGitLabRepoPath(t *testing.T) {
 }
 
 func TestAPIGitLabProviderCapabilitiesExposeOnResponses(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database := setupGitLabCapabilityServer(t)
 	ctx := t.Context()
 
-	rawPulls := doJSON(t, srv, http.MethodGet, "/api/v1/pulls", nil)
+	rawPulls := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls", nil)
 	require.Equal(http.StatusOK, rawPulls.Code, rawPulls.Body.String())
 	var pulls []map[string]any
 	require.NoError(json.NewDecoder(rawPulls.Body).Decode(&pulls))
@@ -15169,13 +15370,13 @@ func TestAPIGitLabProviderCapabilitiesExposeOnResponses(t *testing.T) {
 	assert.Equal(false, pullCaps["native_multiline_ranges"])
 	assert.Empty(pullCaps["supported_review_actions"])
 
-	rawDetail := doJSON(
+	rawDetail := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodGet,
 		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7",
-		nil,
-	)
+		nil)
+
 	require.Equal(http.StatusOK, rawDetail.Code, rawDetail.Body.String())
 	var detail map[string]any
 	require.NoError(json.NewDecoder(rawDetail.Body).Decode(&detail))
@@ -15185,7 +15386,7 @@ func TestAPIGitLabProviderCapabilitiesExposeOnResponses(t *testing.T) {
 	assert.Equal(false, detailCaps["merge_mutation"])
 	assert.Equal(false, detailCaps["review_draft_mutation"])
 
-	rawSummaries := doJSON(t, srv, http.MethodGet, "/api/v1/repos/summary", nil)
+	rawSummaries := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/repos/summary", nil)
 	require.Equal(http.StatusOK, rawSummaries.Code, rawSummaries.Body.String())
 	var summaries []map[string]any
 	require.NoError(json.NewDecoder(rawSummaries.Body).Decode(&summaries))
@@ -15196,7 +15397,7 @@ func TestAPIGitLabProviderCapabilitiesExposeOnResponses(t *testing.T) {
 	assert.Equal(false, summaryCaps["issue_mutation"])
 	assert.Equal(false, summaryCaps["read_review_threads"])
 
-	rawRepos := doJSON(t, srv, http.MethodGet, "/api/v1/repos", nil)
+	rawRepos := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/repos", nil)
 	require.Equal(http.StatusOK, rawRepos.Code, rawRepos.Body.String())
 	var repos []map[string]any
 	require.NoError(json.NewDecoder(rawRepos.Body).Decode(&repos))
@@ -15227,7 +15428,7 @@ func TestAPIGitLabProviderCapabilitiesExposeOnResponses(t *testing.T) {
 	}))
 
 	since := time.Now().UTC().AddDate(0, 0, -7).Format(time.RFC3339)
-	rawActivity := doJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since, nil)
+	rawActivity := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since, nil)
 	require.Equal(http.StatusOK, rawActivity.Code, rawActivity.Body.String())
 	var activity map[string]any
 	require.NoError(json.NewDecoder(rawActivity.Body).Decode(&activity))
@@ -15252,7 +15453,7 @@ func TestAPIGitLabProviderCapabilitiesExposeOnResponses(t *testing.T) {
 		TmuxSession:  "kenn-forge-gitlabcap0000001",
 		Status:       "creating",
 	}))
-	rawWorkspaces := doJSON(t, srv, http.MethodGet, "/api/v1/workspaces", nil)
+	rawWorkspaces := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/workspaces", nil)
 	require.Equal(http.StatusOK, rawWorkspaces.Code, rawWorkspaces.Body.String())
 	var workspaces map[string]any
 	require.NoError(json.NewDecoder(rawWorkspaces.Body).Decode(&workspaces))
@@ -15266,6 +15467,7 @@ func TestAPIGitLabProviderCapabilitiesExposeOnResponses(t *testing.T) {
 }
 
 func TestAPIGitLabUnsupportedMutationsReturnCodedCapabilityErrors(t *testing.T) {
+	runParallelServerTest(t)
 	srv, _ := setupGitLabCapabilityServer(t)
 
 	tests := []struct {
@@ -15392,7 +15594,7 @@ func TestAPIGitLabUnsupportedMutationsReturnCodedCapabilityErrors(t *testing.T) 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			require := require.New(t)
-			rr := doJSON(t, srv, tt.method, tt.path, tt.body)
+			rr := testutil.DoJSON(t, srv, tt.method, tt.path, tt.body)
 			require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
 			assertUnsupportedCapabilityProblem(
 				t, rr.Body, "gitlab", "gitlab.example.com", tt.capability,
@@ -15406,17 +15608,18 @@ func TestAPIGitLabUnsupportedMutationsReturnCodedCapabilityErrors(t *testing.T) 
 // `code = "unsupportedCapability"` and `details.capability` carrying the
 // capability the route required. Frontend callers branch on `code`.
 func TestAPIUnsupportedCapabilityEnvelope(t *testing.T) {
+	runParallelServerTest(t)
 	srv, _ := setupGitLabCapabilityServer(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodPost,
 		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/approve-workflows",
-		nil,
-	)
+		nil)
+
 	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
 
 	var problem rawProblemDetail
@@ -15429,6 +15632,7 @@ func TestAPIUnsupportedCapabilityEnvelope(t *testing.T) {
 }
 
 func TestAPICapabilityGatedRouteReturnsLookupProblemBeforeCapabilityProblem(t *testing.T) {
+	runParallelServerTest(t)
 	srv, _ := setupTestServer(t)
 
 	tests := []struct {
@@ -15456,13 +15660,13 @@ func TestAPICapabilityGatedRouteReturnsLookupProblemBeforeCapabilityProblem(t *t
 			require := require.New(t)
 			assert := assert.New(t)
 
-			rr := doJSON(
+			rr := testutil.DoJSON(
 				t,
 				srv,
 				http.MethodPatch,
 				tt.path,
-				map[string]string{"title": "Updated title"},
-			)
+				map[string]string{"title": "Updated title"})
+
 			require.Equal(tt.wantCode, rr.Code, rr.Body.String())
 
 			var problem rawProblemDetail
@@ -15473,6 +15677,7 @@ func TestAPICapabilityGatedRouteReturnsLookupProblemBeforeCapabilityProblem(t *t
 }
 
 func TestAPICapabilityGatedMutationsHandleMissingSyncer(t *testing.T) {
+	runParallelServerTest(t)
 	database := dbtest.Open(t)
 	srv := New(database, nil, nil, "/", nil, ServerOptions{})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
@@ -15580,7 +15785,7 @@ func TestAPICapabilityGatedMutationsHandleMissingSyncer(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			require := require.New(t)
 
-			rr := doJSON(t, srv, tt.method, tt.path, tt.body)
+			rr := testutil.DoJSON(t, srv, tt.method, tt.path, tt.body)
 			require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
 			assertUnsupportedCapabilityProblem(
 				t, rr.Body, "github", "github.com", tt.capability,
@@ -15595,6 +15800,7 @@ func TestAPICapabilityGatedMutationsHandleMissingSyncer(t *testing.T) {
 // providerCallProblem / mapPlatformError, which builds the rateLimited
 // problem with details.retryAfter populated as an RFC 3339 string.
 func TestAPIRateLimitedEnvelope(t *testing.T) {
+	runParallelServerTest(t)
 	reset := time.Date(2026, 5, 19, 12, 0, 0, 0, time.UTC)
 	srv := setupGitLabIssueMutatorServer(t, &platform.Error{
 		Code:         platform.ErrCodeRateLimited,
@@ -15628,7 +15834,7 @@ func TestAPIRateLimitedEnvelope(t *testing.T) {
 			require := require.New(t)
 			assert := assert.New(t)
 
-			rr := doJSON(t, srv, tt.method, tt.path, tt.body)
+			rr := testutil.DoJSON(t, srv, tt.method, tt.path, tt.body)
 			require.Equal(http.StatusTooManyRequests, rr.Code, rr.Body.String())
 
 			var problem rawProblemDetail
@@ -15654,6 +15860,7 @@ func TestAPIRateLimitedEnvelope(t *testing.T) {
 // expects the typed validationError envelope with details.field and
 // details.allowed.
 func TestAPIValidationErrorEnvelope(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -15683,13 +15890,13 @@ func TestAPIValidationErrorEnvelope(t *testing.T) {
 	})
 	require.NoError(err)
 
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodPut,
 		"/api/v1/pulls/gh/acme/widget/42/state",
-		map[string]string{"status": "frobnicated"},
-	)
+		map[string]string{"status": "frobnicated"})
+
 	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
 
 	var problem rawProblemDetail
@@ -15820,6 +16027,7 @@ func (p *issueMutatorGitLabProvider) EditMergeRequestContent(
 // must carry the classified outcome — not a raw upstream failure or a 500 —
 // and the moved outcome must include the destination extension members.
 func TestAPIResolveItemMapsLookupOutcomes(t *testing.T) {
+	runParallelServerTest(t)
 	const movedRepoAPIURL = "https://api.github.com/repos/newowner/newname"
 
 	statusErr := func(status int) error {
@@ -15878,7 +16086,7 @@ func TestAPIResolveItemMapsLookupOutcomes(t *testing.T) {
 			)
 			require.NoError(err)
 
-			rr := doJSON(t, srv, http.MethodPost, "/api/v1/repo/gh/acme/widget/resolve/5", nil)
+			rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repo/gh/acme/widget/resolve/5", nil)
 			require.Equal(tc.wantStatus, rr.Code, rr.Body.String())
 
 			var problem rawProblemDetail
@@ -15926,6 +16134,7 @@ func (p *movedLookupGitLabProvider) GetMergeRequest(
 // problem body must carry the full provider-aware destination identity as
 // stable extension members so clients can retarget the reference.
 func TestAPIMovedLookupProblemCarriesDestination(t *testing.T) {
+	runParallelServerTest(t)
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Second)
 
@@ -16028,7 +16237,7 @@ func TestAPIMovedLookupProblemCarriesDestination(t *testing.T) {
 			require := require.New(t)
 			assert := assert.New(t)
 
-			rr := doJSON(t, srv, http.MethodPost, tt.path, nil)
+			rr := testutil.DoJSON(t, srv, http.MethodPost, tt.path, nil)
 			require.Equal(http.StatusNotFound, rr.Code, rr.Body.String())
 
 			var problem rawProblemDetail
@@ -16048,6 +16257,7 @@ func TestAPIMovedLookupProblemCarriesDestination(t *testing.T) {
 }
 
 func TestAPIDiffReviewDraftCRUDUsesLocalStorage(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	caps := platform.Capabilities{
@@ -16073,7 +16283,7 @@ func TestAPIDiffReviewDraftCRUDUsesLocalStorage(t *testing.T) {
 	require.NotNil(mr)
 
 	basePath := "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-draft"
-	getRR := doJSON(t, srv, http.MethodGet, basePath, nil)
+	getRR := testutil.DoJSON(t, srv, http.MethodGet, basePath, nil)
 	require.Equal(http.StatusOK, getRR.Code, getRR.Body.String())
 	var draft map[string]any
 	require.NoError(json.NewDecoder(getRR.Body).Decode(&draft))
@@ -16082,7 +16292,7 @@ func TestAPIDiffReviewDraftCRUDUsesLocalStorage(t *testing.T) {
 	assert.Equal([]any{"comment"}, draft["supported_actions"])
 	assert.Equal(false, draft["native_multiline_ranges"])
 
-	createRR := doJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
+	createRR := testutil.DoJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
 		"body": "Please tighten this assertion.",
 		"range": map[string]any{
 			"path":          "internal/server/api_test.go",
@@ -16094,6 +16304,7 @@ func TestAPIDiffReviewDraftCRUDUsesLocalStorage(t *testing.T) {
 			"commit_sha":    "abc123",
 		},
 	})
+
 	require.Equal(http.StatusCreated, createRR.Code, createRR.Body.String())
 	var created map[string]any
 	require.NoError(json.NewDecoder(createRR.Body).Decode(&created))
@@ -16104,13 +16315,13 @@ func TestAPIDiffReviewDraftCRUDUsesLocalStorage(t *testing.T) {
 	assert.Equal("right", created["side"])
 	assert.InDelta(42, created["line"], 0)
 
-	getRR = doJSON(t, srv, http.MethodGet, basePath, nil)
+	getRR = testutil.DoJSON(t, srv, http.MethodGet, basePath, nil)
 	require.Equal(http.StatusOK, getRR.Code, getRR.Body.String())
 	require.NoError(json.NewDecoder(getRR.Body).Decode(&draft))
 	assert.NotEmpty(draft["draft_id"])
 	require.Len(draft["comments"], 1)
 
-	editRR := doJSON(
+	editRR := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodPatch,
@@ -16126,27 +16337,27 @@ func TestAPIDiffReviewDraftCRUDUsesLocalStorage(t *testing.T) {
 				"diff_head_sha": "abc123",
 				"commit_sha":    "abc123",
 			},
-		},
-	)
+		})
+
 	require.Equal(http.StatusOK, editRR.Code, editRR.Body.String())
 	var edited map[string]any
 	require.NoError(json.NewDecoder(editRR.Body).Decode(&edited))
 	assert.Equal("Updated draft body.", edited["body"])
 	assert.InDelta(43, edited["line"], 0)
 
-	deleteRR := doJSON(
+	deleteRR := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodDelete,
 		basePath+"/comments/"+commentID,
-		nil,
-	)
+		nil)
+
 	require.Equal(http.StatusOK, deleteRR.Code, deleteRR.Body.String())
 	comments, err := database.ListMRReviewDraftComments(ctx, draftIDFromResponse(t, draft))
 	require.NoError(err)
 	assert.Empty(comments)
 
-	discardRR := doJSON(t, srv, http.MethodDelete, basePath, nil)
+	discardRR := testutil.DoJSON(t, srv, http.MethodDelete, basePath, nil)
 	require.Equal(http.StatusOK, discardRR.Code, discardRR.Body.String())
 	storedDraft, err := database.GetMRReviewDraft(ctx, mr.ID)
 	require.NoError(err)
@@ -16154,6 +16365,7 @@ func TestAPIDiffReviewDraftCRUDUsesLocalStorage(t *testing.T) {
 }
 
 func TestAPIDiffReviewDraftRejectsInvalidLineCoordinates(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	caps := platform.Capabilities{
@@ -16222,10 +16434,11 @@ func TestAPIDiffReviewDraftRejectsInvalidLineCoordinates(t *testing.T) {
 		},
 	}
 	for _, lineRange := range invalidRanges {
-		rr := doJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
+		rr := testutil.DoJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
 			"body":  "Invalid range.",
 			"range": lineRange,
 		})
+
 		require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
 	}
 
@@ -16243,17 +16456,18 @@ func TestAPIDiffReviewDraftRejectsInvalidLineCoordinates(t *testing.T) {
 	require.NoError(err)
 	assert.Nil(storedDraft)
 
-	createRR := doJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
+	createRR := testutil.DoJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
 		"body":  "Valid draft.",
 		"range": validRange,
 	})
+
 	require.Equal(http.StatusCreated, createRR.Code, createRR.Body.String())
 	var created map[string]any
 	require.NoError(json.NewDecoder(createRR.Body).Decode(&created))
 	commentID, ok := created["id"].(string)
 	require.True(ok)
 
-	patchRR := doJSON(t, srv, http.MethodPatch, basePath+"/comments/"+commentID, map[string]any{
+	patchRR := testutil.DoJSON(t, srv, http.MethodPatch, basePath+"/comments/"+commentID, map[string]any{
 		"body": "Invalid patch.",
 		"range": map[string]any{
 			"path":          "internal/server/api_test.go",
@@ -16265,6 +16479,7 @@ func TestAPIDiffReviewDraftRejectsInvalidLineCoordinates(t *testing.T) {
 			"diff_head_sha": "abc123",
 		},
 	})
+
 	require.Equal(http.StatusBadRequest, patchRR.Code, patchRR.Body.String())
 	storedDraft, err = database.GetMRReviewDraft(ctx, mr.ID)
 	require.NoError(err)
@@ -16276,6 +16491,7 @@ func TestAPIDiffReviewDraftRejectsInvalidLineCoordinates(t *testing.T) {
 }
 
 func TestAPIGitHubPublishReviewDraftSendsCommentsThroughServer(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -16322,7 +16538,7 @@ func TestAPIGitHubPublishReviewDraftSendsCommentsThroughServer(t *testing.T) {
 	require.NoError(database.UpdateDiffSHAs(ctx, mr.RepoID, 42, "github-head", "base", "merge-base"))
 
 	basePath := "/api/v1/pulls/gh/acme/widget/42/review-draft"
-	createRR := doJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
+	createRR := testutil.DoJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
 		"body": "Please tighten this line.",
 		"range": map[string]any{
 			"path":          "src/main.go",
@@ -16336,12 +16552,14 @@ func TestAPIGitHubPublishReviewDraftSendsCommentsThroughServer(t *testing.T) {
 			"commit_sha":    "github-commit",
 		},
 	})
+
 	require.Equal(http.StatusCreated, createRR.Code, createRR.Body.String())
 
-	publishRR := doJSON(t, srv, http.MethodPost, basePath+"/publish", map[string]string{
+	publishRR := testutil.DoJSON(t, srv, http.MethodPost, basePath+"/publish", map[string]string{
 		"action": "request_changes",
 		"body":   " Needs changes. ",
 	})
+
 	require.Equal(http.StatusOK, publishRR.Code, publishRR.Body.String())
 	var publishStatus pullapi.ActionStatusBody
 	require.NoError(json.NewDecoder(publishRR.Body).Decode(&publishStatus))
@@ -16368,6 +16586,7 @@ func TestAPIGitHubPublishReviewDraftSendsCommentsThroughServer(t *testing.T) {
 }
 
 func TestAPIGitHubRequestChangesDoesNotPublishSavedDraftComments(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -16405,19 +16624,21 @@ func TestAPIGitHubRequestChangesDoesNotPublishSavedDraftComments(t *testing.T) {
 	require.NoError(database.UpdateDiffSHAs(ctx, mr.RepoID, 42, "reviewed-head", "base", "merge-base"))
 
 	basePath := "/api/v1/pulls/gh/acme/widget/42/review-draft"
-	createRR := doJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
+	createRR := testutil.DoJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
 		"body": "Saved for the later inline review.",
 		"range": map[string]any{
 			"path": "src/main.go", "side": "right", "line": 42,
 			"new_line": 42, "line_type": "add", "diff_head_sha": "reviewed-head",
 		},
 	})
+
 	require.Equal(http.StatusCreated, createRR.Code, createRR.Body.String())
 
-	requestRR := doJSON(t, srv, http.MethodPost, "/api/v1/pulls/gh/acme/widget/42/request-changes", map[string]string{
+	requestRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/pulls/gh/acme/widget/42/request-changes", map[string]string{
 		"body":              " Please cover the empty state. ",
 		"expected_head_sha": "provider-head",
 	})
+
 	require.Equal(http.StatusOK, requestRR.Code, requestRR.Body.String())
 	assert.Equal("Please cover the empty state.", captured.Body)
 	assert.Equal(platform.ReviewActionRequestChanges, captured.Action)
@@ -16433,6 +16654,7 @@ func TestAPIGitHubRequestChangesDoesNotPublishSavedDraftComments(t *testing.T) {
 }
 
 func TestAPIGitHubPublishReviewDraftRejectsSelfApprovalBeforeProvider(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -16462,7 +16684,7 @@ func TestAPIGitHubPublishReviewDraftRejectsSelfApprovalBeforeProvider(t *testing
 	require.NoError(database.UpdateDiffSHAs(ctx, mr.RepoID, 42, "github-head", "base", "merge-base"))
 
 	basePath := "/api/v1/pulls/gh/acme/widget/42/review-draft"
-	createRR := doJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
+	createRR := testutil.DoJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
 		"body": "Please tighten this line.",
 		"range": map[string]any{
 			"path":          "src/main.go",
@@ -16474,12 +16696,14 @@ func TestAPIGitHubPublishReviewDraftRejectsSelfApprovalBeforeProvider(t *testing
 			"commit_sha":    "github-head",
 		},
 	})
+
 	require.Equal(http.StatusCreated, createRR.Code, createRR.Body.String())
 
-	publishRR := doJSON(t, srv, http.MethodPost, basePath+"/publish", map[string]string{
+	publishRR := testutil.DoJSON(t, srv, http.MethodPost, basePath+"/publish", map[string]string{
 		"action": "approve",
 		"body":   "looks good",
 	})
+
 	require.Equal(http.StatusForbidden, publishRR.Code, publishRR.Body.String())
 	var problem rawProblemDetail
 	require.NoError(json.NewDecoder(publishRR.Body).Decode(&problem))
@@ -16494,6 +16718,7 @@ func TestAPIGitHubPublishReviewDraftRejectsSelfApprovalBeforeProvider(t *testing
 }
 
 func TestAPIGitHubReviewDraftHidesApproveForSelfAuthoredPR(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	mock := &mockGH{
@@ -16505,7 +16730,7 @@ func TestAPIGitHubReviewDraftHidesApproveForSelfAuthoredPR(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 42, withSeedPRAuthor("marius"))
 	seedPR(t, database, "acme", "widget", 43, withSeedPRAuthor("someone-else"))
 
-	selfRR := doJSON(t, srv, http.MethodGet, "/api/v1/pulls/gh/acme/widget/42/review-draft", nil)
+	selfRR := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls/gh/acme/widget/42/review-draft", nil)
 	require.Equal(http.StatusOK, selfRR.Code, selfRR.Body.String())
 	var selfDraft map[string]any
 	require.NoError(json.NewDecoder(selfRR.Body).Decode(&selfDraft))
@@ -16515,7 +16740,7 @@ func TestAPIGitHubReviewDraftHidesApproveForSelfAuthoredPR(t *testing.T) {
 		"self-authored PR draft must not advertise approve",
 	)
 
-	otherRR := doJSON(t, srv, http.MethodGet, "/api/v1/pulls/gh/acme/widget/43/review-draft", nil)
+	otherRR := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls/gh/acme/widget/43/review-draft", nil)
 	require.Equal(http.StatusOK, otherRR.Code, otherRR.Body.String())
 	var otherDraft map[string]any
 	require.NoError(json.NewDecoder(otherRR.Body).Decode(&otherDraft))
@@ -16527,6 +16752,7 @@ func TestAPIGitHubReviewDraftHidesApproveForSelfAuthoredPR(t *testing.T) {
 }
 
 func TestAPIGitHubApprovePullRejectsSelfApprovalBeforeProvider(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	var providerCalled atomic.Bool
@@ -16548,11 +16774,11 @@ func TestAPIGitHubApprovePullRejectsSelfApprovalBeforeProvider(t *testing.T) {
 	srv, database := setupTestServerWithMock(t, mock)
 	seedPR(t, database, "acme", "widget", 42, withSeedPRAuthor("marius"))
 
-	approveRR := doJSON(
+	approveRR := testutil.DoJSON(
 		t, srv, http.MethodPost,
 		"/api/v1/pulls/gh/acme/widget/42/approve",
-		map[string]any{"body": ""},
-	)
+		map[string]any{"body": ""})
+
 	require.Equal(http.StatusForbidden, approveRR.Code, approveRR.Body.String())
 	var problem rawProblemDetail
 	require.NoError(json.NewDecoder(approveRR.Body).Decode(&problem))
@@ -16563,6 +16789,7 @@ func TestAPIGitHubApprovePullRejectsSelfApprovalBeforeProvider(t *testing.T) {
 }
 
 func TestAPIPublishReviewDraftRejectsStoredCommentWithoutDiffHeadSHA(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	caps := platform.Capabilities{
 		ReadRepositories:       true,
@@ -16603,17 +16830,18 @@ func TestAPIPublishReviewDraftRejectsStoredCommentWithoutDiffHeadSHA(t *testing.
 	})
 	require.NoError(err)
 
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodPost,
 		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-draft/publish",
-		map[string]string{"action": "comment"},
-	)
+		map[string]string{"action": "comment"})
+
 	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
 }
 
 func TestAPIPublishReviewDraftUsesPlatformHeadSHAWhenDiffHeadIsUnavailable(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	caps := platform.Capabilities{
@@ -16653,13 +16881,12 @@ func TestAPIPublishReviewDraftUsesPlatformHeadSHAWhenDiffHeadIsUnavailable(t *te
 	})
 	require.NoError(err)
 
-	publishRR := doJSON(
+	publishRR := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodPost,
 		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-draft/publish",
-		map[string]string{"action": "approve", "body": "looks good"},
-	)
+		map[string]string{"action": "approve", "body": "looks good"})
 
 	require.Equal(http.StatusOK, publishRR.Code, publishRR.Body.String())
 	require.Len(provider.publishedReviews, 1)
@@ -16667,6 +16894,7 @@ func TestAPIPublishReviewDraftUsesPlatformHeadSHAWhenDiffHeadIsUnavailable(t *te
 }
 
 func TestAPIPublishReviewDraftMapsStaleProviderErrorToConflict(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	caps := platform.Capabilities{
@@ -16717,13 +16945,12 @@ func TestAPIPublishReviewDraftMapsStaleProviderErrorToConflict(t *testing.T) {
 	})
 	require.NoError(err)
 
-	publishRR := doJSON(
+	publishRR := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodPost,
 		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-draft/publish",
-		map[string]string{"action": "approve", "body": "looks good"},
-	)
+		map[string]string{"action": "approve", "body": "looks good"})
 
 	require.Equal(http.StatusConflict, publishRR.Code, publishRR.Body.String())
 	var problem rawProblemDetail
@@ -16752,6 +16979,7 @@ func TestAPIPublishReviewDraftMapsStaleProviderErrorToConflict(t *testing.T) {
 }
 
 func TestAPIPublishReviewDraftMapsPartialStaleProviderErrorToConflict(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	caps := platform.Capabilities{
@@ -16804,13 +17032,12 @@ func TestAPIPublishReviewDraftMapsPartialStaleProviderErrorToConflict(t *testing
 	})
 	require.NoError(err)
 
-	publishRR := doJSON(
+	publishRR := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodPost,
 		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-draft/publish",
-		map[string]string{"action": "approve", "body": "looks good"},
-	)
+		map[string]string{"action": "approve", "body": "looks good"})
 
 	require.Equal(http.StatusConflict, publishRR.Code, publishRR.Body.String())
 	var problem rawProblemDetail
@@ -16837,6 +17064,7 @@ func TestAPIPublishReviewDraftMapsPartialStaleProviderErrorToConflict(t *testing
 }
 
 func TestAPIPublishReviewDraftRejectsMultilineRangeWithoutCapability(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	caps := platform.Capabilities{
 		ReadRepositories:       true,
@@ -16860,7 +17088,7 @@ func TestAPIPublishReviewDraftRejectsMultilineRangeWithoutCapability(t *testing.
 	require.NoError(database.UpdateDiffSHAs(ctx, repo.ID, 7, "current-head", "base", "merge"))
 
 	basePath := "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-draft"
-	createRR := doJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
+	createRR := testutil.DoJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
 		"body": "Please fix this range.",
 		"range": map[string]any{
 			"path":          "internal/server/api_test.go",
@@ -16873,20 +17101,22 @@ func TestAPIPublishReviewDraftRejectsMultilineRangeWithoutCapability(t *testing.
 			"diff_head_sha": "current-head",
 		},
 	})
+
 	require.Equal(http.StatusCreated, createRR.Code, createRR.Body.String())
 
-	publishRR := doJSON(
+	publishRR := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodPost,
 		basePath+"/publish",
-		map[string]string{"action": "comment"},
-	)
+		map[string]string{"action": "comment"})
+
 	require.Equal(http.StatusBadRequest, publishRR.Code, publishRR.Body.String())
 	require.Empty(provider.publishedReviews)
 }
 
 func TestAPIGitLabPublishReviewDraftApprovesWithDiffPositionSHAs(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	caps := platform.Capabilities{
@@ -16914,14 +17144,14 @@ func TestAPIGitLabPublishReviewDraftApprovesWithDiffPositionSHAs(t *testing.T) {
 	require.NoError(database.UpdateDiffSHAs(ctx, repo.ID, 7, "gitlab-head", "gitlab-base", "gitlab-merge-base"))
 
 	basePath := "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-draft"
-	getRR := doJSON(t, srv, http.MethodGet, basePath, nil)
+	getRR := testutil.DoJSON(t, srv, http.MethodGet, basePath, nil)
 	require.Equal(http.StatusOK, getRR.Code, getRR.Body.String())
 	var draft map[string]any
 	require.NoError(json.NewDecoder(getRR.Body).Decode(&draft))
 	assert.Equal([]any{"comment", "approve"}, draft["supported_actions"])
 	assert.Equal(false, draft["native_multiline_ranges"])
 
-	createRR := doJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
+	createRR := testutil.DoJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
 		"body": "Please tighten this line.",
 		"range": map[string]any{
 			"path":          "internal/server/api_test.go",
@@ -16933,28 +17163,29 @@ func TestAPIGitLabPublishReviewDraftApprovesWithDiffPositionSHAs(t *testing.T) {
 			"commit_sha":    "gitlab-head",
 		},
 	})
+
 	require.Equal(http.StatusCreated, createRR.Code, createRR.Body.String())
 
-	rejectRR := doJSON(
+	rejectRR := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodPost,
 		basePath+"/publish",
-		map[string]string{"action": "request_changes"},
-	)
+		map[string]string{"action": "request_changes"})
+
 	require.Equal(http.StatusConflict, rejectRR.Code, rejectRR.Body.String())
 	assertUnsupportedCapabilityProblem(
 		t, rejectRR.Body, "gitlab", "gitlab.example.com", "review_action_request_changes",
 	)
 	require.Empty(provider.publishedReviews)
 
-	publishRR := doJSON(
+	publishRR := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodPost,
 		basePath+"/publish",
-		map[string]string{"action": "approve", "body": "approved"},
-	)
+		map[string]string{"action": "approve", "body": "approved"})
+
 	require.Equal(http.StatusOK, publishRR.Code, publishRR.Body.String())
 	require.Len(provider.publishedReviews, 1)
 	published := provider.publishedReviews[0]
@@ -16970,6 +17201,7 @@ func TestAPIGitLabPublishReviewDraftApprovesWithDiffPositionSHAs(t *testing.T) {
 }
 
 func TestAPIPublishReviewDraftPreservesDraftWhenPartialStatusIsUnknown(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	caps := platform.Capabilities{
 		ReadRepositories:       true,
@@ -16998,7 +17230,7 @@ func TestAPIPublishReviewDraftPreservesDraftWhenPartialStatusIsUnknown(t *testin
 	require.NoError(database.UpdateDiffSHAs(ctx, repo.ID, 7, "gitlab-head", "gitlab-base", "gitlab-merge-base"))
 
 	basePath := "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-draft"
-	createRR := doJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
+	createRR := testutil.DoJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
 		"body": "Please tighten this line.",
 		"range": map[string]any{
 			"path":          "internal/server/api_test.go",
@@ -17010,15 +17242,16 @@ func TestAPIPublishReviewDraftPreservesDraftWhenPartialStatusIsUnknown(t *testin
 			"commit_sha":    "gitlab-head",
 		},
 	})
+
 	require.Equal(http.StatusCreated, createRR.Code, createRR.Body.String())
 
-	publishRR := doJSON(
+	publishRR := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodPost,
 		basePath+"/publish",
-		map[string]string{"action": "comment"},
-	)
+		map[string]string{"action": "comment"})
+
 	require.Equal(http.StatusOK, publishRR.Code, publishRR.Body.String())
 	var publishStatus pullapi.ActionStatusBody
 	require.NoError(json.NewDecoder(publishRR.Body).Decode(&publishStatus))
@@ -17034,6 +17267,7 @@ func TestAPIPublishReviewDraftPreservesDraftWhenPartialStatusIsUnknown(t *testin
 }
 
 func TestAPIGitLabPublishReviewDraftSurfacesCleanupFailureAsPartial(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -17182,7 +17416,7 @@ func TestAPIGitLabPublishReviewDraftSurfacesCleanupFailureAsPartial(t *testing.T
 
 	basePath := "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-draft"
 	for _, line := range []int{41, 42} {
-		createRR := doJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
+		createRR := testutil.DoJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
 			"body": fmt.Sprintf("line %d", line),
 			"range": map[string]any{
 				"path":          "src/main.go",
@@ -17193,12 +17427,14 @@ func TestAPIGitLabPublishReviewDraftSurfacesCleanupFailureAsPartial(t *testing.T
 				"diff_head_sha": "gitlab-head",
 			},
 		})
+
 		require.Equal(http.StatusCreated, createRR.Code, createRR.Body.String())
 	}
 
-	publishRR := doJSON(t, srv, http.MethodPost, basePath+"/publish", map[string]string{
+	publishRR := testutil.DoJSON(t, srv, http.MethodPost, basePath+"/publish", map[string]string{
 		"action": "comment",
 	})
+
 	require.Equal(http.StatusOK, publishRR.Code, publishRR.Body.String())
 	var publishStatus pullapi.ActionStatusBody
 	require.NoError(json.NewDecoder(publishRR.Body).Decode(&publishStatus))
@@ -17231,6 +17467,7 @@ func TestAPIGitLabPublishReviewDraftSurfacesCleanupFailureAsPartial(t *testing.T
 }
 
 func TestAPIGitLabPublishReviewDraftSendsSummaryThroughServer(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -17307,7 +17544,7 @@ func TestAPIGitLabPublishReviewDraftSendsSummaryThroughServer(t *testing.T) {
 	require.NoError(database.UpdateDiffSHAs(ctx, repoID, 7, "gitlab-head", "base", "merge-base"))
 
 	basePath := "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-draft"
-	createRR := doJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
+	createRR := testutil.DoJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
 		"body": "inline note",
 		"range": map[string]any{
 			"path":          "src/main.go",
@@ -17318,12 +17555,14 @@ func TestAPIGitLabPublishReviewDraftSendsSummaryThroughServer(t *testing.T) {
 			"diff_head_sha": "gitlab-head",
 		},
 	})
+
 	require.Equal(http.StatusCreated, createRR.Code, createRR.Body.String())
 
-	publishRR := doJSON(t, srv, http.MethodPost, basePath+"/publish", map[string]string{
+	publishRR := testutil.DoJSON(t, srv, http.MethodPost, basePath+"/publish", map[string]string{
 		"action": "approve",
 		"body":   " review summary from ui ",
 	})
+
 	require.Equal(http.StatusOK, publishRR.Code, publishRR.Body.String())
 	var publishStatus pullapi.ActionStatusBody
 	require.NoError(json.NewDecoder(publishRR.Body).Decode(&publishStatus))
@@ -17428,6 +17667,7 @@ func writeRawJSONForTest(w http.ResponseWriter, body string) {
 }
 
 func TestAPIPublishReviewDraftPersistsProviderReviewThreads(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	caps := platform.Capabilities{
@@ -17524,7 +17764,7 @@ func TestAPIPublishReviewDraftPersistsProviderReviewThreads(t *testing.T) {
 		},
 	}
 	basePath := "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-draft"
-	createRR := doJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
+	createRR := testutil.DoJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
 		"body": "Please fix this.",
 		"range": map[string]any{
 			"path":          "internal/server/api_test.go",
@@ -17535,15 +17775,16 @@ func TestAPIPublishReviewDraftPersistsProviderReviewThreads(t *testing.T) {
 			"diff_head_sha": "current-head",
 		},
 	})
+
 	require.Equal(http.StatusCreated, createRR.Code, createRR.Body.String())
 
-	publishRR := doJSON(
+	publishRR := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodPost,
 		basePath+"/publish",
-		map[string]string{"action": "comment", "body": "review summary"},
-	)
+		map[string]string{"action": "comment", "body": "review summary"})
+
 	require.Equal(http.StatusOK, publishRR.Code, publishRR.Body.String())
 	require.Len(provider.publishedReviews, 1)
 	assert.Equal(platform.ReviewActionComment, provider.publishedReviews[0].Action)
@@ -17586,6 +17827,7 @@ func TestAPIPublishReviewDraftPersistsProviderReviewThreads(t *testing.T) {
 }
 
 func TestAPIForgejoPublishReviewDraftIngestsTimelineThread(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	caps := platform.Capabilities{
@@ -17633,7 +17875,7 @@ func TestAPIForgejoPublishReviewDraftIngestsTimelineThread(t *testing.T) {
 	}}
 
 	basePath := "/api/v1/pulls/forgejo/acme/widgets/42/review-draft"
-	createRR := doJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
+	createRR := testutil.DoJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
 		"body": "Forgejo inline note",
 		"range": map[string]any{
 			"path":          "src/main.go",
@@ -17645,15 +17887,17 @@ func TestAPIForgejoPublishReviewDraftIngestsTimelineThread(t *testing.T) {
 			"commit_sha":    "forgejo-head",
 		},
 	})
+
 	require.Equal(http.StatusCreated, createRR.Code, createRR.Body.String())
 
-	publishRR := doJSON(t, srv, http.MethodPost, basePath+"/publish", map[string]string{
+	publishRR := testutil.DoJSON(t, srv, http.MethodPost, basePath+"/publish", map[string]string{
 		"action": "comment",
 	})
+
 	require.Equal(http.StatusOK, publishRR.Code, publishRR.Body.String())
 	require.Len(provider.publishedReviews, 1)
 
-	detailRR := doJSON(t, srv, http.MethodGet, "/api/v1/pulls/forgejo/acme/widgets/42", nil)
+	detailRR := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls/forgejo/acme/widgets/42", nil)
 	require.Equal(http.StatusOK, detailRR.Code, detailRR.Body.String())
 	var detail pullapi.MergeRequestDetailResponse
 	require.NoError(json.NewDecoder(detailRR.Body).Decode(&detail))
@@ -17665,6 +17909,7 @@ func TestAPIForgejoPublishReviewDraftIngestsTimelineThread(t *testing.T) {
 }
 
 func TestAPIForgejoSyncPersistsCompleteLargeReviewDatasetBeforeSuccess(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	caps := platform.Capabilities{
@@ -17711,13 +17956,13 @@ func TestAPIForgejoSyncPersistsCompleteLargeReviewDatasetBeforeSuccess(t *testin
 		}
 	}
 
-	syncRR := doJSON(t, srv, http.MethodPost, "/api/v1/pulls/forgejo/acme/widgets/42/sync", nil)
+	syncRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/pulls/forgejo/acme/widgets/42/sync", nil)
 	require.Equal(http.StatusOK, syncRR.Code, syncRR.Body.String())
 	threads, err := database.ListMRReviewThreads(ctx, mr.ID)
 	require.NoError(err)
 	require.Len(threads, 101)
 
-	detailRR := doJSON(t, srv, http.MethodGet, "/api/v1/pulls/forgejo/acme/widgets/42", nil)
+	detailRR := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls/forgejo/acme/widgets/42", nil)
 	require.Equal(http.StatusOK, detailRR.Code, detailRR.Body.String())
 	var detail pullapi.MergeRequestDetailResponse
 	require.NoError(json.NewDecoder(detailRR.Body).Decode(&detail))
@@ -17730,6 +17975,7 @@ func TestAPIForgejoSyncPersistsCompleteLargeReviewDatasetBeforeSuccess(t *testin
 }
 
 func TestAPIGitLabSyncKeepsCanonicalReviewThreadWhenProviderReturnsReplies(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	caps := platform.Capabilities{
@@ -17791,7 +18037,7 @@ func TestAPIGitLabSyncKeepsCanonicalReviewThreadWhenProviderReturnsReplies(t *te
 		},
 	}
 
-	syncRR := doJSON(t, srv, http.MethodPost, "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/sync", nil)
+	syncRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/sync", nil)
 	require.Equal(http.StatusOK, syncRR.Code, syncRR.Body.String())
 
 	threads, err := database.ListMRReviewThreads(ctx, mr.ID)
@@ -17803,7 +18049,7 @@ func TestAPIGitLabSyncKeepsCanonicalReviewThreadWhenProviderReturnsReplies(t *te
 	assert.Equal("reviewer", threads[0].AuthorLogin)
 	assert.Equal(originalLine, threads[0].Range.Line)
 
-	detailRR := doJSON(t, srv, http.MethodGet, "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7", nil)
+	detailRR := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7", nil)
 	require.Equal(http.StatusOK, detailRR.Code, detailRR.Body.String())
 	var detail pullapi.MergeRequestDetailResponse
 	require.NoError(json.NewDecoder(detailRR.Body).Decode(&detail))
@@ -17825,6 +18071,7 @@ func TestAPIGitLabSyncKeepsCanonicalReviewThreadWhenProviderReturnsReplies(t *te
 }
 
 func TestAPIGitLabSyncRemovesMissingReviewThreadTimelineEvents(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	caps := platform.Capabilities{
 		ReadRepositories:  true,
@@ -17885,13 +18132,13 @@ func TestAPIGitLabSyncRemovesMissingReviewThreadTimelineEvents(t *testing.T) {
 	provider.mergeRequests[0].LastActivityAt = providerUpdatedAt
 	provider.reviewThreads = nil
 
-	syncRR := doJSON(t, srv, http.MethodPost, "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/sync", nil)
+	syncRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/sync", nil)
 	require.Equal(http.StatusOK, syncRR.Code, syncRR.Body.String())
 
 	threads, err := database.ListMRReviewThreads(ctx, mr.ID)
 	require.NoError(err)
 	require.Empty(threads)
-	detailRR := doJSON(t, srv, http.MethodGet, "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7", nil)
+	detailRR := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7", nil)
 	require.Equal(http.StatusOK, detailRR.Code, detailRR.Body.String())
 	var detail pullapi.MergeRequestDetailResponse
 	require.NoError(json.NewDecoder(detailRR.Body).Decode(&detail))
@@ -17900,6 +18147,7 @@ func TestAPIGitLabSyncRemovesMissingReviewThreadTimelineEvents(t *testing.T) {
 }
 
 func TestAPIGitLabSyncPrunesLegacyPositionedNoteCommentEvents(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	caps := platform.Capabilities{
@@ -17951,10 +18199,10 @@ func TestAPIGitLabSyncPrunesLegacyPositionedNoteCommentEvents(t *testing.T) {
 		UpdatedAt: now,
 	}}
 
-	syncRR := doJSON(t, srv, http.MethodPost, "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/sync", nil)
+	syncRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/sync", nil)
 	require.Equal(http.StatusOK, syncRR.Code, syncRR.Body.String())
 
-	detailRR := doJSON(t, srv, http.MethodGet, "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7", nil)
+	detailRR := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7", nil)
 	require.Equal(http.StatusOK, detailRR.Code, detailRR.Body.String())
 	var detail pullapi.MergeRequestDetailResponse
 	require.NoError(json.NewDecoder(detailRR.Body).Decode(&detail))
@@ -17971,6 +18219,7 @@ func TestAPIGitLabSyncPrunesLegacyPositionedNoteCommentEvents(t *testing.T) {
 }
 
 func TestAPIPublishReviewDraftReconcilesAfterTransientThreadIngestFailure(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	caps := platform.Capabilities{
@@ -18030,7 +18279,7 @@ func TestAPIPublishReviewDraftReconcilesAfterTransientThreadIngestFailure(t *tes
 	}
 
 	basePath := "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-draft"
-	createRR := doJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
+	createRR := testutil.DoJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
 		"body": "Please fix this.",
 		"range": map[string]any{
 			"path":          "internal/server/api_test.go",
@@ -18041,15 +18290,16 @@ func TestAPIPublishReviewDraftReconcilesAfterTransientThreadIngestFailure(t *tes
 			"diff_head_sha": "current-head",
 		},
 	})
+
 	require.Equal(http.StatusCreated, createRR.Code, createRR.Body.String())
 
-	publishRR := doJSON(
+	publishRR := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodPost,
 		basePath+"/publish",
-		map[string]string{"action": "comment"},
-	)
+		map[string]string{"action": "comment"})
+
 	require.Equal(http.StatusOK, publishRR.Code, publishRR.Body.String())
 	var publishStatus pullapi.ActionStatusBody
 	require.NoError(json.NewDecoder(publishRR.Body).Decode(&publishStatus))
@@ -18069,7 +18319,7 @@ func TestAPIPublishReviewDraftReconcilesAfterTransientThreadIngestFailure(t *tes
 		}
 	}, 10*time.Second, 10*time.Millisecond, "background refresh did not reach the provider")
 	require.Eventually(func() bool {
-		detailRR := doJSON(t, srv, http.MethodGet, detailPath, nil)
+		detailRR := testutil.DoJSON(t, srv, http.MethodGet, detailPath, nil)
 		if detailRR.Code != http.StatusOK {
 			return false
 		}
@@ -18098,6 +18348,7 @@ func TestAPIPublishReviewDraftReconcilesAfterTransientThreadIngestFailure(t *tes
 }
 
 func TestAPIResolveReviewThreadPersistsProviderState(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	caps := platform.Capabilities{
@@ -18141,13 +18392,13 @@ func TestAPIResolveReviewThreadPersistsProviderState(t *testing.T) {
 	require.Len(threads, 1)
 	threadID := strconv.FormatInt(threads[0].ID, 10)
 
-	resolveRR := doJSON(
+	resolveRR := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodPost,
 		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-threads/"+threadID+"/resolve",
-		nil,
-	)
+		nil)
+
 	require.Equal(http.StatusOK, resolveRR.Code, resolveRR.Body.String())
 	assert.Equal([]string{"thread-7"}, provider.resolvedThreads)
 	thread, err := database.GetMRReviewThread(ctx, mr.ID, threads[0].ID)
@@ -18155,13 +18406,13 @@ func TestAPIResolveReviewThreadPersistsProviderState(t *testing.T) {
 	require.NotNil(thread)
 	assert.True(thread.Resolved)
 
-	unresolveRR := doJSON(
+	unresolveRR := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodPost,
 		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-threads/"+threadID+"/unresolve",
-		nil,
-	)
+		nil)
+
 	require.Equal(http.StatusOK, unresolveRR.Code, unresolveRR.Body.String())
 	assert.Equal([]string{"thread-7"}, provider.unresolvedThreads)
 	thread, err = database.GetMRReviewThread(ctx, mr.ID, threads[0].ID)
@@ -18171,6 +18422,7 @@ func TestAPIResolveReviewThreadPersistsProviderState(t *testing.T) {
 }
 
 func TestAPIResolveReviewThreadReturnsServerErrorForCorruptStoredThread(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	caps := platform.Capabilities{
 		ReadRepositories:       true,
@@ -18223,18 +18475,19 @@ func TestAPIResolveReviewThreadReturnsServerErrorForCorruptStoredThread(t *testi
 	)
 	require.NoError(err)
 
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodPost,
 		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-threads/"+
 			strconv.FormatInt(threads[0].ID, 10)+"/resolve",
-		nil,
-	)
+		nil)
+
 	require.Equal(http.StatusInternalServerError, rr.Code, rr.Body.String())
 }
 
 func TestAPIPullDetailAttachesReviewThreadMetadata(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database := setupGitLabCapabilityServer(t)
@@ -18277,13 +18530,13 @@ func TestAPIPullDetailAttachesReviewThreadMetadata(t *testing.T) {
 		UpdatedAt: time.Now().UTC(),
 	}}))
 
-	rawDetail := doJSON(
+	rawDetail := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodGet,
 		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7",
-		nil,
-	)
+		nil)
+
 	require.Equal(http.StatusOK, rawDetail.Code, rawDetail.Body.String())
 	var detail map[string]any
 	require.NoError(json.NewDecoder(rawDetail.Body).Decode(&detail))
@@ -18324,6 +18577,7 @@ func seedApplySuggestionReviewThread(t *testing.T, database *db.DB, mrID int64) 
 }
 
 func TestAPIApplyReviewSuggestionPassesStoredThreadRangeToProvider(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	caps := platform.Capabilities{
@@ -18373,7 +18627,7 @@ func TestAPIApplyReviewSuggestionPassesStoredThreadRangeToProvider(t *testing.T)
 	require.NoError(err)
 	require.Len(threads, 1)
 
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodPost,
@@ -18384,8 +18638,8 @@ func TestAPIApplyReviewSuggestionPassesStoredThreadRangeToProvider(t *testing.T)
 				"thread_id":   strconv.FormatInt(threads[0].ID, 10),
 				"replacement": "return client.publishThreads();",
 			}},
-		},
-	)
+		})
+
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	var response pullapi.ApplyReviewSuggestionResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&response))
@@ -18404,6 +18658,7 @@ func TestAPIApplyReviewSuggestionPassesStoredThreadRangeToProvider(t *testing.T)
 }
 
 func TestAPIApplyReviewSuggestionRejectsNonOpenPullRequest(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	caps := platform.Capabilities{
@@ -18432,7 +18687,7 @@ func TestAPIApplyReviewSuggestionRejectsNonOpenPullRequest(t *testing.T) {
 	require.NotNil(mr)
 	thread := seedApplySuggestionReviewThread(t, database, mr.ID)
 
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodPost,
@@ -18443,8 +18698,7 @@ func TestAPIApplyReviewSuggestionRejectsNonOpenPullRequest(t *testing.T) {
 				"thread_id":   strconv.FormatInt(thread.ID, 10),
 				"replacement": "return client.publishThreads();",
 			}},
-		},
-	)
+		})
 
 	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
 	var problem rawProblemDetail
@@ -18457,6 +18711,7 @@ func TestAPIApplyReviewSuggestionRejectsNonOpenPullRequest(t *testing.T) {
 }
 
 func TestAPIApplyReviewSuggestionRejectsUnknownHeadRepoOnGitHub(t *testing.T) {
+	runParallelServerTest(t)
 	tests := []struct {
 		name             string
 		headRepoCloneURL string
@@ -18479,7 +18734,7 @@ func TestAPIApplyReviewSuggestionRejectsUnknownHeadRepoOnGitHub(t *testing.T) {
 			}
 			srv, _, provider := setupGitHubCapabilityServerWithProvider(t, &caps, tt.headRepoCloneURL)
 
-			rr := doJSON(
+			rr := testutil.DoJSON(
 				t,
 				srv,
 				http.MethodPost,
@@ -18490,8 +18745,7 @@ func TestAPIApplyReviewSuggestionRejectsUnknownHeadRepoOnGitHub(t *testing.T) {
 						"thread_id":   "1",
 						"replacement": "return client.publishThreads();",
 					}},
-				},
-			)
+				})
 
 			require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
 			var problem rawProblemDetail
@@ -18506,6 +18760,7 @@ func TestAPIApplyReviewSuggestionRejectsUnknownHeadRepoOnGitHub(t *testing.T) {
 }
 
 func TestAPIApplyReviewSuggestionPassesHeadRepoToGitHubProvider(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	caps := platform.Capabilities{
@@ -18534,7 +18789,7 @@ func TestAPIApplyReviewSuggestionPassesHeadRepoToGitHubProvider(t *testing.T) {
 	require.NotNil(mr)
 	thread := seedApplySuggestionReviewThread(t, database, mr.ID)
 
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodPost,
@@ -18545,8 +18800,7 @@ func TestAPIApplyReviewSuggestionPassesHeadRepoToGitHubProvider(t *testing.T) {
 				"thread_id":   strconv.FormatInt(thread.ID, 10),
 				"replacement": "return client.publishThreads();",
 			}},
-		},
-	)
+		})
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	require.Len(provider.appliedSuggestions, 1)
@@ -18557,6 +18811,7 @@ func TestAPIApplyReviewSuggestionPassesHeadRepoToGitHubProvider(t *testing.T) {
 }
 
 func TestAPIApplyReviewSuggestionMapsProviderConflictReason(t *testing.T) {
+	runParallelServerTest(t)
 	tests := []struct {
 		name   string
 		reason string
@@ -18601,7 +18856,7 @@ func TestAPIApplyReviewSuggestionMapsProviderConflictReason(t *testing.T) {
 			require.NotNil(mr)
 			thread := seedApplySuggestionReviewThread(t, database, mr.ID)
 
-			rr := doJSON(
+			rr := testutil.DoJSON(
 				t,
 				srv,
 				http.MethodPost,
@@ -18612,8 +18867,7 @@ func TestAPIApplyReviewSuggestionMapsProviderConflictReason(t *testing.T) {
 						"thread_id":   strconv.FormatInt(thread.ID, 10),
 						"replacement": "return client.publishThreads();",
 					}},
-				},
-			)
+				})
 
 			require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
 			var problem rawProblemDetail
@@ -18626,6 +18880,7 @@ func TestAPIApplyReviewSuggestionMapsProviderConflictReason(t *testing.T) {
 }
 
 func TestAPIApplyReviewSuggestionMapsProviderStaleStateAndRefreshesDetail(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	caps := platform.Capabilities{
@@ -18661,7 +18916,7 @@ func TestAPIApplyReviewSuggestionMapsProviderStaleStateAndRefreshesDetail(t *tes
 	thread := seedApplySuggestionReviewThread(t, database, mr.ID)
 	ch, _ := srv.Hub().Subscribe(ctx, false)
 
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodPost,
@@ -18672,8 +18927,7 @@ func TestAPIApplyReviewSuggestionMapsProviderStaleStateAndRefreshesDetail(t *tes
 				"thread_id":   strconv.FormatInt(thread.ID, 10),
 				"replacement": "return client.publishThreads();",
 			}},
-		},
-	)
+		})
 
 	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
 	var problem rawProblemDetail
@@ -18690,6 +18944,7 @@ func TestAPIApplyReviewSuggestionMapsProviderStaleStateAndRefreshesDetail(t *tes
 }
 
 func TestAPIApplyReviewSuggestionReturnsAppliedWithoutCommitMetadata(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	caps := platform.Capabilities{
@@ -18717,7 +18972,7 @@ func TestAPIApplyReviewSuggestionReturnsAppliedWithoutCommitMetadata(t *testing.
 	require.NotNil(mr)
 	thread := seedApplySuggestionReviewThread(t, database, mr.ID)
 
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodPost,
@@ -18728,8 +18983,7 @@ func TestAPIApplyReviewSuggestionReturnsAppliedWithoutCommitMetadata(t *testing.
 				"thread_id":   strconv.FormatInt(thread.ID, 10),
 				"replacement": "return client.publishThreads();",
 			}},
-		},
-	)
+		})
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	var response pullapi.ApplyReviewSuggestionResponse
@@ -18740,6 +18994,7 @@ func TestAPIApplyReviewSuggestionReturnsAppliedWithoutCommitMetadata(t *testing.
 }
 
 func TestAPIApplyReviewSuggestionReturnsAppliedForNilProviderResult(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	caps := platform.Capabilities{
@@ -18767,7 +19022,7 @@ func TestAPIApplyReviewSuggestionReturnsAppliedForNilProviderResult(t *testing.T
 	require.NotNil(mr)
 	thread := seedApplySuggestionReviewThread(t, database, mr.ID)
 
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodPost,
@@ -18778,8 +19033,7 @@ func TestAPIApplyReviewSuggestionReturnsAppliedForNilProviderResult(t *testing.T
 				"thread_id":   strconv.FormatInt(thread.ID, 10),
 				"replacement": "return client.publishThreads();",
 			}},
-		},
-	)
+		})
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	var response pullapi.ApplyReviewSuggestionResponse
@@ -18790,6 +19044,7 @@ func TestAPIApplyReviewSuggestionReturnsAppliedForNilProviderResult(t *testing.T
 }
 
 func TestAPIApplyReviewSuggestionProviderErrorQueuesDetailSync(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	caps := platform.Capabilities{
@@ -18818,7 +19073,7 @@ func TestAPIApplyReviewSuggestionProviderErrorQueuesDetailSync(t *testing.T) {
 	thread := seedApplySuggestionReviewThread(t, database, mr.ID)
 	ch, _ := srv.Hub().Subscribe(ctx, false)
 
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodPost,
@@ -18829,8 +19084,7 @@ func TestAPIApplyReviewSuggestionProviderErrorQueuesDetailSync(t *testing.T) {
 				"thread_id":   strconv.FormatInt(thread.ID, 10),
 				"replacement": "return client.publishThreads();",
 			}},
-		},
-	)
+		})
 
 	require.Equal(http.StatusBadGateway, rr.Code, rr.Body.String())
 	changed := readEventMatching(t, ch, func(ev Event) bool {
@@ -18840,6 +19094,7 @@ func TestAPIApplyReviewSuggestionProviderErrorQueuesDetailSync(t *testing.T) {
 }
 
 func TestAPIApplyReviewSuggestionBroadcastsAfterDetailSync(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	caps := platform.Capabilities{
 		ReadRepositories:            true,
@@ -18866,7 +19121,7 @@ func TestAPIApplyReviewSuggestionBroadcastsAfterDetailSync(t *testing.T) {
 	thread := seedApplySuggestionReviewThread(t, database, mr.ID)
 	ch, _ := srv.Hub().Subscribe(ctx, false)
 
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodPost,
@@ -18877,8 +19132,7 @@ func TestAPIApplyReviewSuggestionBroadcastsAfterDetailSync(t *testing.T) {
 				"thread_id":   strconv.FormatInt(thread.ID, 10),
 				"replacement": "return client.publishThreads();",
 			}},
-		},
-	)
+		})
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	changed := readEventMatching(t, ch, func(ev Event) bool {
@@ -18888,6 +19142,7 @@ func TestAPIApplyReviewSuggestionBroadcastsAfterDetailSync(t *testing.T) {
 }
 
 func TestAPIApplyReviewSuggestionRejectsReplacementOutsideStoredSuggestion(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	caps := platform.Capabilities{
@@ -18933,7 +19188,7 @@ func TestAPIApplyReviewSuggestionRejectsReplacementOutsideStoredSuggestion(t *te
 	require.NoError(err)
 	require.Len(threads, 1)
 
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodPost,
@@ -18944,14 +19199,15 @@ func TestAPIApplyReviewSuggestionRejectsReplacementOutsideStoredSuggestion(t *te
 				"thread_id":   strconv.FormatInt(threads[0].ID, 10),
 				"replacement": "return maliciousRewrite();",
 			}},
-		},
-	)
+		})
+
 	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
 	assert.Contains(rr.Body.String(), "body.suggestions[0].replacement")
 	assert.Empty(provider.appliedSuggestions)
 }
 
 func TestAPIApplyReviewSuggestionRejectsReplacementInsideIndentedExampleFence(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	caps := platform.Capabilities{
@@ -19009,7 +19265,7 @@ func TestAPIApplyReviewSuggestionRejectsReplacementInsideIndentedExampleFence(t 
 	require.NoError(err)
 	require.Len(threads, 1)
 
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodPost,
@@ -19020,12 +19276,12 @@ func TestAPIApplyReviewSuggestionRejectsReplacementInsideIndentedExampleFence(t 
 				"thread_id":   strconv.FormatInt(threads[0].ID, 10),
 				"replacement": "return client.publishThreads();",
 			}},
-		},
-	)
+		})
+
 	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
 	assert.Empty(provider.appliedSuggestions)
 
-	rr = doJSON(
+	rr = testutil.DoJSON(
 		t,
 		srv,
 		http.MethodPost,
@@ -19036,14 +19292,15 @@ func TestAPIApplyReviewSuggestionRejectsReplacementInsideIndentedExampleFence(t 
 				"thread_id":   strconv.FormatInt(threads[0].ID, 10),
 				"replacement": "return actualSuggestion();",
 			}},
-		},
-	)
+		})
+
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	require.Len(provider.appliedSuggestions, 1)
 	assert.Equal("return actualSuggestion();", provider.appliedSuggestions[0].Suggestions[0].Replacement)
 }
 
 func TestAPIApplyReviewSuggestionRejectsRateLimitedOperationBeforeProviderCall(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	caps := platform.Capabilities{
@@ -19099,7 +19356,7 @@ func TestAPIApplyReviewSuggestionRejectsRateLimitedOperationBeforeProviderCall(t
 	require.NoError(err)
 	require.Len(threads, 1)
 
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodPost,
@@ -19110,8 +19367,8 @@ func TestAPIApplyReviewSuggestionRejectsRateLimitedOperationBeforeProviderCall(t
 				"thread_id":   strconv.FormatInt(threads[0].ID, 10),
 				"replacement": "return client.publishThreads();",
 			}},
-		},
-	)
+		})
+
 	require.Equal(http.StatusTooManyRequests, rr.Code, rr.Body.String())
 	var problem rawProblemDetail
 	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
@@ -19120,6 +19377,7 @@ func TestAPIApplyReviewSuggestionRejectsRateLimitedOperationBeforeProviderCall(t
 }
 
 func TestAPIApplyReviewSuggestionPreProviderValidationFailureDoesNotQueueDetailSync(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	caps := platform.Capabilities{
 		ReadRepositories:            true,
@@ -19147,7 +19405,7 @@ func TestAPIApplyReviewSuggestionPreProviderValidationFailureDoesNotQueueDetailS
 	provider.blockNextMRFetch.Store(true)
 	provider.mrFetchStarted = make(chan struct{}, 1)
 
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodPost,
@@ -19158,8 +19416,7 @@ func TestAPIApplyReviewSuggestionPreProviderValidationFailureDoesNotQueueDetailS
 				"thread_id":   strconv.FormatInt(thread.ID, 10),
 				"replacement": "return client.publishThreads();",
 			}},
-		},
-	)
+		})
 
 	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
 	require.Empty(provider.appliedSuggestions)
@@ -19171,6 +19428,7 @@ func TestAPIApplyReviewSuggestionPreProviderValidationFailureDoesNotQueueDetailS
 }
 
 func TestAPIApplyReviewSuggestionRejectsStaleHead(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	caps := platform.Capabilities{
 		ReadRepositories:            true,
@@ -19212,7 +19470,7 @@ func TestAPIApplyReviewSuggestionRejectsStaleHead(t *testing.T) {
 	require.NoError(err)
 	require.Len(threads, 1)
 
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodPost,
@@ -19223,8 +19481,8 @@ func TestAPIApplyReviewSuggestionRejectsStaleHead(t *testing.T) {
 				"thread_id":   strconv.FormatInt(threads[0].ID, 10),
 				"replacement": "return client.publishThreads();",
 			}},
-		},
-	)
+		})
+
 	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
 }
 
@@ -19238,6 +19496,7 @@ func draftIDFromResponse(t *testing.T, draft map[string]any) int64 {
 }
 
 func TestAPIGitealikeReadSyncPersistsThroughServer(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -19374,6 +19633,7 @@ func TestAPIGitealikeReadSyncPersistsThroughServer(t *testing.T) {
 }
 
 func TestAPIGitealikeHTTPMergeabilityPersistsThroughServer(t *testing.T) {
+	runParallelServerTest(t)
 	tests := []struct {
 		name      string
 		kind      platform.Kind
@@ -19517,6 +19777,7 @@ func TestAPIGitealikeHTTPMergeabilityPersistsThroughServer(t *testing.T) {
 }
 
 func TestAPIGitealikeMutationsPersistThroughServer(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -19882,6 +20143,7 @@ func setupGitealikeCloneFixture(t *testing.T) (cloneURL, baseSHA, headSHA string
 // sync path that never writes it would leave every head-bound action
 // permanently rejected with 409 head_unknown.
 func TestAPIGitealikeNormalSyncEnablesHeadBoundMutations(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -19964,6 +20226,7 @@ func TestAPIGitealikeNormalSyncEnablesHeadBoundMutations(t *testing.T) {
 }
 
 func TestAPIGitealikePinnedMergeHeadMismatchIsStale(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	transport := &apiTestGitealikeTransport{
@@ -19996,6 +20259,7 @@ func TestAPIGitealikePinnedMergeHeadMismatchIsStale(t *testing.T) {
 }
 
 func TestAPIGitealikePinnedMergeGenericConflictStaysConflict(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	transport := &apiTestGitealikeTransport{
@@ -20026,6 +20290,7 @@ func TestAPIGitealikePinnedMergeGenericConflictStaysConflict(t *testing.T) {
 }
 
 func TestAPIGitealikeApproveSubmitsReview(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	transport := &apiTestGitealikeTransport{}
@@ -20045,6 +20310,7 @@ func TestAPIGitealikeApproveSubmitsReview(t *testing.T) {
 }
 
 func TestAPIGitealikeApproveRefreshesAfterMutation(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	transport := &apiTestGitealikeTransport{}
@@ -20066,6 +20332,7 @@ func TestAPIGitealikeApproveRefreshesAfterMutation(t *testing.T) {
 }
 
 func TestAPIGiteaActionsSyncPersistsThroughServer(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -20247,6 +20514,7 @@ func requireIssue(t *testing.T, database *db.DB, repoID int64, number int) *db.I
 }
 
 func TestAPIGitealikeMergeConflictReturnsConflict(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -20420,6 +20688,7 @@ func newAPIGitealikeHeadPinTransport(t *testing.T) *apiTestGitealikeTransport {
 }
 
 func TestAPIGitealikeMergePassesReviewedHeadPinToProvider(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -20451,6 +20720,7 @@ func TestAPIGitealikeMergePassesReviewedHeadPinToProvider(t *testing.T) {
 }
 
 func TestAPIGitealikeMergeHeadMismatchMapsToStaleState(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -20482,6 +20752,7 @@ func TestAPIGitealikeMergeHeadMismatchMapsToStaleState(t *testing.T) {
 }
 
 func TestAPIGitealikeApproveBeforeHeadRace(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -20503,6 +20774,7 @@ func TestAPIGitealikeApproveBeforeHeadRace(t *testing.T) {
 }
 
 func TestAPIGitealikeRequestChangesPassesReviewedHeadPinToProvider(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -21009,7 +21281,9 @@ func setupGitLabCapabilityServerWithProvider(
 		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil,
 	)
 	t.Cleanup(syncer.Stop)
-	srv := New(database, syncer, nil, "/", nil, ServerOptions{
+	srv := New(database, syncer, nil, "/", &config.Config{Tmux: config.Tmux{
+		Command: []string{filepath.Join(t.TempDir(), "missing-tmux")},
+	}}, ServerOptions{
 		WorktreeDir:                        t.TempDir(),
 		DisableWorkspaceBackgroundMonitors: true,
 	})
@@ -21190,6 +21464,7 @@ func assertUnsupportedCapabilityProblem(
 }
 
 func TestAPIGitealikeLockedPRPersistsThroughServer(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -21274,6 +21549,7 @@ func TestAPIGitealikeLockedPRPersistsThroughServer(t *testing.T) {
 }
 
 func TestAPIGitealikeDraftPRFieldsPersistThroughServer(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -21519,6 +21795,7 @@ func (t *lockedGitealikeTransport) ListStatuses(
 // Should contain an empty array, not null.
 
 func TestAPIGetFilesAndDiffMarkGeneratedFilesE2E(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -21644,6 +21921,7 @@ func (s *countingTokenFileSource) Descriptor() tokenauth.Descriptor {
 // briefly empty file would surface a missing-token error and break commit and
 // diff views for repos that are already on disk.
 func TestAPILocalReadEndpointsServeDuringTokenRotationE2E(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -21752,6 +22030,7 @@ func TestAPILocalReadEndpointsServeDuringTokenRotationE2E(t *testing.T) {
 }
 
 func TestAPIRateLimits(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 
 	database := dbtest.Open(t)
@@ -21796,6 +22075,7 @@ func TestAPIRateLimits(t *testing.T) {
 }
 
 func TestAPIRateLimitsSeparatesCredentialPoolsFromLocalCeilings(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -21859,6 +22139,7 @@ func TestAPIRateLimitsSeparatesCredentialPoolsFromLocalCeilings(t *testing.T) {
 }
 
 func TestAPIRateLimitsMarksExpiredProviderQuotaUnknown(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -21894,6 +22175,7 @@ func TestAPIRateLimitsMarksExpiredProviderQuotaUnknown(t *testing.T) {
 }
 
 func TestAPIRateLimitsRollsExpiredTrackerBeforeResponse(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -21923,6 +22205,7 @@ func TestAPIRateLimitsRollsExpiredTrackerBeforeResponse(t *testing.T) {
 }
 
 func TestAPISyncPRIncrementsRequestCount(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -21982,6 +22265,7 @@ func TestAPISyncPRIncrementsRequestCount(t *testing.T) {
 }
 
 func TestAPIRateLimitsWithBudget(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 
 	database := dbtest.Open(t)
@@ -22026,6 +22310,7 @@ func TestAPIRateLimitsWithBudget(t *testing.T) {
 }
 
 func TestAPIRateLimitsResetExpiredBudgetWindow(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 
 	database := dbtest.Open(t)
@@ -22075,6 +22360,7 @@ func TestAPIRateLimitsResetExpiredBudgetWindow(t *testing.T) {
 }
 
 func TestAPIRateLimitsUsesSafeIdentityKeyAndResolvedPrincipalLabel(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	database := dbtest.Open(t)
@@ -22119,6 +22405,7 @@ func TestAPIRateLimitsUsesSafeIdentityKeyAndResolvedPrincipalLabel(t *testing.T)
 }
 
 func TestAPIRateLimitsIncludesWriteOnlyGraphQLState(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	database := dbtest.Open(t)
@@ -22147,6 +22434,7 @@ func TestAPIRateLimitsIncludesWriteOnlyGraphQLState(t *testing.T) {
 }
 
 func TestAPIRateLimitsWithGQL(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 
 	database := dbtest.Open(t)
@@ -22204,6 +22492,7 @@ func TestAPIRateLimitsWithGQL(t *testing.T) {
 }
 
 func TestAPIRateLimitsReadsLocalStateWithoutRefreshingGitHubRateLimit(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 
 	database := dbtest.Open(t)
@@ -22292,6 +22581,7 @@ func TestAPIRateLimitsReadsLocalStateWithoutRefreshingGitHubRateLimit(t *testing
 }
 
 func TestAPIRateLimitsGQLDefaultsUnknown(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 
 	database := dbtest.Open(t)
@@ -22331,6 +22621,7 @@ func TestAPIRateLimitsGQLDefaultsUnknown(t *testing.T) {
 }
 
 func TestAPIRateLimitsMultiHostMixed(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 
 	database := dbtest.Open(t)
@@ -22398,6 +22689,7 @@ func TestAPIRateLimitsMultiHostMixed(t *testing.T) {
 }
 
 func TestAPIRateLimitsScopesSameHostByProvider(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 
 	database := dbtest.Open(t)
@@ -22452,6 +22744,7 @@ func TestAPIRateLimitsScopesSameHostByProvider(t *testing.T) {
 }
 
 func TestAPIGetPullDetailLoaded(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -22537,6 +22830,7 @@ func TestAPIGetPullDetailIncludesAssociatedWorkspace(t *testing.T) {
 }
 
 func TestAPIActivityReturnsUTCCreatedAt(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -22582,6 +22876,7 @@ func TestAPIActivityReturnsUTCCreatedAt(t *testing.T) {
 }
 
 func TestAPIActivityFencesRepositoryReconciliationAcrossEventAndWorkspaceReads(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database := setupTestServer(t)
@@ -22771,6 +23066,7 @@ func setupTestServerWithClonesAndServer(t *testing.T) (
 }
 
 func TestAPIGetCommits(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -22788,6 +23084,7 @@ func TestAPIGetCommits(t *testing.T) {
 }
 
 func TestAPIGetCommits_NotFound(t *testing.T) {
+	runParallelServerTest(t)
 	client, _, _, _, _ := setupTestServerWithClones(t)
 
 	resp, err := client.HTTP.GetPullCommitsWithResponse(
@@ -22798,6 +23095,7 @@ func TestAPIGetCommits_NotFound(t *testing.T) {
 }
 
 func TestAPIGetDiff_SingleCommit(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 
 	client, _, _, _, commitSHAs := setupTestServerWithClones(t)
@@ -22812,6 +23110,7 @@ func TestAPIGetDiff_SingleCommit(t *testing.T) {
 }
 
 func TestAPIGetDiffReportsSyncedDiffHeadSHA(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -22827,6 +23126,7 @@ func TestAPIGetDiffReportsSyncedDiffHeadSHA(t *testing.T) {
 }
 
 func TestAPIGetRepoCommitDiff(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -22854,6 +23154,7 @@ func TestAPIGetRepoCommitDiff(t *testing.T) {
 }
 
 func TestAPIGetRepoCommitDiffRejectsOptionLikeSHA(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 
 	_, _, _, _, _, srv := setupTestServerWithClonesAndServer(t)
@@ -22881,6 +23182,7 @@ func TestAPIGetRepoCommitDiffRejectsOptionLikeSHA(t *testing.T) {
 }
 
 func TestAPIGetFilePreview_ReturnsHeadContent(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -22901,6 +23203,7 @@ func TestAPIGetFilePreview_ReturnsHeadContent(t *testing.T) {
 }
 
 func TestAPIGetFilePreview_ReturnsDeletedFileContent(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -22943,6 +23246,7 @@ func TestAPIGetFilePreview_ReturnsDeletedFileContent(t *testing.T) {
 }
 
 func TestAPIGetFilePreview_ReturnsRequestedDiffSideContent(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -22999,6 +23303,7 @@ func TestAPIGetFilePreview_ReturnsRequestedDiffSideContent(t *testing.T) {
 }
 
 func TestAPIGetDiff_Range(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 
 	client, _, _, _, commitSHAs := setupTestServerWithClones(t)
@@ -23015,6 +23320,7 @@ func TestAPIGetDiff_Range(t *testing.T) {
 }
 
 func TestAPIGetDiff_InvalidScope(t *testing.T) {
+	runParallelServerTest(t)
 	client, _, _, _, commitSHAs := setupTestServerWithClones(t)
 	from := commitSHAs[0]
 	resp, err := client.HTTP.GetPullDiffWithResponse(
@@ -23026,6 +23332,7 @@ func TestAPIGetDiff_InvalidScope(t *testing.T) {
 }
 
 func TestAPIGetDiff_UnknownSHA(t *testing.T) {
+	runParallelServerTest(t)
 	client, _, _, _, _ := setupTestServerWithClones(t)
 	bogus := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	resp, err := client.HTTP.GetPullDiffWithResponse(
@@ -23037,6 +23344,7 @@ func TestAPIGetDiff_UnknownSHA(t *testing.T) {
 }
 
 func TestAPIGetDiff_ReversedRange(t *testing.T) {
+	runParallelServerTest(t)
 	client, _, _, _, commitSHAs := setupTestServerWithClones(t)
 	from := commitSHAs[0] // newest
 	to := commitSHAs[4]   // oldest
@@ -23049,6 +23357,7 @@ func TestAPIGetDiff_ReversedRange(t *testing.T) {
 }
 
 func TestAPIGetDiff_FromWithoutTo(t *testing.T) {
+	runParallelServerTest(t)
 	client, _, _, _, commitSHAs := setupTestServerWithClones(t)
 	from := commitSHAs[0]
 	resp, err := client.HTTP.GetPullDiffWithResponse(
@@ -23060,6 +23369,7 @@ func TestAPIGetDiff_FromWithoutTo(t *testing.T) {
 }
 
 func TestAPIGetDiff_RootCommit(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 
 	dir := t.TempDir()
@@ -23113,6 +23423,7 @@ func TestAPIGetDiff_RootCommit(t *testing.T) {
 }
 
 func TestAPIListActivity(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
@@ -23148,7 +23459,7 @@ func TestAPIListActivity(t *testing.T) {
 		"activity feed should contain PR and comment items")
 	assert.Equal("github.com", (*resp.JSON200.Items)[0].PlatformHost)
 
-	collapsed := doJSON(
+	collapsed := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodGet,
@@ -23168,14 +23479,14 @@ func TestAPIListActivity(t *testing.T) {
 		"collapsed parents must identify the exact child ledger snapshot")
 	assert.NotEmpty(collapsedBody.EventCursor, "cursor must cover omitted child events")
 
-	delta := doJSON(
+	delta := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodGet,
 		"/api/v1/activity?since="+url.QueryEscape(since)+"&projection=events&after="+
 			url.QueryEscape(collapsedBody.EventCursor),
-		nil,
-	)
+		nil)
+
 	require.Equal(http.StatusOK, delta.Code)
 	var deltaBody struct {
 		Items        []activityItemResponse    `json:"items"`
@@ -23187,15 +23498,15 @@ func TestAPIListActivity(t *testing.T) {
 	assert.Empty(deltaBody.ItemActivity, "event deltas must not resend parent summaries")
 	assert.Equal(collapsedBody.EventCursor, deltaBody.EventCursor)
 
-	thread := doJSON(
+	thread := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodGet,
 		"/api/v1/activity/thread-events?provider=github&platform_host=github.com"+
 			"&platform_repo_id=repo-acme-widget&item_type=pr&item_number=1&since="+
 			url.QueryEscape(since),
-		nil,
-	)
+		nil)
+
 	require.Equal(http.StatusOK, thread.Code)
 	var threadBody activityResponse
 	require.NoError(json.NewDecoder(thread.Body).Decode(&threadBody))
@@ -23203,7 +23514,7 @@ func TestAPIListActivity(t *testing.T) {
 	assert.Empty(threadBody.ItemActivity)
 
 	require.NoError(database.UpdateMergeRequestAssignees(ctx, repo.ID, prID, []string{"alice"}))
-	assignedThread := doJSON(
+	assignedThread := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodGet,
@@ -23217,15 +23528,15 @@ func TestAPIListActivity(t *testing.T) {
 	require.NoError(json.NewDecoder(assignedThread.Body).Decode(&assignedThreadBody))
 	assert.Empty(assignedThreadBody.Items)
 
-	filteredThread := doJSON(
+	filteredThread := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodGet,
 		"/api/v1/activity/thread-events?provider=github&platform_host=github.com"+
 			"&platform_repo_id=repo-acme-widget&item_type=pr&item_number=1&since="+
 			url.QueryEscape(since)+"&types=comment&search="+url.QueryEscape("Looks good"),
-		nil,
-	)
+		nil)
+
 	require.Equal(http.StatusOK, filteredThread.Code)
 	var filteredThreadBody activityResponse
 	require.NoError(json.NewDecoder(filteredThread.Body).Decode(&filteredThreadBody))
@@ -23269,6 +23580,7 @@ func TestAPIListActivity(t *testing.T) {
 }
 
 func TestAPIListCollapsedActivityHonorsLimit(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
@@ -23282,13 +23594,13 @@ func TestAPIListCollapsedActivityHonorsLimit(t *testing.T) {
 	}
 
 	since := url.QueryEscape(now.Add(-7 * 24 * time.Hour).Format(time.RFC3339))
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodGet,
 		"/api/v1/activity?since="+since+"&projection=collapsed&limit=10",
-		nil,
-	)
+		nil)
+
 	require.Equal(http.StatusOK, rr.Code)
 	var body activityResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
@@ -23298,6 +23610,7 @@ func TestAPIListCollapsedActivityHonorsLimit(t *testing.T) {
 }
 
 func TestAPIListCollapsedActivitySearchLimitCountsDistinctParents(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
@@ -23336,13 +23649,13 @@ func TestAPIListCollapsedActivitySearchLimitCountsDistinctParents(t *testing.T) 
 	require.NoError(database.UpsertMREvents(ctx, newerEvents))
 
 	since := url.QueryEscape(base.Add(-time.Minute).Format(time.RFC3339))
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodGet,
 		"/api/v1/activity?since="+since+"&projection=collapsed&limit=30&search=needle",
-		nil,
-	)
+		nil)
+
 	require.Equal(http.StatusOK, rr.Code)
 	var body activityResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
@@ -23352,6 +23665,7 @@ func TestAPIListCollapsedActivitySearchLimitCountsDistinctParents(t *testing.T) 
 }
 
 func TestAPIListCollapsedActivityIncludesParentRecentOnlyByNotification(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database := setupNotificationsEnabledTestServer(t)
@@ -23377,13 +23691,13 @@ func TestAPIListCollapsedActivityIncludesParentRecentOnlyByNotification(t *testi
 	}}))
 
 	since := url.QueryEscape(now.Add(-7 * 24 * time.Hour).Format(time.RFC3339))
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodGet,
 		"/api/v1/activity?since="+since+"&projection=collapsed",
-		nil,
-	)
+		nil)
+
 	require.Equal(http.StatusOK, rr.Code)
 	var body struct {
 		Items        []activityItemResponse    `json:"items"`
@@ -23395,13 +23709,13 @@ func TestAPIListCollapsedActivityIncludesParentRecentOnlyByNotification(t *testi
 	assert.Equal(71, body.ItemActivity[0].ItemNumber)
 	assert.Equal(formatUTCRFC3339(notificationAt), body.ItemActivity[0].ActivityAt)
 
-	filtered := doJSON(
+	filtered := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodGet,
 		"/api/v1/activity?since="+since+"&projection=collapsed&types=comment",
-		nil,
-	)
+		nil)
+
 	require.Equal(http.StatusOK, filtered.Code)
 	var filteredBody struct {
 		Items        []activityItemResponse    `json:"items"`
@@ -23414,6 +23728,7 @@ func TestAPIListCollapsedActivityIncludesParentRecentOnlyByNotification(t *testi
 }
 
 func TestAPIListCollapsedActivityRetainsVisibleEventsForBotParents(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
@@ -23435,13 +23750,13 @@ func TestAPIListCollapsedActivityRetainsVisibleEventsForBotParents(t *testing.T)
 	}}))
 
 	since := url.QueryEscape(now.Add(-7 * 24 * time.Hour).Format(time.RFC3339))
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodGet,
 		"/api/v1/activity?since="+since+"&projection=collapsed&hide_bots=true",
-		nil,
-	)
+		nil)
+
 	require.Equal(http.StatusOK, rr.Code)
 	var body struct {
 		Items        []activityItemResponse    `json:"items"`
@@ -23456,6 +23771,7 @@ func TestAPIListCollapsedActivityRetainsVisibleEventsForBotParents(t *testing.T)
 }
 
 func TestAPIListActivityReturnsRecentParentWhenItsVisibleEventsAreFiltered(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
@@ -23483,13 +23799,13 @@ func TestAPIListActivityReturnsRecentParentWhenItsVisibleEventsAreFiltered(t *te
 	}}))
 
 	since := url.QueryEscape(now.Add(-7 * 24 * time.Hour).Format(time.RFC3339))
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodGet,
 		"/api/v1/activity?since="+since+"&types=commit&item_types=pr,repo",
-		nil,
-	)
+		nil)
+
 	require.Equal(http.StatusOK, rr.Code)
 	var body struct {
 		Items        []activityItemResponse    `json:"items"`
@@ -23507,6 +23823,7 @@ func TestAPIListActivityReturnsRecentParentWhenItsVisibleEventsAreFiltered(t *te
 }
 
 func TestAPIListActivityIncrementalSearchReturnsParentsMatchedByProviderEvents(t *testing.T) {
+	runParallelServerTest(t)
 	req := require.New(t)
 	srv, database := setupTestServer(t)
 	ctx := t.Context()
@@ -23554,13 +23871,13 @@ func TestAPIListActivityIncrementalSearchReturnsParentsMatchedByProviderEvents(t
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			require := require.New(t)
-			rr := doJSON(
+			rr := testutil.DoJSON(
 				t,
 				srv,
 				http.MethodGet,
 				"/api/v1/activity?since="+since+"&after="+after+"&search="+url.QueryEscape(tc.search),
-				nil,
-			)
+				nil)
+
 			require.Equal(http.StatusOK, rr.Code)
 			var body struct {
 				Items        []activityItemResponse    `json:"items"`
@@ -23575,6 +23892,7 @@ func TestAPIListActivityIncrementalSearchReturnsParentsMatchedByProviderEvents(t
 }
 
 func TestAPIListActivitySeparatesEventAndParentSnapshotCaps(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database := setupTestServer(t)
@@ -23607,13 +23925,13 @@ func TestAPIListActivitySeparatesEventAndParentSnapshotCaps(t *testing.T) {
 	require.NoError(err)
 
 	since := url.QueryEscape(now.Add(-time.Minute).Format(time.RFC3339))
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodGet,
 		"/api/v1/activity?since="+since+"&types=commit&item_types=pr,repo",
-		nil,
-	)
+		nil)
+
 	require.Equal(http.StatusOK, rr.Code)
 	var body struct {
 		Items              []activityItemResponse    `json:"items"`
@@ -23629,6 +23947,7 @@ func TestAPIListActivitySeparatesEventAndParentSnapshotCaps(t *testing.T) {
 }
 
 func TestWorkspaceActivitySearchKeepsSubjectsWithMatchingProviderEvents(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
@@ -23683,6 +24002,7 @@ func TestWorkspaceActivitySearchKeepsSubjectsWithMatchingProviderEvents(t *testi
 }
 
 func TestWorkspaceActivityAuthorMatchesTheSubjectInsteadOfProviderEventActors(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
@@ -23750,6 +24070,7 @@ func TestWorkspaceActivityAuthorMatchesTheSubjectInsteadOfProviderEventActors(t 
 }
 
 func TestMergeWorkspaceActivityAuthorsDeduplicatesCaseInsensitively(t *testing.T) {
+	runParallelServerTest(t)
 	now := time.Date(2026, 8, 12, 12, 0, 0, 0, time.UTC)
 	since := now.Add(-time.Hour)
 	activityAt := func(offset time.Duration) *time.Time {
@@ -23798,6 +24119,7 @@ func TestMergeWorkspaceActivityAuthorsDeduplicatesCaseInsensitively(t *testing.T
 }
 
 func TestWorkspaceActivityProjectionUsesHubPolicy(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	now := time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC)
 	key := db.WorkspaceSubjectKey{
@@ -23839,6 +24161,7 @@ func TestWorkspaceActivityProjectionUsesHubPolicy(t *testing.T) {
 }
 
 func TestAPIListActivityFiltersByAuthorAndListsScopedCandidates(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
@@ -23873,13 +24196,13 @@ func TestAPIListActivityFiltersByAuthorAndListsScopedCandidates(t *testing.T) {
 	)
 
 	since := base.Add(-time.Minute).Format(time.RFC3339)
-	feed := doJSON(
+	feed := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodGet,
 		"/api/v1/activity?since="+url.QueryEscape(since)+"&author=ITEM%20OWNER",
-		nil,
-	)
+		nil)
+
 	require.Equal(http.StatusOK, feed.Code)
 	var feedBody activityResponse
 	require.NoError(json.Unmarshal(feed.Body.Bytes(), &feedBody))
@@ -23888,25 +24211,25 @@ func TestAPIListActivityFiltersByAuthorAndListsScopedCandidates(t *testing.T) {
 		assert.Equal("Item Owner", item.ItemAuthor)
 	}
 
-	commenterFeed := doJSON(
+	commenterFeed := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodGet,
 		"/api/v1/activity?since="+url.QueryEscape(since)+"&author=REVIEWER",
-		nil,
-	)
+		nil)
+
 	require.Equal(http.StatusOK, commenterFeed.Code)
 	var commenterFeedBody activityResponse
 	require.NoError(json.Unmarshal(commenterFeed.Body.Bytes(), &commenterFeedBody))
 	assert.Empty(commenterFeedBody.Items)
 
-	candidates := doJSON(
+	candidates := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodGet,
 		"/api/v1/activity/authors?since="+url.QueryEscape(since),
-		nil,
-	)
+		nil)
+
 	require.Equal(http.StatusOK, candidates.Code)
 	var candidateBody struct {
 		Authors []string `json:"authors"`
@@ -23917,6 +24240,7 @@ func TestAPIListActivityFiltersByAuthorAndListsScopedCandidates(t *testing.T) {
 }
 
 func TestAPIListActivityReturnsParentRecencyWhenCommitEventsAreFiltered(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
 	ctx := t.Context()
@@ -23947,13 +24271,13 @@ func TestAPIListActivityReturnsParentRecencyWhenCommitEventsAreFiltered(t *testi
 	}))
 
 	since := base.Add(-time.Minute).Format(time.RFC3339)
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodGet,
 		"/api/v1/activity?since="+url.QueryEscape(since)+"&types=comment",
-		nil,
-	)
+		nil)
+
 	require.Equal(http.StatusOK, rr.Code)
 	var body activityResponse
 	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
@@ -23963,6 +24287,7 @@ func TestAPIListActivityReturnsParentRecencyWhenCommitEventsAreFiltered(t *testi
 }
 
 func TestAPIActivityScopesFollowTrackedRepositoryIDAcrossRename(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database := setupTestServer(t)
@@ -23996,10 +24321,10 @@ func TestAPIActivityScopesFollowTrackedRepositoryIDAcrossRename(t *testing.T) {
 	require.True(applied)
 
 	since := now.Add(-time.Minute).Format(time.RFC3339)
-	feed := doJSON(
+	feed := testutil.DoJSON(
 		t, srv, http.MethodGet,
-		"/api/v1/activity?since="+url.QueryEscape(since), nil,
-	)
+		"/api/v1/activity?since="+url.QueryEscape(since), nil)
+
 	require.Equal(http.StatusOK, feed.Code)
 	var feedBody activityResponse
 	require.NoError(json.Unmarshal(feed.Body.Bytes(), &feedBody))
@@ -24009,10 +24334,10 @@ func TestAPIActivityScopesFollowTrackedRepositoryIDAcrossRename(t *testing.T) {
 	require.Len(feedBody.ItemActivity, 1)
 	assert.Equal(repo.PlatformRepoID, feedBody.ItemActivity[0].Repo.PlatformRepoID)
 
-	candidates := doJSON(
+	candidates := testutil.DoJSON(
 		t, srv, http.MethodGet,
-		"/api/v1/activity/authors?since="+url.QueryEscape(since), nil,
-	)
+		"/api/v1/activity/authors?since="+url.QueryEscape(since), nil)
+
 	require.Equal(http.StatusOK, candidates.Code)
 	var candidateBody struct {
 		Authors []string `json:"authors"`
@@ -24022,6 +24347,7 @@ func TestAPIActivityScopesFollowTrackedRepositoryIDAcrossRename(t *testing.T) {
 }
 
 func TestAPIListActivityAppliesTrackedRepoScopeBeforeAuthorLimit(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database := setupNotificationsEnabledTestServer(t)
@@ -24059,13 +24385,13 @@ func TestAPIListActivityAppliesTrackedRepoScopeBeforeAuthorLimit(t *testing.T) {
 	require.NoError(database.UpsertMREvents(ctx, untrackedEvents))
 
 	since := base.Add(-time.Minute).Format(time.RFC3339)
-	feed := doJSON(
+	feed := testutil.DoJSON(
 		t,
 		srv,
 		http.MethodGet,
 		"/api/v1/activity?since="+url.QueryEscape(since)+"&author=ITEM%20OWNER",
-		nil,
-	)
+		nil)
+
 	require.Equal(http.StatusOK, feed.Code)
 	var feedBody activityResponse
 	require.NoError(json.Unmarshal(feed.Body.Bytes(), &feedBody))
@@ -24079,6 +24405,7 @@ func TestAPIListActivityAppliesTrackedRepoScopeBeforeAuthorLimit(t *testing.T) {
 }
 
 func TestAPIListActivitySearchReportsParentTruncationWhenMatchesOverflowEventCap(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database := setupTestServer(t)
@@ -24120,7 +24447,7 @@ func TestAPIListActivitySearchReportsParentTruncationWhenMatchesOverflowEventCap
 	require.NoError(database.UpsertMREvents(ctx, noisyEvents))
 
 	since := url.QueryEscape(base.Add(-time.Minute).Format(time.RFC3339))
-	rr := doJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since+"&search=needle", nil)
+	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since+"&search=needle", nil)
 	require.Equal(http.StatusOK, rr.Code)
 	var body struct {
 		Items              []activityItemResponse    `json:"items"`
@@ -24138,6 +24465,7 @@ func TestAPIListActivitySearchReportsParentTruncationWhenMatchesOverflowEventCap
 }
 
 func TestAPIListActivityIncludesNotificationSyncedBeforeRepo(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database := setupNotificationsEnabledTestServer(t)
@@ -24188,6 +24516,7 @@ func TestAPIListActivityIncludesNotificationSyncedBeforeRepo(t *testing.T) {
 }
 
 func TestAPIListActivityScopesNotificationsToTrackedRepos(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database := setupNotificationsEnabledTestServer(t)
@@ -24258,6 +24587,7 @@ func TestAPIListActivityScopesNotificationsToTrackedRepos(t *testing.T) {
 }
 
 func TestAPIListActivityReturnsDefaultBranchActivity(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
@@ -24289,7 +24619,7 @@ func TestAPIListActivityReturnsDefaultBranchActivity(t *testing.T) {
 	}))
 
 	since := url.QueryEscape(base.Format(time.RFC3339))
-	rr := doJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since, nil)
+	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since, nil)
 	require.Equal(http.StatusOK, rr.Code)
 	var body struct {
 		Items []map[string]any `json:"items"`
@@ -24321,6 +24651,7 @@ func TestAPIListActivityReturnsDefaultBranchActivity(t *testing.T) {
 }
 
 func TestAPIListActivityCapsDefaultBranchCommitMetadata(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
@@ -24351,7 +24682,7 @@ func TestAPIListActivityCapsDefaultBranchCommitMetadata(t *testing.T) {
 	require.NoError(err)
 
 	since := url.QueryEscape(base.Format(time.RFC3339))
-	rr := doJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since, nil)
+	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since, nil)
 	require.Equal(http.StatusOK, rr.Code)
 	var body struct {
 		Items []map[string]any `json:"items"`
@@ -24370,6 +24701,7 @@ func TestAPIListActivityCapsDefaultBranchCommitMetadata(t *testing.T) {
 }
 
 func TestAPIListActivityReflectsConfiguredDefaultBranchCommitCap(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -24464,6 +24796,7 @@ func TestAPIListActivityReflectsConfiguredDefaultBranchCommitCap(t *testing.T) {
 }
 
 func TestAPIListActivityReturnsProviderCompareURLsForDefaultBranchForcePushes(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
@@ -24530,7 +24863,7 @@ func TestAPIListActivityReturnsProviderCompareURLsForDefaultBranchForcePushes(t 
 	}
 
 	since := url.QueryEscape(base.Add(-time.Minute).Format(time.RFC3339))
-	rr := doJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since, nil)
+	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since, nil)
 	require.Equal(http.StatusOK, rr.Code)
 	var body struct {
 		Items []map[string]any `json:"items"`
@@ -24560,6 +24893,7 @@ func TestAPIListActivityReturnsProviderCompareURLsForDefaultBranchForcePushes(t 
 }
 
 func TestAPIListActivityCanHideDefaultBranchActivity(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
@@ -24604,6 +24938,7 @@ func TestAPIListActivityCanHideDefaultBranchActivity(t *testing.T) {
 }
 
 func TestAPIListActivityAcceptsProviderQualifiedRepoFilter(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
@@ -24648,6 +24983,7 @@ func TestAPIListActivityAcceptsProviderQualifiedRepoFilter(t *testing.T) {
 }
 
 func TestAPIListActivityKeepsProviderNamedHostsProviderQualified(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
@@ -24684,6 +25020,7 @@ func TestAPIListActivityKeepsProviderNamedHostsProviderQualified(t *testing.T) {
 }
 
 func TestAPIListActivityFiltersConfiguredReposByHost(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database, _ := setupTestServerWithConfig(t)
@@ -24692,7 +25029,7 @@ func TestAPIListActivityFiltersConfiguredReposByHost(t *testing.T) {
 	seedPROnHost(t, database, "ghe.example.com", "acme", "widget", 2)
 
 	since := time.Now().UTC().AddDate(0, 0, -7).Format(time.RFC3339)
-	rr := doJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since, nil)
+	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since, nil)
 	require.Equal(http.StatusOK, rr.Code)
 	var body activityResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
@@ -24782,6 +25119,7 @@ func runStackDetection(t *testing.T, database *db.DB, owner, name string) {
 }
 
 func TestAPIListStacks(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
@@ -24806,6 +25144,7 @@ func TestAPIListStacks(t *testing.T) {
 }
 
 func TestAPIListStacks_RepoFilter(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	repos := []ghclient.RepoRef{
@@ -24847,6 +25186,7 @@ func TestAPIListStacks_RepoFilter(t *testing.T) {
 }
 
 func TestAPIGetStackForPR(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
@@ -24873,6 +25213,7 @@ func TestAPIGetStackForPR(t *testing.T) {
 }
 
 func TestAPIGetPullDetailIncludesStackContext(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
@@ -24904,6 +25245,7 @@ func TestAPIGetPullDetailIncludesStackContext(t *testing.T) {
 }
 
 func TestAPIStackBaseConflictMarksDownstreamPRsDirty(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
@@ -24950,6 +25292,7 @@ func TestAPIStackBaseConflictMarksDownstreamPRsDirty(t *testing.T) {
 }
 
 func TestAPIGetStackForPR_DraftNotBaseReady(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	srv, database := setupTestServer(t)
 	client := setupTestClient(t, srv)
@@ -24968,6 +25311,7 @@ func TestAPIGetStackForPR_DraftNotBaseReady(t *testing.T) {
 }
 
 func TestAPIListStacks_DraftNotAllGreen(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
@@ -24995,6 +25339,7 @@ func TestAPIListStacks_DraftNotAllGreen(t *testing.T) {
 // GET /stacks and GET /repos/{owner}/{name}/pulls/{number}/stack return
 // data produced entirely by the sync-completion callback path.
 func TestAPIStacks_DetectionViaSyncHook(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -25069,6 +25414,7 @@ func TestAPIStacks_DetectionViaSyncHook(t *testing.T) {
 }
 
 func TestAPIStacks_DetectionViaSyncHookPrefersGitHubNativeOrder(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -25144,6 +25490,7 @@ func TestAPIStacks_DetectionViaSyncHookPrefersGitHubNativeOrder(t *testing.T) {
 }
 
 func TestAPIStacks_DetectionViaSyncHookIgnoresForkHeadBranchCollision(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -25217,6 +25564,7 @@ func TestAPIStacks_DetectionViaSyncHookIgnoresForkHeadBranchCollision(t *testing
 }
 
 func TestAPIStacks_GitLabUnknownForkHeadSyncsButSkipsStackEdges(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -25327,6 +25675,7 @@ func TestAPIStacks_GitLabUnknownForkHeadSyncsButSkipsStackEdges(t *testing.T) {
 }
 
 func TestAPIStacks_DetectionViaSyncHookIgnoresSameRepoSelfEdge(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -25407,6 +25756,7 @@ func stackMemberNumbers(members []generated.StackMemberResponse) []int64 {
 }
 
 func TestAPIGetStackForPR_SingleFailingIsInProgress(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	srv, database := setupTestServer(t)
 	client := setupTestClient(t, srv)
@@ -25426,6 +25776,7 @@ func TestAPIGetStackForPR_SingleFailingIsInProgress(t *testing.T) {
 }
 
 func TestAPIGetStackForPR_BaseBranchNotMain(t *testing.T) {
+	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
@@ -25453,6 +25804,7 @@ func TestAPIGetStackForPR_BaseBranchNotMain(t *testing.T) {
 // AuthorDisplayName after each pass, and that GetUser is only
 // called during the first sync.
 func TestDisplayNameCacheE2E(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -25496,7 +25848,7 @@ func TestDisplayNameCacheE2E(t *testing.T) {
 	firstCalls := getUserCalls
 
 	// GET /api/v1/pulls — display name must appear.
-	rr := doJSON(t, srv, http.MethodGet, "/api/v1/pulls", nil)
+	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls", nil)
 	require.Equal(http.StatusOK, rr.Code)
 	require.Contains(rr.Body.String(), `"AuthorDisplayName":"Alice Smith"`)
 
@@ -25506,12 +25858,13 @@ func TestDisplayNameCacheE2E(t *testing.T) {
 		"second sync must not re-fetch cached display names")
 
 	// GET /api/v1/pulls — display name still present.
-	rr2 := doJSON(t, srv, http.MethodGet, "/api/v1/pulls", nil)
+	rr2 := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls", nil)
 	require.Equal(http.StatusOK, rr2.Code)
 	require.Contains(rr2.Body.String(), `"AuthorDisplayName":"Alice Smith"`)
 }
 
 func TestCICheckDedupLatestRunWinsE2E(t *testing.T) {
+	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -26205,78 +26558,6 @@ func TestListWorkspacesIncludesItemLastActivityAt(t *testing.T) {
 	assert.Nil(byID["ws-unsynced-activity"].ItemLastActivityAt)
 }
 
-func TestListWorkspacesIncludesKataMetadata(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	client, database, _, _ := setupTestServerWithWorkspaces(t)
-	ctx := t.Context()
-
-	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
-	require.NoError(err)
-	require.NotNil(repo)
-
-	metadata := db.WorkspaceKataMetadata{
-		DaemonID:    "desktop",
-		ProjectUID:  "project-kata",
-		ProjectName: "Widget",
-		IssueUID:    "issue-kata-1",
-		ShortID:     "task-123",
-		QualifiedID: "Kata#task-123",
-		Title:       "Wire kata workspace sidebar",
-	}
-	itemKey := db.KataWorkspaceItemKey(metadata)
-	require.NotEmpty(itemKey)
-	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
-		ID:           "ws-kata-list",
-		Platform:     "github",
-		PlatformHost: "github.com",
-		RepoOwner:    "acme",
-		RepoName:     "widget",
-		ItemType:     db.WorkspaceItemTypeKataTask,
-		ItemKey:      itemKey,
-		GitHeadRef:   "kenn-forge/kata/task-123-abcd1234",
-		WorktreePath: filepath.Join(t.TempDir(), "ws-kata-list"),
-		TmuxSession:  "kenn-forge-ws-kata-list",
-		Status:       "creating",
-		CreatedAt:    time.Date(2026, 6, 15, 10, 0, 0, 0, time.UTC),
-		KataMetadata: &metadata,
-	}))
-
-	// The workspace list UI reloads from GET /workspaces, so the kata owner
-	// metadata it renders must survive the DB summary hydration on that path,
-	// not just the create response.
-	resp, err := client.HTTP.ListWorkspacesWithResponse(ctx)
-	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
-	require.NotNil(resp.JSON200)
-	require.NotNil(resp.JSON200.Workspaces)
-
-	var kata *generated.WorkspaceResponse
-	for i := range *resp.JSON200.Workspaces {
-		if (*resp.JSON200.Workspaces)[i].Id == "ws-kata-list" {
-			kata = &(*resp.JSON200.Workspaces)[i]
-			break
-		}
-	}
-	require.NotNil(kata)
-	assert.Equal(db.WorkspaceItemTypeKataTask, kata.ItemType)
-	assert.Equal(itemKey, kata.ItemKey)
-	// item_number is always emitted and is 0 (ignored) for Kata workspaces.
-	assert.Equal(int64(0), kata.ItemNumber)
-	require.NotNil(kata.Kata)
-	assert.Equal("desktop", kata.Kata.DaemonId)
-	assert.Equal("issue-kata-1", kata.Kata.IssueUid)
-	assert.Equal("project-kata", kata.Kata.ProjectUid)
-	require.NotNil(kata.Kata.ProjectName)
-	assert.Equal("Widget", *kata.Kata.ProjectName)
-	require.NotNil(kata.Kata.ShortId)
-	assert.Equal("task-123", *kata.Kata.ShortId)
-	require.NotNil(kata.Kata.QualifiedId)
-	assert.Equal("Kata#task-123", *kata.Kata.QualifiedId)
-	require.NotNil(kata.Kata.Title)
-	assert.Equal("Wire kata workspace sidebar", *kata.Kata.Title)
-}
-
 func TestWorkspaceServerFixtureCleansUpTmuxSessions(t *testing.T) {
 	require := require.New(t)
 	if testing.Short() {
@@ -26515,7 +26796,7 @@ func TestServerTestCleanupDoesNotInvokeDefaultTmux(t *testing.T) {
 }
 
 func TestWorkspaceRuntimeTargetsRefreshAfterSettingsUpdateE2E(t *testing.T) {
-	t.Parallel()
+	runParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -26553,10 +26834,10 @@ func TestWorkspaceRuntimeTargetsRefreshAfterSettingsUpdateE2E(t *testing.T) {
 		Label:   "Custom Codex",
 		Command: []string{agentPath, "--full-auto"},
 	}}
-	updateResp := doJSON(
+	updateResp := testutil.DoJSON(
 		t, srv, http.MethodPut, "/api/v1/settings",
-		updateSettingsRequest{Agents: &agents},
-	)
+		updateSettingsRequest{Agents: &agents})
+
 	require.Equal(http.StatusOK, updateResp.Code, updateResp.Body.String())
 
 	reloaded, err := config.Load(cfgPath)
@@ -26584,7 +26865,7 @@ func TestWorkspaceRuntimeTargetsRefreshAfterSettingsUpdateE2E(t *testing.T) {
 }
 
 func TestWorkspaceCreatesPtyOwnerSessionWhenTmuxUnavailableE2E(t *testing.T) {
-	runParallelPTYE2E(t)
+	runSerialPTYE2E(t)
 
 	require := require.New(t)
 	assert := assert.New(t)
@@ -26668,106 +26949,11 @@ func TestWorkspaceCreatesPtyOwnerSessionWhenTmuxUnavailableE2E(t *testing.T) {
 	assert.True(os.IsNotExist(err))
 }
 
-func TestWorkspacePtyOwnerTitleMarksWorkspaceWorkingE2E(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("workspace clone fixture uses Unix-style local remotes")
-	}
-	runParallelPTYE2E(t)
-
-	require := require.New(t)
-	assert := assert.New(t)
-
-	fixture, _, ptyOwnerDir := setupPtyOwnerWorkspaceFixture(t, true)
-	ctx := context.Background()
-	ws := createReadyWorkspace(t, ctx, fixture.client)
-	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, ws.TmuxSession)
-
-	ts := httptest.NewServer(fixture.server)
-	t.Cleanup(ts.Close)
-
-	conn, _, err := workspaceTerminalDial(ctx, ts.URL, ws.Id)
-	require.NoError(err)
-	defer conn.Close(websocket.StatusNormalClosure, "done")
-	workspaceTerminalConnWriteRead(
-		t, ctx, conn, "stty -echo\rprintf '%s\\n' $((40+2))\r", "42",
-	)
-	// The spinner glyph is sent as printf octal escapes (\342\240\264
-	// is "⠴") so the typed line stays pure ASCII. Raw multibyte bytes
-	// written to an interactive shell are interpreted by readline as
-	// meta editing commands when the host has no UTF-8 locale set,
-	// scrambling the command before it runs. The session still emits
-	// the real multibyte title for the pty owner to track.
-	workspaceTerminalConnWriteRead(
-		t, ctx, conn,
-		"printf 'title-sent\\n'; "+
-			"printf '\\033]0;\\342\\240\\264 t3code-b5014b03\\007'\r",
-		"t3code-b5014b03",
-	)
-
-	var got *generated.WorkspaceResponse
-	require.Eventually(func() bool {
-		resp, err := fixture.client.HTTP.GetWorkspaceWithResponse(ctx, ws.Id)
-		if err != nil || resp.StatusCode() != http.StatusOK || resp.JSON200 == nil {
-			return false
-		}
-		got = resp.JSON200
-		return got.TmuxWorking &&
-			got.TmuxActivitySource == workspaceapi.TmuxActivitySourceTitle &&
-			got.TmuxPaneTitle != nil
-	}, 6*time.Second, 50*time.Millisecond)
-	require.NotNil(got)
-	assert.True(got.TmuxWorking)
-	assert.Equal(workspaceapi.TmuxActivitySourceTitle, got.TmuxActivitySource)
-	require.NotNil(got.TmuxPaneTitle)
-	assert.Equal("⠴ t3code-b5014b03", *got.TmuxPaneTitle)
-}
-
-func TestWorkspaceRuntimePlainShellUsesPtyOwnerWhenTmuxUnavailableE2E(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("test fixture uses /bin/sh")
-	}
-	runParallelPTYE2E(t)
-
-	require := require.New(t)
-	assert := assert.New(t)
-
-	fixture, _, ptyOwnerDir := setupPtyOwnerWorkspaceFixture(t)
-	ctx := context.Background()
-	ws := createReadyWorkspace(t, ctx, fixture.client)
-
-	session := launchPlainShellRuntimeSession(t, ctx, fixture.client, ws.Id)
-	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, session.Key)
-	assert.Equal(string(localruntime.LaunchTargetPlainShell), session.TargetKey)
-	assert.Equal(string(localruntime.SessionStatusRunning), session.Status)
-
-	paths, err := ptyowner.NewSessionPaths(ptyOwnerDir, session.Key)
-	require.NoError(err)
-	_, err = os.Stat(paths.StatePath)
-	require.NoError(err)
-
-	storedTmux, err := fixture.database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.Id)
-	require.NoError(err)
-	assert.Empty(storedTmux)
-
-	ts := httptest.NewServer(fixture.server)
-	t.Cleanup(ts.Close)
-	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
-		"/ws/v1/workspaces/" + ws.Id +
-		"/runtime/sessions/" + session.Key + "/terminal?cols=80&rows=24"
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
-	require.NoError(err)
-	defer conn.Close(websocket.StatusNormalClosure, "done")
-
-	workspaceTerminalConnWriteRead(
-		t, ctx, conn, "printf 'pty-owner-shell\\n'\r", "pty-owner-shell",
-	)
-}
-
 func TestWorkspaceRuntimePtyOwnerPersistenceFailureRollsBackSessionE2E(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test fixture uses /bin/sh")
 	}
-	runParallelPTYE2E(t)
+	runSerialPTYE2E(t)
 
 	require := require.New(t)
 	assert := assert.New(t)
@@ -26823,7 +27009,7 @@ func TestWorkspaceRuntimePtyOwnerShellReattachesAfterServerRestartE2E(t *testing
 	if runtime.GOOS == "windows" {
 		t.Skip("test fixture uses /bin/sh")
 	}
-	runParallelPTYE2E(t)
+	runSerialPTYE2E(t)
 
 	require := require.New(t)
 	assert := assert.New(t)
@@ -26936,7 +27122,7 @@ func TestWorkspaceRuntimeUnavailablePtyOwnerSessionStaysUntilUserStopE2E(t *test
 	if runtime.GOOS == "windows" {
 		t.Skip("test fixture uses /bin/sh")
 	}
-	runParallelPTYE2E(t)
+	runSerialPTYE2E(t)
 
 	require := require.New(t)
 	assert := assert.New(t)
@@ -27032,7 +27218,7 @@ func TestWorkspaceDeleteStopsPtyOwnerAgentAfterServerRestartE2E(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test fixture uses /bin/sh")
 	}
-	runParallelPTYE2E(t)
+	runSerialPTYE2E(t)
 
 	require := require.New(t)
 	assert := assert.New(t)
@@ -27088,192 +27274,6 @@ func TestWorkspaceDeleteStopsPtyOwnerAgentAfterServerRestartE2E(t *testing.T) {
 	assert.True(os.IsNotExist(err))
 }
 
-func TestRustPtyManagerRejectsConcurrentAttachmentsE2E(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("concurrent attach coverage is exercised by the Rust owner tests on Windows")
-	}
-	requirePTYAvailable(t)
-	runParallelPTYE2E(t)
-
-	require := require.New(t)
-	assert := assert.New(t)
-
-	managerPath := buildRustPtyManagerForTest(t)
-	ptyOwnerDir := longRustPtyOwnerDirForTest(t)
-	session := "kenn-forge-rust-concurrent"
-	command := []string{
-		"sh", "-c",
-		"printf ready; while IFS= read -r line; do echo got:$line; done",
-	}
-	readyNeedle := "ready"
-	firstNeedle := "got:before-second"
-	thirdNeedle := "got:after-close"
-	if runtime.GOOS == "windows" {
-		command = serverRuntimeHelperCommand("echo")
-		readyNeedle = ""
-		firstNeedle = "echo:before-second"
-		thirdNeedle = "echo:after-close"
-	}
-	client := ptyowner.Client{
-		Root:        ptyOwnerDir,
-		ManagerPath: managerPath,
-		Command:     command,
-	}
-	require.NoError(client.Ensure(t.Context(), session, t.TempDir()))
-	t.Cleanup(func() {
-		_ = client.Stop(context.Background(), session)
-	})
-
-	first, err := client.Attach(
-		context.Background(), session,
-		ptysize.Geometry{Cols: 120, Rows: 30},
-	)
-	require.NoError(err)
-	defer first.Close()
-	if readyNeedle != "" {
-		require.Contains(
-			readPtyOwnerOutputUntil(t, first.Output, readyNeedle),
-			readyNeedle,
-		)
-	}
-	require.NoError(first.Write([]byte("before-second\r")))
-	require.Contains(
-		readPtyOwnerOutputUntil(t, first.Output, firstNeedle),
-		firstNeedle,
-	)
-
-	second, err := client.Attach(
-		context.Background(), session,
-		ptysize.Geometry{Cols: 100, Rows: 20},
-	)
-	if second != nil {
-		second.Close()
-	}
-	require.Error(err)
-	assert.Contains(err.Error(), "already has an active attachment")
-
-	first.Close()
-	var third *ptyowner.Attachment
-	require.Eventually(func() bool {
-		var attachErr error
-		third, attachErr = client.Attach(
-			context.Background(), session,
-			ptysize.Geometry{Cols: 80, Rows: 24},
-		)
-		return attachErr == nil
-	}, 2*time.Second, 20*time.Millisecond)
-	defer third.Close()
-	require.NoError(third.Write([]byte("after-close\n")))
-	require.Contains(
-		readPtyOwnerOutputUntil(t, third.Output, thirdNeedle),
-		thirdNeedle,
-	)
-}
-
-func readPtyOwnerOutputUntil(
-	t *testing.T,
-	output <-chan []byte,
-	needle string,
-) string {
-	t.Helper()
-
-	deadline := time.After(2 * time.Second)
-	var builder strings.Builder
-	for {
-		select {
-		case chunk, ok := <-output:
-			if !ok {
-				return builder.String()
-			}
-			builder.Write(chunk)
-			if strings.Contains(builder.String(), needle) {
-				return builder.String()
-			}
-		case <-deadline:
-			require.New(t).Failf(
-				"timed out waiting for output",
-				"wanted %q in %q", needle, builder.String(),
-			)
-		}
-	}
-}
-
-func TestWorkspacePtyOwnerTerminalRejectsConcurrentAttachmentsE2E(t *testing.T) {
-	runParallelPTYE2E(t)
-
-	require := require.New(t)
-	assert := assert.New(t)
-
-	fixture, _, ptyOwnerDir := setupPtyOwnerWorkspaceFixture(t)
-	ctx := context.Background()
-	ws := createReadyWorkspace(t, ctx, fixture.client)
-	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, ws.TmuxSession)
-
-	ts := httptest.NewServer(fixture.server)
-	t.Cleanup(ts.Close)
-
-	first, _, err := workspaceTerminalDial(ctx, ts.URL, ws.Id)
-	require.NoError(err)
-	defer first.Close(websocket.StatusNormalClosure, "done")
-
-	second, resp, err := workspaceTerminalDial(ctx, ts.URL, ws.Id)
-	require.Error(err)
-	if second != nil {
-		second.Close(websocket.StatusNormalClosure, "done")
-	}
-	require.NotNil(resp)
-	assert.Equal(http.StatusConflict, resp.StatusCode)
-	if resp.Body != nil {
-		resp.Body.Close()
-	}
-
-	require.NoError(first.Close(websocket.StatusNormalClosure, "done"))
-	third := workspaceTerminalDialEventually(t, ctx, ts.URL, ws.Id)
-	defer third.Close(websocket.StatusNormalClosure, "done")
-	workspaceTerminalConnWriteRead(
-		t, ctx, third, "printf 'owner-after-close\n'\n", "owner-after-close",
-	)
-}
-
-func TestWorkspacePtyOwnerTerminalFlushesFinalOutputOnExitE2E(t *testing.T) {
-	runParallelPTYE2E(t)
-
-	require := require.New(t)
-
-	fixture, _, ptyOwnerDir := setupPtyOwnerWorkspaceFixture(t)
-	ctx := context.Background()
-	ws := createReadyWorkspace(t, ctx, fixture.client)
-	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, ws.TmuxSession)
-
-	ts := httptest.NewServer(fixture.server)
-	t.Cleanup(ts.Close)
-
-	conn, _, err := workspaceTerminalDial(ctx, ts.URL, ws.Id)
-	require.NoError(err)
-	defer conn.Close(websocket.StatusNormalClosure, "done")
-
-	require.NoError(conn.Write(
-		ctx, websocket.MessageBinary,
-		[]byte("printf 'final-owner-output\n'; exit\n"),
-	))
-	readCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-	var got strings.Builder
-	for {
-		typ, data, readErr := conn.Read(readCtx)
-		if readErr != nil {
-			break
-		}
-		if typ == websocket.MessageBinary {
-			got.WriteString(string(data))
-		}
-		if strings.Contains(got.String(), "final-owner-output") {
-			return
-		}
-	}
-	require.Contains(got.String(), "final-owner-output")
-}
-
 func setupPtyOwnerWorkspaceFixture(
 	t *testing.T,
 	enableEnrichment ...bool,
@@ -27318,46 +27318,6 @@ func gitLocalRemoteURL(path string) string {
 	return (&url.URL{Scheme: "file", Path: slashPath}).String()
 }
 
-func buildRustPtyManagerForTest(t *testing.T) string {
-	t.Helper()
-
-	cargo, err := exec.LookPath("cargo")
-	if err != nil {
-		t.Skip("cargo not available")
-	}
-	if err := procutil.Command(cargo, "--version").Run(); err != nil {
-		t.Skipf("cargo not usable: %v", err)
-	}
-	root := repoRootForTest(t)
-	cmd := procutil.Command(cargo, "build", "-p", "kenn-forge-pty-manager")
-	cmd.Dir = root
-	out, err := cmd.CombinedOutput()
-	require.NoError(t, err, string(out))
-	exe := filepath.Join(root, "target", "debug", "kenn-forge-pty-manager")
-	if runtime.GOOS == "windows" {
-		exe += ".exe"
-	}
-	return exe
-}
-
-func repoRootForTest(t *testing.T) string {
-	t.Helper()
-
-	root, err := filepath.Abs(filepath.Join("..", ".."))
-	require.NoError(t, err)
-	_, err = os.Stat(filepath.Join(root, "Cargo.toml"))
-	require.NoError(t, err)
-	return root
-}
-
-func longRustPtyOwnerDirForTest(t *testing.T) string {
-	t.Helper()
-
-	dir := filepath.Join(t.TempDir(), strings.Repeat("long-owner-root-", 8))
-	require.NoError(t, os.MkdirAll(dir, 0o755))
-	return dir
-}
-
 func cleanupPtyOwnerWorkspace(
 	t *testing.T,
 	ptyOwnerDir string,
@@ -27372,7 +27332,7 @@ func cleanupPtyOwnerWorkspace(
 }
 
 func TestWorkspaceRuntimeExistingSessionsAvailableWhenWorkspaceErroredE2E(t *testing.T) {
-	t.Parallel()
+	runParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -27419,243 +27379,6 @@ func TestWorkspaceRuntimeExistingSessionsAvailableWhenWorkspaceErroredE2E(t *tes
 	)
 	require.NoError(err)
 	require.Equal(http.StatusConflict, relaunchResp.StatusCode())
-}
-
-func TestWorkspaceRuntimeLaunchMultipleAndStopOneE2E(t *testing.T) {
-	runParallelPTYE2E(t)
-
-	require := require.New(t)
-	assert := assert.New(t)
-	disableTmuxAgentSessions := false
-	cfg := &config.Config{Agents: []config.Agent{{
-		Key:     "helper",
-		Label:   "Helper",
-		Command: serverRuntimeHelperCommand("sleep"),
-	}}, Tmux: config.Tmux{AgentSessions: &disableTmuxAgentSessions}}
-	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
-	ctx := context.Background()
-	ws := createReadyWorkspace(t, ctx, client)
-
-	firstResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{
-			TargetKey: "helper",
-		},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusOK, firstResp.StatusCode())
-	require.NotNil(firstResp.JSON200)
-	first := firstResp.JSON200
-
-	secondResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{
-			TargetKey: "helper",
-		},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusOK, secondResp.StatusCode())
-	require.NotNil(secondResp.JSON200)
-	second := secondResp.JSON200
-	assert.NotEqual(first.Key, second.Key)
-	assert.True(isRuntimeSessionKeyForWorkspace(ws.Id, first.Key))
-	assert.True(isRuntimeSessionKeyForWorkspace(ws.Id, second.Key))
-	assert.Equal("Helper", first.Label)
-	assert.Equal("Helper 2", second.Label)
-	assert.Equal(string(localruntime.SessionStatusRunning), first.Status)
-
-	renameRR := doJSON(
-		t,
-		srv,
-		http.MethodPatch,
-		"/api/v1/workspaces/"+ws.Id+"/runtime/sessions/"+url.PathEscape(second.Key),
-		map[string]string{"label": "Review helper"},
-	)
-	require.Equal(http.StatusOK, renameRR.Code, renameRR.Body.String())
-	var renamed generated.SessionInfo
-	require.NoError(json.NewDecoder(renameRR.Body).Decode(&renamed))
-	assert.Equal(second.Key, renamed.Key)
-	assert.Equal("Review helper", renamed.Label)
-
-	listResp, err := client.HTTP.GetWorkspaceRuntimeWithResponse(
-		ctx, ws.Id,
-	)
-	require.NoError(err)
-	require.Equal(http.StatusOK, listResp.StatusCode())
-	require.NotNil(listResp.JSON200)
-	require.NotNil(listResp.JSON200.Sessions)
-	require.Len(*listResp.JSON200.Sessions, 2)
-	assert.Equal(first.Key, (*listResp.JSON200.Sessions)[0].Key)
-	assert.Equal("Helper", (*listResp.JSON200.Sessions)[0].Label)
-	assert.Equal("Review helper", (*listResp.JSON200.Sessions)[1].Label)
-
-	stopResp, err := client.HTTP.StopWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id, first.Key,
-	)
-	require.NoError(err)
-	require.Equal(http.StatusNoContent, stopResp.StatusCode())
-
-	afterStopResp, err := client.HTTP.GetWorkspaceRuntimeWithResponse(
-		ctx, ws.Id,
-	)
-	require.NoError(err)
-	require.Equal(http.StatusOK, afterStopResp.StatusCode())
-	require.NotNil(afterStopResp.JSON200)
-	require.NotNil(afterStopResp.JSON200.Sessions)
-	require.Len(*afterStopResp.JSON200.Sessions, 1)
-	assert.Equal(second.Key, (*afterStopResp.JSON200.Sessions)[0].Key)
-}
-
-func TestWorkspaceRuntimeNaturalAgentExitRemovesSessionE2E(t *testing.T) {
-	runParallelPTYE2E(t)
-
-	require := require.New(t)
-	assert := assert.New(t)
-	disableTmuxAgentSessions := false
-	cfg := &config.Config{Agents: []config.Agent{{
-		Key:     "helper",
-		Label:   "Helper",
-		Command: serverRuntimeHelperCommand("exit"),
-	}}, Tmux: config.Tmux{AgentSessions: &disableTmuxAgentSessions}}
-	client, database, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
-	ctx := context.Background()
-	ws := createReadyWorkspace(t, ctx, client)
-
-	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{
-			TargetKey: "helper",
-		},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusOK, launchResp.StatusCode(), string(launchResp.Body))
-	require.NotNil(launchResp.JSON200)
-
-	require.Eventually(func() bool {
-		runtimeResp, runtimeErr := client.HTTP.GetWorkspaceRuntimeWithResponse(
-			ctx, ws.Id,
-		)
-		if runtimeErr != nil ||
-			runtimeResp.StatusCode() != http.StatusOK ||
-			runtimeResp.JSON200 == nil ||
-			runtimeResp.JSON200.Sessions == nil {
-			return false
-		}
-		return len(*runtimeResp.JSON200.Sessions) == 0
-	}, 2*time.Second, 20*time.Millisecond)
-	stored, err := database.ListWorkspaceRuntimeSessions(ctx, ws.Id)
-	require.NoError(err)
-	assert.Empty(stored)
-	assert.NotEmpty(launchResp.JSON200.Key)
-}
-
-func TestWorkspaceRuntimePtyOwnerQuickExitLaunchSucceedsE2E(t *testing.T) {
-	runParallelPTYE2E(t)
-
-	require := require.New(t)
-	assert := assert.New(t)
-	disableTmuxAgentSessions := false
-	cfg := &config.Config{Agents: []config.Agent{{
-		Key:     "helper",
-		Label:   "Helper",
-		Command: serverRuntimeHelperCommand("print-exit"),
-	}}, Tmux: config.Tmux{AgentSessions: &disableTmuxAgentSessions}}
-	client, database, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
-	ctx := context.Background()
-	ws := createReadyWorkspace(t, ctx, client)
-
-	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{
-			TargetKey: "helper",
-		},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusOK, launchResp.StatusCode(), string(launchResp.Body))
-	require.NotNil(launchResp.JSON200)
-	assert.NotEmpty(launchResp.JSON200.Key)
-
-	require.Eventually(func() bool {
-		runtimeResp, runtimeErr := client.HTTP.GetWorkspaceRuntimeWithResponse(
-			ctx, ws.Id,
-		)
-		if runtimeErr != nil ||
-			runtimeResp.StatusCode() != http.StatusOK ||
-			runtimeResp.JSON200 == nil ||
-			runtimeResp.JSON200.Sessions == nil {
-			return false
-		}
-		return len(*runtimeResp.JSON200.Sessions) == 0
-	}, 2*time.Second, 20*time.Millisecond)
-	stored, err := database.ListWorkspaceRuntimeSessions(ctx, ws.Id)
-	require.NoError(err)
-	assert.Empty(stored)
-}
-
-func TestWorkspaceRuntimeNaturalTmuxAgentExitForgetsStoredSessionE2E(
-	t *testing.T,
-) {
-	require := require.New(t)
-	assert := assert.New(t)
-	dir := t.TempDir()
-	record := filepath.Join(dir, "tmux-record")
-	tmuxPath := filepath.Join(dir, "fake-tmux")
-	require.NoError(os.WriteFile(tmuxPath, []byte("#!/bin/sh\n"+
-		"TMUX_RECORD="+shellquote.Join(record)+"\n"+
-		`printf '%s\0' "$@" >> "$TMUX_RECORD"
-if [ "$1" = "-u" ]; then shift; fi
-case "$1" in
-  has-session)
-    echo "can't find session: $3" >&2
-    exit 1
-    ;;
-  new-session|set-option|attach-session)
-    exit 0
-    ;;
-esac
-exit 0
-`), 0o755))
-
-	cfg := &config.Config{
-		Agents: []config.Agent{{
-			Key:     "helper",
-			Label:   "Helper",
-			Command: []string{"/bin/sh", "-lc", "exit 0"},
-		}},
-		Tmux: config.Tmux{Command: []string{tmuxPath}},
-	}
-	client, database, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
-	ctx := context.Background()
-	ws := createReadyWorkspace(t, ctx, client)
-
-	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{
-			TargetKey: "helper",
-		},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusOK, launchResp.StatusCode())
-	require.NotNil(launchResp.JSON200)
-
-	require.Eventually(func() bool {
-		runtimeResp, runtimeErr := client.HTTP.GetWorkspaceRuntimeWithResponse(
-			ctx, ws.Id,
-		)
-		if runtimeErr != nil ||
-			runtimeResp.StatusCode() != http.StatusOK ||
-			runtimeResp.JSON200 == nil ||
-			runtimeResp.JSON200.Sessions == nil {
-			return false
-		}
-		return len(*runtimeResp.JSON200.Sessions) == 0
-	}, 2*time.Second, 20*time.Millisecond)
-
-	require.Eventually(func() bool {
-		stored, storedErr := database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.Id)
-		return storedErr == nil && len(stored) == 0
-	}, 2*time.Second, 20*time.Millisecond)
-	assert.NotEmpty(launchResp.JSON200.Key)
 }
 
 func TestWorkspaceRuntimeIncludesStoredRuntimeSessionsAfterReloadE2E(t *testing.T) {
@@ -28288,15 +28011,6 @@ func tmuxNewSessionPaneCommand(argv []string) string {
 	return command
 }
 
-func isRuntimeSessionKeyForWorkspace(workspaceID string, key string) bool {
-	suffix := strings.TrimPrefix(key, workspaceID+"_")
-	return suffix != key &&
-		len(suffix) == 16 &&
-		strings.IndexFunc(suffix, func(r rune) bool {
-			return !strings.ContainsRune("0123456789abcdef", r)
-		}) == -1
-}
-
 func TestWorkspaceRuntimeTmuxSessionsHashUnsafeTargetKeysE2E(
 	t *testing.T,
 ) {
@@ -28523,87 +28237,8 @@ exit 0
 	)
 }
 
-func TestWorkspaceResponseUsesStoredRuntimeTmuxSessionsAfterRestartE2E(
-	t *testing.T,
-) {
-	require := require.New(t)
-	assert := assert.New(t)
-	dir := t.TempDir()
-	tmuxPath := filepath.Join(dir, "fake-tmux")
-	liveSessionsFile := filepath.Join(dir, "live-sessions")
-	require.NoError(os.WriteFile(tmuxPath, []byte("#!/bin/sh\n"+
-		"TMUX_LIVE_SESSIONS_FILE="+shellquote.Join(liveSessionsFile)+"\n"+
-		`target=""
-mode=""
-prev=""
-for a in "$@"; do
-  if [ "$prev" = "-t" ]; then target="$a"; fi
-  if [ "$a" = "display-message" ]; then mode="display-message"; fi
-  if [ "$a" = "capture-pane" ]; then mode="capture-pane"; fi
-  if [ "$a" = "list-sessions" ]; then
-    [ -f "$TMUX_LIVE_SESSIONS_FILE" ] && cat "$TMUX_LIVE_SESSIONS_FILE"
-    exit 0
-  fi
-  prev="$a"
-done
-if [ "$mode" = "display-message" ]; then
-  case "$target" in
-    *-claude) printf '⠴ claude-activity\n' ;;
-    *) printf 'idle\n' ;;
-  esac
-  exit 0
-fi
-if [ "$mode" = "capture-pane" ]; then
-  printf 'stable\n'
-  exit 0
-fi
-exit 0
-`), 0o755))
-	cfg := &config.Config{Tmux: config.Tmux{Command: []string{tmuxPath}}}
-	client, database, _, _, _ := setupTestServerWithWorkspacesServerAndEnrichment(t, cfg)
-	ctx := context.Background()
-	ws := createReadyWorkspace(t, ctx, client)
-	require.NotEmpty(ws.TmuxSession)
-	require.NoError(os.WriteFile(liveSessionsFile, []byte(strings.Join([]string{
-		ws.TmuxSession,
-		ws.TmuxSession + "-codex",
-		ws.TmuxSession + "-claude",
-	}, "\n")+"\n"), 0o644))
-	recordRuntimeTmuxSessionForServerTest(
-		t, database, ws.Id, "", "codex", ws.TmuxSession+"-codex", time.Time{},
-	)
-	recordRuntimeTmuxSessionForServerTest(
-		t, database, ws.Id, "", "claude", ws.TmuxSession+"-claude", time.Time{},
-	)
-
-	var listed *generated.WorkspaceResponse
-	require.Eventually(func() bool {
-		listResp, err := client.HTTP.ListWorkspacesWithResponse(ctx)
-		require.NoError(err)
-		if listResp.StatusCode() != http.StatusOK ||
-			listResp.JSON200 == nil || listResp.JSON200.Workspaces == nil {
-			return false
-		}
-		listed = nil
-		for i := range *listResp.JSON200.Workspaces {
-			if (*listResp.JSON200.Workspaces)[i].Id == ws.Id {
-				listed = &(*listResp.JSON200.Workspaces)[i]
-				break
-			}
-		}
-		return listed != nil && listed.TmuxWorking &&
-			listed.TmuxActivitySource == workspaceapi.TmuxActivitySourceTitle &&
-			listed.TmuxPaneTitle != nil
-	}, 6*time.Second, 10*time.Millisecond)
-	require.NotNil(listed)
-	assert.True(listed.TmuxWorking)
-	assert.Equal(workspaceapi.TmuxActivitySourceTitle, listed.TmuxActivitySource)
-	require.NotNil(listed.TmuxPaneTitle)
-	assert.Equal("⠴ claude-activity", *listed.TmuxPaneTitle)
-}
-
 func TestWorkspaceDeletionRecoversAcrossServerRestartE2E(t *testing.T) {
-	t.Parallel()
+	runParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -28667,7 +28302,7 @@ func TestWorkspaceDeletionRecoversAcrossServerRestartE2E(t *testing.T) {
 }
 
 func TestWorkspaceDeleteStopsRuntimeSessionsE2E(t *testing.T) {
-	runParallelPTYE2E(t)
+	runSerialPTYE2E(t)
 
 	require := require.New(t)
 	assert := assert.New(t)
@@ -28707,7 +28342,7 @@ func TestWorkspaceDeleteStopsRuntimeSessionsE2E(t *testing.T) {
 }
 
 func TestWorkspaceDeleteDirtyKeepsRuntimeSessionsE2E(t *testing.T) {
-	runParallelPTYE2E(t)
+	runSerialPTYE2E(t)
 
 	require := require.New(t)
 	assert := assert.New(t)
@@ -28793,7 +28428,7 @@ func TestMergeWorkspaceCleanupDeletesWorkspaceAfterConfirmedMerge(t *testing.T) 
 	ws := createReadyWorkspace(t, ctx, client)
 	headSHA := pinWorkspaceMergeRequestForReview(t, ctx, database, ws)
 
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/pulls/github/acme/widget/1/merge", map[string]any{
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/pulls/github/acme/widget/1/merge", map[string]any{
 		"commit_title":        "merge title",
 		"commit_message":      "merge body",
 		"method":              "squash",
@@ -28817,79 +28452,6 @@ func TestMergeWorkspaceCleanupDeletesWorkspaceAfterConfirmedMerge(t *testing.T) 
 	}, 5*time.Second, 10*time.Millisecond)
 	_, err := os.Stat(ws.WorktreePath)
 	assert.ErrorIs(err, os.ErrNotExist)
-}
-
-func TestWorkspaceDiffCacheHitReturnsWhileGitCapacityIsHeldE2E(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	restoreLimiter := procutil.SetDefaultLimiterForTest(
-		procutil.NewLimiterWithAcquireTimeout(1, 500*time.Millisecond),
-	)
-	t.Cleanup(restoreLimiter)
-
-	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
-	ws := createReadyWorkspace(t, context.Background(), client)
-	initial := requestWorkspaceDiff(t, srv, ws.Id, "head")
-	assert.False(initial.Stale)
-
-	releaseHeld, err := procutil.TryAcquire(
-		context.Background(), "test-held workspace diff capacity",
-	)
-	require.NoError(err)
-	defer releaseHeld()
-
-	started := time.Now()
-	cached := requestWorkspaceDiff(t, srv, ws.Id, "head")
-	elapsed := time.Since(started)
-	releaseHeld()
-
-	assert.False(cached.Stale)
-	assert.Less(elapsed, 200*time.Millisecond)
-}
-
-func requestWorkspaceDiff(
-	t *testing.T,
-	srv *Server,
-	workspaceID string,
-	base string,
-	whitespace ...string,
-) generated.DiffResponse {
-	t.Helper()
-
-	query := "/api/v1/workspaces/" + workspaceID + "/diff?base=" + base
-	if len(whitespace) > 0 {
-		query += "&whitespace=" + whitespace[0]
-	}
-	return requestWorkspaceDiffPath(t, srv, query)
-}
-
-func requestWorkspaceDiffPath(
-	t *testing.T,
-	srv *Server,
-	query string,
-) generated.DiffResponse {
-	t.Helper()
-
-	req := newWorkspaceFixtureRequest(http.MethodGet, query, nil)
-	rr := httptest.NewRecorder()
-	srv.ServeHTTP(rr, req)
-	resp := rr.Result()
-	defer resp.Body.Close()
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-
-	var body generated.DiffResponse
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
-	return body
-}
-
-func newWorkspaceFixtureRequest(
-	method string,
-	target string,
-	body io.Reader,
-) *http.Request {
-	req := httptest.NewRequest(method, target, body)
-	req.Host = "forge.test"
-	return req
 }
 
 func requireWorkspaceDiffFile(
@@ -29251,326 +28813,11 @@ func TestWorkspaceRuntimeRestoreKeepsStoredTmuxShellWithDifferentOwnerMarkerE2E(
 	assert.Equal(string(localruntime.SessionStatusRunning), (*runtimeResp.JSON200.Sessions)[0].Status)
 }
 
-// TestWorkspaceRuntimePlainShellTerminalWebSocketE2E exercises the runtime
-// session websocket path end-to-end with a custom Shell.Command. Hardened
-// deployments (e.g. systemd services with SystemCallFilter=~@privileged) need
-// the override so that zsh's startup setresuid is not SIGSYS'd by the parent's
-// seccomp filter; this test guards both the websocket route and the
-// config.Shell.Command -> manager.Options.ShellCommand wiring.
-func TestWorkspaceRuntimePlainShellTerminalWebSocketE2E(t *testing.T) {
-	runParallelPTYE2E(t)
-
-	require := require.New(t)
-	tmuxCommand := isolatedRealTmuxCommandIfAvailable(t)
-	cfg := &config.Config{
-		Tmux: config.Tmux{Command: tmuxCommand},
-		Shell: config.Shell{
-			Command: serverRuntimeHelperCommand("echo"),
-		},
-	}
-	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
-	ctx := context.Background()
-	ws := createReadyWorkspace(t, ctx, client)
-
-	shell := launchPlainShellRuntimeSession(t, ctx, client, ws.Id)
-
-	ts := httptest.NewServer(srv)
-	t.Cleanup(ts.Close)
-	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
-		"/ws/v1/workspaces/" + ws.Id +
-		"/runtime/sessions/" + shell.Key + "/terminal?cols=80&rows=24"
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
-	require.NoError(err)
-	defer conn.Close(websocket.StatusNormalClosure, "done")
-
-	require.NoError(conn.Write(
-		ctx, websocket.MessageBinary, []byte("ping\n"),
-	))
-	readCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-	var got strings.Builder
-	for {
-		typ, data, readErr := conn.Read(readCtx)
-		if readErr != nil {
-			break
-		}
-		if typ != websocket.MessageBinary {
-			continue
-		}
-		got.WriteString(string(data))
-		if strings.Contains(got.String(), "echo:ping") {
-			return
-		}
-	}
-	require.Contains(got.String(), "echo:ping")
-}
-
-// TestWorkspaceRuntimePlainShellTerminalDeliversActualExitCodeE2E pins the
-// websocket "exited" text frame contract through the real runtime stack. The
-// helper closes its PTY shortly before exiting so this exercises the window
-// where PTY EOF can arrive before process wait publishes the exit code.
-func TestWorkspaceRuntimePlainShellTerminalDeliversActualExitCodeE2E(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("test fixture uses /bin/sh")
-	}
-	runParallelPTYE2E(t)
-
-	require := require.New(t)
-	dir := t.TempDir()
-	ptyOwnerDir := filepath.Join(dir, "pty-owner")
-	cfg := &config.Config{
-		Tmux: config.Tmux{
-			Command: []string{filepath.Join(dir, "missing-tmux")},
-		},
-		Shell: config.Shell{
-			Command: serverRuntimeHelperCommand("pty-close-on-input-then-exit"),
-		},
-	}
-	fixture := setupWorkspaceServerFixtureWithOptions(
-		t, cfg, ptyOwnerServerOptions(ptyOwnerDir),
-	)
-	client := fixture.client
-	srv := fixture.server
-	ctx := context.Background()
-	ws := createReadyWorkspace(t, ctx, client)
-
-	shell := launchPlainShellRuntimeSession(t, ctx, client, ws.Id)
-	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, shell.Key)
-	stored, err := fixture.database.ListWorkspaceRuntimeSessions(ctx, ws.Id)
-	require.NoError(err)
-	require.Len(stored, 1)
-	require.Equal(shell.Key, stored[0].SessionKey)
-	require.Empty(stored[0].TmuxSession)
-
-	ts := httptest.NewServer(srv)
-	t.Cleanup(ts.Close)
-	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
-		"/ws/v1/workspaces/" + ws.Id +
-		"/runtime/sessions/" + shell.Key + "/terminal?cols=80&rows=24"
-	conn := dialWebSocketForTest(t, ctx, wsURL, "shell")
-	defer conn.Close(websocket.StatusNormalClosure, "done")
-
-	// Trigger after attach so the session cannot exit before the websocket
-	// connects. The helper's short delay makes PTY EOF reliably precede process
-	// exit while remaining inside the owner's bounded exit-code grace period.
-	require.NoError(conn.Write(ctx, websocket.MessageBinary, []byte("close\n")))
-	readCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	for {
-		typ, data, readErr := conn.Read(readCtx)
-		if readErr != nil {
-			require.Failf(
-				"never received exit frame",
-				"read err before exit frame: %v", readErr,
-			)
-		}
-		if typ != websocket.MessageText {
-			continue
-		}
-		var msg struct {
-			Type string `json:"type"`
-			Code int    `json:"code"`
-		}
-		require.NoError(json.Unmarshal(data, &msg))
-		require.Equal("exited", msg.Type)
-		require.Equal(7, msg.Code)
-		break
-	}
-
-	require.Eventually(func() bool {
-		runtimeResp, runtimeErr := client.HTTP.GetWorkspaceRuntimeWithResponse(
-			ctx, ws.Id,
-		)
-		if runtimeErr != nil || runtimeResp.StatusCode() != http.StatusOK ||
-			runtimeResp.JSON200 == nil {
-			return false
-		}
-		if runtimeResp.JSON200.Sessions != nil {
-			for _, session := range *runtimeResp.JSON200.Sessions {
-				if session.Key == shell.Key {
-					return false
-				}
-			}
-		}
-		rows, rowsErr := fixture.database.ListWorkspaceRuntimeSessions(ctx, ws.Id)
-		return rowsErr == nil && len(rows) == 0
-	}, 5*time.Second, 20*time.Millisecond)
-}
-
-func TestWorkspaceRuntimePtyOwnerQuickExitReportsExactStatusE2E(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("test fixture uses Unix PTY exit semantics")
-	}
-	runParallelPTYE2E(t)
-
-	require := require.New(t)
-	dir := t.TempDir()
-	ptyOwnerDir := filepath.Join(dir, "pty-owner")
-	disableTmuxAgentSessions := false
-	cfg := &config.Config{
-		Agents: []config.Agent{{
-			Key:   "helper",
-			Label: "Helper",
-			// Keep the PTY open briefly after the shell exits so the owner can
-			// publish the exact status before output EOF reaches the bridge.
-			// Without this ordering, a loaded race runner can legitimately hit
-			// the owner's bounded unknown-status fallback instead.
-			Command: []string{
-				"sh", "-c", "IFS= read -r line; sleep 1 & exit 9",
-			},
-		}},
-		Tmux: config.Tmux{
-			Command:       []string{filepath.Join(dir, "missing-tmux")},
-			AgentSessions: &disableTmuxAgentSessions,
-		},
-	}
-	fixture := setupWorkspaceServerFixtureWithOptions(
-		t, cfg, ptyOwnerServerOptions(ptyOwnerDir),
-	)
-	ctx := context.Background()
-	ws := createReadyWorkspace(t, ctx, fixture.client)
-
-	launchResp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{TargetKey: "helper"},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusOK, launchResp.StatusCode(), string(launchResp.Body))
-	require.NotNil(launchResp.JSON200)
-	session := launchResp.JSON200
-	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, session.Key)
-
-	stored, err := fixture.database.ListWorkspaceRuntimeSessions(ctx, ws.Id)
-	require.NoError(err)
-	require.Len(stored, 1)
-	require.Equal(session.Key, stored[0].SessionKey)
-
-	ts := httptest.NewServer(fixture.server)
-	t.Cleanup(ts.Close)
-	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
-		"/ws/v1/workspaces/" + ws.Id +
-		"/runtime/sessions/" + session.Key + "/terminal?cols=80&rows=24"
-	conn := dialWebSocketForTest(t, ctx, wsURL, "quick-exit helper")
-	defer conn.Close(websocket.StatusNormalClosure, "done")
-	require.NoError(conn.Write(ctx, websocket.MessageBinary, []byte("exit\n")))
-
-	readCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	for {
-		typ, data, readErr := conn.Read(readCtx)
-		if readErr != nil {
-			require.Failf(
-				"never received exact exit frame",
-				"read err before exit frame: %v", readErr,
-			)
-		}
-		if typ != websocket.MessageText {
-			continue
-		}
-		var msg struct {
-			Type string `json:"type"`
-			Code int    `json:"code"`
-		}
-		require.NoError(json.Unmarshal(data, &msg))
-		require.Equal("exited", msg.Type)
-		require.Equal(9, msg.Code)
-		break
-	}
-
-	require.Eventually(func() bool {
-		runtimeResp, runtimeErr := fixture.client.HTTP.GetWorkspaceRuntimeWithResponse(
-			ctx, ws.Id,
-		)
-		if runtimeErr != nil || runtimeResp.StatusCode() != http.StatusOK ||
-			runtimeResp.JSON200 == nil || runtimeResp.JSON200.Sessions == nil ||
-			len(*runtimeResp.JSON200.Sessions) != 0 {
-			return false
-		}
-		stored, storedErr := fixture.database.ListWorkspaceRuntimeSessions(ctx, ws.Id)
-		return storedErr == nil && len(stored) == 0
-	}, 2*time.Second, 20*time.Millisecond)
-}
-
 // TestBridgeRuntimeAttachmentOutputClosedEmitsExitFrameBeforeDone pins the
 // bridge branch for wrappers where PTY EOF reaches the subscriber before
 // cmd.Wait marks the session done. That is the race the real ShellDrawer cares
 // about, but it is cleaner to drive it with controlled channels than to depend
 // on backend-specific PTY behavior in an e2e helper.
-
-// TestWorkspaceRuntimePlainShellAfterExitStartsFreshE2E pins the user-visible
-// no-tmux behavior that launching a shell after the terminal has reported exit
-// returns a fresh ptyowner-backed session, never the dead shell record the
-// frontend just auto-closed.
-func TestWorkspaceRuntimePlainShellAfterExitStartsFreshE2E(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("test fixture uses /bin/sh")
-	}
-	runParallelPTYE2E(t)
-
-	require := require.New(t)
-	assert := assert.New(t)
-	cfg := &config.Config{
-		Tmux: config.Tmux{
-			Command: []string{filepath.Join(t.TempDir(), "missing-tmux")},
-		},
-		Shell: config.Shell{
-			Command: serverRuntimeHelperCommand("pty-close-on-input-then-sleep"),
-		},
-	}
-	ptyOwnerDir := filepath.Join(t.TempDir(), "pty-owner")
-	fixture := setupWorkspaceServerFixtureWithOptions(
-		t, cfg, ptyOwnerServerOptions(ptyOwnerDir),
-	)
-	client := fixture.client
-	srv := fixture.server
-	ctx := context.Background()
-	ws := createReadyWorkspace(t, ctx, client)
-
-	first := launchPlainShellRuntimeSession(t, ctx, client, ws.Id)
-	firstCreatedAt := first.CreatedAt
-	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, first.Key)
-
-	// Attach + drain to drive the helper through exit, then ensure
-	// the next shell open does not reuse the session that just
-	// reported an exit frame to the frontend.
-	ts := httptest.NewServer(srv)
-	t.Cleanup(ts.Close)
-	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
-		"/ws/v1/workspaces/" + ws.Id +
-		"/runtime/sessions/" + first.Key + "/terminal?cols=80&rows=24"
-	conn := dialWebSocketForTest(t, ctx, wsURL, "plain shell after exit")
-	require.NoError(conn.Write(ctx, websocket.MessageBinary, []byte("exit\n")))
-	readCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	for {
-		typ, data, readErr := conn.Read(readCtx)
-		if readErr != nil {
-			require.Failf(
-				"never received exit frame",
-				"read err before exit frame: %v", readErr,
-			)
-		}
-		if typ != websocket.MessageText {
-			continue
-		}
-		var msg struct {
-			Type string `json:"type"`
-		}
-		require.NoError(json.Unmarshal(data, &msg))
-		require.Equal("exited", msg.Type)
-		break
-	}
-	conn.Close(websocket.StatusNormalClosure, "done")
-
-	// Inside the zombie window: helper still sleeping, so cmd.Wait
-	// hasn't returned and watchSession hasn't run.
-	second := launchPlainShellRuntimeSession(t, ctx, client, ws.Id)
-	assert.NotEqual(
-		firstCreatedAt, second.CreatedAt,
-		"second shell launch must return a fresh session, not the zombie",
-	)
-	assert.Equal(string(localruntime.SessionStatusRunning), second.Status)
-}
 
 // TestBridgeRuntimeAttachmentSubscriberDropDoesNotEmitExitFrame
 // pins the bridge's branch that distinguishes a subscriber drop from
@@ -29590,122 +28837,6 @@ func TestWorkspaceRuntimePlainShellAfterExitStartsFreshE2E(t *testing.T) {
 
 // Read until close. With the bug present (always-emit on
 // outputDone), we'd see a MessageText "exited" frame here.
-
-func TestWorkspaceRuntimeSessionTerminalWebSocketE2E(t *testing.T) {
-	runParallelPTYE2E(t)
-
-	require := require.New(t)
-	disableTmuxAgentSessions := false
-	cfg := &config.Config{Agents: []config.Agent{{
-		Key:     "helper",
-		Label:   "Helper",
-		Command: serverRuntimeHelperCommand("echo"),
-	}}, Tmux: config.Tmux{AgentSessions: &disableTmuxAgentSessions}}
-	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
-	ctx := context.Background()
-	ws := createReadyWorkspace(t, ctx, client)
-
-	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{
-			TargetKey: "helper",
-		},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusOK, launchResp.StatusCode())
-	require.NotNil(launchResp.JSON200)
-	session := launchResp.JSON200
-
-	ts := httptest.NewServer(srv)
-	t.Cleanup(ts.Close)
-	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
-		"/ws/v1/workspaces/" + ws.Id +
-		"/runtime/sessions/" + session.Key + "/terminal"
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
-	require.NoError(err)
-	defer conn.Close(websocket.StatusNormalClosure, "done")
-
-	require.NoError(conn.Write(
-		ctx, websocket.MessageBinary, []byte("ping\n"),
-	))
-	readCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-	var got strings.Builder
-	for {
-		typ, data, readErr := conn.Read(readCtx)
-		if readErr != nil {
-			break
-		}
-		if typ != websocket.MessageBinary {
-			continue
-		}
-		got.WriteString(string(data))
-		if strings.Contains(got.String(), "echo:ping") {
-			return
-		}
-	}
-	require.Contains(got.String(), "echo:ping")
-}
-
-func TestWorkspaceRuntimeSessionTerminalWebSocketBasePathE2E(t *testing.T) {
-	runParallelPTYE2E(t)
-
-	require := require.New(t)
-	disableTmuxAgentSessions := false
-	cfg := &config.Config{
-		BasePath: "/kenn-forge/",
-		Agents: []config.Agent{{
-			Key:     "helper",
-			Label:   "Helper",
-			Command: serverRuntimeHelperCommand("echo"),
-		}},
-		Tmux: config.Tmux{AgentSessions: &disableTmuxAgentSessions},
-	}
-	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
-	ctx := context.Background()
-	ws := createReadyWorkspace(t, ctx, client)
-
-	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{
-			TargetKey: "helper",
-		},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusOK, launchResp.StatusCode())
-	require.NotNil(launchResp.JSON200)
-	session := launchResp.JSON200
-
-	ts := httptest.NewServer(srv)
-	t.Cleanup(ts.Close)
-	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
-		"/kenn-forge/ws/v1/workspaces/" + ws.Id +
-		"/runtime/sessions/" + session.Key + "/terminal"
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
-	require.NoError(err)
-	defer conn.Close(websocket.StatusNormalClosure, "done")
-
-	require.NoError(conn.Write(
-		ctx, websocket.MessageBinary, []byte("ping\n"),
-	))
-	readCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-	var got strings.Builder
-	for {
-		typ, data, readErr := conn.Read(readCtx)
-		if readErr != nil {
-			break
-		}
-		if typ != websocket.MessageBinary {
-			continue
-		}
-		got.WriteString(string(data))
-		if strings.Contains(got.String(), "echo:ping") {
-			return
-		}
-	}
-	require.Contains(got.String(), "echo:ping")
-}
 
 func workspaceTerminalWriteRead(
 	t *testing.T,
@@ -29760,30 +28891,6 @@ func workspaceTerminalConnWriteRead(
 	require.Contains(t, got.String(), needle)
 }
 
-func workspaceTerminalDialEventually(
-	t *testing.T,
-	ctx context.Context,
-	serverURL string,
-	workspaceID string,
-) *websocket.Conn {
-	t.Helper()
-
-	var conn *websocket.Conn
-	require.Eventually(t, func() bool {
-		var resp *http.Response
-		var err error
-		conn, resp, err = workspaceTerminalDial(ctx, serverURL, workspaceID)
-		if err != nil && conn != nil {
-			conn.Close(websocket.StatusNormalClosure, "done")
-		}
-		if resp != nil && resp.Body != nil {
-			resp.Body.Close()
-		}
-		return err == nil
-	}, 2*time.Second, 20*time.Millisecond)
-	return conn
-}
-
 func workspaceTerminalDial(
 	ctx context.Context,
 	serverURL string,
@@ -29804,159 +28911,6 @@ func workspaceTerminalDialWithQuery(
 		wsURL += "?" + query
 	}
 	return websocket.Dial(ctx, wsURL, nil)
-}
-
-func TestWorkspaceRuntimeSessionTerminalSkipsAltScreenReplayE2E(t *testing.T) {
-	runParallelPTYE2E(t)
-
-	require := require.New(t)
-	assert := assert.New(t)
-	disableTmuxAgentSessions := false
-	cfg := &config.Config{Agents: []config.Agent{{
-		Key:     "helper",
-		Label:   "Helper",
-		Command: serverRuntimeHelperCommand("altscreen"),
-	}}, Tmux: config.Tmux{AgentSessions: &disableTmuxAgentSessions}}
-	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
-	ctx := context.Background()
-	ws := createReadyWorkspace(t, ctx, client)
-
-	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{
-			TargetKey: "helper",
-		},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusOK, launchResp.StatusCode())
-	require.NotNil(launchResp.JSON200)
-	session := launchResp.JSON200
-
-	ts := httptest.NewServer(srv)
-	t.Cleanup(ts.Close)
-	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
-		"/ws/v1/workspaces/" + ws.Id +
-		"/runtime/sessions/" + session.Key + "/terminal"
-
-	primingConn := dialWebSocketForTest(t, ctx, wsURL, "priming")
-	require.NoError(primingConn.Write(
-		ctx, websocket.MessageBinary, []byte("prime\n"),
-	))
-	readWebSocketBinaryUntil(t, ctx, primingConn, 2*time.Second, "codex screen")
-	require.NoError(primingConn.Close(websocket.StatusNormalClosure, "primed"))
-
-	conn := dialWebSocketForTest(t, ctx, wsURL, "late")
-	defer conn.Close(websocket.StatusNormalClosure, "done")
-
-	type terminalRead struct {
-		typ  websocket.MessageType
-		data []byte
-		err  error
-	}
-	reads := make(chan terminalRead, 1)
-	readOnce := func() {
-		go func() {
-			typ, data, readErr := conn.Read(context.Background())
-			reads <- terminalRead{typ: typ, data: data, err: readErr}
-		}()
-	}
-	readOnce()
-	select {
-	case read := <-reads:
-		require.NoError(read.err)
-		require.Empty(
-			string(read.data),
-			"late attach must not replay stale alternate-screen output",
-		)
-	case <-time.After(100 * time.Millisecond):
-	}
-
-	require.NoError(conn.Write(
-		ctx, websocket.MessageBinary, []byte("paint\n"),
-	))
-	var got strings.Builder
-	deadline := time.After(5 * time.Second)
-	for {
-		select {
-		case read := <-reads:
-			require.NoError(read.err)
-			if read.typ == websocket.MessageBinary {
-				got.WriteString(string(read.data))
-			}
-			if strings.Contains(got.String(), "live:paint") {
-				break
-			}
-			readOnce()
-			continue
-		case <-deadline:
-			require.Contains(got.String(), "live:paint")
-		}
-		break
-	}
-	assert.NotContains(got.String(), "codex screen")
-	require.Contains(got.String(), "live:paint")
-}
-
-func TestWorkspaceRuntimeSessionTerminalAppliesInitialSizeE2E(t *testing.T) {
-	runParallelPTYE2E(t)
-
-	require := require.New(t)
-	// This intentionally goes through the generated HTTP client, the real
-	// httptest server, and the terminal websocket rather than attaching to
-	// localruntime directly. The helper exits quickly after printing the
-	// observed PTY size, so receiving size:41:177 exercises the full path
-	// that must preserve final terminal output before the exit frame wins.
-	disableTmuxAgentSessions := false
-	cfg := &config.Config{Agents: []config.Agent{{
-		Key:     "helper",
-		Label:   "Helper",
-		Command: serverRuntimeHelperCommand("size"),
-	}}, Tmux: config.Tmux{AgentSessions: &disableTmuxAgentSessions}}
-	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
-	ctx := context.Background()
-	ws := createReadyWorkspace(t, ctx, client)
-
-	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{
-			TargetKey: "helper",
-		},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusOK, launchResp.StatusCode())
-	require.NotNil(launchResp.JSON200)
-	session := launchResp.JSON200
-
-	ts := httptest.NewServer(srv)
-	t.Cleanup(ts.Close)
-	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
-		"/ws/v1/workspaces/" + ws.Id +
-		"/runtime/sessions/" + session.Key +
-		"/terminal?cols=177&rows=41"
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
-	require.NoError(err)
-	defer conn.Close(websocket.StatusNormalClosure, "done")
-
-	require.NoError(conn.Write(
-		ctx, websocket.MessageBinary, []byte("size\n"),
-	))
-	readCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
-	defer cancel()
-	var got strings.Builder
-	for {
-		typ, data, readErr := conn.Read(readCtx)
-		if readErr != nil {
-			break
-		}
-		if typ != websocket.MessageBinary {
-			continue
-		}
-		got.WriteString(string(data))
-		if strings.Contains(got.String(), "size:41:177") {
-			return
-		}
-	}
-	require.Contains(got.String(), "size:41:177")
 }
 
 func TestWorkspaceRuntimeSessionTerminalTmuxBackedWebSocketE2E(
@@ -30325,27 +29279,6 @@ func TestServerRuntimeHelperProcess(t *testing.T) {
 			fmt.Print("echo:" + line)
 		}
 		blockServerRuntimeHelper()
-	case "altscreen":
-		reader := bufio.NewReader(os.Stdin)
-		_, err := reader.ReadString('\n')
-		if err != nil {
-			blockServerRuntimeHelper()
-		}
-		fmt.Print("\x1b[?1049h\x1b[Hcodex screen")
-		line, err := reader.ReadString('\n')
-		if err == nil {
-			fmt.Print("\x1b[Hlive:" + line)
-		}
-		blockServerRuntimeHelper()
-	case "size":
-		line, err := bufio.NewReader(os.Stdin).ReadString('\n')
-		if err == nil {
-			rows, cols, sizeErr := pty.Getsize(os.Stdin)
-			if sizeErr == nil {
-				fmt.Printf("size:%d:%d:%s", rows, cols, line)
-			}
-		}
-		return
 	case "size-live":
 		reader := bufio.NewReader(os.Stdin)
 		for {
@@ -30358,11 +29291,6 @@ func TestServerRuntimeHelperProcess(t *testing.T) {
 				fmt.Printf("size:%d:%d:%s", rows, cols, line)
 			}
 		}
-	case "exit":
-		os.Exit(3)
-	case "print-exit":
-		fmt.Print("quick-api-output")
-		os.Exit(7)
 	case "pty-close-then-sleep":
 		// Simulate the systemd-run-wrapper window the bridge has to
 		// survive: PTY EOF observed (drainOutput exits) well before
@@ -30380,28 +29308,6 @@ func TestServerRuntimeHelperProcess(t *testing.T) {
 		_ = os.Stdout.Close()
 		_ = os.Stderr.Close()
 		time.Sleep(2 * time.Second)
-		os.Exit(7)
-	case "pty-close-on-input-then-sleep":
-		_, err := bufio.NewReader(os.Stdin).ReadString('\n')
-		if err != nil {
-			os.Exit(2)
-		}
-		signal.Ignore(syscall.SIGHUP, syscall.SIGTERM, syscall.SIGINT)
-		_ = os.Stdin.Close()
-		_ = os.Stdout.Close()
-		_ = os.Stderr.Close()
-		time.Sleep(2 * time.Second)
-		os.Exit(7)
-	case "pty-close-on-input-then-exit":
-		_, err := bufio.NewReader(os.Stdin).ReadString('\n')
-		if err != nil {
-			os.Exit(2)
-		}
-		signal.Ignore(syscall.SIGHUP, syscall.SIGTERM, syscall.SIGINT)
-		_ = os.Stdin.Close()
-		_ = os.Stdout.Close()
-		_ = os.Stderr.Close()
-		time.Sleep(50 * time.Millisecond)
 		os.Exit(7)
 	default:
 		os.Exit(2)
@@ -30515,7 +29421,7 @@ type rawProblemDetail struct {
 }
 
 func TestWorkspaceManualRefreshDiscoversAndSyncsAssociatedPR(t *testing.T) {
-	t.Parallel()
+	runParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	assert := assert.New(t)
@@ -30602,13 +29508,13 @@ func TestWorkspaceManualRefreshDiscoversAndSyncsAssociatedPR(t *testing.T) {
 	)
 
 	seedIssue(t, fixture.database, "acme", "widget", 7, "open")
-	createRR := doJSON(
+	createRR := testutil.DoJSON(
 		t,
 		fixture.server,
 		http.MethodPost,
 		"/api/v1/issues/gh/acme/widget/7/workspace",
-		map[string]string{},
-	)
+		map[string]string{})
+
 	require.Equal(http.StatusAccepted, createRR.Code, createRR.Body.String())
 
 	var created rawWorkspaceStatusResponse
@@ -30631,13 +29537,13 @@ func TestWorkspaceManualRefreshDiscoversAndSyncsAssociatedPR(t *testing.T) {
 	headRef = ready.GitHeadRef
 	headSHA = testGitSHA(t, ready.WorktreePath, "HEAD")
 
-	refreshRR := doJSON(
+	refreshRR := testutil.DoJSON(
 		t,
 		fixture.server,
 		http.MethodPost,
 		"/api/v1/workspaces/"+created.ID+"/refresh",
-		nil,
-	)
+		nil)
+
 	require.Equal(http.StatusOK, refreshRR.Code, refreshRR.Body.String())
 
 	var refreshed rawWorkspaceStatusResponse
@@ -30662,7 +29568,7 @@ func TestWorkspaceManualRefreshDiscoversAndSyncsAssociatedPR(t *testing.T) {
 }
 
 func TestKataWorkspaceManualRefreshDiscoversAndSyncsAssociatedPR(t *testing.T) {
-	t.Parallel()
+	runParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	assert := assert.New(t)
@@ -30772,13 +29678,13 @@ func TestKataWorkspaceManualRefreshDiscoversAndSyncsAssociatedPR(t *testing.T) {
 		KataMetadata:    &kataMetadata,
 	}))
 
-	refreshRR := doJSON(
+	refreshRR := testutil.DoJSON(
 		t,
 		fixture.server,
 		http.MethodPost,
 		"/api/v1/workspaces/ws-kata-refresh/refresh",
-		nil,
-	)
+		nil)
+
 	require.Equal(http.StatusOK, refreshRR.Code, refreshRR.Body.String())
 
 	var refreshed rawWorkspaceStatusResponse
@@ -30813,7 +29719,7 @@ func TestKataWorkspaceManualRefreshDiscoversAndSyncsAssociatedPR(t *testing.T) {
 }
 
 func TestWorkspaceManualRefreshSkipsRemovedIssueProviderDetail(t *testing.T) {
-	t.Parallel()
+	runParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -30866,10 +29772,10 @@ func TestWorkspaceManualRefreshSkipsRemovedIssueProviderDetail(t *testing.T) {
 	)
 	seedIssue(t, fixture.database, "acme", "widget", issueNumber, "open")
 
-	createRR := doJSON(
+	createRR := testutil.DoJSON(
 		t, fixture.server, http.MethodPost,
-		"/api/v1/issues/gh/acme/widget/7/workspace", map[string]string{},
-	)
+		"/api/v1/issues/gh/acme/widget/7/workspace", map[string]string{})
+
 	require.Equal(http.StatusAccepted, createRR.Code, createRR.Body.String())
 	var created rawWorkspaceStatusResponse
 	require.NoError(json.NewDecoder(createRR.Body).Decode(&created))
@@ -30885,10 +29791,10 @@ func TestWorkspaceManualRefreshSkipsRemovedIssueProviderDetail(t *testing.T) {
 	)
 	before := issueDetailCalls.Load()
 
-	refreshRR := doJSON(
+	refreshRR := testutil.DoJSON(
 		t, fixture.server, http.MethodPost,
-		"/api/v1/workspaces/"+created.ID+"/refresh", nil,
-	)
+		"/api/v1/workspaces/"+created.ID+"/refresh", nil)
+
 	require.Equal(http.StatusOK, refreshRR.Code, refreshRR.Body.String())
 	require.Equal(before, issueDetailCalls.Load(),
 		"manual refresh must not fetch a tombstoned issue")
@@ -30901,7 +29807,7 @@ func TestWorkspaceManualRefreshSkipsRemovedIssueProviderDetail(t *testing.T) {
 // association discovery proceeds, the targeted PR-detail update still runs,
 // and the tolerated partial failure stays recorded in repo sync health.
 func TestWorkspaceRefreshProceedsThroughIssueScopePartialSyncFailure(t *testing.T) {
-	t.Parallel()
+	runParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	assert := assert.New(t)
@@ -30953,13 +29859,13 @@ func TestWorkspaceRefreshProceedsThroughIssueScopePartialSyncFailure(t *testing.
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 	before := detailCalls.Load()
 
-	refreshRR := doJSON(
+	refreshRR := testutil.DoJSON(
 		t,
 		fixture.server,
 		http.MethodPost,
 		"/api/v1/workspaces/"+ws.Id+"/refresh",
-		nil,
-	)
+		nil)
+
 	require.Equal(http.StatusOK, refreshRR.Code, refreshRR.Body.String())
 
 	var refreshed rawWorkspaceStatusResponse
@@ -30993,7 +29899,7 @@ func TestWorkspaceRefreshProceedsThroughIssueScopePartialSyncFailure(t *testing.
 // association/PR-detail refresh must not continue — while sync health still
 // records the failure.
 func TestWorkspaceRefreshAbortsOnMergeRequestScopePartialSyncFailure(t *testing.T) {
-	t.Parallel()
+	runParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	assert := assert.New(t)
@@ -31054,13 +29960,13 @@ func TestWorkspaceRefreshAbortsOnMergeRequestScopePartialSyncFailure(t *testing.
 	require.NotNil(before)
 	detailCallsBefore := pr1DetailCalls.Load()
 
-	refreshRR := doJSON(
+	refreshRR := testutil.DoJSON(
 		t,
 		fixture.server,
 		http.MethodPost,
 		"/api/v1/workspaces/"+ws.Id+"/refresh",
-		nil,
-	)
+		nil)
+
 	require.Equal(http.StatusBadGateway, refreshRR.Code, refreshRR.Body.String())
 
 	var problem rawProblemDetail
@@ -31087,7 +29993,7 @@ func TestWorkspaceRefreshAbortsOnMergeRequestScopePartialSyncFailure(t *testing.
 }
 
 func TestWorkspaceManualRefreshReturnsAssociationInspectionError(t *testing.T) {
-	t.Parallel()
+	runParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	assert := assert.New(t)
@@ -31149,13 +30055,13 @@ func TestWorkspaceManualRefreshReturnsAssociationInspectionError(t *testing.T) {
 	)
 
 	seedIssue(t, fixture.database, "acme", "widget", 7, "open")
-	createRR := doJSON(
+	createRR := testutil.DoJSON(
 		t,
 		fixture.server,
 		http.MethodPost,
 		"/api/v1/issues/gh/acme/widget/7/workspace",
-		map[string]string{},
-	)
+		map[string]string{})
+
 	require.Equal(http.StatusAccepted, createRR.Code, createRR.Body.String())
 
 	var created rawWorkspaceStatusResponse
@@ -31163,13 +30069,13 @@ func TestWorkspaceManualRefreshReturnsAssociationInspectionError(t *testing.T) {
 	ready := waitForWorkspaceReady(t, ctx, fixture.client, created.ID)
 	require.NoError(os.RemoveAll(ready.WorktreePath))
 
-	refreshRR := doJSON(
+	refreshRR := testutil.DoJSON(
 		t,
 		fixture.server,
 		http.MethodPost,
 		"/api/v1/workspaces/"+created.ID+"/refresh",
-		nil,
-	)
+		nil)
+
 	require.Equal(
 		http.StatusInternalServerError, refreshRR.Code, refreshRR.Body.String(),
 	)
@@ -31202,7 +30108,7 @@ func readEventMatching(
 func TestWorkspaceCreateWithLocalBaseUsesPullRefWhenHeadBranchDeleted(
 	t *testing.T,
 ) {
-	t.Parallel()
+	runParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	assert := assert.New(t)
@@ -31266,7 +30172,7 @@ func TestWorkspaceCreateWithLocalBaseUsesPullRefWhenHeadBranchDeleted(
 func TestWorkspaceCreateGitLabUsesSpecificMergeRequestHeadRefE2E(
 	t *testing.T,
 ) {
-	t.Parallel()
+	runParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	assert := assert.New(t)
@@ -31344,7 +30250,7 @@ func TestWorkspaceCreateGitLabUsesSpecificMergeRequestHeadRefE2E(
 }
 
 func TestWorkspaceCreateReusesExistingWorktreeThroughAPI(t *testing.T) {
-	t.Parallel()
+	runParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	assert := assert.New(t)
@@ -31405,7 +30311,7 @@ func TestWorkspaceCreateReusesExistingWorktreeThroughAPI(t *testing.T) {
 }
 
 func TestWorkspaceRetryReusesExistingLocalHeadBranchThroughAPI(t *testing.T) {
-	t.Parallel()
+	runParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	assert := assert.New(t)
@@ -31533,7 +30439,7 @@ func setupHTTPWorktreeBaseForServerTest(
 }
 
 func TestWorkspaceCreatePortQualifiedHostTracksOriginBranchE2E(t *testing.T) {
-	t.Parallel()
+	runParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -31585,7 +30491,7 @@ func TestWorkspaceCreatePortQualifiedHostTracksOriginBranchE2E(t *testing.T) {
 }
 
 func TestWorkspaceDeleteDoesNotCleanupReplacementCloneFromStaleLocalBaseE2E(t *testing.T) {
-	t.Parallel()
+	runParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	assert := assert.New(t)
@@ -31775,9 +30681,10 @@ func TestAPIEditPRTitleAndBody(t *testing.T) {
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
 
-	rr := doJSON(t, srv, http.MethodPatch,
+	rr := testutil.DoJSON(t, srv, http.MethodPatch,
 		"/api/v1/pulls/gh/acme/widget/1",
 		map[string]string{"title": "updated title", "body": "updated body"})
+
 	require.Equal(http.StatusOK, rr.Code)
 
 	mr, err := database.GetMergeRequest(
@@ -31793,9 +30700,10 @@ func TestAPIEditPRTitleOnly(t *testing.T) {
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
 
-	rr := doJSON(t, srv, http.MethodPatch,
+	rr := testutil.DoJSON(t, srv, http.MethodPatch,
 		"/api/v1/pulls/gh/acme/widget/1",
 		map[string]string{"title": "new title"})
+
 	require.Equal(http.StatusOK, rr.Code)
 
 	mr, err := database.GetMergeRequest(
@@ -31811,9 +30719,10 @@ func TestAPIEditPRBodyOnly(t *testing.T) {
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
 
-	rr := doJSON(t, srv, http.MethodPatch,
+	rr := testutil.DoJSON(t, srv, http.MethodPatch,
 		"/api/v1/pulls/gh/acme/widget/1",
 		map[string]string{"body": "new body"})
+
 	require.Equal(http.StatusOK, rr.Code)
 
 	mr, err := database.GetMergeRequest(
@@ -31829,9 +30738,10 @@ func TestAPIEditPRClearBody(t *testing.T) {
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
 
-	rr := doJSON(t, srv, http.MethodPatch,
+	rr := testutil.DoJSON(t, srv, http.MethodPatch,
 		"/api/v1/pulls/gh/acme/widget/1",
 		map[string]string{"body": ""})
+
 	require.Equal(http.StatusOK, rr.Code)
 
 	mr, err := database.GetMergeRequest(
@@ -31847,9 +30757,10 @@ func TestAPIEditPRNoFields400(t *testing.T) {
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
 
-	rr := doJSON(t, srv, http.MethodPatch,
+	rr := testutil.DoJSON(t, srv, http.MethodPatch,
 		"/api/v1/pulls/gh/acme/widget/1",
 		map[string]any{})
+
 	require.Equal(http.StatusBadRequest, rr.Code)
 }
 
@@ -31858,9 +30769,10 @@ func TestAPIEditPRBlankTitle400(t *testing.T) {
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
 
-	rr := doJSON(t, srv, http.MethodPatch,
+	rr := testutil.DoJSON(t, srv, http.MethodPatch,
 		"/api/v1/pulls/gh/acme/widget/1",
 		map[string]string{"title": "   "})
+
 	require.Equal(http.StatusBadRequest, rr.Code)
 }
 
@@ -31880,9 +30792,10 @@ func TestAPIEditPRPreservesDerivedFields(t *testing.T) {
 	}))
 	require.NoError(database.UpdateMRCIStatus(ctx, repo.ID, 1, "success", "[]"))
 
-	rr := doJSON(t, srv, http.MethodPatch,
+	rr := testutil.DoJSON(t, srv, http.MethodPatch,
 		"/api/v1/pulls/gh/acme/widget/1",
 		map[string]string{"title": "changed title"})
+
 	require.Equal(http.StatusOK, rr.Code)
 
 	after, err := database.GetMergeRequest(ctx, "github", "github.com", "acme", "widget", 1)
@@ -31901,9 +30814,10 @@ func TestAPIEditIssueBodyOnly(t *testing.T) {
 	srv, database := setupTestServer(t)
 	seedIssue(t, database, "acme", "widget", 5, "open")
 
-	rr := doJSON(t, srv, http.MethodPatch,
+	rr := testutil.DoJSON(t, srv, http.MethodPatch,
 		"/api/v1/issues/gh/acme/widget/5",
 		map[string]string{"body": "- [x] task done"})
+
 	require.Equal(http.StatusOK, rr.Code)
 
 	issue, err := database.GetIssue(t.Context(), "github", "github.com", "acme", "widget", 5)
@@ -31918,9 +30832,10 @@ func TestAPIEditIssueTitleAndBody(t *testing.T) {
 	srv, database := setupTestServer(t)
 	seedIssue(t, database, "acme", "widget", 5, "open")
 
-	rr := doJSON(t, srv, http.MethodPatch,
+	rr := testutil.DoJSON(t, srv, http.MethodPatch,
 		"/api/v1/issues/gh/acme/widget/5",
 		map[string]string{"title": "new title", "body": "new body"})
+
 	require.Equal(http.StatusOK, rr.Code)
 
 	issue, err := database.GetIssue(t.Context(), "github", "github.com", "acme", "widget", 5)
@@ -31935,9 +30850,10 @@ func TestAPIEditIssueNoFields400(t *testing.T) {
 	srv, database := setupTestServer(t)
 	seedIssue(t, database, "acme", "widget", 5, "open")
 
-	rr := doJSON(t, srv, http.MethodPatch,
+	rr := testutil.DoJSON(t, srv, http.MethodPatch,
 		"/api/v1/issues/gh/acme/widget/5",
 		map[string]any{})
+
 	require.Equal(http.StatusBadRequest, rr.Code)
 }
 
@@ -31946,9 +30862,10 @@ func TestAPIEditIssueBlankTitle400(t *testing.T) {
 	srv, database := setupTestServer(t)
 	seedIssue(t, database, "acme", "widget", 5, "open")
 
-	rr := doJSON(t, srv, http.MethodPatch,
+	rr := testutil.DoJSON(t, srv, http.MethodPatch,
 		"/api/v1/issues/gh/acme/widget/5",
 		map[string]string{"title": "   "})
+
 	require.Equal(http.StatusBadRequest, rr.Code)
 }
 
@@ -31962,9 +30879,10 @@ func TestAPIEditIssueMissing404(t *testing.T) {
 	)
 	require.NoError(err)
 
-	rr := doJSON(t, srv, http.MethodPatch,
+	rr := testutil.DoJSON(t, srv, http.MethodPatch,
 		"/api/v1/issues/gh/acme/widget/999",
 		map[string]string{"body": "anything"})
+
 	require.Equal(http.StatusNotFound, rr.Code)
 }
 

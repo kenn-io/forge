@@ -92,7 +92,7 @@ func seedIssueOnHost(
 }
 
 func TestWorkspaceCRUDE2E(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -180,7 +180,7 @@ func TestWorkspaceCRUDE2E(t *testing.T) {
 }
 
 func TestWorkspaceRetryErroredWorkspaceE2E(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -225,7 +225,7 @@ func TestWorkspaceRetryErroredWorkspaceE2E(t *testing.T) {
 }
 
 func TestWorkspaceRetryReadyWorkspaceConflictE2E(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -283,7 +283,7 @@ func TestWorkspaceRetryReadyWorkspaceConflictE2E(t *testing.T) {
 // reacted to status=ready could read a setup-event list still missing its
 // last row, which made retry-conflict event-count assertions flake on CI.
 func TestWorkspaceReadyStatusImpliesReadySetupEventE2E(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -326,7 +326,7 @@ func TestWorkspaceReadyStatusImpliesReadySetupEventE2E(t *testing.T) {
 }
 
 func TestWorkspaceCreateNotFound(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -365,7 +365,7 @@ func TestWorkspaceCreateNotFound(t *testing.T) {
 }
 
 func TestWorkspaceCreateHidesRemovedUpstreamItems(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -414,7 +414,7 @@ func TestWorkspaceCreateHidesRemovedUpstreamItems(t *testing.T) {
 }
 
 func TestWorkspaceListRetainsWorkspaceWithoutRemovedPullMetadata(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -462,7 +462,7 @@ func TestWorkspaceListRetainsWorkspaceWithoutRemovedPullMetadata(t *testing.T) {
 }
 
 func TestWorkspaceMRDetailHasWorkspace(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -512,7 +512,7 @@ func TestWorkspaceMRDetailHasWorkspace(t *testing.T) {
 }
 
 func TestWorkspaceCreateDuplicate(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -547,7 +547,7 @@ func TestWorkspaceCreateDuplicate(t *testing.T) {
 }
 
 func TestWorkspaceCreateFetchesCloneThroughAPI(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -592,7 +592,7 @@ func TestWorkspaceCreateFetchesCloneThroughAPI(t *testing.T) {
 }
 
 func TestWorkspaceCreateIssueE2E(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	assert := assert.New(t)
@@ -647,7 +647,7 @@ func TestWorkspaceCreateIssueE2E(t *testing.T) {
 }
 
 func TestWorkspaceCreateIssueUsesTitleSlugInBranch(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	assert := assert.New(t)
@@ -684,7 +684,7 @@ func TestWorkspaceCreateIssueUsesTitleSlugInBranch(t *testing.T) {
 }
 
 func TestWorkspaceCreateIssueBareStyleConfigOptOut(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	assert := assert.New(t)
@@ -722,7 +722,7 @@ func TestWorkspaceCreateIssueBareStyleConfigOptOut(t *testing.T) {
 }
 
 func TestWorkspaceCreateIssueIsIdempotent(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	assert := assert.New(t)
@@ -760,7 +760,7 @@ func TestWorkspaceCreateIssueIsIdempotent(t *testing.T) {
 }
 
 func TestWorkspaceCreateIssueAfterDeleteRecreatesBranch(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	assert := assert.New(t)
@@ -816,7 +816,7 @@ func TestWorkspaceCreateIssueAfterDeleteRecreatesBranch(t *testing.T) {
 }
 
 func TestWorkspaceCreatePRAndIssueCanCoexistForSameRepoNumber(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	assert := assert.New(t)

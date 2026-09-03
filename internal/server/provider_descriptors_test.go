@@ -180,10 +180,10 @@ func TestNodeGitLabCloneReadsFetchMergeRequestHead(t *testing.T) {
 	})
 	t.Cleanup(func() { gracefulShutdown(t, nodeServer) })
 
-	response := doJSON(
+	response := testutil.DoJSON(
 		t, nodeServer, http.MethodGet,
-		"/api/v1/host/"+platformHost+"/pulls/gitlab/acme/widget/7/commits", nil,
-	)
+		"/api/v1/host/"+platformHost+"/pulls/gitlab/acme/widget/7/commits", nil)
+
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
 	assert.Contains(response.Body.String(), headSHA)
 }
@@ -343,11 +343,11 @@ func TestRemoteAdHocWorkspaceCreationSeedsSpokeRepositoryCatalog(t *testing.T) {
 	})
 	t.Cleanup(func() { gracefulShutdown(t, spokeServer) })
 
-	response := doJSON(
+	response := testutil.DoJSON(
 		t, spokeServer, http.MethodPost,
 		"/api/v1/host/github.com/repo/github/acme/widget/workspaces",
-		map[string]any{"branch": "work/remote-create"},
-	)
+		map[string]any{"branch": "work/remote-create"})
+
 	require.Equal(http.StatusAccepted, response.Code, response.Body.String())
 	observed, err := spokeDB.GetRepositoryByProviderID(
 		t.Context(), "github", "github.com", "repo-acme-widget",
@@ -706,7 +706,7 @@ func TestNodeCloneReadsRequireFreshDescriptorAndComputeLocally(t *testing.T) {
 		"/api/v1/pulls/github/acme/widgets/1/file-preview?path=internal/cache.go",
 		"/api/v1/repo/github/acme/widgets/browser/refs",
 	} {
-		response := doJSON(t, nodeServer, http.MethodGet, path, nil)
+		response := testutil.DoJSON(t, nodeServer, http.MethodGet, path, nil)
 		require.Equal(http.StatusOK, response.Code, response.Body.String())
 	}
 
@@ -734,18 +734,18 @@ func TestNodeCloneReadsRequireFreshDescriptorAndComputeLocally(t *testing.T) {
 		},
 	)
 	t.Cleanup(func() { gracefulShutdown(t, credentiallessNode) })
-	credentialProblem := doJSON(
+	credentialProblem := testutil.DoJSON(
 		t, credentiallessNode, http.MethodGet,
-		"/api/v1/pulls/github/acme/widgets/1/diff", nil,
-	)
+		"/api/v1/pulls/github/acme/widgets/1/diff", nil)
+
 	require.Equal(http.StatusServiceUnavailable, credentialProblem.Code)
 	var problem httpapi.ProblemError
 	require.NoError(json.NewDecoder(credentialProblem.Body).Decode(&problem))
 	assert.Equal(httpapi.CodeGitCredentialUnavailable, problem.Code)
-	credentialBrowserProblem := doJSON(
+	credentialBrowserProblem := testutil.DoJSON(
 		t, credentiallessNode, http.MethodGet,
-		"/api/v1/repo/github/acme/widgets/browser/refs", nil,
-	)
+		"/api/v1/repo/github/acme/widgets/browser/refs", nil)
+
 	require.Equal(http.StatusServiceUnavailable, credentialBrowserProblem.Code)
 	require.NoError(json.NewDecoder(credentialBrowserProblem.Body).Decode(&problem))
 	assert.Equal(httpapi.CodeGitCredentialUnavailable, problem.Code)
@@ -755,17 +755,17 @@ func TestNodeCloneReadsRequireFreshDescriptorAndComputeLocally(t *testing.T) {
 	// the outage with httptest.Server.Close.
 	hubServer.Hub().Close()
 	hub.Close()
-	outage := doJSON(
+	outage := testutil.DoJSON(
 		t, nodeServer, http.MethodGet,
-		"/api/v1/pulls/github/acme/widgets/1/diff", nil,
-	)
+		"/api/v1/pulls/github/acme/widgets/1/diff", nil)
+
 	require.Equal(http.StatusServiceUnavailable, outage.Code, outage.Body.String())
 	require.NoError(json.NewDecoder(outage.Body).Decode(&problem))
 	assert.Equal(httpapi.CodeHubUnavailable, problem.Code)
-	browserOutage := doJSON(
+	browserOutage := testutil.DoJSON(
 		t, nodeServer, http.MethodGet,
-		"/api/v1/repo/github/acme/widgets/browser/refs", nil,
-	)
+		"/api/v1/repo/github/acme/widgets/browser/refs", nil)
+
 	require.Equal(http.StatusServiceUnavailable, browserOutage.Code)
 	require.NoError(json.NewDecoder(browserOutage.Body).Decode(&problem))
 	assert.Equal(httpapi.CodeHubUnavailable, problem.Code)

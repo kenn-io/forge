@@ -27,7 +27,7 @@ func setupLifecycleWorkspaceServer(t *testing.T) (*apiclient.Client, *db.DB, str
 }
 
 func TestWorkspaceForceDeleteToleratesCorruptWorktreeGitfileE2E(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -59,7 +59,6 @@ func TestWorkspaceForceDeleteToleratesCorruptWorktreeGitfileE2E(t *testing.T) {
 func TestWorkspaceForceDeleteQuarantinesReplacedWorktreeAndAllowsRecreateE2E(
 	t *testing.T,
 ) {
-	t.Parallel()
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -110,7 +109,7 @@ func TestWorkspaceForceDeleteQuarantinesReplacedWorktreeAndAllowsRecreateE2E(
 func TestWorkspaceForceDeleteQuarantinesReplacementFileAndAllowsRecreateE2E(
 	t *testing.T,
 ) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -156,7 +155,7 @@ func TestWorkspaceForceDeleteQuarantinesReplacementFileAndAllowsRecreateE2E(
 func TestWorkspaceForceDeleteReplacementCloneClearsManagedRegistrationE2E(
 	t *testing.T,
 ) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -219,7 +218,7 @@ func TestWorkspaceForceDeleteReplacementCloneClearsManagedRegistrationE2E(
 func TestWorkspaceForceDeletePreservesSameOriginForeignLinkedWorktreeE2E(
 	t *testing.T,
 ) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -294,7 +293,7 @@ func TestWorkspaceForceDeletePreservesSameOriginForeignLinkedWorktreeE2E(
 func TestWorkspaceForceDeletePreservesForeignLinkedWorktreeAfterManagedPruneE2E(
 	t *testing.T,
 ) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -362,7 +361,7 @@ func TestWorkspaceForceDeletePreservesForeignLinkedWorktreeAfterManagedPruneE2E(
 func TestWorkspaceForceDeleteRemovesSameRepoReplacementAfterManagedPruneE2E(
 	t *testing.T,
 ) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -415,7 +414,7 @@ func TestWorkspaceForceDeleteRemovesSameRepoReplacementAfterManagedPruneE2E(
 func TestWorkspaceForceDeleteRemovesPreMarkerWorkspaceAfterUpgradeE2E(
 	t *testing.T,
 ) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -457,7 +456,7 @@ func TestWorkspaceForceDeleteRemovesPreMarkerWorkspaceAfterUpgradeE2E(
 }
 
 func TestWorkspaceForceDeleteRetainsLockedWorktreeE2E(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -515,7 +514,7 @@ func TestWorkspaceForceDeleteRetainsLockedWorktreeE2E(t *testing.T) {
 func TestWorkspaceForceDeleteForgetsSymlinkToSameRepoWorktreeE2E(
 	t *testing.T,
 ) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -565,7 +564,7 @@ func TestWorkspaceForceDeleteForgetsSymlinkToSameRepoWorktreeE2E(
 }
 
 func TestWorkspaceCreateRejectsSymlinkedReusableWorktreeE2E(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -631,7 +630,7 @@ func TestWorkspaceCreateRejectsSymlinkedReusableWorktreeE2E(t *testing.T) {
 func TestWorkspaceRetryAcceptsPreMarkerWorkspaceAfterUpgradeE2E(
 	t *testing.T,
 ) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -674,7 +673,7 @@ func TestWorkspaceRetryAcceptsPreMarkerWorkspaceAfterUpgradeE2E(
 }
 
 func TestWorkspaceRetryCleansStalePreMarkerRegistrationE2E(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -718,7 +717,7 @@ func TestWorkspaceRetryCleansStalePreMarkerRegistrationE2E(t *testing.T) {
 }
 
 func TestWorkspaceCreateOccupiedPathCreatesNoBranchesE2E(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -794,7 +793,7 @@ func TestWorkspaceCreateOccupiedPathCreatesNoBranchesE2E(t *testing.T) {
 }
 
 func TestWorkspaceCreateSameRepoHeadCloneURLTracksOriginBranchE2E(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -862,7 +861,6 @@ func requireGitRefMissing(t *testing.T, dir, ref string) {
 }
 
 func TestWorkspaceRetryUnknownHeadRepoFailsClosedE2E(t *testing.T) {
-	t.Parallel()
 	acquireWorkspaceGitSlot(t)
 
 	assert := assert.New(t)
@@ -935,7 +933,7 @@ func TestWorkspaceRetryUnknownHeadRepoFailsClosedE2E(t *testing.T) {
 }
 
 func TestWorkspaceDeletePreservesUserCreatedBranch(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	assert := assert.New(t)
@@ -977,7 +975,7 @@ func TestWorkspaceDeletePreservesUserCreatedBranch(t *testing.T) {
 }
 
 func TestWorkspaceDeleteDoesNotCleanupReplacementCloneE2E(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	assert := assert.New(t)
@@ -1025,7 +1023,7 @@ func TestWorkspaceDeleteDoesNotCleanupReplacementCloneE2E(t *testing.T) {
 }
 
 func TestWorkspaceCreatePreservesExistingLocalPreferredBranch(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	assert := assert.New(t)
@@ -1087,7 +1085,7 @@ func TestWorkspaceCreatePreservesExistingLocalPreferredBranch(t *testing.T) {
 }
 
 func TestWorkspaceDeleteLegacySyntheticBranchAllowsRecreate(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	assert := assert.New(t)
@@ -1173,7 +1171,7 @@ func TestWorkspaceDeleteLegacySyntheticBranchAllowsRecreate(t *testing.T) {
 }
 
 func TestWorkspaceDeleteDirty(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)

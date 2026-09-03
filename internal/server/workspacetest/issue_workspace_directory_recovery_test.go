@@ -13,7 +13,7 @@ import (
 )
 
 func TestIssueWorkspaceRecoversExpectedDirectory(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	assert := assert.New(t)
@@ -69,7 +69,7 @@ func TestIssueWorkspaceRecoversExpectedDirectory(t *testing.T) {
 }
 
 func TestIssueWorkspaceDirectoryRecoveryRejectsMissingPath(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	assert := assert.New(t)
@@ -157,7 +157,7 @@ func TestIssueWorkspaceDirectoryRecoveryReasons(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
+			runParallelWorkspaceTest(t)
 			acquireWorkspaceGitSlot(t)
 			assert := assert.New(t)
 			require := require.New(t)
@@ -201,7 +201,7 @@ func TestIssueWorkspaceDirectoryRecoveryReasons(t *testing.T) {
 }
 
 func TestIssueWorkspaceConflictRejectsAlternateBranchForExistingDirectory(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	assert := assert.New(t)
@@ -258,7 +258,7 @@ func TestIssueWorkspaceConflictRejectsAlternateBranchForExistingDirectory(t *tes
 }
 
 func TestIssueWorkspaceRejectsConflictingReuseOptions(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 
 	assert := assert.New(t)

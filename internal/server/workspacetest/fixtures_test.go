@@ -23,7 +23,17 @@ import (
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/servertest"
 	gitcmd "go.kenn.io/kit/git/cmd"
+	"golang.org/x/sync/semaphore"
 )
+
+var parallelWorkspaceTestSlots = semaphore.NewWeighted(4)
+
+func runParallelWorkspaceTest(t *testing.T) {
+	t.Helper()
+	t.Parallel()
+	require.NoError(t, parallelWorkspaceTestSlots.Acquire(t.Context(), 1))
+	t.Cleanup(func() { parallelWorkspaceTestSlots.Release(1) })
+}
 
 type workspaceServerFixture struct {
 	server           *server.Server

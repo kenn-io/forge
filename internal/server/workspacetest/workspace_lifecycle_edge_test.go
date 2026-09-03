@@ -15,7 +15,7 @@ import (
 )
 
 func TestWorkspaceCreateUsesPRBranchAndFallbackBranch(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 	assert := assert.New(t)
 	require := require.New(t)
@@ -46,7 +46,7 @@ func TestWorkspaceCreateUsesPRBranchAndFallbackBranch(t *testing.T) {
 }
 
 func TestWorkspaceDeleteRecreatesForkBranchName(t *testing.T) {
-	t.Parallel()
+	runParallelWorkspaceTest(t)
 	acquireWorkspaceGitSlot(t)
 	assert := assert.New(t)
 	require := require.New(t)

@@ -27,7 +27,7 @@ import (
 )
 
 func TestLaunchWorkspaceRuntimeSessionPreparesAgentContext(t *testing.T) {
-	t.Parallel()
+	runParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 	assert := assert.New(t)
 	require := require.New(t)

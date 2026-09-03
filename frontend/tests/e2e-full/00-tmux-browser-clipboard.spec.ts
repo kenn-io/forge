@@ -594,7 +594,7 @@ async function captureTerminalClipboardFallback(page: Page): Promise<string[]> {
   await page.route("**/api/v1/terminal/clipboard", async (route) => {
     const request = route.request();
     await expect(request.headerValue("content-type")).resolves.toContain("application/json");
-    await expect(request.headerValue("x-kenn-forge-csrf")).resolves.toBe("1");
+    expect(new URL(request.url()).origin).toBe(new URL(page.url()).origin);
     const body = request.postDataJSON() as { text?: string };
     fallbackWrites.push(body.text ?? "");
     await route.fulfill({ status: 204 });

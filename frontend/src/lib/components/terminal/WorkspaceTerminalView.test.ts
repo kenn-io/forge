@@ -907,6 +907,24 @@ describe("WorkspaceTerminalView", () => {
     expect(screen.getByLabelText("Helper running").classList.contains("kit-status-dot--idle")).toBe(true);
   });
 
+  it("uses the launch target harness icon for a workflow session tab", async () => {
+    const codexSession = {
+      ...runningSession,
+      target_key: "codex-review",
+      label: "Review Agent",
+    } satisfies RuntimeSession;
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, [codexSession]));
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+      },
+    });
+
+    const tab = await screen.findByRole("tab", { name: "Review Agent, Review Agent running" });
+    expect(tab.querySelector(".kit-harness-icon--openai")).not.toBeNull();
+  });
+
   it("persists toolbar font zoom through shared settings", async () => {
     render(WorkspaceTerminalView, {
       props: {

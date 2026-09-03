@@ -2011,7 +2011,7 @@ func (s *Handler) workspaceResponseWithChangeAwareEnrichment(
 }
 
 func (s *Handler) workspaceGitFingerprint(summary *db.WorkspaceSummary) string {
-	fingerprint, err := worktreeGitFingerprint(summary.WorktreePath)
+	fingerprint, err := workspace.WorktreeGitFingerprint(summary.WorktreePath)
 	if err != nil {
 		slog.Debug(
 			"worktree git fingerprint failed",

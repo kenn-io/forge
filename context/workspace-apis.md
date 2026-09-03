@@ -218,7 +218,7 @@ embedder protocol for arbitrary host state.
 - Worktree-only edits never move the fingerprint; the first refresh a read
   requests after the forced interval runs git, and no daemon timer probes an
   unread workspace. Fingerprinting must never spawn git
-  (`internal/server/workspaceapi/worktree_fingerprint.go::worktreeGitFingerprint`).
+  (`internal/workspace/worktree_fingerprint.go::WorktreeGitFingerprint`).
 - Failed enrichment retains last-known-good values and component-owned errors;
   one component's success clears only its own error
   (`internal/server/workspaceapi/workspace_enrichment.go::recordWorkspaceEnrichmentResult`).

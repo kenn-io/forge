@@ -443,7 +443,7 @@ func TestSpokeUnassignedActivityUsesHubAssignmentWithoutLocalProviderRows(t *tes
 		Subjects: map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{},
 	}
 	now := time.Now().UTC()
-	for number, workspaceID := range map[int]string{1: "ws-issue", 2: "ws-assigned"} {
+	for number, workspaceID := range map[int]string{2: "ws-assigned"} {
 		key := db.WorkspaceSubjectKey{
 			RepoID: spokeRepoID, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: number,
 		}
@@ -478,9 +478,7 @@ func TestSpokeUnassignedActivityUsesHubAssignmentWithoutLocalProviderRows(t *tes
 	require.Len(response.Items, 1)
 	require.NotNil(response.Items[0].Workspace)
 	assert.Equal("ws-issue", response.Items[0].Workspace.ID)
-	require.Len(response.WorkspaceActivity, 1)
-	assert.Equal(1, response.WorkspaceActivity[0].ItemNumber)
-	assert.Equal("ws-issue", response.WorkspaceActivity[0].Workspace.ID)
+	require.Empty(response.WorkspaceActivity)
 }
 
 func TestNodeServerRoutesProviderReadsWithoutUsingLocalTables(t *testing.T) {

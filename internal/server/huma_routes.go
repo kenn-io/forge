@@ -1438,7 +1438,11 @@ func (s *Server) overlayLocalActivityWorkspaceSnapshot(
 			return activityResponse{}, httpapi.Internal("list workspace activity failed")
 		}
 	}
-	overlays := activityWorkspaceOverlays(snapshot)
+	repositories, err := s.workspaceActivityRepositoryIdentities(ctx, snapshot)
+	if err != nil {
+		return activityResponse{}, httpapi.Internal("list workspace activity failed")
+	}
+	overlays := activityWorkspaceOverlays(snapshot, repositories)
 	for i := range response.Items {
 		if workspace, ok := overlays[activityItemIdentity(response.Items[i])]; ok {
 			copy := workspace
@@ -1486,9 +1490,9 @@ func localWorkspaceActivityOptions(input *listActivityInput, now time.Time) (db.
 
 func activityWorkspaceOverlays(
 	snapshot workspaceapi.WorkspaceSubjectSnapshot,
+	repositories map[int64]providerplane.RepositoryIdentity,
 ) map[providerplane.ItemIdentity]workspaceapi.WorkspaceRef {
 	overlays := make(map[providerplane.ItemIdentity]workspaceapi.WorkspaceRef)
-	repositories := workspaceActivityRepositoryIdentities(snapshot)
 	for key, activity := range snapshot.Subjects {
 		itemType := ""
 		workspace := activity.Workspace
@@ -1930,7 +1934,11 @@ func (s *Server) retainUnassignedWorkspaceSubjects(
 	ctx context.Context, snapshot *workspaceapi.WorkspaceSubjectSnapshot,
 ) error {
 	if s.providerSource != nil {
-		identitiesByKey, candidates := workspaceActivitySubjectIdentities(*snapshot)
+		repositories, err := s.workspaceActivityRepositoryIdentities(ctx, *snapshot)
+		if err != nil {
+			return err
+		}
+		identitiesByKey, candidates := workspaceActivitySubjectIdentities(*snapshot, repositories)
 		unassigned, err := s.providerSource.FilterUnassignedActivitySubjects(ctx, candidates)
 		if err != nil {
 			return err

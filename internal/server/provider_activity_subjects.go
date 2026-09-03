@@ -142,12 +142,12 @@ func (s *Server) federationFilterUnassignedActivitySubjects(
 
 func workspaceActivitySubjectIdentities(
 	snapshot workspaceapi.WorkspaceSubjectSnapshot,
+	repositories map[int64]providerplane.RepositoryIdentity,
 ) (map[db.WorkspaceSubjectKey]providerplane.ItemIdentity, []providerplane.ItemIdentity) {
 	capacity := len(snapshot.Subjects) + len(snapshot.OwnReferences)
 	byKey := make(map[db.WorkspaceSubjectKey]providerplane.ItemIdentity, capacity)
 	identities := make([]providerplane.ItemIdentity, 0, capacity)
 	seen := make(map[providerplane.ItemIdentity]struct{}, capacity)
-	repositories := workspaceActivityRepositoryIdentities(snapshot)
 	appendIdentity := func(key db.WorkspaceSubjectKey, repository providerplane.RepositoryIdentity) {
 		itemType := "pr"
 		if key.ItemType == db.WorkspaceItemTypeIssue {
@@ -180,9 +180,9 @@ func workspaceActivitySubjectIdentities(
 	return byKey, identities
 }
 
-func workspaceActivityRepositoryIdentities(
-	snapshot workspaceapi.WorkspaceSubjectSnapshot,
-) map[int64]providerplane.RepositoryIdentity {
+func (s *Server) workspaceActivityRepositoryIdentities(
+	ctx context.Context, snapshot workspaceapi.WorkspaceSubjectSnapshot,
+) (map[int64]providerplane.RepositoryIdentity, error) {
 	repositories := make(map[int64]providerplane.RepositoryIdentity, len(snapshot.Subjects))
 	for key, activity := range snapshot.Subjects {
 		repositories[key.RepoID] = providerplane.RepositoryIdentity{
@@ -191,7 +191,24 @@ func workspaceActivityRepositoryIdentities(
 			PlatformRepoID: activity.Subject.PlatformRepoID,
 		}.Canonical()
 	}
-	return repositories
+	for key := range snapshot.OwnReferences {
+		if _, ok := repositories[key.RepoID]; ok {
+			continue
+		}
+		repository, err := s.db.GetRepoByID(ctx, key.RepoID)
+		if err != nil {
+			return nil, err
+		}
+		if repository == nil {
+			continue
+		}
+		repositories[key.RepoID] = providerplane.RepositoryIdentity{
+			Provider:       repository.Platform,
+			PlatformHost:   repository.PlatformHost,
+			PlatformRepoID: repository.PlatformRepoID,
+		}.Canonical()
+	}
+	return repositories, nil
 }
 
 func retainActivitySubjectsByIdentity(

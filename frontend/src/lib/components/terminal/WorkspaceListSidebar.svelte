@@ -2091,10 +2091,7 @@
 
   .workspace-sort-time {
     color: var(--text-muted);
-    font-family: var(--font-mono);
-    font-size: var(--font-size-2xs);
-    font-variant-numeric: tabular-nums;
-    line-height: 1.2;
+    font-size: var(--font-size-xs);
     white-space: nowrap;
   }
 

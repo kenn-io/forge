@@ -521,6 +521,50 @@ describe("DiffFile", () => {
     });
   });
 
+  it("does not classify inactive markdown review threads as unavailable", async () => {
+    const visibleObserver = (globalThis as GlobalWithIO).IntersectionObserver;
+    class InactiveIntersectionObserverStub {
+      root: Element | null = null;
+      rootMargin = "";
+      thresholds: readonly number[] = [];
+      constructor(private readonly callback: IntersectionObserverCallback) {}
+      observe(target: Element): void {
+        const entry = {
+          isIntersecting: false,
+          intersectionRatio: 0,
+          target,
+          boundingClientRect: {} as DOMRectReadOnly,
+          intersectionRect: {} as DOMRectReadOnly,
+          rootBounds: null,
+          time: 0,
+        } as IntersectionObserverEntry;
+        this.callback([entry], this as unknown as IntersectionObserver);
+      }
+      unobserve(): void {}
+      disconnect(): void {}
+      takeRecords(): IntersectionObserverEntry[] {
+        return [];
+      }
+    }
+    (globalThis as GlobalWithIO).IntersectionObserver = InactiveIntersectionObserverStub;
+
+    try {
+      renderDiffFile(makeFile({ path: "README.md", old_path: "README.md" }), {
+        richPreview: true,
+        diffHeadSHA: "diff-head",
+        reviewThreads: [makeReviewThread({ path: "README.md", diff_head_sha: "diff-head" })],
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("Loading preview")).toBeTruthy();
+      });
+      expect(screen.queryByText("Published review note")).toBeNull();
+      expect(screen.queryByText("Line unavailable")).toBeNull();
+    } finally {
+      (globalThis as GlobalWithIO).IntersectionObserver = visibleObserver;
+    }
+  });
+
   it("keeps structural markdown rich preview changes visibly highlighted", async () => {
     renderDiffFile(
       makeFile({

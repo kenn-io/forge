@@ -89,7 +89,9 @@
   const displayText = $derived(formatText(file.path, text));
   const fallbackReviewThreads = $derived<ReviewThreadPlacement[]>(
     markdownPreview?.fallbackReviewThreads ??
-      reviewThreads.map((thread) => ({ thread, placement: reviewThreadFallbackPlacement(thread) })),
+      (isMarkdownFile
+        ? []
+        : reviewThreads.map((thread) => ({ thread, placement: reviewThreadFallbackPlacement(thread) }))),
   );
   const fileHeaderReviewThreads = $derived(
     fallbackReviewThreads.filter(({ placement }) => placement === "file"),

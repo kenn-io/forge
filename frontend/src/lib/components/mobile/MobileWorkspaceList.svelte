@@ -511,7 +511,7 @@
       onclick={() => openWorkspace(workspace)}
     >
       <span class="mobile-workspace-row__title">
-        <StatusDot status={status(workspace)} label={statusLabel(workspace)} size={7} />
+        <StatusDot status={status(workspace)} label={statusLabel(workspace)} size={7} animated />
         <strong>{mobileWorkspaceDisplayName(workspace)}</strong>
         {#if agentState}
           <span

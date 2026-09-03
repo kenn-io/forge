@@ -2011,7 +2011,7 @@ describe("WorkspaceListSidebar", () => {
     ["deleting", "Deleting workspace", "kit-status-dot--working"],
     ["deletion_failed", "Deletion failed", "kit-status-dot--unclean"],
     ["pending", "Workspace pending", "kit-status-dot--stale"],
-  ] as const)("maps %s workspace state to the shared semantic status", async (status, label, className) => {
+  ] as const)("maps %s workspace state to the animated semantic status", async (status, label, className) => {
     mockGet.mockResolvedValue({
       data: {
         workspaces: [
@@ -2032,7 +2032,9 @@ describe("WorkspaceListSidebar", () => {
       props: { selectedId: `ws-${status}` },
     });
 
-    expect((await screen.findByLabelText(label)).classList.contains(className)).toBe(true);
+    const statusDot = await screen.findByLabelText(label);
+    expect(statusDot.classList.contains(className)).toBe(true);
+    expect(statusDot.classList.contains("kit-status-dot--animated")).toBe(true);
   });
 
   it("opens a failed issue workspace for retry and confirmed force-delete recovery", async () => {

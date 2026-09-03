@@ -470,7 +470,7 @@
         </p>
       {:else if prItems.length === 0 && sync.getSyncState()?.running}
         <div class="state-message sync-message">
-          <StatusDot status="working" label="Syncing pull requests" size={6} />
+          <StatusDot status="working" label="Syncing pull requests" size={6} animated />
           <span aria-hidden="true">Syncing...</span>
         </div>
       {:else if prItems.length === 0 && !sync.getSyncState()?.last_run_at}
@@ -528,7 +528,7 @@
         </p>
       {:else if issueItems.length === 0 && sync.getSyncState()?.running}
         <div class="state-message sync-message">
-          <StatusDot status="working" label="Syncing issues" size={6} />
+          <StatusDot status="working" label="Syncing issues" size={6} animated />
           <span aria-hidden="true">Syncing...</span>
         </div>
       {:else if issueItems.length === 0 && !sync.getSyncState()?.last_run_at}

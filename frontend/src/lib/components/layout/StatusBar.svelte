@@ -298,7 +298,7 @@
         class="status-item status-item--error status-item--provider-unavailable"
         title="This Forge spoke cannot reach its federation hub"
       >
-        <StatusDot status="stale" label="Provider unavailable" size={5} />
+        <StatusDot status="stale" label="Provider unavailable" size={5} animated />
         provider unavailable
       </span>
       <span class="status-sep">&middot;</span>
@@ -321,12 +321,12 @@
           title={events.getLastError() ?? "Reconnect live updates"}
           onclick={events.reconnect}
         >
-          <StatusDot status="stale" label="Live updates disconnected" size={5} />
+          <StatusDot status="stale" label="Live updates disconnected" size={5} animated />
           live updates disconnected
         </button>
       {:else}
         <span class="status-item status-item--live-updates">
-          <StatusDot status="working" label="Reconnecting live updates" size={5} />
+          <StatusDot status="working" label="Reconnecting live updates" size={5} animated />
           live updates reconnecting
         </span>
       {/if}
@@ -335,7 +335,7 @@
     {#if sync.getProviderAvailable()}
       <span class="status-item" class:status-item--active={sync.getSyncState()?.running}>
         {#if sync.getSyncState()?.running}
-          <StatusDot status="working" label="Syncing" size={5} />
+          <StatusDot status="working" label="Syncing" size={5} animated />
         {/if}
         {syncText()}
       </span>

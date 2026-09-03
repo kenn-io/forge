@@ -686,6 +686,7 @@
               <span class="tabbed-panel-tab-label">{tab.label}</span>
               {#if tab.status}
                 <StatusDot
+                  animated
                   status={tab.status.value}
                   label={tab.status.label}
                   size={6}

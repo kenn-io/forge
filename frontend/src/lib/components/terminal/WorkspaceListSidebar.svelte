@@ -1382,6 +1382,7 @@
             <div class="ws-row-text">
               <div class="ws-row-title">
                 <StatusDot
+                  animated
                   status={workspaceStatus(ws)}
                   label={workspaceStatusLabel(ws)}
                   size={6}
@@ -1405,6 +1406,7 @@
                     title={`Agent ${agentState.label.toLowerCase()}`}
                   >
                     <StatusDot
+                      animated
                       status={agentState.status}
                       label={`Agent ${agentState.label.toLowerCase()}`}
                       size={6}
@@ -1412,9 +1414,9 @@
                     <span>{agentState.label}</span>
                   </span>
                 {:else if workspaceActionMatches(ws)}
-                  <StatusDot status="working" label={workspaceBusyLabel(ws)} size={6} />
+                  <StatusDot status="working" label={workspaceBusyLabel(ws)} size={6} animated />
                 {:else if ws.agent_state == null && ws.tmux_working}
-                  <StatusDot status="working" label={workingTitle(ws)} size={6} />
+                  <StatusDot status="working" label={workingTitle(ws)} size={6} animated />
                 {/if}
               </div>
               <div class="ws-row-meta">

@@ -1209,7 +1209,7 @@
       {/if}
       {#if issues.isIssueStaleRefreshing() && !manualRefreshPending}
         <div class="refresh-banner">
-          <StatusDot status="working" label="Refreshing issue details" size={5} />
+          <StatusDot status="working" label="Refreshing issue details" size={5} animated />
           <span aria-hidden="true">Refreshing...</span>
         </div>
       {/if}

@@ -118,6 +118,7 @@
   >
     <summary aria-label={`Current Forge: ${hostName(currentHost)}`}>
       <StatusDot
+        animated
         status={statusDot(hostStatus(currentHost))}
         label={`${hostName(currentHost)} is ${hostStatus(currentHost)}`}
         size={9}
@@ -135,7 +136,7 @@
             aria-current={host.kind === "self" ? "page" : undefined}
             title={diagnostic || `Open ${hostName(host)}`}
           >
-            <StatusDot status={statusDot(status)} label={`${hostName(host)} is ${status}`} size={9} />
+            <StatusDot status={statusDot(status)} label={`${hostName(host)} is ${status}`} size={9} animated />
             <span class="host-copy">
               <span class="host-heading">
                 <strong>{hostName(host)}</strong>

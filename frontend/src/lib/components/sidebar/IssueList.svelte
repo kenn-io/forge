@@ -328,7 +328,7 @@
       <p class="state-message state-message--error">Error: {issues.getIssuesError()}</p>
     {:else if issues.getIssues().length === 0 && sync.getSyncState()?.running}
       <div class="state-message sync-message">
-        <StatusDot status="working" label="Syncing issues from GitHub" size={6} />
+        <StatusDot status="working" label="Syncing issues from GitHub" size={6} animated />
         <span aria-hidden="true">Syncing from GitHub…</span>
       </div>
     {:else if issues.getIssues().length === 0 && !sync.getSyncState()?.last_run_at}

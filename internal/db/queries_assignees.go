@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 )
 
@@ -32,47 +33,53 @@ func (d *DB) ListUnassignedWorkspaceSubjectKeys(
 	ctx context.Context, candidates []WorkspaceSubjectKey,
 ) (map[WorkspaceSubjectKey]struct{}, error) {
 	keys := make(map[WorkspaceSubjectKey]struct{})
-	for _, subject := range []struct {
-		itemType string
-		table    string
-		alias    string
-	}{
-		{WorkspaceItemTypePullRequest, "forge_merge_requests", "p"},
-		{WorkspaceItemTypeIssue, "forge_issues", "i"},
-	} {
-		var args []any
-		candidateCondition := workspaceSubjectCandidateCondition(
-			subject.alias, subject.itemType, candidates, &args,
+	if len(candidates) == 0 {
+		return keys, nil
+	}
+	candidatesJSON, err := json.Marshal(candidates)
+	if err != nil {
+		return nil, fmt.Errorf("encode unassigned workspace subjects: %w", err)
+	}
+	query := `WITH requested(repo_id, item_type, item_number) AS (
+			SELECT CAST(json_extract(value, '$.repo_id') AS INTEGER),
+			       json_extract(value, '$.item_type'),
+			       CAST(json_extract(value, '$.item_number') AS INTEGER)
+			FROM json_each(?)
 		)
-		if candidateCondition == "" {
-			continue
+		SELECT DISTINCT q.repo_id, q.item_type, q.item_number
+		FROM requested q
+		JOIN forge_repos r ON r.id = q.repo_id AND r.lifecycle_state = 'active'
+		LEFT JOIN forge_merge_requests p
+		  ON q.item_type = 'pull_request' AND p.repo_id = q.repo_id AND p.number = q.item_number
+		LEFT JOIN forge_issues i
+		  ON q.item_type = 'issue' AND i.repo_id = q.repo_id AND i.number = q.item_number
+		WHERE ((p.number IS NOT NULL AND ` + unassignedCondition("p") + `)
+		       OR (i.number IS NOT NULL AND ` + unassignedCondition("i") + `))
+		  AND NOT EXISTS (
+			SELECT 1 FROM forge_archive_items ai
+			WHERE ai.repo_id = q.repo_id
+			  AND ai.item_type = CASE q.item_type
+			      WHEN 'pull_request' THEN 'merge_request' ELSE 'issue' END
+			  AND ai.item_number = q.item_number
+			  AND ai.lifecycle_state = 'removed_upstream'
+		  )`
+	rows, err := d.ro.QueryContext(ctx, query, candidatesJSON)
+	if err != nil {
+		return nil, fmt.Errorf("list unassigned workspace subjects: %w", err)
+	}
+	for rows.Next() {
+		var key WorkspaceSubjectKey
+		if err := rows.Scan(&key.RepoID, &key.ItemType, &key.ItemNumber); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("scan unassigned workspace subject: %w", err)
 		}
-		query := fmt.Sprintf(`
-			SELECT %[1]s.repo_id, %[1]s.number
-			FROM %[2]s %[1]s
-			JOIN forge_repos r ON r.id = %[1]s.repo_id
-			WHERE r.lifecycle_state = 'active'
-			  AND %[3]s
-			  AND %[4]s`, subject.alias, subject.table, candidateCondition, unassignedCondition(subject.alias))
-		rows, err := d.ro.QueryContext(ctx, query, args...)
-		if err != nil {
-			return nil, fmt.Errorf("list unassigned workspace %s subjects: %w", subject.itemType, err)
-		}
-		for rows.Next() {
-			var key WorkspaceSubjectKey
-			key.ItemType = subject.itemType
-			if err := rows.Scan(&key.RepoID, &key.ItemNumber); err != nil {
-				rows.Close()
-				return nil, fmt.Errorf("scan unassigned workspace %s subject: %w", subject.itemType, err)
-			}
-			keys[key] = struct{}{}
-		}
-		if err := rows.Close(); err != nil {
-			return nil, fmt.Errorf("close unassigned workspace %s subjects: %w", subject.itemType, err)
-		}
-		if err := rows.Err(); err != nil {
-			return nil, fmt.Errorf("list unassigned workspace %s subject rows: %w", subject.itemType, err)
-		}
+		keys[key] = struct{}{}
+	}
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("close unassigned workspace subjects: %w", err)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list unassigned workspace subject rows: %w", err)
 	}
 	return keys, nil
 }

@@ -169,8 +169,8 @@ embedder protocol for arbitrary host state.
 - Spokes overlay their subject snapshot onto hub pull, issue, and Activity
   rows by stable provider identity, preserving membership, order, and cursors
   (`internal/server/pullapi/services.go::Handler.overlayLocalPullWorkspaces`).
-- Provider-owned filters on spoke workspace overlays must use hub state; spoke
-  provider rows are optional and cannot decide filter membership
+- Assignment-dependent filters on spoke workspace overlays must use hub state;
+  spoke provider rows are optional and cannot decide filter membership
   (`internal/server/provider_activity_subjects.go::Server.federationFilterUnassignedActivitySubjects`).
 - Workspace enrichment is best-effort on Issue/PR detail: snapshot failures log
   and omit optional workspace metadata rather than hiding a valid item; list and

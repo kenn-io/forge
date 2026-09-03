@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -1308,14 +1309,14 @@ func TestPreEnrollmentEndpointUsesOneTimeTokenInsteadOfLocalAPIAuth(t *testing.T
 	})
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
-	const joinJSON = `{
+	joinJSON := fmt.Sprintf(`{
 		"enrollment_id":"11111111111111111111111111111111",
 		"node_id":"fedcba9876543210fedcba9876543210",
 		"platform":"linux",
 		"base_url":"https://spoke.example",
-		"protocol_version":3,
+		"protocol_version":%d,
 		"hub_credential":"hub-calls-spoke-token"
-	}`
+	}`, federation.ProtocolVersion)
 	body := strings.NewReader(joinJSON)
 	request, err := http.NewRequest(
 		http.MethodPost, ts.URL+"/api/v1/federation/enrollments", body,

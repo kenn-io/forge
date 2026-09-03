@@ -642,25 +642,31 @@ func (s *hubProviderSource) ListActivity(
 func (s *hubProviderSource) FilterUnassignedActivitySubjects(
 	ctx context.Context, subjects []providerplane.ItemIdentity,
 ) ([]providerplane.ItemIdentity, error) {
-	requestSubjects := make([]federationActivitySubjectIdentity, 0, len(subjects))
-	for _, subject := range subjects {
-		requestSubjects = append(requestSubjects, federationActivitySubjectIdentityFromProvider(subject))
-	}
-	request := federationUnassignedActivitySubjectsRequest{Subjects: requestSubjects}
-	var response federationUnassignedActivitySubjectsResponse
-	if err := s.exchange(
-		ctx,
-		http.MethodPost,
-		"/api/v1/federation/provider/activity/unassigned-subjects/query",
-		federationauth.ScopeProviderRead,
-		request,
-		&response,
-	); err != nil {
-		return nil, err
-	}
-	result := make([]providerplane.ItemIdentity, 0, len(response.Subjects))
-	for _, subject := range response.Subjects {
-		result = append(result, subject.provider())
+	const batchSize = 500
+	result := make([]providerplane.ItemIdentity, 0, len(subjects))
+	for start := 0; start < len(subjects); start += batchSize {
+		end := min(start+batchSize, len(subjects))
+		requestSubjects := make([]federationActivitySubjectIdentity, 0, end-start)
+		for _, subject := range subjects[start:end] {
+			requestSubjects = append(
+				requestSubjects, federationActivitySubjectIdentityFromProvider(subject),
+			)
+		}
+		request := federationUnassignedActivitySubjectsRequest{Subjects: requestSubjects}
+		var response federationUnassignedActivitySubjectsResponse
+		if err := s.exchange(
+			ctx,
+			http.MethodPost,
+			"/api/v1/federation/provider/activity/unassigned-subjects/query",
+			federationauth.ScopeProviderRead,
+			request,
+			&response,
+		); err != nil {
+			return nil, err
+		}
+		for _, subject := range response.Subjects {
+			result = append(result, subject.provider())
+		}
 	}
 	return result, nil
 }

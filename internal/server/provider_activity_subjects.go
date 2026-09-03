@@ -99,17 +99,26 @@ func (s *Server) federationFilterUnassignedActivitySubjects(
 
 	keys := make([]db.WorkspaceSubjectKey, 0, len(identities))
 	identityByKey := make(map[db.WorkspaceSubjectKey]providerplane.ItemIdentity, len(identities))
+	repositoryIDs := make(map[providerplane.RepositoryIdentity]int64)
 	for _, identity := range identities {
-		repository, lookupErr := s.db.GetRepositoryByProviderIDUnderRepositoryReconciliationRead(
-			ctx,
-			identity.Repository.Provider,
-			identity.Repository.PlatformHost,
-			identity.Repository.PlatformRepoID,
-		)
-		if lookupErr != nil {
-			return nil, httpapi.Internal("filter activity subjects failed")
+		repositoryIdentity := identity.Repository.Canonical()
+		repositoryID, resolved := repositoryIDs[repositoryIdentity]
+		if !resolved {
+			repository, lookupErr := s.db.GetRepositoryByProviderIDUnderRepositoryReconciliationRead(
+				ctx,
+				repositoryIdentity.Provider,
+				repositoryIdentity.PlatformHost,
+				repositoryIdentity.PlatformRepoID,
+			)
+			if lookupErr != nil {
+				return nil, httpapi.Internal("filter activity subjects failed")
+			}
+			if repository != nil && repository.Lifecycle == db.RepositoryLifecycleActive {
+				repositoryID = repository.Repository.ID
+			}
+			repositoryIDs[repositoryIdentity] = repositoryID
 		}
-		if repository == nil || repository.Lifecycle != db.RepositoryLifecycleActive {
+		if repositoryID == 0 {
 			continue
 		}
 		itemType := db.WorkspaceItemTypePullRequest
@@ -117,7 +126,7 @@ func (s *Server) federationFilterUnassignedActivitySubjects(
 			itemType = db.WorkspaceItemTypeIssue
 		}
 		key := db.WorkspaceSubjectKey{
-			RepoID: repository.Repository.ID, ItemType: itemType, ItemNumber: identity.ItemNumber,
+			RepoID: repositoryID, ItemType: itemType, ItemNumber: identity.ItemNumber,
 		}
 		keys = append(keys, key)
 		identityByKey[key] = identity

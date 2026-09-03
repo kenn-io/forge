@@ -274,10 +274,10 @@ or remote workspace and session operations.
 
 ## Configuration And Lifecycle
 
-- Federation protocol version 3 requires an exact match; there is no
+- Federation protocol version 4 requires an exact match; there is no
   translation or compatibility fallback
   (`internal/federation/protocol.go::ProtocolVersion`).
-- Activation leases negotiate their own version 1 inside protocol 3. This
+- Activation leases negotiate their own version 1 inside protocol 4. This
   keeps snapshot compatibility separate from the authorization handshake:
   upgraded hubs isolate lease-unaware active spokes until they upgrade and
   activate again, without rewriting enrollment storage or requiring

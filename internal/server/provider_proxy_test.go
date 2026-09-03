@@ -350,6 +350,46 @@ func TestHubListFiltersForwardUnassigned(t *testing.T) {
 	}, seen)
 }
 
+func TestHubUnassignedActivitySubjectFilterBatchesLargeSnapshots(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	const subjectCount = 11_000
+	var requestCount int
+	source := &hubProviderSource{client: providerPlaneClientFunc(func(
+		_ context.Context, scope federationauth.Scope, request *http.Request,
+	) (*http.Response, error) {
+		assert.Equal(federationauth.ScopeProviderRead, scope)
+		assert.Equal("/api/v1/federation/provider/activity/unassigned-subjects/query", request.URL.Path)
+		var body federationUnassignedActivitySubjectsRequest
+		require.NoError(json.NewDecoder(request.Body).Decode(&body))
+		assert.LessOrEqual(len(body.Subjects), 500)
+		requestCount++
+		encoded, err := json.Marshal(federationUnassignedActivitySubjectsResponse(body))
+		require.NoError(err)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(bytes.NewReader(encoded)),
+			Request:    request,
+		}, nil
+	})}
+
+	subjects := make([]providerplane.ItemIdentity, subjectCount)
+	for i := range subjects {
+		subjects[i] = providerplane.ItemIdentity{
+			Repository: providerplane.RepositoryIdentity{
+				Provider: "github", PlatformHost: "github.com", PlatformRepoID: "repo-acme-widget",
+			},
+			ItemType: "pr", ItemNumber: i + 1,
+		}
+	}
+
+	got, err := source.FilterUnassignedActivitySubjects(t.Context(), subjects)
+	require.NoError(err)
+	assert.Equal(22, requestCount)
+	assert.Equal(subjects, got)
+}
+
 func TestSpokeUnassignedActivityKeepsMatchingLocalWorkspaceSubject(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -401,21 +441,19 @@ func TestSpokeUnassignedActivityUsesHubAssignmentWithoutLocalProviderRows(t *tes
 	assert := assert.New(t)
 	require := require.New(t)
 	hub, hubDatabase := setupTestServer(t)
-	unassignedID := seedPR(t, hubDatabase, "acme", "widget", 1)
-	assignedID := seedPR(t, hubDatabase, "acme", "widget", 2)
-	issueID := seedIssue(t, hubDatabase, "acme", "widget", 7, "open")
+	unassignedIssueID := seedIssue(t, hubDatabase, "acme", "widget", 7, "open")
+	assignedIssueID := seedIssue(t, hubDatabase, "acme", "widget", 8, "open")
 	hubRepo, err := hubDatabase.GetRepoByIdentity(
 		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	require.NotNil(hubRepo)
-	require.NoError(hubDatabase.UpdateMergeRequestAssignees(
-		t.Context(), hubRepo.ID, unassignedID, nil,
+	require.NoError(hubDatabase.UpdateIssueAssignees(
+		t.Context(), hubRepo.ID, unassignedIssueID, nil,
 	))
-	require.NoError(hubDatabase.UpdateMergeRequestAssignees(
-		t.Context(), hubRepo.ID, assignedID, []string{"reviewer"},
+	require.NoError(hubDatabase.UpdateIssueAssignees(
+		t.Context(), hubRepo.ID, assignedIssueID, []string{"reviewer"},
 	))
-	require.NoError(hubDatabase.UpdateIssueAssignees(t.Context(), hubRepo.ID, issueID, nil))
 
 	spoke, spokeDatabase := setupTestServer(t)
 	spokeRepoID, err := spokeDatabase.UpsertRepo(
@@ -439,45 +477,41 @@ func TestSpokeUnassignedActivityUsesHubAssignmentWithoutLocalProviderRows(t *tes
 			{
 				RepoID: spokeRepoID, ItemType: db.WorkspaceItemTypeIssue, ItemNumber: 7,
 			}: {ID: "ws-issue", Status: "ready"},
+			{
+				RepoID: spokeRepoID, ItemType: db.WorkspaceItemTypeIssue, ItemNumber: 8,
+			}: {ID: "ws-assigned-issue", Status: "ready"},
 		},
 		Subjects: map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{},
-	}
-	now := time.Now().UTC()
-	for number, workspaceID := range map[int]string{2: "ws-assigned"} {
-		key := db.WorkspaceSubjectKey{
-			RepoID: spokeRepoID, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: number,
-		}
-		snapshot.Subjects[key] = workspaceapi.SubjectActivity{
-			Subject: db.WorkspaceSubjectMetadata{
-				Key: key, Platform: "github", PlatformHost: "github.com",
-				PlatformRepoID: "repo-acme-widget", RepoOwner: "acme", RepoName: "widget",
-				RepoPath: "acme/widget", Title: "Local workspace", State: "open",
-				URL: "https://github.com/acme/widget/pull/1", Author: "author",
-			},
-			Workspace:  workspaceapi.WorkspaceRef{ID: workspaceID, Status: "ready"},
-			ActivityAt: &now,
-		}
 	}
 
 	response, err := spoke.overlayLocalActivityWorkspaceSnapshot(
 		t.Context(),
 		&listActivityInput{Unassigned: true},
-		activityResponse{
-			Items: []activityItemResponse{{
+		activityResponse{Items: []activityItemResponse{
+			{
 				Repo: activityRepoRefResponse{
 					Provider: "github", PlatformHost: "github.com",
 					PlatformRepoID: "repo-acme-widget",
 				},
 				ItemType: "issue", ItemNumber: 7,
-			}},
+			},
+			{
+				Repo: activityRepoRefResponse{
+					Provider: "github", PlatformHost: "github.com",
+					PlatformRepoID: "repo-acme-widget",
+				},
+				ItemType: "issue", ItemNumber: 8,
+			},
+		},
 			UseWorkspaceActivityForRecency: true,
 		},
 		snapshot,
 	)
 	require.NoError(err)
-	require.Len(response.Items, 1)
+	require.Len(response.Items, 2)
 	require.NotNil(response.Items[0].Workspace)
 	assert.Equal("ws-issue", response.Items[0].Workspace.ID)
+	assert.Nil(response.Items[1].Workspace)
 	require.Empty(response.WorkspaceActivity)
 }
 

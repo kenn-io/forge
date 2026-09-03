@@ -1509,6 +1509,41 @@ describe("WorkspaceListSidebar", () => {
     expect(container.querySelectorAll(".sidebar-group-header")).toHaveLength(0);
   });
 
+  it("sorts flat by hook-reported agent status", async () => {
+    const states: WorkspaceFixtureOptions["agentState"][] = ["idle", "done", "working", "input", "approval", null];
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: states.map((agentState, index) =>
+          workspaceFixture({
+            id: agentState ?? "unreported",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "kenn-io",
+            name: "kenn-forge",
+            number: index + 1,
+            title: agentState ?? "unreported",
+            agentState,
+          }),
+        ),
+      },
+    });
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "approval" },
+    });
+    await screen.findByText("approval");
+
+    await fireEvent.click(screen.getByTitle("View workspace options"));
+    const agentStatusSort = screen.getByRole("button", { name: "Agent status" });
+    expect(agentStatusSort.getAttribute("title")).toBe(
+      "Group by agent status, with workspaces needing attention first.",
+    );
+    await fireEvent.click(agentStatusSort);
+
+    expect(rowTitles(container)).toEqual(["approval", "input", "working", "done", "idle", "unreported"]);
+    expect(container.querySelectorAll(".sidebar-group-header")).toHaveLength(0);
+  });
+
   it("persists the selected sort across mounts", async () => {
     mockGet.mockResolvedValue({
       data: { workspaces: sortFixtures() },
@@ -1548,6 +1583,7 @@ describe("WorkspaceListSidebar", () => {
     expect(screen.getByRole("button", { name: "Org / repo" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Created" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Activity" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Agent status" })).toBeTruthy();
     expect(screen.getByText("Visibility")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Hide org name" }).classList.contains("active")).toBe(false);
     expect(screen.getByRole("button", { name: "Show PR diff stats" })).toBeTruthy();

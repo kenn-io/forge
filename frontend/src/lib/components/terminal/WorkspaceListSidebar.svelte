@@ -46,6 +46,7 @@
     loadWorkspaceListSort,
     saveWorkspaceListDisplayOptions,
     saveWorkspaceListSort,
+    workspaceAgentStatePriority,
     workspaceListSortOptions,
     type WorkspaceListDisplayOptions,
     type WorkspaceListSort,
@@ -312,12 +313,22 @@
       fleetHosts.find((host) => host.kind === "self")?.federationRole === "hub",
   );
 
-  // Flat ordering for timestamp sorts. The org/repo mode keeps
+  // Flat ordering for status and timestamp sorts. The org/repo mode keeps
   // the API order (created_at DESC) inside each repo group.
+  // Agent status follows the same attention-first priority as the server's
+  // aggregate hook state, then keeps newer workspaces first within a status.
   // "Activity" means terminal output only (tmux_last_output_at).
   // "Item activity" means the synced PR/issue last_activity_at.
   // Missing timestamps fall back to workspace creation time.
   const sortedFlat = $derived.by(() => {
+    if (sortMode === "agent-status") {
+      return [...visibleWorkspaces].sort(
+        (a, b) =>
+          workspaceAgentStatePriority(b.agent_state) - workspaceAgentStatePriority(a.agent_state) ||
+          timeValue(b.created_at) - timeValue(a.created_at) ||
+          a.id.localeCompare(b.id),
+      );
+    }
     const stamp = sortMode === "activity"
       ? (ws: Workspace) =>
           timeValue(ws.tmux_last_output_at) || timeValue(ws.created_at)

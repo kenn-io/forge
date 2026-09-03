@@ -1,4 +1,6 @@
-export type WorkspaceListSort = "repo" | "created" | "activity" | "item-activity";
+import type { WorkspaceListItem } from "./workspace-list-schema.js";
+
+export type WorkspaceListSort = "repo" | "created" | "activity" | "item-activity" | "agent-status";
 
 export interface WorkspaceListDisplayOptions {
   showOrgNames: boolean;
@@ -30,6 +32,11 @@ export const workspaceListSortOptions: {
     label: "Item activity",
     description: "Sort by latest linked PR or issue activity, falling back to workspace creation.",
   },
+  {
+    value: "agent-status",
+    label: "Agent status",
+    description: "Group by agent status, with workspaces needing attention first.",
+  },
 ];
 
 export const defaultWorkspaceListSort: WorkspaceListSort = "repo";
@@ -43,6 +50,23 @@ const sortStorageKey = "kenn-forge:workspaceListSort";
 const displayStorageKey = "kenn-forge:workspaceListDisplayOptions";
 
 const validSorts = new Set<WorkspaceListSort>(workspaceListSortOptions.map((option) => option.value));
+
+export function workspaceAgentStatePriority(state: WorkspaceListItem["agent_state"]): number {
+  switch (state) {
+    case "approval":
+      return 5;
+    case "input":
+      return 4;
+    case "working":
+      return 3;
+    case "done":
+      return 2;
+    case "idle":
+      return 1;
+    default:
+      return 0;
+  }
+}
 
 function getStorage(): Storage | null {
   try {

@@ -225,12 +225,12 @@ type gqlCommit struct {
 	Message string
 	Author  struct {
 		Name string
-		Date time.Time
+		Date *time.Time
 		User *struct{ Login string }
 	}
 	Committer struct {
 		Name string
-		Date time.Time
+		Date *time.Time
 		User *struct{ Login string }
 	}
 }
@@ -656,11 +656,11 @@ func adaptCommit(gql *gqlCommitNode) *gh.RepositoryCommit {
 			Message: new(gql.Commit.Message),
 			Author: &gh.CommitAuthor{
 				Name: new(gql.Commit.Author.Name),
-				Date: &gh.Timestamp{Time: gql.Commit.Author.Date},
+				Date: ghTimestampPtr(gql.Commit.Author.Date),
 			},
 			Committer: &gh.CommitAuthor{
 				Name: new(gql.Commit.Committer.Name),
-				Date: &gh.Timestamp{Time: gql.Commit.Committer.Date},
+				Date: ghTimestampPtr(gql.Commit.Committer.Date),
 			},
 		},
 	}

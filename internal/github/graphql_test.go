@@ -345,10 +345,11 @@ func TestAdaptCommit(t *testing.T) {
 		},
 	}
 	gql.Commit.Author.Name = "Dave"
-	gql.Commit.Author.Date = now
+	gql.Commit.Author.Date = &now
 	gql.Commit.Author.User = &struct{ Login string }{Login: "dave"}
 	gql.Commit.Committer.Name = "Eve"
-	gql.Commit.Committer.Date = now.Add(time.Hour)
+	committedAt := now.Add(time.Hour)
+	gql.Commit.Committer.Date = &committedAt
 	gql.Commit.Committer.User = &struct{ Login string }{Login: "eve"}
 
 	c := adaptCommit(&gql)
@@ -359,6 +360,10 @@ func TestAdaptCommit(t *testing.T) {
 	assert.Equal("dave", c.GetAuthor().GetLogin())
 	assert.Equal("Eve", c.GetCommit().GetCommitter().GetName())
 	assert.Equal("eve", c.GetCommitter().GetLogin())
+
+	gql.Commit.Committer.Date = nil
+	withoutCommitterDate := adaptCommit(&gql)
+	assert.Nil(withoutCommitterDate.GetCommit().GetCommitter().Date)
 }
 
 func TestAdaptCheckContext(t *testing.T) {

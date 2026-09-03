@@ -228,6 +228,11 @@ type gqlCommit struct {
 		Date time.Time
 		User *struct{ Login string }
 	}
+	Committer struct {
+		Name string
+		Date time.Time
+		User *struct{ Login string }
+	}
 }
 
 type gqlPullRequestTimelineItem struct {
@@ -653,10 +658,17 @@ func adaptCommit(gql *gqlCommitNode) *gh.RepositoryCommit {
 				Name: new(gql.Commit.Author.Name),
 				Date: &gh.Timestamp{Time: gql.Commit.Author.Date},
 			},
+			Committer: &gh.CommitAuthor{
+				Name: new(gql.Commit.Committer.Name),
+				Date: &gh.Timestamp{Time: gql.Commit.Committer.Date},
+			},
 		},
 	}
 	if gql.Commit.Author.User != nil {
 		c.Author = &gh.User{Login: new(gql.Commit.Author.User.Login)}
+	}
+	if gql.Commit.Committer.User != nil {
+		c.Committer = &gh.User{Login: new(gql.Commit.Committer.User.Login)}
 	}
 	return c
 }

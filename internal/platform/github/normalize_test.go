@@ -105,6 +105,16 @@ func TestNormalizeCommitEventFallbacks(t *testing.T) {
 			wantMetadata:    `{"commit_author":"original-author"}`,
 		},
 		{
+			name:            "web-flow committer is displayed as reported",
+			author:          user("original-author"),
+			committer:       user("web-flow"),
+			commitAuthor:    signature("original-name", authoredAt),
+			commitCommitter: signature("web-flow", committedAt),
+			wantAuthor:      "web-flow",
+			wantCreatedAt:   committedAt,
+			wantMetadata:    `{"commit_author":"original-author"}`,
+		},
+		{
 			name:            "nested committer name is used without associated user",
 			author:          user("original-author"),
 			commitAuthor:    signature("original-name", authoredAt),

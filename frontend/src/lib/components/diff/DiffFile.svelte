@@ -445,7 +445,7 @@
 
   function selectedRangeForDraftComment(comment: DiffReviewDraftComment): SelectedLineRange | null {
     if (comment.line_type === "file") return null;
-    if (!commentMatchesCurrentDiff(comment)) return null;
+    if (reviewThreadSnapshotState(comment, diffHeadSHA) === "stale") return null;
     const endSide = commentSide(comment);
     const end = refForSelection(comment.line, endSide);
     if (!end) return null;
@@ -456,10 +456,6 @@
       return selectedLinesFor(end, end);
     }
     return selectedLinesFor(start, end);
-  }
-
-  function commentMatchesCurrentDiff(comment: DiffReviewDraftComment): boolean {
-    return !comment.diff_head_sha || !diffHeadSHA || comment.diff_head_sha === diffHeadSHA;
   }
 
   function reviewSideFromValue(side: string): ReviewSide {

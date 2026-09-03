@@ -1098,6 +1098,32 @@ describe("DiffFile", () => {
     });
   });
 
+  it("does not restore a saved draft range from an older diff snapshot", async () => {
+    renderDiffFile(makeFile(), {
+      reviewEnabled: true,
+      diffHeadSHA: "current-diff-head",
+      draftComments: [
+        {
+          id: "draft-stale",
+          body: "Stale draft range",
+          path: "src/foo.ts",
+          side: "right",
+          line: 2,
+          new_line: 2,
+          line_type: "add",
+          diff_head_sha: "older-diff-head",
+          created_at: "2026-03-30T14:01:00Z",
+          updated_at: "2026-03-30T14:01:00Z",
+        },
+      ],
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Stale draft range")).toBeTruthy();
+    });
+    expect(selectedPierreLines()).toHaveLength(0);
+  });
+
   it("opens a new inline composer on a line that already has a saved draft", async () => {
     renderDiffFile(makeFile(), {
       reviewEnabled: true,

@@ -8,7 +8,7 @@ export type ReviewThreadSnapshotState = "fresh" | "stale" | "head-unknown";
 export type ReviewThreadCardPlacement = "inline" | "file" | "outdated" | "unavailable";
 
 export function reviewThreadSnapshotState(
-  thread: ReviewThread,
+  thread: Pick<ReviewThread, "diff_head_sha">,
   diffHeadSHA: string | undefined,
 ): ReviewThreadSnapshotState {
   if (!thread.diff_head_sha || !diffHeadSHA) return "head-unknown";

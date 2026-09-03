@@ -448,6 +448,10 @@ fallback repository listing.
 - Releasing the last live provider operation on a host wakes the archive worker only when
   that host denied or preempted an archive request; a normal sync's stream of releases
   must not trigger denied passes and deferral writes. (`internal/github/sync.go::beginProviderWork`)
+- Archive scheduling is eventually consistent by maintainer decision: a missed or late wake
+  that only delays eligible archive work until the next backoff pass (five minutes at most)
+  is accepted behavior, not a defect. Do not add wake bookkeeping or atomicity for it.
+  (`internal/github/sync.go::runArchiveLoop`)
 - Initial issue and pull-request inventory includes all states in stable created-time ascending order; issue enumeration excludes PR-shaped rows. (`internal/github/pages.go::ListIssuesPage`, `internal/github/pages.go::ListMergeRequestsPage`)
 - GitHub issue-only repositories return pulls API 404; normal and archive paths
   classify it as feature-disabled only for explicit `has_pull_requests=false`;

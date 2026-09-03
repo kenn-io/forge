@@ -188,11 +188,21 @@ on:
       target:
         required: true
         type: environment
+jobs:
+  noop:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ok
 `
 
 const e2eMaintenanceWorkflowDefinition = `name: Maintenance
 on:
   workflow_dispatch:
+jobs:
+  noop:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ok
 `
 
 const e2ePushWorkflowDefinition = `name: Push checks
@@ -200,6 +210,11 @@ on:
   push:
     branches:
       - main
+jobs:
+  noop:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ok
 `
 
 type e2eWorkflowDispatch struct {

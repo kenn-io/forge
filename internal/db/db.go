@@ -171,7 +171,7 @@ func (d *DB) init() error {
 // planner guesses, and on a large event table it guessed wrong for the
 // activity feed and merge request detail reads.
 func (d *DB) Optimize(ctx context.Context) error {
-	if _, err := d.rw.ExecContext(ctx, "PRAGMA optimize"); err != nil {
+	if _, err := d.ro.ExecContext(ctx, "PRAGMA optimize"); err != nil {
 		return fmt.Errorf("optimize db: %w", err)
 	}
 	return nil

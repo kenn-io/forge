@@ -195,10 +195,18 @@
     if (disabled || !terminal || !terminalSession?.isConnected()) return false;
     const input = containerEl.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea");
     if (!input) return false;
-    claimTerminalResize();
+    if (!claimTerminalResize()) return false;
+    applyTerminalSoftwareKeyboardPolicy(input);
+    const previousFocus = input.ownerDocument.activeElement;
     const keyDownAllowed = input.dispatchEvent(terminalKeyEvent("keydown", key));
     if (key === "Space" && keyDownAllowed) input.dispatchEvent(terminalKeyEvent("keypress", key));
     input.dispatchEvent(terminalKeyEvent("keyup", key));
+    if (previousFocus !== input && input.ownerDocument.activeElement === input) {
+      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) {
+        previousFocus.focus({ preventScroll: true });
+      }
+      if (input.ownerDocument.activeElement === input) input.blur();
+    }
     return true;
   }
 
@@ -284,11 +292,7 @@
     // policy first.
     if (active && (event.pointerType === "touch" || event.pointerType === "pen")) {
       const input = containerEl.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea");
-      if (containerEl.closest('[data-terminal-software-keyboard="manual"]')) {
-        input?.setAttribute("inputmode", "none");
-      } else {
-        input?.removeAttribute("inputmode");
-      }
+      if (input) applyTerminalSoftwareKeyboardPolicy(input);
       terminal?.focus();
     }
     if (!event.isTrusted) return;
@@ -307,6 +311,14 @@
       containerEl.setPointerCapture(event.pointerId);
     } catch {
       // The timeout and global cancellation handlers still bound the gesture.
+    }
+  }
+
+  function applyTerminalSoftwareKeyboardPolicy(input: HTMLTextAreaElement): void {
+    if (containerEl.closest('[data-terminal-software-keyboard="manual"]')) {
+      input.setAttribute("inputmode", "none");
+    } else {
+      input.removeAttribute("inputmode");
     }
   }
 

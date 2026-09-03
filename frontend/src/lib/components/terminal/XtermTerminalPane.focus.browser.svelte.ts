@@ -71,10 +71,13 @@ describe("XtermTerminalPane focus", () => {
     const target = document.createElement("div");
     target.style.width = "600px";
     target.style.height = "400px";
+    target.dataset.terminalSoftwareKeyboard = "manual";
+    const composer = document.createElement("textarea");
     document.body.appendChild(target);
+    document.body.appendChild(composer);
     const props = $state({
       runtime,
-      websocketPath: "/api/v1/workspaces/ws-1/runtime/sessions/s1/attach",
+      websocketPath: "/ws/v1/workspaces/ws-1/runtime/sessions/s1/terminal",
       active: true,
     });
     const component = mount(XtermTerminalPaneTestHarness, {
@@ -89,13 +92,22 @@ describe("XtermTerminalPane focus", () => {
       });
       const socket = controlledSockets[0]!;
 
+      socket.sent.length = 0;
+      composer.focus();
+      expect(component.sendKey("ArrowUp")).toBe(false);
+      expect(socket.sent).toEqual([]);
+      expect(document.activeElement).toBe(composer);
+
       socket.receiveControl(JSON.stringify({ type: "replay_ready" }));
       socket.sent.length = 0;
       socket.receive("\x1b[?1h\x1b[?u");
       await vi.waitFor(() => expect(socket.sentText()).toContain("\x1b[?0u"));
       socket.sent.length = 0;
+      composer.focus();
       expect(component.sendKey("ArrowUp")).toBe(true);
       await vi.waitFor(() => expect(socket.sent.length).toBeGreaterThanOrEqual(2));
+      expect(document.activeElement).toBe(composer);
+      expect(target.querySelector(".xterm-helper-textarea")).toHaveAttribute("inputmode", "none");
       let frames = socket.sentText();
       expect(JSON.parse(frames[0]!)).toMatchObject({ type: "claim_resize" });
       expect(frames.slice(1)).toEqual(["\x1bOA"]);
@@ -111,6 +123,7 @@ describe("XtermTerminalPane focus", () => {
     } finally {
       unmount(component);
       target.remove();
+      composer.remove();
     }
   });
 

@@ -696,6 +696,7 @@ func (s *Handler) runWorkspaceTmuxPrune(ctx context.Context) {
 	// broadcast made every open view refetch its workspace every prune
 	// interval even though nothing happened.
 	if pruned {
+		s.reconcileAgentActivityReports(pruneCtx)
 		s.hub.Broadcast(Event{Type: "workspace_status", Data: map[string]string{}})
 	}
 }

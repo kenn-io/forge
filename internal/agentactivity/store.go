@@ -247,6 +247,33 @@ func (s *Store) RemoveRuntimeSession(runtimeSessionKey string) error {
 	return errors.Join(errs...)
 }
 
+// RetainRuntimeSessions removes every report whose runtime session key is not
+// in keep. Startup pruning and the periodic missing-tmux prune delete runtime
+// rows without an exit hook, so this is how their reports follow them.
+func (s *Store) RetainRuntimeSessions(keep map[string]struct{}) error {
+	if s == nil || strings.TrimSpace(s.root) == "" {
+		return nil
+	}
+	var errs []error
+	removed := false
+	for _, report := range s.reports() {
+		if _, ok := keep[report.RuntimeSessionKey]; ok {
+			continue
+		}
+		err := os.Remove(s.reportPath(report.Agent, report.SessionID))
+		switch {
+		case err == nil:
+			removed = true
+		case !errors.Is(err, os.ErrNotExist):
+			errs = append(errs, err)
+		}
+	}
+	if removed {
+		s.invalidateCache()
+	}
+	return errors.Join(errs...)
+}
+
 func (s *Store) reports() []Report {
 	s.cacheMu.Lock()
 	defer s.cacheMu.Unlock()

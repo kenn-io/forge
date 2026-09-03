@@ -44,9 +44,15 @@ Rules:
   same session preserves `UpdatedAt`, so the sidebar's acknowledged Done badge
   does not reappear when Claude Code's `idle_prompt` follows Stop
   (`internal/agentactivity/store.go::Store.HandleEvent`).
-- Claude Code's `idle_prompt` notification follows Stop on a finished turn and
-  maps to `done`, not `input`; only `elicitation_dialog` and user-input tools
-  mean the agent is waiting on a person (`internal/agentactivity/store.go::stateForHook`).
+- Claude Code's `idle_prompt` notification fires after a minute of waiting
+  whatever the agent waits for. It leaves a pending `input` or `approval`
+  state untouched and otherwise maps to `done`; only `elicitation_dialog` and
+  user-input tools put a session into `input`
+  (`internal/agentactivity/store.go::Store.HandleEvent`).
+- Reports are reconciled against persisted and live runtime session keys
+  after startup restoration and after every missing-tmux prune, so a report
+  whose runtime row was pruned does not outlive it
+  (`internal/server/workspaceapi/lifecycle.go::Handler.reconcileAgentActivityReports`).
 
 ## Provider-Backed Lifecycle Facts
 

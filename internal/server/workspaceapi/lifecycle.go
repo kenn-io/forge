@@ -167,7 +167,43 @@ func (h *Handler) RestoreRuntimeSessions(ctx context.Context) error {
 		}
 		return err
 	}
+	h.reconcileAgentActivityReports(ctx)
 	return nil
+}
+
+// reconcileAgentActivityReports drops agent activity reports whose runtime
+// session is neither persisted nor live. Startup pruning and the periodic
+// missing-tmux prune delete runtime rows without an exit hook, and reports do
+// not expire on their own, so this is what keeps the report directory from
+// collecting sessions that died while the daemon was down.
+func (h *Handler) reconcileAgentActivityReports(ctx context.Context) {
+	if h == nil || h.agentActivity == nil || h.db == nil {
+		return
+	}
+	keep := map[string]struct{}{}
+	stored, err := h.db.ListAllWorkspaceRuntimeSessions(ctx)
+	if err != nil {
+		slog.Warn("reconcile agent activity reports: list runtime sessions", "err", err)
+		return
+	}
+	for _, session := range stored {
+		keep[session.SessionKey] = struct{}{}
+	}
+	if h.runtime != nil {
+		summaries, err := h.db.ListWorkspaceSummaries(ctx)
+		if err != nil {
+			slog.Warn("reconcile agent activity reports: list workspaces", "err", err)
+			return
+		}
+		for _, summary := range summaries {
+			for _, session := range h.runtime.ListSessions(summary.ID) {
+				keep[session.Key] = struct{}{}
+			}
+		}
+	}
+	if err := h.agentActivity.RetainRuntimeSessions(keep); err != nil {
+		slog.Warn("reconcile agent activity reports", "err", err)
+	}
 }
 
 // HandleRuntimeSessionExit reconciles a workspace runtime exit with persisted

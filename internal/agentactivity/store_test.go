@@ -371,3 +371,27 @@ func TestStoreIdlePromptKeepsPendingInputAndApproval(t *testing.T) {
 		assert.Equal(tc.want, snapshot.State, tc.name)
 	}
 }
+
+func TestStoreRetainRuntimeSessionsRemovesOthers(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	root := t.TempDir()
+	store := NewStore(root)
+	workspace := t.TempDir()
+	for _, key := range []string{"runtime-a", "runtime-b"} {
+		reportHook(t, store, key, map[string]any{
+			"session_id": "agent-" + key, "cwd": workspace,
+			"hook_event_name": "UserPromptSubmit",
+		})
+	}
+
+	require.NoError(store.RetainRuntimeSessions(map[string]struct{}{"runtime-a": {}}))
+
+	entries, err := os.ReadDir(root)
+	require.NoError(err)
+	assert.Len(entries, 1)
+	_, ok := store.SnapshotForWorkspace(workspace, []string{"runtime-a"})
+	assert.True(ok)
+	_, ok = store.SnapshotForWorkspace(workspace, []string{"runtime-b"})
+	assert.False(ok, "the report of a runtime not in the keep set is removed")
+}

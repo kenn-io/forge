@@ -517,6 +517,7 @@ test.describe("workspace create-and-launch full stack", () => {
         .toContain("\x1b[200~printf 'mobile-input-ok\\n'\rprintf 'second-line\\n'\x1b[201~\r");
 
       await phonePage.getByRole("button", { name: "Show special terminal keys" }).tap();
+      await expect(input).toBeFocused();
       const specialKeys = phonePage.getByRole("group", { name: "Special terminal keys" });
       await expect(specialKeys).toBeVisible();
       await expect.poll(async () => (await specialKeys.boundingBox())?.height).toBeLessThanOrEqual(44);
@@ -552,6 +553,7 @@ test.describe("workspace create-and-launch full stack", () => {
       for (const [index, keyName] of expectedSpecialKeyNames.entries()) {
         const sentBefore = (await sessionWebSockets(phonePage, created.id)).flatMap((socket) => socket.sent).length;
         await specialKeys.getByRole("button", { name: keyName, exact: true }).tap();
+        await expect(input).toBeFocused();
         await expect
           .poll(async () => {
             const sent = (await sessionWebSockets(phonePage, created.id)).flatMap((socket) => socket.sent);

@@ -482,9 +482,15 @@
     if (!key) return;
     if (!sendSessionKey(key, keyName)) {
       inputError = "Terminal is reconnecting. Try again in a moment.";
-      return;
+    } else {
+      inputError = null;
     }
-    inputError = null;
+    composerInput?.focus({ preventScroll: true });
+  }
+
+  function toggleSpecialKeys(): void {
+    specialKeysOpen = !specialKeysOpen;
+    composerInput?.focus({ preventScroll: true });
   }
 
   function resizeComposer(): void {
@@ -890,7 +896,7 @@
             class="mobile-workspace-terminal__special-keys-toggle"
             aria-label={specialKeysOpen ? "Hide special terminal keys" : "Show special terminal keys"}
             aria-expanded={specialKeysOpen}
-            onclick={() => (specialKeysOpen = !specialKeysOpen)}
+            onclick={toggleSpecialKeys}
           >
             <KeyboardIcon size="20" aria-hidden="true" />
           </button>

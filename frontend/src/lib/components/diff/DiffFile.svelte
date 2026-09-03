@@ -17,9 +17,11 @@
   import DiffRichPreview from "./DiffRichPreview.svelte";
   import { CopyButton, DiffStats } from "@kenn-io/kit-ui";
   import {
+    reviewThreadSnapshotState,
     reviewThreadTargetLine,
     reviewThreadTargetSide,
     type ReviewThread,
+    type ReviewThreadCardPlacement,
   } from "./review-thread-context.js";
   import PierreFileDiff from "./PierreFileDiff.svelte";
 
@@ -136,7 +138,7 @@
       }
     }
     for (const thread of fileReviewThreads) {
-      if (!threadMatchesCurrentDiff(thread) || thread.line_type === "file") continue;
+      if (reviewThreadPlacement(thread) !== "inline") continue;
       annotations.push({
         side: pierreSide(reviewThreadTargetSide(thread)),
         lineNumber: reviewThreadTargetLine(thread),
@@ -260,16 +262,10 @@
       (!!thread.old_path && !!file.old_path && thread.old_path === file.old_path);
   }
 
-  function threadMatchesCurrentDiff(thread: ReviewThread): boolean {
-    return !thread.diff_head_sha || !diffHeadSHA || thread.diff_head_sha === diffHeadSHA;
-  }
-
   function lineMatchesReviewThread(
     line: DiffFileType["hunks"][number]["lines"][number],
     thread: ReviewThread,
   ): boolean {
-    if (!threadMatchesCurrentDiff(thread)) return false;
-    if (thread.line_type === "file") return false;
     const lineNumber = reviewThreadTargetSide(thread) === "left"
       ? line.old_num
       : line.new_num;
@@ -283,14 +279,21 @@
     );
   }
 
-  function reviewThreadIsFileLevelCard(thread: ReviewThread): boolean {
-    return thread.line_type === "file" ||
-      !threadMatchesCurrentDiff(thread) ||
-      !hasRenderedReviewThread(thread);
+  function reviewThreadPlacement(thread: ReviewThread): ReviewThreadCardPlacement {
+    if (thread.line_type === "file") return "file";
+    if (reviewThreadSnapshotState(thread, diffHeadSHA) === "stale") return "outdated";
+    if (hasRenderedReviewThread(thread)) return "inline";
+    return "unavailable";
   }
 
-  const fileLevelReviewThreads = $derived(
-    fileReviewThreads.filter((thread) => reviewThreadIsFileLevelCard(thread)),
+  const fileHeaderReviewThreads = $derived(
+    fileReviewThreads.filter((thread) => reviewThreadPlacement(thread) === "file"),
+  );
+  const detachedReviewThreads = $derived(
+    fileReviewThreads.filter((thread) => {
+      const placement = reviewThreadPlacement(thread);
+      return placement === "outdated" || placement === "unavailable";
+    }),
   );
 
   function lineRef(
@@ -646,8 +649,8 @@
           />
         {/key}
       {:else}
-        {#each fileLevelReviewThreads as thread (thread.id)}
-          <DiffReviewThreadInlineComment {runtime} {thread} fileLevel={true} />
+        {#each fileHeaderReviewThreads as thread (thread.id)}
+          <DiffReviewThreadInlineComment {runtime} {thread} placement="file" />
         {/each}
         {#if file.is_binary}
           <div class="binary-notice">Binary file changed</div>
@@ -673,6 +676,13 @@
             />
           {/key}
         {/if}
+        {#each detachedReviewThreads as thread (thread.id)}
+          <DiffReviewThreadInlineComment
+            {runtime}
+            {thread}
+            placement={reviewThreadPlacement(thread)}
+          />
+        {/each}
       {/if}
     </div>
   {/if}

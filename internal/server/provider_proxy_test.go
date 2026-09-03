@@ -403,6 +403,7 @@ func TestSpokeUnassignedActivityUsesHubAssignmentWithoutLocalProviderRows(t *tes
 	hub, hubDatabase := setupTestServer(t)
 	unassignedID := seedPR(t, hubDatabase, "acme", "widget", 1)
 	assignedID := seedPR(t, hubDatabase, "acme", "widget", 2)
+	issueID := seedIssue(t, hubDatabase, "acme", "widget", 7, "open")
 	hubRepo, err := hubDatabase.GetRepoByIdentity(
 		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
@@ -414,6 +415,7 @@ func TestSpokeUnassignedActivityUsesHubAssignmentWithoutLocalProviderRows(t *tes
 	require.NoError(hubDatabase.UpdateMergeRequestAssignees(
 		t.Context(), hubRepo.ID, assignedID, []string{"reviewer"},
 	))
+	require.NoError(hubDatabase.UpdateIssueAssignees(t.Context(), hubRepo.ID, issueID, nil))
 
 	spoke, spokeDatabase := setupTestServer(t)
 	spokeRepoID, err := spokeDatabase.UpsertRepo(
@@ -433,11 +435,15 @@ func TestSpokeUnassignedActivityUsesHubAssignmentWithoutLocalProviderRows(t *tes
 	})}
 
 	snapshot := workspaceapi.WorkspaceSubjectSnapshot{
-		OwnReferences: map[db.WorkspaceSubjectKey]workspaceapi.WorkspaceRef{},
-		Subjects:      map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{},
+		OwnReferences: map[db.WorkspaceSubjectKey]workspaceapi.WorkspaceRef{
+			{
+				RepoID: spokeRepoID, ItemType: db.WorkspaceItemTypeIssue, ItemNumber: 7,
+			}: {ID: "ws-issue", Status: "ready"},
+		},
+		Subjects: map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{},
 	}
 	now := time.Now().UTC()
-	for number, workspaceID := range map[int]string{1: "ws-unassigned", 2: "ws-assigned"} {
+	for number, workspaceID := range map[int]string{1: "ws-issue", 2: "ws-assigned"} {
 		key := db.WorkspaceSubjectKey{
 			RepoID: spokeRepoID, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: number,
 		}
@@ -456,13 +462,25 @@ func TestSpokeUnassignedActivityUsesHubAssignmentWithoutLocalProviderRows(t *tes
 	response, err := spoke.overlayLocalActivityWorkspaceSnapshot(
 		t.Context(),
 		&listActivityInput{Unassigned: true},
-		activityResponse{UseWorkspaceActivityForRecency: true},
+		activityResponse{
+			Items: []activityItemResponse{{
+				Repo: activityRepoRefResponse{
+					Provider: "github", PlatformHost: "github.com",
+					PlatformRepoID: "repo-acme-widget",
+				},
+				ItemType: "issue", ItemNumber: 7,
+			}},
+			UseWorkspaceActivityForRecency: true,
+		},
 		snapshot,
 	)
 	require.NoError(err)
+	require.Len(response.Items, 1)
+	require.NotNil(response.Items[0].Workspace)
+	assert.Equal("ws-issue", response.Items[0].Workspace.ID)
 	require.Len(response.WorkspaceActivity, 1)
 	assert.Equal(1, response.WorkspaceActivity[0].ItemNumber)
-	assert.Equal("ws-unassigned", response.WorkspaceActivity[0].Workspace.ID)
+	assert.Equal("ws-issue", response.WorkspaceActivity[0].Workspace.ID)
 }
 
 func TestNodeServerRoutesProviderReadsWithoutUsingLocalTables(t *testing.T) {

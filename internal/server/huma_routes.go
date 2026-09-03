@@ -1488,6 +1488,7 @@ func activityWorkspaceOverlays(
 	snapshot workspaceapi.WorkspaceSubjectSnapshot,
 ) map[providerplane.ItemIdentity]workspaceapi.WorkspaceRef {
 	overlays := make(map[providerplane.ItemIdentity]workspaceapi.WorkspaceRef)
+	repositories := workspaceActivityRepositoryIdentities(snapshot)
 	for key, activity := range snapshot.Subjects {
 		itemType := ""
 		workspace := activity.Workspace
@@ -1511,6 +1512,28 @@ func activityWorkspaceOverlays(
 				PlatformRepoID: activity.Subject.PlatformRepoID,
 			},
 			ItemType: itemType, ItemNumber: key.ItemNumber,
+		}.Canonical()
+		if identity.Valid() {
+			overlays[identity] = workspace
+		}
+	}
+	for key, workspace := range snapshot.OwnReferences {
+		if _, ok := snapshot.Subjects[key]; ok {
+			continue
+		}
+		itemType := ""
+		switch key.ItemType {
+		case db.WorkspaceItemTypePullRequest:
+			itemType = "pr"
+		case db.WorkspaceItemTypeIssue:
+			itemType = "issue"
+		default:
+			continue
+		}
+		identity := providerplane.ItemIdentity{
+			Repository: repositories[key.RepoID],
+			ItemType:   itemType,
+			ItemNumber: key.ItemNumber,
 		}.Canonical()
 		if identity.Valid() {
 			overlays[identity] = workspace

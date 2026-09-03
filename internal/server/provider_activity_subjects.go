@@ -143,33 +143,55 @@ func (s *Server) federationFilterUnassignedActivitySubjects(
 func workspaceActivitySubjectIdentities(
 	snapshot workspaceapi.WorkspaceSubjectSnapshot,
 ) (map[db.WorkspaceSubjectKey]providerplane.ItemIdentity, []providerplane.ItemIdentity) {
-	byKey := make(map[db.WorkspaceSubjectKey]providerplane.ItemIdentity, len(snapshot.Subjects))
-	identities := make([]providerplane.ItemIdentity, 0, len(snapshot.Subjects))
-	seen := make(map[providerplane.ItemIdentity]struct{}, len(snapshot.Subjects))
-	for key, activity := range snapshot.Subjects {
+	capacity := len(snapshot.Subjects) + len(snapshot.OwnReferences)
+	byKey := make(map[db.WorkspaceSubjectKey]providerplane.ItemIdentity, capacity)
+	identities := make([]providerplane.ItemIdentity, 0, capacity)
+	seen := make(map[providerplane.ItemIdentity]struct{}, capacity)
+	repositories := workspaceActivityRepositoryIdentities(snapshot)
+	appendIdentity := func(key db.WorkspaceSubjectKey, repository providerplane.RepositoryIdentity) {
 		itemType := "pr"
 		if key.ItemType == db.WorkspaceItemTypeIssue {
 			itemType = "issue"
 		}
 		identity := providerplane.ItemIdentity{
-			Repository: providerplane.RepositoryIdentity{
-				Provider:       activity.Subject.Platform,
-				PlatformHost:   activity.Subject.PlatformHost,
-				PlatformRepoID: activity.Subject.PlatformRepoID,
-			},
-			ItemType: itemType, ItemNumber: key.ItemNumber,
+			Repository: repository,
+			ItemType:   itemType,
+			ItemNumber: key.ItemNumber,
 		}.Canonical()
 		if !identity.Valid() {
-			continue
+			return
 		}
 		byKey[key] = identity
 		if _, ok := seen[identity]; ok {
-			continue
+			return
 		}
 		seen[identity] = struct{}{}
 		identities = append(identities, identity)
 	}
+	for key := range snapshot.Subjects {
+		appendIdentity(key, repositories[key.RepoID])
+	}
+	for key := range snapshot.OwnReferences {
+		if _, ok := byKey[key]; ok {
+			continue
+		}
+		appendIdentity(key, repositories[key.RepoID])
+	}
 	return byKey, identities
+}
+
+func workspaceActivityRepositoryIdentities(
+	snapshot workspaceapi.WorkspaceSubjectSnapshot,
+) map[int64]providerplane.RepositoryIdentity {
+	repositories := make(map[int64]providerplane.RepositoryIdentity, len(snapshot.Subjects))
+	for key, activity := range snapshot.Subjects {
+		repositories[key.RepoID] = providerplane.RepositoryIdentity{
+			Provider:       activity.Subject.Platform,
+			PlatformHost:   activity.Subject.PlatformHost,
+			PlatformRepoID: activity.Subject.PlatformRepoID,
+		}.Canonical()
+	}
+	return repositories
 }
 
 func retainActivitySubjectsByIdentity(

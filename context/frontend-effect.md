@@ -42,6 +42,31 @@ service is the supported tool here.
 - Use scoped acquisition and finalizers for listeners, streams, readers,
   abort controllers, timers, presenters, and workflow owners. Teardown must be
   explicit at the same lifetime boundary that acquired the resource.
+- Publish an owner registry entry and install its finalizer in one
+  uninterruptible acquisition handoff. After an ordered queue admits a
+  non-idempotent command, pending-state publication and executor release are
+  likewise one uninterruptible handoff.
+- Workflow Actions is one app-scoped Effect service by canonical repository;
+  presenters only claim demand, while polling, dispatch, and accepted workflow
+  identity survive them (`frontend/src/lib/stores/workflow-actions-workflow.ts::WorkflowActionsWorkflowLive`).
+- Selection interrupts the prior run loop, and stale responses cannot replace
+  its runs; disabling clears owners/fibers without cancelling admitted dispatch
+  (`frontend/src/lib/stores/workflow-actions-workflow.ts::selectWorkflow`).
+- Workflow dispatch reconciliation starts its window at POST execution and matches
+  only a resolved personal-write actor; unknown actors never wildcard another user's run
+  (`frontend/src/lib/stores/workflow-actions-workflow.ts::matchingCandidates`).
+- Success, rejection, uncertainty, and definition conflict leave presentation only through
+  the explicit new-cycle command; deliberate retry returns to fresh confirmation and never posts
+  (`frontend/src/lib/stores/workflow-actions-workflow.ts::newDispatchCycle`).
+- Dispatch ordering is FIFO per canonical repository, not global: same-repository writes serialize
+  while unrelated repositories post concurrently, and every queue lives for the app scope
+  (`frontend/src/lib/stores/workflow-actions-workflow.ts::dispatchQueueFor`).
+- Definition-reload failures are workflow-cycle state, separate from general read errors;
+  successful run polling cannot clear them, and only dialog close or the next reload cycle does
+  (`frontend/src/lib/stores/workflow-actions-workflow.ts::clearCatalogRefreshError`).
+- Forced definition reloads are latest-cycle-wins per repository and workflow;
+  stale success or failure cannot replace catalog data, recovery error, or conflict state
+  (`frontend/src/lib/stores/workflow-actions-workflow.ts::refreshCatalog`).
 - Use Effect concurrency, queues, fibers, schedules, and interruption instead
   of bespoke Promise generations, overlapping timers, or boolean race guards.
   Preserve latest-wins, single-flight, ordered, or lossless semantics explicitly;

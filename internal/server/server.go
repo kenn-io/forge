@@ -45,6 +45,7 @@ import (
 	"go.kenn.io/forge/internal/server/kata"
 	"go.kenn.io/forge/internal/server/pullapi"
 	"go.kenn.io/forge/internal/server/repobrowserapi"
+	"go.kenn.io/forge/internal/server/workflowapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/systemclipboard"
 	"go.kenn.io/forge/internal/telemetry"
@@ -235,6 +236,7 @@ type Server struct {
 	repoBrowserAPI         *repobrowserapi.Handler
 	pullAPI                *pullapi.Handler
 	issueAPI               *issueapi.Handler
+	workflowAPI            *workflowapi.Handler
 	pullLifecycle          pullLifecycle
 	workspaceAPI           *workspaceapi.Handler
 	providerSource         *hubProviderSource
@@ -1201,6 +1203,11 @@ func newServer(
 		)
 	}
 	s.updateCatalogStripEnvVars(bootCatalog.TokenEnvNames())
+	s.workflowAPI = workflowapi.New(workflowapi.Deps{
+		Resolver:       repoResolver,
+		Syncer:         syncer,
+		RepoOperations: s.repoOperations,
+	})
 	var pullProviderSource pullapi.ProviderSource
 	var issueProviderSource issueapi.ProviderSource
 	if s.providerSource != nil {

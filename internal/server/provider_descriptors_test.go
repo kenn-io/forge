@@ -26,6 +26,7 @@ import (
 	"go.kenn.io/forge/internal/server/pullapi"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/tokenauth"
 	gitcmd "go.kenn.io/kit/git/cmd"
 )
@@ -101,16 +102,16 @@ func TestNodeGitLabCloneReadsFetchMergeRequestHead(t *testing.T) {
 	const mrNumber = 7
 
 	work, remote, platformHost := setupHTTPWorktreeBaseForServerTest(t, "base-copy")
-	baseSHA := testGitSHA(t, work, "main")
-	runGit(t, work, "checkout", "-b", "contributor/fork", "main")
+	baseSHA := gitfixture.SHA(t, work, "main")
+	gitfixture.Run(t, work, "checkout", "-b", "contributor/fork", "main")
 	require.NoError(os.WriteFile(
 		filepath.Join(work, "gitlab-mr.txt"), []byte("merge request head\n"), 0o644,
 	))
-	runGit(t, work, "add", ".")
-	runGit(t, work, "commit", "-m", "gitlab merge request head")
-	headSHA := testGitSHA(t, work, "HEAD")
-	runGit(t, work, "push", remote, "HEAD:refs/merge-requests/7/head")
-	runGit(t, remote, "update-server-info")
+	gitfixture.Run(t, work, "add", ".")
+	gitfixture.Run(t, work, "commit", "-m", "gitlab merge request head")
+	headSHA := gitfixture.SHA(t, work, "HEAD")
+	gitfixture.Run(t, work, "push", remote, "HEAD:refs/merge-requests/7/head")
+	gitfixture.Run(t, remote, "update-server-info")
 	cloneURL := "http://" + platformHost + "/acme/widget.git"
 
 	hubDB := dbtest.Open(t)

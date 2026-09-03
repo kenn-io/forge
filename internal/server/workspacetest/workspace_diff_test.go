@@ -22,11 +22,20 @@ import (
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/workspace"
 )
 
 var workspaceGitSlots = semaphore.NewWeighted(8)
+
+func runParallelWorkspaceGitTest(t *testing.T) {
+	t.Helper()
+	t.Parallel()
+	acquireWorkspaceGitSlot(t)
+}
 
 func acquireWorkspaceGitSlot(t *testing.T) {
 	t.Helper()
@@ -35,8 +44,7 @@ func acquireWorkspaceGitSlot(t *testing.T) {
 }
 
 func TestWorkspaceDiffEndpointsReportHeadAndPushedE2E(t *testing.T) {
-	runParallelWorkspaceTest(t)
-	acquireWorkspaceGitSlot(t)
+	runParallelWorkspaceGitTest(t)
 
 	require := require.New(t)
 	assert := assert.New(t)
@@ -46,15 +54,15 @@ func TestWorkspaceDiffEndpointsReportHeadAndPushedE2E(t *testing.T) {
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 
-	runGit(t, ws.WorktreePath, "config", "user.email", "test@test.com")
-	runGit(t, ws.WorktreePath, "config", "user.name", "Test")
+	gitfixture.Run(t, ws.WorktreePath, "config", "user.email", "test@test.com")
+	gitfixture.Run(t, ws.WorktreePath, "config", "user.name", "Test")
 
 	require.NoError(os.WriteFile(
 		filepath.Join(ws.WorktreePath, "committed.go"),
 		[]byte("package committed\n"), 0o644,
 	))
-	runGit(t, ws.WorktreePath, "add", ".")
-	runGit(t, ws.WorktreePath, "commit", "-m", "local workspace commit")
+	gitfixture.Run(t, ws.WorktreePath, "add", ".")
+	gitfixture.Run(t, ws.WorktreePath, "commit", "-m", "local workspace commit")
 	require.NoError(os.WriteFile(
 		filepath.Join(ws.WorktreePath, "dirty.go"),
 		[]byte("package dirty\n"), 0o644,
@@ -129,8 +137,7 @@ func TestWorkspaceDiffEndpointsReportHeadAndPushedE2E(t *testing.T) {
 }
 
 func TestWorkspaceFilePreviewEndpointReturnsRequestedDiffSideContentE2E(t *testing.T) {
-	runParallelWorkspaceTest(t)
-	acquireWorkspaceGitSlot(t)
+	runParallelWorkspaceGitTest(t)
 
 	require := require.New(t)
 	assert := assert.New(t)
@@ -140,8 +147,8 @@ func TestWorkspaceFilePreviewEndpointReturnsRequestedDiffSideContentE2E(t *testi
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 
-	runGit(t, ws.WorktreePath, "config", "user.email", "test@test.com")
-	runGit(t, ws.WorktreePath, "config", "user.name", "Test")
+	gitfixture.Run(t, ws.WorktreePath, "config", "user.email", "test@test.com")
+	gitfixture.Run(t, ws.WorktreePath, "config", "user.name", "Test")
 
 	path := "preview.go"
 	require.NoError(os.WriteFile(
@@ -149,8 +156,8 @@ func TestWorkspaceFilePreviewEndpointReturnsRequestedDiffSideContentE2E(t *testi
 		[]byte("package preview\n\nfunc value() string {\n\treturn \"base\"\n}\n"),
 		0o644,
 	))
-	runGit(t, ws.WorktreePath, "add", ".")
-	runGit(t, ws.WorktreePath, "commit", "-m", "add preview fixture")
+	gitfixture.Run(t, ws.WorktreePath, "add", ".")
+	gitfixture.Run(t, ws.WorktreePath, "commit", "-m", "add preview fixture")
 	require.NoError(os.WriteFile(
 		filepath.Join(ws.WorktreePath, path),
 		[]byte("package preview\n\nfunc value() string {\n\treturn \"worktree\"\n}\n"),
@@ -173,23 +180,22 @@ func TestWorkspaceFilePreviewEndpointReturnsRequestedDiffSideContentE2E(t *testi
 }
 
 func TestWorkspaceDiffEndpointsReturnPierreTreeOrderE2E(t *testing.T) {
-	runParallelWorkspaceTest(t)
-	acquireWorkspaceGitSlot(t)
+	runParallelWorkspaceGitTest(t)
 
 	require := require.New(t)
 
 	dir := t.TempDir()
 	worktreePath := filepath.Join(dir, "worktree")
-	runGit(t, dir, "init", "--initial-branch=main", worktreePath)
-	runGit(t, worktreePath, "config", "user.email", "test@test.com")
-	runGit(t, worktreePath, "config", "user.name", "Test")
+	gitfixture.Run(t, dir, "init", "--initial-branch=main", worktreePath)
+	gitfixture.Run(t, worktreePath, "config", "user.email", "test@test.com")
+	gitfixture.Run(t, worktreePath, "config", "user.name", "Test")
 	require.NoError(os.WriteFile(
 		filepath.Join(worktreePath, "base.txt"),
 		[]byte("base\n"),
 		0o644,
 	))
-	runGit(t, worktreePath, "add", ".")
-	runGit(t, worktreePath, "commit", "-m", "base commit")
+	gitfixture.Run(t, worktreePath, "add", ".")
+	gitfixture.Run(t, worktreePath, "commit", "-m", "base commit")
 
 	database := dbtest.Open(t)
 	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
@@ -247,8 +253,7 @@ func TestWorkspaceDiffEndpointsReturnPierreTreeOrderE2E(t *testing.T) {
 }
 
 func TestWorkspaceCommitsEndpointListsBranchCommitsE2E(t *testing.T) {
-	runParallelWorkspaceTest(t)
-	acquireWorkspaceGitSlot(t)
+	runParallelWorkspaceGitTest(t)
 
 	require := require.New(t)
 	assert := assert.New(t)
@@ -258,21 +263,21 @@ func TestWorkspaceCommitsEndpointListsBranchCommitsE2E(t *testing.T) {
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 
-	runGit(t, ws.WorktreePath, "config", "user.email", "test@test.com")
-	runGit(t, ws.WorktreePath, "config", "user.name", "Test")
+	gitfixture.Run(t, ws.WorktreePath, "config", "user.email", "test@test.com")
+	gitfixture.Run(t, ws.WorktreePath, "config", "user.name", "Test")
 
 	require.NoError(os.WriteFile(
 		filepath.Join(ws.WorktreePath, "local-one.go"),
 		[]byte("package one\n"), 0o644,
 	))
-	runGit(t, ws.WorktreePath, "add", ".")
-	runGit(t, ws.WorktreePath, "commit", "-m", "local one")
+	gitfixture.Run(t, ws.WorktreePath, "add", ".")
+	gitfixture.Run(t, ws.WorktreePath, "commit", "-m", "local one")
 	require.NoError(os.WriteFile(
 		filepath.Join(ws.WorktreePath, "local-two.go"),
 		[]byte("package two\n"), 0o644,
 	))
-	runGit(t, ws.WorktreePath, "add", ".")
-	runGit(t, ws.WorktreePath, "commit", "-m", "local two")
+	gitfixture.Run(t, ws.WorktreePath, "add", ".")
+	gitfixture.Run(t, ws.WorktreePath, "commit", "-m", "local two")
 
 	commits := requestWorkspaceCommits(t, srv, ws.Id)
 	require.NotNil(commits.Commits)
@@ -283,8 +288,7 @@ func TestWorkspaceCommitsEndpointListsBranchCommitsE2E(t *testing.T) {
 }
 
 func TestWorkspaceDiffEndpointsAcceptCommitAndRangeScopesE2E(t *testing.T) {
-	runParallelWorkspaceTest(t)
-	acquireWorkspaceGitSlot(t)
+	runParallelWorkspaceGitTest(t)
 
 	require := require.New(t)
 
@@ -293,21 +297,21 @@ func TestWorkspaceDiffEndpointsAcceptCommitAndRangeScopesE2E(t *testing.T) {
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 
-	runGit(t, ws.WorktreePath, "config", "user.email", "test@test.com")
-	runGit(t, ws.WorktreePath, "config", "user.name", "Test")
+	gitfixture.Run(t, ws.WorktreePath, "config", "user.email", "test@test.com")
+	gitfixture.Run(t, ws.WorktreePath, "config", "user.name", "Test")
 
 	require.NoError(os.WriteFile(
 		filepath.Join(ws.WorktreePath, "local-one.go"),
 		[]byte("package one\n"), 0o644,
 	))
-	runGit(t, ws.WorktreePath, "add", ".")
-	runGit(t, ws.WorktreePath, "commit", "-m", "local one")
+	gitfixture.Run(t, ws.WorktreePath, "add", ".")
+	gitfixture.Run(t, ws.WorktreePath, "commit", "-m", "local one")
 	require.NoError(os.WriteFile(
 		filepath.Join(ws.WorktreePath, "local-two.go"),
 		[]byte("package two\n"), 0o644,
 	))
-	runGit(t, ws.WorktreePath, "add", ".")
-	runGit(t, ws.WorktreePath, "commit", "-m", "local two")
+	gitfixture.Run(t, ws.WorktreePath, "add", ".")
+	gitfixture.Run(t, ws.WorktreePath, "commit", "-m", "local two")
 	require.NoError(os.WriteFile(
 		filepath.Join(ws.WorktreePath, "dirty.go"),
 		[]byte("package dirty\n"), 0o644,
@@ -359,8 +363,7 @@ func TestWorkspaceDiffEndpointsAcceptCommitAndRangeScopesE2E(t *testing.T) {
 }
 
 func TestWorkspaceDiffEndpointReportsMergeTargetE2E(t *testing.T) {
-	runParallelWorkspaceTest(t)
-	acquireWorkspaceGitSlot(t)
+	runParallelWorkspaceGitTest(t)
 
 	require := require.New(t)
 	assert := assert.New(t)
@@ -371,26 +374,26 @@ func TestWorkspaceDiffEndpointReportsMergeTargetE2E(t *testing.T) {
 	ws := createReadyWorkspace(t, ctx, client)
 
 	targetWork := filepath.Join(t.TempDir(), "target")
-	runGit(t, filepath.Dir(targetWork), "clone", remote, targetWork)
-	runGit(t, targetWork, "config", "user.email", "test@test.com")
-	runGit(t, targetWork, "config", "user.name", "Test")
+	gitfixture.Run(t, filepath.Dir(targetWork), "clone", remote, targetWork)
+	gitfixture.Run(t, targetWork, "config", "user.email", "test@test.com")
+	gitfixture.Run(t, targetWork, "config", "user.name", "Test")
 	require.NoError(os.WriteFile(
 		filepath.Join(targetWork, "target-only.txt"),
 		[]byte("target\n"), 0o644,
 	))
-	runGit(t, targetWork, "add", ".")
-	runGit(t, targetWork, "commit", "-m", "advance main")
-	runGit(t, targetWork, "push", "origin", "main")
-	runGit(t, ws.WorktreePath, "fetch", "origin", "main")
+	gitfixture.Run(t, targetWork, "add", ".")
+	gitfixture.Run(t, targetWork, "commit", "-m", "advance main")
+	gitfixture.Run(t, targetWork, "push", "origin", "main")
+	gitfixture.Run(t, ws.WorktreePath, "fetch", "origin", "main")
 
-	runGit(t, ws.WorktreePath, "config", "user.email", "test@test.com")
-	runGit(t, ws.WorktreePath, "config", "user.name", "Test")
+	gitfixture.Run(t, ws.WorktreePath, "config", "user.email", "test@test.com")
+	gitfixture.Run(t, ws.WorktreePath, "config", "user.name", "Test")
 	require.NoError(os.WriteFile(
 		filepath.Join(ws.WorktreePath, "committed.go"),
 		[]byte("package committed\n"), 0o644,
 	))
-	runGit(t, ws.WorktreePath, "add", ".")
-	runGit(t, ws.WorktreePath, "commit", "-m", "local workspace commit")
+	gitfixture.Run(t, ws.WorktreePath, "add", ".")
+	gitfixture.Run(t, ws.WorktreePath, "commit", "-m", "local workspace commit")
 	require.NoError(os.WriteFile(
 		filepath.Join(ws.WorktreePath, "dirty.go"),
 		[]byte("package dirty\n"), 0o644,
@@ -414,8 +417,7 @@ func TestWorkspaceDiffEndpointReportsMergeTargetE2E(t *testing.T) {
 }
 
 func TestWorkspaceDiffEndpointReportsMergeTargetForAssociatedKataWorkspaceE2E(t *testing.T) {
-	runParallelWorkspaceTest(t)
-	acquireWorkspaceGitSlot(t)
+	runParallelWorkspaceGitTest(t)
 
 	require := require.New(t)
 	assert := assert.New(t)
@@ -426,26 +428,26 @@ func TestWorkspaceDiffEndpointReportsMergeTargetForAssociatedKataWorkspaceE2E(t 
 	ws := createReadyWorkspace(t, ctx, client)
 
 	targetWork := filepath.Join(t.TempDir(), "target")
-	runGit(t, filepath.Dir(targetWork), "clone", remote, targetWork)
-	runGit(t, targetWork, "config", "user.email", "test@test.com")
-	runGit(t, targetWork, "config", "user.name", "Test")
+	gitfixture.Run(t, filepath.Dir(targetWork), "clone", remote, targetWork)
+	gitfixture.Run(t, targetWork, "config", "user.email", "test@test.com")
+	gitfixture.Run(t, targetWork, "config", "user.name", "Test")
 	require.NoError(os.WriteFile(
 		filepath.Join(targetWork, "target-only.txt"),
 		[]byte("target\n"), 0o644,
 	))
-	runGit(t, targetWork, "add", ".")
-	runGit(t, targetWork, "commit", "-m", "advance main")
-	runGit(t, targetWork, "push", "origin", "main")
-	runGit(t, ws.WorktreePath, "fetch", "origin", "main")
+	gitfixture.Run(t, targetWork, "add", ".")
+	gitfixture.Run(t, targetWork, "commit", "-m", "advance main")
+	gitfixture.Run(t, targetWork, "push", "origin", "main")
+	gitfixture.Run(t, ws.WorktreePath, "fetch", "origin", "main")
 
-	runGit(t, ws.WorktreePath, "config", "user.email", "test@test.com")
-	runGit(t, ws.WorktreePath, "config", "user.name", "Test")
+	gitfixture.Run(t, ws.WorktreePath, "config", "user.email", "test@test.com")
+	gitfixture.Run(t, ws.WorktreePath, "config", "user.name", "Test")
 	require.NoError(os.WriteFile(
 		filepath.Join(ws.WorktreePath, "kata-local.go"),
 		[]byte("package kata\n"), 0o644,
 	))
-	runGit(t, ws.WorktreePath, "add", ".")
-	runGit(t, ws.WorktreePath, "commit", "-m", "kata workspace commit")
+	gitfixture.Run(t, ws.WorktreePath, "add", ".")
+	gitfixture.Run(t, ws.WorktreePath, "commit", "-m", "kata workspace commit")
 
 	associatedPRNumber := 1
 	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
@@ -479,8 +481,7 @@ func TestWorkspaceDiffEndpointReportsMergeTargetForAssociatedKataWorkspaceE2E(t 
 }
 
 func TestWorkspaceDiffEndpointRejectsOriginBaseE2E(t *testing.T) {
-	runParallelWorkspaceTest(t)
-	acquireWorkspaceGitSlot(t)
+	runParallelWorkspaceGitTest(t)
 
 	require := require.New(t)
 
@@ -501,14 +502,13 @@ func TestWorkspaceDiffEndpointRejectsOriginBaseE2E(t *testing.T) {
 
 	require.Equal(http.StatusBadRequest, resp.StatusCode)
 
-	var body rawProblemDetail
+	var body httpapi.ProblemError
 	require.NoError(json.NewDecoder(resp.Body).Decode(&body))
 	require.Contains(body.Detail, "base must be head, pushed, or merge-target")
 }
 
 func TestWorkspaceDiffEndpointHandlesUntrackedSymlinkAndLargeFileE2E(t *testing.T) {
-	runParallelWorkspaceTest(t)
-	acquireWorkspaceGitSlot(t)
+	runParallelWorkspaceGitTest(t)
 
 	require := require.New(t)
 	assert := assert.New(t)
@@ -534,7 +534,7 @@ func TestWorkspaceDiffEndpointHandlesUntrackedSymlinkAndLargeFileE2E(t *testing.
 	diff := requestWorkspaceDiff(t, srv, ws.Id, "head")
 	require.NotNil(diff.Files)
 
-	symlink := requireWorkspaceDiffFile(t, *diff.Files, "secret-link")
+	symlink := testutil.RequireWorkspaceDiffFile(t, *diff.Files, "secret-link")
 	assert.Equal("added", symlink.Status)
 	assert.False(symlink.IsBinary)
 	assert.Equal(int64(1), symlink.Additions)
@@ -546,7 +546,7 @@ func TestWorkspaceDiffEndpointHandlesUntrackedSymlinkAndLargeFileE2E(t *testing.
 	assert.Equal(secretPath, line.Content)
 	assert.NotContains(line.Content, "do not expose")
 
-	large := requireWorkspaceDiffFile(t, *diff.Files, "large.txt")
+	large := testutil.RequireWorkspaceDiffFile(t, *diff.Files, "large.txt")
 	assert.Equal("added", large.Status)
 	assert.True(large.IsBinary)
 	assert.Zero(large.Additions)
@@ -555,8 +555,7 @@ func TestWorkspaceDiffEndpointHandlesUntrackedSymlinkAndLargeFileE2E(t *testing.
 }
 
 func TestWorkspaceDiffEndpointMarksGeneratedFilesE2E(t *testing.T) {
-	runParallelWorkspaceTest(t)
-	acquireWorkspaceGitSlot(t)
+	runParallelWorkspaceGitTest(t)
 
 	require := require.New(t)
 	assert := assert.New(t)
@@ -586,20 +585,19 @@ func TestWorkspaceDiffEndpointMarksGeneratedFilesE2E(t *testing.T) {
 
 	files := requestWorkspaceFiles(t, srv, ws.Id, "head")
 	require.NotNil(files.Files)
-	assert.True(requireWorkspaceDiffFile(t, *files.Files, "dist/api.ts").IsGenerated)
-	assert.False(requireWorkspaceDiffFile(t, *files.Files, "bun.lock").IsGenerated)
-	assert.False(requireWorkspaceDiffFile(t, *files.Files, "src.ts").IsGenerated)
+	assert.True(testutil.RequireWorkspaceDiffFile(t, *files.Files, "dist/api.ts").IsGenerated)
+	assert.False(testutil.RequireWorkspaceDiffFile(t, *files.Files, "bun.lock").IsGenerated)
+	assert.False(testutil.RequireWorkspaceDiffFile(t, *files.Files, "src.ts").IsGenerated)
 
 	diff := requestWorkspaceDiff(t, srv, ws.Id, "head")
 	require.NotNil(diff.Files)
-	assert.True(requireWorkspaceDiffFile(t, *diff.Files, "dist/api.ts").IsGenerated)
-	assert.False(requireWorkspaceDiffFile(t, *diff.Files, "bun.lock").IsGenerated)
-	assert.False(requireWorkspaceDiffFile(t, *diff.Files, "src.ts").IsGenerated)
+	assert.True(testutil.RequireWorkspaceDiffFile(t, *diff.Files, "dist/api.ts").IsGenerated)
+	assert.False(testutil.RequireWorkspaceDiffFile(t, *diff.Files, "bun.lock").IsGenerated)
+	assert.False(testutil.RequireWorkspaceDiffFile(t, *diff.Files, "src.ts").IsGenerated)
 }
 
 func TestWorkspaceDiffEndpointScopesPatchByPathE2E(t *testing.T) {
-	runParallelWorkspaceTest(t)
-	acquireWorkspaceGitSlot(t)
+	runParallelWorkspaceGitTest(t)
 
 	require := require.New(t)
 	assert := assert.New(t)
@@ -623,20 +621,19 @@ func TestWorkspaceDiffEndpointScopesPatchByPathE2E(t *testing.T) {
 }
 
 func TestWorkspaceDiffPathPrefersCurrentPathOverEarlierRenameE2E(t *testing.T) {
-	runParallelWorkspaceTest(t)
-	acquireWorkspaceGitSlot(t)
+	runParallelWorkspaceGitTest(t)
 
 	require := require.New(t)
 	assert := assert.New(t)
 	fixture := setupWorkspaceServerFixture(t, nil)
 	ws := createReadyWorkspace(t, context.Background(), fixture.client)
-	runGit(t, ws.WorktreePath, "config", "user.email", "test@test.com")
-	runGit(t, ws.WorktreePath, "config", "user.name", "Test")
+	gitfixture.Run(t, ws.WorktreePath, "config", "user.email", "test@test.com")
+	gitfixture.Run(t, ws.WorktreePath, "config", "user.name", "Test")
 	require.NoError(os.WriteFile(filepath.Join(ws.WorktreePath, "z.txt"), []byte("renamed content\n"), 0o644))
-	runGit(t, ws.WorktreePath, "add", "z.txt")
-	runGit(t, ws.WorktreePath, "commit", "-m", "add rename source")
+	gitfixture.Run(t, ws.WorktreePath, "add", "z.txt")
+	gitfixture.Run(t, ws.WorktreePath, "commit", "-m", "add rename source")
 	require.NoError(os.Rename(filepath.Join(ws.WorktreePath, "z.txt"), filepath.Join(ws.WorktreePath, "a.txt")))
-	runGit(t, ws.WorktreePath, "add", "-A")
+	gitfixture.Run(t, ws.WorktreePath, "add", "-A")
 	require.NoError(os.WriteFile(filepath.Join(ws.WorktreePath, "z.txt"), []byte("new current path\n"), 0o644))
 
 	diff := requestWorkspaceDiffForPath(t, fixture.server, ws.Id, "head", "z.txt")
@@ -653,30 +650,29 @@ func TestWorkspaceDiffPathPrefersCurrentPathOverEarlierRenameE2E(t *testing.T) {
 }
 
 func TestWorkspaceDiffEndpointKeepsModifiedSourcePatchSeparateFromCopyE2E(t *testing.T) {
-	runParallelWorkspaceTest(t)
-	acquireWorkspaceGitSlot(t)
+	runParallelWorkspaceGitTest(t)
 
 	require := require.New(t)
 	assert := assert.New(t)
 	fixture := setupWorkspaceServerFixture(t, nil)
 	ws := createReadyWorkspace(t, context.Background(), fixture.client)
-	runGit(t, ws.WorktreePath, "config", "user.email", "test@test.com")
-	runGit(t, ws.WorktreePath, "config", "user.name", "Test")
+	gitfixture.Run(t, ws.WorktreePath, "config", "user.email", "test@test.com")
+	gitfixture.Run(t, ws.WorktreePath, "config", "user.name", "Test")
 
 	sourcePath := filepath.Join(ws.WorktreePath, "src", "a.txt")
 	copiedPath := filepath.Join(ws.WorktreePath, "src", "z.txt")
 	require.NoError(os.MkdirAll(filepath.Dir(sourcePath), 0o755))
 	require.NoError(os.WriteFile(sourcePath, []byte("base line\nshared line\n"), 0o644))
-	runGit(t, ws.WorktreePath, "add", ".")
-	runGit(t, ws.WorktreePath, "commit", "-m", "add copy source fixture")
+	gitfixture.Run(t, ws.WorktreePath, "add", ".")
+	gitfixture.Run(t, ws.WorktreePath, "commit", "-m", "add copy source fixture")
 	require.NoError(os.WriteFile(copiedPath, []byte("base line\nshared line\n"), 0o644))
 	require.NoError(os.WriteFile(sourcePath, []byte("changed line\nshared line\n"), 0o644))
-	runGit(t, ws.WorktreePath, "add", "src/z.txt")
+	gitfixture.Run(t, ws.WorktreePath, "add", "src/z.txt")
 
 	diff := requestWorkspaceDiff(t, fixture.server, ws.Id, "head")
 	require.NotNil(diff.Files)
-	source := requireWorkspaceDiffFile(t, *diff.Files, "src/a.txt")
-	copied := requireWorkspaceDiffFile(t, *diff.Files, "src/z.txt")
+	source := testutil.RequireWorkspaceDiffFile(t, *diff.Files, "src/a.txt")
+	copied := testutil.RequireWorkspaceDiffFile(t, *diff.Files, "src/z.txt")
 	assert.Equal("modified", source.Status)
 	assert.Equal(int64(1), source.Additions)
 	assert.Equal(int64(1), source.Deletions)
@@ -694,19 +690,18 @@ func TestWorkspaceDiffEndpointKeepsModifiedSourcePatchSeparateFromCopyE2E(t *tes
 }
 
 func TestWorkspaceDiffEndpointQuotesDangerousPathsE2E(t *testing.T) {
-	runParallelWorkspaceTest(t)
-	acquireWorkspaceGitSlot(t)
+	runParallelWorkspaceGitTest(t)
 
 	require := require.New(t)
 	assert := assert.New(t)
 	dir := t.TempDir()
 	worktreePath := filepath.Join(dir, "worktree")
-	runGit(t, dir, "init", "--initial-branch=main", worktreePath)
-	runGit(t, worktreePath, "config", "user.email", "test@test.com")
-	runGit(t, worktreePath, "config", "user.name", "Test")
+	gitfixture.Run(t, dir, "init", "--initial-branch=main", worktreePath)
+	gitfixture.Run(t, worktreePath, "config", "user.email", "test@test.com")
+	gitfixture.Run(t, worktreePath, "config", "user.name", "Test")
 	require.NoError(os.WriteFile(filepath.Join(worktreePath, "base.txt"), []byte("base\n"), 0o644))
-	runGit(t, worktreePath, "add", ".")
-	runGit(t, worktreePath, "commit", "-m", "base commit")
+	gitfixture.Run(t, worktreePath, "add", ".")
+	gitfixture.Run(t, worktreePath, "commit", "-m", "base commit")
 
 	maliciousPath := "src/evil\n--- forged\n+++ forged\n@@ -1,1 +1,1 @@"
 	require.NoError(os.MkdirAll(filepath.Join(worktreePath, "src"), 0o755))
@@ -730,7 +725,7 @@ func TestWorkspaceDiffEndpointQuotesDangerousPathsE2E(t *testing.T) {
 
 	diff := requestWorkspaceDiff(t, srv, "ws-control-paths", "head")
 	require.NotNil(diff.Files)
-	file := requireWorkspaceDiffFile(t, *diff.Files, filepath.ToSlash(maliciousPath))
+	file := testutil.RequireWorkspaceDiffFile(t, *diff.Files, filepath.ToSlash(maliciousPath))
 	assert.Contains(file.Patch, `diff --git "a/src/evil\n--- forged\n+++ forged\n@@ -1,1 +1,1 @@" "b/src/evil\n--- forged\n+++ forged\n@@ -1,1 +1,1 @@"`)
 	assert.Contains(file.Patch, `+++ "b/src/evil\n--- forged\n+++ forged\n@@ -1,1 +1,1 @@"`)
 	assert.NotContains(file.Patch, "\n--- forged\n")
@@ -738,7 +733,7 @@ func TestWorkspaceDiffEndpointQuotesDangerousPathsE2E(t *testing.T) {
 	assert.NotContains(file.Patch, "\n@@ -1,1 +1,1 @@\n")
 	assert.Equal(1, strings.Count(file.Patch, "\n@@ "))
 
-	unicodeFile := requireWorkspaceDiffFile(t, *diff.Files, filepath.ToSlash(unicodeSeparatorPath))
+	unicodeFile := testutil.RequireWorkspaceDiffFile(t, *diff.Files, filepath.ToSlash(unicodeSeparatorPath))
 	assert.Contains(unicodeFile.Patch, `diff --git "a/src/unicode\u2028separator\u2029file.go" "b/src/unicode\u2028separator\u2029file.go"`)
 	assert.Contains(unicodeFile.Patch, `+++ "b/src/unicode\u2028separator\u2029file.go"`)
 	assert.NotContains(unicodeFile.Patch, "\u2028")
@@ -880,17 +875,6 @@ func newWorkspaceFixtureRequest(method, target string, body io.Reader) *http.Req
 	return req
 }
 
-func requireWorkspaceDiffFile(t *testing.T, files []generated.DiffFile, path string) generated.DiffFile {
-	t.Helper()
-	for _, file := range files {
-		if file.Path == path {
-			return file
-		}
-	}
-	require.Failf(t, "workspace diff file not found", "path %q", path)
-	return generated.DiffFile{}
-}
-
 func assertWorkspaceDiffPaths(t *testing.T, files []generated.DiffFile, want []string) {
 	t.Helper()
 	assert.Equal(t, want, workspaceDiffPaths(files))
@@ -902,12 +886,6 @@ func workspaceDiffPaths(files []generated.DiffFile) []string {
 		paths = append(paths, file.Path)
 	}
 	return paths
-}
-
-type rawProblemDetail struct {
-	Detail  string         `json:"detail"`
-	Code    string         `json:"code"`
-	Details map[string]any `json:"details"`
 }
 
 func gracefulShutdown(t *testing.T, srv *server.Server) {

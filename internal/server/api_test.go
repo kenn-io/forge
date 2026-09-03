@@ -59,6 +59,7 @@ import (
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitfake"
+	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/processjob"
 	"go.kenn.io/forge/internal/testutil/testsignal"
@@ -84,9 +85,8 @@ var (
 		0,
 		"PID of the test process that launched the PTY owner helper",
 	)
-	// Root keeps only Workspace tests that cross provider, config, Kata,
-	// runtime, terminal, Fleet, or agent-context composition boundaries.
-	// Bound their Git setup independently from the workspacetest binary.
+	// Bound Git-heavy root-package tests independently from the workspacetest
+	// binary.
 	rootWorkspaceGitSemaphore = semaphore.NewWeighted(2)
 )
 
@@ -2024,6 +2024,8 @@ func TestAPIInvolvesMeFiltersPullsIssuesAndActivity(t *testing.T) {
 }
 
 func TestAPIUnassignedFiltersPullsIssuesAndActivity(t *testing.T) {
+	runParallelServerTest(t)
+
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
@@ -5434,21 +5436,21 @@ func TestAPIGitHubSyncReadsCloneTokenFileAfterRotation(t *testing.T) {
 	dir := t.TempDir()
 
 	remote := filepath.Join(dir, "remote.git")
-	runGit(t, dir, "init", "--bare", "--initial-branch=main", remote)
+	gitfixture.Run(t, dir, "init", "--bare", "--initial-branch=main", remote)
 	work := filepath.Join(dir, "work")
-	runGit(t, dir, "clone", remote, work)
-	runGit(t, work, "config", "user.email", "test@test.com")
-	runGit(t, work, "config", "user.name", "Test")
+	gitfixture.Run(t, dir, "clone", remote, work)
+	gitfixture.Run(t, work, "config", "user.email", "test@test.com")
+	gitfixture.Run(t, work, "config", "user.name", "Test")
 	require.NoError(os.WriteFile(filepath.Join(work, "base.txt"), []byte("base\n"), 0o644))
-	runGit(t, work, "add", ".")
-	runGit(t, work, "commit", "-m", "base commit")
-	runGit(t, work, "push", "origin", "main")
+	gitfixture.Run(t, work, "add", ".")
+	gitfixture.Run(t, work, "commit", "-m", "base commit")
+	gitfixture.Run(t, work, "push", "origin", "main")
 	baseSHA := gitOutput(t, work, "rev-parse", "HEAD")
-	runGit(t, work, "checkout", "-b", "feature/token-rotation")
+	gitfixture.Run(t, work, "checkout", "-b", "feature/token-rotation")
 	require.NoError(os.WriteFile(filepath.Join(work, "feature.txt"), []byte("feature\n"), 0o644))
-	runGit(t, work, "add", ".")
-	runGit(t, work, "commit", "-m", "feature commit")
-	runGit(t, work, "push", "origin", "feature/token-rotation")
+	gitfixture.Run(t, work, "add", ".")
+	gitfixture.Run(t, work, "commit", "-m", "feature commit")
+	gitfixture.Run(t, work, "push", "origin", "feature/token-rotation")
 	headSHA := gitOutput(t, work, "rev-parse", "HEAD")
 
 	tokenPath := filepath.Join(dir, "github-token")
@@ -5595,15 +5597,15 @@ func TestAPISharedHostCloneFetchFollowsReloadedHostToken(t *testing.T) {
 	t.Setenv("KENN_FORGE_ROTATED_TOKEN", "rotated-token")
 
 	remote := filepath.Join(dir, "remote.git")
-	runGit(t, dir, "init", "--bare", "--initial-branch=main", remote)
+	gitfixture.Run(t, dir, "init", "--bare", "--initial-branch=main", remote)
 	work := filepath.Join(dir, "work")
-	runGit(t, dir, "clone", remote, work)
-	runGit(t, work, "config", "user.email", "test@test.com")
-	runGit(t, work, "config", "user.name", "Test")
+	gitfixture.Run(t, dir, "clone", remote, work)
+	gitfixture.Run(t, work, "config", "user.email", "test@test.com")
+	gitfixture.Run(t, work, "config", "user.name", "Test")
 	require.NoError(os.WriteFile(filepath.Join(work, "base.txt"), []byte("base\n"), 0o644))
-	runGit(t, work, "add", ".")
-	runGit(t, work, "commit", "-m", "base commit")
-	runGit(t, work, "push", "origin", "main")
+	gitfixture.Run(t, work, "add", ".")
+	gitfixture.Run(t, work, "commit", "-m", "base commit")
+	gitfixture.Run(t, work, "push", "origin", "main")
 
 	capturePath := installCredentialCapturingGit(t, dir)
 	cloneURL := gitLocalRemoteURL(remote)
@@ -6794,6 +6796,7 @@ platform_host = "ghe.example.com"
 
 func TestAPIListRepoSummariesIncludesSyncedReleaseTimeline(t *testing.T) {
 	runParallelServerTest(t)
+	acquireRootWorkspaceGitSlot(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -6802,10 +6805,10 @@ func TestAPIListRepoSummariesIncludesSyncedReleaseTimeline(t *testing.T) {
 
 	remote := filepath.Join(dir, "remote.git")
 	work := filepath.Join(dir, "work")
-	runGit(t, dir, "init", "--bare", "--initial-branch=main", remote)
-	runGit(t, dir, "clone", remote, work)
-	runGit(t, work, "config", "user.email", "test@test.com")
-	runGit(t, work, "config", "user.name", "Test")
+	gitfixture.Run(t, dir, "init", "--bare", "--initial-branch=main", remote)
+	gitfixture.Run(t, dir, "clone", remote, work)
+	gitfixture.Run(t, work, "config", "user.email", "test@test.com")
+	gitfixture.Run(t, work, "config", "user.name", "Test")
 
 	commitFile := func(name, message string) {
 		t.Helper()
@@ -6814,19 +6817,19 @@ func TestAPIListRepoSummariesIncludesSyncedReleaseTimeline(t *testing.T) {
 			[]byte(message+"\n"),
 			0o644,
 		))
-		runGit(t, work, "add", ".")
-		runGit(t, work, "commit", "-m", message)
+		gitfixture.Run(t, work, "add", ".")
+		gitfixture.Run(t, work, "commit", "-m", message)
 	}
 
 	commitFile("base.txt", "release v1")
-	runGit(t, work, "tag", "v1.0.0")
+	gitfixture.Run(t, work, "tag", "v1.0.0")
 	commitFile("v2.txt", "prepare v2")
-	runGit(t, work, "tag", "v2.0.0")
+	gitfixture.Run(t, work, "tag", "v2.0.0")
 	commitFile("v3.txt", "prepare v3")
-	runGit(t, work, "tag", "v3.0.0")
+	gitfixture.Run(t, work, "tag", "v3.0.0")
 	commitFile("post-1.txt", "post latest 1")
 	commitFile("post-2.txt", "post latest 2")
-	runGit(t, work, "push", "--tags", "origin", "main")
+	gitfixture.Run(t, work, "push", "--tags", "origin", "main")
 
 	clones := gitclone.New(filepath.Join(dir, "clones"), nil)
 	clonePath, err := clones.ClonePathForContext(
@@ -6835,7 +6838,7 @@ func TestAPIListRepoSummariesIncludesSyncedReleaseTimeline(t *testing.T) {
 	)
 	require.NoError(err)
 	require.NoError(os.MkdirAll(filepath.Dir(clonePath), 0o755))
-	runGit(t, dir, "clone", "--bare", remote, clonePath)
+	gitfixture.Run(t, dir, "clone", "--bare", remote, clonePath)
 
 	releaseForTag := func(tag string, publishedAt time.Time) *gh.RepositoryRelease {
 		t.Helper()
@@ -6904,10 +6907,10 @@ func TestAPIListRepoSummariesIncludesSyncedReleaseTimeline(t *testing.T) {
 	assert.Equal("post latest 1", (*widgets.CommitTimeline)[1].Message)
 	assert.Len((*widgets.CommitTimeline)[0].Sha, 40)
 
-	runGit(t, work, "tag", "-f", "v3.0.0", "HEAD")
-	runGit(t, work, "tag", "-f", "v1.0.0", "HEAD")
-	runGit(t, work, "push", "--force", "origin", "refs/tags/v3.0.0")
-	runGit(t, work, "push", "--force", "origin", "refs/tags/v1.0.0")
+	gitfixture.Run(t, work, "tag", "-f", "v3.0.0", "HEAD")
+	gitfixture.Run(t, work, "tag", "-f", "v1.0.0", "HEAD")
+	gitfixture.Run(t, work, "push", "--force", "origin", "refs/tags/v3.0.0")
+	gitfixture.Run(t, work, "push", "--force", "origin", "refs/tags/v1.0.0")
 	syncer.RunOnce(ctx)
 
 	resp, err = client.HTTP.ListRepoSummariesWithResponse(ctx)
@@ -21796,6 +21799,7 @@ func (t *lockedGitealikeTransport) ListStatuses(
 
 func TestAPIGetFilesAndDiffMarkGeneratedFilesE2E(t *testing.T) {
 	runParallelServerTest(t)
+	acquireRootWorkspaceGitSlot(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -21813,21 +21817,21 @@ func TestAPIGetFilesAndDiffMarkGeneratedFilesE2E(t *testing.T) {
 	require.NoError(os.MkdirAll(filepath.Dir(bare), 0o755))
 
 	work := filepath.Join(dir, "work")
-	runGit(t, dir, "init", "--bare", "--initial-branch=main", bare)
-	runGit(t, dir, "clone", bare, work)
-	runGit(t, work, "config", "user.email", "test@test.com")
-	runGit(t, work, "config", "user.name", "Test")
+	gitfixture.Run(t, dir, "init", "--bare", "--initial-branch=main", bare)
+	gitfixture.Run(t, dir, "clone", bare, work)
+	gitfixture.Run(t, work, "config", "user.email", "test@test.com")
+	gitfixture.Run(t, work, "config", "user.name", "Test")
 
 	require.NoError(os.WriteFile(
 		filepath.Join(work, "base.txt"),
 		[]byte("base\n"), 0o644,
 	))
-	runGit(t, work, "add", ".")
-	runGit(t, work, "commit", "-m", "base commit")
-	runGit(t, work, "push", "origin", "main")
-	mergeBase := testGitSHA(t, work, "HEAD")
+	gitfixture.Run(t, work, "add", ".")
+	gitfixture.Run(t, work, "commit", "-m", "base commit")
+	gitfixture.Run(t, work, "push", "origin", "main")
+	mergeBase := gitfixture.SHA(t, work, "HEAD")
 
-	runGit(t, work, "checkout", "-b", "feature")
+	gitfixture.Run(t, work, "checkout", "-b", "feature")
 	require.NoError(os.WriteFile(
 		filepath.Join(work, ".gitattributes"),
 		[]byte("dist/** linguist-generated\nbun.lock -linguist-generated\n"), 0o644,
@@ -21845,10 +21849,10 @@ func TestAPIGetFilesAndDiffMarkGeneratedFilesE2E(t *testing.T) {
 		filepath.Join(work, "src.ts"),
 		[]byte("export const source = true;\n"), 0o644,
 	))
-	runGit(t, work, "add", ".")
-	runGit(t, work, "commit", "-m", "feature commit")
-	runGit(t, work, "push", "origin", "feature")
-	headSHA := testGitSHA(t, work, "HEAD")
+	gitfixture.Run(t, work, "add", ".")
+	gitfixture.Run(t, work, "commit", "-m", "feature commit")
+	gitfixture.Run(t, work, "push", "origin", "feature")
+	headSHA := gitfixture.SHA(t, work, "HEAD")
 
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
@@ -21876,9 +21880,9 @@ func TestAPIGetFilesAndDiffMarkGeneratedFilesE2E(t *testing.T) {
 	require.Equal(http.StatusOK, filesResp.StatusCode(), string(filesResp.Body))
 	require.NotNil(filesResp.JSON200)
 	require.NotNil(filesResp.JSON200.Files)
-	assert.True(requireWorkspaceDiffFile(t, *filesResp.JSON200.Files, "dist/api.ts").IsGenerated)
-	assert.False(requireWorkspaceDiffFile(t, *filesResp.JSON200.Files, "bun.lock").IsGenerated)
-	assert.False(requireWorkspaceDiffFile(t, *filesResp.JSON200.Files, "src.ts").IsGenerated)
+	assert.True(testutil.RequireWorkspaceDiffFile(t, *filesResp.JSON200.Files, "dist/api.ts").IsGenerated)
+	assert.False(testutil.RequireWorkspaceDiffFile(t, *filesResp.JSON200.Files, "bun.lock").IsGenerated)
+	assert.False(testutil.RequireWorkspaceDiffFile(t, *filesResp.JSON200.Files, "src.ts").IsGenerated)
 
 	diffResp, err := client.HTTP.GetPullDiffWithResponse(
 		ctx, "gh", "acme", "widget", 1,
@@ -21888,9 +21892,9 @@ func TestAPIGetFilesAndDiffMarkGeneratedFilesE2E(t *testing.T) {
 	require.Equal(http.StatusOK, diffResp.StatusCode(), string(diffResp.Body))
 	require.NotNil(diffResp.JSON200)
 	require.NotNil(diffResp.JSON200.Files)
-	assert.True(requireWorkspaceDiffFile(t, *diffResp.JSON200.Files, "dist/api.ts").IsGenerated)
-	assert.False(requireWorkspaceDiffFile(t, *diffResp.JSON200.Files, "bun.lock").IsGenerated)
-	assert.False(requireWorkspaceDiffFile(t, *diffResp.JSON200.Files, "src.ts").IsGenerated)
+	assert.True(testutil.RequireWorkspaceDiffFile(t, *diffResp.JSON200.Files, "dist/api.ts").IsGenerated)
+	assert.False(testutil.RequireWorkspaceDiffFile(t, *diffResp.JSON200.Files, "bun.lock").IsGenerated)
+	assert.False(testutil.RequireWorkspaceDiffFile(t, *diffResp.JSON200.Files, "src.ts").IsGenerated)
 }
 
 // countingTokenFileSource wraps a managed token-file source and records how
@@ -21922,6 +21926,7 @@ func (s *countingTokenFileSource) Descriptor() tokenauth.Descriptor {
 // diff views for repos that are already on disk.
 func TestAPILocalReadEndpointsServeDuringTokenRotationE2E(t *testing.T) {
 	runParallelServerTest(t)
+	acquireRootWorkspaceGitSlot(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -21938,23 +21943,23 @@ func TestAPILocalReadEndpointsServeDuringTokenRotationE2E(t *testing.T) {
 	require.NoError(os.MkdirAll(filepath.Dir(bare), 0o755))
 
 	work := filepath.Join(dir, "work")
-	runGit(t, dir, "init", "--bare", "--initial-branch=main", bare)
-	runGit(t, dir, "clone", bare, work)
-	runGit(t, work, "config", "user.email", "test@test.com")
-	runGit(t, work, "config", "user.name", "Test")
+	gitfixture.Run(t, dir, "init", "--bare", "--initial-branch=main", bare)
+	gitfixture.Run(t, dir, "clone", bare, work)
+	gitfixture.Run(t, work, "config", "user.email", "test@test.com")
+	gitfixture.Run(t, work, "config", "user.name", "Test")
 
 	require.NoError(os.WriteFile(filepath.Join(work, "base.txt"), []byte("base\n"), 0o644))
-	runGit(t, work, "add", ".")
-	runGit(t, work, "commit", "-m", "base commit")
-	runGit(t, work, "push", "origin", "main")
-	mergeBase := testGitSHA(t, work, "HEAD")
+	gitfixture.Run(t, work, "add", ".")
+	gitfixture.Run(t, work, "commit", "-m", "base commit")
+	gitfixture.Run(t, work, "push", "origin", "main")
+	mergeBase := gitfixture.SHA(t, work, "HEAD")
 
-	runGit(t, work, "checkout", "-b", "feature")
+	gitfixture.Run(t, work, "checkout", "-b", "feature")
 	require.NoError(os.WriteFile(filepath.Join(work, "feature.txt"), []byte("feature\n"), 0o644))
-	runGit(t, work, "add", ".")
-	runGit(t, work, "commit", "-m", "feature commit")
-	runGit(t, work, "push", "origin", "feature")
-	headSHA := testGitSHA(t, work, "HEAD")
+	gitfixture.Run(t, work, "add", ".")
+	gitfixture.Run(t, work, "commit", "-m", "feature commit")
+	gitfixture.Run(t, work, "push", "origin", "feature")
+	headSHA := gitfixture.SHA(t, work, "HEAD")
 
 	// A token-file source modeling the credential that was valid when the
 	// clone was created. Rotation empties the file before the reads below.
@@ -22970,20 +22975,6 @@ func TestAPIActivityFencesRepositoryReconciliationAcrossEventAndWorkspaceReads(t
 // The comment row carries the PR author, not the commenter, so the
 // threaded feed can attribute the item to its real author.
 
-func runGit(t *testing.T, dir string, args ...string) {
-	t.Helper()
-	runner := gitcmd.New().WithConfig("init.defaultBranch", "main")
-	out, stderr, err := runner.Run(t.Context(), dir, nil, args...)
-	require.NoError(t, err, "git %v failed: %s%s", args, out, stderr)
-}
-
-func testGitSHA(t *testing.T, dir, ref string) string {
-	t.Helper()
-	out, err := gitcmd.New().Output(t.Context(), dir, "rev-parse", ref)
-	require.NoError(t, err)
-	return strings.TrimSpace(string(out))
-}
-
 func setupTestServerWithClones(t *testing.T) (
 	client *apiclient.Client,
 	database *db.DB,
@@ -23006,6 +22997,7 @@ func setupTestServerWithClonesAndServer(t *testing.T) (
 	srv *Server,
 ) {
 	t.Helper()
+	acquireRootWorkspaceGitSlot(t)
 
 	dir := t.TempDir()
 	database = dbtest.Open(t)
@@ -23020,33 +23012,33 @@ func setupTestServerWithClonesAndServer(t *testing.T) (
 	require.NoError(t, err)
 
 	tmpWork := filepath.Join(dir, "work")
-	runGit(t, dir, "init", "--bare", "--initial-branch=main", bare)
-	runGit(t, dir, "clone", bare, tmpWork)
-	runGit(t, tmpWork, "config", "user.email", "test@test.com")
-	runGit(t, tmpWork, "config", "user.name", "Test")
+	gitfixture.Run(t, dir, "init", "--bare", "--initial-branch=main", bare)
+	gitfixture.Run(t, dir, "clone", bare, tmpWork)
+	gitfixture.Run(t, tmpWork, "config", "user.email", "test@test.com")
+	gitfixture.Run(t, tmpWork, "config", "user.name", "Test")
 
 	require.NoError(t, os.WriteFile(filepath.Join(tmpWork, "base.txt"), []byte("base\n"), 0o644))
-	runGit(t, tmpWork, "add", ".")
-	runGit(t, tmpWork, "commit", "-m", "base commit")
-	runGit(t, tmpWork, "push", "origin", "main")
-	mergeBase = testGitSHA(t, tmpWork, "HEAD")
+	gitfixture.Run(t, tmpWork, "add", ".")
+	gitfixture.Run(t, tmpWork, "commit", "-m", "base commit")
+	gitfixture.Run(t, tmpWork, "push", "origin", "main")
+	mergeBase = gitfixture.SHA(t, tmpWork, "HEAD")
 
-	runGit(t, tmpWork, "checkout", "-b", "pr")
+	gitfixture.Run(t, tmpWork, "checkout", "-b", "pr")
 	for i := 1; i <= 5; i++ {
 		fname := fmt.Sprintf("file%d.txt", i)
 		require.NoError(t, os.WriteFile(filepath.Join(tmpWork, fname), fmt.Appendf(nil, "content %d\n", i), 0o644))
-		runGit(t, tmpWork, "add", ".")
-		runGit(t, tmpWork, "commit", "-m", fmt.Sprintf("commit %d", i))
+		gitfixture.Run(t, tmpWork, "add", ".")
+		gitfixture.Run(t, tmpWork, "commit", "-m", fmt.Sprintf("commit %d", i))
 	}
-	runGit(t, tmpWork, "push", "origin", "pr")
-	headSHA = testGitSHA(t, tmpWork, "HEAD")
+	gitfixture.Run(t, tmpWork, "push", "origin", "pr")
+	headSHA = gitfixture.SHA(t, tmpWork, "HEAD")
 
 	// Collect SHAs newest-first.
 	commitSHAs = make([]string, 5)
 	sha := headSHA
 	for i := range 5 {
 		commitSHAs[i] = sha
-		sha = testGitSHA(t, tmpWork, sha+"^1")
+		sha = gitfixture.SHA(t, tmpWork, sha+"^1")
 	}
 
 	mock := &mockGH{}
@@ -23204,6 +23196,7 @@ func TestAPIGetFilePreview_ReturnsHeadContent(t *testing.T) {
 
 func TestAPIGetFilePreview_ReturnsDeletedFileContent(t *testing.T) {
 	runParallelServerTest(t)
+	acquireRootWorkspaceGitSlot(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -23247,6 +23240,7 @@ func TestAPIGetFilePreview_ReturnsDeletedFileContent(t *testing.T) {
 
 func TestAPIGetFilePreview_ReturnsRequestedDiffSideContent(t *testing.T) {
 	runParallelServerTest(t)
+	acquireRootWorkspaceGitSlot(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -23370,6 +23364,7 @@ func TestAPIGetDiff_FromWithoutTo(t *testing.T) {
 
 func TestAPIGetDiff_RootCommit(t *testing.T) {
 	runParallelServerTest(t)
+	acquireRootWorkspaceGitSlot(t)
 	require := require.New(t)
 
 	dir := t.TempDir()
@@ -23384,21 +23379,21 @@ func TestAPIGetDiff_RootCommit(t *testing.T) {
 	)
 	require.NoError(err)
 	tmpWork := filepath.Join(dir, "work")
-	runGit(t, dir, "init", "--bare", "--initial-branch=main", bare)
-	runGit(t, dir, "clone", bare, tmpWork)
-	runGit(t, tmpWork, "config", "user.email", "test@test.com")
-	runGit(t, tmpWork, "config", "user.name", "Test")
+	gitfixture.Run(t, dir, "init", "--bare", "--initial-branch=main", bare)
+	gitfixture.Run(t, dir, "clone", bare, tmpWork)
+	gitfixture.Run(t, tmpWork, "config", "user.email", "test@test.com")
+	gitfixture.Run(t, tmpWork, "config", "user.name", "Test")
 
 	require.NoError(os.WriteFile(filepath.Join(tmpWork, "root.txt"), []byte("root\n"), 0o644))
-	runGit(t, tmpWork, "add", ".")
-	runGit(t, tmpWork, "commit", "-m", "root commit")
-	rootSHA := testGitSHA(t, tmpWork, "HEAD")
+	gitfixture.Run(t, tmpWork, "add", ".")
+	gitfixture.Run(t, tmpWork, "commit", "-m", "root commit")
+	rootSHA := gitfixture.SHA(t, tmpWork, "HEAD")
 
 	require.NoError(os.WriteFile(filepath.Join(tmpWork, "second.txt"), []byte("second\n"), 0o644))
-	runGit(t, tmpWork, "add", ".")
-	runGit(t, tmpWork, "commit", "-m", "second commit")
-	runGit(t, tmpWork, "push", "origin", "main")
-	headSHA := testGitSHA(t, tmpWork, "HEAD")
+	gitfixture.Run(t, tmpWork, "add", ".")
+	gitfixture.Run(t, tmpWork, "commit", "-m", "second commit")
+	gitfixture.Run(t, tmpWork, "push", "origin", "main")
+	headSHA := gitfixture.SHA(t, tmpWork, "HEAD")
 
 	mock := &mockGH{}
 	repos := []ghclient.RepoRef{{Owner: "acme", Name: "rootrepo", PlatformHost: "github.com"}}
@@ -24702,16 +24697,17 @@ func TestAPIListActivityCapsDefaultBranchCommitMetadata(t *testing.T) {
 
 func TestAPIListActivityReflectsConfiguredDefaultBranchCommitCap(t *testing.T) {
 	runParallelServerTest(t)
+	acquireRootWorkspaceGitSlot(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
 	dir := t.TempDir()
 	remote := filepath.Join(dir, "remote.git")
 	work := filepath.Join(dir, "work")
-	runGit(t, dir, "init", "--bare", "--initial-branch=main", remote)
-	runGit(t, dir, "clone", remote, work)
-	runGit(t, work, "config", "user.email", "alice@example.com")
-	runGit(t, work, "config", "user.name", "Alice")
+	gitfixture.Run(t, dir, "init", "--bare", "--initial-branch=main", remote)
+	gitfixture.Run(t, dir, "clone", remote, work)
+	gitfixture.Run(t, work, "config", "user.email", "alice@example.com")
+	gitfixture.Run(t, work, "config", "user.name", "Alice")
 
 	shas := map[string]string{}
 	for _, subject := range []string{"oldest", "third", "second", "newest"} {
@@ -24720,11 +24716,11 @@ func TestAPIListActivityReflectsConfiguredDefaultBranchCommitCap(t *testing.T) {
 			[]byte(subject+"\n"),
 			0o644,
 		))
-		runGit(t, work, "add", ".")
-		runGit(t, work, "commit", "-m", subject)
-		shas[subject] = testGitSHA(t, work, "HEAD")
+		gitfixture.Run(t, work, "add", ".")
+		gitfixture.Run(t, work, "commit", "-m", subject)
+		shas[subject] = gitfixture.SHA(t, work, "HEAD")
 	}
-	runGit(t, work, "push", "origin", "main")
+	gitfixture.Run(t, work, "push", "origin", "main")
 
 	database := dbtest.Open(t)
 	clones := gitclone.New(filepath.Join(dir, "clones"), nil)
@@ -26102,33 +26098,33 @@ func setupWorkspaceServerFixtureWithMockHostAndOptions(
 	remoteDir := filepath.Join(dir, "remote")
 	require.NoError(t, os.MkdirAll(remoteDir, 0o755))
 	remote := filepath.Join(remoteDir, "widget.git")
-	runGit(
+	gitfixture.Run(
 		t, dir, "init", "--bare", "--initial-branch=main", remote,
 	)
 
 	tmpWork := filepath.Join(dir, "work")
-	runGit(t, dir, "clone", remote, tmpWork)
-	runGit(t, tmpWork, "config", "user.email", "test@test.com")
-	runGit(t, tmpWork, "config", "user.name", "Test")
+	gitfixture.Run(t, dir, "clone", remote, tmpWork)
+	gitfixture.Run(t, tmpWork, "config", "user.email", "test@test.com")
+	gitfixture.Run(t, tmpWork, "config", "user.name", "Test")
 
 	require.NoError(t, os.WriteFile(
 		filepath.Join(tmpWork, "base.txt"),
 		[]byte("base\n"), 0o644,
 	))
-	runGit(t, tmpWork, "add", ".")
-	runGit(t, tmpWork, "commit", "-m", "base commit")
-	runGit(t, tmpWork, "push", "origin", "main")
+	gitfixture.Run(t, tmpWork, "add", ".")
+	gitfixture.Run(t, tmpWork, "commit", "-m", "base commit")
+	gitfixture.Run(t, tmpWork, "push", "origin", "main")
 
-	runGit(t, tmpWork, "checkout", "-b", "feature")
+	gitfixture.Run(t, tmpWork, "checkout", "-b", "feature")
 	require.NoError(t, os.WriteFile(
 		filepath.Join(tmpWork, "new.txt"),
 		[]byte("new\n"), 0o644,
 	))
-	runGit(t, tmpWork, "add", ".")
-	runGit(t, tmpWork, "commit", "-m", "feature commit")
-	runGit(t, tmpWork, "push", "origin", "feature")
+	gitfixture.Run(t, tmpWork, "add", ".")
+	gitfixture.Run(t, tmpWork, "commit", "-m", "feature commit")
+	gitfixture.Run(t, tmpWork, "push", "origin", "feature")
 	featureSHA := gitOutput(t, tmpWork, "rev-parse", "HEAD")
-	runGit(t, remote, "update-ref", "refs/pull/1/head", featureSHA)
+	gitfixture.Run(t, remote, "update-ref", "refs/pull/1/head", featureSHA)
 
 	bareDir := filepath.Join(dir, "clones")
 	require.NoError(t, os.MkdirAll(bareDir, 0o755))
@@ -26138,8 +26134,8 @@ func setupWorkspaceServerFixtureWithMockHostAndOptions(
 		"github", platformHost, "acme", "widget",
 	)
 	require.NoError(t, err)
-	runGit(t, dir, "clone", "--bare", remote, bare)
-	runGit(t, bare, "remote", "set-url", "origin", gitLocalRemoteURL(remote))
+	gitfixture.Run(t, dir, "clone", "--bare", remote, bare)
+	gitfixture.Run(t, bare, "remote", "set-url", "origin", gitLocalRemoteURL(remote))
 
 	worktreeDir := filepath.Join(dir, "worktrees")
 	repos := []ghclient.RepoRef{
@@ -28454,22 +28450,6 @@ func TestMergeWorkspaceCleanupDeletesWorkspaceAfterConfirmedMerge(t *testing.T) 
 	assert.ErrorIs(err, os.ErrNotExist)
 }
 
-func requireWorkspaceDiffFile(
-	t *testing.T,
-	files []generated.DiffFile,
-	path string,
-) generated.DiffFile {
-	t.Helper()
-
-	for _, file := range files {
-		if file.Path == path {
-			return file
-		}
-	}
-	require.Failf(t, "workspace diff file not found", "path %q", path)
-	return generated.DiffFile{}
-}
-
 func TestWorkspaceListPrunesMissingTmuxSessionsE2E(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -29525,17 +29505,17 @@ func TestWorkspaceManualRefreshDiscoversAndSyncsAssociatedPR(t *testing.T) {
 		[]byte("feature\n"),
 		0o644,
 	))
-	runGit(t, ready.WorktreePath, "config", "user.email", "test@test.com")
-	runGit(t, ready.WorktreePath, "config", "user.name", "Test")
-	runGit(t, ready.WorktreePath, "add", ".")
-	runGit(t, ready.WorktreePath, "commit", "-m", "feature commit")
-	runGit(t, ready.WorktreePath, "push", "-u", "origin", ready.GitHeadRef)
-	runGit(
+	gitfixture.Run(t, ready.WorktreePath, "config", "user.email", "test@test.com")
+	gitfixture.Run(t, ready.WorktreePath, "config", "user.name", "Test")
+	gitfixture.Run(t, ready.WorktreePath, "add", ".")
+	gitfixture.Run(t, ready.WorktreePath, "commit", "-m", "feature commit")
+	gitfixture.Run(t, ready.WorktreePath, "push", "-u", "origin", ready.GitHeadRef)
+	gitfixture.Run(
 		t, ready.WorktreePath,
 		"remote", "set-url", "origin", "git@github.com:acme/widget.git",
 	)
 	headRef = ready.GitHeadRef
-	headSHA = testGitSHA(t, ready.WorktreePath, "HEAD")
+	headSHA = gitfixture.SHA(t, ready.WorktreePath, "HEAD")
 
 	refreshRR := testutil.DoJSON(
 		t,
@@ -29637,23 +29617,23 @@ func TestKataWorkspaceManualRefreshDiscoversAndSyncsAssociatedPR(t *testing.T) {
 	)
 
 	worktreePath := filepath.Join(t.TempDir(), "kata-worktree")
-	runGit(t, t.TempDir(), "clone", fixture.remote, worktreePath)
-	runGit(t, worktreePath, "config", "user.email", "test@test.com")
-	runGit(t, worktreePath, "config", "user.name", "Test")
-	runGit(t, worktreePath, "checkout", "-b", headRef)
+	gitfixture.Run(t, t.TempDir(), "clone", fixture.remote, worktreePath)
+	gitfixture.Run(t, worktreePath, "config", "user.email", "test@test.com")
+	gitfixture.Run(t, worktreePath, "config", "user.name", "Test")
+	gitfixture.Run(t, worktreePath, "checkout", "-b", headRef)
 	require.NoError(os.WriteFile(
 		filepath.Join(worktreePath, "feature.txt"),
 		[]byte("feature\n"),
 		0o644,
 	))
-	runGit(t, worktreePath, "add", ".")
-	runGit(t, worktreePath, "commit", "-m", "feature commit")
-	runGit(t, worktreePath, "push", "-u", "origin", headRef)
-	runGit(
+	gitfixture.Run(t, worktreePath, "add", ".")
+	gitfixture.Run(t, worktreePath, "commit", "-m", "feature commit")
+	gitfixture.Run(t, worktreePath, "push", "-u", "origin", headRef)
+	gitfixture.Run(
 		t, worktreePath,
 		"remote", "set-url", "origin", "git@github.com:acme/widget.git",
 	)
-	headSHA = testGitSHA(t, worktreePath, "HEAD")
+	headSHA = gitfixture.SHA(t, worktreePath, "HEAD")
 	kataMetadata := db.WorkspaceKataMetadata{
 		DaemonID:   "local",
 		ProjectUID: "project-1",
@@ -30118,14 +30098,14 @@ func TestWorkspaceCreateWithLocalBaseUsesPullRefWhenHeadBranchDeleted(
 	localRepo, remote, platformHost := setupHTTPWorktreeBaseForServerTest(
 		t, "feature",
 	)
-	wantSHA := testGitSHA(t, localRepo, "refs/remotes/origin/feature")
-	runGit(
+	wantSHA := gitfixture.SHA(t, localRepo, "refs/remotes/origin/feature")
+	gitfixture.Run(
 		t, remote, "update-ref",
 		fmt.Sprintf("refs/pull/%d/head", prNumber), wantSHA,
 	)
-	runGit(t, remote, "update-ref", "-d", "refs/heads/feature")
-	runGit(t, remote, "update-server-info")
-	runGit(t, localRepo, "fetch", "--prune", "origin")
+	gitfixture.Run(t, remote, "update-ref", "-d", "refs/heads/feature")
+	gitfixture.Run(t, remote, "update-server-info")
+	gitfixture.Run(t, localRepo, "fetch", "--prune", "origin")
 
 	cfg := &config.Config{Repos: []config.Repo{{
 		Platform:         "github",
@@ -30162,7 +30142,7 @@ func TestWorkspaceCreateWithLocalBaseUsesPullRefWhenHeadBranchDeleted(
 	require.NotNil(stored)
 	assert.Equal("ready", stored.Status)
 	assert.Equal(syntheticPRWorktreeBranchForTest(prNumber), stored.WorkspaceBranch)
-	assert.Equal(wantSHA, testGitSHA(t, ready.WorktreePath, "HEAD"))
+	assert.Equal(wantSHA, gitfixture.SHA(t, ready.WorktreePath, "HEAD"))
 	assert.Equal(
 		syntheticPRWorktreeBranchForTest(prNumber),
 		gitOutput(t, ready.WorktreePath, "branch", "--show-current"),
@@ -30183,19 +30163,19 @@ func TestWorkspaceCreateGitLabUsesSpecificMergeRequestHeadRefE2E(
 	localRepo, remote, platformHost := setupHTTPWorktreeBaseForServerTest(
 		t, "feature",
 	)
-	runGit(t, localRepo, "checkout", "-b", headBranch, "main")
+	gitfixture.Run(t, localRepo, "checkout", "-b", headBranch, "main")
 	require.NoError(os.WriteFile(
 		filepath.Join(localRepo, "gitlab-mr.txt"),
 		[]byte("gitlab mr head\n"), 0o644,
 	))
-	runGit(t, localRepo, "add", ".")
-	runGit(t, localRepo, "commit", "-m", "gitlab mr head")
-	wantSHA := testGitSHA(t, localRepo, "HEAD")
-	runGit(
+	gitfixture.Run(t, localRepo, "add", ".")
+	gitfixture.Run(t, localRepo, "commit", "-m", "gitlab mr head")
+	wantSHA := gitfixture.SHA(t, localRepo, "HEAD")
+	gitfixture.Run(
 		t, localRepo, "push", remote,
 		fmt.Sprintf("HEAD:refs/merge-requests/%d/head", mrNumber),
 	)
-	runGit(t, remote, "update-server-info")
+	gitfixture.Run(t, remote, "update-server-info")
 
 	fixture := setupWorkspaceServerFixtureWithHost(t, nil, platformHost)
 	ctx := t.Context()
@@ -30246,7 +30226,7 @@ func TestWorkspaceCreateGitLabUsesSpecificMergeRequestHeadRefE2E(
 		syntheticPRWorktreeBranchForTest(mrNumber),
 		gitOutput(t, ready.WorktreePath, "branch", "--show-current"),
 	)
-	assert.Equal(wantSHA, testGitSHA(t, ready.WorktreePath, "HEAD"))
+	assert.Equal(wantSHA, gitfixture.SHA(t, ready.WorktreePath, "HEAD"))
 }
 
 func TestWorkspaceCreateReusesExistingWorktreeThroughAPI(t *testing.T) {
@@ -30279,11 +30259,11 @@ func TestWorkspaceCreateReusesExistingWorktreeThroughAPI(t *testing.T) {
 		fixture.worktrees, "github", platformHost, "acme", "widget",
 		fmt.Sprintf("repo-%d", repoID), fmt.Sprintf("pr-%d", prNumber),
 	)
-	runGit(
+	gitfixture.Run(
 		t, localRepo,
 		"worktree", "add", worktreePath, "-b", existingBranch, "main",
 	)
-	wantSHA := testGitSHA(t, worktreePath, "HEAD")
+	wantSHA := gitfixture.SHA(t, worktreePath, "HEAD")
 	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
@@ -30306,7 +30286,7 @@ func TestWorkspaceCreateReusesExistingWorktreeThroughAPI(t *testing.T) {
 	assert.Equal(worktreePath, stored.WorktreePath)
 	assert.Equal(existingBranch, stored.WorkspaceBranch)
 	assert.Equal(worktreePath, ready.WorktreePath)
-	assert.Equal(wantSHA, testGitSHA(t, ready.WorktreePath, "HEAD"))
+	assert.Equal(wantSHA, gitfixture.SHA(t, ready.WorktreePath, "HEAD"))
 	assert.Equal(existingBranch, gitOutput(t, ready.WorktreePath, "branch", "--show-current"))
 }
 
@@ -30339,12 +30319,12 @@ func TestWorkspaceRetryReusesExistingLocalHeadBranchThroughAPI(t *testing.T) {
 		fixture.worktrees, "github", platformHost, "acme", "widget",
 		fmt.Sprintf("repo-%d", repoID), fmt.Sprintf("pr-%d", prNumber),
 	)
-	runGit(
+	gitfixture.Run(
 		t, localRepo,
 		"worktree", "add", worktreePath,
 		"-b", "feature", "refs/remotes/origin/feature",
 	)
-	wantSHA := testGitSHA(t, worktreePath, "HEAD")
+	wantSHA := gitfixture.SHA(t, worktreePath, "HEAD")
 	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
@@ -30365,7 +30345,7 @@ func TestWorkspaceRetryReusesExistingLocalHeadBranchThroughAPI(t *testing.T) {
 	assert.Equal("ready", stored.Status)
 	assert.Empty(stored.WorkspaceBranch)
 	assert.Equal("feature", gitOutput(t, ready.WorktreePath, "branch", "--show-current"))
-	assert.Equal(wantSHA, testGitSHA(t, ready.WorktreePath, "HEAD"))
+	assert.Equal(wantSHA, gitfixture.SHA(t, ready.WorktreePath, "HEAD"))
 
 	msg := "retry existing local base worktree"
 	require.NoError(fixture.database.UpdateWorkspaceStatus(
@@ -30384,7 +30364,7 @@ func TestWorkspaceRetryReusesExistingLocalHeadBranchThroughAPI(t *testing.T) {
 	assert.Empty(stored.WorkspaceBranch)
 	assert.Equal(worktreePath, stored.WorktreePath)
 	assert.Equal("feature", gitOutput(t, retried.WorktreePath, "branch", "--show-current"))
-	assert.Equal(wantSHA, testGitSHA(t, retried.WorktreePath, "HEAD"))
+	assert.Equal(wantSHA, gitfixture.SHA(t, retried.WorktreePath, "HEAD"))
 
 	force := true
 	deleteResp, err := fixture.client.HTTP.DeleteWorkspaceWithResponse(
@@ -30392,7 +30372,7 @@ func TestWorkspaceRetryReusesExistingLocalHeadBranchThroughAPI(t *testing.T) {
 	)
 	require.NoError(err)
 	require.Equal(http.StatusNoContent, deleteResp.StatusCode())
-	assert.Equal(wantSHA, testGitSHA(t, localRepo, "refs/heads/feature"))
+	assert.Equal(wantSHA, gitfixture.SHA(t, localRepo, "refs/heads/feature"))
 }
 
 func syntheticPRWorktreeBranchForTest(mrNumber int) string {
@@ -30408,7 +30388,7 @@ func setupHTTPWorktreeBaseForServerTest(
 	remote = filepath.Join(root, "acme", "widget.git")
 	repo = filepath.Join(root, "repo")
 	require.NoError(t, os.MkdirAll(filepath.Dir(remote), 0o755))
-	runGit(t, root, "init", "--bare", "--initial-branch=main", remote)
+	gitfixture.Run(t, root, "init", "--bare", "--initial-branch=main", remote)
 	server := httptest.NewServer(http.FileServer(http.Dir(root)))
 	t.Cleanup(server.Close)
 	remoteURL := server.URL + "/acme/widget.git"
@@ -30416,22 +30396,22 @@ func setupHTTPWorktreeBaseForServerTest(
 	require.NoError(t, err)
 	platformHost = parsed.Host
 
-	runGit(t, root, "init", "--initial-branch=main", repo)
-	runGit(t, repo, "config", "user.email", "test@test.com")
-	runGit(t, repo, "config", "user.name", "Test")
-	runGit(t, repo, "remote", "add", "origin", remote)
+	gitfixture.Run(t, root, "init", "--initial-branch=main", repo)
+	gitfixture.Run(t, repo, "config", "user.email", "test@test.com")
+	gitfixture.Run(t, repo, "config", "user.name", "Test")
+	gitfixture.Run(t, repo, "remote", "add", "origin", remote)
 	require.NoError(t, os.WriteFile(
 		filepath.Join(repo, "base.txt"), []byte("base\n"), 0o644,
 	))
-	runGit(t, repo, "add", ".")
-	runGit(t, repo, "commit", "-m", "base commit")
-	runGit(t, repo, "push", "origin", "HEAD:refs/heads/main")
-	runGit(t, remote, "symbolic-ref", "HEAD", "refs/heads/main")
-	runGit(t, repo, "push", "origin", "HEAD:refs/heads/"+branch)
-	runGit(t, remote, "update-server-info")
-	runGit(t, repo, "remote", "set-url", "origin", remoteURL)
-	runGit(t, repo, "fetch", "--prune", "origin")
-	runGit(
+	gitfixture.Run(t, repo, "add", ".")
+	gitfixture.Run(t, repo, "commit", "-m", "base commit")
+	gitfixture.Run(t, repo, "push", "origin", "HEAD:refs/heads/main")
+	gitfixture.Run(t, remote, "symbolic-ref", "HEAD", "refs/heads/main")
+	gitfixture.Run(t, repo, "push", "origin", "HEAD:refs/heads/"+branch)
+	gitfixture.Run(t, remote, "update-server-info")
+	gitfixture.Run(t, repo, "remote", "set-url", "origin", remoteURL)
+	gitfixture.Run(t, repo, "fetch", "--prune", "origin")
+	gitfixture.Run(
 		t, repo, "symbolic-ref",
 		"refs/remotes/origin/HEAD", "refs/remotes/origin/main",
 	)
@@ -30450,8 +30430,8 @@ func TestWorkspaceCreatePortQualifiedHostTracksOriginBranchE2E(t *testing.T) {
 	)
 	ctx := t.Context()
 
-	headSHA := testGitSHA(t, fixture.remote, "refs/heads/feature")
-	runGit(t, fixture.remote, "update-ref", "refs/pull/1/head", headSHA)
+	headSHA := gitfixture.SHA(t, fixture.remote, "refs/heads/feature")
+	gitfixture.Run(t, fixture.remote, "update-ref", "refs/pull/1/head", headSHA)
 	_, err := fixture.database.WriteDB().ExecContext(
 		ctx,
 		`UPDATE forge_merge_requests
@@ -30502,20 +30482,20 @@ func TestWorkspaceDeleteDoesNotCleanupReplacementCloneFromStaleLocalBaseE2E(t *t
 	ctx := t.Context()
 	const branch = "kenn-forge/pr-42"
 	localRepo := filepath.Join(t.TempDir(), "local-base")
-	runGit(t, filepath.Dir(localRepo), "clone", remotePath, localRepo)
+	gitfixture.Run(t, filepath.Dir(localRepo), "clone", remotePath, localRepo)
 	replacementClone := filepath.Join(t.TempDir(), "replacement-clone")
-	runGit(
+	gitfixture.Run(
 		t, localRepo,
 		"worktree", "add", replacementClone, "-b", branch, "HEAD",
 	)
 	require.NoError(os.RemoveAll(replacementClone))
-	runGit(t, filepath.Dir(replacementClone), "clone", remotePath, replacementClone)
-	runGit(
+	gitfixture.Run(t, filepath.Dir(replacementClone), "clone", remotePath, replacementClone)
+	gitfixture.Run(
 		t, replacementClone, "remote", "set-url", "origin",
 		"https://github.com/acme/widget.git",
 	)
-	runGit(t, replacementClone, "branch", branch, "HEAD")
-	branchSHA := testGitSHA(t, replacementClone, "refs/heads/"+branch)
+	gitfixture.Run(t, replacementClone, "branch", branch, "HEAD")
+	branchSHA := gitfixture.SHA(t, replacementClone, "refs/heads/"+branch)
 
 	srv.cfgMu.Lock()
 	srv.cfg.Repos = []config.Repo{{
@@ -30551,7 +30531,7 @@ func TestWorkspaceDeleteDoesNotCleanupReplacementCloneFromStaleLocalBaseE2E(t *t
 	require.NoError(err)
 	require.Equal(http.StatusNoContent, deleteResp.StatusCode())
 	assert.DirExists(replacementClone)
-	assert.Equal(branchSHA, testGitSHA(t, replacementClone, "refs/heads/"+branch))
+	assert.Equal(branchSHA, gitfixture.SHA(t, replacementClone, "refs/heads/"+branch))
 	got, err := database.GetWorkspace(ctx, wsID)
 	require.NoError(err)
 	assert.Nil(got)

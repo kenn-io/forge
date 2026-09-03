@@ -19,7 +19,7 @@ import (
 )
 
 func TestWorkspaceForceDeleteWaitsForInFlightSetupE2E(t *testing.T) {
-	acquireWorkspaceGitSlot(t)
+	runParallelWorkspaceGitTest(t)
 
 	require := require.New(t)
 	assert := assert.New(t)
@@ -96,8 +96,7 @@ func TestWorkspaceForceDeleteWaitsForInFlightSetupE2E(t *testing.T) {
 }
 
 func TestWorkspaceForceDeleteRejectsConcurrentRetrySetupE2E(t *testing.T) {
-	runParallelWorkspaceTest(t)
-	acquireWorkspaceGitSlot(t)
+	runParallelWorkspaceGitTest(t)
 
 	require := require.New(t)
 	assert := assert.New(t)
@@ -211,8 +210,7 @@ exec "$@"
 // must not move the durable row back to creating or attach a setup worker to
 // resources that teardown already owns.
 func TestWorkspaceRetryDuringFailedDeleteIsRejectedE2E(t *testing.T) {
-	runParallelWorkspaceTest(t)
-	acquireWorkspaceGitSlot(t)
+	runParallelWorkspaceGitTest(t)
 
 	require := require.New(t)
 	assert := assert.New(t)
@@ -332,8 +330,7 @@ exec "$@"
 // reopen setup admission, and a retry during the overlap must remain rejected
 // until the surviving DELETE finishes.
 func TestWorkspaceFailedConcurrentDeleteKeepsSetupBlockedE2E(t *testing.T) {
-	runParallelWorkspaceTest(t)
-	acquireWorkspaceGitSlot(t)
+	runParallelWorkspaceGitTest(t)
 
 	require := require.New(t)
 	assert := assert.New(t)
@@ -471,8 +468,7 @@ exec "$@"
 // consistent state — no wedged worktree, no half-created branch, no
 // corrupt `worktrees/` metadata.
 func TestWorkspaceConcurrentSameRepoOperationsE2E(t *testing.T) {
-	runParallelWorkspaceTest(t)
-	acquireWorkspaceGitSlot(t)
+	runParallelWorkspaceGitTest(t)
 
 	require := require.New(t)
 	assert := assert.New(t)

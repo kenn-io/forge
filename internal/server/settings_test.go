@@ -35,6 +35,7 @@ import (
 	"go.kenn.io/forge/internal/stacks"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
@@ -4200,8 +4201,8 @@ base_url = %q
 	worktreeBase := t.TempDir()
 	canonicalWorktreeBase, err := filepath.EvalSymlinks(worktreeBase)
 	require.NoError(err)
-	runGit(t, worktreeBase, "init", "--initial-branch=main")
-	runGit(t, worktreeBase, "remote", "add", "origin", "https://github.com/acme/widget.git")
+	gitfixture.Run(t, worktreeBase, "init", "--initial-branch=main")
+	gitfixture.Run(t, worktreeBase, "remote", "add", "origin", "https://github.com/acme/widget.git")
 	response = testutil.DoJSON(
 		t, spoke, http.MethodPut,
 		"/api/v1/repo/github/acme/widget/worktree-base",
@@ -4270,8 +4271,8 @@ port = 8091
 	worktreeBase := t.TempDir()
 	canonicalWorktreeBase, err := filepath.EvalSymlinks(worktreeBase)
 	require.NoError(err)
-	runGit(t, worktreeBase, "init", "--initial-branch=main")
-	runGit(t, worktreeBase, "remote", "add", "origin", "https://github.com/acme/late.git")
+	gitfixture.Run(t, worktreeBase, "init", "--initial-branch=main")
+	gitfixture.Run(t, worktreeBase, "remote", "add", "origin", "https://github.com/acme/late.git")
 
 	response := testutil.DoJSON(
 		t, srv, http.MethodPut, "/api/v1/repo/github/acme/late/worktree-base",

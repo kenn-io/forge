@@ -270,6 +270,8 @@ func TestWorkspaceRuntimeResizeOwnerFollowsLatestDeliberateClientE2E(t *testing.
 }
 
 func TestWorkspaceRuntimeSessionTerminalWebSocketE2E(t *testing.T) {
+	runParallelWorkspacePTYTest(t)
+
 	require := require.New(t)
 	disableTmuxAgentSessions := false
 	cfg := &config.Config{Agents: []config.Agent{{
@@ -309,6 +311,8 @@ func TestWorkspaceRuntimeSessionTerminalWebSocketE2E(t *testing.T) {
 }
 
 func TestWorkspaceRuntimeSessionTerminalWebSocketBasePathE2E(t *testing.T) {
+	runParallelWorkspacePTYTest(t)
+
 	require := require.New(t)
 	disableTmuxAgentSessions := false
 	cfg := &config.Config{
@@ -352,6 +356,8 @@ func TestWorkspaceRuntimeSessionTerminalWebSocketBasePathE2E(t *testing.T) {
 }
 
 func TestWorkspaceRuntimeSessionTerminalSkipsAltScreenReplayE2E(t *testing.T) {
+	runParallelWorkspacePTYTest(t)
+
 	require := require.New(t)
 	assert := assert.New(t)
 	disableTmuxAgentSessions := false
@@ -444,6 +450,8 @@ func TestWorkspaceRuntimeSessionTerminalSkipsAltScreenReplayE2E(t *testing.T) {
 }
 
 func TestWorkspaceRuntimeSessionTerminalAppliesInitialSizeE2E(t *testing.T) {
+	runParallelWorkspacePTYTest(t)
+
 	require := require.New(t)
 	// This intentionally goes through the generated HTTP client, the real
 	// httptest server, and the terminal websocket rather than attaching to
@@ -492,6 +500,7 @@ func TestWorkspacePtyOwnerTitleMarksWorkspaceWorkingE2E(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("workspace clone fixture uses Unix-style local remotes")
 	}
+	runParallelWorkspacePTYTest(t)
 	requirePTYAvailable(t)
 
 	require := require.New(t)
@@ -557,6 +566,7 @@ func TestWorkspaceRuntimePlainShellUsesPtyOwnerWhenTmuxUnavailableE2E(t *testing
 	if runtime.GOOS == "windows" {
 		t.Skip("test fixture uses /bin/sh")
 	}
+	runParallelWorkspacePTYTest(t)
 
 	require := require.New(t)
 	assert := assert.New(t)
@@ -618,6 +628,7 @@ func TestRustPtyManagerRejectsConcurrentAttachmentsE2E(t *testing.T) {
 		t.Skip("concurrent attach coverage is exercised by the Rust owner tests on Windows")
 	}
 	requirePTYAvailable(t)
+	runParallelWorkspacePTYTest(t)
 
 	require := require.New(t)
 	assert := assert.New(t)
@@ -684,6 +695,7 @@ func TestRustPtyManagerRejectsConcurrentAttachmentsE2E(t *testing.T) {
 }
 
 func TestWorkspacePtyOwnerTerminalRejectsConcurrentAttachmentsE2E(t *testing.T) {
+	runParallelWorkspacePTYTest(t)
 
 	require := require.New(t)
 	assert := assert.New(t)
@@ -731,6 +743,7 @@ func TestWorkspacePtyOwnerTerminalRejectsConcurrentAttachmentsE2E(t *testing.T) 
 }
 
 func TestWorkspacePtyOwnerTerminalFlushesFinalOutputOnExitE2E(t *testing.T) {
+	runParallelWorkspacePTYTest(t)
 
 	require := require.New(t)
 
@@ -780,6 +793,7 @@ func TestWorkspacePtyOwnerTerminalFlushesFinalOutputOnExitE2E(t *testing.T) {
 }
 
 func TestWorkspaceRuntimeLaunchMultipleAndStopOneE2E(t *testing.T) {
+	runParallelWorkspacePTYTest(t)
 
 	require := require.New(t)
 	assert := assert.New(t)
@@ -862,6 +876,7 @@ func TestWorkspaceRuntimeLaunchMultipleAndStopOneE2E(t *testing.T) {
 }
 
 func TestWorkspaceRuntimeNaturalAgentExitRemovesSessionE2E(t *testing.T) {
+	runParallelWorkspacePTYTest(t)
 
 	require := require.New(t)
 	assert := assert.New(t)
@@ -906,6 +921,7 @@ func TestWorkspaceRuntimeNaturalAgentExitRemovesSessionE2E(t *testing.T) {
 }
 
 func TestWorkspaceRuntimePtyOwnerQuickExitLaunchSucceedsE2E(t *testing.T) {
+	runParallelWorkspacePTYTest(t)
 
 	require := require.New(t)
 	assert := assert.New(t)
@@ -956,6 +972,7 @@ func TestWorkspaceRuntimePtyOwnerQuickExitLaunchSucceedsE2E(t *testing.T) {
 // seccomp filter; this test guards both the websocket route and the
 // config.Shell.Command -> manager.Options.ShellCommand wiring.
 func TestWorkspaceRuntimePlainShellTerminalWebSocketE2E(t *testing.T) {
+	runParallelWorkspacePTYTest(t)
 
 	require := require.New(t)
 	cfg := &config.Config{
@@ -1003,6 +1020,7 @@ func TestWorkspaceRuntimePlainShellTerminalDeliversActualExitCodeE2E(t *testing.
 	if runtime.GOOS == "windows" {
 		t.Skip("test fixture uses /bin/sh")
 	}
+	runParallelWorkspacePTYTest(t)
 
 	require := require.New(t)
 	dir := t.TempDir()
@@ -1103,6 +1121,7 @@ func TestWorkspaceRuntimePtyOwnerQuickExitReportsExactStatusE2E(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test fixture uses Unix PTY exit semantics")
 	}
+	runParallelWorkspacePTYTest(t)
 
 	require := require.New(t)
 	dir := t.TempDir()
@@ -1204,6 +1223,7 @@ func TestWorkspaceRuntimePlainShellAfterExitStartsFreshE2E(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test fixture uses /bin/sh")
 	}
+	runParallelWorkspacePTYTest(t)
 
 	require := require.New(t)
 	assert := assert.New(t)

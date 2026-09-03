@@ -1263,6 +1263,7 @@
         key: workflowTabKeyForSession(session.key),
         label,
         kind: session.kind === "plain_shell" ? "plain_shell" : "agent",
+        targetKey: session.target_key,
         status: workflowSessionStatus(session, label),
         renamable: true,
         movableToTerminal: true,

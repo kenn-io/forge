@@ -55,6 +55,11 @@ schema migrations.
 - Per-connection pragmas live only in `connectionDSN`; idle limits equal open
   limits so pooled connections and their compiled statements persist
   (`internal/db/db.go::openPool`).
+- `Open` refreshes planner statistics with `PRAGMA optimize`, and the daemon
+  repeats it every 24 hours. Optimization checks every table, then every pooled
+  reader reloads the stored statistics (`internal/db/db.go::Optimize`).
+- Migrations must never drop or rebuild `sqlite_stat1`, and a query-plan assertion
+  needs seeded rows plus `DB.Optimize` first (`internal/db/db.go::Optimize`).
 
 ## Federation Spoke Preparation
 
@@ -75,6 +80,9 @@ generations.
   rewrite provider, workspace, review, workflow, or notification source rows.
 - Review drafts and workflow rows remain on the source spoke as an audit trail
   after handoff; the active spoke runtime stops reading them in the role switch.
+- Migration `000056_repair_notification_admission_triggers` recreates admission
+  triggers against `forge_spoke_preparation` for preview databases that applied
+  migration 54 before the node-to-spoke naming change.
 
 ## Migration Review Checklist
 

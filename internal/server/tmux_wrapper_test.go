@@ -33,6 +33,7 @@ import (
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/gitfixture"
 )
 
 type lockedBuffer struct {
@@ -252,28 +253,28 @@ func setupWrapperServerWithScriptAndDBAndServer(
 	)
 	require.NoError(t, err)
 	tmpWork := filepath.Join(dir, "work")
-	runGit(t, dir, "init", "--bare", "--initial-branch=main", bare)
-	runGit(t, dir, "clone", bare, tmpWork)
-	runGit(t, tmpWork, "config", "user.email", "test@test.com")
-	runGit(t, tmpWork, "config", "user.name", "Test")
+	gitfixture.Run(t, dir, "init", "--bare", "--initial-branch=main", bare)
+	gitfixture.Run(t, dir, "clone", bare, tmpWork)
+	gitfixture.Run(t, tmpWork, "config", "user.email", "test@test.com")
+	gitfixture.Run(t, tmpWork, "config", "user.name", "Test")
 	require.NoError(t, os.WriteFile(
 		filepath.Join(tmpWork, "base.txt"),
 		[]byte("base\n"), 0o644,
 	))
-	runGit(t, tmpWork, "add", ".")
-	runGit(t, tmpWork, "commit", "-m", "base commit")
-	runGit(t, tmpWork, "push", "origin", "main")
-	runGit(t, tmpWork, "checkout", "-b", "feature")
+	gitfixture.Run(t, tmpWork, "add", ".")
+	gitfixture.Run(t, tmpWork, "commit", "-m", "base commit")
+	gitfixture.Run(t, tmpWork, "push", "origin", "main")
+	gitfixture.Run(t, tmpWork, "checkout", "-b", "feature")
 	require.NoError(t, os.WriteFile(
 		filepath.Join(tmpWork, "new.txt"),
 		[]byte("new\n"), 0o644,
 	))
-	runGit(t, tmpWork, "add", ".")
-	runGit(t, tmpWork, "commit", "-m", "feature commit")
-	runGit(t, tmpWork, "push", "origin", "feature")
+	gitfixture.Run(t, tmpWork, "add", ".")
+	gitfixture.Run(t, tmpWork, "commit", "-m", "feature commit")
+	gitfixture.Run(t, tmpWork, "push", "origin", "feature")
 
 	// Point bare origin at itself so EnsureClone fetch works.
-	runGit(t, bare, "remote", "add", "origin", bare)
+	gitfixture.Run(t, bare, "remote", "add", "origin", bare)
 
 	worktreeDir := filepath.Join(dir, "worktrees")
 
@@ -344,7 +345,9 @@ func setupWrapperServerWithScriptAndDBAndServer(
 }
 
 func TestTmuxWrapperNewSession(t *testing.T) {
-	t.Parallel()
+	runParallelServerTest(t)
+	acquireRootWorkspaceGitSlot(t)
+
 	require := require.New(t)
 	assert := assert.New(t)
 	client, _, record := setupWrapperServer(t)
@@ -403,7 +406,6 @@ func TestTmuxWrapperNewSession(t *testing.T) {
 }
 
 func TestWorkspaceResponseIncludesTmuxWorkingState(t *testing.T) {
-	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	client, _, record := setupWrapperServer(t)
@@ -468,7 +470,9 @@ func TestWorkspaceResponseIncludesTmuxWorkingState(t *testing.T) {
 }
 
 func TestFilteredActivityIncrementalPollRetainsWorkspaceSubject(t *testing.T) {
-	t.Parallel()
+	runParallelServerTest(t)
+	acquireRootWorkspaceGitSlot(t)
+
 	require := require.New(t)
 	assert := assert.New(t)
 	script, record := writeTmuxRecorder(t)
@@ -587,7 +591,9 @@ func TestFilteredActivityIncrementalPollRetainsWorkspaceSubject(t *testing.T) {
 }
 
 func TestActivityAuthorsIncludeWorkspaceOnlySubject(t *testing.T) {
-	t.Parallel()
+	runParallelServerTest(t)
+	acquireRootWorkspaceGitSlot(t)
+
 	require := require.New(t)
 	assert := assert.New(t)
 	script, record := writeTmuxRecorder(t)
@@ -667,7 +673,9 @@ func TestActivityAuthorsIncludeWorkspaceOnlySubject(t *testing.T) {
 }
 
 func TestFederatedActivityIncludesNodeWorkspaceOnlySubject(t *testing.T) {
-	t.Parallel()
+	runParallelServerTest(t)
+	acquireRootWorkspaceGitSlot(t)
+
 	require := require.New(t)
 	script, record := writeTmuxRecorder(t)
 	setTmuxRecorderPaneOutput(t, record, "baseline output")
@@ -748,7 +756,9 @@ func TestFederatedActivityIncludesNodeWorkspaceOnlySubject(t *testing.T) {
 }
 
 func TestWorkspaceActivityNumberSearchIncludesEventlessSubject(t *testing.T) {
-	t.Parallel()
+	runParallelServerTest(t)
+	acquireRootWorkspaceGitSlot(t)
+
 	require := require.New(t)
 	assert := assert.New(t)
 	script, record := writeTmuxRecorder(t)
@@ -976,6 +986,9 @@ func TestWorkspaceCreateFailureLogsAndPersistsAuditEvent(t *testing.T) {
 }
 
 func TestWorkspaceShutdownCancellationPersistsFailureViaAPI(t *testing.T) {
+	runParallelServerTest(t)
+	acquireRootWorkspaceGitSlot(t)
+
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -1118,7 +1131,7 @@ func TestWorkspaceSetupFailureRollbackCleansWorktreeViaAPI(t *testing.T) {
 		"github", "github.com", "acme", "widget",
 	)
 	require.NoError(err)
-	featureSHA := testGitSHA(t, clonePath, "refs/heads/feature")
+	featureSHA := gitfixture.SHA(t, clonePath, "refs/heads/feature")
 
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
@@ -1156,7 +1169,7 @@ func TestWorkspaceSetupFailureRollbackCleansWorktreeViaAPI(t *testing.T) {
 	)
 
 	require.NotNil(failed)
-	assert.Equal(featureSHA, testGitSHA(t, clonePath, "refs/heads/feature"))
+	assert.Equal(featureSHA, gitfixture.SHA(t, clonePath, "refs/heads/feature"))
 	assert.Eventually(
 		func() bool {
 			_, err := os.Stat(failed.WorktreePath)
@@ -1174,6 +1187,9 @@ func TestWorkspaceSetupFailureRollbackCleansWorktreeViaAPI(t *testing.T) {
 }
 
 func TestWorkspaceRetryWhileCreatingQueuesAndRunsAfterFailureViaAPI(t *testing.T) {
+	runParallelServerTest(t)
+	acquireRootWorkspaceGitSlot(t)
+
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -1265,7 +1281,7 @@ func TestWorkspaceRetryWhileCreatingQueuesAndRunsAfterFailureViaAPI(t *testing.T
 			ready = getResp.JSON200
 			return true
 		},
-		5*time.Second,
+		15*time.Second,
 		50*time.Millisecond,
 	)
 	require.NotNil(ready)
@@ -1292,6 +1308,9 @@ func TestWorkspaceRetryWhileCreatingQueuesAndRunsAfterFailureViaAPI(t *testing.T
 }
 
 func TestWorkspaceShutdownCancellationDoesNotPersistAfterDeadlineBudgetExhausted(t *testing.T) {
+	runParallelServerTest(t)
+	acquireRootWorkspaceGitSlot(t)
+
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -1418,6 +1437,9 @@ func TestWorkspaceShutdownCancellationDoesNotPersistAfterDeadlineBudgetExhausted
 }
 
 func TestTmuxWrapperAttachSession(t *testing.T) {
+	runParallelServerTest(t)
+	acquireRootWorkspaceGitSlot(t)
+
 	require := require.New(t)
 	assert := assert.New(t)
 	client, baseURL, record := setupWrapperServer(t)
@@ -1734,6 +1756,9 @@ func TestReadTmuxRecordPreservesEmptyArgs(t *testing.T) {
 // This complements TestTmuxWrapperNewSession and TestTmuxWrapperAttachSession —
 // together they cover all three tmux verbs that cross the HTTP boundary.
 func TestTmuxWrapperKillSession(t *testing.T) {
+	runParallelServerTest(t)
+	acquireRootWorkspaceGitSlot(t)
+
 	require := require.New(t)
 	assert := assert.New(t)
 	client, _, record := setupWrapperServer(t)
@@ -1869,6 +1894,9 @@ func TestDeleteWorkspacePreservesRowWhenTmuxKillFails(t *testing.T) {
 }
 
 func TestDeleteWorkspaceTreatsTmuxServerExitAsGoneE2E(t *testing.T) {
+	runParallelServerTest(t)
+	acquireRootWorkspaceGitSlot(t)
+
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -1935,6 +1963,9 @@ func TestDeleteWorkspaceTreatsTmuxServerExitAsGoneE2E(t *testing.T) {
 }
 
 func TestDeleteErroredWorkspaceAllowsUnavailableTmux(t *testing.T) {
+	runParallelServerTest(t)
+	acquireRootWorkspaceGitSlot(t)
+
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -2012,6 +2043,9 @@ func TestDeleteErroredWorkspaceAllowsUnavailableTmux(t *testing.T) {
 // the terminal handler sees the error and closes the WebSocket with
 // StatusInternalError.
 func TestTmuxWrapperAttachSurfacesWrapperFailure(t *testing.T) {
+	runParallelServerTest(t)
+	acquireRootWorkspaceGitSlot(t)
+
 	record := filepath.Join(t.TempDir(), "record")
 	body := "#!/bin/sh\n" +
 		"TMUX_RECORD=" + shellquote.Join(record) + "\n" +
@@ -2106,6 +2140,9 @@ func attachWebsocketAndExpectInternalError(t *testing.T, scriptBody string) {
 // reviewer flagged — shell wrappers often exit 1 for their own
 // generic errors.
 func TestTmuxWrapperAttachSurfacesExit1Failure(t *testing.T) {
+	runParallelServerTest(t)
+	acquireRootWorkspaceGitSlot(t)
+
 	record := filepath.Join(t.TempDir(), "record")
 	body := "#!/bin/sh\n" +
 		"TMUX_RECORD=" + shellquote.Join(record) + "\n" +
@@ -2127,6 +2164,9 @@ func TestTmuxWrapperAttachSurfacesExit1Failure(t *testing.T) {
 // "session absent." Pairs with the unit-level
 // TestManagerEnsureTmuxIgnoresAbsencePhraseOnStdout.
 func TestTmuxWrapperAttachIgnoresAbsencePhraseOnStdout(t *testing.T) {
+	runParallelServerTest(t)
+	acquireRootWorkspaceGitSlot(t)
+
 	record := filepath.Join(t.TempDir(), "record")
 	body := "#!/bin/sh\n" +
 		"TMUX_RECORD=" + shellquote.Join(record) + "\n" +

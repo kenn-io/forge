@@ -1,12 +1,12 @@
-package server
+package docstest
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -14,75 +14,41 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/docs"
+	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/testutil"
+	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
-	gitcmd "go.kenn.io/kit/git/cmd"
+	"go.kenn.io/forge/internal/testutil/servertest"
 )
 
-type docsGitRepo struct {
-	dir    string
-	remote string
-}
-
-func newDocsGitRepo(t *testing.T, upstream bool) docsGitRepo {
-	t.Helper()
-	if _, err := gitcmd.New().Output(t.Context(), "", "--version"); err != nil {
-		t.Skip("git binary unavailable")
-	}
-	dir := t.TempDir()
-	remote := t.TempDir()
-	runDocsGit(t, dir, "init", "-b", "main")
-	runDocsGit(t, dir, "config", "user.email", "kenn-forge-fixture@example.invalid")
-	runDocsGit(t, dir, "config", "user.name", "Kenn Forge Fixture")
-	runDocsGit(t, dir, "config", "commit.gpgsign", "false")
-	runDocsGit(t, dir, "config", "tag.gpgsign", "false")
-	runDocsGit(t, dir, "config", "core.hooksPath", ".git/hooks")
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "seed.md"), []byte("seed\n"), 0o644))
-	runDocsGit(t, dir, "add", "seed.md")
-	runDocsGit(t, dir, "commit", "-m", "seed")
-	if upstream {
-		runDocsGit(t, remote, "init", "--bare")
-		runDocsGit(t, dir, "remote", "add", "origin", remote)
-		runDocsGit(t, dir, "push", "-u", "origin", "main")
-	}
-	return docsGitRepo{dir: dir, remote: remote}
-}
-
-func runDocsGit(t *testing.T, dir string, args ...string) string {
-	t.Helper()
-	out, stderr, err := gitcmd.New().Run(t.Context(), dir, nil, args...)
-	require.NoError(t, err, "git %v: %s", args, string(stderr))
-	return string(out)
-}
-
-func (g docsGitRepo) write(t *testing.T, rel, body string) {
-	t.Helper()
-	full := filepath.Join(g.dir, filepath.FromSlash(rel))
-	require.NoError(t, os.MkdirAll(filepath.Dir(full), 0o755))
-	require.NoError(t, os.WriteFile(full, []byte(body), 0o644))
-}
-
-func setupDocsGitRouteServer(t *testing.T, root string) *Server {
+func setupDocsGitRouteServer(t *testing.T, root string) *server.Server {
 	t.Helper()
 	cfg := &config.Config{
+		Host:       "127.0.0.1",
+		Port:       8091,
 		DocFolders: []config.DocFolder{{ID: "f", Name: "F", Path: root}},
 	}
 	registry := docs.NewRegistry(cfg.DocFolders, docs.WithGitRunner(gitsafe.Runner()))
-	srv := New(openTestDB(t), nil, nil, "/", cfg, ServerOptions{DocsRegistry: registry})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	srv := servertest.New(t, dbtest.Open(t), nil, nil, "/", cfg, server.ServerOptions{
+		DocsRegistry:                  registry,
+		HostCheckAllowLoopbackAnyPort: true,
+	})
 	return srv
 }
 
 func TestDocsGitStatusEndpointReturnsEntries(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	repo := newDocsGitRepo(t, true)
-	repo.write(t, "new.md", "# new\n")
-	srv := setupDocsGitRouteServer(t, repo.dir)
+	repo := gitfixture.NewRepository(t, true)
+	repo.Write(t, "new.md", "# new\n")
+	srv := setupDocsGitRouteServer(t, repo.Dir)
 
-	rr := doDocsJSON(t, srv, http.MethodGet, "/api/v1/docs/folders/f/git", nil)
+	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/docs/folders/f/git", nil)
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	var body docs.GitStatusResponse
@@ -96,11 +62,11 @@ func TestDocsGitStatusEndpointReturnsEntries(t *testing.T) {
 func TestDocsGitChangesEndpointReturnsPreview(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	repo := newDocsGitRepo(t, true)
-	repo.write(t, "new.md", "# new\n")
-	srv := setupDocsGitRouteServer(t, repo.dir)
+	repo := gitfixture.NewRepository(t, true)
+	repo.Write(t, "new.md", "# new\n")
+	srv := setupDocsGitRouteServer(t, repo.Dir)
 
-	rr := doDocsJSON(t, srv, http.MethodGet, "/api/v1/docs/folders/f/git/changes", nil)
+	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/docs/folders/f/git/changes", nil)
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	var body docs.GitChangesResponse
@@ -118,21 +84,21 @@ func TestDocsGitChangesEndpointNotARepoAndUnknownFolder(t *testing.T) {
 	require := require.New(t)
 	srv := setupDocsGitRouteServer(t, t.TempDir())
 
-	notRepoRR := doDocsJSON(t, srv, http.MethodGet, "/api/v1/docs/folders/f/git/changes", nil)
+	notRepoRR := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/docs/folders/f/git/changes", nil)
 	require.Equal(http.StatusOK, notRepoRR.Code, notRepoRR.Body.String())
 	var notRepo docs.GitChangesResponse
 	require.NoError(json.NewDecoder(notRepoRR.Body).Decode(&notRepo))
 	assert.False(notRepo.IsRepo)
 	assert.NotNil(notRepo.Changes)
 
-	missingRR := doDocsJSON(t, srv, http.MethodGet, "/api/v1/docs/folders/missing/git/changes", nil)
+	missingRR := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/docs/folders/missing/git/changes", nil)
 	assert.Equal(http.StatusNotFound, missingRR.Code, missingRR.Body.String())
 }
 
 func TestDocsGitStatusAndChangesEndpointsRejectUnsafeAttributes(t *testing.T) {
-	repo := newDocsGitRepo(t, true)
-	repo.write(t, ".gitattributes", "*.md filter=evil\n")
-	srv := setupDocsGitRouteServer(t, repo.dir)
+	repo := gitfixture.NewRepository(t, true)
+	repo.Write(t, ".gitattributes", "*.md filter=evil\n")
+	srv := setupDocsGitRouteServer(t, repo.Dir)
 
 	for _, path := range []string{
 		"/api/v1/docs/folders/f/git",
@@ -142,7 +108,7 @@ func TestDocsGitStatusAndChangesEndpointsRejectUnsafeAttributes(t *testing.T) {
 			assert := assert.New(t)
 			require := require.New(t)
 
-			rr := doDocsJSON(t, srv, http.MethodGet, path, nil)
+			rr := testutil.DoJSON(t, srv, http.MethodGet, path, nil)
 
 			require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
 			var problem httpapi.ProblemError
@@ -156,15 +122,15 @@ func TestDocsGitStatusAndChangesEndpointsRejectUnsafeAttributes(t *testing.T) {
 func TestDocsGitChangesEndpointRejectsUnsafeLocalConfig(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	repo := newDocsGitRepo(t, true)
-	repo.write(t, "new.md", "# new\n")
+	repo := gitfixture.NewRepository(t, true)
+	repo.Write(t, "new.md", "# new\n")
 	// Command-bearing local config does not execute during the status
 	// read, but the preview must still refuse it so the UI's publish
 	// signal matches publish-time behavior.
-	runDocsGit(t, repo.dir, "config", "gpg.program", "/tmp/evil")
-	srv := setupDocsGitRouteServer(t, repo.dir)
+	gitfixture.Run(t, repo.Dir, "config", "gpg.program", "/tmp/evil")
+	srv := setupDocsGitRouteServer(t, repo.Dir)
 
-	rr := doDocsJSON(t, srv, http.MethodGet, "/api/v1/docs/folders/f/git/changes", nil)
+	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/docs/folders/f/git/changes", nil)
 
 	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
 	var problem httpapi.ProblemError
@@ -176,13 +142,14 @@ func TestDocsGitChangesEndpointRejectsUnsafeLocalConfig(t *testing.T) {
 func TestDocsGitReadEndpointsRejectNonLoopback(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	repo := newDocsGitRepo(t, true)
-	srv := setupDocsGitRouteServer(t, repo.dir)
+	repo := gitfixture.NewRepository(t, true)
+	srv := setupDocsGitRouteServer(t, repo.Dir)
 	for _, path := range []string{
 		"/api/v1/docs/folders/f/git",
 		"/api/v1/docs/folders/f/git/changes",
 	} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Host = "127.0.0.1"
 		req.RemoteAddr = "203.0.113.7:54321"
 		rr := httptest.NewRecorder()
 
@@ -199,12 +166,12 @@ func TestDocsGitReadEndpointsRejectNonLoopback(t *testing.T) {
 func TestDocsGitPublishEndpointHappyPath(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	repo := newDocsGitRepo(t, true)
-	repo.write(t, "new.md", "# new\n")
-	srv := setupDocsGitRouteServer(t, repo.dir)
+	repo := gitfixture.NewRepository(t, true)
+	repo.Write(t, "new.md", "# new\n")
+	srv := setupDocsGitRouteServer(t, repo.Dir)
 
-	rr := doDocsJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", map[string]string{
-		"message": "docs: update new.md\n\n- new.md\n",
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", generated.PublishDocsGitJSONRequestBody{
+		Message: new("docs: update new.md\n\n- new.md\n"),
 	})
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
@@ -222,37 +189,37 @@ func TestDocsGitPublishEndpointHappyPath(t *testing.T) {
 func TestDocsGitPublishEndpointAcceptsLargeMessageBelowRouteLimit(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	repo := newDocsGitRepo(t, true)
-	repo.write(t, "new.md", "# new\n")
-	srv := setupDocsGitRouteServer(t, repo.dir)
+	repo := gitfixture.NewRepository(t, true)
+	repo.Write(t, "new.md", "# new\n")
+	srv := setupDocsGitRouteServer(t, repo.Dir)
 
-	rr := doDocsJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", map[string]string{
-		"message": "docs: " + strings.Repeat("large ", 2<<18),
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", generated.PublishDocsGitJSONRequestBody{
+		Message: new("docs: " + strings.Repeat("large ", 2<<18)),
 	})
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	var body docs.PublishResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
 	assert.NotEmpty(body.Commit)
-	assert.Equal(body.Commit, strings.TrimSpace(runDocsGit(t, repo.remote, "rev-parse", "main")))
+	assert.Equal(body.Commit, strings.TrimSpace(string(gitfixture.Run(t, repo.Remote, "rev-parse", "main"))))
 }
 
 func TestDocsGitPublishEndpointPushesConfiguredUpstreamDespitePushDefaults(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	repo := newDocsGitRepo(t, true)
+	repo := gitfixture.NewRepository(t, true)
 	backup := t.TempDir()
-	runDocsGit(t, backup, "init", "--bare")
-	runDocsGit(t, repo.dir, "remote", "add", "backup", backup)
-	runDocsGit(t, repo.dir, "push", "backup", "main:main")
-	backupInitial := strings.TrimSpace(runDocsGit(t, backup, "rev-parse", "main"))
-	runDocsGit(t, repo.dir, "config", "remote.pushDefault", "backup")
-	runDocsGit(t, repo.dir, "config", "push.default", "current")
-	repo.write(t, "new.md", "# new\n")
-	srv := setupDocsGitRouteServer(t, repo.dir)
+	gitfixture.Run(t, backup, "init", "--bare")
+	gitfixture.Run(t, repo.Dir, "remote", "add", "backup", backup)
+	gitfixture.Run(t, repo.Dir, "push", "backup", "main:main")
+	backupInitial := strings.TrimSpace(string(gitfixture.Run(t, backup, "rev-parse", "main")))
+	gitfixture.Run(t, repo.Dir, "config", "remote.pushDefault", "backup")
+	gitfixture.Run(t, repo.Dir, "config", "push.default", "current")
+	repo.Write(t, "new.md", "# new\n")
+	srv := setupDocsGitRouteServer(t, repo.Dir)
 
-	rr := doDocsJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", map[string]string{
-		"message": "docs: explicit upstream",
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", generated.PublishDocsGitJSONRequestBody{
+		Message: new("docs: explicit upstream"),
 	})
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
@@ -260,16 +227,19 @@ func TestDocsGitPublishEndpointPushesConfiguredUpstreamDespitePushDefaults(t *te
 	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
 	assert.Equal("origin/main", body.Upstream)
 	assert.True(body.Pushed)
-	assert.Equal(body.Commit, strings.TrimSpace(runDocsGit(t, repo.remote, "rev-parse", "main")))
-	assert.Equal(backupInitial, strings.TrimSpace(runDocsGit(t, backup, "rev-parse", "main")))
+	assert.Equal(body.Commit, strings.TrimSpace(string(gitfixture.Run(t, repo.Remote, "rev-parse", "main"))))
+	assert.Equal(backupInitial, strings.TrimSpace(string(gitfixture.Run(t, backup, "rev-parse", "main"))))
 }
 
 func TestDocsGitPublishEndpointRejectsNonLoopback(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	repo := newDocsGitRepo(t, true)
-	srv := setupDocsGitRouteServer(t, repo.dir)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/docs/folders/f/git/publish", strings.NewReader(`{"message":"docs: x"}`))
+	repo := gitfixture.NewRepository(t, true)
+	srv := setupDocsGitRouteServer(t, repo.Dir)
+	body, err := json.Marshal(generated.PublishDocsGitJSONRequestBody{Message: new("docs: x")})
+	require.NoError(err)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/docs/folders/f/git/publish", bytes.NewReader(body))
+	req.Host = "127.0.0.1"
 	req.RemoteAddr = "203.0.113.7:54321"
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
@@ -288,6 +258,7 @@ func TestDocsGitPublishEndpointRejectsNonJSONContentType(t *testing.T) {
 	require := require.New(t)
 	srv := setupDocsGitRouteServer(t, t.TempDir())
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/docs/folders/f/git/publish", strings.NewReader("docs: x"))
+	req.Host = "127.0.0.1"
 	req.RemoteAddr = "127.0.0.1:12345"
 	req.Header.Set("Content-Type", "text/plain")
 	rr := httptest.NewRecorder()
@@ -309,34 +280,37 @@ func TestDocsGitPublishEndpointRejectsNonJSONContentType(t *testing.T) {
 func TestDocsGitPublishEndpointErrors(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	repo := newDocsGitRepo(t, true)
-	repo.write(t, "new.md", "# new\n")
-	srv := setupDocsGitRouteServer(t, repo.dir)
+	repo := gitfixture.NewRepository(t, true)
+	repo.Write(t, "new.md", "# new\n")
+	srv := setupDocsGitRouteServer(t, repo.Dir)
 
-	emptyRR := doDocsJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", map[string]string{
-		"message": "   \n\t",
+	emptyRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", generated.PublishDocsGitJSONRequestBody{
+		Message: new("   \n\t"),
 	})
+
 	require.Equal(http.StatusBadRequest, emptyRR.Code, emptyRR.Body.String())
 	var empty httpapi.ProblemError
 	require.NoError(json.NewDecoder(emptyRR.Body).Decode(&empty))
 	assert.Equal("emptyMessage", empty.Details["reason"])
 
-	missingRR := doDocsJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/missing/git/publish", map[string]string{
-		"message": "docs: x",
+	missingRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/missing/git/publish", generated.PublishDocsGitJSONRequestBody{
+		Message: new("docs: x"),
 	})
+
 	assert.Equal(http.StatusNotFound, missingRR.Code, missingRR.Body.String())
 }
 
 func TestDocsGitPublishEndpointNoUpstreamAndCommitFailure(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	noUpstream := newDocsGitRepo(t, false)
-	noUpstream.write(t, "new.md", "# new\n")
-	noUpstreamSrv := setupDocsGitRouteServer(t, noUpstream.dir)
+	noUpstream := gitfixture.NewRepository(t, false)
+	noUpstream.Write(t, "new.md", "# new\n")
+	noUpstreamSrv := setupDocsGitRouteServer(t, noUpstream.Dir)
 
-	noUpstreamRR := doDocsJSON(t, noUpstreamSrv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", map[string]string{
-		"message": "docs: x",
+	noUpstreamRR := testutil.DoJSON(t, noUpstreamSrv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", generated.PublishDocsGitJSONRequestBody{
+		Message: new("docs: x"),
 	})
+
 	require.Equal(http.StatusBadRequest, noUpstreamRR.Code, noUpstreamRR.Body.String())
 	var noUpstreamProblem httpapi.ProblemError
 	require.NoError(json.NewDecoder(noUpstreamRR.Body).Decode(&noUpstreamProblem))
@@ -347,15 +321,16 @@ func TestDocsGitPublishEndpointNoUpstreamAndCommitFailure(t *testing.T) {
 	// command-bearing signer (which the publish safety gate would reject):
 	// staging the markdown succeeds, then the commit cannot lock the branch
 	// ref. This keeps coverage for git stderr passing through to the detail.
-	repo := newDocsGitRepo(t, true)
-	repo.write(t, "new.md", "# new\n")
-	lockPath := filepath.Join(repo.dir, ".git", "refs", "heads", "main.lock")
+	repo := gitfixture.NewRepository(t, true)
+	repo.Write(t, "new.md", "# new\n")
+	lockPath := filepath.Join(repo.Dir, ".git", "refs", "heads", "main.lock")
 	require.NoError(os.WriteFile(lockPath, nil, 0o644))
-	commitFailSrv := setupDocsGitRouteServer(t, repo.dir)
+	commitFailSrv := setupDocsGitRouteServer(t, repo.Dir)
 
-	commitFailRR := doDocsJSON(t, commitFailSrv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", map[string]string{
-		"message": "docs: x",
+	commitFailRR := testutil.DoJSON(t, commitFailSrv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", generated.PublishDocsGitJSONRequestBody{
+		Message: new("docs: x"),
 	})
+
 	require.Equal(http.StatusInternalServerError, commitFailRR.Code, commitFailRR.Body.String())
 	var commitFailProblem httpapi.ProblemError
 	require.NoError(json.NewDecoder(commitFailRR.Body).Decode(&commitFailProblem))
@@ -367,13 +342,13 @@ func TestDocsGitPublishEndpointNoUpstreamAndCommitFailure(t *testing.T) {
 func TestDocsGitPublishEndpointRejectsUnsafeGitConfig(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	repo := newDocsGitRepo(t, true)
-	repo.write(t, "new.md", "# new\n")
-	runDocsGit(t, repo.dir, "config", "filter.evil.clean", "/bin/sh -c evil")
-	srv := setupDocsGitRouteServer(t, repo.dir)
+	repo := gitfixture.NewRepository(t, true)
+	repo.Write(t, "new.md", "# new\n")
+	gitfixture.Run(t, repo.Dir, "config", "filter.evil.clean", "/bin/sh -c evil")
+	srv := setupDocsGitRouteServer(t, repo.Dir)
 
-	rr := doDocsJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", map[string]string{
-		"message": "docs: x",
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", generated.PublishDocsGitJSONRequestBody{
+		Message: new("docs: x"),
 	})
 
 	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
@@ -385,17 +360,17 @@ func TestDocsGitPublishEndpointRejectsUnsafeGitConfig(t *testing.T) {
 func TestDocsGitPublishEndpointIgnoresDocsRepoHooks(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	repo := newDocsGitRepo(t, true)
-	repo.write(t, "new.md", "# new\n")
+	repo := gitfixture.NewRepository(t, true)
+	repo.Write(t, "new.md", "# new\n")
 	marker := filepath.Join(t.TempDir(), "hook-ran")
-	hookDir := filepath.Join(repo.dir, ".git", "hooks")
+	hookDir := filepath.Join(repo.Dir, ".git", "hooks")
 	require.NoError(os.MkdirAll(hookDir, 0o755))
 	hook := "#!/bin/sh\necho hooked > \"" + marker + "\"\nexit 1\n"
 	require.NoError(os.WriteFile(filepath.Join(hookDir, "pre-commit"), []byte(hook), 0o755))
-	srv := setupDocsGitRouteServer(t, repo.dir)
+	srv := setupDocsGitRouteServer(t, repo.Dir)
 
-	rr := doDocsJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", map[string]string{
-		"message": "docs: x",
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", generated.PublishDocsGitJSONRequestBody{
+		Message: new("docs: x"),
 	})
 
 	assert.Equal(http.StatusOK, rr.Code, rr.Body.String())
@@ -405,23 +380,23 @@ func TestDocsGitPublishEndpointIgnoresDocsRepoHooks(t *testing.T) {
 func TestDocsGitPublishEndpointProblemMappings(t *testing.T) {
 	cases := []struct {
 		name       string
-		setup      func(t *testing.T) *Server
+		setup      func(t *testing.T) *server.Server
 		wantStatus int
 		wantReason string
 	}{
 		{
 			name: "no markdown changes",
-			setup: func(t *testing.T) *Server {
-				repo := newDocsGitRepo(t, true)
-				repo.write(t, "code.go", "package x\n")
-				return setupDocsGitRouteServer(t, repo.dir)
+			setup: func(t *testing.T) *server.Server {
+				repo := gitfixture.NewRepository(t, true)
+				repo.Write(t, "code.go", "package x\n")
+				return setupDocsGitRouteServer(t, repo.Dir)
 			},
 			wantStatus: http.StatusBadRequest,
 			wantReason: "noMarkdownChanges",
 		},
 		{
 			name: "not a git repo",
-			setup: func(t *testing.T) *Server {
+			setup: func(t *testing.T) *server.Server {
 				return setupDocsGitRouteServer(t, t.TempDir())
 			},
 			wantStatus: http.StatusBadRequest,
@@ -429,54 +404,54 @@ func TestDocsGitPublishEndpointProblemMappings(t *testing.T) {
 		},
 		{
 			name: "index not clean",
-			setup: func(t *testing.T) *Server {
-				repo := newDocsGitRepo(t, true)
-				repo.write(t, "new.md", "# new\n")
-				repo.write(t, "code.go", "package x\n")
-				runDocsGit(t, repo.dir, "add", "code.go")
-				return setupDocsGitRouteServer(t, repo.dir)
+			setup: func(t *testing.T) *server.Server {
+				repo := gitfixture.NewRepository(t, true)
+				repo.Write(t, "new.md", "# new\n")
+				repo.Write(t, "code.go", "package x\n")
+				gitfixture.Run(t, repo.Dir, "add", "code.go")
+				return setupDocsGitRouteServer(t, repo.Dir)
 			},
 			wantStatus: http.StatusConflict,
 			wantReason: "indexNotClean",
 		},
 		{
 			name: "conflict",
-			setup: func(t *testing.T) *Server {
-				repo := newDocsGitRepo(t, true)
-				runDocsGit(t, repo.dir, "checkout", "-b", "side")
-				repo.write(t, "seed.md", "side version\n")
-				runDocsGit(t, repo.dir, "commit", "-am", "side")
-				runDocsGit(t, repo.dir, "checkout", "main")
-				repo.write(t, "seed.md", "main version\n")
-				runDocsGit(t, repo.dir, "commit", "-am", "main")
-				out, _, mergeErr := gitcmd.New().Run(
-					t.Context(), repo.dir, nil, "merge", "side",
+			setup: func(t *testing.T) *server.Server {
+				repo := gitfixture.NewRepository(t, true)
+				gitfixture.Run(t, repo.Dir, "checkout", "-b", "side")
+				repo.Write(t, "seed.md", "side version\n")
+				gitfixture.Run(t, repo.Dir, "commit", "-am", "side")
+				gitfixture.Run(t, repo.Dir, "checkout", "main")
+				repo.Write(t, "seed.md", "main version\n")
+				gitfixture.Run(t, repo.Dir, "commit", "-am", "main")
+				out, _, mergeErr := gitsafe.Runner().Run(
+					t.Context(), repo.Dir, nil, "merge", "side",
 				)
 				require.Error(t, mergeErr, "expected merge conflict, got clean merge: %s", out)
-				return setupDocsGitRouteServer(t, repo.dir)
+				return setupDocsGitRouteServer(t, repo.Dir)
 			},
 			wantStatus: http.StatusConflict,
 			wantReason: "conflict",
 		},
 		{
 			name: "push target inside docs folder",
-			setup: func(t *testing.T) *Server {
-				repo := newDocsGitRepo(t, true)
-				repo.write(t, "new.md", "# new\n")
-				runDocsGit(t, repo.dir, "init", "--bare", "evil.git")
-				runDocsGit(t, repo.dir, "remote", "set-url", "origin", "./evil.git")
-				return setupDocsGitRouteServer(t, repo.dir)
+			setup: func(t *testing.T) *server.Server {
+				repo := gitfixture.NewRepository(t, true)
+				repo.Write(t, "new.md", "# new\n")
+				gitfixture.Run(t, repo.Dir, "init", "--bare", "evil.git")
+				gitfixture.Run(t, repo.Dir, "remote", "set-url", "origin", "./evil.git")
+				return setupDocsGitRouteServer(t, repo.Dir)
 			},
 			wantStatus: http.StatusBadRequest,
 			wantReason: "unsafeGitConfig",
 		},
 		{
 			name: "push failed after commit",
-			setup: func(t *testing.T) *Server {
-				repo := newDocsGitRepo(t, true)
-				repo.write(t, "new.md", "# new\n")
-				runDocsGit(t, repo.dir, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "missing-origin"))
-				return setupDocsGitRouteServer(t, repo.dir)
+			setup: func(t *testing.T) *server.Server {
+				repo := gitfixture.NewRepository(t, true)
+				repo.Write(t, "new.md", "# new\n")
+				gitfixture.Run(t, repo.Dir, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "missing-origin"))
+				return setupDocsGitRouteServer(t, repo.Dir)
 			},
 			wantStatus: http.StatusBadGateway,
 			wantReason: "pushFailedAfterCommit",
@@ -488,8 +463,8 @@ func TestDocsGitPublishEndpointProblemMappings(t *testing.T) {
 			require := require.New(t)
 			srv := tc.setup(t)
 
-			rr := doDocsJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", map[string]string{
-				"message": "docs: x",
+			rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", generated.PublishDocsGitJSONRequestBody{
+				Message: new("docs: x"),
 			})
 
 			require.Equal(tc.wantStatus, rr.Code, rr.Body.String())
@@ -507,17 +482,21 @@ func TestDocsGitPublishEndpointProblemMappings(t *testing.T) {
 func TestDocsGitPublishEndpointRejectsConcurrentInFlightPublish(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	repo := newDocsGitRepo(t, true)
-	repo.write(t, "blocked.md", "# blocked\n")
+	repo := gitfixture.NewRepository(t, true)
+	repo.Write(t, "blocked.md", "# blocked\n")
 	cfg := &config.Config{
+		Host: "127.0.0.1",
+		Port: 8091,
 		DocFolders: []config.DocFolder{
-			{ID: "f", Name: "F", Path: repo.dir},
-			{ID: "alias", Name: "Alias", Path: repo.dir},
+			{ID: "f", Name: "F", Path: repo.Dir},
+			{ID: "alias", Name: "Alias", Path: repo.Dir},
 		},
 	}
 	registry := docs.NewRegistry(cfg.DocFolders, docs.WithGitRunner(gitsafe.Runner()))
-	srv := New(openTestDB(t), nil, nil, "/", cfg, ServerOptions{DocsRegistry: registry})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	srv := servertest.New(t, dbtest.Open(t), nil, nil, "/", cfg, server.ServerOptions{
+		DocsRegistry:                  registry,
+		HostCheckAllowLoopbackAnyPort: true,
+	})
 
 	// The publish safety gate forbids command-bearing config, so hold the
 	// publish in-flight by hanging its push: point origin at an HTTP server
@@ -537,16 +516,19 @@ func TestDocsGitPublishEndpointRejectsConcurrentInFlightPublish(t *testing.T) {
 	}))
 	defer hung.Close()
 	defer doRelease()
-	runDocsGit(t, repo.dir, "remote", "set-url", "origin", hung.URL+"/repo.git")
+	gitfixture.Run(t, repo.Dir, "remote", "set-url", "origin", hung.URL+"/repo.git")
 
 	publishAsync := func(message string) <-chan *httptest.ResponseRecorder {
+		body, err := json.Marshal(generated.PublishDocsGitJSONRequestBody{Message: new(message)})
+		require.NoError(err)
 		done := make(chan *httptest.ResponseRecorder, 1)
 		go func() {
 			req := httptest.NewRequest(
 				http.MethodPost,
 				"/api/v1/docs/folders/f/git/publish",
-				strings.NewReader(`{"message":`+strconv.Quote(message)+`}`),
+				bytes.NewReader(body),
 			)
+			req.Host = "127.0.0.1"
 			req.RemoteAddr = "127.0.0.1:12345"
 			req.Header.Set("Content-Type", "application/json")
 			rr := httptest.NewRecorder()
@@ -589,7 +571,7 @@ func TestDocsGitPublishEndpointRejectsConcurrentInFlightPublish(t *testing.T) {
 	assert.Equal(httpapi.CodeConflict, problem.Code)
 	assert.Equal("publishInProgress", problem.Details["reason"])
 
-	aliasPull := doDocsJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/alias/git/pull", nil)
+	aliasPull := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/alias/git/pull", nil)
 	require.Equal(http.StatusConflict, aliasPull.Code, aliasPull.Body.String())
 	var aliasProblem httpapi.ProblemError
 	require.NoError(json.NewDecoder(aliasPull.Body).Decode(&aliasProblem))
@@ -611,41 +593,23 @@ func TestDocsGitPublishEndpointRejectsConcurrentInFlightPublish(t *testing.T) {
 	assert.Equal("pushFailedAfterCommit", firstProblem.Details["reason"])
 
 	// With the lock released and a working remote, a fresh publish succeeds.
-	runDocsGit(t, repo.dir, "remote", "set-url", "origin", repo.remote)
-	repo.write(t, "after.md", "# after\n")
-	afterRR := doDocsJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", map[string]string{
-		"message": "docs: after",
+	gitfixture.Run(t, repo.Dir, "remote", "set-url", "origin", repo.Remote)
+	repo.Write(t, "after.md", "# after\n")
+	afterRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", generated.PublishDocsGitJSONRequestBody{
+		Message: new("docs: after"),
 	})
-	assert.Equal(http.StatusOK, afterRR.Code, afterRR.Body.String())
-}
 
-// remoteAdvance advances the bare fixture remote by one commit created in a
-// scratch clone, returning the new remote head SHA. The explicit checkout
-// matters: under the stripped git env the bare remote's default HEAD is
-// master, so a fresh clone would otherwise sit on an unborn branch.
-func (g docsGitRepo) remoteAdvance(t *testing.T, rel, body string) string {
-	t.Helper()
-	clone := t.TempDir()
-	runDocsGit(t, g.dir, "clone", g.remote, clone)
-	runDocsGit(t, clone, "checkout", "main")
-	runDocsGit(t, clone, "config", "user.email", "kenn-forge-fixture@example.invalid")
-	runDocsGit(t, clone, "config", "user.name", "Kenn Forge Fixture")
-	runDocsGit(t, clone, "config", "commit.gpgsign", "false")
-	require.NoError(t, os.WriteFile(filepath.Join(clone, filepath.FromSlash(rel)), []byte(body), 0o644))
-	runDocsGit(t, clone, "add", "--", rel)
-	runDocsGit(t, clone, "commit", "-m", "remote update")
-	runDocsGit(t, clone, "push", "origin", "main")
-	return strings.TrimSpace(runDocsGit(t, clone, "rev-parse", "HEAD"))
+	assert.Equal(http.StatusOK, afterRR.Code, afterRR.Body.String())
 }
 
 func TestDocsGitPullEndpointFastForwards(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	repo := newDocsGitRepo(t, true)
-	want := repo.remoteAdvance(t, "remote.md", "# remote\n")
-	srv := setupDocsGitRouteServer(t, repo.dir)
+	repo := gitfixture.NewRepository(t, true)
+	want := repo.RemoteCommit(t, "remote.md", "# remote\n")
+	srv := setupDocsGitRouteServer(t, repo.Dir)
 
-	rr := doDocsJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/pull", nil)
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/pull", nil)
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	var body docs.PullResponse
@@ -654,17 +618,17 @@ func TestDocsGitPullEndpointFastForwards(t *testing.T) {
 	assert.Equal(want, body.Commit)
 	assert.Equal("main", body.Branch)
 	assert.Equal("origin/main", body.Upstream)
-	_, statErr := os.Stat(filepath.Join(repo.dir, "remote.md"))
+	_, statErr := os.Stat(filepath.Join(repo.Dir, "remote.md"))
 	assert.NoError(statErr)
 }
 
 func TestDocsGitPullEndpointUpToDate(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	repo := newDocsGitRepo(t, true)
-	srv := setupDocsGitRouteServer(t, repo.dir)
+	repo := gitfixture.NewRepository(t, true)
+	srv := setupDocsGitRouteServer(t, repo.Dir)
 
-	rr := doDocsJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/pull", nil)
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/pull", nil)
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	var body docs.PullResponse
@@ -676,14 +640,14 @@ func TestDocsGitPullEndpointUpToDate(t *testing.T) {
 func TestDocsGitPullEndpointDivergedIs409(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	repo := newDocsGitRepo(t, true)
-	repo.remoteAdvance(t, "remote.md", "remote\n")
-	repo.write(t, "local.md", "local\n")
-	runDocsGit(t, repo.dir, "add", "--", "local.md")
-	runDocsGit(t, repo.dir, "commit", "-m", "local update")
-	srv := setupDocsGitRouteServer(t, repo.dir)
+	repo := gitfixture.NewRepository(t, true)
+	repo.RemoteCommit(t, "remote.md", "remote\n")
+	repo.Write(t, "local.md", "local\n")
+	gitfixture.Run(t, repo.Dir, "add", "--", "local.md")
+	gitfixture.Run(t, repo.Dir, "commit", "-m", "local update")
+	srv := setupDocsGitRouteServer(t, repo.Dir)
 
-	rr := doDocsJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/pull", nil)
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/pull", nil)
 
 	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
 	var problem httpapi.ProblemError
@@ -694,10 +658,10 @@ func TestDocsGitPullEndpointDivergedIs409(t *testing.T) {
 func TestDocsGitPullEndpointNoUpstreamIs400(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	repo := newDocsGitRepo(t, false)
-	srv := setupDocsGitRouteServer(t, repo.dir)
+	repo := gitfixture.NewRepository(t, false)
+	srv := setupDocsGitRouteServer(t, repo.Dir)
 
-	rr := doDocsJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/pull", nil)
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/pull", nil)
 
 	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
 	var problem httpapi.ProblemError

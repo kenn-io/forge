@@ -5,6 +5,8 @@
   import { observeResize } from "../../browser/observers.js";
   import { getStores } from "../../context.js";
   import { showFlash } from "../../stores/flash.svelte.js";
+  import { parseConfiguredProviderItemURL } from "../../utils/item-reference.js";
+  import { resolveItemReference } from "../../utils/itemRefHandler.js";
   import { Terminal } from "@xterm/xterm";
   import type { ILinkHandler } from "@xterm/xterm";
   import { FitAddon } from "@xterm/addon-fit";
@@ -94,6 +96,10 @@
   let containerEl: HTMLElement;
   let terminal: Terminal | null = $state(null);
   let hoveredTerminalLink: string | null = $state(null);
+  let itemLinkExecution: { interrupt: () => void } | null = null;
+  const hoveredTerminalLinkIsItem = $derived(
+    hoveredTerminalLink !== null && configuredItemReference(hoveredTerminalLink) !== null,
+  );
   let fitAddon: FitAddon | null = null;
   let imageAddon: ImageAddon | null = null;
   let ligaturesAddon: LigaturesAddon | null = null;
@@ -206,7 +212,21 @@
     }
     if (url.protocol !== "http:" && url.protocol !== "https:") return;
 
+    // Pull request and issue links for a configured repository stay inside
+    // the app: the resolve endpoint decides whether the repo is tracked and
+    // falls back to opening the provider page when it is not.
+    const itemRef = configuredItemReference(url.href);
+    if (itemRef) {
+      itemLinkExecution?.interrupt();
+      itemLinkExecution = resolveItemReference(runtime, itemRef);
+      return;
+    }
+
     window.open(url.href, "_blank", "noopener,noreferrer");
+  }
+
+  function configuredItemReference(href: string) {
+    return parseConfiguredProviderItemURL(href, settingsStore.getConfiguredRepos());
   }
 
   function terminalLinkModifierPressed(event: MouseEvent): boolean {
@@ -933,6 +953,8 @@
   function cleanup(): void {
     disposed = true;
     pointerOrigin = null;
+    itemLinkExecution?.interrupt();
+    itemLinkExecution = null;
     clipboardWriter?.dispose();
     clipboardWriter = undefined;
     mouseDragAutoscroll?.dispose();
@@ -1272,7 +1294,7 @@
   {#if hoveredTerminalLink}
     <div class="terminal-link-tooltip">
       <span>{hoveredTerminalLink}</span>
-      <small>{terminalLinkModifierLabel}+Click to open link</small>
+      <small>{terminalLinkModifierLabel}+Click to {hoveredTerminalLinkIsItem ? "open in kenn-forge" : "open link"}</small>
     </div>
     {/if}
 </div>

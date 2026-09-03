@@ -152,6 +152,8 @@ func TestDirectDaemonBearerClassificationWithoutGeneralAPIAuth(t *testing.T) {
 //
 // Bind for every case is 127.0.0.1:8091.
 func TestHostCheckBackendHost(t *testing.T) {
+	runParallelServerTest(t)
+
 	cases := []struct {
 		name    string
 		allowed []config.HostKey
@@ -212,6 +214,8 @@ func TestHostCheckBackendHost(t *testing.T) {
 // Always also exercises that DNS-rebinding rejections from Step 2
 // run before any forwarded header is read.
 func TestHostCheckForwardedHost(t *testing.T) {
+	runParallelServerTest(t)
+
 	cases := []struct {
 		name              string
 		allowed           []config.HostKey

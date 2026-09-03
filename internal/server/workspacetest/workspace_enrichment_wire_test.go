@@ -13,11 +13,11 @@ import (
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/workspaceapi"
+	"go.kenn.io/forge/internal/testutil/gitfixture"
 )
 
 func TestWorkspaceListReportsCommitsAheadBehindE2E(t *testing.T) {
-	t.Parallel()
-	acquireWorkspaceGitSlot(t)
+	runParallelWorkspaceGitTest(t)
 
 	require := require.New(t)
 	assert := assert.New(t)
@@ -52,12 +52,12 @@ func TestWorkspaceListReportsCommitsAheadBehindE2E(t *testing.T) {
 			*initial.CommitsBehind == 0 && !*initial.WorktreeDirty
 	}, 10*time.Second, 10*time.Millisecond)
 
-	runGit(t, ws.WorktreePath, "config", "user.email", "test@test.com")
-	runGit(t, ws.WorktreePath, "config", "user.name", "Test")
+	gitfixture.Run(t, ws.WorktreePath, "config", "user.email", "test@test.com")
+	gitfixture.Run(t, ws.WorktreePath, "config", "user.name", "Test")
 	for _, name := range []string{"ahead-1.txt", "ahead-2.txt"} {
 		require.NoError(os.WriteFile(filepath.Join(ws.WorktreePath, name), []byte(name+"\n"), 0o644))
-		runGit(t, ws.WorktreePath, "add", ".")
-		runGit(t, ws.WorktreePath, "commit", "-m", name)
+		gitfixture.Run(t, ws.WorktreePath, "add", ".")
+		gitfixture.Run(t, ws.WorktreePath, "commit", "-m", name)
 	}
 	require.NoError(os.WriteFile(filepath.Join(ws.WorktreePath, "uncommitted.txt"), []byte("dirty\n"), 0o644))
 	clockNow.Store(now.Add(workspaceapi.EnrichmentTTL + time.Second).UnixNano())

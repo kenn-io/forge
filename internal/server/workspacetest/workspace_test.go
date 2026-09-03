@@ -22,6 +22,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
@@ -316,15 +317,15 @@ func TestWorkspaceCommitsFlagsUnpushedCommitsE2E(t *testing.T) {
 	// Commit locally without pushing. A brand-new commit is unpushed no matter
 	// how the worktree tracks its upstream, so the commits endpoint must flag
 	// it - this proves the push status reaches the wire for a real workspace.
-	runGit(t, ws.WorktreePath, "config", "user.email", "ws@test.com")
-	runGit(t, ws.WorktreePath, "config", "user.name", "Workspace")
+	gitfixture.Run(t, ws.WorktreePath, "config", "user.email", "ws@test.com")
+	gitfixture.Run(t, ws.WorktreePath, "config", "user.name", "Workspace")
 	require.NoError(os.WriteFile(
 		filepath.Join(ws.WorktreePath, "local-only.txt"),
 		[]byte("local\n"), 0o644,
 	))
-	runGit(t, ws.WorktreePath, "add", ".")
-	runGit(t, ws.WorktreePath, "commit", "-m", "local only commit")
-	localSHA := testGitSHA(t, ws.WorktreePath, "HEAD")
+	gitfixture.Run(t, ws.WorktreePath, "add", ".")
+	gitfixture.Run(t, ws.WorktreePath, "commit", "-m", "local only commit")
+	localSHA := gitfixture.SHA(t, ws.WorktreePath, "HEAD")
 
 	resp, err := fixture.client.HTTP.GetWorkspaceCommitsWithResponse(ctx, ws.Id)
 	require.NoError(err)
@@ -350,7 +351,7 @@ func TestWorkspaceCommitsOmitsPushStatusWithoutUpstreamE2E(t *testing.T) {
 	// untracked, so provider reconciliation cannot add a base-repository
 	// upstream while this request runs.
 	forkURL := "https://github.com/fork/widget.git"
-	runGit(t, fixture.bare, "config", "--add", "url."+fixture.remote+".insteadOf", forkURL)
+	gitfixture.Run(t, fixture.bare, "config", "--add", "url."+fixture.remote+".insteadOf", forkURL)
 	seedPRWithHeadRepo(t, fixture.database, "github.com", "acme", "widget", 2, forkURL)
 	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
 		ctx, generated.CreateWorkspaceInputBody{

@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/testutil/gitfixture"
 )
 
 func TestWorkspaceAgentActivityFlowsThroughHTTPResponsesE2E(t *testing.T) {
@@ -115,10 +116,10 @@ func TestWorkspaceAgentActivityFlowsThroughHTTPResponsesE2E(t *testing.T) {
 	require.NoError(os.WriteFile(
 		filepath.Join(ws.WorktreePath, "activity.txt"), []byte("activity\n"), 0o644,
 	))
-	runGit(t, ws.WorktreePath, "config", "user.email", "agent-activity@example.invalid")
-	runGit(t, ws.WorktreePath, "config", "user.name", "Agent Activity Fixture")
-	runGit(t, ws.WorktreePath, "add", "activity.txt")
-	runGit(t, ws.WorktreePath, "commit", "-m", "add activity fixture")
+	gitfixture.Run(t, ws.WorktreePath, "config", "user.email", "agent-activity@example.invalid")
+	gitfixture.Run(t, ws.WorktreePath, "config", "user.name", "Agent Activity Fixture")
+	gitfixture.Run(t, ws.WorktreePath, "add", "activity.txt")
+	gitfixture.Run(t, ws.WorktreePath, "commit", "-m", "add activity fixture")
 	pushResponse, err := fixture.client.HTTP.PushWorkspaceBranchWithResponse(ctx, ws.Id)
 	require.NoError(err)
 	require.Equal(http.StatusOK, pushResponse.StatusCode(), string(pushResponse.Body))

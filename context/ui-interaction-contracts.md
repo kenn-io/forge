@@ -48,6 +48,9 @@ Interactive surfaces must agree on which item is selected.
   `item-ref` anchors that resolve through the shared click handler, with the
   provider URL kept as the untracked-repo fallback
   (`frontend/src/lib/utils/item-reference.ts::parseProviderItemURL`).
+- Terminal item links use the same resolver: match provider hosts from the
+  configured repos, never a hardcoded host list, and let the resolve endpoint
+  decide tracked-vs-external (`frontend/src/lib/utils/item-reference.ts::parseConfiguredProviderItemURL`).
 - When a view changes from item A to item B, reset transient action state that
   could otherwise submit or render against the wrong item.
 - A response confirming a server-side outcome (a completed delete or create)

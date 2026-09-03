@@ -706,7 +706,6 @@ func TestConfigReloadSerializesDocsFolderMutation(t *testing.T) {
 		setAcceptedHostForServerTest(req, srv)
 		req.RemoteAddr = "127.0.0.1:12345"
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set(forgeCSRFHeaderName, "1")
 		mutation = httptest.NewRecorder()
 		srv.ServeHTTP(mutation, req)
 	}()

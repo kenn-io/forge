@@ -175,9 +175,13 @@ and the root event stream.
 
 ## Host And Origin Boundary
 
-- Host validation is the DNS-rebinding boundary and runs before API auth, CSRF,
+- Host validation is the DNS-rebinding boundary and runs before API auth,
+  cross-origin protection,
   and route handling. Do not move it behind middleware that trusts request
   credentials first (`internal/server/server.go::Server.ServeHTTP`).
+- Mutation CSRF protection uses `http.CrossOriginProtection`; requests without browser
+  origin metadata remain available to native and generated API clients, while Huma
+  operations enforce their own body media types (`internal/server/server.go::checkCrossOrigin`).
 - Trusted forwarded-host support adds validation of the canonical forwarded
   authority; it never replaces validation of the raw backend `Host`
   (`internal/server/host_check.go::checkHost`).

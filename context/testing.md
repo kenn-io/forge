@@ -584,8 +584,8 @@ Bug classes wire-level catches:
 
 Worked examples: `internal/server/e2etest/sse_contract_test.go` pins SSE
 headers and the first cached `sync_status` frame;
-`internal/server/apitest/mutation_guard_test.go` asserts the 415 response
-for `POST Content-Type: text/plain`;
+`internal/server/apitest/mutation_guard_test.go` asserts the 403 response
+for a cross-site browser mutation;
 `internal/server/workspacetest/issue_workspace_conflict_test.go` reproduces
 a 409 through `generated.ErrorModel` alongside the in-package original.
 

@@ -54,7 +54,7 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
-const forgeCSRFHeaderName = "X-Kenn-Forge-Csrf"
+var crossOriginProtection http.CrossOriginProtection
 
 type BuildInfo struct {
 	Name      string `json:"name"`
@@ -1569,7 +1569,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if r.Method != http.MethodGet && s.isMutatingAPIRequest(r) {
-		if !checkCSRF(w, r, false) {
+		if !checkCrossOrigin(w, r) {
 			return
 		}
 		if s.isMutatingDocsAPIRequest(r) && !isLoopbackRemoteAddr(r.RemoteAddr) {
@@ -1764,31 +1764,13 @@ func authorityIsLoopbackHost(hostHeader string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-// checkCSRF rejects cross-site mutation requests. Returns true if
+// checkCrossOrigin rejects cross-origin browser requests. Returns true if
 // the request is allowed, false if it was rejected (response written).
-func checkCSRF(w http.ResponseWriter, r *http.Request, allowProxyContentType bool) bool {
-	if sfs := r.Header.Get("Sec-Fetch-Site"); sfs != "" {
-		if sfs != "same-origin" && sfs != "none" {
-			writeError(w, http.StatusForbidden,
-				"cross-origin requests are not allowed")
-			return false
-		}
-	}
-
-	// Require Content-Type: application/json on all mutation requests,
-	// including zero-body endpoints like POST /sync. This prevents
-	// cross-origin form submissions and simple fetches from forging
-	// requests even without Sec-Fetch-Site.
-	ct := r.Header.Get("Content-Type")
-	if !strings.HasPrefix(ct, "application/json") {
-		if allowProxyContentType && r.Header.Get("Sec-Fetch-Site") != "" {
-			return true
-		}
-		writeError(w, http.StatusUnsupportedMediaType,
-			"Content-Type must be application/json")
+func checkCrossOrigin(w http.ResponseWriter, r *http.Request) bool {
+	if err := crossOriginProtection.Check(r); err != nil {
+		writeError(w, http.StatusForbidden, "cross-origin requests are not allowed")
 		return false
 	}
-
 	return true
 }
 

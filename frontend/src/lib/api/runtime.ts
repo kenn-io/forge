@@ -3,7 +3,7 @@ import type { QuerySerializerOptions } from "openapi-fetch";
 import { createAPIClient } from "./generated/client.js";
 import { configuredAPIBaseURL } from "./runtime-base.js";
 import type { components } from "./generated/schema.js";
-import { csrfFetch, type FetchFn } from "./csrf.js";
+import { normalizedFetch, type FetchFn } from "./request.js";
 
 import { traceHeadersForRequest } from "../instrumentation/traceContext.js";
 
@@ -36,7 +36,7 @@ export function tracedFetch(inner: FetchFn): FetchFn {
 export function createRuntimeClient(fetch?: FetchFn, clientBaseURL = configuredAPIBaseURL()) {
   const inner = fetch ?? ((...args: Parameters<typeof globalThis.fetch>) => globalThis.fetch(...args));
   return createAPIClient(clientBaseURL, {
-    fetch: csrfFetch(tracedFetch(inner)),
+    fetch: normalizedFetch(tracedFetch(inner)),
     querySerializer,
   });
 }

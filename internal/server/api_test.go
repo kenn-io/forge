@@ -1249,10 +1249,6 @@ func setupTestClientWithBaseURL(
 
 			serverReq := httptest.NewRequest(req.Method, req.URL.String(), body)
 			serverReq.Header = req.Header.Clone()
-			// Ensure mutation requests have Content-Type for CSRF.
-			if req.Method != http.MethodGet && serverReq.Header.Get("Content-Type") == "" {
-				serverReq.Header.Set("Content-Type", "application/json")
-			}
 			serverReq = serverReq.WithContext(req.Context())
 
 			rr := httptest.NewRecorder()

@@ -1,7 +1,7 @@
 import createClient from "openapi-fetch";
 import { Effect, Option, Schema, Stream } from "effect";
 import type { paths } from "./generated/schema.js";
-import { csrfFetch, type FetchFn } from "../csrf.js";
+import { normalizedFetch, type FetchFn } from "../request.js";
 import { TransientTransportError } from "../effect-errors.js";
 import { openStreamingResponse, responseByteStream } from "../../browser/streaming-fetch.js";
 import { RoborevEvent, RoborevJobOutputSnapshot, RoborevLogLinePayload, RoborevStreamOpened } from "./schemas.js";
@@ -12,7 +12,7 @@ export function createRoborevClient(baseUrl: string, fetchFn?: FetchFn): Roborev
   const inner = fetchFn ?? globalThis.fetch.bind(globalThis);
   return createClient<paths>({
     baseUrl,
-    fetch: csrfFetch(inner),
+    fetch: normalizedFetch(inner),
   });
 }
 

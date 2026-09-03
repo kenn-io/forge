@@ -297,11 +297,13 @@ func TestDocsGitPublishEndpointRejectsNonJSONContentType(t *testing.T) {
 	resp := rr.Result()
 	defer resp.Body.Close()
 	require.Equal(http.StatusUnsupportedMediaType, resp.StatusCode)
-	assert.Equal("application/json", resp.Header.Get("Content-Type"))
+	assert.Equal("application/problem+json", resp.Header.Get("Content-Type"))
 
-	var body map[string]string
+	var body struct {
+		Status int `json:"status"`
+	}
 	require.NoError(json.NewDecoder(resp.Body).Decode(&body))
-	assert.Contains(body["error"], "Content-Type must be application/json")
+	assert.Equal(http.StatusUnsupportedMediaType, body.Status)
 }
 
 func TestDocsGitPublishEndpointErrors(t *testing.T) {

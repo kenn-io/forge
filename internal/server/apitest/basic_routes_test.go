@@ -151,7 +151,7 @@ func TestAPIUnsetStarred(t *testing.T) {
 	require.NoError(database.SetStarred(t.Context(), "pr", 1, 1))
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.UnsetStarredWithResponse(t.Context(), generated.UnsetStarredJSONRequestBody{
+	resp, err := client.HTTP.UnsetStarredWithResponse(t.Context(), &generated.UnsetStarredParams{
 		ItemType:     "pr",
 		Provider:     "github",
 		PlatformHost: "github.com",

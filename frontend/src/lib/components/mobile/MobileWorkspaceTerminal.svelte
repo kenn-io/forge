@@ -853,14 +853,11 @@
             <div class="mobile-workspace-terminal__special-keys" role="group" aria-label="Special terminal keys">
               <button type="button" aria-label="Escape" onclick={() => sendSpecialKey("\x1b")}>Esc</button>
               <button type="button" onclick={() => sendSpecialKey("\t")}>Tab</button>
-              <button type="button" aria-label="Arrow up" onclick={() => sendSpecialKey("\x1b[A")}>
-                <ArrowUpIcon size="18" aria-hidden="true" />
-              </button>
-              <button type="button" aria-label="Enter" onclick={() => sendSpecialKey("\r")}>
-                <CornerDownLeftIcon size="18" aria-hidden="true" />
-              </button>
               <button type="button" aria-label="Arrow left" onclick={() => sendSpecialKey("\x1b[D")}>
                 <ArrowLeftIcon size="18" aria-hidden="true" />
+              </button>
+              <button type="button" aria-label="Arrow up" onclick={() => sendSpecialKey("\x1b[A")}>
+                <ArrowUpIcon size="18" aria-hidden="true" />
               </button>
               <button type="button" aria-label="Arrow down" onclick={() => sendSpecialKey("\x1b[B")}>
                 <ArrowDownIcon size="18" aria-hidden="true" />
@@ -870,6 +867,9 @@
               </button>
               <button type="button" aria-label="Space" onclick={() => sendSpecialKey(" ")}>
                 <SpaceIcon size="18" aria-hidden="true" />
+              </button>
+              <button type="button" aria-label="Return" onclick={() => sendSpecialKey("\r")}>
+                <CornerDownLeftIcon size="18" aria-hidden="true" />
               </button>
             </div>
           {/if}

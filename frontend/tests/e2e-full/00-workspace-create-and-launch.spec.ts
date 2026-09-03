@@ -520,21 +520,31 @@ test.describe("workspace create-and-launch full stack", () => {
       const specialKeys = phonePage.getByRole("group", { name: "Special terminal keys" });
       await expect(specialKeys).toBeVisible();
       await expect.poll(async () => (await specialKeys.boundingBox())?.height).toBeLessThanOrEqual(44);
-      for (const keyName of [
+      const expectedSpecialKeyNames = [
         "Escape",
         "Tab",
-        "Arrow up",
-        "Enter",
         "Arrow left",
+        "Arrow up",
         "Arrow down",
         "Arrow right",
         "Space",
-      ]) {
+        "Return",
+      ];
+      await expect
+        .poll(() =>
+          specialKeys
+            .getByRole("button")
+            .evaluateAll((buttons) =>
+              buttons.map((button) => button.getAttribute("aria-label") ?? button.textContent?.trim()),
+            ),
+        )
+        .toEqual(expectedSpecialKeyNames);
+      for (const keyName of expectedSpecialKeyNames) {
         await specialKeys.getByRole("button", { name: keyName, exact: true }).tap();
       }
       await expect
         .poll(async () => (await sessionWebSockets(phonePage, created.id)).flatMap((socket) => socket.sent))
-        .toEqual(expect.arrayContaining(["\x1b", "\t", "\x1b[A", "\r", "\x1b[D", "\x1b[B", "\x1b[C", " "]));
+        .toEqual(expect.arrayContaining(["\x1b", "\t", "\x1b[D", "\x1b[A", "\x1b[B", "\x1b[C", " ", "\r"]));
 
       expect(ready.worktree_path).toBeTruthy();
       const hookResponse = await api.post("/api/v1/agent-hooks/claude", {

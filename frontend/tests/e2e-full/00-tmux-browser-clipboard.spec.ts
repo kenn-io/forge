@@ -70,15 +70,15 @@ async function startInsecureOriginProxy(upstreamBaseUrl: string): Promise<Insecu
   }
 
   const upgradedSockets = new Set<{ destroy(): void }>();
+  let proxyOrigin = "";
   const proxyServer: Server = createServer((request, response) => {
+    const headers = { ...request.headers, host: upstream.host };
+    if (headers.origin === proxyOrigin) headers.origin = upstream.origin;
     const upstreamRequest = httpRequest(
       new URL(request.url ?? "/", upstream),
       {
         method: request.method,
-        headers: {
-          ...request.headers,
-          host: upstream.host,
-        },
+        headers,
       },
       (upstreamResponse) => {
         response.writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
@@ -106,7 +106,14 @@ async function startInsecureOriginProxy(upstreamBaseUrl: string): Promise<Insecu
       const headers: string[] = [];
       for (let index = 0; index < request.rawHeaders.length; index += 2) {
         const name = request.rawHeaders[index]!;
-        const value = name.toLowerCase() === "host" ? upstream.host : request.rawHeaders[index + 1]!;
+        const incomingValue = request.rawHeaders[index + 1]!;
+        const lowerName = name.toLowerCase();
+        const value =
+          lowerName === "host"
+            ? upstream.host
+            : lowerName === "origin" && incomingValue === proxyOrigin
+              ? upstream.origin
+              : incomingValue;
         headers.push(`${name}: ${value}`);
       }
       upstreamSocket.write(
@@ -125,9 +132,10 @@ async function startInsecureOriginProxy(upstreamBaseUrl: string): Promise<Insecu
   if (!proxyAddress || typeof proxyAddress === "string") {
     throw new Error("insecure-origin proxy did not publish a TCP address");
   }
+  proxyOrigin = `http://${proxyHost}:${proxyAddress.port}`;
 
   return {
-    origin: `http://${proxyHost}:${proxyAddress.port}`,
+    origin: proxyOrigin,
     close: async () => {
       for (const socket of upgradedSockets) socket.destroy();
       proxyServer.closeAllConnections();

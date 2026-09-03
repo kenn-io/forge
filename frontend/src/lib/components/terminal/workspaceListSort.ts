@@ -90,6 +90,10 @@ export function workspaceListSortTimestamp(
   }
 }
 
+export function workspaceAgentStateSortTime(workspace: WorkspaceListItem): string {
+  return workspace.agent_state_updated_at?.trim() || workspace.created_at;
+}
+
 function getStorage(): Storage | null {
   try {
     return typeof localStorage === "undefined" ? null : localStorage;

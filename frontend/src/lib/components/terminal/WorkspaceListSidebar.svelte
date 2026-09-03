@@ -49,6 +49,7 @@
     saveWorkspaceListDisplayOptions,
     saveWorkspaceListSort,
     workspaceAgentStatePriority,
+    workspaceAgentStateSortTime,
     workspaceListSortTimestamp,
     workspaceListSortOptions,
     type WorkspaceListDisplayOptions,
@@ -328,7 +329,7 @@
       return [...visibleWorkspaces].sort(
         (a, b) =>
           workspaceAgentStatePriority(b.agent_state) - workspaceAgentStatePriority(a.agent_state) ||
-          timeValue(b.created_at) - timeValue(a.created_at) ||
+          timeValue(workspaceAgentStateSortTime(b)) - timeValue(workspaceAgentStateSortTime(a)) ||
           a.id.localeCompare(b.id),
       );
     }
@@ -630,9 +631,9 @@
   }
 
   function agentStatePresentation(ws: Workspace): {
-    label: "Working" | "Approval" | "Input" | "Done";
+    label: "Working" | "Approval" | "Input" | "Done" | "Idle" | "Unreported";
     status: StatusDotStatus;
-    tone: "working" | "approval" | "input" | "done";
+    tone: "working" | "approval" | "input" | "done" | "idle" | "unreported";
   } | null {
     switch (ws.agent_state) {
       case "working":
@@ -643,13 +644,17 @@
         return { label: "Input", status: "waiting", tone: "input" };
       case "done": {
         const version = doneStateVersion(ws);
-        if (version !== null && acknowledgedDoneStates[workspaceRowKey(ws)] === version) {
+        if (sortMode !== "agent-status" && version !== null && acknowledgedDoneStates[workspaceRowKey(ws)] === version) {
           return null;
         }
         return { label: "Done", status: "idle", tone: "done" };
       }
+      case "idle":
+        return sortMode === "agent-status" ? { label: "Idle", status: "idle", tone: "idle" } : null;
       default:
-        return null;
+        return sortMode === "agent-status"
+          ? { label: "Unreported", status: "stale", tone: "unreported" }
+          : null;
     }
   }
 
@@ -2002,6 +2007,11 @@
 
   .agent-state--done {
     color: var(--accent-green);
+  }
+
+  .agent-state--idle,
+  .agent-state--unreported {
+    color: var(--text-muted);
   }
 
 

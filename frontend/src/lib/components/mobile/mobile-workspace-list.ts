@@ -1,6 +1,10 @@
 import { createRepoLabelFormatter, repoIdentityKey } from "../../utils/repo-label.js";
 import type { WorkspaceListItem } from "../terminal/workspace-list-schema.js";
-import { workspaceAgentStatePriority, type WorkspaceListSort } from "../terminal/workspaceListSort.js";
+import {
+  workspaceAgentStatePriority,
+  workspaceAgentStateSortTime,
+  type WorkspaceListSort,
+} from "../terminal/workspaceListSort.js";
 
 export interface MobileWorkspaceGroup {
   key: string;
@@ -80,7 +84,7 @@ export function sortMobileWorkspaces(
     return [...workspaces].sort(
       (left, right) =>
         workspaceAgentStatePriority(right.agent_state) - workspaceAgentStatePriority(left.agent_state) ||
-        timeValue(right.created_at) - timeValue(left.created_at) ||
+        timeValue(workspaceAgentStateSortTime(right)) - timeValue(workspaceAgentStateSortTime(left)) ||
         left.id.localeCompare(right.id),
     );
   }

@@ -1513,18 +1513,33 @@ describe("WorkspaceListSidebar", () => {
     const states: WorkspaceFixtureOptions["agentState"][] = ["idle", "done", "working", "input", "approval", null];
     mockGet.mockResolvedValue({
       data: {
-        workspaces: states.map((agentState, index) =>
+        workspaces: [
+          ...states.map((agentState, index) =>
+            workspaceFixture({
+              id: agentState ?? "unreported",
+              provider: "github",
+              platformHost: "github.com",
+              owner: "kenn-io",
+              name: "kenn-forge",
+              number: index + 1,
+              title: agentState ?? "unreported",
+              agentState,
+              agentStateUpdatedAt: agentState === "done" ? "2026-05-12T12:00:00Z" : null,
+            }),
+          ),
           workspaceFixture({
-            id: agentState ?? "unreported",
+            id: "done-newer-hook",
             provider: "github",
             platformHost: "github.com",
             owner: "kenn-io",
             name: "kenn-forge",
-            number: index + 1,
-            title: agentState ?? "unreported",
-            agentState,
+            number: 99,
+            title: "done-newer-hook",
+            agentState: "done",
+            createdAt: "2026-05-01T12:00:00Z",
+            agentStateUpdatedAt: "2026-05-13T12:00:00Z",
           }),
-        ),
+        ],
       },
     });
 
@@ -1540,8 +1555,18 @@ describe("WorkspaceListSidebar", () => {
     );
     await fireEvent.click(agentStatusSort);
 
-    expect(rowTitles(container)).toEqual(["approval", "input", "working", "done", "idle", "unreported"]);
+    expect(rowTitles(container)).toEqual([
+      "approval",
+      "input",
+      "working",
+      "done-newer-hook",
+      "done",
+      "idle",
+      "unreported",
+    ]);
     expect(container.querySelectorAll(".sidebar-group-header")).toHaveLength(0);
+    expect(container.textContent).toContain("Idle");
+    expect(container.textContent).toContain("Unreported");
   });
 
   it("shows the timestamp used by each flat sort below the linked item", async () => {

@@ -73,6 +73,9 @@ or remote workspace and session operations.
 - Hubs show the fleet-wide workspace surface. Spokes retain the full host
   directory for navigation but project only their own actionable workspace data
   (`internal/fleet/enrich.go::ProjectForObserver`).
+- Hub Activity workspace indicators include the fleet; peer provider responses
+  omit them so spokes can apply their local workspace ownership
+  (`internal/server/huma_routes.go::Server.listActivityService`).
 - Workspace lists consume inline projected summaries without per-host fan-out;
   remote actions require the owning host's projected operation availability.
   Explicitly incomplete aggregates retain absent-host rows; authoritative views
@@ -319,6 +322,9 @@ change-driven and idle-cheap:
 
 ## Configuration And Lifecycle
 
+- Fresh-hub replacement is re-enrollment, not full archive migration; preserve
+  local execution identity and follow `docs/federated-fleet.md#replace-the-hub`
+  (`internal/server/fleetapi/fleet_enrollment.go::Handler.joinFederation`).
 - Federation protocol version 4 requires an exact match; there is no
   translation or compatibility fallback
   (`internal/federation/protocol.go::ProtocolVersion`).
@@ -349,6 +355,9 @@ change-driven and idle-cheap:
   daemon. Before sealing local writes it first proves the pending hub is
   reachable and pins that enrollment; hub failure before that point
   leaves the standalone provider plane open.
+- A daemon without a local federation enrollment starts with provider writes
+  open and does not restore fleet preparation state
+  (`internal/server/server.go::newServer`).
 - Once quiescing begins, the provider-write barrier survives restarts. Only
   `fleet abort-preparation` may reopen it before activation, after admitted work
   drains. A spoke-shaped process requires restart before standalone provider work;

@@ -9,6 +9,8 @@ fixtures, or changing shell-script coverage.
 - Routine local Go lanes and hooks bound package/processor concurrency and share
   Go caches; `GO_TEST_P=` intentionally restores native package concurrency.
   (`scripts/run-hook-go.sh`, `prek.toml`)
+- Do not overlap frontend/e2e asset builds with Go compilation; replacing embedded
+  assets mid-compile causes missing-file build failures (`internal/web/embed.go:9`).
 - Reduce scanner pressure at source, not by redirecting `GOTMPDIR`.
 - Repository-wide Go tests do not run from Git hooks. Any future fast hook
   lane must select a small set of packages rather than require per-test opt-outs.
@@ -16,6 +18,9 @@ fixtures, or changing shell-script coverage.
   load-sensitive sync E2Es; those flows belong in full Go lanes (`cmd/kenn-forge/lock_e2e_test.go::buildForgeWithLDFlags`, `internal/server/e2etest/sync_cooldown_test.go::TestTriggerSyncE2EPrioritizesNonDefaultHostFilter`).
 - Race tests must synchronize at the narrow boundary under test; do not put a short
   wall-clock deadline around an entire sync pipeline (`internal/github/sync_test.go::TestResolveDisplayNameDedupsConcurrentLookups`).
+- Filesystem writes are not a deterministic event burst under load. Test debounce timing
+  with controlled event channels and `synctest`; keep real filesystem tests for delivery
+  (`internal/configwatch/watcher_test.go::TestWatcher_DebouncesBurst`).
 - Pre-commit runs frontend core checks without full-project Effect diagnostics;
   explicit frontend checks and CI retain Effect coverage (`Makefile::frontend-check-no-deps`).
 - Package-local `svelte-check` tasks must pass that package's Vite config explicitly;

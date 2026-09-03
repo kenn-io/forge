@@ -18,12 +18,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
-	"go.kenn.io/forge/internal/platform"
 	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
+	"go.kenn.io/forge/platform"
 	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
@@ -82,7 +82,7 @@ func (missingTokenRuntimePtyOwner) Attach(context.Context, string) (ptyownerrunt
 }
 
 func (missingTokenRuntimePtyOwner) Start(
-	context.Context, string, string, []string, []string,
+	context.Context, string, string, []string, []string, map[string]string,
 ) (ptyownerruntime.PTY, error) {
 	return nil, fmt.Errorf("resolve runtime token: %w", tokenauth.ErrMissingToken)
 }

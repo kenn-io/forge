@@ -19,12 +19,12 @@ must await the config event before asserting converged state
 GraphQL query shape changes must be validated against GitHub's live GraphQL API before they are merged. The local test suite includes a gated live test:
 
 ```sh
-KENN_FORGE_LIVE_GITHUB_TESTS=1 go test ./internal/github -run TestLiveGraphQLQueriesValidateAgainstGitHub -shuffle=on
+KENN_FORGE_LIVE_GITHUB_TESTS=1 go test ./internal/github ./platform/github -run 'TestLive.*GraphQLQueriesValidateAgainstGitHub' -shuffle=on
 ```
 
 The test uses `KENN_FORGE_GITHUB_TOKEN` first, then `GITHUB_TOKEN`. It intentionally skips unless `KENN_FORGE_LIVE_GITHUB_TESTS=1` is set because live validation consumes GitHub GraphQL rate limit and requires network access.
 
-When changing structs, fields, aliases, fragments, pagination arguments, or nested selections used by `internal/github/graphql.go`, enable `KENN_FORGE_LIVE_GITHUB_TESTS=1` and run the live validation test in addition to the normal Go tests.
+When changing structs, fields, aliases, fragments, pagination arguments, or nested selections used by `internal/github/graphql.go` or the public GitHub client, enable `KENN_FORGE_LIVE_GITHUB_TESTS=1` and run the owning package's live validation test in addition to the normal Go tests.
 
 CI runs the live GraphQL validation as a separate Go test step using the workflow `GITHUB_TOKEN` only in trusted contexts, such as pushes to `main`, manual `workflow_dispatch` runs, and same-repository pull requests. The general pull request Go test step does not receive a GitHub token.
 
@@ -123,6 +123,9 @@ owner:
 - Browser specs live beside their components under `frontend/src`; the browser
   project includes `src/**/*.browser.svelte.ts`, while the jsdom unit project
   also includes GitHub App setup tests (`frontend/vite.config.ts::jsdomUnitTestProject`).
+- Responsive layout tests must await the geometry invariant itself; repeated first-paint
+  measurements do not prove ResizeObserver has delivered its layout update
+  (`frontend/src/RoborevReviewDrawer.footer-layout.browser.svelte.ts:229`).
 - jsdom lacks `ResizeObserver` and the CSS Font Loading API; `frontend/src/test/setup.ts`
   stubs both as inert so kit components that remeasure on resize or font load
   (`AdaptiveActionGrid`, popover auto-reposition) mount in unit tests. Add a stub there,
@@ -167,6 +170,10 @@ server cannot produce the state. Use `frontend/src/test/mockApiFetch.ts` rather
 than forking the Playwright fixture, and do not assert backend-computed values
 through hand-written frontend data.
 
+- Drain asynchronous Playwright route handlers before page teardown; background refreshes
+  can outlive passing assertions. Use `unrouteAll({ behavior: "wait" })` to retain callback errors
+  (`frontend/tests/e2e-full/mobile-routes.spec.ts:11`).
+
 A UI regression can be sufficiently covered by a backend/server test for the
 real runtime path plus a component or Vitest browser test for presentation. Do
 not require a duplicate full-stack browser test when it would only replay data
@@ -187,6 +194,14 @@ the diff, so scope diff locators to `.diff-area`.
 Pane tab headers are `role="tab"` with an `aria-label`, so use
 `getByRole("tab", { name })` — `getByRole(..., { hasText })` is not a valid
 option and silently matches every tab.
+The mock Playwright config's 30 s timeout covers the whole test, and every
+`page.goto` is a full Vite dev-server load that slows several-fold under CI's
+14 workers; keep a test to two navigations or split it, or it fails on the
+first attempt and only passes on retry. (`frontend/playwright.config.ts`)
+Sidebar item rows are `<button>`s whose accessible name concatenates every
+descendant label, including indicator `aria-label`s such as "Stacked: 2/7", so
+a page-wide `getByRole("button", { name })` for a detail chip also matches the
+row; scope chip assertions to the chip's test id.
 
 Every `@lucide/svelte/icons/<name>` import added anywhere in `frontend/src`
 must also be added to the `optimizeDeps.include` list in
@@ -436,6 +451,9 @@ instead of serializing the whole test.
   (`frontend/tests/e2e-full/support/e2eServer.ts::cleanupE2ETmuxDir`).
 - Real-tmux Go test binaries install signal cleanup because termination skips
   code after `m.Run` and `t.Cleanup` (`internal/testutil/testsignal.Install`).
+- Long-lived package-level tmux servers must use `testtmux.Owner`; its reaper
+  reaps servers after uncatchable owner death, which signal cleanup cannot handle.
+  (`internal/testutil/testtmux/reaper_unix.go::startOwnerReaper`)
 
 Windows test binaries that launch restart-durable PTY processes must contain
 their descendants in a kill-on-close Job Object; test timeouts bypass normal

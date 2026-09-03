@@ -36,11 +36,11 @@ import (
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
-	"go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/profiler"
 	"go.kenn.io/forge/internal/ptyowner"
 	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/stacks"
 	"go.kenn.io/forge/internal/testutil"
@@ -48,6 +48,8 @@ import (
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/internal/web"
 	"go.kenn.io/forge/internal/workspace"
+	"go.kenn.io/forge/platform"
+	platformgithub "go.kenn.io/forge/platform/github"
 	gitcmd "go.kenn.io/kit/git/cmd"
 	oteltelemetry "go.kenn.io/kit/telemetry"
 )
@@ -905,12 +907,12 @@ func seedReviewSuggestionProviderFixture(
 	now := time.Date(2026, 7, 1, 16, 30, 0, 0, time.UTC)
 	body := "Consider returning the published value.\n\n```suggestion\nreturn publish();\n```"
 	key := fmt.Sprintf("%s/%s#%d", owner, name, number)
-	fc.ReviewThreads[key] = append(fc.ReviewThreads[key], ghclient.PullRequestReviewThread{
+	fc.ReviewThreads[key] = append(fc.ReviewThreads[key], platformgithub.PullRequestReviewThread{
 		NodeID: providerThreadID,
 		Path:   "internal/cache.go",
 		Side:   "RIGHT",
 		Line:   1,
-		Comments: []ghclient.PullRequestReviewThreadComment{{
+		Comments: []platformgithub.PullRequestReviewThreadComment{{
 			NodeID:           providerThreadID,
 			DatabaseID:       6901,
 			ReviewDatabaseID: 5012,
@@ -2765,7 +2767,9 @@ func buildAppState(
 		if r.Method == http.MethodGet &&
 			strings.HasSuffix(r.URL.Path, "/browser/tree") &&
 			failNextRepoBrowserTree.CompareAndSwap(true, false) {
-			http.Error(w, "tree failed", http.StatusInternalServerError)
+			w.Header().Set("Content-Type", "application/problem+json")
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(httpapi.NewProblem(http.StatusInternalServerError, httpapi.CodeInternalError, "tree failed", nil))
 			return
 		}
 		if r.Method == http.MethodPost &&
@@ -3024,7 +3028,7 @@ func buildAppState(
 		}
 		if r.Method == http.MethodPost &&
 			r.URL.Path == "/__e2e/pr-ci-state/mixed" {
-			mixedPayload, err := json.Marshal([]db.CICheck{
+			checks := []db.CICheck{
 				{
 					Name:       "build-darwin",
 					Status:     "completed",
@@ -3056,18 +3060,16 @@ func buildAppState(
 					Conclusion: "skipped",
 					App:        "GitHub Actions",
 				},
-			})
+			}
+			mixedPayload, err := json.Marshal(checks)
 			if err != nil {
 				http.Error(w, "marshal mixed checks", http.StatusInternalServerError)
 				return
 			}
 			setPR1CIState(w, r, database, fc, "mixed", ciFixtureOptions{
-				statusName: "failure",
-				checksJSON: string(mixedPayload),
-				pinProviderTo: &struct {
-					Status     string
-					Conclusion string
-				}{Status: "completed", Conclusion: "failure"},
+				statusName:        "failure",
+				checksJSON:        string(mixedPayload),
+				providerCheckRuns: ciChecksToCheckRuns(checks),
 			})
 			return
 		}

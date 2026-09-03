@@ -1,4 +1,5 @@
 import type { Attachment } from "svelte/attachments";
+import type { TerminalKey } from "../components/terminal/terminal-key.js";
 
 /**
  * Registry of live per-session terminal subtrees.
@@ -45,6 +46,7 @@ export function sessionHostPrefix(workspaceId: string, hostKey: string | undefin
 /** What the pool needs to render one session's terminal. */
 export interface MountedSession {
   hostKey: SessionHostKey;
+  fleetHostKey?: string;
   websocketPath: string;
   status: string;
   cursorWheelInput?: boolean;
@@ -60,6 +62,7 @@ const connected = new Map<SessionHostKey, boolean>();
 interface SessionInputSender {
   send: (data: string) => boolean;
   sendPasted: (data: string, suffix?: string) => boolean;
+  sendKey: (key: TerminalKey) => boolean;
 }
 const inputSenders = new Map<SessionHostKey, SessionInputSender>();
 let releasedKeys: SessionHostKey[] = [];
@@ -180,6 +183,7 @@ export function noteSessionMounted(session: MountedSession): void {
   if (existing) {
     if (
       existing.websocketPath === session.websocketPath &&
+      existing.fleetHostKey === session.fleetHostKey &&
       existing.status === session.status &&
       (existing.cursorWheelInput ?? false) === (session.cursorWheelInput ?? false) &&
       (existing.disabled ?? false) === (session.disabled ?? false)
@@ -225,6 +229,11 @@ export function sendSessionInput(key: SessionHostKey, data: string): boolean {
 /** Send text through the pooled terminal's sanitized paste path. */
 export function sendSessionPastedInput(key: SessionHostKey, data: string, suffix = ""): boolean {
   return inputSenders.get(key)?.sendPasted(data, suffix) ?? false;
+}
+
+/** Send a semantic key through the pooled terminal's mode-aware keyboard path. */
+export function sendSessionKey(key: SessionHostKey, terminalKey: TerminalKey): boolean {
+  return inputSenders.get(key)?.sendKey(terminalKey) ?? false;
 }
 
 function trimReleasedSessions(protectedPrefix?: string): void {

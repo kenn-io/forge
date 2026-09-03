@@ -33,7 +33,6 @@ import (
 	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
 	katacatalog "go.kenn.io/forge/internal/kata"
-	"go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/projects"
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/ptyowner"
@@ -49,9 +48,11 @@ import (
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/systemclipboard"
 	"go.kenn.io/forge/internal/telemetry"
+	"go.kenn.io/forge/internal/terminalpaste"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
+	"go.kenn.io/forge/platform"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
@@ -833,6 +834,18 @@ func newServer(
 	if cfg != nil {
 		markdownImageDataDir = cfg.DataDir
 	}
+	var terminalPasteImages *terminalpaste.Store
+	if markdownImageDataDir != "" {
+		var err error
+		terminalPasteImages, err = terminalpaste.NewStore(filepath.Join(
+			markdownImageDataDir,
+			"cache",
+			"terminal-paste-images",
+		))
+		if err != nil {
+			slog.Warn("initialize terminal paste image cache", "err", err)
+		}
+	}
 	repoResolver := httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{
 		DB: database,
 		ProviderCapabilities: func(kind platform.Kind, host string) (platform.Capabilities, error) {
@@ -874,7 +887,11 @@ func newServer(
 	}
 	s.providerWriteGate = options.ProviderWriteGate
 	if s.providerWriteGate == nil {
-		s.providerWriteGate = providerplane.NewProviderWriteGate(database)
+		restoreDurableState := false
+		if options.FederationEnrollments != nil {
+			_, restoreDurableState = options.FederationEnrollments.Local()
+		}
+		s.providerWriteGate = providerplane.NewProviderWriteGate(database, restoreDurableState)
 	}
 	if cfg != nil && cfg.Fleet.RoleOrDefault() == config.FleetRoleSpoke {
 		s.providerRouteSpoke = true
@@ -1151,13 +1168,14 @@ func newServer(
 		}
 	}
 	s.workspaceAPI = workspaceapi.New(workspaceapi.Deps{
-		DB:                database,
-		Resolver:          repoResolver,
-		Syncer:            syncer,
-		Config:            workspaceConfigSnapshot(cfg, tmuxCmd),
-		Workspaces:        s.workspaces,
-		Runtime:           s.runtime,
-		TerminalClipboard: terminalClipboard,
+		DB:                  database,
+		Resolver:            repoResolver,
+		Syncer:              syncer,
+		Config:              workspaceConfigSnapshot(cfg, tmuxCmd),
+		Workspaces:          s.workspaces,
+		Runtime:             s.runtime,
+		TerminalClipboard:   terminalClipboard,
+		TerminalPasteImages: terminalPasteImages,
 		AgentActivity: agentactivity.NewStore(filepath.Join(
 			filepath.Dir(options.WorktreeDir), "agent-activity",
 		)),
@@ -1576,7 +1594,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if r.Method != http.MethodGet && s.isMutatingAPIRequest(r) {
-		if !checkCrossOrigin(w, r) {
+		if !checkCrossOrigin(w, r, hostOpts.TrustReverseProxy) {
 			return
 		}
 		if s.isMutatingDocsAPIRequest(r) && !isLoopbackRemoteAddr(r.RemoteAddr) {
@@ -1773,8 +1791,27 @@ func authorityIsLoopbackHost(hostHeader string) bool {
 
 // checkCrossOrigin rejects cross-origin browser requests. Returns true if
 // the request is allowed, false if it was rejected (response written).
-func checkCrossOrigin(w http.ResponseWriter, r *http.Request) bool {
-	if err := crossOriginProtection.Check(r); err != nil {
+func checkCrossOrigin(w http.ResponseWriter, r *http.Request, trustReverseProxy bool) bool {
+	request := r
+	if trustReverseProxy {
+		// Host validation has already accepted the forwarded public authority.
+		// Use it for the Origin comparison instead of the proxy's backend Host.
+		publicHost := ""
+		if values := r.Header.Values("X-Forwarded-Host"); len(values) > 0 {
+			if key, err := parseXForwardedHost(strings.Join(values, ",")); err == nil {
+				publicHost = key.String()
+			}
+		} else if values := r.Header.Values("Forwarded"); len(values) > 0 {
+			if key, err := parseForwardedHost(strings.Join(values, ",")); err == nil {
+				publicHost = key.String()
+			}
+		}
+		if publicHost != "" {
+			request = r.Clone(r.Context())
+			request.Host = publicHost
+		}
+	}
+	if err := crossOriginProtection.Check(request); err != nil {
 		writeError(w, http.StatusForbidden, "cross-origin requests are not allowed")
 		return false
 	}

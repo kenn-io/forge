@@ -24,13 +24,13 @@ import (
 	"go.kenn.io/forge/internal/fleet"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/mcpserver"
-	"go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/pullapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/federationtest"
+	"go.kenn.io/forge/platform"
 )
 
 const (
@@ -617,5 +617,39 @@ func mcpRepositoryIdentity(item mcpserver.ItemIdentity) mcpserver.RepositoryIden
 	return mcpserver.RepositoryIdentity{
 		Provider: item.Provider, PlatformHost: item.PlatformHost,
 		PlatformRepoID: item.PlatformRepoID, Owner: item.Owner, Name: item.Name,
+	}
+}
+
+func TestFederatedActivityWorkspaceIndicators(t *testing.T) {
+	fixture := newFederatedForgesFixture(t)
+	for _, tc := range []struct {
+		daemon *federatedDaemonFixture
+		want   map[int]string
+	}{
+		{fixture.Hub, map[int]string{1: "ws-spoke-a", 2: "ws-spoke-b"}},
+		{fixture.NodeA, map[int]string{1: "ws-spoke-a", 2: ""}},
+	} {
+		t.Run(tc.daemon.Name, func(t *testing.T) {
+			response := fixture.request(t, tc.daemon, http.MethodGet, "/api/v1/activity?projection=collapsed", nil)
+			defer response.Body.Close()
+			require.Equal(t, http.StatusOK, response.StatusCode)
+			var body struct {
+				Subjects []struct {
+					Number    int `json:"item_number"`
+					Workspace *struct {
+						ID string `json:"id"`
+					} `json:"workspace"`
+				} `json:"item_activity"`
+			}
+			require.NoError(t, json.NewDecoder(response.Body).Decode(&body))
+			got := map[int]string{}
+			for _, subject := range body.Subjects {
+				got[subject.Number] = ""
+				if subject.Workspace != nil {
+					got[subject.Number] = subject.Workspace.ID
+				}
+			}
+			assert.Equal(t, tc.want, got)
+		})
 	}
 }

@@ -13,7 +13,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/platform"
+	platformgithub "go.kenn.io/forge/platform/github"
 )
 
 type workflowProviderFake struct {
@@ -60,6 +61,16 @@ func (f *workflowProviderFake) ListManualWorkflowRuns(context.Context, string, s
 	f.calls = append(f.calls, "runs")
 	return f.runs, nil
 }
+func (f *workflowProviderFake) GetManualWorkflowRun(_ context.Context, _, _ string, runID int64) (*gh.WorkflowRun, error) {
+	f.calls = append(f.calls, "run")
+	for _, run := range f.runs.Items {
+		if run.GetID() == runID {
+			return run, nil
+		}
+	}
+	return nil, platform.ErrNotFound
+}
+
 func (f *workflowProviderFake) ListManualWorkflowJobs(context.Context, string, string, int64) ([]*gh.WorkflowJob, error) {
 	f.calls = append(f.calls, "jobs")
 	return f.jobs, nil
@@ -85,6 +96,9 @@ type workflowRunOnlyFake struct{ Client }
 
 func (*workflowRunOnlyFake) ListManualWorkflowRuns(context.Context, string, string, int64, platform.WorkflowRunQuery) (platform.Page[*gh.WorkflowRun], error) {
 	return platform.Page[*gh.WorkflowRun]{}, nil
+}
+func (*workflowRunOnlyFake) GetManualWorkflowRun(context.Context, string, string, int64) (*gh.WorkflowRun, error) {
+	return nil, platform.ErrNotFound
 }
 func (*workflowRunOnlyFake) ListManualWorkflowJobs(context.Context, string, string, int64) ([]*gh.WorkflowJob, error) {
 	return nil, nil
@@ -112,7 +126,8 @@ func TestGitHubWorkflowCapabilitiesAreIndependent(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			assert := assert.New(t)
 			require := require.New(t)
-			provider := &gitHubClientProvider{host: "github.com", client: test.client}
+			provider, providerErr := platformgithub.NewProvider(platformgithub.ProviderConfig{Host: "github.com", Client: test.client, Clock: time.Now})
+			require.NoError(t, providerErr)
 			caps := provider.Capabilities()
 			assert.Equal(test.readCatalog, caps.ReadWorkflows)
 			assert.Equal(test.readRuns, caps.ReadWorkflowRuns)
@@ -157,13 +172,14 @@ func TestGitHubWorkflowProviderCatalogPreservesPartialAvailability(t *testing.T)
 			{ID: new(int64(4)), Name: new("Disabled"), Path: new("disabled.yml"), State: new("disabled_manually")},
 		},
 		definitions: map[string]string{
-			".github/workflows/release.yml":   "on:\n  workflow_dispatch:\n    inputs:\n      target:\n        type: environment\n",
-			".github/workflows/ci.yml":        "on: [push]\n",
+			".github/workflows/release.yml":   "on:\n  workflow_dispatch:\n    inputs:\n      target:\n        type: environment\njobs:\n  noop:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n",
+			".github/workflows/ci.yml":        "on: [push]\njobs:\n  noop:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n",
 			".github/workflows/malformed.yml": "on: workflow_dispatch\n---\non: workflow_dispatch\n",
 		},
 		environments: []*gh.Environment{{Name: new("production")}},
 	}
-	provider := &gitHubClientProvider{host: "github.com", client: fake}
+	provider, providerErr := platformgithub.NewProvider(platformgithub.ProviderConfig{Host: "github.com", Client: fake, Clock: time.Now})
+	require.NoError(t, providerErr)
 	caps := provider.Capabilities()
 	assert.True(caps.ReadWorkflows)
 	assert.True(caps.ReadWorkflowRuns)
@@ -207,6 +223,11 @@ func TestGitHubWorkflowProviderAbortsCatalogOnFatalDefinitionErrors(t *testing.T
 			},
 			Message: "bad credentials",
 		}},
+		{name: "forbidden", err: &gh.ErrorResponse{
+			Response: &http.Response{StatusCode: http.StatusForbidden,
+				Request: httptest.NewRequest(http.MethodGet, "https://api.github.com/repos/acme/widgets/contents/workflow.yml", nil)},
+			Message: "Resource not accessible by integration",
+		}},
 		{name: "server failure", err: &gh.ErrorResponse{
 			Response: &http.Response{
 				StatusCode: http.StatusServiceUnavailable,
@@ -229,13 +250,14 @@ func TestGitHubWorkflowProviderAbortsCatalogOnFatalDefinitionErrors(t *testing.T
 					{ID: new(int64(2)), Name: new("Release"), Path: new(".github/workflows/release.yml"), State: new("active")},
 				},
 				definitions: map[string]string{
-					".github/workflows/release.yml": "on: workflow_dispatch\n",
+					".github/workflows/release.yml": "on: workflow_dispatch\njobs:\n  noop:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n",
 				},
 				definitionErrs: map[string]error{
 					".github/workflows/blocked.yml": test.err,
 				},
 			}
-			provider := &gitHubClientProvider{host: "github.com", client: fake}
+			provider, providerErr := platformgithub.NewProvider(platformgithub.ProviderConfig{Host: "github.com", Client: fake, Clock: time.Now})
+			require.NoError(t, providerErr)
 			_, err := provider.ListManualWorkflows(t.Context(), platform.RepoRef{Owner: "acme", Name: "widgets"})
 			require.Error(t, err)
 			if test.wantIs != nil {
@@ -275,13 +297,14 @@ func TestGitHubWorkflowProviderKeepsPerDefinitionFailuresPartial(t *testing.T) {
 					{ID: new(int64(2)), Name: new("Release"), Path: new(".github/workflows/release.yml"), State: new("active")},
 				},
 				definitions: map[string]string{
-					".github/workflows/release.yml": "on: workflow_dispatch\n",
+					".github/workflows/release.yml": "on: workflow_dispatch\njobs:\n  noop:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n",
 				},
 				definitionErrs: map[string]error{
 					".github/workflows/broken.yml": test.err,
 				},
 			}
-			provider := &gitHubClientProvider{host: "github.com", client: fake}
+			provider, providerErr := platformgithub.NewProvider(platformgithub.ProviderConfig{Host: "github.com", Client: fake, Clock: time.Now})
+			require.NoError(t, providerErr)
 			definitions, err := provider.ListManualWorkflows(
 				t.Context(), platform.RepoRef{Owner: "acme", Name: "widgets"},
 			)
@@ -304,7 +327,8 @@ func TestGitHubWorkflowEnvironmentsReadOnlyEnvironmentTransport(t *testing.T) {
 	fake := &workflowProviderFake{
 		environments: []*gh.Environment{{Name: new("production")}},
 	}
-	provider := &gitHubClientProvider{host: "github.com", client: fake}
+	provider, providerErr := platformgithub.NewProvider(platformgithub.ProviderConfig{Host: "github.com", Client: fake, Clock: time.Now})
+	require.NoError(t, providerErr)
 	environments, err := provider.ListWorkflowEnvironments(
 		t.Context(), platform.RepoRef{Owner: "acme", Name: "widgets"},
 	)
@@ -332,7 +356,8 @@ func TestGitHubWorkflowProviderNormalizesRunsJobsAndDispatch(t *testing.T) {
 		jobs:     []*gh.WorkflowJob{{ID: new(int64(9)), Name: new("deploy"), Status: new("completed"), Conclusion: new("success"), StartedAt: &gh.Timestamp{Time: started}, CompletedAt: &gh.Timestamp{Time: completed}, HTMLURL: new("https://example.test/jobs/9"), Steps: []*gh.TaskStep{{Number: new(int64(1)), Name: new("ship"), Status: new("completed"), Conclusion: new("success"), StartedAt: &gh.Timestamp{Time: started}, CompletedAt: &gh.Timestamp{Time: completed}}}}},
 		dispatch: &gh.WorkflowDispatchRunDetails{WorkflowRunID: new(int64(101)), HTMLURL: new("https://example.test/runs/101")},
 	}
-	provider := &gitHubClientProvider{host: "github.com", client: fake}
+	provider, providerErr := platformgithub.NewProvider(platformgithub.ProviderConfig{Host: "github.com", Client: fake, Clock: time.Now})
+	require.NoError(t, providerErr)
 	page, err := provider.ListWorkflowRuns(t.Context(), platform.RepoRef{Owner: "acme", Name: "widgets"}, platform.WorkflowRunQuery{WorkflowID: "42"})
 	require.NoError(err)
 	assert.Equal(platform.Page[platform.WorkflowRun]{
@@ -344,6 +369,10 @@ func TestGitHubWorkflowProviderNormalizesRunsJobsAndDispatch(t *testing.T) {
 			UpdatedAt: updated.UTC(), WebURL: "https://example.test/runs/100",
 		}},
 	}, page)
+	run, err := provider.GetWorkflowRun(t.Context(), platform.RepoRef{Owner: "acme", Name: "widgets"}, "100")
+	require.NoError(err)
+	assert.Equal(page.Items[0], run)
+
 	jobs, err := provider.ListWorkflowRunJobs(t.Context(), platform.RepoRef{Owner: "acme", Name: "widgets"}, "100")
 	require.NoError(err)
 	assert.Equal([]platform.WorkflowRunJob{{
@@ -368,7 +397,7 @@ func TestGitHubWorkflowProviderNormalizesRunsJobsAndDispatch(t *testing.T) {
 	fake.dispatch = nil
 	result, err = provider.DispatchWorkflow(t.Context(), platform.RepoRef{Owner: "acme", Name: "widgets"}, platform.WorkflowDispatchRequest{WorkflowID: "42", Ref: "main"})
 	require.NoError(err)
-	assert.Equal(platform.WorkflowDispatchResult{Accepted: true, LocatingRun: true, Actor: "maintainer"}, result)
+	assert.Equal(platform.WorkflowDispatchResult{Accepted: true, Actor: "maintainer"}, result)
 	_, err = provider.DispatchWorkflow(t.Context(), platform.RepoRef{}, platform.WorkflowDispatchRequest{WorkflowID: "not-decimal"})
 	require.ErrorIs(err, platform.ErrInvalidArgument)
 }
@@ -376,7 +405,8 @@ func TestGitHubWorkflowProviderNormalizesRunsJobsAndDispatch(t *testing.T) {
 func TestGitHubWorkflowProviderUnsupportedClientsAreTyped(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	provider := &gitHubClientProvider{host: "github.com", client: &mockClient{}}
+	provider, providerErr := platformgithub.NewProvider(platformgithub.ProviderConfig{Host: "github.com", Client: &mockClient{}, Clock: time.Now})
+	require.NoError(t, providerErr)
 	assert.False(provider.Capabilities().ReadWorkflows)
 	_, err := provider.ListManualWorkflows(t.Context(), platform.RepoRef{})
 	require.ErrorIs(err, platform.ErrUnsupportedCapability)
@@ -391,7 +421,7 @@ func TestRoutedClientRoutesWorkflowOperationsByRepository(t *testing.T) {
 	require := require.New(t)
 	fallback := &workflowProviderFake{}
 	exact := &workflowProviderFake{
-		definitions: map[string]string{"release.yml": "on: workflow_dispatch"},
+		definitions: map[string]string{"release.yml": "on: workflow_dispatch\njobs:\n  noop:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n"},
 		dispatch:    &gh.WorkflowDispatchRunDetails{WorkflowRunID: new(int64(8))},
 	}
 	router, err := NewHostRouter(
@@ -410,12 +440,14 @@ func TestRoutedClientRoutesWorkflowOperationsByRepository(t *testing.T) {
 	require.NoError(err)
 	_, err = routed.ListManualWorkflowRuns(t.Context(), "acme", "widgets", 42, platform.WorkflowRunQuery{})
 	require.NoError(err)
+	_, err = routed.GetManualWorkflowRun(t.Context(), "acme", "widgets", 99)
+	require.ErrorIs(err, platform.ErrNotFound)
 	_, err = routed.ListManualWorkflowJobs(t.Context(), "acme", "widgets", 99)
 	require.NoError(err)
 	_, err = routed.DispatchManualWorkflow(t.Context(), "acme", "widgets", 42, gh.CreateWorkflowDispatchEventRequest{Ref: "main"})
 	require.NoError(err)
 	assert.Equal([]string{
-		"workflows", "definition:release.yml@main", "environments", "runs", "jobs", "dispatch",
+		"workflows", "definition:release.yml@main", "environments", "runs", "run", "jobs", "dispatch",
 	}, exact.calls)
 	assert.Empty(fallback.calls)
 }
@@ -438,6 +470,8 @@ func TestRoutedClientWorkflowMethodsRejectClientsWithoutOptionalInterfaces(t *te
 	_, err = routed.ListRepositoryEnvironments(t.Context(), "acme", "widgets")
 	require.ErrorIs(err, platform.ErrUnsupportedCapability)
 	_, err = routed.ListManualWorkflowRuns(t.Context(), "acme", "widgets", 42, platform.WorkflowRunQuery{})
+	require.ErrorIs(err, platform.ErrUnsupportedCapability)
+	_, err = routed.GetManualWorkflowRun(t.Context(), "acme", "widgets", 99)
 	require.ErrorIs(err, platform.ErrUnsupportedCapability)
 	_, err = routed.ListManualWorkflowJobs(t.Context(), "acme", "widgets", 99)
 	require.ErrorIs(err, platform.ErrUnsupportedCapability)

@@ -103,8 +103,12 @@ deleted before daemon shutdown.
 
 ## Coding-agent handoff
 
-Call `kenn_forge_list_agent_targets` to discover available coding agents. Then
-call `kenn_forge_spawn_workspace_with_agent` with one source:
+Call `kenn_forge_list_agent_targets` to discover configured coding agents,
+including custom targets. Use the returned target key as `agent_target`; it
+does not need to match the agent name reported by hooks. The launched agent
+must report a supported hook session for the handoff to complete.
+
+Call `kenn_forge_spawn_workspace_with_agent` with one source:
 
 - a provider-aware pull request or issue; or
 - a provider-aware repository with an optional ad-hoc branch.
@@ -122,8 +126,14 @@ second agent.
 
 Use `kenn_forge_list_workspace_agent_sessions` to inspect live agent runtimes
 and fresh coding sessions. A runtime with `hook_observed=false` has launched but
-has not reported its first hook. Historical sessions and arbitrary terminal
-bytes are outside the MCP surface.
+has not reported its first hook.
+
+To send another instruction after the initial handoff, call
+`kenn_forge_send_agent_message` with the persisted workspace ID, the live
+runtime session key, and the message. The tool submits the prompt to that
+running agent through the same runtime input path as the initial message. It
+does not launch a runtime, resume a handoff, or wait for later agent activity.
+Historical sessions and arbitrary terminal bytes are outside the MCP surface.
 
 ## Troubleshooting
 

@@ -253,6 +253,9 @@ still exists.
 - Every tmux client attach must force UTF-8; service launchers may omit locale
   variables, causing tmux to replace non-ASCII output before WebSocket transport
   (`internal/workspace/localruntime/tmux_launcher.go::tmuxAttachSessionCommand`).
+- On macOS, tmux and PTY-owner shells with no configured `LANG`, `LC_ALL`, or `LC_CTYPE` must
+  default `LC_CTYPE` to UTF-8 without overriding an explicit locale; launchd can
+  otherwise leave zsh with incorrect Unicode prompt widths (`internal/workspace/localruntime/shell_environment.go::shellCharacterLocaleDefault`).
 - Forge's dedicated tmux server owns global passthrough, SIXEL, and mouse mode;
   live changes clear pane overrides, while custom servers receive passthrough
   only on Forge-owned panes and only while graphics are enabled
@@ -331,6 +334,9 @@ stale tabs.
   sanitize and send it once, and do not delegate single-line paste to xterm;
   this event path must remain usable on insecure HTTP origins without the async
   Clipboard API (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::handleTerminalPaste`).
+- Browser text wins over image data; image-only paste uploads to the selected
+  terminal host and pastes returned paths instead of reading that host's clipboard
+  (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::uploadAndPasteImages`).
 - Treat terminal processes as native-terminal-equivalent, but accept bounded, write-only OSC 52 writes only after one
   recent one-shot trusted DOM gesture; terminal data callbacks are not input provenance, and browser denial falls back
   through CSRF-protected loopback (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::handleTerminalKeyDown`).

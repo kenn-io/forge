@@ -16,12 +16,12 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
-	"go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
+	"go.kenn.io/forge/platform"
 	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
@@ -2329,6 +2329,13 @@ func applyWorktreeDivergence(
 		return err
 	}
 	if !ok {
+		missing, missingErr := workspace.WorktreeBranchUpstreamMissing(probeCtx, worktreePath)
+		if missingErr != nil {
+			return missingErr
+		}
+		if missing {
+			resp.BranchUpstreamMissing = &missing
+		}
 		return nil
 	}
 	ahead := div.Ahead

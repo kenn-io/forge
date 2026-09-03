@@ -53,6 +53,95 @@ func TestPushWorktreeBranchPushesAheadCommitsAndRunsHooks(t *testing.T) {
 	assert.FileExists(marker)
 }
 
+func TestPushWorktreeBranchCreatesMissingRemoteBranch(t *testing.T) {
+	require := require.New(t)
+	work := gitfixture.DivergenceWorktree(t)
+	remote := filepath.Join(filepath.Dir(work), "remote.git")
+	runWorkspaceTestGit(t, filepath.Dir(work), "--git-dir", remote, "branch", "-D", "feature")
+	runWorkspaceTestGit(t, work, "update-ref", "-d", "refs/remotes/origin/feature")
+	require.NoError(os.WriteFile(
+		filepath.Join(work, "f.txt"), []byte("first fork commit\n"), 0o644,
+	))
+	runWorkspaceTestGit(t, work, "add", ".")
+	runWorkspaceTestGit(t, work, "commit", "-m", "first fork commit")
+	realGit, err := exec.LookPath("git")
+	require.NoError(err)
+	fakeDir := t.TempDir()
+	require.NoError(os.WriteFile(filepath.Join(fakeDir, "git"), []byte(`#!/bin/sh
+set -eu
+if [ "${1:-}" = "ls-remote" ]; then
+	echo "remote: informational diagnostic" >&2
+fi
+exec "${KENN_FORGE_TEST_REAL_GIT:?}" "$@"
+`), 0o755))
+	t.Setenv("KENN_FORGE_TEST_REAL_GIT", realGit)
+	t.Setenv("PATH", fakeDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	require.NoError(branchSyncTestManager(t).PushWorktreeBranch(
+		t.Context(), "", "github", "", "", "", work,
+	))
+
+	remoteCommit := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, filepath.Dir(work), "--git-dir", remote, "rev-parse", "refs/heads/feature",
+	)))
+	localCommit := strings.TrimSpace(string(runWorkspaceTestGit(t, work, "rev-parse", "HEAD")))
+	require.Equal(localCommit, remoteCommit)
+}
+
+func TestPushWorktreeBranchRecreatesRemoteBranchWithStaleTrackingRef(t *testing.T) {
+	require := require.New(t)
+	work := gitfixture.DivergenceWorktree(t)
+	remote := filepath.Join(filepath.Dir(work), "remote.git")
+	runWorkspaceTestGit(t, filepath.Dir(work), "--git-dir", remote, "branch", "-D", "feature")
+	require.NoError(os.WriteFile(
+		filepath.Join(work, "f.txt"), []byte("recreated branch\n"), 0o644,
+	))
+	runWorkspaceTestGit(t, work, "add", ".")
+	runWorkspaceTestGit(t, work, "commit", "-m", "recreated branch")
+
+	require.NoError(branchSyncTestManager(t).PushWorktreeBranch(
+		t.Context(), "", "github", "", "", "", work,
+	))
+
+	remoteCommit := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, filepath.Dir(work), "--git-dir", remote, "rev-parse", "refs/heads/feature",
+	)))
+	localCommit := strings.TrimSpace(string(runWorkspaceTestGit(t, work, "rev-parse", "HEAD")))
+	require.Equal(localCommit, remoteCommit)
+}
+
+func TestPushWorktreeBranchDoesNotOverwriteUntrackedRemoteBranch(t *testing.T) {
+	require := require.New(t)
+	work := gitfixture.DivergenceWorktree(t)
+	require.NoError(os.WriteFile(filepath.Join(work, "f.txt"), []byte("local\n"), 0o644))
+	runWorkspaceTestGit(t, work, "add", ".")
+	runWorkspaceTestGit(t, work, "commit", "-m", "local")
+
+	other := filepath.Join(filepath.Dir(work), "other")
+	remote := filepath.Join(filepath.Dir(work), "remote.git")
+	runWorkspaceTestGit(t, filepath.Dir(work), "clone", remote, other)
+	runWorkspaceTestGit(t, other, "config", "user.email", "o@test.com")
+	runWorkspaceTestGit(t, other, "config", "user.name", "Other")
+	runWorkspaceTestGit(t, other, "checkout", "-b", "feature", "origin/feature")
+	require.NoError(os.WriteFile(filepath.Join(other, "f.txt"), []byte("remote\n"), 0o644))
+	runWorkspaceTestGit(t, other, "add", ".")
+	runWorkspaceTestGit(t, other, "commit", "-m", "remote")
+	runWorkspaceTestGit(t, other, "push", "origin", "feature")
+	remoteCommit := runWorkspaceTestGit(
+		t, filepath.Dir(work), "--git-dir", remote, "rev-parse", "refs/heads/feature",
+	)
+	runWorkspaceTestGit(t, work, "update-ref", "-d", "refs/remotes/origin/feature")
+
+	err := branchSyncTestManager(t).PushWorktreeBranch(
+		t.Context(), "", "github", "", "", "", work,
+	)
+
+	require.Error(err)
+	require.Equal(remoteCommit, runWorkspaceTestGit(
+		t, filepath.Dir(work), "--git-dir", remote, "rev-parse", "refs/heads/feature",
+	))
+}
+
 func TestPullWorktreeBranchFastForwardsBehindBranch(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -109,10 +198,9 @@ func TestPushWorktreeBranchRejectsDivergedBranch(t *testing.T) {
 	assert.New(t).ErrorIs(err, ErrWorktreeDiverged)
 }
 
-func TestPushWorktreeBranchRejectsNonOriginUpstream(t *testing.T) {
+func TestPushWorktreeBranchRejectsLocalUpstream(t *testing.T) {
 	work := gitfixture.DivergenceWorktree(t)
-	runWorkspaceTestGit(t, work, "remote", "add", "other", "https://github.com/other/repo.git")
-	runWorkspaceTestGit(t, work, "config", "branch.feature.remote", "other")
+	runWorkspaceTestGit(t, work, "config", "branch.feature.remote", ".")
 
 	err := branchSyncTestManager(t).PushWorktreeBranch(
 		t.Context(), "", "github", "github.com", "acme", "widgets", work,
@@ -120,7 +208,49 @@ func TestPushWorktreeBranchRejectsNonOriginUpstream(t *testing.T) {
 
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrWorktreeNoUpstream)
-	assert.ErrorContains(t, err, "unsupported remote other")
+	assert.ErrorContains(t, err, "unsupported remote .")
+}
+
+func TestWorktreeBranchSyncUsesNonOriginRemote(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	work := gitfixture.DivergenceWorktree(t)
+	remote := filepath.Join(filepath.Dir(work), "remote.git")
+	runWorkspaceTestGit(t, work, "remote", "rename", "origin", "upstream")
+	runWorkspaceTestGit(t, work, "update-ref", "-d", "refs/remotes/upstream/feature")
+	missing, err := WorktreeBranchUpstreamMissing(t.Context(), work)
+	require.NoError(err)
+	assert.True(missing, "a missing non-origin tracking ref must be visible")
+
+	mgr := branchSyncTestManager(t)
+	mgr.SetClones(gitclone.New(t.TempDir(), nil))
+	require.NoError(os.WriteFile(filepath.Join(work, "f.txt"), []byte("local change\n"), 0o644))
+	runWorkspaceTestGit(t, work, "add", ".")
+	runWorkspaceTestGit(t, work, "commit", "-m", "local change")
+	require.NoError(mgr.PushWorktreeBranch(t.Context(), "", "github", "github.com", "acme", "widgets", work))
+	assert.Equal(gitfixture.SHA(t, work, "HEAD"), gitfixture.SHA(t, remote, "refs/heads/feature"))
+	missing, err = WorktreeBranchUpstreamMissing(t.Context(), work)
+	require.NoError(err)
+	assert.False(missing, "push must refresh the selected remote's tracking ref")
+
+	other := filepath.Join(filepath.Dir(work), "other")
+	runWorkspaceTestGit(t, filepath.Dir(work), "clone", remote, other)
+	runWorkspaceTestGit(t, other, "config", "user.email", "other@example.com")
+	runWorkspaceTestGit(t, other, "config", "user.name", "Other")
+	runWorkspaceTestGit(t, other, "checkout", "-b", "feature", "origin/feature")
+	require.NoError(os.WriteFile(filepath.Join(other, "f.txt"), []byte("remote change\n"), 0o644))
+	runWorkspaceTestGit(t, other, "add", ".")
+	runWorkspaceTestGit(t, other, "commit", "-m", "remote change")
+	runWorkspaceTestGit(t, other, "push", "origin", "feature")
+
+	require.NoError(mgr.PullWorktreeBranch(t.Context(), "", "github", "github.com", "acme", "widgets", work))
+	contents, err := os.ReadFile(filepath.Join(work, "f.txt"))
+	require.NoError(err)
+	assert.Equal("remote change\n", string(contents))
+	div, ok, err := WorktreeDivergence(t.Context(), work)
+	require.NoError(err)
+	require.True(ok)
+	assert.Equal(Divergence{}, div)
 }
 
 func TestPullWorktreeBranchRejectsDirtyWorktree(t *testing.T) {
@@ -148,6 +278,8 @@ func TestPushWorktreeBranchUsesAuthenticatedRunnerAndMutationAuth(t *testing.T) 
 	require := require.New(t)
 	assert := assert.New(t)
 	work := gitfixture.DivergenceWorktree(t)
+	runWorkspaceTestGit(t, work, "remote", "rename", "origin", "upstream")
+	runWorkspaceTestGit(t, work, "remote", "add", "origin", "https://example.invalid/other/repo.git")
 	require.NoError(os.WriteFile(
 		filepath.Join(work, "f.txt"), []byte("ahead\n"), 0o644,
 	))

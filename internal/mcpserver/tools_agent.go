@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"go.kenn.io/kit/agenthook"
 )
 
 type listAgentTargetsInput struct{}
@@ -26,6 +25,20 @@ type listAgentTargetsOutput struct {
 
 type listWorkspaceAgentSessionsInput struct {
 	WorkspaceID string `json:"workspace_id" jsonschema:"persisted Kenn Forge workspace ID"`
+}
+
+type sendAgentMessageInput struct {
+	WorkspaceID       string `json:"workspace_id" jsonschema:"persisted Kenn Forge workspace ID"`
+	RuntimeSessionKey string `json:"runtime_session_key" jsonschema:"live agent runtime session key"`
+	Message           string `json:"message" jsonschema:"message to submit to the running coding agent"`
+}
+
+type sendAgentMessageOutput struct {
+	WorkspaceID       string `json:"workspace_id"`
+	RuntimeSessionKey string `json:"runtime_session_key"`
+	TargetKey         string `json:"target_key"`
+	MessageBytes      int    `json:"message_bytes"`
+	SubmittedAt       string `json:"submitted_at"`
 }
 
 type agentInitialMessageRow struct {
@@ -60,8 +73,9 @@ type workspaceAgentRuntimeRow struct {
 func (s *Server) registerAgentTools() {
 	mcp.AddTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_list_agent_targets",
-		Description: "List configured launch targets that can report supported coding-agent hook sessions. " +
-			"Unavailable targets remain visible, but command arguments are never returned.",
+		Description: "List configured coding-agent launch targets, including custom targets. " +
+			"Unavailable targets remain visible, but command arguments are never returned. " +
+			"Handoff completion requires the launched runtime to report a supported coding-agent hook session.",
 	}, wrapTool(s.listAgentTargets))
 	mcp.AddTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_list_workspace_agent_sessions",
@@ -69,12 +83,36 @@ func (s *Server) registerAgentTools() {
 			"A runtime with hook_observed=false has launched but has not reported its first hook. This is a live projection, not session history.",
 	}, wrapTool(s.listWorkspaceAgentSessions))
 	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name: "kenn_forge_send_agent_message",
+		Description: "Submit a follow-up message to one existing live coding-agent runtime. " +
+			"Use the workspace ID and runtime session key returned by Forge.",
+	}, wrapTool(s.sendAgentMessage))
+	mcp.AddTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_spawn_workspace_with_agent",
 		Description: "Create or reuse a workspace, launch one configured coding agent, submit exactly one initial message, " +
 			"and observe the resulting hook session. When agent_target is omitted for a new handoff, the most used " +
 			"available agent from the previous 14 days is selected. Resume can continue an existing runtime without " +
 			"launching another agent. Partial resources are never cleaned up automatically.",
 	}, wrapTool(s.spawnWorkspaceWithAgent))
+}
+
+func (s *Server) sendAgentMessage(
+	ctx context.Context,
+	in sendAgentMessageInput,
+) (sendAgentMessageOutput, error) {
+	workspaceID := strings.TrimSpace(in.WorkspaceID)
+	runtimeSessionKey := strings.TrimSpace(in.RuntimeSessionKey)
+	result, err := s.backend.SubmitAgentMessage(ctx, AgentMessageRequest{
+		WorkspaceID: workspaceID, RuntimeSessionKey: runtimeSessionKey, Message: in.Message,
+	})
+	if err != nil {
+		return sendAgentMessageOutput{}, err
+	}
+	return sendAgentMessageOutput{
+		WorkspaceID: workspaceID, RuntimeSessionKey: runtimeSessionKey,
+		TargetKey: result.TargetKey, MessageBytes: result.MessageBytes,
+		SubmittedAt: formatMCPTime(result.SubmittedAt),
+	}, nil
 }
 
 func (s *Server) listAgentTargets(
@@ -85,17 +123,10 @@ func (s *Server) listAgentTargets(
 	if err != nil {
 		return listAgentTargetsOutput{}, err
 	}
-	supported := make(map[string]struct{})
-	for _, profile := range agenthook.Profiles() {
-		supported[string(profile.Agent)] = struct{}{}
-	}
 	out := listAgentTargetsOutput{Targets: make([]agentTargetRow, 0)}
 	for index, target := range targets {
 		key := strings.ToLower(strings.TrimSpace(target.Key))
 		if target.Kind != "agent" {
-			continue
-		}
-		if _, ok := supported[key]; !ok {
 			continue
 		}
 		out.Targets = append(out.Targets, agentTargetRow{

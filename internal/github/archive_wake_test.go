@@ -198,7 +198,7 @@ func TestArchiveLoopWakesOnlyHostsThatDeniedArchiveWork(t *testing.T) {
 		// A normal stream of live work on a host that never turned archive
 		// work away must not wake the worker, or every sync would trigger a
 		// denied pass and a deferral write per release.
-		release := syncer.beginProviderWork(key, archive.PriorityNormalIndex)
+		release := syncer.beginProviderWork(t.Context(), key, archive.PriorityNormalIndex)
 		release()
 		synctest.Wait()
 		require.Empty(runner.offsetsFrom(backedOff), "releasing a host that denied nothing must stay quiet")
@@ -210,13 +210,13 @@ func TestArchiveLoopWakesOnlyHostsThatDeniedArchiveWork(t *testing.T) {
 		started := make(chan struct{})
 		var releaseFirst func()
 		go func() {
-			releaseFirst = syncer.beginProviderWork(key, archive.PriorityActiveDetail)
+			releaseFirst = syncer.beginProviderWork(t.Context(), key, archive.PriorityActiveDetail)
 			close(started)
 		}()
 		synctest.Wait()
 		releaseArchive()
 		<-started
-		releaseSecond := syncer.beginProviderWork(key, archive.PriorityNotificationRefresh)
+		releaseSecond := syncer.beginProviderWork(t.Context(), key, archive.PriorityNotificationRefresh)
 		releaseFirst()
 		synctest.Wait()
 		require.Empty(runner.offsetsFrom(backedOff), "a host still busy must not wake the worker")
@@ -227,9 +227,50 @@ func TestArchiveLoopWakesOnlyHostsThatDeniedArchiveWork(t *testing.T) {
 
 		// The mark is consumed by the wake: the next quiet release stays quiet.
 		quiet := runner.reset()
-		release = syncer.beginProviderWork(key, archive.PriorityNormalIndex)
+		release = syncer.beginProviderWork(t.Context(), key, archive.PriorityNormalIndex)
 		release()
 		synctest.Wait()
 		require.Empty(runner.offsetsFrom(quiet))
+	})
+}
+
+func TestCanceledProviderWorkStopsWaitingForArchive(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		require := require.New(t)
+		syncer := &Syncer{archiveProviderRequests: make(map[string]archiveProviderRequest)}
+		const key = "github\x00github.test"
+		archiveCtx, releaseArchive, allowed := syncer.tryBeginArchiveProviderRequest(t.Context(), key)
+		require.True(allowed)
+		defer releaseArchive()
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		done := make(chan struct{})
+		go func() {
+			release := syncer.beginProviderWork(ctx, key, archive.PriorityActiveDetail)
+			release()
+			release()
+			close(done)
+		}()
+		synctest.Wait()
+		require.ErrorIs(archiveCtx.Err(), context.Canceled)
+		select {
+		case <-done:
+			require.FailNow("active caller must wait for archive release")
+		default:
+		}
+		cancel()
+		synctest.Wait()
+		select {
+		case <-done:
+		default:
+			require.FailNow("canceled caller is still waiting for archive release")
+		}
+		require.False(syncer.higherPriorityProviderWorkActive(key, archive.PriorityFullArchive))
+		_, _, allowed = syncer.tryBeginArchiveProviderRequest(t.Context(), key)
+		require.False(allowed, "canceling a waiter must not free the archive's lease")
+		releaseArchive()
+		_, releaseNext, allowed := syncer.tryBeginArchiveProviderRequest(t.Context(), key)
+		require.True(allowed, "canceled waiter must not leak its work registration")
+		releaseNext()
 	})
 }

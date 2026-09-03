@@ -539,12 +539,35 @@ test.describe("workspace create-and-launch full stack", () => {
             ),
         )
         .toEqual(expectedSpecialKeyNames);
-      for (const keyName of expectedSpecialKeyNames) {
+      const expectedSpecialKeyInput = [
+        "\x1b",
+        "\t",
+        /^\x1b(?:\[|O)D$/,
+        /^\x1b(?:\[|O)A$/,
+        /^\x1b(?:\[|O)B$/,
+        /^\x1b(?:\[|O)C$/,
+        " ",
+        "\r",
+      ];
+      for (const [index, keyName] of expectedSpecialKeyNames.entries()) {
+        const sentBefore = (await sessionWebSockets(phonePage, created.id)).flatMap((socket) => socket.sent).length;
         await specialKeys.getByRole("button", { name: keyName, exact: true }).tap();
+        await expect
+          .poll(async () => {
+            const sent = (await sessionWebSockets(phonePage, created.id)).flatMap((socket) => socket.sent);
+            const newFrames = sent.slice(sentBefore);
+            return newFrames.some((frame, frameIndex) => {
+              if (!frame.includes('"type":"claim_resize"')) return false;
+              const inputFrame = newFrames[frameIndex + 1];
+              const expected = expectedSpecialKeyInput[index];
+              if (expected === undefined) return false;
+              return typeof expected === "string"
+                ? inputFrame === expected
+                : inputFrame !== undefined && expected.test(inputFrame);
+            });
+          })
+          .toBe(true);
       }
-      await expect
-        .poll(async () => (await sessionWebSockets(phonePage, created.id)).flatMap((socket) => socket.sent))
-        .toEqual(expect.arrayContaining(["\x1b", "\t", "\x1b[D", "\x1b[A", "\x1b[B", "\x1b[C", " ", "\r"]));
 
       expect(ready.worktree_path).toBeTruthy();
       const hookResponse = await api.post("/api/v1/agent-hooks/claude", {

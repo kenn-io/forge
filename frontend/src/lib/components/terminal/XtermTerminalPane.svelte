@@ -44,6 +44,7 @@
     type TerminalSessionController,
   } from "./terminal-session.js";
   import { terminalAttachment } from "./terminal-attachment.js";
+  import type { TerminalKey } from "./terminal-key.js";
   import { currentTerminalGeometryIntent } from "./terminalGeometryIntent.js";
   import { decodeTerminalControlMessage } from "./terminal-control-message.js";
 
@@ -163,6 +164,44 @@
     return true;
   }
 
+  const terminalKeyEvents: Record<TerminalKey, { key: string; code: string; keyCode: number }> = {
+    Escape: { key: "Escape", code: "Escape", keyCode: 27 },
+    Tab: { key: "Tab", code: "Tab", keyCode: 9 },
+    ArrowLeft: { key: "ArrowLeft", code: "ArrowLeft", keyCode: 37 },
+    ArrowUp: { key: "ArrowUp", code: "ArrowUp", keyCode: 38 },
+    ArrowDown: { key: "ArrowDown", code: "ArrowDown", keyCode: 40 },
+    ArrowRight: { key: "ArrowRight", code: "ArrowRight", keyCode: 39 },
+    Space: { key: " ", code: "Space", keyCode: 32 },
+    Enter: { key: "Enter", code: "Enter", keyCode: 13 },
+  };
+
+  function terminalKeyEvent(type: "keydown" | "keypress" | "keyup", key: TerminalKey): KeyboardEvent {
+    const definition = terminalKeyEvents[key];
+    const event = new KeyboardEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      code: definition.code,
+      key: definition.key,
+    });
+    Object.defineProperties(event, {
+      charCode: { value: key === "Space" && type === "keypress" ? definition.keyCode : 0 },
+      keyCode: { value: definition.keyCode },
+      which: { value: definition.keyCode },
+    });
+    return event;
+  }
+
+  export function sendKey(key: TerminalKey): boolean {
+    if (disabled || !terminal || !terminalSession?.isConnected()) return false;
+    const input = containerEl.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea");
+    if (!input) return false;
+    claimTerminalResize();
+    const keyDownAllowed = input.dispatchEvent(terminalKeyEvent("keydown", key));
+    if (key === "Space" && keyDownAllowed) input.dispatchEvent(terminalKeyEvent("keypress", key));
+    input.dispatchEvent(terminalKeyEvent("keyup", key));
+    return true;
+  }
+
   const TERMINAL_SMOOTH_SCROLL_DURATION = 0;
   const TERMINAL_MINIMUM_CONTRAST_RATIO = 4.5;
   const TERMINAL_FONT_WAIT_MS = 300;
@@ -267,7 +306,7 @@
     try {
       containerEl.setPointerCapture(event.pointerId);
     } catch {
-      // The watchdog and global cancellation handlers still bound the gesture.
+      // The timeout and global cancellation handlers still bound the gesture.
     }
   }
 

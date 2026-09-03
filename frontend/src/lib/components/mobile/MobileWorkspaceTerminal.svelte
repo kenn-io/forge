@@ -43,13 +43,14 @@
     noteSessionReleased,
     onSessionExited,
     requestSessionFocus,
-    sendSessionInput,
+    sendSessionKey,
     sendSessionPastedInput,
     sessionHostKey,
     type SessionHostKey,
   } from "../../stores/session-host.svelte.js";
   import LaunchTargetName from "../terminal/LaunchTargetName.svelte";
   import SessionTerminalSlot from "../terminal/SessionTerminalSlot.svelte";
+  import type { TerminalKey } from "../terminal/terminal-key.js";
   import TerminalSettings from "../settings/TerminalSettings.svelte";
   import ConfirmDialog from "../shared/ConfirmDialog.svelte";
   import type { WorkspaceDetail } from "../terminal/workspace-detail.js";
@@ -476,10 +477,10 @@
     void tick().then(resizeComposer);
   }
 
-  function sendSpecialKey(data: string): void {
+  function sendSpecialKey(keyName: TerminalKey): void {
     const key = selectedHostKey;
     if (!key) return;
-    if (!sendSessionInput(key, data)) {
+    if (!sendSessionKey(key, keyName)) {
       inputError = "Terminal is reconnecting. Try again in a moment.";
       return;
     }
@@ -851,24 +852,24 @@
           </button>
           {#if specialKeysOpen}
             <div class="mobile-workspace-terminal__special-keys" role="group" aria-label="Special terminal keys">
-              <button type="button" aria-label="Escape" onclick={() => sendSpecialKey("\x1b")}>Esc</button>
-              <button type="button" onclick={() => sendSpecialKey("\t")}>Tab</button>
-              <button type="button" aria-label="Arrow left" onclick={() => sendSpecialKey("\x1b[D")}>
+              <button type="button" aria-label="Escape" onclick={() => sendSpecialKey("Escape")}>Esc</button>
+              <button type="button" onclick={() => sendSpecialKey("Tab")}>Tab</button>
+              <button type="button" aria-label="Arrow left" onclick={() => sendSpecialKey("ArrowLeft")}>
                 <ArrowLeftIcon size="18" aria-hidden="true" />
               </button>
-              <button type="button" aria-label="Arrow up" onclick={() => sendSpecialKey("\x1b[A")}>
+              <button type="button" aria-label="Arrow up" onclick={() => sendSpecialKey("ArrowUp")}>
                 <ArrowUpIcon size="18" aria-hidden="true" />
               </button>
-              <button type="button" aria-label="Arrow down" onclick={() => sendSpecialKey("\x1b[B")}>
+              <button type="button" aria-label="Arrow down" onclick={() => sendSpecialKey("ArrowDown")}>
                 <ArrowDownIcon size="18" aria-hidden="true" />
               </button>
-              <button type="button" aria-label="Arrow right" onclick={() => sendSpecialKey("\x1b[C")}>
+              <button type="button" aria-label="Arrow right" onclick={() => sendSpecialKey("ArrowRight")}>
                 <ArrowRightIcon size="18" aria-hidden="true" />
               </button>
-              <button type="button" aria-label="Space" onclick={() => sendSpecialKey(" ")}>
+              <button type="button" aria-label="Space" onclick={() => sendSpecialKey("Space")}>
                 <SpaceIcon size="18" aria-hidden="true" />
               </button>
-              <button type="button" aria-label="Return" onclick={() => sendSpecialKey("\r")}>
+              <button type="button" aria-label="Return" onclick={() => sendSpecialKey("Enter")}>
                 <CornerDownLeftIcon size="18" aria-hidden="true" />
               </button>
             </div>

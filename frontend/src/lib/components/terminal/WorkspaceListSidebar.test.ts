@@ -1544,6 +1544,48 @@ describe("WorkspaceListSidebar", () => {
     expect(container.querySelectorAll(".sidebar-group-header")).toHaveLength(0);
   });
 
+  it("shows the timestamp used by each flat sort below the linked item", async () => {
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          workspaceFixture({
+            id: "ws-times",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "kenn-io",
+            name: "kenn-forge",
+            number: 7,
+            title: "Timestamped workspace",
+            createdAt: "2026-05-10T12:00:00Z",
+            tmuxLastOutputAt: "2026-05-11T12:00:00Z",
+            itemLastActivityAt: "2026-05-12T12:00:00Z",
+            agentState: "working",
+            agentStateUpdatedAt: "2026-05-13T12:00:00Z",
+          }),
+        ],
+      },
+    });
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-times" },
+    });
+    await screen.findByText("Timestamped workspace");
+    expect(container.querySelector(".workspace-sort-time")).toBeNull();
+
+    for (const [sort, timestamp] of [
+      ["Created", "2026-05-10T12:00:00Z"],
+      ["Activity", "2026-05-11T12:00:00Z"],
+      ["Item activity", "2026-05-12T12:00:00Z"],
+      ["Agent status", "2026-05-13T12:00:00Z"],
+    ]) {
+      await fireEvent.click(screen.getByTitle("View workspace options"));
+      await fireEvent.click(screen.getByRole("button", { name: sort }));
+      expect(
+        container.querySelector(".ws-row-aside > .item-bubble + .workspace-sort-time")?.getAttribute("datetime"),
+      ).toBe(timestamp);
+    }
+  });
+
   it("persists the selected sort across mounts", async () => {
     mockGet.mockResolvedValue({
       data: { workspaces: sortFixtures() },

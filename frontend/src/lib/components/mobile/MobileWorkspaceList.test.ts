@@ -224,6 +224,11 @@ describe("MobileWorkspaceList", () => {
     expect(getTopFrame()?.frameId).toBe("mobile-workspace-view-options");
     expect(screen.getByRole("radio", { name: /^Terminal activity/ })).toBeTruthy();
 
+    await fireEvent.click(screen.getByRole("radio", { name: /^Created/ }));
+    expect(document.querySelector(".mobile-workspace-row__sort-time")?.getAttribute("datetime")).toBe(
+      fixture.created_at,
+    );
+
     await fireEvent.click(screen.getByRole("switch", { name: "Show organization names" }));
     await waitFor(() => {
       expect(localStorage.getItem("kenn-forge:workspaceListDisplayOptions")).toContain('"showOrgNames":false');

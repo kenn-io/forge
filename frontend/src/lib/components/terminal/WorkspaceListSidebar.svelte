@@ -1,6 +1,8 @@
 <script lang="ts">
   import {
     copyToClipboard,
+    formatRelativeTime,
+    formatTimestamp,
     IconButton,
     SearchInput,
     StatusDot,
@@ -47,6 +49,7 @@
     saveWorkspaceListDisplayOptions,
     saveWorkspaceListSort,
     workspaceAgentStatePriority,
+    workspaceListSortTimestamp,
     workspaceListSortOptions,
     type WorkspaceListDisplayOptions,
     type WorkspaceListSort,
@@ -1356,6 +1359,7 @@
           {@const behind = ws.commits_behind ?? 0}
           {@const showPush = ahead > 0 || behind > 0}
           {@const agentState = agentStatePresentation(ws)}
+          {@const sortTimestamp = workspaceListSortTimestamp(ws, sortMode)}
           {@const workspaceReadable = workspaceOperationAvailable(ws, "workspaceRead") && workspaceOperationAvailable(ws, "terminalAttach")}
           <div
             class={["ws-row", { selected: isSelectedWorkspace(ws) }]}
@@ -1520,6 +1524,14 @@
                 >
                   {itemBubbleLabel(ws)}
                 </button>
+                {#if sortTimestamp}
+                  <time
+                    class="workspace-sort-time"
+                    datetime={sortTimestamp.at}
+                    title={`${sortTimestamp.label}: ${formatTimestamp(sortTimestamp.at)}`}
+                    aria-label={`${sortTimestamp.label}: ${formatRelativeTime(sortTimestamp.at)}`}
+                  >{formatRelativeTime(sortTimestamp.at)}</time>
+                {/if}
                 {#if ws.worktree_dirty}
                   {@render worktreeDirtyIndicator()}
                 {/if}
@@ -2066,7 +2078,16 @@
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: var(--space-2);
+    gap: var(--space-1);
+  }
+
+  .workspace-sort-time {
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-2xs);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.2;
+    white-space: nowrap;
   }
 
   .item-bubble {

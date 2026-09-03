@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { copyToClipboard, DiffStats, Modal, SearchInput, Spinner, StatusDot, Toggle, type StatusDotStatus } from "@kenn-io/kit-ui";
+  import { copyToClipboard, DiffStats, formatRelativeTime, formatTimestamp, Modal, SearchInput, Spinner, StatusDot, Toggle, type StatusDotStatus } from "@kenn-io/kit-ui";
   import MoreHorizontalIcon from "@lucide/svelte/icons/ellipsis";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import { Effect, Schedule, Stream } from "effect";
@@ -38,6 +38,7 @@
     loadWorkspaceListSort,
     saveWorkspaceListDisplayOptions,
     saveWorkspaceListSort,
+    workspaceListSortTimestamp,
     workspaceListSortOptions,
     type WorkspaceListDisplayOptions,
     type WorkspaceListSort,
@@ -502,6 +503,7 @@
 {#snippet workspaceRow(workspace: WorkspaceListItem, showRepository: boolean)}
   {@const label = itemLabel(workspace)}
   {@const agentState = agentStatePresentation(workspace)}
+  {@const sortTimestamp = workspaceListSortTimestamp(workspace, sortMode)}
   <article class="mobile-workspace-row">
     <button
       class="mobile-workspace-row__main"
@@ -532,14 +534,24 @@
       </span>
     </button>
     {#if label}
-      <button
-        class="mobile-workspace-row__item"
-        type="button"
-        aria-label={`Open linked item ${label}`}
-        onclick={() => openWorkspaceItem(workspace)}
-        disabled={!workspaceOperationAvailable(workspace, "workspaceRead")}
-        title={!workspaceOperationAvailable(workspace, "workspaceRead") ? "Linked item details are unavailable from this Forge" : undefined}
-      >{label}</button>
+      <span class="mobile-workspace-row__item-stack">
+        <button
+          class="mobile-workspace-row__item"
+          type="button"
+          aria-label={`Open linked item ${label}`}
+          onclick={() => openWorkspaceItem(workspace)}
+          disabled={!workspaceOperationAvailable(workspace, "workspaceRead")}
+          title={!workspaceOperationAvailable(workspace, "workspaceRead") ? "Linked item details are unavailable from this Forge" : undefined}
+        >{label}</button>
+        {#if sortTimestamp}
+          <time
+            class="mobile-workspace-row__sort-time"
+            datetime={sortTimestamp.at}
+            title={`${sortTimestamp.label}: ${formatTimestamp(sortTimestamp.at)}`}
+            aria-label={`${sortTimestamp.label}: ${formatRelativeTime(sortTimestamp.at)}`}
+          >{formatRelativeTime(sortTimestamp.at)}</time>
+        {/if}
+      </span>
     {/if}
     <button
       class="mobile-workspace-row__more"
@@ -660,8 +672,10 @@
   .mobile-workspace-row__meta > span, .mobile-workspace-row__meta code, .mobile-workspace-row__meta em { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mobile-workspace-row__meta code { flex: 1; color: var(--text-secondary); font-family: var(--font-mono); }
   .mobile-workspace-row__meta em { color: var(--accent-blue); font-style: normal; font-weight: 650; }
+  .mobile-workspace-row__item-stack { align-self: center; display: flex; flex-direction: column; align-items: center; gap: 0.125rem; margin: 0.25rem; }
   .mobile-workspace-row__item, .mobile-workspace-row__more { align-self: center; min-width: 2.75rem; min-height: 2.75rem; margin: 0.25rem; border-radius: var(--radius-md) !important; }
-  .mobile-workspace-row__item { height: 2rem; min-width: auto; min-height: 2rem; padding: 0 0.625rem !important; color: var(--text-on-accent) !important; background: var(--accent-green) !important; font-family: var(--font-mono) !important; font-weight: 700 !important; }
+  .mobile-workspace-row__item { height: 2rem; min-width: auto; min-height: 2rem; margin: 0; padding: 0 0.625rem !important; color: var(--text-on-accent) !important; background: var(--accent-green) !important; font-family: var(--font-mono) !important; font-weight: 700 !important; }
+  .mobile-workspace-row__sort-time { color: var(--text-muted); font-family: var(--font-mono); font-size: var(--font-size-xs); font-variant-numeric: tabular-nums; line-height: 1.2; white-space: nowrap; }
   .mobile-workspace-row__item:disabled { cursor: not-allowed; opacity: var(--opacity-disabled); }
   .mobile-workspace-row__more { display: inline-flex; align-items: center; justify-content: center; color: var(--text-muted) !important; }
   .mobile-workspace-row button:focus-visible, .mobile-sheet-content button:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: -2px; }

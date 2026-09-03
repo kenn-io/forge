@@ -68,6 +68,28 @@ export function workspaceAgentStatePriority(state: WorkspaceListItem["agent_stat
   }
 }
 
+export function workspaceListSortTimestamp(
+  workspace: WorkspaceListItem,
+  sort: WorkspaceListSort,
+): { at: string; label: string } | null {
+  switch (sort) {
+    case "created":
+      return { at: workspace.created_at, label: "Created" };
+    case "activity":
+      return workspace.tmux_last_output_at
+        ? { at: workspace.tmux_last_output_at, label: "Terminal activity" }
+        : { at: workspace.created_at, label: "Created" };
+    case "item-activity":
+      return workspace.item_last_activity_at
+        ? { at: workspace.item_last_activity_at, label: "Item activity" }
+        : { at: workspace.created_at, label: "Created" };
+    case "agent-status":
+      return workspace.agent_state_updated_at ? { at: workspace.agent_state_updated_at, label: "Agent hook" } : null;
+    default:
+      return null;
+  }
+}
+
 function getStorage(): Storage | null {
   try {
     return typeof localStorage === "undefined" ? null : localStorage;

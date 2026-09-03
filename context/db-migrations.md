@@ -75,6 +75,9 @@ generations.
   rewrite provider, workspace, review, workflow, or notification source rows.
 - Review drafts and workflow rows remain on the source spoke as an audit trail
   after handoff; the active spoke runtime stops reading them in the role switch.
+- Migration `000056_repair_notification_admission_triggers` recreates admission
+  triggers against `forge_spoke_preparation` for preview databases that applied
+  migration 54 before the node-to-spoke naming change.
 
 ## Migration Review Checklist
 

@@ -153,7 +153,7 @@ Minimum expectations for meaningful mobile UI changes:
 - Assert the phone route renders a phone shell/component and not the desktop layout.
 - Assert no document-level horizontal overflow.
 - Check key element bounds for cards, filters, tabs, branch names, and action buttons; element clipping can happen even when document width is fine.
-- Keep the PR branch icon on the head branch's first line and the unbroken arrow/base pair on its final line (`frontend/src/lib/components/detail/PullDetail.svelte::.branch-target`).
+- Keep the PR branch icon on the head branch's first line, with the unbroken arrow/base pair immediately following its final text (`frontend/src/lib/components/detail/PullDetail.svelte::.branch-target`).
 - Assert source sizing remains token/rem-based for the changed mobile surface.
 - Cover click/tap flows that move from mobile lists into focused detail routes.
 - When testing through Tailscale Serve or another proxy, confirm the proxy target and server process so screenshots are not from stale embedded assets.

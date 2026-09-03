@@ -580,7 +580,7 @@ test.describe("phone routes", () => {
     await expect(page.locator(".mobile-shell .mobile-detail-header__badge")).toHaveText("PR #1");
   });
 
-  test("long PR head branches keep the branch icon on the first text line", async ({ page }) => {
+  test("long PR branch relationships stay inline with the wrapped head branch", async ({ page }) => {
     await page.route("**/api/v1/pulls/github/acme/widgets/1", async (route) => {
       const response = await route.fetch();
       const detail = await response.json();
@@ -632,6 +632,7 @@ test.describe("phone routes", () => {
     expect(alignment.iconBottom).toBeLessThanOrEqual(alignment.firstLineBottom + 1);
     expect(Math.abs(alignment.targetTop - alignment.lastLineTop)).toBeLessThan(5);
     expect(alignment.targetLeft).toBeGreaterThanOrEqual(alignment.lastLineRight - 1);
+    expect(alignment.targetLeft - alignment.lastLineRight).toBeLessThan(16);
   });
 
   test("long description collapse toggle has a phone-sized hit target", async ({ page }) => {

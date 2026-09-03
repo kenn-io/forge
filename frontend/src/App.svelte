@@ -1796,10 +1796,7 @@
   }
 
   .focus-layout--phone :global(.meta-branch) {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) max-content;
-    align-items: end;
-    column-gap: var(--space-1);
+    display: block;
     flex: 1 1 100%;
     min-width: 0;
     max-width: 100%;
@@ -1816,8 +1813,12 @@
   }
 
   .focus-layout--phone :global(.branch-name-btn--head) {
-    display: block;
+    display: inline;
     max-width: none;
+  }
+
+  .focus-layout--phone :global(.branch-target) {
+    margin-left: var(--space-1);
   }
 
   .focus-layout--phone :global(.meta-item),

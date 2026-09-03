@@ -690,13 +690,20 @@ func (s *Handler) runWorkspaceTmuxPrune(ctx context.Context) {
 	pruned, err := s.workspaces.PruneMissingTmuxSessions(pruneCtx)
 	if err != nil {
 		slog.Debug("prune missing tmux sessions", "err", err)
+	}
+	if !pruned {
 		return
 	}
+	// Rows may have been deleted even when the prune also failed part way,
+	// so their reports are reconciled whenever anything was pruned, on a
+	// budget of their own rather than the prune's remaining one.
+	reconcileCtx, cancelReconcile := context.WithTimeout(
+		ctx, workspaceEnrichmentRefreshTimeout,
+	)
+	defer cancelReconcile()
+	s.reconcileAgentActivityReports(reconcileCtx)
 	// Broadcast only when the pass changed state. The unconditional
 	// broadcast made every open view refetch its workspace every prune
 	// interval even though nothing happened.
-	if pruned {
-		s.reconcileAgentActivityReports(pruneCtx)
-		s.hub.Broadcast(Event{Type: "workspace_status", Data: map[string]string{}})
-	}
+	s.hub.Broadcast(Event{Type: "workspace_status", Data: map[string]string{}})
 }

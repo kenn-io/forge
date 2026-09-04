@@ -546,8 +546,9 @@ test("stack status follows refreshed detail stack data", async ({ page }) => {
   ];
   await emitPRDetailRefreshed(page, 102);
 
-  await expect(page.getByRole("button", { name: /Stacked: 2\/2/i })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Stacked: 2\/7/i })).toHaveCount(0);
+  // Scope to the chip: the sidebar row button also exposes "Stacked: n/m"
+  // through its accessible name, so a page-wide role query would match it.
+  await expect(page.getByTestId("stack-chip")).toHaveAccessibleName(/Stacked: 2\/2/i);
 
   currentStackMembers = [];
   await emitPRDetailRefreshed(page, 102);

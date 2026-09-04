@@ -187,6 +187,10 @@ the diff, so scope diff locators to `.diff-area`.
 Pane tab headers are `role="tab"` with an `aria-label`, so use
 `getByRole("tab", { name })` — `getByRole(..., { hasText })` is not a valid
 option and silently matches every tab.
+Sidebar item rows are `<button>`s whose accessible name concatenates every
+descendant label, including indicator `aria-label`s such as "Stacked: 2/7", so
+a page-wide `getByRole("button", { name })` for a detail chip also matches the
+row; scope chip assertions to the chip's test id.
 
 Every `@lucide/svelte/icons/<name>` import added anywhere in `frontend/src`
 must also be added to the `optimizeDeps.include` list in

@@ -9378,7 +9378,7 @@ export interface components {
             readonly $schema?: string;
             accepted: boolean;
             actor?: string;
-            locating_run: boolean;
+            dispatch_id: string;
             run?: components["schemas"]["WorkflowRunResponse"];
         };
         WorkflowEnvironmentResponse: {

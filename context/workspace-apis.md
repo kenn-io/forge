@@ -704,10 +704,9 @@ The workspace sidebar has two separate activity concepts:
 - `Item activity`: provider item activity, ordered by `item_last_activity_at`
   with `created_at` as the fallback.
 
-- `Agent status` groups approval, input, working, done, idle, then unreported;
-  equal states use hook recency with creation as fallback
-  (`frontend/src/lib/components/terminal/workspaceListSort.ts::workspaceAgentStatePriority`,
-  `frontend/src/lib/components/terminal/workspaceListSort.ts::workspaceAgentStateSortTime`).
+- `Agent status` groups approval, input, working, done, idle, then unlabeled
+  rows without a report; equal states use hook recency with creation as fallback
+  (`frontend/src/lib/components/terminal/workspaceListSort.ts`).
 - Each flat sort shows the timestamp that drives its order
   (`frontend/src/lib/components/terminal/workspaceListSort.ts::workspaceListSortTimestamp`).
 

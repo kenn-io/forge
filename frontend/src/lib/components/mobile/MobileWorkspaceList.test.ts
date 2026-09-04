@@ -120,6 +120,16 @@ describe("MobileWorkspaceList", () => {
     ).toBeTruthy();
   });
 
+  it("leaves the agent state empty when no hook has reported", async () => {
+    localStorage.setItem("kenn-forge:workspaceListSort", "agent-status");
+
+    render(MobileWorkspaceList, { props: { onOpen: vi.fn(), onOpenItem: vi.fn() } });
+
+    await screen.findByText("Build mobile workspaces");
+    expect(screen.queryByText("Unreported")).toBeNull();
+    expect(screen.getByRole("button", { name: "Open workspace Build mobile workspaces" })).toBeTruthy();
+  });
+
   it("does not expose a dead linked-item action for Kata workspaces", async () => {
     mockGet.mockImplementation((path: string) => {
       if (path === "/snapshot") {

@@ -1566,7 +1566,9 @@ describe("WorkspaceListSidebar", () => {
     ]);
     expect(container.querySelectorAll(".sidebar-group-header")).toHaveLength(0);
     expect(container.textContent).toContain("Idle");
-    expect(container.textContent).toContain("Unreported");
+    expect(Array.from(container.querySelectorAll(".agent-state"), (state) => state.textContent)).not.toContain(
+      "Unreported",
+    );
   });
 
   it("shows the timestamp used by each flat sort below the linked item", async () => {

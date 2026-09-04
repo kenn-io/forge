@@ -631,9 +631,9 @@
   }
 
   function agentStatePresentation(ws: Workspace): {
-    label: "Working" | "Approval" | "Input" | "Done" | "Idle" | "Unreported";
+    label: "Working" | "Approval" | "Input" | "Done" | "Idle";
     status: StatusDotStatus;
-    tone: "working" | "approval" | "input" | "done" | "idle" | "unreported";
+    tone: "working" | "approval" | "input" | "done" | "idle";
   } | null {
     switch (ws.agent_state) {
       case "working":
@@ -652,9 +652,7 @@
       case "idle":
         return sortMode === "agent-status" ? { label: "Idle", status: "idle", tone: "idle" } : null;
       default:
-        return sortMode === "agent-status"
-          ? { label: "Unreported", status: "stale", tone: "unreported" }
-          : null;
+        return null;
     }
   }
 
@@ -2009,8 +2007,7 @@
     color: var(--accent-green);
   }
 
-  .agent-state--idle,
-  .agent-state--unreported {
+  .agent-state--idle {
     color: var(--text-muted);
   }
 

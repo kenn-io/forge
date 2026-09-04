@@ -194,9 +194,9 @@
   }
 
   function agentStatePresentation(workspace: WorkspaceListItem): {
-    label: "Working" | "Approval" | "Input" | "Done" | "Idle" | "Unreported";
-    tone: "working" | "approval" | "input" | "done" | "idle" | "unreported";
-    announcement: "working" | "waiting for approval" | "waiting for input" | "done" | "idle" | "unreported";
+    label: "Working" | "Approval" | "Input" | "Done" | "Idle";
+    tone: "working" | "approval" | "input" | "done" | "idle";
+    announcement: "working" | "waiting for approval" | "waiting for input" | "done" | "idle";
   } | null {
     switch (workspace.agent_state) {
       case "working":
@@ -210,9 +210,7 @@
       case "idle":
         return sortMode === "agent-status" ? { label: "Idle", tone: "idle", announcement: "idle" } : null;
       default:
-        return sortMode === "agent-status"
-          ? { label: "Unreported", tone: "unreported", announcement: "unreported" }
-          : null;
+        return null;
     }
   }
 
@@ -672,7 +670,7 @@
   .mobile-workspace-row__agent-state--working, .mobile-workspace-row__agent-state--done { color: var(--accent-green); }
   .mobile-workspace-row__agent-state--approval { color: var(--accent-amber); }
   .mobile-workspace-row__agent-state--input { color: var(--accent-purple); }
-  .mobile-workspace-row__agent-state--idle, .mobile-workspace-row__agent-state--unreported { color: var(--text-muted); }
+  .mobile-workspace-row__agent-state--idle { color: var(--text-muted); }
   .mobile-workspace-row__meta { min-width: 0; display: flex; align-items: center; gap: 0.5rem; overflow: hidden; color: var(--text-muted); font-size: var(--font-size-sm); }
   .mobile-workspace-row__meta > span, .mobile-workspace-row__meta code, .mobile-workspace-row__meta em { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mobile-workspace-row__meta code { flex: 1; color: var(--text-secondary); font-family: var(--font-mono); }

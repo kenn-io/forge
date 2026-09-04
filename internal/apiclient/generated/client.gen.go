@@ -3516,6 +3516,7 @@ type MergeRequestResponse struct {
 	RepoName                string                           `json:"repo_name"`
 	RepoOwner               string                           `json:"repo_owner"`
 	RequestedReviewers      *[]string                        `json:"requested_reviewers,omitempty"`
+	Stack                   *StackPlacementResponse          `json:"stack,omitempty"`
 	Workspace               *WorkspaceRef                    `json:"workspace,omitempty"`
 	WorktreeLinks           *[]WorktreeLinkResponse          `json:"worktree_links"`
 }
@@ -5097,6 +5098,15 @@ type StackMemberResponse struct {
 	ReviewDecision string `json:"review_decision"`
 	State          string `json:"state"`
 	Title          string `json:"title"`
+}
+
+// StackPlacementResponse defines model for StackPlacementResponse.
+type StackPlacementResponse struct {
+	// Position 1-based position of this pull request in its stack
+	Position int64 `json:"position"`
+
+	// Size Number of visible pull requests in the stack
+	Size int64 `json:"size"`
 }
 
 // StackResponse defines model for StackResponse.

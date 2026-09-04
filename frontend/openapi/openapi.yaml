@@ -5081,6 +5081,8 @@ components:
           type:
             - array
             - "null"
+        stack:
+          $ref: "#/components/schemas/StackPlacementResponse"
         workspace:
           $ref: "#/components/schemas/WorkspaceRef"
         worktree_links:
@@ -8662,6 +8664,21 @@ components:
         - is_draft
         - base_branch
         - blocked_by
+      type: object
+    StackPlacementResponse:
+      additionalProperties: false
+      properties:
+        position:
+          description: 1-based position of this pull request in its stack
+          format: int64
+          type: integer
+        size:
+          description: Number of visible pull requests in the stack
+          format: int64
+          type: integer
+      required:
+        - position
+        - size
       type: object
     StackResponse:
       additionalProperties: false

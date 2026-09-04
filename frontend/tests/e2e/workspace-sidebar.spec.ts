@@ -4689,7 +4689,10 @@ test.describe("workspace list bubble opens right sidebar", () => {
     expect(maxRight - minRight).toBeLessThanOrEqual(1);
   });
 
-  test("workspace recency uses item-list typography without phone overflow", async ({ page }) => {
+  // Desktop and phone parity are separate tests: each full navigation through
+  // the Vite dev server is slow under CI worker load, and four in one test
+  // exhausted the per-test budget on the first attempt.
+  test("workspace recency uses item-list typography on desktop", async ({ page }) => {
     await setupTerminalMocks(page);
     await page.addInitScript(() => {
       localStorage.setItem("kenn-forge:workspaceListSort", "created");
@@ -4711,6 +4714,13 @@ test.describe("workspace list bubble opens right sidebar", () => {
       return { fontFamily: style.fontFamily, fontSize: style.fontSize, lineHeight: style.lineHeight };
     });
     expect(desktopTypography).toEqual(pullTypography);
+  });
+
+  test("workspace recency uses item-list typography on phones without overflow", async ({ page }) => {
+    await setupTerminalMocks(page);
+    await page.addInitScript(() => {
+      localStorage.setItem("kenn-forge:workspaceListSort", "created");
+    });
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/m/pulls");

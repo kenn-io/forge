@@ -4279,8 +4279,11 @@ port = 8091
 		repoWorktreeBaseRequest{WorktreeBasePath: worktreeBase})
 
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
-	require.Len(srv.cfg.Repos, 1)
-	assert.Equal(canonicalWorktreeBase, srv.cfg.Repos[0].WorktreeBasePath)
+	srv.cfgMu.Lock()
+	configuredRepos := cloneReloadedConfig(srv.cfg).Repos
+	srv.cfgMu.Unlock()
+	require.Len(configuredRepos, 1)
+	assert.Equal(canonicalWorktreeBase, configuredRepos[0].WorktreeBasePath)
 
 	projection.Repos[0].Owner = "renamed"
 	projection.Repos[0].Name = "late-renamed"
@@ -4297,10 +4300,13 @@ port = 8091
 
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
 	assert.Equal(int32(2), reads.Load(), "each mutation uses one pre-commit hub snapshot")
-	require.Len(srv.cfg.Repos, 1)
-	assert.Equal("renamed", srv.cfg.Repos[0].Owner)
-	assert.Equal("late-renamed", srv.cfg.Repos[0].Name)
-	assert.Empty(srv.cfg.Repos[0].WorktreeBasePath)
+	srv.cfgMu.Lock()
+	configuredRepos = cloneReloadedConfig(srv.cfg).Repos
+	srv.cfgMu.Unlock()
+	require.Len(configuredRepos, 1)
+	assert.Equal("renamed", configuredRepos[0].Owner)
+	assert.Equal("late-renamed", configuredRepos[0].Name)
+	assert.Empty(configuredRepos[0].WorktreeBasePath)
 	contents, err := os.ReadFile(configPath)
 	require.NoError(err)
 	assert.Contains(string(contents), `platform_repo_id = "repo-late"`)

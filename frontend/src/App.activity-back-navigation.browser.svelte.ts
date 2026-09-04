@@ -83,13 +83,13 @@ function activityOverrides(): MockRouteOverride[] {
 }
 
 function activityRow(text: string): Element {
-  return Array.from(document.querySelectorAll(".activity-table .activity-row")).find((row) =>
+  return Array.from(document.querySelectorAll(".activity-row")).find((row) =>
     (row.textContent ?? "").includes(text),
   )!;
 }
 
 async function openSelection(text: string): Promise<string> {
-  await vi.waitFor(() => expect(document.querySelector(".activity-table .activity-row")).not.toBeNull(), WAIT);
+  await vi.waitFor(() => expect(document.querySelector(".activity-row")).not.toBeNull(), WAIT);
   const row = activityRow(text);
   expect(row).not.toBeUndefined();
   await page.elementLocator(row).click();
@@ -132,6 +132,7 @@ describe("Activity detail restoration after browser Back", () => {
     expect(document.querySelector(".commit-diff-panel")).not.toBeNull();
     expect(document.querySelector(".activity-detail-header")?.textContent).toContain("acme/widgets");
     expect(document.querySelector(".activity-detail-header")?.textContent).toContain("main");
+    expect(document.querySelector(".activity-detail-header")?.textContent).toContain("abcdef123456");
     const selected = new URL(activityUrl, window.location.origin).searchParams;
     expect(selected.get("selected")).toBe("commit:abcdef1234567890");
     expect(selected.get("provider")).toBe("github");
@@ -168,5 +169,15 @@ describe("Activity detail restoration after browser Back", () => {
     pressKey("Escape");
     await vi.waitFor(() => expect(document.querySelector(".activity-detail")).toBeNull(), WAIT);
     expect(new URL(window.location.href).searchParams.has("selected")).toBe(false);
+  });
+
+  it("replaces a commit selection when an item row is selected", async () => {
+    mounted = await mountBrowserApp("/", { overrides: activityOverrides() });
+    await openSelection("Bump dependency");
+
+    await page.getByText("PR 42 title").click();
+    await vi.waitFor(() => expect(document.querySelector(".activity-detail-header")?.textContent).toContain("acme/widgets#42"), WAIT);
+    expect(new URL(window.location.href).searchParams.get("selected")).toBe("pr:42");
+    expect(document.querySelector(".commit-diff-panel")).toBeNull();
   });
 });

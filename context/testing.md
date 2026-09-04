@@ -433,6 +433,9 @@ instead of serializing the whole test.
   (`frontend/tests/e2e-full/support/e2eServer.ts::cleanupE2ETmuxDir`).
 - Real-tmux Go test binaries install signal cleanup because termination skips
   code after `m.Run` and `t.Cleanup` (`internal/testutil/testsignal.Install`).
+- Long-lived package-level tmux servers must use `testtmux.Owner`; its reaper
+  reaps servers after uncatchable owner death, which signal cleanup cannot handle.
+  (`internal/testutil/testtmux/reaper_unix.go::startOwnerReaper`)
 
 Windows test binaries that launch restart-durable PTY processes must contain
 their descendants in a kill-on-close Job Object; test timeouts bypass normal

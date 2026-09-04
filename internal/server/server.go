@@ -872,7 +872,11 @@ func newServer(
 	}
 	s.providerWriteGate = options.ProviderWriteGate
 	if s.providerWriteGate == nil {
-		s.providerWriteGate = providerplane.NewProviderWriteGate(database)
+		restoreDurableState := false
+		if options.FederationEnrollments != nil {
+			_, restoreDurableState = options.FederationEnrollments.Local()
+		}
+		s.providerWriteGate = providerplane.NewProviderWriteGate(database, restoreDurableState)
 	}
 	if cfg != nil && cfg.Fleet.RoleOrDefault() == config.FleetRoleSpoke {
 		s.providerRouteSpoke = true

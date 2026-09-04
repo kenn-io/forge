@@ -453,6 +453,10 @@ func (s *Handler) listPullsRouteCore(ctx context.Context, input *listPullsInput)
 	if err != nil {
 		return nil, httpapi.Internal("load stack conflict state failed")
 	}
+	stackPlacements, err := s.db.ListStackPlacementsForMRs(ctx, mrIDs)
+	if err != nil {
+		return nil, httpapi.Internal("load stack placements failed")
+	}
 	links, err := s.db.GetWorktreeLinksForMRs(ctx, mrIDs)
 	if err != nil {
 		return nil, httpapi.Internal("load worktree links failed")
@@ -494,6 +498,9 @@ func (s *Handler) listPullsRouteCore(ctx context.Context, input *listPullsInput)
 		}
 		if mr.DetailFetchedAt != nil {
 			resp.DetailFetchedAt = formatUTCRFC3339(*mr.DetailFetchedAt)
+		}
+		if placement, ok := stackPlacements[mr.ID]; ok && placement.Size > 1 {
+			resp.Stack = &StackPlacementResponse{Position: placement.Position, Size: placement.Size}
 		}
 		out = append(out, resp)
 	}

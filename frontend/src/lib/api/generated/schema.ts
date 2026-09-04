@@ -7399,6 +7399,7 @@ export interface components {
             repo_name: string;
             repo_owner: string;
             requested_reviewers?: string[] | null;
+            stack?: components["schemas"]["StackPlacementResponse"];
             workspace?: components["schemas"]["WorkspaceRef"];
             worktree_links: components["schemas"]["WorktreeLinkResponse"][] | null;
         };
@@ -8983,6 +8984,18 @@ export interface components {
             review_decision: string;
             state: string;
             title: string;
+        };
+        StackPlacementResponse: {
+            /**
+             * Format: int64
+             * @description 1-based position of this pull request in its stack
+             */
+            position: number;
+            /**
+             * Format: int64
+             * @description Number of visible pull requests in the stack
+             */
+            size: number;
         };
         StackResponse: {
             health: string;

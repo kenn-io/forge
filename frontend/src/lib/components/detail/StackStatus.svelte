@@ -278,7 +278,7 @@
         {expanded}
       >
         <Layers2Icon size={12} strokeWidth={2.3} aria-hidden="true" />
-        <span class="stack-chip-label">Stacked: {data.position}/{data.size}</span>
+        <span class="stack-chip-label">{data.position}/{data.size}</span>
         {#if downstackBlockerCount > 0}
           <span class="stack-chip-failure" aria-hidden="true">
             <XIcon size={14} strokeWidth={2.8} /><span class="stack-chip-failure-count">{downstackBlockerCount}</span>

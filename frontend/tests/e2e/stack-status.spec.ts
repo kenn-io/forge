@@ -220,7 +220,11 @@ async function mockStackedPR(
     const method = route.request().method();
 
     if (method === "GET" && pathname === "/api/v1/pulls") {
-      await fulfillJson(route, [pr]);
+      const currentStackMembers = options.stackMembers?.() ?? stackMembers;
+      const position = currentStackMembers.findIndex((member) => member.number === pr.Number) + 1;
+      const stack =
+        position > 0 && currentStackMembers.length > 1 ? { position, size: currentStackMembers.length } : undefined;
+      await fulfillJson(route, [{ ...pr, stack }]);
       return;
     }
 
@@ -446,6 +450,11 @@ test("stack status shares the PR detail expandable slot with CI", async ({ page 
   await mockStackedPR(page);
 
   await page.goto("/pulls/github/acme/widgets/102");
+
+  const listStackIndicator = page.locator(".pull-item").getByLabel("Stacked: 2/7");
+  await expect(listStackIndicator).toHaveText("2/7");
+  await expect(page.getByTestId("stack-chip")).toContainText("2/7");
+  await expect(page.getByTestId("stack-chip")).not.toContainText("Stacked");
 
   await page.getByTestId("ci-chip").click();
   await expect(page.getByText("frontend / vp check")).toBeVisible();

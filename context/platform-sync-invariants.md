@@ -500,10 +500,13 @@ Repository import requests and route/query shapes should carry
   pushed-head refresh, manual workspace refresh, and on-demand worktree sync
   must check item visibility before item-specific provider access. Workspace and
   Fleet projections retain local records but omit removed parent metadata;
-  visible stack members are renumbered contiguously after filtering.
+  visible stack members are renumbered contiguously after filtering, and the
+  pull list's per-row stack placement must report the same position and size
+  as the detail stack context.
   `inaccessible` items remain visible.
   (`internal/server/pullapi/helpers.go::visibleMergeRequest`,
-  `internal/server/issueapi/mutation_handlers.go::requireVisibleIssue`)
+  `internal/server/issueapi/mutation_handlers.go::requireVisibleIssue`,
+  `internal/db/queries_stacks.go::ListStackPlacementsForMRs`)
 - Embedded navigation events for repo-bound routes must publish identity from
   parsed route state, not from global embed config. When a route carries repo
   identity, event payloads should include `provider`, `platform_host`, and

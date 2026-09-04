@@ -93,9 +93,7 @@ describe("activity selection URL state", () => {
 
   it("rejects an invalid commit SHA", () => {
     expect(
-      parseActivitySelection(
-        "?selected=commit:zzz&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets",
-      ),
+      parseActivitySelection("?selected=commit:zzz&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets"),
     ).toBeNull();
   });
 

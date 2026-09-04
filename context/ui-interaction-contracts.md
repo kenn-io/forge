@@ -240,6 +240,9 @@ Persisted controls must state their scope clearly.
   workspace's choice (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::sidebarTabStorageKey`).
 - URL query state belongs in the route only when deep-linking or back/forward
   navigation is part of the feature contract.
+- Activity detail selection uses one URL-backed slot for pull requests, issues,
+  and default-branch commits so browser history restores one mutually exclusive pane
+  (`frontend/src/App.svelte::updateDrawerURL`).
 - Activity filters remain URL-backed and session-scoped. Missing filter params on a
   partial Activity URL inherit the last validated route before store hydration, while
   explicit URL values win (`frontend/src/lib/stores/router.svelte.ts::restoreMissingActivityFilters`).

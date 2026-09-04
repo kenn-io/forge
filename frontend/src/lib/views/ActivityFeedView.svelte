@@ -16,6 +16,7 @@
   import { isSessionPaneKey } from "../stores/session-pane-key.js";
   import { getStores } from "../context.js";
   import { useItemWorkspaceClaim } from "../item-workspace-claim.svelte.js";
+  import type { ActivityCommitSelection } from "../utils/activitySelection.js";
   import type { InlineWorkspaceController, WorkspaceItemIdentity } from "../workspace-inline.js";
 
   type ActivityDetailTab = "conversation" | "files";
@@ -36,18 +37,6 @@
     detailTab?: ActivityDetailTab;
   };
 
-  type CommitDrawerItem = {
-    itemType: "commit";
-    provider: string;
-    platformHost?: string | undefined;
-    repoPath: string;
-    owner: string;
-    name: string;
-    branchName: string;
-    commitSha: string;
-    title: string;
-  };
-
   interface Props {
     drawerItem?: DrawerItem | null;
     detailTab?: ActivityDetailTab;
@@ -55,8 +44,8 @@
     onCloseDrawer?: () => void;
     onDetailTabChange?: (tab: ActivityDetailTab, options?: { replace?: boolean }) => void;
     onDrawerItemChange?: (item: DrawerPRItem) => void;
-    commitItem?: CommitDrawerItem | null;
-    onSelectCommit?: (item: CommitDrawerItem) => void;
+    commitItem?: ActivityCommitSelection | null;
+    onSelectCommit?: (item: ActivityCommitSelection) => void;
     phone?: boolean;
     inlineWorkspace?: InlineWorkspaceController | null;
     /**
@@ -113,7 +102,7 @@
   // Internal state used when no controlled props are
   // provided (standalone usage).
   let internalDrawer = $state<DrawerItem | null>(null);
-  let internalCommitDrawer = $state<CommitDrawerItem | null>(null);
+  let internalCommitDrawer = $state<ActivityCommitSelection | null>(null);
   let internalDetailTab = $state<ActivityDetailTab>(
     "conversation",
   );
@@ -404,7 +393,7 @@
     }
     if (!item.commit_sha) return;
 
-    const entry: CommitDrawerItem = {
+    const entry: ActivityCommitSelection = {
       itemType: "commit",
       provider: item.repo.provider,
       platformHost: item.repo.platform_host,

@@ -344,9 +344,7 @@ describe("defaultActions", () => {
     const commitContext = ctx("activity", { selectedPR: staleSelected });
     expect(action.when(commitContext)).toBe(true);
     action.handler(commitContext);
-    expect(locationPath()).toBe(
-      "/repo/browser?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets",
-    );
+    expect(locationPath()).toBe("/repo/browser?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets");
   });
 
   it("opens the repo browser from the route-selected issue before stale issue store state", () => {

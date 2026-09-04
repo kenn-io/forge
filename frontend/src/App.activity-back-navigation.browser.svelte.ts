@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 
-import { mountBrowserApp, pressKey, resetKeyboardModuleState, type MountedBrowserApp } from "./test/browserAppHarness.js";
+import {
+  mountBrowserApp,
+  pressKey,
+  resetKeyboardModuleState,
+  type MountedBrowserApp,
+} from "./test/browserAppHarness.js";
 import { jsonResponse, mockSettings, type MockRouteOverride } from "./test/mockApiFetch.js";
 
 const WAIT = 10_000;
@@ -20,7 +25,7 @@ const activityItems = [
     id: "a1",
     cursor: "a1",
     activity_type: "comment",
-    author: "marius",
+    author: "user-a",
     body_preview: "",
     created_at: "2026-03-30T14:00:00Z",
     item_number: 42,
@@ -34,7 +39,7 @@ const activityItems = [
     id: "b1",
     cursor: "b1",
     activity_type: "comment",
-    author: "marius",
+    author: "user-a",
     body_preview: "",
     created_at: "2026-03-30T13:00:00Z",
     item_number: 55,
@@ -48,7 +53,7 @@ const activityItems = [
     id: "c1",
     cursor: "c1",
     activity_type: "default_branch_commit",
-    author: "marius",
+    author: "user-a",
     body_preview: "Bump dependency",
     created_at: "2026-03-30T12:00:00Z",
     item_number: 0,
@@ -83,9 +88,7 @@ function activityOverrides(): MockRouteOverride[] {
 }
 
 function activityRow(text: string): Element {
-  return Array.from(document.querySelectorAll(".activity-row")).find((row) =>
-    (row.textContent ?? "").includes(text),
-  )!;
+  return Array.from(document.querySelectorAll(".activity-row")).find((row) => (row.textContent ?? "").includes(text))!;
 }
 
 async function openSelection(text: string): Promise<string> {
@@ -176,7 +179,10 @@ describe("Activity detail restoration after browser Back", () => {
     await openSelection("Bump dependency");
 
     await page.getByText("PR 42 title").click();
-    await vi.waitFor(() => expect(document.querySelector(".activity-detail-header")?.textContent).toContain("acme/widgets#42"), WAIT);
+    await vi.waitFor(
+      () => expect(document.querySelector(".activity-detail-header")?.textContent).toContain("acme/widgets#42"),
+      WAIT,
+    );
     expect(new URL(window.location.href).searchParams.get("selected")).toBe("pr:42");
     expect(document.querySelector(".commit-diff-panel")).toBeNull();
   });

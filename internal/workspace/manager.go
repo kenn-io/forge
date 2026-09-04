@@ -2669,6 +2669,9 @@ func resolveWorktreeBaseRemote(
 	}
 	var matches []string
 	for _, remote := range names {
+		if !validGitRemoteName(remote) {
+			return "", fmt.Errorf("git remote name %q is unsafe", remote)
+		}
 		remoteURLs, err := gitConfigValues(ctx, dir, "remote."+remote+".url")
 		if err != nil {
 			return "", fmt.Errorf("read %q remote: %w", remote, err)
@@ -2703,6 +2706,11 @@ func remoteMatchesRepositoryIdentity(
 		gitremote.ValidateRemoteIdentity(gitremote.Identity{
 			Host: platformHost, Owner: owner, Name: name,
 		}, remoteURL) == nil
+}
+
+func validGitRemoteName(remote string) bool {
+	return remote != "" && remote[0] != '-' &&
+		!strings.ContainsAny(remote, " \t\r\n")
 }
 
 func validateBaseRemoteURLs(
@@ -2842,7 +2850,9 @@ func validateBaseFetchRefspec(ctx context.Context, dir, remote string) error {
 		}
 		for _, value := range values {
 			destination, ok := fetchRefspecDestination(value)
-			if ok && strings.HasPrefix(destination, remoteTrackingRef(remote, "")) {
+			if ok && fetchRefspecOverlapsNamespace(
+				destination, remoteTrackingRef(remote, ""),
+			) {
 				return fmt.Errorf(
 					"remote %q fetch refspec %q writes into the %q tracking namespace",
 					other, value, remote,
@@ -2875,6 +2885,18 @@ func fetchRefspecParts(value string) (string, string, bool) {
 		return "", "", false
 	}
 	return source, destination, true
+}
+
+func fetchRefspecOverlapsNamespace(destination, namespace string) bool {
+	if destination == "" || namespace == "" {
+		return false
+	}
+	if wildcard := strings.IndexByte(destination, '*'); wildcard >= 0 {
+		prefix := destination[:wildcard]
+		return strings.HasPrefix(namespace, prefix) ||
+			strings.HasPrefix(prefix, namespace)
+	}
+	return strings.HasPrefix(destination, namespace)
 }
 
 func gitRemoteNames(ctx context.Context, dir string) ([]string, error) {
@@ -3172,7 +3194,7 @@ func (m *Manager) addFallbackBranchWorktree(
 	if err != nil {
 		return "", err
 	}
-	if err := configureFallbackBranchUpstreamForGitDir(
+	if err := configureFallbackBranchUpstream(
 		ctx, gitDir, ws, branch,
 	); err != nil {
 		cleanupErr := cleanupOwnedWorktreeAddOnUpstreamFailure(
@@ -3468,20 +3490,6 @@ func cleanupOwnedWorktreeAddOnUpstreamFailure(
 // identity evidence: forks preserve commit IDs. Fork and unknown heads take
 // the merge-request-ref path and remain without an origin upstream.
 func configureFallbackBranchUpstream(
-	ctx context.Context,
-	cloneDir string,
-	ws *Workspace,
-	fallbackBranch string,
-) error {
-	return configureFallbackBranchUpstreamForGitDir(
-		ctx,
-		workspaceGitDir{path: cloneDir, remote: originRemoteName},
-		ws,
-		fallbackBranch,
-	)
-}
-
-func configureFallbackBranchUpstreamForGitDir(
 	ctx context.Context,
 	gitDir workspaceGitDir,
 	ws *Workspace,

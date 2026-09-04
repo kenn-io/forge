@@ -718,7 +718,7 @@ describe("comment draft persistence", () => {
     });
   });
 
-  it.each(["pull", "issue"] as const)("passes the platform host to %s comment autocomplete", async (kind) => {
+  it.each(["pull", "issue"] as const)("passes the host and item to %s comment autocomplete", async (kind) => {
     const autocompleteQueries: Array<Record<string, unknown> | undefined> = [];
 
     renderCommentHarness({
@@ -747,6 +747,11 @@ describe("comment draft persistence", () => {
     expect(autocompleteQueries.at(-1)).toMatchObject({
       path: {
         platform_host: "ghe.example.com",
+      },
+      query: {
+        trigger: "@",
+        item_type: kind === "pull" ? "pr" : "issue",
+        item_number: 1,
       },
     });
   });

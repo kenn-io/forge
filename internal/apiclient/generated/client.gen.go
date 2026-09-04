@@ -1097,6 +1097,24 @@ func (e GetPullFilePreviewParamsSide) Valid() bool {
 	}
 }
 
+// Defines values for GetCommentAutocompleteParamsItemType.
+const (
+	GetCommentAutocompleteParamsItemTypeIssue GetCommentAutocompleteParamsItemType = "issue"
+	GetCommentAutocompleteParamsItemTypePr    GetCommentAutocompleteParamsItemType = "pr"
+)
+
+// Valid indicates whether the value is a known member of the GetCommentAutocompleteParamsItemType enum.
+func (e GetCommentAutocompleteParamsItemType) Valid() bool {
+	switch e {
+	case GetCommentAutocompleteParamsItemTypeIssue:
+		return true
+	case GetCommentAutocompleteParamsItemTypePr:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ResolveRepoItemParamsItemType.
 const (
 	ResolveRepoItemParamsItemTypeIssue ResolveRepoItemParamsItemType = "issue"
@@ -6300,7 +6318,16 @@ type GetCommentAutocompleteParams struct {
 	Trigger *string `form:"trigger,omitempty" json:"trigger,omitempty"`
 	Q       *string `form:"q,omitempty" json:"q,omitempty"`
 	Limit   *int64  `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// ItemType Optional item the comment targets; requires item_number.
+	ItemType *GetCommentAutocompleteParamsItemType `form:"item_type,omitempty" json:"item_type,omitempty"`
+
+	// ItemNumber Optional item number the comment targets; requires item_type.
+	ItemNumber *int64 `form:"item_number,omitempty" json:"item_number,omitempty"`
 }
+
+// GetCommentAutocompleteParamsItemType defines parameters for GetCommentAutocomplete.
+type GetCommentAutocompleteParamsItemType string
 
 // GetRepoCommitDiffParams defines parameters for GetRepoCommitDiff.
 type GetRepoCommitDiffParams struct {
@@ -35205,6 +35232,30 @@ func NewGetCommentAutocompleteRequest(server string, provider string, owner stri
 		if params.Limit != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.ItemType != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "item_type", *params.ItemType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.ItemNumber != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "item_number", *params.ItemNumber, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {

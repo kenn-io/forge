@@ -19019,6 +19019,10 @@ export interface operations {
                 trigger?: string;
                 q?: string;
                 limit?: number;
+                /** @description Optional item the comment targets; requires item_number. */
+                item_type?: "pr" | "issue";
+                /** @description Optional item number the comment targets; requires item_type. */
+                item_number?: number;
             };
             header?: never;
             path: {
@@ -21189,6 +21193,7 @@ export const pathsActivityThreadEventsGetParametersQueryItem_typeValues: Readonl
 export const pathsHostPlatform_hostPullsProviderOwnerNameNumberFilePreviewGetParametersQuerySideValues: ReadonlyArray<FlattenedDeepRequired<paths>["/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/file-preview"]["get"]["parameters"]["query"]["side"]> = ["old", "new"];
 export const pathsHostPlatform_hostRepoProviderOwnerNameResolveNumberPostParametersQueryItem_typeValues: ReadonlyArray<FlattenedDeepRequired<paths>["/host/{platform_host}/repo/{provider}/{owner}/{name}/resolve/{number}"]["post"]["parameters"]["query"]["item_type"]> = ["pr", "issue"];
 export const pathsPullsProviderOwnerNameNumberFilePreviewGetParametersQuerySideValues: ReadonlyArray<FlattenedDeepRequired<paths>["/pulls/{provider}/{owner}/{name}/{number}/file-preview"]["get"]["parameters"]["query"]["side"]> = ["old", "new"];
+export const pathsRepoProviderOwnerNameCommentAutocompleteGetParametersQueryItem_typeValues: ReadonlyArray<FlattenedDeepRequired<paths>["/repo/{provider}/{owner}/{name}/comment-autocomplete"]["get"]["parameters"]["query"]["item_type"]> = ["pr", "issue"];
 export const pathsRepoProviderOwnerNameResolveNumberPostParametersQueryItem_typeValues: ReadonlyArray<FlattenedDeepRequired<paths>["/repo/{provider}/{owner}/{name}/resolve/{number}"]["post"]["parameters"]["query"]["item_type"]> = ["pr", "issue"];
 export const pathsStarredDeleteParametersQueryItem_typeValues: ReadonlyArray<FlattenedDeepRequired<paths>["/starred"]["delete"]["parameters"]["query"]["item_type"]> = ["pr", "issue"];
 export const pathsWorkspacesIdFilePreviewGetParametersQueryBaseValues: ReadonlyArray<FlattenedDeepRequired<paths>["/workspaces/{id}/file-preview"]["get"]["parameters"]["query"]["base"]> = ["head", "pushed", "merge-target"];

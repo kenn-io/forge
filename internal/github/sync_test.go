@@ -23393,6 +23393,15 @@ func TestWithObsoleteMetadata(t *testing.T) {
 	}
 }
 
+func TestWithCommitOrderMetadataPreservesCommitAuthor(t *testing.T) {
+	withOrder := withCommitOrderMetadata(`{"commit_author":"original-author"}`, 2, 4)
+	assert.JSONEq(t, `{"commit_author":"original-author","commit_order":2,"commit_order_key":4}`, withOrder)
+
+	withObsolete, changed := withObsoleteMetadata(withOrder, true)
+	assert.True(t, changed)
+	assert.JSONEq(t, `{"commit_author":"original-author","commit_order":2,"commit_order_key":4,"obsolete":true}`, withObsolete)
+}
+
 // TestSyncRepoDropsStaleSettingsSnapshotBehindNewerObservation simulates a
 // notification sync committing fresher repository settings between this
 // sync's provider snapshot capture and its settings write. The delayed full

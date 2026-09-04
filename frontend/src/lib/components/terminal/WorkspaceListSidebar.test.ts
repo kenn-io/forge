@@ -1509,6 +1509,182 @@ describe("WorkspaceListSidebar", () => {
     expect(container.querySelectorAll(".sidebar-group-header")).toHaveLength(0);
   });
 
+  it("sorts flat by hook-reported agent status", async () => {
+    const states: WorkspaceFixtureOptions["agentState"][] = ["idle", "done", "working", "input", "approval", null];
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          ...states.map((agentState, index) =>
+            workspaceFixture({
+              id: agentState ?? "unreported",
+              provider: "github",
+              platformHost: "github.com",
+              owner: "kenn-io",
+              name: "kenn-forge",
+              number: index + 1,
+              title: agentState ?? "unreported",
+              agentState,
+              agentStateUpdatedAt: agentState === "done" ? "2026-05-12T12:00:00Z" : null,
+            }),
+          ),
+          workspaceFixture({
+            id: "done-newer-hook",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "kenn-io",
+            name: "kenn-forge",
+            number: 99,
+            title: "done-newer-hook",
+            agentState: "done",
+            createdAt: "2026-05-01T12:00:00Z",
+            agentStateUpdatedAt: "2026-05-13T12:00:00Z",
+          }),
+        ],
+      },
+    });
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "approval" },
+    });
+    await screen.findByText("approval");
+
+    await fireEvent.click(screen.getByTitle("View workspace options"));
+    const agentStatusSort = screen.getByRole("button", { name: "Agent status" });
+    expect(agentStatusSort.getAttribute("title")).toBe(
+      "Group by agent status, with workspaces needing attention first.",
+    );
+    await fireEvent.click(agentStatusSort);
+
+    expect(rowTitles(container)).toEqual([
+      "approval",
+      "input",
+      "working",
+      "done-newer-hook",
+      "done",
+      "idle",
+      "unreported",
+    ]);
+    expect(container.querySelectorAll(".sidebar-group-header")).toHaveLength(0);
+    expect(container.textContent).toContain("Idle");
+    expect(Array.from(container.querySelectorAll(".agent-state"), (state) => state.textContent)).not.toContain(
+      "Unreported",
+    );
+    const unreportedRow = screen.getByText("unreported").closest<HTMLElement>(".ws-row");
+    expect(unreportedRow?.querySelector(".workspace-sort-time")?.getAttribute("datetime")).toBe("2026-05-12T12:00:00Z");
+
+    const doneRow = screen.getByText("done-newer-hook").closest<HTMLElement>(".ws-row");
+    expect(doneRow).toBeTruthy();
+    expect(doneRow?.querySelector(".workspace-sort-time")?.getAttribute("datetime")).toBe("2026-05-13T12:00:00Z");
+    await fireEvent.click(doneRow!);
+
+    expect(mockNavigate).toHaveBeenCalledWith("/terminal/done-newer-hook");
+    expect(doneRow?.querySelector(".agent-state")?.textContent).toContain("Done");
+    expect(doneRow?.querySelector(".workspace-sort-time")?.getAttribute("datetime")).toBe("2026-05-13T12:00:00Z");
+    expect(rowTitles(container)).toEqual([
+      "approval",
+      "input",
+      "working",
+      "done-newer-hook",
+      "done",
+      "idle",
+      "unreported",
+    ]);
+
+    await fireEvent.click(screen.getByTitle("View workspace options"));
+    await fireEvent.click(screen.getByRole("button", { name: "Created" }));
+    expect(doneRow?.querySelector(".agent-state")?.textContent).toContain("Done");
+  });
+
+  it("uses item activity as the agent-status fallback timestamp", async () => {
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          workspaceFixture({
+            id: "newer-created",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "kenn-io",
+            name: "kenn-forge",
+            number: 1,
+            title: "Newer creation",
+            createdAt: "2026-05-12T12:00:00Z",
+            itemLastActivityAt: "2026-05-13T12:00:00Z",
+          }),
+          workspaceFixture({
+            id: "newer-item-activity",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "kenn-io",
+            name: "kenn-forge",
+            number: 2,
+            title: "Newer item activity",
+            createdAt: "2026-05-11T12:00:00Z",
+            itemLastActivityAt: "2026-05-14T12:00:00Z",
+          }),
+        ],
+      },
+    });
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "newer-created" },
+    });
+    await screen.findByText("Newer creation");
+
+    await fireEvent.click(screen.getByTitle("View workspace options"));
+    await fireEvent.click(screen.getByRole("button", { name: "Agent status" }));
+
+    expect(rowTitles(container)).toEqual(["Newer item activity", "Newer creation"]);
+    expect(
+      screen
+        .getByText("Newer item activity")
+        .closest<HTMLElement>(".ws-row")
+        ?.querySelector(".workspace-sort-time")
+        ?.getAttribute("datetime"),
+    ).toBe("2026-05-14T12:00:00Z");
+  });
+
+  it("shows the timestamp used by each flat sort below the linked item", async () => {
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          workspaceFixture({
+            id: "ws-times",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "kenn-io",
+            name: "kenn-forge",
+            number: 7,
+            title: "Timestamped workspace",
+            createdAt: "2026-05-10T12:00:00Z",
+            tmuxLastOutputAt: "2026-05-11T12:00:00Z",
+            itemLastActivityAt: "2026-05-12T12:00:00Z",
+            agentState: "working",
+            agentStateUpdatedAt: "2026-05-13T12:00:00Z",
+          }),
+        ],
+      },
+    });
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-times" },
+    });
+    await screen.findByText("Timestamped workspace");
+    expect(container.querySelector(".workspace-sort-time")).toBeNull();
+
+    for (const [sort, timestamp] of [
+      ["Created", "2026-05-10T12:00:00Z"],
+      ["Activity", "2026-05-11T12:00:00Z"],
+      ["Item activity", "2026-05-12T12:00:00Z"],
+      ["Agent status", "2026-05-13T12:00:00Z"],
+    ]) {
+      await fireEvent.click(screen.getByTitle("View workspace options"));
+      await fireEvent.click(screen.getByRole("button", { name: sort }));
+      expect(
+        container.querySelector(".ws-row-aside > .item-bubble + .workspace-sort-time")?.getAttribute("datetime"),
+      ).toBe(timestamp);
+    }
+  });
+
   it("persists the selected sort across mounts", async () => {
     mockGet.mockResolvedValue({
       data: { workspaces: sortFixtures() },
@@ -1548,6 +1724,7 @@ describe("WorkspaceListSidebar", () => {
     expect(screen.getByRole("button", { name: "Org / repo" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Created" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Activity" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Agent status" })).toBeTruthy();
     expect(screen.getByText("Visibility")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Hide org name" }).classList.contains("active")).toBe(false);
     expect(screen.getByRole("button", { name: "Show PR diff stats" })).toBeTruthy();
@@ -2669,7 +2846,7 @@ describe("WorkspaceListSidebar", () => {
 
   it("labels an ad-hoc workspace by branch and shows no item bubble", async () => {
     mockGet.mockResolvedValue({
-      data: { workspaces: [adHocWorkspaceFixture()] },
+      data: { workspaces: [adHocWorkspaceFixture({ worktreeDirty: true })] },
     });
 
     const { container } = render(WorkspaceListSidebar, {
@@ -2680,6 +2857,8 @@ describe("WorkspaceListSidebar", () => {
     // No provider item and no Kata task: there is nothing for a bubble to
     // open, and the row must never advertise #0.
     expect(container.querySelector(".item-bubble")).toBeNull();
+    expect(container.querySelector(".ws-row-aside > .item-bubble-slot")).toBeTruthy();
+    expect(container.querySelector(".ws-row-aside > .item-bubble-slot + .worktree-dirty")).toBeTruthy();
     expect(container.textContent).not.toContain("#0");
   });
 

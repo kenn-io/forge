@@ -120,7 +120,21 @@ describe("MobileWorkspaceList", () => {
     ).toBeTruthy();
   });
 
-  it("does not expose a dead linked-item action for Kata workspaces", async () => {
+  it("leaves the agent state empty when no hook has reported", async () => {
+    localStorage.setItem("kenn-forge:workspaceListSort", "agent-status");
+
+    render(MobileWorkspaceList, { props: { onOpen: vi.fn(), onOpenItem: vi.fn() } });
+
+    await screen.findByText("Build mobile workspaces");
+    expect(screen.queryByText("Unreported")).toBeNull();
+    expect(document.querySelector(".mobile-workspace-row__sort-time")?.getAttribute("datetime")).toBe(
+      fixture.created_at,
+    );
+    expect(screen.getByRole("button", { name: "Open workspace Build mobile workspaces" })).toBeTruthy();
+  });
+
+  it("shows sort timestamps without exposing a dead linked-item action for Kata workspaces", async () => {
+    localStorage.setItem("kenn-forge:workspaceListSort", "created");
     mockGet.mockImplementation((path: string) => {
       if (path === "/snapshot") {
         return Promise.resolve({
@@ -151,6 +165,9 @@ describe("MobileWorkspaceList", () => {
 
     await screen.findByText("Build mobile workspaces");
     expect(screen.queryByRole("button", { name: /Open linked item/ })).toBeNull();
+    expect(document.querySelector(".mobile-workspace-row__sort-time")?.getAttribute("datetime")).toBe(
+      fixture.created_at,
+    );
   });
 
   it("hides actions for a removed workspace source item", async () => {
@@ -223,6 +240,11 @@ describe("MobileWorkspaceList", () => {
     expect(screen.getByRole("dialog", { name: "View workspace options" })).toBeTruthy();
     expect(getTopFrame()?.frameId).toBe("mobile-workspace-view-options");
     expect(screen.getByRole("radio", { name: /^Terminal activity/ })).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole("radio", { name: /^Created/ }));
+    expect(document.querySelector(".mobile-workspace-row__sort-time")?.getAttribute("datetime")).toBe(
+      fixture.created_at,
+    );
 
     await fireEvent.click(screen.getByRole("switch", { name: "Show organization names" }));
     await waitFor(() => {

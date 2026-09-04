@@ -187,6 +187,10 @@ the diff, so scope diff locators to `.diff-area`.
 Pane tab headers are `role="tab"` with an `aria-label`, so use
 `getByRole("tab", { name })` — `getByRole(..., { hasText })` is not a valid
 option and silently matches every tab.
+The mock Playwright config's 30 s timeout covers the whole test, and every
+`page.goto` is a full Vite dev-server load that slows several-fold under CI's
+14 workers; keep a test to two navigations or split it, or it fails on the
+first attempt and only passes on retry. (`frontend/playwright.config.ts`)
 Sidebar item rows are `<button>`s whose accessible name concatenates every
 descendant label, including indicator `aria-label`s such as "Stacked: 2/7", so
 a page-wide `getByRole("button", { name })` for a detail chip also matches the

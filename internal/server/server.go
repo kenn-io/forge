@@ -1569,7 +1569,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if r.Method != http.MethodGet && s.isMutatingAPIRequest(r) {
-		if !checkCrossOrigin(w, r) {
+		if !checkCrossOrigin(w, r, hostOpts.TrustReverseProxy) {
 			return
 		}
 		if s.isMutatingDocsAPIRequest(r) && !isLoopbackRemoteAddr(r.RemoteAddr) {
@@ -1766,8 +1766,27 @@ func authorityIsLoopbackHost(hostHeader string) bool {
 
 // checkCrossOrigin rejects cross-origin browser requests. Returns true if
 // the request is allowed, false if it was rejected (response written).
-func checkCrossOrigin(w http.ResponseWriter, r *http.Request) bool {
-	if err := crossOriginProtection.Check(r); err != nil {
+func checkCrossOrigin(w http.ResponseWriter, r *http.Request, trustReverseProxy bool) bool {
+	request := r
+	if trustReverseProxy {
+		// Host validation has already accepted the forwarded public authority.
+		// Use it for the Origin comparison instead of the proxy's backend Host.
+		publicHost := ""
+		if values := r.Header.Values("X-Forwarded-Host"); len(values) > 0 {
+			if key, err := parseXForwardedHost(strings.Join(values, ",")); err == nil {
+				publicHost = key.String()
+			}
+		} else if values := r.Header.Values("Forwarded"); len(values) > 0 {
+			if key, err := parseForwardedHost(strings.Join(values, ",")); err == nil {
+				publicHost = key.String()
+			}
+		}
+		if publicHost != "" {
+			request = r.Clone(r.Context())
+			request.Host = publicHost
+		}
+	}
+	if err := crossOriginProtection.Check(request); err != nil {
 		writeError(w, http.StatusForbidden, "cross-origin requests are not allowed")
 		return false
 	}

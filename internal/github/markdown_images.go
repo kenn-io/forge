@@ -105,7 +105,8 @@ func markdownRepositoryFileSegments(parsed *url.URL, platformHost, owner, repo s
 // getRepositoryFileImage reads a committed file through the contents API. Web
 // URLs do not delimit the ref from the file path, and branch names may contain
 // slashes, so the split is resolved the way GitHub does: the shortest ref that
-// yields the file wins, and 404s move on to the next candidate.
+// yields the file wins, and 404s move on to the next candidate. The ref is
+// usually a branch, so the result is marked mutable.
 func (c *liveClient) getRepositoryFileImage(
 	ctx context.Context,
 	owner, repo string,
@@ -125,7 +126,7 @@ func (c *liveClient) getRepositoryFileImage(
 		if err != nil {
 			return platform.MarkdownImage{}, err
 		}
-		return platform.MarkdownImage{Content: content, ContentType: contentType}, nil
+		return platform.MarkdownImage{Content: content, ContentType: contentType, Mutable: true}, nil
 	}
 	return platform.MarkdownImage{}, &platform.Error{
 		Code: platform.ErrCodeNotFound, Provider: platform.KindGitHub, PlatformHost: c.platformHost,

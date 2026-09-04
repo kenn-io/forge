@@ -66,6 +66,7 @@ func TestGetMarkdownImageResolvesRepositoryFileAcrossSlashedBranch(t *testing.T)
 	require.NoError(err)
 	assert.Equal("image/png", image.ContentType)
 	assert.Equal(pngBytes, image.Content)
+	assert.True(image.Mutable, "branch-addressed files change under the same URL")
 
 	got := requests()
 	require.Len(got, 2, "the shortest ref candidate misses before the slashed branch resolves")

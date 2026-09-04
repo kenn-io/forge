@@ -746,8 +746,9 @@ chain "correctly" falls back to the PAT.
 - Repository-file markdown images (`blob`/`raw` web URLs, `raw.githubusercontent.com`)
   are proxied only for the route's own repository, use the normal read chain, and are
   type-sniffed because the contents raw media type hides the file type; web URLs do not
-  delimit ref from path, so ref splits are tried shortest-first past 404s. The frontend
-  must apply the same URL rules (`internal/github/markdown_images.go::getRepositoryFileImage`).
+  delimit ref from path, so ref splits are tried shortest-first past 404s. They are
+  marked mutable because the ref is usually a branch. The frontend must apply the
+  same URL rules (`internal/github/markdown_images.go::getRepositoryFileImage`).
 Config may carry multiple `[[github_apps]]` rows for one host, but those rows
 represent distinct app credentials. Management commands must target one row by
 app owner/installation account or app id, and duplicate installation accounts on

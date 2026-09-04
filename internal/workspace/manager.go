@@ -2901,8 +2901,8 @@ func fetchRefspecOverlapsNamespace(destination, namespace string) bool {
 		return false
 	}
 	namespaceRoot := strings.TrimSuffix(namespace, "/")
-	if wildcard := strings.IndexByte(destination, '*'); wildcard >= 0 {
-		prefix := strings.TrimSuffix(destination[:wildcard], "/")
+	if prefix, _, wildcard := strings.Cut(destination, "*"); wildcard {
+		prefix = strings.TrimSuffix(prefix, "/")
 		return strings.HasPrefix(namespaceRoot, prefix) ||
 			refPathPrefix(namespaceRoot, prefix)
 	}

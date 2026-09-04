@@ -2791,6 +2791,7 @@ func TestValidateWorktreeBasePathRejectsForeignRemoteWritingBaseNamespace(t *tes
 		"+refs/heads/*:refs/remotes/*",
 		"+refs/heads/*:refs/*",
 		"+refs/heads/main:refs/remotes/upstream",
+		"+refs/heads/*:refs/remotes/upstr*",
 	} {
 		t.Run(refspec, func(t *testing.T) {
 			assert := assert.New(t)
@@ -2832,6 +2833,23 @@ func TestValidateWorktreeBasePathRejectsUnsafeCanonicalRemoteName(t *testing.T) 
 	require.Empty(base.Path)
 	require.Error(err)
 	assert.Contains(err.Error(), `git remote name "-bad" is unsafe`)
+}
+
+func TestValidateWorktreeBasePathAllowsUnsafeUnrelatedRemoteName(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/thing")
+	runWorkspaceTestGit(
+		t, localRepo, "config", "--add", "remote.-bad.url",
+		"https://github.com/other/widget.git",
+	)
+
+	base, err := ValidateWorktreeBasePath(
+		t.Context(), localRepo, "github.com", "acme", "widget", false,
+	)
+
+	require.NoError(err)
+	assert.Equal("origin", base.Remote)
 }
 
 func TestValidateWorktreeBasePathRejectsExecutableLocalConfig(t *testing.T) {

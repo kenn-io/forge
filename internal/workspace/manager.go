@@ -16,7 +16,6 @@ import (
 	"os/user"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -2668,20 +2667,30 @@ func resolveWorktreeBaseRemote(
 		return "", fmt.Errorf("list git remotes: %w", err)
 	}
 	var matches []string
+	var unsafeMatches []string
 	for _, remote := range names {
-		if !validGitRemoteName(remote) {
-			return "", fmt.Errorf("git remote name %q is unsafe", remote)
-		}
 		remoteURLs, err := gitConfigValues(ctx, dir, "remote."+remote+".url")
 		if err != nil {
 			return "", fmt.Errorf("read %q remote: %w", remote, err)
 		}
+		identityMatch := false
 		for _, remoteURL := range remoteURLs {
 			if remoteMatchesRepositoryIdentity(remoteURL, platformHost, owner, name) {
-				matches = append(matches, remote)
+				identityMatch = true
 				break
 			}
 		}
+		if !identityMatch {
+			continue
+		}
+		if !validGitRemoteName(remote) {
+			unsafeMatches = append(unsafeMatches, remote)
+			continue
+		}
+		matches = append(matches, remote)
+	}
+	if len(unsafeMatches) > 0 {
+		return "", fmt.Errorf("git remote name %q is unsafe", unsafeMatches[0])
 	}
 	if len(matches) == 0 {
 		return "", fmt.Errorf(
@@ -2894,8 +2903,8 @@ func fetchRefspecOverlapsNamespace(destination, namespace string) bool {
 	namespaceRoot := strings.TrimSuffix(namespace, "/")
 	if wildcard := strings.IndexByte(destination, '*'); wildcard >= 0 {
 		prefix := strings.TrimSuffix(destination[:wildcard], "/")
-		return refPathPrefix(prefix, namespaceRoot) ||
-			refPathPrefix(namespaceRoot, prefix)
+		return strings.HasPrefix(namespaceRoot, prefix) ||
+			strings.HasPrefix(prefix, namespaceRoot)
 	}
 	return refPathPrefix(destination, namespaceRoot) ||
 		refPathPrefix(namespaceRoot, destination)
@@ -2916,7 +2925,7 @@ func gitRemoteNames(ctx context.Context, dir string) ([]string, error) {
 			names = append(names, name)
 		}
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	return names, nil
 }
 

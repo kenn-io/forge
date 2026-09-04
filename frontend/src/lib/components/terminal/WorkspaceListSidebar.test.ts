@@ -1569,6 +1569,24 @@ describe("WorkspaceListSidebar", () => {
     expect(Array.from(container.querySelectorAll(".agent-state"), (state) => state.textContent)).not.toContain(
       "Unreported",
     );
+
+    const doneRow = screen.getByText("done-newer-hook").closest<HTMLElement>(".ws-row");
+    expect(doneRow).toBeTruthy();
+    expect(doneRow?.querySelector(".workspace-sort-time")?.getAttribute("datetime")).toBe("2026-05-13T12:00:00Z");
+    await fireEvent.click(doneRow!);
+
+    expect(mockNavigate).toHaveBeenCalledWith("/terminal/done-newer-hook");
+    expect(doneRow?.querySelector(".agent-state")?.textContent).toContain("Done");
+    expect(doneRow?.querySelector(".workspace-sort-time")?.getAttribute("datetime")).toBe("2026-05-13T12:00:00Z");
+    expect(rowTitles(container)).toEqual([
+      "approval",
+      "input",
+      "working",
+      "done-newer-hook",
+      "done",
+      "idle",
+      "unreported",
+    ]);
   });
 
   it("shows the timestamp used by each flat sort below the linked item", async () => {

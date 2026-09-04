@@ -500,7 +500,7 @@ Workspace create endpoints may return 202 with a pre-existing workspace
   profile with `--agent`; kit preserves unrelated handlers and never enables
   agent consent or auto-approval (`cmd/kenn-forge/agent_hook.go::installAgentHooks`).
 - Matching live runtime/worktree reports prioritize approval, input, working, done, then idle.
-  Stop/Interrupt stays `done` until the session ends or its runtime is removed; row activation acknowledges a versioned completion for the browser-tab session, while a new timestamp resurfaces (`internal/agentactivity/store.go::statePriority`, `frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::openWorkspace`).
+  Agent status row activation preserves completion, its hook timestamp, and sort position. Outside that sort, activation acknowledges a versioned completion for the browser-tab session, while a new timestamp resurfaces (`internal/agentactivity/store.go::statePriority`, `frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::openWorkspace`).
 - Hook installs require absolute data roots; kit preserves config symlinks, while
   report/worktree matching uses canonical paths (`cmd/kenn-forge/agent_hook.go::installAgentHooks`,
   `internal/agentactivity/store.go::canonicalWorkspacePath`).

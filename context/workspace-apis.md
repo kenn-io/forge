@@ -63,9 +63,12 @@ embedder protocol for arbitrary host state.
   linked worktree; repository tools use the shared value to identify this layout
   (`internal/workspace/manager.go::configureBareLinkedWorktree`).
 - Managed clones and existing local base checkouts use the same exact
-  provider-host cleartext acknowledgement when validating their origin; local
+  provider-host cleartext acknowledgement when validating their canonical remote; local
   bases do not silently weaken or ignore the configured transport policy
   (`internal/workspace/manager.go::ValidateWorktreeBasePath`).
+- Configured bases resolve their read remote by repository identity and reject
+  ambiguous matches or tracking-namespace overlap; managed clones and workspace
+  branch upstreams remain `origin`-owned (`internal/workspace/manager.go::resolveWorktreeBaseRemote`).
 
 ## Endpoint Intent
 

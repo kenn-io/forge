@@ -222,6 +222,17 @@ func TestSubmitInitialMessageServiceReturnsDeliveredStateAndRoutesShareAttempt(t
 	require.Equal(http.StatusConflict, response.Code, response.Body.String())
 	assert.Equal("\x1b[200~review this\x1b[201~\r", string(owner.pty.written()))
 
+	followUp, err := handler.SubmitAgentMessageService(
+		ctx, workspaceID, session.Key, "keep going",
+	)
+	require.NoError(err)
+	assert.Equal("codex", followUp.TargetKey)
+	assert.Equal(10, followUp.MessageBytes)
+	assert.Equal(
+		"\x1b[200~review this\x1b[201~\r\x1b[200~keep going\x1b[201~\r",
+		string(owner.pty.written()),
+	)
+
 	launchSession := func(codingSession string, report bool) localruntime.SessionInfo {
 		t.Helper()
 		launched, launchErr := runtime.Launch(ctx, workspaceID, worktree, "codex")

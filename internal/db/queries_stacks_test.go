@@ -253,6 +253,18 @@ func TestListStackPlacementsForMRs(t *testing.T) {
 	empty, err := d.ListStackPlacementsForMRs(ctx, nil)
 	require.NoError(err)
 	assert.Empty(empty)
+
+	// The pull list has no size cap, so the lookup must survive an ID set far
+	// beyond SQLite's bind-parameter ceiling (32,766 variables).
+	large := make([]int64, 0, 70_000)
+	for id := int64(1_000_000); id < 1_070_000; id++ {
+		large = append(large, id)
+	}
+	large = append(large, mrID3, mrID4)
+	placements, err = d.ListStackPlacementsForMRs(ctx, large)
+	require.NoError(err)
+	assert.Len(placements, 2)
+	assert.Equal(StackPlacement{Position: 2, Size: 3}, placements[mrID3])
 }
 
 func TestDeleteStaleStacks(t *testing.T) {

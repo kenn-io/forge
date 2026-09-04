@@ -60,6 +60,12 @@ schema migrations.
   reader reloads the stored statistics (`internal/db/db.go::Optimize`).
 - Migrations must never drop or rebuild `sqlite_stat1`, and a query-plan assertion
   needs seeded rows plus `DB.Optimize` first (`internal/db/db.go::Optimize`).
+- Lookups keyed by an unbounded ID list, such as pull-list enrichment, must not
+  expand the list into `IN (?, ?, ...)` placeholders: SQLite caps a statement at
+  32,766 bound variables. Bind the list once as a JSON array through
+  `json_each(?)`, or batch it
+  (`internal/db/queries_stacks.go::ListStackPlacementsForMRs`,
+  `internal/db/queries.go::GetWorktreeLinksForMRs`).
 
 ## Federation Spoke Preparation
 

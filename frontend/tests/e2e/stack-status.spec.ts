@@ -556,6 +556,31 @@ test("stack status follows refreshed detail stack data", async ({ page }) => {
   await expect(page.getByTestId("stack-chip")).toHaveCount(0);
 });
 
+test("phone pull rows fit the stack indicator beside the other indicators", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockStackedPR(page);
+
+  await page.goto("/m/pulls");
+  const row = page.locator(".mobile-shell .pull-item").first();
+  const indicator = row.getByLabel("Stacked: 2/7");
+  await expect(indicator).toHaveText("2/7");
+  // The fixture also renders the approved review, CI cluster, and time
+  // indicators, so the row exercises the full trailing cluster.
+  await expect(row.locator(".review-indicator--approved")).toBeVisible();
+  await expect(row.locator(".ci")).toBeVisible();
+
+  const rowBox = await row.boundingBox();
+  const indicatorBox = await indicator.boundingBox();
+  expect(rowBox).not.toBeNull();
+  expect(indicatorBox).not.toBeNull();
+  if (rowBox && indicatorBox) {
+    expect(rowBox.x + rowBox.width).toBeLessThanOrEqual(390);
+    expect(indicatorBox.x).toBeGreaterThanOrEqual(rowBox.x);
+    expect(indicatorBox.x + indicatorBox.width).toBeLessThanOrEqual(rowBox.x + rowBox.width);
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+});
+
 test("stack status stays rendered while navigating to a stack member", async ({ page }) => {
   let releaseStackResponse: () => void = () => {};
   const delayedStackResponse = new Promise<void>((resolve) => {

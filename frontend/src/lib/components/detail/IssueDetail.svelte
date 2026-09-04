@@ -1568,6 +1568,7 @@
             repoName={name}
             {repoPath}
             {number}
+            itemType="issue"
             activityViewMode={detailActivityView.getMode()}
             initialEntryLimit={settings.getDetailSettings().initial_timeline_entry_limit}
             itemIdentity={`${provider}:${platformHost ?? ""}:${repoPath}:${number}`}

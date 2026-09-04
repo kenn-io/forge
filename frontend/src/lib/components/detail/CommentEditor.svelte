@@ -37,6 +37,9 @@
     provider: string;
     platformHost?: string | undefined;
     repoPath: string;
+    /** Item the comment targets; its participants lead @ mention suggestions. */
+    itemType?: "pull" | "issue" | undefined;
+    itemNumber?: number | undefined;
     value: string;
     disabled?: boolean;
     autofocus?: boolean;
@@ -68,6 +71,8 @@
     provider,
     platformHost,
     repoPath,
+    itemType = undefined,
+    itemNumber = undefined,
     value,
     disabled = false,
     autofocus = false,
@@ -177,6 +182,9 @@
             trigger,
             q: query,
             limit: 8,
+            ...(trigger === "@" && itemType !== undefined && itemNumber !== undefined
+              ? { item_type: itemType === "pull" ? "pr" : "issue", item_number: itemNumber }
+              : {}),
           },
         },
       }),

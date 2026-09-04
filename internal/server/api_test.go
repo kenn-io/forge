@@ -8123,6 +8123,21 @@ func TestAPICommentAutocomplete(t *testing.T) {
 	assert.Equal([]string{"albert", "alex", "alice"}, userBody.Users)
 	assert.Empty(userBody.References)
 
+	// Naming the target item promotes its author and participants ahead of
+	// the recency ordering.
+	itemReq := httptest.NewRequest(http.MethodGet, "/api/v1/repo/gh/acme/widget/comment-autocomplete?trigger=@&q=al&limit=10&item_type=issue&item_number=17", nil)
+	itemRR := httptest.NewRecorder()
+	srv.ServeHTTP(itemRR, itemReq)
+	require.Equal(http.StatusOK, itemRR.Code, itemRR.Body.String())
+	var itemBody commentAutocompleteResponse
+	require.NoError(json.NewDecoder(itemRR.Body).Decode(&itemBody))
+	assert.Equal([]string{"alex", "albert", "alice"}, itemBody.Users)
+
+	halfReq := httptest.NewRequest(http.MethodGet, "/api/v1/repo/gh/acme/widget/comment-autocomplete?trigger=@&q=al&item_number=17", nil)
+	halfRR := httptest.NewRecorder()
+	srv.ServeHTTP(halfRR, halfReq)
+	assert.Equal(http.StatusBadRequest, halfRR.Code, halfRR.Body.String())
+
 	refReq := httptest.NewRequest(http.MethodGet, "/api/v1/repo/gh/acme/widget/comment-autocomplete?trigger=%23&q=1&limit=10", nil)
 	refRR := httptest.NewRecorder()
 	srv.ServeHTTP(refRR, refReq)

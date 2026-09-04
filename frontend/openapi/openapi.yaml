@@ -21281,6 +21281,24 @@ paths:
           schema:
             format: int64
             type: integer
+        - description: Optional item the comment targets; requires item_number.
+          explode: false
+          in: query
+          name: item_type
+          schema:
+            description: Optional item the comment targets; requires item_number.
+            enum:
+              - pr
+              - issue
+            type: string
+        - description: Optional item number the comment targets; requires item_type.
+          explode: false
+          in: query
+          name: item_number
+          schema:
+            description: Optional item number the comment targets; requires item_type.
+            format: int64
+            type: integer
       responses:
         "200":
           content:

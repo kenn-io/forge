@@ -3178,6 +3178,7 @@
             repoName={name}
             {repoPath}
             {number}
+            itemType="pull"
             currentHeadSHA={latestPlatformHeadSha}
             canResolveReviewThreads={capabilities.review_thread_resolution && !resolveThreadGate.unavailable}
             canReplyToThreads={capabilities.thread_reply && !stalePR && !replyThreadGate.unavailable}

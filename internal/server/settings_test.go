@@ -2901,7 +2901,46 @@ port = 8091
 	assert.Equal("repo-b", orgB.Repos[0].Name)
 }
 
+func TestHandlePreviewReposReportsUnconfiguredGitHubProvider(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "")
+
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	require.NoError(os.WriteFile(cfgPath, []byte(`
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+`), 0o644))
+	cfg, err := config.Load(cfgPath)
+	require.NoError(err)
+	database := dbtest.Open(t)
+	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
+	srv := NewWithConfig(database, syncer, nil, nil, cfg, cfgPath,
+		ServerOptions{HostCheckAllowLoopbackAnyPort: true})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
+		"provider": "github", "host": "github.com",
+		"owner": "acme", "pattern": "widget",
+	})
+
+	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
+	assert.True(strings.HasPrefix(
+		rr.Header().Get("Content-Type"), "application/problem+json",
+	))
+	var problem httpapi.ProblemError
+	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
+	assert.Equal(httpapi.CodeBadRequest, problem.Code)
+	assert.Contains(problem.Detail, "provider_not_configured")
+	assert.Contains(problem.Detail, "github.com")
+}
+
 func TestHandlePreviewReposReportsMissingOwnerRoute(t *testing.T) {
+	assert := assert.New(t)
 	require := require.New(t)
 	router, err := ghclient.NewHostRouter(
 		"github.com",
@@ -2938,9 +2977,12 @@ port = 8091
 	})
 
 	require.Equal(http.StatusBadGateway, rr.Code, rr.Body.String())
-	assert.Contains(t, rr.Body.String(), "org-b")
-	assert.Contains(t, rr.Body.String(), "github.com")
-	assert.NotContains(t, rr.Body.String(), "org-a")
+	assert.Contains(rr.Body.String(), "org-b")
+	assert.Contains(rr.Body.String(), "github.com")
+	assert.NotContains(rr.Body.String(), "org-a")
+	var problem httpapi.ProblemError
+	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
+	assert.Equal(httpapi.CodeUpstreamError, problem.Code)
 }
 
 func TestHandlePreviewReposFallsBackToListWhenExactLookupFails(t *testing.T) {

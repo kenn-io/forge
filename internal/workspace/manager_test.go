@@ -2815,6 +2815,25 @@ func TestValidateWorktreeBasePathRejectsForeignRemoteWritingBaseNamespace(t *tes
 	}
 }
 
+func TestValidateWorktreeBasePathAllowsForeignRemoteWithSimilarNamespace(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	localRepo, _, platformHost := setupForkStyleHTTPWorktreeBaseForWorkspaceGitTest(
+		t, "feature/thing",
+	)
+	runWorkspaceTestGit(
+		t, localRepo, "config", "--add", "remote.origin.fetch",
+		"+refs/heads/*:refs/remotes/upstreamish/*",
+	)
+
+	base, err := ValidateWorktreeBasePath(
+		t.Context(), localRepo, platformHost, "acme", "widget", false,
+	)
+
+	require.NoError(err)
+	assert.Equal("upstream", base.Remote)
+}
+
 func TestValidateWorktreeBasePathRejectsUnsafeCanonicalRemoteName(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

@@ -714,7 +714,7 @@
       !workspaceOperationAvailable(ws, "terminalAttach")
     ) return;
     const doneVersion = doneStateVersion(ws);
-    if (doneVersion !== null) {
+    if (sortMode !== "agent-status" && doneVersion !== null) {
       acknowledgedDoneStates = {
         ...acknowledgedDoneStates,
         [workspaceRowKey(ws)]: doneVersion,

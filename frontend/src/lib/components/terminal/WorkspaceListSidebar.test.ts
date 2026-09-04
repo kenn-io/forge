@@ -1589,6 +1589,10 @@ describe("WorkspaceListSidebar", () => {
       "idle",
       "unreported",
     ]);
+
+    await fireEvent.click(screen.getByTitle("View workspace options"));
+    await fireEvent.click(screen.getByRole("button", { name: "Created" }));
+    expect(doneRow?.querySelector(".agent-state")?.textContent).toContain("Done");
   });
 
   it("uses item activity as the agent-status fallback timestamp", async () => {

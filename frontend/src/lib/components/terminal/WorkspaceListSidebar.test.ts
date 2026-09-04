@@ -1591,6 +1591,54 @@ describe("WorkspaceListSidebar", () => {
     ]);
   });
 
+  it("uses item activity as the agent-status fallback timestamp", async () => {
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          workspaceFixture({
+            id: "newer-created",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "kenn-io",
+            name: "kenn-forge",
+            number: 1,
+            title: "Newer creation",
+            createdAt: "2026-05-12T12:00:00Z",
+            itemLastActivityAt: "2026-05-13T12:00:00Z",
+          }),
+          workspaceFixture({
+            id: "newer-item-activity",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "kenn-io",
+            name: "kenn-forge",
+            number: 2,
+            title: "Newer item activity",
+            createdAt: "2026-05-11T12:00:00Z",
+            itemLastActivityAt: "2026-05-14T12:00:00Z",
+          }),
+        ],
+      },
+    });
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "newer-created" },
+    });
+    await screen.findByText("Newer creation");
+
+    await fireEvent.click(screen.getByTitle("View workspace options"));
+    await fireEvent.click(screen.getByRole("button", { name: "Agent status" }));
+
+    expect(rowTitles(container)).toEqual(["Newer item activity", "Newer creation"]);
+    expect(
+      screen
+        .getByText("Newer item activity")
+        .closest<HTMLElement>(".ws-row")
+        ?.querySelector(".workspace-sort-time")
+        ?.getAttribute("datetime"),
+    ).toBe("2026-05-14T12:00:00Z");
+  });
+
   it("shows the timestamp used by each flat sort below the linked item", async () => {
     mockGet.mockResolvedValue({
       data: {

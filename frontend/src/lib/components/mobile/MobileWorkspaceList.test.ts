@@ -133,7 +133,7 @@ describe("MobileWorkspaceList", () => {
     expect(screen.getByRole("button", { name: "Open workspace Build mobile workspaces" })).toBeTruthy();
   });
 
-  it("does not expose a dead linked-item action for Kata workspaces", async () => {
+  it("shows sort timestamps without exposing a dead linked-item action for Kata workspaces", async () => {
     localStorage.setItem("kenn-forge:workspaceListSort", "created");
     mockGet.mockImplementation((path: string) => {
       if (path === "/snapshot") {

@@ -705,10 +705,10 @@ The workspace sidebar has two separate activity concepts:
   with `created_at` as the fallback.
 
 - `Agent status` groups approval, input, working, done, idle, then unlabeled
-  rows without a report; equal states use hook recency with creation as fallback
+  rows without a report; equal states use hook recency, then item activity, then creation
   (`frontend/src/lib/components/terminal/workspaceListSort.ts`).
-- Each flat sort shows the timestamp that drives its order
-  (`frontend/src/lib/components/terminal/workspaceListSort.ts::workspaceListSortTimestamp`).
+- Each flat sort shows the timestamp that drives its order as an unlabeled relative time
+  (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::workspaceRow`).
 
 Keep these modes distinct. Do not relabel `Activity` to mean provider PR/issue
 activity, and do not add compatibility aliases for old sort values without an

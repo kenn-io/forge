@@ -68,6 +68,14 @@ export function workspaceAgentStatePriority(state: WorkspaceListItem["agent_stat
   }
 }
 
+function workspaceAgentStateTimestamp(workspace: WorkspaceListItem): { at: string; label: string } {
+  const hookTimestamp = workspace.agent_state_updated_at?.trim();
+  if (hookTimestamp) return { at: hookTimestamp, label: "Agent hook" };
+
+  const itemTimestamp = workspace.item_last_activity_at?.trim();
+  return itemTimestamp ? { at: itemTimestamp, label: "Item activity" } : { at: workspace.created_at, label: "Created" };
+}
+
 export function workspaceListSortTimestamp(
   workspace: WorkspaceListItem,
   sort: WorkspaceListSort,
@@ -83,17 +91,15 @@ export function workspaceListSortTimestamp(
       return workspace.item_last_activity_at
         ? { at: workspace.item_last_activity_at, label: "Item activity" }
         : { at: workspace.created_at, label: "Created" };
-    case "agent-status": {
-      const agentHookAt = workspace.agent_state_updated_at?.trim();
-      return agentHookAt ? { at: agentHookAt, label: "Agent hook" } : { at: workspace.created_at, label: "Created" };
-    }
+    case "agent-status":
+      return workspaceAgentStateTimestamp(workspace);
     default:
       return null;
   }
 }
 
 export function workspaceAgentStateSortTime(workspace: WorkspaceListItem): string {
-  return workspace.agent_state_updated_at?.trim() || workspace.created_at;
+  return workspaceAgentStateTimestamp(workspace).at;
 }
 
 function getStorage(): Storage | null {

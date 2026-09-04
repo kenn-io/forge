@@ -2891,12 +2891,18 @@ func fetchRefspecOverlapsNamespace(destination, namespace string) bool {
 	if destination == "" || namespace == "" {
 		return false
 	}
+	namespaceRoot := strings.TrimSuffix(namespace, "/")
 	if wildcard := strings.IndexByte(destination, '*'); wildcard >= 0 {
-		prefix := destination[:wildcard]
-		return strings.HasPrefix(namespace, prefix) ||
-			strings.HasPrefix(prefix, namespace)
+		prefix := strings.TrimSuffix(destination[:wildcard], "/")
+		return refPathPrefix(prefix, namespaceRoot) ||
+			refPathPrefix(namespaceRoot, prefix)
 	}
-	return strings.HasPrefix(destination, namespace)
+	return refPathPrefix(destination, namespaceRoot) ||
+		refPathPrefix(namespaceRoot, destination)
+}
+
+func refPathPrefix(prefix, path string) bool {
+	return prefix == path || strings.HasPrefix(path, prefix+"/")
 }
 
 func gitRemoteNames(ctx context.Context, dir string) ([]string, error) {

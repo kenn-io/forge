@@ -2790,6 +2790,7 @@ func TestValidateWorktreeBasePathRejectsForeignRemoteWritingBaseNamespace(t *tes
 		"+refs/tags/*:refs/remotes/upstream/tags/*",
 		"+refs/heads/*:refs/remotes/*",
 		"+refs/heads/*:refs/*",
+		"+refs/heads/main:refs/remotes/upstream",
 	} {
 		t.Run(refspec, func(t *testing.T) {
 			assert := assert.New(t)

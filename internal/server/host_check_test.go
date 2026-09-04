@@ -346,6 +346,59 @@ func TestHostCheckForwardedHost(t *testing.T) {
 	}
 }
 
+func TestCrossOriginProtectionUsesValidatedForwardedHost(t *testing.T) {
+	cases := []struct {
+		name       string
+		header     string
+		value      string
+		origin     string
+		wantStatus int
+	}{
+		{
+			name:       "X-Forwarded-Host matches Origin",
+			header:     "X-Forwarded-Host",
+			value:      "forge.example:8080",
+			origin:     "http://forge.example:8080",
+			wantStatus: http.StatusAccepted,
+		},
+		{
+			name:       "Forwarded host matches Origin",
+			header:     "Forwarded",
+			value:      "for=192.0.2.10;host=forge.example:8080",
+			origin:     "http://forge.example:8080",
+			wantStatus: http.StatusAccepted,
+		},
+		{
+			name:       "forwarded host does not match Origin",
+			header:     "X-Forwarded-Host",
+			value:      "forge.example:8080",
+			origin:     "http://other.example:8080",
+			wantStatus: http.StatusForbidden,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := setupHostCheckServer(t, HostCheckOptions{
+				Bind: bindLoopback8091(),
+				Allowed: []config.HostKey{
+					{Host: "forge.example", Port: "8080"},
+				},
+				TrustReverseProxy: true,
+			})
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/sync", nil)
+			req.Host = "127.0.0.1:8091"
+			req.Header.Set(tc.header, tc.value)
+			req.Header.Set("Origin", tc.origin)
+			rr := httptest.NewRecorder()
+
+			srv.ServeHTTP(rr, req)
+
+			require.Equal(t, tc.wantStatus, rr.Code, rr.Body.String())
+		})
+	}
+}
+
 // TestHostCheck403BodyShape pins the 403 body shape used by the
 // middleware. The body must be valid JSON of the form
 // {"error":"..."} and the value must name both config knobs so an

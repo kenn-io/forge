@@ -414,6 +414,11 @@ GitLab private Markdown upload web URLs do not accept API-token authentication.
 Translate only repo-scoped upload URLs to the authenticated project-upload API;
 never proxy arbitrary provider URLs. (`internal/platform/gitlab/markdown_images.go::GetMarkdownImage`)
 
+The markdown image cache is keyed by stable repository identity, never the owner/name
+route, so a replacement occupant of a reused route cannot receive the previous
+repository's bytes; providers mark ref-addressed sources `Mutable` and the server then
+caches them for minutes instead of a year (`internal/server/markdown_images.go::markdownImageCacheKey`).
+
 GitLab merge request and issue `iid` values are repo-scoped numbers. Persist
 provider object ids separately from user-visible numbers, and scope events by
 provider identity so equal GitHub/GitLab ids do not collide.

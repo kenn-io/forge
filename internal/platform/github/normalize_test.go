@@ -70,7 +70,7 @@ func TestNormalizeCommitEventUsesCommitterForRebasedCommit(t *testing.T) {
 	assert := assert.New(t)
 	assert.Equal("rebase-committer", event.Author)
 	assert.Equal(time.Date(2026, 9, 3, 4, 52, 4, 0, time.UTC), event.CreatedAt)
-	assert.Equal(`{"commit_author":"original-author"}`, event.MetadataJSON)
+	assert.JSONEq(`{"commit_author":"original-author"}`, event.MetadataJSON)
 	assert.Equal("feat: rewrite commit", event.Body)
 	assert.Equal("abcdef1234567890", event.Summary)
 	assert.Equal("commit-abcdef123456", event.DedupeKey)

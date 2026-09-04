@@ -937,7 +937,7 @@ prefer_github_native_stacks = true
 	require.NoError(err)
 	require.NotNil(before.JSON200)
 	require.NotNil(before.JSON200.Members)
-	assert.Equal([]int64{11, 10}, stackMemberNumbers(*before.JSON200.Members))
+	assert.Equal([]int64{11, 10}, stackMemberNumbers(before.JSON200.Members))
 
 	disabled := config.PullRequests{}
 	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
@@ -949,7 +949,7 @@ prefer_github_native_stacks = true
 	require.NoError(err)
 	require.NotNil(after.JSON200)
 	require.NotNil(after.JSON200.Members)
-	assert.Equal([]int64{10, 11}, stackMemberNumbers(*after.JSON200.Members))
+	assert.Equal([]int64{10, 11}, stackMemberNumbers(after.JSON200.Members))
 }
 
 func TestHandleUpdateTerminalSettingsPreservesActivity(t *testing.T) {
@@ -4516,7 +4516,7 @@ prefer_github_native_stacks = true
 	require.NoError(err)
 	require.NotNil(before.JSON200)
 	require.NotNil(before.JSON200.Members)
-	require.Equal([]int64{11, 10}, stackMemberNumbers(*before.JSON200.Members))
+	require.Equal([]int64{11, 10}, stackMemberNumbers(before.JSON200.Members))
 
 	var buf bytes.Buffer
 	require.NoError(json.NewEncoder(&buf).Encode(updateSettingsRequest{
@@ -4534,7 +4534,7 @@ prefer_github_native_stacks = true
 	require.NoError(err)
 	require.NotNil(after.JSON200)
 	require.NotNil(after.JSON200.Members)
-	assert.Equal([]int64{10, 11}, stackMemberNumbers(*after.JSON200.Members),
+	assert.Equal([]int64{10, 11}, stackMemberNumbers(after.JSON200.Members),
 		"committed-state reconciliation must not depend on the request context")
 }
 
@@ -4587,7 +4587,7 @@ prefer_github_native_stacks = true
 	require.NoError(err)
 	require.NotNil(after.JSON200)
 	require.NotNil(after.JSON200.Members)
-	assert.Equal([]int64{11, 10}, stackMemberNumbers(*after.JSON200.Members),
+	assert.Equal([]int64{11, 10}, stackMemberNumbers(after.JSON200.Members),
 		"a superseded disable must not overwrite the projection the current preference produced")
 }
 
@@ -4637,7 +4637,7 @@ prefer_github_native_stacks = true
 	require.NoError(err)
 	require.NotNil(before.JSON200)
 	require.NotNil(before.JSON200.Members)
-	require.Equal([]int64{11, 10}, stackMemberNumbers(*before.JSON200.Members))
+	require.Equal([]int64{11, 10}, stackMemberNumbers(before.JSON200.Members))
 
 	disabled := config.PullRequests{}
 	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
@@ -4650,7 +4650,7 @@ prefer_github_native_stacks = true
 	require.NoError(err)
 	require.NotNil(after.JSON200)
 	require.NotNil(after.JSON200.Members)
-	assert.Equal([]int64{10, 11}, stackMemberNumbers(*after.JSON200.Members),
+	assert.Equal([]int64{10, 11}, stackMemberNumbers(after.JSON200.Members),
 		"a repository no longer tracked must still lose native ordering when the preview is disabled")
 }
 
@@ -4714,6 +4714,6 @@ prefer_github_native_stacks = false
 	require.NoError(err)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Members)
-	assert.Equal([]int64{10, 11}, stackMemberNumbers(*resp.JSON200.Members),
+	assert.Equal([]int64{10, 11}, stackMemberNumbers(resp.JSON200.Members),
 		"a server booting with the preview disabled must not serve native ordering")
 }

@@ -127,17 +127,17 @@ func TestArchiveReportFromAPIPreservesTransportOrdering(t *testing.T) {
 	}
 	transport := generated.ArchiveReportResponse{
 		ReportSchema: report.Schema, Start: start, End: end,
-		Repositories: &[]generated.ArchiveReportRepositoryResponse{{
+		Repositories: []generated.ArchiveReportRepositoryResponse{{
 			Repository: archiveGeneratedCLIRef("github", "github.example", "owner", "repo"),
 			Coverage: generated.ArchiveReportCoverageResponse{
-				Status: "current", ActivePhases: &activePhases, CollectionMode: "full",
+				Status: "current", ActivePhases: activePhases, CollectionMode: "full",
 				OperatorState: "active", Comments: "supported", Reviews: "supported",
 				InlineComments: "supported", ArchivedItems: 4,
 			},
 			Counts: generated.ArchiveReportCountsResponse{IssuesOpened: 1, ReviewsSubmitted: 1},
 		}},
 		Totals: generated.ArchiveReportCountsResponse{IssuesOpened: 1, ReviewsSubmitted: 1},
-		Contributors: &[]generated.ArchiveReportContributorResponse{
+		Contributors: []generated.ArchiveReportContributorResponse{
 			{Provider: "github", PlatformHost: "github.example", Login: "bob", Counts: generated.ArchiveReportCountsResponse{ReviewsSubmitted: 1}},
 			{Provider: "github", PlatformHost: "github.example", Login: "alice", Counts: generated.ArchiveReportCountsResponse{IssuesOpened: 1}},
 		},
@@ -180,7 +180,7 @@ func TestArchiveReportFromAPIPreservesLifecycleContract(t *testing.T) {
 	}}
 	transport := generated.ArchiveReportResponse{
 		ReportSchema: report.Schema, Start: start, End: end,
-		Repositories: &[]generated.ArchiveReportRepositoryResponse{{
+		Repositories: []generated.ArchiveReportRepositoryResponse{{
 			Repository: archiveGeneratedCLIRef("github", "github.example", "owner", "repo"),
 			Coverage: generated.ArchiveReportCoverageResponse{
 				Status: "current", CollectionMode: "full", OperatorState: "active",
@@ -215,7 +215,7 @@ func TestArchiveReportFromAPIPreservesLifecycleContract(t *testing.T) {
 	assert.Equal(12, activity.Additions)
 	assert.Equal(4, activity.Deletions)
 	require.NotNil(activity.FilesChanged)
-	assert.Equal(3, *activity.FilesChanged)
+	assert.Equal(3, activity.FilesChanged)
 	assert.Equal("abc123", activity.MergeCommitSHA)
 }
 

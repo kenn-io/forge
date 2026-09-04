@@ -853,10 +853,10 @@ func TestWorkspaceRuntimeLaunchMultipleAndStopOneE2E(t *testing.T) {
 	require.Equal(http.StatusOK, listResp.StatusCode())
 	require.NotNil(listResp.JSON200)
 	require.NotNil(listResp.JSON200.Sessions)
-	require.Len(*listResp.JSON200.Sessions, 2)
-	assert.Equal(first.Key, (*listResp.JSON200.Sessions)[0].Key)
-	assert.Equal("Helper", (*listResp.JSON200.Sessions)[0].Label)
-	assert.Equal("Review helper", (*listResp.JSON200.Sessions)[1].Label)
+	require.Len(listResp.JSON200.Sessions, 2)
+	assert.Equal(first.Key, listResp.JSON200.Sessions[0].Key)
+	assert.Equal("Helper", listResp.JSON200.Sessions[0].Label)
+	assert.Equal("Review helper", listResp.JSON200.Sessions[1].Label)
 
 	stopResp, err := client.HTTP.StopWorkspaceRuntimeSessionWithResponse(
 		ctx, ws.Id, first.Key,
@@ -871,8 +871,8 @@ func TestWorkspaceRuntimeLaunchMultipleAndStopOneE2E(t *testing.T) {
 	require.Equal(http.StatusOK, afterStopResp.StatusCode())
 	require.NotNil(afterStopResp.JSON200)
 	require.NotNil(afterStopResp.JSON200.Sessions)
-	require.Len(*afterStopResp.JSON200.Sessions, 1)
-	assert.Equal(second.Key, (*afterStopResp.JSON200.Sessions)[0].Key)
+	require.Len(afterStopResp.JSON200.Sessions, 1)
+	assert.Equal(second.Key, afterStopResp.JSON200.Sessions[0].Key)
 }
 
 func TestWorkspaceRuntimeNaturalAgentExitRemovesSessionE2E(t *testing.T) {
@@ -912,7 +912,7 @@ func TestWorkspaceRuntimeNaturalAgentExitRemovesSessionE2E(t *testing.T) {
 			runtimeResp.JSON200.Sessions == nil {
 			return false
 		}
-		return len(*runtimeResp.JSON200.Sessions) == 0
+		return len(runtimeResp.JSON200.Sessions) == 0
 	}, 2*time.Second, 20*time.Millisecond)
 	stored, err := database.ListWorkspaceRuntimeSessions(ctx, ws.Id)
 	require.NoError(err)
@@ -958,7 +958,7 @@ func TestWorkspaceRuntimePtyOwnerQuickExitLaunchSucceedsE2E(t *testing.T) {
 			runtimeResp.JSON200.Sessions == nil {
 			return false
 		}
-		return len(*runtimeResp.JSON200.Sessions) == 0
+		return len(runtimeResp.JSON200.Sessions) == 0
 	}, 2*time.Second, 20*time.Millisecond)
 	stored, err := database.ListWorkspaceRuntimeSessions(ctx, ws.Id)
 	require.NoError(err)
@@ -1106,7 +1106,7 @@ func TestWorkspaceRuntimePlainShellTerminalDeliversActualExitCodeE2E(t *testing.
 			return false
 		}
 		if runtimeResp.JSON200.Sessions != nil {
-			for _, session := range *runtimeResp.JSON200.Sessions {
+			for _, session := range runtimeResp.JSON200.Sessions {
 				if session.Key == shell.Key {
 					return false
 				}
@@ -1207,7 +1207,7 @@ func TestWorkspaceRuntimePtyOwnerQuickExitReportsExactStatusE2E(t *testing.T) {
 		)
 		if runtimeErr != nil || runtimeResp.StatusCode() != http.StatusOK ||
 			runtimeResp.JSON200 == nil || runtimeResp.JSON200.Sessions == nil ||
-			len(*runtimeResp.JSON200.Sessions) != 0 {
+			len(runtimeResp.JSON200.Sessions) != 0 {
 			return false
 		}
 		stored, storedErr := fixture.database.ListWorkspaceRuntimeSessions(ctx, ws.Id)

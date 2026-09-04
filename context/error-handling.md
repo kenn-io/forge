@@ -80,6 +80,11 @@ packages must use its constructors instead of direct `huma.Error4xx` /
 `huma.Error5xx` calls so status, wire code, and details stay consistent
 (`internal/server/httpapi/problems.go::ProblemError`).
 
+Huma uses Go's JSON v2 semantics for API bodies. Ordinary nil slices serialize
+as `[]`, and their OpenAPI schemas are non-null arrays; use a pointer or an
+explicit nullable wrapper only when `null` has domain meaning
+(`internal/server/httpapi/problems.go::init`).
+
 Rules for handler code:
 
 - Validation failures use `validationError` and should name the request field.

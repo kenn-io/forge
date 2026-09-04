@@ -1,6 +1,12 @@
 import { Effect } from "effect";
-import { canonicalProvider, providerRepoPath, providerRouteParams } from "../api/provider-routes.js";
-import { client } from "../api/runtime.js";
+import { GeneratedApi } from "../api/generated-api.js";
+import {
+  canonicalProvider,
+  providerRouteParams,
+  providerHostRouteParams,
+  providerUsesHostRoute,
+} from "../api/provider-routes.js";
+import { GeneratedProblemResponse } from "../api/runtime.js";
 import type { AppExecution, AppRuntime } from "../app/runtime.js";
 import { navigate, buildItemRoute } from "../stores/router.svelte.js";
 import { showFlash } from "../stores/flash.svelte.js";
@@ -30,56 +36,68 @@ function findItemRef(target: EventTarget | null): HTMLAnchorElement | null {
   return null;
 }
 
-function resolveAndNavigate(ref: ResolvableItemReference): Effect.Effect<void, unknown> {
+function resolveAndNavigate(ref: ResolvableItemReference): Effect.Effect<void, unknown, GeneratedApi> {
   const { provider, platformHost, owner, name, repoPath, number, itemType, externalUrl } = ref;
-  return Effect.tryPromise({
-    try: (signal) => {
-      const routeRef = { provider, platformHost, owner, name, repoPath };
-      const itemTypeHint = canonicalProvider(provider) === "gitlab" ? itemType : undefined;
-      return client.POST(providerRepoPath(routeRef, "/resolve/{number}"), {
-        signal,
-        params: {
-          path: { ...providerRouteParams(routeRef), number },
-          ...(itemTypeHint && { query: { item_type: itemTypeHint } }),
-        },
+  return Effect.gen(function* () {
+    const api = yield* GeneratedApi;
+    const result = yield* Effect.tryPromise({
+      try: (signal) => {
+        const routeRef = { provider, platformHost, owner, name, repoPath };
+        const itemTypeHint = canonicalProvider(provider) === "gitlab" ? itemType : undefined;
+        const query = itemTypeHint === undefined ? undefined : { item_type: itemTypeHint };
+        const request = providerUsesHostRoute(routeRef)
+          ? api.client.RepositoriesService.resolveRepoItemOnHost(
+              { ...providerHostRouteParams(routeRef), number },
+              query,
+              {
+                signal,
+              },
+            )
+          : api.client.RepositoriesService.resolveRepoItem({ ...providerRouteParams(routeRef), number }, query, {
+              signal,
+            });
+        return request.then(
+          (data) => ({ data }) as const,
+          (cause: unknown) => {
+            if (cause instanceof GeneratedProblemResponse) return { problem: cause.problem } as const;
+            throw cause;
+          },
+        );
+      },
+      catch: (cause) => cause,
+    });
+    yield* Effect.sync(() => {
+      if ("problem" in result) {
+        if (result.problem.status === 404) {
+          showFlash(`Item ${owner}/${name}#${number} not found.`, { tone: "danger" });
+        } else {
+          showFlash(`Failed to resolve ${owner}/${name}#${number}. Try again later.`, { tone: "danger" });
+        }
+        return;
+      }
+
+      if (!result.data.repo_tracked) {
+        const safeExternalUrl = safeExternalURL(externalUrl);
+        if (safeExternalUrl) {
+          window.open(safeExternalUrl, "_blank", "noopener,noreferrer");
+          return;
+        }
+        showFlash(`${owner}/${name} is not tracked. Add it in Settings to navigate here.`, { tone: "danger" });
+        return;
+      }
+
+      const path = buildItemRoute({
+        itemType: result.data.item_type === "pr" ? "pr" : "issue",
+        provider,
+        platformHost,
+        owner,
+        name,
+        repoPath,
+        number,
       });
-    },
-    catch: (cause) => cause,
-  }).pipe(
-    Effect.andThen(({ data, error, response }) =>
-      Effect.sync(() => {
-        if (error) {
-          if (response.status === 404) {
-            showFlash(`Item ${owner}/${name}#${number} not found.`, { tone: "danger" });
-          } else {
-            showFlash(`Failed to resolve ${owner}/${name}#${number}. Try again later.`, { tone: "danger" });
-          }
-          return;
-        }
-
-        if (!data.repo_tracked) {
-          const safeExternalUrl = safeExternalURL(externalUrl);
-          if (safeExternalUrl) {
-            window.open(safeExternalUrl, "_blank", "noopener,noreferrer");
-            return;
-          }
-          showFlash(`${owner}/${name} is not tracked. Add it in Settings to navigate here.`, { tone: "danger" });
-          return;
-        }
-
-        const path = buildItemRoute({
-          itemType: data.item_type === "pr" ? "pr" : "issue",
-          provider,
-          platformHost,
-          owner,
-          name,
-          repoPath,
-          number,
-        });
-        navigate(path);
-      }),
-    ),
-  );
+      navigate(path);
+    });
+  });
 }
 
 // Resolves an item reference through the repo resolve endpoint and either

@@ -65,7 +65,7 @@ func TestWorkspaceCRUDE2E(t *testing.T) {
 	require.Equal(http.StatusOK, listResp.StatusCode())
 	require.NotNil(listResp.JSON200)
 	require.NotNil(listResp.JSON200.Workspaces)
-	assert.Empty(*listResp.JSON200.Workspaces)
+	assert.Empty(listResp.JSON200.Workspaces)
 
 	// 2. Create workspace.
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
@@ -110,7 +110,7 @@ func TestWorkspaceCRUDE2E(t *testing.T) {
 	require.Equal(http.StatusOK, listResp2.StatusCode())
 	require.NotNil(listResp2.JSON200)
 	require.NotNil(listResp2.JSON200.Workspaces)
-	assert.Len(*listResp2.JSON200.Workspaces, 1)
+	assert.Len(listResp2.JSON200.Workspaces, 1)
 
 	// 5. Delete workspace (force).
 	force := true
@@ -133,7 +133,7 @@ func TestWorkspaceCRUDE2E(t *testing.T) {
 	require.Equal(http.StatusOK, listResp3.StatusCode())
 	require.NotNil(listResp3.JSON200)
 	require.NotNil(listResp3.JSON200.Workspaces)
-	assert.Empty(*listResp3.JSON200.Workspaces)
+	assert.Empty(listResp3.JSON200.Workspaces)
 }
 
 func TestWorkspaceRetryErroredWorkspaceE2E(t *testing.T) {
@@ -362,7 +362,7 @@ func TestWorkspaceCreateHidesRemovedUpstreamItems(t *testing.T) {
 	require.Equal(http.StatusOK, listed.StatusCode())
 	require.NotNil(listed.JSON200)
 	require.NotNil(listed.JSON200.Workspaces)
-	require.Empty(*listed.JSON200.Workspaces)
+	require.Empty(listed.JSON200.Workspaces)
 }
 
 func TestWorkspaceListRetainsWorkspaceWithoutRemovedPullMetadata(t *testing.T) {
@@ -398,8 +398,8 @@ func TestWorkspaceListRetainsWorkspaceWithoutRemovedPullMetadata(t *testing.T) {
 	require.Equal(http.StatusOK, listed.StatusCode(), string(listed.Body))
 	require.NotNil(listed.JSON200)
 	require.NotNil(listed.JSON200.Workspaces)
-	require.Len(*listed.JSON200.Workspaces, 1)
-	workspace := (*listed.JSON200.Workspaces)[0]
+	require.Len(listed.JSON200.Workspaces, 1)
+	workspace := listed.JSON200.Workspaces[0]
 	require.Equal("ws-removed-pr", workspace.Id)
 	require.Equal(int64(1), workspace.ItemNumber)
 	require.Nil(workspace.MrTitle)
@@ -806,5 +806,5 @@ func TestWorkspaceCreatePRAndIssueCanCoexistForSameRepoNumber(t *testing.T) {
 	require.Equal(http.StatusOK, listResp.StatusCode())
 	require.NotNil(listResp.JSON200)
 	require.NotNil(listResp.JSON200.Workspaces)
-	require.Len(*listResp.JSON200.Workspaces, 2)
+	require.Len(listResp.JSON200.Workspaces, 2)
 }

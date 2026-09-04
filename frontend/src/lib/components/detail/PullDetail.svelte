@@ -99,8 +99,7 @@
     providerRepoPath,
     providerRouteParams,
     resolvedPlatformHost,
-    type ProviderRouteRef,
-  } from "../../api/provider-routes.js";
+    type ProviderRouteRef, providerHostRouteParams, providerUsesHostRoute } from "../../api/provider-routes.js";
   import { supportsLocked } from "../../api/provider-capabilities.js";
   import { buildDiffSummaryKey } from "./diff-summary-key.js";
   import {
@@ -1070,10 +1069,7 @@
     };
     repoSettings = null;
     const program = executeGeneratedApiRequest("GET repository merge settings", (client, signal) =>
-      client.GET(providerRepoPath(selectedRef), {
-        params: { path: providerRouteParams(selectedRef) },
-        signal,
-      }),
+      providerUsesHostRoute(selectedRef) ? client.RepositoriesService.getRepoOnHost({ ...providerHostRouteParams(selectedRef) }, { signal }) : client.RepositoriesService.getRepo({ ...providerRouteParams(selectedRef) }, { signal }),
     ).pipe(
       retryIdempotentRead,
       Effect.flatMap((settings) =>
@@ -1454,10 +1450,7 @@
       yield* loadLabelCatalogWithRefresh({
         isActive: isCurrent,
         loadOnce: executeGeneratedApiRequest("GET pull request label catalog", (client, signal) =>
-          client.GET(providerRepoPath(selectedRef, "/labels"), {
-            params: { path: providerRouteParams(selectedRef) },
-            signal,
-          }),
+          providerUsesHostRoute(selectedRef) ? client.RepositoriesService.listRepoLabelsOnHost({ ...providerHostRouteParams(selectedRef) }, { signal }) : client.RepositoriesService.listRepoLabels({ ...providerRouteParams(selectedRef) }, { signal }),
         ).pipe(
           Effect.map((data) => ({
             labels: data.labels ?? [],
@@ -1542,13 +1535,7 @@
 
   function loadUserCandidates(query: string) {
     return executeGeneratedApiRequest("GET pull request user candidates", (client, signal) =>
-      client.GET(providerRepoPath(routeRef, "/comment-autocomplete"), {
-        params: {
-          path: providerRouteParams(routeRef),
-          query: { trigger: "@", q: query, limit: 25 },
-        },
-        signal,
-      }),
+      providerUsesHostRoute(routeRef) ? client.RepositoriesService.getCommentAutocompleteOnHost({ ...providerHostRouteParams(routeRef) }, { trigger: "@", q: query, limit: 25 }, { signal }) : client.RepositoriesService.getCommentAutocomplete({ ...providerRouteParams(routeRef) }, { trigger: "@", q: query, limit: 25 }, { signal }),
     ).pipe(
       retryIdempotentRead,
       Effect.map((data) => data.users ?? []),
@@ -1648,7 +1635,7 @@
     wsCreating = true;
     beginWorkspaceCreate(requestIdentity, launchTargetKey);
     const program = executeGeneratedApiRequest("POST pull request workspace", (client, signal) =>
-      client.POST("/workspaces", { body: requestBody, signal }),
+      client.WorkspacesService.createWorkspace(requestBody, { signal }),
     ).pipe(
       Effect.flatMap((data) =>
         Effect.sync(() => {
@@ -1937,10 +1924,7 @@
 
   function loadDiffSummaryFiles() {
     return executeGeneratedApiRequest("GET pull request diff summary files", (client, signal) =>
-      client.GET(providerItemPath("pulls", routeRef, "/files"), {
-        params: { path: { ...providerRouteParams(routeRef), number } },
-        signal,
-      }),
+      providerUsesHostRoute(routeRef) ? client.PullRequestsService.getPullFilesOnHost({ ...providerHostRouteParams(routeRef), number: number }, { signal }) : client.PullRequestsService.getPullFiles({ ...providerRouteParams(routeRef), number: number }, { signal }),
     ).pipe(
       retryIdempotentRead,
       Effect.map((data) => new DiffSummaryFilesResult(data.stale ?? true, data.files ?? [])),

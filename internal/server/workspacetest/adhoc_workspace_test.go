@@ -150,7 +150,7 @@ func TestCreateAdHocWorkspaceReusesWorkspaceForSameBranch(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(listResp.JSON200)
 	adhoc := 0
-	for _, ws := range *listResp.JSON200.Workspaces {
+	for _, ws := range listResp.JSON200.Workspaces {
 		if ws.ItemType == "adhoc" {
 			adhoc++
 		}

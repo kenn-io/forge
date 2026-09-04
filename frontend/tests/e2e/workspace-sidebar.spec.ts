@@ -1,10 +1,10 @@
 import { expect, test } from "@playwright/test";
 
-import type { components } from "../../src/lib/api/generated/schema.js";
+import type { ProblemError } from "../../src/lib/api/generated/models/index.js";
 import { createMockApiHandler } from "../../src/test/mockApiFetch.js";
 import { mockApi } from "./support/mockApi";
 
-type ProblemBody = components["schemas"]["ProblemError"];
+type ProblemBody = ProblemError;
 
 function problem(code: ProblemBody["code"], status: number, detail?: string): ProblemBody {
   return { type: "about:blank", code, status, ...(detail === undefined ? {} : { detail }) };

@@ -37,8 +37,8 @@ func TestWorkspaceListReportsCommitsAheadBehindE2E(t *testing.T) {
 		if err != nil || resp.JSON200 == nil || resp.JSON200.Workspaces == nil {
 			return nil
 		}
-		for i := range *resp.JSON200.Workspaces {
-			candidate := &(*resp.JSON200.Workspaces)[i]
+		for i := range resp.JSON200.Workspaces {
+			candidate := &resp.JSON200.Workspaces[i]
 			if candidate.Id == ws.Id {
 				return candidate
 			}

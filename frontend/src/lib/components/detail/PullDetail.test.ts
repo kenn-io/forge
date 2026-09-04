@@ -1410,6 +1410,7 @@ describe("PullDetail approvals", () => {
     const button = await vi.waitFor(() => {
       const found = screen.queryByRole("button", { name: /ready for review/i });
       expect(found).not.toBeNull();
+      expect((found as HTMLButtonElement).disabled).toBe(true);
       return found as HTMLButtonElement;
     });
     expect(button.disabled).toBe(true);
@@ -1639,6 +1640,7 @@ describe("PullDetail approvals", () => {
     const button = await vi.waitFor(() => {
       const found = screen.queryByRole("button", { name: /^approve$/i });
       expect(found).not.toBeNull();
+      expect((found as HTMLButtonElement).disabled).toBe(true);
       return found as HTMLButtonElement;
     });
     expect(button.disabled).toBe(true);
@@ -2229,7 +2231,7 @@ describe("PullDetail inline workspace handoff", () => {
     await rerender({ provider: "gh", platformHost: undefined });
     await fireEvent.click(screen.getAllByRole("button", { name: "Create Workspace" })[0]!);
 
-    expect(apiClient.POST).toHaveBeenCalled();
+    await vi.waitFor(() => expect(apiClient.POST).toHaveBeenCalled());
   });
 
   it("keeps the primary workspace create action launch-free", async () => {

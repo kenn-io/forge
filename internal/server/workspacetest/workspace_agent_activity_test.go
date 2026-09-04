@@ -75,10 +75,10 @@ func TestWorkspaceAgentActivityFlowsThroughHTTPResponsesE2E(t *testing.T) {
 	require.Equal(http.StatusOK, sessionsResponse.StatusCode(), string(sessionsResponse.Body))
 	require.NotNil(sessionsResponse.JSON200)
 	require.NotNil(sessionsResponse.JSON200.Sessions)
-	require.Len(*sessionsResponse.JSON200.Sessions, 1)
-	assert.Equal("codex", (*sessionsResponse.JSON200.Sessions)[0].Agent)
-	assert.Equal("live-agent", (*sessionsResponse.JSON200.Sessions)[0].SessionId)
-	assert.Equal(launch.JSON200.Key, (*sessionsResponse.JSON200.Sessions)[0].RuntimeSessionKey)
+	require.Len(sessionsResponse.JSON200.Sessions, 1)
+	assert.Equal("codex", sessionsResponse.JSON200.Sessions[0].Agent)
+	assert.Equal("live-agent", sessionsResponse.JSON200.Sessions[0].SessionId)
+	assert.Equal(launch.JSON200.Key, sessionsResponse.JSON200.Sessions[0].RuntimeSessionKey)
 
 	messageResponse, err := fixture.client.HTTP.SubmitWorkspaceRuntimeSessionInitialMessageWithResponse(
 		ctx, ws.Id, launch.JSON200.Key,
@@ -101,8 +101,8 @@ func TestWorkspaceAgentActivityFlowsThroughHTTPResponsesE2E(t *testing.T) {
 	require.Equal(http.StatusOK, sessionsResponse.StatusCode(), string(sessionsResponse.Body))
 	require.NotNil(sessionsResponse.JSON200)
 	require.NotNil(sessionsResponse.JSON200.Sessions)
-	require.Len(*sessionsResponse.JSON200.Sessions, 1)
-	assert.Nil((*sessionsResponse.JSON200.Sessions)[0].InitialMessage)
+	require.Len(sessionsResponse.JSON200.Sessions, 1)
+	assert.Nil(sessionsResponse.JSON200.Sessions[0].InitialMessage)
 
 	getResponse, err := fixture.client.HTTP.GetWorkspaceWithResponse(ctx, ws.Id)
 	require.NoError(err)
@@ -145,7 +145,7 @@ func TestWorkspaceAgentActivityFlowsThroughHTTPResponsesE2E(t *testing.T) {
 	require.Equal(http.StatusOK, sessionsResponse.StatusCode(), string(sessionsResponse.Body))
 	require.NotNil(sessionsResponse.JSON200)
 	require.NotNil(sessionsResponse.JSON200.Sessions)
-	assert.Empty(*sessionsResponse.JSON200.Sessions)
+	assert.Empty(sessionsResponse.JSON200.Sessions)
 
 	getResponse, err = fixture.client.HTTP.GetWorkspaceWithResponse(ctx, ws.Id)
 	require.NoError(err)

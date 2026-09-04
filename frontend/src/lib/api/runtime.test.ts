@@ -1,24 +1,15 @@
-import { describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it } from "vite-plus/test";
 
-import { createRuntimeClient } from "./runtime.js";
+import { orvalQueryString } from "./runtime.js";
 
 describe("runtime", () => {
-  it("serializes activity type filters as comma-separated query params", async () => {
-    let requestURL = "";
-    const fetchMock = vi.fn(async (input: URL | RequestInfo) => {
-      requestURL = input instanceof Request ? input.url : String(input);
-      return new Response(JSON.stringify({ items: [], capped: false }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    });
+  it("serializes array query parameters as repeated keys", () => {
+    const query = orvalQueryString({ types: ["comment", "review"] });
 
-    const client = createRuntimeClient(fetchMock, "https://forge.test/api/v1");
-    await client.GET("/activity", {
-      params: { query: { types: ["comment", "review"] } },
-    });
+    expect(query).toBe("types=comment&types=review");
+  });
 
-    expect(requestURL).toContain("types=comment,review");
-    expect(requestURL).not.toContain("types=comment&types=review");
+  it("omits an optional query string when no parameters are supplied", () => {
+    expect(orvalQueryString()).toBe("");
   });
 });

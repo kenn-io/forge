@@ -1,10 +1,14 @@
 import { Effect, Schema } from "effect";
-import type { components } from "../../api/generated/schema.js";
+import type {
+  HostSummary as GeneratedHostSummary,
+  WorkspaceRepositorySummary,
+  WorkspaceSummary,
+} from "../../api/generated/models/index.js";
 import { InvalidExternalPayload } from "../../api/effect-errors.js";
 
-type GeneratedWorkspace = components["schemas"]["WorkspaceSummary"];
-type GeneratedRepo = components["schemas"]["WorkspaceRepositorySummary"];
-type HostSummary = components["schemas"]["HostSummary"];
+type GeneratedWorkspace = WorkspaceSummary;
+type GeneratedRepo = WorkspaceRepositorySummary;
+type HostSummary = GeneratedHostSummary;
 
 export type WorkspaceListItem = Pick<
   GeneratedWorkspace,

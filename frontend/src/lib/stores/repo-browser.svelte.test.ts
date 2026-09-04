@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 
 import { Effect } from "effect";
-import { createQuerySerializer, type QuerySerializerOptions } from "openapi-fetch";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { GeneratedClient } from "../api/generated-api.js";
+import { orvalQueryString } from "../api/runtime.js";
 import type { AppServices, OwnedAppRuntime } from "../app/runtime.js";
 import { makeTestAppRuntime } from "../testing/effect-layers.js";
 import { createRepoBrowserStore } from "./repo-browser.svelte.js";
@@ -19,15 +19,7 @@ const repo = {
 type TestClient = GeneratedClient;
 type TestGetOptions = {
   params?: { path?: Record<string, string>; query?: Record<string, unknown> };
-  querySerializer?: QuerySerializerOptions;
   signal?: AbortSignal;
-};
-
-const runtimeQuerySerializerOptions: QuerySerializerOptions = {
-  array: {
-    style: "form",
-    explode: false,
-  },
 };
 
 function testClient(): TestClient {
@@ -1108,8 +1100,7 @@ function testURL(path: string, options?: TestGetOptions): string {
   for (const [key, value] of Object.entries(options?.params?.path ?? {})) {
     url = url.replace(`{${key}}`, encodeURIComponent(String(value)));
   }
-  const serializer = createQuerySerializer(options?.querySerializer ?? runtimeQuerySerializerOptions);
-  const qs = serializer(options?.params?.query ?? {});
+  const qs = orvalQueryString(options?.params?.query);
   return qs ? `${url}?${qs}` : url;
 }
 

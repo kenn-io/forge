@@ -534,20 +534,20 @@ func TestFilteredActivityIncrementalPollRetainsWorkspaceSubject(t *testing.T) {
 			return false
 		}
 		initial = response
-		return len(*response.JSON200.WorkspaceActivity) == 1
+		return len(response.JSON200.WorkspaceActivity) == 1
 	}, 8*time.Second, 100*time.Millisecond, "workspace activity did not observe changed tmux output")
 	require.NotNil(initial)
 	require.NotNil(initial.JSON200)
 	require.NotNil(initial.JSON200.Items)
-	require.Len(*initial.JSON200.Items, 1)
+	require.Len(initial.JSON200.Items, 1)
 	require.NotNil(initial.JSON200.WorkspaceActivity)
-	require.Len(*initial.JSON200.WorkspaceActivity, 1)
-	initialWorkspace := (*initial.JSON200.WorkspaceActivity)[0]
+	require.Len(initial.JSON200.WorkspaceActivity, 1)
+	initialWorkspace := initial.JSON200.WorkspaceActivity[0]
 	assert.EqualValues(1, initialWorkspace.ItemNumber)
 	require.NotNil(initialWorkspace.Workspace)
 	assert.Equal(workspaceID, initialWorkspace.Workspace.Id)
 
-	after := (*initial.JSON200.Items)[0].Cursor
+	after := initial.JSON200.Items[0].Cursor
 	incremental, err := client.HTTP.ListActivityWithResponse(
 		ctx, &generated.ListActivityParams{Search: &search, Since: &since, After: &after},
 	)
@@ -555,10 +555,10 @@ func TestFilteredActivityIncrementalPollRetainsWorkspaceSubject(t *testing.T) {
 	require.Equal(http.StatusOK, incremental.StatusCode())
 	require.NotNil(incremental.JSON200)
 	require.NotNil(incremental.JSON200.Items)
-	assert.Empty(*incremental.JSON200.Items)
+	assert.Empty(incremental.JSON200.Items)
 	require.NotNil(incremental.JSON200.WorkspaceActivity)
-	require.Len(*incremental.JSON200.WorkspaceActivity, 1)
-	incrementalWorkspace := (*incremental.JSON200.WorkspaceActivity)[0]
+	require.Len(incremental.JSON200.WorkspaceActivity, 1)
+	incrementalWorkspace := incremental.JSON200.WorkspaceActivity[0]
 	assert.EqualValues(1, incrementalWorkspace.ItemNumber)
 	require.NotNil(incrementalWorkspace.Workspace)
 	assert.Equal(workspaceID, incrementalWorkspace.Workspace.Id)
@@ -571,9 +571,9 @@ func TestFilteredActivityIncrementalPollRetainsWorkspaceSubject(t *testing.T) {
 	require.Equal(http.StatusOK, authorInitial.StatusCode())
 	require.NotNil(authorInitial.JSON200)
 	require.NotNil(authorInitial.JSON200.Items)
-	require.NotEmpty(*authorInitial.JSON200.Items)
+	require.NotEmpty(authorInitial.JSON200.Items)
 
-	authorAfter := (*authorInitial.JSON200.Items)[0].Cursor
+	authorAfter := authorInitial.JSON200.Items[0].Cursor
 	authorIncremental, err := client.HTTP.ListActivityWithResponse(
 		ctx, &generated.ListActivityParams{Author: &author, Since: &since, After: &authorAfter},
 	)
@@ -581,10 +581,10 @@ func TestFilteredActivityIncrementalPollRetainsWorkspaceSubject(t *testing.T) {
 	require.Equal(http.StatusOK, authorIncremental.StatusCode())
 	require.NotNil(authorIncremental.JSON200)
 	require.NotNil(authorIncremental.JSON200.Items)
-	assert.Empty(*authorIncremental.JSON200.Items)
+	assert.Empty(authorIncremental.JSON200.Items)
 	require.NotNil(authorIncremental.JSON200.WorkspaceActivity)
-	require.Len(*authorIncremental.JSON200.WorkspaceActivity, 1)
-	authorWorkspace := (*authorIncremental.JSON200.WorkspaceActivity)[0]
+	require.Len(authorIncremental.JSON200.WorkspaceActivity, 1)
+	authorWorkspace := authorIncremental.JSON200.WorkspaceActivity[0]
 	assert.EqualValues(1, authorWorkspace.ItemNumber)
 	require.NotNil(authorWorkspace.Workspace)
 	assert.Equal(workspaceID, authorWorkspace.Workspace.Id)
@@ -640,7 +640,7 @@ func TestActivityAuthorsIncludeWorkspaceOnlySubject(t *testing.T) {
 			return false
 		}
 		response = got
-		for _, author := range *got.JSON200.Authors {
+		for _, author := range got.JSON200.Authors {
 			if strings.EqualFold(author, mr.Author) {
 				return true
 			}
@@ -650,7 +650,7 @@ func TestActivityAuthorsIncludeWorkspaceOnlySubject(t *testing.T) {
 	require.NotNil(response)
 	require.NotNil(response.JSON200)
 	require.NotNil(response.JSON200.Authors)
-	assert.Equal([]string{mr.Author}, *response.JSON200.Authors)
+	assert.Equal([]string{mr.Author}, response.JSON200.Authors)
 
 	missingRepo := "github|github.com/acme/missing"
 	params.Repo = &missingRepo
@@ -659,7 +659,7 @@ func TestActivityAuthorsIncludeWorkspaceOnlySubject(t *testing.T) {
 	require.Equal(http.StatusOK, scoped.StatusCode())
 	require.NotNil(scoped.JSON200)
 	require.NotNil(scoped.JSON200.Authors)
-	assert.Empty(*scoped.JSON200.Authors)
+	assert.Empty(scoped.JSON200.Authors)
 
 	future := time.Now().UTC().Add(time.Hour).Format(time.RFC3339Nano)
 	params.Repo = nil
@@ -669,7 +669,7 @@ func TestActivityAuthorsIncludeWorkspaceOnlySubject(t *testing.T) {
 	require.Equal(http.StatusOK, outOfRange.StatusCode())
 	require.NotNil(outOfRange.JSON200)
 	require.NotNil(outOfRange.JSON200.Authors)
-	assert.Empty(*outOfRange.JSON200.Authors)
+	assert.Empty(outOfRange.JSON200.Authors)
 }
 
 func TestFederatedActivityIncludesNodeWorkspaceOnlySubject(t *testing.T) {
@@ -731,11 +731,11 @@ func TestFederatedActivityIncludesNodeWorkspaceOnlySubject(t *testing.T) {
 			return false
 		}
 		response = got
-		return len(*got.JSON200.WorkspaceActivity) == 1
+		return len(got.JSON200.WorkspaceActivity) == 1
 	}, 8*time.Second, 100*time.Millisecond)
 	require.NotNil(response)
-	require.Len(*response.JSON200.WorkspaceActivity, 1)
-	require.Equal(createResp.JSON202.Id, (*response.JSON200.WorkspaceActivity)[0].Workspace.Id)
+	require.Len(response.JSON200.WorkspaceActivity, 1)
+	require.Equal(createResp.JSON202.Id, response.JSON200.WorkspaceActivity[0].Workspace.Id)
 
 	repo, err := database.GetRepoByIdentity(
 		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
@@ -752,7 +752,7 @@ func TestFederatedActivityIncludesNodeWorkspaceOnlySubject(t *testing.T) {
 	require.Equal(http.StatusOK, authors.StatusCode())
 	require.NotNil(authors.JSON200)
 	require.NotNil(authors.JSON200.Authors)
-	require.ElementsMatch([]string{"hub author", mr.Author}, *authors.JSON200.Authors)
+	require.ElementsMatch([]string{"hub author", mr.Author}, authors.JSON200.Authors)
 }
 
 func TestWorkspaceActivityNumberSearchIncludesEventlessSubject(t *testing.T) {
@@ -811,15 +811,15 @@ func TestWorkspaceActivityNumberSearchIncludesEventlessSubject(t *testing.T) {
 				return false
 			}
 			response = got
-			return len(*got.JSON200.WorkspaceActivity) == 1
+			return len(got.JSON200.WorkspaceActivity) == 1
 		}, 8*time.Second, 100*time.Millisecond, "workspace activity did not match %q", search)
 		require.NotNil(response)
 		require.NotNil(response.JSON200)
 		require.NotNil(response.JSON200.Items)
-		assert.Empty(*response.JSON200.Items, "provider Activity must remain outside the window")
+		assert.Empty(response.JSON200.Items, "provider Activity must remain outside the window")
 		require.NotNil(response.JSON200.WorkspaceActivity)
-		require.Len(*response.JSON200.WorkspaceActivity, 1)
-		workspaceSubject := (*response.JSON200.WorkspaceActivity)[0]
+		require.Len(response.JSON200.WorkspaceActivity, 1)
+		workspaceSubject := response.JSON200.WorkspaceActivity[0]
 		assert.EqualValues(1, workspaceSubject.ItemNumber)
 		assert.Equal("Unrelated title", workspaceSubject.ItemTitle)
 		require.NotNil(workspaceSubject.Workspace)

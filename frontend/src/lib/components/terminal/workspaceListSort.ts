@@ -83,8 +83,10 @@ export function workspaceListSortTimestamp(
       return workspace.item_last_activity_at
         ? { at: workspace.item_last_activity_at, label: "Item activity" }
         : { at: workspace.created_at, label: "Created" };
-    case "agent-status":
-      return workspace.agent_state_updated_at ? { at: workspace.agent_state_updated_at, label: "Agent hook" } : null;
+    case "agent-status": {
+      const agentHookAt = workspace.agent_state_updated_at?.trim();
+      return agentHookAt ? { at: agentHookAt, label: "Agent hook" } : { at: workspace.created_at, label: "Created" };
+    }
     default:
       return null;
   }

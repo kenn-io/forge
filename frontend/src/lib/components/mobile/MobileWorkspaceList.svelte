@@ -535,16 +535,18 @@
         {/if}
       </span>
     </button>
-    {#if label}
+    {#if label || sortTimestamp}
       <span class="mobile-workspace-row__item-stack">
-        <button
-          class="mobile-workspace-row__item"
-          type="button"
-          aria-label={`Open linked item ${label}`}
-          onclick={() => openWorkspaceItem(workspace)}
-          disabled={!workspaceOperationAvailable(workspace, "workspaceRead")}
-          title={!workspaceOperationAvailable(workspace, "workspaceRead") ? "Linked item details are unavailable from this Forge" : undefined}
-        >{label}</button>
+        {#if label}
+          <button
+            class="mobile-workspace-row__item"
+            type="button"
+            aria-label={`Open linked item ${label}`}
+            onclick={() => openWorkspaceItem(workspace)}
+            disabled={!workspaceOperationAvailable(workspace, "workspaceRead")}
+            title={!workspaceOperationAvailable(workspace, "workspaceRead") ? "Linked item details are unavailable from this Forge" : undefined}
+          >{label}</button>
+        {/if}
         {#if sortTimestamp}
           <time
             class="mobile-workspace-row__sort-time"

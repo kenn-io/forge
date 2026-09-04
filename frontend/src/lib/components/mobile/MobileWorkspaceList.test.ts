@@ -127,10 +127,14 @@ describe("MobileWorkspaceList", () => {
 
     await screen.findByText("Build mobile workspaces");
     expect(screen.queryByText("Unreported")).toBeNull();
+    expect(document.querySelector(".mobile-workspace-row__sort-time")?.getAttribute("datetime")).toBe(
+      fixture.created_at,
+    );
     expect(screen.getByRole("button", { name: "Open workspace Build mobile workspaces" })).toBeTruthy();
   });
 
   it("does not expose a dead linked-item action for Kata workspaces", async () => {
+    localStorage.setItem("kenn-forge:workspaceListSort", "created");
     mockGet.mockImplementation((path: string) => {
       if (path === "/snapshot") {
         return Promise.resolve({
@@ -161,6 +165,9 @@ describe("MobileWorkspaceList", () => {
 
     await screen.findByText("Build mobile workspaces");
     expect(screen.queryByRole("button", { name: /Open linked item/ })).toBeNull();
+    expect(document.querySelector(".mobile-workspace-row__sort-time")?.getAttribute("datetime")).toBe(
+      fixture.created_at,
+    );
   });
 
   it("hides actions for a removed workspace source item", async () => {

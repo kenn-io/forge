@@ -1569,6 +1569,8 @@ describe("WorkspaceListSidebar", () => {
     expect(Array.from(container.querySelectorAll(".agent-state"), (state) => state.textContent)).not.toContain(
       "Unreported",
     );
+    const unreportedRow = screen.getByText("unreported").closest<HTMLElement>(".ws-row");
+    expect(unreportedRow?.querySelector(".workspace-sort-time")?.getAttribute("datetime")).toBe("2026-05-12T12:00:00Z");
 
     const doneRow = screen.getByText("done-newer-hook").closest<HTMLElement>(".ws-row");
     expect(doneRow).toBeTruthy();

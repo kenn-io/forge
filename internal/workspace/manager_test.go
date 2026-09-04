@@ -2785,24 +2785,30 @@ func TestValidateWorktreeBasePathRejectsMissingCanonicalRemote(t *testing.T) {
 }
 
 func TestValidateWorktreeBasePathRejectsForeignRemoteWritingBaseNamespace(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	localRepo, _, platformHost := setupForkStyleHTTPWorktreeBaseForWorkspaceGitTest(
-		t, "feature/thing",
-	)
-	runWorkspaceTestGit(
-		t, localRepo, "config", "--add", "remote.origin.fetch",
+	for _, refspec := range []string{
 		"+refs/heads/*:refs/remotes/upstream/*",
-	)
+		"+refs/tags/*:refs/remotes/upstream/tags/*",
+	} {
+		t.Run(refspec, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			localRepo, _, platformHost := setupForkStyleHTTPWorktreeBaseForWorkspaceGitTest(
+				t, "feature/thing",
+			)
+			runWorkspaceTestGit(
+				t, localRepo, "config", "--add", "remote.origin.fetch", refspec,
+			)
 
-	base, err := ValidateWorktreeBasePath(
-		t.Context(), localRepo, platformHost, "acme", "widget", false,
-	)
+			base, err := ValidateWorktreeBasePath(
+				t.Context(), localRepo, platformHost, "acme", "widget", false,
+			)
 
-	require.Empty(base.Path)
-	require.Error(err)
-	assert.Contains(err.Error(), `remote "origin" fetch refspec`)
-	assert.Contains(err.Error(), `"upstream" tracking namespace`)
+			require.Empty(base.Path)
+			require.Error(err)
+			assert.Contains(err.Error(), `remote "origin" fetch refspec`)
+			assert.Contains(err.Error(), `"upstream" tracking namespace`)
+		})
+	}
 }
 
 func TestValidateWorktreeBasePathRejectsExecutableLocalConfig(t *testing.T) {

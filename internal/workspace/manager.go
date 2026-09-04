@@ -2359,10 +2359,10 @@ func (m *Manager) workspaceSetupGitDir(
 				ctx, worktreeBasePath, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 				m.allowsInsecureHTTP(ws.Platform, ws.PlatformHost),
 			)
-			return workspaceGitDir{path: base.Path, remote: base.Remote, localBase: true}, err
+			return workspaceGitDir{path: base.Path, remote: base.Remote, localBase: err == nil}, err
 		}
 		if base, ok, err := m.localWorktreeBaseDir(ctx, repo); err != nil || ok {
-			return workspaceGitDir{path: base.Path, remote: base.Remote, localBase: true}, err
+			return workspaceGitDir{path: base.Path, remote: base.Remote, localBase: err == nil}, err
 		}
 	}
 
@@ -2854,21 +2854,27 @@ func validateBaseFetchRefspec(ctx context.Context, dir, remote string) error {
 }
 
 func fetchRefspecUpdatesRemote(value, remote string) bool {
-	destination, ok := fetchRefspecDestination(value)
-	return ok && remote != "" && strings.HasPrefix(destination, remoteTrackingRef(remote, ""))
+	source, destination, ok := fetchRefspecParts(value)
+	return ok && strings.HasPrefix(source, "refs/heads/") &&
+		remote != "" && strings.HasPrefix(destination, remoteTrackingRef(remote, ""))
 }
 
 func fetchRefspecDestination(value string) (string, bool) {
+	_, destination, ok := fetchRefspecParts(value)
+	return destination, ok
+}
+
+func fetchRefspecParts(value string) (string, string, bool) {
 	refspec := strings.TrimSpace(value)
 	if refspec == "" || strings.HasPrefix(refspec, "^") {
-		return "", false
+		return "", "", false
 	}
 	refspec = strings.TrimPrefix(refspec, "+")
-	src, dst, ok := strings.Cut(refspec, ":")
-	if !ok || !strings.HasPrefix(src, "refs/heads/") {
-		return "", false
+	source, destination, ok := strings.Cut(refspec, ":")
+	if !ok || destination == "" {
+		return "", "", false
 	}
-	return dst, true
+	return source, destination, true
 }
 
 func gitRemoteNames(ctx context.Context, dir string) ([]string, error) {

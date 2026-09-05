@@ -1112,10 +1112,6 @@ func (m *Manager) namedRemoteRepository(
 	if remote == "" || remote[0] == '-' || strings.ContainsAny(remote, " \t\r\n") {
 		return "", "", fmt.Errorf("authenticated git rejects unsafe remote name %q", remote)
 	}
-	rewrites, err := m.git(ctx, dir, "config", "--local", "--get-regexp", `^url\..*\.(insteadOf|pushInsteadOf)$`)
-	if err == nil && strings.TrimSpace(string(rewrites)) != "" {
-		return "", "", fmt.Errorf("authenticated git rejects repository-local URL rewrites")
-	}
 	var remoteURLs []string
 	for _, key := range []string{"remote." + remote + ".url", "remote." + remote + ".pushurl"} {
 		out, err := m.git(ctx, dir, "config", "--get-all", key)

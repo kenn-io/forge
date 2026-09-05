@@ -538,6 +538,28 @@ func TestDocsFileEndpointRejectsInvalidPathsAndTypes(t *testing.T) {
 	assert.Equal(http.StatusUnsupportedMediaType, blobMarkdownRR.Code, blobMarkdownRR.Body.String())
 }
 
+func TestDocsSearchEndpointOmitsLineForFilenameOnlyHits(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, root := setupDocsRouteServer(t)
+	require.NoError(os.WriteFile(filepath.Join(root, "budget.md"), []byte("unrelated content\n"), 0o644))
+	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/docs/search?q=budget", nil)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	var body generated.DocsSearchAllOutputBody
+	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
+	require.Len(body.Hits, 3)
+	for _, hit := range body.Hits {
+		if hit.RelPath == "budget.md" {
+			assert.Equal("filename", hit.HitType)
+			assert.Nil(hit.Line)
+		} else {
+			assert.Equal("body", hit.HitType)
+			require.NotNil(hit.Line)
+			assert.Equal(int64(2), *hit.Line)
+		}
+	}
+}
+
 func TestDocsSearchEndpointEmptyQueryReturnsEmptyArray(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

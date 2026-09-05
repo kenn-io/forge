@@ -46,8 +46,9 @@ func (m *Manager) branchSyncGit(
 		}
 	}
 	return func(ctx context.Context, dir string, args ...string) error {
-		if _, err := m.clones.RunGitForRepo(
-			ctx, platformName, platformHost, owner, name, dir, args...,
+		if _, err := m.clones.RunGitForNamedRemote(
+			ctx, platformName, platformHost, owner, name,
+			"origin", dir, args...,
 		); err != nil {
 			return err
 		}

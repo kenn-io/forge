@@ -66,9 +66,9 @@ embedder protocol for arbitrary host state.
   provider-host cleartext acknowledgement when validating their canonical remote; local
   bases do not silently weaken or ignore the configured transport policy
   (`internal/workspace/manager.go::ValidateWorktreeBasePath`).
-- Configured bases resolve their read remote by repository identity and reject
-  ambiguous matches or tracking-namespace overlap; managed clones and workspace
-  branch upstreams remain `origin`-owned (`internal/workspace/manager.go::resolveWorktreeBaseRemote`).
+- Configured bases resolve and authenticate their read remote by repository identity,
+  rejecting ambiguous matches or tracking-namespace overlap. Branch sync authenticates
+  `origin`'s own repository because it may be a fork (`internal/gitclone/clone.go::RunGitForNamedRemote`).
 
 ## Endpoint Intent
 

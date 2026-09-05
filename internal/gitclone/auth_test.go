@@ -191,6 +191,69 @@ exit 1
 	assert.Contains(t, err.Error(), "repository-local URL rewrites")
 }
 
+func TestRunGitForRepoRemoteValidatesSelectedRemote(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	gitPath := filepath.Join(dir, "git")
+	require.NoError(os.WriteFile(gitPath, []byte(`#!/bin/sh
+set -eu
+if [ "$1" = "config" ] && [ "$2" = "--local" ]; then exit 1; fi
+if [ "$1" = "config" ] && [ "$2" = "--get-all" ]; then
+	case "$3" in
+	remote.upstream.url) echo "https://github.com/acme/widgets.git"; exit 0 ;;
+	remote.upstream.pushurl) exit 1 ;;
+	esac
+fi
+exit 0
+`), 0o755))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	source := &mutableTestTokenSource{token: "secret-token"}
+	mgr := New(t.TempDir(), testRouteResolver{repos: map[string]tokenauth.Source{
+		"github.com/acme/widgets": source,
+	}})
+
+	_, err := mgr.RunGitForRepoRemote(
+		t.Context(), "github", "github.com", "acme", "widgets",
+		"upstream", dir, "fetch", "upstream",
+	)
+
+	require.NoError(err)
+	assert.Equal(t, 1, source.resolved)
+}
+
+func TestRunGitForNamedRemoteUsesRemoteRepositoryCredential(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	gitPath := filepath.Join(dir, "git")
+	require.NoError(os.WriteFile(gitPath, []byte(`#!/bin/sh
+set -eu
+if [ "$1" = "config" ] && [ "$2" = "--local" ]; then exit 1; fi
+if [ "$1" = "config" ] && [ "$2" = "--get-all" ]; then
+	case "$3" in
+	remote.origin.url) echo "https://github.com/forker/widgets.git"; exit 0 ;;
+	remote.origin.pushurl) exit 1 ;;
+	esac
+fi
+exit 0
+`), 0o755))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	canonical := &mutableTestTokenSource{token: "canonical-token"}
+	fork := &mutableTestTokenSource{token: "fork-token"}
+	mgr := New(t.TempDir(), testRouteResolver{repos: map[string]tokenauth.Source{
+		"github.com/acme/widgets":   canonical,
+		"github.com/forker/widgets": fork,
+	}})
+
+	_, err := mgr.RunGitForNamedRemote(
+		t.Context(), "github", "github.com", "acme", "widgets",
+		"origin", dir, "fetch", "origin",
+	)
+
+	require.NoError(err)
+	assert.Zero(t, canonical.resolved)
+	assert.Equal(t, 1, fork.resolved)
+}
+
 func TestRunGitForRemoteRequiresAcknowledgedHTTPTransport(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()

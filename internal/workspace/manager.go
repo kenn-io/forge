@@ -5933,8 +5933,8 @@ func (m *Manager) fetchWorkspaceBase(
 	run := runGitWithoutHooks
 	if m.clones != nil {
 		run = func(ctx context.Context, dir string, args ...string) error {
-			out, err := m.clones.RunGitForRepo(
-				ctx, platformName, platformHost, owner, name, dir, args...,
+			out, err := m.clones.RunGitForRepoRemote(
+				ctx, platformName, platformHost, owner, name, remote, dir, args...,
 			)
 			if err != nil {
 				return fmt.Errorf(
@@ -5958,8 +5958,9 @@ func (m *Manager) fetchWorkspaceMergeRequestHeadRef(
 	runFork := run
 	if m.clones != nil {
 		run = func(ctx context.Context, dir string, args ...string) error {
-			out, err := m.clones.RunGitForRepo(
-				ctx, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName, dir, args...,
+			out, err := m.clones.RunGitForRepoRemote(
+				ctx, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+				remote, dir, args...,
 			)
 			if err != nil {
 				return fmt.Errorf(

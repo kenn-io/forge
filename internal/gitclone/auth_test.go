@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/testutil/gitfake"
-	"go.kenn.io/forge/internal/testutil/gitfixture"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/tokenauth"
 )
 
@@ -261,13 +261,18 @@ func TestRunGitForNamedRemoteAllowsAnonymousLocalURLRewrite(t *testing.T) {
 	remote := filepath.Join(root, "remote.git")
 	repo := filepath.Join(root, "repo")
 	const hostedURL = "https://github.com/acme/widgets.git"
-	gitfixture.Run(t, root, "init", "--bare", remote)
-	gitfixture.Run(t, root, "init", repo)
-	gitfixture.Run(t, repo, "remote", "add", "origin", hostedURL)
-	gitfixture.Run(t, repo, "config", "url."+remote+".insteadOf", hostedURL)
+	runner := gitsafe.MutableRunner(t).WithConfig("init.defaultBranch", "main")
+	_, err := runner.Output(t.Context(), root, "init", "--bare", remote)
+	require.NoError(err)
+	_, err = runner.Output(t.Context(), root, "init", repo)
+	require.NoError(err)
+	_, err = runner.Output(t.Context(), repo, "remote", "add", "origin", hostedURL)
+	require.NoError(err)
+	_, err = runner.Output(t.Context(), repo, "config", "url."+remote+".insteadOf", hostedURL)
+	require.NoError(err)
 	mgr := New(t.TempDir(), nil)
 
-	_, err := mgr.RunGitForNamedRemote(
+	_, err = mgr.RunGitForNamedRemote(
 		t.Context(), "github", "github.com", "acme", "widgets",
 		"origin", repo, "fetch", "origin",
 	)

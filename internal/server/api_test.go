@@ -31,6 +31,8 @@ import (
 	"testing"
 	"time"
 
+	"go.kenn.io/forge/internal/platformdb"
+
 	"github.com/coder/websocket"
 	"github.com/creack/pty/v2"
 	gh "github.com/google/go-github/v89/github"
@@ -44,11 +46,6 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
-	"go.kenn.io/forge/internal/platform"
-	forgejoplatform "go.kenn.io/forge/internal/platform/forgejo"
-	giteaplatform "go.kenn.io/forge/internal/platform/gitea"
-	"go.kenn.io/forge/internal/platform/gitealike"
-	platformgitlab "go.kenn.io/forge/internal/platform/gitlab"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/ptyowner"
 	"go.kenn.io/forge/internal/ptysize"
@@ -67,6 +64,12 @@ import (
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
+	"go.kenn.io/forge/platform"
+	forgejoplatform "go.kenn.io/forge/platform/forgejo"
+	giteaplatform "go.kenn.io/forge/platform/gitea"
+	"go.kenn.io/forge/platform/gitealike"
+	platformgithub "go.kenn.io/forge/platform/github"
+	platformgitlab "go.kenn.io/forge/platform/gitlab"
 	gitcmd "go.kenn.io/kit/git/cmd"
 	"golang.org/x/sync/semaphore"
 )
@@ -239,10 +242,10 @@ func runtimeSessionKeyForTest(
 type mockGHNativeStackAPI struct {
 	listOpenPullRequests func(
 		context.Context, string, string,
-	) ([]*gh.PullRequest, map[int]*ghclient.NativeStackHint, error)
+	) ([]*gh.PullRequest, map[int]*platformgithub.NativeStackHint, error)
 	listStackPage func(
 		context.Context, string, string, int,
-	) (ghclient.NativeStackPage, error)
+	) (platformgithub.NativeStackPage, error)
 }
 
 type mockGH struct {
@@ -258,7 +261,7 @@ type mockGH struct {
 	markReadyForReviewFn       func(context.Context, string, string, int) (*gh.PullRequest, error)
 	convertToDraftFn           func(context.Context, string, string, int) (*gh.PullRequest, error)
 	dismissReviewFn            func(context.Context, string, string, int, int64, string) (*gh.PullRequestReview, error)
-	editPullRequestFn          func(context.Context, string, string, int, ghclient.EditPullRequestOpts) (*gh.PullRequest, error)
+	editPullRequestFn          func(context.Context, string, string, int, platformgithub.EditPullRequestOpts) (*gh.PullRequest, error)
 	editIssueFn                func(context.Context, string, string, int, string) (*gh.Issue, error)
 	editIssueContentFn         func(context.Context, string, string, int, *string, *string) (*gh.Issue, error)
 	createIssueCommentFn       func(context.Context, string, string, int, string) (*gh.IssueComment, error)
@@ -280,12 +283,12 @@ type mockGH struct {
 	listIssuesPageFn           func(context.Context, string, string, string, int) ([]*gh.Issue, bool, error)
 	listCheckRunsForRefFn      func(context.Context, string, string, string) ([]*gh.CheckRun, error)
 	getCombinedStatusFn        func(context.Context, string, string, string) (*gh.CombinedStatus, error)
-	listPRTimelineEventsFn     func(context.Context, string, string, int) ([]ghclient.PullRequestTimelineEvent, error)
+	listPRTimelineEventsFn     func(context.Context, string, string, int) ([]platformgithub.PullRequestTimelineEvent, error)
 	listOpenPRsErr             error
 	listOpenIssuesFn           func(context.Context, string, string) ([]*gh.Issue, error)
 	listIssueCommentsFn        func(context.Context, string, string, int) ([]*gh.IssueComment, error)
-	listReviewThreadsFn        func(context.Context, string, string, int) ([]ghclient.PullRequestReviewThread, error)
-	rateLimitSnapshotFn        func(context.Context) (*ghclient.RateLimitSnapshot, error)
+	listReviewThreadsFn        func(context.Context, string, string, int) ([]platformgithub.PullRequestReviewThread, error)
+	rateLimitSnapshotFn        func(context.Context) (*platformgithub.RateLimitSnapshot, error)
 	rateLimitSnapshotCalls     int
 	listIssueCommentsErr       error
 	listNotificationsFn        func(context.Context, ghclient.NotificationListOptions) ([]ghclient.NotificationThread, bool, error)
@@ -305,7 +308,7 @@ func (m *mockGH) ListOpenPullRequests(ctx context.Context, owner, repo string) (
 
 func (m *mockGH) ListOpenPullRequestsWithNativeStackHints(
 	ctx context.Context, owner, repo string,
-) ([]*gh.PullRequest, map[int]*ghclient.NativeStackHint, error) {
+) ([]*gh.PullRequest, map[int]*platformgithub.NativeStackHint, error) {
 	if m.nativeStackAPI != nil && m.nativeStackAPI.listOpenPullRequests != nil {
 		return m.nativeStackAPI.listOpenPullRequests(ctx, owner, repo)
 	}
@@ -315,11 +318,11 @@ func (m *mockGH) ListOpenPullRequestsWithNativeStackHints(
 
 func (m *mockGH) ListNativeStacksPage(
 	ctx context.Context, owner, repo string, page int,
-) (ghclient.NativeStackPage, error) {
+) (platformgithub.NativeStackPage, error) {
 	if m.nativeStackAPI != nil && m.nativeStackAPI.listStackPage != nil {
 		return m.nativeStackAPI.listStackPage(ctx, owner, repo, page)
 	}
-	return ghclient.NativeStackPage{}, nil
+	return platformgithub.NativeStackPage{}, nil
 }
 
 func (m *mockGH) ListOpenIssues(ctx context.Context, owner, repo string) ([]*gh.Issue, error) {
@@ -387,7 +390,7 @@ func (m *mockGH) AuthenticatedViewerLogin(ctx context.Context) (string, error) {
 	return "", nil
 }
 
-func (m *mockGH) GetRateLimitSnapshot(ctx context.Context) (*ghclient.RateLimitSnapshot, error) {
+func (m *mockGH) GetRateLimitSnapshot(ctx context.Context) (*platformgithub.RateLimitSnapshot, error) {
 	m.rateLimitSnapshotCalls++
 	if m.rateLimitSnapshotFn != nil {
 		return m.rateLimitSnapshotFn(ctx)
@@ -476,7 +479,7 @@ func (m *mockGH) ListPullRequestReviewThreads(
 	owner string,
 	repo string,
 	number int,
-) ([]ghclient.PullRequestReviewThread, error) {
+) ([]platformgithub.PullRequestReviewThread, error) {
 	if m.listReviewThreadsFn != nil {
 		return m.listReviewThreadsFn(ctx, owner, repo, number)
 	}
@@ -491,13 +494,13 @@ func (m *mockGH) ListCommits(
 
 func (m *mockGH) ListForcePushEvents(
 	_ context.Context, _, _ string, _ int,
-) ([]ghclient.ForcePushEvent, error) {
+) ([]platformgithub.ForcePushEvent, error) {
 	return nil, nil
 }
 
 func (m *mockGH) ListPullRequestTimelineEvents(
 	ctx context.Context, owner, repo string, number int,
-) ([]ghclient.PullRequestTimelineEvent, error) {
+) ([]platformgithub.PullRequestTimelineEvent, error) {
 	if m.listPRTimelineEventsFn != nil {
 		return m.listPRTimelineEventsFn(ctx, owner, repo, number)
 	}
@@ -696,7 +699,7 @@ func (m *mockGH) MergePullRequest(
 }
 
 func (m *mockGH) EditPullRequest(
-	ctx context.Context, owner, repo string, number int, opts ghclient.EditPullRequestOpts,
+	ctx context.Context, owner, repo string, number int, opts platformgithub.EditPullRequestOpts,
 ) (*gh.PullRequest, error) {
 	if m.editPullRequestFn != nil {
 		return m.editPullRequestFn(ctx, owner, repo, number, opts)
@@ -1195,7 +1198,7 @@ func setupTestServerWithReposAndOptions(
 			repo.PlatformExternalID = "repo-" + repo.Owner + "-" + repo.Name
 		}
 		_, err := database.UpsertRepo(
-			t.Context(), platform.DBRepoIdentity(platform.RepoRef{
+			t.Context(), platformdb.DBRepoIdentity(platform.RepoRef{
 				Platform:           platform.Kind(repo.Platform),
 				Host:               repo.PlatformHost,
 				Owner:              repo.Owner,
@@ -2344,8 +2347,8 @@ func TestAPISyncPRUsesProviderActivityAfterForcePush(t *testing.T) {
 		listIssueCommentsFn: func(context.Context, string, string, int) ([]*gh.IssueComment, error) {
 			return nil, nil
 		},
-		listPRTimelineEventsFn: func(context.Context, string, string, int) ([]ghclient.PullRequestTimelineEvent, error) {
-			return []ghclient.PullRequestTimelineEvent{{
+		listPRTimelineEventsFn: func(context.Context, string, string, int) ([]platformgithub.PullRequestTimelineEvent, error) {
+			return []platformgithub.PullRequestTimelineEvent{{
 				EventType: "force_push",
 				Actor:     "octocat",
 				BeforeSHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -2484,14 +2487,14 @@ func TestAPIGitHubSyncPersistsReviewThreadsThroughPullDetail(t *testing.T) {
 		listIssueCommentsFn: func(context.Context, string, string, int) ([]*gh.IssueComment, error) {
 			return nil, nil
 		},
-		listReviewThreadsFn: func(context.Context, string, string, int) ([]ghclient.PullRequestReviewThread, error) {
-			return []ghclient.PullRequestReviewThread{{
+		listReviewThreadsFn: func(context.Context, string, string, int) ([]platformgithub.PullRequestReviewThread, error) {
+			return []platformgithub.PullRequestReviewThread{{
 				NodeID:     "PRRT_1",
 				IsOutdated: false,
 				Path:       ".golangci.yml",
 				Side:       "RIGHT",
 				Line:       line,
-				Comments: []ghclient.PullRequestReviewThreadComment{{
+				Comments: []platformgithub.PullRequestReviewThreadComment{{
 					NodeID:           "PRRC_1",
 					DatabaseID:       3312100450,
 					ReviewDatabaseID: 4373946198,
@@ -3067,7 +3070,7 @@ func TestAPIGetPullDoesNotFetchProviderForMissingMergedActor(t *testing.T) {
 			getPullCalls.Add(1)
 			return nil, errors.New("detail reads must not fetch pull request data")
 		},
-		listPRTimelineEventsFn: func(_ context.Context, _ string, _ string, _ int) ([]ghclient.PullRequestTimelineEvent, error) {
+		listPRTimelineEventsFn: func(_ context.Context, _ string, _ string, _ int) ([]platformgithub.PullRequestTimelineEvent, error) {
 			timelineCalls.Add(1)
 			return nil, errors.New("detail reads must not fetch timeline data")
 		},
@@ -4805,7 +4808,7 @@ func TestAPIGitLabConfiguredRepoSyncThroughProviderRegistry(t *testing.T) {
 
 	syncer.RunOnce(ctx)
 
-	repoRow, err := database.GetRepoByIdentity(ctx, platform.DBRepoIdentity(ref))
+	repoRow, err := database.GetRepoByIdentity(ctx, platformdb.DBRepoIdentity(ref))
 	require.NoError(err)
 	require.NotNil(repoRow)
 	require.NotNil(repoRow.LastSyncCompletedAt)
@@ -4950,7 +4953,7 @@ func TestAPIScheduledMergedActorRepairRefreshesOpenDetail(t *testing.T) {
 		CloneURL:           "https://gitlab.example.com/group/project.git",
 		DefaultBranch:      "main",
 	}
-	repoID, err := database.UpsertRepo(ctx, platform.DBRepoIdentity(ref))
+	repoID, err := database.UpsertRepo(ctx, platformdb.DBRepoIdentity(ref))
 	require.NoError(err)
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID:             repoID,
@@ -5347,7 +5350,9 @@ func TestAPIGitLabSyncReadsTokenFileAfterRotation(t *testing.T) {
 	client, err := platformgitlab.NewClient(
 		"gitlab.example.com",
 		source,
-		platformgitlab.WithBaseURLForTesting(gitlabAPI.URL+"/api/v4"),
+		platformgitlab.WithBaseURLForTesting(gitlabAPI.URL+"/api/v4"), platformgitlab.
+			WithTransport(http.DefaultTransport), platformgitlab.
+			WithClock(time.Now),
 	)
 	require.NoError(err)
 	registry, err := platform.NewRegistry(client)
@@ -5366,7 +5371,7 @@ func TestAPIGitLabSyncReadsTokenFileAfterRotation(t *testing.T) {
 		CloneURL:           "https://gitlab.example.com/group/project.git",
 		DefaultBranch:      "main",
 	}
-	repoID, err := database.UpsertRepo(ctx, platform.DBRepoIdentity(ref))
+	repoID, err := database.UpsertRepo(ctx, platformdb.DBRepoIdentity(ref))
 	require.NoError(err)
 	repo := ghclient.RepoRef{
 		Platform:           platform.KindGitLab,
@@ -5674,7 +5679,7 @@ func TestAPISharedHostCloneFetchFollowsReloadedHostToken(t *testing.T) {
 	// operation of that run happens before UpdateRepoSyncCompleted, so
 	// reading the capture file afterwards cannot race a slow trailing
 	// fetch into the next phase's assertions.
-	identity := platform.DBRepoIdentity(giteaRef)
+	identity := platformdb.DBRepoIdentity(giteaRef)
 	runSync := func(prevCompleted *time.Time) *time.Time {
 		rr := doJSON(t, srv, http.MethodPost, "/api/v1/sync", nil)
 		require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
@@ -5949,7 +5954,7 @@ func TestGitLabSyncCoversRepositoryItemsEventsOverviewAndCI(t *testing.T) {
 	require.NoError(syncer.SyncMR(ctx, ref.Owner, ref.Name, 7))
 	require.NoError(syncer.SyncIssue(ctx, ref.Owner, ref.Name, 11))
 
-	repoRow, err := database.GetRepoByIdentity(ctx, platform.DBRepoIdentity(ref))
+	repoRow, err := database.GetRepoByIdentity(ctx, platformdb.DBRepoIdentity(ref))
 	require.NoError(err)
 	require.NotNil(repoRow)
 	assert.Equal("gitlab", repoRow.Platform)
@@ -6048,7 +6053,7 @@ func TestAPICIRefreshWarnsAndPreservesCIWhenProviderFails(t *testing.T) {
 	}
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
-	repoID, err := database.UpsertRepo(ctx, platform.DBRepoIdentity(ref))
+	repoID, err := database.UpsertRepo(ctx, platformdb.DBRepoIdentity(ref))
 	require.NoError(err)
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID:          repoID,
@@ -6161,7 +6166,7 @@ func TestAPISyncRefreshesStaleCachedChecksWhenAggregateCIChanges(t *testing.T) {
 	}
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
-	repoID, err := database.UpsertRepo(ctx, platform.DBRepoIdentity(ref))
+	repoID, err := database.UpsertRepo(ctx, platformdb.DBRepoIdentity(ref))
 	require.NoError(err)
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID:          repoID,
@@ -6279,7 +6284,7 @@ func TestAPISyncRefreshesCachedPendingChecksThroughDetailDrain(t *testing.T) {
 	}
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
-	repoID, err := database.UpsertRepo(ctx, platform.DBRepoIdentity(ref))
+	repoID, err := database.UpsertRepo(ctx, platformdb.DBRepoIdentity(ref))
 	require.NoError(err)
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID:          repoID,
@@ -6504,7 +6509,7 @@ func TestProviderRefSyncEndpointsUseGitLabNestedRepoPath(t *testing.T) {
 		CloneURL:           ref.CloneURL,
 		DefaultBranch:      ref.DefaultBranch,
 	}
-	_, err = database.UpsertRepo(ctx, platform.DBRepoIdentity(ref))
+	_, err = database.UpsertRepo(ctx, platformdb.DBRepoIdentity(ref))
 	require.NoError(err)
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil,
@@ -6550,7 +6555,7 @@ func TestProviderRefSyncEndpointsUseGitLabNestedRepoPath(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusAccepted, asyncPRResp.StatusCode(), string(asyncPRResp.Body))
 	require.Eventually(func() bool {
-		repoRow, rowErr := database.GetRepoByIdentity(ctx, platform.DBRepoIdentity(ref))
+		repoRow, rowErr := database.GetRepoByIdentity(ctx, platformdb.DBRepoIdentity(ref))
 		if rowErr != nil || repoRow == nil {
 			return false
 		}
@@ -6564,7 +6569,7 @@ func TestProviderRefSyncEndpointsUseGitLabNestedRepoPath(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusAccepted, asyncIssueResp.StatusCode(), string(asyncIssueResp.Body))
 	require.Eventually(func() bool {
-		repoRow, rowErr := database.GetRepoByIdentity(ctx, platform.DBRepoIdentity(ref))
+		repoRow, rowErr := database.GetRepoByIdentity(ctx, platformdb.DBRepoIdentity(ref))
 		if rowErr != nil || repoRow == nil {
 			return false
 		}
@@ -7259,7 +7264,7 @@ func TestAPIEditPRContentRejectsNilProviderPayload(t *testing.T) {
 			string,
 			string,
 			int,
-			ghclient.EditPullRequestOpts,
+			platformgithub.EditPullRequestOpts,
 		) (*gh.PullRequest, error) {
 			return nil, nil
 		},
@@ -8769,7 +8774,9 @@ func TestAPIGitLabDisabledIssueCooldownPersistsThroughHTTPAndSQLite(t *testing.T
 		"gitlab.test",
 		testTokenSource("token"),
 		platformgitlab.WithBaseURLForTesting(providerServer.URL+"/api/v4"),
-		platformgitlab.WithoutRetriesForTesting(),
+		platformgitlab.WithoutRetriesForTesting(), platformgitlab.
+			WithTransport(http.DefaultTransport), platformgitlab.
+			WithClock(time.Now),
 	)
 	require.NoError(err)
 	registry, err := platform.NewRegistry(provider)
@@ -8859,7 +8866,7 @@ func TestAPIGiteaDisabledIssueCooldownPersistsThroughHTTPAndSQLite(t *testing.T)
 		"gitea.test",
 		testTokenSource("token"),
 		giteaplatform.WithBaseURL(providerServer.URL, true),
-		giteaplatform.WithServerVersionForTesting("1.26.0"),
+		giteaplatform.WithServerVersion("1.26.0"), giteaplatform.WithTransport(http.DefaultTransport), giteaplatform.WithClock(time.Now),
 	)
 	require.NoError(err)
 	registry, err := platform.NewRegistry(provider)
@@ -9291,7 +9298,7 @@ func TestAPIClosePR(t *testing.T) {
 	providerClosedAt := testEDTTime(9, 15)
 	mock := &mockGH{
 		editPullRequestFn: func(
-			_ context.Context, _, _ string, number int, opts ghclient.EditPullRequestOpts,
+			_ context.Context, _, _ string, number int, opts platformgithub.EditPullRequestOpts,
 		) (*gh.PullRequest, error) {
 			require.NotNil(opts.State)
 			return providerStatePR(
@@ -9354,7 +9361,7 @@ func TestAPIReopenPR(t *testing.T) {
 	require := require.New(t)
 	mock := &mockGH{
 		editPullRequestFn: func(
-			_ context.Context, _, _ string, number int, opts ghclient.EditPullRequestOpts,
+			_ context.Context, _, _ string, number int, opts platformgithub.EditPullRequestOpts,
 		) (*gh.PullRequest, error) {
 			require.NotNil(opts.State)
 			return providerStatePR(
@@ -9474,7 +9481,7 @@ func TestAPISyncPRDoesNotOverwriteNewerStateChange(t *testing.T) {
 		// updated_at is newer than the in-flight stale sync's snapshot;
 		// the monotonic snapshot guard then rejects the stale sync.
 		editPullRequestFn: func(
-			_ context.Context, _, _ string, number int, opts ghclient.EditPullRequestOpts,
+			_ context.Context, _, _ string, number int, opts platformgithub.EditPullRequestOpts,
 		) (*gh.PullRequest, error) {
 			state := "closed"
 			if opts.State != nil {
@@ -11832,15 +11839,15 @@ func TestE2EConditionalPRDetailRefreshesInlineModerationThroughAPI(t *testing.T)
 			require.Equal(`"etag-inline"`, etag)
 			return nil, etag, true, nil
 		},
-		listReviewThreadsFn: func(context.Context, string, string, int) ([]ghclient.PullRequestReviewThread, error) {
+		listReviewThreadsFn: func(context.Context, string, string, int) ([]platformgithub.PullRequestReviewThread, error) {
 			line := 12
 			reason := ""
 			if inlineHidden {
 				reason = "ABUSE"
 			}
-			return []ghclient.PullRequestReviewThread{{
+			return []platformgithub.PullRequestReviewThread{{
 				NodeID: "PRRT_conditional", Path: "src/main.go", Side: "RIGHT", Line: line,
-				Comments: []ghclient.PullRequestReviewThreadComment{{
+				Comments: []platformgithub.PullRequestReviewThreadComment{{
 					NodeID: "PRRC_conditional", DatabaseID: 112233,
 					Body: "moderated inline comment", AuthorLogin: "reviewer",
 					CommitID: "head-1", IsMinimized: inlineHidden, MinimizedReason: reason,
@@ -14734,7 +14741,7 @@ func TestAPIClosePR422NilFallbackPayloadDoesNotCorruptDB(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	mock := &mockGH{
-		editPullRequestFn: func(_ context.Context, _, _ string, _ int, _ ghclient.EditPullRequestOpts) (*gh.PullRequest, error) {
+		editPullRequestFn: func(_ context.Context, _, _ string, _ int, _ platformgithub.EditPullRequestOpts) (*gh.PullRequest, error) {
 			return nil, make422Error()
 		},
 		getPullRequestFn: func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
@@ -14802,7 +14809,7 @@ func TestAPIStateMutationDoesNotRecoverFromProviderWhenSyncDisabled(t *testing.T
 			require := require.New(t)
 			var recoveryReads atomic.Int32
 			mock := &mockGH{
-				editPullRequestFn: func(context.Context, string, string, int, ghclient.EditPullRequestOpts) (*gh.PullRequest, error) {
+				editPullRequestFn: func(context.Context, string, string, int, platformgithub.EditPullRequestOpts) (*gh.PullRequest, error) {
 					return nil, make422Error()
 				},
 				getPullRequestFn: func(context.Context, string, string, int) (*gh.PullRequest, error) {
@@ -14850,7 +14857,7 @@ func TestAPIClosePR422AlreadyClosed(t *testing.T) {
 	// Should succeed since the requested state matches.
 	state := "closed"
 	mock := &mockGH{
-		editPullRequestFn: func(_ context.Context, _, _ string, _ int, _ ghclient.EditPullRequestOpts) (*gh.PullRequest, error) {
+		editPullRequestFn: func(_ context.Context, _, _ string, _ int, _ platformgithub.EditPullRequestOpts) (*gh.PullRequest, error) {
 			return nil, make422Error()
 		},
 		getPullRequestFn: func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
@@ -15125,7 +15132,7 @@ func TestAPIClosePR422Merged(t *testing.T) {
 	// Should return 409.
 	merged := "closed"
 	mock := &mockGH{
-		editPullRequestFn: func(_ context.Context, _, _ string, _ int, _ ghclient.EditPullRequestOpts) (*gh.PullRequest, error) {
+		editPullRequestFn: func(_ context.Context, _, _ string, _ int, _ platformgithub.EditPullRequestOpts) (*gh.PullRequest, error) {
 			return nil, make422Error()
 		},
 		getPullRequestFn: func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
@@ -17533,7 +17540,9 @@ func TestAPIGitLabPublishReviewDraftSurfacesCleanupFailureAsPartial(t *testing.T
 	client, err := platformgitlab.NewClient(
 		"gitlab.example.com",
 		testTokenSource("token"),
-		platformgitlab.WithBaseURLForTesting(gitlabServer.URL+"/api/v4"),
+		platformgitlab.WithBaseURLForTesting(gitlabServer.URL+"/api/v4"), platformgitlab.
+			WithTransport(http.DefaultTransport), platformgitlab.
+			WithClock(time.Now),
 	)
 	require.NoError(err)
 	registry, err := platform.NewRegistry(client)
@@ -17774,7 +17783,9 @@ func setupActualGitLabReviewServer(
 		"gitlab.example.com",
 		testTokenSource("token"),
 		platformgitlab.WithBaseURLForTesting(gitlabServerURL+"/api/v4"),
-		platformgitlab.WithoutRetriesForTesting(),
+		platformgitlab.WithoutRetriesForTesting(), platformgitlab.
+			WithTransport(http.DefaultTransport), platformgitlab.
+			WithClock(time.Now),
 	)
 	require.NoError(err)
 	registry, err := platform.NewRegistry(client)
@@ -19803,7 +19814,7 @@ func TestAPIGitealikeHTTPMergeabilityPersistsThroughServer(t *testing.T) {
 					host,
 					testTokenSource(token),
 					giteaplatform.WithBaseURL(baseURL, true),
-					giteaplatform.WithServerVersionForTesting("1.26.0"),
+					giteaplatform.WithServerVersion("1.26.0"), giteaplatform.WithTransport(http.DefaultTransport), giteaplatform.WithClock(time.Now),
 				)
 			},
 		},
@@ -19814,7 +19825,9 @@ func TestAPIGitealikeHTTPMergeabilityPersistsThroughServer(t *testing.T) {
 			token: "forgejo-token",
 			newClient: func(host, token, baseURL string) (platform.Provider, error) {
 				return forgejoplatform.NewClient(
-					host, testTokenSource(token), forgejoplatform.WithBaseURLForTesting(baseURL),
+					host, testTokenSource(token), forgejoplatform.WithBaseURLForTesting(baseURL), forgejoplatform.
+						WithTransport(http.DefaultTransport), forgejoplatform.
+						WithClock(time.Now),
 				)
 			},
 		},
@@ -22796,8 +22809,8 @@ func TestAPIRateLimitsReadsLocalStateWithoutRefreshingGitHubRateLimit(t *testing
 		Reset:     localGQLReset,
 	})
 	mock := &mockGH{
-		rateLimitSnapshotFn: func(context.Context) (*ghclient.RateLimitSnapshot, error) {
-			return &ghclient.RateLimitSnapshot{
+		rateLimitSnapshotFn: func(context.Context) (*platformgithub.RateLimitSnapshot, error) {
+			return &platformgithub.RateLimitSnapshot{
 				Core: &ghclient.Rate{
 					Limit:     5000,
 					Remaining: 4991,
@@ -25849,18 +25862,18 @@ func TestAPIStacks_DetectionViaSyncHookPrefersGitHubNativeOrder(t *testing.T) {
 		nativeStackAPI: &mockGHNativeStackAPI{
 			listOpenPullRequests: func(
 				context.Context, string, string,
-			) ([]*gh.PullRequest, map[int]*ghclient.NativeStackHint, error) {
-				return prs, map[int]*ghclient.NativeStackHint{
+			) ([]*gh.PullRequest, map[int]*platformgithub.NativeStackHint, error) {
+				return prs, map[int]*platformgithub.NativeStackHint{
 					10: {Number: 42, Size: 2, Position: 2, BaseRef: "main"},
 					11: {Number: 42, Size: 2, Position: 1, BaseRef: "main"},
 				}, nil
 			},
 			listStackPage: func(
 				context.Context, string, string, int,
-			) (ghclient.NativeStackPage, error) {
-				return ghclient.NativeStackPage{Stacks: []ghclient.NativeStack{{
+			) (platformgithub.NativeStackPage, error) {
+				return platformgithub.NativeStackPage{Stacks: []platformgithub.NativeStack{{
 					ID: 9001, Number: 42, BaseRef: "main", Open: true, CreatedAt: now,
-					Members: []ghclient.NativeStackMember{
+					Members: []platformgithub.NativeStackMember{
 						{Position: 1, PullRequestNumber: 11, State: "open", HeadRef: "feat/tip", HeadSHA: "sha11"},
 						{Position: 2, PullRequestNumber: 10, State: "open", HeadRef: "feat/base", HeadSHA: "sha10"},
 					},
@@ -32962,7 +32975,7 @@ func TestMergeBlocksPredecessorRestoredWhenNativeStackAgesOut(t *testing.T) {
 		nativeStackAPI: &mockGHNativeStackAPI{
 			listOpenPullRequests: func(
 				context.Context, string, string,
-			) ([]*gh.PullRequest, map[int]*ghclient.NativeStackHint, error) {
+			) ([]*gh.PullRequest, map[int]*platformgithub.NativeStackHint, error) {
 				if listCalls.Add(1) > 1 {
 					// The open-PR list is byte-identical on the later sync, which
 					// is the path a stale confirmation would survive on.
@@ -32976,14 +32989,14 @@ func TestMergeBlocksPredecessorRestoredWhenNativeStackAgesOut(t *testing.T) {
 				}
 				// Only the tip is claimed by the stack, so no hint can attest to the
 				// leading member the cached row names.
-				return prs, map[int]*ghclient.NativeStackHint{
+				return prs, map[int]*platformgithub.NativeStackHint{
 					101: {Number: 42, Size: 2, Position: 2, BaseRef: "main"},
 				}, nil
 			},
 			listStackPage: func(
 				context.Context, string, string, int,
-			) (ghclient.NativeStackPage, error) {
-				return ghclient.NativeStackPage{}, errors.New("catalog must not be refetched while confirmed")
+			) (platformgithub.NativeStackPage, error) {
+				return platformgithub.NativeStackPage{}, errors.New("catalog must not be refetched while confirmed")
 			},
 		},
 	}
@@ -33099,20 +33112,20 @@ func TestMergeBlocksPredecessorWhenNativeStackRefreshIsPartial(t *testing.T) {
 		nativeStackAPI: &mockGHNativeStackAPI{
 			listOpenPullRequests: func(
 				context.Context, string, string,
-			) ([]*gh.PullRequest, map[int]*ghclient.NativeStackHint, error) {
-				return prs, map[int]*ghclient.NativeStackHint{
+			) ([]*gh.PullRequest, map[int]*platformgithub.NativeStackHint, error) {
+				return prs, map[int]*platformgithub.NativeStackHint{
 					101: {Number: 42, Size: 2, Position: 2, BaseRef: "main"},
 					103: {Number: 43, Size: 1, Position: 1, BaseRef: "main"},
 				}, nil
 			},
 			listStackPage: func(
 				context.Context, string, string, int,
-			) (ghclient.NativeStackPage, error) {
+			) (platformgithub.NativeStackPage, error) {
 				// Stack 43 comes back naming a different pull request than the hint,
 				// so the row is rejected and the target stays unresolved.
-				return ghclient.NativeStackPage{Stacks: []ghclient.NativeStack{{
+				return platformgithub.NativeStackPage{Stacks: []platformgithub.NativeStack{{
 					ID: 9043, Number: 43, BaseRef: "main", Open: true, CreatedAt: now,
-					Members: []ghclient.NativeStackMember{
+					Members: []platformgithub.NativeStackMember{
 						{Position: 1, PullRequestNumber: 999, State: "open", HeadRef: "feature/x", HeadSHA: "sha999"},
 					},
 				}}}, nil

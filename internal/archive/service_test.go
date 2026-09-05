@@ -8,12 +8,14 @@ import (
 	"testing"
 	"time"
 
+	"go.kenn.io/forge/internal/platformdb"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/archive/report"
 	"go.kenn.io/forge/internal/db"
-	"go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/platform"
 )
 
 func TestArchiveRetryClassifierTreatsAttemptBudgetRefusalAsTransient(t *testing.T) {
@@ -118,7 +120,7 @@ func TestArchiveServiceEnsureConfiguredSkipsUnresolvableRef(t *testing.T) {
 	require.NoError(err, "an unresolvable ref must degrade, not fail the pass")
 	assert.Equal([]platform.RepoRef{good}, seeded)
 
-	repo, err := database.GetRepoByIdentity(t.Context(), platform.DBRepoIdentity(good))
+	repo, err := database.GetRepoByIdentity(t.Context(), platformdb.DBRepoIdentity(good))
 	require.NoError(err)
 	require.NotNil(repo)
 	states, err := database.ListArchiveRepoStates(t.Context(), []int64{repo.ID})
@@ -126,7 +128,7 @@ func TestArchiveServiceEnsureConfiguredSkipsUnresolvableRef(t *testing.T) {
 	require.Len(states, 1)
 	assert.Equal(db.ArchiveOperatorStateActive, states[0].OperatorState)
 
-	ghostRepo, err := database.GetRepoByIdentity(t.Context(), platform.DBRepoIdentity(ghost))
+	ghostRepo, err := database.GetRepoByIdentity(t.Context(), platformdb.DBRepoIdentity(ghost))
 	require.NoError(err)
 	assert.Nil(ghostRepo)
 }
@@ -148,7 +150,7 @@ func TestArchiveServiceEnsureConfiguredDefersRemovalPausingWhenRefUnresolvable(t
 	service := newArchiveTestService(t, database, registry, []platform.RepoRef{good}, nil, now)
 
 	requireEnsureConfigured(t, service, []platform.RepoRef{removed})
-	removedRepo, err := database.GetRepoByIdentity(t.Context(), platform.DBRepoIdentity(removed))
+	removedRepo, err := database.GetRepoByIdentity(t.Context(), platformdb.DBRepoIdentity(removed))
 	require.NoError(err)
 	require.NotNil(removedRepo)
 
@@ -185,7 +187,7 @@ func TestArchiveServiceEnsureConfiguredSeedsFreshRepository(t *testing.T) {
 	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
 
 	requireEnsureConfigured(t, service, []platform.RepoRef{ref})
-	repo, err := database.GetRepoByIdentity(t.Context(), platform.DBRepoIdentity(ref))
+	repo, err := database.GetRepoByIdentity(t.Context(), platformdb.DBRepoIdentity(ref))
 	require.NoError(err)
 	require.NotNil(repo)
 	states, err := database.ListArchiveRepoStates(t.Context(), []int64{repo.ID})
@@ -207,9 +209,9 @@ func TestArchiveServiceEnsureConfiguredPreservesRenamedRepositoryAtExistingDesti
 	staleDestination := current
 	staleDestination.PlatformExternalID = "repo-obsolete"
 
-	sourceID, err := database.UpsertRepoByProviderID(t.Context(), platform.DBRepoIdentity(previous))
+	sourceID, err := database.UpsertRepoByProviderID(t.Context(), platformdb.DBRepoIdentity(previous))
 	require.NoError(err)
-	destinationID, err := database.UpsertRepo(t.Context(), platform.DBRepoIdentity(staleDestination))
+	destinationID, err := database.UpsertRepo(t.Context(), platformdb.DBRepoIdentity(staleDestination))
 	require.NoError(err)
 	provider := newArchiveServiceProvider(current.Platform, current.Host)
 	registry, err := platform.NewRegistry(provider)
@@ -225,7 +227,7 @@ func TestArchiveServiceEnsureConfiguredPreservesRenamedRepositoryAtExistingDesti
 	assert.NotEqual(sourceID, destinationID)
 
 	active, err := database.ResolveActiveRepositoryRoute(
-		t.Context(), platform.DBRepoIdentity(current),
+		t.Context(), platformdb.DBRepoIdentity(current),
 	)
 	require.NoError(err)
 	require.NotNil(active)
@@ -783,6 +785,7 @@ func TestDefaultArchiveRetryClassifierDistinguishesTerminalProviderErrors(t *tes
 		wantRetry bool
 	}{
 		{name: "authentication", err: platform.ErrPermissionDenied, wantCode: db.ArchiveErrorCodeAuthentication},
+		{name: "rejected credential", err: platform.ErrCredentialRejected, wantCode: db.ArchiveErrorCodeAuthentication},
 		{name: "contract", err: platform.ErrProviderContract, wantCode: db.ArchiveErrorCodeRepoBlocked},
 		{name: "page limit", err: platform.ErrPageLimit, wantCode: db.ArchiveErrorCodeRepoBlocked},
 		{name: "transient", err: errors.New("temporary"), wantCode: db.ArchiveErrorCodeTransient, wantRetry: true},
@@ -1112,7 +1115,7 @@ func archiveServiceRef(kind platform.Kind, host, name string) platform.RepoRef {
 
 func archiveServiceSeedRepo(t *testing.T, database *db.DB, ref platform.RepoRef) int64 {
 	t.Helper()
-	id, err := database.UpsertRepo(t.Context(), platform.DBRepoIdentity(ref))
+	id, err := database.UpsertRepo(t.Context(), platformdb.DBRepoIdentity(ref))
 	require.NoError(t, err)
 	return id
 }

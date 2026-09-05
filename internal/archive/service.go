@@ -9,8 +9,10 @@ import (
 	"strings"
 	"time"
 
+	"go.kenn.io/forge/internal/platformdb"
+
 	"go.kenn.io/forge/internal/db"
-	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/platform"
 )
 
 type ConfiguredRepositorySource interface {
@@ -224,7 +226,7 @@ func (s *Service) seedArchiveRepository(ctx context.Context, ref platform.RepoRe
 	if _, err := s.registry.Provider(ref.Platform, ref.Host); err != nil {
 		return 0, err
 	}
-	identity := platform.DBRepoIdentity(ref)
+	identity := platformdb.DBRepoIdentity(ref)
 	// Captured before any provider lookup so a slow resolve cannot
 	// stamp its route data newer than intervening sync observations.
 	observedAt := time.Now().UTC()
@@ -249,7 +251,7 @@ func (s *Service) seedArchiveRepository(ctx context.Context, ref platform.RepoRe
 			if err != nil {
 				return 0, fmt.Errorf("resolve archive repository %s: %w", archiveRepoIdentityKey(ref), err)
 			}
-			identity = platform.DBRepositoryIdentity(resolved)
+			identity = platformdb.DBRepositoryIdentity(resolved)
 			if identity.PlatformRepoID == "" {
 				return 0, fmt.Errorf("resolve archive repository %s: provider returned no repository id", archiveRepoIdentityKey(ref))
 			}
@@ -517,7 +519,7 @@ func (s *Service) resolveRepository(ctx context.Context, ref platform.RepoRef, r
 	if err != nil && requireArchive {
 		return nil, err
 	}
-	repo, err := s.db.GetRepoByIdentity(ctx, platform.DBRepoIdentity(ref))
+	repo, err := s.db.GetRepoByIdentity(ctx, platformdb.DBRepoIdentity(ref))
 	if err != nil {
 		return nil, fmt.Errorf("resolve archive repository %s: %w", archiveRepoIdentityKey(ref), err)
 	}
@@ -631,7 +633,8 @@ func defaultArchiveRetryDecision(err error, attempt int, now time.Time) RetryDec
 		delay := time.Minute << min(attempt, 6)
 		retryAt := now.Add(delay)
 		return RetryDecision{Code: db.ArchiveErrorCodeTransient, RetryAt: &retryAt}
-	case errors.Is(err, platform.ErrMissingToken), errors.Is(err, platform.ErrPermissionDenied):
+	case errors.Is(err, platform.ErrMissingToken), errors.Is(err, platform.ErrPermissionDenied),
+		errors.Is(err, platform.ErrCredentialRejected), errors.Is(err, platform.ErrInstallationSuspended), errors.Is(err, platform.ErrInstallationDeleted):
 		return RetryDecision{Code: db.ArchiveErrorCodeAuthentication}
 	case errors.Is(err, platform.ErrUnsupportedCapability), errors.Is(err, platform.ErrProviderContract),
 		errors.Is(err, platform.ErrPageLimit),

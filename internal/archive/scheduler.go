@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"go.kenn.io/forge/internal/db"
-	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/platform"
 )
 
 type WorkPriority int

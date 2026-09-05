@@ -72,6 +72,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/archive/landing-evidence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Collect bounded landed-work provider evidence */
+        get: operations["get-archive-landing-evidence"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/archive/pacing": {
         parameters: {
             query?: never;
@@ -5329,6 +5346,23 @@ export interface components {
             /** Format: date-time */
             next_retry_at?: string;
         };
+        ArchiveLandingResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ArchiveLandingResponse.json
+             */
+            readonly $schema?: string;
+            candidates: components["schemas"]["PlatformLandingCandidate"][] | null;
+            capabilities: components["schemas"]["PlatformLandingCapabilities"];
+            /** Format: date-time */
+            completed_at: string;
+            coverage: components["schemas"]["PlatformLandingCoverage"];
+            repository: components["schemas"]["PlatformLandingRepository"];
+            schema: string;
+            /** Format: date-time */
+            started_at: string;
+        };
         ArchiveMutationBody: {
             /**
              * Format: uri
@@ -5464,6 +5498,7 @@ export interface components {
             contributors: components["schemas"]["ArchiveReportContributorResponse"][] | null;
             /** Format: date-time */
             end: string;
+            landed_work?: components["schemas"]["LandedSection"];
             repositories: components["schemas"]["ArchiveReportRepositoryResponse"][] | null;
             schema: string;
             /** Format: date-time */
@@ -6933,6 +6968,151 @@ export interface components {
             is_default: boolean;
             name: string;
         };
+        LandedMeasures: {
+            /** Format: int64 */
+            change_landings: number;
+            code_churn: components["schemas"]["LandedWorkLineCounts"] | null;
+            complete: boolean;
+            /** Format: double */
+            direct_push_code_churn_share: number | null;
+            /** Format: double */
+            direct_push_landing_share: number | null;
+            /** Format: int64 */
+            direct_push_landings: number;
+            /** Format: double */
+            direct_push_raw_churn_share: number | null;
+            /** Format: int64 */
+            introduced_commits: number;
+            raw_churn: components["schemas"]["LandedWorkLineCounts"] | null;
+        };
+        LandedSection: {
+            correspondence: components["schemas"]["LandedWorkCorrespondence"];
+            evidence: components["schemas"]["LandedWorkResult"];
+            git_time: components["schemas"]["LandedTimeView"];
+            graph: components["schemas"]["LandedMeasures"];
+            provider_time: components["schemas"]["LandedTimeView"];
+            schema: string;
+            snapshot: components["schemas"]["PlatformLandingSnapshot"];
+        };
+        LandedTimeView: {
+            assurance: string;
+            /** Format: date-time */
+            end: string;
+            measures: components["schemas"]["LandedMeasures"];
+            /** Format: date-time */
+            start: string;
+            /** Format: int64 */
+            unknown_time_landings: number;
+        };
+        LandedWorkChurn: {
+            code: components["schemas"]["LandedWorkLineCounts"] | null;
+            exclusions: components["schemas"]["LandedWorkExcludedFile"][] | null;
+            files: components["schemas"]["LandedWorkFileChange"][] | null;
+            raw: components["schemas"]["LandedWorkLineCounts"] | null;
+        };
+        LandedWorkClaim: {
+            account_type?: string;
+            /** @enum {string} */
+            assurance: "unverified" | "verified";
+            derivation: string;
+            email: components["schemas"]["PlatformRawBytes"];
+            instance?: string;
+            /** @enum {string} */
+            kind: "git_email" | "source_provider_user_id";
+            provider?: string;
+            provider_user_id?: string;
+            raw_byline: components["schemas"]["PlatformRawBytes"];
+            raw_email: components["schemas"]["PlatformRawBytes"];
+            /** @enum {string} */
+            role: "author" | "coauthor" | "merger";
+        };
+        LandedWorkCommitEvidence: {
+            /** Format: date-time */
+            author_time: string;
+            claims: components["schemas"]["LandedWorkClaim"][] | null;
+            /** Format: date-time */
+            committer_time: string;
+            declared_reverts: string[] | null;
+            id: string;
+        };
+        LandedWorkCorrespondence: {
+            analysis_head: string;
+            complete: boolean;
+            provider_head: string;
+            reason: string;
+            warnings: components["schemas"]["LandedWorkRouteWarning"][] | null;
+        };
+        LandedWorkExcludedFile: {
+            path: components["schemas"]["PlatformRawBytes"];
+            reason: string;
+            side: string;
+        };
+        LandedWorkFileChange: {
+            /** Format: int64 */
+            additions: number | null;
+            binary: boolean;
+            /** Format: int64 */
+            deletions: number | null;
+            new_blob: string;
+            new_mode: string;
+            new_path: components["schemas"]["PlatformRawBytes"];
+            old_blob: string;
+            old_mode: string;
+            old_path: components["schemas"]["PlatformRawBytes"];
+            renamed: boolean;
+        };
+        LandedWorkGap: {
+            change_id: string;
+            first_sha: string;
+            last_sha: string;
+            reason: string;
+        };
+        LandedWorkLanding: {
+            change_id: string;
+            churn: components["schemas"]["LandedWorkChurn"];
+            claims: components["schemas"]["LandedWorkClaim"][] | null;
+            introduced: components["schemas"]["LandedWorkCommitEvidence"][] | null;
+            /** Format: date-time */
+            merged_at: string | null;
+            method: string;
+            origin: string;
+            parent: string;
+            provider_evidence: components["schemas"]["PlatformLandingCandidate"] | null;
+            sources: components["schemas"]["LandedWorkCommitEvidence"][] | null;
+            spine: string[] | null;
+            terminal: string;
+            terminal_commit: components["schemas"]["LandedWorkCommitEvidence"];
+        };
+        LandedWorkLineCounts: {
+            /** Format: int64 */
+            additions: number;
+            /** Format: int64 */
+            deletions: number;
+        };
+        LandedWorkPresence: {
+            id: string;
+            present: boolean;
+        };
+        LandedWorkResult: {
+            analyzer: string;
+            base_sha: string;
+            certified_head: string;
+            complete: boolean;
+            digest: string;
+            diverged: boolean;
+            gaps: components["schemas"]["LandedWorkGap"][] | null;
+            head_sha: string;
+            landings: components["schemas"]["LandedWorkLanding"][] | null;
+            policy: string;
+            presence: components["schemas"]["LandedWorkPresence"][] | null;
+            repository: components["schemas"]["PlatformRepositoryIdentity"];
+            schema: string;
+        };
+        LandedWorkRouteWarning: {
+            provider_route: string;
+            reason: string;
+            remote_route: string;
+        };
         LaunchHostRuntimeSessionInputBody: {
             /**
              * Format: uri
@@ -7541,11 +7721,97 @@ export interface components {
             retry_at?: string;
             unavailable_reason?: string;
         };
+        PlatformAccount: {
+            display_name: string;
+            id: string;
+            login: string;
+            /** @enum {string} */
+            type: "user" | "bot" | "organization" | "unknown";
+        };
         PlatformIdentityPayload: {
             name: string;
             owner: string;
             platform: string;
             platform_host: string;
+        };
+        PlatformLandingCandidate: {
+            /** Format: int64 */
+            additions: number | null;
+            author: components["schemas"]["PlatformAccount"] | null;
+            base_repository: components["schemas"]["PlatformRepositoryIdentity"] | null;
+            /** Format: int64 */
+            deletions: number | null;
+            /** Format: int64 */
+            files_changed: number | null;
+            id: string;
+            merge_sha: components["schemas"]["PlatformSHAField"];
+            /** Format: date-time */
+            merged_at: string | null;
+            merger: components["schemas"]["PlatformAccount"] | null;
+            method: string;
+            method_proof: string;
+            /** Format: int64 */
+            number: number;
+            /** Format: date-time */
+            opened_at: string | null;
+            possible_span: components["schemas"]["PlatformLandingSpan"] | null;
+            source_commits: string[] | null;
+            source_complete: boolean;
+            source_head_sha: components["schemas"]["PlatformSHAField"];
+            source_repository: components["schemas"]["PlatformRepositoryIdentity"] | null;
+            squash_sha: components["schemas"]["PlatformSHAField"];
+            target_branch: string;
+            terminal_proof: string;
+            terminal_sha: string;
+        };
+        PlatformLandingCapabilities: {
+            account_type: boolean;
+            complete_candidate_inventory: boolean;
+            fast_forward_range: boolean;
+            ordinary_merge: boolean;
+            rebase_range: boolean;
+            squash: boolean;
+            trusted_ref_update_time: boolean;
+        };
+        PlatformLandingCoverage: {
+            complete: boolean;
+            next_cursor: string;
+            reason: string;
+        };
+        PlatformLandingRepository: {
+            clone_url: string;
+            default_branch: string;
+            head_sha: string;
+            identity: components["schemas"]["PlatformRepositoryIdentity"];
+            name: string;
+            owner: string;
+        };
+        PlatformLandingSnapshot: {
+            candidates: components["schemas"]["PlatformLandingCandidate"][] | null;
+            capabilities: components["schemas"]["PlatformLandingCapabilities"];
+            /** Format: date-time */
+            completed_at: string;
+            coverage: components["schemas"]["PlatformLandingCoverage"];
+            repository: components["schemas"]["PlatformLandingRepository"];
+            schema: string;
+            /** Format: date-time */
+            started_at: string;
+        };
+        PlatformLandingSpan: {
+            first_sha: string;
+            last_sha: string;
+        };
+        PlatformRawBytes: {
+            base64: string;
+        };
+        PlatformRepositoryIdentity: {
+            id: string;
+            instance: string;
+            provider: string;
+        };
+        PlatformSHAField: {
+            present: boolean;
+            value: string;
         };
         PostCommentHostInputBody: {
             /**
@@ -9690,6 +9956,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentHookResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-archive-landing-evidence": {
+        parameters: {
+            query: {
+                /** @description One canonical provider|platform_host/repo_path selector. */
+                repo: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArchiveLandingResponse"];
                 };
             };
             /** @description Error */
@@ -21129,10 +21427,14 @@ export const issueWorkflowStatusValues: ReadonlyArray<FlattenedDeepRequired<comp
 export const issueResponseWorkflowStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["IssueResponse"]["WorkflowStatus"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
 export const kataEffectiveLinksResponseStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["KataEffectiveLinksResponse"]["state"]> = ["complete", "partial", "unavailable"];
 export const kataWorkspaceTargetResponseResolution_statusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["KataWorkspaceTargetResponse"]["resolution_status"]> = ["mapped", "unmapped", "ambiguous", "invalid", "error"];
+export const landedWorkClaimAssuranceValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LandedWorkClaim"]["assurance"]> = ["unverified", "verified"];
+export const landedWorkClaimKindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LandedWorkClaim"]["kind"]> = ["git_email", "source_provider_user_id"];
+export const landedWorkClaimRoleValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["LandedWorkClaim"]["role"]> = ["author", "coauthor", "merger"];
 export const mergeRequestKanbanStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequest"]["KanbanStatus"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
 export const mergeRequestStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequest"]["State"]> = ["open", "closed", "merged"];
 export const mergeRequestResponseKanbanStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequestResponse"]["KanbanStatus"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
 export const mergeRequestResponseStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequestResponse"]["State"]> = ["open", "closed", "merged"];
+export const platformAccountTypeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["PlatformAccount"]["type"]> = ["user", "bot", "organization", "unknown"];
 export const problemErrorCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ProblemError"]["code"]> = ["badRequest", "branchConflict", "branchInUse", "branchProtected", "commentNotFound", "conflict", "destinationExists", "forbidden", "gitCredentialUnavailable", "hookFailed", "hubUnavailable", "internalError", "issueNotFound", "mutationOutcomeUnknown", "notFound", "payloadTooLarge", "projectNotFound", "pullNotFound", "rateLimited", "repoNotFound", "resyncRequired", "serviceUnavailable", "settingsUnavailable", "spokePreparationInProgress", "toolMissing", "toolUnauthenticated", "unauthorized", "unsupportedCapability", "upstreamError", "validationError", "workspaceAlreadyExists", "workspaceDeletionInProgress", "workspaceDirectoryNotReusable", "workspaceNotFound", "workspaceSetupInProgress", "worktreeDirty"];
 export const providerStateWorkflowPayloadItem_typeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ProviderStateWorkflowPayload"]["item_type"]> = ["pr", "issue"];
 export const syncStatusLast_error_codeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["SyncStatus"]["last_error_code"]> = ["localSyncCeilingExhausted"];

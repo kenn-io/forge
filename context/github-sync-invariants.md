@@ -63,7 +63,7 @@ what "current" means.
 - PR conversation comments and review threads share one bulk GraphQL freshness
   boundary. Fetch their first pages together, paginate comment content and moderation
   through GraphQL, and keep detail stale while either family is incomplete.
-  (`internal/github/graphql.go::gqlPR`, `internal/github/sync.go::syncOpenMRFromBulk`)
+  (`platform/github/graphql_models.go::GraphQLPR`, `internal/github/sync.go::syncOpenMRFromBulk`)
 - A parent `304 Not Modified` is not a moderation freshness signal. When GraphQL
   admission permits, re-observe conversation and review-thread visibility under
   the parent revision guard (`internal/github/sync.go::markUnchangedMRDetailFetched`).
@@ -195,7 +195,7 @@ Some PR-derived state is only valid for one head commit.
   lines, and do not re-add a trailing newline when a suggestion deletes every
   line. Mutation-time `NOT_FOUND`/could-not-resolve failures are head repo or
   branch races and map to conflict `head_repo_unknown`, not `not_found`
-  (`internal/github/client.go::ApplyReviewSuggestions`).
+  (`platform/github/client.go::Client.ApplyReviewSuggestions`).
 - Apply-suggestion consumes REST content reads plus the GraphQL
   `createCommitOnBranch` mutation; the provider reports both buckets via
   `OperationRateLimitBuckets(platform.OperationApplyReviewSuggestion)` so a
@@ -374,7 +374,7 @@ fallback repository listing.
   GitLab's server-side `archived=false` filter, which runs before any
   listing limit so archived projects cannot crowd live ones out of a
   bounded preview. (`internal/github/repo_config_resolver.go::resolveConfiguredRepo`,
-  `internal/platform/gitlab/client.go::ListRepositories`,
+  `platform/gitlab/client.go::ListRepositories`,
   `internal/github/sync.go::repoRefFromCatalog`)
 - Archived state transitions are observed during normal sync passes, not
   only at resolution sites: each pass reconciles archived tracked refs with
@@ -498,7 +498,7 @@ fallback repository listing.
   `internal/github/budget.go::LocalArchiveSpendAvailable`,
   `internal/github/sync.go::Admit`,
   `internal/github/budget_transport.go::archiveAttemptProviderReserved`)
-- A GitHub issue without `updated_at` uses `created_at` as both its freshness and initial activity boundary; zero timestamps must not bypass monotonic snapshot acceptance. (`internal/platform/github/normalize.go::NormalizeIssue`)
+- A GitHub issue without `updated_at` uses `created_at` as both its freshness and initial activity boundary; zero timestamps must not bypass monotonic snapshot acceptance. (`platform/github/normalize.go::NormalizeIssue`)
 
 ## Owner Routes And Identity Accounting
 
@@ -756,7 +756,7 @@ error or cancellation unchanged and never adopts.
 Changes in this area should usually add or update tests at the boundary where
 the regression would show up.
 
-- `internal/github/*_test.go` and `internal/platform/github/*_test.go` for
+- `internal/github/*_test.go` and `platform/github/*_test.go` for
   GraphQL parsing, normalization, adapter compatibility, optional failure
   handling, and sync sequencing.
 - `internal/server/api_test.go` when the bug would surface through HTTP payloads

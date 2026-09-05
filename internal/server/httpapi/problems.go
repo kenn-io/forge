@@ -27,8 +27,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"go.kenn.io/forge/internal/db"
-	"go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/tokenauth"
+	"go.kenn.io/forge/platform"
 )
 
 // ProblemCode is the machine-readable error code carried on the wire.
@@ -549,6 +549,9 @@ func ProviderMutationProblem(err error, provider, host string) huma.StatusError 
 			platform.ErrCodeInvalidRepoRef,
 			platform.ErrCodeInvalidArgument,
 			platform.ErrCodePermissionDenied,
+			platform.ErrCodeCredentialRejected,
+			platform.ErrCodeInstallationSuspended,
+			platform.ErrCodeInstallationDeleted,
 			platform.ErrCodeNotFound,
 			platform.ErrCodeRateLimited,
 			platform.ErrCodeStaleState,
@@ -642,7 +645,7 @@ func MapPlatformError(err error) huma.StatusError {
 		)
 	case platform.ErrCodeRateLimited:
 		return RateLimited(provider, host, pe.ResetAt)
-	case platform.ErrCodePermissionDenied:
+	case platform.ErrCodePermissionDenied, platform.ErrCodeCredentialRejected, platform.ErrCodeInstallationSuspended, platform.ErrCodeInstallationDeleted:
 		d := platformErrorDetails(provider, host)
 		if len(d) == 0 {
 			d = nil

@@ -364,9 +364,10 @@ func (f *Fake) handleListInstallations(w http.ResponseWriter, r *http.Request) {
 			selection = "all"
 		}
 		out = append(out, map[string]any{
-			"id": inst.ID,
+			"id":     inst.ID,
+			"app_id": app.ID,
 			"account": map[string]any{
-				"login": inst.Account, "type": "Organization",
+				"id": inst.ID + 10000, "login": inst.Account, "type": "Organization",
 			},
 			"repository_selection": selection,
 		})
@@ -463,8 +464,8 @@ func (f *Fake) handleInstallationRepos(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		repos := make([]map[string]any, 0, len(inst.Repos))
-		for _, name := range inst.Repos {
-			repos = append(repos, map[string]any{"full_name": name})
+		for index, name := range inst.Repos {
+			repos = append(repos, map[string]any{"id": index + 20000, "full_name": name})
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"total_count":  len(repos),

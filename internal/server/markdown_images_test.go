@@ -13,9 +13,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
-	"go.kenn.io/forge/internal/platform"
-	platformgitlab "go.kenn.io/forge/internal/platform/gitlab"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/platform"
+	platformgitlab "go.kenn.io/forge/platform/gitlab"
 )
 
 func repoBrowserRequest(
@@ -162,7 +162,9 @@ func TestMarkdownImageRouteMapsGitLabServerErrorToUpstreamError(t *testing.T) {
 		"gitlab.example.com",
 		testTokenSource("gitlab-token"),
 		platformgitlab.WithBaseURLForTesting(gitlabServer.URL+"/api/v4"),
-		platformgitlab.WithoutRetriesForTesting(),
+		platformgitlab.WithoutRetriesForTesting(), platformgitlab.
+			WithTransport(http.DefaultTransport), platformgitlab.
+			WithClock(time.Now),
 	)
 	require.NoError(err)
 	registry, err := platform.NewRegistry(provider)
@@ -226,7 +228,9 @@ func TestMarkdownImageRouteResolvesOpaqueGitLabProjectID(t *testing.T) {
 		"gitlab.example.com",
 		testTokenSource("gitlab-token"),
 		platformgitlab.WithBaseURLForTesting(gitlabServer.URL+"/api/v4"),
-		platformgitlab.WithoutRetriesForTesting(),
+		platformgitlab.WithoutRetriesForTesting(), platformgitlab.
+			WithTransport(http.DefaultTransport), platformgitlab.
+			WithClock(time.Now),
 	)
 	require.NoError(err)
 	registry, err := platform.NewRegistry(provider)

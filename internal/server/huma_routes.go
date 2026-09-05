@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"reflect"
 	"slices"
 	"sort"
 	"strconv"
@@ -20,13 +21,13 @@ import (
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
-	"go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/ratelimit"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/issueapi"
 	"go.kenn.io/forge/internal/server/pullapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
+	"go.kenn.io/forge/platform"
 )
 
 type repoNumberInput struct {
@@ -207,6 +208,22 @@ type notificationBulkOutput struct {
 
 func apiConfig(basePath string) huma.Config {
 	config := huma.DefaultConfig("kenn-forge API", "0.1.0")
+	// Public evidence types have their own package namespace. Preserve that
+	// namespace on the wire without renaming existing application schemas.
+	config.Components.Schemas = huma.NewMapRegistry("#/components/schemas/", func(t reflect.Type, hint string) string {
+		for t.Kind() == reflect.Pointer || t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
+			t = t.Elem()
+		}
+		name := huma.DefaultSchemaNamer(t, hint)
+		switch t.PkgPath() {
+		case "go.kenn.io/forge/platform":
+			return "Platform" + name
+		case "go.kenn.io/forge/landedwork":
+			return "LandedWork" + name
+		default:
+			return name
+		}
+	})
 	config.OpenAPIPath = "/openapi"
 	config.DocsPath = "/docs"
 	config.SchemasPath = "/schemas"

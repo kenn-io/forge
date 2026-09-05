@@ -7,12 +7,13 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/forge/internal/platform"
-	gitlabprovider "go.kenn.io/forge/internal/platform/gitlab"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/platform"
+	gitlabprovider "go.kenn.io/forge/platform/gitlab"
 )
 
 // fakeGitLabReviewerAPI serves the minimal GitLab v4 surface the
@@ -141,7 +142,7 @@ func TestGitLabSetPullReviewersRetainsReviewerAbsentFromUserSearch(t *testing.T)
 	client, err := gitlabprovider.NewClient(
 		platform.DefaultGitLabHost,
 		staticTokenSource("token"),
-		gitlabprovider.WithBaseURLForTesting(upstream.URL+"/api/v4"),
+		gitlabprovider.WithBaseURLForTesting(upstream.URL+"/api/v4"), gitlabprovider.WithTransport(http.DefaultTransport), gitlabprovider.WithClock(time.Now),
 	)
 	require.NoError(err)
 
@@ -190,7 +191,7 @@ func TestGitLabSetPullAssigneesRetainsAssigneeAbsentFromUserSearch(t *testing.T)
 	client, err := gitlabprovider.NewClient(
 		platform.DefaultGitLabHost,
 		staticTokenSource("token"),
-		gitlabprovider.WithBaseURLForTesting(upstream.URL+"/api/v4"),
+		gitlabprovider.WithBaseURLForTesting(upstream.URL+"/api/v4"), gitlabprovider.WithTransport(http.DefaultTransport), gitlabprovider.WithClock(time.Now),
 	)
 	require.NoError(err)
 
@@ -236,7 +237,7 @@ func TestGitLabSetIssueAssigneesRetainsAssigneeAbsentFromUserSearch(t *testing.T
 	client, err := gitlabprovider.NewClient(
 		platform.DefaultGitLabHost,
 		staticTokenSource("token"),
-		gitlabprovider.WithBaseURLForTesting(upstream.URL+"/api/v4"),
+		gitlabprovider.WithBaseURLForTesting(upstream.URL+"/api/v4"), gitlabprovider.WithTransport(http.DefaultTransport), gitlabprovider.WithClock(time.Now),
 	)
 	require.NoError(err)
 

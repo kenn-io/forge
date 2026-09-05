@@ -13,12 +13,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
-	"go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/ratelimit"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/pullapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/tokenauth"
+	"go.kenn.io/forge/platform"
 )
 
 func TestDeriveOperationAvailability(t *testing.T) {
@@ -384,7 +384,7 @@ func TestAPIRepoResponseIncludesOperationsRateLimited(t *testing.T) {
 	require.NoError(database.UpdateRepoViewerCanMerge(t.Context(), repoID, true))
 
 	resetAt := time.Now().UTC().Add(30 * time.Minute)
-	rt.UpdateFromRate(ratelimit.Rate{Limit: 5000, Remaining: 0, Reset: resetAt})
+	rt.UpdateFromRate(platform.Rate{Limit: 5000, Remaining: 0, Reset: resetAt})
 
 	rr := doJSON(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget", nil)
 	require.Equal(http.StatusOK, rr.Code)
@@ -437,7 +437,7 @@ func TestAPIRepoResponseIncludesOperationsGraphQLPauseDoesNotBlockREST(t *testin
 	// Pause GraphQL by reporting zero remaining requests with a
 	// future reset; leave REST untouched.
 	resetAt := time.Now().UTC().Add(30 * time.Minute)
-	gqlRT.UpdateFromRate(ratelimit.Rate{Limit: 5000, Remaining: 0, Reset: resetAt})
+	gqlRT.UpdateFromRate(platform.Rate{Limit: 5000, Remaining: 0, Reset: resetAt})
 
 	rr := doJSON(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget", nil)
 	require.Equal(http.StatusOK, rr.Code)
@@ -480,7 +480,7 @@ func TestAPIRepoResponseApplySuggestionRateBucketsFollowProvider(t *testing.T) {
 			t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 		)
 		require.NoError(err)
-		gqlRT.UpdateFromRate(ratelimit.Rate{Limit: 5000, Remaining: 0, Reset: resetAt})
+		gqlRT.UpdateFromRate(platform.Rate{Limit: 5000, Remaining: 0, Reset: resetAt})
 
 		rr := doJSON(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget", nil)
 		require.Equal(http.StatusOK, rr.Code)
@@ -542,7 +542,7 @@ func TestAPIRepoResponseApplySuggestionRateBucketsFollowProvider(t *testing.T) {
 			RepoPath:       "group/project",
 		})
 		require.NoError(err)
-		gqlRT.UpdateFromRate(ratelimit.Rate{Limit: 5000, Remaining: 0, Reset: resetAt})
+		gqlRT.UpdateFromRate(platform.Rate{Limit: 5000, Remaining: 0, Reset: resetAt})
 
 		rr := doJSON(
 			t, srv, http.MethodGet,
@@ -667,7 +667,7 @@ func TestAPIRepoResponseOperationsGateOnWriteTrackerWhenSplit(t *testing.T) {
 
 	// App (sync) budget exhausted, PAT healthy: writes stay available.
 	resetAt := time.Now().UTC().Add(30 * time.Minute)
-	restRT.UpdateFromRate(ratelimit.Rate{Limit: 5000, Remaining: 0, Reset: resetAt})
+	restRT.UpdateFromRate(platform.Rate{Limit: 5000, Remaining: 0, Reset: resetAt})
 
 	rr := doJSON(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget", nil)
 	require.Equal(http.StatusOK, rr.Code)
@@ -678,7 +678,7 @@ func TestAPIRepoResponseOperationsGateOnWriteTrackerWhenSplit(t *testing.T) {
 
 	// PAT REST budget exhausted: REST writes gate, but the GraphQL
 	// mutation (ready-for-review) follows its own write bucket.
-	writeRT.UpdateFromRate(ratelimit.Rate{Limit: 5000, Remaining: 0, Reset: resetAt})
+	writeRT.UpdateFromRate(platform.Rate{Limit: 5000, Remaining: 0, Reset: resetAt})
 
 	rr = doJSON(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget", nil)
 	require.Equal(http.StatusOK, rr.Code)
@@ -693,8 +693,8 @@ func TestAPIRepoResponseOperationsGateOnWriteTrackerWhenSplit(t *testing.T) {
 		"REST write exhaustion must not gate GraphQL-backed draft conversion")
 
 	// PAT GraphQL budget exhausted: only the GraphQL mutation gates.
-	writeRT.UpdateFromRate(ratelimit.Rate{Limit: 5000, Remaining: 4000, Reset: resetAt})
-	writeGQLRT.UpdateFromRate(ratelimit.Rate{Limit: 5000, Remaining: 0, Reset: resetAt})
+	writeRT.UpdateFromRate(platform.Rate{Limit: 5000, Remaining: 4000, Reset: resetAt})
+	writeGQLRT.UpdateFromRate(platform.Rate{Limit: 5000, Remaining: 0, Reset: resetAt})
 
 	rr = doJSON(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget", nil)
 	require.Equal(http.StatusOK, rr.Code)

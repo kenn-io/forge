@@ -8,6 +8,7 @@ export interface RawWorkspace {
   agentState?: string;
   agentStateUpdatedAt?: string;
   associatedPRNumber?: number;
+  branchUpstreamMissing?: boolean;
   commitsAhead?: number;
   commitsBehind?: number;
   createdAt: string;

@@ -67,8 +67,8 @@ func TestWorkspaceListReportsCommitsAheadBehindE2E(t *testing.T) {
 	require.NotNil(fleetResponse.JSON200)
 	require.NotNil(fleetResponse.JSON200.Workspaces)
 	var fleetWorkspace *generated.WorkspaceSummary
-	for i := range *fleetResponse.JSON200.Workspaces {
-		candidate := &(*fleetResponse.JSON200.Workspaces)[i]
+	for i := range fleetResponse.JSON200.Workspaces {
+		candidate := &fleetResponse.JSON200.Workspaces[i]
 		if candidate.Id == ws.Id {
 			fleetWorkspace = candidate
 			break

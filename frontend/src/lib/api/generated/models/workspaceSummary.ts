@@ -8,6 +8,7 @@ export interface WorkspaceSummary {
   agent_state?: string;
   agent_state_updated_at?: string;
   associated_pr_number?: number;
+  branch_upstream_missing?: boolean;
   commits_ahead?: number;
   commits_behind?: number;
   created_at: string;

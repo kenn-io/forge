@@ -15,6 +15,8 @@ export interface WorkspaceResponse {
   /** UTC timestamp of the hook report that produced agent_state. */
   agent_state_updated_at?: string;
   associated_pr_number?: number;
+  /** True when the current branch has an origin upstream configured but its local remote-tracking ref is absent; clients may offer Push so branch sync can verify or create the remote branch. */
+  branch_upstream_missing?: boolean;
   commits_ahead?: number;
   commits_behind?: number;
   /** True when this response represents a workspace newly created by this request; absent when an existing workspace was returned or on reads. */

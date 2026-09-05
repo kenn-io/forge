@@ -58,6 +58,7 @@ const {
     clearTextureAtlas: ReturnType<typeof vi.fn>;
     cols: number;
     focus: ReturnType<typeof vi.fn>;
+    input: ReturnType<typeof vi.fn>;
     modes: {
       applicationCursorKeysMode: boolean;
       bracketedPasteMode: boolean;
@@ -246,6 +247,7 @@ vi.mock("@xterm/xterm", () => ({
       }),
       dispose: vi.fn(),
       focus: vi.fn(),
+      input: vi.fn(),
       loadAddon: vi.fn(),
       onBinary: vi.fn(),
       onData: vi.fn((handler: (data: string) => void) => {
@@ -498,6 +500,79 @@ describe("TerminalPane", () => {
     expect(handler(new KeyboardEvent("keydown", { key: "V", metaKey: true, shiftKey: true }))).toBe(false);
     expect(handler(new KeyboardEvent("keydown", { key: "v", ctrlKey: true }))).toBe(true);
     expect(handler(new KeyboardEvent("keydown", { key: "V", ctrlKey: true, shiftKey: true }))).toBe(true);
+  });
+
+  it("uses macOS Ctrl+V to upload an image-only browser clipboard", async () => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+    Object.defineProperty(window, "isSecureContext", { configurable: true, value: true });
+    const read = vi.fn().mockResolvedValue([
+      {
+        types: ["image/png"],
+        getType: vi.fn().mockResolvedValue(new Blob(["png bytes"], { type: "image/png" })),
+      },
+    ]);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { read, writeText: clipboardWriteText },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ path: "/remote/paste-image.png" }), { status: 201 })),
+    );
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+    await waitFor(() => expect(xtermCustomKeyEventHandlers).toHaveLength(1));
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    mockSockets[0]!.sent = [];
+
+    expect(xtermCustomKeyEventHandlers[0]!(new KeyboardEvent("keydown", { key: "v", ctrlKey: true }))).toBe(false);
+
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(mockSockets[0]!.sent.map((_, index) => sentText(mockSockets[0]!, index))).toContain(
+        "/remote/paste-image.png",
+      ),
+    );
+    expect(xtermInstances[0]!.input).not.toHaveBeenCalled();
+  });
+
+  it("replays macOS Ctrl+V when clipboard read returns text", async () => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+    Object.defineProperty(window, "isSecureContext", { configurable: true, value: true });
+    const read = vi.fn().mockResolvedValue([
+      {
+        types: ["text/plain"],
+        getType: vi.fn().mockResolvedValue(new Blob(["hello"], { type: "text/plain" })),
+      },
+    ]);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { read, writeText: clipboardWriteText },
+    });
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+    await waitFor(() => expect(xtermCustomKeyEventHandlers).toHaveLength(1));
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+
+    expect(xtermCustomKeyEventHandlers[0]!(new KeyboardEvent("keydown", { key: "v", ctrlKey: true }))).toBe(false);
+
+    await waitFor(() => expect(xtermInstances[0]!.input).toHaveBeenCalledWith("\x16", true));
+  });
+
+  it("replays macOS Ctrl+V when browser clipboard permission is denied", async () => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+    Object.defineProperty(window, "isSecureContext", { configurable: true, value: true });
+    const read = vi.fn().mockRejectedValue(new DOMException("denied", "NotAllowedError"));
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { read, writeText: clipboardWriteText },
+    });
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+    await waitFor(() => expect(xtermCustomKeyEventHandlers).toHaveLength(1));
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    await waitForSocketConnected(mockSockets[0]!);
+
+    expect(xtermCustomKeyEventHandlers[0]!(new KeyboardEvent("keydown", { key: "v", ctrlKey: true }))).toBe(false);
+
+    await waitFor(() => expect(xtermInstances[0]!.input).toHaveBeenCalledWith("\x16", true));
   });
 
   it("keeps insecure-origin right clicks out of tmux without blocking Chrome's context menu", async () => {
@@ -1738,6 +1813,81 @@ describe("TerminalPane", () => {
         "\x1b[200~first[201~\rsecond\rthird\x1b[201~",
       ),
     );
+  });
+
+  it("uploads every image-only browser paste and sends each path separately", async () => {
+    const paths = ["/remote/paste-image-1.png", "/remote/paste-image-2.webp"];
+    const fetchMock = vi.fn(
+      async () => new Response(JSON.stringify({ path: paths[fetchMock.mock.calls.length - 1] }), { status: 201 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { container } = render(TerminalPane, {
+      props: { workspaceId: "ws-123", fleetHostKey: "host-a" },
+    });
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    xtermInstances[0]!.modes.bracketedPasteMode = true;
+    mockSockets[0]!.sent = [];
+    const terminalContainer = container.querySelector(".terminal-container")!;
+    const event = new Event("paste", { bubbles: true, cancelable: true }) as ClipboardEvent;
+    Object.defineProperty(event, "clipboardData", {
+      value: {
+        getData: vi.fn(() => ""),
+        items: [
+          {
+            kind: "file",
+            type: "image/png",
+            getAsFile: () => new File(["first"], "first.png", { type: "image/png" }),
+          },
+          {
+            kind: "file",
+            type: "image/webp",
+            getAsFile: () => new File(["second"], "second.webp", { type: "image/webp" }),
+          },
+        ],
+      },
+    });
+
+    expect(terminalContainer.dispatchEvent(event)).toBe(false);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(fetchMock.mock.calls[0]![0]).toBe(
+      `${window.location.origin}/api/v1/fleet/hosts/host-a/terminal/paste-image`,
+    );
+    await waitFor(() => {
+      const frames = mockSockets[0]!.sent.map((_, index) => sentText(mockSockets[0]!, index));
+      expect(frames).toContain("\x1b[200~/remote/paste-image-1.png\x1b[201~");
+      expect(frames).toContain("\x1b[200~/remote/paste-image-2.webp\x1b[201~");
+    });
+    expect(mockShowFlash).toHaveBeenCalledWith("2 images uploaded; paths pasted into terminal.");
+  });
+
+  it("keeps text precedence when clipboard data also contains an image", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { container } = render(TerminalPane, { props: { workspaceId: "ws-123" } });
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    mockSockets[0]!.sent = [];
+    const terminalContainer = container.querySelector(".terminal-container")!;
+    const event = new Event("paste", { bubbles: true, cancelable: true }) as ClipboardEvent;
+    Object.defineProperty(event, "clipboardData", {
+      value: {
+        getData: vi.fn((type: string) => (type === "text/plain" ? "image description" : "")),
+        items: [
+          {
+            kind: "file",
+            type: "image/png",
+            getAsFile: () => new File(["image"], "image.png", { type: "image/png" }),
+          },
+        ],
+      },
+    });
+
+    terminalContainer.dispatchEvent(event);
+
+    await waitFor(() =>
+      expect(mockSockets[0]!.sent.map((_, index) => sentText(mockSockets[0]!, index))).toContain("image description"),
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it.each([

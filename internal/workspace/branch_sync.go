@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os/exec"
 	"strings"
 
 	"go.kenn.io/forge/internal/gitclone"
+	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/tokenauth"
 )
 
@@ -39,7 +41,18 @@ func (m *Manager) branchSyncGit(
 ) networkedBranchGit {
 	if m.clones == nil {
 		return func(ctx context.Context, dir string, args ...string) (string, error) {
-			return gitCombinedOutput(ctx, dir, args...)
+			cmd := workspaceGitCommand(ctx, dir, args...)
+			out, err := procutil.Output(ctx, cmd, "git subprocess capacity")
+			if err == nil {
+				return string(out), nil
+			}
+			if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
+				stderr := strings.TrimSpace(string(exitErr.Stderr))
+				if stderr != "" {
+					return string(out), fmt.Errorf("%w: %s", err, stderr)
+				}
+			}
+			return string(out), err
 		}
 	}
 	return func(ctx context.Context, dir string, args ...string) (string, error) {

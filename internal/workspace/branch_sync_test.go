@@ -64,6 +64,18 @@ func TestPushWorktreeBranchCreatesMissingRemoteBranch(t *testing.T) {
 	))
 	runWorkspaceTestGit(t, work, "add", ".")
 	runWorkspaceTestGit(t, work, "commit", "-m", "first fork commit")
+	realGit, err := exec.LookPath("git")
+	require.NoError(err)
+	fakeDir := t.TempDir()
+	require.NoError(os.WriteFile(filepath.Join(fakeDir, "git"), []byte(`#!/bin/sh
+set -eu
+if [ "${1:-}" = "ls-remote" ]; then
+	echo "remote: informational diagnostic" >&2
+fi
+exec "${KENN_FORGE_TEST_REAL_GIT:?}" "$@"
+`), 0o755))
+	t.Setenv("KENN_FORGE_TEST_REAL_GIT", realGit)
+	t.Setenv("PATH", fakeDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	require.NoError(branchSyncTestManager(t).PushWorktreeBranch(
 		t.Context(), "", "github", "", "", "", work,

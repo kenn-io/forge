@@ -339,7 +339,7 @@ describe("defaultActions", () => {
     window.history.replaceState(
       null,
       "",
-      "/?selected=commit:abcdef1234567890&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&branch=main",
+      "/?selected=commit:abcdef1234567890abcdef1234567890abcdef12&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&branch=main",
     );
     const commitContext = ctx("activity", { selectedPR: staleSelected });
     expect(action.when(commitContext)).toBe(true);

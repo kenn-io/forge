@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	gh "github.com/google/go-github/v89/github"
+	gh "github.com/google/go-github/v90/github"
 	gitlabapi "gitlab.com/gitlab-org/api/client-go/v2"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federationauth"

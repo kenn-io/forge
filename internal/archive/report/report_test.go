@@ -10,7 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/v2"
 )
 
 func TestRenderMarkdownGoldenAndDeterministicSerialization(t *testing.T) {

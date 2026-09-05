@@ -19,7 +19,7 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	gh "github.com/google/go-github/v89/github"
+	gh "github.com/google/go-github/v90/github"
 	shellquote "github.com/kballard/go-shellquote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

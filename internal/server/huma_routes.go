@@ -15,7 +15,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
-	gh "github.com/google/go-github/v89/github"
+	gh "github.com/google/go-github/v90/github"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/gitclone"

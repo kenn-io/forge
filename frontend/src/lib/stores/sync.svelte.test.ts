@@ -231,7 +231,11 @@ describe("sync store", () => {
 
   it("passes one provider-qualified repository as the only sync scope", async () => {
     const post = vi.fn(async () => undefined);
-    const store = createSyncStore(makeGeneratedClient({ SyncService: { triggerSync: post } }));
+    const getStatus = vi.fn(async () => ({ running: false, last_run_at: "", last_error: "" }));
+    const getRates = vi.fn(async () => ({ provider_pools: {}, local_ceilings: {} }));
+    const store = createSyncStore(
+      makeGeneratedClient({ SyncService: { getSyncStatus: getStatus, getRateLimits: getRates, triggerSync: post } }),
+    );
 
     store.triggerRepoSync("gitlab|gitlab.example.com/group/subgroup/project");
     await vi.waitFor(() => expect(post).toHaveBeenCalledOnce());

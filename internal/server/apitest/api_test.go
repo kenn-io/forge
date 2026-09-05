@@ -36,7 +36,7 @@ func TestAPIListPullsIncludesLabels(t *testing.T) {
 		Description: &description,
 		Color:       "d73a4a",
 		IsDefault:   true,
-	}}, (*resp.JSON200)[0].Labels)
+	}}, *(*resp.JSON200)[0].Labels)
 }
 
 func TestAPIPullsHideRemovedUpstreamArchiveRows(t *testing.T) {
@@ -712,7 +712,7 @@ func TestAPIGetPullIncludesLabels(t *testing.T) {
 		Name:      "enhancement",
 		Color:     "a2eeef",
 		IsDefault: false,
-	}}, resp.JSON200.MergeRequest.Labels)
+	}}, *resp.JSON200.MergeRequest.Labels)
 }
 
 func TestAPIListPullsStateFilter(t *testing.T) {
@@ -818,7 +818,7 @@ func TestAPIListIssuesResponseIncludesAssignees(t *testing.T) {
 	require.NotNil(resp.JSON200)
 	require.Len(*resp.JSON200, 1)
 	require.NotNil((*resp.JSON200)[0].Assignees)
-	require.Equal([]string{"alice", "bob"}, (*resp.JSON200)[0].Assignees)
+	require.Equal([]string{"alice", "bob"}, *(*resp.JSON200)[0].Assignees)
 }
 
 func TestAPIGetIssueIncludesAssignees(t *testing.T) {
@@ -834,7 +834,7 @@ func TestAPIGetIssueIncludesAssignees(t *testing.T) {
 	require.Equal(http.StatusOK, resp.StatusCode())
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Issue.Assignees)
-	require.Equal([]string{"alice", "bob"}, resp.JSON200.Issue.Assignees)
+	require.Equal([]string{"alice", "bob"}, *resp.JSON200.Issue.Assignees)
 }
 
 func TestAPISyncIssuePersistsAssigneesFromProvider(t *testing.T) {
@@ -887,7 +887,7 @@ func TestAPISyncIssuePersistsAssigneesFromProvider(t *testing.T) {
 	require.NotNil(listResp.JSON200)
 	require.Len(*listResp.JSON200, 1)
 	require.NotNil((*listResp.JSON200)[0].Assignees)
-	assert.Equal([]string{"alice", "bob"}, (*listResp.JSON200)[0].Assignees)
+	assert.Equal([]string{"alice", "bob"}, *(*listResp.JSON200)[0].Assignees)
 
 	assignee := "bob"
 	filterResp, err := client.HTTP.ListIssuesWithResponse(
@@ -906,7 +906,7 @@ func TestAPISyncIssuePersistsAssigneesFromProvider(t *testing.T) {
 	require.Equal(http.StatusOK, detailResp.StatusCode())
 	require.NotNil(detailResp.JSON200)
 	require.NotNil(detailResp.JSON200.Issue.Assignees)
-	assert.Equal([]string{"alice", "bob"}, detailResp.JSON200.Issue.Assignees)
+	assert.Equal([]string{"alice", "bob"}, *detailResp.JSON200.Issue.Assignees)
 }
 
 func TestAPIGetIssueIncludesLabels(t *testing.T) {
@@ -933,5 +933,5 @@ func TestAPIGetIssueIncludesLabels(t *testing.T) {
 		Description: &description,
 		Color:       "d73a4a",
 		IsDefault:   true,
-	}}, resp.JSON200.Issue.Labels)
+	}}, *resp.JSON200.Issue.Labels)
 }

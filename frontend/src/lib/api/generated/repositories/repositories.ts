@@ -69,7 +69,6 @@ import type {
 } from "../models";
 
 import { orvalFetch } from "../../runtime.ts";
-import { orvalQueryString } from "../../runtime.ts";
 
 // https://stackoverflow.com/questions/49579094/typescript-conditional-types-filter-out-readonly-properties-pick-only-requir/49579497#49579497
 type IfEquals<X, Y, A = X, B = never> = (<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2 ? A : B;
@@ -109,7 +108,15 @@ export const getGetRepoBrowserAssetOnHostUrl = (
   { platformHost, provider, owner, name }: GetRepoBrowserAssetOnHostPathParameters,
   params?: GetRepoBrowserAssetOnHostParams,
 ) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/host/${encodeURIComponent(String(platformHost))}/repo/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/browser/asset?${stringifiedParams}`
@@ -135,7 +142,15 @@ export const getGetRepoBrowserBlobOnHostUrl = (
   { platformHost, provider, owner, name }: GetRepoBrowserBlobOnHostPathParameters,
   params?: GetRepoBrowserBlobOnHostParams,
 ) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/host/${encodeURIComponent(String(platformHost))}/repo/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/browser/blob?${stringifiedParams}`
@@ -163,7 +178,15 @@ export const getGetRepoBrowserCommitOnHostUrl = (
   { platformHost, provider, owner, name }: GetRepoBrowserCommitOnHostPathParameters,
   params?: GetRepoBrowserCommitOnHostParams,
 ) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/host/${encodeURIComponent(String(platformHost))}/repo/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/browser/commit?${stringifiedParams}`
@@ -191,7 +214,15 @@ export const getGetRepoBrowserHistoryOnHostUrl = (
   { platformHost, provider, owner, name }: GetRepoBrowserHistoryOnHostPathParameters,
   params?: GetRepoBrowserHistoryOnHostParams,
 ) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/host/${encodeURIComponent(String(platformHost))}/repo/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/browser/history?${stringifiedParams}`
@@ -219,7 +250,24 @@ export const getGetRepoBrowserLastChangedOnHostUrl = (
   { platformHost, provider, owner, name }: GetRepoBrowserLastChangedOnHostPathParameters,
   params?: GetRepoBrowserLastChangedOnHostParams,
 ) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    const explodeParameters = ["path"];
+
+    if (Array.isArray(value) && explodeParameters.includes(key)) {
+      value.forEach((v) => {
+        normalizedParams.append(key, v === null ? "null" : String(v));
+      });
+      return;
+    }
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/host/${encodeURIComponent(String(platformHost))}/repo/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/browser/last-changed?${stringifiedParams}`
@@ -247,7 +295,15 @@ export const getListRepoBrowserRefsOnHostUrl = (
   { platformHost, provider, owner, name }: ListRepoBrowserRefsOnHostPathParameters,
   params?: ListRepoBrowserRefsOnHostParams,
 ) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/host/${encodeURIComponent(String(platformHost))}/repo/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/browser/refs?${stringifiedParams}`
@@ -275,7 +331,15 @@ export const getListRepoBrowserTreeOnHostUrl = (
   { platformHost, provider, owner, name }: ListRepoBrowserTreeOnHostPathParameters,
   params?: ListRepoBrowserTreeOnHostParams,
 ) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/host/${encodeURIComponent(String(platformHost))}/repo/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/browser/tree?${stringifiedParams}`
@@ -303,7 +367,15 @@ export const getGetCommentAutocompleteOnHostUrl = (
   { platformHost, provider, owner, name }: GetCommentAutocompleteOnHostPathParameters,
   params?: GetCommentAutocompleteOnHostParams,
 ) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/host/${encodeURIComponent(String(platformHost))}/repo/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/comment-autocomplete?${stringifiedParams}`
@@ -331,7 +403,15 @@ export const getGetRepoCommitDiffOnHostUrl = (
   { platformHost, provider, owner, name, sha }: GetRepoCommitDiffOnHostPathParameters,
   params?: GetRepoCommitDiffOnHostParams,
 ) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/host/${encodeURIComponent(String(platformHost))}/repo/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/commits/${encodeURIComponent(String(sha))}/diff?${stringifiedParams}`
@@ -378,7 +458,15 @@ export const getGetMarkdownImageOnHostUrl = (
   { platformHost, provider, owner, name }: GetMarkdownImageOnHostPathParameters,
   params?: GetMarkdownImageOnHostParams,
 ) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/host/${encodeURIComponent(String(platformHost))}/repo/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/markdown-image?${stringifiedParams}`
@@ -403,7 +491,15 @@ export const getResolveRepoItemOnHostUrl = (
   { platformHost, provider, owner, name, number }: ResolveRepoItemOnHostPathParameters,
   params?: ResolveRepoItemOnHostParams,
 ) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/host/${encodeURIComponent(String(platformHost))}/repo/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/resolve/${encodeURIComponent(String(number))}?${stringifiedParams}`
@@ -448,7 +544,15 @@ export const getGetRepoBrowserAssetUrl = (
   { provider, owner, name }: GetRepoBrowserAssetPathParameters,
   params?: GetRepoBrowserAssetParams,
 ) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/repo/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/browser/asset?${stringifiedParams}`
@@ -474,7 +578,15 @@ export const getGetRepoBrowserBlobUrl = (
   { provider, owner, name }: GetRepoBrowserBlobPathParameters,
   params?: GetRepoBrowserBlobParams,
 ) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/repo/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/browser/blob?${stringifiedParams}`
@@ -499,7 +611,15 @@ export const getGetRepoBrowserCommitUrl = (
   { provider, owner, name }: GetRepoBrowserCommitPathParameters,
   params?: GetRepoBrowserCommitParams,
 ) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/repo/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/browser/commit?${stringifiedParams}`
@@ -524,7 +644,15 @@ export const getGetRepoBrowserHistoryUrl = (
   { provider, owner, name }: GetRepoBrowserHistoryPathParameters,
   params?: GetRepoBrowserHistoryParams,
 ) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/repo/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/browser/history?${stringifiedParams}`
@@ -549,7 +677,24 @@ export const getGetRepoBrowserLastChangedUrl = (
   { provider, owner, name }: GetRepoBrowserLastChangedPathParameters,
   params?: GetRepoBrowserLastChangedParams,
 ) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    const explodeParameters = ["path"];
+
+    if (Array.isArray(value) && explodeParameters.includes(key)) {
+      value.forEach((v) => {
+        normalizedParams.append(key, v === null ? "null" : String(v));
+      });
+      return;
+    }
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/repo/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/browser/last-changed?${stringifiedParams}`
@@ -577,7 +722,15 @@ export const getListRepoBrowserRefsUrl = (
   { provider, owner, name }: ListRepoBrowserRefsPathParameters,
   params?: ListRepoBrowserRefsParams,
 ) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/repo/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/browser/refs?${stringifiedParams}`
@@ -602,7 +755,15 @@ export const getListRepoBrowserTreeUrl = (
   { provider, owner, name }: ListRepoBrowserTreePathParameters,
   params?: ListRepoBrowserTreeParams,
 ) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/repo/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/browser/tree?${stringifiedParams}`
@@ -627,7 +788,15 @@ export const getGetCommentAutocompleteUrl = (
   { provider, owner, name }: GetCommentAutocompletePathParameters,
   params?: GetCommentAutocompleteParams,
 ) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/repo/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/comment-autocomplete?${stringifiedParams}`
@@ -652,7 +821,15 @@ export const getGetRepoCommitDiffUrl = (
   { provider, owner, name, sha }: GetRepoCommitDiffPathParameters,
   params?: GetRepoCommitDiffParams,
 ) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/repo/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/commits/${encodeURIComponent(String(sha))}/diff?${stringifiedParams}`
@@ -694,7 +871,15 @@ export const getGetMarkdownImageUrl = (
   { provider, owner, name }: GetMarkdownImagePathParameters,
   params?: GetMarkdownImageParams,
 ) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/repo/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/markdown-image?${stringifiedParams}`
@@ -719,7 +904,15 @@ export const getResolveRepoItemUrl = (
   { provider, owner, name, number }: ResolveRepoItemPathParameters,
   params?: ResolveRepoItemParams,
 ) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/repo/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/resolve/${encodeURIComponent(String(number))}?${stringifiedParams}`

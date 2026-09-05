@@ -14,6 +14,7 @@ import type {
   DeleteWorkspaceKataLinkPathParameters,
   GetKataIssueDetailPathParameters,
   GetKataLaunchTargetPathParameters,
+  GetKataProjectMappingsHeaders,
   KataCreateLinkRequest,
   KataDaemonRosterResponse,
   KataEffectiveLinksResponse,
@@ -36,7 +37,6 @@ import type {
 } from "../models";
 
 import { orvalFetch } from "../../runtime.ts";
-import { orvalQueryString } from "../../runtime.ts";
 
 // https://stackoverflow.com/questions/49579094/typescript-conditional-types-filter-out-readonly-properties-pick-only-requir/49579497#49579497
 type IfEquals<X, Y, A = X, B = never> = (<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2 ? A : B;
@@ -314,7 +314,15 @@ export const getResolveKataIssueReferenceUrl = (
   { daemonId }: ResolveKataIssueReferencePathParameters,
   params: ResolveKataIssueReferenceParams,
 ) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/kata/daemons/${encodeURIComponent(String(daemonId))}/issue-reference?${stringifiedParams}`
@@ -373,7 +381,24 @@ export const getListKataReferencesUrl = (
   { daemonId }: ListKataReferencesPathParameters,
   params?: ListKataReferencesParams,
 ) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    const explodeParameters = ["issue_uid"];
+
+    if (Array.isArray(value) && explodeParameters.includes(key)) {
+      value.forEach((v) => {
+        normalizedParams.append(key, v === null ? "null" : String(v));
+      });
+      return;
+    }
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/kata/daemons/${encodeURIComponent(String(daemonId))}/references?${stringifiedParams}`
@@ -402,11 +427,19 @@ export const getGetKataProjectMappingsUrl = () => {
  * @summary Inspect effective Kata project repository mappings
  */
 export const getKataProjectMappings = async (
+  headers?: GetKataProjectMappingsHeaders,
   options?: Parameters<typeof orvalFetch>[1],
 ): Promise<KataProjectMappingsResponse> => {
+  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
   return orvalFetch<KataProjectMappingsResponse>(getGetKataProjectMappingsUrl(), {
     ...options,
     method: "GET",
+    headers: { ...headers, ...getHeaders(options?.headers) },
   });
 };
 

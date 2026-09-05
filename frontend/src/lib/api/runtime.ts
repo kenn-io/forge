@@ -28,17 +28,6 @@ export interface OrvalRequestOptions extends RequestInit {
   readonly fetch?: FetchFn;
 }
 
-export function orvalQueryString(params?: Record<string, unknown>): string {
-  const query = new URLSearchParams();
-  if (params === undefined) return query.toString();
-  for (const [key, value] of Object.entries(params)) {
-    if (value === undefined) continue;
-    const values = Array.isArray(value) ? value : [value];
-    for (const item of values) query.append(key, item === null ? "null" : String(item));
-  }
-  return query.toString();
-}
-
 export class InvalidGeneratedErrorResponse extends Error {
   constructor(readonly body: unknown) {
     super("Generated API returned an invalid problem response");

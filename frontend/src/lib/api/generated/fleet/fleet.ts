@@ -6,6 +6,7 @@ import type {
   AbortFederationSpokeInputBody,
   ActivateEnrollmentInputBody,
   ActivateFederationEnrollmentPathParameters,
+  BeginFederationEnrollmentHeaders,
   BeginFederationSpokePreparationPathParameters,
   CloneFleetProjectBody,
   CloneFleetProjectDefaultOne,
@@ -153,6 +154,7 @@ import type {
   StopFleetProjectWorktreeRuntimeSessionPathParameters,
   StopFleetWorkspaceRuntimeSessionDefaultOne,
   StopFleetWorkspaceRuntimeSessionPathParameters,
+  StreamFederationProviderEventsHeaders,
   StreamFederationProviderEventsParams,
   ValidateFleetFilesystemRepoDefaultOne,
   ValidateFleetFilesystemRepoParams,
@@ -165,7 +167,6 @@ import type {
 } from "../models";
 
 import { orvalFetch } from "../../runtime.ts";
-import { orvalQueryString } from "../../runtime.ts";
 
 // https://stackoverflow.com/questions/49579094/typescript-conditional-types-filter-out-readonly-properties-pick-only-requir/49579497#49579497
 type IfEquals<X, Y, A = X, B = never> = (<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2 ? A : B;
@@ -193,6 +194,7 @@ export const getBeginFederationEnrollmentUrl = () => {
  */
 export const beginFederationEnrollment = async (
   joinRequest: NonReadonly<JoinRequest>,
+  headers?: BeginFederationEnrollmentHeaders,
   options?: Parameters<typeof orvalFetch>[1],
 ): Promise<JoinResponse> => {
   const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
@@ -204,7 +206,7 @@ export const beginFederationEnrollment = async (
   return orvalFetch<JoinResponse>(getBeginFederationEnrollmentUrl(), {
     ...options,
     method: "POST",
-    headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
+    headers: { "Content-Type": "application/json", ...headers, ...getHeaders(options?.headers) },
     body: JSON.stringify(joinRequest),
   });
 };
@@ -300,7 +302,15 @@ export const sealFederationSpokePreparation = async (
 };
 
 export const getStreamFederationProviderEventsUrl = (params?: StreamFederationProviderEventsParams) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0 ? `/federation/events?${stringifiedParams}` : `/federation/events`;
 };
@@ -310,11 +320,19 @@ export const getStreamFederationProviderEventsUrl = (params?: StreamFederationPr
  */
 export const streamFederationProviderEvents = async (
   params?: StreamFederationProviderEventsParams,
+  headers?: StreamFederationProviderEventsHeaders,
   options?: Parameters<typeof orvalFetch>[1],
 ): Promise<ProblemError> => {
+  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
   return orvalFetch<ProblemError>(getStreamFederationProviderEventsUrl(params), {
     ...options,
     method: "GET",
+    headers: { ...headers, ...getHeaders(options?.headers) },
   });
 };
 
@@ -671,7 +689,15 @@ export const getCompleteFleetFilesystemPathUrl = (
   { hostKey }: CompleteFleetFilesystemPathPathParameters,
   params: CompleteFleetFilesystemPathParams,
 ) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/fleet/hosts/${encodeURIComponent(String(hostKey))}/filesystem/complete?${stringifiedParams}`
@@ -696,7 +722,15 @@ export const getValidateFleetFilesystemRepoUrl = (
   { hostKey }: ValidateFleetFilesystemRepoPathParameters,
   params: ValidateFleetFilesystemRepoParams,
 ) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/fleet/hosts/${encodeURIComponent(String(hostKey))}/filesystem/validate-repo?${stringifiedParams}`
@@ -1429,7 +1463,15 @@ export const getDeleteFleetWorkspaceUrl = (
   { hostKey, id }: DeleteFleetWorkspacePathParameters,
   params?: DeleteFleetWorkspaceParams,
 ) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/fleet/hosts/${encodeURIComponent(String(hostKey))}/workspaces/${encodeURIComponent(String(id))}?${stringifiedParams}`
@@ -1488,7 +1530,15 @@ export const getGetFleetWorkspaceDiffUrl = (
   { hostKey, id }: GetFleetWorkspaceDiffPathParameters,
   params?: GetFleetWorkspaceDiffParams,
 ) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/fleet/hosts/${encodeURIComponent(String(hostKey))}/workspaces/${encodeURIComponent(String(id))}/diff?${stringifiedParams}`
@@ -1513,7 +1563,15 @@ export const getWatchFleetWorkspaceDiffUrl = (
   { hostKey, id }: WatchFleetWorkspaceDiffPathParameters,
   params?: WatchFleetWorkspaceDiffParams,
 ) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/fleet/hosts/${encodeURIComponent(String(hostKey))}/workspaces/${encodeURIComponent(String(id))}/diff/watch?${stringifiedParams}`
@@ -1538,7 +1596,15 @@ export const getGetFleetWorkspaceFilePreviewUrl = (
   { hostKey, id }: GetFleetWorkspaceFilePreviewPathParameters,
   params?: GetFleetWorkspaceFilePreviewParams,
 ) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/fleet/hosts/${encodeURIComponent(String(hostKey))}/workspaces/${encodeURIComponent(String(id))}/file-preview?${stringifiedParams}`
@@ -1566,7 +1632,15 @@ export const getGetFleetWorkspaceFilesUrl = (
   { hostKey, id }: GetFleetWorkspaceFilesPathParameters,
   params?: GetFleetWorkspaceFilesParams,
 ) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/fleet/hosts/${encodeURIComponent(String(hostKey))}/workspaces/${encodeURIComponent(String(id))}/files?${stringifiedParams}`
@@ -1869,7 +1943,15 @@ export const abortFederationSpokePreparation = async (
 };
 
 export const getGetSnapshotUrl = (params?: GetSnapshotParams) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0 ? `/snapshot?${stringifiedParams}` : `/snapshot`;
 };
@@ -1888,7 +1970,15 @@ export const getSnapshot = async (
 };
 
 export const getGetSnapshotAggregateUrl = (params?: GetSnapshotAggregateParams) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0 ? `/snapshot/aggregate?${stringifiedParams}` : `/snapshot/aggregate`;
 };

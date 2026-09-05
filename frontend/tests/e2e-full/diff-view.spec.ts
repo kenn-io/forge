@@ -1552,15 +1552,15 @@ async function mockDiffApiError(page: Page, status: number, detail: string): Pro
   await page.route("**/api/v1/pulls/github/acme/widgets/1/files", async (route) => {
     await route.fulfill({
       status,
-      contentType: "application/json",
-      body: JSON.stringify({ detail }),
+      contentType: "application/problem+json",
+      body: JSON.stringify({ status, code: "notFound", detail }),
     });
   });
   await page.route("**/api/v1/pulls/github/acme/widgets/1/diff*", async (route) => {
     await route.fulfill({
       status,
-      contentType: "application/json",
-      body: JSON.stringify({ detail }),
+      contentType: "application/problem+json",
+      body: JSON.stringify({ status, code: "notFound", detail }),
     });
   });
 }

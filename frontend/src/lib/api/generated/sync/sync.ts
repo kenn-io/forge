@@ -4,7 +4,6 @@
 import type { RateLimitsResponse, SyncStatus, TriggerSyncParams } from "../models";
 
 import { orvalFetch } from "../../runtime.ts";
-import { orvalQueryString } from "../../runtime.ts";
 
 export const getSyncNotificationsUrl = () => {
   return `/notifications/sync`;
@@ -35,7 +34,15 @@ export const getRateLimits = async (options?: Parameters<typeof orvalFetch>[1]):
 };
 
 export const getTriggerSyncUrl = (params?: TriggerSyncParams) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0 ? `/sync?${stringifiedParams}` : `/sync`;
 };

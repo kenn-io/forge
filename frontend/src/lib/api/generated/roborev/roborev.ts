@@ -4,7 +4,6 @@
 import type { RoborevConfiguredRepositoriesResponse, RoborevStatusResponse } from "../models";
 
 import { orvalFetch } from "../../runtime.ts";
-import { orvalQueryString } from "../../runtime.ts";
 
 export const getListRoborevConfiguredRepositoriesUrl = () => {
   return `/roborev/configured-repositories`;

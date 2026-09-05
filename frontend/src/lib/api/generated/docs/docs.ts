@@ -47,7 +47,6 @@ import type {
 } from "../models";
 
 import { orvalFetch } from "../../runtime.ts";
-import { orvalQueryString } from "../../runtime.ts";
 
 // https://stackoverflow.com/questions/49579094/typescript-conditional-types-filter-out-readonly-properties-pick-only-requir/49579497#49579497
 type IfEquals<X, Y, A = X, B = never> = (<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2 ? A : B;
@@ -67,7 +66,15 @@ type NonReadonly<T> = [T] extends [UnionToIntersection<T>]
   : DistributeReadOnlyOverUnions<T>;
 
 export const getBrowseDocsFoldersUrl = (params?: BrowseDocsFoldersParams) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0 ? `/docs/browse?${stringifiedParams}` : `/docs/browse`;
 };
@@ -170,7 +177,15 @@ export const updateDocsFolder = async (
 };
 
 export const getReadDocsBlobUrl = ({ id }: ReadDocsBlobPathParameters, params?: ReadDocsBlobParams) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/docs/folders/${encodeURIComponent(String(id))}/blob?${stringifiedParams}`
@@ -192,7 +207,15 @@ export const readDocsBlob = async (
 };
 
 export const getDeleteDocsFileUrl = ({ id }: DeleteDocsFilePathParameters, params?: DeleteDocsFileParams) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/docs/folders/${encodeURIComponent(String(id))}/file?${stringifiedParams}`
@@ -214,7 +237,15 @@ export const deleteDocsFile = async (
 };
 
 export const getReadDocsFileUrl = ({ id }: ReadDocsFilePathParameters, params?: ReadDocsFileParams) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/docs/folders/${encodeURIComponent(String(id))}/file?${stringifiedParams}`
@@ -236,7 +267,15 @@ export const readDocsFile = async (
 };
 
 export const getCreateDocsFileUrl = ({ id }: CreateDocsFilePathParameters, params?: CreateDocsFileParams) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/docs/folders/${encodeURIComponent(String(id))}/file?${stringifiedParams}`
@@ -267,7 +306,15 @@ export const createDocsFile = async (
 };
 
 export const getWriteDocsFileUrl = ({ id }: WriteDocsFilePathParameters, params?: WriteDocsFileParams) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/docs/folders/${encodeURIComponent(String(id))}/file?${stringifiedParams}`
@@ -401,7 +448,15 @@ export const pullDocsGit = async (
 };
 
 export const getSearchDocsFolderUrl = ({ id }: SearchDocsFolderPathParameters, params?: SearchDocsFolderParams) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/docs/folders/${encodeURIComponent(String(id))}/search?${stringifiedParams}`
@@ -440,7 +495,15 @@ export const getDocsTree = async (
 };
 
 export const getSearchDocsUrl = (params?: SearchDocsParams) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0 ? `/docs/search?${stringifiedParams}` : `/docs/search`;
 };

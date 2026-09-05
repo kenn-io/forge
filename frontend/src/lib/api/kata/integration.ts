@@ -82,7 +82,9 @@ export async function resolveKataLaunchTarget(daemonID: string, issueUID: string
   return result;
 }
 
-export async function getKataProjectMappings(_daemonID?: string): Promise<KataProjectMappingsResponse> {
-  const result = await client.KataService.getKataProjectMappings();
+export async function getKataProjectMappings(daemonID?: string): Promise<KataProjectMappingsResponse> {
+  const result = await client.KataService.getKataProjectMappings(
+    daemonID ? { "X-Kenn-Forge-Kata-Daemon": daemonID } : undefined,
+  );
   return result;
 }

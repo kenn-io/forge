@@ -85,6 +85,10 @@ as `[]`, and their OpenAPI schemas are non-null arrays; use a pointer or an
 explicit nullable wrapper only when `null` has domain meaning
 (`internal/server/httpapi/problems.go::init`).
 
+Optional numeric and boolean fields whose absence carries meaning need `omitzero`;
+JSON v2's `omitempty` retains zero and false. Zero diff-side line numbers disable
+context expansion (`internal/gitclone/types.go::Line`).
+
 Rules for handler code:
 
 - Validation failures use `validationError` and should name the request field.

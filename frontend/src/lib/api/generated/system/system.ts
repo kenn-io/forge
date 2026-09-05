@@ -17,7 +17,6 @@ import type {
 } from "../models";
 
 import { orvalFetch } from "../../runtime.ts";
-import { orvalQueryString } from "../../runtime.ts";
 
 // https://stackoverflow.com/questions/49579094/typescript-conditional-types-filter-out-readonly-properties-pick-only-requir/49579497#49579497
 type IfEquals<X, Y, A = X, B = never> = (<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2 ? A : B;
@@ -37,7 +36,15 @@ type NonReadonly<T> = [T] extends [UnionToIntersection<T>]
   : DistributeReadOnlyOverUnions<T>;
 
 export const getStreamEventsUrl = (params?: StreamEventsParams) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0 ? `/events?${stringifiedParams}` : `/events`;
 };
@@ -56,7 +63,15 @@ export const streamEvents = async (
 };
 
 export const getCompleteFilesystemPathUrl = (params: CompleteFilesystemPathParams) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0 ? `/filesystem/complete?${stringifiedParams}` : `/filesystem/complete`;
 };
@@ -75,7 +90,15 @@ export const completeFilesystemPath = async (
 };
 
 export const getValidateFilesystemRepoUrl = (params: ValidateFilesystemRepoParams) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0 ? `/filesystem/validate-repo?${stringifiedParams}` : `/filesystem/validate-repo`;
 };
@@ -94,7 +117,15 @@ export const validateFilesystemRepo = async (
 };
 
 export const getListUserRepositoriesUrl = (params?: ListUserRepositoriesParams) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/platform/user-repositories?${stringifiedParams}`

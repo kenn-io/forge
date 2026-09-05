@@ -50,7 +50,6 @@ import type {
 } from "../models";
 
 import { orvalFetch } from "../../runtime.ts";
-import { orvalQueryString } from "../../runtime.ts";
 
 // https://stackoverflow.com/questions/49579094/typescript-conditional-types-filter-out-readonly-properties-pick-only-requir/49579497#49579497
 type IfEquals<X, Y, A = X, B = never> = (<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2 ? A : B;
@@ -166,7 +165,15 @@ export const createWorkspace = async (
 };
 
 export const getDeleteWorkspaceUrl = ({ id }: DeleteWorkspacePathParameters, params?: DeleteWorkspaceParams) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/workspaces/${encodeURIComponent(String(id))}?${stringifiedParams}`
@@ -239,7 +246,15 @@ export const getWorkspaceCommits = async (
 };
 
 export const getGetWorkspaceDiffUrl = ({ id }: GetWorkspaceDiffPathParameters, params?: GetWorkspaceDiffParams) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/workspaces/${encodeURIComponent(String(id))}/diff?${stringifiedParams}`
@@ -264,7 +279,15 @@ export const getWatchWorkspaceDiffUrl = (
   { id }: WatchWorkspaceDiffPathParameters,
   params?: WatchWorkspaceDiffParams,
 ) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/workspaces/${encodeURIComponent(String(id))}/diff/watch?${stringifiedParams}`
@@ -289,7 +312,15 @@ export const getGetWorkspaceFilePreviewUrl = (
   { id }: GetWorkspaceFilePreviewPathParameters,
   params?: GetWorkspaceFilePreviewParams,
 ) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/workspaces/${encodeURIComponent(String(id))}/file-preview?${stringifiedParams}`
@@ -311,7 +342,15 @@ export const getWorkspaceFilePreview = async (
 };
 
 export const getGetWorkspaceFilesUrl = ({ id }: GetWorkspaceFilesPathParameters, params?: GetWorkspaceFilesParams) => {
-  const stringifiedParams = orvalQueryString(params);
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
     ? `/workspaces/${encodeURIComponent(String(id))}/files?${stringifiedParams}`

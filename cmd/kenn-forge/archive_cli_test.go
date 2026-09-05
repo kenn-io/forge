@@ -215,7 +215,7 @@ func TestArchiveReportFromAPIPreservesLifecycleContract(t *testing.T) {
 	assert.Equal(12, activity.Additions)
 	assert.Equal(4, activity.Deletions)
 	require.NotNil(activity.FilesChanged)
-	assert.Equal(3, activity.FilesChanged)
+	assert.Equal(3, *activity.FilesChanged)
 	assert.Equal("abc123", activity.MergeCommitSHA)
 }
 

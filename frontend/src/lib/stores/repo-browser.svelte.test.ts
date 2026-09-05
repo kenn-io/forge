@@ -3,7 +3,6 @@
 import { Effect } from "effect";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { GeneratedClient } from "../api/generated-api.js";
-import { orvalQueryString } from "../api/runtime.js";
 import type { AppServices, OwnedAppRuntime } from "../app/runtime.js";
 import { makeTestAppRuntime } from "../testing/effect-layers.js";
 import { createRepoBrowserStore } from "./repo-browser.svelte.js";
@@ -1100,7 +1099,12 @@ function testURL(path: string, options?: TestGetOptions): string {
   for (const [key, value] of Object.entries(options?.params?.path ?? {})) {
     url = url.replace(`{${key}}`, encodeURIComponent(String(value)));
   }
-  const qs = orvalQueryString(options?.params?.query);
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(options?.params?.query ?? {})) {
+    if (value === undefined) continue;
+    for (const item of Array.isArray(value) ? value : [value]) query.append(key, String(item));
+  }
+  const qs = query.toString();
   return qs ? `${url}?${qs}` : url;
 }
 

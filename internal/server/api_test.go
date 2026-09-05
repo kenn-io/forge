@@ -6748,9 +6748,9 @@ func TestAPIListRepoSummaries(t *testing.T) {
 	assert.True(widgets.Releases[1].Prerelease)
 	assert.Equal(
 		formatUTCRFC3339(previousPublishedAt),
-		widgets.Releases[1].PublishedAt,
+		*widgets.Releases[1].PublishedAt,
 	)
-	assert.Equal(int64(42), widgets.CommitsSinceRelease)
+	assert.Equal(int64(42), *widgets.CommitsSinceRelease)
 	require.NotNil(widgets.CommitTimeline)
 	assert.Len(widgets.CommitTimeline, 1)
 	assert.Equal("Ship repo overview", widgets.CommitTimeline[0].Message)
@@ -6901,7 +6901,7 @@ func TestAPIListRepoSummariesIncludesSyncedReleaseTimeline(t *testing.T) {
 	assert.Equal("v3.0.0", widgets.LatestRelease.TagName)
 	assert.Len(widgets.Releases, 3)
 	assert.Equal("v1.0.0", widgets.Releases[2].TagName)
-	assert.Equal(int64(2), widgets.CommitsSinceRelease)
+	assert.Equal(int64(2), *widgets.CommitsSinceRelease)
 	assert.Len(widgets.CommitTimeline, 4)
 	assert.Equal("post latest 2", widgets.CommitTimeline[0].Message)
 	assert.Equal("post latest 1", widgets.CommitTimeline[1].Message)
@@ -6924,7 +6924,7 @@ func TestAPIListRepoSummariesIncludesSyncedReleaseTimeline(t *testing.T) {
 	require.NotNil(widgets.CommitsSinceRelease)
 	require.NotNil(widgets.CommitTimeline)
 	assert.Equal("v3.0.0", widgets.LatestRelease.TagName)
-	assert.Equal(int64(0), widgets.CommitsSinceRelease)
+	assert.Equal(int64(0), *widgets.CommitsSinceRelease)
 	assert.Empty(widgets.CommitTimeline)
 }
 
@@ -7158,7 +7158,7 @@ func TestAPICreateIssue(t *testing.T) {
 		Name:      "enhancement",
 		Color:     "a2eeef",
 		IsDefault: false,
-	}}, resp.JSON201.Labels)
+	}}, *resp.JSON201.Labels)
 
 	issue, err := database.GetIssue(context.Background(), "github", "github.com", "acme", "widgets", 27)
 	require.NoError(err)
@@ -11490,7 +11490,7 @@ func TestE2EGraphQLIssueSyncThroughAPI(t *testing.T) {
 	require.NotNil(detailResp.JSON200.Events)
 	require.Len(detailResp.JSON200.Events, 1)
 	require.NotNil(detailResp.JSON200.Events[0].PlatformID)
-	assert.Equal(int64(3714845345), detailResp.JSON200.Events[0].PlatformID)
+	assert.Equal(int64(3714845345), *detailResp.JSON200.Events[0].PlatformID)
 	assert.JSONEq(
 		`{"provider_hidden":true,"provider_hidden_reason":"ABUSE"}`,
 		detailResp.JSON200.Events[0].MetadataJSON,
@@ -18076,12 +18076,12 @@ func TestAPIGitLabSyncKeepsCanonicalReviewThreadWhenProviderReturnsReplies(t *te
 	assert.Equal("review_comment", detail.Events[0].EventType)
 	assert.Equal("reply should not replace original", detail.Events[0].Body)
 	require.NotNil(detail.Events[0].ThreadID)
-	assert.Equal("discussion-1", detail.Events[0].ThreadID)
+	assert.Equal("discussion-1", *detail.Events[0].ThreadID)
 	require.NotNil(detail.Events[1].DiffThread)
 	assert.Equal("review_comment", detail.Events[1].EventType)
 	assert.Equal("original inline note", detail.Events[1].Body)
 	require.NotNil(detail.Events[1].ThreadID)
-	assert.Equal("discussion-1", detail.Events[1].ThreadID)
+	assert.Equal("discussion-1", *detail.Events[1].ThreadID)
 	assert.Equal("original inline note", detail.Events[1].DiffThread.Body)
 	assert.Equal("reviewer", detail.Events[1].DiffThread.AuthorLogin)
 	assert.Equal("101", detail.Events[1].DiffThread.ProviderCommentID)
@@ -25292,7 +25292,7 @@ func TestAPIStackBaseConflictMarksDownstreamPRsDirty(t *testing.T) {
 	assert.Equal("dirty", stackResp.JSON200.Members[0].MergeableState)
 	assert.Equal("dirty", stackResp.JSON200.Members[1].MergeableState)
 	require.NotNil(stackResp.JSON200.Members[1].BlockedBy)
-	assert.Equal(int64(10), stackResp.JSON200.Members[1].BlockedBy)
+	assert.Equal(int64(10), *stackResp.JSON200.Members[1].BlockedBy)
 
 	detailResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 11)
 	require.NoError(err)
@@ -26872,7 +26872,7 @@ func TestWorkspaceRuntimeTargetsRefreshAfterSettingsUpdateE2E(t *testing.T) {
 	assert.Equal("Custom Codex", codex.Label)
 	assert.True(codex.Available)
 	require.NotNil(codex.Command)
-	assert.Equal([]string{agentPath, "--full-auto"}, codex.Command)
+	assert.Equal([]string{agentPath, "--full-auto"}, *codex.Command)
 }
 
 func TestWorkspaceCreatesPtyOwnerSessionWhenTmuxUnavailableE2E(t *testing.T) {

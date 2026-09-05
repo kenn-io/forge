@@ -141,7 +141,7 @@ func TestAPIArchiveStartPauseStatusAndReport(t *testing.T) {
 	require.NotNil(merged.Deletions)
 	assert.Equal(int64(4), *merged.Deletions)
 	require.NotNil(merged.FilesChanged)
-	assert.Equal(int64(5), merged.FilesChanged)
+	assert.Equal(int64(5), *merged.FilesChanged)
 	require.NotNil(merged.MergeCommitSha)
 	assert.Equal("abc123", *merged.MergeCommitSha)
 	assert.Zero(provider.calls.Load(), "reports must read SQLite only")

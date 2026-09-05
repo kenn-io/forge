@@ -60,9 +60,9 @@ const activityItems = [
     item_state: "",
     item_title: "",
     item_type: "pr",
-    item_url: "https://github.com/acme/widgets/commit/abcdef1234567890",
+    item_url: "https://github.com/acme/widgets/commit/abcdef1234567890abcdef1234567890abcdef12",
     branch_name: "main",
-    commit_sha: "abcdef1234567890",
+    commit_sha: "abcdef1234567890abcdef1234567890abcdef12",
     repo,
   },
 ];
@@ -137,7 +137,7 @@ describe("Activity detail restoration after browser Back", () => {
     expect(document.querySelector(".activity-detail-header")?.textContent).toContain("main");
     expect(document.querySelector(".activity-detail-header")?.textContent).toContain("abcdef123456");
     const selected = new URL(activityUrl, window.location.origin).searchParams;
-    expect(selected.get("selected")).toBe("commit:abcdef1234567890");
+    expect(selected.get("selected")).toBe("commit:abcdef1234567890abcdef1234567890abcdef12");
     expect(selected.get("provider")).toBe("github");
     expect(selected.get("platform_host")).toBe("github.com");
     expect(selected.get("repo_path")).toBe("acme/widgets");

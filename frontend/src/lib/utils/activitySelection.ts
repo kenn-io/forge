@@ -51,7 +51,7 @@ export function parseActivitySelection(search: string): ActivitySelection | null
   const name = pathParts[pathParts.length - 1]!;
   const owner = pathParts.slice(0, -1).join("/");
 
-  const commitMatch = selected.match(/^commit:([0-9a-fA-F]{7,64})$/);
+  const commitMatch = selected.match(/^commit:([0-9a-fA-F]{40}|[0-9a-fA-F]{64})$/);
   if (commitMatch) {
     const commitSha = commitMatch[1]!.toLowerCase();
     return {

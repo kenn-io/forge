@@ -44,7 +44,7 @@ function commitDrawer() {
     ...repo,
     itemType: "commit" as const,
     branchName: "main",
-    commitSha: "abcdef1234567890",
+    commitSha: "abcdef1234567890abcdef1234567890abcdef12",
     title: "Fix the thing",
   };
 }
@@ -231,7 +231,7 @@ describe("ActivityFeedView detail panes", () => {
       owner: "acme",
       name: "widgets",
       branchName: "main",
-      commitSha: "abcdef1234567890",
+      commitSha: "abcdef1234567890abcdef1234567890abcdef12",
       title: "Fix the thing",
     });
     expect(screen.queryByRole("tab", { name: "Commit" })).toBeNull();

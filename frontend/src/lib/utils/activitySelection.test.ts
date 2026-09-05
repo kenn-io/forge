@@ -18,7 +18,7 @@ const githubCommit = {
   itemType: "commit" as const,
   ...githubWidgets,
   branchName: "main",
-  commitSha: "abcdef1234567890",
+  commitSha: "abcdef1234567890abcdef1234567890abcdef12",
   title: "Bump dependency",
 };
 
@@ -78,7 +78,7 @@ describe("activity selection URL state", () => {
   it("parses a commit selection with its branch", () => {
     expect(
       parseActivitySelection(
-        "?selected=commit:abcdef1234567890&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&branch=main",
+        "?selected=commit:abcdef1234567890abcdef1234567890abcdef12&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&branch=main",
       ),
     ).toEqual({ ...githubCommit, title: "abcdef123456" });
   });
@@ -86,14 +86,32 @@ describe("activity selection URL state", () => {
   it("uses the default branch when a commit selection has no branch", () => {
     expect(
       parseActivitySelection(
-        "?selected=commit:abcdef1234567890&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets",
+        "?selected=commit:abcdef1234567890abcdef1234567890abcdef12&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets",
       ),
     ).toEqual({ ...githubCommit, branchName: "default branch", title: "abcdef123456" });
+  });
+
+  it("parses a full SHA-256 commit selection", () => {
+    const commitSha = "a".repeat(64);
+
+    expect(
+      parseActivitySelection(
+        `?selected=commit:${commitSha}&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&branch=main`,
+      ),
+    ).toEqual({ ...githubCommit, commitSha, title: "aaaaaaaaaaaa" });
   });
 
   it("rejects an invalid commit SHA", () => {
     expect(
       parseActivitySelection("?selected=commit:zzz&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets"),
+    ).toBeNull();
+  });
+
+  it("rejects an abbreviated commit SHA", () => {
+    expect(
+      parseActivitySelection(
+        "?selected=commit:abcdef1234567890&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets",
+      ),
     ).toBeNull();
   });
 
@@ -179,14 +197,14 @@ describe("activity selection URL state", () => {
       githubCommit,
     );
 
-    expect(next.get("selected")).toBe("commit:abcdef1234567890");
+    expect(next.get("selected")).toBe("commit:abcdef1234567890abcdef1234567890abcdef12");
     expect(next.get("branch")).toBe("main");
     expect(next.has("selected_tab")).toBe(false);
   });
 
   it("replaces a commit selection with a PR without a stale branch", () => {
     const next = buildActivitySelectionSearch(
-      "?selected=commit:abcdef1234567890&branch=main&provider=github&repo_path=acme%2Fwidgets",
+      "?selected=commit:abcdef1234567890abcdef1234567890abcdef12&branch=main&provider=github&repo_path=acme%2Fwidgets",
       {
         itemType: "pr",
         ...githubWidgets,

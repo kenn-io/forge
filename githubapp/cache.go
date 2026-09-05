@@ -32,10 +32,11 @@ type tokenKey struct {
 }
 
 type tokenFlight struct {
-	done  chan struct{}
-	token InstallationToken
-	err   error
-	retry bool
+	done     chan struct{}
+	deadline time.Time
+	token    InstallationToken
+	err      error
+	retry    bool
 }
 
 // TokenCache shares bounded in-flight mints without coupling waiter cancellation.
@@ -103,7 +104,7 @@ func (c *TokenCache) Token(ctx context.Context, key CacheKey, mint func(context.
 	}
 	flight := c.flights[k]
 	if flight == nil {
-		flight = &tokenFlight{done: make(chan struct{})}
+		flight = &tokenFlight{done: make(chan struct{}), deadline: deadline}
 		c.flights[k] = flight
 		runner, cancel := context.WithDeadline(context.WithoutCancel(ctx), deadline)
 		go func() {
@@ -142,7 +143,10 @@ func (c *TokenCache) Token(ctx context.Context, key CacheKey, mint func(context.
 			return InstallationToken{}, ErrStaleGeneration
 		}
 		c.mu.Unlock()
-		if flight.retry {
+		// Only a waiter with time beyond this mint's deadline may retry it.
+		// The initiating waiter's timer can fire after the runner's equal
+		// deadline, so ctx.Err alone would allow a second mint after expiry.
+		if flight.retry && deadline.After(flight.deadline) {
 			return c.Token(ctx, key, mint)
 		}
 		return flight.token, flight.err

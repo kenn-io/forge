@@ -27,8 +27,9 @@ vi.mock("../../context.js", () => ({
   }),
 }));
 
-vi.mock("../../api/runtime.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../api/runtime.js")>();
+vi.mock("../../app/runtime.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../app/runtime.js")>();
+  const { makeGeneratedClientFromRouteMocks } = await import("../../testing/test/route-mock-client.js");
   const client = {
     DELETE: (...args: unknown[]) => mockDelete(...args),
     GET: (...args: unknown[]) => mockGet(...args),
@@ -36,8 +37,7 @@ vi.mock("../../api/runtime.js", async (importOriginal) => {
   };
   return {
     ...actual,
-    client,
-    createRuntimeClient: () => client,
+    makeAppRuntime: () => actual.makeAppRuntime(makeGeneratedClientFromRouteMocks(client)),
   };
 });
 
@@ -1244,6 +1244,7 @@ describe("WorkspaceListSidebar", () => {
       props: { selectedId: "ws-title" },
     });
     const filter = await screen.findByLabelText("Filter workspaces");
+    await screen.findByText("Migrate native HTTP surface to Huma v2");
 
     await fireEvent.input(filter, {
       target: { value: "huma" },
@@ -2140,6 +2141,7 @@ describe("WorkspaceListSidebar", () => {
       props: { selectedId: "ws-kata" },
     });
     const filter = await screen.findByLabelText("Filter workspaces");
+    await screen.findByText("Wire kata workspace sidebar");
 
     await fireEvent.input(filter, { target: { value: "task-123" } });
     expect(container.querySelectorAll(".ws-row")).toHaveLength(1);
@@ -2170,6 +2172,7 @@ describe("WorkspaceListSidebar", () => {
       props: { selectedId: "ws-kata" },
     });
     const filter = await screen.findByLabelText("Filter workspaces");
+    await waitFor(() => expect(container.querySelector(".item-bubble")).not.toBeNull());
 
     const bubble = container.querySelector(".item-bubble");
     expect(bubble!.textContent?.trim()).toBe("Kata");

@@ -81,10 +81,10 @@ func TestDocsFoldersEndpointListsConfiguredFolders(t *testing.T) {
 	var body generated.ListDocsFoldersOutputBody
 	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
 	require.NotNil(body.Folders)
-	require.Len(*body.Folders, 1)
+	require.Len(body.Folders, 1)
 	canonicalRoot, err := filepath.EvalSymlinks(root)
 	require.NoError(err)
-	folder := (*body.Folders)[0]
+	folder := body.Folders[0]
 	assert.Equal("notes", folder.Id)
 	assert.Equal("Notes", folder.Name)
 	assert.Equal(canonicalRoot, folder.Path)
@@ -135,9 +135,9 @@ func TestDocsFolderConfigEndpointsAddRenameRemoveAndPersist(t *testing.T) {
 	var listBody generated.ListDocsFoldersOutputBody
 	require.NoError(json.NewDecoder(listRR.Body).Decode(&listBody))
 	require.NotNil(listBody.Folders)
-	require.Len(*listBody.Folders, 1)
-	assert.Equal("extra", (*listBody.Folders)[0].Id)
-	assert.Equal("Reference", (*listBody.Folders)[0].Name)
+	require.Len(listBody.Folders, 1)
+	assert.Equal("extra", listBody.Folders[0].Id)
+	assert.Equal("Reference", listBody.Folders[0].Name)
 
 	reloaded, err := config.Load(cfgPath)
 	require.NoError(err)
@@ -304,8 +304,8 @@ func TestDocsFolderMutationsRequireConfigPersistenceAndRollbackOnSaveFailure(t *
 	var listBody generated.ListDocsFoldersOutputBody
 	require.NoError(json.NewDecoder(listRR.Body).Decode(&listBody))
 	require.NotNil(listBody.Folders)
-	require.Len(*listBody.Folders, 1)
-	assert.Equal("notes", (*listBody.Folders)[0].Id)
+	require.Len(listBody.Folders, 1)
+	assert.Equal("notes", listBody.Folders[0].Id)
 }
 
 func TestDocsBrowseEndpointListsDirectoriesOnly(t *testing.T) {
@@ -324,8 +324,8 @@ func TestDocsBrowseEndpointListsDirectoriesOnly(t *testing.T) {
 	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
 	assert.Equal(root, body.Path)
 	require.NotNil(body.Entries)
-	byName := make(map[string]bool, len(*body.Entries))
-	for _, entry := range *body.Entries {
+	byName := make(map[string]bool, len(body.Entries))
+	for _, entry := range body.Entries {
 		byName[entry.Name] = entry.Hidden
 		assert.True(filepath.IsAbs(entry.Path))
 	}
@@ -425,7 +425,7 @@ func TestDocsSearchEndpointsReturnArrays(t *testing.T) {
 	require.NoError(json.NewDecoder(folderRR.Body).Decode(&folderBody))
 	assert.Equal("daily", folderBody.Query)
 	require.NotNil(folderBody.Hits)
-	assert.NotEmpty(*folderBody.Hits)
+	assert.NotEmpty(folderBody.Hits)
 
 	globalRR := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/docs/search?q=budget&limit=10", nil)
 	require.Equal(http.StatusOK, globalRR.Code, globalRR.Body.String())
@@ -433,7 +433,7 @@ func TestDocsSearchEndpointsReturnArrays(t *testing.T) {
 	require.NoError(json.NewDecoder(globalRR.Body).Decode(&globalBody))
 	assert.Equal("budget", globalBody.Query)
 	require.NotNil(globalBody.Hits)
-	assert.NotEmpty(*globalBody.Hits)
+	assert.NotEmpty(globalBody.Hits)
 	assert.False(globalBody.Truncated)
 }
 
@@ -538,6 +538,28 @@ func TestDocsFileEndpointRejectsInvalidPathsAndTypes(t *testing.T) {
 	assert.Equal(http.StatusUnsupportedMediaType, blobMarkdownRR.Code, blobMarkdownRR.Body.String())
 }
 
+func TestDocsSearchEndpointOmitsLineForFilenameOnlyHits(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, root := setupDocsRouteServer(t)
+	require.NoError(os.WriteFile(filepath.Join(root, "budget.md"), []byte("unrelated content\n"), 0o644))
+	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/docs/search?q=budget", nil)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	var body generated.DocsSearchAllOutputBody
+	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
+	require.Len(body.Hits, 3)
+	for _, hit := range body.Hits {
+		if hit.RelPath == "budget.md" {
+			assert.Equal("filename", hit.HitType)
+			assert.Nil(hit.Line)
+		} else {
+			assert.Equal("body", hit.HitType)
+			require.NotNil(hit.Line)
+			assert.Equal(int64(2), *hit.Line)
+		}
+	}
+}
+
 func TestDocsSearchEndpointEmptyQueryReturnsEmptyArray(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -549,7 +571,7 @@ func TestDocsSearchEndpointEmptyQueryReturnsEmptyArray(t *testing.T) {
 	var body generated.DocsSearchAllOutputBody
 	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
 	require.NotNil(body.Hits)
-	assert.Empty(*body.Hits)
+	assert.Empty(body.Hits)
 }
 
 func TestDocsSearchEndpointTruncationAndFailure(t *testing.T) {
@@ -562,7 +584,7 @@ func TestDocsSearchEndpointTruncationAndFailure(t *testing.T) {
 	var truncatedBody generated.DocsSearchAllOutputBody
 	require.NoError(json.NewDecoder(truncatedRR.Body).Decode(&truncatedBody))
 	require.NotNil(truncatedBody.Hits)
-	assert.Len(*truncatedBody.Hits, 1)
+	assert.Len(truncatedBody.Hits, 1)
 	assert.True(truncatedBody.Truncated)
 
 	missingA := filepath.Join(t.TempDir(), "missing-a")
@@ -600,8 +622,8 @@ func TestDocsSearchEndpointSerializesPartialWarnings(t *testing.T) {
 	var body generated.DocsSearchAllOutputBody
 	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
 	require.NotNil(body.Hits)
-	require.Len(*body.Hits, 1)
-	assert.Equal("good", (*body.Hits)[0].Folder)
+	require.Len(body.Hits, 1)
+	assert.Equal("good", body.Hits[0].Folder)
 	require.NotNil(body.Warnings)
 	assert.NotEmpty(*body.Warnings)
 	assert.False(body.Truncated)
@@ -629,8 +651,8 @@ func TestDocsSearchEndpointFindsHitsAcrossFolders(t *testing.T) {
 	var body generated.DocsSearchAllOutputBody
 	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
 	require.NotNil(body.Hits)
-	require.Len(*body.Hits, 2)
-	ids := []string{(*body.Hits)[0].Folder, (*body.Hits)[1].Folder}
+	require.Len(body.Hits, 2)
+	ids := []string{body.Hits[0].Folder, body.Hits[1].Folder}
 	assert.ElementsMatch([]string{"a", "b"}, ids)
 	assert.False(body.Truncated)
 }

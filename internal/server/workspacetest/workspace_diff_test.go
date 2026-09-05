@@ -89,7 +89,7 @@ func TestWorkspaceDiffEndpointsReportHeadAndPushedE2E(t *testing.T) {
 	require.NotNil(headFiles.Files)
 	assertWorkspaceDiffPaths(
 		t,
-		*headFiles.Files,
+		headFiles.Files,
 		[]string{
 			".workspace-state.json",
 			"base.txt",
@@ -105,7 +105,7 @@ func TestWorkspaceDiffEndpointsReportHeadAndPushedE2E(t *testing.T) {
 	require.NotNil(headFilesHideWhitespace.Files)
 	assertWorkspaceDiffPaths(
 		t,
-		*headFilesHideWhitespace.Files,
+		headFilesHideWhitespace.Files,
 		[]string{".workspace-state.json", "dirty.go", "z-empty.txt"},
 	)
 
@@ -115,7 +115,7 @@ func TestWorkspaceDiffEndpointsReportHeadAndPushedE2E(t *testing.T) {
 	require.NotNil(headDiffHideWhitespace.Files)
 	assertWorkspaceDiffPaths(
 		t,
-		*headDiffHideWhitespace.Files,
+		headDiffHideWhitespace.Files,
 		[]string{".workspace-state.json", "dirty.go", "z-empty.txt"},
 	)
 
@@ -123,7 +123,7 @@ func TestWorkspaceDiffEndpointsReportHeadAndPushedE2E(t *testing.T) {
 	require.NotNil(pushedDiff.Files)
 	assertWorkspaceDiffPaths(
 		t,
-		*pushedDiff.Files,
+		pushedDiff.Files,
 		[]string{
 			".workspace-state.json",
 			"base.txt",
@@ -245,11 +245,11 @@ func TestWorkspaceDiffEndpointsReturnPierreTreeOrderE2E(t *testing.T) {
 
 	files := requestWorkspaceFiles(t, srv, "ws-file-order", "head")
 	require.NotNil(files.Files)
-	assertWorkspaceDiffPaths(t, *files.Files, want)
+	assertWorkspaceDiffPaths(t, files.Files, want)
 
 	diff := requestWorkspaceDiff(t, srv, "ws-file-order", "head")
 	require.NotNil(diff.Files)
-	assertWorkspaceDiffPaths(t, *diff.Files, want)
+	assertWorkspaceDiffPaths(t, diff.Files, want)
 }
 
 func TestWorkspaceCommitsEndpointListsBranchCommitsE2E(t *testing.T) {
@@ -281,10 +281,10 @@ func TestWorkspaceCommitsEndpointListsBranchCommitsE2E(t *testing.T) {
 
 	commits := requestWorkspaceCommits(t, srv, ws.Id)
 	require.NotNil(commits.Commits)
-	require.Len(*commits.Commits, 3)
-	assert.Equal("local two", (*commits.Commits)[0].Message)
-	assert.Equal("local one", (*commits.Commits)[1].Message)
-	assert.Equal("feature commit", (*commits.Commits)[2].Message)
+	require.Len(commits.Commits, 3)
+	assert.Equal("local two", commits.Commits[0].Message)
+	assert.Equal("local one", commits.Commits[1].Message)
+	assert.Equal("feature commit", commits.Commits[2].Message)
 }
 
 func TestWorkspaceDiffEndpointsAcceptCommitAndRangeScopesE2E(t *testing.T) {
@@ -319,21 +319,21 @@ func TestWorkspaceDiffEndpointsAcceptCommitAndRangeScopesE2E(t *testing.T) {
 
 	commits := requestWorkspaceCommits(t, srv, ws.Id)
 	require.NotNil(commits.Commits)
-	require.Len(*commits.Commits, 3)
-	newest := (*commits.Commits)[0].Sha
-	older := (*commits.Commits)[1].Sha
+	require.Len(commits.Commits, 3)
+	newest := commits.Commits[0].Sha
+	older := commits.Commits[1].Sha
 
 	singleFiles := requestWorkspaceFilesQuery(
 		t, srv, ws.Id, "base=head&commit="+url.QueryEscape(newest),
 	)
 	require.NotNil(singleFiles.Files)
-	assertWorkspaceDiffPaths(t, *singleFiles.Files, []string{"local-two.go"})
+	assertWorkspaceDiffPaths(t, singleFiles.Files, []string{"local-two.go"})
 
 	singleDiff := requestWorkspaceDiffQuery(
 		t, srv, ws.Id, "base=head&commit="+url.QueryEscape(newest),
 	)
 	require.NotNil(singleDiff.Files)
-	assertWorkspaceDiffPaths(t, *singleDiff.Files, []string{"local-two.go"})
+	assertWorkspaceDiffPaths(t, singleDiff.Files, []string{"local-two.go"})
 
 	rangeFiles := requestWorkspaceFilesQuery(
 		t,
@@ -344,7 +344,7 @@ func TestWorkspaceDiffEndpointsAcceptCommitAndRangeScopesE2E(t *testing.T) {
 	require.NotNil(rangeFiles.Files)
 	assertWorkspaceDiffPaths(
 		t,
-		*rangeFiles.Files,
+		rangeFiles.Files,
 		[]string{"local-one.go", "local-two.go"},
 	)
 
@@ -357,7 +357,7 @@ func TestWorkspaceDiffEndpointsAcceptCommitAndRangeScopesE2E(t *testing.T) {
 	require.NotNil(rangeDiff.Files)
 	assertWorkspaceDiffPaths(
 		t,
-		*rangeDiff.Files,
+		rangeDiff.Files,
 		[]string{"local-one.go", "local-two.go"},
 	)
 }
@@ -401,7 +401,7 @@ func TestWorkspaceDiffEndpointReportsMergeTargetE2E(t *testing.T) {
 
 	mergeTargetFiles := requestWorkspaceFiles(t, srv, ws.Id, "merge-target")
 	require.NotNil(mergeTargetFiles.Files)
-	filePaths := workspaceDiffPaths(*mergeTargetFiles.Files)
+	filePaths := workspaceDiffPaths(mergeTargetFiles.Files)
 	assert.Contains(filePaths, "new.txt")
 	assert.Contains(filePaths, "committed.go")
 	assert.Contains(filePaths, "dirty.go")
@@ -409,7 +409,7 @@ func TestWorkspaceDiffEndpointReportsMergeTargetE2E(t *testing.T) {
 
 	mergeTargetDiff := requestWorkspaceDiff(t, srv, ws.Id, "merge-target")
 	require.NotNil(mergeTargetDiff.Files)
-	diffPaths := workspaceDiffPaths(*mergeTargetDiff.Files)
+	diffPaths := workspaceDiffPaths(mergeTargetDiff.Files)
 	assert.Contains(diffPaths, "new.txt")
 	assert.Contains(diffPaths, "committed.go")
 	assert.Contains(diffPaths, "dirty.go")
@@ -475,7 +475,7 @@ func TestWorkspaceDiffEndpointReportsMergeTargetForAssociatedKataWorkspaceE2E(t 
 
 	mergeTargetFiles := requestWorkspaceFiles(t, srv, "ws-kata-merge-target", "merge-target")
 	require.NotNil(mergeTargetFiles.Files)
-	filePaths := workspaceDiffPaths(*mergeTargetFiles.Files)
+	filePaths := workspaceDiffPaths(mergeTargetFiles.Files)
 	assert.Contains(filePaths, "kata-local.go")
 	assert.NotContains(filePaths, "target-only.txt")
 }
@@ -534,24 +534,24 @@ func TestWorkspaceDiffEndpointHandlesUntrackedSymlinkAndLargeFileE2E(t *testing.
 	diff := requestWorkspaceDiff(t, srv, ws.Id, "head")
 	require.NotNil(diff.Files)
 
-	symlink := testutil.RequireWorkspaceDiffFile(t, *diff.Files, "secret-link")
+	symlink := testutil.RequireWorkspaceDiffFile(t, diff.Files, "secret-link")
 	assert.Equal("added", symlink.Status)
 	assert.False(symlink.IsBinary)
 	assert.Equal(int64(1), symlink.Additions)
 	require.NotNil(symlink.Hunks)
-	require.Len(*symlink.Hunks, 1)
-	require.NotNil((*symlink.Hunks)[0].Lines)
-	require.Len(*(*symlink.Hunks)[0].Lines, 1)
-	line := (*(*symlink.Hunks)[0].Lines)[0]
+	require.Len(symlink.Hunks, 1)
+	require.NotNil(symlink.Hunks[0].Lines)
+	require.Len(symlink.Hunks[0].Lines, 1)
+	line := (symlink.Hunks[0].Lines)[0]
 	assert.Equal(secretPath, line.Content)
 	assert.NotContains(line.Content, "do not expose")
 
-	large := testutil.RequireWorkspaceDiffFile(t, *diff.Files, "large.txt")
+	large := testutil.RequireWorkspaceDiffFile(t, diff.Files, "large.txt")
 	assert.Equal("added", large.Status)
 	assert.True(large.IsBinary)
 	assert.Zero(large.Additions)
 	require.NotNil(large.Hunks)
-	assert.Empty(*large.Hunks)
+	assert.Empty(large.Hunks)
 }
 
 func TestWorkspaceDiffEndpointMarksGeneratedFilesE2E(t *testing.T) {
@@ -585,15 +585,15 @@ func TestWorkspaceDiffEndpointMarksGeneratedFilesE2E(t *testing.T) {
 
 	files := requestWorkspaceFiles(t, srv, ws.Id, "head")
 	require.NotNil(files.Files)
-	assert.True(testutil.RequireWorkspaceDiffFile(t, *files.Files, "dist/api.ts").IsGenerated)
-	assert.False(testutil.RequireWorkspaceDiffFile(t, *files.Files, "bun.lock").IsGenerated)
-	assert.False(testutil.RequireWorkspaceDiffFile(t, *files.Files, "src.ts").IsGenerated)
+	assert.True(testutil.RequireWorkspaceDiffFile(t, files.Files, "dist/api.ts").IsGenerated)
+	assert.False(testutil.RequireWorkspaceDiffFile(t, files.Files, "bun.lock").IsGenerated)
+	assert.False(testutil.RequireWorkspaceDiffFile(t, files.Files, "src.ts").IsGenerated)
 
 	diff := requestWorkspaceDiff(t, srv, ws.Id, "head")
 	require.NotNil(diff.Files)
-	assert.True(testutil.RequireWorkspaceDiffFile(t, *diff.Files, "dist/api.ts").IsGenerated)
-	assert.False(testutil.RequireWorkspaceDiffFile(t, *diff.Files, "bun.lock").IsGenerated)
-	assert.False(testutil.RequireWorkspaceDiffFile(t, *diff.Files, "src.ts").IsGenerated)
+	assert.True(testutil.RequireWorkspaceDiffFile(t, diff.Files, "dist/api.ts").IsGenerated)
+	assert.False(testutil.RequireWorkspaceDiffFile(t, diff.Files, "bun.lock").IsGenerated)
+	assert.False(testutil.RequireWorkspaceDiffFile(t, diff.Files, "src.ts").IsGenerated)
 }
 
 func TestWorkspaceDiffEndpointScopesPatchByPathE2E(t *testing.T) {
@@ -609,15 +609,15 @@ func TestWorkspaceDiffEndpointScopesPatchByPathE2E(t *testing.T) {
 
 	diff := requestWorkspaceDiffForPath(t, fixture.server, ws.Id, "head", "first.go")
 	require.NotNil(diff.Files)
-	require.Len(*diff.Files, 1)
-	file := (*diff.Files)[0]
+	require.Len(diff.Files, 1)
+	file := diff.Files[0]
 	assert.Equal("first.go", file.Path)
 	assert.Equal("added", file.Status)
 	assert.Contains(file.Patch, "diff --git a/first.go b/first.go\n")
 	assert.Contains(file.Patch, "new file mode 100644\n")
 	require.NotNil(file.Hunks)
-	require.Len(*file.Hunks, 1)
-	assert.NotContains(workspaceDiffPaths(*diff.Files), "second.go")
+	require.Len(file.Hunks, 1)
+	assert.NotContains(workspaceDiffPaths(diff.Files), "second.go")
 }
 
 func TestWorkspaceDiffPathPrefersCurrentPathOverEarlierRenameE2E(t *testing.T) {
@@ -638,9 +638,9 @@ func TestWorkspaceDiffPathPrefersCurrentPathOverEarlierRenameE2E(t *testing.T) {
 
 	diff := requestWorkspaceDiffForPath(t, fixture.server, ws.Id, "head", "z.txt")
 	require.NotNil(diff.Files)
-	require.Len(*diff.Files, 1)
-	assert.Equal("z.txt", (*diff.Files)[0].Path)
-	assert.Equal("added", (*diff.Files)[0].Status)
+	require.Len(diff.Files, 1)
+	assert.Equal("z.txt", diff.Files[0].Path)
+	assert.Equal("added", diff.Files[0].Status)
 
 	preview := requestWorkspaceFilePreview(t, fixture.server, ws.Id, "head", "z.txt", "new")
 	content, err := base64.StdEncoding.DecodeString(preview.Content)
@@ -671,8 +671,8 @@ func TestWorkspaceDiffEndpointKeepsModifiedSourcePatchSeparateFromCopyE2E(t *tes
 
 	diff := requestWorkspaceDiff(t, fixture.server, ws.Id, "head")
 	require.NotNil(diff.Files)
-	source := testutil.RequireWorkspaceDiffFile(t, *diff.Files, "src/a.txt")
-	copied := testutil.RequireWorkspaceDiffFile(t, *diff.Files, "src/z.txt")
+	source := testutil.RequireWorkspaceDiffFile(t, diff.Files, "src/a.txt")
+	copied := testutil.RequireWorkspaceDiffFile(t, diff.Files, "src/z.txt")
 	assert.Equal("modified", source.Status)
 	assert.Equal(int64(1), source.Additions)
 	assert.Equal(int64(1), source.Deletions)
@@ -680,13 +680,13 @@ func TestWorkspaceDiffEndpointKeepsModifiedSourcePatchSeparateFromCopyE2E(t *tes
 	assert.Contains(source.Patch, "+changed line\n")
 	assert.NotContains(source.Patch, "copy to src/z.txt")
 	require.NotNil(source.Hunks)
-	require.Len(*source.Hunks, 1)
+	require.Len(source.Hunks, 1)
 	assert.Equal("copied", copied.Status)
 	assert.Zero(copied.Additions)
 	assert.Zero(copied.Deletions)
 	assert.Empty(copied.Patch)
 	require.NotNil(copied.Hunks)
-	assert.Empty(*copied.Hunks)
+	assert.Empty(copied.Hunks)
 }
 
 func TestWorkspaceDiffEndpointQuotesDangerousPathsE2E(t *testing.T) {
@@ -725,7 +725,7 @@ func TestWorkspaceDiffEndpointQuotesDangerousPathsE2E(t *testing.T) {
 
 	diff := requestWorkspaceDiff(t, srv, "ws-control-paths", "head")
 	require.NotNil(diff.Files)
-	file := testutil.RequireWorkspaceDiffFile(t, *diff.Files, filepath.ToSlash(maliciousPath))
+	file := testutil.RequireWorkspaceDiffFile(t, diff.Files, filepath.ToSlash(maliciousPath))
 	assert.Contains(file.Patch, `diff --git "a/src/evil\n--- forged\n+++ forged\n@@ -1,1 +1,1 @@" "b/src/evil\n--- forged\n+++ forged\n@@ -1,1 +1,1 @@"`)
 	assert.Contains(file.Patch, `+++ "b/src/evil\n--- forged\n+++ forged\n@@ -1,1 +1,1 @@"`)
 	assert.NotContains(file.Patch, "\n--- forged\n")
@@ -733,7 +733,7 @@ func TestWorkspaceDiffEndpointQuotesDangerousPathsE2E(t *testing.T) {
 	assert.NotContains(file.Patch, "\n@@ -1,1 +1,1 @@\n")
 	assert.Equal(1, strings.Count(file.Patch, "\n@@ "))
 
-	unicodeFile := testutil.RequireWorkspaceDiffFile(t, *diff.Files, filepath.ToSlash(unicodeSeparatorPath))
+	unicodeFile := testutil.RequireWorkspaceDiffFile(t, diff.Files, filepath.ToSlash(unicodeSeparatorPath))
 	assert.Contains(unicodeFile.Patch, `diff --git "a/src/unicode\u2028separator\u2029file.go" "b/src/unicode\u2028separator\u2029file.go"`)
 	assert.Contains(unicodeFile.Patch, `+++ "b/src/unicode\u2028separator\u2029file.go"`)
 	assert.NotContains(unicodeFile.Patch, "\u2028")

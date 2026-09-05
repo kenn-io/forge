@@ -67,12 +67,12 @@ func TestWorkspaceRuntimeTargetsE2E(t *testing.T) {
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.LaunchTargets)
 	require.NotNil(resp.JSON200.Sessions)
-	assert.NotEmpty(*resp.JSON200.LaunchTargets)
-	assert.Empty(*resp.JSON200.Sessions)
+	assert.NotEmpty(resp.JSON200.LaunchTargets)
+	assert.Empty(resp.JSON200.Sessions)
 	assertWorkspaceRuntimeTarget(
-		t, *resp.JSON200.LaunchTargets, "plain_shell",
+		t, resp.JSON200.LaunchTargets, "plain_shell",
 	)
-	assertWorkspaceRuntimeTargetAbsent(t, *resp.JSON200.LaunchTargets, "shell")
+	assertWorkspaceRuntimeTargetAbsent(t, resp.JSON200.LaunchTargets, "shell")
 }
 
 func TestWorkspaceRuntimeClaimFailureClosesBeforeFollowingInputE2E(t *testing.T) {
@@ -174,7 +174,7 @@ func TestWorkspaceRuntimeTargetsHideInternalShellTargetE2E(t *testing.T) {
 	require.NotNil(resp.JSON200.LaunchTargets)
 
 	foundPlainShell := false
-	for _, target := range *resp.JSON200.LaunchTargets {
+	for _, target := range resp.JSON200.LaunchTargets {
 		if target.Key == string(localruntime.LaunchTargetShell) {
 			require.Fail("internal shell target should not be exposed")
 		}
@@ -237,9 +237,9 @@ func TestWorkspaceRuntimeLaunchPlainShellCreatesRuntimeSessionE2E(t *testing.T) 
 	require.Equal(http.StatusOK, getResp.StatusCode())
 	require.NotNil(getResp.JSON200)
 	require.NotNil(getResp.JSON200.Sessions)
-	require.Len(*getResp.JSON200.Sessions, 1)
-	assert.Equal(shell.Key, (*getResp.JSON200.Sessions)[0].Key)
-	assert.Equal("terminal", (*getResp.JSON200.Sessions)[0].DisplayRegion)
+	require.Len(getResp.JSON200.Sessions, 1)
+	assert.Equal(shell.Key, getResp.JSON200.Sessions[0].Key)
+	assert.Equal("terminal", getResp.JSON200.Sessions[0].DisplayRegion)
 }
 
 func TestWorkspaceRuntimeAttachSpecUsesStoredTmuxSessionE2E(t *testing.T) {
@@ -332,9 +332,9 @@ func TestWorkspaceCommitsFlagsUnpushedCommitsE2E(t *testing.T) {
 	require.Equal(http.StatusOK, resp.StatusCode())
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Commits)
-	require.NotEmpty(*resp.JSON200.Commits)
+	require.NotEmpty(resp.JSON200.Commits)
 
-	top := (*resp.JSON200.Commits)[0]
+	top := resp.JSON200.Commits[0]
 	assert.Equal(localSHA, top.Sha, "newest commit should be the local-only commit")
 	require.NotNil(top.Pushed, "workspace commits should carry push status")
 	assert.False(*top.Pushed, "freshly committed local commit must be unpushed")
@@ -370,9 +370,9 @@ func TestWorkspaceCommitsOmitsPushStatusWithoutUpstreamE2E(t *testing.T) {
 	require.Equal(http.StatusOK, resp.StatusCode())
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Commits)
-	require.NotEmpty(*resp.JSON200.Commits)
+	require.NotEmpty(resp.JSON200.Commits)
 
-	for _, c := range *resp.JSON200.Commits {
+	for _, c := range resp.JSON200.Commits {
 		assert.Nil(c.Pushed,
 			"push status must be omitted when the branch has no upstream")
 	}

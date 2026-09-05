@@ -10,14 +10,15 @@ const mockPost = vi.fn();
 const mockDelete = vi.fn();
 let workspaceEventListener: EventListener | null = null;
 
-vi.mock("../../api/runtime.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../api/runtime.js")>();
+vi.mock("../../app/runtime.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../app/runtime.js")>();
+  const { makeGeneratedClientFromRouteMocks } = await import("../../testing/test/route-mock-client.js");
   const client = {
     DELETE: (...args: unknown[]) => mockDelete(...args),
     GET: (...args: unknown[]) => mockGet(...args),
     POST: (...args: unknown[]) => mockPost(...args),
   };
-  return { ...actual, client, createRuntimeClient: () => client };
+  return { ...actual, makeAppRuntime: () => actual.makeAppRuntime(makeGeneratedClientFromRouteMocks(client)) };
 });
 
 class MockEventSource {

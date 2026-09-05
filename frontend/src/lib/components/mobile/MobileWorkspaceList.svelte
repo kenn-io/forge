@@ -13,7 +13,7 @@
     executeOpaqueGeneratedApiRequest,
   } from "../../api/generated-api.js";
   import { loadFleetSnapshot } from "../../api/fleet-snapshot.js";
-  import type { components } from "../../api/generated/schema.js";
+  import type { HostSummary as GeneratedHostSummary } from "../../api/generated/models/index.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { eventSourceStream } from "../../browser/event-source.js";
   import { openNewWorkspaceDialog } from "../../stores/new-workspace.svelte.js";
@@ -52,7 +52,7 @@
     workspaceMatchesMobileSearch,
   } from "./mobile-workspace-list.js";
 
-  type HostSummary = components["schemas"]["HostSummary"];
+  type HostSummary = GeneratedHostSummary;
 
   interface Props {
     onOpen: (workspaceId: string, hostKey?: string) => void;
@@ -256,18 +256,24 @@
     actionBusy = `${workspace.fleet_host_key ?? "local"}:${workspace.id}:${action}`;
     const hostKey = workspace.fleet_host_key;
     const command = hostKey
-      ? executeOpaqueGeneratedApiRequest(`${action} mobile Fleet workspace`, (client, signal) =>
-          client.POST(`/fleet/hosts/{host_key}/workspaces/{id}/${action}`, {
-            params: { path: { host_key: hostKey, id: workspace.id } },
-            signal,
-          }),
-        ).pipe(Effect.asVoid)
-      : executeGeneratedApiRequest(`${action} mobile workspace`, (client, signal) =>
-          client.POST(`/workspaces/{id}/${action}`, {
-            params: { path: { id: workspace.id } },
-            signal,
-          }),
-        ).pipe(Effect.asVoid);
+      ? executeOpaqueGeneratedApiRequest<unknown>(`${action} mobile Fleet workspace`, (client, signal) => {
+          const params = { hostKey, id: workspace.id };
+          switch (action) {
+            case "push": return client.FleetService.pushFleetWorkspaceBranch(params, { signal });
+            case "pull": return client.FleetService.pullFleetWorkspaceBranch(params, { signal });
+            case "refresh": return client.FleetService.refreshFleetWorkspace(params, { signal });
+            case "reveal": return client.FleetService.revealFleetWorkspace(params, { signal });
+          }
+        }).pipe(Effect.asVoid)
+      : executeGeneratedApiRequest<unknown>(`${action} mobile workspace`, (client, signal) => {
+          const params = { id: workspace.id };
+          switch (action) {
+            case "push": return client.WorkspacesService.pushWorkspaceBranch(params, { signal });
+            case "pull": return client.WorkspacesService.pullWorkspaceBranch(params, { signal });
+            case "refresh": return client.WorkspacesService.refreshWorkspace(params, { signal });
+            case "reveal": return client.WorkspacesService.revealWorkspace(params, { signal });
+          }
+        }).pipe(Effect.asVoid);
     appRuntime.runCommand(
       command.pipe(
         Effect.tap(() => Effect.sync(refreshWorkspaces.request)),
@@ -294,22 +300,18 @@
     const hostKey = workspace.fleet_host_key;
     const command = hostKey
       ? executeOpaqueGeneratedApiRequest("delete mobile Fleet workspace", (client, signal) =>
-          client.DELETE("/fleet/hosts/{host_key}/workspaces/{id}", {
-            params: {
-              path: { host_key: hostKey, id: workspace.id },
-              ...(force ? { query: { force: true } } : {}),
-            },
-            signal,
-          }),
+          client.FleetService.deleteFleetWorkspace(
+            { hostKey, id: workspace.id },
+            force ? { force: true } : undefined,
+            { signal },
+          ),
         ).pipe(Effect.asVoid)
       : executeGeneratedApiRequest("delete mobile workspace", (client, signal) =>
-          client.DELETE("/workspaces/{id}", {
-            params: {
-              path: { id: workspace.id },
-              ...(force ? { query: { force: true } } : {}),
-            },
-            signal,
-          }),
+          client.WorkspacesService.deleteWorkspace(
+            { id: workspace.id },
+            force ? { force: true } : undefined,
+            { signal },
+          ),
         ).pipe(Effect.asVoid);
     appRuntime.runCommand(
       command.pipe(

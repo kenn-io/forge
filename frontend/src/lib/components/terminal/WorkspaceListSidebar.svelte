@@ -29,7 +29,7 @@
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { getStores } from "../../context.js";
   import { showFlash } from "../../stores/flash.svelte.js";
-  import type { components } from "../../api/generated/schema.js";
+  import type { HostSummary as GeneratedHostSummary } from "../../api/generated/models/index.js";
   import { DiffStats, FilterDropdown, ScrollBox, SidebarToggle } from "@kenn-io/kit-ui";
   import GroupedSidebarSection from "../shared/GroupedSidebarSection.svelte";
   import SidebarTitlePopover from "../sidebar/SidebarTitlePopover.svelte";
@@ -76,7 +76,7 @@
 
   type Workspace = WorkspaceListItem;
 
-  type HostSummary = components["schemas"]["HostSummary"];
+  type HostSummary = GeneratedHostSummary;
   type CatalogLoadStatus = "loading" | "loaded" | "failed";
 
   interface Props {
@@ -920,16 +920,10 @@
     const hostKey = ws.fleet_host_key;
     const refresh = hostKey
       ? executeOpaqueGeneratedApiRequest("refresh remote workspace", (generatedClient, signal) =>
-          generatedClient.POST("/fleet/hosts/{host_key}/workspaces/{id}/refresh", {
-            params: { path: { host_key: hostKey, id: ws.id } },
-            signal,
-          }),
+          generatedClient.FleetService.refreshFleetWorkspace({ hostKey, id: ws.id }, { signal }),
         ).pipe(Effect.asVoid)
       : executeGeneratedApiRequest("refresh workspace", (generatedClient, signal) =>
-          generatedClient.POST("/workspaces/{id}/refresh", {
-            params: { path: { id: ws.id } },
-            signal,
-          }),
+          generatedClient.WorkspacesService.refreshWorkspace({ id: ws.id }, { signal }),
         ).pipe(Effect.asVoid);
     runtime.runCommand(refresh.pipe(Effect.tap(() => Effect.sync(requestApplicationWorkspaceRefresh))), {
       operation: "refresh workspace status",
@@ -991,29 +985,17 @@
     const command = hostKey
       ? action === "push"
         ? executeOpaqueGeneratedApiRequest("push remote workspace branch", (generatedClient, signal) =>
-            generatedClient.POST("/fleet/hosts/{host_key}/workspaces/{id}/push", {
-              params: { path: { host_key: hostKey, id: ws.id } },
-              signal,
-            }),
+            generatedClient.FleetService.pushFleetWorkspaceBranch({ hostKey, id: ws.id }, { signal }),
           ).pipe(Effect.asVoid)
         : executeOpaqueGeneratedApiRequest("pull remote workspace branch", (generatedClient, signal) =>
-            generatedClient.POST("/fleet/hosts/{host_key}/workspaces/{id}/pull", {
-              params: { path: { host_key: hostKey, id: ws.id } },
-              signal,
-            }),
+            generatedClient.FleetService.pullFleetWorkspaceBranch({ hostKey, id: ws.id }, { signal }),
           ).pipe(Effect.asVoid)
       : action === "push"
         ? executeGeneratedApiRequest("push workspace branch", (generatedClient, signal) =>
-            generatedClient.POST("/workspaces/{id}/push", {
-              params: { path: { id: ws.id } },
-              signal,
-            }),
+            generatedClient.WorkspacesService.pushWorkspaceBranch({ id: ws.id }, { signal }),
           ).pipe(Effect.asVoid)
         : executeGeneratedApiRequest("pull workspace branch", (generatedClient, signal) =>
-            generatedClient.POST("/workspaces/{id}/pull", {
-              params: { path: { id: ws.id } },
-              signal,
-            }),
+            generatedClient.WorkspacesService.pullWorkspaceBranch({ id: ws.id }, { signal }),
           ).pipe(Effect.asVoid);
     runtime.runCommand(
       command.pipe(
@@ -1039,16 +1021,10 @@
     const hostKey = ws.fleet_host_key;
     const command = hostKey
       ? executeOpaqueGeneratedApiRequest("reveal remote workspace path", (generatedClient, signal) =>
-          generatedClient.POST("/fleet/hosts/{host_key}/workspaces/{id}/reveal", {
-            params: { path: { host_key: hostKey, id: ws.id } },
-            signal,
-          }),
+          generatedClient.FleetService.revealFleetWorkspace({ hostKey, id: ws.id }, { signal }),
         ).pipe(Effect.asVoid)
       : executeGeneratedApiRequest("reveal workspace path", (generatedClient, signal) =>
-          generatedClient.POST("/workspaces/{id}/reveal", {
-            params: { path: { id: ws.id } },
-            signal,
-          }),
+          generatedClient.WorkspacesService.revealWorkspace({ id: ws.id }, { signal }),
         ).pipe(Effect.asVoid);
     runtime.runCommand(
       command.pipe(
@@ -1078,26 +1054,23 @@
   function confirmDeleteWorkspaceFromList(): void {
     const ws = deleteConfirmWorkspace;
     if (!ws || !startWorkspaceAction(ws, "delete")) return;
+    const force = deleteConfirmForce;
     onWorkspaceDeletePendingChange?.(ws.id, ws.fleet_host_key, true);
     const hostKey = ws.fleet_host_key;
     const command = hostKey
       ? executeOpaqueGeneratedApiRequest("delete remote workspace", (generatedClient, signal) =>
-          generatedClient.DELETE("/fleet/hosts/{host_key}/workspaces/{id}", {
-            params: {
-              path: { host_key: hostKey, id: ws.id },
-              ...(deleteConfirmForce ? { query: { force: true } } : {}),
-            },
-            signal,
-          }),
+          generatedClient.FleetService.deleteFleetWorkspace(
+            { hostKey, id: ws.id },
+            force ? { force: true } : undefined,
+            { signal },
+          ),
         ).pipe(Effect.asVoid)
       : executeGeneratedApiRequest("delete workspace", (generatedClient, signal) =>
-          generatedClient.DELETE("/workspaces/{id}", {
-            params: {
-              path: { id: ws.id },
-              ...(deleteConfirmForce ? { query: { force: true } } : {}),
-            },
-            signal,
-          }),
+          generatedClient.WorkspacesService.deleteWorkspace(
+            { id: ws.id },
+            force ? { force: true } : undefined,
+            { signal },
+          ),
         ).pipe(Effect.asVoid);
     runtime.runCommand(
       command.pipe(

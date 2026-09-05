@@ -665,9 +665,9 @@ func TestConfigReload_UpdatesDocFoldersAndRegistry(t *testing.T) {
 	var listBody generated.ListDocsFoldersOutputBody
 	require.NoError(json.NewDecoder(listResponse.Body).Decode(&listBody))
 	require.NotNil(listBody.Folders)
-	require.Len(*listBody.Folders, 1)
-	assert.Equal("handbook", (*listBody.Folders)[0].Id)
-	assert.Equal("Handbook", (*listBody.Folders)[0].Name)
+	require.Len(listBody.Folders, 1)
+	assert.Equal("handbook", listBody.Folders[0].Id)
+	assert.Equal("Handbook", listBody.Folders[0].Name)
 
 	updatedReadResponse, err := httpServer.Client().Get(httpServer.URL + "/api/v1/docs/folders/handbook/file?path=guide.md")
 	require.NoError(err)
@@ -900,8 +900,8 @@ command = ["sh"]
 	var body generated.ListLaunchTargetsOutputBody
 	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
 	require.NotNil(body.LaunchTargets)
-	keys := make([]string, 0, len(*body.LaunchTargets))
-	for _, target := range *body.LaunchTargets {
+	keys := make([]string, 0, len(body.LaunchTargets))
+	for _, target := range body.LaunchTargets {
 		keys = append(keys, target.Key)
 	}
 	assert.Contains(keys, "after")

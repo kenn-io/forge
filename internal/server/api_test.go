@@ -2278,7 +2278,7 @@ func TestAPIListItemsIncludeWorkspaceRefs(t *testing.T) {
 	require.NotNil(activity.JSON200.Items)
 
 	workspaceByItem := make(map[string]string)
-	for _, item := range *activity.JSON200.Items {
+	for _, item := range activity.JSON200.Items {
 		if item.Workspace == nil {
 			continue
 		}
@@ -2588,8 +2588,8 @@ func TestAPIGitHubSyncPersistsReviewThreadsThroughPullDetail(t *testing.T) {
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Events)
 	assert.Equal(providerUpdatedAt, resp.JSON200.MergeRequest.LastActivityAt)
-	require.Len(*resp.JSON200.Events, 1)
-	event := (*resp.JSON200.Events)[0]
+	require.Len(resp.JSON200.Events, 1)
+	event := resp.JSON200.Events[0]
 	assert.Equal("review_comment", event.EventType)
 	assert.JSONEq(`{"provider_hidden":true,"provider_hidden_reason":"OFF_TOPIC"}`, event.MetadataJSON)
 	assert.Equal("3312100450", event.PlatformExternalID)
@@ -2769,78 +2769,78 @@ func TestAPIGetPullIncludesLifecycleTimelineEvents(t *testing.T) {
 	require.Equal(http.StatusOK, mergedResp.StatusCode())
 	require.NotNil(mergedResp.JSON200)
 	require.NotNil(mergedResp.JSON200.Events)
-	require.Len(*mergedResp.JSON200.Events, 1)
-	assert.Equal("merged", (*mergedResp.JSON200.Events)[0].EventType)
-	assert.Equal("merged this", (*mergedResp.JSON200.Events)[0].Summary)
-	assert.Empty((*mergedResp.JSON200.Events)[0].Author)
-	assert.Equal(int64(-1), (*mergedResp.JSON200.Events)[0].ID)
-	assert.True((*mergedResp.JSON200.Events)[0].CreatedAt.Equal(mergedAt))
+	require.Len(mergedResp.JSON200.Events, 1)
+	assert.Equal("merged", mergedResp.JSON200.Events[0].EventType)
+	assert.Equal("merged this", mergedResp.JSON200.Events[0].Summary)
+	assert.Empty(mergedResp.JSON200.Events[0].Author)
+	assert.Equal(int64(-1), mergedResp.JSON200.Events[0].ID)
+	assert.True(mergedResp.JSON200.Events[0].CreatedAt.Equal(mergedAt))
 
 	closedResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 2)
 	require.NoError(err)
 	require.Equal(http.StatusOK, closedResp.StatusCode())
 	require.NotNil(closedResp.JSON200)
 	require.NotNil(closedResp.JSON200.Events)
-	require.Len(*closedResp.JSON200.Events, 1)
-	assert.Equal("closed", (*closedResp.JSON200.Events)[0].EventType)
-	assert.Equal("closed this", (*closedResp.JSON200.Events)[0].Summary)
-	assert.Empty((*closedResp.JSON200.Events)[0].Author)
-	assert.Equal(int64(-2), (*closedResp.JSON200.Events)[0].ID)
-	assert.True((*closedResp.JSON200.Events)[0].CreatedAt.Equal(closedAt))
+	require.Len(closedResp.JSON200.Events, 1)
+	assert.Equal("closed", closedResp.JSON200.Events[0].EventType)
+	assert.Equal("closed this", closedResp.JSON200.Events[0].Summary)
+	assert.Empty(closedResp.JSON200.Events[0].Author)
+	assert.Equal(int64(-2), closedResp.JSON200.Events[0].ID)
+	assert.True(closedResp.JSON200.Events[0].CreatedAt.Equal(closedAt))
 
 	reopenedResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 3)
 	require.NoError(err)
 	require.Equal(http.StatusOK, reopenedResp.StatusCode())
 	require.NotNil(reopenedResp.JSON200)
 	require.NotNil(reopenedResp.JSON200.Events)
-	require.Len(*reopenedResp.JSON200.Events, 1)
-	assert.Equal("reopened", (*reopenedResp.JSON200.Events)[0].EventType)
-	assert.Equal("reopened this", (*reopenedResp.JSON200.Events)[0].Summary)
-	assert.Empty((*reopenedResp.JSON200.Events)[0].Author)
-	assert.Equal(int64(-3), (*reopenedResp.JSON200.Events)[0].ID)
-	assert.True((*reopenedResp.JSON200.Events)[0].CreatedAt.Equal(reopenedAt))
+	require.Len(reopenedResp.JSON200.Events, 1)
+	assert.Equal("reopened", reopenedResp.JSON200.Events[0].EventType)
+	assert.Equal("reopened this", reopenedResp.JSON200.Events[0].Summary)
+	assert.Empty(reopenedResp.JSON200.Events[0].Author)
+	assert.Equal(int64(-3), reopenedResp.JSON200.Events[0].ID)
+	assert.True(reopenedResp.JSON200.Events[0].CreatedAt.Equal(reopenedAt))
 
 	duplicateResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 4)
 	require.NoError(err)
 	require.Equal(http.StatusOK, duplicateResp.StatusCode())
 	require.NotNil(duplicateResp.JSON200)
 	require.NotNil(duplicateResp.JSON200.Events)
-	require.Len(*duplicateResp.JSON200.Events, 1)
-	assert.Equal("merged", (*duplicateResp.JSON200.Events)[0].EventType)
-	assert.Equal("merged by provider", (*duplicateResp.JSON200.Events)[0].Summary)
-	assert.NotEqual(int64(-1), (*duplicateResp.JSON200.Events)[0].ID)
+	require.Len(duplicateResp.JSON200.Events, 1)
+	assert.Equal("merged", duplicateResp.JSON200.Events[0].EventType)
+	assert.Equal("merged by provider", duplicateResp.JSON200.Events[0].Summary)
+	assert.NotEqual(int64(-1), duplicateResp.JSON200.Events[0].ID)
 
 	repeatedClosedResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 5)
 	require.NoError(err)
 	require.Equal(http.StatusOK, repeatedClosedResp.StatusCode())
 	require.NotNil(repeatedClosedResp.JSON200)
 	require.NotNil(repeatedClosedResp.JSON200.Events)
-	require.Len(*repeatedClosedResp.JSON200.Events, 2)
-	assert.Equal("closed this", (*repeatedClosedResp.JSON200.Events)[0].Summary)
-	assert.True((*repeatedClosedResp.JSON200.Events)[0].CreatedAt.Equal(closedAt))
-	assert.Equal("previously closed by provider", (*repeatedClosedResp.JSON200.Events)[1].Summary)
-	assert.True((*repeatedClosedResp.JSON200.Events)[1].CreatedAt.Equal(previousClosedAt))
+	require.Len(repeatedClosedResp.JSON200.Events, 2)
+	assert.Equal("closed this", repeatedClosedResp.JSON200.Events[0].Summary)
+	assert.True(repeatedClosedResp.JSON200.Events[0].CreatedAt.Equal(closedAt))
+	assert.Equal("previously closed by provider", repeatedClosedResp.JSON200.Events[1].Summary)
+	assert.True(repeatedClosedResp.JSON200.Events[1].CreatedAt.Equal(previousClosedAt))
 
 	repeatedReopenedResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 6)
 	require.NoError(err)
 	require.Equal(http.StatusOK, repeatedReopenedResp.StatusCode())
 	require.NotNil(repeatedReopenedResp.JSON200)
 	require.NotNil(repeatedReopenedResp.JSON200.Events)
-	require.Len(*repeatedReopenedResp.JSON200.Events, 2)
-	assert.Equal("reopened this", (*repeatedReopenedResp.JSON200.Events)[0].Summary)
-	assert.True((*repeatedReopenedResp.JSON200.Events)[0].CreatedAt.Equal(reopenedAt))
-	assert.Equal("previously reopened by provider", (*repeatedReopenedResp.JSON200.Events)[1].Summary)
-	assert.True((*repeatedReopenedResp.JSON200.Events)[1].CreatedAt.Equal(previousClosedAt.Add(-30 * time.Minute)))
+	require.Len(repeatedReopenedResp.JSON200.Events, 2)
+	assert.Equal("reopened this", repeatedReopenedResp.JSON200.Events[0].Summary)
+	assert.True(repeatedReopenedResp.JSON200.Events[0].CreatedAt.Equal(reopenedAt))
+	assert.Equal("previously reopened by provider", repeatedReopenedResp.JSON200.Events[1].Summary)
+	assert.True(repeatedReopenedResp.JSON200.Events[1].CreatedAt.Equal(previousClosedAt.Add(-30 * time.Minute)))
 
 	duplicateReopenedResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 7)
 	require.NoError(err)
 	require.Equal(http.StatusOK, duplicateReopenedResp.StatusCode())
 	require.NotNil(duplicateReopenedResp.JSON200)
 	require.NotNil(duplicateReopenedResp.JSON200.Events)
-	require.Len(*duplicateReopenedResp.JSON200.Events, 1)
-	assert.Equal("reopened", (*duplicateReopenedResp.JSON200.Events)[0].EventType)
-	assert.Equal("reopened by provider", (*duplicateReopenedResp.JSON200.Events)[0].Summary)
-	assert.NotEqual(int64(-3), (*duplicateReopenedResp.JSON200.Events)[0].ID)
+	require.Len(duplicateReopenedResp.JSON200.Events, 1)
+	assert.Equal("reopened", duplicateReopenedResp.JSON200.Events[0].EventType)
+	assert.Equal("reopened by provider", duplicateReopenedResp.JSON200.Events[0].Summary)
+	assert.NotEqual(int64(-3), duplicateReopenedResp.JSON200.Events[0].ID)
 }
 
 func TestAPISyncPRIncludesWorkflowApproval(t *testing.T) {
@@ -3005,8 +3005,8 @@ func TestAPISyncPRPersistsMergedActorInDetail(t *testing.T) {
 	require.Equal(http.StatusOK, detailResp.StatusCode(), string(detailResp.Body))
 	require.NotNil(detailResp.JSON200)
 	require.NotNil(detailResp.JSON200.Events)
-	require.Len(*detailResp.JSON200.Events, 1)
-	event := (*detailResp.JSON200.Events)[0]
+	require.Len(detailResp.JSON200.Events, 1)
+	event := detailResp.JSON200.Events[0]
 	assert.Equal("merged", event.EventType)
 	assert.Equal("merge-admin", event.Author)
 	assert.Equal("merged this", event.Summary)
@@ -3090,8 +3090,8 @@ func TestAPIIndexSyncPersistsMergedActorForImmediateDetail(t *testing.T) {
 	require.Equal(http.StatusOK, detailResp.StatusCode(), string(detailResp.Body))
 	require.NotNil(detailResp.JSON200)
 	require.NotNil(detailResp.JSON200.Events)
-	require.Len(*detailResp.JSON200.Events, 1)
-	event := (*detailResp.JSON200.Events)[0]
+	require.Len(detailResp.JSON200.Events, 1)
+	event := detailResp.JSON200.Events[0]
 	assert.Equal("merged", event.EventType)
 	assert.Equal("merge-admin", event.Author)
 	assert.Equal("merged this", event.Summary)
@@ -3132,8 +3132,8 @@ func TestAPIGetPullDoesNotFetchProviderForMissingMergedActor(t *testing.T) {
 	require.Equal(http.StatusOK, detailResp.StatusCode(), string(detailResp.Body))
 	require.NotNil(detailResp.JSON200)
 	require.NotNil(detailResp.JSON200.Events)
-	require.Len(*detailResp.JSON200.Events, 1)
-	event := (*detailResp.JSON200.Events)[0]
+	require.Len(detailResp.JSON200.Events, 1)
+	event := detailResp.JSON200.Events[0]
 	assert.Equal("merged", event.EventType)
 	assert.Empty(event.Author)
 	assert.Equal("merged this", event.Summary)
@@ -4929,8 +4929,8 @@ func TestAPIGitLabClosedSyncPersistsMergedActorForImmediateDetail(t *testing.T) 
 	require.Equal(http.StatusOK, detailResp.StatusCode(), string(detailResp.Body))
 	require.NotNil(detailResp.JSON200)
 	require.NotNil(detailResp.JSON200.Events)
-	require.Len(*detailResp.JSON200.Events, 1)
-	event := (*detailResp.JSON200.Events)[0]
+	require.Len(detailResp.JSON200.Events, 1)
+	event := detailResp.JSON200.Events[0]
 	assert.Equal("merged", event.EventType)
 	assert.Equal("merge-admin", event.Author)
 	assert.Equal("merged this", event.Summary)
@@ -5034,8 +5034,8 @@ func TestAPIScheduledMergedActorRepairRefreshesOpenDetail(t *testing.T) {
 	require.Equal(http.StatusOK, before.StatusCode(), string(before.Body))
 	require.NotNil(before.JSON200)
 	require.NotNil(before.JSON200.Events)
-	require.Len(*before.JSON200.Events, 1)
-	assert.Empty((*before.JSON200.Events)[0].Author)
+	require.Len(before.JSON200.Events, 1)
+	assert.Empty(before.JSON200.Events[0].Author)
 
 	events, _ := srv.Hub().Subscribe(ctx, false)
 	provider.mu.Lock()
@@ -5081,8 +5081,8 @@ func TestAPIScheduledMergedActorRepairRefreshesOpenDetail(t *testing.T) {
 	require.Equal(http.StatusOK, after.StatusCode(), string(after.Body))
 	require.NotNil(after.JSON200)
 	require.NotNil(after.JSON200.Events)
-	require.Len(*after.JSON200.Events, 1)
-	assert.Equal("merge-admin", (*after.JSON200.Events)[0].Author)
+	require.Len(after.JSON200.Events, 1)
+	assert.Equal("merge-admin", after.JSON200.Events[0].Author)
 }
 
 func TestAPIGitLabDirectSyncPersistsMergedActorForImmediateDetail(t *testing.T) {
@@ -5167,8 +5167,8 @@ func TestAPIGitLabDirectSyncPersistsMergedActorForImmediateDetail(t *testing.T) 
 	require.Equal(http.StatusOK, syncResp.StatusCode(), string(syncResp.Body))
 	require.NotNil(syncResp.JSON200)
 	require.NotNil(syncResp.JSON200.Events)
-	require.Len(*syncResp.JSON200.Events, 1)
-	event := (*syncResp.JSON200.Events)[0]
+	require.Len(syncResp.JSON200.Events, 1)
+	event := syncResp.JSON200.Events[0]
 	assert.Equal("merged", event.EventType)
 	assert.Equal("merge-admin", event.Author)
 	assert.Equal("merged this", event.Summary)
@@ -5181,8 +5181,8 @@ func TestAPIGitLabDirectSyncPersistsMergedActorForImmediateDetail(t *testing.T) 
 	require.Equal(http.StatusOK, detailResp.StatusCode(), string(detailResp.Body))
 	require.NotNil(detailResp.JSON200)
 	require.NotNil(detailResp.JSON200.Events)
-	require.Len(*detailResp.JSON200.Events, 1)
-	assert.Equal("merge-admin", (*detailResp.JSON200.Events)[0].Author)
+	require.Len(detailResp.JSON200.Events, 1)
+	assert.Equal("merge-admin", detailResp.JSON200.Events[0].Author)
 }
 
 func TestAPIGitLabDirectSyncDoesNotDuplicateMergedActorAfterClosedFallback(t *testing.T) {
@@ -5291,9 +5291,9 @@ func TestAPIGitLabDirectSyncDoesNotDuplicateMergedActorAfterClosedFallback(t *te
 	require.Equal(http.StatusOK, syncResp.StatusCode(), string(syncResp.Body))
 	require.NotNil(syncResp.JSON200)
 	require.NotNil(syncResp.JSON200.Events)
-	require.Len(*syncResp.JSON200.Events, 1)
-	assert.Equal("merged", (*syncResp.JSON200.Events)[0].EventType)
-	assert.Equal("merge-admin", (*syncResp.JSON200.Events)[0].Author)
+	require.Len(syncResp.JSON200.Events, 1)
+	assert.Equal("merged", syncResp.JSON200.Events[0].EventType)
+	assert.Equal("merge-admin", syncResp.JSON200.Events[0].Author)
 
 	events, err = database.ListMREvents(ctx, stored.ID)
 	require.NoError(err)
@@ -6008,7 +6008,7 @@ func TestGitLabSyncCoversRepositoryItemsEventsOverviewAndCI(t *testing.T) {
 	assert.Equal("gitlab.example.com:8443", pullResp.JSON200.Repo.PlatformHost)
 	assert.Equal("Group/SubGroup/Project.Special", pullResp.JSON200.Repo.RepoPath)
 	assert.Equal("success", pullResp.JSON200.MergeRequest.CIStatus)
-	assert.Len(*pullResp.JSON200.Events, 1)
+	assert.Len(pullResp.JSON200.Events, 1)
 
 	issueNumber := int64(11)
 	issueResp, err := client.HTTP.GetIssueOnHostWithResponse(
@@ -6019,7 +6019,7 @@ func TestGitLabSyncCoversRepositoryItemsEventsOverviewAndCI(t *testing.T) {
 	require.NotNil(issueResp.JSON200)
 	assert.Equal("gitlab", issueResp.JSON200.Repo.Provider)
 	assert.Equal("gitlab.example.com:8443", issueResp.JSON200.Repo.PlatformHost)
-	assert.Len(*issueResp.JSON200.Events, 1)
+	assert.Len(issueResp.JSON200.Events, 1)
 
 	summaryResp, err := client.HTTP.ListRepoSummariesWithResponse(ctx)
 	require.NoError(err)
@@ -6547,7 +6547,7 @@ func TestProviderRefSyncEndpointsUseGitLabNestedRepoPath(t *testing.T) {
 	assert.Equal("gitlab", prResp.JSON200.Repo.Provider)
 	assert.Equal(repoPath, prResp.JSON200.Repo.RepoPath)
 	assert.Equal("Sync direct provider MR", prResp.JSON200.MergeRequest.Title)
-	assert.Len(*prResp.JSON200.Events, 1)
+	assert.Len(prResp.JSON200.Events, 1)
 
 	issueResp, err := client.HTTP.SyncIssueOnHostWithResponse(
 		ctx, providerHost, providerName, "Group/SubGroup", "Project.Special", issueDirect,
@@ -6558,7 +6558,7 @@ func TestProviderRefSyncEndpointsUseGitLabNestedRepoPath(t *testing.T) {
 	assert.Equal("gitlab", issueResp.JSON200.Repo.Provider)
 	assert.Equal(repoPath, issueResp.JSON200.Repo.RepoPath)
 	assert.Equal("Sync direct provider issue", issueResp.JSON200.Issue.Title)
-	assert.Len(*issueResp.JSON200.Events, 1)
+	assert.Len(issueResp.JSON200.Events, 1)
 
 	asyncPRResp, err := client.HTTP.EnqueuePrSyncOnHostWithResponse(
 		ctx, providerHost, providerName, "Group/SubGroup", "Project.Special", mrAsync,
@@ -6743,21 +6743,21 @@ func TestAPIListRepoSummaries(t *testing.T) {
 	require.NotNil(widgets.LatestRelease)
 	assert.Equal("v2.8.1", widgets.LatestRelease.TagName)
 	require.NotNil(widgets.Releases)
-	assert.Len(*widgets.Releases, 2)
-	assert.Equal("v2.7.0", (*widgets.Releases)[1].TagName)
-	assert.True((*widgets.Releases)[1].Prerelease)
+	assert.Len(widgets.Releases, 2)
+	assert.Equal("v2.7.0", widgets.Releases[1].TagName)
+	assert.True(widgets.Releases[1].Prerelease)
 	assert.Equal(
 		formatUTCRFC3339(previousPublishedAt),
-		*(*widgets.Releases)[1].PublishedAt,
+		*widgets.Releases[1].PublishedAt,
 	)
 	assert.Equal(int64(42), *widgets.CommitsSinceRelease)
 	require.NotNil(widgets.CommitTimeline)
-	assert.Len(*widgets.CommitTimeline, 1)
-	assert.Equal("Ship repo overview", (*widgets.CommitTimeline)[0].Message)
-	assert.Len(*widgets.ActiveAuthors, 3)
-	assert.Equal("alice", (*widgets.ActiveAuthors)[0].Login)
-	assert.Equal(int64(3), (*widgets.ActiveAuthors)[0].ItemCount)
-	assert.NotEmpty((*widgets.RecentIssues)[0].Title)
+	assert.Len(widgets.CommitTimeline, 1)
+	assert.Equal("Ship repo overview", widgets.CommitTimeline[0].Message)
+	assert.Len(widgets.ActiveAuthors, 3)
+	assert.Equal("alice", widgets.ActiveAuthors[0].Login)
+	assert.Equal(int64(3), widgets.ActiveAuthors[0].ItemCount)
+	assert.NotEmpty(widgets.RecentIssues[0].Title)
 }
 
 func TestAPIListRepoSummariesIncludesDefaultPlatformHost(t *testing.T) {
@@ -6899,13 +6899,13 @@ func TestAPIListRepoSummariesIncludesSyncedReleaseTimeline(t *testing.T) {
 	require.NotNil(widgets.TimelineUpdatedAt)
 
 	assert.Equal("v3.0.0", widgets.LatestRelease.TagName)
-	assert.Len(*widgets.Releases, 3)
-	assert.Equal("v1.0.0", (*widgets.Releases)[2].TagName)
+	assert.Len(widgets.Releases, 3)
+	assert.Equal("v1.0.0", widgets.Releases[2].TagName)
 	assert.Equal(int64(2), *widgets.CommitsSinceRelease)
-	assert.Len(*widgets.CommitTimeline, 4)
-	assert.Equal("post latest 2", (*widgets.CommitTimeline)[0].Message)
-	assert.Equal("post latest 1", (*widgets.CommitTimeline)[1].Message)
-	assert.Len((*widgets.CommitTimeline)[0].Sha, 40)
+	assert.Len(widgets.CommitTimeline, 4)
+	assert.Equal("post latest 2", widgets.CommitTimeline[0].Message)
+	assert.Equal("post latest 1", widgets.CommitTimeline[1].Message)
+	assert.Len(widgets.CommitTimeline[0].Sha, 40)
 
 	gitfixture.Run(t, work, "tag", "-f", "v3.0.0", "HEAD")
 	gitfixture.Run(t, work, "tag", "-f", "v1.0.0", "HEAD")
@@ -6925,7 +6925,7 @@ func TestAPIListRepoSummariesIncludesSyncedReleaseTimeline(t *testing.T) {
 	require.NotNil(widgets.CommitTimeline)
 	assert.Equal("v3.0.0", widgets.LatestRelease.TagName)
 	assert.Equal(int64(0), *widgets.CommitsSinceRelease)
-	assert.Empty(*widgets.CommitTimeline)
+	assert.Empty(widgets.CommitTimeline)
 }
 
 func TestAPIListRepoSummariesUsesTagsWhenNoReleases(t *testing.T) {
@@ -6991,10 +6991,10 @@ func TestAPIListRepoSummariesUsesTagsWhenNoReleases(t *testing.T) {
 	assert.Equal(sha, tagged.LatestRelease.TargetCommitish)
 	assert.Nil(tagged.LatestRelease.PublishedAt)
 	assert.False(tagged.LatestRelease.Prerelease)
-	assert.Len(*tagged.Releases, 1)
-	assert.Equal("v0.5.0", (*tagged.Releases)[0].TagName)
+	assert.Len(tagged.Releases, 1)
+	assert.Equal("v0.5.0", tagged.Releases[0].TagName)
 	assert.Nil(tagged.CommitsSinceRelease)
-	assert.Empty(*tagged.CommitTimeline)
+	assert.Empty(tagged.CommitTimeline)
 }
 
 func TestAPIListRepoSummariesClearsStaleOverviewWhenTagFallbackFails(t *testing.T) {
@@ -7080,9 +7080,9 @@ func TestAPIListRepoSummariesClearsStaleOverviewWhenTagFallbackFails(t *testing.
 	assert.Equal("acme", tagless.Owner)
 	assert.Equal("tagless", tagless.Name)
 	assert.Nil(tagless.LatestRelease)
-	assert.Empty(*tagless.Releases)
+	assert.Empty(tagless.Releases)
 	assert.Nil(tagless.CommitsSinceRelease)
-	assert.Empty(*tagless.CommitTimeline)
+	assert.Empty(tagless.CommitTimeline)
 	assert.Nil(tagless.TimelineUpdatedAt)
 }
 
@@ -11488,12 +11488,12 @@ func TestE2EGraphQLIssueSyncThroughAPI(t *testing.T) {
 	assert.Equal("Synced through the HTTP API", detailResp.JSON200.Issue.Body)
 	assert.Equal(int64(1), detailResp.JSON200.Issue.CommentCount)
 	require.NotNil(detailResp.JSON200.Events)
-	require.Len(*detailResp.JSON200.Events, 1)
-	require.NotNil((*detailResp.JSON200.Events)[0].PlatformID)
-	assert.Equal(int64(3714845345), *(*detailResp.JSON200.Events)[0].PlatformID)
+	require.Len(detailResp.JSON200.Events, 1)
+	require.NotNil(detailResp.JSON200.Events[0].PlatformID)
+	assert.Equal(int64(3714845345), *detailResp.JSON200.Events[0].PlatformID)
 	assert.JSONEq(
 		`{"provider_hidden":true,"provider_hidden_reason":"ABUSE"}`,
-		(*detailResp.JSON200.Events)[0].MetadataJSON,
+		detailResp.JSON200.Events[0].MetadataJSON,
 	)
 }
 
@@ -11788,8 +11788,8 @@ func TestE2EConditionalPRDetailRefreshesInlineModerationThroughAPI(t *testing.T)
 	require.Equal(http.StatusOK, first.StatusCode())
 	require.NotNil(first.JSON200)
 	require.NotNil(first.JSON200.Events)
-	require.Len(*first.JSON200.Events, 1)
-	assert.JSONEq(`{"provider_hidden":true,"provider_hidden_reason":"ABUSE"}`, (*first.JSON200.Events)[0].MetadataJSON)
+	require.Len(first.JSON200.Events, 1)
+	assert.JSONEq(`{"provider_hidden":true,"provider_hidden_reason":"ABUSE"}`, first.JSON200.Events[0].MetadataJSON)
 	threads, err := database.ListMRReviewThreads(ctx, mrID)
 	require.NoError(err)
 	require.Len(threads, 1)
@@ -11806,8 +11806,8 @@ func TestE2EConditionalPRDetailRefreshesInlineModerationThroughAPI(t *testing.T)
 	require.Equal(http.StatusOK, second.StatusCode())
 	require.NotNil(second.JSON200)
 	require.NotNil(second.JSON200.Events)
-	require.Len(*second.JSON200.Events, 1)
-	assert.Empty((*second.JSON200.Events)[0].MetadataJSON)
+	require.Len(second.JSON200.Events, 1)
+	assert.Empty(second.JSON200.Events[0].MetadataJSON)
 	threads, err = database.ListMRReviewThreads(ctx, mrID)
 	require.NoError(err)
 	require.Len(threads, 1)
@@ -12221,8 +12221,8 @@ func TestE2EPRDetailRefreshesEditedCommentBody(t *testing.T) {
 	require.Equal(http.StatusOK, firstResp.StatusCode())
 	require.NotNil(firstResp.JSON200)
 	require.NotNil(firstResp.JSON200.Events)
-	require.Len(*firstResp.JSON200.Events, 1)
-	assert.Equal("original body", (*firstResp.JSON200.Events)[0].Body)
+	require.Len(firstResp.JSON200.Events, 1)
+	assert.Equal("original body", firstResp.JSON200.Events[0].Body)
 
 	editedBody := "edited body"
 	mockComments = []*gh.IssueComment{{
@@ -12242,8 +12242,8 @@ func TestE2EPRDetailRefreshesEditedCommentBody(t *testing.T) {
 	require.Equal(http.StatusOK, secondResp.StatusCode())
 	require.NotNil(secondResp.JSON200)
 	require.NotNil(secondResp.JSON200.Events)
-	require.Len(*secondResp.JSON200.Events, 1)
-	assert.Equal("edited body", (*secondResp.JSON200.Events)[0].Body)
+	require.Len(secondResp.JSON200.Events, 1)
+	assert.Equal("edited body", secondResp.JSON200.Events[0].Body)
 }
 
 func TestE2EPRDetailRemovesDeletedCommentWhenPRListIsUnchanged(t *testing.T) {
@@ -12358,8 +12358,8 @@ func TestE2EPRDetailRemovesDeletedCommentWhenPRListIsUnchanged(t *testing.T) {
 	require.Equal(int64(1), firstResp.JSON200.MergeRequest.CommentCount)
 	require.Equal(providerUpdatedAt.UTC(), firstResp.JSON200.MergeRequest.LastActivityAt.UTC())
 	require.NotNil(firstResp.JSON200.Events)
-	require.Len(*firstResp.JSON200.Events, 1)
-	assert.Equal("body to remove", (*firstResp.JSON200.Events)[0].Body)
+	require.Len(firstResp.JSON200.Events, 1)
+	assert.Equal("body to remove", firstResp.JSON200.Events[0].Body)
 
 	mockComments = []*gh.IssueComment{}
 
@@ -12374,7 +12374,7 @@ func TestE2EPRDetailRemovesDeletedCommentWhenPRListIsUnchanged(t *testing.T) {
 	require.Equal(int64(0), secondResp.JSON200.MergeRequest.CommentCount)
 	require.Equal(providerUpdatedAt.UTC(), secondResp.JSON200.MergeRequest.LastActivityAt.UTC())
 	require.NotNil(secondResp.JSON200.Events)
-	require.Empty(*secondResp.JSON200.Events)
+	require.Empty(secondResp.JSON200.Events)
 }
 
 func TestE2EPRDetailRemovesDeletedCommentWhenAnotherPRChanges(t *testing.T) {
@@ -12509,8 +12509,8 @@ func TestE2EPRDetailRemovesDeletedCommentWhenAnotherPRChanges(t *testing.T) {
 	require.NotNil(firstResp.JSON200)
 	require.Equal(int64(1), firstResp.JSON200.MergeRequest.CommentCount)
 	require.NotNil(firstResp.JSON200.Events)
-	require.Len(*firstResp.JSON200.Events, 1)
-	assert.Equal("target comment", (*firstResp.JSON200.Events)[0].Body)
+	require.Len(firstResp.JSON200.Events, 1)
+	assert.Equal("target comment", firstResp.JSON200.Events[0].Body)
 
 	targetComments = []*gh.IssueComment{}
 
@@ -12524,7 +12524,7 @@ func TestE2EPRDetailRemovesDeletedCommentWhenAnotherPRChanges(t *testing.T) {
 	require.NotNil(secondResp.JSON200)
 	require.Equal(int64(0), secondResp.JSON200.MergeRequest.CommentCount)
 	require.NotNil(secondResp.JSON200.Events)
-	require.Empty(*secondResp.JSON200.Events)
+	require.Empty(secondResp.JSON200.Events)
 }
 
 func TestE2EIssueDetailRefreshesEditedCommentBody(t *testing.T) {
@@ -12618,8 +12618,8 @@ func TestE2EIssueDetailRefreshesEditedCommentBody(t *testing.T) {
 	require.Equal(http.StatusOK, firstResp.StatusCode())
 	require.NotNil(firstResp.JSON200)
 	require.NotNil(firstResp.JSON200.Events)
-	require.Len(*firstResp.JSON200.Events, 1)
-	assert.Equal("original issue body", (*firstResp.JSON200.Events)[0].Body)
+	require.Len(firstResp.JSON200.Events, 1)
+	assert.Equal("original issue body", firstResp.JSON200.Events[0].Body)
 
 	editedBody := "edited issue body"
 	mockComments = []*gh.IssueComment{{
@@ -12639,8 +12639,8 @@ func TestE2EIssueDetailRefreshesEditedCommentBody(t *testing.T) {
 	require.Equal(http.StatusOK, secondResp.StatusCode())
 	require.NotNil(secondResp.JSON200)
 	require.NotNil(secondResp.JSON200.Events)
-	require.Len(*secondResp.JSON200.Events, 1)
-	assert.Equal("edited issue body", (*secondResp.JSON200.Events)[0].Body)
+	require.Len(secondResp.JSON200.Events, 1)
+	assert.Equal("edited issue body", secondResp.JSON200.Events[0].Body)
 }
 
 func TestE2EIssueDetailRemovesDeletedCommentWhenIssueListIsUnchanged(t *testing.T) {
@@ -12739,8 +12739,8 @@ func TestE2EIssueDetailRemovesDeletedCommentWhenIssueListIsUnchanged(t *testing.
 	require.Equal(int64(1), firstResp.JSON200.Issue.CommentCount)
 	require.Equal(commentCreatedAt.UTC(), firstResp.JSON200.Issue.LastActivityAt.UTC())
 	require.NotNil(firstResp.JSON200.Events)
-	require.Len(*firstResp.JSON200.Events, 1)
-	assert.Equal("issue body to remove", (*firstResp.JSON200.Events)[0].Body)
+	require.Len(firstResp.JSON200.Events, 1)
+	assert.Equal("issue body to remove", firstResp.JSON200.Events[0].Body)
 
 	mockComments = []*gh.IssueComment{}
 
@@ -12755,7 +12755,7 @@ func TestE2EIssueDetailRemovesDeletedCommentWhenIssueListIsUnchanged(t *testing.
 	require.Equal(int64(0), secondResp.JSON200.Issue.CommentCount)
 	require.Equal(now.UTC(), secondResp.JSON200.Issue.LastActivityAt.UTC())
 	require.NotNil(secondResp.JSON200.Events)
-	require.Empty(*secondResp.JSON200.Events)
+	require.Empty(secondResp.JSON200.Events)
 }
 
 func TestE2EIssueDetailRemovesDeletedCommentWhenAnotherIssueChanges(t *testing.T) {
@@ -12881,8 +12881,8 @@ func TestE2EIssueDetailRemovesDeletedCommentWhenAnotherIssueChanges(t *testing.T
 	require.NotNil(firstResp.JSON200)
 	require.Equal(int64(1), firstResp.JSON200.Issue.CommentCount)
 	require.NotNil(firstResp.JSON200.Events)
-	require.Len(*firstResp.JSON200.Events, 1)
-	assert.Equal("target issue comment", (*firstResp.JSON200.Events)[0].Body)
+	require.Len(firstResp.JSON200.Events, 1)
+	assert.Equal("target issue comment", firstResp.JSON200.Events[0].Body)
 
 	targetComments = []*gh.IssueComment{}
 
@@ -12896,7 +12896,7 @@ func TestE2EIssueDetailRemovesDeletedCommentWhenAnotherIssueChanges(t *testing.T
 	require.NotNil(secondResp.JSON200)
 	require.Equal(int64(0), secondResp.JSON200.Issue.CommentCount)
 	require.NotNil(secondResp.JSON200.Events)
-	require.Empty(*secondResp.JSON200.Events)
+	require.Empty(secondResp.JSON200.Events)
 }
 
 func TestE2EPRDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
@@ -12984,8 +12984,8 @@ func TestE2EPRDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
 	require.Equal(int64(1), firstResp.JSON200.MergeRequest.CommentCount)
 	require.Equal(currentUpdatedAt.UTC(), firstResp.JSON200.MergeRequest.LastActivityAt.UTC())
 	require.NotNil(firstResp.JSON200.Events)
-	require.Len(*firstResp.JSON200.Events, 1)
-	assert.Equal("comment removed on full refresh", (*firstResp.JSON200.Events)[0].Body)
+	require.Len(firstResp.JSON200.Events, 1)
+	assert.Equal("comment removed on full refresh", firstResp.JSON200.Events[0].Body)
 
 	currentUpdatedAt = now.Add(4 * time.Minute)
 	currentComments = []*gh.IssueComment{}
@@ -13001,7 +13001,7 @@ func TestE2EPRDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
 	require.Equal(int64(0), secondResp.JSON200.MergeRequest.CommentCount)
 	require.Equal(currentUpdatedAt.UTC(), secondResp.JSON200.MergeRequest.LastActivityAt.UTC())
 	require.NotNil(secondResp.JSON200.Events)
-	require.Empty(*secondResp.JSON200.Events)
+	require.Empty(secondResp.JSON200.Events)
 }
 
 func TestE2EIssueDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
@@ -13081,8 +13081,8 @@ func TestE2EIssueDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
 	require.Equal(int64(1), firstResp.JSON200.Issue.CommentCount)
 	require.Equal(commentCreatedAt.UTC(), firstResp.JSON200.Issue.LastActivityAt.UTC())
 	require.NotNil(firstResp.JSON200.Events)
-	require.Len(*firstResp.JSON200.Events, 1)
-	assert.Equal("issue comment removed on full refresh", (*firstResp.JSON200.Events)[0].Body)
+	require.Len(firstResp.JSON200.Events, 1)
+	assert.Equal("issue comment removed on full refresh", firstResp.JSON200.Events[0].Body)
 
 	currentUpdatedAt = now.Add(time.Minute)
 	currentComments = []*gh.IssueComment{}
@@ -13098,7 +13098,7 @@ func TestE2EIssueDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
 	require.Equal(int64(0), secondResp.JSON200.Issue.CommentCount)
 	require.Equal(currentUpdatedAt.UTC(), secondResp.JSON200.Issue.LastActivityAt.UTC())
 	require.NotNil(secondResp.JSON200.Events)
-	require.Empty(*secondResp.JSON200.Events)
+	require.Empty(secondResp.JSON200.Events)
 }
 
 func TestE2EIssueDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
@@ -13199,8 +13199,8 @@ func TestE2EIssueDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 	require.Equal(int64(1), firstResp.JSON200.Issue.CommentCount)
 	require.Equal(now.UTC(), firstResp.JSON200.Issue.LastActivityAt.UTC())
 	require.NotNil(firstResp.JSON200.Events)
-	require.Len(*firstResp.JSON200.Events, 1)
-	assert.Equal("bulk comment removed", (*firstResp.JSON200.Events)[0].Body)
+	require.Len(firstResp.JSON200.Events, 1)
+	assert.Equal("bulk comment removed", firstResp.JSON200.Events[0].Body)
 
 	currentUpdatedAt = secondUpdatedAt
 	currentCommentJSON = `{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}`
@@ -13216,7 +13216,7 @@ func TestE2EIssueDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 	require.Equal(int64(0), secondResp.JSON200.Issue.CommentCount)
 	require.Equal(now.Add(time.Minute).UTC(), secondResp.JSON200.Issue.LastActivityAt.UTC())
 	require.NotNil(secondResp.JSON200.Events)
-	require.Empty(*secondResp.JSON200.Events)
+	require.Empty(secondResp.JSON200.Events)
 }
 
 func TestE2EIssueDetailPreservesHiddenCommentsAcrossIncompleteGraphQLRefresh(t *testing.T) {
@@ -13384,8 +13384,8 @@ func TestE2EIssueDetailPreservesHiddenCommentsAcrossIncompleteGraphQLRefresh(t *
 	require.Equal(http.StatusOK, firstResp.StatusCode())
 	require.NotNil(firstResp.JSON200)
 	require.NotNil(firstResp.JSON200.Events)
-	require.Len(*firstResp.JSON200.Events, 2)
-	for _, event := range *firstResp.JSON200.Events {
+	require.Len(firstResp.JSON200.Events, 2)
+	for _, event := range firstResp.JSON200.Events {
 		assert.Contains(event.MetadataJSON, `"provider_hidden":true`)
 		assert.Contains(event.MetadataJSON, `"provider_hidden_reason":"OFF_TOPIC"`)
 	}
@@ -13401,10 +13401,10 @@ func TestE2EIssueDetailPreservesHiddenCommentsAcrossIncompleteGraphQLRefresh(t *
 	require.Equal(http.StatusOK, secondResp.StatusCode())
 	require.NotNil(secondResp.JSON200)
 	require.NotNil(secondResp.JSON200.Events)
-	require.Len(*secondResp.JSON200.Events, 2)
+	require.Len(secondResp.JSON200.Events, 2)
 
-	metadataByCommentID := make(map[int64]string, len(*secondResp.JSON200.Events))
-	for _, event := range *secondResp.JSON200.Events {
+	metadataByCommentID := make(map[int64]string, len(secondResp.JSON200.Events))
+	for _, event := range secondResp.JSON200.Events {
 		require.NotNil(event.PlatformID)
 		metadataByCommentID[*event.PlatformID] = event.MetadataJSON
 	}
@@ -13532,10 +13532,10 @@ func TestE2EGraphQLBulkSyncPersistsIssueTimelineEvents(t *testing.T) {
 	require.NotNil(resp.JSON200)
 	require.True(resp.JSON200.DetailLoaded)
 	require.NotNil(resp.JSON200.Events)
-	require.Len(*resp.JSON200.Events, 3)
+	require.Len(resp.JSON200.Events, 3)
 
-	byType := make(map[string]generated.IssueEvent, len(*resp.JSON200.Events))
-	for _, event := range *resp.JSON200.Events {
+	byType := make(map[string]generated.IssueEvent, len(resp.JSON200.Events))
+	for _, event := range resp.JSON200.Events {
 		byType[event.EventType] = event
 	}
 
@@ -13705,7 +13705,7 @@ func TestE2EGraphQLBulkSyncPersistsIssueLifecycleTimelineAfterReopen(t *testing.
 	require.NotNil(closedResp.JSON200)
 	assert.Equal("closed", closedResp.JSON200.Issue.State)
 	require.NotNil(closedResp.JSON200.Events)
-	assert.Empty(*closedResp.JSON200.Events)
+	assert.Empty(closedResp.JSON200.Events)
 
 	phase = "reopened"
 	srv.syncer.RunOnce(ctx)
@@ -13718,10 +13718,10 @@ func TestE2EGraphQLBulkSyncPersistsIssueLifecycleTimelineAfterReopen(t *testing.
 	require.NotNil(reopenedResp.JSON200)
 	assert.Equal("open", reopenedResp.JSON200.Issue.State)
 	require.NotNil(reopenedResp.JSON200.Events)
-	require.Len(*reopenedResp.JSON200.Events, 2)
+	require.Len(reopenedResp.JSON200.Events, 2)
 
-	byType := make(map[string]generated.IssueEvent, len(*reopenedResp.JSON200.Events))
-	for _, event := range *reopenedResp.JSON200.Events {
+	byType := make(map[string]generated.IssueEvent, len(reopenedResp.JSON200.Events))
+	for _, event := range reopenedResp.JSON200.Events {
 		byType[event.EventType] = event
 	}
 
@@ -13844,8 +13844,8 @@ func TestE2EPRDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 	require.Equal(int64(1), firstResp.JSON200.MergeRequest.CommentCount)
 	require.Equal(now.Add(3*time.Minute).UTC(), firstResp.JSON200.MergeRequest.LastActivityAt.UTC())
 	require.NotNil(firstResp.JSON200.Events)
-	require.Len(*firstResp.JSON200.Events, 1)
-	assert.Equal("bulk PR comment removed", (*firstResp.JSON200.Events)[0].Body)
+	require.Len(firstResp.JSON200.Events, 1)
+	assert.Equal("bulk PR comment removed", firstResp.JSON200.Events[0].Body)
 
 	currentUpdatedAt = secondUpdatedAt
 	currentCommentsJSON = `{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}`
@@ -13861,7 +13861,7 @@ func TestE2EPRDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 	require.Equal(int64(0), secondResp.JSON200.MergeRequest.CommentCount)
 	require.Equal(now.Add(4*time.Minute).UTC(), secondResp.JSON200.MergeRequest.LastActivityAt.UTC())
 	require.NotNil(secondResp.JSON200.Events)
-	require.Empty(*secondResp.JSON200.Events)
+	require.Empty(secondResp.JSON200.Events)
 }
 
 func TestE2EPRDetailPersistsCombinedGraphQLDiscussions(t *testing.T) {
@@ -14036,13 +14036,13 @@ func TestE2EPRDetailPersistsCombinedGraphQLDiscussions(t *testing.T) {
 	require.Equal(http.StatusOK, firstResp.StatusCode())
 	require.NotNil(firstResp.JSON200)
 	require.NotNil(firstResp.JSON200.Events)
-	require.Len(*firstResp.JSON200.Events, 3)
+	require.Len(firstResp.JSON200.Events, 3)
 	firstProviderUpdatedAt, err := time.Parse(time.RFC3339, firstUpdatedAt)
 	require.NoError(err)
 	assert.Equal(firstProviderUpdatedAt, firstResp.JSON200.MergeRequest.LastActivityAt)
-	firstMetadata := make(map[int64]string, len(*firstResp.JSON200.Events))
+	firstMetadata := make(map[int64]string, len(firstResp.JSON200.Events))
 	inlineFound := false
-	for _, event := range *firstResp.JSON200.Events {
+	for _, event := range firstResp.JSON200.Events {
 		if event.EventType == "review_comment" {
 			inlineFound = true
 			assert.Equal("hidden inline reply", event.Body)
@@ -14081,12 +14081,12 @@ func TestE2EPRDetailPersistsCombinedGraphQLDiscussions(t *testing.T) {
 	require.Equal(http.StatusOK, secondResp.StatusCode())
 	require.NotNil(secondResp.JSON200)
 	require.NotNil(secondResp.JSON200.Events)
-	require.Len(*secondResp.JSON200.Events, 3)
+	require.Len(secondResp.JSON200.Events, 3)
 	secondProviderUpdatedAt, err := time.Parse(time.RFC3339, secondUpdatedAt)
 	require.NoError(err)
 	assert.Equal(secondProviderUpdatedAt, secondResp.JSON200.MergeRequest.LastActivityAt)
-	secondMetadata := make(map[int64]string, len(*secondResp.JSON200.Events))
-	for _, event := range *secondResp.JSON200.Events {
+	secondMetadata := make(map[int64]string, len(secondResp.JSON200.Events))
+	for _, event := range secondResp.JSON200.Events {
 		if event.EventType == "review_comment" {
 			assert.Contains(event.MetadataJSON, `"provider_hidden":true`)
 			continue
@@ -19635,8 +19635,8 @@ func TestAPIGitealikeReadSyncPersistsThroughServer(t *testing.T) {
 	assert.True(pullResp.JSON200.Repo.Capabilities.ReadMergeRequests)
 	assert.True(pullResp.JSON200.Repo.Capabilities.ReadCi)
 	require.NotNil(pullResp.JSON200.Events)
-	require.Len(*pullResp.JSON200.Events, 1)
-	assert.Equal("looks good", (*pullResp.JSON200.Events)[0].Body)
+	require.Len(pullResp.JSON200.Events, 1)
+	assert.Equal("looks good", pullResp.JSON200.Events[0].Body)
 
 	issueResp, err := client.HTTP.GetIssueOnHostWithResponse(
 		ctx, "codeberg.test", "forgejo", "forgejo", "tea", 8,
@@ -19646,8 +19646,8 @@ func TestAPIGitealikeReadSyncPersistsThroughServer(t *testing.T) {
 	require.NotNil(issueResp.JSON200)
 	assert.Equal("Missing cup", issueResp.JSON200.Issue.Title)
 	require.NotNil(issueResp.JSON200.Events)
-	require.Len(*issueResp.JSON200.Events, 1)
-	assert.Equal("confirmed", (*issueResp.JSON200.Events)[0].Body)
+	require.Len(issueResp.JSON200.Events, 1)
+	assert.Equal("confirmed", issueResp.JSON200.Events[0].Body)
 }
 
 func TestAPIGitealikeHTTPMergeabilityPersistsThroughServer(t *testing.T) {
@@ -21895,9 +21895,9 @@ func TestAPIGetFilesAndDiffMarkGeneratedFilesE2E(t *testing.T) {
 	require.Equal(http.StatusOK, filesResp.StatusCode(), string(filesResp.Body))
 	require.NotNil(filesResp.JSON200)
 	require.NotNil(filesResp.JSON200.Files)
-	assert.True(testutil.RequireWorkspaceDiffFile(t, *filesResp.JSON200.Files, "dist/api.ts").IsGenerated)
-	assert.False(testutil.RequireWorkspaceDiffFile(t, *filesResp.JSON200.Files, "bun.lock").IsGenerated)
-	assert.False(testutil.RequireWorkspaceDiffFile(t, *filesResp.JSON200.Files, "src.ts").IsGenerated)
+	assert.True(testutil.RequireWorkspaceDiffFile(t, filesResp.JSON200.Files, "dist/api.ts").IsGenerated)
+	assert.False(testutil.RequireWorkspaceDiffFile(t, filesResp.JSON200.Files, "bun.lock").IsGenerated)
+	assert.False(testutil.RequireWorkspaceDiffFile(t, filesResp.JSON200.Files, "src.ts").IsGenerated)
 
 	diffResp, err := client.HTTP.GetPullDiffWithResponse(
 		ctx, "gh", "acme", "widget", 1,
@@ -21907,9 +21907,9 @@ func TestAPIGetFilesAndDiffMarkGeneratedFilesE2E(t *testing.T) {
 	require.Equal(http.StatusOK, diffResp.StatusCode(), string(diffResp.Body))
 	require.NotNil(diffResp.JSON200)
 	require.NotNil(diffResp.JSON200.Files)
-	assert.True(testutil.RequireWorkspaceDiffFile(t, *diffResp.JSON200.Files, "dist/api.ts").IsGenerated)
-	assert.False(testutil.RequireWorkspaceDiffFile(t, *diffResp.JSON200.Files, "bun.lock").IsGenerated)
-	assert.False(testutil.RequireWorkspaceDiffFile(t, *diffResp.JSON200.Files, "src.ts").IsGenerated)
+	assert.True(testutil.RequireWorkspaceDiffFile(t, diffResp.JSON200.Files, "dist/api.ts").IsGenerated)
+	assert.False(testutil.RequireWorkspaceDiffFile(t, diffResp.JSON200.Files, "bun.lock").IsGenerated)
+	assert.False(testutil.RequireWorkspaceDiffFile(t, diffResp.JSON200.Files, "src.ts").IsGenerated)
 }
 
 // countingTokenFileSource wraps a managed token-file source and records how
@@ -22012,20 +22012,20 @@ func TestAPILocalReadEndpointsServeDuringTokenRotationE2E(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusOK, commitsResp.StatusCode(), string(commitsResp.Body))
 	require.NotNil(commitsResp.JSON200)
-	require.Len(*commitsResp.JSON200.Commits, 1)
-	assert.Equal(headSHA, (*commitsResp.JSON200.Commits)[0].Sha)
+	require.Len(commitsResp.JSON200.Commits, 1)
+	assert.Equal(headSHA, commitsResp.JSON200.Commits[0].Sha)
 
 	diffResp, err := client.HTTP.GetPullDiffWithResponse(ctx, "gh", "acme", "widget", 1, nil)
 	require.NoError(err)
 	require.Equal(http.StatusOK, diffResp.StatusCode(), string(diffResp.Body))
 	require.NotNil(diffResp.JSON200)
-	require.Len(*diffResp.JSON200.Files, 1)
+	require.Len(diffResp.JSON200.Files, 1)
 
 	filesResp, err := client.HTTP.GetPullFilesWithResponse(ctx, "gh", "acme", "widget", 1)
 	require.NoError(err)
 	require.Equal(http.StatusOK, filesResp.StatusCode(), string(filesResp.Body))
 	require.NotNil(filesResp.JSON200)
-	require.Len(*filesResp.JSON200.Files, 1)
+	require.Len(filesResp.JSON200.Files, 1)
 
 	previewPath := "feature.txt"
 	previewResp, err := client.HTTP.GetPullFilePreviewWithResponse(
@@ -22879,17 +22879,17 @@ func TestAPIActivityReturnsUTCCreatedAt(t *testing.T) {
 	require.Equal(http.StatusOK, resp.StatusCode())
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Items)
-	require.NotEmpty(*resp.JSON200.Items)
+	require.NotEmpty(resp.JSON200.Items)
 
-	var commentItem *generated.ActivityItemResponse
-	for i := range *resp.JSON200.Items {
-		item := &(*resp.JSON200.Items)[i]
+	var commentItem generated.ActivityItemResponse
+	for i := range resp.JSON200.Items {
+		item := resp.JSON200.Items[i]
 		if item.Author == "reviewer" && item.ActivityType == "comment" {
 			commentItem = item
 			break
 		}
 	}
-	require.NotNil(commentItem)
+	require.NotEmpty(commentItem.ActivityType)
 	assertRFC3339UTC(t, commentItem.CreatedAt, createdAt)
 	assert.Equal("reviewer", commentItem.Author)
 	assert.Equal("comment", commentItem.ActivityType)
@@ -22973,15 +22973,15 @@ func TestAPIActivityFencesRepositoryReconciliationAcrossEventAndWorkspaceReads(t
 	require.NotNil(response.JSON200)
 	require.NotNil(response.JSON200.Items)
 
-	var item *generated.ActivityItemResponse
-	for i := range *response.JSON200.Items {
-		candidate := &(*response.JSON200.Items)[i]
+	var item generated.ActivityItemResponse
+	for i := range response.JSON200.Items {
+		candidate := response.JSON200.Items[i]
 		if candidate.ItemNumber == 701 {
 			item = candidate
 			break
 		}
 	}
-	require.NotNil(item)
+	require.NotEmpty(item.ActivityType)
 	assert.Equal("widget", item.RepoName)
 	require.NotNil(item.Workspace)
 	assert.Equal("ws-activity-fence", item.Workspace.Id)
@@ -23084,10 +23084,10 @@ func TestAPIGetCommits(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
 	require.NotNil(resp.JSON200)
-	assert.Len(*resp.JSON200.Commits, 5)
-	assert.Equal(commitSHAs[0], (*resp.JSON200.Commits)[0].Sha)
-	assert.Equal("commit 5", (*resp.JSON200.Commits)[0].Message)
-	assert.Equal(time.UTC, (*resp.JSON200.Commits)[0].AuthoredAt.Location())
+	assert.Len(resp.JSON200.Commits, 5)
+	assert.Equal(commitSHAs[0], resp.JSON200.Commits[0].Sha)
+	assert.Equal("commit 5", resp.JSON200.Commits[0].Message)
+	assert.Equal(time.UTC, resp.JSON200.Commits[0].AuthoredAt.Location())
 }
 
 func TestAPIGetCommits_NotFound(t *testing.T) {
@@ -23113,7 +23113,7 @@ func TestAPIGetDiff_SingleCommit(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
 	require.NotNil(resp.JSON200)
-	require.Len(*resp.JSON200.Files, 1)
+	require.Len(resp.JSON200.Files, 1)
 }
 
 func TestAPIGetDiffReportsSyncedDiffHeadSHA(t *testing.T) {
@@ -23325,7 +23325,7 @@ func TestAPIGetDiff_Range(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
 	require.NotNil(resp.JSON200)
-	require.Len(*resp.JSON200.Files, 3)
+	require.Len(resp.JSON200.Files, 3)
 }
 
 func TestAPIGetDiff_InvalidScope(t *testing.T) {
@@ -23465,9 +23465,9 @@ func TestAPIListActivity(t *testing.T) {
 	require.Equal(http.StatusOK, resp.StatusCode())
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Items)
-	assert.NotEmpty(*resp.JSON200.Items,
+	assert.NotEmpty(resp.JSON200.Items,
 		"activity feed should contain PR and comment items")
-	assert.Equal("github.com", (*resp.JSON200.Items)[0].PlatformHost)
+	assert.Equal("github.com", resp.JSON200.Items[0].PlatformHost)
 
 	collapsed := testutil.DoJSON(
 		t,
@@ -23561,9 +23561,9 @@ func TestAPIListActivity(t *testing.T) {
 	require.Equal(http.StatusOK, filtered.StatusCode())
 	require.NotNil(filtered.JSON200)
 	require.NotNil(filtered.JSON200.Items)
-	require.Len(*filtered.JSON200.Items, 1)
-	assert.Equal("comment", (*filtered.JSON200.Items)[0].ActivityType)
-	assert.Equal("reviewer", (*filtered.JSON200.Items)[0].Author)
+	require.Len(filtered.JSON200.Items, 1)
+	assert.Equal("comment", filtered.JSON200.Items[0].ActivityType)
+	assert.Equal("reviewer", filtered.JSON200.Items[0].Author)
 
 	itemNumber := "#1"
 	byNumber, err := client.HTTP.ListActivityWithResponse(
@@ -23573,8 +23573,8 @@ func TestAPIListActivity(t *testing.T) {
 	require.Equal(http.StatusOK, byNumber.StatusCode())
 	require.NotNil(byNumber.JSON200)
 	require.NotNil(byNumber.JSON200.Items)
-	require.Len(*byNumber.JSON200.Items, 2)
-	for _, item := range *byNumber.JSON200.Items {
+	require.Len(byNumber.JSON200.Items, 2)
+	for _, item := range byNumber.JSON200.Items {
 		assert.Equal(int64(1), item.ItemNumber)
 	}
 
@@ -23586,7 +23586,7 @@ func TestAPIListActivity(t *testing.T) {
 	require.Equal(http.StatusOK, unfiltered.StatusCode())
 	require.NotNil(unfiltered.JSON200)
 	require.NotNil(unfiltered.JSON200.Items)
-	assert.Len(*unfiltered.JSON200.Items, len(*resp.JSON200.Items))
+	assert.Len(unfiltered.JSON200.Items, len(resp.JSON200.Items))
 }
 
 func TestAPIListCollapsedActivityHonorsLimit(t *testing.T) {
@@ -24516,8 +24516,8 @@ func TestAPIListActivityIncludesNotificationSyncedBeforeRepo(t *testing.T) {
 	require.Equal(http.StatusOK, resp.StatusCode())
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Items)
-	require.Len(*resp.JSON200.Items, 1)
-	item := (*resp.JSON200.Items)[0]
+	require.Len(resp.JSON200.Items, 1)
+	item := resp.JSON200.Items[0]
 	assert.Equal("notification", item.ActivityType)
 	assert.Equal("acme", item.RepoOwner)
 	assert.Equal("widget", item.RepoName)
@@ -24588,8 +24588,8 @@ func TestAPIListActivityScopesNotificationsToTrackedRepos(t *testing.T) {
 	require.Equal(http.StatusOK, resp.StatusCode())
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Items)
-	require.Len(*resp.JSON200.Items, 1)
-	item := (*resp.JSON200.Items)[0]
+	require.Len(resp.JSON200.Items, 1)
+	item := resp.JSON200.Items[0]
 	assert.Equal("notification", item.ActivityType)
 	assert.Equal("acme", item.RepoOwner)
 	assert.Equal("widget", item.RepoName)
@@ -24798,10 +24798,10 @@ func TestAPIListActivityReflectsConfiguredDefaultBranchCommitCap(t *testing.T) {
 	require.Equal(http.StatusOK, resp.StatusCode())
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Items)
-	require.Len(*resp.JSON200.Items, 2)
+	require.Len(resp.JSON200.Items, 2)
 	gotAPI := []string{
-		*(*resp.JSON200.Items)[0].CommitSha,
-		*(*resp.JSON200.Items)[1].CommitSha,
+		*resp.JSON200.Items[0].CommitSha,
+		*resp.JSON200.Items[1].CommitSha,
 	}
 	assert.ElementsMatch([]string{shas["newest"], shas["second"]}, gotAPI)
 }
@@ -24943,9 +24943,9 @@ func TestAPIListActivityCanHideDefaultBranchActivity(t *testing.T) {
 	require.Equal(http.StatusOK, resp.StatusCode())
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Items)
-	require.Len(*resp.JSON200.Items, 1)
-	assert.Equal("new_pr", (*resp.JSON200.Items)[0].ActivityType)
-	assert.Equal(int64(1), (*resp.JSON200.Items)[0].ItemNumber)
+	require.Len(resp.JSON200.Items, 1)
+	assert.Equal("new_pr", resp.JSON200.Items[0].ActivityType)
+	assert.Equal(int64(1), resp.JSON200.Items[0].ItemNumber)
 }
 
 func TestAPIListActivityAcceptsProviderQualifiedRepoFilter(t *testing.T) {
@@ -24984,8 +24984,8 @@ func TestAPIListActivityAcceptsProviderQualifiedRepoFilter(t *testing.T) {
 	require.Equal(http.StatusOK, resp.StatusCode())
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Items)
-	require.NotEmpty(*resp.JSON200.Items)
-	for _, item := range *resp.JSON200.Items {
+	require.NotEmpty(resp.JSON200.Items)
+	for _, item := range resp.JSON200.Items {
 		assert.Equal("gitea", item.Repo.Provider)
 		assert.Equal("github.com", item.PlatformHost)
 		assert.Equal("acme", item.RepoOwner)
@@ -25021,8 +25021,8 @@ func TestAPIListActivityKeepsProviderNamedHostsProviderQualified(t *testing.T) {
 	require.Equal(http.StatusOK, resp.StatusCode())
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Items)
-	require.NotEmpty(*resp.JSON200.Items)
-	for _, item := range *resp.JSON200.Items {
+	require.NotEmpty(resp.JSON200.Items)
+	for _, item := range resp.JSON200.Items {
 		assert.Equal("github", item.Repo.Provider)
 		assert.Equal("gitea", item.PlatformHost)
 		assert.Equal("acme/team", item.RepoOwner)
@@ -25150,8 +25150,8 @@ func TestAPIListStacks(t *testing.T) {
 	assert.Len(stks, 1)
 	assert.Equal("auth", stks[0].Name)
 	require.NotNil(stks[0].Members)
-	assert.Len(*stks[0].Members, 3)
-	assert.Equal(int64(10), (*stks[0].Members)[0].Number)
+	assert.Len(stks[0].Members, 3)
+	assert.Equal(int64(10), stks[0].Members[0].Number)
 }
 
 func TestAPIListStacks_RepoFilter(t *testing.T) {
@@ -25245,7 +25245,7 @@ func TestAPIGetPullDetailIncludesStackContext(t *testing.T) {
 	assert.Equal(int64(2), resp.JSON200.Stack.Size)
 	assert.Equal("blocked", resp.JSON200.Stack.Health)
 	require.NotNil(resp.JSON200.Stack.Members)
-	assert.Len(*resp.JSON200.Stack.Members, 2)
+	assert.Len(resp.JSON200.Stack.Members, 2)
 
 	seedPR(t, database, "acme", "widget", 99)
 	unstacked, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 99)
@@ -25289,10 +25289,10 @@ func TestAPIStackBaseConflictMarksDownstreamPRsDirty(t *testing.T) {
 	require.NotNil(stackResp.JSON200)
 	require.NotNil(stackResp.JSON200.Members)
 	assert.Equal("blocked", stackResp.JSON200.Health)
-	assert.Equal("dirty", (*stackResp.JSON200.Members)[0].MergeableState)
-	assert.Equal("dirty", (*stackResp.JSON200.Members)[1].MergeableState)
-	require.NotNil((*stackResp.JSON200.Members)[1].BlockedBy)
-	assert.Equal(int64(10), *(*stackResp.JSON200.Members)[1].BlockedBy)
+	assert.Equal("dirty", stackResp.JSON200.Members[0].MergeableState)
+	assert.Equal("dirty", stackResp.JSON200.Members[1].MergeableState)
+	require.NotNil(stackResp.JSON200.Members[1].BlockedBy)
+	assert.Equal(int64(10), *stackResp.JSON200.Members[1].BlockedBy)
 
 	detailResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 11)
 	require.NoError(err)
@@ -25490,7 +25490,7 @@ func TestAPIStacks_DetectionViaSyncHookPrefersGitHubNativeOrder(t *testing.T) {
 	require.Equal(http.StatusOK, stackResp.StatusCode(), string(stackResp.Body))
 	require.NotNil(stackResp.JSON200)
 	require.NotNil(stackResp.JSON200.Members)
-	assert.Equal([]int64{11, 10}, stackMemberNumbers(*stackResp.JSON200.Members))
+	assert.Equal([]int64{11, 10}, stackMemberNumbers(stackResp.JSON200.Members))
 
 	detailResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 10)
 	require.NoError(err)
@@ -25565,7 +25565,7 @@ func TestAPIStacks_DetectionViaSyncHookIgnoresForkHeadBranchCollision(t *testing
 	require.Equal(http.StatusOK, ctxResp.StatusCode(), string(ctxResp.Body))
 	require.NotNil(ctxResp.JSON200)
 	require.NotNil(ctxResp.JSON200.Members)
-	assert.Equal([]int64{100, 101}, stackMemberNumbers(*ctxResp.JSON200.Members))
+	assert.Equal([]int64{100, 101}, stackMemberNumbers(ctxResp.JSON200.Members))
 
 	forkResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 90)
 	require.NoError(err)
@@ -25674,7 +25674,7 @@ func TestAPIStacks_GitLabUnknownForkHeadSyncsButSkipsStackEdges(t *testing.T) {
 	require.NotNil(tipStackResp.JSON200)
 	require.NotNil(tipStackResp.JSON200.Members)
 	assert.Equal(int64(2), tipStackResp.JSON200.Size)
-	assert.Equal([]int64{100, 101}, stackMemberNumbers(*tipStackResp.JSON200.Members))
+	assert.Equal([]int64{100, 101}, stackMemberNumbers(tipStackResp.JSON200.Members))
 
 	stacksResp, err := client.HTTP.ListStacksWithResponse(ctx, &generated.ListStacksParams{})
 	require.NoError(err)
@@ -25682,7 +25682,7 @@ func TestAPIStacks_GitLabUnknownForkHeadSyncsButSkipsStackEdges(t *testing.T) {
 	require.NotNil(stacksResp.JSON200)
 	require.Len(*stacksResp.JSON200, 1)
 	require.NotNil((*stacksResp.JSON200)[0].Members)
-	assert.Equal([]int64{100, 101}, stackMemberNumbers(*(*stacksResp.JSON200)[0].Members))
+	assert.Equal([]int64{100, 101}, stackMemberNumbers((*stacksResp.JSON200)[0].Members))
 }
 
 func TestAPIStacks_DetectionViaSyncHookIgnoresSameRepoSelfEdge(t *testing.T) {
@@ -25749,7 +25749,7 @@ func TestAPIStacks_DetectionViaSyncHookIgnoresSameRepoSelfEdge(t *testing.T) {
 	require.Equal(http.StatusOK, ctxResp.StatusCode(), string(ctxResp.Body))
 	require.NotNil(ctxResp.JSON200)
 	require.NotNil(ctxResp.JSON200.Members)
-	assert.Equal([]int64{748, 751}, stackMemberNumbers(*ctxResp.JSON200.Members))
+	assert.Equal([]int64{748, 751}, stackMemberNumbers(ctxResp.JSON200.Members))
 
 	selfEdgeResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 449)
 	require.NoError(err)
@@ -25803,9 +25803,9 @@ func TestAPIGetStackForPR_BaseBranchNotMain(t *testing.T) {
 	require.Equal(http.StatusOK, resp.StatusCode())
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Members)
-	assert.Len(*resp.JSON200.Members, 2)
-	assert.Equal("master", (*resp.JSON200.Members)[0].BaseBranch)
-	assert.Equal("feat/base", (*resp.JSON200.Members)[1].BaseBranch)
+	assert.Len(resp.JSON200.Members, 2)
+	assert.Equal("master", resp.JSON200.Members[0].BaseBranch)
+	assert.Equal("feat/base", resp.JSON200.Members[1].BaseBranch)
 }
 
 // TestDisplayNameCacheE2E verifies the display-name cache
@@ -26548,7 +26548,7 @@ func TestListWorkspacesIncludesItemLastActivityAt(t *testing.T) {
 	require.NotNil(resp.JSON200.Workspaces)
 
 	byID := map[string]generated.WorkspaceResponse{}
-	for _, ws := range *resp.JSON200.Workspaces {
+	for _, ws := range resp.JSON200.Workspaces {
 		byID[ws.Id] = ws
 	}
 
@@ -26863,7 +26863,7 @@ func TestWorkspaceRuntimeTargetsRefreshAfterSettingsUpdateE2E(t *testing.T) {
 	require.NotNil(runtimeResp.JSON200.LaunchTargets)
 
 	var codex generated.LaunchTarget
-	for _, target := range *runtimeResp.JSON200.LaunchTargets {
+	for _, target := range runtimeResp.JSON200.LaunchTargets {
 		if target.Key == "codex" {
 			codex = target
 			break
@@ -27086,11 +27086,11 @@ func TestWorkspaceRuntimePtyOwnerShellReattachesAfterServerRestartE2E(t *testing
 	require.Equal(http.StatusOK, runtimeResp.StatusCode())
 	require.NotNil(runtimeResp.JSON200)
 	require.NotNil(runtimeResp.JSON200.Sessions)
-	require.Len(*runtimeResp.JSON200.Sessions, 2)
+	require.Len(runtimeResp.JSON200.Sessions, 2)
 	var restoredShell *generated.SessionInfo
 	var unavailableTmux *generated.SessionInfo
-	for i := range *runtimeResp.JSON200.Sessions {
-		session := &(*runtimeResp.JSON200.Sessions)[i]
+	for i := range runtimeResp.JSON200.Sessions {
+		session := &runtimeResp.JSON200.Sessions[i]
 		switch session.Key {
 		case originalShell.Key:
 			restoredShell = session
@@ -27177,8 +27177,8 @@ func TestWorkspaceRuntimeUnavailablePtyOwnerSessionStaysUntilUserStopE2E(t *test
 	require.Equal(http.StatusOK, runtimeResp.StatusCode())
 	require.NotNil(runtimeResp.JSON200)
 	require.NotNil(runtimeResp.JSON200.Sessions)
-	require.Len(*runtimeResp.JSON200.Sessions, 1)
-	session := (*runtimeResp.JSON200.Sessions)[0]
+	require.Len(runtimeResp.JSON200.Sessions, 1)
+	session := runtimeResp.JSON200.Sessions[0]
 	assert.Equal(sessionKey, session.Key)
 	assert.Equal("Shell", session.Label)
 	assert.Equal(string(localruntime.SessionStatusError), session.Status)
@@ -27206,8 +27206,8 @@ func TestWorkspaceRuntimeUnavailablePtyOwnerSessionStaysUntilUserStopE2E(t *test
 	require.Equal(http.StatusOK, runtimeResp.StatusCode())
 	require.NotNil(runtimeResp.JSON200)
 	require.NotNil(runtimeResp.JSON200.Sessions)
-	require.Len(*runtimeResp.JSON200.Sessions, 1)
-	assert.Equal("Recovered shell", (*runtimeResp.JSON200.Sessions)[0].Label)
+	require.Len(runtimeResp.JSON200.Sessions, 1)
+	assert.Equal("Recovered shell", runtimeResp.JSON200.Sessions[0].Label)
 
 	stored, err := fixture.database.ListWorkspaceRuntimeSessions(ctx, ws.Id)
 	require.NoError(err)
@@ -27372,9 +27372,9 @@ func TestWorkspaceRuntimeExistingSessionsAvailableWhenWorkspaceErroredE2E(t *tes
 	require.Equal(http.StatusOK, getResp.StatusCode())
 	require.NotNil(getResp.JSON200)
 	require.NotNil(getResp.JSON200.Sessions)
-	require.Len(*getResp.JSON200.Sessions, 1)
-	assert.Equal(shell.Key, (*getResp.JSON200.Sessions)[0].Key)
-	assert.Equal(string(localruntime.SessionStatusRunning), (*getResp.JSON200.Sessions)[0].Status)
+	require.Len(getResp.JSON200.Sessions, 1)
+	assert.Equal(shell.Key, getResp.JSON200.Sessions[0].Key)
+	assert.Equal(string(localruntime.SessionStatusRunning), getResp.JSON200.Sessions[0].Status)
 
 	stopResp, err := client.HTTP.StopWorkspaceRuntimeSessionWithResponse(
 		ctx, ws.Id, shell.Key,
@@ -27477,9 +27477,9 @@ exit 0
 	require.Equal(http.StatusOK, resp.StatusCode())
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Sessions)
-	require.Len(*resp.JSON200.Sessions, 1)
+	require.Len(resp.JSON200.Sessions, 1)
 
-	session := (*resp.JSON200.Sessions)[0]
+	session := resp.JSON200.Sessions[0]
 	assert.Equal(sessionKey, session.Key)
 	assert.Equal(ws.ID, session.WorkspaceId)
 	assert.Equal("helper", session.TargetKey)
@@ -27601,9 +27601,9 @@ exit 0
 			return false
 		}
 		listed = nil
-		for i := range *listResp.JSON200.Workspaces {
-			if (*listResp.JSON200.Workspaces)[i].Id == ws.Id {
-				listed = &(*listResp.JSON200.Workspaces)[i]
+		for i := range listResp.JSON200.Workspaces {
+			if listResp.JSON200.Workspaces[i].Id == ws.Id {
+				listed = &listResp.JSON200.Workspaces[i]
 				break
 			}
 		}
@@ -27927,7 +27927,7 @@ exit 0
 			runtimeResp.JSON200.Sessions == nil {
 			return false
 		}
-		return len(*runtimeResp.JSON200.Sessions) == 0
+		return len(runtimeResp.JSON200.Sessions) == 0
 	}, 2*time.Second, 20*time.Millisecond)
 
 	require.Eventually(func() bool {
@@ -28232,10 +28232,10 @@ exit 0
 			getResp.JSON200.Sessions == nil {
 			return false
 		}
-		if len(*getResp.JSON200.Sessions) != 1 {
+		if len(getResp.JSON200.Sessions) != 1 {
 			return false
 		}
-		session := (*getResp.JSON200.Sessions)[0]
+		session := getResp.JSON200.Sessions[0]
 		return session.Key == launchResp.JSON200.Key &&
 			session.Status == string(localruntime.SessionStatusError)
 	}, 2*time.Second, 20*time.Millisecond)
@@ -28515,10 +28515,10 @@ func TestWorkspaceListPrunesMissingTmuxSessionsE2E(t *testing.T) {
 		require.NoError(err)
 		if listResp.StatusCode() != http.StatusOK ||
 			listResp.JSON200 == nil || listResp.JSON200.Workspaces == nil ||
-			len(*listResp.JSON200.Workspaces) != 1 {
+			len(listResp.JSON200.Workspaces) != 1 {
 			return false
 		}
-		got = (*listResp.JSON200.Workspaces)[0]
+		got = listResp.JSON200.Workspaces[0]
 		return got.Status == "error" && got.ErrorMessage != nil
 	}, 2*time.Second, 10*time.Millisecond)
 	assert.Equal("0000000000000002", got.Id)
@@ -28653,7 +28653,7 @@ func TestWorkspaceRuntimePlainShellRecordFailureCleansCreatedTmuxShellE2E(t *tes
 			runtimeResp.StatusCode() == http.StatusOK &&
 			runtimeResp.JSON200 != nil &&
 			runtimeResp.JSON200.Sessions != nil &&
-			len(*runtimeResp.JSON200.Sessions) == 0
+			len(runtimeResp.JSON200.Sessions) == 0
 	}, 2*time.Second, 20*time.Millisecond)
 	require.Eventually(func() bool {
 		entries, readErr := os.ReadDir(stateDir)
@@ -28727,11 +28727,11 @@ func TestWorkspaceRuntimeRestoresTmuxShellAfterRestartE2E(t *testing.T) {
 	require.Equal(http.StatusOK, runtimeResp.StatusCode())
 	require.NotNil(runtimeResp.JSON200)
 	require.NotNil(runtimeResp.JSON200.Sessions)
-	require.Len(*runtimeResp.JSON200.Sessions, 1)
-	assert.Equal(originalShell.Key, (*runtimeResp.JSON200.Sessions)[0].Key)
+	require.Len(runtimeResp.JSON200.Sessions, 1)
+	assert.Equal(originalShell.Key, runtimeResp.JSON200.Sessions[0].Key)
 	assert.Equal(
 		originalShell.CreatedAt,
-		(*runtimeResp.JSON200.Sessions)[0].CreatedAt,
+		runtimeResp.JSON200.Sessions[0].CreatedAt,
 	)
 	runtimeRows, err = fixture.database.ListWorkspaceRuntimeSessions(ctx, ws.Id)
 	require.NoError(err)
@@ -28803,9 +28803,9 @@ func TestWorkspaceRuntimeRestoreKeepsStoredTmuxShellWithDifferentOwnerMarkerE2E(
 	require.Equal(http.StatusOK, runtimeResp.StatusCode())
 	require.NotNil(runtimeResp.JSON200)
 	require.NotNil(runtimeResp.JSON200.Sessions)
-	require.Len(*runtimeResp.JSON200.Sessions, 1)
-	assert.Equal(stored[0].SessionKey, (*runtimeResp.JSON200.Sessions)[0].Key)
-	assert.Equal(string(localruntime.SessionStatusRunning), (*runtimeResp.JSON200.Sessions)[0].Status)
+	require.Len(runtimeResp.JSON200.Sessions, 1)
+	assert.Equal(stored[0].SessionKey, runtimeResp.JSON200.Sessions[0].Key)
+	assert.Equal(string(localruntime.SessionStatusRunning), runtimeResp.JSON200.Sessions[0].Status)
 }
 
 // TestBridgeRuntimeAttachmentOutputClosedEmitsExitFrameBeforeDone pins the
@@ -31053,7 +31053,7 @@ func TestMergeBlocksPredecessorRestoredWhenNativeStackAgesOut(t *testing.T) {
 	require.Equal(http.StatusOK, stackResp.StatusCode(), string(stackResp.Body))
 	require.NotNil(stackResp.JSON200)
 	require.NotNil(stackResp.JSON200.Members)
-	require.Equal([]int64{900, 101}, stackMemberNumbers(*stackResp.JSON200.Members),
+	require.Equal([]int64{900, 101}, stackMemberNumbers(stackResp.JSON200.Members),
 		"inside its observation window the cached stack still owns the projection")
 
 	// Two hours later the cached stack is past its own 12h window.
@@ -31065,7 +31065,7 @@ func TestMergeBlocksPredecessorRestoredWhenNativeStackAgesOut(t *testing.T) {
 	require.Equal(http.StatusOK, stackResp.StatusCode(), string(stackResp.Body))
 	require.NotNil(stackResp.JSON200)
 	require.NotNil(stackResp.JSON200.Members)
-	assert.Equal([]int64{100, 101}, stackMemberNumbers(*stackResp.JSON200.Members),
+	assert.Equal([]int64{100, 101}, stackMemberNumbers(stackResp.JSON200.Members),
 		"an aged observation must hand the repository back to branch inference")
 
 	tipHeadSHA := "sha101"
@@ -31173,7 +31173,7 @@ func TestMergeBlocksPredecessorWhenNativeStackRefreshIsPartial(t *testing.T) {
 	require.Equal(http.StatusOK, stackResp.StatusCode(), string(stackResp.Body))
 	require.NotNil(stackResp.JSON200)
 	require.NotNil(stackResp.JSON200.Members)
-	assert.Equal([]int64{100, 101}, stackMemberNumbers(*stackResp.JSON200.Members),
+	assert.Equal([]int64{100, 101}, stackMemberNumbers(stackResp.JSON200.Members),
 		"a pass that could not resolve every stack must project none of them")
 
 	tipHeadSHA := "sha101"

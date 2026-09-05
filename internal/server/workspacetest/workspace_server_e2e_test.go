@@ -69,9 +69,9 @@ func TestListWorkspacesIncludesKataMetadata(t *testing.T) {
 	require.NotNil(resp.JSON200.Workspaces)
 
 	var kata *generated.WorkspaceResponse
-	for i := range *resp.JSON200.Workspaces {
-		if (*resp.JSON200.Workspaces)[i].Id == "ws-kata-list" {
-			kata = &(*resp.JSON200.Workspaces)[i]
+	for i := range resp.JSON200.Workspaces {
+		if resp.JSON200.Workspaces[i].Id == "ws-kata-list" {
+			kata = &resp.JSON200.Workspaces[i]
 			break
 		}
 	}
@@ -149,7 +149,7 @@ exit 0
 			runtimeResp.JSON200.Sessions == nil {
 			return false
 		}
-		return len(*runtimeResp.JSON200.Sessions) == 0
+		return len(runtimeResp.JSON200.Sessions) == 0
 	}, 2*time.Second, 20*time.Millisecond)
 
 	require.Eventually(func() bool {
@@ -233,9 +233,9 @@ exit 0
 			return false
 		}
 		listed = nil
-		for i := range *listResp.JSON200.Workspaces {
-			if (*listResp.JSON200.Workspaces)[i].Id == ws.Id {
-				listed = &(*listResp.JSON200.Workspaces)[i]
+		for i := range listResp.JSON200.Workspaces {
+			if listResp.JSON200.Workspaces[i].Id == ws.Id {
+				listed = &listResp.JSON200.Workspaces[i]
 				break
 			}
 		}

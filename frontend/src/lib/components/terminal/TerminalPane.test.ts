@@ -166,13 +166,13 @@ vi.mock("../../context.js", () => ({
   }),
 }));
 
-vi.mock("../../api/runtime.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../api/runtime.js")>();
+vi.mock("../../app/runtime.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../app/runtime.js")>();
+  const { makeGeneratedClient } = await import("../../testing/generated-client.js");
   return {
     ...actual,
-    client: {
-      POST: mockItemResolvePost,
-    },
+    makeAppRuntime: () =>
+      actual.makeAppRuntime(makeGeneratedClient({ RepositoriesService: { resolveRepoItem: mockItemResolvePost } })),
   };
 });
 
@@ -567,11 +567,7 @@ describe("TerminalPane", () => {
 
   it("routes tracked repository item links through the app instead of a new tab", async () => {
     configuredRepos = [{ provider: "github", platform_host: "github.com" }];
-    mockItemResolvePost.mockResolvedValue({
-      data: { repo_tracked: true, item_type: "pr" },
-      error: undefined,
-      response: { status: 200 },
-    });
+    mockItemResolvePost.mockResolvedValue({ repo_tracked: true, item_type: "pr" });
     const open = vi.spyOn(window, "open").mockImplementation(() => null);
     render(TerminalPane, { props: { workspaceId: "ws-123" } });
     await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());
@@ -581,20 +577,17 @@ describe("TerminalPane", () => {
     activate(new MouseEvent("click", modifier), "https://github.com/acme/widgets/pull/1028");
 
     await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/pulls/github/acme/widgets/1028"));
-    expect(mockItemResolvePost).toHaveBeenCalledWith("/repo/{provider}/{owner}/{name}/resolve/{number}", {
-      signal: expect.any(AbortSignal),
-      params: { path: { provider: "github", owner: "acme", name: "widgets", number: 1028 } },
-    });
+    expect(mockItemResolvePost).toHaveBeenCalledWith(
+      { provider: "github", owner: "acme", name: "widgets", number: 1028 },
+      undefined,
+      { signal: expect.any(AbortSignal) },
+    );
     expect(open).not.toHaveBeenCalled();
   });
 
   it("opens item links for untracked repositories externally after resolving", async () => {
     configuredRepos = [{ provider: "github", platform_host: "github.com" }];
-    mockItemResolvePost.mockResolvedValue({
-      data: { repo_tracked: false },
-      error: undefined,
-      response: { status: 200 },
-    });
+    mockItemResolvePost.mockResolvedValue({ repo_tracked: false });
     const open = vi.spyOn(window, "open").mockImplementation(() => null);
     render(TerminalPane, { props: { workspaceId: "ws-123" } });
     await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());

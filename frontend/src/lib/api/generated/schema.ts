@@ -8064,6 +8064,7 @@ export interface components {
             agentStateUpdatedAt?: string;
             /** Format: int64 */
             associatedPRNumber?: number;
+            branchUpstreamMissing?: boolean;
             /** Format: int64 */
             commitsAhead?: number;
             /** Format: int64 */
@@ -9382,6 +9383,8 @@ export interface components {
             agent_state_updated_at?: string;
             /** Format: int64 */
             associated_pr_number?: number;
+            /** @description True when the current branch has an origin upstream configured but its local remote-tracking ref is absent; clients may offer Push so branch sync can verify or create the remote branch. */
+            branch_upstream_missing?: boolean;
             /** Format: int64 */
             commits_ahead?: number;
             /** Format: int64 */
@@ -9455,6 +9458,7 @@ export interface components {
             agent_state_updated_at?: string;
             /** Format: int64 */
             associated_pr_number?: number;
+            branch_upstream_missing?: boolean;
             /** Format: int64 */
             commits_ahead?: number;
             /** Format: int64 */

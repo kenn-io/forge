@@ -97,6 +97,22 @@ describe("MobileWorkspaceList", () => {
     expect(onOpen).toHaveBeenCalledWith("ws-1", undefined);
   });
 
+  it("offers the first push when the configured upstream branch is missing", async () => {
+    mockGet.mockImplementation((path: string) => {
+      if (path === "/snapshot") {
+        return Promise.resolve({ data: { hosts: [], workspaces: [{ ...fixture, branch_upstream_missing: true }] } });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    render(MobileWorkspaceList, { props: { onOpen: vi.fn(), onOpenItem: vi.fn() } });
+    await screen.findByText("Build mobile workspaces");
+    await fireEvent.click(screen.getByRole("button", { name: "Workspace actions for Build mobile workspaces" }));
+
+    const actions = await screen.findByRole("dialog", { name: "Workspace actions" });
+    expect(within(actions).getByRole("button", { name: "Push branch" })).toBeTruthy();
+  });
+
   it.each([
     ["working", "Working", "working"],
     ["approval", "Approval", "waiting for approval"],

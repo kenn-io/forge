@@ -4210,6 +4210,7 @@ type RawWorkspace struct {
 	AgentState            *string            `json:"agentState,omitempty"`
 	AgentStateUpdatedAt   *string            `json:"agentStateUpdatedAt,omitempty"`
 	AssociatedPRNumber    *int64             `json:"associatedPRNumber,omitempty"`
+	BranchUpstreamMissing *bool              `json:"branchUpstreamMissing,omitempty"`
 	CommitsAhead          *int64             `json:"commitsAhead,omitempty"`
 	CommitsBehind         *int64             `json:"commitsBehind,omitempty"`
 	CreatedAt             string             `json:"createdAt"`
@@ -5526,8 +5527,11 @@ type WorkspaceResponse struct {
 	// AgentStateUpdatedAt UTC timestamp of the hook report that produced agent_state.
 	AgentStateUpdatedAt *time.Time `json:"agent_state_updated_at,omitempty"`
 	AssociatedPrNumber  *int64     `json:"associated_pr_number,omitempty"`
-	CommitsAhead        *int64     `json:"commits_ahead,omitempty"`
-	CommitsBehind       *int64     `json:"commits_behind,omitempty"`
+
+	// BranchUpstreamMissing True when the current branch has an origin upstream configured but its local remote-tracking ref is absent; clients may offer Push so branch sync can verify or create the remote branch.
+	BranchUpstreamMissing *bool  `json:"branch_upstream_missing,omitempty"`
+	CommitsAhead          *int64 `json:"commits_ahead,omitempty"`
+	CommitsBehind         *int64 `json:"commits_behind,omitempty"`
 
 	// Created True when this response represents a workspace newly created by this request; absent when an existing workspace was returned or on reads.
 	Created   *bool  `json:"created,omitempty"`
@@ -5608,6 +5612,7 @@ type WorkspaceSummary struct {
 	AgentState            *string                    `json:"agent_state,omitempty"`
 	AgentStateUpdatedAt   *string                    `json:"agent_state_updated_at,omitempty"`
 	AssociatedPrNumber    *int64                     `json:"associated_pr_number,omitempty"`
+	BranchUpstreamMissing *bool                      `json:"branch_upstream_missing,omitempty"`
 	CommitsAhead          *int64                     `json:"commits_ahead,omitempty"`
 	CommitsBehind         *int64                     `json:"commits_behind,omitempty"`
 	CreatedAt             string                     `json:"created_at"`

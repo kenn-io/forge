@@ -664,9 +664,11 @@ The branch's git upstream config (`branch.<name>.remote`/`.merge`) is the
 single source of truth for every sync-derived workspace surface:
 `commits_ahead`/`commits_behind` in the list response, the sidebar
 ahead/behind arrows, push, pull, and unpushed-commit flags. All of them
-silently report nothing when the upstream is missing, so every path that
-creates a PR-owned branch should configure it when repository identity is
-known. Issue, Kata, and ad-hoc workspaces create new untracked branches; a
+silently report nothing when the upstream is not configured. A configured upstream
+whose local tracking ref is missing exposes `branch_upstream_missing`, so the UI can
+offer the push that verifies or creates its remote branch. Every path that creates a
+PR-owned branch should configure its upstream when repository identity is known.
+Issue, Kata, and ad-hoc workspaces create new untracked branches; a
 same-named remote ref is not authority to adopt an upstream
 (`internal/workspace/manager.go::configureFallbackBranchUpstream`). PR upstream
 wiring requires a non-empty head-repository identity whose

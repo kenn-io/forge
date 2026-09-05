@@ -76,6 +76,28 @@ func TestPushWorktreeBranchCreatesMissingRemoteBranch(t *testing.T) {
 	require.Equal(localCommit, remoteCommit)
 }
 
+func TestPushWorktreeBranchRecreatesRemoteBranchWithStaleTrackingRef(t *testing.T) {
+	require := require.New(t)
+	work := gitfixture.DivergenceWorktree(t)
+	remote := filepath.Join(filepath.Dir(work), "remote.git")
+	runWorkspaceTestGit(t, filepath.Dir(work), "--git-dir", remote, "branch", "-D", "feature")
+	require.NoError(os.WriteFile(
+		filepath.Join(work, "f.txt"), []byte("recreated branch\n"), 0o644,
+	))
+	runWorkspaceTestGit(t, work, "add", ".")
+	runWorkspaceTestGit(t, work, "commit", "-m", "recreated branch")
+
+	require.NoError(branchSyncTestManager(t).PushWorktreeBranch(
+		t.Context(), "", "github", "", "", "", work,
+	))
+
+	remoteCommit := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, filepath.Dir(work), "--git-dir", remote, "rev-parse", "refs/heads/feature",
+	)))
+	localCommit := strings.TrimSpace(string(runWorkspaceTestGit(t, work, "rev-parse", "HEAD")))
+	require.Equal(localCommit, remoteCommit)
+}
+
 func TestPushWorktreeBranchDoesNotOverwriteUntrackedRemoteBranch(t *testing.T) {
 	require := require.New(t)
 	work := gitfixture.DivergenceWorktree(t)

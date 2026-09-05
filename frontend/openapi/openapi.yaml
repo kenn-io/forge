@@ -6641,6 +6641,8 @@ components:
         associatedPRNumber:
           format: int64
           type: integer
+        branchUpstreamMissing:
+          type: boolean
         commitsAhead:
           format: int64
           type: integer
@@ -9527,6 +9529,9 @@ components:
         associated_pr_number:
           format: int64
           type: integer
+        branch_upstream_missing:
+          description: True when the current branch has an origin upstream configured but its local remote-tracking ref is absent; clients may offer Push so branch sync can verify or create the remote branch.
+          type: boolean
         commits_ahead:
           format: int64
           type: integer
@@ -9686,6 +9691,8 @@ components:
         associated_pr_number:
           format: int64
           type: integer
+        branch_upstream_missing:
+          type: boolean
         commits_ahead:
           format: int64
           type: integer

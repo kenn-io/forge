@@ -5,6 +5,7 @@ import type { ArchiveReportActivityResponse } from "./archiveReportActivityRespo
 import type { ArchiveReportContributorResponse } from "./archiveReportContributorResponse.ts";
 import type { ArchiveReportCountsResponse } from "./archiveReportCountsResponse.ts";
 import type { ArchiveReportRepositoryResponse } from "./archiveReportRepositoryResponse.ts";
+import type { LandedSection } from "./landedSection.ts";
 
 export interface ArchiveReportResponse {
   /** A URL to the JSON Schema for this object. */
@@ -12,6 +13,7 @@ export interface ArchiveReportResponse {
   activity?: ArchiveReportActivityResponse[];
   contributors: ArchiveReportContributorResponse[];
   end: string;
+  landed_work?: LandedSection;
   repositories: ArchiveReportRepositoryResponse[];
   schema: string;
   start: string;

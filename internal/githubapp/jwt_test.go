@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"go.kenn.io/forge/githubapp"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -25,7 +27,7 @@ func generateTestKey(t *testing.T) *rsa.PrivateKey {
 }
 
 // verifyJWT checks sig and returns the decoded claims. Verification is
-// independent of SignAppJWT: it recomputes the RS256 signature check
+// independent of githubapp.SignAppJWT: it recomputes the RS256 signature check
 // from the raw segments.
 func verifyJWT(t *testing.T, token string, pub *rsa.PublicKey) map[string]any {
 	t.Helper()
@@ -52,7 +54,7 @@ func TestSignAppJWT(t *testing.T) {
 	key := generateTestKey(t)
 	now := time.Date(2026, 6, 11, 12, 0, 0, 0, time.UTC)
 
-	token, err := SignAppJWT(4321, key, now)
+	token, err := githubapp.SignAppJWT(4321, key, now)
 	require.NoError(t, err)
 
 	claims := verifyJWT(t, token, &key.PublicKey)
@@ -73,9 +75,9 @@ func TestSignAppJWTRejectsBadInput(t *testing.T) {
 	key := generateTestKey(t)
 	now := time.Now()
 
-	_, err := SignAppJWT(0, key, now)
+	_, err := githubapp.SignAppJWT(0, key, now)
 	require.ErrorContains(t, err, "app id")
-	_, err = SignAppJWT(1, nil, now)
+	_, err = githubapp.SignAppJWT(1, nil, now)
 	require.ErrorContains(t, err, "private key")
 }
 
@@ -101,7 +103,7 @@ func TestParsePrivateKeyFormats(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			parsed, err := ParsePrivateKey(tt.pem)
+			parsed, err := githubapp.ParsePrivateKey(tt.pem)
 			if tt.wantErr != "" {
 				assert.ErrorContains(t, err, tt.wantErr)
 				return
@@ -115,13 +117,13 @@ func TestParsePrivateKeyFormats(t *testing.T) {
 func TestNewManifestValidation(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
-	_, err := NewManifest("", "", "http://127.0.0.1:1/callback")
+	_, err := githubapp.NewManifest("", DefaultHomepageURL, "http://127.0.0.1:1/callback", DefaultPermissions(), []string{})
 	require.ErrorContains(err, "name is required")
 
-	_, err = NewManifest(strings.Repeat("x", 35), "", "http://127.0.0.1:1/callback")
+	_, err = githubapp.NewManifest(strings.Repeat("x", 35), DefaultHomepageURL, "http://127.0.0.1:1/callback", DefaultPermissions(), []string{})
 	require.ErrorContains(err, "34 character limit")
 
-	m, err := NewManifest("kenn-forge-test", "", "http://127.0.0.1:9/callback")
+	m, err := githubapp.NewManifest("kenn-forge-test", DefaultHomepageURL, "http://127.0.0.1:9/callback", DefaultPermissions(), []string{})
 	require.NoError(err)
 	assert := assert.New(t)
 	assert.False(m.Public)
@@ -160,7 +162,7 @@ func TestRandomAppNameFitsGitHubLimit(t *testing.T) {
 	assert := assert.New(t)
 	name, err := RandomAppName()
 	require.NoError(err)
-	assert.LessOrEqual(len(name), maxAppNameLength)
+	assert.LessOrEqual(len(name), 34)
 	other, err := RandomAppName()
 	require.NoError(err)
 	assert.NotEqual(name, other)

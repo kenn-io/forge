@@ -15,12 +15,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
-	"go.kenn.io/forge/internal/platform"
-	platformgitlab "go.kenn.io/forge/internal/platform/gitlab"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/servertest"
 	"go.kenn.io/forge/internal/tokenauth"
+	"go.kenn.io/forge/platform"
+	platformgitlab "go.kenn.io/forge/platform/gitlab"
 )
 
 const gitlabMutationThreadID = "abc123def456789012345678901234567890abcd"
@@ -301,7 +301,7 @@ func setupGitLabMutationServer(
 	client, err := platformgitlab.NewClient(
 		"gitlab.com",
 		staticGitLabTokenSource("token"),
-		platformgitlab.WithBaseURLForTesting(api.URL+"/api/v4"),
+		platformgitlab.WithBaseURLForTesting(api.URL+"/api/v4"), platformgitlab.WithTransport(http.DefaultTransport), platformgitlab.WithClock(time.Now),
 	)
 	require.NoError(err)
 	registry, err := platform.NewRegistry(client)
@@ -1016,7 +1016,7 @@ func TestGitLabSquashAlwaysProjectDisallowsMergeCommitE2E(t *testing.T) {
 	client, err := platformgitlab.NewClient(
 		"gitlab.com",
 		staticGitLabTokenSource("token"),
-		platformgitlab.WithBaseURLForTesting(api.URL+"/api/v4"),
+		platformgitlab.WithBaseURLForTesting(api.URL+"/api/v4"), platformgitlab.WithTransport(http.DefaultTransport), platformgitlab.WithClock(time.Now),
 	)
 	require.NoError(err)
 	registry, err := platform.NewRegistry(client)

@@ -18,6 +18,8 @@ import (
 	"testing"
 	"time"
 
+	"go.kenn.io/forge/internal/platformdb"
+
 	"github.com/danielgtaylor/huma/v2"
 	gh "github.com/google/go-github/v89/github"
 	shellquote "github.com/kballard/go-shellquote"
@@ -28,8 +30,6 @@ import (
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/federationauth"
 	ghclient "go.kenn.io/forge/internal/github"
-	"go.kenn.io/forge/internal/platform"
-	"go.kenn.io/forge/internal/platform/gitealike"
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/stacks"
@@ -38,6 +38,8 @@ import (
 	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
+	"go.kenn.io/forge/platform"
+	"go.kenn.io/forge/platform/gitealike"
 )
 
 func setupTestServerWithConfig(
@@ -3419,7 +3421,7 @@ port = 8091
 	assert.Equal("Group/Subgroup/Project", cfg2.Repos[0].RepoPath)
 	assert.True(srv.syncer.IsTrackedRepoOnHost("Group/Subgroup", "Project", "gitlab.example.com"))
 
-	dbRepo, err := database.GetRepoByIdentity(t.Context(), platform.DBRepoIdentity(ref))
+	dbRepo, err := database.GetRepoByIdentity(t.Context(), platformdb.DBRepoIdentity(ref))
 	require.NoError(err)
 	require.NotNil(dbRepo)
 	assert.Equal("gitlab", dbRepo.Platform)
@@ -3754,7 +3756,7 @@ port = 8091
 		PlatformID:         6262,
 		PlatformExternalID: "6262",
 	}
-	dbRepo, err := database.GetRepoByIdentity(t.Context(), platform.DBRepoIdentity(ref))
+	dbRepo, err := database.GetRepoByIdentity(t.Context(), platformdb.DBRepoIdentity(ref))
 	require.NoError(err)
 	require.NotNil(dbRepo)
 	assert.Equal("gitea", dbRepo.Platform)

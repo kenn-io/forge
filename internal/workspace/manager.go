@@ -24,10 +24,10 @@ import (
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
-	"go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/workspace/localruntime"
+	"go.kenn.io/forge/platform"
 	gitcmd "go.kenn.io/kit/git/cmd"
 	gitremote "go.kenn.io/kit/git/remote"
 )

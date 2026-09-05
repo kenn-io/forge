@@ -8,9 +8,9 @@ identity and sync invariants, also read
 
 Provider support is split into three layers:
 
-1. `internal/platform` owns provider-neutral domain types, capability
-   interfaces, typed platform errors, registry lookup, and DB conversion helpers.
-2. `internal/platform/<provider>` owns provider API transport and normalization
+1. Public `platform` owns provider-neutral domain types, capability
+   interfaces, typed platform errors and registry lookup; SQL projections stay internal.
+2. Public `platform/<provider>` owns provider API transport and normalization
    into `platform` types.
 3. Existing orchestration packages (`internal/github` sync compatibility,
    server handlers, config startup, clone setup, and UI stores) consume the
@@ -19,22 +19,31 @@ Provider support is split into three layers:
 Dependency direction must stay acyclic:
 
 ```text
-internal/platform        -> neutral types, registry, persistence helpers
-internal/platform/github -> GitHub SDK/client data to neutral platform types
-internal/platform/gitlab -> GitLab API data to neutral platform types
+platform                 -> neutral types and registry
+platform/github          -> GitHub SDK/client data to neutral platform types
+platform/gitlab          -> GitLab API data to neutral platform types
+internal/platformdb      -> SQL projections of public types
 cmd/internal/server/etc. -> registry plus provider-neutral DB rows
 ```
 
 Do not make a provider package import server code, config startup, or another
-provider package. Do not make `internal/platform` import provider-specific SDKs.
+provider package. Do not make `platform` import provider-specific SDKs.
+
+Public provider/App/analyzer libraries must have no transitive application,
+SQLite, config, telemetry or credential-discovery dependency. Callers own
+transport, clock, credentials and admission (`platform/github/config.go`).
+
+Landed-work proof flags are independent of interactive capabilities and of shared
+SDK shape; enable only endpoint-proven methods. Missing proof blocks attribution,
+never implies direct push (`landedwork/proof.go::prove`).
 
 ## Adding A Provider
 
 Minimum provider checklist:
 
-- Add provider metadata in `internal/platform/metadata.go`: kind, label, default
+- Add provider metadata in `platform/metadata.go`: kind, label, default
   host if one exists, nested-owner behavior, and case-folding behavior.
-- Implement `internal/platform/<provider>` with a `Provider` plus only the
+- Implement `platform/<provider>` with a `Provider` plus only the
   optional interfaces it truly supports (`RepositoryReader`,
   `MergeRequestReader`, `IssueReader`, mutators, etc.). Unsupported features
   should be absent from the type and false in `Capabilities()`.
@@ -319,7 +328,7 @@ Choose the smallest boundary that catches the regression:
 - provider package tests for SDK/API normalization and capability errors;
 - shared Forgejo/Gitea behavior runs against both clients through one adapter
   contract; keep SDK, version, timeline, Actions, and review differences local
-  (`internal/platform/gitealike/gitealiketest/contract.go::Run`);
+  (`internal/testutil/gitealiketest/contract.go::Run`);
 - config tests for provider selection and token/env behavior;
 - DB tests for identity, provider IDs, and rename/reconciliation behavior;
 - server e2e tests for API shape, capability gating, and real SQLite flows;

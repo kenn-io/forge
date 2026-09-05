@@ -7,14 +7,16 @@ import (
 	"testing"
 	"time"
 
+	"go.kenn.io/forge/internal/platformdb"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/forge/internal/db"
-	"go.kenn.io/forge/internal/platform"
-	"go.kenn.io/forge/internal/platform/forgejo"
-	"go.kenn.io/forge/internal/platform/gitea"
 	"go.kenn.io/forge/internal/tokenauth"
+	"go.kenn.io/forge/platform"
+	"go.kenn.io/forge/platform/forgejo"
+	"go.kenn.io/forge/platform/gitea"
 )
 
 type staticGiteaLikeToken struct {
@@ -46,7 +48,7 @@ func TestGiteaLikeProviderMergeMetricsReachArchiveReport(t *testing.T) {
 				return gitea.NewClient(
 					host, source,
 					gitea.WithBaseURL(baseURL, true),
-					gitea.WithServerVersionForTesting("1.26.0"),
+					gitea.WithServerVersion("1.26.0"), gitea.WithTransport(http.DefaultTransport), gitea.WithClock(time.Now),
 				)
 			},
 		},
@@ -54,7 +56,7 @@ func TestGiteaLikeProviderMergeMetricsReachArchiveReport(t *testing.T) {
 			name: "forgejo", kind: platform.KindForgejo, host: "forgejo.example.com",
 			newClient: func(host string, source tokenauth.Source, baseURL string) (platform.MergeRequestReader, error) {
 				return forgejo.NewClient(
-					host, source, forgejo.WithBaseURLForTesting(baseURL),
+					host, source, forgejo.WithBaseURLForTesting(baseURL), forgejo.WithTransport(http.DefaultTransport), forgejo.WithClock(time.Now),
 				)
 			},
 		},
@@ -95,12 +97,12 @@ func TestGiteaLikeProviderMergeMetricsReachArchiveReport(t *testing.T) {
 				Platform: tt.kind, Host: tt.host, Owner: "group", Name: "project",
 				RepoPath: "group/project",
 			}
-			repoID, err := database.UpsertRepo(ctx, platform.DBRepoIdentity(ref))
+			repoID, err := database.UpsertRepo(ctx, platformdb.DBRepoIdentity(ref))
 			require.NoError(err)
 			mergeRequest, err := client.GetMergeRequest(ctx, ref, 8)
 			require.NoError(err)
 			_, err = database.UpsertMergeRequest(
-				ctx, platform.DBMergeRequest(repoID, mergeRequest),
+				ctx, platformdb.DBMergeRequest(repoID, mergeRequest),
 			)
 			require.NoError(err)
 

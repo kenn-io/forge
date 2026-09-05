@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"go.kenn.io/forge/githubapp"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -19,7 +21,7 @@ import (
 
 // submitManifest plays the browser role: POST a manifest form to the
 // fake's web surface and return the conversion code from the redirect.
-func submitManifest(t *testing.T, fake *githubapptest.Fake, manifest Manifest) string {
+func submitManifest(t *testing.T, fake *githubapptest.Fake, manifest githubapp.Manifest) string {
 	t.Helper()
 	manifestJSON, err := manifest.JSON()
 	require.NoError(t, err)
@@ -48,12 +50,12 @@ func TestConvertManifest(t *testing.T) {
 	require := require.New(t)
 	fake := githubapptest.NewFake()
 	t.Cleanup(fake.Close)
-	manifest, err := NewManifest("kenn-forge-conv", "", "http://127.0.0.1:1/callback")
+	manifest, err := githubapp.NewManifest("kenn-forge-conv", DefaultHomepageURL, "http://127.0.0.1:1/callback", DefaultPermissions(), []string{})
 	require.NoError(err)
 	code := submitManifest(t, fake, manifest)
 
-	client := NewClientWithBase(fake.APIBase())
-	creds, err := client.ConvertManifest(context.Background(), code)
+	client := githubapp.NewClient("github.com", &http.Client{}, githubapp.WithAPIBase(fake.APIBase()))
+	creds, err := client.ConvertManifest(appTestContext(t), code, appTestMeter(t))
 	require.NoError(err)
 
 	assert := assert.New(t)
@@ -61,13 +63,13 @@ func TestConvertManifest(t *testing.T) {
 	assert.Positive(creds.ID)
 	assert.Contains(creds.PEM, "RSA PRIVATE KEY")
 	assert.NotEmpty(creds.ClientSecret)
-	_, parseErr := ParsePrivateKey([]byte(creds.PEM))
+	_, parseErr := githubapp.ParsePrivateKey([]byte(creds.PEM))
 	require.NoError(parseErr)
 
 	// Conversion codes are single use; replay must fail loudly so the
 	// CLI reports a stale callback instead of silently re-creating.
-	_, err = client.ConvertManifest(context.Background(), code)
-	assert.True(IsStatus(err, http.StatusNotFound), "got %v", err)
+	_, err = client.ConvertManifest(appTestContext(t), code, appTestMeter(t))
+	assert.True(githubapp.IsStatus(err, http.StatusNotFound), "got %v", err)
 }
 
 func TestMintInstallationToken(t *testing.T) {
@@ -75,11 +77,11 @@ func TestMintInstallationToken(t *testing.T) {
 	require := require.New(t)
 	fake := githubapptest.NewFake()
 	t.Cleanup(fake.Close)
-	manifest, err := NewManifest("kenn-forge-mint", "", "http://127.0.0.1:1/callback")
+	manifest, err := githubapp.NewManifest("kenn-forge-mint", DefaultHomepageURL, "http://127.0.0.1:1/callback", DefaultPermissions(), []string{})
 	require.NoError(err)
 	code := submitManifest(t, fake, manifest)
-	client := NewClientWithBase(fake.APIBase())
-	creds, err := client.ConvertManifest(context.Background(), code)
+	client := githubapp.NewClient("github.com", &http.Client{}, githubapp.WithAPIBase(fake.APIBase()))
+	creds, err := client.ConvertManifest(appTestContext(t), code, appTestMeter(t))
 	require.NoError(err)
 	installID, err := fake.Install(creds.ID, "kenn-io")
 	require.NoError(err)
@@ -88,7 +90,7 @@ func TestMintInstallationToken(t *testing.T) {
 	require.NoError(os.WriteFile(keyPath, []byte(creds.PEM), 0o600))
 
 	token, expires, err := mintInstallationToken(
-		context.Background(), fake.APIBase(), creds.ID, keyPath, installID,
+		context.Background(), "github.com", fake.APIBase(), creds.ID, keyPath, installID,
 	)
 	require.NoError(err)
 	assert := assert.New(t)
@@ -96,7 +98,7 @@ func TestMintInstallationToken(t *testing.T) {
 	assert.Greater(time.Until(expires), 50*time.Minute)
 
 	// The minted token must be usable as a plain bearer credential.
-	rate, err := client.CoreRateLimit(context.Background(), token)
+	rate, err := client.CoreRateLimit(appTestContext(t), token, appTestMeter(t))
 	require.NoError(err)
 	assert.Equal(5000, rate.Limit)
 }
@@ -106,12 +108,10 @@ func TestMintInstallationTokenRejectsWrongKey(t *testing.T) {
 	require := require.New(t)
 	fake := githubapptest.NewFake()
 	t.Cleanup(fake.Close)
-	manifest, err := NewManifest("kenn-forge-badkey", "", "http://127.0.0.1:1/callback")
+	manifest, err := githubapp.NewManifest("kenn-forge-badkey", DefaultHomepageURL, "http://127.0.0.1:1/callback", DefaultPermissions(), []string{})
 	require.NoError(err)
-	client := NewClientWithBase(fake.APIBase())
-	creds, err := client.ConvertManifest(
-		context.Background(), submitManifest(t, fake, manifest),
-	)
+	client := githubapp.NewClient("github.com", &http.Client{}, githubapp.WithAPIBase(fake.APIBase()))
+	creds, err := client.ConvertManifest(appTestContext(t), submitManifest(t, fake, manifest), appTestMeter(t))
 	require.NoError(err)
 	installID, err := fake.Install(creds.ID, "kenn-io")
 	require.NoError(err)
@@ -119,10 +119,10 @@ func TestMintInstallationTokenRejectsWrongKey(t *testing.T) {
 	// A key that does not match the app must be rejected by signature
 	// verification, not just shape checks.
 	otherKey := generateTestKey(t)
-	wrongJWT, err := SignAppJWT(creds.ID, otherKey, time.Now())
+	wrongJWT, err := githubapp.SignAppJWT(creds.ID, otherKey, time.Now())
 	require.NoError(err)
-	_, err = client.CreateInstallationToken(context.Background(), wrongJWT, installID)
-	assert.True(t, IsStatus(err, http.StatusUnauthorized), "got %v", err)
+	_, err = client.CreateInstallationToken(appTestContext(t), wrongJWT, installID, githubapp.TokenScope{AllRepositories: true}, appTestMeter(t))
+	assert.True(t, githubapp.IsStatus(err, http.StatusUnauthorized), "got %v", err)
 }
 
 func TestAPIBaseForHost(t *testing.T) {
@@ -136,7 +136,7 @@ func TestAPIBaseForHost(t *testing.T) {
 		{host: "github.example.com", want: "https://github.example.com/api/v3"},
 	}
 	for _, tt := range tests {
-		assert.Equal(t, tt.want, APIBaseForHost(tt.host), "host %q", tt.host)
+		assert.Equal(t, tt.want, githubapp.APIBaseForHost(tt.host), "host %q", tt.host)
 	}
 }
 
@@ -169,7 +169,7 @@ func TestStatusErrorRetryDeadline(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			err := &StatusError{StatusCode: http.StatusForbidden, Header: tt.header}
+			err := &githubapp.StatusError{StatusCode: http.StatusForbidden, Header: tt.header}
 			assert.Equal(t, tt.want, err.RetryDeadline(now))
 		})
 	}

@@ -11,11 +11,13 @@ import (
 	"testing"
 	"time"
 
+	appfiles "go.kenn.io/forge/internal/githubapp"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"go.kenn.io/forge/githubapp"
 	"go.kenn.io/forge/internal/config"
-	"go.kenn.io/forge/internal/githubapp"
 	"go.kenn.io/forge/internal/githubapp/githubapptest"
 	"go.kenn.io/forge/internal/tokenauth"
 )
@@ -35,7 +37,8 @@ func TestCollectProviderTokensMintsGitHubAppToken(t *testing.T) {
 	// Register an app + installation on the fake GitHub the way the
 	// kenn-forge-github-app CLI would have.
 	manifest, err := githubapp.NewManifest(
-		"kenn-forge-startup", "", "http://127.0.0.1:1/callback",
+		"kenn-forge-startup", appfiles.DefaultHomepageURL, "http://127.0.0.1:1/callback",
+		appfiles.DefaultPermissions(), []string{},
 	)
 	require.NoError(err)
 	manifestJSON, err := manifest.JSON()
@@ -52,8 +55,8 @@ func TestCollectProviderTokensMintsGitHubAppToken(t *testing.T) {
 	defer resp.Body.Close()
 	loc, err := url.Parse(resp.Header.Get("Location"))
 	require.NoError(err)
-	apiClient := githubapp.NewClientWithBase(fake.APIBase())
-	creds, err := apiClient.ConvertManifest(t.Context(), loc.Query().Get("code"))
+	apiClient := githubapp.NewClient("github.com", &http.Client{}, githubapp.WithAPIBase(fake.APIBase()))
+	creds, err := apiClient.ConvertManifest(appTestContext(t), loc.Query().Get("code"), appTestMeter(t))
 	require.NoError(err)
 	installID, err := fake.Install(creds.ID, "kenn-io")
 	require.NoError(err)
@@ -93,7 +96,7 @@ repository_selection = "all"
 		GitHubApp: func(
 			ctx context.Context, candidate tokenauth.Candidate,
 		) (string, time.Time, error) {
-			key, err := githubapp.LoadPrivateKey(candidate.FilePath)
+			key, err := appfiles.LoadPrivateKey(candidate.FilePath)
 			if err != nil {
 				return "", time.Time{}, err
 			}
@@ -101,9 +104,7 @@ repository_selection = "all"
 			if err != nil {
 				return "", time.Time{}, err
 			}
-			tok, err := apiClient.CreateInstallationToken(
-				ctx, jwt, candidate.InstallationID,
-			)
+			tok, err := apiClient.CreateInstallationToken(appTestContext(t), jwt, candidate.InstallationID, githubapp.TokenScope{AllRepositories: true}, appTestMeter(t))
 			if err != nil {
 				return "", time.Time{}, err
 			}
@@ -122,7 +123,7 @@ repository_selection = "all"
 
 	// The minted token must be live on GitHub's side, not just shaped
 	// like one: the fake only honors tokens it issued.
-	rate, err := apiClient.CoreRateLimit(t.Context(), got)
+	rate, err := apiClient.CoreRateLimit(appTestContext(t), got, appTestMeter(t))
 	require.NoError(err)
 	assert.Equal(5000, rate.Limit)
 }

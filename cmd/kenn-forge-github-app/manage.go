@@ -11,8 +11,9 @@ import (
 	"strings"
 	"time"
 
+	"go.kenn.io/forge/githubapp"
 	"go.kenn.io/forge/internal/config"
-	"go.kenn.io/forge/internal/githubapp"
+	"go.kenn.io/forge/platform"
 )
 
 func runInstall(args []string, env *appEnv) error {
@@ -77,7 +78,9 @@ func runUninstall(args []string, env *appEnv) error {
 	if err != nil {
 		return err
 	}
-	err = env.apiClient(app.Host).DeleteInstallation(ctx, jwt, app.InstallationID)
+	_, err = appRequest(ctx, func(requestCtx context.Context, meter *platform.Meter) (struct{}, error) {
+		return struct{}{}, env.apiClient(app.Host).DeleteInstallation(requestCtx, jwt, app.InstallationID, meter)
+	})
 	// A 404 means the installation is already gone on GitHub's side;
 	// still clear the stale local record.
 	if err != nil && !githubapp.IsStatus(err, http.StatusNotFound) {
@@ -167,7 +170,9 @@ func runDelete(args []string, env *appEnv) error {
 			if err != nil {
 				return false, err
 			}
-			_, err = client.GetApp(ctx, jwt)
+			_, err = appRequest(ctx, func(requestCtx context.Context, meter *platform.Meter) (*githubapp.App, error) {
+				return client.GetApp(requestCtx, jwt, meter)
+			})
 			if err == nil {
 				return false, nil
 			}

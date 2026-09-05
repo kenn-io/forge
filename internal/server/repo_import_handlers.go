@@ -14,8 +14,8 @@ import (
 	gh "github.com/google/go-github/v89/github"
 	"go.kenn.io/forge/internal/config"
 	ghclient "go.kenn.io/forge/internal/github"
-	"go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/platform"
 )
 
 type repoPreviewInput struct {
@@ -85,9 +85,9 @@ func normalizeImportPlatform(provider, host string) (platform.Kind, string, erro
 	if err != nil {
 		return "", "", err
 	}
-	normalizedHost, err := config.NormalizePlatformHost(string(kind), host)
+	normalizedHost, err := platform.NormalizeHost(kind, host)
 	if err != nil {
-		return "", "", err
+		return "", "", fmt.Errorf("platform_host: %w", err)
 	}
 	return kind, normalizedHost, nil
 }

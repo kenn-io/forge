@@ -11,10 +11,13 @@ import (
 	"strings"
 	"time"
 
+	"go.kenn.io/forge/internal/platformdb"
+
 	gh "github.com/google/go-github/v89/github"
 	"go.kenn.io/forge/internal/archive"
 	"go.kenn.io/forge/internal/db"
-	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/platform"
+	platformgithub "go.kenn.io/forge/platform/github"
 )
 
 const (
@@ -52,17 +55,17 @@ type routedNotificationReadMarker interface {
 }
 
 type notificationReadRateReserveBypasser interface {
-	bypassNotificationReadRateReserve() bool
+	InstallationAuthenticationActive() bool
 }
 
 func notificationBypassesReadRateReserve(client notificationClient) bool {
 	if bypasser, ok := client.(notificationReadRateReserveBypasser); ok {
-		return bypasser.bypassNotificationReadRateReserve()
+		return bypasser.InstallationAuthenticationActive()
 	}
-	if legacy, ok := client.(interface{ GitHubClient() Client }); ok {
+	if legacy, ok := client.(interface{ GitHubClient() platformgithub.API }); ok {
 		if inner := legacy.GitHubClient(); inner != nil {
 			if bypasser, ok := inner.(notificationReadRateReserveBypasser); ok {
-				return bypasser.bypassNotificationReadRateReserve()
+				return bypasser.InstallationAuthenticationActive()
 			}
 		}
 	}
@@ -77,7 +80,7 @@ func notificationThreadGetterFor(client notificationClient) (notificationThreadG
 	if getter, ok := client.(notificationThreadGetter); ok {
 		return getter, true
 	}
-	if legacy, ok := client.(interface{ GitHubClient() Client }); ok {
+	if legacy, ok := client.(interface{ GitHubClient() platformgithub.API }); ok {
 		if inner := legacy.GitHubClient(); inner != nil {
 			if getter, ok := inner.(notificationThreadGetter); ok {
 				return getter, true
@@ -165,7 +168,7 @@ func (s *Syncer) SyncNotifications(ctx context.Context) error {
 	var errs []error
 	for _, entry := range clients {
 		providerWork := s.beginNotificationProviderWork(
-			entry.platform, entry.host, tracked,
+			ctx, entry.platform, entry.host, tracked,
 		)
 		err := s.syncNotificationsForHost(
 			ctx, entry.platform, entry.host, entry.client, tracked, providerWork,
@@ -182,6 +185,7 @@ func (s *Syncer) SyncNotifications(ctx context.Context) error {
 }
 
 func (s *Syncer) beginNotificationProviderWork(
+	ctx context.Context,
 	kind platform.Kind,
 	host string,
 	tracked map[string]RepoRef,
@@ -196,7 +200,7 @@ func (s *Syncer) beginNotificationProviderWork(
 	// would block healthy siblings from syncing and advancing their
 	// watermarks — the exact coupling per-repository watermarks remove.
 	for _, repo := range notificationTrackedRepos(string(kind), host, tracked) {
-		work.addRepo(repo)
+		work.addRepo(ctx, repo)
 	}
 	return work
 }
@@ -207,7 +211,7 @@ type notificationProviderWork struct {
 	releases []func()
 }
 
-func (w *notificationProviderWork) addRepo(repo RepoRef) {
+func (w *notificationProviderWork) addRepo(ctx context.Context, repo RepoRef) {
 	identityRoutes := []bool{false}
 	if repoPlatform(repo) == platform.KindGitHub {
 		identityRoutes = append(identityRoutes, true)
@@ -222,7 +226,7 @@ func (w *notificationProviderWork) addRepo(repo RepoRef) {
 		}
 		w.seen[bucket] = struct{}{}
 		w.releases = append(w.releases, w.syncer.beginProviderWork(
-			bucket, archive.PriorityNotificationRefresh,
+			ctx, bucket, archive.PriorityNotificationRefresh,
 		))
 	}
 }
@@ -365,7 +369,7 @@ func (s *Syncer) syncNotificationsForRepoAttempt(
 		return true, nil
 	}
 	repo = resolved
-	observedIdentity := platform.DBRepoIdentity(platformRepoRef(repo))
+	observedIdentity := platformdb.DBRepoIdentity(platformRepoRef(repo))
 	routeFence, found, err := s.db.CurrentRepositoryRouteFence(
 		ctx, observedIdentity, observedRepoID,
 	)
@@ -378,7 +382,7 @@ func (s *Syncer) syncNotificationsForRepoAttempt(
 	if !found {
 		return true, nil
 	}
-	providerWork.addRepo(repo)
+	providerWork.addRepo(ctx, repo)
 	if s.afterNotificationRepoIdentityReconciled != nil {
 		s.afterNotificationRepoIdentityReconciled()
 	}
@@ -784,7 +788,7 @@ func (s *Syncer) ProcessQueuedNotificationReads(ctx context.Context, kind platfo
 			continue
 		}
 		seenBuckets[bucket] = struct{}{}
-		defer s.beginProviderWork(bucket, archive.PriorityNotificationRefresh)()
+		defer s.beginProviderWork(ctx, bucket, archive.PriorityNotificationRefresh)()
 	}
 	// A rate limit stops only the credential that hit it. Its remaining rows
 	// are already deferred in the database, so skipping them here avoids

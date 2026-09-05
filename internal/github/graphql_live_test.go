@@ -2,11 +2,14 @@ package github
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"testing"
 	"time"
 
 	"github.com/shurcooL/githubv4"
 	"github.com/stretchr/testify/require"
+	platformgithub "go.kenn.io/forge/platform/github"
 	"golang.org/x/oauth2"
 )
 
@@ -24,7 +27,7 @@ func TestLiveGraphQLQueriesValidateAgainstGitHub(t *testing.T) {
 	)
 	client := githubv4.NewClient(httpClient)
 
-	var prQuery gqlPRQuery[gqlPR]
+	var prQuery gqlPRQuery[platformgithub.GraphQLPR]
 	vars := map[string]any{
 		"owner":    githubv4.String("kenn-io"),
 		"name":     githubv4.String("middleman"),
@@ -36,7 +39,7 @@ func TestLiveGraphQLQueriesValidateAgainstGitHub(t *testing.T) {
 
 	type prDetailQuery struct {
 		Repository struct {
-			PullRequest *gqlPR `graphql:"pullRequest(number: $number)"`
+			PullRequest *platformgithub.GraphQLPR `graphql:"pullRequest(number: $number)"`
 		} `graphql:"repository(owner: $owner, name: $name)"`
 	}
 	var detailQuery prDetailQuery
@@ -66,11 +69,10 @@ func TestLiveGraphQLQueriesValidateAgainstGitHub(t *testing.T) {
 	err = client.Query(ctx, &issueQuery, vars)
 	require.NoError(err, "bulk issue GraphQL query should validate against GitHub")
 
-	reviewClient := &liveClient{
-		httpClient:      httpClient,
-		platformHost:    "github.com",
-		graphQLEndpoint: graphQLEndpointForHost("github.com"),
-	}
+	reviewClient, err := platformgithub.NewClient(platformgithub.ClientConfig{
+		Host: "github.com", Read: httpClient, Write: httpClient, Notifications: httpClient, Clock: time.Now,
+	})
+	require.NoError(err)
 	threads, _, _, err := reviewClient.ListInventoryReviewThreadsPage(
 		ctx, "github.com", "kenn-io", "forge", 830, "",
 	)
@@ -82,12 +84,15 @@ func TestLiveGraphQLQueriesValidateAgainstGitHub(t *testing.T) {
 	require.False(threads[0].Comments[0].UpdatedAt.IsZero(),
 		"review-thread GraphQL query should return comment update time")
 
-	comments, _, _, err := reviewClient.listReviewThreadCommentsPage(
-		ctx, "kenn-io", "forge", 830,
-		githubArchiveReviewCursor{
-			Host: "github.com", Owner: "kenn-io", Repo: "forge", Number: 830,
-			Phase: "comments", Thread: archiveReviewThreadCursor(threads[0]),
-		},
+	// Exercise the child-query shape without requiring a live thread to have
+	// more than one hundred comments. This is the provider's serialized cursor.
+	cursor, err := json.Marshal(map[string]any{
+		"host": "github.com", "owner": "kenn-io", "repo": "forge", "number": 830,
+		"phase": "comments", "thread": map[string]any{"node_id": threads[0].NodeID},
+	})
+	require.NoError(err)
+	comments, _, _, err := reviewClient.ListInventoryReviewThreadsPage(
+		ctx, "github.com", "kenn-io", "forge", 830, base64.RawURLEncoding.EncodeToString(cursor),
 	)
 	require.NoError(err, "review-thread comment GraphQL query should validate against GitHub")
 	require.NotEmpty(comments, "live review fixture should return its review thread")

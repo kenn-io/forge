@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.kenn.io/forge/platform"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -40,9 +42,9 @@ func TestAuthTransportReadsTokenEachRequest(t *testing.T) {
 	assert := assert.New(t)
 	src := &sequenceSource{tokens: []string{"first", "second"}}
 	var auth []string
-	rt := AuthTransport{
+	rt := platform.AuthTransport{
 		Source: src,
-		Base: RoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		Base: platform.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
 			auth = append(auth, req.Header.Get("Authorization"))
 			return &http.Response{
 				StatusCode: http.StatusOK,
@@ -51,7 +53,7 @@ func TestAuthTransportReadsTokenEachRequest(t *testing.T) {
 				Request:    req,
 			}, nil
 		}),
-		SetHeader: BearerAuthHeader,
+		SetHeader: platform.BearerAuthHeader,
 	}
 
 	req, err := http.NewRequestWithContext(
@@ -72,9 +74,9 @@ func TestRetryOnUnauthorizedInvalidatesAndRetriesOnce(t *testing.T) {
 	src := &sequenceSource{tokens: []string{"old", "new"}}
 	var auth []string
 	calls := 0
-	rt := AuthTransport{
+	rt := platform.AuthTransport{
 		Source: src,
-		Base: RoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		Base: platform.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
 			calls++
 			auth = append(auth, req.Header.Get("Authorization"))
 			status := http.StatusUnauthorized
@@ -88,7 +90,7 @@ func TestRetryOnUnauthorizedInvalidatesAndRetriesOnce(t *testing.T) {
 				Request:    req,
 			}, nil
 		}),
-		SetHeader:           BearerAuthHeader,
+		SetHeader:           platform.BearerAuthHeader,
 		RetryOnUnauthorized: true,
 	}
 
@@ -110,9 +112,9 @@ func TestRetryOnUnauthorizedDoesNotRetryForbidden(t *testing.T) {
 	assert := assert.New(t)
 	src := &sequenceSource{tokens: []string{"old", "new"}}
 	calls := 0
-	rt := AuthTransport{
+	rt := platform.AuthTransport{
 		Source: src,
-		Base: RoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		Base: platform.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
 			calls++
 			return &http.Response{
 				StatusCode: http.StatusForbidden,
@@ -121,7 +123,7 @@ func TestRetryOnUnauthorizedDoesNotRetryForbidden(t *testing.T) {
 				Request:    req,
 			}, nil
 		}),
-		SetHeader:           BearerAuthHeader,
+		SetHeader:           platform.BearerAuthHeader,
 		RetryOnUnauthorized: true,
 	}
 
@@ -143,9 +145,9 @@ func TestRetryOnUnauthorizedReplaysGetBody(t *testing.T) {
 	src := &sequenceSource{tokens: []string{"old", "new"}}
 	var bodies []string
 	calls := 0
-	rt := AuthTransport{
+	rt := platform.AuthTransport{
 		Source: src,
-		Base: RoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		Base: platform.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
 			calls++
 			body, err := io.ReadAll(req.Body)
 			require.NoError(err)
@@ -161,7 +163,7 @@ func TestRetryOnUnauthorizedReplaysGetBody(t *testing.T) {
 				Request:    req,
 			}, nil
 		}),
-		SetHeader:           BearerAuthHeader,
+		SetHeader:           platform.BearerAuthHeader,
 		RetryOnUnauthorized: true,
 	}
 
@@ -183,9 +185,9 @@ func TestRetryOnUnauthorizedDoesNotRetryUnrewindableBody(t *testing.T) {
 	assert := assert.New(t)
 	src := &sequenceSource{tokens: []string{"old", "new"}}
 	calls := 0
-	rt := AuthTransport{
+	rt := platform.AuthTransport{
 		Source: src,
-		Base: RoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		Base: platform.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
 			calls++
 			return &http.Response{
 				StatusCode: http.StatusUnauthorized,
@@ -194,7 +196,7 @@ func TestRetryOnUnauthorizedDoesNotRetryUnrewindableBody(t *testing.T) {
 				Request:    req,
 			}, nil
 		}),
-		SetHeader:           BearerAuthHeader,
+		SetHeader:           platform.BearerAuthHeader,
 		RetryOnUnauthorized: true,
 	}
 
@@ -216,10 +218,10 @@ func TestAuthTransportRejectsRequestOutsideAllowedOrigin(t *testing.T) {
 	assert := assert.New(t)
 	src := &sequenceSource{tokens: []string{"secret"}}
 	called := false
-	rt := AuthTransport{
+	rt := platform.AuthTransport{
 		Source:        src,
 		AllowedOrigin: "https://api.example.test/base/path",
-		Base: RoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		Base: platform.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
 			called = true
 			return &http.Response{
 				StatusCode: http.StatusOK,
@@ -228,7 +230,7 @@ func TestAuthTransportRejectsRequestOutsideAllowedOrigin(t *testing.T) {
 				Request:    req,
 			}, nil
 		}),
-		SetHeader: BearerAuthHeader,
+		SetHeader: platform.BearerAuthHeader,
 	}
 
 	req, err := http.NewRequestWithContext(
@@ -258,11 +260,11 @@ func TestAuthTransportRejectsCrossOriginRedirectBeforeAuth(t *testing.T) {
 	}))
 	defer origin.Close()
 
-	client := &http.Client{Transport: AuthTransport{
+	client := &http.Client{Transport: platform.AuthTransport{
 		Source:        src,
 		AllowedOrigin: origin.URL,
 		Base:          http.DefaultTransport,
-		SetHeader:     BearerAuthHeader,
+		SetHeader:     platform.BearerAuthHeader,
 	}}
 
 	resp, err := client.Get(origin.URL + "/start")

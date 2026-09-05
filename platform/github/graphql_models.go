@@ -195,7 +195,12 @@ type GraphQLCommit struct {
 	Message string
 	Author  struct {
 		Name string
-		Date time.Time
+		Date *time.Time
+		User *struct{ Login string }
+	}
+	Committer struct {
+		Name string
+		Date *time.Time
 		User *struct{ Login string }
 	}
 }

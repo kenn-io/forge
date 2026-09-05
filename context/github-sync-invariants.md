@@ -137,6 +137,7 @@ PR timeline storage is intentionally selective.
   stored rows may predate parent-time realignment. (`internal/server/pullapi/routes.go::withSyntheticMRLifecycleEvents`)
 - Keep the existing event families stable: comments, reviews, commits, force
   pushes, and the currently supported PR system events.
+- GitHub commit events use the committer login/name and committed date as their activity actor/time when present, preserve a distinct original author in commit metadata, and fall back independently to author identity/time when committer data is absent.
 - Review comments are UI-aware but are not part of the stored sync model unless
   they can be fetched within the supported timeline path.
 - If bulk sync persists PR system events, detail sync must persist the same
@@ -223,10 +224,10 @@ fallback repository listing.
 
 - GitHub.com merges are versioned asynchronous direct operations polled to terminal
   `merged`; `pending`/`enqueued` never count as merged. GHES stays synchronous with no
-  probe fallback. (`internal/github/merge_async.go::liveClient.MergePullRequest`)
+  probe fallback. (`platform/github/merge_async.go::Client.MergePullRequest`)
 - Preserve required-rebase failures verbatim; do not substitute private website routes
   or local force-pushes until GitHub exposes a token-authenticated stack-rebase API.
-  (`internal/github/merge_async.go::mergeAsyncTerminalResult`)
+  (`platform/github/merge_async.go::mergeAsyncTerminalResult`)
 - Confirmed native stacks claim and order their PRs first; branch inference always
   runs afterward on every unclaimed PR, including when the preview is disabled,
   incomplete, or failing. (`internal/stacks/detect.go::RunDetectionWithNativeStacks`)
@@ -258,7 +259,7 @@ fallback repository listing.
   that hint and not the list, and hint-listing errors get the same
   feature-disabled classification as the plain list so a repository with pull
   requests off still enters the cooldown.
-  (`internal/github/native_stacks.go::decodeNativeStackHint`,
+  (`platform/github/native_stacks.go::decodeNativeStackHint`,
   `internal/github/sync.go::ListOpenMergeRequestsWithNativeStackHints`)
 - Preview-only GraphQL fields must be absent from disabled query shapes;
   `@include(false)` does not bypass schema validation on servers without those
@@ -427,37 +428,53 @@ fallback repository listing.
   While an unresolvable ref persists in config, genuinely removed repos keep
   collecting; the recurring deferral warning is the operator signal.
   (`internal/archive/service.go::EnsureConfigured`)
-- The archive worker poll resolves configured repositories tolerantly: a ref
+- The archive worker pass resolves configured repositories tolerantly: a ref
   that seeding skipped stays in the syncer's tracked set, so an all-or-nothing
-  resolve would fail every one-second pass and starve archive work for all
+  resolve would fail every pass and starve archive work for all
   healthy repositories. Only provider-classified failures (invalid ref,
   provider not configured, missing capability) are dropped as
   repository-scoped (debug-logged; seeding already warned); a broken store or
   any other infrastructure error still surfaces — an empty pass reported as
-  success would hide a dead worker. (`internal/archive/scheduler.go::RunEligible`,
+  success would hide a dead worker. (`internal/archive/scheduler.go::RunPass`,
   `internal/archive/service.go::resolveRepositoriesTolerant`)
-- Initial issue and pull-request inventory includes all states in stable created-time ascending order; issue enumeration excludes PR-shaped rows. (`internal/github/pages.go::ListIssuesPage`, `internal/github/pages.go::ListMergeRequestsPage`)
+- The archive worker backs off while idle instead of ticking every second: after a pass
+  that attempted no work the wait doubles from the pacing interval to a five-minute cap,
+  and a pass that worked or failed, or a wake, returns it to the pacing interval. Every
+  completed sync run wakes it, since a sync can clear a feature cooldown and make archive
+  work eligible. (`internal/github/sync.go::runArchiveLoop`, `internal/github/sync.go::runOnceWithSlot`)
+- A pass "worked" when a unit reached the provider, including a provider-answered feature
+  deferral or a preempted request, or failed; only an admission denial before any provider
+  request is idle, so a long live sync backs the worker off instead of writing a one-second
+  deferral every second. (`internal/archive/scheduler.go::finishWork`)
+- Releasing the last live provider operation on a host wakes the archive worker only when
+  that host denied or preempted an archive request; a normal sync's stream of releases
+  must not trigger denied passes and deferral writes. (`internal/github/sync.go::beginProviderWork`)
+- Archive scheduling is eventually consistent by maintainer decision: a missed or late wake
+  that only delays eligible archive work until the next backoff pass (five minutes at most)
+  is accepted behavior, not a defect. Do not add wake bookkeeping or atomicity for it.
+  (`internal/github/sync.go::runArchiveLoop`)
+- Initial issue and pull-request inventory includes all states in stable created-time ascending order; issue enumeration excludes PR-shaped rows. (`platform/github/provider_pages.go::ListIssuesPage`, `platform/github/provider_pages.go::ListMergeRequestsPage`)
 - GitHub issue-only repositories return pulls API 404; normal and archive paths
   classify it as feature-disabled only for explicit `has_pull_requests=false`;
   ambiguous probes preserve the failure. (`internal/github/sync.go::mergeRequestsDisabledByRepository`)
 - GitHub pull inventory admission reserves the possible metadata probe and its
   authentication retry. (`internal/archive/scheduler.go::archiveFeatureReadAttemptCost`)
-- Every issue-only GitHub lookup rejects a PR-shaped Issues API response before normalization; `SyncItemByNumber` is the kind-dispatching exception. (`internal/github/pages.go::gitHubClientProvider.issuePullRequestOutcomeError`, `internal/github/sync.go::SyncItemByNumber`)
-- Updated issue scans query one second before the durable watermark while keeping cursor identity bound to the original boundary. Updated pull-request scans run newest-first across the same overlap. (`internal/github/pages.go::ListIssuesPage`, `internal/github/pages.go::ListMergeRequestsPage`)
-- Durable pull-request inventory bypasses the process-local list ETag cache. Archive cursors require response bodies, so a bodyless `304 Not Modified` must not turn an unchanged maintenance scan into a retryable failure. (`internal/github/pages.go::liveClient.ListInventoryPullRequestsPage`)
-- Repository probes classify only authentication/access/not-found responses; transient probe failures remain retryable and non-destructive. Issue and pull-request lookups compare the response repository with the requested source identity so transfers become moved outcomes instead of source-owned snapshots. (`internal/github/pages.go::archiveRepositoryProbeError`, `internal/github/pages.go::githubArchiveDestination`)
+- Every issue-only GitHub lookup rejects a PR-shaped Issues API response before normalization; `SyncItemByNumber` is the kind-dispatching exception. (`platform/github/provider_pages.go::Provider.IssuePullRequestOutcomeError`, `internal/github/sync.go::SyncItemByNumber`)
+- Updated issue scans query one second before the durable watermark while keeping cursor identity bound to the original boundary. Updated pull-request scans run newest-first across the same overlap. (`platform/github/provider_pages.go::ListIssuesPage`, `platform/github/provider_pages.go::ListMergeRequestsPage`)
+- Durable pull-request inventory bypasses the process-local list ETag cache. Archive cursors require response bodies, so a bodyless `304 Not Modified` must not turn an unchanged maintenance scan into a retryable failure. (`platform/github/pages.go::Client.ListInventoryPullRequestsPage`)
+- Repository probes classify only authentication/access/not-found responses; transient probe failures remain retryable and non-destructive. Issue and pull-request lookups compare the response repository with the requested source identity so transfers become moved outcomes instead of source-owned snapshots. (`platform/github/provider_pages.go::archiveRepositoryProbeError`, `platform/github/provider_pages.go::ArchiveDestination`)
 - After repository-wide issue disablement is classified, a 410 from GitHub's
   single-issue endpoint means deleted; map it to `removed_upstream` only at
   that lookup boundary, never across GitHub endpoints.
-  (`internal/github/pages.go::gitHubClientProvider.classifyIssueLookup`)
+  (`platform/github/provider_pages.go::Provider.classifyIssueLookup`)
 - A previously-open issue whose GitHub-classified lookup is a true removal
   (not_found, no destination) is tombstoned closed locally; otherwise it would
   fail every cycle forever. Transfers and provider-neutral bare 404s (GitLab
   hides inaccessible items behind 404) keep failing the cycle so maintainers
   see them in repo sync health
   (`internal/github/sync.go::tombstoneRemovedIssue`).
-- Archive REST and GraphQL failures must preserve typed authentication and reset-aware rate-limit errors so scheduling defers rather than hot-looping generic retries. (`internal/github/pages.go::archiveTransportError`)
-- GitHub archive code owns historical identity inventory only; hydration must invoke ordinary item sync instead of adding archive-specific lookup, normalization, or persistence. (`internal/github/pages.go::ListIssuesPage`, `internal/github/sync.go::SyncArchiveItem`)
+- Archive REST and GraphQL failures must preserve typed authentication and reset-aware rate-limit errors so scheduling defers rather than hot-looping generic retries. (`platform/github/provider_pages.go::archiveTransportError`)
+- GitHub archive code owns historical identity inventory only; hydration must invoke ordinary item sync instead of adding archive-specific lookup, normalization, or persistence. (`platform/github/provider_pages.go::ListIssuesPage`, `internal/github/sync.go::SyncArchiveItem`)
 - Archive item hydration bypasses persisted parent-detail ETags; an unchanged parent representation does not prove that legacy lifecycle timelines are complete. (`internal/github/sync.go::SyncArchiveItem`)
 - Every older-generation active merged GitHub lookup is requeued once; its new
   generation proves canonical merged detail passed the current verification.
@@ -699,7 +716,7 @@ with installation tokens. Even though kenn-forge disables webhooks and polls,
 the manifest must still include a syntactically valid `hook_attributes.url`;
 GitHub's live manifest validator can report the missing hook URL as a generic
 `"url" wasn't supplied` error. Do not remove that hook URL from
-`internal/githubapp/manifest.go::NewManifest`; keep
+`githubapp/manifest.go::NewManifest`; keep
 `cmd/kenn-forge-github-app/e2e_test.go::TestCreateFlowEndToEnd` asserting the
 serialized manifest shape so the fake cannot accept a payload GitHub rejects.
 
@@ -725,7 +742,13 @@ app to an endpoint its credential cannot use, which fails even though the token
 chain "correctly" falls back to the PAT.
 - Private `user-attachments` reads are the exception to app-token-first reads:
   GitHub returns 404 to installation tokens, so the repo-scoped image proxy must
-  use the user's PAT/`gh` chain (`internal/github/client.go::GetMarkdownImage`).
+  use the user's PAT/`gh` chain (`platform/github/markdown_images.go::GetMarkdownImage`).
+- Repository-file markdown images (`blob`/`raw` web URLs, `raw.githubusercontent.com`)
+  are proxied only for the route's own repository, use the normal read chain, and are
+  type-sniffed because the contents raw media type hides the file type; web URLs do not
+  delimit ref from path, so ref splits are tried shortest-first past 404s. They are
+  marked mutable because the ref is usually a branch. The frontend must apply the
+  same URL rules (`platform/github/markdown_images.go::getRepositoryFileImage`).
 Config may carry multiple `[[github_apps]]` rows for one host, but those rows
 represent distinct app credentials. Management commands must target one row by
 app owner/installation account or app id, and duplicate installation accounts on

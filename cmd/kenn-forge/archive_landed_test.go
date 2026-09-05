@@ -116,7 +116,7 @@ func TestArchiveLandedConversionPreservesUnknownObjectsAndRawClaims(t *testing.T
 	email, err := landing.TerminalCommit.Claims[0].Email.Bytes()
 	require.NoError(err)
 	assert.Equal([]byte{255}, email)
-	input.LandedWork.Evidence.Landings = &[]generated.LandedWorkLanding{{TerminalCommit: generated.LandedWorkCommitEvidence{Claims: &[]generated.LandedWorkClaim{{Email: generated.PlatformRawBytes{Base64: "/x=="}}}}}}
+	input.LandedWork.Evidence.Landings = []generated.LandedWorkLanding{{TerminalCommit: generated.LandedWorkCommitEvidence{Claims: []generated.LandedWorkClaim{{Email: generated.PlatformRawBytes{Base64: "/x=="}}}}}}
 	_, err = archiveReportFromAPI(input)
 	require.Error(err)
 }

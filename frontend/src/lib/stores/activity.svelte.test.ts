@@ -4,6 +4,7 @@ import type { GeneratedClient } from "../api/generated-api.js";
 import type { OwnedAppRuntime } from "../app/runtime.js";
 import type { ActivityItem, ActivitySettings, ActivitySubject, WorkspaceActivitySubject } from "../api/types.js";
 import { makeTestAppRuntime } from "../testing/effect-layers.js";
+import { makeGeneratedClient } from "../testing/generated-client.js";
 import {
   buildActivityItemTypeFilter,
   buildActivityFilterTypes,
@@ -16,6 +17,7 @@ import {
 } from "./activity.svelte.js";
 import { dismissFlash, getFlash, getFlashes } from "./flash.svelte.js";
 import { involvesMeFilterStorageKey } from "./involves-me-filter.js";
+import { unassignedFilterStorageKey } from "./unassigned-filter.js";
 
 let runtime: OwnedAppRuntime | undefined;
 
@@ -107,6 +109,23 @@ describe("activity store workspace activity", () => {
       "/activity",
       expect.objectContaining({
         params: { query: expect.objectContaining({ involves_me: true }) },
+      }),
+    );
+  });
+
+  it("persists and sends the Unassigned filter", async () => {
+    const get = vi.fn(async () => ({ data: { items: [], capped: false }, error: null }));
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+
+    store.setUnassigned(true);
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+
+    expect(localStorage.getItem(unassignedFilterStorageKey("activity"))).toBe("1");
+    expect(get).toHaveBeenCalledWith(
+      "/activity",
+      expect.objectContaining({
+        params: { query: expect.objectContaining({ unassigned: true }) },
       }),
     );
   });
@@ -387,6 +406,7 @@ describe("activity store collapse state", () => {
     });
     const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
     store.hydrateDefaults(settings(true));
+    store.setUnassigned(true);
     store.loadActivity();
     await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
 
@@ -403,9 +423,10 @@ describe("activity store collapse state", () => {
         platform_repo_id: "repo-7",
         item_type: "pr",
         item_number: 7,
+        unassigned: true,
         at_or_before: "hidden:9",
       }),
-      expect.objectContaining({ before: "thread-page-2", at_or_before: "hidden:9" }),
+      expect.objectContaining({ before: "thread-page-2", at_or_before: "hidden:9", unassigned: true }),
     ]);
   });
 
@@ -586,23 +607,25 @@ describe("activity store collapse state", () => {
       },
     } satisfies ActivitySubject;
     let threadQuery: Record<string, unknown> | undefined;
-    const get = vi.fn(async (path: string, options: { params?: { query?: Record<string, unknown> } }) => {
-      if (path === "/activity/thread-events") {
-        threadQuery = options.params?.query;
-        return { data: { items: [], capped: false, event_cursor: "snapshot" }, error: null };
-      }
-      return {
-        data: {
-          items: [],
-          item_activity: [subject],
-          workspace_activity: [],
-          capped: false,
-          event_cursor: "snapshot",
+    const store = createActivityStore({
+      client: makeGeneratedClient({
+        ActivityService: {
+          listActivityThreadEvents: async (params) => {
+            threadQuery = params;
+            return { items: [], capped: false, event_cursor: "snapshot" };
+          },
+          listActivity: async () => ({
+            items: [],
+            item_activity: [subject],
+            workspace_activity: [],
+            capped: false,
+            item_activity_capped: false,
+            use_workspace_activity_for_recency: true,
+            event_cursor: "snapshot",
+          }),
         },
-        error: null,
-      };
+      }),
     });
-    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
     store.hydrateDefaults(settings(true));
     store.setActivityFilterTypes(["comment", "notification"]);
     store.setActivitySearch("reviewer");

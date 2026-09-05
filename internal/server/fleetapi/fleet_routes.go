@@ -60,6 +60,7 @@ func (s *Handler) getSnapshotAggregate(
 	ctx context.Context,
 	input *aggregateSnapshotInput,
 ) (*aggregateSnapshotOutput, error) {
+	s.noteSnapshotDemand()
 	fleetConfig := s.configSnapshot().Fleet
 	if !fleetConfig.Enabled ||
 		fleetConfig.RoleOrDefault() != config.FleetRoleHub {
@@ -107,7 +108,7 @@ type refreshFleetStatsOutput struct {
 func (s *Handler) refreshFleetStats(
 	ctx context.Context, _ *struct{},
 ) (*refreshFleetStatsOutput, error) {
-	s.fleetWorktreeStatsSampler.runOnce(ctx)
+	s.fleetWorktreeStatsSampler.runOnceForced(ctx)
 	out := &refreshFleetStatsOutput{}
 	out.Body.Refreshed = true
 	return out, nil
@@ -116,6 +117,7 @@ func (s *Handler) refreshFleetStats(
 // getSnapshot returns the observer-relative snapshot. With include_peers=true,
 // a hub aggregates member raw state and a spoke consumes that aggregate.
 func (s *Handler) getSnapshot(ctx context.Context, in *snapshotInput) (*snapshotOutput, error) {
+	s.noteSnapshotDemand()
 	snap, err := s.buildFleetSnapshot(ctx, in.IncludePeers)
 	if err != nil {
 		return nil, httpapi.Internal("build snapshot: " + err.Error())
@@ -126,6 +128,7 @@ func (s *Handler) getSnapshot(ctx context.Context, in *snapshotInput) (*snapshot
 // getSnapshotRaw returns this daemon's local raw inventory. It never fans out
 // or re-exports a fetched aggregate, so federation cannot loop.
 func (s *Handler) getSnapshotRaw(ctx context.Context, _ *struct{}) (*rawSnapshotOutput, error) {
+	s.noteSnapshotDemand()
 	raw, err := s.buildLocalRaw(ctx)
 	if err != nil {
 		return nil, httpapi.Internal("build raw snapshot: " + err.Error())

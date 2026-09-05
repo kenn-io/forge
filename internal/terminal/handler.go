@@ -360,6 +360,13 @@ func bridgePtyOwnerAttachment(
 					slog.Warn("bad pty owner terminal control message", "err", err)
 					continue
 				}
+				if msg.Type == "heartbeat" {
+					if err := terminalwebsocket.WriteHeartbeat(ctx, conn); err != nil {
+						logWebsocketDebug("pty owner terminal heartbeat write ended", "err", err)
+						return
+					}
+					continue
+				}
 				if msg.Type == "resize" || msg.Type == "claim_resize" {
 					_ = attachment.Resize(ptysize.Geometry{
 						Cols:        msg.Cols,

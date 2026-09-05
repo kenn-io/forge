@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	"go.kenn.io/forge/internal/agentactivity"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
@@ -1922,16 +1923,8 @@ func (s *Handler) applyAgentActivity(
 	if s.agentActivity == nil || s.runtime == nil || resp == nil || summary == nil {
 		return
 	}
-	liveSessionKeys := make([]string, 0)
-	for _, session := range s.runtime.ListSessions(summary.ID) {
-		if session.Kind == localruntime.LaunchTargetAgent &&
-			(session.Status == localruntime.SessionStatusRunning ||
-				session.Status == localruntime.SessionStatusStarting) {
-			liveSessionKeys = append(liveSessionKeys, session.Key)
-		}
-	}
 	snapshot, ok := s.agentActivity.SnapshotForWorkspace(
-		summary.WorktreePath, liveSessionKeys,
+		summary.WorktreePath, s.liveAgentSessionKeys(summary.ID),
 	)
 	if !ok {
 		return
@@ -1953,9 +1946,81 @@ func (s *Handler) Response(
 	return s.toWorkspaceResponse(ctx, summary)
 }
 
+// workspaceEnrichmentProbePlan selects which enrichment components a probe
+// runs. gitFingerprint carries the git-directory fingerprint captured before
+// the probe so a change during the probe is noticed on the next refresh.
+type workspaceEnrichmentProbePlan struct {
+	git            bool
+	tmux           bool
+	gitFingerprint string
+}
+
+// workspaceResponseWithEnrichment runs every enrichment component
+// unconditionally. Explicit refreshes use it; background refreshes go through
+// workspaceResponseWithChangeAwareEnrichment.
 func (s *Handler) workspaceResponseWithEnrichment(
 	ctx context.Context,
 	summary *db.WorkspaceSummary,
+) workspaceEnrichmentProbeResult {
+	plan := workspaceEnrichmentProbePlan{git: true, tmux: true}
+	if summary.Status == "ready" {
+		plan.gitFingerprint = s.workspaceGitFingerprint(summary)
+	}
+	return s.probeWorkspaceEnrichment(ctx, summary, plan)
+}
+
+// workspaceResponseWithChangeAwareEnrichment is the background full-refresh
+// probe. It spawns git only when the git-directory fingerprint moved since
+// the cached probe or the forced interval elapsed, and probes tmux only when
+// the tmux component is past its own cadence.
+func (s *Handler) workspaceResponseWithChangeAwareEnrichment(
+	ctx context.Context,
+	summary *db.WorkspaceSummary,
+) workspaceEnrichmentProbeResult {
+	plan := workspaceEnrichmentProbePlan{git: true, tmux: true}
+	if s.workspaces == nil || summary.Status != "ready" {
+		return s.probeWorkspaceEnrichment(ctx, summary, plan)
+	}
+	entry, _ := s.cachedWorkspaceEnrichment(summary.ID, workspaceEnrichmentFull)
+	if entry == nil {
+		plan.gitFingerprint = s.workspaceGitFingerprint(summary)
+		return s.probeWorkspaceEnrichment(ctx, summary, plan)
+	}
+	now := s.now()
+	tmuxDue, divergenceDue := entry.componentsDue(now)
+	plan.tmux = tmuxDue
+	if !divergenceDue {
+		// A full job that was upgraded from tmux-only work must not touch
+		// the divergence component before its own cadence elapses.
+		plan.git = false
+		result := s.probeWorkspaceEnrichment(ctx, summary, plan)
+		result.divergenceUnchanged = false
+		result.divergenceSkipped = true
+		return result
+	}
+	plan.gitFingerprint = s.workspaceGitFingerprint(summary)
+	plan.git = !entry.gitProbeSkippable(plan.gitFingerprint, now)
+	return s.probeWorkspaceEnrichment(ctx, summary, plan)
+}
+
+func (s *Handler) workspaceGitFingerprint(summary *db.WorkspaceSummary) string {
+	fingerprint, err := workspace.WorktreeGitFingerprint(summary.WorktreePath)
+	if err != nil {
+		slog.Debug(
+			"worktree git fingerprint failed",
+			"workspace_id", summary.ID,
+			"path", summary.WorktreePath,
+			"err", err,
+		)
+		return ""
+	}
+	return fingerprint
+}
+
+func (s *Handler) probeWorkspaceEnrichment(
+	ctx context.Context,
+	summary *db.WorkspaceSummary,
+	plan workspaceEnrichmentProbePlan,
 ) workspaceEnrichmentProbeResult {
 	resp := toWorkspaceResponse(summary)
 	resp.Repo = s.repoRefFromParts(
@@ -1966,25 +2031,27 @@ func (s *Handler) workspaceResponseWithEnrichment(
 		return workspaceEnrichmentProbeResult{response: resp}
 	}
 
-	divergenceErr := applyWorktreeDivergence(ctx, &resp, summary.WorktreePath)
-	dirtyErr := applyWorktreeDirty(ctx, &resp, summary.WorktreePath)
-	gitStateErr := errors.Join(divergenceErr, dirtyErr)
-	sessions, sessionsErr := s.workspaceTmuxActivitySessions(ctx, summary)
-	activity, hasActivity, activityErr := s.probeWorkspaceTmuxActivity(
-		ctx, summary, sessions,
-	)
-	if hasActivity {
-		applyTmuxActivity(&resp, activity)
-	}
-	err := errors.Join(gitStateErr, sessionsErr, activityErr)
 	result := workspaceEnrichmentProbeResult{
-		response:           resp,
-		divergenceComplete: gitStateErr == nil,
-		tmuxComplete:       sessionsErr == nil && activityErr == nil,
-		divergenceErr:      gitStateErr,
-		tmuxErr:            errors.Join(sessionsErr, activityErr),
-		err:                err,
+		gitFingerprint:      plan.gitFingerprint,
+		divergenceUnchanged: !plan.git,
+		tmuxSkipped:         !plan.tmux,
 	}
+	var gitStateErr error
+	if plan.git {
+		divergenceErr := applyWorktreeDivergence(ctx, &resp, summary.WorktreePath)
+		dirtyErr := applyWorktreeDirty(ctx, &resp, summary.WorktreePath)
+		gitStateErr = errors.Join(divergenceErr, dirtyErr)
+		result.divergenceComplete = gitStateErr == nil
+		result.divergenceErr = gitStateErr
+	}
+	var tmuxErr error
+	if plan.tmux {
+		tmuxErr = s.applyWorkspaceTmuxEnrichment(ctx, summary, &resp)
+		result.tmuxComplete = tmuxErr == nil
+		result.tmuxErr = tmuxErr
+	}
+	err := errors.Join(gitStateErr, tmuxErr)
+	result.err = err
 	if err != nil {
 		resp.EnrichmentStatus = workspaceEnrichmentFailed
 		message := err.Error()
@@ -2010,16 +2077,71 @@ func (s *Handler) workspaceResponseWithTmuxEnrichment(
 	if s.workspaces == nil || summary.Status != "ready" {
 		return workspaceEnrichmentProbeResult{response: resp, kind: workspaceEnrichmentTmux}
 	}
-	sessions, sessionsErr := s.workspaceTmuxActivitySessions(ctx, summary)
-	activity, hasActivity, activityErr := s.probeWorkspaceTmuxActivity(ctx, summary, sessions)
-	if hasActivity {
-		applyTmuxActivity(&resp, activity)
-	}
-	err := errors.Join(sessionsErr, activityErr)
+	err := s.applyWorkspaceTmuxEnrichment(ctx, summary, &resp)
 	return workspaceEnrichmentProbeResult{
 		response: resp, tmuxComplete: err == nil, tmuxErr: err, err: err,
 		kind: workspaceEnrichmentTmux,
 	}
+}
+
+// applyWorkspaceTmuxEnrichment fills the tmux activity fields of resp from a
+// pane probe. A workspace whose live agent session has reported through the
+// hook integration is not probed at all: the lifecycle events are the
+// authoritative activity signal there, and the pane capture would only spend
+// tmux spawns to second-guess them. Such a workspace counts as a complete
+// tmux sample whose last-activity time is the hook report's own timestamp, so
+// subject activity feeds still see hook-driven work move.
+func (s *Handler) applyWorkspaceTmuxEnrichment(
+	ctx context.Context,
+	summary *db.WorkspaceSummary,
+	resp *workspaceResponse,
+) error {
+	if latest, ok := s.latestHookReportForWorkspace(summary); ok {
+		activityAt := latest.UpdatedAt.UTC().Format(time.RFC3339)
+		resp.TmuxLastOutputAt = &activityAt
+		return nil
+	}
+	sessions, sessionsErr := s.workspaceTmuxActivitySessions(ctx, summary)
+	activity, hasActivity, activityErr := s.probeWorkspaceTmuxActivity(ctx, summary, sessions)
+	if hasActivity {
+		applyTmuxActivity(resp, activity)
+	}
+	return errors.Join(sessionsErr, activityErr)
+}
+
+// latestHookReportForWorkspace returns the most recent hook report among the
+// workspace's live agent sessions, when one exists. It is deliberately the
+// newest report rather than the state-priority pick behind AgentState: with
+// two live agents an older approval must not hide a newer event when the
+// workspace's last activity is derived.
+func (s *Handler) latestHookReportForWorkspace(
+	summary *db.WorkspaceSummary,
+) (agentactivity.Report, bool) {
+	if s.agentActivity == nil || s.runtime == nil || summary == nil {
+		return agentactivity.Report{}, false
+	}
+	reports := s.agentActivity.LiveReportsForWorkspace(
+		summary.WorktreePath, s.liveAgentSessionKeys(summary.ID),
+	)
+	if len(reports) == 0 {
+		return agentactivity.Report{}, false
+	}
+	return reports[0], true
+}
+
+// liveAgentSessionKeys lists the runtime session keys of the workspace's
+// running or starting agent sessions, the only sessions whose hook reports
+// count.
+func (s *Handler) liveAgentSessionKeys(workspaceID string) []string {
+	liveSessionKeys := make([]string, 0)
+	for _, session := range s.runtime.ListSessions(workspaceID) {
+		if session.Kind == localruntime.LaunchTargetAgent &&
+			(session.Status == localruntime.SessionStatusRunning ||
+				session.Status == localruntime.SessionStatusStarting) {
+			liveSessionKeys = append(liveSessionKeys, session.Key)
+		}
+	}
+	return liveSessionKeys
 }
 
 func (s *Handler) workspaceTmuxActivitySessions(
@@ -2207,6 +2329,13 @@ func applyWorktreeDivergence(
 		return err
 	}
 	if !ok {
+		missing, missingErr := workspace.WorktreeBranchUpstreamMissing(probeCtx, worktreePath)
+		if missingErr != nil {
+			return missingErr
+		}
+		if missing {
+			resp.BranchUpstreamMissing = &missing
+		}
 		return nil
 	}
 	ahead := div.Ahead

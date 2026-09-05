@@ -33,7 +33,9 @@ import (
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/stacks"
+	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 	"go.kenn.io/forge/platform"
@@ -373,33 +375,6 @@ func (t *gitealikeImportTransport) ListStatuses(
 	return nil, gitealike.Page{}, errors.New("unexpected ListStatuses call")
 }
 
-func doJSON(
-	t *testing.T,
-	srv *Server,
-	method, path string,
-	body any,
-) *httptest.ResponseRecorder {
-	t.Helper()
-	var buf bytes.Buffer
-	if body != nil {
-		require.NoError(t, json.NewEncoder(&buf).Encode(body))
-	}
-	req := httptest.NewRequest(method, path, &buf)
-	// httptest.NewRequest defaults the Host to "example.com" via the
-	// "/path" URL; tests built on doJSON use either the cfg=nil
-	// test-friendly default (loopback IP at any port is allowed)
-	// or a validated cfg whose bind is 127.0.0.1:8091. Sending the
-	// bind value here keeps both paths happy through the Host
-	// validation middleware without per-test churn.
-	req.Host = "127.0.0.1:8091"
-	if method != http.MethodGet {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	rr := httptest.NewRecorder()
-	srv.ServeHTTP(rr, req)
-	return rr
-}
-
 func TestHandleGetSettings(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -419,7 +394,7 @@ label = "Codex"
 command = ["codex", "--full-auto"]
 `, &mockGH{})
 
-	rr := doJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
+	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	assert.NotContains(rr.Body.String(), `"default_agent"`)
 	assert.Contains(rr.Body.String(), `"launch_targets"`)
@@ -472,7 +447,7 @@ diff_cache_mb = 256
 	})
 	srv.bootCfgSnapshot.RequireAuth = true
 
-	rr := doJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
+	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
 	var resp settingsResponse
@@ -491,9 +466,10 @@ func TestHandleUpdateSettingsPersistsMCPAndReportsRestartRequired(t *testing.T) 
 	srv, _, cfgPath := setupTestServerWithConfig(t)
 
 	mcp := config.MCP{Enabled: true, Port: 9092, DiffCacheMB: 256}
-	rr := doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{MCP: &mcpSettingsUpdate{
+	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{MCP: &mcpSettingsUpdate{
 		Enabled: new(true), Port: new(9092), DiffCacheMB: new(256),
 	}})
+
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
 	var resp settingsResponse
@@ -519,15 +495,17 @@ func TestHandleUpdateSettingsMergesMCPFields(t *testing.T) {
 	srv.cfg.MCP = config.MCP{Port: 9092, DiffCacheMB: 256}
 	require.NoError(srv.cfg.Save(cfgPath))
 
-	rr := doJSON(t, srv, http.MethodPut, "/api/v1/settings", map[string]any{
+	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", map[string]any{
 		"mcp": map[string]any{"enabled": true},
 	})
+
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	assert.Equal(config.MCP{Enabled: true, Port: 9092, DiffCacheMB: 256}, srv.cfg.MCP)
 
-	rr = doJSON(t, srv, http.MethodPut, "/api/v1/settings", map[string]any{
+	rr = testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", map[string]any{
 		"mcp": map[string]any{"port": 0},
 	})
+
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	assert.Equal(config.MCP{Enabled: true, DiffCacheMB: 256}, srv.cfg.MCP)
 
@@ -541,9 +519,10 @@ func TestHandleUpdateSettingsPersistsRoborevManagedCloneInit(t *testing.T) {
 	assert := assert.New(t)
 	srv, _, cfgPath := setupTestServerWithConfig(t)
 
-	rr := doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
 		Roborev: &roborevSettingsUpdate{InitManagedClones: new(true)},
 	})
+
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
 	var resp settingsResponse
@@ -559,9 +538,10 @@ func TestHandleUpdateSettingsRejectsInvalidMCPWithoutPublishing(t *testing.T) {
 	assert := assert.New(t)
 	srv, _, cfgPath := setupTestServerWithConfig(t)
 
-	rr := doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{MCP: &mcpSettingsUpdate{
+	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{MCP: &mcpSettingsUpdate{
 		Enabled: new(true), Port: new(8091),
 	}})
+
 	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
 	assert.Equal(config.MCP{}, srv.cfg.MCP)
 
@@ -585,7 +565,7 @@ owner = "acme"
 name = "widget"
 `, &mockGH{})
 
-	rr := doJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
+	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
 	// kata_projects is a required non-null array in the schema. Assert on the
@@ -602,7 +582,7 @@ func TestHandleGetSettingsEncodesEmptyRepoPresetsAsArray(t *testing.T) {
 	assert := assert.New(t)
 	srv, _, _ := setupTestServerWithConfig(t)
 
-	rr := doJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
+	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
 	var raw map[string]json.RawMessage
@@ -622,20 +602,21 @@ func TestRepoPresetMutationsAreAtomic(t *testing.T) {
 		Provider: "gitlab", PlatformHost: "git.example.com", PlatformRepoID: "42", RepoPath: "group/docs",
 	}}}
 
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/settings/repo-presets", first)
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/settings/repo-presets", first)
 	require.Equal(http.StatusCreated, rr.Code, rr.Body.String())
-	rr = doJSON(t, srv, http.MethodPost, "/api/v1/settings/repo-presets", second)
+	rr = testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/settings/repo-presets", second)
 	require.Equal(http.StatusCreated, rr.Code, rr.Body.String())
 
 	updatedRepos := []config.RepoPresetRepository{{
 		Provider: "github", PlatformHost: "github.com", PlatformRepoID: "R_tools", RepoPath: "acme/tools",
 	}}
-	rr = doJSON(t, srv, http.MethodPut, "/api/v1/settings/repo-presets/Review%20queue", struct {
+	rr = testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings/repo-presets/Review%20queue", struct {
 		Repos []config.RepoPresetRepository `json:"repos"`
 	}{Repos: updatedRepos})
+
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
-	rr = doJSON(t, srv, http.MethodDelete, "/api/v1/settings/repo-presets/Review%20queue", nil)
+	rr = testutil.DoJSON(t, srv, http.MethodDelete, "/api/v1/settings/repo-presets/Review%20queue", nil)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
 	var resp settingsResponse
@@ -646,7 +627,7 @@ func TestRepoPresetMutationsAreAtomic(t *testing.T) {
 	require.NoError(err)
 	assert.Equal([]config.RepoPreset{second}, reloaded.RepoPresets)
 
-	rr = doJSON(t, srv, http.MethodPost, "/api/v1/settings/repo-presets", second)
+	rr = testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/settings/repo-presets", second)
 	assert.Equal(http.StatusConflict, rr.Code)
 }
 
@@ -673,7 +654,7 @@ repos = [{ provider = "github", platform_host = "github.com", platform_repo_id =
 	replacement := config.RepoPreset{Name: "Replacement", Repos: []config.RepoPresetRepository{{
 		Provider: "github", PlatformHost: "github.com", PlatformRepoID: "R_other", RepoPath: "acme/other",
 	}}}
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/settings/repo-presets", replacement)
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/settings/repo-presets", replacement)
 	require.Equal(http.StatusInternalServerError, rr.Code, rr.Body.String())
 	require.Equal([]config.RepoPreset{{Name: "Existing", Repos: []config.RepoPresetRepository{{
 		Provider: "github", PlatformHost: "github.com", PlatformRepoID: "R_widget", RepoPath: "acme/widget",
@@ -689,10 +670,10 @@ func TestHandleUpdateSettingsPersistsModes(t *testing.T) {
 	*modes.Docs = true
 	*modes.Workspaces = false
 
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t, srv, http.MethodPut, "/api/v1/settings",
-		updateSettingsRequest{Modes: &modes},
-	)
+		updateSettingsRequest{Modes: &modes})
+
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
 	var resp settingsResponse
@@ -726,10 +707,11 @@ func TestHandleUpdateSettingsPublishesPullConfigOnlyAfterPersistence(t *testing.
 	enabled := config.PullRequests{AllowMidStackMerges: true}
 	activityEnabled := srv.cfg.Activity
 	activityEnabled.UseWorkspaceActivityForRecency = true
-	rr := doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
 		PullRequests: &enabled,
 		Activity:     &activityEnabled,
 	})
+
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	require.True(srv.pullAPI.ConfigSnapshot().AllowMidStackMerges)
 	require.True(srv.pullAPI.ConfigSnapshot().UseWorkspaceActivityForRecency)
@@ -743,10 +725,11 @@ func TestHandleUpdateSettingsPublishesPullConfigOnlyAfterPersistence(t *testing.
 	disabled := config.PullRequests{AllowMidStackMerges: false}
 	activityDisabled := activityEnabled
 	activityDisabled.UseWorkspaceActivityForRecency = false
-	rr = doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+	rr = testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
 		PullRequests: &disabled,
 		Activity:     &activityDisabled,
 	})
+
 	require.Equal(http.StatusInternalServerError, rr.Code, rr.Body.String())
 	require.True(
 		srv.pullAPI.ConfigSnapshot().AllowMidStackMerges,
@@ -805,10 +788,10 @@ func TestHandleUpdateSettingsPersistsKataProjectMappings(t *testing.T) {
 			RepoPath:     "acme/widget",
 		},
 	}
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t, srv, http.MethodPut, "/api/v1/settings",
-		updateSettingsRequest{KataProjects: &mappings},
-	)
+		updateSettingsRequest{KataProjects: &mappings})
+
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
 	var resp settingsResponse
@@ -870,9 +853,9 @@ func TestHandleUpdateSettings(t *testing.T) {
 		Workspaces: &workspaces,
 		Terminal:   &terminal,
 	}
-	rr := doJSON(
-		t, srv, http.MethodPut, "/api/v1/settings", body,
-	)
+	rr := testutil.DoJSON(
+		t, srv, http.MethodPut, "/api/v1/settings", body)
+
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
 	// Verify persisted to disk.
@@ -905,9 +888,10 @@ func TestHandleUpdateSettingsMergesWorkspaceFields(t *testing.T) {
 	require.NoError(srv.cfg.Save(cfgPath))
 
 	defaultSidebarView := "item"
-	rr := doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
 		Workspaces: &workspaceSettingsUpdate{DefaultSidebarView: &defaultSidebarView},
 	})
+
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
 	cfg2, err := config.Load(cfgPath)
@@ -955,18 +939,19 @@ prefer_github_native_stacks = true
 	require.NoError(err)
 	require.NotNil(before.JSON200)
 	require.NotNil(before.JSON200.Members)
-	assert.Equal([]int64{11, 10}, stackMemberNumbers(*before.JSON200.Members))
+	assert.Equal([]int64{11, 10}, stackMemberNumbers(before.JSON200.Members))
 
 	disabled := config.PullRequests{}
-	rr := doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
 		PullRequests: &disabled,
 	})
+
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	after, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 10)
 	require.NoError(err)
 	require.NotNil(after.JSON200)
 	require.NotNil(after.JSON200.Members)
-	assert.Equal([]int64{10, 11}, stackMemberNumbers(*after.JSON200.Members))
+	assert.Equal([]int64{10, 11}, stackMemberNumbers(after.JSON200.Members))
 }
 
 func TestHandleUpdateTerminalSettingsPreservesActivity(t *testing.T) {
@@ -1004,9 +989,9 @@ docs = false
 	body := updateSettingsRequest{
 		Terminal: &terminal,
 	}
-	rr := doJSON(
-		t, srv, http.MethodPut, "/api/v1/settings", body,
-	)
+	rr := testutil.DoJSON(
+		t, srv, http.MethodPut, "/api/v1/settings", body)
+
 	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
 
 	cfg2, err := config.Load(cfgPath)
@@ -1044,9 +1029,10 @@ name = "widget"
 	terminal := srv.cfg.Terminal
 	srv.cfgMu.Unlock()
 	terminal.TmuxMouse = new(false)
-	rr := doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
 		Terminal: &terminal,
 	})
+
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	assert.Equal(t, []string{
 		"-L kenn-forge list-sessions -F #{session_name}:#{@forge_owner}",
@@ -1076,9 +1062,10 @@ name = "widget"
 	terminal := srv.cfg.Terminal
 	srv.cfgMu.Unlock()
 	terminal.Graphics = new(false)
-	rr := doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
 		Terminal: &terminal,
 	})
+
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	assert.Equal(t, []string{
 		"-L kenn-forge set-option -q -g allow-passthrough off",
@@ -1107,9 +1094,9 @@ func TestHandleUpdateSettingsPersistsAgents(t *testing.T) {
 	}}
 
 	body := updateSettingsRequest{Agents: &agents}
-	rr := doJSON(
-		t, srv, http.MethodPut, "/api/v1/settings", body,
-	)
+	rr := testutil.DoJSON(
+		t, srv, http.MethodPut, "/api/v1/settings", body)
+
 	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
 
 	cfg2, err := config.Load(cfgPath)
@@ -1156,10 +1143,10 @@ name = "widget"
 		Label:   "Custom Codex",
 		Command: []string{agentPath, "--full-auto"},
 	}}
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t, srv, http.MethodPut, "/api/v1/settings",
-		updateSettingsRequest{Agents: &agents},
-	)
+		updateSettingsRequest{Agents: &agents})
+
 	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
 
 	target := findRuntimeTargetForSettingsTest(
@@ -1196,9 +1183,9 @@ func TestHandleUpdateSettingsInvalid(t *testing.T) {
 	body := updateSettingsRequest{
 		Activity: &activity,
 	}
-	rr := doJSON(
-		t, srv, http.MethodPut, "/api/v1/settings", body,
-	)
+	rr := testutil.DoJSON(
+		t, srv, http.MethodPut, "/api/v1/settings", body)
+
 	require.Equal(t, http.StatusUnprocessableEntity, rr.Code, rr.Body.String())
 
 	// Verify config was NOT modified (rollback).
@@ -1216,9 +1203,9 @@ func TestHandleAddRepo(t *testing.T) {
 		"owner":    "other-org",
 		"name":     "other-repo",
 	}
-	rr := doJSON(
-		t, srv, http.MethodPost, "/api/v1/repos", body,
-	)
+	rr := testutil.DoJSON(
+		t, srv, http.MethodPost, "/api/v1/repos", body)
+
 	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
 
 	cfg2, err := config.Load(cfgPath)
@@ -1251,12 +1238,13 @@ owner = "acme"
 name = "widget"
 `, mock)
 
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos", map[string]string{
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repos", map[string]string{
 		"provider": "github",
 		"host":     "github.com",
 		"owner":    "other-org",
 		"name":     "frozen",
 	})
+
 	require.Equal(http.StatusCreated, rr.Code, rr.Body.String())
 
 	cfg2, err := config.Load(cfgPath)
@@ -1305,12 +1293,13 @@ name = "*"
 	// The repo gets archived on the provider; adding an overlapping exact
 	// entry must refresh the tracked ref, not keep the stale live one.
 	archivedNow.Store(true)
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos", map[string]string{
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repos", map[string]string{
 		"provider": "github",
 		"host":     "github.com",
 		"owner":    "acme",
 		"name":     "widget",
 	})
+
 	require.Equal(http.StatusCreated, rr.Code, rr.Body.String())
 
 	assert.True(trackedRepoArchived(srv, "acme", "widget"),
@@ -1362,10 +1351,10 @@ name = "*"
 	// provider archives it must update the tracked ref even though the
 	// exact entry keeps it in the tracked set.
 	archivedNow.Store(true)
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t, srv, http.MethodPost,
-		"/api/v1/repo/gh/acme/*/refresh", nil,
-	)
+		"/api/v1/repo/gh/acme/*/refresh", nil)
+
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
 	assert.True(trackedRepoArchived(srv, "acme", "widget"),
@@ -1480,10 +1469,10 @@ name = "*"
 	// the live lanes must stop touching it while the live sibling keeps
 	// syncing.
 	archivedNow.Store(true)
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t, srv, http.MethodPost,
-		"/api/v1/repo/gh/acme/*/refresh", nil,
-	)
+		"/api/v1/repo/gh/acme/*/refresh", nil)
+
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	require.True(trackedRepoArchived(srv, "acme", "widget"))
 
@@ -1704,15 +1693,15 @@ name = "widget"
 	// cooldown path as a user clicking Sync right after a recent sync.
 	syncer.RunOnce(t.Context())
 
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t, srv, http.MethodPost, "/api/v1/repos",
 		map[string]string{
 			"provider": "github",
 			"host":     "github.com",
 			"owner":    "other-org",
 			"name":     "other-repo",
-		},
-	)
+		})
+
 	require.Equal(http.StatusCreated, rr.Code, rr.Body.String())
 
 	require.Eventually(func() bool {
@@ -1742,9 +1731,9 @@ func TestHandleAddRepoDuplicate(t *testing.T) {
 		"owner":    "acme",
 		"name":     "widget",
 	}
-	rr := doJSON(
-		t, srv, http.MethodPost, "/api/v1/repos", body,
-	)
+	rr := testutil.DoJSON(
+		t, srv, http.MethodPost, "/api/v1/repos", body)
+
 	require.Equal(t, http.StatusBadRequest, rr.Code, rr.Body.String())
 }
 
@@ -1759,15 +1748,15 @@ func TestHandleDeleteRepo(t *testing.T) {
 		"owner":    "other-org",
 		"name":     "other-repo",
 	}
-	addRR := doJSON(
-		t, srv, http.MethodPost, "/api/v1/repos", addBody,
-	)
+	addRR := testutil.DoJSON(
+		t, srv, http.MethodPost, "/api/v1/repos", addBody)
+
 	require.Equal(http.StatusCreated, addRR.Code, addRR.Body.String())
 
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t, srv, http.MethodDelete,
-		"/api/v1/repo/gh/acme/widget", nil,
-	)
+		"/api/v1/repo/gh/acme/widget", nil)
+
 	require.Equal(http.StatusNoContent, rr.Code, rr.Body.String())
 
 	cfg2, err := config.Load(cfgPath)
@@ -1787,9 +1776,9 @@ func TestHandleDeleteRepoPreservesKataProjectMappings(t *testing.T) {
 		"owner":    "other-org",
 		"name":     "other-repo",
 	}
-	addRR := doJSON(
-		t, srv, http.MethodPost, "/api/v1/repos", addBody,
-	)
+	addRR := testutil.DoJSON(
+		t, srv, http.MethodPost, "/api/v1/repos", addBody)
+
 	require.Equal(http.StatusCreated, addRR.Code, addRR.Body.String())
 
 	mappings := []config.KataProjectRepoMapping{
@@ -1808,16 +1797,16 @@ func TestHandleDeleteRepoPreservesKataProjectMappings(t *testing.T) {
 			RepoPath:     "other-org/other-repo",
 		},
 	}
-	updateRR := doJSON(
+	updateRR := testutil.DoJSON(
 		t, srv, http.MethodPut, "/api/v1/settings",
-		updateSettingsRequest{KataProjects: &mappings},
-	)
+		updateSettingsRequest{KataProjects: &mappings})
+
 	require.Equal(http.StatusOK, updateRR.Code, updateRR.Body.String())
 
-	deleteRR := doJSON(
+	deleteRR := testutil.DoJSON(
 		t, srv, http.MethodDelete,
-		"/api/v1/repo/gh/acme/widget", nil,
-	)
+		"/api/v1/repo/gh/acme/widget", nil)
+
 	require.Equal(http.StatusNoContent, deleteRR.Code, deleteRR.Body.String())
 
 	cfg2, err := config.Load(cfgPath)
@@ -1856,7 +1845,7 @@ func TestGetSettingsWithoutPersistence(t *testing.T) {
 	srv := New(database, syncer, nil, "/", cfg, ServerOptions{})
 
 	// GET /settings should work (read-only).
-	rr := doJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
+	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
 	var resp settingsResponse
@@ -1866,21 +1855,24 @@ func TestGetSettingsWithoutPersistence(t *testing.T) {
 	assert.Equal("flat", resp.Activity.ViewMode)
 
 	// Mutations should be rejected (no cfgPath).
-	mutRR := doJSON(t, srv, http.MethodPut, "/api/v1/settings",
+	mutRR := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings",
 		updateSettingsRequest{Activity: &cfg.Activity})
+
 	assert.Equal(http.StatusNotFound, mutRR.Code)
 
-	addRR := doJSON(t, srv, http.MethodPost, "/api/v1/repos",
+	addRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repos",
 		map[string]string{
 			"provider": "github",
 			"host":     "github.com",
 			"owner":    "x",
 			"name":     "y",
 		})
+
 	assert.Equal(http.StatusNotFound, addRR.Code)
 
-	delRR := doJSON(t, srv, http.MethodDelete,
+	delRR := testutil.DoJSON(t, srv, http.MethodDelete,
 		"/api/v1/repo/gh/acme/widget", nil)
+
 	assert.Equal(http.StatusNotFound, delRR.Code)
 }
 
@@ -1889,14 +1881,14 @@ func TestDetailSettingsReadPersistAndRejectInvalidLimit(t *testing.T) {
 	require := require.New(t)
 	srv, _, cfgPath := setupTestServerWithConfig(t)
 
-	rr := doJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
+	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	var initial settingsResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&initial))
 	assert.Equal(config.DefaultInitialTimelineEntryLimit, initial.Detail.InitialTimelineEntryLimit)
 
 	updated := config.Detail{InitialTimelineEntryLimit: 80}
-	rr = doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{Detail: &updated})
+	rr = testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{Detail: &updated})
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	var saved settingsResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&saved))
@@ -1906,7 +1898,7 @@ func TestDetailSettingsReadPersistAndRejectInvalidLimit(t *testing.T) {
 	assert.Equal(80, persisted.Detail.InitialTimelineEntryLimit)
 
 	invalid := config.Detail{InitialTimelineEntryLimit: 9}
-	rr = doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{Detail: &invalid})
+	rr = testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{Detail: &invalid})
 	require.Equal(http.StatusUnprocessableEntity, rr.Code, rr.Body.String())
 	persisted, err = config.Load(cfgPath)
 	require.NoError(err)
@@ -1916,10 +1908,10 @@ func TestDetailSettingsReadPersistAndRejectInvalidLimit(t *testing.T) {
 func TestHandleDeleteLastRepo(t *testing.T) {
 	srv, _, cfgPath := setupTestServerWithConfig(t)
 
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t, srv, http.MethodDelete,
-		"/api/v1/repo/gh/acme/widget", nil,
-	)
+		"/api/v1/repo/gh/acme/widget", nil)
+
 	require.Equal(t, http.StatusNoContent, rr.Code, rr.Body.String())
 
 	cfg2, err := config.Load(cfgPath)
@@ -1964,7 +1956,7 @@ owner = "roborev-dev"
 name = "*"
 `, mock)
 
-	rr := doJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
+	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
 	var resp settingsResponse
@@ -2014,10 +2006,10 @@ owner = "roborev-dev"
 name = "*"
 `, mock)
 
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t, srv, http.MethodPost,
-		"/api/v1/repo/gh/roborev-dev/*/refresh", nil,
-	)
+		"/api/v1/repo/gh/roborev-dev/*/refresh", nil)
+
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
 	var resp settingsResponse
@@ -2078,10 +2070,10 @@ name = "*"
 	srv.syncer.Stop()
 	includeRefreshRepo.Store(true)
 
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t, srv, http.MethodPost,
-		"/api/v1/repo/gh/roborev-dev/*/refresh", nil,
-	)
+		"/api/v1/repo/gh/roborev-dev/*/refresh", nil)
+
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
 	repos, err := database.ListRepos(t.Context())
@@ -2135,10 +2127,10 @@ owner = "roborev-dev"
 name = "worker"
 `, mock)
 
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t, srv, http.MethodPost,
-		"/api/v1/repo/gh/roborev-dev/*/refresh", nil,
-	)
+		"/api/v1/repo/gh/roborev-dev/*/refresh", nil)
+
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
 	var resp settingsResponse
@@ -2186,10 +2178,10 @@ owner = "roborev-dev"
 name = "tools"
 `, mock)
 
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t, srv, http.MethodDelete,
-		"/api/v1/repo/gh/roborev-dev/*", nil,
-	)
+		"/api/v1/repo/gh/roborev-dev/*", nil)
+
 	require.Equal(t, http.StatusNoContent, rr.Code, rr.Body.String())
 	assert.True(t, srv.syncer.IsTrackedRepo("roborev-dev", "tools"))
 	assert.False(t, srv.syncer.IsTrackedRepo("roborev-dev", "kenn-forge"))
@@ -2245,10 +2237,10 @@ name = "*"
 		},
 	})
 
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t, srv, http.MethodDelete,
-		"/api/v1/repo/gh/acme/*", nil,
-	)
+		"/api/v1/repo/gh/acme/*", nil)
+
 	require.Equal(t, http.StatusNoContent, rr.Code, rr.Body.String())
 	assert.True(t, srv.syncer.IsTrackedRepo("acme", "tools-new"),
 		"deleting the glob must keep the renamed repo its exact entry still claims")
@@ -2298,10 +2290,10 @@ name = "*"
 	// Removing the exact entry keeps the repo through the glob, but its
 	// provenance now points at a config entry that no longer exists and
 	// must not survive to claim a future entry with the same path.
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t, srv, http.MethodDelete,
-		"/api/v1/repo/gh/acme/tools", nil,
-	)
+		"/api/v1/repo/gh/acme/tools", nil)
+
 	require.Equal(t, http.StatusNoContent, rr.Code, rr.Body.String())
 	require.True(t, srv.syncer.IsTrackedRepo("acme", "tools-new"))
 	assert.Empty(t, trackedRepoProvenancePath(srv, "acme", "tools-new"),
@@ -2355,10 +2347,10 @@ platform_host = "ghe.example.com"
 
 	// The remaining acme/tools entry lives on a different host; it cannot
 	// keep the deleted github.com entry's provenance alive.
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t, srv, http.MethodDelete,
-		"/api/v1/repo/gh/acme/tools", nil,
-	)
+		"/api/v1/repo/gh/acme/tools", nil)
+
 	require.Equal(t, http.StatusNoContent, rr.Code, rr.Body.String())
 	require.True(t, srv.syncer.IsTrackedRepo("acme", "tools-new"))
 	assert.Empty(t, trackedRepoProvenancePath(srv, "acme", "tools-new"),
@@ -2414,10 +2406,10 @@ name = "tools"
 	// The remaining acme/tools entry shares the host but belongs to a
 	// different provider; it cannot keep the deleted GitHub entry's
 	// provenance alive.
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t, srv, http.MethodDelete,
-		"/api/v1/repo/gh/acme/tools", nil,
-	)
+		"/api/v1/repo/gh/acme/tools", nil)
+
 	require.Equal(t, http.StatusNoContent, rr.Code, rr.Body.String())
 	require.True(t, srv.syncer.IsTrackedRepo("acme", "tools-new"))
 	assert.Empty(t, trackedRepoProvenancePath(srv, "acme", "tools-new"),
@@ -2443,13 +2435,13 @@ owner = "acme"
 name = "widget"
 `, &mockGH{})
 
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t, srv, http.MethodDelete,
-		"/api/v1/host/gitlab.com/repo/gl/acme/widget", nil,
-	)
+		"/api/v1/host/gitlab.com/repo/gl/acme/widget", nil)
+
 	require.Equal(http.StatusNoContent, rr.Code, rr.Body.String())
 
-	settingsRR := doJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
+	settingsRR := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
 	require.Equal(http.StatusOK, settingsRR.Code, settingsRR.Body.String())
 	var resp settingsResponse
 	require.NoError(json.NewDecoder(settingsRR.Body).Decode(&resp))
@@ -2494,10 +2486,10 @@ name = "*"
 		PlatformHost: "github.com",
 	}})
 
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t, srv, http.MethodPost,
-		"/api/v1/repo/gh/roborev-dev/*/refresh", nil,
-	)
+		"/api/v1/repo/gh/roborev-dev/*/refresh", nil)
+
 	require.Equal(http.StatusBadGateway, rr.Code, rr.Body.String())
 	assert.True(srv.syncer.IsTrackedRepo("roborev-dev", "kenn-forge"))
 }
@@ -2553,7 +2545,7 @@ name = "widget"
 		ServerOptions{},
 	)
 
-	rr := doJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
+	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
 	var resp settingsResponse
@@ -2587,10 +2579,10 @@ owner = "acme"
 name = "Widget-*"
 `, mock)
 
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t, srv, http.MethodPost,
-		"/api/v1/repo/gh/acme/Widget-*/refresh", nil,
-	)
+		"/api/v1/repo/gh/acme/Widget-*/refresh", nil)
+
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	assert.True(srv.syncer.IsTrackedRepo("acme", "Widget-API"))
 }
@@ -2606,25 +2598,25 @@ func TestAddRepoDoesNotDropConcurrentActivityChange(t *testing.T) {
 	srv, _, cfgPath := setupTestServerWithConfig(t)
 
 	// Change activity via the update handler.
-	rr := doJSON(
+	rr := testutil.DoJSON(
 		t, srv, http.MethodPut, "/api/v1/settings",
 		updateSettingsRequest{
 			Activity: &config.Activity{
 				ViewMode:  "threaded",
 				TimeRange: "30d",
 			},
-		},
-	)
+		})
+
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
 	// Add a new repo; handler should preserve activity.
-	addRR := doJSON(
+	addRR := testutil.DoJSON(
 		t, srv, http.MethodPost, "/api/v1/repos",
 		map[string]string{
 			"provider": "github", "host": "github.com",
 			"owner": "other-org", "name": "other-repo",
-		},
-	)
+		})
+
 	require.Equal(http.StatusCreated, addRR.Code, addRR.Body.String())
 
 	cfg2, err := config.Load(cfgPath)
@@ -2696,10 +2688,10 @@ name = "*"
 		require.FailNow("refresh did not reach the GH mock")
 	}
 
-	delRR := doJSON(
+	delRR := testutil.DoJSON(
 		t, srv, http.MethodDelete,
-		"/api/v1/repo/gh/roborev-dev/*", nil,
-	)
+		"/api/v1/repo/gh/roborev-dev/*", nil)
+
 	require.Equal(http.StatusNoContent, delRR.Code, delRR.Body.String())
 	require.False(srv.syncer.IsTrackedRepo("roborev-dev", "kenn-forge"))
 
@@ -2748,7 +2740,7 @@ command = ["systemd-run", "--user", "--scope", "tmux"]
 			TimeRange: "30d",
 		},
 	}
-	rr := doJSON(t, srv, http.MethodPut, "/api/v1/settings", body)
+	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", body)
 	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
 
 	reloaded, err := config.Load(cfgPath)
@@ -2820,12 +2812,13 @@ owner = "acme"
 name = "widget-*"
 `, mock)
 
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
 		"provider": "github",
 		"host":     "github.com",
 		"owner":    " ACME ",
 		"pattern":  " Widget* ",
 	})
+
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
 	var resp repoPreviewResponse
@@ -2891,10 +2884,11 @@ port = 8091
 		ServerOptions{HostCheckAllowLoopbackAnyPort: true})
 
 	preview := func(owner string) repoPreviewResponse {
-		rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
+		rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
 			"provider": "github", "host": "github.com",
 			"owner": owner, "pattern": "*",
 		})
+
 		require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 		var resp repoPreviewResponse
 		require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
@@ -2909,7 +2903,46 @@ port = 8091
 	assert.Equal("repo-b", orgB.Repos[0].Name)
 }
 
+func TestHandlePreviewReposReportsUnconfiguredGitHubProvider(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "")
+
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	require.NoError(os.WriteFile(cfgPath, []byte(`
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+`), 0o644))
+	cfg, err := config.Load(cfgPath)
+	require.NoError(err)
+	database := dbtest.Open(t)
+	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
+	srv := NewWithConfig(database, syncer, nil, nil, cfg, cfgPath,
+		ServerOptions{HostCheckAllowLoopbackAnyPort: true})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
+		"provider": "github", "host": "github.com",
+		"owner": "acme", "pattern": "widget",
+	})
+
+	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
+	assert.True(strings.HasPrefix(
+		rr.Header().Get("Content-Type"), "application/problem+json",
+	))
+	var problem httpapi.ProblemError
+	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
+	assert.Equal(httpapi.CodeBadRequest, problem.Code)
+	assert.Contains(problem.Detail, "provider_not_configured")
+	assert.Contains(problem.Detail, "github.com")
+}
+
 func TestHandlePreviewReposReportsMissingOwnerRoute(t *testing.T) {
+	assert := assert.New(t)
 	require := require.New(t)
 	router, err := ghclient.NewHostRouter(
 		"github.com",
@@ -2940,14 +2973,18 @@ port = 8091
 	srv := NewWithConfig(database, syncer, nil, nil, cfg, cfgPath,
 		ServerOptions{HostCheckAllowLoopbackAnyPort: true})
 
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
 		"provider": "github", "host": "github.com",
 		"owner": "org-b", "pattern": "*",
 	})
+
 	require.Equal(http.StatusBadGateway, rr.Code, rr.Body.String())
-	assert.Contains(t, rr.Body.String(), "org-b")
-	assert.Contains(t, rr.Body.String(), "github.com")
-	assert.NotContains(t, rr.Body.String(), "org-a")
+	assert.Contains(rr.Body.String(), "org-b")
+	assert.Contains(rr.Body.String(), "github.com")
+	assert.NotContains(rr.Body.String(), "org-a")
+	var problem httpapi.ProblemError
+	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
+	assert.Equal(httpapi.CodeUpstreamError, problem.Code)
 }
 
 func TestHandlePreviewReposFallsBackToListWhenExactLookupFails(t *testing.T) {
@@ -2991,12 +3028,13 @@ host = "127.0.0.1"
 port = 8091
 `, mock)
 
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
 		"provider": "github",
 		"host":     "github.com",
 		"owner":    "mariusvniekerk",
 		"pattern":  "dotfiles2026",
 	})
+
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
 	var resp repoPreviewResponse
@@ -3053,12 +3091,13 @@ host = "127.0.0.1"
 port = 8091
 `, mock)
 
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
 		"provider": "github",
 		"host":     "github.com",
 		"owner":    "anacondarecipes",
 		"pattern":  "tesseract-feedstock",
 	})
+
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
 	var resp repoPreviewResponse
@@ -3081,21 +3120,23 @@ func TestHandlePreviewReposRejectsInvalidPattern(t *testing.T) {
 	require := require.New(t)
 	srv, _, _ := setupTestServerWithConfig(t)
 
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
 		"provider": "github",
 		"host":     "github.com",
 		"owner":    "acme*",
 		"pattern":  "widget",
 	})
+
 	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
 	assert.Contains(rr.Body.String(), "glob syntax in owner is not supported")
 
-	rr = doJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
+	rr = testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
 		"provider": "github",
 		"host":     "github.com",
 		"owner":    "acme",
 		"pattern":  "widget[",
 	})
+
 	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
 	assert.Contains(rr.Body.String(), "invalid glob pattern")
 }
@@ -3154,12 +3195,13 @@ owner = "Group/Subgroup"
 name = "Project"
 `, &mockGH{}, provider)
 
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
 		"provider": "gitlab",
 		"host":     "gitlab.example.com",
 		"owner":    "Group/Subgroup",
 		"pattern":  "Project*",
 	})
+
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
 	var resp repoPreviewResponse
@@ -3231,12 +3273,13 @@ name = "Widget"
 repo_path = "ForgeOrg/Widget"
 `, &mockGH{}, provider)
 
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
 		"provider": "forgejo",
 		"host":     "codeberg.example.com",
 		"owner":    "ForgeOrg",
 		"pattern":  "Widget*",
 	})
+
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
 	body := rr.Body.String()
@@ -3286,13 +3329,14 @@ name = "widget"
 `, mock)
 	callsAfterSetup := getCalls.Load()
 
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/bulk", map[string]any{
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repos/bulk", map[string]any{
 		"repos": []map[string]string{
 			{"provider": "github", "host": "github.com", "owner": " acme ", "name": " api ", "repo_path": " acme/api "},
 			{"provider": "github", "host": "github.com", "owner": "acme", "name": "worker", "repo_path": "acme/worker"},
 			{"provider": "github", "host": "github.com", "owner": "acme", "name": "api", "repo_path": "acme/api"},
 		},
 	})
+
 	require.Equal(http.StatusCreated, rr.Code, rr.Body.String())
 	assert.GreaterOrEqual(getCalls.Load(), callsAfterSetup+2)
 
@@ -3346,7 +3390,7 @@ host = "127.0.0.1"
 port = 8091
 `, &mockGH{}, provider)
 
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/bulk", map[string]any{
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repos/bulk", map[string]any{
 		"repos": []map[string]string{
 			{
 				"provider":  "gitlab",
@@ -3355,6 +3399,7 @@ port = 8091
 			},
 		},
 	})
+
 	require.Equal(http.StatusCreated, rr.Code, rr.Body.String())
 
 	var resp settingsResponse
@@ -3671,7 +3716,7 @@ host = "127.0.0.1"
 port = 8091
 `, &mockGH{}, provider)
 
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/bulk", map[string]any{
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repos/bulk", map[string]any{
 		"repos": []map[string]string{
 			{
 				"provider":  "gitea",
@@ -3680,6 +3725,7 @@ port = 8091
 			},
 		},
 	})
+
 	require.Equal(http.StatusCreated, rr.Code, rr.Body.String())
 
 	var resp settingsResponse
@@ -3744,12 +3790,13 @@ owner = "acme"
 name = "widget"
 `, mock)
 
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/bulk", map[string]any{
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repos/bulk", map[string]any{
 		"repos": []map[string]string{
 			{"provider": "github", "host": "github.com", "owner": "acme", "name": "api", "repo_path": "acme/api"},
 			{"provider": "github", "host": "github.com", "owner": "acme", "name": "missing", "repo_path": "acme/missing"},
 		},
 	})
+
 	require.Equal(http.StatusBadGateway, rr.Code, rr.Body.String())
 	assert.False(srv.syncer.IsTrackedRepo("acme", "api"))
 
@@ -3786,12 +3833,13 @@ port = 8091
 owner = "acme"
 name = "api"
 `, mock)
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/bulk", map[string]any{
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repos/bulk", map[string]any{
 		"repos": []map[string]string{
 			{"provider": "github", "host": "github.com", "owner": "acme", "name": "api", "repo_path": "acme/api"},
 			{"provider": "github", "host": "github.com", "owner": "acme", "name": "worker", "repo_path": "acme/worker"},
 		},
 	})
+
 	require.Equal(http.StatusCreated, rr.Code, rr.Body.String())
 	assert.True(srv.syncer.IsTrackedRepo("acme", "worker"))
 
@@ -3827,11 +3875,12 @@ port = 8091
 owner = "acme"
 name = "api"
 `, mock)
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/bulk", map[string]any{
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repos/bulk", map[string]any{
 		"repos": []map[string]string{
 			{"provider": "github", "host": "github.com", "owner": "acme", "name": "api", "repo_path": "acme/api"},
 		},
 	})
+
 	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
 	assert.Contains(rr.Body.String(), "all selected repositories are already configured")
 }
@@ -3889,9 +3938,10 @@ name = "widget"
 	case <-time.After(5 * time.Second):
 		require.FailNow("bulk validation did not start")
 	}
-	addRR := doJSON(t, srv, http.MethodPost, "/api/v1/repos", map[string]string{
+	addRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repos", map[string]string{
 		"provider": "github", "host": "github.com", "owner": "acme", "name": "api",
 	})
+
 	require.Equal(http.StatusCreated, addRR.Code, addRR.Body.String())
 	close(unblockGet)
 
@@ -3968,7 +4018,7 @@ state = "active"
 	`, &mockGH{})
 
 	get := func() fleetSettingsResponse {
-		response := doJSON(t, srv, http.MethodGet, "/api/v1/settings/fleet", nil)
+		response := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings/fleet", nil)
 		require.Equal(http.StatusOK, response.Code)
 		var result fleetSettingsResponse
 		require.NoError(json.NewDecoder(response.Body).Decode(&result))
@@ -3989,16 +4039,16 @@ state = "active"
 			"state": "active",
 		}},
 	}
-	response := doJSON(
-		t, srv, http.MethodPut, "/api/v1/settings/fleet", forbiddenLifecyclePayload,
-	)
+	response := testutil.DoJSON(
+		t, srv, http.MethodPut, "/api/v1/settings/fleet", forbiddenLifecyclePayload)
+
 	require.Equal(http.StatusUnprocessableEntity, response.Code)
 
 	payload := map[string]any{
 		"enabled":  true,
 		"sessions": map[string]any{"include_unmanaged_details": false},
 	}
-	response = doJSON(t, srv, http.MethodPut, "/api/v1/settings/fleet", payload)
+	response = testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings/fleet", payload)
 	require.Equal(http.StatusOK, response.Code)
 	var updated fleetSettingsResponse
 	require.NoError(json.NewDecoder(response.Body).Decode(&updated))
@@ -4055,7 +4105,7 @@ base_url = "https://hub.example"
 		FederationEnrollments:         enrollments,
 		FederationCredentials:         credentials,
 	})
-	response := doJSON(t, srv, http.MethodGet, "/api/v1/settings/fleet", nil)
+	response := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings/fleet", nil)
 	require.Equal(http.StatusOK, response.Code)
 	assert.Contains(response.Body.String(), enrollmentID)
 	assert.NotContains(response.Body.String(), token.Token)
@@ -4147,49 +4197,61 @@ base_url = %q
 	t.Cleanup(func() { gracefulShutdown(t, spoke) })
 
 	autoAssign := true
-	response := doJSON(t, spoke, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+	response := testutil.DoJSON(t, spoke, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
 		Detail:     &config.Detail{InitialTimelineEntryLimit: 75},
 		Workspaces: &workspaceSettingsUpdate{AutoAssignOnCreate: &autoAssign},
 	})
+
 	require.Equal(http.StatusBadRequest, response.Code, response.Body.String())
 	var problem httpapi.ProblemError
 	require.NoError(json.NewDecoder(response.Body).Decode(&problem))
 	assert.Equal(httpapi.CodeValidationError, problem.Code)
 	assert.Equal("mixedSettingsOwnership", problem.Details["reason"])
+	hub.cfgMu.Lock()
 	assert.Equal(50, hub.cfg.Detail.InitialTimelineEntryLimit)
 	assert.False(hub.cfg.Workspaces.AutoAssignOnCreate)
+	hub.cfgMu.Unlock()
+	spoke.cfgMu.Lock()
 	assert.Equal(25, spoke.cfg.Detail.InitialTimelineEntryLimit)
 	assert.False(spoke.cfg.Workspaces.AutoAssignOnCreate)
+	spoke.cfgMu.Unlock()
 
-	response = doJSON(t, spoke, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+	response = testutil.DoJSON(t, spoke, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
 		Detail: &config.Detail{InitialTimelineEntryLimit: 75},
 	})
+
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
-	response = doJSON(t, spoke, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+	response = testutil.DoJSON(t, spoke, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
 		Workspaces: &workspaceSettingsUpdate{AutoAssignOnCreate: &autoAssign},
 	})
+
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
-	response = doJSON(t, spoke, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+	response = testutil.DoJSON(t, spoke, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
 		Roborev: &roborevSettingsUpdate{InitManagedClones: new(true)},
 	})
+
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
 
+	hub.cfgMu.Lock()
 	assert.Equal(75, hub.cfg.Detail.InitialTimelineEntryLimit)
 	assert.False(hub.cfg.Workspaces.AutoAssignOnCreate)
+	hub.cfgMu.Unlock()
+	spoke.cfgMu.Lock()
 	assert.Equal(25, spoke.cfg.Detail.InitialTimelineEntryLimit)
 	assert.True(spoke.cfg.Workspaces.AutoAssignOnCreate)
 	assert.True(spoke.cfg.Roborev.InitManagedClones)
+	spoke.cfgMu.Unlock()
 
 	worktreeBase := t.TempDir()
 	canonicalWorktreeBase, err := filepath.EvalSymlinks(worktreeBase)
 	require.NoError(err)
-	runGit(t, worktreeBase, "init", "--initial-branch=main")
-	runGit(t, worktreeBase, "remote", "add", "origin", "https://github.com/acme/widget.git")
-	response = doJSON(
+	gitfixture.Run(t, worktreeBase, "init", "--initial-branch=main")
+	gitfixture.Run(t, worktreeBase, "remote", "add", "origin", "https://github.com/acme/widget.git")
+	response = testutil.DoJSON(
 		t, spoke, http.MethodPut,
 		"/api/v1/repo/github/acme/widget/worktree-base",
-		repoWorktreeBaseRequest{WorktreeBasePath: worktreeBase},
-	)
+		repoWorktreeBaseRequest{WorktreeBasePath: worktreeBase})
+
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
 	assert.Equal(canonicalWorktreeBase, spoke.cfg.Repos[0].WorktreeBasePath)
 	assert.Empty(hub.cfg.Repos[0].WorktreeBasePath)
@@ -4202,7 +4264,7 @@ base_url = %q
 	assert.True(settings.Workspaces.AutoAssignOnCreate)
 	assert.Equal(config.FleetRoleSpoke, settings.Fleet.Role)
 
-	response = doJSON(t, spoke, http.MethodGet, "/api/v1/settings", nil)
+	response = testutil.DoJSON(t, spoke, http.MethodGet, "/api/v1/settings", nil)
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
 	require.NoError(json.NewDecoder(response.Body).Decode(&settings))
 	require.Len(settings.Repos, 1)
@@ -4253,16 +4315,19 @@ port = 8091
 	worktreeBase := t.TempDir()
 	canonicalWorktreeBase, err := filepath.EvalSymlinks(worktreeBase)
 	require.NoError(err)
-	runGit(t, worktreeBase, "init", "--initial-branch=main")
-	runGit(t, worktreeBase, "remote", "add", "origin", "https://github.com/acme/late.git")
+	gitfixture.Run(t, worktreeBase, "init", "--initial-branch=main")
+	gitfixture.Run(t, worktreeBase, "remote", "add", "origin", "https://github.com/acme/late.git")
 
-	response := doJSON(
+	response := testutil.DoJSON(
 		t, srv, http.MethodPut, "/api/v1/repo/github/acme/late/worktree-base",
-		repoWorktreeBaseRequest{WorktreeBasePath: worktreeBase},
-	)
+		repoWorktreeBaseRequest{WorktreeBasePath: worktreeBase})
+
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
-	require.Len(srv.cfg.Repos, 1)
-	assert.Equal(canonicalWorktreeBase, srv.cfg.Repos[0].WorktreeBasePath)
+	srv.cfgMu.Lock()
+	configuredRepos := cloneReloadedConfig(srv.cfg).Repos
+	srv.cfgMu.Unlock()
+	require.Len(configuredRepos, 1)
+	assert.Equal(canonicalWorktreeBase, configuredRepos[0].WorktreeBasePath)
 
 	projection.Repos[0].Owner = "renamed"
 	projection.Repos[0].Name = "late-renamed"
@@ -4272,17 +4337,20 @@ port = 8091
 	projection.RepositoryObservations[0].Name = "late-renamed"
 	projection.RepositoryObservations[0].RepoPath = "renamed/late-renamed"
 	projection.RepositoryObservations[0].ObservedAt = observedAt.Add(time.Minute)
-	response = doJSON(
+	response = testutil.DoJSON(
 		t, srv, http.MethodPut,
 		"/api/v1/repo/github/renamed/late-renamed/worktree-base",
-		repoWorktreeBaseRequest{},
-	)
+		repoWorktreeBaseRequest{})
+
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
 	assert.Equal(int32(2), reads.Load(), "each mutation uses one pre-commit hub snapshot")
-	require.Len(srv.cfg.Repos, 1)
-	assert.Equal("renamed", srv.cfg.Repos[0].Owner)
-	assert.Equal("late-renamed", srv.cfg.Repos[0].Name)
-	assert.Empty(srv.cfg.Repos[0].WorktreeBasePath)
+	srv.cfgMu.Lock()
+	configuredRepos = cloneReloadedConfig(srv.cfg).Repos
+	srv.cfgMu.Unlock()
+	require.Len(configuredRepos, 1)
+	assert.Equal("renamed", configuredRepos[0].Owner)
+	assert.Equal("late-renamed", configuredRepos[0].Name)
+	assert.Empty(configuredRepos[0].WorktreeBasePath)
 	contents, err := os.ReadFile(configPath)
 	require.NoError(err)
 	assert.Contains(string(contents), `platform_repo_id = "repo-late"`)
@@ -4312,7 +4380,7 @@ auto_assign_on_create = false
 	}
 	autoAssign := true
 
-	response := doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+	response := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
 		Workspaces: &workspaceSettingsUpdate{AutoAssignOnCreate: &autoAssign},
 	})
 
@@ -4338,7 +4406,7 @@ func TestNodeSettingsLoadWhileFederationIsDisabled(t *testing.T) {
 		enabled: srv.federationEnabled,
 	}
 
-	response := doJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
+	response := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
 
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
 	var settings settingsResponse
@@ -4374,13 +4442,14 @@ base_url = "https://hub.example"
 	require.NotNil(srv.providerSource)
 	require.Nil(srv.providerSource.client)
 
-	response := doJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
+	response := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
 
 	autoAssign := true
-	response = doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+	response = testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
 		Workspaces: &workspaceSettingsUpdate{AutoAssignOnCreate: &autoAssign},
 	})
+
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
 	assert.True(srv.cfg.Workspaces.AutoAssignOnCreate)
 	persisted, err := config.Load(configPath)
@@ -4449,7 +4518,7 @@ prefer_github_native_stacks = true
 	require.NoError(err)
 	require.NotNil(before.JSON200)
 	require.NotNil(before.JSON200.Members)
-	require.Equal([]int64{11, 10}, stackMemberNumbers(*before.JSON200.Members))
+	require.Equal([]int64{11, 10}, stackMemberNumbers(before.JSON200.Members))
 
 	var buf bytes.Buffer
 	require.NoError(json.NewEncoder(&buf).Encode(updateSettingsRequest{
@@ -4467,7 +4536,7 @@ prefer_github_native_stacks = true
 	require.NoError(err)
 	require.NotNil(after.JSON200)
 	require.NotNil(after.JSON200.Members)
-	assert.Equal([]int64{10, 11}, stackMemberNumbers(*after.JSON200.Members),
+	assert.Equal([]int64{10, 11}, stackMemberNumbers(after.JSON200.Members),
 		"committed-state reconciliation must not depend on the request context")
 }
 
@@ -4520,7 +4589,7 @@ prefer_github_native_stacks = true
 	require.NoError(err)
 	require.NotNil(after.JSON200)
 	require.NotNil(after.JSON200.Members)
-	assert.Equal([]int64{11, 10}, stackMemberNumbers(*after.JSON200.Members),
+	assert.Equal([]int64{11, 10}, stackMemberNumbers(after.JSON200.Members),
 		"a superseded disable must not overwrite the projection the current preference produced")
 }
 
@@ -4570,19 +4639,20 @@ prefer_github_native_stacks = true
 	require.NoError(err)
 	require.NotNil(before.JSON200)
 	require.NotNil(before.JSON200.Members)
-	require.Equal([]int64{11, 10}, stackMemberNumbers(*before.JSON200.Members))
+	require.Equal([]int64{11, 10}, stackMemberNumbers(before.JSON200.Members))
 
 	disabled := config.PullRequests{}
-	rr := doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
 		PullRequests: &disabled,
 	})
+
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
 	after, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "removed", 10)
 	require.NoError(err)
 	require.NotNil(after.JSON200)
 	require.NotNil(after.JSON200.Members)
-	assert.Equal([]int64{10, 11}, stackMemberNumbers(*after.JSON200.Members),
+	assert.Equal([]int64{10, 11}, stackMemberNumbers(after.JSON200.Members),
 		"a repository no longer tracked must still lose native ordering when the preview is disabled")
 }
 
@@ -4646,6 +4716,6 @@ prefer_github_native_stacks = false
 	require.NoError(err)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Members)
-	assert.Equal([]int64{10, 11}, stackMemberNumbers(*resp.JSON200.Members),
+	assert.Equal([]int64{10, 11}, stackMemberNumbers(resp.JSON200.Members),
 		"a server booting with the preview disabled must not serve native ordering")
 }

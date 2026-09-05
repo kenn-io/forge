@@ -325,6 +325,7 @@ registry helpers return typed errors for missing providers or capabilities.
   empty forever, which silently degrades the worktree diff sampler to a bare
   HEAD diff (0/0 sidebar stats).
 - Child datasets and detail/CI/diff freshness writes are fenced to the parent snapshot revision. Complete comments and inline review sets replace; submitted reviews remain additive. (`internal/db/queries_snapshot_children.go::CommitMergeRequestChildSnapshot`)
+- Merge-request assignee omission remains unknown; only a provider-confirmed empty set counts as unassigned, so incomplete snapshots cannot claim that an item has no owner. (`internal/platform/persist.go::MarshalUserNamesJSON`, `internal/db/queries_assignees.go::unassignedCondition`)
 
 ## Historical Archive
 
@@ -366,7 +367,8 @@ registry helpers return typed errors for missing providers or capabilities.
   boundary; using the later promotion time can skip items updated after inventory
   completed. (`internal/db/queries_archive.go::StartFullArchives`)
 - Configuration reconciliation pauses omitted repositories with a durable `configuration_removed` reason while retaining archive content and progress. Re-adding the same full identity clears only that automatic pause; an operator pause stays paused. (`internal/db/queries_archive.go::ReconcileDiscoveryArchives`, `internal/db/queries_archive.go::EnsureDiscoveryArchives`)
-- Reconcile configured repositories only at startup or configuration reload; idle scheduler polls must remain read-only unless they claim actual work. (`internal/github/sync.go::SetReposWithContext`, `internal/archive/scheduler.go::RunEligible`)
+- Reconcile configured repositories only at startup or configuration reload; idle scheduler passes must remain read-only unless they claim actual work. (`internal/github/sync.go::SetReposWithContext`, `internal/archive/scheduler.go::RunPass`)
+- The worker caches resolved repositories keyed on configured refs plus the store's repository reconciliation generation, which every catalog write advances, so an unchanged pass runs no resolution queries. (`internal/archive/service.go::workerRepositories`)
 - Startup reconciliation reopens completed legacy known-item lookups once when
   lifecycle details are missing, independent of historical inventory coverage;
   a close actor is current only when the latest authored close event matches
@@ -427,6 +429,11 @@ preserve `path_with_namespace` as `repo_path`.
 GitLab private Markdown upload web URLs do not accept API-token authentication.
 Translate only repo-scoped upload URLs to the authenticated project-upload API;
 never proxy arbitrary provider URLs. (`platform/gitlab/markdown_images.go::GetMarkdownImage`)
+
+The markdown image cache is keyed by stable repository identity, never the owner/name
+route, so a replacement occupant of a reused route cannot receive the previous
+repository's bytes; providers mark ref-addressed sources `Mutable` and the server then
+caches them for minutes instead of a year (`internal/server/markdown_images.go::markdownImageCacheKey`).
 
 GitLab merge request and issue `iid` values are repo-scoped numbers. Persist
 provider object ids separately from user-visible numbers, and scope events by
@@ -511,10 +518,13 @@ Repository import requests and route/query shapes should carry
   pushed-head refresh, manual workspace refresh, and on-demand worktree sync
   must check item visibility before item-specific provider access. Workspace and
   Fleet projections retain local records but omit removed parent metadata;
-  visible stack members are renumbered contiguously after filtering.
+  visible stack members are renumbered contiguously after filtering, and the
+  pull list's per-row stack placement must report the same position and size
+  as the detail stack context.
   `inaccessible` items remain visible.
   (`internal/server/pullapi/helpers.go::visibleMergeRequest`,
-  `internal/server/issueapi/mutation_handlers.go::requireVisibleIssue`)
+  `internal/server/issueapi/mutation_handlers.go::requireVisibleIssue`,
+  `internal/db/queries_stacks.go::ListStackPlacementsForMRs`)
 - Embedded navigation events for repo-bound routes must publish identity from
   parsed route state, not from global embed config. When a route carries repo
   identity, event payloads should include `provider`, `platform_host`, and

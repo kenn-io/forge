@@ -39,6 +39,7 @@
   title={commit.message}
 >
   <StatusDot
+    animated
     status={commit.pushed === false ? "stale" : "quiet"}
     label={commit.pushed === false ? "Not pushed to remote" : ""}
     size={6}

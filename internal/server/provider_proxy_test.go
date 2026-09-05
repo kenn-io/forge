@@ -22,7 +22,10 @@ import (
 	"go.kenn.io/forge/internal/mcpserver"
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/issueapi"
 	"go.kenn.io/forge/internal/server/pullapi"
+	"go.kenn.io/forge/internal/server/workspaceapi"
+	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/platform"
@@ -62,7 +65,7 @@ func (*failingProviderResponseBody) Close() error { return nil }
 func TestProviderProxyPreservesHubResponse(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	t.Parallel()
+	runParallelServerTest(t)
 
 	hub := httptest.NewTLSServer(http.HandlerFunc(func(
 		w http.ResponseWriter, _ *http.Request,
@@ -97,7 +100,7 @@ func TestProviderProxyPreservesHubResponse(t *testing.T) {
 func TestHubUnavailableDoesNotFallBackToLocalProviderHandler(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	t.Parallel()
+	runParallelServerTest(t)
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(err)
@@ -128,7 +131,7 @@ func TestHubUnavailableDoesNotFallBackToLocalProviderHandler(t *testing.T) {
 func TestNodeHEADProviderReadUsesHubGETOwnership(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	t.Parallel()
+	runParallelServerTest(t)
 
 	var hubReads atomic.Int64
 	hub := httptest.NewTLSServer(http.HandlerFunc(func(
@@ -315,10 +318,208 @@ func TestHubPullCandidatesUseProviderQualifiedRepositoryFilter(t *testing.T) {
 	assert.Equal(7, candidates[0].Number)
 }
 
+func TestHubListFiltersForwardUnassigned(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	seen := make(map[string]bool)
+	source := &hubProviderSource{client: providerPlaneClientFunc(func(
+		_ context.Context, scope federationauth.Scope, request *http.Request,
+	) (*http.Response, error) {
+		assert.Equal(federationauth.ScopeProviderRead, scope)
+		seen[request.URL.Path] = request.URL.Query().Get("unassigned") == "true"
+		body := "[]"
+		if request.URL.Path == "/api/v1/activity" {
+			body = "{}"
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(bytes.NewBufferString(body)),
+			Request:    request,
+		}, nil
+	})}
+
+	_, err := source.ListPulls(t.Context(), pullapi.ListQuery{Unassigned: true})
+	require.NoError(err)
+	_, err = source.ListIssues(t.Context(), issueapi.ListQuery{Unassigned: true})
+	require.NoError(err)
+	_, err = source.ListActivity(t.Context(), &listActivityInput{Unassigned: true})
+	require.NoError(err)
+
+	assert.Equal(map[string]bool{
+		"/api/v1/pulls": true, "/api/v1/issues": true, "/api/v1/activity": true,
+	}, seen)
+}
+
+func TestHubUnassignedActivitySubjectFilterBatchesLargeSnapshots(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	const subjectCount = 11_000
+	var requestCount int
+	source := &hubProviderSource{client: providerPlaneClientFunc(func(
+		_ context.Context, scope federationauth.Scope, request *http.Request,
+	) (*http.Response, error) {
+		assert.Equal(federationauth.ScopeProviderRead, scope)
+		assert.Equal("/api/v1/federation/provider/activity/unassigned-subjects/query", request.URL.Path)
+		var body federationUnassignedActivitySubjectsRequest
+		require.NoError(json.NewDecoder(request.Body).Decode(&body))
+		assert.LessOrEqual(len(body.Subjects), 500)
+		requestCount++
+		encoded, err := json.Marshal(federationUnassignedActivitySubjectsResponse(body))
+		require.NoError(err)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(bytes.NewReader(encoded)),
+			Request:    request,
+		}, nil
+	})}
+
+	subjects := make([]providerplane.ItemIdentity, subjectCount)
+	for i := range subjects {
+		subjects[i] = providerplane.ItemIdentity{
+			Repository: providerplane.RepositoryIdentity{
+				Provider: "github", PlatformHost: "github.com", PlatformRepoID: "repo-acme-widget",
+			},
+			ItemType: "pr", ItemNumber: i + 1,
+		}
+	}
+
+	got, err := source.FilterUnassignedActivitySubjects(t.Context(), subjects)
+	require.NoError(err)
+	assert.Equal(22, requestCount)
+	assert.Equal(subjects, got)
+}
+
+func TestSpokeUnassignedActivityKeepsMatchingLocalWorkspaceSubject(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	unassignedID := seedPR(t, database, "acme", "widget", 1)
+	assignedID := seedPR(t, database, "acme", "widget", 2)
+	repo, err := database.GetRepoByIdentity(
+		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	require.NotNil(repo)
+	require.NoError(database.UpdateMergeRequestAssignees(t.Context(), repo.ID, unassignedID, nil))
+	require.NoError(database.UpdateMergeRequestAssignees(t.Context(), repo.ID, assignedID, []string{"reviewer"}))
+
+	snapshot := workspaceapi.WorkspaceSubjectSnapshot{
+		OwnReferences: map[db.WorkspaceSubjectKey]workspaceapi.WorkspaceRef{},
+		Subjects:      map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{},
+	}
+	for number, workspaceID := range map[int]string{1: "ws-unassigned", 2: "ws-assigned"} {
+		key := db.WorkspaceSubjectKey{
+			RepoID: repo.ID, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: number,
+		}
+		snapshot.Subjects[key] = workspaceapi.SubjectActivity{
+			Subject: db.WorkspaceSubjectMetadata{
+				Key: key, Platform: repo.Platform, PlatformHost: repo.PlatformHost,
+				PlatformRepoID: repo.PlatformRepoID, RepoOwner: repo.Owner, RepoName: repo.Name,
+				RepoPath: repo.RepoPath, Title: "Local workspace", State: "open",
+				URL: "https://github.com/acme/widget/pull/1", Author: "author",
+			},
+			Workspace:  workspaceapi.WorkspaceRef{ID: workspaceID, Status: "ready"},
+			ActivityAt: &now,
+		}
+	}
+
+	response, err := srv.overlayLocalActivityWorkspaceSnapshot(
+		t.Context(),
+		&listActivityInput{Unassigned: true},
+		activityResponse{UseWorkspaceActivityForRecency: true},
+		snapshot,
+	)
+	require.NoError(err)
+	require.Len(response.WorkspaceActivity, 1)
+	assert.Equal(1, response.WorkspaceActivity[0].ItemNumber)
+	assert.Equal("ws-unassigned", response.WorkspaceActivity[0].Workspace.ID)
+}
+
+func TestSpokeUnassignedActivityUsesHubAssignmentWithoutLocalProviderRows(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	hub, hubDatabase := setupTestServer(t)
+	unassignedIssueID := seedIssue(t, hubDatabase, "acme", "widget", 7, "open")
+	assignedIssueID := seedIssue(t, hubDatabase, "acme", "widget", 8, "open")
+	hubRepo, err := hubDatabase.GetRepoByIdentity(
+		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	require.NotNil(hubRepo)
+	require.NoError(hubDatabase.UpdateIssueAssignees(
+		t.Context(), hubRepo.ID, unassignedIssueID, nil,
+	))
+	require.NoError(hubDatabase.UpdateIssueAssignees(
+		t.Context(), hubRepo.ID, assignedIssueID, []string{"reviewer"},
+	))
+
+	spoke, spokeDatabase := setupTestServer(t)
+	spokeRepoID, err := spokeDatabase.UpsertRepo(
+		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	spoke.providerSource = &hubProviderSource{client: providerPlaneClientFunc(func(
+		_ context.Context, scope federationauth.Scope, request *http.Request,
+	) (*http.Response, error) {
+		assert.Equal(federationauth.ScopeProviderRead, scope)
+		request.Host = "127.0.0.1"
+		request.RemoteAddr = "127.0.0.1:1234"
+		recorder := httptest.NewRecorder()
+		hub.ServeHTTP(recorder, request)
+		assert.Equal(http.StatusOK, recorder.Code, recorder.Body.String())
+		return recorder.Result(), nil
+	})}
+
+	snapshot := workspaceapi.WorkspaceSubjectSnapshot{
+		OwnReferences: map[db.WorkspaceSubjectKey]workspaceapi.WorkspaceRef{
+			{
+				RepoID: spokeRepoID, ItemType: db.WorkspaceItemTypeIssue, ItemNumber: 7,
+			}: {ID: "ws-issue", Status: "ready"},
+			{
+				RepoID: spokeRepoID, ItemType: db.WorkspaceItemTypeIssue, ItemNumber: 8,
+			}: {ID: "ws-assigned-issue", Status: "ready"},
+		},
+		Subjects: map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{},
+	}
+
+	response, err := spoke.overlayLocalActivityWorkspaceSnapshot(
+		t.Context(),
+		&listActivityInput{Unassigned: true},
+		activityResponse{Items: []activityItemResponse{
+			{
+				Repo: activityRepoRefResponse{
+					Provider: "github", PlatformHost: "github.com",
+					PlatformRepoID: "repo-acme-widget",
+				},
+				ItemType: "issue", ItemNumber: 7,
+			},
+			{
+				Repo: activityRepoRefResponse{
+					Provider: "github", PlatformHost: "github.com",
+					PlatformRepoID: "repo-acme-widget",
+				},
+				ItemType: "issue", ItemNumber: 8,
+			},
+		},
+			UseWorkspaceActivityForRecency: true,
+		},
+		snapshot,
+	)
+	require.NoError(err)
+	require.Len(response.Items, 2)
+	require.NotNil(response.Items[0].Workspace)
+	assert.Equal("ws-issue", response.Items[0].Workspace.ID)
+	assert.Nil(response.Items[1].Workspace)
+	require.Empty(response.WorkspaceActivity)
+}
+
 func TestNodeServerRoutesProviderReadsWithoutUsingLocalTables(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	t.Parallel()
+	runParallelServerTest(t)
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(err)
@@ -574,7 +775,7 @@ func TestFederatedReviewDraftHasOneHubOwner(t *testing.T) {
 		t, "66666666666666666666666666666666", hub.URL, hub.Client(),
 	)
 	path := "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-draft"
-	created := doJSON(t, nodeA, http.MethodPost, path+"/comments", map[string]any{
+	created := testutil.DoJSON(t, nodeA, http.MethodPost, path+"/comments", map[string]any{
 		"body": "comment from spoke A",
 		"range": map[string]any{
 			"path": "internal/server/provider_proxy_test.go", "side": "right",
@@ -582,6 +783,7 @@ func TestFederatedReviewDraftHasOneHubOwner(t *testing.T) {
 			"diff_head_sha": "abc123", "commit_sha": "abc123",
 		},
 	})
+
 	require.Equal(http.StatusCreated, created.Code, created.Body.String())
 	var createdComment struct {
 		ID string `json:"id"`
@@ -589,7 +791,7 @@ func TestFederatedReviewDraftHasOneHubOwner(t *testing.T) {
 	require.NoError(json.NewDecoder(created.Body).Decode(&createdComment))
 	require.NotEmpty(createdComment.ID)
 
-	edited := doJSON(t, nodeA, http.MethodPatch, path+"/comments/"+createdComment.ID, map[string]any{
+	edited := testutil.DoJSON(t, nodeA, http.MethodPatch, path+"/comments/"+createdComment.ID, map[string]any{
 		"body": "edited comment from spoke A",
 		"range": map[string]any{
 			"path": "internal/server/provider_proxy_test.go", "side": "right",
@@ -597,9 +799,10 @@ func TestFederatedReviewDraftHasOneHubOwner(t *testing.T) {
 			"diff_head_sha": "abc123", "commit_sha": "abc123",
 		},
 	})
+
 	require.Equal(http.StatusOK, edited.Code, edited.Body.String())
 
-	read := doJSON(t, nodeB, http.MethodGet, path, nil)
+	read := testutil.DoJSON(t, nodeB, http.MethodGet, path, nil)
 	require.Equal(http.StatusOK, read.Code, read.Body.String())
 	var draft map[string]any
 	require.NoError(json.NewDecoder(read.Body).Decode(&draft))
@@ -610,9 +813,10 @@ func TestFederatedReviewDraftHasOneHubOwner(t *testing.T) {
 	require.True(ok)
 	assert.Equal("edited comment from spoke A", comment["body"])
 
-	published := doJSON(t, nodeB, http.MethodPost, path+"/publish", map[string]any{
+	published := testutil.DoJSON(t, nodeB, http.MethodPost, path+"/publish", map[string]any{
 		"action": "comment",
 	})
+
 	require.Equal(http.StatusOK, published.Code, published.Body.String())
 	assert.Len(provider.publishedReviews, 1)
 
@@ -716,7 +920,7 @@ func newFederatedProviderNodeForTest(
 func TestProviderProxyMapsHubTimeoutToUnavailable(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	t.Parallel()
+	runParallelServerTest(t)
 
 	hub := httptest.NewTLSServer(http.HandlerFunc(func(
 		w http.ResponseWriter, r *http.Request,
@@ -798,7 +1002,7 @@ func newProviderProxyTestServer(
 }
 
 func TestProviderProxyHonorsCallerCancellation(t *testing.T) {
-	t.Parallel()
+	runParallelServerTest(t)
 
 	hub := httptest.NewTLSServer(http.HandlerFunc(func(
 		w http.ResponseWriter, r *http.Request,
@@ -821,7 +1025,7 @@ func TestProviderProxyHonorsCallerCancellation(t *testing.T) {
 func TestProviderProxyRejectsOversizedHubResponse(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	t.Parallel()
+	runParallelServerTest(t)
 
 	hub := httptest.NewTLSServer(http.HandlerFunc(func(
 		w http.ResponseWriter, _ *http.Request,

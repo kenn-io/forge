@@ -127,7 +127,9 @@
   import {
     buildActivitySelectionSearch,
     parseActivitySelection,
+    type ActivityCommitSelection,
     type ActivityDetailTab,
+    type ActivitySelection,
   } from "./lib/utils/activitySelection.js";
   import { docsHref } from "./lib/api/docs/route.js";
   import {
@@ -899,16 +901,22 @@
     const route = getRoute();
     const page = route.page;
 
-    if (page !== "activity") {
+    if (page !== "activity" || !stores.settings.hasConfiguredRepos()) {
       drawerItem = null;
-    } else if (!stores.settings.hasConfiguredRepos()) {
-      drawerItem = null;
+      commitItem = null;
     } else {
-      const nextDrawer = parseActivitySelection(
+      const nextSelection = parseActivitySelection(
         window.location.search,
       );
+      const nextDrawer =
+        nextSelection && nextSelection.itemType !== "commit" ? nextSelection : null;
+      const nextCommit =
+        nextSelection && nextSelection.itemType === "commit" ? nextSelection : null;
       if (!sameActivitySelection(drawerItem, nextDrawer)) {
         drawerItem = nextDrawer;
+      }
+      if (!sameActivityCommitSelection(commitItem, nextCommit)) {
+        commitItem = nextCommit;
       }
     }
 
@@ -961,6 +969,9 @@
   };
 
   let drawerItem = $state<DrawerItem | null>(null);
+  // Owned here for the same reason drawerItem is: the Activity selection lives
+  // in the page's query string, and only this component writes it.
+  let commitItem = $state<ActivityCommitSelection | null>(null);
 
   function sameActivitySelection(
     left: DrawerItem | null,
@@ -978,8 +989,26 @@
       && left.detailTab === right.detailTab;
   }
 
+  function sameActivityCommitSelection(
+    left: ActivityCommitSelection | null,
+    right: ActivityCommitSelection | null,
+  ): boolean {
+    if (left === right) return true;
+    if (left === null || right === null) return false;
+    // `title` is display text the feed supplies and the URL does not carry, so
+    // it is deliberately not part of identity: comparing it would let a
+    // reparse downgrade a live commit subject to the short SHA.
+    return left.provider === right.provider
+      && left.platformHost === right.platformHost
+      && left.repoPath === right.repoPath
+      && left.owner === right.owner
+      && left.name === right.name
+      && left.branchName === right.branchName
+      && left.commitSha === right.commitSha;
+  }
+
   function updateDrawerURL(
-    item: DrawerItem | null,
+    item: ActivitySelection | null,
   ): void {
     if (getPage() !== "activity") return;
     const sp = buildActivitySelectionSearch(
@@ -1017,6 +1046,7 @@
       ...selectedItem,
       detailTab: "conversation",
     };
+    commitItem = null;
     updateDrawerURL(drawerItem);
   }
 
@@ -1035,6 +1065,14 @@
     updateDrawerURL(drawerItem);
   }
 
+  function handleActivityCommitSelect(
+    item: ActivityCommitSelection,
+  ): void {
+    drawerItem = null;
+    commitItem = item;
+    updateDrawerURL(commitItem);
+  }
+
   function handleResponsiveStackMemberNavigate(
     ref: PullRequestRouteRef,
   ): boolean | void {
@@ -1049,6 +1087,7 @@
 
   function closeDrawer(): void {
     drawerItem = null;
+    commitItem = null;
     updateDrawerURL(null);
   }
 
@@ -1076,7 +1115,7 @@
         scope: "global",
         binding: { key: "Escape" },
         priority: 50,
-        when: (ctx) => ctx.page === "activity" && drawerItem !== null,
+        when: (ctx) => ctx.page === "activity" && (drawerItem !== null || commitItem !== null),
         handler: () => closeDrawer(),
       },
     ]);
@@ -1212,12 +1251,14 @@
         <FocusListView
           listType="mrs"
           {...r.repo ? { repo: r.repo } : {}}
+          phonePresentation={phone}
           chunked={useFocusLayoutClass()}
         />
       {:else if r.page === "focus" && r.itemType === "issues"}
         <FocusListView
           listType="issues"
           {...r.repo ? { repo: r.repo } : {}}
+          phonePresentation={phone}
           chunked={useFocusLayoutClass()}
         />
       {:else if r.page === "focus" && r.itemType === "pr"}
@@ -1268,6 +1309,7 @@
         <FocusListView
           listType="mrs"
           routeFamily="canonical"
+          phonePresentation={phone}
           chunked={useFocusLayoutClass()}
         />
       {:else if r.page === "issues" && r.selected}
@@ -1281,6 +1323,7 @@
         <FocusListView
           listType="issues"
           routeFamily="canonical"
+          phonePresentation={phone}
           chunked={useFocusLayoutClass()}
         />
       {/if}
@@ -1448,6 +1491,8 @@
           detailTab={drawerItem?.detailTab ?? "conversation"}
           onDetailTabChange={handleActivityDetailTabChange}
           onDrawerItemChange={handleActivityDrawerItemChange}
+          {commitItem}
+          onSelectCommit={handleActivityCommitSelect}
           inlineWorkspace={getInlineWorkspaceController("activity")}
           {workspacePaneControls}
         />
@@ -1796,11 +1841,10 @@
   }
 
   .focus-layout--phone :global(.meta-branch) {
-    display: inline-flex;
+    display: block;
     flex: 1 1 100%;
     min-width: 0;
     max-width: 100%;
-    flex-wrap: wrap;
     overflow-wrap: anywhere;
     white-space: normal;
   }
@@ -1811,6 +1855,15 @@
     overflow-wrap: anywhere;
     word-break: break-word;
     text-align: left;
+  }
+
+  .focus-layout--phone :global(.branch-name-btn--head) {
+    display: inline;
+    max-width: none;
+  }
+
+  .focus-layout--phone :global(.branch-target) {
+    margin-left: var(--space-1);
   }
 
   .focus-layout--phone :global(.meta-item),

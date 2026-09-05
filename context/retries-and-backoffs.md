@@ -68,6 +68,10 @@ Steady background cadence is scheduling policy, not transient retry. Do not
 migrate ticker-driven sync or refresh loops into `backoff/v5`
 (`internal/github/sync.go::Syncer.Start`).
 
+The archive worker uses the backoff schedule type only as an idle delay calculator,
+not as a retry wrapper: idle passes double up to a five-minute cap and any wake or
+worked pass resets it (`internal/github/sync.go::runArchiveLoop`).
+
 ## Long-lived stream recovery
 
 Hub event-stream recovery is connection lifecycle policy, not a retry

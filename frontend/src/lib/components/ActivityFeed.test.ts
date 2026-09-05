@@ -119,6 +119,7 @@ const showNotifications = vi.hoisted(() => ({ value: true }));
 const activityCapped = vi.hoisted(() => ({ value: false }));
 const itemActivityCapped = vi.hoisted(() => ({ value: false }));
 const involvesMe = vi.hoisted(() => ({ value: false }));
+const unassigned = vi.hoisted(() => ({ value: false }));
 const markNotificationSeen = vi.hoisted(() => vi.fn(async () => undefined));
 const loadActivity = vi.hoisted(() => vi.fn(async () => undefined));
 const threadLoadError = vi.hoisted(() => ({ value: null as string | null }));
@@ -147,6 +148,7 @@ vi.mock("../context.js", () => ({
       getEnabledEvents: () => enabledEvents.value,
       getShowNotifications: () => showNotifications.value,
       getInvolvesMe: () => involvesMe.value,
+      getUnassigned: () => unassigned.value,
       getHideClosedMerged: () => hideClosedMerged.value,
       getHideBots: () => hideBots.value,
       getUseWorkspaceActivityForRecency: () => useWorkspaceActivityForRecency.value,
@@ -184,6 +186,9 @@ vi.mock("../context.js", () => ({
       }),
       setInvolvesMe: vi.fn((value: boolean) => {
         involvesMe.value = value;
+      }),
+      setUnassigned: vi.fn((value: boolean) => {
+        unassigned.value = value;
       }),
       markNotificationSeen,
       setHideClosedMerged: vi.fn(),
@@ -226,6 +231,8 @@ describe("ActivityFeed compact mode", () => {
     enabledItemTypes.value = new Set(["pr", "issue"]);
     enabledEvents.value = new Set(["comment", "review", "commit", "force_push"]);
     showNotifications.value = true;
+    involvesMe.value = false;
+    unassigned.value = false;
     activityCapped.value = false;
     itemActivityCapped.value = false;
     selectedAuthor.value = undefined;
@@ -400,6 +407,7 @@ describe("ActivityFeed compact mode", () => {
 
     expect(screen.getByRole("button", { name: "Roll up commits" }).getAttribute("aria-pressed")).toBe("false");
     expect(screen.getByRole("button", { name: "Comments" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Unassigned" }).getAttribute("aria-pressed")).toBe("false");
   });
 
   it("reloads server-filtered activity when closed or bot visibility changes", async () => {
@@ -412,6 +420,9 @@ describe("ActivityFeed compact mode", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: "Hide bots" }));
     expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 2);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Unassigned" }));
+    expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 3);
   });
 
   it("keeps the filter popover open and focus on the selected radio during keyboard navigation", async () => {

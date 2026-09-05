@@ -309,9 +309,16 @@ func bridgeRuntimeAttachment(
 					return
 				}
 			case websocket.MessageText:
-				if err := handleRuntimeTerminalControl(ctx, attachment, data); err != nil {
+				heartbeat, err := handleRuntimeTerminalControl(ctx, attachment, data)
+				if err != nil {
 					slog.Warn("runtime terminal control failed", "err", err)
 					return
+				}
+				if heartbeat {
+					if err := terminalwebsocket.WriteHeartbeat(ctx, conn); err != nil {
+						logWebsocketDebug("runtime terminal heartbeat write ended", "err", err)
+						return
+					}
 				}
 			}
 		}
@@ -423,14 +430,16 @@ func handleRuntimeTerminalControl(
 	ctx context.Context,
 	attachment *localruntime.Attachment,
 	data []byte,
-) error {
+) (bool, error) {
 	var msg runtimeTerminalControlMsg
 	if err := json.Unmarshal(data, &msg); err != nil {
 		slog.Warn("bad runtime terminal control message", "err", err)
-		return nil
+		return false, nil
 	}
 	info := attachment.Info()
 	switch msg.Type {
+	case "heartbeat":
+		return true, nil
 	case "claim_resize":
 		settle, err := attachment.ClaimResize(ptysize.Geometry{
 			Cols:        msg.Cols,
@@ -439,23 +448,23 @@ func handleRuntimeTerminalControl(
 			PixelHeight: msg.PixelHeight,
 		})
 		if err != nil {
-			return err
+			return false, err
 		}
 		if !settle {
-			return nil
+			return false, nil
 		}
 		refreshCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
 		if err := attachment.Refresh(refreshCtx); err != nil {
-			return err
+			return false, err
 		}
 		attachment.ResizeSettled()
-		return nil
+		return false, nil
 	case "resize_active":
 		if msg.Active != nil {
 			attachment.SetResizeActive(*msg.Active)
 		}
-		return nil
+		return false, nil
 	case "refresh":
 		logWebsocketDebug(
 			"runtime terminal refresh requested",
@@ -481,7 +490,7 @@ func handleRuntimeTerminalControl(
 		if err := attachment.Refresh(refreshCtx); err != nil {
 			slog.Warn("runtime terminal refresh", "err", err)
 		}
-		return nil
+		return false, nil
 	case "resize":
 		logWebsocketDebug(
 			"runtime terminal resize requested",
@@ -501,7 +510,7 @@ func handleRuntimeTerminalControl(
 			slog.Warn("runtime terminal resize", "err", err)
 		}
 	}
-	return nil
+	return false, nil
 }
 
 func writeRuntimeExit(

@@ -23,6 +23,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/platform"
 	platformgitlab "go.kenn.io/forge/platform/gitlab"
@@ -258,9 +259,10 @@ func TestGitLabContainerE2E(t *testing.T) {
 	runID := time.Now().UnixNano()
 
 	// Comment post and edit on the seeded MR.
-	commentRR := doJSON(t, srv, http.MethodPost, seededMR+"/comments", map[string]string{
+	commentRR := testutil.DoJSON(t, srv, http.MethodPost, seededMR+"/comments", map[string]string{
 		"body": fmt.Sprintf("Write parity comment %d", runID),
 	})
+
 	require.Equal(http.StatusCreated, commentRR.Code, commentRR.Body.String())
 	var commentEvent struct {
 		PlatformID *int64
@@ -272,11 +274,11 @@ func TestGitLabContainerE2E(t *testing.T) {
 	assert.Equal("root", commentEvent.Author)
 
 	editedBody := fmt.Sprintf("Write parity comment %d (edited)", runID)
-	editRR := doJSON(
+	editRR := testutil.DoJSON(
 		t, srv, http.MethodPatch,
 		fmt.Sprintf("%s/comments/%d", seededMR, *commentEvent.PlatformID),
-		map[string]string{"body": editedBody},
-	)
+		map[string]string{"body": editedBody})
+
 	require.Equal(http.StatusOK, editRR.Code, editRR.Body.String())
 	editedNote := gitlabContainerAPI(
 		t, ctx, manifest, http.MethodGet,
@@ -288,9 +290,10 @@ func TestGitLabContainerE2E(t *testing.T) {
 
 	// MR description edit (title is left alone so bootstrap stays idempotent).
 	editedDescription := fmt.Sprintf("Description updated by write parity e2e %d", runID)
-	mrEditRR := doJSON(t, srv, http.MethodPatch, seededMR, map[string]string{
+	mrEditRR := testutil.DoJSON(t, srv, http.MethodPatch, seededMR, map[string]string{
 		"body": editedDescription,
 	})
+
 	require.Equal(http.StatusOK, mrEditRR.Code, mrEditRR.Body.String())
 	editedMR := gitlabContainerAPI(t, ctx, manifest, http.MethodGet,
 		fmt.Sprintf("/projects/%d/merge_requests/%d", manifest.ProjectID, manifest.MergeRequestIID),
@@ -299,19 +302,20 @@ func TestGitLabContainerE2E(t *testing.T) {
 	assert.Equal(editedDescription, editedMR["description"])
 
 	// Close and reopen the seeded MR.
-	closeRR := doJSON(t, srv, http.MethodPost, seededMR+"/github-state", map[string]string{"state": "closed"})
+	closeRR := testutil.DoJSON(t, srv, http.MethodPost, seededMR+"/github-state", map[string]string{"state": "closed"})
 	require.Equal(http.StatusOK, closeRR.Code, closeRR.Body.String())
 	assert.Equal("closed", gitlabContainerMRState(t, ctx, manifest, manifest.MergeRequestIID))
-	reopenRR := doJSON(t, srv, http.MethodPost, seededMR+"/github-state", map[string]string{"state": "open"})
+	reopenRR := testutil.DoJSON(t, srv, http.MethodPost, seededMR+"/github-state", map[string]string{"state": "open"})
 	require.Equal(http.StatusOK, reopenRR.Code, reopenRR.Body.String())
 	assert.Equal("opened", gitlabContainerMRState(t, ctx, manifest, manifest.MergeRequestIID))
 
 	// Issue comment, close, and reopen on the seeded issue, each verified
 	// against GitLab's own API.
 	issueCommentBody := fmt.Sprintf("Issue write parity comment %d", runID)
-	issueCommentRR := doJSON(t, srv, http.MethodPost, seededIssue+"/comments", map[string]string{
+	issueCommentRR := testutil.DoJSON(t, srv, http.MethodPost, seededIssue+"/comments", map[string]string{
 		"body": issueCommentBody,
 	})
+
 	require.Equal(http.StatusCreated, issueCommentRR.Code, issueCommentRR.Body.String())
 	var issueCommentEvent struct {
 		PlatformID *int64
@@ -325,19 +329,20 @@ func TestGitLabContainerE2E(t *testing.T) {
 	)
 	assert.Equal(issueCommentBody, issueNote["body"])
 
-	issueCloseRR := doJSON(t, srv, http.MethodPost, seededIssue+"/github-state", map[string]string{"state": "closed"})
+	issueCloseRR := testutil.DoJSON(t, srv, http.MethodPost, seededIssue+"/github-state", map[string]string{"state": "closed"})
 	require.Equal(http.StatusOK, issueCloseRR.Code, issueCloseRR.Body.String())
 	assert.Equal("closed", gitlabContainerIssueState(t, ctx, manifest, manifest.IssueIID))
-	issueReopenRR := doJSON(t, srv, http.MethodPost, seededIssue+"/github-state", map[string]string{"state": "open"})
+	issueReopenRR := testutil.DoJSON(t, srv, http.MethodPost, seededIssue+"/github-state", map[string]string{"state": "open"})
 	require.Equal(http.StatusOK, issueReopenRR.Code, issueReopenRR.Body.String())
 	assert.Equal("opened", gitlabContainerIssueState(t, ctx, manifest, manifest.IssueIID))
 
 	// Issue create plus title/body edit, verified upstream.
 	createdIssueTitle := fmt.Sprintf("Write parity issue %d", runID)
-	createIssueRR := doJSON(t, srv, http.MethodPost, issueBase, map[string]string{
+	createIssueRR := testutil.DoJSON(t, srv, http.MethodPost, issueBase, map[string]string{
 		"title": createdIssueTitle,
 		"body":  "Issue created through kenn-forge against the GitLab container.",
 	})
+
 	require.Equal(http.StatusCreated, createIssueRR.Code, createIssueRR.Body.String())
 	var createdIssue struct {
 		Number int
@@ -353,11 +358,11 @@ func TestGitLabContainerE2E(t *testing.T) {
 	)
 
 	editedIssueTitle := fmt.Sprintf("Write parity issue %d (edited)", runID)
-	issueEditRR := doJSON(
+	issueEditRR := testutil.DoJSON(
 		t, srv, http.MethodPatch,
 		fmt.Sprintf("%s/%d", issueBase, createdIssue.Number),
-		map[string]string{"title": editedIssueTitle},
-	)
+		map[string]string{"title": editedIssueTitle})
+
 	require.Equal(http.StatusOK, issueEditRR.Code, issueEditRR.Body.String())
 	upstreamIssue = gitlabContainerAPI(t, ctx, manifest, http.MethodGet,
 		fmt.Sprintf("/projects/%d/issues/%d", manifest.ProjectID, createdIssue.Number), nil)
@@ -365,9 +370,10 @@ func TestGitLabContainerE2E(t *testing.T) {
 
 	// request_changes has no GitLab equivalent and must fail with the typed
 	// capability envelope.
-	rejectRR := doJSON(t, srv, http.MethodPost, seededMR+"/review-draft/publish", map[string]string{
+	rejectRR := testutil.DoJSON(t, srv, http.MethodPost, seededMR+"/review-draft/publish", map[string]string{
 		"action": "request_changes", "body": "needs work",
 	})
+
 	require.Equal(http.StatusConflict, rejectRR.Code, rejectRR.Body.String())
 	var rejectProblem struct {
 		Code    string         `json:"code"`
@@ -416,10 +422,11 @@ func TestGitLabContainerE2E(t *testing.T) {
 	require.NotEmpty(parityHeadSHA)
 
 	// Approve through the approvals API (body becomes a regular note).
-	approveRR := doJSON(t, srv, http.MethodPost, parityMR+"/approve", map[string]string{
+	approveRR := testutil.DoJSON(t, srv, http.MethodPost, parityMR+"/approve", map[string]string{
 		"body":              "Approving from kenn-forge write parity e2e",
 		"expected_head_sha": parityHeadSHA,
 	})
+
 	require.Equal(http.StatusOK, approveRR.Code, approveRR.Body.String())
 	approvalState := gitlabContainerAPI(t, ctx, manifest, http.MethodGet,
 		fmt.Sprintf("/projects/%d/merge_requests/%d/approvals", manifest.ProjectID, mergeIID),
@@ -436,10 +443,10 @@ func TestGitLabContainerE2E(t *testing.T) {
 	discussionID, _ := discussion["id"].(string)
 	require.NotEmpty(discussionID)
 
-	replyRR := doJSON(t, srv, http.MethodPost,
+	replyRR := testutil.DoJSON(t, srv, http.MethodPost,
 		fmt.Sprintf("%s/discussions/%s/reply", parityMR, discussionID),
-		map[string]string{"body": "Reply sent through kenn-forge"},
-	)
+		map[string]string{"body": "Reply sent through kenn-forge"})
+
 	require.Equal(http.StatusCreated, replyRR.Code, replyRR.Body.String())
 	repliedDiscussion := gitlabContainerAPI(t, ctx, manifest, http.MethodGet,
 		fmt.Sprintf("/projects/%d/merge_requests/%d/discussions/%s",
@@ -451,26 +458,27 @@ func TestGitLabContainerE2E(t *testing.T) {
 	lastNote, _ := replyNotes[1].(map[string]any)
 	assert.Equal("Reply sent through kenn-forge", lastNote["body"])
 
-	resolveRR := doJSON(t, srv, http.MethodPost,
+	resolveRR := testutil.DoJSON(t, srv, http.MethodPost,
 		fmt.Sprintf("%s/discussions/%s/resolve", parityMR, discussionID),
-		map[string]bool{"resolved": true},
-	)
+		map[string]bool{"resolved": true})
+
 	require.Equal(http.StatusOK, resolveRR.Code, resolveRR.Body.String())
 	assert.True(gitlabContainerDiscussionResolved(t, ctx, manifest, mergeIID, discussionID))
 
-	unresolveRR := doJSON(t, srv, http.MethodPost,
+	unresolveRR := testutil.DoJSON(t, srv, http.MethodPost,
 		fmt.Sprintf("%s/discussions/%s/resolve", parityMR, discussionID),
-		map[string]bool{"resolved": false},
-	)
+		map[string]bool{"resolved": false})
+
 	require.Equal(http.StatusOK, unresolveRR.Code, unresolveRR.Body.String())
 	assert.False(gitlabContainerDiscussionResolved(t, ctx, manifest, mergeIID, discussionID))
 
 	// Rebase cannot be honored per merge on GitLab and must fail typed,
 	// without merging anything.
-	rebaseRR := doJSON(t, srv, http.MethodPost, parityMR+"/merge", map[string]string{
+	rebaseRR := testutil.DoJSON(t, srv, http.MethodPost, parityMR+"/merge", map[string]string{
 		"method": "rebase", "commit_title": "t", "commit_message": "m",
 		"expected_head_sha": parityHeadSHA,
 	})
+
 	require.Equal(http.StatusConflict, rebaseRR.Code, rebaseRR.Body.String())
 	var rebaseProblem struct {
 		Code    string         `json:"code"`
@@ -484,12 +492,13 @@ func TestGitLabContainerE2E(t *testing.T) {
 
 	// Squash merge once GitLab finishes its async mergeability check.
 	waitForGitLabMergeable(t, ctx, manifest, mergeIID)
-	mergeRR := doJSON(t, srv, http.MethodPost, parityMR+"/merge", map[string]string{
+	mergeRR := testutil.DoJSON(t, srv, http.MethodPost, parityMR+"/merge", map[string]string{
 		"method":            "squash",
 		"commit_title":      fmt.Sprintf("Write parity squash merge %d", runID),
 		"commit_message":    "Squash merged through kenn-forge against the GitLab container",
 		"expected_head_sha": parityHeadSHA,
 	})
+
 	require.Equal(http.StatusOK, mergeRR.Code, mergeRR.Body.String())
 	var mergeResult struct {
 		Merged bool   `json:"merged"`

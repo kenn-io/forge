@@ -491,6 +491,9 @@ test.describe("phone routes", () => {
           hasText: "Add widget caching layer",
         }),
       })
+      .filter({
+        has: page.locator(".mobile-activity-card__meta span", { hasText: /^(acme\/)?widgets$/ }),
+      })
       .first();
     await expect(card).toBeVisible({ timeout: 10_000 });
 
@@ -518,9 +521,16 @@ test.describe("phone routes", () => {
   test("mobile activity card routes to a focused thread detail", async ({ page }) => {
     await page.goto("/m?range=30d&view=threaded");
     await expect(page.getByRole("button", { name: "Open thread" })).toHaveCount(0);
-    await expect(page.locator(".mobile-activity-card__button").first()).toBeVisible();
+    const card = page
+      .locator(".mobile-activity-card")
+      .filter({
+        has: page.locator(".mobile-activity-card__meta span", { hasText: /^acme\/widgets$/ }),
+      })
+      .filter({ hasText: "Add widget caching layer" })
+      .first();
+    await expect(card).toBeVisible();
 
-    await page.locator(".mobile-activity-card__button").first().click();
+    await card.locator(".mobile-activity-card__button").click();
 
     await expect(page).toHaveURL(/\/focus\/(?:host\/[^/]+\/)?(?:pulls|issues)\//);
     await expect(page.locator(".focus-layout")).toBeVisible();
@@ -542,9 +552,16 @@ test.describe("phone routes", () => {
     await expectPathname(page, "/");
     await expect(page.locator(".mobile-shell")).toBeVisible();
     await expect(page.getByRole("button", { name: "Open thread" })).toHaveCount(0);
-    await expect(page.locator(".mobile-activity-card__button").first()).toBeVisible();
+    const card = page
+      .locator(".mobile-activity-card")
+      .filter({
+        has: page.locator(".mobile-activity-card__meta span", { hasText: /^acme\/widgets$/ }),
+      })
+      .filter({ hasText: "Add widget caching layer" })
+      .first();
+    await expect(card).toBeVisible();
 
-    await page.locator(".mobile-activity-card__button").first().click();
+    await card.locator(".mobile-activity-card__button").click();
 
     await expect(page).toHaveURL(/\/focus\/(?:host\/[^/]+\/)?(?:pulls|issues)\//);
     await expect(page.locator(".focus-layout")).toBeVisible();
@@ -578,6 +595,61 @@ test.describe("phone routes", () => {
     await expect(page.locator(".focus-layout .files-layout")).toBeVisible();
     await expect(page.locator(".focus-layout .diff-view")).toBeVisible();
     await expect(page.locator(".mobile-shell .mobile-detail-header__badge")).toHaveText("PR #1");
+  });
+
+  test("long PR branch relationships stay inline with the wrapped head branch", async ({ page }) => {
+    await page.route("**/api/v1/pulls/github/acme/widgets/1", async (route) => {
+      const response = await route.fetch();
+      const detail = await response.json();
+      detail.merge_request.HeadBranch = "feature/keep-branch-icon-attached-to-long-wrapped-branch-name";
+      await route.fulfill({ response, json: detail });
+    });
+
+    await page.goto("/pulls/github/acme/widgets/1");
+
+    const headBranch = page.locator(".meta-branch .branch-name-btn").first();
+    const branchIcon = page.locator(".meta-branch .branch-icon");
+    await expect(headBranch).toBeVisible();
+    await expect(branchIcon).toBeVisible();
+
+    const alignment = await page.locator(".meta-branch").evaluate((metaBranch) => {
+      const icon = metaBranch.querySelector(".branch-icon");
+      const head = metaBranch.querySelector(".branch-name-btn--head");
+      const target = metaBranch.querySelector(".branch-target");
+      if (!icon || !head || !target) throw new Error("branch metadata is incomplete");
+
+      const iconBounds = icon.getBoundingClientRect();
+      const headText = [...head.childNodes].find(
+        (node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim(),
+      );
+      if (!headText) throw new Error("head branch text did not render");
+      const headTextRange = document.createRange();
+      headTextRange.selectNodeContents(headText);
+      const headLines = [...headTextRange.getClientRects()];
+      const firstHeadLine = headLines.at(0);
+      const lastHeadLine = headLines.at(-1);
+      const targetBounds = target.getBoundingClientRect();
+      if (!firstHeadLine || !lastHeadLine) throw new Error("head branch did not render");
+
+      return {
+        headLineCount: headLines.length,
+        iconTop: iconBounds.top,
+        iconBottom: iconBounds.bottom,
+        firstLineTop: firstHeadLine.top,
+        firstLineBottom: firstHeadLine.bottom,
+        lastLineTop: lastHeadLine.top,
+        lastLineRight: lastHeadLine.right,
+        targetTop: targetBounds.top,
+        targetLeft: targetBounds.left,
+      };
+    });
+
+    expect(alignment.headLineCount).toBeGreaterThan(1);
+    expect(alignment.iconTop).toBeGreaterThanOrEqual(alignment.firstLineTop - 1);
+    expect(alignment.iconBottom).toBeLessThanOrEqual(alignment.firstLineBottom + 1);
+    expect(Math.abs(alignment.targetTop - alignment.lastLineTop)).toBeLessThan(5);
+    expect(alignment.targetLeft).toBeGreaterThanOrEqual(alignment.lastLineRight - 1);
+    expect(alignment.targetLeft - alignment.lastLineRight).toBeLessThan(16);
   });
 
   test("long description collapse toggle has a phone-sized hit target", async ({ page }) => {
@@ -617,6 +689,23 @@ test.describe("phone routes", () => {
     await expectPathname(page, "/issues/github/acme/widgets/10");
     await expect(page.locator(".focus-layout .issue-detail .detail-title")).toBeVisible();
     await expect(page.locator(".mobile-shell .mobile-detail-header__badge")).toHaveText("Issue #10");
+  });
+
+  test("phone canonical lists keep the shared filter menu touch-sized and complete", async ({ page }) => {
+    for (const route of ["pulls", "issues"]) {
+      await page.goto(`/${route}`);
+      await expectPathname(page, `/${route}`);
+      const trigger = page.getByRole("button", { name: "Filters" });
+      await expect(trigger).toBeVisible();
+      const bounds = await trigger.boundingBox();
+      expect(bounds?.width ?? 0).toBeGreaterThanOrEqual(44);
+      expect(bounds?.height ?? 0).toBeGreaterThanOrEqual(44);
+      await trigger.click();
+      await expect(page.getByRole("button", { name: "Unassigned" })).toBeVisible();
+      if (route === "pulls") {
+        await expect(page.getByRole("button", { name: "By repo" })).toBeVisible();
+      }
+    }
   });
 
   test("phone users can opt out of automatic mobile redirect", async ({ page }) => {

@@ -43,6 +43,7 @@ type listPullsInput struct {
 	Kanban     string `query:"kanban"`
 	Starred    bool   `query:"starred"`
 	InvolvesMe bool   `query:"involves_me" doc:"Only include pull requests involving the authenticated viewer."`
+	Unassigned bool   `query:"unassigned" doc:"Only include pull requests with no assignees."`
 	Q          string `query:"q"`
 	Limit      int    `query:"limit"`
 	Offset     int    `query:"offset"`
@@ -360,7 +361,7 @@ type getStackForPROutput = httpapi.BodyOutput[stackContextResponse]
 func (s *Handler) listPulls(ctx context.Context, input *listPullsInput) (*listPullsOutput, error) {
 	query := ListQuery{
 		Repo: input.Repo, State: input.State, Kanban: input.Kanban,
-		Starred: input.Starred, InvolvesMe: input.InvolvesMe, Text: input.Q,
+		Starred: input.Starred, InvolvesMe: input.InvolvesMe, Unassigned: input.Unassigned, Text: input.Q,
 		Limit: input.Limit, Offset: input.Offset,
 	}
 	var rows []MergeRequestResponse
@@ -419,6 +420,7 @@ func (s *Handler) listPullsRouteCore(ctx context.Context, input *listPullsInput)
 		State:             input.State,
 		KanbanState:       input.Kanban,
 		Starred:           input.Starred,
+		Unassigned:        input.Unassigned,
 		Search:            input.Q,
 		Limit:             input.Limit,
 		Offset:            input.Offset,
@@ -452,6 +454,10 @@ func (s *Handler) listPullsRouteCore(ctx context.Context, input *listPullsInput)
 	stackConflictBlocked, err := s.db.ListMRsBlockedByStackConflicts(ctx, mrIDs)
 	if err != nil {
 		return nil, httpapi.Internal("load stack conflict state failed")
+	}
+	stackPlacements, err := s.db.ListStackPlacementsForMRs(ctx, mrIDs)
+	if err != nil {
+		return nil, httpapi.Internal("load stack placements failed")
 	}
 	links, err := s.db.GetWorktreeLinksForMRs(ctx, mrIDs)
 	if err != nil {
@@ -494,6 +500,9 @@ func (s *Handler) listPullsRouteCore(ctx context.Context, input *listPullsInput)
 		}
 		if mr.DetailFetchedAt != nil {
 			resp.DetailFetchedAt = formatUTCRFC3339(*mr.DetailFetchedAt)
+		}
+		if placement, ok := stackPlacements[mr.ID]; ok && placement.Size > 1 {
+			resp.Stack = &StackPlacementResponse{Position: placement.Position, Size: placement.Size}
 		}
 		out = append(out, resp)
 	}

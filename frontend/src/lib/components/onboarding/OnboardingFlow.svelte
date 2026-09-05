@@ -725,6 +725,7 @@
               <span>{syncState?.progress || "Pull requests, issues, CI, and activity"}</span>
             </div>
             <StatusDot
+              animated
               status={syncError ? "stale" : syncState?.running ? "working" : "idle"}
               label={syncError ? "Sync failed" : syncState?.running ? "Syncing" : "Starting"}
               size={7}

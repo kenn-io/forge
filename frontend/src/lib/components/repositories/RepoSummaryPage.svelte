@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { Effect, Schedule, Stream } from "effect";
+  import { Effect } from "effect";
+  import { pollWhileVisible } from "../../effect/poll-while-visible.js";
   import { FilterDropdown } from "@kenn-io/kit-ui";
   import { getStores } from "../../context.js";
   import type { ProviderRouteRef } from "../../api/provider-routes.js";
@@ -328,7 +329,7 @@
     roborevExecution?.interrupt();
     roborevExecution = appRuntime.runCommand(
       executeGeneratedApiRequest("load Roborev configured repositories", (generatedClient, signal) =>
-        generatedClient.GET("/roborev/configured-repositories", { signal }),
+        generatedClient.RoborevService.listRoborevConfiguredRepositories({ signal }),
       ).pipe(
         Effect.tap((data) =>
           Effect.sync(() => {
@@ -352,7 +353,7 @@
   function refreshSummaries(): void {
     refreshExecution = appRuntime.runCommand(
       executeGeneratedApiRequest("refresh repository summaries", (generatedClient, signal) =>
-        generatedClient.POST("/sync", { signal }),
+        generatedClient.SyncService.triggerSync(undefined, { signal }),
       ).pipe(
         Effect.andThen(readSummariesProgram()),
         Effect.tap((loaded) =>
@@ -535,9 +536,7 @@
             Effect.sync(() => stores.sync.subscribeSyncComplete(loadSummaries)),
             (unsubscribe) => Effect.sync(unsubscribe),
           );
-          yield* Stream.fromSchedule(Schedule.spaced("30 seconds")).pipe(
-            Stream.runForEach(() => Effect.sync(loadSummaries)),
-          );
+          yield* pollWhileVisible(Effect.sync(loadSummaries), "30 seconds");
         }),
       ),
       {

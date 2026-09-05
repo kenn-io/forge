@@ -151,12 +151,19 @@ func adaptCommit(gql *platformgithub.GraphQLCommitNode) *gh.RepositoryCommit {
 			Message: new(gql.Commit.Message),
 			Author: &gh.CommitAuthor{
 				Name: new(gql.Commit.Author.Name),
-				Date: &gh.Timestamp{Time: gql.Commit.Author.Date},
+				Date: ghTimestampPtr(gql.Commit.Author.Date),
+			},
+			Committer: &gh.CommitAuthor{
+				Name: new(gql.Commit.Committer.Name),
+				Date: ghTimestampPtr(gql.Commit.Committer.Date),
 			},
 		},
 	}
 	if gql.Commit.Author.User != nil {
 		c.Author = &gh.User{Login: new(gql.Commit.Author.User.Login)}
+	}
+	if gql.Commit.Committer.User != nil {
+		c.Committer = &gh.User{Login: new(gql.Commit.Committer.User.Login)}
 	}
 	return c
 }

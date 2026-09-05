@@ -1,8 +1,14 @@
 <script lang="ts">
-  import { Effect, Schedule } from "effect";
+  import { Effect } from "effect";
+  import { pollWhileVisible } from "../effect/poll-while-visible.js";
   import { onDestroy, tick, untrack } from "svelte";
   import type { Attachment } from "svelte/attachments";
-  import { ScrollBox, StatusDot } from "@kenn-io/kit-ui";
+  import {
+    FilterDropdown,
+    ScrollBox,
+    StatusDot,
+    type FilterDropdownSection,
+  } from "@kenn-io/kit-ui";
   import { getAppRuntime } from "../app/runtime-context.js";
   import type { AppExecution } from "../app/runtime.js";
   import { getStores, getNavigate, getActions } from "../context.js";
@@ -52,6 +58,7 @@
     repo?: string;
     routeFamily?: "focus" | "canonical";
     showRepoSelector?: boolean;
+    phonePresentation?: boolean;
     chunked?: boolean;
   }
 
@@ -60,6 +67,7 @@
     repo,
     routeFamily = "focus",
     showRepoSelector = false,
+    phonePresentation = false,
     chunked = false,
   }: Props = $props();
 
@@ -88,8 +96,23 @@
     resetPageAndLoad();
   }
 
+  function toggleUnassigned(): void {
+    if (listType === "mrs") {
+      pulls.setUnassigned(!pulls.getUnassigned());
+    } else {
+      issues.setUnassigned(!issues.getUnassigned());
+    }
+    resetPageAndLoad();
+  }
+
   function toggleReferencedByPR(): void {
     issues.setReferencedByPR(!issues.getReferencedByPR());
+    resetPageAndLoad();
+  }
+
+  function setListState(state: string): void {
+    if (listType === "mrs") pulls.setFilterState(state);
+    else issues.setIssueFilterState(state);
     resetPageAndLoad();
   }
 
@@ -125,7 +148,7 @@
       ? pulls.getSearchQuery() ?? ""
       : issues.getIssueSearchQuery() ?? "");
     const execution = untrack(() => runtime.runCommand(
-      Effect.sync(loadList).pipe(Effect.repeat(Schedule.spaced("15 seconds")), Effect.asVoid),
+      pollWhileVisible(Effect.sync(loadList), "15 seconds", { immediate: true }),
       {
         operation: "poll focus list",
         safeContext: { listType, identity },
@@ -334,7 +357,111 @@
   const involvesMe = $derived(
     listType === "mrs" ? pulls.getInvolvesMe() : issues.getInvolvesMe(),
   );
+  const unassigned = $derived(
+    listType === "mrs" ? pulls.getUnassigned() : issues.getUnassigned(),
+  );
+  const compactFiltersActive = $derived(
+    listType === "mrs"
+      ? prFilterState !== "open"
+        || groupingMode !== "byRepo"
+        || involvesMe
+        || unassigned
+      : issueFilterState !== "open"
+        || involvesMe
+        || unassigned
+        || issues.getReferencedByPR()
+        || issues.getHideBots(),
+  );
+  const compactFilterSections = $derived.by((): FilterDropdownSection[] => {
+    const sections: FilterDropdownSection[] = [
+      {
+        title: "State",
+        items: ["open", "closed", "all"].map((state) => ({
+          id: `state-${state}`,
+          label: state === "open" ? "Open" : state === "closed" ? "Closed" : "All",
+          active: (listType === "mrs" ? prFilterState : issueFilterState) === state,
+          onSelect: () => setListState(state),
+        })),
+      },
+    ];
+
+    if (listType === "mrs") {
+      sections.push({
+        title: "Group",
+        items: [
+          {
+            id: "group-by-repo",
+            label: "By repo",
+            active: groupingMode === "byRepo",
+            onSelect: () => grouping.setGroupingMode("byRepo"),
+          },
+          {
+            id: "group-by-workflow",
+            label: "By status",
+            active: groupingMode === "byWorkflow",
+            onSelect: () => grouping.setGroupingMode("byWorkflow"),
+          },
+          {
+            id: "group-flat",
+            label: "Flat list",
+            active: groupingMode === "flat",
+            onSelect: () => grouping.setGroupingMode("flat"),
+          },
+        ],
+      });
+    }
+
+    sections.push({
+      title: listType === "mrs" ? "PR" : "Issue",
+      items: [
+        {
+          id: "involves-me",
+          label: "Involves me",
+          active: involvesMe,
+          onSelect: toggleInvolvesMe,
+        },
+        {
+          id: "unassigned",
+          label: "Unassigned",
+          active: unassigned,
+          onSelect: toggleUnassigned,
+        },
+        ...(listType === "issues" && issues.canFilterReferencedByPR()
+          ? [{
+              id: "referenced-by-pr",
+              label: "Referenced by PR",
+              active: issues.getReferencedByPR(),
+              onSelect: toggleReferencedByPR,
+            }]
+          : []),
+        ...(listType === "issues"
+          ? [{
+              id: "hide-bot-authored-issues",
+              label: "Hide bot-authored issues",
+              active: issues.getHideBots(),
+              onSelect: () => void issues.setHideBots(!issues.getHideBots()),
+            }]
+          : []),
+      ],
+    });
+
+    return sections;
+  });
 </script>
+
+{#snippet compactPhoneFilters()}
+  <div class="compact-phone-filter-menu">
+    <FilterDropdown
+      label="Filters"
+      title="Filters"
+      active={compactFiltersActive}
+      showBadge={false}
+      sections={compactFilterSections}
+      minWidth="180px"
+      align="end"
+    />
+  </div>
+{/snippet}
 
 <div class="focus-list" bind:this={listRoot}>
   {#if !showRepoSelector}
@@ -347,6 +474,7 @@
     id="focus-list-filters"
     class="filter-bar"
     class:filter-bar--expanded={filtersExpanded}
+    class:filter-bar--compactable={!showRepoSelector}
   >
     {#if showRepoSelector && filtersExpanded}
       <div class="mobile-repo-filter">
@@ -358,16 +486,25 @@
         />
       </div>
     {/if}
+    {#if !showRepoSelector && !phonePresentation}
+      <div class="compact-filter-menu">
+        <FilterDropdown
+          label="List filters"
+          title="Filters"
+          active={compactFiltersActive}
+          showBadge={false}
+          sections={compactFilterSections}
+          minWidth="180px"
+        />
+      </div>
+    {/if}
     <div class="state-toggle">
       {#if listType === "mrs"}
         {#each ["open", "closed", "all"] as s (s)}
           <button
             class="state-btn"
             class:state-btn--active={prFilterState === s}
-            onclick={() => {
-              pulls.setFilterState(s);
-              resetPageAndLoad();
-            }}
+            onclick={() => setListState(s)}
           >
             {s === "open"
               ? "Open"
@@ -381,10 +518,7 @@
           <button
             class="state-btn"
             class:state-btn--active={issueFilterState === s}
-            onclick={() => {
-              issues.setIssueFilterState(s);
-              resetPageAndLoad();
-            }}
+            onclick={() => setListState(s)}
           >
             {s === "open"
               ? "Open"
@@ -403,6 +537,13 @@
         aria-pressed={involvesMe}
         onclick={toggleInvolvesMe}
       >Involves me</button>
+      <button
+        type="button"
+        class="visibility-btn"
+        class:visibility-btn--active={unassigned}
+        aria-pressed={unassigned}
+        onclick={toggleUnassigned}
+      >Unassigned</button>
       {#if listType === "mrs"}
         <div class="group-toggle">
           <button
@@ -443,6 +584,7 @@
     searchAriaLabel="Search {itemLabel}"
     filterControls="focus-list-filters"
     {filtersExpanded}
+    filterControl={!showRepoSelector && phonePresentation ? compactPhoneFilters : undefined}
     oninput={onSearchInput}
     ontoggle={() => filtersExpanded = !filtersExpanded}
   />
@@ -469,7 +611,7 @@
         </p>
       {:else if prItems.length === 0 && sync.getSyncState()?.running}
         <div class="state-message sync-message">
-          <StatusDot status="working" label="Syncing pull requests" size={6} />
+          <StatusDot status="working" label="Syncing pull requests" size={6} animated />
           <span aria-hidden="true">Syncing...</span>
         </div>
       {:else if prItems.length === 0 && !sync.getSyncState()?.last_run_at}
@@ -527,7 +669,7 @@
         </p>
       {:else if issueItems.length === 0 && sync.getSyncState()?.running}
         <div class="state-message sync-message">
-          <StatusDot status="working" label="Syncing issues" size={6} />
+          <StatusDot status="working" label="Syncing issues" size={6} animated />
           <span aria-hidden="true">Syncing...</span>
         </div>
       {:else if issueItems.length === 0 && !sync.getSyncState()?.last_run_at}
@@ -571,6 +713,7 @@
     flex-direction: column;
     height: 100%;
     width: 100%;
+    container: focus-list / inline-size;
   }
 
   .header {
@@ -628,6 +771,27 @@
     align-items: center;
     gap: 8px;
     margin-left: auto;
+  }
+
+  .compact-filter-menu {
+    display: none;
+    flex-shrink: 0;
+  }
+
+  .compact-filter-menu :global(.kit-filter-dropdown__btn) {
+    width: 26px;
+    justify-content: center;
+    padding: 3px;
+  }
+
+  .compact-filter-menu :global(.kit-filter-dropdown__trigger-label),
+  .compact-filter-menu :global(.kit-filter-dropdown__trigger-detail) {
+    display: none;
+  }
+
+  .compact-phone-filter-menu :global(.kit-filter-dropdown__trigger-label),
+  .compact-phone-filter-menu :global(.kit-filter-dropdown__trigger-detail) {
+    display: none;
   }
 
   .group-btn,
@@ -731,6 +895,17 @@
 
   .focus-list-loading-sentinel {
     min-height: 1px;
+  }
+
+  @container focus-list (max-width: 640px) {
+    .filter-bar--compactable .state-toggle,
+    .filter-bar--compactable .visibility-controls {
+      display: none;
+    }
+
+    .filter-bar--compactable .compact-filter-menu {
+      display: block;
+    }
   }
 
   :global(.mobile-main) .focus-list {

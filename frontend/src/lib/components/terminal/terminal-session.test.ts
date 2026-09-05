@@ -188,6 +188,37 @@ it.layer(makeTerminalSocketTest())("terminal socket reconnect", (it) => {
     }),
   );
 
+  it.effect("replaces a socket that stops answering heartbeat round trips", () =>
+    Effect.gen(function* () {
+      const probe = yield* TerminalSocketProbe;
+      probe.sockets.length = 0;
+      const controller = makeTerminalSessionController({
+        url: () => "wss://example.invalid/terminal",
+        onMessage: () => "continue",
+      });
+      const fiber = yield* Effect.forkChild(Effect.scoped(controller.program));
+      yield* Effect.repeat(Effect.yieldNow, { times: 5 });
+      probe.sockets[0]?.open();
+      yield* Effect.repeat(Effect.yieldNow, { times: 5 });
+
+      assert.include(probe.sockets[0]?.sent ?? [], '{"type":"heartbeat"}');
+      yield* TestClock.adjust("44 seconds");
+      probe.sockets[0]?.message('{"type":"heartbeat"}');
+      yield* Effect.yieldNow;
+      yield* TestClock.adjust("44 seconds");
+      assert.isTrue(controller.isConnected());
+      yield* TestClock.adjust("16 seconds");
+      yield* Effect.repeat(Effect.yieldNow, { times: 5 });
+      assert.isFalse(controller.isConnected());
+      assert.strictEqual(probe.sockets[0]?.closeCount, 1);
+      yield* TestClock.adjust("1 second");
+      yield* Effect.repeat(Effect.yieldNow, { times: 5 });
+      assert.lengthOf(probe.sockets, 2);
+
+      yield* Fiber.interrupt(fiber);
+    }),
+  );
+
   it.effect("does not drop outbound frames while the socket is connected", () =>
     Effect.gen(function* () {
       const probe = yield* TerminalSocketProbe;
@@ -206,7 +237,8 @@ it.layer(makeTerminalSocketTest())("terminal socket reconnect", (it) => {
         controller.send(`frame-${index}`);
       }
       yield* Effect.repeat(Effect.yieldNow, { times: 300 });
-      assert.lengthOf(probe.sockets[0]?.sent ?? [], 300);
+      const dataFrames = probe.sockets[0]?.sent.filter((frame) => String(frame).startsWith("frame-"));
+      assert.lengthOf(dataFrames ?? [], 300);
 
       yield* Fiber.interrupt(fiber);
     }),

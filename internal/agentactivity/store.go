@@ -27,10 +27,6 @@ const (
 
 const RuntimeSessionKeyEnv = "KENN_FORGE_RUNTIME_SESSION_KEY"
 
-// ReportFreshness bounds how long a hook state can override tmux activity
-// without another lifecycle event confirming it.
-const ReportFreshness = 30 * time.Minute
-
 type Report struct {
 	Agent             string    `json:"agent"`
 	SessionID         string    `json:"session_id"`
@@ -61,10 +57,9 @@ type Store struct {
 	root string
 	now  func() time.Time
 
-	cacheMu         sync.Mutex
-	cacheFiles      map[string]os.FileInfo
-	cacheValidUntil time.Time
-	cacheReports    []Report
+	cacheMu      sync.Mutex
+	cacheFiles   map[string]os.FileInfo
+	cacheReports []Report
 }
 
 func NewStore(root string) *Store {
@@ -125,7 +120,29 @@ func (s *Store) HandleEvent(agent string, hook HookEvent, runtimeSessionKey stri
 		State:             state,
 		UpdatedAt:         s.now().UTC(),
 	}
+	if state == StateDone {
+		previous, ok := s.readReport(s.reportPath(agent, hook.SessionID))
+		if ok && previous.RuntimeSessionKey == runtimeSessionKey {
+			switch {
+			case isIdlePrompt(hook) && (previous.State == StateInput ||
+				previous.State == StateApproval):
+				// Claude Code raises idle_prompt after a minute of waiting for
+				// input whatever it is waiting for; an unanswered question or
+				// permission prompt is still pending, not finished.
+				return nil
+			case previous.State == StateDone:
+				// A completion that is already recorded keeps its original
+				// timestamp: idle_prompt follows Stop, and a fresh timestamp
+				// would make an acknowledged "done" reappear as new.
+				report.UpdatedAt = previous.UpdatedAt
+			}
+		}
+	}
 	return s.writeReport(report)
+}
+
+func isIdlePrompt(hook HookEvent) bool {
+	return hook.HookEventName == "Notification" && hook.NotificationType == "idle_prompt"
 }
 
 func (s *Store) SnapshotForWorkspace(cwd string, liveSessionKeys []string) (Snapshot, bool) {
@@ -142,8 +159,11 @@ func (s *Store) SnapshotForWorkspace(cwd string, liveSessionKeys []string) (Snap
 	return Snapshot{State: reports[0].State, UpdatedAt: reports[0].UpdatedAt}, true
 }
 
-// LiveReportsForWorkspace returns fresh reports whose canonical worktree and
-// runtime-session key match the supplied live inventory.
+// LiveReportsForWorkspace returns reports whose canonical worktree and
+// runtime-session key match the supplied live inventory, newest first. A report lives until
+// its session ends or its runtime session is removed; there is no time-based
+// expiry, because a launched agent keeps reporting until it is torn down and
+// its hook state must not lapse back to weaker signals in between.
 func (s *Store) LiveReportsForWorkspace(cwd string, liveSessionKeys []string) []Report {
 	if s == nil || strings.TrimSpace(s.root) == "" || len(liveSessionKeys) == 0 {
 		return nil
@@ -227,6 +247,33 @@ func (s *Store) RemoveRuntimeSession(runtimeSessionKey string) error {
 	return errors.Join(errs...)
 }
 
+// RetainRuntimeSessions removes every report whose runtime session key is not
+// in keep. Startup pruning and the periodic missing-tmux prune delete runtime
+// rows without an exit hook, so this is how their reports follow them.
+func (s *Store) RetainRuntimeSessions(keep map[string]struct{}) error {
+	if s == nil || strings.TrimSpace(s.root) == "" {
+		return nil
+	}
+	var errs []error
+	removed := false
+	for _, report := range s.reports() {
+		if _, ok := keep[report.RuntimeSessionKey]; ok {
+			continue
+		}
+		err := os.Remove(s.reportPath(report.Agent, report.SessionID))
+		switch {
+		case err == nil:
+			removed = true
+		case !errors.Is(err, os.ErrNotExist):
+			errs = append(errs, err)
+		}
+	}
+	if removed {
+		s.invalidateCache()
+	}
+	return errors.Join(errs...)
+}
+
 func (s *Store) reports() []Report {
 	s.cacheMu.Lock()
 	defer s.cacheMu.Unlock()
@@ -236,7 +283,6 @@ func (s *Store) reports() []Report {
 		s.clearCacheLocked()
 		return nil
 	}
-	now := s.now().UTC()
 	files := make(map[string]os.FileInfo)
 	metadataComplete := true
 	for _, entry := range entries {
@@ -250,13 +296,11 @@ func (s *Store) reports() []Report {
 		}
 		files[entry.Name()] = info
 	}
-	if metadataComplete && sameReportFiles(files, s.cacheFiles) &&
-		(s.cacheValidUntil.IsZero() || now.Before(s.cacheValidUntil)) {
+	if metadataComplete && sameReportFiles(files, s.cacheFiles) {
 		return slices.Clone(s.cacheReports)
 	}
 
 	reports := make([]Report, 0, len(entries))
-	validUntil := time.Time{}
 	cleanupPending := false
 	for _, entry := range entries {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
@@ -277,26 +321,12 @@ func (s *Store) reports() []Report {
 			}
 			continue
 		}
-		expiresAt := report.UpdatedAt.Add(ReportFreshness)
-		if !now.Before(expiresAt) {
-			if removeErr := os.Remove(path); removeErr == nil ||
-				errors.Is(removeErr, os.ErrNotExist) {
-				delete(files, entry.Name())
-			} else {
-				cleanupPending = true
-			}
-			continue
-		}
-		if validUntil.IsZero() || expiresAt.Before(validUntil) {
-			validUntil = expiresAt
-		}
 		reports = append(reports, report)
 	}
 	s.cacheFiles = files
 	if cleanupPending || !metadataComplete {
 		s.cacheFiles = nil
 	}
-	s.cacheValidUntil = validUntil
 	s.cacheReports = slices.Clone(reports)
 	return reports
 }
@@ -309,7 +339,6 @@ func (s *Store) invalidateCache() {
 
 func (s *Store) clearCacheLocked() {
 	s.cacheFiles = nil
-	s.cacheValidUntil = time.Time{}
 	s.cacheReports = nil
 }
 
@@ -347,8 +376,13 @@ func stateForHook(input HookEvent) (State, bool, bool) {
 		switch input.NotificationType {
 		case "permission_prompt":
 			return StateApproval, false, true
-		case "idle_prompt", "elicitation_dialog":
+		case "elicitation_dialog":
 			return StateInput, false, true
+		case "idle_prompt":
+			// Claude Code raises idle_prompt about a minute after a turn
+			// ends with nothing pending. It follows Stop and would otherwise
+			// flip a finished session from done to input.
+			return StateDone, false, true
 		default:
 			return "", false, false
 		}

@@ -17,6 +17,7 @@ import (
 
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/terminalwebsocket"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -98,13 +99,15 @@ func TestFleetWebSocketProxyNegotiatesContextTakeoverOnBothLegs(t *testing.T) {
 			peerExtensions <- w.Header().Get("Sec-WebSocket-Extensions")
 			peerHeaders <- r.Header.Clone()
 
-			typ, payload, err := conn.Read(r.Context())
-			if err != nil {
-				peerErrors <- err
-				return
-			}
-			if err := conn.Write(r.Context(), typ, payload); err != nil {
-				peerErrors <- err
+			for {
+				typ, payload, err := conn.Read(r.Context())
+				if err != nil {
+					return
+				}
+				if err := conn.Write(r.Context(), typ, payload); err != nil {
+					peerErrors <- err
+					return
+				}
 			}
 		},
 	))
@@ -175,6 +178,14 @@ func TestFleetWebSocketProxyNegotiatesContextTakeoverOnBothLegs(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(websocket.MessageBinary, typ)
 	assert.Equal(want, got)
+
+	require.NoError(conn.Write(
+		ctx, websocket.MessageText, []byte(terminalwebsocket.HeartbeatMessage),
+	))
+	typ, got, err = conn.Read(ctx)
+	require.NoError(err)
+	assert.Equal(websocket.MessageText, typ)
+	assert.JSONEq(terminalwebsocket.HeartbeatMessage, string(got))
 }
 
 func TestFleetProxyUsesOnlyDestinationCredentialAndRefusesRedirects(t *testing.T) {

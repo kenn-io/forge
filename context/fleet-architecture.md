@@ -89,6 +89,51 @@ or remote workspace and session operations.
   redirects, authentication challenges, or connection-nominated headers
   (`internal/server/fleetapi/fleet_proxy.go::Handler.serveRemoteFleetRESTProxy`).
 
+## Background Monitors
+
+The local snapshot never does git or tmux I/O on the read path; three
+Fleet-owned monitors keep the store and caches it reads fresh. They are
+change-driven and idle-cheap:
+
+- Every monitor pass is gated on demand: a live event-stream subscriber, or a
+  snapshot read within the demand window. Hubs consume spokes through raw
+  snapshot fetches without a spoke-local event stream, so the read itself is
+  the demand signal. With none, a wake-up records a skip and re-checks on a
+  short idle probe, so the first client after an idle stretch is served
+  within seconds rather than a full interval; a nil subscriber source means
+  always run (`internal/server/fleetapi/fleet_monitor_gate.go::runFleetMonitorLoop`,
+  `internal/server/fleetapi/handler.go::Handler.noteSnapshotDemand`).
+- Worktree discovery and worktree stats fingerprint the git directory (sizes
+  and mtimes of `HEAD`, `index`, `config`, `packed-refs`, the `refs/` tree,
+  and for discovery `worktrees/`) without spawning git, and re-run their git
+  commands and database writes only when the fingerprint moved. The stats key
+  also carries the default branch, so a discovery pass that moves it
+  invalidates the sample. The fingerprint is a change hint, not proof: a
+  matching fingerprint older than the max age is re-measured anyway, which
+  bounds the staleness of anything it cannot see. A checkout whose fingerprint
+  cannot be computed always takes the full path so it is marked stale; a
+  failed pass drops the fingerprint so recovery is re-inspected
+  (`internal/server/fleetapi/fleet_git_fingerprint.go::worktreeStatsFingerprint`,
+  `internal/server/fleetapi/fleet_worktree_discovery.go::fleetWorktreeDiscoverer.refreshProjectIfChanged`,
+  `internal/server/fleetapi/fleet_worktree_stats.go::fleetWorktreeStatsSampler.sampleTargets`).
+- Unstaged edits and untracked files do not touch the git directory, so the
+  background stats pass only sees them at the max-age resample. The on-demand
+  refresh paths (`RefreshWorktreeStats`, `RefreshProjectInventory`, and the
+  fleet-wide refresh route through `runOnceForced`) ignore the fingerprint and
+  always measure; lifecycle mutations that change the working tree must keep
+  calling them.
+- Every discovery git spawn goes through `internal/procutil`; the stats probes
+  already did.
+- The tmux monitor runs one pass per interval: `list-sessions` always, then
+  `list-windows` only when the session listing is not byte-identical to the
+  previous pass or the window refresh bound elapsed, then `list-panes` plus
+  process metrics only when managed sessions exist. Process metrics query the
+  pane PIDs and their descendants (`ps -p`, `pgrep -P` per generation) rather
+  than the whole host, descending until no children remain or the process
+  table cap is hit. Exit status 1 from `ps` or `pgrep` is the no-match
+  outcome; any other failure is a probe error, never an empty tree
+  (`internal/server/fleetapi/fleet_tmux_monitor.go::probeFleetProcessTrees`).
+
 ## Transport Trust Boundary
 
 - Supported fleets expose every Forge peer only through operator-controlled
@@ -274,10 +319,10 @@ or remote workspace and session operations.
 
 ## Configuration And Lifecycle
 
-- Federation protocol version 3 requires an exact match; there is no
+- Federation protocol version 4 requires an exact match; there is no
   translation or compatibility fallback
   (`internal/federation/protocol.go::ProtocolVersion`).
-- Activation leases negotiate their own version 1 inside protocol 3. This
+- Activation leases negotiate their own version 1 inside protocol 4. This
   keeps snapshot compatibility separate from the authorization handshake:
   upgraded hubs isolate lease-unaware active spokes until they upgrade and
   activate again, without rewriting enrollment storage or requiring
@@ -304,6 +349,9 @@ or remote workspace and session operations.
   daemon. Before sealing local writes it first proves the pending hub is
   reachable and pins that enrollment; hub failure before that point
   leaves the standalone provider plane open.
+- A daemon without a local federation enrollment starts with provider writes
+  open and does not restore fleet preparation state
+  (`internal/server/server.go::newServer`).
 - Once quiescing begins, the provider-write barrier survives restarts. Only
   `fleet abort-preparation` may reopen it before activation, after admitted work
   drains. A spoke-shaped process requires restart before standalone provider work;

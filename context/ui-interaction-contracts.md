@@ -48,6 +48,9 @@ Interactive surfaces must agree on which item is selected.
   `item-ref` anchors that resolve through the shared click handler, with the
   provider URL kept as the untracked-repo fallback
   (`frontend/src/lib/utils/item-reference.ts::parseProviderItemURL`).
+- Terminal item links use the same resolver: match provider hosts from the
+  configured repos, never a hardcoded host list, and let the resolve endpoint
+  decide tracked-vs-external (`frontend/src/lib/utils/item-reference.ts::parseConfiguredProviderItemURL`).
 - When a view changes from item A to item B, reset transient action state that
   could otherwise submit or render against the wrong item.
 - A response confirming a server-side outcome (a completed delete or create)
@@ -212,6 +215,9 @@ Persisted controls must state their scope clearly.
 - `Involves me` is three independent browser-local preferences for Pulls, Issues, and
   Activity; each enabled view sends the server query so filtering happens before limits,
   never through URL or config state (`frontend/src/lib/stores/involves-me-filter.ts`, `internal/db/queries_involvement.go`).
+- `Unassigned` is three independent browser-local preferences for Pulls, Issues, and
+  Activity. Each sends a pre-limit server query; only PR/issue subjects with an empty
+  synchronized assignee set match (`frontend/src/lib/stores/unassigned-filter.ts`, `internal/db/queries_assignees.go::unassignedCondition`).
 - `Referenced by PR` is a browser-local Issues preference. Every issue-filter
   presentation exposes the same control, and the server combines it with state,
   repository, search, starred, and involvement filters before limits.
@@ -234,6 +240,9 @@ Persisted controls must state their scope clearly.
   workspace's choice (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::sidebarTabStorageKey`).
 - URL query state belongs in the route only when deep-linking or back/forward
   navigation is part of the feature contract.
+- Activity detail selection uses one URL-backed slot for pull requests, issues,
+  and default-branch commits so browser history restores one mutually exclusive pane
+  (`frontend/src/App.svelte::updateDrawerURL`).
 - Activity filters remain URL-backed and session-scoped. Missing filter params on a
   partial Activity URL inherit the last validated route before store hydration, while
   explicit URL values win (`frontend/src/lib/stores/router.svelte.ts::restoreMissingActivityFilters`).

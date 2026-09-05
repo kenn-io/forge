@@ -4,7 +4,8 @@
 
 <script lang="ts">
   import { tablistKeyTarget } from "../shared/tablist-keyboard.js";
-  import { Effect, Schedule } from "effect";
+  import { Effect } from "effect";
+  import { pollWhileVisible } from "../../effect/poll-while-visible.js";
   import { onDestroy, tick, untrack, type ComponentProps } from "svelte";
   import type { ApiProblemError, TransientTransportError } from "../../api/effect-errors.js";
   import { executeGeneratedApiRequest } from "../../api/generated-api.js";
@@ -98,8 +99,7 @@
     providerRepoPath,
     providerRouteParams,
     resolvedPlatformHost,
-    type ProviderRouteRef,
-  } from "../../api/provider-routes.js";
+    type ProviderRouteRef, providerHostRouteParams, providerUsesHostRoute } from "../../api/provider-routes.js";
   import { supportsLocked } from "../../api/provider-capabilities.js";
   import { buildDiffSummaryKey } from "./diff-summary-key.js";
   import {
@@ -591,14 +591,18 @@
     if (!shouldAutoRefreshCI) return;
     const execution = untrack(() =>
       runtime.runCommand(
-        Effect.sync(() => {
-          detailStore.refreshPendingCI(owner, name, number, {
-            provider,
-            platformHost,
-            repoPath,
-            workflowApprovalSync,
-          });
-        }).pipe(Effect.repeat(Schedule.spaced("15 seconds")), Effect.asVoid),
+        pollWhileVisible(
+          Effect.sync(() => {
+            detailStore.refreshPendingCI(owner, name, number, {
+              provider,
+              platformHost,
+              repoPath,
+              workflowApprovalSync,
+            });
+          }),
+          "15 seconds",
+          { immediate: true },
+        ),
         {
           operation: "refresh pending pull request checks",
           safeContext: { owner, name, number },
@@ -764,6 +768,12 @@
         onFailure: () => {},
       },
     );
+  }
+
+  function onBranchCopyKeydown(event: KeyboardEvent, text: string): void {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    copyBranch(text);
   }
 
   let stateSubmitting = $state(false);
@@ -1059,10 +1069,7 @@
     };
     repoSettings = null;
     const program = executeGeneratedApiRequest("GET repository merge settings", (client, signal) =>
-      client.GET(providerRepoPath(selectedRef), {
-        params: { path: providerRouteParams(selectedRef) },
-        signal,
-      }),
+      providerUsesHostRoute(selectedRef) ? client.RepositoriesService.getRepoOnHost({ ...providerHostRouteParams(selectedRef) }, { signal }) : client.RepositoriesService.getRepo({ ...providerRouteParams(selectedRef) }, { signal }),
     ).pipe(
       retryIdempotentRead,
       Effect.flatMap((settings) =>
@@ -1443,10 +1450,7 @@
       yield* loadLabelCatalogWithRefresh({
         isActive: isCurrent,
         loadOnce: executeGeneratedApiRequest("GET pull request label catalog", (client, signal) =>
-          client.GET(providerRepoPath(selectedRef, "/labels"), {
-            params: { path: providerRouteParams(selectedRef) },
-            signal,
-          }),
+          providerUsesHostRoute(selectedRef) ? client.RepositoriesService.listRepoLabelsOnHost({ ...providerHostRouteParams(selectedRef) }, { signal }) : client.RepositoriesService.listRepoLabels({ ...providerRouteParams(selectedRef) }, { signal }),
         ).pipe(
           Effect.map((data) => ({
             labels: data.labels ?? [],
@@ -1531,13 +1535,7 @@
 
   function loadUserCandidates(query: string) {
     return executeGeneratedApiRequest("GET pull request user candidates", (client, signal) =>
-      client.GET(providerRepoPath(routeRef, "/comment-autocomplete"), {
-        params: {
-          path: providerRouteParams(routeRef),
-          query: { trigger: "@", q: query, limit: 25 },
-        },
-        signal,
-      }),
+      providerUsesHostRoute(routeRef) ? client.RepositoriesService.getCommentAutocompleteOnHost({ ...providerHostRouteParams(routeRef) }, { trigger: "@", q: query, limit: 25 }, { signal }) : client.RepositoriesService.getCommentAutocomplete({ ...providerRouteParams(routeRef) }, { trigger: "@", q: query, limit: 25 }, { signal }),
     ).pipe(
       retryIdempotentRead,
       Effect.map((data) => data.users ?? []),
@@ -1637,7 +1635,7 @@
     wsCreating = true;
     beginWorkspaceCreate(requestIdentity, launchTargetKey);
     const program = executeGeneratedApiRequest("POST pull request workspace", (client, signal) =>
-      client.POST("/workspaces", { body: requestBody, signal }),
+      client.WorkspacesService.createWorkspace(requestBody, { signal }),
     ).pipe(
       Effect.flatMap((data) =>
         Effect.sync(() => {
@@ -1926,10 +1924,7 @@
 
   function loadDiffSummaryFiles() {
     return executeGeneratedApiRequest("GET pull request diff summary files", (client, signal) =>
-      client.GET(providerItemPath("pulls", routeRef, "/files"), {
-        params: { path: { ...providerRouteParams(routeRef), number } },
-        signal,
-      }),
+      providerUsesHostRoute(routeRef) ? client.PullRequestsService.getPullFilesOnHost({ ...providerHostRouteParams(routeRef), number: number }, { signal }) : client.PullRequestsService.getPullFiles({ ...providerRouteParams(routeRef), number: number }, { signal }),
     ).pipe(
       retryIdempotentRead,
       Effect.map((data) => new DiffSummaryFilesResult(data.stale ?? true, data.files ?? [])),
@@ -2195,22 +2190,28 @@
         {#if pr.HeadBranch}
           <span class="meta-sep meta-sep--branch">·</span>
           <span class="meta-branch">
-            <svg class="branch-icon" width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M11.75 2.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.25.75a2.25 2.25 0 113 2.122V6c0 .73-.593 1.322-1.325 1.322H9.457A4.377 4.377 0 006.5 8.579V11.128a2.251 2.251 0 11-1.5 0V4.872a2.251 2.251 0 111.5 0v1.836A5.877 5.877 0 0111.175 5.5h.075V5.372A2.25 2.25 0 019.5 3.25zM4.75 12a.75.75 0 100 1.5.75.75 0 000-1.5zM4 3.25a.75.75 0 111.5 0 .75.75 0 01-1.5 0z"/>
-            </svg>
-            <button
-              class="branch-name-btn"
+            <span
+              role="button"
+              tabindex="0"
+              class="branch-name-btn branch-name-btn--head"
               class:branch-name-btn--copied={copiedBranch === pr.HeadBranch}
               title={copiedBranch === pr.HeadBranch ? "Copied!" : "Click to copy"}
               onclick={() => copyBranch(pr.HeadBranch)}
-            >{pr.HeadBranch}</button>
-            <span class="branch-arrow">&rarr;</span>
-            <button
-              class="branch-name-btn"
-              class:branch-name-btn--copied={copiedBranch === pr.BaseBranch}
-              title={copiedBranch === pr.BaseBranch ? "Copied!" : "Click to copy"}
-              onclick={() => copyBranch(pr.BaseBranch)}
-            >{pr.BaseBranch}</button>
+              onkeydown={(event) => onBranchCopyKeydown(event, pr.HeadBranch)}
+            >
+              <svg class="branch-icon" width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M11.75 2.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.25.75a2.25 2.25 0 113 2.122V6c0 .73-.593 1.322-1.325 1.322H9.457A4.377 4.377 0 006.5 8.579V11.128a2.251 2.251 0 11-1.5 0V4.872a2.251 2.251 0 111.5 0v1.836A5.877 5.877 0 0111.175 5.5h.075V5.372A2.25 2.25 0 019.5 3.25zM4.75 12a.75.75 0 100 1.5.75.75 0 000-1.5zM4 3.25a.75.75 0 111.5 0 .75.75 0 01-1.5 0z"/>
+              </svg>
+              {pr.HeadBranch}
+            </span><span class="branch-target">&#8288;
+              <span class="branch-arrow">&rarr;</span>
+              <button
+                class="branch-name-btn"
+                class:branch-name-btn--copied={copiedBranch === pr.BaseBranch}
+                title={copiedBranch === pr.BaseBranch ? "Copied!" : "Click to copy"}
+                onclick={() => copyBranch(pr.BaseBranch)}
+              >{pr.BaseBranch}</button>
+            </span>
           </span>
         {/if}
         {#if detailStore.isDetailSyncing() && !manualRefreshPending && !phonePresentation}
@@ -3161,6 +3162,7 @@
             repoName={name}
             {repoPath}
             {number}
+            itemType="pull"
             currentHeadSHA={latestPlatformHeadSha}
             canResolveReviewThreads={capabilities.review_thread_resolution && !resolveThreadGate.unavailable}
             canReplyToThreads={capabilities.thread_reply && !stalePR && !replyThreadGate.unavailable}
@@ -3480,10 +3482,19 @@
 
   .branch-icon {
     color: var(--text-muted);
-    flex-shrink: 0;
+    margin-right: var(--space-1);
+    vertical-align: -0.1em;
+  }
+
+  .branch-target {
+    display: inline-flex;
+    align-items: baseline;
+    gap: var(--space-1);
+    white-space: nowrap;
   }
 
   .branch-name-btn {
+    min-width: 0;
     position: relative;
     color: var(--text-secondary);
     font-family: var(--font-mono);

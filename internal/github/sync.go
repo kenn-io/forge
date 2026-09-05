@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/cenkalti/backoff/v7"
 	"go.kenn.io/forge/internal/platformdb"
 
 	gh "github.com/google/go-github/v89/github"
@@ -824,13 +825,17 @@ type Syncer struct {
 	pendingRun               *pendingSyncRun // guarded by runMu
 	providerWorkMu           sync.Mutex
 	providerWork             map[string]map[archive.WorkPriority]int
-	archiveProviderRequests  map[string]archiveProviderRequest
-	status                   atomic.Value // stores *SyncStatus
-	stopCh                   chan struct{}
-	notificationSyncMu       sync.RWMutex
-	notificationSync         NotificationSyncStatus
-	stopOnce                 sync.Once
-	wg                       sync.WaitGroup
+	// archiveDeniedHosts records provider hosts whose live work denied or
+	// preempted an archive request; releasing such a host wakes the archive
+	// worker, while hosts that never turned archive work away stay quiet.
+	archiveDeniedHosts      map[string]struct{}
+	archiveProviderRequests map[string]archiveProviderRequest
+	status                  atomic.Value // stores *SyncStatus
+	stopCh                  chan struct{}
+	notificationSyncMu      sync.RWMutex
+	notificationSync        NotificationSyncStatus
+	stopOnce                sync.Once
+	wg                      sync.WaitGroup
 	// lifecycleMu serializes TriggerRun registration with Stop so
 	// no wg.Add can happen after Stop begins wg.Wait.
 	lifecycleMu        sync.Mutex
@@ -939,7 +944,9 @@ type archiveProviderRequest struct {
 }
 
 type archiveRunner interface {
-	RunEligible(context.Context) error
+	// RunPass performs one worker pass and reports whether it attempted
+	// provider work.
+	RunPass(context.Context) (bool, error)
 }
 
 type archiveRepositoryLifecycle interface {
@@ -1244,6 +1251,9 @@ func (s *Syncer) WakeArchive() {
 	}
 }
 
+// SetArchivePollIntervalForTesting shortens the pacing between archive worker
+// passes. It is the wait after a pass that attempted work or failed and the
+// starting point of the idle backoff.
 func (s *Syncer) SetArchivePollIntervalForTesting(interval time.Duration) {
 	if interval > 0 {
 		s.archivePollInterval = interval
@@ -1320,6 +1330,7 @@ func (s *Syncer) Admit(
 	key := RateBucketKey(string(repoPlatform(keyRepo)), identity.Host, identity.Principal)
 	if s.higherPriorityProviderWorkActive(key, archive.PriorityFullArchive) {
 		probe.abandon()
+		s.noteArchiveDenied(key)
 		retryAt := now.Add(time.Second)
 		return archive.AdmissionResult{RetryAt: &retryAt, Detail: "higher-priority sync work is active"}, nil
 	}
@@ -1429,6 +1440,21 @@ func (s *Syncer) Admit(
 	}, nil
 }
 
+// noteArchiveDenied records that live work on key turned an archive request
+// away, so releasing the host later wakes the archive worker.
+func (s *Syncer) noteArchiveDenied(key string) {
+	s.providerWorkMu.Lock()
+	s.markArchiveDeniedLocked(key)
+	s.providerWorkMu.Unlock()
+}
+
+func (s *Syncer) markArchiveDeniedLocked(key string) {
+	if s.archiveDeniedHosts == nil {
+		s.archiveDeniedHosts = make(map[string]struct{})
+	}
+	s.archiveDeniedHosts[key] = struct{}{}
+}
+
 func (s *Syncer) tryBeginArchiveProviderRequest(
 	ctx context.Context,
 	key string,
@@ -1496,6 +1522,7 @@ func (s *Syncer) beginProviderWork(ctx context.Context, key string, priority arc
 	archiveRequest, waitForArchive := s.archiveProviderRequests[key]
 	if waitForArchive {
 		archiveRequest.cancel()
+		s.markArchiveDeniedLocked(key)
 	}
 	s.providerWorkMu.Unlock()
 	if waitForArchive {
@@ -1509,14 +1536,26 @@ func (s *Syncer) beginProviderWork(ctx context.Context, key string, priority arc
 	return func() {
 		once.Do(func() {
 			s.providerWorkMu.Lock()
-			defer s.providerWorkMu.Unlock()
 			active := s.providerWork[key]
 			active[priority]--
 			if active[priority] == 0 {
 				delete(active, priority)
 			}
-			if len(active) == 0 {
+			hostFree := len(active) == 0
+			if hostFree {
 				delete(s.providerWork, key)
+			}
+			_, wake := s.archiveDeniedHosts[key]
+			if hostFree && wake {
+				delete(s.archiveDeniedHosts, key)
+			}
+			s.providerWorkMu.Unlock()
+			if hostFree && wake {
+				// This host turned archive work away while live work held it
+				// and the worker backed off; tell it the host is free again.
+				// Hosts that never denied archive work stay quiet, so a normal
+				// sync's stream of releases does not trigger denied passes.
+				s.WakeArchive()
 			}
 		})
 	}
@@ -2659,10 +2698,7 @@ func clientForRegistry(registry *platform.Registry, repo RepoRef) (Client, error
 	host := repoHost(repo)
 	provider, err := registry.Provider(repoPlatform(repo), host)
 	if err != nil {
-		if errors.Is(err, platform.ErrSyncDisabled) {
-			return nil, err
-		}
-		return nil, fmt.Errorf("no client configured for host %s", host)
+		return nil, err
 	}
 	legacy, ok := provider.(interface{ GitHubClient() platformgithub.API })
 	if !ok || legacy.GitHubClient() == nil {
@@ -3213,23 +3249,45 @@ func (s *Syncer) runArchiveLoop(ctx context.Context, ready <-chan struct{}) {
 	if interval <= 0 {
 		interval = time.Second
 	}
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+	// Idle passes back off exponentially from the pacing interval to
+	// archiveIdleWait. A pass that attempted work or failed, or a wake from
+	// config reload, sync completion, a budget reset, or an archive start,
+	// returns the loop to the pacing interval.
+	idle := backoff.NewExponentialBackOff()
+	idle.InitialInterval = interval
+	idle.MaxInterval = archiveIdleWait
+	idle.Multiplier = 2
+	idle.RandomizationFactor = 0
+	idle.Reset()
 	for {
-		if err := s.archiveRunner.RunEligible(ctx); err != nil &&
-			!errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+		worked, err := s.archiveRunner.RunPass(ctx)
+		if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 			slog.Warn("archive worker iteration failed", "err", err)
 		}
+		if worked || err != nil {
+			idle.Reset()
+		}
+		timer := time.NewTimer(idle.NextBackOff())
 		select {
-		case <-ticker.C:
+		case <-timer.C:
 		case <-s.archiveWake:
+			timer.Stop()
+			idle.Reset()
 		case <-s.stopCh:
+			timer.Stop()
 			return
 		case <-ctx.Done():
+			timer.Stop()
 			return
 		}
 	}
 }
+
+// archiveIdleWait caps the archive worker's idle backoff. Every source of
+// time-driven archive work waits at least a minute, so a bounded delay in
+// noticing it costs little, while an idle daemon stops paying for a pass
+// every second.
+const archiveIdleWait = 5 * time.Minute
 
 // backgroundReserveCost is the request allowance every background reserve check
 // asks for. One constant rather than a per-caller cost: against a 200-request
@@ -4534,6 +4592,10 @@ func (s *Syncer) runOnceWithSlot(
 				s.publishStatusLocked(terminalStatus)
 			}
 			s.statusMu.Unlock()
+			// A completed sync can change archive eligibility, for example by
+			// clearing a repository feature cooldown, so the idle archive
+			// worker must not wait out its backoff to notice.
+			s.WakeArchive()
 			return
 		}
 		s.statusMu.Unlock()

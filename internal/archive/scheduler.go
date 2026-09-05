@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.kenn.io/forge/internal/db"
@@ -26,18 +27,29 @@ type Scheduler struct{}
 
 func NewScheduler() *Scheduler { return &Scheduler{} }
 
-func (s *Scheduler) Run(ctx context.Context, groups map[string][]resolvedRepository, work func(context.Context, []resolvedRepository) error) error {
+// Run executes work for every provider-host group concurrently and reports
+// whether any group attempted provider work.
+func (s *Scheduler) Run(
+	ctx context.Context,
+	groups map[string][]resolvedRepository,
+	work func(context.Context, []resolvedRepository) (bool, error),
+) (bool, error) {
 	keys := make([]string, 0, len(groups))
 	for key := range groups {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
 	errCh := make(chan error, len(keys))
+	var worked atomic.Bool
 	var wg sync.WaitGroup
 	for _, key := range keys {
 		key, repos := key, groups[key]
 		wg.Go(func() {
-			if err := work(ctx, repos); err != nil {
+			handled, err := work(ctx, repos)
+			if handled {
+				worked.Store(true)
+			}
+			if err != nil {
 				errCh <- fmt.Errorf("archive provider worker %s: %w", key, err)
 			}
 		})
@@ -48,10 +60,15 @@ func (s *Scheduler) Run(ctx context.Context, groups map[string][]resolvedReposit
 	for err := range errCh {
 		errs = append(errs, err)
 	}
-	return errors.Join(errs...)
+	return worked.Load(), errors.Join(errs...)
 }
 
 var errAdmissionDeferred = errors.New("archive request deferred by admission")
+
+// errRequestPreempted marks an admitted provider request that live work
+// canceled mid-flight. It is an admission deferral for retry purposes, but the
+// provider was reached, so the pass counts as work.
+var errRequestPreempted = fmt.Errorf("archive request preempted by live work: %w", errAdmissionDeferred)
 
 type featureDeferredError struct {
 	FeatureDeferral
@@ -66,21 +83,21 @@ func featureDeferredBeforeProvider(err error) bool {
 	return errors.As(err, &deferred) && deferred != nil && !deferred.providerAttempted
 }
 
+// RunEligible performs one worker pass. Tests and one-shot callers use it;
+// the worker loop calls RunPass to learn whether the pass attempted work.
 func (s *Service) RunEligible(ctx context.Context) error {
-	if s.configured == nil {
-		return errors.New("run eligible archives: configured repository source is required")
-	}
-	refs, err := s.configured.ConfiguredRepositories(ctx)
+	_, err := s.RunPass(ctx)
+	return err
+}
+
+// RunPass performs one worker pass over every configured repository grouped by
+// provider host and reports whether any provider work was attempted, so the
+// loop can back off while nothing is eligible. A pass with unchanged
+// configuration performs no repository resolution queries.
+func (s *Service) RunPass(ctx context.Context) (bool, error) {
+	resolved, err := s.workerRepositories(ctx)
 	if err != nil {
-		return fmt.Errorf("list configured archive repositories: %w", err)
-	}
-	// Configuration reconciliation runs at startup and on configuration reload.
-	// The one-second worker poll must remain read-only when no work is eligible.
-	// Resolution failures are repository-scoped: a configured entry that seeding
-	// skipped must not block archive work for every healthy repository.
-	resolved, err := s.resolveRepositoriesTolerant(ctx, refs, true)
-	if err != nil {
-		return err
+		return false, err
 	}
 	groups := make(map[string][]resolvedRepository)
 	for _, repo := range resolved {
@@ -90,10 +107,10 @@ func (s *Service) RunEligible(ctx context.Context) error {
 	return s.scheduler.Run(ctx, groups, s.runProviderHostWork)
 }
 
-func (s *Service) runProviderHostWork(ctx context.Context, repos []resolvedRepository) error {
+func (s *Service) runProviderHostWork(ctx context.Context, repos []resolvedRepository) (bool, error) {
 	states, err := s.db.ListArchiveRepoStates(ctx, resolvedRepoIDs(repos))
 	if err != nil {
-		return err
+		return false, err
 	}
 	stateByID := make(map[int64]db.ArchiveRepoState, len(states))
 	for _, state := range states {
@@ -111,7 +128,7 @@ func (s *Service) runProviderHostWork(ctx context.Context, repos []resolvedRepos
 		if archiveScanNotStarted(state.IssueInventory) {
 			err := s.inventoryPage(ctx, repo, state, db.ArchiveItemTypeIssue)
 			if !featureDeferredBeforeProvider(err) {
-				return s.swallowAdmissionDeferred(err)
+				return s.finishWork(err)
 			}
 		}
 		if archiveScanNotStarted(state.MergeRequestInventory) {
@@ -119,7 +136,7 @@ func (s *Service) runProviderHostWork(ctx context.Context, repos []resolvedRepos
 			if featureDeferredBeforeProvider(err) {
 				continue
 			}
-			return s.swallowAdmissionDeferred(err)
+			return s.finishWork(err)
 		}
 	}
 
@@ -141,7 +158,7 @@ func (s *Service) runProviderHostWork(ctx context.Context, repos []resolvedRepos
 			if featureDeferredBeforeProvider(err) {
 				continue
 			}
-			return s.swallowAdmissionDeferred(err)
+			return s.finishWork(err)
 		}
 	}
 
@@ -154,13 +171,13 @@ func (s *Service) runProviderHostWork(ctx context.Context, repos []resolvedRepos
 		}
 	}
 	if handled, err := s.runNextHydrationWork(ctx, repos, fullIDs); handled || err != nil {
-		return err
+		return handled, err
 	}
 
 	if handled, err := s.runNextInventoryWork(
 		ctx, repos, stateByID, db.ArchiveCollectionModeFull,
 	); handled || err != nil {
-		return err
+		return handled, err
 	}
 	for _, repo := range repos {
 		state := stateByID[repo.ID]
@@ -173,15 +190,15 @@ func (s *Service) runProviderHostWork(ctx context.Context, repos []resolvedRepos
 			if featureDeferredBeforeProvider(err) {
 				continue
 			}
-			return s.swallowAdmissionDeferred(err)
+			return s.finishWork(err)
 		}
 	}
 	if handled, err := s.runNextInventoryWork(
 		ctx, repos, stateByID, db.ArchiveCollectionModeDiscovery,
 	); handled || err != nil {
-		return err
+		return handled, err
 	}
-	return nil
+	return false, nil
 }
 
 type archiveInventoryScope struct {
@@ -213,7 +230,7 @@ func (s *Service) runNextHydrationWork(
 			})
 			continue
 		}
-		return true, s.swallowAdmissionDeferred(err)
+		return s.finishWork(err)
 	}
 }
 
@@ -236,15 +253,27 @@ func (s *Service) runNextInventoryWork(
 			skipped[archiveInventoryScope{repoID: repo.ID, itemType: itemType}] = struct{}{}
 			continue
 		}
-		return true, s.swallowAdmissionDeferred(err)
+		return s.finishWork(err)
 	}
 }
 
-func (s *Service) swallowAdmissionDeferred(err error) error {
-	if errors.Is(err, errAdmissionDeferred) {
-		return nil
+// finishWork converts a work unit's outcome into the pass result. A unit that
+// reached the provider is work, even when the provider answered with a feature
+// deferral or live work preempted the request: other repositories on the host
+// may be eligible right now, so the loop keeps its pacing interval. Only an
+// admission denial before any provider request is idle: nothing was attempted
+// and the deferral names when to look again, so the worker may back off.
+func (s *Service) finishWork(err error) (bool, error) {
+	var deferred *featureDeferredError
+	switch {
+	case errors.As(err, &deferred):
+		return deferred.providerAttempted, nil
+	case errors.Is(err, errRequestPreempted):
+		return true, nil
+	case errors.Is(err, errAdmissionDeferred):
+		return false, nil
 	}
-	return err
+	return true, err
 }
 
 // archiveScanNotStarted reports a scan generation that has not committed any

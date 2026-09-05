@@ -1,6 +1,7 @@
 <script lang="ts">
   import { IconButton, SearchInput } from "@kenn-io/kit-ui";
   import FunnelIcon from "@lucide/svelte/icons/funnel";
+  import type { Snippet } from "svelte";
 
   interface Props {
     value?: string;
@@ -10,6 +11,7 @@
     filterControls: string;
     filtersExpanded: boolean;
     filtersActive?: boolean;
+    filterControl?: Snippet | undefined;
     oninput: (value: string) => void;
     ontoggle: () => void;
   }
@@ -22,6 +24,7 @@
     filterControls,
     filtersExpanded,
     filtersActive = filtersExpanded,
+    filterControl,
     oninput,
     ontoggle,
   }: Props = $props();
@@ -40,18 +43,22 @@
   </div>
 
   <div class="mobile-triage-search-bar__filter">
-    <IconButton
-      size="md"
-      tone="info"
-      ariaLabel={filterAriaLabel}
-      title="Filters"
-      ariaExpanded={filtersExpanded}
-      ariaControls={filterControls}
-      ariaPressed={filtersActive}
-      onclick={ontoggle}
-    >
-      <FunnelIcon size={18} strokeWidth={2} aria-hidden="true" />
-    </IconButton>
+    {#if filterControl}
+      {@render filterControl()}
+    {:else}
+      <IconButton
+        size="md"
+        tone="info"
+        ariaLabel={filterAriaLabel}
+        title="Filters"
+        ariaExpanded={filtersExpanded}
+        ariaControls={filterControls}
+        ariaPressed={filtersActive}
+        onclick={ontoggle}
+      >
+        <FunnelIcon size={18} strokeWidth={2} aria-hidden="true" />
+      </IconButton>
+    {/if}
   </div>
 </div>
 
@@ -96,6 +103,15 @@
     border: thin solid var(--border-default);
     border-radius: 8.5px;
     background: var(--bg-inset);
+  }
+
+  :global(.mobile-main) .mobile-triage-search-bar__filter :global(.kit-filter-dropdown__btn) {
+    width: 44px;
+    height: 100%;
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
+    border-radius: 8.5px;
   }
 
   :global(.mobile-main) .mobile-triage-search-bar__search :global(.kit-search-input) {

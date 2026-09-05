@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"go.kenn.io/forge/internal/db/dbupgrade"
 	_ "modernc.org/sqlite"
@@ -21,6 +22,11 @@ type DB struct {
 	mrReconcileGate   sync.Mutex
 	mrSnapshotLocksMu sync.Mutex
 	mrSnapshotLocks   map[mergeRequestSnapshotLockKey]*mergeRequestSnapshotLock
+
+	// repositoryReconciliationGeneration counts repository reconciliation
+	// writes so caches keyed on repository identity can detect that a
+	// repository row, route, or replacement may have changed.
+	repositoryReconciliationGeneration atomic.Uint64
 
 	beforeRepositoryReconciliationWriteLock func()
 }
@@ -158,6 +164,47 @@ func (d *DB) init() error {
 			return dbupgrade.RepairLegacyTimestamps(context.Background(), tx)
 		}); err != nil {
 			return fmt.Errorf("repair legacy timestamp storage: %w", err)
+		}
+	}
+	return d.Optimize(context.Background())
+}
+
+// Optimize refreshes the statistics the SQLite query planner uses to choose
+// indexes. A store that has never been analyzed gets a full ANALYZE, which
+// takes a few hundred milliseconds on a 160 MB file; once sqlite_stat1
+// exists the pragma only re-analyzes tables whose shape changed enough to
+// matter and returns in well under a millisecond. Without statistics the
+// planner guesses, and on a large event table it guessed wrong for the
+// activity feed and merge request detail reads.
+func (d *DB) Optimize(ctx context.Context) (err error) {
+	// Hold every reader so database/sql cannot select the same underlying
+	// connection twice. SQLite persists statistics in the database but loads
+	// and applies them separately on each connection.
+	connections := make([]*sql.Conn, 0, readPoolSize)
+	defer func() {
+		var closeErr error
+		for _, connection := range connections {
+			closeErr = errors.Join(closeErr, connection.Close())
+		}
+		if closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("release read connections: %w", closeErr))
+		}
+	}()
+
+	for range readPoolSize {
+		connection, connErr := d.ro.Conn(ctx)
+		if connErr != nil {
+			return fmt.Errorf("reserve read connections: %w", connErr)
+		}
+		connections = append(connections, connection)
+	}
+
+	if _, err := connections[0].ExecContext(ctx, "PRAGMA optimize=0x10002"); err != nil {
+		return fmt.Errorf("optimize db: %w", err)
+	}
+	for _, connection := range connections {
+		if _, err := connection.ExecContext(ctx, "ANALYZE sqlite_schema"); err != nil {
+			return fmt.Errorf("reload planner statistics: %w", err)
 		}
 	}
 	return nil
@@ -323,7 +370,17 @@ func (d *DB) lockRepositoryReconciliationWrite() func() {
 	}
 	d.mrReconcileMu.Lock()
 	d.mrReconcileGate.Unlock()
+	d.repositoryReconciliationGeneration.Add(1)
 	return d.mrReconcileMu.Unlock
+}
+
+// RepositoryReconciliationGeneration reports a process-local counter that
+// advances whenever a repository reconciliation write begins. A reader that
+// samples it before resolving repository identity and finds it unchanged later
+// knows no reconciliation write started in between, so cached repository rows
+// resolved under the reconciliation read lock are still current.
+func (d *DB) RepositoryReconciliationGeneration() uint64 {
+	return d.repositoryReconciliationGeneration.Load()
 }
 
 // SetBeforeRepositoryReconciliationWriteLockForTest installs a hook after

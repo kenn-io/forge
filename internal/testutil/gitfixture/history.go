@@ -4,13 +4,61 @@ package gitfixture
 import (
 	"bytes"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	gitcmd "go.kenn.io/kit/git/cmd"
 )
+
+// DivergenceWorktree creates a local feature branch that tracks a bare remote.
+func DivergenceWorktree(t *testing.T) string {
+	t.Helper()
+	require := require.New(t)
+	runner := gitsafe.Runner().WithConfig("init.defaultBranch", "main")
+	run := func(dir string, args ...string) {
+		t.Helper()
+		out, stderr, err := runner.Run(t.Context(), dir, nil, args...)
+		require.NoError(err, "git %v failed: %s%s", args, out, stderr)
+	}
+
+	root := t.TempDir()
+	remote := filepath.Join(root, "remote.git")
+	work := filepath.Join(root, "work")
+	run(root, "init", "--bare", "--initial-branch=main", remote)
+	run(root, "clone", remote, work)
+	run(work, "config", "user.email", "t@test.com")
+	run(work, "config", "user.name", "Test")
+	require.NoError(os.WriteFile(filepath.Join(work, "base.txt"), []byte("base\n"), 0o644))
+	run(work, "add", ".")
+	run(work, "commit", "-m", "base")
+	run(work, "push", "origin", "main")
+	run(work, "checkout", "-b", "feature")
+	require.NoError(os.WriteFile(filepath.Join(work, "f.txt"), []byte("f1\n"), 0o644))
+	run(work, "add", ".")
+	run(work, "commit", "-m", "feature 1")
+	run(work, "push", "-u", "origin", "feature")
+	return work
+}
+
+// Run executes Git with the package test process's isolated configuration.
+func Run(t *testing.T, dir string, args ...string) []byte {
+	t.Helper()
+	runner := gitsafe.Runner().WithConfig("init.defaultBranch", "main")
+	out, stderr, err := runner.Run(t.Context(), dir, nil, args...)
+	require.NoError(t, err, "git %v failed: %s%s", args, out, stderr)
+	return out
+}
+
+// SHA resolves ref in dir and returns the trimmed object ID.
+func SHA(t *testing.T, dir, ref string) string {
+	t.Helper()
+	return strings.TrimSpace(string(Run(t, dir, "rev-parse", ref)))
+}
 
 // AppendFileCommits adds count commits that successively replace path on ref.
 // It uses one fast-import process so boundary-size histories do not exhaust

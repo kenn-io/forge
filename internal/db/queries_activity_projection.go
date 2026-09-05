@@ -72,6 +72,7 @@ func (d *DB) ListCollapsedActivityProjection(
 		Search:                   opts.Search,
 		SearchMatchedSubjectKeys: searchMatched,
 		Author:                   opts.Author,
+		Unassigned:               opts.Unassigned,
 		ViewerLogins:             opts.ViewerLogins,
 		HideClosedMerged:         opts.HideClosedMerged,
 		HideBots:                 opts.HideBots,

@@ -1,5 +1,6 @@
-import { Context, Effect, Exit, Fiber, FiberHandle, Layer, Ref, Schedule, Semaphore, Stream } from "effect";
+import { Context, Effect, Exit, Fiber, FiberHandle, Layer, Ref, Semaphore } from "effect";
 import type * as Duration from "effect/Duration";
+import { pollWhileVisible } from "../effect/poll-while-visible.js";
 import { TransientTransportError, type ApiProblemError } from "../api/effect-errors.js";
 import { GeneratedApi } from "../api/generated-api.js";
 import type { Issue, IssueDetail } from "../api/types.js";
@@ -164,9 +165,7 @@ export const IssuesWorkflowLive = Layer.effect(IssuesWorkflow)(
       pollOnce: Effect.Effect<void, E, R>,
       interval: Duration.Input,
     ): Effect.Effect<void, E, R> {
-      const program = Effect.sleep(interval).pipe(
-        Effect.andThen(Stream.fromEffectSchedule(pollOnce, Schedule.spaced(interval)).pipe(Stream.runDrain)),
-      );
+      const program = pollWhileVisible(pollOnce, interval);
       return pollingAcceptance
         .withPermit(
           Ref.modify(pollingGeneration, (current): readonly [boolean, number] =>

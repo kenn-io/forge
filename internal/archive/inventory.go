@@ -59,7 +59,7 @@ func (s *Service) inventoryPage(ctx context.Context, repo resolvedRepository, st
 			}
 			if err != nil {
 				if preempted {
-					return errAdmissionDeferred
+					return errRequestPreempted
 				}
 				return s.recordScanFailure(ctx, repo, kind, scan.Generation, fmt.Errorf(
 					"list historical issues for %s: %w", archiveRepoIdentityKey(repo.Ref), err,
@@ -85,7 +85,7 @@ func (s *Service) inventoryPage(ctx context.Context, repo resolvedRepository, st
 			}
 			if err != nil {
 				if preempted {
-					return errAdmissionDeferred
+					return errRequestPreempted
 				}
 				return s.recordScanFailure(ctx, repo, kind, scan.Generation, fmt.Errorf(
 					"list historical merge requests for %s: %w", archiveRepoIdentityKey(repo.Ref), err,

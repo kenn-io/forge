@@ -79,37 +79,6 @@ const (
 	pushedHeadRefreshRetryInterval = 30 * time.Second
 )
 
-type gitRemoteHeadReader struct{}
-
-func (gitRemoteHeadReader) BranchName(ctx context.Context, dir string) (string, error) {
-	gitCtx, cancel := context.WithTimeout(ctx, pushedHeadGitTimeout)
-	defer cancel()
-	return gitBranchName(gitCtx, dir)
-}
-
-func (gitRemoteHeadReader) UpstreamState(ctx context.Context, dir, branch string) (upstreamState, error) {
-	gitCtx, cancel := context.WithTimeout(ctx, pushedHeadGitTimeout)
-	defer cancel()
-	return gitUpstreamState(gitCtx, dir, branch)
-}
-
-func (gitRemoteHeadReader) SetBranchUpstream(ctx context.Context, dir, branch, remote, mergeRef string) error {
-	gitCtx, cancel := context.WithTimeout(ctx, pushedHeadGitTimeout)
-	defer cancel()
-	return setBranchUpstream(gitCtx, dir, branch, remote, mergeRef)
-}
-
-func (gitRemoteHeadReader) RemoteTrackingSHA(ctx context.Context, dir, remote, branch string) (string, string, bool, error) {
-	trackingRef := "refs/remotes/" + remote + "/" + branch
-	gitCtx, cancel := context.WithTimeout(ctx, pushedHeadGitTimeout)
-	defer cancel()
-	out, err := gitOutput(gitCtx, dir, "rev-parse", "--verify", "--quiet", trackingRef+"^{commit}")
-	if err != nil {
-		return "", trackingRef, false, nil
-	}
-	return strings.TrimSpace(out), trackingRef, true, nil
-}
-
 type PushedHeadObserver struct {
 	db       *db.DB
 	monitor  *PRMonitor
@@ -126,7 +95,7 @@ func NewPushedHeadObserver(
 	return &PushedHeadObserver{
 		db:       database,
 		monitor:  NewPRMonitor(database, monitorOptions...),
-		git:      gitRemoteHeadReader{},
+		git:      newGitdirRemoteHeadReader(),
 		now:      time.Now,
 		observed: make(map[remoteHeadKey]remoteHeadObservation),
 		failures: make(map[string]int),

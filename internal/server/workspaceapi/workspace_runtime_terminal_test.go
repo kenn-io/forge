@@ -16,6 +16,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"go.kenn.io/forge/internal/ptysize"
+	"go.kenn.io/forge/internal/terminalwebsocket"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
@@ -40,6 +41,37 @@ func TestServeRuntimeTerminalNegotiatesCompression(t *testing.T) {
 		resp.Header.Get("Sec-WebSocket-Extensions"),
 		"permessage-deflate",
 	)
+
+	require.NoError(conn.Close(websocket.StatusNormalClosure, "done"))
+	select {
+	case <-handlerDone:
+	case <-ctx.Done():
+		require.Fail("terminal handler did not return")
+	}
+}
+
+func TestServeRuntimeTerminalAnswersHeartbeat(t *testing.T) {
+	require := require.New(t)
+	attachment := localruntime.NewAttachmentForTesting(
+		localruntime.AttachmentForTestingOptions{
+			Output: make(chan []byte),
+			Done:   make(chan struct{}),
+		},
+	)
+	wsURL, handlerDone := runtimeTerminalTestServer(t, attachment)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	require.NoError(err)
+	require.NoError(conn.Write(
+		ctx, websocket.MessageText,
+		[]byte(terminalwebsocket.HeartbeatMessage),
+	))
+	typ, data, err := conn.Read(ctx)
+	require.NoError(err)
+	require.Equal(websocket.MessageText, typ)
+	require.JSONEq(terminalwebsocket.HeartbeatMessage, string(data))
 
 	require.NoError(conn.Close(websocket.StatusNormalClosure, "done"))
 	select {
@@ -232,11 +264,13 @@ func TestHandleRuntimeTerminalControlAcknowledgesResizeClaimBeforeReturning(t *t
 		},
 	)
 
-	require.NoError(handleRuntimeTerminalControl(
+	heartbeat, err := handleRuntimeTerminalControl(
 		context.Background(),
 		attachment,
 		[]byte(`{"type":"claim_resize","cols":132,"rows":43,"pixel_width":1056,"pixel_height":688}`),
-	))
+	)
+	require.NoError(err)
+	require.False(heartbeat)
 	events = append(events, "next input")
 
 	require.Equal([]string{"claim", "refresh", "settled", "next input"}, events)

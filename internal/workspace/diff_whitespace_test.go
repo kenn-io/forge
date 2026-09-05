@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/gitclone"
+	"go.kenn.io/forge/internal/testutil/gitfixture"
 	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
@@ -187,7 +188,7 @@ func TestClassifyWorkspaceWhitespaceOnlyChecksWholeFileAcrossHunks(t *testing.T)
 func TestWorktreeDiffDoesNotClassifyModeChangeAsWhitespaceOnly(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
-	work := setupDivergenceWorktree(t)
+	work := gitfixture.DivergenceWorktree(t)
 	path := filepath.Join(work, "f.txt")
 
 	require.NoError(os.WriteFile(path, []byte("f1  \n"), 0o755))

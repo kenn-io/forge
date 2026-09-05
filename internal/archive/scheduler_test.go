@@ -22,7 +22,7 @@ func TestArchiveSchedulerDoesNotSerializeSameHostOutsideAdmission(t *testing.T) 
 	release := make(chan struct{})
 	var active atomic.Int32
 	var maximum atomic.Int32
-	work := func(context.Context, []resolvedRepository) error {
+	work := func(context.Context, []resolvedRepository) (bool, error) {
 		current := active.Add(1)
 		for {
 			observed := maximum.Load()
@@ -33,11 +33,11 @@ func TestArchiveSchedulerDoesNotSerializeSameHostOutsideAdmission(t *testing.T) 
 		entered <- struct{}{}
 		<-release
 		active.Add(-1)
-		return nil
+		return true, nil
 	}
 	errCh := make(chan error, 2)
-	go func() { errCh <- scheduler.Run(t.Context(), groups, work) }()
-	go func() { errCh <- scheduler.Run(t.Context(), groups, work) }()
+	go func() { _, err := scheduler.Run(t.Context(), groups, work); errCh <- err }()
+	go func() { _, err := scheduler.Run(t.Context(), groups, work); errCh <- err }()
 	require.Eventually(func() bool { return len(entered) == 2 }, time.Second, time.Millisecond)
 	release <- struct{}{}
 	release <- struct{}{}
@@ -58,7 +58,7 @@ func TestArchiveSchedulerRunsIndependentHostsConcurrently(t *testing.T) {
 	release := make(chan struct{})
 	var active atomic.Int32
 	var maximum atomic.Int32
-	work := func(context.Context, []resolvedRepository) error {
+	work := func(context.Context, []resolvedRepository) (bool, error) {
 		current := active.Add(1)
 		for {
 			observed := maximum.Load()
@@ -69,10 +69,10 @@ func TestArchiveSchedulerRunsIndependentHostsConcurrently(t *testing.T) {
 		entered <- struct{}{}
 		<-release
 		active.Add(-1)
-		return nil
+		return true, nil
 	}
 	done := make(chan error, 1)
-	go func() { done <- scheduler.Run(t.Context(), groups, work) }()
+	go func() { _, err := scheduler.Run(t.Context(), groups, work); done <- err }()
 	require.Eventually(func() bool { return len(entered) == 2 }, time.Second, time.Millisecond)
 	release <- struct{}{}
 	release <- struct{}{}

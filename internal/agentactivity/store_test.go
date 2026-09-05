@@ -3,6 +3,7 @@ package agentactivity
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -93,7 +94,7 @@ func TestStoreMatchesWorkspaceReachedThroughSymlink(t *testing.T) {
 	assert.Equal(t, StateWorking, snapshot.State)
 }
 
-func TestStoreExpiresAndRemovesStaleReports(t *testing.T) {
+func TestStoreKeepsReportsUntilTheSessionIsTornDown(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	root := t.TempDir()
@@ -102,13 +103,20 @@ func TestStoreExpiresAndRemovesStaleReports(t *testing.T) {
 	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
 	store.now = func() time.Time { return now }
 
-	reportHook(t, store, "runtime-stale", map[string]any{
-		"session_id": "agent-stale", "cwd": workspace,
-		"hook_event_name": "PermissionRequest",
+	reportHook(t, store, "runtime-quiet", map[string]any{
+		"session_id": "agent-quiet", "cwd": workspace,
+		"hook_event_name": "UserPromptSubmit",
 	})
-	now = now.Add(31 * time.Minute)
+	// A launched agent may go hours without a lifecycle event while it works;
+	// its hook state must not lapse to weaker signals on a timer.
+	now = now.Add(6 * time.Hour)
 
-	_, ok := store.SnapshotForWorkspace(workspace, []string{"runtime-stale"})
+	snapshot, ok := store.SnapshotForWorkspace(workspace, []string{"runtime-quiet"})
+	require.True(ok)
+	assert.Equal(StateWorking, snapshot.State)
+
+	require.NoError(store.RemoveRuntimeSession("runtime-quiet"))
+	_, ok = store.SnapshotForWorkspace(workspace, []string{"runtime-quiet"})
 	assert.False(ok)
 	entries, err := os.ReadDir(root)
 	require.NoError(err)
@@ -260,4 +268,130 @@ func reportAgentHook(
 	data, err := json.Marshal(input)
 	require.NoError(t, err)
 	require.NoError(t, store.HandleHook(agent, strings.NewReader(string(data)), runtimeKey))
+}
+
+func TestStoreTreatsIdlePromptAsDone(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	store := NewStore(t.TempDir())
+	workspace := t.TempDir()
+
+	reportHook(t, store, "runtime-a", map[string]any{
+		"session_id": "agent-a", "cwd": workspace,
+		"hook_event_name": "Stop",
+	})
+	// Claude Code raises idle_prompt roughly a minute after Stop when the
+	// turn ended with nothing pending; it must not turn done into input.
+	reportHook(t, store, "runtime-a", map[string]any{
+		"session_id": "agent-a", "cwd": workspace,
+		"hook_event_name": "Notification", "notification_type": "idle_prompt",
+	})
+	snapshot, ok := store.SnapshotForWorkspace(workspace, []string{"runtime-a"})
+	require.True(ok)
+	assert.Equal(StateDone, snapshot.State)
+
+	// A real question for the user still surfaces as input.
+	reportHook(t, store, "runtime-a", map[string]any{
+		"session_id": "agent-a", "cwd": workspace,
+		"hook_event_name": "Notification", "notification_type": "elicitation_dialog",
+	})
+	snapshot, ok = store.SnapshotForWorkspace(workspace, []string{"runtime-a"})
+	require.True(ok)
+	assert.Equal(StateInput, snapshot.State)
+}
+
+func TestStoreKeepsDoneTimestampAcrossIdlePrompt(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	store := NewStore(t.TempDir())
+	workspace := t.TempDir()
+	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
+	store.now = func() time.Time { return now }
+
+	reportHook(t, store, "runtime-a", map[string]any{
+		"session_id": "agent-a", "cwd": workspace,
+		"hook_event_name": "Stop",
+	})
+	stoppedAt := now
+	now = now.Add(time.Minute)
+	reportHook(t, store, "runtime-a", map[string]any{
+		"session_id": "agent-a", "cwd": workspace,
+		"hook_event_name": "Notification", "notification_type": "idle_prompt",
+	})
+
+	// The sidebar acknowledges a completion by its timestamp; a later
+	// idle_prompt must not mint a new one.
+	snapshot, ok := store.SnapshotForWorkspace(workspace, []string{"runtime-a"})
+	require.True(ok)
+	assert.Equal(StateDone, snapshot.State)
+	assert.Equal(stoppedAt, snapshot.UpdatedAt)
+
+	// A new turn resets the clock as before.
+	now = now.Add(time.Minute)
+	reportHook(t, store, "runtime-a", map[string]any{
+		"session_id": "agent-a", "cwd": workspace,
+		"hook_event_name": "UserPromptSubmit",
+	})
+	now = now.Add(time.Minute)
+	reportHook(t, store, "runtime-a", map[string]any{
+		"session_id": "agent-a", "cwd": workspace,
+		"hook_event_name": "Stop",
+	})
+	snapshot, ok = store.SnapshotForWorkspace(workspace, []string{"runtime-a"})
+	require.True(ok)
+	assert.Equal(StateDone, snapshot.State)
+	assert.Equal(now, snapshot.UpdatedAt)
+}
+
+func TestStoreIdlePromptKeepsPendingInputAndApproval(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	store := NewStore(t.TempDir())
+	workspace := t.TempDir()
+
+	for _, tc := range []struct {
+		name  string
+		event map[string]any
+		want  State
+	}{
+		{"question", map[string]any{"hook_event_name": "PreToolUse", "tool_name": "AskUserQuestion"}, StateInput},
+		{"permission", map[string]any{"hook_event_name": "PermissionRequest"}, StateApproval},
+	} {
+		event := map[string]any{"session_id": "agent-" + tc.name, "cwd": workspace}
+		maps.Copy(event, tc.event)
+		reportHook(t, store, "runtime-"+tc.name, event)
+		// Claude Code raises idle_prompt after a minute of waiting for an
+		// answer; the question is still pending.
+		reportHook(t, store, "runtime-"+tc.name, map[string]any{
+			"session_id": "agent-" + tc.name, "cwd": workspace,
+			"hook_event_name": "Notification", "notification_type": "idle_prompt",
+		})
+		snapshot, ok := store.SnapshotForWorkspace(workspace, []string{"runtime-" + tc.name})
+		require.True(ok, tc.name)
+		assert.Equal(tc.want, snapshot.State, tc.name)
+	}
+}
+
+func TestStoreRetainRuntimeSessionsRemovesOthers(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	root := t.TempDir()
+	store := NewStore(root)
+	workspace := t.TempDir()
+	for _, key := range []string{"runtime-a", "runtime-b"} {
+		reportHook(t, store, key, map[string]any{
+			"session_id": "agent-" + key, "cwd": workspace,
+			"hook_event_name": "UserPromptSubmit",
+		})
+	}
+
+	require.NoError(store.RetainRuntimeSessions(map[string]struct{}{"runtime-a": {}}))
+
+	entries, err := os.ReadDir(root)
+	require.NoError(err)
+	assert.Len(entries, 1)
+	_, ok := store.SnapshotForWorkspace(workspace, []string{"runtime-a"})
+	assert.True(ok)
+	_, ok = store.SnapshotForWorkspace(workspace, []string{"runtime-b"})
+	assert.False(ok, "the report of a runtime not in the keep set is removed")
 }

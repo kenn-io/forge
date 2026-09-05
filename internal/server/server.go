@@ -54,7 +54,7 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
-const forgeCSRFHeaderName = "X-Kenn-Forge-Csrf"
+var crossOriginProtection http.CrossOriginProtection
 
 type BuildInfo struct {
 	Name      string `json:"name"`
@@ -872,7 +872,11 @@ func newServer(
 	}
 	s.providerWriteGate = options.ProviderWriteGate
 	if s.providerWriteGate == nil {
-		s.providerWriteGate = providerplane.NewProviderWriteGate(database)
+		restoreDurableState := false
+		if options.FederationEnrollments != nil {
+			_, restoreDurableState = options.FederationEnrollments.Local()
+		}
+		s.providerWriteGate = providerplane.NewProviderWriteGate(database, restoreDurableState)
 	}
 	if cfg != nil && cfg.Fleet.RoleOrDefault() == config.FleetRoleSpoke {
 		s.providerRouteSpoke = true
@@ -1007,7 +1011,8 @@ func newServer(
 		Broadcast: func(event fleetapi.Event) uint64 {
 			return s.hub.Broadcast(Event{Type: event.Type, Data: event.Data})
 		},
-		Generation: s.hub.Generation,
+		Generation:      s.hub.Generation,
+		SubscriberCount: s.hub.SubscriberCount,
 		WorkspaceSnapshot: func(ctx context.Context) (workspaceapi.FleetSnapshot, error) {
 			if s.workspaceAPI == nil {
 				return workspaceapi.FleetSnapshot{}, nil
@@ -1568,7 +1573,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if r.Method != http.MethodGet && s.isMutatingAPIRequest(r) {
-		if !checkCSRF(w, r, false) {
+		if !checkCrossOrigin(w, r, hostOpts.TrustReverseProxy) {
 			return
 		}
 		if s.isMutatingDocsAPIRequest(r) && !isLoopbackRemoteAddr(r.RemoteAddr) {
@@ -1763,31 +1768,32 @@ func authorityIsLoopbackHost(hostHeader string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-// checkCSRF rejects cross-site mutation requests. Returns true if
+// checkCrossOrigin rejects cross-origin browser requests. Returns true if
 // the request is allowed, false if it was rejected (response written).
-func checkCSRF(w http.ResponseWriter, r *http.Request, allowProxyContentType bool) bool {
-	if sfs := r.Header.Get("Sec-Fetch-Site"); sfs != "" {
-		if sfs != "same-origin" && sfs != "none" {
-			writeError(w, http.StatusForbidden,
-				"cross-origin requests are not allowed")
-			return false
+func checkCrossOrigin(w http.ResponseWriter, r *http.Request, trustReverseProxy bool) bool {
+	request := r
+	if trustReverseProxy {
+		// Host validation has already accepted the forwarded public authority.
+		// Use it for the Origin comparison instead of the proxy's backend Host.
+		publicHost := ""
+		if values := r.Header.Values("X-Forwarded-Host"); len(values) > 0 {
+			if key, err := parseXForwardedHost(strings.Join(values, ",")); err == nil {
+				publicHost = key.String()
+			}
+		} else if values := r.Header.Values("Forwarded"); len(values) > 0 {
+			if key, err := parseForwardedHost(strings.Join(values, ",")); err == nil {
+				publicHost = key.String()
+			}
+		}
+		if publicHost != "" {
+			request = r.Clone(r.Context())
+			request.Host = publicHost
 		}
 	}
-
-	// Require Content-Type: application/json on all mutation requests,
-	// including zero-body endpoints like POST /sync. This prevents
-	// cross-origin form submissions and simple fetches from forging
-	// requests even without Sec-Fetch-Site.
-	ct := r.Header.Get("Content-Type")
-	if !strings.HasPrefix(ct, "application/json") {
-		if allowProxyContentType && r.Header.Get("Sec-Fetch-Site") != "" {
-			return true
-		}
-		writeError(w, http.StatusUnsupportedMediaType,
-			"Content-Type must be application/json")
+	if err := crossOriginProtection.Check(request); err != nil {
+		writeError(w, http.StatusForbidden, "cross-origin requests are not allowed")
 		return false
 	}
-
 	return true
 }
 

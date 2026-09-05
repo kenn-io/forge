@@ -6,14 +6,18 @@ import {
   getIssueInvolvesMe,
   getIssueReferencedByPR,
   getIssueSearch,
+  getIssueUnassigned,
   getPullInvolvesMe,
   getPullSearch,
+  getPullUnassigned,
   resetFocusListViewState,
   setIssueInvolvesMe,
   setIssueReferencedByPR,
   setIssueSearch,
+  setIssueUnassigned,
   setPullInvolvesMe,
   setPullSearch,
+  setPullUnassigned,
 } from "../../test/focusListViewState.svelte.js";
 import { getGlobalRepo, setGlobalRepo } from "../stores/filter.svelte.js";
 
@@ -23,6 +27,8 @@ const loadPulls = vi.hoisted(() => vi.fn());
 const loadIssues = vi.hoisted(() => vi.fn());
 const setPullsInvolvesMe = vi.hoisted(() => vi.fn());
 const setIssuesInvolvesMe = vi.hoisted(() => vi.fn());
+const setPullsUnassigned = vi.hoisted(() => vi.fn());
+const setIssuesUnassigned = vi.hoisted(() => vi.fn());
 const setIssuesReferencedByPR = vi.hoisted(() => vi.fn());
 const unsubscribeSync = vi.hoisted(() => vi.fn());
 const subscribeSyncComplete = vi.hoisted(() => vi.fn(() => unsubscribeSync));
@@ -39,6 +45,7 @@ vi.mock("../context.js", () => ({
     },
     issues: {
       getInvolvesMe: getIssueInvolvesMe,
+      getUnassigned: getIssueUnassigned,
       getReferencedByPR: getIssueReferencedByPR,
       canFilterReferencedByPR: () => true,
       getIssueSearchQuery: getIssueSearch,
@@ -54,6 +61,10 @@ vi.mock("../context.js", () => ({
         setIssuesInvolvesMe(value);
         setIssueInvolvesMe(value);
       },
+      setUnassigned: (value: boolean) => {
+        setIssuesUnassigned(value);
+        setIssueUnassigned(value);
+      },
       setReferencedByPR: (value: boolean) => {
         setIssuesReferencedByPR(value);
         setIssueReferencedByPR(value);
@@ -66,6 +77,7 @@ vi.mock("../context.js", () => ({
     },
     pulls: {
       getInvolvesMe: getPullInvolvesMe,
+      getUnassigned: getPullUnassigned,
       getSearchQuery: getPullSearch,
       getError: () => null,
       getFilterState: () => "open",
@@ -77,6 +89,10 @@ vi.mock("../context.js", () => ({
       setInvolvesMe: (value: boolean) => {
         setPullsInvolvesMe(value);
         setPullInvolvesMe(value);
+      },
+      setUnassigned: (value: boolean) => {
+        setPullsUnassigned(value);
+        setPullUnassigned(value);
       },
       setSearchQuery: (value: string | undefined) => {
         pullSearch(value);
@@ -129,6 +145,8 @@ describe("FocusListView search", () => {
     loadIssues.mockClear();
     setPullsInvolvesMe.mockClear();
     setIssuesInvolvesMe.mockClear();
+    setPullsUnassigned.mockClear();
+    setIssuesUnassigned.mockClear();
     setIssuesReferencedByPR.mockClear();
     unsubscribeSync.mockClear();
     subscribeSyncComplete.mockClear();
@@ -167,6 +185,39 @@ describe("FocusListView search", () => {
     await view.rerender({ listType: "mrs", repo: "acme/two" });
 
     expect(screen.getByLabelText<HTMLInputElement>("Search PRs").value).toBe("owned by me");
+  });
+
+  it("stops polling while the document is hidden and refreshes at once when it is shown", async () => {
+    let visibilityState: DocumentVisibilityState = "visible";
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => visibilityState,
+    });
+    const setVisibility = (state: DocumentVisibilityState) => {
+      visibilityState = state;
+      document.dispatchEvent(new Event("visibilitychange"));
+    };
+    try {
+      const view = render(FocusListView, { props: { listType: "mrs", repo: "acme/one" } });
+      expect(loadPulls).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(loadPulls).toHaveBeenCalledTimes(2);
+
+      setVisibility("hidden");
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(loadPulls).toHaveBeenCalledTimes(2);
+
+      setVisibility("visible");
+      await vi.advanceTimersByTimeAsync(0);
+      expect(loadPulls).toHaveBeenCalledTimes(3);
+
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(loadPulls).toHaveBeenCalledTimes(4);
+      view.unmount();
+    } finally {
+      visibilityState = "visible";
+    }
   });
 
   it("publishes one debounced search without restarting polling ownership", async () => {
@@ -264,6 +315,22 @@ describe("FocusListView search", () => {
     await fireEvent.click(control);
 
     expect(setInvolvesMe).toHaveBeenCalledWith(true);
+    expect(loadList).toHaveBeenCalledTimes(1);
+    expect(control.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it.each([
+    ["mrs" as const, setPullsUnassigned, loadPulls],
+    ["issues" as const, setIssuesUnassigned, loadIssues],
+  ])("uses the shared Unassigned control for %s", async (listType, setUnassigned, loadList) => {
+    render(FocusListView, { props: { listType, repo: "acme/one" } });
+    loadList.mockClear();
+
+    const control = screen.getByRole("button", { name: "Unassigned" });
+    expect(control.getAttribute("aria-pressed")).toBe("false");
+    await fireEvent.click(control);
+
+    expect(setUnassigned).toHaveBeenCalledWith(true);
     expect(loadList).toHaveBeenCalledTimes(1);
     expect(control.getAttribute("aria-pressed")).toBe("true");
   });

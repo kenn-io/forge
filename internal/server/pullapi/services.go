@@ -24,6 +24,7 @@ type ListQuery struct {
 	Kanban     string
 	Starred    bool
 	InvolvesMe bool
+	Unassigned bool
 	Text       string
 	Limit      int
 	Offset     int
@@ -87,7 +88,7 @@ func (s *Handler) ListProviderService(
 ) ([]MergeRequestResponse, error) {
 	output, err := s.listPullsRouteCore(ctx, &listPullsInput{
 		Repo: req.Repo, State: req.State, Kanban: req.Kanban,
-		Starred: req.Starred, InvolvesMe: req.InvolvesMe,
+		Starred: req.Starred, InvolvesMe: req.InvolvesMe, Unassigned: req.Unassigned,
 		Q: req.Text, Limit: req.Limit, Offset: req.Offset,
 	})
 	if err != nil {

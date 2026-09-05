@@ -169,10 +169,38 @@ func (p tmuxEnvPolicy) environment(
 	baseEnv []string,
 	extraStripVars []string,
 ) []string {
+	return p.environmentForOS(baseEnv, extraStripVars, runtime.GOOS)
+}
+
+func (p tmuxEnvPolicy) environmentForOS(
+	baseEnv []string,
+	extraStripVars []string,
+	goos string,
+) []string {
 	if p.preserveShellEnv {
-		return sessionEnvironment(baseEnv, extraStripVars)
+		env := sessionEnvironment(baseEnv, extraStripVars)
+		// launchd services can start without a locale. zsh then measures
+		// Unicode prompts as US-ASCII and reports the wrong cursor column.
+		if goos == "darwin" && !hasCharacterLocale(env) {
+			return append(env, "LC_CTYPE=UTF-8")
+		}
+		return env
 	}
 	return tmuxSessionEnvironment(baseEnv, extraStripVars)
+}
+
+func hasCharacterLocale(env []string) bool {
+	for _, kv := range env {
+		key, value, found := strings.Cut(kv, "=")
+		if !found || value == "" {
+			continue
+		}
+		switch key {
+		case "LANG", "LC_ALL", "LC_CTYPE":
+			return true
+		}
+	}
+	return false
 }
 
 type tmuxLauncher struct {

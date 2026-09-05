@@ -26,7 +26,11 @@
     providerUsesHostRoute,
   } from "../../api/provider-routes.js";
   import { executeGeneratedApiRequest } from "../../api/generated-api.js";
-  import type { CommentAutocompleteReference as GeneratedCommentAutocompleteReference, CommentAutocompleteResponse as GeneratedCommentAutocompleteResponse } from "../../api/generated/models/index.js";
+  import type {
+    CommentAutocompleteReference as GeneratedCommentAutocompleteReference,
+    CommentAutocompleteResponse as GeneratedCommentAutocompleteResponse,
+    GetCommentAutocompleteParams as GeneratedGetCommentAutocompleteParams,
+  } from "../../api/generated/models/index.js";
   import { retryIdempotentRead } from "../../api/retry-policy.js";
   import type { AppExecution } from "../../app/runtime.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
@@ -174,7 +178,7 @@
     if (trigger === "!" && !isGitLabRepo()) return [];
     suggestionExecution?.interrupt();
     const ref = { provider, platformHost, owner, name, repoPath };
-    const params = {
+    const params: GeneratedGetCommentAutocompleteParams = {
       trigger,
       q: query,
       limit: 8,

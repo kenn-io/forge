@@ -51,7 +51,7 @@
     "@xterm/xterm": "6.1.0-beta.302",
     "dompurify": "3.4.13",
     "effect": "4.0.0-beta.107",
-    "js-toml": "^1.0.3",
+    "js-toml": "^2.0.0",
     "marked": "18.0.9",
     "mermaid": "11.16.1",
     "openapi-fetch": "^0.17.0",
@@ -69,7 +69,7 @@
     "@tsconfig/svelte": "5.0.8",
     "@types/node": "^26.0.0",
     "@vitest/browser-playwright": "4.1.10",
-    "jsdom": "29.1.1",
+    "jsdom": "30.0.1",
     "openapi-typescript": "^7.13.0",
     "orval": "8.26.0",
     "playwright": "1.62.1",
@@ -77,7 +77,7 @@
     "vite": "8.2.1",
     "vite-plus": "0.2.8",
     "vitest": "4.1.10",
-    "vitest-browser-svelte": "^2.1.1"
+    "vitest-browser-svelte": "^3.0.0"
   },
   "devEngines": {
     "packageManager": {

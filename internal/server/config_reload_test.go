@@ -1761,6 +1761,7 @@ func (m *fakeRuntimeOwner) Start(
 	_ string,
 	_ []string,
 	stripEnvVars []string,
+	_ map[string]string,
 ) (ptyownerruntime.PTY, error) {
 	m.startedStripEnvVars = append([]string(nil), stripEnvVars...)
 	m.pty = &fakeRuntimePTY{

@@ -341,6 +341,7 @@ func (o *initialMessagePTYOwner) Start(
 	_ string,
 	_ []string,
 	_ []string,
+	_ map[string]string,
 ) (ptyownerruntime.PTY, error) {
 	pty := &initialMessagePTY{
 		output: make(chan []byte, 8), done: make(chan struct{}),

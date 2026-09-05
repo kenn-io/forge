@@ -56,6 +56,7 @@ type workspaceResponse struct {
 	MRDeletions           *int                      `json:"mr_deletions,omitempty"`
 	CommitsAhead          *int                      `json:"commits_ahead,omitempty"`
 	CommitsBehind         *int                      `json:"commits_behind,omitempty"`
+	BranchUpstreamMissing *bool                     `json:"branch_upstream_missing,omitempty" doc:"True when the current branch has an origin upstream configured but its local remote-tracking ref is absent; clients may offer Push so branch sync can verify or create the remote branch."`
 	WorktreeDirty         *bool                     `json:"worktree_dirty,omitempty" doc:"True when the worktree has staged, unstaged, or untracked changes; false when clean; omitted until git-state enrichment completes."`
 	EnrichmentStatus      string                    `json:"enrichment_status" enum:"not_applicable,pending,fresh,stale,failed" doc:"Aggregate git-state and tmux-activity reconciliation status. Failed responses retain last-known-good component fields when available."`
 	EnrichmentRefreshedAt *string                   `json:"enrichment_refreshed_at,omitempty" doc:"Oldest successful refresh time across the populated enrichment components."`

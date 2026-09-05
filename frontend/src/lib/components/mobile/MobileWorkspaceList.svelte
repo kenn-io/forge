@@ -357,7 +357,8 @@
   }
 
   function canPush(workspace: WorkspaceListItem): boolean {
-    return (workspace.commits_ahead ?? 0) > 0 && (workspace.commits_behind ?? 0) === 0;
+    return workspace.branch_upstream_missing === true ||
+      ((workspace.commits_ahead ?? 0) > 0 && (workspace.commits_behind ?? 0) === 0);
   }
 
   function canPull(workspace: WorkspaceListItem): boolean {

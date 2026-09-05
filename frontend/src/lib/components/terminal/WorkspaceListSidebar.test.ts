@@ -2495,6 +2495,33 @@ describe("WorkspaceListSidebar", () => {
     });
   });
 
+  it("offers the first push when the configured upstream branch is missing", async () => {
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          {
+            ...workspaceFixture({
+              id: "ws-first-push",
+              provider: "github",
+              platformHost: "github.com",
+              owner: "acme",
+              name: "widgets",
+              number: 9,
+              title: "First push workspace",
+            }),
+            branch_upstream_missing: true,
+          },
+        ],
+      },
+    });
+
+    const { container } = render(WorkspaceListSidebar, { props: { selectedId: "ws-first-push" } });
+    await screen.findByText("First push workspace");
+    await fireEvent.contextMenu(container.querySelector(".ws-row")!);
+
+    expect(screen.getByRole("menuitem", { name: "Push branch" })).toBeTruthy();
+  });
+
   it("pulls a behind workspace branch and shows a busy state while pending", async () => {
     const pull = deferred<{
       data?: unknown;

@@ -838,7 +838,7 @@
   function canPush(ws: Workspace): boolean {
     const ahead = ws.commits_ahead ?? 0;
     const behind = ws.commits_behind ?? 0;
-    return ahead > 0 && behind === 0;
+    return ws.branch_upstream_missing === true || (ahead > 0 && behind === 0);
   }
 
   function canPull(ws: Workspace): boolean {
@@ -848,6 +848,9 @@
   }
 
   function syncActionDetail(ws: Workspace): string {
+    if (ws.branch_upstream_missing === true) {
+      return "";
+    }
     if (canPush(ws)) {
       return `${ws.commits_ahead ?? 0} ahead`;
     }

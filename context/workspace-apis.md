@@ -63,9 +63,14 @@ embedder protocol for arbitrary host state.
   linked worktree; repository tools use the shared value to identify this layout
   (`internal/workspace/manager.go::configureBareLinkedWorktree`).
 - Managed clones and existing local base checkouts use the same exact
-  provider-host cleartext acknowledgement when validating their origin; local
+  provider-host cleartext acknowledgement when validating their canonical remote; local
   bases do not silently weaken or ignore the configured transport policy
   (`internal/workspace/manager.go::ValidateWorktreeBasePath`).
+- Configured bases resolve and authenticate their read remote by repository identity,
+  rejecting ambiguous matches or tracking-namespace overlap.
+- Credentialed named-remote operations validate every URL and authenticate `origin`'s
+  repository. A first push may create a missing fork branch but never force-update it
+  (`internal/gitclone/clone.go::RunGitForNamedRemote`, `internal/workspace/branch_sync.go::pushWorktreeBranch`).
 
 ## Endpoint Intent
 
@@ -659,9 +664,14 @@ The branch's git upstream config (`branch.<name>.remote`/`.merge`) is the
 single source of truth for every sync-derived workspace surface:
 `commits_ahead`/`commits_behind` in the list response, the sidebar
 ahead/behind arrows, push, pull, and unpushed-commit flags. All of them
-silently report nothing when the upstream is missing, so every path that
-creates a PR-owned branch should configure it when repository identity is
-known. Issue, Kata, and ad-hoc workspaces create new untracked branches; a
+silently report nothing when the upstream is not configured. A configured upstream
+whose local tracking ref is missing exposes `branch_upstream_missing`, so the UI can
+offer the push that verifies or creates its remote branch. Every path that creates a
+PR-owned branch should configure its upstream when repository identity is known.
+Passive workspace enrichment never contacts remotes, so the UI offers Push only for a
+missing local tracking ref or commits ahead. A zero-ahead branch deleted remotely remains
+in-sync until local Git state changes (`internal/server/workspaceapi/routes_handlers.go::applyWorktreeDivergence`).
+Issue, Kata, and ad-hoc workspaces create new untracked branches; a
 same-named remote ref is not authority to adopt an upstream
 (`internal/workspace/manager.go::configureFallbackBranchUpstream`). PR upstream
 wiring requires a non-empty head-repository identity whose

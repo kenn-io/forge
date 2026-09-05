@@ -153,6 +153,19 @@ func pushWorktreeBranch(ctx context.Context, run networkedBranchGit, dir string)
 	if err != nil {
 		return err
 	}
+	upstreamExists, err := branchUpstreamExists(ctx, dir, upstream)
+	if err != nil {
+		return err
+	}
+	if !upstreamExists {
+		if err := pushBranch(ctx, run, dir, upstream); err != nil {
+			return err
+		}
+		if err := refreshBranchUpstream(ctx, run, dir, upstream); err != nil {
+			return fmt.Errorf("refresh after push: %w", err)
+		}
+		return nil
+	}
 	if err := refreshBranchUpstream(ctx, run, dir, upstream); err != nil {
 		return err
 	}
@@ -166,6 +179,25 @@ func pushWorktreeBranch(ctx context.Context, run networkedBranchGit, dir string)
 	if div.Ahead == 0 {
 		return ErrWorktreeInSync
 	}
+	if err := pushBranch(ctx, run, dir, upstream); err != nil {
+		return err
+	}
+	if err := refreshBranchUpstream(ctx, run, dir, upstream); err != nil {
+		return fmt.Errorf("refresh after push: %w", err)
+	}
+	return nil
+}
+
+func branchUpstreamExists(ctx context.Context, dir string, upstream branchUpstream) (bool, error) {
+	ref := "refs/remotes/" + upstream.remote + "/" + upstream.branch
+	out, err := gitCombinedOutput(ctx, dir, "for-each-ref", "--format=%(refname)", ref)
+	if err != nil {
+		return false, fmt.Errorf("check branch upstream: %w", err)
+	}
+	return strings.TrimSpace(out) == ref, nil
+}
+
+func pushBranch(ctx context.Context, run networkedBranchGit, dir string, upstream branchUpstream) error {
 	// Writes stay on the user's own credential chain so the pushed commits
 	// are attributed to the user instead of a GitHub App bot.
 	if err := run(
@@ -173,9 +205,6 @@ func pushWorktreeBranch(ctx context.Context, run networkedBranchGit, dir string)
 		"push", upstream.remote, "HEAD:"+upstream.branch,
 	); err != nil {
 		return fmt.Errorf("git push: %w", err)
-	}
-	if err := refreshBranchUpstream(ctx, run, dir, upstream); err != nil {
-		return fmt.Errorf("refresh after push: %w", err)
 	}
 	return nil
 }

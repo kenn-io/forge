@@ -255,6 +255,36 @@ exit 0
 	assert.Equal(t, 1, fork.resolved)
 }
 
+func TestRunGitForNamedRemoteRejectsInsecurePushURLForLocalFetchURL(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	gitPath := filepath.Join(dir, "git")
+	require.NoError(os.WriteFile(gitPath, []byte(`#!/bin/sh
+set -eu
+if [ "$1" = "config" ] && [ "$2" = "--local" ]; then exit 1; fi
+if [ "$1" = "config" ] && [ "$2" = "--get-all" ]; then
+	case "$3" in
+	remote.origin.url) echo "/tmp/widgets.git"; exit 0 ;;
+	remote.origin.pushurl) echo "http://git.example.test/acme/widgets.git"; exit 0 ;;
+	esac
+fi
+exit 0
+`), 0o755))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	source := &mutableTestTokenSource{token: "secret-token"}
+	mgr := New(t.TempDir(), testRouteResolver{repos: map[string]tokenauth.Source{
+		"git.example.test/acme/widgets": source,
+	}})
+
+	_, err := mgr.RunGitForNamedRemote(
+		t.Context(), "gitea", "git.example.test", "acme", "widgets",
+		"origin", dir, "push", "origin", "HEAD:feature",
+	)
+
+	require.ErrorContains(err, "allow_insecure = true")
+	require.Zero(source.resolved)
+}
+
 func TestRunGitForNamedRemoteAllowsAnonymousLocalURLRewrite(t *testing.T) {
 	require := require.New(t)
 	root := t.TempDir()

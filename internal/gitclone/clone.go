@@ -1134,6 +1134,9 @@ func (m *Manager) namedRemoteRepository(
 			return "", "", errors.New("remote repository owner and name are required")
 		}
 		for _, remoteURL := range remoteURLs {
+			if err := m.validateRemoteTransport(platform, host, remoteURL); err != nil {
+				return "", "", err
+			}
 			if err := validateRemoteURLIdentity(host, owner, name, remoteURL); err != nil {
 				return "", "", fmt.Errorf(
 					"validate %q remote before authenticated git: %w", remote, err,

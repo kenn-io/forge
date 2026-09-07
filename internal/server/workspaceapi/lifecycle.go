@@ -118,11 +118,18 @@ func (h *Handler) RestoreRuntimeSessions(ctx context.Context) error {
 	if h == nil || h.db == nil || h.runtime == nil || h.workspaces == nil {
 		return nil
 	}
-	h.restoreWorkspaceTerminals(ctx)
 	stored, err := h.db.ListAllWorkspaceRuntimeSessions(ctx)
 	if err != nil {
 		return err
 	}
+	retainedWorkspaces := make(map[string]bool)
+	for _, session := range stored {
+		if session.Kind == string(localruntime.LaunchTargetAgent) {
+			retainedWorkspaces[session.WorkspaceID] = true
+			h.setRuntimeRecoveryPending(session.SessionKey, true)
+		}
+	}
+	h.restoreWorkspaceTerminals(ctx, retainedWorkspaces)
 	for _, session := range stored {
 		summary, err := h.workspaces.GetSummary(ctx, session.WorkspaceID)
 		if err != nil {
@@ -143,14 +150,17 @@ func (h *Handler) RestoreRuntimeSessions(ctx context.Context) error {
 		}
 		err = h.runtime.RestoreRuntimeSessions(ctx, []localruntime.RestoredRuntimeSession{restored})
 		if err == nil {
+			h.setRuntimeRecoveryPending(session.SessionKey, false)
 			continue
 		}
 		if errors.Is(err, localruntime.ErrSessionNotFound) {
-			if summary.Status == "ready" && session.Kind == string(localruntime.LaunchTargetAgent) {
+			if workspaceStatusAllowsRecovery(summary.Status) && session.Kind == string(localruntime.LaunchTargetAgent) &&
+				h.agentActivity != nil && len(h.agentActivity.LiveReportsForWorkspace(summary.WorktreePath, []string{session.SessionKey})) > 0 {
 				if resumeErr := h.resumeWorkspaceAgent(ctx, session, restored); resumeErr == nil {
 					continue
 				} else {
-					slog.Warn("could not resume workspace agent", "workspace_id", session.WorkspaceID, "session_key", session.SessionKey, "err", resumeErr)
+					slog.Warn("could not resume workspace agent; retained for recovery", "workspace_id", session.WorkspaceID, "session_key", session.SessionKey, "err", resumeErr)
+					continue
 				}
 			}
 			if _, forgetErr := h.workspaces.ForgetRuntimeSessionCreatedAt(
@@ -162,6 +172,7 @@ func (h *Handler) RestoreRuntimeSessions(ctx context.Context) error {
 			// removed its activity report; reports do not expire on their
 			// own, so the forgotten runtime takes its report with it.
 			h.removeAgentActivityRuntimeSession(session.SessionKey)
+			h.setRuntimeRecoveryPending(session.SessionKey, false)
 			continue
 		}
 		if errors.Is(err, localruntime.ErrSessionUnavailable) {
@@ -218,6 +229,12 @@ func (h *Handler) reconcileAgentActivityReports(ctx context.Context) {
 // session and enrichment state.
 func (h *Handler) HandleRuntimeSessionExit(info localruntime.SessionInfo) {
 	if h == nil {
+		return
+	}
+	h.runtimeRecoveryMu.Lock()
+	pending := h.runtimeRecoveryPending[info.Key]
+	h.runtimeRecoveryMu.Unlock()
+	if pending {
 		return
 	}
 	h.removeAgentActivityRuntimeSession(info.Key)

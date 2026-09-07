@@ -3,6 +3,7 @@ package workspaceapi
 import (
 	"context"
 	"log/slog"
+	"maps"
 	"strings"
 	"time"
 
@@ -690,7 +691,10 @@ func (s *Handler) runWorkspaceTmuxPrune(ctx context.Context) {
 		ctx, workspaceEnrichmentRefreshTimeout,
 	)
 	defer cancel()
-	pruned, err := s.workspaces.PruneMissingTmuxSessions(pruneCtx)
+	s.runtimeRecoveryMu.Lock()
+	pendingRecovery := maps.Clone(s.runtimeRecoveryPending)
+	s.runtimeRecoveryMu.Unlock()
+	pruned, err := s.workspaces.PruneMissingTmuxSessions(pruneCtx, pendingRecovery)
 	if err != nil {
 		slog.Debug("prune missing tmux sessions", "err", err)
 	}

@@ -1314,9 +1314,11 @@ func newServer(
 			slog.Warn("apply startup tmux mouse setting", "err", err)
 		}
 	}
-	if err := s.workspaceAPI.RestoreRuntimeSessions(context.Background()); err != nil {
+	recoveryCtx, cancelRecovery := context.WithTimeout(s.workspaceLifecycleCtx, 30*time.Second)
+	if err := s.workspaceAPI.RestoreRuntimeSessions(recoveryCtx); err != nil {
 		slog.Warn("restore runtime tmux sessions", "err", err)
 	}
+	cancelRecovery()
 	s.workspaceAPI.Start(s.workspaceLifecycleCtx, options.DisableWorkspaceBackgroundMonitors)
 	s.fleetAPI.Start(
 		s.workspaceLifecycleCtx,

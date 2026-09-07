@@ -24,3 +24,25 @@ func TestAgentResumeCommand(t *testing.T) {
 	_, err := agentResumeCommand([]string{"other"}, "other", "conversation")
 	require.Error(t, err)
 }
+
+func TestAgentResumeRejectsAmbiguousConfiguredArguments(t *testing.T) {
+	for _, tc := range []struct {
+		agent string
+		args  []string
+	}{
+		{"codex", []string{"--", "original prompt"}},
+		{"codex", []string{"exec", "original prompt"}},
+		{"codex", []string{"resume", "old-session"}},
+		{"codex", []string{"--model"}},
+		{"claude", []string{"original prompt"}},
+		{"claude", []string{"--resume=old-session"}},
+		{"claude", []string{"--continue"}},
+		{"pi", []string{"--session-id", "other-session"}},
+		{"pi", []string{"--", "original prompt"}},
+	} {
+		t.Run(tc.agent+"/"+tc.args[0], func(t *testing.T) {
+			_, err := agentResumeCommand(append([]string{tc.agent}, tc.args...), tc.agent, "saved-session")
+			require.Error(t, err)
+		})
+	}
+}

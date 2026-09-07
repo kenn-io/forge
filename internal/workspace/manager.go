@@ -840,7 +840,7 @@ func (m *Manager) CreateKataTask(
 		ItemType:        db.WorkspaceItemTypeKataTask,
 		ItemKey:         itemKey,
 		GitHeadRef:      gitHeadRef,
-		WorkspaceBranch: gitHeadRef,
+		WorkspaceBranch: workspaceBranchUnknown,
 		WorktreePath: m.newWorkspacePath(
 			workspaceRepoRef{
 				ID: repo.ID, Platform: repo.Platform, PlatformHost: platformHost,
@@ -3291,7 +3291,7 @@ func (m *Manager) addIssueWorktree(
 	if err != nil {
 		return "", err
 	}
-	if exists {
+	if exists && ws.WorkspaceBranch != workspaceBranchUnknown {
 		if err := m.runOwnedGitWorktreeAdd(ctx, gitDir.path, ws, workspaceBranch); err != nil {
 			return "", err
 		}
@@ -4775,7 +4775,7 @@ func (m *Manager) ReapOrphanTmuxSessions(ctx context.Context) error {
 // missing are marked errored so list responses stop probing dead session names
 // and the UI can offer retry/delete. It reports whether anything was pruned so
 // callers only notify clients about passes that changed state.
-func (m *Manager) PruneMissingTmuxSessions(ctx context.Context) (bool, error) {
+func (m *Manager) PruneMissingTmuxSessions(ctx context.Context, pendingRecovery map[string]bool) (bool, error) {
 	changed := false
 	sessions, err := m.listTmuxSessions(ctx)
 	if err != nil {
@@ -4791,7 +4791,7 @@ func (m *Manager) PruneMissingTmuxSessions(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	for _, stored := range storedSessions {
-		if stored.TmuxSession == "" {
+		if stored.TmuxSession == "" || pendingRecovery[stored.SessionKey] {
 			continue
 		}
 		if live[stored.TmuxSession] {

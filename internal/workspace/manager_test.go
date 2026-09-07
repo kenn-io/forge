@@ -940,7 +940,7 @@ func TestCreateKataTaskDoesNotRequireProviderIssue(t *testing.T) {
 	assert.Equal(db.KataWorkspaceItemKey(metadata), ws.ItemKey)
 	assert.Contains(ws.GitHeadRef, "kenn-forge/kata/task-123-")
 	assert.Contains(ws.GitHeadRef, "-fix-widget")
-	assert.Equal(ws.GitHeadRef, ws.WorkspaceBranch)
+	assert.Equal(workspaceBranchUnknown, ws.WorkspaceBranch)
 	assert.Contains(ws.WorktreePath, "kata-task-123-")
 	require.NotNil(ws.KataMetadata)
 	assert.Equal("issue-kata-1", ws.KataMetadata.IssueUID)
@@ -6974,7 +6974,7 @@ func TestManagerPruneMissingTmuxSessionsRemovesStaleRecords(
 		time.Time{},
 	)
 
-	pruned, pruneErr := mgr.PruneMissingTmuxSessions(ctx)
+	pruned, pruneErr := mgr.PruneMissingTmuxSessions(ctx, nil)
 	require.NoError(pruneErr)
 	assert.True(pruned)
 
@@ -7060,7 +7060,7 @@ func TestManagerTmuxSessionListSurvivesTmux36Sanitization(t *testing.T) {
 		Status:       "ready",
 	}))
 
-	pruned, pruneErr := mgr.PruneMissingTmuxSessions(ctx)
+	pruned, pruneErr := mgr.PruneMissingTmuxSessions(ctx, nil)
 	require.NoError(pruneErr)
 	assert.False(pruned, "no-op prune must report no change so callers stay silent")
 	live, err := d.GetWorkspace(ctx, "0000000000000001")

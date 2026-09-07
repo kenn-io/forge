@@ -70,3 +70,26 @@ func TestIssueRecoveryChecksOutExistingBranchWithSavedCommits(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(t, before, after)
 }
+
+func TestNewKataWorkspaceDoesNotAdoptCollidingBranch(t *testing.T) {
+	require := require.New(t)
+	database := openTestDB(t)
+	seedRepo(t, database, "github.com", "acme", "widget")
+	mgr := newTestManager(t, database, t.TempDir())
+	ws, err := mgr.CreateKataTask(t.Context(), "github", "github.com", "acme", "widget", db.WorkspaceKataMetadata{
+		DaemonID: "daemon-a", ProjectUID: "project-a", IssueUID: "task-a", ShortID: "task-1", Title: "Fix widget",
+	})
+	require.NoError(err)
+	clone := filepath.Join(t.TempDir(), "clone.git")
+	seedWorkspaceBareCloneAt(t, clone)
+	configureOriginHeadForIssueWorkspace(t, clone)
+	runWorkspaceTestGit(t, clone, "branch", ws.GitHeadRef, "HEAD")
+	before, _, err := gitRefSHA(t.Context(), clone, "refs/heads/"+ws.GitHeadRef)
+	require.NoError(err)
+	_, err = mgr.addWorktree(t.Context(), workspaceGitDir{path: clone, remote: originRemoteName}, ws, workspaceGitFetchOptions{})
+	require.Error(err, "initial setup must not adopt a colliding user branch")
+	after, _, err := gitRefSHA(t.Context(), clone, "refs/heads/"+ws.GitHeadRef)
+	require.NoError(err)
+	assert.Equal(t, before, after)
+	assert.NoDirExists(t, ws.WorktreePath)
+}

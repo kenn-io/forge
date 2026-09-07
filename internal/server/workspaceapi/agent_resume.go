@@ -39,6 +39,7 @@ func (h *Handler) resumeWorkspaceAgent(ctx context.Context, stored db.WorkspaceR
 		}
 		return err
 	}
+	h.setRuntimeRecoveryPending(session.Key, false)
 	h.forgetRecordedRuntimeSessionIfExited(ctx, session)
 	slog.Info("resumed workspace agent", "workspace_id", session.WorkspaceID, "target_key", session.TargetKey)
 	return nil
@@ -46,14 +47,18 @@ func (h *Handler) resumeWorkspaceAgent(ctx context.Context, stored db.WorkspaceR
 
 // Restore base terminals before agents create new tmux sessions. Otherwise the
 // periodic prune would mistake the remaining missing bases for individual exits.
-func (h *Handler) restoreWorkspaceTerminals(ctx context.Context) {
+func (h *Handler) restoreWorkspaceTerminals(ctx context.Context, retainedWorkspaces map[string]bool) {
 	workspaces, err := h.db.ListWorkspaces(ctx)
 	if err != nil {
 		slog.Warn("list workspace terminals for recovery", "err", err)
 		return
 	}
 	for _, ws := range workspaces {
-		if ws.Status != "ready" || ws.TmuxSession == "" {
+		if ctx.Err() != nil {
+			return
+		}
+		if !workspaceStatusAllowsRecovery(ws.Status) || ws.TmuxSession == "" ||
+			(ws.Status != "ready" && !retainedWorkspaces[ws.ID]) {
 			continue
 		}
 		info, err := os.Stat(ws.WorktreePath)
@@ -63,5 +68,22 @@ func (h *Handler) restoreWorkspaceTerminals(ctx context.Context) {
 		if err := h.workspaces.EnsureTerminal(ctx, &ws); err != nil {
 			slog.Warn("restore workspace terminal", "workspace_id", ws.ID, "err", err)
 		}
+	}
+}
+
+func workspaceStatusAllowsRecovery(status string) bool {
+	return status == "ready" || status == "creating" || status == "error"
+}
+
+func (h *Handler) setRuntimeRecoveryPending(key string, pending bool) {
+	h.runtimeRecoveryMu.Lock()
+	defer h.runtimeRecoveryMu.Unlock()
+	if pending {
+		if h.runtimeRecoveryPending == nil {
+			h.runtimeRecoveryPending = make(map[string]bool)
+		}
+		h.runtimeRecoveryPending[key] = true
+	} else {
+		delete(h.runtimeRecoveryPending, key)
 	}
 }

@@ -55,7 +55,7 @@ func TestPruneMissingTmuxSessionsKeepsReadyWorkspacesWhenServerIsEmpty(
 		Status:       "ready",
 	}))
 
-	changed, err := mgr.PruneMissingTmuxSessions(ctx)
+	changed, err := mgr.PruneMissingTmuxSessions(ctx, nil)
 	require.NoError(err)
 	assert.False(changed)
 

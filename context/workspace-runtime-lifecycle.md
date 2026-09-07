@@ -196,12 +196,15 @@ create a local process, PTY, or durable transport session
 - Missing tmux agents resume the newest matching Codex, Claude, or Pi hook session
   by exact ID, preserving configured flags and runtime identity without replaying
   the initial prompt (`internal/server/workspaceapi/agent_resume.go::Handler.resumeWorkspaceAgent`).
-- Recovery never resets worktrees or starts a fresh conversation on failure;
-  unsupported or failed attempts use ordinary missing-runtime cleanup
+- Recovery never resets worktrees or replays configured positional prompts;
+  unsupported command shapes retain the saved runtime and report for recovery
   (`internal/server/workspaceapi/lifecycle.go::Handler.RestoreRuntimeSessions`).
-- Restore ready workspaces' base terminals before agent recovery, so the first
-  resumed agent does not make other missing bases appear to be individual exits
+- Restore base terminals before agents, including retained creating/error retries;
+  startup recovery shares a 30-second budget and preserves uncompleted attempts
   (`internal/server/workspaceapi/agent_resume.go::Handler.restoreWorkspaceTerminals`).
+- Pending startup recovery survives periodic missing-tmux pruning and rollback
+  exits; successful recovery restores ordinary exit cleanup
+  (`internal/server/workspaceapi/lifecycle.go::Handler.RestoreRuntimeSessions`).
 - During explicit delete or stop flows, forgetting the persisted row is part of
   cleanup.
 - Removal of a created runtime backend is attempted when launch or persistence

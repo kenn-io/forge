@@ -110,6 +110,13 @@
         min-width: 0;
         overflow: hidden;
       }
+      /* Fractional zoom can round a single measured line above 1lh.
+         Real overflow wraps the hidden measurement text to at least 2lh. */
+      @container measure (height < 1.5lh) {
+        [data-truncate-marker] {
+          opacity: 0;
+        }
+      }
       [data-item-git-status='deleted'] [data-item-section='content'] {
         text-decoration: line-through;
         opacity: 0.7;

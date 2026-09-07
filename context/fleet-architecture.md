@@ -73,6 +73,9 @@ or remote workspace and session operations.
 - Hubs show the fleet-wide workspace surface. Spokes retain the full host
   directory for navigation but project only their own actionable workspace data
   (`internal/fleet/enrich.go::ProjectForObserver`).
+- Hub Activity workspace indicators include the fleet; peer provider responses
+  omit them so spokes can apply their local workspace ownership
+  (`internal/server/huma_routes.go::Server.listActivityService`).
 - Workspace lists consume inline projected summaries without per-host fan-out;
   remote actions require the owning host's projected operation availability.
   Explicitly incomplete aggregates retain absent-host rows; authoritative views

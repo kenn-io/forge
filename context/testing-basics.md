@@ -67,3 +67,7 @@ fixtures, or changing shell-script coverage.
 - Build boundary-size Git histories through one fast-import stream, and disable
   auto-maintenance on every fixture command; detached commit-graph writes can
   race local clone hardlinks. (`internal/server/repobrowserapi/handler_test.go::serverRepoBrowserGit`)
+
+- Peer transport-failure fixtures must retain their listening address and abort
+  the response; a closed listener's port may be reused by another test server
+  (`internal/server/e2etest/fleet_snapshot_test.go::TestFleetOperationProxyPeerDispatchFailureE2E`).

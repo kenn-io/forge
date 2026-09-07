@@ -1022,9 +1022,13 @@ func TestFleetOperationProxyUnknownHostE2E(t *testing.T) {
 
 func TestFleetOperationProxyPeerDispatchFailureE2E(t *testing.T) {
 	assert := assert.New(t)
-	peerTS := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	// Keep the peer port reserved while forcing a transport failure. Closing
+	// the listener first lets a later test server reuse its address.
+	peerTS := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		panic(http.ErrAbortHandler)
+	}))
+	t.Cleanup(peerTS.Close)
 	peerURL := peerTS.URL
-	peerTS.Close()
 
 	hubCfg := &config.Config{
 		BasePath: "/",

@@ -3,8 +3,6 @@ package server
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -226,7 +224,7 @@ func (s *Server) prepareFederationSpoke(
 	if err != nil {
 		return nil, httpapi.Internal("list provider state receipts: " + err.Error())
 	}
-	receiptsDigest, err := spokePreparationReceiptsDigest(receipts)
+	receiptsDigest, err := db.SpokePreparationReceiptsDigest(receipts)
 	if err != nil {
 		return nil, httpapi.Internal(err.Error())
 	}
@@ -658,29 +656,4 @@ func spokePreparationHubProblem(err error) error {
 		return problem
 	}
 	return httpapi.Internal("begin hub spoke preparation: " + err.Error())
-}
-
-func spokePreparationReceiptsDigest(
-	receipts []db.SpokePreparationReceipt,
-) (string, error) {
-	type semanticReceipt struct {
-		StateKind     string `json:"state_kind"`
-		SourceKey     string `json:"source_key"`
-		ContentDigest string `json:"content_digest"`
-		HubReceipt    string `json:"hub_receipt"`
-	}
-	semantic := make([]semanticReceipt, 0, len(receipts))
-	for _, receipt := range receipts {
-		semantic = append(semantic, semanticReceipt{
-			StateKind: receipt.StateKind, SourceKey: receipt.SourceKey,
-			ContentDigest: receipt.ContentDigest,
-			HubReceipt:    receipt.HubReceipt,
-		})
-	}
-	encoded, err := json.Marshal(semantic)
-	if err != nil {
-		return "", fmt.Errorf("encode spoke preparation receipts: %w", err)
-	}
-	digest := sha256.Sum256(encoded)
-	return hex.EncodeToString(digest[:]), nil
 }

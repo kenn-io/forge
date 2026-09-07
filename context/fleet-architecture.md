@@ -54,6 +54,10 @@ or remote workspace and session operations.
 
 ## Snapshot And Routing Contracts
 
+- Protocol-3 enrollment upgrades require the offline native migration, not wire
+  compatibility; keep its transition only until maintained fleets migrate and
+  protocol-3 rollback retention closes (`cmd/kenn-forge/fleet_migrate.go::migrateFleetProtocol`).
+
 - Snapshots use the shared federation protocol version, not a separate schema
   version; protocol version and node ID must match exactly
   (`internal/server/fleetapi/fleet_hub.go::Handler.fetchRawSnapshot`).

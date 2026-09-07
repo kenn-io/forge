@@ -729,6 +729,17 @@ func enrollmentIndexByID(enrollments []Enrollment, enrollmentID string) int {
 }
 
 func readEnrollmentStore(path string) (persistedEnrollmentStore, bool, error) {
+	state, exists, err := decodeEnrollmentStore(path)
+	if err != nil || !exists {
+		return state, exists, err
+	}
+	if err := validateEnrollmentStore(&state); err != nil {
+		return persistedEnrollmentStore{}, false, err
+	}
+	return state, true, nil
+}
+
+func decodeEnrollmentStore(path string) (persistedEnrollmentStore, bool, error) {
 	file, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return persistedEnrollmentStore{}, false, nil
@@ -749,9 +760,6 @@ func readEnrollmentStore(path string) (persistedEnrollmentStore, bool, error) {
 			return persistedEnrollmentStore{}, false, errors.New("decode federation enrollment store: multiple JSON values")
 		}
 		return persistedEnrollmentStore{}, false, fmt.Errorf("decode federation enrollment store trailer: %w", err)
-	}
-	if err := validateEnrollmentStore(&state); err != nil {
-		return persistedEnrollmentStore{}, false, err
 	}
 	return state, true, nil
 }

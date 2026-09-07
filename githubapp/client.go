@@ -131,12 +131,17 @@ func (c *Client) GetApp(ctx context.Context, appJWT string) (*App, error) {
 // ListInstallations lists the accounts the app is installed on.
 func (c *Client) ListInstallations(ctx context.Context, appJWT string) ([]Installation, error) {
 	var installs []Installation
-	err := c.do(ctx, http.MethodGet,
-		"/app/installations?per_page=100", appJWT, nil, &installs)
-	if err != nil {
-		return nil, fmt.Errorf("listing app installations: %w", err)
+	for page := 1; ; page++ {
+		var batch []Installation
+		path := fmt.Sprintf("/app/installations?per_page=100&page=%d", page)
+		if err := c.do(ctx, http.MethodGet, path, appJWT, nil, &batch); err != nil {
+			return nil, fmt.Errorf("listing app installations: %w", err)
+		}
+		installs = append(installs, batch...)
+		if len(batch) < 100 {
+			return installs, nil
+		}
 	}
-	return installs, nil
 }
 
 // CreateInstallationToken mints an installation access token. Tokens

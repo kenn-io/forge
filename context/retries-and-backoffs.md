@@ -72,6 +72,10 @@ The archive worker uses the backoff schedule type only as an idle delay calculat
 not as a retry wrapper: idle passes double up to a five-minute cap and any wake or
 worked pass resets it (`internal/github/sync.go::runArchiveLoop`).
 
+Live provider work waits for preempted archive requests only while its caller is active;
+canceling a waiter must not release the archive request's lease or leak live-work counts.
+(`internal/github/sync.go::beginProviderWork`)
+
 ## Long-lived stream recovery
 
 Hub event-stream recovery is connection lifecycle policy, not a retry

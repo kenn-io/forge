@@ -37,6 +37,10 @@ cache policy and admission remain internal
 
 ## Adding A Provider
 
+Landing preparation uses local objects only; callers own collection and supply
+evidence for the exact prepared interval. Missing history and exhausted budgets
+remain gaps, never empty complete inventories (`landedwork/prepare.go::Prepare`).
+
 Minimum provider checklist:
 
 - Add provider metadata in `platform/metadata.go`: kind, label, default

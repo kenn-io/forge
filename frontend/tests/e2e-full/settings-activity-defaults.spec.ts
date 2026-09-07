@@ -160,3 +160,40 @@ test("settings panels serialize writes through the shared queue", async ({ page 
     await page.unrouteAll({ behavior: "ignoreErrors" });
   }
 });
+
+test("Settings saves preserve both collapse and expand overrides", async ({ page }) => {
+  for (const collapsed of [true, false]) {
+    const baselineResponse = await api!.get("/api/v1/settings");
+    expect(baselineResponse.ok()).toBe(true);
+    const baseline: SettingsResponse = await baselineResponse.json();
+    const configured = await api!.put("/api/v1/settings", {
+      data: { activity: { ...baseline.activity, view_mode: "threaded", collapse_threads: !collapsed } },
+    });
+    expect(configured.ok()).toBe(true);
+
+    await page.goto(`${isolatedServer!.info.base_url}/`);
+    await page.getByRole("button", { name: collapsed ? "Collapse all" : "Expand all", exact: true }).click();
+    const caret = page.locator(".threaded-view .thread-caret").first();
+    await expect(caret).toHaveAttribute("aria-expanded", String(!collapsed));
+
+    await page.getByTitle("Settings", { exact: true }).click();
+    await openSettingsPanel(page, "Activity");
+    const saved = page.waitForResponse(
+      (response) => response.url().endsWith("/api/v1/settings") && response.request().method() === "PUT",
+    );
+    await page.getByRole("button", { name: "Toggle hide bots" }).click();
+    expect((await saved).status()).toBe(200);
+    await page.getByRole("button", { name: "Back to app" }).click();
+    await expect.soft(caret).toHaveAttribute("aria-expanded", String(!collapsed));
+  }
+});
+
+test("Activity search survives returning after reloading Settings", async ({ page }) => {
+  await page.goto(`${isolatedServer!.info.base_url}/?view=flat&search=caching+layer`);
+  const search = page.locator(".search-wrap input");
+  await expect(search).toHaveValue("caching layer");
+  await page.getByTitle("Settings", { exact: true }).click();
+  await page.reload();
+  await page.getByRole("button", { name: "Back to app" }).click();
+  await expect(search).toHaveValue("caching layer");
+});

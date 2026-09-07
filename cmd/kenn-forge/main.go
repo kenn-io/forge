@@ -706,6 +706,7 @@ func run(opts serve.Options) error {
 		)
 		syncer.SetWatchInterval(cfg.ActivePRRefreshDuration())
 		syncer.SetActiveMRWindow(cfg.ActivePRWindowDuration())
+		syncer.SetActiveMRRefreshPolicy(cfg.ActivePRHotWindowDuration(), cfg.ActivePRWarmRefreshDuration())
 		syncer.SetPreferGitHubNativeStacks(cfg.PullRequests.PreferGitHubNativeStacks)
 		syncer.SetFetchers(controlPlane.fetchers)
 		syncer.SetGitHubRouters(controlPlane.githubRouters)

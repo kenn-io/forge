@@ -811,6 +811,8 @@ type Syncer struct {
 	watchInterval            time.Duration
 	watchedMRs               []WatchedMR
 	activeMRWindow           time.Duration
+	activeMRHotWindow        time.Duration
+	activeMRWarmInterval     time.Duration
 	watchMu                  sync.Mutex
 	watchSyncMu              sync.Mutex
 	branchActivityMu         sync.RWMutex
@@ -2055,6 +2057,15 @@ func (s *Syncer) SetActiveMRWindow(d time.Duration) {
 	s.watchMu.Lock()
 	defer s.watchMu.Unlock()
 	s.activeMRWindow = d
+}
+
+// SetActiveMRRefreshPolicy configures recency-based hot admission and warm cadence.
+// A zero hot window preserves view-only hot admission.
+func (s *Syncer) SetActiveMRRefreshPolicy(hotWindow, warmInterval time.Duration) {
+	s.watchMu.Lock()
+	defer s.watchMu.Unlock()
+	s.activeMRHotWindow = hotWindow
+	s.activeMRWarmInterval = warmInterval
 }
 
 // SetPreferGitHubNativeStacks enables GitHub's read-only preview metadata for
@@ -3771,6 +3782,12 @@ func (s *Syncer) hotAndWarmOpenMRs(
 	window time.Duration,
 	hotInterval time.Duration,
 ) []WatchedMR {
+	s.watchMu.Lock()
+	hotWindow, warmInterval := s.activeMRHotWindow, s.activeMRWarmInterval
+	s.watchMu.Unlock()
+	if warmInterval <= 0 {
+		warmInterval = activeMRWarmRefreshInterval
+	}
 	prs, err := s.db.ListMergeRequests(ctx, db.ListMergeRequestsOpts{State: "open"})
 	if err != nil {
 		slog.Warn("fast-sync active MR selection failed", "err", err)
@@ -3813,7 +3830,10 @@ func (s *Syncer) hotAndWarmOpenMRs(
 			if effectiveActivityAt.Before(cutoff) {
 				continue
 			}
-			refreshInterval = activeMRWarmRefreshInterval
+			refreshInterval = warmInterval
+			if hotWindow > 0 && !effectiveActivityAt.Before(now.Add(-hotWindow)) {
+				refreshInterval = hotInterval
+			}
 		}
 		if !mergeRequestDetailDue(pr, now, refreshInterval) {
 			continue

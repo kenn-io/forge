@@ -554,6 +554,7 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 		)
 		s.syncer.SetWatchInterval(newCfg.ActivePRRefreshDuration())
 		s.syncer.SetActiveMRWindow(newCfg.ActivePRWindowDuration())
+		s.syncer.SetActiveMRRefreshPolicy(newCfg.ActivePRHotWindowDuration(), newCfg.ActivePRWarmRefreshDuration())
 	}
 
 	if s.docsAPI != nil {

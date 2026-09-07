@@ -268,6 +268,8 @@ func TestLoadAppliesActivePRRefreshDefaults(t *testing.T) {
 	assert.Equal(defaultActivePRWindow, cfg.ActivePRWindow)
 	assert.Equal(2*time.Minute, cfg.ActivePRRefreshDuration())
 	assert.Equal(4*time.Hour, cfg.ActivePRWindowDuration())
+	assert.Zero(cfg.ActivePRHotWindowDuration())
+	assert.Equal(10*time.Minute, cfg.ActivePRWarmRefreshDuration())
 }
 
 func TestLoadRejectsNonPositiveActivePRRefreshDurations(t *testing.T) {
@@ -4542,4 +4544,47 @@ func TestValidateHostBinding(t *testing.T) {
 			require.Contains(err.Error(), tc.wantErr)
 		})
 	}
+}
+
+func TestActivePRRefreshPolicyRoundTrip(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	path := writeConfig(t, `active_pr_hot_window = "30m"
+active_pr_warm_refresh_interval = "5m"
+active_pr_refresh_interval = "1m"
+active_pr_window = "2h"
+`)
+	cfg, err := Load(path)
+	require.NoError(err)
+	require.NoError(cfg.Save(path))
+	loaded, err := Load(path)
+	require.NoError(err)
+	assert.Equal(30*time.Minute, loaded.ActivePRHotWindowDuration())
+	assert.Equal(5*time.Minute, loaded.ActivePRWarmRefreshDuration())
+	assert.Equal(time.Minute, loaded.ActivePRRefreshDuration())
+	assert.Equal(2*time.Hour, loaded.ActivePRWindowDuration())
+}
+
+func TestLoadValidatesActivePRRefreshPolicy(t *testing.T) {
+	for _, content := range []string{
+		`active_pr_hot_window = "-1s"`,
+		`active_pr_hot_window = "invalid"`,
+		`active_pr_hot_window = "5h"`,
+		`active_pr_hot_window = "3h"
+active_pr_window = "2h"`,
+		`active_pr_warm_refresh_interval = "0s"`,
+		`active_pr_warm_refresh_interval = "-1m"`,
+		`active_pr_warm_refresh_interval = "invalid"`,
+	} {
+		t.Run(content, func(t *testing.T) {
+			_, err := Load(writeConfig(t, content))
+			require.Error(t, err)
+		})
+	}
+	cfg, err := Load(writeConfig(t, `active_pr_hot_window = "0s"`))
+	require.NoError(t, err)
+	assert.Zero(t, cfg.ActivePRHotWindowDuration())
+	_, err = Load(writeConfig(t, `active_pr_hot_window = "2h"
+active_pr_window = "2h"`))
+	require.NoError(t, err)
 }

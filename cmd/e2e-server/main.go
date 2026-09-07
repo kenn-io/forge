@@ -1737,6 +1737,7 @@ func buildAppState(
 	})
 	syncer.SetWatchInterval(cfg.ActivePRRefreshDuration())
 	syncer.SetActiveMRWindow(cfg.ActivePRWindowDuration())
+	syncer.SetActiveMRRefreshPolicy(cfg.ActivePRHotWindowDuration(), cfg.ActivePRWarmRefreshDuration())
 
 	serverSyncer := syncer
 	serverOptions := server.ServerOptions{

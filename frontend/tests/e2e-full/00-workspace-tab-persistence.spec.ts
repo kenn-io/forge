@@ -307,7 +307,7 @@ test.describe("workspace tab persistence", () => {
       await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
       await page
         .getByRole("navigation", { name: "Settings" })
-        .getByRole("button", { name: /^Workspaces Behavior when/ })
+        .getByRole("button", { name: /^Workspaces / })
         .click();
       await expect(page.getByRole("combobox", { name: "Default sidebar view: PR/Issue" })).toBeVisible();
       expect(

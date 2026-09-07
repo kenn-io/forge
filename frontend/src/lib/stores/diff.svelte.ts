@@ -452,8 +452,8 @@ export function createDiffStore(opts: DiffStoreOptions) {
   }
 
   function currentCollapseKey(): string | null {
-    if (currentWorkspaceID) {
-      return `workspace:${currentWorkspaceHostKey ?? "self"}:${currentWorkspaceID}:${currentWorkspaceBase}`;
+    if (currentWorkspaceID || currentCommitSHA) {
+      return collapseKeyFor(currentOwner, currentName, currentNumber);
     }
     if (!currentOwner || !currentName || !currentNumber) return null;
     return collapseKeyFor(currentOwner, currentName, currentNumber);
@@ -462,6 +462,9 @@ export function createDiffStore(opts: DiffStoreOptions) {
   function collapseKeyFor(owner: string, name: string, number: number): string {
     if (currentWorkspaceID) {
       return `workspace:${currentWorkspaceHostKey ?? "self"}:${currentWorkspaceID}:${currentWorkspaceBase}`;
+    }
+    if (currentCommitSHA) {
+      return JSON.stringify(["commit", currentProvider, currentPlatformHost ?? "", currentRepoPath, currentCommitSHA]);
     }
     return `${owner}/${name}#${number}`;
   }

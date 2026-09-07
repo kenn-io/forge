@@ -16,7 +16,8 @@
   import DiffReviewThreadInlineComment from "./DiffReviewThreadInlineComment.svelte";
   import DiffRichPreview from "./DiffRichPreview.svelte";
   import { CopyButton, DiffStats, IconButton } from "@kenn-io/kit-ui";
-  import { ArrowDown, ArrowUp } from "@lucide/svelte";
+  import ArrowDown from "@lucide/svelte/icons/arrow-down";
+  import ArrowUp from "@lucide/svelte/icons/arrow-up";
   import {
     reviewThreadSnapshotState,
     reviewThreadTargetLine,

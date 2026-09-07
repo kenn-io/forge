@@ -1,6 +1,7 @@
 <script lang="ts">
   import { IconButton, SidebarToggle, Toggle } from "@kenn-io/kit-ui";
-  import { ChevronsDownUp, ChevronsUpDown } from "@lucide/svelte";
+  import ChevronsDownUp from "@lucide/svelte/icons/chevrons-down-up";
+  import ChevronsUpDown from "@lucide/svelte/icons/chevrons-up-down";
   import MoreHorizontalIcon from "@lucide/svelte/icons/more-horizontal";
   import { getStores } from "../../context.js";
   import {

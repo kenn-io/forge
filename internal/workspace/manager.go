@@ -1395,7 +1395,10 @@ func (m *Manager) SetupWithOptions(
 		ctx, ws, launchSpec, validateCloneRoute,
 	)
 	branch, reusedWorktree := reuse.branch, reuse.reused
-	preserveWorktree := reusedWorktree
+	// An empty PR branch records a previously adopted branch or detached HEAD;
+	// it is distinct from the unknown marker used before initial setup.
+	preserveWorktree := reusedWorktree ||
+		(ws.ItemType == db.WorkspaceItemTypePullRequest && ws.WorkspaceBranch == "")
 	var gitDir string
 	commonDir, managedClone := reuse.commonDir, reuse.managedClone
 	if err != nil {
@@ -1434,10 +1437,7 @@ func (m *Manager) SetupWithOptions(
 
 		gitDir = gitSetupDir.path
 		savedBranch := ws.WorkspaceBranch
-		if savedBranch == workspaceBranchUnknown {
-			savedBranch = ws.GitHeadRef
-		}
-		if savedBranch != "" {
+		if savedBranch != "" && savedBranch != workspaceBranchUnknown {
 			preserveWorktree, err = localBranchExists(ctx, gitDir, savedBranch)
 			if err != nil {
 				return m.failSetup(ctx, ws.ID, workspaceSetupStageWorktree, err)
@@ -3066,6 +3066,29 @@ func (m *Manager) addWorktree(
 		}
 		if err := m.ensureWorkspacePathAvailable(ctx, ws); err != nil {
 			return err
+		}
+		// The destination is absent, but Git may still reserve its branch for
+		// this path after a checkout was lost. Remove only that registration.
+		metadataDir, registered, err := worktreeRegistrationMetadataDir(ctx, gitDir.path, ws.WorktreePath)
+		if err != nil {
+			return err
+		}
+		var savedHead string
+		if registered && ws.WorkspaceBranch == "" {
+			head, err := os.ReadFile(filepath.Join(metadataDir, "HEAD"))
+			if err != nil {
+				return fmt.Errorf("read missing worktree HEAD: %w", err)
+			}
+			savedHead = strings.TrimSpace(string(head))
+		}
+		if err := removeStaleWorktreeRegistrationMetadata(ctx, gitDir.path, ws.WorktreePath); err != nil {
+			return err
+		}
+		if savedHead != "" {
+			if savedBranch, ok := strings.CutPrefix(savedHead, "ref: refs/heads/"); ok {
+				return m.runOwnedGitWorktreeAdd(ctx, gitDir.path, ws, savedBranch)
+			}
+			return m.runOwnedGitWorktreeAdd(ctx, gitDir.path, ws, "--detach", savedHead)
 		}
 		var addErr error
 		branch, addErr = m.addWorktreeLocked(

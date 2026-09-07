@@ -60,6 +60,12 @@ Rules:
 - A saved branch may have advanced beyond its original provider head. Reattach it
   without resetting commits, and preserve it if later setup fails
   (`internal/workspace/manager.go::Manager.SetupWithOptions`).
+- A clone's PR source branch alone does not prove workspace recovery. Missing
+  checkouts may retain Git registrations; clear only their exact registration
+  before recreation, preserving the branch (`internal/workspace/manager.go::Manager.addWorktree`).
+- An empty PR managed branch means an adopted branch or detached HEAD; unknown
+  means setup has not recorded ownership. Recover the former from its registered
+  HEAD without taking branch ownership (`internal/workspace/manager.go::Manager.addWorktree`).
 
 ## Provider-Backed Lifecycle Facts
 

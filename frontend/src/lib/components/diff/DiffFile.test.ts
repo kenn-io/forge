@@ -283,6 +283,8 @@ function uniqueOwner(): string {
 function renderDiffFile(
   file: DiffFileType,
   options: {
+    previousFilePath?: string;
+    nextFilePath?: string;
     richPreview?: boolean;
     richPreviewEnabled?: boolean;
     contextExpansionEnabled?: boolean;
@@ -324,6 +326,8 @@ function renderDiffFile(
     props: {
       runtime,
       file,
+      previousFilePath: options.previousFilePath,
+      nextFilePath: options.nextFilePath,
       provider: "github",
       platformHost: "github.com",
       owner,
@@ -2793,5 +2797,17 @@ describe("DiffFile", () => {
     renderDiffFile(file);
 
     await expectPierreDiffText(/@@ -17,3 \+17,3 @@ usefulContext/);
+  });
+
+  it("header arrows request the adjacent file without collapsing the current file", async () => {
+    const { diff } = renderDiffFile(makeFile(), {
+      previousFilePath: "src/before.ts",
+      nextFilePath: "src/after.ts",
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Next file" }));
+    expect(diff.getScrollTarget()).toEqual({ path: "src/after.ts" });
+    await fireEvent.click(screen.getByRole("button", { name: "Previous file" }));
+    expect(diff.getScrollTarget()).toEqual({ path: "src/before.ts" });
+    expect(screen.getByRole("button", { name: "Collapse file" }).getAttribute("aria-expanded")).toBe("true");
   });
 });

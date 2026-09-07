@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { SidebarToggle, Toggle } from "@kenn-io/kit-ui";
+  import { IconButton, SidebarToggle, Toggle } from "@kenn-io/kit-ui";
+  import ChevronsDownUp from "@lucide/svelte/icons/chevrons-down-up";
+  import ChevronsUpDown from "@lucide/svelte/icons/chevrons-up-down";
   import MoreHorizontalIcon from "@lucide/svelte/icons/more-horizontal";
   import { getStores } from "../../context.js";
   import {
@@ -94,16 +96,6 @@
       </div>
     </div>
   {/if}
-  <div class="compact-menu-section">
-    <button
-      class="compact-menu-action"
-      type="button"
-      disabled={disabled}
-      onclick={() => diff.setAllVisibleFilesCollapsed(!allVisibleFilesCollapsed)}
-    >
-      {collapseAllLabel}
-    </button>
-  </div>
   <div class="compact-menu-section">
     <div class="compact-menu-title">Tab width</div>
     <div class="compact-menu-grid" role="group" aria-label="Tab width">
@@ -216,6 +208,19 @@
     <DiffScopePicker {disabled} />
   {/if}
   <div class="toolbar-actions">
+    <IconButton
+      size="sm"
+      ariaLabel={collapseAllLabel}
+      title={collapseAllLabel}
+      disabled={disabled || visibleFileCount === 0}
+      onclick={() => diff.setAllVisibleFilesCollapsed(!allVisibleFilesCollapsed)}
+    >
+      {#if allVisibleFilesCollapsed}
+        <ChevronsUpDown size={16} aria-hidden="true" />
+      {:else}
+        <ChevronsDownUp size={16} aria-hidden="true" />
+      {/if}
+    </IconButton>
     {#if shouldShowFileJump}
       <FileJumpPicker {disabled} />
     {/if}
@@ -365,8 +370,7 @@
     gap: 4px;
   }
 
-  .compact-menu-item,
-  .compact-menu-action {
+  .compact-menu-item {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -386,7 +390,6 @@
   }
 
   .compact-menu-item:hover,
-  .compact-menu-action:hover,
   :global(.compact-switch-row:hover) {
     background: var(--bg-surface-hover);
     color: var(--text-primary);

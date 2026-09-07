@@ -662,9 +662,11 @@
                 <p class="diff-state-msg">No changed files match this category.</p>
               </div>
             {/if}
-            {#each visibleFiles as file (file.path)}
+            {#each visibleFiles as file, index (file.path)}
               <DiffFileComponent
                 {file}
+                previousFilePath={visibleFiles[index - 1]?.path}
+                nextFilePath={visibleFiles[index + 1]?.path}
                 contextPrefetchIdentity={nextContextPrefetchIdentity}
                 {provider}
                 {platformHost}

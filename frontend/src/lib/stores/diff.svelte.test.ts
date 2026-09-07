@@ -222,6 +222,40 @@ describe("createDiffStore loadDiff", () => {
     expect(calls.filter((url) => url.includes("/files"))).toHaveLength(2);
   });
 
+  it("shares individual and bulk collapse state within each repository commit", async () => {
+    const diff = makeDiffResult(["src/app.go", "src/app_test.go"]);
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json(diff));
+    const store = createDiffStore({ client: testClient() });
+    const first = Promise.withResolvers<void>();
+    store.loadCommitDiff(ownerRepoRef, "abc123", { onSettled: first.resolve });
+    await first.promise;
+
+    store.setAllVisibleFilesCollapsed(true);
+    expect(store.areAllVisibleFilesCollapsed()).toBe(true);
+    expect(store.isFileCollapsed("owner", "repo", 0, "src/app.go")).toBe(true);
+    store.toggleFileCollapsed("owner", "repo", 0, "src/app.go");
+    expect(store.areAllVisibleFilesCollapsed()).toBe(false);
+    store.setFileCategoryFilter("tests");
+    store.setAllVisibleFilesCollapsed(false);
+    expect(store.isFileCollapsed("owner", "repo", 0, "src/app_test.go")).toBe(false);
+    store.setAllVisibleFilesCollapsed(true);
+
+    for (const [identity, sha] of [
+      [ownerRepoRef, "def456"],
+      [{ ...ownerRepoRef, platformHost: "forge.example.com" }, "abc123"],
+      [{ ...ownerRepoRef, repoPath: "other/repo" }, "abc123"],
+    ] as const) {
+      const next = Promise.withResolvers<void>();
+      store.loadCommitDiff(identity, sha, { onSettled: next.resolve });
+      await next.promise;
+      expect(store.isFileCollapsed("owner", "repo", 0, "src/app_test.go")).toBe(false);
+    }
+    const restored = Promise.withResolvers<void>();
+    store.loadCommitDiff(ownerRepoRef, "abc123", { onSettled: restored.resolve });
+    await restored.promise;
+    expect(store.isFileCollapsed("owner", "repo", 0, "src/app_test.go")).toBe(true);
+  });
+
   it("loads default branch commit diffs through the repo route", async () => {
     const calls: string[] = [];
     const diff = makeDiffResult(["internal/cache.go"]);

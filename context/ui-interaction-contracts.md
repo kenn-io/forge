@@ -832,6 +832,14 @@ the user's current item identity and deep link.
 
 ## Nested Interaction Rules
 
+Diff file navigation and collapse/expand-all are direct header and toolbar
+actions, not menu-only actions. File arrows follow the filtered file order
+(`frontend/src/lib/components/diff/DiffView.svelte`); bulk collapse affects only
+visible files (`frontend/src/lib/components/diff/DiffToolbar.svelte`).
+Commit diffs have no PR number. Individual and bulk collapse must share a key
+scoped by provider, host, repository path, and commit SHA
+(`frontend/src/lib/stores/diff.svelte.ts::collapseKeyFor`).
+
 Rows that contain buttons, links, or toggles need clear event ownership.
 
 - Activating a nested control inside a clickable row must not also trigger the

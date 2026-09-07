@@ -2054,6 +2054,34 @@ test.describe("diff view", () => {
     await expect(secondRow).toHaveAttribute("aria-selected", "true");
   });
 
+  test("file header arrows jump between adjacent files", async ({ page }) => {
+    await mockDiffApi(page, largeDiff);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+    await waitForSidebarFilesLoaded(page);
+
+    const files = page.locator(".diff-file");
+    const first = files.first();
+    const second = files.nth(1);
+    const secondPath = await second.getAttribute("data-file-path");
+    await expect(first.getByRole("button", { name: "Previous file" })).toBeDisabled();
+    await expect(files.last().getByRole("button", { name: "Next file" })).toBeDisabled();
+    await first.getByRole("button", { name: "Next file" }).click();
+    await expect(treeFileItem(page, secondPath!)).toHaveAttribute("aria-selected", "true");
+    const diffArea = page.locator(".diff-area .kit-scrollbox__viewport");
+    await expect
+      .poll(() =>
+        second.evaluate((el) => {
+          const area = el.closest(".kit-scrollbox__viewport")!;
+          return Math.abs(el.getBoundingClientRect().top - area.getBoundingClientRect().top);
+        }),
+      )
+      .toBeLessThan(4);
+
+    await second.getByRole("button", { name: "Previous file" }).click();
+    await expect.poll(() => diffArea.evaluate((el) => Math.round(el.scrollTop))).toBe(0);
+  });
+
   test("sidebar file jumps keep the outer detail frame pinned", async ({ page }) => {
     await mockDiffApi(page, largeDiff);
     await navigateToDiff(page);
@@ -2271,14 +2299,13 @@ test.describe("diff view", () => {
     await expect.poll(decorations).toContain("line-through");
   });
 
-  test("more menu collapses and expands all visible diffs", async ({ page }) => {
+  test("toolbar collapses and expands all visible diffs", async ({ page }) => {
     await mockDiffApi(page, smallDiff);
     await navigateToDiff(page);
     await waitForDiffLoaded(page);
 
     await expect(page.locator(".diff-file .file-content")).toHaveCount(4);
 
-    await openDiffFilterMenu(page);
     await page.getByRole("button", { name: "Collapse all diffs" }).click();
 
     await expect(page.locator(".diff-file .file-content")).toHaveCount(0);

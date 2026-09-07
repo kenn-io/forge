@@ -15,7 +15,9 @@
   import DiffReviewDraftInlineComment from "./DiffReviewDraftInlineComment.svelte";
   import DiffReviewThreadInlineComment from "./DiffReviewThreadInlineComment.svelte";
   import DiffRichPreview from "./DiffRichPreview.svelte";
-  import { CopyButton, DiffStats } from "@kenn-io/kit-ui";
+  import { CopyButton, DiffStats, IconButton } from "@kenn-io/kit-ui";
+  import ArrowDown from "@lucide/svelte/icons/arrow-down";
+  import ArrowUp from "@lucide/svelte/icons/arrow-up";
   import {
     reviewThreadSnapshotState,
     reviewThreadTargetLine,
@@ -32,6 +34,8 @@
 
   interface Props {
     file: DiffFileType;
+    previousFilePath?: string | undefined;
+    nextFilePath?: string | undefined;
     contextPrefetchIdentity?: string | undefined;
     provider: string;
     platformHost?: string | undefined;
@@ -51,6 +55,8 @@
 
   const {
     file,
+    previousFilePath,
+    nextFilePath,
     contextPrefetchIdentity = "",
     provider,
     platformHost,
@@ -601,6 +607,26 @@
     >
       {displayPath(file)}
     </span>
+    <div class="file-navigation">
+      <IconButton
+        ariaLabel="Previous file"
+        title="Previous file"
+        size="sm"
+        disabled={previousFilePath === undefined}
+        onclick={() => previousFilePath !== undefined && diffStore.requestScrollToFile(previousFilePath)}
+      >
+        <ArrowUp size={14} />
+      </IconButton>
+      <IconButton
+        ariaLabel="Next file"
+        title="Next file"
+        size="sm"
+        disabled={nextFilePath === undefined}
+        onclick={() => nextFilePath !== undefined && diffStore.requestScrollToFile(nextFilePath)}
+      >
+        <ArrowDown size={14} />
+      </IconButton>
+    </div>
     <!--
       Copying repository metadata is not code execution or a security boundary.
       Preserve the provider's filename exactly; interpretation after paste belongs
@@ -759,6 +785,11 @@
     flex-shrink: 0;
     font-size: var(--font-size-xs);
     font-weight: 600;
+  }
+
+  .file-navigation {
+    display: flex;
+    flex-shrink: 0;
   }
 
   .file-content {

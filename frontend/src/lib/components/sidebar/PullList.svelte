@@ -435,30 +435,7 @@
       class="stack-row"
       class:stack-row--member={row.depth > 0}
       class:stack-row--root={row.memberCount > 0}
-      style:--stack-depth={Math.min(row.depth, 3)}
     >
-      {#if row.memberCount > 0}
-        {@const countLabel = row.memberCount === pr.stack?.size
-          ? `${row.memberCount} PRs in stack`
-          : `${row.memberCount} of ${pr.stack?.size} PRs in this view`}
-        <div class="stack-control">
-          {#if row.memberCount > 1}
-            <button
-              type="button"
-              class="stack-toggle"
-              aria-expanded={row.expanded}
-              aria-label={`${row.expanded ? "Collapse" : "Expand"} stack at #${pr.Number}: ${countLabel}`}
-              title={countLabel}
-              onclick={() => pulls.toggleStack(row.stackKey, row.expanded)}
-            >
-              <ChevronDownIcon size={12} class={row.expanded ? "" : "stack-chevron--collapsed"} aria-hidden="true" />
-              <span>{row.memberCount}</span>
-            </button>
-          {:else}
-            <span class="stack-partial" title={countLabel} aria-label={countLabel}>1/{pr.stack?.size}</span>
-          {/if}
-        </div>
-      {/if}
       <div class="stack-row-content">
         {#if row.memberCount > 0 && pr.stack && (pr.stack.position > 1 || row.memberCount < pr.stack.size)}
           <span class="stack-context">{row.memberCount} of {pr.stack.size} PRs in this view{pr.stack.position > 1 ? ` · starts at ${pr.stack.position}/${pr.stack.size}` : ""}</span>
@@ -483,6 +460,28 @@
           </div>
         {/if}
       </div>
+      {#if row.memberCount > 0}
+        {@const countLabel = row.memberCount === pr.stack?.size
+          ? `${row.memberCount} PRs in stack`
+          : `${row.memberCount} of ${pr.stack?.size} PRs in this view`}
+        <div class="stack-control">
+          {#if row.memberCount > 1}
+            <button
+              type="button"
+              class="stack-toggle"
+              aria-expanded={row.expanded}
+              aria-label={`${row.expanded ? "Collapse" : "Expand"} stack at #${pr.Number}: ${countLabel}`}
+              title={countLabel}
+              onclick={() => pulls.toggleStack(row.stackKey, row.expanded)}
+            >
+              <span>{row.memberCount}</span>
+              <ChevronDownIcon size={12} class={row.expanded ? "" : "stack-chevron--collapsed"} aria-hidden="true" />
+            </button>
+          {:else}
+            <span class="stack-partial" title={countLabel} aria-label={countLabel}>1/{pr.stack?.size}</span>
+          {/if}
+        </div>
+      {/if}
     </div>
   {/each}
 {/snippet}
@@ -652,27 +651,36 @@
     min-width: 0;
   }
 
+  .stack-row--root,
   .stack-row--member {
-    margin-left: calc(16px + var(--stack-depth) * 12px);
-    border-left: 1px solid var(--border-default);
+    --sidebar-row-bg: color-mix(in srgb, var(--accent-blue) 6%, var(--bg-surface));
+    background: var(--sidebar-row-bg);
+  }
+
+  .stack-row--root {
+    margin-top: var(--space-1);
+    border-top: 1px solid var(--sidebar-list-border-muted, var(--border-muted));
+  }
+
+  .stack-row--member {
+    padding-left: var(--space-4);
   }
 
   .stack-control {
     display: flex;
     align-items: flex-start;
     justify-content: center;
-    width: 28px;
+    width: 44px;
     flex-shrink: 0;
-    padding-top: 8px;
+    padding-top: var(--space-1);
   }
 
   .stack-toggle {
     display: flex;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: var(--space-1);
-    width: 28px;
+    width: 40px;
     min-height: 40px;
     color: var(--text-secondary);
     font-size: var(--font-size-2xs);

@@ -946,6 +946,9 @@ Not every visibility control means "remove this entity entirely."
   must not reappear as context. Stack collapse affects keyboard order; repository
   and status group collapse retain their existing navigation behavior.
   (`frontend/src/lib/stores/pulls.svelte.ts::getSidebarRows`)
+- Stack roots align with ordinary PRs; all children share one shallow indent.
+  Use a shared stack tint and trailing disclosure to avoid implying a parent PR
+  above the root. (`frontend/src/lib/components/sidebar/PullList.svelte::pullRows`)
 - Stack expansion belongs to the stack across status-group fragments; fragment
   counts describe only matching members. (`frontend/src/lib/stores/pulls.svelte.ts::toggleStack`)
 - Collapsing a selected stack child keeps its detail open and anchors keyboard

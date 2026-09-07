@@ -80,6 +80,16 @@ describe("PR sidebar stack tree", () => {
       ]),
     );
     expect(window.location.pathname).toBe(path);
+    const rootRow = document.querySelector<HTMLElement>(".stack-row--root .pull-item")!;
+    const childRows = [...document.querySelectorAll<HTMLElement>(".stack-row--member .pull-item")];
+    const ordinaryRow = document.querySelector<HTMLElement>(
+      ".stack-row:not(.stack-row--root):not(.stack-row--member) .pull-item",
+    )!;
+    expect(rootRow.getBoundingClientRect().left).toBe(ordinaryRow.getBoundingClientRect().left);
+    expect(childRows[0]!.getBoundingClientRect().left).toBeGreaterThan(rootRow.getBoundingClientRect().left);
+    expect(childRows[1]!.getBoundingClientRect().left).toBe(childRows[0]!.getBoundingClientRect().left);
+    expect(getComputedStyle(rootRow).backgroundColor).not.toBe(getComputedStyle(ordinaryRow).backgroundColor);
+
     const sidebar = document.querySelector<HTMLElement>(".pull-list .list-body")!;
     expect(sidebar.scrollWidth).toBeLessThanOrEqual(sidebar.clientWidth);
     await page.getByRole("button", { name: "Collapse stack at #1: 3 PRs in stack" }).click();

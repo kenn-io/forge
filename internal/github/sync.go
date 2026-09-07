@@ -1508,7 +1508,7 @@ func archiveLiveFloor(kind platform.Kind) int {
 	return floor
 }
 
-func (s *Syncer) beginProviderWork(key string, priority archive.WorkPriority) func() {
+func (s *Syncer) beginProviderWork(ctx context.Context, key string, priority archive.WorkPriority) func() {
 	s.providerWorkMu.Lock()
 	if s.providerWork == nil {
 		s.providerWork = make(map[string]map[archive.WorkPriority]int)
@@ -1526,7 +1526,10 @@ func (s *Syncer) beginProviderWork(key string, priority archive.WorkPriority) fu
 	}
 	s.providerWorkMu.Unlock()
 	if waitForArchive {
-		<-archiveRequest.done
+		select {
+		case <-archiveRequest.done:
+		case <-ctx.Done():
+		}
 	}
 
 	var once sync.Once
@@ -5017,7 +5020,7 @@ func (s *Syncer) reconcileArchivedRepos(
 		// Register provider work so an admitted archive request on the
 		// same credential is preempted instead of overlapping the
 		// refresh, matching the coordination live repo syncs get.
-		release := s.beginProviderWork(bucket, archive.PriorityNormalIndex)
+		release := s.beginProviderWork(ctx, bucket, archive.PriorityNormalIndex)
 		resolved, _, _, _, _, err := s.reconcileRepoIdentityObservation(ctx, repo)
 		release()
 		if err != nil {
@@ -5439,7 +5442,7 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 	if err != nil {
 		return fmt.Errorf("resolve sync credential route for %s/%s: %w", repo.Owner, repo.Name, err)
 	}
-	releaseProviderWork := s.beginProviderWork(bucket, archive.PriorityNormalIndex)
+	releaseProviderWork := s.beginProviderWork(ctx, bucket, archive.PriorityNormalIndex)
 	defer releaseProviderWork()
 	// Split-auth repository sync also issues a viewer-permission request on
 	// the write identity; register that principal too so an archive sharing
@@ -5450,7 +5453,7 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 			string(repoPlatform(repo)), writeIdentity.Host, writeIdentity.Principal,
 		)
 		if writeBucket != bucket {
-			defer s.beginProviderWork(writeBucket, archive.PriorityNormalIndex)()
+			defer s.beginProviderWork(ctx, writeBucket, archive.PriorityNormalIndex)()
 		}
 	}
 
@@ -7079,7 +7082,7 @@ func (s *Syncer) BackfillMergedActorEventOnProvider(
 			repo.Owner, repo.Name, err,
 		)
 	}
-	releaseProviderWork := s.beginProviderWork(bucket, archive.PriorityActiveDetail)
+	releaseProviderWork := s.beginProviderWork(ctx, bucket, archive.PriorityActiveDetail)
 	defer releaseProviderWork()
 	return s.backfillMergedActorEvent(ctx, repo, repoID, number)
 }
@@ -11449,7 +11452,7 @@ func (s *Syncer) syncMRForRepoResolved(
 		if err != nil {
 			return fmt.Errorf("resolve detail credential route for %s/%s: %w", repo.Owner, repo.Name, err)
 		}
-		releaseProviderWork := s.beginProviderWork(bucket, archive.PriorityActiveDetail)
+		releaseProviderWork := s.beginProviderWork(ctx, bucket, archive.PriorityActiveDetail)
 		defer releaseProviderWork()
 	}
 
@@ -12161,7 +12164,7 @@ func (s *Syncer) syncIssueForRepo(
 		if err != nil {
 			return fmt.Errorf("resolve issue credential route for %s/%s: %w", repo.Owner, repo.Name, err)
 		}
-		releaseProviderWork := s.beginProviderWork(bucket, archive.PriorityActiveDetail)
+		releaseProviderWork := s.beginProviderWork(ctx, bucket, archive.PriorityActiveDetail)
 		defer releaseProviderWork()
 	}
 
@@ -12391,7 +12394,7 @@ func (s *Syncer) SyncItemByNumber(
 	if err != nil {
 		return "", fmt.Errorf("resolve item credential route for %s/%s: %w", owner, name, err)
 	}
-	releaseProviderWork := s.beginProviderWork(bucket, archive.PriorityActiveDetail)
+	releaseProviderWork := s.beginProviderWork(ctx, bucket, archive.PriorityActiveDetail)
 	defer releaseProviderWork()
 
 	if repoPlatform(repo) != platform.KindGitHub {

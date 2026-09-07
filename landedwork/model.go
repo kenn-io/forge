@@ -23,7 +23,11 @@ type Bounds struct {
 	Base, Head string
 }
 
-// Limits are per-operation positive maxima, not production defaults.
+// Limits are per-operation positive maxima, not production defaults. Records
+// bounds collection entries; Nodes charges commit reads and reachability probes.
+// InputBytes charges supplied evidence and Git stdout/stderr. OutputBytes is
+// the sum of returned string bytes, counting every occurrence, not a wire size.
+// Git's internal traversal work is bounded by the required context deadline.
 type Limits struct{ Records, Nodes, InputBytes, OutputBytes int64 }
 
 type Gap struct{ CandidateID, ObjectID, Reason string }

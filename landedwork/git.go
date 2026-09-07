@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,20 +25,25 @@ func (v *objectView) command(ctx context.Context, args ...string) *exec.Cmd {
 }
 
 func (v *objectView) run(ctx context.Context, args ...string) ([]byte, error) {
+	out := &boundedBuffer{meter: v.meter}
+	err := v.runTo(ctx, out, args...)
+	return out.Bytes(), err
+}
+
+func (v *objectView) runTo(ctx context.Context, out io.Writer, args ...string) error {
 	cmd := v.command(ctx, args...)
-	out, stderr := &boundedBuffer{meter: v.meter}, &boundedBuffer{meter: v.meter}
-	cmd.Stdout, cmd.Stderr = out, stderr
+	cmd.Stdout, cmd.Stderr = out, &boundedBuffer{meter: v.meter}
 	err := cmd.Run()
 	if ctx.Err() != nil {
-		return nil, ctx.Err()
+		return ctx.Err()
 	}
 	if v.meter.failed {
-		return nil, ErrInputBudget
+		return ErrInputBudget
 	}
 	if err != nil {
-		return nil, fmt.Errorf("read Git objects: %w", err)
+		return fmt.Errorf("read Git objects: %w", err)
 	}
-	return out.Bytes(), nil
+	return nil
 }
 
 func openView(ctx context.Context, path string, m *meter) (_ *objectView, err error) {
@@ -113,22 +119,13 @@ func (v *objectView) parents(ctx context.Context, id string) ([]string, error) {
 }
 
 func (v *objectView) introduced(ctx context.Context, base, head string) ([]string, error) {
-	data, err := v.run(ctx, "rev-list", "--topo-order", "--reverse", head, "^"+base, "--")
+	out := &commitStream{meter: v.meter}
+	err := v.runTo(ctx, out, "rev-list", "--topo-order", "--reverse", head, "^"+base, "--")
 	if err != nil {
 		return nil, err
 	}
-	var ids []string
-	for id := range strings.FieldsSeq(string(data)) {
-		if err := v.meter.node(); err != nil {
-			return nil, err
-		}
-		if err := v.meter.records(1); err != nil {
-			return nil, err
-		}
-		if !objectID(id) {
-			return nil, errors.New("invalid revision object ID")
-		}
-		ids = append(ids, id)
+	if out.pending != "" {
+		return nil, errors.New("incomplete revision object ID")
 	}
-	return ids, nil
+	return out.ids, nil
 }

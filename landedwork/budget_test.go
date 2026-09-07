@@ -16,3 +16,11 @@ func TestBufferMetersCopy(t *testing.T) {
 	require.ErrorIs(t, err, ErrInputBudget)
 	assert.Empty(t, b.Bytes())
 }
+
+func TestCommitStreamStopsBeforeRetainingOverBudgetRecord(t *testing.T) {
+	stream := &commitStream{meter: &meter{limits: Limits{InputBytes: 1024, Records: 1, Nodes: 10}}}
+	first, second := strings.Repeat("a", 40), strings.Repeat("b", 40)
+	_, err := stream.Write([]byte(first + "\n" + second + "\n"))
+	require.ErrorIs(t, err, ErrInputBudget)
+	assert.Equal(t, []string{first}, stream.ids)
+}

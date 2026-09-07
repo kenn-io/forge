@@ -23,7 +23,10 @@ func (m *meter) input(n int64) error {
 }
 
 func (m *meter) records(n int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if n > m.limits.Records {
+		m.failed = true
 		return ErrInputBudget
 	}
 	m.limits.Records -= n
@@ -31,7 +34,10 @@ func (m *meter) records(n int64) error {
 }
 
 func (m *meter) node() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.limits.Nodes == 0 {
+		m.failed = true
 		return ErrInputBudget
 	}
 	m.limits.Nodes--
@@ -54,14 +60,7 @@ func (b *boundedBuffer) Write(p []byte) (int, error) {
 func (b *boundedBuffer) Bytes() []byte { return b.buf.Bytes() }
 
 func checkQueryOutput(q Query, l Limits) error {
-	n := int64(len(q.Bounds.Base) + len(q.Bounds.Head) + len(q.Bounds.Repository.Host) + len(q.Bounds.Repository.ID) + len(q.Bounds.Repository.Provider))
-	for _, id := range q.Commits {
-		n += int64(len(id))
-	}
-	for _, g := range q.Gaps {
-		n += int64(len(g.Reason) + len(g.ObjectID) + len(g.CandidateID))
-	}
-	if n > l.OutputBytes || int64(len(q.Commits)+len(q.Gaps)) > l.Records {
+	if queryBytes(q) > l.OutputBytes || int64(len(q.Commits)+len(q.Gaps)) > l.Records {
 		return ErrOutputBudget
 	}
 	return nil

@@ -109,7 +109,13 @@ kenn-forge fleet revoke ENROLLMENT_ID
 Setup requires exactly one publication mode. `--tailscale` manages a Tailscale
 Serve mapping and browser identity; `--origin` uses operator-managed private
 HTTPS and never invokes Tailscale. See [Federated Forge](federated-fleet.md) for
-the complete enrollment and verification workflow.
+the complete enrollment and verification workflow, including
+[replacing a hub](federated-fleet.md#replace-the-hub).
+
+For a service with a custom config, pass the same `--config /path/to/config.toml`
+to every fleet command. Joining and preparing use the existing local daemon;
+they do not reinstall its service. `fleet setup` is not needed just to move an
+already configured spoke to a new hub.
 
 ## Manage Docs folders
 

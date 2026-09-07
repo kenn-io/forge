@@ -134,10 +134,23 @@ provider data.
 On every machine:
 
 1. Install the same `kenn-forge` build on every machine.
-2. Log in to the Git host used for local clone, fetch, and push operations. For
+2. Install Git, tmux, your agent CLIs, and the language tools used by local
+   workspaces. Authenticate the agents as the user that will run Forge.
+3. Log in to the Git host used for local clone, fetch, and push operations. For
    GitHub, `gh auth login` is the normal route.
-3. Choose one stable private HTTPS origin for that machine.
-4. Confirm every machine can resolve and reach every origin.
+4. Choose one stable private HTTPS origin for that machine.
+5. Confirm every machine can resolve and reach every origin.
+
+`fleet setup` configures Forge and its service. It does not provision the
+operating system, install development tools, clone your repositories, or
+authenticate agents. SSH access is useful for provisioning and upgrades;
+federation itself uses HTTPS and does not require reciprocal SSH keys.
+
+The examples below use the default config location. If your service uses a
+custom config, pass that same `--config /path/to/config.toml` to **every** fleet
+command, including setup, token creation, join, preparation, and revocation.
+These commands contact the local daemon selected by that config; the hub URL
+does not select your local instance.
 
 Do not copy a Forge data directory between machines. Each directory receives a
 stable random node ID on first start.
@@ -206,7 +219,20 @@ the hub and a service restart activates the enrollment.
 Run setup as the operating-system user that will run Forge. The normal
 Tailscale path discovers the machine's certificate name and current Tailscale
 login, publishes Forge with Tailscale Serve, installs a per-user service, and
-checks the protected HTTPS API:
+checks the protected HTTPS API.
+
+For the Tailscale path, first join the machine to your tailnet and enable
+[HTTPS certificates](https://tailscale.com/docs/features/tailscale-serve).
+On Linux, an administrator can let the Forge user manage Tailscale without
+running Forge as root:
+
+```sh
+sudo tailscale set --operator="$USER"
+```
+
+This grants the current user control of the local Tailscale daemon; see the
+[Tailscale CLI reference](https://tailscale.com/docs/reference/tailscale-cli#set).
+Then run Forge setup as that user:
 
 ```sh
 kenn-forge fleet setup hub --tailscale
@@ -234,8 +260,10 @@ Setup requires exactly one of `--tailscale` and `--origin`. It does not expose
 the Forge listener directly, weaken API authentication, or make the service
 depend on a particular network product.
 
-The hub also needs the provider credentials and repository
-configuration used for synchronization.
+The hub also needs its own provider credentials. Open **Settings → Repositories**
+on the hub and add the repositories it should synchronize. Cloning a repository
+on disk does not add it to this list. On a fresh hub, allow the initial sync to
+populate provider data before moving existing spokes.
 
 ## Set up each spoke
 
@@ -256,12 +284,32 @@ after provider writes drain and state handoff completes.
 On Linux, setup installs a systemd user service and enables lingering so Forge
 survives logout. On macOS, it installs a LaunchAgent under the selected user.
 Both service definitions execute the installed binary directly and preserve
-the user's credential environment.
+the setup user's `HOME` and `PATH`. They do not start an interactive shell or
+copy arbitrary exported credentials. Configure any additional credential
+environment through your service manager.
+
+Run setup with a stable `PATH` that includes your agent CLIs and tool-manager
+shims. A minimal SSH command environment can omit tools that work in your
+interactive terminal. Verify by launching an agent from a Forge workspace
+after the service restarts.
 
 Tailscale identity mode treats local processes on the Forge host as trusted,
 because Tailscale Serve forwards identity headers over loopback. Use it on a
 single-user or otherwise trusted machine. On a multi-user host, use an external
 origin and Forge's bearer/cookie authentication instead.
+
+### Adopt an existing service
+
+If Forge already runs under a service you maintain, inspect `fleet setup ...
+--dry-run` first. Setup refuses to overwrite a service definition it does not
+own. For an existing federation-ready daemon with working private HTTPS, keep
+its service and continue at [Enroll one spoke at a time](#enroll-one-spoke-at-a-time).
+Re-enrollment does not require reinstalling the service or moving its data.
+
+If you want setup to own the service instead, back up the current definition
+and configuration, stop it, and explicitly move the old definition aside before
+running setup. Keep its data directory and installed binary path consistent
+with the displayed plan.
 
 ## Keep credentials separate
 
@@ -343,7 +391,9 @@ Interactive terminals use a hidden token prompt when neither input method is
 provided.
 
 Joining records a pending enrollment. It does not change the spoke role or
-restart the daemon.
+restart the daemon. Record the printed enrollment ID with the host and origin
+in your private operations inventory; revocation uses that ID. Remove any
+remaining token copies after a successful join.
 
 ### 3. Prepare the spoke
 
@@ -355,9 +405,13 @@ kenn-forge fleet prepare-spoke
 
 Preparation stops new provider writes, waits for admitted writes and deferred
 merges, drains notification acknowledgements, refreshes workspace launch
-information, hands provider state to the hub, and seals local provider
-writes. If it reports concrete remaining work, resolve that work and run the
-command again.
+information, hands review drafts and user-authored workflows to the hub, and
+seals local provider writes. If it reports concrete remaining work, resolve
+that work and run the command again.
+
+This handoff does not copy the entire provider database or move repositories,
+worktrees, or agent sessions. The hub must already track the repositories needed
+by existing workspaces, and the spoke must be able to use their Git credentials.
 
 The token's original deadline no longer applies after preparation starts.
 
@@ -366,6 +420,21 @@ The token's original deadline no longer applies after preparation starts.
 When preparation reports completion, restart Forge through the spoke's service
 manager. Activation happens during startup. Verify the spoke is active in the
 hub's Fleet settings and in the spoke's direct UI.
+
+For services installed by `fleet setup`, run the command for your platform as
+the service user:
+
+```sh
+# Linux
+systemctl --user restart kenn-forge.service
+systemctl --user status kenn-forge.service --no-pager
+
+# macOS, in the user's GUI login session
+launchctl kickstart -k "gui/$(id -u)/io.kenn.forge"
+```
+
+For an existing custom service, use its actual unit or LaunchAgent label.
+A running process alone does not prove enrollment activated.
 
 Do not enroll the next spoke yet. Complete the checks in [Verify the
 fleet](#verify-the-fleet) for this spoke first.
@@ -549,17 +618,78 @@ federation.
 That separation is intentional: the federation contract is canonical HTTPS,
 not Tailscale or Caddy.
 
-## Hub replacement is a separate migration
+## Replace the hub
 
 Do not replace the hub by changing DNS or copying one credential. An
 enrollment is bound to the hub's stable node ID and canonical origin.
 The hub also stores provider state alongside its own local execution
 state.
 
-A safe replacement must transfer hub-owned provider state without
-reassigning local workspaces, enroll every spoke against the new hub,
-revoke both old credential directions, and support rollback during the
-transition. Forge does not currently provide that complete workflow.
+Choose the recovery you need before changing enrollment:
+
+| Goal | Approach |
+| --- | --- |
+| Restore the same hub after an OS reinstall | Restore its complete matching backup, including identity, configuration, database, and credentials. Restore its original HTTPS origin and verify existing spokes. |
+| Start with a fresh hub and retain local workspaces on other machines | Create a new hub identity, configure its repositories, then revoke and re-enroll each old member using the procedure below. |
+| Move the complete provider archive to a different hub while leaving the old hub's execution state behind | Forge does not provide an automated selective migration for this. Retain the old backup; do not transplant its database or individual credentials into a new hub. |
+
+### Move to a fresh hub
+
+This procedure rebuilds provider data through synchronization. It preserves
+each retained machine's local identity and workspaces; it does not promise to
+reproduce the old hub's full archive. Preparation transfers review drafts and
+user-authored workflows when each machine joins.
+
+The old hub and spokes must remain reachable for revocation. If the old hub was
+lost in a reinstall, restore it from its matching backup first. A replacement
+at the same hostname with an empty data directory is still a different hub.
+
+1. **Record and back up the old fleet.** Record each machine's node ID, origin,
+   enrollment ID, config and data paths, service definition, binary version,
+   and local workspace list. Pause fleet changes. Stop the Forge services while
+   taking a consistent backup of their databases and state, including any
+   SQLite WAL files, enrollment and credential stores, configuration, binaries,
+   and service definitions. Keep these as matching rollback sets, with access
+   restricted to the operator. Back up local repositories and worktrees
+   separately if they are outside those paths. Restart the old fleet and verify
+   it before proceeding.
+2. **Prepare the new hub.** Use a new data directory and its own private HTTPS
+   origin. Follow [Set up the hub](#set-up-the-hub), authenticate its provider
+   and Git access, and configure its repository list. Check actual repository
+   and pull-request reads, plus any local agent tools the hub will run.
+3. **Move one spoke.** On the old hub, run
+   `kenn-forge fleet revoke ENROLLMENT_ID` using that spoke's old enrollment ID. Then create a new token
+   on the new hub and follow [join, prepare, restart, and
+   verify](#enroll-one-spoke-at-a-time) on the spoke. Use the new hub origin and
+   retain the spoke's existing origin, config, and data directory. Expect
+   provider access to pause between revocation and activation. Confirm the
+   spoke's node ID and local workspace list are unchanged, and that the new hub
+   can reach its workspaces and terminals, before moving the next spoke.
+4. **Move the old hub last, if it will become a spoke.** Revoke all its old
+   members first; a hub with members cannot join another hub. Keep its existing
+   service, origin, and data directory, then run the same join, prepare, and
+   restart sequence against the new hub. Its local workspaces remain on that
+   machine. Do not set its role by hand or run spoke setup merely to change the
+   role. If retiring the old hub instead, stop its service after the cutover.
+5. **Verify and record the final fleet.** Check every direct HTTPS UI and the
+   new hub's aggregate workspace view. Exercise a local agent and a terminal
+   through the hub on each execution machine. Record the new enrollment IDs,
+   service restart commands, and verification results. Keep the pre-cutover
+   backups until the replacement has passed your recovery checks.
+
+### Roll back a cutover
+
+Rollback restores a coordinated fleet state, not just the old hub's database.
+Stop the new hub and affected Forge services first. Preserve current state and
+any work created since the cutover, then restore the old hub and affected
+members from their matching pre-cutover sets. Restore the service definitions
+and original ingress bindings along with state. Start the old hub, then its
+spokes, and verify their original identities, enrollment, and workspace access.
+Keep the replacement hub stopped while this restored fleet is authoritative.
+
+Database rollback can discard changes made after the backup. Do not overwrite
+new worktree contents as part of restoring Forge state. Revoking a new
+enrollment alone does not restore the old enrollment or provider ownership.
 
 ## Replace an older fleet
 
@@ -576,6 +706,36 @@ There is no automatic translation because the older entries did not establish
 the identity and credential pair required by federation.
 
 ## Troubleshooting
+
+### Setup fails its HTTPS check
+
+Read the setup error and any rollback errors before retrying. Setup attempts to
+restore its previous config, service, and managed publication when a later step
+fails. Confirm what is actually running; do not assume a failed setup left a
+usable service behind.
+
+For Tailscale, check that the device is logged in, the Forge user can manage
+Serve, and HTTPS certificates are enabled. First-time certificate issuance can
+outlast Forge's readiness check. Inspect Tailscale's certificate and Serve
+status, resolve the reported problem, then rerun the setup plan. For external
+ingress, check the proxy route, preserved `Host` header, and certificate trust.
+
+### Agents work in SSH but not in Forge
+
+Check the service's `PATH` and the service user's agent authentication. Shell
+startup files are not loaded by the generated service. For a service owned by
+setup, rerun the appropriate setup command with the intended stable tool paths;
+for a custom service, update its environment through your service manager.
+Restart and launch an agent from a workspace to verify the result.
+
+### A fresh hub is missing repositories or pull requests
+
+Check **Settings → Repositories** on the new hub first. Enrollment does not
+import the old hub's repository selection. Then inspect sync status: a large
+first sync can consume the available request budget before all repositories
+finish. Let the budget recover and use **Sync current repo** for the repository
+you need, rather than repeatedly starting a full sync. Verify a real repository
+or pull-request read separately from fleet reachability.
 
 ### A spoke is unreachable
 

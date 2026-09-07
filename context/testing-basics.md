@@ -9,6 +9,8 @@ fixtures, or changing shell-script coverage.
 - Routine local Go lanes and hooks bound package/processor concurrency and share
   Go caches; `GO_TEST_P=` intentionally restores native package concurrency.
   (`scripts/run-hook-go.sh`, `prek.toml`)
+- CI bounds Go package/test fan-out with `-p` and `-parallel`; do not cap
+  `GOMAXPROCS` globally, because test-launched servers inherit that CPU limit.
 - Do not overlap frontend/e2e asset builds with Go compilation; replacing embedded
   assets mid-compile causes missing-file build failures (`internal/web/embed.go:9`).
 - Reduce scanner pressure at source, not by redirecting `GOTMPDIR`.

@@ -217,6 +217,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   let timeRangeDefault: TimeRange = "7d";
   let viewModeDefault: ViewMode = "flat";
   let defaultsHydrated = false;
+  let timeRangeSelected = false;
+  let viewModeSelected = false;
   let collapseThreads = $state(false);
   let rollUpCommits = $state(false);
   let collapseThreadsDefault = false;
@@ -362,10 +364,12 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     invalidatePagedActivityRequests();
   }
   function setTimeRange(range_: TimeRange): void {
+    timeRangeSelected = true;
     timeRange = range_;
     invalidatePagedActivityRequests();
   }
   function setViewMode(mode: ViewMode): void {
+    viewModeSelected = true;
     viewMode = mode;
     invalidatePagedActivityRequests();
   }
@@ -1303,9 +1307,11 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     else sp.delete("author");
     if (hideClosedMergedOverride !== undefined) sp.set("hide_closed", hideClosedMergedOverride ? "1" : "0");
     else sp.delete("hide_closed");
-    if (timeRange !== timeRangeDefault || (!defaultsHydrated && sp.has("range"))) sp.set("range", timeRange);
+    if (timeRange !== timeRangeDefault || (!defaultsHydrated && (timeRangeSelected || sp.has("range"))))
+      sp.set("range", timeRange);
     else sp.delete("range");
-    if (viewMode !== viewModeDefault || (!defaultsHydrated && sp.has("view"))) sp.set("view", viewMode);
+    if (viewMode !== viewModeDefault || (!defaultsHydrated && (viewModeSelected || sp.has("view"))))
+      sp.set("view", viewMode);
     else sp.delete("view");
     if (rollUpCommits) sp.set("rollup_commits", "1");
     else sp.delete("rollup_commits");

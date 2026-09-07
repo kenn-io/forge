@@ -96,6 +96,20 @@ afterEach(async () => {
 });
 
 describe("activity store workspace activity", () => {
+  it.each(["range", "view", "neither"])(
+    "keeps an explicit %s choice made before defaults arrive without pinning untouched controls",
+    (selected) => {
+      const store = makeStore();
+      store.initializeFromMount();
+      if (selected === "range") store.setTimeRange("7d");
+      if (selected === "view") store.setViewMode("flat");
+      store.syncToURL();
+      store.hydrateDefaults({ ...settings(false), time_range: "30d", view_mode: "threaded" });
+      expect(store.getTimeRange()).toBe(selected === "range" ? "7d" : "30d");
+      expect(store.getViewMode()).toBe(selected === "view" ? "flat" : "threaded");
+    },
+  );
+
   it.each([false, true])(
     "restores explicit builtin choices over changed defaults (late hydration: %s)",
     async (lateHydration) => {

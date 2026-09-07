@@ -16,6 +16,7 @@
   import OctagonXIcon from "@lucide/svelte/icons/octagon-x";
   import LabelRow from "../shared/LabelRow.svelte";
   import WorkspaceIndicator from "../shared/WorkspaceIndicator.svelte";
+  import AgentStatusIndicator from "../shared/AgentStatusIndicator.svelte";
   import SidebarTitlePopover from "./SidebarTitlePopover.svelte";
   import { repoIdentityKey } from "../../utils/repo-label.js";
   import { effectiveActivity } from "../../utils/effective-activity.js";
@@ -96,11 +97,6 @@
     merged: "var(--accent-purple)",
   };
 
-  const worktreeName = $derived(
-    pr.worktree_links?.[0]?.worktree_branch ??
-    pr.worktree_links?.[0]?.worktree_key,
-  );
-
   const showImport = $derived(
     importAction &&
     !hasWorktree &&
@@ -173,7 +169,10 @@
     <span class="state-dot" style="background: {stateColors[prState]}"></span>
     <span class="title-text">{pr.Title}</span>
     <LabelRow {labels} compact />
-    <span class="item-number">#{pr.Number}</span>
+    <span class="title-status">
+      <AgentStatusIndicator state={pr.workspace?.agent_state} />
+      <span class="item-number">#{pr.Number}</span>
+    </span>
   </p>
   <div class="meta-row">
     <span class="meta-left">
@@ -212,15 +211,6 @@
           {:else}
             <OctagonXIcon size={13} strokeWidth={2.2} aria-hidden="true" />
           {/if}
-        </span>
-      {/if}
-      {#if hasWorktree && worktreeName}
-        <span class="worktree-name" title="Linked to {worktreeName}">{worktreeName}</span>
-      {:else if hasWorktree}
-        <span class="worktree-badge" title="Linked to worktree">
-          <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M5 3.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm0 2.122a2.25 2.25 0 10-1.5 0v.878A2.25 2.25 0 005.75 8.5h1.5v2.128a2.251 2.251 0 101.5 0V8.5h1.5a2.25 2.25 0 002.25-2.25v-.878a2.25 2.25 0 10-1.5 0v.878a.75.75 0 01-.75.75h-5.5a.75.75 0 01-.75-.75v-.878zM8 12.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm3.25-9.75a.75.75 0 100 1.5.75.75 0 000-1.5z"/>
-          </svg>
         </span>
       {/if}
       {#if pr.stack}
@@ -339,6 +329,14 @@
     margin-bottom: 2px;
   }
 
+  .title-status {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+
   .title-text {
     flex: 0 1 auto;
     min-width: 0;
@@ -415,25 +413,6 @@
   .time {
     font-size: var(--font-size-xs);
     color: var(--text-muted);
-  }
-
-  .worktree-badge {
-    display: flex;
-    align-items: center;
-    color: var(--accent-teal, var(--accent-green));
-    flex-shrink: 0;
-  }
-
-  .worktree-name {
-    font-size: var(--font-size-2xs);
-    font-weight: 500;
-    color: var(--accent-teal, var(--accent-green));
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 80px;
-    flex-shrink: 1;
-    min-width: 0;
   }
 
   .review-indicator {
@@ -578,7 +557,6 @@
 
   :global(.mobile-main) .meta-text,
   :global(.mobile-main) .time,
-  :global(.mobile-main) .worktree-name,
   :global(.mobile-main) .stack-indicator-count,
   :global(.mobile-main) .item-number,
   :global(.mobile-main) .repo-name {

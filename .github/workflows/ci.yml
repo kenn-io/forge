@@ -269,7 +269,6 @@ jobs:
     # Preserve the managed runner's package fan-out while keeping hosted fork
     # jobs within their smaller CPU allocation.
     env:
-      GOMAXPROCS: ${{ github.repository == 'kenn-io/forge' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && '4' || '2' }}
       GOFLAGS: ${{ github.repository == 'kenn-io/forge' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && '-p=7' || '-p=2' }}
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true'
@@ -439,11 +438,9 @@ jobs:
   race:
     name: go test -race
     runs-on: ${{ github.repository == 'kenn-io/forge' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && 'kenn-linux-x64-public' || 'ubuntu-latest' }}
-    # Cap package fan-out like test_go, but lower: the race detector multiplies
-    # CPU and memory per package, and unbounded fan-out starves servers that
-    # tests boot with their own startup deadlines.
+    # Bound package/test fan-out for race-detector memory usage. Leave
+    # GOMAXPROCS unset so tests and launched servers use available CPUs.
     env:
-      GOMAXPROCS: ${{ github.repository == 'kenn-io/forge' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && '4' || '2' }}
       GOFLAGS: ${{ github.repository == 'kenn-io/forge' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && '-p=4' || '-p=2' }}
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true'
@@ -465,7 +462,7 @@ jobs:
       - name: Run tests (race detector)
         run: |
           mkdir -p tmp
-          go tool gotestsum --format pkgname-and-test-fails --jsonfile=tmp/test-race-output.json --jsonfile-timing-events=tmp/test-race-timing-events.json -- -race ./... -shuffle=on -timeout 20m
+          go tool gotestsum --format pkgname-and-test-fails --jsonfile=tmp/test-race-output.json --jsonfile-timing-events=tmp/test-race-timing-events.json -- -race ./... -shuffle=on -parallel=4 -timeout 20m
 
       - name: Summarize race test timings
         if: ${{ !cancelled() && hashFiles('tmp/test-race-output.json') != '' }}
@@ -477,7 +474,7 @@ jobs:
             jq -r '
               select(.Action == "pass" and .Package and (.Test | not) and .Elapsed)
               | "\(.Elapsed)s\t\(.Package)"
-            ' tmp/test-race-timing-events.json | sort -rn | head -n 30
+            ' tmp/test-race-timing-events.json | sort -rn | sed -n '1,30p'
             echo '```'
             echo
             echo "## Slowest race tests"
@@ -491,7 +488,7 @@ jobs:
                 and .Elapsed
               )
               | "\(.Elapsed)s\t\(.Package)\t\(.Test)"
-            ' tmp/test-race-timing-events.json | sort -rn | head -n 40
+            ' tmp/test-race-timing-events.json | sort -rn | sed -n '1,40p'
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 

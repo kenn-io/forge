@@ -10,6 +10,7 @@ import (
 	"go.kenn.io/forge/platform"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 

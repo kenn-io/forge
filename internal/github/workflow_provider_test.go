@@ -127,7 +127,7 @@ func TestGitHubWorkflowCapabilitiesAreIndependent(t *testing.T) {
 			assert := assert.New(t)
 			require := require.New(t)
 			provider, providerErr := platformgithub.NewProvider(platformgithub.ProviderConfig{Host: "github.com", Client: test.client, Clock: time.Now})
-			require.NoError(t, providerErr)
+			require.NoError(providerErr)
 			caps := provider.Capabilities()
 			assert.Equal(test.readCatalog, caps.ReadWorkflows)
 			assert.Equal(test.readRuns, caps.ReadWorkflowRuns)
@@ -179,7 +179,7 @@ func TestGitHubWorkflowProviderCatalogPreservesPartialAvailability(t *testing.T)
 		environments: []*gh.Environment{{Name: new("production")}},
 	}
 	provider, providerErr := platformgithub.NewProvider(platformgithub.ProviderConfig{Host: "github.com", Client: fake, Clock: time.Now})
-	require.NoError(t, providerErr)
+	require.NoError(providerErr)
 	caps := provider.Capabilities()
 	assert.True(caps.ReadWorkflows)
 	assert.True(caps.ReadWorkflowRuns)
@@ -328,7 +328,7 @@ func TestGitHubWorkflowEnvironmentsReadOnlyEnvironmentTransport(t *testing.T) {
 		environments: []*gh.Environment{{Name: new("production")}},
 	}
 	provider, providerErr := platformgithub.NewProvider(platformgithub.ProviderConfig{Host: "github.com", Client: fake, Clock: time.Now})
-	require.NoError(t, providerErr)
+	require.NoError(providerErr)
 	environments, err := provider.ListWorkflowEnvironments(
 		t.Context(), platform.RepoRef{Owner: "acme", Name: "widgets"},
 	)
@@ -357,7 +357,7 @@ func TestGitHubWorkflowProviderNormalizesRunsJobsAndDispatch(t *testing.T) {
 		dispatch: &gh.WorkflowDispatchRunDetails{WorkflowRunID: new(int64(101)), HTMLURL: new("https://example.test/runs/101")},
 	}
 	provider, providerErr := platformgithub.NewProvider(platformgithub.ProviderConfig{Host: "github.com", Client: fake, Clock: time.Now})
-	require.NoError(t, providerErr)
+	require.NoError(providerErr)
 	page, err := provider.ListWorkflowRuns(t.Context(), platform.RepoRef{Owner: "acme", Name: "widgets"}, platform.WorkflowRunQuery{WorkflowID: "42"})
 	require.NoError(err)
 	assert.Equal(platform.Page[platform.WorkflowRun]{
@@ -406,7 +406,7 @@ func TestGitHubWorkflowProviderUnsupportedClientsAreTyped(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	provider, providerErr := platformgithub.NewProvider(platformgithub.ProviderConfig{Host: "github.com", Client: &mockClient{}, Clock: time.Now})
-	require.NoError(t, providerErr)
+	require.NoError(providerErr)
 	assert.False(provider.Capabilities().ReadWorkflows)
 	_, err := provider.ListManualWorkflows(t.Context(), platform.RepoRef{})
 	require.ErrorIs(err, platform.ErrUnsupportedCapability)

@@ -1248,30 +1248,6 @@ func (c *RoutedClient) GetManualWorkflowRun(ctx context.Context, owner, repo str
 	if err != nil {
 		return nil, err
 	}
-	workflowClient, ok := client.(githubWorkflowRunClient)
-	if !ok {
-		return nil, platform.UnsupportedCapability(platform.KindGitHub, c.routes.host, "read_workflow_runs")
-	}
-	return workflowClient.GetManualWorkflowRun(ctx, owner, repo, runID)
-}
-
-func (c *RoutedClient) ListManualWorkflowRuns(ctx context.Context, owner, repo string, workflowID int64, query platform.WorkflowRunQuery) (platform.Page[*gh.WorkflowRun], error) {
-	client, err := c.routeForRepo(owner, repo)
-	if err != nil {
-		return platform.Page[*gh.WorkflowRun]{}, err
-	}
-	workflowClient, ok := client.(platformgithub.WorkflowRunAPI)
-	if !ok {
-		return platform.Page[*gh.WorkflowRun]{}, platform.UnsupportedCapability(platform.KindGitHub, c.routes.host, "read_workflow_runs")
-	}
-	return workflowClient.ListManualWorkflowRuns(ctx, owner, repo, workflowID, query)
-}
-
-func (c *RoutedClient) GetManualWorkflowRun(ctx context.Context, owner, repo string, runID int64) (*gh.WorkflowRun, error) {
-	client, err := c.routeForRepoContext(ctx, owner, repo)
-	if err != nil {
-		return nil, err
-	}
 	workflowClient, ok := client.(platformgithub.WorkflowRunAPI)
 	if !ok {
 		return nil, platform.UnsupportedCapability(platform.KindGitHub, c.routes.host, "read_workflow_runs")

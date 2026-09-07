@@ -3495,7 +3495,7 @@ type MergeRequestDetailResponse struct {
 	DetailFetchedAt      *string                                `json:"detail_fetched_at,omitempty"`
 	DetailLoaded         bool                                   `json:"detail_loaded"`
 	DiffHeadSha          string                                 `json:"diff_head_sha"`
-	Events               []MergeRequestEventResponse           `json:"events"`
+	Events               []MergeRequestEventResponse            `json:"events"`
 	HeadRepoKind         MergeRequestDetailResponseHeadRepoKind `json:"head_repo_kind"`
 	MergeBaseSha         string                                 `json:"merge_base_sha"`
 	MergeRequest         MergeRequest                           `json:"merge_request"`
@@ -3510,7 +3510,7 @@ type MergeRequestDetailResponse struct {
 	Warnings             *[]string                              `json:"warnings,omitempty"`
 	WorkflowApproval     WorkflowApprovalResponse               `json:"workflow_approval"`
 	Workspace            *WorkspaceRef                          `json:"workspace,omitempty"`
-	WorktreeLinks        *[]WorktreeLinkResponse                `json:"worktree_links"`
+	WorktreeLinks        []WorktreeLinkResponse                 `json:"worktree_links"`
 }
 
 // MergeRequestDetailResponseHeadRepoKind defines model for MergeRequestDetailResponse.HeadRepoKind.
@@ -3941,39 +3941,39 @@ type ProjectWorktreeRuntimeSession struct {
 
 // ProviderCapabilitiesResponse defines model for ProviderCapabilitiesResponse.
 type ProviderCapabilitiesResponse struct {
-	AssigneeMutation            bool      `json:"assignee_mutation"`
-	CommentMutation             bool      `json:"comment_mutation"`
-	DraftMutation               bool      `json:"draft_mutation"`
-	IssueMutation               bool      `json:"issue_mutation"`
-	LabelMutation               bool      `json:"label_mutation"`
-	MergeMutation               bool      `json:"merge_mutation"`
-	MutationHeadBinding         bool      `json:"mutation_head_binding"`
-	NativeMultilineRanges       bool      `json:"native_multiline_ranges"`
-	ReadAuthenticatedUser       bool      `json:"read_authenticated_user"`
-	ReadCi                      bool      `json:"read_ci"`
-	ReadComments                bool      `json:"read_comments"`
-	ReadIssuePrReferences       bool      `json:"read_issue_pr_references"`
-	ReadIssues                  bool      `json:"read_issues"`
-	ReadLabels                  bool      `json:"read_labels"`
-	ReadMarkdownImages          bool      `json:"read_markdown_images"`
-	ReadMergeRequests           bool      `json:"read_merge_requests"`
-	ReadReleases                bool      `json:"read_releases"`
-	ReadRepositories            bool      `json:"read_repositories"`
-	ReadReviewThreads           bool      `json:"read_review_threads"`
-	ReadWorkflowRuns            bool      `json:"read_workflow_runs"`
-	ReadWorkflows               bool      `json:"read_workflows"`
-	ReadyForReview              bool      `json:"ready_for_review"`
-	ReviewDraftMutation         bool      `json:"review_draft_mutation"`
-	ReviewMutation              bool      `json:"review_mutation"`
-	ReviewSuggestionApplication bool      `json:"review_suggestion_application"`
-	ReviewThreadResolution      bool      `json:"review_thread_resolution"`
-	ReviewerMutation            bool      `json:"reviewer_mutation"`
-	StateMutation               bool      `json:"state_mutation"`
+	AssigneeMutation            bool     `json:"assignee_mutation"`
+	CommentMutation             bool     `json:"comment_mutation"`
+	DraftMutation               bool     `json:"draft_mutation"`
+	IssueMutation               bool     `json:"issue_mutation"`
+	LabelMutation               bool     `json:"label_mutation"`
+	MergeMutation               bool     `json:"merge_mutation"`
+	MutationHeadBinding         bool     `json:"mutation_head_binding"`
+	NativeMultilineRanges       bool     `json:"native_multiline_ranges"`
+	ReadAuthenticatedUser       bool     `json:"read_authenticated_user"`
+	ReadCi                      bool     `json:"read_ci"`
+	ReadComments                bool     `json:"read_comments"`
+	ReadIssuePrReferences       bool     `json:"read_issue_pr_references"`
+	ReadIssues                  bool     `json:"read_issues"`
+	ReadLabels                  bool     `json:"read_labels"`
+	ReadMarkdownImages          bool     `json:"read_markdown_images"`
+	ReadMergeRequests           bool     `json:"read_merge_requests"`
+	ReadReleases                bool     `json:"read_releases"`
+	ReadRepositories            bool     `json:"read_repositories"`
+	ReadReviewThreads           bool     `json:"read_review_threads"`
+	ReadWorkflowRuns            bool     `json:"read_workflow_runs"`
+	ReadWorkflows               bool     `json:"read_workflows"`
+	ReadyForReview              bool     `json:"ready_for_review"`
+	ReviewDraftMutation         bool     `json:"review_draft_mutation"`
+	ReviewMutation              bool     `json:"review_mutation"`
+	ReviewSuggestionApplication bool     `json:"review_suggestion_application"`
+	ReviewThreadResolution      bool     `json:"review_thread_resolution"`
+	ReviewerMutation            bool     `json:"reviewer_mutation"`
+	StateMutation               bool     `json:"state_mutation"`
 	SupportedReviewActions      []string `json:"supported_review_actions"`
-	ThreadReply                 bool      `json:"thread_reply"`
-	ThreadResolve               bool      `json:"thread_resolve"`
-	WorkflowApproval            bool      `json:"workflow_approval"`
-	WorkflowDispatch            bool      `json:"workflow_dispatch"`
+	ThreadReply                 bool     `json:"thread_reply"`
+	ThreadResolve               bool     `json:"thread_resolve"`
+	WorkflowApproval            bool     `json:"workflow_approval"`
+	WorkflowDispatch            bool     `json:"workflow_dispatch"`
 }
 
 // ProviderRepositoryObservation defines model for ProviderRepositoryObservation.
@@ -5413,23 +5413,23 @@ type WorkflowCatalogResponse struct {
 	// Schema A URL to the JSON Schema for this object.
 	//
 	// Example: /api/v1/schemas/WorkflowCatalogResponse.json
-	Schema       *string                        `json:"$schema,omitempty"`
-	Environments *[]WorkflowEnvironmentResponse `json:"environments"`
-	Repo         RepoRefResponse                `json:"repo"`
-	Workflows    *[]WorkflowDefinitionResponse  `json:"workflows"`
+	Schema       *string                       `json:"$schema,omitempty"`
+	Environments []WorkflowEnvironmentResponse `json:"environments"`
+	Repo         RepoRefResponse               `json:"repo"`
+	Workflows    []WorkflowDefinitionResponse  `json:"workflows"`
 }
 
 // WorkflowDefinitionResponse defines model for WorkflowDefinitionResponse.
 type WorkflowDefinitionResponse struct {
-	Available         bool                     `json:"available"`
-	DefinitionSha     string                   `json:"definition_sha"`
-	Id                string                   `json:"id"`
-	Inputs            *[]WorkflowInputResponse `json:"inputs"`
-	Name              string                   `json:"name"`
-	Path              string                   `json:"path"`
-	State             string                   `json:"state"`
-	UnavailableReason *string                  `json:"unavailable_reason,omitempty"`
-	WebUrl            string                   `json:"web_url"`
+	Available         bool                    `json:"available"`
+	DefinitionSha     string                  `json:"definition_sha"`
+	Id                string                  `json:"id"`
+	Inputs            []WorkflowInputResponse `json:"inputs"`
+	Name              string                  `json:"name"`
+	Path              string                  `json:"path"`
+	State             string                  `json:"state"`
+	UnavailableReason *string                 `json:"unavailable_reason,omitempty"`
+	WebUrl            string                  `json:"web_url"`
 }
 
 // WorkflowDispatchBody defines model for WorkflowDispatchBody.
@@ -5479,21 +5479,21 @@ type WorkflowJobsResponse struct {
 	// Schema A URL to the JSON Schema for this object.
 	//
 	// Example: /api/v1/schemas/WorkflowJobsResponse.json
-	Schema *string                   `json:"$schema,omitempty"`
-	Items  *[]WorkflowRunJobResponse `json:"items"`
-	Repo   RepoRefResponse           `json:"repo"`
+	Schema *string                  `json:"$schema,omitempty"`
+	Items  []WorkflowRunJobResponse `json:"items"`
+	Repo   RepoRefResponse          `json:"repo"`
 }
 
 // WorkflowRunJobResponse defines model for WorkflowRunJobResponse.
 type WorkflowRunJobResponse struct {
-	CompletedAt *time.Time                 `json:"completed_at,omitempty"`
-	Conclusion  string                     `json:"conclusion"`
-	Id          string                     `json:"id"`
-	Name        string                     `json:"name"`
-	StartedAt   *time.Time                 `json:"started_at,omitempty"`
-	Status      string                     `json:"status"`
-	Steps       *[]WorkflowRunStepResponse `json:"steps"`
-	WebUrl      *string                    `json:"web_url,omitempty"`
+	CompletedAt *time.Time                `json:"completed_at,omitempty"`
+	Conclusion  string                    `json:"conclusion"`
+	Id          string                    `json:"id"`
+	Name        string                    `json:"name"`
+	StartedAt   *time.Time                `json:"started_at,omitempty"`
+	Status      string                    `json:"status"`
+	Steps       []WorkflowRunStepResponse `json:"steps"`
+	WebUrl      *string                   `json:"web_url,omitempty"`
 }
 
 // WorkflowRunResponse defines model for WorkflowRunResponse.
@@ -5528,11 +5528,11 @@ type WorkflowRunsResponse struct {
 	// Schema A URL to the JSON Schema for this object.
 	//
 	// Example: /api/v1/schemas/WorkflowRunsResponse.json
-	Schema     *string                `json:"$schema,omitempty"`
-	Exhausted  bool                   `json:"exhausted"`
-	Items      *[]WorkflowRunResponse `json:"items"`
-	NextCursor *string                `json:"next_cursor,omitempty"`
-	Repo       RepoRefResponse        `json:"repo"`
+	Schema     *string               `json:"$schema,omitempty"`
+	Exhausted  bool                  `json:"exhausted"`
+	Items      []WorkflowRunResponse `json:"items"`
+	NextCursor *string               `json:"next_cursor,omitempty"`
+	Repo       RepoRefResponse       `json:"repo"`
 }
 
 // WorkflowStateMetaResponse defines model for WorkflowStateMetaResponse.

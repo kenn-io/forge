@@ -8939,17 +8939,13 @@ components:
         environments:
           items:
             $ref: "#/components/schemas/WorkflowEnvironmentResponse"
-          type:
-            - array
-            - "null"
+          type: array
         repo:
           $ref: "#/components/schemas/RepoRefResponse"
         workflows:
           items:
             $ref: "#/components/schemas/WorkflowDefinitionResponse"
-          type:
-            - array
-            - "null"
+          type: array
       required:
         - repo
         - workflows
@@ -8967,9 +8963,7 @@ components:
         inputs:
           items:
             $ref: "#/components/schemas/WorkflowInputResponse"
-          type:
-            - array
-            - "null"
+          type: array
         name:
           type: string
         path:
@@ -9056,9 +9050,7 @@ components:
         options:
           items:
             type: string
-          type:
-            - array
-            - "null"
+          type: array
         required:
           type: boolean
         type:
@@ -9088,9 +9080,7 @@ components:
         items:
           items:
             $ref: "#/components/schemas/WorkflowRunJobResponse"
-          type:
-            - array
-            - "null"
+          type: array
         repo:
           $ref: "#/components/schemas/RepoRefResponse"
       required:
@@ -9117,9 +9107,7 @@ components:
         steps:
           items:
             $ref: "#/components/schemas/WorkflowRunStepResponse"
-          type:
-            - array
-            - "null"
+          type: array
         web_url:
           format: uri
           type: string
@@ -9214,9 +9202,7 @@ components:
         items:
           items:
             $ref: "#/components/schemas/WorkflowRunResponse"
-          type:
-            - array
-            - "null"
+          type: array
         next_cursor:
           type: string
         repo:

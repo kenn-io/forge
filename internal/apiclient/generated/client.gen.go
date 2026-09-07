@@ -5643,8 +5643,9 @@ type WorkspaceRuntimeResponse struct {
 
 // WorkspaceSettingsUpdate defines model for WorkspaceSettingsUpdate.
 type WorkspaceSettingsUpdate struct {
-	AutoAssignOnCreate *bool                                      `json:"auto_assign_on_create,omitempty"`
-	DefaultSidebarView *WorkspaceSettingsUpdateDefaultSidebarView `json:"default_sidebar_view,omitempty"`
+	AutoAssignOnCreate     *bool                                      `json:"auto_assign_on_create,omitempty"`
+	DefaultSidebarView     *WorkspaceSettingsUpdateDefaultSidebarView `json:"default_sidebar_view,omitempty"`
+	ShowAgentStatusInLists *bool                                      `json:"show_agent_status_in_lists,omitempty"`
 }
 
 // WorkspaceSettingsUpdateDefaultSidebarView defines model for WorkspaceSettingsUpdate.DefaultSidebarView.
@@ -5697,8 +5698,9 @@ type WorkspaceSummary struct {
 
 // Workspaces defines model for Workspaces.
 type Workspaces struct {
-	AutoAssignOnCreate bool                         `json:"auto_assign_on_create"`
-	DefaultSidebarView WorkspacesDefaultSidebarView `json:"default_sidebar_view"`
+	AutoAssignOnCreate     bool                         `json:"auto_assign_on_create"`
+	DefaultSidebarView     WorkspacesDefaultSidebarView `json:"default_sidebar_view"`
+	ShowAgentStatusInLists bool                         `json:"show_agent_status_in_lists"`
 }
 
 // WorkspacesDefaultSidebarView defines model for Workspaces.DefaultSidebarView.

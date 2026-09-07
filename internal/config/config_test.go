@@ -26,6 +26,16 @@ func writeConfig(t *testing.T, content string) string {
 	return path
 }
 
+func TestWorkspaceListAgentStatus(t *testing.T) {
+	assert := assert.New(t)
+	cfg, saved := roundTripConfigString(t, "[workspaces]\nshow_agent_status_in_lists = true\n")
+	assert.True(cfg.Workspaces.ShowAgentStatusInLists)
+	assert.True(saved.Workspaces.ShowAgentStatusInLists)
+	cfg, err := Load(writeConfig(t, ""))
+	require.NoError(t, err)
+	assert.False(cfg.Workspaces.ShowAgentStatusInLists)
+}
+
 func TestWorkspaceDefaultSidebarView(t *testing.T) {
 	t.Run("defaults to diff", func(t *testing.T) {
 		cfg, err := Load(writeConfig(t, ""))

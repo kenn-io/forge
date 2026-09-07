@@ -6,4 +6,5 @@ import type { WorkspaceSettingsUpdateDefaultSidebarView } from "./workspaceSetti
 export interface WorkspaceSettingsUpdate {
   auto_assign_on_create?: boolean;
   default_sidebar_view?: WorkspaceSettingsUpdateDefaultSidebarView;
+  show_agent_status_in_lists?: boolean;
 }

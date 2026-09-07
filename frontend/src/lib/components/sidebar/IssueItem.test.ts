@@ -47,6 +47,7 @@ function renderItem(issue: Issue, useWorkspaceActivityForRecency = false): void 
         STORES_KEY,
         {
           issues: { toggleIssueStar: vi.fn() },
+          settings: { getWorkspaceSettings: () => ({ show_agent_status_in_lists: false }) },
           activity: { getUseWorkspaceActivityForRecency: () => useWorkspaceActivityForRecency },
         },
       ],
@@ -82,6 +83,7 @@ describe("IssueItem", () => {
           STORES_KEY,
           {
             issues: { toggleIssueStar: vi.fn() },
+            settings: { getWorkspaceSettings: () => ({ show_agent_status_in_lists: false }) },
             activity: { getUseWorkspaceActivityForRecency: () => false },
           },
         ],

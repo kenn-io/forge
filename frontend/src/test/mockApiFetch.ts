@@ -302,6 +302,7 @@ export const mockSettings = {
   workspaces: {
     auto_assign_on_create: false,
     default_sidebar_view: "diff",
+    show_agent_status_in_lists: false,
   },
   modes: {
     activity: true,

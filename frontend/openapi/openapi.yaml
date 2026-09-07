@@ -9479,6 +9479,8 @@ components:
             - diff
             - item
           type: string
+        show_agent_status_in_lists:
+          type: boolean
       type: object
     WorkspaceSummary:
       additionalProperties: false
@@ -9601,7 +9603,10 @@ components:
             - diff
             - item
           type: string
+        show_agent_status_in_lists:
+          type: boolean
       required:
+        - show_agent_status_in_lists
         - auto_assign_on_create
         - default_sidebar_view
       type: object

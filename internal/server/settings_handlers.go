@@ -71,8 +71,9 @@ type updateSettingsRequest struct {
 }
 
 type workspaceSettingsUpdate struct {
-	AutoAssignOnCreate *bool   `json:"auto_assign_on_create,omitempty"`
-	DefaultSidebarView *string `json:"default_sidebar_view,omitempty" enum:"diff,item"`
+	ShowAgentStatusInLists *bool   `json:"show_agent_status_in_lists,omitempty"`
+	AutoAssignOnCreate     *bool   `json:"auto_assign_on_create,omitempty"`
+	DefaultSidebarView     *string `json:"default_sidebar_view,omitempty" enum:"diff,item"`
 }
 
 type mcpSettingsUpdate struct {
@@ -1081,6 +1082,9 @@ func (s *Server) updateLocalSettings(
 	if input.Body.Workspaces != nil {
 		if input.Body.Workspaces.AutoAssignOnCreate != nil {
 			s.cfg.Workspaces.AutoAssignOnCreate = *input.Body.Workspaces.AutoAssignOnCreate
+		}
+		if input.Body.Workspaces.ShowAgentStatusInLists != nil {
+			s.cfg.Workspaces.ShowAgentStatusInLists = *input.Body.Workspaces.ShowAgentStatusInLists
 		}
 		if input.Body.Workspaces.DefaultSidebarView != nil {
 			s.cfg.Workspaces.DefaultSidebarView = *input.Body.Workspaces.DefaultSidebarView

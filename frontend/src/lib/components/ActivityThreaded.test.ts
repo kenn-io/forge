@@ -88,6 +88,7 @@ const markNotificationSeen = vi.hoisted(() => vi.fn(async () => undefined));
 
 vi.mock("../context.js", () => ({
   getStores: () => ({
+    settings: { getWorkspaceSettings: () => ({ show_agent_status_in_lists: false }) },
     grouping: {
       getGroupByRepo: () => groupByRepo.value,
       getHideOrgName: () => hideOrgName.value,

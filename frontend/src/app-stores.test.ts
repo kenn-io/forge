@@ -1,4 +1,3 @@
-import { setShowListAgentStatus } from "./lib/stores/list-agent-status.svelte.js";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -169,6 +168,11 @@ vi.mock("./lib/stores/grouping.svelte.js", () => ({
 vi.mock("./lib/stores/settings.svelte.js", () => ({
   createSettingsStore: () => {
     let launchTargets: LaunchTargets = [];
+    let workspaceSettings = {
+      auto_assign_on_create: false,
+      default_sidebar_view: "diff" as const,
+      show_agent_status_in_lists: false,
+    };
     const store = {
       getConfiguredRepos: () => configuredRepos,
       setConfiguredRepos: vi.fn(),
@@ -180,8 +184,10 @@ vi.mock("./lib/stores/settings.svelte.js", () => ({
       setPullRequestSettings: vi.fn(),
       getDetailSettings: () => ({ initial_timeline_entry_limit: 50 }),
       setDetailSettings: vi.fn(),
-      getWorkspaceSettings: () => ({ auto_assign_on_create: false, default_sidebar_view: "diff" as const }),
-      setWorkspaceSettings: vi.fn(),
+      getWorkspaceSettings: () => workspaceSettings,
+      setWorkspaceSettings: vi.fn((value: typeof workspaceSettings) => {
+        workspaceSettings = value;
+      }),
       getRoborevSettings: () => ({ init_managed_clones: false }),
       setRoborevSettings: vi.fn(),
       getModeVisibility: () => ({
@@ -343,19 +349,28 @@ describe("app store event wiring", () => {
     "refreshes %s agent states only when list indicators are enabled",
     async (route) => {
       compose({ getPage: () => route });
-      setShowListAgentStatus(false);
+      captured.settings?.setWorkspaceSettings({
+        ...captured.settings.getWorkspaceSettings(),
+        show_agent_status_in_lists: false,
+      });
       await acceptEvent(captured.store?.options.onWorkspaceStatus?.({ id: "ws-1" }));
       expect(reconcilePullsEffect).not.toHaveBeenCalled();
       expect(reconcileIssuesEffect).not.toHaveBeenCalled();
       expect(reconcileActivityEffect).not.toHaveBeenCalled();
-      setShowListAgentStatus(true);
+      captured.settings?.setWorkspaceSettings({
+        ...captured.settings.getWorkspaceSettings(),
+        show_agent_status_in_lists: true,
+      });
       try {
         await acceptEvent(captured.store?.options.onWorkspaceStatus?.({ id: "ws-1" }));
         expect(reconcilePullsEffect).toHaveBeenCalledTimes(route === "pulls" ? 1 : 0);
         expect(reconcileIssuesEffect).toHaveBeenCalledTimes(route === "issues" ? 1 : 0);
         expect(reconcileActivityEffect).toHaveBeenCalledTimes(route === "activity" ? 1 : 0);
       } finally {
-        setShowListAgentStatus(false);
+        captured.settings?.setWorkspaceSettings({
+          ...captured.settings.getWorkspaceSettings(),
+          show_agent_status_in_lists: false,
+        });
       }
     },
   );

@@ -76,6 +76,7 @@ function mountAt(widthPx: number, mobileMain: boolean): MountedItem {
       [
         STORES_KEY,
         {
+          settings: { getWorkspaceSettings: () => ({ show_agent_status_in_lists: false }) },
           activity: { getUseWorkspaceActivityForRecency: () => false },
           pulls: { togglePRStar: vi.fn() },
         },

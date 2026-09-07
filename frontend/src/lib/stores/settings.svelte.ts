@@ -31,6 +31,7 @@ export function createSettingsStore() {
   let workspaceSettings = $state.raw<Settings["workspaces"]>({
     auto_assign_on_create: false,
     default_sidebar_view: "diff",
+    show_agent_status_in_lists: false,
   });
   let roborevSettings = $state.raw<Settings["roborev"]>({
     init_managed_clones: false,
@@ -119,6 +120,7 @@ export function createSettingsStore() {
     workspaceSettings = {
       auto_assign_on_create: value?.auto_assign_on_create ?? false,
       default_sidebar_view: value?.default_sidebar_view ?? "diff",
+      show_agent_status_in_lists: value?.show_agent_status_in_lists ?? false,
     };
   }
 

@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { PullRequest, Issue } from "../../src/lib/api/types.js";
 import { createMockApiHandler } from "../../src/test/mockApiFetch.js";
-import { mockApi } from "./support/mockApi";
+import { mockApi, mockSettings } from "./support/mockApi";
 
 async function expectAgentAtRight(page: Page): Promise<void> {
   const gap = await page
@@ -14,9 +14,18 @@ async function expectAgentAtRight(page: Page): Promise<void> {
   expect(gap).toBeLessThanOrEqual(1);
 }
 
-test("browser preference shows linked agent states across item lists", async ({ page }) => {
+test("Forge config preference shows linked agent states across item lists", async ({ page }) => {
   test.setTimeout(60_000);
   await mockApi(page);
+  let settings = structuredClone(mockSettings);
+  await page.route("**/api/v1/settings", async (route) => {
+    if (route.request().method() === "PUT") {
+      const update = route.request().postDataJSON();
+      expect(update).toEqual({ workspaces: { show_agent_status_in_lists: true } });
+      settings = { ...settings, workspaces: { ...settings.workspaces, ...update.workspaces } };
+    }
+    await route.fulfill({ json: settings });
+  });
   const api = createMockApiHandler();
   const pulls: PullRequest[] = await api
     .handle({ method: "GET", url: new URL("http://localhost/api/v1/pulls"), bodyText: "" })
@@ -86,6 +95,8 @@ test("browser preference shows linked agent states across item lists", async ({ 
   const toggle = page.getByRole("button", { name: "Show agent status in lists" });
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(() => settings.workspaces.show_agent_status_in_lists).toBe(true);
+  await page.evaluate(() => localStorage.clear());
   await page.goto("/pulls");
   await expect(
     page.locator(".pr-list-row").filter({ hasText: pull.Title }).getByText("Working", { exact: true }),

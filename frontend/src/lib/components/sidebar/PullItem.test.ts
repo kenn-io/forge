@@ -56,6 +56,7 @@ function renderItem(pr: PullRequest, useWorkspaceActivityForRecency = false): vo
         STORES_KEY,
         {
           pulls: { togglePRStar: vi.fn() },
+          settings: { getWorkspaceSettings: () => ({ show_agent_status_in_lists: false }) },
           activity: { getUseWorkspaceActivityForRecency: () => useWorkspaceActivityForRecency },
         },
       ],
@@ -264,6 +265,7 @@ describe("PullItem repository label", () => {
           STORES_KEY,
           {
             pulls: { togglePRStar: vi.fn() },
+            settings: { getWorkspaceSettings: () => ({ show_agent_status_in_lists: false }) },
             activity: { getUseWorkspaceActivityForRecency: () => false },
           },
         ],
@@ -387,6 +389,7 @@ describe("PullItem compact layout", () => {
           STORES_KEY,
           {
             pulls: { togglePRStar: vi.fn() },
+            settings: { getWorkspaceSettings: () => ({ show_agent_status_in_lists: false }) },
             activity: { getUseWorkspaceActivityForRecency: () => false },
           },
         ],

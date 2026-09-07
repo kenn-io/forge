@@ -1,4 +1,3 @@
-import { getShowListAgentStatus } from "./stores/list-agent-status.svelte.js";
 import { Effect } from "effect";
 import { pollWhileVisible } from "./effect/poll-while-visible.js";
 import { ApiProblemError } from "./api/effect-errors.js";
@@ -283,7 +282,8 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
       getBasePath: () => eventBasePath,
     }),
     onDataChanged: refreshVisibleData,
-    onWorkspaceStatus: () => (getShowListAgentStatus() ? refreshVisibleData(false) : Effect.void),
+    onWorkspaceStatus: () =>
+      settingsStore.getWorkspaceSettings().show_agent_status_in_lists ? refreshVisibleData(false) : Effect.void,
     onSyncStatus: (status) => Effect.sync(() => syncStore.setSyncStatus(status)),
     onHubConnectionChanged: ({ connected }) => {
       if (!connected) {

@@ -44,7 +44,7 @@ const settingsPayload = makeStartupSnapshot({
     render_commit_messages_as_markdown: true,
   },
   launch_targets: [codexTarget],
-  workspaces: { auto_assign_on_create: false, default_sidebar_view: "item" },
+  workspaces: { auto_assign_on_create: false, default_sidebar_view: "item", show_agent_status_in_lists: true },
   roborev: { init_managed_clones: true },
 });
 

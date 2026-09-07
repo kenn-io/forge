@@ -846,8 +846,9 @@ func TestHandleUpdateSettings(t *testing.T) {
 	autoAssign := true
 	defaultSidebarView := "item"
 	workspaces := workspaceSettingsUpdate{
-		AutoAssignOnCreate: &autoAssign,
-		DefaultSidebarView: &defaultSidebarView,
+		AutoAssignOnCreate:     &autoAssign,
+		ShowAgentStatusInLists: new(true),
+		DefaultSidebarView:     &defaultSidebarView,
 	}
 	terminal := config.Terminal{
 		FontFamily:       "\"Fira Code\", monospace",
@@ -879,6 +880,7 @@ func TestHandleUpdateSettings(t *testing.T) {
 	assert.Equal("30d", cfg2.Activity.TimeRange)
 	assert.True(cfg2.Issues.HideBots)
 	assert.True(cfg2.Workspaces.AutoAssignOnCreate)
+	assert.True(cfg2.Workspaces.ShowAgentStatusInLists)
 	assert.Equal("item", cfg2.Workspaces.DefaultSidebarView)
 	assert.Equal("\"Fira Code\", monospace", cfg2.Terminal.FontFamily)
 	assert.Equal(16, cfg2.Terminal.FontSize)
@@ -899,6 +901,7 @@ func TestHandleUpdateSettingsMergesWorkspaceFields(t *testing.T) {
 	require := require.New(t)
 	srv, _, cfgPath := setupTestServerWithConfig(t)
 	srv.cfg.Workspaces.AutoAssignOnCreate = true
+	srv.cfg.Workspaces.ShowAgentStatusInLists = true
 	require.NoError(srv.cfg.Save(cfgPath))
 
 	defaultSidebarView := "item"
@@ -911,7 +914,18 @@ func TestHandleUpdateSettingsMergesWorkspaceFields(t *testing.T) {
 	cfg2, err := config.Load(cfgPath)
 	require.NoError(err)
 	assert.True(cfg2.Workspaces.AutoAssignOnCreate)
+	assert.True(cfg2.Workspaces.ShowAgentStatusInLists)
 	assert.Equal("item", cfg2.Workspaces.DefaultSidebarView)
+	rr = testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+		Workspaces: &workspaceSettingsUpdate{ShowAgentStatusInLists: new(false)},
+	})
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	cfg2, err = config.Load(cfgPath)
+	require.NoError(err)
+	assert.False(cfg2.Workspaces.ShowAgentStatusInLists)
+	assert.True(cfg2.Workspaces.AutoAssignOnCreate)
+	assert.Equal("item", cfg2.Workspaces.DefaultSidebarView)
+
 }
 
 func TestHandleUpdateSettingsDisablesNativeStackProjectionImmediately(t *testing.T) {

@@ -13,6 +13,7 @@ import {
 type WorkspaceSettings = Settings["workspaces"];
 
 const initial: WorkspaceSettings = {
+  show_agent_status_in_lists: false,
   auto_assign_on_create: false,
   default_sidebar_view: "diff",
 };
@@ -91,6 +92,7 @@ describe("workspace settings persistence", () => {
 
     expect(requests).toEqual([{ default_sidebar_view: "item" }, { auto_assign_on_create: true }]);
     expect(store.getWorkspaceSettings()).toEqual({
+      show_agent_status_in_lists: false,
       auto_assign_on_create: true,
       default_sidebar_view: "item",
     });
@@ -103,7 +105,7 @@ describe("workspace settings persistence", () => {
     const sidebarSave = runSave(store, { default_sidebar_view: "item" });
     await vi.waitFor(() => expect(requests).toHaveLength(1));
 
-    persisted = { auto_assign_on_create: true, default_sidebar_view: "diff" };
+    persisted = { show_agent_status_in_lists: false, auto_assign_on_create: true, default_sidebar_view: "diff" };
     const hydration = beginWorkspaceSettingsHydration(store);
     hydrateWorkspaceSettings(hydration, persisted);
 
@@ -111,10 +113,12 @@ describe("workspace settings persistence", () => {
     await sidebarSave;
 
     expect(store.getWorkspaceSettings()).toEqual({
+      show_agent_status_in_lists: false,
       auto_assign_on_create: true,
       default_sidebar_view: "item",
     });
     expect(persisted).toEqual({
+      show_agent_status_in_lists: false,
       auto_assign_on_create: true,
       default_sidebar_view: "item",
     });

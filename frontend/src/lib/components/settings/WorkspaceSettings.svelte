@@ -1,6 +1,5 @@
 <script lang="ts">
   import { SelectDropdown, type SelectDropdownOption } from "@kenn-io/kit-ui";
-  import { getShowListAgentStatus, setShowListAgentStatus } from "../../stores/list-agent-status.svelte.js";
   import { Effect } from "effect";
   import type { Settings } from "../../api/types.js";
 
@@ -28,6 +27,43 @@
     { value: "diff", label: "Diff" },
     { value: "item", label: "PR/Issue" },
   ];
+
+  function toggleListAgentStatus(): void {
+    if (embedded || saving) return;
+    const baseline = workspaces;
+    const pending = {
+      ...workspaces,
+      show_agent_status_in_lists: !workspaces.show_agent_status_in_lists,
+    };
+    onUpdate(pending);
+    saving = true;
+    runtime.runCommand(
+      Effect.gen(function* () {
+        return yield* saveWorkspaceSettings({
+          baseline,
+          changes: { show_agent_status_in_lists: pending.show_agent_status_in_lists },
+          store: settingsStore,
+        });
+      }).pipe(
+        Effect.matchEffect({
+          onFailure: (failure) =>
+            Effect.sync(() => {
+              onUpdate(settingsStore.getWorkspaceSettings());
+              console.warn("Failed to save workspace settings:", settingsErrorMessage(failure));
+            }),
+          onSuccess: () => Effect.sync(() => onUpdate(settingsStore.getWorkspaceSettings())),
+        }),
+        Effect.ensuring(Effect.sync(() => {
+          saving = false;
+        })),
+      ),
+      {
+        operation: "save workspace settings",
+        safeContext: {},
+        onFailure: () => {},
+      },
+    );
+  }
 
   function toggleAutoAssign(): void {
     if (embedded || saving) return;
@@ -130,24 +166,23 @@
   }
 </script>
 
-<div class="setting-row">
-  <div class="setting-copy">
-    <span class="setting-label">Show agent status in lists</span>
-    <span class="setting-description">Show Working, Approval, Input, and Done in PR, Activity, and Issue lists. Saved in this browser.</span>
-  </div>
-  <button
-    class={["toggle-btn", getShowListAgentStatus() && "toggle-on"]}
-    type="button"
-    onclick={() => setShowListAgentStatus(!getShowListAgentStatus())}
-    aria-label="Show agent status in lists"
-    aria-pressed={getShowListAgentStatus()}
-  >
-    <span class="toggle-track"><span class="toggle-thumb"></span></span>
-  </button>
-</div>
-
-
 <div class="settings-list">
+  <div class="setting-row">
+    <div class="setting-copy">
+      <span class="setting-label">Show agent status in lists</span>
+      <span class="setting-description">Show Working, Approval, Input, and Done in PR, Activity, and Issue lists. Saved in Forge config.</span>
+    </div>
+    <button
+      class={["toggle-btn", workspaces.show_agent_status_in_lists && "toggle-on"]}
+      type="button"
+      disabled={embedded || saving}
+      onclick={toggleListAgentStatus}
+      aria-label="Show agent status in lists"
+      aria-pressed={workspaces.show_agent_status_in_lists}
+    >
+      <span class="toggle-track"><span class="toggle-thumb"></span></span>
+    </button>
+  </div>
   <div class="setting-row">
     <div class="setting-copy">
       <span class="setting-label">Assign new workspace items to me</span>

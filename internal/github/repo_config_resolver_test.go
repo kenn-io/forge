@@ -9,8 +9,37 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
-	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/platform"
 )
+
+func TestResolveConfiguredRepoCanonicalizesClientHosts(t *testing.T) {
+	for _, tc := range []struct{ clientHost, repoHost string }{
+		{"", "github.com"},
+		{"GITHUB.COM", "github.com"},
+		{"github.com", "github.com"},
+		{"GIT.EXAMPLE.COM:8443", "git.example.com:8443"},
+	} {
+		t.Run(tc.clientHost, func(t *testing.T) {
+			require := require.New(t)
+			client := &mockClient{
+				getRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
+					require.Equal("acme", owner)
+					require.Equal("widgets", repo)
+					return &gh.Repository{
+						NodeID: new("repo-42"), Name: new("widgets"),
+						Owner: &gh.User{Login: new("acme")},
+					}, nil
+				},
+			}
+			_, repos, err := ResolveConfiguredRepo(t.Context(), map[string]Client{tc.clientHost: client},
+				config.Repo{PlatformHost: tc.repoHost, Owner: "acme", Name: "widgets"})
+			require.NoError(err)
+			require.Len(repos, 1)
+			require.Equal("repo-42", repos[0].PlatformExternalID)
+			require.Equal(tc.repoHost, repos[0].PlatformHost)
+		})
+	}
+}
 
 func TestResolveConfiguredRepos_ExpandsGlobIncludingArchived(t *testing.T) {
 	assert := assert.New(t)

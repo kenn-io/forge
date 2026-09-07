@@ -124,6 +124,11 @@ func TestMissingAdoptedCheckoutRetainsHeadAcrossFailedRecovery(t *testing.T) {
 			metadata, err := worktreeGitDir(ctx, path)
 			require.NoError(err)
 			require.NoError(os.RemoveAll(path))
+			ws.WorkspaceBranch = "different-managed-branch"
+			_, _, err = mgr.addWorktree(ctx, workspaceGitDir{path: clone, remote: originRemoteName}, ws, workspaceGitFetchOptions{})
+			require.ErrorContains(err, "does not match managed branch")
+			assert.NoDirExists(path)
+			ws.WorkspaceBranch = ""
 			// A blocked ownership-marker write is a post-checkout failure.
 			marker := filepath.Join(metadata, workspaceOwnershipMarkerFile)
 			require.NoError(os.Mkdir(marker, 0o755))

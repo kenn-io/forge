@@ -2,6 +2,7 @@ package workspaceapi
 
 import (
 	"context"
+	shellquote "github.com/kballard/go-shellquote"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,7 +22,7 @@ import (
 )
 
 func TestRestoreRuntimeSessionsResumesSavedConversationAfterTmuxLoss(t *testing.T) {
-	for _, status := range []string{"ready", "creating", "error", "unavailable", "ambiguous"} {
+	for _, status := range []string{"ready", "creating", "error", "unavailable", "ambiguous", "fairness", "stopped"} {
 		t.Run(status, func(t *testing.T) {
 			require := require.New(t)
 			assert := assert.New(t)
@@ -50,6 +51,12 @@ func TestRestoreRuntimeSessionsResumesSavedConversationAfterTmuxLoss(t *testing.
 			tmuxPath, err := exec.LookPath("tmux")
 			require.NoError(err)
 			tmux := privateTmuxOwner.Command(t, tmuxPath)
+			blocked := filepath.Join(dir, "blocked")
+			if status == "fairness" {
+				wrapper := filepath.Join(dir, "tmux-wrapper")
+				require.NoError(os.WriteFile(wrapper, []byte("#!/bin/sh\nif [ \"$1\" = has-session ] && [ \"$3\" = blocked ]; then\n touch "+shellquote.Join(blocked)+"\n exec sleep 60\nfi\nexec "+shellquote.Join(tmux...)+" \"$@\"\n"), 0o755))
+				tmux = []string{wrapper}
+			}
 			agent := filepath.Join(dir, "agent")
 			require.NoError(os.WriteFile(agent, []byte(`#!/bin/sh
 [ "$#" = 4 ] && [ "$1" = --model ] && [ "$2" = model-a ] && [ "$3" = --resume ] && [ "$4" = saved-conversation ] || exit 42
@@ -72,11 +79,36 @@ exec sleep 60
 			workspaces := workspace.NewManager(database, t.TempDir())
 			workspaces.SetTmuxCommand(tmux)
 			handler := New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime, AgentActivity: activity})
-			if status == "unavailable" || status == "ambiguous" {
+			if status == "fairness" {
+				require.NoError(database.UpdateWorkspaceStatus(ctx, "workspace", "ready", nil))
+				require.NoError(database.UpsertWorkspaceRuntimeSession(ctx, &db.WorkspaceRuntimeSession{
+					WorkspaceID: "workspace", SessionKey: "aaa-blocked", TargetKey: "custom-worker",
+					Label: "Blocked", Kind: "agent", Scope: "session", TmuxSession: "blocked",
+				}))
+				handler.setRuntimeRecoveryPending("aaa-blocked", true)
+				handler.setRuntimeRecoveryPending("saved-runtime", true)
+				attemptCtx, cancel := context.WithCancel(ctx)
+				defer cancel()
+				attempt := make(chan error, 1)
+				go func() { attempt <- handler.restoreRuntimeSessions(attemptCtx, true) }()
+				require.Eventually(func() bool { _, err := os.Stat(blocked); return err == nil }, 5*time.Second, 10*time.Millisecond)
+				cancel()
+				select {
+				case <-attempt:
+				case <-time.After(5 * time.Second):
+					require.FailNow("blocked recovery did not honor cancellation")
+				}
+				handler.runWorkspaceTmuxPrune(ctx)
+				// The next pass must reach the healthy session before retrying
+				// the blocked first record. Remove the fixture before full restore.
+				require.NoError(workspaces.ForgetRuntimeSession(ctx, "workspace", "aaa-blocked"))
+				handler.setRuntimeRecoveryPending("aaa-blocked", false)
+			}
+			if status == "unavailable" || status == "ambiguous" || status == "stopped" {
 				require.NoError(database.UpdateWorkspaceStatus(ctx, "workspace", "ready", nil))
 				targets := runtime.LaunchTargets()
 				targets = append(targets, localruntime.LaunchTarget{Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: tmux})
-				if status == "unavailable" {
+				if status == "unavailable" || status == "stopped" {
 					targets[0].Available = false
 				} else {
 					targets[0].Command = append(targets[0].Command, "--", "original prompt")
@@ -89,6 +121,19 @@ exec sleep 60
 				require.Len(retained, 1, "failed recovery must survive periodic pruning")
 				require.Len(activity.LiveReportsForWorkspace(cwd, []string{"saved-runtime"}), 1)
 				assert.NoFileExists(filepath.Join(cwd, "args"))
+				if status == "stopped" {
+					_, err := handler.stopWorkspaceRuntimeSession(ctx, &stopWorkspaceRuntimeSessionInput{ID: "workspace", SessionKey: "saved-runtime"})
+					require.NoError(err)
+					targets[0].Available = true
+					runtime.UpdateTargets(targets)
+					handler.runWorkspaceTmuxPrune(ctx)
+					retained, err := database.ListAllWorkspaceRuntimeSessions(ctx)
+					require.NoError(err)
+					assert.Empty(retained)
+					assert.Empty(runtime.ListSessions("workspace"))
+					assert.NoFileExists(filepath.Join(cwd, "args"))
+					return
+				}
 				targets[0].Available = true
 				targets[0].Command = []string{agent, "--model", "model-a"}
 				runtime.UpdateTargets(targets)

@@ -1,11 +1,14 @@
 package workspaceapi
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
 	"time"
 
+	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
@@ -143,28 +146,27 @@ func (h *Handler) restoreRuntimeSessions(ctx context.Context, pendingOnly bool) 
 		}
 	}
 	if pendingOnly {
+		// Each maintenance pass attempts one retained session. Advance before
+		// doing I/O so a timeout cannot monopolize every subsequent pass.
+		slices.SortFunc(stored, func(a, b db.WorkspaceRuntimeSession) int {
+			return cmp.Compare(a.SessionKey, b.SessionKey)
+		})
+		next := 0
+		for i, session := range stored {
+			if session.SessionKey > h.runtimeRecoveryCursor {
+				next = i
+				break
+			}
+		}
+		stored = stored[next : next+1]
+		h.runtimeRecoveryCursor = stored[0].SessionKey
 		// Share setup admission so recovery cannot prepare context or touch
 		// a terminal while setup or deletion owns the workspace.
-		admitted := make(map[string]bool)
-		pending := stored[:0]
-		for _, session := range stored {
-			allowed, seen := admitted[session.WorkspaceID]
-			if !seen {
-				done, start := h.beginWorkspaceSetup(session.WorkspaceID)
-				allowed = start
-				admitted[session.WorkspaceID] = allowed
-				if start {
-					defer h.finishWorkspaceSetup(session.WorkspaceID, done)
-				}
-			}
-			if allowed {
-				pending = append(pending, session)
-			}
-		}
-		stored = pending
-		if len(stored) == 0 {
+		done, start := h.beginWorkspaceSetup(stored[0].WorkspaceID)
+		if !start {
 			return nil
 		}
+		defer h.finishWorkspaceSetup(stored[0].WorkspaceID, done)
 	}
 	retainedWorkspaces := make(map[string]bool)
 	for _, session := range stored {

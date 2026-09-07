@@ -6,12 +6,22 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // The caller holds the repository lock and has verified the exact stale
 // registration and an absent destination. Restore the saved index, retaining
 // staged changes and detached HEADs as well as branch commits.
 func restoreMissingWorkspaceCheckout(ctx context.Context, gitDir, metadataDir string, ws *Workspace) (err error) {
+	if ws.WorkspaceBranch != "" {
+		head, err := os.ReadFile(filepath.Join(metadataDir, "HEAD"))
+		if err != nil {
+			return fmt.Errorf("read missing workspace HEAD: %w", err)
+		}
+		if strings.TrimSpace(string(head)) != "ref: refs/heads/"+ws.WorkspaceBranch {
+			return fmt.Errorf("registered workspace HEAD does not match managed branch %q", ws.WorkspaceBranch)
+		}
+	}
 	if err := os.MkdirAll(filepath.Dir(ws.WorktreePath), 0o755); err != nil {
 		return err
 	}

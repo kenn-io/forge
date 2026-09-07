@@ -208,8 +208,10 @@ create a local process, PTY, or durable transport session
 - Pending startup recovery retries during periodic missing-tmux pruning under
   workspace setup admission; successful recovery restores ordinary exit cleanup
   (`internal/server/workspaceapi/lifecycle.go::Handler.RestoreRuntimeSessions`).
-- During explicit delete or stop flows, forgetting the persisted row is part of
-  cleanup.
+- Periodic recovery rotates one pending session per pass; a slow attempt must
+  not starve later sessions (`internal/server/workspaceapi/lifecycle.go::Handler.restoreRuntimeSessions`).
+- Explicit session stop shares recovery synchronization and forgets the saved
+  row before releasing it (`internal/server/workspaceapi/routes_handlers.go::Handler.stopWorkspaceRuntimeSession`).
 - Removal of a created runtime backend is attempted when launch or persistence
   fails; it is best-effort, not retried, and a backend that survives a failed
   compensation is unrecorded until startup reaping. Reaping must protect stored

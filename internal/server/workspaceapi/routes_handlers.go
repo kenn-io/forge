@@ -2697,6 +2697,8 @@ func (s *Handler) stopWorkspaceRuntimeSession(
 	ctx context.Context,
 	input *stopWorkspaceRuntimeSessionInput,
 ) (*struct{}, error) {
+	s.runtimeRestoreMu.Lock()
+	defer s.runtimeRestoreMu.Unlock()
 	summary, err := s.getRuntimeWorkspace(ctx, input.ID)
 	if err != nil {
 		return nil, err
@@ -2714,6 +2716,7 @@ func (s *Handler) stopWorkspaceRuntimeSession(
 				)
 			}
 			if stopped {
+				s.setRuntimeRecoveryPending(input.SessionKey, false)
 				s.removeAgentActivityRuntimeSession(input.SessionKey)
 				s.invalidateWorkspaceEnrichment(summary.ID)
 				return nil, nil
@@ -2727,6 +2730,7 @@ func (s *Handler) stopWorkspaceRuntimeSession(
 	); err != nil {
 		return nil, httpapi.Internal("forget runtime session: " + err.Error())
 	}
+	s.setRuntimeRecoveryPending(input.SessionKey, false)
 	s.removeAgentActivityRuntimeSession(input.SessionKey)
 	s.invalidateWorkspaceEnrichment(summary.ID)
 	return nil, nil

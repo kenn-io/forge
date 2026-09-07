@@ -104,8 +104,13 @@ test.describe("PR description task list", () => {
   });
 
   test("checkbox clicks persist when navigation happens before the debounce", async ({ page }) => {
+    await page.setViewportSize({ width: 900, height: 720 });
     const server = await openPullDetail(page);
     try {
+      // Keep the 400ms save debounce pending until navigation flushes it.
+      const now = Date.now();
+      await page.clock.install({ time: now });
+      await page.clock.pauseAt(now + 1_000);
       const body = page.locator(".body-section .markdown-body");
       const cb0 = body.locator('input[type="checkbox"][data-task-index="0"]');
       const cb1 = body.locator('input[type="checkbox"][data-task-index="1"]');
@@ -132,8 +137,10 @@ test.describe("PR description task list", () => {
       await cb1.click();
       await expect(cb1).toBeChecked({ checked: cb1Expected });
 
-      await page.getByRole("button", { name: "Activity", exact: true }).click();
+      await page.getByRole("combobox", { name: "Page: PRs", exact: true }).click();
+      await page.getByRole("option", { name: "Activity", exact: true }).click();
       await expect(page).toHaveURL(/\/$/);
+      await page.clock.resume();
       await persisted;
       await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1`);
       const reloadedBody = page.locator(".body-section .markdown-body");

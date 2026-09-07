@@ -285,7 +285,16 @@ test.describe("CI dropdown", () => {
       const seed = await page.request.post(`${server.info.base_url}/__e2e/pr-ci-state/dropdown-mixed`);
       expect(seed.ok()).toBe(true);
 
+      const backgroundSync = page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" &&
+          new URL(response.url()).pathname === "/api/v1/pulls/github/acme/widgets/1/sync/async",
+      );
       await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1`);
+      await backgroundSync;
+      await expect(page.locator(".pull-detail")).toBeVisible();
+      // The initial detail refresh can replace the chip during the click.
+      await expect(page.locator(".pull-detail .sync-indicator")).toHaveCount(0);
 
       const chip = page.locator(".pull-detail [data-testid='ci-chip']");
       await chip.click();

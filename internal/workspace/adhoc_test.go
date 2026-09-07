@@ -426,7 +426,7 @@ func TestSetupAdHocWorkspaceLateBranchConflictFailsWithoutChangingIdentity(t *te
 		CreateAdHocOptions{BranchName: "docs"},
 	)
 	require.NoError(err)
-	runWorkspaceTestGit(t, localRepo, "branch", "docs/guide-refresh")
+	runWorkspaceTestGit(t, localRepo, "branch", "docs")
 
 	require.Error(mgr.Setup(t.Context(), ws))
 	got, err := d.GetWorkspace(t.Context(), ws.ID)

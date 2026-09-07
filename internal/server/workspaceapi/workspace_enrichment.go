@@ -3,6 +3,7 @@ package workspaceapi
 import (
 	"context"
 	"log/slog"
+	"maps"
 	"strings"
 	"time"
 
@@ -686,11 +687,21 @@ func (s *Handler) runWorkspaceTmuxPrune(ctx context.Context) {
 		s.workspaceTmuxPruneInFlight = false
 		s.workspaceEnrichmentMu.Unlock()
 	}()
+	// Retry retained startup failures through the existing periodic worker.
+	// A fixed target configuration or returned tmux server needs no restart.
+	recoveryCtx, cancelRecovery := context.WithTimeout(ctx, 30*time.Second)
+	if err := s.restoreRuntimeSessions(recoveryCtx, true); err != nil {
+		slog.Debug("retry workspace runtime recovery", "err", err)
+	}
+	cancelRecovery()
 	pruneCtx, cancel := context.WithTimeout(
 		ctx, workspaceEnrichmentRefreshTimeout,
 	)
 	defer cancel()
-	pruned, err := s.workspaces.PruneMissingTmuxSessions(pruneCtx)
+	s.runtimeRecoveryMu.Lock()
+	pendingRecovery := maps.Clone(s.runtimeRecoveryPending)
+	s.runtimeRecoveryMu.Unlock()
+	pruned, err := s.workspaces.PruneMissingTmuxSessions(pruneCtx, pendingRecovery)
 	if err != nil {
 		slog.Debug("prune missing tmux sessions", "err", err)
 	}

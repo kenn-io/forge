@@ -940,7 +940,7 @@ func TestCreateKataTaskDoesNotRequireProviderIssue(t *testing.T) {
 	assert.Equal(db.KataWorkspaceItemKey(metadata), ws.ItemKey)
 	assert.Contains(ws.GitHeadRef, "kenn-forge/kata/task-123-")
 	assert.Contains(ws.GitHeadRef, "-fix-widget")
-	assert.Equal(ws.GitHeadRef, ws.WorkspaceBranch)
+	assert.Equal(workspaceBranchUnknown, ws.WorkspaceBranch)
 	assert.Contains(ws.WorktreePath, "kata-task-123-")
 	require.NotNil(ws.KataMetadata)
 	assert.Equal("issue-kata-1", ws.KataMetadata.IssueUID)
@@ -1775,6 +1775,7 @@ func TestRetryDirectoryRecoveryPreservesExistingWorktree(t *testing.T) {
 	tmuxScript := filepath.Join(dir, "fake-tmux")
 	response := "#!/bin/sh\n" +
 		`for arg in "$@"; do` + "\n" +
+		`  if [ "$arg" = "has-session" ]; then echo "no server running on test socket" >&2; exit 1; fi` + "\n" +
 		`  if [ "$arg" = "new-session" ]; then exit 1; fi` + "\n" +
 		"done\n" +
 		"exit 0\n"
@@ -2323,7 +2324,21 @@ func TestSetupReusesExistingWorkspaceWorktree(t *testing.T) {
 	assert.Equal(existingBranch, headBranch)
 	argvs := readRecorderArgv(t, tmuxRecord)
 	require.NotEmpty(argvs)
-	assert.Contains(argvs[0], ws.WorktreePath)
+	assert.Contains(argvs, []string{"has-session", "-t", ws.TmuxSession})
+	runWorkspaceTestGit(t, ws.WorktreePath, "commit", "--allow-empty", "-m", "saved progress")
+	before, _, err := gitRefSHA(t.Context(), ws.WorktreePath, "HEAD")
+	require.NoError(err)
+	require.NoError(os.WriteFile(filepath.Join(ws.WorktreePath, "unfinished.txt"), []byte("keep"), 0o600))
+	require.NoError(d.UpdateWorkspaceStatus(t.Context(), ws.ID, "error", new("terminal unavailable")))
+	retried, started, err := mgr.RequestRetry(t.Context(), ws.ID)
+	require.NoError(err)
+	require.True(started)
+	require.NoError(mgr.Setup(t.Context(), retried))
+	after, _, err := gitRefSHA(t.Context(), ws.WorktreePath, "HEAD")
+	require.NoError(err)
+	assert.Equal(before, after)
+	assert.FileExists(filepath.Join(ws.WorktreePath, "unfinished.txt"))
+
 }
 
 func TestReuseExistingWorkspaceWorktreeRechecksSymlinkAfterLock(t *testing.T) {
@@ -3679,7 +3694,7 @@ func TestAddAndRefreshPRWorktreeFastForwardLocalBaseBranch(t *testing.T) {
 	launchSpec, err := mgr.RequireWorkspaceLaunchSpec(t.Context(), ws)
 	require.NoError(err)
 
-	_, err = mgr.addWorktree(t.Context(), workspaceGitDir{
+	_, _, err = mgr.addWorktree(t.Context(), workspaceGitDir{
 		path: localRepo, remote: originRemoteName, localBase: true,
 	}, ws, workspaceGitFetchOptions{
 		launchSpec: launchSpec,
@@ -3742,7 +3757,7 @@ func TestAddWorktreeRestoresBaseRefsWhenRouteChangesDuringFetch(t *testing.T) {
 	}
 	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 
-	_, err = mgr.addWorktree(
+	_, _, err = mgr.addWorktree(
 		t.Context(), workspaceGitDir{
 			path: localRepo, remote: originRemoteName, localBase: true,
 		}, ws, workspaceGitFetchOptions{
@@ -5184,7 +5199,7 @@ func TestAddWorktreeLocalBaseFetchesPullRefWhenHeadBranchDeleted(t *testing.T) {
 		WorktreePath: filepath.Join(t.TempDir(), "worktree"),
 	}
 
-	gotBranch, err := mgr.addWorktree(
+	gotBranch, _, err := mgr.addWorktree(
 		t.Context(), workspaceGitDir{path: localRepo, remote: originRemoteName, localBase: true}, ws, workspaceGitFetchOptions{
 			launchSpec: pullLaunchSpecForWorkspace(ws, "same_repo", ""),
 		},
@@ -5237,7 +5252,7 @@ func TestAddWorktreeLocalBaseIgnoresStalePullRefWhenFetchFails(t *testing.T) {
 		WorktreePath: filepath.Join(t.TempDir(), "worktree"),
 	}
 
-	gotBranch, err := mgr.addWorktree(
+	gotBranch, _, err := mgr.addWorktree(
 		t.Context(), workspaceGitDir{path: localRepo, remote: originRemoteName, localBase: true}, ws, workspaceGitFetchOptions{
 			launchSpec: pullLaunchSpecForWorkspace(ws, "same_repo", ""),
 		},
@@ -6993,7 +7008,7 @@ func TestManagerPruneMissingTmuxSessionsRemovesStaleRecords(
 		time.Time{},
 	)
 
-	pruned, pruneErr := mgr.PruneMissingTmuxSessions(ctx)
+	pruned, pruneErr := mgr.PruneMissingTmuxSessions(ctx, nil)
 	require.NoError(pruneErr)
 	assert.True(pruned)
 
@@ -7079,7 +7094,7 @@ func TestManagerTmuxSessionListSurvivesTmux36Sanitization(t *testing.T) {
 		Status:       "ready",
 	}))
 
-	pruned, pruneErr := mgr.PruneMissingTmuxSessions(ctx)
+	pruned, pruneErr := mgr.PruneMissingTmuxSessions(ctx, nil)
 	require.NoError(pruneErr)
 	assert.False(pruned, "no-op prune must report no change so callers stay silent")
 	live, err := d.GetWorkspace(ctx, "0000000000000001")
@@ -7486,187 +7501,6 @@ func TestManagerForgetRuntimeSessionAfterExitKeepsLiveTmuxSession(
 	assert.Contains(argvs, []string{"has-session", "-t", tmuxSession})
 }
 
-func TestManagerRequestRetryFailsWhenTmuxCleanupFails(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-
-	dir := t.TempDir()
-	record := filepath.Join(dir, "record")
-	script := filepath.Join(dir, "fake-tmux")
-	body := "#!/bin/sh\n" +
-		"TMUX_RECORD=" + shellquote.Join(record) + "\n" +
-		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
-		`for a in "$@"; do` + "\n" +
-		`  if [ "$a" = "kill-session" ]; then` + "\n" +
-		`    echo "permission denied" >&2` + "\n" +
-		`    exit 1` + "\n" +
-		`  fi` + "\n" +
-		"done\n" +
-		"exit 0\n"
-	require.NoError(os.WriteFile(script, []byte(body), 0o755))
-
-	d := openTestDB(t)
-	mgr := newTestManager(t, d, t.TempDir())
-	mgr.SetTmuxCommand([]string{script, "wrap"})
-	ctx := context.Background()
-	errMsg := "tmux new-session failed"
-	ws := &Workspace{
-		ID:              "ws-retry-cleanup-fails",
-		PlatformHost:    "github.com",
-		RepoOwner:       "acme",
-		RepoName:        "widget",
-		ItemType:        db.WorkspaceItemTypePullRequest,
-		ItemNumber:      42,
-		GitHeadRef:      "feature/retry",
-		WorkspaceBranch: "kenn-forge/pr-42",
-		WorktreePath:    "/tmp/ws-retry-cleanup-fails",
-		TmuxSession:     "kenn-forge-retry-cleanup-fails",
-		Status:          "error",
-		ErrorMessage:    &errMsg,
-	}
-	require.NoError(d.InsertWorkspace(ctx, ws))
-	require.NoError(d.InsertWorkspaceSetupEvent(ctx, &db.WorkspaceSetupEvent{
-		WorkspaceID: ws.ID,
-		Stage:       workspaceSetupStageTmuxSession,
-		Outcome:     "success",
-		Message:     "tmux session started",
-	}))
-
-	next, startNow, err := mgr.RequestRetry(ctx, ws.ID)
-	assert.Nil(next)
-	assert.False(startNow)
-	require.Error(err)
-	assert.Contains(err.Error(), "cleanup workspace artifacts before retry")
-	assert.Contains(err.Error(), "kill tmux session")
-	assert.Contains(err.Error(), "permission denied")
-
-	got, err := d.GetWorkspace(ctx, ws.ID)
-	require.NoError(err)
-	require.NotNil(got)
-	assert.Equal("error", got.Status)
-	require.NotNil(got.ErrorMessage)
-	assert.Contains(*got.ErrorMessage, "permission denied")
-	assert.Equal("kenn-forge/pr-42", got.WorkspaceBranch)
-
-	argvs := readRecorderArgv(t, record)
-	require.Len(argvs, 1)
-	assert.Equal(
-		[]string{"wrap", "kill-session", "-t", ws.TmuxSession},
-		argvs[0],
-	)
-}
-
-func TestManagerRequestRetryConsumesQueuedRetryWhenCleanupFails(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-
-	dir := t.TempDir()
-	started := filepath.Join(dir, "started")
-	release := filepath.Join(dir, "release")
-	count := filepath.Join(dir, "count")
-	script := filepath.Join(dir, "fake-tmux")
-	body := "#!/bin/sh\n" +
-		"TMUX_STARTED=" + shellquote.Join(started) + "\n" +
-		"TMUX_RELEASE=" + shellquote.Join(release) + "\n" +
-		"TMUX_COUNT=" + shellquote.Join(count) + "\n" +
-		`for a in "$@"; do` + "\n" +
-		`  if [ "$a" = "kill-session" ]; then` + "\n" +
-		`    n=0` + "\n" +
-		`    if [ -f "$TMUX_COUNT" ]; then n=$(cat "$TMUX_COUNT"); fi` + "\n" +
-		`    n=$((n + 1))` + "\n" +
-		`    printf '%s' "$n" > "$TMUX_COUNT"` + "\n" +
-		`    if [ "$n" -eq 1 ]; then` + "\n" +
-		`      : > "$TMUX_STARTED"` + "\n" +
-		`      while [ ! -f "$TMUX_RELEASE" ]; do sleep 0.01; done` + "\n" +
-		`      echo "permission denied" >&2` + "\n" +
-		`      exit 1` + "\n" +
-		`    fi` + "\n" +
-		`  fi` + "\n" +
-		"done\n" +
-		"exit 0\n"
-	require.NoError(os.WriteFile(script, []byte(body), 0o755))
-
-	d := openTestDB(t)
-	mgr := newTestManager(t, d, t.TempDir())
-	mgr.SetTmuxCommand([]string{script, "wrap"})
-	ctx := context.Background()
-	errMsg := "tmux new-session failed"
-	ws := &Workspace{
-		ID:              "ws-retry-cleanup-queued",
-		PlatformHost:    "github.com",
-		RepoOwner:       "acme",
-		RepoName:        "widget",
-		ItemType:        db.WorkspaceItemTypePullRequest,
-		ItemNumber:      42,
-		GitHeadRef:      "feature/retry",
-		WorkspaceBranch: "kenn-forge/pr-42",
-		WorktreePath:    "/tmp/ws-retry-cleanup-queued",
-		TmuxSession:     "kenn-forge-retry-cleanup-queued",
-		Status:          "error",
-		ErrorMessage:    &errMsg,
-	}
-	require.NoError(d.InsertWorkspace(ctx, ws))
-	require.NoError(d.InsertWorkspaceSetupEvent(ctx, &db.WorkspaceSetupEvent{
-		WorkspaceID: ws.ID,
-		Stage:       workspaceSetupStageTmuxSession,
-		Outcome:     "success",
-		Message:     "tmux session started",
-	}))
-
-	type retryResult struct {
-		ws       *Workspace
-		startNow bool
-		err      error
-	}
-	firstResult := make(chan retryResult, 1)
-	go func() {
-		next, startNow, err := mgr.RequestRetry(ctx, ws.ID)
-		firstResult <- retryResult{ws: next, startNow: startNow, err: err}
-	}()
-
-	const retryWait = 5 * time.Second
-
-	require.Eventually(func() bool {
-		_, err := os.Stat(started)
-		return err == nil
-	}, retryWait, 10*time.Millisecond)
-	require.Eventually(func() bool {
-		got, err := d.GetWorkspace(ctx, ws.ID)
-		return err == nil && got != nil && got.Status == "creating"
-	}, retryWait, 10*time.Millisecond)
-
-	queuedWS, startNow, err := mgr.RequestRetry(ctx, ws.ID)
-	require.NoError(err)
-	require.NotNil(queuedWS)
-	assert.False(startNow)
-	assert.Equal("creating", queuedWS.Status)
-
-	require.NoError(os.WriteFile(release, []byte("1"), 0o644))
-	var first retryResult
-	require.Eventually(func() bool {
-		select {
-		case first = <-firstResult:
-			return true
-		default:
-			return false
-		}
-	}, retryWait, 10*time.Millisecond)
-	assert.Nil(first.ws)
-	assert.False(first.startNow)
-	require.Error(first.err)
-	assert.Contains(first.err.Error(), "permission denied")
-
-	next, queued, err := mgr.StartQueuedRetryIfErrored(ctx, ws.ID)
-	require.NoError(err)
-	assert.Nil(next)
-	assert.False(queued)
-
-	got, err := d.GetWorkspace(ctx, ws.ID)
-	require.NoError(err)
-	require.NotNil(got)
-	assert.Equal("error", got.Status)
-}
-
 func TestManagerRequestRetrySkipsGitCleanupWhenCloneMissing(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -7710,75 +7544,14 @@ func TestManagerRequestRetrySkipsGitCleanupWhenCloneMissing(t *testing.T) {
 	require.NotNil(next)
 	assert.True(startNow)
 	assert.Equal("creating", next.Status)
-	assert.Equal(workspaceBranchUnknown, next.WorkspaceBranch)
+	assert.Equal(ws.WorkspaceBranch, next.WorkspaceBranch)
 
 	got, err := d.GetWorkspace(ctx, ws.ID)
 	require.NoError(err)
 	require.NotNil(got)
 	assert.Equal("creating", got.Status)
-	assert.Equal(workspaceBranchUnknown, got.WorkspaceBranch)
+	assert.Equal(ws.WorkspaceBranch, got.WorkspaceBranch)
 	assert.Nil(got.ErrorMessage)
-}
-
-func TestIssueRetryCleansLeakedUnknownBranchAndUsesIssueBranch(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-
-	host, owner, name := "github.com", "acme", "widget"
-	baseDir := t.TempDir()
-	mgr := newTestManager(t, openTestDB(t), t.TempDir())
-	mgr.SetClones(gitclone.New(baseDir, nil))
-
-	cloneDir, err := mgr.clones.ClonePath("github", host, owner, name)
-	require.NoError(err)
-	seedWorkspaceBareCloneAt(t, cloneDir)
-	configureOriginHeadForIssueWorkspace(t, cloneDir)
-
-	staleWorktree := filepath.Join(t.TempDir(), "stale-unknown-worktree")
-	runWorkspaceTestGit(
-		t, cloneDir,
-		"worktree", "add", staleWorktree,
-		"-b", workspaceBranchUnknown, "origin/HEAD",
-	)
-	exists, err := localBranchExists(
-		t.Context(), cloneDir, workspaceBranchUnknown,
-	)
-	require.NoError(err)
-	require.True(exists)
-
-	ws := &Workspace{
-		ID:              "ws-issue-retry-unknown",
-		PlatformHost:    host,
-		RepoOwner:       owner,
-		RepoName:        name,
-		ItemType:        db.WorkspaceItemTypeIssue,
-		ItemNumber:      23,
-		GitHeadRef:      "kenn-forge/issue-23-federation-test",
-		WorkspaceBranch: workspaceBranchUnknown,
-		WorktreePath:    staleWorktree,
-		Status:          "error",
-	}
-	require.NoError(writeWorkspaceOwnershipMarker(t.Context(), cloneDir, ws))
-	require.NoError(mgr.cleanupWorkspaceArtifactsForRetry(t.Context(), ws))
-
-	exists, err = localBranchExists(
-		t.Context(), cloneDir, workspaceBranchUnknown,
-	)
-	require.NoError(err)
-	assert.False(exists)
-
-	branch, err := mgr.addIssueWorktree(t.Context(), workspaceGitDir{path: cloneDir, remote: originRemoteName}, ws)
-	require.NoError(err)
-	assert.Equal(ws.GitHeadRef, branch)
-
-	exists, err = localBranchExists(t.Context(), cloneDir, ws.GitHeadRef)
-	require.NoError(err)
-	assert.True(exists)
-	exists, err = localBranchExists(
-		t.Context(), cloneDir, workspaceBranchUnknown,
-	)
-	require.NoError(err)
-	assert.False(exists)
 }
 
 func TestManagerRequestRetryQueuesWhileCreatingAndStartsIfErrored(t *testing.T) {
@@ -7902,14 +7675,14 @@ func TestManagerRequestRetryStartsWhenSetupFailedBeforeQueue(t *testing.T) {
 	assert.True(startNow)
 	assert.Equal("creating", next.Status)
 	assert.Nil(next.ErrorMessage)
-	assert.Equal(workspaceBranchUnknown, next.WorkspaceBranch)
+	assert.Equal(ws.WorkspaceBranch, next.WorkspaceBranch)
 
 	stored, err := d.GetWorkspace(ctx, ws.ID)
 	require.NoError(err)
 	require.NotNil(stored)
 	assert.Equal("creating", stored.Status)
 	assert.Nil(stored.ErrorMessage)
-	assert.Equal(workspaceBranchUnknown, stored.WorkspaceBranch)
+	assert.Equal(ws.WorkspaceBranch, stored.WorkspaceBranch)
 
 	next, queued, err := mgr.StartQueuedRetryIfErrored(ctx, ws.ID)
 	require.NoError(err)
@@ -8491,7 +8264,7 @@ func TestManagerAddWorktreeAcquiresRepoLock(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() {
-		_, err := mgr.addWorktree(
+		_, _, err := mgr.addWorktree(
 			t.Context(), workspaceGitDir{path: cloneDir, remote: originRemoteName}, ws, workspaceGitFetchOptions{},
 		)
 		done <- err
@@ -8534,7 +8307,7 @@ func TestManagerAddWorktreeRechecksOccupiedPathAfterWaitingForLock(t *testing.T)
 	require.NoError(err)
 	done := make(chan error, 1)
 	go func() {
-		_, err := mgr.addWorktree(
+		_, _, err := mgr.addWorktree(
 			t.Context(), workspaceGitDir{path: cloneDir, remote: originRemoteName}, ws, workspaceGitFetchOptions{},
 		)
 		done <- err

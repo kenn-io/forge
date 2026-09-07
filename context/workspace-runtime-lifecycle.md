@@ -54,6 +54,25 @@ Rules:
   whose runtime row was pruned does not outlive it
   (`internal/server/workspaceapi/lifecycle.go::Handler.reconcileAgentActivityReports`).
 
+- Retry resumes setup in place and retains branch, worktree, and runtime records;
+  restarting a terminal must never erase local commits or dirty files
+  (`internal/workspace/manager.go::Manager.RequestRetry`).
+- A saved branch may have advanced beyond its original provider head. Reattach it
+  without resetting commits, and preserve it if later setup fails
+  (`internal/workspace/manager.go::Manager.SetupWithOptions`).
+- A clone's PR source branch alone does not prove workspace recovery. Missing
+  checkouts retain their Git registration and index through failed recovery,
+  preserving detached commits (`internal/workspace/restore_checkout.go::restoreMissingWorkspaceCheckout`).
+- An ad-hoc branch name alone is no proof of prior setup; recovery needs the
+  existing checkout or its registration to distinguish late branch collisions
+  (`internal/workspace/manager.go::Manager.addWorktree`).
+- An empty managed branch means an adopted branch or detached HEAD; unknown
+  means setup has not recorded ownership. Recover the former from its registered
+  HEAD without taking branch ownership (`internal/workspace/manager.go::Manager.addWorktree`).
+- Empty branch metadata does not prove checkout recovery. Roll back fresh
+  failed checkouts while retaining adopted source branches
+  (`internal/workspace/manager.go::Manager.SetupWithOptions`).
+
 ## Provider-Backed Lifecycle Facts
 
 Provider-backed workspace execution is local, but its provider facts remain
@@ -177,15 +196,25 @@ create a local process, PTY, or durable transport session
 
 ## Tmux Persistence Rules
 
-Persisted tmux-backed runtime rows are only valid while the backing tmux session
-still exists.
-
-- Restore persisted runtime tmux sessions on startup only when the backing tmux
-  session is still present.
-- Treat "tmux session is no longer running" and equivalent dead-server cases as
-  gone state to be cleaned up, not as a reason to preserve stale runtime rows.
-- During explicit delete or stop flows, forgetting the persisted row is part of
-  cleanup.
+- Startup must attempt agent recovery before pruning missing runtime rows or
+  their hook reports; those two records jointly identify the saved conversation
+  (`internal/server/workspaceapi/lifecycle.go::Handler.RestoreRuntimeSessions`).
+- Missing tmux agents resume the newest matching Codex, Claude, or Pi hook session
+  by exact ID, preserving configured flags and runtime identity without replaying
+  the initial prompt (`internal/server/workspaceapi/agent_resume.go::Handler.resumeWorkspaceAgent`).
+- Recovery never resets worktrees or replays configured positional prompts;
+  unsupported command shapes retain the saved runtime and report for recovery
+  (`internal/server/workspaceapi/lifecycle.go::Handler.RestoreRuntimeSessions`).
+- Restore base terminals before agents, including retained creating/error retries;
+  startup recovery shares a 30-second budget and preserves uncompleted attempts
+  (`internal/server/workspaceapi/agent_resume.go::Handler.restoreWorkspaceTerminals`).
+- Pending startup recovery retries during periodic missing-tmux pruning under
+  workspace setup admission; successful recovery restores ordinary exit cleanup
+  (`internal/server/workspaceapi/lifecycle.go::Handler.RestoreRuntimeSessions`).
+- Periodic recovery rotates one pending session per pass; a slow attempt must
+  not starve later sessions (`internal/server/workspaceapi/lifecycle.go::Handler.restoreRuntimeSessions`).
+- Explicit session stop shares recovery synchronization and forgets the saved
+  row before releasing it (`internal/server/workspaceapi/routes_handlers.go::Handler.stopWorkspaceRuntimeSession`).
 - Removal of a created runtime backend is attempted when launch or persistence
   fails; it is best-effort, not retried, and a backend that survives a failed
   compensation is unrecorded until startup reaping. Reaping must protect stored

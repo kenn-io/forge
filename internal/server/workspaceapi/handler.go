@@ -167,6 +167,10 @@ type Handler struct {
 	// workspaceSubjectAfterSummariesForTest pauses a snapshot between its two
 	// repository-identity reads so tests can prove the reconciliation fence.
 	workspaceSubjectAfterSummariesForTest func()
+	runtimeRecoveryCursor                 string
+	runtimeRestoreMu                      sync.Mutex
+	runtimeRecoveryMu                     sync.Mutex
+	runtimeRecoveryPending                map[string]bool
 	lifecycleMu                           sync.Mutex
 	lifecycleCtx                          context.Context
 	lifecycleCancel                       context.CancelFunc

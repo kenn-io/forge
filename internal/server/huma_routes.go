@@ -1433,6 +1433,14 @@ func (s *Server) listActivityService(
 	if _, federationRequest := federationauth.PrincipalFromContext(ctx); federationRequest {
 		return providerActivityResponse(output.Body), nil
 	}
+	if s.fleetAPI != nil {
+		workspaces, err := s.fleetAPI.ActivityWorkspaces(ctx)
+		if err != nil {
+			slog.Warn("list fleet activity workspaces failed", "err", err)
+		} else {
+			overlayFleetActivityWorkspaces(&output.Body, workspaces)
+		}
+	}
 	return output.Body, nil
 }
 

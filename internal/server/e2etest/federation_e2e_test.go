@@ -619,3 +619,37 @@ func mcpRepositoryIdentity(item mcpserver.ItemIdentity) mcpserver.RepositoryIden
 		PlatformRepoID: item.PlatformRepoID, Owner: item.Owner, Name: item.Name,
 	}
 }
+
+func TestFederatedActivityWorkspaceIndicators(t *testing.T) {
+	fixture := newFederatedForgesFixture(t)
+	for _, tc := range []struct {
+		daemon *federatedDaemonFixture
+		want   map[int]string
+	}{
+		{fixture.Hub, map[int]string{1: "ws-spoke-a", 2: "ws-spoke-b"}},
+		{fixture.NodeA, map[int]string{1: "ws-spoke-a", 2: ""}},
+	} {
+		t.Run(tc.daemon.Name, func(t *testing.T) {
+			response := fixture.request(t, tc.daemon, http.MethodGet, "/api/v1/activity?projection=collapsed", nil)
+			defer response.Body.Close()
+			require.Equal(t, http.StatusOK, response.StatusCode)
+			var body struct {
+				Subjects []struct {
+					Number    int `json:"item_number"`
+					Workspace *struct {
+						ID string `json:"id"`
+					} `json:"workspace"`
+				} `json:"item_activity"`
+			}
+			require.NoError(t, json.NewDecoder(response.Body).Decode(&body))
+			got := map[int]string{}
+			for _, subject := range body.Subjects {
+				got[subject.Number] = ""
+				if subject.Workspace != nil {
+					got[subject.Number] = subject.Workspace.ID
+				}
+			}
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}

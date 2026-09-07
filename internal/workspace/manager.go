@@ -1395,10 +1395,10 @@ func (m *Manager) SetupWithOptions(
 		ctx, ws, launchSpec, validateCloneRoute,
 	)
 	branch, reusedWorktree := reuse.branch, reuse.reused
-	// An empty PR branch records a previously adopted branch or detached HEAD;
-	// it is distinct from the unknown marker used before initial setup.
-	preserveWorktree := reusedWorktree ||
-		(ws.ItemType == db.WorkspaceItemTypePullRequest && ws.WorkspaceBranch == "")
+	// Preserve proven checkout recovery, not branch metadata alone. A fresh
+	// checkout of an adopted branch still rolls back; its empty returned
+	// managed branch separately prevents deleting the preexisting branch.
+	preserveWorktree := reusedWorktree
 	var gitDir string
 	commonDir, managedClone := reuse.commonDir, reuse.managedClone
 	if err != nil {

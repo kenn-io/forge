@@ -225,3 +225,37 @@ func TestRestoredAdHocCheckoutSurvivesLaterSetupFailure(t *testing.T) {
 	assert.Equal(before, runWorkspaceTestGit(t, ws.WorktreePath, "rev-parse", "HEAD"))
 	assert.Contains(string(runWorkspaceTestGit(t, ws.WorktreePath, "diff", "--cached", "--name-only")), "staged.txt")
 }
+
+func TestEmptyPRBranchDoesNotPreserveFreshFailedCheckout(t *testing.T) {
+	for _, adoptBranch := range []bool{false, true} {
+		t.Run(fmt.Sprintf("adopt=%t", adoptBranch), func(t *testing.T) {
+			require := require.New(t)
+			assert := assert.New(t)
+			ctx := t.Context()
+			database := openTestDB(t)
+			localRepo, _, host := setupHTTPWorktreeBaseForWorkspaceGitTest(t, "feature/thing")
+			repoID := seedRepo(t, database, host, "acme", "widget")
+			seedMR(t, database, repoID, 42, "feature/thing")
+			if adoptBranch {
+				runWorkspaceTestGit(t, localRepo, "branch", "feature/thing", "origin/feature/thing")
+			}
+			mgr := newTestManager(t, database, t.TempDir())
+			mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
+			ws, err := mgr.Create(ctx, "github", host, "acme", "widget", 42)
+			require.NoError(err)
+			ws.WorkspaceBranch = ""
+			require.NoError(database.UpdateWorkspaceBranch(ctx, ws.ID, ""))
+			tmux := filepath.Join(t.TempDir(), "tmux")
+			require.NoError(os.WriteFile(tmux, []byte("#!/bin/sh\necho 'cannot connect to server' >&2\nexit 1\n"), 0o755))
+			mgr.SetTmuxCommand([]string{tmux})
+			require.ErrorContains(mgr.Setup(ctx, ws), "tmux new-session")
+			assert.NoDirExists(ws.WorktreePath)
+			_, registered, err := worktreeRegistrationMetadataDir(ctx, localRepo, ws.WorktreePath)
+			require.NoError(err)
+			assert.False(registered)
+			_, exists, err := gitRefSHA(ctx, localRepo, "refs/heads/feature/thing")
+			require.NoError(err)
+			assert.Equal(adoptBranch, exists, "only the preexisting source branch should survive rollback")
+		})
+	}
+}

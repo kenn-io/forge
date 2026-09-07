@@ -69,6 +69,9 @@ Rules:
 - An empty managed branch means an adopted branch or detached HEAD; unknown
   means setup has not recorded ownership. Recover the former from its registered
   HEAD without taking branch ownership (`internal/workspace/manager.go::Manager.addWorktree`).
+- Empty branch metadata does not prove checkout recovery. Roll back fresh
+  failed checkouts while retaining adopted source branches
+  (`internal/workspace/manager.go::Manager.SetupWithOptions`).
 
 ## Provider-Backed Lifecycle Facts
 

@@ -57,6 +57,9 @@ or remote workspace and session operations.
 - Protocol-3 enrollment upgrades require the offline native migration, not wire
   compatibility; keep its transition only until maintained fleets migrate and
   protocol-3 rollback retention closes (`cmd/kenn-forge/fleet_migrate.go::migrateFleetProtocol`).
+- Protocol-3 seals may hash `coordinator_node_id`; accept that historical encoding
+  only during offline migration, preserving strict current-protocol validation
+  (`internal/db/protocol_migration.go::validateMigratingSpokePreparationSeal`).
 
 - Snapshots use the shared federation protocol version, not a separate schema
   version; protocol version and node ID must match exactly

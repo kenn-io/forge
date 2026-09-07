@@ -1,8 +1,12 @@
 package db
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/json"
+	"errors"
 	"fmt"
 )
 
@@ -87,7 +91,7 @@ func (d *DB) MigrateFleetProtocol3To4(
 				_ = rows.Close()
 				return fmt.Errorf("cannot migrate preparation protocol %d to 4", request.ProtocolVersion)
 			}
-			if err := validateSpokePreparationSealRequest(request); err != nil {
+			if err := validateMigratingSpokePreparationSeal(request); err != nil {
 				_ = rows.Close()
 				return err
 			}
@@ -126,4 +130,25 @@ func (d *DB) MigrateFleetProtocol3To4(
 		return nil
 	})
 	return updatedDigest, err
+}
+
+// Historical protocol-3 seals used coordinator_node_id in the hashed JSON.
+// Accept that exact binding only inside the one-time migration, which rewrites
+// it to the canonical protocol-4 digest before publishing enrollment state.
+func validateMigratingSpokePreparationSeal(request SpokePreparationSealRequest) error {
+	err := validateSpokePreparationSealRequest(request)
+	if err == nil || request.ProtocolVersion != 3 || !errors.Is(err, ErrSpokePreparationConflict) {
+		return err
+	}
+	expected := request.PreparationDigest
+	request.PreparationDigest = ""
+	encoded, encodeErr := json.Marshal(request)
+	if encodeErr != nil {
+		return encodeErr
+	}
+	encoded = bytes.Replace(encoded, []byte(`"hub_node_id":`), []byte(`"coordinator_node_id":`), 1)
+	if fmt.Sprintf("%x", sha256.Sum256(encoded)) != expected {
+		return err
+	}
+	return nil
 }

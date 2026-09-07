@@ -485,7 +485,7 @@ async function emitApplicationOsc52(
   output: ReturnType<typeof observeTerminalOutput>,
 ): Promise<void> {
   const marker = "application osc52 complete";
-  const payload = "dW50cnVzdGVkIGNsaXBib2FyZCB2YWx1ZQ==";
+  const payload = Buffer.from("application clipboard value", "utf8").toString("base64");
   await container.click({ position: { x: 10, y: 10 } });
   await page.keyboard.type(`printf '${shellOctal(`\x1b]52;c;${payload}\x07${marker}\n`)}'`);
   await page.keyboard.press("Enter");
@@ -971,51 +971,70 @@ test("insecure browser clipboard events and context menu work with tmux", async 
   }
 });
 
-test("tmux blocks application OSC 52 while keyboard copy reaches the clipboard", async ({ page, browserName }) => {
-  test.skip(!hasCommand("git") || !hasCommand("tmux", ["-V"]), "git and tmux are required for the real workspace flow");
-  let fallbackWrites: string[] = [];
-  if (browserName === "chromium") {
-    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
-  } else {
-    fallbackWrites = await interceptDeniedBrowserClipboard(page);
-  }
-
-  let isolatedServer: IsolatedE2EServer | null = null;
-  let api: APIRequestContext | null = null;
-  try {
-    isolatedServer = await startIsolatedWorkspaceE2EServer();
-    api = await playwrightRequest.newContext({
-      baseURL: isolatedServer.info.base_url,
-    });
-    const workspace = await createIssueWorkspace(api, 10);
-    const output = observeTerminalOutput(page);
-
-    await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
-    const tabTerminal = await openTerminalPanel(page);
-    const tmuxSession = await runningRuntimeTmuxSession(api, workspace.id);
-    const keyboardMarker = "keyboard clipboard marker";
-    if (browserName === "firefox") {
-      await emitApplicationOsc52(page, tabTerminal, output);
-      await page.waitForTimeout(250);
-      expect(fallbackWrites).toEqual([]);
-
-      await copyMarkerWithTmuxBuffer(page, tabTerminal, output, isolatedServer, tmuxSession, keyboardMarker);
-      await expect.poll(() => fallbackWrites).toContain(keyboardMarker);
+for (const clipboardPolicy of ["external", "on"] as const) {
+  test(`custom tmux clipboard policy ${clipboardPolicy} handles application and keyboard copies`, async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+    let fallbackWrites: string[] = [];
+    if (browserName === "chromium") {
+      await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
     } else {
-      await setBrowserClipboard(page, "trusted clipboard value");
-      await emitApplicationOsc52(page, tabTerminal, output);
-      await page.waitForTimeout(250);
-      expect(await readBrowserClipboard(page)).toBe("trusted clipboard value");
-
-      await setBrowserClipboard(page, "");
-      await copyMarkerWithTmuxBuffer(page, tabTerminal, output, isolatedServer, tmuxSession, keyboardMarker);
-      await expect.poll(() => readBrowserClipboardWithoutFocus(page), { timeout: 15_000 }).toBe(keyboardMarker);
+      fallbackWrites = await interceptDeniedBrowserClipboard(page);
     }
-  } finally {
-    await api?.dispose();
-    await isolatedServer?.stop();
-  }
-});
+
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({
+        baseURL: isolatedServer.info.base_url,
+      });
+      const workspace = await createIssueWorkspace(api, 10);
+      const output = observeTerminalOutput(page);
+
+      await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
+      const tabTerminal = await openTerminalPanel(page);
+      const tmuxSession = await runningRuntimeTmuxSession(api, workspace.id);
+      // The e2e fixture uses a custom private socket, whose policy Forge does
+      // not change. Exercise both that default and Forge's dedicated policy.
+      runE2ETmuxCommand(isolatedServer, ["set-option", "-s", "set-clipboard", clipboardPolicy]);
+      const keyboardMarker = "keyboard clipboard marker";
+      if (browserName === "firefox") {
+        await emitApplicationOsc52(page, tabTerminal, output);
+        if (clipboardPolicy === "on") {
+          await expect.poll(() => fallbackWrites).toContain("application clipboard value");
+        } else {
+          await page.waitForTimeout(250);
+          expect(fallbackWrites).toEqual([]);
+        }
+
+        await copyMarkerWithTmuxBuffer(page, tabTerminal, output, isolatedServer, tmuxSession, keyboardMarker);
+        await expect.poll(() => fallbackWrites).toContain(keyboardMarker);
+      } else {
+        await setBrowserClipboard(page, "trusted clipboard value");
+        await emitApplicationOsc52(page, tabTerminal, output);
+        if (clipboardPolicy === "on") {
+          await expect.poll(() => readBrowserClipboardWithoutFocus(page)).toBe("application clipboard value");
+        } else {
+          await page.waitForTimeout(250);
+          expect(await readBrowserClipboard(page)).toBe("trusted clipboard value");
+        }
+
+        await setBrowserClipboard(page, "");
+        await copyMarkerWithTmuxBuffer(page, tabTerminal, output, isolatedServer, tmuxSession, keyboardMarker);
+        await expect.poll(() => readBrowserClipboardWithoutFocus(page), { timeout: 15_000 }).toBe(keyboardMarker);
+      }
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+}
 
 test("visible terminal focus loss revokes keyboard authorization after a missed pointer release", async ({
   page,

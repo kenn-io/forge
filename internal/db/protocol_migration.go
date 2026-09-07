@@ -49,14 +49,14 @@ func (d *DB) MigrateFleetProtocol3To4(
 				MigrationVersion: local.MigrationVersion, ReceiptsDigest: receiptsDigest,
 				DrainedAckGeneration: *local.DrainAckGeneration,
 			}
-			storedDigest, err := SpokePreparationSealDigest(request)
-			if err != nil || storedDigest != local.PreparationDigest {
-				return "", ErrSpokePreparationConflict
+			request.PreparationDigest = local.PreparationDigest
+			if err := validateMigratingSpokePreparationSeal(request); err != nil {
+				return "", err
 			}
 			request.ProtocolVersion = binding.ProtocolVersion
-			enrollmentDigest, err := SpokePreparationSealDigest(request)
-			if err != nil || enrollmentDigest != digest {
-				return "", ErrSpokePreparationConflict
+			request.PreparationDigest = digest
+			if err := validateMigratingSpokePreparationSeal(request); err != nil {
+				return "", err
 			}
 			request.ProtocolVersion = 4
 			updatedDigest, err = SpokePreparationSealDigest(request)

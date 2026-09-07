@@ -57,6 +57,9 @@ func openView(ctx context.Context, path string, m *meter) (_ *objectView, err er
 	runner := gitcmd.New()
 	runner.DisableSafeDirectoryForward = true
 	source := &objectView{dir: path, runner: runner, meter: m}
+	if err := source.requireRepositoryRoot(ctx); err != nil {
+		return nil, err
+	}
 	objects, err := source.run(ctx, "rev-parse", "--path-format=absolute", "--git-path", "objects")
 	if err != nil {
 		return nil, err
@@ -94,6 +97,19 @@ func openView(ctx context.Context, path string, m *meter) (_ *objectView, err er
 		"GIT_NO_REPLACE_OBJECTS=1", "GIT_OPTIONAL_LOCKS=0")
 	v.runner.StripEnv = false
 	return v, nil
+}
+
+// Resolve only metadata at the supplied path, never Git's parent discovery.
+// Worktrees have a .git directory or gitfile; bare repositories are git dirs.
+func (v *objectView) requireRepositoryRoot(ctx context.Context) error {
+	gitDir := filepath.Join(v.dir, ".git")
+	if _, err := os.Stat(gitDir); errors.Is(err, os.ErrNotExist) {
+		gitDir = v.dir
+	} else if err != nil {
+		return err
+	}
+	_, err := v.run(ctx, "rev-parse", "--resolve-git-dir", gitDir)
+	return err
 }
 
 func (v *objectView) close() error { return os.RemoveAll(v.dir) }

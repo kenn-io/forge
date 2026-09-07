@@ -2,6 +2,7 @@ package landedwork_test
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -126,4 +127,25 @@ func TestAnalyzeIncompletePreparation(t *testing.T) {
 	assert.Equal(p.Query().Gaps, r.Coverage.Gaps)
 	assert.Equal(f.bounds(), r.Coverage.Bounds)
 	assert.Empty(r.Landings)
+}
+
+func TestAnalyzeBudgetPreservesPreparedGaps(t *testing.T) {
+	f := buildFixture(t, false)
+	ctx, _ := f.prepare(t)
+	bounds := f.bounds()
+	bounds.Head = strings.Repeat("a", 40)
+	p, err := landedwork.Prepare(ctx, f.repo.Root, bounds, fixtureLimits())
+	require := require.New(t)
+	require.NoError(err)
+	expected := []landedwork.Gap{{ObjectID: bounds.Head, Reason: "objects_unavailable"}}
+	require.Equal(expected, p.Query().Gaps)
+	limits := fixtureLimits()
+	limits.InputBytes = 1
+	r, err := landedwork.Analyze(ctx, p, fixtureEvidence(f, p, "merge"), limits)
+	require.NoError(err)
+	assert := assert.New(t)
+	assert.Equal(append(expected, landedwork.Gap{Reason: "input_budget_exhausted"}), r.Coverage.Gaps)
+	assert.False(r.Coverage.Complete)
+	assert.Equal(bounds, r.Coverage.Bounds)
+	assert.Equal(bounds.Base, r.Coverage.CertifiedHead)
 }

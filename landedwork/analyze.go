@@ -17,7 +17,8 @@ func Analyze(ctx context.Context, p *Interval, e Evidence, limits Limits) (r Res
 	if err = validate(ctx, p.query.Bounds, limits); err != nil {
 		return r, err
 	}
-	r.Coverage = Coverage{Bounds: p.query.Bounds, Inventory: e.Inventory, CertifiedHead: p.query.Bounds.Base}
+	r.Coverage = Coverage{Bounds: p.query.Bounds, Inventory: e.Inventory, CertifiedHead: p.query.Bounds.Base,
+		Gaps: slices.Clone(p.query.Gaps)}
 	m := &meter{limits: limits}
 	defer func() {
 		if ctx.Err() != nil {
@@ -35,12 +36,11 @@ func Analyze(ctx context.Context, p *Interval, e Evidence, limits Limits) (r Res
 	}()
 	if err = validateEvidence(p, e, m); err != nil {
 		if errors.Is(err, ErrInputBudget) {
-			r.Coverage.Gaps = []Gap{{Reason: "input_budget_exhausted"}}
+			r.Coverage.Gaps = append(r.Coverage.Gaps, Gap{Reason: "input_budget_exhausted"})
 			return r, nil
 		}
 		return r, err
 	}
-	r.Coverage.Gaps = slices.Clone(p.query.Gaps)
 	if !p.query.Complete {
 		return r, nil
 	}

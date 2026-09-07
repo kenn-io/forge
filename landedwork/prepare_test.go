@@ -146,3 +146,31 @@ func TestPrepareCanceled(t *testing.T) {
 	_, err := landedwork.Prepare(ctx, f.repo.Root, f.bounds(), fixtureLimits())
 	require.ErrorIs(t, err, context.Canceled)
 }
+
+func TestPrepareRequiresRepositoryRoot(t *testing.T) {
+	f := buildFixture(t, false)
+	ctx, _ := f.prepare(t)
+	nested := filepath.Join(f.repo.Root, "nested")
+	require := require.New(t)
+	require.NoError(os.Mkdir(nested, 0700))
+	p, err := landedwork.Prepare(ctx, nested, f.bounds(), fixtureLimits())
+	require.NoError(err)
+	assert := assert.New(t)
+	assert.False(p.Query().Complete)
+	assert.Empty(p.Query().Commits)
+	assert.Equal([]landedwork.Gap{{Reason: "objects_unavailable"}}, p.Query().Gaps)
+}
+
+func TestPrepareBareAndLinkedRepositories(t *testing.T) {
+	f := buildFixture(t, false)
+	ctx, _ := f.prepare(t)
+	bare := filepath.Join(t.TempDir(), "bare.git")
+	f.repo.Run("clone", "--bare", "--no-local", f.repo.Root, bare)
+	linked := f.repo.AddWorktree("linked")
+	for _, path := range []string{bare, linked} {
+		p, err := landedwork.Prepare(ctx, path, f.bounds(), fixtureLimits())
+		require.NoError(t, err)
+		assert.True(t, p.Query().Complete)
+		assert.Empty(t, p.Query().Gaps)
+	}
+}

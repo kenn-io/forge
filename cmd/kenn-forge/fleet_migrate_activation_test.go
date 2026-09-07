@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -22,8 +23,18 @@ import (
 )
 
 func TestFleetMigrateProtocolRestoresAuthenticatedActivation(t *testing.T) {
-	for _, state := range []federation.EnrollmentState{federation.EnrollmentPending, federation.EnrollmentActive} {
-		t.Run(string(state), func(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		state      federation.EnrollmentState
+		historical bool
+	}{
+		{name: "pending", state: federation.EnrollmentPending},
+		{name: "active", state: federation.EnrollmentActive},
+		{name: "historical pending", state: federation.EnrollmentPending, historical: true},
+		{name: "historical active resume", state: federation.EnrollmentActive, historical: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			state := test.state
 			assert := assert.New(t)
 			require := require.New(t)
 			hub := httptest.NewUnstartedServer(nil)
@@ -63,6 +74,16 @@ func TestFleetMigrateProtocolRestoresAuthenticatedActivation(t *testing.T) {
 			require.NoError(err)
 			seal, err := hubDB.IssueSpokePreparationSeal(t.Context(), sealRequest)
 			require.NoError(err)
+			if test.historical {
+				encoded := fmt.Sprintf(`{"enrollment_id":%q,"node_id":%q,"coordinator_node_id":%q,"protocol_version":3,"migration_version":54,"receipts_digest":%q,"drained_ack_generation":%d,"preparation_digest":""}`,
+					startupEnrollmentID, startupNodeID, startupHubID, sealRequest.ReceiptsDigest, generation)
+				digest := sha256.Sum256([]byte(encoded))
+				seal.PreparationDigest = hex.EncodeToString(digest[:])
+				_, err := hubDB.WriteDB().ExecContext(t.Context(),
+					`UPDATE forge_spoke_preparation_seals SET preparation_digest = ? WHERE enrollment_id = ?`,
+					seal.PreparationDigest, startupEnrollmentID)
+				require.NoError(err)
+			}
 			require.NoError(spokeDB.StoreLocalSpokePreparationSeal(t.Context(), seal.PreparationDigest, seal.Seal))
 			now := time.Now().UTC()
 			enrollment := federation.Enrollment{ID: startupEnrollmentID, NodeID: startupNodeID,
@@ -91,6 +112,11 @@ func TestFleetMigrateProtocolRestoresAuthenticatedActivation(t *testing.T) {
 			require.NoError(hubCredentials.StoreOutbound(startupNodeID, "hub-to-spoke", federationauth.PendingHubToSpokeScopes()))
 			require.NoError(spokeCredentials.StoreInbound(startupHubID, "hub-to-spoke", federationauth.PendingHubToSpokeScopes()))
 			require.NoError(spokeCredentials.StoreOutbound(startupHubID, "spoke-to-hub", federationauth.PendingSpokeToHubScopes()))
+			if test.historical && state == federation.EnrollmentActive {
+				// Resume after SQLite commits while enrollment still has its old digest.
+				_, err := spokeDB.MigrateFleetProtocol3To4(t.Context(), &binding, seal.PreparationDigest, seal.Seal)
+				require.NoError(err)
+			}
 			require.NoError(hubDB.Close())
 			require.NoError(spokeDB.Close())
 

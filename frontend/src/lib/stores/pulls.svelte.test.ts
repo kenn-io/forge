@@ -342,6 +342,28 @@ describe("pulls store display order", () => {
     expect(store.getDisplayOrderPRs().map((pr) => pr.ID)).toEqual([3, 4, 1, 2]);
   });
 
+  it("uses the collapsed root as the keyboard cursor while a child detail stays selected", async () => {
+    const store = createPullsStore({
+      client: clientWithPulls([
+        pull(9, "api", "2026-05-20T16:00:00Z"),
+        pull(1, "api", "2026-05-20T15:00:00Z", { stack: { stack_id: 7, position: 1, size: 2 } }),
+        pull(2, "api", "2026-05-20T14:00:00Z", { stack: { stack_id: 7, position: 2, size: 2 } }),
+        pull(8, "api", "2026-05-20T13:00:00Z"),
+      ]),
+    });
+    await loadPulls(store);
+    store.setStackTree(true);
+    for (const direction of ["next", "previous"]) {
+      store.selectPR("acme", "api", 2, "github", "github.com", "acme/api");
+      const root = store.getSidebarRows(store.getFilteredPulls()).find((row) => row.pr.ID === 1)!;
+      store.toggleStack(root.stackKey, true);
+      expect(store.getSelectedPR()?.number).toBe(2);
+      if (direction === "next") store.selectNextPR();
+      else store.selectPrevPR();
+      expect(store.getSelectedPR()?.number).toBe(direction === "next" ? 8 : 9);
+    }
+  });
+
   it("keeps filtered and status-grouped stack members within their view", async () => {
     const store = createPullsStore({
       getGroupByWorkflow: () => true,

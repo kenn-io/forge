@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import { page } from "vite-plus/test/browser";
 import { mountBrowserApp, resetKeyboardModuleState, type MountedBrowserApp } from "./test/browserAppHarness.js";
 import { createMockApiFetch, jsonResponse, type MockRouteOverride } from "./test/mockApiFetch.js";
+import { navigate } from "./lib/stores/router.svelte.js";
 import type { PullRequest } from "./lib/api/types.js";
 
 let mounted: MountedBrowserApp | null = null;
@@ -88,7 +89,23 @@ describe("PR sidebar stack tree", () => {
     await expect.element(page.getByRole("button", { name: "Expand stack at #1: 3 PRs in stack" })).toBeVisible();
   });
 
-  it("reveals a deep-linked member and lets the user collapse it", async () => {
+  it.each([340, 520])("resets the stack view with a %i-pixel sidebar", async (width) => {
+    localStorage.setItem("kenn-forge-sidebar-width", String(width));
+    localStorage.setItem("kenn-forge:pullStackTree", "1");
+    mounted = await mountBrowserApp("/pulls", { overrides: [routes] });
+    await vi.waitFor(() => expect(rowTitles()).toHaveLength(2));
+    if (width === 340) {
+      await page.elementLocator(document.querySelector(".pull-list .compact-filter-menu button")!).click();
+      await page.getByRole("button", { name: "Reset view", exact: true }).click();
+    } else {
+      await page.getByRole("button", { name: "PR filters", exact: true }).click();
+      await page.getByRole("button", { name: "Clear filters", exact: true }).click();
+    }
+    await vi.waitFor(() => expect(rowTitles()).toHaveLength(4));
+    expect(localStorage.getItem("kenn-forge:pullStackTree")).toBe("0");
+  });
+
+  it("reveals a deep-linked member again after leaving Pulls and returning", async () => {
     localStorage.setItem("kenn-forge:pullStackTree", "1");
     mounted = await mountBrowserApp("/pulls/github/acme/widgets/2", { overrides: [routes] });
     await expect.element(page.getByRole("button", { name: "Collapse stack at #1: 3 PRs in stack" })).toBeVisible();
@@ -99,5 +116,10 @@ describe("PR sidebar stack tree", () => {
     );
     await page.getByRole("button", { name: "Collapse stack at #1: 3 PRs in stack" }).click();
     await vi.waitFor(() => expect(rowTitles()).toEqual(["Extract request validation", "Update release notes"]));
+    navigate("/activity");
+    await vi.waitFor(() => expect(document.querySelector(".pull-list")).toBeNull());
+    window.history.back();
+    await expect.element(page.getByRole("button", { name: "Collapse stack at #1: 3 PRs in stack" })).toBeVisible();
+    await vi.waitFor(() => expect(rowTitles()).toContain("Add validation to the API"));
   });
 });

@@ -176,6 +176,7 @@
 
   function clearLocalViewFilters(): void {
     pulls.clearLocalFilters();
+    pulls.setStackTree(false);
     pulls.loadPulls();
     grouping.setHideOrgName(false);
   }

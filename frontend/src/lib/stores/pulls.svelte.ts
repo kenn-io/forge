@@ -258,12 +258,26 @@ export function createPullsStore(opts: PullsStoreOptions) {
 
   /** Returns PRs in display order: grouped by repo or flat chronological. */
   function getDisplayOrderPRs(): PullRequest[] {
-    const groups = opts.getGroupByWorkflow?.()
+    const groups = getDisplayGroups();
+    return groups.flatMap((items) => getSidebarRows(items).map((row) => row.pr));
+  }
+
+  function getDisplayGroups(): PullRequest[][] {
+    return opts.getGroupByWorkflow?.()
       ? groupByWorkflow(getFilteredPulls(), opts.getUseWorkspaceActivityForRecency?.()).map((group) => group.items)
       : getGroupByRepo()
         ? [...pullsByRepo().values()]
         : [getFilteredPulls()];
-    return groups.flatMap((items) => getSidebarRows(items).map((row) => row.pr));
+  }
+
+  function getNavigationIndex(list: PullRequest[], selection: PullSelection): number {
+    const index = list.findIndex((pr) => pullMatchesSelection(pr, selection));
+    if (index >= 0 || !stackTree) return index;
+    // A manually hidden child keeps its detail open; use its visible root as the cursor.
+    const group = getDisplayGroups().find((items) => items.some((pr) => pullMatchesSelection(pr, selection)));
+    const stack =
+      group && groupPullStacks(group).find(({ members }) => members.some((pr) => pullMatchesSelection(pr, selection)));
+    return stack ? list.findIndex((pr) => pr.ID === stack.members[0]?.ID) : -1;
   }
 
   function selectNextPR(): void {
@@ -277,7 +291,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
       }
       return;
     }
-    const idx = list.findIndex((pr) => pullMatchesSelection(pr, sel));
+    const idx = getNavigationIndex(list, sel);
     const next = list[idx + 1];
     if (next !== undefined) {
       selectPRFromPull(next);
@@ -295,7 +309,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
       }
       return;
     }
-    const idx = list.findIndex((pr) => pullMatchesSelection(pr, sel));
+    const idx = getNavigationIndex(list, sel);
     if (idx > 0) {
       const prev = list[idx - 1];
       if (prev !== undefined) {

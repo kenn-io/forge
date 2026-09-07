@@ -483,6 +483,42 @@ func TestDefaultRoborevEndpointIsUnbindable(t *testing.T) {
 	assert.Positive(port)
 }
 
+func TestMixedCIFixtureSurvivesRefresh(t *testing.T) {
+	require := require.New(t)
+	assets, err := web.Assets()
+	require.NoError(err)
+	state, err := buildAppState(t.Context(), assets, appOptions{roborevEndpoint: defaultRoborevEndpoint})
+	require.NoError(err)
+	t.Cleanup(state.close)
+
+	seed := httptest.NewRecorder()
+	state.handler.ServeHTTP(seed, httptest.NewRequest(http.MethodPost, "http://127.0.0.1/__e2e/pr-ci-state/mixed", nil))
+	require.Equal(http.StatusOK, seed.Code, seed.Body.String())
+
+	refresh := httptest.NewRecorder()
+	state.handler.ServeHTTP(refresh, httptest.NewRequest(http.MethodPost, "http://127.0.0.1/api/v1/pulls/github/acme/widgets/1/ci-refresh", nil))
+	require.Equal(http.StatusOK, refresh.Code, refresh.Body.String())
+	var detail struct {
+		MergeRequest struct {
+			CIChecksJSON string
+		} `json:"merge_request"`
+	}
+	require.NoError(json.Unmarshal(refresh.Body.Bytes(), &detail))
+	var checks []db.CICheck
+	require.NoError(json.Unmarshal([]byte(detail.MergeRequest.CIChecksJSON), &checks))
+	conclusions := make(map[string]string, len(checks))
+	for _, check := range checks {
+		conclusions[check.Name] = check.Conclusion
+	}
+	assert.Equal(t, map[string]string{
+		"build-darwin":   "failure",
+		"build-linux":    "success",
+		"test-linux":     "success",
+		"deploy-staging": "",
+		"build-windows":  "skipped",
+	}, conclusions)
+}
+
 func TestBuildAppStateSeedsReviewedHeadsForUTCMergeTargets(t *testing.T) {
 	assets, err := web.Assets()
 	require.NoError(t, err)

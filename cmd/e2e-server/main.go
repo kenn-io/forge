@@ -2652,7 +2652,7 @@ func buildAppState(
 		}
 		if r.Method == http.MethodPost &&
 			r.URL.Path == "/__e2e/pr-ci-state/mixed" {
-			mixedPayload, err := json.Marshal([]db.CICheck{
+			checks := []db.CICheck{
 				{
 					Name:       "build-darwin",
 					Status:     "completed",
@@ -2684,18 +2684,16 @@ func buildAppState(
 					Conclusion: "skipped",
 					App:        "GitHub Actions",
 				},
-			})
+			}
+			mixedPayload, err := json.Marshal(checks)
 			if err != nil {
 				http.Error(w, "marshal mixed checks", http.StatusInternalServerError)
 				return
 			}
 			setPR1CIState(w, r, database, fc, "mixed", ciFixtureOptions{
-				statusName: "failure",
-				checksJSON: string(mixedPayload),
-				pinProviderTo: &struct {
-					Status     string
-					Conclusion string
-				}{Status: "completed", Conclusion: "failure"},
+				statusName:        "failure",
+				checksJSON:        string(mixedPayload),
+				providerCheckRuns: ciChecksToCheckRuns(checks),
 			})
 			return
 		}

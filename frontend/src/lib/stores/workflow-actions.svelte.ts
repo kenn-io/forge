@@ -246,14 +246,15 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
         },
         onSuccess: (catalog) => {
           if (!isCurrent(ref, "catalog", generation)) return;
+          const selectedId = snapshotFor(ref).selectedWorkflow?.id;
+          const selectedWorkflow = catalog.workflows?.find((workflow) => workflow.id === selectedId) ?? null;
           update(ref, (snapshot) => ({
             ...snapshot,
             catalog,
-            selectedWorkflow:
-              catalog.workflows?.find((workflow) => workflow.id === snapshot.selectedWorkflow?.id) ??
-              snapshot.selectedWorkflow,
+            selectedWorkflow,
             loading: { ...snapshot.loading, catalog: false },
           }));
+          if (selectedId !== undefined && selectedWorkflow === null) selectWorkflow(ref, null);
           onDone(catalog, null);
         },
       },

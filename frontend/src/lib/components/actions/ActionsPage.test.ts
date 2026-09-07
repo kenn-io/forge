@@ -210,6 +210,7 @@ describe("ActionsPage", () => {
     render(ActionsPage, {
       context: new Map([[STORES_KEY, { workflowActions }]]),
     });
+    return workflowActions;
   }
 
   beforeEach(() => {
@@ -420,6 +421,36 @@ describe("ActionsPage", () => {
     expect(await screen.findByRole("combobox", { name: "channel" })).toBeTruthy();
     expect(catalogReads).toBe(2);
     expect(api.requests.filter((request) => request.method === "POST")).toHaveLength(1);
+  });
+
+  it("clears the dispatch form, runs and jobs when a refreshed catalog removes the selection", async () => {
+    let removed = false;
+    api = createMockApiFetch([
+      (request) =>
+        removed && request.url.pathname === "/api/v1/actions/github/acme/alpha/workflows"
+          ? jsonResponse({ repo: repoSummary("alpha").repo, environments: [], workflows: [] })
+          : null,
+      workflowFixtures(),
+    ]);
+    globalThis.fetch = api.fetch;
+    const store = renderPage();
+    const ref = { provider: "github", platformHost: "github.com", owner: "acme", name: "alpha" };
+    await fireEvent.click(await screen.findByRole("button", { name: /alpha deploy/ }));
+    await fireEvent.click(await screen.findByRole("button", { name: /Run 7 alpha deploy/ }));
+    await waitFor(() => expect(store.getJobs(ref, "alpha-run-1")).toHaveLength(1));
+    expect(screen.getByRole("button", { name: "Run workflow" })).toBeTruthy();
+
+    removed = true;
+    store.refreshCatalog(ref, "alpha-deploy.yml");
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Run workflow" })).toBeNull());
+    expect(store.getSnapshot(ref)).toMatchObject({
+      selectedWorkflow: null,
+      runs: [],
+      jobs: {},
+      runsPage: { nextCursor: null, exhausted: false, loadingMore: false },
+      loading: { catalog: false, runs: false, jobs: [] },
+    });
+    expect(screen.queryByRole("button", { name: /Run 7 alpha deploy/ })).toBeNull();
   });
 
   it("shows a rejected dispatch and requires confirmation before retrying", async () => {

@@ -690,6 +690,48 @@ func TestSyncRepoRecordsDefaultBranchForcePushBeforeUpdatingTip(t *testing.T) {
 	assert.Equal(afterSHA, tip.TipSHA)
 }
 
+func TestSyncRepoResumesDefaultBranchActivityAfterCloneReplacement(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	fixture := setupSyncBranchActivityFixture(t, "main")
+	t.Cleanup(fixture.Syncer.Stop)
+	beforeSHA := syncActivityCommitAndPush(t, fixture.Work,
+		"before.txt", "before\n", "before rewrite", "main")
+	require.NoError(fixture.Syncer.syncRepo(t.Context(), fixture.Repo))
+
+	syncActivityGitRun(t, fixture.Work, "checkout", "--orphan", "rewrite")
+	syncActivityGitRun(t, fixture.Work, "rm", "-r", "--cached", ".")
+	afterSHA := syncActivityCommit(t, fixture.Work, "after.txt", "after\n", "after rewrite")
+	syncActivityGitRun(t, fixture.Work, "push", "--force", "origin", "HEAD:main")
+	// A rebuilt clone no longer has the unreachable tip retained in SQLite.
+	syncActivityGitRun(t, fixture.Remote, "reflog", "expire", "--expire=now", "--all")
+	syncActivityGitRun(t, fixture.Remote, "gc", "--prune=now")
+	fixture.Syncer.clones = gitclone.New(t.TempDir(), nil)
+
+	require.NoError(fixture.Syncer.syncRepo(t.Context(), fixture.Repo))
+	repoRow := requireSyncActivityRepoRow(t, fixture.DB)
+	tip, err := fixture.DB.GetBranchTip(t.Context(), repoRow.ID, "main")
+	require.NoError(err)
+	require.NotNil(tip)
+	assert.Equal(afterSHA, tip.TipSHA, "missing old objects must not stall branch activity")
+	var shas []string
+	for _, item := range syncActivityBranchCommits(t, fixture.DB) {
+		shas = append(shas, item.CommitSHA)
+	}
+	assert.Contains(shas, beforeSHA, "keep previously recorded activity")
+	assert.Contains(shas, afterSHA, "index the current history")
+	assert.Empty(syncActivityForcePushes(t, fixture.DB), "missing history cannot prove a force push")
+
+	nextSHA := syncActivityCommitAndPush(t, fixture.Work,
+		"next.txt", "next\n", "next commit", "main")
+	require.NoError(fixture.Syncer.syncRepo(t.Context(), fixture.Repo))
+	tip, err = fixture.DB.GetBranchTip(t.Context(), repoRow.ID, "main")
+	require.NoError(err)
+	require.NotNil(tip)
+	assert.Equal(nextSHA, tip.TipSHA)
+	assert.Empty(syncActivityForcePushes(t, fixture.DB))
+}
+
 func TestSyncRepoSkipsBranchActivityWhenCloneFetchFails(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

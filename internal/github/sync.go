@@ -5689,15 +5689,22 @@ func (s *Syncer) syncDefaultBranchActivity(
 				previousTip.TipSHA,
 				currentTip,
 			)
-			if err != nil {
+			switch {
+			case errors.Is(err, gitclone.ErrNotFound):
+				// SQLite can retain a tip after its object disappears from a
+				// rebuilt or pruned clone. Resume bounded history indexing;
+				// missing history does not prove a force push.
+				afterSHA = ""
+			case err != nil:
 				slog.Warn("check default branch ancestry failed",
 					"repo", repo.Owner+"/"+repo.Name,
 					"branch", branch,
 					"err", err,
 				)
 				return
+			default:
+				forcePush = !ancestor
 			}
-			forcePush = !ancestor
 		}
 	}
 

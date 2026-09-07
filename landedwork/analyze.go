@@ -24,6 +24,9 @@ func Analyze(ctx context.Context, p *Interval, e Evidence, limits Limits) (r Res
 			err = ctx.Err()
 		}
 		if err == nil {
+			if p.query.Complete {
+				finishCoverage(&r, p)
+			}
 			err = checkResultOutput(r, limits)
 		}
 		if err != nil {
@@ -59,7 +62,9 @@ func Analyze(ctx context.Context, p *Interval, e Evidence, limits Limits) (r Res
 		return r, nil
 	}
 	terminals, ids := candidateCounts(e.Candidates)
-	for _, c := range e.Candidates {
+	candidates := slices.Clone(e.Candidates)
+	slices.SortFunc(candidates, func(a, b Candidate) int { return cmp.Compare(a.ID, b.ID) })
+	for _, c := range candidates {
 		if terminals[c.Terminal] > 1 || ids[c.ID] > 1 {
 			r.Coverage.Gaps = append(r.Coverage.Gaps, Gap{CandidateID: c.ID, ObjectID: c.Terminal, Reason: "candidate_conflict"})
 			continue
@@ -71,7 +76,6 @@ func Analyze(ctx context.Context, p *Interval, e Evidence, limits Limits) (r Res
 			r.Landings = append(r.Landings, landing)
 		}
 	}
-	finishCoverage(&r, p)
 	return r, nil
 }
 

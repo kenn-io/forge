@@ -24,7 +24,8 @@ Use this document as the intent-level guide for frontend UI work in `kenn-forge`
 - Inline conditional notices occupy layout only while active; do not reserve
   invisible rows for them (`frontend/src/lib/components/diff/DiffView.svelte`).
 
-PR list rows show linked worktrees with an icon, without branch-name text.
+PR list rows use the workspace indicator only; do not add a separate worktree
+icon or branch-name label.
 Use `AgentStatusIndicator` for opt-in agent labels in PR, Issue, and Activity
 rows, aligned on the right to match Workspaces.
 

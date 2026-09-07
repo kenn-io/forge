@@ -554,6 +554,9 @@ let route = $state<Route>(parseRoute(configuredInitialRoute ?? currentLocationPa
 // Activity is entered or left.
 const LAST_ACTIVITY_ROUTE_STORAGE_KEY = "kenn-forge:last-activity-route";
 const RESTORABLE_ACTIVITY_FILTER_PARAMS = [
+  "range",
+  "view",
+  "hide_closed",
   "item_types",
   "event_types",
   "types",

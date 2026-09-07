@@ -214,6 +214,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   let authorsError = $state<string | null>(null);
   let timeRange = $state<TimeRange>("7d");
   let viewMode = $state<ViewMode>("flat");
+  let timeRangeDefault: TimeRange = "7d";
+  let viewModeDefault: ViewMode = "flat";
+  let defaultsHydrated = false;
   let collapseThreads = $state(false);
   let rollUpCommits = $state(false);
   let collapseThreadsDefault = false;
@@ -437,6 +440,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   // --- hydration ---
 
   function hydrateDefaults(activity: ActivitySettings): void {
+    timeRangeDefault = activity.time_range;
+    viewModeDefault = activity.view_mode;
+    defaultsHydrated = true;
     viewMode = activity.view_mode;
     timeRange = activity.time_range;
     hideClosedMerged = activity.hide_closed;
@@ -1297,9 +1303,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     else sp.delete("author");
     if (hideClosedMergedOverride !== undefined) sp.set("hide_closed", hideClosedMergedOverride ? "1" : "0");
     else sp.delete("hide_closed");
-    if (timeRange !== "7d") sp.set("range", timeRange);
+    if (timeRange !== timeRangeDefault || (!defaultsHydrated && sp.has("range"))) sp.set("range", timeRange);
     else sp.delete("range");
-    if (viewMode !== "flat") sp.set("view", viewMode);
+    if (viewMode !== viewModeDefault || (!defaultsHydrated && sp.has("view"))) sp.set("view", viewMode);
     else sp.delete("view");
     if (rollUpCommits) sp.set("rollup_commits", "1");
     else sp.delete("rollup_commits");

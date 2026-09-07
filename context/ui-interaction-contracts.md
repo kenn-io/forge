@@ -206,9 +206,9 @@ Examples of transient state that should usually reset on identity change:
 
 Persisted controls must state their scope clearly.
 
-- Activity URL selections override server defaults after refresh and later
-  settings hydration, including explicit false for Hide closed/merged
-  (`frontend/src/lib/stores/activity.svelte.ts::hydrateDefaults`).
+- Preserve explicit Activity choices across refresh, Settings navigation, and
+  late hydration; omit time/view overrides only against known server defaults
+  (`frontend/src/lib/stores/activity.svelte.ts::syncToURL`, `frontend/src/lib/stores/router.svelte.ts::restoreMissingActivityFilters`).
 
 - Switching Forges is ordinary cross-origin link navigation. Do not keep a
   fleet-global selected host or retarget the link in JavaScript: every open tab

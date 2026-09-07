@@ -985,3 +985,20 @@ describe("workspace route memory", () => {
     expect(getLastWorkspaceRoute()).toBe("/terminal/ws-del-4");
   });
 });
+
+describe("Activity preferences after Settings", () => {
+  afterEach(() => {
+    navigate("/");
+    history.replaceState(null, "", "/");
+  });
+
+  it.each(["0", "1"])("restores the time window, view, and hide-closed choice %s on return", (hideClosed) => {
+    navigate(`/?range=90d&view=threaded&hide_closed=${hideClosed}`);
+    navigate("/settings");
+    navigate("/");
+    const restored = new URLSearchParams(window.location.search);
+    expect(restored.get("range")).toBe("90d");
+    expect(restored.get("view")).toBe("threaded");
+    expect(restored.get("hide_closed")).toBe(hideClosed);
+  });
+});

@@ -157,6 +157,7 @@ describe("AppHeader", () => {
     cleanupTheme();
     cleanup();
     navigate("/");
+    history.replaceState(null, "", "/");
     document.documentElement.classList.remove("dark");
     localStorage.clear();
     setSidebarCollapsed(false);

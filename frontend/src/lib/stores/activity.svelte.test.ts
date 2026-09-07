@@ -96,6 +96,27 @@ afterEach(async () => {
 });
 
 describe("activity store workspace activity", () => {
+  it.each([false, true])(
+    "restores explicit builtin choices over changed defaults (late hydration: %s)",
+    async (lateHydration) => {
+      const defaults: ActivitySettings = { ...settings(false), time_range: "30d", view_mode: "threaded" };
+      const first = makeStore();
+      first.hydrateDefaults(defaults);
+      first.initializeFromMount();
+      first.setTimeRange("7d");
+      first.setViewMode("flat");
+      first.syncToURL();
+      await Effect.runPromise(runtime!.disposeEffect);
+
+      const refreshed = makeStore();
+      if (!lateHydration) refreshed.hydrateDefaults(defaults);
+      refreshed.initializeFromMount();
+      if (lateHydration) refreshed.hydrateDefaults(defaults);
+      expect(refreshed.getTimeRange()).toBe("7d");
+      expect(refreshed.getViewMode()).toBe("flat");
+    },
+  );
+
   it("keeps the selected time window when settings hydrate after mounting", () => {
     window.history.replaceState(null, "", "/?range=90d");
     const store = makeStore();

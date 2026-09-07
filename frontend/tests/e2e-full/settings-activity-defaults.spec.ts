@@ -56,6 +56,17 @@ test("activity default view mode and time range persist through the segmented co
   await expect(
     page.getByRole("radiogroup", { name: "Default time range" }).getByRole("radio", { name: "30d" }),
   ).toBeChecked();
+
+  await page.getByRole("button", { name: "Back to app" }).click();
+  for (const label of ["Flat", "7d"]) {
+    await page.locator(".activity-filters__trigger").click();
+    await page.locator(".activity-filters__item", { hasText: label }).click();
+  }
+  await page.reload();
+  await expect(page.locator(".activity-filters__trigger")).toContainText("Flat · 7d");
+  await page.goto(`${isolatedServer!.info.base_url}/settings`);
+  await page.getByRole("button", { name: "Back to app" }).click();
+  await expect(page.locator(".activity-filters__trigger")).toContainText("Flat · 7d");
 });
 
 test("settings panels serialize writes through the shared queue", async ({ page }) => {

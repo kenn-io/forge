@@ -212,8 +212,8 @@ Persisted controls must state their scope clearly.
   storage (`frontend/src/lib/components/layout/ForgeSelector.svelte`).
 - Browser-local preferences belong in `localStorage` only when the behavior is
   intentionally per-browser and not worth server settings.
-- Agent status visibility is one browser-local preference shared by PR, Issue, and
-  Activity lists. Keep labels on the right, matching Workspaces; they describe live agents
+- Agent status visibility uses Forge config across browsers and embedded views.
+  Keep PR, Issue, and Activity labels on the right, matching Workspaces
   (`frontend/src/lib/components/shared/AgentStatusIndicator.svelte`).
 - `Involves me` is three independent browser-local preferences for Pulls, Issues, and
   Activity; each enabled view sends the server query so filtering happens before limits,

@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { getShowListAgentStatus } from "./lib/stores/list-agent-status.svelte.js";
   import { onDestroy, setContext, untrack } from "svelte";
   import { Effect } from "effect";
   import type { Attachment } from "svelte/attachments";
@@ -235,7 +234,7 @@
   });
   stores = appComposition.stores;
   $effect(() => {
-    if (!getShowListAgentStatus()) return;
+    if (!stores?.settings.getWorkspaceSettings().show_agent_status_in_lists) return;
     const execution = appRuntime.runCommand(appComposition.listAgentStatusPolling, {
       operation: "poll list agent status",
       safeContext: {},

@@ -721,6 +721,8 @@ type Detail struct {
 
 // Workspaces configures behavior shared by PR- and issue-backed workspaces.
 type Workspaces struct {
+	// ShowAgentStatusInLists displays linked agent states in item lists.
+	ShowAgentStatusInLists bool `toml:"show_agent_status_in_lists,omitempty" json:"show_agent_status_in_lists"`
 	// AutoAssignOnCreate adds the authenticated provider user to the source
 	// PR or issue when kenn-forge creates its workspace.
 	AutoAssignOnCreate bool `toml:"auto_assign_on_create,omitempty" json:"auto_assign_on_create"`

@@ -1,4 +1,3 @@
-import { getShowListAgentStatus, setShowListAgentStatus } from "../../stores/list-agent-status.svelte.js";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { Effect, Layer } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -42,7 +41,11 @@ import WorkspaceSettings from "./WorkspaceSettings.svelte";
 import SettingsRuntimeHarness from "./SettingsRuntimeHarness.svelte";
 import { createSettingsStore } from "../../stores/settings.svelte.js";
 
-const initial: WorkspaceSettings = { auto_assign_on_create: false, default_sidebar_view: "diff" };
+const initial: WorkspaceSettings = {
+  auto_assign_on_create: false,
+  default_sidebar_view: "diff",
+  show_agent_status_in_lists: false,
+};
 
 describe("WorkspaceSettings", () => {
   beforeEach(() => {
@@ -51,19 +54,35 @@ describe("WorkspaceSettings", () => {
 
   afterEach(() => {
     cleanup();
-    setShowListAgentStatus(false);
     mockPersistSettings.mockReset();
   });
 
-  it("persists the list agent status toggle in this browser", async () => {
-    setShowListAgentStatus(false);
+  it("persists list agent status in Forge settings", async () => {
+    const saved = { ...initial, show_agent_status_in_lists: true };
+    mockPersistSettings.mockReturnValue(Effect.succeed({ workspaces: saved }));
     render(SettingsRuntimeHarness, {
       props: { component: WorkspaceSettings, componentProps: { onUpdate: vi.fn() } },
     });
     await fireEvent.click(screen.getByRole("button", { name: "Show agent status in lists" }));
-    expect(getShowListAgentStatus()).toBe(true);
-    expect(localStorage.getItem("kenn-forge:show-list-agent-status")).toBe("true");
-    expect(mockPersistSettings).not.toHaveBeenCalled();
+    await waitFor(() => expect(mockPersistSettings).toHaveBeenCalledOnce());
+    expect(mockPersistSettings.mock.calls[0]?.[0]()).toEqual({ workspaces: { show_agent_status_in_lists: true } });
+    expect(workspaceStore.current.getWorkspaceSettings()).toEqual(saved);
+  });
+
+  it("restores list agent visibility when saving fails", async () => {
+    const onUpdate = vi.fn();
+    mockPersistSettings.mockReturnValue(
+      Effect.fail({ _tag: "TransientTransportError", operation: "save settings", cause: new Error("save failed") }),
+    );
+    render(SettingsRuntimeHarness, {
+      props: { component: WorkspaceSettings, componentProps: { onUpdate } },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Show agent status in lists" }));
+    await waitFor(() => expect(onUpdate).toHaveBeenCalledTimes(2));
+    expect(workspaceStore.current.getWorkspaceSettings()).toEqual(initial);
+    expect(screen.getByRole("button", { name: "Show agent status in lists" }).getAttribute("aria-pressed")).toBe(
+      "false",
+    );
   });
 
   it("saves automatic assignment for new workspace items", async () => {

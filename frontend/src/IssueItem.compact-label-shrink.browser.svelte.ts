@@ -50,6 +50,7 @@ describe("IssueItem compact label row", () => {
         [
           STORES_KEY,
           {
+            settings: { getWorkspaceSettings: () => ({ show_agent_status_in_lists: false }) },
             activity: { getUseWorkspaceActivityForRecency: () => false },
             issues: { toggleIssueStar: vi.fn() },
           },

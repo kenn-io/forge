@@ -169,6 +169,7 @@ vi.mock("../context.js", () => ({
       syncToURL: vi.fn(),
     },
     settings: {
+      getWorkspaceSettings: () => ({ show_agent_status_in_lists: false }),
       getConfiguredRepos: () => [
         {
           provider: "github",

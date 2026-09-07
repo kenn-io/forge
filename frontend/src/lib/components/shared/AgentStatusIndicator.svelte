@@ -1,11 +1,13 @@
 <script lang="ts">
   import { StatusDot, type StatusDotStatus } from "@kenn-io/kit-ui";
-  import { getShowListAgentStatus } from "../../stores/list-agent-status.svelte.js";
 
+  import { getStores } from "../../context.js";
+
+  const { settings } = getStores();
   const { state }: { state?: string | undefined } = $props();
 
   const agent = $derived.by((): { label: string; status: StatusDotStatus; tone: string } | null => {
-    if (!getShowListAgentStatus()) return null;
+    if (!settings.getWorkspaceSettings().show_agent_status_in_lists) return null;
     switch (state) {
       case "working": return { label: "Working", status: "working", tone: "working" };
       case "approval": return { label: "Approval", status: "waiting", tone: "approval" };

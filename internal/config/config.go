@@ -1504,6 +1504,8 @@ func (c *Config) validate() error {
 		return fmt.Errorf("config: invalid active_pr_hot_window %q: %w", c.ActivePRHotWindow, err)
 	} else if d < 0 {
 		return fmt.Errorf("config: active_pr_hot_window must be nonnegative, got %q", c.ActivePRHotWindow)
+	} else if d > c.ActivePRWindowDuration() {
+		return fmt.Errorf("config: active_pr_hot_window must not exceed active_pr_window (%s), got %q", c.ActivePRWindow, c.ActivePRHotWindow)
 	}
 	if d, err := time.ParseDuration(c.ActivePRWarmRefreshInterval); err != nil {
 		return fmt.Errorf("config: invalid active_pr_warm_refresh_interval %q: %w", c.ActivePRWarmRefreshInterval, err)

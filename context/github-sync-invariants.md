@@ -84,7 +84,7 @@ For pull requests, that means:
   restarts. Hot and explicit workspace-linked PRs use the configured watched cadence;
   terminal PRs are evicted immediately (`internal/db/queries_hot_merge_requests.go::RecordHotMergeRequestView`).
 - Recency-hot admission includes every open PR within `active_pr_hot_window`
-  (zero disables it); remaining active PRs use `active_pr_warm_refresh_interval`
+  (zero disables it; it must not exceed `active_pr_window`); remaining active PRs use `active_pr_warm_refresh_interval`
   (default 10m). Never-fetched PRs are due (`internal/github/sync.go::hotAndWarmOpenMRs`).
 - Linked PR notifications may advance fast-sync scheduling through
   `source_updated_at`, but that timestamp is only a staleness hint. Combine it

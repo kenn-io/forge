@@ -4559,6 +4559,9 @@ func TestLoadValidatesActivePRRefreshPolicy(t *testing.T) {
 	for _, content := range []string{
 		`active_pr_hot_window = "-1s"`,
 		`active_pr_hot_window = "invalid"`,
+		`active_pr_hot_window = "5h"`,
+		`active_pr_hot_window = "3h"
+active_pr_window = "2h"`,
 		`active_pr_warm_refresh_interval = "0s"`,
 		`active_pr_warm_refresh_interval = "-1m"`,
 		`active_pr_warm_refresh_interval = "invalid"`,
@@ -4571,4 +4574,7 @@ func TestLoadValidatesActivePRRefreshPolicy(t *testing.T) {
 	cfg, err := Load(writeConfig(t, `active_pr_hot_window = "0s"`))
 	require.NoError(t, err)
 	assert.Zero(t, cfg.ActivePRHotWindowDuration())
+	_, err = Load(writeConfig(t, `active_pr_hot_window = "2h"
+active_pr_window = "2h"`))
+	require.NoError(t, err)
 }

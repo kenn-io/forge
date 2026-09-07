@@ -40,6 +40,9 @@ cache policy and admission remain internal
 Landing preparation uses local objects only; callers own collection and supply
 evidence for the exact prepared interval. Missing history and exhausted budgets
 remain gaps, never empty complete inventories (`landedwork/prepare.go::Prepare`).
+Unsupported landing methods remain unresolved, and unowned commits are not
+direct-push claims; generic squash proof does not establish any provider's
+squash capability (`landedwork/analyze.go::Analyze`).
 
 Minimum provider checklist:
 

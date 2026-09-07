@@ -96,23 +96,20 @@ func (v *objectView) parents(ctx context.Context, id string) ([]string, error) {
 	if err := v.meter.node(); err != nil {
 		return nil, err
 	}
-	data, err := v.run(ctx, "cat-file", "commit", id)
+	data, err := v.run(ctx, "rev-list", "--parents", "-n", "1", id, "--")
 	if err != nil {
 		return nil, err
 	}
-	var parents []string
-	for line := range strings.SplitSeq(string(data), "\n") {
-		if line == "" {
-			break
-		}
-		if parent, ok := strings.CutPrefix(line, "parent "); ok {
-			if !objectID(parent) {
-				return nil, errors.New("invalid parent object ID")
-			}
-			parents = append(parents, parent)
+	ids := strings.Fields(string(data))
+	if len(ids) == 0 || ids[0] != id {
+		return nil, errors.New("missing commit object")
+	}
+	for _, parent := range ids[1:] {
+		if !objectID(parent) {
+			return nil, errors.New("invalid parent object ID")
 		}
 	}
-	return parents, nil
+	return ids[1:], nil
 }
 
 func (v *objectView) introduced(ctx context.Context, base, head string) ([]string, error) {

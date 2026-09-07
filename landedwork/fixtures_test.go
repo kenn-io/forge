@@ -56,3 +56,21 @@ func (f fixture) prepare(t *testing.T) (context.Context, *landedwork.Interval) {
 	require.NoError(t, err)
 	return ctx, p
 }
+
+func buildSideFixture(t *testing.T) fixture {
+	t.Helper()
+	r := gittest.NewRepo(t, gittest.Options{InitArgs: []string{"init", "-b", "main"}, ConfigureUser: true})
+	r.Runner = gitsafe.Runner()
+	r.CommitFile("work.txt", "old\nkeep\n", "base")
+	r.Checkout("-b", "topic")
+	a := r.CommitFile("work.txt", "new\nkeep\n", "replace")
+	r.Checkout("main")
+	base := r.CommitFile("other.txt", "already present\n", "main advances")
+	r.Checkout("topic")
+	r.Run("merge", "--no-ff", "main", "-m", "merge main")
+	internalMerge := r.Head()
+	b := r.CommitFile("work.txt", "new\nkeep\none\ntwo\n", "append")
+	r.Checkout("main")
+	r.Run("merge", "--no-ff", "topic", "-m", "merge topic")
+	return fixture{r, base, r.Head(), []string{a, base, internalMerge, b}}
+}

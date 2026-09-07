@@ -35,20 +35,53 @@ func TestPrepareIncludesSideAncestry(t *testing.T) {
 }
 
 func TestAnalyzeMissingBoundaryAfterPreparation(t *testing.T) {
-	f := buildFixture(t, true)
-	ctx, p := f.prepare(t)
-	// Remove only a loose object from this test-owned repository after preparing.
-	require.NoError(t, os.Remove(filepath.Join(f.repo.GitDir, "objects", f.base[:2], f.base[2:])))
-	r, err := landedwork.Analyze(ctx, p, fixtureEvidence(f, p, "squash"), fixtureLimits())
-	require := require.New(t)
-	assert := assert.New(t)
-	require.NoError(err)
-	assert.Empty(r.Landings)
-	assert.False(r.Coverage.Complete)
-	assert.Equal(f.base, r.Coverage.CertifiedHead)
-	assert.Equal(f.bounds(), r.Coverage.Bounds)
-	require.NotEmpty(r.Coverage.Gaps)
-	assert.Equal("objects_unavailable", r.Coverage.Gaps[0].Reason)
+	for _, mode := range []string{"loose", "commit-graph"} {
+		t.Run(mode, func(t *testing.T) {
+			f := buildFixture(t, true)
+			if mode == "commit-graph" {
+				f.repo.Run("commit-graph", "write", "--reachable")
+			}
+			ctx, p := f.prepare(t)
+			// Remove only a loose object from this test-owned repository after preparing.
+			require.NoError(t, os.Remove(filepath.Join(f.repo.GitDir, "objects", f.base[:2], f.base[2:])))
+			r, err := landedwork.Analyze(ctx, p, fixtureEvidence(f, p, "squash"), fixtureLimits())
+			require := require.New(t)
+			assert := assert.New(t)
+			require.NoError(err)
+			assert.Empty(r.Landings)
+			assert.False(r.Coverage.Complete)
+			assert.Equal(f.base, r.Coverage.CertifiedHead)
+			assert.Equal(f.bounds(), r.Coverage.Bounds)
+			require.NotEmpty(r.Coverage.Gaps)
+			assert.Equal("objects_unavailable", r.Coverage.Gaps[0].Reason)
+			if mode == "commit-graph" {
+				assert.Equal(f.base, r.Coverage.Gaps[0].ObjectID)
+			}
+		})
+	}
+}
+
+func TestAnalyzeCachedMissingSourceOrTerminal(t *testing.T) {
+	for _, target := range []string{"source", "terminal"} {
+		t.Run(target, func(t *testing.T) {
+			f := buildFixture(t, true)
+			f.repo.Run("commit-graph", "write", "--reachable")
+			ctx, p := f.prepare(t)
+			missing := f.head
+			if target == "source" {
+				missing = f.source[0]
+			}
+			require := require.New(t)
+			require.NoError(os.Remove(filepath.Join(f.repo.GitDir, "objects", missing[:2], missing[2:])))
+			r, err := landedwork.Analyze(ctx, p, fixtureEvidence(f, p, "squash"), fixtureLimits())
+			require.NoError(err)
+			assert := assert.New(t)
+			assert.Empty(r.Landings)
+			assert.False(r.Coverage.Complete)
+			assert.Equal(f.base, r.Coverage.CertifiedHead)
+			assert.Equal([]landedwork.Gap{{CandidateID: "7", ObjectID: missing, Reason: "objects_unavailable"}}, r.Coverage.Gaps)
+		})
+	}
 }
 
 func TestObjectSourceIgnoresWorkingFilesAndReplacementRefs(t *testing.T) {

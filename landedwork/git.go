@@ -118,6 +118,10 @@ func (v *objectView) parents(ctx context.Context, id string) ([]string, error) {
 	if err := v.meter.node(); err != nil {
 		return nil, err
 	}
+	// rev-list can serve cached ancestry even after the commit object disappears.
+	if _, err := v.run(ctx, "cat-file", "-e", id+"^{commit}"); err != nil {
+		return nil, err
+	}
 	data, err := v.run(ctx, "rev-list", "--parents", "-n", "1", id, "--")
 	if err != nil {
 		return nil, err

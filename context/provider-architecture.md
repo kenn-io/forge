@@ -43,6 +43,8 @@ remain gaps, never empty complete inventories (`landedwork/prepare.go::Prepare`)
 Unsupported landing methods remain unresolved, and unowned commits are not
 direct-push claims; generic squash proof does not establish any provider's
 squash capability (`landedwork/analyze.go::Analyze`).
+Git's commit-graph can outlive commit objects; verify required commits physically,
+including the squash parent (`landedwork/git.go::parents`, `landedwork/proof.go::prove`).
 
 Minimum provider checklist:
 

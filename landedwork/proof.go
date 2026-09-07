@@ -48,6 +48,16 @@ func prove(ctx context.Context, v *objectView, p *Interval, c Candidate, caps Ca
 		gap.ObjectID = object
 		return reject(reason)
 	}
+	if method == "squash" {
+		// Cached ancestry can outlive the object needed for the boundary diff.
+		gap.ObjectID = parents[0]
+		if err := v.meter.node(); err != nil {
+			return reject(graphReason(err))
+		}
+		if _, err := v.run(ctx, "cat-file", "-e", parents[0]+"^{commit}"); err != nil {
+			return reject(graphReason(err))
+		}
+	}
 	introduced := []string{c.Terminal}
 	if method == "merge" {
 		introduced, err = mergeCorrespondence(ctx, v, c, parents[0])

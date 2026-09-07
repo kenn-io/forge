@@ -109,6 +109,7 @@ func newFleetCommand(options fleetCLIOptions) *cobra.Command {
 		newFleetPrepareSpokeCommand(options),
 		newFleetAbortPreparationCommand(options),
 		newFleetRevokeCommand(options),
+		newFleetMigrateProtocolCommand(options),
 	)
 	return cmd
 }

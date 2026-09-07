@@ -478,3 +478,29 @@ func (d *DB) StoreLocalSpokePreparationSeal(
 	}
 	return nil
 }
+
+// SpokePreparationReceiptsDigest covers receipt identity and content, excluding local timestamps.
+func SpokePreparationReceiptsDigest(
+	receipts []SpokePreparationReceipt,
+) (string, error) {
+	type semanticReceipt struct {
+		StateKind     string `json:"state_kind"`
+		SourceKey     string `json:"source_key"`
+		ContentDigest string `json:"content_digest"`
+		HubReceipt    string `json:"hub_receipt"`
+	}
+	semantic := make([]semanticReceipt, 0, len(receipts))
+	for _, receipt := range receipts {
+		semantic = append(semantic, semanticReceipt{
+			StateKind: receipt.StateKind, SourceKey: receipt.SourceKey,
+			ContentDigest: receipt.ContentDigest,
+			HubReceipt:    receipt.HubReceipt,
+		})
+	}
+	encoded, err := json.Marshal(semantic)
+	if err != nil {
+		return "", fmt.Errorf("encode spoke preparation receipts: %w", err)
+	}
+	digest := sha256.Sum256(encoded)
+	return hex.EncodeToString(digest[:]), nil
+}

@@ -691,6 +691,30 @@ Database rollback can discard changes made after the backup. Do not overwrite
 new worktree contents as part of restoring Forge state. Revoking a new
 enrollment alone does not restore the old enrollment or provider ownership.
 
+## Upgrade federation protocol 3 to 4
+
+A protocol-3 fleet needs a one-time data migration before protocol-4 binaries
+can use its enrollment. Keep a matching rollback backup of every host's
+database, enrollment and credential stores, configuration, and binary.
+
+1. Stop the Forge service on every fleet member. Keep its worktrees and tmux
+   sessions in place.
+2. On each host, run the new binary against that host's existing configuration:
+
+   ```sh
+   /path/to/new/kenn-forge fleet migrate-protocol --config ~/.kenn/forge/config.toml
+   ```
+
+3. Install the new binary, start the hub, then start its spokes. Verify the
+   fleet workspace list and terminal access on each member.
+
+The migration retains node identities, enrollment, credentials, preparation
+seals, local workspaces, and provider data. It does not enable communication
+between protocol-3 and protocol-4 peers. Repeating the command after an
+interruption resumes the migration; already migrated and unenrolled hosts need
+no changes. To roll back, stop the affected services and restore every host's
+matching pre-migration state and binary together.
+
 ## Replace an older fleet
 
 Older key-based and shell-relay entries are not accepted. Before starting the

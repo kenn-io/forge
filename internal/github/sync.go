@@ -1948,7 +1948,7 @@ func registryFromGitHubClients(clients map[string]Client) *platform.Registry {
 			continue
 		}
 		provider, err := platformgithub.NewProvider(platformgithub.ProviderConfig{
-			Host: host, Client: client, Clock: time.Now,
+			Host: canonicalRepoHost(host), Client: client, Clock: time.Now,
 			ViewerCacheTTL: authenticatedViewerLoginTTL, Warning: slog.Warn,
 		})
 		if err != nil {

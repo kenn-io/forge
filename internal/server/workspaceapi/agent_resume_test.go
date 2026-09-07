@@ -94,6 +94,11 @@ exec sleep 60
 				runtime.UpdateTargets(targets)
 			}
 			if status == "unavailable" || status == "ambiguous" {
+				done, start := handler.beginWorkspaceSetup("workspace")
+				require.True(start)
+				handler.runWorkspaceTmuxPrune(ctx)
+				assert.NoFileExists(filepath.Join(cwd, "args"), "recovery must wait for active setup")
+				handler.finishWorkspaceSetup("workspace", done)
 				handler.runWorkspaceTmuxPrune(ctx)
 			} else {
 				require.NoError(handler.RestoreRuntimeSessions(ctx))

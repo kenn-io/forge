@@ -3694,7 +3694,7 @@ func TestAddAndRefreshPRWorktreeFastForwardLocalBaseBranch(t *testing.T) {
 	launchSpec, err := mgr.RequireWorkspaceLaunchSpec(t.Context(), ws)
 	require.NoError(err)
 
-	_, err = mgr.addWorktree(t.Context(), workspaceGitDir{
+	_, _, err = mgr.addWorktree(t.Context(), workspaceGitDir{
 		path: localRepo, remote: originRemoteName, localBase: true,
 	}, ws, workspaceGitFetchOptions{
 		launchSpec: launchSpec,
@@ -3757,7 +3757,7 @@ func TestAddWorktreeRestoresBaseRefsWhenRouteChangesDuringFetch(t *testing.T) {
 	}
 	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 
-	_, err = mgr.addWorktree(
+	_, _, err = mgr.addWorktree(
 		t.Context(), workspaceGitDir{
 			path: localRepo, remote: originRemoteName, localBase: true,
 		}, ws, workspaceGitFetchOptions{
@@ -5165,7 +5165,7 @@ func TestAddWorktreeLocalBaseFetchesPullRefWhenHeadBranchDeleted(t *testing.T) {
 		WorktreePath: filepath.Join(t.TempDir(), "worktree"),
 	}
 
-	gotBranch, err := mgr.addWorktree(
+	gotBranch, _, err := mgr.addWorktree(
 		t.Context(), workspaceGitDir{path: localRepo, remote: originRemoteName, localBase: true}, ws, workspaceGitFetchOptions{
 			launchSpec: pullLaunchSpecForWorkspace(ws, "same_repo", ""),
 		},
@@ -5218,7 +5218,7 @@ func TestAddWorktreeLocalBaseIgnoresStalePullRefWhenFetchFails(t *testing.T) {
 		WorktreePath: filepath.Join(t.TempDir(), "worktree"),
 	}
 
-	gotBranch, err := mgr.addWorktree(
+	gotBranch, _, err := mgr.addWorktree(
 		t.Context(), workspaceGitDir{path: localRepo, remote: originRemoteName, localBase: true}, ws, workspaceGitFetchOptions{
 			launchSpec: pullLaunchSpecForWorkspace(ws, "same_repo", ""),
 		},
@@ -8230,7 +8230,7 @@ func TestManagerAddWorktreeAcquiresRepoLock(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() {
-		_, err := mgr.addWorktree(
+		_, _, err := mgr.addWorktree(
 			t.Context(), workspaceGitDir{path: cloneDir, remote: originRemoteName}, ws, workspaceGitFetchOptions{},
 		)
 		done <- err
@@ -8273,7 +8273,7 @@ func TestManagerAddWorktreeRechecksOccupiedPathAfterWaitingForLock(t *testing.T)
 	require.NoError(err)
 	done := make(chan error, 1)
 	go func() {
-		_, err := mgr.addWorktree(
+		_, _, err := mgr.addWorktree(
 			t.Context(), workspaceGitDir{path: cloneDir, remote: originRemoteName}, ws, workspaceGitFetchOptions{},
 		)
 		done <- err

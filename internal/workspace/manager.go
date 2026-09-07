@@ -1443,7 +1443,8 @@ func (m *Manager) SetupWithOptions(
 				return m.failSetup(ctx, ws.ID, workspaceSetupStageWorktree, err)
 			}
 		}
-		branch, err = m.addWorktree(
+		var restored bool
+		branch, restored, err = m.addWorktree(
 			ctx, gitSetupDir, ws, workspaceGitFetchOptions{
 				launchSpec: launchSpec, validateRoute: validateCloneRoute,
 			},
@@ -1454,6 +1455,7 @@ func (m *Manager) SetupWithOptions(
 				ws.ID, workspaceSetupStageWorktree, err,
 			)
 		}
+		preserveWorktree = preserveWorktree || restored
 		commonDir = gitSetupDir.path
 		managedClone = !gitSetupDir.localBase
 	}
@@ -2281,7 +2283,7 @@ func existingWorkspacePersistedBranch(
 	}
 	// Registration and repository provenance were checked by the caller. An
 	// empty marker records adoption, including a detached checkout.
-	if ws.ItemType == db.WorkspaceItemTypePullRequest && ws.WorkspaceBranch == "" {
+	if ws.WorkspaceBranch == "" {
 		return "", true, nil
 	}
 	if ws.ItemType == db.WorkspaceItemTypePullRequest &&
@@ -3049,8 +3051,9 @@ func (m *Manager) addWorktree(
 	gitDir workspaceGitDir,
 	ws *Workspace,
 	fetchOptions workspaceGitFetchOptions,
-) (string, error) {
+) (string, bool, error) {
 	var branch string
+	var restored bool
 	err := m.withRepoLockForGitDir(ctx, gitDir.path, func() error {
 		if gitDir.localBase {
 			if err := runRouteValidatedFetch(
@@ -3084,6 +3087,7 @@ func (m *Manager) addWorktree(
 			if err := restoreMissingWorkspaceCheckout(ctx, gitDir.path, metadataDir, ws); err != nil {
 				return err
 			}
+			restored = true
 			branch = ws.WorkspaceBranch
 			return nil
 		}
@@ -3099,7 +3103,7 @@ func (m *Manager) addWorktree(
 		}
 		return nil
 	})
-	return branch, err
+	return branch, restored, err
 }
 
 // addWorktreeLocked runs the worktree-add decision tree. Callers must

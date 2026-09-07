@@ -47,7 +47,7 @@ func (h *Handler) resumeWorkspaceAgent(ctx context.Context, stored db.WorkspaceR
 
 // Restore base terminals before agents create new tmux sessions. Otherwise the
 // periodic prune would mistake the remaining missing bases for individual exits.
-func (h *Handler) restoreWorkspaceTerminals(ctx context.Context, retainedWorkspaces map[string]bool) {
+func (h *Handler) restoreWorkspaceTerminals(ctx context.Context, retainedWorkspaces map[string]bool, pendingOnly bool) {
 	workspaces, err := h.db.ListWorkspaces(ctx)
 	if err != nil {
 		slog.Warn("list workspace terminals for recovery", "err", err)
@@ -56,6 +56,9 @@ func (h *Handler) restoreWorkspaceTerminals(ctx context.Context, retainedWorkspa
 	for _, ws := range workspaces {
 		if ctx.Err() != nil {
 			return
+		}
+		if pendingOnly && !retainedWorkspaces[ws.ID] {
+			continue
 		}
 		if !workspaceStatusAllowsRecovery(ws.Status) || ws.TmuxSession == "" ||
 			(ws.Status != "ready" && !retainedWorkspaces[ws.ID]) {

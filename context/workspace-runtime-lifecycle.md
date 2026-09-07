@@ -66,7 +66,7 @@ Rules:
 - An ad-hoc branch name alone is no proof of prior setup; recovery needs the
   existing checkout or its registration to distinguish late branch collisions
   (`internal/workspace/manager.go::Manager.addWorktree`).
-- An empty PR managed branch means an adopted branch or detached HEAD; unknown
+- An empty managed branch means an adopted branch or detached HEAD; unknown
   means setup has not recorded ownership. Recover the former from its registered
   HEAD without taking branch ownership (`internal/workspace/manager.go::Manager.addWorktree`).
 
@@ -205,8 +205,8 @@ create a local process, PTY, or durable transport session
 - Restore base terminals before agents, including retained creating/error retries;
   startup recovery shares a 30-second budget and preserves uncompleted attempts
   (`internal/server/workspaceapi/agent_resume.go::Handler.restoreWorkspaceTerminals`).
-- Pending startup recovery retries during periodic missing-tmux pruning and survives
-  rollback exits; successful recovery restores ordinary exit cleanup
+- Pending startup recovery retries during periodic missing-tmux pruning under
+  workspace setup admission; successful recovery restores ordinary exit cleanup
   (`internal/server/workspaceapi/lifecycle.go::Handler.RestoreRuntimeSessions`).
 - During explicit delete or stop flows, forgetting the persisted row is part of
   cleanup.

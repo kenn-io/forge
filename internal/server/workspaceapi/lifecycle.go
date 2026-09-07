@@ -142,6 +142,30 @@ func (h *Handler) restoreRuntimeSessions(ctx context.Context, pendingOnly bool) 
 			return nil
 		}
 	}
+	if pendingOnly {
+		// Share setup admission so recovery cannot prepare context or touch
+		// a terminal while setup or deletion owns the workspace.
+		admitted := make(map[string]bool)
+		pending := stored[:0]
+		for _, session := range stored {
+			allowed, seen := admitted[session.WorkspaceID]
+			if !seen {
+				done, start := h.beginWorkspaceSetup(session.WorkspaceID)
+				allowed = start
+				admitted[session.WorkspaceID] = allowed
+				if start {
+					defer h.finishWorkspaceSetup(session.WorkspaceID, done)
+				}
+			}
+			if allowed {
+				pending = append(pending, session)
+			}
+		}
+		stored = pending
+		if len(stored) == 0 {
+			return nil
+		}
+	}
 	retainedWorkspaces := make(map[string]bool)
 	for _, session := range stored {
 		if session.Kind == string(localruntime.LaunchTargetAgent) {
@@ -149,7 +173,7 @@ func (h *Handler) restoreRuntimeSessions(ctx context.Context, pendingOnly bool) 
 			h.setRuntimeRecoveryPending(session.SessionKey, true)
 		}
 	}
-	h.restoreWorkspaceTerminals(ctx, retainedWorkspaces)
+	h.restoreWorkspaceTerminals(ctx, retainedWorkspaces, pendingOnly)
 	for _, session := range stored {
 		summary, err := h.workspaces.GetSummary(ctx, session.WorkspaceID)
 		if err != nil {

@@ -79,7 +79,6 @@ export interface WorkflowActionsStore {
   /** Reads the catalog once per repository; later calls are no-ops until refreshCatalog. */
   readonly loadCatalog: (ref: ProviderRouteRef) => void;
   readonly refreshCatalog: (ref: ProviderRouteRef, workflowId: string) => void;
-  readonly clearCatalogRefreshError: (ref: ProviderRouteRef, workflowId: string) => void;
   readonly selectWorkflow: (ref: ProviderRouteRef, workflowId: string | null) => void;
   readonly loadMoreRuns: (ref: ProviderRouteRef) => void;
   readonly loadJobs: (ref: ProviderRouteRef, runId: string) => void;
@@ -271,7 +270,7 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
   }
 
   function refreshCatalog(ref: ProviderRouteRef, workflowId: string): void {
-    if (!enabled) return;
+    if (!enabled || snapshotFor(ref).loading.catalog) return;
     readCatalog(ref, (_catalog, error) => {
       update(ref, (snapshot) => {
         const { [workflowId]: _cleared, ...refreshErrors } = snapshot.catalogRefreshErrors;
@@ -279,13 +278,6 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
         const { [workflowId]: _cycle, ...dispatches } = snapshot.dispatches;
         return { ...snapshot, catalogRefreshErrors: refreshErrors, dispatches, error: null };
       });
-    });
-  }
-
-  function clearCatalogRefreshError(ref: ProviderRouteRef, workflowId: string): void {
-    update(ref, (snapshot) => {
-      const { [workflowId]: _cleared, ...catalogRefreshErrors } = snapshot.catalogRefreshErrors;
-      return { ...snapshot, catalogRefreshErrors };
     });
   }
 
@@ -515,7 +507,6 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
   return {
     loadCatalog,
     refreshCatalog,
-    clearCatalogRefreshError,
     selectWorkflow,
     loadMoreRuns,
     loadJobs,

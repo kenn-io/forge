@@ -27,6 +27,7 @@
     operation: OperationAvailability | undefined;
     state: WorkflowDispatchPresentationState;
     onsubmit: (request: WorkflowDispatchRequest) => void;
+    reloading?: boolean;
     onreload?: (() => void) | undefined;
     onnewcycle?: (() => void) | undefined;
   }
@@ -38,6 +39,7 @@
     operation,
     state: presentation,
     onsubmit,
+    reloading = false,
     onreload,
     onnewcycle,
   }: Props = $props();
@@ -184,7 +186,7 @@
         Workflow definition changed. Reload workflows before running it.
         {#if presentation.reloadError} {presentation.reloadError}{/if}
       </p>
-      {#if onreload}<Button type="button" tone="workflow" surface="solid" onclick={onreload}>Reload workflows</Button>{/if}
+      {#if onreload}<Button type="button" tone="workflow" surface="solid" disabled={reloading} onclick={onreload}>{reloading ? "Reloading workflows…" : "Reload workflows"}</Button>{/if}
     </div>
   {:else if presentation.kind === "locating"}
     <div class="dispatch-outcome">

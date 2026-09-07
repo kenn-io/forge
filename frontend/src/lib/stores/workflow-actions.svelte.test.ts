@@ -337,7 +337,10 @@ describe("workflow actions store", () => {
     expect(store.getDispatch(ref, "deploy.yml")).toMatchObject({ kind: "failed" });
 
     store.refreshCatalog(ref, "deploy.yml");
+    store.refreshCatalog(ref, "deploy.yml");
+    expect(store.getLoading(ref).catalog).toBe(true);
     await settle();
+    expect(store.getLoading(ref).catalog).toBe(false);
     expect(fixture.catalogReads).toBe(2);
     expect(store.getCatalog(ref)?.workflows?.[0]?.definition_sha).toBe("definition-2");
     expect(store.getDispatch(ref, "deploy.yml")).toBeNull();

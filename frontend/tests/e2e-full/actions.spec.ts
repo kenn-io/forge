@@ -117,7 +117,24 @@ test("runs typed Actions workflows and applies pull request ref defaults until t
 
   const sameRepoDialog = await openReleaseFromPull(page, 1);
   await expect(sameRepoDialog.getByRole("textbox", { name: "Git ref" })).toHaveValue("feature/caching");
-  await sameRepoDialog.getByRole("button", { name: "Cancel" }).click();
+  await sameRepoDialog.getByRole("textbox", { name: "version" }).fill("v2.4.1");
+  await chooseWorkflowInput(page, "target", "production");
+  const pullDispatch = page.waitForResponse(
+    (response) => response.url().includes("/workflows/8101/dispatch") && response.request().method() === "POST",
+  );
+  await sameRepoDialog.getByRole("button", { name: "Run workflow", exact: true }).click();
+  expect((await pullDispatch).status()).toBe(202);
+  await expect(sameRepoDialog.getByRole("button", { name: "Run again" })).toBeVisible();
+  await sameRepoDialog.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(sameRepoDialog).not.toBeVisible();
+  await page.getByLabel("Pull request conversation").getByRole("button", { name: "Run workflow", exact: true }).click();
+  await page
+    .getByRole("region", { name: "GitHub Actions" })
+    .getByRole("button", { name: "Release", exact: true })
+    .click();
+  await expect(sameRepoDialog.getByRole("button", { name: "Run again" })).toBeVisible();
+  await expect(sameRepoDialog.getByRole("button", { name: "Run workflow", exact: true })).toHaveCount(0);
+  await sameRepoDialog.getByRole("button", { name: "Close", exact: true }).click();
 
   await setActionsMode(page, false);
   await expect(page.getByRole("button", { name: "Actions", exact: true })).toHaveCount(0);

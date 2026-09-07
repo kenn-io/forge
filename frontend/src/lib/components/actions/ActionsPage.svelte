@@ -276,6 +276,7 @@
                   operation={snapshot?.catalog?.repo.operations?.dispatch_workflow}
                   state={workflowDispatchPresentation(snapshot, selectedWorkflow.id)}
                   onsubmit={submitWorkflow}
+                  reloading={snapshot?.loading.catalog ?? false}
                   onreload={reloadWorkflowCatalog}
                   onnewcycle={newDispatchCycle}
                 />

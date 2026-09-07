@@ -208,7 +208,6 @@ describe("PullDetail provider workflow action geometry", () => {
         catalogClaimed = true;
       }),
       refreshCatalog: vi.fn(),
-      clearCatalogRefreshError: vi.fn(),
       selectWorkflow: vi.fn(),
       loadMoreRuns: vi.fn(),
       loadJobs: vi.fn(),

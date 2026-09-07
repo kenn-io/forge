@@ -59,6 +59,8 @@ service is the supported tool here.
   definition conflict leave presentation only through the explicit new-cycle
   command; retry returns to fresh confirmation and never replays the POST
   (`frontend/src/lib/stores/workflow-actions.svelte.ts::newDispatchCycle`).
+- Closing a workflow dialog preserves its dispatch and reload outcome; only an explicit
+  new-cycle action resets dispatch state (`frontend/src/lib/components/actions/WorkflowDispatchDialog.svelte::close`).
 - Definition-reload failures are cycle state separate from general read errors;
   a successful reload clears that workflow's cycle
   (`frontend/src/lib/stores/workflow-actions.svelte.ts::refreshCatalog`).

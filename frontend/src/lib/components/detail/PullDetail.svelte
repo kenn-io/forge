@@ -1419,10 +1419,6 @@
   }
 
   function closeWorkflowDialog(): void {
-    const workflow = workflowDialogWorkflow;
-    if (workflow && workflowActions.getSnapshot(routeRef)?.catalogRefreshErrors[workflow.id] !== undefined) {
-      workflowActions.clearCatalogRefreshError(routeRef, workflow.id);
-    }
     workflowDialogWorkflowId = null;
   }
 
@@ -3091,6 +3087,7 @@
           initialRef={workflowInitialRef}
           operation={repoOperations?.dispatch_workflow}
           state={workflowDialogPresentation}
+          reloading={workflowActions.getLoading(routeRef).catalog}
           trigger={actionMenuTriggerEl ?? null}
           onsubmit={submitWorkflow}
           onclose={closeWorkflowDialog}

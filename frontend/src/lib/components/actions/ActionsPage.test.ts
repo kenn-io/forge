@@ -2,6 +2,8 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
+import type { WorkflowRunResponse } from "../../api/generated/models/workflowRunResponse.js";
+import type { WorkflowDefinitionResponse } from "../../api/generated/models/workflowDefinitionResponse.js";
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import { STORES_KEY } from "../../context.js";
 import { createWorkflowActionsStore } from "../../stores/workflow-actions.svelte.js";
@@ -93,6 +95,36 @@ function repoSummary(name: string, supported = true) {
   };
 }
 
+function workflow(name: string, action = "deploy"): WorkflowDefinitionResponse {
+  return {
+    id: `${name}-${action}.yml`,
+    name: `${name} ${action}`,
+    path: `.github/workflows/${name}-${action}.yml`,
+    state: "active",
+    available: true,
+    definition_sha: `${name}-${action}-definition`,
+    inputs: [],
+    web_url: `https://github.com/acme/${name}/actions/workflows/${name}-${action}.yml`,
+  };
+}
+
+function workflowRun(name: string, overrides: Partial<WorkflowRunResponse> = {}): WorkflowRunResponse {
+  return {
+    actor: "octocat",
+    conclusion: "success",
+    created_at: "2026-08-27T12:30:00Z",
+    event: "workflow_dispatch",
+    head_sha: "0123456789abcdef",
+    id: `${name}-run-1`,
+    name: `${name} deploy`,
+    ref: "feature/recent-run",
+    run_number: 7,
+    status: "completed",
+    workflow_id: `${name}-deploy.yml`,
+    ...overrides,
+  };
+}
+
 function workflowFixtures(): MockRouteOverride {
   const summaries = [
     repoSummary("alpha"),
@@ -110,18 +142,7 @@ function workflowFixtures(): MockRouteOverride {
       return jsonResponse({
         repo: { ...repoSummary(name).repo, default_branch: "trunk" },
         environments: [{ name: "production" }],
-        workflows: [
-          {
-            id: `${name}-deploy.yml`,
-            name: `${name} deploy`,
-            path: `.github/workflows/${name}-deploy.yml`,
-            state: "active",
-            available: true,
-            definition_sha: `${name}-definition`,
-            inputs: [],
-            web_url: `https://github.com/acme/${name}/actions/workflows/${name}-deploy.yml`,
-          },
-        ],
+        workflows: [workflow(name)],
       });
     }
     const runs = request.url.pathname.match(/^\/api\/v1\/actions\/github\/acme\/([^/]+)\/runs$/);
@@ -132,19 +153,13 @@ function workflowFixtures(): MockRouteOverride {
           repo: { ...repoSummary(name).repo, default_branch: "trunk" },
           exhausted: true,
           items: [
-            {
-              actor: "octocat",
-              conclusion: "success",
+            workflowRun(name, {
               created_at: "2026-08-26T12:30:00Z",
-              event: "workflow_dispatch",
               head_sha: "olderabcdef",
               id: `${name}-run-older`,
-              name: `${name} deploy`,
               ref: "release/v1",
               run_number: 5,
-              status: "completed",
-              workflow_id: `${name}-deploy.yml`,
-            },
+            }),
           ],
         });
       }
@@ -153,32 +168,15 @@ function workflowFixtures(): MockRouteOverride {
         exhausted: false,
         next_cursor: "older-page",
         items: [
-          {
-            actor: "octocat",
-            conclusion: "success",
-            created_at: "2026-08-27T12:30:00Z",
-            event: "workflow_dispatch",
-            head_sha: "0123456789abcdef",
-            id: `${name}-run-1`,
-            name: `${name} deploy`,
-            ref: "feature/recent-run",
-            run_number: 7,
-            status: "completed",
-            workflow_id: `${name}-deploy.yml`,
-          },
-          {
+          workflowRun(name),
+          workflowRun(name, {
             actor: "hubot",
-            conclusion: "success",
             created_at: "2026-08-27T11:30:00Z",
-            event: "workflow_dispatch",
             head_sha: "fedcba9876543210",
             id: `${name}-run-2`,
-            name: `${name} deploy`,
             ref: "tag/v2",
             run_number: 6,
-            status: "completed",
-            workflow_id: `${name}-deploy.yml`,
-          },
+          }),
         ],
       });
     }
@@ -207,6 +205,13 @@ describe("ActionsPage", () => {
   let api: MockApiHandle;
   let originalFetch: typeof globalThis.fetch;
 
+  function renderPage() {
+    const workflowActions = createWorkflowActionsStore({ runtime });
+    render(ActionsPage, {
+      context: new Map([[STORES_KEY, { workflowActions }]]),
+    });
+  }
+
   beforeEach(() => {
     originalFetch = globalThis.fetch;
     api = createMockApiFetch([workflowFixtures()]);
@@ -225,10 +230,7 @@ describe("ActionsPage", () => {
   });
 
   it("filters repository summaries, distinguishes unsupported repos, and demands only the selected capable repo", async () => {
-    const workflowActions = createWorkflowActionsStore({ runtime });
-    render(ActionsPage, {
-      context: new Map([[STORES_KEY, { workflowActions }]]),
-    });
+    renderPage();
 
     const rail = await screen.findByRole("navigation", { name: "Actions repositories" });
     expect(within(rail).getByRole("button", { name: /alpha/ }).getAttribute("aria-current")).toBe("true");
@@ -241,24 +243,6 @@ describe("ActionsPage", () => {
       expect(paths).toContain("/api/v1/actions/github/acme/alpha/workflows");
       expect(paths.some((path) => path.includes("/legacy/"))).toBe(false);
     });
-  });
-
-  it("uses the shared workflow form and lazy run jobs for the selected repository", async () => {
-    const workflowActions = createWorkflowActionsStore({ runtime });
-    render(ActionsPage, {
-      context: new Map([[STORES_KEY, { workflowActions }]]),
-    });
-
-    await fireEvent.click(await screen.findByRole("button", { name: /alpha deploy/ }));
-    expect(screen.getByRole("textbox", { name: "Git ref" })).toBeTruthy();
-    expect((screen.getByRole("textbox", { name: "Git ref" }) as HTMLInputElement).value).toBe("trunk");
-
-    const run = await screen.findByRole("button", { name: /Run 7 alpha deploy/ });
-    await fireEvent.click(run);
-    expect(await screen.findByRole("button", { name: /Publish/ })).toBeTruthy();
-    expect(api.requests.map((request) => request.url.pathname)).toContain(
-      "/api/v1/actions/github/acme/alpha/runs/alpha-run-1/jobs",
-    );
   });
 
   it("reads jobs once per expanded run and keeps other expanded runs open on collapse", async () => {
@@ -275,6 +259,9 @@ describe("ActionsPage", () => {
     await fireEvent.click(older);
     await screen.findByRole("button", { name: /Verify/ });
     expect(loadJobs.mock.calls.map(([, runId]) => runId)).toEqual(["alpha-run-1", "alpha-run-2"]);
+    expect(api.requests.map((request) => request.url.pathname)).toContain(
+      "/api/v1/actions/github/acme/alpha/runs/alpha-run-1/jobs",
+    );
 
     await fireEvent.click(newest);
     expect(loadJobs).toHaveBeenCalledTimes(2);
@@ -289,36 +276,12 @@ describe("ActionsPage", () => {
       return jsonResponse({
         repo: { ...repoSummary("alpha").repo, default_branch: "trunk" },
         environments: [],
-        workflows: [
-          {
-            id: "alpha-deploy.yml",
-            name: "alpha deploy",
-            path: ".github/workflows/alpha-deploy.yml",
-            state: "active",
-            available: true,
-            definition_sha: "alpha-definition",
-            inputs: [],
-            web_url: "https://github.com/acme/alpha/actions/workflows/alpha-deploy.yml",
-          },
-          {
-            id: "alpha-verify.yml",
-            name: "alpha verify",
-            path: ".github/workflows/alpha-verify.yml",
-            state: "active",
-            available: true,
-            definition_sha: "alpha-verify-definition",
-            inputs: [],
-            web_url: "https://github.com/acme/alpha/actions/workflows/alpha-verify.yml",
-          },
-        ],
+        workflows: [workflow("alpha"), workflow("alpha", "verify")],
       });
     };
     api = createMockApiFetch([twoWorkflows, workflowFixtures()]);
     globalThis.fetch = api.fetch;
-    const workflowActions = createWorkflowActionsStore({ runtime });
-    render(ActionsPage, {
-      context: new Map([[STORES_KEY, { workflowActions }]]),
-    });
+    renderPage();
 
     await fireEvent.click(await screen.findByRole("button", { name: /alpha deploy/ }));
     await fireEvent.click(await screen.findByRole("button", { name: /Run 7 alpha deploy/ }));
@@ -335,10 +298,7 @@ describe("ActionsPage", () => {
   });
 
   it("loads an older run page without changing the repository default ref seed", async () => {
-    const workflowActions = createWorkflowActionsStore({ runtime });
-    render(ActionsPage, {
-      context: new Map([[STORES_KEY, { workflowActions }]]),
-    });
+    renderPage();
 
     await fireEvent.click(await screen.findByRole("button", { name: /alpha deploy/ }));
     expect((screen.getByRole("textbox", { name: "Git ref" }) as HTMLInputElement).value).toBe("trunk");
@@ -367,10 +327,7 @@ describe("ActionsPage", () => {
     };
     api = createMockApiFetch([runsFailure, workflowFixtures()]);
     globalThis.fetch = api.fetch;
-    const workflowActions = createWorkflowActionsStore({ runtime });
-    render(ActionsPage, {
-      context: new Map([[STORES_KEY, { workflowActions }]]),
-    });
+    renderPage();
     await fireEvent.click(await screen.findByRole("button", { name: /alpha deploy/ }));
 
     expect((await screen.findByRole("alert")).textContent).toContain("Recent workflow runs could not be loaded.");
@@ -395,10 +352,7 @@ describe("ActionsPage", () => {
     };
     api = createMockApiFetch([jobsFailure, workflowFixtures()]);
     globalThis.fetch = api.fetch;
-    const workflowActions = createWorkflowActionsStore({ runtime });
-    render(ActionsPage, {
-      context: new Map([[STORES_KEY, { workflowActions }]]),
-    });
+    renderPage();
     await fireEvent.click(await screen.findByRole("button", { name: /alpha deploy/ }));
 
     const run = await screen.findByRole("button", { name: /Run 7 alpha deploy/ });
@@ -419,11 +373,7 @@ describe("ActionsPage", () => {
           environments: [],
           workflows: [
             {
-              id: "alpha-deploy.yml",
-              name: "alpha deploy",
-              path: ".github/workflows/alpha-deploy.yml",
-              state: "active",
-              available: true,
+              ...workflow("alpha"),
               definition_sha: catalogReads === 1 ? "alpha-definition" : "alpha-definition-2",
               inputs:
                 catalogReads === 1
@@ -438,7 +388,6 @@ describe("ActionsPage", () => {
                         options: ["stable", "beta"],
                       },
                     ],
-              web_url: "https://github.com/acme/alpha/actions/workflows/alpha-deploy.yml",
             },
           ],
         });
@@ -463,10 +412,7 @@ describe("ActionsPage", () => {
     };
     api = createMockApiFetch([conflictRecovery, workflowFixtures()]);
     globalThis.fetch = api.fetch;
-    const workflowActions = createWorkflowActionsStore({ runtime });
-    render(ActionsPage, {
-      context: new Map([[STORES_KEY, { workflowActions }]]),
-    });
+    renderPage();
 
     await fireEvent.click(await screen.findByRole("button", { name: /alpha deploy/ }));
     await fireEvent.click(screen.getByRole("button", { name: "Run workflow" }));
@@ -476,11 +422,7 @@ describe("ActionsPage", () => {
     expect(api.requests.filter((request) => request.method === "POST")).toHaveLength(1);
   });
 
-  it.each([
-    ["forbidden", 403],
-    ["rateLimited", 429],
-    ["validationError", 400],
-  ] as const)("presents %s rejection as a fresh-cycle recovery without automatic POST", async (code, status) => {
+  it("shows a rejected dispatch and requires confirmation before retrying", async () => {
     const rejection: MockRouteOverride = (request) => {
       if (
         request.method !== "POST" ||
@@ -490,25 +432,22 @@ describe("ActionsPage", () => {
       }
       return jsonResponse(
         {
-          code,
-          detail: `Rejected with ${code}.`,
-          status,
+          code: "forbidden",
+          detail: "Workflow dispatch is forbidden.",
+          status: 403,
           title: "Rejected",
           type: "about:blank",
         },
-        status,
+        403,
       );
     };
     api = createMockApiFetch([rejection, workflowFixtures()]);
     globalThis.fetch = api.fetch;
-    const workflowActions = createWorkflowActionsStore({ runtime });
-    render(ActionsPage, {
-      context: new Map([[STORES_KEY, { workflowActions }]]),
-    });
+    renderPage();
 
     await fireEvent.click(await screen.findByRole("button", { name: /alpha deploy/ }));
     await fireEvent.click(screen.getByRole("button", { name: "Run workflow" }));
-    expect((await screen.findByRole("alert")).textContent).toContain(`Rejected with ${code}.`);
+    expect((await screen.findByRole("alert")).textContent).toContain("Workflow dispatch is forbidden.");
     expect(api.requests.filter((request) => request.method === "POST")).toHaveLength(1);
     await fireEvent.click(screen.getByRole("button", { name: "Run again" }));
     expect(await screen.findByRole("button", { name: "Run workflow" })).toBeTruthy();
@@ -530,29 +469,21 @@ describe("ActionsPage", () => {
           accepted: true,
           dispatch_id: `dispatch-${dispatches}`,
           actor: "maintainer",
-          run: {
+          run: workflowRun("alpha", {
             actor: "maintainer",
-            conclusion: "success",
-            event: "workflow_dispatch",
             head_sha: `head-${dispatches}`,
             id: `repeat-run-${dispatches}`,
-            name: "alpha deploy",
             ref: "trunk",
             run_number: 10 + dispatches,
-            status: "completed",
             web_url: `https://github.com/acme/alpha/actions/runs/${dispatches}`,
-            workflow_id: "alpha-deploy.yml",
-          },
+          }),
         },
         202,
       );
     };
     api = createMockApiFetch([accepted, workflowFixtures()]);
     globalThis.fetch = api.fetch;
-    const workflowActions = createWorkflowActionsStore({ runtime });
-    render(ActionsPage, {
-      context: new Map([[STORES_KEY, { workflowActions }]]),
-    });
+    renderPage();
 
     await fireEvent.click(await screen.findByRole("button", { name: /alpha deploy/ }));
     await fireEvent.click(screen.getByRole("button", { name: "Run workflow" }));

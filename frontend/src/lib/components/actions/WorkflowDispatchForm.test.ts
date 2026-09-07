@@ -151,11 +151,17 @@ describe("WorkflowDispatchForm", () => {
     const run = screen.getByRole("button", { name: "Run workflow" });
     await Promise.all([fireEvent.click(run), fireEvent.click(run)]);
     expect(onsubmit).toHaveBeenCalledTimes(1);
+    await view.rerender({ ...props, state: { kind: "idle" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Running workflow…" }));
+    expect(onsubmit).toHaveBeenCalledTimes(1);
 
     await view.rerender({ ...props, state: { kind: "pending" } });
+    await view.rerender({ ...props, state: { kind: "succeeded" } });
     await view.rerender({ ...props, state: { kind: "idle" } });
     expect((screen.getByRole("textbox", { name: "Git ref" }) as HTMLInputElement).value).toBe("feature");
     expect((screen.getByRole("textbox", { name: "version" }) as HTMLInputElement).value).toBe("v2");
+    await fireEvent.click(screen.getByRole("button", { name: "Run workflow" }));
+    expect(onsubmit).toHaveBeenCalledTimes(2);
 
     await view.rerender({
       ...props,
@@ -204,23 +210,6 @@ describe("WorkflowDispatchForm", () => {
     expect(screen.queryByRole("textbox", { name: "version" })).toBeNull();
     expect(dropdown("channel").getAttribute("aria-label")).toBe("channel");
     expect(dropdown("channel").textContent).toContain("beta");
-  });
-
-  it("releases admission only after owner leaves idle and starts a fresh idle cycle", async () => {
-    const onsubmit = vi.fn();
-    const props = { workflow: workflow(), environments, initialRef: "main", operation: available, onsubmit };
-    const view = render(WorkflowDispatchForm, { ...props, state: { kind: "idle" } as const });
-    const run = screen.getByRole("button", { name: "Run workflow" });
-    await Promise.all([fireEvent.click(run), fireEvent.click(run)]);
-    expect(onsubmit).toHaveBeenCalledTimes(1);
-    await view.rerender({ ...props, state: { kind: "idle" } });
-    await fireEvent.click(screen.getByRole("button", { name: "Running workflow…" }));
-    expect(onsubmit).toHaveBeenCalledTimes(1);
-    await view.rerender({ ...props, state: { kind: "pending" } });
-    await view.rerender({ ...props, state: { kind: "succeeded" } });
-    await view.rerender({ ...props, state: { kind: "idle" } });
-    await fireEvent.click(screen.getByRole("button", { name: "Run workflow" }));
-    expect(onsubmit).toHaveBeenCalledTimes(2);
   });
 
   it("uses collision-free declared-index IDs for labels and described errors", async () => {
@@ -320,7 +309,7 @@ describe("WorkflowDispatchForm", () => {
 
   it("exposes native required semantics without treating a required false boolean as missing", async () => {
     const onsubmit = vi.fn();
-    const view = render(WorkflowDispatchForm, {
+    const props = {
       workflow: workflow([
         { name: "message", type: "string", required: true, has_default: false },
         { name: "retries", type: "number", required: true, has_default: false },
@@ -331,9 +320,10 @@ describe("WorkflowDispatchForm", () => {
       environments,
       initialRef: "trunk",
       operation: available,
-      state: { kind: "idle" },
+      state: { kind: "idle" } as const,
       onsubmit,
-    });
+    };
+    const view = render(WorkflowDispatchForm, props);
 
     for (const control of [
       screen.getByRole("textbox", { name: "Git ref" }),
@@ -361,34 +351,14 @@ describe("WorkflowDispatchForm", () => {
     expect(target.getAttribute("aria-invalid")).toBe("true");
 
     await view.rerender({
-      workflow: workflow([
-        { name: "message", type: "string", required: true, has_default: false },
-        { name: "retries", type: "number", required: true, has_default: false },
-        { name: "approved", type: "boolean", required: true, has_default: false },
-        { name: "channel", type: "choice", required: true, has_default: false, options: ["stable", "beta"] },
-        { name: "target", type: "environment", required: true, has_default: false },
-      ]),
-      environments,
-      initialRef: "trunk",
-      operation: available,
+      ...props,
       state: { kind: "pending" },
-      onsubmit,
     });
     expect((dropdown("channel") as HTMLButtonElement).disabled).toBe(true);
     expect((dropdown("target") as HTMLButtonElement).disabled).toBe(true);
     await view.rerender({
-      workflow: workflow([
-        { name: "message", type: "string", required: true, has_default: false },
-        { name: "retries", type: "number", required: true, has_default: false },
-        { name: "approved", type: "boolean", required: true, has_default: false },
-        { name: "channel", type: "choice", required: true, has_default: false, options: ["stable", "beta"] },
-        { name: "target", type: "environment", required: true, has_default: false },
-      ]),
-      environments,
-      initialRef: "trunk",
-      operation: available,
+      ...props,
       state: { kind: "idle" },
-      onsubmit,
     });
 
     await fireEvent.input(screen.getByRole("textbox", { name: "message" }), { target: { value: "release" } });

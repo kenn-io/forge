@@ -274,6 +274,9 @@ or remote workspace and session operations.
 
 ## Configuration And Lifecycle
 
+- Fresh-hub replacement is re-enrollment, not full archive migration; preserve
+  local execution identity and follow `docs/federated-fleet.md#replace-the-hub`
+  (`internal/server/fleetapi/fleet_enrollment.go::Handler.joinFederation`).
 - Federation protocol version 3 requires an exact match; there is no
   translation or compatibility fallback
   (`internal/federation/protocol.go::ProtocolVersion`).

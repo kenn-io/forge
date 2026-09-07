@@ -557,6 +557,7 @@ const RESTORABLE_ACTIVITY_FILTER_PARAMS = [
   "range",
   "view",
   "hide_closed",
+  "rollup_commits",
   "item_types",
   "event_types",
   "types",

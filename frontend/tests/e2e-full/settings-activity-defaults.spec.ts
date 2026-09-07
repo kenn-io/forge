@@ -64,9 +64,23 @@ test("activity default view mode and time range persist through the segmented co
   }
   await page.reload();
   await expect(page.locator(".activity-filters__trigger")).toContainText("Flat · 7d");
-  await page.goto(`${isolatedServer!.info.base_url}/settings`);
+  await page.locator(".activity-filters__trigger").click();
+  await page.getByRole("button", { name: "Roll up commits", exact: true }).click();
+  await page.keyboard.press("Escape");
+  await page.getByTitle("Settings", { exact: true }).click();
+  await openSettingsPanel(page, "Activity");
+  const activitySave = page.waitForResponse(
+    (response) => response.url().endsWith("/api/v1/settings") && response.request().method() === "PUT",
+  );
+  await page.getByRole("button", { name: "Toggle hide bots" }).click();
+  expect((await activitySave).status()).toBe(200);
   await page.getByRole("button", { name: "Back to app" }).click();
   await expect(page.locator(".activity-filters__trigger")).toContainText("Flat · 7d");
+  await page.locator(".activity-filters__trigger").click();
+  await expect(page.getByRole("button", { name: "Roll up commits", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
 });
 
 test("settings panels serialize writes through the shared queue", async ({ page }) => {

@@ -217,9 +217,11 @@ func TestArchiveAPIRecoversWhenGitHubIssuesAreReenabledE2E(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(storedRepo)
 
+	// Archive work waits for the initial sync, then completes the historical
+	// scan before maintenance. Allow that startup sequence time under -race.
 	select {
 	case <-updatedIssueStarted:
-	case <-time.After(3 * time.Second):
+	case <-time.After(30 * time.Second):
 		require.Fail("maintenance did not issue an UPDATED_AT request")
 	}
 	var unsupportedGeneration int64

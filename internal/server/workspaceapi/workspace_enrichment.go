@@ -687,6 +687,13 @@ func (s *Handler) runWorkspaceTmuxPrune(ctx context.Context) {
 		s.workspaceTmuxPruneInFlight = false
 		s.workspaceEnrichmentMu.Unlock()
 	}()
+	// Retry retained startup failures through the existing periodic worker.
+	// A fixed target configuration or returned tmux server needs no restart.
+	recoveryCtx, cancelRecovery := context.WithTimeout(ctx, 30*time.Second)
+	if err := s.restoreRuntimeSessions(recoveryCtx, true); err != nil {
+		slog.Debug("retry workspace runtime recovery", "err", err)
+	}
+	cancelRecovery()
 	pruneCtx, cancel := context.WithTimeout(
 		ctx, workspaceEnrichmentRefreshTimeout,
 	)

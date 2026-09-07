@@ -61,8 +61,11 @@ Rules:
   without resetting commits, and preserve it if later setup fails
   (`internal/workspace/manager.go::Manager.SetupWithOptions`).
 - A clone's PR source branch alone does not prove workspace recovery. Missing
-  checkouts may retain Git registrations; clear only their exact registration
-  before recreation, preserving the branch (`internal/workspace/manager.go::Manager.addWorktree`).
+  checkouts retain their Git registration and index through failed recovery,
+  preserving detached commits (`internal/workspace/restore_checkout.go::restoreMissingWorkspaceCheckout`).
+- An ad-hoc branch name alone is no proof of prior setup; recovery needs the
+  existing checkout or its registration to distinguish late branch collisions
+  (`internal/workspace/manager.go::Manager.addWorktree`).
 - An empty PR managed branch means an adopted branch or detached HEAD; unknown
   means setup has not recorded ownership. Recover the former from its registered
   HEAD without taking branch ownership (`internal/workspace/manager.go::Manager.addWorktree`).
@@ -202,8 +205,8 @@ create a local process, PTY, or durable transport session
 - Restore base terminals before agents, including retained creating/error retries;
   startup recovery shares a 30-second budget and preserves uncompleted attempts
   (`internal/server/workspaceapi/agent_resume.go::Handler.restoreWorkspaceTerminals`).
-- Pending startup recovery survives periodic missing-tmux pruning and rollback
-  exits; successful recovery restores ordinary exit cleanup
+- Pending startup recovery retries during periodic missing-tmux pruning and survives
+  rollback exits; successful recovery restores ordinary exit cleanup
   (`internal/server/workspaceapi/lifecycle.go::Handler.RestoreRuntimeSessions`).
 - During explicit delete or stop flows, forgetting the persisted row is part of
   cleanup.

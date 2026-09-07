@@ -93,7 +93,11 @@ exec sleep 60
 				targets[0].Command = []string{agent, "--model", "model-a"}
 				runtime.UpdateTargets(targets)
 			}
-			require.NoError(handler.RestoreRuntimeSessions(ctx))
+			if status == "unavailable" || status == "ambiguous" {
+				handler.runWorkspaceTmuxPrune(ctx)
+			} else {
+				require.NoError(handler.RestoreRuntimeSessions(ctx))
+			}
 			require.Eventually(func() bool { _, err := os.Stat(filepath.Join(cwd, "args")); return err == nil }, 5*time.Second, 10*time.Millisecond)
 			args, err := os.ReadFile(filepath.Join(cwd, "args"))
 			require.NoError(err)

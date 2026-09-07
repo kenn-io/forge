@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -80,7 +81,11 @@ func TestNewKataWorkspaceDoesNotAdoptCollidingBranch(t *testing.T) {
 		DaemonID: "daemon-a", ProjectUID: "project-a", IssueUID: "task-a", ShortID: "task-1", Title: "Fix widget",
 	})
 	require.NoError(err)
-	clone := filepath.Join(t.TempDir(), "clone.git")
+	mgr.SetClones(gitclone.New(t.TempDir(), nil))
+	clone, err := mgr.clones.ClonePath("github", "github.com", "acme", "widget")
+	require.NoError(err)
+	tmux, _ := writeRecorderScript(t)
+	mgr.SetTmuxCommand([]string{tmux})
 	seedWorkspaceBareCloneAt(t, clone)
 	configureOriginHeadForIssueWorkspace(t, clone)
 	runWorkspaceTestGit(t, clone, "branch", ws.GitHeadRef, "HEAD")
@@ -88,8 +93,94 @@ func TestNewKataWorkspaceDoesNotAdoptCollidingBranch(t *testing.T) {
 	require.NoError(err)
 	_, err = mgr.addWorktree(t.Context(), workspaceGitDir{path: clone, remote: originRemoteName}, ws, workspaceGitFetchOptions{})
 	require.Error(err, "initial setup must not adopt a colliding user branch")
+	_, err = mgr.Delete(t.Context(), ws.ID, true, nil)
+	require.NoError(err)
 	after, _, err := gitRefSHA(t.Context(), clone, "refs/heads/"+ws.GitHeadRef)
 	require.NoError(err)
 	assert.Equal(t, before, after)
 	assert.NoDirExists(t, ws.WorktreePath)
+}
+
+func TestMissingAdoptedCheckoutRetainsHeadAcrossFailedRecovery(t *testing.T) {
+	for _, detached := range []bool{false, true} {
+		t.Run(fmt.Sprintf("detached=%t", detached), func(t *testing.T) {
+			require := require.New(t)
+			assert := assert.New(t)
+			ctx := t.Context()
+			mgr := newTestManager(t, openTestDB(t), t.TempDir())
+			clone := filepath.Join(t.TempDir(), "clone.git")
+			seedWorkspaceBareCloneAt(t, clone)
+			path := filepath.Join(t.TempDir(), "workspace")
+			args := []string{"worktree", "add", path, "-b", "saved-branch", "HEAD"}
+			if detached {
+				args = []string{"worktree", "add", "--detach", path, "HEAD"}
+			}
+			runWorkspaceTestGit(t, clone, args...)
+			runWorkspaceTestGit(t, path, "commit", "--allow-empty", "-m", "saved work")
+			before := runWorkspaceTestGit(t, path, "rev-parse", "HEAD")
+			require.NoError(os.WriteFile(filepath.Join(path, "staged.txt"), []byte("staged work\n"), 0o600))
+			runWorkspaceTestGit(t, path, "add", "staged.txt")
+			ws := &Workspace{ID: "saved-checkout", ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 7, GitHeadRef: "provider-branch", WorktreePath: path}
+			metadata, err := worktreeGitDir(ctx, path)
+			require.NoError(err)
+			require.NoError(os.RemoveAll(path))
+			// A blocked ownership-marker write is a post-checkout failure.
+			marker := filepath.Join(metadata, workspaceOwnershipMarkerFile)
+			require.NoError(os.Mkdir(marker, 0o755))
+			_, err = mgr.addWorktree(ctx, workspaceGitDir{path: clone, remote: originRemoteName}, ws, workspaceGitFetchOptions{})
+			require.Error(err)
+			assert.NoDirExists(path)
+			require.NoError(os.Remove(marker))
+			branch, err := mgr.addWorktree(ctx, workspaceGitDir{path: clone, remote: originRemoteName}, ws, workspaceGitFetchOptions{})
+			require.NoError(err)
+			assert.Empty(branch, "adoption must not gain branch ownership")
+			assert.Equal(before, runWorkspaceTestGit(t, path, "rev-parse", "HEAD"))
+			current, err := worktreeCurrentBranch(ctx, path)
+			require.NoError(err)
+			if detached {
+				assert.Empty(current)
+			} else {
+				assert.Equal("saved-branch", current)
+			}
+			staged, err := os.ReadFile(filepath.Join(path, "staged.txt"))
+			require.NoError(err)
+			assert.Equal("staged work\n", string(staged))
+			assert.Contains(string(runWorkspaceTestGit(t, path, "diff", "--cached", "--name-only")), "staged.txt")
+		})
+	}
+}
+
+func TestSetupReusesAdoptedPRCheckoutWithLocalCommits(t *testing.T) {
+	for _, detached := range []bool{false, true} {
+		t.Run(fmt.Sprintf("detached=%t", detached), func(t *testing.T) {
+			require := require.New(t)
+			assert := assert.New(t)
+			ctx := t.Context()
+			database := openTestDB(t)
+			localRepo, _, host := setupHTTPWorktreeBaseForWorkspaceGitTest(t, "feature/thing")
+			repoID := seedRepo(t, database, host, "acme", "widget")
+			seedMR(t, database, repoID, 42, "feature/thing")
+			mgr := newTestManager(t, database, t.TempDir())
+			tmux, _ := writeRecorderScript(t)
+			mgr.SetTmuxCommand([]string{tmux})
+			mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
+			ws, err := mgr.Create(ctx, "github", host, "acme", "widget", 42)
+			require.NoError(err)
+			args := []string{"worktree", "add", ws.WorktreePath, "feature/thing"}
+			if detached {
+				args = []string{"worktree", "add", "--detach", ws.WorktreePath, "origin/feature/thing"}
+			}
+			runWorkspaceTestGit(t, localRepo, args...)
+			runWorkspaceTestGit(t, ws.WorktreePath, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-m", "saved work")
+			before := runWorkspaceTestGit(t, ws.WorktreePath, "rev-parse", "HEAD")
+			ws.WorkspaceBranch = ""
+			require.NoError(database.UpdateWorkspaceBranch(ctx, ws.ID, ""))
+			require.NoError(mgr.Setup(ctx, ws))
+			got, err := database.GetWorkspace(ctx, ws.ID)
+			require.NoError(err)
+			assert.Equal("ready", got.Status)
+			assert.Empty(got.WorkspaceBranch)
+			assert.Equal(before, runWorkspaceTestGit(t, ws.WorktreePath, "rev-parse", "HEAD"))
+		})
+	}
 }

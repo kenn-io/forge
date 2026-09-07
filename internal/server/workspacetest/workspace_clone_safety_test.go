@@ -672,7 +672,7 @@ func TestWorkspaceRetryCleansStalePreMarkerRegistrationE2E(t *testing.T) {
 
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 	branch := workspaceGitOutput(t, ws.WorktreePath, "branch", "--show-current")
-	workspaceGitOutput(t, ws.WorktreePath, "commit", "--allow-empty", "-m", "saved local work")
+	workspaceGitOutput(t, ws.WorktreePath, "-c", "user.name=Test User", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-m", "saved local work")
 	savedHead := workspaceGitOutput(t, ws.WorktreePath, "rev-parse", "HEAD")
 	metadataDir := workspaceGitOutput(
 		t, ws.WorktreePath,

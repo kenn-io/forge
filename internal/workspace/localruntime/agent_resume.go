@@ -68,7 +68,7 @@ func validateAgentResumeOptions(args []string, agent string) error {
 	switch agent {
 	case "codex":
 		valueOptions = "-c --config --enable --disable -m --model -p --profile -s --sandbox -a --ask-for-approval -C --cd --add-dir --local-provider --remote --remote-auth-token-env"
-		switchOptions = "--oss --strict-config --approve-for-me --dangerously-bypass-approvals-and-sandbox --dangerously-bypass-hook-trust --search --no-alt-screen"
+		switchOptions = "--full-auto --oss --strict-config --approve-for-me --dangerously-bypass-approvals-and-sandbox --dangerously-bypass-hook-trust --search --no-alt-screen"
 	case "claude":
 		valueOptions = "--model --effort --agent --agents --permission-mode --settings --setting-sources --mcp-config --add-dir --allowedTools --allowed-tools --disallowedTools --disallowed-tools --tools --system-prompt --append-system-prompt --plugin-dir"
 		switchOptions = "--dangerously-skip-permissions --allow-dangerously-skip-permissions --verbose --strict-mcp-config --bare --chrome --no-chrome"

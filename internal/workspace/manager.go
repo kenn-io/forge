@@ -2279,6 +2279,11 @@ func existingWorkspacePersistedBranch(
 	if ws.WorkspaceBranch != "" && ws.WorkspaceBranch != workspaceBranchUnknown {
 		return ws.WorkspaceBranch, currentBranch == ws.WorkspaceBranch, nil
 	}
+	// Registration and repository provenance were checked by the caller. An
+	// empty marker records adoption, including a detached checkout.
+	if ws.ItemType == db.WorkspaceItemTypePullRequest && ws.WorkspaceBranch == "" {
+		return "", true, nil
+	}
 	if ws.ItemType == db.WorkspaceItemTypePullRequest &&
 		isSyntheticPRWorktreeBranch(ws.ItemNumber, currentBranch) {
 		ok, err := existingWorkspaceHeadMatchesCurrentHead(
@@ -3073,22 +3078,17 @@ func (m *Manager) addWorktree(
 		if err != nil {
 			return err
 		}
-		var savedHead string
-		if registered && ws.WorkspaceBranch == "" {
-			head, err := os.ReadFile(filepath.Join(metadataDir, "HEAD"))
-			if err != nil {
-				return fmt.Errorf("read missing worktree HEAD: %w", err)
+		if registered && ws.WorkspaceBranch != workspaceBranchUnknown {
+			// Keep Git's HEAD, index and reflog in place until reconstruction
+			// succeeds; a failed attempt must not lose the next retry's anchor.
+			if err := restoreMissingWorkspaceCheckout(ctx, gitDir.path, metadataDir, ws); err != nil {
+				return err
 			}
-			savedHead = strings.TrimSpace(string(head))
+			branch = ws.WorkspaceBranch
+			return nil
 		}
 		if err := removeStaleWorktreeRegistrationMetadata(ctx, gitDir.path, ws.WorktreePath); err != nil {
 			return err
-		}
-		if savedHead != "" {
-			if savedBranch, ok := strings.CutPrefix(savedHead, "ref: refs/heads/"); ok {
-				return m.runOwnedGitWorktreeAdd(ctx, gitDir.path, ws, savedBranch)
-			}
-			return m.runOwnedGitWorktreeAdd(ctx, gitDir.path, ws, "--detach", savedHead)
 		}
 		var addErr error
 		branch, addErr = m.addWorktreeLocked(
@@ -3115,7 +3115,7 @@ func (m *Manager) addWorktreeLocked(
 		if err != nil {
 			return "", err
 		}
-		if exists {
+		if exists && ws.ItemType != db.WorkspaceItemTypeAdHoc {
 			if err := m.runOwnedGitWorktreeAdd(ctx, gitDir.path, ws, branch); err != nil {
 				return "", err
 			}
@@ -3291,7 +3291,7 @@ func (m *Manager) addIssueWorktree(
 	if err != nil {
 		return "", err
 	}
-	if exists && ws.WorkspaceBranch != workspaceBranchUnknown {
+	if exists && ws.WorkspaceBranch != workspaceBranchUnknown && ws.ItemType != db.WorkspaceItemTypeAdHoc {
 		if err := m.runOwnedGitWorktreeAdd(ctx, gitDir.path, ws, workspaceBranch); err != nil {
 			return "", err
 		}

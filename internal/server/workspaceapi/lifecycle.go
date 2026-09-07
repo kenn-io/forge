@@ -115,12 +115,32 @@ func (h *Handler) Shutdown(ctx context.Context) error {
 // RestoreRuntimeSessions restores persisted workspace runtime sessions after
 // the runtime manager has been constructed.
 func (h *Handler) RestoreRuntimeSessions(ctx context.Context) error {
+	return h.restoreRuntimeSessions(ctx, false)
+}
+
+func (h *Handler) restoreRuntimeSessions(ctx context.Context, pendingOnly bool) error {
 	if h == nil || h.db == nil || h.runtime == nil || h.workspaces == nil {
 		return nil
 	}
+	h.runtimeRestoreMu.Lock()
+	defer h.runtimeRestoreMu.Unlock()
 	stored, err := h.db.ListAllWorkspaceRuntimeSessions(ctx)
 	if err != nil {
 		return err
+	}
+	if pendingOnly {
+		h.runtimeRecoveryMu.Lock()
+		pending := stored[:0]
+		for _, session := range stored {
+			if h.runtimeRecoveryPending[session.SessionKey] {
+				pending = append(pending, session)
+			}
+		}
+		h.runtimeRecoveryMu.Unlock()
+		stored = pending
+		if len(stored) == 0 {
+			return nil
+		}
 	}
 	retainedWorkspaces := make(map[string]bool)
 	for _, session := range stored {
@@ -135,7 +155,7 @@ func (h *Handler) RestoreRuntimeSessions(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		if summary == nil {
+		if summary == nil || (pendingOnly && !workspaceStatusAllowsRecovery(summary.Status)) {
 			continue
 		}
 		restored := localruntime.RestoredRuntimeSession{

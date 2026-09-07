@@ -46,3 +46,9 @@ func TestAgentResumeRejectsAmbiguousConfiguredArguments(t *testing.T) {
 		})
 	}
 }
+
+func TestAgentResumePreservesCodexFullAuto(t *testing.T) {
+	command, err := agentResumeCommand([]string{"codex", "--full-auto", "--search"}, "codex", "saved-session")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"codex", "--full-auto", "--search", "resume", "saved-session"}, command)
+}

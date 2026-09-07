@@ -212,6 +212,9 @@ review suggestion application, or ready-for-review.
 
 ## Sync Capabilities
 
+- Saved branch tips may outlive objects in rebuilt or pruned clones; resume bounded activity indexing without inferring a force push from missing history.
+  (`internal/github/sync.go::Syncer.syncDefaultBranchActivity`)
+
 kenn-forge reads repositories, merge requests, issues, releases, tags, CI, and
 timeline/comment-like events through provider capability interfaces in
 `platform`. Providers implement only supported optional interfaces;

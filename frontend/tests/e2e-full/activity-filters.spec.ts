@@ -129,6 +129,18 @@ test.describe("activity feed filters", () => {
     await expect(page.locator(".state-badge.state-merged")).toHaveCount(0);
   });
 
+  test("refresh preserves the selected time window and hide closed/merged", async ({ page }) => {
+    await selectActivityFilterItem(page, "90d");
+    await selectActivityFilterItem(page, "Hide closed/merged");
+    await page.reload();
+    await waitForTable(page);
+
+    await expect(page.locator(".activity-filters__trigger")).toContainText("90d");
+    await expect(page.locator(".state-badge.state-closed, .state-badge.state-merged")).toHaveCount(0);
+    await selectActivityFilterItem(page, "Hide closed/merged");
+    await expect(page.locator(".state-badge.state-closed, .state-badge.state-merged").first()).toBeVisible();
+  });
+
   test("hide bots removes bot-authored items", async ({ page }) => {
     const botCells = page.locator(".activity-row .col-author", {
       hasText: "dependabot[bot]",

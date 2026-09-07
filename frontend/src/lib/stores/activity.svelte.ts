@@ -233,6 +233,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   const notificationStateOwnership = new Map<string, { readonly tick: number; readonly state: string }>();
 
   let hideClosedMerged = $state(false);
+  let hideClosedMergedOverride: boolean | undefined;
   let hideBots = $state(false);
   let useWorkspaceActivityForRecency = $state(false);
   let hideDefaultBranchActivity = $state(false);
@@ -399,6 +400,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   }
   function setHideClosedMerged(v: boolean): void {
     hideClosedMerged = v;
+    hideClosedMergedOverride = v;
+    syncToURL();
     invalidatePagedActivityRequests();
   }
   function setHideBots(v: boolean): void {
@@ -443,7 +446,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     collapseThreads = activity.collapse_threads;
     expandOverrides = new Set();
     if (initialized) {
-      applyCollapsedFromURL();
+      syncFromURL();
       // Once a settings reload makes the live state match the new default,
       // drop the now-redundant collapsed param so a later default change is
       // not shadowed by a stale override.
@@ -1275,6 +1278,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     rollUpCommits = sp.get("rollup_commits") === "1";
     hideDefaultBranchActivity = sp.get("hide_branch") === "1";
     showNotifications = sp.get("notif") !== "0";
+    const hideClosedParam = sp.get("hide_closed");
+    hideClosedMergedOverride = hideClosedParam === "1" ? true : hideClosedParam === "0" ? false : undefined;
+    if (hideClosedMergedOverride !== undefined) hideClosedMerged = hideClosedMergedOverride;
     applyCollapsedFromURL();
     rebuildFilterTypes();
   }
@@ -1289,6 +1295,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     else sp.delete("search");
     if (authorFilter) sp.set("author", authorFilter);
     else sp.delete("author");
+    if (hideClosedMergedOverride !== undefined) sp.set("hide_closed", hideClosedMergedOverride ? "1" : "0");
+    else sp.delete("hide_closed");
     if (timeRange !== "7d") sp.set("range", timeRange);
     else sp.delete("range");
     if (viewMode !== "flat") sp.set("view", viewMode);

@@ -6330,6 +6330,7 @@ func TestManagerApplyTmuxMouseDoesNotMutateCustomServer(t *testing.T) {
 	mgr.SetTmuxMouse(true)
 
 	require.NoError(mgr.ApplyTmuxMouse(t.Context()))
+	require.NoError(mgr.ApplyTmuxClipboard(t.Context()))
 	require.NoFileExists(record)
 }
 

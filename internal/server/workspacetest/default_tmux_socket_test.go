@@ -88,6 +88,21 @@ func TestWorkspaceUnconfiguredTmuxUsesForgeSocketE2E(t *testing.T) {
 		ws.TmuxSession,
 	)
 
+	// Prove application clipboard writes cross the base shell, tmux, and
+	// terminal WebSocket; an option read would miss a broken transport hop.
+	require.NoError(conn.Write(ctx, websocket.MessageBinary,
+		[]byte("printf '\\033]52;c;Y2xpcGJvYXJkLXByb29m\\007'\n")))
+	readCtx, cancelRead := context.WithTimeout(ctx, 5*time.Second)
+	defer cancelRead()
+	var clipboardOutput []byte
+	for !bytes.Contains(clipboardOutput, []byte("\x1b]52;c;Y2xpcGJvYXJkLXByb29m")) {
+		typ, data, err := conn.Read(readCtx)
+		require.NoError(err)
+		if typ == websocket.MessageBinary {
+			clipboardOutput = append(clipboardOutput, data...)
+		}
+	}
+
 	require.NoError(conn.Close(websocket.StatusNormalClosure, "done"))
 
 	// A tmux-wrapped agent launch must land on the same sandboxed

@@ -218,6 +218,9 @@ still exists.
 - Only `DefaultTmuxCommand` selects Forge's dedicated tmux server. Custom tmux
   commands may address a shared user server, so Forge never changes their global
   options or applies graphics-off mutations (`internal/config/config.go::IsDefaultTmuxCommand`).
+- Dedicated tmux servers enable application OSC 52 forwarding at startup and
+  session creation/reattachment; `external` drops agent copies before the browser
+  can handle them (`internal/workspace/manager.go::ApplyTmuxClipboard`).
 - The tmux server permanently retains its spawn environment for every pane to
   read via `show-environment -g`, and only `new-session` clients spawn it, so
   every Forge-issued tmux client runs with the non-secret allowlist

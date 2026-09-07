@@ -96,6 +96,29 @@ afterEach(async () => {
 });
 
 describe("activity store workspace activity", () => {
+  it("keeps the selected time window when settings hydrate after mounting", () => {
+    window.history.replaceState(null, "", "/?range=90d");
+    const store = makeStore();
+    store.initializeFromMount();
+    store.hydrateDefaults(settings(false));
+    expect(store.getTimeRange()).toBe("90d");
+  });
+
+  it.each([false, true])("restores a hide-closed override of the %s default on refresh", async (defaultValue) => {
+    const defaults = { ...settings(false), hide_closed: defaultValue };
+    const store = makeStore();
+    store.hydrateDefaults(defaults);
+    store.initializeFromMount();
+    store.setHideClosedMerged(!defaultValue);
+    await Effect.runPromise(runtime!.disposeEffect);
+
+    const refreshed = makeStore();
+    refreshed.hydrateDefaults(defaults);
+    refreshed.initializeFromMount();
+    refreshed.hydrateDefaults(defaults);
+    expect(refreshed.getHideClosedMerged()).toBe(!defaultValue);
+  });
+
   it("persists and sends the Involves me filter", async () => {
     const get = vi.fn(async () => ({ data: { items: [], capped: false }, error: null }));
     const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });

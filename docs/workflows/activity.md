@@ -20,6 +20,8 @@ The filters can narrow the queue by:
 
 Filter choices stay in the Activity URL. You can bookmark a useful queue or
 send the link to another Kenn Forge user with access to the same repositories.
+Refreshing preserves the selected time range and **Hide closed/merged** choice,
+even when they differ from the defaults in Settings.
 
 ## Read an item without losing the queue
 

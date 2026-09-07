@@ -57,6 +57,11 @@ Launch another shell or agent from the workspace header. Sessions continue
 under tmux when you leave the page, reload the browser, or attach from another
 terminal.
 
+Forge enables application clipboard copying on its dedicated tmux server;
+no system-wide tmux change is needed. If you configure a custom shared tmux
+server, enable `set-clipboard on` there to forward agent OSC 52 copies to
+the browser. Copy from the active terminal with a mouse or keyboard gesture.
+
 ## Put sessions beside the work
 
 Pull request, issue, and Activity detail can host the same live workspace. Move

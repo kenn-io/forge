@@ -5443,6 +5443,9 @@ func (m *Manager) configureTmuxSession(
 		if err := m.applyTmuxServerGraphics(ctx, graphics); err != nil {
 			return err
 		}
+		if err := m.ApplyTmuxClipboard(ctx); err != nil {
+			return err
+		}
 		if err := m.applyTmuxMouse(ctx); err != nil {
 			return err
 		}
@@ -5603,6 +5606,26 @@ func (m *Manager) ApplyTmuxGraphics(ctx context.Context) error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// ApplyTmuxClipboard forwards application OSC 52 writes on Forge's dedicated
+// server, including retained sessions created before clipboard forwarding.
+// Custom commands may address a shared server whose policy belongs to the user.
+func (m *Manager) ApplyTmuxClipboard(ctx context.Context) error {
+	if !config.IsDefaultTmuxCommand(m.tmuxCmd) {
+		return nil
+	}
+	sessions, err := m.listTmuxSessions(ctx)
+	if err != nil {
+		return err
+	}
+	if len(sessions) == 0 {
+		return nil
+	}
+	if err := runBuiltCmd(ctx, m.tmuxExec(ctx, "set-option", "-s", "set-clipboard", "on")); err != nil {
+		return fmt.Errorf("configure tmux clipboard: %w", err)
+	}
+	return nil
 }
 
 // ApplyTmuxMouse updates a running Forge-owned tmux server. Custom commands

@@ -1310,6 +1310,9 @@ func newServer(
 		if err := s.workspaces.ApplyTmuxGraphics(context.Background()); err != nil {
 			slog.Warn("apply startup tmux graphics setting", "err", err)
 		}
+		if err := s.workspaces.ApplyTmuxClipboard(context.Background()); err != nil {
+			slog.Warn("apply startup tmux clipboard setting", "err", err)
+		}
 		if err := s.workspaces.ApplyTmuxMouse(context.Background()); err != nil {
 			slog.Warn("apply startup tmux mouse setting", "err", err)
 		}

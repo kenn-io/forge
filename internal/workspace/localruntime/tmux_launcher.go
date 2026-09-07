@@ -244,6 +244,11 @@ func (l tmuxLauncher) prepare(ctx context.Context) (tmuxLaunchResult, error) {
 				ctx, "configure tmux SIXEL", err,
 			)
 		}
+		if err := l.run(ctx, l.clipboardCommand()); err != nil {
+			return tmuxLaunchResult{}, l.cleanupNewSessionAfterError(
+				ctx, "configure tmux clipboard", err,
+			)
+		}
 		if err := l.run(ctx, l.tmuxMouseCommand()); err != nil {
 			return tmuxLaunchResult{}, l.cleanupNewSessionAfterError(
 				ctx, "configure tmux mouse", err,
@@ -284,6 +289,9 @@ func (l tmuxLauncher) prepareExisting(ctx context.Context) (tmuxLaunchResult, er
 		}
 		if err := l.run(ctx, l.sixelCommand()); err != nil {
 			return tmuxLaunchResult{}, fmt.Errorf("configure tmux SIXEL: %w", err)
+		}
+		if err := l.run(ctx, l.clipboardCommand()); err != nil {
+			return tmuxLaunchResult{}, fmt.Errorf("configure tmux clipboard: %w", err)
 		}
 		if err := l.run(ctx, l.tmuxMouseCommand()); err != nil {
 			return tmuxLaunchResult{}, fmt.Errorf("configure tmux mouse: %w", err)
@@ -640,6 +648,11 @@ func (l tmuxLauncher) sixelCommand() []string {
 		return append(command, "-u", "terminal-features[100]")
 	}
 	return append(command, "terminal-features[100]", "xterm-256color:sixel")
+}
+
+// Applications need "on": tmux's default "external" drops their OSC 52 writes.
+func (l tmuxLauncher) clipboardCommand() []string {
+	return append(slices.Clone(l.TmuxCommand), "set-option", "-s", "set-clipboard", "on")
 }
 
 func (l tmuxLauncher) tmuxMouseCommand() []string {

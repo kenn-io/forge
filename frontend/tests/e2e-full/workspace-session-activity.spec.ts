@@ -413,9 +413,8 @@ test.describe("workspace session activity across item surfaces", () => {
       });
       await page.goto(`${server.info.base_url}/`);
       await settingsLoaded;
-      await expect(page.locator(".activity-table .activity-row").first()).toBeVisible();
-      await selectActivityViewItem(page, "Threaded");
-      await selectActivityViewItem(page, "24h");
+      // Returning to Activity restores the Threaded/24h selection made above.
+      await expect(page.locator(".threaded-view .item-row").first()).toBeVisible();
       await expect(page.locator(".activity-filters__trigger")).toContainText("Threaded · 24h");
       const botPullTitle = "Bump lodash from 4.17.20 to 4.17.21";
       const botIssueTitle = "Security advisory: prototype pollution";

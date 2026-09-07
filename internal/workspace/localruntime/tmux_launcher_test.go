@@ -3,6 +3,7 @@ package localruntime
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -737,4 +738,41 @@ func TestShouldAllowTmuxSessionVarFold(t *testing.T) {
 	assert.True(shouldAllowTmuxSessionVarFold("Path", true),
 		"Windows resolves Path as PATH")
 	assert.True(shouldAllowTmuxSessionVarFold("editor", true))
+}
+
+func TestTmuxLauncherAcceptsApplicationClipboard(t *testing.T) {
+	if privateTmuxOwner == nil {
+		t.Skip("tmux requires Unix")
+	}
+	tmuxPath, err := exec.LookPath("tmux")
+	if err != nil {
+		t.Skip("tmux unavailable")
+	}
+	for _, reuse := range []bool{false, true} {
+		t.Run(strconv.FormatBool(reuse), func(t *testing.T) {
+			require := require.New(t)
+			launcher := tmuxLauncher{
+				TmuxCommand: privateTmuxOwner.Command(t, tmuxPath),
+				Session:     "clipboard-test",
+				OwnerMarker: "clipboard-owner",
+				Pane:        tmuxAgentEnvPolicy.paneEnvironment(os.Environ(), []string{"/bin/sh"}, nil),
+			}
+			// Start with the default that rejected application copies, including
+			// when Forge reattaches to a server created by an older release.
+			if reuse {
+				_, err := launcher.prepare(t.Context())
+				require.NoError(err)
+				require.NoError(launcher.run(t.Context(), append(slices.Clone(launcher.TmuxCommand), "set-option", "-s", "set-clipboard", "external")))
+			}
+			launcher.ConfigureServer = true
+			_, err := launcher.prepare(t.Context())
+			require.NoError(err)
+			require.NoError(launcher.run(t.Context(), append(slices.Clone(launcher.TmuxCommand), "send-keys", "-t", launcher.Session,
+				`printf '\033]52;c;Y2xpcGJvYXJkLXByb29m\007'`, "Enter")))
+			require.Eventually(func() bool {
+				out, err := launcher.output(t.Context(), append(slices.Clone(launcher.TmuxCommand), "show-buffer"))
+				return err == nil && string(out) == "clipboard-proof"
+			}, 5*time.Second, 20*time.Millisecond)
+		})
+	}
 }

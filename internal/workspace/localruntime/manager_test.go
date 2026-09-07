@@ -592,7 +592,7 @@ exit 0
 	)
 	assert.Equal(sessionName, launch.TmuxSession)
 	records := readNullArgvRecord(t, record)
-	require.Len(records, 5)
+	require.Len(records, 6)
 	newSession := records[1]
 	assert.Contains(newSession, ";")
 	assert.Contains(newSession, "set-option")
@@ -609,7 +609,7 @@ exit 0
 	}, records[3])
 	assert.Equal([]string{
 		"-L", "kenn-forge", "set-option", "-q", "-g", "mouse", "off",
-	}, records[4])
+	}, records[5])
 }
 
 func TestManagerLaunchPlainShellWrapsInTmuxWhenAvailable(t *testing.T) {

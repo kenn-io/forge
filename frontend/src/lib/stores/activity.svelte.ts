@@ -214,6 +214,11 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   let authorsError = $state<string | null>(null);
   let timeRange = $state<TimeRange>("7d");
   let viewMode = $state<ViewMode>("flat");
+  let timeRangeDefault: TimeRange = "7d";
+  let viewModeDefault: ViewMode = "flat";
+  let defaultsHydrated = false;
+  let timeRangeSelected = false;
+  let viewModeSelected = false;
   let collapseThreads = $state(false);
   let rollUpCommits = $state(false);
   let collapseThreadsDefault = false;
@@ -233,6 +238,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   const notificationStateOwnership = new Map<string, { readonly tick: number; readonly state: string }>();
 
   let hideClosedMerged = $state(false);
+  let hideClosedMergedOverride: boolean | undefined;
   let hideBots = $state(false);
   let useWorkspaceActivityForRecency = $state(false);
   let hideDefaultBranchActivity = $state(false);
@@ -358,10 +364,12 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     invalidatePagedActivityRequests();
   }
   function setTimeRange(range_: TimeRange): void {
+    timeRangeSelected = true;
     timeRange = range_;
     invalidatePagedActivityRequests();
   }
   function setViewMode(mode: ViewMode): void {
+    viewModeSelected = true;
     viewMode = mode;
     invalidatePagedActivityRequests();
   }
@@ -399,6 +407,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   }
   function setHideClosedMerged(v: boolean): void {
     hideClosedMerged = v;
+    hideClosedMergedOverride = v;
+    syncToURL();
     invalidatePagedActivityRequests();
   }
   function setHideBots(v: boolean): void {
@@ -434,6 +444,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   // --- hydration ---
 
   function hydrateDefaults(activity: ActivitySettings): void {
+    timeRangeDefault = activity.time_range;
+    viewModeDefault = activity.view_mode;
+    defaultsHydrated = true;
     viewMode = activity.view_mode;
     timeRange = activity.time_range;
     hideClosedMerged = activity.hide_closed;
@@ -443,7 +456,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     collapseThreads = activity.collapse_threads;
     expandOverrides = new Set();
     if (initialized) {
-      applyCollapsedFromURL();
+      syncFromURL();
       // Once a settings reload makes the live state match the new default,
       // drop the now-redundant collapsed param so a later default change is
       // not shadowed by a stale override.
@@ -1275,6 +1288,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     rollUpCommits = sp.get("rollup_commits") === "1";
     hideDefaultBranchActivity = sp.get("hide_branch") === "1";
     showNotifications = sp.get("notif") !== "0";
+    const hideClosedParam = sp.get("hide_closed");
+    hideClosedMergedOverride = hideClosedParam === "1" ? true : hideClosedParam === "0" ? false : undefined;
+    if (hideClosedMergedOverride !== undefined) hideClosedMerged = hideClosedMergedOverride;
     applyCollapsedFromURL();
     rebuildFilterTypes();
   }
@@ -1289,9 +1305,13 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     else sp.delete("search");
     if (authorFilter) sp.set("author", authorFilter);
     else sp.delete("author");
-    if (timeRange !== "7d") sp.set("range", timeRange);
+    if (hideClosedMergedOverride !== undefined) sp.set("hide_closed", hideClosedMergedOverride ? "1" : "0");
+    else sp.delete("hide_closed");
+    if (timeRange !== timeRangeDefault || (!defaultsHydrated && (timeRangeSelected || sp.has("range"))))
+      sp.set("range", timeRange);
     else sp.delete("range");
-    if (viewMode !== "flat") sp.set("view", viewMode);
+    if (viewMode !== viewModeDefault || (!defaultsHydrated && (viewModeSelected || sp.has("view"))))
+      sp.set("view", viewMode);
     else sp.delete("view");
     if (rollUpCommits) sp.set("rollup_commits", "1");
     else sp.delete("rollup_commits");

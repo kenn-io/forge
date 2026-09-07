@@ -1,9 +1,9 @@
-import { csrfFetch } from "../../api/csrf.js";
 import { configuredAPIBaseURL } from "../../api/runtime-base.js";
 
 export async function writeTerminalClipboardThroughServer(text: string): Promise<void> {
-  const response = await csrfFetch(fetch)(`${configuredAPIBaseURL()}/terminal/clipboard`, {
+  const response = await fetch(`${configuredAPIBaseURL()}/terminal/clipboard`, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text }),
   });
   if (!response.ok) {

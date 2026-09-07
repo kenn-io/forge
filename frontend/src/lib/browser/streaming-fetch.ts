@@ -1,6 +1,6 @@
 import { Cause, Context, Effect, Layer, Queue, Stream } from "effect";
 import { BrowserStreamError, InvalidExternalPayload, TransientTransportError } from "../api/effect-errors.js";
-import { csrfFetch, type FetchFn } from "../api/csrf.js";
+import { normalizedFetch, type FetchFn } from "../api/request.js";
 import { tracedFetch } from "../api/runtime.js";
 import type { Scope } from "effect/Scope";
 
@@ -21,7 +21,7 @@ export class StreamingFetch extends Context.Service<
 const liveFetch: FetchFn = (input, init) => globalThis.fetch(input, init);
 
 export const StreamingFetchLive = Layer.succeed(StreamingFetch)({
-  fetch: csrfFetch(tracedFetch(liveFetch)),
+  fetch: normalizedFetch(tracedFetch(liveFetch)),
 });
 
 export const openStreamingResponse = Effect.fn("StreamingFetch.open")(function* (

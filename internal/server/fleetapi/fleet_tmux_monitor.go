@@ -1,8 +1,10 @@
 package fleetapi
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"maps"
 	"os"
 	"os/exec"
@@ -23,6 +25,18 @@ const (
 	fleetTmuxProbeTimeout      = 750 * time.Millisecond
 	fleetTmuxStaleThreshold    = 30 * time.Second
 	fleetTmuxActivityCPUThresh = 0.1
+	// fleetTmuxPollInterval paces one monitor pass: a session listing, a
+	// window listing when the session listing moved, and process metrics for
+	// the panes of managed sessions.
+	fleetTmuxPollInterval = 15 * time.Second
+	// fleetTmuxWindowRefreshInterval bounds how long a byte-identical session
+	// listing may reuse the previous window inventory, so window renames and
+	// activity stamps still converge without a per-pass list-windows spawn.
+	fleetTmuxWindowRefreshInterval = 60 * time.Second
+	// fleetTmuxProcessTableLimit caps how many processes the metrics probe
+	// will collect across every pane tree before it stops descending, so a
+	// runaway fork tree cannot turn the probe into an unbounded walk.
+	fleetTmuxProcessTableLimit = 4096
 	// tmux 3.5a renders literal tabs in -F output as underscores, so use a
 	// printable separator the real command preserves.
 	fleetTmuxFieldSeparator = "|"
@@ -34,6 +48,13 @@ type fleetTmuxMonitor struct {
 	includeUnmanagedDetails bool
 	clock                   func() time.Time
 	probeTimeout            time.Duration
+	gate                    *fleetMonitorGate
+
+	// lastSessionsOutput is the raw list-sessions output of the last
+	// successful inventory pass and lastWindowsAt when list-windows last ran;
+	// together they decide whether a pass may reuse the previous windows.
+	lastSessionsOutput []byte
+	lastWindowsAt      time.Time
 
 	currentInventory     fleetTmuxInventorySample
 	previousInventory    fleetTmuxInventorySample
@@ -100,6 +121,7 @@ func newFleetTmuxMonitor(
 	tmuxCmd []string,
 	includeUnmanagedDetails bool,
 	clock func() time.Time,
+	hasSubscribers func() bool,
 ) *fleetTmuxMonitor {
 	if clock == nil {
 		clock = time.Now
@@ -112,6 +134,7 @@ func newFleetTmuxMonitor(
 		includeUnmanagedDetails: includeUnmanagedDetails,
 		clock:                   clock,
 		probeTimeout:            fleetTmuxProbeTimeout,
+		gate:                    newFleetMonitorGate("tmux", hasSubscribers),
 	}
 }
 
@@ -199,6 +222,7 @@ func (m *fleetTmuxMonitor) refreshInventory(ctx context.Context) {
 			"#{session_name}",
 	)
 	if err != nil {
+		m.forgetSessionsOutput()
 		if tmuxEmptyServerError(err) {
 			m.recordInventorySample(fleetTmuxInventorySample{
 				PolledAt:  m.clock().UTC(),
@@ -211,6 +235,22 @@ func (m *fleetTmuxMonitor) refreshInventory(ctx context.Context) {
 			PolledAt:  m.clock().UTC(),
 			Error:     err.Error(),
 			Succeeded: false,
+		})
+		return
+	}
+	if previousWindows, ok := m.reusableWindows(sessionsOut); ok {
+		sessions := parseFleetTmuxInventory(string(sessionsOut), "")
+		for name, session := range sessions {
+			if prior, ok := previousWindows[name]; ok {
+				session.Windows = slices.Clone(prior.Windows)
+				session.WindowCount = max(session.WindowCount, len(session.Windows))
+				sessions[name] = session
+			}
+		}
+		m.recordInventorySample(fleetTmuxInventorySample{
+			PolledAt:  m.clock().UTC(),
+			Sessions:  sessions,
+			Succeeded: true,
 		})
 		return
 	}
@@ -223,6 +263,7 @@ func (m *fleetTmuxMonitor) refreshInventory(ctx context.Context) {
 			"#{window_activity}",
 	)
 	if err != nil {
+		m.forgetSessionsOutput()
 		if tmuxEmptyServerError(err) {
 			m.recordInventorySample(fleetTmuxInventorySample{
 				PolledAt:  m.clock().UTC(),
@@ -238,6 +279,7 @@ func (m *fleetTmuxMonitor) refreshInventory(ctx context.Context) {
 		})
 		return
 	}
+	m.rememberSessionsOutput(sessionsOut)
 	m.recordInventorySample(fleetTmuxInventorySample{
 		PolledAt:  m.clock().UTC(),
 		Sessions:  parseFleetTmuxInventory(string(sessionsOut), string(windowsOut)),
@@ -245,8 +287,42 @@ func (m *fleetTmuxMonitor) refreshInventory(ctx context.Context) {
 	})
 }
 
+// reusableWindows reports whether the session listing is byte-identical to the
+// one that produced the current inventory and the window listing is recent
+// enough to reuse; when so it returns the current inventory's sessions so the
+// caller can carry their windows forward without a list-windows spawn.
+func (m *fleetTmuxMonitor) reusableWindows(
+	sessionsOut []byte,
+) (map[string]fleetTmuxLiveSession, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if !m.hasCurrentInventory || m.lastSessionsOutput == nil ||
+		!bytes.Equal(m.lastSessionsOutput, sessionsOut) ||
+		m.clock().Sub(m.lastWindowsAt) >= fleetTmuxWindowRefreshInterval {
+		return nil, false
+	}
+	return cloneFleetTmuxInventorySample(m.currentInventory).Sessions, true
+}
+
+func (m *fleetTmuxMonitor) rememberSessionsOutput(sessionsOut []byte) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.lastSessionsOutput = bytes.Clone(sessionsOut)
+	m.lastWindowsAt = m.clock()
+}
+
+func (m *fleetTmuxMonitor) forgetSessionsOutput() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.lastSessionsOutput = nil
+	m.lastWindowsAt = time.Time{}
+}
+
 func (m *fleetTmuxMonitor) refreshMetrics(ctx context.Context) {
-	cctx, cancel := context.WithTimeout(ctx, m.probeTimeout)
+	// The pane listing plus a ps and pgrep per process generation can add up
+	// to a dozen short spawns, so the metrics pass gets a wider budget than a
+	// single tmux probe.
+	cctx, cancel := context.WithTimeout(ctx, m.probeTimeout*4)
 	defer cancel()
 
 	snap := m.snapshot()
@@ -278,11 +354,8 @@ func (m *fleetTmuxMonitor) refreshMetrics(ctx context.Context) {
 		})
 		return
 	}
-	psCmd := procutil.CommandContext(
-		cctx, "ps", "-ax", "-o", "pid=", "-o", "ppid=", "-o",
-		"%cpu=", "-o", "rss=", "-o", "comm=",
-	)
-	processOut, err := procutil.Output(cctx, psCmd, "fleet process probe")
+	panes := parseFleetTmuxPanes(string(panesOut), managed)
+	processes, err := probeFleetProcessTrees(cctx, panePIDs(panes))
 	if err != nil {
 		m.recordMetricsSample(fleetTmuxMetricsSample{
 			SampledAt: m.clock().UTC(),
@@ -293,30 +366,102 @@ func (m *fleetTmuxMonitor) refreshMetrics(ctx context.Context) {
 	sampledAt := m.clock().UTC()
 	m.recordMetricsSample(fleetTmuxMetricsSample{
 		SampledAt: sampledAt,
-		Sessions: parseFleetTmuxMetrics(
-			string(panesOut), string(processOut), managed, sampledAt,
-		),
+		Sessions:  aggregateFleetTmuxMetrics(panes, processes, sampledAt),
 	})
 }
 
-func (m *fleetTmuxMonitor) run(ctx context.Context) {
+// refresh runs one monitor pass: the session inventory, then process metrics
+// for managed panes.
+func (m *fleetTmuxMonitor) refresh(ctx context.Context) {
 	m.refreshInventory(ctx)
 	m.refreshMetrics(ctx)
+}
 
-	inventoryTicker := time.NewTicker(4 * time.Second)
-	defer inventoryTicker.Stop()
-	metricsTicker := time.NewTicker(15 * time.Second)
-	defer metricsTicker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-inventoryTicker.C:
-			m.refreshInventory(ctx)
-		case <-metricsTicker.C:
-			m.refreshMetrics(ctx)
+func (m *fleetTmuxMonitor) run(ctx context.Context) {
+	runFleetMonitorLoop(ctx, fleetTmuxPollInterval, m.gate, m.refresh)
+}
+
+func panePIDs(panes []fleetTmuxPaneInfo) []int {
+	pids := make([]int, 0, len(panes))
+	for _, pane := range panes {
+		if pane.PID > 0 && !slices.Contains(pids, pane.PID) {
+			pids = append(pids, pane.PID)
 		}
 	}
+	return pids
+}
+
+// probeFleetProcessTrees builds a process table covering only the given pane
+// processes and their descendants, instead of enumerating the whole host. Each
+// generation costs one ps for the known pids and one pgrep for their children;
+// the walk descends until a generation has no children, or stops early once
+// the table reaches its size cap and logs that the metrics are partial. An
+// empty pid set spawns nothing.
+func probeFleetProcessTrees(
+	ctx context.Context, roots []int,
+) (map[int]fleetProcessInfo, error) {
+	processes := map[int]fleetProcessInfo{}
+	pending := slices.Clone(roots)
+	for len(pending) > 0 {
+		if len(processes) >= fleetTmuxProcessTableLimit {
+			slog.Warn("fleet tmux metrics: process tree truncated",
+				"limit", fleetTmuxProcessTableLimit, "pending", len(pending))
+			break
+		}
+		list := joinPIDs(pending)
+		psOut, err := fleetProcessProbeOutput(ctx, "fleet process probe",
+			"ps", "-o", "pid=,ppid=,%cpu=,rss=,comm=", "-p", list)
+		if err != nil {
+			return nil, err
+		}
+		maps.Copy(processes, parseFleetProcessTable(string(psOut)))
+		childrenOut, err := fleetProcessProbeOutput(ctx, "fleet process children probe",
+			"pgrep", "-P", list)
+		if err != nil {
+			return nil, err
+		}
+		pending = pending[:0]
+		for field := range strings.FieldsSeq(string(childrenOut)) {
+			pid, err := strconv.Atoi(field)
+			if err != nil || pid <= 0 {
+				continue
+			}
+			if _, known := processes[pid]; known || slices.Contains(pending, pid) {
+				continue
+			}
+			pending = append(pending, pid)
+		}
+	}
+	return processes, nil
+}
+
+// fleetProcessProbeOutput runs one ps or pgrep query through the process
+// limiter. Both BSD and procps implementations exit 1 when nothing matched,
+// which is a normal outcome for a pane whose process just exited, so exit
+// status 1 yields whatever was printed. Any other failure, including the
+// usage errors both tools report with status 2, surfaces as an error so a
+// broken probe is not published as an empty process tree.
+func fleetProcessProbeOutput(
+	ctx context.Context, reason, name string, args ...string,
+) ([]byte, error) {
+	cmd := procutil.CommandContext(ctx, name, args...)
+	out, err := procutil.Output(ctx, cmd, reason)
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && ctx.Err() == nil && exitErr.ExitCode() == 1 {
+			return out, nil
+		}
+		return nil, err
+	}
+	return out, nil
+}
+
+func joinPIDs(pids []int) string {
+	parts := make([]string, 0, len(pids))
+	for _, pid := range pids {
+		parts = append(parts, strconv.Itoa(pid))
+	}
+	return strings.Join(parts, ",")
 }
 
 func (m *fleetTmuxMonitor) tmuxOutput(ctx context.Context, args ...string) ([]byte, error) {
@@ -439,14 +584,14 @@ func parseFleetTmuxWindowLine(
 	return "", fleet.TmuxWindowInfo{}, false
 }
 
-func parseFleetTmuxMetrics(
-	paneOutput string,
-	processOutput string,
-	managedSessions map[string]struct{},
+// aggregateFleetTmuxMetrics folds a process table into per-session metrics,
+// attributing each pane's process and every descendant present in the table
+// to the pane's session.
+func aggregateFleetTmuxMetrics(
+	panes []fleetTmuxPaneInfo,
+	processes map[int]fleetProcessInfo,
 	sampledAt time.Time,
 ) map[string]fleetTmuxSessionMetrics {
-	panes := parseFleetTmuxPanes(paneOutput, managedSessions)
-	processes := parseFleetProcessTable(processOutput)
 	children := map[int][]int{}
 	for pid, proc := range processes {
 		children[proc.PPID] = append(children[proc.PPID], pid)

@@ -1,7 +1,6 @@
 package apitest
 
 import (
-	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -11,22 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestMutationGuardRejectsNonJSONContentTypeWithProblemBody is a paving
-// wire-level test: it covers the path where the test deliberately violates
-// a precondition the generated client always satisfies. The generated
-// client sets Content-Type: application/json automatically on mutation
-// requests, so the only way to exercise the CSRF/Content-Type guard from
-// a wire-level test is to construct a raw http.Request.
-//
-// The request still flows through srv.ServeHTTP, which means the full
-// middleware chain runs. A handler-internal test that called the handler
-// function directly would never trigger the guard at all, because the
-// guard short-circuits the request before handler dispatch.
-//
-// The asserted shape is the wire response: status 415, the JSON error
-// envelope writeError produces, and the response Content-Type header
-// writeJSON sets.
-func TestMutationGuardRejectsNonJSONContentTypeWithProblemBody(t *testing.T) {
+func TestMutationGuardRejectsCrossOriginRequestWithJSONError(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -35,9 +19,9 @@ func TestMutationGuardRejectsNonJSONContentTypeWithProblemBody(t *testing.T) {
 	req := httptest.NewRequest(
 		http.MethodPost,
 		"/api/v1/sync",
-		bytes.NewReader(nil),
+		nil,
 	)
-	req.Header.Set("Content-Type", "text/plain")
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
 
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
@@ -45,10 +29,10 @@ func TestMutationGuardRejectsNonJSONContentTypeWithProblemBody(t *testing.T) {
 	resp := rr.Result()
 	defer resp.Body.Close()
 
-	require.Equal(http.StatusUnsupportedMediaType, resp.StatusCode)
+	require.Equal(http.StatusForbidden, resp.StatusCode)
 	assert.Equal("application/json", resp.Header.Get("Content-Type"))
 
 	var body map[string]string
 	require.NoError(json.NewDecoder(resp.Body).Decode(&body))
-	assert.Contains(body["error"], "Content-Type must be application/json")
+	assert.Contains(body["error"], "cross-origin requests are not allowed")
 }

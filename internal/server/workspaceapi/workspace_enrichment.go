@@ -247,6 +247,7 @@ func applyWorkspaceEnrichmentCacheEntry(
 	if entry.hasDivergence {
 		resp.CommitsAhead = entry.response.CommitsAhead
 		resp.CommitsBehind = entry.response.CommitsBehind
+		resp.BranchUpstreamMissing = entry.response.BranchUpstreamMissing
 		resp.WorktreeDirty = entry.response.WorktreeDirty
 	}
 	if entry.hasTmux {
@@ -544,6 +545,7 @@ func (s *Handler) recordWorkspaceEnrichmentResult(
 	if result.divergenceComplete {
 		entry.response.CommitsAhead = result.response.CommitsAhead
 		entry.response.CommitsBehind = result.response.CommitsBehind
+		entry.response.BranchUpstreamMissing = result.response.BranchUpstreamMissing
 		entry.response.WorktreeDirty = result.response.WorktreeDirty
 		entry.hasDivergence = true
 		entry.divergenceRefreshedAt = now
@@ -597,6 +599,7 @@ func workspaceEnrichmentBroadcastWorthy(prior, next workspaceEnrichmentCacheEntr
 	return next.hasDivergence &&
 		(!intPointerEqual(prior.response.CommitsAhead, next.response.CommitsAhead) ||
 			!intPointerEqual(prior.response.CommitsBehind, next.response.CommitsBehind) ||
+			!boolPointerEqual(prior.response.BranchUpstreamMissing, next.response.BranchUpstreamMissing) ||
 			!boolPointerEqual(prior.response.WorktreeDirty, next.response.WorktreeDirty))
 }
 
@@ -690,12 +693,20 @@ func (s *Handler) runWorkspaceTmuxPrune(ctx context.Context) {
 	pruned, err := s.workspaces.PruneMissingTmuxSessions(pruneCtx)
 	if err != nil {
 		slog.Debug("prune missing tmux sessions", "err", err)
+	}
+	if !pruned {
 		return
 	}
+	// Rows may have been deleted even when the prune also failed part way,
+	// so their reports are reconciled whenever anything was pruned, on a
+	// budget of their own rather than the prune's remaining one.
+	reconcileCtx, cancelReconcile := context.WithTimeout(
+		ctx, workspaceEnrichmentRefreshTimeout,
+	)
+	defer cancelReconcile()
+	s.reconcileAgentActivityReports(reconcileCtx)
 	// Broadcast only when the pass changed state. The unconditional
 	// broadcast made every open view refetch its workspace every prune
 	// interval even though nothing happened.
-	if pruned {
-		s.hub.Broadcast(Event{Type: "workspace_status", Data: map[string]string{}})
-	}
+	s.hub.Broadcast(Event{Type: "workspace_status", Data: map[string]string{}})
 }

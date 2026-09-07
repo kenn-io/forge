@@ -44,7 +44,7 @@
   <div class="log-toolbar">
     <span class="log-status">
       {#if isStreaming}
-        <StatusDot status="working" label="Streaming review log" size={6} />
+        <StatusDot status="working" label="Streaming review log" size={6} animated />
         <span aria-hidden="true">Streaming...</span>
       {:else}
         {lineCount} lines

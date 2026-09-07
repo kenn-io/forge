@@ -45,8 +45,8 @@ func TestAPIGetPullIncludesDeletedCommentTimelineEvent(t *testing.T) {
 	require.Equal(http.StatusOK, resp.StatusCode())
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Events)
-	require.Len(*resp.JSON200.Events, 1)
-	event := (*resp.JSON200.Events)[0]
+	require.Len(resp.JSON200.Events, 1)
+	event := resp.JSON200.Events[0]
 	assert.Equal("comment_deleted", event.EventType)
 	assert.Equal("maintainer", event.Author)
 	assert.Equal("deleted a comment from reviewer", event.Summary)
@@ -151,7 +151,7 @@ func TestAPIUnsetStarred(t *testing.T) {
 	require.NoError(database.SetStarred(t.Context(), "pr", 1, 1))
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.UnsetStarredWithResponse(t.Context(), generated.UnsetStarredJSONRequestBody{
+	resp, err := client.HTTP.UnsetStarredWithResponse(t.Context(), &generated.UnsetStarredParams{
 		ItemType:     "pr",
 		Provider:     "github",
 		PlatformHost: "github.com",
@@ -735,8 +735,8 @@ func TestAPIActivityCommentCarriesPRAuthor(t *testing.T) {
 	require.NotNil(resp.JSON200.Items)
 
 	var commentItem *generated.ActivityItemResponse
-	for i := range *resp.JSON200.Items {
-		item := &(*resp.JSON200.Items)[i]
+	for i := range resp.JSON200.Items {
+		item := &resp.JSON200.Items[i]
 		if item.ActivityType == "comment" && item.Author == "pr-reviewer" {
 			commentItem = item
 			break
@@ -783,11 +783,11 @@ func TestAPIListActivitySearchEventDeltaDoesNotReadBeforeCursor(t *testing.T) {
 	require.Equal(http.StatusOK, resp.StatusCode())
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Items)
-	require.Empty(*resp.JSON200.Items)
+	require.Empty(resp.JSON200.Items)
 	require.NotNil(resp.JSON200.ItemActivity)
-	require.Empty(*resp.JSON200.ItemActivity)
+	require.Empty(resp.JSON200.ItemActivity)
 	require.NotNil(resp.JSON200.WorkspaceActivity)
-	require.Empty(*resp.JSON200.WorkspaceActivity)
+	require.Empty(resp.JSON200.WorkspaceActivity)
 }
 
 func TestAPIListActivityAcceptsProviderAndHostQualifiedRepoFilter(t *testing.T) {
@@ -808,8 +808,8 @@ func TestAPIListActivityAcceptsProviderAndHostQualifiedRepoFilter(t *testing.T) 
 	require.Equal(http.StatusOK, resp.StatusCode())
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Items)
-	require.NotEmpty(*resp.JSON200.Items)
-	for _, item := range *resp.JSON200.Items {
+	require.NotEmpty(resp.JSON200.Items)
+	for _, item := range resp.JSON200.Items {
 		assert.Equal("ghe.example.com", item.PlatformHost)
 		assert.Equal("acme", item.RepoOwner)
 		assert.Equal("widget", item.RepoName)

@@ -33,6 +33,26 @@ Rules:
 - Coding-agent session IDs are hook-authoritative and live-only: expose only fresh,
   supported reports joined by canonical worktree and runtime key to a live `agent`
   runtime (`internal/server/workspaceapi/agent_sessions.go::Handler.listWorkspaceAgentSessions`).
+- Hook reports own workspace activity where they exist: a workspace with a
+  hook report for a live agent runtime is never probed through tmux pane
+  capture, its last-activity time is the report's timestamp, and the tmux
+  probe returns only when the session ends or its runtime is removed. Reports
+  have no time-based expiry; a launched agent keeps reporting until teardown
+  (`internal/server/workspaceapi/routes_handlers.go::Handler.applyWorkspaceTmuxEnrichment`,
+  `internal/agentactivity/store.go::Store.LiveReportsForWorkspace`).
+- A completion keeps its first timestamp: `done` written over `done` for the
+  same session preserves `UpdatedAt`, so the sidebar's acknowledged Done badge
+  does not reappear when Claude Code's `idle_prompt` follows Stop
+  (`internal/agentactivity/store.go::Store.HandleEvent`).
+- Claude Code's `idle_prompt` notification fires after a minute of waiting
+  whatever the agent waits for. It leaves a pending `input` or `approval`
+  state untouched and otherwise maps to `done`; only `elicitation_dialog` and
+  user-input tools put a session into `input`
+  (`internal/agentactivity/store.go::Store.HandleEvent`).
+- Reports are reconciled against persisted and live runtime session keys
+  after startup restoration and after every missing-tmux prune, so a report
+  whose runtime row was pruned does not outlive it
+  (`internal/server/workspaceapi/lifecycle.go::Handler.reconcileAgentActivityReports`).
 
 ## Provider-Backed Lifecycle Facts
 
@@ -233,6 +253,9 @@ still exists.
 - Every tmux client attach must force UTF-8; service launchers may omit locale
   variables, causing tmux to replace non-ASCII output before WebSocket transport
   (`internal/workspace/localruntime/tmux_launcher.go::tmuxAttachSessionCommand`).
+- On macOS, tmux and PTY-owner shells with no configured `LANG`, `LC_ALL`, or `LC_CTYPE` must
+  default `LC_CTYPE` to UTF-8 without overriding an explicit locale; launchd can
+  otherwise leave zsh with incorrect Unicode prompt widths (`internal/workspace/localruntime/shell_environment.go::shellCharacterLocaleDefault`).
 - Forge's dedicated tmux server owns global passthrough, SIXEL, and mouse mode;
   live changes clear pane overrides, while custom servers receive passthrough
   only on Forge-owned panes and only while graphics are enabled
@@ -311,6 +334,9 @@ stale tabs.
   sanitize and send it once, and do not delegate single-line paste to xterm;
   this event path must remain usable on insecure HTTP origins without the async
   Clipboard API (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::handleTerminalPaste`).
+- Browser text wins over image data; image-only paste uploads to the selected
+  terminal host and pastes returned paths instead of reading that host's clipboard
+  (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::uploadAndPasteImages`).
 - Treat terminal processes as native-terminal-equivalent, but accept bounded, write-only OSC 52 writes only after one
   recent one-shot trusted DOM gesture; terminal data callbacks are not input provenance, and browser denial falls back
   through CSRF-protected loopback (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::handleTerminalKeyDown`).

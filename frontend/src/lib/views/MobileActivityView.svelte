@@ -360,7 +360,8 @@
     + (activity.getHideDefaultBranchActivity() ? 1 : 0)
     + (grouping.getHideOrgName() ? 1 : 0)
     + (activity.getShowNotifications() ? 0 : 1)
-    + (activity.getInvolvesMe() ? 1 : 0),
+    + (activity.getInvolvesMe() ? 1 : 0)
+    + (activity.getUnassigned() ? 1 : 0),
   );
 
   const repoLabelFormatter = $derived.by(() =>
@@ -439,6 +440,11 @@
 
   function toggleInvolvesMe(): void {
     activity.setInvolvesMe(!activity.getInvolvesMe());
+    activity.loadActivity();
+  }
+
+  function toggleUnassigned(): void {
+    activity.setUnassigned(!activity.getUnassigned());
     activity.loadActivity();
   }
 
@@ -857,6 +863,14 @@
           checked={activity.getInvolvesMe()}
           label="Involves me"
           onchange={() => toggleInvolvesMe()}
+        />
+      </div>
+
+      <div class="mobile-boolean-toggle">
+        <Toggle
+          checked={activity.getUnassigned()}
+          label="Unassigned"
+          onchange={() => toggleUnassigned()}
         />
       </div>
 

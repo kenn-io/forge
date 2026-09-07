@@ -130,7 +130,7 @@ test("same-origin browser JSON mutations reach the API", async ({ page, baseURL 
   const result = await page.evaluate(async () => {
     const response = await fetch("/api/v1/sync", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "X-Kenn-Forge-Csrf": "1" },
+      headers: { "Content-Type": "application/json" },
       body: "{}",
     });
     return { status: response.status };
@@ -215,24 +215,18 @@ test("workspace embed routes remain frameable", async ({ page, baseURL }) => {
   }
 });
 
-test("same-origin browser non-JSON mutations return a JSON 415 error", async ({ page, baseURL }) => {
+test("same-origin browser bodyless mutations do not require a content type", async ({ page, baseURL }) => {
   expect(baseURL).toBeTruthy();
   await page.goto(baseURL!);
 
   const result = await page.evaluate(async () => {
     const response = await fetch("/api/v1/sync", {
       method: "POST",
-      headers: { "Content-Type": "text/plain" },
-      body: "body=test",
     });
     return {
-      contentType: response.headers.get("Content-Type"),
       status: response.status,
-      text: await response.text(),
     };
   });
 
-  expect(result.status).toBe(415);
-  expect(result.contentType).toBe("application/json");
-  expect(result.text).toContain("Content-Type must be application/json");
+  expect(result.status).toBe(202);
 });

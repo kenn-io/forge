@@ -30,6 +30,8 @@ type ProviderRouteRule struct {
 // This table is intentionally exhaustive. A newly registered operation must
 // make an explicit ownership decision before the coverage gate passes.
 var providerRouteDeclarations = []ProviderRouteRule{
+	{OperationID: "store-terminal-paste-image", Owner: NodeLocal},
+	{OperationID: "store-fleet-terminal-paste-image", Owner: NodeLocal},
 	{OperationID: "activate-federation-enrollment", Owner: NodeLocal},
 	{OperationID: "add-repo", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderWrite},
 	{OperationID: "abort-federation-enrollment", Owner: NodeLocal},
@@ -118,6 +120,7 @@ var providerRouteDeclarations = []ProviderRouteRule{
 	{OperationID: "ensure-fleet-project-worktree-runtime-shell", Owner: NodeLocal},
 	{OperationID: "ensure-project-worktree-runtime-shell", Owner: NodeLocal},
 	{OperationID: "federation-auto-assign-workspace-item", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderWrite},
+	{OperationID: "federation-filter-unassigned-activity-subjects", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
 	{OperationID: "federation-get-diff-descriptor", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
 	{OperationID: "federation-get-provider-settings", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
 	{OperationID: "federation-get-repository-descriptor", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},

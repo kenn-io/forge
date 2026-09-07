@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"testing"
 	"time"
 
@@ -30,7 +31,7 @@ func TestBuildFleetSnapshotMergesMemberAndDegrades(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"protocolVersion":3,"nodeID":"` + testMemberNodeID + `","baseURL":"https://untrusted.example","host":{"hostname":"mbp","platform":"macos"},"projects":[{"scopedKey":"repo:/x","name":"x","rootPath":"/x"}]}`))
+		_, _ = w.Write([]byte(`{"protocolVersion":` + strconv.Itoa(federation.ProtocolVersion) + `,"nodeID":"` + testMemberNodeID + `","baseURL":"https://untrusted.example","host":{"hostname":"mbp","platform":"macos"},"projects":[{"scopedKey":"repo:/x","name":"x","rootPath":"/x"}]}`))
 	}))
 	defer peer.Close()
 
@@ -107,7 +108,7 @@ func TestBuildFleetSnapshotSkipsMembersWhenFederationDisabled(t *testing.T) {
 	peer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		peerRequests++
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"protocolVersion":3,"nodeID":"` + testMemberNodeID + `","host":{"hostname":"mbp","platform":"macos"}}`))
+		_, _ = w.Write([]byte(`{"protocolVersion":` + strconv.Itoa(federation.ProtocolVersion) + `,"nodeID":"` + testMemberNodeID + `","host":{"hostname":"mbp","platform":"macos"}}`))
 	}))
 	defer peer.Close()
 
@@ -148,7 +149,7 @@ func TestBuildFleetSnapshotDefaultsToFleetNamespace(t *testing.T) {
 func TestHubProjectionKeepsDirectMemberWorkspaceRouting(t *testing.T) {
 	peer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"protocolVersion":3,"nodeID":"` +
+		_, _ = w.Write([]byte(`{"protocolVersion":` + strconv.Itoa(federation.ProtocolVersion) + `,"nodeID":"` +
 			testMemberNodeID + `","host":{"hostname":"mbp","platform":"macos"}}`))
 	}))
 	defer peer.Close()
@@ -313,7 +314,7 @@ func TestSpokeAggregateNegotiatesHubMemberTimeout(t *testing.T) {
 		select {
 		case <-time.After(2 * time.Second):
 			writer.Header().Set("Content-Type", "application/json")
-			_, _ = writer.Write([]byte(`{"protocolVersion":3,"nodeID":"` +
+			_, _ = writer.Write([]byte(`{"protocolVersion":` + strconv.Itoa(federation.ProtocolVersion) + `,"nodeID":"` +
 				siblingNodeID + `","host":{"hostname":"member","platform":"linux"}}`))
 		case <-request.Context().Done():
 		}

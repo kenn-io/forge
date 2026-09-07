@@ -22,6 +22,7 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	gitcmd "go.kenn.io/kit/git/cmd"
 
 	"go.kenn.io/forge/internal/config"
@@ -352,7 +353,7 @@ func httpDo(
 
 func runGit(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	runner := gitcmd.New().WithConfig("init.defaultBranch", "main")
+	runner := gitsafe.Runner().WithConfig("init.defaultBranch", "main")
 	out, stderr, err := runner.Run(t.Context(), dir, nil, args...)
 	require.NoError(t, err, "git %v failed: %s%s", args, out, stderr)
 }

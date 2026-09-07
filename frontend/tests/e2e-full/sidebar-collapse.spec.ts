@@ -306,6 +306,15 @@ test.describe("collapsible sidebar", () => {
     await expect(page.locator(".sidebar-group-header__name").first()).toHaveText("acme/widgets");
   });
 
+  test("issue visibility shows a persisted Unassigned filter", async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem("kenn-forge:filters:issues:unassigned", "1");
+    });
+    const filterBar = await setPersistedSidebarWidth(page, "/issues", 402, waitForIssueList);
+
+    await expect(filterBar.getByRole("button", { name: "Visibility" })).toHaveClass(/kit-filter-dropdown__btn--active/);
+  });
+
   test("pull compact filters update state and grouping", async ({ page }) => {
     const filterBar = await setPersistedSidebarWidth(page, "/pulls", 395, waitForPRList);
     await expectCompactFilterBar(filterBar);

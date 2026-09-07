@@ -51,6 +51,7 @@ const activityLoading = vi.hoisted(() => ({ value: false }));
 const activityError = vi.hoisted(() => ({ value: null as string | null }));
 const showFlash = vi.hoisted(() => vi.fn());
 const involvesMe = vi.hoisted(() => ({ value: false }));
+const unassigned = vi.hoisted(() => ({ value: false }));
 const enabledEvents = vi.hoisted(() => ({
   value: new Set(["comment", "review", "commit", "force_push"]),
 }));
@@ -137,6 +138,7 @@ vi.mock("../context.js", () => ({
       getEnabledEvents: () => enabledEvents.value,
       getShowNotifications: () => showNotifications.value,
       getInvolvesMe: () => involvesMe.value,
+      getUnassigned: () => unassigned.value,
       getHideClosedMerged: () => hideClosedMerged.value,
       getHideBots: () => hideBots.value,
       getUseWorkspaceActivityForRecency: () => useWorkspaceActivityForRecency.value,
@@ -154,6 +156,9 @@ vi.mock("../context.js", () => ({
       setShowNotifications,
       setInvolvesMe: vi.fn((value: boolean) => {
         involvesMe.value = value;
+      }),
+      setUnassigned: vi.fn((value: boolean) => {
+        unassigned.value = value;
       }),
       setFullEventProjectionRequired,
       setActivityPageLimit,
@@ -205,6 +210,8 @@ vi.mock("../context.js", () => ({
 
 beforeEach(() => {
   hideBots.value = false;
+  involvesMe.value = false;
+  unassigned.value = false;
   useWorkspaceActivityForRecency.value = false;
 });
 
@@ -263,6 +270,19 @@ describe("MobileActivityView branch activity", () => {
     await fireEvent.click(comments);
 
     expect([...setEnabledEvents.mock.calls[0]![0]]).toEqual(["review", "commit", "force_push"]);
+  });
+
+  it("reloads unassigned activity from the mobile filter panel", async () => {
+    render(MobileActivityView, { props: { onSelectItem } });
+    const mountedReads = loadActivity.mock.calls.length;
+
+    await fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    const control = screen.getByRole<HTMLInputElement>("switch", { name: "Unassigned" });
+    expect(control.checked).toBe(false);
+    await fireEvent.click(control);
+
+    expect(unassigned.value).toBe(true);
+    expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 1);
   });
 
   it("uses the shared repository picker inside the filter panel", async () => {

@@ -522,6 +522,7 @@ func (s *hubProviderSource) ListPulls(
 	setProviderQuery(values, "kanban", query.Kanban)
 	setProviderBoolQuery(values, "starred", query.Starred)
 	setProviderBoolQuery(values, "involves_me", query.InvolvesMe)
+	setProviderBoolQuery(values, "unassigned", query.Unassigned)
 	setProviderQuery(values, "q", query.Text)
 	setProviderIntQuery(values, "limit", query.Limit)
 	setProviderIntQuery(values, "offset", query.Offset)
@@ -581,6 +582,7 @@ func (s *hubProviderSource) ListIssues(
 	setProviderQuery(values, "state", query.State)
 	setProviderBoolQuery(values, "starred", query.Starred)
 	setProviderBoolQuery(values, "involves_me", query.InvolvesMe)
+	setProviderBoolQuery(values, "unassigned", query.Unassigned)
 	setProviderBoolQuery(values, "referenced_by_pr", query.ReferencedByPR)
 	setProviderQuery(values, "q", query.Text)
 	setProviderQuery(values, "assignee", query.Assignee)
@@ -620,6 +622,7 @@ func (s *hubProviderSource) ListActivity(
 	setProviderQuery(values, "search", input.Search)
 	setProviderQuery(values, "author", input.Author)
 	setProviderBoolQuery(values, "involves_me", input.InvolvesMe)
+	setProviderBoolQuery(values, "unassigned", input.Unassigned)
 	setProviderQuery(values, "after", input.After)
 	setProviderQuery(values, "before", input.Before)
 	setProviderQuery(values, "at_or_before", input.AtOrBefore)
@@ -634,6 +637,38 @@ func (s *hubProviderSource) ListActivity(
 		return activityResponse{}, err
 	}
 	return response, nil
+}
+
+func (s *hubProviderSource) FilterUnassignedActivitySubjects(
+	ctx context.Context, subjects []providerplane.ItemIdentity,
+) ([]providerplane.ItemIdentity, error) {
+	const batchSize = 500
+	result := make([]providerplane.ItemIdentity, 0, len(subjects))
+	for start := 0; start < len(subjects); start += batchSize {
+		end := min(start+batchSize, len(subjects))
+		requestSubjects := make([]federationActivitySubjectIdentity, 0, end-start)
+		for _, subject := range subjects[start:end] {
+			requestSubjects = append(
+				requestSubjects, federationActivitySubjectIdentityFromProvider(subject),
+			)
+		}
+		request := federationUnassignedActivitySubjectsRequest{Subjects: requestSubjects}
+		var response federationUnassignedActivitySubjectsResponse
+		if err := s.exchange(
+			ctx,
+			http.MethodPost,
+			"/api/v1/federation/provider/activity/unassigned-subjects/query",
+			federationauth.ScopeProviderRead,
+			request,
+			&response,
+		); err != nil {
+			return nil, err
+		}
+		for _, subject := range response.Subjects {
+			result = append(result, subject.provider())
+		}
+	}
+	return result, nil
 }
 
 func (s *hubProviderSource) ListActivityAuthors(

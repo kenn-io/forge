@@ -2,6 +2,7 @@ package fleet
 
 import (
 	"encoding/json"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -29,7 +30,7 @@ func TestRawSnapshotCarriesDetachedLocalWorkspacesOnly(t *testing.T) {
 	}
 	b, err := json.Marshal(raw)
 	require.NoError(err)
-	assert.Contains(string(b), `"protocolVersion":3`)
+	assert.Contains(string(b), `"protocolVersion":`+strconv.Itoa(federation.ProtocolVersion))
 	assert.NotContains(string(b), "schemaVersion")
 	assert.NotContains(string(b), "repoID")
 	assert.NotContains(string(b), "remoteHosts")

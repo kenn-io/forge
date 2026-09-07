@@ -212,6 +212,15 @@
             pulls.loadPulls();
           },
         },
+        {
+          id: "unassigned",
+          label: "Unassigned",
+          active: pulls.getUnassigned(),
+          onSelect: () => {
+            pulls.setUnassigned(!pulls.getUnassigned());
+            pulls.loadPulls();
+          },
+        },
         ...attributeFilterOptions.map((option) => ({
           id: `pr-${option.value}`,
           label: option.label,
@@ -517,7 +526,7 @@
       <p class="state-message state-message--error">Error: {pulls.getError()}</p>
     {:else if visiblePulls.length === 0 && sync.getSyncState()?.running && pulls.getPulls().length === 0}
       <div class="state-message sync-message">
-        <StatusDot status="working" label="Syncing pull requests from GitHub" size={6} />
+        <StatusDot status="working" label="Syncing pull requests from GitHub" size={6} animated />
         <span aria-hidden="true">Syncing from GitHub…</span>
       </div>
     {:else if visiblePulls.length === 0 && !sync.getSyncState()?.last_run_at && pulls.getPulls().length === 0}

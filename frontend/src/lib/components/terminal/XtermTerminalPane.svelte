@@ -5,6 +5,8 @@
   import { observeResize } from "../../browser/observers.js";
   import { getStores } from "../../context.js";
   import { showFlash } from "../../stores/flash.svelte.js";
+  import { parseConfiguredProviderItemURL } from "../../utils/item-reference.js";
+  import { resolveItemReference } from "../../utils/itemRefHandler.js";
   import { Terminal } from "@xterm/xterm";
   import type { ILinkHandler } from "@xterm/xterm";
   import { FitAddon } from "@xterm/addon-fit";
@@ -44,12 +46,19 @@
     type TerminalSessionController,
   } from "./terminal-session.js";
   import { terminalAttachment } from "./terminal-attachment.js";
+  import type { TerminalKey } from "./terminal-key.js";
+  import {
+    SUPPORTED_TERMINAL_PASTE_IMAGE_TYPES,
+    terminalPastePathToken,
+    uploadTerminalPasteImage,
+  } from "./terminalPasteImage.js";
   import { currentTerminalGeometryIntent } from "./terminalGeometryIntent.js";
   import { decodeTerminalControlMessage } from "./terminal-control-message.js";
 
   interface TerminalPaneProps {
     workspaceId?: string | undefined;
     websocketPath?: string | undefined;
+    fleetHostKey?: string | undefined;
     reconnectOnExit?: boolean | undefined;
     active?: boolean | undefined;
     renderingEnabled?: boolean | undefined;
@@ -74,6 +83,7 @@
   let {
     workspaceId,
     websocketPath,
+    fleetHostKey,
     reconnectOnExit = true,
     active = true,
     renderingEnabled = true,
@@ -94,6 +104,10 @@
   let containerEl: HTMLElement;
   let terminal: Terminal | null = $state(null);
   let hoveredTerminalLink: string | null = $state(null);
+  let itemLinkExecution: { interrupt: () => void } | null = null;
+  const hoveredTerminalLinkIsItem = $derived(
+    hoveredTerminalLink !== null && configuredItemReference(hoveredTerminalLink) !== null,
+  );
   let fitAddon: FitAddon | null = null;
   let imageAddon: ImageAddon | null = null;
   let ligaturesAddon: LigaturesAddon | null = null;
@@ -101,6 +115,8 @@
   let rendererParked = false;
   let terminalSession: TerminalSessionController | null = null;
   let connectionGeneration = 0;
+  let imagePasteQueue = Promise.resolve();
+  let imagePasteQueueGeneration = -1;
   let unregisterTextureAtlasParticipant: (() => void) | null = null;
   let requestTerminalRefresh = (): void => {};
   let requestTerminalResize = (): void => {};
@@ -163,6 +179,52 @@
     return true;
   }
 
+  const terminalKeyEvents: Record<TerminalKey, { key: string; code: string; keyCode: number }> = {
+    Escape: { key: "Escape", code: "Escape", keyCode: 27 },
+    Tab: { key: "Tab", code: "Tab", keyCode: 9 },
+    ArrowLeft: { key: "ArrowLeft", code: "ArrowLeft", keyCode: 37 },
+    ArrowUp: { key: "ArrowUp", code: "ArrowUp", keyCode: 38 },
+    ArrowDown: { key: "ArrowDown", code: "ArrowDown", keyCode: 40 },
+    ArrowRight: { key: "ArrowRight", code: "ArrowRight", keyCode: 39 },
+    Space: { key: " ", code: "Space", keyCode: 32 },
+    Enter: { key: "Enter", code: "Enter", keyCode: 13 },
+  };
+
+  function terminalKeyEvent(type: "keydown" | "keypress" | "keyup", key: TerminalKey): KeyboardEvent {
+    const definition = terminalKeyEvents[key];
+    const event = new KeyboardEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      code: definition.code,
+      key: definition.key,
+    });
+    Object.defineProperties(event, {
+      charCode: { value: key === "Space" && type === "keypress" ? definition.keyCode : 0 },
+      keyCode: { value: definition.keyCode },
+      which: { value: definition.keyCode },
+    });
+    return event;
+  }
+
+  export function sendKey(key: TerminalKey): boolean {
+    if (disabled || !terminal || !terminalSession?.isConnected()) return false;
+    const input = containerEl.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea");
+    if (!input) return false;
+    if (!claimTerminalResize()) return false;
+    applyTerminalSoftwareKeyboardPolicy(input);
+    const previousFocus = input.ownerDocument.activeElement;
+    const keyDownAllowed = input.dispatchEvent(terminalKeyEvent("keydown", key));
+    if (key === "Space" && keyDownAllowed) input.dispatchEvent(terminalKeyEvent("keypress", key));
+    input.dispatchEvent(terminalKeyEvent("keyup", key));
+    if (previousFocus !== input && input.ownerDocument.activeElement === input) {
+      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) {
+        previousFocus.focus({ preventScroll: true });
+      }
+      if (input.ownerDocument.activeElement === input) input.blur();
+    }
+    return true;
+  }
+
   const TERMINAL_SMOOTH_SCROLL_DURATION = 0;
   const TERMINAL_MINIMUM_CONTRAST_RATIO = 4.5;
   const TERMINAL_FONT_WAIT_MS = 300;
@@ -206,7 +268,21 @@
     }
     if (url.protocol !== "http:" && url.protocol !== "https:") return;
 
+    // Pull request and issue links for a configured repository stay inside
+    // the app: the resolve endpoint decides whether the repo is tracked and
+    // falls back to opening the provider page when it is not.
+    const itemRef = configuredItemReference(url.href);
+    if (itemRef) {
+      itemLinkExecution?.interrupt();
+      itemLinkExecution = resolveItemReference(runtime, itemRef);
+      return;
+    }
+
     window.open(url.href, "_blank", "noopener,noreferrer");
+  }
+
+  function configuredItemReference(href: string) {
+    return parseConfiguredProviderItemURL(href, settingsStore.getConfiguredRepos());
   }
 
   function terminalLinkModifierPressed(event: MouseEvent): boolean {
@@ -245,11 +321,7 @@
     // policy first.
     if (active && (event.pointerType === "touch" || event.pointerType === "pen")) {
       const input = containerEl.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea");
-      if (containerEl.closest('[data-terminal-software-keyboard="manual"]')) {
-        input?.setAttribute("inputmode", "none");
-      } else {
-        input?.removeAttribute("inputmode");
-      }
+      if (input) applyTerminalSoftwareKeyboardPolicy(input);
       terminal?.focus();
     }
     if (!event.isTrusted) return;
@@ -267,7 +339,15 @@
     try {
       containerEl.setPointerCapture(event.pointerId);
     } catch {
-      // The watchdog and global cancellation handlers still bound the gesture.
+      // The timeout and global cancellation handlers still bound the gesture.
+    }
+  }
+
+  function applyTerminalSoftwareKeyboardPolicy(input: HTMLTextAreaElement): void {
+    if (containerEl.closest('[data-terminal-software-keyboard="manual"]')) {
+      input.setAttribute("inputmode", "none");
+    } else {
+      input.removeAttribute("inputmode");
     }
   }
 
@@ -382,6 +462,131 @@
     if (lastTouchGesturePoint === null) return;
     gesture.clientX = lastTouchGesturePoint.clientX;
     gesture.clientY = lastTouchGesturePoint.clientY;
+  }
+
+  function isMacControlVPasteProbe(event: KeyboardEvent): boolean {
+    return terminalLinkUsesMetaKey &&
+      event.type === "keydown" &&
+      event.ctrlKey &&
+      !event.metaKey &&
+      !event.altKey &&
+      !event.shiftKey &&
+      event.key.toLowerCase() === "v";
+  }
+
+  function terminalSessionIsCurrent(
+    session: TerminalSessionController,
+    generation: number,
+  ): boolean {
+    return !disposed &&
+      !disabled &&
+      terminalSession === session &&
+      connectionGeneration === generation &&
+      session.isConnected();
+  }
+
+  function replayControlV(
+    session: TerminalSessionController,
+    generation: number,
+  ): void {
+    if (!terminal || !terminalSessionIsCurrent(session, generation)) return;
+    terminal.input("\x16", true);
+  }
+
+  async function imageOnlyClipboardPayload(): Promise<Blob[] | null> {
+    const items = await navigator.clipboard.read();
+    if (items.length === 0) return null;
+    const images: Blob[] = [];
+    for (const item of items) {
+      if (
+        item.types.length === 0 ||
+        item.types.some((type) => !SUPPORTED_TERMINAL_PASTE_IMAGE_TYPES.has(type))
+      ) {
+        return null;
+      }
+      const imageType = item.types.find((type) =>
+        SUPPORTED_TERMINAL_PASTE_IMAGE_TYPES.has(type)
+      );
+      if (imageType === undefined) return null;
+      images.push(await item.getType(imageType));
+    }
+    return images.length > 0 ? images : null;
+  }
+
+  async function uploadAndPasteImages(
+    images: readonly Blob[],
+    session: TerminalSessionController,
+    generation: number,
+  ): Promise<void> {
+    try {
+      const paths: string[] = [];
+      for (const image of images) {
+        paths.push(await uploadTerminalPasteImage(image, fleetHostKey));
+      }
+      if (!terminalSessionIsCurrent(session, generation)) {
+        showFlash("Images uploaded, but the terminal disconnected before their paths could be pasted.", {
+          tone: "danger",
+        });
+        return;
+      }
+      if (!sendPastedInput(paths.map(terminalPastePathToken).join(" "))) {
+        showFlash("Images uploaded, but their paths could not be pasted into the terminal.", {
+          tone: "danger",
+        });
+        return;
+      }
+      showFlash(
+        paths.length === 1
+          ? "Image uploaded; path pasted into terminal."
+          : `${paths.length} images uploaded; paths pasted into terminal.`,
+      );
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "Unknown upload error.";
+      showFlash(`Could not upload terminal image. ${detail}`, { tone: "danger" });
+    }
+  }
+
+  function enqueueImagePaste(
+    session: TerminalSessionController,
+    generation: number,
+    paste: () => Promise<void>,
+  ): void {
+    if (imagePasteQueueGeneration !== generation) {
+      imagePasteQueue = Promise.resolve();
+      imagePasteQueueGeneration = generation;
+    }
+    imagePasteQueue = imagePasteQueue.then(async () => {
+      if (terminalSessionIsCurrent(session, generation)) await paste();
+    }).catch((error: unknown) => {
+      const detail = error instanceof Error ? error.message : "Unknown paste error.";
+      showFlash(`Could not paste terminal image. ${detail}`, { tone: "danger" });
+    });
+  }
+
+  async function handleMacControlV(
+    clipboardPayload: Promise<Blob[] | null>,
+    session: TerminalSessionController,
+    generation: number,
+  ): Promise<void> {
+    const images = await clipboardPayload;
+    if (images === null) {
+      replayControlV(session, generation);
+      return;
+    }
+    await uploadAndPasteImages(images, session, generation);
+  }
+
+  function handleTerminalCustomKeyEvent(event: KeyboardEvent): boolean {
+    if (isBrowserPasteShortcut(event)) return false;
+    if (!isMacControlVPasteProbe(event)) return true;
+    if (!window.isSecureContext || typeof navigator.clipboard?.read !== "function") return true;
+    const session = terminalSession;
+    if (!session?.isConnected()) return true;
+    const generation = connectionGeneration;
+    // Start the read during the browser gesture, but reserve its paste order now.
+    const clipboardPayload = imageOnlyClipboardPayload().catch(() => null);
+    enqueueImagePaste(session, generation, () => handleMacControlV(clipboardPayload, session, generation));
+    return false;
   }
 
   function handleInsecureTerminalRightMouse(event: MouseEvent): void {
@@ -842,11 +1047,26 @@
       event.clipboardData?.getData("text/plain") ||
       event.clipboardData?.getData("text") ||
       "";
-    if (pastedText === "") return;
+    if (pastedText !== "") {
+      if (!sendPastedInput(pastedText)) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
 
-    if (!sendPastedInput(pastedText)) return;
+    const images = Array.from(event.clipboardData?.items ?? [])
+      .filter((item) =>
+        item.kind === "file" && SUPPORTED_TERMINAL_PASTE_IMAGE_TYPES.has(item.type)
+      )
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => file !== null);
+    if (images.length === 0) return;
+    const session = terminalSession;
+    if (!session) return;
+    const generation = connectionGeneration;
     event.preventDefault();
     event.stopImmediatePropagation();
+    enqueueImagePaste(session, generation, () => uploadAndPasteImages(images, session, generation));
   }
 
   function handleTerminalMessage(data: string | Uint8Array): TerminalMessageDecision {
@@ -933,6 +1153,8 @@
   function cleanup(): void {
     disposed = true;
     pointerOrigin = null;
+    itemLinkExecution?.interrupt();
+    itemLinkExecution = null;
     clipboardWriter?.dispose();
     clipboardWriter = undefined;
     mouseDragAutoscroll?.dispose();
@@ -1108,7 +1330,7 @@
         registerTerminalTextureAtlasParticipant(terminal);
 
       term.open(containerEl);
-      term.attachCustomKeyEventHandler((event) => !isBrowserPasteShortcut(event));
+      term.attachCustomKeyEventHandler(handleTerminalCustomKeyEvent);
       term.parser.registerOscHandler(52, handleOsc52Clipboard);
       switchTimer.record("terminal-constructed");
       containerEl.addEventListener("paste", handleTerminalPaste, true);
@@ -1272,7 +1494,7 @@
   {#if hoveredTerminalLink}
     <div class="terminal-link-tooltip">
       <span>{hoveredTerminalLink}</span>
-      <small>{terminalLinkModifierLabel}+Click to open link</small>
+      <small>{terminalLinkModifierLabel}+Click to {hoveredTerminalLinkIsItem ? "open in kenn-forge" : "open link"}</small>
     </div>
     {/if}
 </div>

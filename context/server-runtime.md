@@ -135,6 +135,9 @@ and the root event stream.
 
 ## Transport Trust Boundary
 
+- Mutation identity must not depend on DELETE request bodies: the native desktop
+  transport drops them before requests reach the daemon. Use path or query identity
+  instead (`internal/server/huma_routes.go::unsetStarred`).
 - Loopback TCP is the required cross-platform transport; Unix sockets and
   named pipes are not lifecycle requirements. Background startup rejects
   non-loopback listeners before launching
@@ -172,12 +175,19 @@ and the root event stream.
 
 ## Host And Origin Boundary
 
-- Host validation is the DNS-rebinding boundary and runs before API auth, CSRF,
+- Host validation is the DNS-rebinding boundary and runs before API auth,
+  cross-origin protection,
   and route handling. Do not move it behind middleware that trusts request
   credentials first (`internal/server/server.go::Server.ServeHTTP`).
+- Mutation CSRF protection uses `http.CrossOriginProtection`; requests without browser
+  origin metadata remain available to native and generated API clients, while Huma
+  operations enforce their own body media types (`internal/server/server.go::checkCrossOrigin`).
 - Trusted forwarded-host support adds validation of the canonical forwarded
   authority; it never replaces validation of the raw backend `Host`
   (`internal/server/host_check.go::checkHost`).
+- After trusted forwarded-host validation, mutation origin checks compare with
+  that public authority rather than the reverse proxy's backend `Host`
+  (`internal/server/server.go::checkCrossOrigin`).
 
 ## Event Replay
 

@@ -103,7 +103,7 @@ func TestBasePathRewritesAssetURLs(t *testing.T) {
 	assert.Contains(body, `src="/kenn-forge/assets/`)
 }
 
-func TestCSRFRejectsCrossSite(t *testing.T) {
+func TestCrossOriginProtectionRejectsCrossSite(t *testing.T) {
 	srv := setupWithBasePath(t, "/", nil)
 
 	body := strings.NewReader(`{"body":"test"}`)
@@ -116,58 +116,30 @@ func TestCSRFRejectsCrossSite(t *testing.T) {
 	require.Equal(t, http.StatusForbidden, rr.Code)
 }
 
-func TestCSRFRejectsWrongContentType(t *testing.T) {
-	srv := setupWithBasePath(t, "/", nil)
-
-	body := strings.NewReader(`body=test`)
-	req := httptest.NewRequest(
-		http.MethodPost, "/api/v1/sync", body,
-	)
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	rr := httptest.NewRecorder()
-	srv.ServeHTTP(rr, req)
-
-	require.Equal(t, http.StatusUnsupportedMediaType, rr.Code)
-}
-
-func TestCSRFAllowsSameOrigin(t *testing.T) {
+func TestCrossOriginProtectionAllowsSameOrigin(t *testing.T) {
 	srv := setupWithBasePath(t, "/", nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync", nil)
-	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Sec-Fetch-Site", "same-origin")
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 
-	// Should pass CSRF and reach the handler (202 Accepted).
+	// Should pass cross-origin protection and reach the handler (202 Accepted).
 	require.Equal(t, http.StatusAccepted, rr.Code, rr.Body.String())
 }
 
-func TestCSRFAllowsNoSecFetchSite(t *testing.T) {
+func TestCrossOriginProtectionAllowsNativeClient(t *testing.T) {
 	srv := setupWithBasePath(t, "/", nil)
 
-	// Non-browser clients (curl, API tools) won't send
-	// Sec-Fetch-Site but must still set Content-Type.
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync", nil)
-	req.Header.Set("Content-Type", "application/json")
-	rr := httptest.NewRecorder()
-	srv.ServeHTTP(rr, req)
-
-	require.Equal(t, http.StatusAccepted, rr.Code, rr.Body.String())
-}
-
-func TestCSRFRejectsNoContentType(t *testing.T) {
-	srv := setupWithBasePath(t, "/", nil)
-
-	// Zero-body POST without Content-Type should be blocked.
+	// Native clients do not send browser origin metadata.
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync", nil)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 
-	require.Equal(t, http.StatusUnsupportedMediaType, rr.Code, rr.Body.String())
+	require.Equal(t, http.StatusAccepted, rr.Code, rr.Body.String())
 }
 
-func TestCSRFAppliesUnderBasePath(t *testing.T) {
+func TestCrossOriginProtectionAppliesUnderBasePath(t *testing.T) {
 	srv := setupWithBasePath(t, "/kenn-forge/", nil)
 
 	body := strings.NewReader(`{"body":"test"}`)

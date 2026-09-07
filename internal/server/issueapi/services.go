@@ -22,6 +22,7 @@ type ListQuery struct {
 	State          string
 	Starred        bool
 	InvolvesMe     bool
+	Unassigned     bool
 	ReferencedByPR bool
 	Text           string
 	Assignee       string
@@ -57,7 +58,7 @@ func (s *Handler) ListProviderService(
 ) ([]IssueResponse, error) {
 	output, err := s.listIssuesRouteCore(ctx, &listIssuesInput{
 		Repo: req.Repo, State: req.State, Starred: req.Starred,
-		InvolvesMe: req.InvolvesMe, ReferencedByPR: req.ReferencedByPR,
+		InvolvesMe: req.InvolvesMe, Unassigned: req.Unassigned, ReferencedByPR: req.ReferencedByPR,
 		Q: req.Text, Assignee: req.Assignee, Limit: req.Limit, Offset: req.Offset,
 	})
 	if err != nil {

@@ -180,7 +180,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
       const workspaceHydration = yield* Effect.sync(() => beginWorkspaceSettingsHydration(settingsStore));
       const roborevHydration = yield* Effect.sync(() => beginRoborevSettingsHydration(settingsStore));
       const settings = yield* executeGeneratedApiRequest("GET settings after config change", (client, signal) =>
-        client.GET("/settings", { signal }),
+        client.SettingsService.getSettings({ signal }),
       ).pipe(retryIdempotentRead);
       yield* Effect.sync(() => {
         applySettingsHydration(
@@ -261,7 +261,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
     return reconcileProviderState().pipe(
       Effect.tapError(() =>
         executeGeneratedApiRequest("probe hub availability after projection refresh failure", (client, signal) =>
-          client.GET("/sync/status", { signal }),
+          client.SyncService.getSyncStatus({ signal }),
         ).pipe(
           Effect.andThen(Effect.sync(() => syncStore.setProviderAvailable(true))),
           Effect.catch(() => Effect.void),

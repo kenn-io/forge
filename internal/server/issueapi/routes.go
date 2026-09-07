@@ -16,7 +16,7 @@ import (
 func (s *Handler) listIssues(ctx context.Context, input *listIssuesInput) (*listIssuesOutput, error) {
 	query := ListQuery{
 		Repo: input.Repo, State: input.State, Starred: input.Starred,
-		InvolvesMe: input.InvolvesMe, ReferencedByPR: input.ReferencedByPR,
+		InvolvesMe: input.InvolvesMe, Unassigned: input.Unassigned, ReferencedByPR: input.ReferencedByPR,
 		Text: input.Q, Assignee: input.Assignee, Limit: input.Limit, Offset: input.Offset,
 	}
 	var rows []IssueResponse
@@ -63,7 +63,7 @@ func (s *Handler) listIssuesRouteCore(ctx context.Context, input *listIssuesInpu
 	}
 	opts := db.ListIssuesOpts{
 		State: input.State, Search: input.Q, Starred: input.Starred,
-		Assignee: input.Assignee, Limit: input.Limit, Offset: input.Offset,
+		Unassigned: input.Unassigned, Assignee: input.Assignee, Limit: input.Limit, Offset: input.Offset,
 		RepoFilters:       parseRepoFilters(input.Repo),
 		WorkspaceActivity: overrides,
 		ReferencedByPR:    input.ReferencedByPR,

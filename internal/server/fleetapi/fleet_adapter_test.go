@@ -372,7 +372,7 @@ func TestBuildLocalRawReconcilesLiveTmuxInventory(t *testing.T) {
 		CreatedAt:   createdAt,
 	}))
 
-	mon := newFleetTmuxMonitor([]string{"tmux"}, false, nil)
+	mon := newFleetTmuxMonitor([]string{"tmux"}, false, nil, nil)
 	mon.recordInventorySample(fleetTmuxInventorySample{
 		PolledAt:  polledAt,
 		Succeeded: true,
@@ -451,7 +451,7 @@ func TestBuildLocalRawIncludesProjectWorktreeRuntimeTmuxSession(t *testing.T) {
 		CreatedAt:   createdAt,
 	}))
 
-	mon := newFleetTmuxMonitor([]string{"tmux"}, false, nil)
+	mon := newFleetTmuxMonitor([]string{"tmux"}, false, nil, nil)
 	mon.recordInventorySample(fleetTmuxInventorySample{
 		PolledAt:  polledAt,
 		Succeeded: true,

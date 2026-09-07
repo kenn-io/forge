@@ -15,6 +15,8 @@ const {
   imageAddonCtor,
   imageAddons,
   ligaturesAddonCtor,
+  mockItemResolvePost,
+  mockNavigate,
   mockShowFlash,
   mockWebglCtor,
   mouseDragEndPointerGesture,
@@ -40,6 +42,8 @@ const {
   imageAddonCtor: vi.fn(),
   imageAddons: [] as Array<{ dispose: ReturnType<typeof vi.fn> }>,
   ligaturesAddonCtor: vi.fn(),
+  mockItemResolvePost: vi.fn(),
+  mockNavigate: vi.fn(),
   mockShowFlash: vi.fn(),
   mockWebglCtor: vi.fn(),
   mouseDragEndPointerGesture: vi.fn(),
@@ -54,6 +58,7 @@ const {
     clearTextureAtlas: ReturnType<typeof vi.fn>;
     cols: number;
     focus: ReturnType<typeof vi.fn>;
+    input: ReturnType<typeof vi.fn>;
     modes: {
       applicationCursorKeysMode: boolean;
       bracketedPasteMode: boolean;
@@ -78,6 +83,7 @@ let configuredLetterSpacing = 0;
 let configuredCursorBlink = true;
 let configuredFontLigatures = false;
 let terminalSettingsStore: SettingsStore;
+let configuredRepos: Array<{ provider: string; platform_host: string }> = [];
 let mockSockets: MockWebSocket[] = [];
 let mockSocketsStartOpen = true;
 let initialTerminalDimensions = { cols: 80, rows: 24 };
@@ -156,9 +162,28 @@ vi.mock("../../context.js", () => ({
       getTerminalCursorBlink: () => configuredCursorBlink,
       getTerminalFontLigatures: () => configuredFontLigatures,
       getTerminalGraphics: () => terminalSettingsStore.getTerminalGraphics(),
+      getConfiguredRepos: () => configuredRepos,
     },
   }),
 }));
+
+vi.mock("../../app/runtime.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../app/runtime.js")>();
+  const { makeGeneratedClient } = await import("../../testing/generated-client.js");
+  return {
+    ...actual,
+    makeAppRuntime: () =>
+      actual.makeAppRuntime(makeGeneratedClient({ RepositoriesService: { resolveRepoItem: mockItemResolvePost } })),
+  };
+});
+
+vi.mock("../../stores/router.svelte.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../stores/router.svelte.js")>();
+  return {
+    ...actual,
+    navigate: mockNavigate,
+  };
+});
 
 vi.mock("../../stores/flash.svelte.js", () => ({
   showFlash: mockShowFlash,
@@ -222,6 +247,7 @@ vi.mock("@xterm/xterm", () => ({
       }),
       dispose: vi.fn(),
       focus: vi.fn(),
+      input: vi.fn(),
       loadAddon: vi.fn(),
       onBinary: vi.fn(),
       onData: vi.fn((handler: (data: string) => void) => {
@@ -324,6 +350,9 @@ describe("TerminalPane", () => {
     configuredCursorBlink = true;
     configuredFontLigatures = false;
     terminalSettingsStore = createSettingsStore();
+    configuredRepos = [];
+    mockItemResolvePost.mockReset();
+    mockNavigate.mockReset();
     initialTerminalDimensions = { cols: 80, rows: 24 };
     fitDimensions = { cols: 80, rows: 24 };
     ligaturesAddonCtor.mockReset();
@@ -473,6 +502,79 @@ describe("TerminalPane", () => {
     expect(handler(new KeyboardEvent("keydown", { key: "V", ctrlKey: true, shiftKey: true }))).toBe(true);
   });
 
+  it("uses macOS Ctrl+V to upload an image-only browser clipboard", async () => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+    Object.defineProperty(window, "isSecureContext", { configurable: true, value: true });
+    const read = vi.fn().mockResolvedValue([
+      {
+        types: ["image/png"],
+        getType: vi.fn().mockResolvedValue(new Blob(["png bytes"], { type: "image/png" })),
+      },
+    ]);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { read, writeText: clipboardWriteText },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ path: "/remote/paste-image.png" }), { status: 201 })),
+    );
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+    await waitFor(() => expect(xtermCustomKeyEventHandlers).toHaveLength(1));
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    mockSockets[0]!.sent = [];
+
+    expect(xtermCustomKeyEventHandlers[0]!(new KeyboardEvent("keydown", { key: "v", ctrlKey: true }))).toBe(false);
+
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(mockSockets[0]!.sent.map((_, index) => sentText(mockSockets[0]!, index))).toContain(
+        "/remote/paste-image.png",
+      ),
+    );
+    expect(xtermInstances[0]!.input).not.toHaveBeenCalled();
+  });
+
+  it("replays macOS Ctrl+V when clipboard read returns text", async () => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+    Object.defineProperty(window, "isSecureContext", { configurable: true, value: true });
+    const read = vi.fn().mockResolvedValue([
+      {
+        types: ["text/plain"],
+        getType: vi.fn().mockResolvedValue(new Blob(["hello"], { type: "text/plain" })),
+      },
+    ]);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { read, writeText: clipboardWriteText },
+    });
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+    await waitFor(() => expect(xtermCustomKeyEventHandlers).toHaveLength(1));
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+
+    expect(xtermCustomKeyEventHandlers[0]!(new KeyboardEvent("keydown", { key: "v", ctrlKey: true }))).toBe(false);
+
+    await waitFor(() => expect(xtermInstances[0]!.input).toHaveBeenCalledWith("\x16", true));
+  });
+
+  it("replays macOS Ctrl+V when browser clipboard permission is denied", async () => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+    Object.defineProperty(window, "isSecureContext", { configurable: true, value: true });
+    const read = vi.fn().mockRejectedValue(new DOMException("denied", "NotAllowedError"));
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { read, writeText: clipboardWriteText },
+    });
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+    await waitFor(() => expect(xtermCustomKeyEventHandlers).toHaveLength(1));
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    await waitForSocketConnected(mockSockets[0]!);
+
+    expect(xtermCustomKeyEventHandlers[0]!(new KeyboardEvent("keydown", { key: "v", ctrlKey: true }))).toBe(false);
+
+    await waitFor(() => expect(xtermInstances[0]!.input).toHaveBeenCalledWith("\x16", true));
+  });
+
   it("keeps insecure-origin right clicks out of tmux without blocking Chrome's context menu", async () => {
     Object.defineProperty(window, "isSecureContext", { configurable: true, value: false });
     const { container } = render(TerminalPane, { props: { workspaceId: "ws-123" } });
@@ -536,6 +638,73 @@ describe("TerminalPane", () => {
 
     expect(open).toHaveBeenCalledTimes(1);
     expect(open).toHaveBeenCalledWith("https://example.com/docs", "_blank", "noopener,noreferrer");
+  });
+
+  it("routes tracked repository item links through the app instead of a new tab", async () => {
+    configuredRepos = [{ provider: "github", platform_host: "github.com" }];
+    mockItemResolvePost.mockResolvedValue({ repo_tracked: true, item_type: "pr" });
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+    await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());
+    const activate = xtermTerminalCtor.mock.calls[0]![0].linkHandler.activate;
+    const modifier = /Mac/.test(navigator.platform) ? { metaKey: true } : { ctrlKey: true };
+
+    activate(new MouseEvent("click", modifier), "https://github.com/acme/widgets/pull/1028");
+
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/pulls/github/acme/widgets/1028"));
+    expect(mockItemResolvePost).toHaveBeenCalledWith(
+      { provider: "github", owner: "acme", name: "widgets", number: 1028 },
+      undefined,
+      { signal: expect.any(AbortSignal) },
+    );
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it("opens item links for untracked repositories externally after resolving", async () => {
+    configuredRepos = [{ provider: "github", platform_host: "github.com" }];
+    mockItemResolvePost.mockResolvedValue({ repo_tracked: false });
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+    await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());
+    const activate = xtermTerminalCtor.mock.calls[0]![0].linkHandler.activate;
+    const modifier = /Mac/.test(navigator.platform) ? { metaKey: true } : { ctrlKey: true };
+
+    activate(new MouseEvent("click", modifier), "https://github.com/other/repo/issues/7");
+
+    await waitFor(() =>
+      expect(open).toHaveBeenCalledWith("https://github.com/other/repo/issues/7", "_blank", "noopener,noreferrer"),
+    );
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it("keeps opening links on unconfigured hosts externally without resolving", async () => {
+    configuredRepos = [{ provider: "gitlab", platform_host: "gitlab.example.com" }];
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+    await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());
+    const activate = xtermTerminalCtor.mock.calls[0]![0].linkHandler.activate;
+    const modifier = /Mac/.test(navigator.platform) ? { metaKey: true } : { ctrlKey: true };
+
+    activate(new MouseEvent("click", modifier), "https://github.com/acme/widgets/pull/1028");
+
+    expect(open).toHaveBeenCalledWith("https://github.com/acme/widgets/pull/1028", "_blank", "noopener,noreferrer");
+    expect(mockItemResolvePost).not.toHaveBeenCalled();
+  });
+
+  it("tells the user a hovered item link opens inside the app", async () => {
+    configuredRepos = [{ provider: "github", platform_host: "github.com" }];
+    const view = render(TerminalPane, { props: { workspaceId: "ws-123" } });
+    await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());
+    const linkHandler = xtermTerminalCtor.mock.calls[0]![0].linkHandler;
+    const modifier = /Mac/.test(navigator.platform) ? "Cmd" : "Ctrl";
+
+    linkHandler.hover(new MouseEvent("mouseover"), "https://github.com/acme/widgets/issues/3");
+    await tick();
+    expect(view.getByText(`${modifier}+Click to open in kenn-forge`)).toBeTruthy();
+
+    linkHandler.hover(new MouseEvent("mouseover"), "https://github.com/acme/widgets/commit/abc");
+    await tick();
+    expect(view.getByText(`${modifier}+Click to open link`)).toBeTruthy();
   });
 
   it("forwards accepted tmux OSC 52 text to the authorized clipboard writer", async () => {
@@ -1644,6 +1813,172 @@ describe("TerminalPane", () => {
         "\x1b[200~first[201~\rsecond\rthird\x1b[201~",
       ),
     );
+  });
+
+  it.each([
+    {
+      paths: ["/remote/paste-image-1.png", "/remote/paste images/paste-image-2.webp"],
+      pasted: "/remote/paste-image-1.png '/remote/paste images/paste-image-2.webp'",
+    },
+    {
+      paths: [String.raw`C:\Forge Images\first.png`, String.raw`C:\Forge Images\second.webp`],
+      pasted: String.raw`"C:\Forge Images\first.png" "C:\Forge Images\second.webp"`,
+    },
+  ])("pastes multiple image paths as separate quoted tokens in one paste: $pasted", async ({ paths, pasted }) => {
+    const fetchMock = vi.fn(
+      async () => new Response(JSON.stringify({ path: paths[fetchMock.mock.calls.length - 1] }), { status: 201 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { container } = render(TerminalPane, {
+      props: { workspaceId: "ws-123", fleetHostKey: "host-a" },
+    });
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    xtermInstances[0]!.modes.bracketedPasteMode = true;
+    mockSockets[0]!.sent = [];
+    const terminalContainer = container.querySelector(".terminal-container")!;
+    const event = new Event("paste", { bubbles: true, cancelable: true }) as ClipboardEvent;
+    Object.defineProperty(event, "clipboardData", {
+      value: {
+        getData: vi.fn(() => ""),
+        items: [
+          {
+            kind: "file",
+            type: "image/png",
+            getAsFile: () => new File(["first"], "first.png", { type: "image/png" }),
+          },
+          {
+            kind: "file",
+            type: "image/webp",
+            getAsFile: () => new File(["second"], "second.webp", { type: "image/webp" }),
+          },
+        ],
+      },
+    });
+
+    expect(terminalContainer.dispatchEvent(event)).toBe(false);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(fetchMock.mock.calls[0]![0]).toBe(
+      `${window.location.origin}/api/v1/fleet/hosts/host-a/terminal/paste-image`,
+    );
+    await waitFor(() => {
+      const frames = mockSockets[0]!.sent.flatMap((frame, index) =>
+        typeof frame === "string" ? [] : [sentText(mockSockets[0]!, index)],
+      );
+      expect(frames.join("")).toBe(`\x1b[200~${pasted}\x1b[201~`);
+    });
+    expect(mockShowFlash).toHaveBeenCalledWith("2 images uploaded; paths pasted into terminal.");
+  });
+
+  it.each([201, 500])("queues a second image paste behind a pending upload returning %s", async (status) => {
+    const firstUpload = deferred<Response>();
+    const fetchMock = vi
+      .fn()
+      .mockReturnValueOnce(firstUpload.promise)
+      .mockResolvedValueOnce(new Response(JSON.stringify({ path: "/remote/second.png" }), { status: 201 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { container } = render(TerminalPane, { props: { workspaceId: "ws-123" } });
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    xtermInstances[0]!.modes.bracketedPasteMode = true;
+    mockSockets[0]!.sent = [];
+    const terminalContainer = container.querySelector(".terminal-container")!;
+    for (const name of ["first", "second"]) {
+      const event = new Event("paste", { bubbles: true, cancelable: true }) as ClipboardEvent;
+      Object.defineProperty(event, "clipboardData", {
+        value: {
+          getData: () => "",
+          items: [
+            {
+              kind: "file",
+              type: "image/png",
+              getAsFile: () => new File([name], `${name}.png`, { type: "image/png" }),
+            },
+          ],
+        },
+      });
+      terminalContainer.dispatchEvent(event);
+    }
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(mockSockets[0]!.sent.filter((frame) => typeof frame !== "string")).toHaveLength(0);
+    firstUpload.resolve(new Response(JSON.stringify({ path: "/remote/first.png" }), { status }));
+    await waitFor(() => {
+      const frames = mockSockets[0]!.sent.flatMap((frame, index) =>
+        typeof frame === "string" ? [] : [sentText(mockSockets[0]!, index)],
+      );
+      expect(frames).toEqual(
+        status === 201
+          ? ["\x1b[200~/remote/first.png\x1b[201~", "\x1b[200~/remote/second.png\x1b[201~"]
+          : ["\x1b[200~/remote/second.png\x1b[201~"],
+      );
+    });
+  });
+
+  it("reserves macOS image paste order before the clipboard read completes", async () => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+    Object.defineProperty(window, "isSecureContext", { configurable: true, value: true });
+    const clipboardRead = deferred<ClipboardItem[]>();
+    const read = vi.fn(() => clipboardRead.promise);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { read } });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ path: "/remote/first.png" }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ path: "/remote/second.png" }), { status: 201 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { container } = render(TerminalPane, { props: { workspaceId: "ws-123" } });
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    xtermInstances[0]!.modes.bracketedPasteMode = true;
+    mockSockets[0]!.sent = [];
+    xtermCustomKeyEventHandlers[0]!(new KeyboardEvent("keydown", { key: "v", ctrlKey: true }));
+    expect(read).toHaveBeenCalledTimes(1);
+    const event = new Event("paste", { bubbles: true, cancelable: true }) as ClipboardEvent;
+    const second = new File(["second"], "second.png", { type: "image/png" });
+    Object.defineProperty(event, "clipboardData", {
+      value: {
+        getData: () => "",
+        items: [{ kind: "file", type: "image/png", getAsFile: () => second }],
+      },
+    });
+    container.querySelector(".terminal-container")!.dispatchEvent(event);
+    expect(fetchMock).not.toHaveBeenCalled();
+    const first = new Blob(["first"], { type: "image/png" });
+    clipboardRead.resolve([{ types: ["image/png"], getType: async () => first } as unknown as ClipboardItem]);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(fetchMock.mock.calls.map((call) => call[1].body)).toEqual([first, second]);
+    await waitFor(() => {
+      const frames = mockSockets[0]!.sent.flatMap((frame, index) =>
+        typeof frame === "string" ? [] : [sentText(mockSockets[0]!, index)],
+      );
+      expect(frames).toEqual(["\x1b[200~/remote/first.png\x1b[201~", "\x1b[200~/remote/second.png\x1b[201~"]);
+    });
+  });
+
+  it("keeps text precedence when clipboard data also contains an image", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { container } = render(TerminalPane, { props: { workspaceId: "ws-123" } });
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    mockSockets[0]!.sent = [];
+    const terminalContainer = container.querySelector(".terminal-container")!;
+    const event = new Event("paste", { bubbles: true, cancelable: true }) as ClipboardEvent;
+    Object.defineProperty(event, "clipboardData", {
+      value: {
+        getData: vi.fn((type: string) => (type === "text/plain" ? "image description" : "")),
+        items: [
+          {
+            kind: "file",
+            type: "image/png",
+            getAsFile: () => new File(["image"], "image.png", { type: "image/png" }),
+          },
+        ],
+      },
+    });
+
+    terminalContainer.dispatchEvent(event);
+
+    await waitFor(() =>
+      expect(mockSockets[0]!.sent.map((_, index) => sentText(mockSockets[0]!, index))).toContain("image description"),
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it.each([

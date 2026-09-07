@@ -154,6 +154,7 @@
       <li class="tooling-row" data-status={gitStatus}>
         <div class="tooling-row__main">
           <StatusDot
+            animated
             status={semanticStatuses[gitStatus]}
             label={gitStatusLabel(gitStatus)}
             size={8}
@@ -172,6 +173,7 @@
       <li class="tooling-row" data-status={providerCliStatus}>
         <div class="tooling-row__main">
           <StatusDot
+            animated
             status={semanticStatuses[providerCliStatus]}
             label={providerStatusLabel(providerCliStatus)}
             size={8}

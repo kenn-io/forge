@@ -126,7 +126,8 @@
     + (activity.getHideBots() ? 1 : 0)
     + (activity.getHideDefaultBranchActivity() ? 1 : 0)
     + (grouping.getHideOrgName() ? 1 : 0)
-    + (activity.getInvolvesMe() ? 1 : 0),
+    + (activity.getInvolvesMe() ? 1 : 0)
+    + (activity.getUnassigned() ? 1 : 0),
   );
 
   let unsubSync: (() => void) | undefined;
@@ -374,6 +375,7 @@
     activity.setHideDefaultBranchActivity(false);
     grouping.setHideOrgName(false);
     activity.setInvolvesMe(false);
+    activity.setUnassigned(false);
     applyFilters();
   }
 
@@ -410,6 +412,16 @@
           color: "var(--accent-blue)",
           onSelect: () => {
             activity.setInvolvesMe(!activity.getInvolvesMe());
+            activity.loadActivity();
+          },
+        },
+        {
+          id: "unassigned",
+          label: "Unassigned",
+          active: activity.getUnassigned(),
+          color: "var(--accent-blue)",
+          onSelect: () => {
+            activity.setUnassigned(!activity.getUnassigned());
             activity.loadActivity();
           },
         },

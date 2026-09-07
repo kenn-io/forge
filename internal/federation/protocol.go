@@ -16,7 +16,7 @@ import (
 
 // ProtocolVersion is the first full Forge federation contract. Peers require
 // an exact match; there is no version translation.
-const ProtocolVersion = 3
+const ProtocolVersion = 4
 
 // ActivationLeaseVersion identifies the lease handshake layered on the fleet
 // protocol. Keeping it distinct lets upgraded peers reject lease-unaware

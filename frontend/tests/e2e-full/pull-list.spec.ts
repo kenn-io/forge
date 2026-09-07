@@ -299,11 +299,21 @@ test.describe("PR list sidebar", () => {
     const star = row.locator(".star-btn");
     await expect(star).toHaveAttribute("title", "Unstar");
     const unstarMutation = page.waitForResponse(
-      (response) => response.request().method() === "DELETE" && response.url() === `${baseURL}/api/v1/starred`,
+      (response) => response.request().method() === "DELETE" && new URL(response.url()).pathname === "/api/v1/starred",
     );
     await star.click();
 
-    expect((await unstarMutation).status()).toBe(200);
+    const unstarResponse = await unstarMutation;
+    expect(unstarResponse.status()).toBe(200);
+    expect(unstarResponse.request().postData()).toBeNull();
+    expect(Object.fromEntries(new URL(unstarResponse.url()).searchParams)).toEqual({
+      item_type: "pr",
+      provider: "github",
+      platform_host: "github.com",
+      owner: "acme",
+      name: "widgets",
+      number: "1",
+    });
     await expect(star).toHaveAttribute("title", "Star");
     await expect
       .poll(async () => {

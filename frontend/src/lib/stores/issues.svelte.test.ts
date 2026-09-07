@@ -3,13 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import type { OwnedAppRuntime } from "../app/runtime.js";
 import type { Issue, IssueDetail } from "../api/types.js";
 import type { GeneratedClient } from "../api/generated-api.js";
-import { client as appClient } from "../api/runtime.js";
+import * as appClient from "../api/generated/index.js";
 import { mockSettings } from "../../test/mockApiFetch.js";
 import { makeTestAppRuntime } from "../testing/effect-layers.js";
 import { dismissFlash, getFlash, getFlashes } from "./flash.svelte.js";
 import { createIssuesStore as createRuntimeIssuesStore, type IssuesStoreOptions } from "./issues.svelte.js";
 import { involvesMeFilterStorageKey } from "./involves-me-filter.js";
 import { issuePRReferenceFilterStorageKey } from "./issue-pr-reference-filter.js";
+import { unassignedFilterStorageKey } from "./unassigned-filter.js";
 
 let runtime: OwnedAppRuntime | undefined;
 
@@ -151,7 +152,13 @@ describe("issues store bot visibility", () => {
   it("restores the previous preference when persistence fails", async () => {
     stubSettingsWrites(() =>
       Response.json(
-        { type: "about:blank", title: "Settings unavailable", status: 500, detail: "settings unavailable" },
+        {
+          type: "about:blank",
+          title: "Settings unavailable",
+          status: 500,
+          detail: "settings unavailable",
+          code: "settingsUnavailable",
+        },
         { status: 500 },
       ),
     );
@@ -313,6 +320,23 @@ describe("createIssuesStore", () => {
       "/issues",
       expect.objectContaining({
         params: { query: expect.objectContaining({ involves_me: true }) },
+      }),
+    );
+  });
+
+  it("persists and sends the Unassigned filter", async () => {
+    const get = vi.fn(async () => ({ data: [], error: undefined }));
+    const store = createIssuesStore({ client: { GET: get } as unknown as GeneratedClient });
+
+    store.setUnassigned(true);
+    store.loadIssues();
+    await vi.waitFor(() => expect(store.isIssuesLoading()).toBe(false));
+
+    expect(localStorage.getItem(unassignedFilterStorageKey("issues"))).toBe("1");
+    expect(get).toHaveBeenCalledWith(
+      "/issues",
+      expect.objectContaining({
+        params: { query: expect.objectContaining({ unassigned: true }) },
       }),
     );
   });

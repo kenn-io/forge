@@ -83,12 +83,12 @@ For pull requests, that means:
 - The hot set is the last 10 unique open PR details viewed and persists across
   restarts. Hot and explicit workspace-linked PRs use the configured watched cadence;
   terminal PRs are evicted immediately (`internal/db/queries_hot_merge_requests.go::RecordHotMergeRequestView`).
-- Other recently active PRs are warm and detail-age gated at 10 minutes;
-  never-fetched hot or warm PRs are immediately due
-  (`internal/github/sync.go::hotAndWarmOpenMRs`).
+- Recency-hot admission includes every open PR within `active_pr_hot_window`
+  (zero disables it); remaining active PRs use `active_pr_warm_refresh_interval`
+  (default 10m). Never-fetched PRs are due (`internal/github/sync.go::hotAndWarmOpenMRs`).
 - Linked PR notifications may advance fast-sync scheduling through
   `source_updated_at`, but that timestamp is only a staleness hint. Combine it
-  with authoritative PR activity for warm admission; never persist it as
+  with authoritative PR activity for hot/warm admission; never persist it as
   `last_activity_at` (`internal/github/sync.go::hotAndWarmOpenMRs`).
 - Scheduled and immediate watched-MR passes are serialized for the full pass so
   provider work and host cadence state have one owner

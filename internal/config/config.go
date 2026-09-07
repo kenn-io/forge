@@ -31,6 +31,8 @@ const (
 	defaultGiteaTokenEnv                   = "KENN_FORGE_GITEA_TOKEN"
 	defaultSyncInterval                    = "5m"
 	defaultActivePRRefreshInterval         = "2m"
+	defaultActivePRHotWindow               = "0s"
+	defaultActivePRWarmRefreshInterval     = "10m"
 	defaultActivePRWindow                  = "4h"
 	defaultNotificationSyncInterval        = "2m"
 	defaultNotificationPropagationInterval = "1m"
@@ -916,18 +918,20 @@ type MCP struct {
 }
 
 type Config struct {
-	SyncInterval              string `toml:"sync_interval"`
-	ActivePRRefreshInterval   string `toml:"active_pr_refresh_interval"`
-	ActivePRWindow            string `toml:"active_pr_window"`
-	GitHubTokenEnv            string `toml:"github_token_env"`
-	DefaultPlatformHost       string `toml:"default_platform_host"`
-	Host                      string `toml:"host"`
-	Port                      int    `toml:"port"`
-	BasePath                  string `toml:"base_path"`
-	DataDir                   string `toml:"data_dir"`
-	SyncBudgetPerHour         int    `toml:"sync_budget_per_hour"`
-	SSEBufferSize             int    `toml:"sse_buffer_size"`
-	IssueWorkspaceBranchStyle string `toml:"issue_workspace_branch_style"`
+	SyncInterval                string `toml:"sync_interval"`
+	ActivePRRefreshInterval     string `toml:"active_pr_refresh_interval"`
+	ActivePRHotWindow           string `toml:"active_pr_hot_window"`
+	ActivePRWarmRefreshInterval string `toml:"active_pr_warm_refresh_interval"`
+	ActivePRWindow              string `toml:"active_pr_window"`
+	GitHubTokenEnv              string `toml:"github_token_env"`
+	DefaultPlatformHost         string `toml:"default_platform_host"`
+	Host                        string `toml:"host"`
+	Port                        int    `toml:"port"`
+	BasePath                    string `toml:"base_path"`
+	DataDir                     string `toml:"data_dir"`
+	SyncBudgetPerHour           int    `toml:"sync_budget_per_hour"`
+	SSEBufferSize               int    `toml:"sse_buffer_size"`
+	IssueWorkspaceBranchStyle   string `toml:"issue_workspace_branch_style"`
 	// AllowedHosts is an exact-match allowlist of Host header values
 	// beyond the bind address that the Host validation middleware
 	// should accept. Loopback synonyms (127.0.0.1 / localhost /
@@ -1218,13 +1222,15 @@ func Load(path string) (*Config, error) {
 // load reads and normalizes path without running validation.
 func load(path string) (*Config, error) {
 	cfg := &Config{
-		SyncInterval:            defaultSyncInterval,
-		ActivePRRefreshInterval: defaultActivePRRefreshInterval,
-		ActivePRWindow:          defaultActivePRWindow,
-		GitHubTokenEnv:          defaultGitHubTokenEnv,
-		DefaultPlatformHost:     defaultPlatformHost,
-		Host:                    defaultHost,
-		Port:                    defaultPort,
+		SyncInterval:                defaultSyncInterval,
+		ActivePRRefreshInterval:     defaultActivePRRefreshInterval,
+		ActivePRHotWindow:           defaultActivePRHotWindow,
+		ActivePRWarmRefreshInterval: defaultActivePRWarmRefreshInterval,
+		ActivePRWindow:              defaultActivePRWindow,
+		GitHubTokenEnv:              defaultGitHubTokenEnv,
+		DefaultPlatformHost:         defaultPlatformHost,
+		Host:                        defaultHost,
+		Port:                        defaultPort,
 		Activity: Activity{
 			CollapseThreads: true,
 		},
@@ -1472,6 +1478,12 @@ func (c *Config) validate() error {
 	if _, err := time.ParseDuration(c.SyncInterval); err != nil {
 		return fmt.Errorf("config: invalid sync_interval %q: %w", c.SyncInterval, err)
 	}
+	if c.ActivePRHotWindow == "" {
+		c.ActivePRHotWindow = defaultActivePRHotWindow
+	}
+	if c.ActivePRWarmRefreshInterval == "" {
+		c.ActivePRWarmRefreshInterval = defaultActivePRWarmRefreshInterval
+	}
 	if c.ActivePRRefreshInterval == "" {
 		c.ActivePRRefreshInterval = defaultActivePRRefreshInterval
 	}
@@ -1487,6 +1499,16 @@ func (c *Config) validate() error {
 		return fmt.Errorf("config: invalid active_pr_window %q: %w", c.ActivePRWindow, err)
 	} else if d <= 0 {
 		return fmt.Errorf("config: active_pr_window must be positive, got %q", c.ActivePRWindow)
+	}
+	if d, err := time.ParseDuration(c.ActivePRHotWindow); err != nil {
+		return fmt.Errorf("config: invalid active_pr_hot_window %q: %w", c.ActivePRHotWindow, err)
+	} else if d < 0 {
+		return fmt.Errorf("config: active_pr_hot_window must be nonnegative, got %q", c.ActivePRHotWindow)
+	}
+	if d, err := time.ParseDuration(c.ActivePRWarmRefreshInterval); err != nil {
+		return fmt.Errorf("config: invalid active_pr_warm_refresh_interval %q: %w", c.ActivePRWarmRefreshInterval, err)
+	} else if d <= 0 {
+		return fmt.Errorf("config: active_pr_warm_refresh_interval must be positive, got %q", c.ActivePRWarmRefreshInterval)
 	}
 	if c.Notifications.SyncInterval == "" {
 		c.Notifications.SyncInterval = defaultNotificationSyncInterval
@@ -2319,6 +2341,23 @@ func (c *Config) ActivePRRefreshDuration() time.Duration {
 		return d
 	}
 	d, _ := time.ParseDuration(c.ActivePRRefreshInterval)
+	return d
+}
+
+func (c *Config) ActivePRHotWindowDuration() time.Duration {
+	if c == nil || c.ActivePRHotWindow == "" {
+		return 0
+	}
+	d, _ := time.ParseDuration(c.ActivePRHotWindow)
+	return d
+}
+
+func (c *Config) ActivePRWarmRefreshDuration() time.Duration {
+	if c == nil || c.ActivePRWarmRefreshInterval == "" {
+		d, _ := time.ParseDuration(defaultActivePRWarmRefreshInterval)
+		return d
+	}
+	d, _ := time.ParseDuration(c.ActivePRWarmRefreshInterval)
 	return d
 }
 
@@ -3424,42 +3463,44 @@ func reposForSave(repos []Repo) []Repo {
 
 // configFile is the subset of Config written to disk.
 type configFile struct {
-	SyncInterval              string                   `toml:"sync_interval"`
-	ActivePRRefreshInterval   string                   `toml:"active_pr_refresh_interval"`
-	ActivePRWindow            string                   `toml:"active_pr_window"`
-	GitHubTokenEnv            string                   `toml:"github_token_env"`
-	DefaultPlatformHost       string                   `toml:"default_platform_host,omitempty"`
-	Host                      string                   `toml:"host"`
-	Port                      int                      `toml:"port"`
-	SyncBudgetPerHour         int                      `toml:"sync_budget_per_hour,omitempty"`
-	SSEBufferSize             int                      `toml:"sse_buffer_size,omitempty"`
-	BasePath                  string                   `toml:"base_path,omitempty"`
-	DataDir                   string                   `toml:"data_dir,omitempty"`
-	IssueWorkspaceBranchStyle string                   `toml:"issue_workspace_branch_style,omitempty"`
-	AllowedHosts              []string                 `toml:"allowed_hosts,omitempty"`
-	TrustReverseProxy         bool                     `toml:"trust_reverse_proxy,omitempty"`
-	Repos                     []Repo                   `toml:"repos"`
-	RepoPresets               []RepoPreset             `toml:"repo_presets,omitempty"`
-	KataProjects              []KataProjectRepoMapping `toml:"kata_projects,omitempty"`
-	Platforms                 []PlatformConfig         `toml:"platforms,omitempty"`
-	GitHubOwnerTokens         []GitHubOwnerTokenConfig `toml:"github_owner_tokens,omitempty"`
-	GitHubApps                []GitHubAppConfig        `toml:"github_apps,omitempty"`
-	Activity                  Activity                 `toml:"activity"`
-	Notifications             Notifications            `toml:"notifications,omitempty"`
-	Terminal                  Terminal                 `toml:"terminal,omitempty"`
-	Modes                     ModeVisibility           `toml:"modes,omitempty"`
-	Agents                    []Agent                  `toml:"agents,omitempty"`
-	DocFolders                []DocFolder              `toml:"doc_folders,omitempty"`
-	Roborev                   Roborev                  `toml:"roborev,omitempty"`
-	PullRequests              PullRequests             `toml:"pull_requests,omitempty"`
-	Detail                    Detail                   `toml:"detail,omitempty"`
-	Workspaces                Workspaces               `toml:"workspaces,omitempty"`
-	Issues                    Issues                   `toml:"issues,omitempty"`
-	Tmux                      Tmux                     `toml:"tmux,omitempty"`
-	Shell                     Shell                    `toml:"shell,omitempty"`
-	Fleet                     Fleet                    `toml:"fleet,omitempty"`
-	API                       API                      `toml:"api,omitempty"`
-	MCP                       MCP                      `toml:"mcp,omitempty"`
+	SyncInterval                string                   `toml:"sync_interval"`
+	ActivePRRefreshInterval     string                   `toml:"active_pr_refresh_interval"`
+	ActivePRHotWindow           string                   `toml:"active_pr_hot_window"`
+	ActivePRWarmRefreshInterval string                   `toml:"active_pr_warm_refresh_interval"`
+	ActivePRWindow              string                   `toml:"active_pr_window"`
+	GitHubTokenEnv              string                   `toml:"github_token_env"`
+	DefaultPlatformHost         string                   `toml:"default_platform_host,omitempty"`
+	Host                        string                   `toml:"host"`
+	Port                        int                      `toml:"port"`
+	SyncBudgetPerHour           int                      `toml:"sync_budget_per_hour,omitempty"`
+	SSEBufferSize               int                      `toml:"sse_buffer_size,omitempty"`
+	BasePath                    string                   `toml:"base_path,omitempty"`
+	DataDir                     string                   `toml:"data_dir,omitempty"`
+	IssueWorkspaceBranchStyle   string                   `toml:"issue_workspace_branch_style,omitempty"`
+	AllowedHosts                []string                 `toml:"allowed_hosts,omitempty"`
+	TrustReverseProxy           bool                     `toml:"trust_reverse_proxy,omitempty"`
+	Repos                       []Repo                   `toml:"repos"`
+	RepoPresets                 []RepoPreset             `toml:"repo_presets,omitempty"`
+	KataProjects                []KataProjectRepoMapping `toml:"kata_projects,omitempty"`
+	Platforms                   []PlatformConfig         `toml:"platforms,omitempty"`
+	GitHubOwnerTokens           []GitHubOwnerTokenConfig `toml:"github_owner_tokens,omitempty"`
+	GitHubApps                  []GitHubAppConfig        `toml:"github_apps,omitempty"`
+	Activity                    Activity                 `toml:"activity"`
+	Notifications               Notifications            `toml:"notifications,omitempty"`
+	Terminal                    Terminal                 `toml:"terminal,omitempty"`
+	Modes                       ModeVisibility           `toml:"modes,omitempty"`
+	Agents                      []Agent                  `toml:"agents,omitempty"`
+	DocFolders                  []DocFolder              `toml:"doc_folders,omitempty"`
+	Roborev                     Roborev                  `toml:"roborev,omitempty"`
+	PullRequests                PullRequests             `toml:"pull_requests,omitempty"`
+	Detail                      Detail                   `toml:"detail,omitempty"`
+	Workspaces                  Workspaces               `toml:"workspaces,omitempty"`
+	Issues                      Issues                   `toml:"issues,omitempty"`
+	Tmux                        Tmux                     `toml:"tmux,omitempty"`
+	Shell                       Shell                    `toml:"shell,omitempty"`
+	Fleet                       Fleet                    `toml:"fleet,omitempty"`
+	API                         API                      `toml:"api,omitempty"`
+	MCP                         MCP                      `toml:"mcp,omitempty"`
 }
 
 // Save writes the current config to the given path.
@@ -3469,37 +3510,39 @@ func (c *Config) Save(path string) error {
 		return fmt.Errorf("validating config: %w", err)
 	}
 	f := configFile{
-		SyncInterval:            cfg.SyncInterval,
-		ActivePRRefreshInterval: cfg.ActivePRRefreshInterval,
-		ActivePRWindow:          cfg.ActivePRWindow,
-		GitHubTokenEnv:          cfg.GitHubTokenEnv,
-		DefaultPlatformHost:     cfg.DefaultPlatformHost,
-		Host:                    cfg.Host,
-		Port:                    cfg.Port,
-		AllowedHosts:            slices.Clone(cfg.AllowedHosts),
-		TrustReverseProxy:       cfg.TrustReverseProxy,
-		Repos:                   reposForSave(cfg.Repos),
-		RepoPresets:             cloneRepoPresets(cfg.RepoPresets),
-		KataProjects:            slices.Clone(cfg.KataProjects),
-		Platforms:               cfg.Platforms,
-		GitHubOwnerTokens:       cfg.GitHubOwnerTokens,
-		GitHubApps:              cfg.GitHubApps,
-		Activity:                cfg.Activity,
-		Notifications:           cfg.Notifications,
-		Terminal:                cfg.Terminal,
-		Modes:                   cfg.Modes,
-		Agents:                  cfg.Agents,
-		DocFolders:              cfg.DocFolders,
-		Roborev:                 cfg.Roborev,
-		PullRequests:            cfg.PullRequests,
-		Detail:                  cfg.Detail,
-		Workspaces:              cfg.Workspaces,
-		Issues:                  cfg.Issues,
-		Tmux:                    cfg.Tmux,
-		Shell:                   cfg.Shell,
-		Fleet:                   cfg.Fleet,
-		API:                     cfg.API,
-		MCP:                     cfg.MCP,
+		SyncInterval:                cfg.SyncInterval,
+		ActivePRRefreshInterval:     cfg.ActivePRRefreshInterval,
+		ActivePRHotWindow:           cfg.ActivePRHotWindow,
+		ActivePRWarmRefreshInterval: cfg.ActivePRWarmRefreshInterval,
+		ActivePRWindow:              cfg.ActivePRWindow,
+		GitHubTokenEnv:              cfg.GitHubTokenEnv,
+		DefaultPlatformHost:         cfg.DefaultPlatformHost,
+		Host:                        cfg.Host,
+		Port:                        cfg.Port,
+		AllowedHosts:                slices.Clone(cfg.AllowedHosts),
+		TrustReverseProxy:           cfg.TrustReverseProxy,
+		Repos:                       reposForSave(cfg.Repos),
+		RepoPresets:                 cloneRepoPresets(cfg.RepoPresets),
+		KataProjects:                slices.Clone(cfg.KataProjects),
+		Platforms:                   cfg.Platforms,
+		GitHubOwnerTokens:           cfg.GitHubOwnerTokens,
+		GitHubApps:                  cfg.GitHubApps,
+		Activity:                    cfg.Activity,
+		Notifications:               cfg.Notifications,
+		Terminal:                    cfg.Terminal,
+		Modes:                       cfg.Modes,
+		Agents:                      cfg.Agents,
+		DocFolders:                  cfg.DocFolders,
+		Roborev:                     cfg.Roborev,
+		PullRequests:                cfg.PullRequests,
+		Detail:                      cfg.Detail,
+		Workspaces:                  cfg.Workspaces,
+		Issues:                      cfg.Issues,
+		Tmux:                        cfg.Tmux,
+		Shell:                       cfg.Shell,
+		Fleet:                       cfg.Fleet,
+		API:                         cfg.API,
+		MCP:                         cfg.MCP,
 	}
 	if cfg.DefaultPlatformHost == defaultPlatformHost {
 		f.DefaultPlatformHost = ""
@@ -3588,6 +3631,12 @@ func (c *Config) copyForSave() Config {
 	cfg.Fleet.Members = slices.Clone(c.Fleet.Members)
 	if cfg.SyncInterval == "" {
 		cfg.SyncInterval = defaultSyncInterval
+	}
+	if cfg.ActivePRHotWindow == "" {
+		cfg.ActivePRHotWindow = defaultActivePRHotWindow
+	}
+	if cfg.ActivePRWarmRefreshInterval == "" {
+		cfg.ActivePRWarmRefreshInterval = defaultActivePRWarmRefreshInterval
 	}
 	if cfg.ActivePRRefreshInterval == "" {
 		cfg.ActivePRRefreshInterval = defaultActivePRRefreshInterval

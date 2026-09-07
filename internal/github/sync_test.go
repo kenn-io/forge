@@ -11086,6 +11086,124 @@ func TestWatchedMRsUsePersistedHotAndWarmCadences(t *testing.T) {
 	}, got)
 }
 
+func TestWatchedMRsUseConfiguredActivityTiers(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC)
+	repoID, err := d.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "repo-acme-app",
+		Owner:          "acme",
+		Name:           "app",
+	})
+	require.NoError(err)
+	cases := []struct {
+		activityAge     time.Duration
+		detailAge       time.Duration
+		viewed          bool
+		notificationAge time.Duration
+		due             bool
+	}{
+		{29 * time.Minute, time.Minute, false, 0, true},
+		{30 * time.Minute, time.Minute, false, 0, true},
+		{30*time.Minute + time.Second, time.Minute, false, 0, false},
+		{time.Hour, 5 * time.Minute, false, 0, true},
+		{time.Hour, 5*time.Minute - time.Second, false, 0, false},
+		{2 * time.Hour, 5 * time.Minute, false, 0, true},
+		{2*time.Hour + time.Second, 5 * time.Minute, false, 0, false},
+		{3 * time.Hour, time.Minute, true, 0, true},
+		{3 * time.Hour, time.Minute - time.Second, true, 0, false},
+		{3 * time.Hour, time.Minute, false, 10 * time.Minute, true},
+		{3 * time.Hour, time.Minute - time.Second, false, 10 * time.Minute, false},
+	}
+	var want []int
+	for i, tc := range cases {
+		number := i + 1
+		activity := now.Add(-tc.activityAge)
+		detail := now.Add(-tc.detailAge)
+		id, err := d.UpsertMergeRequest(ctx, &db.MergeRequest{
+			RepoID:          repoID,
+			PlatformID:      int64(number),
+			Number:          number,
+			Title:           "PR",
+			Author:          "octo",
+			State:           db.MergeRequestStateOpen,
+			HeadBranch:      "feature",
+			BaseBranch:      "main",
+			CreatedAt:       now.Add(-24 * time.Hour),
+			UpdatedAt:       activity,
+			LastActivityAt:  activity,
+			DetailFetchedAt: &detail,
+		})
+		require.NoError(err)
+		if tc.viewed {
+			require.NoError(d.RecordHotMergeRequestView(ctx, id, now))
+		}
+		if tc.notificationAge > 0 {
+			require.NoError(d.UpsertNotifications(ctx, []db.Notification{{
+				Platform:               "github",
+				PlatformHost:           "github.com",
+				PlatformNotificationID: fmt.Sprint(number),
+				RepoID:                 &repoID,
+				RepoOwner:              "acme",
+				RepoName:               "app",
+				SubjectType:            "PullRequest",
+				SubjectTitle:           "PR activity",
+				ItemNumber:             &number,
+				ItemType:               "pr",
+				Reason:                 "comment",
+				SourceUpdatedAt:        now.Add(-tc.notificationAge),
+				SyncedAt:               now,
+			}}))
+		}
+		if tc.due {
+			want = append(want, number)
+		}
+	}
+	// More recent PRs than the persisted view-hot limit must all be selected.
+	for i := range db.HotMergeRequestLimit + 1 {
+		number := 100 + i
+		_, err := d.UpsertMergeRequest(ctx, &db.MergeRequest{
+			RepoID:          repoID,
+			PlatformID:      int64(number),
+			Number:          number,
+			Title:           "PR",
+			Author:          "octo",
+			State:           db.MergeRequestStateOpen,
+			HeadBranch:      "feature",
+			BaseBranch:      "main",
+			CreatedAt:       now.Add(-time.Hour),
+			UpdatedAt:       now,
+			LastActivityAt:  now,
+			DetailFetchedAt: new(now.Add(-time.Minute)),
+		})
+		require.NoError(err)
+		want = append(want, number)
+	}
+	syncer := NewSyncer(map[string]Client{}, d, nil, []RepoRef{{Platform: platform.KindGitHub,
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "app"}}, time.Hour, nil, nil)
+	syncer.SetWatchInterval(time.Minute)
+	syncer.SetActiveMRWindow(2 * time.Hour)
+	syncer.SetActiveMRRefreshPolicy(30*time.Minute, 5*time.Minute)
+	var got []int
+	for _, mr := range syncer.watchedMRsForFastSync(ctx, now) {
+		got = append(got, mr.Number)
+	}
+	assert.ElementsMatch(want, got)
+	stored, err := d.ListMergeRequests(ctx, db.ListMergeRequestsOpts{State: "open"})
+	require.NoError(err)
+	for _, mr := range stored {
+		if mr.Number <= len(cases) {
+			assert.True(mr.LastActivityAt.Equal(now.Add(-cases[mr.Number-1].activityAge)))
+		}
+	}
+}
+
 func TestWatchedMRsUseNotificationActivityForWarmPRCadence(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

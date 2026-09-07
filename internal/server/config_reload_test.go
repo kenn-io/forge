@@ -2570,6 +2570,14 @@ func TestRestartRequiredForNotificationIntervals(t *testing.T) {
 	require.False(snap.restartRequiredFor(activeRefreshChanged),
 		"active PR refresh interval is hot-reloadable by the syncer")
 
+	activeHotWindowChanged := base()
+	activeHotWindowChanged.ActivePRHotWindow = "30m"
+	require.False(snap.restartRequiredFor(activeHotWindowChanged))
+
+	activeWarmRefreshChanged := base()
+	activeWarmRefreshChanged.ActivePRWarmRefreshInterval = "5m"
+	require.False(snap.restartRequiredFor(activeWarmRefreshChanged))
+
 	activeWindowChanged := base()
 	activeWindowChanged.ActivePRWindow = "8h"
 	require.False(snap.restartRequiredFor(activeWindowChanged),

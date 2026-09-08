@@ -23,7 +23,7 @@ import (
 func TestMain(m *testing.M) { os.Exit(gitsafe.RunIsolatedMain(m)) }
 
 func TestGitHubCollectionAnalysis(t *testing.T) {
-	for _, mode := range []string{"merge", "no associations", "failed page", "changed detail", "one parent", "foreign association", "missing base"} {
+	for _, mode := range []string{"merge", "no associations", "failed page", "changed detail", "one parent", "foreign association", "missing base", "malformed terminal", "malformed source head"} {
 		t.Run(mode, func(t *testing.T) {
 			assert, require := assert.New(t), require.New(t)
 			r := gittest.NewRepo(t, gittest.Options{InitArgs: []string{"init", "-b", "main"}, ConfigureUser: true})
@@ -74,7 +74,14 @@ func TestGitHubCollectionAnalysis(t *testing.T) {
 					if mode == "changed detail" && details == 2 {
 						count = 2
 					}
-					body = fmt.Sprintf(`{"id":7,"number":3,"merged":true,"merge_commit_sha":%q,"commits":%d,"base":{"ref":"main","repo":{"id":12}},"head":{"sha":%q,"repo":{"id":12}}}`, head, count, source)
+					terminal, sourceHead := head, source
+					if mode == "malformed terminal" {
+						terminal = "not-an-object-id"
+					}
+					if mode == "malformed source head" {
+						sourceHead = strings.Repeat("a", 64) // Wrong object format for this repository.
+					}
+					body = fmt.Sprintf(`{"id":7,"number":3,"merged":true,"merge_commit_sha":%q,"commits":%d,"base":{"ref":"main","repo":{"id":12}},"head":{"sha":%q,"repo":{"id":12}}}`, terminal, count, sourceHead)
 					if mode == "missing base" {
 						body = `{"id":7,"number":3,"merged":true}`
 					}
@@ -98,12 +105,29 @@ func TestGitHubCollectionAnalysis(t *testing.T) {
 				assert.Equal("foreign_repository", collected.Observations[0].Reason)
 				assert.Equal("ambiguous_absence", collected.Evidence.Inventory.Reason)
 			}
-			if mode == "missing base" {
+			if mode == "missing base" || strings.HasPrefix(mode, "malformed ") {
 				require.Len(collected.Evidence.Candidates, 1)
 				assert.Equal("invalid_observation", collected.Evidence.Inventory.Reason)
 			}
 			analysis, err := landedwork.Analyze(ctx, prepared, collected.Evidence, analysisLimits)
 			require.NoError(err)
+			if strings.HasPrefix(mode, "malformed ") {
+				require.Len(collected.Observations, 1)
+				assert.Equal("7", collected.Evidence.Candidates[0].ID)
+				assert.False(collected.Evidence.Candidates[0].SourceComplete)
+				assert.Equal("invalid_observation", analysis.Coverage.Inventory.Reason)
+				assert.Empty(analysis.Landings)
+				if mode == "malformed terminal" {
+					assert.Equal("not-an-object-id", collected.Observations[0].Change.Terminal)
+					assert.Empty(collected.Evidence.Candidates[0].Terminal)
+					assert.Empty(collected.Evidence.Candidates[0].TerminalEvidence)
+					assert.Equal(source, collected.Evidence.Candidates[0].SourceHead)
+				} else {
+					assert.Equal(new(strings.Repeat("a", 64)), collected.Observations[0].Change.SourceHead)
+					assert.Empty(collected.Evidence.Candidates[0].SourceHead)
+					assert.Equal(head, collected.Evidence.Candidates[0].Terminal)
+				}
+			}
 			switch mode {
 			case "merge":
 				assert.True(analysis.Coverage.Complete)

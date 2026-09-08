@@ -58,6 +58,8 @@ Overlap conflicts block the proven landing ranges, not unrelated earlier
 commits; unknown-start candidate gaps still block from the base (`landedwork/origins.go::rejectOverlaps`).
 Collection must preserve unfinished candidates and the exact prepared query;
 missing provider evidence is never direct-push evidence (`landedwork/collect/collect.go::Collect`).
+Keep malformed object IDs in observations, not analyzer candidates; a provider
+gap must not become a fatal caller-input error (`landedwork/collect/candidates.go::candidate`).
 Reject an over-budget query without a result; never trim commits or gaps to fit.
 Even incomplete preparation and unsupported discovery retain query records that
 must be charged (`landedwork/collect/limits.go::validate`).

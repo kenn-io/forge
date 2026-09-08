@@ -120,7 +120,7 @@ func Collect(ctx context.Context, reader platform.LandingEvidenceReader, route p
 			continue
 		}
 		c.result.Observations = append(c.result.Observations, observation)
-		c.result.Evidence.Candidates = append(c.result.Evidence.Candidates, candidate(query.Bounds.Repository, observation))
+		c.result.Evidence.Candidates = append(c.result.Evidence.Candidates, candidate(query.Bounds, observation))
 	}
 	c.result.Evidence.Inventory.Complete = c.result.Evidence.Inventory.Reason == ""
 	return c.result, nil

@@ -132,9 +132,14 @@ func cloneChange(d platform.LandingChange) platform.LandingChange {
 	return d
 }
 
-func candidate(repo landedwork.Repository, o Observation) landedwork.Candidate {
-	c := landedwork.Candidate{Repository: repo, ID: strconv.FormatInt(o.Change.Ref.ID, 10), Terminal: o.Change.Terminal, TerminalEvidence: o.Change.TerminalEvidence, Source: slices.Clone(o.Source), SourceComplete: o.SourceComplete}
-	if o.Change.SourceHead != nil {
+func candidate(bounds landedwork.Bounds, o Observation) landedwork.Candidate {
+	c := landedwork.Candidate{Repository: bounds.Repository, ID: strconv.FormatInt(o.Change.Ref.ID, 10), Source: slices.Clone(o.Source), SourceComplete: o.SourceComplete}
+	// Preserve malformed provider values in the observation, not the analyzer's
+	// object-ID fields: missing evidence is a gap, invalid input is an error.
+	if objectID(o.Change.Terminal, len(bounds.Head)) {
+		c.Terminal, c.TerminalEvidence = o.Change.Terminal, o.Change.TerminalEvidence
+	}
+	if o.Change.SourceHead != nil && objectID(*o.Change.SourceHead, len(bounds.Head)) {
 		c.SourceHead = *o.Change.SourceHead
 	}
 	return c

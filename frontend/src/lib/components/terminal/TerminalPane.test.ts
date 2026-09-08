@@ -640,7 +640,7 @@ describe("TerminalPane", () => {
     expect(open).toHaveBeenCalledWith("https://example.com/docs", "_blank", "noopener,noreferrer");
   });
 
-  it("routes tracked repository item links through the app instead of a new tab", async () => {
+  it("opens configured repository item links synchronously in the browser", async () => {
     configuredRepos = [{ provider: "github", platform_host: "github.com" }];
     mockItemResolvePost.mockResolvedValue({ repo_tracked: true, item_type: "pr" });
     const open = vi.spyOn(window, "open").mockImplementation(() => null);
@@ -651,29 +651,8 @@ describe("TerminalPane", () => {
 
     activate(new MouseEvent("click", modifier), "https://github.com/acme/widgets/pull/1028");
 
-    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/pulls/github/acme/widgets/1028"));
-    expect(mockItemResolvePost).toHaveBeenCalledWith(
-      { provider: "github", owner: "acme", name: "widgets", number: 1028 },
-      undefined,
-      { signal: expect.any(AbortSignal) },
-    );
-    expect(open).not.toHaveBeenCalled();
-  });
-
-  it("opens item links for untracked repositories externally after resolving", async () => {
-    configuredRepos = [{ provider: "github", platform_host: "github.com" }];
-    mockItemResolvePost.mockResolvedValue({ repo_tracked: false });
-    const open = vi.spyOn(window, "open").mockImplementation(() => null);
-    render(TerminalPane, { props: { workspaceId: "ws-123" } });
-    await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());
-    const activate = xtermTerminalCtor.mock.calls[0]![0].linkHandler.activate;
-    const modifier = /Mac/.test(navigator.platform) ? { metaKey: true } : { ctrlKey: true };
-
-    activate(new MouseEvent("click", modifier), "https://github.com/other/repo/issues/7");
-
-    await waitFor(() =>
-      expect(open).toHaveBeenCalledWith("https://github.com/other/repo/issues/7", "_blank", "noopener,noreferrer"),
-    );
+    expect(open).toHaveBeenCalledWith("https://github.com/acme/widgets/pull/1028", "_blank", "noopener,noreferrer");
+    expect(mockItemResolvePost).not.toHaveBeenCalled();
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
@@ -691,7 +670,7 @@ describe("TerminalPane", () => {
     expect(mockItemResolvePost).not.toHaveBeenCalled();
   });
 
-  it("tells the user a hovered item link opens inside the app", async () => {
+  it("uses the same browser-opening hint for item links and other URLs", async () => {
     configuredRepos = [{ provider: "github", platform_host: "github.com" }];
     const view = render(TerminalPane, { props: { workspaceId: "ws-123" } });
     await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());
@@ -700,7 +679,7 @@ describe("TerminalPane", () => {
 
     linkHandler.hover(new MouseEvent("mouseover"), "https://github.com/acme/widgets/issues/3");
     await tick();
-    expect(view.getByText(`${modifier}+Click to open in kenn-forge`)).toBeTruthy();
+    expect(view.getByText(`${modifier}+Click to open link`)).toBeTruthy();
 
     linkHandler.hover(new MouseEvent("mouseover"), "https://github.com/acme/widgets/commit/abc");
     await tick();

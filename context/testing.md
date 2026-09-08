@@ -215,6 +215,10 @@ Vitest owns unhandled errors in the root runner, so `onUnhandledError` belongs
 in the root `test` config rather than a browser project; keep any ignored error
 exact by message and framework stack frame (`frontend/vite.config.ts:495`).
 
+A successful CI retry proves recovery, not a fix for an intermittent failure.
+Identify the cause or retain targeted diagnostics for the next occurrence;
+do not close the investigation solely because the rerun passed.
+
 Playwright CI uses the private image from `ensure_playwright_image`; keep its
 Playwright, Bun, and Vite+ pins in the recipe, cache only `/usr/local/install/cache`,
 and materialize `node_modules` from the lockfile before invoking baked `vp`

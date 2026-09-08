@@ -778,4 +778,25 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Run frontend browser tests
-        run: cd frontend && ../node_modules/.bin/vp test run --project browser
+        shell: bash
+        env:
+          # Record who closes the browser connection; the final RPC error alone
+          # cannot distinguish a renderer crash, optimizer reload, or teardown.
+          DEBUG: vitest:browser:*,pw:browser,vite:deps
+          VITEST_PW_DEBUG: "1"
+        run: |
+          report_memory() {
+            echo "::group::Browser test container memory"
+            for metric in memory.current memory.peak memory.max memory.events; do
+              if [ -r "/sys/fs/cgroup/$metric" ]; then
+                echo "$metric"
+                cat "/sys/fs/cgroup/$metric"
+              fi
+            done
+            echo "::endgroup::"
+          }
+          # Compare counters before/after, including when Vitest exits nonzero.
+          trap report_memory EXIT
+          report_memory
+          cd frontend
+          ../node_modules/.bin/vp test run --project browser

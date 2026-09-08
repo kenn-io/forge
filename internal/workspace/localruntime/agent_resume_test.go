@@ -16,39 +16,24 @@ func TestAgentResumeCommand(t *testing.T) {
 		{"pi", []string{"--session", "conversation"}},
 	} {
 		t.Run(tc.agent, func(t *testing.T) {
-			command, err := agentResumeCommand([]string{tc.agent, "--model", "model-a"}, tc.agent, "conversation")
+			command, err := agentResumeCommand([]string{"custom-worker", "--model", "model-a"}, tc.agent, "conversation")
 			require.NoError(t, err)
-			assert.Equal(t, append([]string{tc.agent, "--model", "model-a"}, tc.suffix...), command)
+			assert.Equal(t, append([]string{"custom-worker", "--model", "model-a"}, tc.suffix...), command)
 		})
 	}
 	_, err := agentResumeCommand([]string{"other"}, "other", "conversation")
 	require.Error(t, err)
 }
 
-func TestAgentResumeRejectsAmbiguousConfiguredArguments(t *testing.T) {
-	for _, tc := range []struct {
-		agent string
-		args  []string
-	}{
-		{"codex", []string{"--", "original prompt"}},
-		{"codex", []string{"exec", "original prompt"}},
-		{"codex", []string{"resume", "old-session"}},
-		{"codex", []string{"--model"}},
-		{"claude", []string{"original prompt"}},
-		{"claude", []string{"--resume=old-session"}},
-		{"claude", []string{"--continue"}},
-		{"pi", []string{"--session-id", "other-session"}},
-		{"pi", []string{"--", "original prompt"}},
-	} {
-		t.Run(tc.agent+"/"+tc.args[0], func(t *testing.T) {
-			_, err := agentResumeCommand(append([]string{tc.agent}, tc.args...), tc.agent, "saved-session")
-			require.Error(t, err)
-		})
-	}
-}
-
 func TestAgentResumePreservesCodexFullAuto(t *testing.T) {
 	command, err := agentResumeCommand([]string{"codex", "--full-auto", "--search"}, "codex", "saved-session")
 	require.NoError(t, err)
 	assert.Equal(t, []string{"codex", "--full-auto", "--search", "resume", "saved-session"}, command)
+}
+
+func TestAgentResumeRequiresConfiguredCommand(t *testing.T) {
+	for _, command := range [][]string{nil, {""}} {
+		_, err := agentResumeCommand(command, "codex", "saved-session")
+		require.Error(t, err)
+	}
 }

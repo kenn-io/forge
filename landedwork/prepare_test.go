@@ -35,16 +35,24 @@ func TestPrepareIncludesSideAncestry(t *testing.T) {
 }
 
 func TestAnalyzeMissingBoundaryAfterPreparation(t *testing.T) {
-	for _, mode := range []string{"loose", "commit-graph"} {
-		t.Run(mode, func(t *testing.T) {
-			f := buildFixture(t, true)
-			if mode == "commit-graph" {
+	for _, tc := range []struct {
+		method string
+		mode   string
+	}{
+		{"squash", "loose"},
+		{"squash", "commit-graph"},
+		{"merge", "loose"},
+		{"merge", "commit-graph"},
+	} {
+		t.Run(tc.method+"/"+tc.mode, func(t *testing.T) {
+			f := buildFixture(t, tc.method == "squash")
+			if tc.mode == "commit-graph" {
 				f.repo.Run("commit-graph", "write", "--reachable")
 			}
 			ctx, p := f.prepare(t)
 			// Remove only a loose object from this test-owned repository after preparing.
 			require.NoError(t, os.Remove(filepath.Join(f.repo.GitDir, "objects", f.base[:2], f.base[2:])))
-			r, err := landedwork.Analyze(ctx, p, fixtureEvidence(f, p, "squash"), fixtureLimits())
+			r, err := landedwork.Analyze(ctx, p, fixtureEvidence(f, p, tc.method), fixtureLimits())
 			require := require.New(t)
 			assert := assert.New(t)
 			require.NoError(err)
@@ -54,7 +62,7 @@ func TestAnalyzeMissingBoundaryAfterPreparation(t *testing.T) {
 			assert.Equal(f.bounds(), r.Coverage.Bounds)
 			require.NotEmpty(r.Coverage.Gaps)
 			assert.Equal("objects_unavailable", r.Coverage.Gaps[0].Reason)
-			if mode == "commit-graph" {
+			if tc.mode == "commit-graph" {
 				assert.Equal(f.base, r.Coverage.Gaps[0].ObjectID)
 			}
 		})

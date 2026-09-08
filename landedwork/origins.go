@@ -83,7 +83,7 @@ func resolveOrigins(ctx context.Context, v *objectView, p *Interval, candidates 
 			break
 		}
 	}
-	rejectOverlaps(r, p)
+	rejectOverlaps(r)
 	if !v.meter.failed {
 		for _, c := range offSpine {
 			if err := ctx.Err(); err != nil {
@@ -160,7 +160,7 @@ func integratedThrough(ctx context.Context, v *objectView, p *Interval, c Candid
 	return through, Gap{}
 }
 
-func rejectOverlaps(r *Result, p *Interval) {
+func rejectOverlaps(r *Result) {
 	owners := map[string]int{}
 	conflicts := map[int]bool{}
 	for i, l := range r.Landings {
@@ -175,7 +175,7 @@ func rejectOverlaps(r *Result, p *Interval) {
 	accepted := r.Landings[:0]
 	for i, l := range r.Landings {
 		if conflicts[i] {
-			r.Coverage.Gaps = append(r.Coverage.Gaps, Gap{CandidateID: l.CandidateID, ObjectID: l.Terminal, Reason: "candidate_conflict", Span: Span{Before: p.query.Bounds.Base, Through: l.Terminal}})
+			r.Coverage.Gaps = append(r.Coverage.Gaps, Gap{CandidateID: l.CandidateID, ObjectID: l.Terminal, Reason: "candidate_conflict", Span: Span{Before: l.Before, Through: l.Terminal}})
 		} else {
 			accepted = append(accepted, l)
 		}

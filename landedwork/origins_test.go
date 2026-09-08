@@ -200,7 +200,11 @@ func TestIntegratedMerges(t *testing.T) {
 func TestOriginOverlaps(t *testing.T) {
 	for _, reverse := range []bool{false, true} {
 		f := buildFixture(t, false)
-		f.head = f.source[1]
+		f.repo.Checkout("-b", "overlap", f.base)
+		direct := f.repo.CommitFile("other", "direct\n", "direct")
+		f.source = []string{f.repo.CommitFile("work.txt", "new\nkeep\n", "first")}
+		f.source = append(f.source, f.repo.CommitFile("work.txt", "new\nkeep\nlast\n", "last"))
+		f.head = f.repo.Head()
 		ctx, p := f.prepare(t)
 		e := fixtureEvidence(f, p, "fast_forward")
 		e.Capabilities.FastForward = true
@@ -218,10 +222,11 @@ func TestOriginOverlaps(t *testing.T) {
 		assert := assert.New(t)
 		assert.Empty(r.Landings)
 		assert.False(r.Coverage.Complete)
-		assert.Equal(f.base, r.Coverage.CertifiedHead)
+		assert.Equal(direct, r.Coverage.CertifiedHead)
 		require.Len(t, r.Coverage.Gaps, 2)
-		assert.Equal(landedwork.Span{Before: f.base, Through: f.head}, r.Coverage.Gaps[0].Span)
+		assert.Equal(landedwork.Span{Before: direct, Through: f.head}, r.Coverage.Gaps[0].Span)
 		assert.Equal("candidate_conflict", r.Coverage.Gaps[0].Reason)
+		assert.Equal([]landedwork.DirectPush{{Before: f.base, Terminal: direct, Introduced: []string{direct}}}, r.DirectPushes)
 	}
 }
 

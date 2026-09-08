@@ -52,6 +52,10 @@ Git's commit-graph can outlive commit objects; verify required commits physicall
 including each landing's first parent (`landedwork/git.go::parents`, `landedwork/proof.go::proveAt`).
 Rewritten ranges compare exact edit bytes, not whitespace-insensitive patch IDs;
 empty or duplicate rewritten edits stay unproven (`landedwork/range.go::rangeCorrespondence`).
+Offset-free text proof requires uniquely occurring removed bytes or a unique
+insertion neighborhood; repeated locations stay unproven (`landedwork/edits.go::fileEdits`).
+Overlap conflicts block the proven landing ranges, not unrelated earlier
+commits; unknown-start candidate gaps still block from the base (`landedwork/origins.go::rejectOverlaps`).
 
 Minimum provider checklist:
 

@@ -92,6 +92,34 @@ func TestRebaseOldSideNewline(t *testing.T) {
 	}
 }
 
+func TestRebaseRepeatedOccurrence(t *testing.T) {
+	for _, insertion := range []bool{false, true} {
+		f := buildFixture(t, false)
+		f.repo.Checkout("-b", "occurrence-source", f.base)
+		base := f.repo.CommitFile("text", "old\nkeep\nold\nkeep\n", "repeated text")
+		source, replay := "new\nkeep\nold\nkeep\n", "old\nkeep\nnew\nkeep\n"
+		if insertion {
+			source, replay = "old\nnew\nkeep\nold\nkeep\n", "old\nkeep\nold\nnew\nkeep\n"
+		}
+		f.source = []string{f.repo.CommitFile("text", source, "source")}
+		f.repo.Checkout("-b", "occurrence-replay", base)
+		f.base = f.repo.CommitFile("other", "unrelated\n", "advance")
+		f.head = f.repo.CommitFile("text", replay, "replay")
+		ctx, p := f.prepare(t)
+		e := fixtureEvidence(f, p, "rebase")
+		e.Capabilities.Rebase = true
+		r, err := landedwork.Analyze(ctx, p, e, fixtureLimits())
+		require := require.New(t)
+		assert := assert.New(t)
+		require.NoError(err)
+		assert.Empty(r.Landings)
+		assert.False(r.Coverage.Complete)
+		assert.Equal(f.base, r.Coverage.CertifiedHead)
+		require.Len(r.Coverage.Gaps, 1)
+		assert.Equal("edits_unavailable", r.Coverage.Gaps[0].Reason)
+	}
+}
+
 func TestRebaseDuplicateEdits(t *testing.T) {
 	f := buildFixture(t, false)
 	f.repo.Checkout("-b", "repeat-source", f.base)

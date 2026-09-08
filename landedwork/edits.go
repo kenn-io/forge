@@ -12,7 +12,15 @@ import (
 
 var errEdits = errors.New("edit correspondence unavailable")
 
-type editRun struct{ removed, added string }
+type editRun struct {
+	removed, added string
+	anchor         insertionAnchor
+}
+
+type insertionAnchor struct {
+	before, after  string
+	atStart, atEnd bool
+}
 type fileEdit struct {
 	path, oldMode, newMode, oldID, newID string
 	binary                               bool
@@ -99,6 +107,7 @@ func editMode(mode string) bool {
 }
 
 func (v *objectView) fileEdits(ctx context.Context, before, after string, f *fileEdit) error {
+	var old []byte
 	for _, side := range []struct{ mode, id string }{{f.oldMode, f.oldID}, {f.newMode, f.newID}} {
 		if side.mode == "000000" {
 			continue
@@ -113,6 +122,9 @@ func (v *objectView) fileEdits(ctx context.Context, before, after string, f *fil
 		}
 		if side.mode == "120000" || bytes.IndexByte(blob, 0) >= 0 {
 			f.binary = true
+		}
+		if side.id == f.oldID {
+			old = blob
 		}
 	}
 	if f.binary {
@@ -139,6 +151,17 @@ func (v *objectView) fileEdits(ctx context.Context, before, after string, f *fil
 		if err != nil {
 			return err
 		}
+		if run.removed != "" {
+			// Offset-free correspondence is valid only for a unique occurrence.
+			if !uniqueBytes(old, []byte(run.removed)) {
+				return errEdits
+			}
+		} else {
+			run.anchor, err = insertionSite(old, h.OrigStartLine)
+			if err != nil {
+				return err
+			}
+		}
 		f.runs = append(f.runs, run)
 	}
 	if f.oldID != f.newID && len(f.runs) == 0 {
@@ -148,6 +171,35 @@ func (v *objectView) fileEdits(ctx context.Context, before, after string, f *fil
 		}
 	}
 	return nil
+}
+
+func uniqueBytes(text, part []byte) bool {
+	i := bytes.Index(text, part)
+	return i >= 0 && i == bytes.LastIndex(text, part)
+}
+
+// An insertion has no removed bytes. Pin it to its adjacent original lines,
+// requiring that neighborhood to occur once, including file-edge identity.
+func insertionSite(old []byte, position int32) (insertionAnchor, error) {
+	lines := bytes.SplitAfter(old, []byte{'\n'})
+	if len(lines[len(lines)-1]) == 0 {
+		lines = lines[:len(lines)-1]
+	}
+	i := int(position)
+	if i < 0 || i > len(lines) {
+		return insertionAnchor{}, errEdits
+	}
+	a := insertionAnchor{atStart: i == 0, atEnd: i == len(lines)}
+	if i > 0 {
+		a.before = string(lines[i-1])
+	}
+	if i < len(lines) {
+		a.after = string(lines[i])
+	}
+	if len(old) > 0 && !uniqueBytes(old, []byte(a.before+a.after)) {
+		return insertionAnchor{}, errEdits
+	}
+	return a, nil
 }
 
 func editHunk(h *gitdiff.Hunk) (editRun, error) {

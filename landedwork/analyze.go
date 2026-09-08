@@ -25,6 +25,11 @@ func Analyze(ctx context.Context, p *Interval, e Evidence, limits Limits) (r Res
 			err = ctx.Err()
 		}
 		if err == nil {
+			for i := range r.Coverage.Gaps {
+				if r.Coverage.Gaps[i].Span == (Span{}) {
+					r.Coverage.Gaps[i].Span = fullSpan(p)
+				}
+			}
 			if p.query.Complete {
 				finishCoverage(&r, p)
 			}
@@ -61,22 +66,8 @@ func Analyze(ctx context.Context, p *Interval, e Evidence, limits Limits) (r Res
 		r.Coverage.Gaps = append(r.Coverage.Gaps, Gap{Reason: graphReason(shallowErr)})
 		return r, nil
 	}
-	terminals, ids := candidateCounts(e.Candidates)
-	candidates := slices.Clone(e.Candidates)
-	slices.SortFunc(candidates, func(a, b Candidate) int { return cmp.Compare(a.ID, b.ID) })
-	for _, c := range candidates {
-		if terminals[c.Terminal] > 1 || ids[c.ID] > 1 {
-			r.Coverage.Gaps = append(r.Coverage.Gaps, Gap{CandidateID: c.ID, ObjectID: c.Terminal, Reason: "candidate_conflict"})
-			continue
-		}
-		landing, gap := prove(ctx, v, p, c, e.Capabilities)
-		if gap.Reason != "" {
-			r.Coverage.Gaps = append(r.Coverage.Gaps, gap)
-		} else {
-			r.Landings = append(r.Landings, landing)
-		}
-	}
-	return r, nil
+	err = resolveOrigins(ctx, v, p, e.Candidates, e.Capabilities, &r)
+	return r, err
 }
 
 func candidateCounts(candidates []Candidate) (map[string]int, map[string]int) {
@@ -93,16 +84,17 @@ func candidateCounts(candidates []Candidate) (map[string]int, map[string]int) {
 func finishCoverage(r *Result, p *Interval) {
 	owners, positions := map[string]bool{}, map[string]int{}
 	for _, landing := range r.Landings {
-		owners[landing.Terminal] = true
-		if landing.Method == "rebase" || landing.Method == "fast_forward" {
-			for _, id := range landing.Introduced {
-				owners[id] = true
-			}
+		for _, id := range ownedSpine(landing) {
+			owners[id] = true
 		}
 	}
-	complete := len(r.Coverage.Gaps) == 0
+	blocked := blockedSpine(r, p)
+	complete := true
 	for index, id := range p.spine {
 		positions[id] = index
+		if blocked[id] {
+			complete = false
+		}
 		if !owners[id] {
 			r.Unattributed = append(r.Unattributed, id)
 			complete = false
@@ -111,7 +103,7 @@ func finishCoverage(r *Result, p *Interval) {
 			r.Coverage.CertifiedHead = id
 		}
 	}
-	r.Coverage.Complete = complete
+	r.Coverage.Complete = complete && len(r.Coverage.Gaps) == 0
 	slices.SortFunc(r.Landings, func(a, b Landing) int { return cmp.Compare(positions[a.Terminal], positions[b.Terminal]) })
 	slices.SortFunc(r.Coverage.Gaps, func(a, b Gap) int {
 		if n := cmp.Compare(a.CandidateID, b.CandidateID); n != 0 {
@@ -120,6 +112,12 @@ func finishCoverage(r *Result, p *Interval) {
 		if n := cmp.Compare(a.Reason, b.Reason); n != 0 {
 			return n
 		}
-		return cmp.Compare(a.ObjectID, b.ObjectID)
+		if n := cmp.Compare(a.ObjectID, b.ObjectID); n != 0 {
+			return n
+		}
+		if n := cmp.Compare(a.Span.Before, b.Span.Before); n != 0 {
+			return n
+		}
+		return cmp.Compare(a.Span.Through, b.Span.Through)
 	})
 }

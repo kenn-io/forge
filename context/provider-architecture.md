@@ -45,6 +45,8 @@ direct-push claims; generic squash proof does not establish any provider's
 squash capability (`landedwork/analyze.go::Analyze`).
 Git's commit-graph can outlive commit objects; verify required commits physically,
 including each landing's first parent (`landedwork/git.go::parents`, `landedwork/proof.go::prove`).
+Rewritten ranges compare exact edit bytes, not whitespace-insensitive patch IDs;
+empty or duplicate rewritten edits stay unproven (`landedwork/range.go::rangeCorrespondence`).
 
 Minimum provider checklist:
 

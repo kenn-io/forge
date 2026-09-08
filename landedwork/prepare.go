@@ -30,6 +30,9 @@ func Prepare(ctx context.Context, path string, bounds Bounds, limits Limits) (p 
 		if err != nil {
 			return
 		}
+		for i := range p.query.Gaps {
+			p.query.Gaps[i].Span = Span{Before: bounds.Base, Through: bounds.Head}
+		}
 		if err = checkQueryOutput(p.query, limits); err != nil {
 			p = nil
 		}

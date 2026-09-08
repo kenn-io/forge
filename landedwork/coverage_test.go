@@ -94,9 +94,9 @@ func TestAnalyzeCoverageNoCandidateAndConflict(t *testing.T) {
 			case "unattributed":
 				assert.Empty(r.Coverage.Gaps)
 			case "conflict":
-				assert.Equal([]landedwork.Gap{{CandidateID: "7", ObjectID: f.head, Reason: "candidate_conflict"}, {CandidateID: "8", ObjectID: f.head, Reason: "candidate_conflict"}}, r.Coverage.Gaps)
+				assert.Equal([]landedwork.Gap{{CandidateID: "7", ObjectID: f.head, Reason: "candidate_conflict", Span: landedwork.Span{Before: f.base, Through: f.head}}, {CandidateID: "8", ObjectID: f.head, Reason: "candidate_conflict", Span: landedwork.Span{Before: f.base, Through: f.head}}}, r.Coverage.Gaps)
 			case "rebase with merge":
-				assert.Equal([]landedwork.Gap{{CandidateID: "7", ObjectID: f.head, Reason: "method_unsupported"}}, r.Coverage.Gaps)
+				assert.Equal([]landedwork.Gap{{CandidateID: "7", ObjectID: f.head, Reason: "method_unsupported", Span: landedwork.Span{Before: f.base, Through: f.head}}}, r.Coverage.Gaps)
 			}
 		})
 	}

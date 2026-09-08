@@ -33,7 +33,7 @@ func TestAnalyzeSquashRequiresIndependentProof(t *testing.T) {
 			assert := assert.New(t)
 			assert.Empty(r.Landings)
 			assert.Equal(f.bounds(), r.Coverage.Bounds)
-			assert.Equal([]landedwork.Gap{{CandidateID: "7", ObjectID: f.head, Reason: reason}}, r.Coverage.Gaps)
+			assert.Equal([]landedwork.Gap{{CandidateID: "7", ObjectID: f.head, Reason: reason, Span: landedwork.Span{Before: f.base, Through: f.head}}}, r.Coverage.Gaps)
 			assert.Equal([]string{f.head}, r.Unattributed)
 			assert.False(r.Coverage.Complete)
 			assert.Equal(f.base, r.Coverage.CertifiedHead)

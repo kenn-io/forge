@@ -58,7 +58,7 @@ func TestAnalyzeMixedCoverage(t *testing.T) {
 				assert.False(r.Coverage.Complete)
 				assert.Equal(f.base, r.Coverage.CertifiedHead)
 				assert.Equal([]string{f.head}, r.Unattributed)
-				assert.Equal([]landedwork.Gap{{CandidateID: "8", ObjectID: f.head, Reason: "source_incomplete"}}, r.Coverage.Gaps)
+				assert.Equal([]landedwork.Gap{{CandidateID: "8", ObjectID: f.head, Reason: "source_incomplete", Span: landedwork.Span{Before: f.base, Through: f.head}}}, r.Coverage.Gaps)
 			case "unattributed":
 				assert.Len(r.Landings, 1)
 				assert.False(r.Coverage.Complete)
@@ -137,14 +137,14 @@ func TestAnalyzeBudgetPreservesPreparedGaps(t *testing.T) {
 	p, err := landedwork.Prepare(ctx, f.repo.Root, bounds, fixtureLimits())
 	require := require.New(t)
 	require.NoError(err)
-	expected := []landedwork.Gap{{ObjectID: bounds.Head, Reason: "objects_unavailable"}}
+	expected := []landedwork.Gap{{ObjectID: bounds.Head, Reason: "objects_unavailable", Span: landedwork.Span{Before: bounds.Base, Through: bounds.Head}}}
 	require.Equal(expected, p.Query().Gaps)
 	limits := fixtureLimits()
 	limits.InputBytes = 1
 	r, err := landedwork.Analyze(ctx, p, fixtureEvidence(f, p, "merge"), limits)
 	require.NoError(err)
 	assert := assert.New(t)
-	assert.Equal(append(expected, landedwork.Gap{Reason: "input_budget_exhausted"}), r.Coverage.Gaps)
+	assert.Equal(append(expected, landedwork.Gap{Reason: "input_budget_exhausted", Span: landedwork.Span{Before: bounds.Base, Through: bounds.Head}}), r.Coverage.Gaps)
 	assert.False(r.Coverage.Complete)
 	assert.Equal(bounds, r.Coverage.Bounds)
 	assert.Equal(bounds.Base, r.Coverage.CertifiedHead)

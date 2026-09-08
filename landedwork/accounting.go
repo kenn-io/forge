@@ -1,7 +1,9 @@
 package landedwork
 
 func repositoryBytes(r Repository) int64 { return int64(len(r.Provider) + len(r.Host) + len(r.ID)) }
-func gapBytes(g Gap) int64               { return int64(len(g.CandidateID) + len(g.ObjectID) + len(g.Reason)) }
+func gapBytes(g Gap) int64 {
+	return int64(len(g.CandidateID) + len(g.ObjectID) + len(g.Reason) + len(g.Span.Before) + len(g.Span.Through))
+}
 func stringBytes(ids []string) int64 {
 	var n int64
 	for _, id := range ids {

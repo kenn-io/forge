@@ -2,6 +2,7 @@ package landedwork
 
 import (
 	"context"
+	"errors"
 	"slices"
 )
 
@@ -43,10 +44,53 @@ func proveRange(ctx context.Context, v *objectView, p *Interval, c Candidate) (L
 				return reject("source_order_unproven")
 			}
 		}
-		if source != landed[i] {
+	}
+	if object, err := rangeCorrespondence(ctx, v, c, landed); err != nil {
+		gap.ObjectID = object
+		if errors.Is(err, errCorrespondence) {
 			return reject("source_correspondence_unproven")
 		}
+		if errors.Is(err, errEdits) {
+			return reject("edits_unavailable")
+		}
+		return reject(graphReason(err))
 	}
 	return Landing{CandidateID: c.ID, Method: c.Method, Before: before, Terminal: c.Terminal,
 		Source: slices.Clone(c.Source), Introduced: slices.Clone(landed)}, Gap{}
+}
+
+func rangeCorrespondence(ctx context.Context, v *objectView, c Candidate, landed []string) (string, error) {
+	var rewritten [][]fileEdit
+	for i, source := range c.Source {
+		if err := ctx.Err(); err != nil {
+			return source, err
+		}
+		if source == landed[i] {
+			continue
+		}
+		if c.Method == "fast_forward" {
+			return source, errCorrespondence
+		}
+		a, err := v.commitEdits(ctx, source)
+		if err != nil {
+			return source, err
+		}
+		b, err := v.commitEdits(ctx, landed[i])
+		if err != nil {
+			return landed[i], err
+		}
+		if len(a) == 0 || !sameEdits(a, b) {
+			return source, errCorrespondence
+		}
+		for _, previous := range rewritten {
+			if err := ctx.Err(); err != nil {
+				return source, err
+			}
+			if sameEdits(previous, a) {
+				return source, errCorrespondence
+			}
+		}
+		rewritten = append(rewritten, a)
+	}
+	return "", nil
 }

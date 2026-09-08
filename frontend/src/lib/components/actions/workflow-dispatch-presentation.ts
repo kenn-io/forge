@@ -11,6 +11,7 @@ export type WorkflowDispatchPresentationState =
   | { readonly kind: "pending" }
   | { readonly kind: "locating" }
   | { readonly kind: "succeeded"; readonly run?: WorkflowRun; readonly message?: string }
+  | { readonly kind: "timed_out"; readonly run?: WorkflowRun; readonly message: string }
   | { readonly kind: "failed"; readonly message: string }
   | { readonly kind: "uncertain"; readonly message: string }
   | { readonly kind: "conflict"; readonly reloadError?: string };
@@ -40,6 +41,13 @@ export function workflowDispatchPresentation(
       return { kind: "locating" };
     case "succeeded":
       return dispatch.run === undefined ? { kind: "succeeded" } : { kind: "succeeded", run: dispatch.run };
+    case "timed_out":
+      return {
+        kind: "timed_out",
+        ...(dispatch.run !== undefined && { run: dispatch.run }),
+        message:
+          "Forge stopped tracking this run after 30 minutes. Its latest status could not be confirmed. Check the run on GitHub.",
+      };
     case "unresolved":
       return { kind: "succeeded", message: "The provider accepted the workflow, but its run was not observed." };
     case "uncertain":

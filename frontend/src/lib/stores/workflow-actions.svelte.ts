@@ -41,6 +41,7 @@ export interface WorkflowDispatchInput {
 export type WorkflowDispatchState =
   | { readonly kind: "pending" }
   | { readonly kind: "locating"; readonly dispatchId: string }
+  | { readonly kind: "timed_out"; readonly dispatchId: string; readonly run?: WorkflowRun }
   | { readonly kind: "succeeded"; readonly dispatchId: string; readonly run?: WorkflowRun }
   | { readonly kind: "unresolved"; readonly dispatchId: string }
   | { readonly kind: "failed"; readonly error: WorkflowActionsError }
@@ -323,7 +324,7 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
             if (snapshot.selectedWorkflow?.id !== workflowId) return snapshot;
             const items = page.items ?? [];
             const cycle = snapshot.dispatches[workflowId];
-            const retainedRun = cycle?.kind === "succeeded" ? cycle.run : undefined;
+            const retainedRun = cycle?.kind === "succeeded" || cycle?.kind === "timed_out" ? cycle.run : undefined;
             return {
               ...snapshot,
               runs:
@@ -496,7 +497,11 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
         const state: WorkflowDispatchState =
           event.status === "unresolved"
             ? { kind: "unresolved", dispatchId: event.dispatch_id }
-            : { kind: "succeeded", dispatchId: event.dispatch_id, ...(run !== undefined && { run }) };
+            : {
+                kind: event.status === "timed_out" ? "timed_out" : "succeeded",
+                dispatchId: event.dispatch_id,
+                ...(run !== undefined && { run }),
+              };
         dispatches = { ...current.dispatches, [event.workflow_id]: state };
       }
       return { ...current, runs, dispatches };

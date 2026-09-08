@@ -489,7 +489,7 @@ describe("WorkflowDispatchForm", () => {
     expect(onsubmit).toHaveBeenCalledWith({ ref: "trunk", inputs: {} });
   });
 
-  it("announces locating and renders concrete accepted run details without a running submit label", async () => {
+  it.each(["succeeded", "timed_out"] as const)("renders %s with the known run and provider link", async (kind) => {
     const props = {
       workflow: workflow(),
       environments,
@@ -507,7 +507,8 @@ describe("WorkflowDispatchForm", () => {
     await view.rerender({
       ...props,
       state: {
-        kind: "succeeded",
+        kind,
+        ...(kind === "timed_out" && { message: "Forge stopped tracking this run after 30 minutes." }),
         run: {
           actor: "maintainer",
           conclusion: "",
@@ -523,6 +524,10 @@ describe("WorkflowDispatchForm", () => {
         },
       } as const,
     });
+    if (kind === "timed_out") {
+      expect(screen.getByRole("alert").textContent).toContain("stopped tracking");
+      expect(screen.getByText("queued")).toBeTruthy();
+    }
     expect(screen.getByText("run-42")).toBeTruthy();
     expect(screen.getByText("0123456789abcdef")).toBeTruthy();
     expect(screen.getByRole("link", { name: "Open accepted run on provider" }).getAttribute("href")).toBe(

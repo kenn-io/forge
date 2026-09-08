@@ -109,7 +109,7 @@ export class WorkflowDispatchProgressEvent extends Schema.Class<WorkflowDispatch
   name: Schema.String,
   workflow_id: Schema.String,
   dispatch_id: Schema.String,
-  status: Schema.Literals(["located", "updated", "unresolved"]),
+  status: Schema.Literals(["located", "updated", "unresolved", "timed_out"]),
   run: Schema.optionalKey(Schema.Unknown),
 }) {}
 

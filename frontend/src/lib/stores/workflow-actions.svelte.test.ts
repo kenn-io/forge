@@ -80,7 +80,7 @@ function routes(fixture: Fixture): MockRouteOverride {
 }
 
 function progress(
-  status: "located" | "updated" | "unresolved",
+  status: "located" | "updated" | "unresolved" | "timed_out",
   dispatchId: string,
   runPayload?: ReturnType<typeof run>,
 ): WorkflowDispatchProgressEvent {
@@ -362,6 +362,26 @@ describe("workflow actions store", () => {
       dispatchId: "dispatch-1",
       run: run("run-new", "in_progress"),
     });
+  });
+
+  it("retains the last known run when tracking times out", async () => {
+    store.loadCatalog(ref);
+    await settle();
+    store.selectWorkflow(ref, "deploy.yml");
+    await settle();
+    store.dispatch({
+      ref,
+      workflowId: "deploy.yml",
+      expectedDefinitionSha: "definition-1",
+      dispatchRef: "main",
+      inputs: {},
+    });
+    await settle();
+    const lastRun = run("run-new", "in_progress");
+    store.applyDispatchProgress(progress("located", "dispatch-1", lastRun));
+    store.applyDispatchProgress(progress("timed_out", "dispatch-1", lastRun));
+    expect(store.getDispatch(ref, "deploy.yml")).toEqual({ kind: "timed_out", dispatchId: "dispatch-1", run: lastRun });
+    expect(store.getRuns(ref)[0]).toEqual(lastRun);
   });
 
   it("reports an unresolved dispatch and ignores progress for other dispatches or repositories", async () => {

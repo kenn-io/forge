@@ -20,6 +20,7 @@ const (
 	dispatchStatusLocated    = "located"
 	dispatchStatusUpdated    = "updated"
 	dispatchStatusUnresolved = "unresolved"
+	dispatchStatusTimedOut   = "timed_out"
 )
 
 // WorkflowDispatchProgressPayload is the data of a workflow_dispatch_progress event.
@@ -105,6 +106,9 @@ func (h *Handler) followDispatch(ctx context.Context, follow dispatchFollow) {
 		if isTerminalRun(current) {
 			return
 		}
+	}
+	if ctx.Err() == nil {
+		h.publishProgress(follow, dispatchStatusTimedOut, &run)
 	}
 }
 

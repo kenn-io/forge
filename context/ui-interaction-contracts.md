@@ -289,6 +289,9 @@ Persisted controls must state their scope clearly.
   `workflow_dispatch_progress` event, and later events update it in place; the
   list is otherwise refreshed only by user action
   (`frontend/src/lib/stores/workflow-actions.svelte.ts::applyDispatchProgress`).
+- Workflow tracking expiry is not workflow failure: preserve the last known run and provider link,
+  and report that tracking stopped without claiming a final provider outcome
+  (`internal/server/workflowapi/dispatch_follow.go::Handler.followDispatch`).
 - PR Actions defaults open same-repository pulls to the head branch, but forks
   and non-open states to the target; workflows remain on merged pulls
   (`frontend/src/lib/components/detail/PullDetail.svelte::workflowInitialRef`).

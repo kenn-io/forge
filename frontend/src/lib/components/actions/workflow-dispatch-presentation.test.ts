@@ -67,6 +67,7 @@ function snapshot(dispatch?: WorkflowDispatchState): WorkflowActionsSnapshot {
     runs: [],
     runsPage: { nextCursor: null, exhausted: true, loadingMore: false },
     jobs: {},
+    jobErrors: {},
     loading: { catalog: false, runs: false, jobs: [] },
     dispatches: dispatch ? { "deploy.yml": dispatch } : {},
     catalogRefreshErrors: {},
@@ -88,6 +89,15 @@ describe("workflow dispatch presentation", () => {
     expect(workflowDispatchPresentation(snapshot({ kind: "succeeded", dispatchId: "d1", run }), "deploy.yml")).toEqual({
       kind: "succeeded",
       run,
+    });
+  });
+
+  it("distinguishes a tracking timeout from a failed workflow", () => {
+    expect(workflowDispatchPresentation(snapshot({ kind: "timed_out", dispatchId: "d1", run }), "deploy.yml")).toEqual({
+      kind: "timed_out",
+      run,
+      message:
+        "Forge stopped tracking this run after 30 minutes. Its latest status could not be confirmed. Check the run on GitHub.",
     });
   });
 

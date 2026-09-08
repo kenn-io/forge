@@ -193,15 +193,16 @@
       <h2>{workflow.name}</h2>
       <p class="notice" role="status" aria-live="polite">Locating run…</p>
     </div>
-  {:else if presentation.kind === "succeeded"}
+  {:else if presentation.kind === "succeeded" || presentation.kind === "timed_out"}
     <div class="dispatch-outcome">
       <h2>{workflow.name}</h2>
-      <p class="notice notice--success" role="status">
+      <p class:notice--error={presentation.kind === "timed_out"} class:notice--success={presentation.kind === "succeeded"} class="notice" role={presentation.kind === "timed_out" ? "alert" : "status"}>
         {presentation.message ?? "Workflow accepted."}
       </p>
       {#if presentation.run}
         <dl class="run-details">
           <div><dt>Run ID</dt><dd>{presentation.run.id}</dd></div>
+          {#if presentation.kind === "timed_out" && presentation.run.status}<div><dt>Last known status</dt><dd>{presentation.run.status}</dd></div>{/if}
           {#if presentation.run.head_sha}<div><dt>Head SHA</dt><dd><code>{presentation.run.head_sha}</code></dd></div>{/if}
         </dl>
         {#if presentation.run.web_url && isSafeExternalHTTPURL(presentation.run.web_url)}

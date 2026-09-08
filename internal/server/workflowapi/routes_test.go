@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -17,9 +18,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
-	"go.kenn.io/forge/platform"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/platform"
 )
 
 type workflowTestProvider struct {
@@ -625,6 +626,58 @@ func TestWorkflowDispatchFollowThroughWatchesReturnedRunID(t *testing.T) {
 			assert.Equal("success", events[2].Run.Conclusion)
 			assert.Equal([]string{"scheduled-run", "scheduled-run", "scheduled-run"}, provider.runIDs)
 			assert.Empty(provider.runQueries)
+		})
+	}
+}
+
+func TestWorkflowDispatchFollowThroughProviderOutage(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		cancel       bool
+		wantStatuses []string
+	}{
+		{name: "timeout", wantStatuses: []string{"located", "updated", "timed_out"}},
+		{name: "cancellation", cancel: true, wantStatuses: []string{"located", "updated"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				assert := assert.New(t)
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				run := platform.WorkflowRun{
+					ID: "scheduled-run", WorkflowID: "release.yml", Status: "queued",
+					WebURL: "https://github.com/acme/widget/actions/runs/42",
+				}
+				provider := &workflowTestProvider{followRun: func(call int) (platform.WorkflowRun, error) {
+					if call == 1 {
+						current := run
+						current.Status = "in_progress"
+						return current, nil
+					}
+					if test.cancel {
+						cancel()
+					}
+					return platform.WorkflowRun{}, errors.New("provider unavailable")
+				}}
+				handler := New(Deps{Runtime: &workflowTestRuntime{}})
+				handler.followDispatch(ctx, dispatchFollow{
+					reader: provider, result: platform.WorkflowDispatchResult{Run: &run}, dispatchID: "dispatch-1",
+				})
+				events := publishedDispatchEvents(handler)
+				statuses := make([]string, 0, len(events))
+				for _, event := range events {
+					statuses = append(statuses, event.Status)
+				}
+				assert.Equal(test.wantStatuses, statuses)
+				require.NotEmpty(t, events)
+				last := events[len(events)-1]
+				require.NotNil(t, last.Run)
+				assert.Equal("dispatch-1", last.DispatchID)
+				assert.Equal(run.ID, last.Run.ID)
+				assert.Equal(run.WebURL, last.Run.WebURL)
+				assert.Equal("in_progress", last.Run.Status)
+				assert.Empty(last.Run.Conclusion)
+			})
 		})
 	}
 }

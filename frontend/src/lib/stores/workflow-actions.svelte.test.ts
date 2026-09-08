@@ -236,6 +236,50 @@ describe("workflow actions store", () => {
     },
   );
 
+  it("retains the dispatched run when an older first page finishes afterward", async () => {
+    const pageReady = Promise.withResolvers<void>();
+    globalThis.fetch = async (input, init) => {
+      const response = await api.fetch(input, init);
+      const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
+      if (url.pathname.endsWith("/runs")) await pageReady.promise;
+      return response;
+    };
+    fixture.dispatchResponse = () =>
+      jsonResponse(
+        {
+          accepted: true,
+          dispatch_id: "dispatch-1",
+          actor: "maintainer",
+          run: run("run-new", "queued"),
+        },
+        202,
+      );
+    store.loadCatalog(ref);
+    await settle();
+    store.selectWorkflow(ref, "deploy.yml");
+    await settle();
+    expect(store.getLoading(ref).runs).toBe(true);
+
+    store.dispatch({
+      ref,
+      workflowId: "deploy.yml",
+      expectedDefinitionSha: "definition-1",
+      dispatchRef: "main",
+      inputs: {},
+    });
+    await settle();
+    store.applyDispatchProgress(progress("updated", "dispatch-1", run("run-new", "completed", "success")));
+    expect(store.getRuns(ref)).toEqual([run("run-new", "completed", "success")]);
+
+    pageReady.resolve();
+    await settle();
+    expect(store.getLoading(ref).runs).toBe(false);
+    expect(store.getRuns(ref)).toEqual([
+      run("run-new", "completed", "success"),
+      run("run-old", "completed", "success"),
+    ]);
+  });
+
   it("keeps the listed run when the response names only an id and applies progress that arrived first", async () => {
     fixture.dispatchResponse = () =>
       jsonResponse(

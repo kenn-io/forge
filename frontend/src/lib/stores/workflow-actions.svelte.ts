@@ -320,11 +320,15 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
           update(ref, (snapshot) => {
             if (snapshot.selectedWorkflow?.id !== workflowId) return snapshot;
             const items = page.items ?? [];
+            const cycle = snapshot.dispatches[workflowId];
+            const retainedRun = cycle?.kind === "succeeded" ? cycle.run : undefined;
             return {
               ...snapshot,
               runs:
                 cursor === undefined
-                  ? items
+                  ? retainedRun
+                    ? mergeNamedRun(items, retainedRun).runs
+                    : items
                   : [...snapshot.runs, ...items.filter((item) => !snapshot.runs.some((run) => run.id === item.id))],
               runsPage: { nextCursor: page.next_cursor ?? null, exhausted: page.exhausted, loadingMore: false },
               loading: { ...snapshot.loading, runs: false },

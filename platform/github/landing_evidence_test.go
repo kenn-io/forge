@@ -27,7 +27,7 @@ func TestLandingEvidencePages(t *testing.T) {
 		switch r.URL.Path {
 		case "/repos/example/project/commits/" + sha + "/pulls":
 			assert.Equal("100", r.URL.Query().Get("per_page"))
-			body = `[{"id":7,"number":3}]`
+			body = `[{"id":7,"number":3,"base":{"repo":{"id":12}}}]`
 			if r.URL.Query().Get("page") == "1" {
 				header.Set("Link", fmt.Sprintf(`<https://api.github.com%s?page=2&per_page=100>; rel="next"`, r.URL.Path))
 			}

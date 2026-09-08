@@ -120,7 +120,7 @@ func (c *Client) ListLandingAssociations(ctx context.Context, ref platform.RepoR
 	}
 	items := make([]platform.LandingChangeRef, 0, len(prs))
 	for _, pr := range prs {
-		items = append(items, platform.LandingChangeRef{ID: pr.GetID(), Number: pr.GetNumber()})
+		items = append(items, platform.LandingChangeRef{ID: pr.GetID(), Number: pr.GetNumber(), TargetID: pr.GetBase().GetRepo().GetID()})
 	}
 	return landingPageResult(items, resp, state)
 }
@@ -135,7 +135,7 @@ func (c *Client) GetLandingChange(ctx context.Context, ref platform.RepoRef, cha
 	if err != nil {
 		return platform.LandingChange{}, err
 	}
-	if pr.GetID() != change.ID || pr.GetNumber() != change.Number || pr.GetBase().GetRepo().GetID() <= 0 {
+	if pr.GetID() != change.ID || pr.GetNumber() != change.Number {
 		return platform.LandingChange{}, platform.ErrLandingIdentityMismatch
 	}
 	d := platform.LandingChange{Ref: change, TargetID: pr.GetBase().GetRepo().GetID(), TargetBranch: pr.GetBase().GetRef(), Merged: pr.Merged, MergeSHA: pr.MergeCommitSHA}

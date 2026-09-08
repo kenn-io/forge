@@ -9,6 +9,9 @@ import (
 type LandingChangeRef struct {
 	ID     int64
 	Number int
+	// TargetID is the observed base repository, not necessarily the queried
+	// repository. Zero means the association did not establish its target.
+	TargetID int64
 }
 
 // LandingSourcePolicy describes the provider's source-list completeness proof.

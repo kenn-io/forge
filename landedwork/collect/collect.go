@@ -21,6 +21,9 @@ type Observation struct {
 	Source         []string
 	SourceComplete bool
 	Reason         string
+	// FailureStage names association, detail, source, or detail_recheck.
+	// NextPage is a diagnostic source cursor, not a resumable collection token.
+	FailureStage, NextPage string
 }
 
 type Result struct {
@@ -40,6 +43,8 @@ type collector struct {
 // Collect sweeps every queried commit and preserves unfinished candidates.
 // Invalid input, identity mismatch, cancellation, or output overflow yields no
 // result. Other failures return incomplete inventory, never proven absence.
+// Inventory.NextCommit/NextPage describe association-sweep failures only;
+// observation failures have their own stage and page. Neither supports resume.
 func Collect(ctx context.Context, reader platform.LandingEvidenceReader, route platform.RepoRef, query landedwork.Query, limits Limits) (result Result, err error) {
 	if err = validate(ctx, reader, route, query, limits); err != nil {
 		return Result{}, err
@@ -92,7 +97,18 @@ func Collect(ctx context.Context, reader platform.LandingEvidenceReader, route p
 	}
 	slices.Sort(ids)
 	for _, id := range ids {
-		observation := Observation{Change: platform.LandingChange{Ref: c.refs[id]}}
+		ref := c.refs[id]
+		observation := Observation{Change: platform.LandingChange{Ref: ref, TargetID: ref.TargetID}}
+		if ref.TargetID > 0 && strconv.FormatInt(ref.TargetID, 10) != query.Bounds.Repository.ID {
+			// Network-wide associations do not establish local PR absence.
+			observation.Reason, observation.FailureStage = "foreign_repository", "association"
+			c.result.Observations = append(c.result.Observations, observation)
+			c.stop("ambiguous_absence", "", "")
+			continue
+		}
+		if ref.TargetID <= 0 {
+			observation = c.incomplete(observation, "invalid_observation", "association", "")
+		}
 		if c.result.Evidence.Inventory.Reason == "" {
 			if observation, err = c.observe(ctx, c.refs[id], support.Sources); err != nil {
 				return Result{}, err

@@ -23,7 +23,7 @@ import (
 func TestMain(m *testing.M) { os.Exit(gitsafe.RunIsolatedMain(m)) }
 
 func TestGitHubCollectionAnalysis(t *testing.T) {
-	for _, mode := range []string{"merge", "no associations", "failed page", "changed detail", "one parent"} {
+	for _, mode := range []string{"merge", "no associations", "failed page", "changed detail", "one parent", "foreign association", "missing base"} {
 		t.Run(mode, func(t *testing.T) {
 			assert, require := assert.New(t), require.New(t)
 			r := gittest.NewRepo(t, gittest.Options{InitArgs: []string{"init", "-b", "main"}, ConfigureUser: true})
@@ -53,7 +53,10 @@ func TestGitHubCollectionAnalysis(t *testing.T) {
 				case req.URL.Path == "/repos/example/project":
 					body = `{"id":12,"name":"project","owner":{"login":"example"}}`
 				case strings.HasSuffix(req.URL.Path, "/pulls"):
-					body = `[{"id":7,"number":3}]`
+					body = `[{"id":7,"number":3,"base":{"repo":{"id":12}}}]`
+					if mode == "foreign association" {
+						body = `[{"id":8,"number":3,"base":{"repo":{"id":99}}}]`
+					}
 					if mode == "no associations" {
 						body = `[]`
 					}
@@ -72,6 +75,9 @@ func TestGitHubCollectionAnalysis(t *testing.T) {
 						count = 2
 					}
 					body = fmt.Sprintf(`{"id":7,"number":3,"merged":true,"merge_commit_sha":%q,"commits":%d,"base":{"ref":"main","repo":{"id":12}},"head":{"sha":%q,"repo":{"id":12}}}`, head, count, source)
+					if mode == "missing base" {
+						body = `{"id":7,"number":3,"merged":true}`
+					}
 				case req.URL.Path == "/repos/example/project/pulls/3/commits":
 					body = fmt.Sprintf(`[{"sha":%q}]`, source)
 				default:
@@ -85,6 +91,17 @@ func TestGitHubCollectionAnalysis(t *testing.T) {
 			require.NoError(err)
 			collected, err := collect.Collect(ctx, reader, route, prepared.Query(), limits)
 			require.NoError(err)
+			if mode == "foreign association" {
+				assert.Zero(details, "foreign PR numbers must not be fetched in the local repository")
+				assert.Empty(collected.Evidence.Candidates)
+				require.Len(collected.Observations, 1)
+				assert.Equal("foreign_repository", collected.Observations[0].Reason)
+				assert.Equal("ambiguous_absence", collected.Evidence.Inventory.Reason)
+			}
+			if mode == "missing base" {
+				require.Len(collected.Evidence.Candidates, 1)
+				assert.Equal("invalid_observation", collected.Evidence.Inventory.Reason)
+			}
 			analysis, err := landedwork.Analyze(ctx, prepared, collected.Evidence, analysisLimits)
 			require.NoError(err)
 			switch mode {

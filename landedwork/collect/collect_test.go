@@ -67,7 +67,7 @@ func (s *script) ListLandingAssociations(_ context.Context, r platform.RepoRef, 
 	return v.(platform.Page[platform.LandingChangeRef]), nil
 }
 func (s *script) GetLandingChange(_ context.Context, _ platform.RepoRef, ref platform.LandingChangeRef) (platform.LandingChange, error) {
-	require.Equal(s.t, platform.LandingChangeRef{ID: 7, Number: 3}, ref)
+	require.Equal(s.t, platform.LandingChangeRef{ID: 7, Number: 3, TargetID: 12}, ref)
 	v, err := s.next("detail")
 	if err != nil {
 		return platform.LandingChange{}, err
@@ -75,7 +75,7 @@ func (s *script) GetLandingChange(_ context.Context, _ platform.RepoRef, ref pla
 	return v.(platform.LandingChange), nil
 }
 func (s *script) ListLandingSource(_ context.Context, _ platform.RepoRef, ref platform.LandingChangeRef, cursor string) (platform.Page[string], error) {
-	require.Equal(s.t, platform.LandingChangeRef{ID: 7, Number: 3}, ref)
+	require.Equal(s.t, platform.LandingChangeRef{ID: 7, Number: 3, TargetID: 12}, ref)
 	v, err := s.next("source/" + cursor)
 	if err != nil {
 		return platform.Page[string]{}, err
@@ -85,11 +85,11 @@ func (s *script) ListLandingSource(_ context.Context, _ platform.RepoRef, ref pl
 
 func mergedScript(t *testing.T) *script {
 	t.Helper()
-	detail := platform.LandingChange{Ref: platform.LandingChangeRef{ID: 7, Number: 3}, TargetID: 12, TargetBranch: "main", Merged: new(true), MergeSHA: new(head), SourceHead: new(source), SourceCount: new(int64(1)), Terminal: head, TerminalEvidence: "merged_commit_sha"}
+	detail := platform.LandingChange{Ref: platform.LandingChangeRef{ID: 7, Number: 3, TargetID: 12}, TargetID: 12, TargetBranch: "main", Merged: new(true), MergeSHA: new(head), SourceHead: new(source), SourceCount: new(int64(1)), Terminal: head, TerminalEvidence: "merged_commit_sha"}
 	s := &script{t: t, policy: platform.LandingSourcePolicy{RequireCount: true, MaxCommits: 250}, steps: []step{
 		{key: "repository", value: platform.Repository{Ref: route, PlatformID: 12}},
-		{key: "association/" + head + "/", value: platform.Page[platform.LandingChangeRef]{Items: []platform.LandingChangeRef{{ID: 7, Number: 3}}, NextCursor: "next"}},
-		{key: "association/" + head + "/next", value: platform.Page[platform.LandingChangeRef]{Items: []platform.LandingChangeRef{{ID: 7, Number: 3}}, Exhausted: true}},
+		{key: "association/" + head + "/", value: platform.Page[platform.LandingChangeRef]{Items: []platform.LandingChangeRef{{ID: 7, Number: 3, TargetID: 12}}, NextCursor: "next"}},
+		{key: "association/" + head + "/next", value: platform.Page[platform.LandingChangeRef]{Items: []platform.LandingChangeRef{{ID: 7, Number: 3, TargetID: 12}}, Exhausted: true}},
 		{key: "association/" + source + "/", value: platform.Page[platform.LandingChangeRef]{Exhausted: true}},
 		{key: "detail", value: detail},
 		{key: "source/", value: platform.Page[string]{Items: []string{source}, Exhausted: true}},
@@ -199,6 +199,8 @@ func TestCollectSourceProof(t *testing.T) {
 			require.Len(t, got.Evidence.Candidates, 1)
 			assert.Equal(tc.reason == "", got.Evidence.Candidates[0].SourceComplete)
 			assert.Equal(tc.reason == "", got.Evidence.Inventory.Complete)
+			assert.Empty(got.Evidence.Inventory.NextCommit, "candidate failures are not association sweep positions")
+			assert.Empty(got.Evidence.Inventory.NextPage, "source cursors are not association cursors")
 		})
 	}
 }
@@ -227,6 +229,77 @@ func TestCollectLimitsAndFailures(t *testing.T) {
 			assert.Equal(tc.reason, got.Evidence.Inventory.Reason)
 			assert.False(got.Evidence.Inventory.Complete)
 			assert.Equal(head, got.Evidence.Inventory.NextCommit)
+		})
+	}
+}
+
+func TestCollectObservationFailureLocation(t *testing.T) {
+	for _, tc := range []struct {
+		name, stage, page string
+		index             int
+	}{
+		{"first detail", "detail", "", 4},
+		{"source continuation", "source", "next", 6},
+		{"detail recheck", "detail_recheck", "", 6},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+			defer cancel()
+			s := mergedScript(t)
+			key := "detail"
+			if tc.stage == "source" {
+				s.steps[5].value = platform.Page[string]{Items: []string{source}, NextCursor: "next"}
+				key = "source/next"
+			}
+			s.steps[tc.index] = step{key: key, err: errors.New("unavailable")}
+			s.steps = s.steps[:tc.index+1]
+			got, err := collect.Collect(ctx, s, route, query, limits)
+			require.NoError(t, err)
+			require.Len(t, got.Observations, 1)
+			assert := assert.New(t)
+			assert.False(got.Evidence.Inventory.Complete)
+			assert.Empty(got.Evidence.Inventory.NextCommit)
+			assert.Empty(got.Evidence.Inventory.NextPage)
+			assert.Equal(int64(7), got.Observations[0].Change.Ref.ID)
+			assert.Equal("request_failed", got.Observations[0].Reason)
+			assert.Equal(tc.stage, got.Observations[0].FailureStage)
+			assert.Equal(tc.page, got.Observations[0].NextPage)
+		})
+	}
+}
+
+func TestCollectTargetIdentity(t *testing.T) {
+	for _, tc := range []struct {
+		name, stage string
+		index       int
+		target      int64
+	}{
+		{"missing detail target", "detail", 4, 0},
+		{"missing recheck target", "detail_recheck", 6, 0},
+		{"conflicting detail target", "detail", 4, 99},
+		{"conflicting recheck target", "detail_recheck", 6, 99},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert, require := assert.New(t), require.New(t)
+			ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+			defer cancel()
+			s := mergedScript(t)
+			d := s.steps[tc.index].value.(platform.LandingChange)
+			d.TargetID = tc.target
+			s.steps[tc.index].value = d
+			s.steps = s.steps[:tc.index+1]
+			got, err := collect.Collect(ctx, s, route, query, limits)
+			if tc.target != 0 {
+				require.ErrorIs(err, platform.ErrLandingIdentityMismatch)
+				assert.Equal(collect.Result{}, got)
+				return
+			}
+			require.NoError(err)
+			require.Len(got.Evidence.Candidates, 1)
+			require.Len(got.Observations, 1)
+			assert.False(got.Evidence.Inventory.Complete)
+			assert.Equal("invalid_observation", got.Observations[0].Reason)
+			assert.Equal(tc.stage, got.Observations[0].FailureStage)
 		})
 	}
 }

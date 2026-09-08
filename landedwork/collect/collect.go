@@ -13,7 +13,8 @@ import (
 )
 
 // Limits are positive per-invocation maxima. Calls count reader invocations,
-// not HTTP attempts. OutputBytes counts each retained occurrence of a string.
+// not HTTP attempts. Records includes all query commits and gaps, charged once
+// before collection. OutputBytes counts each retained occurrence of a string.
 type Limits struct{ Calls, Records, OutputBytes int64 }
 
 type Observation struct {
@@ -52,6 +53,7 @@ func Collect(ctx context.Context, reader platform.LandingEvidenceReader, route p
 	query.Commits, query.Gaps = slices.Clone(query.Commits), slices.Clone(query.Gaps)
 	support := reader.LandingEvidenceSupport()
 	c := collector{reader: reader, route: route, remaining: limits, refs: make(map[int64]platform.LandingChangeRef), result: Result{Evidence: landedwork.Evidence{Query: query, Inventory: landedwork.Inventory{Supported: support.Inventory}, Capabilities: landedwork.Capabilities{Merge: support.OrdinaryMerge}}}}
+	c.remaining.Records -= int64(len(query.Commits)) + int64(len(query.Gaps))
 	defer func() {
 		if c.fatal != nil {
 			err = c.fatal
@@ -74,7 +76,7 @@ func Collect(ctx context.Context, reader platform.LandingEvidenceReader, route p
 		c.stop("unsupported_discovery", "", "")
 		return c.result, nil
 	}
-	if !c.records(int64(len(query.Gaps))) || !c.call() {
+	if !c.call() {
 		c.stop("exhausted_limits", "", "")
 		return c.result, nil
 	}
@@ -126,10 +128,6 @@ func Collect(ctx context.Context, reader platform.LandingEvidenceReader, route p
 
 func (c *collector) sweep(ctx context.Context, commits []string) {
 	for _, sha := range commits {
-		if !c.records(1) {
-			c.stop("exhausted_limits", sha, "")
-			return
-		}
 		cursor := ""
 		seen := make(map[string]bool)
 		for {

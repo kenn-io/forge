@@ -21,6 +21,11 @@ func validate(ctx context.Context, r platform.LandingEvidenceReader, route platf
 	if l.Calls <= 0 || l.Records <= 0 || l.OutputBytes <= 0 {
 		return errors.New("landing collection limits must be positive")
 	}
+	// The exact query must fit even when preparation or discovery is incomplete.
+	// Check before validating individual commits or allocating retained copies.
+	if int64(len(q.Commits)) > l.Records || int64(len(q.Gaps)) > l.Records-int64(len(q.Commits)) {
+		return landedwork.ErrOutputBudget
+	}
 	if r == nil {
 		return errors.New("landing collection requires a reader")
 	}

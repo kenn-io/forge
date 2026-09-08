@@ -25,9 +25,10 @@ var (
 
 type script struct {
 	platform.LandingEvidenceReader
-	t      *testing.T
-	steps  []step
-	policy platform.LandingSourcePolicy
+	t           *testing.T
+	steps       []step
+	policy      platform.LandingSourcePolicy
+	unsupported bool
 }
 
 type step struct {
@@ -48,8 +49,59 @@ func (s *script) next(key string) (any, error) {
 func (s *script) Platform() platform.Kind { return platform.KindGitHub }
 func (s *script) Host() string            { return "github.com" }
 func (s *script) LandingEvidenceSupport() platform.LandingEvidenceSupport {
-	return platform.LandingEvidenceSupport{Inventory: true, OrdinaryMerge: true, Sources: s.policy}
+	return platform.LandingEvidenceSupport{Inventory: !s.unsupported, OrdinaryMerge: true, Sources: s.policy}
 }
+
+func TestCollectQueryRecordsBeforeEarlyReturn(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		commits  []string
+		gaps     []landedwork.Gap
+		complete bool
+	}{
+		{name: "incomplete commits", commits: []string{head, source}},
+		{name: "empty gaps", gaps: []landedwork.Gap{{}, {}}},
+		{name: "combined rows", commits: []string{head}, gaps: []landedwork.Gap{{}}},
+		{name: "unsupported discovery", commits: []string{head, source}, complete: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require := require.New(t)
+			ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+			defer cancel()
+			q := query
+			q.Commits, q.Gaps, q.Complete = tc.commits, tc.gaps, tc.complete
+			s := &script{t: t, unsupported: tc.complete}
+			l := limits
+			l.Records = 1
+			got, err := collect.Collect(ctx, s, route, q, l)
+			require.ErrorIs(err, landedwork.ErrOutputBudget)
+			require.Equal(collect.Result{}, got)
+			l.Records = 2
+			got, err = collect.Collect(ctx, s, route, q, l)
+			require.NoError(err)
+			assert.Equal(t, q, got.Evidence.Query)
+			assert.False(t, got.Evidence.Inventory.Complete)
+		})
+	}
+}
+
+func TestCollectQueryRecordsChargedOnce(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	s := &script{t: t, steps: []step{
+		{key: "repository", value: platform.Repository{Ref: route, PlatformID: 12}},
+		{key: "association/" + head + "/", value: platform.Page[platform.LandingChangeRef]{Exhausted: true}},
+		{key: "association/" + source + "/", value: platform.Page[platform.LandingChangeRef]{Exhausted: true}},
+	}}
+	l := limits
+	// Two query commits, one repository, and two empty association pages.
+	l.Records = 5
+	got, err := collect.Collect(ctx, s, route, query, l)
+	require.NoError(t, err)
+	assert.True(t, got.Evidence.Inventory.Complete)
+	assert.Empty(t, s.steps)
+}
+
 func (s *script) GetRepository(_ context.Context, r platform.RepoRef) (platform.Repository, error) {
 	require.Equal(s.t, route, r)
 	v, err := s.next("repository")

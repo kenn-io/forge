@@ -13,10 +13,12 @@ import (
 	"go.kenn.io/forge/platform"
 )
 
-type landingAPI interface {
-	ListLandingAssociations(context.Context, platform.RepoRef, string, string) (platform.Page[platform.LandingChangeRef], error)
-	GetLandingChange(context.Context, platform.RepoRef, platform.LandingChangeRef) (platform.LandingChange, error)
-	ListLandingSource(context.Context, platform.RepoRef, platform.LandingChangeRef, string) (platform.Page[string], error)
+// LandingAPI is the optional client surface for landing evidence. Client
+// wrappers must preserve repository-scoped routing for each operation.
+type LandingAPI interface {
+	ListLandingAssociations(ctx context.Context, repo platform.RepoRef, commit, cursor string) (platform.Page[platform.LandingChangeRef], error)
+	GetLandingChange(ctx context.Context, repo platform.RepoRef, change platform.LandingChangeRef) (platform.LandingChange, error)
+	ListLandingSource(ctx context.Context, repo platform.RepoRef, change platform.LandingChangeRef, cursor string) (platform.Page[string], error)
 }
 
 func (p *Provider) LandingEvidenceSupport() platform.LandingEvidenceSupport {
@@ -27,7 +29,7 @@ func (p *Provider) LandingEvidenceSupport() platform.LandingEvidenceSupport {
 	// rewritten ranges, absent associations, and a feature-branch integration
 	// whose inner commit and outer marker discover different PRs. This does
 	// not establish the corresponding contract on Enterprise Server versions.
-	_, ok := p.client.(landingAPI)
+	_, ok := p.client.(LandingAPI)
 	if !ok || p.host != "github.com" {
 		return platform.LandingEvidenceSupport{Reason: "unverified_endpoint_contract"}
 	}
@@ -35,21 +37,21 @@ func (p *Provider) LandingEvidenceSupport() platform.LandingEvidenceSupport {
 }
 
 func (p *Provider) ListLandingAssociations(ctx context.Context, ref platform.RepoRef, sha, cursor string) (platform.Page[platform.LandingChangeRef], error) {
-	if c, ok := p.client.(landingAPI); ok {
+	if c, ok := p.client.(LandingAPI); ok {
 		return c.ListLandingAssociations(ctx, ref, sha, cursor)
 	}
 	return platform.Page[platform.LandingChangeRef]{}, platform.UnsupportedCapability(p.Platform(), p.host, "landing_evidence")
 }
 
 func (p *Provider) GetLandingChange(ctx context.Context, ref platform.RepoRef, change platform.LandingChangeRef) (platform.LandingChange, error) {
-	if c, ok := p.client.(landingAPI); ok {
+	if c, ok := p.client.(LandingAPI); ok {
 		return c.GetLandingChange(ctx, ref, change)
 	}
 	return platform.LandingChange{}, platform.UnsupportedCapability(p.Platform(), p.host, "landing_evidence")
 }
 
 func (p *Provider) ListLandingSource(ctx context.Context, ref platform.RepoRef, change platform.LandingChangeRef, cursor string) (platform.Page[string], error) {
-	if c, ok := p.client.(landingAPI); ok {
+	if c, ok := p.client.(LandingAPI); ok {
 		return c.ListLandingSource(ctx, ref, change, cursor)
 	}
 	return platform.Page[string]{}, platform.UnsupportedCapability(p.Platform(), p.host, "landing_evidence")

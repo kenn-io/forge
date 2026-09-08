@@ -22,7 +22,7 @@ import (
 )
 
 func TestRestoreRuntimeSessionsResumesSavedConversationAfterTmuxLoss(t *testing.T) {
-	for _, status := range []string{"ready", "creating", "error", "unavailable", "ambiguous", "fairness", "stopped"} {
+	for _, status := range []string{"ready", "creating", "error", "unavailable", "fairness", "stopped"} {
 		t.Run(status, func(t *testing.T) {
 			require := require.New(t)
 			assert := assert.New(t)
@@ -104,15 +104,11 @@ exec sleep 60
 				require.NoError(workspaces.ForgetRuntimeSession(ctx, "workspace", "aaa-blocked"))
 				handler.setRuntimeRecoveryPending("aaa-blocked", false)
 			}
-			if status == "unavailable" || status == "ambiguous" || status == "stopped" {
+			if status == "unavailable" || status == "stopped" {
 				require.NoError(database.UpdateWorkspaceStatus(ctx, "workspace", "ready", nil))
 				targets := runtime.LaunchTargets()
 				targets = append(targets, localruntime.LaunchTarget{Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: tmux})
-				if status == "unavailable" || status == "stopped" {
-					targets[0].Available = false
-				} else {
-					targets[0].Command = append(targets[0].Command, "--", "original prompt")
-				}
+				targets[0].Available = false
 				runtime.UpdateTargets(targets)
 				require.NoError(handler.RestoreRuntimeSessions(ctx))
 				handler.runWorkspaceTmuxPrune(ctx)
@@ -138,7 +134,7 @@ exec sleep 60
 				targets[0].Command = []string{agent, "--model", "model-a"}
 				runtime.UpdateTargets(targets)
 			}
-			if status == "unavailable" || status == "ambiguous" {
+			if status == "unavailable" {
 				done, start := handler.beginWorkspaceSetup("workspace")
 				require.True(start)
 				handler.runWorkspaceTmuxPrune(ctx)

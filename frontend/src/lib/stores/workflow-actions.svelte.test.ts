@@ -177,6 +177,54 @@ describe("workflow actions store", () => {
     expect(store.getSnapshot(ref)?.error).toBeNull();
   });
 
+  it.each([false, true])("keeps job reads independent of workflow selection (failure: %s)", async (fail) => {
+    const responseReady = Promise.withResolvers<void>();
+    const jobs = [{ id: "job-1", name: "Build", status: "completed", conclusion: "success", steps: [] }];
+    let jobReads = 0;
+    api = createMockApiFetch([
+      (request) => {
+        if (!request.url.pathname.endsWith("/runs/run-1/jobs")) return null;
+        jobReads += 1;
+        return fail && jobReads === 1
+          ? jsonResponse({ code: "internalError", title: "Read failed", status: 500, type: "about:blank" }, 500)
+          : jsonResponse({ repo, items: jobs });
+      },
+      routes(fixture),
+    ]);
+    globalThis.fetch = async (input, init) => {
+      const response = await api.fetch(input, init);
+      const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
+      if (url.pathname.endsWith("/jobs")) await responseReady.promise;
+      return response;
+    };
+    store.loadCatalog(ref);
+    await settle();
+    store.selectWorkflow(ref, "deploy.yml");
+    await settle();
+    store.loadJobs(ref, "run-1");
+    await settle();
+    store.selectWorkflow(ref, null);
+    store.loadJobs(ref, "run-1");
+    expect(store.getLoading(ref).jobs).toEqual(["run-1"]);
+    responseReady.resolve();
+    await settle();
+    expect(jobReads).toBe(1);
+    expect(store.getSnapshot(ref)?.error).toBeNull();
+    if (fail) {
+      expect(store.getSnapshot(ref)?.jobErrors["run-1"]).toMatchObject({ _tag: "ApiProblemError" });
+      store.loadJobs(ref, "run-1");
+      await settle();
+      expect(store.getSnapshot(ref)?.jobErrors["run-1"]).toBeUndefined();
+    }
+    expect(store.getJobs(ref, "run-1")).toEqual(jobs);
+    store.selectWorkflow(ref, "deploy.yml");
+    await settle();
+    store.loadJobs(ref, "run-1");
+    await settle();
+    expect(jobReads).toBe(fail ? 2 : 1);
+    expect(store.getJobs(ref, "run-1")).toEqual(jobs);
+  });
+
   it("retries a jobs read after a failed response", async () => {
     let reads = 0;
     api = createMockApiFetch([

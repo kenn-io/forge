@@ -67,6 +67,7 @@ export interface WorkflowActionsSnapshot {
   readonly jobs: Readonly<Record<string, readonly WorkflowRunJob[]>>;
   readonly loading: WorkflowActionsLoading;
   readonly dispatches: Readonly<Record<string, WorkflowDispatchState>>;
+  readonly jobErrors: Readonly<Record<string, WorkflowActionsError | undefined>>;
   readonly catalogRefreshErrors: Readonly<Record<string, WorkflowActionsError>>;
   readonly error: WorkflowActionsError | null;
 }
@@ -123,6 +124,7 @@ function emptySnapshot(ref: ProviderRouteRef): WorkflowActionsSnapshot {
     runs: [],
     runsPage: { nextCursor: null, exhausted: false, loadingMore: false },
     jobs: {},
+    jobErrors: {},
     loading: notLoading,
     dispatches: {},
     catalogRefreshErrors: {},
@@ -353,9 +355,8 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
       ...current,
       selectedWorkflow: workflow,
       runs: [],
-      jobs: {},
       runsPage: { nextCursor: null, exhausted: false, loadingMore: false },
-      loading: { ...current.loading, runs: workflow !== null, jobs: [] },
+      loading: { ...current.loading, runs: workflow !== null },
     }));
     if (workflow) readRuns(ref, workflow.id, undefined);
   }
@@ -370,7 +371,7 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
   }
 
   function loadJobs(ref: ProviderRouteRef, runId: string): void {
-    if (!enabled || snapshotFor(ref).jobs[runId] !== undefined) return;
+    if (!enabled || snapshotFor(ref).jobs[runId] !== undefined || snapshotFor(ref).loading.jobs.includes(runId)) return;
     update(ref, (snapshot) => ({
       ...snapshot,
       loading: {
@@ -395,13 +396,14 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
         onFailure: (error) =>
           update(ref, (snapshot) => ({
             ...snapshot,
-            error,
+            jobErrors: { ...snapshot.jobErrors, [runId]: error },
             loading: { ...snapshot.loading, jobs: snapshot.loading.jobs.filter((id) => id !== runId) },
           })),
         onSuccess: (page) =>
           update(ref, (snapshot) => ({
             ...snapshot,
             jobs: { ...snapshot.jobs, [runId]: page.items ?? [] },
+            jobErrors: { ...snapshot.jobErrors, [runId]: undefined },
             loading: { ...snapshot.loading, jobs: snapshot.loading.jobs.filter((id) => id !== runId) },
           })),
       },

@@ -282,6 +282,9 @@ Persisted controls must state their scope clearly.
 - Run reads belong to the selected workflow: selection replaces the prior run
   projection and every generated request carries that workflow ID
   (`frontend/src/lib/stores/workflow-actions.svelte.ts::selectWorkflow`).
+- Workflow job reads, cached results, and errors belong to the run, independent of selection;
+  changing the viewed workflow must not cancel reads or discard successful job results
+  (`frontend/src/lib/stores/workflow-actions.svelte.ts::loadJobs`).
 - A dispatched run appears in the list from the dispatch response or the first
   `workflow_dispatch_progress` event, and later events update it in place; the
   list is otherwise refreshed only by user action

@@ -41,7 +41,7 @@ const jobs: Record<string, readonly Job[]> = {
 };
 
 it("exposes compact textual run data, local time, and secure provider links", () => {
-  render(WorkflowRunList, { runs, jobs: {}, loadingJobs: [], onexpand: vi.fn() });
+  render(WorkflowRunList, { runs, jobs: {}, jobErrors: {}, loadingJobs: [], onexpand: vi.fn() });
   const row = screen.getByRole("button", { name: /Run 42 Deploy/ });
   expect(row.textContent).toContain("#42");
   expect(row.textContent).toContain("Deploy");
@@ -61,6 +61,7 @@ it.each([
   render(WorkflowRunList, {
     runs: [{ ...runs[0]!, web_url: webURL }],
     jobs: {},
+    jobErrors: {},
     loadingJobs: [],
     onexpand: vi.fn(),
   });
@@ -71,6 +72,7 @@ it("omits unsafe provider links", () => {
   render(WorkflowRunList, {
     runs: [{ ...runs[0]!, web_url: "javascript:alert(document.domain)" }],
     jobs: {},
+    jobErrors: {},
     loadingJobs: [],
     onexpand: vi.fn(),
   });
@@ -79,7 +81,7 @@ it("omits unsafe provider links", () => {
 
 it("requests jobs only when a run expands and preserves provider order", async () => {
   const onexpand = vi.fn();
-  const view = render(WorkflowRunList, { runs, jobs, loadingJobs: [], onexpand });
+  const view = render(WorkflowRunList, { runs, jobs, jobErrors: {}, loadingJobs: [], onexpand });
   const disclosure = screen.getByRole("button", { name: /Run 42 Deploy/ });
   expect(disclosure.getAttribute("aria-expanded")).toBe("false");
 
@@ -107,6 +109,6 @@ it("requests jobs only when a run expands and preserves provider order", async (
   await fireEvent.click(disclosure);
   expect(onexpand).toHaveBeenCalledTimes(2);
 
-  await view.rerender({ runs, jobs, loadingJobs: ["run-2"], onexpand });
+  await view.rerender({ runs, jobs, jobErrors: {}, loadingJobs: ["run-2"], onexpand });
   expect(screen.getByText("Loading jobs…").getAttribute("role")).toBe("status");
 });

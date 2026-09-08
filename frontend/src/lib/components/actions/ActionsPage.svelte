@@ -310,6 +310,7 @@
               <WorkflowRunList
                 runs={snapshot.runs}
                 jobs={snapshot.jobs}
+                jobErrors={snapshot.jobErrors}
                 loadingJobs={snapshot.loading.jobs}
                 onexpand={expandRun}
               />

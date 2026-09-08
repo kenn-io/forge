@@ -5,6 +5,8 @@
   import { isSafeExternalHTTPURL } from "../../utils/safe-external-url.js";
   import type { WorkflowRunJobResponse } from "../../api/generated/models/workflowRunJobResponse.js";
   import type { WorkflowRunResponse } from "../../api/generated/models/workflowRunResponse.js";
+  import type { WorkflowActionsError } from "../../stores/workflow-actions.svelte.js";
+  import { workflowActionsErrorMessage } from "./workflow-dispatch-presentation.js";
 
   type Run = WorkflowRunResponse;
   type Job = WorkflowRunJobResponse;
@@ -12,11 +14,12 @@
   interface Props {
     runs: readonly Run[];
     jobs: Readonly<Record<string, readonly Job[]>>;
+    jobErrors: Readonly<Record<string, WorkflowActionsError | undefined>>;
     loadingJobs: readonly string[];
     onexpand: (runId: string) => void;
   }
 
-  let { runs, jobs, loadingJobs, onexpand }: Props = $props();
+  let { runs, jobs, jobErrors, loadingJobs, onexpand }: Props = $props();
   let expandedRuns = $state<Record<string, boolean>>({});
   let expandedJobs = $state<Record<string, boolean>>({});
 
@@ -63,9 +66,13 @@
         {/if}
       </div>
       {#if expandedRuns[run.id]}
+        {@const jobError = jobErrors[run.id]}
         <div class="jobs" aria-label={`Jobs for run ${run.run_number}`}>
           {#if loadingJobs.includes(run.id)}
             <p role="status">Loading jobs…</p>
+          {:else if jobError}
+            <p role="alert">{workflowActionsErrorMessage(jobError, "Workflow jobs could not be loaded.")}</p>
+            <Button surface="soft" onclick={() => onexpand(run.id)}>Retry jobs</Button>
           {:else if (jobs[run.id]?.length ?? 0) === 0}
             <p>No jobs available.</p>
           {:else}

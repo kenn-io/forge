@@ -289,7 +289,7 @@ describe("ActionsPage", () => {
     expect(screen.getByRole("button", { name: /Verify/ })).toBeTruthy();
   });
 
-  it("resets runs and jobs when switching workflows without refetching old jobs", async () => {
+  it("changes visible runs when switching workflows without refetching cached jobs", async () => {
     const twoWorkflows: MockRouteOverride = (request) => {
       if (request.method !== "GET" || request.url.pathname !== "/api/v1/actions/github/acme/alpha/workflows")
         return null;
@@ -354,9 +354,11 @@ describe("ActionsPage", () => {
     expect(screen.queryByText("No recent workflow runs.")).toBeNull();
   });
 
-  it("keeps retained runs visible while surfacing a lazy jobs read failure as degraded", async () => {
+  it("shows job failures inside their expanded run and retries them in place", async () => {
+    let failJobs = true;
     const jobsFailure: MockRouteOverride = (request) => {
       if (
+        !failJobs ||
         request.method !== "GET" ||
         request.url.pathname !== "/api/v1/actions/github/acme/alpha/runs/alpha-run-1/jobs"
       )
@@ -381,6 +383,16 @@ describe("ActionsPage", () => {
     expect((await screen.findByRole("alert")).textContent).toContain("Workflow jobs could not be loaded.");
     expect(screen.getByRole("button", { name: /Run 7 alpha deploy/ })).toBe(run);
     expect(run.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.queryByText("No jobs available.")).toBeNull();
+    await fireEvent.click(run);
+    expect(screen.queryByRole("alert")).toBeNull();
+    await fireEvent.click(run);
+    await screen.findByRole("alert");
+
+    failJobs = false;
+    await fireEvent.click(screen.getByRole("button", { name: "Retry jobs" }));
+    await screen.findByRole("button", { name: /Publish/ });
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("reloads a changed workflow definition once after conflict without replaying dispatch", async () => {
@@ -442,7 +454,7 @@ describe("ActionsPage", () => {
     expect(api.requests.filter((request) => request.method === "POST")).toHaveLength(1);
   });
 
-  it("clears the dispatch form, runs and jobs when a refreshed catalog removes the selection", async () => {
+  it("clears the dispatch form and visible runs while retaining jobs when a refreshed catalog removes the selection", async () => {
     let removed = false;
     api = createMockApiFetch([
       (request) =>
@@ -465,10 +477,10 @@ describe("ActionsPage", () => {
     expect(store.getSnapshot(ref)).toMatchObject({
       selectedWorkflow: null,
       runs: [],
-      jobs: {},
       runsPage: { nextCursor: null, exhausted: false, loadingMore: false },
       loading: { catalog: false, runs: false, jobs: [] },
     });
+    expect(store.getJobs(ref, "alpha-run-1")).toHaveLength(1);
     expect(screen.queryByRole("button", { name: /Run 7 alpha deploy/ })).toBeNull();
   });
 

@@ -2985,6 +2985,7 @@
           requireHeadPin={capabilities.mutation_head_binding}
           routeGeneration={mutationRouteGeneration}
           deferUntilChecksPass={shouldDeferMergeForCI(p.CIStatus, p.CIChecksJSON)}
+          ciFailed={ciStatusHasFailed(p.CIStatus)}
           alreadyQueued={deferredMergePending}
           workspaceId={d.workspace?.id}
           midStackWarning={midStackBlocker

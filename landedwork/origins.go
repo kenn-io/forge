@@ -90,6 +90,9 @@ func resolveOrigins(ctx context.Context, v *objectView, p *Interval, candidates 
 			}
 		}
 	}
+	if !v.meter.failed {
+		return classifyDirectPushes(ctx, v, p, r)
+	}
 	return ctx.Err()
 }
 

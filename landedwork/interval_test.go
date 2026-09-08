@@ -61,9 +61,10 @@ func TestAnalyzeMixedCoverage(t *testing.T) {
 				assert.Equal([]landedwork.Gap{{CandidateID: "8", ObjectID: f.head, Reason: "source_incomplete", Span: landedwork.Span{Before: f.base, Through: f.head}}}, r.Coverage.Gaps)
 			case "unattributed":
 				assert.Len(r.Landings, 1)
-				assert.False(r.Coverage.Complete)
-				assert.Equal(candidates[0].Terminal, r.Coverage.CertifiedHead)
-				assert.Equal([]string{f.head}, r.Unattributed)
+				assert.True(r.Coverage.Complete)
+				assert.Equal(f.head, r.Coverage.CertifiedHead)
+				assert.Empty(r.Unattributed)
+				assert.Equal([]landedwork.DirectPush{{Before: candidates[0].Terminal, Terminal: f.head, Introduced: []string{candidates[1].SourceHead, f.head}}}, r.DirectPushes)
 				assert.Empty(r.Coverage.Gaps)
 			}
 		})

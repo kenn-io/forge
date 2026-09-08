@@ -88,6 +88,9 @@ func finishCoverage(r *Result, p *Interval) {
 			owners[id] = true
 		}
 	}
+	for _, d := range r.DirectPushes {
+		owners[d.Terminal] = true
+	}
 	blocked := blockedSpine(r, p)
 	complete := true
 	for index, id := range p.spine {

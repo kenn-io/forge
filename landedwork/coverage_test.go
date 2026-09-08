@@ -86,10 +86,18 @@ func TestAnalyzeCoverageNoCandidateAndConflict(t *testing.T) {
 			require.NoError(t, err)
 			assert := assert.New(t)
 			assert.Empty(r.Landings)
-			assert.Equal([]string{f.head}, r.Unattributed)
 			assert.Equal(f.bounds(), r.Coverage.Bounds)
-			assert.False(r.Coverage.Complete)
-			assert.Equal(f.base, r.Coverage.CertifiedHead)
+			if name == "unattributed" {
+				assert.Empty(r.Unattributed)
+				assert.True(r.Coverage.Complete)
+				assert.Equal(f.head, r.Coverage.CertifiedHead)
+				assert.Len(r.DirectPushes, 1)
+			} else {
+				assert.Equal([]string{f.head}, r.Unattributed)
+				assert.False(r.Coverage.Complete)
+				assert.Equal(f.base, r.Coverage.CertifiedHead)
+				assert.Empty(r.DirectPushes)
+			}
 			switch name {
 			case "unattributed":
 				assert.Empty(r.Coverage.Gaps)

@@ -1,13 +1,142 @@
 package landedwork_test
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/landedwork"
 )
+
+func TestDirectPushAfterBoundedGap(t *testing.T) {
+	for _, variant := range []string{"bounded", "unknown terminal", "incomplete inventory"} {
+		t.Run(variant, func(t *testing.T) {
+			f, candidates := twoLandings(t)
+			before := f.head
+			f.head = f.repo.CommitFile("direct", "direct\n", "direct")
+			candidates[0].SourceComplete = false
+			ctx, p := f.prepare(t)
+			e := fixtureEvidence(f, p, "merge")
+			e.Candidates = candidates
+			if variant == "unknown terminal" {
+				e.Candidates[0].TerminalEvidence = ""
+			}
+			if variant == "incomplete inventory" {
+				e.Inventory.Complete = false
+			}
+			r, err := landedwork.Analyze(ctx, p, e, fixtureLimits())
+			require := require.New(t)
+			assert := assert.New(t)
+			require.NoError(err)
+			require.Len(r.Landings, 1)
+			assert.Equal("8", r.Landings[0].CandidateID)
+			assert.False(r.Coverage.Complete)
+			assert.Equal(f.base, r.Coverage.CertifiedHead)
+			if variant == "bounded" {
+				assert.Equal([]landedwork.DirectPush{{Before: before, Terminal: f.head, Introduced: []string{f.head}}}, r.DirectPushes)
+				assert.Equal([]string{candidates[0].Terminal}, r.Unattributed)
+			} else {
+				assert.Empty(r.DirectPushes)
+			}
+		})
+	}
+}
+
+func TestRebaseExhaustionPreservesGaps(t *testing.T) {
+	f := buildFixture(t, false)
+	f.repo.Checkout("topic")
+	f.source = append(slices.Clone(f.source), f.repo.CommitFile("large", strings.Repeat("large edit\n", 2048), "large"))
+	f.repo.Checkout("-b", "large-replay", f.base)
+	f.base = f.repo.CommitFile("other", "context\n", "advance")
+	for _, id := range f.source {
+		f.repo.Run("cherry-pick", id)
+	}
+	f.head = f.repo.Head()
+	ctx, p := f.prepare(t)
+	e := fixtureEvidence(f, p, "rebase")
+	e.Capabilities.Rebase = true
+	unknown := e.Candidates[0]
+	unknown.ID = "0"
+	unknown.Terminal = ""
+	unknown.TerminalEvidence = ""
+	e.Candidates = append(e.Candidates, unknown)
+	limits := fixtureLimits()
+	limits.InputBytes = 8192 // Fits metadata and small edits, not the large blob.
+	r, err := landedwork.Analyze(ctx, p, e, limits)
+	require := require.New(t)
+	assert := assert.New(t)
+	require.NoError(err)
+	assert.Empty(r.DirectPushes)
+	assert.False(r.Coverage.Complete)
+	assert.Equal(f.base, r.Coverage.CertifiedHead)
+	require.Len(r.Coverage.Gaps, 2)
+	assert.Equal("terminal_unproven", r.Coverage.Gaps[0].Reason)
+	assert.Equal("input_budget_exhausted", r.Coverage.Gaps[1].Reason)
+	assert.Equal(landedwork.Span{Before: f.base, Through: f.head}, r.Coverage.Gaps[1].Span)
+}
+
+func TestDirectPushes(t *testing.T) {
+	for _, merge := range []bool{false, true} {
+		f := buildFixture(t, false)
+		if !merge {
+			f.head = f.source[1]
+		}
+		ctx, p := f.prepare(t)
+		e := fixtureEvidence(f, p, "merge")
+		e.Candidates = nil
+		r, err := landedwork.Analyze(ctx, p, e, fixtureLimits())
+		require := require.New(t)
+		assert := assert.New(t)
+		require.NoError(err)
+		if merge {
+			require.Len(r.DirectPushes, 1)
+			assert.Equal(f.base, r.DirectPushes[0].Before)
+			assert.Equal(f.head, r.DirectPushes[0].Terminal)
+			assert.ElementsMatch(append(slices.Clone(f.source), f.head), r.DirectPushes[0].Introduced)
+		} else {
+			assert.Equal([]landedwork.DirectPush{{Before: f.base, Terminal: f.source[0], Introduced: f.source[:1]},
+				{Before: f.source[0], Terminal: f.head, Introduced: f.source[1:]}}, r.DirectPushes)
+		}
+		assert.Empty(r.Landings)
+		assert.Empty(r.Unattributed)
+		assert.True(r.Coverage.Complete)
+		assert.Equal(f.head, r.Coverage.CertifiedHead)
+	}
+}
+
+func TestDirectPushMissingObjects(t *testing.T) {
+	for _, target := range []string{"base", "source", "terminal"} {
+		t.Run(target, func(t *testing.T) {
+			f := buildFixture(t, false)
+			f.repo.Run("commit-graph", "write", "--reachable")
+			ctx, p := f.prepare(t)
+			missing := f.base
+			if target == "source" {
+				missing = f.source[0]
+			}
+			if target == "terminal" {
+				missing = f.head
+			}
+			require := require.New(t)
+			assert := assert.New(t)
+			require.NoError(os.Remove(filepath.Join(f.repo.GitDir, "objects", missing[:2], missing[2:])))
+			e := fixtureEvidence(f, p, "merge")
+			e.Candidates = nil
+			r, err := landedwork.Analyze(ctx, p, e, fixtureLimits())
+			require.NoError(err)
+			assert.Empty(r.DirectPushes)
+			assert.False(r.Coverage.Complete)
+			assert.Equal(f.base, r.Coverage.CertifiedHead)
+			require.Len(r.Coverage.Gaps, 1)
+			assert.Equal(missing, r.Coverage.Gaps[0].ObjectID)
+			assert.Equal("objects_unavailable", r.Coverage.Gaps[0].Reason)
+		})
+	}
+}
 
 func TestIntegratedMerges(t *testing.T) {
 	for _, variant := range []string{"nested", "reverse", "partial inner", "rejected outer", "unsupported inner"} {

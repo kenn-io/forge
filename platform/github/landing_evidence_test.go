@@ -80,3 +80,13 @@ func TestLandingMissingHeadStaysAbsent(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, d.SourceHead)
 }
+
+func TestLandingRejectsCrossInstanceSource(t *testing.T) {
+	hc := &http.Client{Transport: platform.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"id":7,"number":3,"merged":true,"base":{"repo":{"id":12}},"head":{"repo":{"id":12,"html_url":"https://other.example/project"}}}`)), Request: req}, nil
+	})}
+	c, err := github.NewClient(github.ClientConfig{Read: hc, Write: hc, Notifications: hc, Clock: time.Now})
+	require.NoError(t, err)
+	_, err = c.GetLandingChange(t.Context(), platform.RepoRef{Platform: platform.KindGitHub, Host: "github.com", Owner: "example", Name: "project"}, platform.LandingChangeRef{ID: 7, Number: 3})
+	assert.ErrorIs(t, err, platform.ErrLandingIdentityMismatch)
+}

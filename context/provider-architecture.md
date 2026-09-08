@@ -62,6 +62,9 @@ Collector call limits do not bound HTTP retries or absence-confirmation reads;
 callers put wire limits below authentication (`platform/landing_evidence.go::LandingEvidenceReader`).
 GitHub collection relies on REST 2022-11-28 terminal semantics, not the newer
 API's omitted field; enterprise coverage remains unverified (`platform/github/landing_evidence.go::Provider.LandingEvidenceSupport`).
+The collector currently has one concrete reader: GitHub.com. GitLab discovery
+still needs the rewritten-commit contract checked; terminal-only Forgejo/Gitea
+lookups cannot prove absence inside a rewritten range (`platform/landing_evidence.go::LandingEvidenceReader`).
 
 Minimum provider checklist:
 

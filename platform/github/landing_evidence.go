@@ -6,6 +6,8 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"net/url"
+	"strings"
 
 	gh "github.com/google/go-github/v89/github"
 	"go.kenn.io/forge/platform"
@@ -144,6 +146,12 @@ func (c *Client) GetLandingChange(ctx context.Context, ref platform.RepoRef, cha
 		d.SourceCount = new(int64(*pr.Commits))
 	}
 	if source := pr.GetHead().GetRepo(); source != nil {
+		if source.HTMLURL != nil {
+			u, err := url.Parse(*source.HTMLURL)
+			if err != nil || !strings.EqualFold(u.Host, c.platformHost) {
+				return platform.LandingChange{}, platform.ErrLandingIdentityMismatch
+			}
+		}
 		d.SourceID = source.ID
 	}
 	if pr.GetMerged() && pr.GetMergeCommitSHA() != "" {

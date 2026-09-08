@@ -54,6 +54,44 @@ func TestRebaseFileChanges(t *testing.T) {
 	}
 }
 
+func TestRebaseOldSideNewline(t *testing.T) {
+	for _, tc := range []struct {
+		name, sourceOld, replayOld string
+		accept                     bool
+	}{
+		{"matching", "old", "old", true},
+		{"source missing newline", "old", "old\n", false},
+		{"replay missing newline", "old\n", "old", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require := require.New(t)
+			assert := assert.New(t)
+			f := buildFixture(t, false)
+			f.repo.Checkout("-b", "newline-source", f.base)
+			f.repo.CommitFile("text", tc.sourceOld, "source base")
+			f.source = []string{f.repo.CommitFile("text", "new\n", "source")}
+			f.repo.Checkout("-b", "newline-replay", f.base)
+			f.base = f.repo.CommitFile("text", tc.replayOld, "replay base")
+			f.head = f.repo.CommitFile("text", "new\n", "replay")
+			ctx, p := f.prepare(t)
+			e := fixtureEvidence(f, p, "rebase")
+			e.Capabilities.Rebase = true
+			r, err := landedwork.Analyze(ctx, p, e, fixtureLimits())
+			require.NoError(err)
+			assert.Equal(tc.accept, r.Coverage.Complete)
+			if tc.accept {
+				assert.Len(r.Landings, 1)
+				assert.Equal(f.head, r.Coverage.CertifiedHead)
+			} else {
+				assert.Empty(r.Landings)
+				assert.Equal(f.base, r.Coverage.CertifiedHead)
+				require.Len(r.Coverage.Gaps, 1)
+				assert.Equal("source_correspondence_unproven", r.Coverage.Gaps[0].Reason)
+			}
+		})
+	}
+}
+
 func TestRebaseDuplicateEdits(t *testing.T) {
 	f := buildFixture(t, false)
 	f.repo.Checkout("-b", "repeat-source", f.base)

@@ -28,6 +28,16 @@ func ownedSpine(l Landing) []string {
 	return []string{l.Terminal}
 }
 
+func landingOwners(landings []Landing) map[string]bool {
+	owners := map[string]bool{}
+	for _, l := range landings {
+		for _, id := range ownedSpine(l) {
+			owners[id] = true
+		}
+	}
+	return owners
+}
+
 func blockedSpine(r *Result, p *Interval) map[string]bool {
 	positions := map[string]int{p.query.Bounds.Base: -1}
 	for i, id := range p.spine {
@@ -63,7 +73,7 @@ func resolveOrigins(ctx context.Context, v *objectView, p *Interval, candidates 
 			offSpine = append(offSpine, c)
 			continue
 		}
-		l, g := prove(ctx, v, p, c, caps)
+		l, g := proveAt(ctx, v, p, c, caps)
 		if g.Reason != "" {
 			r.Coverage.Gaps = append(r.Coverage.Gaps, candidateGap(p, c, g))
 		} else {
@@ -111,7 +121,18 @@ func integratedThrough(ctx context.Context, v *objectView, p *Interval, c Candid
 			g.Reason = graphReason(err)
 			return "", g
 		}
-		if outer.Method != "merge" || !slices.Contains(outer.Introduced, inner.Terminal) {
+		if outer.Method != "merge" {
+			continue
+		}
+		introduced := make(map[string]bool, len(outer.Introduced))
+		for _, id := range outer.Introduced {
+			if err := ctx.Err(); err != nil {
+				g.Reason = graphReason(err)
+				return "", g
+			}
+			introduced[id] = true
+		}
+		if !introduced[inner.Terminal] {
 			continue
 		}
 		contained := true
@@ -120,7 +141,7 @@ func integratedThrough(ctx context.Context, v *objectView, p *Interval, c Candid
 				g.Reason = graphReason(err)
 				return "", g
 			}
-			if !slices.Contains(outer.Introduced, id) {
+			if !introduced[id] {
 				contained = false
 				break
 			}

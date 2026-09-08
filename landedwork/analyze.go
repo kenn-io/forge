@@ -82,12 +82,7 @@ func candidateCounts(candidates []Candidate) (map[string]int, map[string]int) {
 }
 
 func finishCoverage(r *Result, p *Interval) {
-	owners, positions := map[string]bool{}, map[string]int{}
-	for _, landing := range r.Landings {
-		for _, id := range ownedSpine(landing) {
-			owners[id] = true
-		}
-	}
+	owners, positions := landingOwners(r.Landings), map[string]int{}
 	for _, d := range r.DirectPushes {
 		owners[d.Terminal] = true
 	}

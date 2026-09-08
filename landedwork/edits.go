@@ -118,7 +118,8 @@ func (v *objectView) fileEdits(ctx context.Context, before, after string, f *fil
 	if f.binary {
 		return nil
 	}
-	// Each literal path has exactly one patch. The raw metadata supplies its name.
+	// Require one patch for the raw metadata path. File-to-directory changes can
+	// match descendants too; ambiguous output stays unproven rather than guessed.
 	patch, err := v.run(ctx, "--literal-pathspecs", "diff", "--patch", "--text", "-U0", "--full-index", "--no-renames",
 		"--no-ext-diff", "--no-textconv", "--no-color", "--diff-algorithm=myers", "--no-indent-heuristic", before, after, "--", f.path)
 	if err != nil {
@@ -129,6 +130,8 @@ func (v *objectView) fileEdits(ctx context.Context, before, after string, f *fil
 		return errors.Join(errEdits, err)
 	}
 	if len(parsed) != 1 {
+		// go-diff can also split header-like removed/added lines into files.
+		// This safe false negative loses proof, not edit differences.
 		return errEdits
 	}
 	for _, h := range parsed[0].Hunks {

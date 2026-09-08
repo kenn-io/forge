@@ -4,12 +4,7 @@ import "context"
 
 func classifyDirectPushes(ctx context.Context, v *objectView, p *Interval, r *Result) error {
 	blocked := blockedSpine(r, p)
-	owners := map[string]bool{}
-	for _, l := range r.Landings {
-		for _, id := range ownedSpine(l) {
-			owners[id] = true
-		}
-	}
+	owners := landingOwners(r.Landings)
 	before := p.query.Bounds.Base
 	for _, id := range p.spine {
 		if err := ctx.Err(); err != nil {

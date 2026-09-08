@@ -6,13 +6,6 @@ import (
 	"slices"
 )
 
-func prove(ctx context.Context, v *objectView, p *Interval, c Candidate, caps Capabilities) (Landing, Gap) {
-	if c.Terminal != "" && c.TerminalEvidence != "" && !slices.Contains(p.spine, c.Terminal) {
-		return Landing{}, Gap{CandidateID: c.ID, ObjectID: c.Terminal, Reason: "terminal_outside_spine"}
-	}
-	return proveAt(ctx, v, p, c, caps)
-}
-
 // proveAt checks the method independently of its admission to the target spine.
 func proveAt(ctx context.Context, v *objectView, p *Interval, c Candidate, caps Capabilities) (Landing, Gap) {
 	gap := Gap{CandidateID: c.ID, ObjectID: c.Terminal}

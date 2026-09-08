@@ -49,7 +49,7 @@ Integrated candidates own nothing: prove exact containment in an accepted
 ordinary merge, never resolve through another integrated candidate
 (`landedwork/origins.go::integratedThrough`).
 Git's commit-graph can outlive commit objects; verify required commits physically,
-including each landing's first parent (`landedwork/git.go::parents`, `landedwork/proof.go::prove`).
+including each landing's first parent (`landedwork/git.go::parents`, `landedwork/proof.go::proveAt`).
 Rewritten ranges compare exact edit bytes, not whitespace-insensitive patch IDs;
 empty or duplicate rewritten edits stay unproven (`landedwork/range.go::rangeCorrespondence`).
 

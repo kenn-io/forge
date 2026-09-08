@@ -56,6 +56,10 @@ Offset-free text proof requires uniquely occurring removed bytes or a unique
 insertion neighborhood; repeated locations stay unproven (`landedwork/edits.go::fileEdits`).
 Overlap conflicts block the proven landing ranges, not unrelated earlier
 commits; unknown-start candidate gaps still block from the base (`landedwork/origins.go::rejectOverlaps`).
+Collection must preserve unfinished candidates and the exact prepared query;
+missing provider evidence is never direct-push evidence (`landedwork/collect/collect.go::Collect`).
+Collector call limits do not bound HTTP retries or absence-confirmation reads;
+callers put wire limits below authentication (`platform/landing_evidence.go::LandingEvidenceReader`).
 
 Minimum provider checklist:
 

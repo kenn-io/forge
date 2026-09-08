@@ -40,6 +40,8 @@
     routeGeneration?: number;
     /** When true, the primary action waits for currently pending CI before merging. */
     deferUntilChecksPass?: boolean;
+    /** Warn before an immediate merge when aggregate CI has failed. */
+    ciFailed?: boolean;
     /**
      * True while a background merge is already queued for this PR. The
      * deferred action is withheld (the server would 409 on a second
@@ -70,6 +72,7 @@
     allowSquash, allowMerge, allowRebase,
     expectedHeadSha, requireHeadPin = false, routeGeneration = 0,
     deferUntilChecksPass = false,
+    ciFailed = false,
     alreadyQueued = false, workspaceId, midStackWarning,
     onclose, onmerged, onqueued, onstateconflict,
   }: Props = $props();
@@ -214,7 +217,8 @@
   function primaryButtonLabel(): string {
     if (activeMergeSubmission === "deferred") return "Merge scheduled...";
     if (activeMergeSubmission === "immediate" && !offerDeferredMerge) return "Merging...";
-    return offerDeferredMerge ? "Merge after CI is complete" : methodLabel();
+    if (offerDeferredMerge) return "Merge after CI is complete";
+    return ciFailed ? "Merge Anyway" : methodLabel();
   }
 
   function mergeAnywayButtonLabel(): string {
@@ -293,6 +297,11 @@
 
       {#if error}
         <p class="merge-error">{error}</p>
+      {/if}
+      {#if ciFailed}
+        <div class="ci-defer-note" role="alert">
+          CI has failed. Merging now will include changes with failing checks.
+        </div>
       {/if}
       {#if alreadyQueued}
         <div class="ci-defer-note">

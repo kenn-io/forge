@@ -1907,7 +1907,33 @@ describe("PullDetail approvals", () => {
     expect(screen.getByRole("button", { name: "Squash and merge" })).toBeTruthy();
   });
 
-  it("opens the merge modal in normal mode when aggregate CI has already failed", async () => {
+  it.each(["failure", "failed", "error", "cancelled", "canceled", "timed_out"])(
+    "warns before merging when aggregate CI is %s without check rows",
+    async (status) => {
+      const detail = pullDetail();
+      detail.repo.capabilities.merge_mutation = true;
+      detail.merge_request.CIStatus = status;
+      detail.merge_request.CIChecksJSON = "";
+
+      renderPullDetail(detail, {
+        AllowSquashMerge: true,
+        AllowMergeCommit: false,
+        AllowRebaseMerge: false,
+        ViewerCanMerge: true,
+      });
+
+      await fireEvent.click(await screen.findByRole("button", { name: "Squash and merge" }));
+
+      const dialog = within(screen.getByRole("dialog", { name: "Merge Pull Request" }));
+      expect(dialog.getByRole("alert").textContent).toContain(
+        "CI has failed. Merging now will include changes with failing checks.",
+      );
+      expect(dialog.getByRole("button", { name: "Merge Anyway" })).toBeTruthy();
+      expect(dialog.queryByRole("button", { name: "Merge after CI is complete" })).toBeNull();
+    },
+  );
+
+  it("warns before merging when aggregate CI has failed with a check still running", async () => {
     const detail = pullDetail();
     detail.repo.capabilities.merge_mutation = true;
     detail.merge_request.CIStatus = "failure";
@@ -1941,6 +1967,8 @@ describe("PullDetail approvals", () => {
     // A failed aggregate with a still-running check must not route to deferred
     // merge, since the backend would reject that with a 409.
     expect(screen.queryByRole("button", { name: "Merge after CI is complete" })).toBeNull();
+    expect(screen.getByRole("alert").textContent).toContain("CI has failed.");
+    expect(screen.getByRole("button", { name: "Merge Anyway" })).toBeTruthy();
   });
 
   it("keeps a newer head conflict after an overlapping approval succeeds", async () => {

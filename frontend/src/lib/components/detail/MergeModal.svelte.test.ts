@@ -310,6 +310,18 @@ describe("MergeModal acknowledged merge commands", () => {
     expect(onmerged).toHaveBeenCalledOnce();
   });
 
+  it("requires an explicit merge anyway action when CI has failed", async () => {
+    const onmerged = vi.fn();
+    renderModal({ ciFailed: true, onmerged });
+
+    expect(screen.getByRole("alert").textContent).toContain("CI has failed.");
+    expect(mockMergePull).not.toHaveBeenCalled();
+    await fireEvent.click(screen.getByRole("button", { name: "Merge Anyway" }));
+
+    expect(mockMergePull.mock.calls[0]?.[3]).toBe(false);
+    expect(onmerged).toHaveBeenCalledOnce();
+  });
+
   it("keeps the merge action disabled until its acknowledgement settles", async () => {
     let settle = () => {};
     mockMergePull.mockImplementation((...args: unknown[]) => {

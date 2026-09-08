@@ -6,23 +6,24 @@ import (
 	"slices"
 )
 
-func prove(ctx context.Context, v *objectView, p *Interval, c Candidate, caps Capabilities) (Landing, Gap) {
+// proveAt checks the method independently of its admission to the target spine.
+func proveAt(ctx context.Context, v *objectView, p *Interval, c Candidate, caps Capabilities) (Landing, Gap) {
 	gap := Gap{CandidateID: c.ID, ObjectID: c.Terminal}
 	reject := func(reason string) (Landing, Gap) { gap.Reason = reason; return Landing{}, gap }
-	if c.Method == "rebase" || c.Method == "fast_forward" {
+	if (c.Method == "rebase" && !caps.Rebase) || (c.Method == "fast_forward" && !caps.FastForward) {
 		return reject("method_unsupported")
 	}
 	if c.Terminal == "" || c.TerminalEvidence == "" {
 		return reject("terminal_unproven")
-	}
-	if !slices.Contains(p.spine, c.Terminal) {
-		return reject("terminal_outside_spine")
 	}
 	if c.Method != "" && c.MethodEvidence == "" {
 		return reject("method_unproven")
 	}
 	if !c.SourceComplete || len(c.Source) == 0 || c.SourceHead == "" {
 		return reject("source_incomplete")
+	}
+	if c.Method == "rebase" || c.Method == "fast_forward" {
+		return proveRange(ctx, v, p, c)
 	}
 	parents, err := v.parents(ctx, c.Terminal)
 	if err != nil {

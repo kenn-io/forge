@@ -87,7 +87,7 @@ func TestAnalyzeCachedMissingSourceOrTerminal(t *testing.T) {
 			assert.Empty(r.Landings)
 			assert.False(r.Coverage.Complete)
 			assert.Equal(f.base, r.Coverage.CertifiedHead)
-			assert.Equal([]landedwork.Gap{{CandidateID: "7", ObjectID: missing, Reason: "objects_unavailable"}}, r.Coverage.Gaps)
+			assert.Equal([]landedwork.Gap{{CandidateID: "7", ObjectID: missing, Reason: "objects_unavailable", Span: landedwork.Span{Before: f.base, Through: f.head}}}, r.Coverage.Gaps)
 		})
 	}
 }
@@ -199,7 +199,7 @@ func TestPrepareRequiresRepositoryRoot(t *testing.T) {
 	assert := assert.New(t)
 	assert.False(p.Query().Complete)
 	assert.Empty(p.Query().Commits)
-	assert.Equal([]landedwork.Gap{{Reason: "objects_unavailable"}}, p.Query().Gaps)
+	assert.Equal([]landedwork.Gap{{Reason: "objects_unavailable", Span: landedwork.Span{Before: f.base, Through: f.head}}}, p.Query().Gaps)
 }
 
 func TestPrepareBareAndLinkedRepositories(t *testing.T) {

@@ -40,11 +40,22 @@ cache policy and admission remain internal
 The public landing API uses local objects only; callers own collection and supply
 evidence for the exact prepared interval. Missing history and exhausted budgets
 remain gaps, never empty complete inventories (`landedwork/prepare.go::Prepare`).
-Unsupported landing methods remain unresolved, and unowned commits are not
-direct-push claims; generic squash proof does not establish any provider's
-squash capability (`landedwork/analyze.go::Analyze`).
+Unsupported landing methods remain unresolved; generic squash proof does not
+establish any provider's squash capability (`landedwork/analyze.go::Analyze`).
+Direct-push origins require complete inventory and an unblocked, unowned spine
+commit; they establish neither a pusher nor a trusted update time
+(`landedwork/direct.go::classifyDirectPushes`).
+Integrated candidates own nothing: prove exact containment in an accepted
+ordinary merge, never resolve through another integrated candidate
+(`landedwork/origins.go::integratedThrough`).
 Git's commit-graph can outlive commit objects; verify required commits physically,
-including each landing's first parent (`landedwork/git.go::parents`, `landedwork/proof.go::prove`).
+including each landing's first parent (`landedwork/git.go::parents`, `landedwork/proof.go::proveAt`).
+Rewritten ranges compare exact edit bytes, not whitespace-insensitive patch IDs;
+empty or duplicate rewritten edits stay unproven (`landedwork/range.go::rangeCorrespondence`).
+Offset-free text proof requires uniquely occurring removed bytes or a unique
+insertion neighborhood; repeated locations stay unproven (`landedwork/edits.go::fileEdits`).
+Overlap conflicts block the proven landing ranges, not unrelated earlier
+commits; unknown-start candidate gaps still block from the base (`landedwork/origins.go::rejectOverlaps`).
 
 Minimum provider checklist:
 

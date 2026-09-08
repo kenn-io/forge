@@ -13,7 +13,7 @@ type Inventory struct {
 }
 
 // Capabilities authorize generic proof paths, not inferred provider support.
-type Capabilities struct{ Merge, Squash bool }
+type Capabilities struct{ Merge, Squash, Rebase, FastForward bool }
 
 // Candidate contains provider facts bound to a stable target repository.
 // Evidence labels name the facts establishing method and terminal, not guesses
@@ -47,9 +47,21 @@ type Coverage struct {
 	Gaps          []Gap
 }
 
+// IntegratedCandidate arrived through an ordinary merge, without a second origin.
+type IntegratedCandidate struct{ CandidateID, ThroughCandidateID string }
+
+// DirectPush is a graph origin without an associated provider landing. It does
+// not establish a pusher or a trusted ref-update time. Introduced includes merges.
+type DirectPush struct {
+	Before, Terminal string
+	Introduced       []string
+}
+
 // Result is evidence, never a total when Coverage.Complete is false.
 type Result struct {
 	Landings     []Landing
+	Integrated   []IntegratedCandidate
+	DirectPushes []DirectPush
 	Unattributed []string
 	Coverage     Coverage
 }

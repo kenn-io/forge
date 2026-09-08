@@ -1,7 +1,9 @@
 package landedwork
 
 func repositoryBytes(r Repository) int64 { return int64(len(r.Provider) + len(r.Host) + len(r.ID)) }
-func gapBytes(g Gap) int64               { return int64(len(g.CandidateID) + len(g.ObjectID) + len(g.Reason)) }
+func gapBytes(g Gap) int64 {
+	return int64(len(g.CandidateID) + len(g.ObjectID) + len(g.Reason) + len(g.Span.Before) + len(g.Span.Through))
+}
 func stringBytes(ids []string) int64 {
 	var n int64
 	for _, id := range ids {
@@ -27,6 +29,15 @@ func checkResultOutput(r Result, l Limits) error {
 	c := r.Coverage
 	n := repositoryBytes(c.Bounds.Repository) + int64(len(c.Bounds.Base)+len(c.Bounds.Head)+len(c.CertifiedHead)) + inventoryBytes(c.Inventory)
 	records := int64(len(c.Gaps) + len(r.Landings) + len(r.Unattributed))
+	records += int64(len(r.Integrated))
+	records += int64(len(r.DirectPushes))
+	for _, d := range r.DirectPushes {
+		n += int64(len(d.Before)+len(d.Terminal)) + stringBytes(d.Introduced)
+		records += int64(len(d.Introduced))
+	}
+	for _, i := range r.Integrated {
+		n += int64(len(i.CandidateID) + len(i.ThroughCandidateID))
+	}
 	for _, gap := range c.Gaps {
 		n += gapBytes(gap)
 	}

@@ -49,7 +49,7 @@ interface Fixture {
 
 function routes(fixture: Fixture): MockRouteOverride {
   return (request) => {
-    const path = request.url.pathname;
+    const path = request.url.pathname.toLowerCase();
     if (request.method === "GET" && path === "/api/v1/actions/github/acme/app/workflows") {
       fixture.catalogReads += 1;
       return jsonResponse({
@@ -160,6 +160,23 @@ describe("workflow actions store", () => {
     },
   );
 
+  it("clears the initial catalog error after a successful retry", async () => {
+    api = createMockApiFetch([
+      () => jsonResponse({ code: "internalError", title: "Read failed", status: 500, type: "about:blank" }, 500),
+    ]);
+    globalThis.fetch = api.fetch;
+    store.loadCatalog(ref);
+    await settle();
+    expect(store.getSnapshot(ref)?.error).not.toBeNull();
+
+    api = createMockApiFetch([routes(fixture)]);
+    globalThis.fetch = api.fetch;
+    store.loadCatalog(ref);
+    await settle();
+    expect(store.getCatalog(ref)?.workflows?.[0]?.id).toBe("deploy.yml");
+    expect(store.getSnapshot(ref)?.error).toBeNull();
+  });
+
   it("retries a jobs read after a failed response", async () => {
     let reads = 0;
     api = createMockApiFetch([
@@ -180,41 +197,44 @@ describe("workflow actions store", () => {
     expect(store.getSnapshot(ref)?.jobs["run-1"]).toEqual([]);
   });
 
-  it("moves a dispatch from pending to locating and lets server progress events finish it", async () => {
-    store.loadCatalog(ref);
-    await settle();
-    store.selectWorkflow(ref, "deploy.yml");
-    await settle();
+  it.each([ref, { ...ref, owner: "Acme", name: "App", repoPath: "Acme/App" }])(
+    "applies canonical server progress to route %j",
+    async (ref) => {
+      store.loadCatalog(ref);
+      await settle();
+      store.selectWorkflow(ref, "deploy.yml");
+      await settle();
 
-    store.dispatch({
-      ref,
-      workflowId: "deploy.yml",
-      expectedDefinitionSha: "definition-1",
-      dispatchRef: "main",
-      inputs: {},
-    });
-    expect(store.getDispatch(ref, "deploy.yml")).toEqual({ kind: "pending" });
-    await settle();
-    expect(store.getDispatch(ref, "deploy.yml")).toEqual({ kind: "locating", dispatchId: "dispatch-1" });
-    expect(api.requests.filter((request) => request.method === "POST")).toHaveLength(1);
+      store.dispatch({
+        ref,
+        workflowId: "deploy.yml",
+        expectedDefinitionSha: "definition-1",
+        dispatchRef: "main",
+        inputs: {},
+      });
+      expect(store.getDispatch(ref, "deploy.yml")).toEqual({ kind: "pending" });
+      await settle();
+      expect(store.getDispatch(ref, "deploy.yml")).toEqual({ kind: "locating", dispatchId: "dispatch-1" });
+      expect(api.requests.filter((request) => request.method === "POST")).toHaveLength(1);
 
-    store.applyDispatchProgress(progress("located", "dispatch-1", run("run-new", "queued")));
-    expect(store.getDispatch(ref, "deploy.yml")).toEqual({
-      kind: "succeeded",
-      dispatchId: "dispatch-1",
-      run: run("run-new", "queued"),
-    });
-    expect(store.getRuns(ref).map((item) => item.id)).toEqual(["run-new", "run-old"]);
+      store.applyDispatchProgress(progress("located", "dispatch-1", run("run-new", "queued")));
+      expect(store.getDispatch(ref, "deploy.yml")).toEqual({
+        kind: "succeeded",
+        dispatchId: "dispatch-1",
+        run: run("run-new", "queued"),
+      });
+      expect(store.getRuns(ref).map((item) => item.id)).toEqual(["run-new", "run-old"]);
 
-    store.applyDispatchProgress(progress("updated", "dispatch-1", run("run-new", "completed", "success")));
-    expect(store.getRuns(ref)[0]?.conclusion).toBe("success");
-    expect(store.getDispatch(ref, "deploy.yml")).toMatchObject({ kind: "succeeded", run: { conclusion: "success" } });
-    expect(fixture.runReads).toEqual(["deploy.yml"]);
+      store.applyDispatchProgress(progress("updated", "dispatch-1", run("run-new", "completed", "success")));
+      expect(store.getRuns(ref)[0]?.conclusion).toBe("success");
+      expect(store.getDispatch(ref, "deploy.yml")).toMatchObject({ kind: "succeeded", run: { conclusion: "success" } });
+      expect(fixture.runReads).toEqual(["deploy.yml"]);
 
-    store.newDispatchCycle(ref, "deploy.yml");
-    expect(store.getDispatch(ref, "deploy.yml")).toBeNull();
-    expect(store.getRuns(ref)).toHaveLength(2);
-  });
+      store.newDispatchCycle(ref, "deploy.yml");
+      expect(store.getDispatch(ref, "deploy.yml")).toBeNull();
+      expect(store.getRuns(ref)).toHaveLength(2);
+    },
+  );
 
   it("keeps the listed run when the response names only an id and applies progress that arrived first", async () => {
     fixture.dispatchResponse = () =>

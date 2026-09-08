@@ -246,6 +246,25 @@ describe("ActionsPage", () => {
     });
   });
 
+  it("retries an initial catalog failure in place", async () => {
+    let catalogReads = 0;
+    api = createMockApiFetch([
+      (request) =>
+        request.url.pathname === "/api/v1/actions/github/acme/alpha/workflows" && ++catalogReads === 1
+          ? jsonResponse({ code: "upstreamError", detail: "Unavailable" }, 502)
+          : undefined,
+      workflowFixtures(),
+    ]);
+    globalThis.fetch = api.fetch;
+    renderPage();
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Retry workflows" }));
+
+    expect(await screen.findByRole("button", { name: /alpha deploy/ })).toBeTruthy();
+    expect(screen.queryByText("Could not load workflows.")).toBeNull();
+    expect(catalogReads).toBe(2);
+  });
+
   it("reads jobs once per expanded run and keeps other expanded runs open on collapse", async () => {
     const workflowActions = createWorkflowActionsStore({ runtime });
     const loadJobs = vi.spyOn(workflowActions, "loadJobs");

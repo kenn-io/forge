@@ -239,7 +239,10 @@
           {#if snapshot?.loading.catalog || !snapshot}
             <p class="pane-state" role="status">Loading workflows…</p>
           {:else if snapshot.error && !catalog}
-            <p class="pane-state pane-state--error" role="alert">Could not load workflows.</p>
+            <div class="pane-state pane-state--error" role="alert">
+              <p>Could not load workflows.</p>
+              <button type="button" onclick={() => selectedRef && workflowActions.loadCatalog(selectedRef)}>Retry workflows</button>
+            </div>
           {:else if (catalog?.workflows?.length ?? 0) === 0}
             <p class="pane-state">No manual workflows are available.</p>
           {:else}

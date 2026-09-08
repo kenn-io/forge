@@ -20,6 +20,7 @@ const (
 	capabilityReviewMutation              = "review_mutation"
 	capabilityWorkflowApproval            = "workflow_approval"
 	capabilityWorkflowDispatch            = "workflow_dispatch"
+	capabilityReadWorkflows               = "read_workflows"
 	capabilityReadyForReview              = "ready_for_review"
 	capabilityDraftMutation               = "draft_mutation"
 	capabilityIssueMutation               = "issue_mutation"
@@ -144,7 +145,7 @@ var (
 	descCloseIssue         = operationDescriptor{name: operationCloseIssue, requiredCapabilities: []string{capabilityIssueMutation}, bucket: apiBucketREST}
 	descReopenIssue        = operationDescriptor{name: operationReopenIssue, requiredCapabilities: []string{capabilityIssueMutation}, bucket: apiBucketREST}
 	descApproveWorkflow    = operationDescriptor{name: operationApproveWorkflow, requiredCapabilities: []string{capabilityWorkflowApproval}, bucket: apiBucketREST}
-	descDispatchWorkflow   = operationDescriptor{name: operationDispatchWorkflow, requiredCapabilities: []string{capabilityWorkflowDispatch}, bucket: apiBucketREST}
+	descDispatchWorkflow   = operationDescriptor{name: operationDispatchWorkflow, requiredCapabilities: []string{capabilityReadWorkflows, capabilityWorkflowDispatch}, bucket: apiBucketREST}
 	// Content edits (PR/issue title, body, task-list writes) ride the
 	// state-mutation capability: state_mutation has always meant "can
 	// PATCH the item" across providers — state transitions and

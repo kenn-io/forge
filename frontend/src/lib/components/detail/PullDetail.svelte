@@ -1351,6 +1351,7 @@
       && currentCapabilities().read_workflows
       && currentCapabilities().workflow_dispatch,
   );
+  const workflowSnapshot = $derived(workflowActions.getSnapshot(routeRef));
   const workflowCatalog = $derived(
     workflowCatalogDemandEnabled
       ? workflowActions.getCatalog(routeRef)?.workflows ?? []
@@ -1369,7 +1370,7 @@
     detailStore.getDetail()?.merge_request.State !== "merged" && !stalePR,
   );
   const hasWorkflowActions = $derived(
-    workflowCatalogDemandEnabled && workflowCatalog.length > 0,
+    workflowCatalogDemandEnabled && (workflowCatalog.length > 0 || !workflowSnapshot?.catalog),
   );
   const showActionSurface = $derived(
     hasPrimaryPRActions || hasWorkflowActions,
@@ -2792,6 +2793,14 @@
           aria-label={workflowProviderLabel}
         >
           <div class="workflow-actions-menu__label">{workflowProviderLabel}</div>
+          {#if workflowSnapshot?.loading.catalog}
+            <p role="status">Loading workflows…</p>
+          {:else if workflowSnapshot?.error && !workflowSnapshot?.catalog}
+            <p role="alert">Could not load workflows.</p>
+            <button type="button" class="workflow-actions-menu__item" onclick={() => workflowActions.loadCatalog(routeRef)}>
+              Retry workflows
+            </button>
+          {/if}
           {#each workflowCatalog as workflow (workflow.id)}
             <button
               type="button"

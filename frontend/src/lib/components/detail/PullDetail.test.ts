@@ -813,6 +813,23 @@ describe("PullDetail provider workflow actions", () => {
     expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
   });
 
+  it("keeps workflow actions accessible after an initial catalog failure and retries in place", async () => {
+    const detail = pullDetail();
+    enableWorkflowActions(detail);
+    const api = workflowClient(detail);
+    api.GET.mockRejectedValueOnce(new Error("Unavailable"));
+    renderPullDetail(detail, api.repoSettings, api.client, {
+      actionsModeVisible: true,
+      runtimeClient: api.client,
+    });
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Run workflow" }));
+    await fireEvent.click(await screen.findByRole("button", { name: "Retry workflows" }));
+
+    expect(await screen.findByRole("button", { name: "Release" })).toBeTruthy();
+    expect(screen.queryByText("Could not load workflows.")).toBeNull();
+  });
+
   it("routes definition-conflict recovery through a real catalog refresh without replaying POST", async () => {
     const rendered = await openReleaseWorkflow(pullDetail());
     const refreshCatalog = vi.spyOn(rendered.workflowActions, "refreshCatalog");

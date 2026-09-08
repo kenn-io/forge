@@ -108,7 +108,9 @@ export function workflowRepositoryKey(
   ref: Pick<ProviderRouteRef, "provider" | "platformHost" | "owner" | "name">,
 ): string {
   const provider = canonicalProvider(ref.provider);
-  return [provider, resolvedPlatformHost(provider, ref.platformHost).toLowerCase(), ref.owner, ref.name]
+  const owner = provider === "github" ? ref.owner.toLowerCase() : ref.owner;
+  const name = provider === "github" ? ref.name.toLowerCase() : ref.name;
+  return [provider, resolvedPlatformHost(provider, ref.platformHost).toLowerCase(), owner, name]
     .map(encodeURIComponent)
     .join("|");
 }
@@ -266,7 +268,7 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
     const existing = snapshotFor(ref);
     if (existing.catalog !== null || existing.loading.catalog) return;
     readCatalog(ref, (_catalog, error) => {
-      if (error) update(ref, (snapshot) => ({ ...snapshot, error }));
+      update(ref, (snapshot) => ({ ...snapshot, error }));
     });
   }
 

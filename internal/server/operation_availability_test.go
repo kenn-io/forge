@@ -30,6 +30,7 @@ func TestDeriveOperationAvailability(t *testing.T) {
 		ReadComments:                true,
 		ReadReleases:                true,
 		ReadCI:                      true,
+		ReadWorkflows:               true,
 		ReadLabels:                  true,
 		CommentMutation:             true,
 		StateMutation:               true,
@@ -97,6 +98,21 @@ func TestDeriveOperationAvailability(t *testing.T) {
 				Code:               availabilityCodeUnsupportedCapability,
 				UnavailableReason:  "Provider does not support workflow_dispatch",
 				RequiredCapability: capabilityWorkflowDispatch,
+			},
+		},
+		{
+			name: "dispatch_workflow is unavailable without read_workflows",
+			op:   descDispatchWorkflow,
+			caps: func() httpapi.ProviderCapabilitiesResponse {
+				c := allCaps
+				c.ReadWorkflows = false
+				return c
+			}(),
+			repo: repoCanMerge,
+			expected: httpapi.OperationAvailability{
+				Code:               availabilityCodeUnsupportedCapability,
+				UnavailableReason:  "Provider does not support read_workflows",
+				RequiredCapability: "read_workflows",
 			},
 		},
 		{

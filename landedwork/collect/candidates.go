@@ -18,7 +18,7 @@ func (c *collector) observe(ctx context.Context, ref platform.LandingChangeRef, 
 	}
 	detail, err := c.reader.GetLandingChange(ctx, c.route, ref)
 	if err != nil {
-		return c.incomplete(o, reason(err), ""), nil
+		return c.incomplete(o, c.reason(err), ""), nil
 	}
 	if err := c.identity(detail, ref); err != nil {
 		return Observation{}, err
@@ -48,7 +48,7 @@ func (c *collector) observe(ctx context.Context, ref platform.LandingChangeRef, 
 	}
 	after, err := c.reader.GetLandingChange(ctx, c.route, ref)
 	if err != nil {
-		return c.incomplete(o, reason(err), ""), nil
+		return c.incomplete(o, c.reason(err), ""), nil
 	}
 	if err := c.identity(after, ref); err != nil {
 		return Observation{}, err
@@ -69,7 +69,7 @@ func (c *collector) sources(ctx context.Context, o Observation) Observation {
 		}
 		page, err := c.reader.ListLandingSource(ctx, c.route, o.Change.Ref, cursor)
 		if err != nil {
-			return c.incomplete(o, reason(err), cursor)
+			return c.incomplete(o, c.reason(err), cursor)
 		}
 		if r := checkPage(c.reader, cursor, page, seen); r != "" {
 			return c.incomplete(o, r, cursor)

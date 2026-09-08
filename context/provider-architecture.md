@@ -60,6 +60,8 @@ Collection must preserve unfinished candidates and the exact prepared query;
 missing provider evidence is never direct-push evidence (`landedwork/collect/collect.go::Collect`).
 Collector call limits do not bound HTTP retries or absence-confirmation reads;
 callers put wire limits below authentication (`platform/landing_evidence.go::LandingEvidenceReader`).
+GitHub collection relies on REST 2022-11-28 terminal semantics, not the newer
+API's omitted field; enterprise coverage remains unverified (`platform/github/landing_evidence.go::Provider.LandingEvidenceSupport`).
 
 Minimum provider checklist:
 

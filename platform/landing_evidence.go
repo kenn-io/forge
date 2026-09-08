@@ -55,4 +55,5 @@ type LandingEvidenceReader interface {
 var (
 	ErrLandingAbsenceAmbiguous = errors.New("landing association absence unconfirmed")
 	ErrLandingTransportLimit   = errors.New("landing transport limit exhausted")
+	ErrLandingIdentityMismatch = errors.New("landing identity mismatch")
 )

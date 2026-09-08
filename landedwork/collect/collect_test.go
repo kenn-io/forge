@@ -232,7 +232,7 @@ func TestCollectLimitsAndFailures(t *testing.T) {
 }
 
 func TestCollectNoResultOnInvalidInput(t *testing.T) {
-	for _, tc := range []string{"deadline", "canceled", "identity", "output", "duplicate query", "invalid limit"} {
+	for _, tc := range []string{"deadline", "canceled", "identity", "reader identity", "output", "duplicate query", "invalid limit"} {
 		t.Run(tc, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
 			defer cancel()
@@ -245,6 +245,8 @@ func TestCollectNoResultOnInvalidInput(t *testing.T) {
 				cancel()
 			case "identity":
 				s.steps[0].value = platform.Repository{Ref: route, PlatformID: 99}
+			case "reader identity":
+				s.steps[4] = step{key: "detail", err: platform.ErrLandingIdentityMismatch}
 			case "output":
 				l.OutputBytes = 1
 			case "duplicate query":

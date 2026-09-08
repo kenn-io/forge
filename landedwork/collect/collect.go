@@ -34,6 +34,7 @@ type collector struct {
 	remaining Limits
 	result    Result
 	refs      map[int64]platform.LandingChangeRef
+	fatal     error
 }
 
 // Collect sweeps every queried commit and preserves unfinished candidates.
@@ -47,6 +48,9 @@ func Collect(ctx context.Context, reader platform.LandingEvidenceReader, route p
 	support := reader.LandingEvidenceSupport()
 	c := collector{reader: reader, route: route, remaining: limits, refs: make(map[int64]platform.LandingChangeRef), result: Result{Evidence: landedwork.Evidence{Query: query, Inventory: landedwork.Inventory{Supported: support.Inventory}, Capabilities: landedwork.Capabilities{Merge: support.OrdinaryMerge}}}}
 	defer func() {
+		if c.fatal != nil {
+			err = c.fatal
+		}
 		if ctx.Err() != nil {
 			err = ctx.Err()
 		}
@@ -71,7 +75,7 @@ func Collect(ctx context.Context, reader platform.LandingEvidenceReader, route p
 	}
 	repo, readErr := reader.GetRepository(ctx, route)
 	if readErr != nil {
-		c.stop(reason(readErr), "", "")
+		c.stop(c.reason(readErr), "", "")
 		return c.result, nil
 	}
 	if repo.Ref.Platform != query.Bounds.Repository.Provider || repo.Ref.Host != query.Bounds.Repository.Host || repo.PlatformID <= 0 || strconv.FormatInt(repo.PlatformID, 10) != query.Bounds.Repository.ID {
@@ -119,7 +123,7 @@ func (c *collector) sweep(ctx context.Context, commits []string) {
 			}
 			page, err := c.reader.ListLandingAssociations(ctx, c.route, sha, cursor)
 			if err != nil {
-				c.stop(reason(err), sha, cursor)
+				c.stop(c.reason(err), sha, cursor)
 				return
 			}
 			if r := checkPage(c.reader, cursor, page, seen); r != "" {
@@ -160,8 +164,11 @@ func checkPage[T any](r platform.LandingEvidenceReader, cursor string, p platfor
 	return ""
 }
 
-func reason(err error) string {
+func (c *collector) reason(err error) string {
 	switch {
+	case errors.Is(err, platform.ErrLandingIdentityMismatch), errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		c.fatal = err
+		return "request_failed"
 	case errors.Is(err, platform.ErrLandingTransportLimit):
 		return "exhausted_limits"
 	case errors.Is(err, platform.ErrLandingAbsenceAmbiguous):

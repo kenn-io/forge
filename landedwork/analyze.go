@@ -94,6 +94,11 @@ func finishCoverage(r *Result, p *Interval) {
 	owners, positions := map[string]bool{}, map[string]int{}
 	for _, landing := range r.Landings {
 		owners[landing.Terminal] = true
+		if landing.Method == "rebase" || landing.Method == "fast_forward" {
+			for _, id := range landing.Introduced {
+				owners[id] = true
+			}
+		}
 	}
 	complete := len(r.Coverage.Gaps) == 0
 	for index, id := range p.spine {

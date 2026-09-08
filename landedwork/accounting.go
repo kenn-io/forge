@@ -29,6 +29,10 @@ func checkResultOutput(r Result, l Limits) error {
 	c := r.Coverage
 	n := repositoryBytes(c.Bounds.Repository) + int64(len(c.Bounds.Base)+len(c.Bounds.Head)+len(c.CertifiedHead)) + inventoryBytes(c.Inventory)
 	records := int64(len(c.Gaps) + len(r.Landings) + len(r.Unattributed))
+	records += int64(len(r.Integrated))
+	for _, i := range r.Integrated {
+		n += int64(len(i.CandidateID) + len(i.ThroughCandidateID))
+	}
 	for _, gap := range c.Gaps {
 		n += gapBytes(gap)
 	}

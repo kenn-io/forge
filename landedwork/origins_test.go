@@ -9,6 +9,65 @@ import (
 	"go.kenn.io/forge/landedwork"
 )
 
+func TestIntegratedMerges(t *testing.T) {
+	for _, variant := range []string{"nested", "reverse", "partial inner", "rejected outer", "unsupported inner"} {
+		t.Run(variant, func(t *testing.T) {
+			f := buildFixture(t, false)
+			inner := f.head
+			f.repo.Checkout("-b", "integration", f.base)
+			side := f.repo.CommitFile("integration.txt", "side\n", "integration starts")
+			f.repo.Run("merge", "--no-ff", "main", "-m", "middle merge")
+			middle := f.repo.Head()
+			f.repo.Checkout("-b", "final", f.base)
+			f.repo.Run("merge", "--no-ff", "integration", "-m", "outer merge")
+			f.head = f.repo.Head()
+			ctx, p := f.prepare(t)
+			e := fixtureEvidence(f, p, "merge")
+			innerCandidate := e.Candidates[0]
+			innerCandidate.ID = "inner"
+			innerCandidate.Terminal = inner
+			middleCandidate := innerCandidate
+			middleCandidate.ID = "middle"
+			middleCandidate.Terminal = middle
+			middleCandidate.SourceHead = inner
+			middleCandidate.Source = append(slices.Clone(f.source), inner)
+			outer := middleCandidate
+			outer.ID = "outer"
+			outer.Terminal = f.head
+			outer.SourceHead = middle
+			outer.Source = append(slices.Clone(middleCandidate.Source), side, middle)
+			e.Candidates = []landedwork.Candidate{innerCandidate, middleCandidate, outer}
+			switch variant {
+			case "reverse":
+				slices.Reverse(e.Candidates)
+			case "partial inner":
+				e.Candidates[0].SourceComplete = false
+			case "rejected outer":
+				e.Candidates[2].SourceComplete = false
+			case "unsupported inner":
+				e.Candidates[0].Method = "squash"
+			}
+			r, err := landedwork.Analyze(ctx, p, e, fixtureLimits())
+			require := require.New(t)
+			assert := assert.New(t)
+			require.NoError(err)
+			if variant != "nested" && variant != "reverse" {
+				assert.False(r.Coverage.Complete)
+				assert.Equal(f.base, r.Coverage.CertifiedHead)
+				require.NotEmpty(r.Coverage.Gaps)
+				assert.Equal(landedwork.Span{Before: f.base, Through: f.head}, r.Coverage.Gaps[0].Span)
+				return
+			}
+			assert.Equal([]landedwork.IntegratedCandidate{{CandidateID: "inner", ThroughCandidateID: "outer"}, {CandidateID: "middle", ThroughCandidateID: "outer"}}, r.Integrated)
+			require.Len(r.Landings, 1)
+			assert.Equal("outer", r.Landings[0].CandidateID)
+			assert.True(r.Coverage.Complete)
+			assert.Equal(f.head, r.Coverage.CertifiedHead)
+			assert.Empty(r.Coverage.Gaps)
+		})
+	}
+}
+
 func TestOriginOverlaps(t *testing.T) {
 	for _, reverse := range []bool{false, true} {
 		f := buildFixture(t, false)

@@ -50,12 +50,17 @@ func resolveOrigins(ctx context.Context, v *objectView, p *Interval, candidates 
 	terminals, ids := candidateCounts(candidates)
 	candidates = slices.Clone(candidates)
 	slices.SortFunc(candidates, func(a, b Candidate) int { return cmp.Compare(a.ID, b.ID) })
+	var offSpine []Candidate
 	for _, c := range candidates {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		if terminals[c.Terminal] > 1 || ids[c.ID] > 1 {
 			r.Coverage.Gaps = append(r.Coverage.Gaps, candidateGap(p, c, Gap{CandidateID: c.ID, ObjectID: c.Terminal, Reason: "candidate_conflict"}))
+			continue
+		}
+		if c.Terminal != "" && c.TerminalEvidence != "" && !slices.Contains(p.spine, c.Terminal) {
+			offSpine = append(offSpine, c)
 			continue
 		}
 		l, g := prove(ctx, v, p, c, caps)
@@ -69,7 +74,66 @@ func resolveOrigins(ctx context.Context, v *objectView, p *Interval, candidates 
 		}
 	}
 	rejectOverlaps(r, p)
+	if !v.meter.failed {
+		for _, c := range offSpine {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			through, g := integratedThrough(ctx, v, p, c, caps, r.Landings)
+			if g.Reason != "" {
+				r.Coverage.Gaps = append(r.Coverage.Gaps, candidateGap(p, c, g))
+			} else {
+				r.Integrated = append(r.Integrated, IntegratedCandidate{CandidateID: c.ID, ThroughCandidateID: through})
+			}
+			if v.meter.failed {
+				break
+			}
+		}
+	}
 	return ctx.Err()
+}
+
+func integratedThrough(ctx context.Context, v *objectView, p *Interval, c Candidate, caps Capabilities, outers []Landing) (string, Gap) {
+	g := Gap{CandidateID: c.ID, ObjectID: c.Terminal, Reason: "terminal_outside_spine"}
+	if c.Method != "merge" && c.Method != "" {
+		return "", g
+	}
+	inner, failed := proveAt(ctx, v, p, c, caps)
+	if failed.Reason != "" {
+		return "", failed
+	}
+	through := ""
+	for _, outer := range outers {
+		if err := ctx.Err(); err != nil {
+			g.Reason = graphReason(err)
+			return "", g
+		}
+		if outer.Method != "merge" || !slices.Contains(outer.Introduced, inner.Terminal) {
+			continue
+		}
+		contained := true
+		for _, id := range inner.Introduced {
+			if err := ctx.Err(); err != nil {
+				g.Reason = graphReason(err)
+				return "", g
+			}
+			if !slices.Contains(outer.Introduced, id) {
+				contained = false
+				break
+			}
+		}
+		if contained {
+			if through != "" {
+				g.Reason = "candidate_conflict"
+				return "", g
+			}
+			through = outer.CandidateID
+		}
+	}
+	if through == "" {
+		return "", g
+	}
+	return through, Gap{}
 }
 
 func rejectOverlaps(r *Result, p *Interval) {

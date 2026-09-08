@@ -47,9 +47,13 @@ type Coverage struct {
 	Gaps          []Gap
 }
 
+// IntegratedCandidate arrived through an ordinary merge, without a second origin.
+type IntegratedCandidate struct{ CandidateID, ThroughCandidateID string }
+
 // Result is evidence, never a total when Coverage.Complete is false.
 type Result struct {
 	Landings     []Landing
+	Integrated   []IntegratedCandidate
 	Unattributed []string
 	Coverage     Coverage
 }

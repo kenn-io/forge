@@ -7,6 +7,14 @@ import (
 )
 
 func prove(ctx context.Context, v *objectView, p *Interval, c Candidate, caps Capabilities) (Landing, Gap) {
+	if c.Terminal != "" && c.TerminalEvidence != "" && !slices.Contains(p.spine, c.Terminal) {
+		return Landing{}, Gap{CandidateID: c.ID, ObjectID: c.Terminal, Reason: "terminal_outside_spine"}
+	}
+	return proveAt(ctx, v, p, c, caps)
+}
+
+// proveAt checks the method independently of its admission to the target spine.
+func proveAt(ctx context.Context, v *objectView, p *Interval, c Candidate, caps Capabilities) (Landing, Gap) {
 	gap := Gap{CandidateID: c.ID, ObjectID: c.Terminal}
 	reject := func(reason string) (Landing, Gap) { gap.Reason = reason; return Landing{}, gap }
 	if (c.Method == "rebase" && !caps.Rebase) || (c.Method == "fast_forward" && !caps.FastForward) {
@@ -14,9 +22,6 @@ func prove(ctx context.Context, v *objectView, p *Interval, c Candidate, caps Ca
 	}
 	if c.Terminal == "" || c.TerminalEvidence == "" {
 		return reject("terminal_unproven")
-	}
-	if !slices.Contains(p.spine, c.Terminal) {
-		return reject("terminal_outside_spine")
 	}
 	if c.Method != "" && c.MethodEvidence == "" {
 		return reject("method_unproven")

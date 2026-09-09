@@ -22,6 +22,7 @@ func TestProviderEventFilterOwnsOnlyHubProviderEvents(t *testing.T) {
 	for _, eventType := range []string{
 		"data_changed", "sync_status", "pr_detail_refreshed",
 		"pr_ci_refresh_queued", "pr_ci_refreshed", "deferred_merge_completed",
+		"workflow_dispatch_progress",
 	} {
 		assert.True(t, IsHubProviderEvent(eventType), eventType)
 	}
@@ -31,6 +32,31 @@ func TestProviderEventFilterOwnsOnlyHubProviderEvents(t *testing.T) {
 		"hub_connection_changed", "reconnect.stale",
 	} {
 		assert.False(t, IsHubProviderEvent(eventType), eventType)
+	}
+}
+
+func TestEventClientDeliversWorkflowDispatchProgress(t *testing.T) {
+	t.Parallel()
+	for _, status := range []string{"unresolved", "located", "updated", "timed_out"} {
+		t.Run(status, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			payload := `{"dispatch_id":"dispatch-1","status":"` + status + `","run":{"id":"run-1"}}`
+			var received []Event
+			client := &EventClient{onEvent: func(_ context.Context, event Event) error {
+				received = append(received, event)
+				return nil
+			}}
+			var cursor uint64
+			_, err := client.readStream(t.Context(), strings.NewReader(
+				": "+FederationReplayCompleteComment+"\n\n"+
+					"id: 1\nevent: workflow_dispatch_progress\ndata: "+payload+"\n\n",
+			), &cursor)
+			require.ErrorIs(err, io.ErrUnexpectedEOF)
+			require.Len(received, 1)
+			assert.Equal("workflow_dispatch_progress", received[0].Type)
+			assert.JSONEq(payload, string(received[0].Data))
+		})
 	}
 }
 

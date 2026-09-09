@@ -129,6 +129,10 @@ done; a provider child-context deadline while the request remains active is a
 
 ## Frontend Handling
 
+Development API failures must remain inspectable after a toast disappears. Keep
+body capture opt-in outside process-compose and in local process logs, never
+analytics (`frontend/src/lib/dev/apiFailureLogging.ts::apiFailureLogging`).
+
 Generated TypeScript schemas should expose the problem `code` enum. Shared UI
 helpers should provide:
 

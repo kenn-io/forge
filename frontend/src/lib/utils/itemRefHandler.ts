@@ -102,8 +102,7 @@ function resolveAndNavigate(ref: ResolvableItemReference): Effect.Effect<void, u
 
 // Resolves an item reference through the repo resolve endpoint and either
 // navigates to the internal item route (tracked repo) or opens the provider
-// URL externally (untracked repo). Shared by rendered item-ref anchors and
-// the terminal link handler.
+// URL externally (untracked repo) for rendered item-ref anchors.
 export function resolveItemReference(runtime: AppRuntime, ref: ResolvableItemReference): AppExecution<void, unknown> {
   return runtime.runCommand(resolveAndNavigate(ref), {
     operation: "resolve item reference",

@@ -22,3 +22,7 @@ Hosts communicate with embeds through the `window.__kenn_forge_*` bridge on that
 isolated browsing context. Because the bridge and browser history are
 document-global, callers that need more than one embed at a time should allocate
 one iframe/WebView per embed instance rather than sharing a single document.
+
+- Default-browser launches belong to the client host, never the remote daemon;
+  Electron hosts must handle `window.open` requests with `webContents.setWindowOpenHandler`,
+  open HTTP(S) URLs via `shell.openExternal`, and deny creation of an embedded window.

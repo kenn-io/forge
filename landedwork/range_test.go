@@ -12,132 +12,156 @@ import (
 )
 
 func TestRebaseFileChanges(t *testing.T) {
-	for _, tc := range []struct {
-		name, path, old, source, replay string
-		mode                            bool
-		accept                          bool
-	}{
-		{"binary exact", "data.bin", "old\x00", "new\x00", "new\x00", false, true},
-		{"binary differs", "data.bin", "old\x00", "new\x00", "other\x00", false, false},
-		{"raw name and bytes", "odd\n\xff.txt", "old\xff\n", "new\xfe\n", "new\xfe\n", false, true},
-		{"missing newline", "text", "old\n", "new", "new", false, true},
-		{"old missing newline", "text", "old", "new\n", "new\n", false, true},
-		{"newline differs", "text", "old\n", "new", "new\n", false, false},
-		{"mode differs", "script", "old\n", "new\n", "new\n", true, false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			require := require.New(t)
-			assert := assert.New(t)
-			f := buildFixture(t, false)
-			f.repo.Checkout("-b", "file-base", f.base)
-			base := f.repo.CommitFile(tc.path, tc.old, "file base")
-			f.repo.Checkout("-b", "file-source")
-			f.source = []string{f.repo.CommitFile(tc.path, tc.source, "source")}
-			f.repo.Checkout("-b", "file-replay", base)
-			f.base = f.repo.CommitFile("unrelated", "context\n", "advance")
-			if tc.mode {
-				require.NoError(os.Chmod(filepath.Join(f.repo.Root, tc.path), 0755))
-			}
-			f.head = f.repo.CommitFile(tc.path, tc.replay, "replay")
-			ctx, p := f.prepare(t)
-			e := fixtureEvidence(f, p, "rebase")
-			e.Capabilities.Rebase = true
-			r, err := landedwork.Analyze(ctx, p, e, fixtureLimits())
-			require.NoError(err)
-			assert.Equal(tc.accept, r.Coverage.Complete)
-			if tc.accept {
-				assert.Len(r.Landings, 1)
-			} else {
-				assert.Empty(r.Landings)
-			}
-		})
+	for _, method := range []string{"rebase", "squash", "automatic"} {
+		for _, tc := range []struct {
+			name, path, old, source, replay string
+			mode                            bool
+			accept                          bool
+		}{
+			{"binary exact", "data.bin", "old\x00", "new\x00", "new\x00", false, true},
+			{"binary differs", "data.bin", "old\x00", "new\x00", "other\x00", false, false},
+			{"raw name and bytes", "odd\n\xff.txt", "old\xff\n", "new\xfe\n", "new\xfe\n", false, true},
+			{"missing newline", "text", "old\n", "new", "new", false, true},
+			{"old missing newline", "text", "old", "new\n", "new\n", false, true},
+			{"newline differs", "text", "old\n", "new", "new\n", false, false},
+			{"mode differs", "script", "old\n", "new\n", "new\n", true, false},
+		} {
+			t.Run(method+"/"+tc.name, func(t *testing.T) {
+				require := require.New(t)
+				assert := assert.New(t)
+				f := buildFixture(t, false)
+				f.repo.Checkout("-b", "file-base", f.base)
+				base := f.repo.CommitFile(tc.path, tc.old, "file base")
+				f.repo.Checkout("-b", "file-source")
+				f.source = []string{f.repo.CommitFile(tc.path, tc.source, "source")}
+				f.repo.Checkout("-b", "file-replay", base)
+				f.base = f.repo.CommitFile("unrelated", "context\n", "advance")
+				if tc.mode {
+					require.NoError(os.Chmod(filepath.Join(f.repo.Root, tc.path), 0755))
+				}
+				f.head = f.repo.CommitFile(tc.path, tc.replay, "replay")
+				ctx, p := f.prepare(t)
+				e := fixtureEvidence(f, p, method)
+				if method == "automatic" {
+					e.Candidates[0].Method, e.Candidates[0].MethodEvidence = "", ""
+					e.Capabilities.SingleParentCorrespondence = true
+				}
+				e.Capabilities.Rebase = true
+				r, err := landedwork.Analyze(ctx, p, e, fixtureLimits())
+				require.NoError(err)
+				assert.Equal(tc.accept, r.Coverage.Complete)
+				if tc.accept {
+					assert.Len(r.Landings, 1)
+				} else {
+					assert.Empty(r.Landings)
+				}
+			})
+		}
 	}
 }
 
 func TestRebaseOldSideNewline(t *testing.T) {
-	for _, tc := range []struct {
-		name, sourceOld, replayOld string
-		accept                     bool
-	}{
-		{"matching", "old", "old", true},
-		{"source missing newline", "old", "old\n", false},
-		{"replay missing newline", "old\n", "old", false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			require := require.New(t)
-			assert := assert.New(t)
-			f := buildFixture(t, false)
-			f.repo.Checkout("-b", "newline-source", f.base)
-			f.repo.CommitFile("text", tc.sourceOld, "source base")
-			f.source = []string{f.repo.CommitFile("text", "new\n", "source")}
-			f.repo.Checkout("-b", "newline-replay", f.base)
-			f.base = f.repo.CommitFile("text", tc.replayOld, "replay base")
-			f.head = f.repo.CommitFile("text", "new\n", "replay")
-			ctx, p := f.prepare(t)
-			e := fixtureEvidence(f, p, "rebase")
-			e.Capabilities.Rebase = true
-			r, err := landedwork.Analyze(ctx, p, e, fixtureLimits())
-			require.NoError(err)
-			assert.Equal(tc.accept, r.Coverage.Complete)
-			if tc.accept {
-				assert.Len(r.Landings, 1)
-				assert.Equal(f.head, r.Coverage.CertifiedHead)
-			} else {
-				assert.Empty(r.Landings)
-				assert.Equal(f.base, r.Coverage.CertifiedHead)
-				require.Len(r.Coverage.Gaps, 1)
-				assert.Equal("source_correspondence_unproven", r.Coverage.Gaps[0].Reason)
-			}
-		})
+	for _, method := range []string{"rebase", "squash", "automatic"} {
+		for _, tc := range []struct {
+			name, sourceOld, replayOld string
+			accept                     bool
+		}{
+			{"matching", "old", "old", true},
+			{"source missing newline", "old", "old\n", false},
+			{"replay missing newline", "old\n", "old", false},
+		} {
+			t.Run(method+"/"+tc.name, func(t *testing.T) {
+				require := require.New(t)
+				assert := assert.New(t)
+				f := buildFixture(t, false)
+				f.repo.Checkout("-b", "newline-source", f.base)
+				f.repo.CommitFile("text", tc.sourceOld, "source base")
+				f.source = []string{f.repo.CommitFile("text", "new\n", "source")}
+				f.repo.Checkout("-b", "newline-replay", f.base)
+				f.base = f.repo.CommitFile("text", tc.replayOld, "replay base")
+				f.head = f.repo.CommitFile("text", "new\n", "replay")
+				ctx, p := f.prepare(t)
+				e := fixtureEvidence(f, p, method)
+				if method == "automatic" {
+					e.Candidates[0].Method, e.Candidates[0].MethodEvidence = "", ""
+					e.Capabilities.SingleParentCorrespondence = true
+				}
+				e.Capabilities.Rebase = true
+				r, err := landedwork.Analyze(ctx, p, e, fixtureLimits())
+				require.NoError(err)
+				assert.Equal(tc.accept, r.Coverage.Complete)
+				if tc.accept {
+					assert.Len(r.Landings, 1)
+					assert.Equal(f.head, r.Coverage.CertifiedHead)
+				} else {
+					assert.Empty(r.Landings)
+					assert.Equal(f.base, r.Coverage.CertifiedHead)
+					require.Len(r.Coverage.Gaps, 1)
+					assert.Equal("source_correspondence_unproven", r.Coverage.Gaps[0].Reason)
+				}
+			})
+		}
 	}
 }
 
 func TestRebaseRepeatedOccurrence(t *testing.T) {
-	for _, insertion := range []bool{false, true} {
-		f := buildFixture(t, false)
-		f.repo.Checkout("-b", "occurrence-source", f.base)
-		base := f.repo.CommitFile("text", "old\nkeep\nold\nkeep\n", "repeated text")
-		source, replay := "new\nkeep\nold\nkeep\n", "old\nkeep\nnew\nkeep\n"
-		if insertion {
-			source, replay = "old\nnew\nkeep\nold\nkeep\n", "old\nkeep\nold\nnew\nkeep\n"
+	for _, method := range []string{"rebase", "squash", "automatic"} {
+		for _, insertion := range []bool{false, true} {
+			f := buildFixture(t, false)
+			f.repo.Checkout("-b", "occurrence-source", f.base)
+			base := f.repo.CommitFile("text", "old\nkeep\nold\nkeep\n", "repeated text")
+			source, replay := "new\nkeep\nold\nkeep\n", "old\nkeep\nnew\nkeep\n"
+			if insertion {
+				source, replay = "old\nnew\nkeep\nold\nkeep\n", "old\nkeep\nold\nnew\nkeep\n"
+			}
+			f.source = []string{f.repo.CommitFile("text", source, "source")}
+			f.repo.Checkout("-b", "occurrence-replay", base)
+			f.base = f.repo.CommitFile("other", "unrelated\n", "advance")
+			f.head = f.repo.CommitFile("text", replay, "replay")
+			ctx, p := f.prepare(t)
+			e := fixtureEvidence(f, p, method)
+			if method == "automatic" {
+				e.Candidates[0].Method, e.Candidates[0].MethodEvidence = "", ""
+				e.Capabilities.SingleParentCorrespondence = true
+			}
+			e.Capabilities.Rebase = true
+			r, err := landedwork.Analyze(ctx, p, e, fixtureLimits())
+			require := require.New(t)
+			assert := assert.New(t)
+			require.NoError(err)
+			assert.Empty(r.Landings)
+			assert.False(r.Coverage.Complete)
+			assert.Equal(f.base, r.Coverage.CertifiedHead)
+			require.Len(r.Coverage.Gaps, 1)
+			assert.Equal("edits_unavailable", r.Coverage.Gaps[0].Reason)
 		}
-		f.source = []string{f.repo.CommitFile("text", source, "source")}
-		f.repo.Checkout("-b", "occurrence-replay", base)
-		f.base = f.repo.CommitFile("other", "unrelated\n", "advance")
-		f.head = f.repo.CommitFile("text", replay, "replay")
-		ctx, p := f.prepare(t)
-		e := fixtureEvidence(f, p, "rebase")
-		e.Capabilities.Rebase = true
-		r, err := landedwork.Analyze(ctx, p, e, fixtureLimits())
-		require := require.New(t)
-		assert := assert.New(t)
-		require.NoError(err)
-		assert.Empty(r.Landings)
-		assert.False(r.Coverage.Complete)
-		assert.Equal(f.base, r.Coverage.CertifiedHead)
-		require.Len(r.Coverage.Gaps, 1)
-		assert.Equal("edits_unavailable", r.Coverage.Gaps[0].Reason)
 	}
 }
 
 func TestRebaseDuplicateEdits(t *testing.T) {
-	f := buildFixture(t, false)
-	f.repo.Checkout("-b", "repeat-source", f.base)
-	f.source = []string{f.repo.CommitFile("work.txt", "new\nkeep\n", "first")}
-	f.source = append(f.source, f.repo.CommitFile("work.txt", "old\nkeep\n", "undo"))
-	f.source = append(f.source, f.repo.CommitFile("work.txt", "new\nkeep\n", "repeat"))
-	f.repo.Checkout("-b", "repeat-replay", f.base)
-	f.base = f.repo.CommitFile("unrelated", "context\n", "advance")
-	f.repo.CommitFile("work.txt", "new\nkeep\n", "replay first")
-	f.repo.CommitFile("work.txt", "old\nkeep\n", "replay undo")
-	f.head = f.repo.CommitFile("work.txt", "new\nkeep\n", "replay repeat")
-	ctx, p := f.prepare(t)
-	e := fixtureEvidence(f, p, "rebase")
-	e.Capabilities.Rebase = true
-	r, err := landedwork.Analyze(ctx, p, e, fixtureLimits())
-	require.NoError(t, err)
-	assert.Empty(t, r.Landings)
-	assert.False(t, r.Coverage.Complete)
+	for _, automatic := range []bool{false, true} {
+		f := buildFixture(t, false)
+		f.repo.Checkout("-b", "repeat-source", f.base)
+		f.source = []string{f.repo.CommitFile("work.txt", "new\nkeep\n", "first")}
+		f.source = append(f.source, f.repo.CommitFile("work.txt", "old\nkeep\n", "undo"))
+		f.source = append(f.source, f.repo.CommitFile("work.txt", "new\nkeep\n", "repeat"))
+		f.repo.Checkout("-b", "repeat-replay", f.base)
+		f.base = f.repo.CommitFile("unrelated", "context\n", "advance")
+		f.repo.CommitFile("work.txt", "new\nkeep\n", "replay first")
+		f.repo.CommitFile("work.txt", "old\nkeep\n", "replay undo")
+		f.head = f.repo.CommitFile("work.txt", "new\nkeep\n", "replay repeat")
+		ctx, p := f.prepare(t)
+		e := fixtureEvidence(f, p, "rebase")
+		e.Capabilities.Rebase = true
+		if automatic {
+			e.Candidates[0].Method, e.Candidates[0].MethodEvidence = "", ""
+			e.Capabilities.SingleParentCorrespondence = true
+		}
+		r, err := landedwork.Analyze(ctx, p, e, fixtureLimits())
+		require.NoError(t, err)
+		assert.Empty(t, r.Landings)
+		assert.False(t, r.Coverage.Complete)
+	}
 }
 
 func TestRebase(t *testing.T) {

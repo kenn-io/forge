@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	gitcmd "go.kenn.io/kit/git/cmd"
@@ -148,4 +149,32 @@ func (v *objectView) introduced(ctx context.Context, base, head string) ([]strin
 		return nil, errors.New("incomplete revision object ID")
 	}
 	return out.ids, nil
+}
+
+// Read only the fixed suffix and its boundary, including pre-interval history
+// needed to disprove a range. Analyze's shallow check precedes this walk.
+func (v *objectView) firstParentSuffix(ctx context.Context, p *Interval, terminal string, count int) (firstParentRange, bool, string, error) {
+	end := slices.Index(p.spine, terminal)
+	r := firstParentRange{crossesBase: end+1 < count}
+	id := terminal
+	for i := range count {
+		if pos := end - i; pos >= 0 {
+			id = p.spine[pos]
+		}
+		parents, err := v.parents(ctx, id)
+		if err != nil {
+			return firstParentRange{}, false, id, err
+		}
+		if len(parents) != 1 {
+			return firstParentRange{}, false, "", nil
+		}
+		r.commits = append(r.commits, id)
+		id = parents[0]
+	}
+	if _, err := v.parents(ctx, id); err != nil {
+		return firstParentRange{}, false, id, err
+	}
+	r.before = id
+	slices.Reverse(r.commits)
+	return r, true, "", nil
 }

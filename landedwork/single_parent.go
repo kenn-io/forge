@@ -87,3 +87,24 @@ func editReason(err error) string {
 	}
 	return graphReason(err)
 }
+
+func proveSingleParent(ctx context.Context, v *objectView, p *Interval, c Candidate) (Landing, Gap) {
+	sourceBefore, g := sourceBoundary(ctx, v, c)
+	if g.Reason != "" {
+		return Landing{}, g
+	}
+	parents, err := v.parents(ctx, c.Terminal)
+	if err != nil {
+		return Landing{}, Gap{CandidateID: c.ID, ObjectID: c.Terminal, Reason: graphReason(err)}
+	}
+	matched, g := squashCorrespondence(ctx, v, c, sourceBefore, parents[0])
+	squash := proofAttempt{state: attemptMismatch}
+	if g.Reason != "" {
+		squash = proofAttempt{gap: g}
+	} else if matched {
+		squash = proofAttempt{state: attemptMatch, landing: Landing{CandidateID: c.ID, Proofs: []string{"squash"},
+			Before: parents[0], Terminal: c.Terminal, Source: slices.Clone(c.Source), Spine: []string{c.Terminal}, Introduced: []string{c.Terminal}}}
+	}
+	ranges := rangeAlternatives(ctx, v, p, c)
+	return resolveAlternatives(c, []proofAttempt{squash, ranges[0], ranges[1]}, v.meter.failed)
+}

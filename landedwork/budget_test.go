@@ -26,7 +26,7 @@ func TestCommitStreamStopsBeforeRetainingOverBudgetRecord(t *testing.T) {
 }
 
 func TestResultOwnershipBudget(t *testing.T) {
-	// One landing plus two labels and three occurrences of the owned ID.
+	// One landing plus two labels and three retained commit-list entries.
 	r := Result{Landings: []Landing{{CandidateID: "7", Before: "a", Terminal: "b",
 		Proofs: []string{"rebase", "squash"}, Spine: []string{"b"}, Source: []string{"c"}, Introduced: []string{"b"}}}}
 	for _, tc := range []struct {

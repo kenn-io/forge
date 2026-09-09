@@ -45,6 +45,11 @@ establish any provider's squash capability (`landedwork/analyze.go::Analyze`).
 Landing ownership is explicit and independent of correspondence labels; labels
 must not be interpreted as historical provider merge actions
 (`landedwork/evidence.go::Landing`).
+Automatic single-parent proofs require every alternative to be conclusive and
+every match to own the same origin; unavailable evidence cannot lose to a match
+(`landedwork/alternatives.go::resolveAlternatives`).
+Fixed pre-base reads can disprove a range, never expand the query or select a
+shorter origin when that range matches (`landedwork/git.go::firstParentSuffix`).
 Direct-push origins require complete inventory and an unblocked, unowned spine
 commit; they establish neither a pusher nor a trusted update time
 (`landedwork/direct.go::classifyDirectPushes`).

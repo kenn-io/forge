@@ -13,7 +13,11 @@ type Inventory struct {
 }
 
 // Capabilities authorize generic proof paths, not inferred provider support.
-type Capabilities struct{ Merge, Squash, Rebase, FastForward bool }
+type Capabilities struct {
+	Merge, Squash, Rebase, FastForward bool
+	// SingleParentCorrespondence authorizes all automatic alternatives together.
+	SingleParentCorrespondence bool
+}
 
 // Candidate contains provider facts bound to a stable target repository.
 // Evidence labels name the facts establishing method and terminal, not guesses

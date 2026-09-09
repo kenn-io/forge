@@ -79,7 +79,10 @@ func rangeCorrespondence(ctx context.Context, v *objectView, c Candidate, landed
 		if err != nil {
 			return landed[i], err
 		}
-		if len(a) == 0 || !sameEdits(a, b) {
+		if len(a) == 0 || len(b) == 0 {
+			return source, errEdits
+		}
+		if !sameEdits(a, b) {
 			return source, errCorrespondence
 		}
 		for _, previous := range rewritten {
@@ -87,10 +90,37 @@ func rangeCorrespondence(ctx context.Context, v *objectView, c Candidate, landed
 				return source, err
 			}
 			if sameEdits(previous, a) {
-				return source, errCorrespondence
+				return source, errEdits
 			}
 		}
 		rewritten = append(rewritten, a)
 	}
 	return "", nil
+}
+
+func rangeAlternatives(ctx context.Context, v *objectView, p *Interval, c Candidate) [2]proofAttempt {
+	r, possible, object, err := v.firstParentSuffix(ctx, p, c.Terminal, len(c.Source))
+	if err != nil {
+		a := proofAttempt{gap: Gap{CandidateID: c.ID, ObjectID: object, Reason: graphReason(err)}}
+		return [2]proofAttempt{a, a}
+	}
+	if !possible {
+		return [2]proofAttempt{{state: attemptMismatch}, {state: attemptMismatch}}
+	}
+	var attempts [2]proofAttempt
+	for i, method := range []string{"rebase", "fast_forward"} {
+		c.Method = method
+		object, err := rangeCorrespondence(ctx, v, c, r.commits)
+		switch {
+		case errors.Is(err, errCorrespondence):
+			attempts[i].state = attemptMismatch
+		case err != nil:
+			attempts[i].gap = Gap{CandidateID: c.ID, ObjectID: object, Reason: editReason(err)}
+		default:
+			attempts[i] = proofAttempt{state: attemptMatch, crossesBase: r.crossesBase,
+				landing: Landing{CandidateID: c.ID, Proofs: []string{method}, Before: r.before, Terminal: c.Terminal,
+					Source: slices.Clone(c.Source), Spine: slices.Clone(r.commits), Introduced: slices.Clone(r.commits)}}
+		}
+	}
+	return attempts
 }

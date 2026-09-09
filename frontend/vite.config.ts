@@ -7,6 +7,7 @@ import { defaultClientConditions, searchForWorkspaceRoot, type Plugin, type Prox
 import { defineProject, type TestProjectInlineConfiguration } from "vite-plus/test/config";
 import type { InlineConfig } from "vite-plus/test/node";
 import { resolveDevApiUrl } from "./src/lib/dev/apiProxyTarget.ts";
+import { apiFailureLogging } from "./src/lib/dev/apiFailureLogging.ts";
 import { healthcheckPlugin } from "./src/lib/dev/healthcheckPlugin.ts";
 import { nodeUnitTestFiles } from "./vitest.node-files.ts";
 
@@ -460,6 +461,7 @@ const config = {
     fs: { allow: [workspaceRoot, kitUiSourceRoot] },
     proxy: {
       "/api": {
+        configure: apiFailureLogging(),
         target: apiUrl,
         changeOrigin: true,
         timeout: 0,

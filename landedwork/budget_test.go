@@ -24,3 +24,27 @@ func TestCommitStreamStopsBeforeRetainingOverBudgetRecord(t *testing.T) {
 	require.ErrorIs(t, err, ErrInputBudget)
 	assert.Equal(t, []string{first}, stream.ids)
 }
+
+func TestResultOwnershipBudget(t *testing.T) {
+	// One landing plus two labels and three occurrences of the owned ID.
+	r := Result{Landings: []Landing{{CandidateID: "7", Before: "a", Terminal: "b",
+		Proofs: []string{"rebase", "squash"}, Spine: []string{"b"}, Source: []string{"c"}, Introduced: []string{"b"}}}}
+	for _, tc := range []struct {
+		name           string
+		bytes, records int64
+		fails          bool
+	}{
+		{"exact", 18, 6, false},
+		{"bytes", 17, 6, true},
+		{"records", 18, 5, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := checkResultOutput(r, Limits{OutputBytes: tc.bytes, Records: tc.records})
+			if tc.fails {
+				require.ErrorIs(t, err, ErrOutputBudget)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}

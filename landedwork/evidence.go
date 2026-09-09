@@ -35,8 +35,11 @@ type Evidence struct {
 }
 
 type Landing struct {
-	CandidateID, Method, Before, Terminal string
-	Source, Introduced                    []string
+	CandidateID, Before, Terminal string
+	// Proofs are sorted correspondence labels, not historical merge actions.
+	Proofs []string
+	// Spine is the ordered first-parent ownership, independent of proof labels.
+	Spine, Source, Introduced []string
 }
 
 type Coverage struct {

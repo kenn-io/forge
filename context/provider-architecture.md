@@ -42,6 +42,9 @@ evidence for the exact prepared interval. Missing history and exhausted budgets
 remain gaps, never empty complete inventories (`landedwork/prepare.go::Prepare`).
 Unsupported landing methods remain unresolved; generic squash proof does not
 establish any provider's squash capability (`landedwork/analyze.go::Analyze`).
+Landing ownership is explicit and independent of correspondence labels; labels
+must not be interpreted as historical provider merge actions
+(`landedwork/evidence.go::Landing`).
 Direct-push origins require complete inventory and an unblocked, unowned spine
 commit; they establish neither a pusher nor a trusted update time
 (`landedwork/direct.go::classifyDirectPushes`).

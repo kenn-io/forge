@@ -238,8 +238,8 @@ func TestFastForward(t *testing.T) {
 				assert.NotEmpty(r.Coverage.Gaps)
 				return
 			}
-			assert.Equal([]landedwork.Landing{{CandidateID: "7", Method: "fast_forward", Before: f.base,
-				Terminal: f.head, Source: f.source, Introduced: f.source}}, r.Landings)
+			assert.Equal([]landedwork.Landing{{CandidateID: "7", Proofs: []string{"fast_forward"}, Before: f.base,
+				Terminal: f.head, Source: f.source, Spine: f.source, Introduced: f.source}}, r.Landings)
 			assert.True(r.Coverage.Complete)
 			assert.Equal(f.head, r.Coverage.CertifiedHead)
 			assert.Empty(r.Unattributed)

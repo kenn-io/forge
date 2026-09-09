@@ -55,7 +55,7 @@ func proveRange(ctx context.Context, v *objectView, p *Interval, c Candidate) (L
 		}
 		return reject(graphReason(err))
 	}
-	return Landing{CandidateID: c.ID, Method: c.Method, Before: before, Terminal: c.Terminal,
+	return Landing{CandidateID: c.ID, Proofs: []string{c.Method}, Spine: slices.Clone(landed), Before: before, Terminal: c.Terminal,
 		Source: slices.Clone(c.Source), Introduced: slices.Clone(landed)}, Gap{}
 }
 

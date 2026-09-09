@@ -406,6 +406,7 @@ var (
 	_ platformgithub.AssigneeAPI          = (*RoutedClient)(nil)
 	_ platformgithub.ReviewerAPI          = (*RoutedClient)(nil)
 	_ platformgithub.InventoryAPI         = (*RoutedClient)(nil)
+	_ platformgithub.LandingAPI           = (*RoutedClient)(nil)
 	_ markdownImageClient                 = (*RoutedClient)(nil)
 	_ repoUserClient                      = (*RoutedClient)(nil)
 	_ platformgithub.NativeStackClient    = (*RoutedClient)(nil)
@@ -455,6 +456,42 @@ func (c *RoutedClient) pageClientForRepo(
 		)
 	}
 	return paged, nil
+}
+
+func (c *RoutedClient) landingClientForRepo(ctx context.Context, repo platform.RepoRef) (platformgithub.LandingAPI, error) {
+	client, err := c.routeForRepoContext(ctx, repo.Owner, repo.Name)
+	if err != nil {
+		return nil, err
+	}
+	landing, ok := client.(platformgithub.LandingAPI)
+	if !ok {
+		return nil, platform.UnsupportedCapability(platform.KindGitHub, c.routes.host, "landing_evidence")
+	}
+	return landing, nil
+}
+
+func (c *RoutedClient) ListLandingAssociations(ctx context.Context, repo platform.RepoRef, commit, cursor string) (platform.Page[platform.LandingChangeRef], error) {
+	client, err := c.landingClientForRepo(ctx, repo)
+	if err != nil {
+		return platform.Page[platform.LandingChangeRef]{}, err
+	}
+	return client.ListLandingAssociations(ctx, repo, commit, cursor)
+}
+
+func (c *RoutedClient) GetLandingChange(ctx context.Context, repo platform.RepoRef, change platform.LandingChangeRef) (platform.LandingChange, error) {
+	client, err := c.landingClientForRepo(ctx, repo)
+	if err != nil {
+		return platform.LandingChange{}, err
+	}
+	return client.GetLandingChange(ctx, repo, change)
+}
+
+func (c *RoutedClient) ListLandingSource(ctx context.Context, repo platform.RepoRef, change platform.LandingChangeRef, cursor string) (platform.Page[string], error) {
+	client, err := c.landingClientForRepo(ctx, repo)
+	if err != nil {
+		return platform.Page[string]{}, err
+	}
+	return client.ListLandingSource(ctx, repo, change, cursor)
 }
 
 func (c *RoutedClient) ListInventoryIssuesPage(

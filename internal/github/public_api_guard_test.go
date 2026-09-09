@@ -67,6 +67,7 @@ func TestRoutedClientExplicitlyImplementsOwnerBearingClientMethods(t *testing.T)
 	}{
 		{file: "client.go", name: "Client"},
 		{file: "../../platform/github/native_stacks.go", name: "NativeStackClient"},
+		{file: "../../platform/github/landing_evidence.go", name: "LandingAPI"},
 	}
 	files := token.NewFileSet()
 	routerFile, err := parser.ParseFile(files, "auth_router.go", nil, 0)

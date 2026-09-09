@@ -56,6 +56,23 @@ Offset-free text proof requires uniquely occurring removed bytes or a unique
 insertion neighborhood; repeated locations stay unproven (`landedwork/edits.go::fileEdits`).
 Overlap conflicts block the proven landing ranges, not unrelated earlier
 commits; unknown-start candidate gaps still block from the base (`landedwork/origins.go::rejectOverlaps`).
+Collection must preserve unfinished candidates and the exact prepared query;
+missing provider evidence is never direct-push evidence (`landedwork/collect/collect.go::Collect`).
+Keep malformed object IDs in observations, not analyzer candidates; a provider
+gap must not become a fatal caller-input error (`landedwork/collect/candidates.go::candidate`).
+Reject an over-budget query without a result; never trim commits or gaps to fit.
+Even incomplete preparation and unsupported discovery retain query records that
+must be charged (`landedwork/collect/limits.go::validate`).
+GitHub associations can name upstream PRs when querying a fork. Preserve their
+target identity without fetching that PR number locally; foreign associations
+do not prove local absence (`landedwork/collect/collect.go::Collect`).
+Collector call limits do not bound HTTP retries or absence-confirmation reads;
+callers put wire limits below authentication (`platform/landing_evidence.go::LandingEvidenceReader`).
+GitHub collection relies on REST 2022-11-28 terminal semantics, not the newer
+API's omitted field; enterprise coverage remains unverified (`platform/github/landing_evidence.go::Provider.LandingEvidenceSupport`).
+The collector currently has one concrete reader: GitHub.com. GitLab discovery
+still needs the rewritten-commit contract checked; terminal-only Forgejo/Gitea
+lookups cannot prove absence inside a rewritten range (`platform/landing_evidence.go::LandingEvidenceReader`).
 
 Minimum provider checklist:
 

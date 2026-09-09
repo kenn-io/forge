@@ -45,6 +45,9 @@ func proveAt(ctx context.Context, v *objectView, p *Interval, c Candidate, caps 
 	if method == "merge" && parents[1] != c.SourceHead {
 		return reject("source_head_mismatch")
 	}
+	if method == "squash" {
+		return proveSquash(ctx, v, c, parents[0])
+	}
 	if reason, object := checkSources(ctx, v, c); reason != "" {
 		gap.ObjectID = object
 		return reject(reason)

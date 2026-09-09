@@ -47,10 +47,16 @@ func (v *objectView) commitEdits(ctx context.Context, id string) ([]fileEdit, er
 	if len(parents) != 1 {
 		return nil, errEdits
 	}
-	if _, err = v.parents(ctx, parents[0]); err != nil {
-		return nil, err
+	return v.treeEdits(ctx, parents[0], id)
+}
+
+func (v *objectView) treeEdits(ctx context.Context, before, after string) ([]fileEdit, error) {
+	for _, id := range []string{before, after} {
+		if _, err := v.parents(ctx, id); err != nil {
+			return nil, err
+		}
 	}
-	raw, err := v.run(ctx, "diff", "--raw", "-z", "--no-abbrev", "--no-renames", "--no-ext-diff", "--no-textconv", parents[0], id, "--")
+	raw, err := v.run(ctx, "diff", "--raw", "-z", "--no-abbrev", "--no-renames", "--no-ext-diff", "--no-textconv", before, after, "--")
 	if err != nil {
 		return nil, err
 	}
@@ -62,7 +68,7 @@ func (v *objectView) commitEdits(ctx context.Context, id string) ([]fileEdit, er
 		if err = ctx.Err(); err != nil {
 			return nil, err
 		}
-		if err = v.fileEdits(ctx, parents[0], id, &files[i]); err != nil {
+		if err = v.fileEdits(ctx, before, after, &files[i]); err != nil {
 			return nil, err
 		}
 	}

@@ -85,9 +85,9 @@ Rules:
 - Workflow contracts remain optional and provider-neutral. GitHub is the sole
   current implementation; other providers must not advertise capabilities
   before implementing the interfaces (`platform/github/provider.go::Provider.Capabilities`).
-- Treat workflow dispatch as live-state mutation: re-read definitions/environments,
-  validate SHA and typed inputs, then gate one provider call under a stable route fence;
-  never retry uncertain writes or persist definitions (`internal/server/workflowapi/routes.go::Handler.dispatch`).
+- Revalidate live workflow definitions, required environments, SHA, and inputs inside the route
+  fence immediately before the single dispatch; this narrows staleness but cannot lock GitHub edits.
+  Never retry uncertain writes or persist definitions (`internal/server/workflowapi/routes.go::Handler.dispatch`).
 - Workflow catalog partial availability is definition-specific: missing or undecodable files
   become unavailable rows, while cancellation, auth, server, transport, and rate failures abort
   the catalog (`platform/github/provider.go::workflowDefinitionReadMustAbort`).

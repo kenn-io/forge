@@ -12,8 +12,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"go.kenn.io/forge/internal/db"
-	"go.kenn.io/forge/platform"
 	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/platform"
 )
 
 func (h *Handler) Register(api huma.API) {
@@ -229,30 +229,33 @@ func (h *Handler) dispatch(ctx context.Context, input *workflowDispatchInput) (*
 		return nil, httpapi.UnsupportedCapability(*resolved.repo, capabilityWorkflowDispatch)
 	}
 	ref := httpapi.PlatformRepoRef(*resolved.repo)
-	workflows, err := catalogReader.ListManualWorkflows(ctx, ref)
-	if err != nil {
-		return nil, httpapi.ProviderCallProblem(err, string(ref.Platform), ref.Host)
-	}
-	definition, found := findWorkflow(workflows, workflowID)
-	if !found {
-		return nil, httpapi.NotFound(httpapi.CodeNotFound, "workflow not found", map[string]any{"workflowId": workflowID})
-	}
-	if input.Body.ExpectedDefinitionSHA != definition.DefinitionSHA {
-		return nil, httpapi.Conflict(httpapi.CodeConflict, "workflow definition changed", map[string]any{
-			"reason": "workflow_definition_changed", "expectedDefinitionSha": input.Body.ExpectedDefinitionSHA, "definitionSha": definition.DefinitionSHA,
-		})
-	}
-	if !definition.Available {
-		return nil, httpapi.Conflict(httpapi.CodeConflict, "workflow is unavailable", map[string]any{"reason": definition.UnavailableReason})
-	}
-	var environments []platform.WorkflowEnvironment
-	if workflowInputsNeedEnvironments(definition.Inputs) {
-		environments, err = catalogReader.ListWorkflowEnvironments(ctx, ref)
+	validateLiveWorkflow := func() error {
+		workflows, err := catalogReader.ListManualWorkflows(ctx, ref)
 		if err != nil {
-			return nil, httpapi.ProviderCallProblem(err, string(ref.Platform), ref.Host)
+			return httpapi.ProviderCallProblem(err, string(ref.Platform), ref.Host)
 		}
+		definition, found := findWorkflow(workflows, workflowID)
+		if !found {
+			return httpapi.NotFound(httpapi.CodeNotFound, "workflow not found", map[string]any{"workflowId": workflowID})
+		}
+		if input.Body.ExpectedDefinitionSHA != definition.DefinitionSHA {
+			return httpapi.Conflict(httpapi.CodeConflict, "workflow definition changed", map[string]any{
+				"reason": "workflow_definition_changed", "expectedDefinitionSha": input.Body.ExpectedDefinitionSHA, "definitionSha": definition.DefinitionSHA,
+			})
+		}
+		if !definition.Available {
+			return httpapi.Conflict(httpapi.CodeConflict, "workflow is unavailable", map[string]any{"reason": definition.UnavailableReason})
+		}
+		var environments []platform.WorkflowEnvironment
+		if workflowInputsNeedEnvironments(definition.Inputs) {
+			environments, err = catalogReader.ListWorkflowEnvironments(ctx, ref)
+			if err != nil {
+				return httpapi.ProviderCallProblem(err, string(ref.Platform), ref.Host)
+			}
+		}
+		return validateWorkflowInputs(definition.Inputs, environments, input.Body.Inputs)
 	}
-	if err := validateWorkflowInputs(definition.Inputs, environments, input.Body.Inputs); err != nil {
+	if err := validateLiveWorkflow(); err != nil {
 		return nil, err
 	}
 	request := platform.WorkflowDispatchRequest{
@@ -265,6 +268,9 @@ func (h *Handler) dispatch(ctx context.Context, input *workflowDispatchInput) (*
 		availability := h.operations(*resolved.repo).DispatchWorkflow
 		if !availability.Available {
 			return dispatchUnavailableProblem(*resolved.repo, availability)
+		}
+		if err := validateLiveWorkflow(); err != nil {
+			return err
 		}
 		var dispatchErr error
 		result, dispatchErr = dispatcher.DispatchWorkflow(ctx, ref, request)

@@ -261,7 +261,7 @@ func TestWorkflowRoutesLoadEnvironmentsOnlyForDefinitionsThatNeedThem(t *testing
 				"expected_definition_sha": "definition-v1",
 				"inputs":                  map[string]any{"version": "1", "target": "production"},
 			},
-			wantEnvironments: 1,
+			wantEnvironments: 2,
 		},
 	}
 	for _, test := range tests {
@@ -278,10 +278,11 @@ func TestWorkflowRoutesLoadEnvironmentsOnlyForDefinitionsThatNeedThem(t *testing
 			if test.method == http.MethodPost {
 				assert.Equal(http.StatusAccepted, status)
 				assert.Len(provider.dispatches, 1)
+				assert.Equal(2, provider.catalogCalls)
 			} else {
 				assert.Equal(http.StatusOK, status)
+				assert.Equal(1, provider.catalogCalls)
 			}
-			assert.Equal(1, provider.catalogCalls)
 			assert.Equal(test.wantEnvironments, provider.environmentCalls)
 		})
 	}
@@ -462,6 +463,67 @@ func TestWorkflowDispatchValidatesLiveDefinitionBeforeMutation(t *testing.T) {
 			status, body := workflowRequest(t, mux, http.MethodPost, "/actions/github/acme/widget/workflows/release.yml/dispatch", test.body)
 			assert.Equal(test.wantStatus, status)
 			assert.Empty(provider.dispatches)
+			if test.wantField != "" {
+				assert.Equal(test.wantField, body["details"].(map[string]any)["field"])
+			}
+			if test.wantReason != "" {
+				assert.Equal(test.wantReason, body["details"].(map[string]any)["reason"])
+			}
+		})
+	}
+}
+
+func TestWorkflowDispatchRevalidatesBeforeProviderWrite(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		change     func(*workflowTestProvider)
+		wantStatus int
+		wantField  string
+		wantReason string
+	}{
+		{
+			name: "definition changed",
+			change: func(provider *workflowTestProvider) {
+				provider.catalog[0].DefinitionSHA = "definition-v2"
+			},
+			wantStatus: http.StatusConflict,
+			wantReason: "workflow_definition_changed",
+		},
+		{
+			name: "selected environment removed",
+			change: func(provider *workflowTestProvider) {
+				provider.environments = nil
+			},
+			wantStatus: http.StatusBadRequest,
+			wantField:  "body.inputs.target",
+		},
+		{name: "unchanged", wantStatus: http.StatusAccepted},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			assert := assert.New(t)
+			provider := &workflowTestProvider{
+				caps:         platform.Capabilities{ReadWorkflows: true, WorkflowDispatch: true},
+				catalog:      []platform.WorkflowDefinition{workflowDefinitionFixture()},
+				environments: []platform.WorkflowEnvironment{{Name: "production"}},
+				dispatch:     platform.WorkflowDispatchResult{Accepted: true},
+			}
+			provider.onCatalog = func() {
+				if provider.catalogCalls == 2 && test.change != nil {
+					test.change(provider)
+				}
+			}
+			mux, _ := workflowFixture(t, provider, httpapi.OperationAvailability{Available: true})
+			status, body := workflowRequest(t, mux, http.MethodPost, "/actions/github/acme/widget/workflows/release.yml/dispatch", map[string]any{
+				"ref":                     "main",
+				"expected_definition_sha": "definition-v1",
+				"inputs":                  map[string]any{"version": "1", "target": "production"},
+			})
+			assert.Equal(test.wantStatus, status)
+			if test.wantStatus == http.StatusAccepted {
+				assert.Len(provider.dispatches, 1)
+			} else {
+				assert.Empty(provider.dispatches)
+			}
 			if test.wantField != "" {
 				assert.Equal(test.wantField, body["details"].(map[string]any)["field"])
 			}

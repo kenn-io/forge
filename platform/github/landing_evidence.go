@@ -33,7 +33,8 @@ func (p *Provider) LandingEvidenceSupport() platform.LandingEvidenceSupport {
 	if !ok || p.host != "github.com" {
 		return platform.LandingEvidenceSupport{Reason: "unverified_endpoint_contract"}
 	}
-	return platform.LandingEvidenceSupport{Inventory: true, OrdinaryMerge: true, Sources: platform.LandingSourcePolicy{RequireCount: true, MaxCommits: 250}}
+	return platform.LandingEvidenceSupport{Inventory: true, OrdinaryMerge: true, SingleParentCorrespondence: true,
+		Sources: platform.LandingSourcePolicy{RequireCount: true, MaxCommits: 250}}
 }
 
 func (p *Provider) ListLandingAssociations(ctx context.Context, ref platform.RepoRef, sha, cursor string) (platform.Page[platform.LandingChangeRef], error) {

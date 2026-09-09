@@ -10,6 +10,9 @@ import (
 // Analyze accepts only evidence for p.Query(). Missing proof returns a named
 // coverage gap; malformed inputs, cancellation and unrepresentable output return
 // errors. Callers must never publish a result returned with an error.
+// Callers may acquire original source objects after Collect, then analyze the
+// same prepared interval and evidence. A fetched ref never replaces an observed
+// source SHA; missing originals remain gaps. Analyze never fetches objects.
 func Analyze(ctx context.Context, p *Interval, e Evidence, limits Limits) (r Result, err error) {
 	if p == nil {
 		return r, errors.New("prepared interval required")

@@ -129,12 +129,16 @@ func TestGitHubCollectionAnalysis(t *testing.T) {
 				}
 			}
 			switch mode {
-			case "merge":
+			case "merge", "one parent":
 				assert.True(analysis.Coverage.Complete)
 				assert.Equal(head, analysis.Coverage.CertifiedHead)
 				require.Len(analysis.Landings, 1)
 				assert.Equal(base, analysis.Landings[0].Before)
 				assert.Equal(head, analysis.Landings[0].Terminal)
+				if mode == "one parent" {
+					assert.Equal([]string{"rebase", "squash"}, analysis.Landings[0].Proofs)
+					assert.Equal([]string{head}, analysis.Landings[0].Spine)
+				}
 			case "no associations":
 				assert.True(analysis.Coverage.Complete)
 				require.Len(analysis.DirectPushes, 1)

@@ -40,6 +40,9 @@ cache policy and admission remain internal
 The public landing API uses local objects only; callers own collection and supply
 evidence for the exact prepared interval. Missing history and exhausted budgets
 remain gaps, never empty complete inventories (`landedwork/prepare.go::Prepare`).
+Default-branch clones may omit original PR objects; callers may fetch PR-head
+refs after collection, but must keep the pinned query and observed source SHAs
+unchanged (`landedwork/analyze.go::Analyze`).
 Unsupported landing methods remain unresolved; generic squash proof does not
 establish any provider's squash capability (`landedwork/analyze.go::Analyze`).
 Landing ownership is explicit and independent of correspondence labels; labels

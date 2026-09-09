@@ -24,8 +24,11 @@ type LandingSourcePolicy struct {
 // LandingEvidenceSupport is an endpoint contract, not the outcome of one sweep.
 type LandingEvidenceSupport struct {
 	Inventory, OrdinaryMerge bool
-	Reason                   string
-	Sources                  LandingSourcePolicy
+	// SingleParentCorrespondence supplies evidence for all automatic alternatives,
+	// not a historical squash/rebase label.
+	SingleParentCorrespondence bool
+	Reason                     string
+	Sources                    LandingSourcePolicy
 }
 
 // LandingChange preserves field absence independently of application projections.

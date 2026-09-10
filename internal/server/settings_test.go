@@ -21,7 +21,7 @@ import (
 	"go.kenn.io/forge/internal/platformdb"
 
 	"github.com/danielgtaylor/huma/v2"
-	gh "github.com/google/go-github/v89/github"
+	gh "github.com/google/go-github/v91/github"
 	shellquote "github.com/kballard/go-shellquote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

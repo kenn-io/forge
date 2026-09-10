@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"strings"
 
-	gh "github.com/google/go-github/v89/github"
+	gh "github.com/google/go-github/v91/github"
 )
 
 // IsNotModified returns true if the error represents a 304 Not Modified

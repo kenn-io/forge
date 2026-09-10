@@ -1,7 +1,7 @@
 package github
 
 import (
-	gh "github.com/google/go-github/v89/github"
+	gh "github.com/google/go-github/v91/github"
 )
 
 // WorkflowApprovalState describes whether workflow approval is needed for a PR.

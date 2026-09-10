@@ -288,6 +288,9 @@ Persisted controls must state their scope clearly.
   `schema-constraints` module, never from hand-copied numbers, and show an inline
   invalid state instead of sending a request the server would reject
   (`scripts/generate-schema-constraints.mjs`, `frontend/src/lib/components/settings/DetailSettings.svelte::validateLimit`).
+- Rebasing must not hide commit authorship: show the original author and label a
+  distinct committer, while preserving committer-based activity identity and time
+  (`frontend/src/lib/components/detail/EventTimeline.svelte::eventAttribution`).
 - Detail timelines apply the server-backed entry limit after filtering and grouping,
   then make the remainder explicit and mount it in bounded idle batches; harnesses
   that require every fixture row pass a large limit. An explicit full-timeline request

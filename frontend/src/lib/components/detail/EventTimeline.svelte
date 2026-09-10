@@ -978,6 +978,14 @@
     return typeof value === "string" && value.length > 0 ? value : null;
   }
 
+  function eventAttribution(event: PREvent | IssueEvent): string {
+    const author = event.EventType === "commit"
+      ? metadataString(parseMetadata(event), "commit_author")
+      : null;
+    if (!author || author === event.Author) return event.Author;
+    return event.Author ? `${author} committed by ${event.Author}` : author;
+  }
+
   function metadataNumber(metadata: Record<string, unknown>, key: string): number | null {
     const value = metadata[key];
     if (typeof value === "number" && Number.isInteger(value) && value > 0) return value;
@@ -1819,7 +1827,7 @@
     {#if isLifecycleTransitionEvent(event.EventType) && event.Author}
       <span class="event-author-prefix">by</span> {event.Author}
     {:else}
-      {event.Author || "Unknown"}
+      {eventAttribution(event) || "Unknown"}
     {/if}
   </span>
 {/snippet}
@@ -1922,8 +1930,8 @@
               <div class="obsolete-commit-list">
                 {#each entry.obsoleteCommits as commit (commit.ID)}
                   <div class="obsolete-commit-row">
-                    {#if commit.Author}
-                      <span class="event-author">{commit.Author}</span>
+                    {#if eventAttribution(commit)}
+                      <span class="event-author">{eventAttribution(commit)}</span>
                     {/if}
                     <span class="commit-sha">{shortCommit(commit.Summary)}</span>
                     <span class="commit-title">{commitTitle(commit.Body)}</span>
@@ -2056,8 +2064,8 @@
                 >
                   {systemEventLabel(event.EventType)}
                 </span>
-                {#if event.Author}
-                  <span class="event-author">{event.Author}</span>
+                {#if eventAttribution(event)}
+                  <span class="event-author">{eventAttribution(event)}</span>
                 {/if}
                 <span class="commit-sha">{shortCommit(event.Summary)}</span>
                 {#if !showCommitDetails}

@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	gh "github.com/google/go-github/v89/github"
+	gh "github.com/google/go-github/v91/github"
 	"github.com/shurcooL/githubv4"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"

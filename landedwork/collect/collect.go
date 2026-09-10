@@ -52,7 +52,9 @@ func Collect(ctx context.Context, reader platform.LandingEvidenceReader, route p
 	}
 	query.Commits, query.Gaps = slices.Clone(query.Commits), slices.Clone(query.Gaps)
 	support := reader.LandingEvidenceSupport()
-	c := collector{reader: reader, route: route, remaining: limits, refs: make(map[int64]platform.LandingChangeRef), result: Result{Evidence: landedwork.Evidence{Query: query, Inventory: landedwork.Inventory{Supported: support.Inventory}, Capabilities: landedwork.Capabilities{Merge: support.OrdinaryMerge}}}}
+	c := collector{reader: reader, route: route, remaining: limits, refs: make(map[int64]platform.LandingChangeRef), result: Result{Evidence: landedwork.Evidence{Query: query, Inventory: landedwork.Inventory{Supported: support.Inventory}, Capabilities: landedwork.Capabilities{
+		Merge: support.OrdinaryMerge, SingleParentCorrespondence: support.SingleParentCorrespondence,
+	}}}}
 	c.remaining.Records -= int64(len(query.Commits)) + int64(len(query.Gaps))
 	defer func() {
 		if c.fatal != nil {

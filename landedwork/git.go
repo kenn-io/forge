@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -148,4 +149,31 @@ func (v *objectView) introduced(ctx context.Context, base, head string) ([]strin
 		return nil, errors.New("incomplete revision object ID")
 	}
 	return out.ids, nil
+}
+
+type commitBoundary struct{ id, before string }
+
+// The caller has read terminal and its single parent. Walk only as far as the
+// comparison needs, physically reading each next commit before yielding a pair.
+// Analyze's shallow check precedes this walk, including pre-interval history.
+func (v *objectView) firstParentSuffix(ctx context.Context, terminal, before string, count int) iter.Seq2[commitBoundary, error] {
+	return func(yield func(commitBoundary, error) bool) {
+		id := terminal
+		for i := range count {
+			parents, err := v.parents(ctx, before)
+			pair := commitBoundary{id: id, before: before}
+			if err != nil {
+				yield(pair, err)
+				return
+			}
+			if !yield(pair, nil) || i == count-1 {
+				return
+			}
+			if len(parents) != 1 {
+				yield(commitBoundary{id: before, before: before}, errCorrespondence)
+				return
+			}
+			id, before = before, parents[0]
+		}
+	}
 }

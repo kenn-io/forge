@@ -43,8 +43,8 @@ func checkResultOutput(r Result, l Limits) error {
 	}
 	n += stringBytes(r.Unattributed)
 	for _, landing := range r.Landings {
-		n += int64(len(landing.CandidateID)+len(landing.Method)+len(landing.Before)+len(landing.Terminal)) + stringBytes(landing.Source) + stringBytes(landing.Introduced)
-		records += int64(len(landing.Source) + len(landing.Introduced))
+		n += int64(len(landing.CandidateID)+len(landing.Before)+len(landing.Terminal)) + stringBytes(landing.Source) + stringBytes(landing.Introduced) + stringBytes(landing.Proofs) + stringBytes(landing.Spine)
+		records += int64(len(landing.Source) + len(landing.Introduced) + len(landing.Proofs) + len(landing.Spine))
 	}
 	if n > l.OutputBytes || records > l.Records {
 		return ErrOutputBudget

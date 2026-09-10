@@ -30,6 +30,9 @@ func proveAt(ctx context.Context, v *objectView, p *Interval, c Candidate, caps 
 		return reject(graphReason(err))
 	}
 	method := c.Method
+	if method == "" && len(parents) == 1 && caps.SingleParentCorrespondence && slices.Contains(p.spine, c.Terminal) {
+		return proveSingleParent(ctx, v, p, c, parents[0])
+	}
 	if method == "" && len(parents) == 2 {
 		method = "merge"
 	}
@@ -44,6 +47,9 @@ func proveAt(ctx context.Context, v *objectView, p *Interval, c Candidate, caps 
 	}
 	if method == "merge" && parents[1] != c.SourceHead {
 		return reject("source_head_mismatch")
+	}
+	if method == "squash" {
+		return proveSquash(ctx, v, c, parents[0])
 	}
 	if reason, object := checkSources(ctx, v, c); reason != "" {
 		gap.ObjectID = object
@@ -68,7 +74,7 @@ func proveAt(ctx context.Context, v *objectView, p *Interval, c Candidate, caps 
 			return reject(graphReason(err))
 		}
 	}
-	return Landing{CandidateID: c.ID, Method: method, Before: parents[0], Terminal: c.Terminal,
+	return Landing{CandidateID: c.ID, Proofs: []string{method}, Spine: []string{c.Terminal}, Before: parents[0], Terminal: c.Terminal,
 		Source: slices.Clone(c.Source), Introduced: introduced}, Gap{}
 }
 

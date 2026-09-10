@@ -198,36 +198,43 @@ func TestIntegratedMerges(t *testing.T) {
 }
 
 func TestOriginOverlaps(t *testing.T) {
-	for _, reverse := range []bool{false, true} {
-		f := buildFixture(t, false)
-		f.repo.Checkout("-b", "overlap", f.base)
-		direct := f.repo.CommitFile("other", "direct\n", "direct")
-		f.source = []string{f.repo.CommitFile("work.txt", "new\nkeep\n", "first")}
-		f.source = append(f.source, f.repo.CommitFile("work.txt", "new\nkeep\nlast\n", "last"))
-		f.head = f.repo.Head()
-		ctx, p := f.prepare(t)
-		e := fixtureEvidence(f, p, "fast_forward")
-		e.Capabilities.FastForward = true
-		c := e.Candidates[0]
-		c.ID = "8"
-		c.Terminal = f.source[0]
-		c.SourceHead = f.source[0]
-		c.Source = c.Source[:1]
-		e.Candidates = append(e.Candidates, c)
-		if reverse {
-			slices.Reverse(e.Candidates)
+	for _, automatic := range []bool{false, true} {
+		for _, reverse := range []bool{false, true} {
+			f := buildFixture(t, false)
+			f.repo.Checkout("-b", "overlap", f.base)
+			direct := f.repo.CommitFile("other", "direct\n", "direct")
+			f.source = []string{f.repo.CommitFile("work.txt", "new\nkeep\n", "first")}
+			f.source = append(f.source, f.repo.CommitFile("work.txt", "new\nkeep\nlast\n", "last"))
+			f.head = f.repo.Head()
+			ctx, p := f.prepare(t)
+			e := fixtureEvidence(f, p, "fast_forward")
+			e.Capabilities.FastForward = true
+			if automatic {
+				e.Candidates[0].Method, e.Candidates[0].MethodEvidence = "", ""
+				e.Capabilities = landedwork.Capabilities{SingleParentCorrespondence: true}
+			}
+			c := e.Candidates[0]
+			c.ID = "8"
+			c.Terminal = f.source[0]
+			c.SourceHead = f.source[0]
+			c.Source = c.Source[:1]
+			e.Candidates = append(e.Candidates, c)
+			if reverse {
+				slices.Reverse(e.Candidates)
+			}
+			r, err := landedwork.Analyze(ctx, p, e, fixtureLimits())
+			require.NoError(t, err)
+			assert := assert.New(t)
+			assert.Empty(r.Landings)
+			assert.False(r.Coverage.Complete)
+			assert.Equal(direct, r.Coverage.CertifiedHead)
+			require.Len(t, r.Coverage.Gaps, 2)
+			assert.Equal(landedwork.Span{Before: direct, Through: f.head}, r.Coverage.Gaps[0].Span)
+			assert.Equal("candidate_conflict", r.Coverage.Gaps[0].Reason)
+			assert.Equal([]landedwork.DirectPush{{Before: f.base, Terminal: direct, Introduced: []string{direct}}}, r.DirectPushes)
 		}
-		r, err := landedwork.Analyze(ctx, p, e, fixtureLimits())
-		require.NoError(t, err)
-		assert := assert.New(t)
-		assert.Empty(r.Landings)
-		assert.False(r.Coverage.Complete)
-		assert.Equal(direct, r.Coverage.CertifiedHead)
-		require.Len(t, r.Coverage.Gaps, 2)
-		assert.Equal(landedwork.Span{Before: direct, Through: f.head}, r.Coverage.Gaps[0].Span)
-		assert.Equal("candidate_conflict", r.Coverage.Gaps[0].Reason)
-		assert.Equal([]landedwork.DirectPush{{Before: f.base, Terminal: direct, Introduced: []string{direct}}}, r.DirectPushes)
 	}
+
 }
 
 func TestBlockedSpan(t *testing.T) {

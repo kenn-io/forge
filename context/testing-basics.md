@@ -6,6 +6,9 @@ fixtures, or changing shell-script coverage.
 - Pass `-shuffle=on` when invoking `go test` directly; `make test` and
   `make test-short` already include it. Do not pass redundant `-count=1`; use
   `-count=N` only when `N > 1` for repeated runs.
+- Before pushing Go changes, run `make nilaway` as well as `make lint-check`;
+  passing golangci-lint alone does not cover CI's Go analysis checks
+  (`.github/workflows/ci.yml::lint`).
 - Routine local Go lanes and hooks bound package/processor concurrency and share
   Go caches; `GO_TEST_P=` intentionally restores native package concurrency.
   (`scripts/run-hook-go.sh`, `prek.toml`)

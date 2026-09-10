@@ -95,6 +95,12 @@ func TestAnalyzeProof(t *testing.T) {
 			assert.Equal("7", landing.CandidateID)
 			assert.Equal(f.base, landing.Before)
 			assert.Equal(f.head, landing.Terminal)
+			wantProof := method
+			if wantProof == "" {
+				wantProof = "merge"
+			}
+			assert.Equal([]string{wantProof}, landing.Proofs)
+			assert.Equal([]string{f.head}, landing.Spine)
 			assert.Equal(f.source, landing.Source)
 			assert.Equal(f.bounds(), result.Coverage.Bounds)
 			assert.True(result.Coverage.Complete)

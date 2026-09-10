@@ -40,8 +40,20 @@ cache policy and admission remain internal
 The public landing API uses local objects only; callers own collection and supply
 evidence for the exact prepared interval. Missing history and exhausted budgets
 remain gaps, never empty complete inventories (`landedwork/prepare.go::Prepare`).
+Default-branch clones may omit original PR objects; callers may fetch PR-head
+refs after collection, but must keep the pinned query and observed source SHAs
+unchanged (`landedwork/analyze.go::Analyze`).
 Unsupported landing methods remain unresolved; generic squash proof does not
 establish any provider's squash capability (`landedwork/analyze.go::Analyze`).
+Landing ownership is explicit and independent of correspondence labels; labels
+must not be interpreted as historical provider merge actions
+(`landedwork/evidence.go::Landing`).
+Automatic single-parent proofs require every alternative to be conclusive and
+every match to own the same origin; unavailable evidence cannot lose to a match
+(`landedwork/alternatives.go::resolveAlternatives`).
+A conclusive unequal pair disproves a range despite other ambiguous pairs;
+walk from the terminal only as far as needed, never shorten a matching origin
+(`landedwork/range.go::rangeCorrespondence`).
 Direct-push origins require complete inventory and an unblocked, unowned spine
 commit; they establish neither a pusher nor a trusted update time
 (`landedwork/direct.go::classifyDirectPushes`).
@@ -52,6 +64,9 @@ Git's commit-graph can outlive commit objects; verify required commits physicall
 including each landing's first parent (`landedwork/git.go::parents`, `landedwork/proof.go::proveAt`).
 Rewritten ranges compare exact edit bytes, not whitespace-insensitive patch IDs;
 empty or duplicate rewritten edits stay unproven (`landedwork/range.go::rangeCorrespondence`).
+Squash proof compares the net source-boundary delta, not concatenated patches;
+even an explicit method label requires a complete linear source chain
+(`landedwork/single_parent.go::proveSquash`).
 Offset-free text proof requires uniquely occurring removed bytes or a unique
 insertion neighborhood; repeated locations stay unproven (`landedwork/edits.go::fileEdits`).
 Overlap conflicts block the proven landing ranges, not unrelated earlier

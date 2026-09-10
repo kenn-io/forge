@@ -22,10 +22,7 @@ func candidateGap(p *Interval, c Candidate, g Gap) Gap {
 }
 
 func ownedSpine(l Landing) []string {
-	if l.Method == "rebase" || l.Method == "fast_forward" {
-		return l.Introduced
-	}
-	return []string{l.Terminal}
+	return l.Spine
 }
 
 func landingOwners(landings []Landing) map[string]bool {
@@ -121,7 +118,7 @@ func integratedThrough(ctx context.Context, v *objectView, p *Interval, c Candid
 			g.Reason = graphReason(err)
 			return "", g
 		}
-		if outer.Method != "merge" {
+		if !slices.Equal(outer.Proofs, []string{"merge"}) {
 			continue
 		}
 		introduced := make(map[string]bool, len(outer.Introduced))

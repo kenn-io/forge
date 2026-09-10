@@ -13,7 +13,11 @@ type Inventory struct {
 }
 
 // Capabilities authorize generic proof paths, not inferred provider support.
-type Capabilities struct{ Merge, Squash, Rebase, FastForward bool }
+type Capabilities struct {
+	Merge, Squash, Rebase, FastForward bool
+	// SingleParentCorrespondence authorizes all automatic alternatives together.
+	SingleParentCorrespondence bool
+}
 
 // Candidate contains provider facts bound to a stable target repository.
 // Evidence labels name the facts establishing method and terminal, not guesses
@@ -35,8 +39,11 @@ type Evidence struct {
 }
 
 type Landing struct {
-	CandidateID, Method, Before, Terminal string
-	Source, Introduced                    []string
+	CandidateID, Before, Terminal string
+	// Proofs are sorted correspondence labels, not historical merge actions.
+	Proofs []string
+	// Spine is the ordered first-parent ownership, independent of proof labels.
+	Spine, Source, Introduced []string
 }
 
 type Coverage struct {

@@ -55,7 +55,7 @@ func (v *objectView) compareTreeEdits(ctx context.Context, sourceBefore, source,
 	}) {
 		return nil, errCorrespondence
 	}
-	if len(a) == 0 {
+	if len(a) == 0 || len(b) == 0 {
 		return nil, errEdits
 	}
 	for i := range a {

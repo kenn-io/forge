@@ -10,117 +10,101 @@ func proveRange(ctx context.Context, v *objectView, p *Interval, c Candidate) (L
 	gap := Gap{CandidateID: c.ID, ObjectID: c.Terminal}
 	reject := func(reason string) (Landing, Gap) { gap.Reason = reason; return Landing{}, gap }
 	end := slices.Index(p.spine, c.Terminal) + 1
-	start := end - len(c.Source)
-	if start < 0 || end == 0 {
+	if end < len(c.Source) || end == 0 {
 		return reject("range_crosses_base")
 	}
-	if c.Source[len(c.Source)-1] != c.SourceHead {
-		return reject("source_head_mismatch")
+	sourceBefore, g := sourceBoundary(ctx, v, c)
+	if g.Reason != "" {
+		return Landing{}, g
 	}
-	if reason, object := checkSources(ctx, v, c); reason != "" {
-		gap.ObjectID = object
-		return reject(reason)
-	}
-	landed := p.spine[start:end]
-	before := p.query.Bounds.Base
-	if start > 0 {
-		before = p.spine[start-1]
-	}
-	if _, err := v.parents(ctx, before); err != nil {
-		gap.ObjectID = before
+	parents, err := v.parents(ctx, c.Terminal)
+	if err != nil {
 		return reject(graphReason(err))
 	}
-	for i, source := range c.Source {
-		for _, id := range []string{source, landed[i]} {
-			gap.ObjectID = id
-			parents, err := v.parents(ctx, id)
-			if err != nil {
-				return reject(graphReason(err))
-			}
-			if len(parents) != 1 {
-				return reject("topology_unproven")
-			}
-			if id == source && i > 0 && parents[0] != c.Source[i-1] {
-				return reject("source_order_unproven")
-			}
-		}
+	if len(parents) != 1 {
+		return reject("topology_unproven")
 	}
-	if object, err := rangeCorrespondence(ctx, v, c, landed); err != nil {
-		gap.ObjectID = object
-		if errors.Is(err, errCorrespondence) {
-			return reject("source_correspondence_unproven")
-		}
-		if errors.Is(err, errEdits) {
-			return reject("edits_unavailable")
-		}
-		return reject(graphReason(err))
+	attempts := rangeAlternatives(ctx, v, p, c, sourceBefore, parents[0])
+	a := attempts[0]
+	if c.Method == "fast_forward" {
+		a = attempts[1]
 	}
-	return Landing{CandidateID: c.ID, Proofs: []string{c.Method}, Spine: slices.Clone(landed), Before: before, Terminal: c.Terminal,
-		Source: slices.Clone(c.Source), Introduced: slices.Clone(landed)}, Gap{}
+	if a.state == attemptMismatch {
+		return reject("source_correspondence_unproven")
+	}
+	return a.landing, a.gap
 }
 
-func rangeCorrespondence(ctx context.Context, v *objectView, c Candidate, landed []string) (string, error) {
+// Compare the fixed range from its terminal backward. Any unequal pair rejects
+// the range, even if another pair was ambiguous. A successful proof still reads
+// every required commit and its boundary; it never shortens the owned range.
+func rangeCorrespondence(ctx context.Context, v *objectView, c Candidate, sourceBefore, before string) (r firstParentRange, identical bool, object string, err error) {
+	identical = true
 	var rewritten [][]fileEdit
-	for i, source := range c.Source {
-		if err := ctx.Err(); err != nil {
-			return source, err
+	var pending error
+	var pendingObject string
+	i := len(c.Source) - 1
+	for pair, readErr := range v.firstParentSuffix(ctx, c.Terminal, before, len(c.Source)) {
+		if readErr != nil {
+			return r, identical, pair.before, readErr
 		}
-		if source == landed[i] {
+		r.commits = append(r.commits, pair.id)
+		r.before = pair.before
+		source := c.Source[i]
+		parent := sourceBefore
+		if i > 0 {
+			parent = c.Source[i-1]
+		}
+		i--
+		if source == pair.id {
 			continue
 		}
+		identical = false
 		if c.Method == "fast_forward" {
-			return source, errCorrespondence
+			return r, identical, source, errCorrespondence
 		}
-		a, err := v.commitEdits(ctx, source)
-		if err != nil {
-			return source, err
-		}
-		b, err := v.commitEdits(ctx, landed[i])
-		if err != nil {
-			return landed[i], err
-		}
-		if len(a) == 0 || len(b) == 0 {
-			return source, errEdits
-		}
-		if !sameEdits(a, b) {
-			return source, errCorrespondence
-		}
-		for _, previous := range rewritten {
-			if err := ctx.Err(); err != nil {
-				return source, err
+		edits, compareErr := v.compareTreeEdits(ctx, parent, source, pair.before, pair.id)
+		if compareErr == nil {
+			for _, previous := range rewritten {
+				if sameEdits(previous, edits) {
+					compareErr = errEdits
+					break
+				}
 			}
-			if sameEdits(previous, a) {
-				return source, errEdits
-			}
+			rewritten = append(rewritten, edits)
 		}
-		rewritten = append(rewritten, a)
+		if errors.Is(compareErr, errEdits) {
+			if pending == nil {
+				pending, pendingObject = compareErr, source
+			}
+			continue
+		}
+		if compareErr != nil {
+			return r, identical, source, compareErr
+		}
 	}
-	return "", nil
+	slices.Reverse(r.commits)
+	return r, identical, pendingObject, pending
 }
 
-func rangeAlternatives(ctx context.Context, v *objectView, p *Interval, c Candidate) [2]proofAttempt {
-	r, possible, object, err := v.firstParentSuffix(ctx, p, c.Terminal, len(c.Source))
-	if err != nil {
-		a := proofAttempt{gap: Gap{CandidateID: c.ID, ObjectID: object, Reason: graphReason(err)}}
-		return [2]proofAttempt{a, a}
-	}
-	if !possible {
+func rangeAlternatives(ctx context.Context, v *objectView, p *Interval, c Candidate, sourceBefore, before string) [2]proofAttempt {
+	r, identical, object, err := rangeCorrespondence(ctx, v, c, sourceBefore, before)
+	if errors.Is(err, errCorrespondence) {
 		return [2]proofAttempt{{state: attemptMismatch}, {state: attemptMismatch}}
 	}
-	var attempts [2]proofAttempt
-	for i, method := range []string{"rebase", "fast_forward"} {
-		c.Method = method
-		object, err := rangeCorrespondence(ctx, v, c, r.commits)
-		switch {
-		case errors.Is(err, errCorrespondence):
-			attempts[i].state = attemptMismatch
-		case err != nil:
-			attempts[i].gap = Gap{CandidateID: c.ID, ObjectID: object, Reason: editReason(err)}
-		default:
-			attempts[i] = proofAttempt{state: attemptMatch, crossesBase: r.crossesBase,
-				landing: Landing{CandidateID: c.ID, Proofs: []string{method}, Before: r.before, Terminal: c.Terminal,
-					Source: slices.Clone(c.Source), Spine: slices.Clone(r.commits), Introduced: slices.Clone(r.commits)}}
+	a := proofAttempt{gap: Gap{CandidateID: c.ID, ObjectID: object, Reason: editReason(err)}}
+	if err == nil {
+		a = proofAttempt{state: attemptMatch,
+			crossesBase: slices.Index(p.spine, c.Terminal)+1 < len(c.Source),
+			landing: Landing{CandidateID: c.ID, Proofs: []string{"rebase"}, Before: r.before, Terminal: c.Terminal,
+				Source: slices.Clone(c.Source), Spine: r.commits, Introduced: slices.Clone(r.commits)}}
+	}
+	fastForward := proofAttempt{state: attemptMismatch}
+	if identical {
+		fastForward = a
+		if a.state == attemptMatch {
+			fastForward.landing.Proofs = []string{"fast_forward"}
 		}
 	}
-	return attempts
+	return [2]proofAttempt{a, fastForward}
 }

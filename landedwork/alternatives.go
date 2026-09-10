@@ -18,9 +18,8 @@ type proofAttempt struct {
 }
 
 type firstParentRange struct {
-	before      string
-	commits     []string
-	crossesBase bool
+	before  string
+	commits []string
 }
 
 // Order determines only the reported inconclusive reason, never a winning

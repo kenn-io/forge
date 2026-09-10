@@ -31,7 +31,7 @@ func proveAt(ctx context.Context, v *objectView, p *Interval, c Candidate, caps 
 	}
 	method := c.Method
 	if method == "" && len(parents) == 1 && caps.SingleParentCorrespondence && slices.Contains(p.spine, c.Terminal) {
-		return proveSingleParent(ctx, v, p, c)
+		return proveSingleParent(ctx, v, p, c, parents[0])
 	}
 	if method == "" && len(parents) == 2 {
 		method = "merge"

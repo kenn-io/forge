@@ -20,16 +20,16 @@ func TestRangeStopsAtConclusiveMismatch(t *testing.T) {
 	sources = append(sources, r.CommitFile("extra", "extra\n", "source second"))
 	r.Checkout("-b", "target", base)
 	landed := []string{r.CommitFile("text", "different\n", "target first")}
-	landed = append(landed, r.CommitFile("extra", "extra\n", "target second"))
+	landed = append(landed, r.CommitFile("extra", "different\n", "target second"))
 	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
 	defer cancel()
-	// The comparison's first pair needs six physical commit reads. Evaluating
-	// the second pair would spend more, but cannot rescue the mismatched first.
-	m := &meter{limits: Limits{Records: 100, Nodes: 6, InputBytes: 1 << 20}}
+	// The terminal pair disagrees. One boundary read suffices; reading an older
+	// pair would exceed this budget without changing the rejection.
+	m := &meter{limits: Limits{Records: 100, Nodes: 1, InputBytes: 1 << 20}}
 	v, err := openView(ctx, r.Root, m)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, v.close()) })
-	object, err := rangeCorrespondence(ctx, v, Candidate{Method: "rebase", Source: sources}, landed)
+	_, _, object, err := rangeCorrespondence(ctx, v, Candidate{Method: "rebase", Source: sources, Terminal: landed[1]}, base, landed[0])
 	require.ErrorIs(t, err, errCorrespondence)
-	assert.Equal(t, sources[0], object)
+	assert.Equal(t, sources[1], object)
 }

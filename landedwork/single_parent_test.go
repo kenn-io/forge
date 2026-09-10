@@ -31,6 +31,7 @@ func TestSquashRequiresSourceChain(t *testing.T) {
 		{"head", "source_head_mismatch"},
 		{"root", "topology_unproven"},
 		{"merge", "topology_unproven"},
+		{"empty ID", "source_invalid"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := buildFixture(t, true)
@@ -51,6 +52,8 @@ func TestSquashRequiresSourceChain(t *testing.T) {
 			ctx, p := f.prepare(t)
 			e := fixtureEvidence(f, p, "squash")
 			switch tc.name {
+			case "empty ID":
+				e.Candidates[0].Source[0] = ""
 			case "order":
 				e.Candidates[0].Source = []string{f.source[1], f.source[0], last}
 			case "omitted":

@@ -75,7 +75,7 @@ func TestAutomaticSingleParent(t *testing.T) {
 }
 
 func TestAutomaticEarlierHistory(t *testing.T) {
-	for _, mode := range []string{"disproved", "missing", "budget", "shallow"} {
+	for _, mode := range []string{"disproved", "missing", "missing boundary", "bounded mismatch", "budget", "shallow"} {
 		t.Run(mode, func(t *testing.T) {
 			require := require.New(t)
 			f := buildFixture(t, true)
@@ -104,11 +104,19 @@ func TestAutomaticEarlierHistory(t *testing.T) {
 				require.NoError(os.Remove(filepath.Join(f.repo.GitDir, "objects", earlier[:2], earlier[2:])))
 				_, _, err := f.repo.Runner.Run(ctx, f.repo.Root, nil, "cat-file", "-e", earlier)
 				require.Error(err)
-				reason, object = "objects_unavailable", earlier
+				// The terminal pair already disproves the range. Older unrelated
+				// history is not needed to accept the proven squash.
+			case "missing boundary":
+				require.NoError(os.Remove(filepath.Join(f.repo.GitDir, "objects", f.base[:2], f.base[2:])))
+				reason, object = "objects_unavailable", f.base
+			case "bounded mismatch":
+				// Enough to prove the squash and reject the terminal range pair,
+				// but not to walk the rest of the three-commit alternative.
+				limits.Nodes = 7
 			case "budget":
-				// Fourteen reads finish source validation and both aggregate deltas;
-				// the fixed suffix still needs a read and cannot be skipped.
-				limits.Nodes = 14
+				// Source and squash checks fit; the alternative is still untested
+				// when its next boundary read exhausts the allowance.
+				limits.Nodes = 6
 				reason, object = "input_budget_exhausted", terminal
 			case "shallow":
 				require.NoError(os.WriteFile(filepath.Join(f.repo.GitDir, "shallow"), []byte(earlier+"\n"), 0600))

@@ -39,40 +39,45 @@ func sameEdits(a, b []fileEdit) bool {
 	})
 }
 
-func (v *objectView) commitEdits(ctx context.Context, id string) ([]fileEdit, error) {
-	parents, err := v.parents(ctx, id)
+// Callers physically verify the boundary commits before comparing their trees.
+// A different path/mode inventory disproves correspondence without parsing text.
+func (v *objectView) compareTreeEdits(ctx context.Context, sourceBefore, source, before, after string) ([]fileEdit, error) {
+	a, err := v.treeFiles(ctx, sourceBefore, source)
 	if err != nil {
 		return nil, err
 	}
-	if len(parents) != 1 {
+	b, err := v.treeFiles(ctx, before, after)
+	if err != nil {
+		return nil, err
+	}
+	if !slices.EqualFunc(a, b, func(a, b fileEdit) bool {
+		return a.path == b.path && a.oldMode == b.oldMode && a.newMode == b.newMode
+	}) {
+		return nil, errCorrespondence
+	}
+	if len(a) == 0 {
 		return nil, errEdits
 	}
-	return v.treeEdits(ctx, parents[0], id)
-}
-
-func (v *objectView) treeEdits(ctx context.Context, before, after string) ([]fileEdit, error) {
-	for _, id := range []string{before, after} {
-		if _, err := v.parents(ctx, id); err != nil {
+	for i := range a {
+		if err := v.fileEdits(ctx, sourceBefore, source, &a[i]); err != nil {
+			return nil, err
+		}
+		if err := v.fileEdits(ctx, before, after, &b[i]); err != nil {
 			return nil, err
 		}
 	}
+	if !sameEdits(a, b) {
+		return nil, errCorrespondence
+	}
+	return a, nil
+}
+
+func (v *objectView) treeFiles(ctx context.Context, before, after string) ([]fileEdit, error) {
 	raw, err := v.run(ctx, "diff", "--raw", "-z", "--no-abbrev", "--no-renames", "--no-ext-diff", "--no-textconv", before, after, "--")
 	if err != nil {
 		return nil, err
 	}
-	files, err := parseEditFiles(raw)
-	if err != nil {
-		return nil, err
-	}
-	for i := range files {
-		if err = ctx.Err(); err != nil {
-			return nil, err
-		}
-		if err = v.fileEdits(ctx, before, after, &files[i]); err != nil {
-			return nil, err
-		}
-	}
-	return files, nil
+	return parseEditFiles(raw)
 }
 
 // Metadata is NUL-delimited; Git path quoting never changes the comparison key.

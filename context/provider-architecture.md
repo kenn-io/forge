@@ -51,8 +51,9 @@ must not be interpreted as historical provider merge actions
 Automatic single-parent proofs require every alternative to be conclusive and
 every match to own the same origin; unavailable evidence cannot lose to a match
 (`landedwork/alternatives.go::resolveAlternatives`).
-Fixed pre-base reads can disprove a range, never expand the query or select a
-shorter origin when that range matches (`landedwork/git.go::firstParentSuffix`).
+A conclusive unequal pair disproves a range despite other ambiguous pairs;
+walk from the terminal only as far as needed, never shorten a matching origin
+(`landedwork/range.go::rangeCorrespondence`).
 Direct-push origins require complete inventory and an unblocked, unowned spine
 commit; they establish neither a pusher nor a trusted update time
 (`landedwork/direct.go::classifyDirectPushes`).

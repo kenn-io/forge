@@ -22,6 +22,12 @@ func (c *collector) observe(ctx context.Context, ref platform.LandingChangeRef, 
 	if err := c.identity(detail, ref); err != nil {
 		return Observation{}, err
 	}
+	if !c.chargeAccounts(detail) {
+		// The detail record was already charged; omit only the uncharged roles.
+		detail.Author, detail.Merger = nil, nil
+		o.Change = cloneChange(detail)
+		return c.incomplete(o, "exhausted_limits", "detail", ""), nil
+	}
 	o.Change = cloneChange(detail)
 	if detail.TargetID <= 0 || detail.Merged == nil {
 		return c.incomplete(o, "invalid_observation", "detail", ""), nil
@@ -52,14 +58,36 @@ func (c *collector) observe(ctx context.Context, ref platform.LandingChangeRef, 
 	if err := c.identity(after, ref); err != nil {
 		return Observation{}, err
 	}
+	if !c.chargeAccounts(after) {
+		return c.incomplete(o, "exhausted_limits", "detail_recheck", ""), nil
+	}
 	if after.TargetID <= 0 {
 		return c.incomplete(o, "invalid_observation", "detail_recheck", ""), nil
 	}
-	if !reflect.DeepEqual(o.Change, after) {
+	if !sameProof(o.Change, after) {
 		return c.incomplete(o, "changed_observation", "detail_recheck", ""), nil
 	}
+	o.Change = cloneChange(after)
 	o.SourceComplete = true
 	return o, nil
+}
+
+func sameProof(a, b platform.LandingChange) bool {
+	// Metadata may change independently of the source/landing evidence. Compare
+	// all proof fields, including pointer presence, without profile stabilization.
+	a.Author, a.Merger, a.OpenedAt, a.MergedAt = nil, nil, nil, nil
+	b.Author, b.Merger, b.OpenedAt, b.MergedAt = nil, nil, nil, nil
+	return reflect.DeepEqual(a, b)
+}
+
+func (c *collector) chargeAccounts(d platform.LandingChange) bool {
+	var n int64
+	for _, a := range []*platform.Account{d.Author, d.Merger} {
+		if a != nil {
+			n++
+		}
+	}
+	return c.records(n)
 }
 
 func (c *collector) sources(ctx context.Context, o Observation) Observation {
@@ -129,7 +157,16 @@ func cloneChange(d platform.LandingChange) platform.LandingChange {
 	d.SourceID, d.Merged = clonePointer(d.SourceID), clonePointer(d.Merged)
 	d.MergeSHA, d.SquashSHA, d.SourceHead = clonePointer(d.MergeSHA), clonePointer(d.SquashSHA), clonePointer(d.SourceHead)
 	d.SourceCount = clonePointer(d.SourceCount)
+	d.Author, d.Merger = cloneAccount(d.Author), cloneAccount(d.Merger)
+	d.OpenedAt, d.MergedAt = clonePointer(d.OpenedAt), clonePointer(d.MergedAt)
 	return d
+}
+
+func cloneAccount(a *platform.Account) *platform.Account {
+	if a == nil {
+		return nil
+	}
+	return &platform.Account{ID: clonePointer(a.ID), Login: clonePointer(a.Login), Type: a.Type}
 }
 
 func candidate(bounds landedwork.Bounds, o Observation) landedwork.Candidate {

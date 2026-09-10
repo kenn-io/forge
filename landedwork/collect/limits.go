@@ -80,6 +80,14 @@ func resultBytes(r Result) int64 {
 				n += int64(len(*s))
 			}
 		}
+		for _, a := range []*platform.Account{d.Author, d.Merger} {
+			if a != nil {
+				n += int64(len(a.Type))
+				if a.Login != nil {
+					n += int64(len(*a.Login))
+				}
+			}
+		}
 	}
 	return n
 }

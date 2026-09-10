@@ -3,6 +3,7 @@ package platform
 import (
 	"context"
 	"errors"
+	"time"
 )
 
 // LandingChangeRef separates immutable REST identity from the mutable API route.
@@ -31,6 +32,26 @@ type LandingEvidenceSupport struct {
 	Sources                    LandingSourcePolicy
 }
 
+// AccountType is the provider-reported account classification, not authorship assurance.
+type AccountType string
+
+const (
+	AccountTypeUser         AccountType = "user"
+	AccountTypeBot          AccountType = "bot"
+	AccountTypeOrganization AccountType = "organization"
+	AccountTypeUnknown      AccountType = "unknown"
+)
+
+// Account is an observed account, not a complete identity on its own: the
+// enclosing query supplies the provider kind and instance. Only positive IDs
+// are usable identity claims; Login is display metadata. Absent and nonpositive
+// IDs are retained without guessing. Type does not establish a human author.
+type Account struct {
+	ID    *int64
+	Login *string
+	Type  AccountType
+}
+
 // LandingChange preserves field absence independently of application projections.
 // SourceID, when present, belongs to the same provider instance as TargetID.
 // TerminalEvidence names a provider fact; it does not infer a merge method.
@@ -43,6 +64,10 @@ type LandingChange struct {
 	MergeSHA, SquashSHA, SourceHead *string
 	SourceCount                     *int64
 	Terminal, TerminalEvidence      string
+	// Roles and UTC lifecycle times are observations, not landing proof.
+	// Nil means unreported; complete landing coverage does not certify these fields.
+	Author, Merger     *Account
+	OpenedAt, MergedAt *time.Time
 }
 
 // LandingEvidenceReader reads bounded pages for an exact prepared Git interval.

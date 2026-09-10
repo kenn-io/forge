@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	gh "github.com/google/go-github/v89/github"
 	"go.kenn.io/forge/platform"
@@ -142,6 +143,8 @@ func (c *Client) GetLandingChange(ctx context.Context, ref platform.RepoRef, cha
 		return platform.LandingChange{}, platform.ErrLandingIdentityMismatch
 	}
 	d := platform.LandingChange{Ref: change, TargetID: pr.GetBase().GetRepo().GetID(), TargetBranch: pr.GetBase().GetRef(), Merged: pr.Merged, MergeSHA: pr.MergeCommitSHA}
+	d.Author, d.Merger = landingAccount(pr.User), landingAccount(pr.MergedBy)
+	d.OpenedAt, d.MergedAt = landingTime(pr.CreatedAt), landingTime(pr.MergedAt)
 	if pr.Head != nil {
 		d.SourceHead = pr.Head.SHA
 	}
@@ -162,6 +165,35 @@ func (c *Client) GetLandingChange(ctx context.Context, ref platform.RepoRef, cha
 		d.TerminalEvidence = "merged_commit_sha"
 	}
 	return d, nil
+}
+
+func landingAccount(user *gh.User) *platform.Account {
+	if user == nil {
+		return nil
+	}
+	a := &platform.Account{Type: platform.AccountTypeUnknown}
+	if user.ID != nil {
+		a.ID = new(*user.ID)
+	}
+	if user.Login != nil {
+		a.Login = new(*user.Login)
+	}
+	switch user.GetType() {
+	case "User":
+		a.Type = platform.AccountTypeUser
+	case "Bot":
+		a.Type = platform.AccountTypeBot
+	case "Organization":
+		a.Type = platform.AccountTypeOrganization
+	}
+	return a
+}
+
+func landingTime(stamp *gh.Timestamp) *time.Time {
+	if stamp == nil {
+		return nil
+	}
+	return new(stamp.UTC())
 }
 
 func (c *Client) ListLandingSource(ctx context.Context, ref platform.RepoRef, change platform.LandingChangeRef, cursor string) (platform.Page[string], error) {

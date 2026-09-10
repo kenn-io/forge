@@ -73,6 +73,12 @@ Overlap conflicts block the proven landing ranges, not unrelated earlier
 commits; unknown-start candidate gaps still block from the base (`landedwork/origins.go::rejectOverlaps`).
 Collection must preserve unfinished candidates and the exact prepared query;
 missing provider evidence is never direct-push evidence (`landedwork/collect/collect.go::Collect`).
+Roles and lifecycle times belong to observations, not landing proof; complete
+landing coverage does not certify complete attribution (`platform/landing_evidence.go::LandingChange`).
+Metadata-only rechecks replace the entire observation, including absent fields;
+proof changes retain the initial incomplete observation (`landedwork/collect/candidates.go::observe`).
+Account identity needs the enclosing provider and instance; never infer a human
+or a missing ID from a login (`platform/landing_evidence.go::Account`).
 Keep malformed object IDs in observations, not analyzer candidates; a provider
 gap must not become a fatal caller-input error (`landedwork/collect/candidates.go::candidate`).
 Reject an over-budget query without a result; never trim commits or gaps to fit.

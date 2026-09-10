@@ -127,6 +127,12 @@ func TestCollectRoleBudgets(t *testing.T) {
 			if tc.stage == "detail" {
 				assert.Nil(o.Change.Author)
 				assert.Nil(o.Change.Merger)
+				want := d
+				want.Author, want.Merger = nil, nil
+				assert.Equal(want, o.Change, "retain the already charged detail without uncharged accounts")
+				require.Len(got.Evidence.Candidates, 1)
+				assert.Equal(head, got.Evidence.Candidates[0].Terminal)
+				assert.Equal("merged_commit_sha", got.Evidence.Candidates[0].TerminalEvidence)
 				assert.Len(s.steps, 2, "must stop before source paging")
 			} else {
 				assert.Equal(d.Author, o.Change.Author)

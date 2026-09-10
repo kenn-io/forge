@@ -134,14 +134,13 @@ func TestLandingRoles(t *testing.T) {
 func TestLandingTimes(t *testing.T) {
 	assert, require := assert.New(t), require.New(t)
 	hc := &http.Client{Transport: platform.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
-		body := `{"id":7,"number":3,"created_at":"2026-01-02T03:04:05+02:00","merged_at":"2026-01-01T18:04:05-07:00"}`
+		body := `{"id":7,"number":3,"created_at":"2026-01-02T03:04:05+02:00","merged_at":"2026-01-03T18:04:05-07:00"}`
 		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: req}, nil
 	})}
 	c, err := github.NewClient(github.ClientConfig{Read: hc, Write: hc, Notifications: hc, Clock: time.Now})
 	require.NoError(err)
 	d, err := c.GetLandingChange(t.Context(), platform.RepoRef{Platform: platform.KindGitHub, Host: "github.com", Owner: "example", Name: "project"}, platform.LandingChangeRef{ID: 7, Number: 3})
 	require.NoError(err)
-	want := time.Date(2026, 1, 2, 1, 4, 5, 0, time.UTC)
-	assert.Equal(&want, d.OpenedAt)
-	assert.Equal(&want, d.MergedAt)
+	assert.Equal(new(time.Date(2026, 1, 2, 1, 4, 5, 0, time.UTC)), d.OpenedAt)
+	assert.Equal(new(time.Date(2026, 1, 4, 1, 4, 5, 0, time.UTC)), d.MergedAt)
 }

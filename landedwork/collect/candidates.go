@@ -23,6 +23,9 @@ func (c *collector) observe(ctx context.Context, ref platform.LandingChangeRef, 
 		return Observation{}, err
 	}
 	if !c.chargeAccounts(detail) {
+		// The detail record was already charged; omit only the uncharged roles.
+		detail.Author, detail.Merger = nil, nil
+		o.Change = cloneChange(detail)
 		return c.incomplete(o, "exhausted_limits", "detail", ""), nil
 	}
 	o.Change = cloneChange(detail)

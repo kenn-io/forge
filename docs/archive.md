@@ -6,6 +6,28 @@ historical requests.
 
 Reports read only local data. They do not spend provider requests.
 
+## Sync capacity
+
+GitHub archive sync uses spare REST and GraphQL quota from the credential
+reading the repository. Forge reserves 20% of each API's quota for live work,
+with a minimum reserve of 200. Archive work waits when a required API reaches
+that reserve or higher-priority sync work is active.
+
+Archive requests reserved against this provider quota do not spend the local
+`sync_budget_per_hour` allowance. They can proceed even when that local
+ceiling is exhausted. Raising the local ceiling does not add provider quota.
+If GitHub's required quota data is unknown or expired, archive work waits for
+fresh data.
+
+Other archive paths, including Forgejo and Gitea hosts that do not report
+rate limits, use spare [local sync budget](configuration.md#sync-budget).
+They share that allowance with live sync and keep capacity in reserve for
+live work.
+
+For a busy GitHub archive, a [separate archive App](configuration.md#github-app-reads)
+gives covered repositories their own installation quota. It must be a distinct
+App from the one used for ordinary sync.
+
 ## Coverage
 
 Full archival covers supported historical issues, pull requests or merge

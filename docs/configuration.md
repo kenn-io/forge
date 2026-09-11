@@ -167,7 +167,8 @@ the organization and repositories Forge should read. Omit `--org` to create a
 personally owned App. If you need to finish installation later, run
 `kenn-forge-github-app install --owner your-org`.
 
-Forge's [local sync budget](#sync-budget) still applies to App reads. Raise
+Forge's [local sync budget](#sync-budget) still applies to ordinary App sync
+reads. Raise
 `sync_budget_per_hour` if the local ceiling stops sync while the installation
 has quota left.
 
@@ -195,8 +196,8 @@ not retry that response with a PAT because 404 can also mean missing or private.
 
 ## Sync budget
 
-`sync_budget_per_hour` limits the API requests Forge spends on background sync
-each hour. It defaults to 500. For a large or active repository, raise it in
+`sync_budget_per_hour` limits the API requests Forge spends on live background
+sync each hour. It defaults to 500. For a large or active repository, raise it in
 `~/.kenn/forge/config.toml`:
 
 ```toml
@@ -218,8 +219,13 @@ budget when they use the same GitHub user or App installation on a host.
 Other providers share a budget per provider host.
 
 Forge reserves 10% for discovering new and closed issues and pull requests.
-With a limit of 3,000, optional work such as detail refreshes and archive sync
+With a limit of 3,000, optional live work such as detail refreshes
 stops at 2,700, while discovery can use the full 3,000.
+
+GitHub archive requests reserved against provider quota do not spend this
+local allowance. Other archive paths can use it. See
+[Archive sync capacity](archive.md#sync-capacity) for provider reserves and
+local-budget behavior.
 
 Raising this value lets Forge use more of your provider quota. It does not
 increase that quota. Leave room for other tools that use the same account,

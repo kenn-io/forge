@@ -1,3 +1,4 @@
+import { untrack } from "svelte";
 import { Effect } from "effect";
 import { executeGeneratedApiRequest, GeneratedApi } from "../api/generated-api.js";
 import { TransientTransportError, type ApiProblemError } from "../api/effect-errors.js";
@@ -13,7 +14,7 @@ import {
   providerUsesHostRoute,
 } from "../api/provider-routes.js";
 import { bucketCIChecks, parseCIChecks } from "../utils/ci-buckets.js";
-import { normalizeKanbanStatus } from "./workflow.svelte.js";
+import { groupByWorkflow, normalizeKanbanStatus } from "./workflow.svelte.js";
 import { showFlash } from "./flash.svelte.js";
 import { PullsWorkflow, type FetchPullResult } from "./pulls-workflow.js";
 import { ProviderMutations, providerMutationFailureMessage } from "./ordered-mutations.js";
@@ -21,6 +22,8 @@ import { providerItemKey, providerMutationKey } from "./provider-key.js";
 import { nextWorkspaceLifecycleTick } from "./workspace-create-pending.svelte.js";
 import { readInvolvesMeFilter, writeInvolvesMeFilter } from "./involves-me-filter.js";
 import { readUnassignedFilter, writeUnassignedFilter } from "./unassigned-filter.js";
+
+import { groupPullStacks, type PullSidebarRow } from "../utils/pull-stack-tree.js";
 
 export type { FetchPullResult } from "./pulls-workflow.js";
 
@@ -41,6 +44,8 @@ export interface PullsStoreOptions {
   runtime: AppRuntime;
   getGlobalRepo?: () => string | undefined;
   getGroupByRepo?: () => boolean;
+  getGroupByWorkflow?: () => boolean;
+  getUseWorkspaceActivityForRecency?: () => boolean;
   optimisticDetailStarUpdate?: (ref: ProviderRouteRef, number: number, starred: boolean, envelopeTick: number) => void;
 }
 
@@ -59,6 +64,54 @@ export function createPullsStore(opts: PullsStoreOptions) {
   const runtime = opts.runtime;
   const getGlobalRepo = opts.getGlobalRepo ?? (() => undefined);
   const getGroupByRepo = opts.getGroupByRepo ?? (() => false);
+
+  const STACK_TREE_KEY = "kenn-forge:pullStackTree";
+  let stackTree = $state(readStackTree());
+  let selectionVersion = $state(0);
+  let stackExpansion = $state<Record<string, { expanded: boolean; selectionVersion: number }>>({});
+
+  function readStackTree(): boolean {
+    try {
+      return localStorage.getItem(STACK_TREE_KEY) === "1";
+    } catch {
+      return false;
+    }
+  }
+
+  function getStackTree(): boolean {
+    return stackTree;
+  }
+
+  function setStackTree(value: boolean): void {
+    stackTree = value;
+    try {
+      localStorage.setItem(STACK_TREE_KEY, value ? "1" : "0");
+    } catch {
+      // Keep the view usable when browser storage is unavailable.
+    }
+  }
+
+  function toggleStack(key: string, expanded: boolean): void {
+    stackExpansion[key] = { expanded: !expanded, selectionVersion };
+  }
+
+  function getSidebarRows(items: PullRequest[]): PullSidebarRow[] {
+    if (!stackTree) return items.map((pr) => ({ pr, depth: 0, stackKey: "", memberCount: 0, expanded: false }));
+    return groupPullStacks(items).flatMap(({ key, members }) => {
+      const override = stackExpansion[key];
+      const selection = selectedPR;
+      const selectedChild = selection !== null && members.slice(1).some((pr) => pullMatchesSelection(pr, selection));
+      const expanded =
+        override?.expanded === true || (selectedChild && override?.selectionVersion !== selectionVersion);
+      return (expanded ? members : members.slice(0, 1)).map((pr, index) => ({
+        pr,
+        depth: index,
+        stackKey: key,
+        memberCount: index === 0 && pr.stack ? members.length : 0,
+        expanded,
+      }));
+    });
+  }
 
   // --- state ---
 
@@ -205,15 +258,26 @@ export function createPullsStore(opts: PullsStoreOptions) {
 
   /** Returns PRs in display order: grouped by repo or flat chronological. */
   function getDisplayOrderPRs(): PullRequest[] {
-    if (getGroupByRepo()) {
-      const grouped = pullsByRepo();
-      const ordered: PullRequest[] = [];
-      for (const prs of grouped.values()) {
-        ordered.push(...prs);
-      }
-      return ordered;
-    }
-    return getFilteredPulls();
+    const groups = getDisplayGroups();
+    return groups.flatMap((items) => getSidebarRows(items).map((row) => row.pr));
+  }
+
+  function getDisplayGroups(): PullRequest[][] {
+    return opts.getGroupByWorkflow?.()
+      ? groupByWorkflow(getFilteredPulls(), opts.getUseWorkspaceActivityForRecency?.()).map((group) => group.items)
+      : getGroupByRepo()
+        ? [...pullsByRepo().values()]
+        : [getFilteredPulls()];
+  }
+
+  function getNavigationIndex(list: PullRequest[], selection: PullSelection): number {
+    const index = list.findIndex((pr) => pullMatchesSelection(pr, selection));
+    if (index >= 0 || !stackTree) return index;
+    // A manually hidden child keeps its detail open; use its visible root as the cursor.
+    const group = getDisplayGroups().find((items) => items.some((pr) => pullMatchesSelection(pr, selection)));
+    const stack =
+      group && groupPullStacks(group).find(({ members }) => members.some((pr) => pullMatchesSelection(pr, selection)));
+    return stack ? list.findIndex((pr) => pr.ID === stack.members[0]?.ID) : -1;
   }
 
   function selectNextPR(): void {
@@ -227,7 +291,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
       }
       return;
     }
-    const idx = list.findIndex((pr) => pullMatchesSelection(pr, sel));
+    const idx = getNavigationIndex(list, sel);
     const next = list[idx + 1];
     if (next !== undefined) {
       selectPRFromPull(next);
@@ -245,7 +309,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
       }
       return;
     }
-    const idx = list.findIndex((pr) => pullMatchesSelection(pr, sel));
+    const idx = getNavigationIndex(list, sel);
     if (idx > 0) {
       const prev = list[idx - 1];
       if (prev !== undefined) {
@@ -291,7 +355,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
     platformHost: string | undefined,
     repoPath: string,
   ): void {
-    selectedPR = {
+    const selection = {
       provider,
       ...(platformHost && { platformHost }),
       owner,
@@ -299,6 +363,11 @@ export function createPullsStore(opts: PullsStoreOptions) {
       repoPath,
       number,
     };
+    // A manual collapse lasts for this visit, not a later navigation back to the same PR.
+    untrack(() => {
+      if (JSON.stringify(selectedPR) !== JSON.stringify(selection)) selectionVersion += 1;
+    });
+    selectedPR = selection;
   }
 
   function selectPRFromPull(pr: PullRequest): void {
@@ -629,6 +698,10 @@ export function createPullsStore(opts: PullsStoreOptions) {
     getFilterState,
     setFilterState,
     getDisplayOrderPRs,
+    getSidebarRows,
+    getStackTree,
+    setStackTree,
+    toggleStack,
     selectNextPR,
     selectPrevPR,
     setFilterKanban,

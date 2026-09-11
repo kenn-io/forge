@@ -5153,6 +5153,9 @@ type StackPlacementResponse struct {
 
 	// Size Number of visible pull requests in the stack
 	Size int64 `json:"size"`
+
+	// StackId Stable local stack identity
+	StackId int64 `json:"stack_id"`
 }
 
 // StackResponse defines model for StackResponse.

@@ -930,6 +930,8 @@
       }
     }
 
+    if (route.page !== "pulls") stores.pulls.clearSelection();
+
     if (route.page === "pulls") {
       if (
         "selected" in route &&

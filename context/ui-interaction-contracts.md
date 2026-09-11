@@ -959,6 +959,17 @@ action, or the two fight and the control renders the inverse of its real state.
 
 Not every visibility control means "remove this entity entirely."
 
+- PR stack trees stay inside the active filters and grouping; a filtered-out root
+  must not reappear as context. Stack collapse affects keyboard order; repository
+  and status group collapse retain their existing navigation behavior.
+  (`frontend/src/lib/stores/pulls.svelte.ts::getSidebarRows`)
+- Stack roots align with ordinary PRs; all children share one shallow indent.
+  Use a shared stack tint and trailing disclosure to avoid implying a parent PR
+  above the root. (`frontend/src/lib/components/sidebar/PullList.svelte::pullRows`)
+- Stack expansion belongs to the stack across status-group fragments; fragment
+  counts describe only matching members. (`frontend/src/lib/stores/pulls.svelte.ts::toggleStack`)
+- Collapsing a selected stack child keeps its detail open and anchors keyboard
+  movement at its visible root. (`frontend/src/lib/stores/pulls.svelte.ts::getNavigationIndex`)
 - Controls that toggle detail visibility should preserve the parent row unless
   the feature explicitly removes that category from the result set.
 - Activity's Commits filter controls top-level default-branch commits only; it

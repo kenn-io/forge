@@ -1,12 +1,13 @@
 import { Effect } from "effect";
 
+import type { RepoRefResponse } from "../api/generated/models/repoRefResponse.js";
 import type { WorkflowCatalogResponse } from "../api/generated/models/workflowCatalogResponse.js";
 import type { WorkflowDefinitionResponse } from "../api/generated/models/workflowDefinitionResponse.js";
 import type { WorkflowEnvironmentResponse } from "../api/generated/models/workflowEnvironmentResponse.js";
 import type { WorkflowRunJobResponse } from "../api/generated/models/workflowRunJobResponse.js";
 import type { WorkflowRunResponse } from "../api/generated/models/workflowRunResponse.js";
 import { GeneratedApi, type GeneratedClient, type executeGeneratedRequest } from "../api/generated-api.js";
-import type { ApiProblemError, TransientTransportError } from "../api/effect-errors.js";
+import { ApiProblemError, type TransientTransportError } from "../api/effect-errors.js";
 import {
   canonicalProvider,
   providerUsesHostRoute,
@@ -25,8 +26,10 @@ export type WorkflowRun = WorkflowRunResponse;
 export type WorkflowRunJob = WorkflowRunJobResponse;
 export type WorkflowActionsError = ApiProblemError | TransientTransportError;
 
+export type WorkflowRepositoryRef = ProviderRouteRef & { readonly platformRepoId: string };
+
 export interface WorkflowDispatchInput {
-  readonly ref: ProviderRouteRef;
+  readonly ref: WorkflowRepositoryRef;
   readonly workflowId: string;
   readonly expectedDefinitionSha: string;
   readonly dispatchRef: string;
@@ -60,7 +63,7 @@ export interface WorkflowRunsPageState {
 }
 
 export interface WorkflowActionsSnapshot {
-  readonly ref: ProviderRouteRef;
+  readonly ref: WorkflowRepositoryRef;
   readonly catalog: WorkflowCatalog | null;
   readonly selectedWorkflow: WorkflowDefinition | null;
   readonly runs: readonly WorkflowRun[];
@@ -79,23 +82,23 @@ export interface WorkflowActionsStoreOptions {
 
 export interface WorkflowActionsStore {
   /** Reads the catalog once per repository; later calls are no-ops until refreshCatalog. */
-  readonly loadCatalog: (ref: ProviderRouteRef) => void;
-  readonly refreshCatalog: (ref: ProviderRouteRef, workflowId: string) => void;
-  readonly selectWorkflow: (ref: ProviderRouteRef, workflowId: string | null) => void;
-  readonly loadMoreRuns: (ref: ProviderRouteRef) => void;
-  readonly loadJobs: (ref: ProviderRouteRef, runId: string) => void;
+  readonly loadCatalog: (ref: WorkflowRepositoryRef) => void;
+  readonly refreshCatalog: (ref: WorkflowRepositoryRef, workflowId: string) => void;
+  readonly selectWorkflow: (ref: WorkflowRepositoryRef, workflowId: string | null) => void;
+  readonly loadMoreRuns: (ref: WorkflowRepositoryRef) => void;
+  readonly loadJobs: (ref: WorkflowRepositoryRef, runId: string) => void;
   readonly dispatch: (input: WorkflowDispatchInput) => void;
-  readonly newDispatchCycle: (ref: ProviderRouteRef, workflowId: string) => void;
+  readonly newDispatchCycle: (ref: WorkflowRepositoryRef, workflowId: string) => void;
   readonly applyDispatchProgress: (event: WorkflowDispatchProgressEvent) => void;
   readonly setEnabled: (enabled: boolean) => void;
-  readonly getSnapshot: (ref: ProviderRouteRef) => WorkflowActionsSnapshot | null;
-  readonly getCatalog: (ref: ProviderRouteRef) => WorkflowCatalog | null;
-  readonly getEnvironments: (ref: ProviderRouteRef) => readonly WorkflowEnvironment[];
-  readonly getSelectedWorkflow: (ref: ProviderRouteRef) => WorkflowDefinition | null;
-  readonly getRuns: (ref: ProviderRouteRef) => readonly WorkflowRun[];
-  readonly getJobs: (ref: ProviderRouteRef, runId: string) => readonly WorkflowRunJob[];
-  readonly getLoading: (ref: ProviderRouteRef) => WorkflowActionsLoading;
-  readonly getDispatch: (ref: ProviderRouteRef, workflowId: string) => WorkflowDispatchState | null;
+  readonly getSnapshot: (ref: WorkflowRepositoryRef) => WorkflowActionsSnapshot | null;
+  readonly getCatalog: (ref: WorkflowRepositoryRef) => WorkflowCatalog | null;
+  readonly getEnvironments: (ref: WorkflowRepositoryRef) => readonly WorkflowEnvironment[];
+  readonly getSelectedWorkflow: (ref: WorkflowRepositoryRef) => WorkflowDefinition | null;
+  readonly getRuns: (ref: WorkflowRepositoryRef) => readonly WorkflowRun[];
+  readonly getJobs: (ref: WorkflowRepositoryRef, runId: string) => readonly WorkflowRunJob[];
+  readonly getLoading: (ref: WorkflowRepositoryRef) => WorkflowActionsLoading;
+  readonly getDispatch: (ref: WorkflowRepositoryRef, workflowId: string) => WorkflowDispatchState | null;
 }
 
 type GeneratedApiService = {
@@ -107,17 +110,43 @@ const runsPageSize = 50;
 const notLoading: WorkflowActionsLoading = { catalog: false, runs: false, jobs: [] };
 
 export function workflowRepositoryKey(
-  ref: Pick<ProviderRouteRef, "provider" | "platformHost" | "owner" | "name">,
+  ref: Pick<WorkflowRepositoryRef, "provider" | "platformHost" | "platformRepoId">,
 ): string {
   const provider = canonicalProvider(ref.provider);
-  const owner = provider === "github" ? ref.owner.toLowerCase() : ref.owner;
-  const name = provider === "github" ? ref.name.toLowerCase() : ref.name;
-  return [provider, resolvedPlatformHost(provider, ref.platformHost).toLowerCase(), owner, name]
+  return [provider, resolvedPlatformHost(provider, ref.platformHost).toLowerCase(), ref.platformRepoId]
     .map(encodeURIComponent)
     .join("|");
 }
 
-function emptySnapshot(ref: ProviderRouteRef): WorkflowActionsSnapshot {
+function verifyRepository<A extends { readonly repo: RepoRefResponse }>(
+  ref: WorkflowRepositoryRef,
+  response: A,
+): Effect.Effect<A, ApiProblemError> {
+  const repository = response.repo;
+  if (
+    repository.platform_repo_id &&
+    workflowRepositoryKey({
+      provider: repository.provider,
+      platformHost: repository.platform_host,
+      platformRepoId: repository.platform_repo_id,
+    }) === workflowRepositoryKey(ref)
+  )
+    return Effect.succeed(response);
+  return Effect.fail(
+    new ApiProblemError({
+      operation: "GET workflow data",
+      problem: {
+        code: "conflict",
+        status: 409,
+        title: "Repository changed",
+        detail: "Repository identity changed. Reload repository details before continuing.",
+        type: "about:blank",
+      },
+    }),
+  );
+}
+
+function emptySnapshot(ref: WorkflowRepositoryRef): WorkflowActionsSnapshot {
   return {
     ref,
     catalog: null,
@@ -179,16 +208,19 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
   // hold them until the cycle owns that dispatch id.
   const earlyProgress = new Map<string, WorkflowDispatchProgressEvent>();
 
-  function snapshotFor(ref: ProviderRouteRef): WorkflowActionsSnapshot {
+  function snapshotFor(ref: WorkflowRepositoryRef): WorkflowActionsSnapshot {
     return snapshots[workflowRepositoryKey(ref)] ?? emptySnapshot(ref);
   }
 
-  function update(ref: ProviderRouteRef, change: (snapshot: WorkflowActionsSnapshot) => WorkflowActionsSnapshot): void {
+  function update(
+    ref: WorkflowRepositoryRef,
+    change: (snapshot: WorkflowActionsSnapshot) => WorkflowActionsSnapshot,
+  ): void {
     const key = workflowRepositoryKey(ref);
     snapshots = { ...snapshots, [key]: change(snapshots[key] ?? emptySnapshot(ref)) };
   }
 
-  function nextGeneration(ref: ProviderRouteRef, field: keyof Generations): number {
+  function nextGeneration(ref: WorkflowRepositoryRef, field: keyof Generations): number {
     const key = workflowRepositoryKey(ref);
     const current = generations.get(key) ?? { catalog: 0, runs: 0 };
     const next = { ...current, [field]: current[field] + 1 };
@@ -196,14 +228,14 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
     return next[field];
   }
 
-  function isCurrent(ref: ProviderRouteRef, field: keyof Generations, generation: number): boolean {
+  function isCurrent(ref: WorkflowRepositoryRef, field: keyof Generations, generation: number): boolean {
     return (generations.get(workflowRepositoryKey(ref))?.[field] ?? 0) === generation;
   }
 
   function run<A>(
     slot: string,
     operation: string,
-    ref: ProviderRouteRef,
+    ref: WorkflowRepositoryRef,
     request: (api: GeneratedApiService) => Effect.Effect<A, WorkflowActionsError>,
     onSettled: { onFailure: (error: WorkflowActionsError) => void; onSuccess: (value: A) => void },
   ): void {
@@ -228,7 +260,7 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
   }
 
   function readCatalog(
-    ref: ProviderRouteRef,
+    ref: WorkflowRepositoryRef,
     onDone: (catalog: WorkflowCatalog | null, error: WorkflowActionsError | null) => void,
   ): void {
     const generation = nextGeneration(ref, "catalog");
@@ -238,11 +270,13 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
       "GET workflow catalog",
       ref,
       (api) =>
-        api.execute("GET workflow catalog", (signal) =>
-          providerUsesHostRoute(ref)
-            ? api.client.WorkflowsService.listWorkflowsOnHost(providerHostRouteParams(ref), { signal })
-            : api.client.WorkflowsService.listWorkflows(providerRouteParams(ref), { signal }),
-        ),
+        api
+          .execute("GET workflow catalog", (signal) =>
+            providerUsesHostRoute(ref)
+              ? api.client.WorkflowsService.listWorkflowsOnHost(providerHostRouteParams(ref), { signal })
+              : api.client.WorkflowsService.listWorkflows(providerRouteParams(ref), { signal }),
+          )
+          .pipe(Effect.flatMap((response) => verifyRepository(ref, response))),
       {
         onFailure: (error) => {
           if (!isCurrent(ref, "catalog", generation)) return;
@@ -266,7 +300,7 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
     );
   }
 
-  function loadCatalog(ref: ProviderRouteRef): void {
+  function loadCatalog(ref: WorkflowRepositoryRef): void {
     if (!enabled) return;
     const existing = snapshotFor(ref);
     if (existing.catalog !== null || existing.loading.catalog) return;
@@ -275,7 +309,7 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
     });
   }
 
-  function refreshCatalog(ref: ProviderRouteRef, workflowId: string): void {
+  function refreshCatalog(ref: WorkflowRepositoryRef, workflowId: string): void {
     if (!enabled || snapshotFor(ref).loading.catalog) return;
     readCatalog(ref, (_catalog, error) => {
       update(ref, (snapshot) => {
@@ -287,7 +321,7 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
     });
   }
 
-  function readRuns(ref: ProviderRouteRef, workflowId: string, cursor: string | undefined): void {
+  function readRuns(ref: WorkflowRepositoryRef, workflowId: string, cursor: string | undefined): void {
     const generation =
       cursor === undefined ? nextGeneration(ref, "runs") : (generations.get(workflowRepositoryKey(ref))?.runs ?? 0);
     run(
@@ -295,19 +329,21 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
       "GET workflow runs",
       ref,
       (api) =>
-        api.execute("GET workflow runs", (signal) =>
-          providerUsesHostRoute(ref)
-            ? api.client.WorkflowsService.listWorkflowRunsOnHost(
-                providerHostRouteParams(ref),
-                { workflow_id: workflowId, per_page: runsPageSize, ...(cursor !== undefined && { cursor }) },
-                { signal },
-              )
-            : api.client.WorkflowsService.listWorkflowRuns(
-                providerRouteParams(ref),
-                { workflow_id: workflowId, per_page: runsPageSize, ...(cursor !== undefined && { cursor }) },
-                { signal },
-              ),
-        ),
+        api
+          .execute("GET workflow runs", (signal) =>
+            providerUsesHostRoute(ref)
+              ? api.client.WorkflowsService.listWorkflowRunsOnHost(
+                  providerHostRouteParams(ref),
+                  { workflow_id: workflowId, per_page: runsPageSize, ...(cursor !== undefined && { cursor }) },
+                  { signal },
+                )
+              : api.client.WorkflowsService.listWorkflowRuns(
+                  providerRouteParams(ref),
+                  { workflow_id: workflowId, per_page: runsPageSize, ...(cursor !== undefined && { cursor }) },
+                  { signal },
+                ),
+          )
+          .pipe(Effect.flatMap((response) => verifyRepository(ref, response))),
       {
         onFailure: (error) => {
           if (!isCurrent(ref, "runs", generation)) return;
@@ -343,7 +379,7 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
     );
   }
 
-  function selectWorkflow(ref: ProviderRouteRef, workflowId: string | null): void {
+  function selectWorkflow(ref: WorkflowRepositoryRef, workflowId: string | null): void {
     if (!enabled) return;
     const snapshot = snapshotFor(ref);
     const workflow =
@@ -362,7 +398,7 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
     if (workflow) readRuns(ref, workflow.id, undefined);
   }
 
-  function loadMoreRuns(ref: ProviderRouteRef): void {
+  function loadMoreRuns(ref: WorkflowRepositoryRef): void {
     if (!enabled) return;
     const snapshot = snapshotFor(ref);
     const cursor = snapshot.runsPage.nextCursor;
@@ -371,7 +407,7 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
     readRuns(ref, snapshot.selectedWorkflow.id, cursor);
   }
 
-  function loadJobs(ref: ProviderRouteRef, runId: string): void {
+  function loadJobs(ref: WorkflowRepositoryRef, runId: string): void {
     if (!enabled || snapshotFor(ref).jobs[runId] !== undefined || snapshotFor(ref).loading.jobs.includes(runId)) return;
     update(ref, (snapshot) => ({
       ...snapshot,
@@ -385,14 +421,16 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
       "GET workflow run jobs",
       ref,
       (api) =>
-        api.execute("GET workflow run jobs", (signal) =>
-          providerUsesHostRoute(ref)
-            ? api.client.WorkflowsService.listWorkflowRunJobsOnHost(
-                { ...providerHostRouteParams(ref), runId },
-                { signal },
-              )
-            : api.client.WorkflowsService.listWorkflowRunJobs({ ...providerRouteParams(ref), runId }, { signal }),
-        ),
+        api
+          .execute("GET workflow run jobs", (signal) =>
+            providerUsesHostRoute(ref)
+              ? api.client.WorkflowsService.listWorkflowRunJobsOnHost(
+                  { ...providerHostRouteParams(ref), runId },
+                  { signal },
+                )
+              : api.client.WorkflowsService.listWorkflowRunJobs({ ...providerRouteParams(ref), runId }, { signal }),
+          )
+          .pipe(Effect.flatMap((response) => verifyRepository(ref, response))),
       {
         onFailure: (error) =>
           update(ref, (snapshot) => ({
@@ -411,7 +449,7 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
     );
   }
 
-  function setDispatch(ref: ProviderRouteRef, workflowId: string, state: WorkflowDispatchState | null): void {
+  function setDispatch(ref: WorkflowRepositoryRef, workflowId: string, state: WorkflowDispatchState | null): void {
     update(ref, (snapshot) => {
       const { [workflowId]: _previous, ...dispatches } = snapshot.dispatches;
       return { ...snapshot, dispatches: state === null ? dispatches : { ...dispatches, [workflowId]: state } };
@@ -472,7 +510,7 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
     );
   }
 
-  function newDispatchCycle(ref: ProviderRouteRef, workflowId: string): void {
+  function newDispatchCycle(ref: WorkflowRepositoryRef, workflowId: string): void {
     setDispatch(ref, workflowId, null);
   }
 
@@ -480,8 +518,7 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
     const key = workflowRepositoryKey({
       provider: event.provider,
       platformHost: event.platform_host,
-      owner: event.owner,
-      name: event.name,
+      platformRepoId: event.platform_repo_id,
     });
     const snapshot = snapshots[key];
     if (!snapshot) return;

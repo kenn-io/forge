@@ -168,6 +168,7 @@ function pullDetail(): PullDetail {
       owner: "acme",
       name: "widget",
       repo_path: "acme/widget",
+      platform_repo_id: "widget-repo-id",
     },
     merge_request: {
       ID: 1,
@@ -903,7 +904,14 @@ describe("PullDetail provider workflow actions", () => {
     const rendered = await openReleaseWorkflow(pullDetail());
     rendered.api.GET.mockResolvedValue({ data: { repo: pullDetail().repo, environments: [], workflows: [] } });
     rendered.workflowActions.refreshCatalog(
-      { provider: "github", platformHost: "github.com", owner: "acme", name: "widget", repoPath: "acme/widget" },
+      {
+        provider: "github",
+        platformHost: "github.com",
+        owner: "acme",
+        name: "widget",
+        repoPath: "acme/widget",
+        platformRepoId: "widget-repo-id",
+      },
       "release.yml",
     );
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Run workflow" })).toBeNull());

@@ -10,6 +10,7 @@ import { workflowActionsErrorMessage, workflowDispatchPresentation } from "./wor
 const ref = {
   provider: "github",
   platformHost: "github.com",
+  platformRepoId: "repo-app",
   owner: "acme",
   name: "app",
   repoPath: "acme/app",

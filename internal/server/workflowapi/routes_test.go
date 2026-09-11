@@ -680,6 +680,7 @@ func TestWorkflowDispatchFollowThroughWatchesReturnedRunID(t *testing.T) {
 			require.Len(t, events, 3)
 			for _, event := range events {
 				assert.Equal(body["dispatch_id"], event.DispatchID)
+				assert.Equal("R_widget", event.PlatformRepoID)
 				require.NotNil(t, event.Run)
 				assert.Equal("scheduled-run", event.Run.ID)
 			}
@@ -723,12 +724,14 @@ func TestWorkflowDispatchFollowThroughProviderOutage(t *testing.T) {
 				}}
 				handler := New(Deps{Runtime: &workflowTestRuntime{}})
 				handler.followDispatch(ctx, dispatchFollow{
+					repo:   db.Repo{PlatformRepoID: "R_widget"},
 					reader: provider, result: platform.WorkflowDispatchResult{Run: &run}, dispatchID: "dispatch-1",
 				})
 				events := publishedDispatchEvents(handler)
 				statuses := make([]string, 0, len(events))
 				for _, event := range events {
 					statuses = append(statuses, event.Status)
+					assert.Equal("R_widget", event.PlatformRepoID)
 				}
 				assert.Equal(test.wantStatuses, statuses)
 				require.NotEmpty(t, events)
@@ -760,6 +763,7 @@ func TestWorkflowDispatchFollowThroughReportsUnresolvedRun(t *testing.T) {
 	events := publishedDispatchEvents(handler)
 	require.Len(events, 1)
 	assert.Equal("unresolved", events[0].Status)
+	assert.Equal("R_widget", events[0].PlatformRepoID)
 	assert.Equal(body["dispatch_id"], events[0].DispatchID)
 	assert.Nil(events[0].Run)
 	assert.Empty(provider.runQueries, "a missing run ID must not trigger a search")

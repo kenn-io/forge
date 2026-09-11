@@ -64,6 +64,7 @@ function summary(name: string, supportsActions: boolean) {
       owner: "acme",
       name,
       repo_path: `acme/${name}`,
+      platform_repo_id: `${name}-repo-id`,
       capabilities: supportsActions
         ? capable
         : {

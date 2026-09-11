@@ -94,6 +94,7 @@ function pullDetail(): PullDetail {
     owner: "acme",
     name: "widgets",
     repo_path: "acme/widgets",
+    platform_repo_id: "widgets-repo-id",
     default_branch: "main",
     capabilities,
     operations,
@@ -395,7 +396,7 @@ describe("PullDetail provider workflow actions", () => {
     state.detail = {
       ...state.detail,
       repo_name: "gadgets",
-      repo: { ...state.detail.repo, name: "gadgets", repo_path: "acme/gadgets" },
+      repo: { ...state.detail.repo, name: "gadgets", repo_path: "acme/gadgets", platform_repo_id: "gadgets-repo-id" },
       merge_request: { ...state.detail.merge_request, HeadBranch: "feature/gadgets" },
     };
     await vi.waitFor(() => expect(visibleButton("Run workflow")).not.toBeNull(), WAIT);
@@ -409,7 +410,7 @@ describe("PullDetail provider workflow actions", () => {
     document.querySelector<HTMLButtonElement>("button[type='submit']")!.click();
     expect(workflowActions.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
-        ref: expect.objectContaining({ name: "gadgets", repoPath: "acme/gadgets" }),
+        ref: expect.objectContaining({ name: "gadgets", repoPath: "acme/gadgets", platformRepoId: "gadgets-repo-id" }),
         dispatchRef: "feature/gadgets",
       }),
     );
@@ -424,6 +425,47 @@ describe("PullDetail provider workflow actions", () => {
     await tick();
     expect(document.querySelector("input[aria-label='Git ref']")).toBeNull();
     expect(visibleButton("Run workflow")).not.toBeNull();
+    wrapper.remove();
+  });
+
+  it("closes the draft when a different permanent repository ID takes over the same route", async () => {
+    const { state, workflowActions, wrapper } = renderWorkflowDetail();
+    await vi.waitFor(() => expect(visibleButton("Run workflow")).not.toBeNull(), WAIT);
+    visibleButton("Run workflow")!.click();
+    await vi.waitFor(() => expect(visibleButton("Release")).not.toBeNull(), WAIT);
+    visibleButton("Release")!.click();
+    await vi.waitFor(() => expect(document.querySelector("input[aria-label='Git ref']")).not.toBeNull(), WAIT);
+    const oldRef = document.querySelector<HTMLInputElement>("input[aria-label='Git ref']")!;
+    oldRef.value = "old-repository-draft";
+    oldRef.dispatchEvent(new Event("input", { bubbles: true }));
+
+    state.detail = { ...state.detail, merge_request: { ...state.detail.merge_request, Title: "Refreshed title" } };
+    await tick();
+    expect(document.querySelector<HTMLInputElement>("input[aria-label='Git ref']")?.value).toBe("old-repository-draft");
+
+    state.detail = { ...state.detail, repo: { ...state.detail.repo, platform_repo_id: "replacement-repo-id" } };
+    await tick();
+    expect(document.querySelector("input[aria-label='Git ref']")).toBeNull();
+    expect(workflowActions.loadCatalog).toHaveBeenLastCalledWith(
+      expect.objectContaining({ platformRepoId: "replacement-repo-id" }),
+    );
+    visibleButton("Run workflow")!.click();
+    await vi.waitFor(() => expect(visibleButton("Release")).not.toBeNull(), WAIT);
+    visibleButton("Release")!.click();
+    await vi.waitFor(
+      () =>
+        expect(document.querySelector<HTMLInputElement>("input[aria-label='Git ref']")?.value).toBe(
+          "feature/workflow-actions",
+        ),
+      WAIT,
+    );
+    document.querySelector<HTMLButtonElement>("button[type='submit']")!.click();
+    expect(workflowActions.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ref: expect.objectContaining({ platformRepoId: "replacement-repo-id" }),
+        dispatchRef: "feature/workflow-actions",
+      }),
+    );
     wrapper.remove();
   });
 });

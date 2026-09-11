@@ -52,6 +52,9 @@ service is the supported tool here.
   arrives as `workflow_dispatch_progress` events keyed by `dispatch_id`
   (`frontend/src/lib/stores/workflow-actions.svelte.ts::applyDispatchProgress`,
   `internal/server/workflowapi/dispatch_follow.go::Handler.followDispatch`).
+- Workflow caches and progress belong to provider, host, and permanent repository ID;
+  renames retain successful reads and dispatches, while a replacement route occupant gets separate state
+  (`frontend/src/lib/stores/workflow-actions.svelte.ts::workflowRepositoryKey`).
 - Reads are latest-wins per repository through generation counters; a stale catalog
   or run response never replaces newer data
   (`frontend/src/lib/stores/workflow-actions.svelte.ts::selectWorkflow`).

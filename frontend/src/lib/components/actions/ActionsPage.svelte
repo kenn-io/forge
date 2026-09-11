@@ -6,7 +6,7 @@
 
   import { getAppRuntime } from "../../app/runtime-context.js";
   import type { AppExecution } from "../../app/runtime.js";
-  import type { ProviderRouteRef } from "../../api/provider-routes.js";
+  import { workflowRepositoryKey, type WorkflowRepositoryRef } from "../../stores/workflow-actions.svelte.js";
   import { apiErrorMessage } from "../../api/runtime.js";
   import { getStores } from "../../context.js";
   import {
@@ -57,13 +57,17 @@
 
   function supportsWorkflowActions(summary: RepoSummaryCard): boolean {
     const capabilities = summary.repo.capabilities;
-    return capabilities.read_workflows
+    return !!summary.repo.platform_repo_id
+      && capabilities.read_workflows
       && capabilities.read_workflow_runs
       && capabilities.workflow_dispatch;
   }
 
-  function workflowRef(summary: RepoSummaryCard): ProviderRouteRef {
+  function workflowRef(summary: RepoSummaryCard): WorkflowRepositoryRef | null {
+    const platformRepoId = summary.repo.platform_repo_id;
+    if (!platformRepoId) return null;
     return {
+      platformRepoId,
       provider: summary.repo.provider,
       platformHost: summary.repo.platform_host,
       owner: summary.repo.owner,
@@ -151,7 +155,7 @@
     };
   });
 
-  function loadSelectedCatalog(ref: ProviderRouteRef | null): Attachment {
+  function loadSelectedCatalog(ref: WorkflowRepositoryRef | null): Attachment {
     return () => {
       if (!ref) return;
       untrack(() => workflowActions.loadCatalog(ref));
@@ -272,17 +276,19 @@
           <ScrollBox label="Workflow dispatch form">
             <div class="pane-content">
               {#if selectedWorkflow && selectedRef}
-                <WorkflowDispatchForm
-                  workflow={selectedWorkflow}
-                  environments={snapshot?.catalog?.environments ?? []}
-                  initialRef={snapshot?.catalog?.repo.default_branch ?? ""}
-                  operation={snapshot?.catalog?.repo.operations?.dispatch_workflow}
-                  state={workflowDispatchPresentation(snapshot, selectedWorkflow.id)}
-                  onsubmit={submitWorkflow}
-                  reloading={snapshot?.loading.catalog ?? false}
-                  onreload={reloadWorkflowCatalog}
-                  onnewcycle={newDispatchCycle}
-                />
+                {#key workflowRepositoryKey(selectedRef)}
+                  <WorkflowDispatchForm
+                    workflow={selectedWorkflow}
+                    environments={snapshot?.catalog?.environments ?? []}
+                    initialRef={snapshot?.catalog?.repo.default_branch ?? ""}
+                    operation={snapshot?.catalog?.repo.operations?.dispatch_workflow}
+                    state={workflowDispatchPresentation(snapshot, selectedWorkflow.id)}
+                    onsubmit={submitWorkflow}
+                    reloading={snapshot?.loading.catalog ?? false}
+                    onreload={reloadWorkflowCatalog}
+                    onnewcycle={newDispatchCycle}
+                  />
+                {/key}
               {:else}
                 <p class="pane-state">Select a workflow to configure a manual run.</p>
               {/if}

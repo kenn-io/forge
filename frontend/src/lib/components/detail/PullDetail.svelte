@@ -125,7 +125,7 @@
     recordWorkspaceCreated,
     resolveControllerlessWorkspaceRef,
   } from "../../stores/workspace-create-pending.svelte.js";
-  import type { WorkflowDefinition } from "../../stores/workflow-actions.svelte.js";
+  import type { WorkflowDefinition, WorkflowRepositoryRef } from "../../stores/workflow-actions.svelte.js";
 
   type ChipTrailing = ComponentProps<typeof Chip>["trailing"];
 
@@ -1348,16 +1348,22 @@
       if (actionMenuTriggerEl === button) actionMenuTriggerEl = undefined;
     };
   };
+  const workflowPlatformRepoId = $derived(
+    !stalePR ? detailStore.getDetail()?.repo.platform_repo_id : undefined,
+  );
+  const workflowRef = $derived<WorkflowRepositoryRef | null>(
+    workflowPlatformRepoId ? { ...routeRef, platformRepoId: workflowPlatformRepoId } : null,
+  );
   const workflowCatalogDemandEnabled = $derived(
-    !stalePR
+    workflowRef !== null
       && settings.isModeVisible("actions")
       && currentCapabilities().read_workflows
       && currentCapabilities().workflow_dispatch,
   );
-  const workflowSnapshot = $derived(workflowActions.getSnapshot(routeRef));
+  const workflowSnapshot = $derived(workflowRef ? workflowActions.getSnapshot(workflowRef) : null);
   const workflowCatalog = $derived(
-    workflowCatalogDemandEnabled
-      ? workflowActions.getCatalog(routeRef)?.workflows ?? []
+    workflowCatalogDemandEnabled && workflowRef
+      ? workflowActions.getCatalog(workflowRef)?.workflows ?? []
       : [],
   );
   const workflowDialogWorkflow = $derived(
@@ -1387,7 +1393,7 @@
   });
   const workflowDialogPresentation = $derived.by(() =>
     workflowDispatchPresentation(
-      workflowActions.getSnapshot(routeRef),
+      workflowSnapshot,
       workflowDialogWorkflow?.id ?? null,
     )
   );
@@ -1400,9 +1406,9 @@
 
   function submitWorkflow(request: WorkflowDispatchRequest): void {
     const workflow = workflowDialogWorkflow;
-    if (stalePR || !workflowCatalogDemandEnabled || !workflow) return;
+    if (stalePR || !workflowCatalogDemandEnabled || !workflowRef || !workflow) return;
     workflowActions.dispatch({
-      ref: routeRef,
+      ref: workflowRef,
       workflowId: workflow.id,
       expectedDefinitionSha: workflow.definition_sha,
       dispatchRef: request.ref,
@@ -1411,27 +1417,27 @@
   }
 
   function retryWorkflowCatalog(): void {
-    if (stalePR || !workflowCatalogDemandEnabled) return;
-    workflowActions.loadCatalog(routeRef);
+    if (stalePR || !workflowCatalogDemandEnabled || !workflowRef) return;
+    workflowActions.loadCatalog(workflowRef);
   }
 
   function reloadWorkflowCatalog(): void {
     const workflow = workflowDialogWorkflow;
-    if (stalePR || !workflowCatalogDemandEnabled || !workflow) return;
-    workflowActions.refreshCatalog(routeRef, workflow.id);
+    if (stalePR || !workflowCatalogDemandEnabled || !workflowRef || !workflow) return;
+    workflowActions.refreshCatalog(workflowRef, workflow.id);
   }
 
   function newWorkflowDispatchCycle(): void {
     const workflow = workflowDialogWorkflow;
-    if (stalePR || !workflowCatalogDemandEnabled || !workflow) return;
-    workflowActions.newDispatchCycle(routeRef, workflow.id);
+    if (stalePR || !workflowCatalogDemandEnabled || !workflowRef || !workflow) return;
+    workflowActions.newDispatchCycle(workflowRef, workflow.id);
   }
 
   function closeWorkflowDialog(): void {
     workflowDialogWorkflowId = null;
   }
 
-  function loadWorkflowCatalog(ref: ProviderRouteRef | null): Attachment {
+  function loadWorkflowCatalog(ref: WorkflowRepositoryRef | null): Attachment {
     return () => {
       if (!ref) return;
       untrack(() => workflowActions.loadCatalog(ref));
@@ -2140,7 +2146,7 @@
       detail.repo?.owner ?? owner,
       detail.repo?.name ?? name,
     )}
-    <div class="pull-detail-wrap" {@attach loadWorkflowCatalog(workflowCatalogDemandEnabled ? routeRef : null)}>
+    <div class="pull-detail-wrap" {@attach loadWorkflowCatalog(workflowCatalogDemandEnabled ? workflowRef : null)}>
       {#if staleLoadError}
         <div class="detail-load-error" data-testid="detail-load-error">
           Couldn't load this pull request: {detailStore.getDetailError()}
@@ -3096,15 +3102,15 @@
         </div>
       {/if}
 
-      {#if workflowDialogWorkflow && workflowCatalogDemandEnabled}
+      {#if workflowDialogWorkflow && workflowCatalogDemandEnabled && workflowRef}
         <WorkflowDispatchDialog
           open={true}
           workflow={workflowDialogWorkflow}
-          environments={workflowActions.getEnvironments(routeRef)}
+          environments={workflowActions.getEnvironments(workflowRef)}
           initialRef={workflowInitialRef}
           operation={repoOperations?.dispatch_workflow}
           state={workflowDialogPresentation}
-          reloading={workflowActions.getLoading(routeRef).catalog}
+          reloading={workflowActions.getLoading(workflowRef).catalog}
           trigger={actionMenuTriggerEl ?? null}
           onsubmit={submitWorkflow}
           onclose={closeWorkflowDialog}

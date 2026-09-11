@@ -72,6 +72,7 @@ function repoSummary(name: string, supported = true) {
       owner: "acme",
       name,
       repo_path: `acme/${name}`,
+      platform_repo_id: `${name}-repo-id`,
       capabilities: supported
         ? capabilities
         : {
@@ -244,6 +245,59 @@ describe("ActionsPage", () => {
       expect(paths).toContain("/api/v1/actions/github/acme/alpha/workflows");
       expect(paths.some((path) => path.includes("/legacy/"))).toBe(false);
     });
+  });
+
+  it("does not demand workflows without a verified repository ID", async () => {
+    const summary = repoSummary("alpha");
+    api = createMockApiFetch([
+      (request) =>
+        request.url.pathname === "/api/v1/repos/summary"
+          ? jsonResponse([{ ...summary, repo: { ...summary.repo, platform_repo_id: undefined } }])
+          : null,
+      workflowFixtures(),
+    ]);
+    globalThis.fetch = api.fetch;
+    renderPage();
+
+    expect(await screen.findByText("Workflow Actions unavailable")).toBeTruthy();
+    expect(api.requests.some((request) => request.url.pathname.includes("/actions/"))).toBe(false);
+  });
+
+  it("does not reuse a draft across repositories with the same workflow ID and definition", async () => {
+    api = createMockApiFetch([
+      (request) => {
+        const match = request.url.pathname.match(/^\/api\/v1\/actions\/github\/acme\/(alpha|beta)\/workflows$/);
+        return match
+          ? jsonResponse({
+              repo: { ...repoSummary(match[1]!).repo, default_branch: "trunk" },
+              environments: [],
+              workflows: [workflow("shared")],
+            })
+          : null;
+      },
+      workflowFixtures(),
+    ]);
+    globalThis.fetch = api.fetch;
+    const store = renderPage();
+    await fireEvent.click(await screen.findByRole("button", { name: /shared deploy/ }));
+    await fireEvent.input(screen.getByRole("textbox", { name: "Git ref" }), { target: { value: "alpha-only-draft" } });
+
+    const betaRef = {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "beta",
+      platformRepoId: "beta-repo-id",
+    };
+    store.loadCatalog(betaRef);
+    await waitFor(() => expect(store.getCatalog(betaRef)).not.toBeNull());
+    store.selectWorkflow(betaRef, "shared-deploy.yml");
+    await fireEvent.click(
+      within(screen.getByRole("navigation", { name: "Actions repositories" })).getByRole("button", { name: /beta/ }),
+    );
+
+    expect(document.querySelector<HTMLInputElement>('input[aria-label="Git ref"]')?.value).toBe("trunk");
+    expect(store.getSnapshot(betaRef)?.ref.platformRepoId).toBe("beta-repo-id");
   });
 
   it("retries an initial catalog failure in place", async () => {
@@ -465,7 +519,13 @@ describe("ActionsPage", () => {
     ]);
     globalThis.fetch = api.fetch;
     const store = renderPage();
-    const ref = { provider: "github", platformHost: "github.com", owner: "acme", name: "alpha" };
+    const ref = {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "alpha",
+      platformRepoId: "alpha-repo-id",
+    };
     await fireEvent.click(await screen.findByRole("button", { name: /alpha deploy/ }));
     await fireEvent.click(await screen.findByRole("button", { name: /Run 7 alpha deploy/ }));
     await waitFor(() => expect(store.getJobs(ref, "alpha-run-1")).toHaveLength(1));

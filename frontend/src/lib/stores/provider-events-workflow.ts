@@ -103,6 +103,7 @@ export class WorkflowDispatchProgressEvent extends Schema.Class<WorkflowDispatch
   "WorkflowDispatchProgressEvent",
 )({
   provider: Schema.String,
+  platform_repo_id: Schema.String,
   platform_host: Schema.String,
   repo_path: Schema.String,
   owner: Schema.String,

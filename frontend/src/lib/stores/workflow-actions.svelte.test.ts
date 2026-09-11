@@ -11,12 +11,20 @@ import {
 import { WorkflowDispatchProgressEvent } from "./provider-events-workflow.js";
 import { createWorkflowActionsStore, type WorkflowActionsStore } from "./workflow-actions.svelte.js";
 
-const ref = { provider: "github", platformHost: "github.com", owner: "acme", name: "app", repoPath: "acme/app" };
-const otherRef = { ...ref, name: "other", repoPath: "acme/other" };
+const ref = {
+  platformRepoId: "repo-app",
+  provider: "github",
+  platformHost: "github.com",
+  owner: "acme",
+  name: "app",
+  repoPath: "acme/app",
+};
+const otherRef = { ...ref, platformRepoId: "repo-other", name: "other", repoPath: "acme/other" };
 
 const repo = {
   provider: "github",
   platform_host: "github.com",
+  platform_repo_id: "repo-app",
   owner: "acme",
   name: "app",
   repo_path: "acme/app",
@@ -42,6 +50,7 @@ function run(id: string, status: string, conclusion = "") {
 }
 
 interface Fixture {
+  repository: typeof repo;
   catalogReads: number;
   runReads: string[];
   dispatchResponse: () => Response;
@@ -53,7 +62,7 @@ function routes(fixture: Fixture): MockRouteOverride {
     if (request.method === "GET" && path === "/api/v1/actions/github/acme/app/workflows") {
       fixture.catalogReads += 1;
       return jsonResponse({
-        repo,
+        repo: fixture.repository,
         environments: [],
         workflows: [
           {
@@ -70,7 +79,11 @@ function routes(fixture: Fixture): MockRouteOverride {
     }
     if (request.method === "GET" && path === "/api/v1/actions/github/acme/app/runs") {
       fixture.runReads.push(request.url.searchParams.get("workflow_id") ?? "");
-      return jsonResponse({ repo, exhausted: true, items: [run("run-old", "completed", "success")] });
+      return jsonResponse({
+        repo: fixture.repository,
+        exhausted: true,
+        items: [run("run-old", "completed", "success")],
+      });
     }
     if (request.method === "POST" && path.endsWith("/workflows/deploy.yml/dispatch")) {
       return fixture.dispatchResponse();
@@ -87,6 +100,7 @@ function progress(
   return new WorkflowDispatchProgressEvent({
     provider: "github",
     platform_host: "github.com",
+    platform_repo_id: "repo-app",
     repo_path: "acme/app",
     owner: "acme",
     name: "app",
@@ -113,6 +127,7 @@ describe("workflow actions store", () => {
   beforeEach(() => {
     originalFetch = globalThis.fetch;
     fixture = {
+      repository: repo,
       catalogReads: 0,
       runReads: [],
       dispatchResponse: () => jsonResponse({ accepted: true, dispatch_id: "dispatch-1", actor: "maintainer" }, 202),
@@ -142,6 +157,83 @@ describe("workflow actions store", () => {
     await settle();
     expect(fixture.runReads).toEqual(["deploy.yml"]);
     expect(store.getRuns(ref).map((item) => item.id)).toEqual(["run-old"]);
+  });
+
+  it("keeps caches and dispatch progress with the repository when its route is reused", async () => {
+    const jobs = [{ id: "job-1", name: "Build", status: "completed", conclusion: "success", steps: [] }];
+    api = createMockApiFetch([
+      (request) => (request.url.pathname.endsWith("/runs/run-old/jobs") ? jsonResponse({ repo, items: jobs }) : null),
+      routes(fixture),
+    ]);
+    globalThis.fetch = api.fetch;
+    store.loadCatalog(ref);
+    await settle();
+    store.selectWorkflow(ref, "deploy.yml");
+    store.loadJobs(ref, "run-old");
+    store.dispatch({
+      ref,
+      workflowId: "deploy.yml",
+      expectedDefinitionSha: "definition-1",
+      dispatchRef: "main",
+      inputs: {},
+    });
+    await settle();
+
+    const renamed = { ...ref, name: "renamed", repoPath: "acme/renamed" };
+    store.loadCatalog(renamed);
+    expect(fixture.catalogReads).toBe(1);
+    expect(store.getCatalog(renamed)).toBe(store.getCatalog(ref));
+    expect(store.getJobs(renamed, "run-old")).toEqual(jobs);
+
+    const replacement = { ...ref, platformRepoId: "repo-replacement" };
+    fixture.repository = { ...repo, platform_repo_id: replacement.platformRepoId };
+    expect(store.getSnapshot(replacement)).toBeNull();
+    store.loadCatalog(replacement);
+    await settle();
+    expect(fixture.catalogReads).toBe(2);
+    expect(store.getCatalog(replacement)?.repo.platform_repo_id).toBe("repo-replacement");
+    expect(store.getRuns(replacement)).toEqual([]);
+    expect(store.getJobs(replacement, "run-old")).toEqual([]);
+    expect(store.getDispatch(replacement, "deploy.yml")).toBeNull();
+    store.selectWorkflow(replacement, "deploy.yml");
+    await settle();
+
+    // The dispatch started before the rename and still reports its old route.
+    store.applyDispatchProgress(progress("updated", "dispatch-1", run("run-original", "completed", "success")));
+    expect(store.getDispatch(renamed, "deploy.yml")).toMatchObject({ kind: "succeeded", run: { id: "run-original" } });
+    expect(store.getRuns(renamed)[0]?.id).toBe("run-original");
+    expect(store.getRuns(replacement).map((item) => item.id)).toEqual(["run-old"]);
+    expect(store.getDispatch(replacement, "deploy.yml")).toBeNull();
+    expect(store.getJobs(renamed, "run-old")).toEqual(jobs);
+  });
+
+  it.each(["catalog", "runs", "jobs"] as const)("rejects %s returned by a replacement route occupant", async (read) => {
+    if (read === "runs") {
+      store.loadCatalog(ref);
+      await settle();
+    }
+    fixture.repository = { ...repo, platform_repo_id: "repo-replacement" };
+    api = createMockApiFetch([
+      (request) =>
+        request.url.pathname.endsWith("/jobs")
+          ? jsonResponse({
+              repo: fixture.repository,
+              items: [{ id: "replacement-job", name: "Build", status: "queued", conclusion: "", steps: [] }],
+            })
+          : null,
+      routes(fixture),
+    ]);
+    globalThis.fetch = api.fetch;
+    if (read === "catalog") store.loadCatalog(ref);
+    if (read === "runs") store.selectWorkflow(ref, "deploy.yml");
+    if (read === "jobs") store.loadJobs(ref, "run-old");
+    await settle();
+    const snapshot = store.getSnapshot(ref);
+    const error = read === "jobs" ? snapshot?.jobErrors["run-old"] : snapshot?.error;
+    expect(error).toMatchObject({ _tag: "ApiProblemError", problem: { code: "conflict" } });
+    if (read === "catalog") expect(snapshot?.catalog).toBeNull();
+    expect(snapshot?.runs).toEqual([]);
+    expect(snapshot?.jobs).toEqual({});
   });
 
   it.each([{ jobs: [] }, { jobs: [{ id: "job-1", name: "Build", status: "in_progress", conclusion: "", steps: [] }] }])(
@@ -401,7 +493,7 @@ describe("workflow actions store", () => {
 
     store.applyDispatchProgress({
       ...progress("located", "dispatch-1", run("run-x", "queued")),
-      name: "other",
+      platform_repo_id: "repo-other",
     } as WorkflowDispatchProgressEvent);
     expect(store.getDispatch(ref, "deploy.yml")).toEqual({ kind: "locating", dispatchId: "dispatch-1" });
     expect(store.getSnapshot(otherRef)).toBeNull();

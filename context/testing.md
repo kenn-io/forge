@@ -123,6 +123,9 @@ owner:
 - Browser specs live beside their components under `frontend/src`; the browser
   project includes `src/**/*.browser.svelte.ts`, while the jsdom unit project
   also includes GitHub App setup tests (`frontend/vite.config.ts::jsdomUnitTestProject`).
+- Verify browser cleanup changes with repeated full runs in the CI Playwright Linux image;
+  macOS passes and a single retry can miss intermittent orchestrator disconnects
+  (`frontend/src/test/browserSetup.ts:7`).
 - Responsive layout tests must await the geometry invariant itself; repeated first-paint
   measurements do not prove ResizeObserver has delivered its layout update
   (`frontend/src/RoborevReviewDrawer.footer-layout.browser.svelte.ts:229`).
@@ -225,6 +228,9 @@ and materialize `node_modules` from the lockfile before invoking baked `vp`
 (`.github/workflows/ci.yml::ensure_playwright_image`, `.github/docker/playwright/Dockerfile:3`).
 Frontend unit tests use the runner's 14 guaranteed cores; the previous single-worker
 cap was for the retired memory-constrained runner (`frontend/vite.config.ts::resolveUnitTestWorkers`).
+Run CI Vitest unit and browser projects separately: their worker limits differ,
+which Vitest rejects in the same execution group
+(`frontend/vite.config.ts::resolveBrowserTestWorkers`).
 Threaded unit tests must not start and stop a complete Vite/Rolldown dev server merely
 to exercise plugin middleware; native handles can survive worker teardown under CI
 concurrency (`frontend/src/lib/dev/healthcheckPlugin.test.ts::startServer`).

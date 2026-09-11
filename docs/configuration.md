@@ -130,19 +130,52 @@ owner to a PAT from a different GitHub user.
 
 ### GitHub App reads
 
-Use the companion CLI to keep sync reads off your personal rate limit:
+GitHub Apps are an advanced option for more sync capacity. Forge uses an App's
+installation quota for sync reads, leaving your personal quota for other tools
+and actions.
+
+An App can read only the repositories covered by its installation and granted
+permissions. Owning the App does not grant repository access. An installation
+in one organization does not cover another organization's repositories.
+Repositories outside that installation still need another credential route.
+
+The API quota belongs to each installation. Repositories in that installation
+share it; installing an App does not raise your personal token's rate limit.
+
+On GitHub.com, installation REST limits start at 5,000 requests per hour and
+can scale to 12,500 with repository and organization size. Installations on
+GitHub Enterprise Cloud organizations get 15,000. See
+[GitHub's installation rate limits](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api#primary-rate-limit-for-github-app-installations)
+for the current rules.
+
+Creating an organization-owned App requires organization owner access or
+permission to manage all of the organization's GitHub Apps. Installation may
+also require organization approval. If you do not have that access, ask an
+organization owner to help with setup. See
+[GitHub's App registration requirements](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/registering-a-github-app).
+
+Replace `your-org` with your organization:
 
 ```sh
-kenn-forge-github-app create
-kenn-forge-github-app install
+kenn-forge-github-app create --org your-org
 kenn-forge-github-app list
+kenn-forge daemon restart
 ```
+
+The create command opens a browser for App creation and installation. Choose
+the organization and repositories Forge should read. Omit `--org` to create a
+personally owned App. If you need to finish installation later, run
+`kenn-forge-github-app install --owner your-org`.
+
+Forge's [local sync budget](#sync-budget) still applies to App reads. Raise
+`sync_budget_per_hour` if the local ceiling stops sync while the installation
+has quota left.
 
 For a busy historical archive, create a second App with its own installation
 budget:
 
 ```sh
-kenn-forge-github-app create --role archive
+kenn-forge-github-app create --org your-org --role archive
 kenn-forge-github-app install --app-id <archive-app-id>
 ```
 
@@ -193,6 +226,9 @@ increase that quota. Leave room for other tools that use the same account,
 and check the provider's remaining quota before raising it again. See
 [Local sync ceiling reached](troubleshooting.md#local-sync-ceiling-reached)
 for recovery steps.
+
+If GitHub's quota is the bottleneck, [set up a GitHub App](#github-app-reads)
+to move sync reads to an installation quota.
 
 ## Activity defaults
 

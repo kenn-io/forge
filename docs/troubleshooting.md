@@ -87,7 +87,7 @@ does not clear the spent allowance.
 
 Raise the limit only while the provider has quota to spare. If the provider
 quota is exhausted too, wait for its reset or use a
-[GitHub App for sync reads](#github-sync-hits-rate-limits). See
+[GitHub App for sync reads](configuration.md#github-app-reads). See
 [Sync budget](configuration.md#sync-budget) for the default, shared budgets,
 and the capacity Forge reserves for discovering issues and pull requests.
 
@@ -100,13 +100,17 @@ fallback.
 
 ## GitHub sync hits rate limits
 
-Use a GitHub App for sync reads:
+For more GitHub API capacity, use the advanced
+[GitHub App setup](configuration.md#github-app-reads). App installations have
+their own quota, and organization installations can qualify for higher rate
+limits. The setup guide covers organization and personal ownership.
+App access covers only the installed repositories. Organization setup requires
+owner access or delegated App permissions, so you may need an administrator's
+help.
 
-```sh
-kenn-forge-github-app create
-kenn-forge-github-app install
-kenn-forge-github-app list
-```
+Forge's
+[local sync ceiling](#local-sync-ceiling-reached) still applies, so raise it
+if the App has quota left but sync stops at the local limit.
 
 If ordinary sync is healthy but historical archive work is competing for the
 same installation budget, add a separate App with

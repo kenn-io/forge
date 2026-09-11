@@ -5,39 +5,33 @@ import type { TerminalSettings as TerminalSettingsValue } from "../../api/types.
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import { makeStartupSnapshot } from "../../../test/startupSnapshot.js";
 
-const {
-  mockEmbedded,
-  mockGetTerminalSettings,
-  mockSetTerminalSettings,
-  mockTerminalStore,
-  mockUpdateSettings,
-  runtime,
-} = vi.hoisted(() => {
-  const defaultTerminal = {
-    font_family: "",
-    font_size: 14,
-    scrollback: 1000,
-    line_height: 1,
-    letter_spacing: 0,
-    cursor_blink: true,
-    font_ligatures: false,
-    hide_tmux_status: false,
-    graphics: true,
-    tmux_mouse: true,
-    retained_sessions: 10,
-  };
-  const store = { terminal: { ...defaultTerminal } };
-  return {
-    mockEmbedded: { value: false },
-    mockGetTerminalSettings: vi.fn(() => store.terminal),
-    mockSetTerminalSettings: vi.fn((terminal: typeof defaultTerminal) => {
-      store.terminal = terminal;
-    }),
-    mockTerminalStore: { defaultTerminal, store },
-    mockUpdateSettings: vi.fn(),
-    runtime: { current: undefined as unknown as OwnedAppRuntime },
-  };
-});
+const { mockGetTerminalSettings, mockSetTerminalSettings, mockTerminalStore, mockUpdateSettings, runtime } = vi.hoisted(
+  () => {
+    const defaultTerminal = {
+      font_family: "",
+      font_size: 14,
+      scrollback: 1000,
+      line_height: 1,
+      letter_spacing: 0,
+      cursor_blink: true,
+      font_ligatures: false,
+      hide_tmux_status: false,
+      graphics: true,
+      tmux_mouse: true,
+      retained_sessions: 10,
+    };
+    const store = { terminal: { ...defaultTerminal } };
+    return {
+      mockGetTerminalSettings: vi.fn(() => store.terminal),
+      mockSetTerminalSettings: vi.fn((terminal: typeof defaultTerminal) => {
+        store.terminal = terminal;
+      }),
+      mockTerminalStore: { defaultTerminal, store },
+      mockUpdateSettings: vi.fn(),
+      runtime: { current: undefined as unknown as OwnedAppRuntime },
+    };
+  },
+);
 
 vi.mock("../../context.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../context.js")>();
@@ -64,14 +58,6 @@ vi.mock("../../app/runtime-context.js", () => ({
   getAppRuntime: () => runtime.current,
 }));
 
-vi.mock("../../stores/embed-config.svelte.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../stores/embed-config.svelte.js")>();
-  return {
-    ...actual,
-    isEmbedded: () => mockEmbedded.value,
-  };
-});
-
 import TerminalSettings from "./TerminalSettings.svelte";
 
 function settingsResponse(terminal: TerminalSettingsValue) {
@@ -92,7 +78,6 @@ describe("TerminalSettings", () => {
       ...mockTerminalStore.defaultTerminal,
     };
     mockUpdateSettings.mockReset();
-    mockEmbedded.value = false;
   });
 
   beforeEach(() => {
@@ -811,37 +796,6 @@ describe("TerminalSettings", () => {
       expect(onUpdate).toHaveBeenCalledWith({
         ...mockTerminalStore.defaultTerminal,
         font_family: selectedFontFamily,
-      });
-    });
-  });
-
-  it("persists a selected font from an embedded terminal", async () => {
-    mockEmbedded.value = true;
-    const selectedFontFamily = '"Fira Code", monospace';
-    mockUpdateSettings.mockResolvedValue({
-      terminal: {
-        ...mockTerminalStore.defaultTerminal,
-        font_family: selectedFontFamily,
-      },
-    });
-
-    render(TerminalSettings, {
-      props: {
-        terminal: { ...mockTerminalStore.defaultTerminal },
-        onUpdate: vi.fn(),
-      },
-    });
-
-    await fireEvent.click(screen.getByRole("button", { name: "Choose" }));
-    await fireEvent.click(screen.getByRole("button", { name: /Fira Code/ }));
-    await fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    await waitFor(() => {
-      expect(mockUpdateSettings).toHaveBeenCalledWith({
-        terminal: {
-          ...mockTerminalStore.defaultTerminal,
-          font_family: selectedFontFamily,
-        },
       });
     });
   });

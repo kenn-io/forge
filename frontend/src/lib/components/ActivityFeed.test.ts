@@ -133,7 +133,6 @@ const setActivityAuthor = vi.hoisted(() =>
 
 vi.mock("../context.js", () => ({
   getNavigate: () => vi.fn(),
-  getSidebar: () => ({ isEmbedded: () => false }),
   getStores: () => ({
     activity: {
       initializeFromMount: vi.fn(),

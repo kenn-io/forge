@@ -4,7 +4,7 @@ import { tick, type ComponentProps } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { DiffResult, Label, PullDetail } from "../../api/types.js";
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
-import { ACTIONS_KEY, NAVIGATE_KEY, STORES_KEY, UI_CONFIG_KEY } from "../../context.js";
+import { NAVIGATE_KEY, STORES_KEY } from "../../context.js";
 import { createDetailActivityViewStore } from "../../stores/detail-activity-view.svelte.js";
 import { createDetailStore } from "../../stores/detail.svelte.js";
 import { makeTestAppRuntime } from "../../testing/effect-layers.js";
@@ -233,7 +233,6 @@ function renderPullDetail(
     phonePresentation?: boolean;
     onOpenWorkspace?: (workspaceId: string) => void;
     hideTabs?: boolean;
-    actions?: { pull: unknown[] };
     detailLoading?: boolean;
     detailSyncing?: boolean;
     deferRefresh?: boolean;
@@ -247,7 +246,6 @@ function renderPullDetail(
     detailProps?: Partial<ComponentProps<typeof PullDetailComponent>>;
   } = {},
 ) {
-  const actions = options.actions ?? { pull: [] };
   let envelopeTick = 0;
   let pendingRefreshCallbacks: DetailSyncCallbacks | null = null;
   const runProviderAction = (path: string, body: unknown, callbacks: ProviderActionCallbacks): void => {
@@ -405,8 +403,6 @@ function renderPullDetail(
           workflowActions,
         },
       ],
-      [ACTIONS_KEY, actions],
-      [UI_CONFIG_KEY, { hideStar: true }],
       [NAVIGATE_KEY, navigate],
     ]),
   });
@@ -1095,8 +1091,6 @@ describe("PullDetail activity refresh", () => {
             },
           },
         ],
-        [ACTIONS_KEY, { pull: [] }],
-        [UI_CONFIG_KEY, { hideStar: true }],
         [NAVIGATE_KEY, vi.fn()],
       ]),
     });
@@ -1165,48 +1159,6 @@ describe("PullDetail approvals", () => {
         button.getAttribute("title"),
       );
     }
-  });
-
-  it("forwards worktree link host key to navigate actions", async () => {
-    const detail = pullDetail();
-    detail.worktree_links = [
-      {
-        host_key: "hub",
-        worktree_key: "worktree:/srv/widget-feature",
-        worktree_path: "/srv/widget-feature",
-        worktree_branch: "feature",
-      },
-    ];
-    const navigate = vi.fn();
-
-    renderPullDetail(detail, undefined, undefined, {
-      actions: {
-        pull: [
-          {
-            id: "navigate-worktree",
-            label: "Open Worktree",
-            handler: navigate,
-          },
-        ],
-      },
-    });
-
-    await fireEvent.click(
-      screen.getByRole("button", {
-        name: "Open Worktree: worktree:/srv/widget-feature",
-      }),
-    );
-
-    expect(navigate).toHaveBeenCalledWith({
-      surface: "pull-detail",
-      owner: "acme",
-      name: "widget",
-      number: 1,
-      meta: {
-        host_key: "hub",
-        worktree_key: "worktree:/srv/widget-feature",
-      },
-    });
   });
 
   it("normalizes backend review decision casing before enabling approver popup", async () => {
@@ -1989,8 +1941,6 @@ describe("PullDetail approvals", () => {
             },
           },
         ],
-        [ACTIONS_KEY, { pull: [] }],
-        [UI_CONFIG_KEY, { hideStar: true }],
         [NAVIGATE_KEY, vi.fn()],
       ]),
     });

@@ -4,7 +4,6 @@
   import type { ActivitySettings as ActivitySettingsType } from "../../api/types.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { getStores } from "../../context.js";
-  import { isEmbedded } from "../../stores/embed-config.svelte.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import { SettingsWorkflow, settingsErrorMessage } from "../../stores/settings-workflow.js";
   import SettingsOwnerNotice from "./SettingsOwnerNotice.svelte";
@@ -21,7 +20,6 @@
 
   let { activity, onUpdate, owner = "local" }: Props = $props();
 
-  const embedded = isEmbedded();
   let saveVersion = 0;
   let confirmedActivity: ActivitySettingsType | undefined;
   let pendingSaves = 0;
@@ -34,7 +32,6 @@
   ];
 
   function save(updated: ActivitySettingsType, previous: ActivitySettingsType): void {
-    if (embedded) return;
     if (pendingSaves === 0) confirmedActivity = previous;
     pendingSaves += 1;
     const version = ++saveVersion;

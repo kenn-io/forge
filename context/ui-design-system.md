@@ -1,5 +1,9 @@
 # UI Design System
 
+Desktop and mobile remain supported application experiences. External host embeds
+have no consumers and are retired; keep shared detail and workspace views available
+to the application.
+
 Use this document as the intent-level guide for frontend UI work in `kenn-forge`. It should stay short, stable, and useful in model context.
 
 ## Purpose
@@ -90,10 +94,8 @@ otherwise fails only in the Vitest/Playwright transform tier, not in
   `frontend/src/lib/components/terminal/agentHarness.ts::harnessForAgentKey`).
   The glyph only replaces the generic kind icon; the target's own label always stays.
 - Theme resolution: kit's theme store owns dark/light/system resolution
-  and persistence (`kenn-forge-theme` key); `theme.svelte.ts` adapts it. A
-  host-forced mode applies classes directly and never persists via
-  `setThemeMode`; an explicit user toggle persists even under a forced
-  mode. Relative timestamps use kit `formatRelativeTime`;
+  and persistence (`kenn-forge-theme` key); `theme.svelte.ts` adapts it.
+  Relative timestamps use kit `formatRelativeTime`;
   `parseAPITimestamp`/`localDate*Label` stay app-side.
 - Dialogs: every dialog pushes a keyboard modal-stack frame. Background
   Escape surfaces cannot detect dialogs via `defaultPrevented` (kit's
@@ -141,7 +143,7 @@ otherwise fails only in the Vitest/Playwright transform tier, not in
   `expandUsed` footprint and blocks re-expansion). Select tabs via
   `.kit-top-bar__tabs .kit-top-bar__tab`, never the bare class.
   Provider-mode repo selector visibility must not move the tab row; non-provider
-  modes reserve its footprint unless embed config hides it
+  modes reserve its footprint
   (`frontend/src/lib/components/layout/AppHeader.svelte::reserveProviderRepoSelectorSlot`).
 - `AdaptiveActionGrid`: the issue detail action row on every layout
   (`frontend/src/lib/components/detail/IssueDetail.svelte::issue-actions-grid`,
@@ -509,7 +511,7 @@ Promise-required library callbacks may observe `AppExecution.exit`, but the comm
 
 When an `$effect` launches an Effect fiber, wrap `runCommand` itself in `untrack`; fibers begin synchronously, so untracking only program construction can subscribe the outer Svelte effect to the fiber's rune transitions (`frontend/src/App.svelte:542`).
 
-App-wide health polling belongs to the root runtime lifetime, not the full-shell lifetime, because embedded routes still depend on daemon availability (`frontend/src/App.svelte::roborevPollingExecution`).
+App-wide health polling belongs to the root runtime lifetime so every route observes daemon availability (`frontend/src/App.svelte::roborevPollingExecution`).
 
 Provider list, activity, and sync controllers expose synchronous launchers; their Effect workflows own cancellation, shared demand, bounded reads, and sequential cadence so Svelte callers never rebuild Promise generations or timer overlap guards (`frontend/src/lib/stores/`).
 
@@ -531,7 +533,7 @@ Component lifetime owns polling and live-event subscriptions; teardown interrupt
 
 A `$state` record written by full-object reassignment (`x = { ...x, k: v }`) that is also read inside the same reactive scope — an `$effect`, or a `{@attach ...}` callback, which Svelte runs as one — is a self-referential dependency: Svelte detects it as `effect_update_depth_exceeded` and the attachment tears itself down and reattaches forever. Mutate the specific key instead (`x[k] = v`) (`frontend/src/lib/stores/workspace-host.svelte.ts::registerSlotElement`).
 
-For TypeScript/Svelte state and routing contracts, avoid anonymous object type literals when the shape represents a domain concept that is reused or exposed across modules. Name shared item identity shapes, route payloads, embed callbacks, and API view models near the module that owns the concept, then import those types at call sites. PR/issue/file/focus route identity and URL construction belongs in the shared route item module at `frontend/src/lib/routes.ts`; the frontend router remains the browser-location adapter over those builders. New routed item callers should use those named refs and builders instead of repeating `{ owner; name; number; platformHost }` shapes or hand-building `/pulls`, `/issues`, or `/focus` URLs.
+For TypeScript/Svelte state and routing contracts, avoid anonymous object type literals when the shape represents a domain concept that is reused or exposed across modules. Name shared item identity shapes, route payloads and API view models near the module that owns the concept, then import those types at call sites. PR/issue/file/focus route identity and URL construction belongs in the shared route item module at `frontend/src/lib/routes.ts`; the frontend router remains the browser-location adapter over those builders. New routed item callers should use those named refs and builders instead of repeating `{ owner; name; number; platformHost }` shapes or hand-building `/pulls`, `/issues`, or `/focus` URLs.
 
 When TypeScript complains, prefer making the owning type more precise over adding call-site assertions. Generated OpenAPI types, named domain unions, and shared option arrays should carry their real values so components can consume them directly. Good cleanups look like `handleCommandResult(result: void | Promise<void>, ...)` or a typed dropdown option returning `TimeRange`; they remove runtime probing and casts by tightening the contract. Bad cleanups add `as unknown as`, broad `as any`, defensive `instanceof` branches, or response-normalization functions around data that is already typed by the API schema.
 

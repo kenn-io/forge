@@ -15,7 +15,6 @@
     type KataProjectMappingDiagnostic,
     type KataProjectMappingsResponse,
   } from "../../api/kata/integration.js";
-  import { isEmbedded } from "../../stores/embed-config.svelte.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import type { AppExecution } from "../../app/runtime.js";
   import { SettingsWorkflow, settingsErrorMessage } from "../../stores/settings-workflow.js";
@@ -46,7 +45,6 @@
 
   let { mappings, onUpdate }: Props = $props();
 
-  const embedded = isEmbedded();
   const appRuntime = getAppRuntime();
   let nextID = 0;
   let saving = $state(false);
@@ -101,7 +99,7 @@
   const hasInvalidDraft = $derived(
     drafts.some((draft) => draft.projectUID.trim() === "" || !repoOptionsByKey.has(draft.repoKey)),
   );
-  const canSave = $derived(!embedded && !saving && isDirty && !hasInvalidDraft);
+  const canSave = $derived(!saving && isDirty && !hasInvalidDraft);
   const daemonOptions = $derived<SelectDropdownOption[]>(
     daemons.map((daemon) => ({
       value: daemon.id,
@@ -466,7 +464,7 @@
                       surface="outline"
                       type="button"
                       onclick={() => addOverride(project)}
-                      disabled={embedded || saving || repoOptions.length === 0}
+                      disabled={saving || repoOptions.length === 0}
                     >
                       Add override
                     </Button>
@@ -492,7 +490,7 @@
         size="sm"
         type="button"
         onclick={addMapping}
-        disabled={embedded || saving || repoOptions.length === 0}
+        disabled={saving || repoOptions.length === 0}
       >
         <PlusIcon size="14" strokeWidth="2.2" aria-hidden="true" />
         Add mapping
@@ -530,14 +528,14 @@
                   <input
                     bind:value={draft.daemonID}
                     placeholder="Any daemon"
-                    disabled={embedded || saving}
+                    disabled={saving}
                     aria-label={`Kata project ${label} daemon ID`}
                   />
                 </td>
                 <td>
                   <input
                     bind:value={draft.projectUID}
-                    disabled={embedded || saving}
+                    disabled={saving}
                     aria-label={`Kata project ${label} UID`}
                   />
                 </td>
@@ -551,7 +549,7 @@
                     onselect={(value) => {
                       draft.repoKey = value;
                     }}
-                    disabled={embedded || saving}
+                    disabled={saving}
                   />
                 </td>
                 <td class="action-cell">
@@ -561,7 +559,7 @@
                     surface="outline"
                     type="button"
                     onclick={() => removeMapping(draft.id)}
-                    disabled={embedded || saving}
+                    disabled={saving}
                     ariaLabel={`Remove Kata project mapping ${label}`}
                     title={`Remove Kata project mapping ${label}`}
                   >

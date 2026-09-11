@@ -11,8 +11,8 @@
   import { canonicalProvider, providerItemPath, providerRepoPath, providerRouteParams, resolvedPlatformHost, providerHostRouteParams, providerUsesHostRoute } from "../../api/provider-routes.js";
   import type { IssueDetail, Label, ProviderCapabilities } from "../../api/types.js";
   import {
-    getStores, getActions,
-    getUIConfig, getNavigate,
+    getStores,
+    getNavigate,
   } from "../../context.js";
   import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
   import { showFlash } from "../../stores/flash.svelte.js";
@@ -64,8 +64,6 @@
 
   const { issues, activity, detailActivityView, settings } = getStores();
   const runtime = getAppRuntime();
-  const actions = getActions();
-  const uiConfig = getUIConfig();
   const navigate = getNavigate();
   let manualRefreshPending = $state(false);
   let manualRefreshGeneration = 0;
@@ -1201,7 +1199,7 @@
       <!-- Header -->
       <div class="detail-header">
         <h2 class="detail-title">{issue.Title}</h2>
-        {#if !uiConfig.hideStar && !staleIssue}
+        {#if !staleIssue}
           <button
             class="star-btn"
             onclick={handleStarClick}
@@ -1437,26 +1435,6 @@
           </Button>
         {/if}
       {/snippet}
-      {#snippet embeddingActions()}
-        <div class="embedding-actions">
-          {#each actions.issue ?? [] as action (action.id)}
-            <Button
-              class="btn--embedding-action"
-              onclick={() => {
-                if (staleIssue) return;
-                action.handler({
-                  surface: "issue-detail", owner, name, number,
-                });
-              }}
-              disabled={staleIssue}
-              tone="neutral"
-              surface="outline"
-            >
-              {action.label}
-            </Button>
-          {/each}
-        </div>
-      {/snippet}
       {#if !workspace}
         <span id={createWorkspaceDescriptionId} class="kit-sr-only">
           {staleIssue
@@ -1475,7 +1453,6 @@
           { id: "workspace", content: workspaceAction },
           ...(workspace && inlineWorkspace ? [{ id: "workspace-secondary", content: workspaceSecondaryAction }] : []),
           ...(capabilities.state_mutation ? [{ id: "state", content: stateAction }] : []),
-          ...((actions.issue ?? []).length > 0 ? [{ id: "embedding", content: embeddingActions }] : []),
         ]}
       />
 
@@ -1897,14 +1874,6 @@
 
   .issue-detail :global(.issue-actions-grid) {
     padding: var(--space-4) 0;
-  }
-
-  /* Embed-host actions are one custom grid item so each host action stays a
-   * separate button; the wrapper lays them out like the grid's own row. */
-  .issue-detail :global(.embedding-actions) {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-4);
   }
 
   .refresh-banner {

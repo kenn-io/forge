@@ -5,7 +5,6 @@
   import { schemaConstraints } from "../../api/generated/schema-constraints.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { getStores } from "../../context.js";
-  import { isEmbedded } from "../../stores/embed-config.svelte.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import { SettingsWorkflow, settingsErrorMessage } from "../../stores/settings-workflow.js";
   import SettingsOwnerNotice from "./SettingsOwnerNotice.svelte";
@@ -20,7 +19,6 @@
   let { detail, onUpdate, owner = "local" }: Props = $props();
   const runtime = getAppRuntime();
   const { settings: settingsStore } = getStores();
-  const embedded = isEmbedded();
   // The server's bounds come from the OpenAPI schema, so the input can reject
   // an out-of-range limit before any request is sent.
   const limitBounds = schemaConstraints.Detail.initial_timeline_entry_limit;
@@ -72,7 +70,6 @@
   }
 
   function persist(build: (current: DetailSettingsType) => DetailSettingsType | null): void {
-    if (embedded) return;
     queue = queue.then(() => {
       const pending = build(saved);
       if (pending === null) return;
@@ -132,7 +129,7 @@
       max={limitBounds.maximum}
       step="10"
       value={detail.initial_timeline_entry_limit}
-      disabled={embedded}
+
       aria-invalid={!limitValid}
       aria-describedby={limitValid ? undefined : "initial-timeline-entry-limit-error"}
       oninput={onLimitInput}
@@ -149,7 +146,7 @@
 <Checkbox
   class="toggle-row"
   bind:checked={collapseSingleLineBreaks}
-  disabled={embedded}
+
   onchange={toggleCollapseSingleLineBreaks}
   ariaLabel="Collapse single line breaks"
 >
@@ -165,7 +162,7 @@
 <Checkbox
   class="toggle-row"
   bind:checked={renderCommitMessagesAsMarkdown}
-  disabled={embedded}
+
   onchange={toggleCommitMarkdown}
   ariaLabel="Render commit messages as markdown"
 >

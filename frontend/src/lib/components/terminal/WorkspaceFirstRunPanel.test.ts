@@ -2,6 +2,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/sv
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
+import { resetToolingStatusForTest } from "../../stores/tooling-status.svelte.js";
+
 import WorkspaceFirstRunPanel from "./WorkspaceFirstRunPanelRuntimeHarness.svelte";
 
 const mocks = vi.hoisted(() => ({
@@ -32,8 +34,6 @@ vi.mock("../../stores/flash.svelte.js", () => ({
   showFlash: mocks.showFlash,
 }));
 
-const win = window as any;
-
 function project(id = "prj_1") {
   return {
     id,
@@ -47,25 +47,29 @@ function project(id = "prj_1") {
 interface SetupArgs {
   ghAuthed: boolean;
   ghAvailable?: boolean;
-  onWorkspaceCommand?: (command: string, payload: Record<string, unknown>) => CommandResult | Promise<CommandResult>;
 }
 
-function setupConfig({
-  ghAuthed,
-  ghAvailable = true,
-  onWorkspaceCommand = vi.fn().mockResolvedValue({ ok: true }),
-}: SetupArgs): typeof onWorkspaceCommand {
-  win.__kenn_forge_config = {
-    onWorkspaceCommand,
-    embed: {
-      tooling: {
-        git: { available: true, version: "2.45.0" },
-        gh: { available: ghAvailable, authenticated: ghAuthed },
-      },
-    },
-  };
-  win.__kenn_forge_notify_config_changed?.();
-  return onWorkspaceCommand;
+function setupTooling({ ghAuthed, ghAvailable = true }: SetupArgs): void {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            git: { available: true, version: "2.45.0" },
+            gh: { available: ghAvailable, authenticated: ghAuthed },
+            glab: { available: true, authenticated: true, user: "octocat", host: "gitlab.com" },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+    ),
+  );
+}
+
+async function renderPanel(options?: Parameters<typeof render<typeof WorkspaceFirstRunPanel>>[1]) {
+  const view = render(WorkspaceFirstRunPanel, options);
+  await screen.findByLabelText("git available");
+  return view;
 }
 
 describe("WorkspaceFirstRunPanel", () => {
@@ -85,12 +89,13 @@ describe("WorkspaceFirstRunPanel", () => {
 
   afterEach(() => {
     cleanup();
-    delete win.__kenn_forge_config;
+    resetToolingStatusForTest();
+    vi.unstubAllGlobals();
   });
 
-  it("renders the three primary actions with their descriptions", () => {
-    setupConfig({ ghAuthed: true });
-    render(WorkspaceFirstRunPanel);
+  it("renders the three primary actions with their descriptions", async () => {
+    setupTooling({ ghAuthed: true });
+    await renderPanel();
 
     expect(
       screen.getByRole("button", {
@@ -116,8 +121,8 @@ describe("WorkspaceFirstRunPanel", () => {
         ),
       ),
     );
-    setupConfig({ ghAuthed: true });
-    const view = render(WorkspaceFirstRunPanel);
+    setupTooling({ ghAuthed: true });
+    const view = await renderPanel();
     await waitFor(() => {
       expect(mocks.loadSnapshotHosts).toHaveBeenCalledOnce();
     });
@@ -129,9 +134,9 @@ describe("WorkspaceFirstRunPanel", () => {
     });
   });
 
-  it("disables the GitHub action with a recovery hint when gh is not authenticated", () => {
-    setupConfig({ ghAuthed: false, ghAvailable: true });
-    render(WorkspaceFirstRunPanel);
+  it("disables the GitHub action with a recovery hint when gh is not authenticated", async () => {
+    setupTooling({ ghAuthed: false, ghAvailable: true });
+    await renderPanel();
 
     const button = screen.getByRole("button", {
       name: /Connect a GitHub repository/i,
@@ -140,17 +145,17 @@ describe("WorkspaceFirstRunPanel", () => {
     expect(screen.getByText("Run gh auth login to use this option.")).toBeTruthy();
   });
 
-  it("uses an install-gh recovery hint when gh is unavailable", () => {
-    setupConfig({ ghAuthed: false, ghAvailable: false });
-    render(WorkspaceFirstRunPanel);
+  it("uses an install-gh recovery hint when gh is unavailable", async () => {
+    setupTooling({ ghAuthed: false, ghAvailable: false });
+    await renderPanel();
 
     expect(screen.getByText("Install gh to use this option.")).toBeTruthy();
   });
 
-  it("registers an existing repository and notifies the host", async () => {
+  it("registers an existing repository and returns to workspaces", async () => {
     mocks.registerExistingProject.mockReturnValue(Effect.succeed(project("prj_existing")));
-    const command = setupConfig({ ghAuthed: true });
-    render(WorkspaceFirstRunPanel);
+    setupTooling({ ghAuthed: true });
+    await renderPanel();
 
     await fireEvent.click(
       screen.getByRole("button", {
@@ -165,10 +170,7 @@ describe("WorkspaceFirstRunPanel", () => {
     await waitFor(() => {
       expect(mocks.registerExistingProject).toHaveBeenCalledWith("/tmp/repo", undefined);
     });
-    expect(command).toHaveBeenCalledWith("project-registered", {
-      projectId: "prj_existing",
-    });
-    expect(mocks.navigate).toHaveBeenCalledWith("/workspaces/embed/project/prj_existing");
+    expect(mocks.navigate).toHaveBeenCalledWith("/workspaces");
   });
 
   it("adds a project on a scoped host", async () => {
@@ -201,8 +203,8 @@ describe("WorkspaceFirstRunPanel", () => {
         },
       ]),
     );
-    const command = setupConfig({ ghAuthed: true });
-    render(WorkspaceFirstRunPanel, {
+    setupTooling({ ghAuthed: true });
+    await renderPanel({
       props: { firstRun: false, hostKey: "epyc" },
     });
 
@@ -222,10 +224,6 @@ describe("WorkspaceFirstRunPanel", () => {
     await waitFor(() => {
       expect(mocks.registerExistingProject).toHaveBeenCalledWith("/srv/repo", { hostKey: "epyc" });
     });
-    expect(command).toHaveBeenCalledWith("project-registered", {
-      projectId: "prj_remote",
-      hostKey: "epyc",
-    });
     expect(mocks.navigate).toHaveBeenCalledWith("/workspaces");
   });
 
@@ -234,9 +232,12 @@ describe("WorkspaceFirstRunPanel", () => {
     const pendingRegistration = new Promise<ReturnType<typeof project>>((resolve) => {
       completeRegistration = resolve;
     });
-    mocks.registerExistingProject.mockReturnValue(Effect.promise(() => pendingRegistration));
-    const command = setupConfig({ ghAuthed: true });
-    const view = render(WorkspaceFirstRunPanel, {
+    const registrationCompleted = vi.fn();
+    mocks.registerExistingProject.mockReturnValue(
+      Effect.promise(() => pendingRegistration).pipe(Effect.tap(() => Effect.sync(registrationCompleted))),
+    );
+    setupTooling({ ghAuthed: true });
+    const view = await renderPanel({
       props: { firstRun: false },
     });
     await fireEvent.click(
@@ -256,17 +257,13 @@ describe("WorkspaceFirstRunPanel", () => {
     if (!completeRegistration) throw new Error("project registration did not start");
     completeRegistration(project("prj_old_host"));
 
-    await waitFor(() => {
-      expect(command).toHaveBeenCalledWith("project-registered", {
-        projectId: "prj_old_host",
-      });
-    });
+    await waitFor(() => expect(registrationCompleted).toHaveBeenCalledOnce());
     expect(mocks.navigate).not.toHaveBeenCalled();
   });
 
-  it("disables GitHub repository picking on scoped hosts", () => {
-    setupConfig({ ghAuthed: true });
-    render(WorkspaceFirstRunPanel, {
+  it("disables GitHub repository picking on scoped hosts", async () => {
+    setupTooling({ ghAuthed: true });
+    await renderPanel({
       props: { firstRun: false, hostKey: "epyc" },
     });
 
@@ -290,8 +287,8 @@ describe("WorkspaceFirstRunPanel", () => {
         },
       ]),
     );
-    setupConfig({ ghAuthed: true });
-    const view = render(WorkspaceFirstRunPanel, { props: { firstRun: false } });
+    setupTooling({ ghAuthed: true });
+    const view = await renderPanel({ props: { firstRun: false } });
     await fireEvent.click(screen.getByRole("button", { name: /Connect a GitHub repository/i }));
     await screen.findByRole("combobox", { name: /GitHub repository/ });
 
@@ -303,47 +300,10 @@ describe("WorkspaceFirstRunPanel", () => {
     );
   });
 
-  it("falls back to injected workspace host metadata", async () => {
-    mocks.loadSnapshotHosts.mockReturnValue(Effect.fail(new Error("snapshot down")));
-    setupConfig({ ghAuthed: true });
-    win.__kenn_forge_config.workspace = {
-      selectedHostKey: "local",
-      selectedWorktreeKey: null,
-      hosts: [
-        {
-          key: "local",
-          label: "Local",
-          connectionState: "connected",
-          platform: "github",
-          projects: [],
-          sessions: [],
-          resources: null,
-        },
-        {
-          key: "epyc",
-          label: "EPYC",
-          connectionState: "connected",
-          platform: "github",
-          projects: [],
-          sessions: [],
-          resources: null,
-        },
-      ],
-    };
-    win.__kenn_forge_notify_config_changed?.();
-
-    render(WorkspaceFirstRunPanel, {
-      props: { firstRun: false, hostKey: "epyc" },
-    });
-
-    expect(screen.getByText("Add a project.")).toBeTruthy();
-    expect(await screen.findByText("Host: EPYC")).toBeTruthy();
-  });
-
-  it("clones a Git URL and notifies the host", async () => {
+  it("clones a Git URL and returns to workspaces", async () => {
     mocks.cloneProject.mockReturnValue(Effect.succeed(project("prj_clone")));
-    const command = setupConfig({ ghAuthed: true });
-    render(WorkspaceFirstRunPanel);
+    setupTooling({ ghAuthed: true });
+    await renderPanel();
 
     await fireEvent.click(screen.getByRole("button", { name: /Clone a repository/i }));
     await fireEvent.input(screen.getByLabelText("Repository URL"), {
@@ -359,9 +319,7 @@ describe("WorkspaceFirstRunPanel", () => {
 
     await waitFor(() => {
       expect(mocks.cloneProject).toHaveBeenCalledWith("git@github.com:octo/repo.git", "/tmp/repo", "main", undefined);
-    });
-    expect(command).toHaveBeenCalledWith("project-registered", {
-      projectId: "prj_clone",
+      expect(mocks.navigate).toHaveBeenCalledWith("/workspaces");
     });
   });
 
@@ -381,8 +339,8 @@ describe("WorkspaceFirstRunPanel", () => {
       ]),
     );
     mocks.cloneProject.mockReturnValue(Effect.succeed(project("prj_gh")));
-    setupConfig({ ghAuthed: true });
-    render(WorkspaceFirstRunPanel);
+    setupTooling({ ghAuthed: true });
+    await renderPanel();
 
     await fireEvent.click(
       screen.getByRole("button", {
@@ -417,8 +375,8 @@ describe("WorkspaceFirstRunPanel", () => {
       ]),
     );
     mocks.cloneProject.mockReturnValue(Effect.succeed(project("prj_filtered")));
-    setupConfig({ ghAuthed: true });
-    render(WorkspaceFirstRunPanel);
+    setupTooling({ ghAuthed: true });
+    await renderPanel();
 
     await fireEvent.click(
       screen.getByRole("button", {
@@ -441,110 +399,32 @@ describe("WorkspaceFirstRunPanel", () => {
     });
   });
 
-  it("surfaces host callback failures after registration", async () => {
-    mocks.registerExistingProject.mockReturnValue(Effect.succeed(project("prj_existing")));
-    setupConfig({
-      ghAuthed: true,
-      onWorkspaceCommand: vi.fn().mockResolvedValue({
-        ok: false,
-        message: "refresh failed",
-      }),
-    });
-    render(WorkspaceFirstRunPanel);
-
-    await fireEvent.click(
-      screen.getByRole("button", {
-        name: /Add an existing local repository/i,
-      }),
-    );
-    await fireEvent.input(screen.getByLabelText("Repository path"), {
-      target: { value: "/tmp/repo" },
-    });
-    await fireEvent.click(screen.getByRole("button", { name: "Add repository" }));
-
-    await waitFor(() => {
-      expect(mocks.showFlash).toHaveBeenCalledWith("refresh failed", {
-        tone: "danger",
-      });
-    });
-    expect(screen.queryByText("refresh failed")).toBeNull();
-    expect(mocks.navigate).not.toHaveBeenCalled();
-  });
-
-  it("surfaces an invalid host acknowledgement after registration", async () => {
-    mocks.registerExistingProject.mockReturnValue(Effect.succeed(project("prj_existing")));
-    setupConfig({
-      ghAuthed: true,
-      onWorkspaceCommand: vi.fn().mockResolvedValue(undefined),
-    });
-    render(WorkspaceFirstRunPanel);
-    await fireEvent.click(screen.getByRole("button", { name: /Add an existing local repository/i }));
-    await fireEvent.input(screen.getByLabelText("Repository path"), {
-      target: { value: "/tmp/repo" },
-    });
-    await fireEvent.click(screen.getByRole("button", { name: "Add repository" }));
-
-    await waitFor(() => {
-      expect(mocks.showFlash).toHaveBeenCalledWith("The host returned an invalid project acknowledgement.", {
-        tone: "danger",
-      });
-    });
-    expect(mocks.navigate).not.toHaveBeenCalled();
-  });
-
-  it("retries only host acknowledgement after project registration commits", async () => {
-    mocks.registerExistingProject.mockReturnValue(Effect.succeed(project("prj_existing")));
-    const command = setupConfig({
-      ghAuthed: true,
-      onWorkspaceCommand: vi.fn().mockResolvedValueOnce(undefined).mockResolvedValueOnce({ ok: true }),
-    });
-    render(WorkspaceFirstRunPanel);
-    await fireEvent.click(screen.getByRole("button", { name: /Add an existing local repository/i }));
-    await fireEvent.input(screen.getByLabelText("Repository path"), {
-      target: { value: "/tmp/repo" },
-    });
-    await fireEvent.click(screen.getByRole("button", { name: "Add repository" }));
-    await waitFor(() => expect(mocks.showFlash).toHaveBeenCalledOnce());
-
-    await fireEvent.click(screen.getByRole("button", { name: "Add repository" }));
-
-    await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith("/workspaces/embed/project/prj_existing"));
-    expect(mocks.registerExistingProject).toHaveBeenCalledOnce();
-    expect(command).toHaveBeenCalledTimes(2);
-  });
-
-  it("renders the tooling status block beneath the actions", () => {
-    setupConfig({ ghAuthed: true });
-    render(WorkspaceFirstRunPanel);
+  it("renders the tooling status block beneath the actions", async () => {
+    setupTooling({ ghAuthed: true });
+    await renderPanel();
     expect(screen.getByLabelText("Tooling status")).toBeTruthy();
   });
 
-  it("shows GitLab CLI status for a selected GitLab workspace host", () => {
-    setupConfig({ ghAuthed: true });
-    win.__kenn_forge_config.workspace = {
-      selectedHostKey: "gitlab-main",
-      selectedWorktreeKey: null,
-      hosts: [
+  it("shows GitLab CLI status for a selected GitLab workspace host", async () => {
+    setupTooling({ ghAuthed: true });
+    mocks.loadSnapshotHosts.mockReturnValue(
+      Effect.succeed([
         {
-          key: "gitlab-main",
-          label: "GitLab",
-          connectionState: "connected",
+          configKey: "local",
+          diagnostics: [],
+          id: "local",
+          kind: "self",
+          name: "Local",
+          operationAvailability: {},
           platform: "gitlab",
-          projects: [],
-          sessions: [],
-          resources: null,
+          preferredTransport: "local",
+          reachable: true,
+          tmuxSessions: [],
         },
-      ],
-    };
-    win.__kenn_forge_config.embed.tooling.glab = {
-      available: true,
-      authenticated: true,
-      user: "wesm",
-      host: "gitlab.com",
-    };
-    win.__kenn_forge_notify_config_changed?.();
+      ]),
+    );
 
-    render(WorkspaceFirstRunPanel);
+    await renderPanel();
 
     expect(screen.getByText("glab")).toBeTruthy();
     expect(screen.queryByText("gh")).toBeNull();

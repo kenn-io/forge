@@ -200,7 +200,6 @@ Examples of transient state that should usually reset on identity change:
 - inline edit drafts
 - merge/close/reopen dialogs
 - approve/review forms
-- embedded detail-tab selection when the parent surface owns the item
 
 ## Persistence Scope
 
@@ -216,7 +215,7 @@ Persisted controls must state their scope clearly.
   storage (`frontend/src/lib/components/layout/ForgeSelector.svelte`).
 - Browser-local preferences belong in `localStorage` only when the behavior is
   intentionally per-browser and not worth server settings.
-- Agent status visibility uses Forge config across browsers and embedded views.
+- Agent status visibility uses Forge config across browsers.
   Keep PR, Issue, and Activity labels on the right, matching Workspaces
   (`frontend/src/lib/components/shared/AgentStatusIndicator.svelte`).
 - `Involves me` is three independent browser-local preferences for Pulls, Issues, and
@@ -350,10 +349,7 @@ Persisted controls must state their scope clearly.
 - Server-backed settings forms must render and build mutations from the reactive
   authoritative store; a page-load snapshot can republish stale sibling fields
   after hydration (`frontend/src/lib/components/settings/WorkspaceSettings.svelte::workspaces`).
-- Settings that select a runtime must hydrate before that runtime starts, but
-  the gate must abort timed-out or superseded reads and expose retry rather than strand the surface
-  (`frontend/src/lib/components/terminal/WorkspaceEmbedShell.svelte::loadTerminalSettings`).
-- Concurrent startup and embedded-shell callers share the last successful settings snapshot;
+- Concurrent startup callers share the last successful settings snapshot;
   every accepted settings command invalidates that cache entry through the same acknowledged
   workflow, backend readiness is not part of the settings-request timeout, and an invalidated
   in-flight read cannot publish into the next generation
@@ -943,9 +939,8 @@ Rows that contain buttons, links, or toggles need clear event ownership.
 - Frontend uncertainty fences live for one browser application runtime. A deliberate reload clears unresolved
   evidence, so the user must verify fresh authoritative state before attempting that mutation again
   (`frontend/src/lib/app/runtime.ts::makeAppRuntime`).
-- Project registration, clone, and new-worktree commands capture host/project identity and remain
-  application-owned after acceptance; retained worktree acknowledgements are generation-owned, so an
-  older reconciler cannot clear a replacement command or presentation fence
+- Project registration and clone commands capture host identity and remain
+  application-owned after acceptance; returning to an accepted command must not duplicate it
   (`frontend/src/lib/components/terminal/project-mutation-workflow.ts::ProjectMutationWorkflow`).
 - Workspace runtime commands remain application-owned after acceptance and retain presentation by
   `(hostKey, workspaceId)` across surface replacement; one-shot delete presenters may shadow the route presenter,
@@ -958,9 +953,6 @@ Rows that contain buttons, links, or toggles need clear event ownership.
   browser application runtime; a deliberate page reload clears them, so a user who reloads during an unresolved
   outcome must verify authoritative workspace state before attempting the action again
   (`frontend/src/lib/components/terminal/workspace-runtime-workflow.ts::makeWorkspaceRuntimeWorkflow`).
-- Embedding host callbacks settle only after mutations are durably visible to the next authoritative
-  snapshot; negative or malformed acknowledgements reconcile before the command is offered again
-  (`frontend/src/lib/components/terminal/project-mutation-workflow.ts::ProjectMutationWorkflow`).
 - Repository-browser commands use a mount-bound facade and fence every state publication;
   automatic README-first selection yields to user selection, and stale teardown cannot affect a successor
   (`frontend/src/lib/stores/repo-browser.svelte.ts::RepoBrowserMount`).

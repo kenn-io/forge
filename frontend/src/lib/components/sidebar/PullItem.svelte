@@ -1,6 +1,5 @@
 <script lang="ts">
   import type { PullRequest } from "../../api/types.js";
-  import type { Action } from "../../types.js";
   import { getStores, getHostState } from "../../context.js";
   import { formatRelativeTime } from "@kenn-io/kit-ui";
   import { hashColor } from "@kenn-io/kit-ui";
@@ -30,7 +29,6 @@
     showRepo: boolean;
     repoLabel: string;
     onclick: () => void;
-    importAction?: Action | undefined;
   }
 
   const {
@@ -39,7 +37,6 @@
     showRepo,
     repoLabel,
     onclick,
-    importAction,
   }: Props = $props();
 
   function handleStarClick(e: MouseEvent): void {
@@ -97,11 +94,6 @@
     merged: "var(--accent-purple)",
   };
 
-  const showImport = $derived(
-    importAction &&
-    !hasWorktree &&
-    pr.State === "open",
-  );
   const labels = $derived(pr.labels ?? []);
   const repoColorKey = $derived(repoIdentityKey({
     provider: pr.repo.provider,
@@ -125,16 +117,6 @@
       return null;
     },
   );
-
-  function handleImportClick(e: MouseEvent): void {
-    e.stopPropagation();
-    importAction?.handler({
-      surface: "pull-list",
-      owner: pr.repo_owner ?? "",
-      name: pr.repo_name ?? "",
-      number: pr.Number,
-    });
-  }
 
   const parsed = $derived(parseCIChecks(pr.CIChecksJSON));
   const bucketed = $derived(bucketCIChecks(parsed.checks));
@@ -183,20 +165,6 @@
       <span class="meta-text">{pr.Author}</span>
     </span>
     <span class="meta-right">
-      {#if showImport}
-        <span
-          class="import-btn"
-          role="button"
-          tabindex="-1"
-          onclick={handleImportClick}
-          onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleImportClick(e as unknown as MouseEvent); } }}
-          title="Import to worktree"
-        >
-          <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M8 1a.75.75 0 01.75.75v6.19l1.72-1.72a.75.75 0 111.06 1.06l-3 3a.75.75 0 01-1.06 0l-3-3a.75.75 0 011.06-1.06l1.72 1.72V1.75A.75.75 0 018 1zM3.5 10a.75.75 0 01.75.75v1.5c0 .138.112.25.25.25h7a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 0111.5 14h-7A1.75 1.75 0 012.75 12.25v-1.5A.75.75 0 013.5 10z"/>
-          </svg>
-        </span>
-      {/if}
       {#if pr.workspace}
         <WorkspaceIndicator status={pr.workspace.status} />
       {/if}
@@ -459,26 +427,6 @@
 
   :global(.mobile-main) .pull-item .ci {
     gap: var(--space-1);
-  }
-
-  .import-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    opacity: 0;
-    transition: opacity 0.15s;
-    cursor: pointer;
-    color: var(--text-muted);
-  }
-
-  .pull-item:hover .import-btn {
-    opacity: 0.6;
-  }
-
-  .import-btn:hover {
-    opacity: 1 !important;
-    color: var(--accent-blue);
   }
 
   .conflict-icon {

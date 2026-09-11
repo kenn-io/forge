@@ -1,5 +1,4 @@
 import { Cause, Effect } from "effect";
-import { notifyInitialRouteChange } from "./lib/stores/router.svelte.js";
 import "./app.css";
 import { mountApplication } from "./lib/app/mount.js";
 import { makeAppRuntime } from "./lib/app/runtime.js";
@@ -83,8 +82,4 @@ runtime.runCommand(
 
 mountApplication(target, runtime, (cause) => {
   console.error("Frontend application Effect failed", Cause.pretty(cause));
-});
-runtime.runMicrotask(notifyInitialRouteChange, {
-  operation: "publish initial route",
-  safeContext: {},
 });

@@ -26,9 +26,6 @@
 
   let { repos, onUpdate, owner = "local" }: Props = $props();
 
-  import { isEmbedded } from "../../stores/embed-config.svelte.js";
-  const embedded = isEmbedded();
-
   let importOpen = $state(false);
   let importTrigger = $state<HTMLButtonElement | null>(null);
   let inputValue = $state("");
@@ -67,7 +64,6 @@
   }
 
   function handleAdd(): void {
-    if (embedded) return;
     const trimmed = inputValue.trim();
     if (!trimmed) return;
     const parts = trimmed.split("/");
@@ -102,7 +98,6 @@
   }
 
   function handleRemove(repo: ConfigRepo): void {
-    if (embedded) return;
     runtime.runCommand(
       Effect.gen(function* () {
         const workflow = yield* SettingsWorkflow;
@@ -132,7 +127,6 @@
   }
 
   function handleRefresh(repo: ConfigRepo): void {
-    if (embedded) return;
     const key = repoKey(repo);
     refreshingByKey = { ...refreshingByKey, [key]: true };
     runtime.runCommand(
@@ -165,7 +159,7 @@
   }
 
   function handleWorktreeBaseSave(repo: ConfigRepo): void {
-    if (embedded || repo.is_glob) return;
+    if (repo.is_glob) return;
     const key = repoKey(repo);
     savingWorktreeBaseByKey = { ...savingWorktreeBaseByKey, [key]: true };
     const worktreeBasePath = worktreeBaseValue(repo, key).trim();
@@ -203,7 +197,7 @@
   }
 
   function handleToggleVisibility(repo: ConfigRepo): void {
-    if (embedded || repo.is_glob) return;
+    if (repo.is_glob) return;
     const key = repoKey(repo);
     const hidden = !repo.hidden_from_ui;
     savingVisibilityByKey = { ...savingVisibilityByKey, [key]: true };
@@ -257,19 +251,17 @@
 
 <SettingsOwnerNotice {owner} subject="Repository sync inventory" />
 
-{#if !embedded}
-  <div class="repo-import-entry">
-    <Button
-      tone="info"
-      surface="solid"
-      onclick={(event) => {
-        if (event.currentTarget instanceof HTMLButtonElement) importTrigger = event.currentTarget;
-        importOpen = true;
-      }}
-    >Add repositories…</Button>
-    <p>Preview a glob, filter results, and add selected repositories as exact entries.</p>
-  </div>
-{/if}
+<div class="repo-import-entry">
+  <Button
+    tone="info"
+    surface="solid"
+    onclick={(event) => {
+      if (event.currentTarget instanceof HTMLButtonElement) importTrigger = event.currentTarget;
+      importOpen = true;
+    }}
+  >Add repositories…</Button>
+  <p>Preview a glob, filter results, and add selected repositories as exact entries.</p>
+</div>
 
 <RepoImportModal
   open={importOpen}
@@ -320,7 +312,6 @@
               <Button
                 size="sm"
                 onclick={() => { promoteRepo = repo; }}
-                disabled={embedded}
                 ariaLabel={`Promote glob repository ${repoLabel(repo)}`}
               >
                 Promote
@@ -338,7 +329,6 @@
               <RepoConfigMenu
                 repoLabel={repoDisplayLabel(repo)}
                 hidden={repo.hidden_from_ui}
-                {embedded}
                 visibilityPending={Boolean(savingVisibilityByKey[key])}
                 onEditLocalClone={() => {
                   cloneEditorOpen = { ...cloneEditorOpen, [key]: !cloneEditorOpen[key] };
@@ -368,7 +358,7 @@
               placeholder="/path/to/existing/clone"
               ariaLabel={`Local clone path for ${repoDisplayLabel(repo)}`}
               value={worktreeBaseValue(repo, key)}
-              disabled={embedded || Boolean(savingWorktreeBaseByKey[key])}
+              disabled={Boolean(savingWorktreeBaseByKey[key])}
               oninput={(value) => {
                 worktreeBaseDrafts = {
                   ...worktreeBaseDrafts,
@@ -388,7 +378,7 @@
               surface="outline"
               ariaLabel={`Save local clone path for ${repoDisplayLabel(repo)}`}
               onclick={() => handleWorktreeBaseSave(repo)}
-              disabled={embedded || Boolean(savingWorktreeBaseByKey[key]) || worktreeBaseValue(repo, key).trim() === (repo.worktree_base_path ?? "")}
+              disabled={Boolean(savingWorktreeBaseByKey[key]) || worktreeBaseValue(repo, key).trim() === (repo.worktree_base_path ?? "")}
             >
               {savingWorktreeBaseByKey[key] ? "Saving..." : "Save"}
             </Button>
@@ -402,35 +392,33 @@
   {/each}
 </div>
 
-{#if !embedded}
-  <details class="advanced-add">
-    <summary>Advanced: add provider-scoped repo or tracking glob directly</summary>
-    <div class="advanced-body">
-      <div class="add-form">
-        <TextInput
-          class="add-input"
-          block
-          placeholder="provider/owner/name"
-          bind:value={inputValue}
-          onkeydown={handleInputKeydown}
-          disabled={adding}
-        />
-        <Button
-          tone="info"
-          surface="solid"
-          onclick={handleAdd}
-          disabled={adding || !inputValue.trim()}
-        >
-          {adding ? "Adding..." : "Add"}
-        </Button>
-      </div>
-
-      {#if addError}
-        <div class="error-msg">{addError}</div>
-      {/if}
+<details class="advanced-add">
+  <summary>Advanced: add provider-scoped repo or tracking glob directly</summary>
+  <div class="advanced-body">
+    <div class="add-form">
+      <TextInput
+        class="add-input"
+        block
+        placeholder="provider/owner/name"
+        bind:value={inputValue}
+        onkeydown={handleInputKeydown}
+        disabled={adding}
+      />
+      <Button
+        tone="info"
+        surface="solid"
+        onclick={handleAdd}
+        disabled={adding || !inputValue.trim()}
+      >
+        {adding ? "Adding..." : "Add"}
+      </Button>
     </div>
-  </details>
-{/if}
+
+    {#if addError}
+      <div class="error-msg">{addError}</div>
+    {/if}
+  </div>
+</details>
 
 <style>
   .repo-import-entry { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding-bottom: 12px; border-bottom: 1px solid var(--border-muted); }

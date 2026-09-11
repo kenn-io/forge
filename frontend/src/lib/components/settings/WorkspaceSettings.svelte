@@ -5,7 +5,6 @@
 
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { getStores } from "../../context.js";
-  import { isEmbedded } from "../../stores/embed-config.svelte.js";
   import { settingsErrorMessage } from "../../stores/settings-workflow.js";
   import { saveWorkspaceSettings } from "../../stores/workspace-settings-persistence.js";
   import { saveRoborevSettings } from "../../stores/roborev-settings-persistence.js";
@@ -20,7 +19,6 @@
   const { settings: settingsStore } = getStores();
   const workspaces = $derived(settingsStore.getWorkspaceSettings());
   const roborev = $derived(settingsStore.getRoborevSettings());
-  const embedded = isEmbedded();
   let saving = $state(false);
   let savingRoborev = $state(false);
   const defaultSidebarViewOptions: SelectDropdownOption[] = [
@@ -29,7 +27,7 @@
   ];
 
   function toggleListAgentStatus(): void {
-    if (embedded || saving) return;
+    if (saving) return;
     const baseline = workspaces;
     const pending = {
       ...workspaces,
@@ -66,7 +64,7 @@
   }
 
   function toggleAutoAssign(): void {
-    if (embedded || saving) return;
+    if (saving) return;
     const baseline = workspaces;
     const pending = {
       ...workspaces,
@@ -104,7 +102,7 @@
 
   function setDefaultSidebarView(value: string): void {
     const defaultSidebarView = value as Settings["workspaces"]["default_sidebar_view"];
-    if (embedded || saving || defaultSidebarView === workspaces.default_sidebar_view) return;
+    if (saving || defaultSidebarView === workspaces.default_sidebar_view) return;
     const baseline = workspaces;
     const pending = { ...workspaces, default_sidebar_view: defaultSidebarView };
     onUpdate(pending);
@@ -131,7 +129,7 @@
   }
 
   function toggleRoborevManagedClones(): void {
-    if (embedded || savingRoborev) return;
+    if (savingRoborev) return;
     const baseline = roborev;
     const pending = {
       ...roborev,
@@ -175,7 +173,7 @@
     <button
       class={["toggle-btn", workspaces.show_agent_status_in_lists && "toggle-on"]}
       type="button"
-      disabled={embedded || saving}
+      disabled={saving}
       onclick={toggleListAgentStatus}
       aria-label="Show agent status in lists"
       aria-pressed={workspaces.show_agent_status_in_lists}
@@ -211,7 +209,7 @@
     <button
       class={["toggle-btn", roborev.init_managed_clones && "toggle-on"]}
       type="button"
-      disabled={embedded || savingRoborev}
+      disabled={savingRoborev}
       onclick={toggleRoborevManagedClones}
       aria-label="Initialize Roborev in managed clones"
       aria-pressed={roborev.init_managed_clones}
@@ -229,7 +227,7 @@
       title="Default sidebar view"
       value={workspaces.default_sidebar_view}
       options={defaultSidebarViewOptions}
-      disabled={embedded || saving}
+      disabled={saving}
       onchange={setDefaultSidebarView}
     />
   </div>

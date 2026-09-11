@@ -7,7 +7,7 @@ import "./app.css";
 import type { GeneratedClient } from "./lib/api/generated-api.js";
 import type { PullDetail } from "./lib/api/types.js";
 import { type OwnedAppRuntime } from "./lib/app/runtime.js";
-import { ACTIONS_KEY, NAVIGATE_KEY, STORES_KEY, UI_CONFIG_KEY } from "./lib/context.js";
+import { NAVIGATE_KEY, STORES_KEY } from "./lib/context.js";
 import PullDetailTestHarness from "./lib/components/detail/PullDetailTestHarness.svelte";
 import { createDetailActivityViewStore } from "./lib/stores/detail-activity-view.svelte.js";
 import { createSettingsStore } from "./lib/stores/settings.svelte.js";
@@ -291,8 +291,6 @@ function renderWorkflowDetail() {
           workflowActions,
         },
       ],
-      [ACTIONS_KEY, { pull: [] }],
-      [UI_CONFIG_KEY, { hideStar: true }],
       [NAVIGATE_KEY, vi.fn()],
     ]),
   });

@@ -403,35 +403,6 @@ describe("RepoSettings", () => {
     expect((screen.getByRole("menuitem", { name: "Hide from UI" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it("keeps repository configuration inspectable but disabled when embedded", async () => {
-    window.__kenn_forge_config = { embed: {} };
-    window.__kenn_forge_notify_config_changed?.();
-    try {
-      const repo = {
-        provider: "github",
-        platform_host: "github.com",
-        owner: "acme",
-        name: "archive",
-        repo_path: "acme/archive",
-        is_glob: false,
-        matched_repo_count: 1,
-        hidden_from_ui: false,
-      };
-
-      renderRepoSettings({ repos: [repo], onUpdate: vi.fn() });
-      const gear = screen.getByRole("button", { name: "Configure acme/archive" });
-      expect((gear as HTMLButtonElement).disabled).toBe(false);
-      await fireEvent.click(gear);
-      expect((screen.getByRole("menuitem", { name: "Edit local clone path…" }) as HTMLButtonElement).disabled).toBe(
-        true,
-      );
-      expect((screen.getByRole("menuitem", { name: "Hide from UI" }) as HTMLButtonElement).disabled).toBe(true);
-    } finally {
-      delete window.__kenn_forge_config;
-      window.__kenn_forge_notify_config_changed?.();
-    }
-  });
-
   it("promotes a glob match to an exact repository with a local clone path", async () => {
     const onUpdate = vi.fn();
     const addedRepos = [

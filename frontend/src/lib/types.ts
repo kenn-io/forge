@@ -1,26 +1,5 @@
 import type { WorkspaceItemIdentity } from "./workspace-inline.js";
 
-export interface Action {
-  id: string;
-  label: string;
-  icon?: string;
-  handler: (context: ActionContext) => void | Promise<void>;
-}
-
-export interface ActionContext {
-  surface: string;
-  owner: string;
-  name: string;
-  number: number;
-  meta?: Record<string, unknown>;
-}
-
-export interface ActionRegistry {
-  pull?: Action[];
-  issue?: Action[];
-  activity?: Action[];
-}
-
 export interface NavigateEvent {
   path: string;
   route: {
@@ -53,36 +32,11 @@ export interface NavigateOptions {
 
 export type NavigateCallback = (event: string | NavigateEvent, options?: NavigateOptions) => void;
 
-export interface WorkspaceCommandResult {
-  ok: boolean;
-  message?: string;
-}
-
-export type WorkspaceCommandCallback = (
-  command: string,
-  payload: Record<string, unknown>,
-) => WorkspaceCommandResult | Promise<WorkspaceCommandResult>;
-
 export type WorkspaceDeletedCallback = (
   workspaceId: string,
   workspaceHostKey?: string,
   identity?: WorkspaceItemIdentity,
 ) => void;
-
-export interface ForgeEvent {
-  type: "pr-selected" | "issue-selected" | "pr-state-changed" | "sync-completed" | "detail-loaded";
-  owner?: string;
-  name?: string;
-  number?: number;
-  meta?: Record<string, unknown>;
-}
-
-export type EventCallback = (event: ForgeEvent) => void;
-
-export type PrepareRouteCallback = (
-  repo: { host?: string; owner: string; name: string },
-  target?: { kind: "pull" | "issue"; number: number },
-) => void | Promise<void>;
 
 export interface HostStateAccessors {
   getGlobalRepo?: () => string | undefined;
@@ -91,8 +45,6 @@ export interface HostStateAccessors {
 }
 
 export interface UIConfig {
-  hideStar?: boolean;
-  hideSettings?: boolean;
   basePath?: string;
 }
 
@@ -157,7 +109,5 @@ export interface StoreInstances {
 }
 
 export interface SidebarAccessors {
-  isEmbedded: () => boolean;
-  isSidebarToggleEnabled: () => boolean;
   toggleSidebar: () => void;
 }

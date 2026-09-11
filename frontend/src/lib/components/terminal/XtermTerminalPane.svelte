@@ -17,7 +17,6 @@
   import { createWorkspaceSwitchPaneTimer } from "../../instrumentation/workspaceSwitchTiming.js";
   import { traceHeadersForRequest } from "../../instrumentation/traceContext.js";
   import { createTerminalPastePayload } from "./bracketedPaste.js";
-  import { embeddedWebSocketUrl } from "./embeddedWebSocket.js";
   import { parseOsc52ClipboardWrite } from "./osc52Clipboard.js";
   import {
     createBrowserTerminalClipboardPort,
@@ -262,8 +261,7 @@
     }
     if (url.protocol !== "http:" && url.protocol !== "https:") return;
 
-    // Open on the client while the click's user activation is live. Embedded
-    // hosts can handle this window request with their system browser opener.
+    // Open on the client while the click's user activation is live.
     window.open(url.href, "_blank", "noopener,noreferrer");
   }
 
@@ -712,8 +710,6 @@
     if (/^wss?:\/\//.test(withConnectionParams)) {
       return withConnectionParams;
     }
-    const embeddedUrl = embeddedWebSocketUrl(withBasePath(withConnectionParams));
-    if (embeddedUrl) return embeddedUrl;
     const devUrl = buildDevApiWsUrl(withConnectionParams);
     if (devUrl) return devUrl;
     const proto = location.protocol === "https:" ? "wss" : "ws";

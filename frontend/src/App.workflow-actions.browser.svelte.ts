@@ -143,31 +143,17 @@ describe("opt-in workflow Actions route", () => {
     await page.viewport(1280, 900);
     localStorage.clear();
     actionsModeEnabled = true;
-    delete window.__kenn_forge_config;
-    window.__kenn_forge_notify_config_changed?.();
   });
 
   afterEach(async () => {
     mounted?.unmount();
     mounted = null;
     localStorage.clear();
-    delete window.__kenn_forge_config;
-    window.__kenn_forge_notify_config_changed?.();
     await resetKeyboardModuleState();
   });
 
   it("redirects a disabled deep link after settings hydration without creating Actions demand", async () => {
     mounted = await mountBrowserApp("/actions");
-
-    await vi.waitFor(() => expect(window.location.pathname).toBe("/"), WAIT);
-    expect(actionReadPaths(mounted)).toEqual([]);
-    expect(document.querySelector(".actions-page")).toBeNull();
-  });
-
-  it("redirects an embedded Actions route without mounting the workspace", async () => {
-    window.__kenn_forge_config = { embed: {} };
-    window.__kenn_forge_notify_config_changed?.();
-    mounted = await mountBrowserApp("/actions", { overrides: [actionsFixtures()] });
 
     await vi.waitFor(() => expect(window.location.pathname).toBe("/"), WAIT);
     expect(actionReadPaths(mounted)).toEqual([]);

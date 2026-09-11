@@ -58,8 +58,8 @@ describe("app shell teardown", () => {
     );
   });
 
-  it("owns Roborev health polling across an embedded workspace route", async () => {
-    const app = await mountBrowserApp("/workspaces/embed/detail/github/pr/github.com/1?repo_path=acme%2Fwidgets", {
+  it("owns Roborev health polling across a workspace route", async () => {
+    const app = await mountBrowserApp("/workspaces", {
       overrides: [
         (request) =>
           request.method === "GET" && request.url.pathname === "/api/v1/roborev/status"

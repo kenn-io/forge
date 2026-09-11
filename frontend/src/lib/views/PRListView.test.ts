@@ -119,7 +119,6 @@ function renderPRListView(options: RenderPRListViewOptions = {}) {
         [
           SIDEBAR_KEY,
           {
-            isSidebarToggleEnabled: () => false,
             toggleSidebar: vi.fn(),
           },
         ],

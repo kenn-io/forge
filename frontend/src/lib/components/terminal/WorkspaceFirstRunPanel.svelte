@@ -1,7 +1,6 @@
 <script lang="ts">
   // WorkspaceFirstRunPanel owns project registration for both the
-  // empty-registry first run and explicit add-project routes. Project-card
-  // actions only need to react after a project exists.
+  // empty-registry first run and explicit add-project routes.
 
   import {
     listUserRepositories,
@@ -17,9 +16,6 @@
   import { onDestroy, untrack } from "svelte";
   import type { AppExecution } from "../../app/runtime.js";
   import { showFlash } from "../../stores/flash.svelte.js";
-  import {
-    getWorkspaceData,
-  } from "../../stores/embed-config.svelte.ts";
   import { navigate } from "../../stores/router.svelte.ts";
   import { resolveToolingStatus } from "../../stores/tooling-status.svelte.ts";
   import { getAppRuntime } from "../../app/runtime-context.js";
@@ -90,7 +86,6 @@
 
   const tooling = $derived(resolveToolingStatus(runtime));
   const scopedHostKey = $derived(hostKey?.trim() || undefined);
-  const workspaceData = $derived(getWorkspaceData());
   const selectedHost = $derived.by(() => {
     if (snapshotHosts.length > 0) {
       const host = scopedHostKey
@@ -106,16 +101,7 @@
         };
       }
     }
-    const workspace = workspaceData;
-    if (!workspace) return undefined;
-    if (scopedHostKey) {
-      return workspace.hosts.find(
-        (candidate) => candidate.key === scopedHostKey,
-      );
-    }
-    return workspace.hosts.find(
-      (candidate) => candidate.key === workspace.selectedHostKey,
-    ) ?? workspace.hosts[0];
+    return undefined;
   });
   const actionDefinitions = $derived(
     ACTIONS.map((action) => {
@@ -303,31 +289,17 @@
               if (componentDestroyed || scopedHostKey !== targetHostKey) return Effect.void;
               const reportFailure = Effect.sync(() => {
                 showFlash(
-                  projectMutationFailureMessage(failure, "The host returned an invalid project acknowledgement."),
+                  projectMutationFailureMessage(failure),
                   { tone: "danger" },
                 );
               });
-              return failure._tag === "InvalidEmbeddingAcknowledgement"
-                ? reportFailure
-                : reportFailure.pipe(Effect.andThen(workflow.forgetProject(command.key)));
+              return reportFailure.pipe(Effect.andThen(workflow.forgetProject(command.key)));
             },
-            onSuccess: ({ project, acknowledgement: result }) => {
+            onSuccess: () => {
               if (componentDestroyed || scopedHostKey !== targetHostKey) return Effect.void;
-              if (!result.ok) {
-                return Effect.sync(() => {
-                  showFlash(
-                    result.message ?? "Project registered, but the host did not refresh.",
-                    { tone: "danger" },
-                  );
-                });
-              }
-              return Effect.sync(() => {
-                if (targetHostKey) {
-                  navigate("/workspaces");
-                } else {
-                  navigate(`/workspaces/embed/project/${encodeURIComponent(project.id)}`);
-                }
-              }).pipe(Effect.andThen(workflow.forgetProject(command.key)));
+              return Effect.sync(() => navigate("/workspaces")).pipe(
+                Effect.andThen(workflow.forgetProject(command.key)),
+              );
             },
           }),
         );

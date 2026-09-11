@@ -7,7 +7,6 @@
     MCPSettingsUpdate,
   } from "../../api/types.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
-  import { isEmbedded } from "../../stores/embed-config.svelte.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import {
     SettingsWorkflow,
@@ -21,7 +20,6 @@
 
   let { mcp, onUpdate }: Props = $props();
   const runtime = getAppRuntime();
-  const embedded = isEmbedded();
   // svelte-ignore state_referenced_locally
   let currentMCP = $state(mcp);
   let saving = $state(false);
@@ -47,7 +45,7 @@
       parsedDiffCache !== (currentMCP.diff_cache_mb ?? 0),
   );
   const canSave = $derived(
-    !embedded && !saving && isDirty && portValid && diffCacheValid,
+    !saving && isDirty && portValid && diffCacheValid,
   );
   const clientConfiguration = $derived.by(() => {
     if (!currentMCP.active_url) return "";
@@ -110,7 +108,7 @@
   <Checkbox
     class="toggle-row"
     bind:checked={enabledDraft}
-    disabled={embedded || saving}
+    disabled={saving}
     ariaLabel="Enable MCP companion"
   >
     <span>
@@ -134,7 +132,7 @@
         }}
         bind:value={portDraft}
         placeholder="Automatic"
-        disabled={embedded || saving}
+        disabled={saving}
         aria-invalid={!portValid}
       />
       <span class="field-help">Leave blank to use the Forge backend port plus one.</span>
@@ -152,7 +150,7 @@
           }}
           bind:value={diffCacheDraft}
           placeholder="128"
-          disabled={embedded || saving}
+          disabled={saving}
           aria-invalid={!diffCacheValid}
         />
         <span>MiB</span>

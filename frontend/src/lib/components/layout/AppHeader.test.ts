@@ -135,8 +135,6 @@ describe("AppHeader", () => {
     mockedSync.triggerSync.mockClear();
     mockedSync.triggerRepoSync.mockClear();
     setGlobalRepo(undefined);
-    delete window.__kenn_forge_config;
-    window.__kenn_forge_notify_config_changed?.();
     mockedSettings.value = createSettingsStore();
     resetPaletteState();
   });
@@ -154,8 +152,6 @@ describe("AppHeader", () => {
     mockedSync.running = false;
     mockedSync.providerAvailable = true;
     setGlobalRepo(undefined);
-    delete window.__kenn_forge_config;
-    window.__kenn_forge_notify_config_changed?.();
     mockedSettings.value = undefined;
     resetPaletteState();
   });
@@ -389,20 +385,6 @@ describe("AppHeader", () => {
     view.unmount();
   });
 
-  it("never exposes Actions navigation in an embedded shell", () => {
-    initTheme();
-    mockedSettings.value?.setModeVisibility({
-      ...mockedSettings.value.getModeVisibility(),
-      actions: true,
-    });
-    window.__kenn_forge_config = { embed: {} };
-    window.__kenn_forge_notify_config_changed?.();
-
-    render(AppHeader);
-
-    expect(screen.queryByRole("button", { name: "Actions" })).toBeNull();
-  });
-
   it("marks the Workspaces tab current on terminal routes", () => {
     // One tabs list drives both the expanded tab row and kit's collapsed
     // dropdown, so the terminal → workspaces active mapping only needs
@@ -453,17 +435,6 @@ describe("AppHeader", () => {
     const { container } = render(AppHeader);
 
     expectReservedRepoSelectorSlot(container);
-  });
-
-  it("does not reserve the repo selector slot when embed config hides it", () => {
-    initTheme();
-    window.__kenn_forge_config = { ui: { hideRepoSelector: true } };
-    window.__kenn_forge_notify_config_changed?.();
-    navigate("/docs");
-    const { container } = render(AppHeader);
-
-    expect(screen.queryByTitle("Select repository")).toBeNull();
-    expect(container.querySelector(".repo-selector-placeholder")).toBeNull();
   });
 
   it("remembers the Docs route when the nav switches to Activity", async () => {

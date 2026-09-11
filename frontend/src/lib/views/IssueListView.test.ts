@@ -89,7 +89,6 @@ function renderIssueListView(options: RenderIssueListViewOptions = {}) {
         [
           SIDEBAR_KEY,
           {
-            isSidebarToggleEnabled: () => false,
             toggleSidebar: vi.fn(),
           },
         ],

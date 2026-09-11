@@ -1,6 +1,5 @@
 import { getDetailTab, getSelectedPRFromRoute, navigate, replaceUrl } from "../router.svelte.js";
-import { getUIConfig } from "../embed-config.svelte.js";
-import { isSidebarToggleEnabled, toggleSidebar } from "../sidebar.svelte.js";
+import { toggleSidebar } from "../sidebar.svelte.js";
 import { toggleTheme } from "../theme.svelte.js";
 import { toggleCheatsheet } from "./cheatsheet-state.svelte.js";
 import { openNewWorkspaceDialog } from "../new-workspace.svelte.js";
@@ -22,7 +21,6 @@ import {
 import { isSessionPaneKey } from "../session-pane-key.js";
 import { requestSessionFocus } from "../session-host.svelte.js";
 import { activeHostedSession, hostedSessionRegistryKey, hostedWorkspaceLauncher } from "../workspace-host.svelte.js";
-import type { ConfigRepo } from "../../api/types.js";
 import type { StoreInstances } from "../../types.js";
 import type { Action, Context, PreviewBlock } from "./types.js";
 import { parseActivitySelection } from "../../utils/activitySelection.js";
@@ -139,15 +137,6 @@ function cleanRepoPath(repoPath: string | undefined): string {
   return (repoPath ?? "").replace(/^\/+|\/+$/g, "");
 }
 
-function repoIdentityFromPath(repoPath: string): { owner: string; name: string } | null {
-  const separator = repoPath.lastIndexOf("/");
-  if (separator <= 0 || separator === repoPath.length - 1) return null;
-  return {
-    owner: repoPath.slice(0, separator),
-    name: repoPath.slice(separator + 1),
-  };
-}
-
 type RepoSelectionRef = {
   provider?: string | undefined;
   platformHost?: string | undefined;
@@ -155,8 +144,6 @@ type RepoSelectionRef = {
   name?: string | undefined;
   repoPath?: string | undefined;
 };
-
-type WorkspaceConfigRepo = NonNullable<ReturnType<typeof getUIConfig>["repo"]>;
 
 function itemRepoRef(ref: RepoSelectionRef | null): RepositoryRouteRef | null {
   if (!ref) return null;
@@ -171,76 +158,9 @@ function itemRepoRef(ref: RepoSelectionRef | null): RepositoryRouteRef | null {
   };
 }
 
-function workspaceConfigRepoRef(repo: WorkspaceConfigRepo): RepositoryRouteRef | null {
-  const provider = repo.provider?.trim();
-  const platformHost = (repo.platform_host ?? repo.host)?.trim();
-  const repoPath = cleanRepoPath(repo.repo_path);
-  if (!provider || !platformHost || !repoPath) return null;
-  const identity = repo.owner && repo.name ? { owner: repo.owner, name: repo.name } : repoIdentityFromPath(repoPath);
-  if (!identity) return null;
-  return {
-    provider,
-    platformHost,
-    owner: identity.owner,
-    name: identity.name,
-    repoPath,
-  };
-}
-
-function configuredRepoRef(repo: ConfigRepo): RepositoryRouteRef | null {
-  if (repo.is_glob) return null;
-  const repoPath = cleanRepoPath(repo.repo_path || `${repo.owner}/${repo.name}`);
-  if (!repo.provider || !repo.platform_host || !repo.owner || !repo.name || !repoPath) {
-    return null;
-  }
-  return {
-    provider: repo.provider,
-    platformHost: repo.platform_host,
-    owner: repo.owner,
-    name: repo.name,
-    repoPath,
-  };
-}
-
-function configuredRepoMatchesWorkspace(repo: ConfigRepo, selectedRepo: WorkspaceConfigRepo): boolean {
-  if (repo.owner !== selectedRepo.owner || repo.name !== selectedRepo.name) return false;
-  if (selectedRepo.provider && repo.provider !== selectedRepo.provider) return false;
-  const selectedHost = selectedRepo.platform_host ?? selectedRepo.host;
-  if (selectedHost && repo.platform_host !== selectedHost) return false;
-  const selectedRepoPath = cleanRepoPath(selectedRepo.repo_path);
-  if (selectedRepoPath && cleanRepoPath(repo.repo_path || `${repo.owner}/${repo.name}`) !== selectedRepoPath) {
-    return false;
-  }
-  return true;
-}
-
-function workspaceRepoRef(): RepositoryRouteRef | null {
-  const selectedRepo = getUIConfig().repo;
-  if (!selectedRepo) return null;
-  const directRef = workspaceConfigRepoRef(selectedRepo);
-  if (directRef) return directRef;
-  if (!storesGetter) return null;
-
-  const matches = stores()
-    .settings.getConfiguredRepos()
-    .filter((repo) => !repo.is_glob)
-    .filter((repo) => configuredRepoMatchesWorkspace(repo, selectedRepo))
-    .map(configuredRepoRef)
-    .filter((repo): repo is RepositoryRouteRef => repo !== null);
-  return matches.length === 1 ? (matches[0] ?? null) : null;
-}
-
 function routeRepoRef(ctx: Context): RepositoryRouteRef | null {
   switch (ctx.route.page) {
     case "repo-browser":
-      return {
-        provider: ctx.route.provider,
-        platformHost: ctx.route.platformHost,
-        owner: ctx.route.owner,
-        name: ctx.route.name,
-        repoPath: cleanRepoPath(ctx.route.repoPath),
-      };
-    case "embed-workspace-detail":
       return {
         provider: ctx.route.provider,
         platformHost: ctx.route.platformHost,
@@ -257,18 +177,6 @@ function routeRepoRef(ctx: Context): RepositoryRouteRef | null {
         name: ctx.route.name,
         repoPath: cleanRepoPath(ctx.route.repoPath),
       };
-    default:
-      return null;
-  }
-}
-
-function workspacePageRepoRef(ctx: Context): RepositoryRouteRef | null {
-  switch (ctx.page) {
-    case "workspaces":
-    case "terminal":
-    case "embed-workspace-terminal":
-    case "embed-workspace-project":
-      return workspaceRepoRef();
     default:
       return null;
   }
@@ -305,8 +213,6 @@ function repoBrowserCommandRef(ctx: Context): RepositoryRouteRef | null {
   if (ctx.page === "activity") {
     return itemRepoRef(parseActivitySelection(window.location.search));
   }
-  const workspaceRef = workspacePageRepoRef(ctx);
-  if (workspaceRef) return workspaceRef;
   const selectedPRRef = pageSelectedPRRef(ctx);
   if (selectedPRRef) return selectedPRRef;
   return pageSelectedIssueRef(ctx);
@@ -562,8 +468,8 @@ export const defaultActions: Action[] = [
     scope: "global",
     binding: { key: "[", ctrlOrMeta: true },
     priority: 0,
-    when: () => isSidebarToggleEnabled(),
-    visible: (ctx) => isSidebarToggleEnabled() && hasSidebarShortcutTarget(ctx),
+    when: always,
+    visible: hasSidebarShortcutTarget,
     handler: (ctx) => {
       if (hasSidebarShortcutTarget(ctx)) toggleSidebar();
     },
@@ -786,19 +692,7 @@ export const defaultActions: Action[] = [
     binding: null,
     priority: 0,
     when: always,
-    handler: (ctx) => {
-      const ref = workspacePageRepoRef(ctx);
-      openNewWorkspaceDialog(
-        ref
-          ? {
-              provider: ref.provider,
-              platformHost: ref.platformHost ?? "",
-              owner: ref.owner,
-              name: ref.name,
-            }
-          : undefined,
-      );
-    },
+    handler: () => openNewWorkspaceDialog(),
     preview: () => ({
       title: "New workspace",
       subtitle: "Start work in a tracked repository on a new worktree branch",

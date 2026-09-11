@@ -19,7 +19,7 @@
     type TimeRange,
     type ViewMode,
   } from "../stores/activity.svelte.js";
-  import { getStores, getNavigate, getSidebar } from "../context.js";
+  import { getStores, getNavigate } from "../context.js";
   import ActivityThreaded from "./ActivityThreaded.svelte";
   import ActivityFilters from "./ActivityFilters.svelte";
   import { ScrollBox } from "@kenn-io/kit-ui";
@@ -55,7 +55,6 @@
   const { activity, settings, sync, grouping } = getStores();
   const runtime = getAppRuntime();
   const navigate = getNavigate();
-  const { isEmbedded } = getSidebar();
 
   interface Props {
     onSelectItem?: (item: ActivityItem) => void;
@@ -753,7 +752,7 @@
     <ScrollBox label="Activity feed">
     <div class="table-container">
       <EmptyState title="No repositories configured.">
-        {#if !isEmbedded()}<button class="settings-link" onclick={() => navigate("/settings")}>Add one in Settings</button>{/if}
+        <button class="settings-link" onclick={() => navigate("/settings")}>Add one in Settings</button>
       </EmptyState>
     </div>
     </ScrollBox>

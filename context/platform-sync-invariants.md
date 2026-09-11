@@ -513,11 +513,6 @@ Repository import requests and route/query shapes should carry
   (`internal/server/pullapi/helpers.go::visibleMergeRequest`,
   `internal/server/issueapi/mutation_handlers.go::requireVisibleIssue`,
   `internal/db/queries_stacks.go::ListStackPlacementsForMRs`)
-- Embedded navigation events for repo-bound routes must publish identity from
-  parsed route state, not from global embed config. When a route carries repo
-  identity, event payloads should include `provider`, `platform_host`, and
-  `repo_path` and may keep `repo` as the display/canonical path. Global
-  `ui.repo` config is only a fallback for non-repo-bound pages.
 
 ## Testing
 

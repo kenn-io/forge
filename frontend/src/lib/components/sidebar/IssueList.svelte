@@ -25,7 +25,7 @@
   const { issues, sync, grouping, collapsedRepos, settings } = getStores();
   const runtime = getAppRuntime();
   const navigate = getNavigate();
-  const { isEmbedded, isSidebarToggleEnabled, toggleSidebar } = getSidebar();
+  const { toggleSidebar } = getSidebar();
 
   interface Props {
     sidebarWidth?: number;
@@ -291,14 +291,12 @@
         minWidth="180px"
       />
     </div>
-    {#if isSidebarToggleEnabled()}
-      <SidebarToggle
-        state="expanded"
-        label="sidebar"
-        onclick={toggleSidebar}
-        class="kit-sidebar-toggle--push"
-      />
-    {/if}
+    <SidebarToggle
+      state="expanded"
+      label="sidebar"
+      onclick={toggleSidebar}
+      class="kit-sidebar-toggle--push"
+    />
   </div>
   <div class="search-bar">
     <div class="search-wrap">
@@ -335,7 +333,7 @@
   <ScrollBox class="list-body" label="Issues">
     {#if settings.isSettingsLoaded() && !settings.hasConfiguredRepos()}
       <p class="state-message">No repositories configured.<br />
-        {#if !isEmbedded()}<button class="settings-link" onclick={() => navigate("/settings")}>Add one in Settings</button>{/if}</p>
+        <button class="settings-link" onclick={() => navigate("/settings")}>Add one in Settings</button></p>
     {:else if issues.isIssuesLoading() && issues.getIssues().length === 0}
       <p class="state-message">Loading…</p>
     {:else if issues.getIssuesError() !== null && issues.getIssues().length === 0}
@@ -405,11 +403,11 @@
     {/if}
   </ScrollBox>
   <div class="sidebar-footer">
-    {#if !isEmbedded()}
-      <button class="add-repo-link" onclick={() => navigate("/settings")}>
-        + Add repository
-      </button>
-    {/if}
+
+    <button class="add-repo-link" onclick={() => navigate("/settings")}>
+      + Add repository
+    </button>
+
   </div>
 </div>
 
@@ -502,7 +500,6 @@
     justify-content: center;
     gap: 8px;
   }
-
 
   .sidebar-footer {
     padding: 8px 12px;

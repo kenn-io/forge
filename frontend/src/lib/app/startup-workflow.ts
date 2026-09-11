@@ -41,7 +41,7 @@ export const StartupWorkflowLive = Layer.effect(StartupWorkflow)(
     const cache = yield* Cache.make({
       capacity: 1,
       lookup: () => waitUntilBackendReady.pipe(Effect.andThen(loadStartupSettings().pipe(Effect.timeout("8 seconds")))),
-      // Startup and embedded-shell callers share the last settings snapshot.
+      // Startup callers share the last settings snapshot.
       // Every settings write invalidates this entry through SettingsWorkflow.
       timeToLive: Duration.infinity,
     });

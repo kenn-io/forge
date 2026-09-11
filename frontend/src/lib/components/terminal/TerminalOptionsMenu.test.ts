@@ -114,14 +114,6 @@ vi.mock("../../app/runtime-context.js", () => ({
   getAppRuntime: () => runtime.current,
 }));
 
-vi.mock("../../stores/embed-config.svelte.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../stores/embed-config.svelte.js")>();
-  return {
-    ...actual,
-    isEmbedded: () => false,
-  };
-});
-
 import TerminalOptionsMenu from "./TerminalOptionsMenu.svelte";
 
 describe("TerminalOptionsMenu", () => {

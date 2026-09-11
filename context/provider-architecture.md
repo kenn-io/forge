@@ -35,6 +35,13 @@ cache policy and admission remain internal
 (`cmd/kenn-forge/provider_startup.go::defaultProviderFactories`,
 `internal/tokenauth/source.go::githubAppTokenStore`).
 
+App discovery pages are observations, not atomic inventories; callers own total
+budgets and must not equate stopping with exhaustion
+(`githubapp/discovery.go::InstallationPage`).
+Installation absence requires the expected App's authenticated exact-ID read;
+JWT rejection does not prove key revocation, and repository 404s prove neither
+(`githubapp/installation.go::Client.CheckInstallation`).
+
 ## Adding A Provider
 
 The public landing API uses local objects only; callers own collection and supply

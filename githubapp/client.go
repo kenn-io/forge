@@ -33,10 +33,9 @@ func WebBaseForHost(host string) string {
 	return "https://" + host
 }
 
-// Client is a minimal GitHub App management client. It speaks only
-// the app-scoped endpoints the kenn-forge-github-app CLI and the
-// installation token minter need; repository data access stays on the
-// main provider clients.
+// Client handles GitHub App management and installation discovery. Repository
+// content access stays on the provider clients. Callers own credentials,
+// persistence, retry policy and admission.
 type Client struct {
 	apiBase    string
 	httpClient *http.Client
@@ -70,6 +69,7 @@ type AppCredentials struct {
 }
 
 type Account struct {
+	ID    int64  `json:"id"`
 	Login string `json:"login"`
 	Type  string `json:"type"`
 }
@@ -85,9 +85,11 @@ type App struct {
 
 // Installation is one account the app is installed on.
 type Installation struct {
-	ID                  int64   `json:"id"`
-	Account             Account `json:"account"`
-	RepositorySelection string  `json:"repository_selection"`
+	ID                  int64      `json:"id"`
+	AppID               int64      `json:"app_id"`
+	Account             Account    `json:"account"`
+	RepositorySelection string     `json:"repository_selection"`
+	SuspendedAt         *time.Time `json:"suspended_at"`
 }
 
 // InstallationToken is a minted installation access token.

@@ -1243,3 +1243,87 @@ func (r *HostRouter) ClearDisplacedRepoCredentialAlias(
 	}
 	delete(r.repoAliases, key)
 }
+
+func (c *RoutedClient) ListRepositoryWorkflows(ctx context.Context, owner, repo string) ([]*gh.Workflow, error) {
+	client, err := c.routeForRepo(owner, repo)
+	if err != nil {
+		return nil, err
+	}
+	workflowClient, ok := client.(platformgithub.WorkflowCatalogAPI)
+	if !ok {
+		return nil, platform.UnsupportedCapability(platform.KindGitHub, c.routes.host, "read_workflows")
+	}
+	return workflowClient.ListRepositoryWorkflows(ctx, owner, repo)
+}
+
+func (c *RoutedClient) GetWorkflowDefinition(ctx context.Context, owner, repo, path, ref string) (string, string, error) {
+	client, err := c.routeForRepo(owner, repo)
+	if err != nil {
+		return "", "", err
+	}
+	workflowClient, ok := client.(platformgithub.WorkflowCatalogAPI)
+	if !ok {
+		return "", "", platform.UnsupportedCapability(platform.KindGitHub, c.routes.host, "read_workflows")
+	}
+	return workflowClient.GetWorkflowDefinition(ctx, owner, repo, path, ref)
+}
+
+func (c *RoutedClient) ListRepositoryEnvironments(ctx context.Context, owner, repo string) ([]*gh.Environment, error) {
+	client, err := c.routeForRepo(owner, repo)
+	if err != nil {
+		return nil, err
+	}
+	workflowClient, ok := client.(platformgithub.WorkflowCatalogAPI)
+	if !ok {
+		return nil, platform.UnsupportedCapability(platform.KindGitHub, c.routes.host, "read_workflows")
+	}
+	return workflowClient.ListRepositoryEnvironments(ctx, owner, repo)
+}
+
+func (c *RoutedClient) GetManualWorkflowRun(ctx context.Context, owner, repo string, runID int64) (*gh.WorkflowRun, error) {
+	client, err := c.routeForRepoContext(ctx, owner, repo)
+	if err != nil {
+		return nil, err
+	}
+	workflowClient, ok := client.(platformgithub.WorkflowRunAPI)
+	if !ok {
+		return nil, platform.UnsupportedCapability(platform.KindGitHub, c.routes.host, "read_workflow_runs")
+	}
+	return workflowClient.GetManualWorkflowRun(ctx, owner, repo, runID)
+}
+
+func (c *RoutedClient) ListManualWorkflowRuns(ctx context.Context, owner, repo string, workflowID int64, query platform.WorkflowRunQuery) (platform.Page[*gh.WorkflowRun], error) {
+	client, err := c.routeForRepo(owner, repo)
+	if err != nil {
+		return platform.Page[*gh.WorkflowRun]{}, err
+	}
+	workflowClient, ok := client.(platformgithub.WorkflowRunAPI)
+	if !ok {
+		return platform.Page[*gh.WorkflowRun]{}, platform.UnsupportedCapability(platform.KindGitHub, c.routes.host, "read_workflow_runs")
+	}
+	return workflowClient.ListManualWorkflowRuns(ctx, owner, repo, workflowID, query)
+}
+
+func (c *RoutedClient) ListManualWorkflowJobs(ctx context.Context, owner, repo string, runID int64) ([]*gh.WorkflowJob, error) {
+	client, err := c.routeForRepo(owner, repo)
+	if err != nil {
+		return nil, err
+	}
+	workflowClient, ok := client.(platformgithub.WorkflowRunAPI)
+	if !ok {
+		return nil, platform.UnsupportedCapability(platform.KindGitHub, c.routes.host, "read_workflow_runs")
+	}
+	return workflowClient.ListManualWorkflowJobs(ctx, owner, repo, runID)
+}
+
+func (c *RoutedClient) DispatchManualWorkflow(ctx context.Context, owner, repo string, workflowID int64, request gh.CreateWorkflowDispatchEventRequest) (*gh.WorkflowDispatchRunDetails, error) {
+	client, err := c.routeForRepo(owner, repo)
+	if err != nil {
+		return nil, err
+	}
+	workflowClient, ok := client.(platformgithub.WorkflowDispatchAPI)
+	if !ok {
+		return nil, platform.UnsupportedCapability(platform.KindGitHub, c.routes.host, "workflow_dispatch")
+	}
+	return workflowClient.DispatchManualWorkflow(ctx, owner, repo, workflowID, request)
+}

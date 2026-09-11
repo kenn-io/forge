@@ -33,12 +33,13 @@ const (
 var ErrEventProtocol = errors.New("invalid hub event stream")
 
 var hubProviderEventTypes = map[string]struct{}{
-	"data_changed":             {},
-	"sync_status":              {},
-	"pr_detail_refreshed":      {},
-	"pr_ci_refresh_queued":     {},
-	"pr_ci_refreshed":          {},
-	"deferred_merge_completed": {},
+	"data_changed":               {},
+	"sync_status":                {},
+	"pr_detail_refreshed":        {},
+	"pr_ci_refresh_queued":       {},
+	"pr_ci_refreshed":            {},
+	"deferred_merge_completed":   {},
+	"workflow_dispatch_progress": {},
 }
 
 // IsHubProviderEvent reports whether an event is provider-owned and

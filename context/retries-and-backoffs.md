@@ -72,6 +72,10 @@ The archive worker uses the backoff schedule type only as an idle delay calculat
 not as a retry wrapper: idle passes double up to a five-minute cap and any wake or
 worked pass resets it (`internal/github/sync.go::runArchiveLoop`).
 
+- Manual workflow dispatch is never retried. Track only the run ID returned by
+  dispatch, using direct reads until completion or thirty minutes; never infer
+  its identity from ref, actor, or time (`internal/server/workflowapi/dispatch_follow.go::Handler.followDispatch`).
+
 Live provider work waits for preempted archive requests only while its caller is active;
 canceling a waiter must not release the archive request's lease or leak live-work counts.
 (`internal/github/sync.go::beginProviderWork`)

@@ -46,7 +46,8 @@ Check these in order:
 3. The token env var or token file is present in the daemon environment.
 4. The token has read access to repository metadata, PRs/MRs, issues, comments,
    commits, tags, releases, and CI/status data.
-5. The provider rate limit is not exhausted.
+5. Neither the [local sync ceiling](#local-sync-ceiling-reached) nor the
+   provider rate limit is exhausted.
 
 For GitHub, `gh auth token --hostname HOST` can supply the token when the
 configured token source is absent. The unscoped `gh auth token` fallback applies
@@ -55,6 +56,40 @@ With `[[github_owner_tokens]]`, confirm the entered owner matches the mapping
 exactly after case folding and restart after changing the PAT to one issued by
 a different GitHub user. A missing owner route reports the GitHub host and owner
 without exposing token material.
+
+## Local sync ceiling reached
+
+"Local sync ceiling reached (500/500)" means Forge has spent its local hourly
+sync allowance. Sync requests that need more of that allowance must wait.
+The provider may still have quota available.
+
+To give a large or active repository more capacity:
+
+1. Open `~/.kenn/forge/config.toml`, or `$KENN_FORGE_HOME/config.toml` if you
+    set a custom home.
+2. Add or update this top-level setting, before any `[section]` or `[[repos]]`
+    header. This example raises the allowance to 3,000 requests per hour:
+
+    ```toml
+    sync_budget_per_hour = 3000
+    ```
+
+3. Restart Forge to apply the new limit:
+
+    ```sh
+    kenn-forge daemon restart
+    ```
+
+4. Retry sync and check that the local ceiling now shows a limit of 3,000.
+
+You can also wait for the local hourly window to reset. Clicking sync again
+does not clear the spent allowance.
+
+Raise the limit only while the provider has quota to spare. If the provider
+quota is exhausted too, wait for its reset or use a
+[GitHub App for sync reads](configuration.md#github-app-reads). See
+[Sync budget](configuration.md#sync-budget) for the default, shared budgets,
+and the capacity Forge reserves for discovering issues and pull requests.
 
 ## Mutating actions are disabled
 
@@ -65,19 +100,26 @@ fallback.
 
 ## GitHub sync hits rate limits
 
-Use a GitHub App for sync reads:
+For more GitHub API capacity, use the advanced
+[GitHub App setup](configuration.md#github-app-reads). App installations have
+their own quota, and organization installations can qualify for higher rate
+limits. The setup guide covers organization and personal ownership.
+App access covers only the installed repositories. Organization setup requires
+owner access or delegated App permissions, so you may need an administrator's
+help.
 
-```sh
-kenn-forge-github-app create
-kenn-forge-github-app install
-kenn-forge-github-app list
-```
+Forge's [local sync ceiling](#local-sync-ceiling-reached) still applies to
+ordinary sync, so raise it
+if the App has quota left but sync stops at the local limit.
 
 If ordinary sync is healthy but historical archive work is competing for the
 same installation budget, add a separate App with
 `kenn-forge-github-app create --role archive`, install it on the repository
 account, and restart Forge. `kenn-forge-github-app list` shows each App's
 role and independent rate-limit state.
+
+See [Archive sync capacity](archive.md#sync-capacity) for how provider quota
+and reserves control historical work.
 
 Mutating actions still use the user credential chain so comments, approvals, and
 merges are attributed to you. Multiple PAT entries issued to the same GitHub

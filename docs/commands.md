@@ -145,6 +145,7 @@ the installed commands through `/hooks` once.
 
 ```sh
 kenn-forge-github-app create
+kenn-forge-github-app create --org your-org
 kenn-forge-github-app create --role archive
 kenn-forge-github-app list
 kenn-forge-github-app install
@@ -154,6 +155,11 @@ kenn-forge-github-app open
 ```
 
 Use this companion CLI when sync or archive reads should use GitHub App
-installation tokens. `--role archive` creates a separate installation route
+installation tokens. `create --org your-org` creates an organization-owned
+App; omit `--org` for personal ownership. Creation includes a browser-based
+installation step. See [GitHub App reads](configuration.md#github-app-reads)
+for setup and rate limits.
+
+`--role archive` creates a separate installation route
 for historical archive work. Comments, reviews, state changes, and merges
 still use the user PAT chain.

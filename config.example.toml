@@ -1,4 +1,9 @@
 sync_interval = "5m"
+# Raise the local hourly sync allowance for large or active repositories.
+# Default: 500. Minimum: 50. Zero uses the default. Restart after changing.
+# See docs/configuration.md#sync-budget for budget sharing and provider quota.
+# sync_budget_per_hour = 3000
+
 # Environment variable containing your GitHub personal access token.
 # Required scopes: repo (private repos) or public_repo (public only).
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"

@@ -1,3 +1,4 @@
+import { tick } from "svelte";
 import { cleanup, render } from "vitest-browser-svelte";
 import { Effect } from "effect";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
@@ -184,110 +185,123 @@ afterEach(async () => {
   catalogClaimed = false;
 });
 
-describe("PullDetail provider workflow action geometry", () => {
-  it("places workflow dispatch beside workspace tools while primary actions collapse only under pressure", async () => {
-    const detail = pullDetail();
-    const apiClient = {
-      GET: vi.fn(async () => ({
-        data: {
-          AllowSquashMerge: true,
-          AllowMergeCommit: false,
-          AllowRebaseMerge: false,
-          ViewerCanMerge: true,
-          operations: detail.repo.operations,
-        },
-      })),
-      POST: vi.fn(async () => ({ data: {} })),
-    } as unknown as GeneratedClient;
-    runtime = makeTestAppRuntime(apiClient);
-    const settings = createSettingsStore();
-    settings.setModeVisibility({ ...settings.getModeVisibility(), actions: true });
-    settings.setDetailSettings({ ...settings.getDetailSettings(), initial_timeline_entry_limit: 250 });
-    const workflowActions = {
-      loadCatalog: vi.fn(() => {
-        catalogClaimed = true;
-      }),
-      refreshCatalog: vi.fn(),
-      selectWorkflow: vi.fn(),
-      loadMoreRuns: vi.fn(),
-      loadJobs: vi.fn(),
-      dispatch: vi.fn(),
-      newDispatchCycle: vi.fn(),
-      applyDispatchProgress: vi.fn(),
-      setEnabled: vi.fn(),
-      getSnapshot: vi.fn(() => null),
-      getCatalog: () => (catalogClaimed ? { repo: detail.repo, environments: [], workflows: [workflow] } : null),
-      getEnvironments: () => [],
-      getSelectedWorkflow: vi.fn(() => null),
-      getRuns: vi.fn(() => []),
-      getJobs: vi.fn(() => []),
-      getLoading: vi.fn(() => ({ catalog: false, runs: false, jobs: [] })),
-      getDispatch: () => null,
-    };
-    const detailStore = {
-      loadDetail: vi.fn(),
-      startDetailPolling: vi.fn(),
-      stopDetailPolling: vi.fn(),
-      getDetail: () => detail,
-      getDetailEnvelopeTick: () => 0,
-      isDetailLoading: () => false,
-      getDetailError: () => null,
-      isDetailSyncing: () => false,
-      getDetailLoaded: () => true,
-      updateKanbanState: vi.fn(),
-      setPullState: vi.fn(),
-      toggleDetailPRStar: vi.fn(),
-      updatePRContent: vi.fn(),
-      refreshPendingCI: vi.fn(),
-      syncDetailNow: vi.fn(),
-      refreshDetailOnly: vi.fn(),
-      approvePull: vi.fn(),
-      requestPullChanges: vi.fn(),
-      markPullReady: vi.fn(),
-      approvePullWorkflows: vi.fn(),
-      mergePull: vi.fn(),
-      editComment: vi.fn(),
-      savePRBodyInBackground: vi.fn(),
-      setLocalPRBody: vi.fn(),
-      applyReviewSuggestions: vi.fn(),
-    };
-    const wrapper = document.createElement("div");
-    wrapper.style.width = "900px";
-    document.body.appendChild(wrapper);
-
-    render(PullDetailTestHarness, {
-      target: wrapper,
-      props: {
-        runtime,
-        detailProps: {
-          owner: "acme",
-          name: "widgets",
-          number: 42,
-          provider: "github",
-          platformHost: "github.com",
-          repoPath: "acme/widgets",
-          hideTabs: true,
-          hideWorkspaceAction: false,
-          autoSync: false,
-        },
+function renderWorkflowDetail() {
+  const state = $state<{ detail: PullDetail; loading: boolean; error: string | null }>({
+    detail: pullDetail(),
+    loading: false,
+    error: null,
+  });
+  const detail = state.detail;
+  const apiClient = {
+    GET: vi.fn(async () => ({
+      data: {
+        AllowSquashMerge: true,
+        AllowMergeCommit: false,
+        AllowRebaseMerge: false,
+        ViewerCanMerge: true,
+        operations: detail.repo.operations,
       },
-      context: new Map<symbol, unknown>([
-        [
-          STORES_KEY,
-          {
-            detail: detailStore,
-            pulls: { loadPulls: vi.fn() },
-            activity: { loadActivity: vi.fn() },
-            detailActivityView: createDetailActivityViewStore(),
-            settings,
-            workflowActions,
-          },
-        ],
-        [ACTIONS_KEY, { pull: [] }],
-        [UI_CONFIG_KEY, { hideStar: true }],
-        [NAVIGATE_KEY, vi.fn()],
-      ]),
-    });
+    })),
+    POST: vi.fn(async () => ({ data: {} })),
+  } as unknown as GeneratedClient;
+  runtime = makeTestAppRuntime(apiClient);
+  const settings = createSettingsStore();
+  settings.setModeVisibility({ ...settings.getModeVisibility(), actions: true });
+  settings.setDetailSettings({ ...settings.getDetailSettings(), initial_timeline_entry_limit: 250 });
+  const workflowActions = {
+    loadCatalog: vi.fn(() => {
+      catalogClaimed = true;
+    }),
+    refreshCatalog: vi.fn(),
+    selectWorkflow: vi.fn(),
+    loadMoreRuns: vi.fn(),
+    loadJobs: vi.fn(),
+    dispatch: vi.fn(),
+    newDispatchCycle: vi.fn(),
+    applyDispatchProgress: vi.fn(),
+    setEnabled: vi.fn(),
+    getSnapshot: vi.fn(() => null),
+    getCatalog: () => (catalogClaimed ? { repo: state.detail.repo, environments: [], workflows: [workflow] } : null),
+    getEnvironments: () => [],
+    getSelectedWorkflow: vi.fn(() => null),
+    getRuns: vi.fn(() => []),
+    getJobs: vi.fn(() => []),
+    getLoading: vi.fn(() => ({ catalog: false, runs: false, jobs: [] })),
+    getDispatch: () => null,
+  };
+  const detailStore = {
+    loadDetail: vi.fn(),
+    startDetailPolling: vi.fn(),
+    stopDetailPolling: vi.fn(),
+    getDetail: () => state.detail,
+    getDetailEnvelopeTick: () => 0,
+    isDetailLoading: () => state.loading,
+    getDetailError: () => state.error,
+    isDetailSyncing: () => false,
+    getDetailLoaded: () => true,
+    updateKanbanState: vi.fn(),
+    setPullState: vi.fn(),
+    toggleDetailPRStar: vi.fn(),
+    updatePRContent: vi.fn(),
+    refreshPendingCI: vi.fn(),
+    syncDetailNow: vi.fn(),
+    refreshDetailOnly: vi.fn(),
+    approvePull: vi.fn(),
+    requestPullChanges: vi.fn(),
+    markPullReady: vi.fn(),
+    approvePullWorkflows: vi.fn(),
+    mergePull: vi.fn(),
+    editComment: vi.fn(),
+    savePRBodyInBackground: vi.fn(),
+    setLocalPRBody: vi.fn(),
+    applyReviewSuggestions: vi.fn(),
+  };
+  const wrapper = document.createElement("div");
+  wrapper.style.width = "900px";
+  document.body.appendChild(wrapper);
+
+  const detailProps = $state({
+    owner: "acme",
+    name: "widgets",
+    number: 42,
+    provider: "github",
+    platformHost: "github.com",
+    repoPath: "acme/widgets",
+    hideTabs: true,
+    hideWorkspaceAction: false,
+    autoSync: false,
+  });
+
+  render(PullDetailTestHarness, {
+    target: wrapper,
+    props: {
+      runtime,
+      detailProps,
+    },
+    context: new Map<symbol, unknown>([
+      [
+        STORES_KEY,
+        {
+          detail: detailStore,
+          pulls: { loadPulls: vi.fn() },
+          activity: { loadActivity: vi.fn() },
+          detailActivityView: createDetailActivityViewStore(),
+          settings,
+          workflowActions,
+        },
+      ],
+      [ACTIONS_KEY, { pull: [] }],
+      [UI_CONFIG_KEY, { hideStar: true }],
+      [NAVIGATE_KEY, vi.fn()],
+    ]),
+  });
+
+  return { state, detailProps, workflowActions, wrapper };
+}
+
+describe("PullDetail provider workflow actions", () => {
+  it("places workflow dispatch beside workspace tools while primary actions collapse only under pressure", async () => {
+    const { wrapper } = renderWorkflowDetail();
 
     let workflowTrigger: HTMLButtonElement | null = null;
     let workspaceTrigger: HTMLButtonElement | null = null;
@@ -347,6 +361,69 @@ describe("PullDetail provider workflow action geometry", () => {
       expect(visibleActionsTriggers()).toHaveLength(1);
     }, WAIT);
 
+    wrapper.remove();
+  });
+
+  it("keeps workflow drafts bound to the selected PR through delayed and failed navigation", async () => {
+    const { state, detailProps, workflowActions, wrapper } = renderWorkflowDetail();
+    await vi.waitFor(() => expect(visibleButton("Run workflow")).not.toBeNull(), WAIT);
+    visibleButton("Run workflow")!.click();
+    await vi.waitFor(() => expect(visibleButton("Release")).not.toBeNull(), WAIT);
+    visibleButton("Release")!.click();
+    await vi.waitFor(() => expect(document.querySelector("input[aria-label='Git ref']")).not.toBeNull(), WAIT);
+    const oldRef = document.querySelector<HTMLInputElement>("input[aria-label='Git ref']")!;
+    expect(oldRef.value).toBe("feature/workflow-actions");
+    oldRef.value = "draft-for-widgets";
+    oldRef.dispatchEvent(new Event("input", { bubbles: true }));
+
+    workflowActions.loadCatalog.mockClear();
+    state.loading = true;
+    detailProps.name = "gadgets";
+    detailProps.repoPath = "acme/gadgets";
+    await tick();
+    expect(document.querySelector("input[aria-label='Git ref']")).toBeNull();
+    expect(visibleButton("Run workflow")).toBeNull();
+    expect(workflowActions.loadCatalog).not.toHaveBeenCalled();
+
+    state.loading = false;
+    state.error = "Could not load pull request";
+    await tick();
+    expect(visibleButton("Run workflow")).toBeNull();
+    expect(workflowActions.dispatch).not.toHaveBeenCalled();
+
+    state.error = null;
+    state.detail = {
+      ...state.detail,
+      repo_name: "gadgets",
+      repo: { ...state.detail.repo, name: "gadgets", repo_path: "acme/gadgets" },
+      merge_request: { ...state.detail.merge_request, HeadBranch: "feature/gadgets" },
+    };
+    await vi.waitFor(() => expect(visibleButton("Run workflow")).not.toBeNull(), WAIT);
+    expect(document.querySelector("input[aria-label='Git ref']")).toBeNull();
+    visibleButton("Run workflow")!.click();
+    await vi.waitFor(() => expect(visibleButton("Release")).not.toBeNull(), WAIT);
+    visibleButton("Release")!.click();
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLInputElement>("input[aria-label='Git ref']")?.value).toBe("feature/gadgets");
+    }, WAIT);
+    document.querySelector<HTMLButtonElement>("button[type='submit']")!.click();
+    expect(workflowActions.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ref: expect.objectContaining({ name: "gadgets", repoPath: "acme/gadgets" }),
+        dispatchRef: "feature/gadgets",
+      }),
+    );
+
+    // Even an immediately available PR in the same repository starts without
+    // the previous PR's open dialog; the repository catalog itself is reusable.
+    detailProps.number = 43;
+    state.detail = {
+      ...state.detail,
+      merge_request: { ...state.detail.merge_request, Number: 43, HeadBranch: "feature/next-pr" },
+    };
+    await tick();
+    expect(document.querySelector("input[aria-label='Git ref']")).toBeNull();
+    expect(visibleButton("Run workflow")).not.toBeNull();
     wrapper.remove();
   });
 });

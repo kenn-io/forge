@@ -295,6 +295,9 @@ Persisted controls must state their scope clearly.
 - PR Actions defaults open same-repository pulls to the head branch, but forks
   and non-open states to the target; workflows remain on merged pulls
   (`frontend/src/lib/components/detail/PullDetail.svelte::workflowInitialRef`).
+- PR workflow drafts and submissions must match the selected PR; stale details cannot supply
+  a branch or enable actions, and navigation clears drafts without canceling accepted dispatches
+  (`frontend/src/lib/components/detail/PullDetail.svelte::submitWorkflow`).
 - Server-backed settings belong in the API only when the preference should
   follow the user/config rather than one browser session.
 - Settings controls persist on change. Do not add a Save button, a dirty draft,

@@ -698,6 +698,8 @@ describe("PullDetail provider workflow actions", () => {
     enableWorkflowActions(detail);
     detail.repo.provider = "gitlab";
     detail.repo.platform_host = "gitlab.example.com";
+    detail.platform_host = "gitlab.example.com";
+    detail.repo_owner = "group";
     detail.repo.repo_path = "group/widget";
     detail.repo.owner = "group";
     detail.repo.name = "widget";

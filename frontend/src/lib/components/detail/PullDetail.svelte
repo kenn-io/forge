@@ -740,6 +740,8 @@
       return keepExpanded;
     });
     showMergeModal = false;
+    workflowDialogWorkflowId = null;
+    closeActionMenu();
     conflictRefreshRequestID += 1;
     conflictRefreshBusy = false;
     stateConflict = null;
@@ -1347,7 +1349,8 @@
     };
   };
   const workflowCatalogDemandEnabled = $derived(
-    settings.isModeVisible("actions")
+    !stalePR
+      && settings.isModeVisible("actions")
       && currentCapabilities().read_workflows
       && currentCapabilities().workflow_dispatch,
   );
@@ -1377,7 +1380,7 @@
   );
   const workflowInitialRef = $derived.by(() => {
     const detail = detailStore.getDetail();
-    if (!detail) return "";
+    if (!detail || stalePR) return "";
     return detail.merge_request.State === "open" && detail.head_repo_kind === "same_repo"
       ? detail.merge_request.HeadBranch
       : detail.merge_request.BaseBranch;
@@ -1390,14 +1393,14 @@
   );
 
   function openWorkflowDialog(workflow: WorkflowDefinition): void {
-    if (!workflowCatalogDemandEnabled || !workflow.available) return;
+    if (stalePR || !workflowCatalogDemandEnabled || !workflow.available) return;
     workflowDialogWorkflowId = workflow.id;
     closeActionMenu();
   }
 
   function submitWorkflow(request: WorkflowDispatchRequest): void {
     const workflow = workflowDialogWorkflow;
-    if (!workflowCatalogDemandEnabled || !workflow) return;
+    if (stalePR || !workflowCatalogDemandEnabled || !workflow) return;
     workflowActions.dispatch({
       ref: routeRef,
       workflowId: workflow.id,
@@ -1407,15 +1410,20 @@
     });
   }
 
+  function retryWorkflowCatalog(): void {
+    if (stalePR || !workflowCatalogDemandEnabled) return;
+    workflowActions.loadCatalog(routeRef);
+  }
+
   function reloadWorkflowCatalog(): void {
     const workflow = workflowDialogWorkflow;
-    if (!workflowCatalogDemandEnabled || !workflow) return;
+    if (stalePR || !workflowCatalogDemandEnabled || !workflow) return;
     workflowActions.refreshCatalog(routeRef, workflow.id);
   }
 
   function newWorkflowDispatchCycle(): void {
     const workflow = workflowDialogWorkflow;
-    if (!workflowCatalogDemandEnabled || !workflow) return;
+    if (stalePR || !workflowCatalogDemandEnabled || !workflow) return;
     workflowActions.newDispatchCycle(routeRef, workflow.id);
   }
 
@@ -2797,7 +2805,7 @@
             <p role="status">Loading workflows…</p>
           {:else if workflowSnapshot?.error && !workflowSnapshot?.catalog}
             <p role="alert">Could not load workflows.</p>
-            <button type="button" class="workflow-actions-menu__item" onclick={() => workflowActions.loadCatalog(routeRef)}>
+            <button type="button" class="workflow-actions-menu__item" onclick={retryWorkflowCatalog}>
               Retry workflows
             </button>
           {/if}

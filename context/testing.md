@@ -228,6 +228,9 @@ and materialize `node_modules` from the lockfile before invoking baked `vp`
 (`.github/workflows/ci.yml::ensure_playwright_image`, `.github/docker/playwright/Dockerfile:3`).
 Frontend unit tests use the runner's 14 guaranteed cores; the previous single-worker
 cap was for the retired memory-constrained runner (`frontend/vite.config.ts::resolveUnitTestWorkers`).
+Run CI Vitest unit and browser projects separately: their worker limits differ,
+which Vitest rejects in the same execution group
+(`frontend/vite.config.ts::resolveBrowserTestWorkers`).
 Threaded unit tests must not start and stop a complete Vite/Rolldown dev server merely
 to exercise plugin middleware; native handles can survive worker teardown under CI
 concurrency (`frontend/src/lib/dev/healthcheckPlugin.test.ts::startServer`).

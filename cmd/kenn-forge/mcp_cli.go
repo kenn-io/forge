@@ -23,6 +23,8 @@ const mcpTokenEnvironment = "KENN_FORGE_API_TOKEN"
 type mcpQuickstartLoader func(context.Context, string, time.Duration) (mcpQuickstartInfo, error)
 
 type mcpQuickstartInfo struct {
+	pid             int
+	backendURL      string
 	Enabled         bool                    `json:"enabled"`
 	Active          bool                    `json:"active"`
 	RestartRequired bool                    `json:"restart_required"`
@@ -91,7 +93,7 @@ func newMCPCommand(stdout io.Writer, load mcpQuickstartLoader) *cobra.Command {
 	)
 	quickstart.Flags().BoolVar(&asJSON, "json", false, "render output as JSON")
 	quickstart.Flags().DurationVar(&timeout, "timeout", 5*time.Second, "daemon request timeout")
-	cmd.AddCommand(quickstart)
+	cmd.AddCommand(quickstart, newMCPStatusCommand(stdout, load))
 	return cmd
 }
 
@@ -160,7 +162,10 @@ func loadMCPQuickstart(
 	if settings.MCP == nil {
 		return mcpQuickstartInfo{}, fmt.Errorf("mcp quickstart: daemon did not publish MCP settings")
 	}
-	return daemonMCPQuickstart(*settings.MCP, daemon.TokenPath), nil
+	info := daemonMCPQuickstart(*settings.MCP, daemon.TokenPath)
+	info.pid = status.Metadata.PID
+	info.backendURL = daemon.BaseURL
+	return info, nil
 }
 
 func stoppedMCPQuickstart(enabled bool, configPath string) mcpQuickstartInfo {

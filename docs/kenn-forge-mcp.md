@@ -33,6 +33,20 @@ the MCP endpoint does not require a token. Runtime discovery publishes the
 resolved MCP listener and URL, and `kenn-forge daemon status --json` shows both
 the listener address and the token file path.
 
+For a machine-readable listener list, run:
+
+```sh
+kenn-forge mcp status --json
+```
+
+The command returns an array with `pid`, `transport: "http"`, `url`,
+`backend_url`, and an optional `token_path`. It reports the active listener,
+including when saved settings require a restart. A stopped daemon or inactive
+companion returns `[]`; the command never starts either. Use `--config` to
+select another configuration and `--timeout` to set the daemon request timeout.
+Token contents never appear in the output. For client setup instructions and
+restart guidance, use `kenn-forge mcp quickstart`.
+
 Configure your MCP client with the HTTP URL. For clients that accept a JSON
 server catalog, the shape is typically similar to:
 

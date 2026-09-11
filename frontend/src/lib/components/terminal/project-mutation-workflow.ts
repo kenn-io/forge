@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Option, Ref, Semaphore } from "effect";
+import { Context, Effect, Layer, Ref, Semaphore } from "effect";
 import type { Scope } from "effect/Scope";
 import { GeneratedApi } from "../../api/generated-api.js";
 import {
@@ -9,18 +9,6 @@ import {
   type ProjectResponse,
 } from "../../api/project-intake.js";
 import { CommandQueueClosed, makeOrderedCommandQueue } from "../../effect/ordered-command-queue.js";
-import {
-  emitWorkspaceCommand,
-  InvalidEmbeddingAcknowledgement,
-  invokeProjectAction,
-  type ProjectActionContext,
-  type ProjectActionHook,
-} from "../../stores/embed-config.svelte.js";
-
-export interface RegisteredProject {
-  readonly project: ProjectResponse;
-  readonly acknowledgement: CommandResult;
-}
 
 export interface RegisterExistingProjectCommand {
   readonly key: string;
@@ -36,18 +24,11 @@ export interface CloneProjectCommand {
   readonly hostKey?: string | undefined;
 }
 
-export interface NewWorktreeCommand {
-  readonly key: string;
-  readonly action: ProjectActionHook;
-  readonly context: ProjectActionContext;
-}
-
 type ProjectIntakeCommand =
   | ({ readonly _tag: "RegisterExisting" } & RegisterExistingProjectCommand)
   | ({ readonly _tag: "Clone" } & CloneProjectCommand);
 
-export type ProjectMutationFailure = ProjectIntakeFailure | InvalidEmbeddingAcknowledgement | CommandQueueClosed;
-export type NewWorktreeFailure = InvalidEmbeddingAcknowledgement | CommandQueueClosed;
+export type ProjectMutationFailure = ProjectIntakeFailure | CommandQueueClosed;
 
 interface RetainedCommand {
   readonly key: string;
@@ -58,11 +39,6 @@ interface RetainedCommandQueue<Input extends RetainedCommand, Output, Error> {
     input: Input,
   ) => Effect.Effect<Effect.Effect<Output, Error | CommandQueueClosed>, CommandQueueClosed>;
   readonly forget: (key: string) => Effect.Effect<void>;
-  readonly forgetIfCurrent: (
-    key: string,
-    acknowledgement: Effect.Effect<Output, Error | CommandQueueClosed>,
-  ) => Effect.Effect<void>;
-  readonly retained: (key: string) => Effect.Effect<Option.Option<Effect.Effect<Output, Error | CommandQueueClosed>>>;
 }
 
 const makeRetainedCommandQueue = <Input extends RetainedCommand, Output, Error, Requirements>(
@@ -87,17 +63,9 @@ const makeRetainedCommandQueue = <Input extends RetainedCommand, Output, Error, 
 
     return {
       accept,
-      retained: (key) => Ref.get(retained).pipe(Effect.map((current) => Option.fromNullishOr(current.get(key)))),
       forget: (key) =>
         Ref.update(retained, (current) => {
           if (!current.has(key)) return current;
-          const next = new Map(current);
-          next.delete(key);
-          return next;
-        }),
-      forgetIfCurrent: (key, acknowledgement) =>
-        Ref.update(retained, (current) => {
-          if (current.get(key) !== acknowledgement) return current;
           const next = new Map(current);
           next.delete(key);
           return next;
@@ -110,21 +78,11 @@ export class ProjectMutationWorkflow extends Context.Service<
   {
     readonly acceptRegisterExisting: (
       command: RegisterExistingProjectCommand,
-    ) => Effect.Effect<Effect.Effect<RegisteredProject, ProjectMutationFailure>, CommandQueueClosed>;
+    ) => Effect.Effect<Effect.Effect<ProjectResponse, ProjectMutationFailure>, CommandQueueClosed>;
     readonly acceptClone: (
       command: CloneProjectCommand,
-    ) => Effect.Effect<Effect.Effect<RegisteredProject, ProjectMutationFailure>, CommandQueueClosed>;
-    readonly acceptNewWorktree: (
-      command: NewWorktreeCommand,
-    ) => Effect.Effect<Effect.Effect<CommandResult, NewWorktreeFailure>, CommandQueueClosed>;
-    readonly retainedNewWorktree: (
-      key: string,
-    ) => Effect.Effect<Option.Option<Effect.Effect<CommandResult, NewWorktreeFailure>>>;
+    ) => Effect.Effect<Effect.Effect<ProjectResponse, ProjectMutationFailure>, CommandQueueClosed>;
     readonly forgetProject: (key: string) => Effect.Effect<void>;
-    readonly forgetNewWorktree: (
-      key: string,
-      acknowledgement: Effect.Effect<CommandResult, NewWorktreeFailure>,
-    ) => Effect.Effect<void>;
   }
 >()("kenn-forge/ProjectMutationWorkflow") {}
 
@@ -144,46 +102,16 @@ export const ProjectMutationWorkflowLive = Layer.effect(ProjectMutationWorkflow)
         return project;
       }),
     );
-    const worktrees = yield* makeRetainedCommandQueue(
-      "project worktree mutations",
-      Effect.fn("ProjectMutationWorkflow.executeNewWorktree")(function* (command: NewWorktreeCommand) {
-        return yield* invokeProjectAction(command.action, command.context);
-      }),
-    );
-
-    const acknowledgeProject = (
-      command: RegisterExistingProjectCommand | CloneProjectCommand,
-      project: ProjectResponse,
-    ) => {
-      const payload: Record<string, unknown> = { projectId: project.id };
-      if (command.hostKey) payload.hostKey = command.hostKey;
-      return emitWorkspaceCommand("project-registered", payload).pipe(
-        Effect.map((acknowledgement) => ({ project, acknowledgement })),
-      );
-    };
-
-    const acceptProject = (
-      command: ProjectIntakeCommand,
-    ): Effect.Effect<Effect.Effect<RegisteredProject, ProjectMutationFailure>, CommandQueueClosed> =>
-      intake
-        .accept(command)
-        .pipe(
-          Effect.map((committed) => committed.pipe(Effect.flatMap((project) => acknowledgeProject(command, project)))),
-        );
-
     return {
       acceptRegisterExisting: (command: RegisterExistingProjectCommand) =>
-        acceptProject({ ...command, _tag: "RegisterExisting" }),
-      acceptClone: (command: CloneProjectCommand) => acceptProject({ ...command, _tag: "Clone" }),
-      acceptNewWorktree: worktrees.accept,
-      retainedNewWorktree: worktrees.retained,
+        intake.accept({ ...command, _tag: "RegisterExisting" }),
+      acceptClone: (command: CloneProjectCommand) => intake.accept({ ...command, _tag: "Clone" }),
       forgetProject: intake.forget,
-      forgetNewWorktree: worktrees.forgetIfCurrent,
     };
   }),
 );
 
-export function projectMutationFailureMessage(failure: ProjectMutationFailure, fallback: string): string {
+export function projectMutationFailureMessage(failure: ProjectMutationFailure): string {
   switch (failure._tag) {
     case "ApiProblemError":
     case "InvalidExternalPayload":
@@ -192,8 +120,6 @@ export function projectMutationFailureMessage(failure: ProjectMutationFailure, f
       return projectIntakeFailureMessage(failure);
     case "CommandQueueClosed":
       return "The project request stopped before it completed.";
-    case "InvalidEmbeddingAcknowledgement":
-      return fallback;
   }
 }
 
@@ -203,8 +129,4 @@ export function projectMutationKey(
   values: readonly string[],
 ): string {
   return JSON.stringify([kind, hostKey ?? null, ...values.map((value) => value.trim())]);
-}
-
-export function newWorktreeMutationKey(projectId: string, hostKey?: string): string {
-  return JSON.stringify(["new-worktree", hostKey ?? null, projectId]);
 }

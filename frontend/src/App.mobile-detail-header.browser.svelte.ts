@@ -1,3 +1,4 @@
+import { navigate } from "./lib/stores/router.svelte.js";
 // Phone-like PR and issue detail routes render inside the phone shell: the
 // same top bar as every other phone view plus a detail header whose Back
 // control returns to the list that opened the item. The forced-mobile flag
@@ -100,9 +101,9 @@ describe("phone detail header", () => {
     // discarded and the list starts at the top.
     document.querySelector<HTMLElement>(".mobile-shell .pull-item")!.click();
     await vi.waitFor(() => expect(count(".mobile-shell .focus-layout--phone .pull-detail")).toBe(1), WAIT);
-    window.__kenn_forge_navigate_to_route!("/m");
+    navigate("/m");
     await vi.waitFor(() => expect(count(".mobile-shell .focus-list")).toBe(0), WAIT);
-    window.__kenn_forge_navigate_to_route!("/m/pulls");
+    navigate("/m/pulls");
     await vi.waitFor(() => expect(count(".mobile-shell .pull-item")).toBe(rows), WAIT);
     await vi.waitFor(() => expect(viewport().scrollHeight).toBeGreaterThan(viewport().clientHeight), WAIT);
     expect(viewport().scrollTop).toBe(0);

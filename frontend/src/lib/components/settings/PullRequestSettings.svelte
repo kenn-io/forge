@@ -4,7 +4,6 @@
   import type { PullRequestSettings as PullRequestSettingsType } from "../../api/types.js";
 
   import { getAppRuntime } from "../../app/runtime-context.js";
-  import { isEmbedded } from "../../stores/embed-config.svelte.js";
   import { SettingsWorkflow, settingsErrorMessage } from "../../stores/settings-workflow.js";
   import SettingsOwnerNotice from "./SettingsOwnerNotice.svelte";
   import type { SettingsOwner } from "./settingsOwnership.js";
@@ -18,7 +17,6 @@
   let { pullRequests, onUpdate, owner = "local" }: Props = $props();
   const runtime = getAppRuntime();
   const { settings: settingsStore } = getStores();
-  const embedded = isEmbedded();
   let saving = $state(false);
 
   type BooleanPullRequestSetting =
@@ -26,7 +24,7 @@
     | "prefer_github_native_stacks";
 
   function toggleSetting(key: BooleanPullRequestSetting): void {
-    if (embedded || saving) return;
+    if (saving) return;
     const previous = pullRequests;
     const pending = {
       ...pullRequests,

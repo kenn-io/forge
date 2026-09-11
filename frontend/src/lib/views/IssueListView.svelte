@@ -17,7 +17,7 @@
   import type { InlineWorkspaceController, WorkspaceItemIdentity } from "../workspace-inline.js";
   import { useItemWorkspaceClaim } from "../item-workspace-claim.svelte.js";
 
-  const { isSidebarToggleEnabled, toggleSidebar } = getSidebar();
+  const { toggleSidebar } = getSidebar();
   const { issues } = getStores();
 
   interface Props {
@@ -134,7 +134,7 @@
   {sidebarWidth}
   {onSidebarResize}
   overlay={sidebarOverlay}
-  showCollapsedStrip={isSidebarToggleEnabled()}
+  showCollapsedStrip={true}
   onExpand={toggleSidebar}
   mainEmpty={selectedIssue === null}
 >

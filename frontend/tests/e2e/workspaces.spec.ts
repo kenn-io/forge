@@ -348,44 +348,7 @@ test("repo selector renders icon and still filters repos", async ({ page }) => {
   await expect(page.getByText("Add browser regression coverage")).toBeVisible();
 });
 
-test("hideHeader suppresses AppHeader on the workspaces page", async ({ page }) => {
-  await page.addInitScript(() => {
-    window.__kenn_forge_config = {
-      embed: { hideHeader: true },
-    };
-  });
-
-  await page.goto("/workspaces");
-  await expect(page.locator("header.app-top-bar")).toHaveCount(0);
-});
-
-test("navigateToRoute bridge method works", async ({ page }) => {
-  await page.goto("/pulls");
-  await page.evaluate(() => {
-    window.__kenn_forge_navigate_to_route?.("/workspaces");
-  });
-  await expect(page).toHaveURL(/\/workspaces/);
-});
-
-test("workspace bridge methods are registered on startup", async ({ page }) => {
-  await page.goto("/workspaces");
-
-  await expect(
-    page.evaluate(() => ({
-      navigateToRoute: typeof window.__kenn_forge_navigate_to_route,
-      updateWorkspace: typeof window.__kenn_forge_update_workspace,
-      updateSelection: typeof window.__kenn_forge_update_selection,
-      updateHostState: typeof window.__kenn_forge_update_host_state,
-    })),
-  ).resolves.toEqual({
-    navigateToRoute: "function",
-    updateWorkspace: "function",
-    updateSelection: "function",
-    updateHostState: "function",
-  });
-});
-
-test("provider-explicit embed detail route uses provider in detail request", async ({ page }) => {
+test("provider-explicit issue detail route uses provider in detail request", async ({ page }) => {
   const detailRequest = page.waitForRequest(
     (request) =>
       request.method() === "GET" &&
@@ -403,7 +366,7 @@ test("provider-explicit embed detail route uses provider in detail request", asy
           Number: 7,
           URL: "https://git.example.com/group/project/-/issues/7",
           Title: "Provider-explicit GitLab issue",
-          Author: "marius",
+          Author: "user-a",
           State: "open",
           Body: "",
           CommentCount: 0,
@@ -431,13 +394,13 @@ test("provider-explicit embed detail route uses provider in detail request", asy
     });
   });
 
-  await page.goto("/workspaces/embed/detail/gitlab/issue/git.example.com/group/project/7");
+  await page.goto("/host/git.example.com/issues/gitlab/group/project/7");
 
   await detailRequest;
   await expect(page.getByText("Provider-explicit GitLab issue")).toBeVisible();
 });
 
-test("nested repo_path embed detail route loads matching detail content", async ({ page }) => {
+test("nested repository issue detail route loads matching detail content", async ({ page }) => {
   const detailRequest = page.waitForRequest(
     (request) =>
       request.method() === "GET" &&
@@ -455,7 +418,7 @@ test("nested repo_path embed detail route loads matching detail content", async 
           Number: 7,
           URL: "https://git.example.com/group/subgroup/project/-/issues/7",
           Title: "Nested GitLab issue",
-          Author: "marius",
+          Author: "user-a",
           State: "open",
           Body: "",
           CommentCount: 0,
@@ -483,209 +446,8 @@ test("nested repo_path embed detail route loads matching detail content", async 
     });
   });
 
-  await page.goto("/workspaces/embed/detail/gitlab/issue/git.example.com/7" + "?repo_path=group%2Fsubgroup%2Fproject");
+  await page.goto("/host/git.example.com/issues/gitlab/group%2Fsubgroup/project/7");
 
   await detailRequest;
   await expect(page.getByText("Nested GitLab issue")).toBeVisible();
-});
-
-test("embed initialRoute opens detail surface without full app chrome", async ({ page }) => {
-  await page.addInitScript(() => {
-    window.__kenn_forge_config = {
-      embed: {
-        initialRoute: "/workspaces/embed/detail/gitlab/issue/git.example.com/7" + "?repo_path=group%2Fproject",
-      },
-    };
-  });
-
-  const detailRequest = page.waitForRequest(
-    (request) =>
-      request.method() === "GET" &&
-      new URL(request.url()).pathname === "/api/v1/host/git.example.com/issues/gitlab/group/project/7",
-  );
-  await page.route("**/api/v1/host/git.example.com/issues/gitlab/group/project/7", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        issue: {
-          ID: 7,
-          RepoID: 7,
-          GitHubID: 7007,
-          Number: 7,
-          URL: "https://git.example.com/group/project/-/issues/7",
-          Title: "Initial route GitLab issue",
-          Author: "marius",
-          State: "open",
-          Body: "",
-          CommentCount: 0,
-          LabelsJSON: "[]",
-          CreatedAt: "2026-03-28T14:00:00Z",
-          UpdatedAt: "2026-03-30T14:00:00Z",
-          LastActivityAt: "2026-03-30T14:00:00Z",
-          ClosedAt: null,
-          Starred: false,
-        },
-        repo: {
-          provider: "gitlab",
-          platform_host: "git.example.com",
-          owner: "group",
-          name: "project",
-          repo_path: "group/project",
-        },
-        events: [],
-        platform_host: "git.example.com",
-        repo_owner: "group",
-        repo_name: "project",
-        detail_loaded: true,
-        detail_fetched_at: "2026-03-30T14:00:00Z",
-      }),
-    });
-  });
-
-  await page.goto("/");
-
-  await detailRequest;
-  await expect(page.locator("header.app-top-bar")).toHaveCount(0);
-  await expect(page).toHaveURL(
-    /\/workspaces\/embed\/detail\/gitlab\/issue\/git\.example\.com\/7\?repo_path=group%2Fproject$/,
-  );
-  await expect(page.getByText("Initial route GitLab issue")).toBeVisible();
-});
-
-test("full app initializes after navigating away from an initial embed route", async ({ page }) => {
-  await page.route("**/api/v1/settings", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        ...defaultSettings,
-        repos: [
-          {
-            provider: "github",
-            platform_host: "github.com",
-            owner: "acme",
-            name: "widgets",
-            repo_path: "acme/widgets",
-            is_glob: false,
-            matched_repo_count: 1,
-          },
-        ],
-        activity: {
-          ...defaultSettings.activity,
-          view_mode: "threaded",
-        },
-        terminal: {
-          ...defaultSettings.terminal,
-          font_family: '"Fira Code", monospace',
-          font_size: 14,
-        },
-      }),
-    });
-  });
-
-  await page.addInitScript(() => {
-    window.__kenn_forge_config = {
-      embed: {
-        initialRoute: "/workspaces/embed/list",
-      },
-    };
-  });
-
-  await page.goto("/");
-  await expect(page.locator("header.app-top-bar")).toHaveCount(0);
-
-  const pullsResponse = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/v1/pulls");
-  await page.evaluate(() => {
-    window.__kenn_forge_navigate_to_route?.("/pulls");
-  });
-
-  await expect(page).toHaveURL(/\/pulls$/);
-  await pullsResponse;
-  await expect(page.locator("header.app-top-bar")).toBeVisible();
-});
-
-test("full app reinitializes after navigating through an embed route without refetching cached settings", async ({
-  page,
-}) => {
-  let settingsRequests = 0;
-  await page.addInitScript(() => {
-    const OriginalEventSource = window.EventSource;
-    const created: EventSource[] = [];
-    const closed: EventSource[] = [];
-    class TrackingEventSource extends OriginalEventSource {
-      constructor(url: string | URL, eventSourceInitDict?: EventSourceInit) {
-        super(url, eventSourceInitDict);
-        created.push(this);
-      }
-
-      close(): void {
-        closed.push(this);
-        super.close();
-      }
-    }
-    window.EventSource = TrackingEventSource;
-    Object.defineProperty(window, "__kenn_forge_event_source_counts", {
-      value: () => ({ created: created.length, closed: closed.length }),
-    });
-  });
-  await page.route("**/api/v1/settings", async (route) => {
-    settingsRequests += 1;
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        ...defaultSettings,
-        repos: [
-          {
-            provider: "github",
-            platform_host: "github.com",
-            owner: "acme",
-            name: "widgets",
-            repo_path: "acme/widgets",
-            is_glob: false,
-            matched_repo_count: 1,
-          },
-        ],
-        activity: {
-          ...defaultSettings.activity,
-          view_mode: "threaded",
-        },
-        terminal: {
-          ...defaultSettings.terminal,
-          font_family: '"Fira Code", monospace',
-          font_size: 14,
-        },
-      }),
-    });
-  });
-
-  await page.goto("/pulls");
-  await expect(page.locator("header.app-top-bar")).toBeVisible();
-  await expect.poll(() => settingsRequests).toBe(1);
-  const initialEventSources = await page.evaluate(() => window.__kenn_forge_event_source_counts?.().created ?? 0);
-  expect(initialEventSources).toBeGreaterThan(0);
-
-  await page.evaluate(() => {
-    window.__kenn_forge_navigate_to_route?.("/workspaces/embed/list");
-  });
-  await expect(page).toHaveURL(/\/workspaces\/embed\/list$/);
-  await expect(page.locator("header.app-top-bar")).toHaveCount(0);
-  await expect.poll(() => settingsRequests).toBe(1);
-  await expect
-    .poll(async () => page.evaluate(() => window.__kenn_forge_event_source_counts?.().closed ?? 0))
-    .toBeGreaterThanOrEqual(initialEventSources);
-
-  await page.evaluate(() => {
-    window.__kenn_forge_navigate_to_route?.("/pulls");
-  });
-  await expect(page).toHaveURL(/\/pulls$/);
-  await expect(page.locator("header.app-top-bar")).toBeVisible();
-  await expect.poll(() => settingsRequests).toBe(1);
-  await expect
-    .poll(async () => page.evaluate(() => window.__kenn_forge_event_source_counts?.().created ?? 0))
-    .toBeGreaterThan(initialEventSources);
-  await expect
-    .poll(async () => page.evaluate(() => window.__kenn_forge_event_source_counts?.().closed ?? 0))
-    .toBeGreaterThanOrEqual(initialEventSources);
 });

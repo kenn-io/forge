@@ -12,10 +12,6 @@ export type NumberedItemRef = NumberedRouteItemRef;
 export type HostedItemRef = IssueRouteRef;
 export type RoutableItemRef = RoutedItemRef;
 
-export type EmbedEmptyReason = "noSelection" | "noRepo" | "noWorkspace";
-
-export type EmbedDetailTab = "pr" | "issue" | "reviews";
-
 export type Route =
   | { page: "activity" }
   | { page: "actions" }
@@ -70,44 +66,9 @@ export type Route =
   | { page: "focus"; itemType: "issues"; repo?: string }
   | { page: "reviews"; jobId?: number }
   | { page: "project-intake"; hostKey?: string }
-  | { page: "terminal"; workspaceId: string; hostKey?: string }
-  // Embed-targetable workspace surfaces. Hosts mount these
-  // routes to render a single component of the workspaces UX
-  // (list, terminal, per-item detail, empty placeholder, the
-  // empty-registry First Run Panel, or a per-project card)
-  // without the surrounding app chrome.
-  | { page: "embed-workspace-list" }
-  | { page: "embed-workspace-terminal"; workspaceId: string }
-  | {
-      page: "embed-workspace-detail";
-      provider: string;
-      itemType: "pr" | "issue";
-      platformHost: string;
-      repoPath: string;
-      owner: string;
-      name: string;
-      number: number;
-      branch?: string;
-      tab?: EmbedDetailTab;
-    }
-  | { page: "embed-workspace-empty"; reason: EmbedEmptyReason }
-  | { page: "embed-workspace-first-run" }
-  | {
-      page: "embed-workspace-project";
-      projectId: string;
-      hostKey?: string;
-    };
+  | { page: "terminal"; workspaceId: string; hostKey?: string };
 
 export type Page = Route["page"];
-
-import {
-  isEmbedded,
-  getOnNavigate,
-  getOnRouteChange,
-  getUIConfig as getEmbedUIConfig,
-  getHost,
-  getInitialRoute,
-} from "./embed-config.svelte.js";
 
 // Runtime base path injected by the Go server (e.g., "/" or "/kenn-forge/").
 const rawBase = window.__BASE_PATH__ ?? "/";
@@ -205,10 +166,6 @@ function parseHostProviderNumberedPath(
     return parseProviderNumberedPath(parts, start + 3, platformHost);
   }
   return undefined;
-}
-
-function inferLegacyEmbedProvider(platformHost: string): string {
-  return platformHost.toLowerCase().includes("gitlab") ? "gitlab" : "github";
 }
 
 function splitRepoPath(repoPath: string): { owner: string; name: string } | undefined {
@@ -360,7 +317,7 @@ function parseRoute(fullPath: string): Route {
       doc: emptyToNull(sp.get("doc")),
     };
   }
-  if (path === "/settings" && !isEmbedded()) return { page: "settings" };
+  if (path === "/settings") return { page: "settings" };
   if (path.startsWith("/issues")) {
     if (path !== "/issues") {
       const selected = parseHostProviderNumberedPath(parts, "issues");
@@ -425,127 +382,13 @@ function parseRoute(fullPath: string): Route {
       workspaceId: decodeRouteSegment(terminalMatch[1]!) ?? terminalMatch[1]!,
     };
   }
-  // Embed routes must be matched before the generic /workspaces
-  // catch-all so they don't fall back to the standalone page.
-  if (path === "/workspaces/embed/list") {
-    return { page: "embed-workspace-list" };
-  }
-  const embedTerminalMatch = path.match(/^\/workspaces\/embed\/terminal(?:\/([^/]+))?$/);
-  if (embedTerminalMatch) {
-    return {
-      page: "embed-workspace-terminal",
-      workspaceId: embedTerminalMatch[1] ?? "",
-    };
-  }
-  const embedDetailMatch = path.match(/^\/workspaces\/embed\/detail\/([^/]+)\/(pr|issue)\/([^/]+)\/(\d+)$/);
-  if (embedDetailMatch) {
-    const sp = new URLSearchParams(search);
-    const repoPath = sp.get("repo_path")?.trim();
-    const repo = repoPath ? splitRepoPath(repoPath) : undefined;
-    if (!repoPath || !repo) {
-      return { page: "workspaces" };
-    }
-    const branch = sp.get("branch") ?? undefined;
-    const tabParam = sp.get("tab");
-    const tab: EmbedDetailTab | undefined =
-      tabParam === "pr" || tabParam === "issue" || tabParam === "reviews" ? tabParam : undefined;
-    const r: Route = {
-      page: "embed-workspace-detail",
-      provider: embedDetailMatch[1]!,
-      itemType: embedDetailMatch[2] as "pr" | "issue",
-      platformHost: embedDetailMatch[3]!,
-      repoPath,
-      owner: repo.owner,
-      name: repo.name,
-      number: parseInt(embedDetailMatch[4]!, 10),
-    };
-    if (branch) r.branch = branch;
-    if (tab) r.tab = tab;
-    return r;
-  }
-  const legacyProviderEmbedDetailMatch = path.match(
-    /^\/workspaces\/embed\/detail\/([^/]+)\/(pr|issue)\/([^/]+)\/([^/]+)\/([^/]+)\/(\d+)$/,
-  );
-  if (legacyProviderEmbedDetailMatch) {
-    const sp = new URLSearchParams(search);
-    const branch = sp.get("branch") ?? undefined;
-    const tabParam = sp.get("tab");
-    const tab: EmbedDetailTab | undefined =
-      tabParam === "pr" || tabParam === "issue" || tabParam === "reviews" ? tabParam : undefined;
-    const owner = legacyProviderEmbedDetailMatch[4]!;
-    const name = legacyProviderEmbedDetailMatch[5]!;
-    const r: Route = {
-      page: "embed-workspace-detail",
-      provider: legacyProviderEmbedDetailMatch[1]!,
-      itemType: legacyProviderEmbedDetailMatch[2] as "pr" | "issue",
-      platformHost: legacyProviderEmbedDetailMatch[3]!,
-      repoPath: `${owner}/${name}`,
-      owner,
-      name,
-      number: parseInt(legacyProviderEmbedDetailMatch[6]!, 10),
-    };
-    if (branch) r.branch = branch;
-    if (tab) r.tab = tab;
-    return r;
-  }
-  const legacyEmbedDetailMatch = path.match(
-    /^\/workspaces\/embed\/detail\/(pr|issue)\/([^/]+)\/([^/]+)\/([^/]+)\/(\d+)$/,
-  );
-  if (legacyEmbedDetailMatch) {
-    const sp = new URLSearchParams(search);
-    const branch = sp.get("branch") ?? undefined;
-    const tabParam = sp.get("tab");
-    const tab: EmbedDetailTab | undefined =
-      tabParam === "pr" || tabParam === "issue" || tabParam === "reviews" ? tabParam : undefined;
-    const platformHost = legacyEmbedDetailMatch[2]!;
-    const owner = legacyEmbedDetailMatch[3]!;
-    const name = legacyEmbedDetailMatch[4]!;
-    const r: Route = {
-      page: "embed-workspace-detail",
-      provider: inferLegacyEmbedProvider(platformHost),
-      itemType: legacyEmbedDetailMatch[1] as "pr" | "issue",
-      platformHost,
-      repoPath: `${owner}/${name}`,
-      owner,
-      name,
-      number: parseInt(legacyEmbedDetailMatch[5]!, 10),
-    };
-    if (branch) r.branch = branch;
-    if (tab) r.tab = tab;
-    return r;
-  }
-  const embedEmptyMatch = path.match(/^\/workspaces\/embed\/empty\/(noSelection|noRepo|noWorkspace)$/);
-  if (embedEmptyMatch) {
-    return {
-      page: "embed-workspace-empty",
-      reason: embedEmptyMatch[1] as EmbedEmptyReason,
-    };
-  }
-  if (path === "/workspaces/embed/first-run") {
-    return { page: "embed-workspace-first-run" };
-  }
-  const embedProjectMatch = path.match(/^\/workspaces\/embed\/project\/([A-Za-z0-9_-]+)$/);
-  if (embedProjectMatch) {
-    const sp = new URLSearchParams(search);
-    const hostKey = emptyToNull(sp.get("host"));
-    return {
-      page: "embed-workspace-project",
-      projectId: embedProjectMatch[1]!,
-      ...(hostKey ? { hostKey } : {}),
-    };
-  }
   if (path === "/workspaces" || path.startsWith("/workspaces/")) {
     return { page: "workspaces" };
   }
   return { page: "activity" };
 }
 
-const configuredInitialRoute = getInitialRoute();
-if (configuredInitialRoute) {
-  history.replaceState(null, "", basePrefix + configuredInitialRoute);
-}
-
-let route = $state<Route>(parseRoute(configuredInitialRoute ?? currentLocationPath()));
+let route = $state<Route>(parseRoute(currentLocationPath()));
 
 // The Activity selection, detail tab, and feed filters all live in the URL
 // query string. Remember the full Activity path so the top-bar Activity tab
@@ -730,138 +573,6 @@ export function navigate(path: string, state?: Record<string, unknown>): void {
   // remembers the route it lands on — a terminal visit exited that way
   // would otherwise never enter route memory.
   rememberWorkspaceRoute();
-  fireForgeNavigateEvent(route);
-  fireRouteChange(route);
-}
-
-function buildRouteEvent(r: Route): ForgeNavigateEvent {
-  const focus = r.page === "focus";
-  let navType: ForgeNavigateType;
-  if (r.page === "focus") {
-    if (r.itemType === "mrs") {
-      navType = "pull";
-    } else if (r.itemType === "issues") {
-      navType = "issue";
-    } else {
-      navType = r.itemType === "pr" ? "pull" : "issue";
-    }
-  } else if (r.page === "mobile-pulls") {
-    navType = "pull";
-  } else if (r.page === "mobile-issues") {
-    navType = "issue";
-  } else if (r.page === "mobile-activity") {
-    navType = "activity";
-  } else if (r.page === "pulls") {
-    navType = "pull";
-  } else if (r.page === "issues") {
-    navType = "issue";
-  } else if (r.page === "repos" || r.page === "repo-browser") {
-    navType = "repos";
-  } else if (r.page === "docs") {
-    navType = "docs";
-  } else if (r.page === "reviews") {
-    navType = "reviews";
-  } else if (r.page === "project-intake" || isWorkspacePage(r.page)) {
-    navType = "workspaces";
-  } else if (r.page === "design-system") {
-    navType = "activity";
-  } else {
-    navType = "activity";
-  }
-
-  let page: ForgeNavigatePage;
-  if (navType === "pull") {
-    page = "pulls";
-  } else if (navType === "issue") {
-    page = "issues";
-  } else {
-    page = navType;
-  }
-
-  const event: ForgeNavigateEvent = {
-    page,
-    type: navType,
-    focus,
-    view: stripBase(currentLocationPath()),
-  };
-
-  if (r.page === "focus" && "repoPath" in r) {
-    applyRouteRepoIdentity(event, r);
-    event.number = r.number;
-  } else if (r.page === "pulls" && "selected" in r && r.selected) {
-    applyRouteRepoIdentity(event, r.selected);
-    event.number = r.selected.number;
-  } else if (r.page === "issues" && "selected" in r && r.selected) {
-    applyRouteRepoIdentity(event, r.selected);
-    event.number = r.selected.number;
-  } else if ("repoPath" in r) {
-    applyRouteRepoIdentity(event, r);
-  }
-
-  // Populate repo from focus list route or global config.
-  if (r.page === "focus" && "repo" in r && r.repo) {
-    const repoIdentity = parseFocusListRepoIdentity(r.repo);
-    if (repoIdentity) {
-      applyRouteRepoIdentity(event, repoIdentity);
-    } else {
-      event.repo = r.repo;
-    }
-  } else if (!event.repo_path) {
-    const cfgRepo = getEmbedUIConfig().repo;
-    if (cfgRepo) {
-      const repo = embedConfigRepoName(cfgRepo);
-      if (repo) event.repo = repo;
-    }
-  }
-
-  const host = getHost();
-  if (host) {
-    event.host = host;
-  }
-
-  return event;
-}
-
-function applyRouteRepoIdentity(event: ForgeNavigateEvent, ref: RepoRef): void {
-  event.provider = ref.provider;
-  if (ref.platformHost) event.platform_host = ref.platformHost;
-  event.repo_path = ref.repoPath;
-  event.repo = ref.repoPath;
-  event.owner = ref.owner;
-  event.name = ref.name;
-}
-
-function parseFocusListRepoIdentity(repo: string): RepoRef | undefined {
-  const raw = repo.trim();
-  if (!raw || raw.includes(",")) return undefined;
-  const pipeIndex = raw.indexOf("|");
-  if (pipeIndex <= 0) return undefined;
-  const provider = raw.slice(0, pipeIndex).trim();
-  const hostAndPath = raw.slice(pipeIndex + 1);
-  const slashIndex = hostAndPath.indexOf("/");
-  if (!provider || slashIndex <= 0) return undefined;
-  const platformHost = hostAndPath.slice(0, slashIndex).trim();
-  const repoPath = hostAndPath
-    .slice(slashIndex + 1)
-    .trim()
-    .replace(/^\/+|\/+$/g, "");
-  const repoParts = repoPath ? splitRepoPath(repoPath) : undefined;
-  if (!platformHost || !repoPath || !repoParts) return undefined;
-  return {
-    provider,
-    platformHost,
-    repoPath,
-    owner: repoParts.owner,
-    name: repoParts.name,
-  };
-}
-
-function embedConfigRepoName(repo: NonNullable<ReturnType<typeof getEmbedUIConfig>["repo"]>): string | undefined {
-  const repoPath = repo.repo_path?.trim().replace(/^\/+|\/+$/g, "");
-  if (repoPath) return repoPath;
-  const owner = repo.owner?.trim().replace(/^\/+|\/+$/g, "");
-  const name = repo.name?.trim().replace(/^\/+|\/+$/g, "");
-  return owner && name ? `${owner}/${name}` : undefined;
 }
 
 function emptyToNull(value: string | null): string | null {
@@ -882,23 +593,8 @@ export function isWorkspacePage(page: Page): boolean {
     page === "terminal" ||
     page === "mobile-workspaces" ||
     page === "mobile-workspace-terminal" ||
-    page === "mobile-workspace-item" ||
-    isWorkspaceEmbedPage(page)
+    page === "mobile-workspace-item"
   );
-}
-
-export function isWorkspaceEmbedPage(page: Page): boolean {
-  switch (page) {
-    case "embed-workspace-list":
-    case "embed-workspace-terminal":
-    case "embed-workspace-detail":
-    case "embed-workspace-empty":
-    case "embed-workspace-first-run":
-    case "embed-workspace-project":
-      return true;
-    default:
-      return false;
-  }
 }
 
 export function isMobilePage(page: Page): boolean {
@@ -924,27 +620,12 @@ export function buildMobileWorkspaceItemRoute(workspaceId: string, hostKey?: str
   return `${base}/item${tab === "files" ? "/files" : ""}`;
 }
 
-function fireForgeNavigateEvent(r: Route): void {
-  const cb = getOnNavigate();
-  if (cb) cb(buildRouteEvent(r));
-}
-
-function fireRouteChange(r: Route): void {
-  const cb = getOnRouteChange();
-  if (cb) cb(buildRouteEvent(r));
-}
-
-export function notifyInitialRouteChange(): void {
-  fireRouteChange(route);
-}
-
 export function replaceUrl(path: string, state?: Record<string, unknown>): void {
   const fullPath = basePrefix + path;
   history.replaceState(state ?? null, "", fullPath);
   route = parseRoute(fullPath);
   rememberActivityRoute();
   rememberWorkspaceRoute();
-  fireRouteChange(route);
 }
 
 // Listen for browser back/forward.
@@ -954,15 +635,7 @@ if (typeof window !== "undefined") {
     restoreMissingActivityFilters();
     rememberActivityRoute();
     rememberWorkspaceRoute();
-    fireRouteChange(route);
   });
-}
-
-// Expose imperative navigation for the host embedder.
-if (typeof window !== "undefined") {
-  window.__kenn_forge_navigate_to_route = (route: string) => {
-    navigate(route);
-  };
 }
 
 // --- detail tab derived from route ---

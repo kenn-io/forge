@@ -14,7 +14,6 @@ describe("router initialization", () => {
   });
 
   afterEach(() => {
-    delete window.__kenn_forge_config;
     delete window.__BASE_PATH__;
     vi.restoreAllMocks();
     window.sessionStorage.clear();
@@ -48,28 +47,6 @@ describe("router initialization", () => {
         platformHost: "ghe.example.com",
       },
     });
-  });
-  it("uses embed initialRoute before the first app render", async () => {
-    window.__kenn_forge_config = {
-      embed: {
-        initialRoute: "/workspaces/embed/detail/gitlab/pr/git.example.com/42" + "?repo_path=group%2Fproject",
-      },
-    };
-    const { getRoute } = await importRouterAt("/");
-
-    expect(getRoute()).toEqual({
-      page: "embed-workspace-detail",
-      provider: "gitlab",
-      itemType: "pr",
-      platformHost: "git.example.com",
-      repoPath: "group/project",
-      owner: "group",
-      name: "project",
-      number: 42,
-    });
-    expect(window.location.pathname + window.location.search).toBe(
-      "/workspaces/embed/detail/gitlab/pr/git.example.com/42" + "?repo_path=group%2Fproject",
-    );
   });
 
   it("defaults the last workspace route to /workspaces on initial load", async () => {

@@ -28,7 +28,7 @@
 
   type StackMemberNavigate = (ref: PullRequestRouteRef) => boolean | void;
 
-  const { isSidebarToggleEnabled, toggleSidebar } = getSidebar();
+  const { toggleSidebar } = getSidebar();
   const navigate = getNavigate();
   const { detail: detailStore } = getStores();
   interface Props {
@@ -248,7 +248,7 @@
   {sidebarWidth}
   {onSidebarResize}
   overlay={sidebarOverlay}
-  showCollapsedStrip={isSidebarToggleEnabled()}
+  showCollapsedStrip={true}
   onExpand={toggleSidebar}
   mainEmpty={selectedPR === null}
 >

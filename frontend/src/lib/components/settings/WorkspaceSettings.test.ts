@@ -32,11 +32,6 @@ vi.mock("../../stores/settings-workflow.js", async (importOriginal) => {
   };
 });
 
-vi.mock("../../stores/embed-config.svelte.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../stores/embed-config.svelte.js")>()),
-  isEmbedded: () => false,
-}));
-
 import WorkspaceSettings from "./WorkspaceSettings.svelte";
 import SettingsRuntimeHarness from "./SettingsRuntimeHarness.svelte";
 import { createSettingsStore } from "../../stores/settings.svelte.js";

@@ -17,8 +17,8 @@
   import MobileDetailHeader from "./lib/components/mobile/MobileDetailHeader.svelte";
   import ReviewsView from "./lib/views/ReviewsView.svelte";
   import FocusListView from "./lib/views/FocusListView.svelte";
-  import { normalizeGlobalRepoSelection } from "./lib/utils/repo-filter-values.js";
-  import type { ActionRegistry, NavigateCallback, StoreInstances } from "./lib/types.js";
+  import { normalizeInteractiveRepoFilterSelection } from "./lib/utils/repo-filter-values.js";
+  import type { NavigateCallback, StoreInstances } from "./lib/types.js";
   import type { ActivityItem, ModeVisibility } from "./lib/api/types.js";
   import {
     buildFocusPullRequestFilesRoute,
@@ -33,16 +33,12 @@
     type RoutedItemRef,
   } from "./lib/routes.js";
   import {
-    ACTIONS_KEY,
-    EVENT_KEY,
     HOST_STATE_KEY,
     NAVIGATE_KEY,
-    PREPARE_ROUTE_KEY,
     ROBOREV_CLIENT_KEY,
     SIDEBAR_KEY,
     STORES_KEY,
     UI_CONFIG_KEY,
-    WORKSPACE_COMMAND_KEY,
   } from "./lib/context.js";
 
   import AppHeader from "./lib/components/layout/AppHeader.svelte";
@@ -63,7 +59,6 @@
   import WorkspaceHost from "./lib/components/terminal/WorkspaceHost.svelte";
   import SessionTerminalPool from "./lib/components/terminal/SessionTerminalPool.svelte";
   import WorkspacePaneControls from "./lib/components/terminal/WorkspacePaneControls.svelte";
-  import WorkspaceEmbedShell from "./lib/components/terminal/WorkspaceEmbedShell.svelte";
   import WorkspaceFirstRunPanel from "./lib/components/terminal/WorkspaceFirstRunPanel.svelte";
   import DesignSystemPage from "./lib/components/design-system/DesignSystemPage.svelte";
   import OnboardingFlow from "./lib/components/onboarding/OnboardingFlow.svelte";
@@ -86,14 +81,12 @@
   import {
     initTheme,
     cleanupTheme,
-    reapplyTheme,
   } from "./lib/stores/theme.svelte.js";
   import {
     isSidebarCollapsed,
     getSidebarWidth,
     setSidebarWidth,
     toggleSidebar,
-    isSidebarToggleEnabled,
     initSidebar,
     setNarrowOverride,
   } from "./lib/stores/sidebar.svelte.js";
@@ -136,24 +129,9 @@
   import { docsHref } from "./lib/api/docs/route.js";
   import {
     getGlobalRepo,
-    applyConfigRepo,
     setGlobalRepo,
     parseRepoFilterValue,
   } from "./lib/stores/filter.svelte.js";
-  import {
-    getUIConfig,
-    isEmbedded,
-    getPullRequestActions,
-    getIssueActions,
-    getActiveWorktreeKey,
-    invokeAction,
-    emitWorkspaceCommand,
-    isHeaderHidden,
-    isStatusBarHidden,
-    emitLayoutChanged,
-    initWorkspaceBridge,
-  } from "./lib/stores/embed-config.svelte.js";
-  import { shouldUseFullAppShell } from "./lib/utils/appShell.js";
   import {
     readOnboardingState,
     shouldStartOnboarding,
@@ -185,32 +163,7 @@
   let stores = $state.raw<StoreInstances | undefined>();
   let workflowActionsEnabled = false;
   const appRuntime = untrack(() => runtime);
-  const appActions: ActionRegistry = {
-    pull: getPullRequestActions().map((action) => ({
-      id: action.id,
-      label: action.label,
-      handler: (context) =>
-        invokeAction(appRuntime, action, {
-          surface: context.surface,
-          owner: context.owner,
-          name: context.name,
-          number: context.number,
-          ...(context.meta != null && { meta: context.meta }),
-        }),
-    })),
-    issue: getIssueActions().map((action) => ({
-      id: action.id,
-      label: action.label,
-      handler: (context) =>
-        invokeAction(appRuntime, action, {
-          surface: context.surface,
-          owner: context.owner,
-          name: context.name,
-          number: context.number,
-          ...(context.meta != null && { meta: context.meta }),
-        }),
-    })),
-  };
+  const getActiveWorktreeKey = () => window.__kenn_forge_active_worktree_key;
   const appNavigate: NavigateCallback = (event, options) => {
     const path = typeof event === "string" ? event : event.path;
     if (options?.replace) replaceUrl(path, options.state);
@@ -230,7 +183,6 @@
     },
     getActivitySelection: () => drawerItem,
     config: {
-      hideStar: getUIConfig().hideStar,
       basePath: getBasePath(),
     },
     getPage,
@@ -256,14 +208,10 @@
           console.warn("Roborev daemon polling stopped unexpectedly:", failure);
         },
       });
-  setContext(ACTIONS_KEY, appActions);
   setContext(NAVIGATE_KEY, appNavigate);
-  setContext(EVENT_KEY, () => {});
-  setContext(PREPARE_ROUTE_KEY, null);
-  setContext(WORKSPACE_COMMAND_KEY, emitWorkspaceCommand);
   setContext(STORES_KEY, appComposition.stores);
-  setContext(UI_CONFIG_KEY, { hideStar: getUIConfig().hideStar, basePath: getBasePath() });
-  setContext(SIDEBAR_KEY, { isEmbedded, isSidebarToggleEnabled, toggleSidebar });
+  setContext(UI_CONFIG_KEY, { basePath: getBasePath() });
+  setContext(SIDEBAR_KEY, { toggleSidebar });
   setContext(HOST_STATE_KEY, {
     getGlobalRepo: getNormalizedGlobalRepo,
     getGroupByRepo: appComposition.stores.grouping.getGroupByRepo,
@@ -350,7 +298,6 @@
     routeStores: StoreInstances | undefined = stores,
   ): void {
     if (!routeStores) return;
-    if (getUIConfig().hideRepoSelector) return;
     if (!routeStores.settings.hasConfiguredRepos()) return;
     const currentRepo = untrack(getGlobalRepo);
     if (currentRepo === undefined) return;
@@ -523,9 +470,6 @@
     appReady = false;
     initTheme();
     initSidebar();
-    initWorkspaceBridge();
-    const ui = getUIConfig();
-    applyConfigRepo(ui.repo, ui.hideRepoSelector);
     const appEl = document.getElementById("app")!;
     const cleanupContainer = initContainerObserver(runtime, appEl);
     const cleanupItemRefs = initItemRefHandler(appRuntime);
@@ -546,10 +490,6 @@
   }
 
   $effect(() => {
-    if (!shouldUseFullAppShell(getPage())) {
-      stopFullAppShell();
-      return;
-    }
     if (stores && cleanupFullAppShell === undefined) {
       stopFullAppShell();
       startFullAppShell(stores);
@@ -559,7 +499,7 @@
   function syncWorkflowActionsAvailability(): void {
     const appStores = stores;
     if (!appStores?.settings.isSettingsLoaded()) return;
-    const enabled = !isEmbedded() && appStores.settings.isModeVisible("actions");
+    const enabled = appStores.settings.isModeVisible("actions");
     if (enabled !== workflowActionsEnabled) {
       workflowActionsEnabled = enabled;
       untrack(() => appStores.workflowActions.setEnabled(enabled));
@@ -692,7 +632,6 @@
   function flashTopOffset(): string {
     if (onboardingActive) return "0";
     if (shouldUseFocusPresentation() && !useFocusLayoutClass()) return "0";
-    if (isHeaderHidden()) return "0";
     if (
       isMobilePage(getPage())
       || shouldUseResponsiveMobileActivityPresentation()
@@ -882,10 +821,9 @@
   }
 
   function getNormalizedGlobalRepo(repo: string | undefined = getGlobalRepo()): string | undefined {
-    return normalizeGlobalRepoSelection(
+    return normalizeInteractiveRepoFilterSelection(
       repo,
       stores?.settings.getConfiguredRepos?.() ?? [],
-      getUIConfig().hideRepoSelector,
     );
   }
 
@@ -914,14 +852,7 @@
   });
 
   $effect(() => {
-    if (isSidebarToggleEnabled()) {
-      setNarrowOverride(isNarrow());
-    }
-  });
-
-  $effect(() => {
-    if (!shouldUseFullAppShell(getPage())) return;
-    reapplyTheme();
+    setNarrowOverride(isNarrow());
   });
 
   // Sync route state: restore drawer, select items, clear stale.
@@ -1122,14 +1053,9 @@
 
   function handleSidebarResize(width: number): void {
     setSidebarWidth(width);
-    emitLayoutChanged(appRuntime, {
-      sidebar: { width },
-      pinnedPanel: { width: 0, visible: false },
-    });
   }
 
   $effect(() => {
-    if (!shouldUseFullAppShell(getPage())) return;
     if (!stores) return;
     setStoreInstances(() => stores!);
     const cleanupDefaults = registerScopedActions("app:defaults", defaultActions);
@@ -1261,9 +1187,6 @@
 
 <svelte:window onresize={updateViewportState} />
 
-{#if !shouldUseFullAppShell(getPage())}
-  <WorkspaceEmbedShell />
-{:else}
   {#snippet focusPresentation(phone: boolean)}
   {@const r = getRoute()}
   <!-- The phone shell's mobile-main is the page's only main landmark, so the
@@ -1492,9 +1415,7 @@
       <SessionTerminalPool />
     </section>
   {:else}
-    {#if !isHeaderHidden()}
-      <AppHeader onheightchange={(height) => (renderedHeaderHeight = height)} />
-    {/if}
+    <AppHeader onheightchange={(height) => (renderedHeaderHeight = height)} />
 
     <main class="app-main">
       {#if getPage() === "design-system"}
@@ -1529,7 +1450,6 @@
         <RepoSummaryPage />
       {:else if getPage() === "actions"
         && stores.settings.isSettingsLoaded()
-        && !isEmbedded()
         && stores.settings.isModeVisible("actions")}
         <ActionsPage />
       {:else if getPage() === "repo-browser"}
@@ -1645,15 +1565,13 @@
           isSidebarCollapsed={isSidebarCollapsed()}
           sidebarWidth={getSidebarWidth()}
           onSidebarResize={handleSidebarResize}
-          isSidebarToggleEnabled={isSidebarToggleEnabled()}
+          isSidebarToggleEnabled={true}
           onToggleSidebar={toggleSidebar}
         />
       {/if}
     </main>
 
-    {#if !isStatusBarHidden()}
-      <StatusBar />
-    {/if}
+    <StatusBar />
   {/if}
 
     {#if !onboardingActive}
@@ -1677,7 +1595,6 @@
         }}
       />
     {/if}
-  {/if}
 
 <!-- Handed to every detail view: the controls themselves come from the hosted
      workspace's live view, and this component is the popover that holds them in a

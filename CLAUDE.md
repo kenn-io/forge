@@ -37,7 +37,6 @@ only routes to them.
 | Config fields that persist to TOML | `context/config-persistence.md` |
 | Database schema migrations or the SQLite connection layer | `context/db-migrations.md` |
 | Deferred merge behavior | `context/deferred-merge.md` |
-| Embed routes or host bridges | `context/embeds.md` |
 | Daemon startup, discovery, host/origin validation, or SSE replay | `context/server-runtime.md` |
 | Fleet settings, snapshots, host routing, or peer transports | `context/fleet-architecture.md` |
 | API failures or frontend error branching | `context/error-handling.md` |

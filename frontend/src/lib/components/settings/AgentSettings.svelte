@@ -10,7 +10,6 @@
   import { showFlash } from "../../stores/flash.svelte.js";
   import { SettingsWorkflow, settingsErrorMessage } from "../../stores/settings-workflow.js";
   import { slide } from "svelte/transition";
-  import { isEmbedded } from "../../stores/embed-config.svelte.js";
 
   interface Props {
     agents: AgentSettingsType[];
@@ -49,7 +48,6 @@
   let { agents, launchTargets = [], onUpdate }: Props = $props();
 
   const runtime = getAppRuntime();
-  const embedded = isEmbedded();
   let customID = 0;
   let saving = $state(false);
   // svelte-ignore state_referenced_locally
@@ -65,7 +63,7 @@
     JSON.stringify(serializedAgents) !== JSON.stringify(savedAgents),
   );
   const canSave = $derived(
-    !embedded && !saving && isDirty && !hasInvalidDraft,
+    !saving && isDirty && !hasInvalidDraft,
   );
 
   function initialDrafts(configured: AgentSettingsType[]): AgentDraft[] {

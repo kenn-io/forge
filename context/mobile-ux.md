@@ -59,7 +59,7 @@ Viewport size chooses presentation, not route identity.
 
 Do not collapse these concepts:
 
-- **Compact/narrow presentation**: a desktop window, split pane, or embedded surface that is too narrow for sidebars or dense desktop chrome. It can use focus presentation, but it should retain desktop-scale typography and desktop action geometry.
+- **Compact/narrow presentation**: a desktop window or split pane that is too narrow for sidebars or dense desktop chrome. It can use focus presentation, but it should retain desktop-scale typography and desktop action geometry.
 - **Phone-like presentation**: a touch/mobile-user-agent context where larger mobile tokens, hit targets, and phone-specific action layouts are appropriate.
 
 A phone stays phone-like in landscape: a coarse-pointer, mobile-user-agent device keeps phone presentation up to the handheld landscape bound, while wider or single-signal devices stay desktop-narrow (`frontend/src/lib/utils/phone-presentation.ts::isPhoneLikeViewport`).

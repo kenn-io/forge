@@ -20,11 +20,6 @@ vi.mock("../../stores/settings-workflow.js", async (importOriginal) => {
   };
 });
 
-vi.mock("../../stores/embed-config.svelte.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../stores/embed-config.svelte.js")>()),
-  isEmbedded: () => false,
-}));
-
 vi.mock("../../api/kata/integration.js", async () => {
   const { Effect } = await import("effect");
   const asPromise = <T>(value: T) => (Effect.isEffect(value) ? Effect.runPromise(value) : value);

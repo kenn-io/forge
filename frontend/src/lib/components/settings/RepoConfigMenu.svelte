@@ -6,13 +6,12 @@
   interface Props {
     repoLabel: string;
     hidden: boolean;
-    embedded: boolean;
     visibilityPending: boolean;
     onEditLocalClone: () => void;
     onToggleVisibility: () => void;
   }
 
-  let { repoLabel, hidden, embedded, visibilityPending, onEditLocalClone, onToggleVisibility }: Props =
+  let { repoLabel, hidden, visibilityPending, onEditLocalClone, onToggleVisibility }: Props =
     $props();
 
   let open = $state(false);
@@ -94,7 +93,7 @@
       aria-label={`Configure ${repoLabel}`}
     >
       <li>
-        <button type="button" role="menuitem" disabled={embedded} onclick={editLocalClone}>
+        <button type="button" role="menuitem" onclick={editLocalClone}>
           Edit local clone path…
         </button>
       </li>
@@ -102,7 +101,7 @@
         <button
           type="button"
           role="menuitem"
-          disabled={embedded || visibilityPending}
+          disabled={visibilityPending}
           onclick={toggleVisibility}
         >
           {hidden ? "Show in UI" : "Hide from UI"}

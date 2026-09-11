@@ -6,7 +6,7 @@ import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import type { GeneratedClient } from "../../api/generated-api.js";
 import type { IssueDetail, Label } from "../../api/types.js";
 import type { MutationCallbacks } from "../../stores/ordered-mutations.js";
-import { ACTIONS_KEY, NAVIGATE_KEY, STORES_KEY, UI_CONFIG_KEY } from "../../context.js";
+import { NAVIGATE_KEY, STORES_KEY } from "../../context.js";
 import { createDetailActivityViewStore } from "../../stores/detail-activity-view.svelte.js";
 import { createIssuesStore } from "../../stores/issues.svelte.js";
 import { makeTestAppRuntime } from "../../testing/effect-layers.js";
@@ -16,7 +16,6 @@ import {
   nextWorkspaceLifecycleTick,
   resetWorkspaceCreatePendingForTest,
 } from "../../stores/workspace-create-pending.svelte.js";
-import type { ActionRegistry } from "../../types.js";
 import type { InlineWorkspaceController, WorkspaceItemIdentity } from "../../workspace-inline.js";
 import { openLabelPickerFor } from "./labelPickerCommand.js";
 import { createTestController } from "../workspace/inlineWorkspaceTestController.svelte.js";
@@ -187,7 +186,6 @@ function renderIssueDetail(
     refreshFailure?: string;
     inlineWorkspace?: InlineWorkspaceController | null;
     onOpenWorkspace?: (workspaceId: string) => void;
-    actions?: ActionRegistry;
     runtimeClient?: GeneratedClient;
   } = {},
   apiClient: { GET: ReturnType<typeof vi.fn>; POST: ReturnType<typeof vi.fn> } = {
@@ -264,8 +262,6 @@ function renderIssueDetail(
           },
         },
       ],
-      [ACTIONS_KEY, options.actions ?? { issue: [] }],
-      [UI_CONFIG_KEY, { hideStar: true }],
       [NAVIGATE_KEY, navigate],
     ]),
   });
@@ -453,8 +449,6 @@ describe("IssueDetail activity view", () => {
             },
           },
         ],
-        [ACTIONS_KEY, { issue: [] }],
-        [UI_CONFIG_KEY, { hideStar: true }],
         [NAVIGATE_KEY, vi.fn()],
       ]),
     });
@@ -489,23 +483,12 @@ describe("IssueDetail activity view", () => {
     const detail = issueDetail();
     detail.issue.Body = "Action placement marker";
 
-    renderIssueDetail(detail, undefined, {
-      actions: {
-        issue: [
-          {
-            id: "extension-action",
-            label: "Extension action",
-            handler: vi.fn(),
-          },
-        ],
-      },
-    });
+    renderIssueDetail(detail);
 
     const description = screen.getByText("Description");
     for (const action of [
       screen.getByRole("button", { name: "Create Workspace" }),
       screen.getByRole("button", { name: "Close issue" }),
-      screen.getByRole("button", { name: "Extension action" }),
     ]) {
       expect(action.compareDocumentPosition(description) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     }

@@ -1602,42 +1602,6 @@ test.describe("inline workspace pane continuity", () => {
     }
   });
 
-  test("an embedded terminal route renders a live pooled session", async ({ page }) => {
-    // The embed routes replace the whole app shell, so they never mount
-    // WorkspaceHost — and therefore never got the pool that now owns every
-    // session terminal. Every session pane on this route rendered an empty
-    // portal slot until the embed shell mounted its own.
-    test.skip(
-      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
-      "git and tmux are required for the real workspace flow",
-    );
-
-    let isolatedServer: IsolatedE2EServer | null = null;
-    let api: APIRequestContext | null = null;
-    try {
-      isolatedServer = await startIsolatedWorkspaceE2EServer();
-      api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
-      const workspace = await createIssueWorkspace(api, 10);
-
-      await page.goto(`${isolatedServer.info.base_url}/workspaces/embed/terminal/${workspace.id}`);
-      await openTerminalPanel(page);
-      await page.getByRole("button", { name: "New terminal" }).click();
-      const moveSession = page.getByRole("button", { name: /^Move (?!terminal panel).+ to workflow$/ }).first();
-      await expect(moveSession).toBeVisible();
-      await moveSession.click();
-      await page.getByRole("button", { name: "Close terminal panel", exact: true }).nth(1).click();
-
-      const workflowContainer = page.locator(".session-terminal-slot .terminal-container");
-      await expect(workflowContainer).toBeVisible();
-      // A slot with no pool behind it is an empty div: this cannot pass without
-      // a terminal attached to the real tmux session.
-      await typeMarkerCommand(page, workflowContainer, workspace.worktree_path, "embed-pooled-marker");
-    } finally {
-      await api?.dispose();
-      await isolatedServer?.stop();
-    }
-  });
-
   test("a promoted terminal is part of its workspace's dock", async ({ page }) => {
     // The dock is a view of every pane of the workspace once a session is promoted.
     // Only the real app proves it: the store tests drive controllers directly, so

@@ -1,14 +1,4 @@
-// Pins the embed-only props on WorkspaceTerminalView so a refactor that
-// loses the conditional rendering around the workspace list column or the
-// right detail sidebar fails loudly rather than silently breaking
-// embedders that mount the surface via /workspaces/embed/terminal.
-//
-// Lives in its own file because the broader WorkspaceTerminalView test
-// suite stubs globalThis.fetch *after* the runtime client module has
-// captured it; that's a pre-existing test-infrastructure issue
-// (introduced in #182) which affects neither this branch nor the embed
-// props themselves. Mocking the api/runtime module here avoids the
-// captured-fetch problem entirely.
+// Workspace panes can hide the list and detail sidebar while sharing terminal state.
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { Effect } from "effect";
@@ -167,7 +157,7 @@ const readyWorkspaceData = {
   },
   item_type: "pull_request",
   item_number: 7,
-  git_head_ref: "feature/embed-props",
+  git_head_ref: "feature/pane-props",
   worktree_path: "/tmp/worktree",
   tmux_session: "kenn-forge-ws-1",
   status: "ready",
@@ -182,7 +172,7 @@ const readyIssueWorkspaceData = {
   associated_pr_number: null,
 };
 
-describe("WorkspaceTerminalView embed props", () => {
+describe("WorkspaceTerminalView pane props", () => {
   afterAll(async () => {
     if (runtimeState.appRuntime !== undefined) {
       await Effect.runPromise(runtimeState.appRuntime.disposeEffect);
@@ -233,7 +223,7 @@ describe("WorkspaceTerminalView embed props", () => {
     // Wait for the header branch element that only renders once the
     // workspace payload resolves; this confirms the component reached
     // steady state rather than failing the load early.
-    await waitFor(() => expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText("feature/pane-props").length).toBeGreaterThan(0));
 
     // The workspace-list column header reads "Workspaces"; with
     // hideWorkspaceList the entire column is skipped so the heading
@@ -246,7 +236,7 @@ describe("WorkspaceTerminalView embed props", () => {
       props: { workspaceId: "ws-1" },
     });
 
-    await waitFor(() => expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText("feature/pane-props").length).toBeGreaterThan(0));
 
     expect(screen.queryByText("Workspaces")).not.toBeNull();
   });
@@ -260,7 +250,7 @@ describe("WorkspaceTerminalView embed props", () => {
       },
     });
 
-    await waitFor(() => expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText("feature/pane-props").length).toBeGreaterThan(0));
 
     expect(screen.queryByRole("button", { name: "PR" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Reviews" })).toBeNull();
@@ -271,7 +261,7 @@ describe("WorkspaceTerminalView embed props", () => {
       props: { workspaceId: "ws-1" },
     });
 
-    await waitFor(() => expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText("feature/pane-props").length).toBeGreaterThan(0));
 
     expect(screen.getByRole("button", { name: "PR" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Reviews" })).toBeTruthy();
@@ -288,7 +278,7 @@ describe("WorkspaceTerminalView embed props", () => {
       },
     });
 
-    await waitFor(() => expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText("feature/pane-props").length).toBeGreaterThan(0));
     expect(screen.queryByRole("button", { name: "PR" })).toBeNull();
 
     await fireEvent.click(screen.getByRole("button", { name: "Refresh workspace details" }));
@@ -313,7 +303,7 @@ describe("WorkspaceTerminalView embed props", () => {
       },
     });
 
-    await waitFor(() => expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText("feature/pane-props").length).toBeGreaterThan(0));
 
     await fireEvent.click(screen.getByRole("button", { name: "Refresh workspace details" }));
 
@@ -369,7 +359,7 @@ describe("WorkspaceTerminalView embed props", () => {
     render(WorkspaceTerminalView, {
       props: { workspaceId: "ws-1", hideWorkspaceList: true, onWorkspaceDeleted },
     });
-    await waitFor(() => expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText("feature/pane-props").length).toBeGreaterThan(0));
 
     gone = true;
     await waitFor(() => expect(mocks.workspaceEventsSubscriber).toBeTypeOf("function"));
@@ -384,7 +374,7 @@ describe("WorkspaceTerminalView embed props", () => {
     });
     // The dead cached envelope must not keep rendering as live.
     await waitFor(() => {
-      expect(screen.queryAllByText("feature/embed-props")).toHaveLength(0);
+      expect(screen.queryAllByText("feature/pane-props")).toHaveLength(0);
       expect(screen.getAllByText("workspace not found").length).toBeGreaterThan(0);
     });
   });
@@ -413,7 +403,7 @@ describe("WorkspaceTerminalView embed props", () => {
         props: { workspaceId: "ws-1", hideWorkspaceList: true },
       });
 
-      await waitFor(() => expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(0));
+      await waitFor(() => expect(screen.getAllByText("feature/pane-props").length).toBeGreaterThan(0));
 
       expect(screen.queryByRole("button", { name: "Expand Terminal" })).toBeNull();
       expect(screen.queryByRole("button", { name: "Collapse Terminal" })).toBeNull();
@@ -425,7 +415,7 @@ describe("WorkspaceTerminalView embed props", () => {
         props: { workspaceId: "ws-1", hideWorkspaceList: true, inlineDock },
       });
 
-      await waitFor(() => expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(0));
+      await waitFor(() => expect(screen.getAllByText("feature/pane-props").length).toBeGreaterThan(0));
 
       const deleteButton = screen.getByRole("button", { name: "Delete" });
       const container = deleteButton.closest(".header-end");
@@ -445,7 +435,7 @@ describe("WorkspaceTerminalView embed props", () => {
         },
       });
 
-      await waitFor(() => expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(0));
+      await waitFor(() => expect(screen.getAllByText("feature/pane-props").length).toBeGreaterThan(0));
 
       await fireEvent.click(screen.getByRole("button", { name: "Expand Terminal" }));
       expect(setMode).toHaveBeenCalledWith("expanded");
@@ -471,7 +461,7 @@ describe("WorkspaceTerminalView embed props", () => {
         },
       });
 
-      await waitFor(() => expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(0));
+      await waitFor(() => expect(screen.getAllByText("feature/pane-props").length).toBeGreaterThan(0));
 
       await fireEvent.click(screen.getByRole("button", { name: "Collapse Terminal" }));
       expect(setMode).toHaveBeenCalledWith("collapsed");
@@ -553,12 +543,12 @@ describe("WorkspaceTerminalView embed props", () => {
         props: { workspaceId: "ws-1", hideWorkspaceList: true, inlineDock },
       });
 
-      await waitFor(() => expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(0));
+      await waitFor(() => expect(screen.getAllByText("feature/pane-props").length).toBeGreaterThan(0));
 
       await rerender({ workspaceId: "ws-2", hideWorkspaceList: true, inlineDock });
 
       await waitFor(() => expect(screen.getByText("boom")).toBeTruthy());
-      expect(screen.queryByText("feature/embed-props")).toBeNull();
+      expect(screen.queryByText("feature/pane-props")).toBeNull();
 
       const collapse = screen.getByRole("button", { name: "Collapse Terminal" });
       expect(collapse.hasAttribute("disabled")).toBe(false);
@@ -578,12 +568,12 @@ describe("WorkspaceTerminalView embed props", () => {
         props: { workspaceId: "ws-1", hideWorkspaceList: true, inlineDock },
       });
 
-      await waitFor(() => expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(0));
+      await waitFor(() => expect(screen.getAllByText("feature/pane-props").length).toBeGreaterThan(0));
 
       await rerender({ workspaceId: "ws-2", hideWorkspaceList: true, inlineDock });
 
       await waitFor(() => expect(screen.getByText("Setting up workspace...")).toBeTruthy());
-      expect(screen.queryByText("feature/embed-props")).toBeNull();
+      expect(screen.queryByText("feature/pane-props")).toBeNull();
       expect(screen.getByRole("button", { name: "Collapse Terminal" })).toBeTruthy();
     });
 
@@ -608,7 +598,7 @@ describe("WorkspaceTerminalView embed props", () => {
         },
       });
 
-      await waitFor(() => expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(0));
+      await waitFor(() => expect(screen.getAllByText("feature/pane-props").length).toBeGreaterThan(0));
 
       const expandButton = screen.getByRole("button", { name: "Expand Terminal" });
       expect(expandButton.hasAttribute("disabled")).toBe(false);

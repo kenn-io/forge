@@ -65,7 +65,6 @@ knowledge that changes what future agents should do.
 | `notifications` | `context/notifications-in-activity.md` | notification-owned paths in `internal/github/`, `internal/db/`, `internal/server/`, `frontend/`, and `packages/ui/` |
 | `db` | `context/db-migrations.md` | `internal/db/`, `internal/db/migrations/` |
 | `deferred-merge` | `context/deferred-merge.md` | deferred merge paths in `internal/server/` |
-| `embeds` | `context/embeds.md` | embed routes, shell, and host bridge paths |
 | `fleet` | `context/fleet-architecture.md`, `context/workspace-runtime-lifecycle.md` | `internal/federation/`, `internal/federationauth/`, `internal/fleet/`, `internal/server/fleetapi/`; federation-owned settings, frontend, and tests |
 | `server` | `context/server-runtime.md`, `context/workspace-apis.md`, `context/workspace-runtime-lifecycle.md` | `cmd/kenn-forge/`, `internal/daemonruntime/`, `internal/runtimelock/`; server/workspace-owned paths in `internal/config/`, `internal/workspace/`, `internal/agentactivity/`, `internal/server/`, `internal/apiclient/generated/`, `frontend/`, and `packages/ui/`, including shared app and configuration files |
 | `errors` | `context/error-handling.md` | error envelopes and frontend error branching |

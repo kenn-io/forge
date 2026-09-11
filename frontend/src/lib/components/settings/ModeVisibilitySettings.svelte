@@ -6,7 +6,6 @@
   import { showFlash } from "../../stores/flash.svelte.js";
   import type { ModeVisibility } from "../../api/types.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
-  import { isEmbedded } from "../../stores/embed-config.svelte.js";
   import { SettingsWorkflow, settingsErrorMessage } from "../../stores/settings-workflow.js";
 
   type ModeKey = keyof ModeVisibility;
@@ -34,7 +33,6 @@
 
   const { settings: settingsStore } = getStores();
   const runtime = getAppRuntime();
-  const embedded = isEmbedded();
 
   const modeOptions: ModeOption[] = [
     { key: "activity", label: "Activity" },
@@ -79,7 +77,6 @@
   }
 
   function save(): void {
-    if (embedded) return;
     if (!canSave) return;
 
     saving = true;

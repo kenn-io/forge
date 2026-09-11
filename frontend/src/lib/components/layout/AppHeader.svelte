@@ -44,12 +44,9 @@
     parseRepoFilterValue,
     setGlobalRepo,
   } from "../../stores/filter.svelte.js";
-  import { isEmbedded, getUIConfig } from "../../stores/embed-config.svelte.js";
-  import { isThemeToggleVisible } from "../../stores/theme.svelte.js";
   import {
     isSidebarCollapsed,
     toggleSidebar,
-    isSidebarToggleEnabled,
   } from "../../stores/sidebar.svelte.js";
   import { openPalette } from "../../stores/keyboard/palette-state.svelte.js";
   import { syncRepoForRoute } from "../../utils/repoSelectionSync.js";
@@ -222,7 +219,6 @@
     sync.triggerRepoSync(repo);
   }
 
-  const hideProviderRepoSelector = $derived(getUIConfig().hideRepoSelector);
   const isProviderRepoSelectorPage = $derived(
     getPage() === "activity" ||
       getPage() === "repos" ||
@@ -232,8 +228,8 @@
       getPage() === "workspaces" ||
       getPage() === "terminal",
   );
-  const showProviderRepoSelector = $derived(!hideProviderRepoSelector && isProviderRepoSelectorPage);
-  const reserveProviderRepoSelectorSlot = $derived(!hideProviderRepoSelector && !isProviderRepoSelectorPage);
+  const showProviderRepoSelector = $derived(isProviderRepoSelectorPage);
+  const reserveProviderRepoSelectorSlot = $derived(!isProviderRepoSelectorPage);
   let settingsReturnPath = "/";
 
   function currentAppPath(): string {
@@ -266,8 +262,7 @@
 
   const tabs: TopBarTab[] = $derived.by(() => {
     const entries: TopBarTab[] = modeNavOptions
-      .filter((option) => settings.isModeVisible(option.mode)
-        && (option.value !== "actions" || !isEmbedded()))
+      .filter((option) => settings.isModeVisible(option.mode))
       .map(({ value, label }) => {
         const tab: TopBarTab = { id: value, label };
         if (value === "reviews" && reviewsDaemonUnavailable) {
@@ -279,7 +274,7 @@
     if (getPage() === "design-system") {
       entries.push({ id: "design-system", label: "Design system" });
     }
-    if (!isEmbedded() && getPage() === "settings") {
+    if (getPage() === "settings") {
       entries.push({ id: "settings", label: "Settings" });
     }
 
@@ -372,7 +367,7 @@
 
 <!-- The app header renders through kit TopBar; app-top-bar is the app-owned
      selector alias (the kit element also carries .kit-top-bar) used by the
-     app-startup/focus/embedded/routing specs to assert header presence. -->
+     app-startup/focus/routing specs to assert header presence. -->
 <div class="top-bar-frame" bind:this={headerFrame}>
   <TopBar
     class="app-top-bar"
@@ -384,7 +379,7 @@
     onchange={handleTabChange}
   >
   {#snippet left()}
-    {#if isSidebarCollapsed() && isSidebarToggleEnabled() && !hasSidebarStrip}
+    {#if isSidebarCollapsed() && !hasSidebarStrip}
       <HeaderIconButton
         onclick={toggleSidebar}
         title="Expand sidebar"
@@ -423,86 +418,84 @@
         <KbdBadge binding={{ key: "K", ctrlOrMeta: true }} />
       </span>
     </HeaderIconButton>
-    {#if !getUIConfig().hideSync}
-      <div class="sync-split" bind:this={syncControlEl}>
-        <button
-          type="button"
-          class="action-btn sync-btn sync-primary"
-          aria-label={syncing ? "Syncing" : providerAvailable ? "Sync" : "Sync unavailable"}
-          title={syncing ? "Syncing" : providerAvailable ? "Sync" : "Hub unavailable"}
-          onclick={handleSync}
-          disabled={syncing || !providerAvailable}
-        >
-          {#if syncing}
-            <span class="sync-icon sync-icon--spinning" aria-hidden="true">
-              <SpinnerIcon
-                size="14"
-                strokeWidth="2"
-              />
-            </span>
-          {:else}
-            <span class="sync-icon" aria-hidden="true">
-              <SyncIcon
-                size="14"
-                strokeWidth="1.75"
-              />
-            </span>
-          {/if}
-          {#if !tabsCollapsed}
-            <span class="sync-label">{syncing ? "Syncing..." : "Sync"}</span>
-          {/if}
-        </button>
-        <button
-          bind:this={syncMenuTriggerEl}
-          type="button"
-          class="action-btn sync-menu-trigger"
-          aria-label="Sync options"
-          title={providerAvailable ? "Sync options" : "Hub unavailable"}
-          aria-haspopup="menu"
-          aria-expanded={syncMenuOpen}
-          onclick={toggleSyncMenu}
-          onkeydown={handleSyncMenuTriggerKeydown}
-          disabled={syncing || !providerAvailable}
-        >
-          <ChevronDownIcon size="12" strokeWidth="1.75" aria-hidden="true" />
-        </button>
-        {#if syncMenuOpen}
-          <ul
-            bind:this={syncMenuEl}
-            class="sync-menu kit-popover-card"
-            role="menu"
-            aria-label="Sync options"
-            style={syncMenuStyle}
-          >
-            <li>
-              <button
-                bind:this={syncMenuItemEl}
-                type="button"
-                role="menuitem"
-                title={currentSyncRepo ? "Sync current repo" : "Select one repository to sync"}
-                disabled={!currentSyncRepo || syncing}
-                onclick={handleCurrentRepoSync}
-                onkeydown={handleSyncMenuItemKeydown}
-              >
-                Sync current repo
-              </button>
-            </li>
-          </ul>
-        {/if}
-      </div>
-    {/if}
-    {#if isThemeToggleVisible()}
-      <ThemeToggle />
-    {/if}
-    {#if !isEmbedded()}
-      <HeaderIconButton
-        active={getPage() === "settings"}
-        onclick={toggleSettings}
-        title="Settings"
+
+    <div class="sync-split" bind:this={syncControlEl}>
+      <button
+        type="button"
+        class="action-btn sync-btn sync-primary"
+        aria-label={syncing ? "Syncing" : providerAvailable ? "Sync" : "Sync unavailable"}
+        title={syncing ? "Syncing" : providerAvailable ? "Sync" : "Hub unavailable"}
+        onclick={handleSync}
+        disabled={syncing || !providerAvailable}
       >
-        <SettingsIcon size="14" strokeWidth="1.75" aria-hidden="true" />
-      </HeaderIconButton>
-    {/if}
+        {#if syncing}
+          <span class="sync-icon sync-icon--spinning" aria-hidden="true">
+            <SpinnerIcon
+              size="14"
+              strokeWidth="2"
+            />
+          </span>
+        {:else}
+          <span class="sync-icon" aria-hidden="true">
+            <SyncIcon
+              size="14"
+              strokeWidth="1.75"
+            />
+          </span>
+        {/if}
+        {#if !tabsCollapsed}
+          <span class="sync-label">{syncing ? "Syncing..." : "Sync"}</span>
+        {/if}
+      </button>
+      <button
+        bind:this={syncMenuTriggerEl}
+        type="button"
+        class="action-btn sync-menu-trigger"
+        aria-label="Sync options"
+        title={providerAvailable ? "Sync options" : "Hub unavailable"}
+        aria-haspopup="menu"
+        aria-expanded={syncMenuOpen}
+        onclick={toggleSyncMenu}
+        onkeydown={handleSyncMenuTriggerKeydown}
+        disabled={syncing || !providerAvailable}
+      >
+        <ChevronDownIcon size="12" strokeWidth="1.75" aria-hidden="true" />
+      </button>
+      {#if syncMenuOpen}
+        <ul
+          bind:this={syncMenuEl}
+          class="sync-menu kit-popover-card"
+          role="menu"
+          aria-label="Sync options"
+          style={syncMenuStyle}
+        >
+          <li>
+            <button
+              bind:this={syncMenuItemEl}
+              type="button"
+              role="menuitem"
+              title={currentSyncRepo ? "Sync current repo" : "Select one repository to sync"}
+              disabled={!currentSyncRepo || syncing}
+              onclick={handleCurrentRepoSync}
+              onkeydown={handleSyncMenuItemKeydown}
+            >
+              Sync current repo
+            </button>
+          </li>
+        </ul>
+      {/if}
+    </div>
+
+    <ThemeToggle />
+
+    <HeaderIconButton
+      active={getPage() === "settings"}
+      onclick={toggleSettings}
+      title="Settings"
+    >
+      <SettingsIcon size="14" strokeWidth="1.75" aria-hidden="true" />
+    </HeaderIconButton>
+
   {/snippet}
   </TopBar>
 </div>
@@ -690,7 +683,7 @@
     background: var(--bg-inset);
   }
 
-  /* Narrow containers (embedded or split panes under 500px) keep the
+  /* Narrow containers (split panes under 500px) keep the
      two-row header: the left region wraps onto the first row and the
      collapsed nav dropdown shares the second row with the action buttons.
      kit's measurement keeps the tabs collapsed here — the wrap only reorders

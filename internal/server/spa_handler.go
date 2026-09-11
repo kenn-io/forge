@@ -37,10 +37,8 @@ func newSPAAssetHandler(
 		idx := strings.Replace(indexTemplate, "<head>",
 			`<head><script>`+script+`</script>`, 1)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		if !isWorkspaceEmbedRoute(r.URL.Path) {
-			w.Header().Set("Content-Security-Policy", spaFrameAncestorsPolicy)
-			w.Header().Set("X-Frame-Options", spaXFrameOptions)
-		}
+		w.Header().Set("Content-Security-Policy", spaFrameAncestorsPolicy)
+		w.Header().Set("X-Frame-Options", spaXFrameOptions)
 		// index.html references content-hashed bundles. Browsers
 		// must always re-fetch it so a rebuild is picked up; the
 		// hashed assets it references can still be cached forever.
@@ -120,8 +118,4 @@ func serveCompressedAsset(
 	w.WriteHeader(http.StatusOK)
 	_ = writeCompressedBody(w, encoding, body)
 	return true
-}
-
-func isWorkspaceEmbedRoute(path string) bool {
-	return path == "/workspaces/embed" || strings.HasPrefix(path, "/workspaces/embed/")
 }

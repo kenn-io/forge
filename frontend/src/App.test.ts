@@ -103,9 +103,7 @@ vi.mock("./lib/components/settings/SettingsPage.svelte", async () => ({
 vi.mock("./lib/components/terminal/WorkspaceTerminalView.svelte", async () => ({
   default: (await import("./lib/testing/AppViewStub.svelte")).default,
 }));
-vi.mock("./lib/components/terminal/WorkspaceEmbedShell.svelte", async () => ({
-  default: (await import("./lib/testing/AppViewStub.svelte")).default,
-}));
+
 vi.mock("./lib/components/design-system/DesignSystemPage.svelte", async () => ({
   default: (await import("./lib/testing/AppViewStub.svelte")).default,
 }));

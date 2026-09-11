@@ -1,28 +1,14 @@
 import { getContext } from "svelte";
-import type {
-  ActionRegistry,
-  NavigateCallback,
-  HostStateAccessors,
-  StoreInstances,
-  UIConfig,
-  SidebarAccessors,
-} from "./types.js";
+import type { NavigateCallback, HostStateAccessors, StoreInstances, UIConfig, SidebarAccessors } from "./types.js";
 import type { RoborevClient } from "./api/roborev/client.js";
 
-export const ACTIONS_KEY = Symbol("kenn-forge-actions");
 export const NAVIGATE_KEY = Symbol("kenn-forge-navigate");
-export const EVENT_KEY = Symbol("kenn-forge-event");
-export const PREPARE_ROUTE_KEY = Symbol("kenn-forge-prepare-route");
-export const WORKSPACE_COMMAND_KEY = Symbol("kenn-forge-workspace-command");
 export const WORKSPACE_DELETED_KEY = Symbol("kenn-forge-workspace-deleted");
 export const STORES_KEY = Symbol("kenn-forge-stores");
 export const UI_CONFIG_KEY = Symbol("kenn-forge-ui-config");
 export const SIDEBAR_KEY = Symbol("kenn-forge-sidebar");
 export const HOST_STATE_KEY = Symbol("kenn-forge-host-state");
 
-export function getActions(): ActionRegistry {
-  return getContext(ACTIONS_KEY);
-}
 export function getNavigate(): NavigateCallback {
   return getContext(NAVIGATE_KEY);
 }

@@ -11,7 +11,7 @@
   } from "@kenn-io/kit-ui";
   import { getAppRuntime } from "../app/runtime-context.js";
   import type { AppExecution } from "../app/runtime.js";
-  import { getStores, getNavigate, getActions } from "../context.js";
+  import { getStores, getNavigate } from "../context.js";
   import { groupByWorkflow } from "../stores/workflow.svelte.js";
   import PullItem from "../components/sidebar/PullItem.svelte";
   import IssueItem from "../components/sidebar/IssueItem.svelte";
@@ -39,13 +39,7 @@
   const { pulls, issues, sync, settings, grouping, activity } = getStores();
   const runtime = getAppRuntime();
   const navigate = getNavigate();
-  const actions = getActions();
 
-  const importAction = $derived(
-    (actions.pull ?? []).find(
-      (a) => a.id === "import-worktree",
-    ),
-  );
   const groupingMode = $derived(
     grouping.getGroupingMode(),
   );
@@ -635,7 +629,6 @@
                 })}
                 showRepo={!repo}
                 selected={false}
-                {importAction}
                 onclick={() => handlePRSelect(prRef)}
               />
             {/each}
@@ -655,7 +648,6 @@
             })}
             showRepo={!repo}
             selected={false}
-            {importAction}
             onclick={() => handlePRSelect(prRef)}
           />
         {/each}

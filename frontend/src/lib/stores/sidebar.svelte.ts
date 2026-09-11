@@ -1,5 +1,3 @@
-import { getUIConfig, getSidebarWidth as getEmbeddedSidebarWidth } from "./embed-config.svelte.js";
-
 const STORAGE_KEY = "kenn-forge-sidebar";
 const WIDTH_STORAGE_KEY = "kenn-forge-sidebar-width";
 const DEFAULT_WIDTH = 340;
@@ -63,19 +61,8 @@ function persistWidth(value: number): void {
 }
 
 export function initSidebar(): void {
-  const ui = getUIConfig();
-  if (ui.sidebarCollapsed !== undefined) {
-    collapsed = ui.sidebarCollapsed;
-  } else {
-    collapsed = loadPersisted();
-  }
-
-  const embeddedWidth = getEmbeddedSidebarWidth();
-  if (embeddedWidth !== undefined) {
-    width = clampWidth(embeddedWidth);
-  } else {
-    width = loadPersistedWidth();
-  }
+  collapsed = loadPersisted();
+  width = loadPersistedWidth();
 }
 
 export function isSidebarCollapsed(): boolean {
@@ -84,12 +71,7 @@ export function isSidebarCollapsed(): boolean {
   return collapsed;
 }
 
-export function isSidebarToggleEnabled(): boolean {
-  return getUIConfig().sidebarCollapsed === undefined;
-}
-
 export function toggleSidebar(): void {
-  if (!isSidebarToggleEnabled()) return;
   if (narrowCollapsed || narrowOpened) {
     // Toggle the transient narrow state without touching the
     // persisted preference. Both flags reset on widen.
@@ -112,9 +94,7 @@ export function getSidebarWidth(): number {
 
 export function setSidebarWidth(value: number): void {
   width = clampWidth(value);
-  if (getEmbeddedSidebarWidth() === undefined) {
-    persistWidth(width);
-  }
+  persistWidth(width);
 }
 
 export function setNarrowOverride(narrow: boolean): void {

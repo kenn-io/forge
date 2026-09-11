@@ -2,9 +2,7 @@ import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { makeAppRuntime, type OwnedAppRuntime } from "../app/runtime.js";
 import { resolveToolingStatus, resetToolingStatusForTest } from "./tooling-status.svelte.js";
-import type { ToolingStatusValue } from "./embed-config.svelte.js";
-
-const win = window as any;
+import type { ToolingStatusValue } from "./tooling-status.svelte.js";
 
 const serverStatus: ToolingStatusValue = {
   git: { available: true, version: "2.44.0" },
@@ -26,38 +24,12 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
-  delete win.__kenn_forge_config;
   await Effect.runPromise(runtime.disposeEffect);
   resetToolingStatusForTest();
   vi.unstubAllGlobals();
 });
 
 describe("resolveToolingStatus", () => {
-  it("returns the embedder's tooling without fetching when embedded", async () => {
-    const fetcher = vi.fn(async () => toolingResponse(serverStatus));
-    vi.stubGlobal("fetch", fetcher);
-    const embedded: ToolingStatusValue = {
-      git: { available: true },
-    };
-    win.__kenn_forge_config = { embed: { tooling: embedded } };
-    win.__kenn_forge_notify_config_changed();
-
-    expect(resolveToolingStatus(runtime)).toEqual(embedded);
-    await Promise.resolve();
-    expect(fetcher).not.toHaveBeenCalled();
-  });
-
-  it("returns undefined while embedded with no tooling pushed yet", async () => {
-    const fetcher = vi.fn(async () => toolingResponse(serverStatus));
-    vi.stubGlobal("fetch", fetcher);
-    win.__kenn_forge_config = { embed: {} };
-    win.__kenn_forge_notify_config_changed();
-
-    expect(resolveToolingStatus(runtime)).toBeUndefined();
-    await Promise.resolve();
-    expect(fetcher).not.toHaveBeenCalled();
-  });
-
   it("fetches the server probe once in standalone mode", async () => {
     const fetcher = vi.fn(async () => toolingResponse(serverStatus));
     vi.stubGlobal("fetch", fetcher);

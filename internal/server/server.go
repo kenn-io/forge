@@ -1531,16 +1531,11 @@ func (s *Server) bootstrapScript() string {
 	builder.WriteString(`window.__BASE_PATH__=`)
 	builder.WriteString(scriptSafe(string(safeBase)))
 	builder.WriteString(`;`)
-	// The served config carries the daemon-side UI state thin
-	// clients set over the API (PUT /api/v1/ui/active-worktree);
-	// presentation preferences (embed mode, theming) are injected
-	// client-side by whoever hosts the webview.
+	// Preserve daemon-side worktree focus set by thin clients through the API.
 	if awKey, set := s.ActiveWorktreeKey(); set {
-		configJSON, _ := json.Marshal(map[string]any{
-			"ui": map[string]any{"activeWorktreeKey": awKey},
-		})
-		builder.WriteString(`window.__kenn_forge_config=`)
-		builder.WriteString(scriptSafe(string(configJSON)))
+		keyJSON, _ := json.Marshal(awKey)
+		builder.WriteString(`window.__kenn_forge_active_worktree_key=`)
+		builder.WriteString(scriptSafe(string(keyJSON)))
 		builder.WriteString(`;`)
 	}
 	return builder.String()

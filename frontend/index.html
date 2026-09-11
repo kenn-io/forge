@@ -18,41 +18,13 @@
     <script>
       // Apply theme before first paint to avoid flash of wrong theme.
       (function () {
-        var cfg = window.__kenn_forge_config;
-        var mode = cfg && cfg.theme && cfg.theme.mode;
-        var dark;
-        if (mode === "dark") {
-          dark = true;
-        } else if (mode === "light") {
-          dark = false;
-        } else if (mode === "system") {
-          dark = matchMedia("(prefers-color-scheme: dark)").matches;
-        } else {
-          try {
-            var v = localStorage.getItem("kenn-forge-theme");
-          } catch (e) {
-            var v = null;
-          }
-          dark = v === "dark" || v === "light" ? v === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+        try {
+          var v = localStorage.getItem("kenn-forge-theme");
+        } catch (e) {
+          var v = null;
         }
+        var dark = v === "dark" || v === "light" ? v === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
         if (dark) document.documentElement.classList.add("dark");
-        // Apply color overrides from config before first paint
-        var colors = cfg && cfg.theme && cfg.theme.colors;
-        if (colors) {
-          var map = {
-            bgPrimary: "--bg-primary",
-            bgSurface: "--bg-surface",
-            bgSurfaceHover: "--bg-surface-hover",
-            bgInset: "--bg-inset",
-            textPrimary: "--text-primary",
-            textSecondary: "--text-secondary",
-            textMuted: "--text-muted",
-          };
-          var s = document.documentElement.style;
-          for (var k in colors) {
-            if (map[k]) s.setProperty(map[k], colors[k]);
-          }
-        }
       })();
     </script>
   </head>

@@ -437,7 +437,8 @@ test.describe("repository source browser", () => {
       const movedTreeLoaded = treeResponse(page, "main");
       const movedBlobLoaded = blobResponse(page, "README.md");
       await page.evaluate((route) => {
-        window.__kenn_forge_navigate_to_route?.(route);
+        window.history.pushState({}, "", route);
+        window.dispatchEvent(new PopStateEvent("popstate"));
       }, `/repo/browser?provider=github&repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha=${staleSHA}&path=README.md`);
       const movedTree = await movedTreeLoaded;
       const movedTreeBody = (await movedTree.json()) as {
@@ -463,7 +464,8 @@ test.describe("repository source browser", () => {
       await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 10_000 });
 
       await page.evaluate((route) => {
-        window.__kenn_forge_navigate_to_route?.(route);
+        window.history.pushState({}, "", route);
+        window.dispatchEvent(new PopStateEvent("popstate"));
       }, "/focus/pulls/github/acme/widgets/1");
       await page.locator(".focus-layout .pull-detail").waitFor({ state: "visible", timeout: 10_000 });
 
@@ -545,9 +547,12 @@ test.describe("repository source browser", () => {
       await expectHeadingScrolledIntoView(viewer.locator("#api-reference"));
 
       await page.evaluate(() => {
-        window.__kenn_forge_navigate_to_route?.(
+        window.history.pushState(
+          {},
+          "",
           "/repo/browser?provider=github&repo_path=acme%2Fwidgets&path=docs%2Fguide.md&mode=preview",
         );
+        window.dispatchEvent(new PopStateEvent("popstate"));
       });
       await expect(page).toHaveURL(/path=docs%2Fguide\.md&mode=preview$/);
       await viewer.locator(".repo-browser__markdown").evaluate((node) => {

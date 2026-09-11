@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Button, Spinner } from "@kenn-io/kit-ui";
 
-  import type { ToolingStatusValue } from "../../stores/embed-config.svelte.ts";
+  import type { ToolingStatusValue } from "../../stores/tooling-status.svelte.ts";
   import ProviderIcon from "../provider/ProviderIcon.svelte";
 
   interface Props {

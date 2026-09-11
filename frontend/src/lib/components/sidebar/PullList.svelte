@@ -4,7 +4,7 @@
   import { onDestroy, untrack } from "svelte";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import type { AppExecution } from "../../app/runtime.js";
-  import { getStores, getNavigate, getSidebar, getActions, getHostState } from "../../context.js";
+  import { getStores, getNavigate, getSidebar, getHostState } from "../../context.js";
   import { groupByWorkflow } from "../../stores/workflow.svelte.js";
   import {
     Chip,
@@ -30,15 +30,9 @@
   const { pulls, sync, grouping, collapsedRepos, settings, activity } = getStores();
   const runtime = getAppRuntime();
   const navigate = getNavigate();
-  const actions = getActions();
   const hostState = getHostState();
-  const { isEmbedded, isSidebarToggleEnabled, toggleSidebar } = getSidebar();
+  const { toggleSidebar } = getSidebar();
 
-  const importAction = $derived(
-    (actions.pull ?? []).find(
-      (a) => a.id === "import-worktree",
-    ),
-  );
   const activeWorktreeKey = $derived(
     hostState.getActiveWorktreeKey?.(),
   );
@@ -465,14 +459,12 @@
         minWidth="190px"
       />
     </div>
-    {#if isSidebarToggleEnabled()}
-      <SidebarToggle
-        state="expanded"
-        label="sidebar"
-        onclick={toggleSidebar}
-        class="kit-sidebar-toggle--push"
-      />
-    {/if}
+    <SidebarToggle
+      state="expanded"
+      label="sidebar"
+      onclick={toggleSidebar}
+      class="kit-sidebar-toggle--push"
+    />
   </div>
   <div class="search-bar">
     <div class="search-wrap">
@@ -519,7 +511,7 @@
   >
     {#if settings.isSettingsLoaded() && !settings.hasConfiguredRepos()}
       <p class="state-message">No repositories configured.<br />
-        {#if !isEmbedded()}<button class="settings-link" onclick={() => navigate("/settings")}>Add one in Settings</button>{/if}</p>
+        <button class="settings-link" onclick={() => navigate("/settings")}>Add one in Settings</button></p>
     {:else if pulls.isLoading() && pulls.getPulls().length === 0}
       <p class="state-message">Loading…</p>
     {:else if pulls.getError() !== null && pulls.getPulls().length === 0}
@@ -561,7 +553,6 @@
                   })}
                   showRepo={group.showRepo}
                   selected={prSelected}
-                  {importAction}
                   onclick={() => handleSelect(prRef)}
                 />
                 {#if showSelectedDiffSidebar && prSelected && _getDetailTab() === "files"}
@@ -587,7 +578,6 @@
             })}
             showRepo={true}
             selected={prSelected}
-            {importAction}
             onclick={() => handleSelect(prRef)}
           />
           {#if showSelectedDiffSidebar && prSelected && _getDetailTab() === "files"}
@@ -605,11 +595,11 @@
                 </div>
   {/if}
   <div class="sidebar-footer">
-    {#if !isEmbedded()}
-      <button class="add-repo-link" onclick={() => navigate("/settings")}>
-        + Add repository
-      </button>
-    {/if}
+
+    <button class="add-repo-link" onclick={() => navigate("/settings")}>
+      + Add repository
+    </button>
+
   </div>
 </div>
 
@@ -727,7 +717,6 @@
     justify-content: center;
     gap: 8px;
   }
-
 
   .sidebar-footer {
     padding: 8px 12px;

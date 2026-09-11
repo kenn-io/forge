@@ -7,7 +7,6 @@
     FleetSettingsUpdate,
   } from "../../api/types.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
-  import { isEmbedded } from "../../stores/embed-config.svelte.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import {
     SettingsWorkflow,
@@ -22,7 +21,6 @@
   let { fleet, onUpdate }: Props = $props();
 
   const runtime = getAppRuntime();
-  const embedded = isEmbedded();
   // svelte-ignore state_referenced_locally
   let currentFleet = $state(fleet);
   let saving = $state(false);
@@ -40,7 +38,7 @@
   const isDirty = $derived(
     JSON.stringify(pendingFleet) !== JSON.stringify(savedFleet),
   );
-  const canSave = $derived(!embedded && !saving && isDirty);
+  const canSave = $derived(!saving && isDirty);
   const isHub = $derived(currentFleet.role === "hub");
 
   function buildPendingFleet(): FleetSettingsUpdate {
@@ -127,7 +125,7 @@
   <Checkbox
     class="toggle-row"
     bind:checked={enabledDraft}
-    disabled={embedded || saving}
+    disabled={saving}
     ariaLabel="Enable fleet federation"
   >
     <span>
@@ -155,7 +153,7 @@
             : "";
         }}
         placeholder="2s"
-        disabled={embedded || saving}
+        disabled={saving}
         aria-label="Member request timeout"
       />
       <span class="field-help">Bounds snapshot and health requests to another Forge.</span>
@@ -165,7 +163,7 @@
   <Checkbox
     class="check-row"
     bind:checked={includeUnmanagedDetailsDraft}
-    disabled={embedded || saving}
+    disabled={saving}
     ariaLabel="Include unmanaged tmux details"
   >
     <span>

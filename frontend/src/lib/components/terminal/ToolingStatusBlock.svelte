@@ -5,7 +5,7 @@
     type StatusDotStatus,
   } from "@kenn-io/kit-ui";
   import { onDestroy } from "svelte";
-  // ToolingStatusBlock renders the embedding host's view of git and
+  // ToolingStatusBlock renders the daemon's view of git and
   // provider CLI availability/authentication. It is consumed by the
   // First Run Panel (gates provider-dependent actions) and the New
   // Worktree sheet (gates the PR/issue source radios). The block itself
@@ -15,12 +15,12 @@
   import type { AppExecution } from "../../app/runtime.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { transientClipboardFeedback } from "../../browser/clipboard-feedback.js";
-  import type { ToolingStatusValue } from "../../stores/embed-config.svelte.ts";
+  import type { ToolingStatusValue } from "../../stores/tooling-status.svelte.ts";
 
   interface Props {
     tooling: ToolingStatusValue | undefined;
     provider?: string | undefined;
-    // When the embedder cannot detect tooling state at all (the
+    // When the daemon cannot detect tooling state at all (the
     // /api/tooling endpoint failed, or the host has not pushed yet),
     // hide the block entirely. The parent decides whether to fall
     // back to a global "tooling unavailable" notice.

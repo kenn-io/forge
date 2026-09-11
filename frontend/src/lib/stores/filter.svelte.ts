@@ -74,29 +74,3 @@ export function clearGlobalRepoPresetAffinity(name?: string): void {
   if (name !== undefined && filterRepoPresetAffinity?.toLowerCase() !== name.trim().toLowerCase()) return;
   setPresetAffinity(undefined);
 }
-
-export function applyConfigRepo(
-  repo:
-    | {
-        provider?: string;
-        host?: string;
-        platform_host?: string;
-        repo_path?: string;
-        owner?: string;
-        name?: string;
-      }
-    | undefined,
-  hideSelector: boolean,
-): void {
-  if (hideSelector) {
-    setPresetAffinity(undefined);
-    const provider = repo?.provider?.trim();
-    const host = (repo?.platform_host ?? repo?.host)?.trim();
-    const repoPath = (repo?.repo_path ?? (repo?.owner && repo.name ? `${repo.owner}/${repo.name}` : "")).trim();
-    if (provider && host && repoPath) {
-      filterRepo = `${provider}|${host}/${repoPath}`;
-    } else {
-      filterRepo = undefined;
-    }
-  }
-}

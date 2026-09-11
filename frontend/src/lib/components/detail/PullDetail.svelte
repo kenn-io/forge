@@ -29,8 +29,8 @@
   import type { ConflictReason } from "../../api/problems.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import {
-    getStores, getActions,
-    getUIConfig, getNavigate,
+    getStores,
+    getNavigate,
   } from "../../context.js";
   import MarkdownHtml from "../shared/MarkdownHtml.svelte";
   import WorkflowDispatchDialog from "../actions/WorkflowDispatchDialog.svelte";
@@ -142,8 +142,6 @@
     workflowActions,
   } = getStores();
   const runtime = getAppRuntime();
-  const actions = getActions();
-  const uiConfig = getUIConfig();
   const navigate = getNavigate();
   let manualRefreshPending = $state(false);
   let manualRefreshGeneration = 0;
@@ -1240,23 +1238,6 @@
   const hasWorktreeLinks = $derived(
     worktreeLinks.length > 0,
   );
-  const importAction = $derived(
-    (actions.pull ?? []).find(
-      (a) => a.id === "import-worktree",
-    ),
-  );
-  const navigateAction = $derived(
-    (actions.pull ?? []).find(
-      (a) => a.id === "navigate-worktree",
-    ),
-  );
-  const otherActions = $derived(
-    (actions.pull ?? []).filter(
-      (a) =>
-        a.id !== "import-worktree" &&
-        a.id !== "navigate-worktree",
-    ),
-  );
   const labels = $derived(detailStore.getDetail()?.merge_request?.labels ?? []);
   const prAssignees = $derived(detailStore.getDetail()?.merge_request?.assignees ?? []);
   const prReviewers = $derived(detailStore.getDetail()?.merge_request?.requested_reviewers ?? []);
@@ -2272,7 +2253,7 @@
                 title={contentGate.unavailable ? contentGate.reason : undefined}
               >Edit</button>
             {/if}
-            {#if !uiConfig.hideStar && !stalePR}
+            {#if !stalePR}
               <button
                 class="star-btn"
                 onclick={handleStarClick}
@@ -3117,72 +3098,6 @@
           onreload={reloadWorkflowCatalog}
           onnewcycle={newWorkflowDispatchCycle}
         />
-      {/if}
-
-      {#if !hasWorktreeLinks && importAction}
-        <div class="actions-row">
-          <Button
-            class="btn--embedding-action"
-            onclick={() => {
-              if (stalePR) return;
-              importAction.handler({
-                surface: "pull-detail", owner, name, number,
-              });
-            }}
-            disabled={stalePR}
-            tone="neutral"
-            surface="outline"
-            size="sm"
-          >
-            {importAction.label}
-          </Button>
-        </div>
-      {/if}
-      {#if hasWorktreeLinks && navigateAction}
-        <div class="actions-row">
-          {#each worktreeLinks as link (link.worktree_key)}
-            <Button
-              class="btn--embedding-action"
-              onclick={() => {
-                if (stalePR) return;
-                navigateAction.handler({
-                  surface: "pull-detail", owner, name, number,
-                  meta: {
-                    worktree_key: link.worktree_key,
-                    host_key: link.host_key,
-                  },
-                });
-              }}
-              disabled={stalePR}
-              tone="neutral"
-              surface="outline"
-              size="sm"
-            >
-              {navigateAction.label}: {link.worktree_key}
-            </Button>
-          {/each}
-        </div>
-      {/if}
-      {#if otherActions.length > 0}
-        <div class="actions-row">
-          {#each otherActions as action (action.id)}
-            <Button
-              class="btn--embedding-action"
-              onclick={() => {
-                if (stalePR) return;
-                action.handler({
-                  surface: "pull-detail", owner, name, number,
-                });
-              }}
-              disabled={stalePR}
-              tone="neutral"
-              surface="outline"
-              size="sm"
-            >
-              {action.label}
-            </Button>
-          {/each}
-        </div>
       {/if}
 
       {#if showMergeModal && mergeModalSettings}

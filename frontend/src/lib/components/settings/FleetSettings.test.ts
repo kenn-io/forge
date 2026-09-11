@@ -18,11 +18,6 @@ vi.mock("../../stores/settings-workflow.js", async (importOriginal) => {
   };
 });
 
-vi.mock("../../stores/embed-config.svelte.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../stores/embed-config.svelte.js")>()),
-  isEmbedded: () => false,
-}));
-
 import FleetSettings from "./FleetSettings.svelte";
 import SettingsRuntimeHarness from "./SettingsRuntimeHarness.svelte";
 

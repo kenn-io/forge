@@ -8,7 +8,7 @@ import {
   createdWorkspaceRef,
   resetWorkspaceCreatePendingForTest,
 } from "../../stores/workspace-create-pending.svelte.js";
-import type { ToolingStatusValue } from "../../stores/embed-config.svelte.js";
+import type { ToolingStatusValue } from "../../stores/tooling-status.svelte.js";
 import type { StoreInstances } from "../../types.js";
 
 const mocks = vi.hoisted(() => ({

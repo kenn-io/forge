@@ -160,6 +160,40 @@ Selected repository access is a startup routing snapshot. New grants use the
 PAT route until refresh. Revoked App access can return 404, and Forge does
 not retry that response with a PAT because 404 can also mean missing or private.
 
+## Sync budget
+
+`sync_budget_per_hour` limits the API requests Forge spends on background sync
+each hour. It defaults to 500. For a large or active repository, raise it in
+`~/.kenn/forge/config.toml`:
+
+```toml
+sync_budget_per_hour = 3000
+```
+
+Put this at the top level, before any `[section]` or `[[repos]]` header. If
+the key already exists, change its value. Restart Forge to apply it:
+
+```sh
+kenn-forge daemon restart
+```
+
+The value must be at least 50. Omitting it or setting it to `0` uses the
+500-request default; zero does not disable the ceiling.
+
+The same configured limit applies to each budget. GitHub repositories share a
+budget when they use the same GitHub user or App installation on a host.
+Other providers share a budget per provider host.
+
+Forge reserves 10% for discovering new and closed issues and pull requests.
+With a limit of 3,000, optional work such as detail refreshes and archive sync
+stops at 2,700, while discovery can use the full 3,000.
+
+Raising this value lets Forge use more of your provider quota. It does not
+increase that quota. Leave room for other tools that use the same account,
+and check the provider's remaining quota before raising it again. See
+[Local sync ceiling reached](troubleshooting.md#local-sync-ceiling-reached)
+for recovery steps.
+
 ## Activity defaults
 
 ```toml

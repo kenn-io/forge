@@ -68,7 +68,7 @@ function setupTooling({ ghAuthed, ghAvailable = true }: SetupArgs): void {
 
 async function renderPanel(options?: Parameters<typeof render<typeof WorkspaceFirstRunPanel>>[1]) {
   const view = render(WorkspaceFirstRunPanel, options);
-  await screen.findByLabelText("git available");
+  if (!options?.props?.hostKey) await screen.findByLabelText("git available");
   return view;
 }
 
@@ -156,6 +156,7 @@ describe("WorkspaceFirstRunPanel", () => {
     mocks.registerExistingProject.mockReturnValue(Effect.succeed(project("prj_existing")));
     setupTooling({ ghAuthed: true });
     await renderPanel();
+    expect(screen.getByRole("region", { name: "Tooling status" })).toBeTruthy();
 
     await fireEvent.click(
       screen.getByRole("button", {
@@ -210,6 +211,7 @@ describe("WorkspaceFirstRunPanel", () => {
 
     expect(screen.getByText("Add a project.")).toBeTruthy();
     expect(await screen.findByText("Host: EPYC")).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "Tooling status" })).toBeNull();
 
     await fireEvent.click(
       screen.getByRole("button", {

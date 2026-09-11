@@ -68,9 +68,6 @@
     activity.getUseWorkspaceActivityForRecency(),
   ));
   const ago = $derived(formatRelativeTime(activityTime.at));
-  const hasWorktree = $derived(
-    (pr.worktree_links?.length ?? 0) > 0,
-  );
   const isActiveWorktree = $derived.by(() => {
     const key = hostState.getActiveWorktreeKey?.();
     if (!key || !pr.worktree_links) return false;

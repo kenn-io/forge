@@ -165,12 +165,8 @@
     createdAt: string;
   }
 
-  // hideWorkspaceList / hideRightSidebar let an embedding host
-  // render only the terminal/home/empty surface and compose the
-  // workspace list and per-item detail sidebar separately via
-  // the /workspaces/embed/list and /workspaces/embed/detail
-  // routes. Both default to false to preserve the standalone
-  // /workspaces and /terminal/{id} layout.
+  // Internal pane hosts can supply their own list and detail sidebar.
+  // Standalone workspace and terminal routes show both by default.
   interface Props {
     workspaceId: string;
     workspaceHostKey?: string | undefined;

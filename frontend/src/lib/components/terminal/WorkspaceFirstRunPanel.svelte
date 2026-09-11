@@ -96,6 +96,7 @@
           snapshotHosts[0];
       if (host) {
         return {
+          isSelf: host.kind === "self",
           label: host.name || host.configKey,
           platform: host.platform,
         };
@@ -600,7 +601,9 @@
     </p>
   {/if}
 
-  <ToolingStatusBlock {tooling} {provider} />
+  {#if !scopedHostKey || selectedHost?.isSelf}
+    <ToolingStatusBlock {tooling} {provider} />
+  {/if}
 </section>
 
 <style>

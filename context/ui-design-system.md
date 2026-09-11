@@ -115,7 +115,7 @@ otherwise fails only in the Vitest/Playwright transform tier, not in
   accent border only; `app.css` drops the kit `TextInput` outline ring
   that would otherwise stack on the same wrapper (every tap or Tab into a
   text field is `:focus-visible`). Hover-only controls nested inside a
-  list row button (`.star-btn`, `.import-btn`) carry `tabindex="-1"` so
+  list row button (`.star-btn`) carry `tabindex="-1"` so
   Tab moves row to row instead of stopping on an invisible target.
 - Tab strips are one tab stop: only the selected tab has `tabindex="0"`,
   Left/Right/Home/End move focus and selection via

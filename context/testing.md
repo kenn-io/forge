@@ -123,6 +123,9 @@ owner:
 - Browser specs live beside their components under `frontend/src`; the browser
   project includes `src/**/*.browser.svelte.ts`, while the jsdom unit project
   also includes GitHub App setup tests (`frontend/vite.config.ts::jsdomUnitTestProject`).
+- Verify browser cleanup changes with repeated full runs in the CI Playwright Linux image;
+  macOS passes and a single retry can miss intermittent orchestrator disconnects
+  (`frontend/src/test/browserSetup.ts:7`).
 - Responsive layout tests must await the geometry invariant itself; repeated first-paint
   measurements do not prove ResizeObserver has delivered its layout update
   (`frontend/src/RoborevReviewDrawer.footer-layout.browser.svelte.ts:229`).

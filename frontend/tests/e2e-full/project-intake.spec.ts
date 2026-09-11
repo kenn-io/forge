@@ -61,7 +61,8 @@ test.describe("project intake", () => {
       const created = (await registerResponse.json()) as ProjectResponse;
       expect(created.id).not.toBe("");
 
-      await expect(page).toHaveURL(/\/workspaces$/);
+      await expect(page).toHaveURL(`${server.info.base_url}/`);
+      await expect(page.locator(".activity-shell")).toBeVisible();
       const listResponse = await page.request.get(`${server.info.base_url}/api/v1/projects`);
       expect(listResponse.status(), await listResponse.text()).toBe(200);
       const list = (await listResponse.json()) as ProjectListResponse;
@@ -133,7 +134,8 @@ test.describe("project intake", () => {
       await page.getByLabel("Repository path").fill(localRepo);
       await page.getByRole("button", { name: "Add repository" }).click();
 
-      await expect(page).toHaveURL(/\/workspaces$/);
+      await expect(page).toHaveURL(`${server.info.base_url}/`);
+      await expect(page.locator(".activity-shell")).toBeVisible();
       expect(registrationRequests).toBe(1);
       const listResponse = await page.request.get(`${server.info.base_url}/api/v1/projects`);
       expect(listResponse.status(), await listResponse.text()).toBe(200);

@@ -152,7 +152,7 @@ describe("WorkspaceFirstRunPanel", () => {
     expect(screen.getByText("Install gh to use this option.")).toBeTruthy();
   });
 
-  it("registers an existing repository and returns to workspaces", async () => {
+  it("registers an existing repository and opens Activity", async () => {
     mocks.registerExistingProject.mockReturnValue(Effect.succeed(project("prj_existing")));
     setupTooling({ ghAuthed: true });
     await renderPanel();
@@ -170,7 +170,7 @@ describe("WorkspaceFirstRunPanel", () => {
     await waitFor(() => {
       expect(mocks.registerExistingProject).toHaveBeenCalledWith("/tmp/repo", undefined);
     });
-    expect(mocks.navigate).toHaveBeenCalledWith("/workspaces");
+    expect(mocks.navigate).toHaveBeenCalledWith("/");
   });
 
   it("adds a project on a scoped host", async () => {
@@ -224,7 +224,7 @@ describe("WorkspaceFirstRunPanel", () => {
     await waitFor(() => {
       expect(mocks.registerExistingProject).toHaveBeenCalledWith("/srv/repo", { hostKey: "epyc" });
     });
-    expect(mocks.navigate).toHaveBeenCalledWith("/workspaces");
+    expect(mocks.navigate).toHaveBeenCalledWith("/");
   });
 
   it("finishes an accepted registration under its original host identity", async () => {
@@ -300,7 +300,7 @@ describe("WorkspaceFirstRunPanel", () => {
     );
   });
 
-  it("clones a Git URL and returns to workspaces", async () => {
+  it("clones a Git URL and opens Activity", async () => {
     mocks.cloneProject.mockReturnValue(Effect.succeed(project("prj_clone")));
     setupTooling({ ghAuthed: true });
     await renderPanel();
@@ -319,7 +319,7 @@ describe("WorkspaceFirstRunPanel", () => {
 
     await waitFor(() => {
       expect(mocks.cloneProject).toHaveBeenCalledWith("git@github.com:octo/repo.git", "/tmp/repo", "main", undefined);
-      expect(mocks.navigate).toHaveBeenCalledWith("/workspaces");
+      expect(mocks.navigate).toHaveBeenCalledWith("/");
     });
   });
 

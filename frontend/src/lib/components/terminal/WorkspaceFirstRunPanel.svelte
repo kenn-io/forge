@@ -297,7 +297,7 @@
             },
             onSuccess: () => {
               if (componentDestroyed || scopedHostKey !== targetHostKey) return Effect.void;
-              return Effect.sync(() => navigate("/workspaces")).pipe(
+              return Effect.sync(() => navigate("/")).pipe(
                 Effect.andThen(workflow.forgetProject(command.key)),
               );
             },

@@ -1161,6 +1161,9 @@ responses, and discard stale responses instead of patching another item.
 - Onboarding repository setup owns its initial sync through `triggerSyncEffect`: a rejected trigger returns the flow
   to a retryable repository step with the failure visible, while an accepted trigger advances only after the ordered
   sync command settles (`frontend/src/lib/components/onboarding/OnboardingFlow.svelte::startSync`).
+- Project registration and cloning continue to Activity; the workspace list is not
+  the setup landing page
+  (`frontend/src/lib/components/terminal/WorkspaceFirstRunPanel.svelte::runProjectSubmission`).
 
 ## Testing Expectations
 

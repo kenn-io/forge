@@ -1360,11 +1360,13 @@ func (m *Manager) fallbackSource(host string) tokenauth.Source {
 }
 
 // gitRunnerAuthed returns a runner with the selected token attached for
-// networked operations. With no source configured it returns the plain runner.
+// networked operations. Stop stalled transfers without limiting active clones.
 func (m *Manager) gitRunnerAuthed(
 	ctx context.Context, source tokenauth.Source, host string, required bool,
 ) (gitcmd.Runner, string, error) {
-	runner := newGitRunner()
+	runner := newGitRunner().
+		WithConfig("http.lowSpeedLimit", "1").
+		WithConfig("http.lowSpeedTime", "30")
 	if source == nil {
 		if required {
 			return runner, "", ErrCredentialUnavailable

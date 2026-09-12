@@ -22,6 +22,7 @@ var transientGitErrorSubstrings = []string{
 	"connection refused",
 	"could not resolve host",
 	"operation timed out",
+	"operation too slow",
 	"early eof",
 	"ssl_read",
 	"tls connection",

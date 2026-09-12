@@ -18,14 +18,14 @@
     "test:e2e": "node node_modules/vite-plus/bin/vp run kenn-forge-frontend#test:e2e && cd packages/github-app-ui && node ../../node_modules/vite-plus/bin/vp build --logLevel warn && node node_modules/.bin/playwright test"
   },
   "devDependencies": {
-    "@playwright/test": "1.62.1",
+    "@playwright/test": "1.63.0",
     "@sveltejs/mcp": "0.1.26",
-    "svelte-check": "4.7.5",
+    "svelte-check": "4.7.6",
     "typescript": "5.9.3",
-    "vite-plus": "0.2.8"
+    "vite-plus": "0.3.0"
   },
   "overrides": {
-    "dompurify": "3.4.13"
+    "dompurify": "3.4.14"
   },
   "devEngines": {
     "packageManager": {
@@ -38,5 +38,5 @@
       "onFail": "download"
     }
   },
-  "packageManager": "bun@1.4.0"
+  "packageManager": "bun@1.4.2"
 }

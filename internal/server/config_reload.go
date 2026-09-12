@@ -85,6 +85,7 @@ type startupConfigSnapshot struct {
 	FleetBaseURL    string
 	Hub             *fleetHubStartupBinding
 	RequireAuth     bool
+	Service         config.Service
 	TailscaleServe  config.TailscaleServeAPI
 }
 
@@ -144,6 +145,7 @@ func snapshotStartupConfig(cfg *config.Config) startupConfigSnapshot {
 		}
 	}
 	snap.RequireAuth = cfg.API.RequireAuth
+	snap.Service = cfg.Service
 	snap.TailscaleServe = cfg.API.TailscaleServe
 	snap.TailscaleServe.AllowedUsers = slices.Clone(
 		cfg.API.TailscaleServe.AllowedUsers,
@@ -436,6 +438,9 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 			Valid: false,
 			Error: sanitizeConfigError(err, s.cfgPath),
 		}
+	}
+	if newCfg.Service != s.bootCfgSnapshot.Service {
+		return configChangedEvent{Valid: false, RestartRequired: true, Error: "service configuration changes require a daemon restart"}
 	}
 	if err := validateReloadCloneTokenSources(newCfg); err != nil {
 		slog.Warn(

@@ -5,6 +5,15 @@ and the root event stream.
 
 ## Startup Contracts
 
+- Service startup must serve owner login before constructing providers; health
+  readiness includes this signed-out state (`cmd/kenn-forge/main.go::run`).
+- Service browser access requires the owner OAuth cookie; daemon bearer access
+  requires the exact direct loopback listener. Preserve this distinction across
+  APIs and WebSockets (`internal/server/service_auth.go::handleServiceAuth`).
+- Service mode limits delegated GitHub access, but does not isolate credentials
+  or code from root or the service OS account. Disconnect cannot recall tokens
+  already delivered to agents (`internal/serviceauth/auth.go::Logout`).
+
 - Bare `kenn-forge` is help-only, `serve` is foreground, and background
   lifecycle management is under `daemon start|status|stop|restart`
   (`cmd/kenn-forge/cli.go::newRootCommand`).

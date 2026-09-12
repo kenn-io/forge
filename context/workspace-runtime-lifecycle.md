@@ -196,6 +196,16 @@ create a local process, PTY, or durable transport session
 
 ## Tmux Persistence Rules
 
+- Bind service credential commands to an absolute executable and canonical
+  config path; agent working directories differ from daemon startup
+  (`internal/workspace/manager.go::configureServiceGitCredentials`).
+- Keep service credentials out of persistent tmux environments and obtain them
+  per command; missing authorization must also stop Git's askpass fallback
+  (`cmd/kenn-forge/github_credentials.go`).
+- Enabling worktree Git config must preserve the shared bare clone and sibling
+  worktrees' `core.bare` semantics
+  (`internal/workspace/repository_hooks.go::enableWorktreeConfig`).
+
 - Startup must attempt agent recovery before pruning missing runtime rows or
   their hook reports; those two records jointly identify the saved conversation
   (`internal/server/workspaceapi/lifecycle.go::Handler.RestoreRuntimeSessions`).

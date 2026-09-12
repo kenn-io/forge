@@ -10,6 +10,7 @@ import (
 
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/serviceauth"
 )
 
 // SwitchHandler delegates each request to the currently installed handler.
@@ -46,6 +47,7 @@ type startupHandler struct {
 	daemonRequests daemonRequestPolicy
 	basePath       string
 	spa            http.Handler
+	serviceAuth    *serviceauth.Manager
 }
 
 // NewStartupHandler returns a minimal handler for the window between listener
@@ -85,6 +87,7 @@ func NewStartupHandler(
 		daemonRequests: newDaemonRequestPolicy(options.DaemonAccess),
 		basePath:       basePath,
 		spa:            spa,
+		serviceAuth:    options.ServiceAuth,
 	}
 }
 
@@ -106,6 +109,9 @@ func (h *startupHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !checkListenerHost(w, r, h.allowedHosts) {
+		return
+	}
+	if h.serviceAuth != nil && handleServiceAuth(w, r, h.serviceAuth, h.basePath, h.hostOpts, h.daemonRequests.token) {
 		return
 	}
 	h.serve(w, r)
@@ -143,7 +149,7 @@ func (h *startupHandler) serve(w http.ResponseWriter, r *http.Request) {
 
 func (h *startupHandler) serveInner(w http.ResponseWriter, r *http.Request) {
 	switch {
-	case r.URL.Path == "/livez":
+	case r.URL.Path == "/livez", r.URL.Path == "/healthz" && h.serviceAuth != nil:
 		writeJSON(w, http.StatusOK, healthResponse{Status: "ok"})
 	case r.URL.Path == "/healthz",
 		r.URL.Path == "/api",
@@ -152,6 +158,11 @@ func (h *startupHandler) serveInner(w http.ResponseWriter, r *http.Request) {
 		strings.HasPrefix(r.URL.Path, "/ws/"):
 		writeStartupUnavailable(w, r)
 	default:
+		if h.serviceAuth != nil {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = w.Write([]byte(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="1"><title>Forge is starting</title><body><p>Signed in. Forge is starting…</p></body></html>`))
+			return
+		}
 		if h.spa == nil {
 			http.NotFound(w, r)
 			return

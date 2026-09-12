@@ -9,10 +9,11 @@ import (
 type SourceKind string
 
 const (
-	SourceKindEnv       SourceKind = "env"
-	SourceKindFile      SourceKind = "file"
-	SourceKindGitHubCLI SourceKind = "github_cli"
-	SourceKindGitHubApp SourceKind = "github_app"
+	SourceKindEnv           SourceKind = "env"
+	SourceKindFile          SourceKind = "file"
+	SourceKindGitHubCLI     SourceKind = "github_cli"
+	SourceKindGitHubApp     SourceKind = "github_app"
+	SourceKindGitHubAppUser SourceKind = "github_app_user"
 )
 
 type Key struct {
@@ -62,8 +63,8 @@ func (c Candidate) SafeString() string {
 		return fmt.Sprintf("env:%s", c.EnvName)
 	case SourceKindFile:
 		return fmt.Sprintf("file:%s", c.FilePath)
-	case SourceKindGitHubCLI:
-		return fmt.Sprintf("github_cli:%s", c.Host)
+	case SourceKindGitHubCLI, SourceKindGitHubAppUser:
+		return fmt.Sprintf("%s:%s", c.Kind, c.Host)
 	case SourceKindGitHubApp:
 		if c.InstallationAccount != "" {
 			return fmt.Sprintf("github_app:%d@%s/%s", c.AppID, c.Host, c.InstallationAccount)
@@ -175,7 +176,7 @@ func canonicalCandidate(candidate Candidate) Candidate {
 		return Candidate{Kind: candidate.Kind, EnvName: candidate.EnvName}
 	case SourceKindFile:
 		return Candidate{Kind: candidate.Kind, FilePath: candidate.FilePath}
-	case SourceKindGitHubCLI:
+	case SourceKindGitHubCLI, SourceKindGitHubAppUser:
 		return Candidate{Kind: candidate.Kind, Host: candidate.Host}
 	case SourceKindGitHubApp:
 		return Candidate{

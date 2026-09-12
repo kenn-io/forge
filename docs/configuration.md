@@ -194,6 +194,69 @@ Selected repository access is a startup routing snapshot. New grants use the
 PAT route until refresh. Revoked App access can return 404, and Forge does
 not retry that response with a PAT because 404 can also mean missing or private.
 
+### GitHub login for a service account
+
+Service mode gives one Forge deployment to one GitHub user. It is opt-in;
+ordinary deployments keep the credential behavior described above. It currently
+supports GitHub.com and independent instances, without fleet mode.
+
+Create a company-owned **GitHub App**, separate from the read-only sync Apps.
+Keep expiring user access tokens enabled and install it on selected pilot
+repositories. Grant Contents, Pull requests, and Issues read/write, plus
+Actions, Checks, Commit statuses, and Metadata read. Add Actions write for
+workflow operations and Workflows write for workflow-file edits when needed.
+Forge uses the intersection of the App's access and the signed-in user's
+access; writes are attributed to that user. See
+[GitHub's user access token rules](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-user-access-token-for-a-github-app).
+
+Give each instance its own Linux account, private home and data directory,
+loopback port, and HTTPS hostname. On Tailscale, configure a separate
+Tailscale Service/proxy mapping per instance and grant its intended user access.
+Distinct hostnames separate browser cookies; different ports on one hostname
+do not. Register each instance's exact callback URL, such as
+`https://forge-alex.example.com/auth/github/callback`, in the shared App's
+[callback settings](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/about-the-user-authorization-callback-url).
+
+Write the App's client secret to an owner-readable file with mode `0600`.
+The service needs its client ID and secret, not an App private key. Configure
+the owner's numeric GitHub user ID, which stays stable across login renames:
+
+```toml
+host = "127.0.0.1"
+port = 8091
+data_dir = "/home/forge-alex/.kenn/forge"
+
+[service]
+enabled = true
+github_user_id = 123456
+github_client_id = "YOUR_GITHUB_APP_CLIENT_ID"
+github_client_secret_file = "github-client-secret"
+base_url = "https://forge-alex.example.com"
+```
+
+Secret paths are relative to the config file. If using `base_path`, include
+the same prefix in `service.base_url` and the callback URL. Start Forge with
+`kenn-forge daemon start --config /path/to/config.toml`, open the HTTPS URL,
+and choose **Sign in with GitHub**. The daemon can start before its first
+login. Another GitHub user cannot enter this instance.
+
+Agent sessions receive a managed Git credential helper. For GitHub CLI
+operations, generated agent instructions use
+`kenn-forge github exec --config /path/to/config.toml -- gh pr create`.
+Service mode has no personal PAT or `gh auth login` fallback; omit other
+credentials and `api.tailscale_serve` identity authentication. Use **GitHub
+account** in the header to disconnect or reconnect. Closing the browser leaves
+agent credentials available; disconnecting stops new credential requests.
+A process that already received a token retains it until expiry or GitHub
+revocation.
+
+Linux account access, including root/sudo, still grants access to that Forge's
+stored tokens and checked-out code. This mode limits delegated GitHub access;
+it does not isolate projects from the host administrator. Before using
+production repositories, verify two owners, denied cross-instance access,
+denied access to an unselected private repository, agent fetch/push/PR creation,
+restart, and disconnect on the shared host.
+
 ## Sync budget
 
 `sync_budget_per_hour` limits the API requests Forge spends on live background

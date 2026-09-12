@@ -488,6 +488,12 @@
 
     <ThemeToggle />
 
+    {#if window.__KENN_FORGE_SERVICE_MODE__}
+      <a class="action-btn" href={`${getBasePath().replace(/\/$/, "")}/auth/github`}>
+        GitHub account
+      </a>
+    {/if}
+
     <HeaderIconButton
       active={getPage() === "settings"}
       onclick={toggleSettings}

@@ -124,6 +124,7 @@ function expectReservedRepoSelectorSlot(container: HTMLElement): void {
 
 describe("AppHeader", () => {
   beforeEach(() => {
+    delete window.__KENN_FORGE_SERVICE_MODE__;
     document.documentElement.classList.remove("dark");
     localStorage.clear();
     mockMatchMedia(false);
@@ -140,6 +141,7 @@ describe("AppHeader", () => {
   });
 
   afterEach(() => {
+    delete window.__KENN_FORGE_SERVICE_MODE__;
     cleanupTheme();
     cleanup();
     navigate("/");
@@ -154,6 +156,16 @@ describe("AppHeader", () => {
     setGlobalRepo(undefined);
     mockedSettings.value = undefined;
     resetPaletteState();
+  });
+
+  it("offers account management only for service deployments", () => {
+    initTheme();
+    const ordinary = render(AppHeader);
+    expect(screen.queryByRole("link", { name: "GitHub account" })).toBeNull();
+    ordinary.unmount();
+    window.__KENN_FORGE_SERVICE_MODE__ = true;
+    render(AppHeader);
+    expect(screen.getByRole("link", { name: "GitHub account" }).getAttribute("href")).toBe("/auth/github");
   });
 
   it("keeps the primary segment wired to the existing full sync", async () => {

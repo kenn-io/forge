@@ -246,6 +246,47 @@ func ensureManagedCloneExclude(
 		return fmt.Errorf("managed workspace must be a linked worktree")
 	}
 
+	if err := enableWorktreeConfig(ctx, commonDir); err != nil {
+		return err
+	}
+
+	excludePath := filepath.Join(canonicalGitDir, "forge-roborev-exclude")
+	baseExclude, err := effectiveBaseExclude(
+		ctx, workspacePath, canonicalGitDir, excludePath,
+	)
+	if err != nil {
+		return err
+	}
+	if err := writeRoborevExclude(
+		excludePath, baseExclude, gitIgnoreLiteralDirPattern(relativeDir),
+	); err != nil {
+		return err
+	}
+	if _, err := gitCombinedOutput(
+		ctx, workspacePath, "config", "--worktree", "core.excludesFile", excludePath,
+	); err != nil {
+		return fmt.Errorf("configure worktree Roborev exclude file: %w", err)
+	}
+	probePath := filepath.ToSlash(filepath.Join(relativeDir, ".forge-ignore-probe"))
+	if _, err := gitCombinedOutput(ctx, workspacePath, "check-ignore", "--quiet", "--no-index", "--", probePath); err != nil {
+		return fmt.Errorf("verify worktree Roborev exclude for %q: %w", relativeDir, err)
+	}
+	return nil
+}
+
+func enableWorktreeConfig(ctx context.Context, commonDir string) error {
+	enabled, err := gitCombinedOutput(
+		ctx, commonDir, "config", "--local", "--bool", "--get", "extensions.worktreeConfig",
+	)
+	if err == nil && strings.TrimSpace(enabled) == "true" {
+		return nil
+	}
+	if err != nil {
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
+			return fmt.Errorf("inspect managed clone worktree configuration: %w", err)
+		}
+	}
 	sharedBare, err := gitCombinedOutput(
 		ctx, commonDir, "config", "--local", "--bool", "--get", "core.bare",
 	)
@@ -284,28 +325,6 @@ func ensureManagedCloneExclude(
 		ctx, commonDir, "config", "--local", "extensions.worktreeConfig", "true",
 	); err != nil {
 		return fmt.Errorf("enable managed clone worktree configuration: %w", err)
-	}
-
-	excludePath := filepath.Join(canonicalGitDir, "forge-roborev-exclude")
-	baseExclude, err := effectiveBaseExclude(
-		ctx, workspacePath, canonicalGitDir, excludePath,
-	)
-	if err != nil {
-		return err
-	}
-	if err := writeRoborevExclude(
-		excludePath, baseExclude, gitIgnoreLiteralDirPattern(relativeDir),
-	); err != nil {
-		return err
-	}
-	if _, err := gitCombinedOutput(
-		ctx, workspacePath, "config", "--worktree", "core.excludesFile", excludePath,
-	); err != nil {
-		return fmt.Errorf("configure worktree Roborev exclude file: %w", err)
-	}
-	probePath := filepath.ToSlash(filepath.Join(relativeDir, ".forge-ignore-probe"))
-	if _, err := gitCombinedOutput(ctx, workspacePath, "check-ignore", "--quiet", "--no-index", "--", probePath); err != nil {
-		return fmt.Errorf("verify worktree Roborev exclude for %q: %w", relativeDir, err)
 	}
 	return nil
 }

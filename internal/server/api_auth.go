@@ -415,9 +415,15 @@ func (s *Server) isGatedAPIRequest(r *http.Request) bool {
 // debug logs.
 func redactedQuery(u *url.URL) string {
 	query := u.Query()
-	if _, ok := query[authBootstrapParam]; !ok {
+	changed := false
+	for _, name := range []string{authBootstrapParam, "code", "state"} {
+		if _, ok := query[name]; ok {
+			query.Set(name, "REDACTED")
+			changed = true
+		}
+	}
+	if !changed {
 		return u.RawQuery
 	}
-	query.Set(authBootstrapParam, "REDACTED")
 	return query.Encode()
 }

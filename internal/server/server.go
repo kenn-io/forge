@@ -46,6 +46,7 @@ import (
 	"go.kenn.io/forge/internal/server/repobrowserapi"
 	"go.kenn.io/forge/internal/server/workflowapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
+	"go.kenn.io/forge/internal/serviceauth"
 	"go.kenn.io/forge/internal/systemclipboard"
 	"go.kenn.io/forge/internal/telemetry"
 	"go.kenn.io/forge/internal/terminalpaste"
@@ -69,6 +70,9 @@ type versionOutputBody BuildInfo
 type versionOutput = httpapi.BodyOutput[versionOutputBody]
 
 type ServerOptions struct {
+	ServiceGitConfigPath               string
+	ServiceGitExecutable               string
+	ServiceAuth                        *serviceauth.Manager
 	DaemonAccess                       DaemonAccessOptions
 	FederationCredentials              *federationauth.Store
 	FederationEnrollments              *federation.Store
@@ -1088,9 +1092,12 @@ func newServer(
 	}
 	if options.WorktreeDir != "" {
 		s.workspaces = workspace.NewManager(database, options.WorktreeDir)
+		if options.ServiceAuth != nil {
+			s.workspaces.SetServiceGitCredentials(options.ServiceGitExecutable, options.ServiceGitConfigPath)
+		}
 		s.workspaces.SetNow(workspaceNow)
 		s.workspaces.SetLaunchSpecResolver(launchSpecResolver)
-		s.workspaces.SetRequireProviderCredential(s.providerRouteSpoke)
+		s.workspaces.SetRequireProviderCredential(s.providerRouteSpoke || options.ServiceAuth != nil)
 		s.workspaces.SetTmuxCommand(tmuxCmd)
 		s.workspaces.UpdateTmuxStripEnvVars(s.runtimeStripEnvVars)
 		s.workspaces.SetHideTmuxStatus(hideTmuxStatus)
@@ -1531,6 +1538,9 @@ func (s *Server) bootstrapScript() string {
 	builder.WriteString(`window.__BASE_PATH__=`)
 	builder.WriteString(scriptSafe(string(safeBase)))
 	builder.WriteString(`;`)
+	if s.options.ServiceAuth != nil {
+		builder.WriteString(`window.__KENN_FORGE_SERVICE_MODE__=true;`)
+	}
 	// Preserve daemon-side worktree focus set by thin clients through the API.
 	if awKey, set := s.ActiveWorktreeKey(); set {
 		keyJSON, _ := json.Marshal(awKey)
@@ -1595,7 +1605,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !s.checkHost(w, r) {
 		return
 	}
-	if s.daemonRequests.requireAPIAuth {
+	if s.options.ServiceAuth != nil {
+		if handleServiceAuth(w, r, s.options.ServiceAuth, s.basePath, hostOpts, s.daemonRequests.token) {
+			return
+		}
+	} else if s.daemonRequests.requireAPIAuth {
 		if s.handleAuthBootstrap(w, r) {
 			return
 		}

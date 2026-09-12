@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	shellquote "github.com/kballard/go-shellquote"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
@@ -64,6 +65,8 @@ type Manager struct {
 	worktreeBaseResolver      WorktreeBasePathResolver
 	launchSpecResolver        providerplane.WorkspaceLaunchSpecResolver
 	requireProviderCredential bool
+	serviceGitExecutable      string
+	serviceGitConfigPath      string
 	now                       func() time.Time
 	afterHeadRepoSnapshotRead func()
 	// beforeExistingWorktreeRepoLock runs after reuse pre-validation and right
@@ -269,6 +272,13 @@ func (m *Manager) SetClones(clones *gitclone.Manager) {
 // fail closed when the executing federation spoke loses its credential route.
 func (m *Manager) SetRequireProviderCredential(required bool) {
 	m.requireProviderCredential = required
+}
+
+// SetServiceGitCredentials configures service-account Git credentials for
+// worktrees created or launched by this manager. Empty values disable it.
+func (m *Manager) SetServiceGitCredentials(executable, configPath string) {
+	m.serviceGitExecutable = executable
+	m.serviceGitConfigPath = configPath
 }
 
 // SetRoborevEndpoint binds the startup-scoped daemon endpoint used for
@@ -1521,6 +1531,12 @@ func (m *Manager) SetupWithOptions(
 			)
 		}
 	}
+	if err := m.configureServiceGitCredentials(ctx, ws.WorktreePath); err != nil {
+		if !preserveWorktree {
+			m.rollbackWorktree(ctx, gitDir, ws, branch)
+		}
+		return m.failSetup(ctx, ws.ID, workspaceSetupStageWorktree, err)
+	}
 
 	if managedClone && options.RoborevInitManagedClones {
 		m.recordSetupEvent(
@@ -1586,6 +1602,84 @@ func (m *Manager) SetupWithOptions(
 	}
 	ws.WorkspaceBranch = persistedBranch
 	ws.Status = "ready"
+	return nil
+}
+
+func (m *Manager) configureServiceGitCredentials(ctx context.Context, worktree string) error {
+	if m.serviceGitExecutable == "" || m.serviceGitConfigPath == "" {
+		return nil
+	}
+	helper := "!" + shellquote.Join(
+		m.serviceGitExecutable, "github", "credential", "--config", m.serviceGitConfigPath,
+	)
+	commonDir, err := gitCombinedOutput(
+		ctx, worktree, "rev-parse", "--path-format=absolute", "--git-common-dir",
+	)
+	if err != nil {
+		return fmt.Errorf("resolve service workspace Git directory: %w", err)
+	}
+	if err := enableWorktreeConfig(ctx, strings.TrimSpace(commonDir)); err != nil {
+		return fmt.Errorf("configure service workspace Git directory: %w", err)
+	}
+	commands := [][]string{
+		{"config", "--worktree", "--replace-all", "credential.helper", ""},
+		{"config", "--worktree", "--add", "credential.helper", helper},
+		{"config", "--worktree", "credential.useHttpPath", "true"},
+		{"config", "--worktree", "protocol.ssh.allow", "never"},
+	}
+	for _, args := range commands {
+		if err := runGitWithoutHooks(ctx, worktree, args...); err != nil {
+			return fmt.Errorf("configure service Git credentials: %w", err)
+		}
+	}
+	remotes, err := gitCombinedOutput(ctx, worktree, "remote")
+	if err != nil {
+		return fmt.Errorf("list service workspace remotes: %w", err)
+	}
+	for remote := range strings.FieldsSeq(remotes) {
+		if err := convertServiceGitRemote(ctx, worktree, remote, "url"); err != nil {
+			return err
+		}
+		if err := convertServiceGitRemote(ctx, worktree, remote, "pushurl"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func convertServiceGitRemote(ctx context.Context, worktree, remote, suffix string) error {
+	key := "remote." + remote + "." + suffix
+	configured, err := gitCombinedOutput(ctx, worktree, "config", "--get-all", key)
+	if err != nil {
+		if strings.TrimSpace(configured) == "" {
+			return nil
+		}
+		return fmt.Errorf("read service workspace remote: %w", err)
+	}
+	values := strings.Split(strings.TrimSuffix(configured, "\n"), "\n")
+	changed := false
+	for i, value := range values {
+		if !strings.EqualFold(gitremote.RemoteHost(value), "github.com") {
+			continue
+		}
+		repoPath := gitremote.RemoteRepoPath(value)
+		if repoPath == "" {
+			continue
+		}
+		values[i] = "https://github.com/" + repoPath + ".git"
+		changed = true
+	}
+	if !changed {
+		return nil
+	}
+	if _, err := gitCombinedOutput(ctx, worktree, "config", "--unset-all", key); err != nil {
+		return fmt.Errorf("replace service workspace remote: %w", err)
+	}
+	for _, value := range values {
+		if err := runGitWithoutHooks(ctx, worktree, "config", "--add", key, value); err != nil {
+			return fmt.Errorf("write service workspace remote: %w", err)
+		}
+	}
 	return nil
 }
 

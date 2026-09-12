@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	shellquote "github.com/kballard/go-shellquote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -436,6 +437,10 @@ func TestPrepareAgentLaunchContextUsesPersistedFactsWithoutProviderRefresh(t *te
 	require.NoError(err)
 	worktree := ws.WorktreePath
 	initWorkspaceGitRepoAt(t, worktree)
+	runWorkspaceTestGit(t, worktree, "remote", "add", "origin", "git@github.com:acme/widget.git")
+	executable := filepath.Join(t.TempDir(), "kenn forge")
+	configPath := filepath.Join(t.TempDir(), "service config.toml")
+	mgr.SetServiceGitCredentials(executable, configPath)
 	require.NoError(d.UpdateWorkspaceBranch(t.Context(), ws.ID, "feature/widgets"))
 	require.NoError(d.UpdateWorkspaceStatus(t.Context(), ws.ID, "ready", nil))
 
@@ -460,6 +465,28 @@ func TestPrepareAgentLaunchContextUsesPersistedFactsWithoutProviderRefresh(t *te
 	assert.Contains(string(content), "Push branch: feature/widgets on origin (updates this PR)")
 	assert.NotContains(string(content), "feature/widgets-renamed")
 	assert.NotContains(string(content), "Working branch")
+	commandPrefix := shellquote.Join(executable, "github", "exec", "--config", configPath, "--")
+	assert.Contains(string(content), commandPrefix+" gh pr create")
+	assert.Contains(string(content), "Do not run `gh auth login`")
+
+	remote := strings.TrimSpace(string(runWorkspaceTestGit(t, worktree, "remote", "get-url", "origin")))
+	assert.Equal("https://github.com/acme/widget.git", remote)
+	helpers := strings.Split(strings.TrimSuffix(string(runWorkspaceTestGit(
+		t, worktree, "config", "--worktree", "--get-all", "credential.helper",
+	)), "\n"), "\n")
+	require.Len(helpers, 2)
+	assert.Empty(helpers[0])
+	assert.Equal("!"+shellquote.Join(
+		executable, "github", "credential", "--config", configPath,
+	), helpers[1])
+	useHTTPPath := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, worktree, "config", "--worktree", "--get", "credential.useHttpPath",
+	)))
+	assert.Equal("true", useHTTPPath)
+	sshAllowed := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, worktree, "config", "--worktree", "--get", "protocol.ssh.allow",
+	)))
+	assert.Equal("never", sshAllowed)
 }
 
 func TestPrepareAgentLaunchContextPreservesUserFileAndRefreshesMarkedFile(t *testing.T) {

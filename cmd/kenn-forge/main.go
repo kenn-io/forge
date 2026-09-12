@@ -34,6 +34,7 @@ import (
 	"go.kenn.io/forge/internal/runtimelock"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/fleetapi"
+	"go.kenn.io/forge/internal/serviceauth"
 	"go.kenn.io/forge/internal/shutdownbudget"
 	"go.kenn.io/forge/internal/stacks"
 	"go.kenn.io/forge/internal/telemetry"
@@ -449,7 +450,24 @@ func run(opts serve.Options) error {
 		TailscaleServeUsers:   cfg.API.TailscaleServe.AllowedUsers,
 	}
 
-	startupOptions := server.ServerOptions{DaemonAccess: daemonAccess, MCPURL: mcpURL}
+	var serviceAuth *serviceauth.Manager
+	var serviceGitExecutable string
+	if cfg.Service.Enabled {
+		serviceGitExecutable, err = os.Executable()
+		if err != nil {
+			closeListeners()
+			return fmt.Errorf("resolve service Git executable: %w", err)
+		}
+		serviceAuth, err = serviceauth.New(serviceauth.Options{
+			ClientID: cfg.Service.GitHubClientID, ClientSecretFile: cfg.Service.GitHubClientSecretFile,
+			OwnerID: cfg.Service.GitHubUserID, BaseURL: cfg.Service.BaseURL, DataDir: cfg.DataDir,
+		})
+		if err != nil {
+			closeListeners()
+			return err
+		}
+	}
+	startupOptions := server.ServerOptions{DaemonAccess: daemonAccess, MCPURL: mcpURL, ServiceAuth: serviceAuth}
 	startupHandler := server.NewStartupHandler(assets, cfg, startupOptions, ln)
 	switcher := server.NewSwitchHandler(startupHandler)
 	httpSrv := &http.Server{
@@ -641,8 +659,29 @@ func run(opts serve.Options) error {
 		return fmt.Errorf("open database: %w", err)
 	}
 	backgroundLoops = startBackgroundLoops(ctx, database)
+	if serviceAuth != nil {
+		slog.Info("service GitHub login available", "url", cfg.Service.BaseURL)
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		for {
+			if serviceAuth.Status().Connected {
+				if _, tokenErr := serviceAuth.Token(ctx); tokenErr == nil {
+					break
+				}
+			}
+			select {
+			case <-ctx.Done():
+				return nil
+			case serveErr := <-errCh:
+				return fmt.Errorf("serve service login: %w", serveErr)
+			case <-ticker.C:
+			}
+		}
+		ticker.Stop()
+	}
 	tokenSources := tokenauth.NewSourceSet(tokenauth.Options{
-		GitHubCLI: config.GitHubCLITokenForHost,
+		GitHubCLI:     config.GitHubCLITokenForHost,
+		GitHubAppUser: serviceAuth,
 		GitHubApp: func(
 			ctx context.Context, candidate tokenauth.Candidate,
 		) (string, time.Time, error) {
@@ -744,6 +783,9 @@ func run(opts serve.Options) error {
 	srv = server.NewWithConfig(
 		database, syncer, cloneMgr, assets,
 		cfg, configPath, server.ServerOptions{
+			ServiceGitConfigPath:             runtimeIdentity.LockMetadata.ConfigPath,
+			ServiceGitExecutable:             serviceGitExecutable,
+			ServiceAuth:                      serviceAuth,
 			DaemonAccess:                     daemonAccess,
 			FederationCredentials:            federationCredentials,
 			FederationEnrollments:            federationEnrollments,

@@ -22,8 +22,9 @@ type GitHubCLIRunner func(context.Context, string) (string, error)
 type GitHubAppMinter func(context.Context, Candidate) (string, time.Time, error)
 
 type Options struct {
-	GitHubCLI GitHubCLIRunner
-	GitHubApp GitHubAppMinter
+	GitHubCLI     GitHubCLIRunner
+	GitHubApp     GitHubAppMinter
+	GitHubAppUser Source
 }
 
 type Source interface {
@@ -243,12 +244,18 @@ func (s *ManagedSource) Update(desc Descriptor) {
 
 func (s *ManagedSource) Invalidate(rejectedToken string) {
 	s.mu.Lock()
+	appUser := slices.ContainsFunc(s.desc.Candidates, func(c Candidate) bool {
+		return c.Kind == SourceKindGitHubAppUser
+	})
 	if s.ghToken == rejectedToken {
 		s.ghToken = ""
 		s.ghCached = false
 	}
 	s.appTokens.invalidateToken(s.desc.Candidates, rejectedToken)
 	s.mu.Unlock()
+	if appUser && s.options.GitHubAppUser != nil {
+		s.options.GitHubAppUser.Invalidate(rejectedToken)
+	}
 }
 
 func (s *ManagedSource) Token(ctx context.Context) (string, error) {
@@ -284,6 +291,12 @@ func (s *ManagedSource) tokenFromCandidate(
 		return strings.TrimSpace(string(data)), true, nil
 	case SourceKindGitHubCLI:
 		return s.githubCLIToken(ctx, candidate.Host)
+	case SourceKindGitHubAppUser:
+		if s.options.GitHubAppUser == nil {
+			return "", false, nil
+		}
+		token, err := s.options.GitHubAppUser.Token(ctx)
+		return token, true, err
 	case SourceKindGitHubApp:
 		return s.githubAppToken(ctx, candidate)
 	default:

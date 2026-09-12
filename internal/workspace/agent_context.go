@@ -11,6 +11,7 @@ import (
 	"strings"
 	"unicode"
 
+	shellquote "github.com/kballard/go-shellquote"
 	"go.kenn.io/forge/internal/db"
 )
 
@@ -61,6 +62,9 @@ type AgentContext struct {
 	ForkHeadRepo string
 	AssociatedPR *AgentAssociatedPRContext
 	Kata         *AgentKataContext
+	// GitHubCommandPrefix is the shell-quoted Forge wrapper prefix used by
+	// service-account workspaces for GitHub CLI API operations.
+	GitHubCommandPrefix string
 }
 
 type AgentAssociatedPRContext struct {
@@ -204,6 +208,14 @@ func RenderAgentContext(ctx AgentContext) string {
 		writeMarkdownLine(&b, "Associated PR", itemNumberLabel(ctx.AssociatedPR.Number))
 		writeMarkdownLine(&b, "Associated PR URL", ctx.AssociatedPR.URL)
 	}
+	if ctx.GitHubCommandPrefix != "" {
+		b.WriteString("\n## GitHub CLI\n")
+		b.WriteString("- Run GitHub CLI API commands through `")
+		b.WriteString(ctx.GitHubCommandPrefix)
+		b.WriteString(" gh ...`, including `")
+		b.WriteString(ctx.GitHubCommandPrefix)
+		b.WriteString(" gh pr create ...`. Do not run `gh auth login` or ask a human to authenticate in the shell.\n")
+	}
 	return b.String()
 }
 
@@ -228,6 +240,9 @@ func (m *Manager) PrepareAgentLaunchContext(
 	if summary == nil {
 		return ErrWorkspaceNotFound
 	}
+	if err := m.configureServiceGitCredentials(ctx, summary.WorktreePath); err != nil {
+		return err
+	}
 
 	relPath := agentContextRelPath(opts.TargetKey)
 	if relPath == "" {
@@ -245,9 +260,9 @@ func (m *Manager) PrepareAgentLaunchContext(
 	if err := EnsureGeneratedContextFilesIgnored(ctx, summary.WorktreePath, []string{relPath}); err != nil {
 		return err
 	}
-	content := renderAgentInstructionFile(
-		summary.WorktreePath, relPath, BuildAgentContext(*summary),
-	)
+	agentContext := BuildAgentContext(*summary)
+	agentContext.GitHubCommandPrefix = m.serviceGitHubCommandPrefix()
+	content := renderAgentInstructionFile(summary.WorktreePath, relPath, agentContext)
 	if err := writeGeneratedFileAtomic(summary.WorktreePath, relPath, content); err != nil {
 		return err
 	}
@@ -280,12 +295,23 @@ func (m *Manager) RenderAgentContextForWorktree(
 		if refreshed == nil {
 			return "", nil
 		}
-		rendered := RenderAgentContext(BuildAgentContext(*refreshed))
+		agentContext := BuildAgentContext(*refreshed)
+		agentContext.GitHubCommandPrefix = m.serviceGitHubCommandPrefix()
+		rendered := RenderAgentContext(agentContext)
 		return strings.TrimSpace(strings.TrimPrefix(
 			rendered, generatedAgentContextMarker,
 		)), nil
 	}
 	return "", nil
+}
+
+func (m *Manager) serviceGitHubCommandPrefix() string {
+	if m.serviceGitExecutable == "" || m.serviceGitConfigPath == "" {
+		return ""
+	}
+	return shellquote.Join(
+		m.serviceGitExecutable, "github", "exec", "--config", m.serviceGitConfigPath, "--",
+	)
 }
 
 func agentContextRelPath(targetKey string) string {

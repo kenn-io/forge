@@ -66,6 +66,7 @@ func newRootCommand(opts cliOptions) *cobra.Command {
 		newDocsCommand(opts.Stdout),
 		newArchiveCommand(opts.Stdout, time.Now),
 		newAgentHookCommand(opts.Stdin, opts.Stdout),
+		newGitHubCommand(opts.Stdin, opts.Stdout, opts.Stderr),
 		newDaemonCommand(opts.DaemonRunner),
 		newFleetCommand(fleetCLIOptions{
 			Stdin: opts.Stdin, Stdout: opts.Stdout, Stderr: opts.Stderr,

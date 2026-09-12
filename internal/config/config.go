@@ -971,6 +971,7 @@ type Config struct {
 	Shell             Shell                    `toml:"shell"`
 	Fleet             Fleet                    `toml:"fleet"`
 	API               API                      `toml:"api"`
+	Service           Service                  `toml:"service"`
 	MCP               MCP                      `toml:"mcp"`
 
 	// parsedAllowedHosts is the canonicalised form of AllowedHosts,
@@ -1375,6 +1376,9 @@ func (c *Config) DataDirWasRelative() bool {
 // validate runs every config rule.
 func (c *Config) validate() error {
 	var err error
+	if err := c.validateService(); err != nil {
+		return err
+	}
 	if err := c.Fleet.Validate(); err != nil {
 		return err
 	}
@@ -2422,6 +2426,9 @@ func (c *Config) GitHubToken() string {
 // host-scoped `gh auth token --hostname <host>`. Internal callers go
 // through GitHubToken() or TokenForPlatformHost.
 func (c *Config) gitHubTokenForHost(host string) string {
+	if c.Service.Enabled {
+		return ""
+	}
 	if host == platformpkg.DefaultGitHubHost {
 		if token := os.Getenv(c.GitHubTokenEnv); token != "" {
 			return token
@@ -2431,7 +2438,7 @@ func (c *Config) gitHubTokenForHost(host string) string {
 }
 
 func (c *Config) TokenForPlatformHost(platform, host, repoTokenEnv string) string {
-	if c == nil {
+	if c == nil || c.Service.Enabled {
 		return ""
 	}
 	if repoTokenEnv != "" {
@@ -2617,6 +2624,9 @@ func (c *Config) ResolveGitHubRepoTokenSource(r Repo) tokenauth.Descriptor {
 	if c == nil {
 		return tokenauth.Descriptor{}
 	}
+	if c.Service.Enabled {
+		return c.TokenSourceForPlatformHost(defaultPlatform, r.PlatformHostOrDefault(), "", "")
+	}
 	host := r.PlatformHostOrDefault()
 	overridden := r.TokenFile != "" || r.TokenEnv != ""
 	app, appCoversRepo := c.gitHubAppForRepo(host, r.Owner, r.Name)
@@ -2653,7 +2663,7 @@ func (c *Config) ResolveGitHubRepoTokenSource(r Repo) tokenauth.Descriptor {
 // PAT or gh fallback: when configured, archive work either uses the dedicated
 // installation budget or fails closed instead of spending ordinary capacity.
 func (c *Config) ResolveGitHubArchiveTokenSource(r Repo) tokenauth.Descriptor {
-	if c == nil || r.PlatformOrDefault() != defaultPlatform {
+	if c == nil || c.Service.Enabled || r.PlatformOrDefault() != defaultPlatform {
 		return tokenauth.Descriptor{}
 	}
 	host := r.PlatformHostOrDefault()
@@ -3041,6 +3051,12 @@ func (c *Config) TokenSourceForPlatformHost(
 		return tokenauth.Descriptor{}
 	}
 	desc := tokenauth.Descriptor{Key: tokenauth.Key{Platform: p, Host: h}}
+	if c.Service.Enabled {
+		if p == defaultPlatform && h == platformpkg.DefaultGitHubHost {
+			desc.Candidates = []tokenauth.Candidate{{Kind: tokenauth.SourceKindGitHubAppUser, Host: h}}
+		}
+		return desc
+	}
 	appendTokenFileEnvCandidates(&desc, repoTokenFile, repoTokenEnv)
 	// GitHub App installations are account-scoped and therefore belong only
 	// on repository or owner routes built by ResolveGitHubRepoTokenSource.
@@ -3147,6 +3163,7 @@ func appendTokenEnvNamesFromDescriptor(
 }
 
 func (c *Config) normalizeTokenFilePaths(configDir string) {
+	c.Service.GitHubClientSecretFile = normalizeTokenFilePath(configDir, c.Service.GitHubClientSecretFile)
 	for i := range c.GitHubOwnerTokens {
 		c.GitHubOwnerTokens[i].TokenFile = normalizeTokenFilePath(
 			configDir, c.GitHubOwnerTokens[i].TokenFile,
@@ -3509,6 +3526,7 @@ type configFile struct {
 	Shell                       Shell                    `toml:"shell,omitempty"`
 	Fleet                       Fleet                    `toml:"fleet,omitempty"`
 	API                         API                      `toml:"api,omitempty"`
+	Service                     Service                  `toml:"service,omitempty"`
 	MCP                         MCP                      `toml:"mcp,omitempty"`
 }
 
@@ -3519,6 +3537,7 @@ func (c *Config) Save(path string) error {
 		return fmt.Errorf("validating config: %w", err)
 	}
 	f := configFile{
+		Service:                     cfg.Service,
 		SyncInterval:                cfg.SyncInterval,
 		ActivePRRefreshInterval:     cfg.ActivePRRefreshInterval,
 		ActivePRHotWindow:           cfg.ActivePRHotWindow,

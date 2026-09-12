@@ -438,6 +438,11 @@ Intent:
 
 Before placing an overlay inside a split view, compact sidebar, drawer, or scrollable region, verify that it can extend past its trigger container without being cut off. An overlay opened from a modal must escape the modal's scrollable body while remaining inside the modal panel so the modal focus trap still owns it (`packages/ui/src/components/workspace/WorkspaceCreateSplitButton.svelte::portalMenu`).
 
+Label editor popovers use kit's `--z-popover` layer above workspace pane focus
+chrome. Verify overlap inside the workspace details pane as well as ordinary PR
+panes; they have different focus-marker owners. Keep the markers visible on every
+uncovered edge (`frontend/tests/e2e/workspace-sidebar.spec.ts`).
+
 Popover surface chrome (background, border, radius, shadow) comes from `kit-popover-card`; do not re-declare it in component-scoped styles. Scoped rules outrank the kit class, and a `var()` referencing an undefined token (there is no `--bg-elevated`) computes to transparent with no build-time error.
 
 A popover that lowers its own min-content width (`overflow-wrap: anywhere`, so an unbreakable branch name cannot stretch `WorkspacePaneControls` past its max-width) leaks that to every surface nested inside it, where flex rows then shrink buttons below their labels and break them mid-word. Reset `overflow-wrap`/`word-break` at the nested popover's root instead of hardening each child (`frontend/src/lib/components/terminal/TerminalOptionsMenu.svelte`).

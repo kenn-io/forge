@@ -6,6 +6,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -91,6 +93,56 @@ func TestIntegrationEnsureClone(t *testing.T) {
 	// Second call should be a no-op fetch, not re-clone.
 	err = mgr.EnsureClone(ctx, "github", "github.com", "testowner", "testrepo", remote)
 	require.NoError(t, err)
+}
+
+func TestIntegrationFetchRecoversFromStalledHTTP(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	remote, work := setupTestRepo(t)
+	mgr := New(t.TempDir(), nil)
+	require.NoError(mgr.EnsureClone(t.Context(), "github", "github.com", "acme", "widgets", remote))
+	clone, err := mgr.ClonePathForContext(t.Context(), "github", "github.com", "acme", "widgets")
+	require.NoError(err)
+	want := commitAndPush(t, work, "new.go", "package example\n", "new commit")
+	run(t, remote, "git", "update-server-info")
+
+	var requests atomic.Int32
+	files := http.FileServer(http.Dir(filepath.Dir(remote)))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/info/refs") && requests.Add(1) == 1 {
+			w.Header().Set("Content-Length", "1")
+			w.WriteHeader(http.StatusOK)
+			w.(http.Flusher).Flush()
+			<-r.Context().Done()
+			return
+		}
+		files.ServeHTTP(w, r)
+	}))
+	t.Cleanup(server.Close)
+	run(t, clone, "git", "remote", "set-url", "origin", server.URL+"/remote.git")
+	ctx, cancel := context.WithCancel(t.Context())
+	result := make(chan error, 1)
+	finished := make(chan struct{})
+	t.Cleanup(func() {
+		cancel()
+		server.CloseClientConnections()
+		server.Close()
+		<-finished
+	})
+	go func() {
+		defer close(finished)
+		result <- mgr.fetch(ctx, "github", "github.com", "acme", "widgets", clone)
+	}()
+
+	select {
+	case err := <-result:
+		require.NoError(err)
+	case <-time.After(time.Minute):
+		require.FailNow("stalled fetch did not recover within a minute")
+	}
+	got, err := mgr.RevParse(t.Context(), "github", "github.com", "acme", "widgets", "refs/remotes/origin/main")
+	require.NoError(err)
+	assert.Equal(t, want, got)
 }
 
 func TestIntegrationEnsureCloneIsolatesObjectsFromLocalSource(t *testing.T) {

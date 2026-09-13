@@ -3418,7 +3418,7 @@
 
   .label-editor-popover {
     position: fixed;
-    z-index: 60;
+    z-index: var(--z-popover);
   }
 
   .detail-header {

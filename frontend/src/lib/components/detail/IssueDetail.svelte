@@ -1743,7 +1743,7 @@
 
   .label-editor-popover {
     position: fixed;
-    z-index: 20;
+    z-index: var(--z-popover);
   }
 
   .detail-header {

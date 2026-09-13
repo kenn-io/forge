@@ -4310,6 +4310,74 @@ test.describe("sidebar PR tab", () => {
     await expect(page.locator(".right-sidebar .detail-title")).toContainText("Add browser regression coverage");
   });
 
+  for (const item of [
+    { workspace: testWorkspace, tab: "PR", width: "650" },
+    { workspace: testIssueWorkspace, tab: "Issue", width: "350" },
+  ]) {
+    test(`${item.tab} label popup covers the workspace details focus border`, async ({ page }) => {
+      await setupTerminalMocks(page, { workspace: item.workspace });
+      await page.setViewportSize({ width: 1600, height: 1000 });
+      await page.addInitScript((width) => {
+        localStorage.setItem("kenn-forge-workspace-sidebar-width", width);
+        localStorage.setItem("kenn-forge-theme", "dark");
+      }, item.width);
+      await page.route("**/api/v1/repo/github/acme/widgets/labels", async (route) => {
+        await route.fulfill({
+          json: { labels: [{ name: "bug", color: "d73a4a", description: "Something is not working" }] },
+        });
+      });
+      await page.goto(`/terminal/${item.workspace.id}`);
+      await page.locator(".panel-toggle-btn", { hasText: item.tab }).click();
+      const sidebar = page.locator(".right-sidebar");
+      await sidebar
+        .locator(".label-editor-anchor")
+        .getByRole("button", { name: "Labels", exact: true })
+        .first()
+        .click();
+      await expect(page.getByLabel("Filter labels")).toBeFocused();
+      const dialog = page.getByRole("dialog", { name: "Edit labels" });
+      await expect(dialog.getByRole("menuitemcheckbox")).toBeVisible();
+      await expect(sidebar).toHaveClass(/input-active/);
+      const paneBox = (await sidebar.boundingBox())!;
+      const popupBox = (await dialog.boundingBox())!;
+      expect(popupBox.x).toBeLessThan(paneBox.x - 5);
+      expect(popupBox.x + popupBox.width).toBeGreaterThan(paneBox.x + 5);
+      // Compare actual pixels across the pane edge in the popup's bottom padding.
+      // A focus overlay painted above the popup makes these strips different.
+      const clip = { x: paneBox.x, y: popupBox.y + popupBox.height - 5, width: 1, height: 2 };
+      const edge = await page.screenshot({ clip });
+      const adjacent = await page.screenshot({ clip: { ...clip, x: clip.x + 3 } });
+      expect(edge.equals(adjacent), "pane focus border must not paint through the label popup").toBe(true);
+
+      await page.screenshot({ path: test.info().outputPath("label-popup.png") });
+
+      // The active pane must still have a visible stroke on all four edges away
+      // from the popup. Compare each border pixel to its neighboring pane pixel.
+      const middleX = Math.floor(paneBox.x + paneBox.width / 2);
+      const middleY = Math.floor(paneBox.y + paneBox.height * 0.75);
+      for (const [x, y, innerX, innerY] of [
+        [paneBox.x, middleY, paneBox.x + 2, middleY],
+        [paneBox.x + paneBox.width - 1, middleY, paneBox.x + paneBox.width - 3, middleY],
+        [middleX, paneBox.y, middleX, paneBox.y + 2],
+        [middleX, paneBox.y + paneBox.height - 1, middleX, paneBox.y + paneBox.height - 3],
+      ]) {
+        const borderPixel = await page.screenshot({ clip: { x: x!, y: y!, width: 1, height: 1 } });
+        const innerPixel = await page.screenshot({ clip: { x: innerX!, y: innerY!, width: 1, height: 1 } });
+        expect(borderPixel.equals(innerPixel), `focus border must remain visible at ${x}, ${y}`).toBe(false);
+      }
+      await page.getByLabel("Filter labels").press("Escape");
+      await expect(dialog).toBeHidden();
+      await sidebar
+        .locator(".label-editor-anchor")
+        .getByRole("button", { name: "Labels", exact: true })
+        .first()
+        .focus();
+      await expect(sidebar).toHaveClass(/input-active/);
+      const uncoveredEdge = await page.screenshot({ clip });
+      expect(uncoveredEdge.equals(edge), "the border must reappear where the popup closed").toBe(false);
+    });
+  }
+
   test("workspace without associated PR hides malformed PR tab", async ({ page }) => {
     const noLinkedPR = {
       ...testIssueWorkspace,

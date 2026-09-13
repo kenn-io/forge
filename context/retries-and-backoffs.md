@@ -46,6 +46,10 @@ To extend git transient matching, add a substring to the slice in
 Keep the matcher conservative — false positives turn permanent failures into
 multi-second hangs.
 
+HTTP stalls have a separate low-speed timeout; retain the longer budget for
+active clones and retry only existing idempotent operations
+(`internal/gitclone/clone.go::Manager.gitRunnerAuthed`).
+
 ## Rate-limit gates
 
 These paths are **not** transient retry. They represent provider quota state and

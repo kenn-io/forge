@@ -44,6 +44,11 @@ func TestIsTransientGitError(t *testing.T) {
 			true,
 		},
 		{
+			"stalled HTTP transfer",
+			errors.New("fatal: unable to access 'https://example.com/repo.git/': Operation too slow. Less than 1 bytes/sec transferred the last 30 seconds"),
+			true,
+		},
+		{
 			"could not resolve host",
 			errors.New("fatal: unable to access 'https://github.com/x/y.git/': Could not resolve host: github.com"),
 			true,
@@ -118,7 +123,7 @@ func TestRetryTransientExhaustsBudget(t *testing.T) {
 	assert := assert.New(t)
 
 	calls := 0
-	transient := errors.New("remote: Internal Server Error")
+	transient := errors.New("fatal: Operation too slow. Less than 1 bytes/sec transferred the last 30 seconds")
 	_, err := retryTransientWithBackOff(t.Context(), "test", fastBackOff(),
 		func() (string, error) {
 			calls++

@@ -1,7 +1,7 @@
 [tools]
 bun = "latest"
 "github:F1bonacc1/process-compose" = "latest"
-golangci-lint = "2.13.1"
+golangci-lint = "2.13.2"
 "go:go.uber.org/nilaway/cmd/nilaway" = "0.0.0-20260808063849-8649a03c818a"
 node = "24.16.0"
 "npm:vite-plus" = "0.1.24"

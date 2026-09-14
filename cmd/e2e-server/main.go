@@ -542,7 +542,7 @@ func seedWorkflowPullRefFixture(
 	if pull == nil {
 		return errors.New("get workflow fork pull fixture: not found")
 	}
-	const forkCloneURL = "https://github.com/contributor/widgets.git"
+	forkCloneURL := "https://github.com/contributor/widgets.git"
 	pull.HeadRepoCloneURL = forkCloneURL
 	if _, err := database.UpsertMergeRequest(ctx, pull); err != nil {
 		return fmt.Errorf("seed workflow fork pull fixture: %w", err)
@@ -555,7 +555,7 @@ func seedWorkflowPullRefFixture(
 			if providerPull.Head.Repo == nil {
 				providerPull.Head.Repo = &gh.Repository{}
 			}
-			providerPull.Head.Repo.CloneURL = gh.Ptr(forkCloneURL)
+			providerPull.Head.Repo.CloneURL = &forkCloneURL
 		}
 	}
 	patchFork(fc.OpenPRs["acme/widgets"])

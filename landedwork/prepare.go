@@ -47,9 +47,11 @@ func Prepare(ctx context.Context, path string, bounds Bounds, limits Limits) (p 
 		p.query.Gaps = []Gap{{Reason: graphReason(shallowErr)}}
 		return p, nil
 	}
-	if _, readErr := v.parents(ctx, bounds.Base); readErr != nil {
-		p.query.Gaps = []Gap{{ObjectID: bounds.Base, Reason: graphReason(readErr)}}
-		return p, nil
+	if !bounds.FromRoot {
+		if _, readErr := v.parents(ctx, bounds.Base); readErr != nil {
+			p.query.Gaps = []Gap{{ObjectID: bounds.Base, Reason: graphReason(readErr)}}
+			return p, nil
+		}
 	}
 	current := bounds.Head
 	for current != bounds.Base {
@@ -59,6 +61,10 @@ func Prepare(ctx context.Context, path string, bounds Bounds, limits Limits) (p 
 			return p, nil
 		}
 		if len(parents) == 0 {
+			if bounds.FromRoot {
+				p.spine = append(p.spine, current)
+				break
+			}
 			p.query.Gaps = []Gap{{Reason: "base_not_first_parent"}}
 			return p, nil
 		}

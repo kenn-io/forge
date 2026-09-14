@@ -141,7 +141,11 @@ func (v *objectView) parents(ctx context.Context, id string) ([]string, error) {
 
 func (v *objectView) introduced(ctx context.Context, base, head string) ([]string, error) {
 	out := &commitStream{meter: v.meter}
-	err := v.runTo(ctx, out, "rev-list", "--topo-order", "--reverse", head, "^"+base, "--")
+	args := []string{"rev-list", "--topo-order", "--reverse", head}
+	if base != "" {
+		args = append(args, "^"+base)
+	}
+	err := v.runTo(ctx, out, append(args, "--")...)
 	if err != nil {
 		return nil, err
 	}

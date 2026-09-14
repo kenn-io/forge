@@ -38,7 +38,11 @@ func validate(ctx context.Context, r platform.LandingEvidenceReader, route platf
 		return errors.New("landing collection requires matching provider identity")
 	}
 	size := len(q.Bounds.Head)
-	if !objectID(q.Bounds.Base, size) || !objectID(q.Bounds.Head, size) || q.Complete && len(q.Gaps) != 0 {
+	validBase := objectID(q.Bounds.Base, size)
+	if q.Bounds.FromRoot {
+		validBase = q.Bounds.Base == ""
+	}
+	if !validBase || !objectID(q.Bounds.Head, size) || q.Complete && len(q.Gaps) != 0 {
 		return errors.New("invalid landing query")
 	}
 	seen := make(map[string]bool)

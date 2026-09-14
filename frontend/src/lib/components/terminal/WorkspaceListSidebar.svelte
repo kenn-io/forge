@@ -1504,16 +1504,24 @@
               {:else}
                 <span class="item-bubble-slot" aria-hidden="true"></span>
               {/if}
-              {#if sortTimestamp}
-                <time
-                  class="workspace-sort-time"
-                  datetime={sortTimestamp.at}
-                  title={`${sortTimestamp.label}: ${formatTimestamp(sortTimestamp.at)}`}
-                  aria-label={`${sortTimestamp.label}: ${formatRelativeTime(sortTimestamp.at)}`}
-                >{formatRelativeTime(sortTimestamp.at)}</time>
-              {/if}
-              {#if ws.worktree_dirty}
-                {@render worktreeDirtyIndicator()}
+              {#if sortTimestamp || ws.worktree_dirty}
+                <!-- The dirty pencil and the sort time share one line so
+                     the aside column never grows a third row below the
+                     bubble, which would make the row taller than its
+                     clean neighbours. -->
+                <span class="ws-row-aside-line">
+                  {#if ws.worktree_dirty}
+                    {@render worktreeDirtyIndicator()}
+                  {/if}
+                  {#if sortTimestamp}
+                    <time
+                      class="workspace-sort-time"
+                      datetime={sortTimestamp.at}
+                      title={`${sortTimestamp.label}: ${formatTimestamp(sortTimestamp.at)}`}
+                      aria-label={`${sortTimestamp.label}: ${formatRelativeTime(sortTimestamp.at)}`}
+                    >{formatRelativeTime(sortTimestamp.at)}</time>
+                  {/if}
+                </span>
               {/if}
             </div>
           </div>
@@ -2052,7 +2060,12 @@
     color: var(--text-muted);
     opacity: 0.5;
     line-height: 1;
-    margin-top: 1px;
+  }
+
+  .ws-row-aside-line {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
   }
 
   .ws-row-aside {

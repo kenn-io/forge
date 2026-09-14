@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { LaunchTarget } from "../../api/types.js";
 import WorkspaceCreateSplitButton from "./WorkspaceCreateSplitButtonRuntimeHarness.svelte";
@@ -274,8 +274,12 @@ describe("WorkspaceCreateSplitButton quick actions", () => {
     expect(document.activeElement).toBe(rebase);
     expect(deepReview.disabled).toBe(true);
     expect(deepReview.getAttribute("title")).toBe("review-agent not found on PATH");
+    // The reason is visible text, not only a hover title, so it can be read
+    // without pointer hover or focus on the disabled item.
+    expect(deepReview.textContent).toContain("review-agent not found on PATH");
     expect(ghost.disabled).toBe(true);
     expect(ghost.getAttribute("title")).toBe('Agent "missing" is not configured');
+    expect(ghost.textContent).toContain('Agent "missing" is not configured');
     expect(screen.queryByRole("menuitem", { name: "Codex" })).toBeNull();
 
     await fireEvent.click(rebase);
@@ -303,6 +307,32 @@ describe("WorkspaceCreateSplitButton quick actions", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Quick actions" }));
     expect(screen.getByRole("menu", { name: "Quick actions" })).toBeTruthy();
     expect(screen.queryByRole("menu", { name: "Create and launch" })).toBeNull();
+  });
+
+  it("anchors the agent menu to the agent segment and restores its focus on Escape", async () => {
+    render(WorkspaceCreateSplitButton, {
+      props: {
+        label: "Create Workspace",
+        launchTargets: targets,
+        onCreate: vi.fn(),
+        onQuickAction: vi.fn(),
+        quickActions,
+      },
+    });
+    const agentTrigger = screen.getByRole("button", { name: "Create Workspace options" });
+    const quickTrigger = screen.getByRole("button", { name: "Quick actions" });
+
+    await fireEvent.keyDown(agentTrigger, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "Codex" }));
+    await fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    expect(document.activeElement).toBe(agentTrigger);
+
+    await fireEvent.keyDown(quickTrigger, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: /Rebase/ }));
+    await fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    expect(document.activeElement).toBe(quickTrigger);
   });
 
   it("blocks the quick-actions segment while busy or disabled", () => {

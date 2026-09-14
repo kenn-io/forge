@@ -126,6 +126,26 @@ describe("QuickActionSettings", () => {
     expect(mockPersistSettings).not.toHaveBeenCalled();
   });
 
+  it("refuses to save a prompt over the 64 KiB initial-message limit", async () => {
+    renderQuickActionSettings({
+      quickActions: [{ label: "Big", agent: "codex", prompt: "small" }],
+      launchTargets,
+      onUpdate: vi.fn(),
+    });
+
+    // Multi-byte characters: 40000 two-byte characters is 80000 bytes, over
+    // the limit, while 40000 characters alone would pass a length check.
+    await fireEvent.input(screen.getByLabelText("Quick action prompt"), { target: { value: "\u00e9".repeat(40000) } });
+
+    expect(screen.getByText("Prompts must not exceed 64 KiB.")).toBeTruthy();
+    expect(saveButton().disabled).toBe(true);
+
+    await fireEvent.input(screen.getByLabelText("Quick action prompt"), { target: { value: "\u00e9".repeat(1000) } });
+
+    expect(screen.queryByText("Prompts must not exceed 64 KiB.")).toBeNull();
+    expect(saveButton().disabled).toBe(false);
+  });
+
   it("removes an action and keeps a saved but unconfigured agent selectable", async () => {
     mockPersistSettings.mockResolvedValue({ quick_actions: [] });
     renderQuickActionSettings({

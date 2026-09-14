@@ -438,6 +438,12 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if first && s.hub != nil {
 		s.hub.Close()
 	}
+	// Agent handoffs outlive their HTTP requests on purpose; cancel them
+	// here so the HTTP drain below does not wait on a handoff that only the
+	// later workspace shutdown would end.
+	if first && s.workspaceAPI != nil {
+		s.workspaceAPI.CancelAgentHandoffs()
+	}
 	var httpErr error
 	httpDrained := httpSrv == nil
 	if httpSrv != nil {

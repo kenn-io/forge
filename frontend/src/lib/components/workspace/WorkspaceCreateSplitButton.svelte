@@ -100,8 +100,7 @@
     if (blocked) return;
     if (kind === "agents" && agentTargets.length === 0) return;
     if (kind === "quick" && !showQuickActions) return;
-    const triggerClass = kind === "quick" ? ".create-quick-actions-button" : ".create-options-button";
-    trigger = root?.querySelector<HTMLButtonElement>(triggerClass) ?? undefined;
+    trigger = root?.querySelector<HTMLButtonElement>(triggerSelector(kind)) ?? undefined;
     openExecution?.interrupt();
     menuKind = kind;
     open = true;
@@ -132,9 +131,15 @@
     return () => node.remove();
   }
 
+  // Both segments carry the shared create-options-button class for sizing, so
+  // lookups must use the segment-specific class or they resolve to whichever
+  // segment renders first.
+  function triggerSelector(kind: MenuKind): string {
+    return kind === "quick" ? ".create-quick-actions-button" : ".create-agent-options-button";
+  }
+
   function optionsButton(node: HTMLElement, kind: MenuKind = "agents"): () => void {
-    const triggerClass = kind === "quick" ? ".create-quick-actions-button" : ".create-options-button";
-    const button = node.querySelector<HTMLButtonElement>(triggerClass);
+    const button = node.querySelector<HTMLButtonElement>(triggerSelector(kind));
     if (!button) return () => {};
     button.setAttribute("aria-haspopup", "menu");
     function handle(event: KeyboardEvent): void {
@@ -255,7 +260,7 @@
       surface={surface === "solid" ? "solid" : "soft"}
       tone="info"
       {size}
-      class="create-options-button"
+      class="create-options-button create-agent-options-button"
       ariaLabel={`${label} options`}
       title={disabledReason || "Create and launch an agent"}
       ariaExpanded={open && menuKind === "agents"}
@@ -294,7 +299,9 @@
               iconSize={12}
               fallbackIcon
             />
-            <span class="quick-action-agent">{quickActionTarget(action)?.label ?? action.agent}</span>
+            <span class={["quick-action-agent", reason !== "" && "quick-action-agent--unavailable"]}>
+              {reason || quickActionTarget(action)?.label || action.agent}
+            </span>
           </button>
         </li>
       {/each}
@@ -389,6 +396,14 @@
     flex: 0 0 auto;
     color: var(--text-muted);
     font-size: var(--font-size-xs);
+  }
+
+  .quick-action-agent--unavailable {
+    flex: 0 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-faint);
   }
 
   .create-menu {

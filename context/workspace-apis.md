@@ -469,11 +469,20 @@ creation, the detail header posts the configured agent and prompt to
 `POST /workspaces/{id}/runtime/agent-handoffs`, which waits for the workspace to
 become ready, launches the agent in the workflow region, and delivers the prompt
 through the initial-message path, retrying only the typed input-mode-not-ready
-signal. The orchestration runs on the handler lifecycle context rather than the
-request so a client that navigates away cannot strand a launched agent without
-its prompt; input validation still fails before any waiting. Nothing is queued in
-the frontend launch state for a quick action; the session arrives through runtime
-events (`internal/server/workspaceapi/agent_handoff.go::Handler.LaunchWorkspaceAgentHandoffService`,
+signal. The orchestration runs on a handoff context rather than the request so a
+client that navigates away cannot strand a launched agent without its prompt;
+server shutdown cancels that context before the HTTP drain so a waiting handoff
+cannot stall the shutdown budget. Input validation still fails before any
+waiting. A post-launch delivery failure returns a problem whose details carry
+`session_key`, `target_key`, and `initial_message_state`, and the runtime is left
+running; the header reports a launched-but-promptless agent rather than a failed
+start. Quick action prompts apply the initial-message normalization at config
+load so a saved action is never rejected after its workspace exists. Nothing is
+queued in the frontend launch state for a quick action; the session arrives
+through runtime events
+(`internal/server/workspaceapi/agent_handoff.go::Handler.LaunchWorkspaceAgentHandoffService`,
+`internal/server/workspaceapi/agent_handoff.go::Handler.CancelAgentHandoffs`,
+`internal/config/config.go::normalizeQuickActionPrompt`,
 `frontend/src/lib/stores/workspace-quick-actions.ts::runWorkspaceQuickAction`).
 The launch API accepts only the target and display region. Agent launches
 validate the persisted launch specification and renew an expired visibility

@@ -4682,3 +4682,26 @@ func TestLoadQuickActionsRejectsInvalidEntries(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadQuickActionsAppliesInitialMessageContract(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	path := writeConfig(t, "[[repos]]\nowner = \"a\"\nname = \"b\"\n\n"+
+		"[[quick_actions]]\nlabel = \"Triage\"\nagent = \"codex\"\nprompt = \"first\\r\\nsecond\\rthird\"\n")
+	cfg, err := Load(path)
+	require.NoError(err)
+	require.Len(cfg.QuickActions, 1)
+	assert.Equal("first\nsecond\nthird", cfg.QuickActions[0].Prompt)
+
+	// A tab would be refused by the handoff endpoint after the workspace was
+	// already created, so config loading refuses it first.
+	path = writeConfig(t, "[[repos]]\nowner = \"a\"\nname = \"b\"\n\n"+
+		"[[quick_actions]]\nlabel = \"Tabs\"\nagent = \"codex\"\nprompt = \"review\\tthis\"\n")
+	_, err = Load(path)
+	require.ErrorContains(err, "quick_actions[0]: prompt contains unsafe control character U+0009")
+
+	oversized := Config{QuickActions: []QuickAction{{
+		Label: "Big", Agent: "codex", Prompt: strings.Repeat("a", MaxQuickActionPromptBytes+1),
+	}}}
+	require.ErrorContains(oversized.validateQuickActions(), "prompt must not exceed 64 KiB")
+}

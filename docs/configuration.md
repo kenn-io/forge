@@ -327,9 +327,10 @@ question all assumptions
 """
 ```
 
-`agent` is a workspace agent key. Labels must be unique. A quick action whose
-agent is missing or unavailable stays visible but disabled until the agent is
-fixed.
+`agent` is a workspace agent key. Labels must be unique (case-insensitive) and
+prompts are limited to 64 KiB, the same limit as an agent's first message. A
+quick action whose agent is missing or unavailable stays visible but disabled
+until the agent is fixed.
 
 ## Workspace terminals and tmux
 

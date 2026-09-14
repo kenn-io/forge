@@ -29,6 +29,11 @@
   // svelte-ignore state_referenced_locally
   let drafts = $state<ActionDraft[]>(initialDrafts(quickActions ?? []));
 
+  // Mirrors the server's initial-message limit so an oversized prompt is
+  // caught here instead of by a failed save.
+  const MAX_PROMPT_BYTES = 64 * 1024;
+  const promptEncoder = new TextEncoder();
+
   const agentTargets = $derived(launchTargets.filter((target) => target.kind === "agent"));
   const savedActions = $derived(normalizeActions(quickActions ?? []));
   const serializedActions = $derived(serializeDrafts(drafts));
@@ -62,8 +67,18 @@
     }));
   }
 
+  function promptBytes(prompt: string): number {
+    return promptEncoder.encode(prompt.replaceAll("\r\n", "\n").replaceAll("\r", "\n")).length;
+  }
+
+  function promptTooLong(draft: ActionDraft): boolean {
+    return promptBytes(draft.prompt) > MAX_PROMPT_BYTES;
+  }
+
   function isDraftValid(draft: ActionDraft): boolean {
-    return draft.label.trim() !== "" && draft.agent.trim() !== "" && draft.prompt.trim() !== "";
+    return (
+      draft.label.trim() !== "" && draft.agent.trim() !== "" && draft.prompt.trim() !== "" && !promptTooLong(draft)
+    );
   }
 
   function duplicateLabels(rows: ActionDraft[]): Set<string> {
@@ -166,9 +181,10 @@
     <div class="action-list">
       {#each drafts as draft (draft.id)}
         {@const duplicate = duplicateLabels(drafts).has(draft.label.trim().toLowerCase())}
+        {@const oversized = promptTooLong(draft)}
         <div class="action-row">
           <div class="action-fields">
-            <label class="field">
+            <label class="field field--label">
               <span>Label</span>
               <input
                 type="text"
@@ -178,11 +194,8 @@
                 disabled={saving}
                 placeholder="Rebase"
               />
-              {#if duplicate}
-                <span class="field-error">Labels must be unique.</span>
-              {/if}
             </label>
-            <div class="field">
+            <div class="field field--agent">
               <span>Agent</span>
               <SelectDropdown
                 class="agent-select"
@@ -213,11 +226,24 @@
               <textarea
                 bind:value={draft.prompt}
                 aria-label="Quick action prompt"
+                aria-invalid={oversized || undefined}
                 disabled={saving}
                 rows="3"
                 placeholder="rebase this pull request onto main"
               ></textarea>
             </label>
+            <!-- Errors live on their own grid row so the control row keeps a
+                 uniform height and the remove button stays aligned. -->
+            {#if duplicate || oversized}
+              <div class="field-errors" role="alert">
+                {#if duplicate}
+                  <span class="field-error">Labels must be unique.</span>
+                {/if}
+                {#if oversized}
+                  <span class="field-error">Prompts must not exceed 64 KiB.</span>
+                {/if}
+              </div>
+            {/if}
           </div>
         </div>
       {/each}
@@ -276,15 +302,37 @@
     border-top: 0;
   }
 
+  /* Explicit areas: the control row is label + agent + remove, then the
+   * prompt, then any errors. Narrow layouts reflow by area, never by
+   * auto-placement, so the remove button always shares the label's row. */
   .action-fields {
     display: grid;
     grid-template-columns: minmax(120px, 1fr) minmax(140px, 1fr) auto;
+    grid-template-areas:
+      "label agent remove"
+      "prompt prompt prompt"
+      "errors errors errors";
     gap: 8px;
     align-items: start;
   }
 
+  .field--label {
+    grid-area: label;
+  }
+
+  .field--agent {
+    grid-area: agent;
+  }
+
   .field--remove {
-    align-self: end;
+    grid-area: remove;
+  }
+
+  .field-errors {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    grid-area: errors;
   }
 
   .field {
@@ -295,7 +343,7 @@
   }
 
   .field--prompt {
-    grid-column: 1 / -1;
+    grid-area: prompt;
   }
 
   .field > span {
@@ -382,6 +430,11 @@
   @media (max-width: 900px) {
     .action-fields {
       grid-template-columns: 1fr auto;
+      grid-template-areas:
+        "label remove"
+        "agent agent"
+        "prompt prompt"
+        "errors errors";
     }
   }
 </style>

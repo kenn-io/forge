@@ -33,10 +33,25 @@ export function runWorkspaceQuickAction(runtime: AppRuntime, workspaceId: string
     operation: "run workspace quick action",
     safeContext: { workspaceId, agent: action.agent },
     onFailure: (failure) => {
-      const detail =
-        failure._tag === "ApiProblemError"
-          ? (failure.problem.detail ?? failure.problem.title ?? "agent handoff failed")
-          : "Could not reach Kenn Forge";
+      if (failure._tag !== "ApiProblemError") {
+        // The request itself failed. The server keeps running an accepted
+        // handoff, so this is reported as unknown rather than as a failure.
+        showFlash(`"${action.label}": lost contact with Kenn Forge; check the workspace for the agent.`, {
+          tone: "warning",
+        });
+        return;
+      }
+      const detail = failure.problem.detail ?? failure.problem.title ?? "agent handoff failed";
+      // A post-launch failure carries the live session: the agent is running
+      // but did not get its prompt, which is a different situation from a
+      // handoff that never started.
+      const sessionKey = failure.problem.details?.["session_key"];
+      if (typeof sessionKey === "string" && sessionKey !== "") {
+        showFlash(`"${action.label}" launched its agent, but the prompt was not delivered: ${detail}`, {
+          tone: "warning",
+        });
+        return;
+      }
       showFlash(`"${action.label}" could not start: ${detail}`, { tone: "danger" });
     },
   });

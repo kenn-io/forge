@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/BurntSushi/toml"
 	"go.kenn.io/forge/internal/federation"
@@ -2279,14 +2280,11 @@ func (c *Config) validateQuickActions() error {
 		if action.Agent == "" {
 			return fmt.Errorf("config: quick_actions[%d]: agent is required", i)
 		}
-		if strings.TrimSpace(action.Prompt) == "" {
-			return fmt.Errorf("config: quick_actions[%d]: prompt is required", i)
+		prompt, err := normalizeQuickActionPrompt(action.Prompt)
+		if err != nil {
+			return fmt.Errorf("config: quick_actions[%d]: %w", i, err)
 		}
-		if len(action.Prompt) > MaxQuickActionPromptBytes {
-			return fmt.Errorf(
-				"config: quick_actions[%d]: prompt must not exceed 64 KiB", i,
-			)
-		}
+		action.Prompt = prompt
 		labelKey := strings.ToLower(action.Label)
 		if _, ok := seen[labelKey]; ok {
 			return fmt.Errorf("config: duplicate quick action %q", action.Label)
@@ -2294,6 +2292,31 @@ func (c *Config) validateQuickActions() error {
 		seen[labelKey] = struct{}{}
 	}
 	return nil
+}
+
+// normalizeQuickActionPrompt applies the initial agent message contract at
+// config time so a saved quick action can never be rejected by the handoff
+// endpoint after its workspace was already created: line endings are
+// normalized to LF, control characters other than newline are refused, and
+// the size limit is measured after normalization.
+func normalizeQuickActionPrompt(prompt string) (string, error) {
+	if !utf8.ValidString(prompt) {
+		return "", errors.New("prompt must be valid UTF-8")
+	}
+	prompt = strings.ReplaceAll(prompt, "\r\n", "\n")
+	prompt = strings.ReplaceAll(prompt, "\r", "\n")
+	if strings.TrimSpace(prompt) == "" {
+		return "", errors.New("prompt is required")
+	}
+	for _, value := range prompt {
+		if value != '\n' && !unicode.IsPrint(value) {
+			return "", fmt.Errorf("prompt contains unsafe control character U+%04X", value)
+		}
+	}
+	if len(prompt) > MaxQuickActionPromptBytes {
+		return "", errors.New("prompt must not exceed 64 KiB after line-ending normalization")
+	}
+	return prompt, nil
 }
 
 func repoIdentityKey(r Repo) string {

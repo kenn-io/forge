@@ -93,6 +93,7 @@
               settingsStore.setPullRequestSettings(loaded.pull_requests);
               settingsStore.setDetailSettings(loaded.detail);
               settingsStore.setLaunchTargets(loaded.launch_targets ?? []);
+              settingsStore.setQuickActions(loaded.quick_actions ?? []);
               hydrateWorkspaceSettings(workspaceHydration, loaded.workspaces);
               hydrateRoborevSettings(roborevHydration, loaded.roborev);
               loading = false;

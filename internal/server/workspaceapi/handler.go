@@ -163,6 +163,8 @@ type Handler struct {
 	// Agent handoff pacing; zero values select the package defaults.
 	agentHandoffTimeout        time.Duration
 	agentHandoffPollInterval   time.Duration
+	agentHandoffCtx            context.Context
+	agentHandoffCancel         context.CancelFunc
 	worktreeShellTransactions  sync.Map
 	workspaceTmuxPrunedAt      time.Time
 	workspaceTmuxPrunePending  bool

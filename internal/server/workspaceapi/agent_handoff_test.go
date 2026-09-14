@@ -214,3 +214,86 @@ func TestAgentHandoffTimesOutWhileWorkspaceNeverBecomesReady(t *testing.T) {
 	assert.Contains(response.Body.String(), "timed out waiting for workspace to become ready")
 	assert.Empty(fixture.handler.runtime.ListSessions("ws-runtime-token"))
 }
+
+func TestAgentHandoffSurvivesClientCancellationWhileWaiting(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	fixture := newAgentHandoffFixture(t, "creating")
+
+	// The client goes away while the workspace is still provisioning; the
+	// accepted handoff must still launch the agent and deliver the prompt.
+	requestCtx, cancelRequest := context.WithCancel(t.Context())
+	request := fixture.request(t, map[string]string{"target_key": "codex", "message": "rebase this"}).
+		WithContext(requestCtx)
+	done := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		done <- fixture.serve(request)
+	}()
+	time.Sleep(40 * time.Millisecond)
+	cancelRequest()
+	time.Sleep(20 * time.Millisecond)
+	require.NoError(fixture.database.UpdateWorkspaceStatus(context.Background(), "ws-runtime-token", "ready", nil))
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		require.FailNow("handoff did not finish after the client canceled")
+	}
+	require.Eventually(func() bool {
+		return fixture.owner.pty != nil && string(fixture.owner.pty.written()) == "\x1b[200~rebase this\x1b[201~\r"
+	}, time.Second, 5*time.Millisecond)
+	assert.Len(fixture.handler.runtime.ListSessions("ws-runtime-token"), 1)
+}
+
+func TestAgentHandoffCancelsPromptlyOnShutdown(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	fixture := newAgentHandoffFixture(t, "creating")
+	fixture.handler.agentHandoffTimeout = time.Minute
+
+	request := fixture.request(t, map[string]string{"target_key": "codex", "message": "hi"})
+	done := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		done <- fixture.serve(request)
+	}()
+	time.Sleep(40 * time.Millisecond)
+	started := time.Now()
+	fixture.handler.CancelAgentHandoffs()
+
+	var response *httptest.ResponseRecorder
+	select {
+	case response = <-done:
+	case <-time.After(2 * time.Second):
+		require.FailNow("handoff kept waiting after shutdown cancellation")
+	}
+	assert.Less(time.Since(started), time.Second)
+	assert.Equal(http.StatusServiceUnavailable, response.Code, response.Body.String())
+	assert.Contains(response.Body.String(), "canceled by shutdown")
+	assert.Empty(fixture.handler.runtime.ListSessions("ws-runtime-token"))
+}
+
+func TestAgentHandoffReportsLaunchedSessionWhenPromptDeliveryTimesOut(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	fixture := newAgentHandoffFixture(t, "ready")
+	fixture.handler.agentHandoffTimeout = 150 * time.Millisecond
+	// The agent never enables bracketed paste, so nothing is ever written.
+	fixture.owner.setEmitBracketedPaste(false)
+
+	response := fixture.post(t, map[string]string{"target_key": "codex", "message": "hi"})
+	require.Equal(http.StatusServiceUnavailable, response.Code, response.Body.String())
+	var problem struct {
+		Detail  string         `json:"detail"`
+		Details map[string]any `json:"details"`
+	}
+	require.NoError(json.NewDecoder(response.Body).Decode(&problem))
+	assert.Contains(problem.Detail, "timed out waiting for agent input")
+
+	// The agent is still running without its prompt, and the problem says so.
+	sessions := fixture.handler.runtime.ListSessions("ws-runtime-token")
+	require.Len(sessions, 1)
+	assert.Equal(sessions[0].Key, problem.Details["session_key"])
+	assert.Equal("codex", problem.Details["target_key"])
+	assert.Equal("not_delivered", problem.Details["initial_message_state"])
+	assert.Empty(fixture.owner.pty.written())
+}

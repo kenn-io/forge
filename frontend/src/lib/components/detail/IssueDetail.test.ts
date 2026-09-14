@@ -4,7 +4,7 @@ import type { ComponentProps } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import type { GeneratedClient } from "../../api/generated-api.js";
-import type { IssueDetail, Label } from "../../api/types.js";
+import type { IssueDetail, Label, QuickAction } from "../../api/types.js";
 import type { MutationCallbacks } from "../../stores/ordered-mutations.js";
 import { NAVIGATE_KEY, STORES_KEY } from "../../context.js";
 import { createDetailActivityViewStore } from "../../stores/detail-activity-view.svelte.js";
@@ -187,6 +187,7 @@ function renderIssueDetail(
     inlineWorkspace?: InlineWorkspaceController | null;
     onOpenWorkspace?: (workspaceId: string) => void;
     runtimeClient?: GeneratedClient;
+    quickActions?: QuickAction[];
   } = {},
   apiClient: { GET: ReturnType<typeof vi.fn>; POST: ReturnType<typeof vi.fn> } = {
     GET: vi.fn(),
@@ -258,7 +259,7 @@ function renderIssueDetail(
           detailActivityView: createDetailActivityViewStore(),
           settings: {
             getLaunchTargets: () => launchTargets,
-            getQuickActions: () => [],
+            getQuickActions: () => options.quickActions ?? [],
             getDetailSettings: () => ({ initial_timeline_entry_limit: 250 }),
           },
         },
@@ -832,6 +833,44 @@ describe("IssueDetail inline workspace handoff", () => {
 
     await waitFor(() => expect(controller.recordCreated).toHaveBeenCalled());
     expect(discardWorkspaceLaunch("ws-new", undefined)).toBe("codex");
+  });
+
+  it("runs a quick action after creation and keeps it through a branch-conflict retry", async () => {
+    const controller = createTestController("split");
+    const triage = { label: "Triage", agent: "codex", prompt: "/triage-pr\nquestion all assumptions" };
+    const posts: Array<{ path: string; options: Record<string, unknown> | undefined }> = [];
+    let creates = 0;
+    const apiClient = {
+      GET: vi.fn(),
+      POST: vi.fn(async (path: string, options?: Record<string, unknown>) => {
+        posts.push({ path, options });
+        if (path.endsWith("/workspace")) {
+          creates += 1;
+          if (creates === 1) return { error: workspaceBranchConflict() };
+          return { data: { id: "ws-existing", status: "ready" } };
+        }
+        return {
+          data: {
+            session: { key: "runtime-1", target_key: "codex" },
+            initial_message: { state: "delivered", target_key: "codex", message_bytes: 38 },
+          },
+        };
+      }),
+    };
+    renderIssueDetail(issueDetail(), undefined, { inlineWorkspace: controller, quickActions: [triage] }, apiClient);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Quick actions" }));
+    await fireEvent.click(screen.getByRole("menuitem", { name: /Triage/ }));
+    await fireEvent.click(await screen.findByRole("button", { name: "Use Existing Branch" }));
+
+    await waitFor(() => expect(posts).toHaveLength(3));
+    expect(posts[2]!.path).toBe("/workspaces/{id}/runtime/agent-handoffs");
+    expect(posts[2]!.options).toMatchObject({
+      params: { path: { id: "ws-existing" } },
+      body: { target_key: "codex", message: "/triage-pr\nquestion all assumptions" },
+    });
+    await waitFor(() => expect(controller.recordCreated).toHaveBeenCalled());
+    expect(discardWorkspaceLaunch("ws-existing", undefined)).toBeNull();
   });
 
   it("retains the selected agent when reusing an existing branch", async () => {

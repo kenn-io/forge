@@ -2652,6 +2652,76 @@ describe("PullDetail inline workspace handoff", () => {
     expect(discardWorkspaceLaunch("ws-new", undefined)).toBe("codex");
   });
 
+  it("runs a quick action: creates the workspace, then hands the prompt to the agent", async () => {
+    const rebase = { label: "Rebase", agent: "codex", prompt: "rebase this pull request onto main" };
+    const posts: Array<{ path: string; options: Record<string, unknown> | undefined }> = [];
+    const apiClient = {
+      GET: vi.fn(async () => ({ data: {} })),
+      POST: vi.fn(async (path: string, options?: Record<string, unknown>) => {
+        posts.push({ path, options });
+        if (path === "/workspaces") return { data: { id: "ws-new", status: "creating", created: true } };
+        return {
+          data: {
+            session: { key: "runtime-1", target_key: "codex" },
+            initial_message: { state: "delivered", target_key: "codex", message_bytes: 34 },
+          },
+        };
+      }),
+    };
+    const { navigate, settings } = renderPullDetail(pullDetail(), undefined, apiClient, {
+      hideWorkspaceAction: false,
+    });
+    settings.setQuickActions([rebase]);
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Quick actions" }));
+    await fireEvent.click(screen.getByRole("menuitem", { name: /Rebase/ }));
+
+    await waitFor(() => expect(posts).toHaveLength(2));
+    expect(posts[0]!.path).toBe("/workspaces");
+    expect(posts[1]!.path).toBe("/workspaces/{id}/runtime/agent-handoffs");
+    expect(posts[1]!.options).toMatchObject({
+      params: { path: { id: "ws-new" } },
+      body: { target_key: "codex", message: "rebase this pull request onto main" },
+    });
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/terminal/ws-new"));
+    // A quick action never queues a frontend launch; the server owns it.
+    expect(discardWorkspaceLaunch("ws-new", undefined)).toBeNull();
+    expect(getFlashes()).toEqual([]);
+  });
+
+  it("reports a quick action whose agent launched without its prompt", async () => {
+    const apiClient = {
+      GET: vi.fn(async () => ({ data: {} })),
+      POST: vi.fn(async (path: string) => {
+        if (path === "/workspaces") return { data: { id: "ws-new", status: "creating", created: true } };
+        return {
+          error: {
+            status: 503,
+            code: "serviceUnavailable",
+            title: "Service Unavailable",
+            detail: "agent handoff timed out waiting for agent input to become ready",
+            details: { session_key: "runtime-1", target_key: "codex", initial_message_state: "not_delivered" },
+          },
+        };
+      }),
+    };
+    const { settings } = renderPullDetail(pullDetail(), undefined, apiClient, { hideWorkspaceAction: false });
+    settings.setQuickActions([{ label: "Rebase", agent: "codex", prompt: "rebase this" }]);
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Quick actions" }));
+    await fireEvent.click(screen.getByRole("menuitem", { name: /Rebase/ }));
+
+    await waitFor(() =>
+      expect(getFlashes()).toEqual([
+        expect.objectContaining({
+          tone: "warning",
+          message:
+            '"Rebase" launched its agent, but the prompt was not delivered: agent handoff timed out waiting for agent input to become ready',
+        }),
+      ]),
+    );
+  });
+
   it("publishes a confirmed creation even after the selection changed", async () => {
     // The workspace exists server-side the moment the response confirms
     // it. Discarding it because the selection moved on would leave the

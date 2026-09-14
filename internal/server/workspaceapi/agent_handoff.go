@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"maps"
+	"net/http"
 	"strings"
 	"time"
 
@@ -67,10 +69,17 @@ func (s *Handler) launchWorkspaceAgentHandoff(
 
 // LaunchWorkspaceAgentHandoffService waits for the workspace to become ready,
 // launches the agent target, and delivers the message as the runtime's initial
-// prompt. The work runs against the handler lifecycle rather than the request:
+// prompt. The work runs against the handoff lifecycle rather than the request:
 // a client that navigates away mid-handoff must not strand a launched agent
-// without its prompt. Validation happens up front so a bad request fails
-// before any waiting starts.
+// without its prompt, while daemon shutdown cancels every waiting handoff
+// before the HTTP drain (CancelAgentHandoffs). Validation happens up front so
+// a bad request fails before any waiting starts.
+//
+// Once the agent is launched, a delivery failure is reported as a problem that
+// carries the live session key and the last known message state, so callers
+// can tell "the agent is running without its prompt" apart from "nothing
+// started". The session is left running: it may already hold the prompt when
+// delivery is uncertain, and stopping it would destroy the evidence.
 func (s *Handler) LaunchWorkspaceAgentHandoffService(
 	ctx context.Context, req WorkspaceAgentHandoffRequest,
 ) (WorkspaceAgentHandoffResult, error) {
@@ -94,7 +103,7 @@ func (s *Handler) LaunchWorkspaceAgentHandoffService(
 		return WorkspaceAgentHandoffResult{}, err
 	}
 
-	handoffCtx, cancel := context.WithTimeout(s.agentHandoffParentContext(), s.agentHandoffTimeoutOrDefault())
+	handoffCtx, cancel := context.WithTimeout(s.agentHandoffContext(), s.agentHandoffTimeoutOrDefault())
 	defer cancel()
 
 	if err := s.waitForWorkspaceReady(handoffCtx, req.WorkspaceID); err != nil {
@@ -111,10 +120,54 @@ func (s *Handler) LaunchWorkspaceAgentHandoffService(
 	if err != nil {
 		slog.Warn("agent handoff initial message failed",
 			"workspace_id", req.WorkspaceID, "session_key", session.Key,
-			"target_key", targetKey, "err", err)
-		return WorkspaceAgentHandoffResult{Session: session, InitialMessage: status}, err
+			"target_key", targetKey, "state", status.State, "err", err)
+		return WorkspaceAgentHandoffResult{Session: session, InitialMessage: status},
+			postLaunchHandoffProblem(err, session, status)
 	}
 	return WorkspaceAgentHandoffResult{Session: session, InitialMessage: status}, nil
+}
+
+// postLaunchHandoffProblem annotates a delivery failure with the runtime that
+// is now live so the client can report a launched-but-promptless agent
+// instead of a failed start.
+func postLaunchHandoffProblem(
+	err error, session localruntime.SessionInfo, status InitialMessageResult,
+) error {
+	var problem *httpapi.ProblemError
+	if !errors.As(err, &problem) {
+		problem = httpapi.NewProblem(
+			http.StatusInternalServerError, httpapi.CodeInternalError, "submit initial message failed", nil,
+		)
+	}
+	annotated := *problem
+	annotated.Details = maps.Clone(problem.Details)
+	if annotated.Details == nil {
+		annotated.Details = make(map[string]any, 3)
+	}
+	state := status.State
+	if state == "" {
+		state = "not_delivered"
+	}
+	annotated.Details["session_key"] = session.Key
+	annotated.Details["target_key"] = session.TargetKey
+	annotated.Details["initial_message_state"] = state
+	return &annotated
+}
+
+// CancelAgentHandoffs aborts every waiting agent handoff. The server calls it
+// as the first step of shutdown: a handoff deliberately outlives its HTTP
+// request, so without this the HTTP drain would wait on handoffs that only
+// the later handler shutdown could cancel.
+func (s *Handler) CancelAgentHandoffs() {
+	if s == nil {
+		return
+	}
+	s.lifecycleMu.Lock()
+	cancel := s.agentHandoffCancel
+	s.lifecycleMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 }
 
 func (s *Handler) waitForWorkspaceReady(ctx context.Context, workspaceID string) error {
@@ -170,17 +223,21 @@ func (s *Handler) waitAgentHandoffPoll(ctx context.Context, waitingFor string) e
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			return httpapi.ServiceUnavailable("agent handoff timed out waiting for " + waitingFor)
 		}
-		return httpapi.ServiceUnavailable("agent handoff canceled while waiting for " + waitingFor)
+		return httpapi.ServiceUnavailable("agent handoff canceled by shutdown while waiting for " + waitingFor)
 	}
 }
 
-func (s *Handler) agentHandoffParentContext() context.Context {
+func (s *Handler) agentHandoffContext() context.Context {
 	s.lifecycleMu.Lock()
 	defer s.lifecycleMu.Unlock()
-	if s.lifecycleCtx != nil {
-		return s.lifecycleCtx
+	if s.agentHandoffCtx == nil {
+		parent := s.lifecycleCtx
+		if parent == nil {
+			parent = context.Background()
+		}
+		s.agentHandoffCtx, s.agentHandoffCancel = context.WithCancel(parent)
 	}
-	return context.Background()
+	return s.agentHandoffCtx
 }
 
 func (s *Handler) agentHandoffTimeoutOrDefault() time.Duration {

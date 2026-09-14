@@ -464,6 +464,34 @@ the create split button. The one-shot target is reactive session state keyed by
 workspace ID; primary creation never launches, while an explicit fork-PR choice
 shares the ordinary manual Launch-menu trust boundary
 (`frontend/src/lib/stores/workspace-create-pending.svelte.ts::queueWorkspaceLaunch`).
+Quick actions are the one exception to frontend-owned launches: after ordinary
+creation, the detail header posts the configured agent and prompt to
+`POST /workspaces/{id}/runtime/agent-handoffs`, which waits for the workspace to
+become ready, launches the agent in the workflow region, and delivers the prompt
+through the initial-message path, retrying only the typed input-mode-not-ready
+signal. The readiness wait, the retry-while-input-not-ready loop, and the
+cancellation-aware poll live in one shared package that the MCP spawn tool also
+drives; add handoff pacing or retry rules there, not in either caller
+(`internal/workspace/agenthandoff/agenthandoff.go::Deliver`,
+`internal/workspace/agenthandoff/agenthandoff.go::Poller.WaitForWorkspace`).
+The orchestration runs on a handoff context rather than the request so a
+client that navigates away cannot strand a launched agent without its prompt;
+server shutdown cancels that context before the HTTP drain so a waiting handoff
+cannot stall the shutdown budget. Input validation still fails before any
+waiting. A post-launch delivery failure returns a problem whose details carry
+`session_key`, `target_key`, and `initial_message_state`, and the runtime is left
+running; the header reports a launched-but-promptless agent rather than a failed
+start, and only `not_delivered` is worded as a definite loss because any other
+state may already have written the prompt. Cancellation before the first handoff
+creates the shared context already canceled, so a late request cannot start a
+wait that only workspace shutdown would end. Quick action prompts apply the initial-message normalization at config
+load so a saved action is never rejected after its workspace exists. Nothing is
+queued in the frontend launch state for a quick action; the session arrives
+through runtime events
+(`internal/server/workspaceapi/agent_handoff.go::Handler.LaunchWorkspaceAgentHandoffService`,
+`internal/server/workspaceapi/agent_handoff.go::Handler.CancelAgentHandoffs`,
+`internal/config/config.go::normalizeQuickActionPrompt`,
+`frontend/src/lib/stores/workspace-quick-actions.ts::runWorkspaceQuickAction`).
 The launch API accepts only the target and display region. Agent launches
 validate the persisted launch specification and renew an expired visibility
 lease while preparing generated context. A retryable hub outage or a

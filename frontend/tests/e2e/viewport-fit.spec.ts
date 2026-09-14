@@ -113,6 +113,7 @@ test("settings sidebar lists every panel in declaration order under group headin
       "Terminal",
       "Kata mappings",
       "Workspace agents",
+      "Quick actions",
       "Fleet federation",
       "Navigation",
       "Visible modes",

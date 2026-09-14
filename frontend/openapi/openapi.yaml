@@ -4118,6 +4118,24 @@ components:
         - source
         - available
       type: object
+    LaunchWorkspaceAgentHandoffInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/LaunchWorkspaceAgentHandoffInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        message:
+          type: string
+        target_key:
+          type: string
+      required:
+        - target_key
+        - message
+      type: object
     LaunchWorkspaceRuntimeSessionInputBody:
       additionalProperties: false
       properties:
@@ -6245,6 +6263,20 @@ components:
         - commit
         - short_commit
       type: object
+    QuickAction:
+      additionalProperties: false
+      properties:
+        agent:
+          type: string
+        label:
+          type: string
+        prompt:
+          type: string
+      required:
+        - label
+        - agent
+        - prompt
+      type: object
     RateLimitHostStatus:
       additionalProperties: false
       properties:
@@ -8178,6 +8210,10 @@ components:
           $ref: "#/components/schemas/NotificationsSettingsResponse"
         pull_requests:
           $ref: "#/components/schemas/PullRequests"
+        quick_actions:
+          items:
+            $ref: "#/components/schemas/QuickAction"
+          type: array
         repo_presets:
           items:
             $ref: "#/components/schemas/RepoPreset"
@@ -8203,6 +8239,7 @@ components:
         - notifications
         - terminal
         - agents
+        - quick_actions
         - kata_projects
         - fleet
         - mcp
@@ -8868,6 +8905,10 @@ components:
           $ref: "#/components/schemas/ModeVisibility"
         pull_requests:
           $ref: "#/components/schemas/PullRequests"
+        quick_actions:
+          items:
+            $ref: "#/components/schemas/QuickAction"
+          type: array
         roborev:
           $ref: "#/components/schemas/RoborevSettingsUpdate"
         terminal:
@@ -9349,6 +9390,24 @@ components:
         - item_url
         - item_state
         - activity_at
+      type: object
+    WorkspaceAgentHandoffResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/WorkspaceAgentHandoffResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        initial_message:
+          $ref: "#/components/schemas/AgentInitialMessageStatusResponse"
+        session:
+          $ref: "#/components/schemas/SessionInfo"
+      required:
+        - session
+        - initial_message
       type: object
     WorkspaceAgentSessionResponse:
       additionalProperties: false
@@ -23588,6 +23647,38 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get workspace runtime
+      tags:
+        - Workspaces
+  /workspaces/{id}/runtime/agent-handoffs:
+    post:
+      description: Waits for the workspace to become ready, launches the agent target, and delivers the message as its initial prompt.
+      operationId: launch-workspace-agent-handoff
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LaunchWorkspaceAgentHandoffInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceAgentHandoffResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Launch an agent with an initial message
       tags:
         - Workspaces
   /workspaces/{id}/runtime/sessions:

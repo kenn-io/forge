@@ -12,16 +12,16 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"go.kenn.io/forge/internal/workspace/agenthandoff"
 	"go.kenn.io/forge/platform"
 )
 
 const (
-	defaultAgentHandoffTimeout      = 5 * time.Minute
-	maxAgentHandoffTimeout          = 15 * time.Minute
-	defaultAgentHandoffPollInterval = 250 * time.Millisecond
-	messageStatusRecoveryTimeout    = 6 * time.Second
-	maxAgentInitialMessage          = 64 << 10
-	workspaceAgentPreferenceWindow  = 14 * 24 * time.Hour
+	defaultAgentHandoffTimeout     = 5 * time.Minute
+	maxAgentHandoffTimeout         = 15 * time.Minute
+	messageStatusRecoveryTimeout   = 6 * time.Second
+	maxAgentInitialMessage         = 64 << 10
+	workspaceAgentPreferenceWindow = 14 * 24 * time.Hour
 )
 
 type workspaceSourceInput struct {
@@ -539,25 +539,23 @@ func (s *Server) waitForWorkspaceReady(
 	ctx context.Context,
 	workspaceID string,
 ) (Workspace, error) {
-	for {
-		workspace, err := s.backend.GetWorkspace(ctx, workspaceID)
+	var workspace Workspace
+	err := s.agentHandoffPoller().WaitForWorkspace(ctx, func(ctx context.Context) (agenthandoff.WorkspaceState, error) {
+		var err error
+		workspace, err = s.backend.GetWorkspace(ctx, workspaceID)
 		if err != nil {
-			return workspace, err
+			return agenthandoff.WorkspaceState{}, err
 		}
-		switch workspace.Status {
-		case "ready":
-			return workspace, nil
-		case "error":
-			message := "workspace setup failed"
-			if workspace.ErrorMessage != nil && strings.TrimSpace(*workspace.ErrorMessage) != "" {
-				message += ": " + strings.TrimSpace(*workspace.ErrorMessage)
-			}
-			return workspace, errors.New(message)
+		state := agenthandoff.WorkspaceState{Status: workspace.Status}
+		if workspace.ErrorMessage != nil {
+			state.ErrorMessage = *workspace.ErrorMessage
 		}
-		if err := s.waitAgentHandoffPoll(ctx); err != nil {
-			return workspace, err
-		}
+		return state, nil
+	})
+	if errors.Is(err, agenthandoff.ErrWorkspaceSetupFailed) {
+		err = errors.New(strings.ReplaceAll(err.Error(), "\n", ": "))
 	}
+	return workspace, err
 }
 
 func (s *Server) waitForCodingSession(
@@ -566,26 +564,27 @@ func (s *Server) waitForCodingSession(
 	runtimeSessionKey string,
 	targetKey string,
 ) (workspaceAgentSessionRow, error) {
-	for {
+	var found workspaceAgentSessionRow
+	err := s.agentHandoffPoller().Until(ctx, func(ctx context.Context) (bool, error) {
 		response, err := s.listWorkspaceAgentSessions(
 			ctx, listWorkspaceAgentSessionsInput{WorkspaceID: workspaceID},
 		)
 		if err != nil {
-			return workspaceAgentSessionRow{}, err
+			return false, err
 		}
 		for _, session := range response.Sessions {
 			if session.RuntimeSessionKey == runtimeSessionKey &&
 				session.TargetKey == targetKey {
-				return session, nil
+				found = session
+				return true, nil
 			}
 		}
-		if err := s.ensureRuntimeStillLive(ctx, workspaceID, runtimeSessionKey); err != nil {
-			return workspaceAgentSessionRow{}, err
-		}
-		if err := s.waitAgentHandoffPoll(ctx); err != nil {
-			return workspaceAgentSessionRow{}, err
-		}
+		return false, s.ensureRuntimeStillLive(ctx, workspaceID, runtimeSessionKey)
+	})
+	if err != nil {
+		return workspaceAgentSessionRow{}, err
 	}
+	return found, nil
 }
 
 func (s *Server) ensureRuntimeStillLive(
@@ -609,19 +608,8 @@ func (s *Server) ensureRuntimeStillLive(
 	return fmt.Errorf("agent runtime exited before its coding session was observed")
 }
 
-func (s *Server) waitAgentHandoffPoll(ctx context.Context) error {
-	interval := s.agentHandoffPollInterval
-	if interval <= 0 {
-		interval = defaultAgentHandoffPollInterval
-	}
-	timer := time.NewTimer(interval)
-	defer timer.Stop()
-	select {
-	case <-timer.C:
-		return nil
-	case <-ctx.Done():
-		return context.Cause(ctx)
-	}
+func (s *Server) agentHandoffPoller() agenthandoff.Poller {
+	return agenthandoff.Poller{Interval: s.agentHandoffPollInterval}
 }
 
 func (s *Server) submitInitialAgentMessage(
@@ -631,40 +619,41 @@ func (s *Server) submitInitialAgentMessage(
 	targetKey string,
 	message string,
 ) (agentInitialMessageRow, error) {
-	var messageStatus InitialMessageStatus
-	for {
-		status, err := s.backend.SubmitInitialMessage(ctx, InitialMessageRequest{
-			WorkspaceID: workspaceID, RuntimeSessionKey: runtimeSessionKey,
-			TargetKey: targetKey, Message: message,
-		})
-		messageStatus = status
-		if err == nil {
-			break
-		}
-		var backendErr *Error
-		if !errors.As(err, &backendErr) || backendErr == nil {
-			return initialMessageStatusRow(messageStatus), err
-		}
-		if backendErr.Code == ErrorCodeInitialMessageInputModeNotReady &&
-			backendErr.Retryable && !backendErr.Ambiguous {
-			if err := s.waitAgentHandoffPoll(ctx); err != nil {
-				return agentInitialMessageRow{}, err
-			}
-			continue
-		}
-		if !backendErr.Ambiguous {
-			return initialMessageStatusRow(messageStatus), err
-		}
-		recoveredStatus, recoveryErr := s.recoverInitialMessageStatus(
-			ctx, workspaceID, runtimeSessionKey, backendErr,
-		)
-		if recoveryErr != nil {
-			return initialMessageStatusRow(messageStatus), recoveryErr
-		}
-		messageStatus = recoveredStatus
-		break
+	messageStatus, err := agenthandoff.Deliver(ctx, s.agentHandoffPoller(),
+		func(ctx context.Context) (InitialMessageStatus, error) {
+			return s.backend.SubmitInitialMessage(ctx, InitialMessageRequest{
+				WorkspaceID: workspaceID, RuntimeSessionKey: runtimeSessionKey,
+				TargetKey: targetKey, Message: message,
+			})
+		},
+		isInputModeNotReady,
+	)
+	if err == nil {
+		return initialMessageStatusRow(messageStatus), nil
 	}
-	return initialMessageStatusRow(messageStatus), nil
+	var backendErr *Error
+	if !errors.As(err, &backendErr) || backendErr == nil || !backendErr.Ambiguous {
+		return initialMessageStatusRow(messageStatus), err
+	}
+	recoveredStatus, recoveryErr := s.recoverInitialMessageStatus(
+		ctx, workspaceID, runtimeSessionKey, backendErr,
+	)
+	if recoveryErr != nil {
+		return initialMessageStatusRow(messageStatus), recoveryErr
+	}
+	return initialMessageStatusRow(recoveredStatus), nil
+}
+
+// isInputModeNotReady reports the one delivery error that is safe to retry on
+// the same runtime: the agent has not enabled its input mode yet, so nothing
+// was written.
+func isInputModeNotReady(err error) bool {
+	var backendErr *Error
+	if !errors.As(err, &backendErr) || backendErr == nil {
+		return false
+	}
+	return backendErr.Code == ErrorCodeInitialMessageInputModeNotReady &&
+		backendErr.Retryable && !backendErr.Ambiguous
 }
 
 func initialMessageStatusRow(messageStatus InitialMessageStatus) agentInitialMessageRow {
@@ -703,7 +692,7 @@ func (s *Server) recoverInitialMessageStatus(
 		if recovered.State != "pending" {
 			return InitialMessageStatus{}, initialMessageRecoveryError(original, recovered.State)
 		}
-		if err := s.waitAgentHandoffPoll(recoveryCtx); err != nil {
+		if err := s.agentHandoffPoller().Wait(recoveryCtx); err != nil {
 			return InitialMessageStatus{}, initialMessageRecoveryError(original, recovered.State)
 		}
 	}

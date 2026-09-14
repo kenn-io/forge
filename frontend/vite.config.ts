@@ -451,6 +451,7 @@ const config = {
       "@lucide/svelte/icons/users",
       "@lucide/svelte/icons/workflow",
       "@lucide/svelte/icons/x",
+      "@lucide/svelte/icons/zap",
     ],
   },
   server: {

@@ -4591,3 +4591,117 @@ active_pr_window = "2h"`,
 active_pr_window = "2h"`))
 	require.NoError(t, err)
 }
+
+func TestQuickActionsConfigRoundTrip(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	path := writeConfig(t, `
+[[repos]]
+owner = "a"
+name = "b"
+
+[[quick_actions]]
+label = " Rebase "
+agent = " Codex "
+prompt = "rebase this pull request onto main"
+
+[[quick_actions]]
+label = "Triage"
+agent = "opencode"
+prompt = "/triage-pr\nquestion all assumptions"
+`)
+	cfg, err := Load(path)
+	require.NoError(err)
+	require.Len(cfg.QuickActions, 2)
+	assert.Equal("Rebase", cfg.QuickActions[0].Label)
+	assert.Equal("codex", cfg.QuickActions[0].Agent)
+	assert.Equal("rebase this pull request onto main", cfg.QuickActions[0].Prompt)
+	assert.Equal("/triage-pr\nquestion all assumptions", cfg.QuickActions[1].Prompt)
+
+	savePath := filepath.Join(t.TempDir(), "saved.toml")
+	require.NoError(cfg.Save(savePath))
+
+	cfg2, err := Load(savePath)
+	require.NoError(err)
+	assert.Equal(cfg.QuickActions, cfg2.QuickActions)
+}
+
+func TestLoadQuickActionsDefaultsToEmptyAndSaveOmitsSection(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	path := writeConfig(t, `
+[[repos]]
+owner = "a"
+name = "b"
+`)
+	cfg, err := Load(path)
+	require.NoError(err)
+	require.NotNil(cfg.QuickActions)
+	assert.Empty(cfg.QuickActions)
+
+	savePath := filepath.Join(t.TempDir(), "saved.toml")
+	require.NoError(cfg.Save(savePath))
+	saved, err := os.ReadFile(savePath)
+	require.NoError(err)
+	assert.NotContains(string(saved), "quick_actions")
+}
+
+func TestLoadQuickActionsRejectsInvalidEntries(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "missing label",
+			body: "[[quick_actions]]\nagent = \"codex\"\nprompt = \"go\"\n",
+			want: "quick_actions[0]: label is required",
+		},
+		{
+			name: "missing agent",
+			body: "[[quick_actions]]\nlabel = \"Go\"\nprompt = \"go\"\n",
+			want: "quick_actions[0]: agent is required",
+		},
+		{
+			name: "blank prompt",
+			body: "[[quick_actions]]\nlabel = \"Go\"\nagent = \"codex\"\nprompt = \"  \"\n",
+			want: "quick_actions[0]: prompt is required",
+		},
+		{
+			name: "duplicate label",
+			body: "[[quick_actions]]\nlabel = \"Go\"\nagent = \"codex\"\nprompt = \"one\"\n\n" +
+				"[[quick_actions]]\nlabel = \"go\"\nagent = \"claude\"\nprompt = \"two\"\n",
+			want: "duplicate quick action \"go\"",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeConfig(t, "[[repos]]\nowner = \"a\"\nname = \"b\"\n\n"+tc.body)
+			_, err := Load(path)
+			require.ErrorContains(t, err, tc.want)
+		})
+	}
+}
+
+func TestLoadQuickActionsAppliesInitialMessageContract(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	path := writeConfig(t, "[[repos]]\nowner = \"a\"\nname = \"b\"\n\n"+
+		"[[quick_actions]]\nlabel = \"Triage\"\nagent = \"codex\"\nprompt = \"first\\r\\nsecond\\rthird\"\n")
+	cfg, err := Load(path)
+	require.NoError(err)
+	require.Len(cfg.QuickActions, 1)
+	assert.Equal("first\nsecond\nthird", cfg.QuickActions[0].Prompt)
+
+	// A tab would be refused by the handoff endpoint after the workspace was
+	// already created, so config loading refuses it first.
+	path = writeConfig(t, "[[repos]]\nowner = \"a\"\nname = \"b\"\n\n"+
+		"[[quick_actions]]\nlabel = \"Tabs\"\nagent = \"codex\"\nprompt = \"review\\tthis\"\n")
+	_, err = Load(path)
+	require.ErrorContains(err, "quick_actions[0]: prompt contains unsafe control character U+0009")
+
+	oversized := Config{QuickActions: []QuickAction{{
+		Label: "Big", Agent: "codex", Prompt: strings.Repeat("a", MaxQuickActionPromptBytes+1),
+	}}}
+	require.ErrorContains(oversized.validateQuickActions(), "prompt must not exceed 64 KiB")
+}

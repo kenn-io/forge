@@ -24,6 +24,12 @@ Choose an agent from the create menu when you want to create the workspace and
 launch that agent in one step. Creating the same item or ad-hoc branch again
 reopens the existing workspace instead of making a duplicate.
 
+The lightning icon beside the create menu lists your configured quick actions.
+A quick action creates the workspace, launches its agent, and sends a preset
+prompt once the agent is ready, so a routine task such as "rebase this pull
+request" is one click. Configure quick actions under **Settings → Quick
+actions** (see [Configuration](../configuration.md#quick-actions)).
+
 ### Choose a machine in a fleet
 
 On a fleet hub, **New workspace** includes a **Run on** selector. Choose the hub

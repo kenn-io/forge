@@ -4761,3 +4761,55 @@ prefer_github_native_stacks = false
 	assert.Equal([]int64{10, 11}, stackMemberNumbers(resp.JSON200.Members),
 		"a server booting with the preview disabled must not serve native ordering")
 }
+
+func TestHandleUpdateSettingsPersistsQuickActions(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, _, cfgPath := setupTestServerWithConfig(t)
+	actions := []config.QuickAction{{
+		Label:  "Rebase",
+		Agent:  "codex",
+		Prompt: "rebase this pull request onto main",
+	}, {
+		Label:  "Triage",
+		Agent:  "opencode",
+		Prompt: "/triage-pr\nquestion all assumptions",
+	}}
+
+	rr := testutil.DoJSON(
+		t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{QuickActions: &actions})
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	cfg2, err := config.Load(cfgPath)
+	require.NoError(err)
+	assert.Equal(actions, cfg2.QuickActions)
+
+	rr = testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	var body struct {
+		QuickActions []config.QuickAction `json:"quick_actions"`
+	}
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
+	assert.Equal(actions, body.QuickActions)
+
+	// An invalid entry rolls the whole write back.
+	invalid := []config.QuickAction{{Label: "", Agent: "codex", Prompt: "go"}}
+	rr = testutil.DoJSON(
+		t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{QuickActions: &invalid})
+	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
+	cfg3, err := config.Load(cfgPath)
+	require.NoError(err)
+	assert.Equal(actions, cfg3.QuickActions)
+}
+
+func TestHandleGetSettingsReportsEmptyQuickActionsArray(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, _, _ := setupTestServerWithConfig(t)
+	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	var raw map[string]json.RawMessage
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &raw))
+	require.Contains(raw, "quick_actions")
+	assert.JSONEq("[]", string(raw["quick_actions"]))
+}

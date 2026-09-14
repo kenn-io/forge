@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/BurntSushi/toml"
 	"go.kenn.io/forge/internal/federation"
@@ -780,6 +781,20 @@ func (a Agent) EnabledOrDefault() bool {
 	return a.Enabled == nil || *a.Enabled
 }
 
+// QuickAction is a one-click workspace handoff: create the workspace for the
+// current pull request or issue, launch the named agent, and deliver the
+// prompt as its initial message. Agent is a launch target key; it is checked
+// against the resolved targets at use time, not at config load, so a
+// temporarily missing binary does not reject the whole config.
+type QuickAction struct {
+	Label  string `toml:"label" json:"label"`
+	Agent  string `toml:"agent" json:"agent"`
+	Prompt string `toml:"prompt" json:"prompt"`
+}
+
+// MaxQuickActionPromptBytes matches the initial agent message limit.
+const MaxQuickActionPromptBytes = 64 << 10
+
 type Roborev struct {
 	Endpoint          string `toml:"endpoint,omitempty"`
 	InitManagedClones bool   `toml:"init_managed_clones,omitempty"`
@@ -965,6 +980,7 @@ type Config struct {
 	Terminal          Terminal                 `toml:"terminal"`
 	Modes             ModeVisibility           `toml:"modes"`
 	Agents            []Agent                  `toml:"agents"`
+	QuickActions      []QuickAction            `toml:"quick_actions"`
 	DocFolders        []DocFolder              `toml:"doc_folders"`
 	Roborev           Roborev                  `toml:"roborev"`
 	Tmux              Tmux                     `toml:"tmux"`
@@ -1270,6 +1286,9 @@ func load(path string) (*Config, error) {
 	}
 	if cfg.Agents == nil {
 		cfg.Agents = []Agent{}
+	}
+	if cfg.QuickActions == nil {
+		cfg.QuickActions = []QuickAction{}
 	}
 	cfg.Modes = cfg.Modes.WithDefaults()
 	cfg.Workspaces = cfg.Workspaces.withDefaults()
@@ -1735,6 +1754,9 @@ func (c *Config) validate() error {
 		)
 	}
 	if err := c.validateAgents(); err != nil {
+		return err
+	}
+	if err := c.validateQuickActions(); err != nil {
 		return err
 	}
 
@@ -2244,6 +2266,57 @@ func (c *Config) validateAgents() error {
 		}
 	}
 	return nil
+}
+
+func (c *Config) validateQuickActions() error {
+	seen := make(map[string]struct{}, len(c.QuickActions))
+	for i := range c.QuickActions {
+		action := &c.QuickActions[i]
+		action.Label = strings.TrimSpace(action.Label)
+		action.Agent = strings.ToLower(strings.TrimSpace(action.Agent))
+		if action.Label == "" {
+			return fmt.Errorf("config: quick_actions[%d]: label is required", i)
+		}
+		if action.Agent == "" {
+			return fmt.Errorf("config: quick_actions[%d]: agent is required", i)
+		}
+		prompt, err := normalizeQuickActionPrompt(action.Prompt)
+		if err != nil {
+			return fmt.Errorf("config: quick_actions[%d]: %w", i, err)
+		}
+		action.Prompt = prompt
+		labelKey := strings.ToLower(action.Label)
+		if _, ok := seen[labelKey]; ok {
+			return fmt.Errorf("config: duplicate quick action %q", action.Label)
+		}
+		seen[labelKey] = struct{}{}
+	}
+	return nil
+}
+
+// normalizeQuickActionPrompt applies the initial agent message contract at
+// config time so a saved quick action can never be rejected by the handoff
+// endpoint after its workspace was already created: line endings are
+// normalized to LF, control characters other than newline are refused, and
+// the size limit is measured after normalization.
+func normalizeQuickActionPrompt(prompt string) (string, error) {
+	if !utf8.ValidString(prompt) {
+		return "", errors.New("prompt must be valid UTF-8")
+	}
+	prompt = strings.ReplaceAll(prompt, "\r\n", "\n")
+	prompt = strings.ReplaceAll(prompt, "\r", "\n")
+	if strings.TrimSpace(prompt) == "" {
+		return "", errors.New("prompt is required")
+	}
+	for _, value := range prompt {
+		if value != '\n' && !unicode.IsPrint(value) {
+			return "", fmt.Errorf("prompt contains unsafe control character U+%04X", value)
+		}
+	}
+	if len(prompt) > MaxQuickActionPromptBytes {
+		return "", errors.New("prompt must not exceed 64 KiB after line-ending normalization")
+	}
+	return prompt, nil
 }
 
 func repoIdentityKey(r Repo) string {
@@ -3499,6 +3572,7 @@ type configFile struct {
 	Terminal                    Terminal                 `toml:"terminal,omitempty"`
 	Modes                       ModeVisibility           `toml:"modes,omitempty"`
 	Agents                      []Agent                  `toml:"agents,omitempty"`
+	QuickActions                []QuickAction            `toml:"quick_actions,omitempty"`
 	DocFolders                  []DocFolder              `toml:"doc_folders,omitempty"`
 	Roborev                     Roborev                  `toml:"roborev,omitempty"`
 	PullRequests                PullRequests             `toml:"pull_requests,omitempty"`
@@ -3541,6 +3615,7 @@ func (c *Config) Save(path string) error {
 		Terminal:                    cfg.Terminal,
 		Modes:                       cfg.Modes,
 		Agents:                      cfg.Agents,
+		QuickActions:                cfg.QuickActions,
 		DocFolders:                  cfg.DocFolders,
 		Roborev:                     cfg.Roborev,
 		PullRequests:                cfg.PullRequests,
@@ -3632,6 +3707,7 @@ func (c *Config) copyForSave() Config {
 	}
 	cfg.DocFolders = slices.Clone(c.DocFolders)
 	cfg.Agents = slices.Clone(c.Agents)
+	cfg.QuickActions = slices.Clone(c.QuickActions)
 	cfg.API.TailscaleServe.AllowedUsers = slices.Clone(c.API.TailscaleServe.AllowedUsers)
 	if c.Fleet.Hub != nil {
 		hub := *c.Fleet.Hub

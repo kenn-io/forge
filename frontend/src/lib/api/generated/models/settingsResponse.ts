@@ -13,6 +13,7 @@ import type { McpSettingsResponse } from "./mcpSettingsResponse.ts";
 import type { ModeVisibility } from "./modeVisibility.ts";
 import type { NotificationsSettingsResponse } from "./notificationsSettingsResponse.ts";
 import type { PullRequests } from "./pullRequests.ts";
+import type { QuickAction } from "./quickAction.ts";
 import type { RepoPreset } from "./repoPreset.ts";
 import type { RoborevSettingsResponse } from "./roborevSettingsResponse.ts";
 import type { Terminal } from "./terminal.ts";
@@ -32,6 +33,7 @@ export interface SettingsResponse {
   modes?: ModeVisibility;
   notifications: NotificationsSettingsResponse;
   pull_requests: PullRequests;
+  quick_actions: QuickAction[];
   repo_presets: RepoPreset[];
   repos: ConfiguredRepoStatus[];
   roborev: RoborevSettingsResponse;

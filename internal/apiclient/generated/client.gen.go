@@ -3261,6 +3261,16 @@ type LaunchTarget struct {
 	Source         string    `json:"source"`
 }
 
+// LaunchWorkspaceAgentHandoffInputBody defines model for LaunchWorkspaceAgentHandoffInputBody.
+type LaunchWorkspaceAgentHandoffInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: /api/v1/schemas/LaunchWorkspaceAgentHandoffInputBody.json
+	Schema    *string `json:"$schema,omitempty"`
+	Message   string  `json:"message"`
+	TargetKey string  `json:"target_key"`
+}
+
 // LaunchWorkspaceRuntimeSessionInputBody defines model for LaunchWorkspaceRuntimeSessionInputBody.
 type LaunchWorkspaceRuntimeSessionInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -4188,6 +4198,13 @@ type PullResponse struct {
 	Upstream    string  `json:"upstream"`
 }
 
+// QuickAction defines model for QuickAction.
+type QuickAction struct {
+	Agent  string `json:"agent"`
+	Label  string `json:"label"`
+	Prompt string `json:"prompt"`
+}
+
 // RateLimitHostStatus defines model for RateLimitHostStatus.
 type RateLimitHostStatus struct {
 	Graphql            RateLimitResourceStatus `json:"graphql"`
@@ -5096,6 +5113,7 @@ type SettingsResponse struct {
 	Modes         *ModeVisibility               `json:"modes,omitempty"`
 	Notifications NotificationsSettingsResponse `json:"notifications"`
 	PullRequests  PullRequests                  `json:"pull_requests"`
+	QuickActions  []QuickAction                 `json:"quick_actions"`
 	RepoPresets   []RepoPreset                  `json:"repo_presets"`
 	Repos         []ConfiguredRepoStatus        `json:"repos"`
 	Roborev       RoborevSettingsResponse       `json:"roborev"`
@@ -5404,6 +5422,7 @@ type UpdateSettingsRequest struct {
 	Mcp          *McpSettingsUpdate        `json:"mcp,omitempty"`
 	Modes        *ModeVisibility           `json:"modes,omitempty"`
 	PullRequests *PullRequests             `json:"pull_requests,omitempty"`
+	QuickActions *[]QuickAction            `json:"quick_actions,omitempty"`
 	Roborev      *RoborevSettingsUpdate    `json:"roborev,omitempty"`
 	Terminal     *Terminal                 `json:"terminal,omitempty"`
 	Workspaces   *WorkspaceSettingsUpdate  `json:"workspaces,omitempty"`
@@ -5612,6 +5631,16 @@ type WorkspaceActivitySubjectResponse struct {
 	RepoName     string                  `json:"repo_name"`
 	RepoOwner    string                  `json:"repo_owner"`
 	Workspace    *WorkspaceRef           `json:"workspace,omitempty"`
+}
+
+// WorkspaceAgentHandoffResponse defines model for WorkspaceAgentHandoffResponse.
+type WorkspaceAgentHandoffResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: /api/v1/schemas/WorkspaceAgentHandoffResponse.json
+	Schema         *string                           `json:"$schema,omitempty"`
+	InitialMessage AgentInitialMessageStatusResponse `json:"initial_message"`
+	Session        SessionInfo                       `json:"session"`
 }
 
 // WorkspaceAgentSessionResponse defines model for WorkspaceAgentSessionResponse.
@@ -7139,6 +7168,9 @@ type CreateWorkspaceJSONRequestBody = CreateWorkspaceInputBody
 
 // CreateWorkspaceKataLinkJSONRequestBody defines body for CreateWorkspaceKataLink for application/json ContentType.
 type CreateWorkspaceKataLinkJSONRequestBody = KataCreateLinkRequest
+
+// LaunchWorkspaceAgentHandoffJSONRequestBody defines body for LaunchWorkspaceAgentHandoff for application/json ContentType.
+type LaunchWorkspaceAgentHandoffJSONRequestBody = LaunchWorkspaceAgentHandoffInputBody
 
 // LaunchWorkspaceRuntimeSessionJSONRequestBody defines body for LaunchWorkspaceRuntimeSession for application/json ContentType.
 type LaunchWorkspaceRuntimeSessionJSONRequestBody = LaunchWorkspaceRuntimeSessionInputBody
@@ -10283,6 +10315,24 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /workspaces/{id}/runtime (the `GetWorkspaceRuntime` operationId).
 	GetWorkspaceRuntime(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// LaunchWorkspaceAgentHandoffWithBody Launch an agent with an initial message
+	//
+	// Waits for the workspace to become ready, launches the agent target, and delivers the message as its initial prompt.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /workspaces/{id}/runtime/agent-handoffs (the `LaunchWorkspaceAgentHandoff` operationId).
+	LaunchWorkspaceAgentHandoffWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// LaunchWorkspaceAgentHandoff Launch an agent with an initial message
+	//
+	// Waits for the workspace to become ready, launches the agent target, and delivers the message as its initial prompt.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /workspaces/{id}/runtime/agent-handoffs (the `LaunchWorkspaceAgentHandoff` operationId).
+	LaunchWorkspaceAgentHandoff(ctx context.Context, id string, body LaunchWorkspaceAgentHandoffJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// LaunchWorkspaceRuntimeSessionWithBody Launch workspace runtime session
 	//
@@ -17992,6 +18042,44 @@ func (c *Client) RevealWorkspace(ctx context.Context, id string, reqEditors ...R
 // Corresponds with GET /workspaces/{id}/runtime (the `GetWorkspaceRuntime` operationId).
 func (c *Client) GetWorkspaceRuntime(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetWorkspaceRuntimeRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// LaunchWorkspaceAgentHandoffWithBody Launch an agent with an initial message
+//
+// Waits for the workspace to become ready, launches the agent target, and delivers the message as its initial prompt.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /workspaces/{id}/runtime/agent-handoffs (the `LaunchWorkspaceAgentHandoff` operationId).
+func (c *Client) LaunchWorkspaceAgentHandoffWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewLaunchWorkspaceAgentHandoffRequestWithBody(c.Server, id, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// LaunchWorkspaceAgentHandoff Launch an agent with an initial message
+//
+// Waits for the workspace to become ready, launches the agent target, and delivers the message as its initial prompt.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /workspaces/{id}/runtime/agent-handoffs (the `LaunchWorkspaceAgentHandoff` operationId).
+func (c *Client) LaunchWorkspaceAgentHandoff(ctx context.Context, id string, body LaunchWorkspaceAgentHandoffJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewLaunchWorkspaceAgentHandoffRequest(c.Server, id, body)
 	if err != nil {
 		return nil, err
 	}
@@ -39218,6 +39306,53 @@ func NewGetWorkspaceRuntimeRequest(server string, id string) (*http.Request, err
 	return req, nil
 }
 
+// NewLaunchWorkspaceAgentHandoffRequest calls the generic LaunchWorkspaceAgentHandoff builder with application/json body
+func NewLaunchWorkspaceAgentHandoffRequest(server string, id string, body LaunchWorkspaceAgentHandoffJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewLaunchWorkspaceAgentHandoffRequestWithBody(server, id, "application/json", bodyReader)
+}
+
+// NewLaunchWorkspaceAgentHandoffRequestWithBody constructs an http.Request for the LaunchWorkspaceAgentHandoff method, with any body, and a specified content type
+func NewLaunchWorkspaceAgentHandoffRequestWithBody(server string, id string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/workspaces/%s/runtime/agent-handoffs", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewLaunchWorkspaceRuntimeSessionRequest calls the generic LaunchWorkspaceRuntimeSession builder with application/json body
 func NewLaunchWorkspaceRuntimeSessionRequest(server string, id string, body LaunchWorkspaceRuntimeSessionJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -40865,6 +41000,11 @@ type ClientWithResponsesInterface interface {
 
 	// GetWorkspaceRuntimeWithResponse request
 	GetWorkspaceRuntimeWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetWorkspaceRuntimeResponse, error)
+
+	// LaunchWorkspaceAgentHandoffWithBodyWithResponse request with any body
+	LaunchWorkspaceAgentHandoffWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*LaunchWorkspaceAgentHandoffResponse, error)
+
+	LaunchWorkspaceAgentHandoffWithResponse(ctx context.Context, id string, body LaunchWorkspaceAgentHandoffJSONRequestBody, reqEditors ...RequestEditorFn) (*LaunchWorkspaceAgentHandoffResponse, error)
 
 	// LaunchWorkspaceRuntimeSessionWithBodyWithResponse request with any body
 	LaunchWorkspaceRuntimeSessionWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*LaunchWorkspaceRuntimeSessionResponse, error)
@@ -48689,6 +48829,29 @@ func (r GetWorkspaceRuntimeResponse) StatusCode() int {
 	return 0
 }
 
+type LaunchWorkspaceAgentHandoffResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *WorkspaceAgentHandoffResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r LaunchWorkspaceAgentHandoffResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r LaunchWorkspaceAgentHandoffResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type LaunchWorkspaceRuntimeSessionResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -52972,6 +53135,23 @@ func (c *ClientWithResponses) GetWorkspaceRuntimeWithResponse(ctx context.Contex
 		return nil, err
 	}
 	return ParseGetWorkspaceRuntimeResponse(rsp)
+}
+
+// LaunchWorkspaceAgentHandoffWithBodyWithResponse request with arbitrary body returning *LaunchWorkspaceAgentHandoffResponse
+func (c *ClientWithResponses) LaunchWorkspaceAgentHandoffWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*LaunchWorkspaceAgentHandoffResponse, error) {
+	rsp, err := c.LaunchWorkspaceAgentHandoffWithBody(ctx, id, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseLaunchWorkspaceAgentHandoffResponse(rsp)
+}
+
+func (c *ClientWithResponses) LaunchWorkspaceAgentHandoffWithResponse(ctx context.Context, id string, body LaunchWorkspaceAgentHandoffJSONRequestBody, reqEditors ...RequestEditorFn) (*LaunchWorkspaceAgentHandoffResponse, error) {
+	rsp, err := c.LaunchWorkspaceAgentHandoff(ctx, id, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseLaunchWorkspaceAgentHandoffResponse(rsp)
 }
 
 // LaunchWorkspaceRuntimeSessionWithBodyWithResponse request with arbitrary body returning *LaunchWorkspaceRuntimeSessionResponse
@@ -64087,6 +64267,39 @@ func ParseGetWorkspaceRuntimeResponse(rsp *http.Response) (*GetWorkspaceRuntimeR
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest WorkspaceRuntimeResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseLaunchWorkspaceAgentHandoffResponse parses an HTTP response from a LaunchWorkspaceAgentHandoffWithResponse call
+func ParseLaunchWorkspaceAgentHandoffResponse(rsp *http.Response) (*LaunchWorkspaceAgentHandoffResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &LaunchWorkspaceAgentHandoffResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorkspaceAgentHandoffResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

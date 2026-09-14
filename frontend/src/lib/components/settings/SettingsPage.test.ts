@@ -4,10 +4,11 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { DEFAULT_TERMINAL_SETTINGS, type Settings } from "../../api/types.js";
 import { makeStartupSnapshot } from "../../../test/startupSnapshot.js";
 
-const { loadSettings, setDetailSettings, setLaunchTargets, setRepoPresets } = vi.hoisted(() => ({
+const { loadSettings, setDetailSettings, setLaunchTargets, setQuickActions, setRepoPresets } = vi.hoisted(() => ({
   loadSettings: vi.fn(),
   setDetailSettings: vi.fn(),
   setLaunchTargets: vi.fn(),
+  setQuickActions: vi.fn(),
   setRepoPresets: vi.fn(),
 }));
 
@@ -27,6 +28,7 @@ vi.mock("../../context.js", async (importOriginal) => ({
       getRoborevSettings: () => ({ init_managed_clones: false }),
       setRoborevSettings: vi.fn(),
       setLaunchTargets,
+      setQuickActions,
     },
   }),
 }));
@@ -102,6 +104,7 @@ function makeSettings(): Settings {
       },
     ],
     launch_targets: [codexTarget],
+    quick_actions: [{ label: "Rebase", agent: "codex", prompt: "rebase this pull request onto main" }],
   });
 }
 
@@ -110,6 +113,7 @@ describe("SettingsPage", () => {
     cleanup();
     loadSettings.mockReset();
     setLaunchTargets.mockReset();
+    setQuickActions.mockReset();
     setDetailSettings.mockReset();
     setRepoPresets.mockReset();
   });
@@ -124,6 +128,22 @@ describe("SettingsPage", () => {
 
     await waitFor(() => {
       expect(setLaunchTargets).toHaveBeenCalledWith(settings.launch_targets);
+    });
+  });
+
+  it("hydrates quick actions into the shared settings store on initial load", async () => {
+    // The PR and issue headers read quick actions from the shared store, so a
+    // Settings-page load that recovers from a failed startup hydration must
+    // publish them too or the headers keep stale values.
+    const settings = makeSettings();
+    loadSettings.mockReturnValue(Effect.succeed(settings));
+
+    render(SettingsRuntimeHarness, {
+      props: { component: SettingsPage, componentProps: {} },
+    });
+
+    await waitFor(() => {
+      expect(setQuickActions).toHaveBeenCalledWith(settings.quick_actions);
     });
   });
 

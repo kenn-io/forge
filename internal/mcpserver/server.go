@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"go.kenn.io/forge/internal/workspace/agenthandoff"
 )
 
 const defaultDiffCacheBytes int64 = 128 << 20
@@ -36,7 +38,7 @@ func New(opts Options) (*Server, error) {
 	}
 	s := &Server{
 		backend:                  opts.Backend,
-		agentHandoffPollInterval: defaultAgentHandoffPollInterval,
+		agentHandoffPollInterval: agenthandoff.DefaultPollInterval,
 		diffCacheBytes:           diffCacheBytes,
 	}
 	s.mcp = mcp.NewServer(

@@ -22,12 +22,14 @@
     ProviderCapabilities,
     PullDetail,
     PullRequest,
+    QuickAction,
     RepoOperations,
   } from "../../api/types.js";
   import type { DetailSyncMode } from "../../stores/detail.svelte.js";
   import type { MutationCallbacks } from "../../stores/ordered-mutations.js";
   import type { ConflictReason } from "../../api/problems.js";
   import { showFlash } from "../../stores/flash.svelte.js";
+  import { runWorkspaceQuickAction } from "../../stores/workspace-quick-actions.js";
   import {
     getStores,
     getNavigate,
@@ -1720,7 +1722,9 @@
     });
   }
 
-  function createWorkspace(launchTargetKey?: string): void {
+  // A quick action never queues a frontend launch: the server launches the
+  // agent and delivers the prompt once the workspace is ready.
+  function createWorkspace(launchTargetKey?: string, quickAction?: QuickAction): void {
     if (stalePR) return;
     const detail = detailStore.getDetail();
     if (!detail) return;
@@ -1762,6 +1766,7 @@
             promoteWorkspaceCreateLaunch(requestIdentity, createdRef.id, undefined);
             recordWorkspaceCreated(requestIdentity, createdRef);
             inlineWorkspace?.recordCreated(requestIdentity, createdRef);
+            if (quickAction) runWorkspaceQuickAction(runtime, createdRef.id, quickAction);
           }
           if (responseIsStale() || !data?.id) return;
           if (inlineWorkspace) {
@@ -2773,7 +2778,9 @@
               ? "Refresh details before creating a workspace."
               : createWorkspaceTitle}
             descriptionId={createWorkspaceDescriptionId}
-            onCreate={createWorkspace}
+            onCreate={(targetKey) => createWorkspace(targetKey)}
+            quickActions={settings.getQuickActions()}
+            onQuickAction={(action) => createWorkspace(undefined, action)}
           />
         {/if}
       {/snippet}

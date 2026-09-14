@@ -36,6 +36,7 @@ import type {
   MergeRequestEventResponse,
   MergeRequestResponse,
   ModeVisibility as GeneratedModeVisibility,
+  QuickAction as GeneratedQuickAction,
   NotificationBulkResponse as GeneratedNotificationBulkResponse,
   NotificationsResponse as GeneratedNotificationsResponse,
   OperationAvailability as GeneratedOperationAvailability,
@@ -178,6 +179,7 @@ export const DEFAULT_DETAIL_SETTINGS: DetailSettings = {
 };
 
 export type AgentSettings = Agent;
+export type QuickAction = GeneratedQuickAction;
 export type ConfigRepo = ConfiguredRepoStatus;
 export type RepoPreset = GeneratedRepoPreset;
 export type KataProjectRepoMapping = GeneratedKataProjectRepoMapping;

@@ -25,6 +25,8 @@ import type {
   GetWorkspaceRuntimePathParameters,
   GetWorkspaceRuntimeSessionAttachSpecPathParameters,
   GetWorkspaceRuntimeSessionInitialMessagePathParameters,
+  LaunchWorkspaceAgentHandoffInputBody,
+  LaunchWorkspaceAgentHandoffPathParameters,
   LaunchWorkspaceRuntimeSessionInputBody,
   LaunchWorkspaceRuntimeSessionPathParameters,
   ListWorkspaceAgentSessionsOutputBody,
@@ -44,6 +46,7 @@ import type {
   SubmitWorkspaceRuntimeSessionInitialMessagePathParameters,
   WatchWorkspaceDiffParams,
   WatchWorkspaceDiffPathParameters,
+  WorkspaceAgentHandoffResponse,
   WorkspaceDiffWatchResponse,
   WorkspaceResponse,
   WorkspaceRuntimeResponse,
@@ -470,6 +473,33 @@ export const getWorkspaceRuntime = async (
   return orvalFetch<WorkspaceRuntimeResponse>(getGetWorkspaceRuntimeUrl({ id }), {
     ...options,
     method: "GET",
+  });
+};
+
+export const getLaunchWorkspaceAgentHandoffUrl = ({ id }: LaunchWorkspaceAgentHandoffPathParameters) => {
+  return `/workspaces/${encodeURIComponent(String(id))}/runtime/agent-handoffs`;
+};
+
+/**
+ * Waits for the workspace to become ready, launches the agent target, and delivers the message as its initial prompt.
+ * @summary Launch an agent with an initial message
+ */
+export const launchWorkspaceAgentHandoff = async (
+  { id }: LaunchWorkspaceAgentHandoffPathParameters,
+  launchWorkspaceAgentHandoffInputBody: NonReadonly<LaunchWorkspaceAgentHandoffInputBody>,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<WorkspaceAgentHandoffResponse> => {
+  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+  return orvalFetch<WorkspaceAgentHandoffResponse>(getLaunchWorkspaceAgentHandoffUrl({ id }), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
+    body: JSON.stringify(launchWorkspaceAgentHandoffInputBody),
   });
 };
 

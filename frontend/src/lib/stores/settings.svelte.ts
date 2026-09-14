@@ -8,6 +8,7 @@ import {
   type LaunchTarget,
   type ModeVisibility,
   type PullRequestSettings,
+  type QuickAction,
   type Settings,
   type RepoPreset,
   type TerminalSettings,
@@ -28,6 +29,7 @@ export function createSettingsStore() {
     ...DEFAULT_DETAIL_SETTINGS,
   });
   let launchTargets = $state.raw<LaunchTarget[]>([]);
+  let quickActions = $state.raw<QuickAction[]>([]);
   let workspaceSettings = $state.raw<Settings["workspaces"]>({
     auto_assign_on_create: false,
     default_sidebar_view: "diff",
@@ -110,6 +112,14 @@ export function createSettingsStore() {
 
   function setLaunchTargets(targets: LaunchTarget[] | null | undefined): void {
     launchTargets = [...(targets ?? [])];
+  }
+
+  function getQuickActions(): QuickAction[] {
+    return quickActions;
+  }
+
+  function setQuickActions(actions: QuickAction[] | null | undefined): void {
+    quickActions = [...(actions ?? [])];
   }
 
   function getWorkspaceSettings(): Settings["workspaces"] {
@@ -201,6 +211,8 @@ export function createSettingsStore() {
     setDetailSettings,
     getLaunchTargets,
     setLaunchTargets,
+    getQuickActions,
+    setQuickActions,
     getWorkspaceSettings,
     setWorkspaceSettings,
     getRoborevSettings,

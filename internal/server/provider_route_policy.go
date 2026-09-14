@@ -218,6 +218,7 @@ var providerRouteDeclarations = []ProviderRouteRule{
 	{OperationID: "launch-fleet-workspace-runtime-session", Owner: NodeLocal},
 	{OperationID: "launch-host-runtime-session", Owner: NodeLocal},
 	{OperationID: "launch-project-worktree-runtime-session", Owner: NodeLocal},
+	{OperationID: "launch-workspace-agent-handoff", Owner: NodeLocal},
 	{OperationID: "launch-workspace-runtime-session", Owner: NodeLocal},
 	{OperationID: "list-activity", Owner: ProviderWithLocalOverlay, PeerScope: federationauth.ScopeProviderRead},
 	{OperationID: "list-activity-authors", Owner: ProviderWithLocalOverlay, PeerScope: federationauth.ScopeProviderRead},

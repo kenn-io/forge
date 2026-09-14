@@ -13,6 +13,7 @@
   import TerminalSettings from "./TerminalSettings.svelte";
   import ModeVisibilitySettings from "./ModeVisibilitySettings.svelte";
   import AgentSettings from "./AgentSettings.svelte";
+  import QuickActionSettings from "./QuickActionSettings.svelte";
   import FleetSettings from "./FleetSettings.svelte";
   import MCPSettings from "./MCPSettings.svelte";
   import KataProjectMappingsSettings from "./KataProjectMappingsSettings.svelte";
@@ -92,6 +93,7 @@
               settingsStore.setPullRequestSettings(loaded.pull_requests);
               settingsStore.setDetailSettings(loaded.detail);
               settingsStore.setLaunchTargets(loaded.launch_targets ?? []);
+              settingsStore.setQuickActions(loaded.quick_actions ?? []);
               hydrateWorkspaceSettings(workspaceHydration, loaded.workspaces);
               hydrateRoborevSettings(roborevHydration, loaded.roborev);
               loading = false;
@@ -231,6 +233,15 @@
                   launch_targets: launchTargets,
                 };
                 settingsStore.setLaunchTargets(settings.launch_targets ?? []);
+              }}
+            />
+          {:else if meta.id === "settings-quick-actions"}
+            <QuickActionSettings
+              quickActions={loaded.quick_actions}
+              launchTargets={loaded.launch_targets ?? []}
+              onUpdate={(quick_actions) => {
+                settings = { ...settings!, quick_actions };
+                settingsStore.setQuickActions(quick_actions);
               }}
             />
           {:else if meta.id === "settings-fleet"}

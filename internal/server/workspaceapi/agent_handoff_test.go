@@ -272,6 +272,24 @@ func TestAgentHandoffCancelsPromptlyOnShutdown(t *testing.T) {
 	assert.Empty(fixture.handler.runtime.ListSessions("ws-runtime-token"))
 }
 
+func TestAgentHandoffRefusesToWaitAfterShutdownCancellation(t *testing.T) {
+	// Shutdown may cancel before any handoff has created the shared
+	// context. A request arriving after that must not start a fresh wait
+	// that only the later workspace shutdown could end.
+	assert := assert.New(t)
+	fixture := newAgentHandoffFixture(t, "creating")
+	fixture.handler.agentHandoffTimeout = time.Minute
+	fixture.handler.CancelAgentHandoffs()
+
+	started := time.Now()
+	response := fixture.post(t, map[string]string{"target_key": "codex", "message": "hi"})
+
+	assert.Less(time.Since(started), time.Second)
+	assert.Equal(http.StatusServiceUnavailable, response.Code, response.Body.String())
+	assert.Contains(response.Body.String(), "canceled by shutdown")
+	assert.Empty(fixture.handler.runtime.ListSessions("ws-runtime-token"))
+}
+
 func TestAgentHandoffReportsLaunchedSessionWhenPromptDeliveryTimesOut(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

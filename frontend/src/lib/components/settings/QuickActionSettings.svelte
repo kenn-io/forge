@@ -75,9 +75,22 @@
     return promptBytes(draft.prompt) > MAX_PROMPT_BYTES;
   }
 
+  // Mirrors the server's printable-text rule: letters, marks, numbers,
+  // punctuation, symbols, the ASCII space, and line breaks. Tabs and other
+  // control characters are refused here instead of by a failed save.
+  const UNPRINTABLE = /[^\p{L}\p{M}\p{N}\p{P}\p{S} \n]/u;
+
+  function promptHasControlCharacters(draft: ActionDraft): boolean {
+    return UNPRINTABLE.test(draft.prompt.replaceAll("\r\n", "\n").replaceAll("\r", "\n"));
+  }
+
   function isDraftValid(draft: ActionDraft): boolean {
     return (
-      draft.label.trim() !== "" && draft.agent.trim() !== "" && draft.prompt.trim() !== "" && !promptTooLong(draft)
+      draft.label.trim() !== ""
+      && draft.agent.trim() !== ""
+      && draft.prompt.trim() !== ""
+      && !promptTooLong(draft)
+      && !promptHasControlCharacters(draft)
     );
   }
 
@@ -182,6 +195,7 @@
       {#each drafts as draft (draft.id)}
         {@const duplicate = duplicateLabels(drafts).has(draft.label.trim().toLowerCase())}
         {@const oversized = promptTooLong(draft)}
+        {@const unprintable = promptHasControlCharacters(draft)}
         <div class="action-row">
           <div class="action-fields">
             <label class="field field--label">
@@ -226,7 +240,7 @@
               <textarea
                 bind:value={draft.prompt}
                 aria-label="Quick action prompt"
-                aria-invalid={oversized || undefined}
+                aria-invalid={oversized || unprintable || undefined}
                 disabled={saving}
                 rows="3"
                 placeholder="rebase this pull request onto main"
@@ -234,13 +248,16 @@
             </label>
             <!-- Errors live on their own grid row so the control row keeps a
                  uniform height and the remove button stays aligned. -->
-            {#if duplicate || oversized}
+            {#if duplicate || oversized || unprintable}
               <div class="field-errors" role="alert">
                 {#if duplicate}
                   <span class="field-error">Labels must be unique.</span>
                 {/if}
                 {#if oversized}
                   <span class="field-error">Prompts must not exceed 64 KiB.</span>
+                {/if}
+                {#if unprintable}
+                  <span class="field-error">Prompts may only contain printable text and line breaks.</span>
                 {/if}
               </div>
             {/if}

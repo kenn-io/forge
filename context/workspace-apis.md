@@ -481,7 +481,10 @@ cannot stall the shutdown budget. Input validation still fails before any
 waiting. A post-launch delivery failure returns a problem whose details carry
 `session_key`, `target_key`, and `initial_message_state`, and the runtime is left
 running; the header reports a launched-but-promptless agent rather than a failed
-start. Quick action prompts apply the initial-message normalization at config
+start, and only `not_delivered` is worded as a definite loss because any other
+state may already have written the prompt. Cancellation before the first handoff
+creates the shared context already canceled, so a late request cannot start a
+wait that only workspace shutdown would end. Quick action prompts apply the initial-message normalization at config
 load so a saved action is never rejected after its workspace exists. Nothing is
 queued in the frontend launch state for a quick action; the session arrives
 through runtime events

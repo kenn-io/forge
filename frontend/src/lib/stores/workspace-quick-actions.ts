@@ -47,9 +47,15 @@ export function runWorkspaceQuickAction(runtime: AppRuntime, workspaceId: string
       // handoff that never started.
       const sessionKey = failure.problem.details?.["session_key"];
       if (typeof sessionKey === "string" && sessionKey !== "") {
-        showFlash(`"${action.label}" launched its agent, but the prompt was not delivered: ${detail}`, {
-          tone: "warning",
-        });
+        const state = failure.problem.details?.["initial_message_state"];
+        // "not_delivered" is the only definite outcome. Anything else means
+        // the write may have happened, so sending the prompt again could
+        // duplicate the instructions.
+        const message =
+          state === "not_delivered"
+            ? `"${action.label}" launched its agent, but the prompt was not delivered: ${detail}`
+            : `"${action.label}" launched its agent, but prompt delivery is unconfirmed: ${detail}. Check the agent before sending the prompt again.`;
+        showFlash(message, { tone: "warning" });
         return;
       }
       showFlash(`"${action.label}" could not start: ${detail}`, { tone: "danger" });

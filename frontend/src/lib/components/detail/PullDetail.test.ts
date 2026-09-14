@@ -2722,6 +2722,39 @@ describe("PullDetail inline workspace handoff", () => {
     );
   });
 
+  it("reports an unconfirmed prompt delivery without claiming the prompt was lost", async () => {
+    const apiClient = {
+      GET: vi.fn(async () => ({ data: {} })),
+      POST: vi.fn(async (path: string) => {
+        if (path === "/workspaces") return { data: { id: "ws-new", status: "creating", created: true } };
+        return {
+          error: {
+            status: 500,
+            code: "internalError",
+            title: "Internal Server Error",
+            detail: "terminal write interrupted",
+            details: { session_key: "runtime-1", target_key: "codex", initial_message_state: "uncertain" },
+          },
+        };
+      }),
+    };
+    const { settings } = renderPullDetail(pullDetail(), undefined, apiClient, { hideWorkspaceAction: false });
+    settings.setQuickActions([{ label: "Rebase", agent: "codex", prompt: "rebase this" }]);
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Quick actions" }));
+    await fireEvent.click(screen.getByRole("menuitem", { name: /Rebase/ }));
+
+    await waitFor(() =>
+      expect(getFlashes()).toEqual([
+        expect.objectContaining({
+          tone: "warning",
+          message:
+            '"Rebase" launched its agent, but prompt delivery is unconfirmed: terminal write interrupted. Check the agent before sending the prompt again.',
+        }),
+      ]),
+    );
+  });
+
   it("publishes a confirmed creation even after the selection changed", async () => {
     // The workspace exists server-side the moment the response confirms
     // it. Discarding it because the selection moved on would leave the

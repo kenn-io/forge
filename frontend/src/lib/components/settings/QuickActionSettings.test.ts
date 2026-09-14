@@ -146,6 +146,25 @@ describe("QuickActionSettings", () => {
     expect(saveButton().disabled).toBe(false);
   });
 
+  it("refuses to save a prompt containing control characters such as tabs", async () => {
+    renderQuickActionSettings({
+      quickActions: [{ label: "Tabby", agent: "codex", prompt: "plain" }],
+      launchTargets,
+      onUpdate: vi.fn(),
+    });
+
+    await fireEvent.input(screen.getByLabelText("Quick action prompt"), { target: { value: "step one\tstep two" } });
+
+    expect(screen.getByText("Prompts may only contain printable text and line breaks.")).toBeTruthy();
+    expect(saveButton().disabled).toBe(true);
+
+    // Line breaks in either convention stay allowed.
+    await fireEvent.input(screen.getByLabelText("Quick action prompt"), { target: { value: "step one\r\nstep two" } });
+
+    expect(screen.queryByText("Prompts may only contain printable text and line breaks.")).toBeNull();
+    expect(saveButton().disabled).toBe(false);
+  });
+
   it("removes an action and keeps a saved but unconfigured agent selectable", async () => {
     mockPersistSettings.mockResolvedValue({ quick_actions: [] });
     renderQuickActionSettings({

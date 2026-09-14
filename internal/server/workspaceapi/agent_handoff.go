@@ -155,17 +155,17 @@ func postLaunchHandoffProblem(
 // CancelAgentHandoffs aborts every waiting agent handoff. The server calls it
 // as the first step of shutdown: a handoff deliberately outlives its HTTP
 // request, so without this the HTTP drain would wait on handoffs that only
-// the later handler shutdown could cancel.
+// the later handler shutdown could cancel. When no handoff has run yet the
+// shared context is created already canceled, so a request that arrives
+// after this call cannot start a fresh wait.
 func (s *Handler) CancelAgentHandoffs() {
 	if s == nil {
 		return
 	}
 	s.lifecycleMu.Lock()
-	cancel := s.agentHandoffCancel
-	s.lifecycleMu.Unlock()
-	if cancel != nil {
-		cancel()
-	}
+	defer s.lifecycleMu.Unlock()
+	s.agentHandoffContextLocked()
+	s.agentHandoffCancel()
 }
 
 // handoffWaitError maps the shared polling errors onto this endpoint's
@@ -186,6 +186,11 @@ func (s *Handler) waitForWorkspaceReady(ctx context.Context, workspaceID string)
 	err := s.agentHandoffPoller().WaitForWorkspace(ctx, func(ctx context.Context) (agenthandoff.WorkspaceState, error) {
 		summary, err := s.getRuntimeWorkspace(ctx, workspaceID)
 		if err != nil {
+			// A lookup that failed because the handoff context ended is the
+			// wait's outcome, not an internal error.
+			if cause := context.Cause(ctx); cause != nil {
+				return agenthandoff.WorkspaceState{}, cause
+			}
 			return agenthandoff.WorkspaceState{}, err
 		}
 		state := agenthandoff.WorkspaceState{Status: summary.Status}
@@ -225,6 +230,10 @@ func (s *Handler) agentHandoffPoller() agenthandoff.Poller {
 func (s *Handler) agentHandoffContext() context.Context {
 	s.lifecycleMu.Lock()
 	defer s.lifecycleMu.Unlock()
+	return s.agentHandoffContextLocked()
+}
+
+func (s *Handler) agentHandoffContextLocked() context.Context {
 	if s.agentHandoffCtx == nil {
 		parent := s.lifecycleCtx
 		if parent == nil {

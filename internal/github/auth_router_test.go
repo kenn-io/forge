@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	gh "github.com/google/go-github/v89/github"
+	gh "github.com/google/go-github/v91/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
@@ -94,14 +94,14 @@ func (c *routeRecordingClient) ListRepoLabels(
 	_ context.Context, owner, repo string,
 ) ([]*gh.Label, error) {
 	c.calls = append(c.calls, "list-labels:"+owner+"/"+repo)
-	return []*gh.Label{{Name: new(c.marker)}}, nil
+	return []*gh.Label{{Name: c.marker}}, nil
 }
 
 func (c *routeRecordingClient) ReplaceIssueLabels(
 	_ context.Context, owner, repo string, _ int, _ []string,
 ) ([]*gh.Label, error) {
 	c.calls = append(c.calls, "labels:"+owner+"/"+repo)
-	return []*gh.Label{{Name: new(c.marker)}}, nil
+	return []*gh.Label{{Name: c.marker}}, nil
 }
 
 func (c *routeRecordingClient) AuthenticatedViewerLogin(context.Context) (string, error) {

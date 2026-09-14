@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	gh "github.com/google/go-github/v89/github"
+	gh "github.com/google/go-github/v91/github"
 	"go.kenn.io/forge/platform"
 )
 

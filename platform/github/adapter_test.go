@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	gh "github.com/google/go-github/v89/github"
+	gh "github.com/google/go-github/v91/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/platform"
@@ -16,11 +16,11 @@ func ghTimestamp(t time.Time) *gh.Timestamp {
 
 func githubLabel(id int64, name, description, color string, isDefault bool) *gh.Label {
 	return &gh.Label{
-		ID:          &id,
-		Name:        &name,
+		ID:          id,
+		Name:        name,
 		Description: &description,
-		Color:       &color,
-		Default:     &isDefault,
+		Color:       color,
+		Default:     isDefault,
 	}
 }
 

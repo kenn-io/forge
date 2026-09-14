@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	gh "github.com/google/go-github/v89/github"
+	gh "github.com/google/go-github/v91/github"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/platform"
 	platformgithub "go.kenn.io/forge/platform/github"
@@ -499,11 +499,11 @@ func (c *FixtureClient) CreateIssue(
 		ClosedAt:         nil,
 		PullRequestLinks: nil,
 		Labels: []*gh.Label{{
-			ID:          &labelID,
-			Name:        &labelName,
+			ID:          labelID,
+			Name:        labelName,
 			Description: &labelDescription,
-			Color:       &labelColor,
-			Default:     &labelDefault,
+			Color:       labelColor,
+			Default:     labelDefault,
 		}},
 	}
 	c.Issues[issuesKey] = append([]*gh.Issue{issue}, c.Issues[issuesKey]...)

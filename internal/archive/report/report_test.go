@@ -10,7 +10,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/renderer/html"
 )
 
 func TestRenderMarkdownGoldenAndDeterministicSerialization(t *testing.T) {
@@ -90,17 +91,19 @@ func TestRenderMarkdownEscapesProviderControlledMarkup(t *testing.T) {
 	markdown, err := RenderMarkdown(model)
 	require.NoError(err)
 	var rendered bytes.Buffer
-	require.NoError(goldmark.Convert([]byte(markdown), &rendered))
-	html := rendered.String()
-	assert.NotContains(html, "<h2>Forged section</h2>")
-	assert.NotContains(html, "<ol>")
-	assert.NotContains(html, "<script")
-	assert.NotContains(html, `href="javascript:`)
+	source := []byte(markdown)
+	document := parser.New().Parse(source)
+	require.NoError(html.New().Render(&rendered, source, document))
+	renderedHTML := rendered.String()
+	assert.NotContains(renderedHTML, "<h2>Forged section</h2>")
+	assert.NotContains(renderedHTML, "<ol>")
+	assert.NotContains(renderedHTML, "<script")
+	assert.NotContains(renderedHTML, `href="javascript:`)
 	assert.NotContains(markdown, "<javascript:")
-	assert.Contains(html, "&lt;!-- hide following sections --&gt;")
-	assert.Contains(html, "## Forged section")
-	assert.Contains(html, "1. forged list")
-	assert.Contains(html, "&lt;script")
+	assert.Contains(renderedHTML, "&lt;!-- hide following sections --&gt;")
+	assert.Contains(renderedHTML, "## Forged section")
+	assert.Contains(renderedHTML, "1. forged list")
+	assert.Contains(renderedHTML, "&lt;script")
 }
 
 func TestLimitErrorIncludesBothObservedLimits(t *testing.T) {

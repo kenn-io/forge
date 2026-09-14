@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	gh "github.com/google/go-github/v89/github"
+	gh "github.com/google/go-github/v91/github"
 	"github.com/shurcooL/githubv4"
 )
 
@@ -487,10 +487,10 @@ func AdaptLabels(labels []GraphQLLabel) []*gh.Label {
 	out := make([]*gh.Label, 0, len(labels))
 	for _, label := range labels {
 		out = append(out, &gh.Label{
-			Name:        new(label.Name),
-			Color:       new(label.Color),
+			Name:        label.Name,
+			Color:       label.Color,
 			Description: new(label.Description),
-			Default:     new(label.IsDefault),
+			Default:     label.IsDefault,
 		})
 	}
 	return out

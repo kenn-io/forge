@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	gh "github.com/google/go-github/v89/github"
+	gh "github.com/google/go-github/v91/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
@@ -53,8 +53,8 @@ func setupLabelTestServer(t *testing.T) (*server.Server, *db.DB, *testutil.Fixtu
 	database := dbtest.Open(t)
 	client := testutil.NewFixtureClient().(*testutil.FixtureClient)
 	client.Labels["acme/widget"] = []*gh.Label{
-		{Name: new("bug"), Description: new("Something is broken"), Color: new("d73a4a"), Default: new(true)},
-		{Name: new("triage"), Description: new("Needs review"), Color: new("fbca04")},
+		{Name: "bug", Description: new("Something is broken"), Color: "d73a4a", Default: true},
+		{Name: "triage", Description: new("Needs review"), Color: "fbca04"},
 	}
 	pr := &gh.PullRequest{
 		ID:        new(int64),
@@ -145,8 +145,8 @@ func TestAPIListRepoLabelsReturnsCachedCatalogWhileRefreshRuns(t *testing.T) {
 	database := dbtest.Open(t)
 	baseClient := testutil.NewFixtureClient().(*testutil.FixtureClient)
 	baseClient.Labels["acme/widget"] = []*gh.Label{
-		{Name: new("bug"), Description: new("Something is broken"), Color: new("d73a4a"), Default: new(true)},
-		{Name: new("triage"), Description: new("Needs review"), Color: new("fbca04")},
+		{Name: "bug", Description: new("Something is broken"), Color: "d73a4a", Default: true},
+		{Name: "triage", Description: new("Needs review"), Color: "fbca04"},
 	}
 	client := &blockingLabelClient{
 		FixtureClient: baseClient,

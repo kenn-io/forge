@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	gh "github.com/google/go-github/v89/github"
+	gh "github.com/google/go-github/v91/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
@@ -18,11 +18,11 @@ func ghTimestamp(t time.Time) *gh.Timestamp {
 
 func githubLabel(id int64, name, description, color string, isDefault bool) *gh.Label {
 	return &gh.Label{
-		ID:          &id,
-		Name:        &name,
+		ID:          id,
+		Name:        name,
 		Description: &description,
-		Color:       &color,
-		Default:     &isDefault,
+		Color:       color,
+		Default:     isDefault,
 	}
 }
 
@@ -199,7 +199,7 @@ func TestNormalizePR_LabelsSkipsMalformedLabels(t *testing.T) {
 		UpdatedAt: ghTimestamp(updatedAt),
 		Labels: []*gh.Label{
 			nil,
-			{Name: &blankName},
+			{Name: blankName},
 			githubLabel(5002, "ready", "Ready to merge", "0e8a16", false),
 		},
 	}

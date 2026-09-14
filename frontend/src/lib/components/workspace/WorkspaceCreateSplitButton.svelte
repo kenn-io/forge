@@ -88,7 +88,10 @@
       viewportHeight: window.innerHeight,
       popoverWidth: menu.offsetWidth,
       popoverHeight: menu.offsetHeight,
-      align: "end",
+      // The agent menu hangs off the trailing chevron, so its right edge
+      // lines up with the control. The quick-actions segment sits mid-control,
+      // so its menu opens from the segment's own left edge instead.
+      align: menuKind === "quick" ? "start" : "end",
       triggerGap: 2,
     });
   }

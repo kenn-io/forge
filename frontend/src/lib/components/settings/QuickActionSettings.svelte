@@ -167,19 +167,6 @@
       {#each drafts as draft (draft.id)}
         {@const duplicate = duplicateLabels(drafts).has(draft.label.trim().toLowerCase())}
         <div class="action-row">
-          <div class="action-row-header">
-            <span class="action-name">{actionName(draft)}</span>
-            <IconButton
-              size="sm"
-              tone="danger"
-              title="Remove"
-              ariaLabel={`Remove ${actionName(draft)}`}
-              disabled={saving}
-              onclick={() => removeAction(draft.id)}
-            >
-              <TrashIcon size="13" strokeWidth="2" aria-hidden="true" />
-            </IconButton>
-          </div>
           <div class="action-fields">
             <label class="field">
               <span>Label</span>
@@ -198,6 +185,7 @@
             <div class="field">
               <span>Agent</span>
               <SelectDropdown
+                class="agent-select"
                 title="Quick action agent"
                 value={draft.agent}
                 options={agentOptions(draft)}
@@ -206,6 +194,19 @@
                   draft.agent = value;
                 }}
               />
+            </div>
+            <div class="field field--remove">
+              <span aria-hidden="true">&nbsp;</span>
+              <IconButton
+                size="sm"
+                tone="danger"
+                title="Remove"
+                ariaLabel={`Remove ${actionName(draft)}`}
+                disabled={saving}
+                onclick={() => removeAction(draft.id)}
+              >
+                <TrashIcon size="13" strokeWidth="2" aria-hidden="true" />
+              </IconButton>
             </div>
             <label class="field field--prompt">
               <span>Prompt</span>
@@ -275,24 +276,15 @@
     border-top: 0;
   }
 
-  .action-row-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    min-height: 24px;
-  }
-
-  .action-name {
-    color: var(--text-primary);
-    font-weight: 600;
-  }
-
   .action-fields {
     display: grid;
-    grid-template-columns: minmax(120px, 1fr) minmax(140px, 1fr);
+    grid-template-columns: minmax(120px, 1fr) minmax(140px, 1fr) auto;
     gap: 8px;
     align-items: start;
+  }
+
+  .field--remove {
+    align-self: end;
   }
 
   .field {
@@ -319,6 +311,18 @@
     min-width: 0;
     font-family: var(--font-mono);
     font-size: var(--font-size-sm);
+  }
+
+  /* The agent picker is a kit control; size the label input to the same
+   * control height so the two fields line up on one row. */
+  .field input {
+    box-sizing: border-box;
+    height: var(--kit-control-height, 26px);
+    padding: 0 8px;
+  }
+
+  .field :global(.agent-select) {
+    width: 100%;
   }
 
   .field textarea {
@@ -377,7 +381,7 @@
 
   @media (max-width: 900px) {
     .action-fields {
-      grid-template-columns: 1fr;
+      grid-template-columns: 1fr auto;
     }
   }
 </style>

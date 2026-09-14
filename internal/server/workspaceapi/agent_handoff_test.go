@@ -294,7 +294,9 @@ func TestAgentHandoffReportsLaunchedSessionWhenPromptDeliveryTimesOut(t *testing
 	assert := assert.New(t)
 	require := require.New(t)
 	fixture := newAgentHandoffFixture(t, "ready")
-	fixture.handler.agentHandoffTimeout = 150 * time.Millisecond
+	// Long enough for the launch itself to finish on a loaded CI runner;
+	// only the prompt delivery is meant to hit this deadline.
+	fixture.handler.agentHandoffTimeout = 2 * time.Second
 	// The agent never enables bracketed paste, so nothing is ever written.
 	fixture.owner.setEmitBracketedPaste(false)
 

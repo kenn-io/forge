@@ -109,6 +109,11 @@ func (s *Handler) LaunchWorkspaceAgentHandoffService(
 	}
 	session, err := s.launchWorkspaceRuntimeService(handoffCtx, req.WorkspaceID, targetKey, "workflow")
 	if err != nil {
+		// A launch that failed because the handoff context ended is a
+		// timeout or shutdown, not an internal error.
+		if cause := context.Cause(handoffCtx); cause != nil {
+			return WorkspaceAgentHandoffResult{}, handoffWaitError(cause, "agent to launch")
+		}
 		return WorkspaceAgentHandoffResult{}, err
 	}
 	status, err := s.deliverInitialMessage(handoffCtx, InitialMessageRequest{

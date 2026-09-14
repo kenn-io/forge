@@ -226,6 +226,9 @@ Playwright CI uses the private image from `ensure_playwright_image`; keep its
 Playwright, Bun, and Vite+ pins in the recipe, cache only `/usr/local/install/cache`,
 and materialize `node_modules` from the lockfile before invoking baked `vp`
 (`.github/workflows/ci.yml::ensure_playwright_image`, `.github/docker/playwright/Dockerfile:3`).
+Vite+ owns its bundled test-tool versions; update direct Vite/Vitest pins only
+alongside a Vite+ toolchain upgrade, never through independent Renovate updates
+(`renovate.json:31`).
 Frontend unit tests use the runner's 14 guaranteed cores; the previous single-worker
 cap was for the retired memory-constrained runner (`frontend/vite.config.ts::resolveUnitTestWorkers`).
 Run CI Vitest unit and browser projects separately: their worker limits differ,

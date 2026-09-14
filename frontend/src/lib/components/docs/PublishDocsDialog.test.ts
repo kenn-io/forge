@@ -154,15 +154,13 @@ describe("PublishDocsDialog", () => {
       { operation: "block Docs publish queue", safeContext: {}, onFailure: () => {} },
     );
     await waitFor(() => expect(blockerStarted).toBe(true));
-    const gitPublish = vi.fn(
-      async (): Promise<GitPublishResponse> => ({
-        commit: "abcdef1234567890abcdef1234567890abcdef12",
-        short_commit: "abcdef1",
-        branch: "main",
-        pushed: true,
-        files: [{ path: "new.md", status: "untracked" }],
-      }),
-    );
+    const gitPublish = vi.fn(async (): Promise<GitPublishResponse> => ({
+      commit: "abcdef1234567890abcdef1234567890abcdef12",
+      short_commit: "abcdef1",
+      branch: "main",
+      pushed: true,
+      files: [{ path: "new.md", status: "untracked" }],
+    }));
     const api = fakeApi({
       gitChanges: async (requestedFolderID) => ({
         is_repo: true,

@@ -652,11 +652,10 @@ export const SettingsWorkflowLive = Layer.effect(SettingsWorkflow)(
                             Effect.tapError((uncertainty) =>
                               Ref.update(uncertainPromotions, (entries) => new Map(entries).set(key, uncertainty)),
                             ),
-                            Effect.flatMap(
-                              (settings): Effect.Effect<never, RepoPromotionFailure> =>
-                                containsExactRepo(settings, owner, name, options)
-                                  ? Effect.fail(new RepoPromotionRollbackError({ failure, rollbackFailure, settings }))
-                                  : Effect.fail(failure),
+                            Effect.flatMap((settings): Effect.Effect<never, RepoPromotionFailure> =>
+                              containsExactRepo(settings, owner, name, options)
+                                ? Effect.fail(new RepoPromotionRollbackError({ failure, rollbackFailure, settings }))
+                                : Effect.fail(failure),
                             ),
                           ),
                         onSuccess: (): Effect.Effect<never, RepoPromotionFailure> => Effect.fail(failure),

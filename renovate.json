@@ -29,6 +29,32 @@
       "groupSlug": "javascript-dependencies"
     },
     {
+      "description": [
+        "Vite+ selects these bundled versions. Update direct pins to match Vite+ toolchain upgrades, never independently."
+      ],
+      "matchManagers": ["bun"],
+      "matchPackageNames": [
+        "vite",
+        "rolldown",
+        "tsdown",
+        "vitest",
+        "@vitest/**",
+        "oxlint",
+        "oxlint-tsgolint",
+        "oxfmt"
+      ],
+      "enabled": false
+    },
+    {
+      "description": [
+        "Update Vite+ everywhere it runs together. Review bundled tool pins with each toolchain upgrade."
+      ],
+      "matchManagers": ["bun", "custom.regex"],
+      "matchPackageNames": ["vite-plus"],
+      "groupName": "Vite+ toolchain",
+      "groupSlug": "vite-plus-toolchain"
+    },
+    {
       "matchPackageNames": ["typescript"],
       "allowedVersions": "!/^(7\\.0\\.)/"
     },
@@ -76,6 +102,16 @@
       "customType": "regex",
       "managerFilePatterns": ["/(^|/)\\.github/docker/playwright/Dockerfile$/"],
       "matchStrings": ["ARG VITE_PLUS_VERSION=(?<currentValue>\\d+\\.\\d+\\.\\d+)"],
+      "datasourceTemplate": "npm",
+      "depNameTemplate": "vite-plus",
+      "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/(^|/)\\.github/workflows/ci\\.yml$/"],
+      "matchStrings": [
+        "uses:\\s*voidzero-dev/setup-vp@[^\\s]+[\\s\\S]*?version:\\s*[\"']?(?<currentValue>\\d+\\.\\d+\\.\\d+)[\"']?"
+      ],
       "datasourceTemplate": "npm",
       "depNameTemplate": "vite-plus",
       "versioningTemplate": "semver"

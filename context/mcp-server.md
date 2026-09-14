@@ -94,7 +94,10 @@
   `internal/server/workspaceapi/routes_handlers.go::Handler.CreateIssueWorkspaceService`).
 - MCP can create or reuse a pull-request, issue, or ad-hoc workspace and launch
   one new agent runtime with one initial message. It submits that message before
-  waiting for the runtime's matching hook session. A resume names the existing
+  waiting for the runtime's matching hook session. Its readiness wait and
+  input-not-ready retry loop are the shared handoff package's, the same code the
+  workspace agent-handoff endpoint uses; only the transport calls and error
+  mapping stay in the MCP tool (`internal/workspace/agenthandoff/agenthandoff.go::Deliver`). A resume names the existing
   workspace and runtime, repeats the same target and prompt through the
   runtime-scoped duplicate guard, and never launches another agent. Ambiguous
   workspace or runtime mutations are never retried or cleaned up. The exact

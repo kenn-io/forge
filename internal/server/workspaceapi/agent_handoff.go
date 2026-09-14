@@ -10,13 +10,11 @@ import (
 	"time"
 
 	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/workspace/agenthandoff"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
-const (
-	defaultAgentHandoffTimeout      = 5 * time.Minute
-	defaultAgentHandoffPollInterval = 500 * time.Millisecond
-)
+const defaultAgentHandoffTimeout = 5 * time.Minute
 
 // WorkspaceAgentHandoffRequest launches one agent runtime in an existing
 // workspace and delivers one initial message to it. Quick actions from the
@@ -170,26 +168,36 @@ func (s *Handler) CancelAgentHandoffs() {
 	}
 }
 
+// handoffWaitError maps the shared polling errors onto this endpoint's
+// problem contract; problems raised by the workspace lookup pass through.
+func handoffWaitError(err error, waitingFor string) error {
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return httpapi.ServiceUnavailable("agent handoff timed out waiting for " + waitingFor)
+	case errors.Is(err, context.Canceled):
+		return httpapi.ServiceUnavailable("agent handoff canceled by shutdown while waiting for " + waitingFor)
+	case errors.Is(err, agenthandoff.ErrWorkspaceSetupFailed):
+		return httpapi.Conflict(httpapi.CodeConflict, strings.ReplaceAll(err.Error(), "\n", ": "), nil)
+	}
+	return err
+}
+
 func (s *Handler) waitForWorkspaceReady(ctx context.Context, workspaceID string) error {
-	for {
+	err := s.agentHandoffPoller().WaitForWorkspace(ctx, func(ctx context.Context) (agenthandoff.WorkspaceState, error) {
 		summary, err := s.getRuntimeWorkspace(ctx, workspaceID)
 		if err != nil {
-			return err
+			return agenthandoff.WorkspaceState{}, err
 		}
-		switch summary.Status {
-		case "ready":
-			return nil
-		case "error":
-			detail := "workspace setup failed"
-			if summary.ErrorMessage != nil && strings.TrimSpace(*summary.ErrorMessage) != "" {
-				detail += ": " + strings.TrimSpace(*summary.ErrorMessage)
-			}
-			return httpapi.Conflict(httpapi.CodeConflict, detail, nil)
+		state := agenthandoff.WorkspaceState{Status: summary.Status}
+		if summary.ErrorMessage != nil {
+			state.ErrorMessage = *summary.ErrorMessage
 		}
-		if err := s.waitAgentHandoffPoll(ctx, "workspace to become ready"); err != nil {
-			return err
-		}
+		return state, nil
+	})
+	if err != nil {
+		return handoffWaitError(err, "workspace to become ready")
 	}
+	return nil
 }
 
 // deliverInitialMessage retries only the typed "input mode not ready" signal:
@@ -198,33 +206,20 @@ func (s *Handler) waitForWorkspaceReady(ctx context.Context, workspaceID string)
 func (s *Handler) deliverInitialMessage(
 	ctx context.Context, req InitialMessageRequest,
 ) (InitialMessageResult, error) {
-	for {
-		status, err := s.SubmitInitialMessageService(ctx, req)
-		if !errors.Is(err, ErrInitialMessageInputModeNotReady) {
-			return status, err
-		}
-		if err := s.waitAgentHandoffPoll(ctx, "agent input to become ready"); err != nil {
-			return status, err
-		}
+	status, err := agenthandoff.Deliver(ctx, s.agentHandoffPoller(),
+		func(ctx context.Context) (InitialMessageResult, error) {
+			return s.SubmitInitialMessageService(ctx, req)
+		},
+		func(err error) bool { return errors.Is(err, ErrInitialMessageInputModeNotReady) },
+	)
+	if err != nil {
+		return status, handoffWaitError(err, "agent input to become ready")
 	}
+	return status, nil
 }
 
-func (s *Handler) waitAgentHandoffPoll(ctx context.Context, waitingFor string) error {
-	interval := s.agentHandoffPollInterval
-	if interval <= 0 {
-		interval = defaultAgentHandoffPollInterval
-	}
-	timer := time.NewTimer(interval)
-	defer timer.Stop()
-	select {
-	case <-timer.C:
-		return nil
-	case <-ctx.Done():
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return httpapi.ServiceUnavailable("agent handoff timed out waiting for " + waitingFor)
-		}
-		return httpapi.ServiceUnavailable("agent handoff canceled by shutdown while waiting for " + waitingFor)
-	}
+func (s *Handler) agentHandoffPoller() agenthandoff.Poller {
+	return agenthandoff.Poller{Interval: s.agentHandoffPollInterval}
 }
 
 func (s *Handler) agentHandoffContext() context.Context {

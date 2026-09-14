@@ -469,7 +469,12 @@ creation, the detail header posts the configured agent and prompt to
 `POST /workspaces/{id}/runtime/agent-handoffs`, which waits for the workspace to
 become ready, launches the agent in the workflow region, and delivers the prompt
 through the initial-message path, retrying only the typed input-mode-not-ready
-signal. The orchestration runs on a handoff context rather than the request so a
+signal. The readiness wait, the retry-while-input-not-ready loop, and the
+cancellation-aware poll live in one shared package that the MCP spawn tool also
+drives; add handoff pacing or retry rules there, not in either caller
+(`internal/workspace/agenthandoff/agenthandoff.go::Deliver`,
+`internal/workspace/agenthandoff/agenthandoff.go::Poller.WaitForWorkspace`).
+The orchestration runs on a handoff context rather than the request so a
 client that navigates away cannot strand a launched agent without its prompt;
 server shutdown cancels that context before the HTTP drain so a waiting handoff
 cannot stall the shutdown budget. Input validation still fails before any

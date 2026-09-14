@@ -22,7 +22,7 @@
     "@sveltejs/mcp": "0.1.26",
     "svelte-check": "4.7.5",
     "typescript": "5.9.3",
-    "vite-plus": "0.2.8"
+    "vite-plus": "0.3.0"
   },
   "overrides": {
     "dompurify": "3.4.13"

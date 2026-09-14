@@ -191,18 +191,14 @@ export function splitSessionIntoPane(
   }
   const withoutSource = closeSessionInTree(node, sessionKey) ?? node;
   if (!withoutSource) return createLeaf(sessionKey);
-  return replaceLeaf(
-    withoutSource,
-    targetLeafID,
-    (leaf): PaneSplit => ({
-      type: "split",
-      id: newPaneID(),
-      direction,
-      ratio: 0.5,
-      first: placement === "before" ? createLeaf(sessionKey) : leaf,
-      second: placement === "before" ? leaf : createLeaf(sessionKey),
-    }),
-  );
+  return replaceLeaf(withoutSource, targetLeafID, (leaf): PaneSplit => ({
+    type: "split",
+    id: newPaneID(),
+    direction,
+    ratio: 0.5,
+    first: placement === "before" ? createLeaf(sessionKey) : leaf,
+    second: placement === "before" ? leaf : createLeaf(sessionKey),
+  }));
 }
 
 export function addSessionToTree(node: PaneNode | null, sessionKey: string): PaneNode {

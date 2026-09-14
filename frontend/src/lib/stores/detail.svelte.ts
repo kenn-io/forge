@@ -1834,12 +1834,10 @@ export function createDetailStore(opts: DetailStoreOptions) {
               }
             }),
           ),
-          Effect.map(
-            (response): PRContentProjection => ({
-              ...(fields.title !== undefined && { title: response.merge_request.Title }),
-              ...(fields.body !== undefined && { body: response.merge_request.Body }),
-            }),
-          ),
+          Effect.map((response): PRContentProjection => ({
+            ...(fields.title !== undefined && { title: response.merge_request.Title }),
+            ...(fields.body !== undefined && { body: response.merge_request.Body }),
+          })),
         );
       });
       const refreshOnStale = Effect.suspend(() => {
@@ -1860,12 +1858,10 @@ export function createDetailStore(opts: DetailStoreOptions) {
               });
             }),
           ),
-          Effect.map(
-            (response): PRContentProjection => ({
-              title: response.merge_request.Title,
-              body: response.merge_request.Body,
-            }),
-          ),
+          Effect.map((response): PRContentProjection => ({
+            title: response.merge_request.Title,
+            body: response.merge_request.Body,
+          })),
         );
       }).pipe(Effect.provideService(ProviderMutations, mutations));
       yield* mutations.submit({

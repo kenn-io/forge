@@ -85,8 +85,8 @@ function runHandler(action: RunnableAction, ctx: Context, runtime: AppRuntime): 
       try: () => action.handler(ctx),
       catch: (cause) => cause,
     }).pipe(
-      Effect.flatMap(
-        (result): Effect.Effect<void, unknown, AppServices> => (result === undefined ? Effect.void : result),
+      Effect.flatMap((result): Effect.Effect<void, unknown, AppServices> =>
+        result === undefined ? Effect.void : result,
       ),
       Effect.ensuring(Effect.sync(() => inFlight.delete(action.id))),
     ),

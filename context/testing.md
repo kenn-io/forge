@@ -244,8 +244,8 @@ cgroup memory counters. If the exit is silent again, rerun it once with
 repository variable `ACTIONS_RUNNER_DEBUG=true`, download the runner diagnostic
 logs, then remove that variable.
 
-Mock Playwright shares one Vite dev server, so cap CI workers at guaranteed cores;
-burst-level worker counts starve navigation and reload requests into false 30-second
+Mock Playwright shares one Vite dev server, so cap CI workers at seven;
+higher worker counts starve navigation and reload requests into false 30-second
 timeouts (`frontend/playwright.config.ts::ciWorkers`).
 
 Non-container Vite+ jobs cache only Bun downloads with an exact OS, architecture, lockfile, and workspace-manifest key; do not use prefix restores, because stale package caches can poison a lockfile-correct install (`.github/workflows/ci.yml::build`).

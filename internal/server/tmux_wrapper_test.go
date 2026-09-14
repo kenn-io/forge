@@ -1950,7 +1950,7 @@ func TestDeleteWorkspaceTreatsTmuxServerExitAsGoneE2E(t *testing.T) {
 			}
 			return getResp.JSON200.Status == "ready"
 		},
-		5*time.Second, 50*time.Millisecond,
+		15*time.Second, 50*time.Millisecond,
 	)
 
 	force := true

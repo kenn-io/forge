@@ -5,11 +5,13 @@ const host = "127.0.0.1";
 const port = parseE2EPort(process.env.PLAYWRIGHT_PORT) ?? (await getAvailablePort(host));
 process.env.PLAYWRIGHT_PORT = String(port);
 const baseURL = `http://${host}:${port}`;
+// Concurrent page loads share one Vite server and can starve it.
+const sharedViteWorkerLimit = 7;
 
 function ciWorkers(): number | undefined {
   if (!process.env.CI) return undefined;
   const configured = Number.parseInt(process.env.KENN_FORGE_CI_WORKERS ?? "", 10);
-  return configured > 0 ? configured : 14;
+  return configured > 0 ? Math.min(configured, sharedViteWorkerLimit) : sharedViteWorkerLimit;
 }
 
 const workers = ciWorkers();

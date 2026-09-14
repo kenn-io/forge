@@ -499,11 +499,11 @@ func (c *FixtureClient) CreateIssue(
 		ClosedAt:         nil,
 		PullRequestLinks: nil,
 		Labels: []*gh.Label{{
-			ID:          &labelID,
-			Name:        &labelName,
+			ID:          labelID,
+			Name:        labelName,
 			Description: &labelDescription,
-			Color:       &labelColor,
-			Default:     &labelDefault,
+			Color:       labelColor,
+			Default:     labelDefault,
 		}},
 	}
 	c.Issues[issuesKey] = append([]*gh.Issue{issue}, c.Issues[issuesKey]...)

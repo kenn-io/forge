@@ -197,8 +197,8 @@ func githubArchiveIssueFromGraphQL(node *githubArchiveIssueNode) *gh.Issue {
 	}
 	for _, label := range node.Labels.Nodes {
 		issue.Labels = append(issue.Labels, &gh.Label{
-			Name: new(label.Name), Color: new(label.Color), Description: new(label.Description),
-			Default: new(label.IsDefault),
+			Name: label.Name, Color: label.Color, Description: new(label.Description),
+			Default: label.IsDefault,
 		})
 	}
 	for _, assignee := range node.Assignees.Nodes {

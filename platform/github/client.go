@@ -400,8 +400,8 @@ func (c *Client) ReplaceIssueAssignees(
 	if usernames == nil {
 		usernames = []string{}
 	}
-	issue, resp, err := c.writeGH().Issues.Edit(ctx, owner, repo, number, &gh.IssueRequest{
-		Assignees: &usernames,
+	issue, resp, err := c.writeGH().Issues.Update(ctx, owner, repo, number, gh.UpdateIssueRequest{
+		Assignees: usernames,
 	})
 	c.trackWriteRate(resp)
 	if err != nil {
@@ -440,8 +440,8 @@ func (c *Client) RemovePullRequestReviewers(
 func (c *Client) CreateIssue(
 	ctx context.Context, owner, repo, title, body string,
 ) (*gh.Issue, error) {
-	req := &gh.IssueRequest{
-		Title: &title,
+	req := gh.CreateIssueRequest{
+		Title: title,
 	}
 	if body != "" {
 		req.Body = &body
@@ -1938,8 +1938,8 @@ func (c *Client) ApproveWorkflowRun(
 func (c *Client) CreateIssueComment(
 	ctx context.Context, owner, repo string, number int, body string,
 ) (*gh.IssueComment, error) {
-	comment, resp, err := c.writeGH().Issues.CreateComment(ctx, owner, repo, number, &gh.IssueComment{
-		Body: new(body),
+	comment, resp, err := c.writeGH().Issues.CreateComment(ctx, owner, repo, number, gh.IssueCommentRequest{
+		Body: body,
 	})
 	c.trackWriteRate(resp)
 	if err != nil {
@@ -1951,8 +1951,8 @@ func (c *Client) CreateIssueComment(
 func (c *Client) EditIssueComment(
 	ctx context.Context, owner, repo string, commentID int64, body string,
 ) (*gh.IssueComment, error) {
-	comment, resp, err := c.writeGH().Issues.EditComment(
-		ctx, owner, repo, commentID, &gh.IssueComment{Body: new(body)},
+	comment, resp, err := c.writeGH().Issues.UpdateComment(
+		ctx, owner, repo, commentID, gh.IssueCommentRequest{Body: body},
 	)
 	c.trackWriteRate(resp)
 	if err != nil {
@@ -2582,7 +2582,7 @@ func (c *Client) DismissReview(
 ) (*gh.PullRequestReview, error) {
 	review, resp, err := c.writeGH().PullRequests.DismissReview(
 		ctx, owner, repo, number, reviewID,
-		&gh.PullRequestReviewDismissalRequest{Message: &message},
+		gh.PullRequestDismissReviewRequest{Message: message},
 	)
 	c.trackWriteRate(resp)
 	if err != nil {
@@ -2890,8 +2890,8 @@ func (c *Client) EditPullRequest(
 func (c *Client) EditIssue(
 	ctx context.Context, owner, repo string, number int, state string,
 ) (*gh.Issue, error) {
-	issue, resp, err := c.writeGH().Issues.Edit(
-		ctx, owner, repo, number, &gh.IssueRequest{State: &state},
+	issue, resp, err := c.writeGH().Issues.Update(
+		ctx, owner, repo, number, gh.UpdateIssueRequest{State: &state},
 	)
 	c.trackWriteRate(resp)
 	if err != nil {
@@ -2906,14 +2906,14 @@ func (c *Client) EditIssue(
 func (c *Client) EditIssueContent(
 	ctx context.Context, owner, repo string, number int, title *string, body *string,
 ) (*gh.Issue, error) {
-	req := &gh.IssueRequest{}
+	req := gh.UpdateIssueRequest{}
 	if title != nil {
 		req.Title = title
 	}
 	if body != nil {
 		req.Body = body
 	}
-	issue, resp, err := c.writeGH().Issues.Edit(ctx, owner, repo, number, req)
+	issue, resp, err := c.writeGH().Issues.Update(ctx, owner, repo, number, req)
 	c.trackWriteRate(resp)
 	if err != nil {
 		return nil, fmt.Errorf(

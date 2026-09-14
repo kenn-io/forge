@@ -94,14 +94,14 @@ func (c *routeRecordingClient) ListRepoLabels(
 	_ context.Context, owner, repo string,
 ) ([]*gh.Label, error) {
 	c.calls = append(c.calls, "list-labels:"+owner+"/"+repo)
-	return []*gh.Label{{Name: new(c.marker)}}, nil
+	return []*gh.Label{{Name: c.marker}}, nil
 }
 
 func (c *routeRecordingClient) ReplaceIssueLabels(
 	_ context.Context, owner, repo string, _ int, _ []string,
 ) ([]*gh.Label, error) {
 	c.calls = append(c.calls, "labels:"+owner+"/"+repo)
-	return []*gh.Label{{Name: new(c.marker)}}, nil
+	return []*gh.Label{{Name: c.marker}}, nil
 }
 
 func (c *routeRecordingClient) AuthenticatedViewerLogin(context.Context) (string, error) {

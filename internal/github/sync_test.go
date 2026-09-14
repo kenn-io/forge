@@ -2143,11 +2143,11 @@ func buildOpenIssue(number int, updatedAt time.Time) *gh.Issue {
 
 func buildGitHubLabel(id int64, name, description, color string, isDefault bool) *gh.Label {
 	return &gh.Label{
-		ID:          &id,
-		Name:        &name,
+		ID:          id,
+		Name:        name,
 		Description: &description,
-		Color:       &color,
-		Default:     &isDefault,
+		Color:       color,
+		Default:     isDefault,
 	}
 }
 
@@ -2910,7 +2910,7 @@ func TestSyncIssueMarksLinkedNotificationDone(t *testing.T) {
 	}))
 	closedAt := now.Add(time.Hour)
 	closedIssue := &gh.Issue{
-		ID:        gh.Ptr[int64](800),
+		ID:        new(int64(800)),
 		Number:    new(number),
 		HTMLURL:   new("https://github.com/acme/widget/issues/8"),
 		Title:     new("Close issue"),

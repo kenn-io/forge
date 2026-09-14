@@ -7118,9 +7118,9 @@ func TestAPICreateIssue(t *testing.T) {
 				User:     &gh.User{Login: &login},
 				Comments: &comments,
 				Labels: []*gh.Label{{
-					ID:    &labelID,
-					Name:  &labelName,
-					Color: &labelColor,
+					ID:    labelID,
+					Name:  labelName,
+					Color: labelColor,
 				}},
 				CreatedAt: &ts,
 				UpdatedAt: &ts,
@@ -16098,7 +16098,7 @@ func TestAPIResolveItemMapsLookupOutcomes(t *testing.T) {
 					}
 					return &gh.Issue{
 						Number:        new(5),
-						RepositoryURL: gh.Ptr(movedRepoAPIURL),
+						RepositoryURL: new(movedRepoAPIURL),
 					}, nil
 				},
 			}

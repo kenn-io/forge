@@ -16,11 +16,11 @@ func ghTimestamp(t time.Time) *gh.Timestamp {
 
 func githubLabel(id int64, name, description, color string, isDefault bool) *gh.Label {
 	return &gh.Label{
-		ID:          &id,
-		Name:        &name,
+		ID:          id,
+		Name:        name,
 		Description: &description,
-		Color:       &color,
-		Default:     &isDefault,
+		Color:       color,
+		Default:     isDefault,
 	}
 }
 

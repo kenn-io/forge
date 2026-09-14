@@ -21,6 +21,9 @@ type Repository struct {
 type Bounds struct {
 	Repository Repository
 	Base, Head string
+	// FromRoot includes all history reachable from Head, including the root.
+	// Base must be empty in this mode; otherwise Base is a required commit ID.
+	FromRoot bool
 }
 
 // Limits are per-operation positive maxima, not production defaults. Records
@@ -31,6 +34,7 @@ type Bounds struct {
 type Limits struct{ Records, Nodes, InputBytes, OutputBytes int64 }
 
 // Span blocks first-parent commits after Before through Through, inclusively.
+// Empty Before is the boundary before history, only for FromRoot intervals.
 type Span struct{ Before, Through string }
 type Gap struct {
 	CandidateID, ObjectID, Reason string
@@ -75,8 +79,15 @@ func validate(ctx context.Context, b Bounds, l Limits) error {
 	if l.Records <= 0 || l.Nodes <= 0 || l.InputBytes <= 0 || l.OutputBytes <= 0 {
 		return errors.New("landing limits must be positive")
 	}
-	if !validRepository(b.Repository) || !objectID(b.Base) || !objectID(b.Head) || len(b.Base) != len(b.Head) {
+	if !validRepository(b.Repository) || !objectID(b.Head) {
 		return errors.New("landing analysis requires repository identity and full object IDs")
+	}
+	validBase := objectID(b.Base) && len(b.Base) == len(b.Head)
+	if b.FromRoot {
+		validBase = b.Base == ""
+	}
+	if !validBase {
+		return errors.New("landing analysis requires a base commit or FromRoot with an empty base")
 	}
 	return nil
 }

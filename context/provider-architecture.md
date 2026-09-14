@@ -47,6 +47,9 @@ JWT rejection does not prove key revocation, and repository 404s prove neither
 The public landing API uses local objects only; callers own collection and supply
 evidence for the exact prepared interval. Missing history and exhausted budgets
 remain gaps, never empty complete inventories (`landedwork/prepare.go::Prepare`).
+Full history requires explicit FromRoot bounds; an omitted base never opts in.
+The root is an origin only after complete discovery and physical verification,
+not a synthetic commit or a skipped initial boundary (`landedwork/direct.go::directPush`).
 Default-branch clones may omit original PR objects; callers may fetch PR-head
 refs after collection, but must keep the pinned query and observed source SHAs
 unchanged (`landedwork/analyze.go::Analyze`).

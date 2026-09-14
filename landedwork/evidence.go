@@ -47,9 +47,10 @@ type Landing struct {
 }
 
 type Coverage struct {
-	Bounds        Bounds
-	Inventory     Inventory
-	Complete      bool
+	Bounds    Bounds
+	Inventory Inventory
+	Complete  bool
+	// CertifiedHead is empty when a FromRoot interval has no certified prefix.
 	CertifiedHead string
 	Gaps          []Gap
 }
@@ -59,6 +60,7 @@ type IntegratedCandidate struct{ CandidateID, ThroughCandidateID string }
 
 // DirectPush is a graph origin without an associated provider landing. It does
 // not establish a pusher or a trusted ref-update time. Introduced includes merges.
+// Empty Before means Terminal is the physically verified parentless root.
 type DirectPush struct {
 	Before, Terminal string
 	Introduced       []string

@@ -49,6 +49,9 @@ func (v *objectView) checkShallow(ctx context.Context, b Bounds) error {
 			return errShallow
 		}
 		for _, head := range []string{b.Base, b.Head} {
+			if head == "" {
+				continue
+			}
 			found, err := v.ancestor(ctx, id, head)
 			if err != nil {
 				return err

@@ -37,6 +37,9 @@ func directPush(ctx context.Context, v *objectView, before, terminal string) (Di
 		g.Reason = graphReason(err)
 		return DirectPush{}, g
 	}
+	if len(parents) == 0 && before == "" {
+		return DirectPush{Terminal: terminal, Introduced: []string{terminal}}, Gap{}
+	}
 	if len(parents) == 0 || parents[0] != before {
 		g.Reason = "topology_unproven"
 		return DirectPush{}, g

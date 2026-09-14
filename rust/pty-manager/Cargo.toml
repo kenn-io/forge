@@ -7,7 +7,7 @@ publish = false
 
 [dependencies]
 anyhow = "1.0"
-base64 = "0.22"
+base64 = "0.23"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 portable-pty = "0.9"
 rand = "0.10"

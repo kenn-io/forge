@@ -385,6 +385,20 @@
     border-radius: 0;
   }
 
+  /* A trigger stays visibly down while its menu is open. The kit's soft
+   * info surface has no expanded state of its own (its solid info and soft
+   * success surfaces do), so this mirrors that recipe: a deeper tint and a
+   * firmer border, plus an inset edge so the segment reads as pressed. */
+  .create-options :global(.create-options-button.kit-button--soft[aria-expanded="true"]) {
+    background: color-mix(in srgb, var(--accent-blue) 26%, transparent);
+    border-color: color-mix(in srgb, var(--accent-blue) 48%, transparent);
+    box-shadow: inset 0 1px 2px color-mix(in srgb, var(--accent-blue) 35%, transparent);
+  }
+
+  .create-options :global(.create-options-button.kit-button--solid[aria-expanded="true"]) {
+    box-shadow: inset 0 1px 2px color-mix(in srgb, #000 30%, transparent);
+  }
+
   .create-menu--quick button {
     display: flex;
     align-items: center;

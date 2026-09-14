@@ -44,6 +44,7 @@ const settingsPayload = makeStartupSnapshot({
     render_commit_messages_as_markdown: true,
   },
   launch_targets: [codexTarget],
+  quick_actions: [{ label: "Rebase", agent: "codex", prompt: "rebase this pull request onto main" }],
   workspaces: { auto_assign_on_create: false, default_sidebar_view: "item", show_agent_status_in_lists: true },
   roborev: { init_managed_clones: true },
 });
@@ -76,6 +77,11 @@ describe("applySettingsHydration", () => {
   it("hydrates launch targets into the settings store", () => {
     const { settingsStore } = hydrate();
     expect(settingsStore.getLaunchTargets()).toEqual([codexTarget]);
+  });
+
+  it("hydrates quick actions into the settings store", () => {
+    const { settingsStore } = hydrate();
+    expect(settingsStore.getQuickActions()).toEqual(settingsPayload.quick_actions);
   });
 
   it("hydrates workspace preferences into the settings store", () => {

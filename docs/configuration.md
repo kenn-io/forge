@@ -305,6 +305,32 @@ command = ["review-agent", "--fast"]
 
 You can also edit agents under **Settings → Agents**.
 
+## Quick actions
+
+A quick action creates the workspace for the current pull request or issue,
+launches one configured agent, and sends a preset prompt as its first message.
+Quick actions appear behind the lightning icon on the **Create Workspace**
+button. Configure them under **Settings → Quick actions** or in TOML:
+
+```toml
+[[quick_actions]]
+label = "Rebase"
+agent = "codex"
+prompt = "rebase this pull request onto main"
+
+[[quick_actions]]
+label = "Triage"
+agent = "opencode"
+prompt = """
+/triage-pr
+question all assumptions
+"""
+```
+
+`agent` is a workspace agent key. Labels must be unique. A quick action whose
+agent is missing or unavailable stays visible but disabled until the agent is
+fixed.
+
 ## Workspace terminals and tmux
 
 Workspace terminals and agent sessions run on a dedicated tmux server

@@ -15,6 +15,7 @@ export interface SettingsHydrationStore {
   setPullRequestSettings: (pullRequests: SettingsResponse["pull_requests"]) => void;
   setDetailSettings: (detail: SettingsResponse["detail"]) => void;
   setLaunchTargets: (targets: NonNullable<SettingsResponse["launch_targets"]>) => void;
+  setQuickActions: (actions: SettingsResponse["quick_actions"]) => void;
   setWorkspaceSettings: (workspaces: SettingsResponse["workspaces"]) => void;
   getWorkspaceSettings: () => SettingsResponse["workspaces"];
 }
@@ -53,6 +54,7 @@ export function applySettingsHydration(
   stores.settings.setPullRequestSettings(payload.pull_requests);
   stores.settings.setDetailSettings(payload.detail);
   stores.settings.setLaunchTargets(payload.launch_targets ?? []);
+  stores.settings.setQuickActions(payload.quick_actions ?? []);
   hydrateWorkspaceSettings(workspaceHydration, payload.workspaces);
   hydrateRoborevSettings(roborevHydration, payload.roborev);
   stores.activity.hydrateDefaults(payload.activity);

@@ -56,6 +56,7 @@ function makeStores(
       setLaunchTargets: vi.fn((targets: LaunchTargets) => {
         launchTargets = [...targets];
       }),
+      setQuickActions: vi.fn(),
     },
     activity: {
       hydrateDefaults: vi.fn(),

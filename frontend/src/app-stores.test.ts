@@ -220,6 +220,7 @@ vi.mock("./lib/stores/settings.svelte.js", () => ({
       setLaunchTargets: vi.fn((targets: LaunchTargets) => {
         launchTargets = [...targets];
       }),
+      setQuickActions: vi.fn(),
       hasConfiguredRepos: () => false,
       isSettingsLoaded: () => true,
     };

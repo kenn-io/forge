@@ -239,3 +239,84 @@ describe("WorkspaceCreateSplitButton", () => {
     expect(screen.queryByRole("menu")).toBeNull();
   });
 });
+
+describe("WorkspaceCreateSplitButton quick actions", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  const quickActions = [
+    { label: "Rebase", agent: "codex", prompt: "rebase this pull request onto main" },
+    { label: "Deep review", agent: "review", prompt: "review every assumption" },
+    { label: "Ghost", agent: "missing", prompt: "never runs" },
+  ];
+
+  it("renders no quick-actions segment without configured actions", () => {
+    render(WorkspaceCreateSplitButton, {
+      props: { label: "Create Workspace", launchTargets: targets, onCreate: vi.fn(), onQuickAction: vi.fn() },
+    });
+
+    expect(screen.queryByRole("button", { name: "Quick actions" })).toBeNull();
+  });
+
+  it("lists quick actions, disables those whose agent cannot launch, and reports the pick", async () => {
+    const onCreate = vi.fn();
+    const onQuickAction = vi.fn();
+    render(WorkspaceCreateSplitButton, {
+      props: { label: "Create Workspace", launchTargets: targets, onCreate, onQuickAction, quickActions },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Quick actions" }));
+
+    const rebase = screen.getByRole("menuitem", { name: /Rebase/ });
+    const deepReview = screen.getByRole("menuitem", { name: /Deep review/ }) as HTMLButtonElement;
+    const ghost = screen.getByRole("menuitem", { name: /Ghost/ }) as HTMLButtonElement;
+    expect(document.activeElement).toBe(rebase);
+    expect(deepReview.disabled).toBe(true);
+    expect(deepReview.getAttribute("title")).toBe("review-agent not found on PATH");
+    expect(ghost.disabled).toBe(true);
+    expect(ghost.getAttribute("title")).toBe('Agent "missing" is not configured');
+    expect(screen.queryByRole("menuitem", { name: "Codex" })).toBeNull();
+
+    await fireEvent.click(rebase);
+
+    expect(onQuickAction).toHaveBeenCalledWith(quickActions[0]);
+    expect(onCreate).not.toHaveBeenCalled();
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("keeps the agent menu and the quick-actions menu independent", async () => {
+    render(WorkspaceCreateSplitButton, {
+      props: {
+        label: "Create Workspace",
+        launchTargets: targets,
+        onCreate: vi.fn(),
+        onQuickAction: vi.fn(),
+        quickActions,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Create Workspace options" }));
+    expect(screen.getByRole("menu", { name: "Create and launch" })).toBeTruthy();
+    expect(screen.queryByRole("menu", { name: "Quick actions" })).toBeNull();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Quick actions" }));
+    expect(screen.getByRole("menu", { name: "Quick actions" })).toBeTruthy();
+    expect(screen.queryByRole("menu", { name: "Create and launch" })).toBeNull();
+  });
+
+  it("blocks the quick-actions segment while busy or disabled", () => {
+    render(WorkspaceCreateSplitButton, {
+      props: {
+        label: "Create Workspace",
+        launchTargets: targets,
+        busy: true,
+        onCreate: vi.fn(),
+        onQuickAction: vi.fn(),
+        quickActions,
+      },
+    });
+
+    expect((screen.getByRole("button", { name: "Quick actions" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+});

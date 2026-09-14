@@ -223,6 +223,7 @@ function settingsMatchRequest(settings: SettingsSnapshot, request: UpdateSetting
     (request.kata_projects === undefined || sameValue(settings.kata_projects, request.kata_projects)) &&
     (request.modes === undefined || sameValue(settings.modes, request.modes)) &&
     (request.pull_requests === undefined || sameValue(settings.pull_requests, request.pull_requests)) &&
+    (request.quick_actions === undefined || sameValue(settings.quick_actions, request.quick_actions)) &&
     (request.roborev === undefined ||
       Object.entries(request.roborev).every(
         ([key, value]) => settings.roborev[key as keyof typeof settings.roborev] === value,

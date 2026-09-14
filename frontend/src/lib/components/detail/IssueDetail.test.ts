@@ -258,6 +258,7 @@ function renderIssueDetail(
           detailActivityView: createDetailActivityViewStore(),
           settings: {
             getLaunchTargets: () => launchTargets,
+            getQuickActions: () => [],
             getDetailSettings: () => ({ initial_timeline_entry_limit: 250 }),
           },
         },
@@ -445,6 +446,7 @@ describe("IssueDetail activity view", () => {
             detailActivityView: createDetailActivityViewStore(),
             settings: {
               getLaunchTargets: () => launchTargets,
+              getQuickActions: () => [],
               getDetailSettings: () => ({ initial_timeline_entry_limit: 250 }),
             },
           },

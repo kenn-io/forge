@@ -9,13 +9,14 @@
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { transientClipboardFeedback } from "../../browser/clipboard-feedback.js";
   import { canonicalProvider, providerItemPath, providerRepoPath, providerRouteParams, resolvedPlatformHost, providerHostRouteParams, providerUsesHostRoute } from "../../api/provider-routes.js";
-  import type { IssueDetail, Label, ProviderCapabilities } from "../../api/types.js";
+  import type { IssueDetail, Label, ProviderCapabilities, QuickAction } from "../../api/types.js";
   import {
     getStores,
     getNavigate,
   } from "../../context.js";
   import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
   import { showFlash } from "../../stores/flash.svelte.js";
+  import { runWorkspaceQuickAction } from "../../stores/workspace-quick-actions.js";
   import type { IssueDetailSyncMode } from "../../stores/issues.svelte.js";
   import type { MutationCallbacks } from "../../stores/ordered-mutations.js";
   import MarkdownHtml from "../shared/MarkdownHtml.svelte";
@@ -350,6 +351,7 @@
     workspaceRequestGen += 1;
     branchConflict = null;
     pendingWorkspaceLaunchTarget = null;
+    pendingWorkspaceQuickAction = null;
     workspaceCreating = false;
     closeLabelPicker();
   });
@@ -609,6 +611,9 @@
 
   let workspaceCreating = $state(false);
   let pendingWorkspaceLaunchTarget = $state<string | null>(null);
+  // Survives the branch-conflict dialog like the launch target: the retry
+  // must still run the action the user picked.
+  let pendingWorkspaceQuickAction = $state<QuickAction | null>(null);
   // The shared pending store outlives this component and its local flag:
   // route resets and remounts clear workspaceCreating while the POST is
   // still in flight, and a round-trip back to this issue must keep the
@@ -753,6 +758,7 @@
     reuseExistingDirectory?: boolean;
     fromConflictDialog?: boolean;
     launchTargetKey?: string;
+    quickAction?: QuickAction;
   };
 
   // Re-checks the identity at call time (not just at the caller's check)
@@ -776,9 +782,11 @@
     const requestIdentity = $state.snapshot(itemIdentity);
     if (!options.fromConflictDialog) {
       pendingWorkspaceLaunchTarget = options.launchTargetKey ?? null;
+      pendingWorkspaceQuickAction = options.quickAction ?? null;
     }
     const launchTargetKey =
       options.launchTargetKey ?? pendingWorkspaceLaunchTarget ?? undefined;
+    const quickAction = options.quickAction ?? pendingWorkspaceQuickAction ?? undefined;
 
     if (!options.fromConflictDialog) {
       branchConflict = null;
@@ -837,9 +845,11 @@
             promoteWorkspaceCreateLaunch(requestIdentity, createdRef.id, undefined);
             recordWorkspaceCreated(requestIdentity, createdRef);
             inlineWorkspace?.recordCreated(requestIdentity, createdRef);
+            if (quickAction) runWorkspaceQuickAction(runtime, createdRef.id, quickAction);
           }
           if (responseIsStale()) return;
           pendingWorkspaceLaunchTarget = null;
+          pendingWorkspaceQuickAction = null;
           if (!data?.id) return;
           if (inlineWorkspace) {
             refetchDetailForIdentity(requestIdentity);
@@ -896,6 +906,7 @@
     if (workspaceCreating) return;
     branchConflict = null;
     pendingWorkspaceLaunchTarget = null;
+    pendingWorkspaceQuickAction = null;
   }
 
   // Task-list checkbox clicks update the body locally for instant
@@ -1373,6 +1384,8 @@
             onCreate={(targetKey) => void createWorkspace(
               targetKey === undefined ? {} : { launchTargetKey: targetKey },
             )}
+            quickActions={settings.getQuickActions()}
+            onQuickAction={(action) => void createWorkspace({ quickAction: action })}
           />
         {/if}
       {/snippet}

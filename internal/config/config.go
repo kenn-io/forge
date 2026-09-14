@@ -780,6 +780,20 @@ func (a Agent) EnabledOrDefault() bool {
 	return a.Enabled == nil || *a.Enabled
 }
 
+// QuickAction is a one-click workspace handoff: create the workspace for the
+// current pull request or issue, launch the named agent, and deliver the
+// prompt as its initial message. Agent is a launch target key; it is checked
+// against the resolved targets at use time, not at config load, so a
+// temporarily missing binary does not reject the whole config.
+type QuickAction struct {
+	Label  string `toml:"label" json:"label"`
+	Agent  string `toml:"agent" json:"agent"`
+	Prompt string `toml:"prompt" json:"prompt"`
+}
+
+// MaxQuickActionPromptBytes matches the initial agent message limit.
+const MaxQuickActionPromptBytes = 64 << 10
+
 type Roborev struct {
 	Endpoint          string `toml:"endpoint,omitempty"`
 	InitManagedClones bool   `toml:"init_managed_clones,omitempty"`
@@ -965,6 +979,7 @@ type Config struct {
 	Terminal          Terminal                 `toml:"terminal"`
 	Modes             ModeVisibility           `toml:"modes"`
 	Agents            []Agent                  `toml:"agents"`
+	QuickActions      []QuickAction            `toml:"quick_actions"`
 	DocFolders        []DocFolder              `toml:"doc_folders"`
 	Roborev           Roborev                  `toml:"roborev"`
 	Tmux              Tmux                     `toml:"tmux"`
@@ -1270,6 +1285,9 @@ func load(path string) (*Config, error) {
 	}
 	if cfg.Agents == nil {
 		cfg.Agents = []Agent{}
+	}
+	if cfg.QuickActions == nil {
+		cfg.QuickActions = []QuickAction{}
 	}
 	cfg.Modes = cfg.Modes.WithDefaults()
 	cfg.Workspaces = cfg.Workspaces.withDefaults()
@@ -1735,6 +1753,9 @@ func (c *Config) validate() error {
 		)
 	}
 	if err := c.validateAgents(); err != nil {
+		return err
+	}
+	if err := c.validateQuickActions(); err != nil {
 		return err
 	}
 
@@ -2242,6 +2263,35 @@ func (c *Config) validateAgents() error {
 				"config: agents[%d]: command first element must be non-empty", i,
 			)
 		}
+	}
+	return nil
+}
+
+func (c *Config) validateQuickActions() error {
+	seen := make(map[string]struct{}, len(c.QuickActions))
+	for i := range c.QuickActions {
+		action := &c.QuickActions[i]
+		action.Label = strings.TrimSpace(action.Label)
+		action.Agent = strings.ToLower(strings.TrimSpace(action.Agent))
+		if action.Label == "" {
+			return fmt.Errorf("config: quick_actions[%d]: label is required", i)
+		}
+		if action.Agent == "" {
+			return fmt.Errorf("config: quick_actions[%d]: agent is required", i)
+		}
+		if strings.TrimSpace(action.Prompt) == "" {
+			return fmt.Errorf("config: quick_actions[%d]: prompt is required", i)
+		}
+		if len(action.Prompt) > MaxQuickActionPromptBytes {
+			return fmt.Errorf(
+				"config: quick_actions[%d]: prompt must not exceed 64 KiB", i,
+			)
+		}
+		labelKey := strings.ToLower(action.Label)
+		if _, ok := seen[labelKey]; ok {
+			return fmt.Errorf("config: duplicate quick action %q", action.Label)
+		}
+		seen[labelKey] = struct{}{}
 	}
 	return nil
 }
@@ -3499,6 +3549,7 @@ type configFile struct {
 	Terminal                    Terminal                 `toml:"terminal,omitempty"`
 	Modes                       ModeVisibility           `toml:"modes,omitempty"`
 	Agents                      []Agent                  `toml:"agents,omitempty"`
+	QuickActions                []QuickAction            `toml:"quick_actions,omitempty"`
 	DocFolders                  []DocFolder              `toml:"doc_folders,omitempty"`
 	Roborev                     Roborev                  `toml:"roborev,omitempty"`
 	PullRequests                PullRequests             `toml:"pull_requests,omitempty"`
@@ -3541,6 +3592,7 @@ func (c *Config) Save(path string) error {
 		Terminal:                    cfg.Terminal,
 		Modes:                       cfg.Modes,
 		Agents:                      cfg.Agents,
+		QuickActions:                cfg.QuickActions,
 		DocFolders:                  cfg.DocFolders,
 		Roborev:                     cfg.Roborev,
 		PullRequests:                cfg.PullRequests,
@@ -3632,6 +3684,7 @@ func (c *Config) copyForSave() Config {
 	}
 	cfg.DocFolders = slices.Clone(c.DocFolders)
 	cfg.Agents = slices.Clone(c.Agents)
+	cfg.QuickActions = slices.Clone(c.QuickActions)
 	cfg.API.TailscaleServe.AllowedUsers = slices.Clone(c.API.TailscaleServe.AllowedUsers)
 	if c.Fleet.Hub != nil {
 		hub := *c.Fleet.Hub

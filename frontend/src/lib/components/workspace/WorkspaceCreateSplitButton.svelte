@@ -7,10 +7,11 @@
   } from "@kenn-io/kit-ui";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import PackagePlusIcon from "@lucide/svelte/icons/package-plus";
+  import ZapIcon from "@lucide/svelte/icons/zap";
   import LaunchTargetName from "../terminal/LaunchTargetName.svelte";
   import { Effect } from "effect";
   import { tick } from "svelte";
-  import type { LaunchTarget } from "../../api/types.js";
+  import type { LaunchTarget, QuickAction } from "../../api/types.js";
   import type { AppExecution } from "../../app/runtime.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
 
@@ -26,7 +27,13 @@
     size?: "sm" | "md";
     primaryType?: "button" | "submit";
     onCreate: (targetKey?: string) => void;
+    /** Configured quick actions; the lightning segment renders only when non-empty. */
+    quickActions?: QuickAction[];
+    /** Create the workspace, launch the action's agent, and deliver its prompt. */
+    onQuickAction?: (action: QuickAction) => void;
   }
+
+  type MenuKind = "agents" | "quick";
 
   let {
     label,
@@ -40,10 +47,13 @@
     size = "md",
     primaryType = "button",
     onCreate,
+    quickActions = [],
+    onQuickAction,
   }: Props = $props();
   const runtime = getAppRuntime();
 
   let open = $state(false);
+  let menuKind = $state<MenuKind>("agents");
   let root = $state<HTMLDivElement>();
   let trigger = $state<HTMLButtonElement>();
   let menu = $state<HTMLUListElement>();
@@ -53,6 +63,18 @@
     launchTargets.filter((target) => target.kind === "agent" && target.available),
   );
   const blocked = $derived(disabled || busy);
+  const showQuickActions = $derived(quickActions.length > 0 && onQuickAction !== undefined);
+
+  function quickActionTarget(action: QuickAction): LaunchTarget | undefined {
+    return launchTargets.find((target) => target.key === action.agent && target.kind === "agent");
+  }
+
+  function quickActionDisabledReason(action: QuickAction): string {
+    const target = quickActionTarget(action);
+    if (!target) return `Agent "${action.agent}" is not configured`;
+    if (!target.available) return target.disabled_reason || `Agent "${action.agent}" is not available`;
+    return "";
+  }
 
   function enabledItems(): HTMLButtonElement[] {
     return Array.from(menu?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') ?? []);
@@ -71,10 +93,14 @@
     });
   }
 
-  function openMenu(): void {
-    if (blocked || agentTargets.length === 0) return;
-    trigger ??= root?.querySelector<HTMLButtonElement>(".create-options-button") ?? undefined;
+  function openMenu(kind: MenuKind = "agents"): void {
+    if (blocked) return;
+    if (kind === "agents" && agentTargets.length === 0) return;
+    if (kind === "quick" && !showQuickActions) return;
+    const triggerClass = kind === "quick" ? ".create-quick-actions-button" : ".create-options-button";
+    trigger = root?.querySelector<HTMLButtonElement>(triggerClass) ?? undefined;
     openExecution?.interrupt();
+    menuKind = kind;
     open = true;
     openExecution = runtime.runCommand(
       Effect.promise(() => tick()).pipe(
@@ -103,14 +129,15 @@
     return () => node.remove();
   }
 
-  function optionsButton(node: HTMLElement): () => void {
-    const button = node.querySelector<HTMLButtonElement>(".create-options-button");
+  function optionsButton(node: HTMLElement, kind: MenuKind = "agents"): () => void {
+    const triggerClass = kind === "quick" ? ".create-quick-actions-button" : ".create-options-button";
+    const button = node.querySelector<HTMLButtonElement>(triggerClass);
     if (!button) return () => {};
     button.setAttribute("aria-haspopup", "menu");
     function handle(event: KeyboardEvent): void {
       if (event.key === "ArrowDown") {
         event.preventDefault();
-        void openMenu();
+        void openMenu(kind);
       } else if (event.key === "Tab" && open) {
         closeMenu();
       }
@@ -122,6 +149,11 @@
   function selectTarget(targetKey: string): void {
     closeMenu();
     onCreate(targetKey);
+  }
+
+  function selectQuickAction(action: QuickAction): void {
+    closeMenu();
+    onQuickAction?.(action);
   }
 
   function handleItemKeydown(event: KeyboardEvent): void {
@@ -195,6 +227,26 @@
     <PackagePlusIcon size="14" strokeWidth="2.2" aria-hidden="true" />
     <span>{busy ? busyLabel : label}</span>
   </Button>
+  {#if showQuickActions}
+    <span class="create-options create-quick-actions" {@attach (node) => optionsButton(node, "quick")}>
+      <Button
+        surface={surface === "solid" ? "solid" : "soft"}
+        tone="info"
+        {size}
+        class="create-options-button create-quick-actions-button"
+        ariaLabel="Quick actions"
+        title={disabledReason || "Create, launch an agent, and send a preset prompt"}
+        ariaExpanded={open && menuKind === "quick"}
+        disabled={blocked}
+        onclick={() => {
+          if (open && menuKind === "quick") closeMenu();
+          else void openMenu("quick");
+        }}
+      >
+        <ZapIcon size="12" strokeWidth="2.2" aria-hidden="true" />
+      </Button>
+    </span>
+  {/if}
   <span class="create-options" {@attach optionsButton}>
     <Button
       surface={surface === "solid" ? "solid" : "soft"}
@@ -203,17 +255,48 @@
       class="create-options-button"
       ariaLabel={`${label} options`}
       title={disabledReason || "Create and launch an agent"}
-      ariaExpanded={open}
+      ariaExpanded={open && menuKind === "agents"}
       disabled={blocked || agentTargets.length === 0}
       onclick={() => {
-        if (open) closeMenu();
-        else void openMenu();
+        if (open && menuKind === "agents") closeMenu();
+        else void openMenu("agents");
       }}
     >
       <ChevronDownIcon size="12" strokeWidth="2" aria-hidden="true" />
     </Button>
   </span>
-  {#if open}
+  {#if open && menuKind === "quick"}
+    <ul
+      bind:this={menu}
+      class="create-menu create-menu--quick kit-popover-card"
+      role="menu"
+      aria-label="Quick actions"
+      style={menuStyle}
+      {@attach portalMenu}
+    >
+      {#each quickActions as action (action.label)}
+        {@const reason = quickActionDisabledReason(action)}
+        <li role="none">
+          <button
+            type="button"
+            role="menuitem"
+            disabled={reason !== ""}
+            title={reason || action.prompt}
+            onclick={() => selectQuickAction(action)}
+            onkeydown={handleItemKeydown}
+          >
+            <LaunchTargetName
+              target={{ kind: "agent", key: action.agent }}
+              label={action.label}
+              iconSize={12}
+              fallbackIcon
+            />
+            <span class="quick-action-agent">{quickActionTarget(action)?.label ?? action.agent}</span>
+          </button>
+        </li>
+      {/each}
+    </ul>
+  {:else if open}
     <ul
       bind:this={menu}
       class="create-menu kit-popover-card"
@@ -284,6 +367,25 @@
     padding: 0;
     border-left: 0;
     border-radius: 0 var(--kit-control-radius, var(--radius-sm)) var(--kit-control-radius, var(--radius-sm)) 0;
+  }
+
+  /* The quick-actions segment sits between the primary control and the
+   * chevron, so it is square on both sides. */
+  .create-quick-actions :global(.create-quick-actions-button) {
+    border-radius: 0;
+  }
+
+  .create-menu--quick button {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+  }
+
+  .quick-action-agent {
+    flex: 0 0 auto;
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
   }
 
   .create-menu {

@@ -32,6 +32,7 @@ type settingsResponse struct {
 	Terminal      config.Terminal                 `json:"terminal"`
 	Modes         config.ModeVisibility           `json:"modes,omitzero"`
 	Agents        []config.Agent                  `json:"agents" nullable:"false"`
+	QuickActions  []config.QuickAction            `json:"quick_actions" nullable:"false"`
 	KataProjects  []config.KataProjectRepoMapping `json:"kata_projects" nullable:"false"`
 	LaunchTargets []localruntime.LaunchTarget     `json:"launch_targets,omitempty"`
 	Fleet         fleetSettingsResponse           `json:"fleet"`
@@ -65,6 +66,7 @@ type updateSettingsRequest struct {
 	Terminal     *config.Terminal                 `json:"terminal,omitempty"`
 	Modes        *config.ModeVisibility           `json:"modes,omitempty"`
 	Agents       *[]config.Agent                  `json:"agents,omitempty"`
+	QuickActions *[]config.QuickAction            `json:"quick_actions,omitempty"`
 	KataProjects *[]config.KataProjectRepoMapping `json:"kata_projects,omitempty"`
 	MCP          *mcpSettingsUpdate               `json:"mcp,omitempty"`
 	Roborev      *roborevSettingsUpdate           `json:"roborev,omitempty"`
@@ -124,6 +126,7 @@ func (s *Server) buildLocalSettingsResponse(
 	terminal := s.cfg.Terminal
 	modes := cloneModeVisibility(s.cfg.Modes).WithDefaults()
 	agents := cloneConfigAgents(s.cfg.Agents)
+	quickActions := cloneQuickActions(s.cfg.QuickActions)
 	kataProjects := slices.Clone(s.cfg.KataProjects)
 	mcp := s.cfg.MCP
 	roborev := s.cfg.Roborev
@@ -195,6 +198,7 @@ func (s *Server) buildLocalSettingsResponse(
 		Terminal:      terminal,
 		Modes:         modes,
 		Agents:        agents,
+		QuickActions:  quickActions,
 		KataProjects:  kataProjects,
 		LaunchTargets: launchTargets,
 		Fleet:         fleetSettings,
@@ -1060,6 +1064,7 @@ func (s *Server) updateLocalSettings(
 	prevTerminal := s.cfg.Terminal
 	prevModes := cloneModeVisibility(s.cfg.Modes)
 	prevAgents := cloneConfigAgents(s.cfg.Agents)
+	prevQuickActions := cloneQuickActions(s.cfg.QuickActions)
 	prevKataProjects := slices.Clone(s.cfg.KataProjects)
 	prevMCP := s.cfg.MCP
 	prevRoborev := s.cfg.Roborev
@@ -1102,6 +1107,9 @@ func (s *Server) updateLocalSettings(
 	if input.Body.Agents != nil {
 		s.cfg.Agents = cloneConfigAgents(*input.Body.Agents)
 	}
+	if input.Body.QuickActions != nil {
+		s.cfg.QuickActions = cloneQuickActions(*input.Body.QuickActions)
+	}
 	if input.Body.KataProjects != nil {
 		s.cfg.KataProjects = slices.Clone(*input.Body.KataProjects)
 	}
@@ -1128,6 +1136,7 @@ func (s *Server) updateLocalSettings(
 		s.cfg.Terminal = prevTerminal
 		s.cfg.Modes = prevModes
 		s.cfg.Agents = prevAgents
+		s.cfg.QuickActions = prevQuickActions
 		s.cfg.KataProjects = prevKataProjects
 		s.cfg.MCP = prevMCP
 		s.cfg.Roborev = prevRoborev
@@ -1143,6 +1152,7 @@ func (s *Server) updateLocalSettings(
 		s.cfg.Terminal = prevTerminal
 		s.cfg.Modes = prevModes
 		s.cfg.Agents = prevAgents
+		s.cfg.QuickActions = prevQuickActions
 		s.cfg.KataProjects = prevKataProjects
 		s.cfg.MCP = prevMCP
 		s.cfg.Roborev = prevRoborev
@@ -1207,6 +1217,7 @@ func splitSettingsUpdate(
 	local.Terminal = update.Terminal
 	local.Modes = update.Modes
 	local.Agents = update.Agents
+	local.QuickActions = update.QuickActions
 	local.KataProjects = update.KataProjects
 	local.MCP = update.MCP
 	local.Roborev = update.Roborev
@@ -1218,6 +1229,7 @@ func hasSettingsUpdate(update updateSettingsRequest) bool {
 		update.PullRequests != nil || update.Workspaces != nil ||
 		update.Issues != nil || update.Terminal != nil ||
 		update.Modes != nil || update.Agents != nil ||
+		update.QuickActions != nil ||
 		update.KataProjects != nil || update.MCP != nil ||
 		update.Roborev != nil
 }
@@ -1268,6 +1280,13 @@ func cloneModeVisibility(modes config.ModeVisibility) config.ModeVisibility {
 		out.Workspaces = &v
 	}
 	return out
+}
+
+func cloneQuickActions(actions []config.QuickAction) []config.QuickAction {
+	if actions == nil {
+		return []config.QuickAction{}
+	}
+	return slices.Clone(actions)
 }
 
 func cloneConfigAgents(agents []config.Agent) []config.Agent {

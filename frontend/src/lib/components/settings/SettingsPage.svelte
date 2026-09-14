@@ -13,6 +13,7 @@
   import TerminalSettings from "./TerminalSettings.svelte";
   import ModeVisibilitySettings from "./ModeVisibilitySettings.svelte";
   import AgentSettings from "./AgentSettings.svelte";
+  import QuickActionSettings from "./QuickActionSettings.svelte";
   import FleetSettings from "./FleetSettings.svelte";
   import MCPSettings from "./MCPSettings.svelte";
   import KataProjectMappingsSettings from "./KataProjectMappingsSettings.svelte";
@@ -231,6 +232,15 @@
                   launch_targets: launchTargets,
                 };
                 settingsStore.setLaunchTargets(settings.launch_targets ?? []);
+              }}
+            />
+          {:else if meta.id === "settings-quick-actions"}
+            <QuickActionSettings
+              quickActions={loaded.quick_actions}
+              launchTargets={loaded.launch_targets ?? []}
+              onUpdate={(quick_actions) => {
+                settings = { ...settings!, quick_actions };
+                settingsStore.setQuickActions(quick_actions);
               }}
             />
           {:else if meta.id === "settings-fleet"}

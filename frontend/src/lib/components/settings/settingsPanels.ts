@@ -75,6 +75,14 @@ export const SETTINGS_PANELS: SettingsPanelMeta[] = [
     keywords: "workspace agents codex claude gemini opencode aider binary arguments",
   },
   {
+    id: "settings-quick-actions",
+    label: "Quick actions",
+    title: "Workspace quick actions",
+    group: "Workspace",
+    description: "One-click agent launches with a preset prompt",
+    keywords: "quick actions agent prompt launch workspace pull request issue rebase triage handoff",
+  },
+  {
     id: "settings-fleet",
     label: "Fleet federation",
     title: "Fleet federation",

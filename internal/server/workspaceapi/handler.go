@@ -160,10 +160,13 @@ type Handler struct {
 	workspaceDeleting              map[string]*workspaceDeletion
 	initialMessagesMu              sync.Mutex
 	initialMessages                map[initialMessageKey]initialMessageAttempt
-	worktreeShellTransactions      sync.Map
-	workspaceTmuxPrunedAt          time.Time
-	workspaceTmuxPrunePending      bool
-	workspaceTmuxPruneInFlight     bool
+	// Agent handoff pacing; zero values select the package defaults.
+	agentHandoffTimeout        time.Duration
+	agentHandoffPollInterval   time.Duration
+	worktreeShellTransactions  sync.Map
+	workspaceTmuxPrunedAt      time.Time
+	workspaceTmuxPrunePending  bool
+	workspaceTmuxPruneInFlight bool
 	// workspaceSubjectAfterSummariesForTest pauses a snapshot between its two
 	// repository-identity reads so tests can prove the reconciliation fence.
 	workspaceSubjectAfterSummariesForTest func()
@@ -389,6 +392,15 @@ func (s *Handler) Register(api huma.API) {
 	huma.Get(api, "/workspaces/{id}/runtime/sessions/{session_key}/initial-message",
 		s.getInitialMessageStatus,
 		httpapi.DocumentOperation("get-workspace-runtime-session-initial-message", "Get initial agent message status", "Workspaces"))
+	huma.Register(api, huma.Operation{
+		OperationID: "launch-workspace-agent-handoff",
+		Method:      http.MethodPost,
+		Path:        "/workspaces/{id}/runtime/agent-handoffs",
+		Summary:     "Launch an agent with an initial message",
+		Description: "Waits for the workspace to become ready, launches the agent target, " +
+			"and delivers the message as its initial prompt.",
+		Tags: []string{"Workspaces"},
+	}, s.launchWorkspaceAgentHandoff)
 	huma.Register(api, huma.Operation{
 		OperationID: "submit-workspace-runtime-session-initial-message",
 		Method:      http.MethodPost,

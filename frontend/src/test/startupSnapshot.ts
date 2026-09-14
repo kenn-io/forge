@@ -36,6 +36,7 @@ export function makeStartupSnapshot(overrides: Partial<StartupSnapshot> = {}): S
     issues: { hide_bots: true },
     kata_projects: [],
     launch_targets: [],
+    quick_actions: [],
     modes: { ...DEFAULT_MODE_VISIBILITY },
     notifications: { enabled: true },
     pull_requests: { ...DEFAULT_PULL_REQUEST_SETTINGS },

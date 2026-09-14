@@ -9,6 +9,7 @@ import type { KataProjectRepoMapping } from "./kataProjectRepoMapping.ts";
 import type { McpSettingsUpdate } from "./mcpSettingsUpdate.ts";
 import type { ModeVisibility } from "./modeVisibility.ts";
 import type { PullRequests } from "./pullRequests.ts";
+import type { QuickAction } from "./quickAction.ts";
 import type { RoborevSettingsUpdate } from "./roborevSettingsUpdate.ts";
 import type { Terminal } from "./terminal.ts";
 import type { WorkspaceSettingsUpdate } from "./workspaceSettingsUpdate.ts";
@@ -24,6 +25,7 @@ export interface UpdateSettingsRequest {
   mcp?: McpSettingsUpdate;
   modes?: ModeVisibility;
   pull_requests?: PullRequests;
+  quick_actions?: QuickAction[];
   roborev?: RoborevSettingsUpdate;
   terminal?: Terminal;
   workspaces?: WorkspaceSettingsUpdate;

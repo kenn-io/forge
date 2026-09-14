@@ -27,6 +27,7 @@ vi.mock("../../context.js", async (importOriginal) => ({
       getRoborevSettings: () => ({ init_managed_clones: false }),
       setRoborevSettings: vi.fn(),
       setLaunchTargets,
+      setQuickActions: vi.fn(),
     },
   }),
 }));

@@ -333,6 +333,7 @@ export const mockSettings = {
     retained_sessions: 10,
   },
   agents: [],
+  quick_actions: [],
   notifications: {
     enabled: true,
   },

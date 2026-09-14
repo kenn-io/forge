@@ -464,6 +464,17 @@ the create split button. The one-shot target is reactive session state keyed by
 workspace ID; primary creation never launches, while an explicit fork-PR choice
 shares the ordinary manual Launch-menu trust boundary
 (`frontend/src/lib/stores/workspace-create-pending.svelte.ts::queueWorkspaceLaunch`).
+Quick actions are the one exception to frontend-owned launches: after ordinary
+creation, the detail header posts the configured agent and prompt to
+`POST /workspaces/{id}/runtime/agent-handoffs`, which waits for the workspace to
+become ready, launches the agent in the workflow region, and delivers the prompt
+through the initial-message path, retrying only the typed input-mode-not-ready
+signal. The orchestration runs on the handler lifecycle context rather than the
+request so a client that navigates away cannot strand a launched agent without
+its prompt; input validation still fails before any waiting. Nothing is queued in
+the frontend launch state for a quick action; the session arrives through runtime
+events (`internal/server/workspaceapi/agent_handoff.go::Handler.LaunchWorkspaceAgentHandoffService`,
+`frontend/src/lib/stores/workspace-quick-actions.ts::runWorkspaceQuickAction`).
 The launch API accepts only the target and display region. Agent launches
 validate the persisted launch specification and renew an expired visibility
 lease while preparing generated context. A retryable hub outage or a

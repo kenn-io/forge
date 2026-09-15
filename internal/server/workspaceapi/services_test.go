@@ -165,8 +165,7 @@ func TestCreatePullWorkspacePreservesDisplacedRouteOwner(t *testing.T) {
 	require.True(accepted)
 	require.NotNil(oldRepo)
 	displacedPath := filepath.Join(
-		base, "github", "github.com", "acme", "widget",
-		fmt.Sprintf("repo-%d", oldRepo.Repository.ID), "pr-42",
+		base, "github", "github.com", "acme", "widget", "pr-42",
 	)
 	require.NoError(database.InsertWorkspace(t.Context(), &db.Workspace{
 		ID: "ws-displaced", Platform: "github", PlatformHost: "github.com",
@@ -182,7 +181,7 @@ func TestCreatePullWorkspacePreservesDisplacedRouteOwner(t *testing.T) {
 	)
 	require.NoError(err)
 	require.True(accepted)
-	_, accepted, err = database.ReconcileRepositoryObservation(
+	newRepo, accepted, err := database.ReconcileRepositoryObservation(
 		t.Context(), db.RepoIdentity{
 			Platform: "github", PlatformHost: "github.com",
 			PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
@@ -190,6 +189,7 @@ func TestCreatePullWorkspacePreservesDisplacedRouteOwner(t *testing.T) {
 	)
 	require.NoError(err)
 	require.True(accepted)
+	require.NotNil(newRepo)
 
 	resolver := stubLaunchSpecResolver{}
 	manager := workspace.NewManager(database, base)
@@ -216,8 +216,15 @@ func TestCreatePullWorkspacePreservesDisplacedRouteOwner(t *testing.T) {
 	replacement, err := database.GetWorkspace(t.Context(), result.Workspace.ID)
 	require.NoError(err)
 	require.NotNil(replacement)
-	assert.NotEqual(displacedPath, replacement.WorktreePath)
-	assert.Equal("pr-42", filepath.Base(replacement.WorktreePath))
+	assert.Equal(
+		filepath.Join(
+			base, "github", "github.com", "acme",
+			fmt.Sprintf("widget-%d", newRepo.Repository.ID), "pr-42",
+		),
+		replacement.WorktreePath,
+		"a replacement repository on a reused route must not share the "+
+			"displaced owner's directory",
+	)
 }
 
 func TestCreatePullWorkspaceServiceSuppressesAutoAssign(t *testing.T) {

@@ -1,7 +1,6 @@
 package workspacetest
 
 import (
-	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -25,7 +24,7 @@ func TestIssueWorkspaceRecoversExpectedDirectory(t *testing.T) {
 	expectedPath := filepath.Join(
 		fixture.worktreeDir,
 		"github", "github.com", "acme", "widget",
-		fmt.Sprintf("repo-%d", fixture.repoID), "issue-7",
+		"issue-7",
 	)
 	gitfixture.Run(
 		t, fixture.bare,
@@ -164,7 +163,7 @@ func TestIssueWorkspaceDirectoryRecoveryReasons(t *testing.T) {
 			expectedPath := filepath.Join(
 				fixture.worktreeDir,
 				"github", "github.com", "acme", "widget",
-				fmt.Sprintf("repo-%d", fixture.repoID), "issue-7",
+				"issue-7",
 			)
 			tt.prepare(t, fixture, expectedPath)
 
@@ -210,7 +209,7 @@ func TestIssueWorkspaceConflictRejectsAlternateBranchForExistingDirectory(t *tes
 	expectedPath := filepath.Join(
 		fixture.worktreeDir,
 		"github", "github.com", "acme", "widget",
-		fmt.Sprintf("repo-%d", fixture.repoID), "issue-7",
+		"issue-7",
 	)
 	gitfixture.Run(t, fixture.bare, "worktree", "add", expectedPath, "-b", branch, "main")
 

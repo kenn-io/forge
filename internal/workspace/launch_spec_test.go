@@ -512,8 +512,18 @@ func TestProviderWorkspaceCreationKeepsDisplacedRouteOwner(t *testing.T) {
 			}
 			require.NoError(err)
 			require.NotNil(replacementWorkspace)
-			require.Contains(originalWorkspace.WorktreePath, fmt.Sprintf("repo-%d", originalEntry.Repository.ID))
-			require.Contains(replacementWorkspace.WorktreePath, fmt.Sprintf("repo-%d", replacementEntry.Repository.ID))
+			require.Equal(
+				original.Repository.Name,
+				filepath.Base(filepath.Dir(originalWorkspace.WorktreePath)),
+				"the first owner of a route keeps the plain owner/name directory",
+			)
+			require.Equal(
+				fmt.Sprintf(
+					"%s-%d", replacement.Repository.Name, replacementEntry.Repository.ID,
+				),
+				filepath.Base(filepath.Dir(replacementWorkspace.WorktreePath)),
+				"a later occupant of a reused route gets a name-id directory",
+			)
 			require.NotEqual(originalWorkspace.WorktreePath, replacementWorkspace.WorktreePath)
 
 			persistedOriginal, err := database.GetWorkspace(t.Context(), originalWorkspace.ID)

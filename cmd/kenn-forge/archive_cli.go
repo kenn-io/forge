@@ -2,7 +2,8 @@ package main
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -485,7 +486,7 @@ func renderArchiveReport(model report.Model, format string) (string, error) {
 	if format == "markdown" {
 		return report.RenderMarkdown(model)
 	}
-	data, err := json.MarshalIndent(model, "", "  ")
+	data, err := json.Marshal(model, jsontext.WithIndent("  "))
 	if err != nil {
 		return "", fmt.Errorf("render archive report JSON: %w", err)
 	}
@@ -493,7 +494,7 @@ func renderArchiveReport(model report.Model, format string) (string, error) {
 }
 
 func writeArchiveJSON(output io.Writer, value any) error {
-	data, err := json.MarshalIndent(value, "", "  ")
+	data, err := json.Marshal(value, jsontext.WithIndent("  "))
 	if err != nil {
 		return fmt.Errorf("render archive JSON: %w", err)
 	}
@@ -537,7 +538,7 @@ func archiveAPIProblem(operation string, status int, problem *generated.ProblemE
 		return errors.New("archive report is too large; narrow the UTC range or repository scope")
 	}
 	if problem.Details != nil && len(*problem.Details) > 0 {
-		details, err := json.Marshal(*problem.Details)
+		details, err := json.Marshal(*problem.Details, json.Deterministic(true))
 		if err == nil {
 			return fmt.Errorf("%s failed with HTTP %d (%s; details=%s)", operation, status, problem.Code, details)
 		}

@@ -3,7 +3,8 @@ package ptyowner
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -115,7 +116,7 @@ func writeState(paths SessionPaths, state ownerState) error {
 	if err := createPrivateDir(paths.Dir); err != nil {
 		return err
 	}
-	data, err := json.MarshalIndent(state, "", "  ")
+	data, err := json.Marshal(state, jsontext.WithIndent("  "))
 	if err != nil {
 		return err
 	}

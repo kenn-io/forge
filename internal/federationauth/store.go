@@ -5,7 +5,8 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -434,10 +435,9 @@ func readPersistedStore(path string) (persistedStore, bool, error) {
 		return persistedStore{}, false, fmt.Errorf("open federation credential store: %w", err)
 	}
 	defer file.Close()
-	decoder := json.NewDecoder(file)
-	decoder.DisallowUnknownFields()
+	decoder := jsontext.NewDecoder(file)
 	var state persistedStore
-	if err := decoder.Decode(&state); err != nil {
+	if err := json.UnmarshalDecode(decoder, &state, json.RejectUnknownMembers(true)); err != nil {
 		return persistedStore{}, false, fmt.Errorf("decode federation credential store: %w", err)
 	}
 	if err := requireJSONEOF(decoder); err != nil {
@@ -449,9 +449,9 @@ func readPersistedStore(path string) (persistedStore, bool, error) {
 	return state, true, nil
 }
 
-func requireJSONEOF(decoder *json.Decoder) error {
+func requireJSONEOF(decoder *jsontext.Decoder) error {
 	var extra any
-	err := decoder.Decode(&extra)
+	err := json.UnmarshalDecode(decoder, &extra)
 	if errors.Is(err, io.EOF) {
 		return nil
 	}
@@ -548,9 +548,8 @@ func writePersistedStore(path string, state persistedStore) error {
 		_ = tmp.Close()
 		return fmt.Errorf("restrict federation credential store temp file: %w", err)
 	}
-	encoder := json.NewEncoder(tmp)
-	encoder.SetIndent("", "  ")
-	if err := encoder.Encode(state); err != nil {
+	encoder := jsontext.NewEncoder(tmp, jsontext.WithIndentPrefix(""), jsontext.WithIndent("  "))
+	if err := json.MarshalEncode(encoder, state); err != nil {
 		_ = tmp.Close()
 		return fmt.Errorf("encode federation credential store: %w", err)
 	}

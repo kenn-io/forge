@@ -2,7 +2,8 @@ package main
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -81,9 +82,8 @@ func newMCPCommand(stdout io.Writer, load mcpQuickstartLoader) *cobra.Command {
 				return err
 			}
 			if asJSON {
-				encoder := json.NewEncoder(stdout)
-				encoder.SetIndent("", "  ")
-				return encoder.Encode(info)
+				encoder := jsontext.NewEncoder(stdout, jsontext.WithIndentPrefix(""), jsontext.WithIndent("  "))
+				return json.MarshalEncode(encoder, info)
 			}
 			return writeMCPQuickstart(stdout, info)
 		},
@@ -152,11 +152,11 @@ func loadMCPQuickstart(
 		)
 	}
 	var settings mcpSettingsEnvelope
-	decoder := json.NewDecoder(response.Body)
-	if err := decoder.Decode(&settings); err != nil {
+	decoder := jsontext.NewDecoder(response.Body)
+	if err := json.UnmarshalDecode(decoder, &settings); err != nil {
 		return mcpQuickstartInfo{}, fmt.Errorf("mcp quickstart: decode settings: %w", err)
 	}
-	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+	if err := json.UnmarshalDecode(decoder, &struct{}{}); !errors.Is(err, io.EOF) {
 		return mcpQuickstartInfo{}, fmt.Errorf("mcp quickstart: decode settings: trailing JSON data")
 	}
 	if settings.MCP == nil {
@@ -282,9 +282,8 @@ func writeMCPQuickstart(stdout io.Writer, info mcpQuickstartInfo) error {
 		if _, err := fmt.Fprintln(stdout, "client_config:"); err != nil {
 			return err
 		}
-		encoder := json.NewEncoder(stdout)
-		encoder.SetIndent("  ", "  ")
-		if err := encoder.Encode(info.ClientConfig); err != nil {
+		encoder := jsontext.NewEncoder(stdout, jsontext.WithIndentPrefix("  "), jsontext.WithIndent("  "))
+		if err := json.MarshalEncode(encoder, info.ClientConfig); err != nil {
 			return err
 		}
 	}

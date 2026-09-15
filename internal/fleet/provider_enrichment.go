@@ -2,7 +2,7 @@ package fleet
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"strings"
 	"time"
 

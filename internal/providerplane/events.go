@@ -3,7 +3,7 @@ package providerplane
 import (
 	"bufio"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"io"
@@ -55,7 +55,7 @@ func IsHubProviderEvent(eventType string) bool {
 type Event struct {
 	ID   uint64
 	Type string
-	Data json.RawMessage
+	Data jsontext.Value
 }
 
 // EventClientOptions defines the spoke-side consequences of one hub
@@ -237,9 +237,9 @@ func (c *EventClient) consumeFrame(
 	if err != nil || id == 0 {
 		return fmt.Errorf("%w: event id is not a positive integer", ErrEventProtocol)
 	}
-	payload := json.RawMessage(frame.data.String())
+	payload := jsontext.Value(frame.data.String())
 	if frame.eventType == "reconnect.stale" {
-		if !json.Valid(payload) {
+		if !jsontext.Value(payload).IsValid() {
 			return fmt.Errorf("%w: stale event payload is not JSON", ErrEventProtocol)
 		}
 		// A restarted hub begins a new event-ID lifetime. Its stale
@@ -254,7 +254,7 @@ func (c *EventClient) consumeFrame(
 	if id <= *cursor {
 		return nil
 	}
-	if !IsHubProviderEvent(frame.eventType) || !json.Valid(payload) {
+	if !IsHubProviderEvent(frame.eventType) || !jsontext.Value(payload).IsValid() {
 		// A numeric cursor lets the spoke skip a poison frame safely. Refreshing
 		// authoritative state recovers the consequence the frame may represent.
 		*cursor = id

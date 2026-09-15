@@ -3,7 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -332,9 +332,9 @@ func localFleetJSON(
 	if result == nil || response.StatusCode == http.StatusNoContent {
 		return nil
 	}
-	if err := json.NewDecoder(io.LimitReader(
+	if err := json.UnmarshalRead(io.LimitReader(
 		response.Body, maxFleetResponseBytes,
-	)).Decode(result); err != nil {
+	), result); err != nil {
 		return fmt.Errorf("decode fleet response: %w", err)
 	}
 	return nil

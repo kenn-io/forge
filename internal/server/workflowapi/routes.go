@@ -2,7 +2,7 @@ package workflowapi
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"net/http"
 	"slices"
@@ -401,7 +401,7 @@ func validateWorkflowInputs(definitions []platform.WorkflowInput, environments [
 
 func isJSONNumber(value any) bool {
 	switch value.(type) {
-	case float64, float32, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, json.Number:
+	case float64, float32, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
 		return true
 	default:
 		return false

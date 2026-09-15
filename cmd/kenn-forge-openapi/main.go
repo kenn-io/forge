@@ -2,7 +2,7 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"flag"
 	"fmt"
 	"os"
@@ -39,11 +39,11 @@ func main() {
 }
 
 func prettyJSON(spec []byte) ([]byte, error) {
-	var buf bytes.Buffer
-	if err := json.Indent(&buf, spec, "", "  "); err != nil {
+	value := jsontext.Value(spec).Clone()
+	if err := value.Indent(jsontext.WithIndent("  ")); err != nil {
 		return nil, err
 	}
-	return buf.Bytes(), nil
+	return value, nil
 }
 
 func resolveFormat(out, format string) string {

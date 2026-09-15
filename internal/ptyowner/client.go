@@ -4,7 +4,8 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -83,7 +84,7 @@ type Attachment struct {
 	Done   <-chan struct{}
 
 	conn     net.Conn
-	enc      *json.Encoder
+	enc      *jsontext.Encoder
 	writeMu  sync.Mutex
 	token    string
 	exitCode func() int
@@ -326,13 +327,13 @@ func (c *Client) Ping(ctx context.Context, session string) error {
 	defer conn.Close()
 	clearDeadline := applyRPCDeadline(ctx, conn)
 	defer clearDeadline()
-	enc := json.NewEncoder(conn)
-	dec := json.NewDecoder(conn)
-	if err := enc.Encode(Request{Type: RequestStatus, Token: state.Token}); err != nil {
+	enc := jsontext.NewEncoder(conn)
+	dec := jsontext.NewDecoder(conn)
+	if err := json.MarshalEncode(enc, Request{Type: RequestStatus, Token: state.Token}); err != nil {
 		return err
 	}
 	var resp Response
-	if err := dec.Decode(&resp); err != nil {
+	if err := json.UnmarshalDecode(dec, &resp); err != nil {
 		return err
 	}
 	if !resp.OK {
@@ -349,13 +350,13 @@ func (c *Client) Snapshot(ctx context.Context, session string) (Status, error) {
 	defer conn.Close()
 	clearDeadline := applyRPCDeadline(ctx, conn)
 	defer clearDeadline()
-	enc := json.NewEncoder(conn)
-	dec := json.NewDecoder(conn)
-	if err := enc.Encode(Request{Type: RequestStatus, Token: state.Token}); err != nil {
+	enc := jsontext.NewEncoder(conn)
+	dec := jsontext.NewDecoder(conn)
+	if err := json.MarshalEncode(enc, Request{Type: RequestStatus, Token: state.Token}); err != nil {
 		return Status{}, err
 	}
 	var resp Response
-	if err := dec.Decode(&resp); err != nil {
+	if err := json.UnmarshalDecode(dec, &resp); err != nil {
 		return Status{}, err
 	}
 	if !resp.OK {
@@ -377,9 +378,9 @@ func (c *Client) Attach(
 		return nil, err
 	}
 	clearDeadline := applyRPCDeadline(ctx, conn)
-	enc := json.NewEncoder(conn)
-	dec := json.NewDecoder(conn)
-	if err := enc.Encode(Request{
+	enc := jsontext.NewEncoder(conn)
+	dec := jsontext.NewDecoder(conn)
+	if err := json.MarshalEncode(enc, Request{
 		Type: RequestAttach, Token: state.Token,
 		Cols: geometry.Cols, Rows: geometry.Rows,
 		PixelWidth: geometry.PixelWidth, PixelHeight: geometry.PixelHeight,
@@ -389,7 +390,7 @@ func (c *Client) Attach(
 		return nil, err
 	}
 	var initial Response
-	if err := dec.Decode(&initial); err != nil {
+	if err := json.UnmarshalDecode(dec, &initial); err != nil {
 		clearDeadline()
 		conn.Close()
 		return nil, err
@@ -410,7 +411,7 @@ func (c *Client) Attach(
 		defer close(output)
 		for {
 			var resp Response
-			if err := dec.Decode(&resp); err != nil {
+			if err := json.UnmarshalDecode(dec, &resp); err != nil {
 				return
 			}
 			switch resp.Type {
@@ -463,9 +464,9 @@ func (c *Client) Stop(ctx context.Context, session string) error {
 	defer conn.Close()
 	clearDeadline := applyRPCDeadline(ctx, conn)
 	defer clearDeadline()
-	enc := json.NewEncoder(conn)
-	dec := json.NewDecoder(conn)
-	if err := enc.Encode(Request{Type: RequestStop, Token: state.Token}); err != nil {
+	enc := jsontext.NewEncoder(conn)
+	dec := jsontext.NewDecoder(conn)
+	if err := json.MarshalEncode(enc, Request{Type: RequestStop, Token: state.Token}); err != nil {
 		if isAbsentOwner(err) {
 			cleanupAbsentOwner(paths)
 			return nil
@@ -473,7 +474,7 @@ func (c *Client) Stop(ctx context.Context, session string) error {
 		return err
 	}
 	var resp Response
-	if err := dec.Decode(&resp); err != nil {
+	if err := json.UnmarshalDecode(dec, &resp); err != nil {
 		if isAbsentOwner(err) {
 			cleanupAbsentOwner(paths)
 			return nil
@@ -644,7 +645,7 @@ func (a *Attachment) Write(data []byte) error {
 	}
 	a.writeMu.Lock()
 	defer a.writeMu.Unlock()
-	return a.enc.Encode(Request{
+	return json.MarshalEncode(a.enc, Request{
 		Type: RequestInput, Token: a.token, Data: data,
 	})
 }
@@ -655,7 +656,7 @@ func (a *Attachment) Resize(geometry ptysize.Geometry) error {
 	}
 	a.writeMu.Lock()
 	defer a.writeMu.Unlock()
-	return a.enc.Encode(Request{
+	return json.MarshalEncode(a.enc, Request{
 		Type: RequestResize, Token: a.token,
 		Cols: geometry.Cols, Rows: geometry.Rows,
 		PixelWidth: geometry.PixelWidth, PixelHeight: geometry.PixelHeight,

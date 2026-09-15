@@ -5,7 +5,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"strconv"
@@ -158,7 +158,7 @@ func (payload ProviderStateWorkflowPayload) Validate() error {
 }
 
 func providerStateCanonicalDigest(value any) (string, error) {
-	encoded, err := json.Marshal(value)
+	encoded, err := json.Marshal(value, json.Deterministic(true))
 	if err != nil {
 		return "", fmt.Errorf("encode canonical provider state: %w", err)
 	}

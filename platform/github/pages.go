@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"net/http"
@@ -411,7 +411,7 @@ func (c *Client) doArchiveGraphQL(
 	if resp.StatusCode != http.StatusOK {
 		return gh.CheckResponse(resp)
 	}
-	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+	if err := json.UnmarshalRead(resp.Body, out); err != nil {
 		return err
 	}
 	if len(*graphQLErrors) > 0 {

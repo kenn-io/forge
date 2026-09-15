@@ -2,7 +2,7 @@ package kata
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"net/http"
 	"strings"
 
@@ -38,9 +38,9 @@ type kataIssueReadInput struct {
 }
 
 type kataIssueDetailResponse struct {
-	DaemonHealth     string          `json:"daemon_health"`
-	APISchemaVersion string          `json:"api_schema_version,omitempty"`
-	Detail           json.RawMessage `json:"detail"`
+	DaemonHealth     string         `json:"daemon_health"`
+	APISchemaVersion string         `json:"api_schema_version,omitempty"`
+	Detail           jsontext.Value `json:"detail"`
 }
 
 func (*kataIssueDetailResponse) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {

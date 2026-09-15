@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/subtle"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"

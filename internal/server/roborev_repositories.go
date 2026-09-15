@@ -2,7 +2,8 @@ package server
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -53,8 +54,8 @@ type roborevTrackedRepository struct {
 }
 
 type roborevRepositoryInventory struct {
-	Repos      json.RawMessage `json:"repos"`
-	TotalCount *int            `json:"total_count"` // Total review jobs, not repositories.
+	Repos      jsontext.Value `json:"repos"`
+	TotalCount *int           `json:"total_count"` // Total review jobs, not repositories.
 }
 
 type roborevRepositoryProbeDeps struct {

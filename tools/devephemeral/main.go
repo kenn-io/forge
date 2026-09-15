@@ -5,7 +5,8 @@ package main
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"flag"
 	"fmt"
@@ -421,7 +422,7 @@ func writeStatusFile(path string, status ephemeralStatus) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("create status directory: %w", err)
 	}
-	content, err := json.MarshalIndent(status, "", "  ")
+	content, err := json.Marshal(status, jsontext.WithIndent("  "))
 	if err != nil {
 		return fmt.Errorf("encode status: %w", err)
 	}

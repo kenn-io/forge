@@ -4,7 +4,7 @@ package fleetsetup
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -692,7 +692,7 @@ func waitHTTP(
 					_ = response.Body.Close()
 					return nil
 				}
-				decodeErr := json.NewDecoder(io.LimitReader(response.Body, 4<<20)).Decode(result)
+				decodeErr := json.UnmarshalRead(io.LimitReader(response.Body, 4<<20), result)
 				_ = response.Body.Close()
 				if decodeErr == nil {
 					return nil

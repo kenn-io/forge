@@ -4692,51 +4692,72 @@ test.describe("workspace list bubble opens right sidebar", () => {
     await expect(busyRow.locator(".kit-diff-stats")).toHaveCount(1);
     await expect(page.locator(".workspace-list-sidebar .worktree-dirty")).toHaveCount(2);
     await expect(page.locator(".workspace-list-sidebar .worktree-dirty-slot")).toHaveCount(0);
-    await expect(
-      page.locator(".workspace-list-sidebar .ws-row-aside > .item-bubble + .workspace-sort-time + .worktree-dirty"),
-    ).toHaveCount(1);
+    await expect(page.locator(".workspace-list-sidebar .ws-row-aside .worktree-dirty")).toHaveCount(0);
+    await expect(page.locator(".workspace-list-sidebar .ws-row-meta > .branch-chip + .worktree-dirty")).toHaveCount(2);
 
     const diffBox = await busyRow.locator(".workspace-diff-stats").boundingBox();
     const cleanDiffBox = await cleanBusyRow.locator(".workspace-diff-stats").boundingBox();
     const pushBox = await busyRow.locator(".push-state").boundingBox();
     const cleanPushBox = await cleanBusyRow.locator(".push-state").boundingBox();
     const pencilBox = await busyRow.locator(".worktree-dirty").boundingBox();
+    const branchBox = await busyRow.locator(".branch-chip").boundingBox();
     const bubbleBox = await busyRow.locator(".item-bubble").boundingBox();
+    const busyRowBox = await busyRow.boundingBox();
+    const cleanBusyRowBox = await cleanBusyRow.boundingBox();
     expect(diffBox).not.toBeNull();
     expect(cleanDiffBox).not.toBeNull();
     expect(pushBox).not.toBeNull();
     expect(cleanPushBox).not.toBeNull();
     expect(pencilBox).not.toBeNull();
+    expect(branchBox).not.toBeNull();
     expect(bubbleBox).not.toBeNull();
+    expect(busyRowBox).not.toBeNull();
+    expect(cleanBusyRowBox).not.toBeNull();
     if (
       diffBox != null &&
       cleanDiffBox != null &&
       pushBox != null &&
       cleanPushBox != null &&
       pencilBox != null &&
-      bubbleBox != null
+      branchBox != null &&
+      bubbleBox != null &&
+      busyRowBox != null &&
+      cleanBusyRowBox != null
     ) {
       expect(Math.abs(diffBox.x + diffBox.width - (cleanDiffBox.x + cleanDiffBox.width))).toBeLessThanOrEqual(1);
       expect(Math.abs(pushBox.x - cleanPushBox.x)).toBeLessThanOrEqual(1);
-      expect(pencilBox.x).toBeGreaterThan(diffBox.x + diffBox.width);
-      expect(Math.abs(pencilBox.x + pencilBox.width - (bubbleBox.x + bubbleBox.width))).toBeLessThanOrEqual(1);
-      expect(pencilBox.y).toBeGreaterThan(bubbleBox.y + bubbleBox.height + 2);
+      // The pencil sits on the meta line between the branch chip and the
+      // push counts. Kept out of the aside column it can neither widen
+      // that column nor add a third line, so a dirty row is exactly as
+      // tall as an otherwise identical clean row, and on a full line it
+      // borrows width from the branch name rather than moving the chips.
+      expect(pencilBox.x).toBeGreaterThanOrEqual(branchBox.x + branchBox.width);
+      expect(pencilBox.x + pencilBox.width).toBeLessThanOrEqual(pushBox.x);
+      expect(Math.abs(pencilBox.y + pencilBox.height / 2 - (branchBox.y + branchBox.height / 2))).toBeLessThanOrEqual(
+        2,
+      );
+      expect(Math.abs(busyRowBox.height - cleanBusyRowBox.height)).toBeLessThanOrEqual(1);
     }
 
     const adHocRow = page.locator(".workspace-list-sidebar .ws-row", { hasText: "feature/new-work" });
     const adHocSlotBox = await adHocRow.locator(".item-bubble-slot").boundingBox();
     const adHocTimeBox = await adHocRow.locator(".workspace-sort-time").boundingBox();
+    const adHocBranchBox = await adHocRow.locator(".branch-chip").boundingBox();
     const adHocPencilBox = await adHocRow.locator(".worktree-dirty").boundingBox();
     expect(adHocSlotBox).not.toBeNull();
     expect(adHocTimeBox).not.toBeNull();
+    expect(adHocBranchBox).not.toBeNull();
     expect(adHocPencilBox).not.toBeNull();
-    if (adHocSlotBox && adHocTimeBox && adHocPencilBox && bubbleBox) {
+    if (adHocSlotBox && adHocTimeBox && adHocBranchBox && adHocPencilBox && bubbleBox) {
       const expectedRight = bubbleBox.x + bubbleBox.width;
       expect(Math.abs(adHocSlotBox.x + adHocSlotBox.width - expectedRight)).toBeLessThanOrEqual(1);
       expect(Math.abs(adHocTimeBox.x + adHocTimeBox.width - expectedRight)).toBeLessThanOrEqual(1);
-      expect(Math.abs(adHocPencilBox.x + adHocPencilBox.width - expectedRight)).toBeLessThanOrEqual(1);
       expect(adHocTimeBox.y).toBeGreaterThanOrEqual(adHocSlotBox.y + adHocSlotBox.height);
-      expect(adHocPencilBox.y).toBeGreaterThan(adHocTimeBox.y + adHocTimeBox.height);
+      expect(adHocPencilBox.x).toBeGreaterThan(adHocBranchBox.x + adHocBranchBox.width);
+      expect(adHocPencilBox.x + adHocPencilBox.width).toBeLessThan(adHocTimeBox.x);
+      expect(
+        Math.abs(adHocPencilBox.y + adHocPencilBox.height / 2 - (adHocBranchBox.y + adHocBranchBox.height / 2)),
+      ).toBeLessThanOrEqual(2);
     }
 
     const bubbles = page.locator(".workspace-list-sidebar .ws-row .item-bubble");

@@ -1440,6 +1440,16 @@
                     {shortBranch(ws.git_head_ref)}
                   </span>
                 </span>
+                {#if ws.worktree_dirty}
+                  <!-- The dirty pencil follows the branch chip, not the aside
+                       column: there it would either stack as a third line under
+                       the bubble and time, making dirty rows taller, or widen
+                       the aside and shift the text column. Sitting before the
+                       push and diff chips, it borrows width from the branch
+                       name when the line is full, so those chips keep the same
+                       position as on a clean row. -->
+                  {@render worktreeDirtyIndicator()}
+                {/if}
                 {#if showPush}
                   <span
                     class="push-state"
@@ -1511,9 +1521,6 @@
                   title={`${sortTimestamp.label}: ${formatTimestamp(sortTimestamp.at)}`}
                   aria-label={`${sortTimestamp.label}: ${formatRelativeTime(sortTimestamp.at)}`}
                 >{formatRelativeTime(sortTimestamp.at)}</time>
-              {/if}
-              {#if ws.worktree_dirty}
-                {@render worktreeDirtyIndicator()}
               {/if}
             </div>
           </div>
@@ -2052,7 +2059,6 @@
     color: var(--text-muted);
     opacity: 0.5;
     line-height: 1;
-    margin-top: 1px;
   }
 
   .ws-row-aside {

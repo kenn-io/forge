@@ -168,11 +168,23 @@ func (s *Syncer) refreshRelayHint(ctx context.Context, relayURL string, hint *ac
 		if !due {
 			return false, nil
 		}
-		defer probe.release()
+		providerAttempted := false
 		if target == activityrelay.PullRequest {
-			err = s.SyncMRForRepository(ctx, repo, repoID, hint.Number)
+			err = s.syncMRForRepoResolved(ctx, repo, hint.Number, false, &providerAttempted, nil, nil, nil, &repoID)
+			if _, onlyDiffFailed := err.(*DiffSyncError); onlyDiffFailed { //nolint:errorlint // joined hard failures must remain pending
+				err = nil
+			}
 		} else {
-			err = s.syncIssueForRepo(ctx, repo, hint.Number, nil)
+			err = s.syncIssueForRepo(platformgithub.WithUnconditionalRead(ctx), repo, hint.Number, &providerAttempted)
+		}
+		disabled := err != nil && s.recordGitHubRepositoryFeatureDisabled(repo, feature, err)
+		if providerAttempted {
+			probe.release()
+		} else {
+			probe.abandon()
+		}
+		if disabled {
+			return false, nil
 		}
 	case activityrelay.Repository:
 		err = s.syncRepo(ctx, repo)

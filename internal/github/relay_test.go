@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"errors"
 	"net/http/httptest"
 	"path/filepath"
 	"strconv"
@@ -122,4 +123,46 @@ func TestRelayInitialAndExpiredCursorReconciliation(t *testing.T) {
 	pending, err = database.PendingRelayHints(ctx, feed.URL)
 	require.NoError(err)
 	assert.Equal([]activityrelay.Hint{want}, pending)
+}
+
+func TestRelayDisabledIssueRetainsWorkDuringCooldown(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	ref := RepoRef{Platform: platform.KindGitHub, PlatformHost: "github.com", Owner: "team", Name: "project", PlatformExternalID: "repo-team-project"}
+	_, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", ref.Owner, ref.Name))
+	require.NoError(err)
+	provider := &partialFailureMock{}
+	var calls int
+	provider.getIssueFn = func(context.Context, string, string, int) (*gh.Issue, error) {
+		calls++
+		return nil, platform.RepositoryFeatureDisabled(platform.KindGitHub, "github.com", platform.RepositoryFeatureIssues, errors.New("issues disabled"))
+	}
+	syncer := NewSyncer(map[string]Client{"github.com": provider}, database, nil, []RepoRef{ref}, time.Minute, nil, testBudget(1000))
+	now := time.Now().UTC()
+	syncer.now = func() time.Time { return now }
+	store, err := activityrelay.Open(filepath.Join(t.TempDir(), "relay.db"))
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(store.Close()) })
+	_, handler := activityrelay.Handlers(store, nil)
+	feed := httptest.NewServer(handler)
+	t.Cleanup(feed.Close)
+	head, err := store.Read(ctx, "", 100)
+	require.NoError(err)
+	require.NoError(database.SaveRelayPage(ctx, feed.URL, head.NextCursor, nil))
+	hint := activityrelay.Hint{Provider: "github", Host: "github.com", RepositoryID: ref.PlatformExternalID, Target: activityrelay.Issue, Number: 9}
+	require.NoError(store.Append(ctx, []activityrelay.Hint{hint}))
+	first := syncer.PollRelay(ctx, feed.URL, feed.Client())
+	second := syncer.PollRelay(ctx, feed.URL, feed.Client())
+	assert.Equal(1, calls, "disabled features must not be retried every relay poll")
+	require.NoError(first)
+	require.NoError(second)
+	pending, err := database.PendingRelayHints(ctx, feed.URL)
+	require.NoError(err)
+	assert.Equal([]activityrelay.Hint{hint}, pending)
+	now = now.Add(24*time.Hour + time.Second)
+	require.NoError(syncer.PollRelay(ctx, feed.URL, feed.Client()))
+	assert.Equal(2, calls)
 }

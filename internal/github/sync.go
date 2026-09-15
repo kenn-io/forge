@@ -9336,7 +9336,7 @@ func (s *Syncer) getIssueForDetail(
 	repo RepoRef,
 	number int,
 ) (*gh.Issue, string, bool, error) {
-	if IsArchiveSyncBudgetContext(ctx) {
+	if IsArchiveSyncBudgetContext(ctx) || platformgithub.UnconditionalRead(ctx) {
 		issue, err := client.GetIssue(ctx, repo.Owner, repo.Name, number)
 		return issue, "", false, err
 	}

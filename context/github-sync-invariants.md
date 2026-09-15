@@ -784,6 +784,8 @@ error or cancellation unchanged and never adopts.
   new deliveries stay on the relay until the next page read. (`internal/db/queries_relay.go::SaveRelayPage`)
 - Unknown-PR checks become durable PR refreshes; an incomplete first fetch must not reduce a retry
   to checks alone. (`internal/github/relay.go::refreshRelayHint`)
+- A parent ETag does not establish whether comment content changed; child-change hints require
+  unconditional detail reads. (`internal/github/sync.go::getIssueForDetail`)
 
 ## Testing Expectations
 

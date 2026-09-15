@@ -26,6 +26,7 @@ import (
 	"go.kenn.io/forge/internal/activityrelay"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
@@ -102,6 +103,9 @@ func TestActivityRelayEndToEnd(t *testing.T) {
 	stopRelay := startRelay()
 	relayURL := "http://" + feedAddress
 	var checkReads, detailReads atomic.Int32
+	var issueComment atomic.Pointer[string]
+	var unchangedIssues atomic.Int32
+	issueComment.Store(new("Original comment"))
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch strings.TrimPrefix(r.URL.Path, "/api/v3") {
@@ -110,6 +114,20 @@ func TestActivityRelayEndToEnd(t *testing.T) {
 		case "/repos/team/project/pulls/7":
 			detailReads.Add(1)
 			_, _ = io.WriteString(w, `{"id":700,"node_id":"PR_test_7","number":7,"title":"Fresh from GitHub","state":"open","user":{"login":"user-a"},"head":{"sha":"abcdef","ref":"feature"},"base":{"sha":"base123","ref":"main","repo":{"id":12345,"node_id":"R_test_project","name":"project","owner":{"login":"team"}}},"created_at":"2026-09-01T00:00:00Z","updated_at":"2026-09-15T00:00:00Z"}`)
+		case "/repos/team/project/issues/9":
+			if r.Header.Get("If-None-Match") == `"issue-stable"` {
+				unchangedIssues.Add(1)
+				w.WriteHeader(http.StatusNotModified)
+				return
+			}
+			w.Header().Set("ETag", `"issue-stable"`)
+			_, _ = io.WriteString(w, `{"id":900,"node_id":"I_test_9","number":9,"title":"Test issue","state":"open","user":{"login":"user-a"},"created_at":"2026-09-01T00:00:00Z","updated_at":"2026-09-15T00:00:00Z"}`)
+		case "/repos/team/project/issues/9/comments":
+			if body := issueComment.Load(); body != nil {
+				_, _ = fmt.Fprintf(w, `[{"id":901,"node_id":"IC_test_901","body":%q,"user":{"login":"user-a"},"created_at":"2026-09-01T00:00:00Z","updated_at":"2026-09-15T00:00:00Z"}]`, *body)
+			} else {
+				_, _ = io.WriteString(w, `[]`)
+			}
 		case "/repos/team/project/commits/abcdef/check-runs":
 			checkReads.Add(1)
 			_, _ = io.WriteString(w, `{"total_count":1,"check_runs":[{"id":1,"name":"ci","status":"completed","conclusion":"success"}]}`)
@@ -121,7 +139,7 @@ func TestActivityRelayEndToEnd(t *testing.T) {
 			_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequest":{}}}}`)
 		case "/users/user-a":
 			_, _ = io.WriteString(w, `{"login":"user-a","name":"Test User"}`)
-		case "/repos/team/project/issues/7/comments", "/repos/team/project/pulls/7/reviews", "/repos/team/project/pulls/7/commits", "/repos/team/project/issues/7/timeline":
+		case "/repos/team/project/issues/7/comments", "/repos/team/project/pulls/7/reviews", "/repos/team/project/pulls/7/commits", "/repos/team/project/issues/7/timeline", "/repos/team/project/issues/9/timeline":
 			_, _ = io.WriteString(w, `[]`)
 		default:
 			http.Error(w, "unexpected provider request", http.StatusNotFound)
@@ -140,8 +158,12 @@ func TestActivityRelayEndToEnd(t *testing.T) {
 	budget := ghclient.NewSyncBudget(1000)
 	upstream, err := ghclient.NewClient(testTokenSource("test-token"), "github.com", nil, budget, ghclient.WithBaseURLForTesting(provider.URL))
 	require.NoError(err)
+	// A blocked clone directory produces a real non-fatal diff failure without
+	// contacting a remote. PR metadata and CI must still be published once.
+	cloneDirectory := filepath.Join(dir, "blocked-clones")
+	require.NoError(os.WriteFile(cloneDirectory, []byte("not a directory"), 0o600))
 	newConsumer := func() *ghclient.Syncer {
-		return ghclient.NewSyncer(map[string]ghclient.Client{"github.com": upstream}, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, map[string]*ghclient.SyncBudget{"github.com": budget})
+		return ghclient.NewSyncer(map[string]ghclient.Client{"github.com": upstream}, database, gitclone.New(cloneDirectory, nil), []ghclient.RepoRef{repo}, time.Minute, nil, map[string]*ghclient.SyncBudget{"github.com": budget})
 	}
 	syncer := newConsumer()
 	t.Cleanup(syncer.Stop)
@@ -212,6 +234,35 @@ func TestActivityRelayEndToEnd(t *testing.T) {
 	unrelated, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 8)
 	require.NoError(err)
 	assert.Equal("pending", unrelated.CIStatus)
+	issueHint := `{"repository":{"id":12345,"node_id":"R_test_project"},"issue":{"number":9}}`
+	for index, body := range []*string{new("Original comment"), new("Edited comment"), nil} {
+		issueComment.Store(body)
+		if index == 1 {
+			// Regular conditional detail sees a 304 for the unchanged parent.
+			// The subsequent webhook must still replace the edited comment.
+			require.NoError(syncer.SyncIssue(ctx, "team", "project", 9))
+			assert.Equal(int32(1), unchangedIssues.Load())
+		}
+		deliver("issue_comment", issueHint)
+		require.NoError(syncer.PollRelay(ctx, relayURL, client))
+		issue, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 9)
+		require.NoError(err)
+		require.NotNil(issue)
+		events, err := database.ListIssueEvents(ctx, issue.ID)
+		require.NoError(err)
+		var bodies []string
+		for _, event := range events {
+			if event.EventType == "issue_comment" {
+				bodies = append(bodies, event.Body)
+			}
+		}
+		if body == nil {
+			assert.Empty(bodies)
+		} else {
+			assert.Equal([]string{*body}, bodies)
+		}
+		require.NoError(database.UpsertHTTPEtag(ctx, "github", "github.com", "team", "project", "issue", 9, `"issue-stable"`))
+	}
 	for _, suffix := range []string{"", "-wal"} {
 		data, err := os.ReadFile(databaseFile + suffix)
 		require.NoError(err)

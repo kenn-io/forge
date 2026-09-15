@@ -86,7 +86,9 @@ Replace `12345` with your repository's numeric GitHub ID. You can look it up
 with `gh api repos/team/project --jq .id`. List every repository that this
 source may report changes for. Names can change; these IDs stay the same.
 
-Here, `team` is a label you choose. It becomes part of the webhook URL.
+Here, `team` is the source label used in the webhook URL. Choose 1–64
+lowercase letters, digits, or hyphens, starting with a letter or digit;
+for example, `github-app`. Spaces and underscores are not allowed.
 Add another section, such as `[sources.other]`, when another GitHub App or webhook
 needs a different secret or repository list.
 

@@ -638,8 +638,8 @@ github.com/yuin/goldmark/v2 v2.0.1 h1:Os0APQLbfXBzA7pc8qF8HBSTO8LOIvhQHX6pEA5/0C
 github.com/yuin/goldmark/v2 v2.0.1/go.mod h1:G6M4/qOFtfn01/o14BU1UR2Lo5N3S9Qo7xCuz/sHjGQ=
 github.com/yusufpapurcu/wmi v1.2.4 h1:zFUKzehAFReQwLys1b/iSMl+JQGSCSjtVqQn9bBrPo0=
 github.com/yusufpapurcu/wmi v1.2.4/go.mod h1:SBZ9tNy3G9/m5Oi98Zks0QjeHVDvuK0qfxQmPyzfmi0=
-gitlab.com/gitlab-org/api/client-go/v2 v2.64.0 h1:PrLDC9rS6je6scB0VgXAh6gmoB7fk50bgdweKT37Vdg=
-gitlab.com/gitlab-org/api/client-go/v2 v2.64.0/go.mod h1:jLHVjfgFX/BsZnWXp6OsoXv1hKzBp2tSnNoxQTl3A08=
+gitlab.com/gitlab-org/api/client-go/v3 v3.0.0 h1:H2uUG4YE8g7Db73pyUQVYJ4w/7NjxuGAa3lEl/9kC44=
+gitlab.com/gitlab-org/api/client-go/v3 v3.0.0/go.mod h1:k7uYxRoIeuSqyWZSJfAPZlf0L32OH0lUBImAl4gWUFc=
 go.kenn.io/kata v0.16.0 h1:ZmVUZgRZXb/cPu8Hy9XS4/llnMOlA7czzeE7G3iU20M=
 go.kenn.io/kata v0.16.0/go.mod h1:p2gLXbHuqjPfpKxTyfYU93wlaTLqb8BdpqGgtKCTe5k=
 go.kenn.io/kit v0.25.0 h1:V0dFQYkm3ttnu/QGPh9SiE79WgeONxW3KLEY7McxzMk=

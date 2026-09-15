@@ -964,7 +964,7 @@ func TestCreateKataTaskNormalizesRelativeWorktreeDir(t *testing.T) {
 
 	d := openTestDB(t)
 	ctx := t.Context()
-	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	seedRepo(t, d, "github.com", "acme", "widget")
 
 	mgr := newTestManager(t, d, "relative-worktrees")
 	metadata := db.WorkspaceKataMetadata{
@@ -982,7 +982,7 @@ func TestCreateKataTaskNormalizesRelativeWorktreeDir(t *testing.T) {
 	assert.Equal(
 		filepath.Join(
 			cwd, "relative-worktrees", "github", "github.com",
-			"acme", "widget", fmt.Sprintf("repo-%d", repoID),
+			"acme", "widget",
 			"kata-"+kataTaskBranchID(metadata),
 		),
 		ws.WorktreePath,
@@ -1075,7 +1075,7 @@ func TestCreateIssueRecoversExpectedExistingDirectory(t *testing.T) {
 	const branch = "kenn-forge/issue-7"
 	expectedPath := filepath.Join(
 		worktreeRoot, "github", platformHost, "acme", "widget",
-		fmt.Sprintf("repo-%d", repoID), "issue-7",
+		"issue-7",
 	)
 	runWorkspaceTestGit(
 		t, localRepo,
@@ -1142,7 +1142,7 @@ func TestIssueWorkspaceBranchDoesNotCollideWithRecoveryState(t *testing.T) {
 			const branch = "__kenn_forge_recovery_pending__"
 			expectedPath := filepath.Join(
 				worktreeRoot, "github", platformHost, "acme", "widget",
-				fmt.Sprintf("repo-%d", repoID), "issue-7",
+				"issue-7",
 			)
 			if recoverExisting {
 				runWorkspaceTestGit(
@@ -1248,7 +1248,7 @@ func TestCreateIssueRecoveryRejectsInvalidExpectedDirectory(t *testing.T) {
 			const branch = "kenn-forge/issue-7"
 			expectedPath := filepath.Join(
 				worktreeRoot, "github", platformHost, "acme", "widget",
-				fmt.Sprintf("repo-%d", repoID), "issue-7",
+				"issue-7",
 			)
 			tt.prepare(t, localRepo, expectedPath, branch)
 
@@ -1305,7 +1305,7 @@ func TestCreateIssueRecoveryRejectsManagedCloneWithWrongOrigin(t *testing.T) {
 	)
 	expectedPath := filepath.Join(
 		worktreeRoot, "github", host, owner, name,
-		fmt.Sprintf("repo-%d", repoID), "issue-7",
+		"issue-7",
 	)
 	runWorkspaceTestGit(
 		t, cloneDir,
@@ -1666,7 +1666,7 @@ func TestCreateIssueReportsRecoverableDirectoryBranch(t *testing.T) {
 	const existingBranch = "kenn-forge/issue-7-original-title"
 	expectedPath := filepath.Join(
 		worktreeRoot, "github", platformHost, "acme", "widget",
-		fmt.Sprintf("repo-%d", repoID), "issue-7",
+		"issue-7",
 	)
 	runWorkspaceTestGit(
 		t, localRepo,
@@ -1707,7 +1707,7 @@ func TestSetupDirectoryRecoveryNeverCreatesReplacement(t *testing.T) {
 	const branch = "kenn-forge/issue-7"
 	expectedPath := filepath.Join(
 		worktreeRoot, "github", platformHost, "acme", "widget",
-		fmt.Sprintf("repo-%d", repoID), "issue-7",
+		"issue-7",
 	)
 	runWorkspaceTestGit(
 		t, localRepo,
@@ -1761,7 +1761,7 @@ func TestRetryDirectoryRecoveryPreservesExistingWorktree(t *testing.T) {
 	const branch = "kenn-forge/issue-7"
 	expectedPath := filepath.Join(
 		worktreeRoot, "github", platformHost, "acme", "widget",
-		fmt.Sprintf("repo-%d", repoID), "issue-7",
+		"issue-7",
 	)
 	runWorkspaceTestGit(
 		t, localRepo,
@@ -1820,7 +1820,7 @@ func TestDeletePendingDirectoryRecoveryPreservesExistingWorktree(t *testing.T) {
 	const branch = "kenn-forge/issue-7"
 	expectedPath := filepath.Join(
 		worktreeRoot, "github", platformHost, "acme", "widget",
-		fmt.Sprintf("repo-%d", repoID), "issue-7",
+		"issue-7",
 	)
 	runWorkspaceTestGit(
 		t, localRepo,
@@ -3457,7 +3457,7 @@ func TestCreateUsesProviderQualifiedRepo(t *testing.T) {
 	assert.Equal(
 		filepath.Join(
 			worktreeDir, "gitlab", "forge.example.com", "acme", "widget",
-			fmt.Sprintf("repo-%d", gitlabRepoID), "pr-42",
+			"pr-42",
 		),
 		ws.WorktreePath,
 	)

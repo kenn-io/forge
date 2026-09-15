@@ -248,10 +248,15 @@ func TestPersistAdHocWorkspaceRetriesReservedHashedBranch(t *testing.T) {
 		TerminalBackend: "tmux",
 		Status:          "creating",
 	}
-	mgr.setAdHocWorkspaceIdentity(ws, firstBranch, firstBranch)
+	repoDir, err := mgr.workspaceRepoDir(t.Context(), workspaceRepoRef{
+		Platform: ws.Platform, PlatformHost: ws.PlatformHost,
+		Owner: ws.RepoOwner, Name: ws.RepoName,
+	})
+	require.NoError(err)
+	setAdHocWorkspaceIdentity(ws, repoDir, firstBranch, firstBranch)
 
 	require.NoError(mgr.persistAdHocWorkspace(
-		t.Context(), ws, localRepo, requested, nextAttempt,
+		t.Context(), ws, repoDir, localRepo, requested, nextAttempt,
 	))
 	assert.NotEqual(firstBranch, ws.GitHeadRef)
 	assert.Regexp(`^docs-[0-9a-f]{4}$`, ws.GitHeadRef)

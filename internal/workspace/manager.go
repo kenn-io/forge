@@ -493,6 +493,18 @@ func (m *Manager) CreateFromLaunchSpec(
 	if err != nil {
 		return nil, err
 	}
+	worktreePath, err := m.newWorkspacePath(
+		ctx,
+		workspaceRepoRef{
+			ID: repo.ID, Platform: spec.Repository.Provider,
+			PlatformHost: spec.Repository.PlatformHost,
+			Owner:        spec.Repository.Owner, Name: spec.Repository.Name,
+		},
+		fmt.Sprintf("pr-%d", spec.ItemNumber),
+	)
+	if err != nil {
+		return nil, err
+	}
 
 	ws := &Workspace{
 		ID:              id,
@@ -507,14 +519,7 @@ func (m *Manager) CreateFromLaunchSpec(
 		GitHeadRef:      spec.GitHeadRef,
 		MRHeadRepo:      workspaceHeadRepoFromLaunchSpec(spec),
 		WorkspaceBranch: workspaceBranchUnknown,
-		WorktreePath: m.newWorkspacePath(
-			workspaceRepoRef{
-				ID: repo.ID, Platform: spec.Repository.Provider,
-				PlatformHost: spec.Repository.PlatformHost,
-				Owner:        spec.Repository.Owner, Name: spec.Repository.Name,
-			},
-			fmt.Sprintf("pr-%d", spec.ItemNumber),
-		),
+		WorktreePath:    worktreePath,
 		TmuxSession:     "forge-" + id,
 		TerminalBackend: m.PreferredTerminalBackend(),
 		Status:          "creating",
@@ -595,6 +600,18 @@ func (m *Manager) CreateIssueFromLaunchSpec(
 	if err != nil {
 		return nil, err
 	}
+	worktreePath, err := m.newWorkspacePath(
+		ctx,
+		workspaceRepoRef{
+			ID: repo.ID, Platform: spec.Repository.Provider,
+			PlatformHost: spec.Repository.PlatformHost,
+			Owner:        spec.Repository.Owner, Name: spec.Repository.Name,
+		},
+		fmt.Sprintf("issue-%d", spec.ItemNumber),
+	)
+	if err != nil {
+		return nil, err
+	}
 
 	ws := &Workspace{
 		ID:              id,
@@ -608,14 +625,7 @@ func (m *Manager) CreateIssueFromLaunchSpec(
 		ItemKey:         spec.ItemKey,
 		GitHeadRef:      gitHeadRef,
 		WorkspaceBranch: gitHeadRef,
-		WorktreePath: m.newWorkspacePath(
-			workspaceRepoRef{
-				ID: repo.ID, Platform: spec.Repository.Provider,
-				PlatformHost: spec.Repository.PlatformHost,
-				Owner:        spec.Repository.Owner, Name: spec.Repository.Name,
-			},
-			fmt.Sprintf("issue-%d", spec.ItemNumber),
-		),
+		WorktreePath:    worktreePath,
 		TmuxSession:     "forge-" + id,
 		TerminalBackend: m.PreferredTerminalBackend(),
 		Status:          "creating",
@@ -829,6 +839,17 @@ func (m *Manager) CreateKataTask(
 	if err != nil {
 		return nil, err
 	}
+	worktreePath, err := m.newWorkspacePath(
+		ctx,
+		workspaceRepoRef{
+			ID: repo.ID, Platform: repo.Platform, PlatformHost: platformHost,
+			Owner: owner, Name: name,
+		},
+		"kata-"+branchID,
+	)
+	if err != nil {
+		return nil, err
+	}
 
 	ws := &Workspace{
 		ID:              id,
@@ -841,13 +862,7 @@ func (m *Manager) CreateKataTask(
 		ItemKey:         itemKey,
 		GitHeadRef:      gitHeadRef,
 		WorkspaceBranch: workspaceBranchUnknown,
-		WorktreePath: m.newWorkspacePath(
-			workspaceRepoRef{
-				ID: repo.ID, Platform: repo.Platform, PlatformHost: platformHost,
-				Owner: owner, Name: name,
-			},
-			"kata-"+branchID,
-		),
+		WorktreePath:    worktreePath,
 		TmuxSession:     "forge-" + id,
 		TerminalBackend: m.PreferredTerminalBackend(),
 		Status:          "creating",
@@ -901,11 +916,16 @@ func (m *Manager) CreateAdHoc(
 
 	workspaceBranch := gitHeadRef
 	nextHashAttempt := 0
-	branchDir, ok, localBase, err := m.branchInspectionDir(ctx, workspaceRepoRef{
+	repoRef := workspaceRepoRef{
 		ID: repo.ID, Platform: repo.Platform, PlatformHost: platformHost,
 		ProviderID: repo.PlatformRepoID, Owner: owner, Name: name,
 		RemoteURL: workspaceCloneRemoteURL(repo, platformHost, owner, name),
-	})
+	}
+	repoDir, err := m.workspaceRepoDir(ctx, repoRef)
+	if err != nil {
+		return nil, err
+	}
+	branchDir, ok, localBase, err := m.branchInspectionDir(ctx, repoRef)
 	if err != nil {
 		return nil, err
 	}
@@ -942,10 +962,10 @@ func (m *Manager) CreateAdHoc(
 		TerminalBackend: m.PreferredTerminalBackend(),
 		Status:          "creating",
 	}
-	m.setAdHocWorkspaceIdentity(ws, gitHeadRef, workspaceBranch)
+	setAdHocWorkspaceIdentity(ws, repoDir, gitHeadRef, workspaceBranch)
 
 	if err := m.persistAdHocWorkspace(
-		ctx, ws, branchDir, requestedBranch, nextHashAttempt,
+		ctx, ws, repoDir, branchDir, requestedBranch, nextHashAttempt,
 	); err != nil {
 		return nil, fmt.Errorf("insert workspace: %w", err)
 	}
@@ -955,7 +975,7 @@ func (m *Manager) CreateAdHoc(
 func (m *Manager) persistAdHocWorkspace(
 	ctx context.Context,
 	ws *Workspace,
-	branchDir, requestedBranch string,
+	repoDir, branchDir, requestedBranch string,
 	nextHashAttempt int,
 ) error {
 	for {
@@ -976,33 +996,60 @@ func (m *Manager) persistAdHocWorkspace(
 		if nameErr != nil {
 			return nameErr
 		}
-		m.setAdHocWorkspaceIdentity(ws, branch, branch)
+		setAdHocWorkspaceIdentity(ws, repoDir, branch, branch)
 		nextHashAttempt = nextAttempt
 	}
 }
 
-func (m *Manager) setAdHocWorkspaceIdentity(
-	ws *Workspace, identityBranch, managedBranch string,
+func setAdHocWorkspaceIdentity(
+	ws *Workspace, repoDir, identityBranch, managedBranch string,
 ) {
 	ws.GitHeadRef = identityBranch
 	ws.WorkspaceBranch = managedBranch
 	ws.ItemKey = db.AdHocWorkspaceItemKey(identityBranch)
-	ws.WorktreePath = m.newWorkspacePath(
-		workspaceRepoRef{
-			ID: ws.RepoID, Platform: ws.Platform, PlatformHost: ws.PlatformHost,
-			Owner: ws.RepoOwner, Name: ws.RepoName,
-		},
-		adHocWorktreeDirName(identityBranch),
-	)
+	ws.WorktreePath = filepath.Join(repoDir, adHocWorktreeDirName(identityBranch))
 }
 
+// newWorkspacePath places a new worktree under the repository's route
+// directory, which is the plain owner/name path a person expects to browse.
 func (m *Manager) newWorkspacePath(
-	repo workspaceRepoRef, itemDir string,
-) string {
-	return filepath.Join(
-		m.worktreeDir, repo.Platform, repo.PlatformHost, repo.Owner, repo.Name,
-		fmt.Sprintf("repo-%d", repo.ID), itemDir,
+	ctx context.Context, repo workspaceRepoRef, itemDir string,
+) (string, error) {
+	repoDir, err := m.workspaceRepoDir(ctx, repo)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(repoDir, itemDir), nil
+}
+
+// workspaceRepoDir returns the directory that holds a repository's worktrees.
+// The plain owner/name route path is used unless the catalog shows that another
+// stable repository has owned the same route. Only then does the directory
+// become <name>-<id>, so the opaque suffix appears solely in the route-reuse
+// case it exists to disambiguate.
+func (m *Manager) workspaceRepoDir(
+	ctx context.Context, repo workspaceRepoRef,
+) (string, error) {
+	ownerDir := filepath.Join(
+		m.worktreeDir, repo.Platform, repo.PlatformHost, repo.Owner,
 	)
+	routeDir := filepath.Join(ownerDir, repo.Name)
+	if repo.ID <= 0 {
+		return routeDir, nil
+	}
+	shared, err := m.db.RepositoryRouteHasOtherRepository(
+		ctx, db.RepoIdentity{
+			Platform: repo.Platform, PlatformHost: repo.PlatformHost,
+			Owner: repo.Owner, Name: repo.Name,
+		}, repo.ID,
+	)
+	if err != nil {
+		return "", fmt.Errorf("check workspace route reuse: %w", err)
+	}
+	if !shared {
+		return routeDir, nil
+	}
+	return filepath.Join(ownerDir, fmt.Sprintf("%s-%d", repo.Name, repo.ID)), nil
 }
 
 // adHocWorkspaceBranch names a branch for work the user did not name. The

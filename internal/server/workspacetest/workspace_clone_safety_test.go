@@ -2,7 +2,6 @@ package workspacetest
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
@@ -565,7 +564,7 @@ func TestWorkspaceCreateRejectsSymlinkedReusableWorktreeE2E(t *testing.T) {
 
 	worktreePath := filepath.Join(
 		fixture.worktreeDir, "github", "github.com", "acme", "widget",
-		fmt.Sprintf("repo-%d", fixture.repoID), "pr-1",
+		"pr-1",
 	)
 	targetPath := filepath.Join(t.TempDir(), "linked-worktree")
 	gitfixture.Run(t, fixture.bare, "worktree", "add", targetPath, "feature")
@@ -736,7 +735,7 @@ func TestWorkspaceCreateOccupiedPathCreatesNoBranchesE2E(t *testing.T) {
 
 	worktreePath := filepath.Join(
 		fixture.worktreeDir, "github", "github.com", "acme", "widget",
-		fmt.Sprintf("repo-%d", fixture.repoID), "pr-2",
+		"pr-2",
 	)
 	require.NoError(os.MkdirAll(worktreePath, 0o755))
 	require.NoError(os.WriteFile(

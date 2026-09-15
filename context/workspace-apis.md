@@ -46,6 +46,11 @@ embedder protocol for arbitrary host state.
 - A backfilled workspace may keep a route-keyed managed clone from any current
   or historical route that has one stable owner; route reuse excludes that path
   (`internal/workspace/manager.go::Manager.workspaceManagedClonePaths`).
+- New worktrees live at the plain `<platform>/<host>/<owner>/<name>/<item>`
+  path so people can find them by repository name. Only when the catalog shows
+  another stable repository has owned that route does the repository directory
+  become `<name>-<id>`; do not add identity segments to the common path
+  (`internal/workspace/manager.go::Manager.workspaceRepoDir`).
 - Keep Workspace and Projects request state below the root server composition
   boundary. The handler receives deep-copied committed config snapshots; it
   never retains the root mutable config pointer or mutex

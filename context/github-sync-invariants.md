@@ -774,6 +774,17 @@ deadline as a timeout instead of recording the wrong account. A transient probe
 error or a user interrupt is not a clean deadline: it surfaces the original
 error or cancellation unchanged and never adopts.
 
+## Activity relay
+
+- Relay hints accelerate normal polling; each consumer still uses its own credentials and rate gates.
+  Never fan unassociated checks out across all open PRs. (`internal/github/relay.go::PollRelay`)
+- Feed repository IDs are GitHub node IDs, matching the durable catalog; numeric REST IDs need
+  a fresh provider resolve and must not become the consumer's lookup key. (`internal/activityrelay/http.go::reduce`)
+- Checkpoint cursors with pending targets before provider work. Keep one sequential poll/drain owner:
+  new deliveries stay on the relay until the next page read. (`internal/db/queries_relay.go::SaveRelayPage`)
+- Unknown-PR checks become durable PR refreshes; an incomplete first fetch must not reduce a retry
+  to checks alone. (`internal/github/relay.go::refreshRelayHint`)
+
 ## Testing Expectations
 
 Changes in this area should usually add or update tests at the boundary where

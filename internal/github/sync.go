@@ -851,6 +851,7 @@ type Syncer struct {
 	displayNames     *displayNameCache
 	displayNameGroup singleflight.Group // dedups concurrent GetUser calls
 	onMRSynced       func(owner, name string, mr *db.MergeRequest)
+	onRelayRefresh   func(context.Context, int64, string, int)
 	onSyncCompleted  func(results []RepoSyncResult)
 	// onWatchedMRSyncCompleted fires once after a watched-MR fast-sync
 	// pass refreshes at least one MR.

@@ -9,6 +9,25 @@ options. Restart Forge after changing startup settings.
 
 ## Repositories
 
+### Faster GitHub updates
+
+An optional shared activity relay lets Forge refresh changed pull requests,
+issues, and repository activity between normal sync cycles. Each Forge still
+reads content using its own GitHub credentials. Configure this on standalone
+instances or fleet hubs, then restart:
+
+```toml
+[relay]
+url = "https://relay.example.com"
+poll_interval = "30s"
+```
+
+Use the private HTTPS feed URL supplied by the relay operator. An empty URL
+disables the relay. Regular polling continues, including CI checks that GitHub
+cannot associate with a pull request. The relay currently supports GitHub.com.
+
+### Repository selection
+
 A GitHub repository on `github.com` needs only its owner and name:
 
 ```toml

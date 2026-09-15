@@ -1681,9 +1681,7 @@ describe("WorkspaceListSidebar", () => {
       await fireEvent.click(screen.getByTitle("View workspace options"));
       await fireEvent.click(screen.getByRole("button", { name: sort }));
       expect(
-        container
-          .querySelector(".ws-row-aside > .item-bubble + .ws-row-aside-line > .workspace-sort-time")
-          ?.getAttribute("datetime"),
+        container.querySelector(".ws-row-aside > .item-bubble + .workspace-sort-time")?.getAttribute("datetime"),
       ).toBe(timestamp);
     }
   });
@@ -1926,21 +1924,24 @@ describe("WorkspaceListSidebar", () => {
     expect(container.querySelector('[title="Dirty worktree"]')).toBeTruthy();
     expect(container.querySelectorAll(".worktree-dirty")).toHaveLength(1);
     expect(container.querySelector(".worktree-dirty svg.lucide-pencil")).toBeTruthy();
-    expect(container.querySelector(".ws-row-aside > .item-bubble + .ws-row-aside-line > .worktree-dirty")).toBeTruthy();
+    expect(container.querySelector(".ws-row-meta > .branch-chip + .worktree-dirty")).toBeTruthy();
     expect(container.querySelectorAll(".worktree-dirty-slot")).toHaveLength(0);
 
-    // With a sort timestamp visible the pencil must share the time's line,
-    // not stack under it as a third row inside the aside column.
+    // With a sort timestamp visible the pencil stays on the meta line. In
+    // the aside column it would stack as a third line under the bubble and
+    // time and make the dirty row taller than its clean neighbours.
     await fireEvent.click(screen.getByTitle("View workspace options"));
     await fireEvent.click(screen.getByRole("button", { name: "Created" }));
     const dirtyRow = screen.getByText("Dirty workspace").closest<HTMLElement>(".ws-row");
-    const aside = dirtyRow?.querySelector(".ws-row-aside");
     const firstClass = (el: Element) => el.className.split(" ")[0];
-    expect(Array.from(aside?.children ?? [], firstClass)).toEqual(["item-bubble", "ws-row-aside-line"]);
-    expect(Array.from(aside?.lastElementChild?.children ?? [], firstClass)).toEqual([
-      "worktree-dirty",
+    expect(Array.from(dirtyRow?.querySelector(".ws-row-aside")?.children ?? [], firstClass)).toEqual([
+      "item-bubble",
       "workspace-sort-time",
     ]);
+    // Element-scoped sibling selectors are unreliable in jsdom, so read the
+    // meta line's children directly.
+    const meta = Array.from(dirtyRow?.querySelector(".ws-row-meta")?.children ?? [], firstClass);
+    expect(meta.indexOf("worktree-dirty")).toBe(meta.indexOf("branch-chip") + 1);
   });
 
   it("opens a host-aware context menu for local macOS workspaces", async () => {
@@ -2903,9 +2904,8 @@ describe("WorkspaceListSidebar", () => {
     // open, and the row must never advertise #0.
     expect(container.querySelector(".item-bubble")).toBeNull();
     expect(container.querySelector(".ws-row-aside > .item-bubble-slot")).toBeTruthy();
-    expect(
-      container.querySelector(".ws-row-aside > .item-bubble-slot + .ws-row-aside-line > .worktree-dirty"),
-    ).toBeTruthy();
+    expect(container.querySelector(".ws-row-aside > .item-bubble-slot")?.nextElementSibling).toBeNull();
+    expect(container.querySelector(".ws-row-meta > .branch-chip + .worktree-dirty")).toBeTruthy();
     expect(container.textContent).not.toContain("#0");
   });
 

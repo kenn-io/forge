@@ -854,14 +854,15 @@ func TestSyncerAcceptedTriggerQueuesBehindInFlightRun(t *testing.T) {
 					ctx context.Context, _, _ string,
 				) ([]*gh.PullRequest, error) {
 					call := listCalls.Add(1)
-					if call == 1 {
+					switch call {
+					case 1:
 						close(firstSnapshot)
 						select {
 						case <-releaseFirst:
 						case <-ctx.Done():
 							return nil, ctx.Err()
 						}
-					} else if call == 2 {
+					case 2:
 						close(secondSnapshot)
 					}
 					return []*gh.PullRequest{}, nil

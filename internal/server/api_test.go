@@ -3216,14 +3216,11 @@ func TestAPIEnqueuePRSyncQueuesOneRerun(t *testing.T) {
 	resp, err := client.HTTP.EnqueuePrSyncWithResponse(t.Context(), &generated.EnqueuePrSyncRequestOptions{PathParams: &generated.EnqueuePrSyncPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
 	require.Equal(http.StatusAccepted, resp.StatusCode)
-	require.Eventually(func() bool {
-		select {
-		case <-firstStarted:
-			return true
-		default:
-			return false
-		}
-	}, 10*time.Second, time.Millisecond)
+	select {
+	case <-firstStarted:
+	case <-time.After(10 * time.Second):
+		require.Fail("Condition never satisfied")
+	}
 
 	for range 3 {
 		resp, err = client.HTTP.EnqueuePrSyncWithResponse(t.Context(), &generated.EnqueuePrSyncRequestOptions{PathParams: &generated.EnqueuePrSyncPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
@@ -3234,14 +3231,11 @@ func TestAPIEnqueuePRSyncQueuesOneRerun(t *testing.T) {
 
 	// The rerun re-verifies repository identity and persists the settings
 	// observation before its PR fetch; give the loaded CI runner headroom.
-	require.Eventually(func() bool {
-		select {
-		case <-secondDone:
-			return true
-		default:
-			return false
-		}
-	}, 10*time.Second, time.Millisecond)
+	select {
+	case <-secondDone:
+	case <-time.After(10 * time.Second):
+		require.Fail("Condition never satisfied")
+	}
 	assert.Equal(int64(2), calls.Load())
 	assert.Never(
 		func() bool { return calls.Load() > 2 },
@@ -3338,14 +3332,11 @@ func TestAPIQueuedPRSyncRechecksRemovedUpstreamBeforeProviderCall(t *testing.T) 
 			return nil
 		},
 	))
-	require.Eventually(func() bool {
-		select {
-		case <-firstStarted:
-			return true
-		default:
-			return false
-		}
-	}, time.Second, time.Millisecond)
+	select {
+	case <-firstStarted:
+	case <-time.After(time.Second):
+		require.Fail("Condition never satisfied")
+	}
 
 	resp, err := client.HTTP.EnqueuePrSyncWithResponse(ctx, &generated.EnqueuePrSyncRequestOptions{PathParams: &generated.EnqueuePrSyncPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
@@ -16632,14 +16623,11 @@ func TestAPIPublishReviewDraftMapsStaleProviderErrorToConflict(t *testing.T) {
 	assert.Equal("gitlab.example.com", details["platformHost"])
 	assert.Equal("approval 99 was removed after the head moved", details["context"])
 	require.Len(provider.publishedReviews, 1)
-	require.Eventually(func() bool {
-		select {
-		case <-provider.mrFetchStarted:
-			return true
-		default:
-			return false
-		}
-	}, 10*time.Second, 10*time.Millisecond, "background refresh did not reach the provider")
+	select {
+	case <-provider.mrFetchStarted:
+	case <-time.After(10 * time.Second):
+		require.Fail("background refresh did not reach the provider")
+	}
 	require.Eventually(func() bool {
 		synced, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
 		return err == nil && synced != nil && synced.PlatformHeadSHA == "fresh-head"
@@ -16717,14 +16705,11 @@ func TestAPIPublishReviewDraftMapsPartialStaleProviderErrorToConflict(t *testing
 	assert.Equal(true, details["partialPublish"])
 	assert.EqualValues(0, details["publishedCommentCount"])
 	assert.Equal("summary note already posted before stale approval", details["context"])
-	require.Eventually(func() bool {
-		select {
-		case <-provider.mrFetchStarted:
-			return true
-		default:
-			return false
-		}
-	}, 10*time.Second, 10*time.Millisecond, "background refresh did not reach the provider")
+	select {
+	case <-provider.mrFetchStarted:
+	case <-time.After(10 * time.Second):
+		require.Fail("background refresh did not reach the provider")
+	}
 	require.Eventually(func() bool {
 		synced, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
 		return err == nil && synced != nil && synced.PlatformHeadSHA == "fresh-head"
@@ -17980,14 +17965,11 @@ func TestAPIPublishReviewDraftReconcilesAfterTransientThreadIngestFailure(t *tes
 	require.Nil(draft)
 
 	detailPath := "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7"
-	require.Eventually(func() bool {
-		select {
-		case <-reviewThreadRefreshStarted:
-			return true
-		default:
-			return false
-		}
-	}, 10*time.Second, 10*time.Millisecond, "background refresh did not reach the provider")
+	select {
+	case <-reviewThreadRefreshStarted:
+	case <-time.After(10 * time.Second):
+		require.Fail("background refresh did not reach the provider")
+	}
 	require.Eventually(func() bool {
 		detailRR := testutil.DoJSON(t, srv, http.MethodGet, detailPath, nil)
 		if detailRR.Code != http.StatusOK {

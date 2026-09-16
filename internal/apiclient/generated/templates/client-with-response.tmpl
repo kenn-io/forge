@@ -65,16 +65,7 @@ type {{$clientName}}Interface interface {
 {{ if not $config.Generate.OmitDescription }}{{ toGoComment $op.Summary $op.ID }}{{ end }}
 func (c *{{$clientName}}) {{$op.ID}}WithResponse(ctx context.Context{{ if $op.HasRequestOptions }}, options *{{$op.ID | ucFirst}}RequestOptions{{ end }}, reqEditors ...runtime.RequestEditorFn) (*{{$op.WithResponseTypeName}}, error) {
     var err error
-    reqParams := runtime.RequestOptionsParameters{
-        RequestURL:  c.apiClient.GetBaseURL() + "{{escapeGoString $op.Path}}",
-        Method:      "{{$op.Method}}",
-        {{- if $op.HasRequestOptions }}
-        Options:     options,
-        {{- end }}
-        {{- if $op.Body }}
-        ContentType: "{{$op.Body.ContentType}}",
-        {{- end }}
-    }
+    {{ template "requestParams" (dict "op" $op) }}
 
     req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
     if err != nil {

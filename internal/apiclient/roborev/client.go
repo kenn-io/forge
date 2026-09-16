@@ -64,10 +64,16 @@ type ClientInterface interface {
 // ListRepos List repos with job counts
 func (c *Client) ListReposWithResponse(ctx context.Context, options *ListReposRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListReposResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"branch": {Style: "form", Explode: &[]bool{false}[0]},
+		"prefix": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/api/repos",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/api/repos",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)

@@ -40,6 +40,7 @@ type ClientInterface interface {
 // GetHealthz Get healthz
 func (c *Client) GetHealthzWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetHealthzResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/healthz",
 		Method:     "GET",
@@ -94,6 +95,7 @@ func (c *Client) GetHealthzWithResponse(ctx context.Context, reqEditors ...runti
 // GetLivez Get livez
 func (c *Client) GetLivezWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetLivezResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/livez",
 		Method:     "GET",

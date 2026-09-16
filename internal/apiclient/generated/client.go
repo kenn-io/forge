@@ -10800,10 +10800,19 @@ type ClientInterface interface {
 // ListWorkflowRuns List workflow runs
 func (c *Client) ListWorkflowRunsWithResponse(ctx context.Context, options *ListWorkflowRunsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListWorkflowRunsResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"branch":      {Style: "form", Explode: &[]bool{false}[0]},
+		"cursor":      {Style: "form", Explode: &[]bool{false}[0]},
+		"event":       {Style: "form", Explode: &[]bool{false}[0]},
+		"per_page":    {Style: "form", Explode: &[]bool{false}[0]},
+		"workflow_id": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/actions/{provider}/{owner}/{name}/runs",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/actions/{provider}/{owner}/{name}/runs",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -10855,6 +10864,7 @@ func (c *Client) ListWorkflowRunsWithResponse(ctx context.Context, options *List
 // ListWorkflowRunJobs List workflow run jobs
 func (c *Client) ListWorkflowRunJobsWithResponse(ctx context.Context, options *ListWorkflowRunJobsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListWorkflowRunJobsResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/actions/{provider}/{owner}/{name}/runs/{run_id}/jobs",
 		Method:     "GET",
@@ -10910,6 +10920,7 @@ func (c *Client) ListWorkflowRunJobsWithResponse(ctx context.Context, options *L
 // ListWorkflows List manual workflows
 func (c *Client) ListWorkflowsWithResponse(ctx context.Context, options *ListWorkflowsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListWorkflowsResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/actions/{provider}/{owner}/{name}/workflows",
 		Method:     "GET",
@@ -10965,6 +10976,7 @@ func (c *Client) ListWorkflowsWithResponse(ctx context.Context, options *ListWor
 // DispatchWorkflow Dispatch workflow
 func (c *Client) DispatchWorkflowWithResponse(ctx context.Context, options *DispatchWorkflowRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DispatchWorkflowResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/actions/{provider}/{owner}/{name}/workflows/{workflow_id}/dispatch",
 		Method:      "POST",
@@ -11021,10 +11033,30 @@ func (c *Client) DispatchWorkflowWithResponse(ctx context.Context, options *Disp
 // ListActivity List activity
 func (c *Client) ListActivityWithResponse(ctx context.Context, options *ListActivityRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListActivityResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"after":               {Style: "form", Explode: &[]bool{false}[0]},
+		"at_or_before":        {Style: "form", Explode: &[]bool{false}[0]},
+		"author":              {Style: "form", Explode: &[]bool{false}[0]},
+		"before":              {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_bots":           {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_closed_merged":  {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_default_branch": {Style: "form", Explode: &[]bool{false}[0]},
+		"involves_me":         {Style: "form", Explode: &[]bool{false}[0]},
+		"item_types":          {Style: "form", Explode: &[]bool{false}[0]},
+		"limit":               {Style: "form", Explode: &[]bool{false}[0]},
+		"projection":          {Style: "form", Explode: &[]bool{false}[0]},
+		"repo":                {Style: "form", Explode: &[]bool{false}[0]},
+		"search":              {Style: "form", Explode: &[]bool{false}[0]},
+		"since":               {Style: "form", Explode: &[]bool{false}[0]},
+		"types":               {Style: "form", Explode: &[]bool{false}[0]},
+		"unassigned":          {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/activity",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/activity",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -11076,10 +11108,16 @@ func (c *Client) ListActivityWithResponse(ctx context.Context, options *ListActi
 // ListActivityAuthors List activity authors
 func (c *Client) ListActivityAuthorsWithResponse(ctx context.Context, options *ListActivityAuthorsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListActivityAuthorsResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"repo":  {Style: "form", Explode: &[]bool{false}[0]},
+		"since": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/activity/authors",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/activity/authors",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -11131,10 +11169,29 @@ func (c *Client) ListActivityAuthorsWithResponse(ctx context.Context, options *L
 // ListActivityThreadEvents List activity thread events
 func (c *Client) ListActivityThreadEventsWithResponse(ctx context.Context, options *ListActivityThreadEventsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListActivityThreadEventsResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"at_or_before":        {Style: "form", Explode: &[]bool{false}[0]},
+		"before":              {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_bots":           {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_closed_merged":  {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_default_branch": {Style: "form", Explode: &[]bool{false}[0]},
+		"item_number":         {Style: "form", Explode: &[]bool{false}[0]},
+		"item_type":           {Style: "form", Explode: &[]bool{false}[0]},
+		"limit":               {Style: "form", Explode: &[]bool{false}[0]},
+		"platform_host":       {Style: "form", Explode: &[]bool{false}[0]},
+		"platform_repo_id":    {Style: "form", Explode: &[]bool{false}[0]},
+		"provider":            {Style: "form", Explode: &[]bool{false}[0]},
+		"search":              {Style: "form", Explode: &[]bool{false}[0]},
+		"since":               {Style: "form", Explode: &[]bool{false}[0]},
+		"types":               {Style: "form", Explode: &[]bool{false}[0]},
+		"unassigned":          {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/activity/thread-events",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/activity/thread-events",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -11186,6 +11243,7 @@ func (c *Client) ListActivityThreadEventsWithResponse(ctx context.Context, optio
 // ReceiveAgentHook Receive agent lifecycle hook
 func (c *Client) ReceiveAgentHookWithResponse(ctx context.Context, options *ReceiveAgentHookRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ReceiveAgentHookResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/agent-hooks/{agent}",
 		Method:      "POST",
@@ -11242,6 +11300,7 @@ func (c *Client) ReceiveAgentHookWithResponse(ctx context.Context, options *Rece
 // ListArchivePacing List archive hydration pacing per provider credential
 func (c *Client) ListArchivePacingWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*ListArchivePacingResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/archive/pacing",
 		Method:     "GET",
@@ -11296,6 +11355,7 @@ func (c *Client) ListArchivePacingWithResponse(ctx context.Context, reqEditors .
 // PauseArchives Pause historical archives
 func (c *Client) PauseArchivesWithResponse(ctx context.Context, options *PauseArchivesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*PauseArchivesResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/archive/pause",
 		Method:      "POST",
@@ -11352,10 +11412,17 @@ func (c *Client) PauseArchivesWithResponse(ctx context.Context, options *PauseAr
 // GetArchiveReport Get historical archive activity report
 func (c *Client) GetArchiveReportWithResponse(ctx context.Context, options *GetArchiveReportRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetArchiveReportResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"end":     {Style: "form", Explode: &[]bool{false}[0]},
+		"start":   {Style: "form", Explode: &[]bool{false}[0]},
+		"verbose": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/archive/report",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/archive/report",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -11407,6 +11474,7 @@ func (c *Client) GetArchiveReportWithResponse(ctx context.Context, options *GetA
 // StartArchives Start historical archives
 func (c *Client) StartArchivesWithResponse(ctx context.Context, options *StartArchivesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*StartArchivesResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/archive/start",
 		Method:      "POST",
@@ -11463,6 +11531,7 @@ func (c *Client) StartArchivesWithResponse(ctx context.Context, options *StartAr
 // ListArchiveStatus List historical archive status
 func (c *Client) ListArchiveStatusWithResponse(ctx context.Context, options *ListArchiveStatusRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListArchiveStatusResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/archive/status",
 		Method:     "GET",
@@ -11518,10 +11587,15 @@ func (c *Client) ListArchiveStatusWithResponse(ctx context.Context, options *Lis
 // BrowseDocsFolders Browse docs folders
 func (c *Client) BrowseDocsFoldersWithResponse(ctx context.Context, options *BrowseDocsFoldersRequestOptions, reqEditors ...runtime.RequestEditorFn) (*BrowseDocsFoldersResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"path": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/docs/browse",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/docs/browse",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -11573,6 +11647,7 @@ func (c *Client) BrowseDocsFoldersWithResponse(ctx context.Context, options *Bro
 // ListDocsFolders List docs folders
 func (c *Client) ListDocsFoldersWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*ListDocsFoldersResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/docs/folders",
 		Method:     "GET",
@@ -11627,6 +11702,7 @@ func (c *Client) ListDocsFoldersWithResponse(ctx context.Context, reqEditors ...
 // CreateDocsFolder Create docs folder
 func (c *Client) CreateDocsFolderWithResponse(ctx context.Context, options *CreateDocsFolderRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateDocsFolderResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/docs/folders",
 		Method:      "POST",
@@ -11683,6 +11759,7 @@ func (c *Client) CreateDocsFolderWithResponse(ctx context.Context, options *Crea
 // DeleteDocsFolder Delete docs folder
 func (c *Client) DeleteDocsFolderWithResponse(ctx context.Context, options *DeleteDocsFolderRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeleteDocsFolderResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/docs/folders/{id}",
 		Method:     "DELETE",
@@ -11724,6 +11801,7 @@ func (c *Client) DeleteDocsFolderWithResponse(ctx context.Context, options *Dele
 // UpdateDocsFolder Update docs folder
 func (c *Client) UpdateDocsFolderWithResponse(ctx context.Context, options *UpdateDocsFolderRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateDocsFolderResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/docs/folders/{id}",
 		Method:      "PATCH",
@@ -11780,10 +11858,15 @@ func (c *Client) UpdateDocsFolderWithResponse(ctx context.Context, options *Upda
 // ReadDocsBlob Read docs image blob
 func (c *Client) ReadDocsBlobWithResponse(ctx context.Context, options *ReadDocsBlobRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ReadDocsBlobResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"path": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/docs/folders/{id}/blob",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/docs/folders/{id}/blob",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -11826,10 +11909,15 @@ func (c *Client) ReadDocsBlobWithResponse(ctx context.Context, options *ReadDocs
 // DeleteDocsFile Delete docs file
 func (c *Client) DeleteDocsFileWithResponse(ctx context.Context, options *DeleteDocsFileRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeleteDocsFileResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"path": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/docs/folders/{id}/file",
-		Method:     "DELETE",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/docs/folders/{id}/file",
+		Method:        "DELETE",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -11867,10 +11955,15 @@ func (c *Client) DeleteDocsFileWithResponse(ctx context.Context, options *Delete
 // ReadDocsFile Read docs file
 func (c *Client) ReadDocsFileWithResponse(ctx context.Context, options *ReadDocsFileRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ReadDocsFileResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"path": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/docs/folders/{id}/file",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/docs/folders/{id}/file",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -11922,11 +12015,16 @@ func (c *Client) ReadDocsFileWithResponse(ctx context.Context, options *ReadDocs
 // CreateDocsFile Create docs file
 func (c *Client) CreateDocsFileWithResponse(ctx context.Context, options *CreateDocsFileRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateDocsFileResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"path": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL:  c.apiClient.GetBaseURL() + "/docs/folders/{id}/file",
-		Method:      "POST",
-		Options:     options,
-		ContentType: "application/json",
+		RequestURL:    c.apiClient.GetBaseURL() + "/docs/folders/{id}/file",
+		Method:        "POST",
+		Options:       options,
+		ContentType:   "application/json",
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -11978,11 +12076,16 @@ func (c *Client) CreateDocsFileWithResponse(ctx context.Context, options *Create
 // WriteDocsFile Write docs file
 func (c *Client) WriteDocsFileWithResponse(ctx context.Context, options *WriteDocsFileRequestOptions, reqEditors ...runtime.RequestEditorFn) (*WriteDocsFileResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"path": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL:  c.apiClient.GetBaseURL() + "/docs/folders/{id}/file",
-		Method:      "PUT",
-		Options:     options,
-		ContentType: "application/json",
+		RequestURL:    c.apiClient.GetBaseURL() + "/docs/folders/{id}/file",
+		Method:        "PUT",
+		Options:       options,
+		ContentType:   "application/json",
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -12034,6 +12137,7 @@ func (c *Client) WriteDocsFileWithResponse(ctx context.Context, options *WriteDo
 // RenameDocsFile Rename docs file
 func (c *Client) RenameDocsFileWithResponse(ctx context.Context, options *RenameDocsFileRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RenameDocsFileResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/docs/folders/{id}/file/actions/rename",
 		Method:      "POST",
@@ -12090,6 +12194,7 @@ func (c *Client) RenameDocsFileWithResponse(ctx context.Context, options *Rename
 // GetDocsGitStatus Get docs Git status
 func (c *Client) GetDocsGitStatusWithResponse(ctx context.Context, options *GetDocsGitStatusRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetDocsGitStatusResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/docs/folders/{id}/git",
 		Method:     "GET",
@@ -12145,6 +12250,7 @@ func (c *Client) GetDocsGitStatusWithResponse(ctx context.Context, options *GetD
 // GetDocsGitChanges Get docs Git changes
 func (c *Client) GetDocsGitChangesWithResponse(ctx context.Context, options *GetDocsGitChangesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetDocsGitChangesResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/docs/folders/{id}/git/changes",
 		Method:     "GET",
@@ -12200,6 +12306,7 @@ func (c *Client) GetDocsGitChangesWithResponse(ctx context.Context, options *Get
 // PublishDocsGit Publish docs Git changes
 func (c *Client) PublishDocsGitWithResponse(ctx context.Context, options *PublishDocsGitRequestOptions, reqEditors ...runtime.RequestEditorFn) (*PublishDocsGitResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/docs/folders/{id}/git/publish",
 		Method:      "POST",
@@ -12256,6 +12363,7 @@ func (c *Client) PublishDocsGitWithResponse(ctx context.Context, options *Publis
 // PullDocsGit Pull docs Git changes
 func (c *Client) PullDocsGitWithResponse(ctx context.Context, options *PullDocsGitRequestOptions, reqEditors ...runtime.RequestEditorFn) (*PullDocsGitResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/docs/folders/{id}/git/pull",
 		Method:     "POST",
@@ -12311,10 +12419,16 @@ func (c *Client) PullDocsGitWithResponse(ctx context.Context, options *PullDocsG
 // SearchDocsFolder Search docs folder
 func (c *Client) SearchDocsFolderWithResponse(ctx context.Context, options *SearchDocsFolderRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SearchDocsFolderResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"limit": {Style: "form", Explode: &[]bool{false}[0]},
+		"q":     {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/docs/folders/{id}/search",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/docs/folders/{id}/search",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -12366,6 +12480,7 @@ func (c *Client) SearchDocsFolderWithResponse(ctx context.Context, options *Sear
 // GetDocsTree Get docs folder tree
 func (c *Client) GetDocsTreeWithResponse(ctx context.Context, options *GetDocsTreeRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetDocsTreeResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/docs/folders/{id}/tree",
 		Method:     "GET",
@@ -12421,10 +12536,16 @@ func (c *Client) GetDocsTreeWithResponse(ctx context.Context, options *GetDocsTr
 // SearchDocs Search docs
 func (c *Client) SearchDocsWithResponse(ctx context.Context, options *SearchDocsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SearchDocsResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"limit": {Style: "form", Explode: &[]bool{false}[0]},
+		"q":     {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/docs/search",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/docs/search",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -12476,10 +12597,15 @@ func (c *Client) SearchDocsWithResponse(ctx context.Context, options *SearchDocs
 // StreamEvents Stream server events
 func (c *Client) StreamEventsWithResponse(ctx context.Context, options *StreamEventsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*StreamEventsResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"workspace_id": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/events",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/events",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -12517,6 +12643,7 @@ func (c *Client) StreamEventsWithResponse(ctx context.Context, options *StreamEv
 // BeginFederationEnrollment Begin or resume a federation enrollment
 func (c *Client) BeginFederationEnrollmentWithResponse(ctx context.Context, options *BeginFederationEnrollmentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*BeginFederationEnrollmentResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/federation/enrollments",
 		Method:      "POST",
@@ -12573,6 +12700,7 @@ func (c *Client) BeginFederationEnrollmentWithResponse(ctx context.Context, opti
 // AbortFederationEnrollment Abandon this spoke's pending federation enrollment
 func (c *Client) AbortFederationEnrollmentWithResponse(ctx context.Context, options *AbortFederationEnrollmentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*AbortFederationEnrollmentResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/federation/enrollments/{enrollment_id}/abort",
 		Method:     "POST",
@@ -12614,6 +12742,7 @@ func (c *Client) AbortFederationEnrollmentWithResponse(ctx context.Context, opti
 // ActivateFederationEnrollment Activate a prepared federation member
 func (c *Client) ActivateFederationEnrollmentWithResponse(ctx context.Context, options *ActivateFederationEnrollmentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ActivateFederationEnrollmentResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/federation/enrollments/{enrollment_id}/activate",
 		Method:      "POST",
@@ -12670,6 +12799,7 @@ func (c *Client) ActivateFederationEnrollmentWithResponse(ctx context.Context, o
 // BeginFederationSpokePreparation Pin a pending enrollment before spoke preparation
 func (c *Client) BeginFederationSpokePreparationWithResponse(ctx context.Context, options *BeginFederationSpokePreparationRequestOptions, reqEditors ...runtime.RequestEditorFn) (*BeginFederationSpokePreparationResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/federation/enrollments/{enrollment_id}/preparation/begin",
 		Method:     "POST",
@@ -12725,6 +12855,7 @@ func (c *Client) BeginFederationSpokePreparationWithResponse(ctx context.Context
 // SealFederationSpokePreparation Seal completed provider-state handoff for a spoke
 func (c *Client) SealFederationSpokePreparationWithResponse(ctx context.Context, options *SealFederationSpokePreparationRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SealFederationSpokePreparationResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/federation/enrollments/{enrollment_id}/preparation/seal",
 		Method:      "POST",
@@ -12781,10 +12912,15 @@ func (c *Client) SealFederationSpokePreparationWithResponse(ctx context.Context,
 // StreamFederationProviderEvents Stream hub-owned provider events
 func (c *Client) StreamFederationProviderEventsWithResponse(ctx context.Context, options *StreamFederationProviderEventsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*StreamFederationProviderEventsResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"since": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/federation/events",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/federation/events",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -12822,6 +12958,7 @@ func (c *Client) StreamFederationProviderEventsWithResponse(ctx context.Context,
 // GetFederationIdentity Read the authenticated federation identity
 func (c *Client) GetFederationIdentityWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetFederationIdentityResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/federation/identity",
 		Method:     "GET",
@@ -12876,6 +13013,7 @@ func (c *Client) GetFederationIdentityWithResponse(ctx context.Context, reqEdito
 // FederationImportReviewDraft Import one review draft while preparing a Forge spoke
 func (c *Client) FederationImportReviewDraftWithResponse(ctx context.Context, options *FederationImportReviewDraftRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationImportReviewDraftResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/federation/provider-state/review-drafts/import",
 		Method:      "POST",
@@ -12932,6 +13070,7 @@ func (c *Client) FederationImportReviewDraftWithResponse(ctx context.Context, op
 // FederationImportWorkflowState Import one workflow row while preparing a Forge spoke
 func (c *Client) FederationImportWorkflowStateWithResponse(ctx context.Context, options *FederationImportWorkflowStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationImportWorkflowStateResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/federation/provider-state/workflow-states/import",
 		Method:      "POST",
@@ -12988,6 +13127,7 @@ func (c *Client) FederationImportWorkflowStateWithResponse(ctx context.Context, 
 // FederationFilterUnassignedActivitySubjects Filter activity subjects by hub assignment state
 func (c *Client) FederationFilterUnassignedActivitySubjectsWithResponse(ctx context.Context, options *FederationFilterUnassignedActivitySubjectsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationFilterUnassignedActivitySubjectsResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/federation/provider/activity/unassigned-subjects/query",
 		Method:      "POST",
@@ -13044,6 +13184,7 @@ func (c *Client) FederationFilterUnassignedActivitySubjectsWithResponse(ctx cont
 // FederationGetDiffDescriptor Resolve a pull diff descriptor for a Forge spoke
 func (c *Client) FederationGetDiffDescriptorWithResponse(ctx context.Context, options *FederationGetDiffDescriptorRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationGetDiffDescriptorResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/federation/provider/diff-descriptor",
 		Method:      "POST",
@@ -13100,6 +13241,7 @@ func (c *Client) FederationGetDiffDescriptorWithResponse(ctx context.Context, op
 // FederationGetRepositoryDescriptor Resolve a repository descriptor for a Forge spoke
 func (c *Client) FederationGetRepositoryDescriptorWithResponse(ctx context.Context, options *FederationGetRepositoryDescriptorRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationGetRepositoryDescriptorResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/federation/provider/repository-descriptor",
 		Method:      "POST",
@@ -13156,6 +13298,7 @@ func (c *Client) FederationGetRepositoryDescriptorWithResponse(ctx context.Conte
 // FederationGetProviderSettings Get hub-owned settings for a Forge spoke
 func (c *Client) FederationGetProviderSettingsWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*FederationGetProviderSettingsResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/federation/provider/settings",
 		Method:     "GET",
@@ -13210,6 +13353,7 @@ func (c *Client) FederationGetProviderSettingsWithResponse(ctx context.Context, 
 // FederationUpdateProviderSettings Update hub-owned settings for a Forge spoke
 func (c *Client) FederationUpdateProviderSettingsWithResponse(ctx context.Context, options *FederationUpdateProviderSettingsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationUpdateProviderSettingsResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/federation/provider/settings",
 		Method:      "PUT",
@@ -13266,6 +13410,7 @@ func (c *Client) FederationUpdateProviderSettingsWithResponse(ctx context.Contex
 // FederationSetWorkflowState Set hub workflow state for a Forge spoke
 func (c *Client) FederationSetWorkflowStateWithResponse(ctx context.Context, options *FederationSetWorkflowStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationSetWorkflowStateResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/federation/provider/workflow-state",
 		Method:      "PUT",
@@ -13322,6 +13467,7 @@ func (c *Client) FederationSetWorkflowStateWithResponse(ctx context.Context, opt
 // FederationListWorkflowStates List hub workflow states for a Forge spoke
 func (c *Client) FederationListWorkflowStatesWithResponse(ctx context.Context, options *FederationListWorkflowStatesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationListWorkflowStatesResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/federation/provider/workflow-states/query",
 		Method:      "POST",
@@ -13378,6 +13524,7 @@ func (c *Client) FederationListWorkflowStatesWithResponse(ctx context.Context, o
 // FederationAutoAssignWorkspaceItem Apply hub assignment policy to a workspace item
 func (c *Client) FederationAutoAssignWorkspaceItemWithResponse(ctx context.Context, options *FederationAutoAssignWorkspaceItemRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationAutoAssignWorkspaceItemResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/federation/provider/workspace-auto-assign",
 		Method:      "POST",
@@ -13420,6 +13567,7 @@ func (c *Client) FederationAutoAssignWorkspaceItemWithResponse(ctx context.Conte
 // FederationResolveWorkspaceLaunchSpec Resolve current provider facts for a workspace launch
 func (c *Client) FederationResolveWorkspaceLaunchSpecWithResponse(ctx context.Context, options *FederationResolveWorkspaceLaunchSpecRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationResolveWorkspaceLaunchSpecResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/federation/provider/workspace-launch-spec",
 		Method:      "POST",
@@ -13476,6 +13624,7 @@ func (c *Client) FederationResolveWorkspaceLaunchSpecWithResponse(ctx context.Co
 // FederationRefreshWorkspaceLaunchSpec Refresh provider facts for a Forge spoke workspace
 func (c *Client) FederationRefreshWorkspaceLaunchSpecWithResponse(ctx context.Context, options *FederationRefreshWorkspaceLaunchSpecRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationRefreshWorkspaceLaunchSpecResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/federation/provider/workspace-launch-spec/refresh",
 		Method:      "POST",
@@ -13531,6 +13680,7 @@ func (c *Client) FederationRefreshWorkspaceLaunchSpecWithResponse(ctx context.Co
 
 func (c *Client) QueueFederationWorkspaceCleanupWithResponse(ctx context.Context, options *QueueFederationWorkspaceCleanupRequestOptions, reqEditors ...runtime.RequestEditorFn) (*QueueFederationWorkspaceCleanupResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/federation/workspaces/{id}/cleanup",
 		Method:     "POST",
@@ -13572,10 +13722,15 @@ func (c *Client) QueueFederationWorkspaceCleanupWithResponse(ctx context.Context
 // CompleteFilesystemPath Complete a local filesystem path
 func (c *Client) CompleteFilesystemPathWithResponse(ctx context.Context, options *CompleteFilesystemPathRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CompleteFilesystemPathResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"path": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/filesystem/complete",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/filesystem/complete",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -13627,10 +13782,15 @@ func (c *Client) CompleteFilesystemPathWithResponse(ctx context.Context, options
 // ValidateFilesystemRepo Resolve a path to a repository root
 func (c *Client) ValidateFilesystemRepoWithResponse(ctx context.Context, options *ValidateFilesystemRepoRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ValidateFilesystemRepoResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"path": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/filesystem/validate-repo",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/filesystem/validate-repo",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -13682,6 +13842,7 @@ func (c *Client) ValidateFilesystemRepoWithResponse(ctx context.Context, options
 // CreateFleetEnrollmentToken Create a one-time fleet enrollment token
 func (c *Client) CreateFleetEnrollmentTokenWithResponse(ctx context.Context, options *CreateFleetEnrollmentTokenRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateFleetEnrollmentTokenResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/fleet/enrollment-tokens",
 		Method:      "POST",
@@ -13738,6 +13899,7 @@ func (c *Client) CreateFleetEnrollmentTokenWithResponse(ctx context.Context, opt
 // RevokeFederationEnrollment Revoke a federation member
 func (c *Client) RevokeFederationEnrollmentWithResponse(ctx context.Context, options *RevokeFederationEnrollmentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RevokeFederationEnrollmentResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/fleet/enrollments/{enrollment_id}",
 		Method:     "DELETE",
@@ -13779,6 +13941,7 @@ func (c *Client) RevokeFederationEnrollmentWithResponse(ctx context.Context, opt
 // CompleteFleetFilesystemPath Complete a filesystem path on fleet host
 func (c *Client) CompleteFleetFilesystemPathWithResponse(ctx context.Context, options *CompleteFleetFilesystemPathRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CompleteFleetFilesystemPathResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/filesystem/complete",
 		Method:     "GET",
@@ -13811,6 +13974,7 @@ func (c *Client) CompleteFleetFilesystemPathWithResponse(ctx context.Context, op
 // ValidateFleetFilesystemRepo Resolve a repository root on fleet host
 func (c *Client) ValidateFleetFilesystemRepoWithResponse(ctx context.Context, options *ValidateFleetFilesystemRepoRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ValidateFleetFilesystemRepoResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/filesystem/validate-repo",
 		Method:     "GET",
@@ -13843,6 +14007,7 @@ func (c *Client) ValidateFleetFilesystemRepoWithResponse(ctx context.Context, op
 // CreateFleetIssueWorkspaceOnPlatformHost Create issue workspace on fleet host
 func (c *Client) CreateFleetIssueWorkspaceOnPlatformHostWithResponse(ctx context.Context, options *CreateFleetIssueWorkspaceOnPlatformHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateFleetIssueWorkspaceOnPlatformHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/workspace",
 		Method:      "POST",
@@ -13876,6 +14041,7 @@ func (c *Client) CreateFleetIssueWorkspaceOnPlatformHostWithResponse(ctx context
 // CreateFleetRepoWorkspaceOnPlatformHost Create repository workspace on fleet host
 func (c *Client) CreateFleetRepoWorkspaceOnPlatformHostWithResponse(ctx context.Context, options *CreateFleetRepoWorkspaceOnPlatformHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateFleetRepoWorkspaceOnPlatformHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/host/{platform_host}/repo/{provider}/{owner}/{name}/workspaces",
 		Method:      "POST",
@@ -13909,6 +14075,7 @@ func (c *Client) CreateFleetRepoWorkspaceOnPlatformHostWithResponse(ctx context.
 // CreateFleetIssueWorkspace Create issue workspace on fleet host
 func (c *Client) CreateFleetIssueWorkspaceWithResponse(ctx context.Context, options *CreateFleetIssueWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateFleetIssueWorkspaceResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/issues/{provider}/{owner}/{name}/{number}/workspace",
 		Method:      "POST",
@@ -13942,6 +14109,7 @@ func (c *Client) CreateFleetIssueWorkspaceWithResponse(ctx context.Context, opti
 // RegisterFleetProject Register project on fleet host
 func (c *Client) RegisterFleetProjectWithResponse(ctx context.Context, options *RegisterFleetProjectRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RegisterFleetProjectResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/projects",
 		Method:      "POST",
@@ -13975,6 +14143,7 @@ func (c *Client) RegisterFleetProjectWithResponse(ctx context.Context, options *
 // CloneFleetProject Clone a repository into a project on fleet host
 func (c *Client) CloneFleetProjectWithResponse(ctx context.Context, options *CloneFleetProjectRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CloneFleetProjectResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/projects/clone",
 		Method:      "POST",
@@ -14008,6 +14177,7 @@ func (c *Client) CloneFleetProjectWithResponse(ctx context.Context, options *Clo
 // DeleteFleetProject Delete project on fleet host
 func (c *Client) DeleteFleetProjectWithResponse(ctx context.Context, options *DeleteFleetProjectRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeleteFleetProjectResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/projects/{project_id}",
 		Method:     "DELETE",
@@ -14040,6 +14210,7 @@ func (c *Client) DeleteFleetProjectWithResponse(ctx context.Context, options *De
 // GetFleetProject Get project on fleet host
 func (c *Client) GetFleetProjectWithResponse(ctx context.Context, options *GetFleetProjectRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetFleetProjectResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/projects/{project_id}",
 		Method:     "GET",
@@ -14072,6 +14243,7 @@ func (c *Client) GetFleetProjectWithResponse(ctx context.Context, options *GetFl
 // ListFleetProjectBranches List project branches on fleet host
 func (c *Client) ListFleetProjectBranchesWithResponse(ctx context.Context, options *ListFleetProjectBranchesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListFleetProjectBranchesResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/projects/{project_id}/branches",
 		Method:     "GET",
@@ -14104,6 +14276,7 @@ func (c *Client) ListFleetProjectBranchesWithResponse(ctx context.Context, optio
 // ListFleetProjectWorktrees List project worktrees on fleet host
 func (c *Client) ListFleetProjectWorktreesWithResponse(ctx context.Context, options *ListFleetProjectWorktreesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListFleetProjectWorktreesResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/projects/{project_id}/worktrees",
 		Method:     "GET",
@@ -14136,6 +14309,7 @@ func (c *Client) ListFleetProjectWorktreesWithResponse(ctx context.Context, opti
 // CreateFleetProjectWorktree Create project worktree on fleet host
 func (c *Client) CreateFleetProjectWorktreeWithResponse(ctx context.Context, options *CreateFleetProjectWorktreeRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateFleetProjectWorktreeResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/projects/{project_id}/worktrees",
 		Method:      "POST",
@@ -14169,6 +14343,7 @@ func (c *Client) CreateFleetProjectWorktreeWithResponse(ctx context.Context, opt
 // CreateFleetProjectWorktreeFromMergeRequest Create project worktree from a merge request on fleet host
 func (c *Client) CreateFleetProjectWorktreeFromMergeRequestWithResponse(ctx context.Context, options *CreateFleetProjectWorktreeFromMergeRequestRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateFleetProjectWorktreeFromMergeRequestResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/projects/{project_id}/worktrees/from-merge-request",
 		Method:      "POST",
@@ -14202,6 +14377,7 @@ func (c *Client) CreateFleetProjectWorktreeFromMergeRequestWithResponse(ctx cont
 // RemoveFleetProjectWorktree Remove project worktree on fleet host
 func (c *Client) RemoveFleetProjectWorktreeWithResponse(ctx context.Context, options *RemoveFleetProjectWorktreeRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RemoveFleetProjectWorktreeResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/delete",
 		Method:      "POST",
@@ -14235,6 +14411,7 @@ func (c *Client) RemoveFleetProjectWorktreeWithResponse(ctx context.Context, opt
 // InspectFleetProjectWorktree Inspect project worktree on fleet host
 func (c *Client) InspectFleetProjectWorktreeWithResponse(ctx context.Context, options *InspectFleetProjectWorktreeRequestOptions, reqEditors ...runtime.RequestEditorFn) (*InspectFleetProjectWorktreeResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/inspect",
 		Method:     "GET",
@@ -14267,6 +14444,7 @@ func (c *Client) InspectFleetProjectWorktreeWithResponse(ctx context.Context, op
 // SetFleetProjectWorktreeLinks Set project worktree linked issues on fleet host
 func (c *Client) SetFleetProjectWorktreeLinksWithResponse(ctx context.Context, options *SetFleetProjectWorktreeLinksRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetFleetProjectWorktreeLinksResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/linked-issues",
 		Method:      "PUT",
@@ -14300,6 +14478,7 @@ func (c *Client) SetFleetProjectWorktreeLinksWithResponse(ctx context.Context, o
 // RefreshFleetProjectWorktreeStats Refresh project worktree git stats on fleet host
 func (c *Client) RefreshFleetProjectWorktreeStatsWithResponse(ctx context.Context, options *RefreshFleetProjectWorktreeStatsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RefreshFleetProjectWorktreeStatsResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/refresh-stats",
 		Method:     "POST",
@@ -14332,6 +14511,7 @@ func (c *Client) RefreshFleetProjectWorktreeStatsWithResponse(ctx context.Contex
 // GetFleetProjectWorktreeRuntime Get project worktree runtime on fleet host
 func (c *Client) GetFleetProjectWorktreeRuntimeWithResponse(ctx context.Context, options *GetFleetProjectWorktreeRuntimeRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetFleetProjectWorktreeRuntimeResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/runtime",
 		Method:     "GET",
@@ -14364,6 +14544,7 @@ func (c *Client) GetFleetProjectWorktreeRuntimeWithResponse(ctx context.Context,
 // LaunchFleetProjectWorktreeRuntimeSession Launch project worktree session on fleet host
 func (c *Client) LaunchFleetProjectWorktreeRuntimeSessionWithResponse(ctx context.Context, options *LaunchFleetProjectWorktreeRuntimeSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*LaunchFleetProjectWorktreeRuntimeSessionResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/runtime/sessions",
 		Method:      "POST",
@@ -14397,6 +14578,7 @@ func (c *Client) LaunchFleetProjectWorktreeRuntimeSessionWithResponse(ctx contex
 // StopFleetProjectWorktreeRuntimeSession Stop project worktree session on fleet host
 func (c *Client) StopFleetProjectWorktreeRuntimeSessionWithResponse(ctx context.Context, options *StopFleetProjectWorktreeRuntimeSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*StopFleetProjectWorktreeRuntimeSessionResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/runtime/sessions/{session_key}",
 		Method:     "DELETE",
@@ -14429,6 +14611,7 @@ func (c *Client) StopFleetProjectWorktreeRuntimeSessionWithResponse(ctx context.
 // GetFleetProjectWorktreeRuntimeSessionAttachSpec Get project worktree session attach spec on fleet host
 func (c *Client) GetFleetProjectWorktreeRuntimeSessionAttachSpecWithResponse(ctx context.Context, options *GetFleetProjectWorktreeRuntimeSessionAttachSpecRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetFleetProjectWorktreeRuntimeSessionAttachSpecResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/runtime/sessions/{session_key}/attach-spec",
 		Method:     "GET",
@@ -14461,6 +14644,7 @@ func (c *Client) GetFleetProjectWorktreeRuntimeSessionAttachSpecWithResponse(ctx
 // EnsureFleetProjectWorktreeRuntimeShell Ensure project worktree shell on fleet host
 func (c *Client) EnsureFleetProjectWorktreeRuntimeShellWithResponse(ctx context.Context, options *EnsureFleetProjectWorktreeRuntimeShellRequestOptions, reqEditors ...runtime.RequestEditorFn) (*EnsureFleetProjectWorktreeRuntimeShellResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/runtime/shell",
 		Method:     "POST",
@@ -14493,6 +14677,7 @@ func (c *Client) EnsureFleetProjectWorktreeRuntimeShellWithResponse(ctx context.
 // SetFleetProjectWorktreeSessionBackend Set project worktree session backend on fleet host
 func (c *Client) SetFleetProjectWorktreeSessionBackendWithResponse(ctx context.Context, options *SetFleetProjectWorktreeSessionBackendRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetFleetProjectWorktreeSessionBackendResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/session-backend",
 		Method:      "PUT",
@@ -14526,6 +14711,7 @@ func (c *Client) SetFleetProjectWorktreeSessionBackendWithResponse(ctx context.C
 // CreateFleetRepoWorkspace Create repository workspace on fleet host
 func (c *Client) CreateFleetRepoWorkspaceWithResponse(ctx context.Context, options *CreateFleetRepoWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateFleetRepoWorkspaceResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/repo/{provider}/{owner}/{name}/workspaces",
 		Method:      "POST",
@@ -14559,6 +14745,7 @@ func (c *Client) CreateFleetRepoWorkspaceWithResponse(ctx context.Context, optio
 // LaunchFleetHostRuntimeSession Launch host runtime session on fleet host
 func (c *Client) LaunchFleetHostRuntimeSessionWithResponse(ctx context.Context, options *LaunchFleetHostRuntimeSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*LaunchFleetHostRuntimeSessionResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/runtime/sessions",
 		Method:      "POST",
@@ -14592,6 +14779,7 @@ func (c *Client) LaunchFleetHostRuntimeSessionWithResponse(ctx context.Context, 
 // StopFleetHostRuntimeSession Stop host runtime session on fleet host
 func (c *Client) StopFleetHostRuntimeSessionWithResponse(ctx context.Context, options *StopFleetHostRuntimeSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*StopFleetHostRuntimeSessionResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/runtime/sessions/{session_key}",
 		Method:     "DELETE",
@@ -14624,6 +14812,7 @@ func (c *Client) StopFleetHostRuntimeSessionWithResponse(ctx context.Context, op
 // GetFleetHostRuntimeSessionAttachSpec Get host runtime session attach spec on fleet host
 func (c *Client) GetFleetHostRuntimeSessionAttachSpecWithResponse(ctx context.Context, options *GetFleetHostRuntimeSessionAttachSpecRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetFleetHostRuntimeSessionAttachSpecResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/runtime/sessions/{session_key}/attach-spec",
 		Method:     "GET",
@@ -14656,6 +14845,7 @@ func (c *Client) GetFleetHostRuntimeSessionAttachSpecWithResponse(ctx context.Co
 // StoreFleetTerminalPasteImage Store a browser clipboard image on a fleet host
 func (c *Client) StoreFleetTerminalPasteImageWithResponse(ctx context.Context, options *StoreFleetTerminalPasteImageRequestOptions, reqEditors ...runtime.RequestEditorFn) (*StoreFleetTerminalPasteImageResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/terminal/paste-image",
 		Method:      "POST",
@@ -14689,6 +14879,7 @@ func (c *Client) StoreFleetTerminalPasteImageWithResponse(ctx context.Context, o
 // ListFleetWorkspaces List workspaces on fleet host
 func (c *Client) ListFleetWorkspacesWithResponse(ctx context.Context, options *ListFleetWorkspacesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListFleetWorkspacesResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/workspaces",
 		Method:     "GET",
@@ -14721,6 +14912,7 @@ func (c *Client) ListFleetWorkspacesWithResponse(ctx context.Context, options *L
 // CreateFleetWorkspace Create workspace on fleet host
 func (c *Client) CreateFleetWorkspaceWithResponse(ctx context.Context, options *CreateFleetWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateFleetWorkspaceResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/workspaces",
 		Method:      "POST",
@@ -14754,6 +14946,7 @@ func (c *Client) CreateFleetWorkspaceWithResponse(ctx context.Context, options *
 // DeleteFleetWorkspace Delete workspace on fleet host
 func (c *Client) DeleteFleetWorkspaceWithResponse(ctx context.Context, options *DeleteFleetWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeleteFleetWorkspaceResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/workspaces/{id}",
 		Method:     "DELETE",
@@ -14786,6 +14979,7 @@ func (c *Client) DeleteFleetWorkspaceWithResponse(ctx context.Context, options *
 // GetFleetWorkspace Get workspace on fleet host
 func (c *Client) GetFleetWorkspaceWithResponse(ctx context.Context, options *GetFleetWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetFleetWorkspaceResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/workspaces/{id}",
 		Method:     "GET",
@@ -14818,6 +15012,7 @@ func (c *Client) GetFleetWorkspaceWithResponse(ctx context.Context, options *Get
 // GetFleetWorkspaceCommits Get workspace commits on fleet host
 func (c *Client) GetFleetWorkspaceCommitsWithResponse(ctx context.Context, options *GetFleetWorkspaceCommitsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetFleetWorkspaceCommitsResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/workspaces/{id}/commits",
 		Method:     "GET",
@@ -14850,6 +15045,7 @@ func (c *Client) GetFleetWorkspaceCommitsWithResponse(ctx context.Context, optio
 // GetFleetWorkspaceDiff Get workspace diff on fleet host
 func (c *Client) GetFleetWorkspaceDiffWithResponse(ctx context.Context, options *GetFleetWorkspaceDiffRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetFleetWorkspaceDiffResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/workspaces/{id}/diff",
 		Method:     "GET",
@@ -14882,6 +15078,7 @@ func (c *Client) GetFleetWorkspaceDiffWithResponse(ctx context.Context, options 
 // WatchFleetWorkspaceDiff Watch selected workspace diff on fleet host
 func (c *Client) WatchFleetWorkspaceDiffWithResponse(ctx context.Context, options *WatchFleetWorkspaceDiffRequestOptions, reqEditors ...runtime.RequestEditorFn) (*WatchFleetWorkspaceDiffResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/workspaces/{id}/diff/watch",
 		Method:     "GET",
@@ -14914,6 +15111,7 @@ func (c *Client) WatchFleetWorkspaceDiffWithResponse(ctx context.Context, option
 // GetFleetWorkspaceFilePreview Get workspace file preview on fleet host
 func (c *Client) GetFleetWorkspaceFilePreviewWithResponse(ctx context.Context, options *GetFleetWorkspaceFilePreviewRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetFleetWorkspaceFilePreviewResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/workspaces/{id}/file-preview",
 		Method:     "GET",
@@ -14946,6 +15144,7 @@ func (c *Client) GetFleetWorkspaceFilePreviewWithResponse(ctx context.Context, o
 // GetFleetWorkspaceFiles Get workspace files on fleet host
 func (c *Client) GetFleetWorkspaceFilesWithResponse(ctx context.Context, options *GetFleetWorkspaceFilesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetFleetWorkspaceFilesResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/workspaces/{id}/files",
 		Method:     "GET",
@@ -14978,6 +15177,7 @@ func (c *Client) GetFleetWorkspaceFilesWithResponse(ctx context.Context, options
 // PullFleetWorkspaceBranch Pull workspace branch on fleet host
 func (c *Client) PullFleetWorkspaceBranchWithResponse(ctx context.Context, options *PullFleetWorkspaceBranchRequestOptions, reqEditors ...runtime.RequestEditorFn) (*PullFleetWorkspaceBranchResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/workspaces/{id}/pull",
 		Method:     "POST",
@@ -15010,6 +15210,7 @@ func (c *Client) PullFleetWorkspaceBranchWithResponse(ctx context.Context, optio
 // PushFleetWorkspaceBranch Push workspace branch on fleet host
 func (c *Client) PushFleetWorkspaceBranchWithResponse(ctx context.Context, options *PushFleetWorkspaceBranchRequestOptions, reqEditors ...runtime.RequestEditorFn) (*PushFleetWorkspaceBranchResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/workspaces/{id}/push",
 		Method:     "POST",
@@ -15042,6 +15243,7 @@ func (c *Client) PushFleetWorkspaceBranchWithResponse(ctx context.Context, optio
 // RefreshFleetWorkspace Refresh workspace metadata on fleet host
 func (c *Client) RefreshFleetWorkspaceWithResponse(ctx context.Context, options *RefreshFleetWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RefreshFleetWorkspaceResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/workspaces/{id}/refresh",
 		Method:     "POST",
@@ -15074,6 +15276,7 @@ func (c *Client) RefreshFleetWorkspaceWithResponse(ctx context.Context, options 
 // RetryFleetWorkspace Retry workspace setup on fleet host
 func (c *Client) RetryFleetWorkspaceWithResponse(ctx context.Context, options *RetryFleetWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RetryFleetWorkspaceResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/workspaces/{id}/retry",
 		Method:     "POST",
@@ -15106,6 +15309,7 @@ func (c *Client) RetryFleetWorkspaceWithResponse(ctx context.Context, options *R
 // RevealFleetWorkspace Reveal workspace folder on fleet host
 func (c *Client) RevealFleetWorkspaceWithResponse(ctx context.Context, options *RevealFleetWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RevealFleetWorkspaceResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/workspaces/{id}/reveal",
 		Method:     "POST",
@@ -15138,6 +15342,7 @@ func (c *Client) RevealFleetWorkspaceWithResponse(ctx context.Context, options *
 // GetFleetWorkspaceRuntime Get workspace runtime on fleet host
 func (c *Client) GetFleetWorkspaceRuntimeWithResponse(ctx context.Context, options *GetFleetWorkspaceRuntimeRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetFleetWorkspaceRuntimeResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/workspaces/{id}/runtime",
 		Method:     "GET",
@@ -15170,6 +15375,7 @@ func (c *Client) GetFleetWorkspaceRuntimeWithResponse(ctx context.Context, optio
 // LaunchFleetWorkspaceRuntimeSession Launch workspace session on fleet host
 func (c *Client) LaunchFleetWorkspaceRuntimeSessionWithResponse(ctx context.Context, options *LaunchFleetWorkspaceRuntimeSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*LaunchFleetWorkspaceRuntimeSessionResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/workspaces/{id}/runtime/sessions",
 		Method:      "POST",
@@ -15203,6 +15409,7 @@ func (c *Client) LaunchFleetWorkspaceRuntimeSessionWithResponse(ctx context.Cont
 // StopFleetWorkspaceRuntimeSession Stop workspace session on fleet host
 func (c *Client) StopFleetWorkspaceRuntimeSessionWithResponse(ctx context.Context, options *StopFleetWorkspaceRuntimeSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*StopFleetWorkspaceRuntimeSessionResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/workspaces/{id}/runtime/sessions/{session_key}",
 		Method:     "DELETE",
@@ -15235,6 +15442,7 @@ func (c *Client) StopFleetWorkspaceRuntimeSessionWithResponse(ctx context.Contex
 // RenameFleetWorkspaceRuntimeSession Rename workspace session on fleet host
 func (c *Client) RenameFleetWorkspaceRuntimeSessionWithResponse(ctx context.Context, options *RenameFleetWorkspaceRuntimeSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RenameFleetWorkspaceRuntimeSessionResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/workspaces/{id}/runtime/sessions/{session_key}",
 		Method:      "PATCH",
@@ -15268,6 +15476,7 @@ func (c *Client) RenameFleetWorkspaceRuntimeSessionWithResponse(ctx context.Cont
 // GetFleetWorkspaceRuntimeSessionAttachSpec Get workspace session attach spec on fleet host
 func (c *Client) GetFleetWorkspaceRuntimeSessionAttachSpecWithResponse(ctx context.Context, options *GetFleetWorkspaceRuntimeSessionAttachSpecRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetFleetWorkspaceRuntimeSessionAttachSpecResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/workspaces/{id}/runtime/sessions/{session_key}/attach-spec",
 		Method:     "GET",
@@ -15300,6 +15509,7 @@ func (c *Client) GetFleetWorkspaceRuntimeSessionAttachSpecWithResponse(ctx conte
 // JoinFederation Join this daemon to a federation hub
 func (c *Client) JoinFederationWithResponse(ctx context.Context, options *JoinFederationRequestOptions, reqEditors ...runtime.RequestEditorFn) (*JoinFederationResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/fleet/join",
 		Method:      "POST",
@@ -15356,6 +15566,7 @@ func (c *Client) JoinFederationWithResponse(ctx context.Context, options *JoinFe
 // PrepareFederationSpoke Quiesce this daemon and prepare it to become a fleet spoke
 func (c *Client) PrepareFederationSpokeWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*PrepareFederationSpokeResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/fleet/prepare-spoke",
 		Method:     "POST",
@@ -15410,6 +15621,7 @@ func (c *Client) PrepareFederationSpokeWithResponse(ctx context.Context, reqEdit
 // AbortFederationSpokePreparation Abort pending spoke preparation and restore standalone writes
 func (c *Client) AbortFederationSpokePreparationWithResponse(ctx context.Context, options *AbortFederationSpokePreparationRequestOptions, reqEditors ...runtime.RequestEditorFn) (*AbortFederationSpokePreparationResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/fleet/prepare-spoke/abort",
 		Method:      "POST",
@@ -15466,10 +15678,19 @@ func (c *Client) AbortFederationSpokePreparationWithResponse(ctx context.Context
 // ListWorkflowRunsOnHost List workflow runs
 func (c *Client) ListWorkflowRunsOnHostWithResponse(ctx context.Context, options *ListWorkflowRunsOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListWorkflowRunsOnHostResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"branch":      {Style: "form", Explode: &[]bool{false}[0]},
+		"cursor":      {Style: "form", Explode: &[]bool{false}[0]},
+		"event":       {Style: "form", Explode: &[]bool{false}[0]},
+		"per_page":    {Style: "form", Explode: &[]bool{false}[0]},
+		"workflow_id": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/actions/{provider}/{owner}/{name}/runs",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/host/{platform_host}/actions/{provider}/{owner}/{name}/runs",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -15521,6 +15742,7 @@ func (c *Client) ListWorkflowRunsOnHostWithResponse(ctx context.Context, options
 // ListWorkflowRunJobsOnHost List workflow run jobs
 func (c *Client) ListWorkflowRunJobsOnHostWithResponse(ctx context.Context, options *ListWorkflowRunJobsOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListWorkflowRunJobsOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/actions/{provider}/{owner}/{name}/runs/{run_id}/jobs",
 		Method:     "GET",
@@ -15576,6 +15798,7 @@ func (c *Client) ListWorkflowRunJobsOnHostWithResponse(ctx context.Context, opti
 // ListWorkflowsOnHost List manual workflows
 func (c *Client) ListWorkflowsOnHostWithResponse(ctx context.Context, options *ListWorkflowsOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListWorkflowsOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/actions/{provider}/{owner}/{name}/workflows",
 		Method:     "GET",
@@ -15631,6 +15854,7 @@ func (c *Client) ListWorkflowsOnHostWithResponse(ctx context.Context, options *L
 // DispatchWorkflowOnHost Dispatch workflow
 func (c *Client) DispatchWorkflowOnHostWithResponse(ctx context.Context, options *DispatchWorkflowOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DispatchWorkflowOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/actions/{provider}/{owner}/{name}/workflows/{workflow_id}/dispatch",
 		Method:      "POST",
@@ -15687,6 +15911,7 @@ func (c *Client) DispatchWorkflowOnHostWithResponse(ctx context.Context, options
 // CreateIssueOnHost Create issue
 func (c *Client) CreateIssueOnHostWithResponse(ctx context.Context, options *CreateIssueOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateIssueOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/issues/{provider}/{owner}/{name}",
 		Method:      "POST",
@@ -15743,6 +15968,7 @@ func (c *Client) CreateIssueOnHostWithResponse(ctx context.Context, options *Cre
 // GetIssueOnHost Get issue
 func (c *Client) GetIssueOnHostWithResponse(ctx context.Context, options *GetIssueOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetIssueOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}",
 		Method:     "GET",
@@ -15798,6 +16024,7 @@ func (c *Client) GetIssueOnHostWithResponse(ctx context.Context, options *GetIss
 // EditIssueContentOnHost Edit issue content
 func (c *Client) EditIssueContentOnHostWithResponse(ctx context.Context, options *EditIssueContentOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*EditIssueContentOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}",
 		Method:      "PATCH",
@@ -15854,6 +16081,7 @@ func (c *Client) EditIssueContentOnHostWithResponse(ctx context.Context, options
 // SetIssueAssigneesOnHost Set issue assignees
 func (c *Client) SetIssueAssigneesOnHostWithResponse(ctx context.Context, options *SetIssueAssigneesOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetIssueAssigneesOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/assignees",
 		Method:      "PUT",
@@ -15910,6 +16138,7 @@ func (c *Client) SetIssueAssigneesOnHostWithResponse(ctx context.Context, option
 // PostIssueCommentOnHost Post issue comment
 func (c *Client) PostIssueCommentOnHostWithResponse(ctx context.Context, options *PostIssueCommentOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*PostIssueCommentOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/comments",
 		Method:      "POST",
@@ -15966,6 +16195,7 @@ func (c *Client) PostIssueCommentOnHostWithResponse(ctx context.Context, options
 // DeleteIssueCommentOnHost Delete issue comment
 func (c *Client) DeleteIssueCommentOnHostWithResponse(ctx context.Context, options *DeleteIssueCommentOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeleteIssueCommentOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/comments/{comment_id}",
 		Method:     "DELETE",
@@ -16007,6 +16237,7 @@ func (c *Client) DeleteIssueCommentOnHostWithResponse(ctx context.Context, optio
 // EditIssueCommentOnHost Edit issue comment
 func (c *Client) EditIssueCommentOnHostWithResponse(ctx context.Context, options *EditIssueCommentOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*EditIssueCommentOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/comments/{comment_id}",
 		Method:      "PATCH",
@@ -16063,6 +16294,7 @@ func (c *Client) EditIssueCommentOnHostWithResponse(ctx context.Context, options
 // SetIssueGithubStateOnHost Set issue GitHub state
 func (c *Client) SetIssueGithubStateOnHostWithResponse(ctx context.Context, options *SetIssueGithubStateOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetIssueGithubStateOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/github-state",
 		Method:      "POST",
@@ -16119,6 +16351,7 @@ func (c *Client) SetIssueGithubStateOnHostWithResponse(ctx context.Context, opti
 // ListIssueKataLinksOnHost List effective Kata links
 func (c *Client) ListIssueKataLinksOnHostWithResponse(ctx context.Context, options *ListIssueKataLinksOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListIssueKataLinksOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/kata-links",
 		Method:     "GET",
@@ -16174,6 +16407,7 @@ func (c *Client) ListIssueKataLinksOnHostWithResponse(ctx context.Context, optio
 // CreateIssueKataLinkOnHost Create Kata link
 func (c *Client) CreateIssueKataLinkOnHostWithResponse(ctx context.Context, options *CreateIssueKataLinkOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateIssueKataLinkOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/kata-links",
 		Method:      "POST",
@@ -16230,6 +16464,7 @@ func (c *Client) CreateIssueKataLinkOnHostWithResponse(ctx context.Context, opti
 // DeleteIssueKataLinkOnHost Delete Kata link
 func (c *Client) DeleteIssueKataLinkOnHostWithResponse(ctx context.Context, options *DeleteIssueKataLinkOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeleteIssueKataLinkOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/kata-links/{link_id}",
 		Method:     "DELETE",
@@ -16271,6 +16506,7 @@ func (c *Client) DeleteIssueKataLinkOnHostWithResponse(ctx context.Context, opti
 // SetIssueLabelsOnHost Set issue labels
 func (c *Client) SetIssueLabelsOnHostWithResponse(ctx context.Context, options *SetIssueLabelsOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetIssueLabelsOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/labels",
 		Method:      "PUT",
@@ -16327,6 +16563,7 @@ func (c *Client) SetIssueLabelsOnHostWithResponse(ctx context.Context, options *
 // SyncIssueOnHost Sync issue
 func (c *Client) SyncIssueOnHostWithResponse(ctx context.Context, options *SyncIssueOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SyncIssueOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/sync",
 		Method:     "POST",
@@ -16382,6 +16619,7 @@ func (c *Client) SyncIssueOnHostWithResponse(ctx context.Context, options *SyncI
 // EnqueueIssueSyncOnHost Enqueue issue sync
 func (c *Client) EnqueueIssueSyncOnHostWithResponse(ctx context.Context, options *EnqueueIssueSyncOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*EnqueueIssueSyncOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/sync/async",
 		Method:     "POST",
@@ -16423,6 +16661,7 @@ func (c *Client) EnqueueIssueSyncOnHostWithResponse(ctx context.Context, options
 // CreateIssueWorkspaceOnHost Create issue workspace
 func (c *Client) CreateIssueWorkspaceOnHostWithResponse(ctx context.Context, options *CreateIssueWorkspaceOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateIssueWorkspaceOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/workspace",
 		Method:      "POST",
@@ -16479,6 +16718,7 @@ func (c *Client) CreateIssueWorkspaceOnHostWithResponse(ctx context.Context, opt
 // GetPullOnHost Get pull request
 func (c *Client) GetPullOnHostWithResponse(ctx context.Context, options *GetPullOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPullOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}",
 		Method:     "GET",
@@ -16534,6 +16774,7 @@ func (c *Client) GetPullOnHostWithResponse(ctx context.Context, options *GetPull
 // EditPrContentOnHost Edit pull request content
 func (c *Client) EditPrContentOnHostWithResponse(ctx context.Context, options *EditPrContentOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*EditPrContentOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}",
 		Method:      "PATCH",
@@ -16590,6 +16831,7 @@ func (c *Client) EditPrContentOnHostWithResponse(ctx context.Context, options *E
 // ApprovePullOnHost Approve pull request
 func (c *Client) ApprovePullOnHostWithResponse(ctx context.Context, options *ApprovePullOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ApprovePullOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/approve",
 		Method:      "POST",
@@ -16646,6 +16888,7 @@ func (c *Client) ApprovePullOnHostWithResponse(ctx context.Context, options *App
 // ApprovePullWorkflowsOnHost Approve pull request workflows
 func (c *Client) ApprovePullWorkflowsOnHostWithResponse(ctx context.Context, options *ApprovePullWorkflowsOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ApprovePullWorkflowsOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/approve-workflows",
 		Method:     "POST",
@@ -16701,6 +16944,7 @@ func (c *Client) ApprovePullWorkflowsOnHostWithResponse(ctx context.Context, opt
 // SetPrAssigneesOnHost Set pull request assignees
 func (c *Client) SetPrAssigneesOnHostWithResponse(ctx context.Context, options *SetPrAssigneesOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetPrAssigneesOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/assignees",
 		Method:      "PUT",
@@ -16757,6 +17001,7 @@ func (c *Client) SetPrAssigneesOnHostWithResponse(ctx context.Context, options *
 // RefreshPullCiOnHost Refresh pull request CI
 func (c *Client) RefreshPullCiOnHostWithResponse(ctx context.Context, options *RefreshPullCiOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RefreshPullCiOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/ci-refresh",
 		Method:     "POST",
@@ -16812,6 +17057,7 @@ func (c *Client) RefreshPullCiOnHostWithResponse(ctx context.Context, options *R
 // PostPrCommentOnHost Post pull request comment
 func (c *Client) PostPrCommentOnHostWithResponse(ctx context.Context, options *PostPrCommentOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*PostPrCommentOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/comments",
 		Method:      "POST",
@@ -16868,6 +17114,7 @@ func (c *Client) PostPrCommentOnHostWithResponse(ctx context.Context, options *P
 // DeletePrCommentOnHost Delete pull request comment
 func (c *Client) DeletePrCommentOnHostWithResponse(ctx context.Context, options *DeletePrCommentOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeletePrCommentOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/comments/{comment_id}",
 		Method:     "DELETE",
@@ -16909,6 +17156,7 @@ func (c *Client) DeletePrCommentOnHostWithResponse(ctx context.Context, options 
 // EditPrCommentOnHost Edit pull request comment
 func (c *Client) EditPrCommentOnHostWithResponse(ctx context.Context, options *EditPrCommentOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*EditPrCommentOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/comments/{comment_id}",
 		Method:      "PATCH",
@@ -16965,6 +17213,7 @@ func (c *Client) EditPrCommentOnHostWithResponse(ctx context.Context, options *E
 // GetPullCommitsOnHost Get pull request commits
 func (c *Client) GetPullCommitsOnHostWithResponse(ctx context.Context, options *GetPullCommitsOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPullCommitsOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/commits",
 		Method:     "GET",
@@ -17020,10 +17269,18 @@ func (c *Client) GetPullCommitsOnHostWithResponse(ctx context.Context, options *
 // GetPullDiffOnHost Get pull request diff
 func (c *Client) GetPullDiffOnHostWithResponse(ctx context.Context, options *GetPullDiffOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPullDiffOnHostResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"commit":     {Style: "form", Explode: &[]bool{false}[0]},
+		"from":       {Style: "form", Explode: &[]bool{false}[0]},
+		"to":         {Style: "form", Explode: &[]bool{false}[0]},
+		"whitespace": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/diff",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/diff",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -17075,6 +17332,7 @@ func (c *Client) GetPullDiffOnHostWithResponse(ctx context.Context, options *Get
 // ReplyToDiscussionOnHost Reply to pull request discussion
 func (c *Client) ReplyToDiscussionOnHostWithResponse(ctx context.Context, options *ReplyToDiscussionOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ReplyToDiscussionOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/discussions/{discussion_id}/reply",
 		Method:      "POST",
@@ -17131,6 +17389,7 @@ func (c *Client) ReplyToDiscussionOnHostWithResponse(ctx context.Context, option
 // ResolveDiscussionOnHost Resolve pull request discussion
 func (c *Client) ResolveDiscussionOnHostWithResponse(ctx context.Context, options *ResolveDiscussionOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ResolveDiscussionOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/discussions/{discussion_id}/resolve",
 		Method:      "POST",
@@ -17173,10 +17432,19 @@ func (c *Client) ResolveDiscussionOnHostWithResponse(ctx context.Context, option
 // GetPullFilePreviewOnHost Get pull request file preview
 func (c *Client) GetPullFilePreviewOnHostWithResponse(ctx context.Context, options *GetPullFilePreviewOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPullFilePreviewOnHostResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"commit": {Style: "form", Explode: &[]bool{false}[0]},
+		"from":   {Style: "form", Explode: &[]bool{false}[0]},
+		"path":   {Style: "form", Explode: &[]bool{false}[0]},
+		"side":   {Style: "form", Explode: &[]bool{false}[0]},
+		"to":     {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/file-preview",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/file-preview",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -17228,6 +17496,7 @@ func (c *Client) GetPullFilePreviewOnHostWithResponse(ctx context.Context, optio
 // GetPullFilesOnHost Get pull request files
 func (c *Client) GetPullFilesOnHostWithResponse(ctx context.Context, options *GetPullFilesOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPullFilesOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/files",
 		Method:     "GET",
@@ -17283,6 +17552,7 @@ func (c *Client) GetPullFilesOnHostWithResponse(ctx context.Context, options *Ge
 // SetPrGithubStateOnHost Set pull request GitHub state
 func (c *Client) SetPrGithubStateOnHostWithResponse(ctx context.Context, options *SetPrGithubStateOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetPrGithubStateOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/github-state",
 		Method:      "POST",
@@ -17339,6 +17609,7 @@ func (c *Client) SetPrGithubStateOnHostWithResponse(ctx context.Context, options
 // GetPullImportMetadataOnHost Get pull request import metadata
 func (c *Client) GetPullImportMetadataOnHostWithResponse(ctx context.Context, options *GetPullImportMetadataOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPullImportMetadataOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/import-metadata",
 		Method:     "GET",
@@ -17394,6 +17665,7 @@ func (c *Client) GetPullImportMetadataOnHostWithResponse(ctx context.Context, op
 // ListPullRequestKataLinksOnHost List effective Kata links
 func (c *Client) ListPullRequestKataLinksOnHostWithResponse(ctx context.Context, options *ListPullRequestKataLinksOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListPullRequestKataLinksOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/kata-links",
 		Method:     "GET",
@@ -17449,6 +17721,7 @@ func (c *Client) ListPullRequestKataLinksOnHostWithResponse(ctx context.Context,
 // CreatePullRequestKataLinkOnHost Create Kata link
 func (c *Client) CreatePullRequestKataLinkOnHostWithResponse(ctx context.Context, options *CreatePullRequestKataLinkOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreatePullRequestKataLinkOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/kata-links",
 		Method:      "POST",
@@ -17505,6 +17778,7 @@ func (c *Client) CreatePullRequestKataLinkOnHostWithResponse(ctx context.Context
 // DeletePullRequestKataLinkOnHost Delete Kata link
 func (c *Client) DeletePullRequestKataLinkOnHostWithResponse(ctx context.Context, options *DeletePullRequestKataLinkOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeletePullRequestKataLinkOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/kata-links/{link_id}",
 		Method:     "DELETE",
@@ -17546,6 +17820,7 @@ func (c *Client) DeletePullRequestKataLinkOnHostWithResponse(ctx context.Context
 // SetPrLabelsOnHost Set pull request labels
 func (c *Client) SetPrLabelsOnHostWithResponse(ctx context.Context, options *SetPrLabelsOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetPrLabelsOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/labels",
 		Method:      "PUT",
@@ -17602,6 +17877,7 @@ func (c *Client) SetPrLabelsOnHostWithResponse(ctx context.Context, options *Set
 // MergePullOnHost Merge pull request
 func (c *Client) MergePullOnHostWithResponse(ctx context.Context, options *MergePullOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*MergePullOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/merge",
 		Method:      "POST",
@@ -17658,6 +17934,7 @@ func (c *Client) MergePullOnHostWithResponse(ctx context.Context, options *Merge
 // DeferMergePullOnHost Defer pull request merge until pending CI passes
 func (c *Client) DeferMergePullOnHostWithResponse(ctx context.Context, options *DeferMergePullOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeferMergePullOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/merge/deferred",
 		Method:      "POST",
@@ -17714,6 +17991,7 @@ func (c *Client) DeferMergePullOnHostWithResponse(ctx context.Context, options *
 // MarkPullReadyForReviewOnHost Mark pull request ready for review
 func (c *Client) MarkPullReadyForReviewOnHostWithResponse(ctx context.Context, options *MarkPullReadyForReviewOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*MarkPullReadyForReviewOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/ready-for-review",
 		Method:     "POST",
@@ -17769,6 +18047,7 @@ func (c *Client) MarkPullReadyForReviewOnHostWithResponse(ctx context.Context, o
 // RequestPullChangesOnHost Request pull request changes
 func (c *Client) RequestPullChangesOnHostWithResponse(ctx context.Context, options *RequestPullChangesOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RequestPullChangesOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/request-changes",
 		Method:      "POST",
@@ -17825,6 +18104,7 @@ func (c *Client) RequestPullChangesOnHostWithResponse(ctx context.Context, optio
 // DiscardPrReviewDraftOnHost Review pull request diff
 func (c *Client) DiscardPrReviewDraftOnHostWithResponse(ctx context.Context, options *DiscardPrReviewDraftOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DiscardPrReviewDraftOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/review-draft",
 		Method:     "DELETE",
@@ -17866,6 +18146,7 @@ func (c *Client) DiscardPrReviewDraftOnHostWithResponse(ctx context.Context, opt
 // GetPrReviewDraftOnHost Review pull request diff
 func (c *Client) GetPrReviewDraftOnHostWithResponse(ctx context.Context, options *GetPrReviewDraftOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPrReviewDraftOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/review-draft",
 		Method:     "GET",
@@ -17921,6 +18202,7 @@ func (c *Client) GetPrReviewDraftOnHostWithResponse(ctx context.Context, options
 // CreatePrReviewDraftCommentOnHost Create pull request review draft comment
 func (c *Client) CreatePrReviewDraftCommentOnHostWithResponse(ctx context.Context, options *CreatePrReviewDraftCommentOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreatePrReviewDraftCommentOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/review-draft/comments",
 		Method:      "POST",
@@ -17977,6 +18259,7 @@ func (c *Client) CreatePrReviewDraftCommentOnHostWithResponse(ctx context.Contex
 // DeletePrReviewDraftCommentOnHost Review pull request diff
 func (c *Client) DeletePrReviewDraftCommentOnHostWithResponse(ctx context.Context, options *DeletePrReviewDraftCommentOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeletePrReviewDraftCommentOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/review-draft/comments/{draft_comment_id}",
 		Method:     "DELETE",
@@ -18018,6 +18301,7 @@ func (c *Client) DeletePrReviewDraftCommentOnHostWithResponse(ctx context.Contex
 // EditPrReviewDraftCommentOnHost Review pull request diff
 func (c *Client) EditPrReviewDraftCommentOnHostWithResponse(ctx context.Context, options *EditPrReviewDraftCommentOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*EditPrReviewDraftCommentOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/review-draft/comments/{draft_comment_id}",
 		Method:      "PATCH",
@@ -18074,6 +18358,7 @@ func (c *Client) EditPrReviewDraftCommentOnHostWithResponse(ctx context.Context,
 // PublishPrReviewDraftOnHost Review pull request diff
 func (c *Client) PublishPrReviewDraftOnHostWithResponse(ctx context.Context, options *PublishPrReviewDraftOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*PublishPrReviewDraftOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/review-draft/publish",
 		Method:      "POST",
@@ -18130,6 +18415,7 @@ func (c *Client) PublishPrReviewDraftOnHostWithResponse(ctx context.Context, opt
 // ApplyPrReviewSuggestionsOnHost Apply pull request review suggestions
 func (c *Client) ApplyPrReviewSuggestionsOnHostWithResponse(ctx context.Context, options *ApplyPrReviewSuggestionsOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ApplyPrReviewSuggestionsOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/review-suggestions/apply",
 		Method:      "POST",
@@ -18186,6 +18472,7 @@ func (c *Client) ApplyPrReviewSuggestionsOnHostWithResponse(ctx context.Context,
 // ResolvePrReviewThreadOnHost Review pull request diff
 func (c *Client) ResolvePrReviewThreadOnHostWithResponse(ctx context.Context, options *ResolvePrReviewThreadOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ResolvePrReviewThreadOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/review-threads/{thread_id}/resolve",
 		Method:     "POST",
@@ -18227,6 +18514,7 @@ func (c *Client) ResolvePrReviewThreadOnHostWithResponse(ctx context.Context, op
 // UnresolvePrReviewThreadOnHost Review pull request diff
 func (c *Client) UnresolvePrReviewThreadOnHostWithResponse(ctx context.Context, options *UnresolvePrReviewThreadOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UnresolvePrReviewThreadOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/review-threads/{thread_id}/unresolve",
 		Method:     "POST",
@@ -18268,6 +18556,7 @@ func (c *Client) UnresolvePrReviewThreadOnHostWithResponse(ctx context.Context, 
 // SetPrReviewersOnHost Set pull request reviewers
 func (c *Client) SetPrReviewersOnHostWithResponse(ctx context.Context, options *SetPrReviewersOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetPrReviewersOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/reviewers",
 		Method:      "PUT",
@@ -18324,6 +18613,7 @@ func (c *Client) SetPrReviewersOnHostWithResponse(ctx context.Context, options *
 // GetPullStackOnHost Get pull request stack
 func (c *Client) GetPullStackOnHostWithResponse(ctx context.Context, options *GetPullStackOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPullStackOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/stack",
 		Method:     "GET",
@@ -18379,6 +18669,7 @@ func (c *Client) GetPullStackOnHostWithResponse(ctx context.Context, options *Ge
 // SetKanbanStateOnHost Set pull request kanban state
 func (c *Client) SetKanbanStateOnHostWithResponse(ctx context.Context, options *SetKanbanStateOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetKanbanStateOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/state",
 		Method:      "PUT",
@@ -18421,6 +18712,7 @@ func (c *Client) SetKanbanStateOnHostWithResponse(ctx context.Context, options *
 // SyncPullOnHost Sync pull request
 func (c *Client) SyncPullOnHostWithResponse(ctx context.Context, options *SyncPullOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SyncPullOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/sync",
 		Method:     "POST",
@@ -18476,6 +18768,7 @@ func (c *Client) SyncPullOnHostWithResponse(ctx context.Context, options *SyncPu
 // EnqueuePrSyncOnHost Enqueue pull request sync
 func (c *Client) EnqueuePrSyncOnHostWithResponse(ctx context.Context, options *EnqueuePrSyncOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*EnqueuePrSyncOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/sync/async",
 		Method:     "POST",
@@ -18517,6 +18810,7 @@ func (c *Client) EnqueuePrSyncOnHostWithResponse(ctx context.Context, options *E
 // DeleteRepoOnHost Delete repository
 func (c *Client) DeleteRepoOnHostWithResponse(ctx context.Context, options *DeleteRepoOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeleteRepoOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/repo/{provider}/{owner}/{name}",
 		Method:     "DELETE",
@@ -18558,6 +18852,7 @@ func (c *Client) DeleteRepoOnHostWithResponse(ctx context.Context, options *Dele
 // GetRepoOnHost Get repository
 func (c *Client) GetRepoOnHostWithResponse(ctx context.Context, options *GetRepoOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetRepoOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/repo/{provider}/{owner}/{name}",
 		Method:     "GET",
@@ -18613,10 +18908,19 @@ func (c *Client) GetRepoOnHostWithResponse(ctx context.Context, options *GetRepo
 // GetRepoBrowserAssetOnHost Get repository browser asset
 func (c *Client) GetRepoBrowserAssetOnHostWithResponse(ctx context.Context, options *GetRepoBrowserAssetOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetRepoBrowserAssetOnHostResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"path":      {Style: "form", Explode: &[]bool{false}[0]},
+		"ref_name":  {Style: "form", Explode: &[]bool{false}[0]},
+		"ref_sha":   {Style: "form", Explode: &[]bool{false}[0]},
+		"ref_type":  {Style: "form", Explode: &[]bool{false}[0]},
+		"repo_path": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/repo/{provider}/{owner}/{name}/browser/asset",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/host/{platform_host}/repo/{provider}/{owner}/{name}/browser/asset",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -18660,10 +18964,19 @@ func (c *Client) GetRepoBrowserAssetOnHostWithResponse(ctx context.Context, opti
 // GetRepoBrowserBlobOnHost Get repository browser blob
 func (c *Client) GetRepoBrowserBlobOnHostWithResponse(ctx context.Context, options *GetRepoBrowserBlobOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetRepoBrowserBlobOnHostResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"path":      {Style: "form", Explode: &[]bool{false}[0]},
+		"ref_name":  {Style: "form", Explode: &[]bool{false}[0]},
+		"ref_sha":   {Style: "form", Explode: &[]bool{false}[0]},
+		"ref_type":  {Style: "form", Explode: &[]bool{false}[0]},
+		"repo_path": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/repo/{provider}/{owner}/{name}/browser/blob",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/host/{platform_host}/repo/{provider}/{owner}/{name}/browser/blob",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -18715,10 +19028,20 @@ func (c *Client) GetRepoBrowserBlobOnHostWithResponse(ctx context.Context, optio
 // GetRepoBrowserCommitOnHost Get repository browser commit
 func (c *Client) GetRepoBrowserCommitOnHostWithResponse(ctx context.Context, options *GetRepoBrowserCommitOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetRepoBrowserCommitOnHostResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"path":      {Style: "form", Explode: &[]bool{false}[0]},
+		"ref_name":  {Style: "form", Explode: &[]bool{false}[0]},
+		"ref_sha":   {Style: "form", Explode: &[]bool{false}[0]},
+		"ref_type":  {Style: "form", Explode: &[]bool{false}[0]},
+		"repo_path": {Style: "form", Explode: &[]bool{false}[0]},
+		"sha":       {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/repo/{provider}/{owner}/{name}/browser/commit",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/host/{platform_host}/repo/{provider}/{owner}/{name}/browser/commit",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -18770,10 +19093,19 @@ func (c *Client) GetRepoBrowserCommitOnHostWithResponse(ctx context.Context, opt
 // GetRepoBrowserHistoryOnHost Get repository browser file history
 func (c *Client) GetRepoBrowserHistoryOnHostWithResponse(ctx context.Context, options *GetRepoBrowserHistoryOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetRepoBrowserHistoryOnHostResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"path":      {Style: "form", Explode: &[]bool{false}[0]},
+		"ref_name":  {Style: "form", Explode: &[]bool{false}[0]},
+		"ref_sha":   {Style: "form", Explode: &[]bool{false}[0]},
+		"ref_type":  {Style: "form", Explode: &[]bool{false}[0]},
+		"repo_path": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/repo/{provider}/{owner}/{name}/browser/history",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/host/{platform_host}/repo/{provider}/{owner}/{name}/browser/history",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -18825,10 +19157,18 @@ func (c *Client) GetRepoBrowserHistoryOnHostWithResponse(ctx context.Context, op
 // GetRepoBrowserLastChangedOnHost Get repository browser last changed commits
 func (c *Client) GetRepoBrowserLastChangedOnHostWithResponse(ctx context.Context, options *GetRepoBrowserLastChangedOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetRepoBrowserLastChangedOnHostResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"ref_name":  {Style: "form", Explode: &[]bool{false}[0]},
+		"ref_sha":   {Style: "form", Explode: &[]bool{false}[0]},
+		"ref_type":  {Style: "form", Explode: &[]bool{false}[0]},
+		"repo_path": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/repo/{provider}/{owner}/{name}/browser/last-changed",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/host/{platform_host}/repo/{provider}/{owner}/{name}/browser/last-changed",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -18880,10 +19220,15 @@ func (c *Client) GetRepoBrowserLastChangedOnHostWithResponse(ctx context.Context
 // ListRepoBrowserRefsOnHost List repository browser refs
 func (c *Client) ListRepoBrowserRefsOnHostWithResponse(ctx context.Context, options *ListRepoBrowserRefsOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListRepoBrowserRefsOnHostResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"repo_path": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/repo/{provider}/{owner}/{name}/browser/refs",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/host/{platform_host}/repo/{provider}/{owner}/{name}/browser/refs",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -18935,10 +19280,18 @@ func (c *Client) ListRepoBrowserRefsOnHostWithResponse(ctx context.Context, opti
 // ListRepoBrowserTreeOnHost List repository browser tree
 func (c *Client) ListRepoBrowserTreeOnHostWithResponse(ctx context.Context, options *ListRepoBrowserTreeOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListRepoBrowserTreeOnHostResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"ref_name":  {Style: "form", Explode: &[]bool{false}[0]},
+		"ref_sha":   {Style: "form", Explode: &[]bool{false}[0]},
+		"ref_type":  {Style: "form", Explode: &[]bool{false}[0]},
+		"repo_path": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/repo/{provider}/{owner}/{name}/browser/tree",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/host/{platform_host}/repo/{provider}/{owner}/{name}/browser/tree",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -18990,10 +19343,17 @@ func (c *Client) ListRepoBrowserTreeOnHostWithResponse(ctx context.Context, opti
 // GetCommentAutocompleteOnHost Get comment autocomplete
 func (c *Client) GetCommentAutocompleteOnHostWithResponse(ctx context.Context, options *GetCommentAutocompleteOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetCommentAutocompleteOnHostResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"limit":   {Style: "form", Explode: &[]bool{false}[0]},
+		"q":       {Style: "form", Explode: &[]bool{false}[0]},
+		"trigger": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/repo/{provider}/{owner}/{name}/comment-autocomplete",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/host/{platform_host}/repo/{provider}/{owner}/{name}/comment-autocomplete",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -19045,10 +19405,15 @@ func (c *Client) GetCommentAutocompleteOnHostWithResponse(ctx context.Context, o
 // GetRepoCommitDiffOnHost Get repository commit diff
 func (c *Client) GetRepoCommitDiffOnHostWithResponse(ctx context.Context, options *GetRepoCommitDiffOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetRepoCommitDiffOnHostResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"whitespace": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/repo/{provider}/{owner}/{name}/commits/{sha}/diff",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/host/{platform_host}/repo/{provider}/{owner}/{name}/commits/{sha}/diff",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -19100,6 +19465,7 @@ func (c *Client) GetRepoCommitDiffOnHostWithResponse(ctx context.Context, option
 // ListRepoLabelsOnHost List repository labels
 func (c *Client) ListRepoLabelsOnHostWithResponse(ctx context.Context, options *ListRepoLabelsOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListRepoLabelsOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/repo/{provider}/{owner}/{name}/labels",
 		Method:     "GET",
@@ -19155,10 +19521,15 @@ func (c *Client) ListRepoLabelsOnHostWithResponse(ctx context.Context, options *
 // GetMarkdownImageOnHost Get markdown image
 func (c *Client) GetMarkdownImageOnHostWithResponse(ctx context.Context, options *GetMarkdownImageOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetMarkdownImageOnHostResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"source": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/repo/{provider}/{owner}/{name}/markdown-image",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/host/{platform_host}/repo/{provider}/{owner}/{name}/markdown-image",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -19202,6 +19573,7 @@ func (c *Client) GetMarkdownImageOnHostWithResponse(ctx context.Context, options
 // RefreshRepoOnHost Refresh repository
 func (c *Client) RefreshRepoOnHostWithResponse(ctx context.Context, options *RefreshRepoOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RefreshRepoOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/repo/{provider}/{owner}/{name}/refresh",
 		Method:     "POST",
@@ -19257,10 +19629,15 @@ func (c *Client) RefreshRepoOnHostWithResponse(ctx context.Context, options *Ref
 // ResolveRepoItemOnHost Resolve repository item
 func (c *Client) ResolveRepoItemOnHostWithResponse(ctx context.Context, options *ResolveRepoItemOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ResolveRepoItemOnHostResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"item_type": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/repo/{provider}/{owner}/{name}/resolve/{number}",
-		Method:     "POST",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/host/{platform_host}/repo/{provider}/{owner}/{name}/resolve/{number}",
+		Method:        "POST",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -19312,6 +19689,7 @@ func (c *Client) ResolveRepoItemOnHostWithResponse(ctx context.Context, options 
 // UpdateRepoUIVisibilityOnHost Update repository UI visibility
 func (c *Client) UpdateRepoUIVisibilityOnHostWithResponse(ctx context.Context, options *UpdateRepoUIVisibilityOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateRepoUIVisibilityOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/repo/{provider}/{owner}/{name}/ui-visibility",
 		Method:      "PUT",
@@ -19368,6 +19746,7 @@ func (c *Client) UpdateRepoUIVisibilityOnHostWithResponse(ctx context.Context, o
 // CreateRepoWorkspaceOnHost Create workspace for new work
 func (c *Client) CreateRepoWorkspaceOnHostWithResponse(ctx context.Context, options *CreateRepoWorkspaceOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateRepoWorkspaceOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/repo/{provider}/{owner}/{name}/workspaces",
 		Method:      "POST",
@@ -19424,6 +19803,7 @@ func (c *Client) CreateRepoWorkspaceOnHostWithResponse(ctx context.Context, opti
 // UpdateRepoWorktreeBaseOnHost Update repository worktree base
 func (c *Client) UpdateRepoWorktreeBaseOnHostWithResponse(ctx context.Context, options *UpdateRepoWorktreeBaseOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateRepoWorktreeBaseOnHostResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/repo/{provider}/{owner}/{name}/worktree-base",
 		Method:      "PUT",
@@ -19480,10 +19860,24 @@ func (c *Client) UpdateRepoWorktreeBaseOnHostWithResponse(ctx context.Context, o
 // ListIssues List issues
 func (c *Client) ListIssuesWithResponse(ctx context.Context, options *ListIssuesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListIssuesResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"assignee":         {Style: "form", Explode: &[]bool{false}[0]},
+		"involves_me":      {Style: "form", Explode: &[]bool{false}[0]},
+		"limit":            {Style: "form", Explode: &[]bool{false}[0]},
+		"offset":           {Style: "form", Explode: &[]bool{false}[0]},
+		"q":                {Style: "form", Explode: &[]bool{false}[0]},
+		"referenced_by_pr": {Style: "form", Explode: &[]bool{false}[0]},
+		"repo":             {Style: "form", Explode: &[]bool{false}[0]},
+		"starred":          {Style: "form", Explode: &[]bool{false}[0]},
+		"state":            {Style: "form", Explode: &[]bool{false}[0]},
+		"unassigned":       {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/issues",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/issues",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -19535,6 +19929,7 @@ func (c *Client) ListIssuesWithResponse(ctx context.Context, options *ListIssues
 // CreateIssue Create issue
 func (c *Client) CreateIssueWithResponse(ctx context.Context, options *CreateIssueRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateIssueResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/issues/{provider}/{owner}/{name}",
 		Method:      "POST",
@@ -19591,6 +19986,7 @@ func (c *Client) CreateIssueWithResponse(ctx context.Context, options *CreateIss
 // GetIssue Get issue
 func (c *Client) GetIssueWithResponse(ctx context.Context, options *GetIssueRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetIssueResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/issues/{provider}/{owner}/{name}/{number}",
 		Method:     "GET",
@@ -19646,6 +20042,7 @@ func (c *Client) GetIssueWithResponse(ctx context.Context, options *GetIssueRequ
 // EditIssueContent Edit issue content
 func (c *Client) EditIssueContentWithResponse(ctx context.Context, options *EditIssueContentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*EditIssueContentResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/issues/{provider}/{owner}/{name}/{number}",
 		Method:      "PATCH",
@@ -19702,6 +20099,7 @@ func (c *Client) EditIssueContentWithResponse(ctx context.Context, options *Edit
 // SetIssueAssignees Set issue assignees
 func (c *Client) SetIssueAssigneesWithResponse(ctx context.Context, options *SetIssueAssigneesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetIssueAssigneesResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/issues/{provider}/{owner}/{name}/{number}/assignees",
 		Method:      "PUT",
@@ -19758,6 +20156,7 @@ func (c *Client) SetIssueAssigneesWithResponse(ctx context.Context, options *Set
 // PostIssueComment Post issue comment
 func (c *Client) PostIssueCommentWithResponse(ctx context.Context, options *PostIssueCommentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*PostIssueCommentResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/issues/{provider}/{owner}/{name}/{number}/comments",
 		Method:      "POST",
@@ -19814,6 +20213,7 @@ func (c *Client) PostIssueCommentWithResponse(ctx context.Context, options *Post
 // DeleteIssueComment Delete issue comment
 func (c *Client) DeleteIssueCommentWithResponse(ctx context.Context, options *DeleteIssueCommentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeleteIssueCommentResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/issues/{provider}/{owner}/{name}/{number}/comments/{comment_id}",
 		Method:     "DELETE",
@@ -19855,6 +20255,7 @@ func (c *Client) DeleteIssueCommentWithResponse(ctx context.Context, options *De
 // EditIssueComment Edit issue comment
 func (c *Client) EditIssueCommentWithResponse(ctx context.Context, options *EditIssueCommentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*EditIssueCommentResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/issues/{provider}/{owner}/{name}/{number}/comments/{comment_id}",
 		Method:      "PATCH",
@@ -19911,6 +20312,7 @@ func (c *Client) EditIssueCommentWithResponse(ctx context.Context, options *Edit
 // SetIssueGithubState Set issue GitHub state
 func (c *Client) SetIssueGithubStateWithResponse(ctx context.Context, options *SetIssueGithubStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetIssueGithubStateResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/issues/{provider}/{owner}/{name}/{number}/github-state",
 		Method:      "POST",
@@ -19967,6 +20369,7 @@ func (c *Client) SetIssueGithubStateWithResponse(ctx context.Context, options *S
 // ListIssueKataLinks List effective Kata links
 func (c *Client) ListIssueKataLinksWithResponse(ctx context.Context, options *ListIssueKataLinksRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListIssueKataLinksResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/issues/{provider}/{owner}/{name}/{number}/kata-links",
 		Method:     "GET",
@@ -20022,6 +20425,7 @@ func (c *Client) ListIssueKataLinksWithResponse(ctx context.Context, options *Li
 // CreateIssueKataLink Create Kata link
 func (c *Client) CreateIssueKataLinkWithResponse(ctx context.Context, options *CreateIssueKataLinkRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateIssueKataLinkResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/issues/{provider}/{owner}/{name}/{number}/kata-links",
 		Method:      "POST",
@@ -20078,6 +20482,7 @@ func (c *Client) CreateIssueKataLinkWithResponse(ctx context.Context, options *C
 // DeleteIssueKataLink Delete Kata link
 func (c *Client) DeleteIssueKataLinkWithResponse(ctx context.Context, options *DeleteIssueKataLinkRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeleteIssueKataLinkResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/issues/{provider}/{owner}/{name}/{number}/kata-links/{link_id}",
 		Method:     "DELETE",
@@ -20119,6 +20524,7 @@ func (c *Client) DeleteIssueKataLinkWithResponse(ctx context.Context, options *D
 // SetIssueLabels Set issue labels
 func (c *Client) SetIssueLabelsWithResponse(ctx context.Context, options *SetIssueLabelsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetIssueLabelsResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/issues/{provider}/{owner}/{name}/{number}/labels",
 		Method:      "PUT",
@@ -20175,6 +20581,7 @@ func (c *Client) SetIssueLabelsWithResponse(ctx context.Context, options *SetIss
 // SyncIssue Sync issue
 func (c *Client) SyncIssueWithResponse(ctx context.Context, options *SyncIssueRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SyncIssueResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/issues/{provider}/{owner}/{name}/{number}/sync",
 		Method:     "POST",
@@ -20230,6 +20637,7 @@ func (c *Client) SyncIssueWithResponse(ctx context.Context, options *SyncIssueRe
 // EnqueueIssueSync Enqueue issue sync
 func (c *Client) EnqueueIssueSyncWithResponse(ctx context.Context, options *EnqueueIssueSyncRequestOptions, reqEditors ...runtime.RequestEditorFn) (*EnqueueIssueSyncResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/issues/{provider}/{owner}/{name}/{number}/sync/async",
 		Method:     "POST",
@@ -20271,6 +20679,7 @@ func (c *Client) EnqueueIssueSyncWithResponse(ctx context.Context, options *Enqu
 // CreateIssueWorkspace Create issue workspace
 func (c *Client) CreateIssueWorkspaceWithResponse(ctx context.Context, options *CreateIssueWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateIssueWorkspaceResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/issues/{provider}/{owner}/{name}/{number}/workspace",
 		Method:      "POST",
@@ -20327,6 +20736,7 @@ func (c *Client) CreateIssueWorkspaceWithResponse(ctx context.Context, options *
 // ListKataDaemons List Kata daemons
 func (c *Client) ListKataDaemonsWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*ListKataDaemonsResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/kata/daemons",
 		Method:     "GET",
@@ -20381,10 +20791,16 @@ func (c *Client) ListKataDaemonsWithResponse(ctx context.Context, reqEditors ...
 // ResolveKataIssueReference Resolve a Kata issue reference
 func (c *Client) ResolveKataIssueReferenceWithResponse(ctx context.Context, options *ResolveKataIssueReferenceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ResolveKataIssueReferenceResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"project": {Style: "form", Explode: &[]bool{false}[0]},
+		"ref":     {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/kata/daemons/{daemon_id}/issue-reference",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/kata/daemons/{daemon_id}/issue-reference",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -20436,6 +20852,7 @@ func (c *Client) ResolveKataIssueReferenceWithResponse(ctx context.Context, opti
 // GetKataIssueDetail Get Kata issue detail
 func (c *Client) GetKataIssueDetailWithResponse(ctx context.Context, options *GetKataIssueDetailRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetKataIssueDetailResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/kata/daemons/{daemon_id}/issues/{issue_uid}",
 		Method:     "GET",
@@ -20491,6 +20908,7 @@ func (c *Client) GetKataIssueDetailWithResponse(ctx context.Context, options *Ge
 // GetKataLaunchTarget Get Kata issue launch target
 func (c *Client) GetKataLaunchTargetWithResponse(ctx context.Context, options *GetKataLaunchTargetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetKataLaunchTargetResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/kata/daemons/{daemon_id}/issues/{issue_uid}/launch-target",
 		Method:     "GET",
@@ -20546,10 +20964,17 @@ func (c *Client) GetKataLaunchTargetWithResponse(ctx context.Context, options *G
 // ListKataReferences List Kata issue references
 func (c *Client) ListKataReferencesWithResponse(ctx context.Context, options *ListKataReferencesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListKataReferencesResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"limit":       {Style: "form", Explode: &[]bool{false}[0]},
+		"project_uid": {Style: "form", Explode: &[]bool{false}[0]},
+		"q":           {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/kata/daemons/{daemon_id}/references",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/kata/daemons/{daemon_id}/references",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -20601,6 +21026,7 @@ func (c *Client) ListKataReferencesWithResponse(ctx context.Context, options *Li
 // GetKataProjectMappings Inspect effective Kata project repository mappings
 func (c *Client) GetKataProjectMappingsWithResponse(ctx context.Context, options *GetKataProjectMappingsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetKataProjectMappingsResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/kata/project-mappings",
 		Method:     "GET",
@@ -20659,6 +21085,7 @@ func (c *Client) GetKataProjectMappingsWithResponse(ctx context.Context, options
 // CreateKataWorkspace Create Kata workspace
 func (c *Client) CreateKataWorkspaceWithResponse(ctx context.Context, options *CreateKataWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateKataWorkspaceResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/kata/workspaces",
 		Method:      "POST",
@@ -20715,10 +21142,22 @@ func (c *Client) CreateKataWorkspaceWithResponse(ctx context.Context, options *C
 // ListNotifications List notifications
 func (c *Client) ListNotificationsWithResponse(ctx context.Context, options *ListNotificationsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListNotificationsResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"limit":  {Style: "form", Explode: &[]bool{false}[0]},
+		"offset": {Style: "form", Explode: &[]bool{false}[0]},
+		"q":      {Style: "form", Explode: &[]bool{false}[0]},
+		"reason": {Style: "form", Explode: &[]bool{false}[0]},
+		"repo":   {Style: "form", Explode: &[]bool{false}[0]},
+		"sort":   {Style: "form", Explode: &[]bool{false}[0]},
+		"state":  {Style: "form", Explode: &[]bool{false}[0]},
+		"type":   {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/notifications",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/notifications",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -20770,6 +21209,7 @@ func (c *Client) ListNotificationsWithResponse(ctx context.Context, options *Lis
 // MarkNotificationsDone Mark notifications done
 func (c *Client) MarkNotificationsDoneWithResponse(ctx context.Context, options *MarkNotificationsDoneRequestOptions, reqEditors ...runtime.RequestEditorFn) (*MarkNotificationsDoneResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/notifications/done",
 		Method:      "POST",
@@ -20826,6 +21266,7 @@ func (c *Client) MarkNotificationsDoneWithResponse(ctx context.Context, options 
 // MarkNotificationsRead Mark notifications read
 func (c *Client) MarkNotificationsReadWithResponse(ctx context.Context, options *MarkNotificationsReadRequestOptions, reqEditors ...runtime.RequestEditorFn) (*MarkNotificationsReadResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/notifications/read",
 		Method:      "POST",
@@ -20882,6 +21323,7 @@ func (c *Client) MarkNotificationsReadWithResponse(ctx context.Context, options 
 // SyncNotifications Sync notifications
 func (c *Client) SyncNotificationsWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*SyncNotificationsResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/notifications/sync",
 		Method:     "POST",
@@ -20922,6 +21364,7 @@ func (c *Client) SyncNotificationsWithResponse(ctx context.Context, reqEditors .
 // MarkNotificationsUndone Mark notifications undone
 func (c *Client) MarkNotificationsUndoneWithResponse(ctx context.Context, options *MarkNotificationsUndoneRequestOptions, reqEditors ...runtime.RequestEditorFn) (*MarkNotificationsUndoneResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/notifications/undone",
 		Method:      "POST",
@@ -20978,10 +21421,17 @@ func (c *Client) MarkNotificationsUndoneWithResponse(ctx context.Context, option
 // ListUserRepositories List the authenticated platform CLI user's repositories
 func (c *Client) ListUserRepositoriesWithResponse(ctx context.Context, options *ListUserRepositoriesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListUserRepositoriesResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"limit":         {Style: "form", Explode: &[]bool{false}[0]},
+		"platform_host": {Style: "form", Explode: &[]bool{false}[0]},
+		"provider":      {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/platform/user-repositories",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/platform/user-repositories",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -21033,6 +21483,7 @@ func (c *Client) ListUserRepositoriesWithResponse(ctx context.Context, options *
 // ListProjects List projects
 func (c *Client) ListProjectsWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*ListProjectsResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/projects",
 		Method:     "GET",
@@ -21087,6 +21538,7 @@ func (c *Client) ListProjectsWithResponse(ctx context.Context, reqEditors ...run
 // RegisterProject Register project
 func (c *Client) RegisterProjectWithResponse(ctx context.Context, options *RegisterProjectRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RegisterProjectResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/projects",
 		Method:      "POST",
@@ -21143,6 +21595,7 @@ func (c *Client) RegisterProjectWithResponse(ctx context.Context, options *Regis
 // CloneProject Clone a repository and register it as a project
 func (c *Client) CloneProjectWithResponse(ctx context.Context, options *CloneProjectRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CloneProjectResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/projects/clone",
 		Method:      "POST",
@@ -21199,6 +21652,7 @@ func (c *Client) CloneProjectWithResponse(ctx context.Context, options *ClonePro
 // DeleteProject Delete project
 func (c *Client) DeleteProjectWithResponse(ctx context.Context, options *DeleteProjectRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeleteProjectResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/projects/{project_id}",
 		Method:     "DELETE",
@@ -21240,6 +21694,7 @@ func (c *Client) DeleteProjectWithResponse(ctx context.Context, options *DeleteP
 // GetProject Get project
 func (c *Client) GetProjectWithResponse(ctx context.Context, options *GetProjectRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetProjectResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/projects/{project_id}",
 		Method:     "GET",
@@ -21295,6 +21750,7 @@ func (c *Client) GetProjectWithResponse(ctx context.Context, options *GetProject
 // ListProjectBranches List project repository branches
 func (c *Client) ListProjectBranchesWithResponse(ctx context.Context, options *ListProjectBranchesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListProjectBranchesResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/projects/{project_id}/branches",
 		Method:     "GET",
@@ -21350,6 +21806,7 @@ func (c *Client) ListProjectBranchesWithResponse(ctx context.Context, options *L
 // ListLaunchTargets List launch targets
 func (c *Client) ListLaunchTargetsWithResponse(ctx context.Context, options *ListLaunchTargetsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListLaunchTargetsResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/projects/{project_id}/launch-targets",
 		Method:     "GET",
@@ -21405,6 +21862,7 @@ func (c *Client) ListLaunchTargetsWithResponse(ctx context.Context, options *Lis
 // ListWorktrees List worktrees
 func (c *Client) ListWorktreesWithResponse(ctx context.Context, options *ListWorktreesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListWorktreesResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/projects/{project_id}/worktrees",
 		Method:     "GET",
@@ -21460,6 +21918,7 @@ func (c *Client) ListWorktreesWithResponse(ctx context.Context, options *ListWor
 // RegisterWorktree Register worktree
 func (c *Client) RegisterWorktreeWithResponse(ctx context.Context, options *RegisterWorktreeRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RegisterWorktreeResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/projects/{project_id}/worktrees",
 		Method:      "POST",
@@ -21516,6 +21975,7 @@ func (c *Client) RegisterWorktreeWithResponse(ctx context.Context, options *Regi
 // CreateWorktreeFromMergeRequest Create worktree from a merge request head
 func (c *Client) CreateWorktreeFromMergeRequestWithResponse(ctx context.Context, options *CreateWorktreeFromMergeRequestRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateWorktreeFromMergeRequestResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/projects/{project_id}/worktrees/from-merge-request",
 		Method:      "POST",
@@ -21572,6 +22032,7 @@ func (c *Client) CreateWorktreeFromMergeRequestWithResponse(ctx context.Context,
 // DeleteWorktree Delete worktree
 func (c *Client) DeleteWorktreeWithResponse(ctx context.Context, options *DeleteWorktreeRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeleteWorktreeResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/projects/{project_id}/worktrees/{worktree_id}",
 		Method:     "DELETE",
@@ -21613,6 +22074,7 @@ func (c *Client) DeleteWorktreeWithResponse(ctx context.Context, options *Delete
 // RemoveWorktree Remove worktree (optionally from disk)
 func (c *Client) RemoveWorktreeWithResponse(ctx context.Context, options *RemoveWorktreeRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RemoveWorktreeResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/projects/{project_id}/worktrees/{worktree_id}/delete",
 		Method:      "POST",
@@ -21655,6 +22117,7 @@ func (c *Client) RemoveWorktreeWithResponse(ctx context.Context, options *Remove
 // SetWorktreeHidden Set worktree hidden
 func (c *Client) SetWorktreeHiddenWithResponse(ctx context.Context, options *SetWorktreeHiddenRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetWorktreeHiddenResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/projects/{project_id}/worktrees/{worktree_id}/hidden",
 		Method:      "PUT",
@@ -21711,6 +22174,7 @@ func (c *Client) SetWorktreeHiddenWithResponse(ctx context.Context, options *Set
 // InspectProjectWorktree Inspect project worktree
 func (c *Client) InspectProjectWorktreeWithResponse(ctx context.Context, options *InspectProjectWorktreeRequestOptions, reqEditors ...runtime.RequestEditorFn) (*InspectProjectWorktreeResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/projects/{project_id}/worktrees/{worktree_id}/inspect",
 		Method:     "GET",
@@ -21766,6 +22230,7 @@ func (c *Client) InspectProjectWorktreeWithResponse(ctx context.Context, options
 // SetWorktreeLinks Set worktree linked issues
 func (c *Client) SetWorktreeLinksWithResponse(ctx context.Context, options *SetWorktreeLinksRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetWorktreeLinksResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/projects/{project_id}/worktrees/{worktree_id}/linked-issues",
 		Method:      "PUT",
@@ -21822,6 +22287,7 @@ func (c *Client) SetWorktreeLinksWithResponse(ctx context.Context, options *SetW
 // RefreshWorktreeStats Refresh worktree git stats
 func (c *Client) RefreshWorktreeStatsWithResponse(ctx context.Context, options *RefreshWorktreeStatsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RefreshWorktreeStatsResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/projects/{project_id}/worktrees/{worktree_id}/refresh-stats",
 		Method:     "POST",
@@ -21877,6 +22343,7 @@ func (c *Client) RefreshWorktreeStatsWithResponse(ctx context.Context, options *
 // GetProjectWorktreeRuntime Get project worktree runtime
 func (c *Client) GetProjectWorktreeRuntimeWithResponse(ctx context.Context, options *GetProjectWorktreeRuntimeRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetProjectWorktreeRuntimeResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/projects/{project_id}/worktrees/{worktree_id}/runtime",
 		Method:     "GET",
@@ -21932,6 +22399,7 @@ func (c *Client) GetProjectWorktreeRuntimeWithResponse(ctx context.Context, opti
 // LaunchProjectWorktreeRuntimeSession Launch project worktree runtime session
 func (c *Client) LaunchProjectWorktreeRuntimeSessionWithResponse(ctx context.Context, options *LaunchProjectWorktreeRuntimeSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*LaunchProjectWorktreeRuntimeSessionResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/projects/{project_id}/worktrees/{worktree_id}/runtime/sessions",
 		Method:      "POST",
@@ -21988,6 +22456,7 @@ func (c *Client) LaunchProjectWorktreeRuntimeSessionWithResponse(ctx context.Con
 // StopProjectWorktreeRuntimeSession Stop project worktree runtime session
 func (c *Client) StopProjectWorktreeRuntimeSessionWithResponse(ctx context.Context, options *StopProjectWorktreeRuntimeSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*StopProjectWorktreeRuntimeSessionResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/projects/{project_id}/worktrees/{worktree_id}/runtime/sessions/{session_key}",
 		Method:     "DELETE",
@@ -22029,6 +22498,7 @@ func (c *Client) StopProjectWorktreeRuntimeSessionWithResponse(ctx context.Conte
 // GetProjectWorktreeRuntimeSessionAttachSpec Get project worktree runtime session attach spec
 func (c *Client) GetProjectWorktreeRuntimeSessionAttachSpecWithResponse(ctx context.Context, options *GetProjectWorktreeRuntimeSessionAttachSpecRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetProjectWorktreeRuntimeSessionAttachSpecResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/projects/{project_id}/worktrees/{worktree_id}/runtime/sessions/{session_key}/attach-spec",
 		Method:     "GET",
@@ -22084,6 +22554,7 @@ func (c *Client) GetProjectWorktreeRuntimeSessionAttachSpecWithResponse(ctx cont
 // EnsureProjectWorktreeRuntimeShell Ensure project worktree shell
 func (c *Client) EnsureProjectWorktreeRuntimeShellWithResponse(ctx context.Context, options *EnsureProjectWorktreeRuntimeShellRequestOptions, reqEditors ...runtime.RequestEditorFn) (*EnsureProjectWorktreeRuntimeShellResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/projects/{project_id}/worktrees/{worktree_id}/runtime/shell",
 		Method:     "POST",
@@ -22139,6 +22610,7 @@ func (c *Client) EnsureProjectWorktreeRuntimeShellWithResponse(ctx context.Conte
 // SetWorktreeSessionBackend Set worktree session backend
 func (c *Client) SetWorktreeSessionBackendWithResponse(ctx context.Context, options *SetWorktreeSessionBackendRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetWorktreeSessionBackendResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/projects/{project_id}/worktrees/{worktree_id}/session-backend",
 		Method:      "PUT",
@@ -22195,10 +22667,23 @@ func (c *Client) SetWorktreeSessionBackendWithResponse(ctx context.Context, opti
 // ListPulls List pull requests
 func (c *Client) ListPullsWithResponse(ctx context.Context, options *ListPullsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListPullsResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"involves_me": {Style: "form", Explode: &[]bool{false}[0]},
+		"kanban":      {Style: "form", Explode: &[]bool{false}[0]},
+		"limit":       {Style: "form", Explode: &[]bool{false}[0]},
+		"offset":      {Style: "form", Explode: &[]bool{false}[0]},
+		"q":           {Style: "form", Explode: &[]bool{false}[0]},
+		"repo":        {Style: "form", Explode: &[]bool{false}[0]},
+		"starred":     {Style: "form", Explode: &[]bool{false}[0]},
+		"state":       {Style: "form", Explode: &[]bool{false}[0]},
+		"unassigned":  {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/pulls",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/pulls",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -22250,6 +22735,7 @@ func (c *Client) ListPullsWithResponse(ctx context.Context, options *ListPullsRe
 // GetPull Get pull request
 func (c *Client) GetPullWithResponse(ctx context.Context, options *GetPullRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPullResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}",
 		Method:     "GET",
@@ -22305,6 +22791,7 @@ func (c *Client) GetPullWithResponse(ctx context.Context, options *GetPullReques
 // EditPrContent Edit pull request content
 func (c *Client) EditPrContentWithResponse(ctx context.Context, options *EditPrContentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*EditPrContentResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}",
 		Method:      "PATCH",
@@ -22361,6 +22848,7 @@ func (c *Client) EditPrContentWithResponse(ctx context.Context, options *EditPrC
 // ApprovePull Approve pull request
 func (c *Client) ApprovePullWithResponse(ctx context.Context, options *ApprovePullRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ApprovePullResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/approve",
 		Method:      "POST",
@@ -22417,6 +22905,7 @@ func (c *Client) ApprovePullWithResponse(ctx context.Context, options *ApprovePu
 // ApprovePullWorkflows Approve pull request workflows
 func (c *Client) ApprovePullWorkflowsWithResponse(ctx context.Context, options *ApprovePullWorkflowsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ApprovePullWorkflowsResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/approve-workflows",
 		Method:     "POST",
@@ -22472,6 +22961,7 @@ func (c *Client) ApprovePullWorkflowsWithResponse(ctx context.Context, options *
 // SetPrAssignees Set pull request assignees
 func (c *Client) SetPrAssigneesWithResponse(ctx context.Context, options *SetPrAssigneesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetPrAssigneesResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/assignees",
 		Method:      "PUT",
@@ -22528,6 +23018,7 @@ func (c *Client) SetPrAssigneesWithResponse(ctx context.Context, options *SetPrA
 // RefreshPullCi Refresh pull request CI
 func (c *Client) RefreshPullCiWithResponse(ctx context.Context, options *RefreshPullCiRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RefreshPullCiResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/ci-refresh",
 		Method:     "POST",
@@ -22583,6 +23074,7 @@ func (c *Client) RefreshPullCiWithResponse(ctx context.Context, options *Refresh
 // PostPrComment Post pull request comment
 func (c *Client) PostPrCommentWithResponse(ctx context.Context, options *PostPrCommentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*PostPrCommentResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/comments",
 		Method:      "POST",
@@ -22639,6 +23131,7 @@ func (c *Client) PostPrCommentWithResponse(ctx context.Context, options *PostPrC
 // DeletePrComment Delete pull request comment
 func (c *Client) DeletePrCommentWithResponse(ctx context.Context, options *DeletePrCommentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeletePrCommentResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/comments/{comment_id}",
 		Method:     "DELETE",
@@ -22680,6 +23173,7 @@ func (c *Client) DeletePrCommentWithResponse(ctx context.Context, options *Delet
 // EditPrComment Edit pull request comment
 func (c *Client) EditPrCommentWithResponse(ctx context.Context, options *EditPrCommentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*EditPrCommentResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/comments/{comment_id}",
 		Method:      "PATCH",
@@ -22736,6 +23230,7 @@ func (c *Client) EditPrCommentWithResponse(ctx context.Context, options *EditPrC
 // GetPullCommits Get pull request commits
 func (c *Client) GetPullCommitsWithResponse(ctx context.Context, options *GetPullCommitsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPullCommitsResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/commits",
 		Method:     "GET",
@@ -22791,10 +23286,18 @@ func (c *Client) GetPullCommitsWithResponse(ctx context.Context, options *GetPul
 // GetPullDiff Get pull request diff
 func (c *Client) GetPullDiffWithResponse(ctx context.Context, options *GetPullDiffRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPullDiffResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"commit":     {Style: "form", Explode: &[]bool{false}[0]},
+		"from":       {Style: "form", Explode: &[]bool{false}[0]},
+		"to":         {Style: "form", Explode: &[]bool{false}[0]},
+		"whitespace": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/diff",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/diff",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -22846,6 +23349,7 @@ func (c *Client) GetPullDiffWithResponse(ctx context.Context, options *GetPullDi
 // ReplyToDiscussion Reply to pull request discussion
 func (c *Client) ReplyToDiscussionWithResponse(ctx context.Context, options *ReplyToDiscussionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ReplyToDiscussionResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/discussions/{discussion_id}/reply",
 		Method:      "POST",
@@ -22902,6 +23406,7 @@ func (c *Client) ReplyToDiscussionWithResponse(ctx context.Context, options *Rep
 // ResolveDiscussion Resolve pull request discussion
 func (c *Client) ResolveDiscussionWithResponse(ctx context.Context, options *ResolveDiscussionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ResolveDiscussionResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/discussions/{discussion_id}/resolve",
 		Method:      "POST",
@@ -22944,10 +23449,19 @@ func (c *Client) ResolveDiscussionWithResponse(ctx context.Context, options *Res
 // GetPullFilePreview Get pull request file preview
 func (c *Client) GetPullFilePreviewWithResponse(ctx context.Context, options *GetPullFilePreviewRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPullFilePreviewResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"commit": {Style: "form", Explode: &[]bool{false}[0]},
+		"from":   {Style: "form", Explode: &[]bool{false}[0]},
+		"path":   {Style: "form", Explode: &[]bool{false}[0]},
+		"side":   {Style: "form", Explode: &[]bool{false}[0]},
+		"to":     {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/file-preview",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/file-preview",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -22999,6 +23513,7 @@ func (c *Client) GetPullFilePreviewWithResponse(ctx context.Context, options *Ge
 // GetPullFiles Get pull request files
 func (c *Client) GetPullFilesWithResponse(ctx context.Context, options *GetPullFilesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPullFilesResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/files",
 		Method:     "GET",
@@ -23054,6 +23569,7 @@ func (c *Client) GetPullFilesWithResponse(ctx context.Context, options *GetPullF
 // SetPrGithubState Set pull request GitHub state
 func (c *Client) SetPrGithubStateWithResponse(ctx context.Context, options *SetPrGithubStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetPrGithubStateResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/github-state",
 		Method:      "POST",
@@ -23110,6 +23626,7 @@ func (c *Client) SetPrGithubStateWithResponse(ctx context.Context, options *SetP
 // GetPullImportMetadata Get pull request import metadata
 func (c *Client) GetPullImportMetadataWithResponse(ctx context.Context, options *GetPullImportMetadataRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPullImportMetadataResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/import-metadata",
 		Method:     "GET",
@@ -23165,6 +23682,7 @@ func (c *Client) GetPullImportMetadataWithResponse(ctx context.Context, options 
 // ListPullRequestKataLinks List effective Kata links
 func (c *Client) ListPullRequestKataLinksWithResponse(ctx context.Context, options *ListPullRequestKataLinksRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListPullRequestKataLinksResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/kata-links",
 		Method:     "GET",
@@ -23220,6 +23738,7 @@ func (c *Client) ListPullRequestKataLinksWithResponse(ctx context.Context, optio
 // CreatePullRequestKataLink Create Kata link
 func (c *Client) CreatePullRequestKataLinkWithResponse(ctx context.Context, options *CreatePullRequestKataLinkRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreatePullRequestKataLinkResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/kata-links",
 		Method:      "POST",
@@ -23276,6 +23795,7 @@ func (c *Client) CreatePullRequestKataLinkWithResponse(ctx context.Context, opti
 // DeletePullRequestKataLink Delete Kata link
 func (c *Client) DeletePullRequestKataLinkWithResponse(ctx context.Context, options *DeletePullRequestKataLinkRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeletePullRequestKataLinkResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/kata-links/{link_id}",
 		Method:     "DELETE",
@@ -23317,6 +23837,7 @@ func (c *Client) DeletePullRequestKataLinkWithResponse(ctx context.Context, opti
 // SetPrLabels Set pull request labels
 func (c *Client) SetPrLabelsWithResponse(ctx context.Context, options *SetPrLabelsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetPrLabelsResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/labels",
 		Method:      "PUT",
@@ -23373,6 +23894,7 @@ func (c *Client) SetPrLabelsWithResponse(ctx context.Context, options *SetPrLabe
 // MergePull Merge pull request
 func (c *Client) MergePullWithResponse(ctx context.Context, options *MergePullRequestOptions, reqEditors ...runtime.RequestEditorFn) (*MergePullResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/merge",
 		Method:      "POST",
@@ -23429,6 +23951,7 @@ func (c *Client) MergePullWithResponse(ctx context.Context, options *MergePullRe
 // DeferMergePull Defer pull request merge until pending CI passes
 func (c *Client) DeferMergePullWithResponse(ctx context.Context, options *DeferMergePullRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeferMergePullResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/merge/deferred",
 		Method:      "POST",
@@ -23485,6 +24008,7 @@ func (c *Client) DeferMergePullWithResponse(ctx context.Context, options *DeferM
 // MarkPullReadyForReview Mark pull request ready for review
 func (c *Client) MarkPullReadyForReviewWithResponse(ctx context.Context, options *MarkPullReadyForReviewRequestOptions, reqEditors ...runtime.RequestEditorFn) (*MarkPullReadyForReviewResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/ready-for-review",
 		Method:     "POST",
@@ -23540,6 +24064,7 @@ func (c *Client) MarkPullReadyForReviewWithResponse(ctx context.Context, options
 // RequestPullChanges Request pull request changes
 func (c *Client) RequestPullChangesWithResponse(ctx context.Context, options *RequestPullChangesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RequestPullChangesResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/request-changes",
 		Method:      "POST",
@@ -23596,6 +24121,7 @@ func (c *Client) RequestPullChangesWithResponse(ctx context.Context, options *Re
 // DiscardPrReviewDraft Review pull request diff
 func (c *Client) DiscardPrReviewDraftWithResponse(ctx context.Context, options *DiscardPrReviewDraftRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DiscardPrReviewDraftResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/review-draft",
 		Method:     "DELETE",
@@ -23637,6 +24163,7 @@ func (c *Client) DiscardPrReviewDraftWithResponse(ctx context.Context, options *
 // GetPrReviewDraft Review pull request diff
 func (c *Client) GetPrReviewDraftWithResponse(ctx context.Context, options *GetPrReviewDraftRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPrReviewDraftResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/review-draft",
 		Method:     "GET",
@@ -23692,6 +24219,7 @@ func (c *Client) GetPrReviewDraftWithResponse(ctx context.Context, options *GetP
 // CreatePrReviewDraftComment Create pull request review draft comment
 func (c *Client) CreatePrReviewDraftCommentWithResponse(ctx context.Context, options *CreatePrReviewDraftCommentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreatePrReviewDraftCommentResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/review-draft/comments",
 		Method:      "POST",
@@ -23748,6 +24276,7 @@ func (c *Client) CreatePrReviewDraftCommentWithResponse(ctx context.Context, opt
 // DeletePrReviewDraftComment Review pull request diff
 func (c *Client) DeletePrReviewDraftCommentWithResponse(ctx context.Context, options *DeletePrReviewDraftCommentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeletePrReviewDraftCommentResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/review-draft/comments/{draft_comment_id}",
 		Method:     "DELETE",
@@ -23789,6 +24318,7 @@ func (c *Client) DeletePrReviewDraftCommentWithResponse(ctx context.Context, opt
 // EditPrReviewDraftComment Review pull request diff
 func (c *Client) EditPrReviewDraftCommentWithResponse(ctx context.Context, options *EditPrReviewDraftCommentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*EditPrReviewDraftCommentResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/review-draft/comments/{draft_comment_id}",
 		Method:      "PATCH",
@@ -23845,6 +24375,7 @@ func (c *Client) EditPrReviewDraftCommentWithResponse(ctx context.Context, optio
 // PublishPrReviewDraft Review pull request diff
 func (c *Client) PublishPrReviewDraftWithResponse(ctx context.Context, options *PublishPrReviewDraftRequestOptions, reqEditors ...runtime.RequestEditorFn) (*PublishPrReviewDraftResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/review-draft/publish",
 		Method:      "POST",
@@ -23901,6 +24432,7 @@ func (c *Client) PublishPrReviewDraftWithResponse(ctx context.Context, options *
 // ApplyPrReviewSuggestions Apply pull request review suggestions
 func (c *Client) ApplyPrReviewSuggestionsWithResponse(ctx context.Context, options *ApplyPrReviewSuggestionsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ApplyPrReviewSuggestionsResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/review-suggestions/apply",
 		Method:      "POST",
@@ -23957,6 +24489,7 @@ func (c *Client) ApplyPrReviewSuggestionsWithResponse(ctx context.Context, optio
 // ResolvePrReviewThread Review pull request diff
 func (c *Client) ResolvePrReviewThreadWithResponse(ctx context.Context, options *ResolvePrReviewThreadRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ResolvePrReviewThreadResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/review-threads/{thread_id}/resolve",
 		Method:     "POST",
@@ -23998,6 +24531,7 @@ func (c *Client) ResolvePrReviewThreadWithResponse(ctx context.Context, options 
 // UnresolvePrReviewThread Review pull request diff
 func (c *Client) UnresolvePrReviewThreadWithResponse(ctx context.Context, options *UnresolvePrReviewThreadRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UnresolvePrReviewThreadResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/review-threads/{thread_id}/unresolve",
 		Method:     "POST",
@@ -24039,6 +24573,7 @@ func (c *Client) UnresolvePrReviewThreadWithResponse(ctx context.Context, option
 // SetPrReviewers Set pull request reviewers
 func (c *Client) SetPrReviewersWithResponse(ctx context.Context, options *SetPrReviewersRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetPrReviewersResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/reviewers",
 		Method:      "PUT",
@@ -24095,6 +24630,7 @@ func (c *Client) SetPrReviewersWithResponse(ctx context.Context, options *SetPrR
 // GetPullStack Get pull request stack
 func (c *Client) GetPullStackWithResponse(ctx context.Context, options *GetPullStackRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPullStackResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/stack",
 		Method:     "GET",
@@ -24150,6 +24686,7 @@ func (c *Client) GetPullStackWithResponse(ctx context.Context, options *GetPullS
 // SetKanbanState Set pull request kanban state
 func (c *Client) SetKanbanStateWithResponse(ctx context.Context, options *SetKanbanStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetKanbanStateResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/state",
 		Method:      "PUT",
@@ -24192,6 +24729,7 @@ func (c *Client) SetKanbanStateWithResponse(ctx context.Context, options *SetKan
 // SyncPull Sync pull request
 func (c *Client) SyncPullWithResponse(ctx context.Context, options *SyncPullRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SyncPullResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/sync",
 		Method:     "POST",
@@ -24247,6 +24785,7 @@ func (c *Client) SyncPullWithResponse(ctx context.Context, options *SyncPullRequ
 // EnqueuePrSync Enqueue pull request sync
 func (c *Client) EnqueuePrSyncWithResponse(ctx context.Context, options *EnqueuePrSyncRequestOptions, reqEditors ...runtime.RequestEditorFn) (*EnqueuePrSyncResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/sync/async",
 		Method:     "POST",
@@ -24288,6 +24827,7 @@ func (c *Client) EnqueuePrSyncWithResponse(ctx context.Context, options *Enqueue
 // GetRateLimits Get rate limits
 func (c *Client) GetRateLimitsWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetRateLimitsResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/rate-limits",
 		Method:     "GET",
@@ -24342,6 +24882,7 @@ func (c *Client) GetRateLimitsWithResponse(ctx context.Context, reqEditors ...ru
 // DeleteRepo Delete repository
 func (c *Client) DeleteRepoWithResponse(ctx context.Context, options *DeleteRepoRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeleteRepoResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/repo/{provider}/{owner}/{name}",
 		Method:     "DELETE",
@@ -24383,6 +24924,7 @@ func (c *Client) DeleteRepoWithResponse(ctx context.Context, options *DeleteRepo
 // GetRepo Get repository
 func (c *Client) GetRepoWithResponse(ctx context.Context, options *GetRepoRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetRepoResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/repo/{provider}/{owner}/{name}",
 		Method:     "GET",
@@ -24438,10 +24980,19 @@ func (c *Client) GetRepoWithResponse(ctx context.Context, options *GetRepoReques
 // GetRepoBrowserAsset Get repository browser asset
 func (c *Client) GetRepoBrowserAssetWithResponse(ctx context.Context, options *GetRepoBrowserAssetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetRepoBrowserAssetResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"path":      {Style: "form", Explode: &[]bool{false}[0]},
+		"ref_name":  {Style: "form", Explode: &[]bool{false}[0]},
+		"ref_sha":   {Style: "form", Explode: &[]bool{false}[0]},
+		"ref_type":  {Style: "form", Explode: &[]bool{false}[0]},
+		"repo_path": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/repo/{provider}/{owner}/{name}/browser/asset",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/repo/{provider}/{owner}/{name}/browser/asset",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -24485,10 +25036,19 @@ func (c *Client) GetRepoBrowserAssetWithResponse(ctx context.Context, options *G
 // GetRepoBrowserBlob Get repository browser blob
 func (c *Client) GetRepoBrowserBlobWithResponse(ctx context.Context, options *GetRepoBrowserBlobRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetRepoBrowserBlobResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"path":      {Style: "form", Explode: &[]bool{false}[0]},
+		"ref_name":  {Style: "form", Explode: &[]bool{false}[0]},
+		"ref_sha":   {Style: "form", Explode: &[]bool{false}[0]},
+		"ref_type":  {Style: "form", Explode: &[]bool{false}[0]},
+		"repo_path": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/repo/{provider}/{owner}/{name}/browser/blob",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/repo/{provider}/{owner}/{name}/browser/blob",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -24540,10 +25100,20 @@ func (c *Client) GetRepoBrowserBlobWithResponse(ctx context.Context, options *Ge
 // GetRepoBrowserCommit Get repository browser commit
 func (c *Client) GetRepoBrowserCommitWithResponse(ctx context.Context, options *GetRepoBrowserCommitRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetRepoBrowserCommitResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"path":      {Style: "form", Explode: &[]bool{false}[0]},
+		"ref_name":  {Style: "form", Explode: &[]bool{false}[0]},
+		"ref_sha":   {Style: "form", Explode: &[]bool{false}[0]},
+		"ref_type":  {Style: "form", Explode: &[]bool{false}[0]},
+		"repo_path": {Style: "form", Explode: &[]bool{false}[0]},
+		"sha":       {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/repo/{provider}/{owner}/{name}/browser/commit",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/repo/{provider}/{owner}/{name}/browser/commit",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -24595,10 +25165,19 @@ func (c *Client) GetRepoBrowserCommitWithResponse(ctx context.Context, options *
 // GetRepoBrowserHistory Get repository browser file history
 func (c *Client) GetRepoBrowserHistoryWithResponse(ctx context.Context, options *GetRepoBrowserHistoryRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetRepoBrowserHistoryResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"path":      {Style: "form", Explode: &[]bool{false}[0]},
+		"ref_name":  {Style: "form", Explode: &[]bool{false}[0]},
+		"ref_sha":   {Style: "form", Explode: &[]bool{false}[0]},
+		"ref_type":  {Style: "form", Explode: &[]bool{false}[0]},
+		"repo_path": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/repo/{provider}/{owner}/{name}/browser/history",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/repo/{provider}/{owner}/{name}/browser/history",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -24650,10 +25229,18 @@ func (c *Client) GetRepoBrowserHistoryWithResponse(ctx context.Context, options 
 // GetRepoBrowserLastChanged Get repository browser last changed commits
 func (c *Client) GetRepoBrowserLastChangedWithResponse(ctx context.Context, options *GetRepoBrowserLastChangedRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetRepoBrowserLastChangedResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"ref_name":  {Style: "form", Explode: &[]bool{false}[0]},
+		"ref_sha":   {Style: "form", Explode: &[]bool{false}[0]},
+		"ref_type":  {Style: "form", Explode: &[]bool{false}[0]},
+		"repo_path": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/repo/{provider}/{owner}/{name}/browser/last-changed",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/repo/{provider}/{owner}/{name}/browser/last-changed",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -24705,10 +25292,15 @@ func (c *Client) GetRepoBrowserLastChangedWithResponse(ctx context.Context, opti
 // ListRepoBrowserRefs List repository browser refs
 func (c *Client) ListRepoBrowserRefsWithResponse(ctx context.Context, options *ListRepoBrowserRefsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListRepoBrowserRefsResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"repo_path": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/repo/{provider}/{owner}/{name}/browser/refs",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/repo/{provider}/{owner}/{name}/browser/refs",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -24760,10 +25352,18 @@ func (c *Client) ListRepoBrowserRefsWithResponse(ctx context.Context, options *L
 // ListRepoBrowserTree List repository browser tree
 func (c *Client) ListRepoBrowserTreeWithResponse(ctx context.Context, options *ListRepoBrowserTreeRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListRepoBrowserTreeResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"ref_name":  {Style: "form", Explode: &[]bool{false}[0]},
+		"ref_sha":   {Style: "form", Explode: &[]bool{false}[0]},
+		"ref_type":  {Style: "form", Explode: &[]bool{false}[0]},
+		"repo_path": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/repo/{provider}/{owner}/{name}/browser/tree",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/repo/{provider}/{owner}/{name}/browser/tree",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -24815,10 +25415,19 @@ func (c *Client) ListRepoBrowserTreeWithResponse(ctx context.Context, options *L
 // GetCommentAutocomplete Get comment autocomplete
 func (c *Client) GetCommentAutocompleteWithResponse(ctx context.Context, options *GetCommentAutocompleteRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetCommentAutocompleteResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"item_number": {Style: "form", Explode: &[]bool{false}[0]},
+		"item_type":   {Style: "form", Explode: &[]bool{false}[0]},
+		"limit":       {Style: "form", Explode: &[]bool{false}[0]},
+		"q":           {Style: "form", Explode: &[]bool{false}[0]},
+		"trigger":     {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/repo/{provider}/{owner}/{name}/comment-autocomplete",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/repo/{provider}/{owner}/{name}/comment-autocomplete",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -24870,10 +25479,15 @@ func (c *Client) GetCommentAutocompleteWithResponse(ctx context.Context, options
 // GetRepoCommitDiff Get repository commit diff
 func (c *Client) GetRepoCommitDiffWithResponse(ctx context.Context, options *GetRepoCommitDiffRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetRepoCommitDiffResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"whitespace": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/repo/{provider}/{owner}/{name}/commits/{sha}/diff",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/repo/{provider}/{owner}/{name}/commits/{sha}/diff",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -24925,6 +25539,7 @@ func (c *Client) GetRepoCommitDiffWithResponse(ctx context.Context, options *Get
 // ListRepoLabels List repository labels
 func (c *Client) ListRepoLabelsWithResponse(ctx context.Context, options *ListRepoLabelsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListRepoLabelsResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/repo/{provider}/{owner}/{name}/labels",
 		Method:     "GET",
@@ -24980,10 +25595,15 @@ func (c *Client) ListRepoLabelsWithResponse(ctx context.Context, options *ListRe
 // GetMarkdownImage Get markdown image
 func (c *Client) GetMarkdownImageWithResponse(ctx context.Context, options *GetMarkdownImageRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetMarkdownImageResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"source": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/repo/{provider}/{owner}/{name}/markdown-image",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/repo/{provider}/{owner}/{name}/markdown-image",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -25027,6 +25647,7 @@ func (c *Client) GetMarkdownImageWithResponse(ctx context.Context, options *GetM
 // RefreshRepo Refresh repository
 func (c *Client) RefreshRepoWithResponse(ctx context.Context, options *RefreshRepoRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RefreshRepoResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/repo/{provider}/{owner}/{name}/refresh",
 		Method:     "POST",
@@ -25082,10 +25703,15 @@ func (c *Client) RefreshRepoWithResponse(ctx context.Context, options *RefreshRe
 // ResolveRepoItem Resolve repository item
 func (c *Client) ResolveRepoItemWithResponse(ctx context.Context, options *ResolveRepoItemRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ResolveRepoItemResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"item_type": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/repo/{provider}/{owner}/{name}/resolve/{number}",
-		Method:     "POST",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/repo/{provider}/{owner}/{name}/resolve/{number}",
+		Method:        "POST",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -25137,6 +25763,7 @@ func (c *Client) ResolveRepoItemWithResponse(ctx context.Context, options *Resol
 // UpdateRepoUIVisibility Update repository UI visibility
 func (c *Client) UpdateRepoUIVisibilityWithResponse(ctx context.Context, options *UpdateRepoUIVisibilityRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateRepoUIVisibilityResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/repo/{provider}/{owner}/{name}/ui-visibility",
 		Method:      "PUT",
@@ -25193,6 +25820,7 @@ func (c *Client) UpdateRepoUIVisibilityWithResponse(ctx context.Context, options
 // CreateRepoWorkspace Create workspace for new work
 func (c *Client) CreateRepoWorkspaceWithResponse(ctx context.Context, options *CreateRepoWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateRepoWorkspaceResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/repo/{provider}/{owner}/{name}/workspaces",
 		Method:      "POST",
@@ -25249,6 +25877,7 @@ func (c *Client) CreateRepoWorkspaceWithResponse(ctx context.Context, options *C
 // UpdateRepoWorktreeBase Update repository worktree base
 func (c *Client) UpdateRepoWorktreeBaseWithResponse(ctx context.Context, options *UpdateRepoWorktreeBaseRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateRepoWorktreeBaseResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/repo/{provider}/{owner}/{name}/worktree-base",
 		Method:      "PUT",
@@ -25305,6 +25934,7 @@ func (c *Client) UpdateRepoWorktreeBaseWithResponse(ctx context.Context, options
 // ListRepos List repositories
 func (c *Client) ListReposWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*ListReposResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/repos",
 		Method:     "GET",
@@ -25359,6 +25989,7 @@ func (c *Client) ListReposWithResponse(ctx context.Context, reqEditors ...runtim
 // AddRepo Add repository
 func (c *Client) AddRepoWithResponse(ctx context.Context, options *AddRepoRequestOptions, reqEditors ...runtime.RequestEditorFn) (*AddRepoResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/repos",
 		Method:      "POST",
@@ -25415,6 +26046,7 @@ func (c *Client) AddRepoWithResponse(ctx context.Context, options *AddRepoReques
 // BulkAddRepos Bulk add repositories
 func (c *Client) BulkAddReposWithResponse(ctx context.Context, options *BulkAddReposRequestOptions, reqEditors ...runtime.RequestEditorFn) (*BulkAddReposResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/repos/bulk",
 		Method:      "POST",
@@ -25471,6 +26103,7 @@ func (c *Client) BulkAddReposWithResponse(ctx context.Context, options *BulkAddR
 // PreviewRepos Preview repositories
 func (c *Client) PreviewReposWithResponse(ctx context.Context, options *PreviewReposRequestOptions, reqEditors ...runtime.RequestEditorFn) (*PreviewReposResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/repos/preview",
 		Method:      "POST",
@@ -25527,6 +26160,7 @@ func (c *Client) PreviewReposWithResponse(ctx context.Context, options *PreviewR
 // ListRepoSummaries List repository summaries
 func (c *Client) ListRepoSummariesWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*ListRepoSummariesResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/repos/summary",
 		Method:     "GET",
@@ -25581,6 +26215,7 @@ func (c *Client) ListRepoSummariesWithResponse(ctx context.Context, reqEditors .
 // ListRoborevConfiguredRepositories List repositories configured for Roborev
 func (c *Client) ListRoborevConfiguredRepositoriesWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*ListRoborevConfiguredRepositoriesResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/roborev/configured-repositories",
 		Method:     "GET",
@@ -25635,6 +26270,7 @@ func (c *Client) ListRoborevConfiguredRepositoriesWithResponse(ctx context.Conte
 // GetRoborevStatus Get roborev status
 func (c *Client) GetRoborevStatusWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetRoborevStatusResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/roborev/status",
 		Method:     "GET",
@@ -25689,6 +26325,7 @@ func (c *Client) GetRoborevStatusWithResponse(ctx context.Context, reqEditors ..
 // ListHostRuntimeSessions List host runtime sessions
 func (c *Client) ListHostRuntimeSessionsWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*ListHostRuntimeSessionsResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/runtime/sessions",
 		Method:     "GET",
@@ -25743,6 +26380,7 @@ func (c *Client) ListHostRuntimeSessionsWithResponse(ctx context.Context, reqEdi
 // LaunchHostRuntimeSession Launch host runtime session
 func (c *Client) LaunchHostRuntimeSessionWithResponse(ctx context.Context, options *LaunchHostRuntimeSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*LaunchHostRuntimeSessionResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/runtime/sessions",
 		Method:      "POST",
@@ -25799,6 +26437,7 @@ func (c *Client) LaunchHostRuntimeSessionWithResponse(ctx context.Context, optio
 // StopHostRuntimeSession Stop host runtime session
 func (c *Client) StopHostRuntimeSessionWithResponse(ctx context.Context, options *StopHostRuntimeSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*StopHostRuntimeSessionResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/runtime/sessions/{session_key}",
 		Method:     "DELETE",
@@ -25840,6 +26479,7 @@ func (c *Client) StopHostRuntimeSessionWithResponse(ctx context.Context, options
 // GetHostRuntimeSessionAttachSpec Get host runtime session attach spec
 func (c *Client) GetHostRuntimeSessionAttachSpecWithResponse(ctx context.Context, options *GetHostRuntimeSessionAttachSpecRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetHostRuntimeSessionAttachSpecResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/runtime/sessions/{session_key}/attach-spec",
 		Method:     "GET",
@@ -25895,6 +26535,7 @@ func (c *Client) GetHostRuntimeSessionAttachSpecWithResponse(ctx context.Context
 // GetSettings Get settings
 func (c *Client) GetSettingsWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetSettingsResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/settings",
 		Method:     "GET",
@@ -25949,6 +26590,7 @@ func (c *Client) GetSettingsWithResponse(ctx context.Context, reqEditors ...runt
 // UpdateSettings Update settings
 func (c *Client) UpdateSettingsWithResponse(ctx context.Context, options *UpdateSettingsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateSettingsResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/settings",
 		Method:      "PUT",
@@ -26005,6 +26647,7 @@ func (c *Client) UpdateSettingsWithResponse(ctx context.Context, options *Update
 // GetFleetSettings Get fleet settings
 func (c *Client) GetFleetSettingsWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetFleetSettingsResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/settings/fleet",
 		Method:     "GET",
@@ -26059,6 +26702,7 @@ func (c *Client) GetFleetSettingsWithResponse(ctx context.Context, reqEditors ..
 // UpdateFleetSettings Update fleet settings
 func (c *Client) UpdateFleetSettingsWithResponse(ctx context.Context, options *UpdateFleetSettingsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateFleetSettingsResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/settings/fleet",
 		Method:      "PUT",
@@ -26115,6 +26759,7 @@ func (c *Client) UpdateFleetSettingsWithResponse(ctx context.Context, options *U
 // CreateRepoPreset Create repository preset
 func (c *Client) CreateRepoPresetWithResponse(ctx context.Context, options *CreateRepoPresetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateRepoPresetResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/settings/repo-presets",
 		Method:      "POST",
@@ -26171,6 +26816,7 @@ func (c *Client) CreateRepoPresetWithResponse(ctx context.Context, options *Crea
 // DeleteRepoPreset Delete repository preset
 func (c *Client) DeleteRepoPresetWithResponse(ctx context.Context, options *DeleteRepoPresetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeleteRepoPresetResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/settings/repo-presets/{name}",
 		Method:     "DELETE",
@@ -26226,6 +26872,7 @@ func (c *Client) DeleteRepoPresetWithResponse(ctx context.Context, options *Dele
 // UpdateRepoPreset Update repository preset
 func (c *Client) UpdateRepoPresetWithResponse(ctx context.Context, options *UpdateRepoPresetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateRepoPresetResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/settings/repo-presets/{name}",
 		Method:      "PUT",
@@ -26282,10 +26929,15 @@ func (c *Client) UpdateRepoPresetWithResponse(ctx context.Context, options *Upda
 // GetSnapshot Read the workspace snapshot
 func (c *Client) GetSnapshotWithResponse(ctx context.Context, options *GetSnapshotRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetSnapshotResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"include_peers": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/snapshot",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/snapshot",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -26337,10 +26989,15 @@ func (c *Client) GetSnapshotWithResponse(ctx context.Context, options *GetSnapsh
 // GetSnapshotAggregate Read the hub's neutral fleet aggregate
 func (c *Client) GetSnapshotAggregateWithResponse(ctx context.Context, options *GetSnapshotAggregateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetSnapshotAggregateResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"member_timeout": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/snapshot/aggregate",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/snapshot/aggregate",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -26392,6 +27049,7 @@ func (c *Client) GetSnapshotAggregateWithResponse(ctx context.Context, options *
 // GetSnapshotRaw Read the local raw inventory
 func (c *Client) GetSnapshotRawWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetSnapshotRawResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/snapshot/raw",
 		Method:     "GET",
@@ -26446,6 +27104,7 @@ func (c *Client) GetSnapshotRawWithResponse(ctx context.Context, reqEditors ...r
 // RefreshFleetStats Refresh all worktree git stats
 func (c *Client) RefreshFleetStatsWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*RefreshFleetStatsResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/snapshot/refresh-stats",
 		Method:     "POST",
@@ -26500,10 +27159,15 @@ func (c *Client) RefreshFleetStatsWithResponse(ctx context.Context, reqEditors .
 // ListStacks List stacks
 func (c *Client) ListStacksWithResponse(ctx context.Context, options *ListStacksRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListStacksResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"repo": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/stacks",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/stacks",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -26555,10 +27219,20 @@ func (c *Client) ListStacksWithResponse(ctx context.Context, options *ListStacks
 // UnsetStarred Unstar repository
 func (c *Client) UnsetStarredWithResponse(ctx context.Context, options *UnsetStarredRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UnsetStarredResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"item_type":     {Style: "form", Explode: &[]bool{false}[0]},
+		"name":          {Style: "form", Explode: &[]bool{false}[0]},
+		"number":        {Style: "form", Explode: &[]bool{false}[0]},
+		"owner":         {Style: "form", Explode: &[]bool{false}[0]},
+		"platform_host": {Style: "form", Explode: &[]bool{false}[0]},
+		"provider":      {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/starred",
-		Method:     "DELETE",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/starred",
+		Method:        "DELETE",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -26596,6 +27270,7 @@ func (c *Client) UnsetStarredWithResponse(ctx context.Context, options *UnsetSta
 // SetStarred Star repository
 func (c *Client) SetStarredWithResponse(ctx context.Context, options *SetStarredRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetStarredResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/starred",
 		Method:      "PUT",
@@ -26638,10 +27313,16 @@ func (c *Client) SetStarredWithResponse(ctx context.Context, options *SetStarred
 // TriggerSync Trigger sync
 func (c *Client) TriggerSyncWithResponse(ctx context.Context, options *TriggerSyncRequestOptions, reqEditors ...runtime.RequestEditorFn) (*TriggerSyncResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"only_repo":     {Style: "form", Explode: &[]bool{false}[0]},
+		"priority_repo": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/sync",
-		Method:     "POST",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/sync",
+		Method:        "POST",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -26679,6 +27360,7 @@ func (c *Client) TriggerSyncWithResponse(ctx context.Context, options *TriggerSy
 // GetSyncStatus Get sync status
 func (c *Client) GetSyncStatusWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetSyncStatusResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/sync/status",
 		Method:     "GET",
@@ -26733,6 +27415,7 @@ func (c *Client) GetSyncStatusWithResponse(ctx context.Context, reqEditors ...ru
 // CaptureTelemetryEvent Capture telemetry event
 func (c *Client) CaptureTelemetryEventWithResponse(ctx context.Context, options *CaptureTelemetryEventRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CaptureTelemetryEventResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/telemetry/events",
 		Method:      "POST",
@@ -26788,6 +27471,7 @@ func (c *Client) CaptureTelemetryEventWithResponse(ctx context.Context, options 
 
 func (c *Client) WriteTerminalClipboardWithResponse(ctx context.Context, options *WriteTerminalClipboardRequestOptions, reqEditors ...runtime.RequestEditorFn) (*WriteTerminalClipboardResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/terminal/clipboard",
 		Method:      "POST",
@@ -26830,6 +27514,7 @@ func (c *Client) WriteTerminalClipboardWithResponse(ctx context.Context, options
 // StoreTerminalPasteImage Store a browser clipboard image for terminal paste
 func (c *Client) StoreTerminalPasteImageWithResponse(ctx context.Context, options *StoreTerminalPasteImageRequestOptions, reqEditors ...runtime.RequestEditorFn) (*StoreTerminalPasteImageResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/terminal/paste-image",
 		Method:      "POST",
@@ -26886,6 +27571,7 @@ func (c *Client) StoreTerminalPasteImageWithResponse(ctx context.Context, option
 // GetToolingStatus Report git/gh/glab CLI availability and auth
 func (c *Client) GetToolingStatusWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetToolingStatusResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/tooling-status",
 		Method:     "GET",
@@ -26940,6 +27626,7 @@ func (c *Client) GetToolingStatusWithResponse(ctx context.Context, reqEditors ..
 // SetActiveWorktree Set the focused worktree
 func (c *Client) SetActiveWorktreeWithResponse(ctx context.Context, options *SetActiveWorktreeRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetActiveWorktreeResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/ui/active-worktree",
 		Method:      "PUT",
@@ -26982,6 +27669,7 @@ func (c *Client) SetActiveWorktreeWithResponse(ctx context.Context, options *Set
 // GetVersion Get server version
 func (c *Client) GetVersionWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetVersionResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/version",
 		Method:     "GET",
@@ -27036,6 +27724,7 @@ func (c *Client) GetVersionWithResponse(ctx context.Context, reqEditors ...runti
 // ListWorkspaces List workspaces
 func (c *Client) ListWorkspacesWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*ListWorkspacesResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/workspaces",
 		Method:     "GET",
@@ -27090,6 +27779,7 @@ func (c *Client) ListWorkspacesWithResponse(ctx context.Context, reqEditors ...r
 // CreateWorkspace Create workspace
 func (c *Client) CreateWorkspaceWithResponse(ctx context.Context, options *CreateWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateWorkspaceResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/workspaces",
 		Method:      "POST",
@@ -27146,10 +27836,15 @@ func (c *Client) CreateWorkspaceWithResponse(ctx context.Context, options *Creat
 // DeleteWorkspace Delete workspace
 func (c *Client) DeleteWorkspaceWithResponse(ctx context.Context, options *DeleteWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeleteWorkspaceResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"force": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/workspaces/{id}",
-		Method:     "DELETE",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/workspaces/{id}",
+		Method:        "DELETE",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -27187,6 +27882,7 @@ func (c *Client) DeleteWorkspaceWithResponse(ctx context.Context, options *Delet
 // GetWorkspace Get workspace
 func (c *Client) GetWorkspaceWithResponse(ctx context.Context, options *GetWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetWorkspaceResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/workspaces/{id}",
 		Method:     "GET",
@@ -27242,6 +27938,7 @@ func (c *Client) GetWorkspaceWithResponse(ctx context.Context, options *GetWorks
 // ListWorkspaceAgentSessions List live coding sessions
 func (c *Client) ListWorkspaceAgentSessionsWithResponse(ctx context.Context, options *ListWorkspaceAgentSessionsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListWorkspaceAgentSessionsResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/workspaces/{id}/agent-sessions",
 		Method:     "GET",
@@ -27297,6 +27994,7 @@ func (c *Client) ListWorkspaceAgentSessionsWithResponse(ctx context.Context, opt
 // GetWorkspaceCommits Get workspace commits
 func (c *Client) GetWorkspaceCommitsWithResponse(ctx context.Context, options *GetWorkspaceCommitsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetWorkspaceCommitsResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/workspaces/{id}/commits",
 		Method:     "GET",
@@ -27352,10 +28050,21 @@ func (c *Client) GetWorkspaceCommitsWithResponse(ctx context.Context, options *G
 // GetWorkspaceDiff Get workspace diff
 func (c *Client) GetWorkspaceDiffWithResponse(ctx context.Context, options *GetWorkspaceDiffRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetWorkspaceDiffResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"base":       {Style: "form", Explode: &[]bool{false}[0]},
+		"commit":     {Style: "form", Explode: &[]bool{false}[0]},
+		"from":       {Style: "form", Explode: &[]bool{false}[0]},
+		"path":       {Style: "form", Explode: &[]bool{false}[0]},
+		"revision":   {Style: "form", Explode: &[]bool{false}[0]},
+		"to":         {Style: "form", Explode: &[]bool{false}[0]},
+		"whitespace": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/workspaces/{id}/diff",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/workspaces/{id}/diff",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -27407,10 +28116,15 @@ func (c *Client) GetWorkspaceDiffWithResponse(ctx context.Context, options *GetW
 // WatchWorkspaceDiff Watch selected workspace diff
 func (c *Client) WatchWorkspaceDiffWithResponse(ctx context.Context, options *WatchWorkspaceDiffRequestOptions, reqEditors ...runtime.RequestEditorFn) (*WatchWorkspaceDiffResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"version": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/workspaces/{id}/diff/watch",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/workspaces/{id}/diff/watch",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -27462,10 +28176,22 @@ func (c *Client) WatchWorkspaceDiffWithResponse(ctx context.Context, options *Wa
 // GetWorkspaceFilePreview Get workspace file preview
 func (c *Client) GetWorkspaceFilePreviewWithResponse(ctx context.Context, options *GetWorkspaceFilePreviewRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetWorkspaceFilePreviewResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"base":       {Style: "form", Explode: &[]bool{false}[0]},
+		"commit":     {Style: "form", Explode: &[]bool{false}[0]},
+		"from":       {Style: "form", Explode: &[]bool{false}[0]},
+		"path":       {Style: "form", Explode: &[]bool{false}[0]},
+		"revision":   {Style: "form", Explode: &[]bool{false}[0]},
+		"side":       {Style: "form", Explode: &[]bool{false}[0]},
+		"to":         {Style: "form", Explode: &[]bool{false}[0]},
+		"whitespace": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/workspaces/{id}/file-preview",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/workspaces/{id}/file-preview",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -27517,10 +28243,19 @@ func (c *Client) GetWorkspaceFilePreviewWithResponse(ctx context.Context, option
 // GetWorkspaceFiles Get workspace files
 func (c *Client) GetWorkspaceFilesWithResponse(ctx context.Context, options *GetWorkspaceFilesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetWorkspaceFilesResp, error) {
 	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"base":       {Style: "form", Explode: &[]bool{false}[0]},
+		"commit":     {Style: "form", Explode: &[]bool{false}[0]},
+		"from":       {Style: "form", Explode: &[]bool{false}[0]},
+		"to":         {Style: "form", Explode: &[]bool{false}[0]},
+		"whitespace": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/workspaces/{id}/files",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/workspaces/{id}/files",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -27572,6 +28307,7 @@ func (c *Client) GetWorkspaceFilesWithResponse(ctx context.Context, options *Get
 // ListWorkspaceKataLinks List effective Kata links
 func (c *Client) ListWorkspaceKataLinksWithResponse(ctx context.Context, options *ListWorkspaceKataLinksRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListWorkspaceKataLinksResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/workspaces/{id}/kata-links",
 		Method:     "GET",
@@ -27627,6 +28363,7 @@ func (c *Client) ListWorkspaceKataLinksWithResponse(ctx context.Context, options
 // CreateWorkspaceKataLink Create Kata link
 func (c *Client) CreateWorkspaceKataLinkWithResponse(ctx context.Context, options *CreateWorkspaceKataLinkRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateWorkspaceKataLinkResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/workspaces/{id}/kata-links",
 		Method:      "POST",
@@ -27683,6 +28420,7 @@ func (c *Client) CreateWorkspaceKataLinkWithResponse(ctx context.Context, option
 // DeleteWorkspaceKataLink Delete Kata link
 func (c *Client) DeleteWorkspaceKataLinkWithResponse(ctx context.Context, options *DeleteWorkspaceKataLinkRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeleteWorkspaceKataLinkResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/workspaces/{id}/kata-links/{link_id}",
 		Method:     "DELETE",
@@ -27724,6 +28462,7 @@ func (c *Client) DeleteWorkspaceKataLinkWithResponse(ctx context.Context, option
 // PullWorkspaceBranch Pull workspace branch
 func (c *Client) PullWorkspaceBranchWithResponse(ctx context.Context, options *PullWorkspaceBranchRequestOptions, reqEditors ...runtime.RequestEditorFn) (*PullWorkspaceBranchResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/workspaces/{id}/pull",
 		Method:     "POST",
@@ -27779,6 +28518,7 @@ func (c *Client) PullWorkspaceBranchWithResponse(ctx context.Context, options *P
 // PushWorkspaceBranch Push workspace branch
 func (c *Client) PushWorkspaceBranchWithResponse(ctx context.Context, options *PushWorkspaceBranchRequestOptions, reqEditors ...runtime.RequestEditorFn) (*PushWorkspaceBranchResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/workspaces/{id}/push",
 		Method:     "POST",
@@ -27834,6 +28574,7 @@ func (c *Client) PushWorkspaceBranchWithResponse(ctx context.Context, options *P
 // RefreshWorkspace Refresh workspace
 func (c *Client) RefreshWorkspaceWithResponse(ctx context.Context, options *RefreshWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RefreshWorkspaceResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/workspaces/{id}/refresh",
 		Method:     "POST",
@@ -27889,6 +28630,7 @@ func (c *Client) RefreshWorkspaceWithResponse(ctx context.Context, options *Refr
 // RetryWorkspace Retry workspace
 func (c *Client) RetryWorkspaceWithResponse(ctx context.Context, options *RetryWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RetryWorkspaceResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/workspaces/{id}/retry",
 		Method:     "POST",
@@ -27944,6 +28686,7 @@ func (c *Client) RetryWorkspaceWithResponse(ctx context.Context, options *RetryW
 // RevealWorkspace Reveal workspace folder
 func (c *Client) RevealWorkspaceWithResponse(ctx context.Context, options *RevealWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RevealWorkspaceResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/workspaces/{id}/reveal",
 		Method:     "POST",
@@ -27985,6 +28728,7 @@ func (c *Client) RevealWorkspaceWithResponse(ctx context.Context, options *Revea
 // GetWorkspaceRuntime Get workspace runtime
 func (c *Client) GetWorkspaceRuntimeWithResponse(ctx context.Context, options *GetWorkspaceRuntimeRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetWorkspaceRuntimeResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/workspaces/{id}/runtime",
 		Method:     "GET",
@@ -28040,6 +28784,7 @@ func (c *Client) GetWorkspaceRuntimeWithResponse(ctx context.Context, options *G
 // LaunchWorkspaceAgentHandoff Launch an agent with an initial message
 func (c *Client) LaunchWorkspaceAgentHandoffWithResponse(ctx context.Context, options *LaunchWorkspaceAgentHandoffRequestOptions, reqEditors ...runtime.RequestEditorFn) (*LaunchWorkspaceAgentHandoffResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/workspaces/{id}/runtime/agent-handoffs",
 		Method:      "POST",
@@ -28096,6 +28841,7 @@ func (c *Client) LaunchWorkspaceAgentHandoffWithResponse(ctx context.Context, op
 // LaunchWorkspaceRuntimeSession Launch workspace runtime session
 func (c *Client) LaunchWorkspaceRuntimeSessionWithResponse(ctx context.Context, options *LaunchWorkspaceRuntimeSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*LaunchWorkspaceRuntimeSessionResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/workspaces/{id}/runtime/sessions",
 		Method:      "POST",
@@ -28152,6 +28898,7 @@ func (c *Client) LaunchWorkspaceRuntimeSessionWithResponse(ctx context.Context, 
 // StopWorkspaceRuntimeSession Stop workspace runtime session
 func (c *Client) StopWorkspaceRuntimeSessionWithResponse(ctx context.Context, options *StopWorkspaceRuntimeSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*StopWorkspaceRuntimeSessionResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/workspaces/{id}/runtime/sessions/{session_key}",
 		Method:     "DELETE",
@@ -28193,6 +28940,7 @@ func (c *Client) StopWorkspaceRuntimeSessionWithResponse(ctx context.Context, op
 // RenameWorkspaceRuntimeSession Rename workspace runtime session
 func (c *Client) RenameWorkspaceRuntimeSessionWithResponse(ctx context.Context, options *RenameWorkspaceRuntimeSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RenameWorkspaceRuntimeSessionResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/workspaces/{id}/runtime/sessions/{session_key}",
 		Method:      "PATCH",
@@ -28249,6 +28997,7 @@ func (c *Client) RenameWorkspaceRuntimeSessionWithResponse(ctx context.Context, 
 // GetWorkspaceRuntimeSessionAttachSpec Get workspace runtime session attach spec
 func (c *Client) GetWorkspaceRuntimeSessionAttachSpecWithResponse(ctx context.Context, options *GetWorkspaceRuntimeSessionAttachSpecRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetWorkspaceRuntimeSessionAttachSpecResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/workspaces/{id}/runtime/sessions/{session_key}/attach-spec",
 		Method:     "GET",
@@ -28304,6 +29053,7 @@ func (c *Client) GetWorkspaceRuntimeSessionAttachSpecWithResponse(ctx context.Co
 // GetWorkspaceRuntimeSessionInitialMessage Get initial agent message status
 func (c *Client) GetWorkspaceRuntimeSessionInitialMessageWithResponse(ctx context.Context, options *GetWorkspaceRuntimeSessionInitialMessageRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetWorkspaceRuntimeSessionInitialMessageResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/workspaces/{id}/runtime/sessions/{session_key}/initial-message",
 		Method:     "GET",
@@ -28359,6 +29109,7 @@ func (c *Client) GetWorkspaceRuntimeSessionInitialMessageWithResponse(ctx contex
 // SubmitWorkspaceRuntimeSessionInitialMessage Submit initial agent message
 func (c *Client) SubmitWorkspaceRuntimeSessionInitialMessageWithResponse(ctx context.Context, options *SubmitWorkspaceRuntimeSessionInitialMessageRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SubmitWorkspaceRuntimeSessionInitialMessageResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/workspaces/{id}/runtime/sessions/{session_key}/initial-message",
 		Method:      "POST",
@@ -28415,6 +29166,7 @@ func (c *Client) SubmitWorkspaceRuntimeSessionInitialMessageWithResponse(ctx con
 // RemoveStaleWorktree Remove a stale worktree
 func (c *Client) RemoveStaleWorktreeWithResponse(ctx context.Context, options *RemoveStaleWorktreeRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RemoveStaleWorktreeResp, error) {
 	var err error
+
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/worktrees/remove-stale",
 		Method:      "POST",

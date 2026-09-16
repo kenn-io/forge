@@ -140,11 +140,15 @@ func TestShutdownReleasesASubscriberBlockedInWrite(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(t.Context())
 	writer := &blockedWriter{header: http.Header{}, deadline: make(chan time.Time, 8)}
+	feed := new(Broadcaster)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		serveStream(ctx, writer, new(Broadcaster))
+		serveStream(ctx, writer, feed)
 	}()
+	// Hints waiting in the subscriber's buffer at shutdown must not re-arm a
+	// fresh write deadline after cancellation expired the previous one.
+	feed.Publish([]Hint{{Provider: "github", Host: "github.com", RepositoryID: "R_x", Target: Repository}})
 	select {
 	case deadline := <-writer.deadline:
 		require.True(deadline.After(time.Now()), "a frame write carries a bounded deadline")

@@ -96,6 +96,10 @@ func serveStream(ctx context.Context, w http.ResponseWriter, broadcaster *Broadc
 	stop := context.AfterFunc(ctx, func() { _ = controller.SetWriteDeadline(time.Now()) })
 	defer stop()
 	write := func(frame string) bool {
+		// Once cancelled, never re-arm the deadline the cancellation expired.
+		if ctx.Err() != nil {
+			return false
+		}
 		if err := controller.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
 			return false
 		}

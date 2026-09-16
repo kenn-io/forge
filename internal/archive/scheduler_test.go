@@ -41,9 +41,9 @@ func TestArchiveSchedulerDoesNotSerializeSameHostOutsideAdmission(t *testing.T) 
 		go func() { _, err := scheduler.Run(t.Context(), groups, work); errCh <- err }()
 		go func() { _, err := scheduler.Run(t.Context(), groups, work); errCh <- err }()
 		synctest.Wait()
-		require.Len(entered, 2)
-		release <- struct{}{}
-		release <- struct{}{}
+		observed := len(entered)
+		close(release)
+		require.Equal(2, observed)
 		require.NoError(<-errCh)
 		require.NoError(<-errCh)
 		assert.Equal(int32(2), maximum.Load())
@@ -79,9 +79,9 @@ func TestArchiveSchedulerRunsIndependentHostsConcurrently(t *testing.T) {
 		done := make(chan error, 1)
 		go func() { _, err := scheduler.Run(t.Context(), groups, work); done <- err }()
 		synctest.Wait()
-		require.Len(entered, 2)
-		release <- struct{}{}
-		release <- struct{}{}
+		observed := len(entered)
+		close(release)
+		require.Equal(2, observed)
 		require.NoError(<-done)
 		assert.Equal(int32(2), maximum.Load())
 	})

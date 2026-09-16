@@ -93,7 +93,7 @@ describe("flash rendering across app shells", () => {
     mounted = await mountBrowserApp("/pulls");
     overlayTarget = document.createElement("div");
     document.body.appendChild(overlayTarget);
-    ({ unmount: overlayUnmount } = render(Modal, {
+    ({ unmount: overlayUnmount } = await render(Modal, {
       target: overlayTarget,
       props: { title: "Retry action" },
     }));

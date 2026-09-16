@@ -26,7 +26,7 @@ import DesignSystemPanelHarness from "./DesignSystemPanelHarness.svelte";
 
 describe("design system tabbed panel demo (browser)", () => {
   it("renders selected-tab chrome and split divider with real metrics", async () => {
-    const { container } = render(DesignSystemPanelHarness);
+    const { container } = await render(DesignSystemPanelHarness);
 
     const assert = expect;
 
@@ -81,7 +81,7 @@ describe("design system tabbed panel demo (browser)", () => {
   });
 
   it("scrolls the active panel body when its content overflows", async () => {
-    const { container } = render(DesignSystemPanelHarness);
+    const { container } = await render(DesignSystemPanelHarness);
 
     const assert = expect;
 

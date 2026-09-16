@@ -219,7 +219,7 @@ async function mountStatusBar(path: string, overrides: MockRouteOverride[]): Pro
   const target = document.createElement("div");
   document.body.appendChild(target);
   const runtime = makeAppRuntime();
-  const { unmount } = render(StatusBarTestHost, { target, props: { runtime } });
+  const { unmount } = await render(StatusBarTestHost, { target, props: { runtime } });
 
   return {
     api,

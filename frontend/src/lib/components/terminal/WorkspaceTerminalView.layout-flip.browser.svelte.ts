@@ -97,7 +97,7 @@ describe("WorkspaceTerminalView layout flip", () => {
     };
     const runtime = makeAppRuntime();
 
-    const screen = render(WorkspaceTerminalView, {
+    const screen = await render(WorkspaceTerminalView, {
       props: { runtime, workspaceId: "ws-1", hideWorkspaceList: false, hideRightSidebar: true },
       context: new Map([[STORES_KEY, { events: eventsStore, settings: settingsStore }]]),
     });

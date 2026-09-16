@@ -41,10 +41,10 @@ describe("workspace create split button control height", () => {
   // the same size, which only real CSS can tell us.
   for (const size of ["sm", "md"] as const) {
     it(`matches a sibling ${size} kit button on both segments`, async () => {
-      render(WorkspaceCreateSplitButtonRuntimeHarness, {
+      await render(WorkspaceCreateSplitButtonRuntimeHarness, {
         props: { label: "Create Workspace", size, launchTargets, onCreate: () => {} },
       });
-      render(Button, { props: { size, label: "Close issue" } });
+      await render(Button, { props: { size, label: "Close issue" } });
 
       const sibling = page.getByRole("button", { name: "Close issue" });
       await expect.element(sibling).toBeVisible();
@@ -76,7 +76,7 @@ describe("workspace create split button in the New workspace dialog", () => {
     globalThis.fetch = api.fetch;
     const onCreated = vi.fn();
 
-    render(NewWorkspaceDialogRuntimeHarness, {
+    await render(NewWorkspaceDialogRuntimeHarness, {
       props: { open: true, onClose: vi.fn(), onCreated },
       context: new Map([
         [
@@ -117,7 +117,7 @@ describe("workspace create split button in the New workspace dialog", () => {
     globalThis.fetch = createMockApiFetch().fetch;
     setThemeMode("dark");
 
-    render(NewWorkspaceDialogRuntimeHarness, {
+    await render(NewWorkspaceDialogRuntimeHarness, {
       props: { open: true, onClose: vi.fn(), onCreated: vi.fn() },
       context: new Map([
         [
@@ -193,7 +193,7 @@ describe("workspace create split button in the New workspace dialog", () => {
     globalThis.fetch = api.fetch;
     const onCreated = vi.fn();
 
-    render(NewWorkspaceDialogRuntimeHarness, {
+    await render(NewWorkspaceDialogRuntimeHarness, {
       props: { open: true, initialSource: "kata_issue", onClose: vi.fn(), onCreated },
       context: new Map([
         [

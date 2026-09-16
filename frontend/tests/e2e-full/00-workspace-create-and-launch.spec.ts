@@ -159,7 +159,7 @@ async function trackSessionWebSockets(page: Page): Promise<void> {
         });
       }
 
-      override send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
+      override send(data: Parameters<WebSocket["send"]>[0]): void {
         const entry = entries.get(this);
         if (typeof data === "string") entry?.sent.push(data);
         else if (ArrayBuffer.isView(data)) entry?.sent.push(new TextDecoder().decode(data));

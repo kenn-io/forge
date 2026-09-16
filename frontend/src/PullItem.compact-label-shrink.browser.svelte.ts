@@ -56,14 +56,14 @@ interface MountedItem {
   unmount: () => void;
 }
 
-function mountAt(widthPx: number, mobileMain: boolean): MountedItem {
+async function mountAt(widthPx: number, mobileMain: boolean): Promise<MountedItem> {
   const wrapper = document.createElement("div");
   wrapper.style.width = `${widthPx}px`;
   wrapper.style.boxSizing = "border-box";
   if (mobileMain) wrapper.classList.add("mobile-main");
   document.body.appendChild(wrapper);
 
-  const { unmount } = render(PullItem, {
+  const { unmount } = await render(PullItem, {
     target: wrapper,
     props: {
       pr: mkPR(),
@@ -129,13 +129,13 @@ describe("PullItem compact label row at narrow widths", () => {
     expect(labelRowRect.right).toBeLessThanOrEqual(itemRect.right + 0.5);
   }
 
-  it("keeps the item number visible and the title non-zero at the 200px minimum sidebar width", () => {
-    mounted = mountAt(200, false);
+  it("keeps the item number visible and the title non-zero at the 200px minimum sidebar width", async () => {
+    mounted = await mountAt(200, false);
     assertTitleRowFits();
   });
 
-  it("keeps the item number visible and the title non-zero on a narrow phone card", () => {
-    mounted = mountAt(360, true);
+  it("keeps the item number visible and the title non-zero on a narrow phone card", async () => {
+    mounted = await mountAt(360, true);
     assertTitleRowFits();
   });
 });

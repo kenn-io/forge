@@ -8,7 +8,7 @@ import CollapsibleDescriptionBrowserFixture from "./test/CollapsibleDescriptionB
 describe("collapsible description browser layout", () => {
   it("creates a 320px vertical scroll container when collapsed", async () => {
     await page.viewport(1280, 900);
-    const { container, unmount } = render(CollapsibleDescriptionBrowserFixture);
+    const { container, unmount } = await render(CollapsibleDescriptionBrowserFixture);
 
     try {
       const expandedCard = container.querySelector(".detail-description-card");
@@ -42,7 +42,7 @@ describe("collapsible description browser layout", () => {
 
   it("keeps the copy control in the description header on mobile", async () => {
     await page.viewport(390, 844);
-    const { container, unmount } = render(CollapsibleDescriptionBrowserFixture);
+    const { container, unmount } = await render(CollapsibleDescriptionBrowserFixture);
 
     try {
       const copyButton = container.querySelector(".kit-copy-btn.body-copy");

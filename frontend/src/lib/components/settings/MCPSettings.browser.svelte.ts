@@ -14,7 +14,7 @@ describe("MCPSettings numeric inputs (browser)", () => {
       restart_required: false,
       active_requires_auth: false,
     };
-    render(MCPSettingsBrowserHarness, {
+    await render(MCPSettingsBrowserHarness, {
       props: { mcp, onUpdate: vi.fn() },
     });
 

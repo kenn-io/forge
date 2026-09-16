@@ -186,7 +186,7 @@ afterEach(async () => {
   catalogClaimed = false;
 });
 
-function renderWorkflowDetail() {
+async function renderWorkflowDetail() {
   const state = $state<{ detail: PullDetail; loading: boolean; error: string | null }>({
     detail: pullDetail(),
     loading: false,
@@ -273,7 +273,7 @@ function renderWorkflowDetail() {
     autoSync: false,
   });
 
-  render(PullDetailTestHarness, {
+  await render(PullDetailTestHarness, {
     target: wrapper,
     props: {
       runtime,
@@ -300,7 +300,7 @@ function renderWorkflowDetail() {
 
 describe("PullDetail provider workflow actions", () => {
   it("places workflow dispatch beside workspace tools while primary actions collapse only under pressure", async () => {
-    const { wrapper } = renderWorkflowDetail();
+    const { wrapper } = await renderWorkflowDetail();
 
     let workflowTrigger: HTMLButtonElement | null = null;
     let workspaceTrigger: HTMLButtonElement | null = null;
@@ -364,7 +364,7 @@ describe("PullDetail provider workflow actions", () => {
   });
 
   it("keeps workflow drafts bound to the selected PR through delayed and failed navigation", async () => {
-    const { state, detailProps, workflowActions, wrapper } = renderWorkflowDetail();
+    const { state, detailProps, workflowActions, wrapper } = await renderWorkflowDetail();
     await vi.waitFor(() => expect(visibleButton("Run workflow")).not.toBeNull(), WAIT);
     visibleButton("Run workflow")!.click();
     await vi.waitFor(() => expect(visibleButton("Release")).not.toBeNull(), WAIT);
@@ -427,7 +427,7 @@ describe("PullDetail provider workflow actions", () => {
   });
 
   it("closes the draft when a different permanent repository ID takes over the same route", async () => {
-    const { state, workflowActions, wrapper } = renderWorkflowDetail();
+    const { state, workflowActions, wrapper } = await renderWorkflowDetail();
     await vi.waitFor(() => expect(visibleButton("Run workflow")).not.toBeNull(), WAIT);
     visibleButton("Run workflow")!.click();
     await vi.waitFor(() => expect(visibleButton("Release")).not.toBeNull(), WAIT);

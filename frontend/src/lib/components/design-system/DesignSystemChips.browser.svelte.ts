@@ -22,7 +22,7 @@ const TRANSPARENT = "rgba(0, 0, 0, 0)";
 
 describe("design system chip matrix (browser)", () => {
   it("renders shared chip geometry and tokens with real computed styles", async () => {
-    const { container } = render(DesignSystemChipsHarness);
+    const { container } = await render(DesignSystemChipsHarness);
 
     const assert = expect;
 
@@ -53,7 +53,7 @@ describe("design system chip matrix (browser)", () => {
   });
 
   it("honors plain-case opt-out and interactive cursor at the chip tier", async () => {
-    const { container } = render(DesignSystemChipsHarness);
+    const { container } = await render(DesignSystemChipsHarness);
 
     const assert = expect;
 

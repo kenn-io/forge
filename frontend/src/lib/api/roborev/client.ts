@@ -1,19 +1,19 @@
-import createClient from "openapi-fetch";
 import { Effect, Option, Schema, Stream } from "effect";
-import type { paths } from "./generated/schema.js";
 import { normalizedFetch, type FetchFn } from "../request.js";
 import { TransientTransportError } from "../effect-errors.js";
 import { openStreamingResponse, responseByteStream } from "../../browser/streaming-fetch.js";
 import { RoborevEvent, RoborevJobOutputSnapshot, RoborevLogLinePayload, RoborevStreamOpened } from "./schemas.js";
 
-export type RoborevClient = ReturnType<typeof createClient<paths>>;
+export type RoborevClient = FetchFn;
 
 export function createRoborevClient(baseUrl: string, fetchFn?: FetchFn): RoborevClient {
   const inner = fetchFn ?? globalThis.fetch.bind(globalThis);
-  return createClient<paths>({
-    baseUrl,
-    fetch: normalizedFetch(inner),
-  });
+  const transport = normalizedFetch(inner);
+  return (input, init) => {
+    const path = input instanceof Request ? input.url : String(input);
+    const url = new URL(`${baseUrl.replace(/\/$/, "")}/${path.replace(/^\//, "")}`, globalThis.location.origin);
+    return transport(input instanceof Request ? new Request(url, input) : url, init);
+  };
 }
 
 export const executeRoborevRequest = Effect.fn("RoborevClient.execute")(function* <A>(

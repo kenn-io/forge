@@ -65,7 +65,7 @@ func TestWorkspaceUnconfiguredTmuxUsesForgeSocketE2E(t *testing.T) {
 	ts := httptest.NewServer(fixture.server)
 	t.Cleanup(ts.Close)
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
-		"/ws/v1/workspaces/" + ws.Id + "/terminal?cols=80&rows=24"
+		"/ws/v1/workspaces/" + ws.ID + "/terminal?cols=80&rows=24"
 	conn, _, err := websocket.Dial(ctx, wsURL, nil)
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
@@ -109,13 +109,10 @@ func TestWorkspaceUnconfiguredTmuxUsesForgeSocketE2E(t *testing.T) {
 	// kenn-forge socket: the launcher's tmux client resolves -L under
 	// TMUX_TMPDIR, so a client environment that dropped it would create
 	// the session on a different tmux server than the manager owns.
-	launch, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{TargetKey: "helper"},
-	)
+	launch, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{TargetKey: "helper"}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, launch.StatusCode(), string(launch.Body))
-	agentSessionPrefix := "forge-" + ws.Id + "-"
+	require.Equal(http.StatusOK, launch.StatusCode, string(launch.Body))
+	agentSessionPrefix := "forge-" + ws.ID + "-"
 	require.Eventually(func() bool {
 		probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
@@ -137,7 +134,7 @@ func TestWorkspaceUnconfiguredTmuxUsesForgeSocketE2E(t *testing.T) {
 		agentSessionPrefix,
 	)
 
-	deleteWorkspaceForPtyOwnerTest(t, ctx, fixture, ws.Id)
+	deleteWorkspaceForPtyOwnerTest(t, ctx, fixture, ws.ID)
 	require.Eventually(
 		func() bool { return !hasSessionOnForgeSocket() },
 		15*time.Second, 100*time.Millisecond,

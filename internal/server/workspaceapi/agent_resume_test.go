@@ -60,7 +60,7 @@ func TestRestoreRuntimeSessionsResumesSavedConversationAfterTmuxLoss(t *testing.
 			agent := filepath.Join(dir, "agent")
 			require.NoError(os.WriteFile(agent, []byte(`#!/bin/sh
 [ "$#" = 4 ] && [ "$1" = --model ] && [ "$2" = model-a ] && [ "$3" = --resume ] && [ "$4" = saved-conversation ] || exit 42
-printf '%s\n' "$@" > args
+printf '%s\n' "$@" > args.tmp && mv args.tmp args
 exec sleep 60
 `), 0o755))
 			runtime := localruntime.NewManager(localruntime.Options{

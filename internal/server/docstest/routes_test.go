@@ -85,7 +85,7 @@ func TestDocsFoldersEndpointListsConfiguredFolders(t *testing.T) {
 	canonicalRoot, err := filepath.EvalSymlinks(root)
 	require.NoError(err)
 	folder := body.Folders[0]
-	assert.Equal("notes", folder.Id)
+	assert.Equal("notes", folder.ID)
 	assert.Equal("Notes", folder.Name)
 	assert.Equal(canonicalRoot, folder.Path)
 	require.NotNil(folder.Daemon)
@@ -98,8 +98,8 @@ func TestDocsFolderConfigEndpointsAddRenameRemoveAndPersist(t *testing.T) {
 	srv, _, cfgPath := setupPersistentDocsRouteServer(t)
 	extraRoot := t.TempDir()
 
-	addRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders", generated.CreateDocsFolderJSONRequestBody{
-		Id:     new("extra"),
+	addRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders", generated.CreateDocsFolderBody{
+		ID:     new("extra"),
 		Path:   new(extraRoot),
 		Daemon: new("work"),
 	})
@@ -108,7 +108,7 @@ func TestDocsFolderConfigEndpointsAddRenameRemoveAndPersist(t *testing.T) {
 	var addedBody generated.DocsFolderOutputBody
 	require.NoError(json.NewDecoder(addRR.Body).Decode(&addedBody))
 	added := addedBody.Folder
-	assert.Equal("extra", added.Id)
+	assert.Equal("extra", added.ID)
 	assert.Equal(filepath.Base(extraRoot), added.Name)
 	require.NotNil(added.Daemon)
 	assert.Equal("work", *added.Daemon)
@@ -116,7 +116,7 @@ func TestDocsFolderConfigEndpointsAddRenameRemoveAndPersist(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(wantExtraRoot, added.Path)
 
-	renameRR := testutil.DoJSON(t, srv, http.MethodPatch, "/api/v1/docs/folders/extra", generated.UpdateDocsFolderJSONRequestBody{
+	renameRR := testutil.DoJSON(t, srv, http.MethodPatch, "/api/v1/docs/folders/extra", generated.UpdateDocsFolderBody{
 		Name: new("Reference"),
 	})
 
@@ -124,7 +124,7 @@ func TestDocsFolderConfigEndpointsAddRenameRemoveAndPersist(t *testing.T) {
 	var renamedBody generated.DocsFolderOutputBody
 	require.NoError(json.NewDecoder(renameRR.Body).Decode(&renamedBody))
 	renamed := renamedBody.Folder
-	assert.Equal("extra", renamed.Id)
+	assert.Equal("extra", renamed.ID)
 	assert.Equal("Reference", renamed.Name)
 
 	deleteRR := testutil.DoJSON(t, srv, http.MethodDelete, "/api/v1/docs/folders/notes", nil)
@@ -136,7 +136,7 @@ func TestDocsFolderConfigEndpointsAddRenameRemoveAndPersist(t *testing.T) {
 	require.NoError(json.NewDecoder(listRR.Body).Decode(&listBody))
 	require.NotNil(listBody.Folders)
 	require.Len(listBody.Folders, 1)
-	assert.Equal("extra", listBody.Folders[0].Id)
+	assert.Equal("extra", listBody.Folders[0].ID)
 	assert.Equal("Reference", listBody.Folders[0].Name)
 
 	reloaded, err := config.Load(cfgPath)
@@ -150,7 +150,7 @@ func TestDocsFolderAddRejectsNonLoopback(t *testing.T) {
 	require := require.New(t)
 	srv, _, _ := setupPersistentDocsRouteServer(t)
 
-	body, err := json.Marshal(generated.CreateDocsFolderJSONRequestBody{Path: new("/tmp/whatever")})
+	body, err := json.Marshal(generated.CreateDocsFolderBody{Path: new("/tmp/whatever")})
 	require.NoError(err)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/docs/folders", bytes.NewReader(body))
 	req.Host = "127.0.0.1"
@@ -175,7 +175,7 @@ func TestDocsFolderAddDerivesIDAndRejectsInvalidRequests(t *testing.T) {
 	extraRoot := filepath.Join(t.TempDir(), "Research Papers!")
 	require.NoError(os.Mkdir(extraRoot, 0o755))
 
-	addRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders", generated.CreateDocsFolderJSONRequestBody{
+	addRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders", generated.CreateDocsFolderBody{
 		Path: new(extraRoot),
 	})
 
@@ -183,11 +183,11 @@ func TestDocsFolderAddDerivesIDAndRejectsInvalidRequests(t *testing.T) {
 	var addedBody generated.DocsFolderOutputBody
 	require.NoError(json.NewDecoder(addRR.Body).Decode(&addedBody))
 	added := addedBody.Folder
-	assert.Equal("research-papers", added.Id)
+	assert.Equal("research-papers", added.ID)
 
 	collidingRoot := filepath.Join(t.TempDir(), "Notes")
 	require.NoError(os.Mkdir(collidingRoot, 0o755))
-	collisionRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders", generated.CreateDocsFolderJSONRequestBody{
+	collisionRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders", generated.CreateDocsFolderBody{
 		Path: new(collidingRoot),
 	})
 
@@ -195,14 +195,14 @@ func TestDocsFolderAddDerivesIDAndRejectsInvalidRequests(t *testing.T) {
 	var collisionBody generated.DocsFolderOutputBody
 	require.NoError(json.NewDecoder(collisionRR.Body).Decode(&collisionBody))
 	collision := collisionBody.Folder
-	assert.Equal("notes-2", collision.Id)
+	assert.Equal("notes-2", collision.ID)
 	assert.Equal("Notes", collision.Name)
 
 	spacedRoot := t.TempDir()
 	wantSpacedRoot, err := filepath.EvalSymlinks(spacedRoot)
 	require.NoError(err)
-	spacedRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders", generated.CreateDocsFolderJSONRequestBody{
-		Id:   new(" spaced "),
+	spacedRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders", generated.CreateDocsFolderBody{
+		ID:   new(" spaced "),
 		Name: new(" Spaced "),
 		Path: new(" " + spacedRoot + " "),
 	})
@@ -211,39 +211,39 @@ func TestDocsFolderAddDerivesIDAndRejectsInvalidRequests(t *testing.T) {
 	var spacedBody generated.DocsFolderOutputBody
 	require.NoError(json.NewDecoder(spacedRR.Body).Decode(&spacedBody))
 	spaced := spacedBody.Folder
-	assert.Equal("spaced", spaced.Id)
+	assert.Equal("spaced", spaced.ID)
 	assert.Equal("Spaced", spaced.Name)
 	assert.Equal(wantSpacedRoot, spaced.Path)
 
-	duplicateRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders", generated.CreateDocsFolderJSONRequestBody{
-		Id:   new("notes"),
+	duplicateRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders", generated.CreateDocsFolderBody{
+		ID:   new("notes"),
 		Path: new(filepath.Join(t.TempDir(), "missing")),
 	})
 
 	assert.Equal(http.StatusConflict, duplicateRR.Code, duplicateRR.Body.String())
 
-	missingRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders", generated.CreateDocsFolderJSONRequestBody{
-		Id:   new("ghost"),
+	missingRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders", generated.CreateDocsFolderBody{
+		ID:   new("ghost"),
 		Path: new(filepath.Join(t.TempDir(), "missing")),
 	})
 
 	assert.Equal(http.StatusNotFound, missingRR.Code, missingRR.Body.String())
 
-	trimmedDuplicateRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders", generated.CreateDocsFolderJSONRequestBody{
-		Id:   new(" notes "),
+	trimmedDuplicateRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders", generated.CreateDocsFolderBody{
+		ID:   new(" notes "),
 		Path: new(t.TempDir()),
 	})
 
 	assert.Equal(http.StatusConflict, trimmedDuplicateRR.Code, trimmedDuplicateRR.Body.String())
 
-	blankPathRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders", generated.CreateDocsFolderJSONRequestBody{
-		Id:   new("blank"),
+	blankPathRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders", generated.CreateDocsFolderBody{
+		ID:   new("blank"),
 		Path: new(" \t"),
 	})
 
 	assert.Equal(http.StatusBadRequest, blankPathRR.Code, blankPathRR.Body.String())
 
-	blankNameRR := testutil.DoJSON(t, srv, http.MethodPatch, "/api/v1/docs/folders/notes", generated.UpdateDocsFolderJSONRequestBody{
+	blankNameRR := testutil.DoJSON(t, srv, http.MethodPatch, "/api/v1/docs/folders/notes", generated.UpdateDocsFolderBody{
 		Name: new(" \t"),
 	})
 
@@ -251,8 +251,8 @@ func TestDocsFolderAddDerivesIDAndRejectsInvalidRequests(t *testing.T) {
 
 	// An explicit id that cannot be addressed as a single path segment is
 	// rejected up front instead of persisting an unreachable folder.
-	slashIDRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders", generated.CreateDocsFolderJSONRequestBody{
-		Id:   new("team/docs"),
+	slashIDRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders", generated.CreateDocsFolderBody{
+		ID:   new("team/docs"),
 		Path: new(t.TempDir()),
 	})
 
@@ -267,8 +267,8 @@ func TestDocsFolderMutationsRequireConfigPersistenceAndRollbackOnSaveFailure(t *
 	require := require.New(t)
 	srv, _ := setupDocsRouteServer(t)
 
-	unavailableRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders", generated.CreateDocsFolderJSONRequestBody{
-		Id:   new("extra"),
+	unavailableRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders", generated.CreateDocsFolderBody{
+		ID:   new("extra"),
 		Path: new(t.TempDir()),
 	})
 
@@ -293,8 +293,8 @@ func TestDocsFolderMutationsRequireConfigPersistenceAndRollbackOnSaveFailure(t *
 		HostCheckAllowLoopbackAnyPort: true,
 	})
 
-	rollbackRR := testutil.DoJSON(t, failSrv, http.MethodPost, "/api/v1/docs/folders", generated.CreateDocsFolderJSONRequestBody{
-		Id:   new("rollback"),
+	rollbackRR := testutil.DoJSON(t, failSrv, http.MethodPost, "/api/v1/docs/folders", generated.CreateDocsFolderBody{
+		ID:   new("rollback"),
 		Path: new(t.TempDir()),
 	})
 
@@ -305,7 +305,7 @@ func TestDocsFolderMutationsRequireConfigPersistenceAndRollbackOnSaveFailure(t *
 	require.NoError(json.NewDecoder(listRR.Body).Decode(&listBody))
 	require.NotNil(listBody.Folders)
 	require.Len(listBody.Folders, 1)
-	assert.Equal("notes", listBody.Folders[0].Id)
+	assert.Equal("notes", listBody.Folders[0].ID)
 }
 
 func TestDocsBrowseEndpointListsDirectoriesOnly(t *testing.T) {
@@ -400,7 +400,7 @@ func TestDocsFileEndpointReadsAndWritesMarkdown(t *testing.T) {
 	assert.Equal("notes/ideas.md", readBody.RelPath)
 	assert.Equal("# Ideas\n", readBody.Content)
 
-	writeRR := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/docs/folders/notes/file?path=notes/ideas.md", generated.WriteDocsFileJSONRequestBody{
+	writeRR := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/docs/folders/notes/file?path=notes/ideas.md", generated.WriteDocsFileBody{
 		Content: new("# Updated\n"),
 	})
 
@@ -442,7 +442,7 @@ func TestDocsFileCreateDeleteRenameAndBlob(t *testing.T) {
 	require := require.New(t)
 	srv, root := setupDocsRouteServer(t)
 
-	createRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/notes/file?path=notes/new.md", generated.CreateDocsFileJSONRequestBody{
+	createRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/notes/file?path=notes/new.md", generated.CreateDocsFileBody{
 		Content: new("# New\n"),
 	})
 
@@ -452,13 +452,13 @@ func TestDocsFileCreateDeleteRenameAndBlob(t *testing.T) {
 	assert.Equal("notes/new.md", createBody.RelPath)
 	assert.Equal(int64(len("# New\n")), createBody.Size)
 
-	duplicateRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/notes/file?path=notes/new.md", generated.CreateDocsFileJSONRequestBody{
+	duplicateRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/notes/file?path=notes/new.md", generated.CreateDocsFileBody{
 		Content: new("# New\n"),
 	})
 
 	assert.Equal(http.StatusConflict, duplicateRR.Code, duplicateRR.Body.String())
 
-	emptyRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/notes/file?path=notes/empty.md", generated.CreateDocsFileJSONRequestBody{})
+	emptyRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/notes/file?path=notes/empty.md", generated.CreateDocsFileBody{})
 	require.Equal(http.StatusCreated, emptyRR.Code, emptyRR.Body.String())
 	emptyReadRR := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/docs/folders/notes/file?path=notes/empty.md", nil)
 	require.Equal(http.StatusOK, emptyReadRR.Code, emptyReadRR.Body.String())
@@ -466,7 +466,7 @@ func TestDocsFileCreateDeleteRenameAndBlob(t *testing.T) {
 	require.NoError(json.NewDecoder(emptyReadRR.Body).Decode(&emptyReadBody))
 	assert.Empty(emptyReadBody.Content)
 
-	renameRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/notes/file/actions/rename", generated.RenameDocsFileJSONRequestBody{
+	renameRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/notes/file/actions/rename", generated.RenameDocsFileBody{
 		From: new("notes/new.md"),
 		To:   new("notes/renamed.md"),
 	})
@@ -525,7 +525,7 @@ func TestDocsFileEndpointRejectsInvalidPathsAndTypes(t *testing.T) {
 	traversalRR := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/docs/folders/notes/file?path=../../escape", nil)
 	assert.Equal(http.StatusForbidden, traversalRR.Code, traversalRR.Body.String())
 
-	createTextRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/notes/file?path=notes/bad.txt", generated.CreateDocsFileJSONRequestBody{
+	createTextRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/notes/file?path=notes/bad.txt", generated.CreateDocsFileBody{
 		Content: new("x"),
 	})
 
@@ -625,7 +625,7 @@ func TestDocsSearchEndpointSerializesPartialWarnings(t *testing.T) {
 	require.Len(body.Hits, 1)
 	assert.Equal("good", body.Hits[0].Folder)
 	require.NotNil(body.Warnings)
-	assert.NotEmpty(*body.Warnings)
+	assert.NotEmpty(body.Warnings)
 	assert.False(body.Truncated)
 }
 
@@ -672,13 +672,13 @@ func TestDocsFileMutationsRejectNonLoopback(t *testing.T) {
 			name:   "write",
 			method: http.MethodPut,
 			path:   "/api/v1/docs/folders/notes/file?path=notes/ideas.md",
-			body:   generated.WriteDocsFileJSONRequestBody{Content: new("blocked")},
+			body:   generated.WriteDocsFileBody{Content: new("blocked")},
 		},
 		{
 			name:   "create",
 			method: http.MethodPost,
 			path:   "/api/v1/docs/folders/notes/file?path=notes/blocked.md",
-			body:   generated.CreateDocsFileJSONRequestBody{Content: new("blocked")},
+			body:   generated.CreateDocsFileBody{Content: new("blocked")},
 		},
 		{
 			name:   "delete",
@@ -689,7 +689,7 @@ func TestDocsFileMutationsRejectNonLoopback(t *testing.T) {
 			name:   "rename",
 			method: http.MethodPost,
 			path:   "/api/v1/docs/folders/notes/file/actions/rename",
-			body: generated.RenameDocsFileJSONRequestBody{
+			body: generated.RenameDocsFileBody{
 				From: new("notes/ideas.md"),
 				To:   new("notes/blocked.md"),
 			},
@@ -733,31 +733,31 @@ func TestDocsMutationsRejectBodyTooLarge(t *testing.T) {
 			name:   "create folder",
 			method: http.MethodPost,
 			path:   "/api/v1/docs/folders",
-			body:   generated.CreateDocsFolderJSONRequestBody{Path: new(huge)},
+			body:   generated.CreateDocsFolderBody{Path: new(huge)},
 		},
 		{
 			name:   "update folder",
 			method: http.MethodPatch,
 			path:   "/api/v1/docs/folders/notes",
-			body:   generated.UpdateDocsFolderJSONRequestBody{Name: new(huge)},
+			body:   generated.UpdateDocsFolderBody{Name: new(huge)},
 		},
 		{
 			name:   "write file",
 			method: http.MethodPut,
 			path:   "/api/v1/docs/folders/notes/file?path=notes/ideas.md",
-			body:   generated.WriteDocsFileJSONRequestBody{Content: new(huge)},
+			body:   generated.WriteDocsFileBody{Content: new(huge)},
 		},
 		{
 			name:   "create file",
 			method: http.MethodPost,
 			path:   "/api/v1/docs/folders/notes/file?path=notes/large.md",
-			body:   generated.CreateDocsFileJSONRequestBody{Content: new(huge)},
+			body:   generated.CreateDocsFileBody{Content: new(huge)},
 		},
 		{
 			name:   "rename file",
 			method: http.MethodPost,
 			path:   "/api/v1/docs/folders/notes/file/actions/rename",
-			body: generated.RenameDocsFileJSONRequestBody{
+			body: generated.RenameDocsFileBody{
 				From: new("notes/ideas.md"),
 				To:   new(huge),
 			},
@@ -766,7 +766,7 @@ func TestDocsMutationsRejectBodyTooLarge(t *testing.T) {
 			name:   "publish git",
 			method: http.MethodPost,
 			path:   "/api/v1/docs/folders/notes/git/publish",
-			body:   generated.PublishDocsGitJSONRequestBody{Message: new(huge)},
+			body:   generated.PublishDocsGitBody{Message: new(huge)},
 		},
 	}
 	for _, tc := range cases {
@@ -793,7 +793,7 @@ func TestDocsFileWriteAllowsBodyBelowEditorLimit(t *testing.T) {
 	require := require.New(t)
 	srv, _ := setupDocsRouteServer(t)
 	content := strings.Repeat("a", 2<<20)
-	body, err := json.Marshal(generated.WriteDocsFileJSONRequestBody{Content: new(content)})
+	body, err := json.Marshal(generated.WriteDocsFileBody{Content: new(content)})
 	require.NoError(err)
 
 	req := httptest.NewRequest(http.MethodPut,

@@ -2,7 +2,7 @@ package github
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -378,7 +378,7 @@ func githubOwnerFromRequest(req *http.Request) string {
 	var payload struct {
 		Variables map[string]any `json:"variables"`
 	}
-	if err := json.NewDecoder(body).Decode(&payload); err != nil {
+	if err := json.UnmarshalRead(body, &payload); err != nil {
 		return ""
 	}
 	owner, _ := payload.Variables["owner"].(string)

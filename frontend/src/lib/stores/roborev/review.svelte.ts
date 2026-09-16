@@ -1,8 +1,9 @@
+import * as roborevAPI from "../../api/roborev/generated/client.js";
 import { Clipboard } from "@effect/platform-browser";
 import { Effect, Option } from "effect";
 import type { AppRuntime } from "../../app/runtime.js";
 import { executeRoborevRequest, type RoborevClient } from "../../api/roborev/client.js";
-import type { components, operations } from "../../api/roborev/generated/schema.js";
+import type * as RoborevModels from "../../api/roborev/generated/models/index.js";
 import {
   RoborevMutationError,
   roborevMutationFailureMessage,
@@ -10,10 +11,10 @@ import {
   RoborevWorkflow,
 } from "./roborev-workflow.js";
 
-type Review = components["schemas"]["Review"];
-type ReviewJob = components["schemas"]["ReviewJob"];
-type ReviewResponse = components["schemas"]["Response"];
-type ListJobsQuery = NonNullable<operations["list-jobs"]["parameters"]["query"]>;
+type Review = RoborevModels.Review;
+type ReviewJob = RoborevModels.ReviewJob;
+type ReviewResponse = RoborevModels.Response;
+type ListJobsQuery = NonNullable<RoborevModels.ListJobsParams>;
 
 interface ReviewAuthority {
   readonly review: Review | null;
@@ -45,52 +46,41 @@ export function createReviewStore(opts: ReviewStoreOptions) {
     const result = yield* Effect.all(
       {
         review: executeRoborevRequest("GET Roborev review", (signal) =>
-          client.GET("/api/review", {
-            params: { query: { job_id: jobId } },
-            signal,
-          }),
+          roborevAPI.getReview({ job_id: jobId }, { signal }, client),
         ),
         comments: executeRoborevRequest("GET Roborev review comments", (signal) =>
-          client.GET("/api/comments", {
-            params: { query: { job_id: jobId } },
-            signal,
-          }),
+          roborevAPI.listComments({ job_id: jobId }, { signal }, client),
         ),
         job: executeRoborevRequest("GET Roborev review job", (signal) =>
-          client.GET("/api/jobs", {
-            params: {
-              query: { id: jobId, limit: 1 } satisfies ListJobsQuery,
-            },
-            signal,
-          }),
+          roborevAPI.listJobs({ id: jobId, limit: 1 } satisfies ListJobsQuery, { signal }, client),
         ).pipe(Effect.option),
       },
       { concurrency: "unbounded" },
     );
 
-    const notFound = result.review.error !== undefined && result.review.response?.status === 404;
-    if (result.review.error !== undefined && !notFound) {
+    const notFound = result.review.status === 404;
+    if (result.review.status !== 200 && !notFound) {
       return yield* Effect.fail(
         RoborevResponseError.make({
           operation: "GET Roborev review",
           message: "Failed to load review",
-          cause: result.review.error,
+          cause: result.review.data,
         }),
       );
     }
-    if (result.comments.error !== undefined) {
+    if (result.comments.status !== 200) {
       return yield* Effect.fail(
         RoborevResponseError.make({
           operation: "GET Roborev review comments",
           message: "Failed to load review comments",
-          cause: result.comments.error,
+          cause: result.comments.data,
         }),
       );
     }
 
-    const fetchedReview = result.review.data ?? null;
+    const fetchedReview = result.review.status === 200 ? result.review.data : null;
     const fetchedJob =
-      Option.isSome(result.job) && !result.job.value.error
+      Option.isSome(result.job) && result.job.value.status === 200
         ? (result.job.value.data?.jobs?.[0] ?? fetchedReview?.job ?? null)
         : (fetchedReview?.job ?? null);
     return {
@@ -164,14 +154,11 @@ export function createReviewStore(opts: ReviewStoreOptions) {
         key: `review:${jobId}`,
         operation: "close Roborev review",
         mutation: executeRoborevRequest("close Roborev review", (signal) =>
-          client.POST("/api/review/close", {
-            body: { job_id: jobId, closed },
-            signal,
-          }),
+          roborevAPI.closeReview({ job_id: jobId, closed }, { signal }, client),
         ).pipe(
           Effect.flatMap((result) =>
-            result.error
-              ? Effect.fail(RoborevMutationError.make({ operation: "close Roborev review", cause: result.error }))
+            result.status !== 200
+              ? Effect.fail(RoborevMutationError.make({ operation: "close Roborev review", cause: result.data }))
               : Effect.succeed(closed),
           ),
         ),
@@ -208,21 +195,22 @@ export function createReviewStore(opts: ReviewStoreOptions) {
         key: `review:${jobId}`,
         operation: "add Roborev comment",
         mutation: executeRoborevRequest("add Roborev comment", (signal) =>
-          client.POST("/api/comment", {
-            body: {
+          roborevAPI.addComment(
+            {
               job_id: jobId,
               commenter: "web",
               comment: text,
             },
-            signal,
-          }),
+            { signal },
+            client,
+          ),
         ).pipe(
           Effect.flatMap((result) =>
-            result.error || !result.data
+            result.status !== 201
               ? Effect.fail(
                   RoborevMutationError.make({
                     operation: "add Roborev comment",
-                    cause: result.error ?? new Error("Roborev comment response was empty"),
+                    cause: result.data ?? new Error("Roborev comment response was empty"),
                   }),
                 )
               : Effect.succeed(result.data),

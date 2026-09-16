@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import type { components } from "../api/roborev/generated/schema.js";
+import type * as RoborevModels from "../api/roborev/generated/models/index.js";
 import {
   isPanelParent,
   isTerminalStatus,
@@ -9,8 +9,8 @@ import {
   panelStatusLabel,
 } from "./roborev-panel.js";
 
-type ReviewJob = components["schemas"]["ReviewJob"];
-type PanelSummary = components["schemas"]["PanelSummary"];
+type ReviewJob = RoborevModels.ReviewJob;
+type PanelSummary = RoborevModels.PanelSummary;
 
 function makeJob(overrides: Partial<ReviewJob> = {}): ReviewJob {
   return {

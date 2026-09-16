@@ -3,7 +3,7 @@ package fleetapi
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"io"
 	"log/slog"
 	"net/http"
@@ -1264,5 +1264,5 @@ func writeProblemResponse(w http.ResponseWriter, problem *httpapi.ProblemError) 
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(problem.Status)
-	_ = json.NewEncoder(w).Encode(problem)
+	_ = json.MarshalWrite(w, problem)
 }

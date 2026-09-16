@@ -1,9 +1,8 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +10,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"go.kenn.io/forge/internal/apiclient/generated"
 
 	"github.com/spf13/cobra"
 	"go.kenn.io/forge/internal/config"
@@ -230,95 +231,61 @@ func stdinIsTerminal(stdin io.Reader) bool {
 
 type daemonFleetCommandRunner struct{}
 
-func (daemonFleetCommandRunner) CreateEnrollmentToken(
-	ctx context.Context, options fleetEnrollmentTokenOptions,
-) (federation.EnrollmentToken, error) {
+func (daemonFleetCommandRunner) CreateEnrollmentToken(ctx context.Context, options fleetEnrollmentTokenOptions) (federation.EnrollmentToken, error) {
 	var result federation.EnrollmentToken
-	err := postLocalFleetJSON(ctx, options.ConfigPath, options.Timeout,
-		"/api/v1/fleet/enrollment-tokens", map[string]any{
-			"base_url": options.BaseURL, "name": options.Name,
-			"expires_in_seconds": int(options.TTL / time.Second),
-		}, &result)
+	err := localFleetJSON(ctx, options.ConfigPath, options.Timeout, func(baseURL string) (*http.Request, error) {
+		return generated.NewCreateFleetEnrollmentTokenRequest(ctx, baseURL, &generated.CreateFleetEnrollmentTokenRequestOptions{Body: &generated.CreateFleetEnrollmentTokenBody{
+			BaseURL: options.BaseURL, Name: &options.Name, ExpiresInSeconds: int64(options.TTL / time.Second),
+		}})
+	}, &result)
 	return result, err
 }
 
-func (daemonFleetCommandRunner) Join(
-	ctx context.Context, options fleetJoinOptions,
-) (federation.LocalEnrollment, error) {
+func (daemonFleetCommandRunner) Join(ctx context.Context, options fleetJoinOptions) (federation.LocalEnrollment, error) {
 	var result federation.LocalEnrollment
-	err := postLocalFleetJSON(ctx, options.ConfigPath, options.Timeout,
-		"/api/v1/fleet/join", map[string]any{
-			"hub_base_url":   options.HubURL,
-			"spoke_base_url": options.SpokeBaseURL, "name": options.Name,
-			"enrollment_token": options.Token,
-		}, &result)
+	err := localFleetJSON(ctx, options.ConfigPath, options.Timeout, func(baseURL string) (*http.Request, error) {
+		return generated.NewJoinFederationRequest(ctx, baseURL, &generated.JoinFederationRequestOptions{Body: &generated.JoinFederationBody{
+			HubBaseURL: options.HubURL, SpokeBaseURL: options.SpokeBaseURL, Name: &options.Name, EnrollmentToken: options.Token,
+		}})
+	}, &result)
 	return result, err
 }
 
-func (daemonFleetCommandRunner) PrepareSpoke(
-	ctx context.Context, options fleetPrepareOptions,
-) (server.SpokePreparationReport, error) {
+func (daemonFleetCommandRunner) PrepareSpoke(ctx context.Context, options fleetPrepareOptions) (server.SpokePreparationReport, error) {
 	var result server.SpokePreparationReport
-	err := postLocalFleetJSON(
-		ctx, options.ConfigPath, options.Timeout,
-		"/api/v1/fleet/prepare-spoke", struct{}{}, &result,
-	)
+	err := localFleetJSON(ctx, options.ConfigPath, options.Timeout, func(baseURL string) (*http.Request, error) {
+		return generated.NewPrepareFederationSpokeRequest(ctx, baseURL)
+	}, &result)
 	return result, err
 }
 
-func (daemonFleetCommandRunner) AbortPreparation(
-	ctx context.Context, options fleetAbortPreparationOptions,
-) (server.SpokePreparationAbortReport, error) {
+func (daemonFleetCommandRunner) AbortPreparation(ctx context.Context, options fleetAbortPreparationOptions) (server.SpokePreparationAbortReport, error) {
 	var result server.SpokePreparationAbortReport
-	err := localFleetJSON(
-		ctx, options.ConfigPath, options.Timeout, http.MethodPost,
-		"/api/v1/fleet/prepare-spoke/abort", map[string]any{"force": options.Force},
-		&result,
-	)
+	err := localFleetJSON(ctx, options.ConfigPath, options.Timeout, func(baseURL string) (*http.Request, error) {
+		return generated.NewAbortFederationSpokePreparationRequest(ctx, baseURL, &generated.AbortFederationSpokePreparationRequestOptions{Body: &generated.AbortFederationSpokePreparationBody{Force: &options.Force}})
+	}, &result)
 	return result, err
 }
 
-func (daemonFleetCommandRunner) Revoke(
-	ctx context.Context, options fleetRevokeOptions,
-) error {
-	return localFleetJSON(
-		ctx, options.ConfigPath, options.Timeout, http.MethodDelete,
-		"/api/v1/fleet/enrollments/"+options.EnrollmentID, nil, nil,
-	)
-}
-
-func postLocalFleetJSON(
-	ctx context.Context, configPath string, timeout time.Duration,
-	path string, body, result any,
-) error {
-	return localFleetJSON(
-		ctx, configPath, timeout, http.MethodPost, path, body, result,
-	)
+func (daemonFleetCommandRunner) Revoke(ctx context.Context, options fleetRevokeOptions) error {
+	return localFleetJSON(ctx, options.ConfigPath, options.Timeout, func(baseURL string) (*http.Request, error) {
+		return generated.NewRevokeFederationEnrollmentRequest(ctx, baseURL, &generated.RevokeFederationEnrollmentRequestOptions{PathParams: &generated.RevokeFederationEnrollmentPath{EnrollmentID: options.EnrollmentID}})
+	}, nil)
 }
 
 func localFleetJSON(
 	ctx context.Context, configPath string, timeout time.Duration,
-	method, path string, body, result any,
+	buildRequest func(string) (*http.Request, error), result any,
 ) error {
 	daemon, err := discoverDaemonHTTP(configPath, timeout)
 	if err != nil {
 		return err
 	}
-	var reader io.Reader
-	if body != nil {
-		raw, marshalErr := json.Marshal(body)
-		if marshalErr != nil {
-			return fmt.Errorf("encode fleet request: %w", marshalErr)
-		}
-		reader = bytes.NewReader(raw)
-	}
-	request, err := http.NewRequestWithContext(
-		ctx, method, daemon.BaseURL+path, reader,
-	)
+	request, err := buildRequest(strings.TrimRight(daemon.BaseURL, "/") + "/api/v1")
 	if err != nil {
 		return fmt.Errorf("build fleet request: %w", err)
 	}
-	if body != nil || (method != http.MethodGet && method != http.MethodHead) {
+	if request.Method != http.MethodGet && request.Method != http.MethodHead {
 		request.Header.Set("Content-Type", "application/json")
 	}
 	response, err := daemon.Client.Do(request)
@@ -332,9 +299,9 @@ func localFleetJSON(
 	if result == nil || response.StatusCode == http.StatusNoContent {
 		return nil
 	}
-	if err := json.NewDecoder(io.LimitReader(
+	if err := json.UnmarshalRead(io.LimitReader(
 		response.Body, maxFleetResponseBytes,
-	)).Decode(result); err != nil {
+	), result); err != nil {
 		return fmt.Errorf("decode fleet response: %w", err)
 	}
 	return nil

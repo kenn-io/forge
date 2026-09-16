@@ -2,7 +2,8 @@ package main
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -252,7 +253,7 @@ func writeVersion(stdout io.Writer, asJSON bool) error {
 		)
 		return err
 	}
-	return json.NewEncoder(stdout).Encode(versionOutput{
+	return json.MarshalEncode(jsontext.NewEncoder(stdout), versionOutput{
 		Name:      "kenn-forge",
 		Version:   version,
 		Commit:    commit,

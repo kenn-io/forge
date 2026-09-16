@@ -46,14 +46,12 @@ func TestIssueWorkspaceConflictExposesTyped409ThroughGeneratedClient(t *testing.
 		"update-ref", "refs/heads/"+branch, mainSHA,
 	)
 
-	resp, err := fixture.client.HTTP.CreateIssueWorkspaceWithResponse(
-		t.Context(), "gh", "acme", "widget", 7,
-		generated.CreateIssueWorkspaceInputBody{GitHeadRef: &branch},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusConflict, resp.StatusCode(), string(resp.Body))
+	resp, err := fixture.client.HTTP.CreateIssueWorkspaceWithResponse(t.Context(), &generated.CreateIssueWorkspaceRequestOptions{PathParams: &generated.CreateIssueWorkspacePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(7)}, Body: &generated.CreateIssueWorkspaceInputBody{GitHeadRef: &branch}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusConflict, resp.StatusCode, string(resp.Body))
 
-	problem := resp.ApplicationproblemJSONDefault
+	problem := resp.Error
 	require.NotNil(problem, "default error model must be populated for 409")
 
 	require.NotNil(problem.Type)
@@ -68,7 +66,7 @@ func TestIssueWorkspaceConflictExposesTyped409ThroughGeneratedClient(t *testing.
 
 	require.NotNil(problem.Errors)
 	locations := map[string]any{}
-	for _, e := range *problem.Errors {
+	for _, e := range problem.Errors {
 		if e.Location == nil {
 			continue
 		}
@@ -97,15 +95,12 @@ func TestIssueWorkspaceReuseExistingBranchDoesNotReportCreated(t *testing.T) {
 	)
 	reuse := true
 
-	resp, err := fixture.client.HTTP.CreateIssueWorkspaceWithResponse(
-		t.Context(), "gh", "acme", "widget", 7,
-		generated.CreateIssueWorkspaceInputBody{
-			GitHeadRef:          &branch,
-			ReuseExistingBranch: &reuse,
-		},
-	)
+	resp, err := fixture.client.HTTP.CreateIssueWorkspaceWithResponse(t.Context(), &generated.CreateIssueWorkspaceRequestOptions{PathParams: &generated.CreateIssueWorkspacePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(7)}, Body: &generated.CreateIssueWorkspaceInputBody{
+		GitHeadRef:          &branch,
+		ReuseExistingBranch: &reuse,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, resp.StatusCode(), string(resp.Body))
+	require.Equal(http.StatusAccepted, resp.StatusCode, string(resp.Body))
 	require.NotNil(resp.JSON202)
 	assert.Nil(resp.JSON202.Created)
 }
@@ -119,15 +114,12 @@ func TestIssueWorkspaceReuseMissingBranchReportsCreated(t *testing.T) {
 
 	branch := "kenn-forge/issue-7"
 	reuse := true
-	resp, err := fixture.client.HTTP.CreateIssueWorkspaceWithResponse(
-		t.Context(), "gh", "acme", "widget", 7,
-		generated.CreateIssueWorkspaceInputBody{
-			GitHeadRef:          &branch,
-			ReuseExistingBranch: &reuse,
-		},
-	)
+	resp, err := fixture.client.HTTP.CreateIssueWorkspaceWithResponse(t.Context(), &generated.CreateIssueWorkspaceRequestOptions{PathParams: &generated.CreateIssueWorkspacePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(7)}, Body: &generated.CreateIssueWorkspaceInputBody{
+		GitHeadRef:          &branch,
+		ReuseExistingBranch: &reuse,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, resp.StatusCode(), string(resp.Body))
+	require.Equal(http.StatusAccepted, resp.StatusCode, string(resp.Body))
 	require.NotNil(resp.JSON202)
 	require.NotNil(resp.JSON202.Created)
 	assert.True(*resp.JSON202.Created)
@@ -154,16 +146,13 @@ func TestIssueWorkspaceCreateIgnoresBrokenCallerCwdForBranchValidation(t *testin
 	})
 
 	branch := "kenn-forge/issue-23-federation-test"
-	resp, err := fixture.client.HTTP.CreateIssueWorkspaceWithResponse(
-		t.Context(), "gh", "acme", "widget", 23,
-		generated.CreateIssueWorkspaceInputBody{GitHeadRef: &branch},
-	)
+	resp, err := fixture.client.HTTP.CreateIssueWorkspaceWithResponse(t.Context(), &generated.CreateIssueWorkspaceRequestOptions{PathParams: &generated.CreateIssueWorkspacePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(23)}, Body: &generated.CreateIssueWorkspaceInputBody{GitHeadRef: &branch}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, resp.StatusCode(), string(resp.Body))
+	require.Equal(http.StatusAccepted, resp.StatusCode, string(resp.Body))
 	require.NotNil(resp.JSON202)
 
 	ready := waitForWorkspaceReady(
-		t, t.Context(), fixture.client, resp.JSON202.Id,
+		t, t.Context(), fixture.client, resp.JSON202.ID,
 	)
 	assert.Equal(branch, ready.GitHeadRef)
 	assert.Equal("ready", ready.Status)

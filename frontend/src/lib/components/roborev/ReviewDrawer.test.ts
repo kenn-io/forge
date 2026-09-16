@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import type { components } from "../../api/roborev/generated/schema.js";
+import type * as RoborevModels from "../../api/roborev/generated/models/index.js";
 
 vi.mock("./ReviewContent.svelte", async () => ({
   default: (await import("./ReviewDrawerTestContent.svelte")).default,
@@ -24,7 +24,7 @@ const state = vi.hoisted(() => ({
   copyOutput: vi.fn(),
 }));
 
-type ReviewJob = components["schemas"]["ReviewJob"];
+type ReviewJob = RoborevModels.ReviewJob;
 const job: ReviewJob = {
   id: 42,
   agent: "claude",

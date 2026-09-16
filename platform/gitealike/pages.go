@@ -3,7 +3,7 @@ package gitealike
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"slices"

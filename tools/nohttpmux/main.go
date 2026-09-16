@@ -2,7 +2,8 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"go/ast"
@@ -367,11 +368,11 @@ func packageGoFiles(pattern string) ([]string, error) {
 		return nil, errors.New(msg)
 	}
 
-	dec := json.NewDecoder(bytes.NewReader(out))
+	dec := jsontext.NewDecoder(bytes.NewReader(out))
 	var files []string
-	for dec.More() {
+	for dec.PeekKind() != 0 {
 		var pkg listedPackage
-		if err := dec.Decode(&pkg); err != nil {
+		if err := json.UnmarshalDecode(dec, &pkg); err != nil {
 			return nil, err
 		}
 		if pkg.Error != nil {

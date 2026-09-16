@@ -3,7 +3,8 @@ package ptyowner
 import (
 	"bufio"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"net"
@@ -271,7 +272,7 @@ func (o *owner) handleConn(conn net.Conn) {
 	_ = conn.SetReadDeadline(time.Now().Add(ownerFirstRequestTimeout))
 
 	reader := bufio.NewReader(conn)
-	enc := json.NewEncoder(conn)
+	enc := jsontext.NewEncoder(conn)
 	var first initialRequest
 	if err := decodeOwnerRequest(
 		reader, maxOwnerFirstRequestSize, &first,
@@ -279,7 +280,7 @@ func (o *owner) handleConn(conn net.Conn) {
 		return
 	}
 	if first.Token != o.state.Token {
-		_ = enc.Encode(Response{
+		_ = json.MarshalEncode(enc, Response{
 			Type: ResponseError, Error: "invalid pty owner token",
 		})
 		return
@@ -289,31 +290,31 @@ func (o *owner) handleConn(conn net.Conn) {
 	switch first.Type {
 	case RequestStatus:
 		status := o.snapshotStatus()
-		_ = enc.Encode(Response{
+		_ = json.MarshalEncode(enc, Response{
 			Type: ResponseOK, OK: true, Output: status.Output,
 			Title: status.Title,
 		})
 	case RequestStop:
-		_ = enc.Encode(Response{Type: ResponseOK, OK: true})
+		_ = json.MarshalEncode(enc, Response{Type: ResponseOK, OK: true})
 		go o.stop()
 	case RequestInput:
 		if len(first.Data) > maxOwnerInputSize {
-			_ = enc.Encode(Response{
+			_ = json.MarshalEncode(enc, Response{
 				Type: ResponseError, Error: "pty owner input frame too large",
 			})
 			return
 		}
 		_, _ = o.pty.Write(first.Data)
-		_ = enc.Encode(Response{Type: ResponseOK, OK: true})
+		_ = json.MarshalEncode(enc, Response{Type: ResponseOK, OK: true})
 	case RequestResize:
 		if first.Cols > 0 && first.Rows > 0 {
 			_ = resizeOwnerPTY(o.pty, first.geometry())
 		}
-		_ = enc.Encode(Response{Type: ResponseOK, OK: true})
+		_ = json.MarshalEncode(enc, Response{Type: ResponseOK, OK: true})
 	case RequestAttach:
 		o.handleAttach(conn, reader, enc, first.Request())
 	default:
-		_ = enc.Encode(Response{
+		_ = json.MarshalEncode(enc, Response{
 			Type: ResponseError, Error: "unknown pty owner request",
 		})
 	}
@@ -322,7 +323,7 @@ func (o *owner) handleConn(conn net.Conn) {
 func (o *owner) handleAttach(
 	conn net.Conn,
 	reader *bufio.Reader,
-	enc *json.Encoder,
+	enc *jsontext.Encoder,
 	first Request,
 ) {
 	startedAfterExit := o.beginAttach()
@@ -330,7 +331,7 @@ func (o *owner) handleAttach(
 	if first.Cols > 0 && first.Rows > 0 {
 		_ = resizeOwnerPTY(o.pty, first.geometry())
 	}
-	if err := enc.Encode(Response{Type: ResponseOK, OK: true}); err != nil {
+	if err := json.MarshalEncode(enc, Response{Type: ResponseOK, OK: true}); err != nil {
 		return
 	}
 	output, unsubscribe := o.subscribe()
@@ -342,7 +343,7 @@ func (o *owner) handleAttach(
 		defer close(writeDone)
 		for chunk := range output {
 			writeMu.Lock()
-			err := enc.Encode(Response{
+			err := json.MarshalEncode(enc, Response{
 				Type: ResponseOutput, OK: true, Output: chunk,
 			})
 			writeMu.Unlock()
@@ -352,7 +353,7 @@ func (o *owner) handleAttach(
 		}
 		code := o.exitCodeAfterOutputClose()
 		writeMu.Lock()
-		_ = enc.Encode(Response{
+		_ = json.MarshalEncode(enc, Response{
 			Type: ResponseExit, OK: true, ExitCode: &code,
 		})
 		writeMu.Unlock()

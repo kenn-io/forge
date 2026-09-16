@@ -64,13 +64,13 @@ func TestListWorkspacesIncludesKataMetadata(t *testing.T) {
 	// not just the create response.
 	resp, err := client.HTTP.ListWorkspacesWithResponse(ctx)
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Workspaces)
 
 	var kata *generated.WorkspaceResponse
 	for i := range resp.JSON200.Workspaces {
-		if resp.JSON200.Workspaces[i].Id == "ws-kata-list" {
+		if resp.JSON200.Workspaces[i].ID == "ws-kata-list" {
 			kata = &resp.JSON200.Workspaces[i]
 			break
 		}
@@ -81,15 +81,15 @@ func TestListWorkspacesIncludesKataMetadata(t *testing.T) {
 	// item_number is always emitted and is 0 (ignored) for Kata workspaces.
 	assert.Equal(int64(0), kata.ItemNumber)
 	require.NotNil(kata.Kata)
-	assert.Equal("desktop", kata.Kata.DaemonId)
-	assert.Equal("issue-kata-1", kata.Kata.IssueUid)
-	assert.Equal("project-kata", kata.Kata.ProjectUid)
+	assert.Equal("desktop", kata.Kata.DaemonID)
+	assert.Equal("issue-kata-1", kata.Kata.IssueUID)
+	assert.Equal("project-kata", kata.Kata.ProjectUID)
 	require.NotNil(kata.Kata.ProjectName)
 	assert.Equal("Widget", *kata.Kata.ProjectName)
-	require.NotNil(kata.Kata.ShortId)
-	assert.Equal("task-123", *kata.Kata.ShortId)
-	require.NotNil(kata.Kata.QualifiedId)
-	assert.Equal("Kata#task-123", *kata.Kata.QualifiedId)
+	require.NotNil(kata.Kata.ShortID)
+	assert.Equal("task-123", *kata.Kata.ShortID)
+	require.NotNil(kata.Kata.QualifiedID)
+	assert.Equal("Kata#task-123", *kata.Kata.QualifiedID)
 	require.NotNil(kata.Kata.Title)
 	assert.Equal("Wire kata workspace sidebar", *kata.Kata.Title)
 }
@@ -129,22 +129,17 @@ exit 0
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 
-	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{
-			TargetKey: "helper",
-		},
-	)
+	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
+		TargetKey: "helper",
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, launchResp.StatusCode())
+	require.Equal(http.StatusOK, launchResp.StatusCode)
 	require.NotNil(launchResp.JSON200)
 
 	require.Eventually(func() bool {
-		runtimeResp, runtimeErr := client.HTTP.GetWorkspaceRuntimeWithResponse(
-			ctx, ws.Id,
-		)
+		runtimeResp, runtimeErr := client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, &generated.GetWorkspaceRuntimeRequestOptions{PathParams: &generated.GetWorkspaceRuntimePath{ID: ws.ID}})
 		if runtimeErr != nil ||
-			runtimeResp.StatusCode() != http.StatusOK ||
+			runtimeResp.StatusCode != http.StatusOK ||
 			runtimeResp.JSON200 == nil ||
 			runtimeResp.JSON200.Sessions == nil {
 			return false
@@ -153,7 +148,7 @@ exit 0
 	}, 2*time.Second, 20*time.Millisecond)
 
 	require.Eventually(func() bool {
-		stored, storedErr := database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.Id)
+		stored, storedErr := database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.ID)
 		return storedErr == nil && len(stored) == 0
 	}, 2*time.Second, 20*time.Millisecond)
 	assert.NotEmpty(launchResp.JSON200.Key)
@@ -208,12 +203,12 @@ exit 0
 		ws.TmuxSession + "-claude",
 	}, "\n")+"\n"), 0o644))
 	for _, targetKey := range []string{"codex", "claude"} {
-		sessionKey, err := localruntime.NewSessionKey(ws.Id)
+		sessionKey, err := localruntime.NewSessionKey(ws.ID)
 		require.NoError(err)
 		require.NoError(database.UpsertWorkspaceRuntimeSession(
 			ctx,
 			&db.WorkspaceRuntimeSession{
-				WorkspaceID: ws.Id,
+				WorkspaceID: ws.ID,
 				SessionKey:  sessionKey,
 				TargetKey:   targetKey,
 				Label:       targetKey,
@@ -228,13 +223,13 @@ exit 0
 	require.Eventually(func() bool {
 		listResp, err := client.HTTP.ListWorkspacesWithResponse(ctx)
 		require.NoError(err)
-		if listResp.StatusCode() != http.StatusOK ||
+		if listResp.StatusCode != http.StatusOK ||
 			listResp.JSON200 == nil || listResp.JSON200.Workspaces == nil {
 			return false
 		}
 		listed = nil
 		for i := range listResp.JSON200.Workspaces {
-			if listResp.JSON200.Workspaces[i].Id == ws.Id {
+			if listResp.JSON200.Workspaces[i].ID == ws.ID {
 				listed = &listResp.JSON200.Workspaces[i]
 				break
 			}
@@ -260,7 +255,7 @@ func TestWorkspaceDiffCacheHitReturnsWhileGitCapacityIsHeldE2E(t *testing.T) {
 
 	fixture := setupWorkspaceServerFixture(t, nil)
 	ws := createReadyWorkspace(t, context.Background(), fixture.client)
-	initial := requestWorkspaceDiff(t, fixture.server, ws.Id, "head")
+	initial := requestWorkspaceDiff(t, fixture.server, ws.ID, "head")
 	assert.False(initial.Stale)
 
 	releaseHeld, err := procutil.TryAcquire(
@@ -270,7 +265,7 @@ func TestWorkspaceDiffCacheHitReturnsWhileGitCapacityIsHeldE2E(t *testing.T) {
 	defer releaseHeld()
 
 	started := time.Now()
-	cached := requestWorkspaceDiff(t, fixture.server, ws.Id, "head")
+	cached := requestWorkspaceDiff(t, fixture.server, ws.ID, "head")
 	elapsed := time.Since(started)
 	releaseHeld()
 

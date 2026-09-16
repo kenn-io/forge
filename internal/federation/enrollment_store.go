@@ -6,7 +6,8 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -748,14 +749,13 @@ func decodeEnrollmentStore(path string) (persistedEnrollmentStore, bool, error) 
 		return persistedEnrollmentStore{}, false, fmt.Errorf("open federation enrollment store: %w", err)
 	}
 	defer file.Close()
-	decoder := json.NewDecoder(file)
-	decoder.DisallowUnknownFields()
+	decoder := jsontext.NewDecoder(file)
 	var state persistedEnrollmentStore
-	if err := decoder.Decode(&state); err != nil {
+	if err := json.UnmarshalDecode(decoder, &state, json.RejectUnknownMembers(true)); err != nil {
 		return persistedEnrollmentStore{}, false, fmt.Errorf("decode federation enrollment store: %w", err)
 	}
 	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+	if err := json.UnmarshalDecode(decoder, &extra); !errors.Is(err, io.EOF) {
 		if err == nil {
 			return persistedEnrollmentStore{}, false, errors.New("decode federation enrollment store: multiple JSON values")
 		}
@@ -864,9 +864,8 @@ func writeEnrollmentStore(path string, state persistedEnrollmentStore) error {
 		_ = tmp.Close()
 		return fmt.Errorf("restrict federation enrollment store temp file: %w", err)
 	}
-	encoder := json.NewEncoder(tmp)
-	encoder.SetIndent("", "  ")
-	if err := encoder.Encode(state); err != nil {
+	encoder := jsontext.NewEncoder(tmp, jsontext.WithIndentPrefix(""), jsontext.WithIndent("  "))
+	if err := json.MarshalEncode(encoder, state); err != nil {
 		_ = tmp.Close()
 		return fmt.Errorf("encode federation enrollment store: %w", err)
 	}

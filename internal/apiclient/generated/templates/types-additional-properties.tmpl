@@ -1,0 +1,80 @@
+{{/*
+Copyright 2025 DoorDash, Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/}}
+
+{{- template "header" $ }}
+
+{{ define "additionalProperties" }}
+{{ $args := . }}
+{{ $td := $args.typeDef }}
+{{ $alias := $args.alias }}
+{{ $addType := $td.Schema.AdditionalPropertiesType.TypeDeclWithNullable }}
+{{ $typeSchemaMap := $args.typeSchemaMap }}
+
+// Getter for additional properties for {{$td.Name}}. Returns the specified
+// element and whether it was found
+func ({{$alias}} {{$td.Name}}) Get(fieldName string) (value {{$addType}}, found bool) {
+    if {{$alias}}.AdditionalProperties != nil {
+        value, found = {{$alias}}.AdditionalProperties[fieldName]
+    }
+    return
+}
+
+// Setter for additional properties for {{$td.Name}}
+func ({{$alias}} *{{$td.Name}}) Set(fieldName string, value {{$addType}}) {
+    if {{$alias}}.AdditionalProperties == nil {
+        {{$alias}}.AdditionalProperties = make(map[string]{{$addType}})
+    }
+    {{$alias}}.AdditionalProperties[fieldName] = value
+}
+
+{{if eq 0 (len $td.Schema.UnionElements) -}}
+// Override default JSON handling for {{$td.Name}} to handle AdditionalProperties
+func ({{$alias}} *{{$td.Name}}) UnmarshalJSON(data []byte) error {
+    object := make(map[string]jsontext.Value)
+    if err := json.Unmarshal(data, &object); err != nil {
+        return err
+    }
+    {{ template "unmarshalEmbeddedFields" (dict "alias" $alias "properties" $td.Schema.Properties "typeSchemaMap" $typeSchemaMap) }}
+    {{ template "unmarshalNamedFields" (dict "alias" $alias "properties" $td.Schema.Properties) }}
+    if len(object) != 0 {
+        {{$alias}}.AdditionalProperties = make(map[string]{{$addType}})
+        for fieldName, fieldBuf := range object {
+            var fieldVal {{$addType}}
+            if err := json.Unmarshal(fieldBuf, &fieldVal); err != nil {
+                return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
+            }
+            {{$alias}}.AdditionalProperties[fieldName] = fieldVal
+        }
+    }
+    return nil
+}
+
+// Override default JSON handling for {{$td.Name}} to handle AdditionalProperties
+func ({{$alias}} {{$td.Name}}) MarshalJSON() ([]byte, error) {
+    var err error
+    object := make(map[string]jsontext.Value)
+    {{ template "marshalEmbeddedFields" (dict "alias" $alias "properties" $td.Schema.Properties) }}
+    {{ template "marshalNamedFields" (dict "alias" $alias "properties" $td.Schema.Properties) }}
+    for fieldName, field := range {{$alias}}.AdditionalProperties {
+        object[fieldName], err = json.Marshal(field)
+        if err != nil {
+            return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
+        }
+    }
+    return json.Marshal(object)
+}
+{{end}}
+{{end}}

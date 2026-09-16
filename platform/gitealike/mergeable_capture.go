@@ -2,7 +2,8 @@ package gitealike
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"io"
 	"net/http"
 	"strings"
@@ -97,7 +98,7 @@ func (c *MergeableCache) capturePullRequest(item mergeableCaptureItem) {
 
 type mergeableCaptureItem struct {
 	HTMLURL   string                 `json:"html_url"`
-	Mergeable json.RawMessage        `json:"mergeable"`
+	Mergeable jsontext.Value         `json:"mergeable"`
 	Head      mergeableCaptureBranch `json:"head"`
 	Base      mergeableCaptureBranch `json:"base"`
 	Additions *int                   `json:"additions"`

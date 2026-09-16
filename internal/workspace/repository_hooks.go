@@ -3,7 +3,7 @@ package workspace
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"go.kenn.io/forge/internal/apiclient/roborev"
 
 	"github.com/BurntSushi/toml"
 	"go.kenn.io/forge/internal/procutil"
@@ -789,9 +791,7 @@ func confirmRoborevRegistration(
 ) error {
 	requestCtx, cancel := context.WithTimeout(ctx, repositoryHookCommandTimeout)
 	defer cancel()
-	request, err := http.NewRequestWithContext(
-		requestCtx, http.MethodGet, strings.TrimRight(endpoint, "/")+"/api/repos", nil,
-	)
+	request, err := roborev.NewListReposRequest(requestCtx, strings.TrimRight(endpoint, "/"), &roborev.ListReposRequestOptions{})
 	if err != nil {
 		return fmt.Errorf("build Roborev registration request: %w", err)
 	}

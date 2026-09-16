@@ -53,16 +53,16 @@ func TestWorkspaceAPIHidesRemovedAssociatedPullRequestE2E(t *testing.T) {
 	require.NoError(err)
 	list, err := client.HTTP.ListWorkspacesWithResponse(ctx)
 	require.NoError(err)
-	require.Equal(http.StatusOK, list.StatusCode(), string(list.Body))
+	require.Equal(http.StatusOK, list.StatusCode, string(list.Body))
 	require.NotNil(list.JSON200)
 	require.NotNil(list.JSON200.Workspaces)
 	require.Len(list.JSON200.Workspaces, 1)
-	require.Equal("ws-adhoc", list.JSON200.Workspaces[0].Id)
+	require.Equal("ws-adhoc", list.JSON200.Workspaces[0].ID)
 	require.Nil(list.JSON200.Workspaces[0].AssociatedPrNumber)
 
-	detail, err := client.HTTP.GetWorkspaceWithResponse(ctx, "ws-adhoc")
+	detail, err := client.HTTP.GetWorkspaceWithResponse(ctx, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: "ws-adhoc"}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, detail.StatusCode(), string(detail.Body))
+	require.Equal(http.StatusOK, detail.StatusCode, string(detail.Body))
 	require.NotNil(detail.JSON200)
 	require.Nil(detail.JSON200.AssociatedPrNumber)
 
@@ -139,13 +139,13 @@ func TestWorkspaceAPIRetainsProviderMetadataAcrossReusedRouteE2E(t *testing.T) {
 	require.NoError(err)
 	list, err := client.HTTP.ListWorkspacesWithResponse(ctx)
 	require.NoError(err)
-	require.Equal(http.StatusOK, list.StatusCode(), string(list.Body))
+	require.Equal(http.StatusOK, list.StatusCode, string(list.Body))
 	require.NotNil(list.JSON200)
 	require.NotNil(list.JSON200.Workspaces)
 	require.Len(list.JSON200.Workspaces, 2)
 	byID := make(map[string]generated.WorkspaceResponse, 2)
 	for _, workspace := range list.JSON200.Workspaces {
-		byID[workspace.Id] = workspace
+		byID[workspace.ID] = workspace
 	}
 	require.NotNil(byID["ws-associated"].AssociatedPrNumber)
 	require.Equal(int64(42), *byID["ws-associated"].AssociatedPrNumber)

@@ -39,7 +39,7 @@ func TestWorkspaceListReportsCommitsAheadBehindE2E(t *testing.T) {
 		}
 		for i := range resp.JSON200.Workspaces {
 			candidate := &resp.JSON200.Workspaces[i]
-			if candidate.Id == ws.Id {
+			if candidate.ID == ws.ID {
 				return candidate
 			}
 		}
@@ -60,16 +60,14 @@ func TestWorkspaceListReportsCommitsAheadBehindE2E(t *testing.T) {
 	}, 10*time.Second, 10*time.Millisecond)
 
 	includePeers := false
-	fleetResponse, err := fixture.client.HTTP.GetSnapshotWithResponse(
-		t.Context(), &generated.GetSnapshotParams{IncludePeers: &includePeers},
-	)
+	fleetResponse, err := fixture.client.HTTP.GetSnapshotWithResponse(t.Context(), &generated.GetSnapshotRequestOptions{Query: &generated.GetSnapshotQuery{IncludePeers: &includePeers}})
 	require.NoError(err)
 	require.NotNil(fleetResponse.JSON200)
 	require.NotNil(fleetResponse.JSON200.Workspaces)
 	var fleetWorkspace *generated.WorkspaceSummary
 	for i := range fleetResponse.JSON200.Workspaces {
 		candidate := &fleetResponse.JSON200.Workspaces[i]
-		if candidate.Id == ws.Id {
+		if candidate.ID == ws.ID {
 			fleetWorkspace = candidate
 			break
 		}

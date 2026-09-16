@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"net/http"
@@ -1451,8 +1451,10 @@ func (c *Client) ListPullRequestTimelineEvents(
 							AfterCommit *struct {
 								OID string `json:"oid"`
 							} `json:"afterCommit"`
-							CreatedAt            time.Time              `json:"createdAt"`
-							Ref                  *struct{ Name string } `json:"ref"`
+							CreatedAt time.Time `json:"createdAt"`
+							Ref       *struct {
+								Name string `json:"name"`
+							} `json:"ref"`
 							DeletedCommentAuthor *struct {
 								Login string `json:"login"`
 							} `json:"deletedCommentAuthor"`
@@ -1537,7 +1539,7 @@ func (c *Client) ListPullRequestTimelineEvents(
 		}
 
 		var decoded graphQLResponse
-		if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+		if err := json.UnmarshalRead(resp.Body, &decoded); err != nil {
 			_ = resp.Body.Close()
 			return nil, fmt.Errorf(
 				"decode pull request timeline events for %s/%s#%d: %w",
@@ -1741,7 +1743,7 @@ func (c *Client) ListIssueTimelineEvents(
 		}
 
 		var decoded graphQLResponse
-		if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+		if err := json.UnmarshalRead(resp.Body, &decoded); err != nil {
 			_ = resp.Body.Close()
 			return nil, fmt.Errorf(
 				"decode issue timeline events for %s/%s#%d: %w",
@@ -2384,7 +2386,7 @@ func (c *Client) createCommitForReviewSuggestions(
 		return nil, fmt.Errorf("applying review suggestions on %s/%s#%d: graphql status %s", owner, repo, number, resp.Status)
 	}
 	var decoded createCommitResponse
-	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &decoded); err != nil {
 		return nil, fmt.Errorf("decode review suggestion commit response for %s/%s#%d: %w", owner, repo, number, err)
 	}
 	if len(decoded.Errors) > 0 {
@@ -2645,7 +2647,7 @@ func (c *Client) MarkPullRequestReadyForReview(
 				resp.StatusCode == http.StatusNotFound,
 			)
 		}
-		if err := json.NewDecoder(resp.Body).Decode(dest); err != nil {
+		if err := json.UnmarshalRead(resp.Body, dest, json.MatchCaseInsensitiveNames(true)); err != nil {
 			_ = resp.Body.Close()
 			return resp, err
 		}
@@ -2775,7 +2777,7 @@ func (c *Client) ConvertPullRequestToDraft(
 				resp.StatusCode == http.StatusNotFound,
 			)
 		}
-		if err := json.NewDecoder(resp.Body).Decode(dest); err != nil {
+		if err := json.UnmarshalRead(resp.Body, dest, json.MatchCaseInsensitiveNames(true)); err != nil {
 			_ = resp.Body.Close()
 			return resp, err
 		}

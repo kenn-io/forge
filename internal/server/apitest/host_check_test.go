@@ -3,6 +3,7 @@ package apitest
 import (
 	"context"
 	"encoding/json"
+	apiruntime "github.com/doordash-oss/oapi-codegen-dd/v3/pkg/runtime"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -46,9 +47,9 @@ func TestHostValidationE2E(t *testing.T) {
 
 	t.Run("rejects DNS-rebound hostname", func(t *testing.T) {
 		client := newHostValidationClient(t, srv, "http://attacker.example:8091")
-		resp, err := client.HTTP.ListPullsWithResponse(t.Context(), nil)
-		require.NoError(t, err)
-		require.Equal(t, http.StatusForbidden, resp.StatusCode())
+		resp, err := client.HTTP.ListPullsWithResponse(t.Context(), &generated.ListPullsRequestOptions{})
+		require.Error(t, err)
+		require.Equal(t, http.StatusForbidden, resp.StatusCode)
 
 		var payload struct {
 			Error string `json:"error"`
@@ -62,9 +63,9 @@ func TestHostValidationE2E(t *testing.T) {
 	t.Run("accepts configured bind", func(t *testing.T) {
 		require := require.New(t)
 		client := newHostValidationClient(t, srv, "http://127.0.0.1:8091")
-		resp, err := client.HTTP.ListPullsWithResponse(t.Context(), nil)
+		resp, err := client.HTTP.ListPullsWithResponse(t.Context(), &generated.ListPullsRequestOptions{})
 		require.NoError(err)
-		require.Equal(http.StatusOK, resp.StatusCode())
+		require.Equal(http.StatusOK, resp.StatusCode)
 		require.NotNil(resp.JSON200)
 		require.Len(*resp.JSON200, 1)
 		assert := assert.New(t)
@@ -85,24 +86,18 @@ trust_reverse_proxy = true
 	t.Run("accepts allowed forwarded host from config", func(t *testing.T) {
 		require := require.New(t)
 		client := newHostValidationClient(t, srv, "http://proxy.local:8091")
-		resp, err := client.HTTP.ListPullsWithResponse(
-			t.Context(), nil,
-			requestHeader("X-Forwarded-Host", "forge.example"),
-		)
+		resp, err := client.HTTP.ListPullsWithResponse(t.Context(), &generated.ListPullsRequestOptions{}, requestHeader("X-Forwarded-Host", "forge.example"))
 		require.NoError(err)
-		require.Equal(http.StatusOK, resp.StatusCode())
+		require.Equal(http.StatusOK, resp.StatusCode)
 		require.NotNil(resp.JSON200)
 		require.Len(*resp.JSON200, 1)
 	})
 
 	t.Run("rejects disallowed forwarded host from config", func(t *testing.T) {
 		client := newHostValidationClient(t, srv, "http://proxy.local:8091")
-		resp, err := client.HTTP.ListPullsWithResponse(
-			t.Context(), nil,
-			requestHeader("X-Forwarded-Host", "attacker.example"),
-		)
-		require.NoError(t, err)
-		require.Equal(t, http.StatusForbidden, resp.StatusCode())
+		resp, err := client.HTTP.ListPullsWithResponse(t.Context(), &generated.ListPullsRequestOptions{}, requestHeader("X-Forwarded-Host", "attacker.example"))
+		require.Error(t, err)
+		require.Equal(t, http.StatusForbidden, resp.StatusCode)
 	})
 }
 
@@ -120,35 +115,25 @@ func TestHostValidationTrustedProxyE2E(t *testing.T) {
 	t.Run("accepts allowed forwarded public host", func(t *testing.T) {
 		require := require.New(t)
 		client := newHostValidationClient(t, srv, "http://proxy.local:8091")
-		resp, err := client.HTTP.ListPullsWithResponse(
-			t.Context(), nil,
-			requestHeader("X-Forwarded-Host", "forge.example"),
-		)
+		resp, err := client.HTTP.ListPullsWithResponse(t.Context(), &generated.ListPullsRequestOptions{}, requestHeader("X-Forwarded-Host", "forge.example"))
 		require.NoError(err)
-		require.Equal(http.StatusOK, resp.StatusCode())
+		require.Equal(http.StatusOK, resp.StatusCode)
 		require.NotNil(resp.JSON200)
 		require.Len(*resp.JSON200, 1)
 	})
 
 	t.Run("rejects disallowed forwarded public host", func(t *testing.T) {
 		client := newHostValidationClient(t, srv, "http://proxy.local:8091")
-		resp, err := client.HTTP.ListPullsWithResponse(
-			t.Context(), nil,
-			requestHeader("X-Forwarded-Host", "attacker.example"),
-		)
-		require.NoError(t, err)
-		require.Equal(t, http.StatusForbidden, resp.StatusCode())
+		resp, err := client.HTTP.ListPullsWithResponse(t.Context(), &generated.ListPullsRequestOptions{}, requestHeader("X-Forwarded-Host", "attacker.example"))
+		require.Error(t, err)
+		require.Equal(t, http.StatusForbidden, resp.StatusCode)
 	})
 
 	t.Run("rejects mismatched forwarded headers", func(t *testing.T) {
 		client := newHostValidationClient(t, srv, "http://proxy.local:8091")
-		resp, err := client.HTTP.ListPullsWithResponse(
-			t.Context(), nil,
-			requestHeader("X-Forwarded-Host", "forge.example"),
-			requestHeader("Forwarded", "host=attacker.example"),
-		)
-		require.NoError(t, err)
-		require.Equal(t, http.StatusForbidden, resp.StatusCode())
+		resp, err := client.HTTP.ListPullsWithResponse(t.Context(), &generated.ListPullsRequestOptions{}, requestHeader("X-Forwarded-Host", "forge.example"), requestHeader("Forwarded", "host=attacker.example"))
+		require.Error(t, err)
+		require.Equal(t, http.StatusForbidden, resp.StatusCode)
 	})
 }
 
@@ -228,7 +213,7 @@ func newHostValidationClient(t *testing.T, srv *server.Server, baseURL string) *
 	return client
 }
 
-func requestHeader(name, value string) generated.RequestEditorFn {
+func requestHeader(name, value string) apiruntime.RequestEditorFn {
 	return func(_ context.Context, req *http.Request) error {
 		req.Header.Set(name, value)
 		return nil

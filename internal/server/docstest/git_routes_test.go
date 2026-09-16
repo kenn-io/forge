@@ -170,7 +170,7 @@ func TestDocsGitPublishEndpointHappyPath(t *testing.T) {
 	repo.Write(t, "new.md", "# new\n")
 	srv := setupDocsGitRouteServer(t, repo.Dir)
 
-	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", generated.PublishDocsGitJSONRequestBody{
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", generated.PublishDocsGitBody{
 		Message: new("docs: update new.md\n\n- new.md\n"),
 	})
 
@@ -193,7 +193,7 @@ func TestDocsGitPublishEndpointAcceptsLargeMessageBelowRouteLimit(t *testing.T) 
 	repo.Write(t, "new.md", "# new\n")
 	srv := setupDocsGitRouteServer(t, repo.Dir)
 
-	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", generated.PublishDocsGitJSONRequestBody{
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", generated.PublishDocsGitBody{
 		Message: new("docs: " + strings.Repeat("large ", 2<<18)),
 	})
 
@@ -218,7 +218,7 @@ func TestDocsGitPublishEndpointPushesConfiguredUpstreamDespitePushDefaults(t *te
 	repo.Write(t, "new.md", "# new\n")
 	srv := setupDocsGitRouteServer(t, repo.Dir)
 
-	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", generated.PublishDocsGitJSONRequestBody{
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", generated.PublishDocsGitBody{
 		Message: new("docs: explicit upstream"),
 	})
 
@@ -236,7 +236,7 @@ func TestDocsGitPublishEndpointRejectsNonLoopback(t *testing.T) {
 	require := require.New(t)
 	repo := gitfixture.NewRepository(t, true)
 	srv := setupDocsGitRouteServer(t, repo.Dir)
-	body, err := json.Marshal(generated.PublishDocsGitJSONRequestBody{Message: new("docs: x")})
+	body, err := json.Marshal(generated.PublishDocsGitBody{Message: new("docs: x")})
 	require.NoError(err)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/docs/folders/f/git/publish", bytes.NewReader(body))
 	req.Host = "127.0.0.1"
@@ -284,7 +284,7 @@ func TestDocsGitPublishEndpointErrors(t *testing.T) {
 	repo.Write(t, "new.md", "# new\n")
 	srv := setupDocsGitRouteServer(t, repo.Dir)
 
-	emptyRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", generated.PublishDocsGitJSONRequestBody{
+	emptyRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", generated.PublishDocsGitBody{
 		Message: new("   \n\t"),
 	})
 
@@ -293,7 +293,7 @@ func TestDocsGitPublishEndpointErrors(t *testing.T) {
 	require.NoError(json.NewDecoder(emptyRR.Body).Decode(&empty))
 	assert.Equal("emptyMessage", empty.Details["reason"])
 
-	missingRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/missing/git/publish", generated.PublishDocsGitJSONRequestBody{
+	missingRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/missing/git/publish", generated.PublishDocsGitBody{
 		Message: new("docs: x"),
 	})
 
@@ -307,7 +307,7 @@ func TestDocsGitPublishEndpointNoUpstreamAndCommitFailure(t *testing.T) {
 	noUpstream.Write(t, "new.md", "# new\n")
 	noUpstreamSrv := setupDocsGitRouteServer(t, noUpstream.Dir)
 
-	noUpstreamRR := testutil.DoJSON(t, noUpstreamSrv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", generated.PublishDocsGitJSONRequestBody{
+	noUpstreamRR := testutil.DoJSON(t, noUpstreamSrv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", generated.PublishDocsGitBody{
 		Message: new("docs: x"),
 	})
 
@@ -327,7 +327,7 @@ func TestDocsGitPublishEndpointNoUpstreamAndCommitFailure(t *testing.T) {
 	require.NoError(os.WriteFile(lockPath, nil, 0o644))
 	commitFailSrv := setupDocsGitRouteServer(t, repo.Dir)
 
-	commitFailRR := testutil.DoJSON(t, commitFailSrv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", generated.PublishDocsGitJSONRequestBody{
+	commitFailRR := testutil.DoJSON(t, commitFailSrv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", generated.PublishDocsGitBody{
 		Message: new("docs: x"),
 	})
 
@@ -347,7 +347,7 @@ func TestDocsGitPublishEndpointRejectsUnsafeGitConfig(t *testing.T) {
 	gitfixture.Run(t, repo.Dir, "config", "filter.evil.clean", "/bin/sh -c evil")
 	srv := setupDocsGitRouteServer(t, repo.Dir)
 
-	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", generated.PublishDocsGitJSONRequestBody{
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", generated.PublishDocsGitBody{
 		Message: new("docs: x"),
 	})
 
@@ -369,7 +369,7 @@ func TestDocsGitPublishEndpointIgnoresDocsRepoHooks(t *testing.T) {
 	require.NoError(os.WriteFile(filepath.Join(hookDir, "pre-commit"), []byte(hook), 0o755))
 	srv := setupDocsGitRouteServer(t, repo.Dir)
 
-	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", generated.PublishDocsGitJSONRequestBody{
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", generated.PublishDocsGitBody{
 		Message: new("docs: x"),
 	})
 
@@ -463,7 +463,7 @@ func TestDocsGitPublishEndpointProblemMappings(t *testing.T) {
 			require := require.New(t)
 			srv := tc.setup(t)
 
-			rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", generated.PublishDocsGitJSONRequestBody{
+			rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", generated.PublishDocsGitBody{
 				Message: new("docs: x"),
 			})
 
@@ -519,7 +519,7 @@ func TestDocsGitPublishEndpointRejectsConcurrentInFlightPublish(t *testing.T) {
 	gitfixture.Run(t, repo.Dir, "remote", "set-url", "origin", hung.URL+"/repo.git")
 
 	publishAsync := func(message string) <-chan *httptest.ResponseRecorder {
-		body, err := json.Marshal(generated.PublishDocsGitJSONRequestBody{Message: new(message)})
+		body, err := json.Marshal(generated.PublishDocsGitBody{Message: new(message)})
 		require.NoError(err)
 		done := make(chan *httptest.ResponseRecorder, 1)
 		go func() {
@@ -595,7 +595,7 @@ func TestDocsGitPublishEndpointRejectsConcurrentInFlightPublish(t *testing.T) {
 	// With the lock released and a working remote, a fresh publish succeeds.
 	gitfixture.Run(t, repo.Dir, "remote", "set-url", "origin", repo.Remote)
 	repo.Write(t, "after.md", "# after\n")
-	afterRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", generated.PublishDocsGitJSONRequestBody{
+	afterRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", generated.PublishDocsGitBody{
 		Message: new("docs: after"),
 	})
 

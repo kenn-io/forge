@@ -2,6 +2,7 @@ package apitest
 
 import (
 	"encoding/json"
+	"go.kenn.io/forge/internal/apiclient/generated"
 	"net/http"
 	"testing"
 	"time"
@@ -25,17 +26,17 @@ func TestIssueWorkflowStatusWire(t *testing.T) {
 	seedIssue(t, database, "acme", "widget", 5, "open")
 	client := setupTestClient(t, srv)
 
-	listResp, err := client.HTTP.ListIssuesWithResponse(ctx, nil)
+	listResp, err := client.HTTP.ListIssuesWithResponse(ctx, &generated.ListIssuesRequestOptions{})
 	require.NoError(err)
-	require.Equal(http.StatusOK, listResp.StatusCode())
+	require.Equal(http.StatusOK, listResp.StatusCode)
 	var listRows []map[string]any
 	decodeIssueWorkflowBody(t, listResp.Body, &listRows)
 	require.Len(listRows, 1)
 	assert.Equal("new", listRows[0]["WorkflowStatus"])
 
-	detailResp, err := client.HTTP.GetIssueWithResponse(ctx, "gh", "acme", "widget", 5)
+	detailResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(5)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, detailResp.StatusCode())
+	require.Equal(http.StatusOK, detailResp.StatusCode)
 	var detail map[string]any
 	decodeIssueWorkflowBody(t, detailResp.Body, &detail)
 	issue, ok := detail["issue"].(map[string]any)
@@ -59,16 +60,16 @@ func TestIssueWorkflowStatusWire(t *testing.T) {
 	})
 	require.NoError(err)
 
-	listResp, err = client.HTTP.ListIssuesWithResponse(ctx, nil)
+	listResp, err = client.HTTP.ListIssuesWithResponse(ctx, &generated.ListIssuesRequestOptions{})
 	require.NoError(err)
-	require.Equal(http.StatusOK, listResp.StatusCode())
+	require.Equal(http.StatusOK, listResp.StatusCode)
 	decodeIssueWorkflowBody(t, listResp.Body, &listRows)
 	require.Len(listRows, 1)
 	assert.Equal("waiting", listRows[0]["WorkflowStatus"])
 
-	detailResp, err = client.HTTP.GetIssueWithResponse(ctx, "gh", "acme", "widget", 5)
+	detailResp, err = client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(5)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, detailResp.StatusCode())
+	require.Equal(http.StatusOK, detailResp.StatusCode)
 	decodeIssueWorkflowBody(t, detailResp.Body, &detail)
 	issue, ok = detail["issue"].(map[string]any)
 	require.True(ok)
@@ -98,9 +99,9 @@ func TestIssueWorkflowStatusMetadataNormalizesInvalidStoredStatus(t *testing.T) 
 	require.NoError(err)
 
 	client := setupTestClient(t, srv)
-	detailResp, err := client.HTTP.GetIssueWithResponse(ctx, "gh", "acme", "widget", 6)
+	detailResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(6)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, detailResp.StatusCode())
+	require.Equal(http.StatusOK, detailResp.StatusCode)
 
 	var detail map[string]any
 	decodeIssueWorkflowBody(t, detailResp.Body, &detail)
@@ -153,9 +154,9 @@ func TestIssueSyncResponseIncludesWorkflow(t *testing.T) {
 	}}
 
 	client := setupTestClient(t, srv)
-	resp, err := client.HTTP.SyncIssueWithResponse(ctx, "gh", "acme", "widget", 8)
+	resp, err := client.HTTP.SyncIssueWithResponse(ctx, &generated.SyncIssueRequestOptions{PathParams: &generated.SyncIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(8)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode(), string(resp.Body))
+	require.Equal(http.StatusOK, resp.StatusCode, string(resp.Body))
 
 	var body map[string]any
 	decodeIssueWorkflowBody(t, resp.Body, &body)

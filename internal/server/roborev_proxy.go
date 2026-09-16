@@ -2,7 +2,7 @@ package server
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -84,7 +84,7 @@ func (s *Server) getRoborevStatus(
 	var body struct {
 		Version string `json:"version"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := json.UnmarshalRead(r.Body, &body); err != nil {
 		return &roborevStatusOutput{Body: resp}, nil
 	}
 	resp.Available = true

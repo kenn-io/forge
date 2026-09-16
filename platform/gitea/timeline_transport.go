@@ -2,7 +2,8 @@ package gitea
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"io"
 	"net/http"
 	"strconv"
@@ -43,7 +44,7 @@ func (t *timelineLabelTransport) RoundTrip(req *http.Request) (*http.Response, e
 }
 
 func normalizeTimelineLabels(body []byte) ([]byte, bool) {
-	var events []map[string]json.RawMessage
+	var events []map[string]jsontext.Value
 	if err := json.Unmarshal(body, &events); err != nil {
 		return body, false
 	}

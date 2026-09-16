@@ -2,7 +2,7 @@ import { describe, expect, test, vi } from "vite-plus/test";
 import { createDocsAPI } from "./api";
 
 // fakeFetch records every call so tests can assert the URL/method/body the
-// client sent and choose what to return per request. openapi-fetch invokes
+// client sent and choose what to return per request. The client invokes
 // the injected fetch with a single Request object, so unpack url/method/body
 // from it into the {url, init} shape the assertions read. Each `respond`
 // entry is consumed in FIFO order; trailing requests fall back to 200/{}.

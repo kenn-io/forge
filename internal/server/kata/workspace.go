@@ -2,7 +2,6 @@ package kata
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +11,9 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	apiruntime "github.com/doordash-oss/oapi-codegen-dd/v3/pkg/runtime"
+	katagenerated "go.kenn.io/kata/pkg/client/generated"
 
 	"github.com/BurntSushi/toml"
 	"github.com/danielgtaylor/huma/v2"
@@ -814,20 +816,22 @@ func (h *Handler) getKataProjectMappings(
 	if err != nil {
 		return nil, httpapi.BadRequest("", "invalid Kata daemon target", map[string]any{"daemon": daemon.ID})
 	}
+	api, err := katagenerated.NewDefaultClient(baseURL, apiruntime.WithHTTPClient(kataProjectHTTPClient{client}),
+		apiruntime.WithRequestEditorFn(func(_ context.Context, request *http.Request) error {
+			if token := kataDaemonForwardToken(daemon); token != "" {
+				request.Header.Set("Authorization", "Bearer "+token)
+			}
+			return nil
+		}),
+	)
+	if err != nil {
+		return nil, httpapi.NewProblem(http.StatusBadGateway, httpapi.CodeUpstreamError, "Kata daemon projects client failed", map[string]any{"daemon": daemon.ID})
+	}
 	upstreamCtx, cancel := context.WithTimeout(ctx, kataDaemonReadTimeout)
-	result := kataDaemonGet(upstreamCtx, client, daemon, baseURL+"/api/v1/projects")
+	payload, err := api.ListProjects(upstreamCtx, &katagenerated.ListProjectsRequestOptions{})
 	cancel()
-	if result.err != nil || result.status < http.StatusOK || result.status >= http.StatusMultipleChoices {
+	if err != nil {
 		return nil, httpapi.NewProblem(http.StatusBadGateway, httpapi.CodeUpstreamError, "Kata daemon projects read failed", map[string]any{"daemon": daemon.ID})
-	}
-	var payload struct {
-		Projects []struct {
-			UID  string `json:"uid"`
-			Name string `json:"name"`
-		} `json:"projects"`
-	}
-	if err := json.Unmarshal(result.body, &payload); err != nil {
-		return nil, httpapi.NewProblem(http.StatusBadGateway, httpapi.CodeUpstreamError, "Kata daemon returned an unexpected projects payload", map[string]any{"daemon": daemon.ID})
 	}
 	out = &kataProjectMappingsOutput{Vary: kataDaemonHeaderName}
 	out.Body.DaemonID = daemon.ID

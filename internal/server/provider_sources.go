@@ -1,15 +1,14 @@
 package server
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
-	"strconv"
 	"strings"
+
+	"go.kenn.io/forge/internal/apiclient/generated"
 
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federationauth"
@@ -34,14 +33,14 @@ func (s *hubProviderSource) ResolveWorkspaceLaunchSpec(
 	ctx context.Context, request providerplane.WorkspaceLaunchRequest,
 ) (db.WorkspaceLaunchSpec, error) {
 	return s.resolveWorkspaceLaunchSpec(
-		ctx, request, "/api/v1/federation/provider/workspace-launch-spec",
+		ctx, request, false,
 		federationauth.ScopeProviderRead,
 	)
 }
 
 func (s *hubProviderSource) resolveWorkspaceLaunchSpec(
 	ctx context.Context, request providerplane.WorkspaceLaunchRequest,
-	path string, scope federationauth.Scope,
+	refresh bool, scope federationauth.Scope,
 ) (db.WorkspaceLaunchSpec, error) {
 	canonicalRoute, err := providerplane.CanonicalRepositoryRoute(request.Repository)
 	if err != nil {
@@ -50,10 +49,18 @@ func (s *hubProviderSource) resolveWorkspaceLaunchSpec(
 		)
 	}
 	request.Repository = canonicalRoute
+	body := providerLaunchRequestBody(request)
+	var httpRequest *http.Request
+	if refresh {
+		httpRequest, err = generated.NewFederationRefreshWorkspaceLaunchSpecRequest(ctx, "/api/v1", &generated.FederationRefreshWorkspaceLaunchSpecRequestOptions{Body: body})
+	} else {
+		httpRequest, err = generated.NewFederationResolveWorkspaceLaunchSpecRequest(ctx, "/api/v1", &generated.FederationResolveWorkspaceLaunchSpecRequestOptions{Body: body})
+	}
+	if err != nil {
+		return db.WorkspaceLaunchSpec{}, err
+	}
 	var spec db.WorkspaceLaunchSpec
-	if err := s.exchange(
-		ctx, http.MethodPost, path, scope, request, &spec,
-	); err != nil {
+	if err := s.exchange(ctx, scope, httpRequest, &spec); err != nil {
 		return db.WorkspaceLaunchSpec{}, err
 	}
 	if err := providerplane.ValidateFederationWorkspaceLaunchSpecResponse(request, spec); err != nil {
@@ -163,7 +170,7 @@ func (s *hubProviderSource) RefreshWorkspaceLaunchSpec(
 			PlatformRepoID: current.Repository.PlatformRepoID,
 			ItemType:       current.ItemType, ItemNumber: current.ItemNumber,
 			ItemKey: current.ItemKey, GitHeadRef: current.GitHeadRef,
-		}, "/api/v1/federation/provider/workspace-launch-spec/refresh",
+		}, true,
 		federationauth.ScopeProviderWrite)
 	if err != nil {
 		return db.WorkspaceLaunchSpec{}, err
@@ -221,11 +228,11 @@ func (s *hubProviderSource) GetRepositoryDescriptor(
 		)
 	}
 	var descriptor providerplane.RepositoryDescriptor
-	if err := s.exchange(
-		ctx, http.MethodPost,
-		"/api/v1/federation/provider/repository-descriptor",
-		federationauth.ScopeProviderRead, route, &descriptor,
-	); err != nil {
+	httpRequest, err := generated.NewFederationGetRepositoryDescriptorRequest(ctx, "/api/v1", &generated.FederationGetRepositoryDescriptorRequestOptions{Body: new(generated.RepositoryRoute{Provider: route.Provider, PlatformHost: route.PlatformHost, Owner: route.Owner, Name: route.Name})})
+	if err != nil {
+		return providerplane.RepositoryDescriptor{}, err
+	}
+	if err := s.exchange(ctx, federationauth.ScopeProviderRead, httpRequest, &descriptor); err != nil {
 		return providerplane.RepositoryDescriptor{}, err
 	}
 	if err := descriptor.ValidateRoute(route); err != nil {
@@ -269,14 +276,11 @@ func (s *hubProviderSource) GetDiffDescriptor(
 		)
 	}
 	var descriptor providerplane.DiffDescriptor
-	if err := s.exchange(
-		ctx, http.MethodPost, "/api/v1/federation/provider/diff-descriptor",
-		federationauth.ScopeProviderRead,
-		federationDiffDescriptorRequest{
-			Repository: route, PullNumber: item.Number,
-		},
-		&descriptor,
-	); err != nil {
+	httpRequest, err := generated.NewFederationGetDiffDescriptorRequest(ctx, "/api/v1", &generated.FederationGetDiffDescriptorRequestOptions{Body: &generated.FederationGetDiffDescriptorBody{Repository: generated.RepositoryRoute{Provider: route.Provider, PlatformHost: route.PlatformHost, Owner: route.Owner, Name: route.Name}, PullNumber: int64(item.Number)}})
+	if err != nil {
+		return providerplane.DiffDescriptor{}, err
+	}
+	if err := s.exchange(ctx, federationauth.ScopeProviderRead, httpRequest, &descriptor); err != nil {
 		return providerplane.DiffDescriptor{}, err
 	}
 	if err := descriptor.Validate(); err != nil {
@@ -376,7 +380,11 @@ func (s *hubProviderSource) GetSettings(
 	ctx context.Context,
 ) (providerSettingsProjection, error) {
 	var response providerSettingsResponse
-	if err := s.read(ctx, "/api/v1/federation/provider/settings", nil, &response); err != nil {
+	httpRequest, err := generated.NewFederationGetProviderSettingsRequest(ctx, "/api/v1")
+	if err != nil {
+		return providerSettingsProjection{}, err
+	}
+	if err := s.exchange(ctx, federationauth.ScopeProviderRead, httpRequest, &response); err != nil {
 		return providerSettingsProjection{}, err
 	}
 	return response.projection(), nil
@@ -386,10 +394,11 @@ func (s *hubProviderSource) UpdateSettings(
 	ctx context.Context, update updateSettingsRequest,
 ) (settingsResponse, error) {
 	var response providerSettingsResponse
-	if err := s.exchange(
-		ctx, http.MethodPut, "/api/v1/federation/provider/settings",
-		federationauth.ScopeProviderWrite, providerSettingsUpdateFrom(update), &response,
-	); err != nil {
+	httpRequest, err := generated.NewFederationUpdateProviderSettingsRequest(ctx, "/api/v1", &generated.FederationUpdateProviderSettingsRequestOptions{Body: providerSettingsRequestBody(update)})
+	if err != nil {
+		return settingsResponse{}, err
+	}
+	if err := s.exchange(ctx, federationauth.ScopeProviderWrite, httpRequest, &response); err != nil {
 		return settingsResponse{}, err
 	}
 	return response.projection().Settings, nil
@@ -399,20 +408,22 @@ func (s *hubProviderSource) AutoAssignWorkspaceItem(
 	ctx context.Context, request workspaceapi.ProviderWorkspaceItemRequest,
 ) error {
 	var response struct{}
-	return s.exchangeMutation(
-		ctx, http.MethodPost, "/api/v1/federation/provider/workspace-auto-assign",
-		federationauth.ScopeProviderWrite, request, &response,
-	)
+	httpRequest, err := generated.NewFederationAutoAssignWorkspaceItemRequest(ctx, "/api/v1", &generated.FederationAutoAssignWorkspaceItemRequestOptions{Body: &generated.FederationAutoAssignWorkspaceItemBody{Repository: generated.RepositoryRoute{Provider: request.Repository.Provider, PlatformHost: request.Repository.PlatformHost, Owner: request.Repository.Owner, Name: request.Repository.Name}, ItemType: request.ItemType, ItemNumber: int64(request.ItemNumber)}})
+	if err != nil {
+		return err
+	}
+	return s.exchangeMutation(ctx, federationauth.ScopeProviderWrite, httpRequest, &response)
 }
 
 func (s *hubProviderSource) ListWorkflowStates(
 	ctx context.Context, query mcpserver.WorkflowQuery,
 ) (mcpserver.WorkflowPage, error) {
 	var response federationWorkflowPage
-	if err := s.exchange(
-		ctx, http.MethodPost, "/api/v1/federation/provider/workflow-states/query",
-		federationauth.ScopeProviderRead, federationWorkflowQueryFromMCP(query), &response,
-	); err != nil {
+	httpRequest, err := generated.NewFederationListWorkflowStatesRequest(ctx, "/api/v1", &generated.FederationListWorkflowStatesRequestOptions{Body: &generated.FederationListWorkflowStatesBody{Repository: generated.FederationWorkflowRepositoryIdentity{Provider: query.Repository.Provider, PlatformHost: query.Repository.PlatformHost, PlatformRepoID: query.Repository.PlatformRepoID, RepoPath: query.Repository.RepoPath, Owner: query.Repository.Owner, Name: query.Repository.Name}, ItemTypes: append([]string{}, query.ItemTypes...), States: append([]string{}, query.States...), IncludeClosed: query.IncludeClosed, Limit: int64(query.Limit), Cursor: query.Cursor}})
+	if err != nil {
+		return mcpserver.WorkflowPage{}, err
+	}
+	if err := s.exchange(ctx, federationauth.ScopeProviderRead, httpRequest, &response); err != nil {
 		return mcpserver.WorkflowPage{}, err
 	}
 	return response.mcp(), nil
@@ -423,14 +434,12 @@ func (s *hubProviderSource) SetWorkflowState(
 	item mcpserver.ItemIdentity,
 	update mcpserver.WorkflowUpdate,
 ) (mcpserver.WorkflowMutation, error) {
-	body := federationSetWorkflowStateRequest{
-		Item: federationWorkflowItemIdentity(item), Update: federationWorkflowUpdate(update),
-	}
 	var response federationWorkflowMutation
-	if err := s.exchangeMutation(
-		ctx, http.MethodPut, "/api/v1/federation/provider/workflow-state",
-		federationauth.ScopeProviderWrite, body, &response,
-	); err != nil {
+	httpRequest, err := generated.NewFederationSetWorkflowStateRequest(ctx, "/api/v1", &generated.FederationSetWorkflowStateRequestOptions{Body: &generated.FederationSetWorkflowStateBody{Item: generated.FederationWorkflowItemIdentity{Type: item.Type, Provider: item.Provider, PlatformHost: item.PlatformHost, PlatformRepoID: item.PlatformRepoID, Owner: item.Owner, Name: item.Name, Number: int64(item.Number)}, Update: generated.FederationWorkflowUpdate{Status: update.Status, ExpectedStatus: update.ExpectedStatus, Force: update.Force, Source: update.Source, Actor: update.Actor, Reason: update.Reason}}})
+	if err != nil {
+		return mcpserver.WorkflowMutation{}, err
+	}
+	if err := s.exchangeMutation(ctx, federationauth.ScopeProviderWrite, httpRequest, &response); err != nil {
 		return mcpserver.WorkflowMutation{}, err
 	}
 	return response.mcp(), nil
@@ -440,7 +449,11 @@ func (s *hubProviderSource) ListRepositorySummaries(
 	ctx context.Context,
 ) ([]repoSummaryResponse, error) {
 	var rows []repoSummaryResponse
-	if err := s.read(ctx, "/api/v1/repos/summary", nil, &rows); err != nil {
+	httpRequest, err := generated.NewListRepoSummariesRequest(ctx, "/api/v1")
+	if err != nil {
+		return nil, err
+	}
+	if err := s.exchange(ctx, federationauth.ScopeProviderRead, httpRequest, &rows); err != nil {
 		return nil, err
 	}
 	return rows, nil
@@ -449,11 +462,18 @@ func (s *hubProviderSource) ListRepositorySummaries(
 func (s *hubProviderSource) ResolveRepository(
 	ctx context.Context, identity mcpserver.RepositoryIdentity,
 ) (*db.Repo, error) {
-	path := providerRepositoryPath(
-		identity.PlatformHost, identity.Provider, identity.Owner, identity.Name,
-	)
+	var httpRequest *http.Request
+	var err error
+	if strings.TrimSpace(identity.PlatformHost) != "" {
+		httpRequest, err = generated.NewGetRepoOnHostRequest(ctx, "/api/v1", &generated.GetRepoOnHostRequestOptions{PathParams: &generated.GetRepoOnHostPath{Provider: identity.Provider, Owner: identity.Owner, Name: identity.Name, PlatformHost: identity.PlatformHost}})
+	} else {
+		httpRequest, err = generated.NewGetRepoRequest(ctx, "/api/v1", &generated.GetRepoRequestOptions{PathParams: &generated.GetRepoPath{Provider: identity.Provider, Owner: identity.Owner, Name: identity.Name}})
+	}
+	if err != nil {
+		return nil, err
+	}
 	var response repoResponse
-	if err := s.read(ctx, path, nil, &response); err != nil {
+	if err := s.exchange(ctx, federationauth.ScopeProviderRead, httpRequest, &response); err != nil {
 		return nil, err
 	}
 	return &db.Repo{
@@ -467,11 +487,18 @@ func (s *hubProviderSource) ResolveRepository(
 func (s *hubProviderSource) GetPullStack(
 	ctx context.Context, item mcpserver.ItemIdentity,
 ) (pullapi.StackContext, error) {
-	path := providerItemPath(
-		item.PlatformHost, "pulls", item.Provider, item.Owner, item.Name, item.Number,
-	) + "/stack"
+	var httpRequest *http.Request
+	var err error
+	if strings.TrimSpace(item.PlatformHost) != "" {
+		httpRequest, err = generated.NewGetPullStackOnHostRequest(ctx, "/api/v1", &generated.GetPullStackOnHostRequestOptions{PathParams: &generated.GetPullStackOnHostPath{Provider: item.Provider, Owner: item.Owner, Name: item.Name, Number: int64(item.Number), PlatformHost: item.PlatformHost}})
+	} else {
+		httpRequest, err = generated.NewGetPullStackRequest(ctx, "/api/v1", &generated.GetPullStackRequestOptions{PathParams: &generated.GetPullStackPath{Provider: item.Provider, Owner: item.Owner, Name: item.Name, Number: int64(item.Number)}})
+	}
+	if err != nil {
+		return pullapi.StackContext{}, err
+	}
 	var response hubStackResponse
-	if err := s.read(ctx, path, nil, &response); err != nil {
+	if err := s.exchange(ctx, federationauth.ScopeProviderRead, httpRequest, &response); err != nil {
 		return pullapi.StackContext{}, err
 	}
 	members := make([]pullapi.StackMember, 0, len(response.Members))
@@ -516,18 +543,12 @@ type hubStackMemberResponse struct {
 func (s *hubProviderSource) ListPulls(
 	ctx context.Context, query pullapi.ListQuery,
 ) ([]pullapi.MergeRequestResponse, error) {
-	values := make(url.Values)
-	setProviderQuery(values, "repo", query.Repo)
-	setProviderQuery(values, "state", query.State)
-	setProviderQuery(values, "kanban", query.Kanban)
-	setProviderBoolQuery(values, "starred", query.Starred)
-	setProviderBoolQuery(values, "involves_me", query.InvolvesMe)
-	setProviderBoolQuery(values, "unassigned", query.Unassigned)
-	setProviderQuery(values, "q", query.Text)
-	setProviderIntQuery(values, "limit", query.Limit)
-	setProviderIntQuery(values, "offset", query.Offset)
 	var rows []pullapi.MergeRequestResponse
-	if err := s.read(ctx, "/api/v1/pulls", values, &rows); err != nil {
+	httpRequest, err := generated.NewListPullsRequest(ctx, "/api/v1", &generated.ListPullsRequestOptions{Query: &generated.ListPullsQuery{Repo: optionalProviderQuery(query.Repo), State: optionalProviderQuery(query.State), Kanban: optionalProviderQuery(query.Kanban), Starred: optionalProviderQuery(query.Starred), InvolvesMe: optionalProviderQuery(query.InvolvesMe), Unassigned: optionalProviderQuery(query.Unassigned), Q: optionalProviderQuery(query.Text), Limit: optionalProviderQuery(int64(query.Limit)), Offset: optionalProviderQuery(int64(query.Offset))}})
+	if err != nil {
+		return nil, err
+	}
+	if err := s.exchange(ctx, federationauth.ScopeProviderRead, httpRequest, &rows); err != nil {
 		return nil, err
 	}
 	return rows, nil
@@ -537,10 +558,17 @@ func (s *hubProviderSource) GetPull(
 	ctx context.Context, item pullapi.ItemIdentity,
 ) (pullapi.MergeRequestDetailResponse, error) {
 	var detail pullapi.MergeRequestDetailResponse
-	path := providerItemPath(
-		item.PlatformHost, "pulls", item.Provider, item.Owner, item.Name, item.Number,
-	)
-	if err := s.read(ctx, path, nil, &detail); err != nil {
+	var httpRequest *http.Request
+	var err error
+	if strings.TrimSpace(item.PlatformHost) != "" {
+		httpRequest, err = generated.NewGetPullOnHostRequest(ctx, "/api/v1", &generated.GetPullOnHostRequestOptions{PathParams: &generated.GetPullOnHostPath{Provider: item.Provider, Owner: item.Owner, Name: item.Name, Number: int64(item.Number), PlatformHost: item.PlatformHost}})
+	} else {
+		httpRequest, err = generated.NewGetPullRequest(ctx, "/api/v1", &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: item.Provider, Owner: item.Owner, Name: item.Name, Number: int64(item.Number)}})
+	}
+	if err != nil {
+		return pullapi.MergeRequestDetailResponse{}, err
+	}
+	if err := s.exchange(ctx, federationauth.ScopeProviderRead, httpRequest, &detail); err != nil {
 		return pullapi.MergeRequestDetailResponse{}, err
 	}
 	return detail, nil
@@ -577,19 +605,12 @@ func (s *hubProviderSource) ResolveMergeRequestWorktreeFacts(
 func (s *hubProviderSource) ListIssues(
 	ctx context.Context, query issueapi.ListQuery,
 ) ([]issueapi.IssueResponse, error) {
-	values := make(url.Values)
-	setProviderQuery(values, "repo", query.Repo)
-	setProviderQuery(values, "state", query.State)
-	setProviderBoolQuery(values, "starred", query.Starred)
-	setProviderBoolQuery(values, "involves_me", query.InvolvesMe)
-	setProviderBoolQuery(values, "unassigned", query.Unassigned)
-	setProviderBoolQuery(values, "referenced_by_pr", query.ReferencedByPR)
-	setProviderQuery(values, "q", query.Text)
-	setProviderQuery(values, "assignee", query.Assignee)
-	setProviderIntQuery(values, "limit", query.Limit)
-	setProviderIntQuery(values, "offset", query.Offset)
 	var rows []issueapi.IssueResponse
-	if err := s.read(ctx, "/api/v1/issues", values, &rows); err != nil {
+	httpRequest, err := generated.NewListIssuesRequest(ctx, "/api/v1", &generated.ListIssuesRequestOptions{Query: &generated.ListIssuesQuery{Repo: optionalProviderQuery(query.Repo), State: optionalProviderQuery(query.State), Starred: optionalProviderQuery(query.Starred), InvolvesMe: optionalProviderQuery(query.InvolvesMe), Unassigned: optionalProviderQuery(query.Unassigned), ReferencedByPr: optionalProviderQuery(query.ReferencedByPR), Q: optionalProviderQuery(query.Text), Assignee: optionalProviderQuery(query.Assignee), Limit: optionalProviderQuery(int64(query.Limit)), Offset: optionalProviderQuery(int64(query.Offset))}})
+	if err != nil {
+		return nil, err
+	}
+	if err := s.exchange(ctx, federationauth.ScopeProviderRead, httpRequest, &rows); err != nil {
 		return nil, err
 	}
 	return rows, nil
@@ -599,10 +620,17 @@ func (s *hubProviderSource) GetIssue(
 	ctx context.Context, item issueapi.ItemIdentity,
 ) (issueapi.IssueDetailResponse, error) {
 	var detail issueapi.IssueDetailResponse
-	path := providerItemPath(
-		item.PlatformHost, "issues", item.Provider, item.Owner, item.Name, item.Number,
-	)
-	if err := s.read(ctx, path, nil, &detail); err != nil {
+	var httpRequest *http.Request
+	var err error
+	if strings.TrimSpace(item.PlatformHost) != "" {
+		httpRequest, err = generated.NewGetIssueOnHostRequest(ctx, "/api/v1", &generated.GetIssueOnHostRequestOptions{PathParams: &generated.GetIssueOnHostPath{Provider: item.Provider, Owner: item.Owner, Name: item.Name, Number: int64(item.Number), PlatformHost: item.PlatformHost}})
+	} else {
+		httpRequest, err = generated.NewGetIssueRequest(ctx, "/api/v1", &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: item.Provider, Owner: item.Owner, Name: item.Name, Number: int64(item.Number)}})
+	}
+	if err != nil {
+		return issueapi.IssueDetailResponse{}, err
+	}
+	if err := s.exchange(ctx, federationauth.ScopeProviderRead, httpRequest, &detail); err != nil {
 		return issueapi.IssueDetailResponse{}, err
 	}
 	return detail, nil
@@ -611,29 +639,12 @@ func (s *hubProviderSource) GetIssue(
 func (s *hubProviderSource) ListActivity(
 	ctx context.Context, input *listActivityInput,
 ) (activityResponse, error) {
-	values := make(url.Values)
-	setProviderQuery(values, "repo", input.Repo)
-	for _, value := range input.Types {
-		values.Add("types", value)
-	}
-	for _, value := range input.ItemTypes {
-		values.Add("item_types", value)
-	}
-	setProviderQuery(values, "search", input.Search)
-	setProviderQuery(values, "author", input.Author)
-	setProviderBoolQuery(values, "involves_me", input.InvolvesMe)
-	setProviderBoolQuery(values, "unassigned", input.Unassigned)
-	setProviderQuery(values, "after", input.After)
-	setProviderQuery(values, "before", input.Before)
-	setProviderQuery(values, "at_or_before", input.AtOrBefore)
-	setProviderQuery(values, "since", input.Since)
-	setProviderQuery(values, "projection", input.Projection)
-	setProviderIntQuery(values, "limit", input.Limit)
-	setProviderBoolQuery(values, "hide_closed_merged", input.HideClosedMerged)
-	setProviderBoolQuery(values, "hide_bots", input.HideBots)
-	setProviderBoolQuery(values, "hide_default_branch", input.HideDefaultBranch)
 	var response activityResponse
-	if err := s.read(ctx, "/api/v1/activity", values, &response); err != nil {
+	httpRequest, err := generated.NewListActivityRequest(ctx, "/api/v1", &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{Repo: optionalProviderQuery(input.Repo), Search: optionalProviderQuery(input.Search), Author: optionalProviderQuery(input.Author), InvolvesMe: optionalProviderQuery(input.InvolvesMe), Unassigned: optionalProviderQuery(input.Unassigned), After: optionalProviderQuery(input.After), Before: optionalProviderQuery(input.Before), AtOrBefore: optionalProviderQuery(input.AtOrBefore), Since: optionalProviderQuery(input.Since), Projection: optionalProviderQuery(generated.ListActivityQueryProjection(input.Projection)), Limit: optionalProviderQuery(int64(input.Limit)), HideClosedMerged: optionalProviderQuery(input.HideClosedMerged), HideBots: optionalProviderQuery(input.HideBots), HideDefaultBranch: optionalProviderQuery(input.HideDefaultBranch), Types: input.Types, ItemTypes: input.ItemTypes}})
+	if err != nil {
+		return activityResponse{}, err
+	}
+	if err := s.exchange(ctx, federationauth.ScopeProviderRead, httpRequest, &response); err != nil {
 		return activityResponse{}, err
 	}
 	return response, nil
@@ -646,22 +657,19 @@ func (s *hubProviderSource) FilterUnassignedActivitySubjects(
 	result := make([]providerplane.ItemIdentity, 0, len(subjects))
 	for start := 0; start < len(subjects); start += batchSize {
 		end := min(start+batchSize, len(subjects))
-		requestSubjects := make([]federationActivitySubjectIdentity, 0, end-start)
+		requestSubjects := make([]generated.FederationActivitySubjectIdentity, 0, end-start)
 		for _, subject := range subjects[start:end] {
 			requestSubjects = append(
-				requestSubjects, federationActivitySubjectIdentityFromProvider(subject),
+				requestSubjects, generated.FederationActivitySubjectIdentity{Repository: generated.FederationActivityRepositoryIdentity{Provider: subject.Repository.Provider, PlatformHost: subject.Repository.PlatformHost, PlatformRepoID: subject.Repository.PlatformRepoID}, ItemType: subject.ItemType, ItemNumber: int64(subject.ItemNumber)},
 			)
 		}
-		request := federationUnassignedActivitySubjectsRequest{Subjects: requestSubjects}
+		body := &generated.FederationFilterUnassignedActivitySubjectsBody{Subjects: requestSubjects}
 		var response federationUnassignedActivitySubjectsResponse
-		if err := s.exchange(
-			ctx,
-			http.MethodPost,
-			"/api/v1/federation/provider/activity/unassigned-subjects/query",
-			federationauth.ScopeProviderRead,
-			request,
-			&response,
-		); err != nil {
+		httpRequest, err := generated.NewFederationFilterUnassignedActivitySubjectsRequest(ctx, "/api/v1", &generated.FederationFilterUnassignedActivitySubjectsRequestOptions{Body: body})
+		if err != nil {
+			return nil, err
+		}
+		if err := s.exchange(ctx, federationauth.ScopeProviderRead, httpRequest, &response); err != nil {
 			return nil, err
 		}
 		for _, subject := range response.Subjects {
@@ -674,84 +682,30 @@ func (s *hubProviderSource) FilterUnassignedActivitySubjects(
 func (s *hubProviderSource) ListActivityAuthors(
 	ctx context.Context, input *listActivityAuthorsInput,
 ) (activityAuthorsResponse, error) {
-	values := make(url.Values)
-	setProviderQuery(values, "repo", input.Repo)
-	setProviderQuery(values, "since", input.Since)
 	var response activityAuthorsResponse
-	if err := s.read(ctx, "/api/v1/activity/authors", values, &response); err != nil {
+	httpRequest, err := generated.NewListActivityAuthorsRequest(ctx, "/api/v1", &generated.ListActivityAuthorsRequestOptions{Query: &generated.ListActivityAuthorsQuery{Repo: optionalProviderQuery(input.Repo), Since: optionalProviderQuery(input.Since)}})
+	if err != nil {
+		return activityAuthorsResponse{}, err
+	}
+	if err := s.exchange(ctx, federationauth.ScopeProviderRead, httpRequest, &response); err != nil {
 		return activityAuthorsResponse{}, err
 	}
 	return response, nil
 }
 
-func (s *hubProviderSource) read(
-	ctx context.Context, path string, query url.Values, target any,
-) error {
-	if len(query) > 0 {
-		path += "?" + query.Encode()
-	}
-	return s.exchange(
-		ctx, http.MethodGet, path, federationauth.ScopeProviderRead, nil, target,
-	)
+func (s *hubProviderSource) exchange(ctx context.Context, scope federationauth.Scope, request *http.Request, target any) error {
+	return s.exchangeWithProblem(ctx, scope, request, target, hubProviderProblem)
 }
 
-func (s *hubProviderSource) exchange(
-	ctx context.Context,
-	method, path string,
-	scope federationauth.Scope,
-	body any,
-	target any,
-) error {
-	return s.exchangeWithProblem(
-		ctx, method, path, scope, body, target, hubProviderProblem,
-	)
+func (s *hubProviderSource) exchangeMutation(ctx context.Context, scope federationauth.Scope, request *http.Request, target any) error {
+	return s.exchangeWithProblem(ctx, scope, request, target, hubProviderMutationProblem)
 }
 
-func (s *hubProviderSource) exchangeMutation(
-	ctx context.Context,
-	method, path string,
-	scope federationauth.Scope,
-	body any,
-	target any,
-) error {
-	return s.exchangeWithProblem(
-		ctx, method, path, scope, body, target, hubProviderMutationProblem,
-	)
-}
-
-func (s *hubProviderSource) exchangeWithProblem(
-	ctx context.Context,
-	method, path string,
-	scope federationauth.Scope,
-	body any,
-	target any,
-	problem func(error) error,
-) error {
+func (s *hubProviderSource) exchangeWithProblem(ctx context.Context, scope federationauth.Scope, request *http.Request, target any, problem func(error) error) error {
 	if s.client == nil || (s.enabled != nil && !s.enabled()) {
-		return httpapi.HubUnavailable(
-			"provider data is unavailable because fleet federation is disabled or inactive",
-		)
+		return httpapi.HubUnavailable("provider data is unavailable because fleet federation is disabled or inactive")
 	}
-	var requestBody *bytes.Reader
-	if body == nil {
-		requestBody = bytes.NewReader(nil)
-	} else {
-		encoded, err := json.Marshal(body)
-		if err != nil {
-			return httpapi.Internal("encode hub provider request failed")
-		}
-		requestBody = bytes.NewReader(encoded)
-	}
-	request, err := http.NewRequestWithContext(ctx, method, path, requestBody)
-	if err != nil {
-		return httpapi.Internal("build hub provider request failed")
-	}
-	if body != nil {
-		request.Header.Set("Content-Type", "application/json")
-	}
-	if err := providerplane.ReadJSON(
-		ctx, s.client, scope, request, target,
-	); err != nil {
+	if err := providerplane.ReadJSON(ctx, s.client, scope, request, target); err != nil {
 		return problem(err)
 	}
 	return nil
@@ -799,46 +753,40 @@ func hubProviderProblem(err error) error {
 	)
 }
 
-func providerItemPath(
-	platformHost, collection, provider, owner, name string, number int,
-) string {
-	parts := []string{"api", "v1"}
-	if strings.TrimSpace(platformHost) != "" {
-		parts = append(parts, "host", platformHost)
+func optionalProviderQuery[T comparable](value T) *T {
+	var zero T
+	if value == zero {
+		return nil
 	}
-	parts = append(parts, collection, provider, owner, name, strconv.Itoa(number))
-	for i := range parts {
-		parts[i] = url.PathEscape(parts[i])
-	}
-	return "/" + strings.Join(parts, "/")
+	return &value
 }
 
-func providerRepositoryPath(platformHost, provider, owner, name string) string {
-	parts := []string{"api", "v1"}
-	if strings.TrimSpace(platformHost) != "" {
-		parts = append(parts, "host", platformHost)
-	}
-	parts = append(parts, "repo", provider, owner, name)
-	for i := range parts {
-		parts[i] = url.PathEscape(parts[i])
-	}
-	return "/" + strings.Join(parts, "/")
-}
-
-func setProviderQuery(values url.Values, key, value string) {
-	if value != "" {
-		values.Set(key, value)
+func providerLaunchRequestBody(request providerplane.WorkspaceLaunchRequest) *generated.WorkspaceLaunchRequest {
+	return &generated.WorkspaceLaunchRequest{
+		Repository: generated.RepositoryRoute{Provider: request.Repository.Provider, PlatformHost: request.Repository.PlatformHost, Owner: request.Repository.Owner, Name: request.Repository.Name}, ItemType: request.ItemType, ItemNumber: int64(request.ItemNumber),
+		ItemKey: optionalProviderQuery(request.ItemKey), GitHeadRef: optionalProviderQuery(request.GitHeadRef),
+		PlatformRepoID: optionalProviderQuery(request.PlatformRepoID), IssueBranchSlug: optionalProviderQuery(request.IssueBranchSlug),
 	}
 }
 
-func setProviderBoolQuery(values url.Values, key string, value bool) {
-	if value {
-		values.Set(key, "true")
+func providerSettingsRequestBody(update updateSettingsRequest) *generated.ProviderSettingsUpdate {
+	body := &generated.ProviderSettingsUpdate{}
+	if value := update.Activity; value != nil {
+		body.Activity = &generated.Activity{
+			CollapseThreads: value.CollapseThreads, DefaultBranchMaxCommits: int64(value.DefaultBranchMaxCommits),
+			DefaultBranchRetentionDays: int64(value.DefaultBranchRetentionDays), HideBots: value.HideBots, HideClosed: value.HideClosed,
+			TimeRange: generated.ActivityTimeRange(value.TimeRange), ViewMode: generated.ActivityViewMode(value.ViewMode),
+			UseWorkspaceActivityForRecency: value.UseWorkspaceActivityForRecency,
+		}
 	}
-}
-
-func setProviderIntQuery(values url.Values, key string, value int) {
-	if value != 0 {
-		values.Set(key, strconv.Itoa(value))
+	if value := update.Detail; value != nil {
+		body.Detail = &generated.Detail{CollapseSingleLineBreaks: value.CollapseSingleLineBreaks, InitialTimelineEntryLimit: int64(value.InitialTimelineEntryLimit), RenderCommitMessagesAsMarkdown: value.RenderCommitMessagesAsMarkdown}
 	}
+	if value := update.PullRequests; value != nil {
+		body.PullRequests = &generated.PullRequests{AllowMidStackMerges: value.AllowMidStackMerges, PreferGithubNativeStacks: value.PreferGitHubNativeStacks}
+	}
+	if value := update.Issues; value != nil {
+		body.Issues = new(generated.Issues(*value))
+	}
+	return body
 }

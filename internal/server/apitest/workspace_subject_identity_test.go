@@ -94,7 +94,7 @@ func seedWorkspaceIdentitySubjects(
 
 func assertWorkspaceIdentitySurfaces(
 	t *testing.T,
-	client *generated.ClientWithResponses,
+	client *generated.Client,
 	repoName string,
 	wantWorkspace bool,
 ) {
@@ -102,9 +102,9 @@ func assertWorkspaceIdentitySurfaces(
 	require := require.New(t)
 	ctx := t.Context()
 
-	activityResponse, err := client.ListActivityWithResponse(ctx, &generated.ListActivityParams{})
+	activityResponse, err := client.ListActivityWithResponse(ctx, &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, activityResponse.StatusCode())
+	require.Equal(http.StatusOK, activityResponse.StatusCode)
 	require.NotNil(activityResponse.JSON200)
 	require.NotNil(activityResponse.JSON200.Items)
 	activityByType := make(map[string]generated.ActivityItemResponse)
@@ -118,9 +118,9 @@ func assertWorkspaceIdentitySurfaces(
 	assertWorkspaceRef(t, activityByType["pr"].Workspace, "ws-stable-pr", wantWorkspace)
 	assertWorkspaceRef(t, activityByType["issue"].Workspace, "ws-stable-issue", wantWorkspace)
 
-	pullsResponse, err := client.ListPullsWithResponse(ctx, nil)
+	pullsResponse, err := client.ListPullsWithResponse(ctx, &generated.ListPullsRequestOptions{})
 	require.NoError(err)
-	require.Equal(http.StatusOK, pullsResponse.StatusCode())
+	require.Equal(http.StatusOK, pullsResponse.StatusCode)
 	require.NotNil(pullsResponse.JSON200)
 	var pull *generated.MergeRequestResponse
 	for i := range *pullsResponse.JSON200 {
@@ -132,15 +132,15 @@ func assertWorkspaceIdentitySurfaces(
 	}
 	require.NotNil(pull)
 	assertWorkspaceRef(t, pull.Workspace, "ws-stable-pr", wantWorkspace)
-	pullDetail, err := client.GetPullWithResponse(ctx, "gh", "acme", repoName, 61)
+	pullDetail, err := client.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: repoName, Number: int64(61)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, pullDetail.StatusCode())
+	require.Equal(http.StatusOK, pullDetail.StatusCode)
 	require.NotNil(pullDetail.JSON200)
 	assertWorkspaceRef(t, pullDetail.JSON200.Workspace, "ws-stable-pr", wantWorkspace)
 
-	issuesResponse, err := client.ListIssuesWithResponse(ctx, nil)
+	issuesResponse, err := client.ListIssuesWithResponse(ctx, &generated.ListIssuesRequestOptions{})
 	require.NoError(err)
-	require.Equal(http.StatusOK, issuesResponse.StatusCode())
+	require.Equal(http.StatusOK, issuesResponse.StatusCode)
 	require.NotNil(issuesResponse.JSON200)
 	var issue *generated.IssueResponse
 	for i := range *issuesResponse.JSON200 {
@@ -152,9 +152,9 @@ func assertWorkspaceIdentitySurfaces(
 	}
 	require.NotNil(issue)
 	assertWorkspaceRef(t, issue.Workspace, "ws-stable-issue", wantWorkspace)
-	issueDetail, err := client.GetIssueWithResponse(ctx, "gh", "acme", repoName, 62)
+	issueDetail, err := client.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: repoName, Number: int64(62)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, issueDetail.StatusCode())
+	require.Equal(http.StatusOK, issueDetail.StatusCode)
 	require.NotNil(issueDetail.JSON200)
 	assertWorkspaceRef(t, issueDetail.JSON200.Workspace, "ws-stable-issue", wantWorkspace)
 }
@@ -166,5 +166,5 @@ func assertWorkspaceRef(t *testing.T, ref *generated.WorkspaceRef, wantID string
 		return
 	}
 	require.NotNil(t, ref)
-	require.Equal(t, wantID, ref.Id)
+	require.Equal(t, wantID, ref.ID)
 }

@@ -3,7 +3,8 @@ package ctl
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"net/http"
@@ -384,7 +385,7 @@ type apiOperationRecord struct {
 }
 
 type openAPIDocument struct {
-	Paths map[string]map[string]json.RawMessage `json:"paths"`
+	Paths map[string]map[string]jsontext.Value `json:"paths"`
 }
 
 type openAPIOperation struct {
@@ -446,7 +447,7 @@ var openAPIMethodOrder = []string{
 	http.MethodTrace,
 }
 
-func sortedOpenAPIMethods(pathItem map[string]json.RawMessage) []string {
+func sortedOpenAPIMethods(pathItem map[string]jsontext.Value) []string {
 	present := make(map[string]bool, len(pathItem))
 	for method := range pathItem {
 		present[strings.ToUpper(method)] = true
@@ -586,9 +587,8 @@ func repoNumberPath(host, resource string, args []string) string {
 func encodeStructured(w io.Writer, format string, payload any) error {
 	switch format {
 	case "json":
-		enc := json.NewEncoder(w)
-		enc.SetIndent("", "  ")
-		return enc.Encode(payload)
+		enc := jsontext.NewEncoder(w, jsontext.WithIndentPrefix(""), jsontext.WithIndent("  "))
+		return json.MarshalEncode(enc, payload)
 	case "yaml":
 		enc := yaml.NewEncoder(w)
 		defer enc.Close()
@@ -618,10 +618,10 @@ func writeResponse(w io.Writer, format string, body []byte) error {
 }
 
 func encodeJSONLines(w io.Writer, payload any) error {
-	enc := json.NewEncoder(w)
+	enc := jsontext.NewEncoder(w)
 	if rows, ok := payload.([]any); ok {
 		for _, row := range rows {
-			if err := enc.Encode(row); err != nil {
+			if err := json.MarshalEncode(enc, row); err != nil {
 				return err
 			}
 		}
@@ -630,13 +630,13 @@ func encodeJSONLines(w io.Writer, payload any) error {
 	value := reflect.ValueOf(payload)
 	if value.IsValid() && (value.Kind() == reflect.Slice || value.Kind() == reflect.Array) && value.Type().Elem().Kind() != reflect.Uint8 {
 		for i := 0; i < value.Len(); i++ {
-			if err := enc.Encode(value.Index(i).Interface()); err != nil {
+			if err := json.MarshalEncode(enc, value.Index(i).Interface()); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
-	return enc.Encode(payload)
+	return json.MarshalEncode(enc, payload)
 }
 
 func makeAPIRequest(ctx context.Context, cfg cliConfig, method, requestURL string, bodyArgs []string) ([]byte, error) {

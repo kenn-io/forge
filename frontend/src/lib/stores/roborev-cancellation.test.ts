@@ -1,3 +1,4 @@
+import { makeRouteMockFetch, type RouteMockClient } from "../testing/test/route-mock-client.js";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { OwnedAppRuntime } from "../app/runtime.js";
@@ -7,10 +8,10 @@ import { createReviewStore } from "./roborev/review.svelte.js";
 
 let runtime: OwnedAppRuntime | undefined;
 
-function reviewStore(client: Parameters<typeof createReviewStore>[0]["client"], onError?: (message: string) => void) {
+function reviewStore(client: RouteMockClient, onError?: (message: string) => void) {
   if (runtime === undefined) throw new Error("test runtime was not initialized");
   return createReviewStore({
-    client,
+    client: makeRouteMockFetch(client),
     runtime,
     owner: "review-cancellation-test",
     ...(onError !== undefined && { onError }),
@@ -118,7 +119,7 @@ describe("Roborev request cancellation", () => {
       });
     });
     const store = createJobsStore({
-      client: { GET: get } as never,
+      client: makeRouteMockFetch({ GET: get } as never),
       runtime: runtime!,
       owner: "jobs-latest-test",
       navigate: vi.fn(),

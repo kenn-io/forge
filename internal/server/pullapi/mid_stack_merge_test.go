@@ -99,20 +99,13 @@ func TestMergePRRejectsMidStackMergeByDefault(t *testing.T) {
 	assert := assert.New(t)
 	server, provider, client := newMidStackMergeFixture(t)
 
-	resp, err := client.HTTP.MergePullOnHostWithResponse(
-		t.Context(),
-		"gitlab.example.com",
-		"gitlab",
-		"group",
-		"project",
-		2,
-		generated.MergePRInputBody{
-			Method:          "squash",
-			ExpectedHeadSha: new("middle-head"),
-		},
-	)
-	require.NoError(err)
-	assert.Equal(http.StatusConflict, resp.StatusCode())
+	resp, err := client.HTTP.MergePullOnHostWithResponse(t.Context(), &generated.MergePullOnHostRequestOptions{PathParams: &generated.MergePullOnHostPath{PlatformHost: "gitlab.example.com", Provider: "gitlab", Owner: "group", Name: "project", Number: int64(2)}, Body: &generated.MergePRInputBody{
+		Method:          "squash",
+		ExpectedHeadSha: new("middle-head"),
+	}})
+	require.Error(err)
+	require.NotNil(resp)
+	assert.Equal(http.StatusConflict, resp.StatusCode)
 	assert.Contains(string(resp.Body), `"reason":"mid_stack_merge_disallowed"`)
 	assert.Contains(string(resp.Body), `"blocking_number":1`)
 	assert.False(server.handler.allowMidStackMerges())
@@ -129,20 +122,12 @@ func TestMergePRAllowsMidStackMergeFromCommittedConfigSnapshot(t *testing.T) {
 	server, provider, client := newMidStackMergeFixture(t)
 	server.handler.ApplyConfig(ConfigSnapshot{AllowMidStackMerges: true})
 
-	resp, err := client.HTTP.MergePullOnHostWithResponse(
-		t.Context(),
-		"gitlab.example.com",
-		"gitlab",
-		"group",
-		"project",
-		2,
-		generated.MergePRInputBody{
-			Method:          "squash",
-			ExpectedHeadSha: new("middle-head"),
-		},
-	)
+	resp, err := client.HTTP.MergePullOnHostWithResponse(t.Context(), &generated.MergePullOnHostRequestOptions{PathParams: &generated.MergePullOnHostPath{PlatformHost: "gitlab.example.com", Provider: "gitlab", Owner: "group", Name: "project", Number: int64(2)}, Body: &generated.MergePRInputBody{
+		Method:          "squash",
+		ExpectedHeadSha: new("middle-head"),
+	}})
 	require.NoError(err)
-	assert.Equal(http.StatusOK, resp.StatusCode(), string(resp.Body))
+	assert.Equal(http.StatusOK, resp.StatusCode, string(resp.Body))
 	select {
 	case call := <-provider.mergeCh:
 		assert.Equal(2, call.Number)

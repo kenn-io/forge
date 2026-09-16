@@ -35,13 +35,7 @@ type aggregateSnapshotInput struct {
 // Register registers Fleet snapshot, proxy, project, and terminal operations.
 func (s *Handler) Register(api huma.API) {
 	s.registerEnrollmentRoutes(api)
-	huma.Register(api, huma.Operation{
-		OperationID:   "queue-federation-workspace-cleanup",
-		Method:        http.MethodPost,
-		Path:          "/federation/workspaces/{id}/cleanup",
-		DefaultStatus: http.StatusAccepted,
-		Hidden:        true,
-	}, s.queueFederationWorkspaceCleanup)
+	s.RegisterWorkspaceCleanup(api, true)
 	huma.Get(api, "/snapshot", s.getSnapshot,
 		httpapi.DocumentOperation("get-snapshot", "Read the workspace snapshot", "Fleet"))
 	huma.Get(api, "/snapshot/raw", s.getSnapshotRaw,
@@ -134,4 +128,15 @@ func (s *Handler) getSnapshotRaw(ctx context.Context, _ *struct{}) (*rawSnapshot
 		return nil, httpapi.Internal("build raw snapshot: " + err.Error())
 	}
 	return &rawSnapshotOutput{Body: raw}, nil
+}
+
+// RegisterWorkspaceCleanup registers cleanup, hidden in the runtime API.
+func (s *Handler) RegisterWorkspaceCleanup(api huma.API, hidden bool) {
+	huma.Register(api, huma.Operation{
+		OperationID:   "queue-federation-workspace-cleanup",
+		Method:        http.MethodPost,
+		Path:          "/federation/workspaces/{id}/cleanup",
+		DefaultStatus: http.StatusAccepted,
+		Hidden:        hidden,
+	}, s.queueFederationWorkspaceCleanup)
 }

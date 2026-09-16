@@ -1,8 +1,22 @@
 package: generated
+skip-prune: true
+output:
+  use-single-file: true
+  directory: .
+  filename: client.go
 generate:
-  client: true
+  client-with-response: true
+  client-streaming: true
   models: true
-output-options:
-  skip-prune: true
-  user-templates:
-    client-with-responses.tmpl: templates/client-with-responses.tmpl
+  always-prefix-enum-values: true
+  validation:
+    skip: true
+user-templates:
+  client-options.tmpl: templates/client-options.tmpl
+  header.tmpl: templates/header.tmpl
+  types-additional-properties.tmpl: templates/types-additional-properties.tmpl
+  client-with-response.tmpl: templates/client-with-response.tmpl
+  client-with-response-types.tmpl: templates/client-with-response-types.tmpl
+overlay:
+  sources:
+    - overlay.yaml

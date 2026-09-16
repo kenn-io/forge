@@ -2,7 +2,7 @@ package gitealiketest
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -440,7 +440,7 @@ func Run(t *testing.T, adapter Adapter) {
 				Body     string `json:"body"`
 				CommitID string `json:"commit_id"`
 			}
-			if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&body)) {
+			if !assert.NoError(t, json.UnmarshalRead(r.Body, &body)) {
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
@@ -488,7 +488,7 @@ func Run(t *testing.T, adapter Adapter) {
 			if r.Method == http.MethodPost && r.URL.Path == "/api/v1/repos/owner/repo/pulls/7/merge" {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusConflict)
-				_ = json.NewEncoder(w).Encode(map[string]any{"message": message})
+				_ = json.MarshalWrite(w, map[string]any{"message": message})
 				return
 			}
 			http.NotFound(w, r)
@@ -601,7 +601,7 @@ func Run(t *testing.T, adapter Adapter) {
 						{"id":12,"name":"triage","color":"fbca04"}
 					]`))
 				case r.Method == http.MethodPut && r.URL.Path == "/api/v1/repos/acme/widget/issues/7/labels":
-					assert.NoError(t, json.NewDecoder(r.Body).Decode(&putBody))
+					assert.NoError(t, json.UnmarshalRead(r.Body, &putBody))
 					_, _ = w.Write([]byte(`[{"id":12,"name":"triage","color":"fbca04"}]`))
 				default:
 					http.NotFound(w, r)

@@ -2,7 +2,8 @@ package main
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"flag"
 	"fmt"
 	"strings"
@@ -70,9 +71,8 @@ func runList(args []string, env *appEnv) error {
 	}
 
 	if *asJSON {
-		enc := json.NewEncoder(env.stdout)
-		enc.SetIndent("", "  ")
-		return enc.Encode(statuses)
+		enc := jsontext.NewEncoder(env.stdout, jsontext.WithIndentPrefix(""), jsontext.WithIndent("  "))
+		return json.MarshalEncode(enc, statuses)
 	}
 	w := tabwriter.NewWriter(env.stdout, 2, 4, 2, ' ', 0)
 	fmt.Fprintln(w, "HOST\tROLE\tAPP ID\tSLUG\tOWNER\tINSTALLATION\tACCOUNT\tRATE (CORE)\tSTATUS")

@@ -1,7 +1,7 @@
 package gitlab
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"net/url"
 	"path"

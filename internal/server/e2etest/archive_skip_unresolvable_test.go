@@ -117,9 +117,7 @@ func TestArchiveWorkerSkipsUnresolvableTrackedRepoE2E(t *testing.T) {
 		Provider: "github", PlatformHost: "github.com",
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
 	}}
-	started, err := api.HTTP.StartArchivesWithResponse(
-		t.Context(), generated.ArchiveMutationBody{Repositories: &repositories},
-	)
+	started, err := api.HTTP.StartArchivesWithResponse(t.Context(), &generated.StartArchivesRequestOptions{Body: &generated.ArchiveMutationBody{Repositories: repositories}})
 	require.NoError(err)
 	require.NotNil(started.JSON200)
 	require.Len(*started.JSON200, 1)
@@ -142,7 +140,7 @@ func TestArchiveWorkerSkipsUnresolvableTrackedRepoE2E(t *testing.T) {
 		"healthy merge-request inventory must complete despite the tracked ghost")
 	assert.Equal(db.ArchiveOperatorStateActive, states[0].OperatorState)
 
-	status, err := api.HTTP.ListArchiveStatusWithResponse(t.Context(), nil)
+	status, err := api.HTTP.ListArchiveStatusWithResponse(t.Context(), &generated.ListArchiveStatusRequestOptions{})
 	require.NoError(err)
 	require.NotNil(status.JSON200)
 	require.Len(*status.JSON200, 1,

@@ -3,6 +3,9 @@ package fleetapi
 import (
 	"net/http"
 
+	"go.kenn.io/forge/internal/apiclient/generated"
+	"go.kenn.io/forge/internal/server/httpapi"
+
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 )
@@ -28,7 +31,12 @@ func (s *Handler) registerFleetProjectRoutes(api huma.API) {
 		if !bufferFleetProxyRequestBody(w, r, fleetProxyMaxBodyBytes) {
 			return
 		}
-		s.serveFleetProjectWrite(w, r, "/api/v1/projects")
+		request, err := generated.NewRegisterProjectRequest(r.Context(), "/api/v1", &generated.RegisterProjectRequestOptions{})
+		if err != nil {
+			writeProblemResponse(w, httpapi.NewProblem(http.StatusInternalServerError, httpapi.CodeInternalError, "build project request: "+err.Error(), nil))
+			return
+		}
+		s.serveFleetProjectWrite(w, r, request.URL.EscapedPath())
 	})
 
 	deleteOp := &huma.Operation{
@@ -48,9 +56,12 @@ func (s *Handler) registerFleetProjectRoutes(api huma.API) {
 			return
 		}
 		projectID := r.PathValue("project_id")
-		s.serveFleetProjectWrite(
-			w, r, "/api/v1/projects/"+escapePath(projectID),
-		)
+		request, err := generated.NewDeleteProjectRequest(r.Context(), "/api/v1", &generated.DeleteProjectRequestOptions{PathParams: &generated.DeleteProjectPath{ProjectID: projectID}})
+		if err != nil {
+			writeProblemResponse(w, httpapi.NewProblem(http.StatusInternalServerError, httpapi.CodeInternalError, "build project request: "+err.Error(), nil))
+			return
+		}
+		s.serveFleetProjectWrite(w, r, request.URL.EscapedPath())
 	})
 }
 

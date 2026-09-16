@@ -62,26 +62,23 @@ func TestWorkspaceCRUDE2E(t *testing.T) {
 	// 1. List workspaces -- initially empty.
 	listResp, err := client.HTTP.ListWorkspacesWithResponse(ctx)
 	require.NoError(err)
-	require.Equal(http.StatusOK, listResp.StatusCode())
+	require.Equal(http.StatusOK, listResp.StatusCode)
 	require.NotNil(listResp.JSON200)
 	require.NotNil(listResp.JSON200.Workspaces)
 	assert.Empty(listResp.JSON200.Workspaces)
 
 	// 2. Create workspace.
-	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     1,
-		},
-	)
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     1,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
-	wsID := createResp.JSON202.Id
+	wsID := createResp.JSON202.ID
 	assert.NotEmpty(wsID)
 	assert.Equal("github.com", createResp.JSON202.PlatformHost)
 	assert.Equal("acme", createResp.JSON202.RepoOwner)
@@ -96,41 +93,36 @@ func TestWorkspaceCRUDE2E(t *testing.T) {
 	waitForWorkspaceReady(t, ctx, client, wsID)
 
 	// 3. Get workspace by ID.
-	getResp, err := client.HTTP.GetWorkspaceWithResponse(
-		ctx, wsID,
-	)
+	getResp, err := client.HTTP.GetWorkspaceWithResponse(ctx, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: wsID}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, getResp.StatusCode())
+	require.Equal(http.StatusOK, getResp.StatusCode)
 	require.NotNil(getResp.JSON200)
-	assert.Equal(wsID, getResp.JSON200.Id)
+	assert.Equal(wsID, getResp.JSON200.ID)
 
 	// 4. List workspaces -- now has one.
 	listResp2, err := client.HTTP.ListWorkspacesWithResponse(ctx)
 	require.NoError(err)
-	require.Equal(http.StatusOK, listResp2.StatusCode())
+	require.Equal(http.StatusOK, listResp2.StatusCode)
 	require.NotNil(listResp2.JSON200)
 	require.NotNil(listResp2.JSON200.Workspaces)
 	assert.Len(listResp2.JSON200.Workspaces, 1)
 
 	// 5. Delete workspace (force).
 	force := true
-	delResp, err := client.HTTP.DeleteWorkspaceWithResponse(
-		ctx, wsID, &generated.DeleteWorkspaceParams{Force: &force},
-	)
+	delResp, err := client.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: wsID}, Query: &generated.DeleteWorkspaceQuery{Force: &force}})
 	require.NoError(err)
-	require.Equal(http.StatusNoContent, delResp.StatusCode())
+	require.Equal(http.StatusNoContent, delResp.StatusCode)
 
 	// 6. Verify deleted -- GET returns 404.
-	getResp2, err := client.HTTP.GetWorkspaceWithResponse(
-		ctx, wsID,
-	)
-	require.NoError(err)
-	require.Equal(http.StatusNotFound, getResp2.StatusCode())
+	getResp2, err := client.HTTP.GetWorkspaceWithResponse(ctx, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: wsID}})
+	require.Error(err)
+	require.NotNil(getResp2)
+	require.Equal(http.StatusNotFound, getResp2.StatusCode)
 
 	// 7. List workspaces -- deleted workspace is absent from the public list.
 	listResp3, err := client.HTTP.ListWorkspacesWithResponse(ctx)
 	require.NoError(err)
-	require.Equal(http.StatusOK, listResp3.StatusCode())
+	require.Equal(http.StatusOK, listResp3.StatusCode)
 	require.NotNil(listResp3.JSON200)
 	require.NotNil(listResp3.JSON200.Workspaces)
 	assert.Empty(listResp3.JSON200.Workspaces)
@@ -146,37 +138,34 @@ func TestWorkspaceRetryErroredWorkspaceE2E(t *testing.T) {
 	client, database := fixture.client, fixture.database
 	ctx := context.Background()
 
-	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     1,
-		},
-	)
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     1,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
-	wsID := createResp.JSON202.Id
+	wsID := createResp.JSON202.ID
 	waitForWorkspaceReady(t, ctx, client, wsID)
 
 	msg := "ensure clone: git fetch: fork/exec /opt/homebrew/bin/git: resource temporarily unavailable"
 	err = database.UpdateWorkspaceStatus(ctx, wsID, "error", &msg)
 	require.NoError(err)
 
-	retryResp, err := client.HTTP.RetryWorkspaceWithResponse(ctx, wsID)
+	retryResp, err := client.HTTP.RetryWorkspaceWithResponse(ctx, &generated.RetryWorkspaceRequestOptions{PathParams: &generated.RetryWorkspacePath{ID: wsID}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, retryResp.StatusCode())
+	require.Equal(http.StatusAccepted, retryResp.StatusCode)
 	require.NotNil(retryResp.JSON202)
 	retryBody := retryResp.JSON202
-	assert.Equal(wsID, retryBody.Id)
+	assert.Equal(wsID, retryBody.ID)
 	assert.Equal("creating", retryBody.Status)
 	assert.Nil(retryBody.ErrorMessage)
 
 	ready := waitForWorkspaceReady(t, ctx, client, wsID)
-	assert.Equal(wsID, ready.Id)
+	assert.Equal(wsID, ready.ID)
 	assert.Nil(ready.ErrorMessage)
 }
 
@@ -190,20 +179,17 @@ func TestWorkspaceRetryReadyWorkspaceConflictE2E(t *testing.T) {
 	client, database := fixture.client, fixture.database
 	ctx := context.Background()
 
-	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     1,
-		},
-	)
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     1,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
-	wsID := createResp.JSON202.Id
+	wsID := createResp.JSON202.ID
 
 	waitForWorkspaceReady(t, ctx, client, wsID)
 	before, err := database.GetWorkspace(ctx, wsID)
@@ -215,9 +201,10 @@ func TestWorkspaceRetryReadyWorkspaceConflictE2E(t *testing.T) {
 	beforeEvents, err := database.ListWorkspaceSetupEvents(ctx, wsID)
 	require.NoError(err)
 
-	retryResp, err := client.HTTP.RetryWorkspaceWithResponse(ctx, wsID)
-	require.NoError(err)
-	require.Equal(http.StatusConflict, retryResp.StatusCode())
+	retryResp, err := client.HTTP.RetryWorkspaceWithResponse(ctx, &generated.RetryWorkspaceRequestOptions{PathParams: &generated.RetryWorkspacePath{ID: wsID}})
+	require.Error(err)
+	require.NotNil(retryResp)
+	require.Equal(http.StatusConflict, retryResp.StatusCode)
 
 	after, err := database.GetWorkspace(ctx, wsID)
 	require.NoError(err)
@@ -246,20 +233,17 @@ func TestWorkspaceReadyStatusImpliesReadySetupEventE2E(t *testing.T) {
 	client, database := fixture.client, fixture.database
 	ctx := context.Background()
 
-	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     1,
-		},
-	)
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     1,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
-	wsID := createResp.JSON202.Id
+	wsID := createResp.JSON202.ID
 
 	// Read the event log immediately after the first observation of
 	// status=ready: the ready event must already be there.
@@ -289,32 +273,28 @@ func TestWorkspaceCreateNotFound(t *testing.T) {
 	ctx := t.Context()
 
 	// Non-existent repo.
-	resp, err := client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "nope",
-			Name:         "missing",
-			MrNumber:     1,
-		},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusNotFound, resp.StatusCode())
+	resp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "nope",
+		Name:         "missing",
+		MrNumber:     1,
+	}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusNotFound, resp.StatusCode)
 
 	// Existing repo, non-existent MR.
-	resp2, err := client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     999,
-		},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusNotFound, resp2.StatusCode())
+	resp2, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     999,
+	}})
+	require.Error(err)
+	require.NotNil(resp2)
+	require.Equal(http.StatusNotFound, resp2.StatusCode)
 }
 
 func TestWorkspaceCreateHidesRemovedUpstreamItems(t *testing.T) {
@@ -341,25 +321,22 @@ func TestWorkspaceCreateHidesRemovedUpstreamItems(t *testing.T) {
 	)
 	require.NoError(err)
 
-	prResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
-		ctx, generated.CreateWorkspaceInputBody{
-			Provider: "github", PlatformHost: "github.com",
-			Owner: "acme", Name: "widget", MrNumber: 1,
-		},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusNotFound, prResp.StatusCode(), string(prResp.Body))
+	prResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider: "github", PlatformHost: "github.com",
+		Owner: "acme", Name: "widget", MrNumber: 1,
+	}})
+	require.Error(err)
+	require.NotNil(prResp)
+	require.Equal(http.StatusNotFound, prResp.StatusCode, string(prResp.Body))
 
-	issueResp, err := fixture.client.HTTP.CreateIssueWorkspaceWithResponse(
-		ctx, "gh", "acme", "widget", 1,
-		generated.CreateIssueWorkspaceInputBody{},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusNotFound, issueResp.StatusCode(), string(issueResp.Body))
+	issueResp, err := fixture.client.HTTP.CreateIssueWorkspaceWithResponse(ctx, &generated.CreateIssueWorkspaceRequestOptions{PathParams: &generated.CreateIssueWorkspacePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.CreateIssueWorkspaceInputBody{}})
+	require.Error(err)
+	require.NotNil(issueResp)
+	require.Equal(http.StatusNotFound, issueResp.StatusCode, string(issueResp.Body))
 
 	listed, err := fixture.client.HTTP.ListWorkspacesWithResponse(ctx)
 	require.NoError(err)
-	require.Equal(http.StatusOK, listed.StatusCode())
+	require.Equal(http.StatusOK, listed.StatusCode)
 	require.NotNil(listed.JSON200)
 	require.NotNil(listed.JSON200.Workspaces)
 	require.Empty(listed.JSON200.Workspaces)
@@ -395,12 +372,12 @@ func TestWorkspaceListRetainsWorkspaceWithoutRemovedPullMetadata(t *testing.T) {
 
 	listed, err := fixture.client.HTTP.ListWorkspacesWithResponse(ctx)
 	require.NoError(err)
-	require.Equal(http.StatusOK, listed.StatusCode(), string(listed.Body))
+	require.Equal(http.StatusOK, listed.StatusCode, string(listed.Body))
 	require.NotNil(listed.JSON200)
 	require.NotNil(listed.JSON200.Workspaces)
 	require.Len(listed.JSON200.Workspaces, 1)
 	workspace := listed.JSON200.Workspaces[0]
-	require.Equal("ws-removed-pr", workspace.Id)
+	require.Equal("ws-removed-pr", workspace.ID)
 	require.Equal(int64(1), workspace.ItemNumber)
 	require.Nil(workspace.MrTitle)
 	require.Nil(workspace.MrState)
@@ -423,42 +400,34 @@ func TestWorkspaceMRDetailHasWorkspace(t *testing.T) {
 	ctx := t.Context()
 
 	// Create a workspace for PR #1.
-	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     1,
-		},
-	)
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     1,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
-	wsID := createResp.JSON202.Id
+	wsID := createResp.JSON202.ID
 
 	// MR detail should include the workspace reference.
-	mrResp, err := client.HTTP.GetPullWithResponse(
-		ctx, "gh", "acme", "widget", 1,
-	)
+	mrResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, mrResp.StatusCode())
+	require.Equal(http.StatusOK, mrResp.StatusCode)
 	require.NotNil(mrResp.JSON200)
 	require.NotNil(mrResp.JSON200.Workspace)
-	assert.Equal(wsID, mrResp.JSON200.Workspace.Id)
+	assert.Equal(wsID, mrResp.JSON200.Workspace.ID)
 	assert.NotEmpty(mrResp.JSON200.Workspace.Status)
 
 	waitForWorkspaceReady(t, ctx, client, wsID)
 
 	// Clean up: delete the workspace.
 	force := true
-	delResp, err := client.HTTP.DeleteWorkspaceWithResponse(
-		ctx, wsID,
-		&generated.DeleteWorkspaceParams{Force: &force},
-	)
+	delResp, err := client.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: wsID}, Query: &generated.DeleteWorkspaceQuery{Force: &force}})
 	require.NoError(err)
-	require.Equal(http.StatusNoContent, delResp.StatusCode())
+	require.Equal(http.StatusNoContent, delResp.StatusCode)
 }
 
 func TestWorkspaceCreateDuplicate(t *testing.T) {
@@ -479,20 +448,21 @@ func TestWorkspaceCreateDuplicate(t *testing.T) {
 	}
 
 	// First create succeeds.
-	resp1, err := client.HTTP.CreateWorkspaceWithResponse(ctx, body)
+	resp1, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: new(body)})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, resp1.StatusCode())
+	require.Equal(http.StatusAccepted, resp1.StatusCode)
 	require.NotNil(resp1.JSON202)
 
 	// Duplicate create returns 409.
-	resp2, err := client.HTTP.CreateWorkspaceWithResponse(ctx, body)
-	require.NoError(err)
-	require.Equal(http.StatusConflict, resp2.StatusCode())
+	resp2, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: new(body)})
+	require.Error(err)
+	require.NotNil(resp2)
+	require.Equal(http.StatusConflict, resp2.StatusCode)
 
 	// Drain the first create's async setup before the test returns. Otherwise
 	// the background clone can keep writing into the bare-clone temp dir and
 	// race t.TempDir cleanup, which fails RemoveAll with "directory not empty".
-	waitForWorkspaceReady(t, ctx, client, resp1.JSON202.Id)
+	waitForWorkspaceReady(t, ctx, client, resp1.JSON202.ID)
 }
 
 func TestWorkspaceCreateFetchesCloneThroughAPI(t *testing.T) {
@@ -520,21 +490,18 @@ func TestWorkspaceCreateFetchesCloneThroughAPI(t *testing.T) {
 	featureSHA := workspaceGitOutput(t, remoteWork, "rev-parse", "HEAD")
 	gitfixture.Run(t, fixture.remote, "update-ref", "refs/pull/1/head", featureSHA)
 
-	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     1,
-		},
-	)
+	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     1,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
 
-	ready := waitForWorkspaceReady(t, ctx, fixture.client, createResp.JSON202.Id)
+	ready := waitForWorkspaceReady(t, ctx, fixture.client, createResp.JSON202.ID)
 	assert.Equal("ready", ready.Status)
 	assert.FileExists(filepath.Join(ready.WorktreePath, "after-fetch.txt"))
 }
@@ -561,13 +528,13 @@ func TestWorkspaceCreateIssueE2E(t *testing.T) {
 
 	var created generated.WorkspaceResponse
 	require.NoError(json.NewDecoder(createRR.Body).Decode(&created))
-	require.NotEmpty(created.Id)
+	require.NotEmpty(created.ID)
 	assert.Equal("issue", created.ItemType)
 	assert.Equal(int64(7), created.ItemNumber)
 	// seedIssue uses title "Test Issue" → slug style appends "-test-issue".
 	assert.Equal("kenn-forge/issue-7-test-issue", created.GitHeadRef)
 
-	ready := waitForWorkspaceReady(t, ctx, fixture.client, created.Id)
+	ready := waitForWorkspaceReady(t, ctx, fixture.client, created.ID)
 	assert.Equal(
 		"kenn-forge/issue-7-test-issue",
 		workspaceGitOutput(t, ready.WorktreePath, "branch", "--show-current"),
@@ -589,7 +556,7 @@ func TestWorkspaceCreateIssueE2E(t *testing.T) {
 	var issueDetail generated.IssueDetailResponse
 	require.NoError(json.NewDecoder(getIssueRR.Body).Decode(&issueDetail))
 	require.NotNil(issueDetail.Workspace)
-	assert.Equal(created.Id, issueDetail.Workspace.Id)
+	assert.Equal(created.ID, issueDetail.Workspace.ID)
 	assert.NotEmpty(issueDetail.Workspace.Status)
 }
 
@@ -622,7 +589,7 @@ func TestWorkspaceCreateIssueUsesTitleSlugInBranch(t *testing.T) {
 	require.NoError(json.NewDecoder(createRR.Body).Decode(&created))
 	assert.Equal("kenn-forge/issue-8-add-foo-to-bar", created.GitHeadRef)
 
-	ready := waitForWorkspaceReady(t, ctx, fixture.client, created.Id)
+	ready := waitForWorkspaceReady(t, ctx, fixture.client, created.ID)
 	assert.Equal(
 		"kenn-forge/issue-8-add-foo-to-bar",
 		workspaceGitOutput(t, ready.WorktreePath, "branch", "--show-current"),
@@ -659,7 +626,7 @@ func TestWorkspaceCreateIssueBareStyleConfigOptOut(t *testing.T) {
 	require.NoError(json.NewDecoder(createRR.Body).Decode(&created))
 	assert.Equal("kenn-forge/issue-9", created.GitHeadRef)
 
-	ready := waitForWorkspaceReady(t, ctx, fixture.client, created.Id)
+	ready := waitForWorkspaceReady(t, ctx, fixture.client, created.ID)
 	assert.Equal(
 		"kenn-forge/issue-9",
 		workspaceGitOutput(t, ready.WorktreePath, "branch", "--show-current"),
@@ -685,7 +652,7 @@ func TestWorkspaceCreateIssueIsIdempotent(t *testing.T) {
 
 	var first generated.WorkspaceResponse
 	require.NoError(json.NewDecoder(firstRR.Body).Decode(&first))
-	require.NotEmpty(first.Id)
+	require.NotEmpty(first.ID)
 	require.NotNil(first.Created)
 	assert.True(*first.Created, "the fresh create response must mark itself as newly created")
 
@@ -696,12 +663,12 @@ func TestWorkspaceCreateIssueIsIdempotent(t *testing.T) {
 
 	var second generated.WorkspaceResponse
 	require.NoError(json.NewDecoder(secondRR.Body).Decode(&second))
-	assert.Equal(first.Id, second.Id)
+	assert.Equal(first.ID, second.ID)
 	assert.Equal("issue", second.ItemType)
 	assert.Equal(int64(7), second.ItemNumber)
 	assert.Nil(second.Created, "a reused existing workspace must not be marked as newly created")
 
-	waitForWorkspaceReady(t, ctx, fixture.client, second.Id)
+	waitForWorkspaceReady(t, ctx, fixture.client, second.ID)
 }
 
 func TestWorkspaceCreateIssueAfterDeleteRecreatesBranch(t *testing.T) {
@@ -726,20 +693,16 @@ func TestWorkspaceCreateIssueAfterDeleteRecreatesBranch(t *testing.T) {
 
 	var created generated.WorkspaceResponse
 	require.NoError(json.NewDecoder(createRR.Body).Decode(&created))
-	ready := waitForWorkspaceReady(t, ctx, fixture.client, created.Id)
+	ready := waitForWorkspaceReady(t, ctx, fixture.client, created.ID)
 	assert.Equal(
 		"kenn-forge/issue-7-test-issue",
 		workspaceGitOutput(t, ready.WorktreePath, "branch", "--show-current"),
 	)
 
 	force := true
-	deleteResp, err := fixture.client.HTTP.DeleteWorkspaceWithResponse(
-		ctx,
-		created.Id,
-		&generated.DeleteWorkspaceParams{Force: &force},
-	)
+	deleteResp, err := fixture.client.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: created.ID}, Query: &generated.DeleteWorkspaceQuery{Force: &force}})
 	require.NoError(err)
-	require.Equal(http.StatusNoContent, deleteResp.StatusCode())
+	require.Equal(http.StatusNoContent, deleteResp.StatusCode)
 
 	recreateRR := testutil.DoJSON(
 		t,
@@ -752,7 +715,7 @@ func TestWorkspaceCreateIssueAfterDeleteRecreatesBranch(t *testing.T) {
 
 	var recreated generated.WorkspaceResponse
 	require.NoError(json.NewDecoder(recreateRR.Body).Decode(&recreated))
-	recreatedReady := waitForWorkspaceReady(t, ctx, fixture.client, recreated.Id)
+	recreatedReady := waitForWorkspaceReady(t, ctx, fixture.client, recreated.ID)
 	assert.Equal(
 		"kenn-forge/issue-7-test-issue",
 		workspaceGitOutput(t, recreatedReady.WorktreePath, "branch", "--show-current"),
@@ -770,40 +733,30 @@ func TestWorkspaceCreatePRAndIssueCanCoexistForSameRepoNumber(t *testing.T) {
 
 	seedIssueOnHost(t, fixture.database, "github.com", "acme", "widget", 1, "open", "Test Issue")
 
-	prResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     1,
-		},
-	)
+	prResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     1,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, prResp.StatusCode())
+	require.Equal(http.StatusAccepted, prResp.StatusCode)
 	require.NotNil(prResp.JSON202)
 	assert.Equal("pull_request", prResp.JSON202.ItemType)
 	assert.Equal(int64(1), prResp.JSON202.ItemNumber)
 
-	issueResp, err := fixture.client.HTTP.CreateIssueWorkspaceWithResponse(
-		ctx,
-		"gh",
-		"acme",
-		"widget",
-		1,
-		generated.CreateIssueWorkspaceInputBody{},
-	)
+	issueResp, err := fixture.client.HTTP.CreateIssueWorkspaceWithResponse(ctx, &generated.CreateIssueWorkspaceRequestOptions{PathParams: &generated.CreateIssueWorkspacePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.CreateIssueWorkspaceInputBody{}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, issueResp.StatusCode())
+	require.Equal(http.StatusAccepted, issueResp.StatusCode)
 	require.NotNil(issueResp.JSON202)
 	assert.Equal("issue", issueResp.JSON202.ItemType)
 	assert.Equal(int64(1), issueResp.JSON202.ItemNumber)
-	assert.NotEqual(prResp.JSON202.Id, issueResp.JSON202.Id)
+	assert.NotEqual(prResp.JSON202.ID, issueResp.JSON202.ID)
 
 	listResp, err := fixture.client.HTTP.ListWorkspacesWithResponse(ctx)
 	require.NoError(err)
-	require.Equal(http.StatusOK, listResp.StatusCode())
+	require.Equal(http.StatusOK, listResp.StatusCode)
 	require.NotNil(listResp.JSON200)
 	require.NotNil(listResp.JSON200.Workspaces)
 	require.Len(listResp.JSON200.Workspaces, 2)

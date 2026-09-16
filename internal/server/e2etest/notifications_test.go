@@ -101,7 +101,7 @@ name = "tools"
 		},
 	}))
 
-	listResp, err := client.HTTP.ListNotificationsWithResponse(t.Context(), &generated.ListNotificationsParams{State: new("unread")})
+	listResp, err := client.HTTP.ListNotificationsWithResponse(t.Context(), &generated.ListNotificationsRequestOptions{Query: &generated.ListNotificationsQuery{State: new("unread")}})
 	require.NoError(err)
 	require.NotNil(listResp.JSON200)
 	require.NotNil(listResp.JSON200.Items)
@@ -109,19 +109,16 @@ name = "tools"
 	assert.Equal(int64(2), listResp.JSON200.Summary.Unread)
 	assert.Equal(int64(2), listResp.JSON200.Summary.TotalActive)
 
-	ids := []int64{listResp.JSON200.Items[0].Id, listResp.JSON200.Items[1].Id, 999999}
-	readResp, err := client.HTTP.MarkNotificationsReadWithResponse(
-		t.Context(),
-		generated.MarkNotificationsReadJSONRequestBody{Ids: ids},
-	)
+	ids := []int64{listResp.JSON200.Items[0].ID, listResp.JSON200.Items[1].ID, 999999}
+	readResp, err := client.HTTP.MarkNotificationsReadWithResponse(t.Context(), &generated.MarkNotificationsReadRequestOptions{Body: &generated.MarkNotificationsReadBody{Ids: ids}})
 	require.NoError(err)
 	require.NotNil(readResp.JSON200)
 	require.ElementsMatch(ids[:2], readResp.JSON200.Succeeded)
 	require.ElementsMatch(ids[:2], readResp.JSON200.Queued)
 	require.Len(readResp.JSON200.Failed, 1)
-	assert.Equal(int64(999999), readResp.JSON200.Failed[0].Id)
+	assert.Equal(int64(999999), readResp.JSON200.Failed[0].ID)
 
-	readList, err := client.HTTP.ListNotificationsWithResponse(t.Context(), &generated.ListNotificationsParams{State: new("read")})
+	readList, err := client.HTTP.ListNotificationsWithResponse(t.Context(), &generated.ListNotificationsRequestOptions{Query: &generated.ListNotificationsQuery{State: new("read")}})
 	require.NoError(err)
 	require.NotNil(readList.JSON200)
 	require.NotNil(readList.JSON200.Items)
@@ -131,17 +128,14 @@ name = "tools"
 		require.NotNil(item.GithubReadQueuedAt)
 	}
 
-	doneResp, err := client.HTTP.MarkNotificationsDoneWithResponse(
-		t.Context(),
-		generated.MarkNotificationsDoneJSONRequestBody{Ids: ids},
-	)
+	doneResp, err := client.HTTP.MarkNotificationsDoneWithResponse(t.Context(), &generated.MarkNotificationsDoneRequestOptions{Body: &generated.MarkNotificationsDoneBody{Ids: ids}})
 	require.NoError(err)
 	require.NotNil(doneResp.JSON200)
 	require.ElementsMatch(ids[:2], doneResp.JSON200.Succeeded)
 	require.ElementsMatch(ids[:2], doneResp.JSON200.Queued)
 	require.Len(doneResp.JSON200.Failed, 1)
 
-	doneList, err := client.HTTP.ListNotificationsWithResponse(t.Context(), &generated.ListNotificationsParams{State: new("done")})
+	doneList, err := client.HTTP.ListNotificationsWithResponse(t.Context(), &generated.ListNotificationsRequestOptions{Query: &generated.ListNotificationsQuery{State: new("done")}})
 	require.NoError(err)
 	require.NotNil(doneList.JSON200)
 	require.NotNil(doneList.JSON200.Items)
@@ -151,15 +145,12 @@ name = "tools"
 	}
 
 	undoneIDs := []int64{ids[0], ids[1]}
-	undoneResp, err := client.HTTP.MarkNotificationsUndoneWithResponse(
-		t.Context(),
-		generated.MarkNotificationsUndoneJSONRequestBody{Ids: undoneIDs},
-	)
+	undoneResp, err := client.HTTP.MarkNotificationsUndoneWithResponse(t.Context(), &generated.MarkNotificationsUndoneRequestOptions{Body: &generated.MarkNotificationsUndoneBody{Ids: undoneIDs}})
 	require.NoError(err)
 	require.NotNil(undoneResp.JSON200)
 	require.ElementsMatch(undoneIDs, undoneResp.JSON200.Succeeded)
 
-	activeList, err := client.HTTP.ListNotificationsWithResponse(t.Context(), &generated.ListNotificationsParams{State: new("active")})
+	activeList, err := client.HTTP.ListNotificationsWithResponse(t.Context(), &generated.ListNotificationsRequestOptions{Query: &generated.ListNotificationsQuery{State: new("active")}})
 	require.NoError(err)
 	require.NotNil(activeList.JSON200)
 	require.NotNil(activeList.JSON200.Items)
@@ -236,7 +227,7 @@ name = "widget"
 	require.NoError(err)
 	syncResp, err := client.HTTP.SyncNotificationsWithResponse(ctx, withJSON)
 	require.NoError(err)
-	assert.Equal(http.StatusAccepted, syncResp.StatusCode())
+	assert.Equal(http.StatusAccepted, syncResp.StatusCode)
 	var firstSyncAt time.Time
 	require.Eventually(func() bool {
 		watermark, watermarkErr := database.GetNotificationSyncWatermark(
@@ -245,9 +236,7 @@ name = "widget"
 		if watermarkErr != nil || watermark == nil || listCalls.Load() < 2 {
 			return false
 		}
-		resp, callErr := client.HTTP.ListNotificationsWithResponse(
-			ctx, &generated.ListNotificationsParams{State: new("unread")},
-		)
+		resp, callErr := client.HTTP.ListNotificationsWithResponse(ctx, &generated.ListNotificationsRequestOptions{Query: &generated.ListNotificationsQuery{State: new("unread")}})
 		if callErr != nil || resp.JSON200 == nil || resp.JSON200.Sync.Running {
 			return false
 		}
@@ -262,9 +251,9 @@ name = "widget"
 	require.NotNil(active)
 	assert.Equal("R_replacement", active.PlatformRepoID)
 	assert.NotEqual(oldRepoID, active.ID)
-	repoResp, err := client.HTTP.GetRepoWithResponse(ctx, "github", "acme", "widget")
+	repoResp, err := client.HTTP.GetRepoWithResponse(ctx, &generated.GetRepoRequestOptions{PathParams: &generated.GetRepoPath{Provider: "github", Owner: "acme", Name: "widget"}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, repoResp.StatusCode(), string(repoResp.Body))
+	require.Equal(http.StatusOK, repoResp.StatusCode, string(repoResp.Body))
 	require.NotNil(repoResp.JSON200)
 	assert.True(repoResp.JSON200.AllowSquashMerge)
 	assert.False(repoResp.JSON200.AllowMergeCommit)
@@ -282,19 +271,19 @@ name = "widget"
 
 	var notificationID int64
 	require.Eventually(func() bool {
-		resp, callErr := client.HTTP.ListNotificationsWithResponse(ctx, &generated.ListNotificationsParams{State: new("unread")})
+		resp, callErr := client.HTTP.ListNotificationsWithResponse(ctx, &generated.ListNotificationsRequestOptions{Query: &generated.ListNotificationsQuery{State: new("unread")}})
 		if callErr != nil || resp.JSON200 == nil || resp.JSON200.Items == nil || len(resp.JSON200.Items) != 1 {
 			return false
 		}
 		item := resp.JSON200.Items[0]
-		notificationID = item.Id
-		return item.PlatformThreadId == "replacement-thread" && item.RepoOwner == "acme" && item.RepoName == "widget"
+		notificationID = item.ID
+		return item.PlatformThreadID == "replacement-thread" && item.RepoOwner == "acme" && item.RepoName == "widget"
 	}, 3*time.Second, 10*time.Millisecond)
 
 	since := firstActivityAt.Add(-time.Minute).Format(time.RFC3339)
-	activityResp, err := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityParams{
-		Types: &[]string{"notification"}, Since: &since,
-	})
+	activityResp, err := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{
+		Types: []string{"notification"}, Since: &since,
+	}})
 	require.NoError(err)
 	require.NotNil(activityResp.JSON200)
 	require.NotNil(activityResp.JSON200.Items)
@@ -305,9 +294,7 @@ name = "widget"
 	assert.Equal("acme", activity.RepoOwner)
 	assert.Equal("widget", activity.RepoName)
 
-	doneResp, err := client.HTTP.MarkNotificationsDoneWithResponse(
-		ctx, generated.MarkNotificationsDoneJSONRequestBody{Ids: []int64{notificationID}},
-	)
+	doneResp, err := client.HTTP.MarkNotificationsDoneWithResponse(ctx, &generated.MarkNotificationsDoneRequestOptions{Body: &generated.MarkNotificationsDoneBody{Ids: []int64{notificationID}}})
 	require.NoError(err)
 	require.NotNil(doneResp.JSON200)
 	require.ElementsMatch([]int64{notificationID}, doneResp.JSON200.Succeeded)
@@ -316,7 +303,7 @@ name = "widget"
 	activityAt.Store(firstActivityAt.Add(time.Hour).UnixNano())
 	syncResp, err = client.HTTP.SyncNotificationsWithResponse(ctx, withJSON)
 	require.NoError(err)
-	assert.Equal(http.StatusAccepted, syncResp.StatusCode())
+	assert.Equal(http.StatusAccepted, syncResp.StatusCode)
 	require.Eventually(func() bool {
 		watermark, watermarkErr := database.GetNotificationSyncWatermark(
 			ctx, "github", "github.com", "acme", "widget",
@@ -325,13 +312,13 @@ name = "widget"
 			!watermark.LastSuccessfulSyncAt.After(firstSyncAt) || listCalls.Load() < 4 {
 			return false
 		}
-		resp, callErr := client.HTTP.ListNotificationsWithResponse(ctx, &generated.ListNotificationsParams{State: new("unread")})
+		resp, callErr := client.HTTP.ListNotificationsWithResponse(ctx, &generated.ListNotificationsRequestOptions{Query: &generated.ListNotificationsQuery{State: new("unread")}})
 		if callErr != nil || resp.JSON200 == nil || resp.JSON200.Sync.Running ||
 			resp.JSON200.Items == nil || len(resp.JSON200.Items) != 1 {
 			return false
 		}
 		item := resp.JSON200.Items[0]
-		return item.Id == notificationID && item.DoneAt == nil && item.GithubReadQueuedAt == nil
+		return item.ID == notificationID && item.DoneAt == nil && item.GithubReadQueuedAt == nil
 	}, 10*time.Second, 10*time.Millisecond)
 }
 
@@ -408,15 +395,13 @@ name = "alpha"
 		Reason: "mention", Unread: true, SourceUpdatedAt: sourceUpdatedAt, SyncedAt: sourceUpdatedAt,
 	}}))
 
-	unreadResp, err := client.HTTP.ListNotificationsWithResponse(ctx, &generated.ListNotificationsParams{State: new("unread")})
+	unreadResp, err := client.HTTP.ListNotificationsWithResponse(ctx, &generated.ListNotificationsRequestOptions{Query: &generated.ListNotificationsQuery{State: new("unread")}})
 	require.NoError(err)
 	require.NotNil(unreadResp.JSON200)
 	require.NotNil(unreadResp.JSON200.Items)
 	require.Len(unreadResp.JSON200.Items, 1)
-	notificationID := unreadResp.JSON200.Items[0].Id
-	doneResp, err := client.HTTP.MarkNotificationsDoneWithResponse(
-		ctx, generated.MarkNotificationsDoneJSONRequestBody{Ids: []int64{notificationID}},
-	)
+	notificationID := unreadResp.JSON200.Items[0].ID
+	doneResp, err := client.HTTP.MarkNotificationsDoneWithResponse(ctx, &generated.MarkNotificationsDoneRequestOptions{Body: &generated.MarkNotificationsDoneBody{Ids: []int64{notificationID}}})
 	require.NoError(err)
 	require.NotNil(doneResp.JSON200)
 	require.ElementsMatch([]int64{notificationID}, doneResp.JSON200.Succeeded)
@@ -434,13 +419,13 @@ name = "alpha"
 	close(release)
 	require.NoError(<-propagationDone)
 
-	doneStateResp, err := client.HTTP.ListNotificationsWithResponse(ctx, &generated.ListNotificationsParams{State: new("done")})
+	doneStateResp, err := client.HTTP.ListNotificationsWithResponse(ctx, &generated.ListNotificationsRequestOptions{Query: &generated.ListNotificationsQuery{State: new("done")}})
 	require.NoError(err)
 	require.NotNil(doneStateResp.JSON200)
 	require.NotNil(doneStateResp.JSON200.Items)
 	require.Len(doneStateResp.JSON200.Items, 1)
 	item := doneStateResp.JSON200.Items[0]
-	assert.Equal(notificationID, item.Id)
+	assert.Equal(notificationID, item.ID)
 	assert.Equal("beta", item.RepoName)
 	assert.False(item.Unread)
 	assert.NotNil(item.DoneAt)
@@ -451,15 +436,13 @@ name = "alpha"
 	require.NoError(syncer.ProcessQueuedNotificationReads(
 		ctx, platform.KindGitHub, "github.com", 10,
 	))
-	activeResp, err := client.HTTP.ListNotificationsWithResponse(
-		ctx, &generated.ListNotificationsParams{State: new("active")},
-	)
+	activeResp, err := client.HTTP.ListNotificationsWithResponse(ctx, &generated.ListNotificationsRequestOptions{Query: &generated.ListNotificationsQuery{State: new("active")}})
 	require.NoError(err)
 	require.NotNil(activeResp.JSON200)
 	require.NotNil(activeResp.JSON200.Items)
 	require.Len(activeResp.JSON200.Items, 1)
 	item = activeResp.JSON200.Items[0]
-	assert.Equal(notificationID, item.Id)
+	assert.Equal(notificationID, item.ID)
 	assert.Equal("beta", item.RepoName)
 	assert.True(item.Unread)
 	assert.Nil(item.DoneAt)
@@ -530,17 +513,13 @@ name = "widget"
 		WebURL: "https://github.com/acme/widget/pull/7", ItemNumber: &number, ItemType: "pr",
 		Reason: "mention", Unread: true, SourceUpdatedAt: observedAt, SyncedAt: observedAt,
 	}}))
-	unreadResp, err := client.HTTP.ListNotificationsWithResponse(
-		ctx, &generated.ListNotificationsParams{State: new("unread")},
-	)
+	unreadResp, err := client.HTTP.ListNotificationsWithResponse(ctx, &generated.ListNotificationsRequestOptions{Query: &generated.ListNotificationsQuery{State: new("unread")}})
 	require.NoError(err)
 	require.NotNil(unreadResp.JSON200)
 	require.NotNil(unreadResp.JSON200.Items)
 	require.Len(unreadResp.JSON200.Items, 1)
-	notificationID := unreadResp.JSON200.Items[0].Id
-	doneResp, err := client.HTTP.MarkNotificationsDoneWithResponse(
-		ctx, generated.MarkNotificationsDoneJSONRequestBody{Ids: []int64{notificationID}},
-	)
+	notificationID := unreadResp.JSON200.Items[0].ID
+	doneResp, err := client.HTTP.MarkNotificationsDoneWithResponse(ctx, &generated.MarkNotificationsDoneRequestOptions{Body: &generated.MarkNotificationsDoneBody{Ids: []int64{notificationID}}})
 	require.NoError(err)
 	require.NotNil(doneResp.JSON200)
 
@@ -576,15 +555,13 @@ name = "widget"
 	require.NoError(<-propagationDone)
 	assert.Zero(marked.Load())
 
-	allResp, err := client.HTTP.ListNotificationsWithResponse(
-		ctx, &generated.ListNotificationsParams{State: new("all")},
-	)
+	allResp, err := client.HTTP.ListNotificationsWithResponse(ctx, &generated.ListNotificationsRequestOptions{Query: &generated.ListNotificationsQuery{State: new("all")}})
 	require.NoError(err)
 	require.NotNil(allResp.JSON200)
 	require.NotNil(allResp.JSON200.Items)
 	require.Len(allResp.JSON200.Items, 1)
 	item := allResp.JSON200.Items[0]
-	assert.Equal(notificationID, item.Id)
+	assert.Equal(notificationID, item.ID)
 	assert.False(item.Unread)
 	assert.NotNil(item.DoneAt)
 	assert.NotNil(item.GithubReadQueuedAt)
@@ -594,9 +571,7 @@ name = "widget"
 		ctx, platform.KindGitHub, "github.com", 10,
 	))
 	assert.Equal(int32(1), marked.Load())
-	allResp, err = client.HTTP.ListNotificationsWithResponse(
-		ctx, &generated.ListNotificationsParams{State: new("all")},
-	)
+	allResp, err = client.HTTP.ListNotificationsWithResponse(ctx, &generated.ListNotificationsRequestOptions{Query: &generated.ListNotificationsQuery{State: new("all")}})
 	require.NoError(err)
 	require.NotNil(allResp.JSON200)
 	require.NotNil(allResp.JSON200.Items)
@@ -697,16 +672,13 @@ name = "widget"
 		},
 	}))
 
-	listResp, err := client.HTTP.ListNotificationsWithResponse(t.Context(), &generated.ListNotificationsParams{State: new("unread")})
+	listResp, err := client.HTTP.ListNotificationsWithResponse(t.Context(), &generated.ListNotificationsRequestOptions{Query: &generated.ListNotificationsQuery{State: new("unread")}})
 	require.NoError(err)
 	require.NotNil(listResp.JSON200)
 	require.NotNil(listResp.JSON200.Items)
 	require.Len(listResp.JSON200.Items, 2)
-	ids := []int64{listResp.JSON200.Items[0].Id, listResp.JSON200.Items[1].Id}
-	readResp, err := client.HTTP.MarkNotificationsReadWithResponse(
-		t.Context(),
-		generated.MarkNotificationsReadJSONRequestBody{Ids: ids},
-	)
+	ids := []int64{listResp.JSON200.Items[0].ID, listResp.JSON200.Items[1].ID}
+	readResp, err := client.HTTP.MarkNotificationsReadWithResponse(t.Context(), &generated.MarkNotificationsReadRequestOptions{Body: &generated.MarkNotificationsReadBody{Ids: ids}})
 	require.NoError(err)
 	require.NotNil(readResp.JSON200)
 	require.ElementsMatch(ids, readResp.JSON200.Succeeded)
@@ -806,17 +778,13 @@ name = "widget"
 		Reason: "mention", Unread: true, SourceUpdatedAt: sourceUpdatedAt, SyncedAt: sourceUpdatedAt,
 	}}))
 
-	unreadResp, err := client.HTTP.ListNotificationsWithResponse(
-		ctx, &generated.ListNotificationsParams{State: new("unread")},
-	)
+	unreadResp, err := client.HTTP.ListNotificationsWithResponse(ctx, &generated.ListNotificationsRequestOptions{Query: &generated.ListNotificationsQuery{State: new("unread")}})
 	require.NoError(err)
 	require.NotNil(unreadResp.JSON200)
 	require.NotNil(unreadResp.JSON200.Items)
 	require.Len(unreadResp.JSON200.Items, 1)
-	notificationID := unreadResp.JSON200.Items[0].Id
-	doneResp, err := client.HTTP.MarkNotificationsDoneWithResponse(
-		ctx, generated.MarkNotificationsDoneJSONRequestBody{Ids: []int64{notificationID}},
-	)
+	notificationID := unreadResp.JSON200.Items[0].ID
+	doneResp, err := client.HTTP.MarkNotificationsDoneWithResponse(ctx, &generated.MarkNotificationsDoneRequestOptions{Body: &generated.MarkNotificationsDoneBody{Ids: []int64{notificationID}}})
 	require.NoError(err)
 	require.NotNil(doneResp.JSON200)
 	require.ElementsMatch([]int64{notificationID}, doneResp.JSON200.Queued)

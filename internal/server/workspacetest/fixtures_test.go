@@ -359,20 +359,17 @@ func createReadyWorkspace(
 ) *generated.WorkspaceResponse {
 	t.Helper()
 
-	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     1,
-		},
-	)
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     1,
+	}})
 	require.NoError(t, err)
-	require.Equal(t, http.StatusAccepted, createResp.StatusCode())
+	require.Equal(t, http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(t, createResp.JSON202)
-	return waitForWorkspaceReady(t, ctx, client, createResp.JSON202.Id)
+	return waitForWorkspaceReady(t, ctx, client, createResp.JSON202.ID)
 }
 
 func waitForWorkspaceReady(
@@ -390,9 +387,9 @@ func waitForWorkspaceReady(
 	defer ticker.Stop()
 
 	for {
-		getResp, err := client.HTTP.GetWorkspaceWithResponse(waitCtx, wsID)
+		getResp, err := client.HTTP.GetWorkspaceWithResponse(waitCtx, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: wsID}})
 		require.NoError(t, err, "polling workspace readiness: %s", wsID)
-		if getResp.StatusCode() == http.StatusOK &&
+		if getResp.StatusCode == http.StatusOK &&
 			getResp.JSON200 != nil &&
 			getResp.JSON200.Status == "ready" {
 			return getResp.JSON200

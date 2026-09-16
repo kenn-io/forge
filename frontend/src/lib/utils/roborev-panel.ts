@@ -1,7 +1,7 @@
-import type { components } from "../api/roborev/generated/schema.js";
+import type * as RoborevModels from "../api/roborev/generated/models/index.js";
 import { parseCostUsd } from "./roborev-usage.js";
 
-type ReviewJob = components["schemas"]["ReviewJob"];
+type ReviewJob = RoborevModels.ReviewJob;
 
 const TERMINAL_STATUSES = new Set(["done", "applied", "rebased", "failed", "canceled", "skipped"]);
 

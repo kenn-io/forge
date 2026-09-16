@@ -115,14 +115,14 @@ func TestArchiveReportFromAPIPreservesTransportOrdering(t *testing.T) {
 		{
 			Repository: archiveGeneratedCLIRef("github", "github.example", "owner", "repo"),
 			Kind:       generated.ArchiveReportActivityResponseKind("review"), ItemNumber: 9,
-			ProviderExternalId: "review-2", Author: "bob", Title: "Second",
-			OccurredAt: start.Add(2 * time.Hour), Body: "body two", Url: "https://example.test/2",
+			ProviderExternalID: "review-2", Author: "bob", Title: "Second",
+			OccurredAt: start.Add(2 * time.Hour), Body: "body two", URL: "https://example.test/2",
 		},
 		{
 			Repository: archiveGeneratedCLIRef("github", "github.example", "owner", "repo"),
 			Kind:       generated.ArchiveReportActivityResponseKind("issue"), ItemNumber: 1,
-			ProviderExternalId: "issue-1", Author: "alice", Title: "First",
-			OccurredAt: start.Add(time.Hour), Body: "body one", Url: "https://example.test/1",
+			ProviderExternalID: "issue-1", Author: "alice", Title: "First",
+			OccurredAt: start.Add(time.Hour), Body: "body one", URL: "https://example.test/1",
 		},
 	}
 	transport := generated.ArchiveReportResponse{
@@ -141,7 +141,7 @@ func TestArchiveReportFromAPIPreservesTransportOrdering(t *testing.T) {
 			{Provider: "github", PlatformHost: "github.example", Login: "bob", Counts: generated.ArchiveReportCountsResponse{ReviewsSubmitted: 1}},
 			{Provider: "github", PlatformHost: "github.example", Login: "alice", Counts: generated.ArchiveReportCountsResponse{IssuesOpened: 1}},
 		},
-		Activity: &activities,
+		Activity: activities,
 	}
 
 	model, err := archiveReportFromAPI(transport)
@@ -173,8 +173,8 @@ func TestArchiveReportFromAPIPreservesLifecycleContract(t *testing.T) {
 	activities := []generated.ArchiveReportActivityResponse{{
 		Repository: archiveGeneratedCLIRef("github", "github.example", "owner", "repo"),
 		Kind:       generated.ArchiveReportActivityResponseKind("merge_request_merged"),
-		ItemNumber: 7, ProviderExternalId: "pr-7", Author: "author", Actor: &actor,
-		Title: "Merged", OccurredAt: start.Add(time.Hour), Url: "https://example.test/7",
+		ItemNumber: 7, ProviderExternalID: "pr-7", Author: "author", Actor: &actor,
+		Title: "Merged", OccurredAt: start.Add(time.Hour), URL: "https://example.test/7",
 		Comments: &comments, Additions: &additions, Deletions: &deletions,
 		FilesChanged: &filesChanged, MergeCommitSha: &mergeCommitSHA,
 	}}
@@ -194,7 +194,7 @@ func TestArchiveReportFromAPIPreservesLifecycleContract(t *testing.T) {
 		Totals: generated.ArchiveReportCountsResponse{
 			IssuesClosed: 1, MergeRequestsMerged: 1,
 		},
-		Activity: &activities,
+		Activity: activities,
 	}
 
 	model, err := archiveReportFromAPI(transport)
@@ -335,7 +335,7 @@ func TestArchiveAPIProblemIncludesStableDetails(t *testing.T) {
 		"provider": "gitlab", "platformHost": "gitlab.example", "capability": "submitted_reviews",
 	}
 	err := archiveAPIProblem("start archive", http.StatusBadRequest, &generated.ProblemError{
-		Code: generated.ProblemErrorCode("unsupportedCapability"), Details: &details,
+		Code: generated.ProblemErrorCode("unsupportedCapability"), Details: details,
 	})
 	require.Error(t, err)
 	assert.Equal(t,

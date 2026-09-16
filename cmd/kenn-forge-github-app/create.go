@@ -5,7 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"flag"
 	"fmt"
@@ -307,7 +307,7 @@ func (f *flowServer) handleFlowJSON(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(flow)
+	_ = json.MarshalWrite(w, flow)
 }
 
 func (f *flowServer) handleCallback(w http.ResponseWriter, r *http.Request) {

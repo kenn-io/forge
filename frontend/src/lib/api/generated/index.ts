@@ -1,5 +1,6 @@
 export * as ActivityService from "./activity/activity.ts";
 export * as ArchiveService from "./archive/archive.ts";
+export * as DefaultService from "./default/default.ts";
 export * as DocsService from "./docs/docs.ts";
 export * as FleetService from "./fleet/fleet.ts";
 export * as IssuesService from "./issues/issues.ts";

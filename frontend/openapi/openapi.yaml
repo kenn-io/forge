@@ -8709,6 +8709,21 @@ components:
         - tmux_mouse
         - retained_sessions
       type: object
+    TerminalClipboardInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/TerminalClipboardInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        text:
+          type: string
+      required:
+        - text
+      type: object
     TerminalPasteImageOutputBody:
       additionalProperties: false
       properties:
@@ -11841,6 +11856,24 @@ paths:
       summary: Refresh provider facts for a Forge spoke workspace
       tags:
         - Fleet
+  /federation/workspaces/{id}/cleanup:
+    post:
+      operationId: queue-federation-workspace-cleanup
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "202":
+          description: Accepted
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
   /filesystem/complete:
     get:
       operationId: complete-filesystem-path
@@ -22946,6 +22979,24 @@ paths:
       summary: Capture telemetry event
       tags:
         - System
+  /terminal/clipboard:
+    post:
+      operationId: write-terminal-clipboard
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TerminalClipboardInputBody"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
   /terminal/paste-image:
     post:
       operationId: store-terminal-paste-image

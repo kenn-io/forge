@@ -12,6 +12,9 @@ fixtures, or changing shell-script coverage.
 - Routine local Go lanes and hooks bound package/processor concurrency and share
   Go caches; `GO_TEST_P=` intentionally restores native package concurrency.
   (`scripts/run-hook-go.sh`, `prek.toml`)
+- Run builds and tests through `get-in-line run -- <command>` and wait for its `running` signal.
+  After a client timeout, inspect `get-in-line daemon status` and rejoin if the job is gone;
+  a busy queue is not a blocker or permission to bypass it.
 - CI bounds Go package/test fan-out with `-p` and `-parallel`; do not cap
   `GOMAXPROCS` globally, because test-launched servers inherit that CPU limit.
 - Do not overlap frontend/e2e asset builds with Go compilation; replacing embedded
@@ -26,6 +29,10 @@ fixtures, or changing shell-script coverage.
 - Filesystem writes are not a deterministic event burst under load. Test debounce timing
   with controlled event channels and `synctest`; keep real filesystem tests for delivery
   (`internal/configwatch/watcher_test.go::TestWatcher_DebouncesBurst`).
+- Build raw-filename fixtures in Git objects without checking them out; host filesystems
+  can reject path bytes that Git preserves (`landedwork/range_test.go::TestRebaseFileChanges`).
+- Publish fixture output atomically when file existence signals readiness; creation precedes
+  completed writes (`internal/server/workspaceapi/agent_resume_test.go::TestRestoreRuntimeSessionsResumesSavedConversationAfterTmuxLoss`).
 - Pre-commit runs frontend core checks without full-project Effect diagnostics;
   explicit frontend checks and CI retain Effect coverage (`Makefile::frontend-check-no-deps`).
 - Package-local `svelte-check` tasks must pass that package's Vite config explicitly;
@@ -40,6 +47,11 @@ fixtures, or changing shell-script coverage.
   helper methods thereafter. CI enforces this through `guardrail-check`
   (`Makefile::guardrail-check`).
 - Prefer the generated Go API client for integration-style API tests.
+- Verify generated-client migrations without `-short`; shared workspace fixtures skip
+  error-path coverage in short mode (`internal/server/workspacetest/fixtures_test.go::setupWorkspaceServerFixtureWithTmuxInjection`).
+- Stage API, generated-client, and module changes before `make huma-check`; its
+  Git-index snapshot can otherwise load mismatched types or report old findings
+  (`Makefile::huma-check`).
 - Use established package fixtures instead of opening databases directly. Use
   `t.TempDir()` when a test needs filesystem isolation.
 - Fixed historical timestamps must use an explicit query window or controlled

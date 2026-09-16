@@ -1,7 +1,7 @@
 package github
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 )
 
 func WithCommitOrderMetadata(metadataJSON string, listOrder int, stableOrder int) string {

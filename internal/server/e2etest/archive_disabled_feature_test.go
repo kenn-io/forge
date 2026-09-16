@@ -203,9 +203,7 @@ func TestArchiveAPIRecoversWhenGitHubIssuesAreReenabledE2E(t *testing.T) {
 		Provider: "github", PlatformHost: ref.Host,
 		Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
 	}}
-	started, err := api.HTTP.StartArchivesWithResponse(
-		ctx, generated.ArchiveMutationBody{Repositories: &repositories},
-	)
+	started, err := api.HTTP.StartArchivesWithResponse(ctx, &generated.StartArchivesRequestOptions{Body: &generated.ArchiveMutationBody{Repositories: repositories}})
 	require.NoError(err)
 	require.NotNil(started.JSON200)
 
@@ -273,7 +271,7 @@ func TestArchiveAPIRecoversWhenGitHubIssuesAreReenabledE2E(t *testing.T) {
 	assert.GreaterOrEqual(issueDetailCalls.Load(), int32(1))
 
 	require.Eventually(func() bool {
-		status, statusErr := api.HTTP.ListArchiveStatusWithResponse(ctx, nil)
+		status, statusErr := api.HTTP.ListArchiveStatusWithResponse(ctx, &generated.ListArchiveStatusRequestOptions{})
 		return statusErr == nil && status.JSON200 != nil && len(*status.JSON200) == 1 &&
 			(*status.JSON200)[0].Status == generated.ArchiveStatusResponseStatusPartial
 	}, 3*time.Second, 10*time.Millisecond)

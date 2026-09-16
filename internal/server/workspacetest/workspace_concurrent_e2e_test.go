@@ -36,18 +36,15 @@ func TestWorkspaceForceDeleteWaitsForInFlightSetupE2E(t *testing.T) {
 		}
 	}()
 
-	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     1,
-		},
-	)
+	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     1,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
 	ws := createResp.JSON202
 
@@ -58,14 +55,12 @@ func TestWorkspaceForceDeleteWaitsForInFlightSetupE2E(t *testing.T) {
 	deleteDone := make(chan deleteResult, 1)
 	go func() {
 		force := true
-		resp, deleteErr := fixture.client.HTTP.DeleteWorkspaceWithResponse(
-			ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &force},
-		)
+		resp, deleteErr := fixture.client.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: ws.ID}, Query: &generated.DeleteWorkspaceQuery{Force: &force}})
 		if deleteErr != nil {
 			deleteDone <- deleteResult{err: deleteErr}
 			return
 		}
-		deleteDone <- deleteResult{status: resp.StatusCode()}
+		deleteDone <- deleteResult{status: resp.StatusCode}
 	}()
 
 	select {
@@ -87,7 +82,7 @@ func TestWorkspaceForceDeleteWaitsForInFlightSetupE2E(t *testing.T) {
 	require.NoError(result.err)
 	assert.Equal(http.StatusNoContent, result.status)
 
-	stored, err := fixture.database.GetWorkspace(ctx, ws.Id)
+	stored, err := fixture.database.GetWorkspace(ctx, ws.ID)
 	require.NoError(err)
 	assert.Nil(stored)
 	_, err = os.Lstat(ws.WorktreePath)
@@ -139,24 +134,21 @@ exec "$@"
 	fixture := setupWorkspaceServerFixture(t, cfg)
 	ctx := t.Context()
 
-	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     1,
-		},
-	)
+	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     1,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
-	ws := waitForWorkspaceReady(t, ctx, fixture.client, createResp.JSON202.Id)
+	ws := waitForWorkspaceReady(t, ctx, fixture.client, createResp.JSON202.ID)
 
 	msg := "forced error for delete and retry overlap"
 	require.NoError(fixture.database.UpdateWorkspaceStatus(
-		ctx, ws.Id, "error", &msg,
+		ctx, ws.ID, "error", &msg,
 	))
 
 	type deleteResult struct {
@@ -166,14 +158,12 @@ exec "$@"
 	deleteDone := make(chan deleteResult, 1)
 	go func() {
 		force := true
-		resp, deleteErr := fixture.client.HTTP.DeleteWorkspaceWithResponse(
-			ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &force},
-		)
+		resp, deleteErr := fixture.client.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: ws.ID}, Query: &generated.DeleteWorkspaceQuery{Force: &force}})
 		if deleteErr != nil {
 			deleteDone <- deleteResult{err: deleteErr}
 			return
 		}
-		deleteDone <- deleteResult{status: resp.StatusCode()}
+		deleteDone <- deleteResult{status: resp.StatusCode}
 	}()
 
 	require.Eventually(func() bool {
@@ -181,9 +171,10 @@ exec "$@"
 		return statErr == nil
 	}, 5*time.Second, 10*time.Millisecond)
 
-	retryResp, err := fixture.client.HTTP.RetryWorkspaceWithResponse(ctx, ws.Id)
-	require.NoError(err)
-	require.Equal(http.StatusConflict, retryResp.StatusCode())
+	retryResp, err := fixture.client.HTTP.RetryWorkspaceWithResponse(ctx, &generated.RetryWorkspaceRequestOptions{PathParams: &generated.RetryWorkspacePath{ID: ws.ID}})
+	require.Error(err)
+	require.NotNil(retryResp)
+	require.Equal(http.StatusConflict, retryResp.StatusCode)
 	_, err = os.Lstat(ws.WorktreePath)
 	require.NoError(err, "rejected retry must not alter the worktree")
 
@@ -197,7 +188,7 @@ exec "$@"
 	require.NoError(result.err)
 	assert.Equal(http.StatusNoContent, result.status)
 
-	stored, err := fixture.database.GetWorkspace(ctx, ws.Id)
+	stored, err := fixture.database.GetWorkspace(ctx, ws.ID)
 	require.NoError(err)
 	assert.Nil(stored)
 	_, err = os.Lstat(ws.WorktreePath)
@@ -257,24 +248,21 @@ exec "$@"
 	fixture := setupWorkspaceServerFixture(t, cfg)
 	ctx := t.Context()
 
-	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     1,
-		},
-	)
+	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     1,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
-	ws := waitForWorkspaceReady(t, ctx, fixture.client, createResp.JSON202.Id)
+	ws := waitForWorkspaceReady(t, ctx, fixture.client, createResp.JSON202.ID)
 
 	msg := "forced error for retry during failed delete"
 	require.NoError(fixture.database.UpdateWorkspaceStatus(
-		ctx, ws.Id, "error", &msg,
+		ctx, ws.ID, "error", &msg,
 	))
 
 	type deleteResult struct {
@@ -284,14 +272,12 @@ exec "$@"
 	deleteDone := make(chan deleteResult, 1)
 	go func() {
 		force := true
-		resp, deleteErr := fixture.client.HTTP.DeleteWorkspaceWithResponse(
-			ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &force},
-		)
+		resp, deleteErr := fixture.client.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: ws.ID}, Query: &generated.DeleteWorkspaceQuery{Force: &force}})
 		if deleteErr != nil {
 			deleteDone <- deleteResult{err: deleteErr}
 			return
 		}
-		deleteDone <- deleteResult{status: resp.StatusCode()}
+		deleteDone <- deleteResult{status: resp.StatusCode}
 	}()
 
 	require.Eventually(func() bool {
@@ -299,9 +285,10 @@ exec "$@"
 		return statErr == nil
 	}, 5*time.Second, 10*time.Millisecond)
 
-	retryResp, err := fixture.client.HTTP.RetryWorkspaceWithResponse(ctx, ws.Id)
-	require.NoError(err)
-	require.Equal(http.StatusConflict, retryResp.StatusCode())
+	retryResp, err := fixture.client.HTTP.RetryWorkspaceWithResponse(ctx, &generated.RetryWorkspaceRequestOptions{PathParams: &generated.RetryWorkspacePath{ID: ws.ID}})
+	require.Error(err)
+	require.NotNil(retryResp)
+	require.Equal(http.StatusConflict, retryResp.StatusCode)
 	_, err = os.Lstat(ws.WorktreePath)
 	require.NoError(err, "rejected retry must not alter the worktree")
 
@@ -315,7 +302,7 @@ exec "$@"
 	require.NoError(result.err)
 	require.Equal(http.StatusInternalServerError, result.status)
 
-	stored, err := fixture.database.GetWorkspace(ctx, ws.Id)
+	stored, err := fixture.database.GetWorkspace(ctx, ws.ID)
 	require.NoError(err)
 	require.NotNil(stored)
 	assert.Equal("deletion_failed", stored.Status)
@@ -373,24 +360,21 @@ exec "$@"
 	fixture := setupWorkspaceServerFixture(t, cfg)
 	ctx := t.Context()
 
-	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     1,
-		},
-	)
+	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     1,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
-	ws := waitForWorkspaceReady(t, ctx, fixture.client, createResp.JSON202.Id)
+	ws := waitForWorkspaceReady(t, ctx, fixture.client, createResp.JSON202.ID)
 
 	msg := "forced error for concurrent delete overlap"
 	require.NoError(fixture.database.UpdateWorkspaceStatus(
-		ctx, ws.Id, "error", &msg,
+		ctx, ws.ID, "error", &msg,
 	))
 	// Keep the worktree dirty while the first DELETE is paused in destructive
 	// cleanup. The second, non-force DELETE must still report the authoritative
@@ -406,14 +390,12 @@ exec "$@"
 	deleteDone := make(chan deleteResult, 1)
 	go func() {
 		force := true
-		resp, deleteErr := fixture.client.HTTP.DeleteWorkspaceWithResponse(
-			ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &force},
-		)
+		resp, deleteErr := fixture.client.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: ws.ID}, Query: &generated.DeleteWorkspaceQuery{Force: &force}})
 		if deleteErr != nil {
 			deleteDone <- deleteResult{err: deleteErr}
 			return
 		}
-		deleteDone <- deleteResult{status: resp.StatusCode()}
+		deleteDone <- deleteResult{status: resp.StatusCode}
 	}()
 
 	require.Eventually(func() bool {
@@ -422,20 +404,20 @@ exec "$@"
 	}, 5*time.Second, 10*time.Millisecond)
 
 	noForce := false
-	conflictResp, err := fixture.client.HTTP.DeleteWorkspaceWithResponse(
-		ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &noForce},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusConflict, conflictResp.StatusCode())
-	require.NotNil(conflictResp.ApplicationproblemJSONDefault)
+	conflictResp, err := fixture.client.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: ws.ID}, Query: &generated.DeleteWorkspaceQuery{Force: &noForce}})
+	require.Error(err)
+	require.NotNil(conflictResp)
+	require.Equal(http.StatusConflict, conflictResp.StatusCode)
+	require.NotNil(conflictResp.Error)
 	assert.Equal(
-		generated.WorkspaceDeletionInProgress,
-		conflictResp.ApplicationproblemJSONDefault.Code,
+		generated.ProblemErrorCodeWorkspaceDeletionInProgress,
+		conflictResp.Error.Code,
 	)
 
-	retryResp, err := fixture.client.HTTP.RetryWorkspaceWithResponse(ctx, ws.Id)
-	require.NoError(err)
-	require.Equal(http.StatusConflict, retryResp.StatusCode())
+	retryResp, err := fixture.client.HTTP.RetryWorkspaceWithResponse(ctx, &generated.RetryWorkspaceRequestOptions{PathParams: &generated.RetryWorkspacePath{ID: ws.ID}})
+	require.Error(err)
+	require.NotNil(retryResp)
+	require.Equal(http.StatusConflict, retryResp.StatusCode)
 	_, err = os.Lstat(ws.WorktreePath)
 	require.NoError(err, "rejected retry must not alter the worktree")
 
@@ -454,7 +436,7 @@ exec "$@"
 		return statErr == nil
 	}, time.Second, 10*time.Millisecond,
 		"queued setup resurrected the worktree after successful deletion")
-	stored, err := fixture.database.GetWorkspace(ctx, ws.Id)
+	stored, err := fixture.database.GetWorkspace(ctx, ws.ID)
 	require.NoError(err)
 	assert.Nil(stored)
 	assert.Equal(1, listBareWorktrees(t, fixture.bare))
@@ -492,28 +474,25 @@ func TestWorkspaceConcurrentSameRepoOperationsE2E(t *testing.T) {
 	var wg sync.WaitGroup
 	for _, num := range []int{1, 2} {
 		wg.Go(func() {
-			resp, err := client.HTTP.CreateWorkspaceWithResponse(
-				ctx,
-				generated.CreateWorkspaceInputBody{
-					Provider:     "github",
-					PlatformHost: "github.com",
-					Owner:        "acme",
-					Name:         "widget",
-					MrNumber:     int64(num),
-				},
-			)
+			resp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+				Provider:     "github",
+				PlatformHost: "github.com",
+				Owner:        "acme",
+				Name:         "widget",
+				MrNumber:     int64(num),
+			}})
 			if err != nil {
 				created <- createResult{num: num, err: err}
 				return
 			}
-			if resp.StatusCode() != http.StatusAccepted || resp.JSON202 == nil {
+			if resp.StatusCode != http.StatusAccepted || resp.JSON202 == nil {
 				created <- createResult{
 					num: num,
-					err: assertableStatusErr(resp.StatusCode()),
+					err: assertableStatusErr(resp.StatusCode),
 				}
 				return
 			}
-			ready := waitForWorkspaceReady(t, ctx, client, resp.JSON202.Id)
+			ready := waitForWorkspaceReady(t, ctx, client, resp.JSON202.ID)
 			created <- createResult{num: num, ws: ready}
 		})
 	}
@@ -544,7 +523,7 @@ func TestWorkspaceConcurrentSameRepoOperationsE2E(t *testing.T) {
 	deleteTarget := wsByNumber[2]
 	msg := "forced error for retry overlap"
 	require.NoError(fixture.database.UpdateWorkspaceStatus(
-		ctx, retryTarget.Id, "error", &msg,
+		ctx, retryTarget.ID, "error", &msg,
 	))
 
 	force := true
@@ -556,28 +535,25 @@ func TestWorkspaceConcurrentSameRepoOperationsE2E(t *testing.T) {
 
 	var phase2 sync.WaitGroup
 	phase2.Go(func() {
-		resp, err := client.HTTP.DeleteWorkspaceWithResponse(
-			ctx, deleteTarget.Id,
-			&generated.DeleteWorkspaceParams{Force: &force},
-		)
+		resp, err := client.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: deleteTarget.ID}, Query: &generated.DeleteWorkspaceQuery{Force: &force}})
 		switch {
 		case err != nil:
 			opOut <- opResult{op: "delete", err: err}
-		case resp.StatusCode() != http.StatusNoContent:
-			opOut <- opResult{op: "delete", err: assertableStatusErr(resp.StatusCode())}
+		case resp.StatusCode != http.StatusNoContent:
+			opOut <- opResult{op: "delete", err: assertableStatusErr(resp.StatusCode)}
 		default:
 			opOut <- opResult{op: "delete"}
 		}
 	})
 	phase2.Go(func() {
-		resp, err := client.HTTP.RetryWorkspaceWithResponse(ctx, retryTarget.Id)
+		resp, err := client.HTTP.RetryWorkspaceWithResponse(ctx, &generated.RetryWorkspaceRequestOptions{PathParams: &generated.RetryWorkspacePath{ID: retryTarget.ID}})
 		switch {
 		case err != nil:
 			opOut <- opResult{op: "retry", err: err}
-		case resp.StatusCode() != http.StatusAccepted || resp.JSON202 == nil:
-			opOut <- opResult{op: "retry", err: assertableStatusErr(resp.StatusCode())}
+		case resp.StatusCode != http.StatusAccepted || resp.JSON202 == nil:
+			opOut <- opResult{op: "retry", err: assertableStatusErr(resp.StatusCode)}
 		default:
-			waitForWorkspaceReady(t, ctx, client, retryTarget.Id)
+			waitForWorkspaceReady(t, ctx, client, retryTarget.ID)
 			opOut <- opResult{op: "retry"}
 		}
 	})
@@ -589,11 +565,11 @@ func TestWorkspaceConcurrentSameRepoOperationsE2E(t *testing.T) {
 
 	// Verify final state. Deleted workspace is gone from the DB;
 	// retried workspace is ready again.
-	deletedRow, err := fixture.database.GetWorkspace(ctx, deleteTarget.Id)
+	deletedRow, err := fixture.database.GetWorkspace(ctx, deleteTarget.ID)
 	require.NoError(err)
 	assert.Nil(deletedRow, "deleted workspace must be absent from DB")
 
-	retriedRow, err := fixture.database.GetWorkspace(ctx, retryTarget.Id)
+	retriedRow, err := fixture.database.GetWorkspace(ctx, retryTarget.ID)
 	require.NoError(err)
 	require.NotNil(retriedRow)
 	assert.Equal("ready", retriedRow.Status)

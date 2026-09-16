@@ -23,16 +23,14 @@ func TestWorkspaceCreateUsesPRBranchAndFallbackBranch(t *testing.T) {
 	seedPROnHost(t, fixture.database, "github.com", "acme", "widget", 2)
 
 	create := func(number int64) *generated.WorkspaceResponse {
-		resp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
-			t.Context(), generated.CreateWorkspaceInputBody{
-				Provider: "github", PlatformHost: "github.com",
-				Owner: "acme", Name: "widget", MrNumber: number,
-			},
-		)
+		resp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(t.Context(), &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+			Provider: "github", PlatformHost: "github.com",
+			Owner: "acme", Name: "widget", MrNumber: number,
+		}})
 		require.NoError(err)
-		require.Equal(http.StatusAccepted, resp.StatusCode())
+		require.Equal(http.StatusAccepted, resp.StatusCode)
 		require.NotNil(resp.JSON202)
-		return waitForWorkspaceReady(t, t.Context(), fixture.client, resp.JSON202.Id)
+		return waitForWorkspaceReady(t, t.Context(), fixture.client, resp.JSON202.ID)
 	}
 
 	tracked := create(1)
@@ -74,26 +72,22 @@ func TestWorkspaceDeleteRecreatesForkBranchName(t *testing.T) {
 	require.NoError(fixture.database.EnsureKanbanState(t.Context(), prID))
 
 	create := func() *generated.WorkspaceResponse {
-		resp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
-			t.Context(), generated.CreateWorkspaceInputBody{
-				Provider: "github", PlatformHost: "github.com",
-				Owner: "acme", Name: "widget", MrNumber: 2,
-			},
-		)
+		resp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(t.Context(), &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+			Provider: "github", PlatformHost: "github.com",
+			Owner: "acme", Name: "widget", MrNumber: 2,
+		}})
 		require.NoError(err)
-		require.Equal(http.StatusAccepted, resp.StatusCode())
+		require.Equal(http.StatusAccepted, resp.StatusCode)
 		require.NotNil(resp.JSON202)
-		return waitForWorkspaceReady(t, t.Context(), fixture.client, resp.JSON202.Id)
+		return waitForWorkspaceReady(t, t.Context(), fixture.client, resp.JSON202.ID)
 	}
 
 	first := create()
 	assert.Equal("fork-feature", gitOutputForLifecycle(t, first.WorktreePath, "branch", "--show-current"))
 	force := true
-	deleted, err := fixture.client.HTTP.DeleteWorkspaceWithResponse(
-		t.Context(), first.Id, &generated.DeleteWorkspaceParams{Force: &force},
-	)
+	deleted, err := fixture.client.HTTP.DeleteWorkspaceWithResponse(t.Context(), &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: first.ID}, Query: &generated.DeleteWorkspaceQuery{Force: &force}})
 	require.NoError(err)
-	require.Equal(http.StatusNoContent, deleted.StatusCode())
+	require.Equal(http.StatusNoContent, deleted.StatusCode)
 
 	second := create()
 	assert.Equal("fork-feature", gitOutputForLifecycle(t, second.WorktreePath, "branch", "--show-current"))

@@ -1286,14 +1286,11 @@ func launchPlainShellRuntimeSession(
 ) *generated.SessionInfo {
 	t.Helper()
 
-	resp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, workspaceID,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{
-			TargetKey: string(localruntime.LaunchTargetPlainShell),
-		},
-	)
+	resp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: workspaceID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
+		TargetKey: string(localruntime.LaunchTargetPlainShell),
+	}})
 	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode(), string(resp.Body))
+	require.Equal(t, http.StatusOK, resp.StatusCode, string(resp.Body))
 	require.NotNil(t, resp.JSON200)
 	return resp.JSON200
 }
@@ -1651,17 +1648,15 @@ func TestAPIMergePR405ReturnsGitHubMessage(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA(expectedHeadSHA))
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.MergePullWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-		generated.MergePRInputBody{
-			CommitTitle:     "title",
-			CommitMessage:   "msg",
-			Method:          "squash",
-			ExpectedHeadSha: &expectedHeadSHA,
-		},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusConflict, resp.StatusCode())
+	resp, err := client.HTTP.MergePullWithResponse(t.Context(), &generated.MergePullRequestOptions{PathParams: &generated.MergePullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.MergePRInputBody{
+		CommitTitle:     "title",
+		CommitMessage:   "msg",
+		Method:          "squash",
+		ExpectedHeadSha: &expectedHeadSHA,
+	}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusConflict, resp.StatusCode)
 	require.Contains(string(resp.Body), "Pull Request is not mergeable")
 }
 
@@ -1683,17 +1678,15 @@ func TestAPIMergePR409ReturnsGitHubMessage(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA(expectedHeadSHA))
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.MergePullWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-		generated.MergePRInputBody{
-			CommitTitle:     "title",
-			CommitMessage:   "msg",
-			Method:          "squash",
-			ExpectedHeadSha: &expectedHeadSHA,
-		},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusConflict, resp.StatusCode())
+	resp, err := client.HTTP.MergePullWithResponse(t.Context(), &generated.MergePullRequestOptions{PathParams: &generated.MergePullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.MergePRInputBody{
+		CommitTitle:     "title",
+		CommitMessage:   "msg",
+		Method:          "squash",
+		ExpectedHeadSha: &expectedHeadSHA,
+	}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusConflict, resp.StatusCode)
 	require.Contains(string(resp.Body), "Head branch was modified")
 }
 
@@ -1712,17 +1705,15 @@ func TestAPIMergePRNetworkErrorReturns502(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA(expectedHeadSHA))
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.MergePullWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-		generated.MergePRInputBody{
-			CommitTitle:     "title",
-			CommitMessage:   "msg",
-			Method:          "squash",
-			ExpectedHeadSha: &expectedHeadSHA,
-		},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusBadGateway, resp.StatusCode())
+	resp, err := client.HTTP.MergePullWithResponse(t.Context(), &generated.MergePullRequestOptions{PathParams: &generated.MergePullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.MergePRInputBody{
+		CommitTitle:     "title",
+		CommitMessage:   "msg",
+		Method:          "squash",
+		ExpectedHeadSha: &expectedHeadSHA,
+	}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusBadGateway, resp.StatusCode)
 	require.Contains(string(resp.Body), "connection refused")
 }
 
@@ -1744,17 +1735,15 @@ func TestAPIMergePR422ForwardsGitHubMessage(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA(expectedHeadSHA))
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.MergePullWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-		generated.MergePRInputBody{
-			CommitTitle:     "title",
-			CommitMessage:   "msg",
-			Method:          "squash",
-			ExpectedHeadSha: &expectedHeadSHA,
-		},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusUnprocessableEntity, resp.StatusCode())
+	resp, err := client.HTTP.MergePullWithResponse(t.Context(), &generated.MergePullRequestOptions{PathParams: &generated.MergePullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.MergePRInputBody{
+		CommitTitle:     "title",
+		CommitMessage:   "msg",
+		Method:          "squash",
+		ExpectedHeadSha: &expectedHeadSHA,
+	}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusUnprocessableEntity, resp.StatusCode)
 	require.Contains(string(resp.Body), "Required status check is failing")
 }
 
@@ -1776,17 +1765,15 @@ func TestAPIMergePR403ForwardsGitHubMessage(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA(expectedHeadSHA))
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.MergePullWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-		generated.MergePRInputBody{
-			CommitTitle:     "title",
-			CommitMessage:   "msg",
-			Method:          "squash",
-			ExpectedHeadSha: &expectedHeadSHA,
-		},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusForbidden, resp.StatusCode())
+	resp, err := client.HTTP.MergePullWithResponse(t.Context(), &generated.MergePullRequestOptions{PathParams: &generated.MergePullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.MergePRInputBody{
+		CommitTitle:     "title",
+		CommitMessage:   "msg",
+		Method:          "squash",
+		ExpectedHeadSha: &expectedHeadSHA,
+	}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusForbidden, resp.StatusCode)
 	require.Contains(string(resp.Body), "Resource not accessible by integration")
 }
 
@@ -1808,17 +1795,15 @@ func TestAPIMergePR5xxReturns502WithGitHubMessage(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA(expectedHeadSHA))
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.MergePullWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-		generated.MergePRInputBody{
-			CommitTitle:     "title",
-			CommitMessage:   "msg",
-			Method:          "squash",
-			ExpectedHeadSha: &expectedHeadSHA,
-		},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusBadGateway, resp.StatusCode())
+	resp, err := client.HTTP.MergePullWithResponse(t.Context(), &generated.MergePullRequestOptions{PathParams: &generated.MergePullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.MergePRInputBody{
+		CommitTitle:     "title",
+		CommitMessage:   "msg",
+		Method:          "squash",
+		ExpectedHeadSha: &expectedHeadSHA,
+	}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusBadGateway, resp.StatusCode)
 	require.Contains(string(resp.Body), "Service unavailable")
 }
 
@@ -1853,17 +1838,15 @@ func TestAPIMergePRForwardsGitHubErrorDetailsAndLogsError(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA(expectedHeadSHA))
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.MergePullWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-		generated.MergePRInputBody{
-			CommitTitle:     "title",
-			CommitMessage:   "msg",
-			Method:          "squash",
-			ExpectedHeadSha: &expectedHeadSHA,
-		},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusBadGateway, resp.StatusCode())
+	resp, err := client.HTTP.MergePullWithResponse(t.Context(), &generated.MergePullRequestOptions{PathParams: &generated.MergePullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.MergePRInputBody{
+		CommitTitle:     "title",
+		CommitMessage:   "msg",
+		Method:          "squash",
+		ExpectedHeadSha: &expectedHeadSHA,
+	}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusBadGateway, resp.StatusCode)
 
 	var body generated.ProblemError
 	require.NoError(json.Unmarshal(resp.Body, &body))
@@ -1899,17 +1882,14 @@ func TestAPIMergePRStoresUTCTimestamps(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA(expectedHeadSHA))
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.MergePullWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-		generated.MergePRInputBody{
-			CommitTitle:     "title",
-			CommitMessage:   "msg",
-			Method:          "squash",
-			ExpectedHeadSha: &expectedHeadSHA,
-		},
-	)
+	resp, err := client.HTTP.MergePullWithResponse(t.Context(), &generated.MergePullRequestOptions{PathParams: &generated.MergePullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.MergePRInputBody{
+		CommitTitle:     "title",
+		CommitMessage:   "msg",
+		Method:          "squash",
+		ExpectedHeadSha: &expectedHeadSHA,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 
 	pr, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
@@ -1949,9 +1929,9 @@ func TestAPIListPulls(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.ListPullsWithResponse(t.Context(), nil)
+	resp, err := client.HTTP.ListPullsWithResponse(t.Context(), &generated.ListPullsRequestOptions{})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.Len(*resp.JSON200, 1)
 	assert := assert.New(t)
@@ -2253,30 +2233,28 @@ func TestAPIListItemsIncludeWorkspaceRefs(t *testing.T) {
 	)
 	client := setupTestClient(t, srv)
 
-	pulls, err := client.HTTP.ListPullsWithResponse(ctx, nil)
+	pulls, err := client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsRequestOptions{})
 	require.NoError(err)
-	require.Equal(http.StatusOK, pulls.StatusCode())
+	require.Equal(http.StatusOK, pulls.StatusCode)
 	require.NotNil(pulls.JSON200)
 	require.Len(*pulls.JSON200, 1)
 	require.NotNil((*pulls.JSON200)[0].Workspace)
-	assert.Equal("ws-pr-1", (*pulls.JSON200)[0].Workspace.Id)
+	assert.Equal("ws-pr-1", (*pulls.JSON200)[0].Workspace.ID)
 	assert.Equal("ready", (*pulls.JSON200)[0].Workspace.Status)
 
-	issues, err := client.HTTP.ListIssuesWithResponse(ctx, nil)
+	issues, err := client.HTTP.ListIssuesWithResponse(ctx, &generated.ListIssuesRequestOptions{})
 	require.NoError(err)
-	require.Equal(http.StatusOK, issues.StatusCode())
+	require.Equal(http.StatusOK, issues.StatusCode)
 	require.NotNil(issues.JSON200)
 	require.Len(*issues.JSON200, 1)
 	require.NotNil((*issues.JSON200)[0].Workspace)
-	assert.Equal("ws-issue-2", (*issues.JSON200)[0].Workspace.Id)
+	assert.Equal("ws-issue-2", (*issues.JSON200)[0].Workspace.ID)
 	assert.Equal("ready", (*issues.JSON200)[0].Workspace.Status)
 
 	since := time.Now().UTC().AddDate(0, 0, -7).Format(time.RFC3339)
-	activity, err := client.HTTP.ListActivityWithResponse(
-		ctx, &generated.ListActivityParams{Since: &since},
-	)
+	activity, err := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{Since: &since}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, activity.StatusCode())
+	require.Equal(http.StatusOK, activity.StatusCode)
 	require.NotNil(activity.JSON200)
 	require.NotNil(activity.JSON200.Items)
 
@@ -2285,7 +2263,7 @@ func TestAPIListItemsIncludeWorkspaceRefs(t *testing.T) {
 		if item.Workspace == nil {
 			continue
 		}
-		workspaceByItem[item.ItemType+":"+strconv.FormatInt(item.ItemNumber, 10)] = item.Workspace.Id
+		workspaceByItem[item.ItemType+":"+strconv.FormatInt(item.ItemNumber, 10)] = item.Workspace.ID
 	}
 	assert.Equal("ws-pr-1", workspaceByItem["pr:1"])
 	assert.Equal("ws-issue-2", workspaceByItem["issue:2"])
@@ -2307,9 +2285,9 @@ func TestAPIListPullsOrdersByLastActivityDescending(t *testing.T) {
 	)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.ListPullsWithResponse(t.Context(), nil)
+	resp, err := client.HTTP.ListPullsWithResponse(t.Context(), &generated.ListPullsRequestOptions{})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.Len(*resp.JSON200, 3)
 	assert := assert.New(t)
@@ -2375,9 +2353,9 @@ func TestAPIListPullsUsesProviderActivityAfterIndexSync(t *testing.T) {
 
 	srv.syncer.RunOnce(ctx)
 
-	resp, err := client.HTTP.ListPullsWithResponse(ctx, nil)
+	resp, err := client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsRequestOptions{})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.Len(*resp.JSON200, 2)
 	assert.Equal(int64(2), (*resp.JSON200)[0].Number)
@@ -2438,21 +2416,21 @@ func TestAPISyncPRUsesProviderActivityAfterForcePush(t *testing.T) {
 	)
 	client := setupTestClient(t, srv)
 
-	syncResp, err := client.HTTP.SyncPullWithResponse(ctx, "gh", "acme", "widget", 1)
+	syncResp, err := client.HTTP.SyncPullWithResponse(ctx, &generated.SyncPullRequestOptions{PathParams: &generated.SyncPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, syncResp.StatusCode(), string(syncResp.Body))
+	require.Equal(http.StatusOK, syncResp.StatusCode, string(syncResp.Body))
 	require.NotNil(syncResp.JSON200)
 	assert.Equal(forcePushAt, syncResp.JSON200.MergeRequest.LastActivityAt.UTC())
 
-	detailResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 1)
+	detailResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, detailResp.StatusCode(), string(detailResp.Body))
+	require.Equal(http.StatusOK, detailResp.StatusCode, string(detailResp.Body))
 	require.NotNil(detailResp.JSON200)
 	assert.Equal(forcePushAt, detailResp.JSON200.MergeRequest.LastActivityAt.UTC())
 
-	listResp, err := client.HTTP.ListPullsWithResponse(ctx, nil)
+	listResp, err := client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsRequestOptions{})
 	require.NoError(err)
-	require.Equal(http.StatusOK, listResp.StatusCode(), string(listResp.Body))
+	require.Equal(http.StatusOK, listResp.StatusCode, string(listResp.Body))
 	require.NotNil(listResp.JSON200)
 	require.Len(*listResp.JSON200, 2)
 	assert.Equal(int64(1), (*listResp.JSON200)[0].Number)
@@ -2501,9 +2479,9 @@ func TestAPIListPullsKeepsCachedCIDecorationsAfterIndexSync(t *testing.T) {
 
 	srv.syncer.RunOnce(ctx)
 
-	resp, err := client.HTTP.ListPullsWithResponse(ctx, nil)
+	resp, err := client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsRequestOptions{})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.Len(*resp.JSON200, 1)
 	pull := (*resp.JSON200)[0]
@@ -2585,9 +2563,9 @@ func TestAPIGitHubSyncPersistsReviewThreadsThroughPullDetail(t *testing.T) {
 
 	require.NoError(srv.syncer.SyncMR(ctx, "acme", "widget", prNumber))
 
-	resp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", int64(prNumber))
+	resp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Events)
 	assert.Equal(providerUpdatedAt, resp.JSON200.MergeRequest.LastActivityAt)
@@ -2603,14 +2581,14 @@ func TestAPIGitHubSyncPersistsReviewThreadsThroughPullDetail(t *testing.T) {
 	assert.Equal("right", event.DiffThread.Side)
 	assert.Equal(int64(line), event.DiffThread.Line)
 	assert.Equal("inline note", event.DiffThread.Body)
-	require.NotNil(event.DiffThread.MetadataJson)
-	assert.JSONEq(`{"provider_hidden":true,"provider_hidden_reason":"OFF_TOPIC"}`, *event.DiffThread.MetadataJson)
+	require.NotNil(event.DiffThread.MetadataJSON)
+	assert.JSONEq(`{"provider_hidden":true,"provider_hidden_reason":"OFF_TOPIC"}`, *event.DiffThread.MetadataJSON)
 	require.NotNil(event.DiffThread.DiffHeadSha)
 	assert.Equal(commentCommitSHA, *event.DiffThread.DiffHeadSha)
 	require.NotNil(event.DiffThread.CommitSha)
 	assert.Equal(commentCommitSHA, *event.DiffThread.CommitSha)
-	require.NotNil(event.DiffThread.ProviderCommentId)
-	assert.Equal("3312100450", *event.DiffThread.ProviderCommentId)
+	require.NotNil(event.DiffThread.ProviderCommentID)
+	assert.Equal("3312100450", *event.DiffThread.ProviderCommentID)
 }
 
 func TestAPIRepoFilterAcceptsMultipleRepos(t *testing.T) {
@@ -2678,11 +2656,9 @@ func TestAPIGetPullIsDBOnly(t *testing.T) {
 	seedPRWithHeadSHA(t, database, "acme", "widget", 1, "deadbeef")
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.GetPullWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-	)
+	resp, err := client.HTTP.GetPullWithResponse(t.Context(), &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.MergeRequest)
 	// Seeded PR has no DetailFetchedAt, so detail_loaded should be false.
@@ -2767,9 +2743,9 @@ func TestAPIGetPullIncludesLifecycleTimelineEvents(t *testing.T) {
 		DedupeKey:      "provider-current-reopened",
 	}}))
 
-	mergedResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 1)
+	mergedResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, mergedResp.StatusCode())
+	require.Equal(http.StatusOK, mergedResp.StatusCode)
 	require.NotNil(mergedResp.JSON200)
 	require.NotNil(mergedResp.JSON200.Events)
 	require.Len(mergedResp.JSON200.Events, 1)
@@ -2779,9 +2755,9 @@ func TestAPIGetPullIncludesLifecycleTimelineEvents(t *testing.T) {
 	assert.Equal(int64(-1), mergedResp.JSON200.Events[0].ID)
 	assert.True(mergedResp.JSON200.Events[0].CreatedAt.Equal(mergedAt))
 
-	closedResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 2)
+	closedResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(2)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, closedResp.StatusCode())
+	require.Equal(http.StatusOK, closedResp.StatusCode)
 	require.NotNil(closedResp.JSON200)
 	require.NotNil(closedResp.JSON200.Events)
 	require.Len(closedResp.JSON200.Events, 1)
@@ -2791,9 +2767,9 @@ func TestAPIGetPullIncludesLifecycleTimelineEvents(t *testing.T) {
 	assert.Equal(int64(-2), closedResp.JSON200.Events[0].ID)
 	assert.True(closedResp.JSON200.Events[0].CreatedAt.Equal(closedAt))
 
-	reopenedResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 3)
+	reopenedResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(3)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, reopenedResp.StatusCode())
+	require.Equal(http.StatusOK, reopenedResp.StatusCode)
 	require.NotNil(reopenedResp.JSON200)
 	require.NotNil(reopenedResp.JSON200.Events)
 	require.Len(reopenedResp.JSON200.Events, 1)
@@ -2803,9 +2779,9 @@ func TestAPIGetPullIncludesLifecycleTimelineEvents(t *testing.T) {
 	assert.Equal(int64(-3), reopenedResp.JSON200.Events[0].ID)
 	assert.True(reopenedResp.JSON200.Events[0].CreatedAt.Equal(reopenedAt))
 
-	duplicateResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 4)
+	duplicateResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(4)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, duplicateResp.StatusCode())
+	require.Equal(http.StatusOK, duplicateResp.StatusCode)
 	require.NotNil(duplicateResp.JSON200)
 	require.NotNil(duplicateResp.JSON200.Events)
 	require.Len(duplicateResp.JSON200.Events, 1)
@@ -2813,9 +2789,9 @@ func TestAPIGetPullIncludesLifecycleTimelineEvents(t *testing.T) {
 	assert.Equal("merged by provider", duplicateResp.JSON200.Events[0].Summary)
 	assert.NotEqual(int64(-1), duplicateResp.JSON200.Events[0].ID)
 
-	repeatedClosedResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 5)
+	repeatedClosedResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(5)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, repeatedClosedResp.StatusCode())
+	require.Equal(http.StatusOK, repeatedClosedResp.StatusCode)
 	require.NotNil(repeatedClosedResp.JSON200)
 	require.NotNil(repeatedClosedResp.JSON200.Events)
 	require.Len(repeatedClosedResp.JSON200.Events, 2)
@@ -2824,9 +2800,9 @@ func TestAPIGetPullIncludesLifecycleTimelineEvents(t *testing.T) {
 	assert.Equal("previously closed by provider", repeatedClosedResp.JSON200.Events[1].Summary)
 	assert.True(repeatedClosedResp.JSON200.Events[1].CreatedAt.Equal(previousClosedAt))
 
-	repeatedReopenedResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 6)
+	repeatedReopenedResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(6)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, repeatedReopenedResp.StatusCode())
+	require.Equal(http.StatusOK, repeatedReopenedResp.StatusCode)
 	require.NotNil(repeatedReopenedResp.JSON200)
 	require.NotNil(repeatedReopenedResp.JSON200.Events)
 	require.Len(repeatedReopenedResp.JSON200.Events, 2)
@@ -2835,9 +2811,9 @@ func TestAPIGetPullIncludesLifecycleTimelineEvents(t *testing.T) {
 	assert.Equal("previously reopened by provider", repeatedReopenedResp.JSON200.Events[1].Summary)
 	assert.True(repeatedReopenedResp.JSON200.Events[1].CreatedAt.Equal(previousClosedAt.Add(-30 * time.Minute)))
 
-	duplicateReopenedResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 7)
+	duplicateReopenedResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(7)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, duplicateReopenedResp.StatusCode())
+	require.Equal(http.StatusOK, duplicateReopenedResp.StatusCode)
 	require.NotNil(duplicateReopenedResp.JSON200)
 	require.NotNil(duplicateReopenedResp.JSON200.Events)
 	require.Len(duplicateReopenedResp.JSON200.Events, 1)
@@ -2888,11 +2864,9 @@ func TestAPISyncPRIncludesWorkflowApproval(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.SyncPullWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-	)
+	resp, err := client.HTTP.SyncPullWithResponse(t.Context(), &generated.SyncPullRequestOptions{PathParams: &generated.SyncPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	// Sync response uses workflowCheckRuns mode: reads PR state
 	// from DB (just synced) and fetches workflow runs live.
@@ -2939,11 +2913,9 @@ func TestAPISyncPRPersistsMergeableState(t *testing.T) {
 	})
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.SyncPullWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-	)
+	resp, err := client.HTTP.SyncPullWithResponse(t.Context(), &generated.SyncPullRequestOptions{PathParams: &generated.SyncPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode(), string(resp.Body))
+	require.Equal(http.StatusOK, resp.StatusCode, string(resp.Body))
 	require.NotNil(resp.JSON200)
 	assert.Equal("dirty", resp.JSON200.MergeRequest.MergeableState)
 
@@ -2995,17 +2967,13 @@ func TestAPISyncPRPersistsMergedActorInDetail(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	syncResp, err := client.HTTP.SyncPullWithResponse(
-		ctx, "gh", "acme", "widget", 1,
-	)
+	syncResp, err := client.HTTP.SyncPullWithResponse(ctx, &generated.SyncPullRequestOptions{PathParams: &generated.SyncPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, syncResp.StatusCode(), string(syncResp.Body))
+	require.Equal(http.StatusOK, syncResp.StatusCode, string(syncResp.Body))
 
-	detailResp, err := client.HTTP.GetPullWithResponse(
-		ctx, "gh", "acme", "widget", 1,
-	)
+	detailResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, detailResp.StatusCode(), string(detailResp.Body))
+	require.Equal(http.StatusOK, detailResp.StatusCode, string(detailResp.Body))
 	require.NotNil(detailResp.JSON200)
 	require.NotNil(detailResp.JSON200.Events)
 	require.Len(detailResp.JSON200.Events, 1)
@@ -3065,9 +3033,9 @@ func TestAPIIndexSyncPersistsMergedActorForImmediateDetail(t *testing.T) {
 	srv, database := setupTestServerWithMock(t, mock)
 	client := setupTestClient(t, srv)
 
-	syncResp, err := client.HTTP.TriggerSyncWithResponse(ctx, nil)
+	syncResp, err := client.HTTP.TriggerSyncWithResponse(ctx, &generated.TriggerSyncRequestOptions{})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, syncResp.StatusCode(), string(syncResp.Body))
+	require.Equal(http.StatusAccepted, syncResp.StatusCode, string(syncResp.Body))
 
 	require.Eventually(func() bool {
 		mr, mrErr := database.GetMergeRequest(ctx, "github", "github.com", "acme", "widget", 1)
@@ -3086,11 +3054,9 @@ func TestAPIIndexSyncPersistsMergedActorForImmediateDetail(t *testing.T) {
 		return false
 	}, 3*time.Second, 25*time.Millisecond)
 
-	detailResp, err := client.HTTP.GetPullWithResponse(
-		ctx, "gh", "acme", "widget", 1,
-	)
+	detailResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, detailResp.StatusCode(), string(detailResp.Body))
+	require.Equal(http.StatusOK, detailResp.StatusCode, string(detailResp.Body))
 	require.NotNil(detailResp.JSON200)
 	require.NotNil(detailResp.JSON200.Events)
 	require.Len(detailResp.JSON200.Events, 1)
@@ -3128,11 +3094,9 @@ func TestAPIGetPullDoesNotFetchProviderForMissingMergedActor(t *testing.T) {
 	)
 	client := setupTestClient(t, srv)
 
-	detailResp, err := client.HTTP.GetPullWithResponse(
-		ctx, "gh", "acme", "widget", 1,
-	)
+	detailResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, detailResp.StatusCode(), string(detailResp.Body))
+	require.Equal(http.StatusOK, detailResp.StatusCode, string(detailResp.Body))
 	require.NotNil(detailResp.JSON200)
 	require.NotNil(detailResp.JSON200.Events)
 	require.Len(detailResp.JSON200.Events, 1)
@@ -3191,11 +3155,9 @@ func TestAPISyncPRPreservesMergeableStateWhenRefreshHasNoAnswer(t *testing.T) {
 			}, withSeedPRHeadSHA("abc123"), withSeedPRBaseSHA("def456"))
 			client := setupTestClient(t, srv)
 
-			resp, err := client.HTTP.SyncPullWithResponse(
-				t.Context(), "gh", "acme", "widget", 1,
-			)
+			resp, err := client.HTTP.SyncPullWithResponse(t.Context(), &generated.SyncPullRequestOptions{PathParams: &generated.SyncPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 			require.NoError(err)
-			require.Equal(http.StatusOK, resp.StatusCode(), string(resp.Body))
+			require.Equal(http.StatusOK, resp.StatusCode, string(resp.Body))
 			require.NotNil(resp.JSON200)
 			assert.Equal("dirty", resp.JSON200.MergeRequest.MergeableState)
 
@@ -3251,11 +3213,9 @@ func TestAPIEnqueuePRSyncQueuesOneRerun(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.EnqueuePrSyncWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-	)
+	resp, err := client.HTTP.EnqueuePrSyncWithResponse(t.Context(), &generated.EnqueuePrSyncRequestOptions{PathParams: &generated.EnqueuePrSyncPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, resp.StatusCode())
+	require.Equal(http.StatusAccepted, resp.StatusCode)
 	require.Eventually(func() bool {
 		select {
 		case <-firstStarted:
@@ -3266,11 +3226,9 @@ func TestAPIEnqueuePRSyncQueuesOneRerun(t *testing.T) {
 	}, 10*time.Second, time.Millisecond)
 
 	for range 3 {
-		resp, err = client.HTTP.EnqueuePrSyncWithResponse(
-			t.Context(), "gh", "acme", "widget", 1,
-		)
+		resp, err = client.HTTP.EnqueuePrSyncWithResponse(t.Context(), &generated.EnqueuePrSyncRequestOptions{PathParams: &generated.EnqueuePrSyncPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 		require.NoError(err)
-		require.Equal(http.StatusAccepted, resp.StatusCode())
+		require.Equal(http.StatusAccepted, resp.StatusCode)
 	}
 	close(releaseFirst)
 
@@ -3326,26 +3284,24 @@ func TestAPIEnqueueItemSyncRejectsRemovedUpstreamWithoutProviderCalls(t *testing
 	)
 	client := setupTestClient(t, srv)
 
-	pullResp, err := client.HTTP.EnqueuePrSyncWithResponse(
-		ctx, "gh", "acme", "widget", 1,
-	)
-	require.NoError(err)
-	require.Equal(http.StatusNotFound, pullResp.StatusCode(), string(pullResp.Body))
-	require.NotNil(pullResp.ApplicationproblemJSONDefault)
+	pullResp, err := client.HTTP.EnqueuePrSyncWithResponse(ctx, &generated.EnqueuePrSyncRequestOptions{PathParams: &generated.EnqueuePrSyncPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
+	require.Error(err)
+	require.NotNil(pullResp)
+	require.Equal(http.StatusNotFound, pullResp.StatusCode, string(pullResp.Body))
+	require.NotNil(pullResp.Error)
 	require.Equal(
 		generated.ProblemErrorCode("pullNotFound"),
-		pullResp.ApplicationproblemJSONDefault.Code,
+		pullResp.Error.Code,
 	)
 
-	issueResp, err := client.HTTP.EnqueueIssueSyncWithResponse(
-		ctx, "gh", "acme", "widget", 2,
-	)
-	require.NoError(err)
-	require.Equal(http.StatusNotFound, issueResp.StatusCode(), string(issueResp.Body))
-	require.NotNil(issueResp.ApplicationproblemJSONDefault)
+	issueResp, err := client.HTTP.EnqueueIssueSyncWithResponse(ctx, &generated.EnqueueIssueSyncRequestOptions{PathParams: &generated.EnqueueIssueSyncPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(2)}})
+	require.Error(err)
+	require.NotNil(issueResp)
+	require.Equal(http.StatusNotFound, issueResp.StatusCode, string(issueResp.Body))
+	require.NotNil(issueResp.Error)
 	require.Equal(
 		generated.ProblemErrorCode("issueNotFound"),
-		issueResp.ApplicationproblemJSONDefault.Code,
+		issueResp.Error.Code,
 	)
 	require.Zero(pullCalls.Load())
 	require.Zero(issueCalls.Load())
@@ -3391,11 +3347,9 @@ func TestAPIQueuedPRSyncRechecksRemovedUpstreamBeforeProviderCall(t *testing.T) 
 		}
 	}, time.Second, time.Millisecond)
 
-	resp, err := client.HTTP.EnqueuePrSyncWithResponse(
-		ctx, "gh", "acme", "widget", 1,
-	)
+	resp, err := client.HTTP.EnqueuePrSyncWithResponse(ctx, &generated.EnqueuePrSyncRequestOptions{PathParams: &generated.EnqueuePrSyncPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, resp.StatusCode(), string(resp.Body))
+	require.Equal(http.StatusAccepted, resp.StatusCode, string(resp.Body))
 	markArchiveItemRemovedUpstreamForServerTest(
 		t, database, repo.ID, db.ArchiveItemTypeMergeRequest, 1,
 	)
@@ -3457,11 +3411,9 @@ func TestAPIEnqueuePRSyncPersistsWorkflowApproval(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.EnqueuePrSyncWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-	)
+	resp, err := client.HTTP.EnqueuePrSyncWithResponse(t.Context(), &generated.EnqueuePrSyncRequestOptions{PathParams: &generated.EnqueuePrSyncPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, resp.StatusCode())
+	require.Equal(http.StatusAccepted, resp.StatusCode)
 
 	detailSyncKey := "pr:github:github.com:acme/widget#1"
 	require.Eventually(func() bool {
@@ -3471,9 +3423,7 @@ func TestAPIEnqueuePRSyncPersistsWorkflowApproval(t *testing.T) {
 		return !inFlight
 	}, 10*time.Second, time.Millisecond, "async detail sync should complete")
 
-	detail, err := client.HTTP.GetPullWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-	)
+	detail, err := client.HTTP.GetPullWithResponse(t.Context(), &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
 	require.NotNil(detail.JSON200)
 	assert.True(detail.JSON200.WorkflowApproval.Checked)
@@ -3534,24 +3484,18 @@ func TestAPIGetPullClearsWorkflowApprovalWhenHeadMoves(t *testing.T) {
 	client := setupTestClient(t, srv)
 
 	// First sync: persists required=true for abc123.
-	syncResp, err := client.HTTP.SyncPullWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-	)
+	syncResp, err := client.HTTP.SyncPullWithResponse(t.Context(), &generated.SyncPullRequestOptions{PathParams: &generated.SyncPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, syncResp.StatusCode())
+	require.Equal(http.StatusOK, syncResp.StatusCode)
 	require.True(syncResp.JSON200.WorkflowApproval.Required)
 
 	// Head moves forward (force-push); new SHA has no action_required runs.
 	headSHA.Store("def456")
-	syncResp2, err := client.HTTP.SyncPullWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-	)
+	syncResp2, err := client.HTTP.SyncPullWithResponse(t.Context(), &generated.SyncPullRequestOptions{PathParams: &generated.SyncPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, syncResp2.StatusCode())
+	require.Equal(http.StatusOK, syncResp2.StatusCode)
 
-	detail, err := client.HTTP.GetPullWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-	)
+	detail, err := client.HTTP.GetPullWithResponse(t.Context(), &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
 	require.NotNil(detail.JSON200)
 	wa := detail.JSON200.WorkflowApproval
@@ -3627,11 +3571,9 @@ func TestAPIApproveWorkflows(t *testing.T) {
 	))
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.ApprovePullWorkflowsWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-	)
+	resp, err := client.HTTP.ApprovePullWorkflowsWithResponse(t.Context(), &generated.ApprovePullWorkflowsRequestOptions{PathParams: &generated.ApprovePullWorkflowsPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.ApprovedCount)
 	assert.Equal("approved_workflows", resp.JSON200.Status)
@@ -3683,11 +3625,9 @@ func TestAPIApproveWorkflowsZeroMatchesStillSyncsPR(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.ApprovePullWorkflowsWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-	)
+	resp, err := client.HTTP.ApprovePullWorkflowsWithResponse(t.Context(), &generated.ApprovePullWorkflowsRequestOptions{PathParams: &generated.ApprovePullWorkflowsPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	assert.Equal("approved_workflows", resp.JSON200.Status)
 
@@ -3753,14 +3693,13 @@ func TestAPIApproveWorkflowsReturnsUnderlyingApprovalErrorAfterPartialFailure(t 
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.ApprovePullWorkflowsWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-	)
-	require.NoError(err)
-	require.Equal(http.StatusBadGateway, resp.StatusCode())
-	require.NotNil(resp.ApplicationproblemJSONDefault)
-	require.NotNil(resp.ApplicationproblemJSONDefault.Detail)
-	assert.Contains(*resp.ApplicationproblemJSONDefault.Detail, "permission denied")
+	resp, err := client.HTTP.ApprovePullWorkflowsWithResponse(t.Context(), &generated.ApprovePullWorkflowsRequestOptions{PathParams: &generated.ApprovePullWorkflowsPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusBadGateway, resp.StatusCode)
+	require.NotNil(resp.Error)
+	require.NotNil(resp.Error.Detail)
+	assert.Contains(*resp.Error.Detail, "permission denied")
 	assert.Equal([]int64{91, 92}, approvedRunIDs)
 
 	pr, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
@@ -3822,11 +3761,9 @@ func TestAPISyncPRIncludesWorkflowApprovalForForkPR(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.SyncPullWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-	)
+	resp, err := client.HTTP.SyncPullWithResponse(t.Context(), &generated.SyncPullRequestOptions{PathParams: &generated.SyncPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.WorkflowApproval)
 	assert.True(resp.JSON200.WorkflowApproval.Checked)
@@ -3890,11 +3827,9 @@ func TestAPIApproveWorkflowsForForkPR(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.ApprovePullWorkflowsWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-	)
+	resp, err := client.HTTP.ApprovePullWorkflowsWithResponse(t.Context(), &generated.ApprovePullWorkflowsRequestOptions{PathParams: &generated.ApprovePullWorkflowsPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.ApprovedCount)
 	assert.Equal("approved_workflows", resp.JSON200.Status)
@@ -3948,11 +3883,9 @@ func TestAPISyncPRIgnoresWorkflowRunsForOtherPRAtSameSHA(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.SyncPullWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-	)
+	resp, err := client.HTTP.SyncPullWithResponse(t.Context(), &generated.SyncPullRequestOptions{PathParams: &generated.SyncPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.WorkflowApproval)
 	assert.True(resp.JSON200.WorkflowApproval.Checked)
@@ -4016,11 +3949,9 @@ func TestAPIApproveWorkflowsIgnoresRunsForOtherPRAtSameSHA(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.ApprovePullWorkflowsWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-	)
+	resp, err := client.HTTP.ApprovePullWorkflowsWithResponse(t.Context(), &generated.ApprovePullWorkflowsRequestOptions{PathParams: &generated.ApprovePullWorkflowsPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.ApprovedCount)
 	assert.EqualValues(1, *resp.JSON200.ApprovedCount)
@@ -4084,11 +4015,9 @@ func TestAPIApproveWorkflowsRejectsRunFromDifferentForkAtSameSHA(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.ApprovePullWorkflowsWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-	)
+	resp, err := client.HTTP.ApprovePullWorkflowsWithResponse(t.Context(), &generated.ApprovePullWorkflowsRequestOptions{PathParams: &generated.ApprovePullWorkflowsPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	assert.Empty(approvedRunIDs)
 }
@@ -4121,14 +4050,12 @@ func TestAPIGetPullEmitsDiffWarningWhenSHAsMissing(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 
 	client := setupTestClient(t, srv)
-	resp, err := client.HTTP.GetPullWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-	)
+	resp, err := client.HTTP.GetPullWithResponse(t.Context(), &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Warnings, "warnings field should be set when diff is missing")
-	warnings := *resp.JSON200.Warnings
+	warnings := resp.JSON200.Warnings
 	require.Len(warnings, 1)
 	warning := warnings[0]
 	assert.Contains(warning, "Diff data is unavailable")
@@ -4176,14 +4103,12 @@ func TestAPIGetPullNoDiffWarningWhenSHAsPresent(t *testing.T) {
 	))
 
 	client := setupTestClient(t, srv)
-	resp, err := client.HTTP.GetPullWithResponse(
-		t.Context(), "gh", "acme", "widget", 2,
-	)
+	resp, err := client.HTTP.GetPullWithResponse(t.Context(), &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(2)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	if resp.JSON200.Warnings != nil {
-		assert.Empty(*resp.JSON200.Warnings)
+		assert.Empty(resp.JSON200.Warnings)
 	}
 }
 
@@ -4228,14 +4153,12 @@ func TestAPIGetPullEmitsStaleDiffWarning(t *testing.T) {
 	))
 
 	client := setupTestClient(t, srv)
-	resp, err := client.HTTP.GetPullWithResponse(
-		t.Context(), "gh", "acme", "widget", 3,
-	)
+	resp, err := client.HTTP.GetPullWithResponse(t.Context(), &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(3)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Warnings, "warnings field should be set when diff is stale")
-	warnings := *resp.JSON200.Warnings
+	warnings := resp.JSON200.Warnings
 	require.Len(warnings, 1)
 	assert.Contains(warnings[0], "out of date")
 }
@@ -4282,14 +4205,12 @@ func TestAPIGetPullEmitsStaleDiffWarningOnBaseDrift(t *testing.T) {
 	))
 
 	client := setupTestClient(t, srv)
-	resp, err := client.HTTP.GetPullWithResponse(
-		t.Context(), "gh", "acme", "widget", 4,
-	)
+	resp, err := client.HTTP.GetPullWithResponse(t.Context(), &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(4)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Warnings, "warnings field should be set when base drifted")
-	warnings := *resp.JSON200.Warnings
+	warnings := resp.JSON200.Warnings
 	require.Len(warnings, 1)
 	assert.Contains(warnings[0], "out of date")
 }
@@ -4337,14 +4258,12 @@ func TestAPIGetPullEmitsStaleDiffWarningOnMergedPR(t *testing.T) {
 	))
 
 	client := setupTestClient(t, srv)
-	resp, err := client.HTTP.GetPullWithResponse(
-		t.Context(), "gh", "acme", "widget", 5,
-	)
+	resp, err := client.HTTP.GetPullWithResponse(t.Context(), &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(5)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Warnings, "warnings field should be set when merged diff is stale")
-	warnings := *resp.JSON200.Warnings
+	warnings := resp.JSON200.Warnings
 	require.Len(warnings, 1)
 	assert.Contains(warnings[0], "out of date")
 }
@@ -4385,14 +4304,12 @@ func TestAPIGetPullEmitsDiffWarningWhenSHAsMissingClosed(t *testing.T) {
 	// diff sync errored out.
 
 	client := setupTestClient(t, srv)
-	resp, err := client.HTTP.GetPullWithResponse(
-		t.Context(), "gh", "acme", "widget", 6,
-	)
+	resp, err := client.HTTP.GetPullWithResponse(t.Context(), &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(6)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Warnings, "warnings field should be set when closed PR diff is missing")
-	warnings := *resp.JSON200.Warnings
+	warnings := resp.JSON200.Warnings
 	require.Len(warnings, 1)
 	assert.Contains(warnings[0], "unavailable")
 }
@@ -4437,14 +4354,12 @@ func TestAPIGetPullEmitsStaleDiffWarningOnClosedPR(t *testing.T) {
 	))
 
 	client := setupTestClient(t, srv)
-	resp, err := client.HTTP.GetPullWithResponse(
-		t.Context(), "gh", "acme", "widget", 7,
-	)
+	resp, err := client.HTTP.GetPullWithResponse(t.Context(), &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(7)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Warnings, "warnings field should be set when closed PR diff is stale")
-	warnings := *resp.JSON200.Warnings
+	warnings := resp.JSON200.Warnings
 	require.Len(warnings, 1)
 	assert.Contains(warnings[0], "out of date")
 }
@@ -4490,14 +4405,12 @@ func TestAPIGetPullNoDiffWarningOnMergedPRWithBaseDrift(t *testing.T) {
 	))
 
 	client := setupTestClient(t, srv)
-	resp, err := client.HTTP.GetPullWithResponse(
-		t.Context(), "gh", "acme", "widget", 8,
-	)
+	resp, err := client.HTTP.GetPullWithResponse(t.Context(), &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(8)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	if resp.JSON200.Warnings != nil {
-		assert.Empty(*resp.JSON200.Warnings)
+		assert.Empty(resp.JSON200.Warnings)
 	}
 }
 
@@ -4571,16 +4484,14 @@ func TestAPISyncPRSanitizesDiffFailureWarning(t *testing.T) {
 	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	client := setupTestClient(t, srv)
-	resp, err := client.HTTP.SyncPullWithResponse(
-		t.Context(), "gh", "acme", "widget", int64(prNumber),
-	)
+	resp, err := client.HTTP.SyncPullWithResponse(t.Context(), &generated.SyncPullRequestOptions{PathParams: &generated.SyncPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
 	require.NoError(err)
 	// Diff-sync failures are non-fatal: the handler must return 200
 	// with the PR row and a warning, not a 502.
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Warnings)
-	warnings := *resp.JSON200.Warnings
+	warnings := resp.JSON200.Warnings
 	require.Len(warnings, 1)
 	warning := warnings[0]
 	assert.Contains(warning, "Diff data is unavailable")
@@ -4708,7 +4619,7 @@ func TestAPIConfiguredRepoFiltersUseProviderIdentity(t *testing.T) {
 
 	reposResp, err := client.HTTP.ListReposWithResponse(ctx)
 	require.NoError(err)
-	require.Equal(http.StatusOK, reposResp.StatusCode())
+	require.Equal(http.StatusOK, reposResp.StatusCode)
 	require.NotNil(reposResp.JSON200)
 	require.Len(*reposResp.JSON200, 1)
 	assert.Equal("github", (*reposResp.JSON200)[0].Platform)
@@ -4718,7 +4629,7 @@ func TestAPIConfiguredRepoFiltersUseProviderIdentity(t *testing.T) {
 
 	summariesResp, err := client.HTTP.ListRepoSummariesWithResponse(ctx)
 	require.NoError(err)
-	require.Equal(http.StatusOK, summariesResp.StatusCode())
+	require.Equal(http.StatusOK, summariesResp.StatusCode)
 	require.NotNil(summariesResp.JSON200)
 	require.Len(*summariesResp.JSON200, 1)
 	assert.Equal("github", (*summariesResp.JSON200)[0].Repo.Provider)
@@ -4821,7 +4732,7 @@ func TestAPIGitLabConfiguredRepoSyncThroughProviderRegistry(t *testing.T) {
 
 	reposResp, err := client.HTTP.ListReposWithResponse(ctx)
 	require.NoError(err)
-	require.Equal(http.StatusOK, reposResp.StatusCode())
+	require.Equal(http.StatusOK, reposResp.StatusCode)
 	require.NotNil(reposResp.JSON200)
 	require.Len(*reposResp.JSON200, 1)
 	assert.Equal("gitlab", (*reposResp.JSON200)[0].Platform)
@@ -4829,11 +4740,9 @@ func TestAPIGitLabConfiguredRepoSyncThroughProviderRegistry(t *testing.T) {
 	assert.Equal("group/subgroup", (*reposResp.JSON200)[0].Owner)
 	assert.Equal("project", (*reposResp.JSON200)[0].Name)
 
-	pullsResp, err := client.HTTP.ListPullsWithResponse(
-		ctx, &generated.ListPullsParams{},
-	)
+	pullsResp, err := client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsRequestOptions{Query: &generated.ListPullsQuery{}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, pullsResp.StatusCode())
+	require.Equal(http.StatusOK, pullsResp.StatusCode)
 	require.NotNil(pullsResp.JSON200)
 	require.Len(*pullsResp.JSON200, 1)
 	assert.Equal("gitlab.example.com", (*pullsResp.JSON200)[0].PlatformHost)
@@ -4925,11 +4834,9 @@ func TestAPIGitLabClosedSyncPersistsMergedActorForImmediateDetail(t *testing.T) 
 	provider.mergeRequests = nil
 	syncer.RunOnce(ctx)
 
-	detailResp, err := client.HTTP.GetPullOnHostWithResponse(
-		ctx, ref.Host, "gitlab", ref.Owner, ref.Name, 7,
-	)
+	detailResp, err := client.HTTP.GetPullOnHostWithResponse(ctx, &generated.GetPullOnHostRequestOptions{PathParams: &generated.GetPullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, detailResp.StatusCode(), string(detailResp.Body))
+	require.Equal(http.StatusOK, detailResp.StatusCode, string(detailResp.Body))
 	require.NotNil(detailResp.JSON200)
 	require.NotNil(detailResp.JSON200.Events)
 	require.Len(detailResp.JSON200.Events, 1)
@@ -5030,11 +4937,9 @@ func TestAPIScheduledMergedActorRepairRefreshesOpenDetail(t *testing.T) {
 	changed, err := syncer.BackfillMergedActorEventOnProvider(ctx, repoID, 7)
 	require.NoError(err)
 	require.False(changed, "the initial provider response has no merged actor")
-	before, err := client.HTTP.GetPullOnHostWithResponse(
-		ctx, ref.Host, "gitlab", ref.Owner, ref.Name, 7,
-	)
+	before, err := client.HTTP.GetPullOnHostWithResponse(ctx, &generated.GetPullOnHostRequestOptions{PathParams: &generated.GetPullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, before.StatusCode(), string(before.Body))
+	require.Equal(http.StatusOK, before.StatusCode, string(before.Body))
 	require.NotNil(before.JSON200)
 	require.NotNil(before.JSON200.Events)
 	require.Len(before.JSON200.Events, 1)
@@ -5077,11 +4982,9 @@ func TestAPIScheduledMergedActorRepairRefreshesOpenDetail(t *testing.T) {
 	assert.Equal(now.Format(time.RFC3339), refreshPayload.SyncedAt)
 	assert.Empty(refreshPayload.Warnings)
 
-	after, err := client.HTTP.GetPullOnHostWithResponse(
-		ctx, ref.Host, "gitlab", ref.Owner, ref.Name, 7,
-	)
+	after, err := client.HTTP.GetPullOnHostWithResponse(ctx, &generated.GetPullOnHostRequestOptions{PathParams: &generated.GetPullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, after.StatusCode(), string(after.Body))
+	require.Equal(http.StatusOK, after.StatusCode, string(after.Body))
 	require.NotNil(after.JSON200)
 	require.NotNil(after.JSON200.Events)
 	require.Len(after.JSON200.Events, 1)
@@ -5163,11 +5066,9 @@ func TestAPIGitLabDirectSyncPersistsMergedActorForImmediateDetail(t *testing.T) 
 
 	syncer.RunOnce(ctx)
 
-	syncResp, err := client.HTTP.SyncPullOnHostWithResponse(
-		ctx, ref.Host, "gitlab", ref.Owner, ref.Name, 7,
-	)
+	syncResp, err := client.HTTP.SyncPullOnHostWithResponse(ctx, &generated.SyncPullOnHostRequestOptions{PathParams: &generated.SyncPullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, syncResp.StatusCode(), string(syncResp.Body))
+	require.Equal(http.StatusOK, syncResp.StatusCode, string(syncResp.Body))
 	require.NotNil(syncResp.JSON200)
 	require.NotNil(syncResp.JSON200.Events)
 	require.Len(syncResp.JSON200.Events, 1)
@@ -5177,11 +5078,9 @@ func TestAPIGitLabDirectSyncPersistsMergedActorForImmediateDetail(t *testing.T) 
 	assert.Equal("merged this", event.Summary)
 	assert.True(event.CreatedAt.Equal(mergedAt))
 
-	detailResp, err := client.HTTP.GetPullOnHostWithResponse(
-		ctx, ref.Host, "gitlab", ref.Owner, ref.Name, 7,
-	)
+	detailResp, err := client.HTTP.GetPullOnHostWithResponse(ctx, &generated.GetPullOnHostRequestOptions{PathParams: &generated.GetPullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, detailResp.StatusCode(), string(detailResp.Body))
+	require.Equal(http.StatusOK, detailResp.StatusCode, string(detailResp.Body))
 	require.NotNil(detailResp.JSON200)
 	require.NotNil(detailResp.JSON200.Events)
 	require.Len(detailResp.JSON200.Events, 1)
@@ -5287,11 +5186,9 @@ func TestAPIGitLabDirectSyncDoesNotDuplicateMergedActorAfterClosedFallback(t *te
 		CreatedAt:          mergedAt,
 		DedupeKey:          "gitlab:merged-note:9001",
 	}}}
-	syncResp, err := client.HTTP.SyncPullOnHostWithResponse(
-		ctx, ref.Host, "gitlab", ref.Owner, ref.Name, 7,
-	)
+	syncResp, err := client.HTTP.SyncPullOnHostWithResponse(ctx, &generated.SyncPullOnHostRequestOptions{PathParams: &generated.SyncPullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, syncResp.StatusCode(), string(syncResp.Body))
+	require.Equal(http.StatusOK, syncResp.StatusCode, string(syncResp.Body))
 	require.NotNil(syncResp.JSON200)
 	require.NotNil(syncResp.JSON200.Events)
 	require.Len(syncResp.JSON200.Events, 1)
@@ -6002,11 +5899,9 @@ func TestGitLabSyncCoversRepositoryItemsEventsOverviewAndCI(t *testing.T) {
 	providerName := "gitlab"
 	providerHost := "gitlab.example.com:8443"
 	mrNumber := int64(7)
-	pullResp, err := client.HTTP.GetPullOnHostWithResponse(
-		ctx, providerHost, providerName, "Group/SubGroup", "Project.Special", mrNumber,
-	)
+	pullResp, err := client.HTTP.GetPullOnHostWithResponse(ctx, &generated.GetPullOnHostRequestOptions{PathParams: &generated.GetPullOnHostPath{PlatformHost: providerHost, Provider: providerName, Owner: "Group/SubGroup", Name: "Project.Special", Number: int64(mrNumber)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, pullResp.StatusCode())
+	require.Equal(http.StatusOK, pullResp.StatusCode)
 	require.NotNil(pullResp.JSON200)
 	assert.Equal("gitlab", pullResp.JSON200.Repo.Provider)
 	assert.Equal("gitlab.example.com:8443", pullResp.JSON200.Repo.PlatformHost)
@@ -6015,11 +5910,9 @@ func TestGitLabSyncCoversRepositoryItemsEventsOverviewAndCI(t *testing.T) {
 	assert.Len(pullResp.JSON200.Events, 1)
 
 	issueNumber := int64(11)
-	issueResp, err := client.HTTP.GetIssueOnHostWithResponse(
-		ctx, providerHost, providerName, "Group/SubGroup", "Project.Special", issueNumber,
-	)
+	issueResp, err := client.HTTP.GetIssueOnHostWithResponse(ctx, &generated.GetIssueOnHostRequestOptions{PathParams: &generated.GetIssueOnHostPath{PlatformHost: providerHost, Provider: providerName, Owner: "Group/SubGroup", Name: "Project.Special", Number: int64(issueNumber)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, issueResp.StatusCode())
+	require.Equal(http.StatusOK, issueResp.StatusCode)
 	require.NotNil(issueResp.JSON200)
 	assert.Equal("gitlab", issueResp.JSON200.Repo.Provider)
 	assert.Equal("gitlab.example.com:8443", issueResp.JSON200.Repo.PlatformHost)
@@ -6027,7 +5920,7 @@ func TestGitLabSyncCoversRepositoryItemsEventsOverviewAndCI(t *testing.T) {
 
 	summaryResp, err := client.HTTP.ListRepoSummariesWithResponse(ctx)
 	require.NoError(err)
-	require.Equal(http.StatusOK, summaryResp.StatusCode())
+	require.Equal(http.StatusOK, summaryResp.StatusCode)
 	require.NotNil(summaryResp.JSON200)
 	require.Len(*summaryResp.JSON200, 1)
 	summary := (*summaryResp.JSON200)[0]
@@ -6037,7 +5930,7 @@ func TestGitLabSyncCoversRepositoryItemsEventsOverviewAndCI(t *testing.T) {
 	assert.Equal("v1.2.0", summary.LatestRelease.TagName)
 	assert.Equal(
 		"https://gitlab.example.com:8443/Group/SubGroup/Project.Special/-/releases/v1.2.0",
-		summary.LatestRelease.Url,
+		summary.LatestRelease.URL,
 	)
 }
 
@@ -6107,11 +6000,9 @@ func TestAPICIRefreshWarnsAndPreservesCIWhenProviderFails(t *testing.T) {
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.RefreshPullCiOnHostWithResponse(
-		ctx, ref.Host, "gitlab", ref.Owner, ref.Name, 7,
-	)
+	resp, err := client.HTTP.RefreshPullCiOnHostWithResponse(ctx, &generated.RefreshPullCiOnHostRequestOptions{PathParams: &generated.RefreshPullCiOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode(), string(resp.Body))
+	require.Equal(http.StatusOK, resp.StatusCode, string(resp.Body))
 	require.NotNil(resp.JSON200)
 	assert.Equal("pending", resp.JSON200.MergeRequest.CIStatus)
 	assert.JSONEq(
@@ -6119,8 +6010,8 @@ func TestAPICIRefreshWarnsAndPreservesCIWhenProviderFails(t *testing.T) {
 		resp.JSON200.MergeRequest.CIChecksJSON,
 	)
 	require.NotNil(resp.JSON200.Warnings)
-	require.Len(*resp.JSON200.Warnings, 1)
-	assert.Contains((*resp.JSON200.Warnings)[0], "Could not refresh CI checks")
+	require.Len(resp.JSON200.Warnings, 1)
+	assert.Contains((resp.JSON200.Warnings)[0], "Could not refresh CI checks")
 
 	stored, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
 	require.NoError(err)
@@ -6227,11 +6118,9 @@ func TestAPISyncRefreshesStaleCachedChecksWhenAggregateCIChanges(t *testing.T) {
 
 	syncer.RunOnce(ctx)
 
-	resp, err := client.HTTP.GetPullOnHostWithResponse(
-		ctx, ref.Host, "gitlab", ref.Owner, ref.Name, 7,
-	)
+	resp, err := client.HTTP.GetPullOnHostWithResponse(ctx, &generated.GetPullOnHostRequestOptions{PathParams: &generated.GetPullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode(), string(resp.Body))
+	require.Equal(http.StatusOK, resp.StatusCode, string(resp.Body))
 	require.NotNil(resp.JSON200)
 	assert.Equal("pending", resp.JSON200.MergeRequest.CIStatus)
 	assert.JSONEq(
@@ -6346,11 +6235,9 @@ func TestAPISyncRefreshesCachedPendingChecksThroughDetailDrain(t *testing.T) {
 
 	syncer.RunOnce(ctx)
 
-	resp, err := client.HTTP.GetPullOnHostWithResponse(
-		ctx, ref.Host, "gitlab", ref.Owner, ref.Name, 8,
-	)
+	resp, err := client.HTTP.GetPullOnHostWithResponse(ctx, &generated.GetPullOnHostRequestOptions{PathParams: &generated.GetPullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(8)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode(), string(resp.Body))
+	require.Equal(http.StatusOK, resp.StatusCode, string(resp.Body))
 	require.NotNil(resp.JSON200)
 	assert.Equal("success", resp.JSON200.MergeRequest.CIStatus)
 	assert.JSONEq(
@@ -6542,33 +6429,27 @@ func TestProviderRefSyncEndpointsUseGitLabNestedRepoPath(t *testing.T) {
 	issueDirect := int64(11)
 	issueAsync := int64(12)
 
-	prResp, err := client.HTTP.SyncPullOnHostWithResponse(
-		ctx, providerHost, providerName, "Group/SubGroup", "Project.Special", mrDirect,
-	)
+	prResp, err := client.HTTP.SyncPullOnHostWithResponse(ctx, &generated.SyncPullOnHostRequestOptions{PathParams: &generated.SyncPullOnHostPath{PlatformHost: providerHost, Provider: providerName, Owner: "Group/SubGroup", Name: "Project.Special", Number: int64(mrDirect)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, prResp.StatusCode(), string(prResp.Body))
+	require.Equal(http.StatusOK, prResp.StatusCode, string(prResp.Body))
 	require.NotNil(prResp.JSON200)
 	assert.Equal("gitlab", prResp.JSON200.Repo.Provider)
 	assert.Equal(repoPath, prResp.JSON200.Repo.RepoPath)
 	assert.Equal("Sync direct provider MR", prResp.JSON200.MergeRequest.Title)
 	assert.Len(prResp.JSON200.Events, 1)
 
-	issueResp, err := client.HTTP.SyncIssueOnHostWithResponse(
-		ctx, providerHost, providerName, "Group/SubGroup", "Project.Special", issueDirect,
-	)
+	issueResp, err := client.HTTP.SyncIssueOnHostWithResponse(ctx, &generated.SyncIssueOnHostRequestOptions{PathParams: &generated.SyncIssueOnHostPath{PlatformHost: providerHost, Provider: providerName, Owner: "Group/SubGroup", Name: "Project.Special", Number: int64(issueDirect)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, issueResp.StatusCode(), string(issueResp.Body))
+	require.Equal(http.StatusOK, issueResp.StatusCode, string(issueResp.Body))
 	require.NotNil(issueResp.JSON200)
 	assert.Equal("gitlab", issueResp.JSON200.Repo.Provider)
 	assert.Equal(repoPath, issueResp.JSON200.Repo.RepoPath)
 	assert.Equal("Sync direct provider issue", issueResp.JSON200.Issue.Title)
 	assert.Len(issueResp.JSON200.Events, 1)
 
-	asyncPRResp, err := client.HTTP.EnqueuePrSyncOnHostWithResponse(
-		ctx, providerHost, providerName, "Group/SubGroup", "Project.Special", mrAsync,
-	)
+	asyncPRResp, err := client.HTTP.EnqueuePrSyncOnHostWithResponse(ctx, &generated.EnqueuePrSyncOnHostRequestOptions{PathParams: &generated.EnqueuePrSyncOnHostPath{PlatformHost: providerHost, Provider: providerName, Owner: "Group/SubGroup", Name: "Project.Special", Number: int64(mrAsync)}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, asyncPRResp.StatusCode(), string(asyncPRResp.Body))
+	require.Equal(http.StatusAccepted, asyncPRResp.StatusCode, string(asyncPRResp.Body))
 	require.Eventually(func() bool {
 		repoRow, rowErr := database.GetRepoByIdentity(ctx, platformdb.DBRepoIdentity(ref))
 		if rowErr != nil || repoRow == nil {
@@ -6578,11 +6459,9 @@ func TestProviderRefSyncEndpointsUseGitLabNestedRepoPath(t *testing.T) {
 		return rowErr == nil && mr != nil && mr.Title == "Sync async provider MR"
 	}, 2*time.Second, 20*time.Millisecond)
 
-	asyncIssueResp, err := client.HTTP.EnqueueIssueSyncOnHostWithResponse(
-		ctx, providerHost, providerName, "Group/SubGroup", "Project.Special", issueAsync,
-	)
+	asyncIssueResp, err := client.HTTP.EnqueueIssueSyncOnHostWithResponse(ctx, &generated.EnqueueIssueSyncOnHostRequestOptions{PathParams: &generated.EnqueueIssueSyncOnHostPath{PlatformHost: providerHost, Provider: providerName, Owner: "Group/SubGroup", Name: "Project.Special", Number: int64(issueAsync)}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, asyncIssueResp.StatusCode(), string(asyncIssueResp.Body))
+	require.Equal(http.StatusAccepted, asyncIssueResp.StatusCode, string(asyncIssueResp.Body))
 	require.Eventually(func() bool {
 		repoRow, rowErr := database.GetRepoByIdentity(ctx, platformdb.DBRepoIdentity(ref))
 		if rowErr != nil || repoRow == nil {
@@ -6652,14 +6531,14 @@ func TestGitLabSyncUsesTagsForRepoOverviewWhenReleasesAreAbsent(t *testing.T) {
 
 	resp, err := client.HTTP.ListRepoSummariesWithResponse(ctx)
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.Len(*resp.JSON200, 1)
 	require.NotNil((*resp.JSON200)[0].LatestRelease)
 
 	assert := assert.New(t)
 	assert.Equal("v0.9.0", (*resp.JSON200)[0].LatestRelease.TagName)
-	assert.Equal("https://gitlab-tags.example.com/team/service/-/tree/v0.9.0", (*resp.JSON200)[0].LatestRelease.Url)
+	assert.Equal("https://gitlab-tags.example.com/team/service/-/tree/v0.9.0", (*resp.JSON200)[0].LatestRelease.URL)
 }
 
 func TestAPIListRepoSummaries(t *testing.T) {
@@ -6721,7 +6600,7 @@ func TestAPIListRepoSummaries(t *testing.T) {
 
 	resp, err := client.HTTP.ListRepoSummariesWithResponse(context.Background())
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.Len(*resp.JSON200, 3)
 
@@ -6891,7 +6770,7 @@ func TestAPIListRepoSummariesIncludesSyncedReleaseTimeline(t *testing.T) {
 
 	resp, err := client.HTTP.ListRepoSummariesWithResponse(ctx)
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.Len(*resp.JSON200, 1)
 
@@ -6919,7 +6798,7 @@ func TestAPIListRepoSummariesIncludesSyncedReleaseTimeline(t *testing.T) {
 
 	resp, err = client.HTTP.ListRepoSummariesWithResponse(ctx)
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.Len(*resp.JSON200, 1)
 
@@ -6981,7 +6860,7 @@ func TestAPIListRepoSummariesUsesTagsWhenNoReleases(t *testing.T) {
 
 	resp, err := client.HTTP.ListRepoSummariesWithResponse(ctx)
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.Len(*resp.JSON200, 1)
 
@@ -6991,7 +6870,7 @@ func TestAPIListRepoSummariesUsesTagsWhenNoReleases(t *testing.T) {
 
 	assert.Equal("v0.5.0", tagged.LatestRelease.TagName)
 	assert.Equal("v0.5.0", tagged.LatestRelease.Name)
-	assert.Equal("https://github.com/acme/tagged/tree/v0.5.0", tagged.LatestRelease.Url)
+	assert.Equal("https://github.com/acme/tagged/tree/v0.5.0", tagged.LatestRelease.URL)
 	assert.Equal(sha, tagged.LatestRelease.TargetCommitish)
 	assert.Nil(tagged.LatestRelease.PublishedAt)
 	assert.False(tagged.LatestRelease.Prerelease)
@@ -7073,7 +6952,7 @@ func TestAPIListRepoSummariesClearsStaleOverviewWhenTagFallbackFails(t *testing.
 
 	resp, err := client.HTTP.ListRepoSummariesWithResponse(ctx)
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.Len(*resp.JSON200, 1)
 
@@ -7140,17 +7019,12 @@ func TestAPICreateIssue(t *testing.T) {
 	_, err := database.UpsertRepo(context.Background(), verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
 
-	resp, err := client.HTTP.CreateIssueWithResponse(
-		context.Background(), "gh",
-		"acme",
-		"widgets",
-		generated.CreateIssueJSONRequestBody{
-			Title: "Ship repo summaries",
-			Body:  "Add a top-level repository overview page.",
-		},
-	)
+	resp, err := client.HTTP.CreateIssueWithResponse(context.Background(), &generated.CreateIssueRequestOptions{PathParams: &generated.CreateIssuePath{Provider: "gh", Owner: "acme", Name: "widgets"}, Body: &generated.CreateIssueBody{
+		Title: "Ship repo summaries",
+		Body:  "Add a top-level repository overview page.",
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusCreated, resp.StatusCode())
+	require.Equal(http.StatusCreated, resp.StatusCode)
 	require.NotNil(resp.JSON201)
 
 	assert.Equal(int64(27), resp.JSON201.Number)
@@ -7162,7 +7036,7 @@ func TestAPICreateIssue(t *testing.T) {
 		Name:      "enhancement",
 		Color:     "a2eeef",
 		IsDefault: false,
-	}}, *resp.JSON201.Labels)
+	}}, resp.JSON201.Labels)
 
 	issue, err := database.GetIssue(context.Background(), "github", "github.com", "acme", "widgets", 27)
 	require.NoError(err)
@@ -7197,14 +7071,10 @@ func TestAPICreateIssueRejectsNilProviderPayload(t *testing.T) {
 	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
 
-	resp, err := client.HTTP.CreateIssueWithResponse(
-		t.Context(), "gh",
-		"acme",
-		"widgets",
-		generated.CreateIssueJSONRequestBody{Title: "Empty payload"},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusBadGateway, resp.StatusCode())
+	resp, err := client.HTTP.CreateIssueWithResponse(t.Context(), &generated.CreateIssueRequestOptions{PathParams: &generated.CreateIssuePath{Provider: "gh", Owner: "acme", Name: "widgets"}, Body: &generated.CreateIssueBody{Title: "Empty payload"}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusBadGateway, resp.StatusCode)
 
 	issue, err := database.GetIssueByRepoIDAndNumber(t.Context(), repoID, 0)
 	require.NoError(err)
@@ -7218,18 +7088,16 @@ func TestAPICreateIssueReportsUnknownOutcomeForUnverifiedProviderFailure(t *test
 	srv := setupGitLabIssueMutatorServer(t, errors.New("provider response unavailable"))
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.CreateIssueOnHostWithResponse(
-		t.Context(), "gitlab.example.com", "gl", "group", "project",
-		generated.CreateIssueOnHostJSONRequestBody{Title: "Unverified issue"},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusBadGateway, resp.StatusCode(), string(resp.Body))
-	require.NotNil(resp.ApplicationproblemJSONDefault)
+	resp, err := client.HTTP.CreateIssueOnHostWithResponse(t.Context(), &generated.CreateIssueOnHostRequestOptions{PathParams: &generated.CreateIssueOnHostPath{PlatformHost: "gitlab.example.com", Provider: "gl", Owner: "group", Name: "project"}, Body: &generated.CreateIssueOnHostBody{Title: "Unverified issue"}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusBadGateway, resp.StatusCode, string(resp.Body))
+	require.NotNil(resp.Error)
 
-	assert.Equal(generated.MutationOutcomeUnknown, resp.ApplicationproblemJSONDefault.Code)
-	require.NotNil(resp.ApplicationproblemJSONDefault.Details)
-	assert.Equal("gitlab", (*resp.ApplicationproblemJSONDefault.Details)["provider"])
-	assert.Equal("gitlab.example.com", (*resp.ApplicationproblemJSONDefault.Details)["platformHost"])
+	assert.Equal(generated.ProblemErrorCodeMutationOutcomeUnknown, resp.Error.Code)
+	require.NotNil(resp.Error.Details)
+	assert.Equal("gitlab", (resp.Error.Details)["provider"])
+	assert.Equal("gitlab.example.com", (resp.Error.Details)["platformHost"])
 }
 
 func TestAPICreateIssueReportsUnknownOutcomeWhenPersistenceFailsAfterProviderSuccess(t *testing.T) {
@@ -7265,19 +7133,17 @@ func TestAPICreateIssueReportsUnknownOutcomeWhenPersistenceFailsAfterProviderSuc
 	database = openedDatabase
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.CreateIssueWithResponse(
-		t.Context(), "gh", "acme", "widgets",
-		generated.CreateIssueJSONRequestBody{Title: "Persist this issue"},
-	)
-	require.NoError(err)
+	resp, err := client.HTTP.CreateIssueWithResponse(t.Context(), &generated.CreateIssueRequestOptions{PathParams: &generated.CreateIssuePath{Provider: "gh", Owner: "acme", Name: "widgets"}, Body: &generated.CreateIssueBody{Title: "Persist this issue"}})
+	require.Error(err)
+	require.NotNil(resp)
 	require.NoError(persistenceSetupErr)
-	require.Equal(http.StatusBadGateway, resp.StatusCode(), string(resp.Body))
-	require.NotNil(resp.ApplicationproblemJSONDefault)
+	require.Equal(http.StatusBadGateway, resp.StatusCode, string(resp.Body))
+	require.NotNil(resp.Error)
 
-	assert.Equal(generated.MutationOutcomeUnknown, resp.ApplicationproblemJSONDefault.Code)
-	require.NotNil(resp.ApplicationproblemJSONDefault.Details)
-	assert.Equal("github", (*resp.ApplicationproblemJSONDefault.Details)["provider"])
-	assert.Equal("github.com", (*resp.ApplicationproblemJSONDefault.Details)["platformHost"])
+	assert.Equal(generated.ProblemErrorCodeMutationOutcomeUnknown, resp.Error.Code)
+	require.NotNil(resp.Error.Details)
+	assert.Equal("github", (resp.Error.Details)["provider"])
+	assert.Equal("github.com", (resp.Error.Details)["platformHost"])
 }
 
 func TestAPIEditPRContentRejectsNilProviderPayload(t *testing.T) {
@@ -7301,15 +7167,10 @@ func TestAPIEditPRContentRejectsNilProviderPayload(t *testing.T) {
 	client := setupTestClient(t, srv)
 
 	title := "Updated title"
-	resp, err := client.HTTP.EditPrContentWithResponse(
-		t.Context(), "gh",
-		"acme",
-		"widget",
-		1,
-		generated.EditPrContentJSONRequestBody{Title: &title},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusBadGateway, resp.StatusCode())
+	resp, err := client.HTTP.EditPrContentWithResponse(t.Context(), &generated.EditPrContentRequestOptions{PathParams: &generated.EditPrContentPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.EditPrContentBody{Title: &title}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusBadGateway, resp.StatusCode)
 
 	mr, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
@@ -7331,15 +7192,10 @@ func TestAPIPostPRCommentRejectsNilProviderPayload(t *testing.T) {
 	mrID := seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.PostPrCommentWithResponse(
-		t.Context(), "gh",
-		"acme",
-		"widget",
-		1,
-		generated.PostPrCommentJSONRequestBody{Body: "Looks good"},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusBadGateway, resp.StatusCode())
+	resp, err := client.HTTP.PostPrCommentWithResponse(t.Context(), &generated.PostPrCommentRequestOptions{PathParams: &generated.PostPrCommentPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.PostPrCommentBody{Body: "Looks good"}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusBadGateway, resp.StatusCode)
 
 	events, err := database.ListMREvents(t.Context(), mrID)
 	require.NoError(err)
@@ -7359,15 +7215,10 @@ func TestAPIPostIssueCommentRejectsNilProviderPayload(t *testing.T) {
 	issueID := seedIssue(t, database, "acme", "widget", 5, "open")
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.PostIssueCommentWithResponse(
-		t.Context(), "gh",
-		"acme",
-		"widget",
-		5,
-		generated.PostIssueCommentJSONRequestBody{Body: "Looks good"},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusBadGateway, resp.StatusCode())
+	resp, err := client.HTTP.PostIssueCommentWithResponse(t.Context(), &generated.PostIssueCommentRequestOptions{PathParams: &generated.PostIssueCommentPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(5)}, Body: &generated.PostIssueCommentBody{Body: "Looks good"}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusBadGateway, resp.StatusCode)
 
 	events, err := database.ListIssueEvents(t.Context(), issueID)
 	require.NoError(err)
@@ -7397,16 +7248,10 @@ func TestAPIEditPRCommentRejectsNilProviderPayload(t *testing.T) {
 	}}))
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.EditPrCommentWithResponse(
-		t.Context(), "gh",
-		"acme",
-		"widget",
-		1,
-		commentID,
-		generated.EditPrCommentJSONRequestBody{Body: "edited body"},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusBadGateway, resp.StatusCode())
+	resp, err := client.HTTP.EditPrCommentWithResponse(t.Context(), &generated.EditPrCommentRequestOptions{PathParams: &generated.EditPrCommentPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1), CommentID: int64(commentID)}, Body: &generated.EditPrCommentBody{Body: "edited body"}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusBadGateway, resp.StatusCode)
 
 	events, err := database.ListMREvents(t.Context(), mrID)
 	require.NoError(err)
@@ -7437,16 +7282,10 @@ func TestAPIEditIssueCommentRejectsNilProviderPayload(t *testing.T) {
 	}}))
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.EditIssueCommentWithResponse(
-		t.Context(), "gh",
-		"acme",
-		"widget",
-		5,
-		commentID,
-		generated.EditIssueCommentJSONRequestBody{Body: "edited body"},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusBadGateway, resp.StatusCode())
+	resp, err := client.HTTP.EditIssueCommentWithResponse(t.Context(), &generated.EditIssueCommentRequestOptions{PathParams: &generated.EditIssueCommentPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(5), CommentID: int64(commentID)}, Body: &generated.EditIssueCommentBody{Body: "edited body"}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusBadGateway, resp.StatusCode)
 
 	events, err := database.ListIssueEvents(t.Context(), issueID)
 	require.NoError(err)
@@ -7488,15 +7327,9 @@ func TestAPIApprovePRSubmitsGitHubReview(t *testing.T) {
 	mrID := seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA(expectedHeadSHA))
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.ApprovePullWithResponse(
-		t.Context(), "gh",
-		"acme",
-		"widget",
-		1,
-		generated.ApprovePullJSONRequestBody{ExpectedHeadSha: &expectedHeadSHA},
-	)
+	resp, err := client.HTTP.ApprovePullWithResponse(t.Context(), &generated.ApprovePullRequestOptions{PathParams: &generated.ApprovePullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.ApprovePullBody{ExpectedHeadSha: &expectedHeadSHA}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode(), string(resp.Body))
+	require.Equal(http.StatusOK, resp.StatusCode, string(resp.Body))
 	assert.True(providerCalled.Load())
 	assert.Equal(expectedHeadSHA, reviewCommitID)
 
@@ -7530,18 +7363,13 @@ func TestAPIMergePRRejectsNilProviderPayload(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA(expectedHeadSHA))
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.MergePullWithResponse(
-		t.Context(), "gh",
-		"acme",
-		"widget",
-		1,
-		generated.MergePullJSONRequestBody{
-			Method:          "squash",
-			ExpectedHeadSha: &expectedHeadSHA,
-		},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusBadGateway, resp.StatusCode())
+	resp, err := client.HTTP.MergePullWithResponse(t.Context(), &generated.MergePullRequestOptions{PathParams: &generated.MergePullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.MergePullBody{
+		Method:          "squash",
+		ExpectedHeadSha: &expectedHeadSHA,
+	}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusBadGateway, resp.StatusCode)
 
 	mr, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
@@ -7611,19 +7439,12 @@ func TestAPICreateIssueUsesPlatformHost(t *testing.T) {
 	require.NoError(err)
 
 	client := setupTestClient(t, srv)
-	resp, err := client.HTTP.CreateIssueOnHostWithResponse(
-		t.Context(),
-		"ghe.example.com",
-		"gh",
-		"acme",
-		"widgets",
-		generated.CreateIssueOnHostJSONRequestBody{
-			Title: "Ship enterprise issue",
-			Body:  "Route to the selected host.",
-		},
-	)
+	resp, err := client.HTTP.CreateIssueOnHostWithResponse(t.Context(), &generated.CreateIssueOnHostRequestOptions{PathParams: &generated.CreateIssueOnHostPath{PlatformHost: "ghe.example.com", Provider: "gh", Owner: "acme", Name: "widgets"}, Body: &generated.CreateIssueOnHostBody{
+		Title: "Ship enterprise issue",
+		Body:  "Route to the selected host.",
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusCreated, resp.StatusCode())
+	require.Equal(http.StatusCreated, resp.StatusCode)
 	assert.False(githubCalled)
 	assert.True(enterpriseCalled)
 	issue, err := database.GetIssueByRepoIDAndNumber(
@@ -7652,15 +7473,9 @@ func TestAPIPostPrCommentAllowsMixedCaseTrackedRepo(t *testing.T) {
 
 	seedPR(t, database, "acme", "widget", 7)
 
-	resp, err := client.HTTP.PostPrCommentWithResponse(
-		t.Context(), "gh",
-		"acme",
-		"widget",
-		7,
-		generated.PostPrCommentJSONRequestBody{Body: "looks good"},
-	)
+	resp, err := client.HTTP.PostPrCommentWithResponse(t.Context(), &generated.PostPrCommentRequestOptions{PathParams: &generated.PostPrCommentPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(7)}, Body: &generated.PostPrCommentBody{Body: "looks good"}})
 	require.NoError(err)
-	require.Equal(http.StatusCreated, resp.StatusCode())
+	require.Equal(http.StatusCreated, resp.StatusCode)
 	require.NotNil(resp.JSON201)
 }
 
@@ -8421,7 +8236,7 @@ func TestAPISyncStatus(t *testing.T) {
 
 	resp, err := client.HTTP.GetSyncStatusWithResponse(t.Context())
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.False(resp.JSON200.Running)
 	require.NotNil(resp.JSON200.LastRunAt)
@@ -8624,12 +8439,9 @@ func TestAPITriggerSyncBypassesNextSyncAfter(t *testing.T) {
 	require.Equal(int32(1), listCalls.Load())
 
 	client := setupTestClient(t, srv)
-	resp, err := client.HTTP.TriggerSyncWithResponse(
-		t.Context(),
-		nil,
-	)
+	resp, err := client.HTTP.TriggerSyncWithResponse(t.Context(), &generated.TriggerSyncRequestOptions{})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, resp.StatusCode())
+	require.Equal(http.StatusAccepted, resp.StatusCode)
 
 	select {
 	case <-secondSync:
@@ -9092,11 +8904,9 @@ func TestAPIReadyForReview(t *testing.T) {
 	require.NoError(err)
 	require.NoError(database.EnsureKanbanState(t.Context(), prID))
 
-	resp, err := client.HTTP.MarkPullReadyForReviewWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-	)
+	resp, err := client.HTTP.MarkPullReadyForReviewWithResponse(t.Context(), &generated.MarkPullReadyForReviewRequestOptions{PathParams: &generated.MarkPullReadyForReviewPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 
 	pr, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
@@ -9154,11 +8964,9 @@ func TestAPIReadyForReviewReclassifiesWorkspaceHeadRepo(t *testing.T) {
 	}))
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.MarkPullReadyForReviewWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-	)
+	resp, err := client.HTTP.MarkPullReadyForReviewWithResponse(t.Context(), &generated.MarkPullReadyForReviewRequestOptions{PathParams: &generated.MarkPullReadyForReviewPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 
 	stored, err := database.GetWorkspace(t.Context(), "readyfork0000001")
 	require.NoError(err)
@@ -9310,12 +9118,9 @@ func TestAPIClosePR(t *testing.T) {
 	}}))
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.SetPrGithubStateWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-		generated.SetPrGithubStateJSONRequestBody{State: "closed"},
-	)
+	resp, err := client.HTTP.SetPrGithubStateWithResponse(t.Context(), &generated.SetPrGithubStateRequestOptions{PathParams: &generated.SetPrGithubStatePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.SetPrGithubStateBody{State: "closed"}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 
 	pr, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
@@ -9357,12 +9162,9 @@ func TestAPIReopenPR(t *testing.T) {
 	require.NoError(database.UpdateMRState(ctx, repo.ID, 1, "closed", nil, &now))
 
 	client := setupTestClient(t, srv)
-	resp, err := client.HTTP.SetPrGithubStateWithResponse(
-		ctx, "gh", "acme", "widget", 1,
-		generated.SetPrGithubStateJSONRequestBody{State: "open"},
-	)
+	resp, err := client.HTTP.SetPrGithubStateWithResponse(ctx, &generated.SetPrGithubStateRequestOptions{PathParams: &generated.SetPrGithubStatePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.SetPrGithubStateBody{State: "open"}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 
 	pr, err := database.GetMergeRequest(ctx, "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
@@ -9380,12 +9182,9 @@ func TestAPICloseIssue(t *testing.T) {
 	seedIssue(t, database, "acme", "widget", 5, "open")
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.SetIssueGithubStateWithResponse(
-		t.Context(), "gh", "acme", "widget", 5,
-		generated.SetIssueGithubStateJSONRequestBody{State: "closed"},
-	)
+	resp, err := client.HTTP.SetIssueGithubStateWithResponse(t.Context(), &generated.SetIssueGithubStateRequestOptions{PathParams: &generated.SetIssueGithubStatePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(5)}, Body: &generated.SetIssueGithubStateBody{State: "closed"}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 
 	issue, err := database.GetIssue(t.Context(), "github", "github.com", "acme", "widget", 5)
 	require.NoError(err)
@@ -9400,12 +9199,9 @@ func TestAPIReopenIssue(t *testing.T) {
 	seedIssue(t, database, "acme", "widget", 5, "closed")
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.SetIssueGithubStateWithResponse(
-		t.Context(), "gh", "acme", "widget", 5,
-		generated.SetIssueGithubStateJSONRequestBody{State: "open"},
-	)
+	resp, err := client.HTTP.SetIssueGithubStateWithResponse(t.Context(), &generated.SetIssueGithubStateRequestOptions{PathParams: &generated.SetIssueGithubStatePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(5)}, Body: &generated.SetIssueGithubStateBody{State: "open"}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 
 	issue, err := database.GetIssue(t.Context(), "github", "github.com", "acme", "widget", 5)
 	require.NoError(err)
@@ -9472,12 +9268,10 @@ func TestAPISyncPRDoesNotOverwriteNewerStateChange(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	syncDone := make(chan *generated.SyncPullResponse, 1)
+	syncDone := make(chan *generated.SyncPullResp, 1)
 	syncErr := make(chan error, 1)
 	go func() {
-		resp, err := client.HTTP.SyncPullWithResponse(
-			t.Context(), "gh", "acme", "widget", 1,
-		)
+		resp, err := client.HTTP.SyncPullWithResponse(t.Context(), &generated.SyncPullRequestOptions{PathParams: &generated.SyncPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 		if err != nil {
 			syncErr <- err
 			return
@@ -9487,12 +9281,9 @@ func TestAPISyncPRDoesNotOverwriteNewerStateChange(t *testing.T) {
 
 	<-syncStarted
 
-	resp, err := client.HTTP.SetPrGithubStateWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-		generated.SetPrGithubStateJSONRequestBody{State: "closed"},
-	)
+	resp, err := client.HTTP.SetPrGithubStateWithResponse(t.Context(), &generated.SetPrGithubStateRequestOptions{PathParams: &generated.SetPrGithubStatePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.SetPrGithubStateBody{State: "closed"}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 
 	closedPR, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
@@ -9507,7 +9298,7 @@ func TestAPISyncPRDoesNotOverwriteNewerStateChange(t *testing.T) {
 		require.NoError(err)
 		completed = true
 	case resp := <-syncDone:
-		require.Equal(http.StatusOK, resp.StatusCode())
+		require.Equal(http.StatusOK, resp.StatusCode)
 		completed = true
 	case <-time.After(5 * time.Second):
 	}
@@ -9584,12 +9375,10 @@ func TestAPISyncPRPreservesCIStatusWhileRefreshingCI(t *testing.T) {
 	))
 	client := setupTestClient(t, srv)
 
-	syncDone := make(chan *generated.SyncPullResponse, 1)
+	syncDone := make(chan *generated.SyncPullResp, 1)
 	syncErr := make(chan error, 1)
 	go func() {
-		resp, err := client.HTTP.SyncPullWithResponse(
-			t.Context(), "gh", "acme", "widget", 1,
-		)
+		resp, err := client.HTTP.SyncPullWithResponse(t.Context(), &generated.SyncPullRequestOptions{PathParams: &generated.SyncPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 		if err != nil {
 			syncErr <- err
 			return
@@ -9603,11 +9392,9 @@ func TestAPISyncPRPreservesCIStatusWhileRefreshingCI(t *testing.T) {
 		require.Fail("CI refresh did not start")
 	}
 
-	detailResp, err := client.HTTP.GetPullWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-	)
+	detailResp, err := client.HTTP.GetPullWithResponse(t.Context(), &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, detailResp.StatusCode())
+	require.Equal(http.StatusOK, detailResp.StatusCode)
 	require.NotNil(detailResp.JSON200)
 	require.NotNil(detailResp.JSON200.MergeRequest)
 	assert.Equal("success", detailResp.JSON200.MergeRequest.CIStatus)
@@ -9618,7 +9405,7 @@ func TestAPISyncPRPreservesCIStatusWhileRefreshingCI(t *testing.T) {
 	case err := <-syncErr:
 		require.NoError(err)
 	case resp := <-syncDone:
-		require.Equal(http.StatusOK, resp.StatusCode())
+		require.Equal(http.StatusOK, resp.StatusCode)
 	case <-time.After(5 * time.Second):
 		require.Fail("timed out waiting for PR sync")
 	}
@@ -9763,17 +9550,13 @@ func TestAPISyncPRClearsCIWhenHeadSHAChanges(t *testing.T) {
 	))
 	client := setupTestClient(t, srv)
 
-	syncResp, err := client.HTTP.SyncPullWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-	)
+	syncResp, err := client.HTTP.SyncPullWithResponse(t.Context(), &generated.SyncPullRequestOptions{PathParams: &generated.SyncPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, syncResp.StatusCode())
+	require.Equal(http.StatusOK, syncResp.StatusCode)
 
-	detailResp, err := client.HTTP.GetPullWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-	)
+	detailResp, err := client.HTTP.GetPullWithResponse(t.Context(), &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, detailResp.StatusCode())
+	require.Equal(http.StatusOK, detailResp.StatusCode)
 	require.NotNil(detailResp.JSON200)
 	require.NotNil(detailResp.JSON200.MergeRequest)
 	assert.Empty(detailResp.JSON200.MergeRequest.CIStatus)
@@ -9832,11 +9615,9 @@ func TestAPIEnqueuePRSyncReturnsBeforeGitHubFetchCompletes(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
 	defer cancel()
-	resp, err := client.HTTP.EnqueuePrSyncWithResponse(
-		ctx, "gh", "acme", "widget", 1,
-	)
+	resp, err := client.HTTP.EnqueuePrSyncWithResponse(ctx, &generated.EnqueuePrSyncRequestOptions{PathParams: &generated.EnqueuePrSyncPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, resp.StatusCode())
+	require.Equal(http.StatusAccepted, resp.StatusCode)
 
 	select {
 	case <-syncStarted:
@@ -9887,11 +9668,9 @@ func TestAPIEnqueueIssueSyncReturnsBeforeGitHubFetchCompletes(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
 	defer cancel()
-	resp, err := client.HTTP.EnqueueIssueSyncWithResponse(
-		ctx, "gh", "acme", "widget", 5,
-	)
+	resp, err := client.HTTP.EnqueueIssueSyncWithResponse(ctx, &generated.EnqueueIssueSyncRequestOptions{PathParams: &generated.EnqueueIssueSyncPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(5)}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, resp.StatusCode())
+	require.Equal(http.StatusAccepted, resp.StatusCode)
 
 	select {
 	case <-syncStarted:
@@ -10002,12 +9781,10 @@ func TestAPIReadyForReviewDoesNotGetRevertedByStaleSync(t *testing.T) {
 	require.NoError(err)
 	require.NoError(database.EnsureKanbanState(t.Context(), prID))
 
-	syncDone := make(chan *generated.SyncPullResponse, 1)
+	syncDone := make(chan *generated.SyncPullResp, 1)
 	syncErr := make(chan error, 1)
 	go func() {
-		resp, err := client.HTTP.SyncPullWithResponse(
-			t.Context(), "gh", "acme", "widget", 1,
-		)
+		resp, err := client.HTTP.SyncPullWithResponse(t.Context(), &generated.SyncPullRequestOptions{PathParams: &generated.SyncPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 		if err != nil {
 			syncErr <- err
 			return
@@ -10017,11 +9794,9 @@ func TestAPIReadyForReviewDoesNotGetRevertedByStaleSync(t *testing.T) {
 
 	<-syncStarted
 
-	resp, err := client.HTTP.MarkPullReadyForReviewWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-	)
+	resp, err := client.HTTP.MarkPullReadyForReviewWithResponse(t.Context(), &generated.MarkPullReadyForReviewRequestOptions{PathParams: &generated.MarkPullReadyForReviewPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 
 	readyPR, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
@@ -10036,7 +9811,7 @@ func TestAPIReadyForReviewDoesNotGetRevertedByStaleSync(t *testing.T) {
 		require.NoError(err)
 		completed = true
 	case resp := <-syncDone:
-		require.Equal(http.StatusOK, resp.StatusCode())
+		require.Equal(http.StatusOK, resp.StatusCode)
 		completed = true
 	case <-time.After(5 * time.Second):
 	}
@@ -10135,12 +9910,10 @@ func TestAPIMarkDraftDoesNotGetRevertedByStaleSync(t *testing.T) {
 	require.NoError(err)
 	require.NoError(database.EnsureKanbanState(t.Context(), prID))
 
-	syncDone := make(chan *generated.SyncPullResponse, 1)
+	syncDone := make(chan *generated.SyncPullResp, 1)
 	syncErr := make(chan error, 1)
 	go func() {
-		resp, err := client.HTTP.SyncPullWithResponse(
-			t.Context(), "gh", "acme", "widget", 1,
-		)
+		resp, err := client.HTTP.SyncPullWithResponse(t.Context(), &generated.SyncPullRequestOptions{PathParams: &generated.SyncPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 		if err != nil {
 			syncErr <- err
 			return
@@ -10150,12 +9923,9 @@ func TestAPIMarkDraftDoesNotGetRevertedByStaleSync(t *testing.T) {
 
 	<-syncStarted
 
-	resp, err := client.HTTP.SetPrGithubStateWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-		generated.SetPrGithubStateJSONRequestBody{State: "draft"},
-	)
+	resp, err := client.HTTP.SetPrGithubStateWithResponse(t.Context(), &generated.SetPrGithubStateRequestOptions{PathParams: &generated.SetPrGithubStatePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.SetPrGithubStateBody{State: "draft"}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 
 	draftPR, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
@@ -10170,7 +9940,7 @@ func TestAPIMarkDraftDoesNotGetRevertedByStaleSync(t *testing.T) {
 		require.NoError(err)
 		completed = true
 	case resp := <-syncDone:
-		require.Equal(http.StatusOK, resp.StatusCode())
+		require.Equal(http.StatusOK, resp.StatusCode)
 		completed = true
 	case <-time.After(5 * time.Second):
 	}
@@ -10220,12 +9990,10 @@ func TestAPISyncIssueDoesNotOverwriteNewerStateChange(t *testing.T) {
 	seedIssue(t, database, "acme", "widget", 5, "open")
 	client := setupTestClient(t, srv)
 
-	syncDone := make(chan *generated.SyncIssueResponse, 1)
+	syncDone := make(chan *generated.SyncIssueResp, 1)
 	syncErr := make(chan error, 1)
 	go func() {
-		resp, err := client.HTTP.SyncIssueWithResponse(
-			t.Context(), "gh", "acme", "widget", 5,
-		)
+		resp, err := client.HTTP.SyncIssueWithResponse(t.Context(), &generated.SyncIssueRequestOptions{PathParams: &generated.SyncIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(5)}})
 		if err != nil {
 			syncErr <- err
 			return
@@ -10235,12 +10003,9 @@ func TestAPISyncIssueDoesNotOverwriteNewerStateChange(t *testing.T) {
 
 	<-syncStarted
 
-	resp, err := client.HTTP.SetIssueGithubStateWithResponse(
-		t.Context(), "gh", "acme", "widget", 5,
-		generated.SetIssueGithubStateJSONRequestBody{State: "closed"},
-	)
+	resp, err := client.HTTP.SetIssueGithubStateWithResponse(t.Context(), &generated.SetIssueGithubStateRequestOptions{PathParams: &generated.SetIssueGithubStatePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(5)}, Body: &generated.SetIssueGithubStateBody{State: "closed"}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 
 	closedIssue, err := database.GetIssue(t.Context(), "github", "github.com", "acme", "widget", 5)
 	require.NoError(err)
@@ -10255,7 +10020,7 @@ func TestAPISyncIssueDoesNotOverwriteNewerStateChange(t *testing.T) {
 		require.NoError(err)
 		completed = true
 	case resp := <-syncDone:
-		require.Equal(http.StatusOK, resp.StatusCode())
+		require.Equal(http.StatusOK, resp.StatusCode)
 		completed = true
 	case <-time.After(5 * time.Second):
 	}
@@ -10317,11 +10082,9 @@ func TestAPISyncIssueNilUpdatedAtFallsBackToCreatedAt(t *testing.T) {
 
 	// Before the nil guard, refreshIssueTimeline panicked on
 	// ghIssue.UpdatedAt.Time and the handler returned 502.
-	syncResp, err := client.HTTP.SyncIssueWithResponse(
-		ctx, "gh", "acme", "widget", 9,
-	)
+	syncResp, err := client.HTTP.SyncIssueWithResponse(ctx, &generated.SyncIssueRequestOptions{PathParams: &generated.SyncIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(9)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, syncResp.StatusCode())
+	require.Equal(http.StatusOK, syncResp.StatusCode)
 	require.NotNil(syncResp.JSON200)
 	// LastActivityAt must equal CreatedAt, not Go's zero time.
 	// Without the fallback, activity-ordered views would sort
@@ -10331,11 +10094,9 @@ func TestAPISyncIssueNilUpdatedAtFallsBackToCreatedAt(t *testing.T) {
 
 	// Verify the persisted value round-trips through the read
 	// endpoint so the storage -> serializer path is covered.
-	getResp, err := client.HTTP.GetIssueWithResponse(
-		ctx, "gh", "acme", "widget", 9,
-	)
+	getResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(9)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, getResp.StatusCode())
+	require.Equal(http.StatusOK, getResp.StatusCode)
 	require.NotNil(getResp.JSON200)
 	assert.Equal(createdAt, getResp.JSON200.Issue.LastActivityAt.UTC())
 }
@@ -10363,11 +10124,11 @@ func TestAPIListPullsSearchByNumber(t *testing.T) {
 
 	client := setupTestClient(t, srv)
 
-	pullNumbers := func(params *generated.ListPullsParams) []int {
+	pullNumbers := func(params *generated.ListPullsQuery) []int {
 		t.Helper()
-		resp, err := client.HTTP.ListPullsWithResponse(ctx, params)
+		resp, err := client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsRequestOptions{Query: params})
 		require.NoError(err)
-		require.Equal(http.StatusOK, resp.StatusCode())
+		require.Equal(http.StatusOK, resp.StatusCode)
 		require.NotNil(resp.JSON200)
 		nums := make([]int, 0, len(*resp.JSON200))
 		for _, pr := range *resp.JSON200 {
@@ -10377,33 +10138,33 @@ func TestAPIListPullsSearchByNumber(t *testing.T) {
 	}
 
 	q := "278"
-	assert.ElementsMatch([]int{278}, pullNumbers(&generated.ListPullsParams{Q: &q}))
+	assert.ElementsMatch([]int{278}, pullNumbers(&generated.ListPullsQuery{Q: &q}))
 
 	q = "#278"
-	assert.ElementsMatch([]int{278}, pullNumbers(&generated.ListPullsParams{Q: &q}))
+	assert.ElementsMatch([]int{278}, pullNumbers(&generated.ListPullsQuery{Q: &q}))
 
 	// Title still matches.
 	q = "fix"
-	assert.ElementsMatch([]int{278}, pullNumbers(&generated.ListPullsParams{Q: &q}))
+	assert.ElementsMatch([]int{278}, pullNumbers(&generated.ListPullsQuery{Q: &q}))
 
 	q = "fix widget"
-	assert.ElementsMatch([]int{278}, pullNumbers(&generated.ListPullsParams{Q: &q}))
+	assert.ElementsMatch([]int{278}, pullNumbers(&generated.ListPullsQuery{Q: &q}))
 
 	q = "work bug"
-	assert.ElementsMatch([]int{301}, pullNumbers(&generated.ListPullsParams{Q: &q}))
+	assert.ElementsMatch([]int{301}, pullNumbers(&generated.ListPullsQuery{Q: &q}))
 
 	q = "needs-review bug"
-	assert.ElementsMatch([]int{278}, pullNumbers(&generated.ListPullsParams{Q: &q}))
+	assert.ElementsMatch([]int{278}, pullNumbers(&generated.ListPullsQuery{Q: &q}))
 
 	q = "can't"
-	assert.ElementsMatch([]int{302}, pullNumbers(&generated.ListPullsParams{Q: &q}))
+	assert.ElementsMatch([]int{302}, pullNumbers(&generated.ListPullsQuery{Q: &q}))
 
 	q = "needs-review"
-	assert.ElementsMatch([]int{278}, pullNumbers(&generated.ListPullsParams{Q: &q}))
+	assert.ElementsMatch([]int{278}, pullNumbers(&generated.ListPullsQuery{Q: &q}))
 
 	// Substring of number matches multiple.
 	q = "2"
-	assert.ElementsMatch([]int{12, 278, 290, 302}, pullNumbers(&generated.ListPullsParams{Q: &q}))
+	assert.ElementsMatch([]int{12, 278, 290, 302}, pullNumbers(&generated.ListPullsQuery{Q: &q}))
 }
 
 func TestAPIListIssuesSearchByNumber(t *testing.T) {
@@ -10429,11 +10190,11 @@ func TestAPIListIssuesSearchByNumber(t *testing.T) {
 
 	client := setupTestClient(t, srv)
 
-	issueNumbers := func(params *generated.ListIssuesParams) []int {
+	issueNumbers := func(params *generated.ListIssuesQuery) []int {
 		t.Helper()
-		resp, err := client.HTTP.ListIssuesWithResponse(ctx, params)
+		resp, err := client.HTTP.ListIssuesWithResponse(ctx, &generated.ListIssuesRequestOptions{Query: params})
 		require.NoError(err)
-		require.Equal(http.StatusOK, resp.StatusCode())
+		require.Equal(http.StatusOK, resp.StatusCode)
 		require.NotNil(resp.JSON200)
 		nums := make([]int, 0, len(*resp.JSON200))
 		for _, issue := range *resp.JSON200 {
@@ -10443,33 +10204,33 @@ func TestAPIListIssuesSearchByNumber(t *testing.T) {
 	}
 
 	q := "278"
-	assert.ElementsMatch([]int{278}, issueNumbers(&generated.ListIssuesParams{Q: &q}))
+	assert.ElementsMatch([]int{278}, issueNumbers(&generated.ListIssuesQuery{Q: &q}))
 
 	q = "#278"
-	assert.ElementsMatch([]int{278}, issueNumbers(&generated.ListIssuesParams{Q: &q}))
+	assert.ElementsMatch([]int{278}, issueNumbers(&generated.ListIssuesQuery{Q: &q}))
 
 	// Title still matches.
 	q = "broken"
-	assert.ElementsMatch([]int{278}, issueNumbers(&generated.ListIssuesParams{Q: &q}))
+	assert.ElementsMatch([]int{278}, issueNumbers(&generated.ListIssuesQuery{Q: &q}))
 
 	q = "filter widget"
-	assert.ElementsMatch([]int{278}, issueNumbers(&generated.ListIssuesParams{Q: &q}))
+	assert.ElementsMatch([]int{278}, issueNumbers(&generated.ListIssuesQuery{Q: &q}))
 
 	q = "work bug"
-	assert.ElementsMatch([]int{301}, issueNumbers(&generated.ListIssuesParams{Q: &q}))
+	assert.ElementsMatch([]int{301}, issueNumbers(&generated.ListIssuesQuery{Q: &q}))
 
 	q = "needs-triage filter"
-	assert.ElementsMatch([]int{278}, issueNumbers(&generated.ListIssuesParams{Q: &q}))
+	assert.ElementsMatch([]int{278}, issueNumbers(&generated.ListIssuesQuery{Q: &q}))
 
 	q = "O'Reilly"
-	assert.ElementsMatch([]int{302}, issueNumbers(&generated.ListIssuesParams{Q: &q}))
+	assert.ElementsMatch([]int{302}, issueNumbers(&generated.ListIssuesQuery{Q: &q}))
 
 	q = "needs-triage"
-	assert.ElementsMatch([]int{278}, issueNumbers(&generated.ListIssuesParams{Q: &q}))
+	assert.ElementsMatch([]int{278}, issueNumbers(&generated.ListIssuesQuery{Q: &q}))
 
 	// Substring of number matches multiple.
 	q = "2"
-	assert.ElementsMatch([]int{12, 278, 290, 302}, issueNumbers(&generated.ListIssuesParams{Q: &q}))
+	assert.ElementsMatch([]int{12, 278, 290, 302}, issueNumbers(&generated.ListIssuesQuery{Q: &q}))
 }
 
 func TestAPIListPullsReportsHistoricalMergedPRFromMergedAt(t *testing.T) {
@@ -10510,9 +10271,9 @@ func TestAPIListPullsReportsHistoricalMergedPRFromMergedAt(t *testing.T) {
 
 	client := setupTestClient(t, srv)
 	filterState := "closed"
-	resp, err := client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsParams{State: &filterState})
+	resp, err := client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsRequestOptions{Query: &generated.ListPullsQuery{State: &filterState}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.Len(*resp.JSON200, 1)
 
@@ -10536,9 +10297,9 @@ func TestAPIListPullsCasefoldsRepoNames(t *testing.T) {
 	seedPR(t, database, "org", "foo", 1)
 
 	client := setupTestClient(t, srv)
-	resp, err := client.HTTP.ListPullsWithResponse(t.Context(), nil)
+	resp, err := client.HTTP.ListPullsWithResponse(t.Context(), &generated.ListPullsRequestOptions{})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.Len(*resp.JSON200, 1)
 	assert.Equal("org", (*resp.JSON200)[0].RepoOwner)
@@ -10559,11 +10320,11 @@ func TestAPIListPullsFiltersProviderQualifiedHostedNestedRepoPath(t *testing.T) 
 
 	client := setupTestClient(t, srv)
 	repo := "github|ghe.example.com/Group/SubGroup/Project.Special"
-	resp, err := client.HTTP.ListPullsWithResponse(t.Context(), &generated.ListPullsParams{
+	resp, err := client.HTTP.ListPullsWithResponse(t.Context(), &generated.ListPullsRequestOptions{Query: &generated.ListPullsQuery{
 		Repo: &repo,
-	})
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.Len(*resp.JSON200, 1)
 	assert.Equal("group/subgroup", (*resp.JSON200)[0].RepoOwner)
@@ -10598,9 +10359,9 @@ func TestAPIListPullsAcceptsProviderQualifiedRepoFilter(t *testing.T) {
 	seedPRForRepo(t, database, giteaRepo, "github.com", "acme", "widget", 2)
 
 	repo := "gitea|github.com/acme/widget"
-	resp, err := client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsParams{Repo: &repo})
+	resp, err := client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsRequestOptions{Query: &generated.ListPullsQuery{Repo: &repo}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.Len(*resp.JSON200, 1)
 	assert.Equal("gitea", (*resp.JSON200)[0].Repo.Provider)
@@ -10621,11 +10382,9 @@ func TestAPIListIssuesAcceptsProviderAndHostQualifiedRepoFilter(t *testing.T) {
 	client := setupTestClient(t, srv)
 
 	repo := "github|ghe.example.com/acme/widget"
-	resp, err := client.HTTP.ListIssuesWithResponse(
-		t.Context(), &generated.ListIssuesParams{Repo: &repo},
-	)
+	resp, err := client.HTTP.ListIssuesWithResponse(t.Context(), &generated.ListIssuesRequestOptions{Query: &generated.ListIssuesQuery{Repo: &repo}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.Len(*resp.JSON200, 1)
 	assert.Equal("ghe.example.com", (*resp.JSON200)[0].PlatformHost)
@@ -10656,11 +10415,9 @@ func TestAPIListIssuesFiltersProviderQualifiedHostedNestedRepoPath(t *testing.T)
 	client := setupTestClient(t, srv)
 
 	repo := "github|ghe.example.com/Group/SubGroup/Project.Special"
-	resp, err := client.HTTP.ListIssuesWithResponse(
-		t.Context(), &generated.ListIssuesParams{Repo: &repo},
-	)
+	resp, err := client.HTTP.ListIssuesWithResponse(t.Context(), &generated.ListIssuesRequestOptions{Query: &generated.ListIssuesQuery{Repo: &repo}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.Len(*resp.JSON200, 1)
 	assert.Equal("ghe.example.com", (*resp.JSON200)[0].PlatformHost)
@@ -10697,9 +10454,9 @@ func TestAPIListIssuesAcceptsProviderQualifiedRepoFilter(t *testing.T) {
 	seedIssueForRepo(t, database, giteaRepo, "github.com", "acme", "widget", 2, "open", "Gitea issue")
 
 	repo := "gitea|github.com/acme/widget"
-	resp, err := client.HTTP.ListIssuesWithResponse(ctx, &generated.ListIssuesParams{Repo: &repo})
+	resp, err := client.HTTP.ListIssuesWithResponse(ctx, &generated.ListIssuesRequestOptions{Query: &generated.ListIssuesQuery{Repo: &repo}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.Len(*resp.JSON200, 1)
 	assert.Equal("gitea", (*resp.JSON200)[0].Repo.Provider)
@@ -10990,18 +10747,16 @@ func TestAPICreateWorkspaceRejectsEmptyProviderForAmbiguousRepo(t *testing.T) {
 	client := setupTestClient(t, srv)
 	provider := ""
 
-	resp, err := client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     provider,
-			PlatformHost: "forge.example.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     7,
-		},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusBadRequest, resp.StatusCode(), string(resp.Body))
+	resp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     provider,
+		PlatformHost: "forge.example.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     7,
+	}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusBadRequest, resp.StatusCode, string(resp.Body))
 
 	var problem rawProblemDetail
 	require.NoError(json.Unmarshal(resp.Body, &problem))
@@ -11274,17 +11029,9 @@ func TestAPISetIssueStateUsesPlatformHostBody(t *testing.T) {
 	})
 
 	client := setupTestClient(t, srv)
-	resp, err := client.HTTP.SetIssueGithubStateOnHostWithResponse(
-		ctx,
-		"ghe.example.com",
-		"gh",
-		"acme",
-		"widget",
-		7,
-		generated.SetIssueGithubStateOnHostJSONRequestBody{State: "closed"},
-	)
+	resp, err := client.HTTP.SetIssueGithubStateOnHostWithResponse(ctx, &generated.SetIssueGithubStateOnHostRequestOptions{PathParams: &generated.SetIssueGithubStateOnHostPath{PlatformHost: "ghe.example.com", Provider: "gh", Owner: "acme", Name: "widget", Number: int64(7)}, Body: &generated.SetIssueGithubStateOnHostBody{State: "closed"}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 
 	githubRepo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
@@ -11360,9 +11107,9 @@ func TestAPIIssueDataFromGraphQLSync(t *testing.T) {
 	}))
 
 	// Verify via ListIssues API
-	resp, err := client.HTTP.ListIssuesWithResponse(ctx, nil)
+	resp, err := client.HTTP.ListIssuesWithResponse(ctx, &generated.ListIssuesRequestOptions{})
 	require.NoError(err)
-	require.Equal(200, resp.StatusCode())
+	require.Equal(200, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.Len(*resp.JSON200, 1)
 
@@ -11372,15 +11119,13 @@ func TestAPIIssueDataFromGraphQLSync(t *testing.T) {
 	assert.Equal("testuser", apiIssue.Author)
 	assert.Equal("open", apiIssue.State)
 	require.NotNil(apiIssue.Labels)
-	require.Len(*apiIssue.Labels, 1)
-	assert.Equal("bug", (*apiIssue.Labels)[0].Name)
+	require.Len(apiIssue.Labels, 1)
+	assert.Equal("bug", (apiIssue.Labels)[0].Name)
 
 	// Verify via GetIssue API
-	detailResp, err := client.HTTP.GetIssueWithResponse(
-		ctx, "gh", "acme", "widget", 60,
-	)
+	detailResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(60)}})
 	require.NoError(err)
-	require.Equal(200, detailResp.StatusCode())
+	require.Equal(200, detailResp.StatusCode)
 	require.NotNil(detailResp.JSON200)
 	assert.Equal("Synced via GraphQL", detailResp.JSON200.Issue.Body)
 	assert.Equal(int64(1), detailResp.JSON200.Issue.CommentCount)
@@ -11468,9 +11213,9 @@ func TestE2EGraphQLIssueSyncThroughAPI(t *testing.T) {
 	// Verify through the HTTP API that issue data flowed end-to-end.
 	client := setupTestClient(t, srv)
 
-	listResp, err := client.HTTP.ListIssuesWithResponse(ctx, nil)
+	listResp, err := client.HTTP.ListIssuesWithResponse(ctx, &generated.ListIssuesRequestOptions{})
 	require.NoError(err)
-	require.Equal(200, listResp.StatusCode())
+	require.Equal(200, listResp.StatusCode)
 	require.NotNil(listResp.JSON200)
 	require.Len(*listResp.JSON200, 1)
 
@@ -11480,14 +11225,12 @@ func TestE2EGraphQLIssueSyncThroughAPI(t *testing.T) {
 	assert.Equal("renovate[bot]", apiIssue.Author)
 	assert.Equal("open", apiIssue.State)
 	require.NotNil(apiIssue.Labels)
-	require.Len(*apiIssue.Labels, 1)
-	assert.Equal("bug", (*apiIssue.Labels)[0].Name)
+	require.Len(apiIssue.Labels, 1)
+	assert.Equal("bug", (apiIssue.Labels)[0].Name)
 
-	detailResp, err := client.HTTP.GetIssueWithResponse(
-		ctx, "gh", "acme", "widget", 80,
-	)
+	detailResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(80)}})
 	require.NoError(err)
-	require.Equal(200, detailResp.StatusCode())
+	require.Equal(200, detailResp.StatusCode)
 	require.NotNil(detailResp.JSON200)
 	assert.Equal("Synced through the HTTP API", detailResp.JSON200.Issue.Body)
 	assert.Equal(int64(1), detailResp.JSON200.Issue.CommentCount)
@@ -11787,9 +11530,9 @@ func TestE2EConditionalPRDetailRefreshesInlineModerationThroughAPI(t *testing.T)
 	client := setupTestClient(t, srv)
 
 	srv.syncer.RunOnce(ctx)
-	first, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 1)
+	first, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, first.StatusCode())
+	require.Equal(http.StatusOK, first.StatusCode)
 	require.NotNil(first.JSON200)
 	require.NotNil(first.JSON200.Events)
 	require.Len(first.JSON200.Events, 1)
@@ -11805,9 +11548,9 @@ func TestE2EConditionalPRDetailRefreshesInlineModerationThroughAPI(t *testing.T)
 	)
 	require.NoError(err)
 	srv.syncer.RunOnce(ctx)
-	second, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 1)
+	second, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, second.StatusCode())
+	require.Equal(http.StatusOK, second.StatusCode)
 	require.NotNil(second.JSON200)
 	require.NotNil(second.JSON200.Events)
 	require.Len(second.JSON200.Events, 1)
@@ -12107,11 +11850,9 @@ func TestE2EGraphQLIssueSyncTrustsTotalCount(t *testing.T) {
 	// API must expose GraphQL TotalCount (42), not stale DB (5).
 	// With the preservation bug, count would remain 5.
 	client := setupTestClient(t, srv)
-	detailResp, err := client.HTTP.GetIssueWithResponse(
-		ctx, "gh", "acme", "widget", 90,
-	)
+	detailResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(90)}})
 	require.NoError(err)
-	require.Equal(200, detailResp.StatusCode())
+	require.Equal(200, detailResp.StatusCode)
 	require.NotNil(detailResp.JSON200)
 	assert.Equal(int64(42), detailResp.JSON200.Issue.CommentCount)
 }
@@ -12218,11 +11959,9 @@ func TestE2EPRDetailRefreshesEditedCommentBody(t *testing.T) {
 
 	srv.syncer.RunOnce(ctx)
 
-	firstResp, err := client.HTTP.GetPullWithResponse(
-		ctx, "gh", "acme", "widget", int64(prNumber),
-	)
+	firstResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, firstResp.StatusCode())
+	require.Equal(http.StatusOK, firstResp.StatusCode)
 	require.NotNil(firstResp.JSON200)
 	require.NotNil(firstResp.JSON200.Events)
 	require.Len(firstResp.JSON200.Events, 1)
@@ -12239,11 +11978,9 @@ func TestE2EPRDetailRefreshesEditedCommentBody(t *testing.T) {
 
 	srv.syncer.RunOnce(ctx)
 
-	secondResp, err := client.HTTP.GetPullWithResponse(
-		ctx, "gh", "acme", "widget", int64(prNumber),
-	)
+	secondResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, secondResp.StatusCode())
+	require.Equal(http.StatusOK, secondResp.StatusCode)
 	require.NotNil(secondResp.JSON200)
 	require.NotNil(secondResp.JSON200.Events)
 	require.Len(secondResp.JSON200.Events, 1)
@@ -12353,11 +12090,9 @@ func TestE2EPRDetailRemovesDeletedCommentWhenPRListIsUnchanged(t *testing.T) {
 
 	srv.syncer.RunOnce(ctx)
 
-	firstResp, err := client.HTTP.GetPullWithResponse(
-		ctx, "gh", "acme", "widget", int64(prNumber),
-	)
+	firstResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, firstResp.StatusCode())
+	require.Equal(http.StatusOK, firstResp.StatusCode)
 	require.NotNil(firstResp.JSON200)
 	require.Equal(int64(1), firstResp.JSON200.MergeRequest.CommentCount)
 	require.Equal(providerUpdatedAt.UTC(), firstResp.JSON200.MergeRequest.LastActivityAt.UTC())
@@ -12369,11 +12104,9 @@ func TestE2EPRDetailRemovesDeletedCommentWhenPRListIsUnchanged(t *testing.T) {
 
 	srv.syncer.RunOnce(ctx)
 
-	secondResp, err := client.HTTP.GetPullWithResponse(
-		ctx, "gh", "acme", "widget", int64(prNumber),
-	)
+	secondResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, secondResp.StatusCode())
+	require.Equal(http.StatusOK, secondResp.StatusCode)
 	require.NotNil(secondResp.JSON200)
 	require.Equal(int64(0), secondResp.JSON200.MergeRequest.CommentCount)
 	require.Equal(providerUpdatedAt.UTC(), secondResp.JSON200.MergeRequest.LastActivityAt.UTC())
@@ -12505,11 +12238,9 @@ func TestE2EPRDetailRemovesDeletedCommentWhenAnotherPRChanges(t *testing.T) {
 
 	srv.syncer.RunOnce(ctx)
 
-	firstResp, err := client.HTTP.GetPullWithResponse(
-		ctx, "gh", "acme", "widget", int64(targetNumber),
-	)
+	firstResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(targetNumber))}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, firstResp.StatusCode())
+	require.Equal(http.StatusOK, firstResp.StatusCode)
 	require.NotNil(firstResp.JSON200)
 	require.Equal(int64(1), firstResp.JSON200.MergeRequest.CommentCount)
 	require.NotNil(firstResp.JSON200.Events)
@@ -12520,11 +12251,9 @@ func TestE2EPRDetailRemovesDeletedCommentWhenAnotherPRChanges(t *testing.T) {
 
 	srv.syncer.RunOnce(ctx)
 
-	secondResp, err := client.HTTP.GetPullWithResponse(
-		ctx, "gh", "acme", "widget", int64(targetNumber),
-	)
+	secondResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(targetNumber))}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, secondResp.StatusCode())
+	require.Equal(http.StatusOK, secondResp.StatusCode)
 	require.NotNil(secondResp.JSON200)
 	require.Equal(int64(0), secondResp.JSON200.MergeRequest.CommentCount)
 	require.NotNil(secondResp.JSON200.Events)
@@ -12615,11 +12344,9 @@ func TestE2EIssueDetailRefreshesEditedCommentBody(t *testing.T) {
 
 	srv.syncer.RunOnce(ctx)
 
-	firstResp, err := client.HTTP.GetIssueWithResponse(
-		ctx, "gh", "acme", "widget", int64(issueNumber),
-	)
+	firstResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, firstResp.StatusCode())
+	require.Equal(http.StatusOK, firstResp.StatusCode)
 	require.NotNil(firstResp.JSON200)
 	require.NotNil(firstResp.JSON200.Events)
 	require.Len(firstResp.JSON200.Events, 1)
@@ -12636,11 +12363,9 @@ func TestE2EIssueDetailRefreshesEditedCommentBody(t *testing.T) {
 
 	srv.syncer.RunOnce(ctx)
 
-	secondResp, err := client.HTTP.GetIssueWithResponse(
-		ctx, "gh", "acme", "widget", int64(issueNumber),
-	)
+	secondResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, secondResp.StatusCode())
+	require.Equal(http.StatusOK, secondResp.StatusCode)
 	require.NotNil(secondResp.JSON200)
 	require.NotNil(secondResp.JSON200.Events)
 	require.Len(secondResp.JSON200.Events, 1)
@@ -12734,11 +12459,9 @@ func TestE2EIssueDetailRemovesDeletedCommentWhenIssueListIsUnchanged(t *testing.
 
 	srv.syncer.RunOnce(ctx)
 
-	firstResp, err := client.HTTP.GetIssueWithResponse(
-		ctx, "gh", "acme", "widget", int64(issueNumber),
-	)
+	firstResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, firstResp.StatusCode())
+	require.Equal(http.StatusOK, firstResp.StatusCode)
 	require.NotNil(firstResp.JSON200)
 	require.Equal(int64(1), firstResp.JSON200.Issue.CommentCount)
 	require.Equal(commentCreatedAt.UTC(), firstResp.JSON200.Issue.LastActivityAt.UTC())
@@ -12750,11 +12473,9 @@ func TestE2EIssueDetailRemovesDeletedCommentWhenIssueListIsUnchanged(t *testing.
 
 	srv.syncer.RunOnce(ctx)
 
-	secondResp, err := client.HTTP.GetIssueWithResponse(
-		ctx, "gh", "acme", "widget", int64(issueNumber),
-	)
+	secondResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, secondResp.StatusCode())
+	require.Equal(http.StatusOK, secondResp.StatusCode)
 	require.NotNil(secondResp.JSON200)
 	require.Equal(int64(0), secondResp.JSON200.Issue.CommentCount)
 	require.Equal(now.UTC(), secondResp.JSON200.Issue.LastActivityAt.UTC())
@@ -12877,11 +12598,9 @@ func TestE2EIssueDetailRemovesDeletedCommentWhenAnotherIssueChanges(t *testing.T
 
 	srv.syncer.RunOnce(ctx)
 
-	firstResp, err := client.HTTP.GetIssueWithResponse(
-		ctx, "gh", "acme", "widget", int64(targetNumber),
-	)
+	firstResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(targetNumber))}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, firstResp.StatusCode())
+	require.Equal(http.StatusOK, firstResp.StatusCode)
 	require.NotNil(firstResp.JSON200)
 	require.Equal(int64(1), firstResp.JSON200.Issue.CommentCount)
 	require.NotNil(firstResp.JSON200.Events)
@@ -12892,11 +12611,9 @@ func TestE2EIssueDetailRemovesDeletedCommentWhenAnotherIssueChanges(t *testing.T
 
 	srv.syncer.RunOnce(ctx)
 
-	secondResp, err := client.HTTP.GetIssueWithResponse(
-		ctx, "gh", "acme", "widget", int64(targetNumber),
-	)
+	secondResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(targetNumber))}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, secondResp.StatusCode())
+	require.Equal(http.StatusOK, secondResp.StatusCode)
 	require.NotNil(secondResp.JSON200)
 	require.Equal(int64(0), secondResp.JSON200.Issue.CommentCount)
 	require.NotNil(secondResp.JSON200.Events)
@@ -12979,11 +12696,9 @@ func TestE2EPRDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
 
 	require.NoError(srv.syncer.SyncMR(ctx, "acme", "widget", prNumber))
 
-	firstResp, err := client.HTTP.GetPullWithResponse(
-		ctx, "gh", "acme", "widget", int64(prNumber),
-	)
+	firstResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, firstResp.StatusCode())
+	require.Equal(http.StatusOK, firstResp.StatusCode)
 	require.NotNil(firstResp.JSON200)
 	require.Equal(int64(1), firstResp.JSON200.MergeRequest.CommentCount)
 	require.Equal(currentUpdatedAt.UTC(), firstResp.JSON200.MergeRequest.LastActivityAt.UTC())
@@ -12996,11 +12711,9 @@ func TestE2EPRDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
 
 	require.NoError(srv.syncer.SyncMR(ctx, "acme", "widget", prNumber))
 
-	secondResp, err := client.HTTP.GetPullWithResponse(
-		ctx, "gh", "acme", "widget", int64(prNumber),
-	)
+	secondResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, secondResp.StatusCode())
+	require.Equal(http.StatusOK, secondResp.StatusCode)
 	require.NotNil(secondResp.JSON200)
 	require.Equal(int64(0), secondResp.JSON200.MergeRequest.CommentCount)
 	require.Equal(currentUpdatedAt.UTC(), secondResp.JSON200.MergeRequest.LastActivityAt.UTC())
@@ -13076,11 +12789,9 @@ func TestE2EIssueDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
 
 	require.NoError(srv.syncer.SyncIssue(ctx, "acme", "widget", issueNumber))
 
-	firstResp, err := client.HTTP.GetIssueWithResponse(
-		ctx, "gh", "acme", "widget", int64(issueNumber),
-	)
+	firstResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, firstResp.StatusCode())
+	require.Equal(http.StatusOK, firstResp.StatusCode)
 	require.NotNil(firstResp.JSON200)
 	require.Equal(int64(1), firstResp.JSON200.Issue.CommentCount)
 	require.Equal(commentCreatedAt.UTC(), firstResp.JSON200.Issue.LastActivityAt.UTC())
@@ -13093,11 +12804,9 @@ func TestE2EIssueDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
 
 	require.NoError(srv.syncer.SyncIssue(ctx, "acme", "widget", issueNumber))
 
-	secondResp, err := client.HTTP.GetIssueWithResponse(
-		ctx, "gh", "acme", "widget", int64(issueNumber),
-	)
+	secondResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, secondResp.StatusCode())
+	require.Equal(http.StatusOK, secondResp.StatusCode)
 	require.NotNil(secondResp.JSON200)
 	require.Equal(int64(0), secondResp.JSON200.Issue.CommentCount)
 	require.Equal(currentUpdatedAt.UTC(), secondResp.JSON200.Issue.LastActivityAt.UTC())
@@ -13194,11 +12903,9 @@ func TestE2EIssueDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 
 	srv.syncer.RunOnce(ctx)
 
-	firstResp, err := client.HTTP.GetIssueWithResponse(
-		ctx, "gh", "acme", "widget", int64(issueNumber),
-	)
+	firstResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, firstResp.StatusCode())
+	require.Equal(http.StatusOK, firstResp.StatusCode)
 	require.NotNil(firstResp.JSON200)
 	require.Equal(int64(1), firstResp.JSON200.Issue.CommentCount)
 	require.Equal(now.UTC(), firstResp.JSON200.Issue.LastActivityAt.UTC())
@@ -13211,11 +12918,9 @@ func TestE2EIssueDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 
 	srv.syncer.RunOnce(ctx)
 
-	secondResp, err := client.HTTP.GetIssueWithResponse(
-		ctx, "gh", "acme", "widget", int64(issueNumber),
-	)
+	secondResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, secondResp.StatusCode())
+	require.Equal(http.StatusOK, secondResp.StatusCode)
 	require.NotNil(secondResp.JSON200)
 	require.Equal(int64(0), secondResp.JSON200.Issue.CommentCount)
 	require.Equal(now.Add(time.Minute).UTC(), secondResp.JSON200.Issue.LastActivityAt.UTC())
@@ -13381,11 +13086,9 @@ func TestE2EIssueDetailPreservesHiddenCommentsAcrossIncompleteGraphQLRefresh(t *
 	srv.syncer.RunOnce(ctx)
 	assert.Zero(restCommentCalls.Load())
 
-	firstResp, err := client.HTTP.GetIssueWithResponse(
-		ctx, "gh", "acme", "widget", int64(issueNumber),
-	)
+	firstResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, firstResp.StatusCode())
+	require.Equal(http.StatusOK, firstResp.StatusCode)
 	require.NotNil(firstResp.JSON200)
 	require.NotNil(firstResp.JSON200.Events)
 	require.Len(firstResp.JSON200.Events, 2)
@@ -13398,11 +13101,9 @@ func TestE2EIssueDetailPreservesHiddenCommentsAcrossIncompleteGraphQLRefresh(t *
 	srv.syncer.RunOnce(ctx)
 	assert.Equal(int32(1), restCommentCalls.Load())
 
-	secondResp, err := client.HTTP.GetIssueWithResponse(
-		ctx, "gh", "acme", "widget", int64(issueNumber),
-	)
+	secondResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, secondResp.StatusCode())
+	require.Equal(http.StatusOK, secondResp.StatusCode)
 	require.NotNil(secondResp.JSON200)
 	require.NotNil(secondResp.JSON200.Events)
 	require.Len(secondResp.JSON200.Events, 2)
@@ -13528,11 +13229,9 @@ func TestE2EGraphQLBulkSyncPersistsIssueTimelineEvents(t *testing.T) {
 
 	srv.syncer.RunOnce(ctx)
 
-	resp, err := client.HTTP.GetIssueWithResponse(
-		ctx, "gh", "acme", "widget", int64(issueNumber),
-	)
+	resp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.True(resp.JSON200.DetailLoaded)
 	require.NotNil(resp.JSON200.Events)
@@ -13701,11 +13400,9 @@ func TestE2EGraphQLBulkSyncPersistsIssueLifecycleTimelineAfterReopen(t *testing.
 	phase = "closed"
 	srv.syncer.RunOnce(ctx)
 
-	closedResp, err := client.HTTP.GetIssueWithResponse(
-		ctx, "gh", "acme", "widget", int64(issueNumber),
-	)
+	closedResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, closedResp.StatusCode())
+	require.Equal(http.StatusOK, closedResp.StatusCode)
 	require.NotNil(closedResp.JSON200)
 	assert.Equal("closed", closedResp.JSON200.Issue.State)
 	require.NotNil(closedResp.JSON200.Events)
@@ -13714,11 +13411,9 @@ func TestE2EGraphQLBulkSyncPersistsIssueLifecycleTimelineAfterReopen(t *testing.
 	phase = "reopened"
 	srv.syncer.RunOnce(ctx)
 
-	reopenedResp, err := client.HTTP.GetIssueWithResponse(
-		ctx, "gh", "acme", "widget", int64(issueNumber),
-	)
+	reopenedResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, reopenedResp.StatusCode())
+	require.Equal(http.StatusOK, reopenedResp.StatusCode)
 	require.NotNil(reopenedResp.JSON200)
 	assert.Equal("open", reopenedResp.JSON200.Issue.State)
 	require.NotNil(reopenedResp.JSON200.Events)
@@ -13839,11 +13534,9 @@ func TestE2EPRDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 
 	srv.syncer.RunOnce(ctx)
 
-	firstResp, err := client.HTTP.GetPullWithResponse(
-		ctx, "gh", "acme", "widget", int64(prNumber),
-	)
+	firstResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, firstResp.StatusCode())
+	require.Equal(http.StatusOK, firstResp.StatusCode)
 	require.NotNil(firstResp.JSON200)
 	require.Equal(int64(1), firstResp.JSON200.MergeRequest.CommentCount)
 	require.Equal(now.Add(3*time.Minute).UTC(), firstResp.JSON200.MergeRequest.LastActivityAt.UTC())
@@ -13856,11 +13549,9 @@ func TestE2EPRDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 
 	srv.syncer.RunOnce(ctx)
 
-	secondResp, err := client.HTTP.GetPullWithResponse(
-		ctx, "gh", "acme", "widget", int64(prNumber),
-	)
+	secondResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, secondResp.StatusCode())
+	require.Equal(http.StatusOK, secondResp.StatusCode)
 	require.NotNil(secondResp.JSON200)
 	require.Equal(int64(0), secondResp.JSON200.MergeRequest.CommentCount)
 	require.Equal(now.Add(4*time.Minute).UTC(), secondResp.JSON200.MergeRequest.LastActivityAt.UTC())
@@ -14035,9 +13726,9 @@ func TestE2EPRDetailPersistsCombinedGraphQLDiscussions(t *testing.T) {
 
 	srv.syncer.RunOnce(ctx)
 	assert.Zero(restCommentCalls.Load())
-	firstResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", int64(prNumber))
+	firstResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, firstResp.StatusCode())
+	require.Equal(http.StatusOK, firstResp.StatusCode)
 	require.NotNil(firstResp.JSON200)
 	require.NotNil(firstResp.JSON200.Events)
 	require.Len(firstResp.JSON200.Events, 3)
@@ -14053,8 +13744,8 @@ func TestE2EPRDetailPersistsCombinedGraphQLDiscussions(t *testing.T) {
 			assert.Equal(reviewCreatedAt, event.CreatedAt)
 			assert.JSONEq(`{"provider_hidden":true,"provider_hidden_reason":"ABUSE"}`, event.MetadataJSON)
 			require.NotNil(event.DiffThread)
-			require.NotNil(event.DiffThread.MetadataJson)
-			assert.JSONEq(`{"provider_hidden":true,"provider_hidden_reason":"ABUSE"}`, *event.DiffThread.MetadataJson)
+			require.NotNil(event.DiffThread.MetadataJSON)
+			assert.JSONEq(`{"provider_hidden":true,"provider_hidden_reason":"ABUSE"}`, *event.DiffThread.MetadataJSON)
 			continue
 		}
 		require.NotNil(event.PlatformID)
@@ -14080,9 +13771,9 @@ func TestE2EPRDetailPersistsCombinedGraphQLDiscussions(t *testing.T) {
 	reviewThreadsPageInfo = `{"hasNextPage":true,"endCursor":"thread-cursor"}`
 	srv.syncer.RunOnce(ctx)
 	assert.Zero(restCommentCalls.Load())
-	secondResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", int64(prNumber))
+	secondResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, secondResp.StatusCode())
+	require.Equal(http.StatusOK, secondResp.StatusCode)
 	require.NotNil(secondResp.JSON200)
 	require.NotNil(secondResp.JSON200.Events)
 	require.Len(secondResp.JSON200.Events, 3)
@@ -14214,9 +13905,9 @@ func TestE2EGraphQLBulkSyncAppliesAuthoritativeReviewDecisionOverIncompleteRevie
 
 	// First pass persists the APPROVED decision through the real pipeline.
 	srv.syncer.RunOnce(ctx)
-	firstResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", int64(prNumber))
+	firstResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, firstResp.StatusCode())
+	require.Equal(http.StatusOK, firstResp.StatusCode)
 	require.NotNil(firstResp.JSON200)
 	require.Equal("approved", firstResp.JSON200.MergeRequest.ReviewDecision)
 
@@ -14228,9 +13919,9 @@ func TestE2EGraphQLBulkSyncAppliesAuthoritativeReviewDecisionOverIncompleteRevie
 	currentReviewsConn = `{"nodes":[],"pageInfo":{"hasNextPage":true,"endCursor":"review-cursor"}}`
 
 	srv.syncer.RunOnce(ctx)
-	secondResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", int64(prNumber))
+	secondResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, secondResp.StatusCode())
+	require.Equal(http.StatusOK, secondResp.StatusCode)
 	require.NotNil(secondResp.JSON200)
 	assert.Equal("changes_requested", secondResp.JSON200.MergeRequest.ReviewDecision)
 }
@@ -14335,11 +14026,9 @@ func TestE2EGraphQLBulkSyncPersistsWorkflowApproval(t *testing.T) {
 
 	srv.syncer.RunOnce(ctx)
 
-	resp, err := client.HTTP.GetPullWithResponse(
-		ctx, "gh", "acme", "widget", int64(prNumber),
-	)
+	resp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.WorkflowApproval)
 	assert.True(resp.JSON200.WorkflowApproval.Checked,
@@ -14462,11 +14151,9 @@ func TestE2EGraphQLBulkSyncPersistsWorkflowApprovalForForkPR(t *testing.T) {
 
 	srv.syncer.RunOnce(ctx)
 
-	resp, err := client.HTTP.GetPullWithResponse(
-		ctx, "gh", "acme", "widget", int64(prNumber),
-	)
+	resp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.WorkflowApproval)
 	assert.True(resp.JSON200.WorkflowApproval.Checked,
@@ -14574,11 +14261,9 @@ func TestE2EGraphQLBulkSyncKeepsNewestCICheckBySuiteCreatedAt(t *testing.T) {
 
 	srv.syncer.RunOnce(ctx)
 
-	resp, err := client.HTTP.GetPullWithResponse(
-		ctx, "gh", "acme", "widget", int64(prNumber),
-	)
+	resp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.MergeRequest)
 	require.Equal("success", resp.JSON200.MergeRequest.CIStatus)
@@ -14628,12 +14313,10 @@ func TestAPISetIssueGitHubStateReturns404WhenNoClientConfigured(t *testing.T) {
 	require.NoError(err)
 
 	client := setupTestClient(t, srv)
-	resp, err := client.HTTP.SetIssueGithubStateWithResponse(
-		ctx, "gh", "acme", "widget", 5,
-		generated.SetIssueGithubStateJSONRequestBody{State: "closed"},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusNotFound, resp.StatusCode())
+	resp, err := client.HTTP.SetIssueGithubStateWithResponse(ctx, &generated.SetIssueGithubStateRequestOptions{PathParams: &generated.SetIssueGithubStatePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(5)}, Body: &generated.SetIssueGithubStateBody{State: "closed"}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusNotFound, resp.StatusCode)
 }
 
 func TestAPIClosePR422NilFallbackPayloadDoesNotCorruptDB(t *testing.T) {
@@ -14655,12 +14338,10 @@ func TestAPIClosePR422NilFallbackPayloadDoesNotCorruptDB(t *testing.T) {
 	require.NotNil(before)
 
 	client := setupTestClient(t, srv)
-	resp, err := client.HTTP.SetPrGithubStateWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-		generated.SetPrGithubStateJSONRequestBody{State: "closed"},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusBadGateway, resp.StatusCode())
+	resp, err := client.HTTP.SetPrGithubStateWithResponse(t.Context(), &generated.SetPrGithubStateRequestOptions{PathParams: &generated.SetPrGithubStatePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.SetPrGithubStateBody{State: "closed"}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusBadGateway, resp.StatusCode)
 
 	after, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
@@ -14689,12 +14370,10 @@ func TestAPICloseIssue422NilFallbackPayloadDoesNotCorruptDB(t *testing.T) {
 	require.NotNil(before)
 
 	client := setupTestClient(t, srv)
-	resp, err := client.HTTP.SetIssueGithubStateWithResponse(
-		t.Context(), "gh", "acme", "widget", 5,
-		generated.SetIssueGithubStateJSONRequestBody{State: "closed"},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusBadGateway, resp.StatusCode())
+	resp, err := client.HTTP.SetIssueGithubStateWithResponse(t.Context(), &generated.SetIssueGithubStateRequestOptions{PathParams: &generated.SetIssueGithubStatePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(5)}, Body: &generated.SetIssueGithubStateBody{State: "closed"}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusBadGateway, resp.StatusCode)
 
 	after, err := database.GetIssue(t.Context(), "github", "github.com", "acme", "widget", 5)
 	require.NoError(err)
@@ -14732,20 +14411,14 @@ func TestAPIStateMutationDoesNotRecoverFromProviderWhenSyncDisabled(t *testing.T
 			var status int
 			if itemType == "pull request" {
 				seedPR(t, database, "acme", "widget", 1)
-				resp, err := client.HTTP.SetPrGithubStateWithResponse(
-					t.Context(), "gh", "acme", "widget", 1,
-					generated.SetPrGithubStateJSONRequestBody{State: "closed"},
-				)
-				require.NoError(err)
-				status = resp.StatusCode()
+				resp, err := client.HTTP.SetPrGithubStateWithResponse(t.Context(), &generated.SetPrGithubStateRequestOptions{PathParams: &generated.SetPrGithubStatePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.SetPrGithubStateBody{State: "closed"}})
+				require.Error(err)
+				status = resp.StatusCode
 			} else {
 				seedIssue(t, database, "acme", "widget", 5, "open")
-				resp, err := client.HTTP.SetIssueGithubStateWithResponse(
-					t.Context(), "gh", "acme", "widget", 5,
-					generated.SetIssueGithubStateJSONRequestBody{State: "closed"},
-				)
-				require.NoError(err)
-				status = resp.StatusCode()
+				resp, err := client.HTTP.SetIssueGithubStateWithResponse(t.Context(), &generated.SetIssueGithubStateRequestOptions{PathParams: &generated.SetIssueGithubStatePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(5)}, Body: &generated.SetIssueGithubStateBody{State: "closed"}})
+				require.Error(err)
+				status = resp.StatusCode
 			}
 			require.Equal(http.StatusServiceUnavailable, status)
 			require.Zero(recoveryReads.Load())
@@ -14781,12 +14454,9 @@ func TestAPIClosePR422AlreadyClosed(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.SetPrGithubStateWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-		generated.SetPrGithubStateJSONRequestBody{State: "closed"},
-	)
+	resp, err := client.HTTP.SetPrGithubStateWithResponse(t.Context(), &generated.SetPrGithubStateRequestOptions{PathParams: &generated.SetPrGithubStatePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.SetPrGithubStateBody{State: "closed"}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 
 	pr, _ := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.Equal(db.MergeRequestStateClosed, pr.State)
@@ -14846,12 +14516,9 @@ func TestAPIMarkPRDraftPersistsDraftFlag(t *testing.T) {
 	require.NoError(err)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.SetPrGithubStateWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-		generated.SetPrGithubStateJSONRequestBody{State: "draft"},
-	)
+	resp, err := client.HTTP.SetPrGithubStateWithResponse(t.Context(), &generated.SetPrGithubStateRequestOptions{PathParams: &generated.SetPrGithubStatePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.SetPrGithubStateBody{State: "draft"}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 
 	assert.Equal("acme", gotOwner)
 	assert.Equal("widget", gotRepo)
@@ -14885,11 +14552,10 @@ func TestAPIReadyForReview502OnNilPR(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.MarkPullReadyForReviewWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-	)
-	require.NoError(err)
-	require.Equal(http.StatusBadGateway, resp.StatusCode())
+	resp, err := client.HTTP.MarkPullReadyForReviewWithResponse(t.Context(), &generated.MarkPullReadyForReviewRequestOptions{PathParams: &generated.MarkPullReadyForReviewPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusBadGateway, resp.StatusCode)
 }
 
 func TestAPIReadyForReviewReturnsUnderlyingErrorDetail(t *testing.T) {
@@ -14904,16 +14570,15 @@ func TestAPIReadyForReviewReturnsUnderlyingErrorDetail(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.MarkPullReadyForReviewWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-	)
-	require.NoError(err)
-	require.Equal(http.StatusBadGateway, resp.StatusCode())
-	require.NotNil(resp.ApplicationproblemJSONDefault)
-	require.NotNil(resp.ApplicationproblemJSONDefault.Detail)
+	resp, err := client.HTTP.MarkPullReadyForReviewWithResponse(t.Context(), &generated.MarkPullReadyForReviewRequestOptions{PathParams: &generated.MarkPullReadyForReviewPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusBadGateway, resp.StatusCode)
+	require.NotNil(resp.Error)
+	require.NotNil(resp.Error.Detail)
 	require.Equal(
 		"marking acme/widget#1 ready for review: draft review threads still pending",
-		*resp.ApplicationproblemJSONDefault.Detail,
+		*resp.Error.Detail,
 	)
 }
 
@@ -14969,11 +14634,9 @@ func TestAPIReadyForReviewStaleStateRefreshesAndReturnsSuccess(t *testing.T) {
 
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.MarkPullReadyForReviewWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-	)
+	resp, err := client.HTTP.MarkPullReadyForReviewWithResponse(t.Context(), &generated.MarkPullReadyForReviewRequestOptions{PathParams: &generated.MarkPullReadyForReviewPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 
 	pr, err = database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
@@ -15023,11 +14686,9 @@ func TestAPIReadyForReview404RefreshesStaleDraftState(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.MarkPullReadyForReviewWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-	)
+	resp, err := client.HTTP.MarkPullReadyForReviewWithResponse(t.Context(), &generated.MarkPullReadyForReviewRequestOptions{PathParams: &generated.MarkPullReadyForReviewPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 
 	pr, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
@@ -15062,12 +14723,9 @@ func TestAPIClosePR422Merged(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.SetPrGithubStateWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-		generated.SetPrGithubStateJSONRequestBody{State: "closed"},
-	)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusConflict, resp.StatusCode())
+	resp, err := client.HTTP.SetPrGithubStateWithResponse(t.Context(), &generated.SetPrGithubStateRequestOptions{PathParams: &generated.SetPrGithubStatePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.SetPrGithubStateBody{State: "closed"}})
+	require.Error(t, err)
+	require.Equal(t, http.StatusConflict, resp.StatusCode)
 }
 
 func TestResolveItem_PR(t *testing.T) {
@@ -15078,11 +14736,9 @@ func TestResolveItem_PR(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 42)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.ResolveRepoItemWithResponse(
-		t.Context(), "gh", "acme", "widget", 42, nil,
-	)
+	resp, err := client.HTTP.ResolveRepoItemWithResponse(t.Context(), &generated.ResolveRepoItemRequestOptions{PathParams: &generated.ResolveRepoItemPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(42)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.Equal("pr", resp.JSON200.ItemType)
 	require.EqualValues(42, resp.JSON200.Number)
@@ -15097,11 +14753,9 @@ func TestResolveItem_Issue(t *testing.T) {
 	seedIssue(t, database, "acme", "widget", 7, "open")
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.ResolveRepoItemWithResponse(
-		t.Context(), "gh", "acme", "widget", 7, nil,
-	)
+	resp, err := client.HTTP.ResolveRepoItemWithResponse(t.Context(), &generated.ResolveRepoItemRequestOptions{PathParams: &generated.ResolveRepoItemPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(7)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.Equal("issue", resp.JSON200.ItemType)
 	require.EqualValues(7, resp.JSON200.Number)
@@ -15155,14 +14809,11 @@ func TestResolveItem_UsesItemTypeHintForGitLab(t *testing.T) {
 	})
 	require.NoError(err)
 	client := setupTestClient(t, srv)
-	itemType := generated.ResolveRepoItemOnHostParamsItemTypeIssue
+	itemType := generated.ResolveRepoItemOnHostQueryItemTypeIssue
 
-	resp, err := client.HTTP.ResolveRepoItemOnHostWithResponse(
-		t.Context(), "gitlab.example.com", "gitlab", "group", "project", 10,
-		&generated.ResolveRepoItemOnHostParams{ItemType: &itemType},
-	)
+	resp, err := client.HTTP.ResolveRepoItemOnHostWithResponse(t.Context(), &generated.ResolveRepoItemOnHostRequestOptions{PathParams: &generated.ResolveRepoItemOnHostPath{PlatformHost: "gitlab.example.com", Provider: "gitlab", Owner: "group", Name: "project", Number: int64(10)}, Query: &generated.ResolveRepoItemOnHostQuery{ItemType: &itemType}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.Equal("issue", resp.JSON200.ItemType)
 	require.EqualValues(10, resp.JSON200.Number)
@@ -15186,11 +14837,10 @@ func TestResolveItem_NotFoundOnGitHub(t *testing.T) {
 	require.NoError(err)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.ResolveRepoItemWithResponse(
-		t.Context(), "gh", "acme", "widget", 999, nil,
-	)
-	require.NoError(err)
-	require.Equal(http.StatusNotFound, resp.StatusCode())
+	resp, err := client.HTTP.ResolveRepoItemWithResponse(t.Context(), &generated.ResolveRepoItemRequestOptions{PathParams: &generated.ResolveRepoItemPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(999)}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusNotFound, resp.StatusCode)
 }
 
 func TestResolveItem_GitHubServerError(t *testing.T) {
@@ -15210,11 +14860,10 @@ func TestResolveItem_GitHubServerError(t *testing.T) {
 	require.NoError(err)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.ResolveRepoItemWithResponse(
-		t.Context(), "gh", "acme", "widget", 999, nil,
-	)
-	require.NoError(err)
-	require.Equal(http.StatusBadGateway, resp.StatusCode())
+	resp, err := client.HTTP.ResolveRepoItemWithResponse(t.Context(), &generated.ResolveRepoItemRequestOptions{PathParams: &generated.ResolveRepoItemPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(999)}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusBadGateway, resp.StatusCode)
 }
 
 func TestAPICloseIssue422AlreadyClosed(t *testing.T) {
@@ -15241,12 +14890,9 @@ func TestAPICloseIssue422AlreadyClosed(t *testing.T) {
 	seedIssue(t, database, "acme", "widget", 5, "open")
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.SetIssueGithubStateWithResponse(
-		t.Context(), "gh", "acme", "widget", 5,
-		generated.SetIssueGithubStateJSONRequestBody{State: "closed"},
-	)
+	resp, err := client.HTTP.SetIssueGithubStateWithResponse(t.Context(), &generated.SetIssueGithubStateRequestOptions{PathParams: &generated.SetIssueGithubStatePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(5)}, Body: &generated.SetIssueGithubStateBody{State: "closed"}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 
 	issue, _ := database.GetIssue(t.Context(), "github", "github.com", "acme", "widget", 5)
 	require.Equal("closed", issue.State)
@@ -19630,11 +19276,9 @@ func TestAPIGitealikeReadSyncPersistsThroughServer(t *testing.T) {
 	assert.True(mr.IsLocked)
 	assert.Equal("success", mr.CIStatus)
 
-	pullResp, err := client.HTTP.GetPullOnHostWithResponse(
-		ctx, "codeberg.test", "forgejo", "forgejo", "tea", 7,
-	)
+	pullResp, err := client.HTTP.GetPullOnHostWithResponse(ctx, &generated.GetPullOnHostRequestOptions{PathParams: &generated.GetPullOnHostPath{PlatformHost: "codeberg.test", Provider: "forgejo", Owner: "forgejo", Name: "tea", Number: int64(7)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, pullResp.StatusCode())
+	require.Equal(http.StatusOK, pullResp.StatusCode)
 	require.NotNil(pullResp.JSON200)
 	assert.True(pullResp.JSON200.MergeRequest.IsLocked)
 	assert.Equal("forgejo", pullResp.JSON200.Repo.Provider)
@@ -19644,11 +19288,9 @@ func TestAPIGitealikeReadSyncPersistsThroughServer(t *testing.T) {
 	require.Len(pullResp.JSON200.Events, 1)
 	assert.Equal("looks good", pullResp.JSON200.Events[0].Body)
 
-	issueResp, err := client.HTTP.GetIssueOnHostWithResponse(
-		ctx, "codeberg.test", "forgejo", "forgejo", "tea", 8,
-	)
+	issueResp, err := client.HTTP.GetIssueOnHostWithResponse(ctx, &generated.GetIssueOnHostRequestOptions{PathParams: &generated.GetIssueOnHostPath{PlatformHost: "codeberg.test", Provider: "forgejo", Owner: "forgejo", Name: "tea", Number: int64(8)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, issueResp.StatusCode())
+	require.Equal(http.StatusOK, issueResp.StatusCode)
 	require.NotNil(issueResp.JSON200)
 	assert.Equal("Missing cup", issueResp.JSON200.Issue.Title)
 	require.NotNil(issueResp.JSON200.Events)
@@ -19793,11 +19435,9 @@ func TestAPIGitealikeHTTPMergeabilityPersistsThroughServer(t *testing.T) {
 			assert.Empty(requireMR(t, database, repo.ID, 8).MergeableState)
 			assert.Empty(requireMR(t, database, repo.ID, 9).MergeableState)
 
-			detailResp, err := client.HTTP.GetPullOnHostWithResponse(
-				ctx, tt.host, string(tt.kind), "tea", "kettle", 7,
-			)
+			detailResp, err := client.HTTP.GetPullOnHostWithResponse(ctx, &generated.GetPullOnHostRequestOptions{PathParams: &generated.GetPullOnHostPath{PlatformHost: tt.host, Provider: string(tt.kind), Owner: "tea", Name: "kettle", Number: int64(7)}})
 			require.NoError(err)
-			require.Equal(http.StatusOK, detailResp.StatusCode(), string(detailResp.Body))
+			require.Equal(http.StatusOK, detailResp.StatusCode, string(detailResp.Body))
 			require.NotNil(detailResp.JSON200)
 			assert.Equal("dirty", detailResp.JSON200.MergeRequest.MergeableState)
 		})
@@ -19906,15 +19546,12 @@ func TestAPIGitealikeMutationsPersistThroughServer(t *testing.T) {
 
 	editedTitle := "Edited kettle"
 	editedBody := "Updated kettle body"
-	editContentResp, err := client.HTTP.EditPrContentOnHostWithResponse(
-		ctx, "gitea.test", "gitea", "tea", "kettle", 7,
-		generated.EditPrContentOnHostJSONRequestBody{
-			Title: &editedTitle,
-			Body:  &editedBody,
-		},
-	)
+	editContentResp, err := client.HTTP.EditPrContentOnHostWithResponse(ctx, &generated.EditPrContentOnHostRequestOptions{PathParams: &generated.EditPrContentOnHostPath{PlatformHost: "gitea.test", Provider: "gitea", Owner: "tea", Name: "kettle", Number: int64(7)}, Body: &generated.EditPrContentOnHostBody{
+		Title: &editedTitle,
+		Body:  &editedBody,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, editContentResp.StatusCode())
+	require.Equal(http.StatusOK, editContentResp.StatusCode)
 	require.NotNil(editContentResp.JSON200)
 	assert.Equal(editedTitle, editContentResp.JSON200.MergeRequest.Title)
 	assert.Equal(editedBody, editContentResp.JSON200.MergeRequest.Body)
@@ -19922,12 +19559,9 @@ func TestAPIGitealikeMutationsPersistThroughServer(t *testing.T) {
 	assert.Equal(editedTitle, mrSeven.Title)
 	assert.Equal(editedBody, mrSeven.Body)
 
-	commentResp, err := client.HTTP.PostPrCommentOnHostWithResponse(
-		ctx, "gitea.test", "gitea", "tea", "kettle", 7,
-		generated.PostPrCommentOnHostJSONRequestBody{Body: "Looks good"},
-	)
+	commentResp, err := client.HTTP.PostPrCommentOnHostWithResponse(ctx, &generated.PostPrCommentOnHostRequestOptions{PathParams: &generated.PostPrCommentOnHostPath{PlatformHost: "gitea.test", Provider: "gitea", Owner: "tea", Name: "kettle", Number: int64(7)}, Body: &generated.PostPrCommentOnHostBody{Body: "Looks good"}})
 	require.NoError(err)
-	require.Equal(http.StatusCreated, commentResp.StatusCode())
+	require.Equal(http.StatusCreated, commentResp.StatusCode)
 	mrEvents, err := database.ListMREvents(ctx, mrSeven.ID)
 	require.NoError(err)
 	require.Len(mrEvents, 1)
@@ -19935,27 +19569,21 @@ func TestAPIGitealikeMutationsPersistThroughServer(t *testing.T) {
 	commentID := *mrEvents[0].PlatformID
 	assert.Equal("Looks good", mrEvents[0].Body)
 
-	editCommentResp, err := client.HTTP.EditPrCommentOnHostWithResponse(
-		ctx, "gitea.test", "gitea", "tea", "kettle", 7, commentID,
-		generated.EditPrCommentOnHostJSONRequestBody{Body: "Still good"},
-	)
+	editCommentResp, err := client.HTTP.EditPrCommentOnHostWithResponse(ctx, &generated.EditPrCommentOnHostRequestOptions{PathParams: &generated.EditPrCommentOnHostPath{PlatformHost: "gitea.test", Provider: "gitea", Owner: "tea", Name: "kettle", Number: int64(7), CommentID: int64(commentID)}, Body: &generated.EditPrCommentOnHostBody{Body: "Still good"}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, editCommentResp.StatusCode())
+	require.Equal(http.StatusOK, editCommentResp.StatusCode)
 	mrEvents, err = database.ListMREvents(ctx, mrSeven.ID)
 	require.NoError(err)
 	require.Len(mrEvents, 1)
 	assert.Equal("Still good", mrEvents[0].Body)
 	expectedHeadSHA := mrSeven.PlatformHeadSHA
 
-	approveResp, err := client.HTTP.ApprovePullOnHostWithResponse(
-		ctx, "gitea.test", "gitea", "tea", "kettle", 7,
-		generated.ApprovePullOnHostJSONRequestBody{
-			Body:            "approved",
-			ExpectedHeadSha: &expectedHeadSHA,
-		},
-	)
+	approveResp, err := client.HTTP.ApprovePullOnHostWithResponse(ctx, &generated.ApprovePullOnHostRequestOptions{PathParams: &generated.ApprovePullOnHostPath{PlatformHost: "gitea.test", Provider: "gitea", Owner: "tea", Name: "kettle", Number: int64(7)}, Body: &generated.ApprovePullOnHostBody{
+		Body:            "approved",
+		ExpectedHeadSha: &expectedHeadSHA,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, approveResp.StatusCode(), string(approveResp.Body))
+	require.Equal(http.StatusOK, approveResp.StatusCode, string(approveResp.Body))
 	mrEvents, err = database.ListMREvents(ctx, mrSeven.ID)
 	require.NoError(err)
 	require.Len(mrEvents, 2)
@@ -19969,48 +19597,36 @@ func TestAPIGitealikeMutationsPersistThroughServer(t *testing.T) {
 	require.NotNil(reviewEvent)
 	assert.Equal("APPROVED", reviewEvent.Summary)
 
-	mergeResp, err := client.HTTP.MergePullOnHostWithResponse(
-		ctx, "gitea.test", "gitea", "tea", "kettle", 7,
-		generated.MergePullOnHostJSONRequestBody{
-			Method:          "squash",
-			CommitTitle:     "Merge kettle",
-			CommitMessage:   "Merge Gitea MR",
-			ExpectedHeadSha: &expectedHeadSHA,
-		},
-	)
+	mergeResp, err := client.HTTP.MergePullOnHostWithResponse(ctx, &generated.MergePullOnHostRequestOptions{PathParams: &generated.MergePullOnHostPath{PlatformHost: "gitea.test", Provider: "gitea", Owner: "tea", Name: "kettle", Number: int64(7)}, Body: &generated.MergePullOnHostBody{
+		Method:          "squash",
+		CommitTitle:     "Merge kettle",
+		CommitMessage:   "Merge Gitea MR",
+		ExpectedHeadSha: &expectedHeadSHA,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, mergeResp.StatusCode())
+	require.Equal(http.StatusOK, mergeResp.StatusCode)
 	mrSeven = requireMR(t, database, repo.ID, 7)
 	assert.Equal(db.MergeRequestStateMerged, mrSeven.State)
 	require.NotNil(mrSeven.MergedAt)
 
-	stateResp, err := client.HTTP.SetPrGithubStateOnHostWithResponse(
-		ctx, "gitea.test", "gitea", "tea", "kettle", 9,
-		generated.SetPrGithubStateOnHostJSONRequestBody{State: "closed"},
-	)
+	stateResp, err := client.HTTP.SetPrGithubStateOnHostWithResponse(ctx, &generated.SetPrGithubStateOnHostRequestOptions{PathParams: &generated.SetPrGithubStateOnHostPath{PlatformHost: "gitea.test", Provider: "gitea", Owner: "tea", Name: "kettle", Number: int64(9)}, Body: &generated.SetPrGithubStateOnHostBody{State: "closed"}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, stateResp.StatusCode())
+	require.Equal(http.StatusOK, stateResp.StatusCode)
 	mrNine := requireMR(t, database, repo.ID, 9)
 	assert.Equal(db.MergeRequestStateClosed, mrNine.State)
 	require.NotNil(mrNine.ClosedAt)
 
-	createIssueResp, err := client.HTTP.CreateIssueOnHostWithResponse(
-		ctx, "gitea.test", "gitea", "tea", "kettle",
-		generated.CreateIssueOnHostJSONRequestBody{Title: "New issue", Body: "New issue body"},
-	)
+	createIssueResp, err := client.HTTP.CreateIssueOnHostWithResponse(ctx, &generated.CreateIssueOnHostRequestOptions{PathParams: &generated.CreateIssueOnHostPath{PlatformHost: "gitea.test", Provider: "gitea", Owner: "tea", Name: "kettle"}, Body: &generated.CreateIssueOnHostBody{Title: "New issue", Body: "New issue body"}})
 	require.NoError(err)
-	require.Equal(http.StatusCreated, createIssueResp.StatusCode())
+	require.Equal(http.StatusCreated, createIssueResp.StatusCode)
 	createdIssue, err := database.GetIssueByRepoIDAndNumber(ctx, repo.ID, 81)
 	require.NoError(err)
 	require.NotNil(createdIssue)
 	assert.Equal("New issue", createdIssue.Title)
 
-	issueCommentResp, err := client.HTTP.PostIssueCommentOnHostWithResponse(
-		ctx, "gitea.test", "gitea", "tea", "kettle", 8,
-		generated.PostIssueCommentOnHostJSONRequestBody{Body: "Confirmed"},
-	)
+	issueCommentResp, err := client.HTTP.PostIssueCommentOnHostWithResponse(ctx, &generated.PostIssueCommentOnHostRequestOptions{PathParams: &generated.PostIssueCommentOnHostPath{PlatformHost: "gitea.test", Provider: "gitea", Owner: "tea", Name: "kettle", Number: int64(8)}, Body: &generated.PostIssueCommentOnHostBody{Body: "Confirmed"}})
 	require.NoError(err)
-	require.Equal(http.StatusCreated, issueCommentResp.StatusCode())
+	require.Equal(http.StatusCreated, issueCommentResp.StatusCode)
 	issueEight := requireIssue(t, database, repo.ID, 8)
 	issueEvents, err := database.ListIssueEvents(ctx, issueEight.ID)
 	require.NoError(err)
@@ -20019,23 +19635,17 @@ func TestAPIGitealikeMutationsPersistThroughServer(t *testing.T) {
 	issueCommentID := *issueEvents[0].PlatformID
 	assert.Equal("Confirmed", issueEvents[0].Body)
 
-	editIssueCommentResp, err := client.HTTP.EditIssueCommentOnHostWithResponse(
-		ctx, "gitea.test", "gitea", "tea", "kettle", 8, issueCommentID,
-		generated.EditIssueCommentOnHostJSONRequestBody{Body: "Confirmed again"},
-	)
+	editIssueCommentResp, err := client.HTTP.EditIssueCommentOnHostWithResponse(ctx, &generated.EditIssueCommentOnHostRequestOptions{PathParams: &generated.EditIssueCommentOnHostPath{PlatformHost: "gitea.test", Provider: "gitea", Owner: "tea", Name: "kettle", Number: int64(8), CommentID: int64(issueCommentID)}, Body: &generated.EditIssueCommentOnHostBody{Body: "Confirmed again"}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, editIssueCommentResp.StatusCode())
+	require.Equal(http.StatusOK, editIssueCommentResp.StatusCode)
 	issueEvents, err = database.ListIssueEvents(ctx, issueEight.ID)
 	require.NoError(err)
 	require.Len(issueEvents, 1)
 	assert.Equal("Confirmed again", issueEvents[0].Body)
 
-	issueStateResp, err := client.HTTP.SetIssueGithubStateOnHostWithResponse(
-		ctx, "gitea.test", "gitea", "tea", "kettle", 8,
-		generated.SetIssueGithubStateOnHostJSONRequestBody{State: "closed"},
-	)
+	issueStateResp, err := client.HTTP.SetIssueGithubStateOnHostWithResponse(ctx, &generated.SetIssueGithubStateOnHostRequestOptions{PathParams: &generated.SetIssueGithubStateOnHostPath{PlatformHost: "gitea.test", Provider: "gitea", Owner: "tea", Name: "kettle", Number: int64(8)}, Body: &generated.SetIssueGithubStateOnHostBody{State: "closed"}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, issueStateResp.StatusCode())
+	require.Equal(http.StatusOK, issueStateResp.StatusCode)
 	issueEight = requireIssue(t, database, repo.ID, 8)
 	assert.Equal("closed", issueEight.State)
 	require.NotNil(issueEight.ClosedAt)
@@ -20229,26 +19839,21 @@ func TestAPIGitealikeNormalSyncEnablesHeadBoundMutations(t *testing.T) {
 	syncer.RunOnce(ctx)
 	client := setupTestClient(t, srv)
 
-	detail, err := client.HTTP.GetPullOnHostWithResponse(
-		ctx, "gitea.test", "gitea", "tea", "kettle", 7,
-	)
+	detail, err := client.HTTP.GetPullOnHostWithResponse(ctx, &generated.GetPullOnHostRequestOptions{PathParams: &generated.GetPullOnHostPath{PlatformHost: "gitea.test", Provider: "gitea", Owner: "tea", Name: "kettle", Number: int64(7)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, detail.StatusCode())
+	require.Equal(http.StatusOK, detail.StatusCode)
 	require.NotNil(detail.JSON200)
 	assert.Equal(headSHA, detail.JSON200.ReviewedHeadSha,
 		"a normal sync must expose the reviewed head for head-bound actions")
 
-	mergeResp, err := client.HTTP.MergePullOnHostWithResponse(
-		ctx, "gitea.test", "gitea", "tea", "kettle", 7,
-		generated.MergePullOnHostJSONRequestBody{
-			Method:          "squash",
-			CommitTitle:     "t",
-			CommitMessage:   "m",
-			ExpectedHeadSha: &headSHA,
-		},
-	)
+	mergeResp, err := client.HTTP.MergePullOnHostWithResponse(ctx, &generated.MergePullOnHostRequestOptions{PathParams: &generated.MergePullOnHostPath{PlatformHost: "gitea.test", Provider: "gitea", Owner: "tea", Name: "kettle", Number: int64(7)}, Body: &generated.MergePullOnHostBody{
+		Method:          "squash",
+		CommitTitle:     "t",
+		CommitMessage:   "m",
+		ExpectedHeadSha: &headSHA,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, mergeResp.StatusCode(), string(mergeResp.Body))
+	require.Equal(http.StatusOK, mergeResp.StatusCode, string(mergeResp.Body))
 	assert.Equal(headSHA, transport.lastMergeOpts.ExpectedHeadSHA,
 		"the sync-derived reviewed head must reach the provider as the pin")
 }
@@ -20266,17 +19871,15 @@ func TestAPIGitealikePinnedMergeHeadMismatchIsStale(t *testing.T) {
 	client := setupGitealikeHeadPinServer(t, transport)
 
 	pin := "abc123"
-	resp, err := client.HTTP.MergePullOnHostWithResponse(
-		t.Context(), "gitea.test", "gitea", "tea", "kettle", 7,
-		generated.MergePullOnHostJSONRequestBody{
-			Method:          "squash",
-			CommitTitle:     "t",
-			CommitMessage:   "m",
-			ExpectedHeadSha: &pin,
-		},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusConflict, resp.StatusCode())
+	resp, err := client.HTTP.MergePullOnHostWithResponse(t.Context(), &generated.MergePullOnHostRequestOptions{PathParams: &generated.MergePullOnHostPath{PlatformHost: "gitea.test", Provider: "gitea", Owner: "tea", Name: "kettle", Number: int64(7)}, Body: &generated.MergePullOnHostBody{
+		Method:          "squash",
+		CommitTitle:     "t",
+		CommitMessage:   "m",
+		ExpectedHeadSha: &pin,
+	}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusConflict, resp.StatusCode)
 	code, details := decodeGitealikeConflict(t, resp.Body)
 	assert.Equal("conflict", code)
 	require.NotNil(details)
@@ -20299,17 +19902,15 @@ func TestAPIGitealikePinnedMergeGenericConflictStaysConflict(t *testing.T) {
 	client := setupGitealikeHeadPinServer(t, transport)
 
 	pin := "abc123"
-	resp, err := client.HTTP.MergePullOnHostWithResponse(
-		t.Context(), "gitea.test", "gitea", "tea", "kettle", 7,
-		generated.MergePullOnHostJSONRequestBody{
-			Method:          "squash",
-			CommitTitle:     "t",
-			CommitMessage:   "m",
-			ExpectedHeadSha: &pin,
-		},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusConflict, resp.StatusCode())
+	resp, err := client.HTTP.MergePullOnHostWithResponse(t.Context(), &generated.MergePullOnHostRequestOptions{PathParams: &generated.MergePullOnHostPath{PlatformHost: "gitea.test", Provider: "gitea", Owner: "tea", Name: "kettle", Number: int64(7)}, Body: &generated.MergePullOnHostBody{
+		Method:          "squash",
+		CommitTitle:     "t",
+		CommitMessage:   "m",
+		ExpectedHeadSha: &pin,
+	}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusConflict, resp.StatusCode)
 	code, details := decodeGitealikeConflict(t, resp.Body)
 	assert.Equal("conflict", code)
 	require.NotNil(details)
@@ -20325,15 +19926,12 @@ func TestAPIGitealikeApproveSubmitsReview(t *testing.T) {
 	client := setupGitealikeHeadPinServer(t, transport)
 
 	pin := "abc123"
-	resp, err := client.HTTP.ApprovePullOnHostWithResponse(
-		t.Context(), "gitea.test", "gitea", "tea", "kettle", 7,
-		generated.ApprovePullOnHostJSONRequestBody{
-			Body:            "lgtm",
-			ExpectedHeadSha: &pin,
-		},
-	)
+	resp, err := client.HTTP.ApprovePullOnHostWithResponse(t.Context(), &generated.ApprovePullOnHostRequestOptions{PathParams: &generated.ApprovePullOnHostPath{PlatformHost: "gitea.test", Provider: "gitea", Owner: "tea", Name: "kettle", Number: int64(7)}, Body: &generated.ApprovePullOnHostBody{
+		Body:            "lgtm",
+		ExpectedHeadSha: &pin,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode(), string(resp.Body))
+	require.Equal(http.StatusOK, resp.StatusCode, string(resp.Body))
 	assert.Contains(transport.mutationCalls, "review:7:lgtm:abc123")
 }
 
@@ -20346,15 +19944,12 @@ func TestAPIGitealikeApproveRefreshesAfterMutation(t *testing.T) {
 	transport.headCalls = 0
 
 	pin := "abc123"
-	resp, err := client.HTTP.ApprovePullOnHostWithResponse(
-		t.Context(), "gitea.test", "gitea", "tea", "kettle", 7,
-		generated.ApprovePullOnHostJSONRequestBody{
-			Body:            "lgtm",
-			ExpectedHeadSha: &pin,
-		},
-	)
+	resp, err := client.HTTP.ApprovePullOnHostWithResponse(t.Context(), &generated.ApprovePullOnHostRequestOptions{PathParams: &generated.ApprovePullOnHostPath{PlatformHost: "gitea.test", Provider: "gitea", Owner: "tea", Name: "kettle", Number: int64(7)}, Body: &generated.ApprovePullOnHostBody{
+		Body:            "lgtm",
+		ExpectedHeadSha: &pin,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode(), string(resp.Body))
+	require.Equal(http.StatusOK, resp.StatusCode, string(resp.Body))
 	assert.Equal(1, transport.headCalls)
 	assert.Contains(transport.mutationCalls, "review:7:lgtm:abc123")
 }
@@ -20501,11 +20096,9 @@ func TestAPIGiteaActionsSyncPersistsThroughServer(t *testing.T) {
 	mr := requireMR(t, database, repo.ID, 5)
 	require.Equal("failure", mr.CIStatus)
 
-	pullResp, err := client.HTTP.GetPullOnHostWithResponse(
-		ctx, "gitea.test", "gitea", "tea", "actions", 5,
-	)
+	pullResp, err := client.HTTP.GetPullOnHostWithResponse(ctx, &generated.GetPullOnHostRequestOptions{PathParams: &generated.GetPullOnHostPath{PlatformHost: "gitea.test", Provider: "gitea", Owner: "tea", Name: "actions", Number: int64(5)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, pullResp.StatusCode())
+	require.Equal(http.StatusOK, pullResp.StatusCode)
 	require.NotNil(pullResp.JSON200)
 
 	var checks []db.CICheck
@@ -20618,17 +20211,15 @@ func TestAPIGitealikeMergeConflictReturnsConflict(t *testing.T) {
 	expectedHeadSHA := requireMR(t, database, repo.ID, 7).PlatformHeadSHA
 	assert.Equal("dirty", requireMR(t, database, repo.ID, 7).MergeableState)
 
-	resp, err := client.HTTP.MergePullOnHostWithResponse(
-		ctx, "gitea.test", "gitea", "tea", "kettle", 7,
-		generated.MergePullOnHostJSONRequestBody{
-			Method:          "squash",
-			CommitTitle:     "Merge kettle",
-			CommitMessage:   "Merge Gitea MR",
-			ExpectedHeadSha: &expectedHeadSHA,
-		},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusConflict, resp.StatusCode(), string(resp.Body))
+	resp, err := client.HTTP.MergePullOnHostWithResponse(ctx, &generated.MergePullOnHostRequestOptions{PathParams: &generated.MergePullOnHostPath{PlatformHost: "gitea.test", Provider: "gitea", Owner: "tea", Name: "kettle", Number: int64(7)}, Body: &generated.MergePullOnHostBody{
+		Method:          "squash",
+		CommitTitle:     "Merge kettle",
+		CommitMessage:   "Merge Gitea MR",
+		ExpectedHeadSha: &expectedHeadSHA,
+	}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusConflict, resp.StatusCode, string(resp.Body))
 	assert.Contains(string(resp.Body), "pull request is out of date")
 	assert.Contains(transport.mutationCalls, "merge:7:squash")
 	assert.Equal("Add kettle", requireMR(t, database, repo.ID, 7).Title)
@@ -20732,18 +20323,15 @@ func TestAPIGitealikeMergePassesReviewedHeadPinToProvider(t *testing.T) {
 	require.Equal("abc123", requireMR(t, database, repo.ID, 7).PlatformHeadSHA)
 	expectedHeadSHA := "abc123"
 
-	resp, err := client.HTTP.MergePullOnHostWithResponse(
-		ctx, "gitea.test", "gitea", "tea", "kettle", 7,
-		generated.MergePullOnHostJSONRequestBody{
-			Method:          "squash",
-			CommitTitle:     "Merge kettle",
-			CommitMessage:   "Merge Gitea PR",
-			ExpectedHeadSha: &expectedHeadSHA,
-		},
-	)
+	resp, err := client.HTTP.MergePullOnHostWithResponse(ctx, &generated.MergePullOnHostRequestOptions{PathParams: &generated.MergePullOnHostPath{PlatformHost: "gitea.test", Provider: "gitea", Owner: "tea", Name: "kettle", Number: int64(7)}, Body: &generated.MergePullOnHostBody{
+		Method:          "squash",
+		CommitTitle:     "Merge kettle",
+		CommitMessage:   "Merge Gitea PR",
+		ExpectedHeadSha: &expectedHeadSHA,
+	}})
 
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode(), string(resp.Body))
+	require.Equal(http.StatusOK, resp.StatusCode, string(resp.Body))
 	assert.Equal([]string{"abc123"}, transport.mergeHeadPins)
 }
 
@@ -20760,22 +20348,21 @@ func TestAPIGitealikeMergeHeadMismatchMapsToStaleState(t *testing.T) {
 	client, _ := setupAPIGitealikeHeadPinServer(t, transport)
 	expectedHeadSHA := "abc123"
 
-	resp, err := client.HTTP.MergePullOnHostWithResponse(
-		ctx, "gitea.test", "gitea", "tea", "kettle", 7,
-		generated.MergePullOnHostJSONRequestBody{
-			Method:          "squash",
-			CommitTitle:     "Merge kettle",
-			CommitMessage:   "Merge Gitea PR",
-			ExpectedHeadSha: &expectedHeadSHA,
-		},
-	)
+	resp, err := client.HTTP.MergePullOnHostWithResponse(ctx, &generated.MergePullOnHostRequestOptions{PathParams: &generated.MergePullOnHostPath{PlatformHost: "gitea.test", Provider: "gitea", Owner: "tea", Name: "kettle", Number: int64(7)}, Body: &generated.MergePullOnHostBody{
+		Method:          "squash",
+		CommitTitle:     "Merge kettle",
+		CommitMessage:   "Merge Gitea PR",
+		ExpectedHeadSha: &expectedHeadSHA,
+	}})
 
-	require.NoError(err)
-	require.Equal(http.StatusConflict, resp.StatusCode(), string(resp.Body))
-	require.NotNil(resp.ApplicationproblemJSONDefault)
-	assert.Equal("conflict", string(resp.ApplicationproblemJSONDefault.Code))
-	require.NotNil(resp.ApplicationproblemJSONDefault.Details)
-	assert.Equal("stale_state", (*resp.ApplicationproblemJSONDefault.Details)["reason"])
+	require.Error(err)
+
+	require.NotNil(resp)
+	require.Equal(http.StatusConflict, resp.StatusCode, string(resp.Body))
+	require.NotNil(resp.Error)
+	assert.Equal("conflict", string(resp.Error.Code))
+	require.NotNil(resp.Error.Details)
+	assert.Equal("stale_state", (resp.Error.Details)["reason"])
 	assert.Equal([]string{"abc123"}, transport.mergeHeadPins)
 }
 
@@ -20788,16 +20375,13 @@ func TestAPIGitealikeApproveBeforeHeadRace(t *testing.T) {
 	client, _ := setupAPIGitealikeHeadPinServer(t, transport)
 	expectedHeadSHA := "abc123"
 
-	resp, err := client.HTTP.ApprovePullOnHostWithResponse(
-		ctx, "gitea.test", "gitea", "tea", "kettle", 7,
-		generated.ApprovePullOnHostJSONRequestBody{
-			Body:            "approved",
-			ExpectedHeadSha: &expectedHeadSHA,
-		},
-	)
+	resp, err := client.HTTP.ApprovePullOnHostWithResponse(ctx, &generated.ApprovePullOnHostRequestOptions{PathParams: &generated.ApprovePullOnHostPath{PlatformHost: "gitea.test", Provider: "gitea", Owner: "tea", Name: "kettle", Number: int64(7)}, Body: &generated.ApprovePullOnHostBody{
+		Body:            "approved",
+		ExpectedHeadSha: &expectedHeadSHA,
+	}})
 
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode(), string(resp.Body))
+	require.Equal(http.StatusOK, resp.StatusCode, string(resp.Body))
 	assert.Contains(transport.mutationCalls, "review:7:approved:abc123")
 }
 
@@ -20810,16 +20394,13 @@ func TestAPIGitealikeRequestChangesPassesReviewedHeadPinToProvider(t *testing.T)
 	client, _ := setupAPIGitealikeHeadPinServer(t, transport)
 	expectedHeadSHA := "abc123"
 
-	resp, err := client.HTTP.RequestPullChangesOnHostWithResponse(
-		ctx, "gitea.test", "gitea", "tea", "kettle", 7,
-		generated.RequestPullChangesOnHostJSONRequestBody{
-			Body:            "needs work",
-			ExpectedHeadSha: &expectedHeadSHA,
-		},
-	)
+	resp, err := client.HTTP.RequestPullChangesOnHostWithResponse(ctx, &generated.RequestPullChangesOnHostRequestOptions{PathParams: &generated.RequestPullChangesOnHostPath{PlatformHost: "gitea.test", Provider: "gitea", Owner: "tea", Name: "kettle", Number: int64(7)}, Body: &generated.RequestPullChangesOnHostBody{
+		Body:            "needs work",
+		ExpectedHeadSha: &expectedHeadSHA,
+	}})
 
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode(), string(resp.Body))
+	require.Equal(http.StatusOK, resp.StatusCode, string(resp.Body))
 	assert.Equal("REQUEST_CHANGES", transport.lastReviewOpts.State)
 	assert.Equal("needs work", transport.lastReviewOpts.Body)
 	assert.Equal("abc123", transport.lastReviewOpts.CommitID)
@@ -21566,11 +21147,9 @@ func TestAPIGitealikeLockedPRPersistsThroughServer(t *testing.T) {
 	assert.False(mr.IsDraft)
 	assert.True(mr.IsLocked)
 
-	pullResp, err := client.HTTP.GetPullOnHostWithResponse(
-		ctx, "codeberg.test", "forgejo", "forgejo", "tea", 7,
-	)
+	pullResp, err := client.HTTP.GetPullOnHostWithResponse(ctx, &generated.GetPullOnHostRequestOptions{PathParams: &generated.GetPullOnHostPath{PlatformHost: "codeberg.test", Provider: "forgejo", Owner: "forgejo", Name: "tea", Number: int64(7)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, pullResp.StatusCode(), string(pullResp.Body))
+	require.Equal(http.StatusOK, pullResp.StatusCode, string(pullResp.Body))
 	require.NotNil(pullResp.JSON200)
 	assert.False(pullResp.JSON200.MergeRequest.IsDraft)
 	assert.True(pullResp.JSON200.MergeRequest.IsLocked)
@@ -21678,11 +21257,9 @@ func TestAPIGitealikeDraftPRFieldsPersistThroughServer(t *testing.T) {
 	require.Len(mr.Labels, 1)
 	assert.Equal("bug", mr.Labels[0].Name)
 
-	pullResp, err := client.HTTP.GetPullOnHostWithResponse(
-		ctx, "gitea.test", "gitea", "gitea", "tea", 8,
-	)
+	pullResp, err := client.HTTP.GetPullOnHostWithResponse(ctx, &generated.GetPullOnHostRequestOptions{PathParams: &generated.GetPullOnHostPath{PlatformHost: "gitea.test", Provider: "gitea", Owner: "gitea", Name: "tea", Number: int64(8)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, pullResp.StatusCode(), string(pullResp.Body))
+	require.Equal(http.StatusOK, pullResp.StatusCode, string(pullResp.Body))
 	require.NotNil(pullResp.JSON200)
 	apiMR := pullResp.JSON200.MergeRequest
 	assert.True(apiMR.IsDraft)
@@ -21693,8 +21270,8 @@ func TestAPIGitealikeDraftPRFieldsPersistThroughServer(t *testing.T) {
 	require.NotNil(apiMR.MergedAt)
 	require.NotNil(apiMR.ClosedAt)
 	require.NotNil(apiMR.Labels)
-	require.Len(*apiMR.Labels, 1)
-	assert.Equal("bug", (*apiMR.Labels)[0].Name)
+	require.Len(apiMR.Labels, 1)
+	assert.Equal("bug", (apiMR.Labels)[0].Name)
 }
 
 type lockedGitealikeTransport struct {
@@ -21898,23 +21475,18 @@ func TestAPIGetFilesAndDiffMarkGeneratedFilesE2E(t *testing.T) {
 	require.NoError(err)
 	require.NoError(database.UpdateDiffSHAs(ctx, repoID, 1, headSHA, mergeBase, mergeBase))
 
-	filesResp, err := client.HTTP.GetPullFilesWithResponse(
-		ctx, "gh", "acme", "widget", 1,
-	)
+	filesResp, err := client.HTTP.GetPullFilesWithResponse(ctx, &generated.GetPullFilesRequestOptions{PathParams: &generated.GetPullFilesPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, filesResp.StatusCode(), string(filesResp.Body))
+	require.Equal(http.StatusOK, filesResp.StatusCode, string(filesResp.Body))
 	require.NotNil(filesResp.JSON200)
 	require.NotNil(filesResp.JSON200.Files)
 	assert.True(testutil.RequireWorkspaceDiffFile(t, filesResp.JSON200.Files, "dist/api.ts").IsGenerated)
 	assert.False(testutil.RequireWorkspaceDiffFile(t, filesResp.JSON200.Files, "bun.lock").IsGenerated)
 	assert.False(testutil.RequireWorkspaceDiffFile(t, filesResp.JSON200.Files, "src.ts").IsGenerated)
 
-	diffResp, err := client.HTTP.GetPullDiffWithResponse(
-		ctx, "gh", "acme", "widget", 1,
-		nil,
-	)
+	diffResp, err := client.HTTP.GetPullDiffWithResponse(ctx, &generated.GetPullDiffRequestOptions{PathParams: &generated.GetPullDiffPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, diffResp.StatusCode(), string(diffResp.Body))
+	require.Equal(http.StatusOK, diffResp.StatusCode, string(diffResp.Body))
 	require.NotNil(diffResp.JSON200)
 	require.NotNil(diffResp.JSON200.Files)
 	assert.True(testutil.RequireWorkspaceDiffFile(t, diffResp.JSON200.Files, "dist/api.ts").IsGenerated)
@@ -22018,32 +21590,29 @@ func TestAPILocalReadEndpointsServeDuringTokenRotationE2E(t *testing.T) {
 	// resolve it now fails, so the local-read endpoints below must not try.
 	require.NoError(os.WriteFile(tokenPath, []byte("\n"), 0o600))
 
-	commitsResp, err := client.HTTP.GetPullCommitsWithResponse(ctx, "gh", "acme", "widget", 1)
+	commitsResp, err := client.HTTP.GetPullCommitsWithResponse(ctx, &generated.GetPullCommitsRequestOptions{PathParams: &generated.GetPullCommitsPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, commitsResp.StatusCode(), string(commitsResp.Body))
+	require.Equal(http.StatusOK, commitsResp.StatusCode, string(commitsResp.Body))
 	require.NotNil(commitsResp.JSON200)
 	require.Len(commitsResp.JSON200.Commits, 1)
 	assert.Equal(headSHA, commitsResp.JSON200.Commits[0].Sha)
 
-	diffResp, err := client.HTTP.GetPullDiffWithResponse(ctx, "gh", "acme", "widget", 1, nil)
+	diffResp, err := client.HTTP.GetPullDiffWithResponse(ctx, &generated.GetPullDiffRequestOptions{PathParams: &generated.GetPullDiffPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, diffResp.StatusCode(), string(diffResp.Body))
+	require.Equal(http.StatusOK, diffResp.StatusCode, string(diffResp.Body))
 	require.NotNil(diffResp.JSON200)
 	require.Len(diffResp.JSON200.Files, 1)
 
-	filesResp, err := client.HTTP.GetPullFilesWithResponse(ctx, "gh", "acme", "widget", 1)
+	filesResp, err := client.HTTP.GetPullFilesWithResponse(ctx, &generated.GetPullFilesRequestOptions{PathParams: &generated.GetPullFilesPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, filesResp.StatusCode(), string(filesResp.Body))
+	require.Equal(http.StatusOK, filesResp.StatusCode, string(filesResp.Body))
 	require.NotNil(filesResp.JSON200)
 	require.Len(filesResp.JSON200.Files, 1)
 
 	previewPath := "feature.txt"
-	previewResp, err := client.HTTP.GetPullFilePreviewWithResponse(
-		ctx, "gh", "acme", "widget", 1,
-		&generated.GetPullFilePreviewParams{Path: &previewPath},
-	)
+	previewResp, err := client.HTTP.GetPullFilePreviewWithResponse(ctx, &generated.GetPullFilePreviewRequestOptions{PathParams: &generated.GetPullFilePreviewPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Query: &generated.GetPullFilePreviewQuery{Path: &previewPath}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, previewResp.StatusCode(), string(previewResp.Body))
+	require.Equal(http.StatusOK, previewResp.StatusCode, string(previewResp.Body))
 	require.NotNil(previewResp.JSON200)
 	assert.Equal(previewPath, previewResp.JSON200.Path)
 	decoded, err := base64.StdEncoding.DecodeString(previewResp.JSON200.Content)
@@ -22783,11 +22352,9 @@ func TestAPIGetPullDetailLoaded(t *testing.T) {
 	client := setupTestClient(t, srv)
 
 	// Before detail fetch: detail_loaded=false.
-	resp, err := client.HTTP.GetPullWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-	)
+	resp, err := client.HTTP.GetPullWithResponse(t.Context(), &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	assert.False(resp.JSON200.DetailLoaded)
 	assert.Nil(resp.JSON200.DetailFetchedAt)
@@ -22814,11 +22381,9 @@ func TestAPIGetPullDetailLoaded(t *testing.T) {
 	})
 	require.NoError(err)
 
-	resp2, err := client.HTTP.GetPullWithResponse(
-		t.Context(), "gh", "acme", "widget", 2,
-	)
+	resp2, err := client.HTTP.GetPullWithResponse(t.Context(), &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(2)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp2.StatusCode())
+	require.Equal(http.StatusOK, resp2.StatusCode)
 	require.NotNil(resp2.JSON200)
 	assert.True(resp2.JSON200.DetailLoaded)
 	require.NotNil(resp2.JSON200.DetailFetchedAt)
@@ -22848,14 +22413,12 @@ func TestAPIGetPullDetailIncludesAssociatedWorkspace(t *testing.T) {
 		Status:             "ready",
 	}))
 
-	resp, err := client.HTTP.GetPullWithResponse(
-		ctx, "gh", "acme", "widget", int64(associatedPR),
-	)
+	resp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(associatedPR))}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode(), string(resp.Body))
+	require.Equal(http.StatusOK, resp.StatusCode, string(resp.Body))
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Workspace)
-	assert.Equal("associated-workspace", resp.JSON200.Workspace.Id)
+	assert.Equal("associated-workspace", resp.JSON200.Workspace.ID)
 	assert.Equal("ready", resp.JSON200.Workspace.Status)
 }
 
@@ -22882,20 +22445,18 @@ func TestAPIActivityReturnsUTCCreatedAt(t *testing.T) {
 	}}))
 
 	since := createdAtUTC.Add(-time.Hour).Format(time.RFC3339)
-	resp, err := client.HTTP.ListActivityWithResponse(
-		ctx, &generated.ListActivityParams{Since: &since},
-	)
+	resp, err := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{Since: &since}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Items)
 	require.NotEmpty(resp.JSON200.Items)
 
-	var commentItem generated.ActivityItemResponse
+	var commentItem *generated.ActivityItemResponse
 	for i := range resp.JSON200.Items {
 		item := resp.JSON200.Items[i]
 		if item.Author == "reviewer" && item.ActivityType == "comment" {
-			commentItem = item
+			commentItem = &item
 			break
 		}
 	}
@@ -22936,12 +22497,10 @@ func TestAPIActivityFencesRepositoryReconciliationAcrossEventAndWorkspaceReads(t
 		close(afterItems)
 		<-continueRequest
 	}
-	responseDone := make(chan *generated.ListActivityResponse, 1)
+	responseDone := make(chan *generated.ListActivityResp, 1)
 	errorDone := make(chan error, 1)
 	go func() {
-		response, requestErr := client.HTTP.ListActivityWithResponse(
-			context.Background(), &generated.ListActivityParams{},
-		)
+		response, requestErr := client.HTTP.ListActivityWithResponse(context.Background(), &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{}})
 		responseDone <- response
 		errorDone <- requestErr
 	}()
@@ -22979,7 +22538,7 @@ func TestAPIActivityFencesRepositoryReconciliationAcrossEventAndWorkspaceReads(t
 	}
 	require.NoError(renameErr)
 	require.NotNil(response)
-	require.Equal(http.StatusOK, response.StatusCode())
+	require.Equal(http.StatusOK, response.StatusCode)
 	require.NotNil(response.JSON200)
 	require.NotNil(response.JSON200.Items)
 
@@ -22994,7 +22553,7 @@ func TestAPIActivityFencesRepositoryReconciliationAcrossEventAndWorkspaceReads(t
 	require.NotEmpty(item.ActivityType)
 	assert.Equal("widget", item.RepoName)
 	require.NotNil(item.Workspace)
-	assert.Equal("ws-activity-fence", item.Workspace.Id)
+	assert.Equal("ws-activity-fence", item.Workspace.ID)
 }
 
 // The comment row carries the PR author, not the commenter, so the
@@ -23088,11 +22647,9 @@ func TestAPIGetCommits(t *testing.T) {
 	assert := assert.New(t)
 
 	client, _, _, _, commitSHAs := setupTestServerWithClones(t)
-	resp, err := client.HTTP.GetPullCommitsWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-	)
+	resp, err := client.HTTP.GetPullCommitsWithResponse(t.Context(), &generated.GetPullCommitsRequestOptions{PathParams: &generated.GetPullCommitsPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	assert.Len(resp.JSON200.Commits, 5)
 	assert.Equal(commitSHAs[0], resp.JSON200.Commits[0].Sha)
@@ -23104,11 +22661,9 @@ func TestAPIGetCommits_NotFound(t *testing.T) {
 	runParallelServerTest(t)
 	client, _, _, _, _ := setupTestServerWithClones(t)
 
-	resp, err := client.HTTP.GetPullCommitsWithResponse(
-		t.Context(), "gh", "acme", "widget", 999,
-	)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusNotFound, resp.StatusCode())
+	resp, err := client.HTTP.GetPullCommitsWithResponse(t.Context(), &generated.GetPullCommitsRequestOptions{PathParams: &generated.GetPullCommitsPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(999)}})
+	require.Error(t, err)
+	require.Equal(t, http.StatusNotFound, resp.StatusCode)
 }
 
 func TestAPIGetDiff_SingleCommit(t *testing.T) {
@@ -23116,12 +22671,9 @@ func TestAPIGetDiff_SingleCommit(t *testing.T) {
 	require := require.New(t)
 
 	client, _, _, _, commitSHAs := setupTestServerWithClones(t)
-	resp, err := client.HTTP.GetPullDiffWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-		&generated.GetPullDiffParams{Commit: &commitSHAs[2]},
-	)
+	resp, err := client.HTTP.GetPullDiffWithResponse(t.Context(), &generated.GetPullDiffRequestOptions{PathParams: &generated.GetPullDiffPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Query: &generated.GetPullDiffQuery{Commit: &commitSHAs[2]}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.Len(resp.JSON200.Files, 1)
 }
@@ -23132,11 +22684,9 @@ func TestAPIGetDiffReportsSyncedDiffHeadSHA(t *testing.T) {
 	assert := assert.New(t)
 
 	client, _, _, headSHA, _ := setupTestServerWithClones(t)
-	resp, err := client.HTTP.GetPullDiffWithResponse(
-		t.Context(), "gh", "acme", "widget", 1, nil,
-	)
+	resp, err := client.HTTP.GetPullDiffWithResponse(t.Context(), &generated.GetPullDiffRequestOptions{PathParams: &generated.GetPullDiffPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.DiffHeadSha)
 	assert.Equal(headSHA, *resp.JSON200.DiffHeadSha)
@@ -23249,13 +22799,10 @@ func TestAPIGetFilePreview_ReturnsDeletedFileContent(t *testing.T) {
 	client := setupTestClient(t, srv)
 
 	path := "config.yaml"
-	resp, err := client.HTTP.GetPullFilePreviewWithResponse(
-		ctx, "gh", "acme", "widgets", 1,
-		&generated.GetPullFilePreviewParams{Path: &path},
-	)
+	resp, err := client.HTTP.GetPullFilePreviewWithResponse(ctx, &generated.GetPullFilePreviewRequestOptions{PathParams: &generated.GetPullFilePreviewPath{Provider: "gh", Owner: "acme", Name: "widgets", Number: int64(1)}, Query: &generated.GetPullFilePreviewQuery{Path: &path}})
 
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	assert.Equal(path, resp.JSON200.Path)
 	decoded, err := base64.StdEncoding.DecodeString(resp.JSON200.Content)
@@ -23293,24 +22840,18 @@ func TestAPIGetFilePreview_ReturnsRequestedDiffSideContent(t *testing.T) {
 	client := setupTestClient(t, srv)
 
 	path := "internal/handler.go"
-	oldSide := generated.GetPullFilePreviewParamsSideOld
-	oldResp, err := client.HTTP.GetPullFilePreviewWithResponse(
-		ctx, "gh", "acme", "widgets", 1,
-		&generated.GetPullFilePreviewParams{Path: &path, Side: &oldSide},
-	)
+	oldSide := generated.GetPullFilePreviewQuerySideOld
+	oldResp, err := client.HTTP.GetPullFilePreviewWithResponse(ctx, &generated.GetPullFilePreviewRequestOptions{PathParams: &generated.GetPullFilePreviewPath{Provider: "gh", Owner: "acme", Name: "widgets", Number: int64(1)}, Query: &generated.GetPullFilePreviewQuery{Path: &path, Side: &oldSide}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, oldResp.StatusCode())
+	require.Equal(http.StatusOK, oldResp.StatusCode)
 	require.NotNil(oldResp.JSON200)
 	oldDecoded, err := base64.StdEncoding.DecodeString(oldResp.JSON200.Content)
 	require.NoError(err)
 
-	newSide := generated.GetPullFilePreviewParamsSideNew
-	newResp, err := client.HTTP.GetPullFilePreviewWithResponse(
-		ctx, "gh", "acme", "widgets", 1,
-		&generated.GetPullFilePreviewParams{Path: &path, Side: &newSide},
-	)
+	newSide := generated.GetPullFilePreviewQuerySideNew
+	newResp, err := client.HTTP.GetPullFilePreviewWithResponse(ctx, &generated.GetPullFilePreviewRequestOptions{PathParams: &generated.GetPullFilePreviewPath{Provider: "gh", Owner: "acme", Name: "widgets", Number: int64(1)}, Query: &generated.GetPullFilePreviewQuery{Path: &path, Side: &newSide}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, newResp.StatusCode())
+	require.Equal(http.StatusOK, newResp.StatusCode)
 	require.NotNil(newResp.JSON200)
 	newDecoded, err := base64.StdEncoding.DecodeString(newResp.JSON200.Content)
 	require.NoError(err)
@@ -23328,12 +22869,9 @@ func TestAPIGetDiff_Range(t *testing.T) {
 	client, _, _, _, commitSHAs := setupTestServerWithClones(t)
 	from := commitSHAs[4] // commit 1 (oldest)
 	to := commitSHAs[2]   // commit 3
-	resp, err := client.HTTP.GetPullDiffWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-		&generated.GetPullDiffParams{From: &from, To: &to},
-	)
+	resp, err := client.HTTP.GetPullDiffWithResponse(t.Context(), &generated.GetPullDiffRequestOptions{PathParams: &generated.GetPullDiffPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Query: &generated.GetPullDiffQuery{From: &from, To: &to}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.Len(resp.JSON200.Files, 3)
 }
@@ -23342,24 +22880,18 @@ func TestAPIGetDiff_InvalidScope(t *testing.T) {
 	runParallelServerTest(t)
 	client, _, _, _, commitSHAs := setupTestServerWithClones(t)
 	from := commitSHAs[0]
-	resp, err := client.HTTP.GetPullDiffWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-		&generated.GetPullDiffParams{Commit: &commitSHAs[0], From: &from},
-	)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusBadRequest, resp.StatusCode())
+	resp, err := client.HTTP.GetPullDiffWithResponse(t.Context(), &generated.GetPullDiffRequestOptions{PathParams: &generated.GetPullDiffPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Query: &generated.GetPullDiffQuery{Commit: &commitSHAs[0], From: &from}})
+	require.Error(t, err)
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
 func TestAPIGetDiff_UnknownSHA(t *testing.T) {
 	runParallelServerTest(t)
 	client, _, _, _, _ := setupTestServerWithClones(t)
 	bogus := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-	resp, err := client.HTTP.GetPullDiffWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-		&generated.GetPullDiffParams{Commit: &bogus},
-	)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusBadRequest, resp.StatusCode())
+	resp, err := client.HTTP.GetPullDiffWithResponse(t.Context(), &generated.GetPullDiffRequestOptions{PathParams: &generated.GetPullDiffPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Query: &generated.GetPullDiffQuery{Commit: &bogus}})
+	require.Error(t, err)
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
 func TestAPIGetDiff_ReversedRange(t *testing.T) {
@@ -23367,24 +22899,18 @@ func TestAPIGetDiff_ReversedRange(t *testing.T) {
 	client, _, _, _, commitSHAs := setupTestServerWithClones(t)
 	from := commitSHAs[0] // newest
 	to := commitSHAs[4]   // oldest
-	resp, err := client.HTTP.GetPullDiffWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-		&generated.GetPullDiffParams{From: &from, To: &to},
-	)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusBadRequest, resp.StatusCode())
+	resp, err := client.HTTP.GetPullDiffWithResponse(t.Context(), &generated.GetPullDiffRequestOptions{PathParams: &generated.GetPullDiffPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Query: &generated.GetPullDiffQuery{From: &from, To: &to}})
+	require.Error(t, err)
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
 func TestAPIGetDiff_FromWithoutTo(t *testing.T) {
 	runParallelServerTest(t)
 	client, _, _, _, commitSHAs := setupTestServerWithClones(t)
 	from := commitSHAs[0]
-	resp, err := client.HTTP.GetPullDiffWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-		&generated.GetPullDiffParams{From: &from},
-	)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusBadRequest, resp.StatusCode())
+	resp, err := client.HTTP.GetPullDiffWithResponse(t.Context(), &generated.GetPullDiffRequestOptions{PathParams: &generated.GetPullDiffPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Query: &generated.GetPullDiffQuery{From: &from}})
+	require.Error(t, err)
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
 func TestAPIGetDiff_RootCommit(t *testing.T) {
@@ -23433,12 +22959,9 @@ func TestAPIGetDiff_RootCommit(t *testing.T) {
 	require.NoError(database.UpdateDiffSHAs(ctx, repoID, 1, headSHA, "4b825dc642cb6eb9a060e54bf8d69288fbee4904", "4b825dc642cb6eb9a060e54bf8d69288fbee4904"))
 
 	client := setupTestClient(t, srv)
-	resp, err := client.HTTP.GetPullDiffWithResponse(
-		t.Context(), "gh", "acme", "rootrepo", 1,
-		&generated.GetPullDiffParams{Commit: &rootSHA},
-	)
+	resp, err := client.HTTP.GetPullDiffWithResponse(t.Context(), &generated.GetPullDiffRequestOptions{PathParams: &generated.GetPullDiffPath{Provider: "gh", Owner: "acme", Name: "rootrepo", Number: int64(1)}, Query: &generated.GetPullDiffQuery{Commit: &rootSHA}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 }
 
@@ -23468,11 +22991,9 @@ func TestAPIListActivity(t *testing.T) {
 	}))
 
 	since := time.Now().UTC().AddDate(0, 0, -7).Format(time.RFC3339)
-	resp, err := client.HTTP.ListActivityWithResponse(
-		ctx, &generated.ListActivityParams{Since: &since},
-	)
+	resp, err := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{Since: &since}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Items)
 	assert.NotEmpty(resp.JSON200.Items,
@@ -23564,11 +23085,9 @@ func TestAPIListActivity(t *testing.T) {
 	assert.Equal("comment", filteredThreadBody.Items[0].ActivityType)
 
 	search := "reviewer"
-	filtered, err := client.HTTP.ListActivityWithResponse(
-		ctx, &generated.ListActivityParams{Since: &since, Search: &search},
-	)
+	filtered, err := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{Since: &since, Search: &search}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, filtered.StatusCode())
+	require.Equal(http.StatusOK, filtered.StatusCode)
 	require.NotNil(filtered.JSON200)
 	require.NotNil(filtered.JSON200.Items)
 	require.Len(filtered.JSON200.Items, 1)
@@ -23576,11 +23095,9 @@ func TestAPIListActivity(t *testing.T) {
 	assert.Equal("reviewer", filtered.JSON200.Items[0].Author)
 
 	itemNumber := "#1"
-	byNumber, err := client.HTTP.ListActivityWithResponse(
-		ctx, &generated.ListActivityParams{Since: &since, Search: &itemNumber},
-	)
+	byNumber, err := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{Since: &since, Search: &itemNumber}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, byNumber.StatusCode())
+	require.Equal(http.StatusOK, byNumber.StatusCode)
 	require.NotNil(byNumber.JSON200)
 	require.NotNil(byNumber.JSON200.Items)
 	require.Len(byNumber.JSON200.Items, 2)
@@ -23589,11 +23106,9 @@ func TestAPIListActivity(t *testing.T) {
 	}
 
 	whitespace := " \t "
-	unfiltered, err := client.HTTP.ListActivityWithResponse(
-		ctx, &generated.ListActivityParams{Since: &since, Search: &whitespace},
-	)
+	unfiltered, err := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{Since: &since, Search: &whitespace}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, unfiltered.StatusCode())
+	require.Equal(http.StatusOK, unfiltered.StatusCode)
 	require.NotNil(unfiltered.JSON200)
 	require.NotNil(unfiltered.JSON200.Items)
 	assert.Len(unfiltered.JSON200.Items, len(resp.JSON200.Items))
@@ -24519,11 +24034,9 @@ func TestAPIListActivityIncludesNotificationSyncedBeforeRepo(t *testing.T) {
 
 	types := []string{"notification"}
 	since := base.Add(-time.Minute).Format(time.RFC3339)
-	resp, err := client.HTTP.ListActivityWithResponse(
-		ctx, &generated.ListActivityParams{Since: &since, Types: &types},
-	)
+	resp, err := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{Since: &since, Types: types}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Items)
 	require.Len(resp.JSON200.Items, 1)
@@ -24591,11 +24104,9 @@ func TestAPIListActivityScopesNotificationsToTrackedRepos(t *testing.T) {
 
 	types := []string{"notification"}
 	since := base.Add(-time.Minute).Format(time.RFC3339)
-	resp, err := client.HTTP.ListActivityWithResponse(
-		ctx, &generated.ListActivityParams{Since: &since, Types: &types},
-	)
+	resp, err := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{Since: &since, Types: types}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Items)
 	require.Len(resp.JSON200.Items, 1)
@@ -24801,11 +24312,9 @@ func TestAPIListActivityReflectsConfiguredDefaultBranchCommitCap(t *testing.T) {
 	assert.ElementsMatch([]string{shas["newest"], shas["second"]}, gotPersisted)
 
 	since := time.Now().UTC().Add(-24 * time.Hour).Format(time.RFC3339)
-	resp, err := client.HTTP.ListActivityWithResponse(
-		ctx, &generated.ListActivityParams{Since: &since, Types: &types},
-	)
+	resp, err := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{Since: &since, Types: types}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Items)
 	require.Len(resp.JSON200.Items, 2)
@@ -24946,11 +24455,9 @@ func TestAPIListActivityCanHideDefaultBranchActivity(t *testing.T) {
 
 	since := base.Add(-time.Minute).Format(time.RFC3339)
 	types := []string{"new_pr"}
-	resp, err := client.HTTP.ListActivityWithResponse(
-		ctx, &generated.ListActivityParams{Since: &since, Types: &types},
-	)
+	resp, err := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{Since: &since, Types: types}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Items)
 	require.Len(resp.JSON200.Items, 1)
@@ -24987,11 +24494,9 @@ func TestAPIListActivityAcceptsProviderQualifiedRepoFilter(t *testing.T) {
 
 	since := time.Now().UTC().AddDate(0, 0, -7).Format(time.RFC3339)
 	repo := "gitea|github.com/acme/widget"
-	resp, err := client.HTTP.ListActivityWithResponse(
-		ctx, &generated.ListActivityParams{Since: &since, Repo: &repo},
-	)
+	resp, err := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{Since: &since, Repo: &repo}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Items)
 	require.NotEmpty(resp.JSON200.Items)
@@ -25024,11 +24529,9 @@ func TestAPIListActivityKeepsProviderNamedHostsProviderQualified(t *testing.T) {
 
 	since := time.Now().UTC().AddDate(0, 0, -7).Format(time.RFC3339)
 	repo := "github|gitea/acme/team/widget"
-	resp, err := client.HTTP.ListActivityWithResponse(
-		ctx, &generated.ListActivityParams{Since: &since, Repo: &repo},
-	)
+	resp, err := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{Since: &since, Repo: &repo}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Items)
 	require.NotEmpty(resp.JSON200.Items)
@@ -25151,9 +24654,9 @@ func TestAPIListStacks(t *testing.T) {
 	seedStackedPR(t, database, "acme", "widget", 12, "feat/auth-ui", "feat/auth-retry", db.MergeRequestStateOpen, "pending", "")
 	runStackDetection(t, database, "acme", "widget")
 
-	resp, err := client.HTTP.ListStacksWithResponse(t.Context(), &generated.ListStacksParams{})
+	resp, err := client.HTTP.ListStacksWithResponse(t.Context(), &generated.ListStacksRequestOptions{Query: &generated.ListStacksQuery{}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 
 	var stks []generated.StackResponse
 	require.NoError(json.Unmarshal(resp.Body, &stks))
@@ -25184,25 +24687,26 @@ func TestAPIListStacks_RepoFilter(t *testing.T) {
 	seedStackedPR(t, database, "acme", "tools", 21, "feat/d", "feat/c", db.MergeRequestStateOpen, "", "")
 	runStackDetection(t, database, "acme", "tools")
 
-	respAll, err := client.HTTP.ListStacksWithResponse(ctx, &generated.ListStacksParams{})
+	respAll, err := client.HTTP.ListStacksWithResponse(ctx, &generated.ListStacksRequestOptions{Query: &generated.ListStacksQuery{}})
 	require.NoError(err)
 	var allStks []generated.StackResponse
 	require.NoError(json.Unmarshal(respAll.Body, &allStks))
 	assert.Len(allStks, 2)
 
 	repo := "acme/widget"
-	resp, err := client.HTTP.ListStacksWithResponse(ctx, &generated.ListStacksParams{Repo: &repo})
+	resp, err := client.HTTP.ListStacksWithResponse(ctx, &generated.ListStacksRequestOptions{Query: &generated.ListStacksQuery{Repo: &repo}})
 	require.NoError(err)
-	assert.Equal(http.StatusOK, resp.StatusCode())
+	assert.Equal(http.StatusOK, resp.StatusCode)
 	var filtered []generated.StackResponse
 	require.NoError(json.Unmarshal(resp.Body, &filtered))
 	assert.Len(filtered, 1)
 	assert.Equal("widget", filtered[0].RepoName)
 
 	bad := "noslash"
-	resp2, err := client.HTTP.ListStacksWithResponse(ctx, &generated.ListStacksParams{Repo: &bad})
-	require.NoError(err)
-	assert.Equal(http.StatusBadRequest, resp2.StatusCode())
+	resp2, err := client.HTTP.ListStacksWithResponse(ctx, &generated.ListStacksRequestOptions{Query: &generated.ListStacksQuery{Repo: &bad}})
+	require.Error(err)
+	require.NotNil(resp2)
+	assert.Equal(http.StatusBadRequest, resp2.StatusCode)
 	assert.Contains(string(resp2.Body), "invalid repo filter")
 }
 
@@ -25219,18 +24723,19 @@ func TestAPIGetStackForPR(t *testing.T) {
 	seedStackedPR(t, database, "acme", "widget", 11, "feat/api-retry", "feat/api-base", db.MergeRequestStateOpen, "success", "APPROVED")
 	runStackDetection(t, database, "acme", "widget")
 
-	resp, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 10)
+	resp, err := client.HTTP.GetPullStackWithResponse(ctx, &generated.GetPullStackRequestOptions{PathParams: &generated.GetPullStackPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(10)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	assert.Equal("api", resp.JSON200.StackName)
 	assert.Equal(int64(2), resp.JSON200.Size)
 	assert.Equal("blocked", resp.JSON200.Health)
 
 	seedPR(t, database, "acme", "widget", 99)
-	resp2, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 99)
-	require.NoError(err)
-	assert.Equal(http.StatusNotFound, resp2.StatusCode())
+	resp2, err := client.HTTP.GetPullStackWithResponse(ctx, &generated.GetPullStackRequestOptions{PathParams: &generated.GetPullStackPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(99)}})
+	require.Error(err)
+	require.NotNil(resp2)
+	assert.Equal(http.StatusNotFound, resp2.StatusCode)
 }
 
 func TestAPIGetPullDetailIncludesStackContext(t *testing.T) {
@@ -25245,9 +24750,9 @@ func TestAPIGetPullDetailIncludesStackContext(t *testing.T) {
 	seedStackedPR(t, database, "acme", "widget", 11, "feat/api-retry", "feat/api-base", db.MergeRequestStateOpen, "success", "APPROVED")
 	runStackDetection(t, database, "acme", "widget")
 
-	resp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 11)
+	resp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(11)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Stack)
 	assert.Equal("api", resp.JSON200.Stack.StackName)
@@ -25258,9 +24763,9 @@ func TestAPIGetPullDetailIncludesStackContext(t *testing.T) {
 	assert.Len(resp.JSON200.Stack.Members, 2)
 
 	seedPR(t, database, "acme", "widget", 99)
-	unstacked, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 99)
+	unstacked, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(99)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, unstacked.StatusCode())
+	require.Equal(http.StatusOK, unstacked.StatusCode)
 	require.NotNil(unstacked.JSON200)
 	assert.Nil(unstacked.JSON200.Stack)
 }
@@ -25285,17 +24790,17 @@ func TestAPIStackBaseConflictMarksDownstreamPRsDirty(t *testing.T) {
 	require.NotNil(repo)
 	assert.Empty(requireMR(t, database, repo.ID, 11).MergeableState)
 
-	listResp, err := client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsParams{})
+	listResp, err := client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsRequestOptions{Query: &generated.ListPullsQuery{}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, listResp.StatusCode(), string(listResp.Body))
+	require.Equal(http.StatusOK, listResp.StatusCode, string(listResp.Body))
 	require.NotNil(listResp.JSON200)
 	require.Len(*listResp.JSON200, 2)
 	assert.Equal("dirty", (*listResp.JSON200)[0].MergeableState)
 	assert.Equal("dirty", (*listResp.JSON200)[1].MergeableState)
 
-	stackResp, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 11)
+	stackResp, err := client.HTTP.GetPullStackWithResponse(ctx, &generated.GetPullStackRequestOptions{PathParams: &generated.GetPullStackPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(11)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, stackResp.StatusCode(), string(stackResp.Body))
+	require.Equal(http.StatusOK, stackResp.StatusCode, string(stackResp.Body))
 	require.NotNil(stackResp.JSON200)
 	require.NotNil(stackResp.JSON200.Members)
 	assert.Equal("blocked", stackResp.JSON200.Health)
@@ -25304,9 +24809,9 @@ func TestAPIStackBaseConflictMarksDownstreamPRsDirty(t *testing.T) {
 	require.NotNil(stackResp.JSON200.Members[1].BlockedBy)
 	assert.Equal(int64(10), *stackResp.JSON200.Members[1].BlockedBy)
 
-	detailResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 11)
+	detailResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(11)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, detailResp.StatusCode(), string(detailResp.Body))
+	require.Equal(http.StatusOK, detailResp.StatusCode, string(detailResp.Body))
 	require.NotNil(detailResp.JSON200)
 	assert.Equal("dirty", detailResp.JSON200.MergeRequest.MergeableState)
 	assert.Empty(requireMR(t, database, repo.ID, 11).MergeableState)
@@ -25323,9 +24828,9 @@ func TestAPIGetStackForPR_DraftNotBaseReady(t *testing.T) {
 	seedStackedPR(t, database, "acme", "widget", 11, "feat/y", "feat/x", db.MergeRequestStateOpen, "pending", "")
 	runStackDetection(t, database, "acme", "widget")
 
-	resp, err := client.HTTP.GetPullStackWithResponse(t.Context(), "gh", "acme", "widget", 10)
+	resp, err := client.HTTP.GetPullStackWithResponse(t.Context(), &generated.GetPullStackRequestOptions{PathParams: &generated.GetPullStackPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(10)}})
 	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode())
+	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.NotNil(t, resp.JSON200)
 	assert.NotEqual("base_ready", resp.JSON200.Health, "draft base must not be base_ready")
 	assert.NotEqual("all_green", resp.JSON200.Health, "draft stack must not be all_green")
@@ -25343,9 +24848,9 @@ func TestAPIListStacks_DraftNotAllGreen(t *testing.T) {
 	seedStackedPRDraft(t, database, "acme", "widget", 11, "feat/b", "feat/a", db.MergeRequestStateOpen, "success", "APPROVED", true)
 	runStackDetection(t, database, "acme", "widget")
 
-	resp, err := client.HTTP.ListStacksWithResponse(t.Context(), &generated.ListStacksParams{})
+	resp, err := client.HTTP.ListStacksWithResponse(t.Context(), &generated.ListStacksRequestOptions{Query: &generated.ListStacksQuery{}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 
 	var stks []generated.StackResponse
 	require.NoError(json.Unmarshal(resp.Body, &stks))
@@ -25418,17 +24923,17 @@ func TestAPIStacks_DetectionViaSyncHook(t *testing.T) {
 	srv.syncer.RunOnce(ctx)
 
 	// Stacks should be populated purely by the hook path.
-	listResp, err := client.HTTP.ListStacksWithResponse(ctx, &generated.ListStacksParams{})
+	listResp, err := client.HTTP.ListStacksWithResponse(ctx, &generated.ListStacksRequestOptions{Query: &generated.ListStacksQuery{}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, listResp.StatusCode())
+	require.Equal(http.StatusOK, listResp.StatusCode)
 	var stks []generated.StackResponse
 	require.NoError(json.Unmarshal(listResp.Body, &stks))
 	require.Len(stks, 1, "sync-hook detection should produce one stack")
 	assert.Equal("hook", stks[0].Name)
 
-	ctxResp, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 10)
+	ctxResp, err := client.HTTP.GetPullStackWithResponse(ctx, &generated.GetPullStackRequestOptions{PathParams: &generated.GetPullStackPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(10)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, ctxResp.StatusCode())
+	require.Equal(http.StatusOK, ctxResp.StatusCode)
 	require.NotNil(ctxResp.JSON200)
 	assert.Equal("hook", ctxResp.JSON200.StackName)
 	assert.Equal(int64(2), ctxResp.JSON200.Size)
@@ -25495,16 +25000,16 @@ func TestAPIStacks_DetectionViaSyncHookPrefersGitHubNativeOrder(t *testing.T) {
 	srv.syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(ctx, database, nil))
 	srv.syncer.RunOnce(ctx)
 
-	stackResp, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 10)
+	stackResp, err := client.HTTP.GetPullStackWithResponse(ctx, &generated.GetPullStackRequestOptions{PathParams: &generated.GetPullStackPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(10)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, stackResp.StatusCode(), string(stackResp.Body))
+	require.Equal(http.StatusOK, stackResp.StatusCode, string(stackResp.Body))
 	require.NotNil(stackResp.JSON200)
 	require.NotNil(stackResp.JSON200.Members)
 	assert.Equal([]int64{11, 10}, stackMemberNumbers(stackResp.JSON200.Members))
 
-	detailResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 10)
+	detailResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(10)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, detailResp.StatusCode(), string(detailResp.Body))
+	require.Equal(http.StatusOK, detailResp.StatusCode, string(detailResp.Body))
 	require.NotNil(detailResp.JSON200)
 	require.NotNil(detailResp.JSON200.Stack)
 	assert.Equal(int64(2), detailResp.JSON200.Stack.Position)
@@ -25570,16 +25075,16 @@ func TestAPIStacks_DetectionViaSyncHookIgnoresForkHeadBranchCollision(t *testing
 	srv.syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(ctx, database, nil))
 	srv.syncer.RunOnce(ctx)
 
-	ctxResp, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 101)
+	ctxResp, err := client.HTTP.GetPullStackWithResponse(ctx, &generated.GetPullStackRequestOptions{PathParams: &generated.GetPullStackPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(101)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, ctxResp.StatusCode(), string(ctxResp.Body))
+	require.Equal(http.StatusOK, ctxResp.StatusCode, string(ctxResp.Body))
 	require.NotNil(ctxResp.JSON200)
 	require.NotNil(ctxResp.JSON200.Members)
 	assert.Equal([]int64{100, 101}, stackMemberNumbers(ctxResp.JSON200.Members))
 
-	forkResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 90)
+	forkResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(90)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, forkResp.StatusCode(), string(forkResp.Body))
+	require.Equal(http.StatusOK, forkResp.StatusCode, string(forkResp.Body))
 	require.NotNil(forkResp.JSON200)
 	assert.Nil(forkResp.JSON200.Stack)
 }
@@ -25657,9 +25162,9 @@ func TestAPIStacks_GitLabUnknownForkHeadSyncsButSkipsStackEdges(t *testing.T) {
 	syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(ctx, database, nil))
 	syncer.RunOnce(ctx)
 
-	pullsResp, err := client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsParams{})
+	pullsResp, err := client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsRequestOptions{Query: &generated.ListPullsQuery{}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, pullsResp.StatusCode(), string(pullsResp.Body))
+	require.Equal(http.StatusOK, pullsResp.StatusCode, string(pullsResp.Body))
 	require.NotNil(pullsResp.JSON200)
 	pullNumbers := make([]int64, 0, len(*pullsResp.JSON200))
 	for _, pull := range *pullsResp.JSON200 {
@@ -25667,28 +25172,29 @@ func TestAPIStacks_GitLabUnknownForkHeadSyncsButSkipsStackEdges(t *testing.T) {
 	}
 	assert.ElementsMatch([]int64{90, 100, 101}, pullNumbers)
 
-	forkResp, err := client.HTTP.GetPullOnHostWithResponse(ctx, "gitlab.example.com", "gl", "group", "project", 90)
+	forkResp, err := client.HTTP.GetPullOnHostWithResponse(ctx, &generated.GetPullOnHostRequestOptions{PathParams: &generated.GetPullOnHostPath{PlatformHost: "gitlab.example.com", Provider: "gl", Owner: "group", Name: "project", Number: int64(90)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, forkResp.StatusCode(), string(forkResp.Body))
+	require.Equal(http.StatusOK, forkResp.StatusCode, string(forkResp.Body))
 	require.NotNil(forkResp.JSON200)
 	assert.Empty(forkResp.JSON200.MergeRequest.HeadRepoCloneURL)
 	assert.Nil(forkResp.JSON200.Stack)
 
-	forkStackResp, err := client.HTTP.GetPullStackOnHostWithResponse(ctx, "gitlab.example.com", "gl", "group", "project", 90)
-	require.NoError(err)
-	assert.Equal(http.StatusNotFound, forkStackResp.StatusCode(), string(forkStackResp.Body))
+	forkStackResp, err := client.HTTP.GetPullStackOnHostWithResponse(ctx, &generated.GetPullStackOnHostRequestOptions{PathParams: &generated.GetPullStackOnHostPath{PlatformHost: "gitlab.example.com", Provider: "gl", Owner: "group", Name: "project", Number: int64(90)}})
+	require.Error(err)
+	require.NotNil(forkStackResp)
+	assert.Equal(http.StatusNotFound, forkStackResp.StatusCode, string(forkStackResp.Body))
 
-	tipStackResp, err := client.HTTP.GetPullStackOnHostWithResponse(ctx, "gitlab.example.com", "gl", "group", "project", 101)
+	tipStackResp, err := client.HTTP.GetPullStackOnHostWithResponse(ctx, &generated.GetPullStackOnHostRequestOptions{PathParams: &generated.GetPullStackOnHostPath{PlatformHost: "gitlab.example.com", Provider: "gl", Owner: "group", Name: "project", Number: int64(101)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, tipStackResp.StatusCode(), string(tipStackResp.Body))
+	require.Equal(http.StatusOK, tipStackResp.StatusCode, string(tipStackResp.Body))
 	require.NotNil(tipStackResp.JSON200)
 	require.NotNil(tipStackResp.JSON200.Members)
 	assert.Equal(int64(2), tipStackResp.JSON200.Size)
 	assert.Equal([]int64{100, 101}, stackMemberNumbers(tipStackResp.JSON200.Members))
 
-	stacksResp, err := client.HTTP.ListStacksWithResponse(ctx, &generated.ListStacksParams{})
+	stacksResp, err := client.HTTP.ListStacksWithResponse(ctx, &generated.ListStacksRequestOptions{Query: &generated.ListStacksQuery{}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, stacksResp.StatusCode(), string(stacksResp.Body))
+	require.Equal(http.StatusOK, stacksResp.StatusCode, string(stacksResp.Body))
 	require.NotNil(stacksResp.JSON200)
 	require.Len(*stacksResp.JSON200, 1)
 	require.NotNil((*stacksResp.JSON200)[0].Members)
@@ -25754,16 +25260,16 @@ func TestAPIStacks_DetectionViaSyncHookIgnoresSameRepoSelfEdge(t *testing.T) {
 	srv.syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(ctx, database, nil))
 	srv.syncer.RunOnce(ctx)
 
-	ctxResp, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 751)
+	ctxResp, err := client.HTTP.GetPullStackWithResponse(ctx, &generated.GetPullStackRequestOptions{PathParams: &generated.GetPullStackPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(751)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, ctxResp.StatusCode(), string(ctxResp.Body))
+	require.Equal(http.StatusOK, ctxResp.StatusCode, string(ctxResp.Body))
 	require.NotNil(ctxResp.JSON200)
 	require.NotNil(ctxResp.JSON200.Members)
 	assert.Equal([]int64{748, 751}, stackMemberNumbers(ctxResp.JSON200.Members))
 
-	selfEdgeResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 449)
+	selfEdgeResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(449)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, selfEdgeResp.StatusCode(), string(selfEdgeResp.Body))
+	require.Equal(http.StatusOK, selfEdgeResp.StatusCode, string(selfEdgeResp.Body))
 	require.NotNil(selfEdgeResp.JSON200)
 	assert.Nil(selfEdgeResp.JSON200.Stack)
 }
@@ -25788,9 +25294,9 @@ func TestAPIGetStackForPR_SingleFailingIsInProgress(t *testing.T) {
 	seedStackedPR(t, database, "acme", "widget", 11, "feat/tip", "feat/base", db.MergeRequestStateOpen, "failure", "")
 	runStackDetection(t, database, "acme", "widget")
 
-	resp, err := client.HTTP.GetPullStackWithResponse(t.Context(), "gh", "acme", "widget", 11)
+	resp, err := client.HTTP.GetPullStackWithResponse(t.Context(), &generated.GetPullStackRequestOptions{PathParams: &generated.GetPullStackPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(11)}})
 	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode())
+	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.NotNil(t, resp.JSON200)
 	assert.Equal("partial_merge", resp.JSON200.Health,
 		"failing tip with merged base and no open descendant is partial_merge, not blocked")
@@ -25808,9 +25314,9 @@ func TestAPIGetStackForPR_BaseBranchNotMain(t *testing.T) {
 	seedStackedPR(t, database, "acme", "widget", 11, "feat/tip", "feat/base", db.MergeRequestStateOpen, "pending", "")
 	runStackDetection(t, database, "acme", "widget")
 
-	resp, err := client.HTTP.GetPullStackWithResponse(t.Context(), "gh", "acme", "widget", 10)
+	resp, err := client.HTTP.GetPullStackWithResponse(t.Context(), &generated.GetPullStackRequestOptions{PathParams: &generated.GetPullStackPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(10)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Members)
 	assert.Len(resp.JSON200.Members, 2)
@@ -25987,11 +25493,9 @@ func TestCICheckDedupLatestRunWinsE2E(t *testing.T) {
 		withSeedPRTimes(older, older, older),
 	)
 
-	resp, err := client.HTTP.SyncPullWithResponse(
-		context.Background(), "gh", "acme", "widget", int64(prNumber),
-	)
+	resp, err := client.HTTP.SyncPullWithResponse(context.Background(), &generated.SyncPullRequestOptions{PathParams: &generated.SyncPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.MergeRequest)
 	require.Equal("success", resp.JSON200.MergeRequest.CIStatus)
@@ -26444,11 +25948,9 @@ func waitForWorkspaceStatus(
 	defer ticker.Stop()
 
 	for {
-		getResp, err := client.HTTP.GetWorkspaceWithResponse(
-			ctx, wsID,
-		)
+		getResp, err := client.HTTP.GetWorkspaceWithResponse(ctx, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: wsID}})
 		require.NoError(t, err)
-		if getResp.StatusCode() == http.StatusOK &&
+		if getResp.StatusCode == http.StatusOK &&
 			getResp.JSON200 != nil &&
 			getResp.JSON200.Status == status {
 			return getResp.JSON200
@@ -26553,13 +26055,13 @@ func TestListWorkspacesIncludesItemLastActivityAt(t *testing.T) {
 
 	resp, err := client.HTTP.ListWorkspacesWithResponse(ctx)
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Workspaces)
 
 	byID := map[string]generated.WorkspaceResponse{}
 	for _, ws := range resp.JSON200.Workspaces {
-		byID[ws.Id] = ws
+		byID[ws.ID] = ws
 	}
 
 	require.Contains(byID, "ws-pr-activity")
@@ -26866,9 +26368,9 @@ func TestWorkspaceRuntimeTargetsRefreshAfterSettingsUpdateE2E(t *testing.T) {
 	require.Len(reloaded.Agents, 1)
 	assert.Equal([]string{agentPath, "--full-auto"}, reloaded.Agents[0].Command)
 
-	runtimeResp, err := client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, ws.Id)
+	runtimeResp, err := client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, &generated.GetWorkspaceRuntimeRequestOptions{PathParams: &generated.GetWorkspaceRuntimePath{ID: ws.ID}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, runtimeResp.StatusCode())
+	require.Equal(http.StatusOK, runtimeResp.StatusCode)
 	require.NotNil(runtimeResp.JSON200)
 	require.NotNil(runtimeResp.JSON200.LaunchTargets)
 
@@ -26882,7 +26384,7 @@ func TestWorkspaceRuntimeTargetsRefreshAfterSettingsUpdateE2E(t *testing.T) {
 	assert.Equal("Custom Codex", codex.Label)
 	assert.True(codex.Available)
 	require.NotNil(codex.Command)
-	assert.Equal([]string{agentPath, "--full-auto"}, *codex.Command)
+	assert.Equal([]string{agentPath, "--full-auto"}, codex.Command)
 }
 
 func TestWorkspaceCreatesPtyOwnerSessionWhenTmuxUnavailableE2E(t *testing.T) {
@@ -26899,7 +26401,7 @@ func TestWorkspaceCreatesPtyOwnerSessionWhenTmuxUnavailableE2E(t *testing.T) {
 	require.Equal("ready", ws.Status)
 	assert.NotEmpty(ws.TmuxSession)
 
-	stored, err := fixture.database.GetWorkspace(ctx, ws.Id)
+	stored, err := fixture.database.GetWorkspace(ctx, ws.ID)
 	require.NoError(err)
 	require.NotNil(stored)
 	assert.Equal(workspace.TerminalBackendPtyOwner, stored.TerminalBackend)
@@ -26907,7 +26409,7 @@ func TestWorkspaceCreatesPtyOwnerSessionWhenTmuxUnavailableE2E(t *testing.T) {
 	ts := httptest.NewServer(fixture.server)
 	t.Cleanup(ts.Close)
 	workspaceTerminalWriteRead(
-		t, ctx, ts.URL, ws.Id, "printf 'owner-one\n'\n", "owner-one",
+		t, ctx, ts.URL, ws.ID, "printf 'owner-one\n'\n", "owner-one",
 	)
 
 	snapshot, err := fixture.server.workspaces.TerminalPaneSnapshot(
@@ -26919,10 +26421,10 @@ func TestWorkspaceCreatesPtyOwnerSessionWhenTmuxUnavailableE2E(t *testing.T) {
 	_, err = fixture.database.WriteDB().ExecContext(
 		ctx,
 		`UPDATE forge_workspaces SET terminal_backend = '' WHERE id = ?`,
-		ws.Id,
+		ws.ID,
 	)
 	require.NoError(err)
-	legacyStored, err := fixture.database.GetWorkspace(ctx, ws.Id)
+	legacyStored, err := fixture.database.GetWorkspace(ctx, ws.ID)
 	require.NoError(err)
 	require.NotNil(legacyStored)
 	assert.Empty(legacyStored.TerminalBackend)
@@ -26953,17 +26455,15 @@ func TestWorkspaceCreatesPtyOwnerSessionWhenTmuxUnavailableE2E(t *testing.T) {
 	t.Cleanup(restartedTS.Close)
 
 	workspaceTerminalWriteRead(
-		t, ctx, restartedTS.URL, ws.Id, "printf 'owner-two\n'\n", "owner-two",
+		t, ctx, restartedTS.URL, ws.ID, "printf 'owner-two\n'\n", "owner-two",
 	)
 
 	force := true
-	delResp, err := restartedClient.HTTP.DeleteWorkspaceWithResponse(
-		ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &force},
-	)
+	delResp, err := restartedClient.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: ws.ID}, Query: &generated.DeleteWorkspaceQuery{Force: &force}})
 	require.NoError(err)
-	require.Equal(http.StatusNoContent, delResp.StatusCode())
+	require.Equal(http.StatusNoContent, delResp.StatusCode)
 
-	deleted, err := fixture.database.GetWorkspace(ctx, ws.Id)
+	deleted, err := fixture.database.GetWorkspace(ctx, ws.ID)
 	require.NoError(err)
 	assert.Nil(deleted)
 	_, err = os.Stat(filepath.Join(ptyOwnerDir, ws.TmuxSession))
@@ -26991,7 +26491,7 @@ func TestWorkspaceRuntimePtyOwnerPersistenceFailureRollsBackSessionE2E(t *testin
 		fixture.server,
 		requestCtx,
 		http.MethodPost,
-		"/api/v1/workspaces/"+ws.Id+"/runtime/sessions",
+		"/api/v1/workspaces/"+ws.ID+"/runtime/sessions",
 		mustMarshal(t, map[string]any{
 			"target_key": string(localruntime.LaunchTargetPlainShell),
 		}),
@@ -26999,7 +26499,7 @@ func TestWorkspaceRuntimePtyOwnerPersistenceFailureRollsBackSessionE2E(t *testin
 
 	var launched localruntime.SessionInfo
 	require.Eventually(func() bool {
-		sessions := fixture.server.workspaceAPI.RuntimeSnapshot(ws.Id)
+		sessions := fixture.server.workspaceAPI.RuntimeSnapshot(ws.ID)
 		if len(sessions) != 1 || sessions[0].TmuxSession != "" {
 			return false
 		}
@@ -27020,8 +26520,8 @@ func TestWorkspaceRuntimePtyOwnerPersistenceFailureRollsBackSessionE2E(t *testin
 	assert.Contains(recorder.Body.String(), "record runtime session")
 	assert.Contains(recorder.Body.String(), "context canceled")
 	assert.NoFileExists(paths.StatePath)
-	assert.Empty(fixture.server.workspaceAPI.RuntimeSnapshot(ws.Id))
-	runtimeRows, err := fixture.database.ListWorkspaceRuntimeSessions(ctx, ws.Id)
+	assert.Empty(fixture.server.workspaceAPI.RuntimeSnapshot(ws.ID))
+	runtimeRows, err := fixture.database.ListWorkspaceRuntimeSessions(ctx, ws.ID)
 	require.NoError(err)
 	assert.Empty(runtimeRows)
 }
@@ -27039,13 +26539,13 @@ func TestWorkspaceRuntimePtyOwnerShellReattachesAfterServerRestartE2E(t *testing
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 
-	originalShell := launchPlainShellRuntimeSession(t, ctx, fixture.client, ws.Id)
+	originalShell := launchPlainShellRuntimeSession(t, ctx, fixture.client, ws.ID)
 	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, originalShell.Key)
-	staleTmuxKey := ws.Id + "_stale-tmux"
+	staleTmuxKey := ws.ID + "_stale-tmux"
 	require.NoError(fixture.database.UpsertWorkspaceRuntimeSession(
 		ctx,
 		&db.WorkspaceRuntimeSession{
-			WorkspaceID: ws.Id,
+			WorkspaceID: ws.ID,
 			SessionKey:  staleTmuxKey,
 			TargetKey:   "helper",
 			Label:       "Helper",
@@ -27057,13 +26557,13 @@ func TestWorkspaceRuntimePtyOwnerShellReattachesAfterServerRestartE2E(t *testing
 	))
 	t.Cleanup(func() {
 		_ = fixture.database.DeleteWorkspaceRuntimeSession(
-			context.Background(), ws.Id, staleTmuxKey,
+			context.Background(), ws.ID, staleTmuxKey,
 		)
 	})
 
 	ts := httptest.NewServer(fixture.server)
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
-		"/ws/v1/workspaces/" + ws.Id +
+		"/ws/v1/workspaces/" + ws.ID +
 		"/runtime/sessions/" + originalShell.Key + "/terminal?cols=80&rows=24"
 	conn := dialWebSocketForTest(t, ctx, wsURL, "pty-owner shell before restart")
 	workspaceTerminalConnWriteRead(
@@ -27089,11 +26589,9 @@ func TestWorkspaceRuntimePtyOwnerShellReattachesAfterServerRestartE2E(t *testing
 	t.Cleanup(func() { gracefulShutdown(t, restarted) })
 	restartedClient := setupTestClient(t, restarted)
 
-	runtimeResp, err := restartedClient.HTTP.GetWorkspaceRuntimeWithResponse(
-		ctx, ws.Id,
-	)
+	runtimeResp, err := restartedClient.HTTP.GetWorkspaceRuntimeWithResponse(ctx, &generated.GetWorkspaceRuntimeRequestOptions{PathParams: &generated.GetWorkspaceRuntimePath{ID: ws.ID}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, runtimeResp.StatusCode())
+	require.Equal(http.StatusOK, runtimeResp.StatusCode)
 	require.NotNil(runtimeResp.JSON200)
 	require.NotNil(runtimeResp.JSON200.Sessions)
 	require.Len(runtimeResp.JSON200.Sessions, 2)
@@ -27116,7 +26614,7 @@ func TestWorkspaceRuntimePtyOwnerShellReattachesAfterServerRestartE2E(t *testing
 	restartedTS := httptest.NewServer(restarted)
 	t.Cleanup(restartedTS.Close)
 	restartedURL := "ws" + strings.TrimPrefix(restartedTS.URL, "http") +
-		"/ws/v1/workspaces/" + ws.Id +
+		"/ws/v1/workspaces/" + ws.ID +
 		"/runtime/sessions/" + originalShell.Key + "/terminal?cols=80&rows=24"
 	restartedConn := dialWebSocketForTest(
 		t, ctx, restartedURL, "pty-owner shell after restart",
@@ -27130,11 +26628,9 @@ func TestWorkspaceRuntimePtyOwnerShellReattachesAfterServerRestartE2E(t *testing
 	)
 	require.NoError(restartedConn.Close(websocket.StatusNormalClosure, "stop"))
 
-	stopResp, err := restartedClient.HTTP.StopWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id, originalShell.Key,
-	)
+	stopResp, err := restartedClient.HTTP.StopWorkspaceRuntimeSessionWithResponse(ctx, &generated.StopWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.StopWorkspaceRuntimeSessionPath{ID: ws.ID, SessionKey: originalShell.Key}})
 	require.NoError(err)
-	require.Equal(http.StatusNoContent, stopResp.StatusCode())
+	require.Equal(http.StatusNoContent, stopResp.StatusCode)
 	_, err = os.Stat(filepath.Join(ptyOwnerDir, originalShell.Key))
 	assert.True(os.IsNotExist(err))
 }
@@ -27151,12 +26647,12 @@ func TestWorkspaceRuntimeUnavailablePtyOwnerSessionStaysUntilUserStopE2E(t *test
 	fixture, dir, ptyOwnerDir := setupPtyOwnerWorkspaceFixture(t)
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
-	sessionKey := ws.Id + "_stale-shell"
+	sessionKey := ws.ID + "_stale-shell"
 	createdAt := time.Date(2026, 6, 3, 12, 0, 0, 0, time.UTC)
 	require.NoError(fixture.server.workspaces.RecordRuntimeSession(
 		ctx,
 		db.WorkspaceRuntimeSession{
-			WorkspaceID: ws.Id,
+			WorkspaceID: ws.ID,
 			SessionKey:  sessionKey,
 			TargetKey:   string(localruntime.LaunchTargetPlainShell),
 			Label:       "Shell",
@@ -27180,11 +26676,9 @@ func TestWorkspaceRuntimeUnavailablePtyOwnerSessionStaysUntilUserStopE2E(t *test
 	t.Cleanup(func() { gracefulShutdown(t, restarted) })
 	restartedClient := setupTestClient(t, restarted)
 
-	runtimeResp, err := restartedClient.HTTP.GetWorkspaceRuntimeWithResponse(
-		ctx, ws.Id,
-	)
+	runtimeResp, err := restartedClient.HTTP.GetWorkspaceRuntimeWithResponse(ctx, &generated.GetWorkspaceRuntimeRequestOptions{PathParams: &generated.GetWorkspaceRuntimePath{ID: ws.ID}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, runtimeResp.StatusCode())
+	require.Equal(http.StatusOK, runtimeResp.StatusCode)
 	require.NotNil(runtimeResp.JSON200)
 	require.NotNil(runtimeResp.JSON200.Sessions)
 	require.Len(runtimeResp.JSON200.Sessions, 1)
@@ -27194,43 +26688,34 @@ func TestWorkspaceRuntimeUnavailablePtyOwnerSessionStaysUntilUserStopE2E(t *test
 	assert.Equal(string(localruntime.SessionStatusError), session.Status)
 	assert.Equal(string(localruntime.LaunchTargetPlainShell), session.TargetKey)
 
-	renameResp, err := restartedClient.HTTP.RenameWorkspaceRuntimeSessionWithResponse(
-		ctx,
-		ws.Id,
-		sessionKey,
-		generated.RenameWorkspaceRuntimeSessionInputBody{
-			Label: "Recovered shell",
-		},
-	)
+	renameResp, err := restartedClient.HTTP.RenameWorkspaceRuntimeSessionWithResponse(ctx, &generated.RenameWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.RenameWorkspaceRuntimeSessionPath{ID: ws.ID, SessionKey: sessionKey}, Body: &generated.RenameWorkspaceRuntimeSessionInputBody{
+		Label: "Recovered shell",
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, renameResp.StatusCode())
+	require.Equal(http.StatusOK, renameResp.StatusCode)
 	require.NotNil(renameResp.JSON200)
 	assert.Equal(sessionKey, renameResp.JSON200.Key)
 	assert.Equal("Recovered shell", renameResp.JSON200.Label)
 	assert.Equal(string(localruntime.SessionStatusError), renameResp.JSON200.Status)
 
-	runtimeResp, err = restartedClient.HTTP.GetWorkspaceRuntimeWithResponse(
-		ctx, ws.Id,
-	)
+	runtimeResp, err = restartedClient.HTTP.GetWorkspaceRuntimeWithResponse(ctx, &generated.GetWorkspaceRuntimeRequestOptions{PathParams: &generated.GetWorkspaceRuntimePath{ID: ws.ID}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, runtimeResp.StatusCode())
+	require.Equal(http.StatusOK, runtimeResp.StatusCode)
 	require.NotNil(runtimeResp.JSON200)
 	require.NotNil(runtimeResp.JSON200.Sessions)
 	require.Len(runtimeResp.JSON200.Sessions, 1)
 	assert.Equal("Recovered shell", runtimeResp.JSON200.Sessions[0].Label)
 
-	stored, err := fixture.database.ListWorkspaceRuntimeSessions(ctx, ws.Id)
+	stored, err := fixture.database.ListWorkspaceRuntimeSessions(ctx, ws.ID)
 	require.NoError(err)
 	require.Len(stored, 1)
 	assert.Equal(sessionKey, stored[0].SessionKey)
 	assert.Equal("Recovered shell", stored[0].Label)
 
-	stopResp, err := restartedClient.HTTP.StopWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id, sessionKey,
-	)
+	stopResp, err := restartedClient.HTTP.StopWorkspaceRuntimeSessionWithResponse(ctx, &generated.StopWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.StopWorkspaceRuntimeSessionPath{ID: ws.ID, SessionKey: sessionKey}})
 	require.NoError(err)
-	require.Equal(http.StatusNoContent, stopResp.StatusCode())
-	stored, err = fixture.database.ListWorkspaceRuntimeSessions(ctx, ws.Id)
+	require.Equal(http.StatusNoContent, stopResp.StatusCode)
+	stored, err = fixture.database.ListWorkspaceRuntimeSessions(ctx, ws.ID)
 	require.NoError(err)
 	assert.Empty(stored)
 }
@@ -27260,12 +26745,9 @@ func TestWorkspaceDeleteStopsPtyOwnerAgentAfterServerRestartE2E(t *testing.T) {
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 
-	launchResp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{TargetKey: "helper"},
-	)
+	launchResp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{TargetKey: "helper"}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, launchResp.StatusCode(), string(launchResp.Body))
+	require.Equal(http.StatusOK, launchResp.StatusCode, string(launchResp.Body))
 	require.NotNil(launchResp.JSON200)
 	sessionKey := launchResp.JSON200.Key
 	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, sessionKey)
@@ -27284,12 +26766,9 @@ func TestWorkspaceDeleteStopsPtyOwnerAgentAfterServerRestartE2E(t *testing.T) {
 	restartedClient := setupTestClient(t, restarted)
 
 	force := true
-	delResp, err := restartedClient.HTTP.DeleteWorkspaceWithResponse(
-		ctx, ws.Id,
-		&generated.DeleteWorkspaceParams{Force: &force},
-	)
+	delResp, err := restartedClient.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: ws.ID}, Query: &generated.DeleteWorkspaceQuery{Force: &force}})
 	require.NoError(err)
-	require.Equal(http.StatusNoContent, delResp.StatusCode(), string(delResp.Body))
+	require.Equal(http.StatusNoContent, delResp.StatusCode, string(delResp.Body))
 
 	_, err = os.Stat(filepath.Join(ptyOwnerDir, sessionKey))
 	assert.True(os.IsNotExist(err))
@@ -27363,43 +26842,36 @@ func TestWorkspaceRuntimeExistingSessionsAvailableWhenWorkspaceErroredE2E(t *tes
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 
-	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{
-			TargetKey: "plain_shell",
-		},
-	)
+	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
+		TargetKey: "plain_shell",
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, launchResp.StatusCode())
+	require.Equal(http.StatusOK, launchResp.StatusCode)
 	require.NotNil(launchResp.JSON200)
 	shell := launchResp.JSON200
 
 	errMsg := "restart failed"
-	require.NoError(database.UpdateWorkspaceStatus(ctx, ws.Id, "error", &errMsg))
+	require.NoError(database.UpdateWorkspaceStatus(ctx, ws.ID, "error", &errMsg))
 
-	getResp, err := client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, ws.Id)
+	getResp, err := client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, &generated.GetWorkspaceRuntimeRequestOptions{PathParams: &generated.GetWorkspaceRuntimePath{ID: ws.ID}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, getResp.StatusCode())
+	require.Equal(http.StatusOK, getResp.StatusCode)
 	require.NotNil(getResp.JSON200)
 	require.NotNil(getResp.JSON200.Sessions)
 	require.Len(getResp.JSON200.Sessions, 1)
 	assert.Equal(shell.Key, getResp.JSON200.Sessions[0].Key)
 	assert.Equal(string(localruntime.SessionStatusRunning), getResp.JSON200.Sessions[0].Status)
 
-	stopResp, err := client.HTTP.StopWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id, shell.Key,
-	)
+	stopResp, err := client.HTTP.StopWorkspaceRuntimeSessionWithResponse(ctx, &generated.StopWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.StopWorkspaceRuntimeSessionPath{ID: ws.ID, SessionKey: shell.Key}})
 	require.NoError(err)
-	require.Equal(http.StatusNoContent, stopResp.StatusCode())
+	require.Equal(http.StatusNoContent, stopResp.StatusCode)
 
-	relaunchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{
-			TargetKey: "plain_shell",
-		},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusConflict, relaunchResp.StatusCode())
+	relaunchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
+		TargetKey: "plain_shell",
+	}})
+	require.Error(err)
+	require.NotNil(relaunchResp)
+	require.Equal(http.StatusConflict, relaunchResp.StatusCode)
 }
 
 func TestWorkspaceRuntimeIncludesStoredRuntimeSessionsAfterReloadE2E(t *testing.T) {
@@ -27482,16 +26954,16 @@ exit 0
 
 	require.Len(srv.runtime.ListSessions(ws.ID), 1)
 
-	resp, err := client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, ws.ID)
+	resp, err := client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, &generated.GetWorkspaceRuntimeRequestOptions{PathParams: &generated.GetWorkspaceRuntimePath{ID: ws.ID}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Sessions)
 	require.Len(resp.JSON200.Sessions, 1)
 
 	session := resp.JSON200.Sessions[0]
 	assert.Equal(sessionKey, session.Key)
-	assert.Equal(ws.ID, session.WorkspaceId)
+	assert.Equal(ws.ID, session.WorkspaceID)
 	assert.Equal("helper", session.TargetKey)
 	assert.Equal("Helper", session.Label)
 	assert.Equal(string(localruntime.LaunchTargetAgent), session.Kind)
@@ -27563,14 +27035,11 @@ exit 0
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 
-	resp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{
-			TargetKey: "helper",
-		},
-	)
+	resp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
+		TargetKey: "helper",
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 
 	var newSession []string
@@ -27590,7 +27059,7 @@ exit 0
 
 	session, ok := argAfter(newSession, "-s")
 	require.True(ok, "new-session should name a tmux session")
-	assert.True(isRuntimeTmuxSessionNameForWorkspace(ws.Id, session))
+	assert.True(isRuntimeTmuxSessionNameForWorkspace(ws.ID, session))
 	assert.Contains(newSession, "-d")
 	assert.Contains(newSession, "-c")
 	assert.Contains(scriptText, agentPath)
@@ -27606,13 +27075,13 @@ exit 0
 	require.Eventually(func() bool {
 		listResp, err := client.HTTP.ListWorkspacesWithResponse(ctx)
 		require.NoError(err)
-		if listResp.StatusCode() != http.StatusOK ||
+		if listResp.StatusCode != http.StatusOK ||
 			listResp.JSON200 == nil || listResp.JSON200.Workspaces == nil {
 			return false
 		}
 		listed = nil
 		for i := range listResp.JSON200.Workspaces {
-			if listResp.JSON200.Workspaces[i].Id == ws.Id {
+			if listResp.JSON200.Workspaces[i].ID == ws.ID {
 				listed = &listResp.JSON200.Workspaces[i]
 				break
 			}
@@ -27629,7 +27098,7 @@ exit 0
 	assert.Contains(readTmuxRecord(t, record), []string{
 		"display-message", "-p", "-t", session, "#{pane_title}",
 	})
-	stored, err := database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.Id)
+	stored, err := database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.ID)
 	require.NoError(err)
 	require.Len(stored, 1)
 	assert.Equal(session, stored[0].TmuxSession)
@@ -27698,9 +27167,9 @@ exit 0
 	})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	client := setupTestClient(t, srv)
-	resp, err := client.HTTP.GetWorkspaceWithResponse(t.Context(), ws.ID)
+	resp, err := client.HTTP.GetWorkspaceWithResponse(t.Context(), &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: ws.ID}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 
 	require.Eventually(func() bool {
 		return slices.ContainsFunc(
@@ -27807,9 +27276,9 @@ exit 0
 	client := setupTestClient(t, srv)
 	var got *generated.WorkspaceResponse
 	require.Eventually(func() bool {
-		resp, err := client.HTTP.GetWorkspaceWithResponse(t.Context(), ws.ID)
+		resp, err := client.HTTP.GetWorkspaceWithResponse(t.Context(), &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: ws.ID}})
 		require.NoError(err)
-		if resp.StatusCode() != http.StatusOK || resp.JSON200 == nil {
+		if resp.StatusCode != http.StatusOK || resp.JSON200 == nil {
 			return false
 		}
 		got = resp.JSON200
@@ -27887,19 +27356,17 @@ exit 0
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 
-	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{
-			TargetKey: "helper",
-		},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusInternalServerError, launchResp.StatusCode())
+	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
+		TargetKey: "helper",
+	}})
+	require.Error(err)
+	require.NotNil(launchResp)
+	require.Equal(http.StatusInternalServerError, launchResp.StatusCode)
 
 	var sessionName string
 	require.Eventually(func() bool {
 		name, ok := findRuntimeTmuxNewSessionName(
-			t, readTmuxRecord(t, record), ws.Id, "",
+			t, readTmuxRecord(t, record), ws.ID, "",
 		)
 		if ok {
 			sessionName = name
@@ -27930,9 +27397,9 @@ exit 0
 	})
 
 	require.Eventually(func() bool {
-		runtimeResp, err := client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, ws.Id)
+		runtimeResp, err := client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, &generated.GetWorkspaceRuntimeRequestOptions{PathParams: &generated.GetWorkspaceRuntimePath{ID: ws.ID}})
 		if err != nil ||
-			runtimeResp.StatusCode() != http.StatusOK ||
+			runtimeResp.StatusCode != http.StatusOK ||
 			runtimeResp.JSON200 == nil ||
 			runtimeResp.JSON200.Sessions == nil {
 			return false
@@ -27941,7 +27408,7 @@ exit 0
 	}, 2*time.Second, 20*time.Millisecond)
 
 	require.Eventually(func() bool {
-		stored, err := database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.Id)
+		stored, err := database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.ID)
 		return err == nil && len(stored) == 0
 	}, 2*time.Second, 20*time.Millisecond)
 }
@@ -28055,19 +27522,16 @@ func TestWorkspaceRuntimeTmuxSessionsHashUnsafeTargetKeysE2E(
 
 	var launched []generated.SessionInfo
 	for _, targetKey := range []string{"foo/bar", "foo:bar"} {
-		resp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-			ctx, ws.Id,
-			generated.LaunchWorkspaceRuntimeSessionInputBody{
-				TargetKey: targetKey,
-			},
-		)
+		resp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
+			TargetKey: targetKey,
+		}})
 		require.NoError(err)
-		require.Equal(http.StatusOK, resp.StatusCode())
+		require.Equal(http.StatusOK, resp.StatusCode)
 		require.NotNil(resp.JSON200)
 		launched = append(launched, *resp.JSON200)
 	}
 
-	stored, err := database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.Id)
+	stored, err := database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.ID)
 	require.NoError(err)
 	require.Len(stored, 2)
 	sessionsByTarget := map[string]string{}
@@ -28080,20 +27544,18 @@ func TestWorkspaceRuntimeTmuxSessionsHashUnsafeTargetKeysE2E(
 	require.NotEmpty(colonSession)
 	assert.NotEqual(slashSession, colonSession)
 	for _, sessionName := range []string{slashSession, colonSession} {
-		assert.True(isRuntimeTmuxSessionNameForWorkspace(ws.Id, sessionName))
+		assert.True(isRuntimeTmuxSessionNameForWorkspace(ws.ID, sessionName))
 		assert.NotContains(sessionName, "foo")
 		assert.NotContains(sessionName, "/")
 		assert.NotContains(sessionName, ":")
 	}
 
 	for _, session := range launched {
-		stopResp, err := client.HTTP.StopWorkspaceRuntimeSessionWithResponse(
-			ctx, ws.Id, session.Key,
-		)
+		stopResp, err := client.HTTP.StopWorkspaceRuntimeSessionWithResponse(ctx, &generated.StopWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.StopWorkspaceRuntimeSessionPath{ID: ws.ID, SessionKey: session.Key}})
 		require.NoError(err)
-		require.Equal(http.StatusNoContent, stopResp.StatusCode())
+		require.Equal(http.StatusNoContent, stopResp.StatusCode)
 	}
-	stored, err = database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.Id)
+	stored, err = database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.ID)
 	require.NoError(err)
 	assert.Empty(stored)
 	assert.Contains(readTmuxRecord(t, record), []string{
@@ -28126,33 +27588,28 @@ func TestWorkspaceRuntimeStopClearsStoredWrappedAgentSessionAfterRuntimeForgetE2
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 
-	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{
-			TargetKey: "helper",
-		},
-	)
+	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
+		TargetKey: "helper",
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, launchResp.StatusCode())
+	require.Equal(http.StatusOK, launchResp.StatusCode)
 	require.NotNil(launchResp.JSON200)
 
-	stored, err := database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.Id)
+	stored, err := database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.ID)
 	require.NoError(err)
 	require.Len(stored, 1)
 	sessionName := stored[0].TmuxSession
-	assert.True(isRuntimeTmuxSessionNameForWorkspace(ws.Id, sessionName))
+	assert.True(isRuntimeTmuxSessionNameForWorkspace(ws.ID, sessionName))
 
-	require.NoError(srv.runtime.Stop(ctx, ws.Id, launchResp.JSON200.Key))
-	stored, err = database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.Id)
+	require.NoError(srv.runtime.Stop(ctx, ws.ID, launchResp.JSON200.Key))
+	stored, err = database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.ID)
 	require.NoError(err)
 	require.Len(stored, 1)
 
-	stopResp, err := client.HTTP.StopWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id, launchResp.JSON200.Key,
-	)
+	stopResp, err := client.HTTP.StopWorkspaceRuntimeSessionWithResponse(ctx, &generated.StopWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.StopWorkspaceRuntimeSessionPath{ID: ws.ID, SessionKey: launchResp.JSON200.Key}})
 	require.NoError(err)
-	require.Equal(http.StatusNoContent, stopResp.StatusCode())
-	stored, err = database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.Id)
+	require.Equal(http.StatusNoContent, stopResp.StatusCode)
+	stored, err = database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.ID)
 	require.NoError(err)
 	assert.Empty(stored)
 	assert.Contains(readTmuxRecord(t, record), []string{
@@ -28213,31 +27670,25 @@ exit 0
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 	t.Cleanup(func() {
-		_ = database.DeleteWorkspaceRuntimeSessions(context.Background(), ws.Id)
+		_ = database.DeleteWorkspaceRuntimeSessions(context.Background(), ws.ID)
 	})
 
-	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{
-			TargetKey: "helper",
-		},
-	)
+	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
+		TargetKey: "helper",
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, launchResp.StatusCode())
+	require.Equal(http.StatusOK, launchResp.StatusCode)
 	require.NotNil(launchResp.JSON200)
 
-	stopResp, err := client.HTTP.StopWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id, launchResp.JSON200.Key,
-	)
-	require.NoError(err)
-	require.Equal(http.StatusInternalServerError, stopResp.StatusCode())
+	stopResp, err := client.HTTP.StopWorkspaceRuntimeSessionWithResponse(ctx, &generated.StopWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.StopWorkspaceRuntimeSessionPath{ID: ws.ID, SessionKey: launchResp.JSON200.Key}})
+	require.Error(err)
+	require.NotNil(stopResp)
+	require.Equal(http.StatusInternalServerError, stopResp.StatusCode)
 
 	assert.Eventually(func() bool {
-		getResp, err := client.HTTP.GetWorkspaceRuntimeWithResponse(
-			ctx, ws.Id,
-		)
+		getResp, err := client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, &generated.GetWorkspaceRuntimeRequestOptions{PathParams: &generated.GetWorkspaceRuntimePath{ID: ws.ID}})
 		if err != nil ||
-			getResp.StatusCode() != http.StatusOK ||
+			getResp.StatusCode != http.StatusOK ||
 			getResp.JSON200 == nil ||
 			getResp.JSON200.Sessions == nil {
 			return false
@@ -28250,11 +27701,11 @@ exit 0
 			session.Status == string(localruntime.SessionStatusError)
 	}, 2*time.Second, 20*time.Millisecond)
 
-	stored, err := database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.Id)
+	stored, err := database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.ID)
 	require.NoError(err)
 	require.Len(stored, 1)
 	assert.True(
-		isRuntimeTmuxSessionNameForWorkspace(ws.Id, stored[0].TmuxSession),
+		isRuntimeTmuxSessionNameForWorkspace(ws.ID, stored[0].TmuxSession),
 	)
 }
 
@@ -28271,7 +27722,7 @@ func TestWorkspaceDeletionRecoversAcrossServerRestartE2E(t *testing.T) {
 	// Persist the same admission transition performed by DELETE immediately
 	// before destructive teardown. This is the durable state a process crash
 	// can leave behind.
-	started, err := fixture.database.BeginWorkspaceDeletion(ctx, ws.Id)
+	started, err := fixture.database.BeginWorkspaceDeletion(ctx, ws.ID)
 	require.NoError(err)
 	require.True(started)
 	gracefulShutdown(t, fixture.server)
@@ -28295,9 +27746,9 @@ func TestWorkspaceDeletionRecoversAcrossServerRestartE2E(t *testing.T) {
 	t.Cleanup(func() { gracefulShutdown(t, restarted) })
 	restartedClient := setupTestClient(t, restarted)
 
-	getResp, err := restartedClient.HTTP.GetWorkspaceWithResponse(ctx, ws.Id)
+	getResp, err := restartedClient.HTTP.GetWorkspaceWithResponse(ctx, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: ws.ID}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, getResp.StatusCode(), string(getResp.Body))
+	require.Equal(http.StatusOK, getResp.StatusCode, string(getResp.Body))
 	require.NotNil(getResp.JSON200)
 	assert.Equal("deletion_failed", getResp.JSON200.Status)
 	require.NotNil(getResp.JSON200.ErrorMessage)
@@ -28307,17 +27758,15 @@ func TestWorkspaceDeletionRecoversAcrossServerRestartE2E(t *testing.T) {
 	)
 
 	force := true
-	deleteResp, err := restartedClient.HTTP.DeleteWorkspaceWithResponse(
-		ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &force},
-	)
+	deleteResp, err := restartedClient.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: ws.ID}, Query: &generated.DeleteWorkspaceQuery{Force: &force}})
 	require.NoError(err)
 	require.Equal(
-		http.StatusNoContent, deleteResp.StatusCode(), string(deleteResp.Body),
+		http.StatusNoContent, deleteResp.StatusCode, string(deleteResp.Body),
 	)
 
-	getResp, err = restartedClient.HTTP.GetWorkspaceWithResponse(ctx, ws.Id)
+	getResp, err = restartedClient.HTTP.GetWorkspaceWithResponse(ctx, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: ws.ID}})
 	require.NoError(err)
-	assert.Equal(http.StatusNotFound, getResp.StatusCode())
+	assert.Equal(http.StatusNotFound, getResp.StatusCode)
 	_, err = os.Stat(ws.WorktreePath)
 	assert.True(os.IsNotExist(err))
 }
@@ -28337,29 +27786,23 @@ func TestWorkspaceDeleteStopsRuntimeSessionsE2E(t *testing.T) {
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 
-	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{
-			TargetKey: "helper",
-		},
-	)
+	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
+		TargetKey: "helper",
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, launchResp.StatusCode())
+	require.Equal(http.StatusOK, launchResp.StatusCode)
 	require.NotNil(launchResp.JSON200)
 
-	_ = launchPlainShellRuntimeSession(t, ctx, client, ws.Id)
+	_ = launchPlainShellRuntimeSession(t, ctx, client, ws.ID)
 
-	require.Len(srv.runtime.ListSessions(ws.Id), 2)
+	require.Len(srv.runtime.ListSessions(ws.ID), 2)
 
 	force := true
-	delResp, err := client.HTTP.DeleteWorkspaceWithResponse(
-		ctx, ws.Id,
-		&generated.DeleteWorkspaceParams{Force: &force},
-	)
+	delResp, err := client.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: ws.ID}, Query: &generated.DeleteWorkspaceQuery{Force: &force}})
 	require.NoError(err)
-	require.Equal(http.StatusNoContent, delResp.StatusCode())
+	require.Equal(http.StatusNoContent, delResp.StatusCode)
 
-	assert.Empty(srv.runtime.ListSessions(ws.Id))
+	assert.Empty(srv.runtime.ListSessions(ws.ID))
 }
 
 func TestWorkspaceDeleteDirtyKeepsRuntimeSessionsE2E(t *testing.T) {
@@ -28377,16 +27820,13 @@ func TestWorkspaceDeleteDirtyKeepsRuntimeSessionsE2E(t *testing.T) {
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 
-	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{
-			TargetKey: "helper",
-		},
-	)
+	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
+		TargetKey: "helper",
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, launchResp.StatusCode())
-	_ = launchPlainShellRuntimeSession(t, ctx, client, ws.Id)
-	require.Len(srv.runtime.ListSessions(ws.Id), 2)
+	require.Equal(http.StatusOK, launchResp.StatusCode)
+	_ = launchPlainShellRuntimeSession(t, ctx, client, ws.ID)
+	require.Len(srv.runtime.ListSessions(ws.ID), 2)
 
 	// Make the worktree dirty so a non-forced delete will be rejected.
 	require.NoError(os.WriteFile(
@@ -28394,28 +27834,22 @@ func TestWorkspaceDeleteDirtyKeepsRuntimeSessionsE2E(t *testing.T) {
 		[]byte("uncommitted\n"), 0o644,
 	))
 
-	delResp, err := client.HTTP.DeleteWorkspaceWithResponse(
-		ctx, ws.Id, &generated.DeleteWorkspaceParams{},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusConflict, delResp.StatusCode())
+	delResp, err := client.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: ws.ID}, Query: &generated.DeleteWorkspaceQuery{}})
+	require.Error(err)
+	require.NotNil(delResp)
+	require.Equal(http.StatusConflict, delResp.StatusCode)
 
 	// The 409 must not have killed the runtime sessions.
-	assert.Len(srv.runtime.ListSessions(ws.Id), 2)
+	assert.Len(srv.runtime.ListSessions(ws.ID), 2)
 
-	stopResp, err := client.HTTP.StopWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id, launchResp.JSON200.Key,
-	)
+	stopResp, err := client.HTTP.StopWorkspaceRuntimeSessionWithResponse(ctx, &generated.StopWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.StopWorkspaceRuntimeSessionPath{ID: ws.ID, SessionKey: launchResp.JSON200.Key}})
 	require.NoError(err)
-	require.Equal(http.StatusNoContent, stopResp.StatusCode())
+	require.Equal(http.StatusNoContent, stopResp.StatusCode)
 
-	launchAfterRejectResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{TargetKey: "helper"},
-	)
+	launchAfterRejectResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{TargetKey: "helper"}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, launchAfterRejectResp.StatusCode())
-	assert.Len(srv.runtime.ListSessions(ws.Id), 2)
+	require.Equal(http.StatusOK, launchAfterRejectResp.StatusCode)
+	assert.Len(srv.runtime.ListSessions(ws.ID), 2)
 }
 
 func pinWorkspaceMergeRequestForReview(
@@ -28454,7 +27888,7 @@ func TestMergeWorkspaceCleanupDeletesWorkspaceAfterConfirmedMerge(t *testing.T) 
 		"commit_message":      "merge body",
 		"method":              "squash",
 		"expected_head_sha":   headSHA,
-		"delete_workspace_id": ws.Id,
+		"delete_workspace_id": ws.ID,
 	})
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
@@ -28468,7 +27902,7 @@ func TestMergeWorkspaceCleanupDeletesWorkspaceAfterConfirmedMerge(t *testing.T) 
 	assert.True(response.WorkspaceCleanupPending)
 	assert.Empty(response.WorkspaceCleanupWarning)
 	require.Eventually(func() bool {
-		stored, getErr := database.GetWorkspace(ctx, ws.Id)
+		stored, getErr := database.GetWorkspace(ctx, ws.ID)
 		return getErr == nil && stored == nil
 	}, 5*time.Second, 10*time.Millisecond)
 	_, err := os.Stat(ws.WorktreePath)
@@ -28523,7 +27957,7 @@ func TestWorkspaceListPrunesMissingTmuxSessionsE2E(t *testing.T) {
 	require.Eventually(func() bool {
 		listResp, err := client.HTTP.ListWorkspacesWithResponse(ctx)
 		require.NoError(err)
-		if listResp.StatusCode() != http.StatusOK ||
+		if listResp.StatusCode != http.StatusOK ||
 			listResp.JSON200 == nil || listResp.JSON200.Workspaces == nil ||
 			len(listResp.JSON200.Workspaces) != 1 {
 			return false
@@ -28531,7 +27965,7 @@ func TestWorkspaceListPrunesMissingTmuxSessionsE2E(t *testing.T) {
 		got = listResp.JSON200.Workspaces[0]
 		return got.Status == "error" && got.ErrorMessage != nil
 	}, 2*time.Second, 10*time.Millisecond)
-	assert.Equal("0000000000000002", got.Id)
+	assert.Equal("0000000000000002", got.ID)
 	assert.Equal("error", got.Status)
 	require.NotNil(got.ErrorMessage)
 	assert.Contains(*got.ErrorMessage, "tmux session is no longer running")
@@ -28566,21 +28000,19 @@ func TestWorkspaceRuntimePlainShellRecordsTmuxSessionE2E(t *testing.T) {
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 
-	shell := launchPlainShellRuntimeSession(t, ctx, client, ws.Id)
+	shell := launchPlainShellRuntimeSession(t, ctx, client, ws.ID)
 	assert.Equal("plain_shell", shell.TargetKey)
 
-	stored, err := database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.Id)
+	stored, err := database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.ID)
 	require.NoError(err)
 	require.Len(stored, 1)
 	assert.Equal(string(localruntime.LaunchTargetPlainShell), stored[0].TargetKey)
 	assert.NotEmpty(stored[0].TmuxSession)
 
-	stopResp, err := client.HTTP.StopWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id, shell.Key,
-	)
+	stopResp, err := client.HTTP.StopWorkspaceRuntimeSessionWithResponse(ctx, &generated.StopWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.StopWorkspaceRuntimeSessionPath{ID: ws.ID, SessionKey: shell.Key}})
 	require.NoError(err)
-	require.Equal(http.StatusNoContent, stopResp.StatusCode())
-	stored, err = database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.Id)
+	require.Equal(http.StatusNoContent, stopResp.StatusCode)
+	stored, err = database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.ID)
 	require.NoError(err)
 	assert.Empty(stored)
 }
@@ -28620,17 +28052,14 @@ func TestWorkspaceRuntimePlainShellRecordFailureCleansCreatedTmuxShellE2E(t *tes
 	recordCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	type launchResult struct {
-		response *generated.LaunchWorkspaceRuntimeSessionResponse
+		response *generated.LaunchWorkspaceRuntimeSessionResp
 		err      error
 	}
 	launchDone := make(chan launchResult, 1)
 	go func() {
-		response, launchErr := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-			recordCtx, ws.Id,
-			generated.LaunchWorkspaceRuntimeSessionInputBody{
-				TargetKey: string(localruntime.LaunchTargetPlainShell),
-			},
-		)
+		response, launchErr := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(recordCtx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
+			TargetKey: string(localruntime.LaunchTargetPlainShell),
+		}})
 		launchDone <- launchResult{response: response, err: launchErr}
 	}()
 	require.Eventually(func() bool {
@@ -28638,11 +28067,11 @@ func TestWorkspaceRuntimePlainShellRecordFailureCleansCreatedTmuxShellE2E(t *tes
 		return readErr == nil && len(entries) > len(initialState)
 	}, 2*time.Second, 20*time.Millisecond)
 	require.Eventually(func() bool {
-		return len(fixture.server.runtime.ListSessions(ws.Id)) > 0
+		return len(fixture.server.runtime.ListSessions(ws.ID)) > 0
 	}, 2*time.Second, 20*time.Millisecond)
 	require.NoError(os.Remove(attachGate))
 	require.Eventually(func() bool {
-		return len(fixture.server.runtime.ListSessions(ws.Id)) == 0
+		return len(fixture.server.runtime.ListSessions(ws.ID)) == 0
 	}, 2*time.Second, 20*time.Millisecond)
 	cancel()
 	var result launchResult
@@ -28652,15 +28081,13 @@ func TestWorkspaceRuntimePlainShellRecordFailureCleansCreatedTmuxShellE2E(t *tes
 		require.FailNow("runtime launch request did not complete within 5 seconds")
 	}
 	require.NoError(result.err)
-	require.Equal(http.StatusInternalServerError, result.response.StatusCode())
+	require.Equal(http.StatusInternalServerError, result.response.StatusCode)
 	require.NoError(tx.Rollback())
 
 	require.Eventually(func() bool {
-		runtimeResp, runtimeErr := fixture.client.HTTP.GetWorkspaceRuntimeWithResponse(
-			ctx, ws.Id,
-		)
+		runtimeResp, runtimeErr := fixture.client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, &generated.GetWorkspaceRuntimeRequestOptions{PathParams: &generated.GetWorkspaceRuntimePath{ID: ws.ID}})
 		return runtimeErr == nil &&
-			runtimeResp.StatusCode() == http.StatusOK &&
+			runtimeResp.StatusCode == http.StatusOK &&
 			runtimeResp.JSON200 != nil &&
 			runtimeResp.JSON200.Sessions != nil &&
 			len(runtimeResp.JSON200.Sessions) == 0
@@ -28697,11 +28124,11 @@ func TestWorkspaceRuntimeRestoresTmuxShellAfterRestartE2E(t *testing.T) {
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 
-	originalShell := launchPlainShellRuntimeSession(t, ctx, fixture.client, ws.Id)
-	stored, err := fixture.database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.Id)
+	originalShell := launchPlainShellRuntimeSession(t, ctx, fixture.client, ws.ID)
+	stored, err := fixture.database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.ID)
 	require.NoError(err)
 	require.Len(stored, 1)
-	runtimeRows, err := fixture.database.ListWorkspaceRuntimeSessions(ctx, ws.Id)
+	runtimeRows, err := fixture.database.ListWorkspaceRuntimeSessions(ctx, ws.ID)
 	require.NoError(err)
 	require.Len(runtimeRows, 1)
 	assert.Equal("session", runtimeRows[0].Scope)
@@ -28714,7 +28141,7 @@ func TestWorkspaceRuntimeRestoresTmuxShellAfterRestartE2E(t *testing.T) {
 	}, 2*time.Second, 20*time.Millisecond)
 
 	gracefulShutdown(t, fixture.server)
-	stored, err = fixture.database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.Id)
+	stored, err = fixture.database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.ID)
 	require.NoError(err)
 	require.Len(stored, 1)
 	restarted := New(
@@ -28726,15 +28153,13 @@ func TestWorkspaceRuntimeRestoresTmuxShellAfterRestartE2E(t *testing.T) {
 	)
 	t.Cleanup(func() { gracefulShutdown(t, restarted) })
 	restartedClient := setupTestClient(t, restarted)
-	stored, err = fixture.database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.Id)
+	stored, err = fixture.database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.ID)
 	require.NoError(err)
 	require.Len(stored, 1)
 
-	runtimeResp, err := restartedClient.HTTP.GetWorkspaceRuntimeWithResponse(
-		ctx, ws.Id,
-	)
+	runtimeResp, err := restartedClient.HTTP.GetWorkspaceRuntimeWithResponse(ctx, &generated.GetWorkspaceRuntimeRequestOptions{PathParams: &generated.GetWorkspaceRuntimePath{ID: ws.ID}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, runtimeResp.StatusCode())
+	require.Equal(http.StatusOK, runtimeResp.StatusCode)
 	require.NotNil(runtimeResp.JSON200)
 	require.NotNil(runtimeResp.JSON200.Sessions)
 	require.Len(runtimeResp.JSON200.Sessions, 1)
@@ -28743,7 +28168,7 @@ func TestWorkspaceRuntimeRestoresTmuxShellAfterRestartE2E(t *testing.T) {
 		originalShell.CreatedAt,
 		runtimeResp.JSON200.Sessions[0].CreatedAt,
 	)
-	runtimeRows, err = fixture.database.ListWorkspaceRuntimeSessions(ctx, ws.Id)
+	runtimeRows, err = fixture.database.ListWorkspaceRuntimeSessions(ctx, ws.ID)
 	require.NoError(err)
 	require.Len(runtimeRows, 1)
 	assert.Equal("session", runtimeRows[0].Scope)
@@ -28751,7 +28176,7 @@ func TestWorkspaceRuntimeRestoresTmuxShellAfterRestartE2E(t *testing.T) {
 	ts := httptest.NewServer(restarted)
 	t.Cleanup(ts.Close)
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
-		"/ws/v1/workspaces/" + ws.Id +
+		"/ws/v1/workspaces/" + ws.ID +
 		"/runtime/sessions/" + originalShell.Key + "/terminal?cols=80&rows=24"
 	conn, _, err := websocket.Dial(ctx, wsURL, nil)
 	require.NoError(err)
@@ -28780,8 +28205,8 @@ func TestWorkspaceRuntimeRestoreKeepsStoredTmuxShellWithDifferentOwnerMarkerE2E(
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 
-	_ = launchPlainShellRuntimeSession(t, ctx, fixture.client, ws.Id)
-	stored, err := fixture.database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.Id)
+	_ = launchPlainShellRuntimeSession(t, ctx, fixture.client, ws.ID)
+	stored, err := fixture.database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.ID)
 	require.NoError(err)
 	require.Len(stored, 1)
 	stateDir := os.Getenv("KENN_FORGE_FAKE_TMUX_STATE")
@@ -28800,17 +28225,15 @@ func TestWorkspaceRuntimeRestoreKeepsStoredTmuxShellWithDifferentOwnerMarkerE2E(
 	t.Cleanup(func() { gracefulShutdown(t, restarted) })
 	restartedClient := setupTestClient(t, restarted)
 
-	stored, err = fixture.database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.Id)
+	stored, err = fixture.database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.ID)
 	require.NoError(err)
 	require.Len(stored, 1)
 	_, err = os.Stat(sessionPath)
 	require.NoError(err, "stored tmux session should not be killed")
 
-	runtimeResp, err := restartedClient.HTTP.GetWorkspaceRuntimeWithResponse(
-		ctx, ws.Id,
-	)
+	runtimeResp, err := restartedClient.HTTP.GetWorkspaceRuntimeWithResponse(ctx, &generated.GetWorkspaceRuntimeRequestOptions{PathParams: &generated.GetWorkspaceRuntimePath{ID: ws.ID}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, runtimeResp.StatusCode())
+	require.Equal(http.StatusOK, runtimeResp.StatusCode)
 	require.NotNil(runtimeResp.JSON200)
 	require.NotNil(runtimeResp.JSON200.Sessions)
 	require.Len(runtimeResp.JSON200.Sessions, 1)
@@ -28943,27 +28366,24 @@ func TestWorkspaceRuntimeSessionTerminalTmuxBackedWebSocketE2E(
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 
-	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{
-			TargetKey: "helper",
-		},
-	)
+	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
+		TargetKey: "helper",
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, launchResp.StatusCode())
+	require.Equal(http.StatusOK, launchResp.StatusCode)
 	require.NotNil(launchResp.JSON200)
 	session := launchResp.JSON200
-	stored, err := database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.Id)
+	stored, err := database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.ID)
 	require.NoError(err)
 	require.Len(stored, 1)
 	assert.True(
-		isRuntimeTmuxSessionNameForWorkspace(ws.Id, stored[0].TmuxSession),
+		isRuntimeTmuxSessionNameForWorkspace(ws.ID, stored[0].TmuxSession),
 	)
 
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
-		"/ws/v1/workspaces/" + ws.Id +
+		"/ws/v1/workspaces/" + ws.ID +
 		"/runtime/sessions/" + session.Key +
 		"/terminal?cols=177&rows=41"
 	conn, _, err := websocket.Dial(ctx, wsURL, nil)
@@ -29066,20 +28486,17 @@ func createReadyWorkspace(
 ) *generated.WorkspaceResponse {
 	t.Helper()
 
-	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     1,
-		},
-	)
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     1,
+	}})
 	require.NoError(t, err)
-	require.Equal(t, http.StatusAccepted, createResp.StatusCode())
+	require.Equal(t, http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(t, createResp.JSON202)
-	return waitForWorkspaceReady(t, ctx, client, createResp.JSON202.Id)
+	return waitForWorkspaceReady(t, ctx, client, createResp.JSON202.ID)
 }
 
 func writeFakeWorkspaceRuntimeTmux(t *testing.T) string {
@@ -29868,14 +29285,14 @@ func TestWorkspaceRefreshProceedsThroughIssueScopePartialSyncFailure(t *testing.
 		t,
 		fixture.server,
 		http.MethodPost,
-		"/api/v1/workspaces/"+ws.Id+"/refresh",
+		"/api/v1/workspaces/"+ws.ID+"/refresh",
 		nil)
 
 	require.Equal(http.StatusOK, refreshRR.Code, refreshRR.Body.String())
 
 	var refreshed rawWorkspaceStatusResponse
 	require.NoError(json.NewDecoder(refreshRR.Body).Decode(&refreshed))
-	assert.Equal(ws.Id, refreshed.ID,
+	assert.Equal(ws.ID, refreshed.ID,
 		"the refresh must complete association discovery and return the workspace")
 
 	assert.Greater(detailCalls.Load(), before,
@@ -29969,7 +29386,7 @@ func TestWorkspaceRefreshAbortsOnMergeRequestScopePartialSyncFailure(t *testing.
 		t,
 		fixture.server,
 		http.MethodPost,
-		"/api/v1/workspaces/"+ws.Id+"/refresh",
+		"/api/v1/workspaces/"+ws.ID+"/refresh",
 		nil)
 
 	require.Equal(http.StatusBadGateway, refreshRR.Code, refreshRR.Body.String())
@@ -30147,22 +29564,19 @@ func TestWorkspaceCreateWithLocalBaseUsesPullRefWhenHeadBranchDeleted(
 		withSeedPRHeadRepoCloneURL("https://"+platformHost+"/acme/widget.git"),
 	)
 
-	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: platformHost,
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     prNumber,
-		},
-	)
+	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: platformHost,
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     prNumber,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
 
-	ready := waitForWorkspaceReady(t, ctx, fixture.client, createResp.JSON202.Id)
-	stored, err := fixture.database.GetWorkspace(ctx, ready.Id)
+	ready := waitForWorkspaceReady(t, ctx, fixture.client, createResp.JSON202.ID)
+	stored, err := fixture.database.GetWorkspace(ctx, ready.ID)
 	require.NoError(err)
 	require.NotNil(stored)
 	assert.Equal("ready", stored.Status)
@@ -30225,24 +29639,21 @@ func TestWorkspaceCreateGitLabUsesSpecificMergeRequestHeadRefE2E(
 	)
 	provider := string(platform.KindGitLab)
 
-	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     provider,
-			PlatformHost: platformHost,
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     mrNumber,
-		},
-	)
+	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     provider,
+		PlatformHost: platformHost,
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     mrNumber,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
 
-	ready := waitForWorkspaceReady(t, ctx, fixture.client, createResp.JSON202.Id)
+	ready := waitForWorkspaceReady(t, ctx, fixture.client, createResp.JSON202.ID)
 	require.NotNil(ready.MrHeadRepoKind)
 	assert.Equal(generated.WorkspaceResponseMrHeadRepoKindSameRepo, *ready.MrHeadRepoKind)
-	stored, err := fixture.database.GetWorkspace(ctx, ready.Id)
+	stored, err := fixture.database.GetWorkspace(ctx, ready.ID)
 	require.NoError(err)
 	require.NotNil(stored)
 	assert.Equal("ready", stored.Status)
@@ -30289,22 +29700,19 @@ func TestWorkspaceCreateReusesExistingWorktreeThroughAPI(t *testing.T) {
 		"worktree", "add", worktreePath, "-b", existingBranch, "main",
 	)
 	wantSHA := gitfixture.SHA(t, worktreePath, "HEAD")
-	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: platformHost,
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     prNumber,
-		},
-	)
+	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: platformHost,
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     prNumber,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
 
-	ready := waitForWorkspaceReady(t, ctx, fixture.client, createResp.JSON202.Id)
-	stored, err := fixture.database.GetWorkspace(ctx, ready.Id)
+	ready := waitForWorkspaceReady(t, ctx, fixture.client, createResp.JSON202.ID)
+	stored, err := fixture.database.GetWorkspace(ctx, ready.ID)
 	require.NoError(err)
 	require.NotNil(stored)
 	assert.Equal("ready", stored.Status)
@@ -30350,21 +29758,18 @@ func TestWorkspaceRetryReusesExistingLocalHeadBranchThroughAPI(t *testing.T) {
 		"-b", "feature", "refs/remotes/origin/feature",
 	)
 	wantSHA := gitfixture.SHA(t, worktreePath, "HEAD")
-	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: platformHost,
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     prNumber,
-		},
-	)
+	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: platformHost,
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     prNumber,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
-	ready := waitForWorkspaceReady(t, ctx, fixture.client, createResp.JSON202.Id)
-	stored, err := fixture.database.GetWorkspace(ctx, ready.Id)
+	ready := waitForWorkspaceReady(t, ctx, fixture.client, createResp.JSON202.ID)
+	stored, err := fixture.database.GetWorkspace(ctx, ready.ID)
 	require.NoError(err)
 	require.NotNil(stored)
 	assert.Equal("ready", stored.Status)
@@ -30374,15 +29779,15 @@ func TestWorkspaceRetryReusesExistingLocalHeadBranchThroughAPI(t *testing.T) {
 
 	msg := "retry existing local base worktree"
 	require.NoError(fixture.database.UpdateWorkspaceStatus(
-		ctx, ready.Id, "error", &msg,
+		ctx, ready.ID, "error", &msg,
 	))
-	retryResp, err := fixture.client.HTTP.RetryWorkspaceWithResponse(ctx, ready.Id)
+	retryResp, err := fixture.client.HTTP.RetryWorkspaceWithResponse(ctx, &generated.RetryWorkspaceRequestOptions{PathParams: &generated.RetryWorkspacePath{ID: ready.ID}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, retryResp.StatusCode())
+	require.Equal(http.StatusAccepted, retryResp.StatusCode)
 	require.NotNil(retryResp.JSON202)
 
-	retried := waitForWorkspaceReady(t, ctx, fixture.client, ready.Id)
-	stored, err = fixture.database.GetWorkspace(ctx, ready.Id)
+	retried := waitForWorkspaceReady(t, ctx, fixture.client, ready.ID)
+	stored, err = fixture.database.GetWorkspace(ctx, ready.ID)
 	require.NoError(err)
 	require.NotNil(stored)
 	assert.Equal("ready", stored.Status)
@@ -30392,11 +29797,9 @@ func TestWorkspaceRetryReusesExistingLocalHeadBranchThroughAPI(t *testing.T) {
 	assert.Equal(wantSHA, gitfixture.SHA(t, retried.WorktreePath, "HEAD"))
 
 	force := true
-	deleteResp, err := fixture.client.HTTP.DeleteWorkspaceWithResponse(
-		ctx, ready.Id, &generated.DeleteWorkspaceParams{Force: &force},
-	)
+	deleteResp, err := fixture.client.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: ready.ID}, Query: &generated.DeleteWorkspaceQuery{Force: &force}})
 	require.NoError(err)
-	require.Equal(http.StatusNoContent, deleteResp.StatusCode())
+	require.Equal(http.StatusNoContent, deleteResp.StatusCode)
 	assert.Equal(wantSHA, gitfixture.SHA(t, localRepo, "refs/heads/feature"))
 }
 
@@ -30466,22 +29869,19 @@ func TestWorkspaceCreatePortQualifiedHostTracksOriginBranchE2E(t *testing.T) {
 	)
 	require.NoError(err)
 
-	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "ghe.example.com:8443",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     1,
-		},
-	)
+	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "ghe.example.com:8443",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     1,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
 
-	ws := waitForWorkspaceReady(t, ctx, fixture.client, createResp.JSON202.Id)
-	stored, err := fixture.database.GetWorkspace(ctx, ws.Id)
+	ws := waitForWorkspaceReady(t, ctx, fixture.client, createResp.JSON202.ID)
+	stored, err := fixture.database.GetWorkspace(ctx, ws.ID)
 	require.NoError(err)
 	require.NotNil(stored)
 	assert.Nil(stored.MRHeadRepo)
@@ -30549,12 +29949,10 @@ func TestWorkspaceDeleteDoesNotCleanupReplacementCloneFromStaleLocalBaseE2E(t *t
 	}))
 
 	force := true
-	deleteResp, err := client.HTTP.DeleteWorkspaceWithResponse(
-		ctx, wsID, &generated.DeleteWorkspaceParams{Force: &force},
-	)
+	deleteResp, err := client.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: wsID}, Query: &generated.DeleteWorkspaceQuery{Force: &force}})
 
 	require.NoError(err)
-	require.Equal(http.StatusNoContent, deleteResp.StatusCode())
+	require.Equal(http.StatusNoContent, deleteResp.StatusCode)
 	assert.DirExists(replacementClone)
 	assert.Equal(branchSHA, gitfixture.SHA(t, replacementClone, "refs/heads/"+branch))
 	got, err := database.GetWorkspace(ctx, wsID)
@@ -30606,20 +30004,16 @@ func TestWorkspacePRDetailPlatformHost(t *testing.T) {
 	ctx := t.Context()
 
 	// PR on github.com
-	r1, err := client.HTTP.GetPullWithResponse(
-		ctx, "gh", "acme", "widget", 10,
-	)
+	r1, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(10)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, r1.StatusCode())
+	require.Equal(http.StatusOK, r1.StatusCode)
 	require.NotNil(r1.JSON200)
 	assert.Equal("github.com", r1.JSON200.PlatformHost)
 
 	// PR on ghe.example.com (same owner/name, different number)
-	r2, err := client.HTTP.GetPullOnHostWithResponse(
-		ctx, "ghe.example.com", "gh", "acme", "widget", 20,
-	)
+	r2, err := client.HTTP.GetPullOnHostWithResponse(ctx, &generated.GetPullOnHostRequestOptions{PathParams: &generated.GetPullOnHostPath{PlatformHost: "ghe.example.com", Provider: "gh", Owner: "acme", Name: "widget", Number: int64(20)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, r2.StatusCode())
+	require.Equal(http.StatusOK, r2.StatusCode)
 	require.NotNil(r2.JSON200)
 	assert.Equal("ghe.example.com", r2.JSON200.PlatformHost)
 }
@@ -30939,16 +30333,14 @@ func TestMergeBlocksPredecessorPreservedByNativeStackOverlapFallback(t *testing.
 	require.NoError(stacks.RunDetectionWithNativeStacks(ctx, database, repo.ID, []int{42, 43}))
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.MergePullWithResponse(
-		ctx, "gh", "acme", "widget", 102,
-		generated.MergePRInputBody{
-			Method:          "squash",
-			ExpectedHeadSha: &tipHeadSHA,
-		},
-	)
-	require.NoError(err)
+	resp, err := client.HTTP.MergePullWithResponse(ctx, &generated.MergePullRequestOptions{PathParams: &generated.MergePullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(102)}, Body: &generated.MergePRInputBody{
+		Method:          "squash",
+		ExpectedHeadSha: &tipHeadSHA,
+	}})
+	require.Error(err)
+	require.NotNil(resp)
 
-	assert.Equal(http.StatusConflict, resp.StatusCode())
+	assert.Equal(http.StatusConflict, resp.StatusCode)
 	assert.Contains(string(resp.Body), `"reason":"mid_stack_merge_disallowed"`)
 	assert.Contains(string(resp.Body), `"blocking_number":100`)
 	assert.False(merged, "the provider must not be asked to merge past an open predecessor")
@@ -31058,9 +30450,9 @@ func TestMergeBlocksPredecessorRestoredWhenNativeStackAgesOut(t *testing.T) {
 
 	srv.syncer.RunOnce(ctx)
 
-	stackResp, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 101)
+	stackResp, err := client.HTTP.GetPullStackWithResponse(ctx, &generated.GetPullStackRequestOptions{PathParams: &generated.GetPullStackPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(101)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, stackResp.StatusCode(), string(stackResp.Body))
+	require.Equal(http.StatusOK, stackResp.StatusCode, string(stackResp.Body))
 	require.NotNil(stackResp.JSON200)
 	require.NotNil(stackResp.JSON200.Members)
 	require.Equal([]int64{900, 101}, stackMemberNumbers(stackResp.JSON200.Members),
@@ -31070,22 +30462,20 @@ func TestMergeBlocksPredecessorRestoredWhenNativeStackAgesOut(t *testing.T) {
 	clock = observed.Add(13 * time.Hour)
 	srv.syncer.RunOnce(ctx)
 
-	stackResp, err = client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 101)
+	stackResp, err = client.HTTP.GetPullStackWithResponse(ctx, &generated.GetPullStackRequestOptions{PathParams: &generated.GetPullStackPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(101)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, stackResp.StatusCode(), string(stackResp.Body))
+	require.Equal(http.StatusOK, stackResp.StatusCode, string(stackResp.Body))
 	require.NotNil(stackResp.JSON200)
 	require.NotNil(stackResp.JSON200.Members)
 	assert.Equal([]int64{100, 101}, stackMemberNumbers(stackResp.JSON200.Members),
 		"an aged observation must hand the repository back to branch inference")
 
 	tipHeadSHA := "sha101"
-	mergeResp, err := client.HTTP.MergePullWithResponse(
-		ctx, "gh", "acme", "widget", 101,
-		generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &tipHeadSHA},
-	)
-	require.NoError(err)
+	mergeResp, err := client.HTTP.MergePullWithResponse(ctx, &generated.MergePullRequestOptions{PathParams: &generated.MergePullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(101)}, Body: &generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &tipHeadSHA}})
+	require.Error(err)
+	require.NotNil(mergeResp)
 
-	assert.Equal(http.StatusConflict, mergeResp.StatusCode(), string(mergeResp.Body))
+	assert.Equal(http.StatusConflict, mergeResp.StatusCode, string(mergeResp.Body))
 	assert.Contains(string(mergeResp.Body), `"reason":"mid_stack_merge_disallowed"`)
 	assert.Contains(string(mergeResp.Body), `"blocking_number":100`)
 	assert.False(merged, "the provider must not be asked to merge past an open predecessor")
@@ -31178,22 +30568,20 @@ func TestMergeBlocksPredecessorWhenNativeStackRefreshIsPartial(t *testing.T) {
 
 	srv.syncer.RunOnce(ctx)
 
-	stackResp, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 101)
+	stackResp, err := client.HTTP.GetPullStackWithResponse(ctx, &generated.GetPullStackRequestOptions{PathParams: &generated.GetPullStackPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(101)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, stackResp.StatusCode(), string(stackResp.Body))
+	require.Equal(http.StatusOK, stackResp.StatusCode, string(stackResp.Body))
 	require.NotNil(stackResp.JSON200)
 	require.NotNil(stackResp.JSON200.Members)
 	assert.Equal([]int64{100, 101}, stackMemberNumbers(stackResp.JSON200.Members),
 		"a pass that could not resolve every stack must project none of them")
 
 	tipHeadSHA := "sha101"
-	mergeResp, err := client.HTTP.MergePullWithResponse(
-		ctx, "gh", "acme", "widget", 101,
-		generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &tipHeadSHA},
-	)
-	require.NoError(err)
+	mergeResp, err := client.HTTP.MergePullWithResponse(ctx, &generated.MergePullRequestOptions{PathParams: &generated.MergePullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(101)}, Body: &generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &tipHeadSHA}})
+	require.Error(err)
+	require.NotNil(mergeResp)
 
-	assert.Equal(http.StatusConflict, mergeResp.StatusCode(), string(mergeResp.Body))
+	assert.Equal(http.StatusConflict, mergeResp.StatusCode, string(mergeResp.Body))
 	assert.Contains(string(mergeResp.Body), `"reason":"mid_stack_merge_disallowed"`)
 	assert.Contains(string(mergeResp.Body), `"blocking_number":100`)
 	assert.False(merged, "the provider must not be asked to merge past an open predecessor")

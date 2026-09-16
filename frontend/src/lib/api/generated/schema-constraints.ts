@@ -1,5 +1,5 @@
 /**
- * This file was auto-generated from internal/apiclient/spec/openapi.json.
+ * This file was auto-generated from frontend/openapi/openapi.yaml.
  * Do not make direct changes to the file.
  */
 

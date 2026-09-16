@@ -352,18 +352,15 @@ func TestTmuxWrapperNewSession(t *testing.T) {
 	assert := assert.New(t)
 	client, _, record := setupWrapperServer(t)
 
-	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
-		t.Context(),
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     1,
-		},
-	)
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(t.Context(), &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     1,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
 
 	// Workspace setup runs asynchronously. Poll the record file
@@ -413,20 +410,17 @@ func TestWorkspaceResponseIncludesTmuxWorkingState(t *testing.T) {
 	setTmuxRecorderPaneOutput(t, record, "stable output")
 	ctx := context.Background()
 
-	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     1,
-		},
-	)
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     1,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
-	wsID := createResp.JSON202.Id
+	wsID := createResp.JSON202.ID
 
 	waitForWorkspaceReady(t, ctx, client, wsID)
 
@@ -452,7 +446,7 @@ func TestWorkspaceResponseIncludesTmuxWorkingState(t *testing.T) {
 		} `json:"workspaces"`
 	}
 	require.Eventually(func() bool {
-		listResp, listErr := client.HTTP.ListWorkspaces(ctx)
+		listResp, listErr := client.HTTP.ListWorkspacesRaw(ctx, client.Transport)
 		require.NoError(listErr)
 		defer listResp.Body.Close()
 		require.Equal(http.StatusOK, listResp.StatusCode)
@@ -499,17 +493,14 @@ func TestFilteredActivityIncrementalPollRetainsWorkspaceSubject(t *testing.T) {
 		DedupeKey:      "searched-workspace-comment",
 	}}))
 
-	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider: "github", PlatformHost: "github.com",
-			Owner: "acme", Name: "widget", MrNumber: 1,
-		},
-	)
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider: "github", PlatformHost: "github.com",
+		Owner: "acme", Name: "widget", MrNumber: 1,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
-	workspaceID := createResp.JSON202.Id
+	workspaceID := createResp.JSON202.ID
 	waitForWorkspaceReady(t, ctx, client, workspaceID)
 
 	require.Eventually(func() bool {
@@ -520,16 +511,12 @@ func TestFilteredActivityIncrementalPollRetainsWorkspaceSubject(t *testing.T) {
 
 	search := "search-reviewer"
 	since := now.Add(-time.Hour).Format(time.RFC3339)
-	probe, err := client.HTTP.ListActivityWithResponse(
-		ctx, &generated.ListActivityParams{Search: &search, Since: &since},
-	)
+	probe, err := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{Search: &search, Since: &since}})
 	require.NoError(err)
-	require.Equalf(http.StatusOK, probe.StatusCode(), "activity response: %s", probe.Body)
-	var initial *generated.ListActivityResponse
+	require.Equalf(http.StatusOK, probe.StatusCode, "activity response: %s", probe.Body)
+	var initial *generated.ListActivityResp
 	require.Eventually(func() bool {
-		response, requestErr := client.HTTP.ListActivityWithResponse(
-			ctx, &generated.ListActivityParams{Search: &search, Since: &since},
-		)
+		response, requestErr := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{Search: &search, Since: &since}})
 		if requestErr != nil || response.JSON200 == nil || response.JSON200.WorkspaceActivity == nil {
 			return false
 		}
@@ -545,14 +532,12 @@ func TestFilteredActivityIncrementalPollRetainsWorkspaceSubject(t *testing.T) {
 	initialWorkspace := initial.JSON200.WorkspaceActivity[0]
 	assert.EqualValues(1, initialWorkspace.ItemNumber)
 	require.NotNil(initialWorkspace.Workspace)
-	assert.Equal(workspaceID, initialWorkspace.Workspace.Id)
+	assert.Equal(workspaceID, initialWorkspace.Workspace.ID)
 
 	after := initial.JSON200.Items[0].Cursor
-	incremental, err := client.HTTP.ListActivityWithResponse(
-		ctx, &generated.ListActivityParams{Search: &search, Since: &since, After: &after},
-	)
+	incremental, err := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{Search: &search, Since: &since, After: &after}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, incremental.StatusCode())
+	require.Equal(http.StatusOK, incremental.StatusCode)
 	require.NotNil(incremental.JSON200)
 	require.NotNil(incremental.JSON200.Items)
 	assert.Empty(incremental.JSON200.Items)
@@ -561,24 +546,20 @@ func TestFilteredActivityIncrementalPollRetainsWorkspaceSubject(t *testing.T) {
 	incrementalWorkspace := incremental.JSON200.WorkspaceActivity[0]
 	assert.EqualValues(1, incrementalWorkspace.ItemNumber)
 	require.NotNil(incrementalWorkspace.Workspace)
-	assert.Equal(workspaceID, incrementalWorkspace.Workspace.Id)
+	assert.Equal(workspaceID, incrementalWorkspace.Workspace.ID)
 
 	author := mr.Author
-	authorInitial, err := client.HTTP.ListActivityWithResponse(
-		ctx, &generated.ListActivityParams{Author: &author, Since: &since},
-	)
+	authorInitial, err := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{Author: &author, Since: &since}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, authorInitial.StatusCode())
+	require.Equal(http.StatusOK, authorInitial.StatusCode)
 	require.NotNil(authorInitial.JSON200)
 	require.NotNil(authorInitial.JSON200.Items)
 	require.NotEmpty(authorInitial.JSON200.Items)
 
 	authorAfter := authorInitial.JSON200.Items[0].Cursor
-	authorIncremental, err := client.HTTP.ListActivityWithResponse(
-		ctx, &generated.ListActivityParams{Author: &author, Since: &since, After: &authorAfter},
-	)
+	authorIncremental, err := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{Author: &author, Since: &since, After: &authorAfter}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, authorIncremental.StatusCode())
+	require.Equal(http.StatusOK, authorIncremental.StatusCode)
 	require.NotNil(authorIncremental.JSON200)
 	require.NotNil(authorIncremental.JSON200.Items)
 	assert.Empty(authorIncremental.JSON200.Items)
@@ -587,7 +568,7 @@ func TestFilteredActivityIncrementalPollRetainsWorkspaceSubject(t *testing.T) {
 	authorWorkspace := authorIncremental.JSON200.WorkspaceActivity[0]
 	assert.EqualValues(1, authorWorkspace.ItemNumber)
 	require.NotNil(authorWorkspace.Workspace)
-	assert.Equal(workspaceID, authorWorkspace.Workspace.Id)
+	assert.Equal(workspaceID, authorWorkspace.Workspace.ID)
 }
 
 func TestActivityAuthorsIncludeWorkspaceOnlySubject(t *testing.T) {
@@ -613,29 +594,26 @@ func TestActivityAuthorsIncludeWorkspaceOnlySubject(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(mr)
 
-	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider: "github", PlatformHost: "github.com",
-			Owner: "acme", Name: "widget", MrNumber: 1,
-		},
-	)
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider: "github", PlatformHost: "github.com",
+		Owner: "acme", Name: "widget", MrNumber: 1,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
-	waitForWorkspaceReady(t, ctx, client, createResp.JSON202.Id)
+	waitForWorkspaceReady(t, ctx, client, createResp.JSON202.ID)
 
 	require.Eventually(func() bool {
-		activity := getRawWorkspaceActivity(t, client, ctx, createResp.JSON202.Id)
+		activity := getRawWorkspaceActivity(t, client, ctx, createResp.JSON202.ID)
 		return activity.TmuxActivitySource == "none" && activity.TmuxLastOutputAt == nil
 	}, 3*time.Second, 50*time.Millisecond, "tmux baseline was not observed")
 	since := time.Now().UTC().Format(time.RFC3339Nano)
 	setTmuxRecorderPaneOutput(t, record, "workspace-only activity")
 
-	params := &generated.ListActivityAuthorsParams{Since: &since}
-	var response *generated.ListActivityAuthorsResponse
+	params := &generated.ListActivityAuthorsQuery{Since: &since}
+	var response *generated.ListActivityAuthorsResp
 	require.Eventually(func() bool {
-		got, requestErr := client.HTTP.ListActivityAuthorsWithResponse(ctx, params)
+		got, requestErr := client.HTTP.ListActivityAuthorsWithResponse(ctx, &generated.ListActivityAuthorsRequestOptions{Query: params})
 		if requestErr != nil || got.JSON200 == nil || got.JSON200.Authors == nil {
 			return false
 		}
@@ -654,9 +632,9 @@ func TestActivityAuthorsIncludeWorkspaceOnlySubject(t *testing.T) {
 
 	missingRepo := "github|github.com/acme/missing"
 	params.Repo = &missingRepo
-	scoped, err := client.HTTP.ListActivityAuthorsWithResponse(ctx, params)
+	scoped, err := client.HTTP.ListActivityAuthorsWithResponse(ctx, &generated.ListActivityAuthorsRequestOptions{Query: params})
 	require.NoError(err)
-	require.Equal(http.StatusOK, scoped.StatusCode())
+	require.Equal(http.StatusOK, scoped.StatusCode)
 	require.NotNil(scoped.JSON200)
 	require.NotNil(scoped.JSON200.Authors)
 	assert.Empty(scoped.JSON200.Authors)
@@ -664,9 +642,9 @@ func TestActivityAuthorsIncludeWorkspaceOnlySubject(t *testing.T) {
 	future := time.Now().UTC().Add(time.Hour).Format(time.RFC3339Nano)
 	params.Repo = nil
 	params.Since = &future
-	outOfRange, err := client.HTTP.ListActivityAuthorsWithResponse(ctx, params)
+	outOfRange, err := client.HTTP.ListActivityAuthorsWithResponse(ctx, &generated.ListActivityAuthorsRequestOptions{Query: params})
 	require.NoError(err)
-	require.Equal(http.StatusOK, outOfRange.StatusCode())
+	require.Equal(http.StatusOK, outOfRange.StatusCode)
 	require.NotNil(outOfRange.JSON200)
 	require.NotNil(outOfRange.JSON200.Authors)
 	assert.Empty(outOfRange.JSON200.Authors)
@@ -684,19 +662,16 @@ func TestFederatedActivityIncludesNodeWorkspaceOnlySubject(t *testing.T) {
 	srv.cfg.Fleet.Enabled = true
 	srv.cfgMu.Unlock()
 
-	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
-		t.Context(),
-		generated.CreateWorkspaceInputBody{
-			Provider: "github", PlatformHost: "github.com",
-			Owner: "acme", Name: "widget", MrNumber: 1,
-		},
-	)
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(t.Context(), &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider: "github", PlatformHost: "github.com",
+		Owner: "acme", Name: "widget", MrNumber: 1,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
-	waitForWorkspaceReady(t, t.Context(), client, createResp.JSON202.Id)
+	waitForWorkspaceReady(t, t.Context(), client, createResp.JSON202.ID)
 	require.Eventually(func() bool {
-		activity := getRawWorkspaceActivity(t, client, t.Context(), createResp.JSON202.Id)
+		activity := getRawWorkspaceActivity(t, client, t.Context(), createResp.JSON202.ID)
 		return activity.TmuxActivitySource == "none" && activity.TmuxLastOutputAt == nil
 	}, 3*time.Second, 50*time.Millisecond)
 
@@ -722,11 +697,9 @@ func TestFederatedActivityIncludesNodeWorkspaceOnlySubject(t *testing.T) {
 
 	since := time.Now().UTC().Format(time.RFC3339Nano)
 	setTmuxRecorderPaneOutput(t, record, "workspace-only activity")
-	var response *generated.ListActivityResponse
+	var response *generated.ListActivityResp
 	require.Eventually(func() bool {
-		got, requestErr := client.HTTP.ListActivityWithResponse(
-			t.Context(), &generated.ListActivityParams{Since: &since},
-		)
+		got, requestErr := client.HTTP.ListActivityWithResponse(t.Context(), &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{Since: &since}})
 		if requestErr != nil || got.JSON200 == nil || got.JSON200.WorkspaceActivity == nil {
 			return false
 		}
@@ -735,7 +708,7 @@ func TestFederatedActivityIncludesNodeWorkspaceOnlySubject(t *testing.T) {
 	}, 8*time.Second, 100*time.Millisecond)
 	require.NotNil(response)
 	require.Len(response.JSON200.WorkspaceActivity, 1)
-	require.Equal(createResp.JSON202.Id, response.JSON200.WorkspaceActivity[0].Workspace.Id)
+	require.Equal(createResp.JSON202.ID, response.JSON200.WorkspaceActivity[0].Workspace.ID)
 
 	repo, err := database.GetRepoByIdentity(
 		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
@@ -745,11 +718,9 @@ func TestFederatedActivityIncludesNodeWorkspaceOnlySubject(t *testing.T) {
 	mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repo.ID, 1)
 	require.NoError(err)
 	require.NotNil(mr)
-	authors, err := client.HTTP.ListActivityAuthorsWithResponse(
-		t.Context(), &generated.ListActivityAuthorsParams{Since: &since},
-	)
+	authors, err := client.HTTP.ListActivityAuthorsWithResponse(t.Context(), &generated.ListActivityAuthorsRequestOptions{Query: &generated.ListActivityAuthorsQuery{Since: &since}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, authors.StatusCode())
+	require.Equal(http.StatusOK, authors.StatusCode)
 	require.NotNil(authors.JSON200)
 	require.NotNil(authors.JSON200.Authors)
 	require.ElementsMatch([]string{"hub author", mr.Author}, authors.JSON200.Authors)
@@ -781,17 +752,14 @@ func TestWorkspaceActivityNumberSearchIncludesEventlessSubject(t *testing.T) {
 	_, err = database.UpsertMergeRequest(ctx, mr)
 	require.NoError(err)
 
-	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider: "github", PlatformHost: "github.com",
-			Owner: "acme", Name: "widget", MrNumber: 1,
-		},
-	)
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider: "github", PlatformHost: "github.com",
+		Owner: "acme", Name: "widget", MrNumber: 1,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
-	workspaceID := createResp.JSON202.Id
+	workspaceID := createResp.JSON202.ID
 	waitForWorkspaceReady(t, ctx, client, workspaceID)
 
 	require.Eventually(func() bool {
@@ -802,11 +770,9 @@ func TestWorkspaceActivityNumberSearchIncludesEventlessSubject(t *testing.T) {
 	setTmuxRecorderPaneOutput(t, record, "changed output")
 
 	for _, search := range []string{"1", "#1"} {
-		var response *generated.ListActivityResponse
+		var response *generated.ListActivityResp
 		require.Eventually(func() bool {
-			got, requestErr := client.HTTP.ListActivityWithResponse(
-				ctx, &generated.ListActivityParams{Search: &search, Since: &since},
-			)
+			got, requestErr := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{Search: &search, Since: &since}})
 			if requestErr != nil || got.JSON200 == nil || got.JSON200.WorkspaceActivity == nil {
 				return false
 			}
@@ -823,7 +789,7 @@ func TestWorkspaceActivityNumberSearchIncludesEventlessSubject(t *testing.T) {
 		assert.EqualValues(1, workspaceSubject.ItemNumber)
 		assert.Equal("Unrelated title", workspaceSubject.ItemTitle)
 		require.NotNil(workspaceSubject.Workspace)
-		assert.Equal(workspaceID, workspaceSubject.Workspace.Id)
+		assert.Equal(workspaceID, workspaceSubject.Workspace.ID)
 	}
 }
 
@@ -839,7 +805,7 @@ func getRawWorkspaceActivity(
 	TmuxLastOutputAt   *string `json:"tmux_last_output_at"`
 } {
 	t.Helper()
-	resp, err := client.HTTP.GetWorkspace(ctx, wsID)
+	resp, err := client.HTTP.GetWorkspaceRaw(ctx, client.Transport, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: wsID}})
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -931,20 +897,17 @@ func TestWorkspaceCreateFailureLogsAndPersistsAuditEvent(t *testing.T) {
 	)
 	ctx := t.Context()
 
-	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     1,
-		},
-	)
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     1,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
-	wsID := createResp.JSON202.Id
+	wsID := createResp.JSON202.ID
 
 	failed := waitForWorkspaceStatus(t, ctx, client, wsID, "error")
 	require.NotNil(failed.ErrorMessage)
@@ -1015,20 +978,17 @@ func TestWorkspaceShutdownCancellationPersistsFailureViaAPI(t *testing.T) {
 	)
 	ctx := t.Context()
 
-	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     1,
-		},
-	)
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     1,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
-	wsID := createResp.JSON202.Id
+	wsID := createResp.JSON202.ID
 
 	require.Eventually(
 		func() bool {
@@ -1062,11 +1022,9 @@ func TestWorkspaceShutdownCancellationPersistsFailureViaAPI(t *testing.T) {
 	t.Cleanup(func() { gracefulShutdown(t, restarted) })
 	restartedClient := setupTestClient(t, restarted)
 
-	getResp, err := restartedClient.HTTP.GetWorkspaceWithResponse(
-		ctx, wsID,
-	)
+	getResp, err := restartedClient.HTTP.GetWorkspaceWithResponse(ctx, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: wsID}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, getResp.StatusCode())
+	require.Equal(http.StatusOK, getResp.StatusCode)
 	require.NotNil(getResp.JSON200)
 	assert.Equal("error", getResp.JSON200.Status)
 	require.NotNil(getResp.JSON200.ErrorMessage)
@@ -1133,29 +1091,24 @@ func TestWorkspaceSetupFailureRollbackCleansWorktreeViaAPI(t *testing.T) {
 	require.NoError(err)
 	featureSHA := gitfixture.SHA(t, clonePath, "refs/heads/feature")
 
-	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     1,
-		},
-	)
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     1,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
-	wsID := createResp.JSON202.Id
+	wsID := createResp.JSON202.ID
 
 	var failed *generated.WorkspaceResponse
 	require.Eventually(
 		func() bool {
-			getResp, getErr := client.HTTP.GetWorkspaceWithResponse(
-				ctx, wsID,
-			)
+			getResp, getErr := client.HTTP.GetWorkspaceWithResponse(ctx, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: wsID}})
 			require.NoError(getErr)
-			if getResp.StatusCode() != http.StatusOK || getResp.JSON200 == nil {
+			if getResp.StatusCode != http.StatusOK || getResp.JSON200 == nil {
 				return false
 			}
 			if getResp.JSON200.Status != "error" {
@@ -1228,20 +1181,17 @@ func TestWorkspaceRetryWhileCreatingQueuesAndRunsAfterFailureViaAPI(t *testing.T
 	)
 	ctx := context.Background()
 
-	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     1,
-		},
-	)
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     1,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
-	wsID := createResp.JSON202.Id
+	wsID := createResp.JSON202.ID
 
 	require.Eventually(
 		func() bool {
@@ -1264,9 +1214,9 @@ func TestWorkspaceRetryWhileCreatingQueuesAndRunsAfterFailureViaAPI(t *testing.T
 	gitfixture.Run(t, clonePath, "config", "url."+clonePath+".insteadOf", "https://github.com/acme/widget.git")
 	gitfixture.Run(t, clonePath, "remote", "set-url", "origin", "https://github.com/acme/widget.git")
 
-	retryResp, err := client.HTTP.RetryWorkspaceWithResponse(ctx, wsID)
+	retryResp, err := client.HTTP.RetryWorkspaceWithResponse(ctx, &generated.RetryWorkspaceRequestOptions{PathParams: &generated.RetryWorkspacePath{ID: wsID}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, retryResp.StatusCode())
+	require.Equal(http.StatusAccepted, retryResp.StatusCode)
 	require.NotNil(retryResp.JSON202)
 	assert.Equal("creating", retryResp.JSON202.Status)
 
@@ -1275,11 +1225,9 @@ func TestWorkspaceRetryWhileCreatingQueuesAndRunsAfterFailureViaAPI(t *testing.T
 	var ready *generated.WorkspaceResponse
 	require.Eventually(
 		func() bool {
-			getResp, getErr := client.HTTP.GetWorkspaceWithResponse(
-				ctx, wsID,
-			)
+			getResp, getErr := client.HTTP.GetWorkspaceWithResponse(ctx, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: wsID}})
 			require.NoError(getErr)
-			if getResp.StatusCode() != http.StatusOK || getResp.JSON200 == nil {
+			if getResp.StatusCode != http.StatusOK || getResp.JSON200 == nil {
 				return false
 			}
 			if getResp.JSON200.Status != "ready" {
@@ -1343,20 +1291,17 @@ func TestWorkspaceShutdownCancellationDoesNotPersistAfterDeadlineBudgetExhausted
 		t, script,
 	)
 
-	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
-		t.Context(),
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     1,
-		},
-	)
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(t.Context(), &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     1,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
-	wsID := createResp.JSON202.Id
+	wsID := createResp.JSON202.ID
 
 	require.Eventually(
 		func() bool {
@@ -1452,27 +1397,22 @@ func TestTmuxWrapperAttachSession(t *testing.T) {
 	client, baseURL, record := setupWrapperServer(t)
 	ctx := t.Context()
 
-	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     1,
-		},
-	)
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     1,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
-	wsID := createResp.JSON202.Id
+	wsID := createResp.JSON202.ID
 
 	// Poll for status == "ready".
 	require.Eventually(
 		func() bool {
-			getResp, getErr := client.HTTP.GetWorkspaceWithResponse(
-				ctx, wsID,
-			)
+			getResp, getErr := client.HTTP.GetWorkspaceWithResponse(ctx, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: wsID}})
 			if getErr != nil || getResp.JSON200 == nil {
 				return false
 			}
@@ -1579,29 +1519,24 @@ func TestWorkspaceSetupResourceExhaustionGetsHelpfulErrorViaAPI(t *testing.T) {
 	client, _, _ := setupWrapperServerWithScriptAndDB(t, script)
 	ctx := context.Background()
 
-	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     1,
-		},
-	)
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     1,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
-	wsID := createResp.JSON202.Id
+	wsID := createResp.JSON202.ID
 
 	var failed *generated.WorkspaceResponse
 	require.Eventually(
 		func() bool {
-			getResp, getErr := client.HTTP.GetWorkspaceWithResponse(
-				ctx, wsID,
-			)
+			getResp, getErr := client.HTTP.GetWorkspaceWithResponse(ctx, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: wsID}})
 			require.NoError(getErr)
-			if getResp.StatusCode() != http.StatusOK || getResp.JSON200 == nil {
+			if getResp.StatusCode != http.StatusOK || getResp.JSON200 == nil {
 				return false
 			}
 			if getResp.JSON200.Status != "error" {
@@ -1629,20 +1564,17 @@ func TestWorkspaceListReturnsWhileSubprocessCapacityIsHeld(t *testing.T) {
 	client, _, _ := setupWrapperServer(t)
 	ctx := context.Background()
 
-	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     1,
-		},
-	)
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     1,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
-	waitForWorkspaceReady(t, ctx, client, createResp.JSON202.Id)
+	waitForWorkspaceReady(t, ctx, client, createResp.JSON202.ID)
 
 	releaseHeld, err := procutil.TryAcquire(
 		context.Background(), "test-held subprocess capacity",
@@ -1656,7 +1588,7 @@ func TestWorkspaceListReturnsWhileSubprocessCapacityIsHeld(t *testing.T) {
 	}
 	listDone := make(chan listResult, 1)
 	go func() {
-		resp, listErr := client.HTTP.ListWorkspaces(ctx)
+		resp, listErr := client.HTTP.ListWorkspacesRaw(ctx, client.Transport)
 		listDone <- listResult{resp: resp, err: listErr}
 	}()
 
@@ -1673,7 +1605,7 @@ func TestWorkspaceListReturnsWhileSubprocessCapacityIsHeld(t *testing.T) {
 		}
 		require.NoError(json.NewDecoder(got.resp.Body).Decode(&listed))
 		require.Len(listed.Workspaces, 1)
-		assert.Equal(createResp.JSON202.Id, listed.Workspaces[0].ID)
+		assert.Equal(createResp.JSON202.ID, listed.Workspaces[0].ID)
 	case <-time.After(200 * time.Millisecond):
 		require.Fail("workspace list waited for subprocess capacity")
 	}
@@ -1699,28 +1631,23 @@ func TestWorkspaceSetupLimiterTimeoutSurfacesResourceExhaustionViaAPI(t *testing
 	require.NoError(err)
 	defer releaseHeld()
 
-	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     1,
-		},
-	)
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     1,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
 
 	var failed *generated.WorkspaceResponse
 	require.Eventually(
 		func() bool {
-			getResp, getErr := client.HTTP.GetWorkspaceWithResponse(
-				ctx, createResp.JSON202.Id,
-			)
+			getResp, getErr := client.HTTP.GetWorkspaceWithResponse(ctx, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: createResp.JSON202.ID}})
 			require.NoError(getErr)
-			if getResp.StatusCode() != http.StatusOK || getResp.JSON200 == nil {
+			if getResp.StatusCode != http.StatusOK || getResp.JSON200 == nil {
 				return false
 			}
 			if getResp.JSON200.Status != "error" {
@@ -1771,28 +1698,23 @@ func TestTmuxWrapperKillSession(t *testing.T) {
 	client, _, record := setupWrapperServer(t)
 	ctx := t.Context()
 
-	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     1,
-		},
-	)
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     1,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
-	wsID := createResp.JSON202.Id
+	wsID := createResp.JSON202.ID
 
 	// Poll for status == "ready" before deleting so the tmux
 	// session is known to exist from the manager's perspective.
 	require.Eventually(
 		func() bool {
-			getResp, getErr := client.HTTP.GetWorkspaceWithResponse(
-				ctx, wsID,
-			)
+			getResp, getErr := client.HTTP.GetWorkspaceWithResponse(ctx, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: wsID}})
 			if getErr != nil || getResp.JSON200 == nil {
 				return false
 			}
@@ -1802,11 +1724,9 @@ func TestTmuxWrapperKillSession(t *testing.T) {
 	)
 
 	force := true
-	delResp, err := client.HTTP.DeleteWorkspaceWithResponse(
-		ctx, wsID, &generated.DeleteWorkspaceParams{Force: &force},
-	)
+	delResp, err := client.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: wsID}, Query: &generated.DeleteWorkspaceQuery{Force: &force}})
 	require.NoError(err)
-	require.Equal(http.StatusNoContent, delResp.StatusCode())
+	require.Equal(http.StatusNoContent, delResp.StatusCode)
 
 	// The recorded argv should contain a kill-session invocation
 	// with our "wrap" prefix.
@@ -1848,26 +1768,21 @@ func TestDeleteWorkspacePreservesRowWhenTmuxKillFails(t *testing.T) {
 	client, _, _ := setupWrapperServerWithScriptAndDB(t, script)
 	ctx := context.Background()
 
-	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     1,
-		},
-	)
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     1,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
-	wsID := createResp.JSON202.Id
+	wsID := createResp.JSON202.ID
 
 	require.Eventually(
 		func() bool {
-			getResp, getErr := client.HTTP.GetWorkspaceWithResponse(
-				ctx, wsID,
-			)
+			getResp, getErr := client.HTTP.GetWorkspaceWithResponse(ctx, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: wsID}})
 			if getErr != nil || getResp.JSON200 == nil {
 				return false
 			}
@@ -1877,27 +1792,26 @@ func TestDeleteWorkspacePreservesRowWhenTmuxKillFails(t *testing.T) {
 	)
 
 	force := true
-	delResp, err := client.HTTP.DeleteWorkspaceWithResponse(
-		ctx, wsID, &generated.DeleteWorkspaceParams{Force: &force},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusInternalServerError, delResp.StatusCode())
-	require.NotNil(delResp.ApplicationproblemJSONDefault)
-	require.NotNil(delResp.ApplicationproblemJSONDefault.Detail)
+	delResp, err := client.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: wsID}, Query: &generated.DeleteWorkspaceQuery{Force: &force}})
+	require.Error(err)
+	require.NotNil(delResp)
+	require.Equal(http.StatusInternalServerError, delResp.StatusCode)
+	require.NotNil(delResp.Error)
+	require.NotNil(delResp.Error.Detail)
 	assert.Contains(
-		*delResp.ApplicationproblemJSONDefault.Detail,
+		*delResp.Error.Detail,
 		"kill tmux session",
 	)
 	assert.Contains(
-		*delResp.ApplicationproblemJSONDefault.Detail,
+		*delResp.Error.Detail,
 		"permission denied",
 	)
 
-	getResp, err := client.HTTP.GetWorkspaceWithResponse(ctx, wsID)
+	getResp, err := client.HTTP.GetWorkspaceWithResponse(ctx, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: wsID}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, getResp.StatusCode())
+	require.Equal(http.StatusOK, getResp.StatusCode)
 	require.NotNil(getResp.JSON200)
-	assert.Equal(wsID, getResp.JSON200.Id)
+	assert.Equal(wsID, getResp.JSON200.ID)
 }
 
 func TestDeleteWorkspaceTreatsTmuxServerExitAsGoneE2E(t *testing.T) {
@@ -1925,26 +1839,21 @@ func TestDeleteWorkspaceTreatsTmuxServerExitAsGoneE2E(t *testing.T) {
 
 	client, _, database := setupWrapperServerWithScriptAndDB(t, script)
 
-	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
-		t.Context(),
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     1,
-		},
-	)
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(t.Context(), &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     1,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
-	wsID := createResp.JSON202.Id
+	wsID := createResp.JSON202.ID
 
 	require.Eventually(
 		func() bool {
-			getResp, getErr := client.HTTP.GetWorkspaceWithResponse(
-				t.Context(), wsID,
-			)
+			getResp, getErr := client.HTTP.GetWorkspaceWithResponse(t.Context(), &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: wsID}})
 			if getErr != nil || getResp.JSON200 == nil {
 				return false
 			}
@@ -1954,15 +1863,14 @@ func TestDeleteWorkspaceTreatsTmuxServerExitAsGoneE2E(t *testing.T) {
 	)
 
 	force := true
-	delResp, err := client.HTTP.DeleteWorkspaceWithResponse(
-		t.Context(), wsID, &generated.DeleteWorkspaceParams{Force: &force},
-	)
+	delResp, err := client.HTTP.DeleteWorkspaceWithResponse(t.Context(), &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: wsID}, Query: &generated.DeleteWorkspaceQuery{Force: &force}})
 	require.NoError(err)
-	require.Equal(http.StatusNoContent, delResp.StatusCode())
+	require.Equal(http.StatusNoContent, delResp.StatusCode)
 
-	getResp, err := client.HTTP.GetWorkspaceWithResponse(t.Context(), wsID)
-	require.NoError(err)
-	require.Equal(http.StatusNotFound, getResp.StatusCode())
+	getResp, err := client.HTTP.GetWorkspaceWithResponse(t.Context(), &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: wsID}})
+	require.Error(err)
+	require.NotNil(getResp)
+	require.Equal(http.StatusNotFound, getResp.StatusCode)
 
 	stored, err := database.GetWorkspace(t.Context(), wsID)
 	require.NoError(err)
@@ -1999,26 +1907,21 @@ func TestDeleteErroredWorkspaceAllowsUnavailableTmux(t *testing.T) {
 	client, _, _ := setupWrapperServerWithScriptAndDB(t, script)
 	ctx := context.Background()
 
-	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     1,
-		},
-	)
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     1,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
-	wsID := createResp.JSON202.Id
+	wsID := createResp.JSON202.ID
 
 	require.Eventually(
 		func() bool {
-			getResp, getErr := client.HTTP.GetWorkspaceWithResponse(
-				ctx, wsID,
-			)
+			getResp, getErr := client.HTTP.GetWorkspaceWithResponse(ctx, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: wsID}})
 			if getErr != nil || getResp.JSON200 == nil {
 				return false
 			}
@@ -2028,15 +1931,14 @@ func TestDeleteErroredWorkspaceAllowsUnavailableTmux(t *testing.T) {
 	)
 
 	force := true
-	delResp, err := client.HTTP.DeleteWorkspaceWithResponse(
-		ctx, wsID, &generated.DeleteWorkspaceParams{Force: &force},
-	)
+	delResp, err := client.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: wsID}, Query: &generated.DeleteWorkspaceQuery{Force: &force}})
 	require.NoError(err)
-	require.Equal(http.StatusNoContent, delResp.StatusCode())
+	require.Equal(http.StatusNoContent, delResp.StatusCode)
 
-	getResp, err := client.HTTP.GetWorkspaceWithResponse(ctx, wsID)
-	require.NoError(err)
-	assert.Equal(http.StatusNotFound, getResp.StatusCode())
+	getResp, err := client.HTTP.GetWorkspaceWithResponse(ctx, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: wsID}})
+	require.Error(err)
+	require.NotNil(getResp)
+	assert.Equal(http.StatusNotFound, getResp.StatusCode)
 }
 
 // TestTmuxWrapperAttachSurfacesWrapperFailure exercises the
@@ -2082,26 +1984,21 @@ func attachWebsocketAndExpectInternalError(t *testing.T, scriptBody string) {
 	client, baseURL := setupWrapperServerWithScript(t, script)
 	ctx := t.Context()
 
-	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     1,
-		},
-	)
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     1,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
-	wsID := createResp.JSON202.Id
+	wsID := createResp.JSON202.ID
 
 	require.Eventually(
 		func() bool {
-			getResp, getErr := client.HTTP.GetWorkspaceWithResponse(
-				ctx, wsID,
-			)
+			getResp, getErr := client.HTTP.GetWorkspaceWithResponse(ctx, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: wsID}})
 			if getErr != nil || getResp.JSON200 == nil {
 				return false
 			}

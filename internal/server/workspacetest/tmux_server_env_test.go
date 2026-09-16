@@ -79,7 +79,7 @@ func TestWorkspaceTmuxServerEnvironmentExcludesTokensE2E(t *testing.T) {
 	ts := httptest.NewServer(fixture.server)
 	t.Cleanup(ts.Close)
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
-		"/ws/v1/workspaces/" + ws.Id + "/terminal?cols=80&rows=24"
+		"/ws/v1/workspaces/" + ws.ID + "/terminal?cols=80&rows=24"
 	conn, _, err := websocket.Dial(ctx, wsURL, nil)
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")

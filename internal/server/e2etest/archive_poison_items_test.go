@@ -123,9 +123,7 @@ func TestArchiveAPIPersistsTerminalAndBackoffOutcomesE2E(t *testing.T) {
 		Provider: "github", PlatformHost: "github.com",
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
 	}}
-	started, err := api.HTTP.StartArchivesWithResponse(
-		t.Context(), generated.ArchiveMutationBody{Repositories: &repositories},
-	)
+	started, err := api.HTTP.StartArchivesWithResponse(t.Context(), &generated.StartArchivesRequestOptions{Body: &generated.ArchiveMutationBody{Repositories: repositories}})
 	require.NoError(err)
 	require.NotNil(started.JSON200)
 	require.Len(*started.JSON200, 1)
@@ -183,7 +181,7 @@ func TestArchiveAPIPersistsTerminalAndBackoffOutcomesE2E(t *testing.T) {
 	require.NotNil(failed.NextRetryAt)
 	assert.Equal(clock.now.Add(time.Minute), *failed.NextRetryAt)
 
-	status, err := api.HTTP.ListArchiveStatusWithResponse(t.Context(), nil)
+	status, err := api.HTTP.ListArchiveStatusWithResponse(t.Context(), &generated.ListArchiveStatusRequestOptions{})
 	require.NoError(err)
 	require.NotNil(status.JSON200)
 	require.Len(*status.JSON200, 1)
@@ -231,7 +229,7 @@ func TestArchiveAPIPersistsTerminalAndBackoffOutcomesE2E(t *testing.T) {
 	assert.Equal(int32(1), deletedCalls.Load(), "deleted issue must never be fetched again")
 	assert.Equal(int32(3), transientCalls.Load(), "retry before next_retry_at must stay provider-free")
 
-	status, err = api.HTTP.ListArchiveStatusWithResponse(t.Context(), nil)
+	status, err = api.HTTP.ListArchiveStatusWithResponse(t.Context(), &generated.ListArchiveStatusRequestOptions{})
 	require.NoError(err)
 	require.NotNil(status.JSON200)
 	require.Len(*status.JSON200, 1)

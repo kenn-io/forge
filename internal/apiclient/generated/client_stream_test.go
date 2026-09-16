@@ -30,7 +30,7 @@ func TestStreamEventsReturnsLiveEventStream(t *testing.T) {
 	defer server.Close()
 	defer close(release)
 
-	client, err := NewClientWithResponses(server.URL)
+	client, err := NewDefaultClient(server.URL)
 	require.NoError(err)
 
 	done := make(chan struct {
@@ -38,7 +38,7 @@ func TestStreamEventsReturnsLiveEventStream(t *testing.T) {
 		err  error
 	}, 1)
 	go func() {
-		resp, err := client.StreamEvents(context.Background(), nil)
+		resp, err := client.StreamEventsRaw(context.Background(), server.Client(), &StreamEventsRequestOptions{})
 		done <- struct {
 			resp *http.Response
 			err  error

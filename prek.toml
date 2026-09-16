@@ -23,7 +23,7 @@ hooks = [
   { id = "no-commit-to-branch", priority = 0 },
   { id = "check-added-large-files", args = [
     "--maxkb=1024",
-  ], priority = 0 },
+  ], exclude = "^internal/apiclient/generated/client\\.go$", priority = 0 },
   { id = "check-json", priority = 0 },
   { id = "check-toml", priority = 0 },
   { id = "check-yaml", priority = 0 },
@@ -39,7 +39,7 @@ hooks = [
   { id = "gofmt", name = "gofmt", language = "system", entry = "gofmt -w", files = "\\.go$", priority = 3 },
   { id = "cargo-fmt", name = "cargo fmt", language = "system", entry = "cargo fmt --all", files = "^(Cargo\\.toml|Cargo\\.lock|rust/.*\\.rs|rust/.*/Cargo\\.toml)$", pass_filenames = false, priority = 3 },
   { id = "frontend-deps", name = "install workspace dependencies", language = "system", entry = "make frontend-deps", always_run = true, pass_filenames = false, priority = 4 },
-  { id = "api-generate", name = "regenerate api clients", language = "system", entry = "make api-generate", files = "^(go\\.mod|go\\.sum|cmd/kenn-forge-openapi/.*\\.go|internal/server/.*\\.go|internal/db/.*\\.go|internal/apiclient/.*|frontend/package\\.json|frontend/bun\\.lock)$", exclude = "^(internal/apiclient/generated/client\\.gen\\.go|internal/apiclient/spec/openapi\\.json)$", pass_filenames = false, priority = 5 },
+  { id = "api-generate", name = "regenerate api clients", language = "system", entry = "make api-generate", files = "^(go\\.mod|go\\.sum|cmd/kenn-forge-openapi/.*\\.go|internal/server/.*\\.go|internal/db/.*\\.go|internal/apiclient/.*|frontend/package\\.json|frontend/bun\\.lock)$", exclude = "^internal/apiclient/generated/client\\.go$", pass_filenames = false, priority = 5 },
   { id = "golangci-lint", name = "golangci-lint --fix", language = "system", entry = "./scripts/run-hook-go.sh make lint", files = "^(go\\.mod|go\\.sum|.*\\.go)$", pass_filenames = false, priority = 10 },
   { id = "golangci-lint-check", name = "golangci-lint check", language = "system", entry = "./scripts/run-hook-go.sh make lint-check", stages = [
     "pre-push",

@@ -38,11 +38,9 @@ func TestAPIGetPullIncludesDeletedCommentTimelineEvent(t *testing.T) {
 	}}))
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.GetPullWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-	)
+	resp, err := client.HTTP.GetPullWithResponse(t.Context(), &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Events)
 	require.Len(resp.JSON200.Events, 1)
@@ -58,12 +56,10 @@ func TestAPIGetPullNotFound(t *testing.T) {
 	srv, _ := setupTestServer(t)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.GetPullWithResponse(
-		t.Context(), "gh", "acme", "widget", 999,
-	)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusNotFound, resp.StatusCode())
-	require.NotNil(t, resp.ApplicationproblemJSONDefault)
+	resp, err := client.HTTP.GetPullWithResponse(t.Context(), &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(999)}})
+	require.Error(t, err)
+	require.Equal(t, http.StatusNotFound, resp.StatusCode)
+	require.NotNil(t, resp.Error)
 }
 
 func TestAPISetKanbanState(t *testing.T) {
@@ -72,15 +68,9 @@ func TestAPISetKanbanState(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.SetKanbanStateWithResponse(
-		t.Context(), "gh",
-		"acme",
-		"widget",
-		1,
-		generated.SetKanbanStateJSONRequestBody{Status: "reviewing"},
-	)
+	resp, err := client.HTTP.SetKanbanStateWithResponse(t.Context(), &generated.SetKanbanStateRequestOptions{PathParams: &generated.SetKanbanStatePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.SetKanbanStateBody{Status: "reviewing"}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 
 	pr, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
@@ -93,16 +83,10 @@ func TestAPISetKanbanStateRejectsInvalidStatus(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.SetKanbanStateWithResponse(
-		t.Context(), "gh",
-		"acme",
-		"widget",
-		1,
-		generated.SetKanbanStateJSONRequestBody{Status: "nonsense"},
-	)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusBadRequest, resp.StatusCode())
-	require.NotNil(t, resp.ApplicationproblemJSONDefault)
+	resp, err := client.HTTP.SetKanbanStateWithResponse(t.Context(), &generated.SetKanbanStateRequestOptions{PathParams: &generated.SetKanbanStatePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.SetKanbanStateBody{Status: "nonsense"}})
+	require.Error(t, err)
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	require.NotNil(t, resp.Error)
 }
 
 func TestAPIListRepos(t *testing.T) {
@@ -115,7 +99,7 @@ func TestAPIListRepos(t *testing.T) {
 
 	resp, err := client.HTTP.ListReposWithResponse(t.Context())
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.Len(*resp.JSON200, 1)
 	require.Equal("acme", (*resp.JSON200)[0].Owner)
@@ -128,16 +112,16 @@ func TestAPISetStarred(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.SetStarredWithResponse(t.Context(), generated.SetStarredJSONRequestBody{
+	resp, err := client.HTTP.SetStarredWithResponse(t.Context(), &generated.SetStarredRequestOptions{Body: &generated.SetStarredBody{
 		ItemType:     "pr",
 		Provider:     "github",
 		PlatformHost: "github.com",
 		Owner:        "acme",
 		Name:         "widget",
 		Number:       1,
-	})
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 
 	starred, err := database.IsStarred(t.Context(), "pr", 1, 1)
 	require.NoError(err)
@@ -151,16 +135,16 @@ func TestAPIUnsetStarred(t *testing.T) {
 	require.NoError(database.SetStarred(t.Context(), "pr", 1, 1))
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.UnsetStarredWithResponse(t.Context(), &generated.UnsetStarredParams{
+	resp, err := client.HTTP.UnsetStarredWithResponse(t.Context(), &generated.UnsetStarredRequestOptions{Query: &generated.UnsetStarredQuery{
 		ItemType:     "pr",
 		Provider:     "github",
 		PlatformHost: "github.com",
 		Owner:        "acme",
 		Name:         "widget",
 		Number:       1,
-	})
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 
 	starred, err := database.IsStarred(t.Context(), "pr", 1, 1)
 	require.NoError(err)
@@ -172,19 +156,20 @@ func TestAPISetStarredRejectsInvalidItemType(t *testing.T) {
 	srv, _ := setupTestServer(t)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.SetStarredWithResponse(t.Context(), generated.SetStarredJSONRequestBody{
+	resp, err := client.HTTP.SetStarredWithResponse(t.Context(), &generated.SetStarredRequestOptions{Body: &generated.SetStarredBody{
 		ItemType:     "repo",
 		Provider:     "github",
 		PlatformHost: "github.com",
 		Owner:        "acme",
 		Name:         "widget",
 		Number:       1,
-	})
-	require.NoError(err)
-	require.Equal(http.StatusBadRequest, resp.StatusCode())
-	require.NotNil(resp.ApplicationproblemJSONDefault)
-	require.NotNil(resp.ApplicationproblemJSONDefault.Detail)
-	require.Contains(*resp.ApplicationproblemJSONDefault.Detail, "item_type must be 'pr' or 'issue'")
+	}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusBadRequest, resp.StatusCode)
+	require.NotNil(resp.Error)
+	require.NotNil(resp.Error.Detail)
+	require.Contains(*resp.Error.Detail, "item_type must be 'pr' or 'issue'")
 }
 
 func TestOpenAPIEndpointReflectsHumaContract(t *testing.T) {
@@ -222,12 +207,10 @@ func TestAPIClosePRRejectsMerged(t *testing.T) {
 	require.NoError(database.UpdateMRState(ctx, repo.ID, 1, "merged", &now, &now))
 
 	client := setupTestClient(t, srv)
-	resp, err := client.HTTP.SetPrGithubStateWithResponse(
-		ctx, "gh", "acme", "widget", 1,
-		generated.SetPrGithubStateJSONRequestBody{State: "open"},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusConflict, resp.StatusCode())
+	resp, err := client.HTTP.SetPrGithubStateWithResponse(ctx, &generated.SetPrGithubStateRequestOptions{PathParams: &generated.SetPrGithubStatePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.SetPrGithubStateBody{State: "open"}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusConflict, resp.StatusCode)
 }
 
 func TestAPIClosePRInvalidState(t *testing.T) {
@@ -235,12 +218,9 @@ func TestAPIClosePRInvalidState(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.SetPrGithubStateWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-		generated.SetPrGithubStateJSONRequestBody{State: "nonsense"},
-	)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusBadRequest, resp.StatusCode())
+	resp, err := client.HTTP.SetPrGithubStateWithResponse(t.Context(), &generated.SetPrGithubStateRequestOptions{PathParams: &generated.SetPrGithubStatePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.SetPrGithubStateBody{State: "nonsense"}})
+	require.Error(t, err)
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
 func TestAPIListItemsHonorsLimit(t *testing.T) {
@@ -257,31 +237,31 @@ func TestAPIListItemsHonorsLimit(t *testing.T) {
 	client := setupTestClient(t, srv)
 	limit := int64(1)
 
-	pullsResp, err := client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsParams{Limit: &limit})
+	pullsResp, err := client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsRequestOptions{Query: &generated.ListPullsQuery{Limit: &limit}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, pullsResp.StatusCode())
+	require.Equal(http.StatusOK, pullsResp.StatusCode)
 	require.NotNil(pullsResp.JSON200)
 	require.Len(*pullsResp.JSON200, 1)
 	assert.EqualValues(278, (*pullsResp.JSON200)[0].Number)
 
 	offset := int64(1)
-	secondPullResp, err := client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsParams{Limit: &limit, Offset: &offset})
+	secondPullResp, err := client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsRequestOptions{Query: &generated.ListPullsQuery{Limit: &limit, Offset: &offset}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, secondPullResp.StatusCode())
+	require.Equal(http.StatusOK, secondPullResp.StatusCode)
 	require.NotNil(secondPullResp.JSON200)
 	require.Len(*secondPullResp.JSON200, 1)
 	assert.EqualValues(12, (*secondPullResp.JSON200)[0].Number)
 
-	issuesResp, err := client.HTTP.ListIssuesWithResponse(ctx, &generated.ListIssuesParams{Limit: &limit})
+	issuesResp, err := client.HTTP.ListIssuesWithResponse(ctx, &generated.ListIssuesRequestOptions{Query: &generated.ListIssuesQuery{Limit: &limit}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, issuesResp.StatusCode())
+	require.Equal(http.StatusOK, issuesResp.StatusCode)
 	require.NotNil(issuesResp.JSON200)
 	require.Len(*issuesResp.JSON200, 1)
 	assert.EqualValues(278, (*issuesResp.JSON200)[0].Number)
 
-	secondIssueResp, err := client.HTTP.ListIssuesWithResponse(ctx, &generated.ListIssuesParams{Limit: &limit, Offset: &offset})
+	secondIssueResp, err := client.HTTP.ListIssuesWithResponse(ctx, &generated.ListIssuesRequestOptions{Query: &generated.ListIssuesQuery{Limit: &limit, Offset: &offset}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, secondIssueResp.StatusCode())
+	require.Equal(http.StatusOK, secondIssueResp.StatusCode)
 	require.NotNil(secondIssueResp.JSON200)
 	require.Len(*secondIssueResp.JSON200, 1)
 	assert.EqualValues(12, (*secondIssueResp.JSON200)[0].Number)
@@ -297,9 +277,9 @@ func TestAPIListIssuesIncludesLabels(t *testing.T) {
 	}})
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.ListIssuesWithResponse(t.Context(), nil)
+	resp, err := client.HTTP.ListIssuesWithResponse(t.Context(), &generated.ListIssuesRequestOptions{})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.Len(*resp.JSON200, 1)
 	require.NotNil((*resp.JSON200)[0].Labels)
@@ -307,7 +287,7 @@ func TestAPIListIssuesIncludesLabels(t *testing.T) {
 		Name:      "triage",
 		Color:     "fbca04",
 		IsDefault: false,
-	}}, *(*resp.JSON200)[0].Labels)
+	}}, (*resp.JSON200)[0].Labels)
 }
 
 func TestAPIGetIssueAcceptsMixedCaseRepoPath(t *testing.T) {
@@ -316,11 +296,9 @@ func TestAPIGetIssueAcceptsMixedCaseRepoPath(t *testing.T) {
 	seedIssue(t, database, "acme", "widget", 5, "open")
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.GetIssueWithResponse(
-		t.Context(), "gh", "Acme", "Widget", 5,
-	)
+	resp, err := client.HTTP.GetIssueWithResponse(t.Context(), &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "Acme", Name: "Widget", Number: int64(5)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.Equal("acme", resp.JSON200.RepoOwner)
 	require.Equal("widget", resp.JSON200.RepoName)
@@ -333,11 +311,9 @@ func TestAPIListIssuesAcceptsMixedCaseProviderQualifiedRepoFilter(t *testing.T) 
 	client := setupTestClient(t, srv)
 
 	repo := "github|github.com/Acme/Widget"
-	resp, err := client.HTTP.ListIssuesWithResponse(
-		t.Context(), &generated.ListIssuesParams{Repo: &repo},
-	)
+	resp, err := client.HTTP.ListIssuesWithResponse(t.Context(), &generated.ListIssuesRequestOptions{Query: &generated.ListIssuesQuery{Repo: &repo}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.Len(*resp.JSON200, 1)
 	require.Equal("acme", (*resp.JSON200)[0].RepoOwner)
@@ -349,11 +325,9 @@ func TestResolveItem_UntrackedRepo(t *testing.T) {
 	srv, _ := setupTestServer(t)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.ResolveRepoItemWithResponse(
-		t.Context(), "gh", "unknown", "repo", 1, nil,
-	)
+	resp, err := client.HTTP.ResolveRepoItemWithResponse(t.Context(), &generated.ResolveRepoItemRequestOptions{PathParams: &generated.ResolveRepoItemPath{Provider: "gh", Owner: "unknown", Name: "repo", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.False(resp.JSON200.RepoTracked)
 	require.EqualValues(1, resp.JSON200.Number)
@@ -494,11 +468,9 @@ func TestProviderIssueRouteGeneratedClientEscapesGitLabRepoPath(t *testing.T) {
 	})
 	require.NoError(err)
 
-	resp, err := client.HTTP.GetIssueOnHostWithResponse(
-		ctx, host, provider, "Team One/Sub Team", "project+#1", number,
-	)
+	resp, err := client.HTTP.GetIssueOnHostWithResponse(ctx, &generated.GetIssueOnHostRequestOptions{PathParams: &generated.GetIssueOnHostPath{PlatformHost: host, Provider: provider, Owner: "Team One/Sub Team", Name: "project+#1", Number: int64(number)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode(), string(resp.Body))
+	require.Equal(http.StatusOK, resp.StatusCode, string(resp.Body))
 	require.NotNil(resp.JSON200)
 
 	assert.Equal(provider, resp.JSON200.Repo.Provider)
@@ -593,11 +565,10 @@ func TestAPIGetFiles503WhenCloneManagerNil(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.GetPullFilesWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-	)
-	require.NoError(err)
-	require.Equal(http.StatusServiceUnavailable, resp.StatusCode())
+	resp, err := client.HTTP.GetPullFilesWithResponse(t.Context(), &generated.GetPullFilesRequestOptions{PathParams: &generated.GetPullFilesPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusServiceUnavailable, resp.StatusCode)
 }
 
 func TestSetActiveWorktreeKey(t *testing.T) {
@@ -638,9 +609,9 @@ func TestAPIGetPullDetailRecordsHotView(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(mr)
 
-	resp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 1)
+	resp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 
 	hotIDs, err := database.ListHotMergeRequestIDs(ctx, 10)
 	require.NoError(err)
@@ -656,9 +627,9 @@ func TestAPIGetPullDetailRecordsHotView(t *testing.T) {
 		&closedAt,
 	))
 
-	resp, err = client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 1)
+	resp, err = client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 
 	hotIDs, err = database.ListHotMergeRequestIDs(ctx, 10)
 	require.NoError(err)
@@ -726,11 +697,9 @@ func TestAPIActivityCommentCarriesPRAuthor(t *testing.T) {
 	}}))
 
 	since := commentedAt.Add(-time.Hour).Format(time.RFC3339)
-	resp, err := client.HTTP.ListActivityWithResponse(
-		ctx, &generated.ListActivityParams{Since: &since},
-	)
+	resp, err := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{Since: &since}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Items)
 
@@ -772,15 +741,15 @@ func TestAPIListActivitySearchEventDeltaDoesNotReadBeforeCursor(t *testing.T) {
 	require.NoError(err, "the cursor-bounded event query must exclude the malformed older row")
 	require.Empty(deltaRows)
 
-	projection := generated.ListActivityParamsProjectionEvents
+	projection := generated.ListActivityQueryProjectionEvents
 	since := sinceTime.Format(time.RFC3339)
 	after := db.EncodeCursor(now, "pre", 0)
 	limit := int64(10)
-	resp, err := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityParams{
+	resp, err := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{
 		Search: &search, Since: &since, After: &after, Projection: &projection, Limit: &limit,
-	})
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Items)
 	require.Empty(resp.JSON200.Items)
@@ -801,11 +770,9 @@ func TestAPIListActivityAcceptsProviderAndHostQualifiedRepoFilter(t *testing.T) 
 
 	since := time.Now().UTC().AddDate(0, 0, -7).Format(time.RFC3339)
 	repo := "github|ghe.example.com/acme/widget"
-	resp, err := client.HTTP.ListActivityWithResponse(
-		t.Context(), &generated.ListActivityParams{Since: &since, Repo: &repo},
-	)
+	resp, err := client.HTTP.ListActivityWithResponse(t.Context(), &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{Since: &since, Repo: &repo}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Items)
 	require.NotEmpty(resp.JSON200.Items)
@@ -821,9 +788,9 @@ func TestAPIListStacks_Empty(t *testing.T) {
 	srv, _ := setupTestServer(t)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.ListStacksWithResponse(t.Context(), &generated.ListStacksParams{})
+	resp, err := client.HTTP.ListStacksWithResponse(t.Context(), &generated.ListStacksRequestOptions{Query: &generated.ListStacksQuery{}})
 	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode())
+	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var stks []generated.StackResponse
 	require.NoError(t, json.Unmarshal(resp.Body, &stks))

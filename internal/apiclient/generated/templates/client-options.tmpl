@@ -1,0 +1,139 @@
+{{/*
+Copyright 2025 DoorDash, Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/}}
+
+{{- template "header" $ }}
+
+{{range .Operations}}{{$op := .}}
+{{ $skipValidation := $.Config.Generate.Validation.Skip }}
+
+{{ if $op.HasRequestOptions }}
+// {{$op.ID | ucFirst}}RequestOptions is the options needed to make a request to {{$op.ID}}.
+type {{$op.ID | ucFirst}}RequestOptions struct {
+    {{ if $op.PathParams }}
+    PathParams *{{$op.PathParams.Name}}
+    {{end -}}
+
+    {{- if $op.Query -}}
+    Query *{{$op.Query.Name}}
+    {{ end -}}
+
+    {{- if $op.Body -}}
+    Body *{{$op.Body.Name}}
+    {{ end -}}
+
+    {{- if $op.Header -}}
+    Header *{{$op.Header.Name}}
+    {{ end -}}
+}
+
+{{ if not $skipValidation }}
+// Validate validates all the fields in the options.
+// Use it if fields validation was not run.
+func (o *{{$op.ID | ucFirst}}RequestOptions) Validate() error {
+    var errors runtime.ValidationErrors
+
+    {{ if $op.PathParams }}
+    if o.PathParams != nil {
+        if v, ok := any(o.PathParams).(runtime.Validator); ok {
+            if err := v.Validate(); err != nil {
+                errors = errors.Append("PathParams", err)
+            }
+        }
+    }
+    {{ end -}}
+
+    {{ if $op.Query }}
+    if o.Query != nil {
+        if v, ok := any(o.Query).(runtime.Validator); ok {
+            if err := v.Validate(); err != nil {
+                errors = errors.Append("Query", err)
+            }
+        }
+    }
+    {{end -}}
+
+    {{ if $op.Body }}
+    if o.Body != nil {
+        if v, ok := any(o.Body).(runtime.Validator); ok {
+            if err := v.Validate(); err != nil {
+                errors = errors.Append("Body", err)
+            }
+        }
+    }
+    {{end -}}
+
+    {{ if $op.Header }}
+    if o.Header != nil {
+        if v, ok := any(o.Header).(runtime.Validator); ok {
+            if err := v.Validate(); err != nil {
+                errors = errors.Append("Header", err)
+            }
+        }
+    }
+    {{end -}}
+
+    if len(errors) == 0 {
+        return nil
+    }
+
+    return errors
+}
+{{ end }}
+
+// GetPathParams returns the path params as a map.
+func (o *{{$op.ID | ucFirst}}RequestOptions) GetPathParams() (map[string]any, error) {
+    {{- if $op.PathParams -}}
+    params, err := runtime.AsMap[any](o.PathParams)
+    if err != nil { return nil, err }
+    for key, value := range params {
+        params[key] = url.PathEscape(fmt.Sprint(value))
+    }
+    return params, nil
+    {{- else -}}
+    return nil, nil
+    {{- end}}
+}
+
+// GetQuery returns the query params as a map.
+func (o *{{$op.ID | ucFirst}}RequestOptions) GetQuery() (map[string]any, error) {
+    {{- if $op.Query -}}
+    return runtime.AsMap[any](o.Query)
+    {{- else -}}
+    return nil, nil
+    {{- end}}
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *{{$op.ID | ucFirst}}RequestOptions) GetBody() any {
+    {{- if $op.Body -}}
+    return o.Body
+    {{- else -}}
+    return nil
+    {{- end}}
+}
+
+// GetHeader returns the headers as a map.
+func (o *{{$op.ID | ucFirst}}RequestOptions) GetHeader() (map[string]string, error) {
+    {{- if $op.Header -}}
+    return runtime.AsMap[string](o.Header)
+    {{- else -}}
+    return nil, nil
+    {{- end}}
+}
+
+{{end}}
+
+{{end}}

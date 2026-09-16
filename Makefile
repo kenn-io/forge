@@ -238,11 +238,9 @@ guardrail-check: check-vite-plus-bin
 api-generate: frontend-deps
 	mkdir -p frontend/src/lib/api/generated
 	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; go run ./cmd/kenn-forge-openapi -out "$$tmp" -format yaml; if [ -f frontend/openapi/openapi.yaml ] && cmp -s "$$tmp" frontend/openapi/openapi.yaml; then rm "$$tmp"; else mv "$$tmp" frontend/openapi/openapi.yaml; fi; trap - EXIT
-	mkdir -p internal/apiclient/spec
-	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; go run ./cmd/kenn-forge-openapi -out "$$tmp" -version 3.0 -format json; if [ -f internal/apiclient/spec/openapi.json ] && cmp -s "$$tmp" internal/apiclient/spec/openapi.json; then rm "$$tmp"; else mv "$$tmp" internal/apiclient/spec/openapi.json; fi; trap - EXIT
 	node frontend/scripts/generate-api-client.mjs openapi/openapi.yaml
-	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; node scripts/generate-schema-constraints.mjs internal/apiclient/spec/openapi.json "$$tmp"; if [ -f frontend/src/lib/api/generated/schema-constraints.ts ] && cmp -s "$$tmp" frontend/src/lib/api/generated/schema-constraints.ts; then rm "$$tmp"; else mv "$$tmp" frontend/src/lib/api/generated/schema-constraints.ts; fi; trap - EXIT
-	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; (cd internal/apiclient/generated && go tool oapi-codegen --config config.yaml -o "$$tmp" ../spec/openapi.json); if [ -f internal/apiclient/generated/client.gen.go ] && cmp -s "$$tmp" internal/apiclient/generated/client.gen.go; then rm "$$tmp"; else mv "$$tmp" internal/apiclient/generated/client.gen.go; fi; trap - EXIT
+	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; node scripts/generate-schema-constraints.mjs frontend/openapi/openapi.yaml "$$tmp"; if [ -f frontend/src/lib/api/generated/schema-constraints.ts ] && cmp -s "$$tmp" frontend/src/lib/api/generated/schema-constraints.ts; then rm "$$tmp"; else mv "$$tmp" frontend/src/lib/api/generated/schema-constraints.ts; fi; trap - EXIT
+	go generate ./internal/apiclient/generated
 
 # Regenerate the roborev TypeScript client from the checked-in OpenAPI spec
 roborev-api-generate: frontend-deps

@@ -100,27 +100,27 @@ func runArchiveMutation(command string, daemonFlags archiveDaemonFlags, all bool
 	}
 	body := generated.ArchiveMutationBody{All: all}
 	if len(refs) > 0 {
-		body.Repositories = &refs
+		body.Repositories = refs
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), daemonFlags.timeout)
 	defer cancel()
 	var statuses []generated.ArchiveStatusResponse
 	if command == "start" {
-		response, requestErr := client.HTTP.StartArchivesWithResponse(ctx, body)
-		if requestErr != nil {
+		response, requestErr := client.HTTP.StartArchivesWithResponse(ctx, &generated.StartArchivesRequestOptions{Body: new(body)})
+		if requestErr != nil && (response == nil || response.Error == nil) {
 			return fmt.Errorf("start archive request: %w", requestErr)
 		}
 		if response.JSON200 == nil {
-			return archiveAPIProblem("start archive", response.StatusCode(), response.ApplicationproblemJSONDefault)
+			return archiveAPIProblem("start archive", response.StatusCode, response.Error)
 		}
 		statuses = *response.JSON200
 	} else {
-		response, requestErr := client.HTTP.PauseArchivesWithResponse(ctx, body)
-		if requestErr != nil {
+		response, requestErr := client.HTTP.PauseArchivesWithResponse(ctx, &generated.PauseArchivesRequestOptions{Body: new(body)})
+		if requestErr != nil && (response == nil || response.Error == nil) {
 			return fmt.Errorf("pause archive request: %w", requestErr)
 		}
 		if response.JSON200 == nil {
-			return archiveAPIProblem("pause archive", response.StatusCode(), response.ApplicationproblemJSONDefault)
+			return archiveAPIProblem("pause archive", response.StatusCode, response.Error)
 		}
 		statuses = *response.JSON200
 	}
@@ -153,19 +153,19 @@ func runArchiveStatus(daemonFlags archiveDaemonFlags, repositories []string, std
 	if err != nil {
 		return err
 	}
-	params := &generated.ListArchiveStatusParams{}
+	params := &generated.ListArchiveStatusQuery{}
 	if len(refs) > 0 {
 		values := archiveRepositoryFilters(refs)
-		params.Repo = &values
+		params.Repo = values
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), daemonFlags.timeout)
 	defer cancel()
-	response, err := client.HTTP.ListArchiveStatusWithResponse(ctx, params)
-	if err != nil {
+	response, err := client.HTTP.ListArchiveStatusWithResponse(ctx, &generated.ListArchiveStatusRequestOptions{Query: params})
+	if err != nil && (response == nil || response.Error == nil) {
 		return fmt.Errorf("archive status request: %w", err)
 	}
 	if response.JSON200 == nil {
-		return archiveAPIProblem("archive status", response.StatusCode(), response.ApplicationproblemJSONDefault)
+		return archiveAPIProblem("archive status", response.StatusCode, response.Error)
 	}
 	return writeArchiveJSON(stdout, *response.JSON200)
 }
@@ -221,24 +221,24 @@ func runArchiveReport(opts archiveReportOptions, daysSet bool, stdout io.Writer,
 	if err != nil {
 		return err
 	}
-	params := &generated.GetArchiveReportParams{
+	params := &generated.GetArchiveReportQuery{
 		Start: start.Format(time.RFC3339), End: end.Format(time.RFC3339),
 	}
 	if len(refs) > 0 {
 		values := archiveRepositoryFilters(refs)
-		params.Repo = &values
+		params.Repo = values
 	}
 	if opts.verbose {
 		params.Verbose = &opts.verbose
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), opts.daemonFlags.timeout)
 	defer cancel()
-	response, err := client.HTTP.GetArchiveReportWithResponse(ctx, params)
-	if err != nil {
+	response, err := client.HTTP.GetArchiveReportWithResponse(ctx, &generated.GetArchiveReportRequestOptions{Query: params})
+	if err != nil && (response == nil || response.Error == nil) {
 		return fmt.Errorf("archive report request: %w", err)
 	}
 	if response.JSON200 == nil {
-		return archiveAPIProblem("archive report", response.StatusCode(), response.ApplicationproblemJSONDefault)
+		return archiveAPIProblem("archive report", response.StatusCode, response.Error)
 	}
 	model, err := archiveReportFromAPI(*response.JSON200)
 	if err != nil {
@@ -391,17 +391,17 @@ func archiveReportFromAPI(input generated.ArchiveReportResponse) (report.Model, 
 		model.Contributors = []report.Contributor{}
 	}
 	if input.Activity != nil {
-		model.Activity = make([]report.Activity, len(*input.Activity))
-		for i, item := range *input.Activity {
+		model.Activity = make([]report.Activity, len(input.Activity))
+		for i, item := range input.Activity {
 			kind := report.ActivityKind(item.Kind)
 			if !validArchiveActivityKind(kind) {
 				return report.Model{}, fmt.Errorf("unknown activity kind %q", item.Kind)
 			}
 			model.Activity[i] = report.Activity{
 				Repository: archiveReportRepositoryRefFromAPI(item.Repository), Kind: kind,
-				ItemNumber: int(item.ItemNumber), ProviderExternalID: item.ProviderExternalId,
+				ItemNumber: int(item.ItemNumber), ProviderExternalID: item.ProviderExternalID,
 				Title: item.Title, Author: item.Author, Actor: archiveOptionalString(item.Actor),
-				OccurredAt: item.OccurredAt.UTC(), Body: item.Body, URL: item.Url,
+				OccurredAt: item.OccurredAt.UTC(), Body: item.Body, URL: item.URL,
 				Comments:       archiveOptionalInt(item.Comments),
 				Additions:      archiveOptionalInt(item.Additions),
 				Deletions:      archiveOptionalInt(item.Deletions),
@@ -534,11 +534,11 @@ func archiveAPIProblem(operation string, status int, problem *generated.ProblemE
 	if problem == nil {
 		return fmt.Errorf("%s failed with HTTP %d", operation, status)
 	}
-	if problem.Code == generated.PayloadTooLarge && archiveProblemReason(problem) == "reportTooLarge" {
+	if problem.Code == generated.ProblemErrorCodePayloadTooLarge && archiveProblemReason(problem) == "reportTooLarge" {
 		return errors.New("archive report is too large; narrow the UTC range or repository scope")
 	}
-	if problem.Details != nil && len(*problem.Details) > 0 {
-		details, err := json.Marshal(*problem.Details, json.Deterministic(true))
+	if len(problem.Details) > 0 {
+		details, err := json.Marshal(problem.Details, json.Deterministic(true))
 		if err == nil {
 			return fmt.Errorf("%s failed with HTTP %d (%s; details=%s)", operation, status, problem.Code, details)
 		}
@@ -550,6 +550,6 @@ func archiveProblemReason(problem *generated.ProblemError) string {
 	if problem.Details == nil {
 		return ""
 	}
-	reason, _ := (*problem.Details)["reason"].(string)
+	reason, _ := (problem.Details)["reason"].(string)
 	return reason
 }

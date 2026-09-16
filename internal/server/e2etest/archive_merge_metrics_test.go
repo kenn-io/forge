@@ -363,9 +363,7 @@ func testArchiveReactivationReclassifiesWorkspaceHeadRepo(
 		Provider: "github", PlatformHost: "github.com",
 		Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
 	}}
-	started, err := api.HTTP.StartArchivesWithResponse(
-		ctx, generated.ArchiveMutationBody{Repositories: &repositories},
-	)
+	started, err := api.HTTP.StartArchivesWithResponse(ctx, &generated.StartArchivesRequestOptions{Body: &generated.ArchiveMutationBody{Repositories: repositories}})
 	require.NoError(err)
 	require.NotNil(started.JSON200)
 
@@ -427,9 +425,9 @@ func testArchiveReactivationReclassifiesWorkspaceHeadRepo(
 	)
 	require.NoError(err)
 	require.False(removed)
-	detail, err := api.HTTP.GetWorkspaceWithResponse(ctx, "ws-reappeared")
+	detail, err := api.HTTP.GetWorkspaceWithResponse(ctx, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: "ws-reappeared"}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, detail.StatusCode(), string(detail.Body))
+	require.Equal(http.StatusOK, detail.StatusCode, string(detail.Body))
 	require.NotNil(detail.JSON200)
 	require.NotNil(detail.JSON200.MrHeadRepoKind)
 	require.Equal(expectKind, *detail.JSON200.MrHeadRepoKind)
@@ -528,9 +526,7 @@ func testArchiveReportRepairsMergedMetricsAcrossRepositoryRename(
 		Provider: "github", PlatformHost: "github.com",
 		Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
 	}}
-	started, err := api.HTTP.StartArchivesWithResponse(
-		ctx, generated.ArchiveMutationBody{Repositories: &repositories},
-	)
+	started, err := api.HTTP.StartArchivesWithResponse(ctx, &generated.StartArchivesRequestOptions{Body: &generated.ArchiveMutationBody{Repositories: repositories}})
 	require.NoError(err)
 	require.NotNil(started.JSON200)
 
@@ -643,15 +639,15 @@ func testArchiveReportRepairsMergedMetricsAcrossRepositoryRename(
 	assert.Equal("newer local title", storedMR.Title)
 
 	verbose := true
-	reportResponse, err := api.HTTP.GetArchiveReportWithResponse(ctx, &generated.GetArchiveReportParams{
+	reportResponse, err := api.HTTP.GetArchiveReportWithResponse(ctx, &generated.GetArchiveReportRequestOptions{Query: &generated.GetArchiveReportQuery{
 		Start: mergedAt.Add(-time.Minute).Format(time.RFC3339),
 		End:   mergedAt.Add(time.Minute).Format(time.RFC3339), Verbose: &verbose,
-	})
+	}})
 	require.NoError(err)
 	require.NotNil(reportResponse.JSON200)
 	require.NotNil(reportResponse.JSON200.Activity)
-	require.Len(*reportResponse.JSON200.Activity, 1)
-	merged := (*reportResponse.JSON200.Activity)[0]
+	require.Len(reportResponse.JSON200.Activity, 1)
+	merged := (reportResponse.JSON200.Activity)[0]
 	assert.Equal(generated.ArchiveReportActivityResponseKindMergeRequestMerged, merged.Kind)
 	require.NotNil(merged.Actor)
 	assert.Equal("merge-admin", *merged.Actor)

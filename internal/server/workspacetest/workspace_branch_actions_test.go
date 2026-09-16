@@ -33,7 +33,7 @@ func TestWorkspacePushBranchRoutePushesAheadBranch(t *testing.T) {
 	gitfixture.Run(t, ws.WorktreePath, "add", ".")
 	gitfixture.Run(t, ws.WorktreePath, "commit", "-m", "ahead")
 
-	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/workspaces/"+ws.Id+"/push", nil)
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/workspaces/"+ws.ID+"/push", nil)
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	div, ok, err := workspace.WorktreeDivergence(ctx, ws.WorktreePath)
@@ -70,7 +70,7 @@ func TestWorkspacePullBranchRouteFastForwardsBehindBranch(t *testing.T) {
 	gitfixture.Run(t, other, "commit", "-m", "remote")
 	gitfixture.Run(t, other, "push", "origin", upstreamBranch)
 
-	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/workspaces/"+ws.Id+"/pull", nil)
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/workspaces/"+ws.ID+"/pull", nil)
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	contents, err := os.ReadFile(filepath.Join(ws.WorktreePath, "remote.txt"))
@@ -89,7 +89,7 @@ func TestWorkspacePullBranchRouteRejectsDirtyWorktree(t *testing.T) {
 		filepath.Join(ws.WorktreePath, "dirty.txt"), []byte("dirty\n"), 0o644,
 	))
 
-	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/workspaces/"+ws.Id+"/pull", nil)
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/workspaces/"+ws.ID+"/pull", nil)
 
 	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
 	var problem httpapi.ProblemError

@@ -40,7 +40,7 @@ func TestWorkspaceFixtureUsesIsolatedTmuxServer(t *testing.T) {
 			context.WithoutCancel(ctx), 5*time.Second,
 		)
 		defer cancel()
-		deleteWorkspaceForPtyOwnerTest(t, cleanupCtx, fixture, ws.Id)
+		deleteWorkspaceForPtyOwnerTest(t, cleanupCtx, fixture, ws.ID)
 	})
 
 	err = procutil.Run(
@@ -61,9 +61,9 @@ func TestWorkspaceRuntimeTargetsE2E(t *testing.T) {
 	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 
-	resp, err := fixture.client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, ws.Id)
+	resp, err := fixture.client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, &generated.GetWorkspaceRuntimeRequestOptions{PathParams: &generated.GetWorkspaceRuntimePath{ID: ws.ID}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.LaunchTargets)
 	require.NotNil(resp.JSON200.Sessions)
@@ -105,18 +105,15 @@ exec "$@"
 	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 
-	launch, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{TargetKey: "plain_shell"},
-	)
+	launch, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{TargetKey: "plain_shell"}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, launch.StatusCode(), string(launch.Body))
+	require.Equal(http.StatusOK, launch.StatusCode, string(launch.Body))
 	require.NotNil(launch.JSON200)
 
 	ts := httptest.NewServer(fixture.server)
 	t.Cleanup(ts.Close)
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
-		"/ws/v1/workspaces/" + ws.Id +
+		"/ws/v1/workspaces/" + ws.ID +
 		"/runtime/sessions/" + launch.JSON200.Key +
 		"/terminal?cols=80&rows=24"
 	conn, _, err := websocket.Dial(ctx, wsURL, nil)
@@ -167,9 +164,9 @@ func TestWorkspaceRuntimeTargetsHideInternalShellTargetE2E(t *testing.T) {
 	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 
-	resp, err := fixture.client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, ws.Id)
+	resp, err := fixture.client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, &generated.GetWorkspaceRuntimeRequestOptions{PathParams: &generated.GetWorkspaceRuntimePath{ID: ws.ID}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.LaunchTargets)
 
@@ -197,15 +194,12 @@ func TestWorkspaceRuntimeLaunchUnavailableTargetE2E(t *testing.T) {
 	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 
-	resp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{
-			TargetKey: "disabled",
-		},
-	)
+	resp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
+		TargetKey: "disabled",
+	}})
 
 	require.NoError(t, err)
-	require.Equal(t, http.StatusBadRequest, resp.StatusCode())
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	require.Contains(t, string(resp.Body), "not available")
 }
 
@@ -217,14 +211,11 @@ func TestWorkspaceRuntimeLaunchPlainShellCreatesRuntimeSessionE2E(t *testing.T) 
 	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 
-	resp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{
-			TargetKey: "plain_shell",
-		},
-	)
+	resp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
+		TargetKey: "plain_shell",
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	shell := resp.JSON200
 	assert.Equal("plain_shell", shell.TargetKey)
@@ -232,9 +223,9 @@ func TestWorkspaceRuntimeLaunchPlainShellCreatesRuntimeSessionE2E(t *testing.T) 
 	assert.Equal(string(localruntime.SessionStatusRunning), shell.Status)
 	assert.Equal("terminal", shell.DisplayRegion)
 
-	getResp, err := fixture.client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, ws.Id)
+	getResp, err := fixture.client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, &generated.GetWorkspaceRuntimeRequestOptions{PathParams: &generated.GetWorkspaceRuntimePath{ID: ws.ID}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, getResp.StatusCode())
+	require.Equal(http.StatusOK, getResp.StatusCode)
 	require.NotNil(getResp.JSON200)
 	require.NotNil(getResp.JSON200.Sessions)
 	require.Len(getResp.JSON200.Sessions, 1)
@@ -253,11 +244,11 @@ func TestWorkspaceRuntimeAttachSpecUsesStoredTmuxSessionE2E(t *testing.T) {
 	fixture := setupWorkspaceServerFixture(t, cfg)
 	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
-	sessionKey := ws.Id + "_codex"
+	sessionKey := ws.ID + "_codex"
 	require.NoError(fixture.database.UpsertWorkspaceRuntimeSession(
 		ctx,
 		&db.WorkspaceRuntimeSession{
-			WorkspaceID: ws.Id,
+			WorkspaceID: ws.ID,
 			SessionKey:  sessionKey,
 			TargetKey:   "codex",
 			Label:       "codex",
@@ -270,7 +261,7 @@ func TestWorkspaceRuntimeAttachSpecUsesStoredTmuxSessionE2E(t *testing.T) {
 
 	req := httptest.NewRequest(
 		http.MethodGet,
-		"/api/v1/workspaces/"+ws.Id+"/runtime/sessions/"+
+		"/api/v1/workspaces/"+ws.ID+"/runtime/sessions/"+
 			sessionKey+"/attach-spec",
 		nil,
 	)
@@ -327,9 +318,9 @@ func TestWorkspaceCommitsFlagsUnpushedCommitsE2E(t *testing.T) {
 	gitfixture.Run(t, ws.WorktreePath, "commit", "-m", "local only commit")
 	localSHA := gitfixture.SHA(t, ws.WorktreePath, "HEAD")
 
-	resp, err := fixture.client.HTTP.GetWorkspaceCommitsWithResponse(ctx, ws.Id)
+	resp, err := fixture.client.HTTP.GetWorkspaceCommitsWithResponse(ctx, &generated.GetWorkspaceCommitsRequestOptions{PathParams: &generated.GetWorkspaceCommitsPath{ID: ws.ID}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Commits)
 	require.NotEmpty(resp.JSON200.Commits)
@@ -353,21 +344,19 @@ func TestWorkspaceCommitsOmitsPushStatusWithoutUpstreamE2E(t *testing.T) {
 	forkURL := "https://github.com/fork/widget.git"
 	gitfixture.Run(t, fixture.bare, "config", "--add", "url."+fixture.remote+".insteadOf", forkURL)
 	seedPRWithHeadRepo(t, fixture.database, "github.com", "acme", "widget", 2, forkURL)
-	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
-		ctx, generated.CreateWorkspaceInputBody{
-			Provider: "github", PlatformHost: "github.com",
-			Owner: "acme", Name: "widget", MrNumber: 2,
-		},
-	)
+	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider: "github", PlatformHost: "github.com",
+		Owner: "acme", Name: "widget", MrNumber: 2,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode(), string(createResp.Body))
+	require.Equal(http.StatusAccepted, createResp.StatusCode, string(createResp.Body))
 	require.NotNil(createResp.JSON202)
-	ws := waitForWorkspaceReady(t, ctx, fixture.client, createResp.JSON202.Id)
+	ws := waitForWorkspaceReady(t, ctx, fixture.client, createResp.JSON202.ID)
 	require.NotEmpty(ws.WorktreePath)
 
-	resp, err := fixture.client.HTTP.GetWorkspaceCommitsWithResponse(ctx, ws.Id)
+	resp, err := fixture.client.HTTP.GetWorkspaceCommitsWithResponse(ctx, &generated.GetWorkspaceCommitsRequestOptions{PathParams: &generated.GetWorkspaceCommitsPath{ID: ws.ID}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Commits)
 	require.NotEmpty(resp.JSON200.Commits)

@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/apiclient"
+	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
@@ -151,9 +152,9 @@ func TestRepoRenameSyncPreservesMergeAvailabilityE2E(t *testing.T) {
 
 	client, err := apiclient.NewWithHTTPClient(forge.URL, forge.Client())
 	require.NoError(err)
-	response, err := client.HTTP.GetRepoWithResponse(ctx, "github", "acme", "widget")
+	response, err := client.HTTP.GetRepoWithResponse(ctx, &generated.GetRepoRequestOptions{PathParams: &generated.GetRepoPath{Provider: "github", Owner: "acme", Name: "widget"}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, response.StatusCode(), string(response.Body))
+	require.Equal(http.StatusOK, response.StatusCode, string(response.Body))
 	require.NotNil(response.JSON200)
 
 	repo := response.JSON200
@@ -163,9 +164,9 @@ func TestRepoRenameSyncPreservesMergeAvailabilityE2E(t *testing.T) {
 	assert.True(repo.ViewerCanMerge)
 	assert.True(repo.Operations.MergePr.Available)
 
-	pull, err := client.HTTP.GetPullWithResponse(ctx, "github", "acme", "widget", 7)
+	pull, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "github", Owner: "acme", Name: "widget", Number: int64(7)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, pull.StatusCode(), string(pull.Body))
+	require.Equal(http.StatusOK, pull.StatusCode, string(pull.Body))
 	require.NotNil(pull.JSON200)
 	assert.Equal(sourceMRID, pull.JSON200.MergeRequest.ID)
 	assert.Equal(sourceID, pull.JSON200.MergeRequest.RepoID)
@@ -173,9 +174,10 @@ func TestRepoRenameSyncPreservesMergeAvailabilityE2E(t *testing.T) {
 	assert.True(pull.JSON200.MergeRequest.Starred)
 	assert.Equal("reviewing", string(pull.JSON200.MergeRequest.KanbanStatus))
 
-	discarded, err := client.HTTP.GetPullWithResponse(ctx, "github", "acme", "widget", 8)
-	require.NoError(err)
-	assert.Equal(http.StatusNotFound, discarded.StatusCode(), string(discarded.Body))
+	discarded, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "github", Owner: "acme", Name: "widget", Number: int64(8)}})
+	require.Error(err)
+	require.NotNil(discarded)
+	assert.Equal(http.StatusNotFound, discarded.StatusCode, string(discarded.Body))
 }
 
 func TestRepoPathReuseSyncDropsPreviousProviderSnapshotE2E(t *testing.T) {
@@ -277,9 +279,9 @@ func TestRepoPathReuseSyncDropsPreviousProviderSnapshotE2E(t *testing.T) {
 
 	client, err := apiclient.NewWithHTTPClient(forge.URL, forge.Client())
 	require.NoError(err)
-	response, err := client.HTTP.GetRepoWithResponse(ctx, "github", "acme", "widget")
+	response, err := client.HTTP.GetRepoWithResponse(ctx, &generated.GetRepoRequestOptions{PathParams: &generated.GetRepoPath{Provider: "github", Owner: "acme", Name: "widget"}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, response.StatusCode(), string(response.Body))
+	require.Equal(http.StatusOK, response.StatusCode, string(response.Body))
 	require.NotNil(response.JSON200)
 	assert.True(response.JSON200.AllowSquashMerge)
 	assert.True(response.JSON200.AllowMergeCommit)
@@ -287,12 +289,14 @@ func TestRepoPathReuseSyncDropsPreviousProviderSnapshotE2E(t *testing.T) {
 	assert.True(response.JSON200.ViewerCanMerge)
 	assert.True(response.JSON200.Operations.MergePr.Available)
 
-	pull, err := client.HTTP.GetPullWithResponse(ctx, "github", "acme", "widget", 7)
-	require.NoError(err)
-	assert.Equal(http.StatusNotFound, pull.StatusCode(), string(pull.Body))
-	issue, err := client.HTTP.GetIssueWithResponse(ctx, "github", "acme", "widget", 8)
-	require.NoError(err)
-	assert.Equal(http.StatusNotFound, issue.StatusCode(), string(issue.Body))
+	pull, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "github", Owner: "acme", Name: "widget", Number: int64(7)}})
+	require.Error(err)
+	require.NotNil(pull)
+	assert.Equal(http.StatusNotFound, pull.StatusCode, string(pull.Body))
+	issue, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "github", Owner: "acme", Name: "widget", Number: int64(8)}})
+	require.Error(err)
+	require.NotNil(issue)
+	assert.Equal(http.StatusNotFound, issue.StatusCode, string(issue.Body))
 }
 
 func TestPullDetailReportsPausedRateTrackerE2E(t *testing.T) {
@@ -344,9 +348,9 @@ func TestPullDetailReportsPausedRateTrackerE2E(t *testing.T) {
 
 	client, err := apiclient.NewWithHTTPClient(forge.URL, forge.Client())
 	require.NoError(err)
-	response, err := client.HTTP.GetPullWithResponse(t.Context(), "github", "acme", "widget", 7)
+	response, err := client.HTTP.GetPullWithResponse(t.Context(), &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "github", Owner: "acme", Name: "widget", Number: int64(7)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, response.StatusCode(), string(response.Body))
+	require.Equal(http.StatusOK, response.StatusCode, string(response.Body))
 	require.NotNil(response.JSON200)
 	require.NotNil(response.JSON200.Repo.Operations)
 
@@ -430,9 +434,9 @@ func TestRepoSyncHealthReportsSettingsFailureE2E(t *testing.T) {
 
 	client, err := apiclient.NewWithHTTPClient(forge.URL, forge.Client())
 	require.NoError(err)
-	response, err := client.HTTP.GetRepoWithResponse(ctx, "github", "acme", "widget")
+	response, err := client.HTTP.GetRepoWithResponse(ctx, &generated.GetRepoRequestOptions{PathParams: &generated.GetRepoPath{Provider: "github", Owner: "acme", Name: "widget"}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, response.StatusCode(), string(response.Body))
+	require.Equal(http.StatusOK, response.StatusCode, string(response.Body))
 	require.NotNil(response.JSON200)
 	assert.Contains(response.JSON200.LastSyncError, "kept losing")
 }

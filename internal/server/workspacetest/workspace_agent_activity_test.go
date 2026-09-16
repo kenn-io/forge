@@ -32,27 +32,20 @@ func TestWorkspaceAgentActivityFlowsThroughHTTPResponsesE2E(t *testing.T) {
 	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 
-	launch, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{TargetKey: "hook-agent"},
-	)
+	launch, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{TargetKey: "hook-agent"}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, launch.StatusCode())
+	require.Equal(http.StatusOK, launch.StatusCode)
 	require.NotNil(launch.JSON200)
 
 	reportHook := func(agent, sessionID, runtimeKey, cwd, event string) {
 		t.Helper()
-		response, hookErr := fixture.client.HTTP.ReceiveAgentHookWithResponse(
-			ctx, agent,
-			&generated.ReceiveAgentHookParams{
-				XKennForgeRuntimeSessionKey: &runtimeKey,
-			},
-			generated.HookEvent{
-				SessionId: sessionID, Cwd: cwd, HookEventName: event,
-			},
-		)
+		response, hookErr := fixture.client.HTTP.ReceiveAgentHookWithResponse(ctx, &generated.ReceiveAgentHookRequestOptions{PathParams: &generated.ReceiveAgentHookPath{Agent: agent}, Header: &generated.ReceiveAgentHookHeaders{
+			XKennForgeRuntimeSessionKey: &runtimeKey,
+		}, Body: &generated.HookEvent{
+			SessionID: sessionID, Cwd: cwd, HookEventName: event,
+		}})
 		require.NoError(hookErr)
-		require.Equal(http.StatusOK, response.StatusCode(), string(response.Body))
+		require.Equal(http.StatusOK, response.StatusCode, string(response.Body))
 	}
 	for _, report := range []struct {
 		sessionID  string
@@ -70,24 +63,21 @@ func TestWorkspaceAgentActivityFlowsThroughHTTPResponsesE2E(t *testing.T) {
 		reportHook("CoDeX", report.sessionID, report.runtimeKey, cwd, report.event)
 	}
 
-	sessionsResponse, err := fixture.client.HTTP.ListWorkspaceAgentSessionsWithResponse(ctx, ws.Id)
+	sessionsResponse, err := fixture.client.HTTP.ListWorkspaceAgentSessionsWithResponse(ctx, &generated.ListWorkspaceAgentSessionsRequestOptions{PathParams: &generated.ListWorkspaceAgentSessionsPath{ID: ws.ID}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, sessionsResponse.StatusCode(), string(sessionsResponse.Body))
+	require.Equal(http.StatusOK, sessionsResponse.StatusCode, string(sessionsResponse.Body))
 	require.NotNil(sessionsResponse.JSON200)
 	require.NotNil(sessionsResponse.JSON200.Sessions)
 	require.Len(sessionsResponse.JSON200.Sessions, 1)
 	assert.Equal("codex", sessionsResponse.JSON200.Sessions[0].Agent)
-	assert.Equal("live-agent", sessionsResponse.JSON200.Sessions[0].SessionId)
+	assert.Equal("live-agent", sessionsResponse.JSON200.Sessions[0].SessionID)
 	assert.Equal(launch.JSON200.Key, sessionsResponse.JSON200.Sessions[0].RuntimeSessionKey)
 
-	messageResponse, err := fixture.client.HTTP.SubmitWorkspaceRuntimeSessionInitialMessageWithResponse(
-		ctx, ws.Id, launch.JSON200.Key,
-		generated.SubmitInitialMessageInputBody{
-			TargetKey: "hook-agent", Message: "review this",
-		},
-	)
+	messageResponse, err := fixture.client.HTTP.SubmitWorkspaceRuntimeSessionInitialMessageWithResponse(ctx, &generated.SubmitWorkspaceRuntimeSessionInitialMessageRequestOptions{PathParams: &generated.SubmitWorkspaceRuntimeSessionInitialMessagePath{ID: ws.ID, SessionKey: launch.JSON200.Key}, Body: &generated.SubmitInitialMessageInputBody{
+		TargetKey: "hook-agent", Message: "review this",
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, messageResponse.StatusCode(), string(messageResponse.Body))
+	require.Equal(http.StatusOK, messageResponse.StatusCode, string(messageResponse.Body))
 	require.NotNil(messageResponse.JSON200)
 	assert.Equal("hook-agent", messageResponse.JSON200.TargetKey)
 	assert.Equal("delivered", messageResponse.JSON200.State)
@@ -96,9 +86,9 @@ func TestWorkspaceAgentActivityFlowsThroughHTTPResponsesE2E(t *testing.T) {
 	require.NotNil(messageResponse.JSON200.DeliveredAt)
 	assert.Equal(time.UTC, messageResponse.JSON200.DeliveredAt.Location())
 
-	sessionsResponse, err = fixture.client.HTTP.ListWorkspaceAgentSessionsWithResponse(ctx, ws.Id)
+	sessionsResponse, err = fixture.client.HTTP.ListWorkspaceAgentSessionsWithResponse(ctx, &generated.ListWorkspaceAgentSessionsRequestOptions{PathParams: &generated.ListWorkspaceAgentSessionsPath{ID: ws.ID}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, sessionsResponse.StatusCode(), string(sessionsResponse.Body))
+	require.Equal(http.StatusOK, sessionsResponse.StatusCode, string(sessionsResponse.Body))
 	require.NotNil(sessionsResponse.JSON200)
 	require.NotNil(sessionsResponse.JSON200.Sessions)
 	require.Len(sessionsResponse.JSON200.Sessions, 1)
@@ -107,24 +97,24 @@ func TestWorkspaceAgentActivityFlowsThroughHTTPResponsesE2E(t *testing.T) {
 	assert.Equal("hook-agent", sessionsResponse.JSON200.Sessions[0].InitialMessage.TargetKey)
 	assert.Equal(int64(11), sessionsResponse.JSON200.Sessions[0].InitialMessage.MessageBytes)
 
-	getResponse, err := fixture.client.HTTP.GetWorkspaceWithResponse(ctx, ws.Id)
+	getResponse, err := fixture.client.HTTP.GetWorkspaceWithResponse(ctx, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: ws.ID}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, getResponse.StatusCode())
+	require.Equal(http.StatusOK, getResponse.StatusCode)
 	require.NotNil(getResponse.JSON200)
 	require.NotNil(getResponse.JSON200.AgentState)
 	require.NotNil(getResponse.JSON200.AgentStateUpdatedAt)
 	assert.Equal(generated.WorkspaceResponseAgentStateWorking, *getResponse.JSON200.AgentState)
 	assert.Equal(time.UTC, getResponse.JSON200.AgentStateUpdatedAt.Location())
 
-	pullsResponse, err := fixture.client.HTTP.ListPullsWithResponse(ctx, nil)
+	pullsResponse, err := fixture.client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsRequestOptions{})
 	require.NoError(err)
-	require.Equal(http.StatusOK, pullsResponse.StatusCode())
+	require.Equal(http.StatusOK, pullsResponse.StatusCode)
 	require.NotNil(pullsResponse.JSON200)
 	require.Len(*pullsResponse.JSON200, 1)
 	linkedWorkspace := (*pullsResponse.JSON200)[0].Workspace
 	require.NotNil(linkedWorkspace)
 	require.NotNil(linkedWorkspace.AgentState)
-	assert.Equal(ws.Id, linkedWorkspace.Id)
+	assert.Equal(ws.ID, linkedWorkspace.ID)
 	assert.Equal(generated.WorkspaceRefAgentStateWorking, *linkedWorkspace.AgentState)
 
 	require.NoError(os.WriteFile(
@@ -134,36 +124,34 @@ func TestWorkspaceAgentActivityFlowsThroughHTTPResponsesE2E(t *testing.T) {
 	gitfixture.Run(t, ws.WorktreePath, "config", "user.name", "Agent Activity Fixture")
 	gitfixture.Run(t, ws.WorktreePath, "add", "activity.txt")
 	gitfixture.Run(t, ws.WorktreePath, "commit", "-m", "add activity fixture")
-	pushResponse, err := fixture.client.HTTP.PushWorkspaceBranchWithResponse(ctx, ws.Id)
+	pushResponse, err := fixture.client.HTTP.PushWorkspaceBranchWithResponse(ctx, &generated.PushWorkspaceBranchRequestOptions{PathParams: &generated.PushWorkspaceBranchPath{ID: ws.ID}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, pushResponse.StatusCode(), string(pushResponse.Body))
+	require.Equal(http.StatusOK, pushResponse.StatusCode, string(pushResponse.Body))
 	require.NotNil(pushResponse.JSON200)
 	require.NotNil(pushResponse.JSON200.AgentState)
 	assert.Equal(generated.WorkspaceResponseAgentStateWorking, *pushResponse.JSON200.AgentState)
 
 	reportHook("codex", "live-agent", launch.JSON200.Key, ws.WorktreePath, "Stop")
-	getResponse, err = fixture.client.HTTP.GetWorkspaceWithResponse(ctx, ws.Id)
+	getResponse, err = fixture.client.HTTP.GetWorkspaceWithResponse(ctx, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: ws.ID}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, getResponse.StatusCode())
+	require.Equal(http.StatusOK, getResponse.StatusCode)
 	require.NotNil(getResponse.JSON200)
 	require.NotNil(getResponse.JSON200.AgentState)
 	assert.Equal(generated.WorkspaceResponseAgentStateDone, *getResponse.JSON200.AgentState)
 
-	stopResponse, err := fixture.client.HTTP.StopWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id, launch.JSON200.Key,
-	)
+	stopResponse, err := fixture.client.HTTP.StopWorkspaceRuntimeSessionWithResponse(ctx, &generated.StopWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.StopWorkspaceRuntimeSessionPath{ID: ws.ID, SessionKey: launch.JSON200.Key}})
 	require.NoError(err)
-	require.Equal(http.StatusNoContent, stopResponse.StatusCode())
-	sessionsResponse, err = fixture.client.HTTP.ListWorkspaceAgentSessionsWithResponse(ctx, ws.Id)
+	require.Equal(http.StatusNoContent, stopResponse.StatusCode)
+	sessionsResponse, err = fixture.client.HTTP.ListWorkspaceAgentSessionsWithResponse(ctx, &generated.ListWorkspaceAgentSessionsRequestOptions{PathParams: &generated.ListWorkspaceAgentSessionsPath{ID: ws.ID}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, sessionsResponse.StatusCode(), string(sessionsResponse.Body))
+	require.Equal(http.StatusOK, sessionsResponse.StatusCode, string(sessionsResponse.Body))
 	require.NotNil(sessionsResponse.JSON200)
 	require.NotNil(sessionsResponse.JSON200.Sessions)
 	assert.Empty(sessionsResponse.JSON200.Sessions)
 
-	getResponse, err = fixture.client.HTTP.GetWorkspaceWithResponse(ctx, ws.Id)
+	getResponse, err = fixture.client.HTTP.GetWorkspaceWithResponse(ctx, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: ws.ID}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, getResponse.StatusCode())
+	require.Equal(http.StatusOK, getResponse.StatusCode)
 	require.NotNil(getResponse.JSON200)
 	assert.Nil(getResponse.JSON200.AgentState)
 }

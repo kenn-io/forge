@@ -40,19 +40,16 @@ func TestIssueWorkspaceRecoversExpectedDirectory(t *testing.T) {
 	wantStatus := workspaceGitOutput(t, expectedPath, "status", "--short")
 
 	reuseDirectory := true
-	resp, err := fixture.client.HTTP.CreateIssueWorkspaceWithResponse(
-		t.Context(), "gh", "acme", "widget", 7,
-		generated.CreateIssueWorkspaceInputBody{
-			GitHeadRef:             &branch,
-			ReuseExistingDirectory: &reuseDirectory,
-		},
-	)
+	resp, err := fixture.client.HTTP.CreateIssueWorkspaceWithResponse(t.Context(), &generated.CreateIssueWorkspaceRequestOptions{PathParams: &generated.CreateIssueWorkspacePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(7)}, Body: &generated.CreateIssueWorkspaceInputBody{
+		GitHeadRef:             &branch,
+		ReuseExistingDirectory: &reuseDirectory,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, resp.StatusCode(), string(resp.Body))
+	require.Equal(http.StatusAccepted, resp.StatusCode, string(resp.Body))
 	require.NotNil(resp.JSON202)
 
 	ready := waitForWorkspaceReady(
-		t, t.Context(), fixture.client, resp.JSON202.Id,
+		t, t.Context(), fixture.client, resp.JSON202.ID,
 	)
 	assert.Equal(expectedPath, ready.WorktreePath)
 	assert.Equal(
@@ -77,20 +74,18 @@ func TestIssueWorkspaceDirectoryRecoveryRejectsMissingPath(t *testing.T) {
 
 	branch := "kenn-forge/issue-7"
 	reuseDirectory := true
-	resp, err := fixture.client.HTTP.CreateIssueWorkspaceWithResponse(
-		t.Context(), "gh", "acme", "widget", 7,
-		generated.CreateIssueWorkspaceInputBody{
-			GitHeadRef:             &branch,
-			ReuseExistingDirectory: &reuseDirectory,
-		},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusConflict, resp.StatusCode(), string(resp.Body))
-	problem := resp.ApplicationproblemJSONDefault
+	resp, err := fixture.client.HTTP.CreateIssueWorkspaceWithResponse(t.Context(), &generated.CreateIssueWorkspaceRequestOptions{PathParams: &generated.CreateIssueWorkspacePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(7)}, Body: &generated.CreateIssueWorkspaceInputBody{
+		GitHeadRef:             &branch,
+		ReuseExistingDirectory: &reuseDirectory,
+	}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusConflict, resp.StatusCode, string(resp.Body))
+	problem := resp.Error
 	require.NotNil(problem)
-	assert.Equal(generated.WorkspaceDirectoryNotReusable, problem.Code)
+	assert.Equal(generated.ProblemErrorCodeWorkspaceDirectoryNotReusable, problem.Code)
 	require.NotNil(problem.Details)
-	assert.Equal("missing", (*problem.Details)["reason"])
+	assert.Equal("missing", (problem.Details)["reason"])
 
 	workspace, err := fixture.database.GetWorkspaceByIssueForProvider(
 		t.Context(), "github", "github.com", "acme", "widget", 7,
@@ -169,20 +164,18 @@ func TestIssueWorkspaceDirectoryRecoveryReasons(t *testing.T) {
 
 			branch := "kenn-forge/issue-7"
 			reuseDirectory := true
-			resp, err := fixture.client.HTTP.CreateIssueWorkspaceWithResponse(
-				t.Context(), "gh", "acme", "widget", 7,
-				generated.CreateIssueWorkspaceInputBody{
-					GitHeadRef:             &branch,
-					ReuseExistingDirectory: &reuseDirectory,
-				},
-			)
-			require.NoError(err)
-			require.Equal(http.StatusConflict, resp.StatusCode(), string(resp.Body))
-			problem := resp.ApplicationproblemJSONDefault
+			resp, err := fixture.client.HTTP.CreateIssueWorkspaceWithResponse(t.Context(), &generated.CreateIssueWorkspaceRequestOptions{PathParams: &generated.CreateIssueWorkspacePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(7)}, Body: &generated.CreateIssueWorkspaceInputBody{
+				GitHeadRef:             &branch,
+				ReuseExistingDirectory: &reuseDirectory,
+			}})
+			require.Error(err)
+			require.NotNil(resp)
+			require.Equal(http.StatusConflict, resp.StatusCode, string(resp.Body))
+			problem := resp.Error
 			require.NotNil(problem)
-			assert.Equal(generated.WorkspaceDirectoryNotReusable, problem.Code)
+			assert.Equal(generated.ProblemErrorCodeWorkspaceDirectoryNotReusable, problem.Code)
 			require.NotNil(problem.Details)
-			details := *problem.Details
+			details := problem.Details
 			assert.Equal(tt.wantReason, details["reason"])
 			if tt.checkBranches {
 				assert.Equal(tt.wantExpected, details["expectedBranch"])
@@ -213,20 +206,18 @@ func TestIssueWorkspaceConflictRejectsAlternateBranchForExistingDirectory(t *tes
 	)
 	gitfixture.Run(t, fixture.bare, "worktree", "add", expectedPath, "-b", branch, "main")
 
-	resp, err := fixture.client.HTTP.CreateIssueWorkspaceWithResponse(
-		t.Context(), "gh", "acme", "widget", 7,
-		generated.CreateIssueWorkspaceInputBody{},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusConflict, resp.StatusCode(), string(resp.Body))
-	problem := resp.ApplicationproblemJSONDefault
+	resp, err := fixture.client.HTTP.CreateIssueWorkspaceWithResponse(t.Context(), &generated.CreateIssueWorkspaceRequestOptions{PathParams: &generated.CreateIssueWorkspacePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(7)}, Body: &generated.CreateIssueWorkspaceInputBody{}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusConflict, resp.StatusCode, string(resp.Body))
+	problem := resp.Error
 	require.NotNil(problem)
-	assert.Equal(generated.BranchConflict, problem.Code)
+	assert.Equal(generated.ProblemErrorCodeBranchConflict, problem.Code)
 	require.NotNil(problem.Details)
-	assert.Equal(true, (*problem.Details)["existingDirectory"])
+	assert.Equal(true, (problem.Details)["existingDirectory"])
 	require.NotNil(problem.Errors)
 	locations := map[string]any{}
-	for _, detail := range *problem.Errors {
+	for _, detail := range problem.Errors {
 		if detail.Location != nil {
 			locations[*detail.Location] = detail.Value
 		}
@@ -234,17 +225,14 @@ func TestIssueWorkspaceConflictRejectsAlternateBranchForExistingDirectory(t *tes
 	assert.Equal(branch, locations["body.git_head_ref"])
 
 	alternateBranch := branch + "-2"
-	resp, err = fixture.client.HTTP.CreateIssueWorkspaceWithResponse(
-		t.Context(), "gh", "acme", "widget", 7,
-		generated.CreateIssueWorkspaceInputBody{GitHeadRef: &alternateBranch},
-	)
+	resp, err = fixture.client.HTTP.CreateIssueWorkspaceWithResponse(t.Context(), &generated.CreateIssueWorkspaceRequestOptions{PathParams: &generated.CreateIssueWorkspacePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(7)}, Body: &generated.CreateIssueWorkspaceInputBody{GitHeadRef: &alternateBranch}})
 	require.NoError(err)
-	require.Equal(http.StatusConflict, resp.StatusCode(), string(resp.Body))
-	problem = resp.ApplicationproblemJSONDefault
+	require.Equal(http.StatusConflict, resp.StatusCode, string(resp.Body))
+	problem = resp.Error
 	require.NotNil(problem)
-	assert.Equal(generated.BranchConflict, problem.Code)
+	assert.Equal(generated.ProblemErrorCodeBranchConflict, problem.Code)
 	require.NotNil(problem.Details)
-	assert.Equal(true, (*problem.Details)["existingDirectory"])
+	assert.Equal(true, (problem.Details)["existingDirectory"])
 
 	workspace, getErr := fixture.database.GetWorkspaceByIssueForProvider(
 		t.Context(), "github", "github.com", "acme", "widget", 7,
@@ -262,16 +250,14 @@ func TestIssueWorkspaceRejectsConflictingReuseOptions(t *testing.T) {
 	seedIssue(t, fixture.database, "acme", "widget", 7, "open")
 
 	reuse := true
-	resp, err := fixture.client.HTTP.CreateIssueWorkspaceWithResponse(
-		t.Context(), "gh", "acme", "widget", 7,
-		generated.CreateIssueWorkspaceInputBody{
-			ReuseExistingBranch:    &reuse,
-			ReuseExistingDirectory: &reuse,
-		},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusBadRequest, resp.StatusCode(), string(resp.Body))
-	problem := resp.ApplicationproblemJSONDefault
+	resp, err := fixture.client.HTTP.CreateIssueWorkspaceWithResponse(t.Context(), &generated.CreateIssueWorkspaceRequestOptions{PathParams: &generated.CreateIssueWorkspacePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(7)}, Body: &generated.CreateIssueWorkspaceInputBody{
+		ReuseExistingBranch:    &reuse,
+		ReuseExistingDirectory: &reuse,
+	}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusBadRequest, resp.StatusCode, string(resp.Body))
+	problem := resp.Error
 	require.NotNil(problem)
-	assert.Equal(generated.ValidationError, problem.Code)
+	assert.Equal(generated.ProblemErrorCodeValidationError, problem.Code)
 }

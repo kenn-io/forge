@@ -9,6 +9,7 @@
         "svelte-check": "4.7.5",
         "typescript": "5.9.3",
         "vite-plus": "0.3.0",
+        "yaml": "2.9.0",
       },
     },
     "frontend": {

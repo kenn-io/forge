@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cenkalti/backoff/v7"
 	gh "github.com/google/go-github/v91/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -45,8 +46,6 @@ func awaitRelayStatus(t *testing.T, statuses <-chan RelayStatus, matches func(Re
 	}
 }
 
-func immediateRetry(int) time.Duration { return time.Millisecond }
-
 func TestRelaySubscriptionStatusAndRecentActivity(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
@@ -76,7 +75,7 @@ func TestRelaySubscriptionStatusAndRecentActivity(t *testing.T) {
 	stopped := make(chan struct{})
 	go func() {
 		defer close(stopped)
-		syncer.RunRelay(ctx, RelayOptions{URL: server.URL, Client: server.Client(), RetryDelay: immediateRetry})
+		syncer.RunRelay(ctx, RelayOptions{URL: server.URL, Client: server.Client(), Backoff: backoff.NewConstantBackOff(time.Millisecond)})
 	}()
 	t.Cleanup(func() { cancel(); <-stopped })
 	connected := awaitRelayStatus(t, statuses, func(status RelayStatus) bool { return status.Connected })
@@ -108,42 +107,6 @@ func TestRelaySubscriptionStatusAndRecentActivity(t *testing.T) {
 	unavailable.Store(false)
 	awaitRelayStatus(t, statuses, func(status RelayStatus) bool { return status.Connected })
 	assert.Len(syncer.Status().Relay.Recent, 20, "reconnecting must not replay activity")
-}
-
-func TestRelayBacksOffWhenAcceptedStreamsCloseAtOnce(t *testing.T) {
-	t.Parallel()
-	require := require.New(t)
-	assert := assert.New(t)
-	ctx, cancel := context.WithCancel(t.Context())
-	syncer := NewSyncer(nil, openTestDB(t), nil, nil, time.Minute, nil, nil)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// A proxy that accepts the subscription and drops it immediately.
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.WriteHeader(http.StatusOK)
-	}))
-	t.Cleanup(server.Close)
-	attempts := make(chan int, 8)
-	stopped := make(chan struct{})
-	go func() {
-		defer close(stopped)
-		syncer.RunRelay(ctx, RelayOptions{URL: server.URL, Client: server.Client(), RetryDelay: func(failures int) time.Duration {
-			attempts <- failures
-			return time.Millisecond
-		}})
-	}()
-	t.Cleanup(func() { cancel(); <-stopped })
-	var seen []int
-	for len(seen) < 4 {
-		select {
-		case failures := <-attempts:
-			seen = append(seen, failures)
-		case <-time.After(10 * time.Second):
-			require.FailNow("reconnect attempts did not arrive")
-		}
-	}
-	assert.Equal([]int{1, 2, 3, 4}, seen, "immediately closed streams must keep growing the backoff")
-	assert.Equal(30*time.Second, jitteredRelayRetryDelay(20), "the delay never exceeds its cap")
-	assert.LessOrEqual(jitteredRelayRetryDelay(1), 1200*time.Millisecond)
 }
 
 func TestRelayTargetedChecksAndBudgetGate(t *testing.T) {

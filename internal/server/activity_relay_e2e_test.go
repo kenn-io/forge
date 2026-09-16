@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cenkalti/backoff/v7"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/apiclient/generated"
@@ -206,7 +207,7 @@ func TestActivityRelayEndToEnd(t *testing.T) {
 	subscriptionDone := make(chan struct{})
 	go func() {
 		defer close(subscriptionDone)
-		syncer.RunRelay(subscriptionCtx, ghclient.RelayOptions{URL: relayURL, Client: &http.Client{}, RetryDelay: func(int) time.Duration { return 50 * time.Millisecond }})
+		syncer.RunRelay(subscriptionCtx, ghclient.RelayOptions{URL: relayURL, Client: &http.Client{}, Backoff: backoff.NewConstantBackOff(50 * time.Millisecond)})
 	}()
 	t.Cleanup(func() { stopSubscription(); <-subscriptionDone })
 	awaitConnection(true)

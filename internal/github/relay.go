@@ -5,11 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math/rand/v2"
 	"net/http"
 	"sync"
 	"time"
 
+	"github.com/cenkalti/backoff/v7"
 	"go.kenn.io/forge/internal/activityrelay"
 	"go.kenn.io/forge/internal/archive"
 	"go.kenn.io/forge/internal/db"
@@ -36,8 +36,9 @@ type RelayActivity struct {
 type RelayOptions struct {
 	URL    string
 	Client *http.Client
-	// RetryDelay returns how long to wait before reconnect attempt n.
-	RetryDelay func(failures int) time.Duration
+	// Backoff paces reconnect attempts. Nil selects jittered exponential
+	// backoff from one second to a 30-second ceiling.
+	Backoff backoff.BackOff
 }
 
 const (
@@ -70,20 +71,24 @@ func (s *Syncer) SetOnRelayRefresh(fn func(context.Context, int64, string, int))
 }
 
 // RunRelay keeps one subscription open until ctx ends, reconnecting with
-// jittered exponential backoff. Hints are refreshed in arrival order by a
-// single worker so a slow provider call never stalls the connection.
+// backoff. Hints are refreshed in arrival order by a single worker so a slow
+// provider call never stalls the connection.
 func (s *Syncer) RunRelay(ctx context.Context, options RelayOptions) {
-	retryDelay := options.RetryDelay
-	if retryDelay == nil {
-		retryDelay = jitteredRelayRetryDelay
+	policy := options.Backoff
+	if policy == nil {
+		exponential := backoff.NewExponentialBackOff()
+		exponential.InitialInterval = time.Second
+		exponential.MaxInterval = maxRelayRetryDelay
+		exponential.RandomizationFactor = 0.2
+		policy = exponential
 	}
+	policy.Reset()
 	queue := &relayQueue{signal: make(chan struct{}, 1)}
 	var workers sync.WaitGroup
 	workers.Go(func() { s.drainRelayQueue(ctx, queue) })
 	defer workers.Wait()
 	s.updateRelayStatus(func(status *RelayStatus) { status.Connected = false })
 	var sequence int64
-	failures := 0
 	for ctx.Err() == nil {
 		stream, err := activityrelay.Open(ctx, options.Client, options.URL)
 		if err == nil {
@@ -99,14 +104,16 @@ func (s *Syncer) RunRelay(ctx context.Context, options RelayOptions) {
 			// stream that stayed up resets the backoff, so a relay or proxy
 			// that accepts and immediately drops cannot cause a reconnect storm.
 			if time.Since(opened) >= relayStableAfter {
-				failures = 0
+				policy.Reset()
 			}
 		}
 		if ctx.Err() != nil {
 			return
 		}
-		failures++
-		delay := retryDelay(failures)
+		delay := policy.NextBackOff()
+		if delay == backoff.Stop {
+			delay = maxRelayRetryDelay
+		}
 		slog.Debug("retrying relay subscription", "next", delay, "err", err)
 		timer := time.NewTimer(delay)
 		select {
@@ -116,20 +123,6 @@ func (s *Syncer) RunRelay(ctx context.Context, options RelayOptions) {
 		case <-timer.C:
 		}
 	}
-}
-
-func jitteredRelayRetryDelay(failures int) time.Duration {
-	delay := time.Second
-	for range max(failures, 1) - 1 {
-		if delay >= maxRelayRetryDelay {
-			break
-		}
-		delay *= 2
-	}
-	delay = min(delay, maxRelayRetryDelay)
-	// Symmetric 20% jitter keeps a fleet from reconnecting in lockstep.
-	spread := delay / 5
-	return min(delay-spread+time.Duration(rand.Int64N(int64(spread*2)+1)), maxRelayRetryDelay)
 }
 
 func (s *Syncer) receiveRelayHint(hint activityrelay.Hint, id int64, queue *relayQueue) {

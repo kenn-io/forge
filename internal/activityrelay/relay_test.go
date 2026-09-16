@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -109,6 +110,53 @@ func TestOpenRejectsNonStreamResponses(t *testing.T) {
 	require.Error(err, "a page response must not be mistaken for a subscription")
 	_, err = Open(t.Context(), server.Client(), server.URL+"/missing")
 	require.Error(err)
+}
+
+// blockedWriter behaves like a socket whose peer stopped reading: writes block
+// until a deadline expires.
+type blockedWriter struct {
+	header   http.Header
+	deadline chan time.Time
+}
+
+func (w *blockedWriter) Header() http.Header { return w.header }
+func (w *blockedWriter) WriteHeader(int)     {}
+func (w *blockedWriter) Write([]byte) (int, error) {
+	for deadline := range w.deadline {
+		if !deadline.IsZero() && !deadline.After(time.Now()) {
+			return 0, errors.New("write deadline exceeded")
+		}
+	}
+	return 0, errors.New("closed")
+}
+
+func (w *blockedWriter) SetWriteDeadline(deadline time.Time) error {
+	w.deadline <- deadline
+	return nil
+}
+
+func TestShutdownReleasesASubscriberBlockedInWrite(t *testing.T) {
+	require := require.New(t)
+	t.Parallel()
+	ctx, cancel := context.WithCancel(t.Context())
+	writer := &blockedWriter{header: http.Header{}, deadline: make(chan time.Time, 8)}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		serveStream(ctx, writer, new(Broadcaster))
+	}()
+	select {
+	case deadline := <-writer.deadline:
+		require.True(deadline.After(time.Now()), "a frame write carries a bounded deadline")
+	case <-time.After(5 * time.Second):
+		require.FailNow("the stream did not start writing")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		require.FailNow("cancellation must interrupt a write that is blocked on a stalled subscriber")
+	}
 }
 
 func TestReadReconnectsWhenAnOpenStreamStalls(t *testing.T) {

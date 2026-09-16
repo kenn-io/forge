@@ -84,11 +84,21 @@ func Handlers(broadcaster *Broadcaster, sources map[string]Source) (http.Handler
 	return public, private
 }
 
+// writeTimeout bounds one frame. It is long enough to ride out a subscriber on
+// a bad link, whose hints wait in its buffer meanwhile, and short enough that a
+// subscriber that never reads again is released rather than held forever.
+const writeTimeout = 30 * time.Second
+
 func serveStream(ctx context.Context, w http.ResponseWriter, broadcaster *Broadcaster) {
 	controller := http.NewResponseController(w)
-	// The stream outlives the server's per-response write timeout.
-	_ = controller.SetWriteDeadline(time.Time{})
+	// Shutdown must interrupt a write already blocked on a full socket, which
+	// only an expired deadline can do.
+	stop := context.AfterFunc(ctx, func() { _ = controller.SetWriteDeadline(time.Now()) })
+	defer stop()
 	write := func(frame string) bool {
+		if err := controller.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
+			return false
+		}
 		if _, err := io.WriteString(w, frame); err != nil {
 			return false
 		}

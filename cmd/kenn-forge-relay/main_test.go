@@ -28,17 +28,19 @@ func TestShutdownEndsOpenSubscriptionsPromptly(t *testing.T) {
 	require.NoError(os.WriteFile(config, fmt.Appendf(nil,
 		"webhook_listen = %q\nfeed_listen = %q\n[sources.team]\nsecret_file = %q\nrepository_ids = [1]\n",
 		"127.0.0.1:0", "127.0.0.1:0", secret), 0o600))
-	ctx, cancel := context.WithCancel(t.Context())
+	// The subscriber keeps its own live context so only the relay's shutdown
+	// can end the stream; sharing one context would let the client close it.
+	relayCtx, cancel := context.WithCancel(t.Context())
 	readyReader, readyWriter := io.Pipe()
 	finished := make(chan error, 1)
-	go func() { finished <- run(ctx, config, readyWriter) }()
+	go func() { finished <- run(relayCtx, config, readyWriter) }()
 	var addresses struct {
 		Feed string `json:"feed"`
 	}
 	scanner := bufio.NewScanner(readyReader)
 	require.True(scanner.Scan())
 	require.NoError(json.Unmarshal(scanner.Bytes(), &addresses))
-	stream, err := activityrelay.Open(ctx, &http.Client{}, "http://"+addresses.Feed)
+	stream, err := activityrelay.Open(t.Context(), &http.Client{}, "http://"+addresses.Feed)
 	require.NoError(err)
 	readErr := make(chan error, 1)
 	go func() { readErr <- stream.Read(func(activityrelay.Hint) {}) }()

@@ -30,6 +30,8 @@ fixtures, or changing shell-script coverage.
   (`internal/configwatch/watcher_test.go::TestWatcher_DebouncesBurst`).
 - Build raw-filename fixtures in Git objects without checking them out; host filesystems
   can reject path bytes that Git preserves (`landedwork/range_test.go::TestRebaseFileChanges`).
+- Publish fixture output atomically when file existence signals readiness; creation precedes
+  completed writes (`internal/server/workspaceapi/agent_resume_test.go::TestRestoreRuntimeSessionsResumesSavedConversationAfterTmuxLoss`).
 - Pre-commit runs frontend core checks without full-project Effect diagnostics;
   explicit frontend checks and CI retain Effect coverage (`Makefile::frontend-check-no-deps`).
 - Package-local `svelte-check` tasks must pass that package's Vite config explicitly;

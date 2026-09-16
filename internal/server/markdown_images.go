@@ -10,11 +10,12 @@ import (
 )
 
 type markdownImageOutput struct {
-	ContentType        string `header:"Content-Type"`
-	CacheControl       string `header:"Cache-Control"`
-	ContentLength      string `header:"Content-Length"`
-	ContentTypeOptions string `header:"X-Content-Type-Options"`
-	Body               []byte
+	ContentType           string `header:"Content-Type"`
+	CacheControl          string `header:"Cache-Control"`
+	ContentLength         string `header:"Content-Length"`
+	ContentTypeOptions    string `header:"X-Content-Type-Options"`
+	ContentSecurityPolicy string `header:"Content-Security-Policy"`
+	Body                  []byte
 }
 
 type markdownImageInput struct {
@@ -64,13 +65,19 @@ func (s *Server) getMarkdownImageFor(
 	if err != nil {
 		return nil, markdownImageError(ctx, err, kind, host)
 	}
-	return &markdownImageOutput{
+	output := &markdownImageOutput{
 		ContentType:        image.ContentType,
 		CacheControl:       markdownImageCacheControl(image),
 		ContentLength:      strconv.Itoa(len(image.Content)),
 		ContentTypeOptions: "nosniff",
 		Body:               image.Content,
-	}, nil
+	}
+	if image.ContentType == "image/svg+xml" {
+		// An SVG can also be opened as a document. Keep repository content
+		// outside Forge's origin and disable scripts and external resources.
+		output.ContentSecurityPolicy = "sandbox; default-src 'none'; style-src 'unsafe-inline'"
+	}
+	return output, nil
 }
 
 // markdownImageCacheKey uses the stable provider identity, not the owner/name
@@ -99,12 +106,13 @@ func markdownImageResponses() map[string]*huma.Response {
 		"200": {
 			Description: "Image response",
 			Content: map[string]*huma.MediaType{
-				"image/avif": {Schema: &huma.Schema{Type: "string", Format: "binary"}},
-				"image/bmp":  {Schema: &huma.Schema{Type: "string", Format: "binary"}},
-				"image/gif":  {Schema: &huma.Schema{Type: "string", Format: "binary"}},
-				"image/jpeg": {Schema: &huma.Schema{Type: "string", Format: "binary"}},
-				"image/png":  {Schema: &huma.Schema{Type: "string", Format: "binary"}},
-				"image/webp": {Schema: &huma.Schema{Type: "string", Format: "binary"}},
+				"image/avif":    {Schema: &huma.Schema{Type: "string", Format: "binary"}},
+				"image/bmp":     {Schema: &huma.Schema{Type: "string", Format: "binary"}},
+				"image/gif":     {Schema: &huma.Schema{Type: "string", Format: "binary"}},
+				"image/jpeg":    {Schema: &huma.Schema{Type: "string", Format: "binary"}},
+				"image/png":     {Schema: &huma.Schema{Type: "string", Format: "binary"}},
+				"image/svg+xml": {Schema: &huma.Schema{Type: "string", Format: "binary"}},
+				"image/webp":    {Schema: &huma.Schema{Type: "string", Format: "binary"}},
 			},
 		},
 	}

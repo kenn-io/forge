@@ -17,8 +17,40 @@ import (
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/platform"
+	platformgithub "go.kenn.io/forge/platform/github"
 	platformgitlab "go.kenn.io/forge/platform/gitlab"
 )
+
+func TestMarkdownImageRouteServesRepositorySVG(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80"><rect width="120" height="80" fill="green"/></svg>`
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal("/api/v3/repos/acme/widgets/contents/diagram.svg", r.URL.Path)
+		w.Header().Set("Content-Type", "application/vnd.github.raw; charset=utf-8")
+		_, _ = w.Write([]byte(svg))
+	}))
+	t.Cleanup(upstream.Close)
+	client, err := platformgithub.NewClient(platformgithub.ClientConfig{
+		Host: "github.com", Read: upstream.Client(), Write: upstream.Client(),
+		Notifications: upstream.Client(), Clock: time.Now, APIBase: upstream.URL + "/",
+	})
+	require.NoError(err)
+	srv, database := setupTestServerWithMock(t, &mockGH{getMarkdownImageFn: client.GetMarkdownImage})
+	srv.markdownImages = newMarkdownImageCache(t.TempDir())
+	_, err = database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
+	require.NoError(err)
+	const source = "https://github.com/acme/widgets/raw/main/diagram.svg"
+	for range 2 {
+		rr := repoBrowserRequest(t, srv, http.MethodGet,
+			"/api/v1/repo/github/acme/widgets/markdown-image?source="+url.QueryEscape(source))
+		require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+		assert.Equal("image/svg+xml", rr.Header().Get("Content-Type"))
+		assert.Equal("sandbox; default-src 'none'; style-src 'unsafe-inline'", rr.Header().Get("Content-Security-Policy"))
+		assert.Equal("nosniff", rr.Header().Get("X-Content-Type-Options"))
+		assert.Equal(svg, rr.Body.String())
+	}
+}
 
 func repoBrowserRequest(
 	t *testing.T,

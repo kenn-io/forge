@@ -420,6 +420,10 @@ GitLab private Markdown upload web URLs do not accept API-token authentication.
 Translate only repo-scoped upload URLs to the authenticated project-upload API;
 never proxy arbitrary provider URLs. (`platform/gitlab/markdown_images.go::GetMarkdownImage`)
 
+SVGs fetched for Markdown can also be opened as documents. Serve them with a
+sandboxed origin and scripts disabled on every response, including cache hits.
+(`internal/server/markdown_images.go::getMarkdownImageFor`)
+
 The markdown image cache is keyed by stable repository identity, never the owner/name
 route, so a replacement occupant of a reused route cannot receive the previous
 repository's bytes; providers mark ref-addressed sources `Mutable` and the server then

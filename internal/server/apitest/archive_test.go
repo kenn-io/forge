@@ -48,25 +48,25 @@ func TestAPIArchiveStartPauseStatusAndReport(t *testing.T) {
 	client := setupTestClient(t, srv)
 	repositories := []generated.ArchiveRepositoryRef{archiveGeneratedRef(ref)}
 
-	started, err := client.HTTP.StartArchivesWithResponse(t.Context(), generated.ArchiveMutationBody{
-		Repositories: &repositories,
-	})
+	started, err := client.HTTP.StartArchivesWithResponse(t.Context(), &generated.StartArchivesRequestOptions{Body: &generated.ArchiveMutationBody{
+		Repositories: repositories,
+	}})
 	require.NoError(err)
 	require.NotNil(started.JSON200)
 	require.Len(*started.JSON200, 1)
 	assert.Equal(generated.ArchiveStatusResponseStatusRunning, (*started.JSON200)[0].Status)
 	assert.Equal("github.test", (*started.JSON200)[0].Repository.PlatformHost)
 	assert.Equal([]generated.ArchiveStatusResponseActivePhases{
-		generated.IssueInventory, generated.MergeRequestInventory,
+		generated.ArchiveStatusResponseActivePhasesIssueInventory, generated.ArchiveStatusResponseActivePhasesMergeRequestInventory,
 	}, (*started.JSON200)[0].ActivePhases)
 	assert.Equal(generated.ArchiveCoverageResponseCommentsSupported, (*started.JSON200)[0].Coverage.Comments)
 	assert.NotNil((*started.JSON200)[0].InitialStartedAt)
 	assert.Equal(int32(1), wakeCount.Load())
 	assert.Zero(provider.calls.Load(), "start must only mutate durable state and wake the worker")
 
-	startedAgain, err := client.HTTP.StartArchivesWithResponse(t.Context(), generated.ArchiveMutationBody{
-		Repositories: &repositories,
-	})
+	startedAgain, err := client.HTTP.StartArchivesWithResponse(t.Context(), &generated.StartArchivesRequestOptions{Body: &generated.ArchiveMutationBody{
+		Repositories: repositories,
+	}})
 	require.NoError(err)
 	require.NotNil(startedAgain.JSON200)
 	assert.Equal((*started.JSON200)[0].Status, (*startedAgain.JSON200)[0].Status)
@@ -110,10 +110,10 @@ func TestAPIArchiveStartPauseStatusAndReport(t *testing.T) {
 		WHERE repo_id = ?`, repo.ID)
 	require.NoError(err)
 	verbose := true
-	reportResponse, err := client.HTTP.GetArchiveReportWithResponse(t.Context(), &generated.GetArchiveReportParams{
+	reportResponse, err := client.HTTP.GetArchiveReportWithResponse(t.Context(), &generated.GetArchiveReportRequestOptions{Query: &generated.GetArchiveReportQuery{
 		Start: now.Add(-time.Hour).Format(time.RFC3339),
 		End:   now.Add(time.Hour).Format(time.RFC3339), Verbose: &verbose,
-	})
+	}})
 	require.NoError(err)
 	require.NotNil(reportResponse.JSON200)
 	assert.Equal(report.Schema, reportResponse.JSON200.ReportSchema)
@@ -127,13 +127,13 @@ func TestAPIArchiveStartPauseStatusAndReport(t *testing.T) {
 	assert.Equal(generated.ArchiveReportCoverageResponseMergeRequestsSupported,
 		reportResponse.JSON200.Repositories[0].Coverage.MergeRequests)
 	require.NotNil(reportResponse.JSON200.Activity)
-	require.Len(*reportResponse.JSON200.Activity, 3)
-	assert.Equal("issue-7", (*reportResponse.JSON200.Activity)[0].ProviderExternalId)
+	require.Len(reportResponse.JSON200.Activity, 3)
+	assert.Equal("issue-7", (reportResponse.JSON200.Activity)[0].ProviderExternalID)
 	assert.Equal(generated.ArchiveReportActivityResponseKindIssueClosed,
-		(*reportResponse.JSON200.Activity)[1].Kind)
-	require.NotNil((*reportResponse.JSON200.Activity)[1].Actor)
-	assert.Equal("closer", *(*reportResponse.JSON200.Activity)[1].Actor)
-	merged := (*reportResponse.JSON200.Activity)[2]
+		(reportResponse.JSON200.Activity)[1].Kind)
+	require.NotNil((reportResponse.JSON200.Activity)[1].Actor)
+	assert.Equal("closer", *(reportResponse.JSON200.Activity)[1].Actor)
+	merged := (reportResponse.JSON200.Activity)[2]
 	assert.Equal(generated.ArchiveReportActivityResponseKindMergeRequestMerged, merged.Kind)
 	require.NotNil(merged.Actor)
 	assert.Equal("merger", *merged.Actor)
@@ -148,9 +148,7 @@ func TestAPIArchiveStartPauseStatusAndReport(t *testing.T) {
 	assert.Zero(provider.calls.Load(), "reports must read SQLite only")
 
 	filter := []string{"github|github.test/owner/repo"}
-	statusResponse, err := client.HTTP.ListArchiveStatusWithResponse(
-		t.Context(), &generated.ListArchiveStatusParams{Repo: &filter},
-	)
+	statusResponse, err := client.HTTP.ListArchiveStatusWithResponse(t.Context(), &generated.ListArchiveStatusRequestOptions{Query: &generated.ListArchiveStatusQuery{Repo: filter}})
 	require.NoError(err)
 	require.NotNil(statusResponse.JSON200)
 	require.Len(*statusResponse.JSON200, 1)
@@ -163,9 +161,7 @@ func TestAPIArchiveStartPauseStatusAndReport(t *testing.T) {
 			last_error_detail = '/private/path?token=should-not-leak', next_retry_at = ?
 		WHERE repo_id = ?`, resetAt, repo.ID)
 	require.NoError(err)
-	budgetStatus, err := client.HTTP.ListArchiveStatusWithResponse(
-		t.Context(), &generated.ListArchiveStatusParams{Repo: &filter},
-	)
+	budgetStatus, err := client.HTTP.ListArchiveStatusWithResponse(t.Context(), &generated.ListArchiveStatusRequestOptions{Query: &generated.ListArchiveStatusQuery{Repo: filter}})
 	require.NoError(err)
 	require.NotNil(budgetStatus.JSON200)
 	require.Len(*budgetStatus.JSON200, 1)
@@ -177,16 +173,14 @@ func TestAPIArchiveStartPauseStatusAndReport(t *testing.T) {
 	assert.NotContains(string(budgetStatus.Body), "should-not-leak")
 	assert.NotContains(string(budgetStatus.Body), "/private/path")
 
-	paused, err := client.HTTP.PauseArchivesWithResponse(t.Context(), generated.ArchiveMutationBody{
-		Repositories: &repositories,
-	})
+	paused, err := client.HTTP.PauseArchivesWithResponse(t.Context(), &generated.PauseArchivesRequestOptions{Body: &generated.ArchiveMutationBody{
+		Repositories: repositories,
+	}})
 	require.NoError(err)
 	require.NotNil(paused.JSON200)
 	assert.Equal(generated.ArchiveStatusResponseStatusPaused, (*paused.JSON200)[0].Status)
 
-	startedAll, err := client.HTTP.StartArchivesWithResponse(
-		t.Context(), generated.ArchiveMutationBody{All: true},
-	)
+	startedAll, err := client.HTTP.StartArchivesWithResponse(t.Context(), &generated.StartArchivesRequestOptions{Body: &generated.ArchiveMutationBody{All: true}})
 	require.NoError(err)
 	require.NotNil(startedAll.JSON200)
 	require.Len(*startedAll.JSON200, 1)
@@ -274,21 +268,21 @@ func TestAPIArchiveReportExcludesOnlyRemovedUpstreamParents(t *testing.T) {
 	require.Equal(2, removedCount)
 
 	verbose := true
-	response, err := client.HTTP.GetArchiveReportWithResponse(ctx, &generated.GetArchiveReportParams{
+	response, err := client.HTTP.GetArchiveReportWithResponse(ctx, &generated.GetArchiveReportRequestOptions{Query: &generated.GetArchiveReportQuery{
 		Start:   now.Add(-time.Hour).Format(time.RFC3339),
 		End:     now.Add(time.Hour).Format(time.RFC3339),
 		Verbose: &verbose,
-	})
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, response.StatusCode())
+	require.Equal(http.StatusOK, response.StatusCode)
 	require.NotNil(response.JSON200)
 	require.EqualValues(1, response.JSON200.Totals.IssuesOpened)
 	require.EqualValues(1, response.JSON200.Totals.MergeRequestsOpened)
 	require.EqualValues(1, response.JSON200.Totals.OrdinaryComments)
 	require.EqualValues(1, response.JSON200.Totals.ReviewsSubmitted)
 	require.NotNil(response.JSON200.Activity)
-	require.Len(*response.JSON200.Activity, 4)
-	for _, activity := range *response.JSON200.Activity {
+	require.Len(response.JSON200.Activity, 4)
+	for _, activity := range response.JSON200.Activity {
 		require.NotEqualValues(2, activity.ItemNumber)
 		require.NotEqualValues(4, activity.ItemNumber)
 	}
@@ -302,19 +296,19 @@ func TestAPIArchiveValidationAndLimitProblemDetails(t *testing.T) {
 	client := setupTestClient(t, srv)
 	repositories := []generated.ArchiveRepositoryRef{archiveGeneratedRef(ref)}
 
-	invalidMutation, err := client.HTTP.StartArchivesWithResponse(t.Context(), generated.ArchiveMutationBody{
-		All: true, Repositories: &repositories,
-	})
-	require.NoError(err)
-	require.NotNil(invalidMutation.ApplicationproblemJSONDefault)
-	assert.Equal(generated.ValidationError, invalidMutation.ApplicationproblemJSONDefault.Code)
+	invalidMutation, err := client.HTTP.StartArchivesWithResponse(t.Context(), &generated.StartArchivesRequestOptions{Body: &generated.ArchiveMutationBody{
+		All: true, Repositories: repositories,
+	}})
+	require.Error(err)
+	require.NotNil(invalidMutation)
+	require.NotNil(invalidMutation.Error)
+	assert.Equal(generated.ProblemErrorCodeValidationError, invalidMutation.Error.Code)
 
-	emptyMutation, err := client.HTTP.StartArchivesWithResponse(
-		t.Context(), generated.ArchiveMutationBody{},
-	)
-	require.NoError(err)
-	require.NotNil(emptyMutation.ApplicationproblemJSONDefault)
-	assert.Equal(generated.ValidationError, emptyMutation.ApplicationproblemJSONDefault.Code)
+	emptyMutation, err := client.HTTP.StartArchivesWithResponse(t.Context(), &generated.StartArchivesRequestOptions{Body: &generated.ArchiveMutationBody{}})
+	require.Error(err)
+	require.NotNil(emptyMutation)
+	require.NotNil(emptyMutation.Error)
+	assert.Equal(generated.ProblemErrorCodeValidationError, emptyMutation.Error.Code)
 
 	missingRepository := archiveGeneratedRef(ref)
 	missingRepository.Name = "missing"
@@ -322,12 +316,13 @@ func TestAPIArchiveValidationAndLimitProblemDetails(t *testing.T) {
 	mixedRepositories := []generated.ArchiveRepositoryRef{
 		archiveGeneratedRef(ref), missingRepository,
 	}
-	mixedMutation, err := client.HTTP.StartArchivesWithResponse(t.Context(), generated.ArchiveMutationBody{
-		Repositories: &mixedRepositories,
-	})
-	require.NoError(err)
-	require.NotNil(mixedMutation.ApplicationproblemJSONDefault)
-	assert.Equal(generated.BadRequest, mixedMutation.ApplicationproblemJSONDefault.Code)
+	mixedMutation, err := client.HTTP.StartArchivesWithResponse(t.Context(), &generated.StartArchivesRequestOptions{Body: &generated.ArchiveMutationBody{
+		Repositories: mixedRepositories,
+	}})
+	require.Error(err)
+	require.NotNil(mixedMutation)
+	require.NotNil(mixedMutation.Error)
+	assert.Equal(generated.ProblemErrorCodeBadRequest, mixedMutation.Error.Code)
 	repo, err := database.GetRepoByIdentity(t.Context(), platformdb.DBRepoIdentity(ref))
 	require.NoError(err)
 	require.NotNil(repo)
@@ -337,32 +332,35 @@ func TestAPIArchiveValidationAndLimitProblemDetails(t *testing.T) {
 	assert.Equal(db.ArchiveCollectionModeDiscovery, states[0].CollectionMode,
 		"membership validation must finish before any repository is promoted")
 
-	offsetReport, err := client.HTTP.GetArchiveReportWithResponse(t.Context(), &generated.GetArchiveReportParams{
+	offsetReport, err := client.HTTP.GetArchiveReportWithResponse(t.Context(), &generated.GetArchiveReportRequestOptions{Query: &generated.GetArchiveReportQuery{
 		Start: "2026-07-01T00:00:00+01:00", End: "2026-07-02T00:00:00Z",
-	})
-	require.NoError(err)
-	require.NotNil(offsetReport.ApplicationproblemJSONDefault)
-	assert.Equal(generated.ValidationError, offsetReport.ApplicationproblemJSONDefault.Code)
+	}})
+	require.Error(err)
+	require.NotNil(offsetReport)
+	require.NotNil(offsetReport.Error)
+	assert.Equal(generated.ProblemErrorCodeValidationError, offsetReport.Error.Code)
 
 	missing := []string{"github|github.test/owner/missing"}
-	missingReport, err := client.HTTP.GetArchiveReportWithResponse(t.Context(), &generated.GetArchiveReportParams{
-		Start: "2026-07-01T00:00:00Z", End: "2026-07-02T00:00:00Z", Repo: &missing,
-	})
-	require.NoError(err)
-	require.NotNil(missingReport.ApplicationproblemJSONDefault)
-	assert.Equal(generated.BadRequest, missingReport.ApplicationproblemJSONDefault.Code)
+	missingReport, err := client.HTTP.GetArchiveReportWithResponse(t.Context(), &generated.GetArchiveReportRequestOptions{Query: &generated.GetArchiveReportQuery{
+		Start: "2026-07-01T00:00:00Z", End: "2026-07-02T00:00:00Z", Repo: missing,
+	}})
+	require.Error(err)
+	require.NotNil(missingReport)
+	require.NotNil(missingReport.Error)
+	assert.Equal(generated.ProblemErrorCodeBadRequest, missingReport.Error.Code)
 
 	limitSrv, _, _, _, _ := setupArchiveTestServer(t, archiveLimitController{})
 	limitClient := setupTestClient(t, limitSrv)
-	tooLarge, err := limitClient.HTTP.GetArchiveReportWithResponse(t.Context(), &generated.GetArchiveReportParams{
+	tooLarge, err := limitClient.HTTP.GetArchiveReportWithResponse(t.Context(), &generated.GetArchiveReportRequestOptions{Query: &generated.GetArchiveReportQuery{
 		Start: "2026-07-01T00:00:00Z", End: "2026-07-02T00:00:00Z",
-	})
-	require.NoError(err)
-	assert.Equal(http.StatusRequestEntityTooLarge, tooLarge.StatusCode())
-	require.NotNil(tooLarge.ApplicationproblemJSONDefault)
-	assert.Equal(generated.PayloadTooLarge, tooLarge.ApplicationproblemJSONDefault.Code)
-	require.NotNil(tooLarge.ApplicationproblemJSONDefault.Details)
-	details := *tooLarge.ApplicationproblemJSONDefault.Details
+	}})
+	require.Error(err)
+	require.NotNil(tooLarge)
+	assert.Equal(http.StatusRequestEntityTooLarge, tooLarge.StatusCode)
+	require.NotNil(tooLarge.Error)
+	assert.Equal(generated.ProblemErrorCodePayloadTooLarge, tooLarge.Error.Code)
+	require.NotNil(tooLarge.Error.Details)
+	details := tooLarge.Error.Details
 	encodedDetails, err := json.Marshal(details)
 	require.NoError(err)
 	assert.JSONEq(`{
@@ -410,21 +408,17 @@ func TestAPIArchiveRoutesObeyHostAuthAndCSRFGuards(t *testing.T) {
 		require.NoError(authServer.Shutdown(ctx))
 	})
 	authClient := setupTestClient(t, authServer)
-	unauthorized, err := authClient.HTTP.ListArchiveStatusWithResponse(
-		t.Context(), &generated.ListArchiveStatusParams{},
-	)
-	require.NoError(err)
-	assert.Equal(http.StatusUnauthorized, unauthorized.StatusCode())
-	require.NotNil(unauthorized.ApplicationproblemJSONDefault)
-	assert.Equal(generated.Unauthorized, unauthorized.ApplicationproblemJSONDefault.Code)
+	unauthorized, err := authClient.HTTP.ListArchiveStatusWithResponse(t.Context(), &generated.ListArchiveStatusRequestOptions{Query: &generated.ListArchiveStatusQuery{}})
+	require.Error(err)
+	require.NotNil(unauthorized)
+	assert.Equal(http.StatusUnauthorized, unauthorized.StatusCode)
+	require.NotNil(unauthorized.Error)
+	assert.Equal(generated.ProblemErrorCodeUnauthorized, unauthorized.Error.Code)
 
-	authorized, err := authClient.HTTP.ListArchiveStatusWithResponse(
-		t.Context(), &generated.ListArchiveStatusParams{},
-		func(_ context.Context, req *http.Request) error {
-			req.Header.Set("Authorization", "Bearer archive-test-token")
-			return nil
-		},
-	)
+	authorized, err := authClient.HTTP.ListArchiveStatusWithResponse(t.Context(), &generated.ListArchiveStatusRequestOptions{Query: &generated.ListArchiveStatusQuery{}}, func(_ context.Context, req *http.Request) error {
+		req.Header.Set("Authorization", "Bearer archive-test-token")
+		return nil
+	})
 	require.NoError(err)
 	require.NotNil(authorized.JSON200)
 	assert.Empty(*authorized.JSON200)

@@ -4,7 +4,7 @@ package fleetsetup
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -20,6 +20,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"go.kenn.io/forge/internal/apiclient/generated"
+	"go.kenn.io/forge/internal/apiclient/health"
 
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/daemonruntime"
@@ -617,7 +620,10 @@ func atomicWriteFile(path string, data []byte, mode os.FileMode) error {
 }
 
 func (r *Runner) verifyReadiness(ctx context.Context, plan Plan, nodeID string) error {
-	loopback := fmt.Sprintf("http://127.0.0.1:%d/healthz", plan.Port)
+	loopback, err := health.NewGetHealthzRequest(ctx, fmt.Sprintf("http://127.0.0.1:%d", plan.Port))
+	if err != nil {
+		return err
+	}
 	if err := waitHTTP(ctx, r.deps.httpClient, loopback, "", r.deps.readinessTimeout, nil); err != nil {
 		return fmt.Errorf("loopback readiness: %w", err)
 	}
@@ -639,8 +645,12 @@ func (r *Runner) verifyReadiness(ctx context.Context, plan Plan, nodeID string) 
 			return errors.New("daemon bearer for HTTPS verification is empty")
 		}
 	}
+	request, err := generated.NewGetSnapshotRequest(ctx, plan.Origin+"/api/v1", &generated.GetSnapshotRequestOptions{Query: &generated.GetSnapshotQuery{IncludePeers: new(true)}})
+	if err != nil {
+		return err
+	}
 	if err := waitHTTP(
-		ctx, r.deps.httpClient, plan.Origin+"/api/v1/snapshot?include_peers=true", bearer,
+		ctx, r.deps.httpClient, request, bearer,
 		r.deps.readinessTimeout, &snapshot,
 	); err != nil {
 		return fmt.Errorf("canonical HTTPS readiness: %w", err)
@@ -663,7 +673,7 @@ func (r *Runner) verifyReadiness(ctx context.Context, plan Plan, nodeID string) 
 func waitHTTP(
 	ctx context.Context,
 	client *http.Client,
-	url string,
+	request *http.Request,
 	bearer string,
 	timeout time.Duration,
 	result any,
@@ -678,10 +688,7 @@ func waitHTTP(
 	defer ticker.Stop()
 	var lastErr error
 	for {
-		request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-		if err != nil {
-			return err
-		}
+		request := request.Clone(ctx)
 		if bearer != "" {
 			request.Header.Set("Authorization", "Bearer "+bearer)
 		}
@@ -692,7 +699,7 @@ func waitHTTP(
 					_ = response.Body.Close()
 					return nil
 				}
-				decodeErr := json.NewDecoder(io.LimitReader(response.Body, 4<<20)).Decode(result)
+				decodeErr := json.UnmarshalRead(io.LimitReader(response.Body, 4<<20), result)
 				_ = response.Body.Close()
 				if decodeErr == nil {
 					return nil

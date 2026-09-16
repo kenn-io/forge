@@ -671,7 +671,7 @@ func TestConfigReload_UpdatesDocFoldersAndRegistry(t *testing.T) {
 	require.NoError(json.NewDecoder(listResponse.Body).Decode(&listBody))
 	require.NotNil(listBody.Folders)
 	require.Len(listBody.Folders, 1)
-	assert.Equal("handbook", listBody.Folders[0].Id)
+	assert.Equal("handbook", listBody.Folders[0].ID)
 	assert.Equal("Handbook", listBody.Folders[0].Name)
 
 	updatedReadResponse, err := httpServer.Client().Get(httpServer.URL + "/api/v1/docs/folders/handbook/file?path=guide.md")

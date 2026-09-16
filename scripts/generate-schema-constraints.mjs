@@ -1,10 +1,11 @@
 // Emit numeric schema constraints from the generated OpenAPI document as a
-// TypeScript module. openapi-typescript keeps types but drops `minimum` and
+// TypeScript module. Generated TypeScript types do not carry `minimum` and
 // `maximum`, so the frontend could not validate a bounded field without
 // duplicating the server's limits by hand. This module is the single source
 // the UI reads; regenerate it with `make api-generate`.
 
 import { readFileSync, writeFileSync } from "node:fs";
+import { parse } from "yaml";
 
 export function schemaConstraints(document) {
   const schemas = document?.components?.schemas ?? {};
@@ -27,7 +28,7 @@ export function schemaConstraints(document) {
 export function renderModule(constraints) {
   const lines = [
     "/**",
-    " * This file was auto-generated from internal/apiclient/spec/openapi.json.",
+    " * This file was auto-generated from frontend/openapi/openapi.yaml.",
     " * Do not make direct changes to the file.",
     " */",
     "",
@@ -49,9 +50,9 @@ const invokedDirectly = process.argv[1] && import.meta.url === new URL(`file://$
 if (invokedDirectly) {
   const [specPath, outPath] = process.argv.slice(2);
   if (!specPath || !outPath) {
-    console.error("usage: generate-schema-constraints.mjs <openapi.json> <out.ts>");
+    console.error("usage: generate-schema-constraints.mjs <openapi.yaml> <out.ts>");
     process.exit(2);
   }
-  const document = JSON.parse(readFileSync(specPath, "utf8"));
+  const document = parse(readFileSync(specPath, "utf8"));
   writeFileSync(outPath, renderModule(schemaConstraints(document)));
 }

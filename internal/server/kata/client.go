@@ -2,7 +2,8 @@ package kata
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -309,7 +310,7 @@ func (c *kataDaemonClient) resolveIssueReferenceInProject(
 func (c *kataDaemonClient) IssueDetail(
 	ctx context.Context,
 	issueUID string,
-) (json.RawMessage, error) {
+) (jsontext.Value, error) {
 	result, err := c.get(
 		ctx,
 		"/api/v1/issues/"+url.PathEscape(issueUID),
@@ -322,10 +323,10 @@ func (c *kataDaemonClient) IssueDetail(
 	if err := c.requireSuccess("issue detail", result.status); err != nil {
 		return nil, err
 	}
-	if !json.Valid(result.body) {
+	if !jsontext.Value(result.body).IsValid() {
 		return nil, fmt.Errorf("decode Kata daemon %q issue detail response: invalid JSON", c.daemon.ID)
 	}
-	return json.RawMessage(result.body), nil
+	return jsontext.Value(result.body), nil
 }
 
 func (c *kataDaemonClient) LaunchTarget(

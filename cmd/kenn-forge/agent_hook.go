@@ -1,17 +1,17 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"go.kenn.io/forge/internal/apiclient/generated"
 
 	"go.kenn.io/forge/internal/agentactivity"
 	"go.kenn.io/forge/internal/config"
@@ -138,12 +138,13 @@ func (h agentHookRelay) relay(ctx context.Context, input agenthook.CommonInput) 
 	if err != nil {
 		return ""
 	}
-	req, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodPost,
-		daemon.BaseURL+"/api/v1/agent-hooks/"+url.PathEscape(string(h.agent)),
-		bytes.NewReader(input.Raw),
-	)
+	var body generated.HookEvent
+	if err := json.Unmarshal(input.Raw, &body); err != nil {
+		return ""
+	}
+	req, err := generated.NewReceiveAgentHookRequest(ctx, daemon.BaseURL+"/api/v1", &generated.ReceiveAgentHookRequestOptions{
+		PathParams: &generated.ReceiveAgentHookPath{Agent: string(h.agent)}, Body: &body,
+	})
 	if err != nil {
 		return ""
 	}

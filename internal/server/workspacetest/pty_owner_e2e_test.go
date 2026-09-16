@@ -68,7 +68,7 @@ func TestWorkspaceCreatesRustPtyManagerSessionE2E(t *testing.T) {
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, ws.TmuxSession)
 
-	stored, err := fixture.database.GetWorkspace(ctx, ws.Id)
+	stored, err := fixture.database.GetWorkspace(ctx, ws.ID)
 	require.NoError(err)
 	require.NotNil(stored)
 	assert.Equal(workspace.TerminalBackendPtyOwner, stored.TerminalBackend)
@@ -76,7 +76,7 @@ func TestWorkspaceCreatesRustPtyManagerSessionE2E(t *testing.T) {
 	ts := httptest.NewServer(fixture.server)
 	t.Cleanup(ts.Close)
 	conn, _, err := workspaceTerminalDialWithQuery(
-		ctx, ts.URL, ws.Id, "cols=120&rows=30",
+		ctx, ts.URL, ws.ID, "cols=120&rows=30",
 	)
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
@@ -102,7 +102,7 @@ func TestWorkspaceCreatesRustPtyManagerSessionE2E(t *testing.T) {
 	}
 
 	require.NoError(conn.Close(websocket.StatusNormalClosure, "done"))
-	deleteWorkspaceForPtyOwnerTest(t, ctx, fixture, ws.Id)
+	deleteWorkspaceForPtyOwnerTest(t, ctx, fixture, ws.ID)
 
 	_, err = os.Stat(filepath.Join(ptyOwnerDir, ws.TmuxSession))
 	assert.True(os.IsNotExist(err))
@@ -139,12 +139,9 @@ func TestWorkspaceRuntimeLaunchesRustPtyManagerSessionE2E(t *testing.T) {
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, ws.TmuxSession)
 
-	launchResp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{TargetKey: "helper"},
-	)
+	launchResp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{TargetKey: "helper"}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, launchResp.StatusCode(), string(launchResp.Body))
+	require.Equal(http.StatusOK, launchResp.StatusCode, string(launchResp.Body))
 	require.NotNil(launchResp.JSON200)
 	session := launchResp.JSON200
 	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, session.Key)
@@ -154,7 +151,7 @@ func TestWorkspaceRuntimeLaunchesRustPtyManagerSessionE2E(t *testing.T) {
 	ts := httptest.NewServer(fixture.server)
 	t.Cleanup(ts.Close)
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
-		"/ws/v1/workspaces/" + ws.Id +
+		"/ws/v1/workspaces/" + ws.ID +
 		"/runtime/sessions/" + session.Key + "/terminal?cols=80&rows=24"
 	conn, _, err := websocket.Dial(ctx, wsURL, nil)
 	require.NoError(err)
@@ -162,12 +159,10 @@ func TestWorkspaceRuntimeLaunchesRustPtyManagerSessionE2E(t *testing.T) {
 
 	workspaceTerminalConnWriteRead(t, ctx, conn, "ping\r", "echo:ping")
 
-	stopResp, err := fixture.client.HTTP.StopWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id, session.Key,
-	)
+	stopResp, err := fixture.client.HTTP.StopWorkspaceRuntimeSessionWithResponse(ctx, &generated.StopWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.StopWorkspaceRuntimeSessionPath{ID: ws.ID, SessionKey: session.Key}})
 	require.NoError(err)
-	require.Equal(http.StatusNoContent, stopResp.StatusCode())
-	deleteWorkspaceForPtyOwnerTest(t, ctx, fixture, ws.Id)
+	require.Equal(http.StatusNoContent, stopResp.StatusCode)
+	deleteWorkspaceForPtyOwnerTest(t, ctx, fixture, ws.ID)
 }
 
 func TestWorkspaceRuntimeResizeOwnerFollowsLatestDeliberateClientE2E(t *testing.T) {
@@ -202,12 +197,9 @@ func TestWorkspaceRuntimeResizeOwnerFollowsLatestDeliberateClientE2E(t *testing.
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, ws.TmuxSession)
 
-	launchResp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{TargetKey: "shell-size"},
-	)
+	launchResp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{TargetKey: "shell-size"}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, launchResp.StatusCode(), string(launchResp.Body))
+	require.Equal(http.StatusOK, launchResp.StatusCode, string(launchResp.Body))
 	require.NotNil(launchResp.JSON200)
 	session := launchResp.JSON200
 	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, session.Key)
@@ -215,7 +207,7 @@ func TestWorkspaceRuntimeResizeOwnerFollowsLatestDeliberateClientE2E(t *testing.
 	ts := httptest.NewServer(fixture.server)
 	t.Cleanup(ts.Close)
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
-		"/ws/v1/workspaces/" + ws.Id +
+		"/ws/v1/workspaces/" + ws.ID +
 		"/runtime/sessions/" + session.Key + "/terminal"
 	first, _, err := websocket.Dial(
 		ctx, wsURL+"?cols=80&rows=24&resize_active=1", nil,
@@ -261,12 +253,10 @@ func TestWorkspaceRuntimeResizeOwnerFollowsLatestDeliberateClientE2E(t *testing.
 		"first-size:40 120",
 	)
 
-	stopResp, err := fixture.client.HTTP.StopWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id, session.Key,
-	)
+	stopResp, err := fixture.client.HTTP.StopWorkspaceRuntimeSessionWithResponse(ctx, &generated.StopWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.StopWorkspaceRuntimeSessionPath{ID: ws.ID, SessionKey: session.Key}})
 	require.NoError(err)
-	require.Equal(http.StatusNoContent, stopResp.StatusCode())
-	deleteWorkspaceForPtyOwnerTest(t, ctx, fixture, ws.Id)
+	require.Equal(http.StatusNoContent, stopResp.StatusCode)
+	deleteWorkspaceForPtyOwnerTest(t, ctx, fixture, ws.ID)
 }
 
 func TestWorkspaceRuntimeSessionTerminalWebSocketE2E(t *testing.T) {
@@ -287,21 +277,18 @@ func TestWorkspaceRuntimeSessionTerminalWebSocketE2E(t *testing.T) {
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 
-	launchResp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{
-			TargetKey: "helper",
-		},
-	)
+	launchResp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
+		TargetKey: "helper",
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, launchResp.StatusCode())
+	require.Equal(http.StatusOK, launchResp.StatusCode)
 	require.NotNil(launchResp.JSON200)
 	session := launchResp.JSON200
 
 	ts := httptest.NewServer(fixture.server)
 	t.Cleanup(ts.Close)
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
-		"/ws/v1/workspaces/" + ws.Id +
+		"/ws/v1/workspaces/" + ws.ID +
 		"/runtime/sessions/" + session.Key + "/terminal"
 	conn, _, err := websocket.Dial(ctx, wsURL, nil)
 	require.NoError(err)
@@ -332,21 +319,18 @@ func TestWorkspaceRuntimeSessionTerminalWebSocketBasePathE2E(t *testing.T) {
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 
-	launchResp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{
-			TargetKey: "helper",
-		},
-	)
+	launchResp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
+		TargetKey: "helper",
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, launchResp.StatusCode())
+	require.Equal(http.StatusOK, launchResp.StatusCode)
 	require.NotNil(launchResp.JSON200)
 	session := launchResp.JSON200
 
 	ts := httptest.NewServer(fixture.server)
 	t.Cleanup(ts.Close)
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
-		"/kenn-forge/ws/v1/workspaces/" + ws.Id +
+		"/kenn-forge/ws/v1/workspaces/" + ws.ID +
 		"/runtime/sessions/" + session.Key + "/terminal"
 	conn, _, err := websocket.Dial(ctx, wsURL, nil)
 	require.NoError(err)
@@ -374,21 +358,18 @@ func TestWorkspaceRuntimeSessionTerminalSkipsAltScreenReplayE2E(t *testing.T) {
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 
-	launchResp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{
-			TargetKey: "helper",
-		},
-	)
+	launchResp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
+		TargetKey: "helper",
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, launchResp.StatusCode())
+	require.Equal(http.StatusOK, launchResp.StatusCode)
 	require.NotNil(launchResp.JSON200)
 	session := launchResp.JSON200
 
 	ts := httptest.NewServer(fixture.server)
 	t.Cleanup(ts.Close)
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
-		"/ws/v1/workspaces/" + ws.Id +
+		"/ws/v1/workspaces/" + ws.ID +
 		"/runtime/sessions/" + session.Key + "/terminal"
 
 	primingConn, _, err := websocket.Dial(ctx, wsURL, nil)
@@ -472,21 +453,18 @@ func TestWorkspaceRuntimeSessionTerminalAppliesInitialSizeE2E(t *testing.T) {
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 
-	launchResp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{
-			TargetKey: "helper",
-		},
-	)
+	launchResp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
+		TargetKey: "helper",
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, launchResp.StatusCode())
+	require.Equal(http.StatusOK, launchResp.StatusCode)
 	require.NotNil(launchResp.JSON200)
 	session := launchResp.JSON200
 
 	ts := httptest.NewServer(fixture.server)
 	t.Cleanup(ts.Close)
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
-		"/ws/v1/workspaces/" + ws.Id +
+		"/ws/v1/workspaces/" + ws.ID +
 		"/runtime/sessions/" + session.Key +
 		"/terminal?cols=177&rows=41"
 	conn, _, err := websocket.Dial(ctx, wsURL, nil)
@@ -525,7 +503,7 @@ func TestWorkspacePtyOwnerTitleMarksWorkspaceWorkingE2E(t *testing.T) {
 	ts := httptest.NewServer(fixture.server)
 	t.Cleanup(ts.Close)
 
-	conn, _, err := workspaceTerminalDialWithQuery(ctx, ts.URL, ws.Id, "")
+	conn, _, err := workspaceTerminalDialWithQuery(ctx, ts.URL, ws.ID, "")
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 	workspaceTerminalConnWriteRead(
@@ -546,8 +524,8 @@ func TestWorkspacePtyOwnerTitleMarksWorkspaceWorkingE2E(t *testing.T) {
 
 	var got *generated.WorkspaceResponse
 	require.Eventually(func() bool {
-		resp, err := fixture.client.HTTP.GetWorkspaceWithResponse(ctx, ws.Id)
-		if err != nil || resp.StatusCode() != http.StatusOK || resp.JSON200 == nil {
+		resp, err := fixture.client.HTTP.GetWorkspaceWithResponse(ctx, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: ws.ID}})
+		if err != nil || resp.StatusCode != http.StatusOK || resp.JSON200 == nil {
 			return false
 		}
 		got = resp.JSON200
@@ -586,14 +564,11 @@ func TestWorkspaceRuntimePlainShellUsesPtyOwnerWhenTmuxUnavailableE2E(t *testing
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 
-	launchResp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{
-			TargetKey: string(localruntime.LaunchTargetPlainShell),
-		},
-	)
+	launchResp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
+		TargetKey: string(localruntime.LaunchTargetPlainShell),
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, launchResp.StatusCode(), string(launchResp.Body))
+	require.Equal(http.StatusOK, launchResp.StatusCode, string(launchResp.Body))
 	require.NotNil(launchResp.JSON200)
 	session := launchResp.JSON200
 	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, session.Key)
@@ -605,14 +580,14 @@ func TestWorkspaceRuntimePlainShellUsesPtyOwnerWhenTmuxUnavailableE2E(t *testing
 	_, err = os.Stat(paths.StatePath)
 	require.NoError(err)
 
-	storedTmux, err := fixture.database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.Id)
+	storedTmux, err := fixture.database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.ID)
 	require.NoError(err)
 	assert.Empty(storedTmux)
 
 	ts := httptest.NewServer(fixture.server)
 	t.Cleanup(ts.Close)
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
-		"/ws/v1/workspaces/" + ws.Id +
+		"/ws/v1/workspaces/" + ws.ID +
 		"/runtime/sessions/" + session.Key + "/terminal?cols=80&rows=24"
 	conn, _, err := websocket.Dial(ctx, wsURL, nil)
 	require.NoError(err)
@@ -719,11 +694,11 @@ func TestWorkspacePtyOwnerTerminalRejectsConcurrentAttachmentsE2E(t *testing.T) 
 	ts := httptest.NewServer(fixture.server)
 	t.Cleanup(ts.Close)
 
-	first, _, err := workspaceTerminalDialWithQuery(ctx, ts.URL, ws.Id, "")
+	first, _, err := workspaceTerminalDialWithQuery(ctx, ts.URL, ws.ID, "")
 	require.NoError(err)
 	defer first.Close(websocket.StatusNormalClosure, "done")
 
-	second, resp, err := workspaceTerminalDialWithQuery(ctx, ts.URL, ws.Id, "")
+	second, resp, err := workspaceTerminalDialWithQuery(ctx, ts.URL, ws.ID, "")
 	require.Error(err)
 	if second != nil {
 		second.Close(websocket.StatusNormalClosure, "done")
@@ -735,7 +710,7 @@ func TestWorkspacePtyOwnerTerminalRejectsConcurrentAttachmentsE2E(t *testing.T) 
 	}
 
 	require.NoError(first.Close(websocket.StatusNormalClosure, "done"))
-	third := workspaceTerminalDialEventually(t, ctx, ts.URL, ws.Id)
+	third := workspaceTerminalDialEventually(t, ctx, ts.URL, ws.ID)
 	defer third.Close(websocket.StatusNormalClosure, "done")
 	workspaceTerminalConnWriteRead(
 		t, ctx, third, "printf 'owner-after-close\n'\n", "owner-after-close",
@@ -766,7 +741,7 @@ func TestWorkspacePtyOwnerTerminalFlushesFinalOutputOnExitE2E(t *testing.T) {
 	ts := httptest.NewServer(fixture.server)
 	t.Cleanup(ts.Close)
 
-	conn, _, err := workspaceTerminalDialWithQuery(ctx, ts.URL, ws.Id, "")
+	conn, _, err := workspaceTerminalDialWithQuery(ctx, ts.URL, ws.ID, "")
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 
@@ -808,49 +783,38 @@ func TestWorkspaceRuntimeLaunchMultipleAndStopOneE2E(t *testing.T) {
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 
-	firstResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{
-			TargetKey: "helper",
-		},
-	)
+	firstResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
+		TargetKey: "helper",
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, firstResp.StatusCode())
+	require.Equal(http.StatusOK, firstResp.StatusCode)
 	require.NotNil(firstResp.JSON200)
 	first := firstResp.JSON200
 
-	secondResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{
-			TargetKey: "helper",
-		},
-	)
+	secondResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
+		TargetKey: "helper",
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, secondResp.StatusCode())
+	require.Equal(http.StatusOK, secondResp.StatusCode)
 	require.NotNil(secondResp.JSON200)
 	second := secondResp.JSON200
 	assert.NotEqual(first.Key, second.Key)
-	assert.True(isRuntimeSessionKeyForWorkspace(ws.Id, first.Key))
-	assert.True(isRuntimeSessionKeyForWorkspace(ws.Id, second.Key))
+	assert.True(isRuntimeSessionKeyForWorkspace(ws.ID, first.Key))
+	assert.True(isRuntimeSessionKeyForWorkspace(ws.ID, second.Key))
 	assert.Equal("Helper", first.Label)
 	assert.Equal("Helper 2", second.Label)
 	assert.Equal(string(localruntime.SessionStatusRunning), first.Status)
 
-	renameResp, err := client.HTTP.RenameWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id, second.Key,
-		generated.RenameWorkspaceRuntimeSessionInputBody{Label: "Review helper"},
-	)
+	renameResp, err := client.HTTP.RenameWorkspaceRuntimeSessionWithResponse(ctx, &generated.RenameWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.RenameWorkspaceRuntimeSessionPath{ID: ws.ID, SessionKey: second.Key}, Body: &generated.RenameWorkspaceRuntimeSessionInputBody{Label: "Review helper"}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, renameResp.StatusCode(), string(renameResp.Body))
+	require.Equal(http.StatusOK, renameResp.StatusCode, string(renameResp.Body))
 	require.NotNil(renameResp.JSON200)
 	assert.Equal(second.Key, renameResp.JSON200.Key)
 	assert.Equal("Review helper", renameResp.JSON200.Label)
 
-	listResp, err := client.HTTP.GetWorkspaceRuntimeWithResponse(
-		ctx, ws.Id,
-	)
+	listResp, err := client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, &generated.GetWorkspaceRuntimeRequestOptions{PathParams: &generated.GetWorkspaceRuntimePath{ID: ws.ID}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, listResp.StatusCode())
+	require.Equal(http.StatusOK, listResp.StatusCode)
 	require.NotNil(listResp.JSON200)
 	require.NotNil(listResp.JSON200.Sessions)
 	require.Len(listResp.JSON200.Sessions, 2)
@@ -858,17 +822,13 @@ func TestWorkspaceRuntimeLaunchMultipleAndStopOneE2E(t *testing.T) {
 	assert.Equal("Helper", listResp.JSON200.Sessions[0].Label)
 	assert.Equal("Review helper", listResp.JSON200.Sessions[1].Label)
 
-	stopResp, err := client.HTTP.StopWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id, first.Key,
-	)
+	stopResp, err := client.HTTP.StopWorkspaceRuntimeSessionWithResponse(ctx, &generated.StopWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.StopWorkspaceRuntimeSessionPath{ID: ws.ID, SessionKey: first.Key}})
 	require.NoError(err)
-	require.Equal(http.StatusNoContent, stopResp.StatusCode())
+	require.Equal(http.StatusNoContent, stopResp.StatusCode)
 
-	afterStopResp, err := client.HTTP.GetWorkspaceRuntimeWithResponse(
-		ctx, ws.Id,
-	)
+	afterStopResp, err := client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, &generated.GetWorkspaceRuntimeRequestOptions{PathParams: &generated.GetWorkspaceRuntimePath{ID: ws.ID}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, afterStopResp.StatusCode())
+	require.Equal(http.StatusOK, afterStopResp.StatusCode)
 	require.NotNil(afterStopResp.JSON200)
 	require.NotNil(afterStopResp.JSON200.Sessions)
 	require.Len(afterStopResp.JSON200.Sessions, 1)
@@ -892,29 +852,24 @@ func TestWorkspaceRuntimeNaturalAgentExitRemovesSessionE2E(t *testing.T) {
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 
-	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{
-			TargetKey: "helper",
-		},
-	)
+	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
+		TargetKey: "helper",
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, launchResp.StatusCode(), string(launchResp.Body))
+	require.Equal(http.StatusOK, launchResp.StatusCode, string(launchResp.Body))
 	require.NotNil(launchResp.JSON200)
 
 	require.Eventually(func() bool {
-		runtimeResp, runtimeErr := client.HTTP.GetWorkspaceRuntimeWithResponse(
-			ctx, ws.Id,
-		)
+		runtimeResp, runtimeErr := client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, &generated.GetWorkspaceRuntimeRequestOptions{PathParams: &generated.GetWorkspaceRuntimePath{ID: ws.ID}})
 		if runtimeErr != nil ||
-			runtimeResp.StatusCode() != http.StatusOK ||
+			runtimeResp.StatusCode != http.StatusOK ||
 			runtimeResp.JSON200 == nil ||
 			runtimeResp.JSON200.Sessions == nil {
 			return false
 		}
 		return len(runtimeResp.JSON200.Sessions) == 0
 	}, 2*time.Second, 20*time.Millisecond)
-	stored, err := database.ListWorkspaceRuntimeSessions(ctx, ws.Id)
+	stored, err := database.ListWorkspaceRuntimeSessions(ctx, ws.ID)
 	require.NoError(err)
 	assert.Empty(stored)
 	assert.NotEmpty(launchResp.JSON200.Key)
@@ -937,30 +892,25 @@ func TestWorkspaceRuntimePtyOwnerQuickExitLaunchSucceedsE2E(t *testing.T) {
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 
-	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{
-			TargetKey: "helper",
-		},
-	)
+	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
+		TargetKey: "helper",
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, launchResp.StatusCode(), string(launchResp.Body))
+	require.Equal(http.StatusOK, launchResp.StatusCode, string(launchResp.Body))
 	require.NotNil(launchResp.JSON200)
 	assert.NotEmpty(launchResp.JSON200.Key)
 
 	require.Eventually(func() bool {
-		runtimeResp, runtimeErr := client.HTTP.GetWorkspaceRuntimeWithResponse(
-			ctx, ws.Id,
-		)
+		runtimeResp, runtimeErr := client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, &generated.GetWorkspaceRuntimeRequestOptions{PathParams: &generated.GetWorkspaceRuntimePath{ID: ws.ID}})
 		if runtimeErr != nil ||
-			runtimeResp.StatusCode() != http.StatusOK ||
+			runtimeResp.StatusCode != http.StatusOK ||
 			runtimeResp.JSON200 == nil ||
 			runtimeResp.JSON200.Sessions == nil {
 			return false
 		}
 		return len(runtimeResp.JSON200.Sessions) == 0
 	}, 2*time.Second, 20*time.Millisecond)
-	stored, err := database.ListWorkspaceRuntimeSessions(ctx, ws.Id)
+	stored, err := database.ListWorkspaceRuntimeSessions(ctx, ws.ID)
 	require.NoError(err)
 	assert.Empty(stored)
 }
@@ -989,21 +939,18 @@ func TestWorkspaceRuntimePlainShellTerminalWebSocketE2E(t *testing.T) {
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 
-	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{
-			TargetKey: string(localruntime.LaunchTargetPlainShell),
-		},
-	)
+	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
+		TargetKey: string(localruntime.LaunchTargetPlainShell),
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, launchResp.StatusCode(), string(launchResp.Body))
+	require.Equal(http.StatusOK, launchResp.StatusCode, string(launchResp.Body))
 	require.NotNil(launchResp.JSON200)
 	shell := launchResp.JSON200
 
 	ts := httptest.NewServer(fixture.server)
 	t.Cleanup(ts.Close)
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
-		"/ws/v1/workspaces/" + ws.Id +
+		"/ws/v1/workspaces/" + ws.ID +
 		"/runtime/sessions/" + shell.Key + "/terminal?cols=80&rows=24"
 	conn, _, err := websocket.Dial(ctx, wsURL, nil)
 	require.NoError(err)
@@ -1044,18 +991,15 @@ func TestWorkspaceRuntimePlainShellTerminalDeliversActualExitCodeE2E(t *testing.
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 
-	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{
-			TargetKey: string(localruntime.LaunchTargetPlainShell),
-		},
-	)
+	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
+		TargetKey: string(localruntime.LaunchTargetPlainShell),
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, launchResp.StatusCode(), string(launchResp.Body))
+	require.Equal(http.StatusOK, launchResp.StatusCode, string(launchResp.Body))
 	require.NotNil(launchResp.JSON200)
 	shell := launchResp.JSON200
 	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, shell.Key)
-	stored, err := fixture.database.ListWorkspaceRuntimeSessions(ctx, ws.Id)
+	stored, err := fixture.database.ListWorkspaceRuntimeSessions(ctx, ws.ID)
 	require.NoError(err)
 	require.Len(stored, 1)
 	require.Equal(shell.Key, stored[0].SessionKey)
@@ -1064,7 +1008,7 @@ func TestWorkspaceRuntimePlainShellTerminalDeliversActualExitCodeE2E(t *testing.
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
-		"/ws/v1/workspaces/" + ws.Id +
+		"/ws/v1/workspaces/" + ws.ID +
 		"/runtime/sessions/" + shell.Key + "/terminal?cols=80&rows=24"
 	conn, _, err := websocket.Dial(ctx, wsURL, nil)
 	require.NoError(err)
@@ -1098,10 +1042,8 @@ func TestWorkspaceRuntimePlainShellTerminalDeliversActualExitCodeE2E(t *testing.
 	}
 
 	require.Eventually(func() bool {
-		runtimeResp, runtimeErr := client.HTTP.GetWorkspaceRuntimeWithResponse(
-			ctx, ws.Id,
-		)
-		if runtimeErr != nil || runtimeResp.StatusCode() != http.StatusOK ||
+		runtimeResp, runtimeErr := client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, &generated.GetWorkspaceRuntimeRequestOptions{PathParams: &generated.GetWorkspaceRuntimePath{ID: ws.ID}})
+		if runtimeErr != nil || runtimeResp.StatusCode != http.StatusOK ||
 			runtimeResp.JSON200 == nil {
 			return false
 		}
@@ -1112,7 +1054,7 @@ func TestWorkspaceRuntimePlainShellTerminalDeliversActualExitCodeE2E(t *testing.
 				}
 			}
 		}
-		rows, rowsErr := fixture.database.ListWorkspaceRuntimeSessions(ctx, ws.Id)
+		rows, rowsErr := fixture.database.ListWorkspaceRuntimeSessions(ctx, ws.ID)
 		return rowsErr == nil && len(rows) == 0
 	}, 5*time.Second, 20*time.Millisecond)
 }
@@ -1153,17 +1095,14 @@ func TestWorkspaceRuntimePtyOwnerQuickExitReportsExactStatusE2E(t *testing.T) {
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 
-	launchResp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{TargetKey: "helper"},
-	)
+	launchResp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{TargetKey: "helper"}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, launchResp.StatusCode(), string(launchResp.Body))
+	require.Equal(http.StatusOK, launchResp.StatusCode, string(launchResp.Body))
 	require.NotNil(launchResp.JSON200)
 	session := launchResp.JSON200
 	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, session.Key)
 
-	stored, err := fixture.database.ListWorkspaceRuntimeSessions(ctx, ws.Id)
+	stored, err := fixture.database.ListWorkspaceRuntimeSessions(ctx, ws.ID)
 	require.NoError(err)
 	require.Len(stored, 1)
 	require.Equal(session.Key, stored[0].SessionKey)
@@ -1171,7 +1110,7 @@ func TestWorkspaceRuntimePtyOwnerQuickExitReportsExactStatusE2E(t *testing.T) {
 	ts := httptest.NewServer(fixture.server)
 	t.Cleanup(ts.Close)
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
-		"/ws/v1/workspaces/" + ws.Id +
+		"/ws/v1/workspaces/" + ws.ID +
 		"/runtime/sessions/" + session.Key + "/terminal?cols=80&rows=24"
 	conn, _, err := websocket.Dial(ctx, wsURL, nil)
 	require.NoError(err)
@@ -1202,15 +1141,13 @@ func TestWorkspaceRuntimePtyOwnerQuickExitReportsExactStatusE2E(t *testing.T) {
 	}
 
 	require.Eventually(func() bool {
-		runtimeResp, runtimeErr := fixture.client.HTTP.GetWorkspaceRuntimeWithResponse(
-			ctx, ws.Id,
-		)
-		if runtimeErr != nil || runtimeResp.StatusCode() != http.StatusOK ||
+		runtimeResp, runtimeErr := fixture.client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, &generated.GetWorkspaceRuntimeRequestOptions{PathParams: &generated.GetWorkspaceRuntimePath{ID: ws.ID}})
+		if runtimeErr != nil || runtimeResp.StatusCode != http.StatusOK ||
 			runtimeResp.JSON200 == nil || runtimeResp.JSON200.Sessions == nil ||
 			len(runtimeResp.JSON200.Sessions) != 0 {
 			return false
 		}
-		stored, storedErr := fixture.database.ListWorkspaceRuntimeSessions(ctx, ws.Id)
+		stored, storedErr := fixture.database.ListWorkspaceRuntimeSessions(ctx, ws.ID)
 		return storedErr == nil && len(stored) == 0
 	}, 2*time.Second, 20*time.Millisecond)
 }
@@ -1247,15 +1184,12 @@ func TestWorkspaceRuntimePlainShellAfterExitStartsFreshE2E(t *testing.T) {
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 
-	firstLaunchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{
-			TargetKey: string(localruntime.LaunchTargetPlainShell),
-		},
-	)
+	firstLaunchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
+		TargetKey: string(localruntime.LaunchTargetPlainShell),
+	}})
 	require.NoError(err)
 	require.Equal(
-		http.StatusOK, firstLaunchResp.StatusCode(), string(firstLaunchResp.Body),
+		http.StatusOK, firstLaunchResp.StatusCode, string(firstLaunchResp.Body),
 	)
 	require.NotNil(firstLaunchResp.JSON200)
 	first := firstLaunchResp.JSON200
@@ -1268,7 +1202,7 @@ func TestWorkspaceRuntimePlainShellAfterExitStartsFreshE2E(t *testing.T) {
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
-		"/ws/v1/workspaces/" + ws.Id +
+		"/ws/v1/workspaces/" + ws.ID +
 		"/runtime/sessions/" + first.Key + "/terminal?cols=80&rows=24"
 	conn, _, err := websocket.Dial(ctx, wsURL, nil)
 	require.NoError(err)
@@ -1297,15 +1231,12 @@ func TestWorkspaceRuntimePlainShellAfterExitStartsFreshE2E(t *testing.T) {
 
 	// Inside the zombie window: helper still sleeping, so cmd.Wait
 	// hasn't returned and watchSession hasn't run.
-	secondLaunchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{
-			TargetKey: string(localruntime.LaunchTargetPlainShell),
-		},
-	)
+	secondLaunchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
+		TargetKey: string(localruntime.LaunchTargetPlainShell),
+	}})
 	require.NoError(err)
 	require.Equal(
-		http.StatusOK, secondLaunchResp.StatusCode(), string(secondLaunchResp.Body),
+		http.StatusOK, secondLaunchResp.StatusCode, string(secondLaunchResp.Body),
 	)
 	require.NotNil(secondLaunchResp.JSON200)
 	second := secondLaunchResp.JSON200
@@ -1362,11 +1293,9 @@ func deleteWorkspaceForPtyOwnerTest(
 	t.Helper()
 
 	force := true
-	resp, err := fixture.client.HTTP.DeleteWorkspaceWithResponse(
-		ctx, workspaceID, &generated.DeleteWorkspaceParams{Force: &force},
-	)
+	resp, err := fixture.client.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: workspaceID}, Query: &generated.DeleteWorkspaceQuery{Force: &force}})
 	require.NoError(t, err)
-	require.Equal(t, http.StatusNoContent, resp.StatusCode())
+	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 }
 
 func requirePTYAvailable(t *testing.T) {

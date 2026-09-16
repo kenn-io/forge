@@ -393,8 +393,10 @@ func TestReadinessRefusesRedirectsBeforeForwardingDaemonBearer(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	err := waitHTTP(
-		t.Context(), server.Client(), server.URL+"/api/v1/snapshot",
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL+"/api/v1/snapshot", nil)
+	require.NoError(t, err)
+	err = waitHTTP(
+		t.Context(), server.Client(), request,
 		"daemon-secret", 20*time.Millisecond, &struct{}{},
 	)
 

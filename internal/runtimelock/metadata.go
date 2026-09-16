@@ -1,7 +1,8 @@
 package runtimelock
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -37,7 +38,7 @@ type Metadata struct {
 	BasePath string `json:"base_path,omitempty"`
 	// RequireAuth reports whether the daemon enforces bearer-token
 	// auth on API routes, so clients know to send the token.
-	RequireAuth bool `json:"require_auth,omitempty"`
+	RequireAuth bool `json:"require_auth,omitzero"`
 }
 
 // errMetadataMissing is the typed reason returned by readMetadata when
@@ -59,7 +60,7 @@ var errMetadataMissing = errors.New("runtime metadata is missing")
 //
 // Any failure removes the temp file before returning so we never leak.
 func writeMetadata(dataDir string, meta Metadata) error {
-	data, err := json.MarshalIndent(meta, "", "  ")
+	data, err := json.Marshal(meta, jsontext.WithIndent("  "))
 	if err != nil {
 		return fmt.Errorf("marshal runtime metadata: %w", err)
 	}

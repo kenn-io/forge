@@ -190,9 +190,7 @@ func TestArchiveAPIPromotionMaintainsFromDiscoveryBoundaryE2E(t *testing.T) {
 		Provider: "github", PlatformHost: "github.com",
 		Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
 	}}
-	started, err := api.HTTP.StartArchivesWithResponse(
-		ctx, generated.ArchiveMutationBody{Repositories: &repositories},
-	)
+	started, err := api.HTTP.StartArchivesWithResponse(ctx, &generated.StartArchivesRequestOptions{Body: &generated.ArchiveMutationBody{Repositories: repositories}})
 	require.NoError(err)
 	require.NotNil(started.JSON200)
 
@@ -240,7 +238,7 @@ func TestArchiveAPIPromotionMaintainsFromDiscoveryBoundaryE2E(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(db.ArchiveDatasetProgressComplete, progress.Status)
 
-	status, err := api.HTTP.ListArchiveStatusWithResponse(ctx, nil)
+	status, err := api.HTTP.ListArchiveStatusWithResponse(ctx, &generated.ListArchiveStatusRequestOptions{})
 	require.NoError(err)
 	require.NotNil(status.JSON200)
 	require.Len(*status.JSON200, 1)

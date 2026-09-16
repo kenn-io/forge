@@ -470,23 +470,15 @@ func TestDeferMergeEndpointQueuesMergeAndBroadcastsCompletion(t *testing.T) {
 	expectedHeadSHA := "head-sha"
 	workspaceID := "ws-1"
 
-	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(
-		ctx,
-		ref.Host,
-		"gitlab",
-		ref.Owner,
-		ref.Name,
-		7,
-		generated.MergePRInputBody{
-			CommitTitle:       "Merge title",
-			CommitMessage:     "Merge body",
-			Method:            "squash",
-			ExpectedHeadSha:   &expectedHeadSHA,
-			DeleteWorkspaceId: &workspaceID,
-		},
-	)
+	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(ctx, &generated.DeferMergePullOnHostRequestOptions{PathParams: &generated.DeferMergePullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}, Body: &generated.MergePRInputBody{
+		CommitTitle:       "Merge title",
+		CommitMessage:     "Merge body",
+		Method:            "squash",
+		ExpectedHeadSha:   &expectedHeadSHA,
+		DeleteWorkspaceID: &workspaceID,
+	}})
 	require.NoError(err)
-	require.Equal(202, resp.StatusCode(), string(resp.Body))
+	require.Equal(202, resp.StatusCode, string(resp.Body))
 	require.NotNil(resp.JSON202)
 	require.Equal("queued", resp.JSON202.Status)
 	require.Equal(int64(1), resp.JSON202.PendingChecks)
@@ -534,11 +526,9 @@ func TestDeferMergeEndpointQueuesMergeAndBroadcastsCompletion(t *testing.T) {
 	// Clients refresh detail the moment they receive
 	// deferred_merge_completed, so pending must already be false on the
 	// very first read after the event — not eventually.
-	detailResp, err := client.HTTP.GetPullOnHostWithResponse(
-		ctx, ref.Host, "gitlab", ref.Owner, ref.Name, 7,
-	)
+	detailResp, err := client.HTTP.GetPullOnHostWithResponse(ctx, &generated.GetPullOnHostRequestOptions{PathParams: &generated.GetPullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}})
 	require.NoError(err)
-	require.Equal(200, detailResp.StatusCode(), string(detailResp.Body))
+	require.Equal(200, detailResp.StatusCode, string(detailResp.Body))
 	require.NotNil(detailResp.JSON200)
 	require.False(detailResp.JSON200.DeferredMergePending)
 }
@@ -576,34 +566,22 @@ func TestPullDetailReportsDeferredMergePendingWhileQueued(t *testing.T) {
 		[]db.CICheck{{App: "GitLab", Name: "pipeline", Status: "in_progress"}},
 	)
 
-	detailResp, err := client.HTTP.GetPullOnHostWithResponse(
-		ctx, ref.Host, "gitlab", ref.Owner, ref.Name, 7,
-	)
+	detailResp, err := client.HTTP.GetPullOnHostWithResponse(ctx, &generated.GetPullOnHostRequestOptions{PathParams: &generated.GetPullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}})
 	require.NoError(err)
-	require.Equal(200, detailResp.StatusCode(), string(detailResp.Body))
+	require.Equal(200, detailResp.StatusCode, string(detailResp.Body))
 	require.NotNil(detailResp.JSON200)
 	require.False(detailResp.JSON200.DeferredMergePending)
 
 	expectedHeadSHA := "head-sha"
-	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(
-		ctx,
-		ref.Host,
-		"gitlab",
-		ref.Owner,
-		ref.Name,
-		7,
-		generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA},
-	)
+	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(ctx, &generated.DeferMergePullOnHostRequestOptions{PathParams: &generated.DeferMergePullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}, Body: &generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA}})
 	require.NoError(err)
-	require.Equal(202, resp.StatusCode(), string(resp.Body))
+	require.Equal(202, resp.StatusCode, string(resp.Body))
 
 	// The pending check never completes, so the background worker keeps
 	// waiting; the detail response must report the queued merge.
-	detailResp, err = client.HTTP.GetPullOnHostWithResponse(
-		ctx, ref.Host, "gitlab", ref.Owner, ref.Name, 7,
-	)
+	detailResp, err = client.HTTP.GetPullOnHostWithResponse(ctx, &generated.GetPullOnHostRequestOptions{PathParams: &generated.GetPullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}})
 	require.NoError(err)
-	require.Equal(200, detailResp.StatusCode(), string(detailResp.Body))
+	require.Equal(200, detailResp.StatusCode, string(detailResp.Body))
 	require.NotNil(detailResp.JSON200)
 	require.True(detailResp.JSON200.DeferredMergePending)
 }
@@ -663,37 +641,19 @@ func TestImmediateMergeSupersedesQueuedDeferredMerge(t *testing.T) {
 	events, _ := srv.Hub().Subscribe(ctx, false)
 
 	expectedHeadSHA := "head-sha"
-	deferResp, err := client.HTTP.DeferMergePullOnHostWithResponse(
-		ctx,
-		ref.Host,
-		"gitlab",
-		ref.Owner,
-		ref.Name,
-		7,
-		generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA},
-	)
+	deferResp, err := client.HTTP.DeferMergePullOnHostWithResponse(ctx, &generated.DeferMergePullOnHostRequestOptions{PathParams: &generated.DeferMergePullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}, Body: &generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA}})
 	require.NoError(err)
-	require.Equal(202, deferResp.StatusCode(), string(deferResp.Body))
+	require.Equal(202, deferResp.StatusCode, string(deferResp.Body))
 
-	mergeResp, err := client.HTTP.MergePullOnHostWithResponse(
-		ctx,
-		ref.Host,
-		"gitlab",
-		ref.Owner,
-		ref.Name,
-		7,
-		generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA},
-	)
+	mergeResp, err := client.HTTP.MergePullOnHostWithResponse(ctx, &generated.MergePullOnHostRequestOptions{PathParams: &generated.MergePullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}, Body: &generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA}})
 	require.NoError(err)
-	require.Equal(200, mergeResp.StatusCode(), string(mergeResp.Body))
+	require.Equal(200, mergeResp.StatusCode, string(mergeResp.Body))
 
 	// The immediate merge supersedes the queued worker: pending clears with
 	// the merge response, not on the worker's next poll.
-	detailResp, err := client.HTTP.GetPullOnHostWithResponse(
-		ctx, ref.Host, "gitlab", ref.Owner, ref.Name, 7,
-	)
+	detailResp, err := client.HTTP.GetPullOnHostWithResponse(ctx, &generated.GetPullOnHostRequestOptions{PathParams: &generated.GetPullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}})
 	require.NoError(err)
-	require.Equal(200, detailResp.StatusCode(), string(detailResp.Body))
+	require.Equal(200, detailResp.StatusCode, string(detailResp.Body))
 	require.NotNil(detailResp.JSON200)
 	require.False(detailResp.JSON200.DeferredMergePending)
 
@@ -782,42 +742,24 @@ func TestImmediateUnmergedResponsePreservesQueueUntilDeferredProviderRejects(t *
 	events, _ := srv.Hub().Subscribe(ctx, false)
 	expectedHeadSHA := "head-sha"
 
-	deferResp, err := client.HTTP.DeferMergePullOnHostWithResponse(
-		ctx,
-		ref.Host,
-		"gitlab",
-		ref.Owner,
-		ref.Name,
-		7,
-		generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA},
-	)
+	deferResp, err := client.HTTP.DeferMergePullOnHostWithResponse(ctx, &generated.DeferMergePullOnHostRequestOptions{PathParams: &generated.DeferMergePullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}, Body: &generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA}})
 	require.NoError(err)
-	require.Equal(202, deferResp.StatusCode(), string(deferResp.Body))
+	require.Equal(202, deferResp.StatusCode, string(deferResp.Body))
 	select {
 	case <-ciStarted:
 	case <-time.After(time.Second):
 		require.FailNow("timed out waiting for deferred CI refresh")
 	}
 
-	mergeResp, err := client.HTTP.MergePullOnHostWithResponse(
-		ctx,
-		ref.Host,
-		"gitlab",
-		ref.Owner,
-		ref.Name,
-		7,
-		generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA},
-	)
+	mergeResp, err := client.HTTP.MergePullOnHostWithResponse(ctx, &generated.MergePullOnHostRequestOptions{PathParams: &generated.MergePullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}, Body: &generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA}})
 	require.NoError(err)
-	require.Equal(200, mergeResp.StatusCode(), string(mergeResp.Body))
+	require.Equal(200, mergeResp.StatusCode, string(mergeResp.Body))
 	require.NotNil(mergeResp.JSON200)
 	require.False(mergeResp.JSON200.Merged)
 
-	detailResp, err := client.HTTP.GetPullOnHostWithResponse(
-		ctx, ref.Host, "gitlab", ref.Owner, ref.Name, 7,
-	)
+	detailResp, err := client.HTTP.GetPullOnHostWithResponse(ctx, &generated.GetPullOnHostRequestOptions{PathParams: &generated.GetPullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}})
 	require.NoError(err)
-	require.Equal(200, detailResp.StatusCode(), string(detailResp.Body))
+	require.Equal(200, detailResp.StatusCode, string(detailResp.Body))
 	require.NotNil(detailResp.JSON200)
 	require.True(detailResp.JSON200.DeferredMergePending)
 
@@ -840,11 +782,9 @@ func TestImmediateUnmergedResponsePreservesQueueUntilDeferredProviderRejects(t *
 	require.False(completed.Merged)
 	require.Equal("deferred provider response did not merge the pull request", completed.Error)
 
-	detailResp, err = client.HTTP.GetPullOnHostWithResponse(
-		ctx, ref.Host, "gitlab", ref.Owner, ref.Name, 7,
-	)
+	detailResp, err = client.HTTP.GetPullOnHostWithResponse(ctx, &generated.GetPullOnHostRequestOptions{PathParams: &generated.GetPullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}})
 	require.NoError(err)
-	require.Equal(200, detailResp.StatusCode(), string(detailResp.Body))
+	require.Equal(200, detailResp.StatusCode, string(detailResp.Body))
 	require.NotNil(detailResp.JSON200)
 	require.False(detailResp.JSON200.DeferredMergePending)
 }
@@ -871,17 +811,10 @@ func TestDeferMergeEndpointRejectsInvalidMergeMethodBeforeQueueing(t *testing.T)
 		App: "GitLab", Name: "pipeline", Status: "in_progress",
 	}})
 
-	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(
-		ctx,
-		ref.Host,
-		"gitlab",
-		ref.Owner,
-		ref.Name,
-		7,
-		generated.MergePRInputBody{Method: "fast-forward"},
-	)
-	require.NoError(err)
-	require.Equal(400, resp.StatusCode(), string(resp.Body))
+	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(ctx, &generated.DeferMergePullOnHostRequestOptions{PathParams: &generated.DeferMergePullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}, Body: &generated.MergePRInputBody{Method: "fast-forward"}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(400, resp.StatusCode, string(resp.Body))
 	require.Contains(string(resp.Body), "invalid merge method")
 	select {
 	case call := <-provider.mergeCh:
@@ -922,17 +855,10 @@ func TestDeferMergeEndpointRejectsWithoutPendingChecks(t *testing.T) {
 	))
 
 	expectedHeadSHA := "head-sha"
-	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(
-		ctx,
-		ref.Host,
-		"gitlab",
-		ref.Owner,
-		ref.Name,
-		7,
-		generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA},
-	)
-	require.NoError(err)
-	require.Equal(409, resp.StatusCode(), string(resp.Body))
+	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(ctx, &generated.DeferMergePullOnHostRequestOptions{PathParams: &generated.DeferMergePullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}, Body: &generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(409, resp.StatusCode, string(resp.Body))
 	require.Contains(string(resp.Body), "no_pending_checks")
 	select {
 	case call := <-provider.mergeCh:
@@ -986,17 +912,10 @@ func TestDeferMergeEndpointRejectsMissingBaseSHA(t *testing.T) {
 	require.NoError(err)
 
 	expectedHeadSHA := "head-sha"
-	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(
-		ctx,
-		ref.Host,
-		"gitlab",
-		ref.Owner,
-		ref.Name,
-		7,
-		generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA},
-	)
-	require.NoError(err)
-	require.Equal(409, resp.StatusCode(), string(resp.Body))
+	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(ctx, &generated.DeferMergePullOnHostRequestOptions{PathParams: &generated.DeferMergePullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}, Body: &generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(409, resp.StatusCode, string(resp.Body))
 	require.Contains(string(resp.Body), "base_unknown")
 	select {
 	case call := <-provider.mergeCh:
@@ -1037,17 +956,10 @@ func TestDeferMergeEndpointRejectsFailedAggregateCIWithPassingRows(t *testing.T)
 	))
 
 	expectedHeadSHA := "head-sha"
-	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(
-		ctx,
-		ref.Host,
-		"gitlab",
-		ref.Owner,
-		ref.Name,
-		7,
-		generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA},
-	)
-	require.NoError(err)
-	require.Equal(409, resp.StatusCode(), string(resp.Body))
+	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(ctx, &generated.DeferMergePullOnHostRequestOptions{PathParams: &generated.DeferMergePullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}, Body: &generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(409, resp.StatusCode, string(resp.Body))
 	require.Contains(string(resp.Body), "ci_failed")
 	select {
 	case call := <-provider.mergeCh:
@@ -1095,17 +1007,9 @@ func TestDeferMergeEndpointFailsWhenAggregatePendingRefreshBecomesUnknown(t *tes
 	events, _ := srv.Hub().Subscribe(ctx, false)
 
 	expectedHeadSHA := "head-sha"
-	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(
-		ctx,
-		ref.Host,
-		"gitlab",
-		ref.Owner,
-		ref.Name,
-		7,
-		generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA},
-	)
+	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(ctx, &generated.DeferMergePullOnHostRequestOptions{PathParams: &generated.DeferMergePullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}, Body: &generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA}})
 	require.NoError(err)
-	require.Equal(202, resp.StatusCode(), string(resp.Body))
+	require.Equal(202, resp.StatusCode, string(resp.Body))
 	require.NotNil(resp.JSON202)
 	require.Equal(int64(0), resp.JSON202.PendingChecks)
 
@@ -1173,17 +1077,9 @@ func TestDeferMergeEndpointFailsWhenGranularPendingRefreshHasUnknownAggregate(t 
 	events, _ := srv.Hub().Subscribe(ctx, false)
 
 	expectedHeadSHA := "head-sha"
-	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(
-		ctx,
-		ref.Host,
-		"gitlab",
-		ref.Owner,
-		ref.Name,
-		7,
-		generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA},
-	)
+	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(ctx, &generated.DeferMergePullOnHostRequestOptions{PathParams: &generated.DeferMergePullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}, Body: &generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA}})
 	require.NoError(err)
-	require.Equal(202, resp.StatusCode(), string(resp.Body))
+	require.Equal(202, resp.StatusCode, string(resp.Body))
 	require.NotNil(resp.JSON202)
 	require.Equal(int64(1), resp.JSON202.PendingChecks)
 
@@ -1244,17 +1140,9 @@ func TestDeferMergeEndpointRefreshesEmptyPendingSnapshotBeforeRejecting(t *testi
 	require.NoError(database.UpdateMRCIStatus(ctx, repoID, 7, "", "[]"))
 
 	expectedHeadSHA := "head-sha"
-	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(
-		ctx,
-		ref.Host,
-		"gitlab",
-		ref.Owner,
-		ref.Name,
-		7,
-		generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA},
-	)
+	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(ctx, &generated.DeferMergePullOnHostRequestOptions{PathParams: &generated.DeferMergePullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}, Body: &generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA}})
 	require.NoError(err)
-	require.Equal(202, resp.StatusCode(), string(resp.Body))
+	require.Equal(202, resp.StatusCode, string(resp.Body))
 	require.NotNil(resp.JSON202)
 	require.Equal(int64(1), resp.JSON202.PendingChecks)
 	select {
@@ -1289,17 +1177,9 @@ func TestDeferMergeEndpointBroadcastsFailureWhenCIRefreshWarns(t *testing.T) {
 	events, _ := srv.Hub().Subscribe(ctx, false)
 
 	expectedHeadSHA := "head-sha"
-	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(
-		ctx,
-		ref.Host,
-		"gitlab",
-		ref.Owner,
-		ref.Name,
-		7,
-		generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA},
-	)
+	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(ctx, &generated.DeferMergePullOnHostRequestOptions{PathParams: &generated.DeferMergePullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}, Body: &generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA}})
 	require.NoError(err)
-	require.Equal(202, resp.StatusCode(), string(resp.Body))
+	require.Equal(202, resp.StatusCode, string(resp.Body))
 
 	var completed DeferredMergeCompletedPayload
 	for range 4 {
@@ -1358,17 +1238,9 @@ func TestDeferMergeEndpointBroadcastsFailureWhenCurrentChecksFail(t *testing.T) 
 	events, _ := srv.Hub().Subscribe(ctx, false)
 
 	expectedHeadSHA := "head-sha"
-	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(
-		ctx,
-		ref.Host,
-		"gitlab",
-		ref.Owner,
-		ref.Name,
-		7,
-		generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA},
-	)
+	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(ctx, &generated.DeferMergePullOnHostRequestOptions{PathParams: &generated.DeferMergePullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}, Body: &generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA}})
 	require.NoError(err)
-	require.Equal(202, resp.StatusCode(), string(resp.Body))
+	require.Equal(202, resp.StatusCode, string(resp.Body))
 
 	var completed DeferredMergeCompletedPayload
 	for range 4 {
@@ -1432,17 +1304,9 @@ func TestDeferMergeEndpointBroadcastsFailureWhenHeadChangesWhileWaiting(t *testi
 	events, _ := srv.Hub().Subscribe(ctx, false)
 
 	expectedHeadSHA := "head-sha"
-	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(
-		ctx,
-		ref.Host,
-		"gitlab",
-		ref.Owner,
-		ref.Name,
-		7,
-		generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA},
-	)
+	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(ctx, &generated.DeferMergePullOnHostRequestOptions{PathParams: &generated.DeferMergePullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}, Body: &generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA}})
 	require.NoError(err)
-	require.Equal(202, resp.StatusCode(), string(resp.Body))
+	require.Equal(202, resp.StatusCode, string(resp.Body))
 
 	select {
 	case <-ciStarted:
@@ -1552,17 +1416,9 @@ func TestDeferMergeEndpointBroadcastsFailureWhenProviderBaseChangesBeforeMerge(t
 	events, _ := srv.Hub().Subscribe(ctx, false)
 
 	expectedHeadSHA := "head-sha"
-	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(
-		ctx,
-		ref.Host,
-		"gitlab",
-		ref.Owner,
-		ref.Name,
-		7,
-		generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA},
-	)
+	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(ctx, &generated.DeferMergePullOnHostRequestOptions{PathParams: &generated.DeferMergePullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}, Body: &generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA}})
 	require.NoError(err)
-	require.Equal(202, resp.StatusCode(), string(resp.Body))
+	require.Equal(202, resp.StatusCode, string(resp.Body))
 
 	select {
 	case <-ciStarted:
@@ -1634,17 +1490,9 @@ func TestDeferMergeEndpointBroadcastsFailureWhenPendingChecksTimeOut(t *testing.
 	events, _ := srv.Hub().Subscribe(ctx, false)
 
 	expectedHeadSHA := "head-sha"
-	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(
-		ctx,
-		ref.Host,
-		"gitlab",
-		ref.Owner,
-		ref.Name,
-		7,
-		generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA},
-	)
+	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(ctx, &generated.DeferMergePullOnHostRequestOptions{PathParams: &generated.DeferMergePullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}, Body: &generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA}})
 	require.NoError(err)
-	require.Equal(202, resp.StatusCode(), string(resp.Body))
+	require.Equal(202, resp.StatusCode, string(resp.Body))
 
 	var completed DeferredMergeCompletedPayload
 	for range 4 {
@@ -1668,11 +1516,9 @@ func TestDeferMergeEndpointBroadcastsFailureWhenPendingChecksTimeOut(t *testing.
 	// Failure events follow the same ordering contract as completions:
 	// pending is cleared before the broadcast, so the first detail read
 	// after the event must not report a queued merge.
-	detailResp, err := client.HTTP.GetPullOnHostWithResponse(
-		ctx, ref.Host, "gitlab", ref.Owner, ref.Name, 7,
-	)
+	detailResp, err := client.HTTP.GetPullOnHostWithResponse(ctx, &generated.GetPullOnHostRequestOptions{PathParams: &generated.GetPullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}})
 	require.NoError(err)
-	require.Equal(200, detailResp.StatusCode(), string(detailResp.Body))
+	require.Equal(200, detailResp.StatusCode, string(detailResp.Body))
 	require.NotNil(detailResp.JSON200)
 	require.False(detailResp.JSON200.DeferredMergePending)
 	select {
@@ -1730,17 +1576,10 @@ func TestDeferMergeEndpointRejectsClosedPullRequest(t *testing.T) {
 	require.NoError(err)
 
 	expectedHeadSHA := "head-sha"
-	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(
-		ctx,
-		ref.Host,
-		"gitlab",
-		ref.Owner,
-		ref.Name,
-		7,
-		generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA},
-	)
-	require.NoError(err)
-	require.Equal(409, resp.StatusCode(), string(resp.Body))
+	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(ctx, &generated.DeferMergePullOnHostRequestOptions{PathParams: &generated.DeferMergePullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}, Body: &generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(409, resp.StatusCode, string(resp.Body))
 	require.Contains(string(resp.Body), "not_open")
 	select {
 	case call := <-provider.mergeCh:
@@ -1785,17 +1624,9 @@ func TestDeferMergeEndpointBroadcastsFailureWhenTargetClosedWhileWaiting(t *test
 	events, _ := srv.Hub().Subscribe(ctx, false)
 
 	expectedHeadSHA := "head-sha"
-	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(
-		ctx,
-		ref.Host,
-		"gitlab",
-		ref.Owner,
-		ref.Name,
-		7,
-		generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA},
-	)
+	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(ctx, &generated.DeferMergePullOnHostRequestOptions{PathParams: &generated.DeferMergePullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}, Body: &generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA}})
 	require.NoError(err)
-	require.Equal(202, resp.StatusCode(), string(resp.Body))
+	require.Equal(202, resp.StatusCode, string(resp.Body))
 
 	select {
 	case <-ciStarted:
@@ -1890,17 +1721,9 @@ func TestDeferMergeEndpointStandsDownSilentlyWhenTargetMergedWhileWaiting(t *tes
 	events, _ := srv.Hub().Subscribe(ctx, false)
 
 	expectedHeadSHA := "head-sha"
-	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(
-		ctx,
-		ref.Host,
-		"gitlab",
-		ref.Owner,
-		ref.Name,
-		7,
-		generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA},
-	)
+	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(ctx, &generated.DeferMergePullOnHostRequestOptions{PathParams: &generated.DeferMergePullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}, Body: &generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA}})
 	require.NoError(err)
-	require.Equal(202, resp.StatusCode(), string(resp.Body))
+	require.Equal(202, resp.StatusCode, string(resp.Body))
 
 	select {
 	case <-ciStarted:
@@ -2004,17 +1827,9 @@ func TestDeferMergeEndpointBroadcastsFailureWhenProviderClosedBeforeMerge(t *tes
 	events, _ := srv.Hub().Subscribe(ctx, false)
 
 	expectedHeadSHA := "head-sha"
-	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(
-		ctx,
-		ref.Host,
-		"gitlab",
-		ref.Owner,
-		ref.Name,
-		7,
-		generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA},
-	)
+	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(ctx, &generated.DeferMergePullOnHostRequestOptions{PathParams: &generated.DeferMergePullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}, Body: &generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA}})
 	require.NoError(err)
-	require.Equal(202, resp.StatusCode(), string(resp.Body))
+	require.Equal(202, resp.StatusCode, string(resp.Body))
 
 	select {
 	case <-ciStarted:
@@ -2110,17 +1925,9 @@ func TestImmediateMergeRecordsMergedActor(t *testing.T) {
 	)
 
 	expectedHeadSHA := "head-sha"
-	mergeResp, err := client.HTTP.MergePullOnHostWithResponse(
-		ctx,
-		ref.Host,
-		"gitlab",
-		ref.Owner,
-		ref.Name,
-		7,
-		generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA},
-	)
+	mergeResp, err := client.HTTP.MergePullOnHostWithResponse(ctx, &generated.MergePullOnHostRequestOptions{PathParams: &generated.MergePullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}, Body: &generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA}})
 	require.NoError(err)
-	require.Equal(200, mergeResp.StatusCode(), string(mergeResp.Body))
+	require.Equal(200, mergeResp.StatusCode, string(mergeResp.Body))
 
 	stored, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
 	require.NoError(err)
@@ -2138,11 +1945,9 @@ func TestImmediateMergeRecordsMergedActor(t *testing.T) {
 	}, 3*time.Second, 50*time.Millisecond,
 		"no authored merged event recorded after immediate merge")
 
-	detailResp, err := client.HTTP.GetPullOnHostWithResponse(
-		ctx, ref.Host, "gitlab", ref.Owner, ref.Name, 7,
-	)
+	detailResp, err := client.HTTP.GetPullOnHostWithResponse(ctx, &generated.GetPullOnHostRequestOptions{PathParams: &generated.GetPullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, detailResp.StatusCode(), string(detailResp.Body))
+	require.Equal(http.StatusOK, detailResp.StatusCode, string(detailResp.Body))
 	require.NotNil(detailResp.JSON200)
 	require.NotNil(detailResp.JSON200.Events)
 	mergedEvents := make([]generated.MergeRequestEventResponse, 0, 1)
@@ -2165,11 +1970,9 @@ func TestImmediateMergeRecordsMergedActor(t *testing.T) {
 	require.NoError(database.UpdateMRState(
 		ctx, repoID, 7, "merged", &mergedAt, &mergedAt,
 	))
-	detailResp, err = client.HTTP.GetPullOnHostWithResponse(
-		ctx, ref.Host, "gitlab", ref.Owner, ref.Name, 7,
-	)
+	detailResp, err = client.HTTP.GetPullOnHostWithResponse(ctx, &generated.GetPullOnHostRequestOptions{PathParams: &generated.GetPullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, detailResp.StatusCode(), string(detailResp.Body))
+	require.Equal(http.StatusOK, detailResp.StatusCode, string(detailResp.Body))
 	require.NotNil(detailResp.JSON200)
 	require.NotNil(detailResp.JSON200.Events)
 	mergedEvents = mergedEvents[:0]

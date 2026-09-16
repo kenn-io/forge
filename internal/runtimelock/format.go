@@ -1,7 +1,8 @@
 package runtimelock
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 )
@@ -63,7 +64,7 @@ func FormatStatus(w io.Writer, st Status, asJSON bool) error {
 			Metadata:      st.Metadata,
 			MetadataError: string(st.MetadataUnavailable),
 		}
-		data, err := json.MarshalIndent(payload, "", "  ")
+		data, err := json.Marshal(payload, jsontext.WithIndent("  "))
 		if err != nil {
 			return fmt.Errorf("encode status json: %w", err)
 		}

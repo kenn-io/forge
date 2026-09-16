@@ -1,9 +1,8 @@
 package server
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +10,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"go.kenn.io/forge/internal/apiclient/generated"
 
 	"github.com/danielgtaylor/huma/v2"
 	"go.kenn.io/forge/internal/config"
@@ -365,11 +366,8 @@ func (s *Server) refreshSpokePreparationLaunchSpecs(
 			body.PlatformRepoID = current.Repository.PlatformRepoID
 		}
 		var spec db.WorkspaceLaunchSpec
-		if err := spokePreparationProviderJSON(
-			ctx, client, federationauth.ScopeProviderRead,
-			http.MethodPost, "/api/v1/federation/provider/workspace-launch-spec",
-			body, &spec,
-		); err != nil {
+		httpRequest, requestErr := generated.NewFederationResolveWorkspaceLaunchSpecRequest(ctx, "https://hub.invalid/api/v1", &generated.FederationResolveWorkspaceLaunchSpecRequestOptions{Body: providerLaunchRequestBody(body)})
+		if err := spokePreparationProviderJSON(ctx, client, federationauth.ScopeProviderRead, httpRequest, requestErr, &spec); err != nil {
 			report.HandoffErrors = append(report.HandoffErrors,
 				fmt.Sprintf("refresh workspace %s: %v", workspace.ID, err))
 			continue
@@ -425,11 +423,8 @@ func (s *Server) reconcileSpokePreparationProjects(
 		}
 		seen[route] = struct{}{}
 		var descriptor providerplane.RepositoryDescriptor
-		if err := spokePreparationProviderJSON(
-			ctx, client, federationauth.ScopeProviderRead,
-			http.MethodPost, "/api/v1/federation/provider/repository-descriptor",
-			route, &descriptor,
-		); err != nil {
+		httpRequest, requestErr := generated.NewFederationGetRepositoryDescriptorRequest(ctx, "https://hub.invalid/api/v1", &generated.FederationGetRepositoryDescriptorRequestOptions{Body: new(generated.RepositoryRoute{Provider: route.Provider, PlatformHost: route.PlatformHost, Owner: route.Owner, Name: route.Name})})
+		if err := spokePreparationProviderJSON(ctx, client, federationauth.ScopeProviderRead, httpRequest, requestErr, &descriptor); err != nil {
 			report.HandoffErrors = append(report.HandoffErrors,
 				fmt.Sprintf("resolve project %s repository: %v", project.ID, err))
 			continue
@@ -470,17 +465,9 @@ func (s *Server) handoffSpokeProviderState(
 			receipt.ContentDigest == record.ContentDigest {
 			continue
 		}
-		path := "/api/v1/federation/provider-state/workflow-states/import"
-		var body any = record.WorkflowState
-		if record.Kind == db.ProviderStateReviewDraft {
-			path = "/api/v1/federation/provider-state/review-drafts/import"
-			body = record.ReviewDraft
-		}
+		httpRequest, requestErr := providerStateImportRequest(ctx, record)
 		var result db.ProviderStateImportResult
-		if err := spokePreparationProviderJSON(
-			ctx, client, federationauth.ScopeProviderHandoff,
-			http.MethodPost, path, body, &result,
-		); err != nil {
+		if err := spokePreparationProviderJSON(ctx, client, federationauth.ScopeProviderHandoff, httpRequest, requestErr, &result); err != nil {
 			report.HandoffErrors = append(report.HandoffErrors,
 				fmt.Sprintf("handoff %s %s: %v", record.Kind, record.SourceKey, err))
 			continue
@@ -505,26 +492,10 @@ func (s *Server) handoffSpokeProviderState(
 	}
 }
 
-func spokePreparationProviderJSON(
-	ctx context.Context,
-	client providerplane.Client,
-	scope federationauth.Scope,
-	method string,
-	path string,
-	body any,
-	target any,
-) error {
-	encoded, err := json.Marshal(body)
-	if err != nil {
-		return err
+func spokePreparationProviderJSON(ctx context.Context, client providerplane.Client, scope federationauth.Scope, request *http.Request, requestErr error, target any) error {
+	if requestErr != nil {
+		return requestErr
 	}
-	request, err := http.NewRequestWithContext(
-		ctx, method, "https://hub.invalid"+path, bytes.NewReader(encoded),
-	)
-	if err != nil {
-		return err
-	}
-	request.Header.Set("Content-Type", "application/json")
 	return providerplane.ReadJSON(ctx, client, scope, request, target)
 }
 
@@ -533,11 +504,11 @@ func (s *Server) pinHubEnrollment(
 	local federation.LocalEnrollment,
 ) error {
 	var response federation.Enrollment
-	if err := s.postHubEnrollmentJSON(
-		ctx, local,
-		"/api/v1/federation/enrollments/"+local.EnrollmentID+"/preparation/begin",
-		map[string]any{}, &response,
-	); err != nil {
+	httpRequest, err := generated.NewBeginFederationSpokePreparationRequest(ctx, local.HubURL+"/api/v1", &generated.BeginFederationSpokePreparationRequestOptions{PathParams: &generated.BeginFederationSpokePreparationPath{EnrollmentID: local.EnrollmentID}})
+	if err != nil {
+		return err
+	}
+	if err := s.postHubEnrollmentJSON(ctx, local, httpRequest, &response); err != nil {
 		return err
 	}
 	if response.ID != local.EnrollmentID || response.NodeID != local.NodeID ||
@@ -555,21 +526,21 @@ func (s *Server) requestHubPreparationSeal(
 	local federation.LocalEnrollment,
 	request db.SpokePreparationSealRequest,
 ) (db.SpokePreparationSeal, error) {
-	body := map[string]any{
-		"node_id":                request.NodeID,
-		"hub_node_id":            request.HubNodeID,
-		"protocol_version":       request.ProtocolVersion,
-		"migration_version":      request.MigrationVersion,
-		"receipts_digest":        request.ReceiptsDigest,
-		"drained_ack_generation": request.DrainedAckGeneration,
-		"preparation_digest":     request.PreparationDigest,
+	body := &generated.SealFederationSpokePreparationBody{
+		NodeID:               request.NodeID,
+		HubNodeID:            request.HubNodeID,
+		ProtocolVersion:      int64(request.ProtocolVersion),
+		MigrationVersion:     int64(request.MigrationVersion),
+		ReceiptsDigest:       request.ReceiptsDigest,
+		DrainedAckGeneration: request.DrainedAckGeneration,
+		PreparationDigest:    request.PreparationDigest,
 	}
 	var seal db.SpokePreparationSeal
-	err := s.postHubEnrollmentJSON(
-		ctx, local,
-		"/api/v1/federation/enrollments/"+local.EnrollmentID+"/preparation/seal",
-		body, &seal,
-	)
+	httpRequest, err := generated.NewSealFederationSpokePreparationRequest(ctx, local.HubURL+"/api/v1", &generated.SealFederationSpokePreparationRequestOptions{PathParams: &generated.SealFederationSpokePreparationPath{EnrollmentID: local.EnrollmentID}, Body: body})
+	if err != nil {
+		return db.SpokePreparationSeal{}, err
+	}
+	err = s.postHubEnrollmentJSON(ctx, local, httpRequest, &seal)
 	return seal, err
 }
 
@@ -577,33 +548,22 @@ func (s *Server) requestHubEnrollmentAbort(
 	ctx context.Context, local federation.LocalEnrollment,
 ) error {
 	var response struct{}
-	return s.postHubEnrollmentJSON(
-		ctx, local,
-		"/api/v1/federation/enrollments/"+local.EnrollmentID+"/abort",
-		struct{}{}, &response,
-	)
+	httpRequest, err := generated.NewAbortFederationEnrollmentRequest(ctx, local.HubURL+"/api/v1", &generated.AbortFederationEnrollmentRequestOptions{PathParams: &generated.AbortFederationEnrollmentPath{EnrollmentID: local.EnrollmentID}})
+	if err != nil {
+		return err
+	}
+	return s.postHubEnrollmentJSON(ctx, local, httpRequest, &response)
 }
 
 func (s *Server) postHubEnrollmentJSON(
 	ctx context.Context,
 	local federation.LocalEnrollment,
-	path string,
-	body any,
+	request *http.Request,
 	target any,
 ) error {
 	credential, ok := s.options.FederationCredentials.Outbound(local.HubID)
 	if !ok || !slices.Contains(credential.Scopes, federationauth.ScopeEnrollmentActivate) {
 		return providerplane.ErrCredentialUnavailable
-	}
-	encoded, err := json.Marshal(body)
-	if err != nil {
-		return err
-	}
-	request, err := http.NewRequestWithContext(
-		ctx, http.MethodPost, local.HubURL+path, bytes.NewReader(encoded),
-	)
-	if err != nil {
-		return err
 	}
 	request.Header.Set("Authorization", "Bearer "+credential.Token)
 	request.Header.Set(federationauth.NodeIDHeader, local.NodeID)
@@ -656,4 +616,43 @@ func spokePreparationHubProblem(err error) error {
 		return problem
 	}
 	return httpapi.Internal("begin hub spoke preparation: " + err.Error())
+}
+
+func providerStateImportRequest(ctx context.Context, record db.ProviderStateRecord) (*http.Request, error) {
+	if record.Kind == db.ProviderStateReviewDraft {
+		var body *generated.FederationImportReviewDraftBody
+		if draft := record.ReviewDraft; draft != nil {
+			body = &generated.FederationImportReviewDraftBody{
+				Repository: generated.ProviderStateRepository{Provider: draft.Repository.Provider, PlatformHost: draft.Repository.PlatformHost, PlatformRepoID: draft.Repository.PlatformRepoID, Owner: draft.Repository.Owner, Name: draft.Repository.Name}, PullNumber: int64(draft.PullNumber), Body: draft.Body, Action: draft.Action,
+				Comments: make([]generated.ProviderStateReviewComment, 0, len(draft.Comments)),
+			}
+			for _, comment := range draft.Comments {
+				item := generated.ProviderStateReviewComment{
+					Body: comment.Body, Path: comment.Path, OldPath: optionalProviderQuery(comment.OldPath), Side: comment.Side,
+					StartSide: optionalProviderQuery(comment.StartSide), Line: int64(comment.Line), LineType: comment.LineType,
+					DiffHeadSha: comment.DiffHeadSHA, CommitSha: comment.CommitSHA,
+				}
+				if comment.StartLine != nil {
+					item.StartLine = new(int64(*comment.StartLine))
+				}
+				if comment.OldLine != nil {
+					item.OldLine = new(int64(*comment.OldLine))
+				}
+				if comment.NewLine != nil {
+					item.NewLine = new(int64(*comment.NewLine))
+				}
+				body.Comments = append(body.Comments, item)
+			}
+		}
+		return generated.NewFederationImportReviewDraftRequest(ctx, "https://hub.invalid/api/v1", &generated.FederationImportReviewDraftRequestOptions{Body: body})
+	}
+	var body *generated.FederationImportWorkflowStateBody
+	if state := record.WorkflowState; state != nil {
+		body = &generated.FederationImportWorkflowStateBody{
+			Repository: generated.ProviderStateRepository{Provider: state.Repository.Provider, PlatformHost: state.Repository.PlatformHost, PlatformRepoID: state.Repository.PlatformRepoID, Owner: state.Repository.Owner, Name: state.Repository.Name}, ItemType: generated.ProviderStateWorkflowPayloadItemType(state.ItemType),
+			ItemNumber: int64(state.ItemNumber), Status: state.Status,
+			UpdatedSource: optionalProviderQuery(state.UpdatedSource), UpdatedActor: optionalProviderQuery(state.UpdatedActor), UpdatedReason: optionalProviderQuery(state.UpdatedReason),
+		}
+	}
+	return generated.NewFederationImportWorkflowStateRequest(ctx, "https://hub.invalid/api/v1", &generated.FederationImportWorkflowStateRequestOptions{Body: body})
 }

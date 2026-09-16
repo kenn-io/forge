@@ -70,7 +70,7 @@ func TestEventClientReconnectBackoffResetsAfterSuccessfulConnection(t *testing.T
 		_ context.Context, scope federationauth.Scope, request *http.Request,
 	) (*http.Response, error) {
 		assert.Equal(federationauth.ScopeEventsRead, scope)
-		assert.Equal(hubEventsPath, request.URL.Path)
+		assert.Equal("/api/v1/federation/events", request.URL.Path)
 		call := calls.Add(1)
 		if call <= 3 {
 			return eventResponse(http.StatusServiceUnavailable, "application/problem+json", `{}`), nil

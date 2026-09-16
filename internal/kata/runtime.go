@@ -1,7 +1,7 @@
 package kata
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"net"
 	"net/url"
 	"os"

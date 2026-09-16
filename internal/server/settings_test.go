@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go.kenn.io/forge/internal/apiclient/generated"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -977,7 +978,7 @@ prefer_github_native_stacks = true
 	require.NoError(stacks.RunDetectionWithNativeStacks(ctx, database, repo.ID, []int{42}))
 	client := setupTestClientWithBaseURL(t, srv, "http://127.0.0.1:8091")
 
-	before, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 10)
+	before, err := client.HTTP.GetPullStackWithResponse(ctx, &generated.GetPullStackRequestOptions{PathParams: &generated.GetPullStackPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(10)}})
 	require.NoError(err)
 	require.NotNil(before.JSON200)
 	require.NotNil(before.JSON200.Members)
@@ -989,7 +990,7 @@ prefer_github_native_stacks = true
 	})
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-	after, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 10)
+	after, err := client.HTTP.GetPullStackWithResponse(ctx, &generated.GetPullStackRequestOptions{PathParams: &generated.GetPullStackPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(10)}})
 	require.NoError(err)
 	require.NotNil(after.JSON200)
 	require.NotNil(after.JSON200.Members)
@@ -4556,7 +4557,7 @@ prefer_github_native_stacks = true
 	}))
 	require.NoError(stacks.RunDetectionWithNativeStacks(ctx, database, repo.ID, []int{42}))
 	client := setupTestClientWithBaseURL(t, srv, "http://127.0.0.1:8091")
-	before, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 10)
+	before, err := client.HTTP.GetPullStackWithResponse(ctx, &generated.GetPullStackRequestOptions{PathParams: &generated.GetPullStackPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(10)}})
 	require.NoError(err)
 	require.NotNil(before.JSON200)
 	require.NotNil(before.JSON200.Members)
@@ -4574,7 +4575,7 @@ prefer_github_native_stacks = true
 	cancel()
 	srv.ServeHTTP(httptest.NewRecorder(), req)
 
-	after, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 10)
+	after, err := client.HTTP.GetPullStackWithResponse(ctx, &generated.GetPullStackRequestOptions{PathParams: &generated.GetPullStackPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(10)}})
 	require.NoError(err)
 	require.NotNil(after.JSON200)
 	require.NotNil(after.JSON200.Members)
@@ -4627,7 +4628,7 @@ prefer_github_native_stacks = true
 	// reconciliation a later enable has already won the swap.
 	srv.reconcileGitHubNativeStackProjection(true, false)
 
-	after, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 10)
+	after, err := client.HTTP.GetPullStackWithResponse(ctx, &generated.GetPullStackRequestOptions{PathParams: &generated.GetPullStackPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(10)}})
 	require.NoError(err)
 	require.NotNil(after.JSON200)
 	require.NotNil(after.JSON200.Members)
@@ -4677,7 +4678,7 @@ prefer_github_native_stacks = true
 	// native ordering cannot be found by looking for native rows.
 	require.NoError(database.DeleteGitHubNativeStacks(ctx, repo.ID, []int{42}))
 	client := setupTestClientWithBaseURL(t, srv, "http://127.0.0.1:8091")
-	before, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "removed", 10)
+	before, err := client.HTTP.GetPullStackWithResponse(ctx, &generated.GetPullStackRequestOptions{PathParams: &generated.GetPullStackPath{Provider: "gh", Owner: "acme", Name: "removed", Number: int64(10)}})
 	require.NoError(err)
 	require.NotNil(before.JSON200)
 	require.NotNil(before.JSON200.Members)
@@ -4690,7 +4691,7 @@ prefer_github_native_stacks = true
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
-	after, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "removed", 10)
+	after, err := client.HTTP.GetPullStackWithResponse(ctx, &generated.GetPullStackRequestOptions{PathParams: &generated.GetPullStackPath{Provider: "gh", Owner: "acme", Name: "removed", Number: int64(10)}})
 	require.NoError(err)
 	require.NotNil(after.JSON200)
 	require.NotNil(after.JSON200.Members)
@@ -4754,7 +4755,7 @@ prefer_github_native_stacks = false
 	client := setupTestClientWithBaseURL(t, srv, "http://127.0.0.1:8091")
 
 	// No sync has run, and the repository is not even tracked.
-	resp, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 10)
+	resp, err := client.HTTP.GetPullStackWithResponse(ctx, &generated.GetPullStackRequestOptions{PathParams: &generated.GetPullStackPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(10)}})
 	require.NoError(err)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Members)

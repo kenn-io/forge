@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/apiclient"
+	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
@@ -106,20 +107,17 @@ func TestRepositorySyncTombstonesPRShapedStaleIssueE2E(t *testing.T) {
 
 	triggerSync := func(after *time.Time) time.Time {
 		t.Helper()
-		response, err := api.HTTP.TriggerSyncWithResponse(
-			ctx, nil,
-			func(_ context.Context, req *http.Request) error {
-				req.Header.Set("Content-Type", "application/json")
-				return nil
-			},
-		)
+		response, err := api.HTTP.TriggerSyncWithResponse(ctx, &generated.TriggerSyncRequestOptions{}, func(_ context.Context, req *http.Request) error {
+			req.Header.Set("Content-Type", "application/json")
+			return nil
+		})
 		require.NoError(err)
-		require.Equal(http.StatusAccepted, response.StatusCode(), string(response.Body))
+		require.Equal(http.StatusAccepted, response.StatusCode, string(response.Body))
 
 		var completedAt time.Time
 		require.Eventually(func() bool {
 			status, err := api.HTTP.GetSyncStatusWithResponse(ctx)
-			if err != nil || status.StatusCode() != http.StatusOK || status.JSON200 == nil ||
+			if err != nil || status.StatusCode != http.StatusOK || status.JSON200 == nil ||
 				status.JSON200.Running || status.JSON200.LastRunAt == nil {
 				return false
 			}
@@ -130,11 +128,9 @@ func TestRepositorySyncTombstonesPRShapedStaleIssueE2E(t *testing.T) {
 	}
 
 	firstSync := triggerSync(nil)
-	issue, err := api.HTTP.GetIssueWithResponse(
-		ctx, "gh", "acme", "widget", int64(issueNumber),
-	)
+	issue, err := api.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, issue.StatusCode(), string(issue.Body))
+	require.Equal(http.StatusOK, issue.StatusCode, string(issue.Body))
 	require.NotNil(issue.JSON200)
 	assert.Equal("closed", issue.JSON200.Issue.State)
 	assert.Equal(int32(1), mock.getIssueCalls.Load())
@@ -199,11 +195,9 @@ func TestTransferredIssueObservableViaAPIE2E(t *testing.T) {
 	// Seed cycle: the issue is open in the source repo.
 	syncer.RunOnce(ctx)
 
-	seeded, err := client.HTTP.GetIssueWithResponse(
-		ctx, "gh", "acme", "widget", int64(issueNumber),
-	)
+	seeded, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, seeded.StatusCode(), string(seeded.Body))
+	require.Equal(http.StatusOK, seeded.StatusCode, string(seeded.Body))
 	require.NotNil(seeded.JSON200)
 	require.Equal(sourceTitle, seeded.JSON200.Issue.Title)
 
@@ -228,11 +222,9 @@ func TestTransferredIssueObservableViaAPIE2E(t *testing.T) {
 	syncer.RunOnce(ctx)
 
 	// (a) The source issue is served unchanged.
-	source, err := client.HTTP.GetIssueWithResponse(
-		ctx, "gh", "acme", "widget", int64(issueNumber),
-	)
+	source, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, source.StatusCode(), string(source.Body))
+	require.Equal(http.StatusOK, source.StatusCode, string(source.Body))
 	require.NotNil(source.JSON200)
 	assert.Equal(sourceTitle, source.JSON200.Issue.Title,
 		"source issue must not be rewritten with destination data")
@@ -243,7 +235,7 @@ func TestTransferredIssueObservableViaAPIE2E(t *testing.T) {
 	// (b) The failed sync cycle is observable through repo sync health.
 	reposResp, err := client.HTTP.ListReposWithResponse(ctx)
 	require.NoError(err)
-	require.Equal(http.StatusOK, reposResp.StatusCode(), string(reposResp.Body))
+	require.Equal(http.StatusOK, reposResp.StatusCode, string(reposResp.Body))
 	require.NotNil(reposResp.JSON200)
 	require.Len(*reposResp.JSON200, 1)
 	repo := (*reposResp.JSON200)[0]
@@ -253,11 +245,10 @@ func TestTransferredIssueObservableViaAPIE2E(t *testing.T) {
 		"the transferred item must surface as a failed repo sync cycle")
 
 	// (c) Nothing is served under the destination repository.
-	destination, err := client.HTTP.GetIssueWithResponse(
-		ctx, "gh", "newowner", "newname", int64(issueNumber),
-	)
-	require.NoError(err)
+	destination, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "newowner", Name: "newname", Number: int64(int64(issueNumber))}})
+	require.Error(err)
+	require.NotNil(destination)
 	assert.Equal(
-		http.StatusNotFound, destination.StatusCode(), string(destination.Body),
+		http.StatusNotFound, destination.StatusCode, string(destination.Body),
 	)
 }

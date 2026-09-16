@@ -25,12 +25,9 @@ func TestCreateAdHocWorkspaceMaterializesRequestedBranch(t *testing.T) {
 	fixture := setupWorkspaceServerFixture(t, nil)
 	branch := "spike/rate-limits"
 
-	resp, err := fixture.client.HTTP.CreateRepoWorkspaceWithResponse(
-		t.Context(), "gh", "acme", "widget",
-		generated.CreateRepoWorkspaceJSONRequestBody{Branch: &branch},
-	)
+	resp, err := fixture.client.HTTP.CreateRepoWorkspaceWithResponse(t.Context(), &generated.CreateRepoWorkspaceRequestOptions{PathParams: &generated.CreateRepoWorkspacePath{Provider: "gh", Owner: "acme", Name: "widget"}, Body: &generated.CreateRepoWorkspaceBody{Branch: &branch}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, resp.StatusCode(), string(resp.Body))
+	require.Equal(http.StatusAccepted, resp.StatusCode, string(resp.Body))
 	require.NotNil(resp.JSON202)
 	require.NotNil(resp.JSON202.Created)
 	assert.True(*resp.JSON202.Created)
@@ -38,7 +35,7 @@ func TestCreateAdHocWorkspaceMaterializesRequestedBranch(t *testing.T) {
 	assert.EqualValues(0, resp.JSON202.ItemNumber)
 	assert.Equal(branch, resp.JSON202.GitHeadRef)
 
-	ready := waitForWorkspaceReady(t, t.Context(), fixture.client, resp.JSON202.Id)
+	ready := waitForWorkspaceReady(t, t.Context(), fixture.client, resp.JSON202.ID)
 	assert.Equal(branch, ready.GitHeadRef)
 	assert.Nil(ready.MrTitle)
 
@@ -84,17 +81,14 @@ func TestCreateAdHocWorkspaceAfterRepositoryRouteReuse(t *testing.T) {
 	require.NotNil(current)
 
 	branch := "spike/route-reuse"
-	resp, err := fixture.client.HTTP.CreateRepoWorkspaceWithResponse(
-		t.Context(), "gh", "acme", "widget",
-		generated.CreateRepoWorkspaceJSONRequestBody{Branch: &branch},
-	)
+	resp, err := fixture.client.HTTP.CreateRepoWorkspaceWithResponse(t.Context(), &generated.CreateRepoWorkspaceRequestOptions{PathParams: &generated.CreateRepoWorkspacePath{Provider: "gh", Owner: "acme", Name: "widget"}, Body: &generated.CreateRepoWorkspaceBody{Branch: &branch}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, resp.StatusCode(), string(resp.Body))
+	require.Equal(http.StatusAccepted, resp.StatusCode, string(resp.Body))
 	require.NotNil(resp.JSON202)
 
-	ready := waitForWorkspaceReady(t, t.Context(), fixture.client, resp.JSON202.Id)
+	ready := waitForWorkspaceReady(t, t.Context(), fixture.client, resp.JSON202.ID)
 	require.Equal(branch, ready.GitHeadRef)
-	workspace, err := fixture.database.GetWorkspace(t.Context(), ready.Id)
+	workspace, err := fixture.database.GetWorkspace(t.Context(), ready.ID)
 	require.NoError(err)
 	require.NotNil(workspace)
 	require.Equal(current.Repository.ID, workspace.RepoID)
@@ -106,17 +100,14 @@ func TestCreateAdHocWorkspaceGeneratesBranchWhenOmitted(t *testing.T) {
 
 	fixture := setupWorkspaceServerFixture(t, nil)
 
-	resp, err := fixture.client.HTTP.CreateRepoWorkspaceWithResponse(
-		t.Context(), "gh", "acme", "widget",
-		generated.CreateRepoWorkspaceJSONRequestBody{},
-	)
+	resp, err := fixture.client.HTTP.CreateRepoWorkspaceWithResponse(t.Context(), &generated.CreateRepoWorkspaceRequestOptions{PathParams: &generated.CreateRepoWorkspacePath{Provider: "gh", Owner: "acme", Name: "widget"}, Body: &generated.CreateRepoWorkspaceBody{}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, resp.StatusCode(), string(resp.Body))
+	require.Equal(http.StatusAccepted, resp.StatusCode, string(resp.Body))
 	require.NotNil(resp.JSON202)
 	assert.True(strings.HasPrefix(resp.JSON202.GitHeadRef, "kenn-forge/work-"),
 		"generated branch %q should carry the work prefix", resp.JSON202.GitHeadRef)
 
-	ready := waitForWorkspaceReady(t, t.Context(), fixture.client, resp.JSON202.Id)
+	ready := waitForWorkspaceReady(t, t.Context(), fixture.client, resp.JSON202.ID)
 	assert.Equal(resp.JSON202.GitHeadRef, ready.GitHeadRef)
 }
 
@@ -128,22 +119,18 @@ func TestCreateAdHocWorkspaceReusesWorkspaceForSameBranch(t *testing.T) {
 
 	fixture := setupWorkspaceServerFixture(t, nil)
 	branch := "spike/rate-limits"
-	body := generated.CreateRepoWorkspaceJSONRequestBody{Branch: &branch}
+	body := generated.CreateRepoWorkspaceBody{Branch: &branch}
 
-	first, err := fixture.client.HTTP.CreateRepoWorkspaceWithResponse(
-		t.Context(), "gh", "acme", "widget", body,
-	)
+	first, err := fixture.client.HTTP.CreateRepoWorkspaceWithResponse(t.Context(), &generated.CreateRepoWorkspaceRequestOptions{PathParams: &generated.CreateRepoWorkspacePath{Provider: "gh", Owner: "acme", Name: "widget"}, Body: new(body)})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, first.StatusCode(), string(first.Body))
+	require.Equal(http.StatusAccepted, first.StatusCode, string(first.Body))
 	require.NotNil(first.JSON202)
 
-	second, err := fixture.client.HTTP.CreateRepoWorkspaceWithResponse(
-		t.Context(), "gh", "acme", "widget", body,
-	)
+	second, err := fixture.client.HTTP.CreateRepoWorkspaceWithResponse(t.Context(), &generated.CreateRepoWorkspaceRequestOptions{PathParams: &generated.CreateRepoWorkspacePath{Provider: "gh", Owner: "acme", Name: "widget"}, Body: new(body)})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, second.StatusCode(), string(second.Body))
+	require.Equal(http.StatusAccepted, second.StatusCode, string(second.Body))
 	require.NotNil(second.JSON202)
-	assert.Equal(first.JSON202.Id, second.JSON202.Id)
+	assert.Equal(first.JSON202.ID, second.JSON202.ID)
 	assert.Nil(second.JSON202.Created)
 
 	listResp, err := fixture.client.HTTP.ListWorkspacesWithResponse(t.Context())
@@ -164,12 +151,10 @@ func TestCreateAdHocWorkspaceRejectsInvalidBranch(t *testing.T) {
 	fixture := setupWorkspaceServerFixture(t, nil)
 	branch := "bad branch"
 
-	resp, err := fixture.client.HTTP.CreateRepoWorkspaceWithResponse(
-		t.Context(), "gh", "acme", "widget",
-		generated.CreateRepoWorkspaceJSONRequestBody{Branch: &branch},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusBadRequest, resp.StatusCode(), string(resp.Body))
+	resp, err := fixture.client.HTTP.CreateRepoWorkspaceWithResponse(t.Context(), &generated.CreateRepoWorkspaceRequestOptions{PathParams: &generated.CreateRepoWorkspacePath{Provider: "gh", Owner: "acme", Name: "widget"}, Body: &generated.CreateRepoWorkspaceBody{Branch: &branch}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusBadRequest, resp.StatusCode, string(resp.Body))
 }
 
 func TestCreateAdHocWorkspaceRejectsUntrackedRepo(t *testing.T) {
@@ -178,12 +163,10 @@ func TestCreateAdHocWorkspaceRejectsUntrackedRepo(t *testing.T) {
 	fixture := setupWorkspaceServerFixture(t, nil)
 	branch := "spike/thing"
 
-	resp, err := fixture.client.HTTP.CreateRepoWorkspaceWithResponse(
-		t.Context(), "gh", "acme", "unknown",
-		generated.CreateRepoWorkspaceJSONRequestBody{Branch: &branch},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusNotFound, resp.StatusCode(), string(resp.Body))
+	resp, err := fixture.client.HTTP.CreateRepoWorkspaceWithResponse(t.Context(), &generated.CreateRepoWorkspaceRequestOptions{PathParams: &generated.CreateRepoWorkspacePath{Provider: "gh", Owner: "acme", Name: "unknown"}, Body: &generated.CreateRepoWorkspaceBody{Branch: &branch}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusNotFound, resp.StatusCode, string(resp.Body))
 }
 
 func TestCreateAdHocWorkspaceExistingBranchIsUniquified(t *testing.T) {
@@ -195,16 +178,13 @@ func TestCreateAdHocWorkspaceExistingBranchIsUniquified(t *testing.T) {
 	mainSHA := gitfixture.SHA(t, fixture.remote, "refs/heads/main")
 	gitfixture.Run(t, fixture.bare, "update-ref", "refs/heads/"+branch, mainSHA)
 
-	resp, err := fixture.client.HTTP.CreateRepoWorkspaceWithResponse(
-		t.Context(), "gh", "acme", "widget",
-		generated.CreateRepoWorkspaceJSONRequestBody{Branch: &branch},
-	)
+	resp, err := fixture.client.HTTP.CreateRepoWorkspaceWithResponse(t.Context(), &generated.CreateRepoWorkspaceRequestOptions{PathParams: &generated.CreateRepoWorkspacePath{Provider: "gh", Owner: "acme", Name: "widget"}, Body: &generated.CreateRepoWorkspaceBody{Branch: &branch}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, resp.StatusCode(), string(resp.Body))
+	require.Equal(http.StatusAccepted, resp.StatusCode, string(resp.Body))
 	require.NotNil(resp.JSON202)
 	assert.Regexp(`^spike/rate-limits-[0-9a-f]{4}$`, resp.JSON202.GitHeadRef)
 
-	ready := waitForWorkspaceReady(t, t.Context(), fixture.client, resp.JSON202.Id)
+	ready := waitForWorkspaceReady(t, t.Context(), fixture.client, resp.JSON202.ID)
 	assert.Equal(resp.JSON202.GitHeadRef, ready.GitHeadRef)
 	assert.Equal(resp.JSON202.GitHeadRef, workspaceGitOutput(
 		t, ready.WorktreePath, "rev-parse", "--abbrev-ref", "HEAD",
@@ -221,18 +201,15 @@ func TestCreateAdHocWorkspaceReusesExistingBranchWhenAsked(t *testing.T) {
 	gitfixture.Run(t, fixture.bare, "update-ref", "refs/heads/"+branch, mainSHA)
 	reuse := true
 
-	resp, err := fixture.client.HTTP.CreateRepoWorkspaceWithResponse(
-		t.Context(), "gh", "acme", "widget",
-		generated.CreateRepoWorkspaceJSONRequestBody{
-			Branch: &branch, ReuseExistingBranch: &reuse,
-		},
-	)
+	resp, err := fixture.client.HTTP.CreateRepoWorkspaceWithResponse(t.Context(), &generated.CreateRepoWorkspaceRequestOptions{PathParams: &generated.CreateRepoWorkspacePath{Provider: "gh", Owner: "acme", Name: "widget"}, Body: &generated.CreateRepoWorkspaceBody{
+		Branch: &branch, ReuseExistingBranch: &reuse,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, resp.StatusCode(), string(resp.Body))
+	require.Equal(http.StatusAccepted, resp.StatusCode, string(resp.Body))
 	require.NotNil(resp.JSON202)
 	assert.Nil(resp.JSON202.Created)
 
-	ready := waitForWorkspaceReady(t, t.Context(), fixture.client, resp.JSON202.Id)
+	ready := waitForWorkspaceReady(t, t.Context(), fixture.client, resp.JSON202.ID)
 	assert.Equal(branch, ready.GitHeadRef)
 	checkedOut := workspaceGitOutput(
 		t, ready.WorktreePath, "rev-parse", "--abbrev-ref", "HEAD",
@@ -248,14 +225,11 @@ func TestCreateAdHocWorkspaceReuseMissingBranchReportsCreated(t *testing.T) {
 	branch := "spike/rate-limits"
 	reuse := true
 
-	resp, err := fixture.client.HTTP.CreateRepoWorkspaceWithResponse(
-		t.Context(), "gh", "acme", "widget",
-		generated.CreateRepoWorkspaceJSONRequestBody{
-			Branch: &branch, ReuseExistingBranch: &reuse,
-		},
-	)
+	resp, err := fixture.client.HTTP.CreateRepoWorkspaceWithResponse(t.Context(), &generated.CreateRepoWorkspaceRequestOptions{PathParams: &generated.CreateRepoWorkspacePath{Provider: "gh", Owner: "acme", Name: "widget"}, Body: &generated.CreateRepoWorkspaceBody{
+		Branch: &branch, ReuseExistingBranch: &reuse,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, resp.StatusCode(), string(resp.Body))
+	require.Equal(http.StatusAccepted, resp.StatusCode, string(resp.Body))
 	require.NotNil(resp.JSON202)
 	require.NotNil(resp.JSON202.Created)
 	assert.True(*resp.JSON202.Created)
@@ -275,17 +249,14 @@ func TestCreateAdHocWorkspaceReuseStartsFromDivergedBranchTip(t *testing.T) {
 	require.NotEqual(mainSHA, featureSHA)
 	reuse := true
 
-	resp, err := fixture.client.HTTP.CreateRepoWorkspaceWithResponse(
-		t.Context(), "gh", "acme", "widget",
-		generated.CreateRepoWorkspaceJSONRequestBody{
-			Branch: &branch, ReuseExistingBranch: &reuse,
-		},
-	)
+	resp, err := fixture.client.HTTP.CreateRepoWorkspaceWithResponse(t.Context(), &generated.CreateRepoWorkspaceRequestOptions{PathParams: &generated.CreateRepoWorkspacePath{Provider: "gh", Owner: "acme", Name: "widget"}, Body: &generated.CreateRepoWorkspaceBody{
+		Branch: &branch, ReuseExistingBranch: &reuse,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, resp.StatusCode(), string(resp.Body))
+	require.Equal(http.StatusAccepted, resp.StatusCode, string(resp.Body))
 	require.NotNil(resp.JSON202)
 
-	ready := waitForWorkspaceReady(t, t.Context(), fixture.client, resp.JSON202.Id)
+	ready := waitForWorkspaceReady(t, t.Context(), fixture.client, resp.JSON202.ID)
 	assert.Equal(branch, ready.GitHeadRef)
 	assert.Equal(featureSHA, gitfixture.SHA(t, ready.WorktreePath, "HEAD"),
 		"reuse adopts the existing branch tip, not origin/HEAD")
@@ -305,34 +276,25 @@ func TestCreateAdHocWorkspaceAfterInWorktreeBranchRename(t *testing.T) {
 	original := "spike/rate-limits"
 	renamed := "spike/rate-limits-v2"
 
-	created, err := fixture.client.HTTP.CreateRepoWorkspaceWithResponse(
-		t.Context(), "gh", "acme", "widget",
-		generated.CreateRepoWorkspaceJSONRequestBody{Branch: &original},
-	)
+	created, err := fixture.client.HTTP.CreateRepoWorkspaceWithResponse(t.Context(), &generated.CreateRepoWorkspaceRequestOptions{PathParams: &generated.CreateRepoWorkspacePath{Provider: "gh", Owner: "acme", Name: "widget"}, Body: &generated.CreateRepoWorkspaceBody{Branch: &original}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, created.StatusCode(), string(created.Body))
+	require.Equal(http.StatusAccepted, created.StatusCode, string(created.Body))
 	require.NotNil(created.JSON202)
-	ready := waitForWorkspaceReady(t, t.Context(), fixture.client, created.JSON202.Id)
+	ready := waitForWorkspaceReady(t, t.Context(), fixture.client, created.JSON202.ID)
 
 	gitfixture.Run(t, ready.WorktreePath, "branch", "-m", original, renamed)
 
 	// Old name: still this workspace, because item_key is the creation-time
 	// branch and is never rewritten.
-	again, err := fixture.client.HTTP.CreateRepoWorkspaceWithResponse(
-		t.Context(), "gh", "acme", "widget",
-		generated.CreateRepoWorkspaceJSONRequestBody{Branch: &original},
-	)
+	again, err := fixture.client.HTTP.CreateRepoWorkspaceWithResponse(t.Context(), &generated.CreateRepoWorkspaceRequestOptions{PathParams: &generated.CreateRepoWorkspacePath{Provider: "gh", Owner: "acme", Name: "widget"}, Body: &generated.CreateRepoWorkspaceBody{Branch: &original}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, again.StatusCode(), string(again.Body))
+	require.Equal(http.StatusAccepted, again.StatusCode, string(again.Body))
 	require.NotNil(again.JSON202)
-	assert.Equal(created.JSON202.Id, again.JSON202.Id)
+	assert.Equal(created.JSON202.ID, again.JSON202.ID)
 
-	unique, err := fixture.client.HTTP.CreateRepoWorkspaceWithResponse(
-		t.Context(), "gh", "acme", "widget",
-		generated.CreateRepoWorkspaceJSONRequestBody{Branch: &renamed},
-	)
+	unique, err := fixture.client.HTTP.CreateRepoWorkspaceWithResponse(t.Context(), &generated.CreateRepoWorkspaceRequestOptions{PathParams: &generated.CreateRepoWorkspacePath{Provider: "gh", Owner: "acme", Name: "widget"}, Body: &generated.CreateRepoWorkspaceBody{Branch: &renamed}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, unique.StatusCode(), string(unique.Body))
+	require.Equal(http.StatusAccepted, unique.StatusCode, string(unique.Body))
 	require.NotNil(unique.JSON202)
 	assert.Regexp(
 		`^spike/rate-limits-v2-[0-9a-f]{4}$`,

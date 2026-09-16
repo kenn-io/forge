@@ -3,8 +3,6 @@ package kata
 import (
 	"context"
 	"errors"
-	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -22,31 +20,6 @@ const (
 type kataDaemonReadResult struct {
 	status int
 	body   []byte
-	err    error
-}
-
-func kataDaemonGet(ctx context.Context, client *http.Client, d katacatalog.Daemon, target string) kataDaemonReadResult {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
-	if err != nil {
-		return kataDaemonReadResult{err: err}
-	}
-	if token := kataDaemonForwardToken(d); token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return kataDaemonReadResult{err: err}
-	}
-	defer func() { _ = resp.Body.Close() }()
-	limited := io.LimitReader(resp.Body, maxKataDaemonReadBytes+1)
-	body, err := io.ReadAll(limited)
-	if err != nil {
-		return kataDaemonReadResult{err: err}
-	}
-	if len(body) > maxKataDaemonReadBytes {
-		return kataDaemonReadResult{err: fmt.Errorf("kata daemon response exceeds %d bytes", maxKataDaemonReadBytes)}
-	}
-	return kataDaemonReadResult{status: resp.StatusCode, body: body}
 }
 
 func (h *Handler) kataDaemonHTTPClient(d katacatalog.Daemon) (*http.Client, string, error) {
@@ -139,4 +112,16 @@ func disposableKataDaemonTransport(transport http.RoundTripper) http.RoundTrippe
 	owned := concrete.Clone()
 	owned.DisableKeepAlives = true
 	return owned
+}
+
+// kataProjectHTTPClient keeps the daemon read bound when using its generated client.
+type kataProjectHTTPClient struct{ client *http.Client }
+
+func (c kataProjectHTTPClient) Do(ctx context.Context, request *http.Request) (*http.Response, error) {
+	response, err := c.client.Do(request.WithContext(ctx))
+	if err != nil {
+		return nil, err
+	}
+	response.Body = http.MaxBytesReader(nil, response.Body, maxKataDaemonReadBytes)
+	return response, nil
 }

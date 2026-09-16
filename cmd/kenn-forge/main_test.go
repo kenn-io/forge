@@ -1455,6 +1455,7 @@ func TestRunCLIVersionJSONReturnsStableBuildMetadata(t *testing.T) {
 		"commit": "abc1234",
 		"buildDate": "2026-07-12T12:00:00Z"
 	}`, stdout.String())
+	assert.True(t, strings.HasSuffix(stdout.String(), "\n"))
 }
 
 func TestRunCLIConfigReadPortCreatesDefaultConfig(t *testing.T) {

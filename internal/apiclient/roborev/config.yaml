@@ -1,0 +1,18 @@
+package: roborev
+output:
+  use-single-file: true
+  directory: .
+  filename: client.go
+generate:
+  client-with-response: true
+  models: true
+  validation:
+    skip: true
+user-templates:
+  header.tmpl: ../generated/templates/header.tmpl
+  client-options.tmpl: ../generated/templates/client-options.tmpl
+  client-with-response.tmpl: ../generated/templates/client-with-response.tmpl
+  client-with-response-types.tmpl: ../generated/templates/client-with-response-types.tmpl
+filter:
+  include:
+    operation-ids: [list-repos]

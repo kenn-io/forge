@@ -1,7 +1,8 @@
+import * as roborevAPI from "../../api/roborev/generated/client.js";
 import { Effect, Option, Ref } from "effect";
 import type { AppRuntime } from "../../app/runtime.js";
 import { executeRoborevRequest, type RoborevClient, RoborevStreamError } from "../../api/roborev/client.js";
-import type { components, operations } from "../../api/roborev/generated/schema.js";
+import type * as RoborevModels from "../../api/roborev/generated/models/index.js";
 import { isPanelParent, panelCostUsd, panelElapsedStart } from "../../utils/roborev-panel.js";
 import {
   makeRoborevOwner,
@@ -11,11 +12,11 @@ import {
   RoborevWorkflow,
 } from "./roborev-workflow.js";
 
-type ReviewJob = components["schemas"]["ReviewJob"];
-type JobStats = components["schemas"]["JobStats"];
-type CancelJobResponse = components["schemas"]["CancelJobOutputBody"];
-type RerunJobResponse = components["schemas"]["RerunJobOutputBody"];
-type ListJobsQuery = NonNullable<operations["list-jobs"]["parameters"]["query"]>;
+type ReviewJob = RoborevModels.ReviewJob;
+type JobStats = RoborevModels.JobStats;
+type CancelJobResponse = RoborevModels.CancelJobOutputBody;
+type RerunJobResponse = RoborevModels.RerunJobOutputBody;
+type ListJobsQuery = NonNullable<RoborevModels.ListJobsParams>;
 
 export interface JobsStoreOptions {
   client: RoborevClient;
@@ -248,16 +249,11 @@ export function createJobsStore(opts: JobsStoreOptions) {
     const countQuery: ListJobsQuery = { ...query, limit: 0, omit_prompt: "true" };
     const countScope = JSON.stringify(countQuery);
     const countRequest = executeRoborevRequest("count filtered Roborev jobs", (signal) =>
-      client.GET("/api/jobs", {
-        params: { query: countQuery },
-        signal,
-      }),
+      roborevAPI.listJobs(countQuery, { signal }, client),
     );
     const result = yield* Effect.all(
       {
-        list: executeRoborevRequest("list Roborev jobs", (signal) =>
-          client.GET("/api/jobs", { params: { query }, signal }),
-        ),
+        list: executeRoborevRequest("list Roborev jobs", (signal) => roborevAPI.listJobs(query, { signal }, client)),
         count: filtered
           ? strictCount
             ? countRequest.pipe(Effect.map(Option.some))
@@ -266,21 +262,21 @@ export function createJobsStore(opts: JobsStoreOptions) {
       },
       { concurrency: "unbounded" },
     );
-    if (result.list.error !== undefined) {
+    if (result.list.status !== 200) {
       return yield* Effect.fail(
         RoborevResponseError.make({
           operation: "list Roborev jobs",
           message: "Failed to load jobs",
-          cause: result.list.error,
+          cause: result.list.data,
         }),
       );
     }
-    if (strictCount && Option.isSome(result.count) && result.count.value.error !== undefined) {
+    if (strictCount && Option.isSome(result.count) && result.count.value.status !== 200) {
       return yield* Effect.fail(
         RoborevResponseError.make({
           operation: "count filtered Roborev jobs",
           message: "Failed to count filtered jobs",
-          cause: result.count.value.error,
+          cause: result.count.value.data,
         }),
       );
     }
@@ -288,7 +284,7 @@ export function createJobsStore(opts: JobsStoreOptions) {
       jobs: result.list.data?.jobs ?? [],
       hasMore: result.list.data?.has_more ?? false,
       stats: result.list.data?.stats ?? { done: 0, closed: 0, open: 0 },
-      filteredStatusCounts: Option.filter(result.count, (count) => count.error === undefined).pipe(
+      filteredStatusCounts: Option.filter(result.count, (count) => count.status === 200).pipe(
         Option.map((count) => countJobsByStatus(count.data?.jobs ?? [])),
       ),
       countScope,
@@ -380,14 +376,14 @@ export function createJobsStore(opts: JobsStoreOptions) {
             storeError = null;
           });
           const result = yield* executeRoborevRequest("load more Roborev jobs", (signal) =>
-            client.GET("/api/jobs", { params: { query }, signal }),
+            roborevAPI.listJobs(query, { signal }, client),
           );
-          if (result.error) {
+          if (result.status !== 200) {
             return yield* Effect.fail(
               RoborevResponseError.make({
                 operation: "load more Roborev jobs",
                 message: "Failed to load more jobs",
-                cause: result.error,
+                cause: result.data,
               }),
             );
           }
@@ -476,17 +472,14 @@ export function createJobsStore(opts: JobsStoreOptions) {
   // Job actions
   const fetchJobAuthority = Effect.fn("RoborevJobs.fetchJobAuthority")(function* (id: number) {
     const result = yield* executeRoborevRequest("load authoritative Roborev job", (signal) =>
-      client.GET("/api/jobs", {
-        params: { query: { id, limit: 1, omit_prompt: "true" } satisfies ListJobsQuery },
-        signal,
-      }),
+      roborevAPI.listJobs({ id, limit: 1, omit_prompt: "true" } satisfies ListJobsQuery, { signal }, client),
     );
-    if (result.error !== undefined) {
+    if (result.status !== 200) {
       return yield* Effect.fail(
         RoborevResponseError.make({
           operation: "load authoritative Roborev job",
           message: "Failed to revalidate job",
-          cause: result.error,
+          cause: result.data,
         }),
       );
     }
@@ -523,17 +516,14 @@ export function createJobsStore(opts: JobsStoreOptions) {
         key: `job:${id}`,
         operation: "cancel Roborev job",
         mutation: executeRoborevRequest("cancel Roborev job", (signal) =>
-          client.POST("/api/job/cancel", {
-            body: { job_id: id },
-            signal,
-          }),
+          roborevAPI.cancelJob({ job_id: id }, { signal }, client),
         ).pipe(
           Effect.flatMap((result) =>
-            result.error || !result.data
+            result.status !== 200
               ? Effect.fail(
                   RoborevMutationError.make({
                     operation: "cancel Roborev job",
-                    cause: result.error ?? new Error("Roborev cancellation response was empty"),
+                    cause: result.data ?? new Error("Roborev cancellation response was empty"),
                   }),
                 )
               : Effect.succeed(result.data),
@@ -586,16 +576,13 @@ export function createJobsStore(opts: JobsStoreOptions) {
           }
           yield* Ref.set(baselineRetryCount, Option.some(baseline.retry_count));
           const result = yield* executeRoborevRequest("rerun Roborev job", (signal) =>
-            client.POST("/api/job/rerun", {
-              body: { job_id: id },
-              signal,
-            }),
+            roborevAPI.rerunJob({ job_id: id }, { signal }, client),
           );
-          return yield* result.error || !result.data
+          return yield* result.status !== 200
             ? Effect.fail(
                 RoborevMutationError.make({
                   operation: "rerun Roborev job",
-                  cause: result.error ?? new Error("Roborev rerun response was empty"),
+                  cause: result.data ?? new Error("Roborev rerun response was empty"),
                 }),
               )
             : Effect.succeed(result.data);
@@ -640,18 +627,15 @@ export function createJobsStore(opts: JobsStoreOptions) {
           panelMemberErrors = startedErrors;
         }),
         read: executeRoborevRequest("load Roborev panel members", (signal) =>
-          client.GET("/api/jobs", {
-            params: { query: { panel_run: runUuid, limit: 0, omit_prompt: "true" } },
-            signal,
-          }),
+          roborevAPI.listJobs({ panel_run: runUuid, limit: 0, omit_prompt: "true" }, { signal }, client),
         ).pipe(
           Effect.flatMap((result) =>
-            result.error
+            result.status !== 200
               ? Effect.fail(
                   RoborevResponseError.make({
                     operation: "load Roborev panel members",
                     message: "Failed to load panel members",
-                    cause: result.error,
+                    cause: result.data,
                   }),
                 )
               : Effect.succeed(

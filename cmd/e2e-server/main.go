@@ -7,7 +7,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"flag"
 	"fmt"
@@ -1261,7 +1261,7 @@ func setPR1CIState(
 		}
 	}
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(map[string]string{"status": label}); err != nil {
+	if err := json.MarshalWrite(w, map[string]string{"status": label}); err != nil {
 		slog.Warn("write e2e response", "err", err)
 	}
 }
@@ -2330,7 +2330,7 @@ func buildAppState(
 				targetKeys = append(targetKeys, session.TargetKey)
 			}
 			w.Header().Set("Content-Type", "application/json")
-			if err := json.NewEncoder(w).Encode(map[string]any{
+			if err := json.MarshalWrite(w, map[string]any{
 				"target_keys": targetKeys,
 			}); err != nil {
 				slog.Warn(
@@ -2780,7 +2780,7 @@ func buildAppState(
 				activityIdentityRepoRef(entry.Repository, originalRepoPath),
 			})
 			w.Header().Set("Content-Type", "application/json")
-			if err := json.NewEncoder(w).Encode(map[string]string{
+			if err := json.MarshalWrite(w, map[string]string{
 				"platform_repo_id": entry.Repository.PlatformRepoID,
 				"repo_path":        entry.Repository.RepoPath,
 			}); err != nil {
@@ -2798,7 +2798,7 @@ func buildAppState(
 			failNextRepoBrowserTree.CompareAndSwap(true, false) {
 			w.Header().Set("Content-Type", "application/problem+json")
 			w.WriteHeader(http.StatusInternalServerError)
-			_ = json.NewEncoder(w).Encode(httpapi.NewProblem(http.StatusInternalServerError, httpapi.CodeInternalError, "tree failed", nil))
+			_ = json.MarshalWrite(w, httpapi.NewProblem(http.StatusInternalServerError, httpapi.CodeInternalError, "tree failed", nil))
 			return
 		}
 		if r.Method == http.MethodPost &&
@@ -2813,7 +2813,7 @@ func buildAppState(
 			var input struct {
 				IDs []int64 `json:"ids"`
 			}
-			if err := json.NewDecoder(r.Body).Decode(&input); err != nil || len(input.IDs) == 0 {
+			if err := json.UnmarshalRead(r.Body, &input); err != nil || len(input.IDs) == 0 {
 				http.Error(w, "notification ids required", http.StatusBadRequest)
 				return
 			}
@@ -2824,7 +2824,7 @@ func buildAppState(
 				})
 			}
 			w.Header().Set("Content-Type", "application/json")
-			if err := json.NewEncoder(w).Encode(map[string]any{
+			if err := json.MarshalWrite(w, map[string]any{
 				"succeeded": []int64{},
 				"queued":    []int64{},
 				"failed":    failed,
@@ -2955,7 +2955,7 @@ func buildAppState(
 			}})
 
 			w.Header().Set("Content-Type", "application/json")
-			if err := json.NewEncoder(w).Encode(map[string]any{
+			if err := json.MarshalWrite(w, map[string]any{
 				"status": "required",
 				"run_id": runID,
 			}); err != nil {
@@ -2977,7 +2977,7 @@ func buildAppState(
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
-			if err := json.NewEncoder(w).Encode(map[string]bool{
+			if err := json.MarshalWrite(w, map[string]bool{
 				"ViewerCanMerge": false,
 			}); err != nil {
 				slog.Warn("write e2e response", "err", err)
@@ -3017,7 +3017,7 @@ func buildAppState(
 			}
 
 			w.Header().Set("Content-Type", "application/json")
-			if err := json.NewEncoder(w).Encode(map[string]string{
+			if err := json.MarshalWrite(w, map[string]string{
 				"status": "fail-refresh",
 			}); err != nil {
 				slog.Warn("write e2e response", "err", err)
@@ -3269,7 +3269,7 @@ func buildAppState(
 			})
 			w.Header().Set("X-Kenn-E2E-Event-ID", strconv.FormatUint(eventID, 10))
 			w.Header().Set("Content-Type", "application/json")
-			if err := json.NewEncoder(w).Encode(map[string]string{
+			if err := json.MarshalWrite(w, map[string]string{
 				"head_sha": diffRepo.AltHeadSHA,
 			}); err != nil {
 				slog.Warn("write e2e response", "err", err)
@@ -3304,7 +3304,7 @@ func buildAppState(
 				diffRepo.ContextHeadSHA, diffRepo.BaseSHA,
 			)
 			w.Header().Set("Content-Type", "application/json")
-			if err := json.NewEncoder(w).Encode(map[string]string{
+			if err := json.MarshalWrite(w, map[string]string{
 				"head_sha": diffRepo.ContextHeadSHA,
 			}); err != nil {
 				slog.Warn("write e2e response", "err", err)
@@ -3368,7 +3368,7 @@ func buildAppState(
 				},
 			})
 			w.Header().Set("Content-Type", "application/json")
-			if err := json.NewEncoder(w).Encode(map[string]string{
+			if err := json.MarshalWrite(w, map[string]string{
 				"status": "reply-added",
 			}); err != nil {
 				slog.Warn("write e2e response", "err", err)
@@ -3431,7 +3431,7 @@ func (s *e2eFederationSwitch) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	if s.offline.Load() {
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(http.StatusServiceUnavailable)
-		_ = json.NewEncoder(w).Encode(map[string]any{
+		_ = json.MarshalWrite(w, map[string]any{
 			"status": http.StatusServiceUnavailable,
 			"code":   "hubUnavailable",
 			"detail": "the federated e2e hub is offline",
@@ -3443,7 +3443,7 @@ func (s *e2eFederationSwitch) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 
 func writeFederatedE2EControlResponse(w http.ResponseWriter, status string) {
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{"status": status})
+	_ = json.MarshalWrite(w, map[string]string{"status": status})
 }
 
 func runFederatedForgesE2E(
@@ -3897,7 +3897,7 @@ func run(
 			resetInfo := info
 			resetInfo.ConfigPath = newState.cfgPath
 			w.Header().Set("Content-Type", "application/json")
-			if err := json.NewEncoder(w).Encode(resetInfo); err != nil {
+			if err := json.MarshalWrite(w, resetInfo); err != nil {
 				slog.Warn("write e2e reset response", "err", err)
 			}
 			return

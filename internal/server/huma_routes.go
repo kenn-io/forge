@@ -22,6 +22,7 @@ import (
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/ratelimit"
+	"go.kenn.io/forge/internal/server/fleetapi"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/issueapi"
 	"go.kenn.io/forge/internal/server/pullapi"
@@ -523,6 +524,23 @@ func NewOpenAPI() *huma.OpenAPI {
 	s := &Server{}
 	api := humago.NewWithPrefix(mux, "/api/v1", apiConfig("/"))
 	s.registerAPI(api)
+	return api.OpenAPI()
+}
+
+// NewClientOpenAPI includes hidden operations used by first-party clients.
+func NewClientOpenAPI() *huma.OpenAPI {
+	config := apiConfig("/")
+	config.OpenAPI = NewOpenAPI()
+	api := humago.New(http.NewServeMux(), config)
+	(*workspaceapi.Handler)(nil).RegisterTerminalClipboard(api, false)
+	(*fleetapi.Handler)(nil).RegisterWorkspaceCleanup(api, false)
+	return api.OpenAPI()
+}
+
+// NewHealthOpenAPI describes the health API served outside /api/v1.
+func NewHealthOpenAPI() *huma.OpenAPI {
+	api := humago.New(http.NewServeMux(), healthAPIConfig())
+	(&Server{}).registerHealthAPI(api)
 	return api.OpenAPI()
 }
 

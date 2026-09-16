@@ -2,9 +2,9 @@ import { cleanup, render, screen } from "@testing-library/svelte";
 import { afterEach, describe, expect, it } from "vite-plus/test";
 
 import JobRow from "./JobRow.svelte";
-import type { components } from "../../api/roborev/generated/schema.js";
+import type * as RoborevModels from "../../api/roborev/generated/models/index.js";
 
-type ReviewJob = components["schemas"]["ReviewJob"];
+type ReviewJob = RoborevModels.ReviewJob;
 
 function makeJob(tokenUsage?: string): ReviewJob {
   return {

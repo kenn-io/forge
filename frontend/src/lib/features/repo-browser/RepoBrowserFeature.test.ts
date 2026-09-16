@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
-import { createQuerySerializer, type QuerySerializerOptions } from "openapi-fetch";
 import { tick } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { GeneratedClient } from "../../api/generated-api.js";
@@ -36,7 +35,6 @@ const route = {
 
 type TestGetOptions = {
   params?: { path?: Record<string, string>; query?: Record<string, unknown> };
-  querySerializer?: QuerySerializerOptions;
 };
 
 type TestClientOptions = {
@@ -55,13 +53,6 @@ function mockPointerCapture(element: HTMLElement): void {
     releasePointerCapture: { configurable: true, value: vi.fn() },
   });
 }
-
-const runtimeQuerySerializerOptions: QuerySerializerOptions = {
-  array: {
-    style: "form",
-    explode: false,
-  },
-};
 
 afterEach(() => {
   cleanup();
@@ -966,8 +957,11 @@ function testURL(path: string, options?: TestGetOptions): string {
   for (const [key, value] of Object.entries(options?.params?.path ?? {})) {
     url = url.replace(`{${key}}`, encodeURIComponent(String(value)));
   }
-  const serializer = createQuerySerializer(options?.querySerializer ?? runtimeQuerySerializerOptions);
-  const qs = serializer(options?.params?.query ?? {});
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(options?.params?.query ?? {})) {
+    if (value !== undefined) query.set(key, String(value));
+  }
+  const qs = query.toString();
   return qs ? `${url}?${qs}` : url;
 }
 

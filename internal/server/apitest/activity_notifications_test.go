@@ -157,11 +157,11 @@ func TestActivityNotificationsFullStack(t *testing.T) {
 	})
 
 	// --- notifications-only view ---
-	notifResp, err := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityParams{
-		Types: &[]string{"notification"},
-	})
+	notifResp, err := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{
+		Types: []string{"notification"},
+	}})
 	require.NoError(err)
-	require.Equal(200, notifResp.StatusCode())
+	require.Equal(200, notifResp.StatusCode)
 	require.NotNil(notifResp.JSON200)
 	require.NotNil(notifResp.JSON200.Items)
 
@@ -196,12 +196,12 @@ func TestActivityNotificationsFullStack(t *testing.T) {
 	// --- default collapsed view ---
 	// Synced subjects are represented by authoritative parent summaries, but an
 	// unsynced notification must remain as a directly rendered item row.
-	collapsedProjection := generated.ListActivityParamsProjectionCollapsed
-	collapsedResp, err := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityParams{
+	collapsedProjection := generated.ListActivityQueryProjectionCollapsed
+	collapsedResp, err := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{
 		Projection: &collapsedProjection,
-	})
+	}})
 	require.NoError(err)
-	require.Equal(200, collapsedResp.StatusCode())
+	require.Equal(200, collapsedResp.StatusCode)
 	require.NotNil(collapsedResp.JSON200)
 	require.NotNil(collapsedResp.JSON200.Items)
 	require.Len(collapsedResp.JSON200.Items, 1)
@@ -211,11 +211,11 @@ func TestActivityNotificationsFullStack(t *testing.T) {
 	// --- hide closed/merged notifications ---
 	hideClosedMerged := true
 	limit := int64(10)
-	visibleResp, err := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityParams{
-		Types: &[]string{"notification"}, HideClosedMerged: &hideClosedMerged, Limit: &limit,
-	})
+	visibleResp, err := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{
+		Types: []string{"notification"}, HideClosedMerged: &hideClosedMerged, Limit: &limit,
+	}})
 	require.NoError(err)
-	require.Equal(200, visibleResp.StatusCode())
+	require.Equal(200, visibleResp.StatusCode)
 	require.NotNil(visibleResp.JSON200)
 	require.NotNil(visibleResp.JSON200.Items)
 	visibleKeys := make([]string, 0, len(visibleResp.JSON200.Items))
@@ -227,9 +227,9 @@ func TestActivityNotificationsFullStack(t *testing.T) {
 	// --- default (all types) view ---
 	// Anchored notifications coexist with the new_pr rows the notifications-only
 	// view filtered out, while unanchored/author notifications still never show.
-	allResp, err := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityParams{})
+	allResp, err := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{}})
 	require.NoError(err)
-	require.Equal(200, allResp.StatusCode())
+	require.Equal(200, allResp.StatusCode)
 	require.NotNil(allResp.JSON200.Items)
 
 	var notifRows, newPRRows int

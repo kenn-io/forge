@@ -3,7 +3,7 @@ package agentactivity
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -71,7 +71,7 @@ func (s *Store) HandleHook(agent string, input io.Reader, runtimeSessionKey stri
 		return nil
 	}
 	var hook HookEvent
-	if err := json.NewDecoder(io.LimitReader(input, 1<<20)).Decode(&hook); err != nil {
+	if err := json.UnmarshalRead(io.LimitReader(input, 1<<20), &hook); err != nil {
 		return fmt.Errorf("decode agent hook: %w", err)
 	}
 	return s.HandleEvent(agent, hook, runtimeSessionKey)
@@ -460,7 +460,7 @@ func (s *Store) readReport(path string) (Report, bool) {
 	}
 	defer file.Close()
 	var report Report
-	if err := json.NewDecoder(io.LimitReader(file, 64<<10)).Decode(&report); err != nil {
+	if err := json.UnmarshalRead(io.LimitReader(file, 64<<10), &report); err != nil {
 		return Report{}, false
 	}
 	if statePriority(report.State) == 0 || report.RuntimeSessionKey == "" ||

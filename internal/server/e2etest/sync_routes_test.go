@@ -41,7 +41,7 @@ func TestSyncRoutesWithoutProviderSyncerE2E(t *testing.T) {
 
 	status, err := client.HTTP.GetSyncStatusWithResponse(t.Context())
 	require.NoError(err)
-	require.Equal(http.StatusOK, status.StatusCode(), string(status.Body))
+	require.Equal(http.StatusOK, status.StatusCode, string(status.Body))
 	require.NotNil(status.JSON200)
 	assert.False(status.JSON200.Running)
 	assert.Nil(status.JSON200.LastRunAt)
@@ -49,25 +49,22 @@ func TestSyncRoutesWithoutProviderSyncerE2E(t *testing.T) {
 
 	rates, err := client.HTTP.GetRateLimitsWithResponse(t.Context())
 	require.NoError(err)
-	require.Equal(http.StatusOK, rates.StatusCode(), string(rates.Body))
+	require.Equal(http.StatusOK, rates.StatusCode, string(rates.Body))
 	require.NotNil(rates.JSON200)
 	assert.Empty(rates.JSON200.ProviderPools)
 	assert.Empty(rates.JSON200.LocalCeilings)
 
-	trigger, err := client.HTTP.TriggerSyncWithResponse(
-		t.Context(),
-		nil,
-		func(_ context.Context, req *http.Request) error {
-			req.Header.Set("Content-Type", "application/json")
-			return nil
-		},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusServiceUnavailable, trigger.StatusCode(), string(trigger.Body))
-	require.NotNil(trigger.ApplicationproblemJSONDefault)
-	assert.Equal(generated.ServiceUnavailable, trigger.ApplicationproblemJSONDefault.Code)
-	require.NotNil(trigger.ApplicationproblemJSONDefault.Detail)
-	assert.Equal("syncer not configured", *trigger.ApplicationproblemJSONDefault.Detail)
+	trigger, err := client.HTTP.TriggerSyncWithResponse(t.Context(), &generated.TriggerSyncRequestOptions{}, func(_ context.Context, req *http.Request) error {
+		req.Header.Set("Content-Type", "application/json")
+		return nil
+	})
+	require.Error(err)
+	require.NotNil(trigger)
+	require.Equal(http.StatusServiceUnavailable, trigger.StatusCode, string(trigger.Body))
+	require.NotNil(trigger.Error)
+	assert.Equal(generated.ProblemErrorCodeServiceUnavailable, trigger.Error.Code)
+	require.NotNil(trigger.Error.Detail)
+	assert.Equal("syncer not configured", *trigger.Error.Detail)
 }
 
 // If an accepted queued sync reports completion before its provider pass,
@@ -152,16 +149,12 @@ func TestAcceptedFullSyncStaysRunningUntilQueuedProviderDataPersistsE2E(t *testi
 
 	triggerSync := func() {
 		t.Helper()
-		response, err := api.HTTP.TriggerSyncWithResponse(
-			t.Context(),
-			nil,
-			func(_ context.Context, req *http.Request) error {
-				req.Header.Set("Content-Type", "application/json")
-				return nil
-			},
-		)
+		response, err := api.HTTP.TriggerSyncWithResponse(t.Context(), &generated.TriggerSyncRequestOptions{}, func(_ context.Context, req *http.Request) error {
+			req.Header.Set("Content-Type", "application/json")
+			return nil
+		})
 		require.NoError(err)
-		require.Equal(http.StatusAccepted, response.StatusCode(), string(response.Body))
+		require.Equal(http.StatusAccepted, response.StatusCode, string(response.Body))
 	}
 
 	triggerSync()
@@ -180,7 +173,7 @@ func TestAcceptedFullSyncStaysRunningUntilQueuedProviderDataPersistsE2E(t *testi
 			return false
 		}
 		status, err := api.HTTP.GetSyncStatusWithResponse(t.Context())
-		if err != nil || status.StatusCode() != http.StatusOK ||
+		if err != nil || status.StatusCode != http.StatusOK ||
 			status.JSON200 == nil || status.JSON200.Running {
 			return false
 		}
@@ -319,16 +312,12 @@ func TestQueuedScopedHTTPRefreshKeepsBypassRepositoryBoundE2E(t *testing.T) {
 	onlySelected := []string{"github|github.com/acme/selected"}
 	triggerSelected := func() {
 		t.Helper()
-		response, err := api.HTTP.TriggerSyncWithResponse(
-			t.Context(),
-			&generated.TriggerSyncParams{OnlyRepo: &onlySelected},
-			func(_ context.Context, req *http.Request) error {
-				req.Header.Set("Content-Type", "application/json")
-				return nil
-			},
-		)
+		response, err := api.HTTP.TriggerSyncWithResponse(t.Context(), &generated.TriggerSyncRequestOptions{Query: &generated.TriggerSyncQuery{OnlyRepo: onlySelected}}, func(_ context.Context, req *http.Request) error {
+			req.Header.Set("Content-Type", "application/json")
+			return nil
+		})
 		require.NoError(err)
-		require.Equal(http.StatusAccepted, response.StatusCode(), string(response.Body))
+		require.Equal(http.StatusAccepted, response.StatusCode, string(response.Body))
 	}
 
 	phase.Store(1)
@@ -436,26 +425,22 @@ func TestSyncListNotModifiedDoesNotChangeRateLimitBudgetE2E(t *testing.T) {
 		t.Helper()
 		resp, err := api.HTTP.GetSyncStatusWithResponse(t.Context())
 		require.NoError(err)
-		require.Equal(http.StatusOK, resp.StatusCode(), string(resp.Body))
+		require.Equal(http.StatusOK, resp.StatusCode, string(resp.Body))
 		require.NotNil(resp.JSON200)
 		return resp.JSON200.LastRunAt
 	}
 	triggerSync := func() {
 		t.Helper()
 		before := syncLastRunAt()
-		resp, err := api.HTTP.TriggerSyncWithResponse(
-			t.Context(),
-			nil,
-			func(_ context.Context, req *http.Request) error {
-				req.Header.Set("Content-Type", "application/json")
-				return nil
-			},
-		)
+		resp, err := api.HTTP.TriggerSyncWithResponse(t.Context(), &generated.TriggerSyncRequestOptions{}, func(_ context.Context, req *http.Request) error {
+			req.Header.Set("Content-Type", "application/json")
+			return nil
+		})
 		require.NoError(err)
-		require.Equal(http.StatusAccepted, resp.StatusCode(), string(resp.Body))
+		require.Equal(http.StatusAccepted, resp.StatusCode, string(resp.Body))
 		require.Eventually(func() bool {
 			resp, err := api.HTTP.GetSyncStatusWithResponse(t.Context())
-			if err != nil || resp.StatusCode() != http.StatusOK || resp.JSON200 == nil {
+			if err != nil || resp.StatusCode != http.StatusOK || resp.JSON200 == nil {
 				return false
 			}
 			if resp.JSON200.Running || resp.JSON200.LastRunAt == nil {
@@ -468,7 +453,7 @@ func TestSyncListNotModifiedDoesNotChangeRateLimitBudgetE2E(t *testing.T) {
 		t.Helper()
 		resp, err := api.HTTP.GetRateLimitsWithResponse(t.Context())
 		require.NoError(err)
-		require.Equal(http.StatusOK, resp.StatusCode(), string(resp.Body))
+		require.Equal(http.StatusOK, resp.StatusCode, string(resp.Body))
 		require.NotNil(resp.JSON200)
 		ceiling, ok := resp.JSON200.LocalCeilings["github.com"]
 		require.True(ok)
@@ -490,14 +475,14 @@ func TestSyncListNotModifiedDoesNotChangeRateLimitBudgetE2E(t *testing.T) {
 	triggerSync()
 	status, err := api.HTTP.GetSyncStatusWithResponse(t.Context())
 	require.NoError(err)
-	require.Equal(http.StatusOK, status.StatusCode(), string(status.Body))
+	require.Equal(http.StatusOK, status.StatusCode, string(status.Body))
 	require.NotNil(status.JSON200)
 	require.NotNil(status.JSON200.LastErrorCode)
-	assert.Equal(generated.LocalSyncCeilingExhausted, *status.JSON200.LastErrorCode)
+	assert.Equal(generated.SyncStatusLastErrorCodeLocalSyncCeilingExhausted, *status.JSON200.LastErrorCode)
 
 	rates, err := api.HTTP.GetRateLimitsWithResponse(t.Context())
 	require.NoError(err)
-	require.Equal(http.StatusOK, rates.StatusCode(), string(rates.Body))
+	require.Equal(http.StatusOK, rates.StatusCode, string(rates.Body))
 	require.NotNil(rates.JSON200)
 	ceiling, ok := rates.JSON200.LocalCeilings["github.com"]
 	require.True(ok)
@@ -658,10 +643,10 @@ func TestGitLabSyncBudgetExhaustionIncludesWindowE2E(t *testing.T) {
 	require.NoError(err)
 	status, err := api.HTTP.GetSyncStatusWithResponse(t.Context())
 	require.NoError(err)
-	require.Equal(http.StatusOK, status.StatusCode(), string(status.Body))
+	require.Equal(http.StatusOK, status.StatusCode, string(status.Body))
 	require.NotNil(status.JSON200)
 	require.NotNil(status.JSON200.LastErrorCode)
-	require.Equal(generated.LocalSyncCeilingExhausted, *status.JSON200.LastErrorCode)
+	require.Equal(generated.SyncStatusLastErrorCodeLocalSyncCeilingExhausted, *status.JSON200.LastErrorCode)
 	require.NotNil(status.JSON200.LastErrorCeilingKey)
 	require.Equal("gitlab:gitlab.example.com", *status.JSON200.LastErrorCeilingKey)
 	require.NotNil(status.JSON200.LastErrorCeilingResetAt)

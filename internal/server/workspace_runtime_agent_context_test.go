@@ -132,12 +132,9 @@ func TestWorkspaceRuntimeLaunchWritesAgentContextE2E(t *testing.T) {
 
 	assert.NoFileExists(filepath.Join(ws.WorktreePath, "AGENTS.override.md"))
 
-	resp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{TargetKey: "codex"},
-	)
+	resp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{TargetKey: "codex"}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode)
 
 	agentsLocal, err := os.ReadFile(filepath.Join(ws.WorktreePath, "AGENTS.override.md"))
 	require.NoError(err)
@@ -189,12 +186,9 @@ func TestWorkspaceRuntimeLaunchRejectsUnsafeRepositoryAgentInstructionsE2E(t *te
 				require.NoError(os.WriteFile(agentsPath, []byte(strings.Repeat("x", (1<<20)+1)), 0o644))
 			}
 
-			resp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-				ctx, ws.Id,
-				generated.LaunchWorkspaceRuntimeSessionInputBody{TargetKey: "codex"},
-			)
+			resp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{TargetKey: "codex"}})
 			require.NoError(err)
-			require.Equal(http.StatusOK, resp.StatusCode())
+			require.Equal(http.StatusOK, resp.StatusCode)
 
 			override, err := os.ReadFile(filepath.Join(ws.WorktreePath, "AGENTS.override.md"))
 			require.NoError(err)

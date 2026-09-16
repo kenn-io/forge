@@ -108,18 +108,22 @@ function responseFromRouteMockResult(result: unknown): Response {
   });
 }
 
+export function makeRouteMockFetch(routeClient: RouteMockClient, args: readonly unknown[] = []): FetchFn {
+  return async (input, init) => {
+    const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
+    const handler = routeClient[method as keyof RouteMockClient];
+    if (handler === undefined) throw new Error(`No ${method} route mock configured`);
+    const request = await routeRequestOptions(input, init, args);
+    return responseFromRouteMockResult(await handler(request.path, request.options));
+  };
+}
+
 function bindRouteMockOperation(
   operation: (...args: never[]) => unknown,
   routeClient: RouteMockClient,
 ): (...args: never[]) => unknown {
   return (...args: never[]) => {
-    const fetch: FetchFn = async (input, init) => {
-      const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
-      const handler = routeClient[method as keyof RouteMockClient];
-      if (handler === undefined) throw new Error(`No ${method} route mock configured`);
-      const request = await routeRequestOptions(input, init, args);
-      return responseFromRouteMockResult(await handler(request.path, request.options));
-    };
+    const fetch = makeRouteMockFetch(routeClient, args);
     const callArgs: unknown[] = [...args];
     const suppliedOptionsIndex = callArgs.findLastIndex(
       (argument) =>

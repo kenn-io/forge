@@ -24,13 +24,14 @@ type terminalClipboardOutput struct {
 	Status int `status:"204"`
 }
 
-func (h *Handler) registerTerminalClipboard(api huma.API) {
+// RegisterTerminalClipboard registers the clipboard operation, hidden in the runtime API.
+func (h *Handler) RegisterTerminalClipboard(api huma.API, hidden bool) {
 	huma.Register(api, huma.Operation{
 		OperationID:   "write-terminal-clipboard",
 		Method:        http.MethodPost,
 		Path:          "/terminal/clipboard",
 		DefaultStatus: http.StatusNoContent,
-		Hidden:        true,
+		Hidden:        hidden,
 		// JSON can expand each control byte into a six-byte \u00xx escape.
 		MaxBodyBytes: maxTerminalClipboardBytes*6 + 1024,
 	}, h.writeTerminalClipboard)

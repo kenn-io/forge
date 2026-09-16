@@ -4,14 +4,13 @@ import (
 	"container/list"
 	"context"
 	"crypto/sha256"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
 	"net/url"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -90,10 +89,6 @@ func metadataInt(value any) int {
 	case int64:
 		if v > 0 {
 			return int(v)
-		}
-	case json.Number:
-		if n, err := strconv.Atoi(v.String()); err == nil && n > 0 {
-			return n
 		}
 	}
 	return 0

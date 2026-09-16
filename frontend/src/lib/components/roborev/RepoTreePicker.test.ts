@@ -1,3 +1,4 @@
+import { makeRouteMockFetch } from "../../testing/test/route-mock-client.js";
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vite-plus/test";
@@ -26,7 +27,7 @@ vi.mock("../../context.js", () => ({
   getStores: () => ({
     roborevJobs: state.jobs,
   }),
-  getRoborevClient: () => client,
+  getRoborevClient: () => makeRouteMockFetch(client),
 }));
 
 vi.mock("../../app/runtime-context.js", () => ({

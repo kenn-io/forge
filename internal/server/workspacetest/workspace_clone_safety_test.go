@@ -40,14 +40,12 @@ func TestWorkspaceForceDeleteToleratesCorruptWorktreeGitfileE2E(t *testing.T) {
 	require.NoError(os.Truncate(gitfile, 0))
 
 	force := true
-	deleteResp, err := client.HTTP.DeleteWorkspaceWithResponse(
-		ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &force},
-	)
+	deleteResp, err := client.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: ws.ID}, Query: &generated.DeleteWorkspaceQuery{Force: &force}})
 	require.NoError(err)
 	require.Equal(
-		http.StatusNoContent, deleteResp.StatusCode(), string(deleteResp.Body),
+		http.StatusNoContent, deleteResp.StatusCode, string(deleteResp.Body),
 	)
-	stored, err := database.GetWorkspace(ctx, ws.Id)
+	stored, err := database.GetWorkspace(ctx, ws.ID)
 	require.NoError(err)
 	assert.Nil(stored)
 }
@@ -77,15 +75,13 @@ func TestWorkspaceForceDeleteQuarantinesReplacedWorktreeAndAllowsRecreateE2E(
 	))
 
 	force := true
-	delResp, err := client.HTTP.DeleteWorkspaceWithResponse(
-		ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &force},
-	)
+	delResp, err := client.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: ws.ID}, Query: &generated.DeleteWorkspaceQuery{Force: &force}})
 	require.NoError(err)
 	require.Equal(
-		http.StatusNoContent, delResp.StatusCode(), string(delResp.Body),
+		http.StatusNoContent, delResp.StatusCode, string(delResp.Body),
 	)
 
-	got, err := database.GetWorkspace(ctx, ws.Id)
+	got, err := database.GetWorkspace(ctx, ws.ID)
 	require.NoError(err)
 	assert.Nil(got)
 	_, err = os.Lstat(worktreePath)
@@ -100,7 +96,7 @@ func TestWorkspaceForceDeleteQuarantinesReplacedWorktreeAndAllowsRecreateE2E(
 	recreateCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	recreated := createReadyWorkspace(t, recreateCtx, client)
-	assert.NotEqual(ws.Id, recreated.Id)
+	assert.NotEqual(ws.ID, recreated.ID)
 	assert.Equal(worktreePath, recreated.WorktreePath)
 	require.FileExists(filepath.Join(recreated.WorktreePath, ".git"))
 }
@@ -124,15 +120,13 @@ func TestWorkspaceForceDeleteQuarantinesReplacementFileAndAllowsRecreateE2E(
 	))
 
 	force := true
-	deleteResp, err := client.HTTP.DeleteWorkspaceWithResponse(
-		ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &force},
-	)
+	deleteResp, err := client.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: ws.ID}, Query: &generated.DeleteWorkspaceQuery{Force: &force}})
 	require.NoError(err)
 	require.Equal(
-		http.StatusNoContent, deleteResp.StatusCode(), string(deleteResp.Body),
+		http.StatusNoContent, deleteResp.StatusCode, string(deleteResp.Body),
 	)
 
-	stored, err := database.GetWorkspace(ctx, ws.Id)
+	stored, err := database.GetWorkspace(ctx, ws.ID)
 	require.NoError(err)
 	assert.Nil(stored)
 	_, err = os.Lstat(worktreePath)
@@ -145,7 +139,7 @@ func TestWorkspaceForceDeleteQuarantinesReplacementFileAndAllowsRecreateE2E(
 	assert.Equal("preserve replacement file\n", string(contents))
 
 	recreated := createReadyWorkspace(t, ctx, client)
-	assert.NotEqual(ws.Id, recreated.Id)
+	assert.NotEqual(ws.ID, recreated.ID)
 	assert.Equal(worktreePath, recreated.WorktreePath)
 	require.FileExists(filepath.Join(recreated.WorktreePath, ".git"))
 }
@@ -182,15 +176,13 @@ func TestWorkspaceForceDeleteReplacementCloneClearsManagedRegistrationE2E(
 	foreignHead := gitfixture.SHA(t, worktreePath, "HEAD")
 
 	force := true
-	deleteResp, err := fixture.client.HTTP.DeleteWorkspaceWithResponse(
-		ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &force},
-	)
+	deleteResp, err := fixture.client.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: ws.ID}, Query: &generated.DeleteWorkspaceQuery{Force: &force}})
 	require.NoError(err)
 	require.Equal(
-		http.StatusNoContent, deleteResp.StatusCode(), string(deleteResp.Body),
+		http.StatusNoContent, deleteResp.StatusCode, string(deleteResp.Body),
 	)
 
-	stored, err := fixture.database.GetWorkspace(ctx, ws.Id)
+	stored, err := fixture.database.GetWorkspace(ctx, ws.ID)
 	require.NoError(err)
 	assert.Nil(stored)
 	assert.Equal(foreignHead, gitfixture.SHA(t, worktreePath, "HEAD"))
@@ -247,15 +239,13 @@ func TestWorkspaceForceDeletePreservesSameOriginForeignLinkedWorktreeE2E(
 	foreignHead := gitfixture.SHA(t, worktreePath, "HEAD")
 
 	force := true
-	deleteResp, err := fixture.client.HTTP.DeleteWorkspaceWithResponse(
-		ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &force},
-	)
+	deleteResp, err := fixture.client.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: ws.ID}, Query: &generated.DeleteWorkspaceQuery{Force: &force}})
 	require.NoError(err)
 	require.Equal(
-		http.StatusNoContent, deleteResp.StatusCode(), string(deleteResp.Body),
+		http.StatusNoContent, deleteResp.StatusCode, string(deleteResp.Body),
 	)
 
-	stored, err := fixture.database.GetWorkspace(ctx, ws.Id)
+	stored, err := fixture.database.GetWorkspace(ctx, ws.ID)
 	require.NoError(err)
 	assert.Nil(stored)
 	require.FileExists(filepath.Join(worktreePath, ".git"))
@@ -327,15 +317,13 @@ func TestWorkspaceForceDeletePreservesForeignLinkedWorktreeAfterManagedPruneE2E(
 	foreignHead := gitfixture.SHA(t, worktreePath, "HEAD")
 
 	force := true
-	deleteResp, err := fixture.client.HTTP.DeleteWorkspaceWithResponse(
-		ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &force},
-	)
+	deleteResp, err := fixture.client.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: ws.ID}, Query: &generated.DeleteWorkspaceQuery{Force: &force}})
 	require.NoError(err)
 	require.Equal(
-		http.StatusNoContent, deleteResp.StatusCode(), string(deleteResp.Body),
+		http.StatusNoContent, deleteResp.StatusCode, string(deleteResp.Body),
 	)
 
-	stored, err := fixture.database.GetWorkspace(ctx, ws.Id)
+	stored, err := fixture.database.GetWorkspace(ctx, ws.ID)
 	require.NoError(err)
 	assert.Nil(stored)
 	require.FileExists(filepath.Join(worktreePath, ".git"))
@@ -383,15 +371,13 @@ func TestWorkspaceForceDeleteRemovesSameRepoReplacementAfterManagedPruneE2E(
 	foreignHead := gitfixture.SHA(t, worktreePath, "HEAD")
 
 	force := true
-	deleteResp, err := fixture.client.HTTP.DeleteWorkspaceWithResponse(
-		ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &force},
-	)
+	deleteResp, err := fixture.client.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: ws.ID}, Query: &generated.DeleteWorkspaceQuery{Force: &force}})
 	require.NoError(err)
 	require.Equal(
-		http.StatusNoContent, deleteResp.StatusCode(), string(deleteResp.Body),
+		http.StatusNoContent, deleteResp.StatusCode, string(deleteResp.Body),
 	)
 
-	stored, err := fixture.database.GetWorkspace(ctx, ws.Id)
+	stored, err := fixture.database.GetWorkspace(ctx, ws.ID)
 	require.NoError(err)
 	assert.Nil(stored)
 	require.NoDirExists(worktreePath)
@@ -429,15 +415,13 @@ func TestWorkspaceForceDeleteRemovesPreMarkerWorkspaceAfterUpgradeE2E(
 	require.NoError(os.Remove(filepath.Join(metadataDir, "kenn-forge-workspace-id")))
 
 	force := true
-	deleteResp, err := fixture.client.HTTP.DeleteWorkspaceWithResponse(
-		ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &force},
-	)
+	deleteResp, err := fixture.client.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: ws.ID}, Query: &generated.DeleteWorkspaceQuery{Force: &force}})
 	require.NoError(err)
 	require.Equal(
-		http.StatusNoContent, deleteResp.StatusCode(), string(deleteResp.Body),
+		http.StatusNoContent, deleteResp.StatusCode, string(deleteResp.Body),
 	)
 
-	stored, err := fixture.database.GetWorkspace(ctx, ws.Id)
+	stored, err := fixture.database.GetWorkspace(ctx, ws.ID)
 	require.NoError(err)
 	assert.Nil(stored)
 	require.NoDirExists(worktreePath)
@@ -463,20 +447,19 @@ func TestWorkspaceForceDeleteRetainsLockedWorktreeE2E(t *testing.T) {
 	)
 
 	force := true
-	deleteResp, err := fixture.client.HTTP.DeleteWorkspaceWithResponse(
-		ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &force},
-	)
-	require.NoError(err)
+	deleteResp, err := fixture.client.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: ws.ID}, Query: &generated.DeleteWorkspaceQuery{Force: &force}})
+	require.Error(err)
+	require.NotNil(deleteResp)
 	require.Equal(
 		http.StatusInternalServerError,
-		deleteResp.StatusCode(),
+		deleteResp.StatusCode,
 		string(deleteResp.Body),
 	)
 
-	stored, err := fixture.database.GetWorkspace(ctx, ws.Id)
+	stored, err := fixture.database.GetWorkspace(ctx, ws.ID)
 	require.NoError(err)
 	require.NotNil(stored)
-	assert.Equal(ws.Id, stored.ID)
+	assert.Equal(ws.ID, stored.ID)
 	require.FileExists(filepath.Join(ws.WorktreePath, ".git"))
 	assert.Contains(
 		workspaceGitOutput(t, fixture.bare, "worktree", "list", "--porcelain"),
@@ -488,17 +471,15 @@ func TestWorkspaceForceDeleteRetainsLockedWorktreeE2E(t *testing.T) {
 	)
 	marker, err := os.ReadFile(filepath.Join(metadataDir, "kenn-forge-workspace-id"))
 	require.NoError(err)
-	assert.Equal(ws.Id+"\n", string(marker))
+	assert.Equal(ws.ID+"\n", string(marker))
 
 	gitfixture.Run(t, fixture.bare, "worktree", "unlock", ws.WorktreePath)
-	deleteResp, err = fixture.client.HTTP.DeleteWorkspaceWithResponse(
-		ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &force},
-	)
+	deleteResp, err = fixture.client.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: ws.ID}, Query: &generated.DeleteWorkspaceQuery{Force: &force}})
 	require.NoError(err)
 	require.Equal(
-		http.StatusNoContent, deleteResp.StatusCode(), string(deleteResp.Body),
+		http.StatusNoContent, deleteResp.StatusCode, string(deleteResp.Body),
 	)
-	stored, err = fixture.database.GetWorkspace(ctx, ws.Id)
+	stored, err = fixture.database.GetWorkspace(ctx, ws.ID)
 	require.NoError(err)
 	assert.Nil(stored)
 }
@@ -530,15 +511,13 @@ func TestWorkspaceForceDeleteForgetsSymlinkToSameRepoWorktreeE2E(
 	foreignHead := gitfixture.SHA(t, targetPath, "HEAD")
 
 	force := true
-	deleteResp, err := fixture.client.HTTP.DeleteWorkspaceWithResponse(
-		ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &force},
-	)
+	deleteResp, err := fixture.client.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: ws.ID}, Query: &generated.DeleteWorkspaceQuery{Force: &force}})
 	require.NoError(err)
 	require.Equal(
-		http.StatusNoContent, deleteResp.StatusCode(), string(deleteResp.Body),
+		http.StatusNoContent, deleteResp.StatusCode, string(deleteResp.Body),
 	)
 
-	stored, err := fixture.database.GetWorkspace(ctx, ws.Id)
+	stored, err := fixture.database.GetWorkspace(ctx, ws.ID)
 	require.NoError(err)
 	assert.Nil(stored)
 	pathInfo, err := os.Lstat(worktreePath)
@@ -572,25 +551,20 @@ func TestWorkspaceCreateRejectsSymlinkedReusableWorktreeE2E(t *testing.T) {
 	require.NoError(os.Symlink(targetPath, worktreePath))
 	wantHead := gitfixture.SHA(t, targetPath, "HEAD")
 
-	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     1,
-		},
-	)
+	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     1,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
 
 	var terminal *generated.WorkspaceResponse
 	require.Eventually(func() bool {
-		getResp, getErr := fixture.client.HTTP.GetWorkspaceWithResponse(
-			ctx, createResp.JSON202.Id,
-		)
+		getResp, getErr := fixture.client.HTTP.GetWorkspaceWithResponse(ctx, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: createResp.JSON202.ID}})
 		if getErr != nil || getResp.JSON200 == nil ||
 			getResp.JSON200.Status == "creating" {
 			return false
@@ -636,16 +610,16 @@ func TestWorkspaceRetryAcceptsPreMarkerWorkspaceAfterUpgradeE2E(
 	require.NoError(os.Remove(filepath.Join(metadataDir, "kenn-forge-workspace-id")))
 	errorMessage := "simulate setup failure before upgrade"
 	require.NoError(fixture.database.UpdateWorkspaceStatus(
-		ctx, ws.Id, "error", &errorMessage,
+		ctx, ws.ID, "error", &errorMessage,
 	))
 
-	retryResp, err := fixture.client.HTTP.RetryWorkspaceWithResponse(ctx, ws.Id)
+	retryResp, err := fixture.client.HTTP.RetryWorkspaceWithResponse(ctx, &generated.RetryWorkspaceRequestOptions{PathParams: &generated.RetryWorkspacePath{ID: ws.ID}})
 	require.NoError(err)
 	require.Equal(
-		http.StatusAccepted, retryResp.StatusCode(), string(retryResp.Body),
+		http.StatusAccepted, retryResp.StatusCode, string(retryResp.Body),
 	)
 
-	ready := waitForWorkspaceReady(t, ctx, fixture.client, ws.Id)
+	ready := waitForWorkspaceReady(t, ctx, fixture.client, ws.ID)
 	assert.Equal(branch, workspaceGitOutput(
 		t, ready.WorktreePath, "branch", "--show-current",
 	))
@@ -658,7 +632,7 @@ func TestWorkspaceRetryAcceptsPreMarkerWorkspaceAfterUpgradeE2E(
 		newMetadataDir, "kenn-forge-workspace-id",
 	))
 	require.NoError(err)
-	assert.Equal(ws.Id+"\n", string(marker))
+	assert.Equal(ws.ID+"\n", string(marker))
 }
 
 func TestWorkspaceRetryCleansStalePreMarkerRegistrationE2E(t *testing.T) {
@@ -681,16 +655,16 @@ func TestWorkspaceRetryCleansStalePreMarkerRegistrationE2E(t *testing.T) {
 	require.NoError(os.RemoveAll(ws.WorktreePath))
 	errorMessage := "simulate missing worktree after upgrade"
 	require.NoError(fixture.database.UpdateWorkspaceStatus(
-		ctx, ws.Id, "error", &errorMessage,
+		ctx, ws.ID, "error", &errorMessage,
 	))
 
-	retryResp, err := fixture.client.HTTP.RetryWorkspaceWithResponse(ctx, ws.Id)
+	retryResp, err := fixture.client.HTTP.RetryWorkspaceWithResponse(ctx, &generated.RetryWorkspaceRequestOptions{PathParams: &generated.RetryWorkspacePath{ID: ws.ID}})
 	require.NoError(err)
 	require.Equal(
-		http.StatusAccepted, retryResp.StatusCode(), string(retryResp.Body),
+		http.StatusAccepted, retryResp.StatusCode, string(retryResp.Body),
 	)
 
-	ready := waitForWorkspaceReady(t, ctx, fixture.client, ws.Id)
+	ready := waitForWorkspaceReady(t, ctx, fixture.client, ws.ID)
 	assert.Equal(savedHead, workspaceGitOutput(t, ready.WorktreePath, "rev-parse", "HEAD"))
 	assert.Equal(branch, workspaceGitOutput(
 		t, ready.WorktreePath, "branch", "--show-current",
@@ -704,7 +678,7 @@ func TestWorkspaceRetryCleansStalePreMarkerRegistrationE2E(t *testing.T) {
 		newMetadataDir, "kenn-forge-workspace-id",
 	))
 	require.NoError(err)
-	assert.Equal(ws.Id+"\n", string(marker))
+	assert.Equal(ws.ID+"\n", string(marker))
 }
 
 func TestWorkspaceCreateOccupiedPathCreatesNoBranchesE2E(t *testing.T) {
@@ -742,25 +716,20 @@ func TestWorkspaceCreateOccupiedPathCreatesNoBranchesE2E(t *testing.T) {
 		filepath.Join(worktreePath, "keep.txt"), []byte("preserve me\n"), 0o644,
 	))
 
-	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     mrNumber,
-		},
-	)
+	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     mrNumber,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
 
 	var errored *generated.WorkspaceResponse
 	require.Eventually(func() bool {
-		getResp, getErr := fixture.client.HTTP.GetWorkspaceWithResponse(
-			ctx, createResp.JSON202.Id,
-		)
+		getResp, getErr := fixture.client.HTTP.GetWorkspaceWithResponse(ctx, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: createResp.JSON202.ID}})
 		if getErr != nil || getResp.JSON200 == nil ||
 			getResp.JSON200.Status != "error" {
 			return false
@@ -771,7 +740,7 @@ func TestWorkspaceCreateOccupiedPathCreatesNoBranchesE2E(t *testing.T) {
 	require.NotNil(errored.ErrorMessage)
 	assert.NotEmpty(*errored.ErrorMessage)
 
-	stored, err := fixture.database.GetWorkspace(ctx, createResp.JSON202.Id)
+	stored, err := fixture.database.GetWorkspace(ctx, createResp.JSON202.ID)
 	require.NoError(err)
 	require.NotNil(stored)
 	assert.Equal("error", stored.Status)
@@ -796,24 +765,21 @@ func TestWorkspaceCreateSameRepoHeadCloneURLTracksOriginBranchE2E(t *testing.T) 
 	gitfixture.Run(t, clonePath, "update-ref", "refs/pull/2/head", headSHA)
 	seedPROnHost(t, database, "github.com", "acme", "widget", 2)
 
-	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     2,
-		},
-	)
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     2,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
 
-	ws := waitForWorkspaceReady(t, ctx, client, createResp.JSON202.Id)
+	ws := waitForWorkspaceReady(t, ctx, client, createResp.JSON202.ID)
 	require.NotNil(ws.MrHeadRepoKind)
 	assert.Equal(generated.WorkspaceResponseMrHeadRepoKindSameRepo, *ws.MrHeadRepoKind)
-	stored, err := database.GetWorkspace(ctx, ws.Id)
+	stored, err := database.GetWorkspace(ctx, ws.ID)
 	require.NoError(err)
 	require.NotNil(stored)
 	assert.Nil(stored.MRHeadRepo)
@@ -893,9 +859,9 @@ func TestWorkspaceRetryUnknownHeadRepoFailsClosedE2E(t *testing.T) {
 		SourceVisibleUntil: issuedAt.Add(db.WorkspaceLaunchSpecVisibilityLease),
 	}))
 
-	retryResp, err := fixture.client.HTTP.RetryWorkspaceWithResponse(ctx, workspaceID)
+	retryResp, err := fixture.client.HTTP.RetryWorkspaceWithResponse(ctx, &generated.RetryWorkspaceRequestOptions{PathParams: &generated.RetryWorkspacePath{ID: workspaceID}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, retryResp.StatusCode())
+	require.Equal(http.StatusAccepted, retryResp.StatusCode)
 
 	var stored *db.Workspace
 	require.Eventually(func() bool {
@@ -910,9 +876,9 @@ func TestWorkspaceRetryUnknownHeadRepoFailsClosedE2E(t *testing.T) {
 	assert.Empty(*stored.MRHeadRepo)
 	assert.NoDirExists(stored.WorktreePath)
 
-	response, err := fixture.client.HTTP.GetWorkspaceWithResponse(ctx, workspaceID)
+	response, err := fixture.client.HTTP.GetWorkspaceWithResponse(ctx, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: workspaceID}})
 	require.NoError(err)
-	require.Equal(http.StatusOK, response.StatusCode())
+	require.Equal(http.StatusOK, response.StatusCode)
 	require.NotNil(response.JSON200)
 	require.NotNil(response.JSON200.MrHeadRepoKind)
 	assert.Equal(
@@ -930,31 +896,25 @@ func TestWorkspaceDeletePreservesUserCreatedBranch(t *testing.T) {
 	client, _, clonePath, _ := setupLifecycleWorkspaceServer(t)
 	ctx := t.Context()
 
-	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     1,
-		},
-	)
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     1,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
 
-	ws := waitForWorkspaceReady(t, ctx, client, createResp.JSON202.Id)
+	ws := waitForWorkspaceReady(t, ctx, client, createResp.JSON202.ID)
 	gitfixture.Run(t, ws.WorktreePath, "checkout", "-b", "user-scratch")
 	scratchSHA := gitfixture.SHA(t, ws.WorktreePath, "HEAD")
 
 	force := true
-	deleteResp, err := client.HTTP.DeleteWorkspaceWithResponse(
-		ctx, createResp.JSON202.Id,
-		&generated.DeleteWorkspaceParams{Force: &force},
-	)
+	deleteResp, err := client.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: createResp.JSON202.ID}, Query: &generated.DeleteWorkspaceQuery{Force: &force}})
 	require.NoError(err)
-	require.Equal(http.StatusNoContent, deleteResp.StatusCode())
+	require.Equal(http.StatusNoContent, deleteResp.StatusCode)
 
 	assert.Equal(
 		scratchSHA,
@@ -996,12 +956,10 @@ func TestWorkspaceDeleteDoesNotCleanupReplacementCloneE2E(t *testing.T) {
 	}))
 
 	force := true
-	deleteResp, err := client.HTTP.DeleteWorkspaceWithResponse(
-		ctx, wsID, &generated.DeleteWorkspaceParams{Force: &force},
-	)
+	deleteResp, err := client.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: wsID}, Query: &generated.DeleteWorkspaceQuery{Force: &force}})
 
 	require.NoError(err)
-	require.Equal(http.StatusNoContent, deleteResp.StatusCode())
+	require.Equal(http.StatusNoContent, deleteResp.StatusCode)
 	assert.DirExists(replacementClone)
 	assert.Equal(branchSHA, gitfixture.SHA(t, replacementClone, "refs/heads/"+branch))
 	got, err := database.GetWorkspace(ctx, wsID)
@@ -1037,21 +995,18 @@ func TestWorkspaceCreatePreservesExistingLocalPreferredBranch(t *testing.T) {
 	assert.NotEqual(originSHA, privateSHA)
 	assert.Equal(privateSHA, gitfixture.SHA(t, clonePath, "refs/heads/feature"))
 
-	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     1,
-		},
-	)
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     1,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
 
-	ws := waitForWorkspaceReady(t, ctx, client, createResp.JSON202.Id)
+	ws := waitForWorkspaceReady(t, ctx, client, createResp.JSON202.ID)
 	assert.Equal(
 		"kenn-forge/pr-1",
 		workspaceGitOutput(t, ws.WorktreePath, "branch", "--show-current"),
@@ -1060,12 +1015,9 @@ func TestWorkspaceCreatePreservesExistingLocalPreferredBranch(t *testing.T) {
 	assert.Equal(privateSHA, gitfixture.SHA(t, clonePath, "refs/heads/feature"))
 
 	force := true
-	deleteResp, err := client.HTTP.DeleteWorkspaceWithResponse(
-		ctx, createResp.JSON202.Id,
-		&generated.DeleteWorkspaceParams{Force: &force},
-	)
+	deleteResp, err := client.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: createResp.JSON202.ID}, Query: &generated.DeleteWorkspaceQuery{Force: &force}})
 	require.NoError(err)
-	require.Equal(http.StatusNoContent, deleteResp.StatusCode())
+	require.Equal(http.StatusNoContent, deleteResp.StatusCode)
 
 	assert.Equal(privateSHA, gitfixture.SHA(t, clonePath, "refs/heads/feature"))
 }
@@ -1095,21 +1047,18 @@ func TestWorkspaceDeleteLegacySyntheticBranchAllowsRecreate(t *testing.T) {
 	originSHA := gitfixture.SHA(t, remotePath, "refs/heads/feature")
 	assert.NotEqual(originSHA, privateSHA)
 
-	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     1,
-		},
-	)
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     1,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
 
-	ws := waitForWorkspaceReady(t, ctx, client, createResp.JSON202.Id)
+	ws := waitForWorkspaceReady(t, ctx, client, createResp.JSON202.ID)
 	assert.Equal(
 		"kenn-forge/pr-1",
 		workspaceGitOutput(t, ws.WorktreePath, "branch", "--show-current"),
@@ -1119,35 +1068,29 @@ func TestWorkspaceDeleteLegacySyntheticBranchAllowsRecreate(t *testing.T) {
 		UPDATE forge_workspaces
 		SET workspace_branch = '__kenn_forge_unknown__'
 		WHERE id = ?`,
-		createResp.JSON202.Id,
+		createResp.JSON202.ID,
 	)
 	require.NoError(err)
 
 	force := true
-	deleteResp, err := client.HTTP.DeleteWorkspaceWithResponse(
-		ctx, createResp.JSON202.Id,
-		&generated.DeleteWorkspaceParams{Force: &force},
-	)
+	deleteResp, err := client.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: createResp.JSON202.ID}, Query: &generated.DeleteWorkspaceQuery{Force: &force}})
 	require.NoError(err)
-	require.Equal(http.StatusNoContent, deleteResp.StatusCode())
+	require.Equal(http.StatusNoContent, deleteResp.StatusCode)
 
 	gitfixture.Run(t, clonePath, "fetch", "--prune", "origin")
 
-	recreateResp, err := client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     1,
-		},
-	)
+	recreateResp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     1,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, recreateResp.StatusCode())
+	require.Equal(http.StatusAccepted, recreateResp.StatusCode)
 	require.NotNil(recreateResp.JSON202)
 
-	recreated := waitForWorkspaceReady(t, ctx, client, recreateResp.JSON202.Id)
+	recreated := waitForWorkspaceReady(t, ctx, client, recreateResp.JSON202.ID)
 	assert.Equal(
 		"kenn-forge/pr-1",
 		workspaceGitOutput(t, recreated.WorktreePath, "branch", "--show-current"),
@@ -1165,20 +1108,17 @@ func TestWorkspaceDeleteDirty(t *testing.T) {
 	ctx := t.Context()
 
 	// Create workspace.
-	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     1,
-		},
-	)
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     1,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
 	require.NotNil(createResp.JSON202)
-	wsID := createResp.JSON202.Id
+	wsID := createResp.JSON202.ID
 
 	ready := waitForWorkspaceReady(t, ctx, client, wsID)
 	wsPath := ready.WorktreePath
@@ -1190,44 +1130,36 @@ func TestWorkspaceDeleteDirty(t *testing.T) {
 	))
 
 	// DELETE without force -> 409.
-	delResp, err := client.HTTP.DeleteWorkspaceWithResponse(
-		ctx, wsID, &generated.DeleteWorkspaceParams{},
-	)
-	require.NoError(err)
-	assert.Equal(http.StatusConflict, delResp.StatusCode())
+	delResp, err := client.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: wsID}, Query: &generated.DeleteWorkspaceQuery{}})
+	require.Error(err)
+	require.NotNil(delResp)
+	assert.Equal(http.StatusConflict, delResp.StatusCode)
 
 	// DELETE with force -> 204.
 	force := true
-	delResp2, err := client.HTTP.DeleteWorkspaceWithResponse(
-		ctx, wsID,
-		&generated.DeleteWorkspaceParams{Force: &force},
-	)
+	delResp2, err := client.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: wsID}, Query: &generated.DeleteWorkspaceQuery{Force: &force}})
 	require.NoError(err)
-	assert.Equal(http.StatusNoContent, delResp2.StatusCode())
+	assert.Equal(http.StatusNoContent, delResp2.StatusCode)
 
 	// Verify deleted.
-	getResp, err := client.HTTP.GetWorkspaceWithResponse(
-		ctx, wsID,
-	)
-	require.NoError(err)
-	assert.Equal(http.StatusNotFound, getResp.StatusCode())
+	getResp, err := client.HTTP.GetWorkspaceWithResponse(ctx, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: wsID}})
+	require.Error(err)
+	require.NotNil(getResp)
+	assert.Equal(http.StatusNotFound, getResp.StatusCode)
 
 	// --- Second scenario: corrupt/missing worktree ---
 	// Seed a second PR and create a workspace for it.
 	seedPROnHost(t, database, "github.com", "acme", "widget", 2)
-	create2, err := client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     2,
-		},
-	)
+	create2, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     2,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, create2.StatusCode())
-	ws2ID := create2.JSON202.Id
+	require.Equal(http.StatusAccepted, create2.StatusCode)
+	ws2ID := create2.JSON202.ID
 
 	ready2 := waitForWorkspaceReady(t, ctx, client, ws2ID)
 	ws2Path := ready2.WorktreePath
@@ -1236,24 +1168,21 @@ func TestWorkspaceDeleteDirty(t *testing.T) {
 	require.NoError(os.RemoveAll(ws2Path))
 
 	// DELETE without force → 409 (dirty check fails on missing dir).
-	del3, err := client.HTTP.DeleteWorkspaceWithResponse(
-		ctx, ws2ID, &generated.DeleteWorkspaceParams{},
-	)
-	require.NoError(err)
-	assert.Equal(http.StatusConflict, del3.StatusCode())
+	del3, err := client.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: ws2ID}, Query: &generated.DeleteWorkspaceQuery{}})
+	require.Error(err)
+	require.NotNil(del3)
+	assert.Equal(http.StatusConflict, del3.StatusCode)
 
 	// DELETE with force → 204.
-	del4, err := client.HTTP.DeleteWorkspaceWithResponse(
-		ctx, ws2ID,
-		&generated.DeleteWorkspaceParams{Force: &force},
-	)
+	del4, err := client.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: ws2ID}, Query: &generated.DeleteWorkspaceQuery{Force: &force}})
 	require.NoError(err)
-	assert.Equal(http.StatusNoContent, del4.StatusCode())
+	assert.Equal(http.StatusNoContent, del4.StatusCode)
 
 	// Verify deleted.
-	get2, err := client.HTTP.GetWorkspaceWithResponse(ctx, ws2ID)
-	require.NoError(err)
-	assert.Equal(http.StatusNotFound, get2.StatusCode())
+	get2, err := client.HTTP.GetWorkspaceWithResponse(ctx, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: ws2ID}})
+	require.Error(err)
+	require.NotNil(get2)
+	assert.Equal(http.StatusNotFound, get2.StatusCode)
 }
 
 func TestWorkspaceForceDeleteToleratesMissingWorktreeCommonDirE2E(
@@ -1268,15 +1197,13 @@ func TestWorkspaceForceDeleteToleratesMissingWorktreeCommonDirE2E(
 	installGitCommonDirReadFailure(t)
 
 	force := true
-	delResp, err := client.HTTP.DeleteWorkspaceWithResponse(
-		ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &force},
-	)
+	delResp, err := client.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: ws.ID}, Query: &generated.DeleteWorkspaceQuery{Force: &force}})
 	require.NoError(err)
 	require.Equal(
-		http.StatusNoContent, delResp.StatusCode(), string(delResp.Body),
+		http.StatusNoContent, delResp.StatusCode, string(delResp.Body),
 	)
 
-	got, err := database.GetWorkspace(ctx, ws.Id)
+	got, err := database.GetWorkspace(ctx, ws.ID)
 	require.NoError(err)
 	assert.Nil(got)
 }

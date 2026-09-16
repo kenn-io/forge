@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	apiruntime "github.com/doordash-oss/oapi-codegen-dd/v3/pkg/runtime"
+	"go.kenn.io/forge/internal/apiclient"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -76,12 +78,12 @@ func TestSettingsAPIE2EReadUpdateAndValidation(t *testing.T) {
 	require.NoError(json.NewDecoder(getResp.Body).Decode(&settings))
 	require.Len(settings.Repos, 1)
 	assert.Equal("acme", settings.Repos[0].Owner)
-	assert.Equal(generated.Threaded, settings.Activity.ViewMode)
+	assert.Equal(generated.ActivityViewModeThreaded, settings.Activity.ViewMode)
 	assert.True(settings.Activity.CollapseThreads)
 	require.NotNil(settings.LaunchTargets)
-	assert.NotEmpty(*settings.LaunchTargets)
+	assert.NotEmpty(settings.LaunchTargets)
 	plainShellTarget := findSettingsLaunchTarget(
-		t, *settings.LaunchTargets, "plain_shell",
+		t, settings.LaunchTargets, "plain_shell",
 	)
 	assert.Equal("Shell", plainShellTarget.Label)
 	assert.Equal("plain_shell", plainShellTarget.Kind)
@@ -781,7 +783,7 @@ func TestRepoConfigAPIE2EUpdatesUIVisibility(t *testing.T) {
 	var hidden generated.SettingsResponse
 	require.NoError(json.NewDecoder(hideResp.Body).Decode(&hidden))
 	require.Len(hidden.Repos, 1)
-	assert.True(hidden.Repos[0].HiddenFromUi)
+	assert.True(hidden.Repos[0].HiddenFromUI)
 	assert.Empty(summaryNames(),
 		"hidden repo leaves the repository overview summaries")
 
@@ -796,7 +798,7 @@ func TestRepoConfigAPIE2EUpdatesUIVisibility(t *testing.T) {
 	var shown generated.SettingsResponse
 	require.NoError(json.NewDecoder(showResp.Body).Decode(&shown))
 	require.Len(shown.Repos, 1)
-	assert.False(shown.Repos[0].HiddenFromUi)
+	assert.False(shown.Repos[0].HiddenFromUI)
 	assert.Equal([]string{"widget"}, summaryNames(),
 		"showing restores the repo in the repository overview summaries")
 }
@@ -838,7 +840,7 @@ func TestRepoConfigAPIE2ERejectsUnsafeWorktreeScopedBaseConfig(t *testing.T) {
 // e2e tests: a configured repo, seeded DB, running server, and API client.
 type settingsWorkspaceEnv struct {
 	ts           *httptest.Server
-	client       *generated.ClientWithResponses
+	client       *generated.Client
 	database     *db.DB
 	localRepo    string
 	remote       string
@@ -913,9 +915,9 @@ name = "widget"
 	// The server validates the request Host against its configured listen
 	// address, so the generated client must present the configured host
 	// rather than the random httptest port.
-	client, err := generated.NewClientWithResponses(
-		ts.URL+"/api/v1",
-		generated.WithRequestEditorFn(
+	apiClient, err := apiclient.NewWithHTTPClient(
+		ts.URL, ts.Client(),
+		apiruntime.WithRequestEditorFn(
 			func(_ context.Context, req *http.Request) error {
 				setAcceptedHostForE2ETest(req)
 				return nil
@@ -925,7 +927,7 @@ name = "widget"
 	require.NoError(err)
 	return settingsWorkspaceEnv{
 		ts:           ts,
-		client:       client,
+		client:       apiClient.HTTP,
 		database:     database,
 		localRepo:    localRepo,
 		remote:       remote,
@@ -938,12 +940,9 @@ name = "widget"
 // validation needs to observe.
 func (env settingsWorkspaceEnv) setWorktreeBase(t *testing.T) {
 	t.Helper()
-	resp, err := env.client.UpdateRepoWorktreeBaseOnHostWithResponse(
-		t.Context(), env.platformHost, "github", "acme", "widget",
-		generated.RepoWorktreeBaseRequest{WorktreeBasePath: env.localRepo},
-	)
+	resp, err := env.client.UpdateRepoWorktreeBaseOnHostWithResponse(t.Context(), &generated.UpdateRepoWorktreeBaseOnHostRequestOptions{PathParams: &generated.UpdateRepoWorktreeBaseOnHostPath{PlatformHost: env.platformHost, Provider: "github", Owner: "acme", Name: "widget"}, Body: &generated.RepoWorktreeBaseRequest{WorktreeBasePath: env.localRepo}})
 	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode(), string(resp.Body))
+	require.Equal(t, http.StatusOK, resp.StatusCode, string(resp.Body))
 }
 
 func TestRepoConfigAPIE2EWorkspaceCreationUsesWorktreeBasePath(t *testing.T) {
@@ -964,24 +963,21 @@ func TestRepoConfigAPIE2EWorkspaceCreationUsesWorktreeBasePath(t *testing.T) {
 	runSettingsGit(t, localRepo, "fetch", "--prune", "origin")
 
 	env.setWorktreeBase(t)
-	createResp, err := client.CreateWorkspaceWithResponse(
-		t.Context(),
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: platformHost,
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     42,
-		},
-	)
+	createResp, err := client.CreateWorkspaceWithResponse(t.Context(), &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: platformHost,
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     42,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode(), string(createResp.Body))
+	require.Equal(http.StatusAccepted, createResp.StatusCode, string(createResp.Body))
 	require.NotNil(createResp.JSON202)
 
-	ready := waitForSettingsWorkspaceReady(t, client, createResp.JSON202.Id)
+	ready := waitForSettingsWorkspaceReady(t, client, createResp.JSON202.ID)
 	assert.Equal("ready", ready.Status)
 	assert.Equal("feature/thing", ready.GitHeadRef)
-	stored, err := database.GetWorkspace(t.Context(), ready.Id)
+	stored, err := database.GetWorkspace(t.Context(), ready.ID)
 	require.NoError(err)
 	require.NotNil(stored)
 	assert.Equal("feature/thing", stored.WorkspaceBranch)
@@ -1016,24 +1012,21 @@ func TestRepoConfigAPIE2EWorkspaceCreationUsesFallbackBranchWhenPreferredChecked
 	)
 
 	env.setWorktreeBase(t)
-	createResp, err := client.CreateWorkspaceWithResponse(
-		t.Context(),
-		generated.CreateWorkspaceInputBody{
-			Provider:     "github",
-			PlatformHost: platformHost,
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     42,
-		},
-	)
+	createResp, err := client.CreateWorkspaceWithResponse(t.Context(), &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     "github",
+		PlatformHost: platformHost,
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     42,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode(), string(createResp.Body))
+	require.Equal(http.StatusAccepted, createResp.StatusCode, string(createResp.Body))
 	require.NotNil(createResp.JSON202)
 
-	ready := waitForSettingsWorkspaceReady(t, client, createResp.JSON202.Id)
+	ready := waitForSettingsWorkspaceReady(t, client, createResp.JSON202.ID)
 	assert.Equal("ready", ready.Status)
 	assert.Equal("feature/thing", ready.GitHeadRef)
-	stored, err := database.GetWorkspace(t.Context(), ready.Id)
+	stored, err := database.GetWorkspace(t.Context(), ready.ID)
 	require.NoError(err)
 	require.NotNil(stored)
 	assert.Equal("kenn-forge/pr-42", stored.WorkspaceBranch)
@@ -1075,22 +1068,21 @@ func TestWorkspaceAPIE2ERejectsEmptyProviderForAmbiguousRepo(t *testing.T) {
 		require.NoError(err)
 		seedSettingsWorkspaceMR(t, database, repoID, 7, "feature")
 	}
-	client, err := generated.NewClientWithResponses(ts.URL + "/api/v1")
+	apiClient, err := apiclient.NewWithHTTPClient(ts.URL, ts.Client())
 	require.NoError(err)
+	client := apiClient.HTTP
 	provider := ""
 
-	resp, err := client.CreateWorkspaceWithResponse(
-		ctx,
-		generated.CreateWorkspaceInputBody{
-			Provider:     provider,
-			PlatformHost: "forge.example.com",
-			Owner:        "acme",
-			Name:         "widget",
-			MrNumber:     7,
-		},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusBadRequest, resp.StatusCode(), string(resp.Body))
+	resp, err := client.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider:     provider,
+		PlatformHost: "forge.example.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     7,
+	}})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusBadRequest, resp.StatusCode, string(resp.Body))
 
 	var problem struct {
 		Code    string         `json:"code"`
@@ -1117,29 +1109,26 @@ func TestRepoConfigAPIE2EDeleteReusedIssueBranchKeepsLocalBranch(t *testing.T) {
 
 	env.setWorktreeBase(t)
 	reuse := true
-	createResp, err := client.CreateIssueWorkspaceOnHostWithResponse(
-		t.Context(), platformHost, "github", "acme", "widget", 7,
-		generated.CreateIssueWorkspaceOnHostJSONRequestBody{
-			ReuseExistingBranch: &reuse,
-		},
-	)
+	createResp, err := client.CreateIssueWorkspaceOnHostWithResponse(t.Context(), &generated.CreateIssueWorkspaceOnHostRequestOptions{PathParams: &generated.CreateIssueWorkspaceOnHostPath{PlatformHost: platformHost, Provider: "github", Owner: "acme", Name: "widget", Number: int64(7)}, Body: &generated.CreateIssueWorkspaceOnHostBody{
+		ReuseExistingBranch: &reuse,
+	}})
 	require.NoError(err)
-	require.Equal(http.StatusAccepted, createResp.StatusCode(), string(createResp.Body))
+	require.Equal(http.StatusAccepted, createResp.StatusCode, string(createResp.Body))
 	require.NotNil(createResp.JSON202)
 
-	ready := waitForSettingsWorkspaceReady(t, client, createResp.JSON202.Id)
+	ready := waitForSettingsWorkspaceReady(t, client, createResp.JSON202.ID)
 	assert.Equal("ready", ready.Status)
 	assert.Equal(branch, strings.TrimSpace(string(runSettingsGitOutput(
 		t, ready.WorktreePath, "branch", "--show-current",
 	))))
-	stored, err := database.GetWorkspace(t.Context(), ready.Id)
+	stored, err := database.GetWorkspace(t.Context(), ready.ID)
 	require.NoError(err)
 	require.NotNil(stored)
 	assert.Empty(stored.WorkspaceBranch)
 
 	deleteResp := doServerJSON(
 		t, ts.Client(), http.MethodDelete,
-		ts.URL+"/api/v1/workspaces/"+ready.Id+"?force=true",
+		ts.URL+"/api/v1/workspaces/"+ready.ID+"?force=true",
 		map[string]any{},
 	)
 	defer deleteResp.Body.Close()
@@ -1318,7 +1307,7 @@ func seedSettingsWorkspaceIssue(
 
 func waitForSettingsWorkspaceReady(
 	t *testing.T,
-	client *generated.ClientWithResponses,
+	client *generated.Client,
 	workspaceID string,
 ) *generated.WorkspaceResponse {
 	t.Helper()
@@ -1328,9 +1317,9 @@ func waitForSettingsWorkspaceReady(
 	ticker := time.NewTicker(25 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		resp, err := client.GetWorkspaceWithResponse(ctx, workspaceID)
+		resp, err := client.GetWorkspaceWithResponse(ctx, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: workspaceID}})
 		require.NoError(t, err)
-		if resp.StatusCode() == http.StatusOK &&
+		if resp.StatusCode == http.StatusOK &&
 			resp.JSON200 != nil &&
 			resp.JSON200.Status == "ready" {
 			return resp.JSON200

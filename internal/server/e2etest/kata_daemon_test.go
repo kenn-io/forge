@@ -55,12 +55,12 @@ local = true
 	require.NoError(err)
 	roster, err := client.HTTP.ListKataDaemonsWithResponse(t.Context())
 	require.NoError(err)
-	require.Equal(http.StatusOK, roster.StatusCode(), string(roster.Body))
+	require.Equal(http.StatusOK, roster.StatusCode, string(roster.Body))
 	require.NotNil(roster.JSON200)
 	require.NotNil(roster.JSON200.Daemons)
 	require.Len(roster.JSON200.Daemons, 1)
 	localDaemon := roster.JSON200.Daemons[0]
-	assert.Equal("local", localDaemon.Id)
+	assert.Equal("local", localDaemon.ID)
 	assert.Equal("none", localDaemon.Auth)
 	assert.Equal("down", localDaemon.Health)
 
@@ -111,12 +111,12 @@ token_env = "KENN_FORGE_KATA_MISSING_TOKEN"
 	require.NoError(err)
 	roster, err := client.HTTP.ListKataDaemonsWithResponse(t.Context())
 	require.NoError(err)
-	require.Equal(http.StatusOK, roster.StatusCode(), string(roster.Body))
+	require.Equal(http.StatusOK, roster.StatusCode, string(roster.Body))
 	require.NotNil(roster.JSON200)
 	require.NotNil(roster.JSON200.Daemons)
 	require.Len(roster.JSON200.Daemons, 1)
 	localDaemon := roster.JSON200.Daemons[0]
-	assert.Equal("local", localDaemon.Id)
+	assert.Equal("local", localDaemon.ID)
 	assert.Equal("none", localDaemon.Auth)
 	assert.Equal("connected", localDaemon.Health)
 

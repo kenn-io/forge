@@ -85,7 +85,7 @@ func TestWorkspaceDiffEndpointsReportHeadAndPushedE2E(t *testing.T) {
 		[]byte("base  \n"), 0o644,
 	))
 
-	headFiles := requestWorkspaceFiles(t, srv, ws.Id, "head")
+	headFiles := requestWorkspaceFiles(t, srv, ws.ID, "head")
 	require.NotNil(headFiles.Files)
 	assertWorkspaceDiffPaths(
 		t,
@@ -100,7 +100,7 @@ func TestWorkspaceDiffEndpointsReportHeadAndPushedE2E(t *testing.T) {
 	)
 
 	headFilesHideWhitespace := requestWorkspaceFiles(
-		t, srv, ws.Id, "head", "hide",
+		t, srv, ws.ID, "head", "hide",
 	)
 	require.NotNil(headFilesHideWhitespace.Files)
 	assertWorkspaceDiffPaths(
@@ -110,7 +110,7 @@ func TestWorkspaceDiffEndpointsReportHeadAndPushedE2E(t *testing.T) {
 	)
 
 	headDiffHideWhitespace := requestWorkspaceDiff(
-		t, srv, ws.Id, "head", "hide",
+		t, srv, ws.ID, "head", "hide",
 	)
 	require.NotNil(headDiffHideWhitespace.Files)
 	assertWorkspaceDiffPaths(
@@ -119,7 +119,7 @@ func TestWorkspaceDiffEndpointsReportHeadAndPushedE2E(t *testing.T) {
 		[]string{".workspace-state.json", "dirty.go", "z-empty.txt"},
 	)
 
-	pushedDiff := requestWorkspaceDiff(t, srv, ws.Id, "pushed")
+	pushedDiff := requestWorkspaceDiff(t, srv, ws.ID, "pushed")
 	require.NotNil(pushedDiff.Files)
 	assertWorkspaceDiffPaths(
 		t,
@@ -164,10 +164,10 @@ func TestWorkspaceFilePreviewEndpointReturnsRequestedDiffSideContentE2E(t *testi
 		0o644,
 	))
 
-	oldPreview := requestWorkspaceFilePreview(t, srv, ws.Id, "head", path, "old")
+	oldPreview := requestWorkspaceFilePreview(t, srv, ws.ID, "head", path, "old")
 	oldDecoded, err := base64.StdEncoding.DecodeString(oldPreview.Content)
 	require.NoError(err)
-	newPreview := requestWorkspaceFilePreview(t, srv, ws.Id, "head", path, "new")
+	newPreview := requestWorkspaceFilePreview(t, srv, ws.ID, "head", path, "new")
 	newDecoded, err := base64.StdEncoding.DecodeString(newPreview.Content)
 	require.NoError(err)
 
@@ -279,7 +279,7 @@ func TestWorkspaceCommitsEndpointListsBranchCommitsE2E(t *testing.T) {
 	gitfixture.Run(t, ws.WorktreePath, "add", ".")
 	gitfixture.Run(t, ws.WorktreePath, "commit", "-m", "local two")
 
-	commits := requestWorkspaceCommits(t, srv, ws.Id)
+	commits := requestWorkspaceCommits(t, srv, ws.ID)
 	require.NotNil(commits.Commits)
 	require.Len(commits.Commits, 3)
 	assert.Equal("local two", commits.Commits[0].Message)
@@ -317,20 +317,20 @@ func TestWorkspaceDiffEndpointsAcceptCommitAndRangeScopesE2E(t *testing.T) {
 		[]byte("package dirty\n"), 0o644,
 	))
 
-	commits := requestWorkspaceCommits(t, srv, ws.Id)
+	commits := requestWorkspaceCommits(t, srv, ws.ID)
 	require.NotNil(commits.Commits)
 	require.Len(commits.Commits, 3)
 	newest := commits.Commits[0].Sha
 	older := commits.Commits[1].Sha
 
 	singleFiles := requestWorkspaceFilesQuery(
-		t, srv, ws.Id, "base=head&commit="+url.QueryEscape(newest),
+		t, srv, ws.ID, "base=head&commit="+url.QueryEscape(newest),
 	)
 	require.NotNil(singleFiles.Files)
 	assertWorkspaceDiffPaths(t, singleFiles.Files, []string{"local-two.go"})
 
 	singleDiff := requestWorkspaceDiffQuery(
-		t, srv, ws.Id, "base=head&commit="+url.QueryEscape(newest),
+		t, srv, ws.ID, "base=head&commit="+url.QueryEscape(newest),
 	)
 	require.NotNil(singleDiff.Files)
 	assertWorkspaceDiffPaths(t, singleDiff.Files, []string{"local-two.go"})
@@ -338,7 +338,7 @@ func TestWorkspaceDiffEndpointsAcceptCommitAndRangeScopesE2E(t *testing.T) {
 	rangeFiles := requestWorkspaceFilesQuery(
 		t,
 		srv,
-		ws.Id,
+		ws.ID,
 		"base=head&from="+url.QueryEscape(older)+"&to="+url.QueryEscape(newest),
 	)
 	require.NotNil(rangeFiles.Files)
@@ -351,7 +351,7 @@ func TestWorkspaceDiffEndpointsAcceptCommitAndRangeScopesE2E(t *testing.T) {
 	rangeDiff := requestWorkspaceDiffQuery(
 		t,
 		srv,
-		ws.Id,
+		ws.ID,
 		"base=head&from="+url.QueryEscape(older)+"&to="+url.QueryEscape(newest),
 	)
 	require.NotNil(rangeDiff.Files)
@@ -399,7 +399,7 @@ func TestWorkspaceDiffEndpointReportsMergeTargetE2E(t *testing.T) {
 		[]byte("package dirty\n"), 0o644,
 	))
 
-	mergeTargetFiles := requestWorkspaceFiles(t, srv, ws.Id, "merge-target")
+	mergeTargetFiles := requestWorkspaceFiles(t, srv, ws.ID, "merge-target")
 	require.NotNil(mergeTargetFiles.Files)
 	filePaths := workspaceDiffPaths(mergeTargetFiles.Files)
 	assert.Contains(filePaths, "new.txt")
@@ -407,7 +407,7 @@ func TestWorkspaceDiffEndpointReportsMergeTargetE2E(t *testing.T) {
 	assert.Contains(filePaths, "dirty.go")
 	assert.NotContains(filePaths, "target-only.txt")
 
-	mergeTargetDiff := requestWorkspaceDiff(t, srv, ws.Id, "merge-target")
+	mergeTargetDiff := requestWorkspaceDiff(t, srv, ws.ID, "merge-target")
 	require.NotNil(mergeTargetDiff.Files)
 	diffPaths := workspaceDiffPaths(mergeTargetDiff.Files)
 	assert.Contains(diffPaths, "new.txt")
@@ -492,7 +492,7 @@ func TestWorkspaceDiffEndpointRejectsOriginBaseE2E(t *testing.T) {
 
 	req := newWorkspaceFixtureRequest(
 		http.MethodGet,
-		"/api/v1/workspaces/"+ws.Id+"/diff?base=origin",
+		"/api/v1/workspaces/"+ws.ID+"/diff?base=origin",
 		nil,
 	)
 	rr := httptest.NewRecorder()
@@ -531,7 +531,7 @@ func TestWorkspaceDiffEndpointHandlesUntrackedSymlinkAndLargeFileE2E(t *testing.
 		0o644,
 	))
 
-	diff := requestWorkspaceDiff(t, srv, ws.Id, "head")
+	diff := requestWorkspaceDiff(t, srv, ws.ID, "head")
 	require.NotNil(diff.Files)
 
 	symlink := testutil.RequireWorkspaceDiffFile(t, diff.Files, "secret-link")
@@ -583,13 +583,13 @@ func TestWorkspaceDiffEndpointMarksGeneratedFilesE2E(t *testing.T) {
 		[]byte("export const source = true;\n"), 0o644,
 	))
 
-	files := requestWorkspaceFiles(t, srv, ws.Id, "head")
+	files := requestWorkspaceFiles(t, srv, ws.ID, "head")
 	require.NotNil(files.Files)
 	assert.True(testutil.RequireWorkspaceDiffFile(t, files.Files, "dist/api.ts").IsGenerated)
 	assert.False(testutil.RequireWorkspaceDiffFile(t, files.Files, "bun.lock").IsGenerated)
 	assert.False(testutil.RequireWorkspaceDiffFile(t, files.Files, "src.ts").IsGenerated)
 
-	diff := requestWorkspaceDiff(t, srv, ws.Id, "head")
+	diff := requestWorkspaceDiff(t, srv, ws.ID, "head")
 	require.NotNil(diff.Files)
 	assert.True(testutil.RequireWorkspaceDiffFile(t, diff.Files, "dist/api.ts").IsGenerated)
 	assert.False(testutil.RequireWorkspaceDiffFile(t, diff.Files, "bun.lock").IsGenerated)
@@ -607,7 +607,7 @@ func TestWorkspaceDiffEndpointScopesPatchByPathE2E(t *testing.T) {
 	require.NoError(os.WriteFile(filepath.Join(ws.WorktreePath, "first.go"), []byte("package first\n"), 0o644))
 	require.NoError(os.WriteFile(filepath.Join(ws.WorktreePath, "second.go"), []byte("package second\n"), 0o644))
 
-	diff := requestWorkspaceDiffForPath(t, fixture.server, ws.Id, "head", "first.go")
+	diff := requestWorkspaceDiffForPath(t, fixture.server, ws.ID, "head", "first.go")
 	require.NotNil(diff.Files)
 	require.Len(diff.Files, 1)
 	file := diff.Files[0]
@@ -636,13 +636,13 @@ func TestWorkspaceDiffPathPrefersCurrentPathOverEarlierRenameE2E(t *testing.T) {
 	gitfixture.Run(t, ws.WorktreePath, "add", "-A")
 	require.NoError(os.WriteFile(filepath.Join(ws.WorktreePath, "z.txt"), []byte("new current path\n"), 0o644))
 
-	diff := requestWorkspaceDiffForPath(t, fixture.server, ws.Id, "head", "z.txt")
+	diff := requestWorkspaceDiffForPath(t, fixture.server, ws.ID, "head", "z.txt")
 	require.NotNil(diff.Files)
 	require.Len(diff.Files, 1)
 	assert.Equal("z.txt", diff.Files[0].Path)
 	assert.Equal("added", diff.Files[0].Status)
 
-	preview := requestWorkspaceFilePreview(t, fixture.server, ws.Id, "head", "z.txt", "new")
+	preview := requestWorkspaceFilePreview(t, fixture.server, ws.ID, "head", "z.txt", "new")
 	content, err := base64.StdEncoding.DecodeString(preview.Content)
 	require.NoError(err)
 	assert.Equal("z.txt", preview.Path)
@@ -669,7 +669,7 @@ func TestWorkspaceDiffEndpointKeepsModifiedSourcePatchSeparateFromCopyE2E(t *tes
 	require.NoError(os.WriteFile(sourcePath, []byte("changed line\nshared line\n"), 0o644))
 	gitfixture.Run(t, ws.WorktreePath, "add", "src/z.txt")
 
-	diff := requestWorkspaceDiff(t, fixture.server, ws.Id, "head")
+	diff := requestWorkspaceDiff(t, fixture.server, ws.ID, "head")
 	require.NotNil(diff.Files)
 	source := testutil.RequireWorkspaceDiffFile(t, diff.Files, "src/a.txt")
 	copied := testutil.RequireWorkspaceDiffFile(t, diff.Files, "src/z.txt")

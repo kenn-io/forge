@@ -2,7 +2,7 @@ package testutil
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -20,7 +20,7 @@ func DoJSON(
 	t.Helper()
 	var buf bytes.Buffer
 	if body != nil {
-		require.NoError(t, json.NewEncoder(&buf).Encode(body))
+		require.NoError(t, json.MarshalWrite(&buf, body))
 	}
 	req := httptest.NewRequest(method, path, &buf)
 	req.Host = "127.0.0.1:8091"

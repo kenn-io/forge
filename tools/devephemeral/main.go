@@ -5,7 +5,8 @@ package main
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"flag"
 	"fmt"
@@ -69,7 +70,7 @@ type ephemeralStatus struct {
 	FrontendStartedAt string `json:"frontend_started_at,omitempty"`
 	BackendPort       int    `json:"backend_port"`
 	FrontendPort      int    `json:"frontend_port"`
-	MCPPort           int    `json:"mcp_port,omitempty"`
+	MCPPort           int    `json:"mcp_port,omitzero"`
 	ConfigPath        string `json:"config_path"`
 	DataDir           string `json:"data_dir"`
 	BackendURL        string `json:"backend_url"`
@@ -421,7 +422,7 @@ func writeStatusFile(path string, status ephemeralStatus) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("create status directory: %w", err)
 	}
-	content, err := json.MarshalIndent(status, "", "  ")
+	content, err := json.Marshal(status, jsontext.WithIndent("  "))
 	if err != nil {
 		return fmt.Errorf("encode status: %w", err)
 	}

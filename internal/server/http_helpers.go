@@ -2,7 +2,7 @@ package server
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 
 	"go.kenn.io/forge/internal/server/httpapi"
@@ -30,5 +30,5 @@ func writeProblemResponse(w http.ResponseWriter, problem *httpapi.ProblemError) 
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(problem.Status)
-	_ = json.NewEncoder(w).Encode(problem)
+	_ = json.MarshalWrite(w, problem)
 }

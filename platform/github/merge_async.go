@@ -2,7 +2,7 @@ package github
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"net/http"
@@ -176,7 +176,7 @@ func (c *Client) doMergeAsyncRequest(
 		return result, resp, requestErr
 	}
 	defer resp.Body.Close()
-	decodeErr := json.NewDecoder(resp.Body).Decode(&result)
+	decodeErr := json.UnmarshalRead(resp.Body, &result)
 	if decodeErr != nil {
 		return result, resp, decodeErr
 	}

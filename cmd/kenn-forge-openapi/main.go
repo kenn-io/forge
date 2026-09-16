@@ -2,7 +2,7 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"flag"
 	"fmt"
 	"os"
@@ -15,12 +15,20 @@ func main() {
 	var out string
 	var version string
 	var format string
+	var api string
 	flag.StringVar(&out, "out", "frontend/openapi/openapi.yaml", "path to write the generated OpenAPI document")
 	flag.StringVar(&version, "version", "3.1", "OpenAPI version to write: 3.1 or 3.0")
 	flag.StringVar(&format, "format", "auto", "OpenAPI format to write: auto, json, or yaml")
+	flag.StringVar(&api, "api", "main", "API to generate: main or health")
 	flag.Parse()
 
-	openAPI := server.NewOpenAPI()
+	openAPI := server.NewClientOpenAPI()
+	if api == "health" {
+		openAPI = server.NewHealthOpenAPI()
+	} else if api != "main" {
+		fmt.Fprintf(os.Stderr, "unsupported API %q\n", api)
+		os.Exit(1)
+	}
 	spec, err := renderSpec(openAPI, version, resolveFormat(out, format))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "render openapi: %v\n", err)
@@ -39,11 +47,11 @@ func main() {
 }
 
 func prettyJSON(spec []byte) ([]byte, error) {
-	var buf bytes.Buffer
-	if err := json.Indent(&buf, spec, "", "  "); err != nil {
+	value := jsontext.Value(spec).Clone()
+	if err := value.Indent(jsontext.WithIndent("  ")); err != nil {
 		return nil, err
 	}
-	return buf.Bytes(), nil
+	return value, nil
 }
 
 func resolveFormat(out, format string) string {

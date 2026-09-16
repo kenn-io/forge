@@ -12,6 +12,7 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { normalizePath } from "vite";
 import { parse } from "yaml";
 import { renderModule, schemaConstraints } from "../../scripts/generate-schema-constraints.mjs";
 
@@ -95,7 +96,7 @@ export function frontendApiClient() {
     apply: (_config, { isPreview }) => !isPreview && !process.env.VITEST,
     configResolved(config) {
       frontendDir = config.root;
-      specPath = resolve(frontendDir, "openapi/openapi.yaml");
+      specPath = normalizePath(resolve(frontendDir, "openapi/openapi.yaml"));
     },
     async buildStart() {
       this.addWatchFile(specPath);

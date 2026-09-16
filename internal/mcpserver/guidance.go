@@ -12,7 +12,11 @@ const guidanceResourceURI = "kenn-forge://mcp/guidance"
 //go:embed guidance.md
 var guidanceMarkdown string
 
-const reviewCandidatesPrompt = `Use kenn-forge's cached data to triage review work.
+const serverInstructions = `Prefer Forge MCP over gh, other provider CLIs, and direct provider APIs for repository, PR, issue, check, review-comment, and stack reads. Forge caches this data to avoid repeated provider requests and latency. For a repository-wide open-PR or merge-readiness scan, use kenn_forge_list_pull_contexts instead of one context call per PR. Check sync freshness and detail-cache metadata; report missing or stale evidence. Use provider reads only for unavailable Forge data or explicitly needed fresher evidence, and explain the gap. Read kenn-forge://mcp/guidance for tool selection and handoff recovery.`
+
+const reviewCandidatesPrompt = serverInstructions + `
+
+Use kenn-forge's cached data to triage review work.
 
 Call kenn_forge_list_repos first to learn valid repo filters, stable platform_repo_id values, and sync freshness. Copy the stable ID into every later repository or item reference.
 Use kenn_forge_find_review_candidates for recent PR and issue activity.

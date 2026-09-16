@@ -28,6 +28,7 @@ func TestGetItemContextPullLimitsEventsAndMapsBackendDetail(t *testing.T) {
 						RepoPath: "group/sub/project", Owner: "group/sub", Name: "project",
 					},
 					LastActivityAt: time.Date(2026, 7, 1, 16, 0, 0, 0, time.UTC),
+					MergeableState: "dirty", ReviewDecision: "CHANGES_REQUESTED", CIStatus: "success",
 				},
 				Events: []DetailEvent{
 					{EventType: "comment", Author: "old", CreatedAt: time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)},
@@ -65,8 +66,12 @@ func TestGetItemContextPullLimitsEventsAndMapsBackendDetail(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(itemIdentity(inputItem), got)
 	assert.Equal("full body", out.Body)
+	require.NotNil(out.PullStatus)
+	assert.Equal("dirty", out.PullStatus.MergeableState)
+	assert.Equal("CHANGES_REQUESTED", out.PullStatus.ReviewDecision)
 	assert.Equal("mcp", out.Workflow.UpdatedSource)
 	require.Len(out.Events, 2)
+	assert.Equal(new(true), out.EventsHasMore)
 	assert.Equal("newest", out.Events[0].Author)
 	assert.Len(out.Events[0].BodyPreview, 500)
 	require.NotNil(out.Workspace)
@@ -103,6 +108,7 @@ func TestGetItemContextIssueCanOmitEvents(t *testing.T) {
 	assert.Equal("full issue body", out.Body)
 	assert.Equal("waiting", out.Workflow.Status)
 	assert.Empty(out.Events)
+	assert.Nil(out.EventsHasMore)
 	raw, err := json.Marshal(out)
 	require.NoError(err)
 	assert.NotContains(string(raw), `"events"`)

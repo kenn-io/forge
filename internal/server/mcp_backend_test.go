@@ -162,6 +162,50 @@ func TestMCPBackendRejectsMismatchedStableRepositoryID(t *testing.T) {
 	assert.Equal(t, string(httpapi.CodeRepoNotFound), backendErr.Code)
 }
 
+func TestMCPBackendPreservesCachedPullReadiness(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	seedPR(t, database, "acme", "widget", 42, func(pr *db.MergeRequest) {
+		pr.MergeableState = "dirty"
+		pr.ReviewDecision = "CHANGES_REQUESTED"
+		pr.CIStatus = "success"
+		pr.PlatformHeadSHA = "head-one"
+		pr.CIChecksJSON = `[{"name":"unit","status":"completed","conclusion":"success"}]`
+	})
+	seedPR(t, database, "acme", "widget", 43, withSeedPRLifecycle("closed", nil, new(time.Now().UTC())))
+	repo, err := database.GetRepoByIdentity(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	identity := mcpserver.RepositoryIdentity{
+		Provider: "github", PlatformHost: "github.com", PlatformRepoID: repo.PlatformRepoID,
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+	}
+	rows, err := srv.MCPBackend().ListPulls(t.Context(), mcpserver.ItemListQuery{Repository: identity, State: "open", Limit: 26})
+	require.NoError(err)
+	require.Len(rows, 1)
+	assert.Equal(42, rows[0].Number)
+	assert.Equal("dirty", rows[0].MergeableState)
+	assert.Equal("CHANGES_REQUESTED", rows[0].ReviewDecision)
+	assert.Equal("success", rows[0].CIStatus)
+	assert.Equal("head-one", rows[0].HeadSHA)
+	require.Len(rows[0].Checks, 1)
+	assert.Equal("success", rows[0].Checks[0].Conclusion)
+	detail, err := srv.MCPBackend().GetPull(t.Context(), mcpserver.ItemIdentity{
+		Type: "pr", Provider: "github", PlatformHost: "github.com", PlatformRepoID: repo.PlatformRepoID,
+		Owner: "acme", Name: "widget", Number: 42,
+	})
+	require.NoError(err)
+	require.NotNil(detail.Pull)
+	assert.Equal(rows[0].MergeableState, detail.Pull.MergeableState)
+	assert.Equal(rows[0].ReviewDecision, detail.Pull.ReviewDecision)
+	assert.Equal(rows[0].Checks, detail.Checks)
+	identity.PlatformRepoID = "replacement-repository"
+	_, err = srv.MCPBackend().ListPulls(t.Context(), mcpserver.ItemListQuery{Repository: identity, State: "open"})
+	var backendErr *mcpserver.Error
+	require.ErrorAs(err, &backendErr)
+	assert.Equal("not_found", backendErr.Kind)
+}
+
 func TestMCPWorkspaceRepositoryFenceReconcilesHubIdentity(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)

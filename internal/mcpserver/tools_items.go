@@ -46,15 +46,24 @@ type contextCheck struct {
 }
 
 type getItemContextOutput struct {
-	Item           itemRef           `json:"item"`
-	Body           string            `json:"body,omitempty"`
-	Events         []contextEvent    `json:"events,omitempty"`
-	Checks         []contextCheck    `json:"checks,omitempty"`
-	Workspace      *WorkspaceRef     `json:"workspace,omitempty"`
-	Stack          candidateStack    `json:"stack,omitzero"`
-	Workflow       candidateWorkflow `json:"workflow"`
-	Cache          candidateCache    `json:"cache"`
-	LastActivityAt string            `json:"last_activity_at,omitempty"`
+	Item           itemRef            `json:"item"`
+	PullStatus     *contextPullStatus `json:"pull_status,omitempty"`
+	Body           string             `json:"body,omitempty"`
+	Events         []contextEvent     `json:"events,omitempty"`
+	EventsHasMore  *bool              `json:"events_has_more,omitempty" jsonschema:"true when more cached events exist than returned; omitted when events are not requested; request a larger event_limit up to 100 if needed"`
+	Checks         []contextCheck     `json:"checks,omitempty"`
+	Workspace      *WorkspaceRef      `json:"workspace,omitempty"`
+	Stack          candidateStack     `json:"stack,omitzero"`
+	Workflow       candidateWorkflow  `json:"workflow"`
+	Cache          candidateCache     `json:"cache"`
+	LastActivityAt string             `json:"last_activity_at,omitempty"`
+}
+
+type contextPullStatus struct {
+	MergeableState string `json:"mergeable_state" jsonschema:"cached mergeability: dirty indicates a conflict on this PR or an ancestor in its stack; unknown means no conclusion"`
+	ReviewDecision string `json:"review_decision"`
+	CIStatus       string `json:"ci_status"`
+	HeadSHA        string `json:"head_sha"`
 }
 
 type listByWorkflowInput struct {
@@ -78,6 +87,14 @@ type listByWorkflowOutput struct {
 }
 
 func (s *Server) registerItemTools() {
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name: "kenn_forge_list_pull_contexts",
+		Description: "Read a page of open PR contexts for one repository in a single call. " +
+			"Prefer this for merge-readiness scans or work across all PRs. Includes cached mergeability, " +
+			"CI checks, review decision, stack placement, workspace and freshness without per-PR detail reads. " +
+			"Set include_events for review-comment excerpts and full stack health; this reads cached details internally. " +
+			"Follow next_offset until absent. Cached evidence does not certify branch protection or merge permission.",
+	}, wrapTool(s.listPullContexts))
 	mcp.AddTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_get_item_context",
 		Description: "Return cached detail for a selected PR or issue without triggering sync. " +
@@ -113,20 +130,31 @@ func (s *Server) getPullContext(ctx context.Context, in getItemContextInput) (ge
 		return getItemContextOutput{}, fmt.Errorf("pull detail missing pull")
 	}
 	pull := *detail.Pull
-	out := getItemContextOutput{
-		Item:           pull.itemRef(),
-		Body:           pull.Body,
-		Cache:          candidateCache{DetailLoaded: detail.DetailLoaded, DetailFetchedAt: detail.DetailFetchedAt},
-		LastActivityAt: formatMCPTime(pull.LastActivityAt),
-	}
+	out := pullContext(detail, in)
 	workflowKey := candidateKeyFromItem(out.Item)
 	workflows, err := s.workflowStatesForKeys(ctx, map[candidateKey]bool{workflowKey: true})
 	if err != nil {
 		return getItemContextOutput{}, err
 	}
 	out.Workflow = workflowForCandidate(workflowKey, workflows, pull.WorkflowStatus)
+	return out, nil
+}
+
+func pullContext(detail PullDetail, in getItemContextInput) getItemContextOutput {
+	pull := *detail.Pull
+	out := getItemContextOutput{
+		Item: pull.itemRef(), Body: pull.Body,
+		PullStatus: &contextPullStatus{
+			MergeableState: firstNonEmpty(pull.MergeableState, "unknown"),
+			ReviewDecision: pull.ReviewDecision, CIStatus: pull.CIStatus, HeadSHA: pull.HeadSHA,
+		},
+		Workflow:       candidateWorkflow{Status: workflowStatusOrNew(pull.WorkflowStatus)},
+		Cache:          candidateCache{DetailLoaded: detail.DetailLoaded, DetailFetchedAt: detail.DetailFetchedAt},
+		LastActivityAt: formatMCPTime(pull.LastActivityAt),
+	}
 	if boolDefault(in.IncludeEvents, true) {
 		out.Events = contextEvents(detail.Events, clampLimit(in.EventLimit, 30, 100))
+		out.EventsHasMore = new(len(detail.Events) > len(out.Events))
 	}
 	if boolDefault(in.IncludeChecks, true) {
 		out.Checks = contextChecks(detail.Checks)
@@ -142,7 +170,7 @@ func (s *Server) getPullContext(ctx context.Context, in getItemContextInput) (ge
 			Health:   detail.Stack.Health,
 		}
 	}
-	return out, nil
+	return out
 }
 
 func (s *Server) getIssueContext(ctx context.Context, in getItemContextInput) (getItemContextOutput, error) {
@@ -167,6 +195,7 @@ func (s *Server) getIssueContext(ctx context.Context, in getItemContextInput) (g
 	}
 	if boolDefault(in.IncludeEvents, true) {
 		out.Events = contextEvents(detail.Events, clampLimit(in.EventLimit, 30, 100))
+		out.EventsHasMore = new(len(detail.Events) > len(out.Events))
 	}
 	if boolDefault(in.IncludeWorkspace, true) {
 		out.Workspace = detail.Workspace

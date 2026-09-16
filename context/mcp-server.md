@@ -1,5 +1,14 @@
 # MCP Companion
 
+- Event excerpts must disclose whether more cached events exist so agents can
+  decide whether to request more context; never silently truncate the list
+  (`internal/mcpserver/tools_items.go::getItemContextOutput`).
+- Agent guidance must prefer cached Forge reads over provider CLI/API reads to
+  avoid redundant latency; explain missing or stale evidence before falling back
+  (`internal/mcpserver/guidance.go::serverInstructions`).
+- Repository-wide PR scans use bulk cached list data by default, never one detail
+  read per PR; review-event enrichment is opt-in. Cached readiness evidence must
+  not certify permission to merge (`internal/mcpserver/tools_pulls.go::Server.listPullContexts`).
 - MCP is an optional daemon-owned secondary listener enabled by
   `[mcp].enabled`; an omitted or zero port uses the backend port plus one, while
   a nonzero port overrides it (`internal/config/config.go::Config.MCPPort`).

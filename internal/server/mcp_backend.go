@@ -2,7 +2,9 @@ package server
 
 import (
 	"context"
+	"encoding/json/v2"
 	"errors"
+	"fmt"
 	"maps"
 	"net/http"
 	"strings"
@@ -126,7 +128,11 @@ func (b mcpBackend) ListPulls(
 	}
 	out := make([]mcpserver.Pull, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, mcpPull(row))
+		pull, err := mcpPull(row)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, pull)
 	}
 	return out, nil
 }
@@ -183,6 +189,9 @@ func (b mcpBackend) GetPull(
 	}
 	if detail.MergeRequest != nil {
 		pull := mcpserver.Pull{
+			MergeableState: detail.MergeRequest.MergeableState,
+			ReviewDecision: detail.MergeRequest.ReviewDecision,
+			CIStatus:       detail.MergeRequest.CIStatus, HeadSHA: detail.MergeRequest.PlatformHeadSHA,
 			Number: detail.MergeRequest.Number, Title: detail.MergeRequest.Title,
 			State: string(detail.MergeRequest.State), Author: detail.MergeRequest.Author,
 			URL: detail.MergeRequest.URL, IsDraft: detail.MergeRequest.IsDraft,
@@ -215,12 +224,7 @@ func (b mcpBackend) GetPull(
 		}
 		out.Stack = &stack
 	}
-	for _, check := range detail.Checks {
-		out.Checks = append(out.Checks, mcpserver.Check{
-			Name: check.Name, Status: check.Status, Conclusion: check.Conclusion,
-			URL: check.URL, App: check.App, DurationSeconds: check.DurationSeconds,
-		})
-	}
+	out.Checks = mcpChecks(detail.Checks)
 	return out, nil
 }
 
@@ -992,8 +996,16 @@ func mcpWorkspaceRef(ref *workspaceapi.WorkspaceRef) *mcpserver.WorkspaceRef {
 	return &mcpserver.WorkspaceRef{ID: ref.ID, Status: ref.Status}
 }
 
-func mcpPull(row pullapi.MergeRequestResponse) mcpserver.Pull {
-	return mcpserver.Pull{
+func mcpPull(row pullapi.MergeRequestResponse) (mcpserver.Pull, error) {
+	var checks []db.CICheck
+	if strings.TrimSpace(row.CIChecksJSON) != "" {
+		if err := json.Unmarshal([]byte(row.CIChecksJSON), &checks); err != nil {
+			return mcpserver.Pull{}, fmt.Errorf("decode cached checks for PR %d: %w", row.Number, err)
+		}
+	}
+	pull := mcpserver.Pull{
+		MergeableState: row.MergeableState, ReviewDecision: row.ReviewDecision,
+		CIStatus: row.CIStatus, HeadSHA: row.PlatformHeadSHA, Checks: mcpChecks(checks),
 		Number: row.Number, Title: row.Title, State: string(row.State),
 		Author: row.Author, URL: row.URL, IsDraft: row.IsDraft, Body: row.Body,
 		WorkflowStatus: string(row.KanbanStatus), LastActivityAt: row.LastActivityAt,
@@ -1001,6 +1013,21 @@ func mcpPull(row pullapi.MergeRequestResponse) mcpserver.Pull {
 		Workspace:    mcpWorkspaceRef(row.Workspace),
 		DetailLoaded: row.DetailLoaded, DetailFetchedAt: row.DetailFetchedAt,
 	}
+	if row.Stack != nil {
+		pull.Stack = &mcpserver.Stack{Position: row.Stack.Position, Size: row.Stack.Size}
+	}
+	return pull, nil
+}
+
+func mcpChecks(checks []db.CICheck) []mcpserver.Check {
+	out := make([]mcpserver.Check, 0, len(checks))
+	for _, check := range checks {
+		out = append(out, mcpserver.Check{
+			Name: check.Name, Status: check.Status, Conclusion: check.Conclusion,
+			URL: check.URL, App: check.App, DurationSeconds: check.DurationSeconds,
+		})
+	}
+	return out
 }
 
 func mcpIssue(row issueapi.IssueResponse) mcpserver.Issue {

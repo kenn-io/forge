@@ -148,12 +148,16 @@ func TestAgentHandoffRetriesUntilAgentInputModeIsReady(t *testing.T) {
 		done <- fixture.serve(request)
 	}()
 
+	var pty *initialMessagePTY
 	require.Eventually(func() bool {
-		return fixture.owner.pty != nil && len(fixture.handler.runtime.ListSessions("ws-runtime-token")) == 1
+		fixture.owner.mu.Lock()
+		pty = fixture.owner.pty
+		fixture.owner.mu.Unlock()
+		return pty != nil && len(fixture.handler.runtime.ListSessions("ws-runtime-token")) == 1
 	}, time.Second, 5*time.Millisecond)
 	time.Sleep(50 * time.Millisecond)
-	assert.Empty(fixture.owner.pty.written())
-	fixture.owner.pty.output <- []byte("\x1b[?2004h")
+	assert.Empty(pty.written())
+	pty.output <- []byte("\x1b[?2004h")
 
 	var response *httptest.ResponseRecorder
 	select {
@@ -162,7 +166,7 @@ func TestAgentHandoffRetriesUntilAgentInputModeIsReady(t *testing.T) {
 		require.FailNow("handoff did not complete after input mode became ready")
 	}
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
-	assert.Equal("\x1b[200~triage this\x1b[201~\r", string(fixture.owner.pty.written()))
+	assert.Equal("\x1b[200~triage this\x1b[201~\r", string(pty.written()))
 }
 
 func TestAgentHandoffRejectsInvalidInputBeforeWaiting(t *testing.T) {

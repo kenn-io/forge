@@ -1,8 +1,15 @@
 import { Effect } from "effect";
+import { SvelteSet } from "svelte/reactivity";
 import type { QuickAction } from "../api/types.js";
 import type { AppRuntime } from "../app/runtime.js";
 import { executeGeneratedApiRequest } from "../api/generated-api.js";
 import { showFlash } from "./flash.svelte.js";
+
+const pendingHandoffs = new SvelteSet<{ workspaceId: string }>();
+
+export function workspaceQuickActionPending(workspaceId: string): boolean {
+  return [...pendingHandoffs].some((handoff) => handoff.workspaceId === workspaceId);
+}
 
 /**
  * Runs a configured quick action against a workspace that was just created (or
@@ -12,6 +19,8 @@ import { showFlash } from "./flash.svelte.js";
  * ordinary workspace runtime events.
  */
 export function runWorkspaceQuickAction(runtime: AppRuntime, workspaceId: string, action: QuickAction): void {
+  const handoff = { workspaceId };
+  pendingHandoffs.add(handoff);
   const program = executeGeneratedApiRequest("POST workspace agent handoff", (client, signal) =>
     client.WorkspacesService.launchWorkspaceAgentHandoff(
       { id: workspaceId },
@@ -26,6 +35,11 @@ export function runWorkspaceQuickAction(runtime: AppRuntime, workspaceId: string
             tone: "warning",
           });
         }
+      }),
+    ),
+    Effect.ensuring(
+      Effect.sync(() => {
+        pendingHandoffs.delete(handoff);
       }),
     ),
   );

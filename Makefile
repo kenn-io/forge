@@ -17,7 +17,7 @@ GOPATH_FIRST := $(shell go env GOPATH | sed -E 's/^([A-Za-z]:)?([^;:]*).*/\1\2/'
 
 ROBOREV_SRC ?= $(HOME)/code/roborev
 ROBOREV_REF ?= main
-HUMA_CHECK_VERSION := efb469cee12d24fd52640ea05b03ced275bf4370
+HUMA_CHECK_VERSION := 3e1f59e9011e878ec595aa04aebc8a77c5292c4d
 AIR_BIN := $(shell if command -v air >/dev/null 2>&1; then command -v air; \
 	elif [ -n "$$(go env GOBIN)" ] && [ -x "$$(go env GOBIN)/air$(EXE_SUFFIX)" ]; then printf "%s" "$$(go env GOBIN)/air$(EXE_SUFFIX)"; \
 	elif [ -x "$(GOPATH_FIRST)/bin/air$(EXE_SUFFIX)" ]; then printf "%s" "$(GOPATH_FIRST)/bin/air$(EXE_SUFFIX)"; \

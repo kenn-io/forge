@@ -629,15 +629,11 @@ func TestSyncerTriggerRunRunsRunOnce(t *testing.T) {
 
 	s.TriggerRun(t.Context())
 
-	require.Eventually(t, func() bool {
-		select {
-		case <-done:
-			return true
-		default:
-			return false
-		}
-	}, 5*time.Second, 10*time.Millisecond,
-		"TriggerRun did not complete RunOnce")
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		require.Fail(t, "TriggerRun did not complete RunOnce")
+	}
 	s.Stop()
 	assert.True(mock.listOpenPRsCalled,
 		"TriggerRun should invoke ListOpenPullRequests")
@@ -787,15 +783,11 @@ func TestSyncerTriggerRunForReposSyncsOnlySelectedRepos(t *testing.T) {
 		PlatformHost: "github.com",
 	}})
 
-	require.Eventually(func() bool {
-		select {
-		case <-done:
-			return true
-		default:
-			return false
-		}
-	}, 5*time.Second, 10*time.Millisecond,
-		"scoped TriggerRun did not complete")
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		require.Fail("scoped TriggerRun did not complete")
+	}
 	s.Stop()
 
 	mu.Lock()
@@ -852,6 +844,7 @@ func TestSyncerAcceptedTriggerQueuesBehindInFlightRun(t *testing.T) {
 			require.NoError(err)
 
 			firstSnapshot := make(chan struct{})
+			secondSnapshot := make(chan struct{})
 			releaseFirst := make(chan struct{})
 			var releaseOnce sync.Once
 			var listCalls atomic.Int32
@@ -860,13 +853,16 @@ func TestSyncerAcceptedTriggerQueuesBehindInFlightRun(t *testing.T) {
 				listOpenPRsFn: func(
 					ctx context.Context, _, _ string,
 				) ([]*gh.PullRequest, error) {
-					if listCalls.Add(1) == 1 {
+					call := listCalls.Add(1)
+					if call == 1 {
 						close(firstSnapshot)
 						select {
 						case <-releaseFirst:
 						case <-ctx.Done():
 							return nil, ctx.Err()
 						}
+					} else if call == 2 {
+						close(secondSnapshot)
 					}
 					return []*gh.PullRequest{}, nil
 				},
@@ -909,12 +905,11 @@ func TestSyncerAcceptedTriggerQueuesBehindInFlightRun(t *testing.T) {
 			tt.trigger(syncer, ctx, repos)
 			releaseOnce.Do(func() { close(releaseFirst) })
 
-			require.Eventually(
-				func() bool { return listCalls.Load() == 2 },
-				5*time.Second,
-				10*time.Millisecond,
-				"accepted trigger did not run after the active sync",
-			)
+			select {
+			case <-secondSnapshot:
+			case <-time.After(5 * time.Second):
+				require.Fail("accepted trigger did not run after the active sync")
+			}
 			syncer.Stop()
 
 			stored, err := database.GetRepoByID(ctx, repoID)

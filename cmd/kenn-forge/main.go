@@ -773,17 +773,7 @@ func run(opts serve.Options) error {
 
 	if syncer != nil {
 		// Wire status callbacks only when this process owns a provider plane.
-		syncer.SetOnStatusChange(func(status *ghclient.SyncStatus) {
-			srv.Hub().Broadcast(server.Event{
-				Type: "sync_status", Data: status,
-			})
-			if !status.Running {
-				srv.Hub().Broadcast(server.Event{Type: "data_changed", Data: struct{}{}})
-			}
-		})
-		srv.Hub().Broadcast(server.Event{
-			Type: "sync_status", Data: syncer.Status(),
-		})
+		wireSyncStatus(syncer, srv.Hub())
 		syncer.SetOnNotificationSyncComplete(func() {
 			srv.Hub().Broadcast(server.Event{Type: "data_changed", Data: struct{}{}})
 		})

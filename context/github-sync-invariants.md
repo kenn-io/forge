@@ -789,6 +789,8 @@ error or cancellation unchanged and never adopts.
 - Relay status travels with ordinary sync status and is absent when the consumer is off.
   Recent activity is a bounded, process-local list of received hints for tracked repositories,
   not proof that provider refreshes finished. (`internal/github/relay.go::updateRelayStatus`)
+- Relay status alone must not reload provider data; sync-status broadcasts invalidate lists only
+  when a running sync finishes. (`cmd/kenn-forge/provider_startup.go::wireSyncStatus`)
 
 ## Testing Expectations
 

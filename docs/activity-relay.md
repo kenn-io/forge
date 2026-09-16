@@ -2,16 +2,17 @@
 
 Kenn Forge can use a shared **activity relay** to notice GitHub changes sooner.
 GitHub sends the relay a webhook, a message saying that something changed.
-Each connected Forge receives that change immediately, then fetches the
-changed items from GitHub using its own credentials.
+The relay passes that change to the connected Forges right away, and each
+Forge fetches the changed items from GitHub using its own credentials.
 
 The relay stores nothing. It passes on which repository and item changed and
 never keeps pull request titles, comments, code, or GitHub access tokens.
 Everyone can keep their existing GitHub App or token.
 
-Use this for GitHub.com repositories where you can configure webhooks. Normal
-Forge syncing continues when the relay is unavailable, when a Forge was
-disconnected while a change happened, or when a webhook is missed. GitHub
+Use this for GitHub.com repositories where you can configure webhooks.
+Delivery is best effort: a Forge that is disconnected, falls behind during a
+burst, or has too many refreshes waiting can miss a change even while it
+shows as connected. Normal Forge syncing picks up anything missed. GitHub
 delivery delays and API limits can still delay an update.
 
 ## Connect your Forge
@@ -39,8 +40,8 @@ Connecting a relay does not add repositories or grant GitHub access.
 Click **Relay** in the bottom bar to see whether Forge is connected and the
 recent changes received for your repositories. Forge reconnects on its own
 after an outage. The list holds the latest 20 changes since Forge started; an
-entry means a refresh was requested, not that it has finished. The button is
-hidden when the relay is off.
+entry means a hint was received, not that the refresh has finished. The
+button is hidden when the relay is off.
 
 ## Run a shared relay
 

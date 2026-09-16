@@ -96,7 +96,11 @@ both an active read and the reconnect timer immediately
 
 The activity relay subscription follows the same lifecycle policy with a 30s
 jittered ceiling and no durable cursor: a reconnect never replays, and hints
-missed while disconnected are left to ordinary syncing
+missed while disconnected are left to ordinary syncing. Its failure count
+resets only after a stream has stayed open for the full ceiling, so a relay
+or proxy that accepts and immediately drops connections cannot cause a
+reconnect storm. The relay performs no reconciliation on connect; the
+replay-barrier rule below applies only to the hub event stream
 (`internal/github/relay.go::RunRelay`).
 
 Every successful connection requests provider reconciliation and refreshes

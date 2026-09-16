@@ -16,6 +16,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync/atomic"
+	"time"
 )
 
 const (
@@ -54,11 +56,16 @@ func (h Hint) Validate() error {
 // Stream is one open subscription to a relay feed.
 type Stream struct {
 	body io.ReadCloser
+	// idleTimeout closes a stream that stops delivering bytes. The relay
+	// writes a keepalive every keepaliveInterval, so silence beyond this is a
+	// stalled proxy or connection, not a quiet feed.
+	idleTimeout time.Duration
 }
 
 const (
 	hintEvent         = "hint"
 	maxEventLineBytes = 4096
+	streamIdleTimeout = 3 * keepaliveInterval
 )
 
 // Open connects to the feed and returns once the relay has accepted the
@@ -87,17 +94,24 @@ func Open(ctx context.Context, client *http.Client, baseURL string) (*Stream, er
 		_ = response.Body.Close()
 		return nil, errors.New("relay did not return an event stream")
 	}
-	return &Stream{body: response.Body}, nil
+	return &Stream{body: response.Body, idleTimeout: streamIdleTimeout}, nil
 }
 
 // Read delivers hints until the connection ends. It always returns a non-nil
 // error describing why delivery stopped.
 func (s *Stream) Read(handle func(Hint)) error {
+	var stalled atomic.Bool
+	idle := time.AfterFunc(s.idleTimeout, func() {
+		stalled.Store(true)
+		_ = s.body.Close()
+	})
+	defer idle.Stop()
 	scanner := bufio.NewScanner(s.body)
 	scanner.Buffer(make([]byte, maxEventLineBytes), maxEventLineBytes)
 	var event string
 	var data []string
 	for scanner.Scan() {
+		idle.Reset(s.idleTimeout)
 		line := strings.TrimSuffix(scanner.Text(), "\r")
 		if line == "" {
 			if event == hintEvent {
@@ -121,6 +135,9 @@ func (s *Stream) Read(handle func(Hint)) error {
 		case "data":
 			data = append(data, value)
 		}
+	}
+	if stalled.Load() {
+		return errors.New("relay stream stalled")
 	}
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("read relay stream: %w", err)

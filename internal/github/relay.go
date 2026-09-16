@@ -42,7 +42,10 @@ type RelayOptions struct {
 
 const (
 	maxRelayRetryDelay = 30 * time.Second
-	maxRelayRecent     = 20
+	// relayStableAfter is how long a subscription must stay open before its
+	// reconnect backoff resets.
+	relayStableAfter = maxRelayRetryDelay
+	maxRelayRecent   = 20
 	// relayQueueLimit bounds refresh work waiting on provider budget; hints
 	// beyond it are dropped and covered by ordinary syncing.
 	relayQueueLimit = 1024
@@ -84,7 +87,7 @@ func (s *Syncer) RunRelay(ctx context.Context, options RelayOptions) {
 	for ctx.Err() == nil {
 		stream, err := activityrelay.Open(ctx, options.Client, options.URL)
 		if err == nil {
-			failures = 0
+			opened := time.Now()
 			s.updateRelayStatus(func(status *RelayStatus) { status.Connected = true })
 			err = stream.Read(func(hint activityrelay.Hint) {
 				sequence++
@@ -92,6 +95,12 @@ func (s *Syncer) RunRelay(ctx context.Context, options RelayOptions) {
 			})
 			_ = stream.Close()
 			s.updateRelayStatus(func(status *RelayStatus) { status.Connected = false })
+			// An accepted stream that dies at once is still a failure; only a
+			// stream that stayed up resets the backoff, so a relay or proxy
+			// that accepts and immediately drops cannot cause a reconnect storm.
+			if time.Since(opened) >= relayStableAfter {
+				failures = 0
+			}
 		}
 		if ctx.Err() != nil {
 			return

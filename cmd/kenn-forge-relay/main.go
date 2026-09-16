@@ -6,6 +6,7 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -45,13 +46,15 @@ func main() {
 		fmt.Fprintln(os.Stderr, "usage: kenn-forge-relay --config PATH")
 		os.Exit(2)
 	}
-	if err := run(ctx, *configFile); err != nil {
+	if err := run(ctx, *configFile, os.Stdout); err != nil {
 		slog.Error("relay stopped", "error", err)
 		os.Exit(1)
 	}
 }
 
-func run(ctx context.Context, path string) error {
+// run serves until ctx ends and writes the bound listener addresses to ready
+// as one JSON line once both servers accept connections.
+func run(ctx context.Context, path string, ready io.Writer) error {
 	cfg := relayConfig{WebhookListen: "127.0.0.1:8081", FeedListen: "127.0.0.1:8082"}
 	metadata, err := toml.DecodeFile(path, &cfg)
 	if err != nil || len(metadata.Undecoded()) != 0 || len(cfg.Sources) == 0 {
@@ -91,15 +94,22 @@ func run(ctx context.Context, path string) error {
 	}
 	defer func() { _ = feed.Close() }()
 	ingress, private := activityrelay.Handlers(new(activityrelay.Broadcaster), sources)
+	// Subscriptions outlive any request timeout, so graceful shutdown must end
+	// them explicitly; http.Server.Shutdown only waits for handlers to return.
+	streamCtx, stopStreams := context.WithCancel(ctx)
+	defer stopStreams()
 	servers := []*http.Server{
 		{Handler: ingress, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: time.Minute, MaxHeaderBytes: 16 << 10},
-		{Handler: private, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: time.Minute, MaxHeaderBytes: 16 << 10},
+		{
+			Handler: private, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: time.Minute, MaxHeaderBytes: 16 << 10,
+			BaseContext: func(net.Listener) context.Context { return streamCtx },
+		},
 	}
 	finished := make(chan error, 2)
 	go func() { finished <- servers[0].Serve(webhook) }()
 	go func() { finished <- servers[1].Serve(feed) }()
-	ready, _ := json.Marshal(map[string]string{"webhook": webhook.Addr().String(), "feed": feed.Addr().String()})
-	fmt.Println(string(ready))
+	addresses, _ := json.Marshal(map[string]string{"webhook": webhook.Addr().String(), "feed": feed.Addr().String()})
+	fmt.Fprintln(ready, string(addresses))
 	var serveErr error
 	completed := 0
 	select {
@@ -110,6 +120,7 @@ func run(ctx context.Context, path string) error {
 			serveErr = errors.New("relay HTTP server failed")
 		}
 	}
+	stopStreams()
 	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
 	for _, server := range servers {

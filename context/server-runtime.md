@@ -6,12 +6,15 @@
   import the SPA or depend on a running Forge daemon. (`cmd/kenn-forge-relay/main.go`)
 - Public ingress authenticates GitHub signatures; private feed authorization belongs to the
   transport. Never put the feed behind the public proxy. (`internal/activityrelay/http.go::Handlers`)
-- The relay is stateless: a hint is written to every open subscription and discarded. No
-  database, cursor, retention, or replay; a subscriber that was disconnected relies on ordinary
-  syncing. Do not reintroduce durable resume. (`internal/activityrelay/broadcast.go::Broadcaster`)
+- The relay is stateless and best effort: a hint is offered to every open subscription and
+  discarded. No database, cursor, retention, or replay; a disconnected or lagging subscriber
+  relies on ordinary syncing. Do not reintroduce durable resume, and do not document delivery as
+  guaranteed. (`internal/activityrelay/broadcast.go::Broadcaster`)
 - The feed is one SSE stream per Forge with a 20-second keepalive comment; a subscriber that
-  stops reading drops hints rather than blocking webhook ingress.
-  (`internal/activityrelay/http.go::serveStream`)
+  stops reading drops hints rather than blocking webhook ingress, and a subscriber that hears
+  nothing for three keepalive intervals treats the stream as stalled and reconnects. Graceful
+  relay shutdown cancels open streams before waiting on the HTTP server.
+  (`internal/activityrelay/http.go::serveStream`, `internal/activityrelay/protocol.go::Stream.Read`)
 - Retain only routing metadata in transit, never raw webhooks, names, content, actors, refs,
   hashes, or secrets; this also applies to proxy and diagnostic logging. (`internal/activityrelay/http.go::reduce`)
 

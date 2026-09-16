@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -110,10 +111,28 @@ func TestOpenRejectsNonStreamResponses(t *testing.T) {
 	require.Error(err)
 }
 
+func TestReadReconnectsWhenAnOpenStreamStalls(t *testing.T) {
+	require := require.New(t)
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, ": connected\n\n")
+		http.NewResponseController(w).Flush() //nolint:errcheck // the stall is the point
+		<-r.Context().Done()
+	}))
+	t.Cleanup(server.Close)
+	stream, err := Open(t.Context(), server.Client(), server.URL)
+	require.NoError(err)
+	t.Cleanup(func() { _ = stream.Close() })
+	stream.idleTimeout = 50 * time.Millisecond
+	err = stream.Read(func(Hint) {})
+	require.ErrorContains(err, "stalled", "silence past the keepalive interval must end the subscription")
+}
+
 func TestReadRejectsInvalidHints(t *testing.T) {
 	require := require.New(t)
 	t.Parallel()
-	stream := &Stream{body: io.NopCloser(strings.NewReader(": connected\n\nevent: hint\ndata: {\"provider\":\"github\",\"host\":\"github.com\",\"repository_id\":\"R_x\",\"target\":\"issue\",\"number\":0}\n\n"))}
+	stream := &Stream{idleTimeout: time.Second, body: io.NopCloser(strings.NewReader(": connected\n\nevent: hint\ndata: {\"provider\":\"github\",\"host\":\"github.com\",\"repository_id\":\"R_x\",\"target\":\"issue\",\"number\":0}\n\n"))}
 	var received []Hint
 	err := stream.Read(func(hint Hint) { received = append(received, hint) })
 	require.Error(err)

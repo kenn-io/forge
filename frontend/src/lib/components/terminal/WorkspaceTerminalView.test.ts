@@ -24,6 +24,7 @@ import {
   resetWorkspaceCreatePendingForTest,
 } from "../../stores/workspace-create-pending.svelte.js";
 import type { WorkspaceItemIdentity } from "../../workspace-inline.js";
+import { runWorkspaceQuickAction } from "../../stores/workspace-quick-actions.js";
 import { STORES_KEY } from "../../context.js";
 
 const mocks = vi.hoisted(() => ({
@@ -4308,6 +4309,34 @@ describe("WorkspaceTerminalView", () => {
   });
 
   describe("launcher overlay", () => {
+    it("keeps the launcher closed while a quick action starts its agent", async () => {
+      const handoff = deferred<Response>();
+      const originalFetch = globalThis.fetch;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((input: Request | URL | string, init?: RequestInit) => {
+          if (String(input instanceof Request ? input.url : input).includes("agent-handoff")) {
+            return handoff.promise;
+          }
+          return originalFetch(input, init);
+        }),
+      );
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+      runWorkspaceQuickAction(mocks.runtime, "ws-1", { label: "Review", agent: "codex", prompt: "Review this change" });
+      claimForPrs();
+      render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" as const } });
+
+      await waitFor(() => expect(hostedWorkspaceControls()).not.toBeNull());
+      await screen.findByRole("region", { name: "Workflow panes" });
+      await waitFor(() => expect(screen.queryByText("Loading workspace runtime...")).toBeNull());
+      flushSync();
+      expect(screen.queryByRole("dialog", { name: "Launch a session" })).toBeNull();
+      expect(mocks.launchWorkspaceSession).not.toHaveBeenCalled();
+
+      handoff.resolve(Response.json({ title: "Launch failed", status: 400 }, { status: 400 }));
+      await screen.findByRole("dialog", { name: "Launch a session" });
+    });
+
     it("drops the Home tab in a pane and opens the launcher when nothing is running", async () => {
       localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
       mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());

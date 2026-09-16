@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log/slog"
+	"net/http"
 	"sync"
 	"time"
 
@@ -59,6 +60,16 @@ func startNotificationLoops(handle *backgroundLoopHandle, syncer *ghclient.Synce
 	})
 }
 
+// relayHTTPClient keeps a subscription open indefinitely while still bounding
+// connection setup and response headers.
+func relayHTTPClient() *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.ResponseHeaderTimeout = 10 * time.Second
+	return &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+}
+
 func notificationLoopSettingsFromConfig(cfg *config.Config) notificationLoopSettings {
 	return notificationLoopSettings{
 		syncInterval:        cfg.NotificationSyncDuration(),
@@ -70,6 +81,15 @@ func notificationLoopSettingsFromConfig(cfg *config.Config) notificationLoopSett
 func newBackgroundLoopHandle(parent context.Context) *backgroundLoopHandle {
 	ctx, cancel := context.WithCancel(parent)
 	return &backgroundLoopHandle{ctx: ctx, cancel: cancel}
+}
+
+// start runs a long-lived loop that owns its own retry schedule.
+func (h *backgroundLoopHandle) start(run func(context.Context)) {
+	h.wg.Go(func() {
+		if h.ctx.Err() == nil {
+			run(h.ctx)
+		}
+	})
 }
 
 func (h *backgroundLoopHandle) startTicker(name string, interval time.Duration, run func(context.Context) error) {

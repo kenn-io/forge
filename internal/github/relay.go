@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"math/rand/v2"
 	"net/http"
+	"sync"
 	"time"
 
 	"go.kenn.io/forge/internal/activityrelay"
@@ -15,20 +18,35 @@ import (
 	platformgithub "go.kenn.io/forge/platform/github"
 )
 
-// RelayStatus is a process-local view of the feed, carried with sync status.
+// RelayStatus is a process-local view of the subscription, carried with sync status.
 type RelayStatus struct {
-	LastPollAt  time.Time       `json:"last_poll_at,omitzero"`
-	Unavailable bool            `json:"unavailable"`
-	Recent      []RelayActivity `json:"recent"`
+	Connected bool            `json:"connected"`
+	Recent    []RelayActivity `json:"recent"`
 }
 
 type RelayActivity struct {
-	Cursor     string    `json:"cursor"`
+	ID         int64     `json:"id"`
 	Repository string    `json:"repository"`
 	Target     string    `json:"target" enum:"pull_request,pull_request_checks,issue,repository_refs,repository"`
 	Number     int       `json:"number"`
 	ReceivedAt time.Time `json:"received_at"`
 }
+
+// RelayOptions configures one relay subscription owned by RunRelay.
+type RelayOptions struct {
+	URL    string
+	Client *http.Client
+	// RetryDelay returns how long to wait before reconnect attempt n.
+	RetryDelay func(failures int) time.Duration
+}
+
+const (
+	maxRelayRetryDelay = 30 * time.Second
+	maxRelayRecent     = 20
+	// relayQueueLimit bounds refresh work waiting on provider budget; hints
+	// beyond it are dropped and covered by ordinary syncing.
+	relayQueueLimit = 1024
+)
 
 func (s *Syncer) updateRelayStatus(update func(*RelayStatus)) {
 	s.statusMu.Lock()
@@ -43,134 +61,164 @@ func (s *Syncer) updateRelayStatus(update func(*RelayStatus)) {
 	s.publishStatusLocked(&status)
 }
 
-// SetOnRelayRefresh installs the callback before the consumer starts.
+// SetOnRelayRefresh installs the callback before the subscription starts.
 func (s *Syncer) SetOnRelayRefresh(fn func(context.Context, int64, string, int)) {
 	s.onRelayRefresh = fn
 }
 
-// PollRelay is owned by one daemon background loop. New deliveries received
-// during provider work remain on the relay for the next poll, so completing a
-// saved target cannot consume a newer event that has not been read yet.
-func (s *Syncer) PollRelay(ctx context.Context, relayURL string, client *http.Client) error {
-	if !s.SyncEnabled() {
-		return nil
+// RunRelay keeps one subscription open until ctx ends, reconnecting with
+// jittered exponential backoff. Hints are refreshed in arrival order by a
+// single worker so a slow provider call never stalls the connection.
+func (s *Syncer) RunRelay(ctx context.Context, options RelayOptions) {
+	retryDelay := options.RetryDelay
+	if retryDelay == nil {
+		retryDelay = jitteredRelayRetryDelay
 	}
-	pollErr := s.readRelayPages(ctx, relayURL, client)
-	s.updateRelayStatus(func(status *RelayStatus) {
-		status.LastPollAt = s.now().UTC()
-		status.Unavailable = pollErr != nil
-	})
-	// Pending work must also progress while the relay is unavailable.
-	return errors.Join(pollErr, s.drainRelayHints(ctx, relayURL))
-}
-
-func (s *Syncer) readRelayPages(ctx context.Context, relayURL string, client *http.Client) error {
-	cursor, err := s.db.RelayCursor(ctx, relayURL)
-	if err != nil {
-		return err
-	}
-	for ctx.Err() == nil && s.SyncEnabled() {
-		page, err := activityrelay.Fetch(ctx, client, relayURL, cursor)
-		if err != nil {
-			return err
-		}
-		hints := []activityrelay.Hint{}
-		var recent []RelayActivity
-		if page.ResyncRequired || page.Code == "cursor_expired" {
-			for _, repo := range s.TrackedRepos() {
-				if repoPlatform(repo) != platform.KindGitHub || repoHost(repo) != "github.com" || repo.Archived {
-					continue
-				}
-				if repo.PlatformExternalID != "" {
-					hints = append(hints, activityrelay.Hint{
-						Provider: "github", Host: "github.com", RepositoryID: repo.PlatformExternalID, Target: activityrelay.Repository,
-					})
-				}
-			}
-			if page.Code == "cursor_expired" {
-				page.NextCursor = page.ResetCursor
-			}
-		} else {
-			for _, event := range page.Events {
-				if repo, ok := s.trackedRepoByProviderID(platform.KindGitHub, event.Host, event.RepositoryID); ok && !repo.Archived {
-					hints = append(hints, event.Hint)
-					recent = append(recent, RelayActivity{
-						Cursor: event.Cursor, Repository: repo.Owner + "/" + repo.Name,
-						Target: event.Target, Number: event.Number, ReceivedAt: s.now().UTC(),
-					})
-				}
-			}
-		}
-		if err := s.db.SaveRelayPage(ctx, relayURL, page.NextCursor, hints); err != nil {
-			return err
-		}
-		if len(recent) > 0 {
-			s.updateRelayStatus(func(status *RelayStatus) {
-				for _, event := range recent {
-					status.Recent = append([]RelayActivity{event}, status.Recent[:min(19, len(status.Recent))]...)
-				}
+	queue := &relayQueue{signal: make(chan struct{}, 1)}
+	var workers sync.WaitGroup
+	workers.Go(func() { s.drainRelayQueue(ctx, queue) })
+	defer workers.Wait()
+	s.updateRelayStatus(func(status *RelayStatus) { status.Connected = false })
+	var sequence int64
+	failures := 0
+	for ctx.Err() == nil {
+		stream, err := activityrelay.Open(ctx, options.Client, options.URL)
+		if err == nil {
+			failures = 0
+			s.updateRelayStatus(func(status *RelayStatus) { status.Connected = true })
+			err = stream.Read(func(hint activityrelay.Hint) {
+				sequence++
+				s.receiveRelayHint(hint, sequence, queue)
 			})
+			_ = stream.Close()
+			s.updateRelayStatus(func(status *RelayStatus) { status.Connected = false })
 		}
-		cursor = page.NextCursor
-		if !page.HasMore {
-			return nil
+		if ctx.Err() != nil {
+			return
+		}
+		failures++
+		delay := retryDelay(failures)
+		slog.Debug("retrying relay subscription", "next", delay, "err", err)
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
 		}
 	}
-	return ctx.Err()
 }
 
-func (s *Syncer) drainRelayHints(ctx context.Context, relayURL string) error {
-	hints, err := s.db.PendingRelayHints(ctx, relayURL)
-	if err != nil {
-		return err
+func jitteredRelayRetryDelay(failures int) time.Duration {
+	delay := time.Second
+	for range max(failures, 1) - 1 {
+		if delay >= maxRelayRetryDelay {
+			break
+		}
+		delay *= 2
 	}
-	var failures error
-	for _, hint := range hints {
-		if ctx.Err() != nil || !s.SyncEnabled() {
-			return errors.Join(failures, ctx.Err())
+	delay = min(delay, maxRelayRetryDelay)
+	// Symmetric 20% jitter keeps a fleet from reconnecting in lockstep.
+	spread := delay / 5
+	return min(delay-spread+time.Duration(rand.Int64N(int64(spread*2)+1)), maxRelayRetryDelay)
+}
+
+func (s *Syncer) receiveRelayHint(hint activityrelay.Hint, id int64, queue *relayQueue) {
+	if !s.SyncEnabled() {
+		return
+	}
+	repo, ok := s.trackedRepoByProviderID(platform.KindGitHub, hint.Host, hint.RepositoryID)
+	if !ok || repo.Archived {
+		return
+	}
+	activity := RelayActivity{
+		ID: id, Repository: repo.Owner + "/" + repo.Name,
+		Target: hint.Target, Number: hint.Number, ReceivedAt: s.now().UTC(),
+	}
+	s.updateRelayStatus(func(status *RelayStatus) {
+		status.Recent = append([]RelayActivity{activity}, status.Recent[:min(maxRelayRecent-1, len(status.Recent))]...)
+	})
+	queue.push(hint)
+}
+
+// relayQueue coalesces repeated hints for the same target while a refresh waits.
+type relayQueue struct {
+	mu      sync.Mutex
+	order   []activityrelay.Hint
+	pending map[activityrelay.Hint]struct{}
+	signal  chan struct{}
+}
+
+func (q *relayQueue) push(hint activityrelay.Hint) {
+	q.mu.Lock()
+	if _, waiting := q.pending[hint]; !waiting && len(q.order) < relayQueueLimit {
+		if q.pending == nil {
+			q.pending = make(map[activityrelay.Hint]struct{})
 		}
-		done, err := s.refreshRelayHint(WithSyncBudget(ctx), relayURL, &hint)
-		if err != nil {
-			failures = errors.Join(failures, fmt.Errorf("refresh relay target %s/%s/%d: %w", hint.RepositoryID, hint.Target, hint.Number, err))
-			continue
+		q.pending[hint] = struct{}{}
+		q.order = append(q.order, hint)
+	}
+	q.mu.Unlock()
+	select {
+	case q.signal <- struct{}{}:
+	default:
+	}
+}
+
+func (q *relayQueue) pop() (activityrelay.Hint, bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if len(q.order) == 0 {
+		return activityrelay.Hint{}, false
+	}
+	hint := q.order[0]
+	q.order = q.order[1:]
+	delete(q.pending, hint)
+	return hint, true
+}
+
+func (s *Syncer) drainRelayQueue(ctx context.Context, queue *relayQueue) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-queue.signal:
 		}
-		if done {
-			if err := s.db.CompleteRelayHint(ctx, relayURL, hint); err != nil {
-				return errors.Join(failures, err)
+		for hint, ok := queue.pop(); ok; hint, ok = queue.pop() {
+			if ctx.Err() != nil {
+				return
+			}
+			if !s.SyncEnabled() {
+				continue
+			}
+			if err := s.refreshRelayHint(WithSyncBudget(ctx), hint); err != nil && ctx.Err() == nil {
+				slog.Warn("relay refresh failed", "repository_id", hint.RepositoryID, "target", hint.Target, "number", hint.Number, "err", err)
 			}
 		}
 	}
-	return failures
 }
 
-func (s *Syncer) refreshRelayHint(ctx context.Context, relayURL string, hint *activityrelay.Hint) (bool, error) {
+// refreshRelayHint performs one provider refresh. A hint that cannot be
+// served now, because budget, cooldown, or catalog state forbids it, is
+// dropped: ordinary syncing covers it later.
+func (s *Syncer) refreshRelayHint(ctx context.Context, hint activityrelay.Hint) error {
 	repo, tracked := s.trackedRepoByProviderID(platform.KindGitHub, hint.Host, hint.RepositoryID)
 	if !tracked || repo.Archived {
-		return true, nil
+		return nil
 	}
 	bucket, err := s.bucketKeyForRepo(repo, false)
 	if err != nil {
-		return false, err
-	}
-	cost := PRDetailWorstCase * wireAttemptsPerRequest
-	switch hint.Target {
-	case activityrelay.PullRequestChecks:
-		cost = 2 * wireAttemptsPerRequest
-	case activityrelay.Issue:
-		cost = IssueDetailWorstCase * wireAttemptsPerRequest
-	}
-	if budget := s.budgets[bucket]; budget != nil && !budget.CanSpend(cost) {
-		return false, nil
+		return err
 	}
 	if s.backgroundReserveExhausted(repo, QuotaResourceREST, false) {
-		return false, nil
+		return nil
 	}
 	stored, err := s.db.GetRepositoryByProviderID(ctx, hint.Provider, hint.Host, repo.PlatformExternalID)
 	if err != nil {
-		return false, err
+		return err
 	}
 	if stored == nil || stored.Lifecycle != db.RepositoryLifecycleActive {
-		return false, nil
+		return nil
 	}
 	repoID := stored.Repository.ID
 	// Resolve the current route from the provider-verified catalog, preserving
@@ -180,43 +228,43 @@ func (s *Syncer) refreshRelayHint(ctx context.Context, relayURL string, hint *ac
 	if target == activityrelay.PullRequestChecks {
 		mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, hint.Number)
 		if err != nil {
-			return false, err
+			return err
 		}
 		if mr == nil || mr.PlatformHeadSHA == "" {
+			// An unknown pull request needs its details before checks mean anything.
 			target = activityrelay.PullRequest
-			hint.Target = target
-			cursor, err := s.db.RelayCursor(ctx, relayURL)
-			if err != nil {
-				return false, err
-			}
-			if err := s.db.SaveRelayPage(ctx, relayURL, cursor, []activityrelay.Hint{*hint}); err != nil {
-				return false, err
-			}
-			if budget := s.budgets[bucket]; budget != nil && !budget.CanSpend(PRDetailWorstCase*wireAttemptsPerRequest) {
-				return false, nil
-			}
 		} else {
+			if budget := s.budgets[bucket]; budget != nil && !budget.CanSpend(2*wireAttemptsPerRequest) {
+				return nil
+			}
 			defer s.beginProviderWork(ctx, bucket, archive.PriorityActiveDetail)()
 			warnings, err := s.RefreshMRCIStatusForRepository(ctx, repo, repoID, hint.Number, mr.PlatformHeadSHA)
 			if err != nil || len(warnings) != 0 {
-				return false, errors.Join(err, errors.New("relay CI refresh incomplete"))
+				return errors.Join(err, errors.New("relay CI refresh incomplete"))
 			}
 		}
 	}
+	cost := PRDetailWorstCase * wireAttemptsPerRequest
+	if target == activityrelay.Issue {
+		cost = IssueDetailWorstCase * wireAttemptsPerRequest
+	}
 	switch target {
 	case activityrelay.PullRequest, activityrelay.Issue:
+		if budget := s.budgets[bucket]; budget != nil && !budget.CanSpend(cost) {
+			return nil
+		}
 		feature := platform.RepositoryFeatureMergeRequests
 		if target == activityrelay.Issue {
 			feature = platform.RepositoryFeatureIssues
 		}
 		probe, due := s.beginRepositoryFeatureProbe(ctx, repo, feature)
 		if !due {
-			return false, nil
+			return nil
 		}
 		providerAttempted := false
 		if target == activityrelay.PullRequest {
 			err = s.syncMRForRepoResolved(ctx, repo, hint.Number, false, &providerAttempted, nil, nil, nil, &repoID)
-			if _, onlyDiffFailed := err.(*DiffSyncError); onlyDiffFailed { //nolint:errorlint // joined hard failures must remain pending
+			if _, onlyDiffFailed := err.(*DiffSyncError); onlyDiffFailed { //nolint:errorlint // joined hard failures must surface
 				err = nil
 			}
 		} else {
@@ -229,7 +277,7 @@ func (s *Syncer) refreshRelayHint(ctx context.Context, relayURL string, hint *ac
 			probe.abandon()
 		}
 		if disabled {
-			return false, nil
+			return nil
 		}
 	case activityrelay.Repository:
 		err = s.syncRepo(ctx, repo)
@@ -237,12 +285,12 @@ func (s *Syncer) refreshRelayHint(ctx context.Context, relayURL string, hint *ac
 		err = s.refreshRelayRefs(ctx, repo)
 	}
 	if err != nil {
-		return false, err
+		return fmt.Errorf("refresh %s/%s/%d: %w", hint.RepositoryID, target, hint.Number, err)
 	}
 	if s.onRelayRefresh != nil {
 		s.onRelayRefresh(ctx, repoID, target, hint.Number)
 	}
-	return true, nil
+	return nil
 }
 
 func (s *Syncer) refreshRelayRefs(ctx context.Context, repo RepoRef) error {

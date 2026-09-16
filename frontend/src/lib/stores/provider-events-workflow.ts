@@ -137,12 +137,11 @@ export class SyncStatusEvent extends Schema.Class<SyncStatusEvent>("SyncStatusEv
   progress: Schema.optionalKey(Schema.String),
   relay: Schema.optionalKey(
     Schema.Struct({
-      last_poll_at: Schema.optionalKey(Schema.String),
-      unavailable: Schema.Boolean,
+      connected: Schema.Boolean,
       recent: Schema.mutable(
         Schema.Array(
           Schema.Struct({
-            cursor: Schema.String,
+            id: Schema.Number,
             repository: Schema.String,
             target: Schema.Literals(["pull_request", "pull_request_checks", "issue", "repository_refs", "repository"]),
             number: Schema.Number,

@@ -94,6 +94,11 @@ the same bounded wait so none can hot-loop. Context cancellation interrupts
 both an active read and the reconnect timer immediately
 (`internal/providerplane/events.go::EventClient.Run`).
 
+The activity relay subscription follows the same lifecycle policy with a 30s
+jittered ceiling and no durable cursor: a reconnect never replays, and hints
+missed while disconnected are left to ordinary syncing
+(`internal/github/relay.go::RunRelay`).
+
 Every successful connection requests provider reconciliation and refreshes
 sync status after the replay-complete barrier and before it is reported
 healthy. A stale cursor or poison frame

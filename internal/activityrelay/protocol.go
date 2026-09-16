@@ -1,14 +1,21 @@
-// Package activityrelay implements a minimal GitHub refresh-hint feed.
+// Package activityrelay implements a stateless GitHub refresh-hint feed.
+//
+// The relay reduces signed webhooks to routing hints and writes each hint to
+// every open subscriber connection. Nothing is stored: a subscriber that is
+// not connected when a hint arrives relies on ordinary syncing instead.
 package activityrelay
 
 import (
+	"bufio"
 	"context"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
+	"strings"
 )
 
 const (
@@ -44,79 +51,81 @@ func (h Hint) Validate() error {
 	return errors.New("invalid relay refresh target")
 }
 
-type Event struct {
-	Hint
-	Cursor string `json:"cursor"`
+// Stream is one open subscription to a relay feed.
+type Stream struct {
+	body io.ReadCloser
 }
 
-type Page struct {
-	Events         []Event `json:"events"`
-	NextCursor     string  `json:"next_cursor,omitempty"`
-	HasMore        bool    `json:"has_more"`
-	ResyncRequired bool    `json:"resync_required,omitempty"`
-	Code           string  `json:"code,omitempty"`
-	ResetCursor    string  `json:"reset_cursor,omitempty"`
-}
+const (
+	hintEvent         = "hint"
+	maxEventLineBytes = 4096
+)
 
-// Fetch treats cursors as opaque and checks the page before a consumer saves it.
-func Fetch(ctx context.Context, client *http.Client, baseURL, after string) (Page, error) {
+// Open connects to the feed and returns once the relay has accepted the
+// subscription. Callers own the returned stream and must close it.
+func Open(ctx context.Context, client *http.Client, baseURL string) (*Stream, error) {
 	endpoint, err := url.Parse(baseURL)
 	if err != nil {
-		return Page{}, fmt.Errorf("parse relay URL: %w", err)
+		return nil, fmt.Errorf("parse relay URL: %w", err)
 	}
 	endpoint.Path = "/activity"
-	endpoint.RawQuery = url.Values{"after": {after}, "limit": {"100"}}.Encode()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
 	if err != nil {
-		return Page{}, fmt.Errorf("create relay request: %w", err)
+		return nil, fmt.Errorf("create relay request: %w", err)
 	}
+	req.Header.Set("Accept", "text/event-stream")
 	response, err := client.Do(req)
 	if err != nil {
-		return Page{}, fmt.Errorf("read relay: %w", err)
+		return nil, fmt.Errorf("subscribe to relay: %w", err)
 	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusGone {
-		return Page{}, fmt.Errorf("relay returned HTTP %d", response.StatusCode)
+	if response.StatusCode != http.StatusOK {
+		_ = response.Body.Close()
+		return nil, fmt.Errorf("relay returned HTTP %d", response.StatusCode)
 	}
-	const maxPageBytes = 1 << 20
-	body, err := io.ReadAll(io.LimitReader(response.Body, maxPageBytes+1))
-	if err != nil {
-		return Page{}, fmt.Errorf("read relay response: %w", err)
+	mediaType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type"))
+	if err != nil || mediaType != "text/event-stream" {
+		_ = response.Body.Close()
+		return nil, errors.New("relay did not return an event stream")
 	}
-	var page Page
-	if len(body) > maxPageBytes || json.Unmarshal(body, &page) != nil {
-		return Page{}, errors.New("invalid relay response body")
-	}
-	if response.StatusCode == http.StatusGone {
-		if page.Code != "cursor_expired" || page.ResetCursor == "" || len(page.Events) != 0 || page.HasMore {
-			return Page{}, errors.New("invalid relay reset response")
-		}
-		return page, nil
-	}
-	if page.Code != "" || page.ResetCursor != "" || page.NextCursor == "" || len(page.Events) > 100 {
-		return Page{}, errors.New("invalid relay page")
-	}
-	if page.ResyncRequired {
-		if after != "" || len(page.Events) != 0 || page.HasMore {
-			return Page{}, errors.New("invalid relay initial checkpoint")
-		}
-		return page, nil
-	}
-	if after == "" || (len(page.Events) == 0 && (page.HasMore || page.NextCursor != after)) {
-		return Page{}, errors.New("relay page did not preserve its checkpoint")
-	}
-	previous := after
-	for _, event := range page.Events {
-		if err := event.Validate(); err != nil {
-			return Page{}, err
-		}
-		if event.Cursor == "" || event.Cursor == previous {
-			return Page{}, errors.New("relay event did not advance its cursor")
-		}
-		previous = event.Cursor
-	}
-	if previous != page.NextCursor {
-		return Page{}, errors.New("relay checkpoint does not match its last event")
-	}
-	return page, nil
+	return &Stream{body: response.Body}, nil
 }
+
+// Read delivers hints until the connection ends. It always returns a non-nil
+// error describing why delivery stopped.
+func (s *Stream) Read(handle func(Hint)) error {
+	scanner := bufio.NewScanner(s.body)
+	scanner.Buffer(make([]byte, maxEventLineBytes), maxEventLineBytes)
+	var event string
+	var data []string
+	for scanner.Scan() {
+		line := strings.TrimSuffix(scanner.Text(), "\r")
+		if line == "" {
+			if event == hintEvent {
+				var hint Hint
+				if json.Unmarshal([]byte(strings.Join(data, "\n")), &hint) != nil || hint.Validate() != nil {
+					return errors.New("relay sent an invalid hint")
+				}
+				handle(hint)
+			}
+			event, data = "", nil
+			continue
+		}
+		if strings.HasPrefix(line, ":") {
+			continue
+		}
+		field, value, _ := strings.Cut(line, ":")
+		value = strings.TrimPrefix(value, " ")
+		switch field {
+		case "event":
+			event = value
+		case "data":
+			data = append(data, value)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("read relay stream: %w", err)
+	}
+	return io.ErrUnexpectedEOF
+}
+
+func (s *Stream) Close() error { return s.body.Close() }

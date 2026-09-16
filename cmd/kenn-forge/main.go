@@ -790,12 +790,8 @@ func run(opts serve.Options) error {
 		)
 		syncer.Start(ctx)
 		if !opts.DisableSync && cfg.Relay.URL != "" {
-			relayURL := cfg.Relay.URL
-			relayClient := &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
-				return http.ErrUseLastResponse
-			}}
-			backgroundLoops.startTicker("activity relay", cfg.Relay.Interval(), func(runCtx context.Context) error {
-				return syncer.PollRelay(runCtx, relayURL, relayClient)
+			backgroundLoops.start(func(runCtx context.Context) {
+				syncer.RunRelay(runCtx, ghclient.RelayOptions{URL: cfg.Relay.URL, Client: relayHTTPClient()})
 			})
 		}
 		if !opts.DisableSync && cfg.NotificationsEnabled() {

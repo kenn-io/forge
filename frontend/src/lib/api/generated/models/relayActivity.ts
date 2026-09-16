@@ -4,7 +4,7 @@
 import type { RelayActivityTarget } from "./relayActivityTarget.ts";
 
 export interface RelayActivity {
-  cursor: string;
+  id: number;
   number: number;
   received_at: string;
   repository: string;

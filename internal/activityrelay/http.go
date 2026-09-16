@@ -7,20 +7,26 @@ import (
 	"encoding/hex"
 	"encoding/json/v2"
 	"errors"
+	"io"
 	"net/http"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 )
+
+// keepaliveInterval keeps idle streams alive through proxies that close
+// silent connections.
+const keepaliveInterval = 20 * time.Second
 
 type Source struct {
 	Secret        []byte
 	RepositoryIDs []int64
 }
 
-func Handlers(store *Store, sources map[string]Source) (http.Handler, http.Handler) {
+func Handlers(broadcaster *Broadcaster, sources map[string]Source) (http.Handler, http.Handler) {
 	public, private := http.NewServeMux(), http.NewServeMux()
 	config := huma.DefaultConfig("Forge activity relay", "1")
 	config.OpenAPIPath, config.DocsPath, config.SchemasPath = "", "", ""
@@ -54,50 +60,70 @@ func Handlers(store *Store, sources map[string]Source) (http.Handler, http.Handl
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid webhook payload")
 		}
-		if err := store.Append(ctx, hints); err != nil {
-			return nil, huma.Error503ServiceUnavailable("could not persist activity")
-		}
+		broadcaster.Publish(hints)
 		return &struct{}{}, nil
 	})
-	type feedInput struct {
-		After string `query:"after"`
-		Limit int    `query:"limit" default:"100" minimum:"1" maximum:"1000"`
-	}
-	type feedOutput struct {
-		Status int
-		Body   Page
-	}
-	huma.Register(feedAPI, huma.Operation{OperationID: "read-activity", Method: http.MethodGet, Path: "/activity"},
-		func(ctx context.Context, input *feedInput) (*feedOutput, error) {
-			page, err := store.Read(ctx, input.After, input.Limit)
-			if errors.Is(err, ErrInvalidCursor) {
-				return nil, huma.Error400BadRequest("invalid activity cursor")
-			}
-			if err != nil {
-				return nil, huma.Error503ServiceUnavailable("could not read activity")
-			}
-			status := http.StatusOK
-			if page.Code == "cursor_expired" {
-				status = http.StatusGone
-			}
-			return &feedOutput{Status: status, Body: page}, nil
-		})
+	huma.Register(feedAPI, huma.Operation{
+		OperationID: "subscribe-activity", Method: http.MethodGet, Path: "/activity",
+		Responses: map[string]*huma.Response{"200": {
+			Description: "Live refresh hints",
+			Content:     map[string]*huma.MediaType{"text/event-stream": {}},
+		}},
+	}, func(context.Context, *struct{}) (*huma.StreamResponse, error) {
+		return &huma.StreamResponse{Body: func(ctx huma.Context) {
+			ctx.SetHeader("Content-Type", "text/event-stream")
+			ctx.SetHeader("Cache-Control", "no-cache")
+			_, w := humago.Unwrap(ctx)
+			serveStream(ctx.Context(), w, broadcaster)
+		}}, nil
+	})
 	huma.Register(feedAPI, huma.Operation{OperationID: "relay-health", Method: http.MethodGet, Path: "/healthz"},
-		func(ctx context.Context, _ *struct{}) (*struct{}, error) {
-			if err := store.db.PingContext(ctx); err != nil {
-				return nil, huma.Error503ServiceUnavailable("activity store unavailable")
-			}
+		func(context.Context, *struct{}) (*struct{}, error) {
 			return &struct{}{}, nil
 		})
 	return public, private
+}
+
+func serveStream(ctx context.Context, w http.ResponseWriter, broadcaster *Broadcaster) {
+	controller := http.NewResponseController(w)
+	// The stream outlives the server's per-response write timeout.
+	_ = controller.SetWriteDeadline(time.Time{})
+	write := func(frame string) bool {
+		if _, err := io.WriteString(w, frame); err != nil {
+			return false
+		}
+		return controller.Flush() == nil
+	}
+	hints, cancel := broadcaster.Subscribe()
+	defer cancel()
+	if !write(": connected\n\n") {
+		return
+	}
+	keepalive := time.NewTicker(keepaliveInterval)
+	defer keepalive.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case hint := <-hints:
+			data, err := json.Marshal(hint)
+			if err != nil || !write("event: "+hintEvent+"\ndata: "+string(data)+"\n\n") {
+				return
+			}
+		case <-keepalive.C:
+			if !write(": keepalive\n\n") {
+				return
+			}
+		}
+	}
 }
 
 type pullReference struct {
 	Number int `json:"number"`
 }
 
-// Decode only routing fields. Neither this value nor decoder errors are stored
-// or logged; a fresh Hint is the only value passed to persistence.
+// Decode only routing fields. Neither this value nor decoder errors are
+// retained or logged; a fresh Hint is the only value that leaves this function.
 func reduce(event string, body []byte, allowed []int64) ([]Hint, error) {
 	switch event {
 	case "pull_request", "pull_request_review", "pull_request_review_comment", "pull_request_review_thread",

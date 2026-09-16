@@ -777,20 +777,26 @@ error or cancellation unchanged and never adopts.
 ## Activity relay
 
 - Relay hints accelerate normal polling; each consumer still uses its own credentials and rate gates.
-  (`internal/github/relay.go::PollRelay`)
+  (`internal/github/relay.go::refreshRelayHint`)
+- One `RunRelay` loop owns the subscription and reconnects with jittered exponential backoff,
+  1s doubling to a 30s cap, reset after a successful subscribe. The `[relay]` config has no
+  poll interval; `relay.poll_interval` is rejected at load. (`internal/github/relay.go::RunRelay`)
 - Webhook ingress ignores check, workflow, and status events; CI stays on normal syncing so check
   bursts do not crowd out activity. (`internal/activityrelay/http.go::reduce`)
 - Feed repository IDs are GitHub node IDs, matching the durable catalog; numeric REST IDs need
   a fresh provider resolve and must not become the consumer's lookup key. (`internal/activityrelay/http.go::reduce`)
-- Checkpoint cursors with pending targets before provider work. Keep one sequential poll/drain owner:
-  new deliveries stay on the relay until the next page read. (`internal/db/queries_relay.go::SaveRelayPage`)
-- Unknown-PR checks become durable PR refreshes; an incomplete first fetch must not reduce a retry
-  to checks alone. (`internal/github/relay.go::refreshRelayHint`)
+- Nothing about a hint is persisted. Received hints wait in a bounded in-memory queue that
+  coalesces repeats for one target; a single worker refreshes them in order so provider work
+  never stalls the stream. A hint that cannot run now because of budget, cooldown, or catalog
+  state is dropped and left to ordinary syncing. (`internal/github/relay.go::relayQueue`)
+- Unknown-PR checks refresh the PR itself in the same pass instead of checks alone.
+  (`internal/github/relay.go::refreshRelayHint`)
 - A parent ETag does not establish whether comment content changed; child-change hints require
   unconditional detail reads. (`internal/github/sync.go::getIssueForDetail`)
-- Relay status travels with ordinary sync status and is absent when the consumer is off.
-  Recent activity is a bounded, process-local list of received hints for tracked repositories,
-  not proof that provider refreshes finished. (`internal/github/relay.go::updateRelayStatus`)
+- Relay status travels with ordinary sync status and is absent when the consumer is off. It
+  carries connection state and a bounded, process-local list of received hints for tracked
+  repositories with process-local IDs, not proof that provider refreshes finished.
+  (`internal/github/relay.go::updateRelayStatus`)
 - Relay status alone must not reload provider data; sync-status broadcasts invalidate lists only
   when a running sync finishes. (`cmd/kenn-forge/provider_startup.go::wireSyncStatus`)
 

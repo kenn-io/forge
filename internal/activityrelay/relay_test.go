@@ -1,112 +1,123 @@
 package activityrelay
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestFeedReplayAndRetention(t *testing.T) {
+// subscribe opens a stream and returns hints as they arrive. The stream is
+// closed when the test ends.
+func subscribe(t *testing.T, feed *httptest.Server) <-chan Hint {
+	t.Helper()
 	require := require.New(t)
-	t.Parallel()
-	assert := assert.New(t)
-	path := filepath.Join(t.TempDir(), "relay.db")
-	store, err := Open(path)
+	ctx, cancel := context.WithCancel(t.Context())
+	stream, err := Open(ctx, feed.Client(), feed.URL)
 	require.NoError(err)
-	t.Cleanup(func() { require.NoError(store.Close()) })
-	head, err := store.Read(t.Context(), "", 100)
-	require.NoError(err)
-	require.True(head.ResyncRequired)
-	hint := Hint{Provider: "github", Host: "github.com", RepositoryID: "R_test_project", Target: "pull_request", Number: 42}
-	require.NoError(store.Append(t.Context(), []Hint{hint, hint}))
-	page, err := store.Read(t.Context(), head.NextCursor, 1)
-	require.NoError(err)
-	require.Len(page.Events, 1)
-	assert.Equal(hint, page.Events[0].Hint)
-	assert.True(page.HasMore)
-	require.NoError(store.Close())
-	store, err = Open(path)
-	require.NoError(err)
-	replayed, err := store.Read(t.Context(), head.NextCursor, 1)
-	require.NoError(err)
-	assert.Equal(page, replayed)
-	last, err := store.Read(t.Context(), page.NextCursor, 1)
-	require.NoError(err)
-	require.Len(last.Events, 1)
-	assert.False(last.HasMore)
-	empty, err := store.Read(t.Context(), last.NextCursor, 100)
-	require.NoError(err)
-	assert.Empty(empty.Events)
-	assert.Equal(last.NextCursor, empty.NextCursor)
-	require.NoError(store.Prune(t.Context(), time.Now().Add(time.Hour)))
-	expired, err := store.Read(t.Context(), head.NextCursor, 100)
-	require.NoError(err)
-	assert.Equal("cursor_expired", expired.Code)
-	assert.Equal(last.NextCursor, expired.ResetCursor)
-	require.NoError(store.Append(t.Context(), []Hint{hint}))
-	newPage, err := store.Read(t.Context(), expired.ResetCursor, 100)
-	require.NoError(err)
-	require.Len(newPage.Events, 1)
-	assert.NotEqual(last.NextCursor, newPage.NextCursor)
-	other, err := Open(filepath.Join(t.TempDir(), "replacement.db"))
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(other.Close()) })
-	reset, err := other.Read(t.Context(), newPage.NextCursor, 100)
-	require.NoError(err)
-	assert.Equal("cursor_expired", reset.Code)
-	_, err = store.Read(t.Context(), "invalid", 100)
-	require.Error(err)
+	hints := make(chan Hint, 16)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = stream.Read(func(hint Hint) { hints <- hint })
+	}()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+		_ = stream.Close()
+	})
+	return hints
 }
 
-func TestSignedWebhookReductionAndPrivacy(t *testing.T) {
+func TestSignedWebhookFansOutAndKeepsPayloadsPrivate(t *testing.T) {
 	require := require.New(t)
 	t.Parallel()
 	assert := assert.New(t)
-	path := filepath.Join(t.TempDir(), "relay.db")
-	store, err := Open(path)
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(store.Close()) })
 	secret := []byte("synthetic-signing-secret")
-	ingress, feed := Handlers(store, map[string]Source{"team": {Secret: secret, RepositoryIDs: []int64{12345}}})
-	feedServer := httptest.NewServer(feed)
+	feed := new(Broadcaster)
+	ingress, private := Handlers(feed, map[string]Source{"team": {Secret: secret, RepositoryIDs: []int64{12345}}})
+	feedServer := httptest.NewServer(private)
 	t.Cleanup(feedServer.Close)
-	head, err := Fetch(t.Context(), feedServer.Client(), feedServer.URL, "")
-	require.NoError(err)
+	first := subscribe(t, feedServer)
+	second := subscribe(t, feedServer)
 	body := `{"action":"edited","repository":{"id":12345,"node_id":"R_test_project","full_name":"private-repository-marker"},"pull_request":{"number":42,"title":"private-title-marker","body":"private-body-marker"},"sender":{"login":"private-user-marker"}}`
 	response := deliver(t, ingress, secret, "pull_request", body)
 	assert.Equal(http.StatusNoContent, response.Code)
+	want := Hint{Provider: "github", Host: "github.com", RepositoryID: "R_test_project", Target: PullRequest, Number: 42}
+	assert.Equal(want, <-first)
+	assert.Equal(want, <-second)
 	bad := deliver(t, ingress, []byte("wrong-secret"), "pull_request", body)
 	assert.Equal(http.StatusUnauthorized, bad.Code)
 	assert.NotContains(bad.Body.String(), "private-")
 	unlisted := deliver(t, ingress, secret, "pull_request", strings.ReplaceAll(body, "12345", "99999"))
 	assert.Equal(http.StatusBadRequest, unlisted.Code)
 	assert.NotContains(unlisted.Body.String(), "private-")
-	page, err := Fetch(t.Context(), feedServer.Client(), feedServer.URL, head.NextCursor)
-	require.NoError(err)
-	require.Len(page.Events, 1)
-	assert.Equal(Hint{Provider: "github", Host: "github.com", RepositoryID: "R_test_project", Target: "pull_request", Number: 42}, page.Events[0].Hint)
-	for _, suffix := range []string{"", "-wal"} {
-		data, readErr := os.ReadFile(path + suffix)
-		require.NoError(readErr)
-		assert.NotContains(string(data), "private-")
-		assert.NotContains(string(data), string(secret))
+	select {
+	case hint := <-first:
+		require.FailNow("rejected deliveries must not reach subscribers", "%+v", hint)
+	default:
 	}
 	publicFeed := httptest.NewRecorder()
 	ingress.ServeHTTP(publicFeed, httptest.NewRequest(http.MethodGet, "/activity", nil))
 	assert.Equal(http.StatusNotFound, publicFeed.Code)
-	privateWebhook := deliver(t, feed, secret, "pull_request", body)
+	privateWebhook := deliver(t, private, secret, "pull_request", body)
 	assert.Equal(http.StatusNotFound, privateWebhook.Code)
+	health := httptest.NewRecorder()
+	private.ServeHTTP(health, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	assert.Equal(http.StatusNoContent, health.Code)
+}
+
+func TestSubscriberReleaseAndSlowConsumers(t *testing.T) {
+	assert := assert.New(t)
+	t.Parallel()
+	feed := new(Broadcaster)
+	hints, cancel := feed.Subscribe()
+	assert.Equal(1, feed.Subscribers())
+	hint := Hint{Provider: "github", Host: "github.com", RepositoryID: "R_test_project", Target: Repository}
+	for range subscriberBuffer + 5 {
+		feed.Publish([]Hint{hint})
+	}
+	assert.Len(hints, subscriberBuffer, "a stalled subscriber drops hints instead of blocking the webhook")
+	cancel()
+	assert.Zero(feed.Subscribers())
+	feed.Publish([]Hint{hint})
+	assert.Len(hints, subscriberBuffer)
+}
+
+func TestOpenRejectsNonStreamResponses(t *testing.T) {
+	require := require.New(t)
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/activity":
+			_, _ = io.WriteString(w, `{"events":[]}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	_, err := Open(t.Context(), server.Client(), server.URL)
+	require.Error(err, "a page response must not be mistaken for a subscription")
+	_, err = Open(t.Context(), server.Client(), server.URL+"/missing")
+	require.Error(err)
+}
+
+func TestReadRejectsInvalidHints(t *testing.T) {
+	require := require.New(t)
+	t.Parallel()
+	stream := &Stream{body: io.NopCloser(strings.NewReader(": connected\n\nevent: hint\ndata: {\"provider\":\"github\",\"host\":\"github.com\",\"repository_id\":\"R_x\",\"target\":\"issue\",\"number\":0}\n\n"))}
+	var received []Hint
+	err := stream.Read(func(hint Hint) { received = append(received, hint) })
+	require.Error(err)
+	require.Empty(received)
 }
 
 func TestWebhookTargets(t *testing.T) {
@@ -140,24 +151,21 @@ func TestWebhookTargets(t *testing.T) {
 			require := require.New(t)
 			assert := assert.New(t)
 			t.Parallel()
-			store, err := Open(filepath.Join(t.TempDir(), "relay.db"))
-			require.NoError(err)
-			t.Cleanup(func() { require.NoError(store.Close()) })
+			feed := new(Broadcaster)
+			hints, cancel := feed.Subscribe()
+			t.Cleanup(cancel)
 			secret := []byte("synthetic-secret")
-			ingress, _ := Handlers(store, map[string]Source{"team": {Secret: secret, RepositoryIDs: []int64{12345}}})
-			head, err := store.Read(t.Context(), "", 100)
-			require.NoError(err)
+			ingress, _ := Handlers(feed, map[string]Source{"team": {Secret: secret, RepositoryIDs: []int64{12345}}})
 			response := deliver(t, ingress, secret, tt.event, `{"action":"created","repository":{"id":12345,"node_id":"R_test_project"},`+tt.fields+`}`)
 			require.Equal(tt.status, response.Code, response.Body.String())
-			page, err := store.Read(t.Context(), head.NextCursor, 100)
-			require.NoError(err)
 			if tt.target == "" {
-				require.Empty(page.Events)
+				require.Empty(hints)
 				return
 			}
-			require.Len(page.Events, 1)
-			assert.Equal(tt.target, page.Events[0].Target)
-			assert.Equal(tt.number, page.Events[0].Number)
+			require.Len(hints, 1)
+			hint := <-hints
+			assert.Equal(tt.target, hint.Target)
+			assert.Equal(tt.number, hint.Number)
 		})
 	}
 }

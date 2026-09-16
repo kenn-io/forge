@@ -127,6 +127,12 @@ type WorkspaceRef struct {
 }
 
 type Pull struct {
+	MergeableState  string
+	ReviewDecision  string
+	CIStatus        string
+	HeadSHA         string
+	Checks          []Check
+	Stack           *Stack
 	Number          int
 	Title           string
 	State           string

@@ -34,6 +34,7 @@ func TestRegisteredToolsResourcesAndPromptsAreCurated(t *testing.T) {
 		"kenn_forge_list_activity",
 		"kenn_forge_list_agent_targets",
 		"kenn_forge_list_items_by_workflow_state",
+		"kenn_forge_list_pull_contexts",
 		"kenn_forge_list_repos",
 		"kenn_forge_list_workspace_agent_sessions",
 		"kenn_forge_search_items",
@@ -71,6 +72,8 @@ func TestServerUses20260728ProtocolCapabilities(t *testing.T) {
 	initialized := connectMCPTestSession(t, s).InitializeResult()
 
 	require.NotNil(initialized)
+	assert.Contains(initialized.Instructions, "Prefer Forge MCP over gh")
+	assert.Contains(initialized.Instructions, "kenn-forge://mcp/guidance")
 	assert.Equal("2026-07-28", initialized.ProtocolVersion)
 	//nolint:staticcheck // Verify the 2026-07-28 server does not advertise deprecated logging.
 	assert.Nil(initialized.Capabilities.Logging)

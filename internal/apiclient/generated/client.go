@@ -19557,10 +19557,11 @@ func (c *Client) GetMarkdownImageOnHostWithResponse(ctx context.Context, options
 	switch resp.StatusCode {
 	case 200:
 		out.Headers200 = &GetMarkdownImageOnHostResp200Headers{
-			CacheControl:        resp.Headers.Get("Cache-Control"),
-			ContentLength:       resp.Headers.Get("Content-Length"),
-			ContentType:         resp.Headers.Get("Content-Type"),
-			XContentTypeOptions: resp.Headers.Get("X-Content-Type-Options"),
+			CacheControl:          resp.Headers.Get("Cache-Control"),
+			ContentLength:         resp.Headers.Get("Content-Length"),
+			ContentSecurityPolicy: resp.Headers.Get("Content-Security-Policy"),
+			ContentType:           resp.Headers.Get("Content-Type"),
+			XContentTypeOptions:   resp.Headers.Get("X-Content-Type-Options"),
 		}
 		return out, nil
 	case 500:
@@ -25631,10 +25632,11 @@ func (c *Client) GetMarkdownImageWithResponse(ctx context.Context, options *GetM
 	switch resp.StatusCode {
 	case 200:
 		out.Headers200 = &GetMarkdownImageResp200Headers{
-			CacheControl:        resp.Headers.Get("Cache-Control"),
-			ContentLength:       resp.Headers.Get("Content-Length"),
-			ContentType:         resp.Headers.Get("Content-Type"),
-			XContentTypeOptions: resp.Headers.Get("X-Content-Type-Options"),
+			CacheControl:          resp.Headers.Get("Cache-Control"),
+			ContentLength:         resp.Headers.Get("Content-Length"),
+			ContentSecurityPolicy: resp.Headers.Get("Content-Security-Policy"),
+			ContentType:           resp.Headers.Get("Content-Type"),
+			XContentTypeOptions:   resp.Headers.Get("X-Content-Type-Options"),
 		}
 		return out, nil
 	case 500:
@@ -46778,10 +46780,11 @@ type ListRepoLabelsOnHostResp struct {
 }
 
 type GetMarkdownImageOnHostResp200Headers struct {
-	CacheControl        string `header:"Cache-Control"`
-	ContentLength       string `header:"Content-Length"`
-	ContentType         string `header:"Content-Type"`
-	XContentTypeOptions string `header:"X-Content-Type-Options"`
+	CacheControl          string `header:"Cache-Control"`
+	ContentLength         string `header:"Content-Length"`
+	ContentSecurityPolicy string `header:"Content-Security-Policy"`
+	ContentType           string `header:"Content-Type"`
+	XContentTypeOptions   string `header:"X-Content-Type-Options"`
 }
 
 type GetMarkdownImageOnHostResp struct {
@@ -47659,10 +47662,11 @@ type ListRepoLabelsResp struct {
 }
 
 type GetMarkdownImageResp200Headers struct {
-	CacheControl        string `header:"Cache-Control"`
-	ContentLength       string `header:"Content-Length"`
-	ContentType         string `header:"Content-Type"`
-	XContentTypeOptions string `header:"X-Content-Type-Options"`
+	CacheControl          string `header:"Cache-Control"`
+	ContentLength         string `header:"Content-Length"`
+	ContentSecurityPolicy string `header:"Content-Security-Policy"`
+	ContentType           string `header:"Content-Type"`
+	XContentTypeOptions   string `header:"X-Content-Type-Options"`
 }
 
 type GetMarkdownImageResp struct {

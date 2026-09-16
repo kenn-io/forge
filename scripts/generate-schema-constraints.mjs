@@ -2,10 +2,7 @@
 // TypeScript module. Generated TypeScript types do not carry `minimum` and
 // `maximum`, so the frontend could not validate a bounded field without
 // duplicating the server's limits by hand. This module is the single source
-// the UI reads; regenerate it with `make api-generate`.
-
-import { readFileSync, writeFileSync } from "node:fs";
-import { parse } from "yaml";
+// the UI reads; Vite regenerates it with the API client.
 
 export function schemaConstraints(document) {
   const schemas = document?.components?.schemas ?? {};
@@ -44,15 +41,4 @@ export function renderModule(constraints) {
   }
   lines.push("} as const;", "");
   return lines.join("\n");
-}
-
-const invokedDirectly = process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href;
-if (invokedDirectly) {
-  const [specPath, outPath] = process.argv.slice(2);
-  if (!specPath || !outPath) {
-    console.error("usage: generate-schema-constraints.mjs <openapi.yaml> <out.ts>");
-    process.exit(2);
-  }
-  const document = parse(readFileSync(specPath, "utf8"));
-  writeFileSync(outPath, renderModule(schemaConstraints(document)));
 }

@@ -237,10 +237,8 @@ guardrail-check: check-vite-plus-bin
 
 # Regenerate the checked-in OpenAPI document and generated clients
 api-generate: frontend-deps
-	mkdir -p frontend/src/lib/api/generated
 	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; go run ./cmd/kenn-forge-openapi -out "$$tmp" -format yaml; if [ -f frontend/openapi/openapi.yaml ] && cmp -s "$$tmp" frontend/openapi/openapi.yaml; then rm "$$tmp"; else mv "$$tmp" frontend/openapi/openapi.yaml; fi; trap - EXIT
-	node frontend/scripts/generate-api-client.mjs openapi/openapi.yaml
-	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; node scripts/generate-schema-constraints.mjs frontend/openapi/openapi.yaml "$$tmp"; if [ -f frontend/src/lib/api/generated/schema-constraints.ts ] && cmp -s "$$tmp" frontend/src/lib/api/generated/schema-constraints.ts; then rm "$$tmp"; else mv "$$tmp" frontend/src/lib/api/generated/schema-constraints.ts; fi; trap - EXIT
+	cd frontend && $(VITE_PLUS_FRONTEND_BIN) build --logLevel warn
 	go run ./cmd/kenn-forge-openapi -api health -out internal/apiclient/health/openapi.yaml
 	go generate ./internal/apiclient/...
 

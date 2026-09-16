@@ -42,6 +42,9 @@ fixtures, or changing shell-script coverage.
   helper methods thereafter. CI enforces this through `guardrail-check`
   (`Makefile::guardrail-check`).
 - Prefer the generated Go API client for integration-style API tests.
+- Stage API, generated-client, and module changes before `make huma-check`; its
+  Git-index snapshot can otherwise load mismatched types or report old findings
+  (`Makefile::huma-check`).
 - Use established package fixtures instead of opening databases directly. Use
   `t.TempDir()` when a test needs filesystem isolation.
 - Fixed historical timestamps must use an explicit query window or controlled

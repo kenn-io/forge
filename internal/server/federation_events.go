@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"go.kenn.io/forge/internal/apiclient/generated"
+
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 	"go.kenn.io/forge/internal/federationauth"
@@ -272,9 +274,7 @@ func (s *Server) resynchronizeHubProviderState(ctx context.Context) error {
 	if s.providerSource == nil || s.providerSource.client == nil {
 		return providerplane.ErrHubUnavailable
 	}
-	request, err := http.NewRequestWithContext(
-		ctx, http.MethodGet, "/api/v1/sync/status", nil,
-	)
+	request, err := generated.NewGetSyncStatusRequest(ctx, "/api/v1")
 	if err != nil {
 		return err
 	}

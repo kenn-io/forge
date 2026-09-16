@@ -260,6 +260,9 @@ jobs:
           go install go.uber.org/nilaway/cmd/nilaway@v0.0.0-20260808063849-8649a03c818a
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
+      - name: Check shared Huma API contract
+        run: make huma-check
+
       - name: Run NilAway
         run: make nilaway
 

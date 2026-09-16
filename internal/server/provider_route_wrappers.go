@@ -66,17 +66,6 @@ type federationWorkflowMutation struct {
 
 type federationSetWorkflowStateOutput = httpapi.BodyOutput[federationWorkflowMutation]
 
-func federationWorkflowQueryFromMCP(query mcpserver.WorkflowQuery) federationWorkflowQuery {
-	return federationWorkflowQuery{
-		Repository:    federationWorkflowRepositoryIdentity(query.Repository),
-		ItemTypes:     append([]string{}, query.ItemTypes...),
-		States:        append([]string{}, query.States...),
-		IncludeClosed: query.IncludeClosed,
-		Limit:         query.Limit,
-		Cursor:        query.Cursor,
-	}
-}
-
 func (query federationWorkflowQuery) mcp() mcpserver.WorkflowQuery {
 	return mcpserver.WorkflowQuery{
 		Repository:    mcpserver.RepositoryIdentity(query.Repository),

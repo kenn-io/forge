@@ -82,7 +82,8 @@ generate_api_artifacts() {
   "$NODE_BIN" "$constraints_generator" "$frontend_spec" "$tmp_constraints"
   write_if_changed "$frontend_constraints" "$tmp_constraints" >/dev/null 2>&1 || true
 
-  GOCACHE="${GOCACHE:-/tmp/kenn-forge-gocache}" "$GO_BIN" generate ./internal/apiclient/generated
+  GOCACHE="${GOCACHE:-/tmp/kenn-forge-gocache}" "$GO_BIN" run ./cmd/kenn-forge-openapi -api health -out internal/apiclient/health/openapi.yaml
+  GOCACHE="${GOCACHE:-/tmp/kenn-forge-gocache}" "$GO_BIN" generate ./internal/apiclient/...
 }
 
 current_inputs_hash="$(compute_inputs_hash)"

@@ -17,6 +17,7 @@ GOPATH_FIRST := $(shell go env GOPATH | sed -E 's/^([A-Za-z]:)?([^;:]*).*/\1\2/'
 
 ROBOREV_SRC ?= $(HOME)/code/roborev
 ROBOREV_REF ?= main
+HUMA_CHECK_VERSION := efb469cee12d24fd52640ea05b03ced275bf4370
 AIR_BIN := $(shell if command -v air >/dev/null 2>&1; then command -v air; \
 	elif [ -n "$$(go env GOBIN)" ] && [ -x "$$(go env GOBIN)/air$(EXE_SUFFIX)" ]; then printf "%s" "$$(go env GOBIN)/air$(EXE_SUFFIX)"; \
 	elif [ -x "$(GOPATH_FIRST)/bin/air$(EXE_SUFFIX)" ]; then printf "%s" "$(GOPATH_FIRST)/bin/air$(EXE_SUFFIX)"; \
@@ -39,7 +40,7 @@ DEV_CLONE_FRONTEND_PORT ?= 5175
 .PHONY: ensure-embed-dir ensure-tmp-dir check-air air-install build build-release install \
         rust-pty-manager rust-test vite-plus-install frontend-deps check-vite-plus-bin frontend githubapp-frontend frontend-dev frontend-dev-bun frontend-check frontend-check-no-deps frontend-check-core-no-deps frontend-effect-diagnostics api-generate roborev-api-generate \
         docs-build docs-check docs-screenshots docs-vercel-build docs-branding-check docs-deploy-staging docs-deploy \
-        dev dev-ephemeral dev-ephemeral-stop test test-short test-integration test-e2e test-e2e-roborev test-fleet-container test-fleet-drive-container test-gitlab-container gitlab-fixture-bake vet check-mise lint lint-check nilaway testify-helper-check \
+        dev dev-ephemeral dev-ephemeral-stop test test-short test-integration test-e2e test-e2e-roborev huma-check test-fleet-container test-fleet-drive-container test-gitlab-container gitlab-fixture-bake vet check-mise lint lint-check nilaway testify-helper-check \
         profile-workspace-switch otel-lgtm \
         frontend-api-client-check font-size-token-check huma-route-check migration-history-check playwright-version-check script-tests guardrail-check race-times tidy svelte-skills svelte-skills-sync clean install-hooks help \
         dev-clone-db frontend-dev-clone-db
@@ -240,7 +241,8 @@ api-generate: frontend-deps
 	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; go run ./cmd/kenn-forge-openapi -out "$$tmp" -format yaml; if [ -f frontend/openapi/openapi.yaml ] && cmp -s "$$tmp" frontend/openapi/openapi.yaml; then rm "$$tmp"; else mv "$$tmp" frontend/openapi/openapi.yaml; fi; trap - EXIT
 	node frontend/scripts/generate-api-client.mjs openapi/openapi.yaml
 	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; node scripts/generate-schema-constraints.mjs frontend/openapi/openapi.yaml "$$tmp"; if [ -f frontend/src/lib/api/generated/schema-constraints.ts ] && cmp -s "$$tmp" frontend/src/lib/api/generated/schema-constraints.ts; then rm "$$tmp"; else mv "$$tmp" frontend/src/lib/api/generated/schema-constraints.ts; fi; trap - EXIT
-	go generate ./internal/apiclient/generated
+	go run ./cmd/kenn-forge-openapi -api health -out internal/apiclient/health/openapi.yaml
+	go generate ./internal/apiclient/...
 
 # Regenerate the roborev TypeScript client from the checked-in OpenAPI spec
 roborev-api-generate: frontend-deps
@@ -248,6 +250,7 @@ roborev-api-generate: frontend-deps
 	$(VITE_PLUS_BIN) fmt frontend/src/lib/api/roborev/generated-next --write
 	rm -rf frontend/src/lib/api/roborev/generated
 	mv frontend/src/lib/api/roborev/generated-next frontend/src/lib/api/roborev/generated
+	go generate ./internal/apiclient/roborev
 
 # Ensure air is installed for backend live reload
 check-air:
@@ -471,3 +474,7 @@ help:
 	@echo ""
 	@echo "  install-hooks  - Install pre-commit and pre-push hooks (prek)"
 	@echo "  clean          - Remove build artifacts"
+
+# Enforce the shared API contract without rewriting files during verification.
+huma-check:
+	go run go.kenn.io/kit/cmd/huma-check@$(HUMA_CHECK_VERSION) -fix=false ./...

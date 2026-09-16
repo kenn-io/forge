@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json/v2"
 	"errors"
@@ -12,6 +11,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"go.kenn.io/forge/internal/apiclient/generated"
 
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
@@ -264,11 +265,11 @@ func validateAndActivateFederationSpoke(
 		NodeID          string `json:"node_id"`
 		ProtocolVersion int    `json:"protocol_version"`
 	}
-	if err := doSpokeActivationJSON(
-		ctx, client, http.MethodGet,
-		local.HubURL+"/api/v1/federation/identity",
-		local.NodeID, credential.Token, nil, &identity,
-	); err != nil {
+	request, err := generated.NewGetFederationIdentityRequest(ctx, local.HubURL+"/api/v1")
+	if err != nil {
+		return time.Time{}, err
+	}
+	if err := doSpokeActivationJSON(client, request, local.NodeID, credential.Token, &identity); err != nil {
 		return time.Time{}, err
 	}
 	if identity.ProtocolVersion != federation.ProtocolVersion {
@@ -285,18 +286,16 @@ func validateAndActivateFederationSpoke(
 		)
 	}
 	var active federation.Enrollment
-	if err := doSpokeActivationJSON(
-		ctx, client, http.MethodPost,
-		local.HubURL+"/api/v1/federation/enrollments/"+
-			local.EnrollmentID+"/activate",
-		local.NodeID, credential.Token,
-		map[string]any{
-			"protocol_version":         federation.ProtocolVersion,
-			"activation_lease_version": federation.ActivationLeaseVersion,
-			"preparation_seal":         local.Preparation.Seal,
+	request, err = generated.NewActivateFederationEnrollmentRequest(ctx, local.HubURL+"/api/v1", &generated.ActivateFederationEnrollmentRequestOptions{
+		PathParams: &generated.ActivateFederationEnrollmentPath{EnrollmentID: local.EnrollmentID},
+		Body: &generated.ActivateFederationEnrollmentBody{
+			ProtocolVersion: federation.ProtocolVersion, ActivationLeaseVersion: federation.ActivationLeaseVersion, PreparationSeal: local.Preparation.Seal,
 		},
-		&active,
-	); err != nil {
+	})
+	if err != nil {
+		return time.Time{}, err
+	}
+	if err := doSpokeActivationJSON(client, request, local.NodeID, credential.Token, &active); err != nil {
 		return time.Time{}, err
 	}
 	if active.ID != local.EnrollmentID || active.NodeID != local.NodeID ||
@@ -438,31 +437,10 @@ func suspendFederationSpokeActivation(
 	)
 }
 
-func doSpokeActivationJSON(
-	ctx context.Context,
-	client *http.Client,
-	method, endpoint, nodeID, token string,
-	body any,
-	target any,
-) error {
-	var reader io.Reader
-	if body != nil {
-		encoded, err := json.Marshal(body)
-		if err != nil {
-			return fmt.Errorf("encode federation activation request: %w", err)
-		}
-		reader = bytes.NewReader(encoded)
-	}
-	request, err := http.NewRequestWithContext(ctx, method, endpoint, reader)
-	if err != nil {
-		return fmt.Errorf("build federation activation request: %w", err)
-	}
+func doSpokeActivationJSON(client *http.Client, request *http.Request, nodeID, token string, target any) error {
 	request.Header.Set("Authorization", "Bearer "+token)
 	request.Header.Set(federationauth.NodeIDHeader, nodeID)
 	request.Header.Set(providerplane.ProtocolVersionHeader, providerplane.ProtocolVersionHeaderValue())
-	if body != nil {
-		request.Header.Set("Content-Type", "application/json")
-	}
 	response, err := client.Do(request)
 	if err != nil {
 		return err

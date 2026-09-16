@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"net/url"
+	"strings"
+
+	"go.kenn.io/forge/internal/apiclient/generated"
 
 	"go.kenn.io/forge/internal/server/httpapi"
 )
@@ -34,16 +36,7 @@ func (s *Handler) RequestWorkspaceCleanup(
 	if !ok || target.self {
 		return fmt.Errorf("fleet host %q is unavailable", hostKey)
 	}
-	request, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodPost,
-		remoteHTTPURL(
-			target.member.BaseURL,
-			"/api/v1/federation/workspaces/"+url.PathEscape(workspaceID)+"/cleanup",
-			"",
-		),
-		nil,
-	)
+	request, err := generated.NewQueueFederationWorkspaceCleanupRequest(ctx, strings.TrimRight(target.member.BaseURL, "/")+"/api/v1", &generated.QueueFederationWorkspaceCleanupRequestOptions{PathParams: &generated.QueueFederationWorkspaceCleanupPath{ID: workspaceID}})
 	if err != nil {
 		return fmt.Errorf("build spoke workspace cleanup request: %w", err)
 	}

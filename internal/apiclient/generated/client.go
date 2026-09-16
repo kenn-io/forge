@@ -1369,6 +1369,38 @@ func (o *FederationRefreshWorkspaceLaunchSpecRequestOptions) GetHeader() (map[st
 	return nil, nil
 }
 
+// QueueFederationWorkspaceCleanupRequestOptions is the options needed to make a request to QueueFederationWorkspaceCleanup.
+type QueueFederationWorkspaceCleanupRequestOptions struct {
+	PathParams *QueueFederationWorkspaceCleanupPath
+}
+
+// GetPathParams returns the path params as a map.
+func (o *QueueFederationWorkspaceCleanupRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := runtime.AsMap[any](o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *QueueFederationWorkspaceCleanupRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *QueueFederationWorkspaceCleanupRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *QueueFederationWorkspaceCleanupRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // CompleteFilesystemPathRequestOptions is the options needed to make a request to CompleteFilesystemPath.
 type CompleteFilesystemPathRequestOptions struct {
 	Query *CompleteFilesystemPathQuery
@@ -9379,6 +9411,31 @@ func (o *CaptureTelemetryEventRequestOptions) GetHeader() (map[string]string, er
 	return nil, nil
 }
 
+// WriteTerminalClipboardRequestOptions is the options needed to make a request to WriteTerminalClipboard.
+type WriteTerminalClipboardRequestOptions struct {
+	Body *WriteTerminalClipboardBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *WriteTerminalClipboardRequestOptions) GetPathParams() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *WriteTerminalClipboardRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *WriteTerminalClipboardRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *WriteTerminalClipboardRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // StoreTerminalPasteImageRequestOptions is the options needed to make a request to StoreTerminalPasteImage.
 type StoreTerminalPasteImageRequestOptions struct {
 	Body   *StoreTerminalPasteImageBody
@@ -10437,6 +10494,7 @@ type ClientInterface interface {
 	FederationAutoAssignWorkspaceItemWithResponse(ctx context.Context, options *FederationAutoAssignWorkspaceItemRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationAutoAssignWorkspaceItemResp, error)
 	FederationResolveWorkspaceLaunchSpecWithResponse(ctx context.Context, options *FederationResolveWorkspaceLaunchSpecRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationResolveWorkspaceLaunchSpecResp, error)
 	FederationRefreshWorkspaceLaunchSpecWithResponse(ctx context.Context, options *FederationRefreshWorkspaceLaunchSpecRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationRefreshWorkspaceLaunchSpecResp, error)
+	QueueFederationWorkspaceCleanupWithResponse(ctx context.Context, options *QueueFederationWorkspaceCleanupRequestOptions, reqEditors ...runtime.RequestEditorFn) (*QueueFederationWorkspaceCleanupResp, error)
 	CompleteFilesystemPathWithResponse(ctx context.Context, options *CompleteFilesystemPathRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CompleteFilesystemPathResp, error)
 	ValidateFilesystemRepoWithResponse(ctx context.Context, options *ValidateFilesystemRepoRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ValidateFilesystemRepoResp, error)
 	CreateFleetEnrollmentTokenWithResponse(ctx context.Context, options *CreateFleetEnrollmentTokenRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateFleetEnrollmentTokenResp, error)
@@ -10705,6 +10763,7 @@ type ClientInterface interface {
 	TriggerSyncWithResponse(ctx context.Context, options *TriggerSyncRequestOptions, reqEditors ...runtime.RequestEditorFn) (*TriggerSyncResp, error)
 	GetSyncStatusWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetSyncStatusResp, error)
 	CaptureTelemetryEventWithResponse(ctx context.Context, options *CaptureTelemetryEventRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CaptureTelemetryEventResp, error)
+	WriteTerminalClipboardWithResponse(ctx context.Context, options *WriteTerminalClipboardRequestOptions, reqEditors ...runtime.RequestEditorFn) (*WriteTerminalClipboardResp, error)
 	StoreTerminalPasteImageWithResponse(ctx context.Context, options *StoreTerminalPasteImageRequestOptions, reqEditors ...runtime.RequestEditorFn) (*StoreTerminalPasteImageResp, error)
 	GetToolingStatusWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetToolingStatusResp, error)
 	SetActiveWorktreeWithResponse(ctx context.Context, options *SetActiveWorktreeRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetActiveWorktreeResp, error)
@@ -10763,10 +10822,11 @@ func (c *Client) ListWorkflowRunsWithResponse(ctx context.Context, options *List
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ListWorkflowRunsErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ListWorkflowRunsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -10817,10 +10877,11 @@ func (c *Client) ListWorkflowRunJobsWithResponse(ctx context.Context, options *L
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ListWorkflowRunJobsErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ListWorkflowRunJobsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -10871,10 +10932,11 @@ func (c *Client) ListWorkflowsWithResponse(ctx context.Context, options *ListWor
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ListWorkflowsErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ListWorkflowsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -10926,10 +10988,11 @@ func (c *Client) DispatchWorkflowWithResponse(ctx context.Context, options *Disp
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(DispatchWorkflowErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(DispatchWorkflowErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 202:
@@ -10980,10 +11043,11 @@ func (c *Client) ListActivityWithResponse(ctx context.Context, options *ListActi
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ListActivityErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ListActivityErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -11034,10 +11098,11 @@ func (c *Client) ListActivityAuthorsWithResponse(ctx context.Context, options *L
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ListActivityAuthorsErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ListActivityAuthorsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -11088,10 +11153,11 @@ func (c *Client) ListActivityThreadEventsWithResponse(ctx context.Context, optio
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ListActivityThreadEventsErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ListActivityThreadEventsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -11143,10 +11209,11 @@ func (c *Client) ReceiveAgentHookWithResponse(ctx context.Context, options *Rece
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ReceiveAgentHookErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ReceiveAgentHookErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -11196,10 +11263,11 @@ func (c *Client) ListArchivePacingWithResponse(ctx context.Context, reqEditors .
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ListArchivePacingErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ListArchivePacingErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -11251,10 +11319,11 @@ func (c *Client) PauseArchivesWithResponse(ctx context.Context, options *PauseAr
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(PauseArchivesErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(PauseArchivesErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -11305,10 +11374,11 @@ func (c *Client) GetArchiveReportWithResponse(ctx context.Context, options *GetA
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetArchiveReportErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetArchiveReportErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -11360,10 +11430,11 @@ func (c *Client) StartArchivesWithResponse(ctx context.Context, options *StartAr
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(StartArchivesErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(StartArchivesErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -11414,10 +11485,11 @@ func (c *Client) ListArchiveStatusWithResponse(ctx context.Context, options *Lis
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ListArchiveStatusErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ListArchiveStatusErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -11468,10 +11540,11 @@ func (c *Client) BrowseDocsFoldersWithResponse(ctx context.Context, options *Bro
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(BrowseDocsFoldersErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(BrowseDocsFoldersErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -11521,10 +11594,11 @@ func (c *Client) ListDocsFoldersWithResponse(ctx context.Context, reqEditors ...
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ListDocsFoldersErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ListDocsFoldersErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -11576,10 +11650,11 @@ func (c *Client) CreateDocsFolderWithResponse(ctx context.Context, options *Crea
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(CreateDocsFolderErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(CreateDocsFolderErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 201:
@@ -11630,10 +11705,11 @@ func (c *Client) DeleteDocsFolderWithResponse(ctx context.Context, options *Dele
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(DeleteDocsFolderErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(DeleteDocsFolderErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 204:
@@ -11671,10 +11747,11 @@ func (c *Client) UpdateDocsFolderWithResponse(ctx context.Context, options *Upda
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(UpdateDocsFolderErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(UpdateDocsFolderErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -11725,10 +11802,11 @@ func (c *Client) ReadDocsBlobWithResponse(ctx context.Context, options *ReadDocs
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ReadDocsBlobErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ReadDocsBlobErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -11770,10 +11848,11 @@ func (c *Client) DeleteDocsFileWithResponse(ctx context.Context, options *Delete
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(DeleteDocsFileErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(DeleteDocsFileErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 204:
@@ -11810,10 +11889,11 @@ func (c *Client) ReadDocsFileWithResponse(ctx context.Context, options *ReadDocs
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ReadDocsFileErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ReadDocsFileErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -11865,10 +11945,11 @@ func (c *Client) CreateDocsFileWithResponse(ctx context.Context, options *Create
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(CreateDocsFileErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(CreateDocsFileErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 201:
@@ -11920,10 +12001,11 @@ func (c *Client) WriteDocsFileWithResponse(ctx context.Context, options *WriteDo
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(WriteDocsFileErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(WriteDocsFileErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -11975,10 +12057,11 @@ func (c *Client) RenameDocsFileWithResponse(ctx context.Context, options *Rename
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(RenameDocsFileErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(RenameDocsFileErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -12029,10 +12112,11 @@ func (c *Client) GetDocsGitStatusWithResponse(ctx context.Context, options *GetD
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetDocsGitStatusErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetDocsGitStatusErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -12083,10 +12167,11 @@ func (c *Client) GetDocsGitChangesWithResponse(ctx context.Context, options *Get
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetDocsGitChangesErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetDocsGitChangesErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -12138,10 +12223,11 @@ func (c *Client) PublishDocsGitWithResponse(ctx context.Context, options *Publis
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(PublishDocsGitErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(PublishDocsGitErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -12192,10 +12278,11 @@ func (c *Client) PullDocsGitWithResponse(ctx context.Context, options *PullDocsG
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(PullDocsGitErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(PullDocsGitErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -12246,10 +12333,11 @@ func (c *Client) SearchDocsFolderWithResponse(ctx context.Context, options *Sear
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(SearchDocsFolderErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(SearchDocsFolderErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -12300,10 +12388,11 @@ func (c *Client) GetDocsTreeWithResponse(ctx context.Context, options *GetDocsTr
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetDocsTreeErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetDocsTreeErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -12354,10 +12443,11 @@ func (c *Client) SearchDocsWithResponse(ctx context.Context, options *SearchDocs
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(SearchDocsErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(SearchDocsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -12408,10 +12498,11 @@ func (c *Client) StreamEventsWithResponse(ctx context.Context, options *StreamEv
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(StreamEventsErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(StreamEventsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -12449,10 +12540,11 @@ func (c *Client) BeginFederationEnrollmentWithResponse(ctx context.Context, opti
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(BeginFederationEnrollmentErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(BeginFederationEnrollmentErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 201:
@@ -12503,10 +12595,11 @@ func (c *Client) AbortFederationEnrollmentWithResponse(ctx context.Context, opti
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(AbortFederationEnrollmentErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(AbortFederationEnrollmentErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 204:
@@ -12544,10 +12637,11 @@ func (c *Client) ActivateFederationEnrollmentWithResponse(ctx context.Context, o
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ActivateFederationEnrollmentErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ActivateFederationEnrollmentErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -12598,10 +12692,11 @@ func (c *Client) BeginFederationSpokePreparationWithResponse(ctx context.Context
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(BeginFederationSpokePreparationErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(BeginFederationSpokePreparationErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -12653,10 +12748,11 @@ func (c *Client) SealFederationSpokePreparationWithResponse(ctx context.Context,
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(SealFederationSpokePreparationErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(SealFederationSpokePreparationErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -12707,10 +12803,11 @@ func (c *Client) StreamFederationProviderEventsWithResponse(ctx context.Context,
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(StreamFederationProviderEventsErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(StreamFederationProviderEventsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -12746,10 +12843,11 @@ func (c *Client) GetFederationIdentityWithResponse(ctx context.Context, reqEdito
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetFederationIdentityErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetFederationIdentityErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -12801,10 +12899,11 @@ func (c *Client) FederationImportReviewDraftWithResponse(ctx context.Context, op
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(FederationImportReviewDraftErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(FederationImportReviewDraftErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -12856,10 +12955,11 @@ func (c *Client) FederationImportWorkflowStateWithResponse(ctx context.Context, 
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(FederationImportWorkflowStateErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(FederationImportWorkflowStateErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -12911,10 +13011,11 @@ func (c *Client) FederationFilterUnassignedActivitySubjectsWithResponse(ctx cont
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(FederationFilterUnassignedActivitySubjectsErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(FederationFilterUnassignedActivitySubjectsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -12966,10 +13067,11 @@ func (c *Client) FederationGetDiffDescriptorWithResponse(ctx context.Context, op
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(FederationGetDiffDescriptorErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(FederationGetDiffDescriptorErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -13021,10 +13123,11 @@ func (c *Client) FederationGetRepositoryDescriptorWithResponse(ctx context.Conte
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(FederationGetRepositoryDescriptorErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(FederationGetRepositoryDescriptorErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -13074,10 +13177,11 @@ func (c *Client) FederationGetProviderSettingsWithResponse(ctx context.Context, 
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(FederationGetProviderSettingsErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(FederationGetProviderSettingsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -13129,10 +13233,11 @@ func (c *Client) FederationUpdateProviderSettingsWithResponse(ctx context.Contex
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(FederationUpdateProviderSettingsErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(FederationUpdateProviderSettingsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -13184,10 +13289,11 @@ func (c *Client) FederationSetWorkflowStateWithResponse(ctx context.Context, opt
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(FederationSetWorkflowStateErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(FederationSetWorkflowStateErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -13239,10 +13345,11 @@ func (c *Client) FederationListWorkflowStatesWithResponse(ctx context.Context, o
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(FederationListWorkflowStatesErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(FederationListWorkflowStatesErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -13294,10 +13401,11 @@ func (c *Client) FederationAutoAssignWorkspaceItemWithResponse(ctx context.Conte
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(FederationAutoAssignWorkspaceItemErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(FederationAutoAssignWorkspaceItemErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 204:
@@ -13335,10 +13443,11 @@ func (c *Client) FederationResolveWorkspaceLaunchSpecWithResponse(ctx context.Co
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(FederationResolveWorkspaceLaunchSpecErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(FederationResolveWorkspaceLaunchSpecErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -13390,10 +13499,11 @@ func (c *Client) FederationRefreshWorkspaceLaunchSpecWithResponse(ctx context.Co
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(FederationRefreshWorkspaceLaunchSpecErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(FederationRefreshWorkspaceLaunchSpecErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -13411,6 +13521,46 @@ func (c *Client) FederationRefreshWorkspaceLaunchSpecWithResponse(ctx context.Co
 				}
 			}
 		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+func (c *Client) QueueFederationWorkspaceCleanupWithResponse(ctx context.Context, options *QueueFederationWorkspaceCleanupRequestOptions, reqEditors ...runtime.RequestEditorFn) (*QueueFederationWorkspaceCleanupResp, error) {
+	var err error
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/federation/workspaces/{id}/cleanup",
+		Method:     "POST",
+		Options:    options,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/federation/workspaces/{id}/cleanup")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &QueueFederationWorkspaceCleanupResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(QueueFederationWorkspaceCleanupErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 202:
 		return out, nil
 	case 500:
 		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
@@ -13444,10 +13594,11 @@ func (c *Client) CompleteFilesystemPathWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(CompleteFilesystemPathErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(CompleteFilesystemPathErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -13498,10 +13649,11 @@ func (c *Client) ValidateFilesystemRepoWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ValidateFilesystemRepoErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ValidateFilesystemRepoErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -13553,10 +13705,11 @@ func (c *Client) CreateFleetEnrollmentTokenWithResponse(ctx context.Context, opt
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(CreateFleetEnrollmentTokenErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(CreateFleetEnrollmentTokenErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 201:
@@ -13607,10 +13760,11 @@ func (c *Client) RevokeFederationEnrollmentWithResponse(ctx context.Context, opt
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(RevokeFederationEnrollmentErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(RevokeFederationEnrollmentErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 204:
@@ -15169,10 +15323,11 @@ func (c *Client) JoinFederationWithResponse(ctx context.Context, options *JoinFe
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(JoinFederationErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(JoinFederationErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -15222,10 +15377,11 @@ func (c *Client) PrepareFederationSpokeWithResponse(ctx context.Context, reqEdit
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(PrepareFederationSpokeErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(PrepareFederationSpokeErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -15277,10 +15433,11 @@ func (c *Client) AbortFederationSpokePreparationWithResponse(ctx context.Context
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(AbortFederationSpokePreparationErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(AbortFederationSpokePreparationErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -15331,10 +15488,11 @@ func (c *Client) ListWorkflowRunsOnHostWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ListWorkflowRunsOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ListWorkflowRunsOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -15385,10 +15543,11 @@ func (c *Client) ListWorkflowRunJobsOnHostWithResponse(ctx context.Context, opti
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ListWorkflowRunJobsOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ListWorkflowRunJobsOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -15439,10 +15598,11 @@ func (c *Client) ListWorkflowsOnHostWithResponse(ctx context.Context, options *L
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ListWorkflowsOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ListWorkflowsOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -15494,10 +15654,11 @@ func (c *Client) DispatchWorkflowOnHostWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(DispatchWorkflowOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(DispatchWorkflowOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 202:
@@ -15549,10 +15710,11 @@ func (c *Client) CreateIssueOnHostWithResponse(ctx context.Context, options *Cre
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(CreateIssueOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(CreateIssueOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 201:
@@ -15603,10 +15765,11 @@ func (c *Client) GetIssueOnHostWithResponse(ctx context.Context, options *GetIss
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetIssueOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetIssueOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -15658,10 +15821,11 @@ func (c *Client) EditIssueContentOnHostWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(EditIssueContentOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(EditIssueContentOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -15713,10 +15877,11 @@ func (c *Client) SetIssueAssigneesOnHostWithResponse(ctx context.Context, option
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(SetIssueAssigneesOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(SetIssueAssigneesOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -15768,10 +15933,11 @@ func (c *Client) PostIssueCommentOnHostWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(PostIssueCommentOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(PostIssueCommentOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 201:
@@ -15822,10 +15988,11 @@ func (c *Client) DeleteIssueCommentOnHostWithResponse(ctx context.Context, optio
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(DeleteIssueCommentOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(DeleteIssueCommentOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 204:
@@ -15863,10 +16030,11 @@ func (c *Client) EditIssueCommentOnHostWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(EditIssueCommentOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(EditIssueCommentOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -15918,10 +16086,11 @@ func (c *Client) SetIssueGithubStateOnHostWithResponse(ctx context.Context, opti
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(SetIssueGithubStateOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(SetIssueGithubStateOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -15972,10 +16141,11 @@ func (c *Client) ListIssueKataLinksOnHostWithResponse(ctx context.Context, optio
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ListIssueKataLinksOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ListIssueKataLinksOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -16027,10 +16197,11 @@ func (c *Client) CreateIssueKataLinkOnHostWithResponse(ctx context.Context, opti
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(CreateIssueKataLinkOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(CreateIssueKataLinkOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -16081,10 +16252,11 @@ func (c *Client) DeleteIssueKataLinkOnHostWithResponse(ctx context.Context, opti
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(DeleteIssueKataLinkOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(DeleteIssueKataLinkOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 204:
@@ -16122,10 +16294,11 @@ func (c *Client) SetIssueLabelsOnHostWithResponse(ctx context.Context, options *
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(SetIssueLabelsOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(SetIssueLabelsOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -16176,10 +16349,11 @@ func (c *Client) SyncIssueOnHostWithResponse(ctx context.Context, options *SyncI
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(SyncIssueOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(SyncIssueOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -16230,10 +16404,11 @@ func (c *Client) EnqueueIssueSyncOnHostWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(EnqueueIssueSyncOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(EnqueueIssueSyncOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 202:
@@ -16271,10 +16446,11 @@ func (c *Client) CreateIssueWorkspaceOnHostWithResponse(ctx context.Context, opt
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(CreateIssueWorkspaceOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(CreateIssueWorkspaceOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 202:
@@ -16325,10 +16501,11 @@ func (c *Client) GetPullOnHostWithResponse(ctx context.Context, options *GetPull
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetPullOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetPullOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -16380,10 +16557,11 @@ func (c *Client) EditPrContentOnHostWithResponse(ctx context.Context, options *E
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(EditPrContentOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(EditPrContentOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -16435,10 +16613,11 @@ func (c *Client) ApprovePullOnHostWithResponse(ctx context.Context, options *App
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ApprovePullOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ApprovePullOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -16489,10 +16668,11 @@ func (c *Client) ApprovePullWorkflowsOnHostWithResponse(ctx context.Context, opt
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ApprovePullWorkflowsOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ApprovePullWorkflowsOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -16544,10 +16724,11 @@ func (c *Client) SetPrAssigneesOnHostWithResponse(ctx context.Context, options *
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(SetPrAssigneesOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(SetPrAssigneesOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -16598,10 +16779,11 @@ func (c *Client) RefreshPullCiOnHostWithResponse(ctx context.Context, options *R
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(RefreshPullCiOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(RefreshPullCiOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -16653,10 +16835,11 @@ func (c *Client) PostPrCommentOnHostWithResponse(ctx context.Context, options *P
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(PostPrCommentOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(PostPrCommentOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 201:
@@ -16707,10 +16890,11 @@ func (c *Client) DeletePrCommentOnHostWithResponse(ctx context.Context, options 
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(DeletePrCommentOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(DeletePrCommentOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 204:
@@ -16748,10 +16932,11 @@ func (c *Client) EditPrCommentOnHostWithResponse(ctx context.Context, options *E
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(EditPrCommentOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(EditPrCommentOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -16802,10 +16987,11 @@ func (c *Client) GetPullCommitsOnHostWithResponse(ctx context.Context, options *
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetPullCommitsOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetPullCommitsOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -16856,10 +17042,11 @@ func (c *Client) GetPullDiffOnHostWithResponse(ctx context.Context, options *Get
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetPullDiffOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetPullDiffOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -16911,10 +17098,11 @@ func (c *Client) ReplyToDiscussionOnHostWithResponse(ctx context.Context, option
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ReplyToDiscussionOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ReplyToDiscussionOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 201:
@@ -16966,10 +17154,11 @@ func (c *Client) ResolveDiscussionOnHostWithResponse(ctx context.Context, option
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ResolveDiscussionOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ResolveDiscussionOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -17006,10 +17195,11 @@ func (c *Client) GetPullFilePreviewOnHostWithResponse(ctx context.Context, optio
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetPullFilePreviewOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetPullFilePreviewOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -17060,10 +17250,11 @@ func (c *Client) GetPullFilesOnHostWithResponse(ctx context.Context, options *Ge
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetPullFilesOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetPullFilesOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -17115,10 +17306,11 @@ func (c *Client) SetPrGithubStateOnHostWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(SetPrGithubStateOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(SetPrGithubStateOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -17169,10 +17361,11 @@ func (c *Client) GetPullImportMetadataOnHostWithResponse(ctx context.Context, op
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetPullImportMetadataOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetPullImportMetadataOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -17223,10 +17416,11 @@ func (c *Client) ListPullRequestKataLinksOnHostWithResponse(ctx context.Context,
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ListPullRequestKataLinksOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ListPullRequestKataLinksOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -17278,10 +17472,11 @@ func (c *Client) CreatePullRequestKataLinkOnHostWithResponse(ctx context.Context
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(CreatePullRequestKataLinkOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(CreatePullRequestKataLinkOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -17332,10 +17527,11 @@ func (c *Client) DeletePullRequestKataLinkOnHostWithResponse(ctx context.Context
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(DeletePullRequestKataLinkOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(DeletePullRequestKataLinkOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 204:
@@ -17373,10 +17569,11 @@ func (c *Client) SetPrLabelsOnHostWithResponse(ctx context.Context, options *Set
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(SetPrLabelsOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(SetPrLabelsOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -17428,10 +17625,11 @@ func (c *Client) MergePullOnHostWithResponse(ctx context.Context, options *Merge
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(MergePullOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(MergePullOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -17483,10 +17681,11 @@ func (c *Client) DeferMergePullOnHostWithResponse(ctx context.Context, options *
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(DeferMergePullOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(DeferMergePullOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 202:
@@ -17537,10 +17736,11 @@ func (c *Client) MarkPullReadyForReviewOnHostWithResponse(ctx context.Context, o
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(MarkPullReadyForReviewOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(MarkPullReadyForReviewOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -17592,10 +17792,11 @@ func (c *Client) RequestPullChangesOnHostWithResponse(ctx context.Context, optio
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(RequestPullChangesOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(RequestPullChangesOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -17646,10 +17847,11 @@ func (c *Client) DiscardPrReviewDraftOnHostWithResponse(ctx context.Context, opt
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(DiscardPrReviewDraftOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(DiscardPrReviewDraftOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -17686,10 +17888,11 @@ func (c *Client) GetPrReviewDraftOnHostWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetPrReviewDraftOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetPrReviewDraftOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -17741,10 +17944,11 @@ func (c *Client) CreatePrReviewDraftCommentOnHostWithResponse(ctx context.Contex
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(CreatePrReviewDraftCommentOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(CreatePrReviewDraftCommentOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 201:
@@ -17795,10 +17999,11 @@ func (c *Client) DeletePrReviewDraftCommentOnHostWithResponse(ctx context.Contex
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(DeletePrReviewDraftCommentOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(DeletePrReviewDraftCommentOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -17836,10 +18041,11 @@ func (c *Client) EditPrReviewDraftCommentOnHostWithResponse(ctx context.Context,
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(EditPrReviewDraftCommentOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(EditPrReviewDraftCommentOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -17891,10 +18097,11 @@ func (c *Client) PublishPrReviewDraftOnHostWithResponse(ctx context.Context, opt
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(PublishPrReviewDraftOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(PublishPrReviewDraftOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -17946,10 +18153,11 @@ func (c *Client) ApplyPrReviewSuggestionsOnHostWithResponse(ctx context.Context,
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ApplyPrReviewSuggestionsOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ApplyPrReviewSuggestionsOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -18000,10 +18208,11 @@ func (c *Client) ResolvePrReviewThreadOnHostWithResponse(ctx context.Context, op
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ResolvePrReviewThreadOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ResolvePrReviewThreadOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -18040,10 +18249,11 @@ func (c *Client) UnresolvePrReviewThreadOnHostWithResponse(ctx context.Context, 
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(UnresolvePrReviewThreadOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(UnresolvePrReviewThreadOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -18081,10 +18291,11 @@ func (c *Client) SetPrReviewersOnHostWithResponse(ctx context.Context, options *
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(SetPrReviewersOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(SetPrReviewersOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -18135,10 +18346,11 @@ func (c *Client) GetPullStackOnHostWithResponse(ctx context.Context, options *Ge
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetPullStackOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetPullStackOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -18190,10 +18402,11 @@ func (c *Client) SetKanbanStateOnHostWithResponse(ctx context.Context, options *
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(SetKanbanStateOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(SetKanbanStateOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -18230,10 +18443,11 @@ func (c *Client) SyncPullOnHostWithResponse(ctx context.Context, options *SyncPu
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(SyncPullOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(SyncPullOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -18284,10 +18498,11 @@ func (c *Client) EnqueuePrSyncOnHostWithResponse(ctx context.Context, options *E
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(EnqueuePrSyncOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(EnqueuePrSyncOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 202:
@@ -18324,10 +18539,11 @@ func (c *Client) DeleteRepoOnHostWithResponse(ctx context.Context, options *Dele
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(DeleteRepoOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(DeleteRepoOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 204:
@@ -18364,10 +18580,11 @@ func (c *Client) GetRepoOnHostWithResponse(ctx context.Context, options *GetRepo
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetRepoOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetRepoOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -18418,10 +18635,11 @@ func (c *Client) GetRepoBrowserAssetOnHostWithResponse(ctx context.Context, opti
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetRepoBrowserAssetOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetRepoBrowserAssetOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -18464,10 +18682,11 @@ func (c *Client) GetRepoBrowserBlobOnHostWithResponse(ctx context.Context, optio
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetRepoBrowserBlobOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetRepoBrowserBlobOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -18518,10 +18737,11 @@ func (c *Client) GetRepoBrowserCommitOnHostWithResponse(ctx context.Context, opt
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetRepoBrowserCommitOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetRepoBrowserCommitOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -18572,10 +18792,11 @@ func (c *Client) GetRepoBrowserHistoryOnHostWithResponse(ctx context.Context, op
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetRepoBrowserHistoryOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetRepoBrowserHistoryOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -18626,10 +18847,11 @@ func (c *Client) GetRepoBrowserLastChangedOnHostWithResponse(ctx context.Context
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetRepoBrowserLastChangedOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetRepoBrowserLastChangedOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -18680,10 +18902,11 @@ func (c *Client) ListRepoBrowserRefsOnHostWithResponse(ctx context.Context, opti
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ListRepoBrowserRefsOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ListRepoBrowserRefsOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -18734,10 +18957,11 @@ func (c *Client) ListRepoBrowserTreeOnHostWithResponse(ctx context.Context, opti
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ListRepoBrowserTreeOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ListRepoBrowserTreeOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -18788,10 +19012,11 @@ func (c *Client) GetCommentAutocompleteOnHostWithResponse(ctx context.Context, o
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetCommentAutocompleteOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetCommentAutocompleteOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -18842,10 +19067,11 @@ func (c *Client) GetRepoCommitDiffOnHostWithResponse(ctx context.Context, option
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetRepoCommitDiffOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetRepoCommitDiffOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -18896,10 +19122,11 @@ func (c *Client) ListRepoLabelsOnHostWithResponse(ctx context.Context, options *
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ListRepoLabelsOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ListRepoLabelsOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -18950,10 +19177,11 @@ func (c *Client) GetMarkdownImageOnHostWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetMarkdownImageOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetMarkdownImageOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -18996,10 +19224,11 @@ func (c *Client) RefreshRepoOnHostWithResponse(ctx context.Context, options *Ref
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(RefreshRepoOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(RefreshRepoOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -19050,10 +19279,11 @@ func (c *Client) ResolveRepoItemOnHostWithResponse(ctx context.Context, options 
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ResolveRepoItemOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ResolveRepoItemOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -19105,10 +19335,11 @@ func (c *Client) UpdateRepoUIVisibilityOnHostWithResponse(ctx context.Context, o
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(UpdateRepoUIVisibilityOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(UpdateRepoUIVisibilityOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -19160,10 +19391,11 @@ func (c *Client) CreateRepoWorkspaceOnHostWithResponse(ctx context.Context, opti
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(CreateRepoWorkspaceOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(CreateRepoWorkspaceOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 202:
@@ -19215,10 +19447,11 @@ func (c *Client) UpdateRepoWorktreeBaseOnHostWithResponse(ctx context.Context, o
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(UpdateRepoWorktreeBaseOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(UpdateRepoWorktreeBaseOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -19269,10 +19502,11 @@ func (c *Client) ListIssuesWithResponse(ctx context.Context, options *ListIssues
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ListIssuesErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ListIssuesErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -19324,10 +19558,11 @@ func (c *Client) CreateIssueWithResponse(ctx context.Context, options *CreateIss
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(CreateIssueErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(CreateIssueErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 201:
@@ -19378,10 +19613,11 @@ func (c *Client) GetIssueWithResponse(ctx context.Context, options *GetIssueRequ
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetIssueErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetIssueErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -19433,10 +19669,11 @@ func (c *Client) EditIssueContentWithResponse(ctx context.Context, options *Edit
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(EditIssueContentErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(EditIssueContentErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -19488,10 +19725,11 @@ func (c *Client) SetIssueAssigneesWithResponse(ctx context.Context, options *Set
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(SetIssueAssigneesErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(SetIssueAssigneesErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -19543,10 +19781,11 @@ func (c *Client) PostIssueCommentWithResponse(ctx context.Context, options *Post
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(PostIssueCommentErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(PostIssueCommentErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 201:
@@ -19597,10 +19836,11 @@ func (c *Client) DeleteIssueCommentWithResponse(ctx context.Context, options *De
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(DeleteIssueCommentErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(DeleteIssueCommentErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 204:
@@ -19638,10 +19878,11 @@ func (c *Client) EditIssueCommentWithResponse(ctx context.Context, options *Edit
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(EditIssueCommentErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(EditIssueCommentErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -19693,10 +19934,11 @@ func (c *Client) SetIssueGithubStateWithResponse(ctx context.Context, options *S
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(SetIssueGithubStateErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(SetIssueGithubStateErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -19747,10 +19989,11 @@ func (c *Client) ListIssueKataLinksWithResponse(ctx context.Context, options *Li
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ListIssueKataLinksErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ListIssueKataLinksErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -19802,10 +20045,11 @@ func (c *Client) CreateIssueKataLinkWithResponse(ctx context.Context, options *C
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(CreateIssueKataLinkErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(CreateIssueKataLinkErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -19856,10 +20100,11 @@ func (c *Client) DeleteIssueKataLinkWithResponse(ctx context.Context, options *D
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(DeleteIssueKataLinkErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(DeleteIssueKataLinkErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 204:
@@ -19897,10 +20142,11 @@ func (c *Client) SetIssueLabelsWithResponse(ctx context.Context, options *SetIss
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(SetIssueLabelsErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(SetIssueLabelsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -19951,10 +20197,11 @@ func (c *Client) SyncIssueWithResponse(ctx context.Context, options *SyncIssueRe
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(SyncIssueErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(SyncIssueErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -20005,10 +20252,11 @@ func (c *Client) EnqueueIssueSyncWithResponse(ctx context.Context, options *Enqu
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(EnqueueIssueSyncErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(EnqueueIssueSyncErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 202:
@@ -20046,10 +20294,11 @@ func (c *Client) CreateIssueWorkspaceWithResponse(ctx context.Context, options *
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(CreateIssueWorkspaceErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(CreateIssueWorkspaceErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 202:
@@ -20099,10 +20348,11 @@ func (c *Client) ListKataDaemonsWithResponse(ctx context.Context, reqEditors ...
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ListKataDaemonsErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ListKataDaemonsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -20153,10 +20403,11 @@ func (c *Client) ResolveKataIssueReferenceWithResponse(ctx context.Context, opti
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ResolveKataIssueReferenceErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ResolveKataIssueReferenceErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -20207,10 +20458,11 @@ func (c *Client) GetKataIssueDetailWithResponse(ctx context.Context, options *Ge
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetKataIssueDetailErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetKataIssueDetailErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -20261,10 +20513,11 @@ func (c *Client) GetKataLaunchTargetWithResponse(ctx context.Context, options *G
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetKataLaunchTargetErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetKataLaunchTargetErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -20315,10 +20568,11 @@ func (c *Client) ListKataReferencesWithResponse(ctx context.Context, options *Li
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ListKataReferencesErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ListKataReferencesErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -20369,10 +20623,11 @@ func (c *Client) GetKataProjectMappingsWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetKataProjectMappingsErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetKataProjectMappingsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -20427,10 +20682,11 @@ func (c *Client) CreateKataWorkspaceWithResponse(ctx context.Context, options *C
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(CreateKataWorkspaceErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(CreateKataWorkspaceErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 202:
@@ -20481,10 +20737,11 @@ func (c *Client) ListNotificationsWithResponse(ctx context.Context, options *Lis
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ListNotificationsErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ListNotificationsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -20536,10 +20793,11 @@ func (c *Client) MarkNotificationsDoneWithResponse(ctx context.Context, options 
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(MarkNotificationsDoneErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(MarkNotificationsDoneErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -20591,10 +20849,11 @@ func (c *Client) MarkNotificationsReadWithResponse(ctx context.Context, options 
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(MarkNotificationsReadErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(MarkNotificationsReadErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -20644,10 +20903,11 @@ func (c *Client) SyncNotificationsWithResponse(ctx context.Context, reqEditors .
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(SyncNotificationsErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(SyncNotificationsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 202:
@@ -20685,10 +20945,11 @@ func (c *Client) MarkNotificationsUndoneWithResponse(ctx context.Context, option
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(MarkNotificationsUndoneErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(MarkNotificationsUndoneErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -20739,10 +21000,11 @@ func (c *Client) ListUserRepositoriesWithResponse(ctx context.Context, options *
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ListUserRepositoriesErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ListUserRepositoriesErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -20792,10 +21054,11 @@ func (c *Client) ListProjectsWithResponse(ctx context.Context, reqEditors ...run
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ListProjectsErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ListProjectsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -20847,10 +21110,11 @@ func (c *Client) RegisterProjectWithResponse(ctx context.Context, options *Regis
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(RegisterProjectErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(RegisterProjectErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 201:
@@ -20902,10 +21166,11 @@ func (c *Client) CloneProjectWithResponse(ctx context.Context, options *ClonePro
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(CloneProjectErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(CloneProjectErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 201:
@@ -20956,10 +21221,11 @@ func (c *Client) DeleteProjectWithResponse(ctx context.Context, options *DeleteP
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(DeleteProjectErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(DeleteProjectErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 204:
@@ -20996,10 +21262,11 @@ func (c *Client) GetProjectWithResponse(ctx context.Context, options *GetProject
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetProjectErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetProjectErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -21050,10 +21317,11 @@ func (c *Client) ListProjectBranchesWithResponse(ctx context.Context, options *L
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ListProjectBranchesErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ListProjectBranchesErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -21104,10 +21372,11 @@ func (c *Client) ListLaunchTargetsWithResponse(ctx context.Context, options *Lis
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ListLaunchTargetsErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ListLaunchTargetsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -21158,10 +21427,11 @@ func (c *Client) ListWorktreesWithResponse(ctx context.Context, options *ListWor
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ListWorktreesErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ListWorktreesErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -21213,10 +21483,11 @@ func (c *Client) RegisterWorktreeWithResponse(ctx context.Context, options *Regi
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(RegisterWorktreeErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(RegisterWorktreeErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 201:
@@ -21268,10 +21539,11 @@ func (c *Client) CreateWorktreeFromMergeRequestWithResponse(ctx context.Context,
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(CreateWorktreeFromMergeRequestErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(CreateWorktreeFromMergeRequestErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 201:
@@ -21322,10 +21594,11 @@ func (c *Client) DeleteWorktreeWithResponse(ctx context.Context, options *Delete
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(DeleteWorktreeErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(DeleteWorktreeErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 204:
@@ -21363,10 +21636,11 @@ func (c *Client) RemoveWorktreeWithResponse(ctx context.Context, options *Remove
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(RemoveWorktreeErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(RemoveWorktreeErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 204:
@@ -21404,10 +21678,11 @@ func (c *Client) SetWorktreeHiddenWithResponse(ctx context.Context, options *Set
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(SetWorktreeHiddenErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(SetWorktreeHiddenErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -21458,10 +21733,11 @@ func (c *Client) InspectProjectWorktreeWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(InspectProjectWorktreeErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(InspectProjectWorktreeErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -21513,10 +21789,11 @@ func (c *Client) SetWorktreeLinksWithResponse(ctx context.Context, options *SetW
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(SetWorktreeLinksErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(SetWorktreeLinksErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -21567,10 +21844,11 @@ func (c *Client) RefreshWorktreeStatsWithResponse(ctx context.Context, options *
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(RefreshWorktreeStatsErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(RefreshWorktreeStatsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -21621,10 +21899,11 @@ func (c *Client) GetProjectWorktreeRuntimeWithResponse(ctx context.Context, opti
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetProjectWorktreeRuntimeErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetProjectWorktreeRuntimeErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -21676,10 +21955,11 @@ func (c *Client) LaunchProjectWorktreeRuntimeSessionWithResponse(ctx context.Con
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(LaunchProjectWorktreeRuntimeSessionErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(LaunchProjectWorktreeRuntimeSessionErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -21730,10 +22010,11 @@ func (c *Client) StopProjectWorktreeRuntimeSessionWithResponse(ctx context.Conte
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(StopProjectWorktreeRuntimeSessionErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(StopProjectWorktreeRuntimeSessionErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 204:
@@ -21770,10 +22051,11 @@ func (c *Client) GetProjectWorktreeRuntimeSessionAttachSpecWithResponse(ctx cont
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetProjectWorktreeRuntimeSessionAttachSpecErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetProjectWorktreeRuntimeSessionAttachSpecErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -21824,10 +22106,11 @@ func (c *Client) EnsureProjectWorktreeRuntimeShellWithResponse(ctx context.Conte
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(EnsureProjectWorktreeRuntimeShellErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(EnsureProjectWorktreeRuntimeShellErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -21879,10 +22162,11 @@ func (c *Client) SetWorktreeSessionBackendWithResponse(ctx context.Context, opti
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(SetWorktreeSessionBackendErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(SetWorktreeSessionBackendErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -21933,10 +22217,11 @@ func (c *Client) ListPullsWithResponse(ctx context.Context, options *ListPullsRe
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ListPullsErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ListPullsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -21987,10 +22272,11 @@ func (c *Client) GetPullWithResponse(ctx context.Context, options *GetPullReques
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetPullErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetPullErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -22042,10 +22328,11 @@ func (c *Client) EditPrContentWithResponse(ctx context.Context, options *EditPrC
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(EditPrContentErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(EditPrContentErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -22097,10 +22384,11 @@ func (c *Client) ApprovePullWithResponse(ctx context.Context, options *ApprovePu
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ApprovePullErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ApprovePullErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -22151,10 +22439,11 @@ func (c *Client) ApprovePullWorkflowsWithResponse(ctx context.Context, options *
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ApprovePullWorkflowsErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ApprovePullWorkflowsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -22206,10 +22495,11 @@ func (c *Client) SetPrAssigneesWithResponse(ctx context.Context, options *SetPrA
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(SetPrAssigneesErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(SetPrAssigneesErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -22260,10 +22550,11 @@ func (c *Client) RefreshPullCiWithResponse(ctx context.Context, options *Refresh
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(RefreshPullCiErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(RefreshPullCiErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -22315,10 +22606,11 @@ func (c *Client) PostPrCommentWithResponse(ctx context.Context, options *PostPrC
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(PostPrCommentErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(PostPrCommentErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 201:
@@ -22369,10 +22661,11 @@ func (c *Client) DeletePrCommentWithResponse(ctx context.Context, options *Delet
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(DeletePrCommentErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(DeletePrCommentErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 204:
@@ -22410,10 +22703,11 @@ func (c *Client) EditPrCommentWithResponse(ctx context.Context, options *EditPrC
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(EditPrCommentErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(EditPrCommentErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -22464,10 +22758,11 @@ func (c *Client) GetPullCommitsWithResponse(ctx context.Context, options *GetPul
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetPullCommitsErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetPullCommitsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -22518,10 +22813,11 @@ func (c *Client) GetPullDiffWithResponse(ctx context.Context, options *GetPullDi
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetPullDiffErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetPullDiffErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -22573,10 +22869,11 @@ func (c *Client) ReplyToDiscussionWithResponse(ctx context.Context, options *Rep
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ReplyToDiscussionErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ReplyToDiscussionErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 201:
@@ -22628,10 +22925,11 @@ func (c *Client) ResolveDiscussionWithResponse(ctx context.Context, options *Res
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ResolveDiscussionErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ResolveDiscussionErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -22668,10 +22966,11 @@ func (c *Client) GetPullFilePreviewWithResponse(ctx context.Context, options *Ge
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetPullFilePreviewErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetPullFilePreviewErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -22722,10 +23021,11 @@ func (c *Client) GetPullFilesWithResponse(ctx context.Context, options *GetPullF
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetPullFilesErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetPullFilesErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -22777,10 +23077,11 @@ func (c *Client) SetPrGithubStateWithResponse(ctx context.Context, options *SetP
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(SetPrGithubStateErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(SetPrGithubStateErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -22831,10 +23132,11 @@ func (c *Client) GetPullImportMetadataWithResponse(ctx context.Context, options 
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetPullImportMetadataErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetPullImportMetadataErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -22885,10 +23187,11 @@ func (c *Client) ListPullRequestKataLinksWithResponse(ctx context.Context, optio
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ListPullRequestKataLinksErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ListPullRequestKataLinksErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -22940,10 +23243,11 @@ func (c *Client) CreatePullRequestKataLinkWithResponse(ctx context.Context, opti
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(CreatePullRequestKataLinkErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(CreatePullRequestKataLinkErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -22994,10 +23298,11 @@ func (c *Client) DeletePullRequestKataLinkWithResponse(ctx context.Context, opti
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(DeletePullRequestKataLinkErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(DeletePullRequestKataLinkErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 204:
@@ -23035,10 +23340,11 @@ func (c *Client) SetPrLabelsWithResponse(ctx context.Context, options *SetPrLabe
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(SetPrLabelsErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(SetPrLabelsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -23090,10 +23396,11 @@ func (c *Client) MergePullWithResponse(ctx context.Context, options *MergePullRe
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(MergePullErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(MergePullErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -23145,10 +23452,11 @@ func (c *Client) DeferMergePullWithResponse(ctx context.Context, options *DeferM
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(DeferMergePullErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(DeferMergePullErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 202:
@@ -23199,10 +23507,11 @@ func (c *Client) MarkPullReadyForReviewWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(MarkPullReadyForReviewErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(MarkPullReadyForReviewErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -23254,10 +23563,11 @@ func (c *Client) RequestPullChangesWithResponse(ctx context.Context, options *Re
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(RequestPullChangesErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(RequestPullChangesErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -23308,10 +23618,11 @@ func (c *Client) DiscardPrReviewDraftWithResponse(ctx context.Context, options *
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(DiscardPrReviewDraftErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(DiscardPrReviewDraftErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -23348,10 +23659,11 @@ func (c *Client) GetPrReviewDraftWithResponse(ctx context.Context, options *GetP
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetPrReviewDraftErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetPrReviewDraftErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -23403,10 +23715,11 @@ func (c *Client) CreatePrReviewDraftCommentWithResponse(ctx context.Context, opt
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(CreatePrReviewDraftCommentErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(CreatePrReviewDraftCommentErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 201:
@@ -23457,10 +23770,11 @@ func (c *Client) DeletePrReviewDraftCommentWithResponse(ctx context.Context, opt
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(DeletePrReviewDraftCommentErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(DeletePrReviewDraftCommentErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -23498,10 +23812,11 @@ func (c *Client) EditPrReviewDraftCommentWithResponse(ctx context.Context, optio
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(EditPrReviewDraftCommentErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(EditPrReviewDraftCommentErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -23553,10 +23868,11 @@ func (c *Client) PublishPrReviewDraftWithResponse(ctx context.Context, options *
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(PublishPrReviewDraftErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(PublishPrReviewDraftErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -23608,10 +23924,11 @@ func (c *Client) ApplyPrReviewSuggestionsWithResponse(ctx context.Context, optio
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ApplyPrReviewSuggestionsErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ApplyPrReviewSuggestionsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -23662,10 +23979,11 @@ func (c *Client) ResolvePrReviewThreadWithResponse(ctx context.Context, options 
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ResolvePrReviewThreadErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ResolvePrReviewThreadErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -23702,10 +24020,11 @@ func (c *Client) UnresolvePrReviewThreadWithResponse(ctx context.Context, option
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(UnresolvePrReviewThreadErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(UnresolvePrReviewThreadErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -23743,10 +24062,11 @@ func (c *Client) SetPrReviewersWithResponse(ctx context.Context, options *SetPrR
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(SetPrReviewersErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(SetPrReviewersErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -23797,10 +24117,11 @@ func (c *Client) GetPullStackWithResponse(ctx context.Context, options *GetPullS
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetPullStackErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetPullStackErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -23852,10 +24173,11 @@ func (c *Client) SetKanbanStateWithResponse(ctx context.Context, options *SetKan
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(SetKanbanStateErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(SetKanbanStateErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -23892,10 +24214,11 @@ func (c *Client) SyncPullWithResponse(ctx context.Context, options *SyncPullRequ
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(SyncPullErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(SyncPullErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -23946,10 +24269,11 @@ func (c *Client) EnqueuePrSyncWithResponse(ctx context.Context, options *Enqueue
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(EnqueuePrSyncErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(EnqueuePrSyncErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 202:
@@ -23985,10 +24309,11 @@ func (c *Client) GetRateLimitsWithResponse(ctx context.Context, reqEditors ...ru
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetRateLimitsErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetRateLimitsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -24039,10 +24364,11 @@ func (c *Client) DeleteRepoWithResponse(ctx context.Context, options *DeleteRepo
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(DeleteRepoErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(DeleteRepoErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 204:
@@ -24079,10 +24405,11 @@ func (c *Client) GetRepoWithResponse(ctx context.Context, options *GetRepoReques
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetRepoErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetRepoErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -24133,10 +24460,11 @@ func (c *Client) GetRepoBrowserAssetWithResponse(ctx context.Context, options *G
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetRepoBrowserAssetErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetRepoBrowserAssetErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -24179,10 +24507,11 @@ func (c *Client) GetRepoBrowserBlobWithResponse(ctx context.Context, options *Ge
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetRepoBrowserBlobErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetRepoBrowserBlobErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -24233,10 +24562,11 @@ func (c *Client) GetRepoBrowserCommitWithResponse(ctx context.Context, options *
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetRepoBrowserCommitErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetRepoBrowserCommitErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -24287,10 +24617,11 @@ func (c *Client) GetRepoBrowserHistoryWithResponse(ctx context.Context, options 
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetRepoBrowserHistoryErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetRepoBrowserHistoryErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -24341,10 +24672,11 @@ func (c *Client) GetRepoBrowserLastChangedWithResponse(ctx context.Context, opti
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetRepoBrowserLastChangedErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetRepoBrowserLastChangedErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -24395,10 +24727,11 @@ func (c *Client) ListRepoBrowserRefsWithResponse(ctx context.Context, options *L
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ListRepoBrowserRefsErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ListRepoBrowserRefsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -24449,10 +24782,11 @@ func (c *Client) ListRepoBrowserTreeWithResponse(ctx context.Context, options *L
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ListRepoBrowserTreeErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ListRepoBrowserTreeErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -24503,10 +24837,11 @@ func (c *Client) GetCommentAutocompleteWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetCommentAutocompleteErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetCommentAutocompleteErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -24557,10 +24892,11 @@ func (c *Client) GetRepoCommitDiffWithResponse(ctx context.Context, options *Get
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetRepoCommitDiffErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetRepoCommitDiffErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -24611,10 +24947,11 @@ func (c *Client) ListRepoLabelsWithResponse(ctx context.Context, options *ListRe
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ListRepoLabelsErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ListRepoLabelsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -24665,10 +25002,11 @@ func (c *Client) GetMarkdownImageWithResponse(ctx context.Context, options *GetM
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetMarkdownImageErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetMarkdownImageErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -24711,10 +25049,11 @@ func (c *Client) RefreshRepoWithResponse(ctx context.Context, options *RefreshRe
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(RefreshRepoErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(RefreshRepoErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -24765,10 +25104,11 @@ func (c *Client) ResolveRepoItemWithResponse(ctx context.Context, options *Resol
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ResolveRepoItemErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ResolveRepoItemErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -24820,10 +25160,11 @@ func (c *Client) UpdateRepoUIVisibilityWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(UpdateRepoUIVisibilityErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(UpdateRepoUIVisibilityErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -24875,10 +25216,11 @@ func (c *Client) CreateRepoWorkspaceWithResponse(ctx context.Context, options *C
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(CreateRepoWorkspaceErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(CreateRepoWorkspaceErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 202:
@@ -24930,10 +25272,11 @@ func (c *Client) UpdateRepoWorktreeBaseWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(UpdateRepoWorktreeBaseErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(UpdateRepoWorktreeBaseErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -24983,10 +25326,11 @@ func (c *Client) ListReposWithResponse(ctx context.Context, reqEditors ...runtim
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ListReposErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ListReposErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -25038,10 +25382,11 @@ func (c *Client) AddRepoWithResponse(ctx context.Context, options *AddRepoReques
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(AddRepoErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(AddRepoErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 201:
@@ -25093,10 +25438,11 @@ func (c *Client) BulkAddReposWithResponse(ctx context.Context, options *BulkAddR
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(BulkAddReposErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(BulkAddReposErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 201:
@@ -25148,10 +25494,11 @@ func (c *Client) PreviewReposWithResponse(ctx context.Context, options *PreviewR
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(PreviewReposErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(PreviewReposErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -25201,10 +25548,11 @@ func (c *Client) ListRepoSummariesWithResponse(ctx context.Context, reqEditors .
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ListRepoSummariesErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ListRepoSummariesErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -25254,10 +25602,11 @@ func (c *Client) ListRoborevConfiguredRepositoriesWithResponse(ctx context.Conte
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ListRoborevConfiguredRepositoriesErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ListRoborevConfiguredRepositoriesErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -25307,10 +25656,11 @@ func (c *Client) GetRoborevStatusWithResponse(ctx context.Context, reqEditors ..
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetRoborevStatusErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetRoborevStatusErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -25360,10 +25710,11 @@ func (c *Client) ListHostRuntimeSessionsWithResponse(ctx context.Context, reqEdi
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ListHostRuntimeSessionsErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ListHostRuntimeSessionsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -25415,10 +25766,11 @@ func (c *Client) LaunchHostRuntimeSessionWithResponse(ctx context.Context, optio
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(LaunchHostRuntimeSessionErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(LaunchHostRuntimeSessionErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -25469,10 +25821,11 @@ func (c *Client) StopHostRuntimeSessionWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(StopHostRuntimeSessionErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(StopHostRuntimeSessionErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 204:
@@ -25509,10 +25862,11 @@ func (c *Client) GetHostRuntimeSessionAttachSpecWithResponse(ctx context.Context
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetHostRuntimeSessionAttachSpecErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetHostRuntimeSessionAttachSpecErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -25562,10 +25916,11 @@ func (c *Client) GetSettingsWithResponse(ctx context.Context, reqEditors ...runt
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetSettingsErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetSettingsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -25617,10 +25972,11 @@ func (c *Client) UpdateSettingsWithResponse(ctx context.Context, options *Update
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(UpdateSettingsErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(UpdateSettingsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -25670,10 +26026,11 @@ func (c *Client) GetFleetSettingsWithResponse(ctx context.Context, reqEditors ..
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetFleetSettingsErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetFleetSettingsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -25725,10 +26082,11 @@ func (c *Client) UpdateFleetSettingsWithResponse(ctx context.Context, options *U
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(UpdateFleetSettingsErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(UpdateFleetSettingsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -25780,10 +26138,11 @@ func (c *Client) CreateRepoPresetWithResponse(ctx context.Context, options *Crea
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(CreateRepoPresetErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(CreateRepoPresetErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 201:
@@ -25834,10 +26193,11 @@ func (c *Client) DeleteRepoPresetWithResponse(ctx context.Context, options *Dele
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(DeleteRepoPresetErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(DeleteRepoPresetErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -25889,10 +26249,11 @@ func (c *Client) UpdateRepoPresetWithResponse(ctx context.Context, options *Upda
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(UpdateRepoPresetErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(UpdateRepoPresetErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -25943,10 +26304,11 @@ func (c *Client) GetSnapshotWithResponse(ctx context.Context, options *GetSnapsh
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetSnapshotErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetSnapshotErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -25997,10 +26359,11 @@ func (c *Client) GetSnapshotAggregateWithResponse(ctx context.Context, options *
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetSnapshotAggregateErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetSnapshotAggregateErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -26050,10 +26413,11 @@ func (c *Client) GetSnapshotRawWithResponse(ctx context.Context, reqEditors ...r
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetSnapshotRawErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetSnapshotRawErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -26103,10 +26467,11 @@ func (c *Client) RefreshFleetStatsWithResponse(ctx context.Context, reqEditors .
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(RefreshFleetStatsErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(RefreshFleetStatsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -26157,10 +26522,11 @@ func (c *Client) ListStacksWithResponse(ctx context.Context, options *ListStacks
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ListStacksErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ListStacksErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -26211,10 +26577,11 @@ func (c *Client) UnsetStarredWithResponse(ctx context.Context, options *UnsetSta
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(UnsetStarredErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(UnsetStarredErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -26252,10 +26619,11 @@ func (c *Client) SetStarredWithResponse(ctx context.Context, options *SetStarred
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(SetStarredErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(SetStarredErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -26292,10 +26660,11 @@ func (c *Client) TriggerSyncWithResponse(ctx context.Context, options *TriggerSy
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(TriggerSyncErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(TriggerSyncErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 202:
@@ -26331,10 +26700,11 @@ func (c *Client) GetSyncStatusWithResponse(ctx context.Context, reqEditors ...ru
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetSyncStatusErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetSyncStatusErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -26386,10 +26756,11 @@ func (c *Client) CaptureTelemetryEventWithResponse(ctx context.Context, options 
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(CaptureTelemetryEventErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(CaptureTelemetryEventErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 202:
@@ -26407,6 +26778,47 @@ func (c *Client) CaptureTelemetryEventWithResponse(ctx context.Context, options 
 				}
 			}
 		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+func (c *Client) WriteTerminalClipboardWithResponse(ctx context.Context, options *WriteTerminalClipboardRequestOptions, reqEditors ...runtime.RequestEditorFn) (*WriteTerminalClipboardResp, error) {
+	var err error
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/terminal/clipboard",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/terminal/clipboard")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &WriteTerminalClipboardResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(WriteTerminalClipboardErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 204:
 		return out, nil
 	case 500:
 		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
@@ -26441,10 +26853,11 @@ func (c *Client) StoreTerminalPasteImageWithResponse(ctx context.Context, option
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(StoreTerminalPasteImageErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(StoreTerminalPasteImageErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 201:
@@ -26494,10 +26907,11 @@ func (c *Client) GetToolingStatusWithResponse(ctx context.Context, reqEditors ..
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetToolingStatusErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetToolingStatusErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -26549,10 +26963,11 @@ func (c *Client) SetActiveWorktreeWithResponse(ctx context.Context, options *Set
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(SetActiveWorktreeErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(SetActiveWorktreeErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 204:
@@ -26588,10 +27003,11 @@ func (c *Client) GetVersionWithResponse(ctx context.Context, reqEditors ...runti
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetVersionErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetVersionErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -26641,10 +27057,11 @@ func (c *Client) ListWorkspacesWithResponse(ctx context.Context, reqEditors ...r
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ListWorkspacesErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ListWorkspacesErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -26696,10 +27113,11 @@ func (c *Client) CreateWorkspaceWithResponse(ctx context.Context, options *Creat
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(CreateWorkspaceErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(CreateWorkspaceErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 202:
@@ -26750,10 +27168,11 @@ func (c *Client) DeleteWorkspaceWithResponse(ctx context.Context, options *Delet
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(DeleteWorkspaceErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(DeleteWorkspaceErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 204:
@@ -26790,10 +27209,11 @@ func (c *Client) GetWorkspaceWithResponse(ctx context.Context, options *GetWorks
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetWorkspaceErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetWorkspaceErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -26844,10 +27264,11 @@ func (c *Client) ListWorkspaceAgentSessionsWithResponse(ctx context.Context, opt
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ListWorkspaceAgentSessionsErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ListWorkspaceAgentSessionsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -26898,10 +27319,11 @@ func (c *Client) GetWorkspaceCommitsWithResponse(ctx context.Context, options *G
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetWorkspaceCommitsErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetWorkspaceCommitsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -26952,10 +27374,11 @@ func (c *Client) GetWorkspaceDiffWithResponse(ctx context.Context, options *GetW
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetWorkspaceDiffErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetWorkspaceDiffErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -27006,10 +27429,11 @@ func (c *Client) WatchWorkspaceDiffWithResponse(ctx context.Context, options *Wa
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(WatchWorkspaceDiffErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(WatchWorkspaceDiffErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -27060,10 +27484,11 @@ func (c *Client) GetWorkspaceFilePreviewWithResponse(ctx context.Context, option
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetWorkspaceFilePreviewErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetWorkspaceFilePreviewErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -27114,10 +27539,11 @@ func (c *Client) GetWorkspaceFilesWithResponse(ctx context.Context, options *Get
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetWorkspaceFilesErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetWorkspaceFilesErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -27168,10 +27594,11 @@ func (c *Client) ListWorkspaceKataLinksWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(ListWorkspaceKataLinksErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(ListWorkspaceKataLinksErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -27223,10 +27650,11 @@ func (c *Client) CreateWorkspaceKataLinkWithResponse(ctx context.Context, option
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(CreateWorkspaceKataLinkErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(CreateWorkspaceKataLinkErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -27277,10 +27705,11 @@ func (c *Client) DeleteWorkspaceKataLinkWithResponse(ctx context.Context, option
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(DeleteWorkspaceKataLinkErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(DeleteWorkspaceKataLinkErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 204:
@@ -27317,10 +27746,11 @@ func (c *Client) PullWorkspaceBranchWithResponse(ctx context.Context, options *P
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(PullWorkspaceBranchErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(PullWorkspaceBranchErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -27371,10 +27801,11 @@ func (c *Client) PushWorkspaceBranchWithResponse(ctx context.Context, options *P
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(PushWorkspaceBranchErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(PushWorkspaceBranchErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -27425,10 +27856,11 @@ func (c *Client) RefreshWorkspaceWithResponse(ctx context.Context, options *Refr
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(RefreshWorkspaceErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(RefreshWorkspaceErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -27479,10 +27911,11 @@ func (c *Client) RetryWorkspaceWithResponse(ctx context.Context, options *RetryW
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(RetryWorkspaceErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(RetryWorkspaceErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 202:
@@ -27533,10 +27966,11 @@ func (c *Client) RevealWorkspaceWithResponse(ctx context.Context, options *Revea
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(RevealWorkspaceErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(RevealWorkspaceErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 204:
@@ -27573,10 +28007,11 @@ func (c *Client) GetWorkspaceRuntimeWithResponse(ctx context.Context, options *G
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetWorkspaceRuntimeErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetWorkspaceRuntimeErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -27628,10 +28063,11 @@ func (c *Client) LaunchWorkspaceAgentHandoffWithResponse(ctx context.Context, op
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(LaunchWorkspaceAgentHandoffErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(LaunchWorkspaceAgentHandoffErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -27683,10 +28119,11 @@ func (c *Client) LaunchWorkspaceRuntimeSessionWithResponse(ctx context.Context, 
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(LaunchWorkspaceRuntimeSessionErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(LaunchWorkspaceRuntimeSessionErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -27737,10 +28174,11 @@ func (c *Client) StopWorkspaceRuntimeSessionWithResponse(ctx context.Context, op
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(StopWorkspaceRuntimeSessionErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(StopWorkspaceRuntimeSessionErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 204:
@@ -27778,10 +28216,11 @@ func (c *Client) RenameWorkspaceRuntimeSessionWithResponse(ctx context.Context, 
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(RenameWorkspaceRuntimeSessionErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(RenameWorkspaceRuntimeSessionErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -27832,10 +28271,11 @@ func (c *Client) GetWorkspaceRuntimeSessionAttachSpecWithResponse(ctx context.Co
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetWorkspaceRuntimeSessionAttachSpecErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetWorkspaceRuntimeSessionAttachSpecErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -27886,10 +28326,11 @@ func (c *Client) GetWorkspaceRuntimeSessionInitialMessageWithResponse(ctx contex
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(GetWorkspaceRuntimeSessionInitialMessageErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(GetWorkspaceRuntimeSessionInitialMessageErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -27941,10 +28382,11 @@ func (c *Client) SubmitWorkspaceRuntimeSessionInitialMessageWithResponse(ctx con
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(SubmitWorkspaceRuntimeSessionInitialMessageErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(SubmitWorkspaceRuntimeSessionInitialMessageErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -27996,10 +28438,11 @@ func (c *Client) RemoveStaleWorktreeWithResponse(ctx context.Context, options *R
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		out.Error = new(RemoveStaleWorktreeErrorResponse)
-		if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+		problem := new(RemoveStaleWorktreeErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
 		}
+		out.Error = problem
 	}
 	switch resp.StatusCode {
 	case 200:
@@ -28902,6 +29345,21 @@ func (c *Client) FederationRefreshWorkspaceLaunchSpecRaw(ctx context.Context, ht
 		Method:      "POST",
 		Options:     options,
 		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// QueueFederationWorkspaceCleanupRaw returns an unread response. The caller must close its body.
+func (c *Client) QueueFederationWorkspaceCleanupRaw(ctx context.Context, httpClient *http.Client, options *QueueFederationWorkspaceCleanupRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/federation/workspaces/{id}/cleanup",
+		Method:     "POST",
+		Options:    options,
 	}
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 	if err != nil {
@@ -33286,6 +33744,22 @@ func (c *Client) CaptureTelemetryEventRaw(ctx context.Context, httpClient *http.
 	return httpClient.Do(req)
 }
 
+// WriteTerminalClipboardRaw returns an unread response. The caller must close its body.
+func (c *Client) WriteTerminalClipboardRaw(ctx context.Context, httpClient *http.Client, options *WriteTerminalClipboardRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/terminal/clipboard",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // StoreTerminalPasteImageRaw returns an unread response. The caller must close its body.
 func (c *Client) StoreTerminalPasteImageRaw(ctx context.Context, httpClient *http.Client, options *StoreTerminalPasteImageRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -34724,6 +35198,22 @@ func NewFederationRefreshWorkspaceLaunchSpecRequest(ctx context.Context, baseURL
 		Method:      "POST",
 		Options:     options,
 		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewQueueFederationWorkspaceCleanupRequest constructs a typed request for a caller-owned transport.
+func NewQueueFederationWorkspaceCleanupRequest(ctx context.Context, baseURL string, options *QueueFederationWorkspaceCleanupRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/federation/workspaces/{id}/cleanup",
+		Method:     "POST",
+		Options:    options,
 	}
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
@@ -39372,6 +39862,23 @@ func NewCaptureTelemetryEventRequest(ctx context.Context, baseURL string, option
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewWriteTerminalClipboardRequest constructs a typed request for a caller-owned transport.
+func NewWriteTerminalClipboardRequest(ctx context.Context, baseURL string, options *WriteTerminalClipboardRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/terminal/clipboard",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewStoreTerminalPasteImageRequest constructs a typed request for a caller-owned transport.
 func NewStoreTerminalPasteImageRequest(ctx context.Context, baseURL string, options *StoreTerminalPasteImageRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -40523,6 +41030,10 @@ type BeginFederationSpokePreparationPath struct {
 
 type SealFederationSpokePreparationPath struct {
 	EnrollmentID string `json:"enrollment_id"`
+}
+
+type QueueFederationWorkspaceCleanupPath struct {
+	ID string `json:"id"`
 }
 
 type RevokeFederationEnrollmentPath struct {
@@ -42369,6 +42880,8 @@ type SetStarredBody = StarredRequest
 
 type CaptureTelemetryEventBody = TelemetryEventInputBody
 
+type WriteTerminalClipboardBody = TerminalClipboardInputBody
+
 type StoreTerminalPasteImageBody = runtime.File
 
 type SetActiveWorktreeBody = SetActiveWorktreeInputBody
@@ -43179,6 +43692,8 @@ type FederationResolveWorkspaceLaunchSpecErrorResponse = ProblemError
 type FederationRefreshWorkspaceLaunchSpecResponse = WorkspaceLaunchSpec
 
 type FederationRefreshWorkspaceLaunchSpecErrorResponse = ProblemError
+
+type QueueFederationWorkspaceCleanupErrorResponse = ProblemError
 
 type CompleteFilesystemPathResponse = FilesystemCompleteOutputBody
 
@@ -44086,6 +44601,8 @@ type CaptureTelemetryEventResponse = TelemetryEventResponse
 
 type CaptureTelemetryEventErrorResponse = ProblemError
 
+type WriteTerminalClipboardErrorResponse = ProblemError
+
 type StoreTerminalPasteImageResponse = TerminalPasteImageOutputBody
 
 type StoreTerminalPasteImageErrorResponse = ProblemError
@@ -44608,6 +45125,13 @@ type FederationRefreshWorkspaceLaunchSpecResp struct {
 	StatusCode   int
 	Error        *FederationRefreshWorkspaceLaunchSpecErrorResponse
 	JSON200      *FederationRefreshWorkspaceLaunchSpecResponse
+}
+
+type QueueFederationWorkspaceCleanupResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *QueueFederationWorkspaceCleanupErrorResponse
 }
 
 type CompleteFilesystemPathResp struct {
@@ -46655,6 +47179,13 @@ type CaptureTelemetryEventResp struct {
 	StatusCode   int
 	Error        *CaptureTelemetryEventErrorResponse
 	JSON202      *CaptureTelemetryEventResponse
+}
+
+type WriteTerminalClipboardResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *WriteTerminalClipboardErrorResponse
 }
 
 type StoreTerminalPasteImageResp struct {
@@ -50244,6 +50775,12 @@ type Terminal struct {
 	RetainedSessions int64   `json:"retained_sessions"`
 	Scrollback       int64   `json:"scrollback"`
 	TmuxMouse        bool    `json:"tmux_mouse"`
+}
+
+type TerminalClipboardInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+	Text   string  `json:"text"`
 }
 
 type TerminalPasteImageOutputBody struct {

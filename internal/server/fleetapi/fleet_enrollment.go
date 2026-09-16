@@ -10,10 +10,11 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/url"
 	"runtime"
 	"strings"
 	"time"
+
+	"go.kenn.io/forge/internal/apiclient/generated"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -656,14 +657,7 @@ func (h *Handler) requestSpokeEnrollmentRevocation(
 	if !ok {
 		return httpapi.Internal("outbound spoke credential is unavailable")
 	}
-	request, err := http.NewRequestWithContext(
-		ctx, http.MethodDelete,
-		remoteHTTPURL(
-			enrollment.SpokeBaseURL,
-			"/api/v1/fleet/enrollments/"+url.PathEscape(enrollment.ID), "",
-		),
-		nil,
-	)
+	request, err := generated.NewRevokeFederationEnrollmentRequest(ctx, strings.TrimRight(enrollment.SpokeBaseURL, "/")+"/api/v1", &generated.RevokeFederationEnrollmentRequestOptions{PathParams: &generated.RevokeFederationEnrollmentPath{EnrollmentID: enrollment.ID}})
 	if err != nil {
 		return httpapi.Internal("build spoke revocation request: " + err.Error())
 	}

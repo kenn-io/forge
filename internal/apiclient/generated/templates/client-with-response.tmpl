@@ -94,10 +94,11 @@ func (c *{{$clientName}}) {{$op.ID}}WithResponse(ctx context.Context{{ if $op.Ha
 
     {{- if $op.Response.Error }}
     if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-        out.Error = new({{$op.Response.Error.ResponseName}})
-        if err := json.Unmarshal(resp.Content, out.Error); err != nil {
+        problem := new({{$op.Response.Error.ResponseName}})
+        if err := json.Unmarshal(resp.Content, problem); err != nil {
             return out, fmt.Errorf("decode API error response: %w", err)
         }
+        out.Error = problem
     }
     {{- end }}
     switch resp.StatusCode {

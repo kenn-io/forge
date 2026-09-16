@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"time"
 
+	"go.kenn.io/forge/internal/apiclient/health"
+
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/runtimelock"
 	"go.kenn.io/kit/daemon"
@@ -121,9 +123,7 @@ func IsVerifiedReady(
 	client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
 		return http.ErrUseLastResponse
 	}
-	req, err := http.NewRequestWithContext(
-		ctx, http.MethodGet, ep.BaseURL()+"/healthz", nil,
-	)
+	req, err := health.NewGetHealthzRequest(ctx, ep.BaseURL())
 	if err != nil {
 		return false, fmt.Errorf("build daemon readiness request: %w", err)
 	}

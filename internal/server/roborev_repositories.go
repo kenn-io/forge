@@ -16,10 +16,12 @@ import (
 	"sync"
 	"time"
 
+	"go.kenn.io/forge/internal/apiclient/roborev"
+
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/projects"
 	"go.kenn.io/forge/internal/server/httpapi"
-	"go.kenn.io/kit/git/env"
+	gitenv "go.kenn.io/kit/git/env"
 )
 
 func (s *Server) listRoborevConfiguredRepositories(
@@ -399,12 +401,7 @@ func loadRoborevRepositoryInventory(
 	endpoint string,
 ) func(context.Context) ([]roborevTrackedRepository, error) {
 	return func(ctx context.Context) ([]roborevTrackedRepository, error) {
-		request, err := http.NewRequestWithContext(
-			ctx,
-			http.MethodGet,
-			strings.TrimRight(endpoint, "/")+"/api/repos",
-			nil,
-		)
+		request, err := roborev.NewListReposRequest(ctx, strings.TrimRight(endpoint, "/"), &roborev.ListReposRequestOptions{})
 		if err != nil {
 			return nil, fmt.Errorf("build roborev repository request: %w", err)
 		}

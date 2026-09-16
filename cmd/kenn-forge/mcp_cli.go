@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"go.kenn.io/forge/internal/apiclient/generated"
+
 	shellquote "github.com/kballard/go-shellquote"
 	"github.com/spf13/cobra"
 	"go.kenn.io/forge/internal/config"
@@ -130,12 +132,7 @@ func loadMCPQuickstart(
 	if err != nil {
 		return mcpQuickstartInfo{}, fmt.Errorf("mcp quickstart: discover daemon: %w", err)
 	}
-	request, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodGet,
-		strings.TrimRight(daemon.BaseURL, "/")+"/api/v1/settings",
-		nil,
-	)
+	request, err := generated.NewGetSettingsRequest(ctx, strings.TrimRight(daemon.BaseURL, "/")+"/api/v1")
 	if err != nil {
 		return mcpQuickstartInfo{}, fmt.Errorf("mcp quickstart: build settings request: %w", err)
 	}

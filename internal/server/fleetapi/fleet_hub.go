@@ -7,10 +7,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"sync"
 	"time"
+
+	"go.kenn.io/forge/internal/apiclient/generated"
 
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/federation"
@@ -170,8 +171,12 @@ func (s *Handler) fetchRawSnapshot(
 	timeout time.Duration,
 ) (fleet.RawSnapshot, error) {
 	var raw fleet.RawSnapshot
-	err := s.fetchFederationJSON(
-		ctx, target, target.clients.rest, timeout, "/api/v1/snapshot/raw", &raw,
+	request, err := generated.NewGetSnapshotRawRequest(ctx, target.member.BaseURL+"/api/v1")
+	if err != nil {
+		return fleet.RawSnapshot{}, err
+	}
+	err = s.fetchFederationJSON(
+		ctx, target, target.clients.rest, timeout, request, &raw,
 	)
 	if err != nil {
 		return fleet.RawSnapshot{}, err
@@ -199,10 +204,13 @@ func (s *Handler) fetchHubAggregate(
 		return fleet.NeutralSnapshot{}, fmt.Errorf("federation credential unavailable")
 	}
 	var aggregate fleet.NeutralSnapshot
-	query := url.Values{"member_timeout": {memberTimeout.String()}}
+	request, err := generated.NewGetSnapshotAggregateRequest(ctx, target.member.BaseURL+"/api/v1", &generated.GetSnapshotAggregateRequestOptions{Query: &generated.GetSnapshotAggregateQuery{MemberTimeout: new(memberTimeout.String())}})
+	if err != nil {
+		return fleet.NeutralSnapshot{}, err
+	}
 	if err := s.fetchFederationJSON(
 		ctx, target, target.clients.proxy, timeout,
-		"/api/v1/snapshot/aggregate?"+query.Encode(), &aggregate,
+		request, &aggregate,
 	); err != nil {
 		return fleet.NeutralSnapshot{}, err
 	}
@@ -224,17 +232,12 @@ func (s *Handler) fetchFederationJSON(
 	target fleetHostTarget,
 	client *http.Client,
 	timeout time.Duration,
-	path string,
+	request *http.Request,
 	destination any,
 ) error {
 	requestContext, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	request, err := http.NewRequestWithContext(
-		requestContext, http.MethodGet, target.member.BaseURL+path, nil,
-	)
-	if err != nil {
-		return err
-	}
+	request = request.Clone(requestContext)
 	s.authorizeFederationRequest(request.Header, target.credential)
 	response, err := client.Do(request)
 	if err != nil {

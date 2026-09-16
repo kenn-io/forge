@@ -172,13 +172,6 @@ func (settings providerSettingsResponse) projection() providerSettingsProjection
 	}
 }
 
-func providerSettingsUpdateFrom(update updateSettingsRequest) providerSettingsUpdate {
-	return providerSettingsUpdate{
-		Activity: update.Activity, Detail: update.Detail,
-		PullRequests: update.PullRequests, Issues: update.Issues,
-	}
-}
-
 func (update providerSettingsUpdate) settingsUpdate() updateSettingsRequest {
 	return updateSettingsRequest{
 		Activity: update.Activity, Detail: update.Detail,

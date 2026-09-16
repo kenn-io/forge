@@ -15,11 +15,12 @@ import (
 	"strings"
 	"time"
 
+	"go.kenn.io/forge/internal/apiclient/generated"
+
 	"go.kenn.io/forge/internal/federationauth"
 )
 
 const (
-	hubEventsPath = "/api/v1/federation/events"
 	// FederationReplayCompleteComment is the SSE comment that separates
 	// hub replay from the live stream without expanding its event
 	// vocabulary.
@@ -131,7 +132,7 @@ func (c *EventClient) Run(ctx context.Context) {
 }
 
 func (c *EventClient) runOnce(ctx context.Context, cursor *uint64) (bool, error) {
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, hubEventsPath, nil)
+	request, err := generated.NewStreamFederationProviderEventsRequest(ctx, "/api/v1", &generated.StreamFederationProviderEventsRequestOptions{})
 	if err != nil {
 		return false, err
 	}

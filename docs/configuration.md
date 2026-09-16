@@ -9,6 +9,29 @@ options. Restart Forge after changing startup settings.
 
 ## Repositories
 
+### Faster GitHub updates
+
+An optional shared relay receives messages from GitHub when something changes.
+Forge checks the relay, then fetches the changed items using its own GitHub
+credentials. Add the private feed URL supplied by the person running the
+relay, then restart Forge:
+
+```toml
+[relay]
+url = "https://relay.example.com"
+poll_interval = "15s"
+```
+
+Omit `poll_interval` to use the 15-second default, or set a positive duration
+to override it.
+
+Use the HTTPS origin without `/activity` or a webhook path. In a fleet, add
+this setting to the hub. An empty URL disables the relay. Normal syncing
+continues. See [Faster GitHub updates](activity-relay.md) for setup, access,
+and a walkthrough to check that it works. The relay supports GitHub.com.
+
+### Repository selection
+
 A GitHub repository on `github.com` needs only its owner and name:
 
 ```toml

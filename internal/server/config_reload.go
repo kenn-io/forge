@@ -41,6 +41,7 @@ type configChangedEvent struct {
 // startup. It is taken once in newServer and compared in applyConfigChange
 // to detect drift that the watcher cannot fix without a restart.
 type startupConfigSnapshot struct {
+	Relay                           config.Relay
 	SyncInterval                    string
 	NotificationSyncInterval        string
 	NotificationPropagationInterval string
@@ -105,6 +106,7 @@ func snapshotStartupConfig(cfg *config.Config) startupConfigSnapshot {
 		return startupConfigSnapshot{}
 	}
 	snap := startupConfigSnapshot{
+		Relay:                           cfg.Relay,
 		SyncInterval:                    cfg.SyncInterval,
 		NotificationSyncInterval:        cfg.Notifications.SyncInterval,
 		NotificationPropagationInterval: cfg.Notifications.PropagationInterval,

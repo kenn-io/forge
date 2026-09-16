@@ -41479,6 +41479,16 @@ const (
 	ProviderStateWorkflowPayloadItemTypePr    ProviderStateWorkflowPayloadItemType = "pr"
 )
 
+type RelayActivityTarget string
+
+const (
+	RelayActivityTargetIssue             RelayActivityTarget = "issue"
+	RelayActivityTargetPullRequest       RelayActivityTarget = "pull_request"
+	RelayActivityTargetPullRequestChecks RelayActivityTarget = "pull_request_checks"
+	RelayActivityTargetRepository        RelayActivityTarget = "repository"
+	RelayActivityTargetRepositoryRefs    RelayActivityTarget = "repository_refs"
+)
+
 type SyncStatusLastErrorCode string
 
 const (
@@ -50822,6 +50832,20 @@ type RegisterWorktreeInputBody struct {
 	WorktreeName *string `json:"worktree_name,omitempty"`
 }
 
+type RelayActivity struct {
+	Cursor     string              `json:"cursor"`
+	Number     int64               `json:"number"`
+	ReceivedAt time.Time           `json:"received_at"`
+	Repository string              `json:"repository"`
+	Target     RelayActivityTarget `json:"target"`
+}
+
+type RelayStatus struct {
+	LastPollAt  *time.Time      `json:"last_poll_at,omitempty"`
+	Recent      []RelayActivity `json:"recent"`
+	Unavailable bool            `json:"unavailable"`
+}
+
 type RemoveStaleWorktreeInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema       *string `json:"$schema,omitempty"`
@@ -51503,6 +51527,7 @@ type SyncStatus struct {
 	LastErrorCode           *SyncStatusLastErrorCode `json:"last_error_code,omitempty"`
 	LastRunAt               *time.Time               `json:"last_run_at,omitempty"`
 	Progress                *string                  `json:"progress,omitempty"`
+	Relay                   *RelayStatus             `json:"relay,omitempty"`
 	Running                 bool                     `json:"running"`
 }
 

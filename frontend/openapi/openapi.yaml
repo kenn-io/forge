@@ -6767,6 +6767,50 @@ components:
       required:
         - branch
       type: object
+    RelayActivity:
+      additionalProperties: false
+      properties:
+        cursor:
+          type: string
+        number:
+          format: int64
+          type: integer
+        received_at:
+          format: date-time
+          type: string
+        repository:
+          type: string
+        target:
+          enum:
+            - pull_request
+            - pull_request_checks
+            - issue
+            - repository_refs
+            - repository
+          type: string
+      required:
+        - cursor
+        - repository
+        - target
+        - number
+        - received_at
+      type: object
+    RelayStatus:
+      additionalProperties: false
+      properties:
+        last_poll_at:
+          format: date-time
+          type: string
+        recent:
+          items:
+            $ref: "#/components/schemas/RelayActivity"
+          type: array
+        unavailable:
+          type: boolean
+      required:
+        - unavailable
+        - recent
+      type: object
     RemoveStaleWorktreeInputBody:
       additionalProperties: false
       properties:
@@ -8628,6 +8672,8 @@ components:
           type: string
         progress:
           type: string
+        relay:
+          $ref: "#/components/schemas/RelayStatus"
         running:
           type: boolean
       required:

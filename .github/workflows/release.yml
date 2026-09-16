@@ -64,10 +64,16 @@ jobs:
 
           ./dist/kenn-forge version
 
+          go build -buildvcs=false -ldflags="$LDFLAGS" -trimpath \
+            -o dist/kenn-forge-relay ./cmd/kenn-forge-relay
+          ./dist/kenn-forge-relay --version
+
           cd dist
           ARCHIVE="forge_${VERSION}_linux_${{ matrix.goarch }}.tar.gz"
           tar czf "$ARCHIVE" kenn-forge
           rm kenn-forge
+          tar czf "forge-relay_${VERSION}_linux_${{ matrix.goarch }}.tar.gz" kenn-forge-relay
+          rm kenn-forge-relay
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

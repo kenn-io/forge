@@ -69,6 +69,11 @@ build: frontend githubapp-frontend
 	go build -ldflags="$(LDFLAGS)" -o $(BINARY) ./cmd/kenn-forge
 	go build -ldflags="$(LDFLAGS)" -o $(GHAPP_BINARY) ./cmd/kenn-forge-github-app
 
+# The relay has no frontend dependency.
+.PHONY: build-relay
+build-relay:
+	go build -ldflags="$(LDFLAGS)" -o tmp/kenn-forge-relay ./cmd/kenn-forge-relay
+
 # Build with optimizations (release)
 build-release: frontend githubapp-frontend
 	go build -ldflags="$(LDFLAGS_RELEASE)" -trimpath -o $(BINARY) ./cmd/kenn-forge

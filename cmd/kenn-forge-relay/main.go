@@ -1,0 +1,155 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"encoding/json/v2"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net"
+	"net/http"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"regexp"
+	"syscall"
+	"time"
+
+	"github.com/BurntSushi/toml"
+	"github.com/spf13/pflag"
+	"go.kenn.io/forge/internal/activityrelay"
+)
+
+var version = "dev"
+
+type relayConfig struct {
+	Database      string `toml:"database"`
+	WebhookListen string `toml:"webhook_listen"`
+	FeedListen    string `toml:"feed_listen"`
+	Retention     string `toml:"retention"`
+	Sources       map[string]struct {
+		SecretFile    string  `toml:"secret_file"`
+		RepositoryIDs []int64 `toml:"repository_ids"`
+	} `toml:"sources"`
+}
+
+func main() {
+	configFile := pflag.String("config", "", "Path to relay TOML configuration")
+	showVersion := pflag.Bool("version", false, "Print build version")
+	pflag.Parse()
+	if *showVersion {
+		fmt.Println(version)
+		return
+	}
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	if pflag.NArg() != 0 || *configFile == "" {
+		fmt.Fprintln(os.Stderr, "usage: kenn-forge-relay --config PATH")
+		os.Exit(2)
+	}
+	if err := run(ctx, *configFile); err != nil {
+		slog.Error("relay stopped", "error", err)
+		os.Exit(1)
+	}
+}
+
+func run(ctx context.Context, path string) (runErr error) {
+	cfg := relayConfig{WebhookListen: "127.0.0.1:8081", FeedListen: "127.0.0.1:8082", Retention: "168h"}
+	metadata, err := toml.DecodeFile(path, &cfg)
+	if err != nil || len(metadata.Undecoded()) != 0 || cfg.Database == "" || len(cfg.Sources) == 0 {
+		return errors.New("invalid relay configuration")
+	}
+	retention, err := time.ParseDuration(cfg.Retention)
+	if err != nil || retention <= 0 {
+		return errors.New("retention must be a positive duration")
+	}
+	for _, address := range []string{cfg.WebhookListen, cfg.FeedListen} {
+		host, _, err := net.SplitHostPort(address)
+		if err != nil || !net.ParseIP(host).IsLoopback() {
+			return errors.New("relay listeners must use loopback IP addresses")
+		}
+	}
+	sources := make(map[string]activityrelay.Source, len(cfg.Sources))
+	validSource := regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
+	for name, source := range cfg.Sources {
+		if !validSource.MatchString(name) || len(source.RepositoryIDs) == 0 {
+			return errors.New("source requires a routing label and repository IDs")
+		}
+		for _, id := range source.RepositoryIDs {
+			if id <= 0 {
+				return errors.New("source repository IDs must be positive")
+			}
+		}
+		secret, err := os.ReadFile(source.SecretFile)
+		if err != nil || len(bytes.TrimSpace(secret)) == 0 {
+			return errors.New("could not read source verification credential")
+		}
+		sources[name] = activityrelay.Source{Secret: bytes.TrimSpace(secret), RepositoryIDs: source.RepositoryIDs}
+	}
+	if err := os.MkdirAll(filepath.Dir(cfg.Database), 0o700); err != nil {
+		return errors.New("could not create relay data directory")
+	}
+	store, err := activityrelay.Open(cfg.Database)
+	if err != nil {
+		return errors.New("could not open relay database")
+	}
+	defer func() { runErr = errors.Join(runErr, store.Close()) }()
+	if err := store.Prune(ctx, time.Now().UTC().Add(-retention)); err != nil {
+		return errors.New("could not prune relay database")
+	}
+	webhook, err := net.Listen("tcp", cfg.WebhookListen)
+	if err != nil {
+		return errors.New("could not bind webhook listener")
+	}
+	defer func() { _ = webhook.Close() }()
+	feed, err := net.Listen("tcp", cfg.FeedListen)
+	if err != nil {
+		return errors.New("could not bind feed listener")
+	}
+	defer func() { _ = feed.Close() }()
+	ingress, private := activityrelay.Handlers(store, sources)
+	servers := []*http.Server{
+		{Handler: ingress, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: time.Minute, MaxHeaderBytes: 16 << 10},
+		{Handler: private, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: time.Minute, MaxHeaderBytes: 16 << 10},
+	}
+	finished := make(chan error, 2)
+	go func() { finished <- servers[0].Serve(webhook) }()
+	go func() { finished <- servers[1].Serve(feed) }()
+	ready, _ := json.Marshal(map[string]string{"webhook": webhook.Addr().String(), "feed": feed.Addr().String()})
+	fmt.Println(string(ready))
+	ticker := time.NewTicker(min(time.Hour, retention))
+	defer ticker.Stop()
+	var serveErr error
+	completed := 0
+serve:
+	for {
+		select {
+		case <-ctx.Done():
+			break serve
+		case err := <-finished:
+			completed++
+			if !errors.Is(err, http.ErrServerClosed) {
+				serveErr = errors.New("relay HTTP server failed")
+			}
+			break serve
+		case <-ticker.C:
+			if err := store.Prune(ctx, time.Now().UTC().Add(-retention)); err != nil && ctx.Err() == nil {
+				slog.Error("relay retention failed")
+			}
+		}
+	}
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	for _, server := range servers {
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			serveErr = errors.Join(serveErr, errors.New("relay shutdown timed out"))
+			_ = server.Close()
+		}
+	}
+	for completed < 2 {
+		<-finished
+		completed++
+	}
+	return serveErr
+}

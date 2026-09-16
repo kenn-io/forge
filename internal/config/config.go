@@ -977,6 +977,7 @@ type Config struct {
 	Workspaces        Workspaces               `toml:"workspaces"`
 	Issues            Issues                   `toml:"issues"`
 	Notifications     Notifications            `toml:"notifications"`
+	Relay             Relay                    `toml:"relay"`
 	Terminal          Terminal                 `toml:"terminal"`
 	Modes             ModeVisibility           `toml:"modes"`
 	Agents            []Agent                  `toml:"agents"`
@@ -1393,6 +1394,9 @@ func (c *Config) DataDirWasRelative() bool {
 
 // validate runs every config rule.
 func (c *Config) validate() error {
+	if err := c.Relay.Validate(); err != nil {
+		return err
+	}
 	var err error
 	if err := c.Fleet.Validate(); err != nil {
 		return err
@@ -3569,6 +3573,7 @@ type configFile struct {
 	GitHubApps                  []GitHubAppConfig        `toml:"github_apps,omitempty"`
 	Activity                    Activity                 `toml:"activity"`
 	Notifications               Notifications            `toml:"notifications,omitempty"`
+	Relay                       Relay                    `toml:"relay,omitempty"`
 	Terminal                    Terminal                 `toml:"terminal,omitempty"`
 	Modes                       ModeVisibility           `toml:"modes,omitempty"`
 	Agents                      []Agent                  `toml:"agents,omitempty"`
@@ -3612,6 +3617,7 @@ func (c *Config) Save(path string) error {
 		GitHubApps:                  cfg.GitHubApps,
 		Activity:                    cfg.Activity,
 		Notifications:               cfg.Notifications,
+		Relay:                       cfg.Relay,
 		Terminal:                    cfg.Terminal,
 		Modes:                       cfg.Modes,
 		Agents:                      cfg.Agents,

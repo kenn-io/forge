@@ -184,6 +184,7 @@ func TestWorkspaceRuntimeTargetsHideInternalShellTargetE2E(t *testing.T) {
 }
 
 func TestWorkspaceRuntimeLaunchUnavailableTargetE2E(t *testing.T) {
+	require := require.New(t)
 	disabled := false
 	cfg := &config.Config{Agents: []config.Agent{{
 		Key:     "disabled",
@@ -198,9 +199,10 @@ func TestWorkspaceRuntimeLaunchUnavailableTargetE2E(t *testing.T) {
 		TargetKey: "disabled",
 	}})
 
-	require.NoError(t, err)
-	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
-	require.Contains(t, string(resp.Body), "not available")
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusBadRequest, resp.StatusCode)
+	require.Contains(string(resp.Body), "not available")
 }
 
 func TestWorkspaceRuntimeLaunchPlainShellCreatesRuntimeSessionE2E(t *testing.T) {

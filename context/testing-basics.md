@@ -47,6 +47,8 @@ fixtures, or changing shell-script coverage.
   helper methods thereafter. CI enforces this through `guardrail-check`
   (`Makefile::guardrail-check`).
 - Prefer the generated Go API client for integration-style API tests.
+- Verify generated-client migrations without `-short`; shared workspace fixtures skip
+  error-path coverage in short mode (`internal/server/workspacetest/fixtures_test.go::setupWorkspaceServerFixtureWithTmuxInjection`).
 - Stage API, generated-client, and module changes before `make huma-check`; its
   Git-index snapshot can otherwise load mismatched types or report old findings
   (`Makefile::huma-check`).

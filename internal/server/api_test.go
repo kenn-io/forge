@@ -27765,7 +27765,8 @@ func TestWorkspaceDeletionRecoversAcrossServerRestartE2E(t *testing.T) {
 	)
 
 	getResp, err = restartedClient.HTTP.GetWorkspaceWithResponse(ctx, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: ws.ID}})
-	require.NoError(err)
+	require.Error(err)
+	require.NotNil(getResp)
 	assert.Equal(http.StatusNotFound, getResp.StatusCode)
 	_, err = os.Stat(ws.WorktreePath)
 	assert.True(os.IsNotExist(err))
@@ -28080,7 +28081,8 @@ func TestWorkspaceRuntimePlainShellRecordFailureCleansCreatedTmuxShellE2E(t *tes
 	case <-time.After(5 * time.Second):
 		require.FailNow("runtime launch request did not complete within 5 seconds")
 	}
-	require.NoError(result.err)
+	require.Error(result.err)
+	require.NotNil(result.response)
 	require.Equal(http.StatusInternalServerError, result.response.StatusCode)
 	require.NoError(tx.Rollback())
 

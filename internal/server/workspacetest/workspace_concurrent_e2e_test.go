@@ -273,11 +273,11 @@ exec "$@"
 	go func() {
 		force := true
 		resp, deleteErr := fixture.client.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: ws.ID}, Query: &generated.DeleteWorkspaceQuery{Force: &force}})
-		if deleteErr != nil {
-			deleteDone <- deleteResult{err: deleteErr}
-			return
+		result := deleteResult{err: deleteErr}
+		if resp != nil {
+			result.status = resp.StatusCode
 		}
-		deleteDone <- deleteResult{status: resp.StatusCode}
+		deleteDone <- result
 	}()
 
 	require.Eventually(func() bool {
@@ -299,7 +299,7 @@ exec "$@"
 	case <-time.After(10 * time.Second):
 		require.FailNow("delete did not finish after terminal cleanup resumed")
 	}
-	require.NoError(result.err)
+	require.Error(result.err)
 	require.Equal(http.StatusInternalServerError, result.status)
 
 	stored, err := fixture.database.GetWorkspace(ctx, ws.ID)

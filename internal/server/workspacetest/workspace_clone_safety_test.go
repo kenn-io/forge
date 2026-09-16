@@ -448,7 +448,8 @@ func TestWorkspaceForceDeleteRetainsLockedWorktreeE2E(t *testing.T) {
 
 	force := true
 	deleteResp, err := fixture.client.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: ws.ID}, Query: &generated.DeleteWorkspaceQuery{Force: &force}})
-	require.NoError(err)
+	require.Error(err)
+	require.NotNil(deleteResp)
 	require.Equal(
 		http.StatusInternalServerError,
 		deleteResp.StatusCode,

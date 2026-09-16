@@ -226,7 +226,8 @@ func TestIssueWorkspaceConflictRejectsAlternateBranchForExistingDirectory(t *tes
 
 	alternateBranch := branch + "-2"
 	resp, err = fixture.client.HTTP.CreateIssueWorkspaceWithResponse(t.Context(), &generated.CreateIssueWorkspaceRequestOptions{PathParams: &generated.CreateIssueWorkspacePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(7)}, Body: &generated.CreateIssueWorkspaceInputBody{GitHeadRef: &alternateBranch}})
-	require.NoError(err)
+	require.Error(err)
+	require.NotNil(resp)
 	require.Equal(http.StatusConflict, resp.StatusCode, string(resp.Body))
 	problem = resp.Error
 	require.NotNil(problem)

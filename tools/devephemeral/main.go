@@ -70,7 +70,7 @@ type ephemeralStatus struct {
 	FrontendStartedAt string `json:"frontend_started_at,omitempty"`
 	BackendPort       int    `json:"backend_port"`
 	FrontendPort      int    `json:"frontend_port"`
-	MCPPort           int    `json:"mcp_port,omitempty"`
+	MCPPort           int    `json:"mcp_port,omitzero"`
 	ConfigPath        string `json:"config_path"`
 	DataDir           string `json:"data_dir"`
 	BackendURL        string `json:"backend_url"`

@@ -580,6 +580,18 @@ func TestWriteStatusFileRecordsPIDsAndPortsNextToConfig(t *testing.T) {
 	assert.Equal(filepath.Join(dir, "config.toml"), got.ConfigPath)
 }
 
+func TestWriteStatusFileOmitsDisabledMCP(t *testing.T) {
+	require := require.New(t)
+	path := filepath.Join(t.TempDir(), "dev-ephemeral.json")
+	require.NoError(writeStatusFile(path, ephemeralStatus{}))
+	content, err := os.ReadFile(path)
+	require.NoError(err)
+	var fields map[string]any
+	require.NoError(json.Unmarshal(content, &fields))
+	assert.NotContains(t, fields, "mcp_port")
+	assert.NotContains(t, fields, "mcp_url")
+}
+
 func TestResolveRunWorkDirDefaultsToStableDirectory(t *testing.T) {
 	workDir, err := resolveRunWorkDir("")
 	require.NoError(t, err)

@@ -49074,7 +49074,7 @@ type ErrorDetail struct {
 	Message *string `json:"message,omitempty"`
 
 	// Value The value at the given location
-	Value *struct{} `json:"value,omitempty"`
+	Value any `json:"value"`
 }
 
 type FeatureCapabilities struct {
@@ -51685,7 +51685,7 @@ type WorkflowEnvironmentResponse struct {
 }
 
 type WorkflowInputResponse struct {
-	Default     *struct{}                 `json:"default,omitempty"`
+	Default     any                       `json:"default"`
 	Description *string                   `json:"description,omitempty"`
 	HasDefault  bool                      `json:"has_default"`
 	Name        string                    `json:"name"`

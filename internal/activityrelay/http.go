@@ -101,12 +101,9 @@ type pullReference struct {
 func reduce(event string, body []byte, allowed []int64) ([]Hint, error) {
 	switch event {
 	case "pull_request", "pull_request_review", "pull_request_review_comment", "pull_request_review_thread",
-		"issues", "issue_comment", "check_run", "check_suite", "workflow_run", "push", "create", "delete", "repository":
+		"issues", "issue_comment", "push", "create", "delete", "repository":
 	default:
 		return nil, nil
-	}
-	type checks struct {
-		PullRequests []pullReference `json:"pull_requests"`
 	}
 	var payload struct {
 		Repository struct {
@@ -118,9 +115,6 @@ func reduce(event string, body []byte, allowed []int64) ([]Hint, error) {
 			Number      int       `json:"number"`
 			PullRequest *struct{} `json:"pull_request"`
 		} `json:"issue"`
-		CheckRun    *checks `json:"check_run"`
-		CheckSuite  *checks `json:"check_suite"`
-		WorkflowRun *checks `json:"workflow_run"`
 	}
 	if json.Unmarshal(body, &payload) != nil || payload.Repository.ID <= 0 || !slices.Contains(allowed, payload.Repository.ID) {
 		return nil, errors.New("invalid webhook repository")
@@ -140,26 +134,6 @@ func reduce(event string, body []byte, allowed []int64) ([]Hint, error) {
 		if payload.Issue.PullRequest != nil {
 			hint.Target = PullRequest
 		}
-	case "check_run", "check_suite", "workflow_run":
-		value := payload.CheckRun
-		switch event {
-		case "check_suite":
-			value = payload.CheckSuite
-		case "workflow_run":
-			value = payload.WorkflowRun
-		}
-		if value == nil {
-			return nil, errors.New("missing check event")
-		}
-		hints := make([]Hint, 0, len(value.PullRequests))
-		for _, pr := range value.PullRequests {
-			hint.Target, hint.Number = PullRequestChecks, pr.Number
-			if err := hint.Validate(); err != nil {
-				return nil, err
-			}
-			hints = append(hints, hint)
-		}
-		return hints, nil
 	case "push", "create", "delete":
 		hint.Target = RepositoryRefs
 	case "repository":

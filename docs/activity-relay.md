@@ -147,13 +147,14 @@ names below are also the values used when configuring hooks through its API:
 
 ```text
 pull_request, pull_request_review, pull_request_review_comment,
-pull_request_review_thread, issues, issue_comment, check_run,
-check_suite, workflow_run, push, create, delete, repository
+pull_request_review_thread, issues, issue_comment, push, create,
+delete, repository
 ```
 
-Do not subscribe to `status` or `workflow_job`. The relay uses check events
-only when GitHub includes a pull request number. Other checks, including
-some fork pull request checks, still update through normal Forge syncing.
+Do not subscribe to `check_run`, `check_suite`, `workflow_run`, `status`,
+or `workflow_job`. The relay ignores these events so check updates do not
+crowd out other activity. Check results still update through normal Forge
+syncing.
 
 A GitHub App can use the same webhook URL and secret. Configure its events
 and repository access in the App settings. Each Forge can continue using a

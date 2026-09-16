@@ -777,7 +777,9 @@ error or cancellation unchanged and never adopts.
 ## Activity relay
 
 - Relay hints accelerate normal polling; each consumer still uses its own credentials and rate gates.
-  Never fan unassociated checks out across all open PRs. (`internal/github/relay.go::PollRelay`)
+  (`internal/github/relay.go::PollRelay`)
+- Webhook ingress ignores check, workflow, and status events; CI stays on normal syncing so check
+  bursts do not crowd out activity. (`internal/activityrelay/http.go::reduce`)
 - Feed repository IDs are GitHub node IDs, matching the durable catalog; numeric REST IDs need
   a fresh provider resolve and must not become the consumer's lookup key. (`internal/activityrelay/http.go::reduce`)
 - Checkpoint cursors with pending targets before provider work. Keep one sequential poll/drain owner:

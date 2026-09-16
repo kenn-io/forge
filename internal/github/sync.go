@@ -429,6 +429,7 @@ const (
 
 // SyncStatus holds the current state of the sync engine.
 type SyncStatus struct {
+	Relay               *RelayStatus  `json:"relay,omitempty"`
 	Running             bool          `json:"running"`
 	CurrentRepo         string        `json:"current_repo,omitempty"`
 	Progress            string        `json:"progress,omitempty"`
@@ -1133,6 +1134,9 @@ func (s *Syncer) publishStatus(status *SyncStatus) {
 }
 
 func (s *Syncer) publishStatusLocked(status *SyncStatus) {
+	if status.Relay == nil {
+		status.Relay = s.Status().Relay
+	}
 	s.status.Store(status)
 	if s.onStatusChange != nil {
 		s.onStatusChange(status)

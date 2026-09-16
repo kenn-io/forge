@@ -786,6 +786,9 @@ error or cancellation unchanged and never adopts.
   to checks alone. (`internal/github/relay.go::refreshRelayHint`)
 - A parent ETag does not establish whether comment content changed; child-change hints require
   unconditional detail reads. (`internal/github/sync.go::getIssueForDetail`)
+- Relay status travels with ordinary sync status and is absent when the consumer is off.
+  Recent activity is a bounded, process-local list of received hints for tracked repositories,
+  not proof that provider refreshes finished. (`internal/github/relay.go::updateRelayStatus`)
 
 ## Testing Expectations
 

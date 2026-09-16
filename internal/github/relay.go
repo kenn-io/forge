@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"go.kenn.io/forge/internal/activityrelay"
 	"go.kenn.io/forge/internal/archive"
@@ -13,6 +14,34 @@ import (
 	"go.kenn.io/forge/platform"
 	platformgithub "go.kenn.io/forge/platform/github"
 )
+
+// RelayStatus is a process-local view of the feed, carried with sync status.
+type RelayStatus struct {
+	LastPollAt  time.Time       `json:"last_poll_at,omitzero"`
+	Unavailable bool            `json:"unavailable"`
+	Recent      []RelayActivity `json:"recent"`
+}
+
+type RelayActivity struct {
+	Cursor     string    `json:"cursor"`
+	Repository string    `json:"repository"`
+	Target     string    `json:"target" enum:"pull_request,pull_request_checks,issue,repository_refs,repository"`
+	Number     int       `json:"number"`
+	ReceivedAt time.Time `json:"received_at"`
+}
+
+func (s *Syncer) updateRelayStatus(update func(*RelayStatus)) {
+	s.statusMu.Lock()
+	defer s.statusMu.Unlock()
+	status := *s.Status()
+	relay := RelayStatus{Recent: []RelayActivity{}}
+	if status.Relay != nil {
+		relay = *status.Relay
+	}
+	update(&relay)
+	status.Relay = &relay
+	s.publishStatusLocked(&status)
+}
 
 // SetOnRelayRefresh installs the callback before the consumer starts.
 func (s *Syncer) SetOnRelayRefresh(fn func(context.Context, int64, string, int)) {
@@ -27,6 +56,10 @@ func (s *Syncer) PollRelay(ctx context.Context, relayURL string, client *http.Cl
 		return nil
 	}
 	pollErr := s.readRelayPages(ctx, relayURL, client)
+	s.updateRelayStatus(func(status *RelayStatus) {
+		status.LastPollAt = s.now().UTC()
+		status.Unavailable = pollErr != nil
+	})
 	// Pending work must also progress while the relay is unavailable.
 	return errors.Join(pollErr, s.drainRelayHints(ctx, relayURL))
 }
@@ -42,6 +75,7 @@ func (s *Syncer) readRelayPages(ctx context.Context, relayURL string, client *ht
 			return err
 		}
 		hints := []activityrelay.Hint{}
+		var recent []RelayActivity
 		if page.ResyncRequired || page.Code == "cursor_expired" {
 			for _, repo := range s.TrackedRepos() {
 				if repoPlatform(repo) != platform.KindGitHub || repoHost(repo) != "github.com" || repo.Archived {
@@ -58,13 +92,24 @@ func (s *Syncer) readRelayPages(ctx context.Context, relayURL string, client *ht
 			}
 		} else {
 			for _, event := range page.Events {
-				if _, ok := s.trackedRepoByProviderID(platform.KindGitHub, event.Host, event.RepositoryID); ok {
+				if repo, ok := s.trackedRepoByProviderID(platform.KindGitHub, event.Host, event.RepositoryID); ok && !repo.Archived {
 					hints = append(hints, event.Hint)
+					recent = append(recent, RelayActivity{
+						Cursor: event.Cursor, Repository: repo.Owner + "/" + repo.Name,
+						Target: event.Target, Number: event.Number, ReceivedAt: s.now().UTC(),
+					})
 				}
 			}
 		}
 		if err := s.db.SaveRelayPage(ctx, relayURL, page.NextCursor, hints); err != nil {
 			return err
+		}
+		if len(recent) > 0 {
+			s.updateRelayStatus(func(status *RelayStatus) {
+				for _, event := range recent {
+					status.Recent = append([]RelayActivity{event}, status.Recent[:min(19, len(status.Recent))]...)
+				}
+			})
 		}
 		cursor = page.NextCursor
 		if !page.HasMore {

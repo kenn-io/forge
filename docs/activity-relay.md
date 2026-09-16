@@ -37,6 +37,11 @@ Configure this on the Forge that syncs with GitHub. For a
 updates from their hub. Keep the repositories selected and syncing in Forge.
 Connecting a relay does not add repositories or grant GitHub access.
 
+Click **Relay** in the bottom bar to see recent changes received for your
+repositories and whether the last check succeeded. The list holds the latest
+20 changes since Forge started; an entry means a refresh was requested, not
+that it has finished. The button is hidden when the relay is off.
+
 ## Run a shared relay
 
 One small server can receive webhooks for several repositories and serve

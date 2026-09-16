@@ -3,9 +3,11 @@ package github
 import (
 	"context"
 	"errors"
+	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,6 +18,61 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/platform"
 )
+
+func TestRelayStatusRecentActivity(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	budget := NewSyncBudget(1)
+	budget.Spend(1) // Received events must be visible even while refreshes wait for budget.
+	repo := RepoRef{Platform: platform.KindGitHub, PlatformHost: "github.com", PlatformExternalID: "R_project", Owner: "team", Name: "project"}
+	syncer := NewSyncer(nil, database, nil, []RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{"github.com": budget})
+	assert.Nil(syncer.Status().Relay)
+	store, err := activityrelay.Open(filepath.Join(t.TempDir(), "relay.db"))
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(store.Close()) })
+	_, handler := activityrelay.Handlers(store, nil)
+	var unavailable atomic.Bool
+	feed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if unavailable.Load() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		handler.ServeHTTP(w, r)
+	}))
+	t.Cleanup(feed.Close)
+	require.NoError(syncer.PollRelay(ctx, feed.URL, feed.Client()))
+	require.NotNil(syncer.Status().Relay)
+	assert.Empty(syncer.Status().Relay.Recent)
+	var hints []activityrelay.Hint
+	for number := 1; number <= 25; number++ {
+		hints = append(hints, activityrelay.Hint{Provider: "github", Host: "github.com", RepositoryID: "R_project", Target: activityrelay.Issue, Number: number})
+	}
+	hints = append(hints, activityrelay.Hint{Provider: "github", Host: "github.com", RepositoryID: "R_untracked", Target: activityrelay.Issue, Number: 99})
+	require.NoError(store.Append(ctx, hints))
+	require.NoError(syncer.PollRelay(ctx, feed.URL, feed.Client()))
+	status := syncer.Status().Relay
+	require.Len(status.Recent, 20)
+	assert.Equal(25, status.Recent[0].Number)
+	assert.Equal(6, status.Recent[19].Number)
+	assert.Equal("team/project", status.Recent[0].Repository)
+	assert.False(status.Unavailable)
+	assert.False(status.LastPollAt.IsZero())
+	assert.False(status.Recent[0].ReceivedAt.IsZero())
+	syncer.publishStatus(&SyncStatus{Running: true})
+	assert.Equal(status, syncer.Status().Relay, "ordinary sync must preserve relay activity")
+	unavailable.Store(true)
+	require.Error(syncer.PollRelay(ctx, feed.URL, feed.Client()))
+	assert.True(syncer.Status().Relay.Unavailable)
+	assert.Equal(status.Recent, syncer.Status().Relay.Recent)
+	assert.False(status.Unavailable, "published snapshots must remain immutable")
+	unavailable.Store(false)
+	require.NoError(syncer.PollRelay(ctx, feed.URL, feed.Client()))
+	assert.False(syncer.Status().Relay.Unavailable)
+	assert.Len(syncer.Status().Relay.Recent, 20, "repeated polls must not repeat events")
+}
 
 func TestRelayTargetedChecksAndBudgetRecovery(t *testing.T) {
 	require := require.New(t)

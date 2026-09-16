@@ -10,6 +10,7 @@
   import { repoIdentityKey } from "../../utils/repo-label.js";
   import BudgetBars from "./BudgetBars.svelte";
   import BudgetPopover from "./BudgetPopover.svelte";
+  import RelayIndicator from "./RelayIndicator.svelte";
   import { formatCompact } from "./budget-utils";
   import { getPage } from "../../stores/router.svelte.ts";
 
@@ -280,6 +281,11 @@
     <span class="status-item">{counts.repos} repos</span>
   {/snippet}
   {#snippet right()}
+    {@const relay = sync.getSyncState()?.relay}
+    {#if relay}
+      <RelayIndicator status={relay} />
+      <span class="status-sep">&middot;</span>
+    {/if}
     {#if hasRateLimits}
       <span class="budget-wrapper">
         <BudgetBars providerPools={rateLimits.provider_pools} onclick={togglePopover} expanded={popoverOpen} />

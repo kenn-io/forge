@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -307,39 +308,40 @@ func TestHubEventsStopWhileFleetIsDisabled(t *testing.T) {
 }
 
 func TestHubEventLifecyclePausesUntilFleetIsEnabled(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	started := make(chan struct{}, 2)
-	stopped := make(chan struct{}, 2)
-	lifecycle := newHubEventLifecycle(true, func(ctx context.Context) {
-		started <- struct{}{}
-		<-ctx.Done()
-		stopped <- struct{}{}
+	synctest.Test(t, func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+		started := make(chan struct{}, 2)
+		stopped := make(chan struct{}, 2)
+		lifecycle := newHubEventLifecycle(true, func(ctx context.Context) {
+			started <- struct{}{}
+			<-ctx.Done()
+			stopped <- struct{}{}
+		})
+		ctx, cancel := context.WithCancel(t.Context())
+		done := make(chan struct{})
+		go func() {
+			lifecycle.Run(ctx)
+			close(done)
+		}()
+
+		synctest.Wait()
+		require.Len(started, 1)
+		lifecycle.SetEnabled(false)
+		synctest.Wait()
+		require.Len(stopped, 1)
+		synctest.Wait()
+		assert.Len(started, 1)
+
+		lifecycle.SetEnabled(true)
+		synctest.Wait()
+		require.Len(started, 2)
+		cancel()
+		synctest.Wait()
+		require.Len(stopped, 2)
+		synctest.Wait()
+		<-done
 	})
-	ctx, cancel := context.WithCancel(t.Context())
-	done := make(chan struct{})
-	go func() {
-		lifecycle.Run(ctx)
-		close(done)
-	}()
-
-	require.Eventually(func() bool { return len(started) == 1 }, time.Second, time.Millisecond)
-	lifecycle.SetEnabled(false)
-	require.Eventually(func() bool { return len(stopped) == 1 }, time.Second, time.Millisecond)
-	assert.Never(func() bool { return len(started) > 1 }, 50*time.Millisecond, time.Millisecond)
-
-	lifecycle.SetEnabled(true)
-	require.Eventually(func() bool { return len(started) == 2 }, time.Second, time.Millisecond)
-	cancel()
-	require.Eventually(func() bool { return len(stopped) == 2 }, time.Second, time.Millisecond)
-	require.Eventually(func() bool {
-		select {
-		case <-done:
-			return true
-		default:
-			return false
-		}
-	}, time.Second, time.Millisecond)
 }
 
 func TestHubEventLifecycleCanStopAfterCleanReturn(t *testing.T) {

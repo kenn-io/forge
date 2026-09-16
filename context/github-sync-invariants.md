@@ -778,8 +778,8 @@ error or cancellation unchanged and never adopts.
 
 - Relay hints accelerate normal polling; each consumer still uses its own credentials and rate gates.
   (`internal/github/relay.go::refreshRelayHint`)
-- One `RunRelay` loop owns the subscription and reconnects with jittered exponential backoff,
-  1s doubling to a 30s cap, reset after a successful subscribe. The `[relay]` config has no
+- One `RunRelay` loop owns the subscription and reconnects with jittered exponential backoff from
+  the backoff library, 1s rising to a 30s base ceiling plus jitter, reset only after a stream stayed open. The `[relay]` config has no
   poll interval; `relay.poll_interval` is rejected at load. (`internal/github/relay.go::RunRelay`)
 - Webhook ingress ignores check, workflow, and status events; CI stays on normal syncing so check
   bursts do not crowd out activity. (`internal/activityrelay/http.go::reduce`)

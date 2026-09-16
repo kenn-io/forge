@@ -103,6 +103,11 @@ func serveStream(ctx context.Context, w http.ResponseWriter, broadcaster *Broadc
 		if err := controller.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
 			return false
 		}
+		// A cancellation that landed between the check above and the deadline
+		// install has just been overwritten; honour it before blocking.
+		if ctx.Err() != nil {
+			return false
+		}
 		if _, err := io.WriteString(w, frame); err != nil {
 			return false
 		}

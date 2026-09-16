@@ -95,7 +95,8 @@ both an active read and the reconnect timer immediately
 (`internal/providerplane/events.go::EventClient.Run`).
 
 The activity relay subscription follows the same lifecycle policy using the
-library's `ExponentialBackOff`, 1s to a 30s ceiling with 20% jitter, and no
+library's `ExponentialBackOff`, 1s to a 30s base ceiling with 20% jitter applied
+after the cap, and no
 durable cursor: a reconnect never replays, and hints missed while
 disconnected are left to ordinary syncing. The policy resets only after a
 stream has stayed open for the full ceiling, so a relay or proxy that accepts

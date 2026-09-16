@@ -115,8 +115,9 @@ func TestOpenRejectsNonStreamResponses(t *testing.T) {
 // blockedWriter behaves like a socket whose peer stopped reading: writes block
 // until a deadline expires.
 type blockedWriter struct {
-	header   http.Header
-	deadline chan time.Time
+	header    http.Header
+	deadline  chan time.Time // consumed by Write
+	installed chan time.Time // observed by the test
 }
 
 func (w *blockedWriter) Header() http.Header { return w.header }
@@ -132,6 +133,10 @@ func (w *blockedWriter) Write([]byte) (int, error) {
 
 func (w *blockedWriter) SetWriteDeadline(deadline time.Time) error {
 	w.deadline <- deadline
+	select {
+	case w.installed <- deadline:
+	default:
+	}
 	return nil
 }
 
@@ -139,7 +144,7 @@ func TestShutdownReleasesASubscriberBlockedInWrite(t *testing.T) {
 	require := require.New(t)
 	t.Parallel()
 	ctx, cancel := context.WithCancel(t.Context())
-	writer := &blockedWriter{header: http.Header{}, deadline: make(chan time.Time, 8)}
+	writer := &blockedWriter{header: http.Header{}, deadline: make(chan time.Time, 8), installed: make(chan time.Time, 8)}
 	feed := new(Broadcaster)
 	done := make(chan struct{})
 	go func() {
@@ -150,7 +155,7 @@ func TestShutdownReleasesASubscriberBlockedInWrite(t *testing.T) {
 	// fresh write deadline after cancellation expired the previous one.
 	feed.Publish([]Hint{{Provider: "github", Host: "github.com", RepositoryID: "R_x", Target: Repository}})
 	select {
-	case deadline := <-writer.deadline:
+	case deadline := <-writer.installed:
 		require.True(deadline.After(time.Now()), "a frame write carries a bounded deadline")
 	case <-time.After(5 * time.Second):
 		require.FailNow("the stream did not start writing")

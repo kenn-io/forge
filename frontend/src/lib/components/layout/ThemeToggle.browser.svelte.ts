@@ -54,7 +54,7 @@ describe("ThemeToggle (browser)", () => {
   });
 
   it("renders as a real flex-centered icon button", async () => {
-    const { container } = render(ThemeToggle);
+    const { container } = await render(ThemeToggle);
 
     const button = page.getByTitle("Toggle theme");
     await expect.element(button).toBeVisible();
@@ -76,7 +76,7 @@ describe("ThemeToggle (browser)", () => {
   });
 
   it("renders the light-mode moon as a filled glyph (fill, no stroke)", async () => {
-    const { container } = render(ThemeToggle);
+    const { container } = await render(ThemeToggle);
 
     await expect.element(page.getByTitle("Toggle theme")).toBeVisible();
     expect(isDark()).toBe(false);
@@ -93,7 +93,7 @@ describe("ThemeToggle (browser)", () => {
   });
 
   it("toggles the html.dark class and swaps the icon when clicked", async () => {
-    const { container } = render(ThemeToggle);
+    const { container } = await render(ThemeToggle);
 
     const root = document.documentElement;
     const button = page.getByTitle("Toggle theme");
@@ -125,7 +125,7 @@ describe("ThemeToggle (browser)", () => {
   });
 
   it("applies a real dark token override to html when toggled on", async () => {
-    render(ThemeToggle);
+    await render(ThemeToggle);
 
     const root = document.documentElement;
     const lightSurface = getComputedStyle(root).getPropertyValue("--bg-surface").trim();

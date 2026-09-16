@@ -128,7 +128,7 @@ export async function mountBrowserApp(path: string, options: MountBrowserAppOpti
   // vitest-browser-svelte's render forwards `target` straight to Svelte.mount,
   // so App mounts into the same #app element it reads for its width.
   const { default: App } = await import("../App.svelte");
-  const { unmount } = render(App, { target, props: { runtime } });
+  const { unmount } = await render(App, { target, props: { runtime } });
 
   return {
     api,

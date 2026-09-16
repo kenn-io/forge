@@ -28,7 +28,7 @@ function controlByLabel<T extends HTMLElement>(labelText: string, selector: stri
 // (tabindex="-1") is pinned in SelectDropdown's own test.
 describe("RepoImportModal focus trap (browser)", () => {
   it("focuses the pattern input on open and wraps Tab at the trap boundaries", async () => {
-    render(RepoImportModalRuntimeHarness, {
+    await render(RepoImportModalRuntimeHarness, {
       props: { open: true, onClose: vi.fn(), onImported: vi.fn() },
     });
 

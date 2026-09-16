@@ -49,13 +49,13 @@ const job = {
   }),
 };
 
-function mountAt(widthPx: number): { unmount: () => Promise<void> } {
+async function mountAt(widthPx: number): Promise<{ unmount: () => Promise<void> }> {
   const wrapper = document.createElement("div");
   wrapper.style.width = `${widthPx}px`;
   document.body.appendChild(wrapper);
   const runtime = makeAppRuntime();
 
-  const { unmount } = render(ReviewDrawerRuntimeHarness, {
+  const { unmount } = await render(ReviewDrawerRuntimeHarness, {
     target: wrapper,
     props: { runtime },
     context: new Map<symbol, unknown>([
@@ -171,7 +171,7 @@ describe("review drawer footer layout", () => {
   }
 
   it("keeps the actions beside the usage summary when the footer has room", async () => {
-    mounted = mountAt(1100);
+    mounted = await mountAt(1100);
 
     await vi.waitFor(() => expect(actionNames()).toEqual(["Close Review", "Rerun", "Copy Output"]));
     expect(actionButtons().every((el) => el.classList.contains("kit-button"))).toBe(true);
@@ -196,7 +196,7 @@ describe("review drawer footer layout", () => {
   // falsification passes. The row assertion documents the property rather than
   // guarding a wrap rule; the guard that still bites is the floor, below.
   it("downgrades to icon-only actions and wraps the usage summary below when space is tight", async () => {
-    mounted = mountAt(260);
+    mounted = await mountAt(260);
 
     await vi.waitFor(() => expect(actionButtons().every((el) => el.classList.contains("kit-icon-button"))).toBe(true));
 
@@ -225,7 +225,7 @@ describe("review drawer footer layout", () => {
   // (frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte).
   for (const width of [280, 300, 340, 380, 420, 460]) {
     it(`keeps the actions clear of the usage summary at ${width}px`, async () => {
-      mounted = mountAt(width);
+      mounted = await mountAt(width);
       // Repeated first-paint geometry does not prove ResizeObserver has run.
       // Wait for the layout contract itself, regardless of the selected stage.
       await vi.waitFor(() => {
@@ -240,7 +240,7 @@ describe("review drawer footer layout", () => {
   // the accessible names must not change with the drawer's width, or a
   // screen-reader user loses the action the sighted user still has.
   it("keeps every action reachable under the same name once it downgrades to icons", async () => {
-    mounted = mountAt(260);
+    mounted = await mountAt(260);
 
     await vi.waitFor(() => expect(actionButtons().every((el) => el.classList.contains("kit-icon-button"))).toBe(true));
     expect(actionNames()).toEqual(["Close Review", "Rerun", "Copy Output"]);

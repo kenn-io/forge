@@ -12,7 +12,7 @@ describe("IssueItem compact label row", () => {
     document.querySelector("[data-issue-item-test]")?.remove();
   });
 
-  it("keeps a short label chip intact beside a long title", () => {
+  it("keeps a short label chip intact beside a long title", async () => {
     const wrapper = document.createElement("div");
     wrapper.dataset.issueItemTest = "";
     wrapper.style.width = "420px";
@@ -37,7 +37,7 @@ describe("IssueItem compact label row", () => {
       labels: [{ name: "bug", color: "d73a4a" }],
     } as unknown as Issue;
 
-    render(IssueItem, {
+    await render(IssueItem, {
       target: wrapper,
       props: {
         issue,

@@ -8,7 +8,7 @@ it.each([1, 1.1, 1.25])("only truncates overflowing filenames at %s scaling", as
   await page.viewport(640, 500);
   const shortPaths = ["docs/guide/SKILL.md", "docs/guide/agents/config.yaml", "docs/guide/references/patterns.md"];
   const longPath = `docs/guide/${"long-filename-".repeat(10)}.md`;
-  render(PierreFileTree, {
+  await render(PierreFileTree, {
     props: {
       files: [],
       entries: [...shortPaths, longPath].map((path) => ({ path, decoration: "2w" })),

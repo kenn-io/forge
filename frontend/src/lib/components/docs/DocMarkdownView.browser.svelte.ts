@@ -18,7 +18,7 @@ function options(): DocsMarkdownOptions {
 
 describe("DocMarkdownView details blocks (browser)", () => {
   it("renders GitHub-style details blocks as native toggleable disclosures", async () => {
-    const { container } = render(DocMarkdownViewRuntimeHarness, {
+    const { container } = await render(DocMarkdownViewRuntimeHarness, {
       props: {
         source: [
           "<details>",

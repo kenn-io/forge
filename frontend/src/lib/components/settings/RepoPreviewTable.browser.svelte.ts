@@ -56,7 +56,7 @@ describe("RepoPreviewTable (browser)", () => {
       onDeselectVisible: () => {},
     });
 
-    const { rerender } = render(RepoPreviewTable, { props: props() });
+    const { rerender } = await render(RepoPreviewTable, { props: props() });
     const first = page.getByRole("checkbox", { name: "Select acme/api" });
     const third = page.getByRole("checkbox", { name: "Select acme/worker" });
 

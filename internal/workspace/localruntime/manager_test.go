@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/cenkalti/backoff/v7"
@@ -1559,35 +1560,35 @@ func TestManagerRejectsUnownedRuntimeSessions(t *testing.T) {
 }
 
 func TestManagerShutdownDetachesPtyOwnerSessions(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
+	synctest.Test(t, func(t *testing.T) {
+		require := require.New(t)
+		assert := assert.New(t)
 
-	ctx := context.Background()
-	owner := newFakeRuntimePtyOwner()
-	mgr := NewManager(Options{
-		PtyOwnerRuntime: owner,
-		ShellCommand:    []string{"/bin/sh"},
-		Targets:         []LaunchTarget{plainShellTarget()},
-	})
+		ctx := context.Background()
+		owner := newFakeRuntimePtyOwner()
+		mgr := NewManager(Options{
+			PtyOwnerRuntime: owner,
+			ShellCommand:    []string{"/bin/sh"},
+			Targets:         []LaunchTarget{plainShellTarget()},
+		})
 
-	info, err := mgr.Launch(
-		ctx, "ws-1", t.TempDir(), string(LaunchTargetPlainShell),
-	)
-	require.NoError(err)
-	require.Equal(string(LaunchTargetPlainShell), info.TargetKey)
+		info, err := mgr.Launch(
+			ctx, "ws-1", t.TempDir(), string(LaunchTargetPlainShell),
+		)
+		require.NoError(err)
+		require.Equal(string(LaunchTargetPlainShell), info.TargetKey)
 
-	mgr.Shutdown()
+		mgr.Shutdown()
 
-	assert.Empty(owner.stoppedSession)
-	assert.Eventually(func() bool {
+		assert.Empty(owner.stoppedSession)
+		synctest.Wait()
 		select {
 		case <-owner.startedPTY.Done():
-			return true
 		default:
-			return false
+			assert.Fail("PTY owner did not stop")
 		}
-	}, 2*time.Second, 20*time.Millisecond)
-	assert.Empty(mgr.ListSessions("ws-1"))
+		assert.Empty(mgr.ListSessions("ws-1"))
+	})
 }
 
 func TestManagerStopWorkspaceStopsKnownPtyOwnerSessionsAfterRestart(t *testing.T) {
@@ -1959,117 +1960,106 @@ func TestSessionWatchClosesPTYAfterPostExitDrainTimeout(t *testing.T) {
 }
 
 func TestSessionWatchPtyOwnerWaitsForFinalOutputDrain(t *testing.T) {
-	require := require.New(t)
-	ownedPTY := &fakeRuntimePTY{
-		output: make(chan []byte, 1),
-		done:   make(chan struct{}),
-	}
-	s := &session{
-		pty:         ownedPTY,
-		done:        make(chan struct{}),
-		outputDone:  make(chan struct{}),
-		subscribers: make(map[chan []byte]struct{}),
-	}
-	output, unsubscribe := s.subscribe()
-	defer unsubscribe()
+	synctest.Test(t, func(t *testing.T) {
+		require := require.New(t)
+		ownedPTY := &fakeRuntimePTY{
+			output: make(chan []byte, 1),
+			done:   make(chan struct{}),
+		}
+		s := &session{
+			pty:         ownedPTY,
+			done:        make(chan struct{}),
+			outputDone:  make(chan struct{}),
+			subscribers: make(map[chan []byte]struct{}),
+		}
+		output, unsubscribe := s.subscribe()
+		defer unsubscribe()
 
-	go s.drainOutput()
-	watchDone := make(chan struct{})
-	go func() {
-		s.watchPtyOwner()
-		close(watchDone)
-	}()
+		go s.drainOutput()
+		watchDone := make(chan struct{})
+		go func() {
+			s.watchPtyOwner()
+			close(watchDone)
+		}()
 
-	close(ownedPTY.done)
-	time.Sleep(50 * time.Millisecond)
-	ownedPTY.output <- []byte("final output")
-	close(ownedPTY.output)
+		close(ownedPTY.done)
+		synctest.Wait()
+		ownedPTY.output <- []byte("final output")
+		close(ownedPTY.output)
 
-	select {
-	case got, ok := <-output:
+		synctest.Wait()
+		got, ok := <-output
 		require.True(ok)
 		require.Equal("final output", string(got))
-	case <-time.After(time.Second):
-		require.Fail("final PTY-owner output was not delivered")
-	}
-	select {
-	case <-watchDone:
-	case <-time.After(time.Second):
-		require.Fail("PTY-owner watcher did not finish after output drained")
-	}
+		select {
+		case <-watchDone:
+		default:
+			require.Fail("PTY-owner watcher did not finish after output drained")
+		}
+	})
 }
 
 func TestManagerRemovesNaturallyExitedSession(t *testing.T) {
-	ctx := context.Background()
-	exited := make(chan SessionInfo, 1)
-	owner := newFakeRuntimePtyOwner()
-	mgr := NewManager(Options{Targets: []LaunchTarget{
-		helperTarget("helper", "sleep"),
-	}, OnSessionExit: func(info SessionInfo) {
-		exited <- info
-	}, PtyOwnerRuntime: owner})
-	t.Cleanup(mgr.Shutdown)
+	synctest.Test(t, func(t *testing.T) {
+		ctx := context.Background()
+		exited := make(chan SessionInfo, 1)
+		owner := newFakeRuntimePtyOwner()
+		mgr := NewManager(Options{Targets: []LaunchTarget{
+			helperTarget("helper", "sleep"),
+		}, OnSessionExit: func(info SessionInfo) {
+			exited <- info
+		}, PtyOwnerRuntime: owner})
+		t.Cleanup(mgr.Shutdown)
 
-	session, err := mgr.Launch(ctx, "ws-1", t.TempDir(), "helper")
-	require.NoError(t, err)
-	owner.startedPTY.Close()
+		session, err := mgr.Launch(ctx, "ws-1", t.TempDir(), "helper")
+		require.NoError(t, err)
+		owner.startedPTY.Close()
 
-	var got SessionInfo
-	require.Eventually(t, func() bool {
-		select {
-		case got = <-exited:
-			return true
-		default:
-			return false
-		}
-	}, 2*time.Second, 20*time.Millisecond)
+		synctest.Wait()
+		got := <-exited
 
-	assert := assert.New(t)
-	assert.Equal(session.Key, got.Key)
-	assert.Equal(SessionStatusExited, got.Status)
-	assert.NotNil(got.ExitedAt)
-	assert.NotNil(got.ExitCode)
-	assert.Equal(0, *got.ExitCode)
-	assert.Empty(mgr.ListSessions("ws-1"))
+		assert := assert.New(t)
+		assert.Equal(session.Key, got.Key)
+		assert.Equal(SessionStatusExited, got.Status)
+		assert.NotNil(got.ExitedAt)
+		assert.NotNil(got.ExitCode)
+		assert.Equal(0, *got.ExitCode)
+		assert.Empty(mgr.ListSessions("ws-1"))
+	})
 }
 
 func TestManagerRemovesNaturallyExitedShell(t *testing.T) {
-	ctx := context.Background()
-	exited := make(chan SessionInfo, 1)
-	owner := newFakeRuntimePtyOwner()
-	mgr := NewManager(Options{
-		ShellCommand: []string{"/bin/sh"},
-		Targets:      []LaunchTarget{plainShellTarget()},
-		OnSessionExit: func(info SessionInfo) {
-			exited <- info
-		},
-		PtyOwnerRuntime: owner,
+	synctest.Test(t, func(t *testing.T) {
+		ctx := context.Background()
+		exited := make(chan SessionInfo, 1)
+		owner := newFakeRuntimePtyOwner()
+		mgr := NewManager(Options{
+			ShellCommand: []string{"/bin/sh"},
+			Targets:      []LaunchTarget{plainShellTarget()},
+			OnSessionExit: func(info SessionInfo) {
+				exited <- info
+			},
+			PtyOwnerRuntime: owner,
+		})
+		t.Cleanup(mgr.Shutdown)
+
+		shell, err := mgr.Launch(
+			ctx, "ws-1", t.TempDir(), string(LaunchTargetPlainShell),
+		)
+		require.NoError(t, err)
+		owner.startedPTY.Close()
+
+		synctest.Wait()
+		got := <-exited
+
+		assert := assert.New(t)
+		assert.Equal(shell.Key, got.Key)
+		assert.Equal(SessionStatusExited, got.Status)
+		assert.NotNil(got.ExitedAt)
+		assert.NotNil(got.ExitCode)
+		assert.Equal(0, *got.ExitCode)
+		assert.Empty(mgr.ListSessions("ws-1"))
 	})
-	t.Cleanup(mgr.Shutdown)
-
-	shell, err := mgr.Launch(
-		ctx, "ws-1", t.TempDir(), string(LaunchTargetPlainShell),
-	)
-	require.NoError(t, err)
-	owner.startedPTY.Close()
-
-	var got SessionInfo
-	require.Eventually(t, func() bool {
-		select {
-		case got = <-exited:
-			return true
-		default:
-			return false
-		}
-	}, 2*time.Second, 20*time.Millisecond)
-
-	assert := assert.New(t)
-	assert.Equal(shell.Key, got.Key)
-	assert.Equal(SessionStatusExited, got.Status)
-	assert.NotNil(got.ExitedAt)
-	assert.NotNil(got.ExitCode)
-	assert.Equal(0, *got.ExitCode)
-	assert.Empty(mgr.ListSessions("ws-1"))
 }
 
 func TestManagerLaunchPlainShellCreatesIndependentSessions(t *testing.T) {

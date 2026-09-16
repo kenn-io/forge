@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -133,43 +134,50 @@ func TestWorkspaceDiffCacheHitDoesNotRepeatFullSnapshotResolution(t *testing.T) 
 
 func TestWorkspaceDiffCacheHeadMismatchQueuesImmediateValidation(t *testing.T) {
 	t.Parallel()
-	require := require.New(t)
-	assert := assert.New(t)
-	now := time.Unix(100, 0)
-	resolved := workspaceDiffTestResolved()
-	key := workspaceDiffTestKey()
-	cache := newWorkspaceDiffCache(t.Context(), workspaceDiffCacheDeps{
-		now: func() time.Time { return now },
-		after: func(time.Duration) <-chan time.Time {
-			return make(chan time.Time)
-		},
-		resolve: func(context.Context, workspace.DiffSnapshotSpec) (workspace.ResolvedDiffSnapshotSpec, bool, error) {
-			return resolved, true, nil
-		},
-		resolveHead: func(context.Context, workspace.DiffSnapshotSpec) (string, error) {
-			return resolved.HeadOID, nil
-		},
-		fingerprint: func(context.Context, workspace.ResolvedDiffSnapshotSpec) (workspace.DiffFingerprint, error) {
-			return workspace.DiffFingerprint(resolved.HeadOID), nil
-		},
-		prepare: func(context.Context, workspace.ResolvedDiffSnapshotSpec) (*gitclone.DiffResult, error) {
-			return workspaceDiffTestResult(resolved.HeadOID + ".txt"), nil
-		},
-	})
+	synctest.Test(t, func(t *testing.T) {
+		require := require.New(t)
+		assert := assert.New(t)
+		root, cancel := context.WithCancel(context.Background())
+		now := time.Unix(100, 0)
+		resolved := workspaceDiffTestResolved()
+		key := workspaceDiffTestKey()
+		cache := newWorkspaceDiffCache(root, workspaceDiffCacheDeps{
+			now: func() time.Time { return now },
+			after: func(time.Duration) <-chan time.Time {
+				return make(chan time.Time)
+			},
+			resolve: func(context.Context, workspace.DiffSnapshotSpec) (workspace.ResolvedDiffSnapshotSpec, bool, error) {
+				return resolved, true, nil
+			},
+			resolveHead: func(context.Context, workspace.DiffSnapshotSpec) (string, error) {
+				return resolved.HeadOID, nil
+			},
+			fingerprint: func(context.Context, workspace.ResolvedDiffSnapshotSpec) (workspace.DiffFingerprint, error) {
+				return workspace.DiffFingerprint(resolved.HeadOID), nil
+			},
+			prepare: func(context.Context, workspace.ResolvedDiffSnapshotSpec) (*gitclone.DiffResult, error) {
+				return workspaceDiffTestResult(resolved.HeadOID + ".txt"), nil
+			},
+		})
+		defer func() {
+			cancel()
+			cache.Wait()
+		}()
 
-	_, _, err := cache.Get(t.Context(), key)
-	require.NoError(err)
-	resolved.HeadOID = "new-head"
+		_, _, err := cache.Get(root, key)
+		require.NoError(err)
+		resolved.HeadOID = "new-head"
 
-	got, state, err := cache.Get(t.Context(), key)
-	require.NoError(err)
-	require.NotNil(got)
-	assert.Equal(workspaceDiffCacheHit, state)
-	assert.True(got.Diff.Stale)
-	assert.Eventually(func() bool {
+		got, state, err := cache.Get(root, key)
+		require.NoError(err)
+		require.NotNil(got)
+		assert.Equal(workspaceDiffCacheHit, state)
+		assert.True(got.Diff.Stale)
+		synctest.Wait()
 		entry := cache.peekEntry(key)
-		return entry != nil && entry.snapshot.Resolved.HeadOID == "new-head"
-	}, time.Second, time.Millisecond)
+		require.NotNil(entry)
+		assert.Equal("new-head", entry.snapshot.Resolved.HeadOID)
+	})
 }
 
 func TestWorkspaceDiffCacheProtectedEntriesDoNotConsumeCostBudget(t *testing.T) {
@@ -236,50 +244,54 @@ func TestWorkspaceDiffCacheProtectedEntriesDoNotConsumeCostBudget(t *testing.T) 
 
 func TestWorkspaceDiffCacheReconnectRetainsActiveScopes(t *testing.T) {
 	t.Parallel()
-	require := require.New(t)
-	assert := assert.New(t)
-	now := time.Unix(100, 0)
-	var fingerprintCalls atomic.Int64
-	cache := newWorkspaceDiffCache(t.Context(), workspaceDiffCacheDeps{
-		now: func() time.Time { return now },
-		resolve: func(_ context.Context, spec workspace.DiffSnapshotSpec) (workspace.ResolvedDiffSnapshotSpec, bool, error) {
-			resolved := workspaceDiffTestResolved()
-			resolved.DiffSnapshotSpec = spec
-			return resolved, true, nil
-		},
-		fingerprint: func(_ context.Context, resolved workspace.ResolvedDiffSnapshotSpec) (workspace.DiffFingerprint, error) {
-			fingerprintCalls.Add(1)
-			return workspace.DiffFingerprint(resolved.Base), nil
-		},
-		prepare: func(_ context.Context, resolved workspace.ResolvedDiffSnapshotSpec) (*gitclone.DiffResult, error) {
-			return workspaceDiffTestResult(string(resolved.Base) + ".txt"), nil
-		},
+	synctest.Test(t, func(t *testing.T) {
+		require := require.New(t)
+		assert := assert.New(t)
+		root, cancel := context.WithCancel(context.Background())
+		now := time.Unix(100, 0)
+		var fingerprintCalls atomic.Int64
+		cache := newWorkspaceDiffCache(root, workspaceDiffCacheDeps{
+			now: func() time.Time { return now },
+			resolve: func(_ context.Context, spec workspace.DiffSnapshotSpec) (workspace.ResolvedDiffSnapshotSpec, bool, error) {
+				resolved := workspaceDiffTestResolved()
+				resolved.DiffSnapshotSpec = spec
+				return resolved, true, nil
+			},
+			fingerprint: func(_ context.Context, resolved workspace.ResolvedDiffSnapshotSpec) (workspace.DiffFingerprint, error) {
+				fingerprintCalls.Add(1)
+				return workspace.DiffFingerprint(resolved.Base), nil
+			},
+			prepare: func(_ context.Context, resolved workspace.ResolvedDiffSnapshotSpec) (*gitclone.DiffResult, error) {
+				return workspaceDiffTestResult(string(resolved.Base) + ".txt"), nil
+			},
+		})
+		defer func() {
+			cancel()
+			cache.Wait()
+		}()
+		headKey := workspaceDiffTestKey()
+		pushedKey := headKey
+		pushedKey.Spec.Base = workspace.WorktreeDiffBasePushed
+		release := cache.Select(headKey.WorkspaceID, nil)
+		_, _, err := cache.Get(root, headKey)
+		require.NoError(err)
+		_, _, err = cache.Get(root, pushedKey)
+		require.NoError(err)
+		release()
+
+		cache.mu.Lock()
+		_, retained := cache.active[headKey.WorkspaceID][pushedKey]
+		cache.mu.Unlock()
+		require.True(retained)
+		baseline := fingerprintCalls.Load()
+		now = now.Add(workspaceDiffCacheFreshFor)
+		release = cache.Select(headKey.WorkspaceID, nil)
+		defer release()
+		cache.ValidateSelected()
+
+		synctest.Wait()
+		assert.GreaterOrEqual(fingerprintCalls.Load(), baseline+2)
 	})
-	headKey := workspaceDiffTestKey()
-	pushedKey := headKey
-	pushedKey.Spec.Base = workspace.WorktreeDiffBasePushed
-	release := cache.Select(headKey.WorkspaceID, nil)
-	_, _, err := cache.Get(t.Context(), headKey)
-	require.NoError(err)
-	_, _, err = cache.Get(t.Context(), pushedKey)
-	require.NoError(err)
-	release()
-
-	cache.mu.Lock()
-	_, retained := cache.active[headKey.WorkspaceID][pushedKey]
-	cache.mu.Unlock()
-	require.True(retained)
-	baseline := fingerprintCalls.Load()
-	now = now.Add(workspaceDiffCacheFreshFor)
-	release = cache.Select(headKey.WorkspaceID, nil)
-	defer release()
-	cache.ValidateSelected()
-
-	assert.Eventually(
-		func() bool { return fingerprintCalls.Load() >= baseline+2 },
-		time.Second,
-		time.Millisecond,
-	)
 }
 
 func TestWorkspaceDiffCacheChangedValidationReplacesStableSnapshot(t *testing.T) {
@@ -691,42 +703,50 @@ func TestWorkspaceDiffCacheBackgroundValidationDoesNotRenewAccess(t *testing.T) 
 
 func TestWorkspaceDiffCacheSelectedValidationMeetsMaxAge(t *testing.T) {
 	t.Parallel()
-	require := require.New(t)
-	assert := assert.New(t)
-	now := time.Unix(100, 0)
-	key := workspaceDiffTestKey()
-	var fingerprint atomic.Value
-	fingerprint.Store(workspace.DiffFingerprint("v1"))
-	var fingerprintCalls atomic.Int64
-	cache := newWorkspaceDiffCache(t.Context(), workspaceDiffCacheDeps{
-		now: func() time.Time { return now },
-		resolve: func(context.Context, workspace.DiffSnapshotSpec) (workspace.ResolvedDiffSnapshotSpec, bool, error) {
-			return workspaceDiffTestResolved(), true, nil
-		},
-		fingerprint: func(context.Context, workspace.ResolvedDiffSnapshotSpec) (workspace.DiffFingerprint, error) {
-			fingerprintCalls.Add(1)
-			return fingerprint.Load().(workspace.DiffFingerprint), nil
-		},
-		prepare: func(context.Context, workspace.ResolvedDiffSnapshotSpec) (*gitclone.DiffResult, error) {
-			return workspaceDiffTestResult("one.txt"), nil
-		},
+	synctest.Test(t, func(t *testing.T) {
+		require := require.New(t)
+		assert := assert.New(t)
+		root, cancel := context.WithCancel(context.Background())
+		now := time.Unix(100, 0)
+		key := workspaceDiffTestKey()
+		var fingerprint atomic.Value
+		fingerprint.Store(workspace.DiffFingerprint("v1"))
+		var fingerprintCalls atomic.Int64
+		cache := newWorkspaceDiffCache(root, workspaceDiffCacheDeps{
+			now: func() time.Time { return now },
+			resolve: func(context.Context, workspace.DiffSnapshotSpec) (workspace.ResolvedDiffSnapshotSpec, bool, error) {
+				return workspaceDiffTestResolved(), true, nil
+			},
+			fingerprint: func(context.Context, workspace.ResolvedDiffSnapshotSpec) (workspace.DiffFingerprint, error) {
+				fingerprintCalls.Add(1)
+				return fingerprint.Load().(workspace.DiffFingerprint), nil
+			},
+			prepare: func(context.Context, workspace.ResolvedDiffSnapshotSpec) (*gitclone.DiffResult, error) {
+				return workspaceDiffTestResult("one.txt"), nil
+			},
+		})
+		defer func() {
+			cancel()
+			cache.Wait()
+		}()
+		_, _, err := cache.Get(root, key)
+		require.NoError(err)
+		initialCalls := fingerprintCalls.Load()
+		cache.mu.Lock()
+		cache.selected[key.WorkspaceID] = 1
+		cache.active[key.WorkspaceID] = map[workspaceDiffLogicalKey]time.Time{key: now}
+		cache.mu.Unlock()
+		fingerprint.Store(workspace.DiffFingerprint("v2"))
+
+		now = now.Add(workspaceDiffCacheFreshFor - workspaceDiffValidationPoll - time.Nanosecond)
+		cache.ValidateSelected()
+		assert.Equal(initialCalls, fingerprintCalls.Load())
+
+		now = now.Add(time.Nanosecond)
+		cache.ValidateSelected()
+		synctest.Wait()
+		assert.Greater(fingerprintCalls.Load(), initialCalls)
 	})
-	_, _, err := cache.Get(t.Context(), key)
-	require.NoError(err)
-	initialCalls := fingerprintCalls.Load()
-	cache.mu.Lock()
-	cache.selected[key.WorkspaceID] = 1
-	cache.active[key.WorkspaceID] = map[workspaceDiffLogicalKey]time.Time{key: now}
-	cache.mu.Unlock()
-	fingerprint.Store(workspace.DiffFingerprint("v2"))
-
-	now = now.Add(workspaceDiffCacheFreshFor - workspaceDiffValidationPoll - time.Nanosecond)
-	cache.ValidateSelected()
-	assert.Equal(initialCalls, fingerprintCalls.Load())
-
-	now = now.Add(time.Nanosecond)
-	cache.ValidateSelected()
-	assert.Eventually(func() bool { return fingerprintCalls.Load() > initialCalls }, time.Second, time.Millisecond)
 }
 
 func TestWorkspaceDiffCacheRetainsOversizedSnapshotForCoherentPair(t *testing.T) {

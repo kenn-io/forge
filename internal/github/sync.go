@@ -429,6 +429,7 @@ const (
 
 // SyncStatus holds the current state of the sync engine.
 type SyncStatus struct {
+	Relay               *RelayStatus  `json:"relay,omitempty"`
 	Running             bool          `json:"running"`
 	CurrentRepo         string        `json:"current_repo,omitempty"`
 	Progress            string        `json:"progress,omitempty"`
@@ -851,6 +852,7 @@ type Syncer struct {
 	displayNames     *displayNameCache
 	displayNameGroup singleflight.Group // dedups concurrent GetUser calls
 	onMRSynced       func(owner, name string, mr *db.MergeRequest)
+	onRelayRefresh   func(context.Context, int64, string, int)
 	onSyncCompleted  func(results []RepoSyncResult)
 	// onWatchedMRSyncCompleted fires once after a watched-MR fast-sync
 	// pass refreshes at least one MR.
@@ -1132,6 +1134,9 @@ func (s *Syncer) publishStatus(status *SyncStatus) {
 }
 
 func (s *Syncer) publishStatusLocked(status *SyncStatus) {
+	if status.Relay == nil {
+		status.Relay = s.Status().Relay
+	}
 	s.status.Store(status)
 	if s.onStatusChange != nil {
 		s.onStatusChange(status)
@@ -9335,7 +9340,7 @@ func (s *Syncer) getIssueForDetail(
 	repo RepoRef,
 	number int,
 ) (*gh.Issue, string, bool, error) {
-	if IsArchiveSyncBudgetContext(ctx) {
+	if IsArchiveSyncBudgetContext(ctx) || platformgithub.UnconditionalRead(ctx) {
 		issue, err := client.GetIssue(ctx, repo.Owner, repo.Name, number)
 		return issue, "", false, err
 	}

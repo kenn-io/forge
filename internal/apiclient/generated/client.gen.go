@@ -836,6 +836,33 @@ func (e ProviderStateWorkflowPayloadItemType) Valid() bool {
 	}
 }
 
+// Defines values for RelayActivityTarget.
+const (
+	RelayActivityTargetIssue             RelayActivityTarget = "issue"
+	RelayActivityTargetPullRequest       RelayActivityTarget = "pull_request"
+	RelayActivityTargetPullRequestChecks RelayActivityTarget = "pull_request_checks"
+	RelayActivityTargetRepository        RelayActivityTarget = "repository"
+	RelayActivityTargetRepositoryRefs    RelayActivityTarget = "repository_refs"
+)
+
+// Valid indicates whether the value is a known member of the RelayActivityTarget enum.
+func (e RelayActivityTarget) Valid() bool {
+	switch e {
+	case RelayActivityTargetIssue:
+		return true
+	case RelayActivityTargetPullRequest:
+		return true
+	case RelayActivityTargetPullRequestChecks:
+		return true
+	case RelayActivityTargetRepository:
+		return true
+	case RelayActivityTargetRepositoryRefs:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SyncStatusLastErrorCode.
 const (
 	LocalSyncCeilingExhausted SyncStatusLastErrorCode = "localSyncCeilingExhausted"
@@ -4428,6 +4455,25 @@ type RegisterWorktreeInputBody struct {
 	WorktreeName *string `json:"worktree_name,omitempty"`
 }
 
+// RelayActivity defines model for RelayActivity.
+type RelayActivity struct {
+	Cursor     string              `json:"cursor"`
+	Number     int64               `json:"number"`
+	ReceivedAt time.Time           `json:"received_at"`
+	Repository string              `json:"repository"`
+	Target     RelayActivityTarget `json:"target"`
+}
+
+// RelayActivityTarget defines model for RelayActivity.Target.
+type RelayActivityTarget string
+
+// RelayStatus defines model for RelayStatus.
+type RelayStatus struct {
+	LastPollAt  *time.Time      `json:"last_poll_at,omitempty"`
+	Recent      []RelayActivity `json:"recent"`
+	Unavailable bool            `json:"unavailable"`
+}
+
 // RemoveStaleWorktreeInputBody defines model for RemoveStaleWorktreeInputBody.
 type RemoveStaleWorktreeInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -5278,6 +5324,7 @@ type SyncStatus struct {
 	LastErrorCode           *SyncStatusLastErrorCode `json:"last_error_code,omitempty"`
 	LastRunAt               *time.Time               `json:"last_run_at,omitempty"`
 	Progress                *string                  `json:"progress,omitempty"`
+	Relay                   *RelayStatus             `json:"relay,omitempty"`
 	Running                 bool                     `json:"running"`
 }
 

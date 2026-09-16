@@ -9,6 +9,7 @@ const repoRoot = path.resolve(path.dirname(scriptPath), "..");
 const zensicalVersion = "0.0.51";
 
 const publishedFiles = new Set([
+  "activity-relay.md",
   "archive.md",
   "commands.md",
   "configuration.md",

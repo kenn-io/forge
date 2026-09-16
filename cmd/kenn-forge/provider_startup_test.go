@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -12,13 +13,54 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"go.kenn.io/forge/internal/activityrelay"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
 )
+
+func TestWireSyncStatusDoesNotReloadDataForEmptyRelayPolls(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	syncer := github.NewSyncer(nil, dbtest.Open(t), nil, nil, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
+	hub := server.NewEventHub()
+	t.Cleanup(hub.Close)
+	wireSyncStatus(syncer, hub)
+	store, err := activityrelay.Open(filepath.Join(t.TempDir(), "relay.db"))
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(store.Close()) })
+	_, handler := activityrelay.Handlers(store, nil)
+	feed := httptest.NewServer(handler)
+	t.Cleanup(feed.Close)
+	for range 2 {
+		require.NoError(syncer.PollRelay(ctx, feed.URL, feed.Client()))
+	}
+	events, _, stale := hub.ReplaySnapshotSince(0)
+	require.False(stale)
+	require.Len(events, 3, "initial sync status and two relay checks must not broadcast data_changed")
+	for _, event := range events {
+		assert.Equal("sync_status", event.Event.Type)
+	}
+	assert.NotNil(events[2].Event.Data.(*github.SyncStatus).Relay)
+
+	// Ordinary sync completion must still refresh visible data, once.
+	syncer.RunOnce(ctx)
+	require.NoError(syncer.PollRelay(ctx, feed.URL, feed.Client()))
+	events, _, stale = hub.ReplaySnapshotSince(events[2].ID)
+	require.False(stale)
+	var kinds []string
+	for _, event := range events {
+		kinds = append(kinds, event.Event.Type)
+	}
+	assert.Equal([]string{"sync_status", "sync_status", "data_changed", "sync_status"}, kinds)
+}
 
 func TestBuildServeControlPlanesNodeNeverConstructsProviderPlane(t *testing.T) {
 	assert := assert.New(t)

@@ -967,6 +967,7 @@ func newServer(
 	)
 	if syncer != nil {
 		syncer.SetOnMergedActorRepaired(s.broadcastMergedActorDetailRefresh)
+		syncer.SetOnRelayRefresh(s.broadcastRelayRefresh)
 	}
 	s.workspaceDependentsCtx, s.workspaceDependentsCancel = context.WithCancel(s.bgCtx)
 	s.workspaceLifecycleCtx, s.workspaceLifecycleCancel = context.WithCancel(context.Background())

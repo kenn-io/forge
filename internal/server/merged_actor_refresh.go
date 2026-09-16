@@ -4,8 +4,16 @@ import (
 	"context"
 	"log/slog"
 
+	"go.kenn.io/forge/internal/activityrelay"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 )
+
+func (s *Server) broadcastRelayRefresh(ctx context.Context, repoID int64, target string, number int) {
+	s.hub.Broadcast(Event{Type: "data_changed", Data: struct{}{}})
+	if target == activityrelay.PullRequest || target == activityrelay.PullRequestChecks {
+		s.broadcastMergedActorDetailRefresh(ctx, repoID, number)
+	}
+}
 
 func (s *Server) broadcastMergedActorDetailRefresh(
 	ctx context.Context,

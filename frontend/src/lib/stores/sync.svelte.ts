@@ -165,6 +165,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
       yield* Effect.sync(() => {
         triggeredSyncLastRunAt = baselineLastRunAt;
         status = {
+          ...(previous?.relay && { relay: previous.relay }),
           running: true,
           last_run_at: baselineLastRunAt ?? "",
           last_error: "",
@@ -179,6 +180,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
         Effect.sync(() => {
           triggeredSyncLastRunAt = undefined;
           status = {
+            ...(previous?.relay && { relay: previous.relay }),
             running: false,
             last_run_at: previous?.last_run_at ?? baselineLastRunAt ?? "",
             last_error: readErrorMessage(failure, "failed to trigger sync"),

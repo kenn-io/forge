@@ -135,6 +135,23 @@ export class SyncStatusEvent extends Schema.Class<SyncStatusEvent>("SyncStatusEv
   last_error: Schema.optionalKey(Schema.String),
   last_run_at: Schema.optionalKey(Schema.String),
   progress: Schema.optionalKey(Schema.String),
+  relay: Schema.optionalKey(
+    Schema.Struct({
+      last_poll_at: Schema.optionalKey(Schema.String),
+      unavailable: Schema.Boolean,
+      recent: Schema.mutable(
+        Schema.Array(
+          Schema.Struct({
+            cursor: Schema.String,
+            repository: Schema.String,
+            target: Schema.Literals(["pull_request", "pull_request_checks", "issue", "repository_refs", "repository"]),
+            number: Schema.Number,
+            received_at: Schema.String,
+          }),
+        ),
+      ),
+    }),
+  ),
 }) {}
 
 export class HubConnectionChangedEvent extends Schema.Class<HubConnectionChangedEvent>("HubConnectionChangedEvent")({

@@ -131,7 +131,7 @@ func TestGetMarkdownImageReportsMissingRepositoryFile(t *testing.T) {
 }
 
 func TestGetMarkdownImageRejectsNonImageRepositoryFile(t *testing.T) {
-	server, _ := contentsServer(t, []byte("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>"))
+	server, _ := contentsServer(t, []byte("<html><body>Not an image</body></html>"))
 	client := newMarkdownImageTestClient(t, server)
 
 	_, err := client.GetMarkdownImage(t.Context(), "acme", "widgets",
@@ -139,6 +139,43 @@ func TestGetMarkdownImageRejectsNonImageRepositoryFile(t *testing.T) {
 	var providerErr *platform.Error
 	require.ErrorAs(t, err, &providerErr)
 	assert.Equal(t, platform.ErrCodeInvalidArgument, providerErr.Code)
+}
+
+func TestGetMarkdownImageReadsRepositorySVG(t *testing.T) {
+	const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80"><rect width="120" height="80" fill="green"/></svg>`
+	for _, tc := range []struct {
+		name    string
+		content string
+		wantErr bool
+	}{
+		{name: "svg", content: svg},
+		{name: "xml declaration", content: `<?xml version="1.0"?>` + svg},
+		{name: "html with svg extension", content: `<html><body>Not an image</body></html>`, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert := assert.New(t)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal("/api/v3/repos/acme/widgets/contents/diagram.svg", r.URL.Path)
+				assert.Equal("main", r.URL.Query().Get("ref"))
+				w.Header().Set("Content-Type", "application/vnd.github.raw; charset=utf-8")
+				_, _ = w.Write([]byte(tc.content))
+			}))
+			t.Cleanup(server.Close)
+			client := newMarkdownImageTestClient(t, server)
+
+			image, err := client.GetMarkdownImage(t.Context(), "acme", "widgets",
+				"https://github.com/acme/widgets/raw/main/diagram.svg")
+			if tc.wantErr {
+				var providerErr *platform.Error
+				require.ErrorAs(t, err, &providerErr)
+				assert.Equal(platform.ErrCodeInvalidArgument, providerErr.Code)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal("image/svg+xml", image.ContentType)
+			assert.Equal([]byte(tc.content), image.Content)
+		})
+	}
 }
 
 func TestGetMarkdownImageRejectsOversizedRepositoryFile(t *testing.T) {

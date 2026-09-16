@@ -3,6 +3,7 @@ package github
 import (
 	"bytes"
 	"context"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -18,12 +19,13 @@ import (
 const maxMarkdownImageBytes = 25 << 20
 
 var allowedMarkdownImageTypes = map[string]struct{}{
-	"image/avif": {},
-	"image/bmp":  {},
-	"image/gif":  {},
-	"image/jpeg": {},
-	"image/png":  {},
-	"image/webp": {},
+	"image/avif":    {},
+	"image/bmp":     {},
+	"image/gif":     {},
+	"image/jpeg":    {},
+	"image/png":     {},
+	"image/svg+xml": {},
+	"image/webp":    {},
 }
 
 var errMarkdownImageTooLarge = fmt.Errorf("GitHub markdown image exceeds %d bytes", maxMarkdownImageBytes)
@@ -163,8 +165,18 @@ func (c *Client) repositoryFileError(err error) error {
 
 // repositoryImageContentType derives the image type from the bytes because the
 // contents API labels every raw response with its own media type rather than
-// the file's. The extension only decides formats sniffing cannot recognize.
+// the file's. SVG needs XML recognition because HTTP sniffing labels it as text.
+// The extension only decides formats sniffing cannot recognize.
 func (c *Client) repositoryImageContentType(content []byte, fileName string) (string, error) {
+	if strings.EqualFold(path.Ext(fileName), ".svg") {
+		var svg struct {
+			XMLName xml.Name `xml:"http://www.w3.org/2000/svg svg"`
+		}
+		if err := xml.Unmarshal(content, &svg); err != nil {
+			return "", c.invalidMarkdownImageSource(errors.New("invalid SVG image"))
+		}
+		return "image/svg+xml", nil
+	}
 	contentType, _, _ := mime.ParseMediaType(http.DetectContentType(content))
 	if _, ok := allowedMarkdownImageTypes[contentType]; ok {
 		return contentType, nil

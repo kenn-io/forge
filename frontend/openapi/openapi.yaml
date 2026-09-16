@@ -17358,6 +17358,11 @@ paths:
                 contentMediaType: application/octet-stream
                 format: binary
                 type: string
+            image/svg+xml:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
             image/webp:
               schema:
                 contentMediaType: application/octet-stream
@@ -17369,6 +17374,9 @@ paths:
               schema:
                 type: string
             Content-Length:
+              schema:
+                type: string
+            Content-Security-Policy:
               schema:
                 type: string
             Content-Type:
@@ -22011,6 +22019,11 @@ paths:
                 contentMediaType: application/octet-stream
                 format: binary
                 type: string
+            image/svg+xml:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
             image/webp:
               schema:
                 contentMediaType: application/octet-stream
@@ -22022,6 +22035,9 @@ paths:
               schema:
                 type: string
             Content-Length:
+              schema:
+                type: string
+            Content-Security-Policy:
               schema:
                 type: string
             Content-Type:

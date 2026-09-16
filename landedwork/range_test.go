@@ -1,9 +1,8 @@
 package landedwork_test
 
 import (
-	"os"
-	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -30,16 +29,26 @@ func TestRebaseFileChanges(t *testing.T) {
 				require := require.New(t)
 				assert := assert.New(t)
 				f := buildFixture(t, false)
-				f.repo.Checkout("-b", "file-base", f.base)
-				base := f.repo.CommitFile(tc.path, tc.old, "file base")
-				f.repo.Checkout("-b", "file-source")
-				f.source = []string{f.repo.CommitFile(tc.path, tc.source, "source")}
-				f.repo.Checkout("-b", "file-replay", base)
-				f.base = f.repo.CommitFile("unrelated", "context\n", "advance")
-				if tc.mode {
-					require.NoError(os.Chmod(filepath.Join(f.repo.Root, tc.path), 0755))
+				// Git trees support raw path bytes that the host filesystem may reject.
+				commitFile := func(parent, path, content, mode, message string) string {
+					t.Helper()
+					blob, stderr, err := f.repo.Runner.Run(t.Context(), f.repo.Root, strings.NewReader(content), "hash-object", "-w", "--stdin")
+					require.NoError(err, "%s", stderr)
+					f.repo.Run("read-tree", parent)
+					entry := mode + " " + strings.TrimSpace(string(blob)) + "\t" + path + "\x00"
+					_, stderr, err = f.repo.Runner.Run(t.Context(), f.repo.Root, strings.NewReader(entry), "update-index", "-z", "--index-info")
+					require.NoError(err, "%s", stderr)
+					tree := f.repo.Run("write-tree")
+					return f.repo.Run("commit-tree", tree, "-p", parent, "-m", message)
 				}
-				f.head = f.repo.CommitFile(tc.path, tc.replay, "replay")
+				base := commitFile(f.base, tc.path, tc.old, "100644", "file base")
+				f.source = []string{commitFile(base, tc.path, tc.source, "100644", "source")}
+				f.base = commitFile(base, "unrelated", "context\n", "100644", "advance")
+				mode := "100644"
+				if tc.mode {
+					mode = "100755"
+				}
+				f.head = commitFile(f.base, tc.path, tc.replay, mode, "replay")
 				ctx, p := f.prepare(t)
 				e := fixtureEvidence(f, p, method)
 				if method == "automatic" {

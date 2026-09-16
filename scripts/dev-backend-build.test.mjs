@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
-test("generates both clients and schema constraints from the shared YAML before building", async (t) => {
+test("generates the OpenAPI document and Go client before building", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "forge-api-build-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   for (const dir of [
@@ -15,7 +15,6 @@ test("generates both clients and schema constraints from the shared YAML before 
     "internal/server",
     "frontend/openapi",
     "internal/apiclient/health",
-    "frontend/src/lib/api/generated",
   ]) {
     await mkdir(join(root, dir), { recursive: true });
   }
@@ -29,23 +28,7 @@ case "$1" in
     printf 'openapi: 3.1.0\\n' > "$2"
     echo spec >> calls ;;
   generate) test -s frontend/openapi/openapi.yaml; echo go-client >> calls ;;
-  build) test -s frontend/src/lib/api/generated/schema-constraints.ts; echo build >> calls ;;
-  *) exit 1 ;;
-esac
-`,
-    node: `#!/bin/sh
-set -eu
-case "$1" in
-  frontend/scripts/generate-api-client.mjs)
-    test "$2" = openapi/openapi.yaml
-    test -s frontend/openapi/openapi.yaml
-    rm -f frontend/src/lib/api/generated/schema-constraints.ts
-    echo ts-client >> calls ;;
-  scripts/generate-schema-constraints.mjs)
-    test "$2" = frontend/openapi/openapi.yaml
-    test -s "$2"
-    echo constraints > "$3"
-    echo constraints >> calls ;;
+  build) echo build >> calls ;;
   *) exit 1 ;;
 esac
 `,
@@ -64,11 +47,8 @@ esac
     });
   const first = run();
   assert.equal(first.status, 0, first.stderr);
-  assert.equal(await readFile(join(root, "calls"), "utf8"), "spec\nts-client\nconstraints\nspec\ngo-client\nbuild\n");
+  assert.equal(await readFile(join(root, "calls"), "utf8"), "spec\nspec\ngo-client\nbuild\n");
   const second = run();
   assert.equal(second.status, 0, second.stderr);
-  assert.equal(
-    await readFile(join(root, "calls"), "utf8"),
-    "spec\nts-client\nconstraints\nspec\ngo-client\nbuild\nbuild\n",
-  );
+  assert.equal(await readFile(join(root, "calls"), "utf8"), "spec\nspec\ngo-client\nbuild\nbuild\n");
 });

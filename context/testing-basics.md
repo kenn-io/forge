@@ -19,6 +19,9 @@ fixtures, or changing shell-script coverage.
   `GOMAXPROCS` globally, because test-launched servers inherit that CPU limit.
 - Do not overlap frontend/e2e asset builds with Go compilation; replacing embedded
   assets mid-compile causes missing-file build failures (`internal/web/embed.go:9`).
+- Vite dev/build owns frontend API client and schema-constraint generation together;
+  Make and Air must not generate TypeScript independently
+  (`frontend/scripts/generate-api-client.mjs::frontendApiClient`).
 - Reduce scanner pressure at source, not by redirecting `GOTMPDIR`.
 - Repository-wide Go tests do not run from Git hooks. Any future fast hook
   lane must select a small set of packages rather than require per-test opt-outs.

@@ -9,6 +9,7 @@ import type { InlineConfig } from "vite-plus/test/node";
 import { resolveDevApiUrl } from "./src/lib/dev/apiProxyTarget.ts";
 import { apiFailureLogging } from "./src/lib/dev/apiFailureLogging.ts";
 import { healthcheckPlugin } from "./src/lib/dev/healthcheckPlugin.ts";
+import { frontendApiClient } from "./scripts/generate-api-client.mjs";
 import { nodeUnitTestFiles } from "./vitest.node-files.ts";
 
 const require = createRequire(import.meta.url);
@@ -244,7 +245,13 @@ const config = {
       return hostType === "js" ? { relative: true } : undefined;
     },
   },
-  plugins: [healthcheckPlugin(), devApiUrlPlugin(apiUrl), svelte(), svelteTesting({ autoCleanup: false })],
+  plugins: [
+    frontendApiClient(),
+    healthcheckPlugin(),
+    devApiUrlPlugin(apiUrl),
+    svelte(),
+    svelteTesting({ autoCleanup: false }),
+  ],
   resolve: {
     alias: [
       {

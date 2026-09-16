@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
@@ -316,4 +317,24 @@ func TestAgentHandoffReportsLaunchedSessionWhenPromptDeliveryTimesOut(t *testing
 	assert.Equal("codex", problem.Details["target_key"])
 	assert.Equal("not_delivered", problem.Details["initial_message_state"])
 	assert.Empty(fixture.owner.pty.written())
+}
+
+func TestAgentHandoffDeliveryPreservesCancellationCause(t *testing.T) {
+	for _, cause := range []error{context.DeadlineExceeded, context.Canceled} {
+		t.Run(cause.Error(), func(t *testing.T) {
+			fixture := newAgentHandoffFixture(t, "ready")
+			ctx, cancel := context.WithCancelCause(t.Context())
+			cancel(cause)
+
+			_, err := fixture.handler.deliverInitialMessage(ctx, InitialMessageRequest{
+				WorkspaceID: "ws-runtime-token", RuntimeSessionKey: "session-1",
+				TargetKey: "codex", Message: "hi",
+			})
+
+			var problem *httpapi.ProblemError
+			require.ErrorAs(t, err, &problem)
+			assert.Equal(t, http.StatusServiceUnavailable, problem.Status)
+			assert.Equal(t, handoffWaitError(cause, "agent input to become ready").Error(), problem.Error())
+		})
+	}
 }

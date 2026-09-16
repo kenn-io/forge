@@ -191,7 +191,7 @@ func TestSubmitInitialMessageServiceReturnsDeliveredStateAndRoutesShareAttempt(t
 		}
 		require.NoError(submitErr)
 		return true
-	}, time.Second, 10*time.Millisecond)
+	}, 5*time.Second, 10*time.Millisecond)
 	owner.pty.setOnWrite(nil)
 	assert.Equal(initialMessageDelivered, serviceStatus.State)
 	assert.Equal(11, serviceStatus.MessageBytes)

@@ -1,3 +1,4 @@
+import { makeRouteMockFetch } from "../testing/test/route-mock-client.js";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { createRoborevClient } from "../api/roborev/client.js";
@@ -101,7 +102,7 @@ describe("Roborev mutation ownership", () => {
       return Promise.resolve({ data: { success: true }, error: undefined });
     });
     const store = createJobsStore({
-      client: { GET: get, POST: post } as never,
+      client: makeRouteMockFetch({ GET: get, POST: post } as never),
       runtime,
       owner: "rerun-baseline-test",
       navigate: vi.fn(),
@@ -131,7 +132,7 @@ describe("Roborev mutation ownership", () => {
       return Promise.resolve({ data: { success: true }, error: undefined });
     });
     const store = createJobsStore({
-      client: { GET: get, POST: post } as never,
+      client: makeRouteMockFetch({ GET: get, POST: post } as never),
       runtime,
       owner: "rerun-preflight-order-test",
       navigate: vi.fn(),
@@ -228,7 +229,7 @@ describe("Roborev mutation ownership", () => {
       return Promise.resolve({ data: { success: true }, error: undefined });
     });
     const store = createJobsStore({
-      client: { GET: get, POST: post } as never,
+      client: makeRouteMockFetch({ GET: get, POST: post } as never),
       runtime,
       owner: "mutation-revalidation-test",
       navigate: vi.fn(),

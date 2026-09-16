@@ -1,3 +1,4 @@
+import { makeRouteMockFetch, type RouteMockClient } from "../testing/test/route-mock-client.js";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { OwnedAppRuntime } from "../app/runtime.js";
@@ -7,9 +8,9 @@ import {
   type JobsStore,
   type JobsStoreOptions,
 } from "./roborev/jobs.svelte.js";
-import type { components } from "../api/roborev/generated/schema.js";
+import type * as RoborevModels from "../api/roborev/generated/models/index.js";
 
-type ReviewJob = components["schemas"]["ReviewJob"];
+type ReviewJob = RoborevModels.ReviewJob;
 
 const originalFetch = globalThis.fetch;
 const runtimes = new Set<OwnedAppRuntime>();
@@ -21,11 +22,18 @@ function fetchSignal(input: RequestInfo | URL, init?: RequestInit): AbortSignal 
   return input instanceof Request ? input.signal : init?.signal;
 }
 
-function createJobsStore(options: Omit<JobsStoreOptions, "runtime" | "owner">) {
+function createJobsStore(
+  options: Omit<JobsStoreOptions, "runtime" | "owner" | "client"> & { client: RouteMockClient },
+) {
   const runtime = makeTestAppRuntime({} as never);
   runtimes.add(runtime);
   ownerSequence += 1;
-  const store = createRuntimeJobsStore({ ...options, runtime, owner: `jobs-test:${ownerSequence}` });
+  const store = createRuntimeJobsStore({
+    ...options,
+    client: makeRouteMockFetch(options.client, [{ repo: [], branch: [] }]),
+    runtime,
+    owner: `jobs-test:${ownerSequence}`,
+  });
   stores.add(store);
   storeRuntimes.set(store, runtime);
   return store;
@@ -93,7 +101,7 @@ describe("createJobsStore filter preferences", () => {
     expect(restoredStore.getFilterShowAutoDesign()).toBe(true);
     expect(client.GET).toHaveBeenCalledWith(
       "/api/jobs",
-      expect.objectContaining({ params: { query: { closed: "false", limit: 50 } } }),
+      expect.objectContaining({ params: { query: { closed: false, limit: 50 } } }),
     );
   });
 
@@ -121,7 +129,7 @@ describe("createJobsStore filter preferences", () => {
     await vi.waitFor(() =>
       expect(secondClient.GET).toHaveBeenCalledWith(
         "/api/jobs",
-        expect.objectContaining({ params: { query: { closed: "false", limit: 50 } } }),
+        expect.objectContaining({ params: { query: { closed: false, limit: 50 } } }),
       ),
     );
   });
@@ -160,7 +168,7 @@ describe("createJobsStore filter preferences", () => {
       expect(secondStore.getFilterShowAutoDesign()).toBe(true);
       expect(secondClient.GET).toHaveBeenCalledWith(
         "/api/jobs",
-        expect.objectContaining({ params: { query: { closed: "false", limit: 50 } } }),
+        expect.objectContaining({ params: { query: { closed: false, limit: 50 } } }),
       );
     } finally {
       getItem.mockRestore();
@@ -571,7 +579,7 @@ describe("createJobsStore auto-design filter", () => {
     expect(client.GET).toHaveBeenLastCalledWith(
       "/api/jobs",
       expect.objectContaining({
-        params: { query: expect.objectContaining({ hide_classify_jobs: "true" }) },
+        params: { query: expect.objectContaining({ hide_classify_jobs: true }) },
       }),
     );
 
@@ -608,9 +616,9 @@ describe("createJobsStore filtered status counts", () => {
       expect.objectContaining({
         params: {
           query: expect.objectContaining({
-            hide_classify_jobs: "true",
+            hide_classify_jobs: true,
             limit: 0,
-            omit_prompt: "true",
+            omit_prompt: true,
           }),
         },
       }),
@@ -660,7 +668,7 @@ describe("createJobsStore filtered status counts", () => {
           query: expect.objectContaining({
             repo: ["/workspace/repo"],
             limit: 0,
-            omit_prompt: "true",
+            omit_prompt: true,
           }),
         },
       }),
@@ -689,7 +697,7 @@ describe("createJobsStore filtered status counts", () => {
     await loadJobs(store);
     expect(store.getFilteredStatusCounts()?.done).toBe(1);
 
-    const reload = store.loadJobs();
+    const reload = loadJobs(store);
     try {
       expect(store.getFilteredStatusCounts()?.done).toBe(1);
     } finally {
@@ -819,7 +827,7 @@ describe("createJobsStore panel expansion", () => {
     expect(client.GET).toHaveBeenCalledWith(
       "/api/jobs",
       expect.objectContaining({
-        params: { query: { panel_run: "run-10", limit: 0, omit_prompt: "true" } },
+        params: { query: { panel_run: "run-10", limit: 0, omit_prompt: true } },
       }),
     );
 

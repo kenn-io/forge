@@ -318,7 +318,6 @@ const config = {
       "@kenn-io/kit-ui > @lucide/svelte/icons/wrap-text",
       "@kenn-io/kit-ui > @lucide/svelte/icons/x",
       // Frontend-resolvable deps the barrel also pulls in.
-      "openapi-fetch",
       // The complete set of @lucide/svelte icon paths imported under
       // frontend/src.
       // Pre-bundling every icon -- not just the /pulls subset -- stops the cold

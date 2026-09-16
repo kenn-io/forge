@@ -1,19 +1,21 @@
 <script lang="ts">
+import * as roborevAPI from "../../api/roborev/generated/client.js";
+
   import { SearchInput } from "@kenn-io/kit-ui";
   import { Effect } from "effect";
   import { onDestroy } from "svelte";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { executeRoborevRequest } from "../../api/roborev/client.js";
   import { getStores, getRoborevClient } from "../../context.js";
-  import type { components } from "../../api/roborev/generated/schema.js";
+  import type * as RoborevModels from "../../api/roborev/generated/models/index.js";
   import {
     makeRoborevOwner,
     RoborevResponseError,
     RoborevWorkflow,
   } from "../../stores/roborev/roborev-workflow.js";
 
-  type RepoWithCount = components["schemas"]["RepoWithCount"];
-  type BranchWithCount = components["schemas"]["BranchWithCount"];
+  type RepoWithCount = RoborevModels.RepoWithCount;
+  type BranchWithCount = RoborevModels.BranchWithCount;
 
   const stores = getStores();
   const client = getRoborevClient();
@@ -63,15 +65,15 @@
         yield* workflow.catalog(
           owner,
           executeRoborevRequest("list Roborev repositories", (signal) =>
-            client.GET("/api/repos", { signal }),
+            roborevAPI.listRepos(undefined, { signal }, client),
           ).pipe(
             Effect.flatMap((result) =>
-              result.error
+              result.status !== 200
                 ? Effect.fail(
                     RoborevResponseError.make({
                       operation: "list Roborev repositories",
                       message: "Failed to load repositories",
-                      cause: result.error,
+                      cause: result.data,
                     }),
                   )
                 : Effect.sync(() => {
@@ -109,18 +111,15 @@
         yield* workflow.catalog(
           owner,
           executeRoborevRequest("list Roborev branches", (signal) =>
-            client.GET("/api/branches", {
-              params: { query: { repo: [rootPath] } },
-              signal,
-            }),
+            roborevAPI.listBranches({ repo: [rootPath] }, { signal }, client),
           ).pipe(
             Effect.flatMap((result) =>
-              result.error
+              result.status !== 200
                 ? Effect.fail(
                     RoborevResponseError.make({
                       operation: "list Roborev branches",
                       message: "Failed to load branches",
-                      cause: result.error,
+                      cause: result.data,
                     }),
                   )
                 : Effect.sync(() => {

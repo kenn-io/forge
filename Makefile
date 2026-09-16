@@ -244,10 +244,12 @@ api-generate: frontend-deps
 	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; node scripts/generate-schema-constraints.mjs internal/apiclient/spec/openapi.json "$$tmp"; if [ -f frontend/src/lib/api/generated/schema-constraints.ts ] && cmp -s "$$tmp" frontend/src/lib/api/generated/schema-constraints.ts; then rm "$$tmp"; else mv "$$tmp" frontend/src/lib/api/generated/schema-constraints.ts; fi; trap - EXIT
 	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; (cd internal/apiclient/generated && go tool oapi-codegen --config config.yaml -o "$$tmp" ../spec/openapi.json); if [ -f internal/apiclient/generated/client.gen.go ] && cmp -s "$$tmp" internal/apiclient/generated/client.gen.go; then rm "$$tmp"; else mv "$$tmp" internal/apiclient/generated/client.gen.go; fi; trap - EXIT
 
-# Regenerate roborev TypeScript client types from checked-in OpenAPI spec
+# Regenerate the roborev TypeScript client from the checked-in OpenAPI spec
 roborev-api-generate: frontend-deps
-	node frontend/node_modules/openapi-typescript/bin/cli.js frontend/src/lib/api/roborev/openapi.json -o frontend/src/lib/api/roborev/generated/schema.ts
-	@echo "Roborev API types generated"
+	cd frontend && node node_modules/orval/dist/bin/orval.mjs --config orval.roborev.config.ts
+	$(VITE_PLUS_BIN) fmt frontend/src/lib/api/roborev/generated-next --write
+	rm -rf frontend/src/lib/api/roborev/generated
+	mv frontend/src/lib/api/roborev/generated-next frontend/src/lib/api/roborev/generated
 
 # Ensure air is installed for backend live reload
 check-air:

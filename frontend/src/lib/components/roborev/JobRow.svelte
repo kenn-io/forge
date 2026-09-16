@@ -1,6 +1,6 @@
 <script lang="ts">
   import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
-  import type { components } from "../../api/roborev/generated/schema.js";
+  import type * as RoborevModels from "../../api/roborev/generated/models/index.js";
   import {
     panelCostUsd,
     panelElapsedStart,
@@ -10,7 +10,7 @@
   import StatusBadge from "./StatusBadge.svelte";
   import VerdictBadge from "./VerdictBadge.svelte";
 
-  type ReviewJob = components["schemas"]["ReviewJob"];
+  type ReviewJob = RoborevModels.ReviewJob;
 
   interface Props {
     job: ReviewJob;

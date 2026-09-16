@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import type { components } from "../../src/lib/api/roborev/generated/schema.js";
+import type * as RoborevModels from "../../src/lib/api/roborev/generated/models/index.js";
 import {
   assertSeededRoborevDaemon,
   stopDaemon,
@@ -942,7 +942,7 @@ test.describe.serial("Roborev", () => {
       await expect(page.locator(".submit-btn")).toBeDisabled();
       const authority = await page.request.get("/api/roborev/api/comments?job_id=72");
       expect(authority.ok()).toBe(true);
-      const body: components["schemas"]["ListCommentsOutputBody"] = await authority.json();
+      const body: RoborevModels.ListCommentsOutputBody = await authority.json();
       expect((body.responses ?? []).filter((response) => response.response === comment)).toHaveLength(1);
     });
 
@@ -975,7 +975,7 @@ test.describe.serial("Roborev", () => {
       await expect(page.getByText("Comment was added, but the refreshed review is unavailable")).toBeVisible();
       const authority = await page.request.get("/api/roborev/api/comments?job_id=72");
       expect(authority.ok()).toBe(true);
-      const body: components["schemas"]["ListCommentsOutputBody"] = await authority.json();
+      const body: RoborevModels.ListCommentsOutputBody = await authority.json();
       expect((body.responses ?? []).filter((response) => response.response === comment)).toHaveLength(1);
     });
 

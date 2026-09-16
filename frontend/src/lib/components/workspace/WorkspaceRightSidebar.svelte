@@ -1,4 +1,6 @@
 <script lang="ts">
+import * as roborevAPI from "../../api/roborev/generated/client.js";
+
   import { EmptyState, Spinner } from "@kenn-io/kit-ui";
   import { Effect } from "effect";
   import { onDestroy } from "svelte";
@@ -23,9 +25,7 @@
     createLogStore,
   } from "../../stores/roborev/log.svelte.js";
   import type { StoreInstances } from "../../types.js";
-  import type {
-    components,
-  } from "../../api/roborev/generated/schema.js";
+  import type * as RoborevModels from "../../api/roborev/generated/models/index.js";
   import SidebarStoreScope
     from "./SidebarStoreScope.svelte";
   import PullDetail
@@ -46,7 +46,7 @@
     from "../kata/KataLinksPanel.svelte";
 
   type RepoWithCount =
-    components["schemas"]["RepoWithCount"];
+    RoborevModels.RepoWithCount;
 
   interface Props {
     activeTab: "diff" | "pr" | "issue" | "reviews" | "kata";
@@ -156,15 +156,15 @@
       return yield* workflow.catalog(
         repoResolutionOwner,
         executeRoborevRequest("resolve workspace Roborev repository", (signal) =>
-          roborevClient.GET("/api/repos", { signal }),
+          roborevAPI.listRepos(undefined, { signal }, roborevClient),
         ).pipe(
           Effect.flatMap((result) =>
-            result.error
+            result.status !== 200
               ? Effect.fail(
                   RoborevResponseError.make({
                     operation: "resolve workspace Roborev repository",
                     message: "Failed to resolve repository",
-                    cause: result.error,
+                    cause: result.data,
                   }),
                 )
               : Effect.succeed(result.data?.repos ?? []),

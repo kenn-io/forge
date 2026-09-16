@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "@effect/vitest";
 import { Effect, Fiber, Layer } from "effect";
 import { TestClock } from "effect/testing";
-import type { RoborevClient } from "../../api/roborev/client.js";
+import { makeRouteMockFetch, type RouteMockClient } from "../../testing/test/route-mock-client.js";
 import { makeGeneratedApiLayer, type GeneratedClient } from "../../api/generated-api.js";
 import type { OwnedAppRuntime } from "../../app/runtime.js";
 import { makeTestAppRuntime } from "../../testing/effect-layers.js";
@@ -11,9 +11,9 @@ import { createDaemonStore } from "./daemon.svelte.js";
 
 let runtime: OwnedAppRuntime | undefined;
 
-function daemonStore(forgeClient: GeneratedClient, client: RoborevClient) {
+function daemonStore(forgeClient: GeneratedClient, client: RouteMockClient) {
   runtime = makeTestAppRuntime(forgeClient);
-  return createDaemonStore({ client, runtime });
+  return createDaemonStore({ client: makeRouteMockFetch(client), runtime });
 }
 
 function forgeClient(get: ReturnType<typeof vi.fn>): GeneratedClient {
@@ -77,7 +77,7 @@ describe("createDaemonStore", () => {
         version: "test",
       },
     });
-    const store = daemonStore(forgeClient(forgeGet), { GET: roborevGet } as unknown as RoborevClient);
+    const store = daemonStore(forgeClient(forgeGet), { GET: roborevGet } as unknown as RouteMockClient);
 
     const polling = startPolling(store);
     store.checkHealth();
@@ -109,7 +109,7 @@ describe("createDaemonStore", () => {
       statusSignal = options?.signal;
       return new Promise(() => {});
     });
-    const store = daemonStore(forgeClient(forgeGet), { GET: roborevGet } as unknown as RoborevClient);
+    const store = daemonStore(forgeClient(forgeGet), { GET: roborevGet } as unknown as RouteMockClient);
 
     const polling = startPolling(store);
     await vi.waitFor(() => {
@@ -183,7 +183,7 @@ describe("createDaemonStore", () => {
         version: "test",
       },
     });
-    const store = daemonStore(forgeClient(forgeGet), { GET: roborevGet } as unknown as RoborevClient);
+    const store = daemonStore(forgeClient(forgeGet), { GET: roborevGet } as unknown as RouteMockClient);
 
     const oldPolling = startPolling(store);
     expect(forgeGet).toHaveBeenCalledTimes(1);
@@ -256,7 +256,7 @@ describe("createDaemonStore", () => {
         },
       });
       const generatedClient = forgeClient(forgeGet);
-      const store = daemonStore(generatedClient, { GET: roborevGet } as unknown as RoborevClient);
+      const store = daemonStore(generatedClient, { GET: roborevGet } as unknown as RouteMockClient);
       const daemonLayer = Layer.provideMerge(RoborevDaemonWorkflowLive, makeGeneratedApiLayer(generatedClient));
       const polling = yield* Effect.forkChild(store.pollingEffect.pipe(Effect.provide(daemonLayer)));
 

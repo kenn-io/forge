@@ -1,16 +1,17 @@
+import * as roborevAPI from "../../api/roborev/generated/client.js";
 import { Duration, Effect, Option } from "effect";
 import { pollWhileVisible } from "../../effect/poll-while-visible.js";
 import type { AppRuntime } from "../../app/runtime.js";
 import { TransientTransportError } from "../../api/effect-errors.js";
 import type { RoborevClient } from "../../api/roborev/client.js";
-import type { components as RoborevComponents } from "../../api/roborev/generated/schema.js";
+import type * as RoborevModels from "../../api/roborev/generated/models/index.js";
 import { RoborevDaemonWorkflow } from "./daemon-workflow.js";
 
 const UNAVAILABLE_POLL_INTERVAL_MS = 1_000;
 const AVAILABLE_POLL_INTERVAL_MS = 30_000;
 const STATUS_TIMEOUT = "5 seconds";
 
-type DaemonStatus = RoborevComponents["schemas"]["DaemonStatus"];
+type DaemonStatus = RoborevModels.DaemonStatus;
 
 export interface DaemonStoreOptions {
   client: RoborevClient;
@@ -53,15 +54,15 @@ export function createDaemonStore(opts: DaemonStoreOptions) {
   }
 
   const loadStatusProgram = Effect.tryPromise({
-    try: (signal) => opts.client.GET("/api/status", { signal }),
+    try: (signal) => roborevAPI.getStatus({ signal }, opts.client),
     catch: (cause) => TransientTransportError.make({ operation: "GET Roborev daemon status", cause }),
   }).pipe(
     Effect.flatMap((result) =>
-      result.data === undefined
+      result.status !== 200
         ? Effect.fail(
             TransientTransportError.make({
               operation: "GET Roborev daemon status",
-              cause: result.error ?? new Error("Roborev status response was empty"),
+              cause: result.data ?? new Error("Roborev status response was empty"),
             }),
           )
         : Effect.succeed(result.data),

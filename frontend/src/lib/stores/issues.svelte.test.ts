@@ -588,51 +588,65 @@ describe("createIssuesStore", () => {
     expect(onSettled).toHaveBeenCalledOnce();
   });
 
-  it("skips a scheduled poll while an on-demand issue sync is pending", async () => {
-    vi.useFakeTimers();
-    const cached = issueDetail();
-    cached.issue.Title = "Cached issue detail";
-    const fresh = issueDetail();
-    fresh.issue.Title = "Fresh issue detail";
-    const syncResponse = Promise.withResolvers<{ data: IssueDetail; error: undefined }>();
-    const get = vi
-      .fn()
-      .mockResolvedValueOnce({ data: cached, error: undefined })
-      .mockResolvedValue({ data: fresh, error: undefined });
-    const store = createIssuesStore({
-      client: mockClient({ GET: get, POST: vi.fn(() => syncResponse.promise) }),
-    });
-    await loadIssueDetail(store, "acme", "widget", 7, {
-      provider: "github",
-      platformHost: "github.com",
-      repoPath: "acme/widget",
-      sync: false,
-    });
-    store.startIssueDetailPolling("acme", "widget", 7, {
-      provider: "github",
-      platformHost: "github.com",
-      repoPath: "acme/widget",
-    });
-    const settled = Promise.withResolvers<void>();
+  it.each(["scheduled poll", "provider event"])(
+    "skips a %s while an on-demand issue sync is pending",
+    async (source) => {
+      vi.useFakeTimers();
+      const cached = issueDetail();
+      cached.issue.Title = "Cached issue detail";
+      const fresh = issueDetail();
+      fresh.issue.Title = "Fresh issue detail";
+      const syncResponse = Promise.withResolvers<{ data: IssueDetail; error: undefined }>();
+      let cachedResponse = cached;
+      const get = vi.fn(async () => ({ data: cachedResponse, error: undefined }));
+      const store = createIssuesStore({
+        client: mockClient({ GET: get, POST: vi.fn(() => syncResponse.promise) }),
+      });
+      await loadIssueDetail(store, "acme", "widget", 7, {
+        provider: "github",
+        platformHost: "github.com",
+        repoPath: "acme/widget",
+        sync: false,
+      });
+      store.startIssueDetailPolling("acme", "widget", 7, {
+        provider: "github",
+        platformHost: "github.com",
+        repoPath: "acme/widget",
+      });
+      const settled = Promise.withResolvers<void>();
+      const refresh = () =>
+        source === "scheduled poll"
+          ? vi.advanceTimersByTimeAsync(60_000)
+          : Effect.runPromise(
+              runtime!
+                .runCommand(store.refreshActiveIssueDetailEffect(), {
+                  operation: "test provider refresh during issue sync",
+                  safeContext: {},
+                  onFailure: () => {},
+                })
+                .await.pipe(Effect.flatMap((exit) => exit)),
+            );
 
-    store.syncIssueDetailNow(
-      "acme",
-      "widget",
-      7,
-      { provider: "github", platformHost: "github.com", repoPath: "acme/widget" },
-      { onSettled: settled.resolve },
-    );
-    await vi.waitFor(() => expect(store.isIssueDetailSyncing()).toBe(true));
-    await vi.advanceTimersByTimeAsync(60_000);
+      store.syncIssueDetailNow(
+        "acme",
+        "widget",
+        7,
+        { provider: "github", platformHost: "github.com", repoPath: "acme/widget" },
+        { onSettled: settled.resolve },
+      );
+      await vi.waitFor(() => expect(store.isIssueDetailSyncing()).toBe(true));
+      await refresh();
 
-    expect(get).toHaveBeenCalledTimes(1);
-    syncResponse.resolve({ data: fresh, error: undefined });
-    await settled.promise;
-    expect(store.getIssueDetail()?.issue.Title).toBe("Fresh issue detail");
-    await vi.advanceTimersByTimeAsync(60_000);
-    expect(get).toHaveBeenCalledTimes(2);
-    store.stopIssueDetailPolling();
-  });
+      cachedResponse = fresh;
+      syncResponse.resolve({ data: fresh, error: undefined });
+      await settled.promise;
+      expect(store.getIssueDetail()?.issue.Title).toBe("Fresh issue detail");
+      expect(get).toHaveBeenCalledTimes(1);
+      await refresh();
+      expect(get).toHaveBeenCalledTimes(2);
+      store.stopIssueDetailPolling();
+    },
+  );
 
   it("keeps cached issue detail and reports an on-demand synchronization failure", async () => {
     const cached = issueDetail();

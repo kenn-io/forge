@@ -1022,7 +1022,9 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   function refreshActiveIssueDetailEffect() {
     return Effect.suspend(() => {
       const ref = activeIssueDetailRef;
-      return ref === null ? Effect.void : refreshIssueDetailEffect(ref.owner, ref.name, ref.number, ref);
+      return ref === null || detailSyncing
+        ? Effect.void
+        : refreshIssueDetailEffect(ref.owner, ref.name, ref.number, ref);
     });
   }
 

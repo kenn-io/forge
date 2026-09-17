@@ -282,8 +282,14 @@ func (s *Syncer) refreshRelayHint(ctx context.Context, hint activityrelay.Hint) 
 			return nil
 		}
 	case activityrelay.Repository:
+		if budget := s.budgets[bucket]; budget != nil && !budget.CanSpend(cost) {
+			return nil
+		}
 		err = s.syncRepo(ctx, repo)
 	case activityrelay.RepositoryRefs:
+		if budget := s.budgets[bucket]; budget != nil && !budget.CanSpend(cost) {
+			return nil
+		}
 		err = s.refreshRelayRefs(ctx, repo)
 	}
 	if err != nil {

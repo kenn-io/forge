@@ -186,6 +186,59 @@ func TestRelayQueueCoalescesAndSkipsDisabledSync(t *testing.T) {
 	assert.Nil(syncer.Status().Relay)
 }
 
+func TestRelayRepositoryHintsRespectBudgetAdmission(t *testing.T) {
+	t.Parallel()
+	for _, target := range []string{activityrelay.Repository, activityrelay.RepositoryRefs} {
+		t.Run(target, func(t *testing.T) {
+			t.Parallel()
+			require := require.New(t)
+			assert := assert.New(t)
+			ctx := WithSyncBudget(t.Context())
+			database := openTestDB(t)
+			repo := RepoRef{Platform: platform.KindGitHub, PlatformHost: "github.com", PlatformExternalID: "R_test_project", Owner: "team", Name: "project"}
+			_, err := database.UpsertRepo(ctx, db.RepoIdentity{
+				Platform: "github", PlatformHost: "github.com", PlatformRepoID: repo.PlatformExternalID, Owner: repo.Owner, Name: repo.Name,
+			})
+			require.NoError(err)
+			budget := NewSyncBudgetWithEssentialReserve(100)
+			var requests atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				w.Header().Set("Content-Type", "application/json")
+				if r.URL.Path == "/api/v3/repos/team/project" {
+					_, _ = w.Write([]byte(`{"id":1,"node_id":"R_test_project","name":"project","owner":{"login":"team"},"default_branch":"main","has_issues":true}`))
+					return
+				}
+				_, _ = w.Write([]byte(`[]`))
+			}))
+			t.Cleanup(server.Close)
+			client, err := NewClient(testTokenSource("token"), "github.com", nil, budget, WithBaseURLForTesting(server.URL))
+			require.NoError(err)
+			syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, []RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{"github.com": budget})
+			var refreshed int
+			syncer.SetOnRelayRefresh(func(context.Context, int64, string, int) { refreshed++ })
+			hint := activityrelay.Hint{Provider: "github", Host: "github.com", RepositoryID: repo.PlatformExternalID, Target: target}
+
+			// Both the reserve alone and less than the conservative refresh cost
+			// must leave the hint to ordinary syncing, without any provider I/O.
+			for _, spent := range []int{90, 71} {
+				budget.Reset()
+				budget.Spend(spent)
+				require.NoError(syncer.refreshRelayHint(ctx, hint))
+				assert.Zero(requests.Load())
+				assert.Equal(spent, budget.Spent())
+				assert.Zero(refreshed)
+			}
+
+			budget.Reset()
+			budget.Spend(70)
+			require.NoError(syncer.refreshRelayHint(ctx, hint))
+			assert.Positive(requests.Load(), "an affordable hint must refresh the provider")
+			assert.Equal(1, refreshed)
+		})
+	}
+}
+
 func TestRelayDisabledIssueRespectsCooldown(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)

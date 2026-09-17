@@ -76,10 +76,9 @@ func GitLabCLITokenForHost(ctx context.Context, host string) (string, error) {
 	// passing them through would send one GitLab host's token to another.
 	env := slices.DeleteFunc(os.Environ(), func(kv string) bool {
 		name, _, _ := strings.Cut(kv, "=")
-		return slices.ContainsFunc(
-			[]string{"GITLAB_TOKEN", "GITLAB_ACCESS_TOKEN", "OAUTH_TOKEN"},
-			func(unscoped string) bool { return strings.EqualFold(name, unscoped) },
-		)
+		return strings.EqualFold(name, "GITLAB_TOKEN") ||
+			strings.EqualFold(name, "GITLAB_ACCESS_TOKEN") ||
+			strings.EqualFold(name, "OAUTH_TOKEN")
 	})
 	cmd.Env = append(env, "GLAB_CHECK_UPDATE=false", "NO_COLOR=1")
 	out, err := cmd.Output()

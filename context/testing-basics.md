@@ -85,6 +85,10 @@ fixtures, or changing shell-script coverage.
   mimic the CLI only proves the fake. Do not test stdlib behavior such as
   environment filtering on its own
   (`internal/config/provider_cli_tokens_test.go::TestGitLabCLITokenForHostIgnoresUnscopedTokenEnvWithRealGlab`).
+- The Go test CI job installs those CLIs through mise so the skips do not hide
+  the tests; a tool with no build for a maintainer platform belongs in
+  `mise.ci.toml` (loaded with `MISE_ENV=ci`), never in `mise.toml`, which must
+  stay installable on every workstation.
 - Fixtures asserted through windowed endpoints (activity's default 7d range)
   must seed now-relative instants, not absolute calendar dates — pinned dates
   age out and the test starts failing on a later calendar day

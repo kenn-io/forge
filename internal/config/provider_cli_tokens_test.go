@@ -264,6 +264,30 @@ func TestForgejoCLITokenForHostMissingOrMalformedFile(t *testing.T) {
 	assert.Contains(err.Error(), "fj keys file")
 }
 
+func TestForgejoCLITokenForHostReadsRealFjKeysFile(t *testing.T) {
+	// The keys file path, schema, and host keying are fj's, not ours: only
+	// the real CLI proves the lookup still matches what fj writes.
+	assert := assert.New(t)
+	require := require.New(t)
+	fj, err := exec.LookPath("fj")
+	if err != nil {
+		t.Skip("fj is not installed")
+	}
+	isolateForgejoCLIKeys(t)
+	out, err := procutil.Command(
+		fj, "auth", "add-token", "--host", "code.example.test", "fj-stored-token",
+	).CombinedOutput()
+	require.NoError(err, string(out))
+
+	got, err := ForgejoCLITokenForHost(t.Context(), "code.example.test")
+	require.NoError(err)
+	assert.Equal("fj-stored-token", got)
+
+	got, err = ForgejoCLITokenForHost(t.Context(), "other.example.test")
+	require.NoError(err)
+	assert.Empty(got)
+}
+
 func TestTokenForPlatformHostFallsBackToForgejoCLI(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

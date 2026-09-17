@@ -15,13 +15,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-git/go-billy/v5/osfs"
-	"github.com/go-git/go-git/v5/config"
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/cache"
-	"github.com/go-git/go-git/v5/plumbing/storer"
-	"github.com/go-git/go-git/v5/storage/filesystem"
-	"github.com/go-git/go-git/v5/storage/filesystem/dotgit"
+	"github.com/go-git/go-billy/v6/osfs"
+	"github.com/go-git/go-git/v6/config"
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/cache"
+	"github.com/go-git/go-git/v6/plumbing/storer"
+	"github.com/go-git/go-git/v6/storage/filesystem"
+	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 	lru "github.com/hashicorp/golang-lru/v2"
 )
 
@@ -198,14 +198,9 @@ func (r gitdirRemoteHeadReader) open(dir string) (storer.ReferenceStorer, *confi
 
 // newWorktreeGitHandle resolves the layout and builds the reference store.
 //
-// The git directory and common directory are resolved here rather than with
-// go-git's EnableDotGitCommonDir: that option reads the worktree's
-// `commondir` file without closing it, and the observer opens every
-// workspace several times a minute, so the daemon would leak a descriptor per
-// open and keep linked worktrees undeletable on Windows. The store is used
-// directly instead of through gogit.Open because Open rejects any
-// version-0 repository declaring extensions.worktreeConfig (its allow list
-// is case-mismatched), and ref lookups do not need that validation.
+// Resolve the worktree and common directories once for the cached handle.
+// Ref lookups use the filesystem store directly; effectiveConfig owns the
+// worktree-specific config overlay.
 func newWorktreeGitHandle(dir string) (*worktreeGitHandle, error) {
 	gitDir, commonDir, err := resolveWorktreeGitDirs(dir)
 	if err != nil {

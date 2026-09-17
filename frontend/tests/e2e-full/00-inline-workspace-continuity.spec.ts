@@ -2166,7 +2166,7 @@ test.describe("inline workspace pane continuity", () => {
             }
           }
 
-          override send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
+          override send(data: Parameters<WebSocket["send"]>[0]): void {
             if (this.suppressRefresh && typeof data === "string") {
               try {
                 if ((JSON.parse(data) as { type?: string }).type === "refresh") return;
@@ -2401,7 +2401,7 @@ test.describe("inline workspace pane continuity", () => {
             });
           }
 
-          override send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
+          override send(data: Parameters<WebSocket["send"]>[0]): void {
             const entry = log.find((candidate) => candidate.socket === this);
             if (entry && typeof data === "string") entry.sent.push(data);
             super.send(data);

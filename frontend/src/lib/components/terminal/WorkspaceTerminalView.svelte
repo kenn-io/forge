@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { workspaceQuickActionPending } from "../../stores/workspace-quick-actions.js";
   import { EmptyState, IconButton, Spinner } from "@kenn-io/kit-ui";
   import { Context, Deferred, Duration, Effect, Fiber, Option, Schedule, Stream } from "effect";
   import PlayIcon from "@lucide/svelte/icons/play";
@@ -903,7 +904,8 @@
     const identity = workspaceIdentitySnapshot(workspaceId);
     return (
       (identity !== undefined && pendingWorkspaceCreateLaunch(identity) !== null) ||
-      pendingWorkspaceLaunch(workspaceId, workspaceHostKey) !== null
+      pendingWorkspaceLaunch(workspaceId, workspaceHostKey) !== null ||
+      (workspaceHostKey === undefined && workspaceQuickActionPending(workspaceId))
     );
   }
 

@@ -42,7 +42,9 @@ const initialMessageWriteTimeout = 30 * time.Second
 // keystroke that submits it. Terminal UIs that collapse a multi-line paste
 // treat bytes arriving in the same chunk as the paste-end marker as part of
 // the paste, so a carriage return in that chunk never submits the prompt.
-const initialMessageEnterDelay = 150 * time.Millisecond
+// Allow startup to settle too: tmux enables paste mode before the agent is
+// reading input, so a 150 ms gap can still leave both writes queued together.
+const initialMessageEnterDelay = time.Second
 
 var (
 	errManagerShutdown    = errors.New("runtime manager is shut down")
@@ -1461,7 +1463,7 @@ func (m *Manager) AttachSessionWithOptions(
 
 // SubmitInitialMessage writes one bounded, already-normalized initial prompt
 // through a live agent runtime. It requires observed bracketed-paste mode and
-// sends the complete paste frame and Enter in one terminal write.
+// sends the complete paste frame and Enter in one serialized terminal operation.
 func (m *Manager) SubmitInitialMessage(
 	ctx context.Context,
 	workspaceID string,

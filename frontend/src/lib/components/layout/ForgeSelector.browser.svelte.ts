@@ -29,8 +29,8 @@ function host(nodeID: string, name: string, options: Partial<HostSummary> = {}):
   };
 }
 
-function renderSelector(props: { compact?: boolean; fallbackLabel?: string } = {}): void {
-  const view = render(ForgeSelectorRuntimeHarness, { props });
+async function renderSelector(props: { compact?: boolean; fallbackLabel?: string } = {}): Promise<void> {
+  const view = await render(ForgeSelectorRuntimeHarness, { props });
   unmount = view.unmount;
 }
 
@@ -66,7 +66,7 @@ describe("ForgeSelector (browser)", () => {
 
   it("stays hidden for a one-host snapshot", async () => {
     snapshotHosts = [host("self", "Local", { kind: "self", federationRole: "hub" })];
-    renderSelector();
+    await renderSelector();
 
     await vi.waitFor(() => {
       expect(globalThis.fetch).toHaveBeenCalled();
@@ -88,7 +88,7 @@ describe("ForgeSelector (browser)", () => {
         error: "Spoke health check timed out",
       }),
     ];
-    renderSelector();
+    await renderSelector();
     await waitForDirectory();
 
     const trigger = page.getByLabelText("Current Forge: Current spoke");
@@ -117,7 +117,7 @@ describe("ForgeSelector (browser)", () => {
     document.body.append(outside);
 
     try {
-      renderSelector();
+      await renderSelector();
       await waitForDirectory();
 
       const trigger = page.getByLabelText("Current Forge: Current spoke");
@@ -140,7 +140,7 @@ describe("ForgeSelector (browser)", () => {
     const current = host("spoke-a", "Current spoke", { kind: "self" });
     const removed = host("spoke-b", "Removed spoke");
     snapshotHosts = [current, hub, removed];
-    renderSelector();
+    await renderSelector();
     await waitForDirectory();
 
     const trigger = page.getByLabelText("Current Forge: Current spoke");
@@ -163,7 +163,7 @@ describe("ForgeSelector (browser)", () => {
         federationRole: "hub",
       }),
     ];
-    renderSelector({ compact: true, fallbackLabel: "kenn-forge" });
+    await renderSelector({ compact: true, fallbackLabel: "kenn-forge" });
     await waitForDirectory();
 
     const trigger = page.getByLabelText("Current Forge: Current spoke with a long name");

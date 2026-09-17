@@ -35,13 +35,13 @@ afterEach(async () => {
 });
 
 describe("EventTimeline timestamp layout", () => {
-  it("keeps a force-push timestamp in the card's trailing metadata slot", () => {
+  it("keeps a force-push timestamp in the card's trailing metadata slot", async () => {
     runtime = makeAppRuntime();
     const wrapper = document.createElement("div");
     wrapper.style.width = "760px";
     document.body.appendChild(wrapper);
 
-    render(EventTimelineTestHarness, {
+    await render(EventTimelineTestHarness, {
       target: wrapper,
       props: {
         runtime,

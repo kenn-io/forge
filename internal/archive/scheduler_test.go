@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -14,70 +15,76 @@ import (
 )
 
 func TestArchiveSchedulerDoesNotSerializeSameHostOutsideAdmission(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	scheduler := NewScheduler()
-	groups := map[string][]resolvedRepository{"github\x00github.test": {{Ref: archiveServiceRef(platform.KindGitHub, "github.test", "repo")}}}
-	entered := make(chan struct{}, 2)
-	release := make(chan struct{})
-	var active atomic.Int32
-	var maximum atomic.Int32
-	work := func(context.Context, []resolvedRepository) (bool, error) {
-		current := active.Add(1)
-		for {
-			observed := maximum.Load()
-			if current <= observed || maximum.CompareAndSwap(observed, current) {
-				break
+	synctest.Test(t, func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+		scheduler := NewScheduler()
+		groups := map[string][]resolvedRepository{"github\x00github.test": {{Ref: archiveServiceRef(platform.KindGitHub, "github.test", "repo")}}}
+		entered := make(chan struct{}, 2)
+		release := make(chan struct{})
+		var active atomic.Int32
+		var maximum atomic.Int32
+		work := func(context.Context, []resolvedRepository) (bool, error) {
+			current := active.Add(1)
+			for {
+				observed := maximum.Load()
+				if current <= observed || maximum.CompareAndSwap(observed, current) {
+					break
+				}
 			}
+			entered <- struct{}{}
+			<-release
+			active.Add(-1)
+			return true, nil
 		}
-		entered <- struct{}{}
-		<-release
-		active.Add(-1)
-		return true, nil
-	}
-	errCh := make(chan error, 2)
-	go func() { _, err := scheduler.Run(t.Context(), groups, work); errCh <- err }()
-	go func() { _, err := scheduler.Run(t.Context(), groups, work); errCh <- err }()
-	require.Eventually(func() bool { return len(entered) == 2 }, time.Second, time.Millisecond)
-	release <- struct{}{}
-	release <- struct{}{}
-	require.NoError(<-errCh)
-	require.NoError(<-errCh)
-	assert.Equal(int32(2), maximum.Load())
+		errCh := make(chan error, 2)
+		go func() { _, err := scheduler.Run(t.Context(), groups, work); errCh <- err }()
+		go func() { _, err := scheduler.Run(t.Context(), groups, work); errCh <- err }()
+		synctest.Wait()
+		observed := len(entered)
+		close(release)
+		require.Equal(2, observed)
+		require.NoError(<-errCh)
+		require.NoError(<-errCh)
+		assert.Equal(int32(2), maximum.Load())
+	})
 }
 
 func TestArchiveSchedulerRunsIndependentHostsConcurrently(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	scheduler := NewScheduler()
-	groups := map[string][]resolvedRepository{
-		"github\x00one.test": {{Ref: archiveServiceRef(platform.KindGitHub, "one.test", "one")}},
-		"github\x00two.test": {{Ref: archiveServiceRef(platform.KindGitHub, "two.test", "two")}},
-	}
-	entered := make(chan struct{}, 2)
-	release := make(chan struct{})
-	var active atomic.Int32
-	var maximum atomic.Int32
-	work := func(context.Context, []resolvedRepository) (bool, error) {
-		current := active.Add(1)
-		for {
-			observed := maximum.Load()
-			if current <= observed || maximum.CompareAndSwap(observed, current) {
-				break
-			}
+	synctest.Test(t, func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+		scheduler := NewScheduler()
+		groups := map[string][]resolvedRepository{
+			"github\x00one.test": {{Ref: archiveServiceRef(platform.KindGitHub, "one.test", "one")}},
+			"github\x00two.test": {{Ref: archiveServiceRef(platform.KindGitHub, "two.test", "two")}},
 		}
-		entered <- struct{}{}
-		<-release
-		active.Add(-1)
-		return true, nil
-	}
-	done := make(chan error, 1)
-	go func() { _, err := scheduler.Run(t.Context(), groups, work); done <- err }()
-	require.Eventually(func() bool { return len(entered) == 2 }, time.Second, time.Millisecond)
-	release <- struct{}{}
-	release <- struct{}{}
-	require.NoError(<-done)
-	assert.Equal(int32(2), maximum.Load())
+		entered := make(chan struct{}, 2)
+		release := make(chan struct{})
+		var active atomic.Int32
+		var maximum atomic.Int32
+		work := func(context.Context, []resolvedRepository) (bool, error) {
+			current := active.Add(1)
+			for {
+				observed := maximum.Load()
+				if current <= observed || maximum.CompareAndSwap(observed, current) {
+					break
+				}
+			}
+			entered <- struct{}{}
+			<-release
+			active.Add(-1)
+			return true, nil
+		}
+		done := make(chan error, 1)
+		go func() { _, err := scheduler.Run(t.Context(), groups, work); done <- err }()
+		synctest.Wait()
+		observed := len(entered)
+		close(release)
+		require.Equal(2, observed)
+		require.NoError(<-done)
+		assert.Equal(int32(2), maximum.Load())
+	})
 }
 
 func TestArchiveWorkPrioritiesPreserveForegroundOrdering(t *testing.T) {

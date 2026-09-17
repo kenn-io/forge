@@ -36,7 +36,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          bun-version: "1.4.0"
+          bun-version: "1.4.2"
 
       - name: Build frontend
         run: bun install --frozen-lockfile && cd frontend && ../node_modules/.bin/vp build --logLevel warn
@@ -64,10 +64,16 @@ jobs:
 
           ./dist/kenn-forge version
 
+          go build -buildvcs=false -ldflags="$LDFLAGS" -trimpath \
+            -o dist/kenn-forge-relay ./cmd/kenn-forge-relay
+          ./dist/kenn-forge-relay --version
+
           cd dist
           ARCHIVE="forge_${VERSION}_linux_${{ matrix.goarch }}.tar.gz"
           tar czf "$ARCHIVE" kenn-forge
           rm kenn-forge
+          tar czf "forge-relay_${VERSION}_linux_${{ matrix.goarch }}.tar.gz" kenn-forge-relay
+          rm kenn-forge-relay
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -102,7 +108,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          bun-version: "1.4.0"
+          bun-version: "1.4.2"
 
       - name: Build frontend
         run: bun install --frozen-lockfile && cd frontend && ../node_modules/.bin/vp build --logLevel warn
@@ -202,7 +208,7 @@ jobs:
           fi
 
       - name: Create Release
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           files: |
             artifacts/*.tar.gz

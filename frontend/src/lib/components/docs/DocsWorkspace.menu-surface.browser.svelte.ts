@@ -42,7 +42,7 @@ function resolvedSurfaceColor(): string {
 
 describe("docs menu surfaces (browser)", () => {
   it("folder switcher menu computes to the opaque shared popover surface", async () => {
-    renderWorkspace();
+    await renderWorkspace();
 
     const trigger = page.getByRole("combobox", { name: /^Switch folder:/ });
     await expect.element(trigger).toBeEnabled();
@@ -56,7 +56,7 @@ describe("docs menu surfaces (browser)", () => {
   });
 
   it("file actions menu computes to the opaque shared popover surface", async () => {
-    renderWorkspace({ folder: "notes", doc: "README.md" });
+    await renderWorkspace({ folder: "notes", doc: "README.md" });
 
     const trigger = page.getByRole("button", { name: "File actions" });
     await expect.element(trigger).toBeVisible();

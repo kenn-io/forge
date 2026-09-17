@@ -5,9 +5,6 @@ set -eu
 state_dir="tmp/air"
 input_hash_file="$state_dir/openapi-inputs.sha256"
 frontend_spec="frontend/openapi/openapi.yaml"
-frontend_constraints="frontend/src/lib/api/generated/schema-constraints.ts"
-frontend_client_generator="frontend/scripts/generate-api-client.mjs"
-constraints_generator="scripts/generate-schema-constraints.mjs"
 
 mkdir -p "$state_dir"
 
@@ -26,18 +23,7 @@ resolve_go_bin() {
   exit 127
 }
 
-resolve_node_bin() {
-  if command -v node >/dev/null 2>&1; then
-    command -v node
-    return
-  fi
-
-  printf '%s\n' "node runtime not found" >&2
-  exit 127
-}
-
 GO_BIN="$(resolve_go_bin)"
-NODE_BIN="$(resolve_node_bin)"
 exe_suffix=""
 
 if [ "$("$GO_BIN" env GOOS)" = "windows" ]; then
@@ -46,7 +32,7 @@ fi
 
 compute_inputs_hash() {
   {
-    printf '%s\n' "go.mod" "go.sum" "frontend/package.json" "$frontend_client_generator" "$constraints_generator"
+    printf '%s\n' "go.mod" "go.sum"
     find cmd/kenn-forge-openapi internal/server -type f -name '*.go' | sort
   } | while IFS= read -r path; do
     [ -f "$path" ] || continue
@@ -73,14 +59,6 @@ generate_api_artifacts() {
   GOCACHE="${GOCACHE:-/tmp/kenn-forge-gocache}" "$GO_BIN" run ./cmd/kenn-forge-openapi -out "$tmp_frontend_spec" -format yaml
 
   write_if_changed "$frontend_spec" "$tmp_frontend_spec" >/dev/null 2>&1 || true
-
-  "$NODE_BIN" "$frontend_client_generator" openapi/openapi.yaml
-
-  # Numeric bounds come from the shared YAML spec. Generate them after Orval,
-  # which replaces the generated client directory atomically.
-  tmp_constraints="$(mktemp "$state_dir/frontend-schema-constraints.XXXXXX")"
-  "$NODE_BIN" "$constraints_generator" "$frontend_spec" "$tmp_constraints"
-  write_if_changed "$frontend_constraints" "$tmp_constraints" >/dev/null 2>&1 || true
 
   GOCACHE="${GOCACHE:-/tmp/kenn-forge-gocache}" "$GO_BIN" run ./cmd/kenn-forge-openapi -api health -out internal/apiclient/health/openapi.yaml
   GOCACHE="${GOCACHE:-/tmp/kenn-forge-gocache}" "$GO_BIN" generate ./internal/apiclient/...

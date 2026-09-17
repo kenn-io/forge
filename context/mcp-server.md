@@ -1,5 +1,8 @@
 # MCP Companion
 
+- Event excerpts must disclose whether more cached events exist so agents can
+  decide whether to request more context; never silently truncate the list
+  (`internal/mcpserver/tools_items.go::getItemContextOutput`).
 - Agent guidance must prefer cached Forge reads over provider CLI/API reads to
   avoid redundant latency; explain missing or stale evidence before falling back
   (`internal/mcpserver/guidance.go::serverInstructions`).

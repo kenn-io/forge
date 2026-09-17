@@ -223,6 +223,9 @@ func (s *Handler) deliverInitialMessage(
 		func(err error) bool { return errors.Is(err, ErrInitialMessageInputModeNotReady) },
 	)
 	if err != nil {
+		if cause := context.Cause(ctx); cause != nil {
+			err = cause
+		}
 		return status, handoffWaitError(err, "agent input to become ready")
 	}
 	return status, nil

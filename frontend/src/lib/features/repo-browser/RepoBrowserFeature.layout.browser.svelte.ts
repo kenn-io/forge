@@ -44,7 +44,7 @@ function testClient(): GeneratedClient {
 describe("repository browser responsive rails", () => {
   it("reserves the visible history rail above the 900px breakpoint", async () => {
     await page.viewport(940, 700);
-    render(RepoBrowserFeature, {
+    await render(RepoBrowserFeature, {
       props: {
         client: testClient(),
         route,

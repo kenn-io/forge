@@ -774,6 +774,26 @@ deadline as a timeout instead of recording the wrong account. A transient probe
 error or a user interrupt is not a clean deadline: it surfaces the original
 error or cancellation unchanged and never adopts.
 
+## Activity relay
+
+- Relay hints accelerate normal polling; each consumer still uses its own credentials and rate gates.
+  (`internal/github/relay.go::PollRelay`)
+- Webhook ingress ignores check, workflow, and status events; CI stays on normal syncing so check
+  bursts do not crowd out activity. (`internal/activityrelay/http.go::reduce`)
+- Feed repository IDs are GitHub node IDs, matching the durable catalog; numeric REST IDs need
+  a fresh provider resolve and must not become the consumer's lookup key. (`internal/activityrelay/http.go::reduce`)
+- Checkpoint cursors with pending targets before provider work. Keep one sequential poll/drain owner:
+  new deliveries stay on the relay until the next page read. (`internal/db/queries_relay.go::SaveRelayPage`)
+- Unknown-PR checks become durable PR refreshes; an incomplete first fetch must not reduce a retry
+  to checks alone. (`internal/github/relay.go::refreshRelayHint`)
+- A parent ETag does not establish whether comment content changed; child-change hints require
+  unconditional detail reads. (`internal/github/sync.go::getIssueForDetail`)
+- Relay status travels with ordinary sync status and is absent when the consumer is off.
+  Recent activity is a bounded, process-local list of received hints for tracked repositories,
+  not proof that provider refreshes finished. (`internal/github/relay.go::updateRelayStatus`)
+- Relay status alone must not reload provider data; sync-status broadcasts invalidate lists only
+  when a running sync finishes. (`cmd/kenn-forge/provider_startup.go::wireSyncStatus`)
+
 ## Testing Expectations
 
 Changes in this area should usually add or update tests at the boundary where

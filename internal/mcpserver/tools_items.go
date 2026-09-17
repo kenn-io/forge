@@ -51,6 +51,7 @@ type getItemContextOutput struct {
 	PullStatus     *contextPullStatus `json:"pull_status,omitempty"`
 	Body           string             `json:"body,omitempty"`
 	Events         []contextEvent     `json:"events,omitempty"`
+	EventsHasMore  *bool              `json:"events_has_more,omitempty" jsonschema:"true when more cached events exist than returned; omitted when events are not requested; request a larger event_limit up to 100 if needed"`
 	Checks         []contextCheck     `json:"checks,omitempty"`
 	Workspace      *WorkspaceRef      `json:"workspace,omitempty"`
 	Stack          candidateStack     `json:"stack,omitzero"`
@@ -154,6 +155,7 @@ func pullContext(detail PullDetail, in getItemContextInput) getItemContextOutput
 	}
 	if boolDefault(in.IncludeEvents, true) {
 		out.Events = contextEvents(detail.Events, clampLimit(in.EventLimit, 30, 100))
+		out.EventsHasMore = new(len(detail.Events) > len(out.Events))
 	}
 	if boolDefault(in.IncludeChecks, true) {
 		out.Checks = contextChecks(detail.Checks)
@@ -194,6 +196,7 @@ func (s *Server) getIssueContext(ctx context.Context, in getItemContextInput) (g
 	}
 	if boolDefault(in.IncludeEvents, true) {
 		out.Events = contextEvents(detail.Events, clampLimit(in.EventLimit, 30, 100))
+		out.EventsHasMore = new(len(detail.Events) > len(out.Events))
 	}
 	if boolDefault(in.IncludeWorkspace, true) {
 		out.Workspace = detail.Workspace

@@ -139,3 +139,50 @@ func TestListPullContextsRequiresRepositoryAndBoundsPages(t *testing.T) {
 		})
 	}
 }
+
+func TestListPullContextsReportsMoreEvents(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		include   bool
+		count     int
+		limit     int
+		wantCount int
+		wantMore  *bool
+	}{
+		{name: "default truncates", include: true, count: 6, wantCount: 5, wantMore: new(true)},
+		{name: "exact limit", include: true, count: 5, wantCount: 5, wantMore: new(false)},
+		{name: "empty", include: true, wantMore: new(false)},
+		{name: "larger excerpt", include: true, count: 6, limit: 6, wantCount: 6, wantMore: new(false)},
+		{name: "capped excerpt", include: true, count: 101, limit: 200, wantCount: 100, wantMore: new(true)},
+		{name: "not requested", count: 6},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			pull := Pull{Number: 42, Repository: testRepository()}
+			backend := &fakeBackend{
+				listPullsFn: func(context.Context, ItemListQuery) ([]Pull, error) { return []Pull{pull}, nil },
+				getPullFn: func(context.Context, ItemIdentity) (PullDetail, error) {
+					return PullDetail{Pull: &pull, Events: make([]DetailEvent, tc.count)}, nil
+				},
+			}
+			client := connectMCPTestSession(t, newMCPTestServer(t, backend))
+			result, err := client.CallTool(t.Context(), &mcp.CallToolParams{
+				Name: "kenn_forge_list_pull_contexts",
+				Arguments: listPullContextsInput{
+					Repo:          repoFilterInput{Provider: "github", PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget"},
+					IncludeEvents: tc.include, EventLimit: tc.limit,
+				},
+			})
+			require.NoError(err)
+			require.False(result.IsError)
+			encoded, err := json.Marshal(result.StructuredContent)
+			require.NoError(err)
+			var page listPullContextsOutput
+			require.NoError(json.Unmarshal(encoded, &page))
+			require.Len(page.Items, 1)
+			assert.Len(page.Items[0].Events, tc.wantCount)
+			assert.Equal(tc.wantMore, page.Items[0].EventsHasMore)
+		})
+	}
+}

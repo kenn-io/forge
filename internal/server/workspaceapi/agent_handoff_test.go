@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
@@ -147,12 +148,16 @@ func TestAgentHandoffRetriesUntilAgentInputModeIsReady(t *testing.T) {
 		done <- fixture.serve(request)
 	}()
 
+	var pty *initialMessagePTY
 	require.Eventually(func() bool {
-		return fixture.owner.pty != nil && len(fixture.handler.runtime.ListSessions("ws-runtime-token")) == 1
+		fixture.owner.mu.Lock()
+		pty = fixture.owner.pty
+		fixture.owner.mu.Unlock()
+		return pty != nil && len(fixture.handler.runtime.ListSessions("ws-runtime-token")) == 1
 	}, time.Second, 5*time.Millisecond)
 	time.Sleep(50 * time.Millisecond)
-	assert.Empty(fixture.owner.pty.written())
-	fixture.owner.pty.output <- []byte("\x1b[?2004h")
+	assert.Empty(pty.written())
+	pty.output <- []byte("\x1b[?2004h")
 
 	var response *httptest.ResponseRecorder
 	select {
@@ -161,7 +166,7 @@ func TestAgentHandoffRetriesUntilAgentInputModeIsReady(t *testing.T) {
 		require.FailNow("handoff did not complete after input mode became ready")
 	}
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
-	assert.Equal("\x1b[200~triage this\x1b[201~\r", string(fixture.owner.pty.written()))
+	assert.Equal("\x1b[200~triage this\x1b[201~\r", string(pty.written()))
 }
 
 func TestAgentHandoffRejectsInvalidInputBeforeWaiting(t *testing.T) {
@@ -316,4 +321,24 @@ func TestAgentHandoffReportsLaunchedSessionWhenPromptDeliveryTimesOut(t *testing
 	assert.Equal("codex", problem.Details["target_key"])
 	assert.Equal("not_delivered", problem.Details["initial_message_state"])
 	assert.Empty(fixture.owner.pty.written())
+}
+
+func TestAgentHandoffDeliveryPreservesCancellationCause(t *testing.T) {
+	for _, cause := range []error{context.DeadlineExceeded, context.Canceled} {
+		t.Run(cause.Error(), func(t *testing.T) {
+			fixture := newAgentHandoffFixture(t, "ready")
+			ctx, cancel := context.WithCancelCause(t.Context())
+			cancel(cause)
+
+			_, err := fixture.handler.deliverInitialMessage(ctx, InitialMessageRequest{
+				WorkspaceID: "ws-runtime-token", RuntimeSessionKey: "session-1",
+				TargetKey: "codex", Message: "hi",
+			})
+
+			var problem *httpapi.ProblemError
+			require.ErrorAs(t, err, &problem)
+			assert.Equal(t, http.StatusServiceUnavailable, problem.Status)
+			assert.Equal(t, handoffWaitError(cause, "agent input to become ready").Error(), problem.Error())
+		})
+	}
 }

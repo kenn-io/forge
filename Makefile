@@ -17,7 +17,7 @@ GOPATH_FIRST := $(shell go env GOPATH | sed -E 's/^([A-Za-z]:)?([^;:]*).*/\1\2/'
 
 ROBOREV_SRC ?= $(HOME)/code/roborev
 ROBOREV_REF ?= main
-HUMA_CHECK_VERSION := efb469cee12d24fd52640ea05b03ced275bf4370
+HUMA_CHECK_VERSION := 3e1f59e9011e878ec595aa04aebc8a77c5292c4d
 AIR_BIN := $(shell if command -v air >/dev/null 2>&1; then command -v air; \
 	elif [ -n "$$(go env GOBIN)" ] && [ -x "$$(go env GOBIN)/air$(EXE_SUFFIX)" ]; then printf "%s" "$$(go env GOBIN)/air$(EXE_SUFFIX)"; \
 	elif [ -x "$(GOPATH_FIRST)/bin/air$(EXE_SUFFIX)" ]; then printf "%s" "$(GOPATH_FIRST)/bin/air$(EXE_SUFFIX)"; \
@@ -68,6 +68,11 @@ ensure-tmp-dir:
 build: frontend githubapp-frontend
 	go build -ldflags="$(LDFLAGS)" -o $(BINARY) ./cmd/kenn-forge
 	go build -ldflags="$(LDFLAGS)" -o $(GHAPP_BINARY) ./cmd/kenn-forge-github-app
+
+# The relay has no frontend dependency.
+.PHONY: build-relay
+build-relay:
+	go build -ldflags="$(LDFLAGS)" -o tmp/kenn-forge-relay ./cmd/kenn-forge-relay
 
 # Build with optimizations (release)
 build-release: frontend githubapp-frontend
@@ -237,10 +242,8 @@ guardrail-check: check-vite-plus-bin
 
 # Regenerate the checked-in OpenAPI document and generated clients
 api-generate: frontend-deps
-	mkdir -p frontend/src/lib/api/generated
 	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; go run ./cmd/kenn-forge-openapi -out "$$tmp" -format yaml; if [ -f frontend/openapi/openapi.yaml ] && cmp -s "$$tmp" frontend/openapi/openapi.yaml; then rm "$$tmp"; else mv "$$tmp" frontend/openapi/openapi.yaml; fi; trap - EXIT
-	node frontend/scripts/generate-api-client.mjs openapi/openapi.yaml
-	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; node scripts/generate-schema-constraints.mjs frontend/openapi/openapi.yaml "$$tmp"; if [ -f frontend/src/lib/api/generated/schema-constraints.ts ] && cmp -s "$$tmp" frontend/src/lib/api/generated/schema-constraints.ts; then rm "$$tmp"; else mv "$$tmp" frontend/src/lib/api/generated/schema-constraints.ts; fi; trap - EXIT
+	cd frontend && $(VITE_PLUS_FRONTEND_BIN) build --logLevel warn
 	go run ./cmd/kenn-forge-openapi -api health -out internal/apiclient/health/openapi.yaml
 	go generate ./internal/apiclient/...
 

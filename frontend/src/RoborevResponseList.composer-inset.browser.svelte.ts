@@ -18,12 +18,12 @@ import "./app.css";
 import { STORES_KEY } from "./lib/context.js";
 import ResponseList from "./lib/components/roborev/ResponseList.svelte";
 
-function mountComposer(): { wrapper: HTMLElement; unmount: () => void } {
+async function mountComposer(): Promise<{ wrapper: HTMLElement; unmount: () => void }> {
   const wrapper = document.createElement("div");
   wrapper.style.width = "720px";
   document.body.appendChild(wrapper);
 
-  const { unmount } = render(ResponseList, {
+  const { unmount } = await render(ResponseList, {
     target: wrapper,
     context: new Map<symbol, unknown>([
       [
@@ -59,7 +59,7 @@ describe("roborev comment composer", () => {
   });
 
   it("insets the Comment button inside the textarea and keeps typed text clear of it", async () => {
-    mounted = mountComposer();
+    mounted = await mountComposer();
 
     const textarea = document.querySelector<HTMLTextAreaElement>(".comment-textarea")!;
     const submit = document.querySelector<HTMLButtonElement>(".submit-btn")!;

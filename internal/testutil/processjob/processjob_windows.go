@@ -13,7 +13,6 @@ import (
 var (
 	containOnce sync.Once
 	containErr  error
-	jobHandle   windows.Handle
 )
 
 // ContainCurrentProcessTree assigns the current process to a Windows Job
@@ -49,7 +48,6 @@ func ContainCurrentProcessTree() error {
 			containErr = fmt.Errorf("assign current process to job: %w", err)
 			return
 		}
-		jobHandle = job
 	})
 	return containErr
 }

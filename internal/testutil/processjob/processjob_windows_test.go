@@ -5,7 +5,6 @@ package processjob
 import (
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -15,6 +14,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/windows"
+
+	"go.kenn.io/forge/internal/procutil"
 )
 
 const (
@@ -33,7 +34,7 @@ func TestContainCurrentProcessTreeStopsDetachedDescendant(t *testing.T) {
 
 	require := require.New(t)
 	pidFile := filepath.Join(t.TempDir(), "child.pid")
-	owner := exec.Command(
+	owner := procutil.Command(
 		os.Args[0],
 		"-test.run=^TestContainCurrentProcessTreeStopsDetachedDescendant$",
 	)
@@ -72,7 +73,7 @@ func runProcessJobOwnerHelper() {
 	}
 	args := os.Args
 	pidFile := args[len(args)-1]
-	child := exec.Command(
+	child := procutil.Command(
 		os.Args[0],
 		"-test.run=^TestContainCurrentProcessTreeStopsDetachedDescendant$",
 	)

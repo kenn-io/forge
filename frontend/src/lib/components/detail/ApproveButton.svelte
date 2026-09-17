@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button, Card, Menu, MenuTrigger, MenuContent, MenuItem } from "@kenn-io/kit-ui";
+  import { Button, Card, autoReposition, dismissable, floatingPopoverStyle } from "@kenn-io/kit-ui";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import CheckIcon from "@lucide/svelte/icons/check";
   import { Effect } from "effect";
@@ -74,6 +74,9 @@
   let expanded = $state(false);
   let reviewMenuOpen = $state(false);
   let requestChangesForm = $state(false);
+  let menuTrigger = $state<HTMLButtonElement>();
+  let menuEl = $state<HTMLUListElement>();
+  let menuStyle = $state("");
   let body = $state("");
   let submitting = $state(false);
   let submittingAction = $state<"approve" | "request_changes" | null>(null);
@@ -232,6 +235,67 @@
     );
   }
 
+  function positionReviewMenu(): void {
+    if (!menuTrigger || !menuEl) return;
+    menuStyle = floatingPopoverStyle({
+      trigger: menuTrigger.getBoundingClientRect(),
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      popoverWidth: menuEl.offsetWidth,
+      popoverHeight: menuEl.offsetHeight,
+      align: "end",
+      triggerGap: 2,
+    });
+  }
+
+  function attachMenuTrigger(node: HTMLElement): () => void {
+    const button = node.querySelector("button");
+    menuTrigger = button ?? undefined;
+    button?.setAttribute("aria-haspopup", "menu");
+    function handleKeydown(event: KeyboardEvent): void {
+      if (event.key === "ArrowDown" && !disabled && !submitting) {
+        event.preventDefault();
+        reviewMenuOpen = true;
+      }
+    }
+    node.addEventListener("keydown", handleKeydown);
+    return () => {
+      node.removeEventListener("keydown", handleKeydown);
+      menuTrigger = undefined;
+    };
+  }
+
+  function portalReviewMenu(node: HTMLElement): () => void {
+    const host = sectionEl?.closest<HTMLElement>(".kit-modal-panel") ?? document.body;
+    host.appendChild(node);
+    return () => node.remove();
+  }
+
+  $effect(() => {
+    if (!reviewMenuOpen) return;
+    const execution = untrack(() => runtime.runCommand(
+      Effect.promise(() => tick()).pipe(
+        Effect.andThen(Effect.sync(() => {
+          positionReviewMenu();
+          menuEl?.querySelector("button")?.focus();
+        })),
+      ),
+      { operation: "open pull request review menu", safeContext: {}, onFailure: () => {} },
+    ));
+    const cleanups = [
+      dismissable({
+        owners: () => [sectionEl, menuEl],
+        dismiss: () => { reviewMenuOpen = false; },
+        escapeFocus: () => menuTrigger,
+      }),
+      autoReposition(() => [menuEl, menuTrigger], positionReviewMenu),
+    ];
+    return () => {
+      execution.interrupt();
+      cleanups.forEach((cleanup) => cleanup());
+    };
+  });
+
   function openReviewForm(requestChanges = false): void {
     if (disabled || submitting) return;
     if (!expanded) {
@@ -243,9 +307,10 @@
   }
 
   function handleDocumentPointerDown(event: PointerEvent): void {
-    if (!expanded || submitting) return;
-    if (event.target instanceof Node && !sectionEl?.contains(event.target)) {
+    if (submitting) return;
+    if (event.target instanceof Node && !sectionEl?.contains(event.target) && !menuEl?.contains(event.target)) {
       expanded = false;
+      reviewMenuOpen = false;
     }
   }
 </script>
@@ -253,7 +318,7 @@
 <svelte:document onpointerdowncapture={handleDocumentPointerDown} />
 
 <div bind:this={sectionEl} class={["approve-section", (expanded || reviewMenuOpen) && "approve-section--open"]}>
-  <div class={["review-buttons", canRequestChanges && "review-buttons--split"]}>
+  <div class={["review-buttons", `review-buttons--${size}`, canRequestChanges && "review-buttons--split"]}>
     <Button
       class="btn btn--approve"
       onclick={() => {
@@ -275,30 +340,50 @@
       <CheckIcon size="14" strokeWidth="2.4" aria-hidden="true" />
     </Button>
     {#if canRequestChanges}
-      <Menu bind:open={reviewMenuOpen} align="end">
-        <MenuTrigger
-          class="review-options review-options--{size}"
+      <span class="review-options" {@attach attachMenuTrigger}>
+        <Button
+          class="review-options-button"
           ariaLabel="Review options"
           title={title ?? "More review actions"}
           disabled={disabled || submitting}
+          ariaExpanded={reviewMenuOpen}
+          tone="success"
+          surface="soft"
+          {size}
+          onclick={() => { reviewMenuOpen = !reviewMenuOpen; }}
         >
-          <ChevronDownIcon size="14" aria-hidden="true" />
-        </MenuTrigger>
-        <MenuContent ariaLabel="Review actions">
-          <MenuItem
-            closeOnSelect={false}
-            disabled={disabled || submitting}
-            onselect={() => {
-              reviewMenuOpen = false;
-              openReviewForm(true);
-            }}
-          >
-            Request changes
-          </MenuItem>
-        </MenuContent>
-      </Menu>
+          <ChevronDownIcon size="12" strokeWidth="2" aria-hidden="true" />
+        </Button>
+      </span>
     {/if}
   </div>
+
+  {#if reviewMenuOpen}
+    <ul
+      bind:this={menuEl}
+      class="review-menu kit-popover-card"
+      role="menu"
+      aria-label="Review actions"
+      style={menuStyle}
+      {@attach portalReviewMenu}
+    >
+      <li role="none">
+        <button
+          type="button"
+          role="menuitem"
+          disabled={disabled || submitting}
+          onclick={() => {
+            reviewMenuOpen = false;
+            openReviewForm(true);
+          }}
+          onkeydown={(event) => {
+            if (event.key === "Tab") reviewMenuOpen = false;
+            else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) event.preventDefault();
+          }}
+        >Request changes</button>
+      </li>
+    </ul>
+  {/if}
 
   {#if expanded}
     <div class="approve-popover" role="dialog" aria-label="Submit pull request review">
@@ -314,6 +399,7 @@
         <div class="approve-actions">
         <Button
           class="btn btn--secondary"
+          {size}
           onclick={() => { expanded = false; }}
           disabled={submitting}
           tone="neutral"
@@ -324,6 +410,7 @@
         {#if canRequestChanges}
           <Button
             class="btn btn--request-changes"
+          {size}
             onclick={handleRequestChanges}
             disabled={submitting || disabled || body.trim() === ""}
             tone="danger"
@@ -338,6 +425,7 @@
         {#if !requestChangesForm}
           <Button
             class="btn btn--primary btn--green"
+          {size}
             onclick={handleApprove}
             disabled={submitting || disabled}
             tone="success"
@@ -355,28 +443,70 @@
 
 <style>
   .review-buttons {
+    --review-options-width: var(--kit-control-height, 28px);
     display: inline-flex;
-    align-items: stretch;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .review-buttons--sm {
+    --review-options-width: 24px;
   }
 
   .review-buttons--split :global(.btn--approve) {
-    border-start-end-radius: 0;
-    border-end-end-radius: 0;
+    border-radius: var(--kit-control-radius, var(--radius-sm)) 0 0 var(--kit-control-radius, var(--radius-sm));
   }
 
-  .review-buttons :global(.review-options) {
-    height: 100%;
-    border-inline-start: 0;
-    border-start-start-radius: 0;
-    border-end-start-radius: 0;
-    color: color-mix(in srgb, var(--accent-green) 72%, var(--text-primary));
-    background: color-mix(in srgb, var(--accent-green) 12%, transparent);
-    border-color: color-mix(in srgb, var(--accent-green) 30%, transparent);
+  .review-options {
+    display: inline-flex;
+    flex: 0 0 auto;
   }
 
-  .review-buttons :global(.review-options--sm) {
-    min-height: var(--kit-control-height-sm, 24px);
-    padding: 2px 6px;
+  .review-options :global(.review-options-button) {
+    flex-shrink: 0;
+    width: var(--review-options-width);
+    padding: 0;
+    border-left: 0;
+    border-radius: 0 var(--kit-control-radius, var(--radius-sm)) var(--kit-control-radius, var(--radius-sm)) 0;
+  }
+
+  .review-menu {
+    position: fixed;
+    z-index: var(--z-popover, 1001);
+    min-width: 180px;
+    max-width: calc(100vw - 16px);
+    margin: 0;
+    padding: var(--space-2);
+    list-style: none;
+  }
+
+  .review-menu button {
+    width: 100%;
+    min-height: 30px;
+    padding: 0 var(--space-3);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-primary);
+    font: inherit;
+    font-size: var(--font-size-xs);
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .review-menu button:hover:not(:disabled),
+  .review-menu button:focus-visible {
+    background: var(--bg-surface-hover);
+  }
+
+  .review-menu button:focus-visible {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: -1px;
+  }
+
+  .review-menu button:disabled {
+    color: var(--text-faint);
+    cursor: default;
   }
 
   .approve-section {

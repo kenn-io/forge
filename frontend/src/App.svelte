@@ -930,6 +930,7 @@
   };
 
   let drawerItem = $state<DrawerItem | null>(null);
+  let activitySelectionRevealKey = $state(0);
   // Owned here for the same reason drawerItem is: the Activity selection lives
   // in the page's query string, and only this component writes it.
   let commitItem = $state<ActivityCommitSelection | null>(null);
@@ -1026,6 +1027,7 @@
     }
     drawerItem = { ...item, detailTab: "conversation" };
     commitItem = null;
+    activitySelectionRevealKey += 1;
     updateDrawerURL(drawerItem);
   }
 
@@ -1455,6 +1457,7 @@
              this view get no controller (structural eligibility). -->
         <ActivityFeedView
           {drawerItem}
+          selectionRevealKey={activitySelectionRevealKey}
           onSelectItem={handleActivitySelect}
           onCloseDrawer={closeDrawer}
           detailTab={drawerItem?.detailTab ?? "conversation"}

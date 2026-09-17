@@ -104,7 +104,7 @@ function issueRow(owner: string, name: string, number: number, title: string) {
 const pulls = [pull("acme", "widgets", 42, "Add browser regression coverage")];
 const issues = [issueRow("acme", "widgets", 7, "Theme toggle does not stick")];
 
-function activityEvent(): unknown {
+function activityEvent() {
   return {
     id: "pr:42",
     cursor: "pr:42",
@@ -235,20 +235,58 @@ describe("view navigation", () => {
     expect(window.location.search).toContain("selected=pr%3A");
   });
 
-  it.each([
-    { source: "pr:42", enabled: "pr", target: "issue:7", number: 7, label: "Issues", detail: ".issue-detail" },
-    { source: "issue:7", enabled: "issue", target: "pr:42", number: 42, label: "PRs", detail: ".pull-detail" },
-  ])("opening $label from Activity keeps Activity selected and enables its filter", async (testCase) => {
+  it.each(
+    [
+      { source: "pr:42", enabled: "pr", target: "issue:7", number: 7, label: "Issues", detail: ".issue-detail" },
+      { source: "issue:7", enabled: "issue", target: "pr:42", number: 42, label: "PRs", detail: ".pull-detail" },
+    ].flatMap((testCase) => ["flat", "threaded"].map((view) => ({ ...testCase, view }))),
+  )("opening $label from $view Activity enables its filter and scrolls to the selected row", async (testCase) => {
+    const fillerItems = Array.from({ length: 60 }, (_, index) => ({
+      ...activityEvent(),
+      id: index === 0 ? testCase.source : `${testCase.enabled}:${100 + index}`,
+      item_type: testCase.enabled,
+      item_number: index === 0 ? Number(testCase.source.split(":")[1]) : 100 + index,
+      item_title: `Activity item ${index}`,
+    }));
+    const targetItem = {
+      ...activityEvent(),
+      id: testCase.target,
+      item_type: testCase.target.split(":")[0],
+      item_number: testCase.number,
+      created_at: "2026-03-01T14:00:00Z",
+    };
+    let linkClicked = false;
+    let releaseActivity: (() => void) | undefined;
     mounted = await mountBrowserApp(
-      `/?selected=${testCase.source}&provider=github&repo_path=acme%2Fwidgets&item_types=${testCase.enabled}&event_types=comment`,
+      `/?selected=${testCase.source}&provider=github&repo_path=acme%2Fwidgets&item_types=${testCase.enabled}&event_types=comment&view=${testCase.view}`,
       {
         overrides: [
           (req) => {
-            if (
-              req.method === "POST" &&
-              req.url.pathname === `/api/v1/repo/github/acme/widgets/resolve/${testCase.number}`
-            ) {
-              return jsonResponse({ repo_tracked: true, item_type: testCase.target.split(":")[0] });
+            const resolved = req.url.pathname.match(/^\/api\/v1\/repo\/github\/acme\/widgets\/resolve\/(7|42)$/);
+            if (req.method === "POST" && resolved) {
+              linkClicked = true;
+              return jsonResponse({ repo_tracked: true, item_type: resolved[1] === "42" ? "pr" : "issue" });
+            }
+            if (req.method === "GET" && req.url.pathname === "/api/v1/activity") {
+              if (!linkClicked) return jsonResponse({ capped: false, items: fillerItems });
+              return new Response(
+                new ReadableStream({
+                  start(controller) {
+                    releaseActivity = () => {
+                      controller.enqueue(
+                        new TextEncoder().encode(
+                          JSON.stringify({
+                            capped: false,
+                            items: [...fillerItems, targetItem],
+                          }),
+                        ),
+                      );
+                      controller.close();
+                    };
+                  },
+                }),
+                { headers: { "content-type": "application/json" } },
+              );
             }
             return null;
           },
@@ -268,6 +306,30 @@ describe("view navigation", () => {
     await expect
       .element(page.getByRole("switch", { name: testCase.enabled === "pr" ? "PRs" : "Issues", exact: true }))
       .toBeChecked();
+
+    await vi.waitFor(() => expect(releaseActivity).toBeDefined(), WAIT);
+    if (testCase.target === "pr:42") {
+      await page.getByRole("tab", { name: "Files changed", exact: true }).click();
+      await page.getByRole("tab", { name: "Conversation", exact: true }).click();
+    }
+    releaseActivity!();
+    await vi.waitFor(() => {
+      const row = document.querySelector<HTMLElement>(".activity-feed .selected");
+      expect(row?.textContent).toContain(`#${testCase.number}`);
+      const viewport = row!.closest<HTMLElement>(".kit-scrollbox__viewport")!;
+      expect(viewport.scrollTop).toBeGreaterThan(0);
+      expect(row!.getBoundingClientRect().top).toBeGreaterThanOrEqual(viewport.getBoundingClientRect().top);
+      expect(row!.getBoundingClientRect().bottom).toBeLessThanOrEqual(viewport.getBoundingClientRect().bottom + 1);
+    }, WAIT);
+
+    const viewport = document.querySelector<HTMLElement>(".activity-feed .kit-scrollbox__viewport")!;
+    await page.getByRole("link", { name: `#${testCase.source.split(":")[1]}`, exact: true }).click();
+    await vi.waitFor(() => {
+      expect(document.querySelector(".activity-feed .selected")?.textContent).toContain(
+        `#${testCase.source.split(":")[1]}`,
+      );
+      expect(viewport.scrollTop).toBe(0);
+    }, WAIT);
   });
 
   it("keeps Activity filter shortcuts and Escape isolated from the open detail pane", async () => {

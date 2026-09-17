@@ -2,10 +2,10 @@
 
 Kenn Forge can use a shared **activity relay** to notice GitHub changes sooner.
 GitHub sends the relay a webhook, a message saying that something changed.
-The relay passes that change to the connected Forges right away, and each
-Forge fetches the changed items from GitHub using its own credentials.
+The relay tells connected Forges what changed, and each Forge fetches those
+items from GitHub using its own credentials.
 
-The relay stores nothing. It passes on which repository and item changed and
+The relay writes no activity to disk. It passes on which repository and item changed and
 never keeps pull request titles, comments, code, or GitHub access tokens.
 Everyone can keep their existing GitHub App or token.
 
@@ -45,16 +45,18 @@ button is hidden when the relay is off.
 
 ### GitHub Actions checks
 
-When the webhook includes `workflow_run`, Forge collects check updates for
-one minute per pull request, then refreshes its check results. More events
-for that PR share the same refresh; they do not restart the timer. An event
-received during a refresh schedules another pass after at least a minute.
-Only checks are fetched, and the usual GitHub API limits still apply.
+When the webhook includes `workflow_run`, the relay collects check updates
+in one-minute batches. Each batch sends just one hint per repository and
+pull request, even if many workflows reported changes. Repeated events do
+not restart the timer. Forges receive the batch, not the individual events.
+
+Forge refreshes check results when the hint arrives, without another timed
+wait. Only checks are fetched, and the usual GitHub API limits still apply.
 
 This works for open PRs already in Forge when GitHub includes their PR
 numbers in the event. Runs with no PR reference and PRs Forge has not synced
-yet use normal syncing. Other PR and issue updates do not wait for this
-one-minute window. No extra Forge configuration is needed.
+yet use normal syncing. Other PR and issue updates pass through the relay
+immediately. No extra Forge configuration is needed.
 
 ## Run a shared relay
 
@@ -170,9 +172,9 @@ delete, repository, workflow_run
 
 Use `workflow_run` for GitHub Actions updates. Leave `check_run`,
 `check_suite`, `status`, and `workflow_job` off; the relay ignores them.
-When adding workflow events to an existing relay, upgrade the connected
-Forges first so they batch check refreshes, then upgrade the relay and add
-the webhook subscription.
+When adding workflow events to an existing relay, upgrade both the relay
+and connected Forges before adding the webhook subscription. The relay
+batches the events; Forge processes the resulting hints without another delay.
 
 A GitHub App can use the same webhook URL and secret. Configure its events
 and repository access in the App settings. Each Forge can continue using a
@@ -201,9 +203,9 @@ The relay keeps no data. Each change is passed to the connected Forges and
 discarded. Repository IDs and timing still reveal activity in transit, so keep
 request-body recording disabled in the proxy and monitoring tools.
 
-A Forge that is disconnected when a change happens does not receive it later.
-Ordinary syncing picks up the change on its next pass, so a relay or Forge
-restart needs no recovery step. Refreshes that cannot run right away, for
+A Forge that misses a hint catches up through ordinary syncing; the relay
+does not replay past hints. Pending check batches are held only in memory
+and are discarded on restart. Refreshes that cannot run right away, for
 example because the GitHub API budget is spent, are dropped for the same
 reason.
 

@@ -790,9 +790,9 @@ error or cancellation unchanged and never adopts.
   coalesces repeats for one target; a single worker refreshes ready hints so provider work
   never stalls the stream. A hint that cannot run now because of budget, cooldown, or catalog
   state is dropped and left to ordinary syncing. (`internal/github/relay.go::relayQueue`)
-- Checks hints wait one minute from the first pending event per PR; repeats do not postpone
-  the deadline. Remove pending work before refreshing so concurrent events get a new window.
-  Ordinary hints bypass waiting checks. (`internal/github/relay.go::relayQueue`)
+- Batch checks in the relay, never in consumers: one hint per repository/PR per minute,
+  with repeats unable to postpone delivery. Keep pending checks separate from immediate
+  activity and discard them on shutdown. (`internal/activityrelay/broadcast.go::Broadcaster`)
 - Checks refresh only known open PRs with a head SHA; never upgrade them to full PR syncs.
   (`internal/github/relay.go::refreshRelayHint`)
 - A parent ETag does not establish whether comment content changed; child-change hints require

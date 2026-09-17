@@ -173,7 +173,7 @@ func TestRelayTargetedChecksAndBudgetGate(t *testing.T) {
 	assert.Equal(int32(1), provider.getCombinedCalls.Load(), "closed, unknown, and headless PRs do not spend CI budget")
 }
 
-func TestRelayChecksBatchAndKeepEventsDuringRefresh(t *testing.T) {
+func TestRelayChecksRefreshImmediatelyAndKeepEventsDuringRefresh(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		require := require.New(t)
@@ -209,24 +209,13 @@ func TestRelayChecksBatchAndKeepEventsDuringRefresh(t *testing.T) {
 		hint := activityrelay.Hint{Provider: "github", Host: "github.com", RepositoryID: "R_project", Target: activityrelay.PullRequestChecks, Number: 7}
 		begin := time.Now()
 		queue.push(hint)
-		time.Sleep(59 * time.Second)
-		for range 100 {
-			queue.push(hint)
-		}
-		synctest.Wait()
-		assert.Empty(started, "a burst waits for one minute")
-		time.Sleep(time.Second)
 		first := <-started
-		assert.Equal(time.Minute, first.Sub(begin), "repeated hints do not postpone the refresh")
+		assert.Equal(begin, first, "Forge must not add another delay after the relay batch")
 		queue.push(hint) // A completion arriving during the provider request must survive it.
 		finish <- struct{}{}
 		<-refreshed
-		time.Sleep(59 * time.Second)
-		synctest.Wait()
-		assert.Empty(started, "the trailing event must wait another minute")
-		time.Sleep(time.Second)
 		second := <-started
-		assert.Equal(time.Minute, second.Sub(first))
+		assert.Equal(first, second, "a new hint received during a request stays ready to run")
 		finish <- struct{}{}
 		<-refreshed
 		time.Sleep(time.Minute)
@@ -247,25 +236,22 @@ func TestRelayQueueCoalescesAndSkipsDisabledSync(t *testing.T) {
 	hint := activityrelay.Hint{Provider: "github", Host: "github.com", RepositoryID: "R_test_project", Target: activityrelay.Issue, Number: 9}
 	other := hint
 	other.Number = 10
-	checks := hint
-	checks.Target = activityrelay.PullRequestChecks
-	queue.push(checks)
 	queue.push(hint)
 	queue.push(hint)
 	queue.push(other)
-	first, _, ok := queue.pop()
+	first, ok := queue.pop()
 	require.True(ok)
-	second, _, ok := queue.pop()
+	second, ok := queue.pop()
 	require.True(ok)
-	_, _, ok = queue.pop()
+	_, ok = queue.pop()
 	assert.False(ok, "repeated hints for one target coalesce while waiting")
-	assert.Equal([]activityrelay.Hint{hint, other}, []activityrelay.Hint{first, second}, "pending checks do not delay ordinary activity")
+	assert.Equal([]activityrelay.Hint{hint, other}, []activityrelay.Hint{first, second})
 
 	database := openTestDB(t)
 	syncer := NewSyncer(nil, database, nil, []RepoRef{{Platform: platform.KindGitHub, PlatformHost: "github.com", PlatformExternalID: "R_test_project", Owner: "team", Name: "project"}}, time.Minute, nil, nil)
 	syncer.DisableSync()
 	syncer.receiveRelayHint(hint, 1, queue)
-	_, _, ok = queue.pop()
+	_, ok = queue.pop()
 	assert.False(ok, "hints are ignored while syncing is disabled")
 	assert.Nil(syncer.Status().Relay)
 }

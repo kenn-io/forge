@@ -1,14 +1,24 @@
 import { Effect } from "effect";
 import { SvelteSet } from "svelte/reactivity";
-import type { QuickAction } from "../api/types.js";
+import type { QuickAction, RuntimeSession } from "../api/types.js";
 import type { AppRuntime } from "../app/runtime.js";
 import { executeGeneratedApiRequest } from "../api/generated-api.js";
 import { showFlash } from "./flash.svelte.js";
 
-const pendingHandoffs = new SvelteSet<{ workspaceId: string }>();
+const pendingHandoffs = new SvelteSet<{ workspaceId: string; sessionKey?: string }>();
 
 export function workspaceQuickActionPending(workspaceId: string): boolean {
   return [...pendingHandoffs].some((handoff) => handoff.workspaceId === workspaceId);
+}
+
+// A completed POST does not mean the terminal view has received the session.
+// Keep its empty-state launcher suppressed until a runtime read includes it.
+export function observeWorkspaceQuickActionSessions(workspaceId: string, sessions: readonly RuntimeSession[]): void {
+  for (const handoff of pendingHandoffs) {
+    if (handoff.workspaceId === workspaceId && sessions.some((session) => session.key === handoff.sessionKey)) {
+      pendingHandoffs.delete(handoff);
+    }
+  }
 }
 
 /**
@@ -19,7 +29,7 @@ export function workspaceQuickActionPending(workspaceId: string): boolean {
  * ordinary workspace runtime events.
  */
 export function runWorkspaceQuickAction(runtime: AppRuntime, workspaceId: string, action: QuickAction): void {
-  const handoff = { workspaceId };
+  const handoff: { workspaceId: string; sessionKey?: string } = { workspaceId };
   pendingHandoffs.add(handoff);
   const program = executeGeneratedApiRequest("POST workspace agent handoff", (client, signal) =>
     client.WorkspacesService.launchWorkspaceAgentHandoff(
@@ -30,6 +40,7 @@ export function runWorkspaceQuickAction(runtime: AppRuntime, workspaceId: string
   ).pipe(
     Effect.tap((result) =>
       Effect.sync(() => {
+        handoff.sessionKey = result.session.key;
         if (result.initial_message.state !== "delivered") {
           showFlash(`"${action.label}" launched, but the prompt delivery is ${result.initial_message.state}.`, {
             tone: "warning",
@@ -39,7 +50,7 @@ export function runWorkspaceQuickAction(runtime: AppRuntime, workspaceId: string
     ),
     Effect.ensuring(
       Effect.sync(() => {
-        pendingHandoffs.delete(handoff);
+        if (handoff.sessionKey === undefined) pendingHandoffs.delete(handoff);
       }),
     ),
   );

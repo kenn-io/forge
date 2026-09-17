@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { workspaceQuickActionPending } from "../../stores/workspace-quick-actions.js";
+  import { observeWorkspaceQuickActionSessions, workspaceQuickActionPending } from "../../stores/workspace-quick-actions.js";
   import { EmptyState, IconButton, Spinner } from "@kenn-io/kit-ui";
   import { Context, Deferred, Duration, Effect, Fiber, Option, Schedule, Stream } from "effect";
   import PlayIcon from "@lucide/svelte/icons/play";
@@ -2240,6 +2240,7 @@
           sessions: data.sessions.length,
         });
         if (!isCurrentWorkspace(id, hostKey)) return null;
+        if (hostKey === undefined) observeWorkspaceQuickActionSessions(id, data.sessions);
         const fingerprint = JSON.stringify(data);
         const acceptedLaunch = pendingWorkspaceLaunch(id, hostKey);
         if (

@@ -2066,6 +2066,14 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 	} else {
 		conds = append(conds, "r.lifecycle_state = 'active'")
 	}
+	if opts.Label != "" {
+		conds = append(conds, `EXISTS (
+			SELECT 1 FROM forge_merge_request_labels mrl
+			JOIN forge_labels l ON l.id = mrl.label_id
+			WHERE mrl.merge_request_id = p.id AND l.name = ?
+		)`)
+		args = append(args, opts.Label)
+	}
 	if opts.KanbanState != "" {
 		if opts.KanbanState == string(KanbanStatusNew) {
 			conds = append(conds, "COALESCE(k.status, 'new') = ?")

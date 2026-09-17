@@ -46,6 +46,7 @@ type contextCheck struct {
 }
 
 type getItemContextOutput struct {
+	Labels         []string           `json:"labels,omitempty" jsonschema:"cached PR label names"`
 	Item           itemRef            `json:"item"`
 	PullStatus     *contextPullStatus `json:"pull_status,omitempty"`
 	Body           string             `json:"body,omitempty"`
@@ -143,7 +144,7 @@ func (s *Server) getPullContext(ctx context.Context, in getItemContextInput) (ge
 func pullContext(detail PullDetail, in getItemContextInput) getItemContextOutput {
 	pull := *detail.Pull
 	out := getItemContextOutput{
-		Item: pull.itemRef(), Body: pull.Body,
+		Item: pull.itemRef(), Body: pull.Body, Labels: pull.Labels,
 		PullStatus: &contextPullStatus{
 			MergeableState: firstNonEmpty(pull.MergeableState, "unknown"),
 			ReviewDecision: pull.ReviewDecision, CIStatus: pull.CIStatus, HeadSHA: pull.HeadSHA,

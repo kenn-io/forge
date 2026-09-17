@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json/v2"
 	"errors"
-	"fmt"
+	"log/slog"
 	"maps"
 	"net/http"
 	"strings"
@@ -116,7 +116,7 @@ func (b mcpBackend) ListPulls(
 	}
 	rows, err := b.server.pullAPI.ListService(ctx, pullapi.ListQuery{
 		Repo: mcpRepositoryFilter(query.Repository), State: query.State,
-		Text: query.Text, Limit: query.Limit, Offset: query.Offset,
+		Text: query.Text, Label: query.Label, Limit: query.Limit, Offset: query.Offset,
 	})
 	if err != nil {
 		return nil, mcpBackendError(err)
@@ -128,11 +128,7 @@ func (b mcpBackend) ListPulls(
 	}
 	out := make([]mcpserver.Pull, 0, len(rows))
 	for _, row := range rows {
-		pull, err := mcpPull(row)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, pull)
+		out = append(out, mcpPull(row))
 	}
 	return out, nil
 }
@@ -189,6 +185,7 @@ func (b mcpBackend) GetPull(
 	}
 	if detail.MergeRequest != nil {
 		pull := mcpserver.Pull{
+			Labels:         mcpLabelNames(detail.MergeRequest.Labels),
 			MergeableState: detail.MergeRequest.MergeableState,
 			ReviewDecision: detail.MergeRequest.ReviewDecision,
 			CIStatus:       detail.MergeRequest.CIStatus, HeadSHA: detail.MergeRequest.PlatformHeadSHA,
@@ -996,14 +993,16 @@ func mcpWorkspaceRef(ref *workspaceapi.WorkspaceRef) *mcpserver.WorkspaceRef {
 	return &mcpserver.WorkspaceRef{ID: ref.ID, Status: ref.Status}
 }
 
-func mcpPull(row pullapi.MergeRequestResponse) (mcpserver.Pull, error) {
+func mcpPull(row pullapi.MergeRequestResponse) mcpserver.Pull {
 	var checks []db.CICheck
 	if strings.TrimSpace(row.CIChecksJSON) != "" {
 		if err := json.Unmarshal([]byte(row.CIChecksJSON), &checks); err != nil {
-			return mcpserver.Pull{}, fmt.Errorf("decode cached checks for PR %d: %w", row.Number, err)
+			slog.Warn("decode cached pull checks failed", "pull_number", row.Number, "err", err)
+			checks = nil
 		}
 	}
 	pull := mcpserver.Pull{
+		Labels:         mcpLabelNames(row.Labels),
 		MergeableState: row.MergeableState, ReviewDecision: row.ReviewDecision,
 		CIStatus: row.CIStatus, HeadSHA: row.PlatformHeadSHA, Checks: mcpChecks(checks),
 		Number: row.Number, Title: row.Title, State: string(row.State),
@@ -1016,7 +1015,15 @@ func mcpPull(row pullapi.MergeRequestResponse) (mcpserver.Pull, error) {
 	if row.Stack != nil {
 		pull.Stack = &mcpserver.Stack{Position: row.Stack.Position, Size: row.Stack.Size}
 	}
-	return pull, nil
+	return pull
+}
+
+func mcpLabelNames(labels []db.Label) []string {
+	names := make([]string, 0, len(labels))
+	for _, label := range labels {
+		names = append(names, label.Name)
+	}
+	return names
 }
 
 func mcpChecks(checks []db.CICheck) []mcpserver.Check {

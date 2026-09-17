@@ -4,6 +4,10 @@
 
 export type ListPullsParams = {
   /**
+   * Exact case-sensitive label name; applied before pagination.
+   */
+  label?: string;
+  /**
    * Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories.
    */
   repo?: string;

@@ -22672,6 +22672,7 @@ func (c *Client) ListPullsWithResponse(ctx context.Context, options *ListPullsRe
 	queryEncoding := map[string]runtime.QueryEncoding{
 		"involves_me": {Style: "form", Explode: &[]bool{false}[0]},
 		"kanban":      {Style: "form", Explode: &[]bool{false}[0]},
+		"label":       {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":       {Style: "form", Explode: &[]bool{false}[0]},
 		"offset":      {Style: "form", Explode: &[]bool{false}[0]},
 		"q":           {Style: "form", Explode: &[]bool{false}[0]},
@@ -33054,6 +33055,7 @@ func (c *Client) ListPullsRaw(ctx context.Context, httpClient *http.Client, opti
 	queryEncoding := map[string]runtime.QueryEncoding{
 		"involves_me": {Style: "form", Explode: &[]bool{false}[0]},
 		"kanban":      {Style: "form", Explode: &[]bool{false}[0]},
+		"label":       {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":       {Style: "form", Explode: &[]bool{false}[0]},
 		"offset":      {Style: "form", Explode: &[]bool{false}[0]},
 		"q":           {Style: "form", Explode: &[]bool{false}[0]},
@@ -39090,6 +39092,7 @@ func NewListPullsRequest(ctx context.Context, baseURL string, options *ListPulls
 	queryEncoding := map[string]runtime.QueryEncoding{
 		"involves_me": {Style: "form", Explode: &[]bool{false}[0]},
 		"kanban":      {Style: "form", Explode: &[]bool{false}[0]},
+		"label":       {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":       {Style: "form", Explode: &[]bool{false}[0]},
 		"offset":      {Style: "form", Explode: &[]bool{false}[0]},
 		"q":           {Style: "form", Explode: &[]bool{false}[0]},
@@ -44036,6 +44039,9 @@ type ListUserRepositoriesQuery struct {
 }
 
 type ListPullsQuery struct {
+	// Label Exact case-sensitive label name; applied before pagination.
+	Label *string `json:"label,omitempty"`
+
 	// Repo Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories.
 	Repo    *string `json:"repo,omitempty"`
 	State   *string `json:"state,omitempty"`

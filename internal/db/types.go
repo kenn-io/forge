@@ -845,6 +845,7 @@ type WorkflowStateListRow struct {
 }
 
 type ListMergeRequestsOpts struct {
+	Label             string
 	RepoID            int64
 	PlatformHost      string
 	RepoOwner         string

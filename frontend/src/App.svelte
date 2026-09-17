@@ -104,6 +104,7 @@
     isMobilePage,
     getDetailTab,
     getSelectedPRFromRoute,
+    buildItemRoute,
     buildMobileWorkspaceRoute,
     buildMobileWorkspaceItemRoute,
     type Page,
@@ -472,7 +473,7 @@
     initSidebar();
     const appEl = document.getElementById("app")!;
     const cleanupContainer = initContainerObserver(runtime, appEl);
-    const cleanupItemRefs = initItemRefHandler(appRuntime);
+    const cleanupItemRefs = initItemRefHandler(appRuntime, handleItemReference);
     const cancelStartup = runAppStartup(runtime, {
       stores: startupStores,
       beforeInitialLoad: () => syncGlobalRepoWithRoute(startupStores),
@@ -1006,6 +1007,24 @@
       ...selectedItem,
       detailTab: "conversation",
     };
+    commitItem = null;
+    updateDrawerURL(drawerItem);
+  }
+
+  function handleItemReference(item: RoutableItemRef): void {
+    if (getPage() !== "activity") {
+      navigate(buildItemRoute(item));
+      return;
+    }
+
+    const activity = appComposition.stores.activity;
+    const enabledTypes = activity.getEnabledItemTypes();
+    if (!enabledTypes.has(item.itemType)) {
+      activity.setEnabledItemTypes(new Set([...enabledTypes, item.itemType]));
+      activity.syncToURL();
+      activity.loadActivity();
+    }
+    drawerItem = { ...item, detailTab: "conversation" };
     commitItem = null;
     updateDrawerURL(drawerItem);
   }

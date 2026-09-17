@@ -51,7 +51,7 @@ function pull(owner: string, name: string, number: number, title: string) {
     Author: "alice",
     State: "open",
     IsDraft: false,
-    Body: "",
+    Body: "Related issue #7.",
     HeadBranch: "feature/x",
     BaseBranch: "main",
     Additions: 1,
@@ -86,7 +86,7 @@ function issueRow(owner: string, name: string, number: number, title: string) {
     Title: title,
     Author: "alice",
     State: "open",
-    Body: "",
+    Body: "Related pull request #42.",
     CommentCount: 0,
     LabelsJSON: "[]",
     CreatedAt: "2026-03-28T14:00:00Z",
@@ -233,6 +233,41 @@ describe("view navigation", () => {
     await page.elementLocator(viewTab("Activity")).click();
     await vi.waitFor(() => expect(document.querySelector(".activity-shell--split")).not.toBeNull(), WAIT);
     expect(window.location.search).toContain("selected=pr%3A");
+  });
+
+  it.each([
+    { source: "pr:42", enabled: "pr", target: "issue:7", number: 7, label: "Issues", detail: ".issue-detail" },
+    { source: "issue:7", enabled: "issue", target: "pr:42", number: 42, label: "PRs", detail: ".pull-detail" },
+  ])("opening $label from Activity keeps Activity selected and enables its filter", async (testCase) => {
+    mounted = await mountBrowserApp(
+      `/?selected=${testCase.source}&provider=github&repo_path=acme%2Fwidgets&item_types=${testCase.enabled}&event_types=comment`,
+      {
+        overrides: [
+          (req) => {
+            if (
+              req.method === "POST" &&
+              req.url.pathname === `/api/v1/repo/github/acme/widgets/resolve/${testCase.number}`
+            ) {
+              return jsonResponse({ repo_tracked: true, item_type: testCase.target.split(":")[0] });
+            }
+            return null;
+          },
+          ...overrides(),
+        ],
+      },
+    );
+    const filter = page.getByRole("switch", { name: testCase.label, exact: true });
+    await expect.element(filter).not.toBeChecked();
+    await page.getByRole("link", { name: `#${testCase.number}`, exact: true }).click();
+
+    await vi.waitFor(() => expect(document.querySelector(testCase.detail)).not.toBeNull(), WAIT);
+    expect(window.location.pathname).toBe("/");
+    expect(new URLSearchParams(window.location.search).get("selected")).toBe(testCase.target);
+    expect(new URLSearchParams(window.location.search).get("event_types")).toBe("comment");
+    await expect.element(filter).toBeChecked();
+    await expect
+      .element(page.getByRole("switch", { name: testCase.enabled === "pr" ? "PRs" : "Issues", exact: true }))
+      .toBeChecked();
   });
 
   it("keeps Activity filter shortcuts and Escape isolated from the open detail pane", async () => {

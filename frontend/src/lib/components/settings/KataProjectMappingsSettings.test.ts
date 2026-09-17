@@ -170,7 +170,7 @@ describe("KataProjectMappingsSettings", () => {
     });
 
     const pickerName = "Kata project project-kata repository target";
-    await fireEvent.click(screen.getByRole("button", { name: pickerName }));
+    await fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${pickerName}: `) }));
     const query = screen.getByRole("combobox", { name: pickerName });
     await fireEvent.input(query, { target: { value: "middle" } });
 
@@ -318,7 +318,7 @@ describe("KataProjectMappingsSettings", () => {
       target: { value: "project-kata" },
     });
     const pickerName = "Kata project project-kata repository target";
-    await fireEvent.click(screen.getByRole("button", { name: pickerName }));
+    await fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${pickerName}: `) }));
     await fireEvent.mouseDown(screen.getByRole("option", { name: "Kenn Forge · kenn-io/middleman" }));
     await fireEvent.click(screen.getByRole("button", { name: "Save Kata mappings" }));
     await waitFor(() => {

@@ -91,7 +91,7 @@ async function renderDialog(props: Record<string, unknown> = {}) {
 }
 
 function repoPicker(): HTMLElement {
-  return screen.getByRole("button", { name: "Filter repositories" });
+  return screen.getByRole("button", { name: /^Filter repositories: / });
 }
 
 // The repository picker is kit-ui's Typeahead: the trigger opens the list and
@@ -297,7 +297,7 @@ describe("NewWorkspaceDialog", () => {
     // button while closed and a combobox while open, so accept either.
     await waitFor(() => {
       const trigger =
-        screen.queryByRole("button", { name: "Filter repositories" }) ??
+        screen.queryByRole("button", { name: /^Filter repositories: / }) ??
         screen.getByRole("combobox", { name: "Filter repositories" });
       expect(trigger.textContent).not.toContain("Loading repositories");
       expect(trigger.textContent).not.toContain("acme/gadget");

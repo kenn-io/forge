@@ -358,7 +358,7 @@ describe("ActivityFeed compact mode", () => {
     render(ActivityFeed, { props: { compact: false } });
 
     await fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
-    await fireEvent.click(screen.getByRole("button", { name: "Filter authors" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Filter authors: Anyone" }));
     await fireEvent.mouseDown(screen.getByRole("option", { name: "Alice" }));
 
     expect(setActivityAuthor).toHaveBeenCalledWith("Alice");

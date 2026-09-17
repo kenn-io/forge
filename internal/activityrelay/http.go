@@ -98,12 +98,20 @@ func serveStream(ctx context.Context, w http.ResponseWriter, broadcaster *Broadc
 	// by a fresh 30-second deadline: whichever runs second wins, and the
 	// install refuses once ctx is done.
 	var deadlineMu sync.Mutex
+	expired := make(chan struct{})
 	stop := context.AfterFunc(ctx, func() {
+		defer close(expired)
 		deadlineMu.Lock()
 		defer deadlineMu.Unlock()
 		_ = controller.SetWriteDeadline(time.Now())
 	})
-	defer stop()
+	defer func() {
+		// The ResponseWriter must not be touched after the handler returns, so
+		// a callback that already started is waited for rather than abandoned.
+		if !stop() {
+			<-expired
+		}
+	}()
 	write := func(frame string) bool {
 		deadlineMu.Lock()
 		if ctx.Err() != nil {

@@ -1620,9 +1620,9 @@ func TestConfigReload_ForgejoHostCloneSourceFollowsRotatedToken(t *testing.T) {
 	))
 
 	// RestartRequired is not asserted: this fixture's syncer has no
-	// readers for code.example.com, so the resolving gitea token trips
-	// the client-rebuild flag. The shared-host e2e covers the flag with
-	// live provider clients.
+	// readers for code.example.com, so the resolving forgejo token trips
+	// the client-rebuild flag. The forgejo-host e2e covers the flag with
+	// a live provider client.
 	ev := waitForConfigEvent(t, stream, 2*time.Second)
 	assert.True(ev.Valid, "reload error: %s", ev.Error)
 	// Clone auth must follow the rotated host chain without a restart.

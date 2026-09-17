@@ -161,7 +161,7 @@ type pullReference struct {
 func reduce(event string, body []byte, allowed []int64) ([]Hint, error) {
 	switch event {
 	case "pull_request", "pull_request_review", "pull_request_review_comment", "pull_request_review_thread",
-		"issues", "issue_comment", "push", "create", "delete", "repository":
+		"issues", "issue_comment", "push", "create", "delete", "repository", "workflow_run":
 	default:
 		return nil, nil
 	}
@@ -175,6 +175,9 @@ func reduce(event string, body []byte, allowed []int64) ([]Hint, error) {
 			Number      int       `json:"number"`
 			PullRequest *struct{} `json:"pull_request"`
 		} `json:"issue"`
+		WorkflowRun *struct {
+			PullRequests []pullReference `json:"pull_requests"`
+		} `json:"workflow_run"`
 	}
 	if json.Unmarshal(body, &payload) != nil || payload.Repository.ID <= 0 || !slices.Contains(allowed, payload.Repository.ID) {
 		return nil, errors.New("invalid webhook repository")
@@ -198,6 +201,19 @@ func reduce(event string, body []byte, allowed []int64) ([]Hint, error) {
 		hint.Target = RepositoryRefs
 	case "repository":
 		hint.Target = Repository
+	case "workflow_run":
+		if payload.WorkflowRun == nil {
+			return nil, errors.New("missing workflow run")
+		}
+		var hints []Hint
+		for _, pr := range payload.WorkflowRun.PullRequests {
+			hint.Target, hint.Number = PullRequestChecks, pr.Number
+			if err := hint.Validate(); err != nil {
+				return nil, err
+			}
+			hints = append(hints, hint)
+		}
+		return hints, nil
 	}
 	if err := hint.Validate(); err != nil {
 		return nil, err

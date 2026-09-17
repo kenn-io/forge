@@ -25,6 +25,8 @@ Use the HTTPS origin without `/activity` or a webhook path. In a fleet, add
 this setting to the hub. An empty URL disables the relay. Normal syncing
 continues. See [Faster GitHub updates](activity-relay.md) for setup, access,
 and a walkthrough to check that it works. The relay supports GitHub.com.
+With `workflow_run` webhooks enabled, Forge batches check updates for each
+open PR into one checks-only refresh per minute. No extra setting is needed.
 
 ### Repository selection
 

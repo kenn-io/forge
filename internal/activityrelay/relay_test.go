@@ -266,7 +266,9 @@ func TestWebhookTargets(t *testing.T) {
 		{"pull comment", "issue_comment", `"issue":{"number":7,"pull_request":{}}`, "pull_request", 7, 204},
 		{"checks", "check_run", `"check_run":{"pull_requests":[{"number":7}]}`, "", 0, 204},
 		{"suite", "check_suite", `"check_suite":{"pull_requests":[{"number":7}]}`, "", 0, 204},
-		{"workflow", "workflow_run", `"workflow_run":{"pull_requests":[{"number":7}]}`, "", 0, 204},
+		{"workflow", "workflow_run", `"workflow_run":{"pull_requests":[{"number":7}]}`, "pull_request_checks", 7, 204},
+		{"unassociated workflow", "workflow_run", `"workflow_run":{"pull_requests":[]}`, "", 0, 204},
+		{"missing workflow", "workflow_run", `"extra":true`, "", 0, 400},
 		{"unassociated", "check_run", `"check_run":{"pull_requests":[]}`, "", 0, 204},
 		{"push", "push", `"ref":"refs/heads/private-branch"`, "repository_refs", 0, 204},
 		{"create", "create", `"ref":"private-branch"`, "repository_refs", 0, 204},
@@ -297,6 +299,27 @@ func TestWebhookTargets(t *testing.T) {
 			hint := <-hints
 			assert.Equal(tt.target, hint.Target)
 			assert.Equal(tt.number, hint.Number)
+		})
+	}
+}
+
+func TestWorkflowRunHintsForReferencedPullRequests(t *testing.T) {
+	t.Parallel()
+	for _, action := range []string{"requested", "in_progress", "completed"} {
+		t.Run(action, func(t *testing.T) {
+			t.Parallel()
+			require := require.New(t)
+			feed := new(Broadcaster)
+			hints, cancel := feed.Subscribe()
+			t.Cleanup(cancel)
+			secret := []byte("synthetic-secret")
+			ingress, _ := Handlers(feed, map[string]Source{"team": {Secret: secret, RepositoryIDs: []int64{12345}}})
+			response := deliver(t, ingress, secret, "workflow_run", `{"action":"`+action+`","repository":{"id":12345,"node_id":"R_test_project"},"workflow_run":{"name":"Private workflow","head_sha":"private-sha","pull_requests":[{"number":7},{"number":8}]}}`)
+			require.Equal(http.StatusNoContent, response.Code, response.Body.String())
+			require.Len(hints, 2)
+			for _, number := range []int{7, 8} {
+				require.Equal(Hint{Provider: "github", Host: "github.com", RepositoryID: "R_test_project", Target: PullRequestChecks, Number: number}, <-hints)
+			}
 		})
 	}
 }

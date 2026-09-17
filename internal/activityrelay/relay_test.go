@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -122,6 +123,10 @@ type blockedWriter struct {
 	changed   chan struct{}
 	started   chan struct{}
 	once      sync.Once
+	// holdExpiry, when set, keeps the caller inside an expired-deadline
+	// install until the channel closes, modelling a callback still using the
+	// ResponseWriter.
+	holdExpiry chan struct{}
 }
 
 func (w *blockedWriter) Header() http.Header { return w.header }
@@ -141,6 +146,9 @@ func (w *blockedWriter) SetWriteDeadline(deadline time.Time) error {
 	select {
 	case w.changed <- struct{}{}:
 	default:
+	}
+	if w.holdExpiry != nil && !deadline.IsZero() && !deadline.After(time.Now()) {
+		<-w.holdExpiry
 	}
 	return nil
 }
@@ -184,6 +192,35 @@ func TestShutdownReleasesASubscriberBlockedInWrite(t *testing.T) {
 	cancel()
 	awaitSignal(t, done, "cancellation must interrupt a write that is blocked on a stalled subscriber")
 	require.False(writer.lastDeadline().After(time.Now()), "the expired deadline must be the one left in force")
+}
+
+func TestShutdownWaitsForAStartedExpiryCallback(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		require := require.New(t)
+		ctx, cancel := context.WithCancel(t.Context())
+		writer := &blockedWriter{header: http.Header{}, changed: make(chan struct{}, 1), started: make(chan struct{}), holdExpiry: make(chan struct{})}
+		feed := new(Broadcaster)
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			serveStream(ctx, writer, feed)
+		}()
+		feed.Publish([]Hint{{Provider: "github", Host: "github.com", RepositoryID: "R_x", Target: Repository}})
+		<-writer.started
+		cancel()
+		// The expiry callback wakes the blocked write, then stays inside its
+		// deadline install. Once every goroutine is blocked, the handler must
+		// still be waiting for that callback rather than returned.
+		synctest.Wait()
+		select {
+		case <-done:
+			require.FailNow("the handler returned while the expiry callback was still using the ResponseWriter")
+		default:
+		}
+		close(writer.holdExpiry)
+		<-done
+	})
 }
 
 func TestReadReconnectsWhenAnOpenStreamStalls(t *testing.T) {

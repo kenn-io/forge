@@ -318,7 +318,7 @@ func TestHubPullCandidatesUseProviderQualifiedRepositoryFilter(t *testing.T) {
 	assert.Equal(7, candidates[0].Number)
 }
 
-func TestHubListFiltersForwardUnassigned(t *testing.T) {
+func TestHubListFiltersForwardUnassignedAndPullLabel(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	seen := make(map[string]bool)
@@ -327,6 +327,9 @@ func TestHubListFiltersForwardUnassigned(t *testing.T) {
 	) (*http.Response, error) {
 		assert.Equal(federationauth.ScopeProviderRead, scope)
 		seen[request.URL.Path] = request.URL.Query().Get("unassigned") == "true"
+		if request.URL.Path == "/api/v1/pulls" {
+			assert.Equal("priority: high", request.URL.Query().Get("label"))
+		}
 		body := "[]"
 		if request.URL.Path == "/api/v1/activity" {
 			body = "{}"
@@ -339,7 +342,7 @@ func TestHubListFiltersForwardUnassigned(t *testing.T) {
 		}, nil
 	})}
 
-	_, err := source.ListPulls(t.Context(), pullapi.ListQuery{Unassigned: true})
+	_, err := source.ListPulls(t.Context(), pullapi.ListQuery{Unassigned: true, Label: "priority: high"})
 	require.NoError(err)
 	_, err = source.ListIssues(t.Context(), issueapi.ListQuery{Unassigned: true})
 	require.NoError(err)

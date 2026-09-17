@@ -19465,6 +19465,13 @@ paths:
     get:
       operationId: list-pulls
       parameters:
+        - description: Exact case-sensitive label name; applied before pagination.
+          explode: false
+          in: query
+          name: label
+          schema:
+            description: Exact case-sensitive label name; applied before pagination.
+            type: string
         - description: Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories.
           explode: false
           in: query

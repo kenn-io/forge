@@ -114,6 +114,7 @@ type ActivityItem struct {
 }
 
 type ItemListQuery struct {
+	Label      string
 	Repository RepositoryIdentity
 	State      string
 	Text       string
@@ -127,6 +128,7 @@ type WorkspaceRef struct {
 }
 
 type Pull struct {
+	Labels          []string
 	MergeableState  string
 	ReviewDecision  string
 	CIStatus        string

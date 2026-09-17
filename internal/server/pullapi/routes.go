@@ -39,6 +39,7 @@ const (
 )
 
 type listPullsInput struct {
+	Label      string `query:"label" doc:"Exact case-sensitive label name; applied before pagination."`
 	Repo       string `query:"repo" doc:"Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories."`
 	State      string `query:"state"`
 	Kanban     string `query:"kanban"`
@@ -363,7 +364,7 @@ func (s *Handler) listPulls(ctx context.Context, input *listPullsInput) (*listPu
 	query := ListQuery{
 		Repo: input.Repo, State: input.State, Kanban: input.Kanban,
 		Starred: input.Starred, InvolvesMe: input.InvolvesMe, Unassigned: input.Unassigned, Text: input.Q,
-		Limit: input.Limit, Offset: input.Offset,
+		Label: input.Label, Limit: input.Limit, Offset: input.Offset,
 	}
 	var rows []MergeRequestResponse
 	var err error
@@ -423,6 +424,7 @@ func (s *Handler) listPullsRouteCore(ctx context.Context, input *listPullsInput)
 		Starred:           input.Starred,
 		Unassigned:        input.Unassigned,
 		Search:            input.Q,
+		Label:             input.Label,
 		Limit:             input.Limit,
 		Offset:            input.Offset,
 		RepoFilters:       parseRepoFilters(input.Repo),

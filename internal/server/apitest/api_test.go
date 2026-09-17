@@ -23,9 +23,12 @@ func TestAPIListPullsIncludesLabels(t *testing.T) {
 		Color:       "d73a4a",
 		IsDefault:   true,
 	}})
+	seedPRWithLabels(t, database, "acme", "widget", 2, []db.Label{{Name: "debug"}})
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.ListPullsWithResponse(t.Context(), &generated.ListPullsRequestOptions{})
+	resp, err := client.HTTP.ListPullsWithResponse(t.Context(), &generated.ListPullsRequestOptions{
+		Query: &generated.ListPullsQuery{Label: new("bug"), Limit: new(int64(1))},
+	})
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)

@@ -19,6 +19,7 @@ type ProviderSource interface {
 }
 
 type ListQuery struct {
+	Label      string
 	Repo       string
 	State      string
 	Kanban     string
@@ -89,7 +90,7 @@ func (s *Handler) ListProviderService(
 	output, err := s.listPullsRouteCore(ctx, &listPullsInput{
 		Repo: req.Repo, State: req.State, Kanban: req.Kanban,
 		Starred: req.Starred, InvolvesMe: req.InvolvesMe, Unassigned: req.Unassigned,
-		Q: req.Text, Limit: req.Limit, Offset: req.Offset,
+		Q: req.Text, Label: req.Label, Limit: req.Limit, Offset: req.Offset,
 	})
 	if err != nil {
 		return nil, err

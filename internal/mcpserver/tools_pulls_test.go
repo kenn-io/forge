@@ -25,11 +25,12 @@ func TestListPullContextsReadsPagesWithoutPerPullCalls(t *testing.T) {
 					listCalls++
 					assert.Equal(repo, query.Repository)
 					assert.Equal("open", query.State)
+					assert.Equal("bug", query.Label)
 					assert.Equal(3, query.Limit)
 					rows := []Pull{
 						{Number: 1, State: "open", Repository: repo, MergeableState: "clean", WorkflowStatus: "awaiting_merge",
 							ReviewDecision: "APPROVED", CIStatus: "success", HeadSHA: "head-one",
-							Checks: []Check{{Name: "unit", Conclusion: "success"}}, Body: "large description",
+							Labels: []string{"bug", "priority: high"}, Checks: []Check{{Name: "unit", Conclusion: "success"}}, Body: "large description",
 							DetailLoaded: true, DetailFetchedAt: "2026-09-12T12:00:00Z"},
 						{Number: 2, State: "open", Repository: repo, MergeableState: "dirty", Stack: &Stack{Position: 2, Size: 3}},
 						{Number: 3, State: "open", Repository: repo},
@@ -49,7 +50,7 @@ func TestListPullContextsReadsPagesWithoutPerPullCalls(t *testing.T) {
 			input := listPullContextsInput{Repo: repoFilterInput{
 				Provider: provider, PlatformHost: repo.PlatformHost, PlatformRepoID: repo.PlatformRepoID,
 				Owner: repo.Owner, Name: repo.Name,
-			}, Limit: 2}
+			}, Limit: 2, Label: "bug"}
 			result, err := client.CallTool(t.Context(), &mcp.CallToolParams{Name: "kenn_forge_list_pull_contexts", Arguments: input})
 			require.NoError(err)
 			require.False(result.IsError)
@@ -58,6 +59,7 @@ func TestListPullContextsReadsPagesWithoutPerPullCalls(t *testing.T) {
 			require.NoError(err)
 			require.NoError(json.Unmarshal(encoded, &page))
 			require.Len(page.Items, 2)
+			assert.Equal([]string{"bug", "priority: high"}, page.Items[0].Labels)
 			assert.Equal("clean", page.Items[0].PullStatus.MergeableState)
 			assert.Equal("APPROVED", page.Items[0].PullStatus.ReviewDecision)
 			assert.Equal("head-one", page.Items[0].PullStatus.HeadSHA)

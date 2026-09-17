@@ -252,6 +252,12 @@ Persisted controls must state their scope clearly.
 - Activity detail selection uses one URL-backed slot for pull requests, issues,
   and default-branch commits so browser history restores one mutually exclusive pane
   (`frontend/src/App.svelte::updateDrawerURL`).
+- Issue and PR links opened from Activity stay in Activity and enable the matching
+  item-type filter so the sidebar agrees with the detail selection
+  (`frontend/src/App.svelte::handleItemReference`).
+- Link navigation reveals the selected Activity row once it renders; later feed
+  refreshes must preserve the user's scroll position
+  (`frontend/src/lib/views/ActivityFeedView.svelte::revealSelectedActivityRow`).
 - Activity filters remain URL-backed and session-scoped. Missing filter params on a
   partial Activity URL inherit the last validated route before store hydration, while
   explicit URL values win (`frontend/src/lib/stores/router.svelte.ts::restoreMissingActivityFilters`).

@@ -104,6 +104,7 @@
     isMobilePage,
     getDetailTab,
     getSelectedPRFromRoute,
+    buildItemRoute,
     buildMobileWorkspaceRoute,
     buildMobileWorkspaceItemRoute,
     type Page,
@@ -472,7 +473,7 @@
     initSidebar();
     const appEl = document.getElementById("app")!;
     const cleanupContainer = initContainerObserver(runtime, appEl);
-    const cleanupItemRefs = initItemRefHandler(appRuntime);
+    const cleanupItemRefs = initItemRefHandler(appRuntime, handleItemReference);
     const cancelStartup = runAppStartup(runtime, {
       stores: startupStores,
       beforeInitialLoad: () => syncGlobalRepoWithRoute(startupStores),
@@ -929,6 +930,7 @@
   };
 
   let drawerItem = $state<DrawerItem | null>(null);
+  let activitySelectionRevealKey = $state(0);
   // Owned here for the same reason drawerItem is: the Activity selection lives
   // in the page's query string, and only this component writes it.
   let commitItem = $state<ActivityCommitSelection | null>(null);
@@ -1007,6 +1009,25 @@
       detailTab: "conversation",
     };
     commitItem = null;
+    updateDrawerURL(drawerItem);
+  }
+
+  function handleItemReference(item: RoutableItemRef): void {
+    if (getPage() !== "activity") {
+      navigate(buildItemRoute(item));
+      return;
+    }
+
+    const activity = appComposition.stores.activity;
+    const enabledTypes = activity.getEnabledItemTypes();
+    if (!enabledTypes.has(item.itemType)) {
+      activity.setEnabledItemTypes(new Set([...enabledTypes, item.itemType]));
+      activity.syncToURL();
+      activity.loadActivity();
+    }
+    drawerItem = { ...item, detailTab: "conversation" };
+    commitItem = null;
+    activitySelectionRevealKey += 1;
     updateDrawerURL(drawerItem);
   }
 
@@ -1436,6 +1457,7 @@
              this view get no controller (structural eligibility). -->
         <ActivityFeedView
           {drawerItem}
+          selectionRevealKey={activitySelectionRevealKey}
           onSelectItem={handleActivitySelect}
           onCloseDrawer={closeDrawer}
           detailTab={drawerItem?.detailTab ?? "conversation"}

@@ -6,7 +6,7 @@
   import CommitDiffPanel from "../components/CommitDiffPanel.svelte";
   import { IconButton, SidebarToggle, SplitResizeHandle } from "@kenn-io/kit-ui";
   import type { SplitResizeEvent } from "@kenn-io/kit-ui";
-  import type { PullRequestRouteRef } from "../routes.js";
+  import { buildRoutedItemRoute, type PullRequestRouteRef } from "../routes.js";
   import IssueDetail from "../components/detail/IssueDetail.svelte";
   import PullDetailPane from "../components/detail/PullDetailPane.svelte";
   import { issueDetailMatchesRef, pullDetailMatchesRef } from "../components/detail/detail-match.js";
@@ -39,6 +39,7 @@
 
   interface Props {
     drawerItem?: DrawerItem | null;
+    selectionRevealKey?: number;
     detailTab?: ActivityDetailTab;
     onSelectItem?: (item: ActivityItem) => void;
     onCloseDrawer?: () => void;
@@ -58,6 +59,7 @@
 
   let {
     drawerItem: controlledDrawer,
+    selectionRevealKey = 0,
     detailTab = "conversation",
     onSelectItem,
     onCloseDrawer,
@@ -155,6 +157,29 @@
   const activeDrawer = $derived(
     controlled ? (controlledDrawer ?? null) : internalDrawer,
   );
+  const selectedItemRoute = $derived(activeDrawer ? buildRoutedItemRoute(activeDrawer) : null);
+  let lastSelectionRevealKey = 0;
+
+  function revealSelectedActivityRow(container: HTMLElement): (() => void) | undefined {
+    const selection = selectedItemRoute;
+    if (selectionRevealKey === lastSelectionRevealKey) return;
+    lastSelectionRevealKey = selectionRevealKey;
+    if (!selection) return;
+
+    const reveal = () => {
+      const row = container.querySelector<HTMLElement>(".activity-compact-row.selected, .item-row.selected");
+      if (!row) return false;
+      row.scrollIntoView({ block: "center" });
+      return true;
+    };
+    // Filters can load the row later, and threaded rows mount in batches.
+    const observer = new MutationObserver(() => {
+      if (reveal()) observer.disconnect();
+    });
+    observer.observe(container, { subtree: true, childList: true, attributes: true, attributeFilter: ["class"] });
+    if (reveal()) observer.disconnect();
+    return () => observer.disconnect();
+  }
   // Same seam shape as the item drawer above: a host that supplies either the
   // value or the callback owns the commit selection and its URL round trip;
   // standalone usage keeps it local.
@@ -500,7 +525,7 @@
         />
       </div>
     {/if}
-    <div class="activity-feed-wrap">
+    <div class="activity-feed-wrap" {@attach revealSelectedActivityRow}>
       <ActivityFeed
         compact={phone || hasActiveDetail}
         selectedItem={activeDrawer}

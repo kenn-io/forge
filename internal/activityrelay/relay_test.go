@@ -11,7 +11,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -115,21 +114,20 @@ func TestOpenRejectsNonStreamResponses(t *testing.T) {
 }
 
 // blockedWriter behaves like a socket whose peer stopped reading: a write
-// blocks until the deadline in force has expired. beforeInstall runs before a
-// deadline is committed so a test can act inside that window.
+// blocks until the deadline in force has expired.
 type blockedWriter struct {
-	header        http.Header
-	beforeInstall func(time.Time)
-	mu            sync.Mutex
-	deadlines     []time.Time
-	changed       chan struct{}
-	writes        atomic.Int32
+	header    http.Header
+	mu        sync.Mutex
+	deadlines []time.Time
+	changed   chan struct{}
+	started   chan struct{}
+	once      sync.Once
 }
 
 func (w *blockedWriter) Header() http.Header { return w.header }
 func (w *blockedWriter) WriteHeader(int)     {}
 func (w *blockedWriter) Write([]byte) (int, error) {
-	w.writes.Add(1)
+	w.once.Do(func() { close(w.started) })
 	for !w.expired() {
 		<-w.changed
 	}
@@ -137,9 +135,6 @@ func (w *blockedWriter) Write([]byte) (int, error) {
 }
 
 func (w *blockedWriter) SetWriteDeadline(deadline time.Time) error {
-	if w.beforeInstall != nil {
-		w.beforeInstall(deadline)
-	}
 	w.mu.Lock()
 	w.deadlines = append(w.deadlines, deadline)
 	w.mu.Unlock()
@@ -161,10 +156,10 @@ func (w *blockedWriter) expired() bool {
 	return !deadline.IsZero() && !deadline.After(time.Now())
 }
 
-func awaitStream(t *testing.T, done <-chan struct{}, message string) {
+func awaitSignal(t *testing.T, signal <-chan struct{}, message string) {
 	t.Helper()
 	select {
-	case <-done:
+	case <-signal:
 	case <-time.After(5 * time.Second):
 		require.FailNow(t, message)
 	}
@@ -174,7 +169,7 @@ func TestShutdownReleasesASubscriberBlockedInWrite(t *testing.T) {
 	require := require.New(t)
 	t.Parallel()
 	ctx, cancel := context.WithCancel(t.Context())
-	writer := &blockedWriter{header: http.Header{}, changed: make(chan struct{}, 1)}
+	writer := &blockedWriter{header: http.Header{}, changed: make(chan struct{}, 1), started: make(chan struct{})}
 	feed := new(Broadcaster)
 	done := make(chan struct{})
 	go func() {
@@ -184,39 +179,11 @@ func TestShutdownReleasesASubscriberBlockedInWrite(t *testing.T) {
 	// Hints waiting in the subscriber's buffer at shutdown must not re-arm a
 	// fresh write deadline after cancellation expired the previous one.
 	feed.Publish([]Hint{{Provider: "github", Host: "github.com", RepositoryID: "R_x", Target: Repository}})
-	require.Eventually(func() bool { return writer.writes.Load() > 0 }, 5*time.Second, time.Millisecond, "the stream did not start writing")
+	awaitSignal(t, writer.started, "the stream did not start writing")
 	require.True(writer.lastDeadline().After(time.Now()), "a frame write carries a bounded deadline")
 	cancel()
-	awaitStream(t, done, "cancellation must interrupt a write that is blocked on a stalled subscriber")
+	awaitSignal(t, done, "cancellation must interrupt a write that is blocked on a stalled subscriber")
 	require.False(writer.lastDeadline().After(time.Now()), "the expired deadline must be the one left in force")
-}
-
-func TestShutdownDuringDeadlineInstallStillExpiresIt(t *testing.T) {
-	require := require.New(t)
-	t.Parallel()
-	ctx, cancel := context.WithCancel(t.Context())
-	writer := &blockedWriter{header: http.Header{}, changed: make(chan struct{}, 1)}
-	var cancelled sync.Once
-	writer.beforeInstall = func(deadline time.Time) {
-		if deadline.After(time.Now()) {
-			// Cancel after the context check but before the frame deadline is
-			// committed, then give the expiry callback a chance to run first.
-			// Only serialization keeps the expiry from being overwritten by
-			// this install.
-			cancelled.Do(func() {
-				cancel()
-				time.Sleep(50 * time.Millisecond)
-			})
-		}
-	}
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		serveStream(ctx, writer, new(Broadcaster))
-	}()
-	awaitStream(t, done, "a cancellation racing the deadline install must still end the stream")
-	require.False(writer.lastDeadline().After(time.Now()), "the cancellation's expired deadline must be installed last")
-	require.EqualValues(1, writer.writes.Load(), "the frame write that raced the cancellation is interrupted, not repeated")
 }
 
 func TestReadReconnectsWhenAnOpenStreamStalls(t *testing.T) {

@@ -2,6 +2,7 @@ package tokenauth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -196,4 +197,63 @@ func TestMissingTokenErrorIsDetectable(t *testing.T) {
 	_, err := src.Token(context.Background())
 	require.ErrorIs(t, err, ErrMissingToken)
 	assert.NotContains(t, err.Error(), "secret")
+}
+
+func TestManagedSourceProviderCLIsUseTheirOwnRunnerAndCache(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	glabCalls, fjCalls := 0, 0
+	options := Options{
+		GitHubCLI: func(context.Context, string) (string, error) {
+			return "", errors.New("github runner must not serve other CLI kinds")
+		},
+		GitLabCLI: func(_ context.Context, host string) (string, error) {
+			glabCalls++
+			return "glab-" + host, nil
+		},
+		ForgejoCLI: func(_ context.Context, host string) (string, error) {
+			fjCalls++
+			return "fj-" + host, nil
+		},
+	}
+
+	gitlab := NewManagedSource(Descriptor{
+		Key: Key{Platform: "gitlab", Host: "gitlab.example.test"},
+		Candidates: []Candidate{
+			{Kind: SourceKindEnv, EnvName: "TOKENAUTH_UNSET_GITLAB_ENV"},
+			{Kind: SourceKindGitLabCLI, Host: "gitlab.example.test"},
+		},
+	}, options)
+	forgejo := NewManagedSource(Descriptor{
+		Key:        Key{Platform: "gitea", Host: "gitea.example.test"},
+		Candidates: []Candidate{{Kind: SourceKindForgejoCLI, Host: "gitea.example.test"}},
+	}, options)
+
+	for range 2 {
+		got, err := gitlab.Token(context.Background())
+		require.NoError(err)
+		assert.Equal("glab-gitlab.example.test", got)
+		got, err = forgejo.Token(context.Background())
+		require.NoError(err)
+		assert.Equal("fj-gitea.example.test", got)
+	}
+	assert.Equal(1, glabCalls, "glab lookup is cached per source")
+	assert.Equal(1, fjCalls, "fj lookup is cached per source")
+
+	gitlab.Invalidate("glab-gitlab.example.test")
+	_, err := gitlab.Token(context.Background())
+	require.NoError(err)
+	assert.Equal(2, glabCalls, "a rejected token re-runs only its own CLI")
+	assert.Equal(1, fjCalls)
+}
+
+func TestManagedSourceProviderCLIWithoutRunnerIsMissingToken(t *testing.T) {
+	src := NewManagedSource(Descriptor{
+		Key:        Key{Platform: "gitlab", Host: "gitlab.example.test"},
+		Candidates: []Candidate{{Kind: SourceKindGitLabCLI, Host: "gitlab.example.test"}},
+	}, Options{})
+
+	_, err := src.Token(context.Background())
+	require.ErrorIs(t, err, ErrMissingToken)
+	assert.Contains(t, err.Error(), "gitlab_cli:gitlab.example.test")
 }

@@ -81,8 +81,9 @@ repositories, runs the first sync, and opens a pull request.
 Use `kenn-forge serve` when you want the server attached to the foreground for
 development or diagnosis.
 
-The Repositories panel selects provider hosts and repository patterns. Configure
-non-GitHub and explicit credentials through environment variables or
+The Repositories panel selects provider hosts and repository patterns. GitLab,
+Forgejo, and Gitea hosts reuse an authenticated `glab` or `fj` session the same
+way. Configure explicit credentials through environment variables or
 `~/.kenn/forge/config.toml`; see [Configuration](docs/configuration.md).
 
 Local workspaces require Git and tmux on a Unix-like host. The Windows release

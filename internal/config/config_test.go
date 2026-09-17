@@ -185,7 +185,15 @@ func setFakeGHCLIWithScript(t *testing.T, script string) string {
 
 func writeFakeGHCLI(t *testing.T, dir, script string) {
 	t.Helper()
-	require.NoError(t, os.WriteFile(fakeGHCLIPath(dir), []byte(script), 0o755))
+	writeFakeCLI(t, dir, "gh", script)
+}
+
+// writeFakeCLI installs script as the only `name` binary on PATH. The
+// script body follows the fakeGHCLIScript conventions, so glab fakes
+// record argv to FAKE_GH_ARGV as well.
+func writeFakeCLI(t *testing.T, dir, name, script string) {
+	t.Helper()
+	require.NoError(t, os.WriteFile(fakeCLIPath(dir, name), []byte(script), 0o755))
 	t.Setenv("PATH", dir)
 	// The production 5s exec bound exists to catch a hung gh; under a
 	// loaded parallel suite run it can instead kill the fake before it
@@ -1374,7 +1382,7 @@ func TestConfigTokenSourceDescriptorPrecedence(t *testing.T) {
 
 	desc := cfg.TokenSourceForPlatformHost("gitlab", "gitlab.com", "REPO_TOKEN", "/repo/file")
 
-	require.Len(t, desc.Candidates, 4)
+	require.Len(t, desc.Candidates, 5)
 	assert.Equal(tokenauth.SourceKindFile, desc.Candidates[0].Kind)
 	assert.Equal("/repo/file", desc.Candidates[0].FilePath)
 	assert.Equal(tokenauth.SourceKindEnv, desc.Candidates[1].Kind)
@@ -1383,6 +1391,8 @@ func TestConfigTokenSourceDescriptorPrecedence(t *testing.T) {
 	assert.Equal("/platform/file", desc.Candidates[2].FilePath)
 	assert.Equal(tokenauth.SourceKindEnv, desc.Candidates[3].Kind)
 	assert.Equal("PLATFORM_TOKEN", desc.Candidates[3].EnvName)
+	assert.Equal(tokenauth.SourceKindGitLabCLI, desc.Candidates[4].Kind)
+	assert.Equal("gitlab.com", desc.Candidates[4].Host)
 }
 
 func TestTokenSourceForPlatformHostScopesGitHubTokenEnvToDefaultHost(t *testing.T) {
@@ -1412,7 +1422,7 @@ func TestConfigProviderTokenSourcesKeepsCredentiallessPlatformHosts(t *testing.T
 	assert := assert.New(t)
 	require := require.New(t)
 	// A platform host whose token config was removed must stay in the
-	// plans with an empty candidate chain: config reload updates live
+	// plans carrying only its CLI fallback: config reload updates live
 	// sources from this list, and dropping the host would leave its old
 	// credential active until restart.
 	cfg := &Config{
@@ -1427,22 +1437,23 @@ func TestConfigProviderTokenSourcesKeepsCredentiallessPlatformHosts(t *testing.T
 		plans[0].Descriptor.Key,
 	)
 	assert.False(plans[0].Required)
-	assert.Empty(plans[0].Descriptor.Candidates)
+	assert.Equal("gitlab_cli:gitlab.example.com", plans[0].Descriptor.SafeString())
 	assert.Equal(
 		tokenauth.Key{Platform: "github", Host: "github.com"},
 		plans[1].Descriptor.Key,
 	)
 }
 
-func TestConfigCloneTokenDescriptorsUseFirstNonEmptyHostChain(t *testing.T) {
+func TestConfigCloneTokenDescriptorsFollowProviderChains(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	// The ownerless host fallback carries the chain every tokened provider
-	// on the host agrees on. The credential-less forgejo entry does not
-	// conflict, so the host descriptor carries the only non-empty chain
-	// (gitlab's); a host whose providers are all credential-less keeps an
-	// empty chain so reload clears a previously tokened clone source
-	// instead of leaving it active.
+	// The ownerless host fallback carries the chain every provider on the
+	// host agrees on. Every provider chain now ends on its own CLI
+	// credential, so two providers sharing a hostname always disagree and
+	// the host fallback is disabled. A host with one provider and no
+	// declared token still carries that provider's CLI chain, so a reload
+	// that removes a token_env replaces the live clone source's credential
+	// instead of leaving the removed one active.
 	cfg := &Config{
 		Platforms: []PlatformConfig{
 			{Type: "forgejo", Host: "code.example.com"},
@@ -1455,12 +1466,14 @@ func TestConfigCloneTokenDescriptorsUseFirstNonEmptyHostChain(t *testing.T) {
 
 	require.Len(descs, 3)
 	assert.Equal(tokenauth.CloneKey("code.example.com"), descs[0].Key)
-	assert.Equal(
-		[]tokenauth.Candidate{{Kind: tokenauth.SourceKindEnv, EnvName: "SHARED"}},
-		descs[0].Candidates,
-	)
+	assert.Empty(descs[0].Candidates)
 	assert.Equal(tokenauth.CloneKey("tokenless.example.com"), descs[1].Key)
-	assert.Empty(descs[1].Candidates)
+	assert.Equal(
+		[]tokenauth.Candidate{{
+			Kind: tokenauth.SourceKindForgejoCLI, Host: "tokenless.example.com",
+		}},
+		descs[1].Candidates,
+	)
 	assert.Equal(tokenauth.CloneKey("github.com"), descs[2].Key)
 	assert.NotEmpty(descs[2].Candidates)
 }
@@ -1504,7 +1517,7 @@ func TestConfigProviderTokenSourcesPlansEffectiveDescriptors(t *testing.T) {
 	assert.Equal("PLATFORM_GITHUB_TOKEN", plans[0].Descriptor.Candidates[1].EnvName)
 	assert.True(plans[1].Required)
 	assert.Equal(tokenauth.Key{Platform: "gitlab", Host: "gitlab.com"}, plans[1].Descriptor.Key)
-	assert.Empty(plans[1].Descriptor.Candidates)
+	assert.Equal("gitlab_cli:gitlab.com", plans[1].Descriptor.SafeString())
 	assert.False(plans[2].Required)
 	assert.Equal(tokenauth.Key{Platform: "github", Host: "github.com"}, plans[2].Descriptor.Key)
 	assert.Equal("PLATFORM_GITHUB_TOKEN", plans[2].Descriptor.Candidates[0].EnvName)

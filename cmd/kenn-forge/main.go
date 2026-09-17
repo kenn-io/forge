@@ -643,7 +643,9 @@ func run(opts serve.Options) error {
 	}
 	backgroundLoops = startBackgroundLoops(ctx, database)
 	tokenSources := tokenauth.NewSourceSet(tokenauth.Options{
-		GitHubCLI: config.GitHubCLITokenForHost,
+		GitHubCLI:  config.GitHubCLITokenForHost,
+		GitLabCLI:  config.GitLabCLITokenForHost,
+		ForgejoCLI: config.ForgejoCLITokenForHost,
 		GitHubApp: func(
 			ctx context.Context, candidate tokenauth.Candidate,
 		) (string, time.Time, error) {

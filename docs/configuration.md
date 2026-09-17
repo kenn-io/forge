@@ -110,19 +110,31 @@ An exact repository `token_file` or `token_env` takes priority over broader
 credentials. Empty files and variables are skipped. Token files are read on
 each request, so replacing a file atomically rotates that credential.
 
-For GitHub, Forge can run `gh auth token --hostname HOST`. The unscoped
-fallback applies only to `github.com`. Authenticate another host with:
+When no token source is declared for a host, Forge reuses the credential the
+provider's CLI stores for that host:
+
+- GitHub: `gh auth token --hostname HOST`. The unscoped fallback applies only
+  to `github.com`.
+- GitLab: the token `glab` holds for the host, from its config file or the
+  operating-system keyring.
+- Forgejo and Gitea: the token `fj` ([forgejo-cli](https://codeberg.org/forgejo-contrib/forgejo-cli))
+  stores for the host in its keys file. Expired OAuth logins are skipped; run
+  any `fj` command against the host to refresh them.
+
+Authenticate a host with the matching CLI:
 
 ```sh
 gh auth login --hostname HOST
+glab auth login --hostname HOST
+fj --host HOST auth login
 ```
 
 Public-host defaults are:
 
 - GitHub `github.com`: `KENN_FORGE_GITHUB_TOKEN`, then the GitHub CLI.
-- GitLab `gitlab.com`: no implicit variable. Configure a token source.
-- Forgejo `codeberg.org`: `KENN_FORGE_FORGEJO_TOKEN`.
-- Gitea `gitea.com`: `KENN_FORGE_GITEA_TOKEN`.
+- GitLab `gitlab.com`: no implicit variable, then the GitLab CLI.
+- Forgejo `codeberg.org`: `KENN_FORGE_FORGEJO_TOKEN`, then the Forgejo CLI.
+- Gitea `gitea.com`: `KENN_FORGE_GITEA_TOKEN`, then the Forgejo CLI.
 
 Grant read access for monitoring. Add write access only for comments, reviews,
 state changes, edits, or merges.

@@ -93,7 +93,9 @@ func run(ctx context.Context, path string, ready io.Writer) error {
 		return errors.New("could not bind feed listener")
 	}
 	defer func() { _ = feed.Close() }()
-	ingress, private := activityrelay.Handlers(new(activityrelay.Broadcaster), sources)
+	broadcaster := new(activityrelay.Broadcaster)
+	defer broadcaster.Close()
+	ingress, private := activityrelay.Handlers(broadcaster, sources)
 	// Subscriptions outlive any request timeout, so graceful shutdown must end
 	// them explicitly; http.Server.Shutdown only waits for handlers to return.
 	streamCtx, stopStreams := context.WithCancel(ctx)

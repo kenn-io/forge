@@ -1,8 +1,8 @@
 // Package activityrelay implements a stateless GitHub refresh-hint feed.
 //
 // The relay reduces signed webhooks to routing hints and writes each hint to
-// every open subscriber connection. Nothing is stored: a subscriber that is
-// not connected when a hint arrives relies on ordinary syncing instead.
+// every open subscriber connection, batching check hints in memory. Nothing is
+// persisted: subscribers rely on ordinary syncing to recover missed hints.
 package activityrelay
 
 import (

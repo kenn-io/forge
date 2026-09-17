@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"slices"
 	"sync"
 	"time"
 
@@ -51,8 +50,6 @@ const (
 	// relayQueueLimit bounds refresh work waiting on provider budget; hints
 	// beyond it are dropped and covered by ordinary syncing.
 	relayQueueLimit = 1024
-	// Collect workflow bursts without delaying ordinary PR and issue activity.
-	relayChecksDelay = time.Minute
 )
 
 func (s *Syncer) updateRelayStatus(update func(*RelayStatus)) {
@@ -74,7 +71,7 @@ func (s *Syncer) SetOnRelayRefresh(fn func(context.Context, int64, string, int))
 }
 
 // RunRelay keeps one subscription open until ctx ends, reconnecting with
-// backoff. Ready hints are refreshed by a single worker so a slow
+// backoff. Hints are refreshed in arrival order by a single worker so a slow
 // provider call never stalls the connection.
 func (s *Syncer) RunRelay(ctx context.Context, options RelayOptions) {
 	policy := options.Backoff
@@ -150,7 +147,7 @@ func (s *Syncer) receiveRelayHint(hint activityrelay.Hint, id int64, queue *rela
 type relayQueue struct {
 	mu      sync.Mutex
 	order   []activityrelay.Hint
-	pending map[activityrelay.Hint]time.Time
+	pending map[activityrelay.Hint]struct{}
 	signal  chan struct{}
 }
 
@@ -158,13 +155,9 @@ func (q *relayQueue) push(hint activityrelay.Hint) {
 	q.mu.Lock()
 	if _, waiting := q.pending[hint]; !waiting && len(q.order) < relayQueueLimit {
 		if q.pending == nil {
-			q.pending = make(map[activityrelay.Hint]time.Time)
+			q.pending = make(map[activityrelay.Hint]struct{})
 		}
-		var due time.Time
-		if hint.Target == activityrelay.PullRequestChecks {
-			due = time.Now().Add(relayChecksDelay)
-		}
-		q.pending[hint] = due
+		q.pending[hint] = struct{}{}
 		q.order = append(q.order, hint)
 	}
 	q.mu.Unlock()
@@ -174,54 +167,36 @@ func (q *relayQueue) push(hint activityrelay.Hint) {
 	}
 }
 
-func (q *relayQueue) pop() (activityrelay.Hint, time.Duration, bool) {
+func (q *relayQueue) pop() (activityrelay.Hint, bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	var wait time.Duration
-	now := time.Now()
-	// ponytail: scan at most 1024 entries; use a deadline heap if the bound grows.
-	for i, hint := range q.order {
-		if delay := q.pending[hint].Sub(now); delay > 0 {
-			if wait == 0 || delay < wait {
-				wait = delay
-			}
-			continue
-		}
-		q.order = slices.Delete(q.order, i, i+1)
-		// Remove before refreshing so events received during the request get
-		// their own window, at least a minute after this refresh started.
-		delete(q.pending, hint)
-		return hint, 0, true
+	if len(q.order) == 0 {
+		return activityrelay.Hint{}, false
 	}
-	return activityrelay.Hint{}, wait, false
+	hint := q.order[0]
+	q.order = q.order[1:]
+	delete(q.pending, hint)
+	return hint, true
 }
 
 func (s *Syncer) drainRelayQueue(ctx context.Context, queue *relayQueue) {
-	timer := time.NewTimer(0)
-	timer.Stop()
-	defer timer.Stop()
-	for ctx.Err() == nil {
-		hint, wait, ok := queue.pop()
-		if ok {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-queue.signal:
+		}
+		for hint, ok := queue.pop(); ok; hint, ok = queue.pop() {
+			if ctx.Err() != nil {
+				return
+			}
 			if !s.SyncEnabled() {
 				continue
 			}
 			if err := s.refreshRelayHint(WithSyncBudget(ctx), hint); err != nil && ctx.Err() == nil {
 				slog.Warn("relay refresh failed", "repository_id", hint.RepositoryID, "target", hint.Target, "number", hint.Number, "err", err)
 			}
-			continue
 		}
-		var ready <-chan time.Time
-		if wait > 0 {
-			timer.Reset(wait)
-			ready = timer.C
-		}
-		select {
-		case <-ctx.Done():
-		case <-queue.signal:
-		case <-ready:
-		}
-		timer.Stop()
 	}
 }
 

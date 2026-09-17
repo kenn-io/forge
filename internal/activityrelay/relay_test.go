@@ -266,7 +266,7 @@ func TestWebhookTargets(t *testing.T) {
 		{"pull comment", "issue_comment", `"issue":{"number":7,"pull_request":{}}`, "pull_request", 7, 204},
 		{"checks", "check_run", `"check_run":{"pull_requests":[{"number":7}]}`, "", 0, 204},
 		{"suite", "check_suite", `"check_suite":{"pull_requests":[{"number":7}]}`, "", 0, 204},
-		{"workflow", "workflow_run", `"workflow_run":{"pull_requests":[{"number":7}]}`, "pull_request_checks", 7, 204},
+		{"pending workflow", "workflow_run", `"workflow_run":{"pull_requests":[{"number":7}]}`, "", 0, 204},
 		{"unassociated workflow", "workflow_run", `"workflow_run":{"pull_requests":[]}`, "", 0, 204},
 		{"missing workflow", "workflow_run", `"extra":true`, "", 0, 400},
 		{"unassociated", "check_run", `"check_run":{"pull_requests":[]}`, "", 0, 204},
@@ -285,6 +285,7 @@ func TestWebhookTargets(t *testing.T) {
 			assert := assert.New(t)
 			t.Parallel()
 			feed := new(Broadcaster)
+			t.Cleanup(feed.Close)
 			hints, cancel := feed.Subscribe()
 			t.Cleanup(cancel)
 			secret := []byte("synthetic-secret")
@@ -303,24 +304,75 @@ func TestWebhookTargets(t *testing.T) {
 	}
 }
 
-func TestWorkflowRunHintsForReferencedPullRequests(t *testing.T) {
+func TestWorkflowRunHintsBatchBeforeReachingSubscribers(t *testing.T) {
 	t.Parallel()
-	for _, action := range []string{"requested", "in_progress", "completed"} {
-		t.Run(action, func(t *testing.T) {
-			t.Parallel()
-			require := require.New(t)
-			feed := new(Broadcaster)
-			hints, cancel := feed.Subscribe()
-			t.Cleanup(cancel)
-			secret := []byte("synthetic-secret")
-			ingress, _ := Handlers(feed, map[string]Source{"team": {Secret: secret, RepositoryIDs: []int64{12345}}})
+	synctest.Test(t, func(t *testing.T) {
+		require := require.New(t)
+		assert := assert.New(t)
+		feed := new(Broadcaster)
+		defer feed.Close()
+		first, cancelFirst := feed.Subscribe()
+		defer cancelFirst()
+		second, cancelSecond := feed.Subscribe()
+		defer cancelSecond()
+		secret := []byte("synthetic-secret")
+		ingress, _ := Handlers(feed, map[string]Source{"team": {Secret: secret, RepositoryIDs: []int64{12345}}})
+		for i, action := range []string{"requested", "in_progress", "completed"} {
 			response := deliver(t, ingress, secret, "workflow_run", `{"action":"`+action+`","repository":{"id":12345,"node_id":"R_test_project"},"workflow_run":{"name":"Private workflow","head_sha":"private-sha","pull_requests":[{"number":7},{"number":8}]}}`)
 			require.Equal(http.StatusNoContent, response.Code, response.Body.String())
-			require.Len(hints, 2)
-			for _, number := range []int{7, 8} {
-				require.Equal(Hint{Provider: "github", Host: "github.com", RepositoryID: "R_test_project", Target: PullRequestChecks, Number: number}, <-hints)
+			if i == 0 {
+				time.Sleep(59 * time.Second)
 			}
-		})
+		}
+		synctest.Wait()
+		assert.Empty(first, "workflow bursts stay in the relay")
+		assert.Empty(second)
+		response := deliver(t, ingress, secret, "pull_request", `{"repository":{"id":12345,"node_id":"R_test_project"},"pull_request":{"number":7}}`)
+		require.Equal(http.StatusNoContent, response.Code)
+		ordinary := Hint{Provider: "github", Host: "github.com", RepositoryID: "R_test_project", Target: PullRequest, Number: 7}
+		require.Equal(ordinary, <-first, "ordinary updates do not wait behind checks")
+		require.Equal(ordinary, <-second)
+		time.Sleep(time.Second)
+		synctest.Wait()
+		check := ordinary
+		check.Target = PullRequestChecks
+		other := check
+		other.Number = 8
+		for _, hints := range []<-chan Hint{first, second} {
+			require.Len(hints, 2, "one hint per PR, even with multiple workflows")
+			assert.ElementsMatch([]Hint{check, other}, []Hint{<-hints, <-hints})
+		}
+		feed.Publish([]Hint{check})
+		time.Sleep(59 * time.Second)
+		feed.Publish([]Hint{check})
+		assert.Empty(first)
+		time.Sleep(time.Second)
+		synctest.Wait()
+		require.Len(first, 1)
+		require.Len(second, 1)
+		assert.Equal(check, <-first)
+		assert.Equal(check, <-second)
+		feed.Publish([]Hint{check})
+		feed.Close()
+		time.Sleep(time.Minute)
+		synctest.Wait()
+		assert.Empty(first, "shutdown discards pending checks")
+	})
+}
+
+func TestPendingChecksDoNotCrowdOutActivity(t *testing.T) {
+	t.Parallel()
+	feed := new(Broadcaster)
+	defer feed.Close()
+	hints, cancel := feed.Subscribe()
+	defer cancel()
+	for number := 1; number <= 1025; number++ {
+		feed.Publish([]Hint{{Provider: "github", Host: "github.com", RepositoryID: "R_project", Target: PullRequestChecks, Number: number}})
+	}
+	for _, target := range []string{PullRequest, Issue, RepositoryRefs, Repository} {
+		hint := Hint{Provider: "github", Host: "github.com", RepositoryID: "R_project", Target: target, Number: 1}
+		feed.Publish([]Hint{hint})
+		require.Equal(t, hint, <-hints, "pending checks must not occupy ordinary activity buffers")
 	}
 }
 

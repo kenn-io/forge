@@ -1058,9 +1058,12 @@ Not every visibility control means "remove this entity entirely."
   cannot surface newly persisted events older than unrelated leading rows.
   Selection generations gate only detail installation, not successful-read or
   successful-sync invalidation (`frontend/src/lib/stores/detail.svelte.ts::reconcileListsAfterDetailSync`, `frontend/src/lib/stores/issues.svelte.ts::reconcileListsAfterDetailSync`).
-- Detail poll paths — scheduled cycles and sync-completion refreshes — skip while provider
+- Provider data-change events must refresh mounted issue details from the local cache;
+  waiting for the detail timer defeats relay latency, and refreshing must preserve local edits
+  without starting another provider sync (`frontend/src/lib/stores/issues.svelte.ts::refreshActiveIssueDetailEffect`).
+- Background detail reads — timer polls and provider-event refreshes — skip while provider
   synchronization is active; overlap lets cached data supersede the authoritative response
-  (`frontend/src/lib/stores/detail.svelte.ts::startDetailPolling`, `frontend/src/lib/stores/issues.svelte.ts::startIssueDetailPolling`).
+  (`frontend/src/lib/stores/detail.svelte.ts::startDetailPolling`, `frontend/src/lib/stores/issues.svelte.ts::refreshActiveIssueDetailEffect`).
 - Activity full-snapshot projections are latest-successful-request-wins across
   foreground and convergence reads. Incremental polling neither claims snapshot
   authority nor overwrites a later claimed snapshot; replacement polling does

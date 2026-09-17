@@ -781,15 +781,19 @@ error or cancellation unchanged and never adopts.
 - One `RunRelay` loop owns the subscription and reconnects with jittered exponential backoff from
   the backoff library, 1s rising to a 30s base ceiling plus jitter, reset only after a stream stayed open. The `[relay]` config has no
   poll interval; `relay.poll_interval` is rejected at load. (`internal/github/relay.go::RunRelay`)
-- Webhook ingress ignores check, workflow, and status events; CI stays on normal syncing so check
-  bursts do not crowd out activity. (`internal/activityrelay/http.go::reduce`)
+- Webhook ingress maps `workflow_run` to checks-only hints for explicitly referenced PRs;
+  unassociated runs, `check_run`, `check_suite`, `workflow_job`, and `status` produce no hints.
+  Never fan an unassociated run out across a repository. (`internal/activityrelay/http.go::reduce`)
 - Feed repository IDs are GitHub node IDs, matching the durable catalog; numeric REST IDs need
   a fresh provider resolve and must not become the consumer's lookup key. (`internal/activityrelay/http.go::reduce`)
 - Nothing about a hint is persisted. Received hints wait in a bounded in-memory queue that
-  coalesces repeats for one target; a single worker refreshes them in order so provider work
+  coalesces repeats for one target; a single worker refreshes ready hints so provider work
   never stalls the stream. A hint that cannot run now because of budget, cooldown, or catalog
   state is dropped and left to ordinary syncing. (`internal/github/relay.go::relayQueue`)
-- Unknown-PR checks refresh the PR itself in the same pass instead of checks alone.
+- Checks hints wait one minute from the first pending event per PR; repeats do not postpone
+  the deadline. Remove pending work before refreshing so concurrent events get a new window.
+  Ordinary hints bypass waiting checks. (`internal/github/relay.go::relayQueue`)
+- Checks refresh only known open PRs with a head SHA; never upgrade them to full PR syncs.
   (`internal/github/relay.go::refreshRelayHint`)
 - A parent ETag does not establish whether comment content changed; child-change hints require
   unconditional detail reads. (`internal/github/sync.go::getIssueForDetail`)

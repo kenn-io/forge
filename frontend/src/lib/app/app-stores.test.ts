@@ -2,6 +2,8 @@ import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { makeAppRuntime, type OwnedAppRuntime } from "./runtime.js";
 import { createAppStores } from "../app-stores.svelte.js";
+import type { IssueDetail } from "../api/types.js";
+import { createMockApiFetch } from "../../test/mockApiFetch.js";
 
 let runtime: OwnedAppRuntime;
 let eventSources: EventSourceStub[];
@@ -44,6 +46,90 @@ afterEach(async () => {
 });
 
 describe("app store composition", () => {
+  it.each(["issues", "activity", "focus", "workspaces"])(
+    "refreshes an open issue after data_changed on %s without waiting for the detail poll",
+    async (page) => {
+      let updatedDetail: IssueDetail | undefined;
+      const api = createMockApiFetch([
+        ({ method, url }) =>
+          method === "GET" && url.pathname === "/api/v1/activity/authors"
+            ? Response.json({ authors: [], use_workspace_activity_for_recency: false })
+            : undefined,
+        ({ method, url }) =>
+          method === "GET" && url.pathname === "/api/v1/activity"
+            ? Response.json({
+                items: [],
+                item_activity: [],
+                workspace_activity: [],
+                capped: false,
+                item_activity_capped: false,
+                event_cursor: "",
+                use_workspace_activity_for_recency: false,
+              })
+            : undefined,
+        ({ method, url }) =>
+          method === "GET" && url.pathname.endsWith("/issues/github/acme/widgets/7") && updatedDetail
+            ? Response.json(updatedDetail)
+            : undefined,
+      ]);
+      vi.stubGlobal("fetch", api.fetch);
+      const { stores } = createAppStores({ runtime, getPage: () => page });
+      const ref = { provider: "github", platformHost: "github.com", repoPath: "acme/widgets" };
+      stores.issues.loadIssueDetail("acme", "widgets", 7, { ...ref, sync: false });
+      await vi.waitFor(() => expect(stores.issues.getIssueDetail()?.issue.Number).toBe(7));
+      stores.issues.startIssueDetailPolling("acme", "widgets", 7, ref);
+      runtime.runCommand(stores.events.streamEffect, {
+        operation: "test provider events",
+        safeContext: {},
+        onFailure: () => {},
+      });
+      await vi.waitFor(() => expect(eventSources).toHaveLength(1));
+      const original = stores.issues.getIssueDetail()!;
+      updatedDetail = {
+        ...original,
+        issue: { ...original.issue, Body: "Updated upstream body" },
+        events: [
+          {
+            ID: 1,
+            IssueID: original.issue.ID,
+            EventType: "issue_comment",
+            Author: "user-a",
+            Body: "New upstream comment",
+            CreatedAt: "2026-09-17T10:00:00Z",
+            DedupeKey: "comment:1",
+            DirectURL: "",
+            MetadataJSON: "{}",
+            PlatformExternalID: "1",
+            PlatformID: 1,
+            Summary: "",
+            ThreadID: null,
+          },
+        ],
+      };
+
+      emit(eventSources[0]!, "data_changed", {});
+
+      await vi.waitFor(() =>
+        expect(stores.issues.getIssueDetail()).toMatchObject({
+          issue: { Body: "Updated upstream body" },
+          events: [{ Body: "New upstream comment" }],
+        }),
+      );
+
+      stores.issues.setLocalIssueBody("github", "github.com", "acme", "widgets", 7, "Draft still being edited");
+      updatedDetail = { ...updatedDetail, events: [{ ...updatedDetail.events[0]!, Body: "Edited upstream comment" }] };
+      emit(eventSources[0]!, "data_changed", {});
+
+      await vi.waitFor(() =>
+        expect(stores.issues.getIssueDetail()).toMatchObject({
+          issue: { Body: "Draft still being edited" },
+          events: [{ Body: "Edited upstream comment" }],
+        }),
+      );
+      expect(api.requests.every(({ method }) => method === "GET")).toBe(true);
+    },
+  );
+
   it("builds the provider store graph directly from the application runtime", () => {
     const composition = createAppStores({
       runtime,

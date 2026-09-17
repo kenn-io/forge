@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/cenkalti/backoff/v7"
@@ -156,6 +157,86 @@ func TestRelayTargetedChecksAndBudgetGate(t *testing.T) {
 	unrelated, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 8)
 	require.NoError(err)
 	assert.Equal("pending", unrelated.CIStatus)
+	for _, state := range []db.MergeRequestState{"closed", "merged"} {
+		updated.State = state
+		_, err = database.UpsertMergeRequest(ctx, updated)
+		require.NoError(err)
+		require.NoError(syncer.refreshRelayHint(WithSyncBudget(ctx), hint))
+	}
+	hint.Number = 99
+	require.NoError(syncer.refreshRelayHint(WithSyncBudget(ctx), hint))
+	updated.State, updated.PlatformHeadSHA = db.MergeRequestStateOpen, ""
+	_, err = database.UpsertMergeRequest(ctx, updated)
+	require.NoError(err)
+	hint.Number = 7
+	require.NoError(syncer.refreshRelayHint(WithSyncBudget(ctx), hint))
+	assert.Equal(int32(1), provider.getCombinedCalls.Load(), "closed, unknown, and headless PRs do not spend CI budget")
+}
+
+func TestRelayChecksBatchAndKeepEventsDuringRefresh(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		require := require.New(t)
+		assert := assert.New(t)
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		database := openTestDB(t)
+		repo := RepoRef{Platform: platform.KindGitHub, PlatformHost: "github.com", PlatformExternalID: "R_project", Owner: "team", Name: "project"}
+		repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{Platform: "github", PlatformHost: "github.com", PlatformRepoID: "R_project", Owner: "team", Name: "project"})
+		require.NoError(err)
+		_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+			RepoID: repoID, Number: 7, PlatformID: 7, PlatformExternalID: "pr-7", State: "open", PlatformHeadSHA: "abcdef", CIStatus: "pending",
+			CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+		})
+		require.NoError(err)
+		started := make(chan time.Time, 2)
+		finish := make(chan struct{}, 2)
+		provider := &mockClient{ciStatus: &gh.CombinedStatus{State: new("success")}}
+		provider.listCheckRunsForRefFn = func(ctx context.Context, _, _, _ string) ([]*gh.CheckRun, error) {
+			started <- time.Now()
+			select {
+			case <-finish:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+			return []*gh.CheckRun{{Name: new("ci"), Status: new("completed"), Conclusion: new("success")}}, nil
+		}
+		syncer := NewSyncer(map[string]Client{"github.com": provider}, database, nil, []RepoRef{repo}, time.Minute, nil, nil)
+		refreshed := make(chan struct{}, 2)
+		syncer.SetOnRelayRefresh(func(context.Context, int64, string, int) { refreshed <- struct{}{} })
+		queue := &relayQueue{signal: make(chan struct{}, 1)}
+		go syncer.drainRelayQueue(ctx, queue)
+		hint := activityrelay.Hint{Provider: "github", Host: "github.com", RepositoryID: "R_project", Target: activityrelay.PullRequestChecks, Number: 7}
+		begin := time.Now()
+		queue.push(hint)
+		time.Sleep(59 * time.Second)
+		for range 100 {
+			queue.push(hint)
+		}
+		synctest.Wait()
+		assert.Empty(started, "a burst waits for one minute")
+		time.Sleep(time.Second)
+		first := <-started
+		assert.Equal(time.Minute, first.Sub(begin), "repeated hints do not postpone the refresh")
+		queue.push(hint) // A completion arriving during the provider request must survive it.
+		finish <- struct{}{}
+		<-refreshed
+		time.Sleep(59 * time.Second)
+		synctest.Wait()
+		assert.Empty(started, "the trailing event must wait another minute")
+		time.Sleep(time.Second)
+		second := <-started
+		assert.Equal(time.Minute, second.Sub(first))
+		finish <- struct{}{}
+		<-refreshed
+		time.Sleep(time.Minute)
+		synctest.Wait()
+		assert.Empty(started, "no refresh runs without another hint")
+		assert.Equal(int32(2), provider.getCombinedCalls.Load())
+		updated, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+		require.NoError(err)
+		assert.Equal("success", updated.CIStatus)
+	})
 }
 
 func TestRelayQueueCoalescesAndSkipsDisabledSync(t *testing.T) {
@@ -166,22 +247,25 @@ func TestRelayQueueCoalescesAndSkipsDisabledSync(t *testing.T) {
 	hint := activityrelay.Hint{Provider: "github", Host: "github.com", RepositoryID: "R_test_project", Target: activityrelay.Issue, Number: 9}
 	other := hint
 	other.Number = 10
+	checks := hint
+	checks.Target = activityrelay.PullRequestChecks
+	queue.push(checks)
 	queue.push(hint)
 	queue.push(hint)
 	queue.push(other)
-	first, ok := queue.pop()
+	first, _, ok := queue.pop()
 	require.True(ok)
-	second, ok := queue.pop()
+	second, _, ok := queue.pop()
 	require.True(ok)
-	_, ok = queue.pop()
+	_, _, ok = queue.pop()
 	assert.False(ok, "repeated hints for one target coalesce while waiting")
-	assert.Equal([]activityrelay.Hint{hint, other}, []activityrelay.Hint{first, second})
+	assert.Equal([]activityrelay.Hint{hint, other}, []activityrelay.Hint{first, second}, "pending checks do not delay ordinary activity")
 
 	database := openTestDB(t)
 	syncer := NewSyncer(nil, database, nil, []RepoRef{{Platform: platform.KindGitHub, PlatformHost: "github.com", PlatformExternalID: "R_test_project", Owner: "team", Name: "project"}}, time.Minute, nil, nil)
 	syncer.DisableSync()
 	syncer.receiveRelayHint(hint, 1, queue)
-	_, ok = queue.pop()
+	_, _, ok = queue.pop()
 	assert.False(ok, "hints are ignored while syncing is disabled")
 	assert.Nil(syncer.Status().Relay)
 }

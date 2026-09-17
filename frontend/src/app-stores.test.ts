@@ -103,6 +103,7 @@ vi.mock("./lib/stores/issues.svelte.js", () => ({
       loadIssues,
       loadIssuesEffect,
       reconcileIssuesEffect,
+      refreshActiveIssueDetailEffect: () => Effect.void,
       hydrateDefaults: vi.fn(),
       getIssues: () => [],
       isLoading: () => false,

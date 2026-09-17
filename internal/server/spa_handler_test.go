@@ -1,16 +1,19 @@
 package server
 
 import (
+	"bytes"
 	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
 
 	"github.com/andybalholm/brotli"
+	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	ghclient "go.kenn.io/forge/internal/github"
@@ -222,4 +225,58 @@ func TestSPAAssetsCompressFullResponsesAndPreserveRanges(t *testing.T) {
 	assert.Equal(http.StatusPartialContent, rangeResponse.Code)
 	assert.Empty(rangeResponse.Header().Get("Content-Encoding"))
 	assert.Equal(asset[:6], rangeResponse.Body.Bytes())
+}
+
+func TestSPAAssetsServePrecompressedRepresentations(t *testing.T) {
+	asset := []byte(strings.Repeat("export const payload = 'value';\n", 256))
+	var brotliBody bytes.Buffer
+	brotliWriter := brotli.NewWriterLevel(&brotliBody, brotli.BestCompression)
+	_, err := brotliWriter.Write(asset)
+	require.NoError(t, err)
+	require.NoError(t, brotliWriter.Close())
+	zstdWriter, err := zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.SpeedBestCompression), zstd.WithEncoderCRC(false))
+	require.NoError(t, err)
+	zstdBody := zstdWriter.EncodeAll(asset, nil)
+	zstdWriter.Close()
+	frontend := fstest.MapFS{
+		"index.html":                  &fstest.MapFile{Data: []byte("<!doctype html><html></html>")},
+		"assets/index-ABC123.js":      &fstest.MapFile{Data: asset},
+		"assets/index-ABC123.js.br":   &fstest.MapFile{Data: brotliBody.Bytes()},
+		"assets/index-ABC123.js.zstd": &fstest.MapFile{Data: zstdBody},
+	}
+
+	for _, basePath := range []string{"/", "/app/"} {
+		t.Run(basePath, func(t *testing.T) {
+			srv := setupSPAAssetServer(t, basePath, frontend, ServerOptions{})
+			for _, tc := range []struct {
+				name, method, acceptEncoding, byteRange, wantEncoding string
+				wantStatus                                            int
+				wantBody                                              []byte
+				wantLength                                            int
+			}{
+				{"brotli preferred", http.MethodGet, "br, zstd", "", "br", http.StatusOK, brotliBody.Bytes(), brotliBody.Len()},
+				{"zstd higher quality", http.MethodGet, "br;q=0.5, zstd", "", "zstd", http.StatusOK, zstdBody, len(zstdBody)},
+				{"identity", http.MethodGet, "identity", "", "", http.StatusOK, asset, len(asset)},
+				{"head", http.MethodHead, "br", "", "", http.StatusOK, nil, len(asset)},
+				{"range", http.MethodGet, "br", "bytes=0-5", "", http.StatusPartialContent, asset[:6], 6},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					req := httptest.NewRequest(tc.method, basePath+"assets/index-ABC123.js", nil)
+					req.Header.Set("Accept-Encoding", tc.acceptEncoding)
+					req.Header.Set("Range", tc.byteRange)
+					rr := httptest.NewRecorder()
+					srv.ServeHTTP(rr, req)
+
+					assert := assert.New(t)
+					assert.Equal(tc.wantStatus, rr.Code)
+					assert.Equal(tc.wantEncoding, rr.Header().Get("Content-Encoding"))
+					assert.Equal(strconv.Itoa(tc.wantLength), rr.Header().Get("Content-Length"))
+					assert.Equal("Accept-Encoding", rr.Header().Get("Vary"))
+					assert.Equal("public, max-age=31536000, immutable", rr.Header().Get("Cache-Control"))
+					assert.Contains(rr.Header().Get("Content-Type"), "javascript")
+					assert.Equal(tc.wantBody, rr.Body.Bytes())
+				})
+			}
+		})
+	}
 }

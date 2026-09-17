@@ -5,6 +5,7 @@ import (
 	"mime"
 	"net/http"
 	"path"
+	"strconv"
 	"strings"
 )
 
@@ -100,11 +101,15 @@ func serveCompressedAsset(
 	if encoding == "" {
 		return false
 	}
-	body, err := fs.ReadFile(frontend, name)
+	contentType := mime.TypeByExtension(path.Ext(name))
+	body, err := fs.ReadFile(frontend, name+"."+encoding)
+	precompressed := err == nil && contentType != ""
+	if !precompressed {
+		body, err = fs.ReadFile(frontend, name)
+	}
 	if err != nil {
 		return false
 	}
-	contentType := mime.TypeByExtension(path.Ext(name))
 	if contentType == "" {
 		contentType = http.DetectContentType(body)
 	}
@@ -114,6 +119,12 @@ func serveCompressedAsset(
 
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Encoding", encoding)
+	if precompressed {
+		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(body)
+		return true
+	}
 	w.Header().Del("Content-Length")
 	w.WriteHeader(http.StatusOK)
 	_ = writeCompressedBody(w, encoding, body)

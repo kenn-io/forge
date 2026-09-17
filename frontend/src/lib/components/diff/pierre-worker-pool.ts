@@ -1,5 +1,4 @@
 import { Context, Effect, Layer } from "effect";
-import type { Scope } from "effect/Scope";
 import { WorkerPoolManager } from "@pierre/diffs/worker";
 
 export const diffTokenizeMaxLineLength = 180;
@@ -35,11 +34,6 @@ function createPierreDiffWorkerPool(): WorkerPoolManager | undefined {
   );
 }
 
-export const makePierreDiffWorkerPool: Effect.Effect<WorkerPoolManager | undefined, never, Scope> =
-  Effect.acquireRelease(Effect.sync(createPierreDiffWorkerPool), (pool) =>
-    pool === undefined ? Effect.void : Effect.sync(() => pool.terminate()),
-  );
-
 interface PierreDiffWorkerPoolService {
   readonly pool: WorkerPoolManager | undefined;
 }
@@ -49,5 +43,13 @@ export class PierreDiffWorkerPool extends Context.Service<PierreDiffWorkerPool, 
 ) {}
 
 export const PierreDiffWorkerPoolLive = Layer.effect(PierreDiffWorkerPool)(
-  makePierreDiffWorkerPool.pipe(Effect.map((pool) => ({ pool }))),
+  Effect.gen(function* () {
+    let pool: WorkerPoolManager | undefined;
+    yield* Effect.addFinalizer(() => Effect.sync(() => pool?.terminate()));
+    return {
+      get pool() {
+        return (pool ??= createPierreDiffWorkerPool());
+      },
+    };
+  }),
 );

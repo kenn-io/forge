@@ -429,9 +429,11 @@ describe("TerminalPane", () => {
   });
 
   it("uses xterm.js", async () => {
-    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+    const view = render(TerminalPane, { props: { workspaceId: "ws-123" } });
+    expect(view.getByRole("status").textContent).toBe("Loading terminal...");
 
     await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());
+    expect(view.queryByRole("status")).toBeNull();
   });
 
   it("loads SIXEL and iTerm images without enabling Kitty graphics", async () => {
@@ -1026,10 +1028,10 @@ describe("TerminalPane", () => {
 
   it("releases terminal gesture resources when detached before the selected font is ready", async () => {
     const fontLoad = deferred<FontFace[]>();
-    stubFontLoad(fontLoad.promise);
+    const loadFont = stubFontLoad(fontLoad.promise);
 
     const { unmount } = render(TerminalPane, { props: { workspaceId: "ws-123" } });
-    await tick();
+    await waitFor(() => expect(loadFont).toHaveBeenCalled());
     unmount();
 
     await waitFor(() => expect(clipboardWriterDispose).toHaveBeenCalledTimes(1));

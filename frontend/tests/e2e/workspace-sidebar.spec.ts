@@ -1445,6 +1445,17 @@ test("phone terminal clears a draft before falling back to another session", asy
   await page.getByRole("button", { name: "Open terminal composer" }).click();
   await page.getByRole("textbox", { name: "Terminal command" }).fill("do not send elsewhere");
 
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (
+          window as unknown as {
+            __kenn_forgeControllableTerminalSockets: Array<{ url: string }>;
+          }
+        ).__kenn_forgeControllableTerminalSockets.some(({ url }) => url.includes(encodeURIComponent("ws-123:codex"))),
+      ),
+    )
+    .toBe(true);
   mocked.runtime.sessions = mocked.runtime.sessions.filter(({ key }) => key !== "ws-123:codex");
   await emitTerminalControl(page, "ws-123:codex", { type: "exited", code: 0 });
 

@@ -1,5 +1,6 @@
 <script lang="ts">
-  import XtermTerminalPane from "./XtermTerminalPane.svelte";
+  import { Button } from "@kenn-io/kit-ui";
+  import type XtermTerminalPane from "./XtermTerminalPane.svelte";
   import type { TerminalKey } from "./terminal-key.js";
 
   interface TerminalPaneProps {
@@ -36,9 +37,19 @@
   }: TerminalPaneProps = $props();
 
   let xtermPane = $state<XtermTerminalPane | null>(null);
+  let focusRequested = false;
+
+  function setTerminalPane(pane: XtermTerminalPane | null): void {
+    xtermPane = pane;
+    if (pane && focusRequested) {
+      focusRequested = false;
+      pane.focus();
+    }
+  }
 
   export function focus(): void {
-    xtermPane?.focus();
+    if (xtermPane) xtermPane.focus();
+    else focusRequested = true;
   }
 
   export function sendInput(data: string): boolean {
@@ -54,18 +65,27 @@
   }
 </script>
 
-<XtermTerminalPane
-  bind:this={xtermPane}
-  {workspaceId}
-  {websocketPath}
-  {fleetHostKey}
-  {reconnectOnExit}
-  {active}
-  {renderingEnabled}
-  {autoFocus}
-  {cursorWheelInput}
-  {disabled}
-  {onExit}
-  {onConnectionChange}
-  {initialStatus}
-/>
+{#await import("./XtermTerminalPane.svelte")}
+  <p role="status">Loading terminal...</p>
+{:then { default: Terminal }}
+  <Terminal
+    bind:this={() => xtermPane, setTerminalPane}
+    {workspaceId}
+    {websocketPath}
+    {fleetHostKey}
+    {reconnectOnExit}
+    {active}
+    {renderingEnabled}
+    {autoFocus}
+    {cursorWheelInput}
+    {disabled}
+    {onExit}
+    {onConnectionChange}
+    {initialStatus}
+  />
+{:catch}
+  <div role="alert">
+    <p>Could not load terminal.</p>
+    <Button onclick={() => window.location.reload()}>Reload</Button>
+  </div>
+{/await}

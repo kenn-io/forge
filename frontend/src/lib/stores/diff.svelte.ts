@@ -759,7 +759,7 @@ export function createDiffStore(opts: DiffStoreOptions) {
     runtime.runCommand(
       Effect.gen(function* () {
         const workflow = yield* FilePreviewWorkflow;
-        yield* workflow.invalidateAll;
+        yield* workflow.invalidateMutable;
       }),
       {
         operation: "invalidate file previews",
@@ -788,7 +788,7 @@ export function createDiffStore(opts: DiffStoreOptions) {
         number,
       }),
       ref.repoPath,
-      generation,
+      requestScope.kind === "head" ? generation : "immutable",
       scopeCacheKey(),
       path,
       side ?? "preview",
@@ -826,7 +826,7 @@ export function createDiffStore(opts: DiffStoreOptions) {
     ).pipe(retryIdempotentRead);
     return Effect.gen(function* () {
       const workflow = yield* FilePreviewWorkflow;
-      return yield* workflow.read(key, request);
+      return yield* workflow.read(key, request, requestScope.kind !== "head");
     });
   }
 

@@ -42,6 +42,9 @@ service is the supported tool here.
 - Use scoped acquisition and finalizers for listeners, streams, readers,
   abort controllers, timers, presenters, and workflow owners. Teardown must be
   explicit at the same lifetime boundary that acquired the resource.
+- Shared diff workers start on first diff demand and live until app disposal;
+  mounting the app or disposing one diff must not create or terminate the pool
+  (`frontend/src/lib/components/diff/pierre-worker-pool.ts::PierreDiffWorkerPoolLive`).
 - Publish an owner registry entry and install its finalizer in one
   uninterruptible acquisition handoff. After an ordered queue admits a
   non-idempotent command, pending-state publication and executor release are
@@ -74,6 +77,9 @@ service is the supported tool here.
 - Repeated reads of the same PR or issue list query share the pending request;
   only a changed query replaces it, so polling cannot starve a slow response
   (`frontend/src/lib/effect/latest-shared-read.ts::makeLatestSharedRead`).
+- Navigation retains successful previews for explicit commit/range scopes;
+  head and workspace previews still follow their mutable refresh generations
+  (`frontend/src/lib/stores/diff-preview-workflow.ts::FilePreviewWorkflowLive`).
 - Timer polls use the shared visibility-aware helper: hidden documents stop
   polling and refresh at once when shown; event-driven refreshes ignore
   visibility (`frontend/src/lib/effect/poll-while-visible.ts::pollWhileVisible`).

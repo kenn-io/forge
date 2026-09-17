@@ -1,5 +1,11 @@
 # Server Runtime
 
+## Frontend assets
+
+- Precompress final emitted assets after Vite rewrites preload URLs; encoded
+  responses must decode to the exact bytes served for the same asset identity
+  (`frontend/vite.config.ts::precompressAssets`).
+
 ## Activity relay boundary
 
 - Build the relay as a separate binary in this module so CI can test it with Forge; it must not

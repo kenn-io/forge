@@ -11,6 +11,10 @@ import { STORES_KEY } from "../../context.js";
 import { copyToClipboard } from "@kenn-io/kit-ui";
 import type { DiffResult, PREvent } from "../../api/types.js";
 import type { DiffStore } from "../../stores/diff.svelte.js";
+import { createDiffStore } from "../../stores/diff.svelte.js";
+import { makeTestAppRuntime } from "../../testing/effect-layers.js";
+import { makeGeneratedClient } from "../../testing/generated-client.js";
+import { GeneratedProblemResponse } from "../../api/runtime.js";
 import { getStackDepth, resetModalStack } from "../../stores/keyboard/modal-stack.svelte.js";
 
 vi.mock("@kenn-io/kit-ui", async (importOriginal) => ({
@@ -248,6 +252,61 @@ describe("EventTimeline", () => {
     vi.restoreAllMocks();
     vi.useRealTimers();
     await Effect.runPromise(runtime.disposeEffect);
+  });
+
+  it("does not restart a failed review context read when loading settles", async () => {
+    await Effect.runPromise(runtime.disposeEffect);
+    const failure = new GeneratedProblemResponse(
+      { status: 404, title: "Not Found", detail: "Pull request diff unavailable" },
+      new Response(null, { status: 404 }),
+    );
+    const getPullDiff = vi.fn(async () => {
+      throw failure;
+    });
+    runtime = makeTestAppRuntime(
+      makeGeneratedClient({
+        PullRequestsService: {
+          getPullDiff,
+          getPullFiles: async () => ({ files: [], stale: false, whitespace_only_count: 0 }),
+        },
+      }),
+    );
+    const diff = createDiffStore({ runtime });
+    const originalLoad = diff.loadDiff;
+    const loadDiff = vi.spyOn(diff, "loadDiff");
+    // Stop a regression after its first repeated command rather than letting
+    // its reactive loop starve the test runner.
+    loadDiff.mockImplementationOnce(originalLoad).mockImplementation(() => {});
+    const props = {
+      events: [makeReviewThreadEvent()],
+      provider: "github",
+      repoOwner: "acme",
+      repoName: "widget",
+      repoPath: "acme/widget",
+      number: 7,
+      currentHeadSHA: "abc123",
+    };
+    const view = renderTimeline({
+      props,
+      context: new Map([[STORES_KEY, { diff }]]),
+    });
+    await waitFor(() => expect(getPullDiff).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(diff.isDiffLoading()).toBe(false));
+    expect(loadDiff).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("Please keep this setup explicit.")).toBeTruthy();
+
+    // A new head and another PR must still be able to load context.
+    loadDiff.mockImplementationOnce(originalLoad);
+    await view.rerender({ ...props, currentHeadSHA: "def456" });
+    await waitFor(() => expect(getPullDiff).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(diff.isDiffLoading()).toBe(false));
+    expect(loadDiff).toHaveBeenCalledTimes(2);
+
+    loadDiff.mockImplementationOnce(originalLoad);
+    await view.rerender({ ...props, number: 8, currentHeadSHA: "def456" });
+    await waitFor(() => expect(getPullDiff).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(diff.isDiffLoading()).toBe(false));
+    expect(loadDiff).toHaveBeenCalledTimes(3);
   });
 
   it("renders the configured initial entry limit and progressively loads the remainder", async () => {

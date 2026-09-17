@@ -3033,8 +3033,9 @@ func (c *Config) ProviderTokenSources() []ProviderTokenSource {
 // ownerless host operations. When every provider on a hostname agrees on one
 // canonical chain, that chain is the fallback; when providers disagree, the
 // fallback is disabled (empty chain) because an ownerless operation cannot
-// select a provider safely. Every provider chain ends on its own CLI
-// credential, so distinct providers sharing a hostname always disagree. A
+// select a provider safely. Every provider chain ends on its CLI credential
+// (Forgejo and Gitea share fj's), so providers sharing a hostname agree only
+// when their declared tokens and CLI credential match. A
 // host whose plans declare no token keeps its CLI-only chain, so a reload
 // that removes a token replaces the live clone source's credential instead
 // of leaving the removed one active.

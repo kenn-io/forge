@@ -123,12 +123,16 @@ Each configured provider-host pair may have its own fallback token source;
 providers sharing one hostname may carry different chains. When their chains
 disagree, the ownerless host clone fallback is disabled rather than borrowing
 one provider's credential, because an ownerless operation cannot select a
-provider safely. Every provider chain ends on its own host-scoped CLI
-candidate, so distinct providers sharing a hostname always disagree, and
-runtime route resolution must honor the disabled state instead of falling
-through to another provider's unscoped route
+provider safely. Every provider chain ends on its host-scoped CLI candidate,
+and a provider without a declared token still carries that chain, so it
+disagrees with any tokened provider on the hostname. Runtime route resolution
+must honor the disabled state instead of falling through to another
+provider's unscoped route
 (`internal/config/config.go::Config.CloneTokenDescriptors`,
 `cmd/kenn-forge/provider_startup.go::providerStartup.FallbackSource`).
+Two providers on one hostname is a config-validation edge, not a real
+deployment: behavior tests such as token rotation and clone auth use one
+provider per hostname (`internal/server/api_test.go::TestAPIForgejoHostCloneFetchFollowsReloadedToken`).
 Non-GitHub repositories on one (provider, host) must declare equivalent
 effective chains, checked against each repository's own descriptor —
 `ProviderTokenSources` deduplicates by key and would hide the conflict

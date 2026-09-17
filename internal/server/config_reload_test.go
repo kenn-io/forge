@@ -1575,9 +1575,8 @@ repository_selection = "all"
 	})
 }
 
-// Two providers share one host with the same credential chain — the only
-// multi-provider-per-host layout clone-token validation accepts.
-const reloadSharedHostBothTokensConfig = `
+func reloadForgejoHostConfig(tokenLine string) string {
+	return fmt.Sprintf(`
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -1586,68 +1585,23 @@ port = 8091
 [[platforms]]
 type = "forgejo"
 host = "code.example.com"
-token_env = "KENN_FORGE_SHARED_TOKEN"
-
-[[platforms]]
-type = "gitea"
-host = "code.example.com"
-token_env = "KENN_FORGE_SHARED_TOKEN"
+%s
 
 [[repos]]
 owner = "acme"
 name = "widget"
-`
+`, tokenLine)
+}
 
-// The forgejo entry went credential-less while gitea rotated to a new env
-// var, so the host's effective clone chain is gitea's surviving chain.
-const reloadSharedHostSurvivorRotatedConfig = `
-sync_interval = "5m"
-github_token_env = "KENN_FORGE_GITHUB_TOKEN"
-host = "127.0.0.1"
-port = 8091
-
-[[platforms]]
-type = "forgejo"
-host = "code.example.com"
-
-[[platforms]]
-type = "gitea"
-host = "code.example.com"
-token_env = "KENN_FORGE_ROTATED_TOKEN"
-
-[[repos]]
-owner = "acme"
-name = "widget"
-`
-
-const reloadSharedHostAllTokenlessConfig = `
-sync_interval = "5m"
-github_token_env = "KENN_FORGE_GITHUB_TOKEN"
-host = "127.0.0.1"
-port = 8091
-
-[[platforms]]
-type = "forgejo"
-host = "code.example.com"
-
-[[platforms]]
-type = "gitea"
-host = "code.example.com"
-
-[[repos]]
-owner = "acme"
-name = "widget"
-`
-
-func TestConfigReload_SharedHostCloneSourceFollowsSurvivingProviderChain(t *testing.T) {
+func TestConfigReload_ForgejoHostCloneSourceFollowsRotatedToken(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "github-token")
-	t.Setenv("KENN_FORGE_SHARED_TOKEN", "shared-token")
-	t.Setenv("KENN_FORGE_ROTATED_TOKEN", "rotated-token")
+	t.Setenv("KENN_FORGE_FORGEJO_TOKEN_A", "forgejo-token")
+	t.Setenv("KENN_FORGE_FORGEJO_TOKEN_B", "rotated-token")
 
 	srv, _, cfgPath := setupTestServerWithConfigContent(
-		t, reloadSharedHostBothTokensConfig, &mockGH{},
+		t, reloadForgejoHostConfig(`token_env = "KENN_FORGE_FORGEJO_TOKEN_A"`), &mockGH{},
 	)
 	sourceSet, cloneSrc := reloadTestTokenSources(
 		t, cfgPath, tokenauth.CloneKey("code.example.com"),
@@ -1655,13 +1609,15 @@ func TestConfigReload_SharedHostCloneSourceFollowsSurvivingProviderChain(t *test
 	srv.tokenSources = sourceSet
 	bootToken, err := cloneSrc.Token(t.Context())
 	require.NoError(err)
-	require.Equal("shared-token", bootToken)
+	require.Equal("forgejo-token", bootToken)
 
 	waitForConfigWatcher(t, srv, 2*time.Second)
 	stream := streamConfigEvents(t, srv)
 	defer stream.Close()
 
-	writeConfigToml(t, cfgPath, reloadSharedHostSurvivorRotatedConfig)
+	writeConfigToml(t, cfgPath, reloadForgejoHostConfig(
+		`token_env = "KENN_FORGE_FORGEJO_TOKEN_B"`,
+	))
 
 	// RestartRequired is not asserted: this fixture's syncer has no
 	// readers for code.example.com, so the resolving gitea token trips
@@ -1669,21 +1625,20 @@ func TestConfigReload_SharedHostCloneSourceFollowsSurvivingProviderChain(t *test
 	// live provider clients.
 	ev := waitForConfigEvent(t, stream, 2*time.Second)
 	assert.True(ev.Valid, "reload error: %s", ev.Error)
-	// Clone auth must follow the host's surviving effective chain, not
-	// stay pinned to the forgejo entry that lost its token.
+	// Clone auth must follow the rotated host chain without a restart.
 	newToken, err := cloneSrc.Token(t.Context())
 	require.NoError(err)
 	assert.Equal("rotated-token", newToken)
 }
 
-func TestConfigReload_SharedHostCloneSourceClearsWhenAllTokensRemoved(t *testing.T) {
+func TestConfigReload_ForgejoHostCloneSourceClearsWhenTokenRemoved(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "github-token")
-	t.Setenv("KENN_FORGE_SHARED_TOKEN", "shared-token")
+	t.Setenv("KENN_FORGE_FORGEJO_TOKEN_A", "forgejo-token")
 
 	srv, _, cfgPath := setupTestServerWithConfigContent(
-		t, reloadSharedHostBothTokensConfig, &mockGH{},
+		t, reloadForgejoHostConfig(`token_env = "KENN_FORGE_FORGEJO_TOKEN_A"`), &mockGH{},
 	)
 	sourceSet, cloneSrc := reloadTestTokenSources(
 		t, cfgPath, tokenauth.CloneKey("code.example.com"),
@@ -1691,19 +1646,19 @@ func TestConfigReload_SharedHostCloneSourceClearsWhenAllTokensRemoved(t *testing
 	srv.tokenSources = sourceSet
 	bootToken, err := cloneSrc.Token(t.Context())
 	require.NoError(err)
-	require.Equal("shared-token", bootToken)
+	require.Equal("forgejo-token", bootToken)
 
 	waitForConfigWatcher(t, srv, 2*time.Second)
 	stream := streamConfigEvents(t, srv)
 	defer stream.Close()
 
-	writeConfigToml(t, cfgPath, reloadSharedHostAllTokenlessConfig)
+	writeConfigToml(t, cfgPath, reloadForgejoHostConfig(""))
 
 	ev := waitForConfigEvent(t, stream, 2*time.Second)
 	assert.True(ev.Valid, "reload error: %s", ev.Error)
 	assert.False(ev.RestartRequired)
-	// Every provider on the host went credential-less, so clone auth
-	// fails closed instead of keeping the removed credential.
+	// The host went credential-less, so clone auth fails closed instead
+	// of keeping the removed credential.
 	_, err = cloneSrc.Token(t.Context())
 	require.ErrorIs(err, tokenauth.ErrMissingToken)
 }

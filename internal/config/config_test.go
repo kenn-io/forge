@@ -1448,9 +1448,9 @@ func TestConfigCloneTokenDescriptorsFollowProviderChains(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	// The ownerless host fallback carries the chain every provider on the
-	// host agrees on. Every provider chain now ends on its own CLI
-	// credential, so two providers sharing a hostname always disagree and
-	// the host fallback is disabled. A host with one provider and no
+	// host agrees on. Every provider chain now ends on its CLI credential,
+	// so a tokenless provider disagrees with a tokened one on the same
+	// hostname and the host fallback is disabled. A host with one provider and no
 	// declared token still carries that provider's CLI chain, so a reload
 	// that removes a token_env replaces the live clone source's credential
 	// instead of leaving the removed one active.

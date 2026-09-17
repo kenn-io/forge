@@ -28,7 +28,6 @@ import (
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
 	platformforgejo "go.kenn.io/forge/platform/forgejo"
-	platformgitea "go.kenn.io/forge/platform/gitea"
 	platformgitlab "go.kenn.io/forge/platform/gitlab"
 )
 
@@ -610,9 +609,9 @@ name = "widget"
 	assert.Empty(ev.Error)
 }
 
-// sharedHostCloneConfig points forgejo and gitea at one self-hosted host,
-// each with its own token line ("" for credential-less).
-func sharedHostCloneConfig(forgejoTokenLine, giteaTokenLine string) string {
+// forgejoHostCloneConfig points forgejo at one self-hosted host with the
+// given token line ("" for credential-less).
+func forgejoHostCloneConfig(tokenLine string) string {
 	return fmt.Sprintf(`
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
@@ -623,25 +622,19 @@ port = 8091
 type = "forgejo"
 host = "code.example.com"
 %s
-
-[[platforms]]
-type = "gitea"
-host = "code.example.com"
-%s
-`, forgejoTokenLine, giteaTokenLine)
+`, tokenLine)
 }
 
-func TestSharedHostCloneAuthFollowsSurvivingProviderTokenE2E(t *testing.T) {
+func TestForgejoHostCloneAuthFollowsRotatedTokenE2E(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	dir := t.TempDir()
-	t.Setenv("KENN_FORGE_E2E_SHARED_TOKEN", "opaque-shared-token-11111")
+	t.Setenv("KENN_FORGE_E2E_FORGEJO_TOKEN", "opaque-forgejo-token-11111")
 	t.Setenv("KENN_FORGE_E2E_ROTATED_TOKEN", "opaque-rotated-token-22222")
 
 	cfgPath := filepath.Join(dir, "config.toml")
-	require.NoError(os.WriteFile(cfgPath, []byte(sharedHostCloneConfig(
-		`token_env = "KENN_FORGE_E2E_SHARED_TOKEN"`,
-		`token_env = "KENN_FORGE_E2E_SHARED_TOKEN"`,
+	require.NoError(os.WriteFile(cfgPath, []byte(forgejoHostCloneConfig(
+		`token_env = "KENN_FORGE_E2E_FORGEJO_TOKEN"`,
 	)), 0o644))
 	cfg, err := config.Load(cfgPath)
 	require.NoError(err)
@@ -651,10 +644,6 @@ func TestSharedHostCloneAuthFollowsSurvivingProviderTokenE2E(t *testing.T) {
 			Platform: string(platform.KindForgejo), Host: "code.example.com",
 		},
 	)
-	giteaSource, ok := sourceSet.Get(tokenauth.Key{
-		Platform: string(platform.KindGitea), Host: "code.example.com",
-	})
-	require.True(ok)
 	// No provider API call happens in this test; the stub base URL only
 	// keeps client construction off the real network.
 	forgeAPI := httptest.NewServer(http.NotFoundHandler())
@@ -665,12 +654,7 @@ func TestSharedHostCloneAuthFollowsSurvivingProviderTokenE2E(t *testing.T) {
 			WithTransport(http.DefaultTransport),
 	)
 	require.NoError(err)
-	giteaClient, err := platformgitea.NewClient(
-		"code.example.com", giteaSource,
-		platformgitea.WithBaseURL(forgeAPI.URL, true),
-		platformgitea.WithServerVersion("1.26.0"), platformgitea.WithTransport(http.DefaultTransport))
-	require.NoError(err)
-	registry, err := platform.NewRegistry(forgejoClient, giteaClient)
+	registry, err := platform.NewRegistry(forgejoClient)
 	require.NoError(err)
 	database := dbtest.Open(t)
 	syncer := ghclient.NewSyncerWithRegistry(
@@ -689,17 +673,14 @@ func TestSharedHostCloneAuthFollowsSurvivingProviderTokenE2E(t *testing.T) {
 	require.True(ok)
 	bootToken, err := cloneSrc.Token(t.Context())
 	require.NoError(err)
-	require.Equal("opaque-shared-token-11111", bootToken)
+	require.Equal("opaque-forgejo-token-11111", bootToken)
 
 	stream := streamTokenRotationConfigEvents(t, srv, httpServer)
 	defer stream.Close()
 
-	// The forgejo entry that may have supplied clone auth goes
-	// credential-less while gitea rotates to a new env var. Clone auth
-	// must hot-follow the host's surviving effective chain; both hosts
-	// keep live provider clients, so no restart may be demanded.
-	writeConfigTomlAtomically(t, cfgPath, sharedHostCloneConfig(
-		"",
+	// The host rotates to a new env var. Clone auth must hot-follow it;
+	// the provider keeps its live client, so no restart may be demanded.
+	writeConfigTomlAtomically(t, cfgPath, forgejoHostCloneConfig(
 		`token_env = "KENN_FORGE_E2E_ROTATED_TOKEN"`,
 	))
 	ev := waitForTokenRotationConfigEvent(t, stream, 3*time.Second)
@@ -709,9 +690,9 @@ func TestSharedHostCloneAuthFollowsSurvivingProviderTokenE2E(t *testing.T) {
 	require.NoError(err)
 	assert.Equal("opaque-rotated-token-22222", rotatedToken)
 
-	// Every provider on the host goes credential-less: clone auth fails
-	// closed instead of keeping a removed credential.
-	writeConfigTomlAtomically(t, cfgPath, sharedHostCloneConfig("", ""))
+	// The host goes credential-less: clone auth fails closed instead of
+	// keeping a removed credential.
+	writeConfigTomlAtomically(t, cfgPath, forgejoHostCloneConfig(""))
 	ev = waitForTokenRotationConfigEvent(t, stream, 3*time.Second)
 	assert.True(ev.Valid, "reload error: %s", ev.Error)
 	assert.False(ev.RestartRequired)

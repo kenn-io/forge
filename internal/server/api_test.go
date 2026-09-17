@@ -5447,7 +5447,7 @@ func TestAPIGitHubSyncReadsCloneTokenFileAfterRotation(t *testing.T) {
 	assert.Equal(baseSHA, mr.MergeBaseSHA)
 }
 
-func sharedHostCloneSyncConfig(forgejoTokenLine, giteaTokenLine string) string {
+func forgejoHostCloneSyncConfig(tokenLine string) string {
 	return fmt.Sprintf(`
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
@@ -5459,34 +5459,28 @@ type = "forgejo"
 host = "code.example.com"
 %s
 
-[[platforms]]
-type = "gitea"
-host = "code.example.com"
-%s
-
 [[repos]]
-platform = "gitea"
+platform = "forgejo"
 platform_host = "code.example.com"
 owner = "acme"
 name = "widget"
-`, forgejoTokenLine, giteaTokenLine)
+`, tokenLine)
 }
 
-// TestAPISharedHostCloneFetchFollowsReloadedHostToken drives the full
+// TestAPIForgejoHostCloneFetchFollowsReloadedToken drives the full
 // stack the way main.go wires it: the gitclone.Manager holds the
 // host-level clone source (tokenauth.CloneKey) from the shared
 // SourceSet, sync runs are triggered over HTTP, and the credential git
-// actually receives is captured per invocation. Two providers share one
-// host; the reload drops one provider's token and rotates the other's,
-// and git fetches must follow the surviving effective chain.
-func TestAPISharedHostCloneFetchFollowsReloadedHostToken(t *testing.T) {
+// actually receives is captured per invocation. The reload rotates the
+// Forgejo host's token, and git fetches must follow it.
+func TestAPIForgejoHostCloneFetchFollowsReloadedToken(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
 	dir := t.TempDir()
 	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "github-token")
-	t.Setenv("KENN_FORGE_SHARED_TOKEN", "shared-token")
-	t.Setenv("KENN_FORGE_ROTATED_TOKEN", "rotated-token")
+	t.Setenv("KENN_FORGE_FORGEJO_TOKEN_A", "forgejo-token")
+	t.Setenv("KENN_FORGE_FORGEJO_TOKEN_B", "rotated-token")
 
 	remote := filepath.Join(dir, "remote.git")
 	gitfixture.Run(t, dir, "init", "--bare", "--initial-branch=main", remote)
@@ -5503,9 +5497,8 @@ func TestAPISharedHostCloneFetchFollowsReloadedHostToken(t *testing.T) {
 	cloneURL := gitLocalRemoteURL(remote)
 
 	cfgPath := filepath.Join(dir, "config.toml")
-	writeConfigToml(t, cfgPath, sharedHostCloneSyncConfig(
-		`token_env = "KENN_FORGE_SHARED_TOKEN"`,
-		`token_env = "KENN_FORGE_SHARED_TOKEN"`,
+	writeConfigToml(t, cfgPath, forgejoHostCloneSyncConfig(
+		`token_env = "KENN_FORGE_FORGEJO_TOKEN_A"`,
 	))
 	cfg, err := config.Load(cfgPath)
 	require.NoError(err)
@@ -5518,10 +5511,10 @@ func TestAPISharedHostCloneFetchFollowsReloadedHostToken(t *testing.T) {
 	)
 	bootToken, err := cloneSrc.Token(ctx)
 	require.NoError(err)
-	require.Equal("shared-token", bootToken)
+	require.Equal("forgejo-token", bootToken)
 
-	giteaRef := platform.RepoRef{
-		Platform:           platform.KindGitea,
+	repoRef := platform.RepoRef{
+		Platform:           platform.KindForgejo,
 		Host:               "code.example.com",
 		Owner:              "acme",
 		Name:               "widget",
@@ -5532,14 +5525,7 @@ func TestAPISharedHostCloneFetchFollowsReloadedHostToken(t *testing.T) {
 		CloneURL:           cloneURL,
 		DefaultBranch:      "main",
 	}
-	giteaProvider := &apiTestGitLabProvider{ref: giteaRef}
-	forgejoProvider := &apiTestGitLabProvider{ref: platform.RepoRef{
-		Platform: platform.KindForgejo,
-		Host:     "code.example.com",
-		Owner:    "acme",
-		Name:     "other",
-	}}
-	registry, err := platform.NewRegistry(giteaProvider, forgejoProvider)
+	registry, err := platform.NewRegistry(&apiTestGitLabProvider{ref: repoRef})
 	require.NoError(err)
 
 	database := dbtest.Open(t)
@@ -5549,7 +5535,7 @@ func TestAPISharedHostCloneFetchFollowsReloadedHostToken(t *testing.T) {
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry, database, clones,
 		[]ghclient.RepoRef{{
-			Platform:           platform.KindGitea,
+			Platform:           platform.KindForgejo,
 			Owner:              "acme",
 			Name:               "widget",
 			PlatformHost:       "code.example.com",
@@ -5577,7 +5563,7 @@ func TestAPISharedHostCloneFetchFollowsReloadedHostToken(t *testing.T) {
 	// operation of that run happens before UpdateRepoSyncCompleted, so
 	// reading the capture file afterwards cannot race a slow trailing
 	// fetch into the next phase's assertions.
-	identity := platformdb.DBRepoIdentity(giteaRef)
+	identity := platformdb.DBRepoIdentity(repoRef)
 	runSync := func(prevCompleted *time.Time) *time.Time {
 		rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/sync", nil)
 		require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
@@ -5600,16 +5586,14 @@ func TestAPISharedHostCloneFetchFollowsReloadedHostToken(t *testing.T) {
 	bootCreds := readCapturedCredentials(t, capturePath)
 	require.NotEmpty(bootCreds)
 	for _, token := range bootCreds {
-		assert.Equal("shared-token", token)
+		assert.Equal("forgejo-token", token)
 	}
 
-	// The forgejo entry goes credential-less while gitea rotates to a
-	// new env var. Git fetches must follow the host's surviving chain
-	// without a restart, not stay pinned to whichever provider source
-	// startup happened to hand the clone manager.
-	writeConfigToml(t, cfgPath, sharedHostCloneSyncConfig(
-		"",
-		`token_env = "KENN_FORGE_ROTATED_TOKEN"`,
+	// The host rotates to a new env var. Git fetches must follow it
+	// without a restart, not stay pinned to the credential startup
+	// handed the clone manager.
+	writeConfigToml(t, cfgPath, forgejoHostCloneSyncConfig(
+		`token_env = "KENN_FORGE_FORGEJO_TOKEN_B"`,
 	))
 	ev := waitForConfigEvent(t, stream, 2*time.Second)
 	require.True(ev.Valid, "reload error: %s", ev.Error)
@@ -5626,7 +5610,7 @@ func TestAPISharedHostCloneFetchFollowsReloadedHostToken(t *testing.T) {
 	// invalid reload by design (the required repo plan no longer
 	// resolves), so the daemon keeps last-known-good: git keeps using
 	// the rotated token rather than a cleared or stale credential.
-	writeConfigToml(t, cfgPath, sharedHostCloneSyncConfig("", ""))
+	writeConfigToml(t, cfgPath, forgejoHostCloneSyncConfig(""))
 	ev = waitForConfigEvent(t, stream, 2*time.Second)
 	require.False(ev.Valid)
 	assert.NotEmpty(ev.Error)

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -71,7 +72,16 @@ func GitLabCLITokenForHost(ctx context.Context, host string) (string, error) {
 		defer cancel()
 	}
 	cmd := execCommand(ctx, "glab", "config", "get", "token", "--host", host)
-	cmd.Env = append(os.Environ(), "GLAB_CHECK_UPDATE=false", "NO_COLOR=1")
+	// glab returns these variables for every host before its per-host config;
+	// passing them through would send one GitLab host's token to another.
+	env := slices.DeleteFunc(os.Environ(), func(kv string) bool {
+		name, _, _ := strings.Cut(kv, "=")
+		return slices.ContainsFunc(
+			[]string{"GITLAB_TOKEN", "GITLAB_ACCESS_TOKEN", "OAUTH_TOKEN"},
+			func(unscoped string) bool { return strings.EqualFold(name, unscoped) },
+		)
+	})
+	cmd.Env = append(env, "GLAB_CHECK_UPDATE=false", "NO_COLOR=1")
 	out, err := cmd.Output()
 	if err != nil {
 		return "", nil

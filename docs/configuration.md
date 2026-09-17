@@ -116,7 +116,8 @@ provider's CLI stores for that host:
 - GitHub: `gh auth token --hostname HOST`. The unscoped fallback applies only
   to `github.com`.
 - GitLab: the token `glab` holds for the host, from its config file or the
-  operating-system keyring.
+  operating-system keyring. `GITLAB_TOKEN` and similar variables are not used
+  here; declare `token_env` to use one.
 - Forgejo and Gitea: the token `fj` ([forgejo-cli](https://codeberg.org/forgejo-contrib/forgejo-cli))
   stores for the host in its keys file. Expired OAuth logins are skipped; run
   any `fj` command against the host to refresh them.

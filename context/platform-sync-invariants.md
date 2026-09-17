@@ -196,9 +196,10 @@ GitLab CLI fallback runs `glab config get token --host HOST` with update
 checks disabled: it prints the resolved token (plaintext config or keyring) on
 stdout, prints nothing when unset, and never contacts the server. Do not use
 `glab auth status --show-token`; it writes to stderr and exits non-zero when
-its API probe fails, which would drop the credential offline. glab honors
-`GITLAB_TOKEN` for every host, which is that CLI's own contract
-(`internal/config/provider_cli_tokens.go::GitLabCLITokenForHost`).
+its API probe fails, which would drop the credential offline. glab returns
+`GITLAB_TOKEN`, `GITLAB_ACCESS_TOKEN`, or `OAUTH_TOKEN` for every host before
+its per-host config, so the lookup strips them to keep one host's token from
+reaching another (`internal/config/provider_cli_tokens.go::GitLabCLITokenForHost`).
 
 Forgejo and Gitea CLI fallback reads fj's `keys.json` directly because fj has
 no command that prints a stored token. The file lives in the `directories`

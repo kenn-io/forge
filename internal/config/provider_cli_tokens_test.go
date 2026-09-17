@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/tokenauth"
 )
 
@@ -88,6 +90,41 @@ func TestGitLabCLITokenForHostIgnoresFailuresAndProse(t *testing.T) {
 		require.NoError(t, err)
 		assert.Empty(t, got)
 	})
+}
+
+func TestGitLabCLITokenForHostIgnoresUnscopedTokenEnvWithRealGlab(t *testing.T) {
+	// glab returns GITLAB_TOKEN, GITLAB_ACCESS_TOKEN, or OAUTH_TOKEN for every
+	// --host before its per-host config. The lookup must return only the
+	// login stored for the requested host.
+	glab, err := exec.LookPath("glab")
+	if err != nil {
+		t.Skip("glab is not installed")
+	}
+	t.Setenv("GLAB_CONFIG_DIR", t.TempDir())
+	t.Setenv("GLAB_CHECK_UPDATE", "false")
+	for _, name := range []string{"GITLAB_TOKEN", "GITLAB_ACCESS_TOKEN", "OAUTH_TOKEN"} {
+		t.Setenv(name, "")
+	}
+	out, err := procutil.Command(
+		glab, "config", "set", "token", "host-scoped-token",
+		"--host", "gitlab.example.test",
+	).CombinedOutput()
+	require.NoError(t, err, string(out))
+
+	for _, name := range []string{"GITLAB_TOKEN", "GITLAB_ACCESS_TOKEN", "OAUTH_TOKEN"} {
+		t.Run(name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			t.Setenv(name, "other-host-token")
+			got, err := GitLabCLITokenForHost(t.Context(), "gitlab.example.test")
+			require.NoError(err)
+			assert.Equal("host-scoped-token", got)
+
+			got, err = GitLabCLITokenForHost(t.Context(), "unset.example.test")
+			require.NoError(err)
+			assert.Empty(got)
+		})
+	}
 }
 
 func TestTokenForPlatformHostFallsBackToGlab(t *testing.T) {

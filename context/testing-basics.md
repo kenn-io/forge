@@ -80,6 +80,11 @@ fixtures, or changing shell-script coverage.
 - Use provider live or container fixtures only when fake transports cannot
   catch endpoint or authentication drift. GitHub GraphQL validation is gated by
   `KENN_FORGE_LIVE_GITHUB_TESTS=1`.
+- A claim about how an external CLI behaves must be tested against that real
+  CLI with isolated config, skipping when it is absent; a fake written to
+  mimic the CLI only proves the fake. Do not test stdlib behavior such as
+  environment filtering on its own
+  (`internal/config/provider_cli_tokens_test.go::TestGitLabCLITokenForHostIgnoresUnscopedTokenEnvWithRealGlab`).
 - Fixtures asserted through windowed endpoints (activity's default 7d range)
   must seed now-relative instants, not absolute calendar dates — pinned dates
   age out and the test starts failing on a later calendar day

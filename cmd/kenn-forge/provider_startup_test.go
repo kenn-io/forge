@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -23,43 +22,57 @@ import (
 	"go.kenn.io/forge/platform"
 )
 
-func TestWireSyncStatusDoesNotReloadDataForEmptyRelayPolls(t *testing.T) {
+func TestWireSyncStatusDoesNotReloadDataForRelayConnectionChanges(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
-	ctx := t.Context()
+	ctx, cancel := context.WithCancel(t.Context())
 	syncer := github.NewSyncer(nil, dbtest.Open(t), nil, nil, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
 	hub := server.NewEventHub()
 	t.Cleanup(hub.Close)
+	events, _ := hub.Subscribe(ctx, false)
 	wireSyncStatus(syncer, hub)
-	store, err := activityrelay.Open(filepath.Join(t.TempDir(), "relay.db"))
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(store.Close()) })
-	_, handler := activityrelay.Handlers(store, nil)
-	feed := httptest.NewServer(handler)
-	t.Cleanup(feed.Close)
-	for range 2 {
-		require.NoError(syncer.PollRelay(ctx, feed.URL, feed.Client()))
+	feed := new(activityrelay.Broadcaster)
+	_, handler := activityrelay.Handlers(feed, nil)
+	relay := httptest.NewServer(handler)
+	t.Cleanup(relay.Close)
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		syncer.RunRelay(ctx, github.RelayOptions{URL: relay.URL, Client: relay.Client()})
+	}()
+	t.Cleanup(func() { cancel(); <-stopped })
+	nextEvent := func() server.RecordedEvent {
+		t.Helper()
+		select {
+		case event := <-events:
+			return event
+		case <-time.After(10 * time.Second):
+			require.FailNow("hub event did not arrive")
+			return server.RecordedEvent{}
+		}
 	}
-	events, _, stale := hub.ReplaySnapshotSince(0)
-	require.False(stale)
-	require.Len(events, 3, "initial sync status and two relay checks must not broadcast data_changed")
-	for _, event := range events {
-		assert.Equal("sync_status", event.Event.Type)
+	initial := nextEvent()
+	assert.Equal("sync_status", initial.Event.Type)
+	assert.Nil(initial.Event.Data.(*github.SyncStatus).Relay)
+	var connected *github.SyncStatus
+	for connected == nil {
+		event := nextEvent()
+		require.Equal("sync_status", event.Event.Type, "relay connection changes must not broadcast data_changed")
+		if status := event.Event.Data.(*github.SyncStatus); status.Relay != nil && status.Relay.Connected {
+			connected = status
+		}
 	}
-	assert.NotNil(events[2].Event.Data.(*github.SyncStatus).Relay)
+	assert.Empty(connected.Relay.Recent)
 
 	// Ordinary sync completion must still refresh visible data, once.
 	syncer.RunOnce(ctx)
-	require.NoError(syncer.PollRelay(ctx, feed.URL, feed.Client()))
-	events, _, stale = hub.ReplaySnapshotSince(events[2].ID)
-	require.False(stale)
 	var kinds []string
-	for _, event := range events {
-		kinds = append(kinds, event.Event.Type)
+	for len(kinds) < 3 {
+		kinds = append(kinds, nextEvent().Event.Type)
 	}
-	assert.Equal([]string{"sync_status", "sync_status", "data_changed", "sync_status"}, kinds)
+	assert.Equal([]string{"sync_status", "sync_status", "data_changed"}, kinds)
 }
 
 func TestBuildServeControlPlanesNodeNeverConstructsProviderPlane(t *testing.T) {

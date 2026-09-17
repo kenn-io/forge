@@ -6770,8 +6770,9 @@ components:
     RelayActivity:
       additionalProperties: false
       properties:
-        cursor:
-          type: string
+        id:
+          format: int64
+          type: integer
         number:
           format: int64
           type: integer
@@ -6789,7 +6790,7 @@ components:
             - repository
           type: string
       required:
-        - cursor
+        - id
         - repository
         - target
         - number
@@ -6798,17 +6799,14 @@ components:
     RelayStatus:
       additionalProperties: false
       properties:
-        last_poll_at:
-          format: date-time
-          type: string
+        connected:
+          type: boolean
         recent:
           items:
             $ref: "#/components/schemas/RelayActivity"
           type: array
-        unavailable:
-          type: boolean
       required:
-        - unavailable
+        - connected
         - recent
       type: object
     RemoveStaleWorktreeInputBody:

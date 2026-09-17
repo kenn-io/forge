@@ -2,16 +2,17 @@
 
 Kenn Forge can use a shared **activity relay** to notice GitHub changes sooner.
 GitHub sends the relay a webhook, a message saying that something changed.
-Each Forge checks the relay every 15 seconds by default, then fetches the
-changed items from GitHub using its own credentials.
+The relay passes that change to the connected Forges right away, and each
+Forge fetches the changed items from GitHub using its own credentials.
 
-The relay keeps a small list of what needs refreshing. It does not keep pull
-request titles, comments, code, or GitHub access tokens. Everyone can keep
-their existing GitHub App or token.
+The relay stores nothing. It passes on which repository and item changed and
+never keeps pull request titles, comments, code, or GitHub access tokens.
+Everyone can keep their existing GitHub App or token.
 
-Use this for GitHub.com repositories where you can configure webhooks. Normal
-Forge syncing continues when the relay is unavailable or a webhook is missed.
-The polling interval controls how often Forge checks the relay; GitHub
+Use this for GitHub.com repositories where you can configure webhooks.
+Delivery is best effort: a Forge that is disconnected, falls behind during a
+burst, or has too many refreshes waiting can miss a change even while it
+shows as connected. Normal Forge syncing picks up anything missed. GitHub
 delivery delays and API limits can still delay an update.
 
 ## Connect your Forge
@@ -25,24 +26,22 @@ Add this to your Forge configuration, using the supplied URL:
 ```toml
 [relay]
 url = "https://relay.example.com"
-poll_interval = "15s"
 ```
 
 Use the HTTPS origin only, without `/activity` or a webhook path. Restart
-Forge after changing these settings. Omitting `poll_interval` uses the
-15-second default. Set it to another positive duration, such as `30s` or
-`1m`, to check less often. Remove the URL or set it to an empty string to
-disable the relay.
+Forge after changing this setting. Remove the URL or set it to an empty
+string to disable the relay.
 
 Configure this on the Forge that syncs with GitHub. For a
 [federated fleet](federated-fleet.md), that means the hub; spokes receive
 updates from their hub. Keep the repositories selected and syncing in Forge.
 Connecting a relay does not add repositories or grant GitHub access.
 
-Click **Relay** in the bottom bar to see recent changes received for your
-repositories and whether the last check succeeded. The list holds the latest
-20 changes since Forge started; an entry means a refresh was requested, not
-that it has finished. The button is hidden when the relay is off.
+Click **Relay** in the bottom bar to see whether Forge is connected and the
+recent changes received for your repositories. Forge reconnects on its own
+after an outage. The list holds the latest 20 changes since Forge started; an
+entry means a hint was received, not that the refresh has finished. The
+button is hidden when the relay is off.
 
 ## Run a shared relay
 
@@ -71,18 +70,16 @@ make build-relay
 This creates `tmp/kenn-forge-relay` for the machine doing the build and does
 not need a frontend build.
 
-Run the service under its own operating-system account. Give it a private
-state directory and a signing-secret file that only the service and its
-administrator can read. Store the secret outside the configuration file and
-database. Do not put it in command arguments or source control.
+Run the service under its own operating-system account. Give it a
+signing-secret file that only the service and its administrator can read.
+Store the secret outside the configuration file. Do not put it in command
+arguments or source control.
 
 Create a relay configuration file:
 
 ```toml
-database = "/var/lib/forge-relay/activity.db"
 webhook_listen = "127.0.0.1:8081"
 feed_listen = "127.0.0.1:8082"
-retention = "168h"
 
 [sources.team]
 secret_file = "/etc/forge-relay/credentials/team"
@@ -121,6 +118,11 @@ private routes:
 Use an HTTPS reverse proxy, such as Caddy, for the public webhook URL. Keep
 ports `8081` and `8082` closed to direct external connections. The public
 proxy must reject all other paths, including `/activity` and `/healthz`.
+
+Forges hold one long-lived connection each to the private feed. The private
+proxy must pass streaming responses through without buffering and must not
+close idle connections faster than every 20 seconds; the relay sends a
+keepalive at that interval. Tailscale Serve handles both.
 
 For a server already enrolled in Tailscale, publish the private feed with:
 
@@ -181,23 +183,22 @@ between them.
 
 ## Data, outages, and troubleshooting
 
-The relay keeps repository IDs, item numbers, the kind of change, arrival
-times, and each event's position in the feed. It keeps seven days by default.
-IDs and timing still reveal activity, so restrict access to the database.
-Keep request-body recording disabled in the proxy and monitoring tools.
+The relay keeps no data. Each change is passed to the connected Forges and
+discarded. Repository IDs and timing still reveal activity in transit, so keep
+request-body recording disabled in the proxy and monitoring tools.
 
-Each Forge saves its position in the feed and any refreshes it still needs
-to finish. A restart resumes that work. If a Forge falls behind the retention
-window, or the relay database is replaced, it refreshes its tracked
-repositories to catch up. The relay database does not need a backup to
-recover repository content.
+A Forge that is disconnected when a change happens does not receive it later.
+Ordinary syncing picks up the change on its next pass, so a relay or Forge
+restart needs no recovery step. Refreshes that cannot run right away, for
+example because the GitHub API budget is spent, are dropped for the same
+reason.
 
 | Symptom | Check |
 | --- | --- |
 | GitHub reports `401` | GitHub and the relay must use the same signing secret. |
 | GitHub reports `400` | Check the source's numeric repository ID list. |
 | GitHub reports `404` | Check the public proxy route and source label in the URL. |
-| Forge cannot reach the feed | Check Tailscale connectivity, access rules, and the private HTTPS URL. |
+| Relay shows disconnected | Check Tailscale connectivity, access rules, and the private HTTPS URL. Forge keeps retrying with increasing delays up to 30 seconds. |
 | Deliveries succeed but Forge stays stale | Confirm the repository is selected, syncing is enabled, and Forge's GitHub credentials can read it. API limits can delay refreshes. |
 
 GitHub [does not automatically resend failed deliveries](https://docs.github.com/en/webhooks/using-webhooks/handling-failed-webhook-deliveries).

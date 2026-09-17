@@ -21,9 +21,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cenkalti/backoff/v7"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/forge/internal/activityrelay"
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
@@ -53,11 +53,10 @@ func TestActivityRelayEndToEnd(t *testing.T) {
 	secretFile := filepath.Join(dir, "signing-secret")
 	require.NoError(os.WriteFile(secretFile, []byte(secret), 0o600))
 	configFile := filepath.Join(dir, "relay.toml")
-	databaseFile := filepath.Join(dir, "relay.db")
 	webhookAddress, feedAddress := "127.0.0.1:0", "127.0.0.1:0"
 	startRelay := func() func() {
 		t.Helper()
-		body := fmt.Sprintf("database = %q\nwebhook_listen = %q\nfeed_listen = %q\n[sources.team]\nsecret_file = %q\nrepository_ids = [12345]\n", databaseFile, webhookAddress, feedAddress, secretFile)
+		body := fmt.Sprintf("webhook_listen = %q\nfeed_listen = %q\n[sources.team]\nsecret_file = %q\nrepository_ids = [12345]\n", webhookAddress, feedAddress, secretFile)
 		require.NoError(os.WriteFile(configFile, []byte(body), 0o600))
 		processCtx, cancel := context.WithCancel(ctx)
 		command := procutil.CommandContext(processCtx, binary, "--config", configFile)
@@ -171,9 +170,47 @@ func TestActivityRelayEndToEnd(t *testing.T) {
 	srv := New(database, syncer, nil, "/", &config.Config{}, ServerOptions{})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	client := &http.Client{Timeout: 10 * time.Second}
-	head, err := activityrelay.Fetch(ctx, client, relayURL, "")
-	require.NoError(err)
-	require.NoError(database.SaveRelayPage(ctx, relayURL, head.NextCursor, nil))
+	refreshed := make(chan int, 16)
+	syncer.SetOnRelayRefresh(func(ctx context.Context, repoID int64, target string, number int) {
+		srv.broadcastRelayRefresh(ctx, repoID, target, number)
+		refreshed <- number
+	})
+	statuses := make(chan *ghclient.RelayStatus, 64)
+	syncer.SetOnStatusChange(func(status *ghclient.SyncStatus) {
+		if status.Relay != nil {
+			statuses <- status.Relay
+		}
+	})
+	awaitConnection := func(connected bool) {
+		t.Helper()
+		for {
+			select {
+			case status := <-statuses:
+				if status.Connected == connected {
+					return
+				}
+			case <-time.After(30 * time.Second):
+				require.FailNow("relay connection state did not change", "want connected=%v", connected)
+			}
+		}
+	}
+	awaitRefresh := func(number int) {
+		t.Helper()
+		select {
+		case got := <-refreshed:
+			require.Equal(number, got)
+		case <-time.After(30 * time.Second):
+			require.FailNow("relay refresh did not complete", "number %d", number)
+		}
+	}
+	subscriptionCtx, stopSubscription := context.WithCancel(ctx)
+	subscriptionDone := make(chan struct{})
+	go func() {
+		defer close(subscriptionDone)
+		syncer.RunRelay(subscriptionCtx, ghclient.RelayOptions{URL: relayURL, Client: &http.Client{}, Backoff: backoff.NewConstantBackOff(50 * time.Millisecond)})
+	}()
+	t.Cleanup(func() { stopSubscription(); <-subscriptionDone })
+	awaitConnection(true)
 	deliver := func(event, payload string) {
 		t.Helper()
 		mac := hmac.New(sha256.New, []byte(secret))
@@ -190,7 +227,7 @@ func TestActivityRelayEndToEnd(t *testing.T) {
 	}
 	pull := `{"repository":{"id":12345,"node_id":"R_test_project"},"pull_request":{"number":7,"title":"private-payload-marker"}}`
 	deliver("pull_request", pull)
-	require.NoError(syncer.PollRelay(ctx, relayURL, client))
+	awaitRefresh(7)
 	first, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
 	require.NoError(err)
 	require.NotNil(first)
@@ -204,7 +241,7 @@ func TestActivityRelayEndToEnd(t *testing.T) {
 	require.Len(status.JSON200.Relay.Recent, 1)
 	assert.Equal("team/project", status.JSON200.Relay.Recent[0].Repository)
 	assert.Equal(int64(7), status.JSON200.Relay.Recent[0].Number)
-	assert.False(status.JSON200.Relay.Unavailable)
+	assert.True(status.JSON200.Relay.Connected)
 	pulls, err := api.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsRequestOptions{})
 	require.NoError(err)
 	require.NotNil(pulls.JSON200)
@@ -218,32 +255,25 @@ func TestActivityRelayEndToEnd(t *testing.T) {
 	assert.True(found, "relay refresh must reach the Forge API")
 	events, _, stale := srv.Hub().ReplaySnapshotSince(0)
 	require.False(stale)
-	var refreshed bool
+	var detailRefreshed bool
 	for _, event := range events {
 		if event.Event.Type == "pr_detail_refreshed" {
-			refreshed = true
+			detailRefreshed = true
 		}
 	}
-	assert.True(refreshed, "relay refresh must invalidate an open PR view")
+	assert.True(detailRefreshed, "relay refresh must invalidate an open PR view")
 	assert.Equal(int32(1), detailReads.Load())
+	// A relay restart drops every subscription; Forge must reconnect on its own.
 	stopRelay()
+	awaitConnection(false)
 	stopRelay = startRelay()
 	defer stopRelay()
+	awaitConnection(true)
 	deliver("issue_comment", `{"repository":{"id":12345,"node_id":"R_test_project"},"issue":{"number":7,"pull_request":{}}}`)
-	syncer.Stop()
-	syncer = newConsumer()
-	t.Cleanup(syncer.Stop)
-	syncer.SetOnRelayRefresh(srv.broadcastRelayRefresh)
-	require.NoError(syncer.PollRelay(ctx, relayURL, client))
-	assert.Equal(int32(2), detailReads.Load(), "PR comments must refresh details after restart")
+	awaitRefresh(7)
+	assert.Equal(int32(2), detailReads.Load(), "PR comments must refresh details after a relay restart")
 	assert.Equal(int32(2), checkReads.Load())
 	deliver("check_run", `{"repository":{"id":12345,"node_id":"R_test_project"},"check_run":{"pull_requests":[{"number":7}]}}`)
-	require.NoError(syncer.PollRelay(ctx, relayURL, client))
-	assert.Equal(int32(2), checkReads.Load())
-	assert.Equal(int32(2), detailReads.Load(), "check events must not trigger refreshes")
-	unrelated, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 8)
-	require.NoError(err)
-	assert.Equal("pending", unrelated.CIStatus)
 	issueHint := `{"repository":{"id":12345,"node_id":"R_test_project"},"issue":{"number":9}}`
 	for index, body := range []*string{new("Original comment"), new("Edited comment"), nil} {
 		issueComment.Store(body)
@@ -254,7 +284,7 @@ func TestActivityRelayEndToEnd(t *testing.T) {
 			assert.Equal(int32(1), unchangedIssues.Load())
 		}
 		deliver("issue_comment", issueHint)
-		require.NoError(syncer.PollRelay(ctx, relayURL, client))
+		awaitRefresh(9)
 		issue, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 9)
 		require.NoError(err)
 		require.NotNil(issue)
@@ -273,10 +303,19 @@ func TestActivityRelayEndToEnd(t *testing.T) {
 		}
 		require.NoError(database.UpsertHTTPEtag(ctx, "github", "github.com", "team", "project", "issue", 9, `"issue-stable"`))
 	}
-	for _, suffix := range []string{"", "-wal"} {
-		data, err := os.ReadFile(databaseFile + suffix)
-		require.NoError(err)
-		assert.NotContains(string(data), "private-payload-marker")
-		assert.NotContains(string(data), secret)
+	// The ignored check event was delivered before the issue hints; refreshes
+	// run in order, so its absence here proves it never became a refresh.
+	assert.Equal(int32(2), checkReads.Load())
+	assert.Equal(int32(2), detailReads.Load(), "check events must not trigger refreshes")
+	unrelated, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 8)
+	require.NoError(err)
+	assert.Equal("pending", unrelated.CIStatus)
+	entries, err := os.ReadDir(dir)
+	require.NoError(err)
+	var names []string
+	for _, entry := range entries {
+		names = append(names, entry.Name())
 	}
+	assert.ElementsMatch([]string{"kenn-forge-relay", "signing-secret", "relay.toml", "forge.db", "forge.db-shm", "forge.db-wal", "blocked-clones"}, names,
+		"the relay must not write anything beside what the test created")
 }

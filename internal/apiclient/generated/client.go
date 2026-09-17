@@ -50833,7 +50833,7 @@ type RegisterWorktreeInputBody struct {
 }
 
 type RelayActivity struct {
-	Cursor     string              `json:"cursor"`
+	ID         int64               `json:"id"`
 	Number     int64               `json:"number"`
 	ReceivedAt time.Time           `json:"received_at"`
 	Repository string              `json:"repository"`
@@ -50841,9 +50841,8 @@ type RelayActivity struct {
 }
 
 type RelayStatus struct {
-	LastPollAt  *time.Time      `json:"last_poll_at,omitempty"`
-	Recent      []RelayActivity `json:"recent"`
-	Unavailable bool            `json:"unavailable"`
+	Connected bool            `json:"connected"`
+	Recent    []RelayActivity `json:"recent"`
 }
 
 type RemoveStaleWorktreeInputBody struct {

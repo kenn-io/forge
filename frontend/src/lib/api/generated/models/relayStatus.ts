@@ -4,7 +4,6 @@
 import type { RelayActivity } from "./relayActivity.ts";
 
 export interface RelayStatus {
-  last_poll_at?: string;
+  connected: boolean;
   recent: RelayActivity[];
-  unavailable: boolean;
 }

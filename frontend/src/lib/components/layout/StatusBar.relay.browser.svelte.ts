@@ -34,11 +34,10 @@ it("opens recent relay activity and returns focus on Escape", async () => {
           ? jsonResponse({
               running: false,
               relay: {
-                last_poll_at: new Date().toISOString(),
-                unavailable: false,
+                connected: true,
                 recent: [
                   {
-                    cursor: "stream:1",
+                    id: 1,
                     repository: "team/project",
                     target: "pull_request_checks",
                     number: 7,
@@ -62,11 +61,10 @@ it("opens recent relay activity and returns focus on Escape", async () => {
   emitBrowserEventSource("sync_status", {
     running: false,
     relay: {
-      last_poll_at: new Date().toISOString(),
-      unavailable: false,
+      connected: true,
       recent: [
         {
-          cursor: "stream:2",
+          id: 2,
           repository: "team/project",
           target: "issue",
           number: 9,
@@ -81,7 +79,7 @@ it("opens recent relay activity and returns focus on Escape", async () => {
   await expect.element(trigger).toHaveFocus();
 });
 
-it("keeps the control visible with an unavailable feed and no recent activity", async () => {
+it("keeps the control visible while disconnected with no recent activity", async () => {
   await page.viewport(1280, 900);
   mounted = await mountBrowserApp("/pulls", {
     overrides: [
@@ -89,14 +87,16 @@ it("keeps the control visible with an unavailable feed and no recent activity", 
         req.url.pathname === "/api/v1/sync/status"
           ? jsonResponse({
               running: false,
-              relay: { last_poll_at: new Date().toISOString(), unavailable: true, recent: [] },
+              relay: { connected: false, recent: [] },
             })
           : null,
     ],
   });
   await page.getByRole("button", { name: "Show relay activity" }).click();
   const dialog = page.getByRole("dialog", { name: "Recent relay activity" });
-  await expect.element(dialog.getByText("Could not reach the relay. Normal syncing continues.")).toBeVisible();
+  await expect
+    .element(dialog.getByText("Not connected to the relay. Reconnecting; normal syncing continues."))
+    .toBeVisible();
   await expect.element(dialog.getByText("No recent activity for your repositories.")).toBeVisible();
   await page.getByRole("button", { name: "Show provider quota details" }).click();
   await expect.element(dialog).not.toBeInTheDocument();

@@ -94,6 +94,18 @@ the same bounded wait so none can hot-loop. Context cancellation interrupts
 both an active read and the reconnect timer immediately
 (`internal/providerplane/events.go::EventClient.Run`).
 
+The activity relay subscription follows the same lifecycle policy using the
+library's `ExponentialBackOff`, 1s to a 30s base ceiling with 20% jitter applied
+after the cap, and no
+durable cursor: a reconnect never replays, and hints missed while
+disconnected are left to ordinary syncing. The policy resets only after a
+stream has stayed open for the full ceiling, so a relay or proxy that accepts
+and immediately drops connections cannot cause a reconnect storm. Do not
+write tests that the library's backoff backs off; test only the reset
+condition if it changes. The relay performs no reconciliation on connect; the
+replay-barrier rule below applies only to the hub event stream
+(`internal/github/relay.go::RunRelay`).
+
 Every successful connection requests provider reconciliation and refreshes
 sync status after the replay-complete barrier and before it is reported
 healthy. A stale cursor or poison frame

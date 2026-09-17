@@ -5,12 +5,12 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/cenkalti/backoff/v7"
 	gh "github.com/google/go-github/v91/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -19,62 +19,98 @@ import (
 	"go.kenn.io/forge/platform"
 )
 
-func TestRelayStatusRecentActivity(t *testing.T) {
+// relayStatuses forwards every published relay status so tests wait on the
+// exact transition they care about instead of polling.
+func relayStatuses(t *testing.T, syncer *Syncer) <-chan RelayStatus {
+	t.Helper()
+	statuses := make(chan RelayStatus, 256)
+	syncer.SetOnStatusChange(func(status *SyncStatus) {
+		if status.Relay != nil {
+			statuses <- *status.Relay
+		}
+	})
+	return statuses
+}
+
+func awaitRelayStatus(t *testing.T, statuses <-chan RelayStatus, matches func(RelayStatus) bool) RelayStatus {
+	t.Helper()
+	for {
+		select {
+		case status := <-statuses:
+			if matches(status) {
+				return status
+			}
+		case <-time.After(10 * time.Second):
+			require.FailNow(t, "relay status transition did not arrive")
+		}
+	}
+}
+
+func TestRelaySubscriptionStatusAndRecentActivity(t *testing.T) {
 	t.Parallel()
-	require := require.New(t)
 	assert := assert.New(t)
-	ctx := t.Context()
+	ctx, cancel := context.WithCancel(t.Context())
 	database := openTestDB(t)
 	budget := NewSyncBudget(1)
 	budget.Spend(1) // Received events must be visible even while refreshes wait for budget.
-	repo := RepoRef{Platform: platform.KindGitHub, PlatformHost: "github.com", PlatformExternalID: "R_project", Owner: "team", Name: "project"}
-	syncer := NewSyncer(nil, database, nil, []RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{"github.com": budget})
+	repos := []RepoRef{
+		{Platform: platform.KindGitHub, PlatformHost: "github.com", PlatformExternalID: "R_project", Owner: "team", Name: "project"},
+		{Platform: platform.KindGitHub, PlatformHost: "github.com", PlatformExternalID: "R_archived", Archived: true},
+		{Platform: platform.KindGitLab, PlatformHost: "gitlab.example.com", PlatformExternalID: "123"},
+	}
+	syncer := NewSyncer(nil, database, nil, repos, time.Minute, nil, map[string]*SyncBudget{"github.com": budget})
 	assert.Nil(syncer.Status().Relay)
-	store, err := activityrelay.Open(filepath.Join(t.TempDir(), "relay.db"))
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(store.Close()) })
-	_, handler := activityrelay.Handlers(store, nil)
+	statuses := relayStatuses(t, syncer)
+	feed := new(activityrelay.Broadcaster)
+	_, handler := activityrelay.Handlers(feed, nil)
 	var unavailable atomic.Bool
-	feed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if unavailable.Load() {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
 		handler.ServeHTTP(w, r)
 	}))
-	t.Cleanup(feed.Close)
-	require.NoError(syncer.PollRelay(ctx, feed.URL, feed.Client()))
-	require.NotNil(syncer.Status().Relay)
-	assert.Empty(syncer.Status().Relay.Recent)
+	t.Cleanup(server.Close)
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		syncer.RunRelay(ctx, RelayOptions{URL: server.URL, Client: server.Client(), Backoff: backoff.NewConstantBackOff(time.Millisecond)})
+	}()
+	t.Cleanup(func() { cancel(); <-stopped })
+	connected := awaitRelayStatus(t, statuses, func(status RelayStatus) bool { return status.Connected })
+	assert.Empty(connected.Recent)
 	var hints []activityrelay.Hint
 	for number := 1; number <= 25; number++ {
 		hints = append(hints, activityrelay.Hint{Provider: "github", Host: "github.com", RepositoryID: "R_project", Target: activityrelay.Issue, Number: number})
 	}
-	hints = append(hints, activityrelay.Hint{Provider: "github", Host: "github.com", RepositoryID: "R_untracked", Target: activityrelay.Issue, Number: 99})
-	require.NoError(store.Append(ctx, hints))
-	require.NoError(syncer.PollRelay(ctx, feed.URL, feed.Client()))
-	status := syncer.Status().Relay
-	require.Len(status.Recent, 20)
-	assert.Equal(25, status.Recent[0].Number)
+	hints = append(hints,
+		activityrelay.Hint{Provider: "github", Host: "github.com", RepositoryID: "R_untracked", Target: activityrelay.Issue, Number: 99},
+		activityrelay.Hint{Provider: "github", Host: "github.com", RepositoryID: "R_archived", Target: activityrelay.Repository},
+	)
+	feed.Publish(hints)
+	status := awaitRelayStatus(t, statuses, func(status RelayStatus) bool {
+		return len(status.Recent) == 20 && status.Recent[0].Number == 25
+	})
 	assert.Equal(6, status.Recent[19].Number)
 	assert.Equal("team/project", status.Recent[0].Repository)
-	assert.False(status.Unavailable)
-	assert.False(status.LastPollAt.IsZero())
+	assert.True(status.Connected)
 	assert.False(status.Recent[0].ReceivedAt.IsZero())
+	assert.Greater(status.Recent[0].ID, status.Recent[1].ID)
 	syncer.publishStatus(&SyncStatus{Running: true})
-	assert.Equal(status, syncer.Status().Relay, "ordinary sync must preserve relay activity")
+	assert.Equal(status, *syncer.Status().Relay, "ordinary sync must preserve relay activity")
+	published := syncer.Status()
 	unavailable.Store(true)
-	require.Error(syncer.PollRelay(ctx, feed.URL, feed.Client()))
-	assert.True(syncer.Status().Relay.Unavailable)
-	assert.Equal(status.Recent, syncer.Status().Relay.Recent)
-	assert.False(status.Unavailable, "published snapshots must remain immutable")
+	server.CloseClientConnections()
+	disconnected := awaitRelayStatus(t, statuses, func(status RelayStatus) bool { return !status.Connected })
+	assert.Equal(status.Recent, disconnected.Recent)
+	assert.True(published.Relay.Connected, "a published snapshot must not change after a later transition")
 	unavailable.Store(false)
-	require.NoError(syncer.PollRelay(ctx, feed.URL, feed.Client()))
-	assert.False(syncer.Status().Relay.Unavailable)
-	assert.Len(syncer.Status().Relay.Recent, 20, "repeated polls must not repeat events")
+	awaitRelayStatus(t, statuses, func(status RelayStatus) bool { return status.Connected })
+	assert.Len(syncer.Status().Relay.Recent, 20, "reconnecting must not replay activity")
 }
 
-func TestRelayTargetedChecksAndBudgetRecovery(t *testing.T) {
+func TestRelayTargetedChecksAndBudgetGate(t *testing.T) {
 	require := require.New(t)
 	t.Parallel()
 	assert := assert.New(t)
@@ -100,23 +136,10 @@ func TestRelayTargetedChecksAndBudgetRecovery(t *testing.T) {
 	// A cached catalog ref need not carry GitHub's numeric REST ID.
 	repo := RepoRef{Platform: platform.KindGitHub, PlatformHost: "github.com", PlatformExternalID: "R_test_project", Owner: "team", Name: "project"}
 	syncer := NewSyncer(map[string]Client{"github.com": provider}, database, nil, []RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{"github.com": budget})
-	store, err := activityrelay.Open(filepath.Join(t.TempDir(), "relay.db"))
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(store.Close()) })
-	_, feed := activityrelay.Handlers(store, nil)
-	server := httptest.NewServer(feed)
-	t.Cleanup(server.Close)
-	head, err := store.Read(ctx, "", 100)
-	require.NoError(err)
-	require.NoError(database.SaveRelayPage(ctx, server.URL, head.NextCursor, nil))
 	hint := activityrelay.Hint{Provider: "github", Host: "github.com", RepositoryID: "R_test_project", Target: activityrelay.PullRequestChecks, Number: 7}
-	require.NoError(store.Append(ctx, []activityrelay.Hint{hint, hint}))
 	budget.Spend(100)
-	require.NoError(syncer.PollRelay(ctx, server.URL, server.Client()))
-	pending, err := database.PendingRelayHints(ctx, server.URL)
-	require.NoError(err)
-	assert.Equal([]activityrelay.Hint{hint}, pending)
-	assert.Zero(provider.getCombinedCalls.Load())
+	require.NoError(syncer.refreshRelayHint(WithSyncBudget(ctx), hint))
+	assert.Zero(provider.getCombinedCalls.Load(), "an exhausted budget drops the hint instead of spending")
 	budget.Reset()
 	var notified int
 	syncer.SetOnRelayRefresh(func(_ context.Context, id int64, target string, number int) {
@@ -124,7 +147,7 @@ func TestRelayTargetedChecksAndBudgetRecovery(t *testing.T) {
 		assert.Equal(activityrelay.PullRequestChecks, target)
 		notified = number
 	})
-	require.NoError(syncer.PollRelay(ctx, server.URL, server.Client()))
+	require.NoError(syncer.refreshRelayHint(WithSyncBudget(ctx), hint))
 	assert.Equal(7, notified)
 	assert.Equal(int32(1), provider.getCombinedCalls.Load())
 	updated, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
@@ -133,56 +156,90 @@ func TestRelayTargetedChecksAndBudgetRecovery(t *testing.T) {
 	unrelated, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 8)
 	require.NoError(err)
 	assert.Equal("pending", unrelated.CIStatus)
-	pending, err = database.PendingRelayHints(ctx, server.URL)
-	require.NoError(err)
-	assert.Empty(pending)
-
-	syncer.DisableSync()
-	require.NoError(store.Append(ctx, []activityrelay.Hint{hint}))
-	require.NoError(syncer.PollRelay(ctx, server.URL, server.Client()))
-	assert.Equal(int32(1), provider.getCombinedCalls.Load())
 }
 
-func TestRelayInitialAndExpiredCursorReconciliation(t *testing.T) {
-	require := require.New(t)
+func TestRelayQueueCoalescesAndSkipsDisabledSync(t *testing.T) {
 	t.Parallel()
+	require := require.New(t)
 	assert := assert.New(t)
-	ctx := t.Context()
+	queue := &relayQueue{signal: make(chan struct{}, 1)}
+	hint := activityrelay.Hint{Provider: "github", Host: "github.com", RepositoryID: "R_test_project", Target: activityrelay.Issue, Number: 9}
+	other := hint
+	other.Number = 10
+	queue.push(hint)
+	queue.push(hint)
+	queue.push(other)
+	first, ok := queue.pop()
+	require.True(ok)
+	second, ok := queue.pop()
+	require.True(ok)
+	_, ok = queue.pop()
+	assert.False(ok, "repeated hints for one target coalesce while waiting")
+	assert.Equal([]activityrelay.Hint{hint, other}, []activityrelay.Hint{first, second})
+
 	database := openTestDB(t)
-	budget := NewSyncBudget(1)
-	budget.Spend(1)
-	repos := []RepoRef{
-		{Platform: platform.KindGitHub, PlatformHost: "github.com", PlatformExternalID: "R_test_project", Owner: "team", Name: "project"},
-		{Platform: platform.KindGitHub, PlatformHost: "github.com", PlatformExternalID: "R_archived", Archived: true},
-		{Platform: platform.KindGitLab, PlatformHost: "gitlab.example.com", PlatformExternalID: "123"},
-	}
-	syncer := NewSyncer(map[string]Client{"github.com": &mockClient{}}, database, nil, repos, time.Minute, nil, map[string]*SyncBudget{"github.com": budget})
-	store, err := activityrelay.Open(filepath.Join(t.TempDir(), "relay.db"))
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(store.Close()) })
-	_, handler := activityrelay.Handlers(store, nil)
-	feed := httptest.NewServer(handler)
-	t.Cleanup(feed.Close)
-	require.NoError(syncer.PollRelay(ctx, feed.URL, feed.Client()))
-	want := activityrelay.Hint{Provider: "github", Host: "github.com", RepositoryID: "R_test_project", Target: activityrelay.Repository}
-	pending, err := database.PendingRelayHints(ctx, feed.URL)
-	require.NoError(err)
-	assert.Equal([]activityrelay.Hint{want}, pending)
-	require.NoError(database.CompleteRelayHint(ctx, feed.URL, want))
-	before, err := database.RelayCursor(ctx, feed.URL)
-	require.NoError(err)
-	require.NoError(store.Append(ctx, []activityrelay.Hint{want}))
-	require.NoError(store.Prune(ctx, time.Now().Add(time.Hour)))
-	require.NoError(syncer.PollRelay(ctx, feed.URL, feed.Client()))
-	after, err := database.RelayCursor(ctx, feed.URL)
-	require.NoError(err)
-	assert.NotEqual(before, after)
-	pending, err = database.PendingRelayHints(ctx, feed.URL)
-	require.NoError(err)
-	assert.Equal([]activityrelay.Hint{want}, pending)
+	syncer := NewSyncer(nil, database, nil, []RepoRef{{Platform: platform.KindGitHub, PlatformHost: "github.com", PlatformExternalID: "R_test_project", Owner: "team", Name: "project"}}, time.Minute, nil, nil)
+	syncer.DisableSync()
+	syncer.receiveRelayHint(hint, 1, queue)
+	_, ok = queue.pop()
+	assert.False(ok, "hints are ignored while syncing is disabled")
+	assert.Nil(syncer.Status().Relay)
 }
 
-func TestRelayDisabledIssueRetainsWorkDuringCooldown(t *testing.T) {
+func TestRelayRepositoryHintsRespectBudgetAdmission(t *testing.T) {
+	t.Parallel()
+	for _, target := range []string{activityrelay.Repository, activityrelay.RepositoryRefs} {
+		t.Run(target, func(t *testing.T) {
+			t.Parallel()
+			require := require.New(t)
+			assert := assert.New(t)
+			ctx := WithSyncBudget(t.Context())
+			database := openTestDB(t)
+			repo := RepoRef{Platform: platform.KindGitHub, PlatformHost: "github.com", PlatformExternalID: "R_test_project", Owner: "team", Name: "project"}
+			_, err := database.UpsertRepo(ctx, db.RepoIdentity{
+				Platform: "github", PlatformHost: "github.com", PlatformRepoID: repo.PlatformExternalID, Owner: repo.Owner, Name: repo.Name,
+			})
+			require.NoError(err)
+			budget := NewSyncBudgetWithEssentialReserve(100)
+			var requests atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				w.Header().Set("Content-Type", "application/json")
+				if r.URL.Path == "/api/v3/repos/team/project" {
+					_, _ = w.Write([]byte(`{"id":1,"node_id":"R_test_project","name":"project","owner":{"login":"team"},"default_branch":"main","has_issues":true}`))
+					return
+				}
+				_, _ = w.Write([]byte(`[]`))
+			}))
+			t.Cleanup(server.Close)
+			client, err := NewClient(testTokenSource("token"), "github.com", nil, budget, WithBaseURLForTesting(server.URL))
+			require.NoError(err)
+			syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, []RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{"github.com": budget})
+			var refreshed int
+			syncer.SetOnRelayRefresh(func(context.Context, int64, string, int) { refreshed++ })
+			hint := activityrelay.Hint{Provider: "github", Host: "github.com", RepositoryID: repo.PlatformExternalID, Target: target}
+
+			// Both the reserve alone and less than the conservative refresh cost
+			// must leave the hint to ordinary syncing, without any provider I/O.
+			for _, spent := range []int{90, 71} {
+				budget.Reset()
+				budget.Spend(spent)
+				require.NoError(syncer.refreshRelayHint(ctx, hint))
+				assert.Zero(requests.Load())
+				assert.Equal(spent, budget.Spent())
+				assert.Zero(refreshed)
+			}
+
+			budget.Reset()
+			budget.Spend(70)
+			require.NoError(syncer.refreshRelayHint(ctx, hint))
+			assert.Positive(requests.Load(), "an affordable hint must refresh the provider")
+			assert.Equal(1, refreshed)
+		})
+	}
+}
+
+func TestRelayDisabledIssueRespectsCooldown(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
@@ -200,26 +257,11 @@ func TestRelayDisabledIssueRetainsWorkDuringCooldown(t *testing.T) {
 	syncer := NewSyncer(map[string]Client{"github.com": provider}, database, nil, []RepoRef{ref}, time.Minute, nil, testBudget(1000))
 	now := time.Now().UTC()
 	syncer.now = func() time.Time { return now }
-	store, err := activityrelay.Open(filepath.Join(t.TempDir(), "relay.db"))
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(store.Close()) })
-	_, handler := activityrelay.Handlers(store, nil)
-	feed := httptest.NewServer(handler)
-	t.Cleanup(feed.Close)
-	head, err := store.Read(ctx, "", 100)
-	require.NoError(err)
-	require.NoError(database.SaveRelayPage(ctx, feed.URL, head.NextCursor, nil))
 	hint := activityrelay.Hint{Provider: "github", Host: "github.com", RepositoryID: ref.PlatformExternalID, Target: activityrelay.Issue, Number: 9}
-	require.NoError(store.Append(ctx, []activityrelay.Hint{hint}))
-	first := syncer.PollRelay(ctx, feed.URL, feed.Client())
-	second := syncer.PollRelay(ctx, feed.URL, feed.Client())
-	assert.Equal(1, calls, "disabled features must not be retried every relay poll")
-	require.NoError(first)
-	require.NoError(second)
-	pending, err := database.PendingRelayHints(ctx, feed.URL)
-	require.NoError(err)
-	assert.Equal([]activityrelay.Hint{hint}, pending)
+	require.NoError(syncer.refreshRelayHint(WithSyncBudget(ctx), hint))
+	require.NoError(syncer.refreshRelayHint(WithSyncBudget(ctx), hint))
+	assert.Equal(1, calls, "disabled features must not be retried for every hint")
 	now = now.Add(24*time.Hour + time.Second)
-	require.NoError(syncer.PollRelay(ctx, feed.URL, feed.Client()))
+	require.NoError(syncer.refreshRelayHint(WithSyncBudget(ctx), hint))
 	assert.Equal(2, calls)
 }

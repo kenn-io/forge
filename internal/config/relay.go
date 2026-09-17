@@ -5,22 +5,14 @@ import (
 	"net"
 	"net/url"
 	"strings"
-	"time"
 )
 
 // Relay is an optional activity source. Changing it requires a daemon restart.
 type Relay struct {
-	URL          string `toml:"url,omitempty"`
-	PollInterval string `toml:"poll_interval,omitempty"`
+	URL string `toml:"url,omitempty"`
 }
 
 func (r *Relay) Validate() error {
-	if r.PollInterval != "" {
-		interval, err := time.ParseDuration(r.PollInterval)
-		if err != nil || interval <= 0 {
-			return errors.New("config: relay.poll_interval must be a positive duration")
-		}
-	}
 	if r.URL == "" {
 		return nil
 	}
@@ -34,12 +26,4 @@ func (r *Relay) Validate() error {
 	}
 	r.URL = strings.TrimSuffix(r.URL, "/")
 	return nil
-}
-
-func (r Relay) Interval() time.Duration {
-	if r.PollInterval == "" {
-		return 15 * time.Second
-	}
-	interval, _ := time.ParseDuration(r.PollInterval)
-	return interval
 }

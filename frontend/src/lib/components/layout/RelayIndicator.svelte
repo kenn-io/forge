@@ -36,22 +36,22 @@
     aria-expanded={open}
     onclick={() => { open = !open; }}
   >
-    <StatusDot status={status.unavailable ? "stale" : "working"} label={status.unavailable ? "Relay unavailable" : "Relay connected"} size={5} />
+    <StatusDot status={status.connected ? "working" : "stale"} label={status.connected ? "Relay connected" : "Relay disconnected"} size={5} />
     Relay
   </button>
   {#if open}
     <div class="relay-popover kit-popover-card" role="dialog" aria-label="Recent relay activity">
       <h2>Recent relay activity</h2>
-      {#if status.unavailable}
-        <p class="relay-error">Could not reach the relay. Normal syncing continues.</p>
-      {:else if status.last_poll_at}
-        <p>Last checked {localDateTimeLabel(status.last_poll_at)}</p>
+      {#if status.connected}
+        <p>Connected. Changes arrive as GitHub reports them.</p>
+      {:else}
+        <p class="relay-error">Not connected to the relay. Reconnecting; normal syncing continues.</p>
       {/if}
       {#if status.recent.length === 0}
         <p>No recent activity for your repositories.</p>
       {:else}
         <ul>
-          {#each status.recent as event (event.cursor)}
+          {#each status.recent as event (event.id)}
             <li>
               <span class="repository">{event.repository}</span>
               <span>{activityLabel(event)}</span>

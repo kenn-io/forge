@@ -1378,6 +1378,9 @@ func rejectUnsupportedConfigKeys(meta toml.MetaData) error {
 				key.String(),
 			)
 		}
+		if len(key) == 2 && key[0] == "relay" && key[1] == "poll_interval" {
+			return errors.New("relay.poll_interval is not supported; Forge subscribes to the relay instead of polling it")
+		}
 	}
 	return nil
 }

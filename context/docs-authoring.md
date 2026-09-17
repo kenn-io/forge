@@ -68,8 +68,8 @@ screenshots, or the Zensical site.
 - Rendered-site browser verification is separate from the static build; the
   browser-image docs CI lane runs Chromium and WebKit.
   (`scripts/verify-docs-site.mjs`, `.github/workflows/ci.yml::docs`)
-- Production docs use a default-branch `workflow_run`; the released SHA must be
-  on `main` and latest before build and before/after promotion. A stale attempt
+- Production docs deploy when a stable GitHub Release is published; the released
+  SHA must be on `main` and latest before build and before/after promotion. A stale attempt
   dispatches trusted latest-release reconciliation. Promotion uses Vercel's
   project endpoint so project-scoped tokens avoid the CLI's user lookup. No
   Vercel Git app or GitHub environment. (`.github/workflows/deploy-docs.yml`)

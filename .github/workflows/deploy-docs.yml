@@ -1,9 +1,8 @@
 name: Deploy documentation
 
 on:
-  workflow_run:
-    workflows: [Release]
-    types: [completed]
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -13,8 +12,7 @@ jobs:
   validate-release:
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'push')
+      !github.event.release.prerelease
     runs-on: ubuntu-latest
     outputs:
       release-sha: ${{ steps.release.outputs.sha }}
@@ -30,14 +28,14 @@ jobs:
         id: release
         env:
           GH_TOKEN: ${{ github.token }}
-          WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          RELEASE_SHA: ${{ github.event_name == 'release' && github.sha || '' }}
         run: |
           set -euo pipefail
           git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
           latest_tag="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)"
           git fetch --force origin "refs/tags/$latest_tag:refs/tags/$latest_tag"
           latest_sha="$(git rev-list -n 1 "refs/tags/$latest_tag")"
-          release_sha="${WORKFLOW_RUN_SHA:-$latest_sha}"
+          release_sha="${RELEASE_SHA:-$latest_sha}"
           if ! git merge-base --is-ancestor "$release_sha" refs/remotes/origin/main; then
             echo "Refusing to deploy documentation from a release commit outside main." >&2
             exit 1

@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -113,38 +115,62 @@ func TestOpenRejectsNonStreamResponses(t *testing.T) {
 }
 
 // blockedWriter behaves like a socket whose peer stopped reading: writes block
-// until a deadline expires.
+// until an expired deadline is installed. onInstall runs inside every
+// deadline install so a test can force a cancellation into that window.
 type blockedWriter struct {
 	header    http.Header
-	deadline  chan time.Time // consumed by Write
-	installed chan time.Time // observed by the test
+	onInstall func(time.Time)
+	mu        sync.Mutex
+	deadlines []time.Time
+	expired   chan struct{}
+	writes    atomic.Int32
 }
 
 func (w *blockedWriter) Header() http.Header { return w.header }
 func (w *blockedWriter) WriteHeader(int)     {}
 func (w *blockedWriter) Write([]byte) (int, error) {
-	for deadline := range w.deadline {
-		if !deadline.IsZero() && !deadline.After(time.Now()) {
-			return 0, errors.New("write deadline exceeded")
-		}
-	}
-	return 0, errors.New("closed")
+	w.writes.Add(1)
+	<-w.expired
+	return 0, errors.New("write deadline exceeded")
 }
 
 func (w *blockedWriter) SetWriteDeadline(deadline time.Time) error {
-	w.deadline <- deadline
-	select {
-	case w.installed <- deadline:
-	default:
+	w.mu.Lock()
+	w.deadlines = append(w.deadlines, deadline)
+	w.mu.Unlock()
+	if w.onInstall != nil {
+		w.onInstall(deadline)
+	}
+	if !deadline.IsZero() && !deadline.After(time.Now()) {
+		select {
+		case <-w.expired:
+		default:
+			close(w.expired)
+		}
 	}
 	return nil
+}
+
+func (w *blockedWriter) lastDeadline() time.Time {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.deadlines[len(w.deadlines)-1]
+}
+
+func awaitStream(t *testing.T, done <-chan struct{}, message string) {
+	t.Helper()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, message)
+	}
 }
 
 func TestShutdownReleasesASubscriberBlockedInWrite(t *testing.T) {
 	require := require.New(t)
 	t.Parallel()
 	ctx, cancel := context.WithCancel(t.Context())
-	writer := &blockedWriter{header: http.Header{}, deadline: make(chan time.Time, 8), installed: make(chan time.Time, 8)}
+	writer := &blockedWriter{header: http.Header{}, expired: make(chan struct{})}
 	feed := new(Broadcaster)
 	done := make(chan struct{})
 	go func() {
@@ -154,18 +180,34 @@ func TestShutdownReleasesASubscriberBlockedInWrite(t *testing.T) {
 	// Hints waiting in the subscriber's buffer at shutdown must not re-arm a
 	// fresh write deadline after cancellation expired the previous one.
 	feed.Publish([]Hint{{Provider: "github", Host: "github.com", RepositoryID: "R_x", Target: Repository}})
-	select {
-	case deadline := <-writer.installed:
-		require.True(deadline.After(time.Now()), "a frame write carries a bounded deadline")
-	case <-time.After(5 * time.Second):
-		require.FailNow("the stream did not start writing")
-	}
+	require.Eventually(func() bool { return writer.writes.Load() > 0 }, 5*time.Second, time.Millisecond, "the stream did not start writing")
+	require.True(writer.lastDeadline().After(time.Now()), "a frame write carries a bounded deadline")
 	cancel()
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		require.FailNow("cancellation must interrupt a write that is blocked on a stalled subscriber")
+	awaitStream(t, done, "cancellation must interrupt a write that is blocked on a stalled subscriber")
+	require.False(writer.lastDeadline().After(time.Now()), "the expired deadline must be the one left in force")
+}
+
+func TestShutdownDuringDeadlineInstallStillExpiresIt(t *testing.T) {
+	require := require.New(t)
+	t.Parallel()
+	ctx, cancel := context.WithCancel(t.Context())
+	writer := &blockedWriter{header: http.Header{}, expired: make(chan struct{})}
+	var cancelled sync.Once
+	writer.onInstall = func(deadline time.Time) {
+		if deadline.After(time.Now()) {
+			// Cancel while the frame deadline is being installed: the window
+			// between the context check and the install.
+			cancelled.Do(cancel)
+		}
 	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		serveStream(ctx, writer, new(Broadcaster))
+	}()
+	awaitStream(t, done, "a cancellation racing the deadline install must still end the stream")
+	require.False(writer.lastDeadline().After(time.Now()), "the cancellation's expired deadline must be installed last")
+	require.EqualValues(1, writer.writes.Load(), "the frame write that raced the cancellation is interrupted, not repeated")
 }
 
 func TestReadReconnectsWhenAnOpenStreamStalls(t *testing.T) {

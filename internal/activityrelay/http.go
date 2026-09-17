@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -92,20 +93,26 @@ const writeTimeout = 30 * time.Second
 func serveStream(ctx context.Context, w http.ResponseWriter, broadcaster *Broadcaster) {
 	controller := http.NewResponseController(w)
 	// Shutdown must interrupt a write already blocked on a full socket, which
-	// only an expired deadline can do.
-	stop := context.AfterFunc(ctx, func() { _ = controller.SetWriteDeadline(time.Now()) })
+	// only an expired deadline can do. The mutex serializes that expiry with
+	// each frame's deadline install so a cancellation can never be overwritten
+	// by a fresh 30-second deadline: whichever runs second wins, and the
+	// install refuses once ctx is done.
+	var deadlineMu sync.Mutex
+	stop := context.AfterFunc(ctx, func() {
+		deadlineMu.Lock()
+		defer deadlineMu.Unlock()
+		_ = controller.SetWriteDeadline(time.Now())
+	})
 	defer stop()
 	write := func(frame string) bool {
-		// Once cancelled, never re-arm the deadline the cancellation expired.
+		deadlineMu.Lock()
 		if ctx.Err() != nil {
+			deadlineMu.Unlock()
 			return false
 		}
-		if err := controller.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
-			return false
-		}
-		// A cancellation that landed between the check above and the deadline
-		// install has just been overwritten; honour it before blocking.
-		if ctx.Err() != nil {
+		err := controller.SetWriteDeadline(time.Now().Add(writeTimeout))
+		deadlineMu.Unlock()
+		if err != nil {
 			return false
 		}
 		if _, err := io.WriteString(w, frame); err != nil {

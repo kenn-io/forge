@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { Button, Card } from "@kenn-io/kit-ui";
+  import { Button, Card, Menu, MenuTrigger, MenuContent, MenuItem } from "@kenn-io/kit-ui";
+  import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import CheckIcon from "@lucide/svelte/icons/check";
   import { Effect } from "effect";
   import { tick, untrack } from "svelte";
@@ -71,6 +72,8 @@
   let generationAtOpen = $state(0);
 
   let expanded = $state(false);
+  let reviewMenuOpen = $state(false);
+  let requestChangesForm = $state(false);
   let body = $state("");
   let submitting = $state(false);
   let submittingAction = $state<"approve" | "request_changes" | null>(null);
@@ -90,6 +93,7 @@
     void name;
     void number;
     expanded = false;
+    reviewMenuOpen = false;
     body = "";
     pinAtOpen = "";
     generationAtOpen = routeGeneration;
@@ -228,6 +232,16 @@
     );
   }
 
+  function openReviewForm(requestChanges = false): void {
+    if (disabled || submitting) return;
+    if (!expanded) {
+      pinAtOpen = (platformHeadSha ?? expectedHeadSha ?? "").trim();
+      generationAtOpen = routeGeneration;
+    }
+    requestChangesForm = requestChanges;
+    expanded = true;
+  }
+
   function handleDocumentPointerDown(event: PointerEvent): void {
     if (!expanded || submitting) return;
     if (event.target instanceof Node && !sectionEl?.contains(event.target)) {
@@ -238,29 +252,53 @@
 
 <svelte:document onpointerdowncapture={handleDocumentPointerDown} />
 
-<div bind:this={sectionEl} class={["approve-section", expanded && "approve-section--open"]}>
-  <Button
-    class="btn btn--approve"
-    onclick={() => {
-      if (disabled || submitting) return;
-      if (!expanded) {
-        pinAtOpen = (platformHeadSha ?? expectedHeadSha ?? "").trim();
-        generationAtOpen = routeGeneration;
-      }
-      expanded = !expanded;
-    }}
-    disabled={disabled || submitting}
-    ariaExpanded={expanded}
-    tone="success"
-    surface="soft"
-    title={expanded
-        ? "Close the approval form"
-        : title ?? "Open the approval form to submit a code review on this pull request"}
-    label="Approve"
-    {size}
-  >
-    <CheckIcon size="14" strokeWidth="2.4" aria-hidden="true" />
-  </Button>
+<div bind:this={sectionEl} class={["approve-section", (expanded || reviewMenuOpen) && "approve-section--open"]}>
+  <div class={["review-buttons", canRequestChanges && "review-buttons--split"]}>
+    <Button
+      class="btn btn--approve"
+      onclick={() => {
+        if (disabled || submitting) return;
+        reviewMenuOpen = false;
+        if (expanded) expanded = false;
+        else openReviewForm();
+      }}
+      disabled={disabled || submitting}
+      ariaExpanded={expanded}
+      tone="success"
+      surface="soft"
+      title={expanded
+          ? "Close the approval form"
+          : title ?? "Open the approval form to submit a code review on this pull request"}
+      label="Approve"
+      {size}
+    >
+      <CheckIcon size="14" strokeWidth="2.4" aria-hidden="true" />
+    </Button>
+    {#if canRequestChanges}
+      <Menu bind:open={reviewMenuOpen} align="end">
+        <MenuTrigger
+          class="review-options review-options--{size}"
+          ariaLabel="Review options"
+          title={title ?? "More review actions"}
+          disabled={disabled || submitting}
+        >
+          <ChevronDownIcon size="14" aria-hidden="true" />
+        </MenuTrigger>
+        <MenuContent ariaLabel="Review actions">
+          <MenuItem
+            closeOnSelect={false}
+            disabled={disabled || submitting}
+            onselect={() => {
+              reviewMenuOpen = false;
+              openReviewForm(true);
+            }}
+          >
+            Request changes
+          </MenuItem>
+        </MenuContent>
+      </Menu>
+    {/if}
+  </div>
 
   {#if expanded}
     <div class="approve-popover" role="dialog" aria-label="Submit pull request review">
@@ -268,7 +306,8 @@
         <textarea
           bind:this={commentInput}
           class="approve-comment"
-          placeholder="Leave an optional comment…"
+          aria-label={requestChangesForm ? "Requested changes" : "Review comment"}
+          placeholder={requestChangesForm ? "Explain the changes you are requesting…" : "Leave an optional comment…"}
           bind:value={body}
           rows={3}
         ></textarea>
@@ -296,16 +335,18 @@
             {submittingAction === "request_changes" ? "Submitting…" : "Request changes"}
           </Button>
         {/if}
-        <Button
-          class="btn btn--primary btn--green"
-          onclick={handleApprove}
-          disabled={submitting || disabled}
-          tone="success"
-          surface="solid"
-          title="Submit an approving code review on this pull request"
-        >
-          {submittingAction === "approve" ? "Approving\u2026" : "Approve"}
-        </Button>
+        {#if !requestChangesForm}
+          <Button
+            class="btn btn--primary btn--green"
+            onclick={handleApprove}
+            disabled={submitting || disabled}
+            tone="success"
+            surface="solid"
+            title="Submit an approving code review on this pull request"
+          >
+            {submittingAction === "approve" ? "Approving\u2026" : "Approve"}
+          </Button>
+        {/if}
         </div>
       </Card>
     </div>
@@ -313,6 +354,31 @@
 </div>
 
 <style>
+  .review-buttons {
+    display: inline-flex;
+    align-items: stretch;
+  }
+
+  .review-buttons--split :global(.btn--approve) {
+    border-start-end-radius: 0;
+    border-end-end-radius: 0;
+  }
+
+  .review-buttons :global(.review-options) {
+    height: 100%;
+    border-inline-start: 0;
+    border-start-start-radius: 0;
+    border-end-start-radius: 0;
+    color: color-mix(in srgb, var(--accent-green) 72%, var(--text-primary));
+    background: color-mix(in srgb, var(--accent-green) 12%, transparent);
+    border-color: color-mix(in srgb, var(--accent-green) 30%, transparent);
+  }
+
+  .review-buttons :global(.review-options--sm) {
+    min-height: var(--kit-control-height-sm, 24px);
+    padding: 2px 6px;
+  }
+
   .approve-section {
     position: relative;
     display: inline-flex;

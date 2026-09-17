@@ -18,6 +18,14 @@ export const SETTINGS_PANELS: SettingsPanelMeta[] = [
     keywords: "repos repositories providers github gitlab forgejo gitea import glob",
   },
   {
+    id: "settings-sync",
+    label: "Sync",
+    title: "Sync",
+    group: "Providers",
+    description: "Background updates and airplane mode",
+    keywords: "sync airplane mode slow internet bandwidth relay offline network",
+  },
+  {
     id: "settings-pull-requests",
     label: "Pull requests",
     title: "Pull request safeguards",

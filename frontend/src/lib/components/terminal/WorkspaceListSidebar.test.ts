@@ -679,7 +679,12 @@ describe("WorkspaceListSidebar", () => {
     expect(mockGet).not.toHaveBeenCalledWith("/fleet/hosts/{host_key}/workspaces", expect.anything());
   });
 
-  it("refreshes inline workspace summaries after a workspace event", async () => {
+  it.each([
+    { type: "workspace_status", payload: {} },
+    { type: "open" },
+    { type: "reconnect.stale", payload: {} },
+    { type: "workspace_pr_associated", payload: {} },
+  ])("refreshes inline workspace summaries after $type", async (event) => {
     let snapshotLoads = 0;
     mockGet.mockImplementation((path: string) => {
       if (path === "/snapshot") {
@@ -721,7 +726,7 @@ describe("WorkspaceListSidebar", () => {
     expect(await screen.findByText("Initial local workspace")).toBeTruthy();
     await waitFor(() => expect(workspaceEventsSubscriber).toBeTypeOf("function"));
 
-    emitWorkspaceStatus();
+    workspaceEventsSubscriber?.(event);
 
     expect(await screen.findByText("Updated local workspace")).toBeTruthy();
     expect(snapshotLoads).toBe(2);

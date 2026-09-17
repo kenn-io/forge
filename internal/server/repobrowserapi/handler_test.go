@@ -16,6 +16,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
@@ -830,12 +831,12 @@ func TestRepoBrowserStartupRefreshSeedsExistingClone(t *testing.T) {
 
 func TestRepoBrowserStartupRefreshHonorsDisabledBackgroundMonitors(t *testing.T) {
 	acquireRepoBrowserTestSlot(t)
-	require := require.New(t)
+	req := require.New(t)
 	database := dbtest.Open(t)
 	remote, work := setupServerRepoBrowserGitRepo(t)
 	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
-	require.NoError(err)
-	require.NoError(database.UpdateRepoProviderMetadata(
+	req.NoError(err)
+	req.NoError(database.UpdateRepoProviderMetadata(
 		t.Context(),
 		repoID,
 		db.RepoProviderMetadata{
@@ -855,41 +856,36 @@ func TestRepoBrowserStartupRefreshHonorsDisabledBackgroundMonitors(t *testing.T)
 	initialRefs := repoBrowserRequest(t, initialServer, http.MethodGet,
 		"/api/v1/repo/github/acme/widgets/browser/refs",
 	)
-	require.Equal(http.StatusOK, initialRefs.Code)
+	req.Equal(http.StatusOK, initialRefs.Code)
 	gracefulShutdown(t, initialServer)
 
-	require.NoError(os.WriteFile(filepath.Join(work, "README.md"), []byte("# Updated\n"), 0o644))
+	req.NoError(os.WriteFile(filepath.Join(work, "README.md"), []byte("# Updated\n"), 0o644))
 	serverRepoBrowserGit(t, work, "add", ".")
 	serverRepoBrowserGit(t, work, "commit", "-m", "update readme")
 	updatedSHA := testGitSHA(t, work, "main")
 	serverRepoBrowserGit(t, work, "push", "origin", "main")
 
-	disabledClones := gitclone.New(cloneBase, nil)
-	disabledSyncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
-	t.Cleanup(disabledSyncer.Stop)
-	disabledServer := server.New(database, disabledSyncer, nil, "/", nil, server.ServerOptions{
-		Clones:                             disabledClones,
-		DisableWorkspaceBackgroundMonitors: true,
-	})
-	t.Cleanup(func() { gracefulShutdown(t, disabledServer) })
+	for _, airplaneMode := range []bool{false, true} {
+		t.Run(fmt.Sprintf("airplane_mode=%t", airplaneMode), func(t *testing.T) {
+			require := require.New(t)
+			disabledClones := gitclone.New(cloneBase, nil)
+			disabledSyncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
+			t.Cleanup(disabledSyncer.Stop)
+			disabledServer := server.NewWithConfig(database, disabledSyncer, disabledClones, nil,
+				&config.Config{AirplaneMode: airplaneMode, Host: "127.0.0.1", Port: 8091, BasePath: "/"}, "", server.ServerOptions{
+					DisableWorkspaceBackgroundMonitors: !airplaneMode,
+				})
+			t.Cleanup(func() { gracefulShutdown(t, disabledServer) })
 
-	require.Never(func() bool {
-		resolved, err := disabledClones.ResolveRepoBrowserRef(t.Context(), gitclone.RepoBrowserRepoRef{
-			Provider:  "github",
-			Host:      "github.com",
-			Owner:     "acme",
-			Name:      "widgets",
-			RepoPath:  "acme/widgets",
-			RemoteURL: remote,
-		}, gitclone.RepoBrowserRef{
-			Type: gitclone.RepoBrowserRefBranch,
-			Name: "main",
+			require.Never(func() bool {
+				resolved, err := disabledClones.ResolveRepoBrowserRef(t.Context(), gitclone.RepoBrowserRepoRef{
+					Provider: "github", Host: "github.com", Owner: "acme", Name: "widgets",
+					RepoPath: "acme/widgets", RemoteURL: remote,
+				}, gitclone.RepoBrowserRef{Type: gitclone.RepoBrowserRefBranch, Name: "main"})
+				return err == nil && resolved.SHA == updatedSHA
+			}, 250*time.Millisecond, 25*time.Millisecond)
 		})
-		if err != nil {
-			return false
-		}
-		return resolved.SHA == updatedSHA
-	}, 250*time.Millisecond, 25*time.Millisecond)
+	}
 }
 
 func TestRepoBrowserStartupAdoptsLegacyClonesWithoutProviderAccess(t *testing.T) {

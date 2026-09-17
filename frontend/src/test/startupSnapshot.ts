@@ -8,6 +8,7 @@ import type { StartupSnapshot } from "../lib/app/startup-workflow.js";
 
 export function makeStartupSnapshot(overrides: Partial<StartupSnapshot> = {}): StartupSnapshot {
   const defaults = {
+    airplane_mode: false,
     activity: {
       view_mode: "threaded",
       time_range: "7d",

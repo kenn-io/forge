@@ -110,7 +110,7 @@ export function workspaceListLifecycle<WorkspaceR, FleetR, EventR>({
       Effect.all(
         [
           refreshWorkspaces.program,
-          poll(refreshWorkspaces.request, "5 seconds"),
+          poll(refreshWorkspaces.request, "15 seconds"),
           Stream.runForEach(workspaceEvents, () =>
             Effect.sync(refreshWorkspaces.request).pipe(Effect.andThen(Effect.yieldNow)),
           ),

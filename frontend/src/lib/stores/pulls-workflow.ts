@@ -1,5 +1,7 @@
-import { Cache, Context, Effect, Fiber, FiberHandle, FiberMap, Layer, Ref, Semaphore } from "effect";
-import { TransientTransportError } from "../api/effect-errors.js";
+import { Cache, Context, Effect, Fiber, FiberMap, Layer, Ref, Semaphore } from "effect";
+import { TransientTransportError, type ApiProblemError } from "../api/effect-errors.js";
+import { GeneratedApi } from "../api/generated-api.js";
+import { makeLatestSharedRead } from "../effect/latest-shared-read.js";
 import type { PullRequest } from "../api/types.js";
 
 export type FetchPullResult =
@@ -8,7 +10,10 @@ export type FetchPullResult =
   | { readonly status: "error"; readonly message: string };
 
 interface PullsWorkflowShape {
-  readonly list: <E, R>(read: Effect.Effect<PullRequest[], E, R>) => Effect.Effect<PullRequest[], E, R>;
+  readonly list: (
+    key: string,
+    read: Effect.Effect<PullRequest[], ApiProblemError | TransientTransportError, GeneratedApi>,
+  ) => Effect.Effect<PullRequest[], ApiProblemError | TransientTransportError>;
   readonly reconcile: <E, R, ProjectError, ProjectRequirements>(
     read: Effect.Effect<readonly PullRequest[], E, R>,
     project: (result: readonly PullRequest[]) => Effect.Effect<void, ProjectError, ProjectRequirements>,
@@ -21,7 +26,11 @@ export class PullsWorkflow extends Context.Service<PullsWorkflow, PullsWorkflowS
 
 export const PullsWorkflowLive = Layer.effect(PullsWorkflow)(
   Effect.gen(function* () {
-    const listHandle = yield* FiberHandle.make<PullRequest[], unknown>();
+    const listReads = yield* makeLatestSharedRead<
+      PullRequest[],
+      ApiProblemError | TransientTransportError,
+      GeneratedApi
+    >();
     const listGeneration = yield* Ref.make(0);
     const projection = yield* Semaphore.make(1);
     const itemFibers = yield* FiberMap.make<string, FetchPullResult>();
@@ -37,10 +46,14 @@ export const PullsWorkflowLive = Layer.effect(PullsWorkflow)(
         }),
     });
 
-    function list<E, R>(read: Effect.Effect<PullRequest[], E, R>): Effect.Effect<PullRequest[], E, R> {
-      return projection
-        .withPermit(Ref.update(listGeneration, (generation) => generation + 1))
-        .pipe(Effect.andThen(FiberHandle.run(listHandle, read)), Effect.flatMap(Fiber.join));
+    function list(
+      key: string,
+      read: Effect.Effect<PullRequest[], ApiProblemError | TransientTransportError, GeneratedApi>,
+    ) {
+      return listReads.read(
+        key,
+        projection.withPermit(Ref.update(listGeneration, (generation) => generation + 1)).pipe(Effect.andThen(read)),
+      );
     }
 
     function reconcile<E, R, ProjectError, ProjectRequirements>(

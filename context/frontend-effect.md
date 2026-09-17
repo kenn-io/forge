@@ -71,6 +71,9 @@ service is the supported tool here.
   of bespoke Promise generations, overlapping timers, or boolean race guards.
   Preserve latest-wins, single-flight, ordered, or lossless semantics explicitly;
   these are different contracts.
+- Repeated reads of the same PR or issue list query share the pending request;
+  only a changed query replaces it, so polling cannot starve a slow response
+  (`frontend/src/lib/effect/latest-shared-read.ts::makeLatestSharedRead`).
 - Timer polls use the shared visibility-aware helper: hidden documents stop
   polling and refresh at once when shown; event-driven refreshes ignore
   visibility (`frontend/src/lib/effect/poll-while-visible.ts::pollWhileVisible`).

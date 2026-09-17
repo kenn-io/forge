@@ -180,6 +180,34 @@ describe("sync store", () => {
     polling.interrupt();
   });
 
+  it("uses slow polling with live updates and resumes fast polling when they disconnect", async () => {
+    vi.useFakeTimers();
+    const running = { running: true, last_run_at: "", last_error: "" };
+    const getStatus = vi.fn(async () => running);
+    const getRates = vi.fn(async () => ({ provider_pools: {}, local_ceilings: {} }));
+    const store = createSyncStore(
+      makeGeneratedClient({ SyncService: { getSyncStatus: getStatus, getRateLimits: getRates } }),
+    );
+    store.setLiveUpdatesConnected(true);
+    store.setSyncStatus(running);
+    if (runtime === undefined) throw new Error("test runtime was not initialized");
+    const polling = runtime.runCommand(store.pollingEffect, {
+      operation: "test sync polling with live updates",
+      safeContext: {},
+      onFailure: () => {},
+    });
+
+    await vi.waitFor(() => expect(getStatus).toHaveBeenCalledOnce());
+    await vi.advanceTimersByTimeAsync(6_000);
+    expect(getStatus).toHaveBeenCalledOnce();
+    expect(getRates).toHaveBeenCalledOnce();
+
+    store.setLiveUpdatesConnected(false);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(getStatus.mock.calls.length).toBeGreaterThanOrEqual(2);
+    polling.interrupt();
+  });
+
   it("fails stale-event reconciliation when authoritative sync status cannot be read", async () => {
     const store = createSyncStore(
       makeGeneratedClient({

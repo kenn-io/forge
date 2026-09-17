@@ -79,6 +79,7 @@ interface IssueCommentMutationState {
 }
 
 export interface IssuesStoreOptions {
+  getAirplaneMode?: () => boolean;
   runtime: AppRuntime;
   getGlobalRepo?: () => string | undefined;
   getGroupByRepo?: () => boolean;
@@ -425,7 +426,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       Effect.andThen(
         Effect.gen(function* () {
           const workflow = yield* IssuesWorkflow;
-          return yield* workflow.list(read);
+          return yield* workflow.list(JSON.stringify(query), read);
         }),
       ),
       Effect.tap((result) =>
@@ -975,7 +976,9 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     activeIssueDetailRef = ref;
     const pollingGeneration = ++issuePollingGeneration;
     const pollOnce = Effect.suspend(() =>
-      detailSyncing ? Effect.void : refreshIssueDetailProgram(ref, issueSyncGeneration).pipe(Effect.asVoid),
+      detailSyncing || opts.getAirplaneMode?.()
+        ? Effect.void
+        : refreshIssueDetailProgram(ref, issueSyncGeneration).pipe(Effect.asVoid),
     ).pipe(Effect.catch(() => Effect.void));
     const program = Effect.gen(function* () {
       const workflow = yield* IssuesWorkflow;

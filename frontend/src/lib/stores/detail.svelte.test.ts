@@ -1020,6 +1020,26 @@ describe("createDetailStore", () => {
     expect(store.getDetail()).toBeNull();
   });
 
+  it("pauses scheduled detail sync in airplane mode while allowing an item visit", async () => {
+    vi.useFakeTimers();
+    let airplaneMode = true;
+    const post = vi.fn().mockResolvedValue({ data: undefined, error: undefined });
+    const get = vi.fn().mockResolvedValue({ data: pullDetail("cached-head") });
+    const store = createDetailStore({
+      client: mockClient({ GET: get, POST: post }),
+      getAirplaneMode: () => airplaneMode,
+    });
+    const identity = { provider: "github", platformHost: "github.com", repoPath: "acme/widget" };
+    store.startDetailPolling("acme", "widget", 7, identity);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(post).not.toHaveBeenCalled();
+    store.loadDetail("acme", "widget", 7, { ...identity, sync: "background" });
+    await vi.waitFor(() => expect(post).toHaveBeenCalledOnce());
+    airplaneMode = false;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(post.mock.calls.length).toBeGreaterThan(1);
+  });
+
   it("enqueues background sync when active detail polling fires", async () => {
     vi.useFakeTimers();
     const post = vi.fn().mockResolvedValue({ data: undefined, error: undefined });

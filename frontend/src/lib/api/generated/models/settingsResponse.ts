@@ -24,6 +24,7 @@ export interface SettingsResponse {
   readonly $schema?: string;
   activity: Activity;
   agents: Agent[];
+  airplane_mode: boolean;
   detail: Detail;
   fleet: FleetSettingsResponse;
   issues: Issues;

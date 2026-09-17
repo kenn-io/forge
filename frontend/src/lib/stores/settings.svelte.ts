@@ -40,6 +40,7 @@ export function createSettingsStore() {
   });
   let repoPresets = $state.raw<RepoPreset[]>([]);
   let loaded = $state(false);
+  let airplaneMode = $state(false);
 
   function getConfiguredRepos(): ConfigRepo[] {
     return repos;
@@ -196,6 +197,10 @@ export function createSettingsStore() {
   }
 
   return {
+    getAirplaneMode: () => airplaneMode,
+    setAirplaneMode: (enabled: boolean) => {
+      airplaneMode = enabled;
+    },
     getConfiguredRepos,
     setConfiguredRepos,
     getRepoPresets,

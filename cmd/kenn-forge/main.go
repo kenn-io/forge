@@ -697,6 +697,7 @@ func run(opts serve.Options) error {
 			controlPlane.registry, database, cloneMgr, nil,
 			cfg.SyncDuration(), controlPlane.rateTrackers, controlPlane.budgets,
 		)
+		syncer.SetAirplaneMode(cfg.AirplaneMode)
 		if opts.DisableSync {
 			syncer.DisableSync()
 		}
@@ -1049,11 +1050,17 @@ func resolveStartupRepos(
 			resolveCtx = ghclient.WithArchiveSyncBudget(ctx)
 		}
 		configuredProviderID := strings.TrimSpace(raw.PlatformRepoID)
-		_, expanded, err := ghclient.ResolveConfiguredRepoWithRegistry(
-			resolveCtx, registry, raw,
-		)
-		if err != nil {
-			slog.Warn("resolve configured repo", "err", err)
+		var expanded []ghclient.RepoRef
+		var err error
+		if !cfg.AirplaneMode {
+			_, expanded, err = ghclient.ResolveConfiguredRepoWithRegistry(
+				resolveCtx, registry, raw,
+			)
+		}
+		if cfg.AirplaneMode || err != nil {
+			if err != nil {
+				slog.Warn("resolve configured repo", "err", err)
+			}
 			if raw.HasNameGlob() {
 				expanded = fallbackGlobFromDB(
 					ctx, database, raw,
@@ -1080,7 +1087,7 @@ func resolveStartupRepos(
 			)
 		}
 		for _, repo := range expanded {
-			set.Add(repo, err == nil)
+			set.Add(repo, err == nil && !cfg.AirplaneMode)
 		}
 	}
 	return set.Refs()

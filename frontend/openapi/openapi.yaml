@@ -8232,6 +8232,8 @@ components:
           items:
             $ref: "#/components/schemas/Agent"
           type: array
+        airplane_mode:
+          type: boolean
         detail:
           $ref: "#/components/schemas/Detail"
         fleet:
@@ -8273,6 +8275,7 @@ components:
         workspaces:
           $ref: "#/components/schemas/Workspaces"
       required:
+        - airplane_mode
         - repos
         - repo_presets
         - activity
@@ -8952,6 +8955,8 @@ components:
           items:
             $ref: "#/components/schemas/Agent"
           type: array
+        airplane_mode:
+          type: boolean
         detail:
           $ref: "#/components/schemas/Detail"
         issues:

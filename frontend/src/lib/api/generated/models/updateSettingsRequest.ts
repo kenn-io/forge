@@ -19,6 +19,7 @@ export interface UpdateSettingsRequest {
   readonly $schema?: string;
   activity?: Activity;
   agents?: Agent[];
+  airplane_mode?: boolean;
   detail?: Detail;
   issues?: Issues;
   kata_projects?: KataProjectRepoMapping[];

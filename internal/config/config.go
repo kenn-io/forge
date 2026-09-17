@@ -940,6 +940,7 @@ type MCP struct {
 }
 
 type Config struct {
+	AirplaneMode                bool   `toml:"airplane_mode"`
 	SyncInterval                string `toml:"sync_interval"`
 	ActivePRRefreshInterval     string `toml:"active_pr_refresh_interval"`
 	ActivePRHotWindow           string `toml:"active_pr_hot_window"`
@@ -3570,6 +3571,7 @@ func reposForSave(repos []Repo) []Repo {
 
 // configFile is the subset of Config written to disk.
 type configFile struct {
+	AirplaneMode                bool                     `toml:"airplane_mode,omitempty"`
 	SyncInterval                string                   `toml:"sync_interval"`
 	ActivePRRefreshInterval     string                   `toml:"active_pr_refresh_interval"`
 	ActivePRHotWindow           string                   `toml:"active_pr_hot_window"`
@@ -3619,6 +3621,7 @@ func (c *Config) Save(path string) error {
 		return fmt.Errorf("validating config: %w", err)
 	}
 	f := configFile{
+		AirplaneMode:                cfg.AirplaneMode,
 		SyncInterval:                cfg.SyncInterval,
 		ActivePRRefreshInterval:     cfg.ActivePRRefreshInterval,
 		ActivePRHotWindow:           cfg.ActivePRHotWindow,

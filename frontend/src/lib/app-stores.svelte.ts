@@ -129,6 +129,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
   const detailOpts: DetailStoreOptions = {
     runtime: appRuntime,
     getPage: gp,
+    getAirplaneMode: settingsStore.getAirplaneMode,
     onDetailSynchronized: reconcileActivityAfterDetailSync,
     pulls: {
       loadPulls: pullsStore.loadPulls,
@@ -144,6 +145,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
   const issuesOpts: IssuesStoreOptions = {
     runtime: appRuntime,
     getPage: gp,
+    getAirplaneMode: settingsStore.getAirplaneMode,
     onDetailSynchronized: reconcileActivityAfterDetailSync,
     sync: {
       refreshSyncStatus: syncStore.refreshSyncStatus,
@@ -253,14 +255,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
 
   function reconcileProviderState() {
     return Effect.all(
-      [
-        pullsStore.reconcilePullsEffect(),
-        issuesStore.reconcileIssuesEffect(),
-        activityStore.reconcileActivityEffect(),
-        refreshSelectedActivityDetail(),
-        issuesStore.refreshActiveIssueDetailEffect(),
-        syncStore.reconcileSyncStatusEffect,
-      ],
+      [refreshVisibleData(), issuesStore.refreshActiveIssueDetailEffect(), syncStore.reconcileSyncStatusEffect],
       { concurrency: "unbounded", discard: true },
     );
   }
@@ -293,6 +288,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
       ),
     onWorkspaceStatus: () =>
       settingsStore.getWorkspaceSettings().show_agent_status_in_lists ? refreshVisibleData(false) : Effect.void,
+    onConnectionStateChange: (state) => syncStore.setLiveUpdatesConnected(state === "connected"),
     onSyncStatus: (status) => Effect.sync(() => syncStore.setSyncStatus(status)),
     onHubConnectionChanged: ({ connected }) => {
       if (!connected) {
@@ -401,9 +397,8 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
       const markUnavailable = Effect.sync(() => syncStore.setProviderAvailable(false));
       if (hub_connected === false) return markUnavailable;
       // The replay ring rolled past the client's cursor while it was
-      // disconnected. Hide cached provider projections until every
-      // authoritative read succeeds because no missed event can be assumed
-      // to replay.
+      // disconnected. Keep cached provider projections visible and marked stale until
+      // the visible view is reconciled; missed events cannot be assumed to replay.
       return markUnavailable.pipe(
         Effect.andThen(reconcileProviderStateAfterHubConnection()),
         Effect.andThen(Effect.sync(() => syncStore.setProviderAvailable(true))),

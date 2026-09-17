@@ -816,6 +816,7 @@ type Syncer struct {
 	branchActivityMaxCommits int
 	preferGitHubNativeStacks atomic.Bool
 	syncDisabled             atomic.Bool
+	airplaneMode             atomic.Bool
 	parallelism              atomic.Int32
 	runMu                    sync.Mutex
 	running                  atomic.Bool
@@ -928,6 +929,16 @@ func (s *Syncer) DisableSync() {
 
 func (s *Syncer) SyncEnabled() bool {
 	return s != nil && !s.syncDisabled.Load()
+}
+
+// SetAirplaneMode pauses scheduled sync after the current pass. Explicit
+// refreshes, relay hints, and notification read propagation remain available.
+func (s *Syncer) SetAirplaneMode(enabled bool) {
+	s.airplaneMode.Store(enabled)
+}
+
+func (s *Syncer) AutomaticSyncEnabled() bool {
+	return s.SyncEnabled() && !s.airplaneMode.Load()
 }
 
 func (s *Syncer) syncDisabledError() error {
@@ -3151,7 +3162,7 @@ func (s *Syncer) SetReposWithContext(ctx context.Context, repos []RepoRef, retry
 	for _, repo := range repos {
 		refs = append(refs, platformRepoRef(repo))
 	}
-	if s.SyncEnabled() && s.archiveLifecycle != nil {
+	if s.AutomaticSyncEnabled() && s.archiveLifecycle != nil {
 		seeded, err := s.archiveLifecycle.EnsureConfigured(ctx, refs)
 		if err != nil {
 			return fmt.Errorf("seed archive discovery: %w", err)
@@ -3271,7 +3282,11 @@ func (s *Syncer) runArchiveLoop(ctx context.Context, ready <-chan struct{}) {
 	idle.RandomizationFactor = 0
 	idle.Reset()
 	for {
-		worked, err := s.archiveRunner.RunPass(ctx)
+		var worked bool
+		var err error
+		if s.AutomaticSyncEnabled() {
+			worked, err = s.archiveRunner.RunPass(ctx)
+		}
 		if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 			slog.Warn("archive worker iteration failed", "err", err)
 		}
@@ -3589,7 +3604,7 @@ func (s *Syncer) SyncWatchedMRs(ctx context.Context) {
 }
 
 func (s *Syncer) syncWatchedMRs(ctx context.Context) {
-	if !s.SyncEnabled() {
+	if !s.AutomaticSyncEnabled() {
 		return
 	}
 	s.watchSyncMu.Lock()
@@ -4548,6 +4563,9 @@ func (s *Syncer) publishMonotonicProgress(
 // per-host GitHub rate limit and abuse-detection thresholds happy
 // while still capturing most of the wall-clock win on network I/O.
 func (s *Syncer) RunOnce(ctx context.Context) {
+	if !s.AutomaticSyncEnabled() {
+		return
+	}
 	s.runOnce(ctx, false, nil, nil)
 }
 
@@ -4598,6 +4616,14 @@ func (s *Syncer) runOnceWithSlot(
 		s.runMu.Lock()
 		pending := s.pendingRun
 		s.pendingRun = nil
+		if pending != nil && !s.AutomaticSyncEnabled() && !pending.bypassNextSyncAfter {
+			if len(pending.bypassRepos) == 0 {
+				pending = nil
+			} else {
+				pending.full = false
+				pending.onlyRepos = pending.bypassRepos
+			}
+		}
 		if pending == nil {
 			s.running.Store(false)
 			s.exclusiveRun = false
@@ -5216,7 +5242,7 @@ func (s *Syncer) reconcileArchiveRepositoryIfNeeded(
 	previousID int64,
 	repoID int64,
 ) error {
-	if s.archiveLifecycle == nil {
+	if s.archiveLifecycle == nil || !s.AutomaticSyncEnabled() {
 		return nil
 	}
 	needsReconcile := previousID != 0 && previousID != repoID

@@ -9,6 +9,7 @@ type SettingsResponse = GeneratedSettingsResponse;
 // only needs the setters it calls, and narrowing here keeps it testable
 // without constructing a whole Provider store graph.
 export interface SettingsHydrationStore {
+  setAirplaneMode: (enabled: boolean) => void;
   setConfiguredRepos: (repos: SettingsResponse["repos"]) => void;
   setRepoPresets: (presets: SettingsResponse["repo_presets"]) => void;
   setModeVisibility: (modes: SettingsResponse["modes"]) => void;
@@ -47,6 +48,7 @@ export function applySettingsHydration(
   workspaceHydration: WorkspaceSettingsHydration,
   roborevHydration: RoborevSettingsHydration,
 ): void {
+  stores.settings.setAirplaneMode(payload.airplane_mode);
   stores.settings.setConfiguredRepos(payload.repos);
   stores.settings.setRepoPresets(payload.repo_presets);
   hydrateTerminalSettings(terminalHydration, payload.terminal);

@@ -473,6 +473,7 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 			Error: "config reload disabled: server has no in-memory config",
 		}
 	}
+	previousAirplaneMode := s.cfg.AirplaneMode
 	s.cfgMu.Unlock()
 
 	s.updateTokenSourcesForReload(newCfg)
@@ -510,7 +511,9 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 		restartRequired = true
 	}
 	if s.syncer != nil {
+		s.syncer.SetAirplaneMode(newCfg.AirplaneMode)
 		if err := s.syncer.SetReposWithContext(ctx, resolved, true); err != nil {
+			s.syncer.SetAirplaneMode(previousAirplaneMode)
 			return configChangedEvent{
 				Valid: false,
 				Error: sanitizeConfigError(
@@ -818,6 +821,12 @@ func (s *Server) resolveReposForReload(
 				"%s/%s@%s/%s",
 				string(kind), host, raw.Owner, raw.Name,
 			))
+			continue
+		}
+		if cfg.AirplaneMode {
+			for _, repo := range ghclient.FallbackConfiguredRepoRefs(previous, raw) {
+				set.Add(repo, false)
+			}
 			continue
 		}
 		resolveCtx := ctx

@@ -127,6 +127,7 @@ vi.mock("./lib/stores/sync.svelte.js", () => ({
     getSyncState: () => null,
     getProviderAvailable: () => true,
     setProviderAvailable,
+    setLiveUpdatesConnected: vi.fn(),
     onNextSyncComplete: vi.fn(),
     subscribeSyncComplete: vi.fn(() => () => undefined),
     refreshSyncStatus: vi.fn(async () => undefined),
@@ -176,6 +177,8 @@ vi.mock("./lib/stores/settings.svelte.js", () => ({
     };
     const store = {
       getConfiguredRepos: () => configuredRepos,
+      getAirplaneMode: () => false,
+      setAirplaneMode: vi.fn(),
       setConfiguredRepos: vi.fn(),
       setRepoPresets: vi.fn(),
       getPullRequestSettings: () => ({
@@ -471,8 +474,8 @@ describe("app store event wiring", () => {
 
     await acceptEvent(captured.store?.options.onReconnectStale?.({}));
 
-    expect(loadPulls).toHaveBeenCalledTimes(1);
-    expect(loadIssues).toHaveBeenCalledTimes(1);
+    expect(loadPulls).not.toHaveBeenCalled();
+    expect(loadIssues).not.toHaveBeenCalled();
     expect(loadActivity).toHaveBeenCalledTimes(1);
     expect(refreshDetailOnly).toHaveBeenCalledTimes(1);
     expect(refreshDetailOnly).toHaveBeenCalledWith("acme", "widget", 42, {
@@ -535,8 +538,8 @@ describe("app store event wiring", () => {
 
     refresh.resolve();
     await Effect.runPromise(execution.await.pipe(Effect.flatMap((exit) => exit)));
-    expect(loadIssues).toHaveBeenCalledOnce();
-    expect(loadActivity).toHaveBeenCalledOnce();
+    expect(loadIssues).not.toHaveBeenCalled();
+    expect(loadActivity).not.toHaveBeenCalled();
     expect(setProviderAvailable).toHaveBeenLastCalledWith(true);
   });
 

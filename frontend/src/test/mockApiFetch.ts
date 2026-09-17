@@ -267,6 +267,7 @@ const syncStatus = {
 };
 
 export const mockSettings = {
+  airplane_mode: false,
   repos: [
     {
       provider: "github",

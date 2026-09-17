@@ -382,6 +382,27 @@ func TestRunClosesPrimaryListenerWhenProfilerStartFails(t *testing.T) {
 	}, 2*time.Second, 25*time.Millisecond)
 }
 
+func TestResolveStartupReposAirplaneModeUsesCachedCatalog(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
+	identity.PlatformRepoID = "R_widget"
+	_, err := database.UpsertRepoByProviderID(t.Context(), identity)
+	require.NoError(err)
+	called := false
+	client := &testutil.FixtureClient{ListRepositoriesByOwnerFn: func(context.Context, string) ([]*gh.Repository, error) {
+		called = true
+		return nil, nil
+	}}
+	repos := resolveStartupRepos(t.Context(), &config.Config{
+		AirplaneMode: true,
+		Repos:        []config.Repo{{Owner: "acme", Name: "*"}},
+	}, mustProviderRegistry(t, map[string]ghclient.Client{"github.com": client}), database, nil)
+	require.False(called)
+	require.Len(repos, 1)
+	require.Equal("widget", repos[0].Name)
+}
+
 func TestResolveStartupReposExpandsConfiguredGlobs(t *testing.T) {
 	assert := assert.New(t)
 	cfg := &config.Config{

@@ -25,6 +25,7 @@ import {
 export interface EventsStoreOptions {
   readonly runtime: AppRuntime;
   readonly getBasePath?: () => string;
+  readonly onConnectionStateChange?: (state: ProviderEventsConnectionState) => void;
   readonly onDataChanged?: () => Effect.Effect<void, ProviderEventsError, AppServices>;
   readonly onSyncStatus?: (status: SyncStatus) => Effect.Effect<void, ProviderEventsError, AppServices>;
   readonly onHubConnectionChanged?: (
@@ -72,6 +73,11 @@ export function createEventsStore(opts: EventsStoreOptions) {
   let workspaceSelectionSequence = 0;
   const workspaceSelections = new Map<number, string>();
   const workspaceEventSubscribers = new Set<(event: WorkspaceEventsNotification) => void>();
+
+  function setConnectionState(state: ProviderEventsConnectionState): void {
+    connectionState = state;
+    opts.onConnectionStateChange?.(state);
+  }
 
   function notifyWorkspaceEventSubscribers(event: WorkspaceEventsNotification): void {
     for (const subscriber of workspaceEventSubscribers) subscriber(event);
@@ -142,7 +148,7 @@ export function createEventsStore(opts: EventsStoreOptions) {
       providerEventsProgram({
         url,
         onState: (state) => {
-          connectionState = state;
+          setConnectionState(state);
           if (state === "connected") notifyWorkspaceEventSubscribers({ type: "open" });
         },
         onEvent: dispatch,
@@ -177,7 +183,7 @@ export function createEventsStore(opts: EventsStoreOptions) {
     streamAttempt.pipe(
       Effect.catch((failure) =>
         Effect.sync(() => {
-          connectionState = "disconnected";
+          setConnectionState("disconnected");
           lastError = `Live updates stopped: ${failure.operation}`;
           opts.onTerminalFailure?.(lastError);
         }).pipe(Effect.andThen(waitForReconnect)),
@@ -187,7 +193,7 @@ export function createEventsStore(opts: EventsStoreOptions) {
     Effect.ensuring(
       Effect.sync(() => {
         reconnectSignal = null;
-        connectionState = "disconnected";
+        setConnectionState("disconnected");
       }),
     ),
   );

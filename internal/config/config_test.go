@@ -26,6 +26,12 @@ func writeConfig(t *testing.T, content string) string {
 	return path
 }
 
+func TestAirplaneModeRoundTrip(t *testing.T) {
+	cfg, saved := roundTripConfigString(t, "airplane_mode = true\n")
+	assert.True(t, cfg.AirplaneMode)
+	assert.True(t, saved.AirplaneMode)
+}
+
 func TestWorkspaceListAgentStatus(t *testing.T) {
 	assert := assert.New(t)
 	cfg, saved := roundTripConfigString(t, "[workspaces]\nshow_agent_status_in_lists = true\n")

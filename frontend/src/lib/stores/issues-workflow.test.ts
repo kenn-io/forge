@@ -16,17 +16,17 @@ it.layer(IssuesWorkflowTest)("issue list reads", (it) => {
     Effect.gen(function* () {
       const workflow = yield* IssuesWorkflow;
       const oldStarted = yield* Deferred.make<void>();
-      const releaseOld = yield* Deferred.make<readonly Issue[]>();
+      const releaseOld = yield* Deferred.make<Issue[]>();
       const projected = yield* Ref.make<readonly Issue[]>([]);
 
       const oldFiber = yield* Effect.forkChild(
         workflow
-          .list(Deferred.succeed(oldStarted, undefined).pipe(Effect.andThen(Deferred.await(releaseOld))))
+          .list("old", Deferred.succeed(oldStarted, undefined).pipe(Effect.andThen(Deferred.await(releaseOld))))
           .pipe(Effect.tap((result) => Ref.set(projected, result))),
       );
       yield* Deferred.await(oldStarted);
       const latestFiber = yield* Effect.forkChild(
-        workflow.list(Effect.succeed([issue(2)])).pipe(Effect.tap((result) => Ref.set(projected, result))),
+        workflow.list("latest", Effect.succeed([issue(2)])).pipe(Effect.tap((result) => Ref.set(projected, result))),
       );
 
       yield* Fiber.join(latestFiber);
@@ -36,6 +36,27 @@ it.layer(IssuesWorkflowTest)("issue list reads", (it) => {
         (yield* Ref.get(projected)).map((item) => item.ID),
         [2],
       );
+    }),
+  );
+
+  it.effect("lets repeated reads of a slow query finish without restarting it", () =>
+    Effect.gen(function* () {
+      const workflow = yield* IssuesWorkflow;
+      const started = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<Issue[]>();
+      const calls = yield* Ref.make(0);
+      const read = Ref.update(calls, (count) => count + 1).pipe(
+        Effect.andThen(Deferred.succeed(started, undefined)),
+        Effect.andThen(Deferred.await(release)),
+      );
+      const first = yield* Effect.forkChild(workflow.list("same", read));
+      yield* Deferred.await(started);
+      const second = yield* Effect.forkChild(workflow.list("same", read));
+      yield* Effect.yieldNow;
+      assert.strictEqual(yield* Ref.get(calls), 1);
+      yield* Deferred.succeed(release, [issue(7)]);
+      assert.deepStrictEqual(yield* Fiber.join(first), [issue(7)]);
+      assert.deepStrictEqual(yield* Fiber.join(second), [issue(7)]);
     }),
   );
 
@@ -53,7 +74,7 @@ it.layer(IssuesWorkflowTest)("issue list reads", (it) => {
       );
       yield* Deferred.await(eventStarted);
 
-      const latest = yield* workflow.list(Effect.succeed([issue(2)]));
+      const latest = yield* workflow.list("latest", Effect.succeed([issue(2)]));
       yield* Ref.set(projected, latest);
       yield* Deferred.succeed(releaseEvent, [issue(1)]);
       const failure = yield* Fiber.join(eventFiber).pipe(Effect.flip);

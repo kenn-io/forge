@@ -76,6 +76,7 @@ interface PullCommentMutationState {
 }
 
 export interface DetailStoreOptions {
+  getAirplaneMode?: () => boolean;
   runtime: AppRuntime;
   getPage?: () => string;
   onDetailSynchronized?: () => void;
@@ -2050,7 +2051,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
       unsubSyncComplete = null;
     }
     const pollOnce = Effect.suspend(() =>
-      syncing
+      syncing || opts.getAirplaneMode?.()
         ? Effect.void
         : enqueueBackgroundDetailSyncEffect(owner, name, number, syncGeneration, observedFetchedAtBaseline(), ref),
     ).pipe(Effect.catch(() => Effect.void));

@@ -104,6 +104,7 @@ test("settings sidebar lists every panel in declaration order under group headin
     .toEqual([
       "Providers",
       "Repositories",
+      "Sync",
       "Workflow",
       "Pull requests",
       "Detail views",

@@ -51387,6 +51387,7 @@ type SettingsResponse struct {
 	Schema        *string                       `json:"$schema,omitempty"`
 	Activity      Activity                      `json:"activity"`
 	Agents        []Agent                       `json:"agents"`
+	AirplaneMode  bool                          `json:"airplane_mode"`
 	Detail        Detail                        `json:"detail"`
 	Fleet         FleetSettingsResponse         `json:"fleet"`
 	Issues        Issues                        `json:"issues"`
@@ -51645,6 +51646,7 @@ type UpdateSettingsRequest struct {
 	Schema       *string                  `json:"$schema,omitempty"`
 	Activity     *Activity                `json:"activity,omitempty"`
 	Agents       []Agent                  `json:"agents,omitempty"`
+	AirplaneMode *bool                    `json:"airplane_mode,omitempty"`
 	Detail       *Detail                  `json:"detail,omitempty"`
 	Issues       *Issues                  `json:"issues,omitempty"`
 	KataProjects []KataProjectRepoMapping `json:"kata_projects,omitempty"`

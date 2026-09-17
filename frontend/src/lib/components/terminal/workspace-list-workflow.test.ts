@@ -116,7 +116,7 @@ it.effect("runs scheduled and event refreshes through the same hubs", () =>
     assert.strictEqual(yield* Ref.get(workspaceLoads), 2);
 
     yield* TestClock.adjust("15 seconds");
-    assert.strictEqual(yield* Ref.get(workspaceLoads), 5);
+    assert.strictEqual(yield* Ref.get(workspaceLoads), 3);
     assert.strictEqual(yield* Ref.get(fleetLoads), 2);
 
     yield* Fiber.interrupt(fiber);

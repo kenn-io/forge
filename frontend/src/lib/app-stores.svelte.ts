@@ -258,6 +258,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
         issuesStore.reconcileIssuesEffect(),
         activityStore.reconcileActivityEffect(),
         refreshSelectedActivityDetail(),
+        issuesStore.refreshActiveIssueDetailEffect(),
         syncStore.reconcileSyncStatusEffect,
       ],
       { concurrency: "unbounded", discard: true },
@@ -283,7 +284,13 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
     ...(eventBasePath != null && {
       getBasePath: () => eventBasePath,
     }),
-    onDataChanged: refreshVisibleData,
+    onDataChanged: () =>
+      observeHubFailure(
+        Effect.all([refreshVisibleData(), issuesStore.refreshActiveIssueDetailEffect()], {
+          concurrency: "unbounded",
+          discard: true,
+        }),
+      ),
     onWorkspaceStatus: () =>
       settingsStore.getWorkspaceSettings().show_agent_status_in_lists ? refreshVisibleData(false) : Effect.void,
     onSyncStatus: (status) => Effect.sync(() => syncStore.setSyncStatus(status)),

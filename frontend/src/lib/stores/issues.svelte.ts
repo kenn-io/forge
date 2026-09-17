@@ -179,6 +179,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   let unsavedLocalBody = $state<UnsavedIssueTarget | null>(null);
   let issueSyncGeneration = 0;
   let issuePollingGeneration = 0;
+  let activeIssueDetailRef: IssueDetailRequestRef | null = null;
   // Provider synchronization is eventually complete. Keep a successfully
   // deleted comment hidden locally until an ordinary sync no longer returns it.
   const hiddenDeletedCommentIDs: Record<string, number[]> = {};
@@ -971,6 +972,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     options: IssueDetailRequestOptions,
   ): void {
     const ref = issueDetailRequestRef(owner, name, number, options);
+    activeIssueDetailRef = ref;
     const pollingGeneration = ++issuePollingGeneration;
     const pollOnce = Effect.suspend(() =>
       detailSyncing ? Effect.void : refreshIssueDetailProgram(ref, issueSyncGeneration).pipe(Effect.asVoid),
@@ -993,6 +995,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   }
 
   function stopIssueDetailPolling(): void {
+    activeIssueDetailRef = null;
     const pollingGeneration = ++issuePollingGeneration;
     const program = Effect.gen(function* () {
       const workflow = yield* IssuesWorkflow;
@@ -1014,6 +1017,13 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     issueDetailLoaded = false;
     unsavedLocalBody = null;
     stopIssueDetailPolling();
+  }
+
+  function refreshActiveIssueDetailEffect() {
+    return Effect.suspend(() => {
+      const ref = activeIssueDetailRef;
+      return ref === null ? Effect.void : refreshIssueDetailEffect(ref.owner, ref.name, ref.number, ref);
+    });
   }
 
   function refreshIssueDetailEffect(
@@ -1939,6 +1949,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     loadIssues,
     loadIssuesEffect,
     reconcileIssuesEffect,
+    refreshActiveIssueDetailEffect,
     getIssueDetail,
     getIssueDetailEnvelopeTick,
     isIssueDetailLoading,

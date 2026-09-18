@@ -80,7 +80,13 @@ func (s *Handler) launchWorkspaceAgentHandoff(
 // delivery is uncertain, and stopping it would destroy the evidence.
 func (s *Handler) LaunchWorkspaceAgentHandoffService(
 	ctx context.Context, req WorkspaceAgentHandoffRequest,
-) (WorkspaceAgentHandoffResult, error) {
+) (result WorkspaceAgentHandoffResult, err error) {
+	started := time.Now()
+	defer func() {
+		slog.Info("workspace agent handoff finished", "workspace_id", req.WorkspaceID,
+			"session_key", result.Session.Key, "target_key", req.TargetKey,
+			"duration_ms", time.Since(started).Milliseconds(), "success", err == nil)
+	}()
 	if s.workspaces == nil || s.runtime == nil {
 		return WorkspaceAgentHandoffResult{}, httpapi.ServiceUnavailable("workspace runtime not configured")
 	}

@@ -284,6 +284,9 @@ per-task error isolation rather than duplicating Kata's component suite.
 
 Roborev `hide_classify_jobs` e2e fixtures must cover skipped design rows and classify-typed auto-design rows.
 Seed classify rows terminal unless testing worker mutation; live workers can rewrite queued/running rows during browser assertions (`internal/testutil/roborev_fixtures.go::seedRoborevMutationFixtures`).
+Real Roborev mutation fixtures need an available fixture agent. Pause the queue while asserting a queued rerun;
+`--workers 0` retains the daemon's default worker count
+(`frontend/tests/e2e-full/roborev-e2e.spec.ts:969`).
 Keep injected Roborev `panel_run` failures controlled until the assertion observes them; drawer/list refresh demand can immediately retry member fetches and clear transient panel errors (`frontend/src/lib/stores/roborev/jobs.svelte.ts::wantsPanelMembers`).
 Roborev `/api/stream/events` is NDJSON, not SSE: use an abortable Fetch reader with bounded reconnects, and abort both pre-header and active-body requests on teardown (`frontend/src/lib/stores/roborev/jobs.svelte.ts::connectEventStream`).
 Playwright retries that write to a persistent authority must use per-attempt mutation identities or reset state; a committed first attempt otherwise poisons its retry (`frontend/tests/e2e-full/roborev-e2e.spec.ts:923`).

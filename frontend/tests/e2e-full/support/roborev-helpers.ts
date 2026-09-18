@@ -83,7 +83,7 @@ function waitForDaemonHealthy(): void {
 //     larger history.
 //
 //  2. /api/jobs?id=73 must return the seeded mutation fixture with
-//     agent="codex" and branch="main". These two fields are
+//     agent="test" and branch="main". These two fields are
 //     immutable across the test run (the rerun test re-enqueues job
 //     73 in place but does not touch agent/branch), so they make a
 //     load-bearing fingerprint for the seeded daemon. Without this
@@ -167,12 +167,12 @@ export async function assertSeededRoborevDaemon(): Promise<void> {
   const job = jobs[0] as Record<string, unknown>;
   const agent = job["agent"];
   const branch = job["branch"];
-  if (agent !== "codex" || branch !== "main") {
+  if (agent !== "test" || branch !== "main") {
     throw new Error(
       `roborev daemon at ${jobsURL} returned job 73 with ` +
         `agent=${JSON.stringify(agent)}, ` +
         `branch=${JSON.stringify(branch)}, ` +
-        'but the seed pins these to agent="codex" branch="main". ' +
+        'but the seed pins these to agent="test" branch="main". ' +
         wrongDaemonHint(),
     );
   }

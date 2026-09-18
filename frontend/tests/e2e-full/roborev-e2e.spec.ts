@@ -919,9 +919,9 @@ test.describe.serial("Roborev", () => {
       expect((body.responses ?? []).filter((response) => response.response === comment)).toHaveLength(1);
     });
 
-    test("an acknowledged comment remains successful when its refresh fails", async ({ page }) => {
+    test("an acknowledged comment remains successful when its refresh fails", async ({ page }, testInfo) => {
       await openDrawer(page, 72);
-      const comment = "Acknowledged comment with unavailable refresh";
+      const comment = `Acknowledged comment with unavailable refresh (attempt ${testInfo.retry})`;
       let mutationAccepted = false;
       await page.route("**/api/roborev/api/comment", async (route) => {
         const response = await route.fetch();
@@ -968,17 +968,34 @@ test.describe.serial("Roborev", () => {
 
     test("reruns and cancels a job through drawer actions", async ({ page }) => {
       await openDrawer(page, 73);
-      const submittedMutations: string[] = [];
-      page.on("request", (request) => {
-        if (request.method() !== "POST") return;
-        const path = new URL(request.url()).pathname;
-        if (path.endsWith("/api/job/rerun")) submittedMutations.push("rerun");
-        if (path.endsWith("/api/job/cancel")) submittedMutations.push("cancel");
-      });
-      await reviewAction(page, "Rerun").click();
-      await reviewAction(page, "Cancel").click();
-      await expect.poll(() => submittedMutations).toEqual(["rerun", "cancel"]);
-      await expect(page.getByRole("region", { name: "Review details" })).toBeVisible();
+      // Keep the accepted rerun queued until the drawer submits cancellation.
+      const pause = await page.request.post("/api/roborev/api/queue/pause");
+      expect(pause.status(), await pause.text()).toBe(200);
+      try {
+        const rerunResponse = page.waitForResponse(
+          (response) => response.request().method() === "POST" && response.url().endsWith("/api/job/rerun"),
+        );
+        await reviewAction(page, "Rerun").click();
+        const rerun = await rerunResponse;
+        expect(rerun.status(), await rerun.text()).toBe(200);
+        const queued = await page.request.get("/api/roborev/api/jobs?id=73");
+        expect(queued.ok()).toBe(true);
+        expect(await queued.json()).toMatchObject({ jobs: [{ id: 73, status: "queued" }] });
+
+        const cancelResponse = page.waitForResponse(
+          (response) => response.request().method() === "POST" && response.url().endsWith("/api/job/cancel"),
+        );
+        await reviewAction(page, "Cancel").click();
+        const cancel = await cancelResponse;
+        expect(cancel.status(), await cancel.text()).toBe(200);
+        const canceled = await page.request.get("/api/roborev/api/jobs?id=73");
+        expect(canceled.ok()).toBe(true);
+        expect(await canceled.json()).toMatchObject({ jobs: [{ id: 73, status: "canceled" }] });
+        await expect(page.getByRole("region", { name: "Review details" })).toBeVisible();
+      } finally {
+        const unpause = await page.request.post("/api/roborev/api/queue/unpause");
+        expect(unpause.status(), await unpause.text()).toBe(200);
+      }
     });
 
     test("cancel button hidden for non-cancelable job 70", async ({ page }) => {

@@ -27,15 +27,23 @@ func TestApplyWorktreeDivergenceReportsMissingConfiguredUpstream(t *testing.T) {
 	assert := assert.New(t)
 	work := gitfixture.DivergenceWorktree(t)
 	gitfixture.Run(t, work, "update-ref", "-d", "refs/remotes/origin/feature")
+	// A fetched PR head ref must not mask the first push: the branch has a
+	// configured upstream, so the PR-head comparison does not apply.
+	gitfixture.Run(t, work, "update-ref", "refs/pull/9/head", "HEAD")
 	resp := workspaceResponse{ID: "ws-first-push"}
+	summary := &db.WorkspaceSummary{
+		Platform: "github", ItemType: db.WorkspaceItemTypePullRequest,
+		ItemNumber: 9, WorktreePath: work,
+	}
 
-	err := applyWorktreeDivergence(t.Context(), &resp, work)
+	err := applyWorktreeDivergence(t.Context(), &resp, summary)
 
 	require.NoError(err)
 	require.NotNil(resp.BranchUpstreamMissing)
 	assert.True(*resp.BranchUpstreamMissing)
 	assert.Nil(resp.CommitsAhead)
 	assert.Nil(resp.CommitsBehind)
+	assert.Nil(resp.CommitsVsPRHead)
 }
 
 func newEnrichmentTestHandler(t *testing.T, tmuxScript string) *Handler {

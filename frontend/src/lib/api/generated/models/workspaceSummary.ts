@@ -11,6 +11,7 @@ export interface WorkspaceSummary {
   branch_upstream_missing?: boolean;
   commits_ahead?: number;
   commits_behind?: number;
+  commits_vs_pr_head?: boolean;
   created_at: string;
   enrichment_error?: string;
   enrichment_refreshed_at?: string;

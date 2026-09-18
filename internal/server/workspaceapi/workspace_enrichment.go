@@ -248,6 +248,7 @@ func applyWorkspaceEnrichmentCacheEntry(
 	if entry.hasDivergence {
 		resp.CommitsAhead = entry.response.CommitsAhead
 		resp.CommitsBehind = entry.response.CommitsBehind
+		resp.CommitsVsPRHead = entry.response.CommitsVsPRHead
 		resp.BranchUpstreamMissing = entry.response.BranchUpstreamMissing
 		resp.WorktreeDirty = entry.response.WorktreeDirty
 	}
@@ -546,6 +547,7 @@ func (s *Handler) recordWorkspaceEnrichmentResult(
 	if result.divergenceComplete {
 		entry.response.CommitsAhead = result.response.CommitsAhead
 		entry.response.CommitsBehind = result.response.CommitsBehind
+		entry.response.CommitsVsPRHead = result.response.CommitsVsPRHead
 		entry.response.BranchUpstreamMissing = result.response.BranchUpstreamMissing
 		entry.response.WorktreeDirty = result.response.WorktreeDirty
 		entry.hasDivergence = true
@@ -600,6 +602,7 @@ func workspaceEnrichmentBroadcastWorthy(prior, next workspaceEnrichmentCacheEntr
 	return next.hasDivergence &&
 		(!intPointerEqual(prior.response.CommitsAhead, next.response.CommitsAhead) ||
 			!intPointerEqual(prior.response.CommitsBehind, next.response.CommitsBehind) ||
+			!boolPointerEqual(prior.response.CommitsVsPRHead, next.response.CommitsVsPRHead) ||
 			!boolPointerEqual(prior.response.BranchUpstreamMissing, next.response.BranchUpstreamMissing) ||
 			!boolPointerEqual(prior.response.WorktreeDirty, next.response.WorktreeDirty))
 }

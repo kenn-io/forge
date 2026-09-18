@@ -835,13 +835,17 @@
     return `Open item on ${provider}`;
   }
 
+  // Counts measured against the PR head ref (fork PRs) name no push or pull
+  // target: the branch has no upstream, so branch sync would only fail.
   function canPush(ws: Workspace): boolean {
+    if (ws.commits_vs_pr_head === true) return false;
     const ahead = ws.commits_ahead ?? 0;
     const behind = ws.commits_behind ?? 0;
     return ws.branch_upstream_missing === true || (ahead > 0 && behind === 0);
   }
 
   function canPull(ws: Workspace): boolean {
+    if (ws.commits_vs_pr_head === true) return false;
     const ahead = ws.commits_ahead ?? 0;
     const behind = ws.commits_behind ?? 0;
     return behind > 0 && ahead === 0;
@@ -1453,7 +1457,7 @@
                 {#if showPush}
                   <span
                     class="push-state"
-                    title={`${ahead} ahead, ${behind} behind upstream`}
+                    title={`${ahead} ahead, ${behind} behind ${ws.commits_vs_pr_head === true ? "PR head" : "upstream"}`}
                   >
                     {#if ahead > 0}
                       <span class="push-ahead">

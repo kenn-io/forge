@@ -34,6 +34,7 @@ export type WorkspaceListItem = Pick<
     readonly branch_upstream_missing?: boolean;
     readonly commits_ahead?: number | null;
     readonly commits_behind?: number | null;
+    readonly commits_vs_pr_head?: boolean;
     readonly error_message?: GeneratedWorkspace["error_message"] | null;
     readonly item_last_activity_at?: string | null;
     readonly mr_additions?: number | null;
@@ -77,6 +78,7 @@ const Workspace = Schema.Struct({
   branch_upstream_missing: Schema.optionalKey(Schema.Boolean),
   commits_ahead: Schema.optionalKey(Schema.NullOr(Schema.Number)),
   commits_behind: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+  commits_vs_pr_head: Schema.optionalKey(Schema.Boolean),
   created_at: Schema.String,
   error_message: Schema.optionalKey(Schema.NullOr(Schema.String)),
   fleet_host_key: Schema.optionalKey(Schema.String),

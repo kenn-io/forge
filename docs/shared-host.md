@@ -54,13 +54,14 @@ Create the roots as an administrator, then let each OS user write only inside
 that user's root. Repeat the commands for Bob with the Bob paths and owner.
 
 ```sh
-sudo install -d -m 700 /srv/forge/alice
-sudo install -d -m 700 \
+sudo install -d -o alice -g alice -m 700 /srv/forge/alice
+sudo install -d -o alice -g alice -m 700 \
   /srv/forge/alice/forge \
   /srv/forge/alice/certs \
   /srv/forge/alice/containers \
-  /srv/forge/alice/runtime
-sudo install -d -m 700 \
+  /srv/forge/alice/runtime \
+  /srv/forge/alice/home
+sudo install -d -o alice -g alice -m 700 \
   /srv/forge/alice/forge/credentials \
   /srv/forge/alice/containers/graphroot \
   /srv/forge/alice/containers/runroot
@@ -228,7 +229,8 @@ test -d /srv/forge/alice/runtime && test -w /srv/forge/alice/runtime
 sudo systemd-run --uid=alice --wait --pipe \
   -p ProtectHome=true \
   -p PrivateTmp=yes \
-  env XDG_RUNTIME_DIR=/srv/forge/alice/runtime \
+  env HOME=/srv/forge/alice/home \
+  XDG_RUNTIME_DIR=/srv/forge/alice/runtime \
   CONTAINERS_STORAGE_CONF=/srv/forge/alice/containers/storage.conf \
   /usr/bin/podman info
 namei -l /srv/forge/alice/forge /srv/forge/alice/certs/alice-gateway.pem

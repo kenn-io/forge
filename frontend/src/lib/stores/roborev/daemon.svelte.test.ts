@@ -277,4 +277,42 @@ describe("createDaemonStore", () => {
       yield* Fiber.interrupt(polling);
     }),
   );
+
+  it.effect("backs off prolonged unavailability while manual recovery resets the next outage", () =>
+    Effect.gen(function* () {
+      let available = false;
+      const forgeGet = vi.fn(async () => ({
+        data: { available, endpoint: "http://roborev:7373", version: "test" },
+      }));
+      const store = daemonStore(forgeClient(forgeGet), { GET: vi.fn() } as unknown as RouteMockClient);
+      const daemonLayer = Layer.provideMerge(RoborevDaemonWorkflowLive, makeGeneratedApiLayer(forgeClient(forgeGet)));
+      const polling = yield* Effect.forkChild(store.pollingEffect.pipe(Effect.provide(daemonLayer)));
+      yield* Effect.yieldNow;
+
+      let calls = 1;
+      for (const delay of [1_000, 2_000, 4_000, 8_000, 16_000, 30_000]) {
+        yield* TestClock.adjust(delay - 1);
+        expect(forgeGet).toHaveBeenCalledTimes(calls);
+        yield* TestClock.adjust(1);
+        expect(forgeGet).toHaveBeenCalledTimes(++calls);
+      }
+
+      available = true;
+      store.checkHealth();
+      yield* Effect.promise(() => vi.waitFor(() => expect(store.isAvailable()).toBe(true)));
+      expect(forgeGet).toHaveBeenCalledTimes(++calls);
+
+      // A transport failure after recovery starts a fresh short probe cadence.
+      forgeGet.mockRejectedValueOnce(new Error("offline"));
+      available = false;
+      yield* TestClock.adjust("30 seconds");
+      expect(store.isAvailable()).toBe(false);
+      expect(forgeGet).toHaveBeenCalledTimes(++calls);
+      yield* TestClock.adjust("999 millis");
+      expect(forgeGet).toHaveBeenCalledTimes(calls);
+      yield* TestClock.adjust("1 millis");
+      expect(forgeGet).toHaveBeenCalledTimes(++calls);
+      yield* Fiber.interrupt(polling);
+    }),
+  );
 });

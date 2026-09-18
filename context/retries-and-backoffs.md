@@ -76,6 +76,10 @@ The archive worker uses the backoff schedule type only as an idle delay calculat
 not as a retry wrapper: idle passes double up to a five-minute cap and any wake or
 worked pass resets it (`internal/github/sync.go::runArchiveLoop`).
 
+RoboRev health polling runs on every page, so prolonged unavailability must back off.
+Manual Retry remains immediate, and recovery resets the outage cadence
+(`frontend/src/lib/stores/roborev/daemon.svelte.ts::waitForNextPoll`).
+
 - Manual workflow dispatch is never retried. Track only the run ID returned by
   dispatch, using direct reads until completion or thirty minutes; never infer
   its identity from ref, actor, or time (`internal/server/workflowapi/dispatch_follow.go::Handler.followDispatch`).

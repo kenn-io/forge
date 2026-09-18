@@ -31,6 +31,7 @@ export function createDaemonStore(opts: DaemonStoreOptions) {
   let canceledJobs = $state(0);
   let activeWorkers = $state(0);
   let maxWorkers = $state(0);
+  let unavailablePollIntervalMs = UNAVAILABLE_POLL_INTERVAL_MS;
 
   function clearStatus(): void {
     queuedJobs = 0;
@@ -92,6 +93,7 @@ export function createDaemonStore(opts: DaemonStoreOptions) {
       version = result.value.version;
       endpoint = result.value.endpoint;
       if (!available) clearStatus();
+      else unavailablePollIntervalMs = UNAVAILABLE_POLL_INTERVAL_MS;
     });
     const recovered = available && !previous;
     if (recovered) wasEverAvailable = true;
@@ -111,9 +113,11 @@ export function createDaemonStore(opts: DaemonStoreOptions) {
     }
   });
 
-  const waitForNextPoll = Effect.suspend(() =>
-    Effect.sleep(Duration.millis(available ? AVAILABLE_POLL_INTERVAL_MS : UNAVAILABLE_POLL_INTERVAL_MS)),
-  );
+  const waitForNextPoll = Effect.suspend(() => {
+    const intervalMs = available ? AVAILABLE_POLL_INTERVAL_MS : unavailablePollIntervalMs;
+    if (!available) unavailablePollIntervalMs = Math.min(intervalMs * 2, AVAILABLE_POLL_INTERVAL_MS);
+    return Effect.sleep(Duration.millis(intervalMs));
+  });
   const pollingEffect = pollWhileVisible(pollOnce, waitForNextPoll, { immediate: true }).pipe(
     Effect.ensuring(
       Effect.sync(() => {

@@ -67,6 +67,7 @@ test("records slow-link navigation and traffic", async ({ page, browser, context
     traffic.failedRequests++;
   });
   let idle: Record<string, number> | null = null;
+  const idleRequests: Record<string, number> = {};
   let coldTraffic: typeof traffic | null = null;
   let completed = false;
 
@@ -143,6 +144,7 @@ test("records slow-link navigation and traffic", async ({ page, browser, context
     await page.locator(".pull-item").first().waitFor({ state: "visible" });
     await page.waitForTimeout(2_000);
     const beforeIdle = { ...traffic };
+    const idleRequestOffset = httpRequests.length;
     const idleStarted = performance.now();
     await page.waitForTimeout(idleMs);
     const idleDuration = performance.now() - idleStarted;
@@ -152,6 +154,10 @@ test("records slow-link navigation and traffic", async ({ page, browser, context
         ((traffic.httpEncodedBodyBytes - beforeIdle.httpEncodedBodyBytes) * 60_000) / idleDuration,
       requestsPerMinute: ((traffic.requests - beforeIdle.requests) * 60_000) / idleDuration,
     };
+    for (const { method, url } of httpRequests.slice(idleRequestOffset)) {
+      const key = `${method} ${url}`;
+      idleRequests[key] = (idleRequests[key] ?? 0) + 1;
+    }
     console.log("slow-link: idle measured");
 
     const offlineFailure = page.waitForEvent("requestfailed", {
@@ -192,6 +198,7 @@ test("records slow-link navigation and traffic", async ({ page, browser, context
         measurements,
         coldTraffic,
         idle,
+        idleRequests,
         traffic,
         httpRequests,
       };
@@ -200,7 +207,11 @@ test("records slow-link navigation and traffic", async ({ page, browser, context
       const summary = [...grouped].map(([scenario, values]) => {
         return `${scenario}: median ${median(values.map((value) => value.durationMs)).toFixed(1)} ms (${values.length} samples)`;
       });
-      summary.push(`idle: ${JSON.stringify(idle)}`, `cold traffic: ${JSON.stringify(coldTraffic)}`);
+      summary.push(
+        `idle: ${JSON.stringify(idle)}`,
+        `idle requests: ${JSON.stringify(idleRequests)}`,
+        `cold traffic: ${JSON.stringify(coldTraffic)}`,
+      );
       if (process.env.KENN_FORGE_PROFILE_BASELINE) {
         const baseline = JSON.parse(await readFile(process.env.KENN_FORGE_PROFILE_BASELINE, "utf8")) as {
           measurements: Measurement[];

@@ -187,7 +187,7 @@ The benchmark writes `timings.json` and `summary.txt` under
 - Explicit return navigation after the outage. This measures a user retry,
   rather than claiming automatic recovery of every live connection.
 - HTTP encoded response-body bytes and request
-  counts over a 60-second idle pull-list window. Header bytes and transport
+  counts by endpoint over a 60-second idle pull-list window. Header bytes and transport
   overhead are excluded. The fixture server does not run provider background sync.
 
 There are no performance thresholds. Visibility and API success

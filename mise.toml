@@ -1,6 +1,7 @@
 [tools]
 bun = "latest"
 "github:F1bonacc1/process-compose" = "latest"
+glab = "1.117.0"
 golangci-lint = "2.13.2"
 "go:go.uber.org/nilaway/cmd/nilaway" = "0.0.0-20260808063849-8649a03c818a"
 node = "24.16.0"

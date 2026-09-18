@@ -90,6 +90,8 @@ jobs:
               - .github/workflows/ci.yml
               - .github/docker/**
               - Makefile
+              - mise.toml
+              - mise.ci.toml
 
   ensure_playwright_image:
     name: Ensure Playwright CI image
@@ -289,6 +291,12 @@ jobs:
         run: |
           mkdir -p internal/web/dist
           echo ok > internal/web/dist/stub.html
+
+      # glab and fj back the provider CLI credential tests, which skip when
+      # the binary is absent and would otherwise never run in CI.
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        env:
+          MISE_ENV: ci
 
       - name: Run tests
         run: |

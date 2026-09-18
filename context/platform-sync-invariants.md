@@ -123,11 +123,16 @@ Each configured provider-host pair may have its own fallback token source;
 providers sharing one hostname may carry different chains. When their chains
 disagree, the ownerless host clone fallback is disabled rather than borrowing
 one provider's credential, because an ownerless operation cannot select a
-provider safely; providers with no credential chain of their own do not veto
-the fallback, and runtime route resolution must honor the disabled state
-instead of falling through to another provider's unscoped route
+provider safely. Every provider chain ends on its host-scoped CLI candidate,
+and a provider without a declared token still carries that chain, so it
+disagrees with any tokened provider on the hostname. Runtime route resolution
+must honor the disabled state instead of falling through to another
+provider's unscoped route
 (`internal/config/config.go::Config.CloneTokenDescriptors`,
 `cmd/kenn-forge/provider_startup.go::providerStartup.FallbackSource`).
+Two providers on one hostname is a config-validation edge, not a real
+deployment: behavior tests such as token rotation and clone auth use one
+provider per hostname (`internal/server/api_test.go::TestAPIForgejoHostCloneFetchFollowsReloadedToken`).
 Non-GitHub repositories on one (provider, host) must declare equivalent
 effective chains, checked against each repository's own descriptor —
 `ProviderTokenSources` deduplicates by key and would hide the conflict
@@ -167,9 +172,13 @@ implementation; it should not masquerade as another provider.
 Fallback token lookup is scoped by `(provider, platform_host)`. GitHub
 authorization routes may be exact-repository, owner, or host fallback. Lookup
 checks repo `token_file`, repo `token_env`, a covered App installation for
-reads, owner PAT, platform token, public-host default, then GitHub CLI. GitLab
-`gitlab.com` has no implicit default env var. Forgejo `codeberg.org` uses
+reads, owner PAT, platform token, public-host default, then the provider CLI.
+GitLab `gitlab.com` has no implicit default env var. Forgejo `codeberg.org` uses
 `KENN_FORGE_FORGEJO_TOKEN`, and Gitea `gitea.com` uses `KENN_FORGE_GITEA_TOKEN`.
+Every non-GitHub chain ends on a host-scoped CLI candidate: GitLab on the glab
+CLI and Forgejo or Gitea on the fj CLI (`forgejo-cli`). CLI candidates never
+count as configured credentials
+(`internal/config/config.go::descriptorCredentialAvailable`).
 Token files are read lazily so atomic replacement rotates credentials without
 rebuilding provider clients. Route descriptors and auth transports stay keyed
 by full route, while GitHub App installation-token caches are shared by
@@ -182,6 +191,33 @@ Only the default `github.com` host may retry bare `gh auth token` for an older
 CLI that does not support `--hostname`; retrying bare for another host could
 silently authenticate to the wrong account
 (`internal/config/config.go::ghAuthTokenForHost`).
+
+GitLab CLI fallback runs `glab config get token --host HOST` with update
+checks disabled: it prints the resolved token (plaintext config or keyring) on
+stdout, prints nothing when unset, and never contacts the server. Do not use
+`glab auth status --show-token`; it writes to stderr and exits non-zero when
+its API probe fails, which would drop the credential offline. glab returns
+`GITLAB_TOKEN`, `GITLAB_ACCESS_TOKEN`, or `OAUTH_TOKEN` for every host before
+its per-host config, so the lookup strips them to keep one host's token from
+reaching another (`internal/config/provider_cli_tokens.go::GitLabCLITokenForHost`).
+
+Forgejo and Gitea CLI fallback reads fj's `keys.json` directly because fj has
+no command that prints a stored token. The file lives in the `directories`
+crate data dir for `forgejo-cli` (macOS `Library/Application Support/
+forgejo-cli.forgejo-cli`, Linux `$XDG_DATA_HOME` or `~/.local/share/forgejo-cli`,
+Windows `%APPDATA%\forgejo-cli\forgejo-cli\data`). Entries are keyed by host
+without scheme but with any port or subpath; lookup tries the exact host, an fj
+alias, then a single subpath entry under the host. Expired OAuth entries are
+skipped rather than sent because fj refreshes them on its own next run; an
+unrecognized expiry encoding is treated as live. A missing file is a missing
+credential, a malformed file is an error
+(`internal/config/provider_cli_tokens.go::ForgejoCLITokenForHost`).
+
+Non-GitHub `TokenForPlatformHost` lookups fall through empty platform and
+default env vars to the CLI candidate, matching the descriptor chain. Provider
+CLI tokens are cached per managed source by candidate and evicted only when
+the provider rejects that exact token or the descriptor changes
+(`internal/tokenauth/source.go::ManagedSource.cliToken`).
 
 Managed Git authorization is selected by full `(platform, platform_host, owner,
 name)` identity. GitHub smart HTTP uses mutation/user candidates and never an

@@ -13,7 +13,9 @@ import (
 
 var ErrMissingToken = errors.New("missing provider token")
 
-type GitHubCLIRunner func(context.Context, string) (string, error)
+// CLITokenRunner returns the token a locally authenticated provider CLI
+// holds for host, or "" when that CLI has no credential for it.
+type CLITokenRunner func(context.Context, string) (string, error)
 
 // GitHubAppMinter exchanges a github_app candidate (app id, private
 // key path, installation id, host) for an installation access token
@@ -22,8 +24,25 @@ type GitHubCLIRunner func(context.Context, string) (string, error)
 type GitHubAppMinter func(context.Context, Candidate) (string, time.Time, error)
 
 type Options struct {
-	GitHubCLI GitHubCLIRunner
-	GitHubApp GitHubAppMinter
+	GitHubCLI  CLITokenRunner
+	GitLabCLI  CLITokenRunner
+	ForgejoCLI CLITokenRunner
+	GitHubApp  GitHubAppMinter
+}
+
+// cliRunner returns the runner serving one CLI source kind, or nil when
+// the kind is not a CLI kind or no runner is configured.
+func (o Options) cliRunner(kind SourceKind) CLITokenRunner {
+	switch kind {
+	case SourceKindGitHubCLI:
+		return o.GitHubCLI
+	case SourceKindGitLabCLI:
+		return o.GitLabCLI
+	case SourceKindForgejoCLI:
+		return o.ForgejoCLI
+	default:
+		return nil
+	}
 }
 
 type Source interface {
@@ -34,11 +53,13 @@ type Source interface {
 }
 
 type ManagedSource struct {
-	mu        sync.Mutex
-	desc      Descriptor
-	options   Options
-	ghToken   string
-	ghCached  bool
+	mu      sync.Mutex
+	desc    Descriptor
+	options Options
+	// cliTokens caches the token each CLI candidate resolved. CLI lookups
+	// shell out or read a credential store, so a hit is reused until the
+	// provider rejects it or the descriptor changes.
+	cliTokens map[Candidate]string
 	appTokens *githubAppTokenStore
 }
 
@@ -234,8 +255,7 @@ func (s *ManagedSource) Update(desc Descriptor) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.desc.EqualSource(desc) {
-		s.ghToken = ""
-		s.ghCached = false
+		s.cliTokens = nil
 		s.appTokens.evictCompleted(s.desc.Candidates)
 	}
 	s.desc = cloneDescriptor(desc)
@@ -243,9 +263,10 @@ func (s *ManagedSource) Update(desc Descriptor) {
 
 func (s *ManagedSource) Invalidate(rejectedToken string) {
 	s.mu.Lock()
-	if s.ghToken == rejectedToken {
-		s.ghToken = ""
-		s.ghCached = false
+	for candidate, token := range s.cliTokens {
+		if token == rejectedToken {
+			delete(s.cliTokens, candidate)
+		}
 	}
 	s.appTokens.invalidateToken(s.desc.Candidates, rejectedToken)
 	s.mu.Unlock()
@@ -282,8 +303,8 @@ func (s *ManagedSource) tokenFromCandidate(
 			return "", false, fmt.Errorf("read token file %s: %w", candidate.FilePath, err)
 		}
 		return strings.TrimSpace(string(data)), true, nil
-	case SourceKindGitHubCLI:
-		return s.githubCLIToken(ctx, candidate.Host)
+	case SourceKindGitHubCLI, SourceKindGitLabCLI, SourceKindForgejoCLI:
+		return s.cliToken(ctx, candidate)
 	case SourceKindGitHubApp:
 		return s.githubAppToken(ctx, candidate)
 	default:
@@ -376,32 +397,36 @@ func (s *ManagedSource) githubAppToken(
 	return token, true, nil
 }
 
-func (s *ManagedSource) githubCLIToken(
+func (s *ManagedSource) cliToken(
 	ctx context.Context,
-	host string,
+	candidate Candidate,
 ) (string, bool, error) {
+	key := canonicalCandidate(candidate)
 	s.mu.Lock()
-	if s.ghCached {
-		token := s.ghToken
+	if token, ok := s.cliTokens[key]; ok {
 		s.mu.Unlock()
 		return token, true, nil
 	}
-	runner := s.options.GitHubCLI
+	runner := s.options.cliRunner(candidate.Kind)
 	s.mu.Unlock()
 	if runner == nil {
 		return "", true, nil
 	}
-	token, err := runner(ctx, host)
+	token, err := runner(ctx, candidate.Host)
 	if err != nil {
-		return "", false, fmt.Errorf("github cli token for %s: %w", host, err)
+		return "", false, fmt.Errorf(
+			"%s token for %s: %w", candidate.Kind, candidate.Host, err,
+		)
 	}
 	token = strings.TrimSpace(token)
 	if token == "" {
 		return "", true, nil
 	}
 	s.mu.Lock()
-	s.ghToken = token
-	s.ghCached = true
+	if s.cliTokens == nil {
+		s.cliTokens = make(map[Candidate]string)
+	}
+	s.cliTokens[key] = token
 	s.mu.Unlock()
 	return token, true, nil
 }

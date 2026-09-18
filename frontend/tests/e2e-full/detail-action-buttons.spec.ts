@@ -1630,7 +1630,11 @@ test.describe("detail action buttons", () => {
       });
       await page.locator(".actions-menu-popover .btn--ready").click();
       expect((await readyResponse).status()).toBe(200);
-      await expect(page.locator(".actions-menu-popover")).toHaveCount(0);
+      await expect(page.locator(".actions-menu-popover")).toBeHidden();
+      await expect(page.getByRole("button", { name: "Actions", exact: true })).toHaveAttribute(
+        "aria-expanded",
+        "false",
+      );
     } finally {
       await isolatedServer?.stop();
     }
@@ -1650,7 +1654,7 @@ test.describe("detail action buttons", () => {
     }
 
     const metrics = await page.evaluate(() => {
-      const selectors = [".btn--ready", ".btn--approve", ".btn--merge", ".btn--close"];
+      const selectors = [".btn--ready", ".review-buttons", ".btn--merge", ".btn--close"];
       return selectors.map((selector) => {
         const element = document.querySelector(selector);
         if (!(element instanceof HTMLElement)) {
@@ -1693,8 +1697,8 @@ test.describe("detail action buttons", () => {
     const detail = page.locator(".pull-detail-content");
     await expect(detail).toBeVisible();
     await detail.evaluate((element) => {
-      element.style.width = "400px";
-      element.style.flex = "0 0 400px";
+      element.style.width = "424px";
+      element.style.flex = "0 0 424px";
     });
 
     const fitStages = detail.locator(".kit-fit-stages");
@@ -1748,8 +1752,8 @@ test.describe("detail action buttons", () => {
     await comment.fill("Keep this review draft while the pane resizes.");
 
     await detail.evaluate((element) => {
-      element.style.width = "400px";
-      element.style.flex = "0 0 400px";
+      element.style.width = "424px";
+      element.style.flex = "0 0 424px";
     });
 
     await expect(dialog).toBeVisible();

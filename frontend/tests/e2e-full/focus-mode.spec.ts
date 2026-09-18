@@ -21,17 +21,17 @@ test.describe("focus mode", () => {
     await expect(page.locator(".kit-status-bar")).not.toBeAttached();
   });
 
-  test("narrow PR focus route keeps actions available in the compact layout", async ({ page }) => {
+  test("narrow PR focus route keeps actions available in the Actions menu", async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 720 });
     await page.goto("/focus/pulls/github/acme/widgets/1");
     await page.locator(".focus-layout .pull-detail").waitFor({ state: "visible", timeout: 10_000 });
 
-    await expect(page.getByRole("button", { name: "Actions", exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: "Actions", exact: true }).click();
     await expect(page.getByRole("button", { name: "Approve", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Merge", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Close", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Create Workspace", exact: true })).toBeVisible();
-    const labels = page.locator(".label-editor-anchor--inline").getByRole("button", { name: "Labels" });
+    const labels = page.locator(".actions-menu-popover").getByRole("button", { name: "Labels" });
     await expect(labels).toBeVisible();
 
     await labels.click();
@@ -53,8 +53,8 @@ test.describe("focus mode", () => {
     await expect(page.locator(".label-picker")).toBeHidden();
   });
 
-  test("narrow PR focus route closes the label picker when Labels toggles it", async ({ page }) => {
-    await page.setViewportSize({ width: 320, height: 720 });
+  test("compact PR focus route closes the label picker when Labels toggles it", async ({ page }) => {
+    await page.setViewportSize({ width: 560, height: 720 });
     await page.goto("/focus/pulls/github/acme/widgets/1");
     await page.locator(".focus-layout .pull-detail").waitFor({ state: "visible", timeout: 10_000 });
 

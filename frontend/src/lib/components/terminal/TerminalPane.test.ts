@@ -432,6 +432,7 @@ describe("TerminalPane", () => {
     const view = render(TerminalPane, { props: { workspaceId: "ws-123" } });
     expect(view.getByRole("status").textContent).toBe("Loading terminal...");
 
+    await vi.dynamicImportSettled();
     await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());
     expect(view.queryByRole("status")).toBeNull();
   });

@@ -2159,6 +2159,18 @@ func buildAppState(
 		database, serverSyncer, diffRepo.Manager, assets, cfg, cfgPath,
 		serverOptions,
 	)
+	// Mirror production status events so connected clients observe sync completion.
+	if serverSyncer != nil {
+		wasRunning := syncer.Status().Running
+		syncer.SetOnStatusChange(func(status *ghclient.SyncStatus) {
+			srv.Hub().Broadcast(server.Event{Type: "sync_status", Data: status})
+			if wasRunning && !status.Running {
+				srv.Hub().Broadcast(server.Event{Type: "data_changed", Data: struct{}{}})
+			}
+			wasRunning = status.Running
+		})
+		srv.Hub().Broadcast(server.Event{Type: "sync_status", Data: syncer.Status()})
+	}
 	// Mirror production wiring so notification syncs nudge an open activity
 	// feed to reload (the feed's incremental poll skips backfilled rows).
 	syncer.SetOnNotificationSyncComplete(func() {

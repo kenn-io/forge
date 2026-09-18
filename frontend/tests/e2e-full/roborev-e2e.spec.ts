@@ -527,10 +527,10 @@ test.describe.serial("Roborev", () => {
       await branchItem.click();
 
       // Wait atomically for the filter to settle.
-      await expect(page.locator(".branch-name", { hasText: "feat/auth" }).first()).toBeVisible({
+      await expect(page.locator(".job-row .branch-name", { hasText: "feat/auth" }).first()).toBeVisible({
         timeout: 5_000,
       });
-      await expect(page.locator(".branch-name").filter({ hasNotText: "feat/auth" })).toHaveCount(0);
+      await expect(page.locator(".job-row .branch-name").filter({ hasNotText: "feat/auth" })).toHaveCount(0);
     });
 
     test("search input: filter by exact git ref", async ({ page }) => {

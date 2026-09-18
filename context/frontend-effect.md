@@ -100,6 +100,9 @@ service is the supported tool here.
 - A non-idempotent transport failure may be uncertain. Retain a fence and read
   fresh authority before retrying. Definite rejection, uncertain outcome, and
   acknowledged success followed by refresh failure require different UI state.
+- New settings fields must participate in save-recovery comparisons; reading
+  unchanged settings cannot confirm that a requested change took effect
+  (`frontend/src/lib/stores/settings-workflow.ts::settingsMatchRequest`).
 - Presentation callbacks must not change command acknowledgement. Publish
   identity-scoped authoritative outcomes before component-liveness checks, and
   gate only local presentation on the current view.

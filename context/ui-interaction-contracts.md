@@ -116,9 +116,9 @@ Interactive surfaces must agree on which item is selected.
   their automatically opened empty fallback while the launch intent is pending and may discard only unclaimed intents
   (`frontend/src/lib/stores/workspace-create-pending.svelte.ts::acceptWorkspaceLaunch`,
   `frontend/src/lib/components/terminal/workspace-runtime-workflow.ts::reconcileAcceptedLaunch`).
-- Quick actions already choose an agent, so their pending server handoff suppresses
-  the automatic session launcher without queuing a second frontend launch
-  (`frontend/src/lib/stores/workspace-quick-actions.ts::runWorkspaceQuickAction`).
+- Quick actions keep the automatic session picker closed for that workspace during the browser session,
+  regardless of launch outcome or session exit. Opening it remains an explicit user action
+  (`frontend/src/lib/stores/workspace-quick-actions.ts::quickActionWorkspaces`).
 - Inline surface claims come only from live selection effects (the list
   views' claim effects, which react to recorded overrides); async responses
   record overrides and tombstones but never claim a surface themselves, and

@@ -25,6 +25,26 @@ test("reloads an outdated frontend before rendering a Mermaid diagram", async ({
   let currentEntrypointUrl = "";
   let currentMermaidCoreUrl = "";
   let currentSequenceUrl = "";
+  function updatedImports(body: string): string {
+    for (const { original, updated } of [
+      { original: currentEntrypointUrl, updated: updatedEntrypointPath },
+      { original: currentMermaidCoreUrl, updated: updatedMermaidCorePath },
+      { original: currentSequenceUrl, updated: updatedSequencePath },
+    ]) {
+      if (original) body = body.replaceAll(new URL(original).pathname.split("/").at(-1)!, updated.split("/").at(-1)!);
+    }
+    return body;
+  }
+  // A release changes imports throughout the chunk graph, including imports
+  // back to the entrypoint. Leaving those old mounts a second application.
+  await page.route(/\/assets\/[^/?]+\.js$/, async (route) => {
+    if (mainFrameNavigations < 2) return route.fallback();
+    await route.fulfill({
+      status: 200,
+      contentType: "application/javascript",
+      body: updatedImports(await readFile(distAssetUrl(route.request().url()), "utf8")),
+    });
+  });
   page.on("framenavigated", (frame) => {
     if (frame === page.mainFrame()) mainFrameNavigations += 1;
   });
@@ -62,7 +82,7 @@ test("reloads an outdated frontend before rendering a Mermaid diagram", async ({
     await route.fulfill({
       status: 200,
       contentType: "application/javascript",
-      body: body.replaceAll(mermaidCoreFilename, "mermaid.core-updated.js"),
+      body: updatedImports(body),
     });
   });
   await page.route(updatedMermaidCorePath, async (route) => {
@@ -76,7 +96,7 @@ test("reloads an outdated frontend before rendering a Mermaid diagram", async ({
     await route.fulfill({
       status: 200,
       contentType: "application/javascript",
-      body: body.replaceAll(sequenceFilename, "sequenceDiagram-updated.js"),
+      body: updatedImports(body),
     });
   });
   await page.route(/\/assets\/sequenceDiagram-[^/?]+\.js$/, async (route) => {
@@ -87,7 +107,7 @@ test("reloads an outdated frontend before rendering a Mermaid diagram", async ({
       await route.fulfill({
         status: 200,
         contentType: "application/javascript",
-        body: await readFile(distAssetUrl(currentSequenceUrl), "utf8"),
+        body: updatedImports(await readFile(distAssetUrl(currentSequenceUrl), "utf8")),
       });
       return;
     }

@@ -113,10 +113,9 @@ type diagnostic struct {
 }
 
 type stubPackages struct {
-	time     *types.Package
-	assert   *types.Package
-	require  *types.Package
-	duration *types.Named
+	time    *types.Package
+	assert  *types.Package
+	require *types.Package
 }
 
 type stubImporter struct {
@@ -278,7 +277,7 @@ func checkFile(
 			if _, ok := testifyNames[obj.Name()]; !ok {
 				return true
 			}
-			waitFor := waitForIndex(call.Fun, signature, info)
+			waitFor := waitForIndex(signature)
 			if waitFor < 0 || waitFor >= len(call.Args) {
 				return true
 			}
@@ -356,7 +355,7 @@ func resolvedCallee(expr ast.Expr, info *types.Info) (*types.Func, *types.Signat
 	return function, signature
 }
 
-func waitForIndex(expr ast.Expr, signature *types.Signature, info *types.Info) int {
+func waitForIndex(signature *types.Signature) int {
 	if params := signature.Params(); params != nil {
 		for i := 0; i < params.Len(); i++ {
 			if params.At(i).Name() == "waitFor" {
@@ -364,13 +363,7 @@ func waitForIndex(expr ast.Expr, signature *types.Signature, info *types.Info) i
 			}
 		}
 	}
-
-	if selector, ok := unparen(expr).(*ast.SelectorExpr); ok {
-		if selection := info.Selections[selector]; selection != nil && selection.Kind() == types.MethodVal {
-			return 1
-		}
-	}
-	return 2
+	return -1
 }
 
 func literalBudget(expr ast.Expr, info *types.Info, stubs *stubPackages) (time.Duration, bool) {
@@ -418,7 +411,8 @@ func literalExpression(expr ast.Expr, info *types.Info, stubs *stubPackages) boo
 		return ok && object.Pkg() == stubs.time
 	case *ast.CallExpr:
 		return len(node.Args) == 1 && !node.Ellipsis.IsValid() &&
-			isDurationConversion(node.Fun, info, stubs)
+			isDurationConversion(node.Fun, info, stubs) &&
+			literalExpression(node.Args[0], info, stubs)
 	default:
 		return false
 	}
@@ -488,15 +482,10 @@ func buildStubs() (*stubPackages, error) {
 		return nil, err
 	}
 
-	duration, ok := timePackage.Scope().Lookup("Duration").Type().(*types.Named)
-	if !ok {
-		return nil, fmt.Errorf("time stub has no named Duration type")
-	}
 	return &stubPackages{
-		time:     timePackage,
-		assert:   assertPackage,
-		require:  requirePackage,
-		duration: duration,
+		time:    timePackage,
+		assert:  assertPackage,
+		require: requirePackage,
 	}, nil
 }
 

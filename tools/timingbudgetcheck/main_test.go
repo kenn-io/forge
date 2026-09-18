@@ -129,6 +129,8 @@ import (
 )
 
 const settle = 50 * stdtime.Millisecond
+const settleMs = 50
+const settleDuration = 50 * stdtime.Millisecond
 var namedWait = settle
 
 func waitBudget() stdtime.Duration { return settle }
@@ -143,6 +145,8 @@ func checks(t a.TestingT) {
 	a.Eventually(t, func() bool { return true }, 2*stdtime.Second, stdtime.Millisecond)
 	a.Eventually(t, func() bool { return true }, stdtime.Minute, stdtime.Millisecond)
 	a.Eventually(t, func() bool { return true }, settle, stdtime.Millisecond)
+	a.Eventually(t, func() bool { return true }, stdtime.Duration(settleMs)*stdtime.Millisecond, stdtime.Millisecond)
+	a.Eventually(t, func() bool { return true }, stdtime.Duration(settleDuration), stdtime.Millisecond)
 	a.Eventually(t, func() bool { return true }, namedWait, stdtime.Millisecond)
 	a.Eventually(t, func() bool { return true }, waitBudget(), stdtime.Millisecond)
 	a.Eventually(t, func() bool { return true }, stdtime.Second, 50*stdtime.Millisecond)

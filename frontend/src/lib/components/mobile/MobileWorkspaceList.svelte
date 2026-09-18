@@ -358,12 +358,16 @@
     );
   }
 
+  // Counts measured against the PR head ref (fork PRs) name no push or pull
+  // target: the branch has no upstream, so branch sync would only fail.
   function canPush(workspace: WorkspaceListItem): boolean {
+    if (workspace.commits_vs_pr_head === true) return false;
     return workspace.branch_upstream_missing === true ||
       ((workspace.commits_ahead ?? 0) > 0 && (workspace.commits_behind ?? 0) === 0);
   }
 
   function canPull(workspace: WorkspaceListItem): boolean {
+    if (workspace.commits_vs_pr_head === true) return false;
     return (workspace.commits_behind ?? 0) > 0 && (workspace.commits_ahead ?? 0) === 0;
   }
 

@@ -2541,6 +2541,42 @@ describe("WorkspaceListSidebar", () => {
     expect(screen.getByRole("menuitem", { name: "Push branch" })).toBeTruthy();
   });
 
+  it.each([
+    ["ahead", { commitsAhead: 3 }, "3 ahead, 0 behind PR head"],
+    ["behind", { commitsBehind: 12 }, "0 ahead, 12 behind PR head"],
+  ] as const)(
+    "shows fork PR drift %s of the PR head without offering branch sync",
+    async (_direction, counts, title) => {
+      mockGet.mockResolvedValue({
+        data: {
+          workspaces: [
+            {
+              ...workspaceFixture({
+                id: "ws-fork",
+                provider: "github",
+                platformHost: "github.com",
+                owner: "acme",
+                name: "widgets",
+                number: 9,
+                title: "Fork workspace",
+                ...counts,
+              }),
+              commits_vs_pr_head: true,
+            },
+          ],
+        },
+      });
+
+      const { container } = render(WorkspaceListSidebar, { props: { selectedId: "ws-fork" } });
+      await screen.findByText("Fork workspace");
+
+      expect(container.querySelector(".push-state")?.getAttribute("title")).toBe(title);
+      await fireEvent.contextMenu(container.querySelector(".ws-row")!);
+      expect(screen.queryByRole("menuitem", { name: /Pull branch/ })).toBeNull();
+      expect(screen.queryByRole("menuitem", { name: /Push branch/ })).toBeNull();
+    },
+  );
+
   it("pulls a behind workspace branch and shows a busy state while pending", async () => {
     const pull = deferred<{
       data?: unknown;

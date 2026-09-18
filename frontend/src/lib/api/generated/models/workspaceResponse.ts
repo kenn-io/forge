@@ -19,6 +19,8 @@ export interface WorkspaceResponse {
   branch_upstream_missing?: boolean;
   commits_ahead?: number;
   commits_behind?: number;
+  /** True when the current branch has no upstream and commits_ahead/commits_behind instead compare against the provider's locally fetched pull-request head ref, as for fork pull requests. The counts name no push or pull target, so clients must not offer branch sync for them. */
+  commits_vs_pr_head?: boolean;
   /** True when this response represents a workspace newly created by this request; absent when an existing workspace was returned or on reads. */
   created?: boolean;
   created_at: string;

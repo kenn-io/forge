@@ -104,6 +104,41 @@ func TestWorktreeDivergenceDetachedHead(t *testing.T) {
 	assert.Equal(t, workspace.Divergence{}, div)
 }
 
+func TestWorktreeDivergenceFromRefCountsBothDirections(t *testing.T) {
+	require := require.New(t)
+	work := gitfixture.DivergenceWorktree(t)
+	// A fork PR branch has no upstream; the provider head ref is the only
+	// local record of where the PR currently points.
+	gitfixture.Run(t, work, "branch", "--unset-upstream")
+	gitfixture.Run(t, work, "update-ref", "refs/pull/7/head", "HEAD")
+	gitfixture.Run(t, work, "reset", "--hard", "HEAD~1")
+	require.NoError(os.WriteFile(
+		filepath.Join(work, "local.txt"), []byte("local\n"), 0o644,
+	))
+	gitfixture.Run(t, work, "add", ".")
+	gitfixture.Run(t, work, "commit", "-m", "local only")
+
+	div, ok, err := workspace.WorktreeDivergenceFromRef(
+		t.Context(), work, "refs/pull/7/head",
+	)
+	require.NoError(err)
+	require.True(ok)
+	assert := assert.New(t)
+	assert.Equal(1, div.Ahead)
+	assert.Equal(1, div.Behind)
+}
+
+func TestWorktreeDivergenceFromRefMissingRef(t *testing.T) {
+	work := gitfixture.DivergenceWorktree(t)
+
+	div, ok, err := workspace.WorktreeDivergenceFromRef(
+		t.Context(), work, "refs/pull/7/head",
+	)
+	require.NoError(t, err)
+	assert.False(t, ok, "expected ok=false when the head ref was never fetched")
+	assert.Equal(t, workspace.Divergence{}, div)
+}
+
 func TestWorktreeUnpushedSHAsInSync(t *testing.T) {
 	work := gitfixture.DivergenceWorktree(t)
 

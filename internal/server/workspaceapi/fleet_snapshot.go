@@ -85,6 +85,7 @@ func rawWorkspaceFromSummary(
 		Status: response.Status, ErrorMessage: response.ErrorMessage,
 		CreatedAt:    response.CreatedAt,
 		CommitsAhead: response.CommitsAhead, CommitsBehind: response.CommitsBehind,
+		CommitsVsPRHead:       response.CommitsVsPRHead,
 		BranchUpstreamMissing: response.BranchUpstreamMissing,
 		WorktreeDirty:         response.WorktreeDirty,
 		EnrichmentStatus:      response.EnrichmentStatus,

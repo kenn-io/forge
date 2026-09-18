@@ -50734,6 +50734,7 @@ type RawWorkspace struct {
 	BranchUpstreamMissing *bool              `json:"branchUpstreamMissing,omitempty"`
 	CommitsAhead          *int64             `json:"commitsAhead,omitempty"`
 	CommitsBehind         *int64             `json:"commitsBehind,omitempty"`
+	CommitsVsPRHead       *bool              `json:"commitsVsPRHead,omitempty"`
 	CreatedAt             string             `json:"createdAt"`
 	EnrichmentError       *string            `json:"enrichmentError,omitempty"`
 	EnrichmentRefreshedAt *string            `json:"enrichmentRefreshedAt,omitempty"`
@@ -51952,6 +51953,9 @@ type WorkspaceResponse struct {
 	CommitsAhead          *int64 `json:"commits_ahead,omitempty"`
 	CommitsBehind         *int64 `json:"commits_behind,omitempty"`
 
+	// CommitsVsPrHead True when the current branch has no upstream and commits_ahead/commits_behind instead compare against the provider's locally fetched pull-request head ref, as for fork pull requests. The counts name no push or pull target, so clients must not offer branch sync for them.
+	CommitsVsPrHead *bool `json:"commits_vs_pr_head,omitempty"`
+
 	// Created True when this response represents a workspace newly created by this request; absent when an existing workspace was returned or on reads.
 	Created   *bool  `json:"created,omitempty"`
 	CreatedAt string `json:"created_at"`
@@ -52018,6 +52022,7 @@ type WorkspaceSummary struct {
 	BranchUpstreamMissing *bool                      `json:"branch_upstream_missing,omitempty"`
 	CommitsAhead          *int64                     `json:"commits_ahead,omitempty"`
 	CommitsBehind         *int64                     `json:"commits_behind,omitempty"`
+	CommitsVsPrHead       *bool                      `json:"commits_vs_pr_head,omitempty"`
 	CreatedAt             string                     `json:"created_at"`
 	EnrichmentError       *string                    `json:"enrichment_error,omitempty"`
 	EnrichmentRefreshedAt *string                    `json:"enrichment_refreshed_at,omitempty"`

@@ -3302,7 +3302,7 @@
             />
           </div>
         </div>
-        {#if detailStore.getDetailLoaded()}
+        {#if detailStore.getDiscussionLoaded()}
           <EventTimeline
             events={filteredTimelineEvents}
             orderingEvents={timelineEvents}

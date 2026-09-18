@@ -107,6 +107,7 @@ function pullDetail(headSHA: string): PullDetail {
       provider: "github",
       platform_host: "github.com",
       repo_path: "acme/widget",
+      platform_repo_id: "widget-repo-id",
     },
     events: [],
     detail_loaded: true,
@@ -232,6 +233,53 @@ describe("createDetailStore", () => {
       "This repository is not available in Forge. Add it under Settings → Repositories, then retry.",
     );
   });
+
+  it("keeps discussion available through incomplete background snapshots but resets for another PR", async () => {
+    const identity = { provider: "github", platformHost: "github.com", repoPath: "acme/widget", sync: false as const };
+    const incomplete = { ...pullDetail("head"), detail_loaded: false };
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ data: pullDetail("head") })
+      .mockResolvedValueOnce({ data: incomplete })
+      .mockResolvedValueOnce({ data: { ...pullDetailFor("widget", 8, "other-head"), detail_loaded: false } });
+    const store = createDetailStore({ client: mockClient({ GET: get }) });
+    await loadDetail(store, "acme", "widget", 7, identity);
+    await refreshDetail(store, "acme", "widget", 7, identity);
+    expect(store.getDiscussionLoaded()).toBe(true);
+    expect(store.getDetailLoaded()).toBe(false);
+    expect(store.getDetail()?.detail_loaded).toBe(false);
+
+    store.loadDetail("acme", "widget", 8, identity);
+    expect(store.getDetailLoaded()).toBe(false);
+    expect(store.getDiscussionLoaded()).toBe(false);
+    await vi.waitFor(() => expect(store.isDetailLoading()).toBe(false));
+    expect(store.getDetailLoaded()).toBe(false);
+  });
+
+  it.each(["load", "refresh"])(
+    "resets discussion availability when a %s returns a replacement repository",
+    async (operation) => {
+      const identity = {
+        provider: "github",
+        platformHost: "github.com",
+        repoPath: "acme/widget",
+        sync: false as const,
+      };
+      const replacement = pullDetail("head");
+      replacement.repo.platform_repo_id = "replacement-repo-id";
+      replacement.detail_loaded = false;
+      const get = vi
+        .fn()
+        .mockResolvedValueOnce({ data: pullDetail("head") })
+        .mockResolvedValueOnce({ data: replacement });
+      const store = createDetailStore({ client: mockClient({ GET: get }) });
+      await loadDetail(store, "acme", "widget", 7, identity);
+      expect(store.getDiscussionLoaded()).toBe(true);
+      await (operation === "load" ? loadDetail : refreshDetail)(store, "acme", "widget", 7, identity);
+      expect(store.getDiscussionLoaded()).toBe(false);
+      expect(store.getDetailLoaded()).toBe(false);
+    },
+  );
 
   it("keeps the displayed detail object when a refresh returns identical content", async () => {
     const routeIdentity = {

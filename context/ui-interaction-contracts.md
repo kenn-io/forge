@@ -258,6 +258,10 @@ Persisted controls must state their scope clearly.
 - Link navigation reveals the selected Activity row once it renders; later feed
   refreshes must preserve the user's scroll position
   (`frontend/src/lib/views/ActivityFeedView.svelte::revealSelectedActivityRow`).
+- Loaded discussion stays visible across incomplete refreshes only for the same
+  provider-stable repository and PR. Keep its availability separate from current
+  detail completeness used by CI; clear it on selection change or explicit clear
+  (`frontend/src/lib/stores/detail.svelte.ts::applyDetailAvailability`).
 - Activity filters remain URL-backed and session-scoped. Missing filter params on a
   partial Activity URL inherit the last validated route before store hydration, while
   explicit URL values win (`frontend/src/lib/stores/router.svelte.ts::restoreMissingActivityFilters`).
@@ -326,6 +330,9 @@ Persisted controls must state their scope clearly.
 - Rebasing must not hide commit authorship: show the original author and label a
   distinct committer, while preserving committer-based activity identity and time
   (`frontend/src/lib/components/detail/EventTimeline.svelte::eventAttribution`).
+- Timeline diff retry suppression must permit a new load after another pane clears
+  or replaces the shared diff store; a previous attempt is not permanent availability
+  (`frontend/src/lib/components/detail/EventTimeline.svelte::lastDiffLoadKey`).
 - Detail timelines apply the server-backed entry limit after filtering and grouping,
   then make the remainder explicit and mount it in bounded idle batches; harnesses
   that require every fixture row pass a large limit. An explicit full-timeline request

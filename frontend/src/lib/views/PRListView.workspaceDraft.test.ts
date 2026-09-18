@@ -146,6 +146,7 @@ function renderWithRealPullDetail(
     getDetailError: () => null,
     isDetailSyncing: () => false,
     getDetailLoaded: () => true,
+    getDiscussionLoaded: () => true,
     updateKanbanState: vi.fn(),
     toggleDetailPRStar: vi.fn(),
     updatePRContent: vi.fn(),

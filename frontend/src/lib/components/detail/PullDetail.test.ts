@@ -296,6 +296,7 @@ function renderPullDetail(
     getDetailError: () => null,
     isDetailSyncing: () => options.detailSyncing ?? false,
     getDetailLoaded: () => true,
+    getDiscussionLoaded: () => true,
     updateKanbanState: vi.fn(),
     setPullState: vi.fn(
       (_ref: ProviderRouteRef, _number: number, _state: string, callbacks: ProviderActionCallbacks) => {
@@ -788,6 +789,81 @@ describe("PullDetail provider workflow actions", () => {
     await fireEvent.input(ref, { target: { value: "release/2026-08" } });
 
     expect(ref.value).toBe("release/2026-08");
+  });
+
+  it.each(["closed", "merged"])("keeps the discussion mounted while a %s PR reloads", async (state) => {
+    const detail = pullDetail();
+    detail.merge_request.CIStatus = "success";
+    detail.merge_request.CIChecksJSON = JSON.stringify([
+      { name: "unit tests", status: "completed", conclusion: "success" },
+    ]);
+    detail.events = [{ ...reviewEvent("reviewer"), EventType: "issue_comment", Body: "Keep this discussion visible." }];
+    const pending = Promise.withResolvers<{ data: PullDetail }>();
+    let reloading = false;
+    const api = {
+      GET: vi.fn(async (path: string) =>
+        path.includes("/repos/") ? { data: { ViewerCanMerge: false } } : reloading ? pending.promise : { data: detail },
+      ),
+    };
+    detailRuntime = makeTestAppRuntime(api as unknown as GeneratedClient);
+    const detailStore = createDetailStore({ runtime: detailRuntime });
+    const settings = createSettingsStore();
+    settings.setModeVisibility({ ...settings.getModeVisibility(), actions: false });
+    render(PullDetailTestHarness, {
+      props: {
+        runtime: detailRuntime,
+        detailProps: {
+          owner: "acme",
+          name: "widget",
+          number: 1,
+          provider: "github",
+          platformHost: "github.com",
+          repoPath: "acme/widget",
+          autoSync: false,
+          hideWorkspaceAction: true,
+        },
+      },
+      context: new Map<symbol, unknown>([
+        [
+          STORES_KEY,
+          {
+            detail: detailStore,
+            pulls: { loadPulls: vi.fn() },
+            activity: { loadActivity: vi.fn() },
+            detailActivityView: createDetailActivityViewStore(),
+            settings,
+            workflowActions: createWorkflowActionsStore({ runtime: detailRuntime }),
+          },
+        ],
+        [NAVIGATE_KEY, vi.fn()],
+      ]),
+    });
+    const comment = await screen.findByText("Keep this discussion visible.");
+    reloading = true;
+    detailStore.loadDetail("acme", "widget", 1, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+      sync: false,
+    });
+    await tick();
+    expect(comment.isConnected).toBe(true);
+    expect(screen.queryByText("Detail not yet loaded")).toBeNull();
+
+    pending.resolve({
+      data: {
+        ...detail,
+        merge_request: { ...detail.merge_request, State: state },
+        detail_loaded: false,
+      },
+    });
+    await waitFor(() => expect(detailStore.getDetail()?.merge_request.State).toBe(state));
+    expect(comment.isConnected).toBe(true);
+    expect(screen.queryByText("Detail not yet loaded")).toBeNull();
+    await fireEvent.click(screen.getByTestId("ci-chip"));
+    expect(screen.getByText("Detail not yet loaded")).toBeTruthy();
+    expect(screen.queryByText("unit tests")).toBeNull();
+    expect(comment.isConnected).toBe(true);
   });
 
   it("keeps only the workflow action surface on a merged pull request", async () => {

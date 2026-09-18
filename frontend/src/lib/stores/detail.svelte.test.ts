@@ -233,6 +233,26 @@ describe("createDetailStore", () => {
     );
   });
 
+  it("keeps discussion available through incomplete background snapshots but resets for another PR", async () => {
+    const identity = { provider: "github", platformHost: "github.com", repoPath: "acme/widget", sync: false as const };
+    const incomplete = { ...pullDetail("head"), detail_loaded: false };
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ data: pullDetail("head") })
+      .mockResolvedValueOnce({ data: incomplete })
+      .mockResolvedValueOnce({ data: { ...pullDetailFor("widget", 8, "other-head"), detail_loaded: false } });
+    const store = createDetailStore({ client: mockClient({ GET: get }) });
+    await loadDetail(store, "acme", "widget", 7, identity);
+    await refreshDetail(store, "acme", "widget", 7, identity);
+    expect(store.getDetailLoaded()).toBe(true);
+    expect(store.getDetail()?.detail_loaded).toBe(false);
+
+    store.loadDetail("acme", "widget", 8, identity);
+    expect(store.getDetailLoaded()).toBe(false);
+    await vi.waitFor(() => expect(store.isDetailLoading()).toBe(false));
+    expect(store.getDetailLoaded()).toBe(false);
+  });
+
   it("keeps the displayed detail object when a refresh returns identical content", async () => {
     const routeIdentity = {
       provider: "github",

@@ -874,6 +874,9 @@ export function createDetailStore(opts: DetailStoreOptions) {
   }
 
   function applyRefreshedDetail(next: PullDetail): void {
+    // Availability belongs to the selection, not the latest sync round. The
+    // server can invalidate its completeness marker while retaining events.
+    detailLoaded ||= next.detail_loaded ?? false;
     if (detailContentUnchanged(next)) return;
     detail = next;
   }
@@ -954,6 +957,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     // intent if its requested mode is stronger.
     const key = prKey(requestRef);
     if (activeSelectionKey !== key) {
+      detailLoaded = false;
       activeSelectionKey = key;
       ++selectionGeneration;
       // The observed-timestamp baseline belongs to the previous selection;
@@ -990,7 +994,6 @@ export function createDetailStore(opts: DetailStoreOptions) {
     loading = true;
     syncing = false;
     storeError = null;
-    detailLoaded = false;
     const envelopeTick = nextWorkspaceLifecycleTick();
     const read = executeGeneratedApiRequest("GET pull request", (client, signal) =>
       providerUsesHostRoute(requestRef)
@@ -1039,7 +1042,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
         if (gen !== syncGeneration || activeSelectionKey !== key) return false;
         const didApply = applyEnvelopeAt(envelopeTick, () => {
           detail = withPreservedLocalBody(data);
-          detailLoaded = data.detail_loaded;
+          detailLoaded ||= data.detail_loaded;
         });
         if (didApply) noteObservedFetchedAt(data.detail_fetched_at);
         return didApply;
@@ -1240,7 +1243,6 @@ export function createDetailStore(opts: DetailStoreOptions) {
                 }
                 const didApply = applyEnvelopeAt(envelopeTick, () => {
                   applyRefreshedDetail(withPreservedLocalBody(next));
-                  detailLoaded = data.detail_loaded ?? detailLoaded;
                 });
                 if (didApply) noteObservedFetchedAt(data.detail_fetched_at);
                 return didApply;
@@ -1286,7 +1288,6 @@ export function createDetailStore(opts: DetailStoreOptions) {
               storeError = null;
               const didApply = applyEnvelopeAt(envelopeTick, () => {
                 applyRefreshedDetail(withPreservedLocalBody(next));
-                detailLoaded = next.detail_loaded ?? detailLoaded;
               });
               if (didApply) noteObservedFetchedAt(next.detail_fetched_at);
               return didApply;
@@ -1321,6 +1322,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
   ): void {
     const ref = detailRequestRef(owner, name, number, identity);
     activeLoad = null;
+    if (activeSelectionKey !== prKey(ref)) detailLoaded = false;
     activeSelectionKey = prKey(ref);
     syncGeneration += 1;
     const program = syncDetailEffect(owner, name, number, ref).pipe(
@@ -1367,7 +1369,6 @@ export function createDetailStore(opts: DetailStoreOptions) {
         storeError = null;
         const didApply = applyEnvelopeAt(envelopeTick, () => {
           applyRefreshedDetail(withPreservedLocalBody(next));
-          detailLoaded = next.detail_loaded ?? detailLoaded;
         });
         if (didApply) {
           noteObservedFetchedAt(next.detail_fetched_at);
@@ -1853,7 +1854,6 @@ export function createDetailStore(opts: DetailStoreOptions) {
               if (!isDetailShowingRef(ref)) return false;
               return applyEnvelopeAt(refreshTick, () => {
                 applyRefreshedDetail(withPreservedLocalBody(response));
-                detailLoaded = response.detail_loaded ?? detailLoaded;
                 noteObservedFetchedAt(response.detail_fetched_at);
               });
             }),
@@ -1882,7 +1882,6 @@ export function createDetailStore(opts: DetailStoreOptions) {
           if (!isDetailShowingRef(ref)) return false;
           return applyEnvelopeAt(confirmed.envelopeTick, () => {
             applyRefreshedDetail(withPreservedLocalBody(confirmed.detail));
-            detailLoaded = confirmed.detail.detail_loaded ?? detailLoaded;
             noteObservedFetchedAt(confirmed.detail.detail_fetched_at);
           });
         });

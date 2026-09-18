@@ -309,6 +309,50 @@ describe("EventTimeline", () => {
     expect(loadDiff).toHaveBeenCalledTimes(3);
   });
 
+  it.each(["clear", "replace"])("reloads review context after another pane %ss the shared diff", async (action) => {
+    await Effect.runPromise(runtime.disposeEffect);
+    const getPullDiff = vi.fn(async () => makeDiffStore().getDiff()!);
+    runtime = makeTestAppRuntime(
+      makeGeneratedClient({
+        PullRequestsService: {
+          getPullDiff,
+          getPullFiles: async () => ({ files: [], stale: false, whitespace_only_count: 0 }),
+        },
+      }),
+    );
+    const diff = createDiffStore({ runtime });
+    renderTimeline({
+      props: {
+        events: [makeReviewThreadEvent()],
+        provider: "github",
+        repoOwner: "acme",
+        repoName: "widget",
+        repoPath: "acme/widget",
+        number: 7,
+        currentHeadSHA: "abc123",
+      },
+      context: new Map([[STORES_KEY, { diff }]]),
+    });
+    await waitFor(() => expect(diff.getDiff()).not.toBeNull());
+    await waitFor(() => expect(diff.isDiffLoading()).toBe(false));
+
+    if (action === "clear") {
+      diff.clearDiff();
+    } else {
+      diff.loadDiff("acme", "widget", 8, {
+        provider: "github",
+        owner: "acme",
+        name: "widget",
+        repoPath: "acme/widget",
+      });
+    }
+
+    await waitFor(() => expect(getPullDiff).toHaveBeenCalledTimes(action === "clear" ? 2 : 3));
+    await waitFor(() => expect(diff.isDiffLoading()).toBe(false));
+    expect(diff.getCurrentPR()?.number).toBe(7);
+    expect(diff.getDiff()).not.toBeNull();
+  });
+
   it("renders the configured initial entry limit and progressively loads the remainder", async () => {
     const events = Array.from({ length: 51 }, (_, index) =>
       makeEvent({

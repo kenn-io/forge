@@ -330,6 +330,9 @@ Persisted controls must state their scope clearly.
 - Rebasing must not hide commit authorship: show the original author and label a
   distinct committer, while preserving committer-based activity identity and time
   (`frontend/src/lib/components/detail/EventTimeline.svelte::eventAttribution`).
+- Timeline diff retry suppression must permit a new load after another pane clears
+  or replaces the shared diff store; a previous attempt is not permanent availability
+  (`frontend/src/lib/components/detail/EventTimeline.svelte::lastDiffLoadKey`).
 - Detail timelines apply the server-backed entry limit after filtering and grouping,
   then make the remainder explicit and mount it in bounded idle batches; harnesses
   that require every fixture row pass a large limit. An explicit full-timeline request

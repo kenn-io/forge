@@ -59,23 +59,22 @@ sudo install -d -o alice -g alice -m 700 \
   /srv/forge/alice/forge \
   /srv/forge/alice/certs \
   /srv/forge/alice/containers \
-  /srv/forge/alice/runtime \
   /srv/forge/alice/home
 sudo install -d -o alice -g alice -m 700 \
   /srv/forge/alice/forge/credentials \
-  /srv/forge/alice/containers/graphroot \
-  /srv/forge/alice/containers/runroot
+  /srv/forge/alice/containers/graphroot
 ```
-Configure rootless Podman to use the private paths under
-/srv/forge/alice/containers for its graph root and run root. Set
-XDG_RUNTIME_DIR to /srv/forge/alice/runtime in the user service. These paths
-stay outside /home and /run/user, which lets the service use ProtectHome=true.
+Configure rootless Podman to use the persistent graph root under
+/srv/forge/alice/containers. Let systemd create an Alice-owned runtime
+directory under /run for the run root and XDG_RUNTIME_DIR on every boot. These
+paths stay outside /home and /run/user, which lets the service use
+ProtectHome=true.
 
 Place a storage.conf in /srv/forge/alice/containers with these roots:
 
 ```
 [storage]
-runroot = "/srv/forge/alice/containers/runroot"
+runroot = "/run/forge-alice/containers/runroot"
 graphroot = "/srv/forge/alice/containers/graphroot"
 
 ```
@@ -201,7 +200,9 @@ User=alice
 Group=alice
 Environment=HOME=/srv/forge/alice/home
 Type=simple
-Environment=XDG_RUNTIME_DIR=/srv/forge/alice/runtime
+RuntimeDirectory=forge-alice
+RuntimeDirectoryMode=0700
+Environment=XDG_RUNTIME_DIR=/run/forge-alice
 Environment=CONTAINERS_STORAGE_CONF=/srv/forge/alice/containers/storage.conf
 UMask=0077
 ProtectHome=true
@@ -216,21 +217,23 @@ WantedBy=default.target
 ```
 
 ProtectHome=true hides the normal home tree and /run/user from the service.
-Before starting it, confirm that the rootless Podman graph root, run root,
-runtime directory, image configuration, private certificate path, and data
-path under /srv/forge/alice are reachable under this sandbox. Do not start
-the service until this check succeeds.
+RuntimeDirectory creates and clears /run/forge-alice for each boot, so the
+Podman run root does not retain stale boot state while the graph root and Forge
+data remain persistent. Before starting it, confirm that the rootless Podman
+graph root, run root, runtime directory, image configuration, private
+certificate path, and data path under /srv/forge/alice are reachable under
+this sandbox. Do not start the service until this check succeeds.
 
 Run the checks as Alice from the same OS account that owns the service:
 
 ```sh
 podman info --format 'graphroot={{.Store.GraphRoot}} runroot={{.Store.RunRoot}}'
-test -d /srv/forge/alice/runtime && test -w /srv/forge/alice/runtime
+test -d /run/forge-alice && test -w /run/forge-alice
 sudo systemd-run --uid=alice --wait --pipe \
   -p ProtectHome=true \
   -p PrivateTmp=yes \
   env HOME=/srv/forge/alice/home \
-  XDG_RUNTIME_DIR=/srv/forge/alice/runtime \
+  XDG_RUNTIME_DIR=/run/forge-alice \
   CONTAINERS_STORAGE_CONF=/srv/forge/alice/containers/storage.conf \
   /usr/bin/podman info
 namei -l /srv/forge/alice/forge /srv/forge/alice/certs/alice-gateway.pem
@@ -320,6 +323,7 @@ listed so a failed check stops the rollout.
 | Proxy routing | Authenticate as Bob and request Alice's hostname. Inspect the proxy route and upstream logs. | The proxy denies the request or never connects it to Alice's gateway. |
 | Stopped-instance substitution | Stop Alice's service, bind `127.0.0.1:18091` with a gateway using a certificate other than Alice's pinned certificate, then request Alice's origin. | The proxy rejects the upstream before forwarding Alice's credentials. |
 | Restart and token replacement | Restart Alice's service, confirm the data directory and gateway certificate remain Alice's, then atomically replace a provider `token_file`. | Alice's instance keeps its state and certificate, and later provider requests read the replacement file. |
+| Host reboot recovery | Reboot the host, then inspect Alice's systemd unit, runtime directory, graph root, and Forge data. | systemd recreates the Alice-owned `/run/forge-alice` directory, the service starts, the run root is fresh, and the graph root and Forge data persist. |
 | Image workspace tools | From Alice's disposable workspace, check the selected image's Git, tmux, and configured agent commands. | The service environment exposes the tools the operator expects. |
 
 The repository checks in this change prove static documentation publication. They do not prove Linux Podman, systemd services, proxy identity, certificate verification, browser login, DAC, or workspace tools. Run those checks on the target Linux host and record their real output separately.

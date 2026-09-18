@@ -1,8 +1,10 @@
 package workspace
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -14,10 +16,81 @@ import (
 
 const hotWorktreeMarkerFile = "kenn-forge-hot-worktree"
 
-// WarmWorktrees prepares one spare for each repository with a ready workspace.
+type hotWorktreeRepository struct {
+	CommonDir     string `json:"common_dir"`
+	WorkspacePath string `json:"workspace_path"`
+	StartRef      string `json:"start_ref"`
+}
+
+// WarmWorktrees prepares one spare for every repository that has had a workspace.
 // It uses only existing local refs; setup still owns the fresh fetch and route
 // validation. The caller owns scheduling and cancellation.
 func (m *Manager) WarmWorktrees(ctx context.Context) error {
+	var errs []error
+	if err := m.rememberExistingWorkspaceRepositories(ctx); err != nil {
+		errs = append(errs, err)
+	}
+	dir := filepath.Join(m.worktreeDir, ".hot-repositories")
+	entries, err := os.ReadDir(dir)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return errors.Join(append(errs, err)...)
+	}
+	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+		var repo hotWorktreeRepository
+		if err == nil {
+			err = json.Unmarshal(data, &repo)
+		}
+		if err == nil {
+			if _, statErr := os.Stat(repo.CommonDir); errors.Is(statErr, os.ErrNotExist) {
+				continue // Removing the source checkout makes warming unavailable.
+			}
+			err = m.prepareHotWorktree(ctx, repo.CommonDir, repo.WorkspacePath, repo.StartRef)
+		}
+		if err != nil {
+			errs = append(errs, fmt.Errorf("warm workspace repository %s: %w", entry.Name(), err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// Keep enrollment outside workspace records so closing the last workspace does
+// not stop warming. The old workspace path supplies only destination placement.
+func (m *Manager) rememberHotWorktreeRepository(ctx context.Context, gitDir, workspacePath, remote string) error {
+	commonDir, err := worktreeCommonGitDir(ctx, gitDir)
+	if err != nil {
+		return err
+	}
+	commonDir, err = canonicalFilesystemPath(commonDir)
+	if err != nil {
+		return err
+	}
+	data, err := json.Marshal(hotWorktreeRepository{
+		CommonDir: commonDir, WorkspacePath: workspacePath, StartRef: remoteShorthandRef(remote, "HEAD"),
+	})
+	if err != nil {
+		return err
+	}
+	dir := filepath.Join(m.worktreeDir, ".hot-repositories")
+	key := sha256.Sum256([]byte(hotWorktreePath(commonDir, workspacePath)))
+	name := fmt.Sprintf("%x.json", key[:16])
+	if current, err := os.ReadFile(filepath.Join(dir, name)); err == nil && bytes.Equal(current, data) {
+		return nil
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	return writeGeneratedFileAtomic(dir, name, data)
+}
+
+// Seed enrollment for workspaces created before hot checkouts were enabled.
+func (m *Manager) rememberExistingWorkspaceRepositories(ctx context.Context) error {
 	if m.db == nil {
 		return nil
 	}
@@ -58,8 +131,8 @@ func (m *Manager) WarmWorktrees(ctx context.Context) error {
 			continue
 		}
 		seen[pool] = true
-		if err := m.prepareHotWorktree(ctx, commonDir, ws.WorktreePath, remoteShorthandRef(provenance.remote, "HEAD")); err != nil {
-			errs = append(errs, fmt.Errorf("warm workspace repository %s: %w", ws.ID, err))
+		if err := m.rememberHotWorktreeRepository(ctx, commonDir, ws.WorktreePath, provenance.remote); err != nil {
+			errs = append(errs, fmt.Errorf("remember workspace repository %s: %w", ws.ID, err))
 		}
 	}
 	return errors.Join(errs...)

@@ -192,4 +192,21 @@ func TestWorkspaceListReportsForkPullRequestDivergenceE2E(t *testing.T) {
 	require.NotNil(found.CommitsVsPrHead)
 	assert.True(*found.CommitsVsPrHead,
 		"clients must know these counts are not a pushable upstream")
+
+	// The phone list and remote hosts read workspaces from the fleet snapshot;
+	// a dropped flag there would offer branch sync that can only fail.
+	includePeers := false
+	fleetResponse, err := fixture.client.HTTP.GetSnapshotWithResponse(t.Context(), &generated.GetSnapshotRequestOptions{Query: &generated.GetSnapshotQuery{IncludePeers: &includePeers}})
+	require.NoError(err)
+	require.NotNil(fleetResponse.JSON200)
+	var fleetWorkspace *generated.WorkspaceSummary
+	for i := range fleetResponse.JSON200.Workspaces {
+		if fleetResponse.JSON200.Workspaces[i].ID == ws.ID {
+			fleetWorkspace = &fleetResponse.JSON200.Workspaces[i]
+			break
+		}
+	}
+	require.NotNil(fleetWorkspace)
+	require.NotNil(fleetWorkspace.CommitsVsPrHead)
+	assert.True(*fleetWorkspace.CommitsVsPrHead)
 }

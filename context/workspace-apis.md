@@ -694,13 +694,12 @@ blocked base branches stay untouched and emit a warning
 ## Branch Upstream
 
 The branch's git upstream config (`branch.<name>.remote`/`.merge`) is the
-single source of truth for every sync-derived workspace surface:
-`commits_ahead`/`commits_behind` in the list response, the sidebar
-ahead/behind arrows, push, pull, and unpushed-commit flags. Push, pull, and
-unpushed-commit flags report nothing without an upstream. A PR workspace without
-one (every fork head) still reports counts against the locally fetched
-merge-request head ref, flagged `commits_vs_pr_head`; clients show them but never
-offer branch sync (`internal/server/workspaceapi/routes_handlers.go::applyPullRequestHeadDivergence`).
+single source of truth for push, pull, and unpushed-commit flags; they report
+nothing without one. `commits_ahead`/`commits_behind` and the desktop sidebar
+arrows use the upstream when configured. A PR workspace without one (every fork
+head) instead reports counts against the locally fetched merge-request head ref,
+flagged `commits_vs_pr_head`; clients never offer branch sync for flagged counts
+(`internal/server/workspaceapi/routes_handlers.go::applyPullRequestHeadDivergence`).
 A configured upstream whose local tracking ref is missing exposes
 `branch_upstream_missing`, so the UI can
 offer the push that verifies or creates its remote branch. Every path that creates a

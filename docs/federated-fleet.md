@@ -296,7 +296,8 @@ after the service restarts.
 Tailscale identity mode treats local processes on the Forge host as trusted,
 because Tailscale Serve forwards identity headers over loopback. Use it on a
 single-user or otherwise trusted machine. On a multi-user host, use an external
-origin and Forge's bearer/cookie authentication instead.
+origin and Forge's bearer/cookie authentication instead. For one Forge
+instance per local user, see [Shared Linux host](shared-host.md).
 
 ### Adopt an existing service
 

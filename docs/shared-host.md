@@ -227,15 +227,15 @@ this sandbox. Do not start the service until this check succeeds.
 Run the checks as Alice from the same OS account that owns the service:
 
 ```sh
-podman info --format 'graphroot={{.Store.GraphRoot}} runroot={{.Store.RunRoot}}'
-test -d /run/forge-alice && test -w /run/forge-alice
 sudo systemd-run --uid=alice --wait --pipe \
+  -p RuntimeDirectory=forge-alice \
+  -p RuntimeDirectoryMode=0700 \
   -p ProtectHome=true \
   -p PrivateTmp=yes \
   env HOME=/srv/forge/alice/home \
   XDG_RUNTIME_DIR=/run/forge-alice \
   CONTAINERS_STORAGE_CONF=/srv/forge/alice/containers/storage.conf \
-  /usr/bin/podman info
+  sh -c 'test -d "$XDG_RUNTIME_DIR" && test -w "$XDG_RUNTIME_DIR" && exec /usr/bin/podman info'
 namei -l /srv/forge/alice/forge /srv/forge/alice/certs/alice-gateway.pem
 ```
 

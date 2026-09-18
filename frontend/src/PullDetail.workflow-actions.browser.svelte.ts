@@ -1,3 +1,4 @@
+import { page, userEvent } from "vite-plus/test/browser";
 import { tick } from "svelte";
 import { cleanup, render } from "vitest-browser-svelte";
 import { Effect } from "effect";
@@ -269,6 +270,7 @@ async function renderWorkflowDetail() {
     platformHost: "github.com",
     repoPath: "acme/widgets",
     hideTabs: true,
+    phonePresentation: false,
     hideWorkspaceAction: false,
     autoSync: false,
   });
@@ -299,6 +301,79 @@ async function renderWorkflowDetail() {
 }
 
 describe("PullDetail provider workflow actions", () => {
+  it("keeps review menus usable across compact and phone layouts", async () => {
+    const { state, detailProps, wrapper } = await renderWorkflowDetail();
+    state.detail.repo.capabilities.supported_review_actions = ["request_changes"];
+    await tick();
+    const live = page.getByRole("button", { name: "Review options" });
+    await expect.element(live).toBeVisible();
+
+    // Both FitStages probes must include the complete control's measured width.
+    await vi.waitFor(() => {
+      const actual = live.element().closest(".approve-section")!.getBoundingClientRect().width;
+      const probes = wrapper.querySelectorAll(".actions-row--measure .approve-action-measure");
+      expect(probes.length).toBeGreaterThan(0);
+      for (const probe of probes) expect(probe.getBoundingClientRect().width).toBeCloseTo(actual, 0);
+    }, WAIT);
+
+    // Keyboard ownership remains at the trigger, even though the menu floats.
+    live.element().focus();
+    await userEvent.keyboard("{ArrowUp}");
+    const item = page.getByRole("menuitem", { name: "Request changes" });
+    await expect.element(item).toHaveFocus();
+    await userEvent.keyboard("{Escape}");
+    await expect.element(live).toHaveFocus();
+    await userEvent.keyboard("{ArrowDown}");
+    await expect.element(item).toHaveFocus();
+    await userEvent.keyboard("{Shift>}{Tab}{/Shift}");
+    await expect.element(page.getByRole("button", { name: "Approve", exact: true })).toHaveFocus();
+    await expect.element(item).not.toBeInTheDocument();
+
+    await page.getByRole("button", { name: "Approve", exact: true }).click();
+    await live.click();
+    await page.getByRole("textbox", { name: "Review comment" }).click();
+    await expect.element(item).not.toBeInTheDocument();
+    await live.click();
+    await item.click();
+    await expect.element(page.getByRole("textbox", { name: "Requested changes" })).toHaveFocus();
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+
+    // Compare Tab from the menu with the browser's normal next control.
+    live.element().focus();
+    await userEvent.keyboard("{Tab}");
+    const nextControl = document.activeElement;
+    live.element().focus();
+    await userEvent.keyboard("{ArrowDown}");
+    await expect.element(item).toHaveFocus();
+    await userEvent.keyboard("{Tab}");
+    expect(document.activeElement).toBe(nextControl);
+    await expect.element(item).not.toBeInTheDocument();
+
+    await live.click();
+    state.detail.repo.capabilities.supported_review_actions = [];
+    await expect.element(item).not.toBeInTheDocument();
+    state.detail.repo.capabilities.supported_review_actions = ["request_changes"];
+
+    wrapper.style.width = "180px";
+    await vi.waitFor(() => expect(visibleButton("Actions")).not.toBeNull(), WAIT);
+    await page.getByRole("button", { name: "Actions", exact: true }).click();
+    await live.click();
+    await item.click();
+    await expect.element(page.getByRole("textbox", { name: "Requested changes" })).toBeVisible();
+    await expect.element(page.getByRole("textbox", { name: "Requested changes" })).toHaveFocus();
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+
+    detailProps.phonePresentation = true;
+    wrapper.style.width = "390px";
+    await vi.waitFor(() => {
+      const section = wrapper.querySelector(".phone-actions-grid .approve-section");
+      expect(section).not.toBeNull();
+      const control = section!.querySelector(".review-buttons")!;
+      expect(control.getBoundingClientRect().width).toBeCloseTo(section!.getBoundingClientRect().width, 0);
+      expect(section!.querySelector(".btn--approve")!.getBoundingClientRect().width).toBeGreaterThan(94);
+    }, WAIT);
+  });
+
   it("places workflow dispatch beside workspace tools while primary actions collapse only under pressure", async () => {
     const { wrapper } = await renderWorkflowDetail();
 

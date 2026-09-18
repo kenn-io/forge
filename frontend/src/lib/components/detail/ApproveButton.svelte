@@ -104,6 +104,7 @@
 
   $effect(() => {
     if (!expanded) return;
+    void requestChangesForm;
     const execution = untrack(() => runtime.runCommand(
       Effect.promise(() => tick()).pipe(
         Effect.andThen(Effect.sync(() => commentInput?.focus())),
@@ -253,7 +254,7 @@
     menuTrigger = button ?? undefined;
     button?.setAttribute("aria-haspopup", "menu");
     function handleKeydown(event: KeyboardEvent): void {
-      if (event.key === "ArrowDown" && !disabled && !submitting) {
+      if ((event.key === "ArrowDown" || event.key === "ArrowUp") && !disabled && !submitting) {
         event.preventDefault();
         reviewMenuOpen = true;
       }
@@ -266,12 +267,16 @@
   }
 
   function portalReviewMenu(node: HTMLElement): () => void {
-    const host = sectionEl?.closest<HTMLElement>(".kit-modal-panel") ?? document.body;
+    const host = sectionEl?.closest<HTMLElement>(".actions-menu-wrap--menu, .kit-modal-panel") ?? document.body;
     host.appendChild(node);
     return () => node.remove();
   }
 
   $effect(() => {
+    if (!canRequestChanges) {
+      reviewMenuOpen = false;
+      return;
+    }
     if (!reviewMenuOpen) return;
     const execution = untrack(() => runtime.runCommand(
       Effect.promise(() => tick()).pipe(
@@ -284,7 +289,7 @@
     ));
     const cleanups = [
       dismissable({
-        owners: () => [sectionEl, menuEl],
+        owners: () => [menuTrigger, menuEl],
         dismiss: () => { reviewMenuOpen = false; },
         escapeFocus: () => menuTrigger,
       }),
@@ -358,7 +363,7 @@
     {/if}
   </div>
 
-  {#if reviewMenuOpen}
+  {#if reviewMenuOpen && canRequestChanges}
     <ul
       bind:this={menuEl}
       class="review-menu kit-popover-card"
@@ -377,7 +382,10 @@
             openReviewForm(true);
           }}
           onkeydown={(event) => {
-            if (event.key === "Tab") reviewMenuOpen = false;
+            if (event.key === "Tab") {
+              menuTrigger?.focus();
+              reviewMenuOpen = false;
+            }
             else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) event.preventDefault();
           }}
         >Request changes</button>
@@ -447,10 +455,16 @@
     display: inline-flex;
     min-width: 0;
     max-width: 100%;
+    width: 100%;
   }
 
   .review-buttons--sm {
     --review-options-width: 24px;
+  }
+
+  .review-buttons :global(.btn--approve) {
+    flex: 1 1 auto;
+    min-width: 0;
   }
 
   .review-buttons--split :global(.btn--approve) {

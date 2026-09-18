@@ -1,8 +1,9 @@
 # Shared Linux host
 
 A shared Linux machine needs one Forge instance for each OS user. This page
-shows a rootless Podman container for each user, managed by that user's
-systemd user manager. Kenn Forge runs inside each container with a user-owned
+shows a rootless Podman container for each user, managed by an
+administrator-owned systemd service running as that user's OS account. Kenn
+Forge runs inside each container with a user-owned
 TLS gateway. The examples use synthetic Alice and Bob accounts.
 
 The repository publishes no production container image. The operator supplies
@@ -53,14 +54,16 @@ Create the roots as an administrator, then let each OS user write only inside
 that user's root. Repeat the commands for Bob with the Bob paths and owner.
 
 ```sh
+sudo install -d -m 700 /srv/forge/alice
+sudo install -d -m 700 \
+  /srv/forge/alice/forge \
+  /srv/forge/alice/certs \
+  /srv/forge/alice/containers \
+  /srv/forge/alice/runtime
 sudo install -d -m 700 \
   /srv/forge/alice/forge/credentials \
-  /srv/forge/alice/certs \
   /srv/forge/alice/containers/graphroot \
-  /srv/forge/alice/containers/runroot \
-  /srv/forge/alice/runtime
-sudo chown -R alice:alice /srv/forge/alice
-
+  /srv/forge/alice/containers/runroot
 ```
 Configure rootless Podman to use the private paths under
 /srv/forge/alice/containers for its graph root and run root. Set
@@ -73,7 +76,9 @@ Place a storage.conf in /srv/forge/alice/containers with these roots:
 [storage]
 runroot = "/srv/forge/alice/containers/runroot"
 graphroot = "/srv/forge/alice/containers/graphroot"
+
 ```
+Verify that Alice has subordinate UID and GID ranges in /etc/subuid and /etc/subgid. Rootless Podman uses those ranges for userns=keep-id.
 
 Use a restrictive umask whenever you create files:
 
@@ -175,18 +180,25 @@ Do not use host networking, host PID sharing, or a separate bridge container
 that cannot reach Forge's container loopback. The host publish is a local
 transport for the outer proxy. It is not a user identity check.
 
-Manage the container with a systemd user service. The following layout shows
+Manage the container with an administrator-owned systemd service running as
+Alice. The following layout shows
 the required hardening settings. Keep the unit with the operator's service
 configuration; this repository does not add a Quadlet or a service file.
+This system-level unit keeps ProtectHome=true without the implicit PrivateUsers
+namespace of a user-manager unit, so rootless Podman can use Alice's
+subordinate ID mapping.
 
 ```ini
-# ~/.config/systemd/user/forge-alice.service
+# /etc/systemd/system/forge-alice.service
 [Unit]
 Description=Alice Forge container
 After=network-online.target
 Wants=network-online.target
 
 [Service]
+User=alice
+Group=alice
+Environment=HOME=/srv/forge/alice/home
 Type=simple
 Environment=XDG_RUNTIME_DIR=/srv/forge/alice/runtime
 Environment=CONTAINERS_STORAGE_CONF=/srv/forge/alice/containers/storage.conf
@@ -208,12 +220,12 @@ runtime directory, image configuration, private certificate path, and data
 path under /srv/forge/alice are reachable under this sandbox. Do not start
 the service until this check succeeds.
 
-Run the checks as Alice from the same user manager that will own the service:
+Run the checks as Alice from the same OS account that owns the service:
 
 ```sh
 podman info --format 'graphroot={{.Store.GraphRoot}} runroot={{.Store.RunRoot}}'
 test -d /srv/forge/alice/runtime && test -w /srv/forge/alice/runtime
-systemd-run --user --wait --pipe \
+sudo systemd-run --uid=alice --wait --pipe \
   -p ProtectHome=true \
   -p PrivateTmp=yes \
   env XDG_RUNTIME_DIR=/srv/forge/alice/runtime \
@@ -226,8 +238,8 @@ Confirm that the reported storage and runtime paths are user-owned and
 available to the service. Then load and enable the unit:
 
 ```sh
-systemctl --user daemon-reload
-systemctl --user enable --now forge-alice.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now forge-alice.service
 ```
 
 Repeat the layout for Bob with his own `data_dir`, gateway certificate,
@@ -308,7 +320,7 @@ listed so a failed check stops the rollout.
 | Restart and token replacement | Restart Alice's service, confirm the data directory and gateway certificate remain Alice's, then atomically replace a provider `token_file`. | Alice's instance keeps its state and certificate, and later provider requests read the replacement file. |
 | Image workspace tools | From Alice's disposable workspace, check the selected image's Git, tmux, and configured agent commands. | The service environment exposes the tools the operator expects. |
 
-The repository checks in this change prove static documentation publication. They do not prove Linux Podman, systemd user services, proxy identity, certificate verification, browser login, DAC, or workspace tools. Run those checks on the target Linux host and record their real output separately.
+The repository checks in this change prove static documentation publication. They do not prove Linux Podman, systemd services, proxy identity, certificate verification, browser login, DAC, or workspace tools. Run those checks on the target Linux host and record their real output separately.
 
 ## Limits and later work
 

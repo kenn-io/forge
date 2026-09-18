@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { observeWorkspaceQuickActionSessions, workspaceQuickActionPending } from "../../stores/workspace-quick-actions.js";
+  import { quickActionWorkspaces } from "../../stores/workspace-quick-actions.js";
   import { EmptyState, IconButton, Spinner } from "@kenn-io/kit-ui";
   import { Context, Deferred, Duration, Effect, Fiber, Option, Schedule, Stream } from "effect";
   import PlayIcon from "@lucide/svelte/icons/play";
@@ -904,8 +904,7 @@
     const identity = workspaceIdentitySnapshot(workspaceId);
     return (
       (identity !== undefined && pendingWorkspaceCreateLaunch(identity) !== null) ||
-      pendingWorkspaceLaunch(workspaceId, workspaceHostKey) !== null ||
-      (workspaceHostKey === undefined && workspaceQuickActionPending(workspaceId))
+      pendingWorkspaceLaunch(workspaceId, workspaceHostKey) !== null
     );
   }
 
@@ -913,7 +912,9 @@
     return explicitLaunchIntentPending() || launchingKey !== null;
   }
 
-  const automaticLauncherBlocked = $derived(explicitLaunchIntentPending());
+  const automaticLauncherBlocked = $derived(
+    explicitLaunchIntentPending() || (workspaceHostKey === undefined && quickActionWorkspaces.has(workspaceId)),
+  );
   const launcherOverlayAllowed = $derived(
     launcherState?.auto !== true || !automaticLauncherBlocked,
   );
@@ -942,7 +943,7 @@
     // the ready workspace before its POST response hands the choice to the
     // workspace-ID launch queue, and the runtime stays empty until that launch
     // produces its first session.
-    if (createOrLaunchPending()) return;
+    if (createOrLaunchPending() || automaticLauncherBlocked) return;
     if (launcherAutoOpenedFor.includes(viewWorkspaceKey)) return;
     launcherAutoOpenedFor = [...launcherAutoOpenedFor, viewWorkspaceKey];
     launcherState = { workspaceKey: viewWorkspaceKey, auto: true };
@@ -1019,7 +1020,7 @@
     const openState = launcherState;
     const autoOpened = launcherAutoOpenedFor.includes(workspaceKey);
     const deletionPending = deletingSelectedWorkspace || forceDeleting;
-    const explicitLaunchIsPending = explicitLaunchIntentPending();
+    const autoLaunchBlocked = automaticLauncherBlocked;
     const createOrLaunchIsPending = createOrLaunchPending();
     untrack(() => {
       if (tabs.length > 0 && activeMissing) selectWorkspaceTab(tabs[0]!.key);
@@ -1035,12 +1036,12 @@
       }
       // Deletion tears down the runtime before the inline host disappears. That
       // sessionless gap is not an empty workspace asking what to launch next.
-      if (createOrLaunchIsPending) {
+      if (createOrLaunchIsPending || autoLaunchBlocked) {
         // The explicit target can arrive just after the empty-runtime pass opened
         // the fallback. Retract only that automatic overlay immediately; waiting
         // for the launched session to appear leaves the redundant picker flashing
         // over the terminal startup the user already requested.
-        if (explicitLaunchIsPending && openState?.workspaceKey === workspaceKey && openState.auto) {
+        if (autoLaunchBlocked && openState?.workspaceKey === workspaceKey && openState.auto) {
           withdrawAutoLauncher();
         }
         return;
@@ -2240,7 +2241,6 @@
           sessions: data.sessions.length,
         });
         if (!isCurrentWorkspace(id, hostKey)) return null;
-        if (hostKey === undefined) observeWorkspaceQuickActionSessions(id, data.sessions);
         const fingerprint = JSON.stringify(data);
         const acceptedLaunch = pendingWorkspaceLaunch(id, hostKey);
         if (

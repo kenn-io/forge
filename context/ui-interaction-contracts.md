@@ -258,10 +258,10 @@ Persisted controls must state their scope clearly.
 - Link navigation reveals the selected Activity row once it renders; later feed
   refreshes must preserve the user's scroll position
   (`frontend/src/lib/views/ActivityFeedView.svelte::revealSelectedActivityRow`).
-- Refreshing the same PR must not replace an already loaded discussion with a
-  loading placeholder. Discussion availability outlives an incomplete provider
-  sync round; reset it only on selection change or explicit clear
-  (`frontend/src/lib/stores/detail.svelte.ts::applyRefreshedDetail`).
+- Loaded discussion stays visible across incomplete refreshes only for the same
+  provider-stable repository and PR. Keep its availability separate from current
+  detail completeness used by CI; clear it on selection change or explicit clear
+  (`frontend/src/lib/stores/detail.svelte.ts::applyDetailAvailability`).
 - Activity filters remain URL-backed and session-scoped. Missing filter params on a
   partial Activity URL inherit the last validated route before store hydration, while
   explicit URL values win (`frontend/src/lib/stores/router.svelte.ts::restoreMissingActivityFilters`).

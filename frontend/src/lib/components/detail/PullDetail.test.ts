@@ -296,6 +296,7 @@ function renderPullDetail(
     getDetailError: () => null,
     isDetailSyncing: () => options.detailSyncing ?? false,
     getDetailLoaded: () => true,
+    getDiscussionLoaded: () => true,
     updateKanbanState: vi.fn(),
     setPullState: vi.fn(
       (_ref: ProviderRouteRef, _number: number, _state: string, callbacks: ProviderActionCallbacks) => {
@@ -792,6 +793,10 @@ describe("PullDetail provider workflow actions", () => {
 
   it.each(["closed", "merged"])("keeps the discussion mounted while a %s PR reloads", async (state) => {
     const detail = pullDetail();
+    detail.merge_request.CIStatus = "success";
+    detail.merge_request.CIChecksJSON = JSON.stringify([
+      { name: "unit tests", status: "completed", conclusion: "success" },
+    ]);
     detail.events = [{ ...reviewEvent("reviewer"), EventType: "issue_comment", Body: "Keep this discussion visible." }];
     const pending = Promise.withResolvers<{ data: PullDetail }>();
     let reloading = false;
@@ -855,6 +860,10 @@ describe("PullDetail provider workflow actions", () => {
     await waitFor(() => expect(detailStore.getDetail()?.merge_request.State).toBe(state));
     expect(comment.isConnected).toBe(true);
     expect(screen.queryByText("Detail not yet loaded")).toBeNull();
+    await fireEvent.click(screen.getByTestId("ci-chip"));
+    expect(screen.getByText("Detail not yet loaded")).toBeTruthy();
+    expect(screen.queryByText("unit tests")).toBeNull();
+    expect(comment.isConnected).toBe(true);
   });
 
   it("keeps only the workflow action surface on a merged pull request", async () => {

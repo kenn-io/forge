@@ -240,6 +240,7 @@ async function renderWorkflowDetail() {
     getDetailError: () => state.error,
     isDetailSyncing: () => false,
     getDetailLoaded: () => true,
+    getDiscussionLoaded: () => true,
     updateKanbanState: vi.fn(),
     setPullState: vi.fn(),
     toggleDetailPRStar: vi.fn(),

@@ -530,6 +530,15 @@ Workspace create endpoints may return 202 with a pre-existing workspace
 - Inspect warm clones locally for branch conflicts; setup owns the fresh fetch
   before checkout. Cold admission still creates the clone so its existing branches
   participate in conflict handling (`internal/workspace/manager.go::Manager.branchInspectionDir`).
+- Hot worktrees are one detached spare per Git directory and destination parent;
+  keep warming local and separate from workspace records and runtime sessions
+  (`internal/workspace/hot_worktree.go::Manager.WarmWorktrees`).
+- Populate spares outside the repository lock; readiness must survive cancellation
+  without exposing incomplete files or blocking foreground creation
+  (`internal/workspace/hot_worktree.go::Manager.prepareHotWorktree`).
+- Claim only clean, owned spares and retain normal fetch, branch, and ownership
+  rules; changed or foreign spares must remain untouched
+  (`internal/workspace/hot_worktree.go::tryHotWorktree`).
 
 ## Agent Activity Hooks
 

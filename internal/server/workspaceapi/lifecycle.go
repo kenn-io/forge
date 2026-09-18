@@ -53,8 +53,32 @@ func (h *Handler) Start(parent context.Context, disableMonitors bool) {
 		}
 	})
 	if h.workspaces != nil && !disableMonitors {
+		h.runBackground(h.runWorkspaceWarmLoop)
 		h.runBackground(h.runWorkspacePRMonitorLoop)
 		h.runBackground(h.runWorkspacePushedHeadObserverLoop)
+	}
+}
+
+func (h *Handler) runWorkspaceWarmLoop(ctx context.Context) {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	for {
+		if err := h.workspaces.WarmWorktrees(ctx); err != nil && ctx.Err() == nil {
+			slog.Warn("warm workspace worktrees", "err", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		case <-h.workspaceWarmWake:
+		}
+	}
+}
+
+func (h *Handler) wakeWorkspaceWarmer() {
+	select {
+	case h.workspaceWarmWake <- struct{}{}:
+	default:
 	}
 }
 

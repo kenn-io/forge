@@ -6304,6 +6304,9 @@ func gitRefExists(ctx context.Context, dir, ref string) bool {
 func runGitWorktreeAdd(
 	ctx context.Context, dir, worktreePath string, args ...string,
 ) error {
+	if claimed, err := tryHotWorktree(ctx, dir, worktreePath, args...); claimed || err != nil {
+		return err
+	}
 	gitArgs := make([]string, 0, len(args)+3)
 	gitArgs = append(gitArgs, "worktree", "add", worktreePath)
 	gitArgs = append(gitArgs, args...)

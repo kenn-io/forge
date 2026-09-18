@@ -243,7 +243,7 @@
       viewportHeight: window.innerHeight,
       popoverWidth: menuEl.offsetWidth,
       popoverHeight: menuEl.offsetHeight,
-      align: "end",
+      align: "start",
       triggerGap: 2,
     });
   }

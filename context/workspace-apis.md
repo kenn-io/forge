@@ -536,8 +536,8 @@ Workspace create endpoints may return 202 with a pre-existing workspace
 - Populate spares outside the repository lock; readiness must survive cancellation
   without exposing incomplete files or blocking foreground creation
   (`internal/workspace/hot_worktree.go::Manager.prepareHotWorktree`).
-- Claim only clean, owned spares and retain normal fetch, branch, and ownership
-  rules; changed or foreign spares must remain untouched
+- Claim only clean, owned spares at the freshly fetched requested revision; preserve
+  branch and ownership rules, and leave changed or foreign spares untouched
   (`internal/workspace/hot_worktree.go::tryHotWorktree`).
 
 ## Agent Activity Hooks

@@ -122,6 +122,13 @@ func TestHotWorktreeLifecycleWarmsClaimsRefillsAndStops(t *testing.T) {
 			require.NoError(manager.WarmWorktrees(t.Context()))
 			warmedFile, err := os.Stat(filepath.Join(hotPath, "base.txt"))
 			require.NoError(err)
+			// The spare may sit idle while the default branch advances.
+			require.NoError(os.WriteFile(filepath.Join(seed, "later.txt"), []byte("new upstream commit\n"), 0o644))
+			runGit(t, seed, "add", "later.txt")
+			runGit(t, seed, "commit", "-m", "advance main after warming")
+			runGit(t, seed, "push", "origin", "main")
+			runGit(t, remote, "update-server-info")
+			latest := runGitOutput(t, seed, "rev-parse", "HEAD")
 
 			second, err := manager.CreateAdHoc(
 				t.Context(), "github", serverURL.Host, "acme", "widget",
@@ -137,6 +144,10 @@ func TestHotWorktreeLifecycleWarmsClaimsRefillsAndStops(t *testing.T) {
 			claimedFile, err := os.Stat(filepath.Join(secondPath, "base.txt"))
 			require.NoError(err)
 			require.True(os.SameFile(warmedFile, claimedFile))
+			require.Equal(latest, runGitOutput(t, secondPath, "rev-parse", "HEAD"))
+			contents, err := os.ReadFile(filepath.Join(secondPath, "later.txt"))
+			require.NoError(err)
+			require.Equal("new upstream commit\n", string(contents))
 
 			require.Eventually(func() bool {
 				_, statErr := os.Stat(filepath.Join(hotPath, "base.txt"))

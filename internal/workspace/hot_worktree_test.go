@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -15,6 +16,58 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestHotWorktreeCanceledRegistration(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture uses a POSIX Git wrapper")
+	}
+	require := require.New(t)
+	clone := setupBareCloneForWorkspaceGitTest(t)
+	runWorkspaceTestGit(t, clone, "config", "extensions.worktreeConfig", "true")
+	realGit, err := exec.LookPath("git")
+	require.NoError(err)
+	gate := t.TempDir()
+	started, release := filepath.Join(gate, "started"), filepath.Join(gate, "release")
+	script := `#!/bin/sh
+case " $* " in
+  *" worktree add "*)
+    "$KENN_FORGE_TEST_REAL_GIT" "$@" || exit $?
+    : > "$KENN_FORGE_TEST_STARTED"
+    while [ ! -f "$KENN_FORGE_TEST_RELEASE" ]; do sleep 0.02; done
+    exit 0
+    ;;
+esac
+exec "$KENN_FORGE_TEST_REAL_GIT" "$@"
+`
+	require.NoError(os.WriteFile(filepath.Join(gate, "git"), []byte(script), 0o700))
+	t.Setenv("KENN_FORGE_TEST_REAL_GIT", realGit)
+	t.Setenv("KENN_FORGE_TEST_STARTED", started)
+	t.Setenv("KENN_FORGE_TEST_RELEASE", release)
+	t.Setenv("PATH", gate+string(os.PathListSeparator)+os.Getenv("PATH"))
+	manager := NewManager(nil, t.TempDir())
+	workspacePath := filepath.Join(t.TempDir(), "workspace")
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	var prepareErr error
+	go func() {
+		defer close(done)
+		prepareErr = manager.prepareHotWorktree(ctx, clone, workspacePath, "HEAD")
+	}()
+	t.Cleanup(func() { cancel(); <-done })
+	require.Eventually(func() bool { _, err := os.Stat(started); return err == nil }, 10*time.Second, 10*time.Millisecond)
+	cancel()
+	<-done
+	require.Error(prepareErr)
+	require.NoError(os.WriteFile(release, nil, 0o600))
+	// Git registered the worktree, but Forge never configured it or recorded
+	// readiness. A restarted warmer must still finish and hand it off.
+	manager = NewManager(nil, manager.worktreeDir)
+	require.NoError(manager.prepareHotWorktree(t.Context(), clone, workspacePath, "HEAD"))
+	claimed, err := tryHotWorktree(t.Context(), clone, workspacePath, "--detach", "HEAD")
+	require.NoError(err)
+	require.True(claimed)
+	require.FileExists(filepath.Join(workspacePath, "base.txt"))
+}
 
 func TestHotWorktreeCanceledCheckout(t *testing.T) {
 	if runtime.GOOS == "windows" {

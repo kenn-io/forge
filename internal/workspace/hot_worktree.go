@@ -166,30 +166,43 @@ func (m *Manager) prepareHotWorktree(ctx context.Context, commonDir, workspacePa
 				// Resume only our interrupted preparation. Ready or foreign
 				// checkouts are left in place, including any user edits.
 				metadataDir, fill = metadata, state == "preparing"
-				if fill {
-					// Canceled Git processes can leave index.lock behind. The
-					// fill lock serializes builders; only this private,
-					// incomplete index is rebuilt.
-					if err := os.Remove(filepath.Join(metadata, "index.lock")); err != nil && !errors.Is(err, os.ErrNotExist) {
-						return err
-					}
+				if !fill {
+					return nil
 				}
-				return nil
+				// Canceled Git processes can leave index.lock behind. The
+				// fill lock serializes builders; only this private,
+				// incomplete index is rebuilt.
+				if err := os.Remove(filepath.Join(metadata, "index.lock")); err != nil && !errors.Is(err, os.ErrNotExist) {
+					return err
+				}
 			} else if !errors.Is(err, os.ErrNotExist) {
 				return err
+			} else {
+				if err := removeStaleWorktreeRegistrationMetadata(ctx, commonDir, hot); err != nil {
+					return err
+				}
+				// Git writes the lock reason during registration, before this
+				// process can be interrupted while recording our own marker.
+				if err := runGitWithoutHooks(ctx, commonDir, "worktree", "add", "--lock", "--reason", hotWorktreeMarkerFile, "--detach", "--no-checkout", hot, startRef); err != nil {
+					return err
+				}
+				var err error
+				metadataDir, err = worktreeGitDir(ctx, hot)
+				if err != nil {
+					return err
+				}
 			}
-			if err := removeStaleWorktreeRegistrationMetadata(ctx, commonDir, hot); err != nil {
+			if err := configureBareLinkedWorktree(ctx, commonDir, hot); err != nil {
 				return err
 			}
-			if err := runGitWorktreeAdd(ctx, commonDir, hot, "--detach", "--no-checkout", startRef); err != nil {
+			if err := writeGeneratedFileAtomic(metadataDir, hotWorktreeMarkerFile, []byte("preparing\n")); err != nil {
 				return err
 			}
-			var err error
-			metadataDir, err = worktreeGitDir(ctx, hot)
-			if err != nil {
-				return err
-			}
-			if err := os.WriteFile(filepath.Join(metadataDir, hotWorktreeMarkerFile), []byte("preparing\n"), 0o600); err != nil {
+			if reason, err := os.ReadFile(filepath.Join(metadataDir, "locked")); err == nil && strings.TrimSpace(string(reason)) == hotWorktreeMarkerFile {
+				if err := runGitWithoutHooks(ctx, commonDir, "worktree", "unlock", hot); err != nil {
+					return err
+				}
+			} else if err != nil && !errors.Is(err, os.ErrNotExist) {
 				return err
 			}
 			fill = true
@@ -201,7 +214,7 @@ func (m *Manager) prepareHotWorktree(ctx context.Context, commonDir, workspacePa
 			return err
 		}
 		return m.withRepoLockForGitDir(ctx, commonDir, func() error {
-			return os.WriteFile(filepath.Join(metadataDir, hotWorktreeMarkerFile), []byte("ready\n"), 0o600)
+			return writeGeneratedFileAtomic(metadataDir, hotWorktreeMarkerFile, []byte("ready\n"))
 		})
 	})
 }
@@ -209,17 +222,44 @@ func (m *Manager) prepareHotWorktree(ctx context.Context, commonDir, workspacePa
 // hotWorktreeState accepts only our detached, registered checkout. Its marker
 // lives in Git's administrative directory, outside repository-controlled files.
 func hotWorktreeState(ctx context.Context, commonDir, hot string) (string, string, error) {
-	live, err := gitDirHasLiveWorktree(ctx, commonDir, hot)
-	if err != nil || !live {
+	info, err := os.Lstat(hot)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", "", nil
+	}
+	if err != nil {
 		return "", "", err
 	}
-	metadata, err := worktreeGitDir(ctx, hot)
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return "", "", nil
+	}
+	// Match both directions of registration without requiring a working index
+	// or core.bare override: cancellation may have interrupted their setup.
+	metadata, registered, err := worktreeRegistrationMetadataDir(ctx, commonDir, hot)
+	if err != nil || !registered {
+		return "", "", err
+	}
+	actual, err := worktreeGitDir(ctx, hot)
 	if err != nil {
+		return "", "", err
+	}
+	actual, err = canonicalFilesystemPath(actual)
+	if err != nil {
+		return "", "", err
+	}
+	metadata, err = canonicalFilesystemPath(metadata)
+	if err != nil || metadata != actual {
 		return "", "", err
 	}
 	state, err := os.ReadFile(filepath.Join(metadata, hotWorktreeMarkerFile))
 	if errors.Is(err, os.ErrNotExist) {
-		return "", "", nil
+		reason, lockErr := os.ReadFile(filepath.Join(metadata, "locked"))
+		if errors.Is(lockErr, os.ErrNotExist) {
+			return "", "", nil
+		}
+		if lockErr != nil || strings.TrimSpace(string(reason)) != hotWorktreeMarkerFile {
+			return "", "", lockErr
+		}
+		state, err = []byte("preparing"), nil
 	}
 	if err != nil {
 		return "", "", err

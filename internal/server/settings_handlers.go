@@ -1283,10 +1283,6 @@ func cloneModeVisibility(modes config.ModeVisibility) config.ModeVisibility {
 		v := *modes.Issues
 		out.Issues = &v
 	}
-	if modes.Reviews != nil {
-		v := *modes.Reviews
-		out.Reviews = &v
-	}
 	if modes.Workspaces != nil {
 		v := *modes.Workspaces
 		out.Workspaces = &v

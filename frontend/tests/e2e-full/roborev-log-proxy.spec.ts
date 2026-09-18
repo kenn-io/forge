@@ -4,6 +4,7 @@ import type { AddressInfo } from "node:net";
 import { test, expect } from "@playwright/test";
 
 import { startIsolatedE2EServerWithOptions, type IsolatedE2EServer } from "./support/e2eServer";
+import { openDrawer, setupRoborevWorkspace } from "./support/roborev-helpers";
 
 const job = {
   id: 501,
@@ -154,7 +155,8 @@ test("completed job Log tab renders output through the kenn-forge roborev proxy"
   try {
     forge = await startForgeWithRoborev(daemon.url);
 
-    await page.goto(`${forge.info.base_url}/reviews/${job.id}`);
+    await setupRoborevWorkspace(page, { repoName: job.repo_name, branch: job.branch });
+    await openDrawer(page, job.id, forge.info.base_url);
     await expect(page.getByRole("region", { name: "Review details" })).toBeVisible();
 
     await page.locator(".tab-bar .tab", { hasText: "Log" }).click();

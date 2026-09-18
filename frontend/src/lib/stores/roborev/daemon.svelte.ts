@@ -1,14 +1,11 @@
 import * as roborevAPI from "../../api/roborev/generated/client.js";
-import { Duration, Effect, Option } from "effect";
-import { pollWhileVisible } from "../../effect/poll-while-visible.js";
+import { Effect, Option } from "effect";
 import type { AppRuntime } from "../../app/runtime.js";
 import { TransientTransportError } from "../../api/effect-errors.js";
 import type { RoborevClient } from "../../api/roborev/client.js";
 import type * as RoborevModels from "../../api/roborev/generated/models/index.js";
 import { RoborevDaemonWorkflow } from "./daemon-workflow.js";
 
-const UNAVAILABLE_POLL_INTERVAL_MS = 1_000;
-const AVAILABLE_POLL_INTERVAL_MS = 30_000;
 const STATUS_TIMEOUT = "5 seconds";
 
 type DaemonStatus = RoborevModels.DaemonStatus;
@@ -31,7 +28,6 @@ export function createDaemonStore(opts: DaemonStoreOptions) {
   let canceledJobs = $state(0);
   let activeWorkers = $state(0);
   let maxWorkers = $state(0);
-  let unavailablePollIntervalMs = UNAVAILABLE_POLL_INTERVAL_MS;
 
   function clearStatus(): void {
     queuedJobs = 0;
@@ -93,7 +89,6 @@ export function createDaemonStore(opts: DaemonStoreOptions) {
       version = result.value.version;
       endpoint = result.value.endpoint;
       if (!available) clearStatus();
-      else unavailablePollIntervalMs = UNAVAILABLE_POLL_INTERVAL_MS;
     });
     const recovered = available && !previous;
     if (recovered) wasEverAvailable = true;
@@ -106,25 +101,12 @@ export function createDaemonStore(opts: DaemonStoreOptions) {
     ),
   );
 
-  const pollOnce = Effect.gen(function* () {
+  const refreshEffect = Effect.gen(function* () {
     yield* healthProgram;
     if (available) {
       yield* loadStatusProgram.pipe(Effect.catch(() => Effect.void));
     }
   });
-
-  const waitForNextPoll = Effect.suspend(() => {
-    const intervalMs = available ? AVAILABLE_POLL_INTERVAL_MS : unavailablePollIntervalMs;
-    if (!available) unavailablePollIntervalMs = Math.min(intervalMs * 2, AVAILABLE_POLL_INTERVAL_MS);
-    return Effect.sleep(Duration.millis(intervalMs));
-  });
-  const pollingEffect = pollWhileVisible(pollOnce, waitForNextPoll, { immediate: true }).pipe(
-    Effect.ensuring(
-      Effect.sync(() => {
-        loading = false;
-      }),
-    ),
-  );
 
   function checkHealth(): void {
     opts.runtime.runCommand(healthProgram, {
@@ -194,7 +176,7 @@ export function createDaemonStore(opts: DaemonStoreOptions) {
     getWasEverAvailable,
     checkHealth,
     loadStatus,
-    pollingEffect,
+    refreshEffect,
   };
 }
 

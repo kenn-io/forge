@@ -38,11 +38,6 @@ export function startDaemon(): void {
   waitForDaemonHealthy();
 }
 
-export function restartDaemon(): void {
-  composeExec("restart roborev");
-  waitForDaemonHealthy();
-}
-
 function waitForDaemonHealthy(): void {
   const env = readEnvFile();
   const port = env["ROBOREV_PORT"] ?? "17373";
@@ -68,19 +63,6 @@ function waitForDaemonHealthy(): void {
     }
   }
   throw new Error("Daemon not healthy through Kenn Forge's proxy after 30 attempts");
-}
-
-export async function countRoborevDaemonEventStreams(): Promise<number> {
-  const env = readEnvFile();
-  const port = env["ROBOREV_PORT"] ?? "17373";
-  const response = await fetch(`http://127.0.0.1:${port}/debug/pprof/goroutine?debug=2`, {
-    signal: AbortSignal.timeout(3_000),
-  });
-  if (!response.ok) {
-    throw new Error(`roborev goroutine profile returned HTTP ${response.status}`);
-  }
-  const profile = await response.text();
-  return profile.split("\n").filter((line) => line.includes("humaStreamEvents")).length;
 }
 
 // Probe the daemon backing the e2e server and assert it matches the
@@ -226,11 +208,73 @@ function wrongDaemonHint(): string {
   );
 }
 
-export async function waitForReviewsReady(page: Page): Promise<void> {
-  await page.goto("/reviews");
-  await expect(page.locator(".job-table")).toBeVisible({
-    timeout: 15_000,
+const defaultWorkspace = {
+  id: "roborev-e2e",
+  platform_host: "github.com",
+  repo_owner: "acme",
+  repo_name: "test-repo-alpha",
+  repo: {
+    provider: "github",
+    platform_host: "github.com",
+    owner: "acme",
+    name: "test-repo-alpha",
+    repo_path: "acme/test-repo-alpha",
+  },
+  item_type: "pull_request",
+  item_number: 1,
+  source_item_visible: true,
+  git_head_ref: "main",
+  worktree_path: "/tmp/roborev-e2e",
+  status: "ready",
+  enrichment_status: "fresh",
+  created_at: "2026-04-10T12:00:00Z",
+  tmux_session: "",
+  tmux_working: false,
+  tmux_activity_source: "unknown",
+  tmux_last_output_at: null,
+};
+
+// The workspace shell is a fixture; all review requests still pass through
+// Forge's real proxy to the script-managed, seeded RoboRev daemon.
+export async function setupRoborevWorkspace(
+  page: Page,
+  options: { repoName?: string; branch?: string } = {},
+): Promise<void> {
+  const repoName = options.repoName ?? defaultWorkspace.repo_name;
+  const workspace = {
+    ...defaultWorkspace,
+    repo_name: repoName,
+    git_head_ref: options.branch ?? defaultWorkspace.git_head_ref,
+    repo: { ...defaultWorkspace.repo, name: repoName, repo_path: `acme/${repoName}` },
+  };
+  await page.route("**/api/v1/snapshot**", (route) => route.fulfill({ json: { hosts: [], workspaces: [workspace] } }));
+  await page.route("**/api/v1/workspaces/roborev-e2e**", (route) => {
+    const path = new URL(route.request().url()).pathname;
+    const json = path.endsWith("/runtime")
+      ? { launch_targets: [], sessions: [] }
+      : path.endsWith("/files") || path.endsWith("/diff")
+        ? { files: [], stale: false, whitespace_only_count: 0 }
+        : path.endsWith("/commits")
+          ? { commits: [] }
+          : workspace;
+    return route.fulfill({ json });
   });
+}
+
+export async function openWorkspaceReviews(page: Page, baseURL = ""): Promise<void> {
+  await page.goto(`${baseURL}/terminal/roborev-e2e`);
+  const reviews = page.locator(".panel-toggle-btn", { hasText: "Reviews" });
+  await expect(reviews).toBeVisible();
+  if (!(await reviews.evaluate((node) => node.classList.contains("active")))) await reviews.click();
+  await expect(page.locator(".sidebar-reviews")).toBeVisible();
+}
+
+export async function waitForReviewsReady(page: Page, baseURL = ""): Promise<void> {
+  await openWorkspaceReviews(page, baseURL);
+  await expect(page.locator(".job-table")).toBeVisible({ timeout: 15_000 });
+  await page.locator(".picker-button").click();
+  await page.getByRole("button", { name: "All Repos", exact: true }).click();
+  await expect(page.locator(".picker-button")).toContainText("All Repos");
 }
 
 export async function waitForJobRows(page: Page, min: number): Promise<void> {
@@ -241,8 +285,12 @@ export async function waitForJobRows(page: Page, min: number): Promise<void> {
   }).toPass({ timeout: 10_000 });
 }
 
-export async function openDrawer(page: Page, jobId: number): Promise<void> {
-  await page.goto(`/reviews/${jobId}`);
+export async function openDrawer(page: Page, jobId: number, baseURL = ""): Promise<void> {
+  await waitForReviewsReady(page, baseURL);
+  await page
+    .locator(".job-row")
+    .filter({ has: page.locator(".col-id .mono", { hasText: new RegExp(`^${jobId}$`) }) })
+    .click();
   await expect(page.getByRole("region", { name: "Review details" })).toBeVisible({
     timeout: 10_000,
   });

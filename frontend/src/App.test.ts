@@ -54,9 +54,6 @@ vi.mock("./lib/views/ActivityFeedView.svelte", async () => ({
 vi.mock("./lib/views/MobileActivityView.svelte", async () => ({
   default: (await import("./lib/testing/AppViewStub.svelte")).default,
 }));
-vi.mock("./lib/views/ReviewsView.svelte", async () => ({
-  default: (await import("./lib/testing/AppViewStub.svelte")).default,
-}));
 vi.mock("./lib/views/FocusListView.svelte", async () => ({
   default: (await import("./lib/testing/AppNavigationContextProbe.svelte")).default,
 }));

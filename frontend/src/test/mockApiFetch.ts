@@ -316,7 +316,6 @@ export const mockSettings = {
     issues: true,
     pulls: true,
     repos: true,
-    reviews: true,
     workspaces: true,
   },
   kata_projects: [],

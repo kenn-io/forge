@@ -50189,7 +50189,6 @@ type ModeVisibility struct {
 	Issues     bool `json:"issues"`
 	Pulls      bool `json:"pulls"`
 	Repos      bool `json:"repos"`
-	Reviews    bool `json:"reviews"`
 	Workspaces bool `json:"workspaces"`
 }
 

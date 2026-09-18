@@ -7,12 +7,7 @@ import { executeGeneratedApiRequest } from "./api/generated-api.js";
 import { ProblemCodes } from "./api/problems.js";
 import type { ProviderRouteRef } from "./api/provider-routes.js";
 import { retryIdempotentRead } from "./api/retry-policy.js";
-import { createDaemonStore } from "./stores/roborev/daemon.svelte.js";
-import { createJobsStore } from "./stores/roborev/jobs.svelte.js";
-import { createReviewStore } from "./stores/roborev/review.svelte.js";
-import { createLogStore } from "./stores/roborev/log.svelte.js";
-import { makeRoborevOwner } from "./stores/roborev/roborev-workflow.js";
-import type { NavigateCallback, HostStateAccessors, StoreInstances, UIConfig } from "./types.js";
+import type { HostStateAccessors, StoreInstances, UIConfig } from "./types.js";
 import type { AppRuntime, AppServices } from "./app/runtime.js";
 import type { ProviderEventsError } from "./stores/provider-events-workflow.js";
 import type { PullsStoreOptions } from "./stores/pulls.svelte.js";
@@ -43,7 +38,6 @@ import { notifyWorkspaceDeleted } from "./stores/workspace-host.svelte.js";
 
 export interface AppStoreOptions {
   runtime: AppRuntime;
-  onNavigate?: NavigateCallback;
   hostState?: HostStateAccessors;
   config?: UIConfig;
   getPage?: () => string;
@@ -63,7 +57,6 @@ export interface AppStoreComposition {
 export function createAppStores(options: AppStoreOptions): AppStoreComposition {
   const {
     runtime,
-    onNavigate = () => {},
     hostState = {},
     config = {},
     getPage = () => "",
@@ -76,7 +69,6 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
   const appRuntime = runtime;
   const hs = hostState;
   const cfg = config;
-  const nav = onNavigate;
   const gp = getPage;
   const getSelectedActivity = getActivitySelection;
   const roborevBase = roborevBaseUrl;
@@ -427,39 +419,6 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
   if (roborevBase) {
     const bp = (cfg.basePath ?? "/").replace(/\/$/, "");
     roborevClient = createRoborevClient(bp + roborevBase);
-    const roborevOwner = makeRoborevOwner("app-reviews");
-
-    const jobsOpts: Parameters<typeof createJobsStore>[0] = {
-      client: roborevClient,
-      runtime: appRuntime,
-      owner: roborevOwner,
-      navigate: nav,
-    };
-    if (errorCb) jobsOpts.onError = errorCb;
-    const jobsStore = createJobsStore(jobsOpts);
-    si.roborevJobs = jobsStore;
-
-    const reviewOpts: Parameters<typeof createReviewStore>[0] = {
-      client: roborevClient,
-      runtime: appRuntime,
-      owner: roborevOwner,
-    };
-    if (errorCb) reviewOpts.onError = errorCb;
-    const reviewStore = createReviewStore(reviewOpts);
-    si.roborevReview = reviewStore;
-
-    const logStore = createLogStore({
-      runtime: appRuntime,
-      baseUrl: bp + roborevBase,
-      ...(errorCb !== undefined && { onError: errorCb }),
-    });
-    si.roborevLog = logStore;
-
-    const daemon = createDaemonStore({
-      client: roborevClient,
-      runtime: appRuntime,
-    });
-    si.roborevDaemon = daemon;
   }
 
   const listAgentStatusPolling = pollWhileVisible(

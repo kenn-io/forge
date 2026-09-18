@@ -17,6 +17,8 @@ import * as roborevAPI from "../../api/roborev/generated/client.js";
   type RepoWithCount = RoborevModels.RepoWithCount;
   type BranchWithCount = RoborevModels.BranchWithCount;
 
+  let { onChange }: { onChange?: (() => void) | undefined } = $props();
+
   const stores = getStores();
   const client = getRoborevClient();
   const runtime = getAppRuntime();
@@ -147,6 +149,7 @@ import * as roborevAPI from "../../api/roborev/generated/client.js";
     stores.roborevJobs?.setFilter("repo", rootPath);
     stores.roborevJobs?.setFilter("branch", undefined);
     open = false;
+    onChange?.();
   }
 
   function selectBranch(
@@ -156,12 +159,14 @@ import * as roborevAPI from "../../api/roborev/generated/client.js";
     stores.roborevJobs?.setFilter("repo", rootPath);
     stores.roborevJobs?.setFilter("branch", branch);
     open = false;
+    onChange?.();
   }
 
   function selectAll(): void {
     stores.roborevJobs?.setFilter("repo", undefined);
     stores.roborevJobs?.setFilter("branch", undefined);
     open = false;
+    onChange?.();
   }
 
   function toggle(): void {

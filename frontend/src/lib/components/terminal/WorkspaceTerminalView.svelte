@@ -4574,6 +4574,7 @@
               {#if workspaceDetailsReady && workspace}
                 <WorkspaceRightSidebar
                   activeTab={sidebarTab}
+                  visible={hostVisible}
                   workspaceID={workspace.id}
                   {workspaceHostKey}
                   provider={workspace.repo.provider}

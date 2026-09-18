@@ -2775,7 +2775,7 @@ test.describe("workspace launch home", () => {
   });
 
   test("shows one Workspaces option in the compact page menu on terminal routes", async ({ page }) => {
-    await page.setViewportSize({ width: 1000, height: 720 });
+    await page.setViewportSize({ width: 820, height: 720 });
     await setupTerminalMocks(page, {
       runtime: workflowDragRuntime(),
     });
@@ -5820,6 +5820,7 @@ test.describe("issue workspace sidebar", () => {
       },
       events: [],
       platform_host: "example.com",
+      repo: workspaceRepoRef("acme", "widgets", "example.com"),
       repo_owner: "acme",
       repo_name: "widgets",
       detail_loaded: true,
@@ -6003,6 +6004,46 @@ test.describe("sidebar Reviews tab", () => {
     });
   });
 
+  test("loads local reviews on display and explicit refresh, then stops when hidden", async ({ page }) => {
+    await setupTerminalMocks(page);
+    const reviewRequests: string[] = [];
+    page.on("request", (request) => {
+      const path = new URL(request.url()).pathname;
+      if (path.startsWith("/api/roborev/") || path === "/api/v1/roborev/status") {
+        reviewRequests.push(path);
+      }
+    });
+    await page.clock.install();
+    await page.goto("/terminal/ws-123");
+    const reviewsTab = page.locator(".panel-toggle-btn", { hasText: "Reviews" });
+    await expect(reviewsTab).toBeVisible();
+    expect(reviewRequests).toEqual([]);
+
+    await reviewsTab.click();
+    await expect(page.locator(".right-sidebar .job-row")).toBeVisible();
+    const refresh = page.getByRole("button", { name: "Refresh local reviews" });
+    await expect(refresh).toBeEnabled();
+    const requestsWhileOpen = reviewRequests.length;
+    await page.clock.fastForward("01:00");
+    expect(reviewRequests).toHaveLength(requestsWhileOpen);
+    const jobsBeforeRefresh = reviewRequests.filter((path) => path.endsWith("/api/jobs")).length;
+    await refresh.click();
+    await expect
+      .poll(() => reviewRequests.filter((path) => path.endsWith("/api/jobs")).length)
+      .toBeGreaterThan(jobsBeforeRefresh);
+    await expect(refresh).toBeEnabled();
+
+    await reviewsTab.click();
+    await expect(page.locator(".right-sidebar")).toBeHidden();
+    const requestsWhileClosed = reviewRequests.length;
+    await page.clock.fastForward("01:00");
+    expect(reviewRequests).toHaveLength(requestsWhileClosed);
+
+    await reviewsTab.click();
+    await expect(page.locator(".right-sidebar .job-row")).toBeVisible();
+    expect(reviewRequests.length).toBeGreaterThan(requestsWhileClosed);
+  });
+
   test("Reviews tab preserves a daemon version that already starts with v", async ({ page }) => {
     await setupTerminalMocks(page, {
       roborevStatus: {
@@ -6016,6 +6057,34 @@ test.describe("sidebar Reviews tab", () => {
     await expect(page.locator(".right-sidebar")).toBeVisible();
 
     await expect(page.locator('.right-sidebar .daemon-status [title="Daemon version"]')).toHaveText("v0.52.0");
+  });
+
+  test("closing a local review refreshes the visible filtered job list", async ({ page }) => {
+    await setupTerminalMocks(page);
+    let closed = false;
+    await page.route("**/api/roborev/api/review/close", async (route) => {
+      closed = true;
+      await route.fulfill({ json: { success: true } });
+    });
+    await page.route(
+      (url) => url.pathname === "/api/roborev/api/review",
+      (route) => route.fulfill({ json: { ...roborevReview, closed } }),
+    );
+    await page.route(
+      (url) => url.pathname === "/api/roborev/api/jobs",
+      (route) => {
+        const url = new URL(route.request().url());
+        const jobs = closed && url.searchParams.get("closed") === "false" ? [] : roborevJobs.jobs;
+        return route.fulfill({ json: { ...roborevJobs, jobs } });
+      },
+    );
+    await page.goto("/terminal/ws-123");
+    await page.locator(".panel-toggle-btn", { hasText: "Reviews" }).click();
+    await page.getByRole("checkbox", { name: "Hide closed" }).check();
+    await page.locator(".right-sidebar .job-row").click();
+    await page.getByRole("button", { name: "Close Review", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Reopen", exact: true })).toBeVisible();
+    await expect(page.locator(".right-sidebar .job-row")).toHaveCount(0);
   });
 
   test("Reviews tab shows job list when roborev repo matches", async ({ page }) => {
@@ -6045,6 +6114,24 @@ test.describe("sidebar Reviews tab", () => {
 
     // Should show empty/no-reviews message
     await expect(page.locator(".right-sidebar .kit-empty-state")).toContainText("No reviews");
+  });
+
+  test("local reviews allow choosing a repository when multiple clones match", async ({ page }) => {
+    await setupTerminalMocks(page, {
+      roborevRepos: {
+        repos: [
+          { name: "widgets", root_path: "/tmp/clone-a/acme/widgets", count: 1 },
+          { name: "widgets", root_path: "/tmp/clone-b/acme/widgets", count: 1 },
+        ],
+        total_count: 2,
+      },
+    });
+    await page.goto("/terminal/ws-123");
+    await page.locator(".panel-toggle-btn", { hasText: "Reviews" }).click();
+    await expect(page.locator(".right-sidebar .kit-empty-state")).toContainText("Multiple local repositories");
+    await page.locator('.right-sidebar .picker-button[title="Filter by repository"]').click();
+    await page.locator(".right-sidebar .dropdown-item.repo-item").first().click();
+    await expect(page.locator(".right-sidebar .job-row")).toBeVisible();
   });
 
   test("branch picker shows and clears branch filter", async ({ page }) => {

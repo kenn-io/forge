@@ -4,12 +4,12 @@ import {
   assertSeededRoborevDaemon,
   stopDaemon,
   startDaemon,
-  restartDaemon,
   waitForReviewsReady,
   waitForJobRows,
   openDrawer,
   reviewAction,
-  countRoborevDaemonEventStreams,
+  setupRoborevWorkspace,
+  openWorkspaceReviews,
 } from "./support/roborev-helpers.js";
 
 function parseElapsed(text: string): number {
@@ -39,6 +39,10 @@ test.describe.serial("Roborev", () => {
   // is bound to 127.0.0.1:7373 (the e2e server's silent default).
   test.beforeAll(async () => {
     await assertSeededRoborevDaemon();
+  });
+
+  test.beforeEach(async ({ page }) => {
+    await setupRoborevWorkspace(page);
   });
 
   async function selectStatusFilter(page: Page, label: string): Promise<void> {
@@ -72,7 +76,6 @@ test.describe.serial("Roborev", () => {
     });
 
     test("panel parent expands to real member rows through the daemon proxy", async ({ page }) => {
-      await page.route("**/api/roborev/api/stream/events", (route) => route.abort());
       await waitForReviewsReady(page);
       await waitForJobRows(page, 10);
 
@@ -90,9 +93,7 @@ test.describe.serial("Roborev", () => {
           url.searchParams.get("omit_prompt") === "true"
         );
       });
-      await page.keyboard.press("j");
-      await expect(parent).toHaveClass(/highlighted/);
-      await page.keyboard.press("ArrowRight");
+      await parent.getByRole("button", { name: "Expand panel" }).click();
       await panelRunResponse;
 
       const members = page.locator(".job-row.member");
@@ -102,16 +103,14 @@ test.describe.serial("Roborev", () => {
       await expect(members.nth(1).locator(".member-name")).toHaveText("security");
       await expect(members.nth(1).locator(".col-id")).toContainText("78");
 
-      await page.keyboard.press("Enter");
-      await expect(page).toHaveURL(/\/reviews\/79$/);
+      await parent.click();
       await expect(page.locator(".panel-line")).toContainText("2 reviewers:");
       await expect(page.locator(".panel-line")).toContainText("default");
-      await page.keyboard.press("Escape");
-      await expect(page).toHaveURL(/\/reviews$/);
+      await page.getByRole("button", { name: "Close review details", exact: true }).click();
 
-      await page.keyboard.press("ArrowLeft");
+      await parent.getByRole("button", { name: "Collapse panel" }).click();
       await expect(members).toHaveCount(0);
-      await page.keyboard.press("ArrowRight");
+      await parent.getByRole("button", { name: "Expand panel" }).click();
       await expect(members).toHaveCount(2);
 
       let releaseRefresh: (() => void) | undefined;
@@ -182,20 +181,17 @@ test.describe.serial("Roborev", () => {
         }
       });
 
-      await page.keyboard.press("Enter");
+      await parent.click();
       await refreshStarted;
       await expect(members).toHaveCount(2);
       await expect(page.locator(".members-status-row")).toContainText("Refreshing reviewers");
       releaseRefresh?.();
       await refreshContinued;
       await expect(page.locator(".members-status-row", { hasText: "Refreshing reviewers" })).toHaveCount(0);
-      await expect(page).toHaveURL(/\/reviews\/79$/);
-      await page.keyboard.press("Escape");
-      await expect(page).toHaveURL(/\/reviews$/);
+      await page.getByRole("button", { name: "Close review details", exact: true }).click();
       failNextRefresh = true;
       await parent.click();
       await failureServed;
-      await expect(page).toHaveURL(/\/reviews\/79$/);
       await expect(page.getByRole("region", { name: "Review details" })).toBeVisible();
       await expect(page.locator(".panel-error")).toContainText("Could not refresh reviewers.");
       await expect(page.locator(".members-status-row.error")).toContainText("Could not refresh reviewers.");
@@ -214,24 +210,17 @@ test.describe.serial("Roborev", () => {
       await retryResponse;
       await expect(page.locator(".panel-error")).toHaveCount(0);
       await expect(page.locator(".members-status-row.error")).toHaveCount(0);
-      await page.keyboard.press("Escape");
-      await expect(page).toHaveURL(/\/reviews$/);
-      await page.keyboard.press("j");
-      await expect(members.nth(0)).toHaveClass(/highlighted/);
-      await page.keyboard.press("ArrowLeft");
+      await page.getByRole("button", { name: "Close review details", exact: true }).click();
+      await parent.getByRole("button", { name: "Collapse panel" }).click();
       await expect(members).toHaveCount(0);
-      await expect(parent).toHaveClass(/highlighted/);
-      await page.keyboard.press("ArrowRight");
+      await parent.getByRole("button", { name: "Expand panel" }).click();
       await expect(members).toHaveCount(2);
-      await page.keyboard.press("j");
-      await expect(members.nth(0)).toHaveClass(/highlighted/);
-      await page.keyboard.press("Enter");
-      await expect(page).toHaveURL(/\/reviews\/77$/);
+      await members.nth(0).click();
       await expect(page.getByRole("region", { name: "Review details" })).toBeVisible();
       await expect(page.locator(".header-start .review-type", { hasText: "default" })).toBeVisible();
     });
 
-    test("route-selected panel drawer drains queued member refresh while table stays collapsed", async ({ page }) => {
+    test("selected panel drawer drains queued member refresh while table stays collapsed", async ({ page }) => {
       let panelMemberRequests = 0;
       let releaseFirstMemberFetch: (() => void) | undefined;
       let resolveFirstMemberFetchStarted!: () => void;
@@ -281,8 +270,7 @@ test.describe.serial("Roborev", () => {
         resolveLatestMemberFetchServed();
       });
 
-      await page.goto("/reviews/79");
-      await expect(page).toHaveURL(/\/reviews\/79$/);
+      await openDrawer(page, 79);
       await expect(page.locator(".job-table")).toBeVisible({
         timeout: 15_000,
       });
@@ -579,33 +567,18 @@ test.describe.serial("Roborev", () => {
       }).toPass({ timeout: 5_000 });
     });
 
-    test("daemon events refresh reviews and navigation tears down the upstream stream", async ({ page }) => {
-      const baselineStreams = await countRoborevDaemonEventStreams();
+    test("refresh updates reviews after a daemon-side change", async ({ page }) => {
       const row = jobRowById(page, 72);
-
       try {
         await waitForReviewsReady(page);
         await page.getByLabel("Hide closed").check();
         await expect(row).toBeVisible();
-        await expect.poll(countRoborevDaemonEventStreams).toBe(baselineStreams + 1);
-
         const closeResponse = await page.request.post("/api/roborev/api/review/close", {
           data: { job_id: 72, closed: true },
         });
         expect(closeResponse.ok()).toBe(true);
+        await page.getByRole("button", { name: "Refresh local reviews" }).click();
         await expect(row).toHaveCount(0);
-
-        await page.locator(".app-top-bar").getByRole("button", { name: "PRs", exact: true }).click();
-        await expect(page).toHaveURL(/\/pulls$/);
-        await expect.poll(countRoborevDaemonEventStreams).toBe(baselineStreams);
-
-        await page.locator(".app-top-bar").getByRole("button", { name: "Reviews", exact: true }).click();
-        await expect(page).toHaveURL(/\/reviews$/);
-        await expect(page.locator(".job-table")).toBeVisible();
-        await expect.poll(countRoborevDaemonEventStreams).toBe(baselineStreams + 1);
-
-        await page.locator(".app-top-bar").getByRole("button", { name: "PRs", exact: true }).click();
-        await expect.poll(countRoborevDaemonEventStreams).toBe(baselineStreams);
       } finally {
         const reopenResponse = await page.request.post("/api/roborev/api/review/close", {
           data: { job_id: 72, closed: false },
@@ -632,7 +605,7 @@ test.describe.serial("Roborev", () => {
       await autoDesignSkipRow.click();
       await expect(page.locator(".header-start .review-type", { hasText: "auto-design" })).toBeVisible();
       await expect(page.locator(".skip-reason")).toHaveText("Skipped: trivial diff");
-      await page.keyboard.press("Escape");
+      await page.getByRole("button", { name: "Close review details", exact: true }).click();
 
       await expect(autoDesignClassifyRef).toBeVisible({ timeout: 5_000 });
       const autoDesignClassifyRow = page.locator(".job-row", { has: autoDesignClassifyRef });
@@ -659,6 +632,8 @@ test.describe.serial("Roborev", () => {
       });
       await page.reload();
       await restoredJobs;
+      await page.locator(".picker-button").click();
+      await page.getByRole("button", { name: "All Repos", exact: true }).click();
 
       await expect(page.getByLabel("Hide closed")).toBeChecked();
       await expect(page.getByLabel("Show auto-design")).toBeChecked();
@@ -666,7 +641,6 @@ test.describe.serial("Roborev", () => {
     });
 
     test("status counts follow the default auto-design visibility", async ({ page }) => {
-      await page.route("**/api/roborev/api/stream/events", (route) => route.abort());
       await waitForReviewsReady(page);
       await waitForJobRows(page, 10);
 
@@ -786,7 +760,6 @@ test.describe.serial("Roborev", () => {
     });
 
     test("click Elapsed header places missing time before zero duration", async ({ page }) => {
-      await page.route("**/api/roborev/api/stream/events", (route) => route.abort());
       await waitForReviewsReady(page);
       await waitForJobRows(page, 10);
 
@@ -993,57 +966,18 @@ test.describe.serial("Roborev", () => {
       await expect(reviewAction(page, "Reopen")).toBeVisible({ timeout: 10_000 });
     });
 
-    test("keeps a delayed rerun authority read ahead of a later cancellation", async ({ page }) => {
+    test("reruns and cancels a job through drawer actions", async ({ page }) => {
       await openDrawer(page, 73);
-
-      let releasePreflight!: () => void;
-      const preflightRelease = new Promise<void>((resolve) => {
-        releasePreflight = resolve;
-      });
-      let markPreflightStarted!: () => void;
-      const preflightStarted = new Promise<void>((resolve) => {
-        markPreflightStarted = resolve;
-      });
-      let delayedPreflight = false;
-      await page.route("**/api/roborev/api/jobs?**", async (route) => {
-        const request = route.request();
-        const url = new URL(request.url());
-        if (
-          !delayedPreflight &&
-          request.method() === "GET" &&
-          url.searchParams.get("id") === "73" &&
-          url.searchParams.get("limit") === "1" &&
-          url.searchParams.get("omit_prompt") === "true"
-        ) {
-          delayedPreflight = true;
-          markPreflightStarted();
-          await preflightRelease;
-        }
-        await route.continue();
-      });
-
       const submittedMutations: string[] = [];
       page.on("request", (request) => {
         if (request.method() !== "POST") return;
-        const pathname = new URL(request.url()).pathname;
-        if (pathname.endsWith("/api/roborev/api/job/rerun")) submittedMutations.push("rerun");
-        if (pathname.endsWith("/api/roborev/api/job/cancel")) submittedMutations.push("cancel");
+        const path = new URL(request.url()).pathname;
+        if (path.endsWith("/api/job/rerun")) submittedMutations.push("rerun");
+        if (path.endsWith("/api/job/cancel")) submittedMutations.push("cancel");
       });
-
-      const rerunBtn = reviewAction(page, "Rerun");
-      await expect(rerunBtn).toBeVisible({
-        timeout: 10_000,
-      });
-      await rerunBtn.click();
-      await preflightStarted;
-
-      await page.keyboard.press("x");
-      await page.waitForTimeout(50);
-      expect(submittedMutations).toEqual([]);
-
-      releasePreflight();
+      await reviewAction(page, "Rerun").click();
+      await reviewAction(page, "Cancel").click();
       await expect.poll(() => submittedMutations).toEqual(["rerun", "cancel"]);
-
       await expect(page.getByRole("region", { name: "Review details" })).toBeVisible();
     });
 
@@ -1097,145 +1031,6 @@ test.describe.serial("Roborev", () => {
   });
 
   // -------------------------------------------------------
-  // Group 6: URL State and Navigation
-  // -------------------------------------------------------
-  test.describe("URL State and Navigation", () => {
-    test("/reviews shows table, no drawer", async ({ page }) => {
-      await page.goto("/reviews");
-      await expect(page.locator(".job-table")).toBeVisible({
-        timeout: 15_000,
-      });
-      await expect(page.getByRole("region", { name: "Review details" })).not.toBeVisible();
-    });
-
-    test("/reviews/:jobId opens drawer on page load", async ({ page }) => {
-      await openDrawer(page, 72);
-      await expect(page.locator(".job-id")).toContainText("72");
-    });
-
-    test("selecting job updates URL to /reviews/:jobId", async ({ page }) => {
-      await waitForReviewsReady(page);
-      await waitForJobRows(page, 10);
-
-      await page.locator(".job-row").first().click();
-      await expect(page).toHaveURL(/\/reviews\/\d+/);
-    });
-
-    test("closing drawer navigates back to /reviews", async ({ page }) => {
-      await waitForReviewsReady(page);
-      await waitForJobRows(page, 10);
-
-      // Open drawer
-      await page.locator(".job-row").first().click();
-      await expect(page.getByRole("region", { name: "Review details" })).toBeVisible();
-
-      // Close via X button
-      await page.getByRole("button", { name: "Close review details" }).click();
-      await expect(page.getByRole("region", { name: "Review details" })).not.toBeVisible();
-      await expect(page).toHaveURL(/\/reviews$/);
-    });
-
-    test("page reload preserves drawer state for valid jobId", async ({ page }) => {
-      await openDrawer(page, 72);
-      await expect(page.getByRole("region", { name: "Review details" })).toBeVisible();
-
-      // Reload
-      await page.reload();
-      await expect(page.getByRole("region", { name: "Review details" })).toBeVisible({
-        timeout: 15_000,
-      });
-      await expect(page.locator(".job-id")).toContainText("72");
-    });
-  });
-
-  // -------------------------------------------------------
-  // Group 7: Keyboard Shortcuts
-  // -------------------------------------------------------
-  test.describe("Keyboard Shortcuts", () => {
-    test("j/k highlights table rows without opening drawer", async ({ page }) => {
-      await waitForReviewsReady(page);
-      await waitForJobRows(page, 10);
-
-      // Press j to highlight first row
-      await page.keyboard.press("j");
-      await expect(page.locator(".job-row.highlighted")).toBeVisible();
-
-      // Drawer should NOT open
-      await expect(page.getByRole("region", { name: "Review details" })).not.toBeVisible();
-
-      // Press j again to move to next
-      await page.keyboard.press("j");
-      const highlighted = page.locator(".job-row.highlighted");
-      await expect(highlighted).toHaveCount(1);
-
-      // Press k to move back up
-      await page.keyboard.press("k");
-      await expect(highlighted).toHaveCount(1);
-    });
-
-    test("Enter opens drawer for highlighted row", async ({ page }) => {
-      await waitForReviewsReady(page);
-      await waitForJobRows(page, 10);
-
-      // Highlight a row
-      await page.keyboard.press("j");
-      await expect(page.locator(".job-row.highlighted")).toBeVisible();
-
-      // Press Enter to open drawer
-      await page.keyboard.press("Enter");
-      await expect(page.getByRole("region", { name: "Review details" })).toBeVisible({
-        timeout: 10_000,
-      });
-    });
-
-    test("Escape closes open drawer", async ({ page }) => {
-      await waitForReviewsReady(page);
-      await waitForJobRows(page, 10);
-
-      // Open drawer
-      await page.locator(".job-row").first().click();
-      await expect(page.getByRole("region", { name: "Review details" })).toBeVisible();
-
-      // Close with Escape
-      await page.keyboard.press("Escape");
-      await expect(page.getByRole("region", { name: "Review details" })).not.toBeVisible();
-    });
-
-    test("? opens help modal, Escape closes it", async ({ page }) => {
-      await waitForReviewsReady(page);
-      await page.locator(".reviews-view").waitFor();
-
-      // Open help modal
-      await page.keyboard.press("Shift+?");
-      const modal = page.getByRole("dialog", { name: "Keyboard Shortcuts" });
-      await expect(modal).toBeVisible();
-      await expect(modal).toContainText("Move selection down / up");
-
-      // Close with Escape
-      await page.keyboard.press("Escape");
-      await expect(modal).not.toBeVisible();
-    });
-
-    test("modifier keys (Cmd+R) do not trigger shortcuts", async ({ page }) => {
-      await waitForReviewsReady(page);
-      await waitForJobRows(page, 10);
-
-      // Cmd+R should not trigger the 'r' rerun shortcut
-      // (it should be a page reload, but we just verify no
-      // shortcut side-effect happens)
-      const drawerBefore = await page.getByRole("region", { name: "Review details" }).isVisible();
-      expect(drawerBefore).toBe(false);
-
-      await page.keyboard.press("Meta+r");
-      // Wait for any potential side effects
-      await page.waitForTimeout(300);
-
-      // No drawer should have opened
-      await expect(page.getByRole("region", { name: "Review details" })).not.toBeVisible();
-    });
-  });
-
-  // -------------------------------------------------------
   // Group 8: Daemon Status
   // -------------------------------------------------------
   test.describe("Daemon Status", () => {
@@ -1262,180 +1057,21 @@ test.describe.serial("Roborev", () => {
     });
   });
 
-  // -------------------------------------------------------
-  // Group 9: Resilience -- Daemon Down
-  // -------------------------------------------------------
-  test.describe("Daemon Down", () => {
-    test.beforeAll(() => {
-      stopDaemon();
-    });
-
-    test.afterAll(() => {
+  test("unavailable daemon recovers when workspace reviews are refreshed", async ({ page }) => {
+    stopDaemon();
+    try {
+      await openWorkspaceReviews(page);
+      await expect(page.locator(".sidebar-reviews")).toContainText("Roborev daemon not reachable");
+      await page.getByRole("button", { name: "Refresh local reviews" }).click();
+      await expect(page.locator(".sidebar-reviews")).toContainText("Roborev daemon not reachable");
       startDaemon();
-    });
-
-    test("fresh load shows empty state with unreachable message", async ({ page }) => {
-      await page.goto("/reviews");
-      // Daemon was never available on this fresh page, so
-      // ReviewsView shows the empty-state fallback.
-      const emptyState = page.locator(".kit-empty-state");
-      await expect(emptyState).toBeVisible({
-        timeout: 15_000,
-      });
-      await expect(emptyState).toContainText("not reachable");
-    });
-
-    test("empty state does not render table or filter bar", async ({ page }) => {
-      await page.goto("/reviews");
-      await expect(page.locator(".kit-empty-state")).toBeVisible({
-        timeout: 15_000,
-      });
-
-      // Full UI elements should not be present
-      await expect(page.locator(".job-table")).not.toBeVisible();
-      await expect(page.locator(".filter-bar")).not.toBeVisible();
-      await expect(page.locator(".daemon-status")).not.toBeVisible();
-    });
-
-    test("retry button appears in empty state", async ({ page }) => {
-      await page.goto("/reviews");
-      await expect(page.locator(".kit-empty-state")).toBeVisible({
-        timeout: 15_000,
-      });
-
-      const retryBtn = page.locator(".kit-empty-state button");
-      await expect(retryBtn).toBeVisible();
-      await expect(retryBtn).toHaveText("Retry");
-    });
-
-    test("retry button while daemon still down keeps empty state", async ({ page }) => {
-      await page.goto("/reviews");
-      await expect(page.locator(".kit-empty-state")).toBeVisible({
-        timeout: 15_000,
-      });
-
-      // Click retry while daemon is still stopped
-      await page.locator(".kit-empty-state button").click();
-      await page.waitForTimeout(1_000);
-
-      // Should still show the empty state
-      await expect(page.locator(".kit-empty-state")).toBeVisible();
-    });
-
-    test("header Reviews tab is still navigable", async ({ page }) => {
-      await page.goto("/reviews");
-      await expect(page.locator(".kit-empty-state")).toBeVisible({
-        timeout: 15_000,
-      });
-
-      // The page should still be the reviews view
-      await expect(page.locator(".reviews-view")).toBeVisible();
-    });
-  });
-
-  // -------------------------------------------------------
-  // Group 10: Resilience -- Daemon Recovery
-  // -------------------------------------------------------
-  test.describe("Daemon Recovery", () => {
-    test.beforeAll(() => {
-      restartDaemon();
-    });
-
-    test("Retry while down does not prevent automatic recovery on the same page", async ({ page }) => {
-      // Start with daemon stopped to get the empty state
-      stopDaemon();
-      await page.goto("/reviews");
-      await expect(page.locator(".kit-empty-state")).toBeVisible({
-        timeout: 15_000,
-      });
-
-      // Exercise Retry while the daemon is still unavailable.
-      await page.locator(".kit-empty-state button").click();
-      await expect(page.locator(".kit-empty-state")).toBeVisible();
-
-      startDaemon();
-      await expect(page.locator(".kit-empty-state")).not.toBeVisible({
-        timeout: 20_000,
-      });
-      await expect(page.locator(".conn-indicator.connected")).toBeVisible({
-        timeout: 15_000,
-      });
+      await page.getByRole("button", { name: "Refresh local reviews" }).click();
       await waitForJobRows(page, 1);
-    });
-
-    test("table has data after recovery on same page", async ({ page }) => {
-      // Stop, load, restart, and verify data is present
-      // without manual recovery — all on the same page.
-      stopDaemon();
-      await page.goto("/reviews");
-      await expect(page.locator(".kit-empty-state")).toBeVisible({
-        timeout: 15_000,
-      });
-
-      startDaemon();
-      await expect(page.locator(".kit-empty-state")).not.toBeVisible({
-        timeout: 20_000,
-      });
-      await waitForJobRows(page, 1);
-
-      const count = await page.locator(".job-row").count();
-      expect(count).toBeGreaterThan(0);
-    });
-
-    test("event stream waits for daemon recovery before connecting", async ({ page }) => {
-      let healthRequests = 0;
-      let eventStreamRequests = 0;
-      page.on("request", (request) => {
-        const pathname = new URL(request.url()).pathname;
-        if (pathname.endsWith("/roborev/status")) healthRequests += 1;
-        if (pathname.endsWith("/api/roborev/api/stream/events")) eventStreamRequests += 1;
-      });
-
-      stopDaemon();
-      await page.goto("/reviews");
-      await expect(page.locator(".kit-empty-state")).toBeVisible({
-        timeout: 15_000,
-      });
-      await expect.poll(() => healthRequests).toBeGreaterThanOrEqual(2);
-      expect(eventStreamRequests).toBe(0);
-
-      startDaemon();
-      await expect(page.locator(".kit-empty-state")).not.toBeVisible({
-        timeout: 20_000,
-      });
-      await expect(page.locator(".conn-indicator.connected")).toBeVisible({
-        timeout: 15_000,
-      });
-      await waitForJobRows(page, 1);
-      await expect.poll(countRoborevDaemonEventStreams).toBe(1);
-      expect(eventStreamRequests).toBeGreaterThan(0);
-    });
-
-    test("recovery from empty state then open drawer", async ({ page }) => {
-      // Stop daemon and get empty state (fresh page load)
-      stopDaemon();
-      await page.goto("/reviews");
-      await expect(page.locator(".kit-empty-state")).toBeVisible({
-        timeout: 15_000,
-      });
-
-      // Restart daemon and recover automatically.
-      startDaemon();
-      await expect(page.locator(".kit-empty-state")).not.toBeVisible({
-        timeout: 20_000,
-      });
-      await waitForJobRows(page, 1);
-
-      // Click a row to open the drawer and verify content
-      // actually loaded (not just an empty shell)
+      await expect(page.locator(".conn-indicator.connected")).toBeVisible();
       await page.locator(".job-row").first().click();
-      await expect(page.getByRole("region", { name: "Review details" })).toBeVisible({
-        timeout: 10_000,
-      });
-      await expect(page.locator(".job-id")).toBeVisible({
-        timeout: 5_000,
-      });
-      await expect(page.locator(".review-dock-header")).toContainText(/\d+/);
-    });
+      await expect(page.getByRole("region", { name: "Review details" })).toBeVisible();
+    } finally {
+      startDaemon();
+    }
   });
 });

@@ -296,7 +296,6 @@ docs = false
 actions = false
 pulls = true
 issues = true
-reviews = true
 workspaces = true
 ```
 
@@ -308,8 +307,8 @@ other mode to `false` to hide it.
 
 ## Roborev
 
-The Reviews page reads from a separately running Roborev daemon. The default
-endpoint is `http://127.0.0.1:7373`:
+The Reviews panel in local workspaces reads from a separately running Roborev
+daemon when displayed. The default endpoint is `http://127.0.0.1:7373`:
 
 ```toml
 [roborev]
@@ -323,8 +322,7 @@ also change it under **Settings → Workspaces** without restarting. When it is
 enabled, the endpoint must use loopback HTTP (`127.0.0.1`, `localhost`, or
 `[::1]`) because Forge passes it to the Roborev CLI during workspace setup.
 
-Set `reviews = false` under `[modes]` if you do not want the Reviews page. See
-[Integrations](integrations.md#review-roborev-jobs) for the current Reviews
+See [Integrations](integrations.md#review-roborev-jobs) for the Reviews panel
 workflow.
 
 ## Workspace agents

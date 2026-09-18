@@ -1,12 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "@effect/vitest";
-import { Effect, Fiber, Layer } from "effect";
-import { TestClock } from "effect/testing";
+import { Effect } from "effect";
 import { makeRouteMockFetch, type RouteMockClient } from "../../testing/test/route-mock-client.js";
-import { makeGeneratedApiLayer, type GeneratedClient } from "../../api/generated-api.js";
+import { type GeneratedClient } from "../../api/generated-api.js";
 import type { OwnedAppRuntime } from "../../app/runtime.js";
 import { makeTestAppRuntime } from "../../testing/effect-layers.js";
 import { makeGeneratedClient } from "../../testing/generated-client.js";
-import { RoborevDaemonWorkflowLive } from "./daemon-workflow.js";
 import { createDaemonStore } from "./daemon.svelte.js";
 
 let runtime: OwnedAppRuntime | undefined;
@@ -24,10 +22,10 @@ function forgeClient(get: ReturnType<typeof vi.fn>): GeneratedClient {
   });
 }
 
-function startPolling(store: ReturnType<typeof daemonStore>) {
+function startRefresh(store: ReturnType<typeof daemonStore>) {
   if (runtime === undefined) throw new Error("test runtime was not initialized");
-  return runtime.runCommand(store.pollingEffect, {
-    operation: "test Roborev daemon polling",
+  return runtime.runCommand(store.refreshEffect, {
+    operation: "test Roborev daemon refresh",
     safeContext: {},
     onFailure: () => {},
   });
@@ -43,7 +41,7 @@ afterEach(async () => {
 });
 
 describe("createDaemonStore", () => {
-  it("shares an in-flight poll with a manual health check", async () => {
+  it("shares an in-flight refresh with a manual health check", async () => {
     let resolveHealth!: (response: {
       data: {
         available: boolean;
@@ -79,7 +77,7 @@ describe("createDaemonStore", () => {
     });
     const store = daemonStore(forgeClient(forgeGet), { GET: roborevGet } as unknown as RouteMockClient);
 
-    const polling = startPolling(store);
+    const polling = startRefresh(store);
     store.checkHealth();
 
     expect(forgeGet).toHaveBeenCalledTimes(1);
@@ -111,7 +109,7 @@ describe("createDaemonStore", () => {
     });
     const store = daemonStore(forgeClient(forgeGet), { GET: roborevGet } as unknown as RouteMockClient);
 
-    const polling = startPolling(store);
+    const polling = startRefresh(store);
     await vi.waitFor(() => {
       expect(store.isAvailable()).toBe(true);
       expect(store.getWasEverAvailable()).toBe(true);
@@ -122,7 +120,7 @@ describe("createDaemonStore", () => {
     await vi.waitFor(() => expect(statusSignal?.aborted).toBe(true));
   });
 
-  it("ignores health responses from a stopped polling generation", async () => {
+  it("ignores health responses from a stopped refresh", async () => {
     let resolveOldHealth!: (response: {
       data: {
         available: boolean;
@@ -185,11 +183,11 @@ describe("createDaemonStore", () => {
     });
     const store = daemonStore(forgeClient(forgeGet), { GET: roborevGet } as unknown as RouteMockClient);
 
-    const oldPolling = startPolling(store);
+    const oldPolling = startRefresh(store);
     expect(forgeGet).toHaveBeenCalledTimes(1);
 
     oldPolling.interrupt();
-    const currentPolling = startPolling(store);
+    const currentPolling = startRefresh(store);
     await vi.waitFor(() => {
       expect(forgeGet).toHaveBeenCalledTimes(2);
       expect(store.isLoading()).toBe(false);
@@ -220,99 +218,4 @@ describe("createDaemonStore", () => {
     await vi.waitFor(() => expect(store.isLoading()).toBe(false));
     currentPolling.interrupt();
   });
-
-  it.effect("polls quickly while unavailable and returns to the healthy cadence after recovery", () =>
-    Effect.gen(function* () {
-      const forgeGet = vi
-        .fn()
-        .mockResolvedValueOnce({
-          data: {
-            available: false,
-            endpoint: "http://roborev:7373",
-            version: "",
-          },
-        })
-        .mockResolvedValue({
-          data: {
-            available: true,
-            endpoint: "http://roborev:7373",
-            version: "test",
-          },
-        });
-      const roborevGet = vi.fn().mockResolvedValue({
-        data: {
-          active_workers: 0,
-          applied_jobs: 0,
-          canceled_jobs: 0,
-          completed_jobs: 0,
-          failed_jobs: 0,
-          max_workers: 1,
-          queue_paused: false,
-          queued_jobs: 0,
-          rebased_jobs: 0,
-          running_jobs: 0,
-          skipped_jobs: 0,
-          version: "test",
-        },
-      });
-      const generatedClient = forgeClient(forgeGet);
-      const store = daemonStore(generatedClient, { GET: roborevGet } as unknown as RouteMockClient);
-      const daemonLayer = Layer.provideMerge(RoborevDaemonWorkflowLive, makeGeneratedApiLayer(generatedClient));
-      const polling = yield* Effect.forkChild(store.pollingEffect.pipe(Effect.provide(daemonLayer)));
-
-      yield* Effect.yieldNow;
-      expect(forgeGet).toHaveBeenCalledTimes(1);
-      yield* TestClock.adjust("999 millis");
-      expect(forgeGet).toHaveBeenCalledTimes(1);
-      yield* TestClock.adjust("1 millis");
-      expect(forgeGet).toHaveBeenCalledTimes(2);
-      expect(store.isAvailable()).toBe(true);
-      expect(store.getWasEverAvailable()).toBe(true);
-      expect(roborevGet).toHaveBeenCalledTimes(1);
-
-      yield* TestClock.adjust("29999 millis");
-      expect(forgeGet).toHaveBeenCalledTimes(2);
-      yield* TestClock.adjust("1 millis");
-      expect(forgeGet).toHaveBeenCalledTimes(3);
-      yield* Fiber.interrupt(polling);
-    }),
-  );
-
-  it.effect("backs off prolonged unavailability while manual recovery resets the next outage", () =>
-    Effect.gen(function* () {
-      let available = false;
-      const forgeGet = vi.fn(async () => ({
-        data: { available, endpoint: "http://roborev:7373", version: "test" },
-      }));
-      const store = daemonStore(forgeClient(forgeGet), { GET: vi.fn() } as unknown as RouteMockClient);
-      const daemonLayer = Layer.provideMerge(RoborevDaemonWorkflowLive, makeGeneratedApiLayer(forgeClient(forgeGet)));
-      const polling = yield* Effect.forkChild(store.pollingEffect.pipe(Effect.provide(daemonLayer)));
-      yield* Effect.yieldNow;
-
-      let calls = 1;
-      for (const delay of [1_000, 2_000, 4_000, 8_000, 16_000, 30_000]) {
-        yield* TestClock.adjust(delay - 1);
-        expect(forgeGet).toHaveBeenCalledTimes(calls);
-        yield* TestClock.adjust(1);
-        expect(forgeGet).toHaveBeenCalledTimes(++calls);
-      }
-
-      available = true;
-      store.checkHealth();
-      yield* Effect.promise(() => vi.waitFor(() => expect(store.isAvailable()).toBe(true)));
-      expect(forgeGet).toHaveBeenCalledTimes(++calls);
-
-      // A transport failure after recovery starts a fresh short probe cadence.
-      forgeGet.mockRejectedValueOnce(new Error("offline"));
-      available = false;
-      yield* TestClock.adjust("30 seconds");
-      expect(store.isAvailable()).toBe(false);
-      expect(forgeGet).toHaveBeenCalledTimes(++calls);
-      yield* TestClock.adjust("999 millis");
-      expect(forgeGet).toHaveBeenCalledTimes(calls);
-      yield* TestClock.adjust("1 millis");
-      expect(forgeGet).toHaveBeenCalledTimes(++calls);
-      yield* Fiber.interrupt(polling);
-    }),
-  );
 });

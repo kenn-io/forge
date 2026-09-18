@@ -5057,8 +5057,6 @@ components:
           type: boolean
         repos:
           type: boolean
-        reviews:
-          type: boolean
         workspaces:
           type: boolean
       required:
@@ -5068,7 +5066,6 @@ components:
         - actions
         - pulls
         - issues
-        - reviews
         - workspaces
       type: object
     MrImportMetadataResponse:

@@ -163,7 +163,6 @@ export const DEFAULT_MODE_VISIBILITY: ModeVisibility = {
   actions: false,
   pulls: true,
   issues: true,
-  reviews: true,
   workspaces: true,
 };
 

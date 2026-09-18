@@ -38,7 +38,6 @@ function defaultModes(): ModeVisibility {
     docs: false,
     pulls: true,
     issues: true,
-    reviews: true,
     workspaces: true,
   };
 }

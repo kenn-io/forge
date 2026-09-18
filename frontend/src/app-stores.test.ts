@@ -200,7 +200,6 @@ vi.mock("./lib/stores/settings.svelte.js", () => ({
         docs: false,
         pulls: true,
         issues: true,
-        reviews: true,
         workspaces: true,
       }),
       setModeVisibility: vi.fn(),

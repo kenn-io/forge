@@ -15,7 +15,6 @@
   import MobileWorkspaceTerminal from "./lib/components/mobile/MobileWorkspaceTerminal.svelte";
   import MobileWorkspaceItem from "./lib/components/mobile/MobileWorkspaceItem.svelte";
   import MobileDetailHeader from "./lib/components/mobile/MobileDetailHeader.svelte";
-  import ReviewsView from "./lib/views/ReviewsView.svelte";
   import FocusListView from "./lib/views/FocusListView.svelte";
   import { normalizeInteractiveRepoFilterSelection } from "./lib/utils/repo-filter-values.js";
   import type { NavigateCallback, StoreInstances } from "./lib/types.js";
@@ -173,7 +172,6 @@
     onError: (message) => showFlash(message, { tone: "danger" }),
     onWarning: (message) => showFlash(message, { tone: "warning" }),
     onNotification: showFlash,
-    onNavigate: appNavigate,
     hostState: {
       getGlobalRepo: getNormalizedGlobalRepo,
       getGroupByRepo: () => stores?.grouping.getGroupByRepo() ?? true,
@@ -197,15 +195,6 @@
     return () => execution.interrupt();
   });
 
-  const roborevPollingExecution = appComposition.stores.roborevDaemon === undefined
-    ? undefined
-    : appRuntime.runCommand(appComposition.stores.roborevDaemon.pollingEffect, {
-        operation: "poll Roborev daemon health",
-        safeContext: {},
-        onFailure: (failure) => {
-          console.warn("Roborev daemon polling stopped unexpectedly:", failure);
-        },
-      });
   setContext(NAVIGATE_KEY, appNavigate);
   setContext(STORES_KEY, appComposition.stores);
   setContext(UI_CONFIG_KEY, { basePath: getBasePath() });
@@ -826,9 +815,7 @@
   }
 
   onDestroy(() => {
-    stores?.roborevJobs?.dispose();
     stopFullAppShell();
-    roborevPollingExecution?.interrupt();
   });
 
   $effect(() => {
@@ -1551,13 +1538,6 @@
           inlineWorkspace={getInlineWorkspaceController("issues")}
           {workspacePaneControls}
         />
-      {:else if getPage() === "reviews"}
-        {@const route = getRoute()}
-        {#if route.page === "reviews" && route.jobId != null}
-          <ReviewsView jobId={route.jobId} />
-        {:else}
-          <ReviewsView />
-        {/if}
       {:else if getPage() === "project-intake"}
         {@const route = getRoute()}
         {#if route.page === "project-intake"}

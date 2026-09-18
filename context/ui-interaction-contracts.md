@@ -920,8 +920,10 @@ Rows that contain buttons, links, or toggles need clear event ownership.
   `tracked_repo_path`, because selections created from catalog rows use the
   current route, which diverges after a provider-side rename
   (`frontend/src/lib/utils/repo-filter-values.ts::normalizeInteractiveRepoFilterSelection`).
-- Roborev has no event replay cursor: reconnect after authoritative job-list reconciliation; a lost
-  mutation response retains and fences its original target until authoritative observation, never
+- Local Roborev reviews belong to the PR workspace panel: read on display or explicit action,
+  never poll globally or refresh hidden workspace panels
+  (`frontend/src/lib/components/workspace/WorkspaceReviewsPanel.svelte`).
+- A lost Roborev mutation response retains and fences its original target until authoritative observation, never
   replays the write. A confirmed POST stays acknowledged when its follow-up refresh fails; report
   refresh degradation separately. Cancel only the exact owner lease on teardown
   (`frontend/src/lib/stores/roborev/roborev-workflow.ts::RoborevWorkflowService`).

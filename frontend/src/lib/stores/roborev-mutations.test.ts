@@ -57,7 +57,6 @@ describe("Roborev mutation ownership", () => {
       client: createRoborevClient("http://localhost", fetchFn),
       runtime,
       owner: "rerun-preflight-failure-test",
-      navigate: vi.fn(),
       onError: (message) => errors.push(message),
     });
 
@@ -105,7 +104,6 @@ describe("Roborev mutation ownership", () => {
       client: makeRouteMockFetch({ GET: get, POST: post } as never),
       runtime,
       owner: "rerun-baseline-test",
-      navigate: vi.fn(),
     });
 
     store.rerunJob(17);
@@ -135,7 +133,6 @@ describe("Roborev mutation ownership", () => {
       client: makeRouteMockFetch({ GET: get, POST: post } as never),
       runtime,
       owner: "rerun-preflight-order-test",
-      navigate: vi.fn(),
     });
 
     store.rerunJob(17);
@@ -182,7 +179,6 @@ describe("Roborev mutation ownership", () => {
       client: createRoborevClient("http://localhost", fetchFn),
       runtime,
       owner: "mutation-test",
-      navigate: vi.fn(),
     });
 
     store.cancelJob(17);
@@ -232,7 +228,6 @@ describe("Roborev mutation ownership", () => {
       client: makeRouteMockFetch({ GET: get, POST: post } as never),
       runtime,
       owner: "mutation-revalidation-test",
-      navigate: vi.fn(),
     });
     const initial = runtime.runCommand(store.loadJobsEffect(), {
       operation: "load Roborev jobs",

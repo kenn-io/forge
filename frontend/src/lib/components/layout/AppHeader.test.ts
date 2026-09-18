@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { compile } from "svelte/compiler";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import headerIconButtonSource from "./HeaderIconButton.svelte?raw";
@@ -7,9 +7,7 @@ const mockedContainerSize = vi.hoisted(() => ({
   value: "wide" as "narrow" | "medium" | "wide",
 }));
 
-type ModeKey = "activity" | "repos" | "docs" | "actions" | "pulls" | "issues" | "reviews" | "workspaces";
-
-const mockedReviewsDaemonAvailable = vi.hoisted(() => ({ value: true }));
+type ModeKey = "activity" | "repos" | "docs" | "actions" | "pulls" | "issues" | "workspaces";
 
 const mockedSync = vi.hoisted(() => ({
   running: false,
@@ -57,9 +55,6 @@ vi.mock("../../context.js", async (importOriginal) => {
         triggerRepoSync: mockedSync.triggerRepoSync,
       },
       settings: mockedSettings.value,
-      roborevDaemon: {
-        isAvailable: () => mockedReviewsDaemonAvailable.value,
-      },
     }),
   };
 });
@@ -129,7 +124,6 @@ describe("AppHeader", () => {
     mockMatchMedia(false);
     setSidebarCollapsed(false);
     mockedContainerSize.value = "wide";
-    mockedReviewsDaemonAvailable.value = true;
     mockedSync.running = false;
     mockedSync.providerAvailable = true;
     mockedSync.triggerSync.mockClear();
@@ -148,7 +142,6 @@ describe("AppHeader", () => {
     localStorage.clear();
     setSidebarCollapsed(false);
     mockedContainerSize.value = "wide";
-    mockedReviewsDaemonAvailable.value = true;
     mockedSync.running = false;
     mockedSync.providerAvailable = true;
     setGlobalRepo(undefined);
@@ -323,35 +316,6 @@ describe("AppHeader", () => {
     const { container } = render(AppHeader);
 
     expect(container.querySelector("button[title='Expand sidebar'] svg")).toBeTruthy();
-  });
-
-  it("places Reviews daemon status on the Reviews tab", () => {
-    initTheme();
-    mockedReviewsDaemonAvailable.value = false;
-    render(AppHeader);
-
-    const reviewsTab = screen.getByRole("button", {
-      name: "Reviews Reviews daemon unavailable",
-    });
-    expect(within(reviewsTab).getByRole("img", { name: "Reviews daemon unavailable" })).toBeTruthy();
-    expect(screen.getAllByRole("img", { name: "Reviews daemon unavailable" })).toHaveLength(1);
-  });
-
-  it("removes Reviews daemon status when available or hidden", () => {
-    initTheme();
-    render(AppHeader);
-    expect(screen.queryByRole("img", { name: "Reviews daemon unavailable" })).toBeNull();
-
-    cleanup();
-    mockedReviewsDaemonAvailable.value = false;
-    mockedSettings.value?.setModeVisibility({
-      ...mockedSettings.value.getModeVisibility(),
-      reviews: false,
-    });
-    render(AppHeader);
-
-    expect(screen.queryByRole("img", { name: "Reviews daemon unavailable" })).toBeNull();
-    expect(screen.queryByRole("button", { name: /Reviews/ })).toBeNull();
   });
 
   it("does not offer a Board mode", () => {

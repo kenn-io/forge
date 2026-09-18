@@ -1,4 +1,5 @@
-import { providerItemKey, type ProviderItemKey } from "../../stores/provider-key.js";
+import { canonicalProvider, resolvedPlatformHost } from "../../api/provider-routes.js";
+import { repoIdentityKey, type RepoLabelIdentity } from "../../utils/repo-label.js";
 
 type CommentDraftTarget = "issue" | "pull";
 
@@ -6,8 +7,14 @@ const storagePrefix = "kenn-forge:comment-draft:";
 const drafts = $state<Record<string, string>>({});
 const pendingSubmitCounts = $state<Record<string, number>>({});
 
-export function getCommentDraftKey(target: CommentDraftTarget, ref: ProviderItemKey): string {
-  return `${target}\u0000${providerItemKey(ref)}`;
+export function getCommentDraftKey(target: CommentDraftTarget, ref: RepoLabelIdentity & { number: number }): string {
+  const provider = canonicalProvider(ref.provider);
+  const repository = repoIdentityKey({
+    ...ref,
+    provider,
+    platformHost: resolvedPlatformHost(provider, ref.platformHost),
+  });
+  return `${target}\u0000${repository}\u0000${ref.number}`;
 }
 
 export function getCommentDraft(key: string): string {

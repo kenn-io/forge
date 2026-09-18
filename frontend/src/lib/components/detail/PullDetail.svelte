@@ -3276,6 +3276,7 @@
           {number}
           provider={detail.repo.provider}
           platformHost={detail.platform_host}
+          platformRepoId={detail.repo.platform_repo_id}
           repoPath={detail.repo.repo_path}
           disabled={stalePR || !capabilities.comment_mutation || addCommentGate.unavailable}
           disabledReason={addCommentGate.unavailable ? addCommentGate.reason : undefined}

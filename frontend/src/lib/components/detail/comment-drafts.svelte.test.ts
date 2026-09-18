@@ -25,6 +25,29 @@ it.each(["pull", "issue"] as const)(
   },
 );
 
+it.each(["pull", "issue"] as const)(
+  "keeps a %s draft with its repository through route reuse and renames",
+  async (target) => {
+    const firstRuntime = await import("./comment-drafts.svelte.js");
+    const original = { ...ref, platformRepoId: "R_original" };
+    const replacement = { ...ref, platformRepoId: "R_replacement" };
+    const originalKey = firstRuntime.getCommentDraftKey(target, original);
+    firstRuntime.setCommentDraft(originalKey, "original repository draft");
+    firstRuntime.beginCommentSubmit(originalKey);
+
+    expect(firstRuntime.isCommentSubmitPending(firstRuntime.getCommentDraftKey(target, replacement))).toBe(false);
+
+    vi.resetModules();
+    const nextRuntime = await import("./comment-drafts.svelte.js");
+    expect(nextRuntime.getCommentDraft(nextRuntime.getCommentDraftKey(target, replacement))).toBe("");
+    expect(
+      nextRuntime.getCommentDraft(
+        nextRuntime.getCommentDraftKey(target, { ...original, owner: "renamed", repoPath: "renamed/widgets" }),
+      ),
+    ).toBe("original repository draft");
+  },
+);
+
 it("restores separate drafts by provider, host, repository, item type, and number", async () => {
   const firstRuntime = await import("./comment-drafts.svelte.js");
   const examples = [
@@ -35,6 +58,8 @@ it("restores separate drafts by provider, host, repository, item type, and numbe
     ["pull", { ...ref, owner: "another" }, "owner draft"],
     ["pull", { ...ref, name: "another" }, "repository draft"],
     ["pull", { ...ref, number: 8 }, "number draft"],
+    ["pull", { ...ref, provider: "gitlab", repoPath: "group/first/widgets" }, "first nested path draft"],
+    ["pull", { ...ref, provider: "gitlab", repoPath: "group/second/widgets" }, "second nested path draft"],
   ] as const;
   for (const [target, item, body] of examples) {
     firstRuntime.setCommentDraft(firstRuntime.getCommentDraftKey(target, item), body);

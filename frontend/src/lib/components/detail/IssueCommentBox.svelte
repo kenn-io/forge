@@ -19,6 +19,7 @@
     number: number;
     provider: string;
     platformHost?: string | undefined;
+    platformRepoId?: string | undefined;
     repoPath: string;
     disabled?: boolean;
     /** Shown under the editor when the box is disabled for a reason
@@ -32,13 +33,14 @@
     number,
     provider,
     platformHost,
+    platformRepoId,
     repoPath,
     disabled = false,
     disabledReason = undefined,
   }: Props = $props();
 
   const currentDraftKey = $derived(
-    getCommentDraftKey("issue", { provider, platformHost: platformHost ?? "", owner, name, number }),
+    getCommentDraftKey("issue", { provider, platformHost: platformHost ?? "", platformRepoId, repoPath, owner, name, number }),
   );
   const body = $derived(
     getCommentDraft(currentDraftKey),

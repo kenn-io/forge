@@ -1182,8 +1182,8 @@ responses, and discard stale responses instead of patching another item.
   reconciliation failure is reported separately and must never offer to replay the POST
   (`frontend/src/lib/stores/detail.svelte.ts::submitComment`).
 - Unsent top-level comments persist only in browser storage, scoped by item kind and
-  canonical provider/host/repository/item identity. Restoring a draft never submits it;
-  pending submissions remain runtime state (`frontend/src/lib/components/detail/comment-drafts.svelte.ts::getCommentDraftKey`).
+  canonical provider/host, verified repository ID (full path when unavailable), and item number.
+  Restoring never submits; pending submissions use the same identity in memory (`frontend/src/lib/components/detail/comment-drafts.svelte.ts::getCommentDraftKey`).
 - Onboarding repository setup owns its initial sync through `triggerSyncEffect`: a rejected trigger returns the flow
   to a retryable repository step with the failure visible, while an accepted trigger advances only after the ordered
   sync command settles (`frontend/src/lib/components/onboarding/OnboardingFlow.svelte::startSync`).

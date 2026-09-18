@@ -54,12 +54,25 @@ that user's root. Repeat the commands for Bob with the Bob paths and owner.
 
 ```sh
 sudo install -d -m 700 \
-  /srv/forge/alice/config \
-  /srv/forge/alice/data/credentials \
+  /srv/forge/alice/forge/credentials \
   /srv/forge/alice/certs \
-  /srv/forge/alice/containers \
-  /srv/forge/alice/home
+  /srv/forge/alice/containers/graphroot \
+  /srv/forge/alice/containers/runroot \
+  /srv/forge/alice/runtime
 sudo chown -R alice:alice /srv/forge/alice
+
+```
+Configure rootless Podman to use the private paths under
+/srv/forge/alice/containers for its graph root and run root. Set
+XDG_RUNTIME_DIR to /srv/forge/alice/runtime in the user service. These paths
+stay outside /home and /run/user, which lets the service use ProtectHome=true.
+
+Place a storage.conf in /srv/forge/alice/containers with these roots:
+
+```
+[storage]
+runroot = "/srv/forge/alice/containers/runroot"
+graphroot = "/srv/forge/alice/containers/graphroot"
 ```
 
 Use a restrictive umask whenever you create files:
@@ -75,7 +88,7 @@ configuration, provider token, gateway key, gateway certificate, and
 bit and executable files need their execute bit.
 
 The container sees the host paths through the mounts in the next section. Put
-this configuration in `/srv/forge/alice/config/config.toml`:
+this configuration in /srv/forge/alice/forge/config.toml:
 
 ```toml
 host = "127.0.0.1"
@@ -127,8 +140,7 @@ token_file = "/var/lib/forge/credentials/provider-token"
 The `token_file` credential belongs to the provider repository. Forge reads
 that file on each request, so the owning user can replace it atomically when a
 provider token changes. See the [configuration reference](configuration.md#credentials)
-for the other credential sources. Token minting and rotation automation belong
-to slice 2.
+for the other credential sources. Token minting and rotation automation belong to separate GitHub App credential setup.
 
 ## Run the container
 
@@ -147,9 +159,9 @@ podman run \
   --pid=private \
   --network=slirp4netns \
   --publish 127.0.0.1:18091:8443 \
-  --env KENN_FORGE_HOME=/etc/forge \
-  --volume /srv/forge/alice/config:/etc/forge:ro \
-  --volume /srv/forge/alice/data:/var/lib/forge:rw \
+  --replace \
+  --env KENN_FORGE_HOME=/var/lib/forge \
+  --volume /srv/forge/alice/forge:/var/lib/forge:rw \
   --volume /srv/forge/alice/certs:/etc/forge-gateway:ro \
   registry.example.test/forge@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 ```
@@ -176,37 +188,38 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-Environment=XDG_RUNTIME_DIR=/run/user/1001
+Environment=XDG_RUNTIME_DIR=/srv/forge/alice/runtime
 Environment=CONTAINERS_STORAGE_CONF=/srv/forge/alice/containers/storage.conf
 UMask=0077
 ProtectHome=true
 PrivateTmp=yes
 KillMode=control-group
 Restart=on-failure
-ExecStart=/usr/bin/podman run --name forge-alice --userns=keep-id --pid=private --network=slirp4netns --publish 127.0.0.1:18091:8443 --env KENN_FORGE_HOME=/etc/forge --volume /srv/forge/alice/config:/etc/forge:ro --volume /srv/forge/alice/data:/var/lib/forge:rw --volume /srv/forge/alice/certs:/etc/forge-gateway:ro registry.example.test/forge@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ExecStart=/usr/bin/podman run --replace --name forge-alice --userns=keep-id --pid=private --network=slirp4netns --publish 127.0.0.1:18091:8443 --env KENN_FORGE_HOME=/var/lib/forge --volume /srv/forge/alice/forge:/var/lib/forge:rw --volume /srv/forge/alice/certs:/etc/forge-gateway:ro registry.example.test/forge@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 ExecStop=/usr/bin/podman stop --time 10 forge-alice
 
 [Install]
 WantedBy=default.target
 ```
 
-`ProtectHome=true` hides the normal home tree from the service. Before
-starting it, confirm that the rootless Podman graph root, run root, user
+ProtectHome=true hides the normal home tree and /run/user from the service.
+Before starting it, confirm that the rootless Podman graph root, run root,
 runtime directory, image configuration, private certificate path, and data
-path are still reachable under this sandbox. A target host may need rootless
-storage configured under `/srv/forge/alice/containers` and its runtime state
-under `/run/user/1001`. Do not start the service until this check succeeds.
+path under /srv/forge/alice are reachable under this sandbox. Do not start
+the service until this check succeeds.
 
 Run the checks as Alice from the same user manager that will own the service:
 
 ```sh
 podman info --format 'graphroot={{.Store.GraphRoot}} runroot={{.Store.RunRoot}}'
-test -d "$XDG_RUNTIME_DIR" && test -w "$XDG_RUNTIME_DIR"
+test -d /srv/forge/alice/runtime && test -w /srv/forge/alice/runtime
 systemd-run --user --wait --pipe \
   -p ProtectHome=true \
   -p PrivateTmp=yes \
+  env XDG_RUNTIME_DIR=/srv/forge/alice/runtime \
+  CONTAINERS_STORAGE_CONF=/srv/forge/alice/containers/storage.conf \
   /usr/bin/podman info
-namei -l /srv/forge/alice/data /srv/forge/alice/certs/alice-gateway.pem
+namei -l /srv/forge/alice/forge /srv/forge/alice/certs/alice-gateway.pem
 ```
 
 Confirm that the reported storage and runtime paths are user-owned and
@@ -257,7 +270,7 @@ covers the preserved `Host` rule and HTTPS origin requirements.
 
 After Alice's service is ready, Alice reads that instance's own
 `data_dir/auth_token`. The file is on the host at
-`/srv/forge/alice/data/auth_token` in this example. Alice opens the correct
+`/srv/forge/alice/forge/auth_token` in this example. Alice opens the correct
 HTTPS origin once with the token in the query:
 
 ```text
@@ -286,8 +299,8 @@ listed so a failed check stops the rollout.
 
 | Check | Command or action | Expected result |
 | --- | --- | --- |
-| Modes and ownership | `stat -c '%A %U:%G %n' /srv/forge/alice /srv/forge/alice/data /srv/forge/alice/data/auth_token /srv/forge/alice/certs/alice-gateway.pem` | Alice owns the paths, directories are `0700`, and private files are `0600`. |
-| Cross-user file reads | As Bob, run `sudo -u bob -- cat /srv/forge/alice/data/auth_token` and try Alice's gateway key. | DAC denies both reads. Root and sudo retain administrator access. |
+| Modes and ownership | `stat -c '%A %U:%G %n' /srv/forge/alice /srv/forge/alice/forge /srv/forge/alice/forge/auth_token /srv/forge/alice/certs/alice-gateway.pem` | Alice owns the paths, directories are `0700`, and private files are `0600`. |
+| Cross-user file reads | As Bob, run `sudo -u bob -- cat /srv/forge/alice/forge/auth_token` and try Alice's gateway key. | DAC denies both reads. Root and sudo retain administrator access. |
 | Protected API and WebSocket | From an authenticated proxy client, request Alice's health endpoint, a protected `/api/` route, and a terminal `/ws/` upgrade without a bearer or cookie. | Health stays available; the protected API and WebSocket receive the authentication boundary response. |
 | Own browser and API | Alice signs in through `https://alice.forge.example.test/` and calls a protected API route with the resulting session. Repeat for Bob on Bob's origin. | Each owner reaches only that owner's state, API, and terminal session. |
 | Proxy routing | Authenticate as Bob and request Alice's hostname. Inspect the proxy route and upstream logs. | The proxy denies the request or never connects it to Alice's gateway. |
@@ -295,19 +308,16 @@ listed so a failed check stops the rollout.
 | Restart and token replacement | Restart Alice's service, confirm the data directory and gateway certificate remain Alice's, then atomically replace a provider `token_file`. | Alice's instance keeps its state and certificate, and later provider requests read the replacement file. |
 | Image workspace tools | From Alice's disposable workspace, check the selected image's Git, tmux, and configured agent commands. | The service environment exposes the tools the operator expects. |
 
-The docs build can run on this Windows development host, but this host does
-not provide proof for Linux Podman, systemd user services, proxy identity,
-certificate verification, browser login, DAC, or workspace tools. Run those
-checks on the target Linux host and record their real output separately.
+The repository checks in this change prove static documentation publication. They do not prove Linux Podman, systemd user services, proxy identity, certificate verification, browser login, DAC, or workspace tools. Run those checks on the target Linux host and record their real output separately.
 
 ## Limits and later work
 
 Root and sudo can inspect process memory even when the containers are rootless.
 Use virtualization when the threat model requires a boundary from the host
-administrator. Virtualization is outside this slice.
+administrator. Virtualization is outside this deployment guide.
 
 This recipe does not add a production image, a repository Quadlet, or proxy
 configuration. It also does not add GitHub App credential minting or Tailscale
-ACLs. Those are later slices. Keep `api.tailscale_serve.enabled = false` here
+per-user ACLs. Configure those separately. Keep api.tailscale_serve.enabled = false here
 because Tailscale Serve's local identity mode trusts the local process that
 reaches Forge.

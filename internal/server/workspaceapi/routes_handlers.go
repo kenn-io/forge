@@ -393,6 +393,7 @@ func (s *Handler) runWorkspaceSetupWithBasePath(ws *workspace.Workspace, basePat
 				Data: resp,
 			})
 			if setupErr == nil {
+				s.wakeWorkspaceWarmer()
 				s.runWorkspacePushedHeadObserverPass(bgCtx)
 			}
 			if errors.Is(setupErr, workspace.ErrWorkspaceRepositoryUnresolved) {

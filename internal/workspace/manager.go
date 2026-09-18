@@ -1463,6 +1463,7 @@ func (m *Manager) SetupWithOptions(
 	preserveWorktree := reusedWorktree
 	var gitDir string
 	commonDir, managedClone := reuse.commonDir, reuse.managedClone
+	remote := reuse.remote
 	if err != nil {
 		if recoveryPending {
 			if recoveryErr := m.validateExistingWorkspaceDirectory(ctx, ws); recoveryErr != nil {
@@ -1522,6 +1523,7 @@ func (m *Manager) SetupWithOptions(
 		preserveWorktree = preserveWorktree || restored
 		commonDir = gitSetupDir.path
 		managedClone = !gitSetupDir.localBase
+		remote = gitSetupDir.remote
 	}
 	nextStage("finalize")
 	if ws.ItemType == db.WorkspaceItemTypePullRequest && ws.MRHeadRepo != nil {
@@ -1654,6 +1656,9 @@ func (m *Manager) SetupWithOptions(
 	}
 	ws.WorkspaceBranch = persistedBranch
 	ws.Status = "ready"
+	if err := m.rememberHotWorktreeRepository(ctx, commonDir, ws.WorktreePath, remote); err != nil {
+		slog.Warn("remember workspace repository for warming", "workspace_id", ws.ID, "err", err)
+	}
 	return nil
 }
 
@@ -1816,6 +1821,7 @@ func (m *Manager) RefreshWorkspaceHeadRepoSnapshot(
 type existingWorkspaceWorktreeResult struct {
 	branch       string
 	commonDir    string
+	remote       string
 	managedClone bool
 	reused       bool
 }
@@ -1940,7 +1946,7 @@ func (m *Manager) reuseExistingWorkspaceWorktreeDetails(
 		return existingWorkspaceWorktreeResult{}, err
 	}
 	return existingWorkspaceWorktreeResult{
-		branch: branch, commonDir: commonDir, managedClone: !prov.localBase, reused: true,
+		branch: branch, commonDir: commonDir, remote: prov.remote, managedClone: !prov.localBase, reused: true,
 	}, nil
 }
 
@@ -6304,6 +6310,9 @@ func gitRefExists(ctx context.Context, dir, ref string) bool {
 func runGitWorktreeAdd(
 	ctx context.Context, dir, worktreePath string, args ...string,
 ) error {
+	if claimed, err := tryHotWorktree(ctx, dir, worktreePath, args...); claimed || err != nil {
+		return err
+	}
 	gitArgs := make([]string, 0, len(args)+3)
 	gitArgs = append(gitArgs, "worktree", "add", worktreePath)
 	gitArgs = append(gitArgs, args...)

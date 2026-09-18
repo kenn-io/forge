@@ -90,6 +90,8 @@ jobs:
               - .github/workflows/ci.yml
               - .github/docker/**
               - Makefile
+              - mise.toml
+              - mise.ci.toml
 
   ensure_playwright_image:
     name: Ensure Playwright CI image

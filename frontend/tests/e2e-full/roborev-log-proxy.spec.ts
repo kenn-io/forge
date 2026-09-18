@@ -92,6 +92,14 @@ async function startFakeRoborevDaemon(): Promise<{
           total_count: 1,
         });
         return;
+      case "/api/repos/resolve":
+        writeJSON(
+          res,
+          url.searchParams.get("path") === job.repo_path
+            ? { tracked: true, repo: { root_path: job.repo_path, name: job.repo_name, identity: "" } }
+            : { tracked: false },
+        );
+        return;
       case "/api/job/output":
         writeJSON(res, {
           job_id: job.id,
@@ -155,7 +163,7 @@ test("completed job Log tab renders output through the kenn-forge roborev proxy"
   try {
     forge = await startForgeWithRoborev(daemon.url);
 
-    await setupRoborevWorkspace(page, { repoName: job.repo_name, branch: job.branch });
+    await setupRoborevWorkspace(page, { repoName: job.repo_name, branch: job.branch, worktreePath: job.repo_path });
     await openDrawer(page, job.id, forge.info.base_url);
     await expect(page.getByRole("region", { name: "Review details" })).toBeVisible();
 

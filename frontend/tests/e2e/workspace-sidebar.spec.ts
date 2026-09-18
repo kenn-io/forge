@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import type { ProblemError } from "../../src/lib/api/generated/models/index.js";
+import type { ResolveRepoOutputBody } from "../../src/lib/api/roborev/generated/models/index.js";
 import { createMockApiHandler } from "../../src/test/mockApiFetch.js";
 import { mockApi } from "./support/mockApi";
 
@@ -233,6 +234,7 @@ async function setupTerminalMocks(
     roborevJobs?: typeof roborevJobs;
     roborevStatus?: typeof roborevStatus;
     roborevReview?: typeof roborevReview;
+    roborevResolution?: ResolveRepoOutputBody;
     workspaceDetailResponses?: Array<{
       status: number;
       body?: unknown;
@@ -548,6 +550,17 @@ async function setupTerminalMocks(
     (url) => url.pathname.startsWith("/api/roborev/"),
     async (route) => {
       const url = new URL(route.request().url());
+      if (url.pathname.endsWith("/api/repos/resolve")) {
+        const repo = rrRepos.repos[0];
+        await route.fulfill({
+          json:
+            opts?.roborevResolution ??
+            (repo && url.searchParams.get("path") === ws.worktree_path
+              ? { tracked: true, repo: { ...repo, identity: "" } }
+              : { tracked: false }),
+        });
+        return;
+      }
       if (url.pathname.endsWith("/api/repos")) {
         await route.fulfill({
           status: 200,
@@ -6087,8 +6100,50 @@ test.describe("sidebar Reviews tab", () => {
     await expect(page.locator(".right-sidebar .job-row")).toHaveCount(0);
   });
 
-  test("Reviews tab shows job list when roborev repo matches", async ({ page }) => {
+  test("local review comments remain accepted and show a warning when refresh fails", async ({ page }) => {
     await setupTerminalMocks(page);
+    const comment = "Review comment with an unavailable refresh";
+    let acceptedComments = 0;
+    await page.route("**/api/roborev/api/comment", async (route) => {
+      acceptedComments += 1;
+      await route.fulfill({
+        status: 201,
+        json: {
+          id: 2,
+          job_id: 1,
+          responder: "web",
+          response: route.request().postDataJSON().comment,
+          created_at: "2026-04-10T12:01:00Z",
+        },
+      });
+    });
+    await page.route("**/api/roborev/api/comments?**", (route) =>
+      acceptedComments > 0 ? route.abort("failed") : route.fulfill({ json: { responses: [] } }),
+    );
+    await page.goto("/terminal/ws-123");
+    await page.locator(".panel-toggle-btn", { hasText: "Reviews" }).click();
+    await page.locator(".right-sidebar .job-row").click();
+    const textarea = page.locator(".comment-input .comment-textarea");
+    await textarea.fill(comment);
+    await page.locator(".submit-btn").click();
+
+    await expect(page.locator(".response-item", { hasText: comment })).toHaveCount(1);
+    await expect(textarea).toHaveValue("");
+    await expect(page.locator(".kit-flash-banner")).toContainText(
+      "Comment was added, but the refreshed review is unavailable",
+    );
+    expect(acceptedComments).toBe(1);
+  });
+
+  test("Reviews tab resolves the workspace path before showing local jobs", async ({ page }) => {
+    await setupTerminalMocks(page);
+    const resolvedPaths: string[] = [];
+    const jobRepositories: string[] = [];
+    page.on("request", (request) => {
+      const url = new URL(request.url());
+      if (url.pathname.endsWith("/api/repos/resolve")) resolvedPaths.push(url.searchParams.get("path") ?? "");
+      if (url.pathname === "/api/roborev/api/jobs") jobRepositories.push(url.searchParams.get("repo") ?? "");
+    });
     await page.goto("/terminal/ws-123");
 
     // Open Reviews tab
@@ -6100,6 +6155,25 @@ test.describe("sidebar Reviews tab", () => {
     await expect(page.locator(".right-sidebar .job-row")).toContainText("Add auth middleware");
     await expect(page.locator(".right-sidebar .job-table thead")).toContainText("Cost");
     await expect(page.locator(".right-sidebar .job-row")).toContainText("~$0.42");
+    expect(resolvedPaths).toContain(testWorkspace.worktree_path);
+    expect(jobRepositories).toContain(roborevRepos.repos[0]!.root_path);
+  });
+
+  test("local reviews do not guess a repository from a matching name", async ({ page }) => {
+    await setupTerminalMocks(page, {
+      roborevRepos: { repos: [{ name: "widgets", root_path: "/tmp/other/widgets", count: 1 }], total_count: 1 },
+      roborevResolution: { tracked: false },
+    });
+    const jobRequests: string[] = [];
+    page.on("request", (request) => {
+      const url = new URL(request.url());
+      if (url.pathname === "/api/roborev/api/jobs") jobRequests.push(request.url());
+    });
+    await page.goto("/terminal/ws-123");
+    await page.locator(".panel-toggle-btn", { hasText: "Reviews" }).click();
+
+    await expect(page.locator(".right-sidebar .kit-empty-state")).toContainText("No reviews for this worktree");
+    expect(jobRequests).toEqual([]);
   });
 
   test("Reviews tab shows empty state when no repo matches", async ({ page }) => {
@@ -6116,7 +6190,7 @@ test.describe("sidebar Reviews tab", () => {
     await expect(page.locator(".right-sidebar .kit-empty-state")).toContainText("No reviews");
   });
 
-  test("local reviews allow choosing a repository when multiple clones match", async ({ page }) => {
+  test("local reviews allow choosing a repository when the workspace is untracked", async ({ page }) => {
     await setupTerminalMocks(page, {
       roborevRepos: {
         repos: [
@@ -6125,10 +6199,11 @@ test.describe("sidebar Reviews tab", () => {
         ],
         total_count: 2,
       },
+      roborevResolution: { tracked: false },
     });
     await page.goto("/terminal/ws-123");
     await page.locator(".panel-toggle-btn", { hasText: "Reviews" }).click();
-    await expect(page.locator(".right-sidebar .kit-empty-state")).toContainText("Multiple local repositories");
+    await expect(page.locator(".right-sidebar .kit-empty-state")).toContainText("No reviews for this worktree");
     await page.locator('.right-sidebar .picker-button[title="Filter by repository"]').click();
     await page.locator(".right-sidebar .dropdown-item.repo-item").first().click();
     await expect(page.locator(".right-sidebar .job-row")).toBeVisible();

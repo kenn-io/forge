@@ -4576,6 +4576,7 @@
                   activeTab={sidebarTab}
                   visible={hostVisible}
                   workspaceID={workspace.id}
+                  worktreePath={workspace.worktree_path}
                   {workspaceHostKey}
                   provider={workspace.repo.provider}
                   platformHost={workspace.repo.platform_host}

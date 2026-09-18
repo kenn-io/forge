@@ -224,7 +224,7 @@ const defaultWorkspace = {
   item_number: 1,
   source_item_visible: true,
   git_head_ref: "main",
-  worktree_path: "/tmp/roborev-e2e",
+  worktree_path: "/home/dev/test-repo-alpha",
   status: "ready",
   enrichment_status: "fresh",
   created_at: "2026-04-10T12:00:00Z",
@@ -238,12 +238,13 @@ const defaultWorkspace = {
 // Forge's real proxy to the script-managed, seeded RoboRev daemon.
 export async function setupRoborevWorkspace(
   page: Page,
-  options: { repoName?: string; branch?: string } = {},
+  options: { repoName?: string; branch?: string; worktreePath?: string } = {},
 ): Promise<void> {
   const repoName = options.repoName ?? defaultWorkspace.repo_name;
   const workspace = {
     ...defaultWorkspace,
     repo_name: repoName,
+    worktree_path: options.worktreePath ?? defaultWorkspace.worktree_path,
     git_head_ref: options.branch ?? defaultWorkspace.git_head_ref,
     repo: { ...defaultWorkspace.repo, name: repoName, repo_path: `acme/${repoName}` },
   };
@@ -271,10 +272,23 @@ export async function openWorkspaceReviews(page: Page, baseURL = ""): Promise<vo
 
 export async function waitForReviewsReady(page: Page, baseURL = ""): Promise<void> {
   await openWorkspaceReviews(page, baseURL);
-  await expect(page.locator(".job-table")).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator(".picker-button")).toBeVisible({ timeout: 15_000 });
   await page.locator(".picker-button").click();
+  const unscopedJobs = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      response.ok() &&
+      url.pathname.endsWith("/api/roborev/api/jobs") &&
+      url.searchParams.get("limit") === "50" &&
+      !url.searchParams.has("repo") &&
+      !url.searchParams.has("branch")
+    );
+  });
   await page.getByRole("button", { name: "All Repos", exact: true }).click();
+  await unscopedJobs;
   await expect(page.locator(".picker-button")).toContainText("All Repos");
+  await expect(page.locator(".sidebar-reviews .loading-bar")).toHaveCount(0);
+  await expect(page.locator(".job-table")).toBeVisible();
 }
 
 export async function waitForJobRows(page: Page, min: number): Promise<void> {

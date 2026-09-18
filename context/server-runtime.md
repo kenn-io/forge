@@ -5,6 +5,9 @@
 - Precompress final emitted assets after Vite rewrites preload URLs; encoded
   responses must decode to the exact bytes served for the same asset identity
   (`frontend/vite.config.ts::precompressAssets`).
+- Embed only Brotli asset copies to limit distribution size; other accepted
+  encodings remain available through on-demand compression
+  (`internal/server/spa_handler.go::serveCompressedAsset`).
 
 ## Activity relay boundary
 

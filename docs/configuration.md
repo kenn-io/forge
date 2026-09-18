@@ -229,6 +229,26 @@ Selected repository access is a startup routing snapshot. New grants use the
 PAT route until refresh. Revoked App access can return 404, and Forge does
 not retry that response with a PAT because 404 can also mean missing or private.
 
+## Airplane mode
+
+Turn on **Settings → Sync → Airplane mode** to pause automatic background
+sync after any running update finishes. Relay updates, opening an item, and
+manual **Sync** remain available, including a manually requested full sync.
+The status bar shows **airplane mode** while enabled; click it to return to
+the setting.
+
+Airplane mode is off by default and stays enabled across restarts until you
+turn it off. It applies only to the Forge instance you configure. On a fleet
+spoke, it pauses local background refresh; the hub keeps its own setting.
+
+The equivalent top-level option, before any `[section]` header, is:
+
+```toml
+airplane_mode = true
+```
+
+Changes apply without restarting Forge.
+
 ## Sync budget
 
 `sync_budget_per_hour` limits the API requests Forge spends on live background

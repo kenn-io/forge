@@ -8,7 +8,7 @@
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { StartupWorkflow, startupErrorMessage } from "../../app/startup-workflow.js";
   import { SettingsWorkflow, settingsErrorMessage } from "../../stores/settings-workflow.js";
-  import { navigate } from "../../stores/router.svelte.js";
+  import { getRoute, navigate } from "../../stores/router.svelte.js";
   import RepoSettings from "./RepoSettings.svelte";
   import ActivitySettings from "./ActivitySettings.svelte";
   import TerminalSettings from "./TerminalSettings.svelte";
@@ -49,7 +49,11 @@
   let airplaneMode = $state(false);
   let savingAirplaneMode = $state(false);
   let airplaneModeError = $state<string | null>(null);
-  let active = $state(SETTINGS_PANELS[0]!.id);
+  let active = $derived.by(() => {
+    getRoute();
+    const section = new URLSearchParams(window.location.search).get("section");
+    return SETTINGS_PANELS.find((panel) => panel.id === section)?.id ?? SETTINGS_PANELS[0]!.id;
+  });
 
   // The host owns search semantics: kit renders whatever category list it is
   // given, and its display falls back to the first visible category while the

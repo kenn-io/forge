@@ -9,6 +9,7 @@
   interface Props {
     activeTab: "diff" | "pr" | "issue" | "reviews" | "kata";
     workspaceID: string;
+    worktreePath: string;
     workspaceHostKey?: string | undefined;
     provider: string;
     platformHost?: string | undefined;
@@ -29,6 +30,7 @@
   let {
     activeTab,
     workspaceID,
+    worktreePath,
     workspaceHostKey = undefined,
     provider,
     platformHost,
@@ -134,9 +136,13 @@
       />
     {/if}
   {:else if activeTab === "reviews" && visible}
-    {#key `${workspaceID}:${repoOwner}/${repoName}:${branch}`}
-      <WorkspaceReviewsPanel {workspaceID} {repoOwner} {repoName} {branch} {roborevBaseUrl} {disabled} />
-    {/key}
+    {#if workspaceHostKey}
+      <EmptyState title="Local reviews are unavailable for remote workspaces" />
+    {:else}
+      {#key `${workspaceID}:${worktreePath}:${branch}`}
+        <WorkspaceReviewsPanel {workspaceID} {worktreePath} {branch} {roborevBaseUrl} {disabled} />
+      {/key}
+    {/if}
   {/if}
 </div>
 

@@ -10,6 +10,7 @@
   import { createJobsStore } from "../../stores/roborev/jobs.svelte.js";
   import { createReviewStore } from "../../stores/roborev/review.svelte.js";
   import { createLogStore } from "../../stores/roborev/log.svelte.js";
+  import { showFlash } from "../../stores/flash.svelte.js";
   import { makeRoborevOwner, RoborevResponseError, RoborevWorkflow } from "../../stores/roborev/roborev-workflow.js";
   import SidebarStoreScope from "./SidebarStoreScope.svelte";
   import FilterBar from "../roborev/FilterBar.svelte";
@@ -17,10 +18,9 @@
   import JobTable from "../roborev/JobTable.svelte";
   import ReviewDrawer from "../roborev/ReviewDrawer.svelte";
 
-  let { workspaceID, repoOwner, repoName, branch, roborevBaseUrl, disabled = false }: {
+  let { workspaceID, worktreePath, branch, roborevBaseUrl, disabled = false }: {
     workspaceID: string;
-    repoOwner: string;
-    repoName: string;
+    worktreePath: string;
     branch: string;
     roborevBaseUrl: string;
     disabled?: boolean;
@@ -30,9 +30,10 @@
   // The parent keys this panel by workspace, repository, and branch.
   const client = createRoborevClient(untrack(() => roborevBaseUrl));
   const owner = makeRoborevOwner(untrack(() => `workspace-reviews:${workspaceID}`));
-  const jobs = createJobsStore({ client, runtime, owner });
-  const review = createReviewStore({ client, runtime, owner, onClosedChanged: () => jobs.loadJobs() });
-  const log = createLogStore({ runtime, baseUrl: untrack(() => roborevBaseUrl) });
+  const onError = (message: string) => { showFlash(message, { tone: "danger" }); };
+  const jobs = createJobsStore({ client, runtime, owner, onError });
+  const review = createReviewStore({ client, runtime, owner, onError, onClosedChanged: () => jobs.loadJobs() });
+  const log = createLogStore({ runtime, baseUrl: untrack(() => roborevBaseUrl), onError });
   const daemon = createDaemonStore({ client, runtime });
   const stores = { ...getStores(), roborevJobs: jobs, roborevReview: review, roborevLog: log, roborevDaemon: daemon };
 
@@ -50,17 +51,17 @@
   // It has no polling or event stream, including while the tab stays open.
   $effect(() => {
     void refreshToken;
-    const requestedName = repoName;
-    const requestedOwner = repoOwner;
+    const requestedPath = worktreePath;
     const requestedBranch = branch;
     const execution = untrack(() => runtime.runCommand(
       Effect.gen(function* () {
         yield* Effect.sync(() => { loading = true; resolutionError = null; });
         yield* daemon.refreshEffect;
-        if (!daemon.isAvailable() || !requestedName || !requestedOwner) return;
+        if (!daemon.isAvailable()) return;
         if (!repositorySelected) {
+          if (!requestedPath) return;
           const result = yield* executeRoborevRequest("resolve workspace Roborev repository", (signal) =>
-            roborevAPI.listRepos(undefined, { signal }, client),
+            roborevAPI.resolveRepo({ path: requestedPath }, { signal }, client),
           );
           if (result.status !== 200) {
             return yield* Effect.fail(RoborevResponseError.make({
@@ -69,15 +70,7 @@
               cause: result.data,
             }));
           }
-          const matches = (result.data.repos ?? []).filter((repo) => repo.name.toLowerCase() === requestedName.toLowerCase());
-          const candidates = matches.length > 1
-            ? matches.filter((repo) => repo.root_path.split("/").some((segment) => segment.toLowerCase() === requestedOwner.toLowerCase()))
-            : matches;
-          if (candidates.length > 1) {
-            yield* Effect.sync(() => { resolutionError = "Multiple local repositories match this workspace"; });
-            return;
-          }
-          const rootPath = candidates[0]?.root_path;
+          const rootPath = result.data.tracked ? result.data.repo?.root_path : undefined;
           if (!rootPath) return;
           yield* Effect.sync(() => {
             repositorySelected = true;
@@ -132,7 +125,7 @@
     {:else if resolutionError}
       <EmptyState title={resolutionError} />
     {:else if !repositorySelected}
-      <EmptyState title="No reviews for this worktree" />
+      <EmptyState title="No reviews for this worktree" description="Choose a repository to view its local reviews." />
     {:else}
       <div class="sidebar-reviews-body">
         <div class="sidebar-reviews-table"><JobTable /></div>

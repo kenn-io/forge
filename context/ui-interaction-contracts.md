@@ -923,6 +923,9 @@ Rows that contain buttons, links, or toggles need clear event ownership.
 - Local Roborev reviews belong to the PR workspace panel: read on display or explicit action,
   never poll globally or refresh hidden workspace panels
   (`frontend/src/lib/components/workspace/WorkspaceReviewsPanel.svelte`).
+- Resolve local reviews from the actual workspace path; unresolved paths require an explicit
+  repository choice. Remote workspaces cannot use the viewing node's Roborev authority
+  (`frontend/src/lib/components/workspace/WorkspaceRightSidebar.svelte`).
 - A lost Roborev mutation response retains and fences its original target until authoritative observation, never
   replays the write. A confirmed POST stays acknowledged when its follow-up refresh fails; report
   refresh degradation separately. Cancel only the exact owner lease on teardown

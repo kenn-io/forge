@@ -1,7 +1,7 @@
 import { readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { brotliCompressSync, constants, zstdCompressSync } from "node:zlib";
+import { brotliCompressSync, constants } from "node:zlib";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { svelteTesting } from "@testing-library/svelte/vite";
 import { defaultClientConditions, searchForWorkspaceRoot, type Plugin, type ProxyOptions, type UserConfig } from "vite";
@@ -43,12 +43,10 @@ function precompressAssets(): Plugin {
         // Vite's generateBundle hooks still rewrite preload URLs. Compress the final files.
         const assetPath = path.join(options.dir, fileName);
         const body = readFileSync(assetPath);
-        for (const [encoding, source] of [
-          ["br", brotliCompressSync(body, { params: { [constants.BROTLI_PARAM_QUALITY]: 11 } })],
-          ["zstd", zstdCompressSync(body, { params: { [constants.ZSTD_c_compressionLevel]: 9 } })],
-        ] as const) {
-          writeFileSync(`${assetPath}.${encoding}`, source);
-        }
+        writeFileSync(
+          `${assetPath}.br`,
+          brotliCompressSync(body, { params: { [constants.BROTLI_PARAM_QUALITY]: 11 } }),
+        );
       }
     },
   };

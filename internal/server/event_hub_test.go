@@ -124,7 +124,7 @@ func TestEventHub_DataChangedNotCached(t *testing.T) {
 	select {
 	case <-ch:
 		require.FailNow(t, "data_changed should not be cached for new subscribers")
-	case <-time.After(50 * time.Millisecond):
+	default:
 		// expected
 	}
 }
@@ -138,7 +138,7 @@ func TestEventHub_NoCacheBeforeAnyBroadcast(t *testing.T) {
 	select {
 	case <-ch:
 		require.FailNow(t, "expected no pre-loaded event")
-	case <-time.After(50 * time.Millisecond):
+	default:
 		// expected
 	}
 }
@@ -514,7 +514,7 @@ func TestEventHub_SubscribeWithoutCachedSkipsInjection(t *testing.T) {
 	select {
 	case ev := <-ch:
 		require.FailNowf(t, "unexpected", "expected no cached inject; got %+v", ev)
-	case <-time.After(50 * time.Millisecond):
+	default:
 		// expected
 	}
 }

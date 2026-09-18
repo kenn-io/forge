@@ -14,7 +14,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	gh "github.com/google/go-github/v91/github"
@@ -239,15 +241,21 @@ func TestRunMainShutdownBoundsMCPStoreCleanup(t *testing.T) {
 }
 
 func TestRunBoundedShutdownHonorsDeadline(t *testing.T) {
-	release := make(chan struct{})
-	t.Cleanup(func() { close(release) })
+	synctest.Test(t, func(t *testing.T) {
+		release := make(chan struct{})
+		var releaseOnce sync.Once
+		releaseCallback := func() { releaseOnce.Do(func() { close(release) }) }
+		t.Cleanup(releaseCallback)
 
-	err := runBoundedShutdown(t.Context(), 20*time.Millisecond, func() error {
-		<-release
-		return nil
+		err := runBoundedShutdown(t.Context(), 20*time.Millisecond, func() error {
+			<-release
+			return nil
+		})
+
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+		releaseCallback()
+		synctest.Wait()
 	})
-
-	require.ErrorIs(t, err, context.DeadlineExceeded)
 }
 
 func TestMCPStartupHandlerStaysUnavailableUntilFullServerSwap(t *testing.T) {

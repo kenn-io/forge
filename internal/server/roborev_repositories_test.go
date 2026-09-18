@@ -15,6 +15,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -246,40 +247,41 @@ func TestRoborevRepositoryProbeCallerCancellationDoesNotPoisonWaiters(t *testing
 }
 
 func TestRoborevRepositoryProbeBoundsHookResolution(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	var active atomic.Int32
-	var maximum atomic.Int32
-	repositories := make([]roborevTrackedRepository, 12)
-	for i := range repositories {
-		repositories[i] = roborevTrackedRepository{
-			RootPath: fmt.Sprintf("/checkout/%d", i),
-			Identity: fmt.Sprintf("https://github.com/acme/repo-%d.git", i),
-		}
-	}
-	probe := newRoborevRepositoryProbeWithDeps(nil, roborevRepositoryProbeDeps{
-		now:           time.Now,
-		loadInventory: func(context.Context) ([]roborevTrackedRepository, error) { return repositories, nil },
-		resolveHookPath: func(_ context.Context, root string) (string, error) {
-			current := active.Add(1)
-			for {
-				previous := maximum.Load()
-				if current <= previous || maximum.CompareAndSwap(previous, current) {
-					break
-				}
+	synctest.Test(t, func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+		var active atomic.Int32
+		var maximum atomic.Int32
+		repositories := make([]roborevTrackedRepository, 12)
+		for i := range repositories {
+			repositories[i] = roborevTrackedRepository{
+				RootPath: fmt.Sprintf("/checkout/%d", i),
+				Identity: fmt.Sprintf("https://github.com/acme/repo-%d.git", i),
 			}
-			time.Sleep(10 * time.Millisecond)
-			active.Add(-1)
-			return root + "/post-commit", nil
-		},
-		inspectHook: func(string) (bool, error) { return true, nil },
-	})
+		}
+		probe := newRoborevRepositoryProbeWithDeps(nil, roborevRepositoryProbeDeps{
+			now:           time.Now,
+			loadInventory: func(context.Context) ([]roborevTrackedRepository, error) { return repositories, nil },
+			resolveHookPath: func(_ context.Context, root string) (string, error) {
+				current := active.Add(1)
+				for {
+					previous := maximum.Load()
+					if current <= previous || maximum.CompareAndSwap(previous, current) {
+						break
+					}
+				}
+				time.Sleep(10 * time.Millisecond)
+				active.Add(-1)
+				return root + "/post-commit", nil
+			},
+			inspectHook: func(string) (bool, error) { return true, nil },
+		})
 
-	configured, err := probe.configuredRepositories(t.Context())
-	require.NoError(err)
-	assert.Len(configured, 12)
-	assert.Greater(maximum.Load(), int32(1))
-	assert.LessOrEqual(maximum.Load(), int32(roborevHookProbeWorkers))
+		configured, err := probe.configuredRepositories(t.Context())
+		require.NoError(err)
+		assert.Len(configured, 12)
+		assert.Equal(int32(roborevHookProbeWorkers), maximum.Load())
+	})
 }
 
 func TestRoborevRepositoryProbeRetriesTransientCheckoutFailureAfterCooldown(t *testing.T) {

@@ -1188,7 +1188,7 @@
   <div class="state-center"><p class="state-msg state-msg--error">Error: {issues.getIssueDetailError()}</p></div>
 {:else}
   {@const detail = issues.getIssueDetail()}
-  {@const staleLoadError = staleIssue && issues.getIssueDetailError() !== null}
+  {@const detailLoadError = issues.getIssueDetailError() !== null}
   {#if detail !== null}
     {@const issue = detail.issue}
     {@const labels = issue.labels ?? []}
@@ -1196,9 +1196,10 @@
     <ScrollBox label="Issue conversation">
     <div class="issue-detail">
       <div class="issue-detail-content">
-      {#if staleLoadError}
+      {#if detailLoadError}
         <div class="detail-load-error" data-testid="detail-load-error">
-          Couldn't load this issue: {issues.getIssueDetailError()}
+          {staleIssue ? "Couldn't load this issue:" : "Couldn't refresh this issue. Showing previously loaded content:"}
+          {issues.getIssueDetailError()}
         </div>
       {/if}
       {#if issues.isIssueStaleRefreshing() && !manualRefreshPending}

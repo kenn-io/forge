@@ -32,6 +32,8 @@ import {
   providerMutationFailureMessage,
   type MutationCallbacks,
   type ProviderMutationFailure,
+  type ProviderMutationService,
+  type VersionedCommand,
 } from "./ordered-mutations.js";
 import { providerItemKey } from "./provider-key.js";
 import { SettingsWorkflow, settingsErrorMessage } from "./settings-workflow.js";
@@ -39,6 +41,7 @@ import { nextWorkspaceLifecycleTick } from "./workspace-create-pending.svelte.js
 import { readInvolvesMeFilter, writeInvolvesMeFilter } from "./involves-me-filter.js";
 import { readUnassignedFilter, writeUnassignedFilter } from "./unassigned-filter.js";
 import { readIssuePRReferenceFilter, writeIssuePRReferenceFilter } from "./issue-pr-reference-filter.js";
+import { createRecentDetails } from "./recent-details.js";
 
 export type { IssueDetailSyncMode } from "./issues-workflow.js";
 
@@ -181,6 +184,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   let issueSyncGeneration = 0;
   let issuePollingGeneration = 0;
   let activeIssueDetailRef: IssueDetailRequestRef | null = null;
+  const recentDetails = createRecentDetails<{ detail: IssueDetail; envelopeTick: number; loaded: boolean }>();
   // Provider synchronization is eventually complete. Keep a successfully
   // deleted comment hidden locally until an ordinary sync no longer returns it.
   const hiddenDeletedCommentIDs: Record<string, number[]> = {};
@@ -924,6 +928,16 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
 
   function loadIssueDetail(owner: string, name: string, number: number, options: IssueDetailRequestOptions): void {
     const ref = issueDetailRequestRef(owner, name, number, options);
+    if (!isIssueDetailShowingRef(ref)) {
+      rememberIssueDetail();
+      const previous = recentDetails.get(JSON.stringify([issueDetailKey(ref), ref.repoPath]));
+      if (previous) {
+        // Restoring presentation must not acknowledge mutations or workspace absence.
+        issueDetail = previous.detail;
+        issueDetailEnvelopeTick = previous.envelopeTick;
+        issueDetailLoaded = previous.loaded;
+      }
+    }
     const syncMode = options.sync ?? true;
     const generation = ++issueSyncGeneration;
     const envelopeTick = nextWorkspaceLifecycleTick();
@@ -1011,7 +1025,34 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     });
   }
 
+  function rememberIssueDetail(): void {
+    if (!issueDetail) return;
+    const ref = issueDetailRequestRef(issueDetail.repo_owner, issueDetail.repo_name, issueDetail.issue.Number, {
+      provider: issueDetail.repo.provider,
+      platformHost: issueDetail.repo.platform_host,
+      repoPath: issueDetail.repo.repo_path,
+    });
+    recentDetails.remember(JSON.stringify([issueDetailKey(ref), ref.repoPath]), {
+      detail: issueDetail,
+      envelopeTick: issueDetailEnvelopeTick,
+      loaded: issueDetailLoaded,
+    });
+  }
+
+  function submitDetailMutation<A>(
+    mutations: ProviderMutationService,
+    ref: IssueDetailRequestRef,
+    command: VersionedCommand<A, GeneratedApi>,
+  ) {
+    return mutations
+      .submit(command)
+      .pipe(
+        Effect.ensuring(Effect.sync(() => recentDetails.delete(JSON.stringify([issueDetailKey(ref), ref.repoPath])))),
+      );
+  }
+
   function clearIssueDetail(): void {
+    rememberIssueDetail();
     ++issueSyncGeneration;
     issueDetail = null;
     detailLoading = false;
@@ -1140,7 +1181,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
             issueDetail = { ...issueDetail, issue: { ...issueDetail.issue, labels: nextLabels } };
           }
         });
-      yield* mutations.submit({
+      yield* submitDetailMutation(mutations, ref, {
         key,
         baseline: previousLabels,
         optimistic: labels,
@@ -1211,7 +1252,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
             };
           }
         });
-      yield* mutations.submit({
+      yield* submitDetailMutation(mutations, ref, {
         key,
         baseline: previousAssignees,
         optimistic: assignees,
@@ -1262,7 +1303,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
               { signal },
             ),
       ).pipe(Effect.asVoid);
-      yield* mutations.submit({
+      yield* submitDetailMutation(mutations, ref, {
         key,
         baseline: undefined,
         optimistic: undefined,
@@ -1361,16 +1402,14 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       ).pipe(Effect.map((response) => issueCommentState(response.events ?? [], commentID, baseline)));
       const apply = (state: IssueCommentMutationState) => applyIssueCommentState(ref, commentID, state);
       yield* Effect.sync(() => trackIssueCommentMutation(commentID, baseline));
-      yield* mutations
-        .submit({
-          key,
-          baseline,
-          optimistic,
-          apply,
-          commit,
-          refreshOnStale,
-        })
-        .pipe(Effect.ensuring(Effect.sync(() => releaseIssueCommentMutation(commentID))));
+      yield* submitDetailMutation(mutations, ref, {
+        key,
+        baseline,
+        optimistic,
+        apply,
+        commit,
+        refreshOnStale,
+      }).pipe(Effect.ensuring(Effect.sync(() => releaseIssueCommentMutation(commentID))));
       const shouldReconcile = yield* Effect.sync(() => {
         mutationSettled = true;
         return isIssueDetailShowingRef(ref);
@@ -1454,16 +1493,14 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         detailError = null;
         trackIssueCommentMutation(commentID, baseline);
       });
-      yield* mutations
-        .submit({
-          key,
-          baseline,
-          optimistic,
-          apply,
-          commit,
-          refreshOnStale,
-        })
-        .pipe(Effect.ensuring(Effect.sync(() => releaseIssueCommentMutation(commentID))));
+      yield* submitDetailMutation(mutations, ref, {
+        key,
+        baseline,
+        optimistic,
+        apply,
+        commit,
+        refreshOnStale,
+      }).pipe(Effect.ensuring(Effect.sync(() => releaseIssueCommentMutation(commentID))));
       yield* Effect.sync(() => hideDeletedComment(ref, commentID));
       const shouldReconcile = yield* Effect.sync(() => {
         mutationSettled = true;
@@ -1616,7 +1653,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
           Effect.map((detail) => detail.issue.Body),
         );
       }).pipe(Effect.provideService(ProviderMutations, mutations));
-      yield* mutations.submit({
+      yield* submitDetailMutation(mutations, ref, {
         key: issueMutationKey(ref, "body"),
         baseline,
         optimistic: body,
@@ -1722,7 +1759,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       const refreshOnStale = readIssueDetail(detailRef, "GET issue after stale star mutation").pipe(
         Effect.map((detail) => Boolean(detail.issue.Starred)),
       );
-      yield* mutations.submit({
+      yield* submitDetailMutation(mutations, detailRef, {
         key: issueMutationKey(detailRef, "star"),
         baseline: Boolean(baseline),
         optimistic: nextStarred,
@@ -1798,7 +1835,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
           Effect.map((detail) => detail.issue.State),
         );
       }).pipe(Effect.provideService(ProviderMutations, mutations));
-      yield* mutations.submit({
+      yield* submitDetailMutation(mutations, ref, {
         key: issueMutationKey(ref, "actions"),
         baseline,
         optimistic: state,

@@ -160,6 +160,114 @@ function mockClient(overrides: Partial<GeneratedClient> = {}): GeneratedClient {
 }
 
 describe("createDetailStore", () => {
+  it("restores a recently viewed pull before its fresh read and retains its original workspace tick", async () => {
+    const freshRead = deferred<{ data: PullDetail }>();
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ data: pullDetail("cached-head") })
+      .mockResolvedValueOnce({ data: pullDetailFor("other", 8, "other-head") })
+      .mockReturnValueOnce(freshRead.promise);
+    const store = createDetailStore({ client: mockClient({ GET: get }) });
+    const options = { provider: "github", repoPath: "acme/widget", sync: false } as const;
+    await loadDetail(store, "acme", "widget", 7, options);
+    const originalTick = store.getDetailEnvelopeTick();
+    store.clearDetail();
+    await loadDetail(store, "acme", "other", 8, { ...options, repoPath: "acme/other" });
+
+    store.loadDetail("acme", "widget", 7, options);
+
+    expect(store.getDetail()?.platform_head_sha).toBe("cached-head");
+    expect(store.getDetailEnvelopeTick()).toBe(originalTick);
+    expect(store.getDetailLoaded()).toBe(true);
+    expect(store.isDetailLoading()).toBe(true);
+    freshRead.resolve({ data: pullDetail("fresh-head") });
+    await vi.waitFor(() => expect(store.isDetailLoading()).toBe(false));
+    expect(store.getDetail()?.platform_head_sha).toBe("fresh-head");
+    expect(store.getDetailEnvelopeTick()).toBeGreaterThan(originalTick);
+  });
+
+  it("keeps a restored pull visible when revalidation fails without reusing it on another host", async () => {
+    const failedRead = deferred<{ error: ProblemBody }>();
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ data: pullDetail("cached-head") })
+      .mockReturnValueOnce(failedRead.promise)
+      .mockImplementation(() => new Promise(() => {}));
+    const store = createDetailStore({ client: mockClient({ GET: get }) });
+    const options = { provider: "github", repoPath: "acme/widget", sync: false } as const;
+    await loadDetail(store, "acme", "widget", 7, options);
+    store.clearDetail();
+    store.loadDetail("acme", "widget", 7, options);
+    failedRead.resolve({ error: { code: ProblemCodes.forbidden, title: "Unavailable", detail: "Cannot refresh" } });
+    await vi.waitFor(() => expect(store.isDetailLoading()).toBe(false));
+    expect(store.getDetail()?.platform_head_sha).toBe("cached-head");
+    expect(store.getDetailError()).toBe("Cannot refresh");
+
+    store.clearDetail();
+    store.loadDetail("acme", "widget", 7, { ...options, platformHost: "git.example.com" });
+    expect(store.getDetail()).toBeNull();
+  });
+
+  it("does not treat a restored optimistic snapshot as a confirmed mutation baseline", async () => {
+    const mutation = deferred<{ error: ProblemBody }>();
+    const freshRead = deferred<{ data: PullDetail }>();
+    const original = {
+      ...pullDetail("cached-head"),
+      merge_request: { ...pullDetail("cached-head").merge_request, Starred: false },
+    };
+    const get = vi.fn().mockResolvedValueOnce({ data: original }).mockReturnValueOnce(freshRead.promise);
+    const store = createDetailStore({
+      client: mockClient({ GET: get, PUT: vi.fn().mockReturnValue(mutation.promise) }),
+    });
+    const ref = { provider: "github", owner: "acme", name: "widget", repoPath: "acme/widget" };
+    await loadDetail(store, "acme", "widget", 7, { ...ref, sync: false });
+    store.toggleDetailPRStar(ref, 7, false);
+    await vi.waitFor(() => expect(store.getDetail()?.merge_request.Starred).toBe(true));
+
+    store.clearDetail();
+    store.loadDetail("acme", "widget", 7, { ...ref, sync: false });
+    expect(store.getDetail()?.merge_request.Starred).toBe(true);
+    mutation.resolve({ error: { code: ProblemCodes.forbidden, detail: "Star rejected" } });
+    await vi.waitFor(() => expect(store.getDetail()?.merge_request.Starred).toBe(false));
+    freshRead.resolve({ data: original });
+    await vi.waitFor(() => expect(store.isDetailLoading()).toBe(false));
+  });
+
+  it("retains timeline readiness when returning before the next item finishes loading", async () => {
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ data: pullDetail("cached-head") })
+      .mockImplementation(() => new Promise(() => {}));
+    const store = createDetailStore({ client: mockClient({ GET: get }) });
+    const options = { provider: "github", repoPath: "acme/widget", sync: false } as const;
+    await loadDetail(store, "acme", "widget", 7, options);
+    store.loadDetail("acme", "widget", 8, options);
+    store.loadDetail("acme", "widget", 7, options);
+    expect(store.getDetailLoaded()).toBe(true);
+  });
+
+  it("discards a saved optimistic snapshot when its mutation fails while another pull is visible", async () => {
+    const mutation = deferred<{ error: ProblemBody }>();
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ data: pullDetail("cached-head") })
+      .mockResolvedValueOnce({ data: pullDetailFor("widget", 8, "other-head") })
+      .mockImplementation(() => new Promise(() => {}));
+    const store = createDetailStore({
+      client: mockClient({ GET: get, PUT: vi.fn().mockReturnValue(mutation.promise) }),
+    });
+    const ref = { provider: "github", owner: "acme", name: "widget", repoPath: "acme/widget" };
+    await loadDetail(store, "acme", "widget", 7, { ...ref, sync: false });
+    store.toggleDetailPRStar(ref, 7, false);
+    await vi.waitFor(() => expect(store.getDetail()?.merge_request.Starred).toBe(true));
+    await loadDetail(store, "acme", "widget", 8, { ...ref, sync: false });
+    mutation.resolve({ error: { code: ProblemCodes.forbidden, detail: "Star rejected" } });
+    await vi.waitFor(() => expect(getFlash()?.message).toBe("Star rejected"));
+
+    store.loadDetail("acme", "widget", 7, { ...ref, sync: false });
+    expect(store.getDetail()?.platform_head_sha).toBe("other-head");
+  });
+
   beforeEach(() => {
     runtime = undefined;
   });
@@ -237,11 +345,13 @@ describe("createDetailStore", () => {
   it("keeps discussion available through incomplete background snapshots but resets for another PR", async () => {
     const identity = { provider: "github", platformHost: "github.com", repoPath: "acme/widget", sync: false as const };
     const incomplete = { ...pullDetail("head"), detail_loaded: false };
+    const restoredRead = deferred<{ data: PullDetail }>();
     const get = vi
       .fn()
       .mockResolvedValueOnce({ data: pullDetail("head") })
       .mockResolvedValueOnce({ data: incomplete })
-      .mockResolvedValueOnce({ data: { ...pullDetailFor("widget", 8, "other-head"), detail_loaded: false } });
+      .mockResolvedValueOnce({ data: { ...pullDetailFor("widget", 8, "other-head"), detail_loaded: false } })
+      .mockReturnValueOnce(restoredRead.promise);
     const store = createDetailStore({ client: mockClient({ GET: get }) });
     await loadDetail(store, "acme", "widget", 7, identity);
     await refreshDetail(store, "acme", "widget", 7, identity);
@@ -254,6 +364,12 @@ describe("createDetailStore", () => {
     expect(store.getDiscussionLoaded()).toBe(false);
     await vi.waitFor(() => expect(store.isDetailLoading()).toBe(false));
     expect(store.getDetailLoaded()).toBe(false);
+
+    store.loadDetail("acme", "widget", 7, identity);
+    expect(store.getDetailLoaded()).toBe(false);
+    expect(store.getDiscussionLoaded()).toBe(true);
+    restoredRead.resolve({ data: incomplete });
+    await vi.waitFor(() => expect(store.isDetailLoading()).toBe(false));
   });
 
   it.each(["load", "refresh"])(
@@ -1533,7 +1649,9 @@ describe("createDetailStore", () => {
 
     await expect(applying).resolves.toBe(true);
     expect(store.getDetail()?.repo_name).toBe("other-widget");
-    await load("widget", 7);
+    const reload = load("widget", 7);
+    expect(store.getDetail()?.repo_name).toBe("other-widget");
+    await reload;
     expect(store.getDetail()?.platform_head_sha).toBe("reviewed-head");
     expect(post.mock.calls.some(([path]) => String(path).endsWith("/sync"))).toBe(false);
     expect(getFlash()).toMatchObject({

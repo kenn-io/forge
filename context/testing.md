@@ -501,6 +501,9 @@ migration state, dirty database handling, or other internal invariants.
   equality cannot prove stasis. (`internal/db/queries_archive_test.go::TestArchivePromptReopensEqualOrNewerObservations`)
 - Snapshot race coverage must include equal provider timestamps through a real sync workflow and generated HTTP client; helper-only tests miss ordering gaps where child I/O begins before the parent revision is committed. (`internal/server/e2etest/archive_snapshot_race_test.go::TestIssueSyncCannotReplaceEqualTimestampArchiveSnapshotE2E`)
 - Seeded full-stack provider fakes must return every child family represented as provider-owned seed data. Complete mirroring legitimately deletes absent comments/reviews, so a DB-only synthetic child row is not stable across background or explicit sync. (`internal/testutil/fixtures.go::SeedFixtures`)
+- The standalone e2e server runs outside Go's test-only public-API guard. Every provider
+  client it constructs must prevent remote I/O explicitly, including clients used for rate
+  display (`cmd/e2e-server/main.go::newE2EGraphQLFetcher`).
 
 ### SQLite Fixtures
 

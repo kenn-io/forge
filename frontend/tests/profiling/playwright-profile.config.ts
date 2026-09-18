@@ -1,8 +1,6 @@
-// Playwright config for the workspace-switch profiling harness
-// (`make profile-workspace-switch`). Chromium only: the harness uses
-// browser.startTracing, which is a Chromium-specific API, to produce a
-// chrome://tracing / Perfetto compatible trace that includes the
-// workspace-switch:* User Timing measures.
+// Chromium-only profiling harnesses use tracing, CDP network emulation,
+// and the workspace-switch:* User Timing measures. Run one spec at a
+// time so each benchmark owns the browser and isolated fixture server.
 import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({

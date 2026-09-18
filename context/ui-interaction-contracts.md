@@ -53,6 +53,9 @@ Interactive surfaces must agree on which item is selected.
   (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::openTerminalLink`).
 - When a view changes from item A to item B, reset transient action state that
   could otherwise submit or render against the wrong item.
+- Recent detail snapshots are presentation only: revalidate every visit and preserve
+  the original workspace lifecycle tick. Settled mutations invalidate saved views
+  so hidden optimistic state cannot survive rollback (`frontend/src/lib/stores/detail.svelte.ts::submitDetailMutation`).
 - A response confirming a server-side outcome (a completed delete or create)
   must publish to identity-scoped global state — claims, tombstones, creation
   overrides, route memory — before any liveness guard: neither unmount nor a
@@ -1173,6 +1176,9 @@ responses, and discard stale responses instead of patching another item.
 - Acknowledging a provider comment POST clears and unlocks its keyed draft; follow-up
   reconciliation failure is reported separately and must never offer to replay the POST
   (`frontend/src/lib/stores/detail.svelte.ts::submitComment`).
+- Unsent top-level comments persist only in browser storage, scoped by item kind and
+  canonical provider/host/repository/item identity. Restoring a draft never submits it;
+  pending submissions remain runtime state (`frontend/src/lib/components/detail/comment-drafts.svelte.ts::getCommentDraftKey`).
 - Onboarding repository setup owns its initial sync through `triggerSyncEffect`: a rejected trigger returns the flow
   to a retryable repository step with the failure visible, while an accepted trigger advances only after the ordered
   sync command settles (`frontend/src/lib/components/onboarding/OnboardingFlow.svelte::startSync`).

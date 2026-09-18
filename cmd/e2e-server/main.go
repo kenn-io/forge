@@ -45,7 +45,6 @@ import (
 	"go.kenn.io/forge/internal/stacks"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/federationtest"
-	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/internal/web"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/platform"
@@ -152,16 +151,10 @@ type e2eFederationInfo struct {
 	SpokeBNodeID string `json:"spoke_b_node_id"`
 }
 
-type staticTokenSource string
-
-func (s staticTokenSource) Token(context.Context) (string, error) {
-	return string(s), nil
-}
-
-func (s staticTokenSource) Invalidate(string) {}
-
-func (s staticTokenSource) Descriptor() tokenauth.Descriptor {
-	return tokenauth.Descriptor{Key: tokenauth.Key{Platform: "github", Host: "github.com"}}
+func newE2EGraphQLFetcher(rateTracker *ghclient.RateTracker) *ghclient.GraphQLFetcher {
+	// The fetcher exposes seeded rate data. No credential source means
+	// AuthTransport rejects reads locally, preserving stored fixture state.
+	return ghclient.NewGraphQLFetcher(nil, "e2e.invalid", rateTracker, nil)
 }
 
 const (
@@ -2132,9 +2125,7 @@ func buildAppState(
 	)
 
 	// Wire GraphQL fetcher so GQL rate data appears in the endpoint.
-	gqlFetcher := ghclient.NewGraphQLFetcher(
-		staticTokenSource("fake-token"), "github.com", gqlRT, budget,
-	)
+	gqlFetcher := newE2EGraphQLFetcher(gqlRT)
 	syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
 		"github.com":        gqlFetcher,
 		defaultPlatformHost: gqlFetcher,

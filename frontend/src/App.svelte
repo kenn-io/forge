@@ -54,13 +54,10 @@
     isNewWorkspaceDialogOpen,
   } from "./lib/stores/new-workspace.svelte.js";
   import RepoSummaryPage from "./lib/components/repositories/RepoSummaryPage.svelte";
-  import ActionsPage from "./lib/components/actions/ActionsPage.svelte";
-  import SettingsPage from "./lib/components/settings/SettingsPage.svelte";
   import WorkspaceHost from "./lib/components/terminal/WorkspaceHost.svelte";
   import SessionTerminalPool from "./lib/components/terminal/SessionTerminalPool.svelte";
   import WorkspacePaneControls from "./lib/components/terminal/WorkspacePaneControls.svelte";
   import WorkspaceFirstRunPanel from "./lib/components/terminal/WorkspaceFirstRunPanel.svelte";
-  import DesignSystemPage from "./lib/components/design-system/DesignSystemPage.svelte";
   import OnboardingFlow from "./lib/components/onboarding/OnboardingFlow.svelte";
   import RepoBrowserFeature from "./lib/features/repo-browser/RepoBrowserFeature.svelte";
   import {
@@ -1440,7 +1437,16 @@
 
     <main class="app-main">
       {#if getPage() === "design-system"}
-        <DesignSystemPage />
+        {#await import("./lib/components/design-system/DesignSystemPage.svelte")}
+          <div class="loading-state" role="status"><Spinner size={18} />Loading design system</div>
+        {:then { default: DesignSystemPage }}
+          <DesignSystemPage />
+        {:catch}
+          <div class="loading-state" role="alert">
+            <span>Could not load design system.</span>
+            <button type="button" onclick={() => window.location.reload()}>Reload</button>
+          </div>
+        {/await}
       {:else if !appReady}
         <div class="loading-state">
           <Spinner size={18} />
@@ -1451,7 +1457,16 @@
           {@render providerUnavailableState()}
         {/if}
         {#if getPage() === "settings"}
-        <SettingsPage />
+        {#await import("./lib/components/settings/SettingsPage.svelte")}
+          <div class="loading-state" role="status"><Spinner size={18} />Loading settings</div>
+        {:then { default: SettingsPage }}
+          <SettingsPage />
+        {:catch}
+          <div class="loading-state" role="alert">
+            <span>Could not load settings.</span>
+            <button type="button" onclick={() => window.location.reload()}>Reload</button>
+          </div>
+        {/await}
         {:else if getPage() === "activity"}
         <!-- Desktop shell only: focus-presentation and mobile branches of
              this view get no controller (structural eligibility). -->
@@ -1473,7 +1488,16 @@
       {:else if getPage() === "actions"
         && stores.settings.isSettingsLoaded()
         && stores.settings.isModeVisible("actions")}
-        <ActionsPage />
+        {#await import("./lib/components/actions/ActionsPage.svelte")}
+          <div class="loading-state" role="status"><Spinner size={18} />Loading Actions</div>
+        {:then { default: ActionsPage }}
+          <ActionsPage />
+        {:catch}
+          <div class="loading-state" role="alert">
+            <span>Could not load Actions.</span>
+            <button type="button" onclick={() => window.location.reload()}>Reload</button>
+          </div>
+        {/await}
       {:else if getPage() === "repo-browser"}
         {@const route = getRoute()}
         {#if route.page === "repo-browser"}

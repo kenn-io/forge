@@ -217,6 +217,57 @@ function mockClient(overrides: Partial<GeneratedClient> = {}): GeneratedClient {
 }
 
 describe("createIssuesStore", () => {
+  it("restores a recently viewed issue before its fresh read and retains its original workspace tick", async () => {
+    const freshRead = Promise.withResolvers<{ data: IssueDetail }>();
+    const initial = issueDetail();
+    const other = { ...issueDetail(), issue: { ...initial.issue, Number: 8 } };
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ data: initial })
+      .mockResolvedValueOnce({ data: other })
+      .mockReturnValueOnce(freshRead.promise);
+    const store = createIssuesStore({ client: mockClient({ GET: get }) });
+    const options = { provider: "github", repoPath: "acme/widget", sync: false } as const;
+    await loadIssueDetail(store, "acme", "widget", 7, options);
+    const originalTick = store.getIssueDetailEnvelopeTick();
+    store.clearIssueDetail();
+    await loadIssueDetail(store, "acme", "widget", 8, options);
+
+    store.loadIssueDetail("acme", "widget", 7, options);
+
+    expect(store.getIssueDetail()?.issue.Number).toBe(7);
+    expect(store.getIssueDetailEnvelopeTick()).toBe(originalTick);
+    expect(store.getIssueDetailLoaded()).toBe(true);
+    expect(store.isIssueDetailLoading()).toBe(true);
+    freshRead.resolve({ data: { ...initial, issue: { ...initial.issue, Body: "fresh content" } } });
+    await vi.waitFor(() => expect(store.isIssueDetailLoading()).toBe(false));
+    expect(store.getIssueDetail()?.issue.Body).toBe("fresh content");
+    expect(store.getIssueDetailEnvelopeTick()).toBeGreaterThan(originalTick);
+  });
+
+  it("discards a saved optimistic snapshot when its mutation fails while another issue is visible", async () => {
+    const mutation = Promise.withResolvers<{ error: { code: "forbidden"; detail: string } }>();
+    const initial = issueDetail();
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ data: initial })
+      .mockResolvedValueOnce({ data: { ...initial, issue: { ...initial.issue, Number: 8 } } })
+      .mockImplementation(() => new Promise(() => {}));
+    const store = createIssuesStore({
+      client: mockClient({ GET: get, PUT: vi.fn().mockReturnValue(mutation.promise) }),
+    });
+    const ref = { provider: "github", owner: "acme", name: "widget", repoPath: "acme/widget" };
+    await loadIssueDetail(store, "acme", "widget", 7, { ...ref, sync: false });
+    store.toggleIssueStar(ref, 7, false);
+    await vi.waitFor(() => expect(store.getIssueDetail()?.issue.Starred).toBe(true));
+    await loadIssueDetail(store, "acme", "widget", 8, { ...ref, sync: false });
+    mutation.resolve({ error: { code: "forbidden", detail: "Star rejected" } });
+    await vi.waitFor(() => expect(getFlash()?.message).toBe("Star rejected"));
+
+    store.loadIssueDetail("acme", "widget", 7, { ...ref, sync: false });
+    expect(store.getIssueDetail()?.issue.Number).toBe(8);
+  });
+
   it("reports when a bounded list filled the requested chunk", async () => {
     const get = vi.fn(async () => ({
       data: Array.from({ length: 30 }, (_, index) => issue(index + 1, "alice")),

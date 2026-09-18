@@ -563,6 +563,56 @@ test.describe("PR detail merge modal route reset", () => {
 });
 
 test.describe("detail load-error banner", () => {
+  for (const item of [
+    {
+      kind: "pulls",
+      first: { number: prA.Number, title: prA.Title, body: JSON.stringify(detailEnvelopePR(prA)) },
+      second: { number: prB.Number, title: prB.Title, body: JSON.stringify(detailEnvelopePR(prB)) },
+    },
+    {
+      kind: "issues",
+      first: { number: issueX.Number, title: issueX.Title, body: JSON.stringify(detailEnvelopeIssue(issueX)) },
+      second: { number: issueY.Number, title: issueY.Title, body: JSON.stringify(detailEnvelopeIssue(issueY)) },
+    },
+  ]) {
+    test(`${item.kind}: returning to a cached item stays readable when refresh fails`, async ({ page }) => {
+      await mockApi(page);
+      await mockSettings(page);
+      let returning = false;
+      const refresh = Promise.withResolvers<void>();
+      for (const entry of [item.first, item.second]) {
+        await page.route(`**/api/v1/${item.kind}/github/acme/widgets/${entry.number}`, async (route) => {
+          if (returning && entry === item.first) {
+            await refresh.promise;
+            await route.fulfill({
+              status: 500,
+              contentType: "application/problem+json",
+              body: JSON.stringify({ code: "internalError", detail: "Refresh unavailable" }),
+            });
+          } else {
+            await route.fulfill({ contentType: "application/json", body: entry.body });
+          }
+        });
+      }
+      await page.goto(`/${item.kind}/github/acme/widgets/${item.first.number}`);
+      await expect(page.locator(".detail-title")).toContainText(item.first.title);
+      await page.evaluate((path) => {
+        window.history.pushState(null, "", path);
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      }, `/${item.kind}/github/acme/widgets/${item.second.number}`);
+      await expect(page.locator(".detail-title")).toContainText(item.second.title);
+      returning = true;
+      await page.evaluate((path) => {
+        window.history.pushState(null, "", path);
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      }, `/${item.kind}/github/acme/widgets/${item.first.number}`);
+      await expect(page.locator(".detail-title")).toContainText(item.first.title);
+      refresh.resolve();
+      await expect(page.getByTestId("detail-load-error")).toContainText("Refresh unavailable");
+      await expect(page.locator(".detail-title")).toContainText(item.first.title);
+    });
+  }
+
   test("PR: failing route shows banner over the previous PR", async ({ page }) => {
     await mockApi(page);
     await mockSettings(page);

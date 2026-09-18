@@ -2109,7 +2109,7 @@
   <div class="state-center"><p class="state-msg state-msg--error">Error: {detailStore.getDetailError()}</p></div>
 {:else}
   {@const detail = detailStore.getDetail()}
-  {@const staleLoadError = stalePR && detailStore.getDetailError() !== null}
+  {@const detailLoadError = detailStore.getDetailError() !== null}
   {#if detail !== null}
     {@const pr = detail.merge_request}
     {@const capabilities = detail.repo?.capabilities ?? defaultProviderCapabilities}
@@ -2133,9 +2133,10 @@
       detail.repo?.name ?? name,
     )}
     <div class="pull-detail-wrap" {@attach loadWorkflowCatalog(workflowCatalogDemandEnabled ? workflowRef : null)}>
-      {#if staleLoadError}
+      {#if detailLoadError}
         <div class="detail-load-error" data-testid="detail-load-error">
-          Couldn't load this pull request: {detailStore.getDetailError()}
+          {stalePR ? "Couldn't load this pull request:" : "Couldn't refresh this pull request. Showing previously loaded content:"}
+          {detailStore.getDetailError()}
         </div>
       {/if}
       {#if !hideTabs}

@@ -16,7 +16,7 @@ make profile-workspace-switch
 or, from `frontend/`:
 
 ```bash
-node node_modules/.bin/playwright test --config tests/profiling/playwright-profile.config.ts
+node node_modules/.bin/playwright test --config tests/profiling/playwright-profile.config.ts workspace-switch.spec.ts
 ```
 
 Requires `git`, `tmux`, and `less` on the host (the same requirements
@@ -151,3 +151,59 @@ those traces to an OTel backend is opt-in. To inspect a live trace:
    HTTP spans named after the matched route (e.g.
    `GET /workspaces/{id}`) and a bounded `terminal.attach` span for the
    WS attach.
+
+## Slow-link navigation benchmark
+
+From the repository root:
+
+```bash
+node node_modules/vite-plus/bin/vp run kenn-forge-frontend#profile:slow-link
+```
+
+This starts the existing isolated e2e server with synthetic provider fixtures
+and temporary Git repositories. It builds the production
+frontend when needed. It requires Git; it never connects to a live
+Forge daemon. Run it separately from other browser suites and builds.
+
+Chromium emulates **700 ms latency and 1 Mbit/s in each direction**
+(`125000` bytes/second), then a **3-second offline window**. These are illustrative
+conditions, not a model of a particular satellite service. The throttled link is
+browser to daemon; fixture setup and provider work are local and unthrottled.
+This benchmark covers HTTP navigation. Packet loss is not injected;
+TCP and TLS overhead are not included in the byte counters. For terminal
+switching and paint timings, use the existing `make profile-workspace-switch`
+harness described above; it does not apply this HTTP network profile.
+
+The benchmark writes `timings.json` and `summary.txt` under
+`frontend/test-results/slow-link-profile/<timestamp>/`:
+
+- Cold pull-list visibility from navigation start, in a fresh browser context.
+- First and repeated PR/issue navigation until the item's title is visible, with
+  three repeat passes over two items of each kind. Each detail HTTP response
+  settles before the next visit. Diff and auxiliary-pane readiness are outside
+  this measurement.
+- Comment POST acknowledgement and visible comment feedback against the fixture
+  provider. This does not estimate a real upstream provider's write latency.
+- Explicit return navigation after the outage. This measures a user retry,
+  rather than claiming automatic recovery of every live connection.
+- HTTP encoded response-body bytes and request
+  counts over a 60-second idle pull-list window. Header bytes and transport
+  overhead are excluded. The fixture server does not run provider background sync.
+
+There are no performance thresholds. Visibility and API success
+checks keep broken scenarios from silently producing plausible measurements.
+Timings use a small fixed sample, so compare repeated runs before attributing a
+small difference to code. Artifacts are written even when a scenario fails.
+
+Optional environment variables:
+
+| Variable                       | Purpose                                                                                                                  |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| `KENN_FORGE_PROFILE_OUT_DIR`   | Explicit artifact directory, including a path outside the worktree.                                                      |
+| `KENN_FORGE_PROFILE_LABEL`     | Build label recorded with browser and platform versions; defaults to Git HEAD.                                           |
+| `KENN_FORGE_PROFILE_BASELINE`  | Earlier `timings.json`; adds per-scenario median deltas to the summary.                                                  |
+| `PLAYWRIGHT_E2E_SERVER_BINARY` | Existing isolated e2e binary with its own embedded production bundle, useful for an unchanged baseline after rebuilding. |
+
+For comparisons, preserve the baseline e2e binary before rebuilding, run each
+binary with the same Chromium version, and set `KENN_FORGE_PROFILE_BASELINE` on
+the second run. A negative timing delta means the second run was faster.

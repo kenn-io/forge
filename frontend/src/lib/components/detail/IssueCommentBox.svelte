@@ -38,15 +38,15 @@
   }: Props = $props();
 
   const currentDraftKey = $derived(
-    getCommentDraftKey("issue", owner, name, number, platformHost),
+    getCommentDraftKey("issue", { provider, platformHost: platformHost ?? "", owner, name, number }),
   );
   const body = $derived(
-    getCommentDraft("issue", owner, name, number, platformHost),
+    getCommentDraft(currentDraftKey),
   );
 
   const isEmpty = $derived(body.trim() === "");
   const isPostingCurrent = $derived(
-    isCommentSubmitPending("issue", owner, name, number, platformHost),
+    isCommentSubmitPending(currentDraftKey),
   );
 
   function handleSubmit(): void {
@@ -55,39 +55,21 @@
     const submittedName = name;
     const submittedNumber = number;
     const submittedBody = body.trim();
-    const submittedPlatformHost = platformHost;
-    beginCommentSubmit(
-      "issue",
-      submittedOwner,
-      submittedName,
-      submittedNumber,
-      submittedPlatformHost,
-    );
+    const submittedDraftKey = currentDraftKey;
+    beginCommentSubmit(submittedDraftKey);
     issues.submitIssueComment(submittedOwner, submittedName, submittedNumber, submittedBody, {
       onSuccess: () => {
-        clearCommentDraft(
-          "issue",
-          submittedOwner,
-          submittedName,
-          submittedNumber,
-          submittedPlatformHost,
-        );
+        clearCommentDraft(submittedDraftKey);
       },
       onSettled: () => {
-        finishCommentSubmit(
-        "issue",
-        submittedOwner,
-        submittedName,
-        submittedNumber,
-        submittedPlatformHost,
-        );
+        finishCommentSubmit(submittedDraftKey);
       },
     });
   }
 </script>
 
 <div class="comment-box">
-  {#key `issue:${owner}/${name}/${number}`}
+  {#key currentDraftKey}
     <div class="comment-editor-shell">
       <CommentEditor
         {owner}
@@ -100,7 +82,7 @@
         value={body}
         disabled={isPostingCurrent || disabled}
         oninput={(nextBody) => {
-          setCommentDraft("issue", owner, name, number, nextBody, platformHost);
+          setCommentDraft(currentDraftKey, nextBody);
         }}
         onsubmit={() => {
           handleSubmit();

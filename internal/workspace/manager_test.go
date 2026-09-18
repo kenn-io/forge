@@ -3376,6 +3376,63 @@ func TestBranchInspectionPartitionsManagedCloneByProviderIdentity(t *testing.T) 
 	assert.NotEqual(firstDir, secondDir)
 }
 
+func TestWorkspaceBranchInspectionDoesNotRefreshExistingClone(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	source, remote, _ := setupHTTPWorktreeBaseForWorkspaceGitTest(t, "feature/thing")
+	var requests atomic.Int64
+	files := http.FileServer(http.Dir(filepath.Dir(filepath.Dir(remote))))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		files.ServeHTTP(w, r)
+	}))
+	t.Cleanup(server.Close)
+	parsed, err := url.Parse(server.URL)
+	require.NoError(err)
+	repoID := seedRepo(t, d, parsed.Host, "acme", "widget")
+	require.NoError(d.UpdateRepoProviderMetadata(ctx, repoID, db.RepoProviderMetadata{
+		CloneURL: server.URL + "/acme/widget.git", DefaultBranch: "main",
+	}))
+	clones := gitclone.New(t.TempDir(), nil)
+	clones.SetAllowInsecureHTTP("github", parsed.Host, true)
+	manager := newTestManager(t, d, t.TempDir())
+	manager.SetClones(clones)
+	tmuxScript, _ := writeRecorderScript(t)
+	manager.SetTmuxCommand([]string{tmuxScript})
+
+	// The first admission still creates the clone and checks its local branches.
+	_, err = manager.CreateAdHoc(ctx, "github", parsed.Host, "acme", "widget",
+		CreateAdHocOptions{BranchName: "first"})
+	require.NoError(err)
+	require.Positive(requests.Load())
+	cloneDir, err := clones.ClonePathForContext(
+		gitclone.WithRepositoryIdentity(ctx, "repo-acme-widget"),
+		"github", parsed.Host, "acme", "widget",
+	)
+	require.NoError(err)
+	runWorkspaceTestGit(t, cloneDir, "branch", "existing")
+	before := requests.Load()
+	ws, err := manager.CreateAdHoc(ctx, "github", parsed.Host, "acme", "widget",
+		CreateAdHocOptions{BranchName: "existing"})
+	require.NoError(err)
+	assert.Equal(before, requests.Load(), "warm admission must not contact the remote")
+	assert.Regexp(`^existing-[0-9a-f]{4}$`, ws.GitHeadRef)
+
+	// Setup must still fetch the current default-branch commit.
+	require.NoError(os.WriteFile(filepath.Join(source, "base.txt"), []byte("updated\n"), 0o644))
+	runWorkspaceTestGit(t, source, "commit", "-am", "advance main")
+	runWorkspaceTestGit(t, source, "push", remote, "HEAD:refs/heads/main")
+	runWorkspaceTestGit(t, remote, "update-server-info")
+	require.NoError(manager.Setup(ctx, ws))
+	assert.Greater(requests.Load(), before)
+	content, err := os.ReadFile(filepath.Join(ws.WorktreePath, "base.txt"))
+	require.NoError(err)
+	assert.Equal("updated\n", string(content))
+	assert.Equal("ready", ws.Status)
+}
+
 func TestWorkspaceSetupGitDirRemovesCloneWhenRouteChangesDuringClone(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

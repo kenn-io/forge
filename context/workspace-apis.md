@@ -524,8 +524,12 @@ Workspace create endpoints may return 202 with a pre-existing workspace
 (`internal/server/workspaceapi/routes_handlers.go::createIssueWorkspace`).
 
 - Automatic self-assignment is opt-in and applies only after a new PR/issue
-  workspace is persisted; preserve current assignees and never roll back the
-  workspace on upstream failure (`internal/server/workspaceapi/auto_assign.go::Handler.autoAssignWorkspaceItem`).
+  workspace is persisted; run it independently of creation/setup under handler
+  shutdown ownership. Preserve assignees and never roll back on upstream failure
+  (`internal/server/workspaceapi/auto_assign.go::Handler.runWorkspaceAutoAssignment`).
+- Inspect warm clones locally for branch conflicts; setup owns the fresh fetch
+  before checkout. Cold admission still creates the clone so its existing branches
+  participate in conflict handling (`internal/workspace/manager.go::Manager.branchInspectionDir`).
 
 ## Agent Activity Hooks
 

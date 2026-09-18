@@ -339,7 +339,21 @@ func (m *Manager) EnsureCloneValidated(
 ) error {
 	return m.ensureCloneInNamespaceValidated(
 		ctx, cloneNamespaceForContext(ctx, platform),
-		platform, host, owner, name, remoteURL, validate,
+		platform, host, owner, name, remoteURL, validate, true,
+	)
+}
+
+// EnsureCloneForInspection prepares a clone for local branch inspection without
+// refreshing a completed clone. In-flight clones/fetches and cold creation use
+// the normal shared slot; setup must still refresh before checking out code.
+func (m *Manager) EnsureCloneForInspection(
+	ctx context.Context,
+	platform, host, owner, name, remoteURL string,
+	validate func(context.Context) error,
+) error {
+	return m.ensureCloneInNamespaceValidated(
+		ctx, cloneNamespaceForContext(ctx, platform),
+		platform, host, owner, name, remoteURL, validate, false,
 	)
 }
 
@@ -349,7 +363,7 @@ func (m *Manager) EnsureCloneInNamespace(
 	ctx context.Context, namespace, platform, host, owner, name, remoteURL string,
 ) error {
 	return m.ensureCloneInNamespaceValidated(
-		ctx, namespace, platform, host, owner, name, remoteURL, nil,
+		ctx, namespace, platform, host, owner, name, remoteURL, nil, true,
 	)
 }
 
@@ -357,6 +371,7 @@ func (m *Manager) ensureCloneInNamespaceValidated(
 	ctx context.Context,
 	namespace, platform, host, owner, name, remoteURL string,
 	validate func(context.Context) error,
+	refresh bool,
 ) error {
 	namespace = strings.TrimSpace(namespace)
 	if err := ctx.Err(); err != nil {
@@ -381,6 +396,20 @@ func (m *Manager) ensureCloneInNamespaceValidated(
 	key := ensureCloneKey(namespace, host, owner, name)
 	if err := validateEnsureCloneCaller(ctx, validate); err != nil {
 		return err
+	}
+	if !refresh {
+		// HEAD appears before a cold clone has populated its branches. Check
+		// readiness under the slot lock so inspection joins any active clone.
+		m.ensureMu.Lock()
+		_, active := m.ensureFlights[key]
+		_, statErr := os.Stat(filepath.Join(clonePath, "HEAD"))
+		m.ensureMu.Unlock()
+		if !active && statErr == nil {
+			if err := m.validateCloneOrigin(ctx, clonePath, host, owner, name); err != nil {
+				return err
+			}
+			return validateEnsureCloneCaller(ctx, validate)
+		}
 	}
 	run := func() error {
 		opCtx, cancel := context.WithTimeout(
@@ -746,16 +775,21 @@ func (m *Manager) ensureCloneNowInNamespace(
 			ctx, platform, host, owner, name, clonePath, remoteURL,
 		)
 	}
-	// On an existing clone, also re-verify the stored origin URL
-	// belongs to the expected host: catches a clone whose config
-	// was rewritten after creation.
-	if out, err := m.git(ctx, clonePath, "config", "--get", "remote.origin.url"); err == nil {
-		if err := validateRemoteURLIdentity(host, owner, name, strings.TrimSpace(string(out))); err != nil {
-			return err
-		}
+	if err := m.validateCloneOrigin(ctx, clonePath, host, owner, name); err != nil {
+		return err
 	}
 	m.ensureRefspecs(ctx, clonePath)
 	return m.fetch(ctx, platform, host, owner, name, clonePath)
+}
+
+func (m *Manager) validateCloneOrigin(
+	ctx context.Context, clonePath, host, owner, name string,
+) error {
+	// Recheck an existing clone's origin in case its config changed.
+	if out, err := m.git(ctx, clonePath, "config", "--get", "remote.origin.url"); err == nil {
+		return validateRemoteURLIdentity(host, owner, name, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 // Fetch refspecs configured on every bare clone.

@@ -95,6 +95,50 @@ func TestIntegrationEnsureClone(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestIntegrationEnsureCloneForInspectionJoinsColdClone(t *testing.T) {
+	require := require.New(t)
+	remote, _ := setupTestRepo(t)
+	run(t, remote, "git", "update-server-info")
+	started, release := make(chan struct{}), make(chan struct{})
+	var startOnce, releaseOnce sync.Once
+	unblock := func() { releaseOnce.Do(func() { close(release) }) }
+	files := http.StripPrefix("/acme/widget.git", http.FileServer(http.Dir(remote)))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		startOnce.Do(func() { close(started); <-release })
+		files.ServeHTTP(w, r)
+	}))
+	t.Cleanup(server.Close)
+	t.Cleanup(unblock)
+	host := strings.TrimPrefix(server.URL, "http://")
+	remoteURL := server.URL + "/acme/widget.git"
+	mgr := New(t.TempDir(), nil)
+	ctx := t.Context()
+	leaderDone := make(chan error, 1)
+	go func() { leaderDone <- mgr.EnsureClone(ctx, "github", host, "acme", "widget", remoteURL) }()
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		require.FailNow("clone did not reach remote")
+	}
+	clonePath, err := mgr.ClonePath("github", host, "acme", "widget")
+	require.NoError(err)
+	require.FileExists(filepath.Join(clonePath, "HEAD"))
+	inspectionDone := make(chan error, 1)
+	go func() {
+		inspectionDone <- mgr.EnsureCloneForInspection(ctx, "github", host, "acme", "widget", remoteURL, nil)
+	}()
+	require.Eventually(func() bool {
+		mgr.ensureMu.Lock()
+		defer mgr.ensureMu.Unlock()
+		flight := mgr.ensureFlights[ensureCloneKey("", host, "acme", "widget")]
+		return flight != nil && flight.waiters == 2
+	}, 5*time.Second, time.Millisecond, "inspection must wait for the clone's branches")
+	unblock()
+	require.NoError(<-leaderDone)
+	require.NoError(<-inspectionDone)
+	run(t, clonePath, "git", "rev-parse", "--verify", "refs/heads/main")
+}
+
 func TestIntegrationFetchRecoversFromStalledHTTP(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)

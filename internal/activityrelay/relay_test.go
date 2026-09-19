@@ -86,14 +86,14 @@ func TestSubscriberReleaseAndSlowConsumers(t *testing.T) {
 	hints, cancel := feed.Subscribe()
 	assert.Equal(1, feed.Subscribers())
 	hint := Hint{Provider: "github", Host: "github.com", RepositoryID: "R_test_project", Target: Repository}
-	for range subscriberBuffer + 5 {
+	for range cap(hints) + 5 {
 		feed.Publish([]Hint{hint})
 	}
-	assert.Len(hints, subscriberBuffer, "a stalled subscriber drops hints instead of blocking the webhook")
+	assert.Len(hints, cap(hints), "a stalled subscriber drops hints instead of blocking the webhook")
 	cancel()
 	assert.Zero(feed.Subscribers())
 	feed.Publish([]Hint{hint})
-	assert.Len(hints, subscriberBuffer)
+	assert.Len(hints, cap(hints))
 }
 
 func TestOpenRejectsNonStreamResponses(t *testing.T) {
@@ -373,6 +373,45 @@ func TestPendingChecksDoNotCrowdOutActivity(t *testing.T) {
 		hint := Hint{Provider: "github", Host: "github.com", RepositoryID: "R_project", Target: target, Number: 1}
 		feed.Publish([]Hint{hint})
 		require.Equal(t, hint, <-hints, "pending checks must not occupy ordinary activity buffers")
+	}
+}
+
+func TestFlushedChecksLeaveRoomForActivity(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name    string
+		batches int
+	}{
+		{name: "full batch", batches: 1},
+		{name: "backlogged subscriber", batches: 2},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			synctest.Test(t, func(t *testing.T) {
+				feed := new(Broadcaster)
+				defer feed.Close()
+				hints, cancel := feed.Subscribe()
+				defer cancel()
+				checks := make([]Hint, 1024)
+				for i := range checks {
+					checks[i] = Hint{Provider: "github", Host: "github.com", RepositoryID: "R_project", Target: PullRequestChecks, Number: i + 1}
+				}
+				for range tt.batches {
+					feed.Publish(checks)
+					time.Sleep(time.Minute)
+					synctest.Wait()
+				}
+				ordinary := Hint{Provider: "github", Host: "github.com", RepositoryID: "R_project", Target: PullRequest, Number: 1}
+				feed.Publish([]Hint{ordinary})
+				require.Len(t, hints, len(checks)+1, "a full batch must reach the subscriber and leave room for immediate activity")
+				received := make([]Hint, len(checks))
+				for i := range received {
+					received[i] = <-hints
+				}
+				assert.ElementsMatch(t, checks, received)
+				assert.Equal(t, ordinary, <-hints)
+			})
+		})
 	}
 }
 

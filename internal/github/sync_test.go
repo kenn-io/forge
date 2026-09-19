@@ -12705,6 +12705,7 @@ func TestRunOnceLatchesCancelWhenSyncRepoIgnoresCtx(t *testing.T) {
 		[]RepoRef{{Owner: "o", Name: "r", PlatformHost: "github.com"}},
 		time.Minute, nil, nil,
 	)
+	syncer.publishStatus(&SyncStatus{DetailRefreshOverdue: 3})
 
 	var syncCompletedCalls atomic.Int32
 	syncer.SetOnSyncCompleted(func(_ []RepoSyncResult) {
@@ -12720,6 +12721,8 @@ func TestRunOnceLatchesCancelWhenSyncRepoIgnoresCtx(t *testing.T) {
 	assert.False(status.Running, "sync must stop")
 	assert.NotEmpty(status.LastError,
 		"status must record the cancel as an error")
+	assert.Equal(3, status.DetailRefreshOverdue,
+		"canceling the run must preserve the last measured backlog")
 }
 
 // --- Index/Detail Split Tests ---

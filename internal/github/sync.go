@@ -4619,6 +4619,10 @@ func (s *Syncer) runOnceWithSlot(
 		// claim runMu as soon as running becomes false, but its Running:true
 		// publication must follow this pass's terminal status.
 		s.statusMu.Lock()
+		if terminalStatus != nil && ctx.Err() != nil {
+			// Cancellation cannot establish a fresh backlog count.
+			terminalStatus.DetailRefreshOverdue = s.Status().DetailRefreshOverdue
+		}
 		s.runMu.Lock()
 		pending := s.pendingRun
 		s.pendingRun = nil

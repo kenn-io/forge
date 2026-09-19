@@ -813,7 +813,7 @@ func (s *Server) resolveReposForReload(
 		kind := platform.Kind(raw.PlatformOrDefault())
 		if _, err := s.syncer.RepositoryReader(kind, host); err != nil {
 			for _, repo := range ghclient.FallbackConfiguredRepoRefs(previous, raw) {
-				if slices.Contains(previous, repo) {
+				if repo.PlatformExternalID != "" || slices.Contains(previous, repo) {
 					set.Add(repo, false)
 				}
 			}
@@ -838,11 +838,8 @@ func (s *Server) resolveReposForReload(
 			resolveCtx, s.syncer.SyncRegistry(), raw,
 		)
 		if err != nil {
-			// Network failure or transient API error: fall back to a
-			// synthetic RepoRef built from the configured fields so
-			// the syncer still has a target to retry on its next
-			// tick. This matches resolveStartupRepos's offline-
-			// resilience behavior.
+			// Preserve cached references when resolution fails. Only
+			// unpinned entries may fall back to an unverified route.
 			slog.Warn(
 				"config reload resolve repo failed; using fallback",
 				"owner", raw.Owner,

@@ -961,6 +961,55 @@ token_env = "KENN_FORGE_MISSING_REPO_TOKEN"
 	assert.Equal("KENN_FORGE_REPO_TOKEN", currentTokenEnv)
 }
 
+func TestConfigReload_AirplaneModeOmitsUnresolvedPinnedRepository(t *testing.T) {
+	require := require.New(t)
+	initialConfig := "airplane_mode = true\n" + validReloadConfig +
+		"platform_repo_id = \"repo-acme-widget\"\n"
+	srv, _, cfgPath := setupTestServerWithConfigContentAndOptions(
+		t, initialConfig, &mockGH{}, ServerOptions{
+			HostCheckAllowLoopbackAnyPort:      true,
+			WorktreeDir:                        t.TempDir(),
+			DisableWorkspaceBackgroundMonitors: true,
+		},
+	)
+	previous := srv.syncer.TrackedRepos()
+	require.Len(previous, 1)
+	require.Equal("repo-acme-widget", previous[0].PlatformExternalID)
+	previous[0].Name = "widget-next"
+	previous[0].RepoPath = "acme/widget-next"
+	previous[0].ConfiguredRepoPath = ""
+	srv.syncer.SetRepos(previous)
+	waitForConfigWatcher(t, srv, 2*time.Second)
+	stream := streamConfigEvents(t, srv)
+	defer stream.Close()
+
+	writeConfigToml(t, cfgPath, initialConfig+`
+[[repos]]
+owner = "acme"
+name = "replacement"
+platform_repo_id = "R_pinned"
+`)
+	event := waitForConfigEvent(t, stream, 2*time.Second)
+	require.True(event.Valid, event.Error)
+	srv.cfgMu.Lock()
+	configured := slices.Clone(srv.cfg.Repos)
+	srv.cfgMu.Unlock()
+	require.Len(configured, 2)
+	require.Equal("R_pinned", configured[1].PlatformRepoID)
+	previous[0].ConfiguredRepoPath = "acme/widget"
+	assert.Equal(t, previous, srv.syncer.TrackedRepos(),
+		"keep the verified repository without adopting the unresolved pinned route")
+	_, err := srv.deleteConfiguredRepo(t.Context(), &repoConfigInput{
+		Provider: "github", PlatformHost: "github.com",
+		Owner: "acme", Name: "replacement",
+	})
+	require.NoError(err)
+	event = waitForConfigEvent(t, stream, 2*time.Second)
+	require.True(event.Valid, event.Error)
+	require.Equal(previous, srv.syncer.TrackedRepos(),
+		"removing another entry must keep the renamed pinned repository")
+}
+
 func TestConfigReload_PreservesCachedReposForProviderMissingAtStartup(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -977,6 +1026,7 @@ platform = "gitlab"
 platform_host = "gitlab.example.com"
 owner = "acme"
 name = "backend"
+platform_repo_id = "gid://gitlab/Project/42"
 
 [[repos]]
 platform = "gitlab"
@@ -998,7 +1048,6 @@ name = "service-*"
 			Platform: platform.KindGitLab, PlatformHost: "gitlab.example.com",
 			Owner: "acme", Name: "backend", RepoPath: "acme/backend",
 			PlatformExternalID: "gid://gitlab/Project/42",
-			ConfiguredRepoPath: "acme/backend",
 		},
 		{
 			Platform: platform.KindGitLab, PlatformHost: "gitlab.example.com",
@@ -1020,6 +1069,7 @@ name = "service-*"
 	require.True(event.Valid, "unrelated reload failed: %s", event.Error)
 	assert.True(event.RestartRequired)
 	tracked := srv.syncer.TrackedRepos()
+	startupFallbacks[0].ConfiguredRepoPath = "acme/backend"
 	for _, repo := range startupFallbacks {
 		assert.Contains(tracked, repo)
 	}

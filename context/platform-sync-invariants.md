@@ -23,9 +23,9 @@ combining repository-owned history
 - `repo_path` carries the full provider path when `owner/name` is not enough.
 - `platform_repo_id` / provider external IDs are stable provider identities;
   preserve human-readable route history across renames and replacements.
-- Exact configured repositories with a stable provider ID never adopt a new
-  occupant of their saved route; startup recovers that ID's current catalog
-  route or fails closed (`cmd/kenn-forge/main.go::fallbackExactFromDB`).
+- Offline startup and reload must preserve pinned repository identity: use a matching verified reference or leave the entry untracked.
+  A saved route cannot establish identity (`cmd/kenn-forge/main.go::fallbackExactFromDB`,
+  `internal/github/repo_config_resolver.go::FallbackConfiguredRepoRefs`).
 - Rows without a verified provider ID remain inactive legacy records. Never
   infer their identity from a matching route.
 - Timestamp provider observations before the identity lookup starts; a delayed

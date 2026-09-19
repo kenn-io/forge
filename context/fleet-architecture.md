@@ -407,6 +407,9 @@ change-driven and idle-cheap:
 - Ordinary fleet settings update only operator preferences; enrollment owns
   role, hub binding, and membership, so a stale browser save cannot
   replace them (`internal/server/settings_routes.go::Server.updateFleetSettings`).
+- Leaving requires a revoked enrollment and a stopped daemon; preserve current local execution
+  state, not a pre-enrollment database. Hub-owned provider state and credentials stay on the hub
+  (`cmd/kenn-forge/fleet_leave.go::leaveFleet`).
 - Enrollment-managed membership and ordinary fleet settings can reload live.
   Role, local and hub origins, API authentication, and
   session-monitor policy report `restart_required` until the running process

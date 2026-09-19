@@ -691,6 +691,33 @@ Database rollback can discard changes made after the backup. Do not overwrite
 new worktree contents as part of restoring Forge state. Revoking a new
 enrollment alone does not restore the old enrollment or provider ownership.
 
+## Return a spoke to standalone operation
+
+Keep the hub and spoke reachable until revocation finishes. On the hub, run:
+
+```sh
+kenn-forge fleet revoke ENROLLMENT_ID --config /path/to/hub/config.toml
+```
+
+Stop the spoke's Forge service, leaving its worktrees and tmux sessions in place.
+Retain a matching backup of its current data directory, configuration, binary,
+and service definition, as described in [Move to a fresh hub](#move-to-a-fresh-hub).
+Then, on the stopped spoke, run:
+
+```sh
+kenn-forge fleet leave --config /path/to/spoke/config.toml
+```
+
+This disables federation and removes the old hub's credentials. It preserves
+the current node identity, local database, workspaces, and session records;
+repeating it after an interruption is supported. It does not restore an old
+database or copy the hub's provider archive, review drafts, or credentials.
+
+Configure this machine's own provider access and repository list before
+starting Forge. Sync its repositories, then check its local workspaces and
+terminals. Provider state created on the hub stays there. Pending enrollments
+use `fleet abort-preparation`, not `fleet leave`.
+
 ## Upgrade federation protocol 3 to 4
 
 A protocol-3 fleet needs a one-time data migration before protocol-4 binaries

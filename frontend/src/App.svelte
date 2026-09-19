@@ -1099,6 +1099,7 @@
   // is intentionally NOT wired (see pr-detail-actions.ts).
   function buildPRDetailInput(ctx: Context): PRDetailActionInput | null {
     if (!stores) return null;
+    if (stores.detail.isDetailFromCache()) return null;
     if (ctx.selectedPR === null) return null;
     const detail = stores.detail.getDetail();
     if (detail === null) return null;

@@ -142,6 +142,7 @@ function renderWithRealPullDetail(
     stopDetailPolling: vi.fn(),
     getDetail: () => detail,
     getDetailEnvelopeTick: () => 0,
+    isDetailFromCache: () => false,
     isDetailLoading: () => false,
     getDetailError: () => null,
     isDetailSyncing: () => false,

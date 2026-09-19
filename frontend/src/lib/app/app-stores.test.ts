@@ -49,7 +49,9 @@ describe("app store composition", () => {
   it.each(["issues", "activity", "focus", "workspaces"])(
     "refreshes an open issue after data_changed on %s without waiting for the detail poll",
     async (page) => {
-      let updatedDetail: IssueDetail | undefined;
+      const initialResponse = await createMockApiFetch().fetch("/api/v1/issues/github/acme/widgets/7");
+      let updatedDetail: IssueDetail = await initialResponse.json();
+      updatedDetail.repo.platform_repo_id = "repo-acme-widgets";
       const api = createMockApiFetch([
         ({ method, url }) =>
           method === "GET" && url.pathname === "/api/v1/activity/authors"

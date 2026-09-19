@@ -160,6 +160,8 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   // Detail envelopes are replaced immutably. Keeping the large event array raw
   // avoids proxying thousands of timeline objects that are never mutated in place.
   let issueDetail = $state.raw<IssueDetail | null>(null);
+  // Earlier requests cannot validate a later visit restored from cache.
+  let issueDetailCacheTick = $state(0);
   // Lifecycle tick captured when the request that produced the current
   // envelope STARTED (not when it landed). Workspace-create reconciliation
   // compares it against a creation confirmation's tick to tell a stale
@@ -177,6 +179,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   type UnsavedIssueTarget = {
     provider: string;
     platformHost: string | undefined;
+    platformRepoId: string | undefined;
     owner: string;
     name: string;
     number: number;
@@ -311,6 +314,10 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   }
   function isIssueDetailLoading(): boolean {
     return detailLoading;
+  }
+
+  function isIssueDetailFromCache(): boolean {
+    return issueDetailCacheTick !== 0;
   }
   function isIssueDetailSyncing(): boolean {
     return detailSyncing;
@@ -520,6 +527,10 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     ) {
       return next;
     }
+    if (!unsavedLocalBody.platformRepoId || unsavedLocalBody.platformRepoId !== next.repo.platform_repo_id) {
+      unsavedLocalBody = null;
+      return next;
+    }
     if (
       issueDetail.repo_owner !== next.repo_owner ||
       issueDetail.repo_name !== next.repo_name ||
@@ -695,6 +706,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     authoritative: IssueDetail,
     installEnvelope: () => boolean,
   ) {
+    if (ref.platformRepoId && authoritative.repo.platform_repo_id !== ref.platformRepoId) return Effect.succeed(false);
     return Effect.gen(function* () {
       const mutations = yield* ProviderMutations;
       const labels = authoritative.issue.labels ?? [];
@@ -732,7 +744,14 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
           confirmed: applyIssueCommentState(ref, commentID, state),
         });
       }
-      return yield* mutations.rebaseAll(Effect.sync(installEnvelope), entries);
+      return yield* mutations.rebaseAll(
+        Effect.sync(() => {
+          const applied = installEnvelope();
+          if (applied && issueDetailEnvelopeTick >= issueDetailCacheTick) issueDetailCacheTick = 0;
+          return applied;
+        }),
+        entries,
+      );
     });
   }
 
@@ -741,6 +760,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       if (!isIssueDetailShowingRef(ref) || issueDetail === null) return;
       const projectedBody =
         unsavedLocalBody !== null &&
+        unsavedLocalBody.platformRepoId === issueDetail.repo.platform_repo_id &&
         sameBodyTarget(unsavedLocalBody.provider, unsavedLocalBody.platformHost, ref.provider, ref.platformHost) &&
         unsavedLocalBody.owner === ref.owner &&
         unsavedLocalBody.name === ref.name &&
@@ -802,14 +822,12 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     expectedGeneration: number,
     requireVisible: boolean,
   ) {
-    if (ref.platformRepoId && authoritative.repo.platform_repo_id !== ref.platformRepoId) return Effect.succeed(false);
-    const next = withPreservedLocalBody(authoritative);
     return rebaseIssueMutations(ref, authoritative, () => {
       if (expectedGeneration !== issueSyncGeneration) return false;
       if (requireVisible && !isIssueDetailShowingRef(ref)) return false;
       let applied = false;
       applyEnvelopeAt(envelopeTick, () => {
-        issueDetail = next;
+        issueDetail = withPreservedLocalBody(authoritative);
         issueDetailLoaded = authoritative.detail_loaded ?? issueDetailLoaded;
         applied = true;
       });
@@ -945,6 +963,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       const previous = ref.platformRepoId
         ? recentDetails.get(JSON.stringify([issueDetailKey(ref), ref.repoPath]))
         : undefined;
+      issueDetailCacheTick = previous ? nextWorkspaceLifecycleTick() : 0;
       if (previous) {
         // Restoring presentation must not acknowledge mutations or workspace absence.
         issueDetail = previous.detail;
@@ -1076,6 +1095,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     activeIssueSelectionKey = null;
     ++issueSyncGeneration;
     issueDetail = null;
+    issueDetailCacheTick = 0;
     detailLoading = false;
     detailSyncing = false;
     detailError = null;
@@ -1585,7 +1605,15 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     ) {
       return;
     }
-    unsavedLocalBody = { provider, platformHost, owner, name, number, body };
+    unsavedLocalBody = {
+      provider,
+      platformHost,
+      platformRepoId: issueDetail.repo.platform_repo_id,
+      owner,
+      name,
+      number,
+      body,
+    };
     issueDetail = {
       ...issueDetail,
       issue: { ...issueDetail.issue, Body: body },
@@ -1606,8 +1634,10 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     readonly ref: IssueDetailRequestRef;
     readonly program: Effect.Effect<void, ProviderMutationFailure, ProviderMutations>;
   } {
-    const ref = issueDetailRequestRef(owner, name, number, routeRef);
-    const baseline = isIssueDetailShowingRef(ref) && issueDetail !== null ? issueDetail.issue.Body : body;
+    const requestedRef = issueDetailRequestRef(owner, name, number, routeRef);
+    const visibleDetail = isIssueDetailShowingRef(requestedRef) ? issueDetail : null;
+    const ref = visibleDetail ? { ...requestedRef, platformRepoId: visibleDetail.repo.platform_repo_id } : requestedRef;
+    const baseline = visibleDetail?.issue.Body ?? body;
     let confirmed: { readonly detail: IssueDetail; readonly envelopeTick: number } | undefined;
     let acknowledgedUnsavedTarget: UnsavedIssueTarget | null = null;
     const program = Effect.gen(function* () {
@@ -1634,6 +1664,8 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
               if (
                 unsavedLocalBody !== null &&
                 unsavedLocalBody.body === body &&
+                unsavedLocalBody.platformRepoId === ref.platformRepoId &&
+                unsavedLocalBody.platformRepoId === detail.repo.platform_repo_id &&
                 sameBodyTarget(
                   unsavedLocalBody.provider,
                   unsavedLocalBody.platformHost,
@@ -2016,6 +2048,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     getIssueDetail,
     getIssueDetailEnvelopeTick,
     isIssueDetailLoading,
+    isIssueDetailFromCache,
     isIssueDetailSyncing,
     getIssueDetailError,
     getIssueDetailLoaded,

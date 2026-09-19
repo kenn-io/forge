@@ -83,7 +83,7 @@
       manualRefreshPending
       || issues.isIssueDetailLoading()
       || issues.isIssueDetailSyncing()
-      || staleIssue
+      || detailMismatch
     ) return;
     const requestIdentity = $state.snapshot(itemIdentity);
     const requestGeneration = ++manualRefreshGeneration;
@@ -214,7 +214,7 @@
   // actions (state change, workspace create, etc.) read the props,
   // which point at the new route — so they must be gated until the
   // displayed issue catches up.
-  const staleIssue = $derived.by(() => {
+  const detailMismatch = $derived.by(() => {
     const d = issues.getIssueDetail();
     if (d == null) return false;
     if (
@@ -234,6 +234,9 @@
       || resolvedPlatformHost(provider, d.repo?.platform_host)
         !== resolvedPlatformHost(provider, platformHost);
   });
+
+  // A restored snapshot stays readable, but cannot authorize actions until revalidated.
+  const staleIssue = $derived(detailMismatch || issues.isIssueDetailFromCache());
 
   // Same comparison shape as PRListView's detailMatchesSelected, but
   // against the inline workspace identity rather than a route ref: the
@@ -1194,9 +1197,9 @@
 
 <svelte:document onmousedown={onDocumentMousedown} />
 
-{#if issues.isIssueDetailLoading() && (issues.getIssueDetail() === null || (staleIssue && hideStaleWhileLoading))}
+{#if issues.isIssueDetailLoading() && (issues.getIssueDetail() === null || (detailMismatch && hideStaleWhileLoading))}
   <div class="state-center"><p class="state-msg">Loading...</p></div>
-{:else if issues.getIssueDetailError() !== null && (issues.getIssueDetail() === null || (staleIssue && hideStaleWhileLoading))}
+{:else if issues.getIssueDetailError() !== null && (issues.getIssueDetail() === null || (detailMismatch && hideStaleWhileLoading))}
   <div class="state-center"><p class="state-msg state-msg--error">Error: {issues.getIssueDetailError()}</p></div>
 {:else}
   {@const detail = issues.getIssueDetail()}
@@ -1210,7 +1213,7 @@
       <div class="issue-detail-content">
       {#if detailLoadError}
         <div class="detail-load-error" data-testid="detail-load-error">
-          {staleIssue ? "Couldn't load this issue:" : "Couldn't refresh this issue. Showing previously loaded content:"}
+          {detailMismatch ? "Couldn't load this issue:" : "Couldn't refresh this issue. Showing previously loaded content:"}
           {issues.getIssueDetailError()}
         </div>
       {/if}
@@ -1538,7 +1541,7 @@
           <h3 class="section-title">Activity</h3>
           <div class="section-title-actions">
             <DetailRefreshButton
-              disabled={issues.isIssueDetailLoading() || issues.isIssueDetailSyncing() || staleIssue}
+              disabled={issues.isIssueDetailLoading() || issues.isIssueDetailSyncing() || detailMismatch}
               refreshing={manualRefreshPending}
               onRefresh={refreshDetail}
             />

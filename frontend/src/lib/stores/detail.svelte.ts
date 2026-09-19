@@ -226,6 +226,8 @@ export function createDetailStore(opts: DetailStoreOptions) {
   // Detail envelopes are replaced immutably. Keeping the large event array raw
   // avoids proxying thousands of timeline objects that are never mutated in place.
   let detail = $state.raw<PullDetail | null>(null);
+  // Earlier requests cannot validate a later visit restored from cache.
+  let detailCacheTick = $state(0);
   // Lifecycle tick captured when the request that produced the current
   // envelope STARTED (not when it landed). Workspace-create reconciliation
   // compares it against a creation confirmation's tick to tell a stale
@@ -251,6 +253,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
   type UnsavedTarget = {
     provider: string;
     platformHost: string | undefined;
+    platformRepoId: string | undefined;
     owner: string;
     name: string;
     number: number;
@@ -294,6 +297,10 @@ export function createDetailStore(opts: DetailStoreOptions) {
 
   function getDetail(): PullDetail | null {
     return detail;
+  }
+
+  function isDetailFromCache(): boolean {
+    return detailCacheTick !== 0;
   }
 
   function getDetailEnvelopeTick(): number {
@@ -374,6 +381,10 @@ export function createDetailStore(opts: DetailStoreOptions) {
       unsavedLocalBody.name !== next.repo_name ||
       unsavedLocalBody.number !== next.merge_request?.Number
     ) {
+      return next;
+    }
+    if (!unsavedLocalBody.platformRepoId || unsavedLocalBody.platformRepoId !== next.repo.platform_repo_id) {
+      unsavedLocalBody = null;
       return next;
     }
     if (
@@ -627,7 +638,14 @@ export function createDetailStore(opts: DetailStoreOptions) {
           confirmed: applyPullCommentState(ref, commentID, state),
         });
       }
-      return yield* mutations.rebaseAll(Effect.sync(installEnvelope), rebaseEntries);
+      return yield* mutations.rebaseAll(
+        Effect.sync(() => {
+          const applied = installEnvelope();
+          if (applied && detailEnvelopeTick >= detailCacheTick) detailCacheTick = 0;
+          return applied;
+        }),
+        rebaseEntries,
+      );
     });
   }
 
@@ -995,6 +1013,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     activeLoad = null;
     latestSuccessfulDetailRequestSequenceBySelection.clear();
     detail = null;
+    detailCacheTick = 0;
     loading = false;
     syncing = false;
     storeError = null;
@@ -1027,6 +1046,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
       const previous = requestRef.platformRepoId
         ? recentDetails.get(JSON.stringify([key, requestRef.repoPath]))
         : undefined;
+      detailCacheTick = previous ? nextWorkspaceLifecycleTick() : 0;
       if (previous) {
         // Do not rebase mutations or advance workspace freshness from a saved view.
         detail = previous.detail;
@@ -1856,8 +1876,9 @@ export function createDetailStore(opts: DetailStoreOptions) {
     callbacks: MutationCallbacks = {},
     requireVisible: boolean,
   ): PreparedPRContentUpdate | undefined {
-    const ref = detailRequestRef(routeRef.owner, routeRef.name, number, routeRef);
-    const visibleDetail = isDetailShowingRef(ref) ? detail : null;
+    const requestedRef = detailRequestRef(routeRef.owner, routeRef.name, number, routeRef);
+    const visibleDetail = isDetailShowingRef(requestedRef) ? detail : null;
+    const ref = visibleDetail ? { ...requestedRef, platformRepoId: visibleDetail.repo.platform_repo_id } : requestedRef;
     if (requireVisible && visibleDetail === null) return undefined;
     const baseline: PRContentProjection = {
       ...(fields.title !== undefined && { title: visibleDetail?.merge_request.Title ?? fields.title }),
@@ -1871,6 +1892,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
         const projectedBody =
           projection.body !== undefined &&
           unsavedLocalBody !== null &&
+          unsavedLocalBody.platformRepoId === ref.platformRepoId &&
           sameBodyTarget(unsavedLocalBody.provider, unsavedLocalBody.platformHost, ref.provider, ref.platformHost) &&
           unsavedLocalBody.owner === ref.owner &&
           unsavedLocalBody.name === ref.name &&
@@ -1915,6 +1937,8 @@ export function createDetailStore(opts: DetailStoreOptions) {
                 fields.body !== undefined &&
                 unsavedLocalBody !== null &&
                 unsavedLocalBody.body === fields.body &&
+                unsavedLocalBody.platformRepoId === ref.platformRepoId &&
+                unsavedLocalBody.platformRepoId === response.repo.platform_repo_id &&
                 sameBodyTarget(
                   unsavedLocalBody.provider,
                   unsavedLocalBody.platformHost,
@@ -2010,6 +2034,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
         : Effect.gen(function* () {
             if (
               unsavedLocalBody !== null &&
+              unsavedLocalBody.platformRepoId === update.ref.platformRepoId &&
               sameBodyTarget(
                 unsavedLocalBody.provider,
                 unsavedLocalBody.platformHost,
@@ -2078,7 +2103,15 @@ export function createDetailStore(opts: DetailStoreOptions) {
     ) {
       return;
     }
-    unsavedLocalBody = { provider, platformHost, owner, name, number, body };
+    unsavedLocalBody = {
+      provider,
+      platformHost,
+      platformRepoId: detail.repo.platform_repo_id,
+      owner,
+      name,
+      number,
+      body,
+    };
     detail = {
       ...detail,
       merge_request: { ...detail.merge_request, Body: body },
@@ -2734,6 +2767,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
 
   return {
     getDetail,
+    isDetailFromCache,
     getDetailEnvelopeTick,
     isDetailLoading,
     isDetailSyncing,

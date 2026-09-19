@@ -53,8 +53,8 @@ Interactive surfaces must agree on which item is selected.
   (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::openTerminalLink`).
 - When a view changes from item A to item B, reset transient action state that
   could otherwise submit or render against the wrong item.
-- Recent detail snapshots are presentation only: revalidate every visit and preserve
-  the original workspace lifecycle tick. Settled mutations invalidate saved views
+- Recent detail snapshots stay read-only until that visit's revalidation succeeds;
+  preserve the original workspace lifecycle tick. Settled mutations invalidate saved views
   so hidden optimistic state cannot survive rollback (`frontend/src/lib/stores/detail.svelte.ts::submitDetailMutation`).
 - Restore recent details only with a verified provider/host/repository ID; an unknown
   ID requires a fresh response because owner/name routes can be reused

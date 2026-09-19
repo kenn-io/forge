@@ -576,52 +576,97 @@ test.describe("detail load-error banner", () => {
       second: { number: issueY.Number, title: issueY.Title, body: JSON.stringify(detailEnvelopeIssue(issueY)) },
     },
   ]) {
-    test(`${item.kind}: returning to a cached item stays readable when refresh fails`, async ({ page }) => {
-      await mockApi(page);
-      await mockSettings(page);
-      await page.route(
-        (url) => url.pathname === `/api/v1/${item.kind}`,
-        async (route) => {
-          const rows = [item.first, item.second].map((entry) => {
-            const detail = JSON.parse(entry.body);
-            return { ...(detail.merge_request ?? detail.issue), repo: detail.repo };
-          });
-          await route.fulfill({ contentType: "application/json", body: JSON.stringify(rows) });
-        },
-      );
-      let returning = false;
-      const refresh = Promise.withResolvers<void>();
-      for (const entry of [item.first, item.second]) {
-        await page.route(`**/api/v1/${item.kind}/github/acme/widgets/${entry.number}`, async (route) => {
-          if (returning && entry === item.first) {
-            await refresh.promise;
-            await route.fulfill({
-              status: 500,
-              contentType: "application/problem+json",
-              body: JSON.stringify({ code: "internalError", detail: "Refresh unavailable" }),
+    for (const refreshResult of ["failed", "matching", "replacement"] as const) {
+      test(`${item.kind}: cached item actions wait for a ${refreshResult} refresh`, async ({ page }) => {
+        await mockApi(page);
+        await mockSettings(page);
+        await page.route(
+          (url) => url.pathname === `/api/v1/${item.kind}`,
+          async (route) => {
+            const rows = [item.first, item.second].map((entry) => {
+              const detail = JSON.parse(entry.body);
+              return { ...(detail.merge_request ?? detail.issue), repo: detail.repo };
             });
-          } else {
-            await route.fulfill({ contentType: "application/json", body: entry.body });
+            await route.fulfill({ contentType: "application/json", body: JSON.stringify(rows) });
+          },
+        );
+        let returning = false;
+        const refresh = Promise.withResolvers<void>();
+        const readStarted = Promise.withResolvers<void>();
+        for (const entry of [item.first, item.second]) {
+          await page.route(`**/api/v1/${item.kind}/github/acme/widgets/${entry.number}`, async (route) => {
+            if (returning && entry === item.first) {
+              readStarted.resolve();
+              await refresh.promise;
+              if (refreshResult === "failed") {
+                await route.fulfill({
+                  status: 500,
+                  contentType: "application/problem+json",
+                  body: JSON.stringify({ code: "internalError", detail: "Refresh unavailable" }),
+                });
+              } else {
+                const detail = JSON.parse(entry.body);
+                if (refreshResult === "replacement") detail.repo.platform_repo_id = "R_replacement";
+                await route.fulfill({ contentType: "application/json", body: JSON.stringify(detail) });
+              }
+            } else {
+              await route.fulfill({ contentType: "application/json", body: entry.body });
+            }
+          });
+        }
+        await page.goto(`/${item.kind}/github/acme/widgets/${item.first.number}`);
+        await expect(page.locator(".detail-title")).toContainText(item.first.title);
+        await expect(page.locator(".btn--close").first()).toBeEnabled();
+        await page.evaluate((path) => {
+          window.history.pushState(null, "", path);
+          window.dispatchEvent(new PopStateEvent("popstate"));
+        }, `/${item.kind}/github/acme/widgets/${item.second.number}`);
+        await expect(page.locator(".detail-title")).toContainText(item.second.title);
+        returning = true;
+        await page.evaluate((path) => {
+          window.history.pushState(null, "", path);
+          window.dispatchEvent(new PopStateEvent("popstate"));
+        }, `/${item.kind}/github/acme/widgets/${item.first.number}`);
+        await readStarted.promise;
+        try {
+          await expect(page.locator(".detail-title")).toContainText(item.first.title);
+          if (item.kind === "pulls" && refreshResult === "failed") {
+            await page.keyboard.press("Meta+K");
+            const palette = page.getByRole("dialog", { name: "Command palette" });
+            await expect(palette).toBeVisible();
+            await page.getByRole("textbox", { name: "Search command palette" }).fill("approve pr");
+            await expect(palette.getByText("Approve PR", { exact: true })).toHaveCount(0);
+            await page.keyboard.press("Escape");
           }
-        });
-      }
-      await page.goto(`/${item.kind}/github/acme/widgets/${item.first.number}`);
-      await expect(page.locator(".detail-title")).toContainText(item.first.title);
-      await page.evaluate((path) => {
-        window.history.pushState(null, "", path);
-        window.dispatchEvent(new PopStateEvent("popstate"));
-      }, `/${item.kind}/github/acme/widgets/${item.second.number}`);
-      await expect(page.locator(".detail-title")).toContainText(item.second.title);
-      returning = true;
-      await page.evaluate((path) => {
-        window.history.pushState(null, "", path);
-        window.dispatchEvent(new PopStateEvent("popstate"));
-      }, `/${item.kind}/github/acme/widgets/${item.first.number}`);
-      await expect(page.locator(".detail-title")).toContainText(item.first.title);
-      refresh.resolve();
-      await expect(page.getByTestId("detail-load-error")).toContainText("Refresh unavailable");
-      await expect(page.locator(".detail-title")).toContainText(item.first.title);
-    });
+          await expect(page.locator(".btn--close:enabled")).toHaveCount(0);
+        } finally {
+          refresh.resolve();
+        }
+        const refreshButton = page.getByRole("button", { name: "Refresh detail", exact: true });
+        if (refreshResult === "matching") {
+          await expect(page.locator(".btn--close").first()).toBeEnabled();
+        } else {
+          if (refreshResult === "failed") {
+            await expect(page.getByTestId("detail-load-error")).toBeVisible();
+          }
+          await expect(refreshButton).toBeEnabled();
+          await expect(page.locator(".btn--close:enabled")).toHaveCount(0);
+        }
+        await expect(page.locator(".detail-title")).toContainText(item.first.title);
+        if (refreshResult === "failed") {
+          let manualRefreshes = 0;
+          await page.route(`**/api/v1/${item.kind}/github/acme/widgets/${item.first.number}/sync`, async (route) => {
+            manualRefreshes += 1;
+            returning = false;
+            await route.fulfill({ contentType: "application/json", body: item.first.body });
+          });
+          await refreshButton.click();
+          await expect.poll(() => manualRefreshes).toBe(1);
+          await expect(page.locator(".btn--close").first()).toBeEnabled();
+          await expect(page.getByTestId("detail-load-error")).toHaveCount(0);
+        }
+      });
+    }
 
     test(`${item.kind}: a replacement repository does not restore the old item's snapshot`, async ({ page }) => {
       await mockApi(page);

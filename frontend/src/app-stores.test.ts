@@ -147,6 +147,7 @@ vi.mock("./lib/stores/detail.svelte.js", () => ({
       loadDetail: vi.fn(),
       refreshDetailOnly,
       refreshDetailOnlyEffect,
+      isDetailFromCache: () => false,
       isDetailLoading: () => false,
       getDetail: () => currentDetail,
     };

@@ -309,6 +309,46 @@ describe("createIssuesStore", () => {
     expect(store.getIssueDetailEnvelopeTick()).toBeGreaterThan(originalTick);
   });
 
+  it("keeps a restored issue read-only when an earlier body save finishes", async () => {
+    const initial = issueDetail();
+    const other = { ...issueDetail(), issue: { ...initial.issue, Number: 8 } };
+    const updated = { ...issueDetail(), issue: { ...initial.issue, Body: "local edit" } };
+    const mutation = Promise.withResolvers<{ data: IssueDetail; error: undefined }>();
+    const freshRead = Promise.withResolvers<{ data: IssueDetail }>();
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ data: initial })
+      .mockResolvedValueOnce({ data: other })
+      .mockReturnValueOnce(freshRead.promise);
+    const patch = vi.fn(() => mutation.promise);
+    const store = createIssuesStore({ client: mockClient({ GET: get, PATCH: patch }) });
+    const ref = {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widget",
+      repoPath: "acme/widget",
+      platformRepoId: "widget-repo-id",
+    };
+    await loadIssueDetail(store, "acme", "widget", 7, { ...ref, sync: false });
+    store.setLocalIssueBody("github", "github.com", "acme", "widget", 7, "local edit");
+    store.saveIssueBodyInBackground("acme", "widget", 7, "local edit", ref);
+    await vi.waitFor(() => expect(patch).toHaveBeenCalledOnce());
+    await loadIssueDetail(store, "acme", "widget", 8, { ...ref, sync: false });
+    store.loadIssueDetail("acme", "widget", 7, { ...ref, sync: false });
+    await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(3));
+    expect(store.isIssueDetailFromCache()).toBe(true);
+
+    mutation.resolve({ data: updated, error: undefined });
+    await vi.waitFor(() => expect(store.hasUnsavedLocalBody()).toBe(false));
+
+    expect(store.isIssueDetailLoading()).toBe(true);
+    expect(store.isIssueDetailFromCache()).toBe(true);
+    freshRead.resolve({ data: updated });
+    await vi.waitFor(() => expect(store.isIssueDetailLoading()).toBe(false));
+    expect(store.isIssueDetailFromCache()).toBe(false);
+  });
+
   it("discards a saved optimistic snapshot when its mutation fails while another issue is visible", async () => {
     const mutation = Promise.withResolvers<{ error: { code: "forbidden"; detail: string } }>();
     const initial = issueDetail();
@@ -818,6 +858,60 @@ describe("createIssuesStore", () => {
     expect(store.getIssueDetail()?.issue.Body).toBe("- [x] done");
     expect(store.hasUnsavedLocalBody()).toBe(true);
   });
+
+  it.each([
+    { repository: "same", saveState: "failed" },
+    { repository: "replacement", saveState: "failed" },
+    { repository: "replacement", saveState: "pending" },
+  ])(
+    "scopes a $saveState local body save to its repository on a $repository refresh",
+    async ({ repository, saveState }) => {
+      const initial = issueDetail();
+      const refreshed = issueDetail();
+      refreshed.issue.Body = "provider body";
+      if (repository === "replacement") refreshed.repo.platform_repo_id = "replacement-repo-id";
+      const saving = Promise.withResolvers<{ error: { detail: string } }>();
+      const patch = vi.fn(() => saving.promise);
+      const get = vi.fn().mockResolvedValueOnce({ data: initial }).mockResolvedValue({ data: refreshed });
+      const store = createIssuesStore({ client: mockClient({ GET: get, PATCH: patch }) });
+      const routeRef = {
+        provider: "github",
+        platformHost: "github.com",
+        owner: "acme",
+        name: "widget",
+        repoPath: "acme/widget",
+      };
+      await loadIssueDetail(store, "acme", "widget", 7, { ...routeRef, sync: false });
+      store.setLocalIssueBody("github", "github.com", "acme", "widget", 7, "local edit");
+      store.saveIssueBodyInBackground("acme", "widget", 7, "local edit", routeRef);
+      await vi.waitFor(() => expect(patch).toHaveBeenCalledOnce());
+      if (saveState === "failed") {
+        saving.resolve({ error: { detail: "save rejected" } });
+        await vi.waitFor(() => expect(getFlash()?.message).toBe("save rejected"));
+      }
+
+      store.startIssueDetailPolling("acme", "widget", 7, routeRef);
+      await Effect.runPromise(
+        runtime!
+          .runCommand(store.refreshActiveIssueDetailEffect(), {
+            operation: "test repository replacement refresh",
+            safeContext: {},
+            onFailure: () => {},
+          })
+          .await.pipe(Effect.flatMap((exit) => exit)),
+      );
+
+      expect(store.getIssueDetail()?.repo.platform_repo_id).toBe(refreshed.repo.platform_repo_id);
+      expect(store.getIssueDetail()?.issue.Body).toBe(repository === "same" ? "local edit" : "provider body");
+      expect(store.hasUnsavedLocalBody()).toBe(repository === "same");
+      if (saveState === "pending") {
+        saving.resolve({ error: { detail: "save rejected" } });
+        await vi.waitFor(() => expect(getFlash()?.message).toBe("save rejected"));
+        expect(store.getIssueDetail()?.issue.Body).toBe("provider body");
+        expect(store.hasUnsavedLocalBody()).toBe(false);
+      }
+    },
+  );
 
   it("coalesces pending issue body saves to the latest captured edit", async () => {
     const initial = issueDetail();

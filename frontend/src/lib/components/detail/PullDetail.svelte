@@ -163,7 +163,7 @@
       || detailStore.isDetailLoading()
       || detailStore.isDetailSyncing()
       || sync?.getProviderAvailable() === false
-      || stalePR
+      || detailMismatch
     ) return;
     const requestIdentity = $state.snapshot(itemIdentity);
     const requestGeneration = ++manualRefreshGeneration;
@@ -560,7 +560,7 @@
   // load completes. `stalePR` is true in that window, and every mutation
   // handler short-circuits on it so a click during the transition can't
   // operate on the freshly-routed PR while showing the previous one.
-  const stalePR = $derived.by(() => {
+  const detailMismatch = $derived.by(() => {
     const d = detailStore.getDetail();
     if (d == null) return false;
     return (
@@ -578,6 +578,9 @@
       (!!platformRepoId && d.repo?.platform_repo_id !== platformRepoId)
     );
   });
+
+  // A restored snapshot stays readable, but cannot authorize actions until revalidated.
+  const stalePR = $derived(detailMismatch || detailStore.isDetailFromCache());
 
   // Same comparison shape as PRListView's detailMatchesSelected, but
   // against the inline workspace identity rather than a route ref: the
@@ -2116,9 +2119,9 @@
 <svelte:window onkeydown={onActionMenuKeydown} />
 <svelte:document onmousedown={onDocumentMousedown} />
 
-{#if detailStore.isDetailLoading() && (detailStore.getDetail() === null || (stalePR && hideStaleWhileLoading))}
+{#if detailStore.isDetailLoading() && (detailStore.getDetail() === null || (detailMismatch && hideStaleWhileLoading))}
   <div class="state-center"><p class="state-msg">Loading…</p></div>
-{:else if detailStore.getDetailError() !== null && (detailStore.getDetail() === null || (stalePR && hideStaleWhileLoading))}
+{:else if detailStore.getDetailError() !== null && (detailStore.getDetail() === null || (detailMismatch && hideStaleWhileLoading))}
   <div class="state-center"><p class="state-msg state-msg--error">Error: {detailStore.getDetailError()}</p></div>
 {:else}
   {@const detail = detailStore.getDetail()}
@@ -2148,7 +2151,7 @@
     <div class="pull-detail-wrap" {@attach loadWorkflowCatalog(workflowCatalogDemandEnabled ? workflowRef : null)}>
       {#if detailLoadError}
         <div class="detail-load-error" data-testid="detail-load-error">
-          {stalePR ? "Couldn't load this pull request:" : "Couldn't refresh this pull request. Showing previously loaded content:"}
+          {detailMismatch ? "Couldn't load this pull request:" : "Couldn't refresh this pull request. Showing previously loaded content:"}
           {detailStore.getDetailError()}
         </div>
       {/if}
@@ -3304,7 +3307,7 @@
           <h3 class="section-title">Activity</h3>
           <div class="section-title-actions">
             <DetailRefreshButton
-              disabled={detailStore.isDetailLoading() || detailStore.isDetailSyncing() || stalePR || sync?.getProviderAvailable() === false}
+              disabled={detailStore.isDetailLoading() || detailStore.isDetailSyncing() || detailMismatch || sync?.getProviderAvailable() === false}
               disabledReason={sync?.getProviderAvailable() === false ? "Hub unavailable" : undefined}
               refreshing={manualRefreshPending}
               onRefresh={refreshDetail}

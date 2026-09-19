@@ -8,7 +8,7 @@ import {
 } from "../api/provider-routes.js";
 import { GeneratedProblemResponse } from "../api/runtime.js";
 import type { AppExecution, AppRuntime } from "../app/runtime.js";
-import { navigate, buildItemRoute } from "../stores/router.svelte.js";
+import { navigate, buildItemRoute, type RoutableItemRef } from "../stores/router.svelte.js";
 import { showFlash } from "../stores/flash.svelte.js";
 import type { ResolvableItemReference } from "./item-reference.js";
 
@@ -36,7 +36,10 @@ function findItemRef(target: EventTarget | null): HTMLAnchorElement | null {
   return null;
 }
 
-function resolveAndNavigate(ref: ResolvableItemReference): Effect.Effect<void, unknown, GeneratedApi> {
+function resolveAndNavigate(
+  ref: ResolvableItemReference,
+  onNavigate: (ref: RoutableItemRef) => void,
+): Effect.Effect<void, unknown, GeneratedApi> {
   const { provider, platformHost, owner, name, repoPath, number, itemType, externalUrl } = ref;
   return Effect.gen(function* () {
     const api = yield* GeneratedApi;
@@ -86,7 +89,7 @@ function resolveAndNavigate(ref: ResolvableItemReference): Effect.Effect<void, u
         return;
       }
 
-      const path = buildItemRoute({
+      onNavigate({
         itemType: result.data.item_type === "pr" ? "pr" : "issue",
         provider,
         platformHost,
@@ -95,7 +98,6 @@ function resolveAndNavigate(ref: ResolvableItemReference): Effect.Effect<void, u
         repoPath,
         number,
       });
-      navigate(path);
     });
   });
 }
@@ -103,8 +105,12 @@ function resolveAndNavigate(ref: ResolvableItemReference): Effect.Effect<void, u
 // Resolves an item reference through the repo resolve endpoint and either
 // navigates to the internal item route (tracked repo) or opens the provider
 // URL externally (untracked repo) for rendered item-ref anchors.
-export function resolveItemReference(runtime: AppRuntime, ref: ResolvableItemReference): AppExecution<void, unknown> {
-  return runtime.runCommand(resolveAndNavigate(ref), {
+export function resolveItemReference(
+  runtime: AppRuntime,
+  ref: ResolvableItemReference,
+  onNavigate: (ref: RoutableItemRef) => void = (item) => navigate(buildItemRoute(item)),
+): AppExecution<void, unknown> {
+  return runtime.runCommand(resolveAndNavigate(ref, onNavigate), {
     operation: "resolve item reference",
     safeContext: {
       provider: ref.provider,
@@ -119,7 +125,7 @@ export function resolveItemReference(runtime: AppRuntime, ref: ResolvableItemRef
   });
 }
 
-export function initItemRefHandler(runtime: AppRuntime): () => void {
+export function initItemRefHandler(runtime: AppRuntime, onNavigate?: (ref: RoutableItemRef) => void): () => void {
   let execution: AppExecution<void, unknown> | null = null;
 
   function handleClick(e: MouseEvent): void {
@@ -141,16 +147,20 @@ export function initItemRefHandler(runtime: AppRuntime): () => void {
 
     e.preventDefault();
     execution?.interrupt();
-    execution = resolveItemReference(runtime, {
-      provider,
-      platformHost,
-      owner,
-      name,
-      repoPath,
-      number: parseInt(numberStr, 10),
-      itemType,
-      externalUrl,
-    });
+    execution = resolveItemReference(
+      runtime,
+      {
+        provider,
+        platformHost,
+        owner,
+        name,
+        repoPath,
+        number: parseInt(numberStr, 10),
+        itemType,
+        externalUrl,
+      },
+      onNavigate,
+    );
   }
 
   document.addEventListener("click", handleClick);

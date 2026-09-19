@@ -6524,6 +6524,8 @@ components:
         commitsBehind:
           format: int64
           type: integer
+        commitsVsPRHead:
+          type: boolean
         createdAt:
           type: string
         enrichmentError:
@@ -9769,6 +9771,9 @@ components:
         commits_behind:
           format: int64
           type: integer
+        commits_vs_pr_head:
+          description: True when the current branch has no upstream and commits_ahead/commits_behind instead compare against the provider's locally fetched pull-request head ref, as for fork pull requests. The counts name no push or pull target, so clients must not offer branch sync for them.
+          type: boolean
         created:
           description: True when this response represents a workspace newly created by this request; absent when an existing workspace was returned or on reads.
           type: boolean
@@ -9928,6 +9933,8 @@ components:
         commits_behind:
           format: int64
           type: integer
+        commits_vs_pr_head:
+          type: boolean
         created_at:
           type: string
         enrichment_error:
@@ -19509,6 +19516,13 @@ paths:
     get:
       operationId: list-pulls
       parameters:
+        - description: Exact case-sensitive label name; applied before pagination.
+          explode: false
+          in: query
+          name: label
+          schema:
+            description: Exact case-sensitive label name; applied before pagination.
+            type: string
         - description: Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories.
           explode: false
           in: query

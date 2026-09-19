@@ -55,6 +55,15 @@ func TestCanonicalSourceString(t *testing.T) {
 			},
 			want: "file:/run/token -> env:A -> github_cli:github.com",
 		},
+		{
+			name: "provider cli kinds are host scoped",
+			candidates: []Candidate{
+				{Kind: SourceKindGitLabCLI, Host: "gitlab.example.test", EnvName: "ignored"},
+				{Kind: SourceKindGitLabCLI, Host: "gitlab.example.test"},
+				{Kind: SourceKindForgejoCLI, Host: "codeberg.org"},
+			},
+			want: "gitlab_cli:gitlab.example.test -> forgejo_cli:codeberg.org",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			desc := Descriptor{Candidates: tc.candidates}

@@ -151,7 +151,7 @@ describe("Activity Filters popover", () => {
 
     await userEvent.keyboard("{Tab}");
     expect(document.activeElement).toBe(
-      document.querySelector<HTMLButtonElement>("button[aria-label='Filter authors']"),
+      document.querySelector<HTMLButtonElement>("button[aria-label^='Filter authors: ']"),
     );
   });
 });

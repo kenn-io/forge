@@ -29,6 +29,30 @@ type Divergence struct {
 func WorktreeDivergence(
 	ctx context.Context, dir string,
 ) (Divergence, bool, error) {
+	return worktreeDivergenceFrom(ctx, dir, "@{upstream}")
+}
+
+// WorktreeDivergenceFromRef computes ahead/behind counts between the worktree
+// at dir and a fully qualified local ref. A fork pull-request branch has no
+// upstream, so the provider's merge-request head ref is the only local record
+// of where the pull request points. Like the upstream probe it never contacts
+// a remote: the counts are as fresh as the last fetch of ref.
+//
+// The second return value is false when ref does not exist locally.
+func WorktreeDivergenceFromRef(
+	ctx context.Context, dir, ref string,
+) (Divergence, bool, error) {
+	if !strings.HasPrefix(ref, "refs/") {
+		return Divergence{}, false, fmt.Errorf(
+			"divergence ref %q is not fully qualified", ref,
+		)
+	}
+	return worktreeDivergenceFrom(ctx, dir, ref)
+}
+
+func worktreeDivergenceFrom(
+	ctx context.Context, dir, base string,
+) (Divergence, bool, error) {
 	if dir == "" {
 		return Divergence{}, false, errors.New("empty worktree dir")
 	}
@@ -36,7 +60,7 @@ func WorktreeDivergence(
 	cmd := workspaceGitCommand(
 		ctx, dir,
 		"rev-list", "--left-right", "--count",
-		"@{upstream}...HEAD",
+		base+"...HEAD",
 	)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

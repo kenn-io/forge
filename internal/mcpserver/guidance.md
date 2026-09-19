@@ -55,6 +55,8 @@ Repository-wide PR scans:
   back as `offset` with the same repo filter until `next_offset` is absent.
 - The default page uses bulk cached reads for CI checks, review decision,
   mergeability, head SHA, stack placement, workflow, workspace, and freshness.
+  PR contexts include cached label names. Pass `label: "bug"` to match an exact,
+  case-sensitive label before pagination; keep the same filter on later pages.
   Set `include_events: true` for review-comment excerpts and full stack health;
   Forge then reads individual cached details internally. `event_limit` defaults
   to 5 per PR. Descriptions require `include_body: true`.

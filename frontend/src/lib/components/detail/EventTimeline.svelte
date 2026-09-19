@@ -153,7 +153,7 @@
       diff.diff_head_sha !== currentHeadSHA,
   );
   const suggestionDiff = $derived(diffContextStale ? null : diff);
-  let diffReloadedForHead = "";
+  let lastDiffLoadKey = "";
 
   $effect(() => {
     if (!provider || !repoOwner || !repoName || !repoPath || number == null) return;
@@ -168,9 +168,9 @@
     if (!diffStore || !provider || !repoOwner || !repoName || !repoPath || number == null) return;
     if (!events.some((event) => reviewThreadFor(event) !== null)) return;
     if (diffStore.isDiffLoading()) return;
+    const loadKey = JSON.stringify([provider, platformHost, repoOwner, repoName, repoPath, number, currentHeadSHA]);
     const current = diffStore.getCurrentPR();
     if (
-      diffStore.getDiff() !== null &&
       current?.provider === provider &&
       current.platformHost === platformHost &&
       current?.owner === repoOwner &&
@@ -178,13 +178,12 @@
       current.repoPath === repoPath &&
       current.number === number
     ) {
-      // Same route, but the loaded diff may predate the current head.
-      // Reload once per observed head; if the server still serves the
-      // older snapshot, the preview stays marked outdated instead of
-      // looping.
-      if (!diffContextStale || diffReloadedForHead === currentHeadSHA) return;
-      diffReloadedForHead = currentHeadSHA;
+      if (diffStore.getDiff() !== null && !diffContextStale) return;
+      if (lastDiffLoadKey === loadKey) return;
     }
+    // Attempt once per route/head while the store still owns that route.
+    // Failed reads must not loop; a cleared or replaced store can load again.
+    lastDiffLoadKey = loadKey;
     untrack(() => {
       diffStore.loadDiff(repoOwner, repoName, number, {
         provider,

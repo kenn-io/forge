@@ -13,7 +13,24 @@ const (
 	SourceKindFile      SourceKind = "file"
 	SourceKindGitHubCLI SourceKind = "github_cli"
 	SourceKindGitHubApp SourceKind = "github_app"
+	// SourceKindGitLabCLI reads the token the glab CLI stores for Host.
+	SourceKindGitLabCLI SourceKind = "gitlab_cli"
+	// SourceKindForgejoCLI reads the token the fj (forgejo-cli) CLI stores
+	// for Host. Forgejo and Gitea hosts share it: fj speaks to both.
+	SourceKindForgejoCLI SourceKind = "forgejo_cli"
 )
+
+// IsCLI reports whether kind resolves through a locally authenticated
+// provider CLI rather than declared config. CLI candidates are host-scoped
+// and never count as configured credentials.
+func (k SourceKind) IsCLI() bool {
+	switch k {
+	case SourceKindGitHubCLI, SourceKindGitLabCLI, SourceKindForgejoCLI:
+		return true
+	default:
+		return false
+	}
+}
 
 type Key struct {
 	Platform string
@@ -62,8 +79,8 @@ func (c Candidate) SafeString() string {
 		return fmt.Sprintf("env:%s", c.EnvName)
 	case SourceKindFile:
 		return fmt.Sprintf("file:%s", c.FilePath)
-	case SourceKindGitHubCLI:
-		return fmt.Sprintf("github_cli:%s", c.Host)
+	case SourceKindGitHubCLI, SourceKindGitLabCLI, SourceKindForgejoCLI:
+		return fmt.Sprintf("%s:%s", c.Kind, c.Host)
 	case SourceKindGitHubApp:
 		if c.InstallationAccount != "" {
 			return fmt.Sprintf("github_app:%d@%s/%s", c.AppID, c.Host, c.InstallationAccount)
@@ -175,7 +192,7 @@ func canonicalCandidate(candidate Candidate) Candidate {
 		return Candidate{Kind: candidate.Kind, EnvName: candidate.EnvName}
 	case SourceKindFile:
 		return Candidate{Kind: candidate.Kind, FilePath: candidate.FilePath}
-	case SourceKindGitHubCLI:
+	case SourceKindGitHubCLI, SourceKindGitLabCLI, SourceKindForgejoCLI:
 		return Candidate{Kind: candidate.Kind, Host: candidate.Host}
 	case SourceKindGitHubApp:
 		return Candidate{

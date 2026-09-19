@@ -295,7 +295,7 @@ describe("MobileActivityView branch activity", () => {
     const repoPicker = screen.getByRole("button", { name: "Select repository: Global" });
     const filterPanel = screen.getByLabelText("Activity filters");
     expect(filterPanel.firstElementChild?.contains(repoPicker)).toBe(true);
-    const authorPicker = screen.getByRole("button", { name: "Filter authors" });
+    const authorPicker = screen.getByRole("button", { name: "Filter authors: Anyone" });
     const authorRow = authorPicker.closest(".mobile-author-filter");
     expect(authorRow?.querySelector(".mobile-author-icon")).toBeTruthy();
     expect(authorRow?.textContent).toContain("All authors");
@@ -530,7 +530,7 @@ describe("MobileActivityView branch activity", () => {
     expect(screen.getByPlaceholderText("Search activity")).toBeTruthy();
 
     await fireEvent.click(filters);
-    await fireEvent.click(screen.getByRole("button", { name: "Filter authors" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Filter authors: Anyone" }));
     await fireEvent.mouseDown(screen.getByRole("option", { name: "Alice" }));
 
     expect(setActivityAuthor).toHaveBeenCalledWith("Alice");
@@ -542,7 +542,7 @@ describe("MobileActivityView branch activity", () => {
     expect(screen.queryByRole("button", { name: "Clear author filter Alice" })).toBeNull();
 
     await fireEvent.click(screen.getByRole("button", { name: /Filters.*Alice/ }));
-    await fireEvent.click(screen.getByRole("button", { name: "Filter authors" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Filter authors: Alice" }));
     await fireEvent.mouseDown(screen.getByRole("option", { name: "Anyone" }));
     expect(setActivityAuthor).toHaveBeenLastCalledWith(undefined);
   });

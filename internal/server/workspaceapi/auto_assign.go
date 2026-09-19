@@ -3,7 +3,9 @@ package workspaceapi
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
+	"time"
 
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/server/httpapi"
@@ -89,18 +91,31 @@ func (s *Handler) applyWorkspaceAutoAssignment(
 	return s.assignPullWorkspaceUser(ctx, repo, ref, number, username, registry, mutator)
 }
 
-func (s *Handler) autoAssignWorkspaceItemForRoute(
-	ctx context.Context,
-	request ProviderWorkspaceItemRequest,
-	suppress bool,
-) error {
+// runWorkspaceAutoAssignment keeps provider latency out of workspace admission
+// and setup. The handler owns cancellation and waits for it during shutdown.
+func (s *Handler) runWorkspaceAutoAssignment(
+	workspaceID string, request ProviderWorkspaceItemRequest, suppress bool,
+) {
 	if suppress || !s.configSnapshot().AutoAssignOnCreate {
-		return nil
+		return
 	}
-	if s.providerWorkspaceAutomation != nil {
-		return s.providerWorkspaceAutomation.AutoAssignWorkspaceItem(ctx, request)
-	}
-	return s.AutoAssignProviderWorkspaceItem(ctx, request)
+	s.runBackground(func(ctx context.Context) {
+		started := time.Now()
+		var err error
+		if s.providerWorkspaceAutomation != nil {
+			err = s.providerWorkspaceAutomation.AutoAssignWorkspaceItem(ctx, request)
+		} else {
+			err = s.AutoAssignProviderWorkspaceItem(ctx, request)
+		}
+		slog.Info("workspace auto-assignment finished",
+			"workspace_id", workspaceID, "duration_ms", time.Since(started).Milliseconds(),
+			"success", err == nil,
+		)
+		if err != nil {
+			slog.Warn("automatically assign workspace item", "workspace_id", workspaceID,
+				"item_type", request.ItemType, "err", err)
+		}
+	})
 }
 
 // AutoAssignProviderWorkspaceItem applies hub-owned assignment policy.

@@ -22672,6 +22672,7 @@ func (c *Client) ListPullsWithResponse(ctx context.Context, options *ListPullsRe
 	queryEncoding := map[string]runtime.QueryEncoding{
 		"involves_me": {Style: "form", Explode: &[]bool{false}[0]},
 		"kanban":      {Style: "form", Explode: &[]bool{false}[0]},
+		"label":       {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":       {Style: "form", Explode: &[]bool{false}[0]},
 		"offset":      {Style: "form", Explode: &[]bool{false}[0]},
 		"q":           {Style: "form", Explode: &[]bool{false}[0]},
@@ -33054,6 +33055,7 @@ func (c *Client) ListPullsRaw(ctx context.Context, httpClient *http.Client, opti
 	queryEncoding := map[string]runtime.QueryEncoding{
 		"involves_me": {Style: "form", Explode: &[]bool{false}[0]},
 		"kanban":      {Style: "form", Explode: &[]bool{false}[0]},
+		"label":       {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":       {Style: "form", Explode: &[]bool{false}[0]},
 		"offset":      {Style: "form", Explode: &[]bool{false}[0]},
 		"q":           {Style: "form", Explode: &[]bool{false}[0]},
@@ -39090,6 +39092,7 @@ func NewListPullsRequest(ctx context.Context, baseURL string, options *ListPulls
 	queryEncoding := map[string]runtime.QueryEncoding{
 		"involves_me": {Style: "form", Explode: &[]bool{false}[0]},
 		"kanban":      {Style: "form", Explode: &[]bool{false}[0]},
+		"label":       {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":       {Style: "form", Explode: &[]bool{false}[0]},
 		"offset":      {Style: "form", Explode: &[]bool{false}[0]},
 		"q":           {Style: "form", Explode: &[]bool{false}[0]},
@@ -44036,6 +44039,9 @@ type ListUserRepositoriesQuery struct {
 }
 
 type ListPullsQuery struct {
+	// Label Exact case-sensitive label name; applied before pagination.
+	Label *string `json:"label,omitempty"`
+
 	// Repo Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories.
 	Repo    *string `json:"repo,omitempty"`
 	State   *string `json:"state,omitempty"`
@@ -50728,6 +50734,7 @@ type RawWorkspace struct {
 	BranchUpstreamMissing *bool              `json:"branchUpstreamMissing,omitempty"`
 	CommitsAhead          *int64             `json:"commitsAhead,omitempty"`
 	CommitsBehind         *int64             `json:"commitsBehind,omitempty"`
+	CommitsVsPRHead       *bool              `json:"commitsVsPRHead,omitempty"`
 	CreatedAt             string             `json:"createdAt"`
 	EnrichmentError       *string            `json:"enrichmentError,omitempty"`
 	EnrichmentRefreshedAt *string            `json:"enrichmentRefreshedAt,omitempty"`
@@ -51946,6 +51953,9 @@ type WorkspaceResponse struct {
 	CommitsAhead          *int64 `json:"commits_ahead,omitempty"`
 	CommitsBehind         *int64 `json:"commits_behind,omitempty"`
 
+	// CommitsVsPrHead True when the current branch has no upstream and commits_ahead/commits_behind instead compare against the provider's locally fetched pull-request head ref, as for fork pull requests. The counts name no push or pull target, so clients must not offer branch sync for them.
+	CommitsVsPrHead *bool `json:"commits_vs_pr_head,omitempty"`
+
 	// Created True when this response represents a workspace newly created by this request; absent when an existing workspace was returned or on reads.
 	Created   *bool  `json:"created,omitempty"`
 	CreatedAt string `json:"created_at"`
@@ -52012,6 +52022,7 @@ type WorkspaceSummary struct {
 	BranchUpstreamMissing *bool                      `json:"branch_upstream_missing,omitempty"`
 	CommitsAhead          *int64                     `json:"commits_ahead,omitempty"`
 	CommitsBehind         *int64                     `json:"commits_behind,omitempty"`
+	CommitsVsPrHead       *bool                      `json:"commits_vs_pr_head,omitempty"`
 	CreatedAt             string                     `json:"created_at"`
 	EnrichmentError       *string                    `json:"enrichment_error,omitempty"`
 	EnrichmentRefreshedAt *string                    `json:"enrichment_refreshed_at,omitempty"`

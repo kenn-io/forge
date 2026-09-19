@@ -21,7 +21,8 @@ import (
 )
 
 type recordingWorkspaceAutomation struct {
-	requests []ProviderWorkspaceItemRequest
+	requests chan ProviderWorkspaceItemRequest
+	release  <-chan struct{}
 }
 
 func TestCreateAdHocWorkspaceResolvesMissingRepositoryBeforeLocalCreate(t *testing.T) {
@@ -83,10 +84,15 @@ func TestCreateAdHocWorkspaceResolvesMissingRepositoryBeforeLocalCreate(t *testi
 }
 
 func (a *recordingWorkspaceAutomation) AutoAssignWorkspaceItem(
-	_ context.Context, request ProviderWorkspaceItemRequest,
+	ctx context.Context, request ProviderWorkspaceItemRequest,
 ) error {
-	a.requests = append(a.requests, request)
-	return nil
+	a.requests <- request
+	select {
+	case <-a.release:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func TestLaunchSpecCreatePersistsBeforeSetupStarts(t *testing.T) {
@@ -280,7 +286,7 @@ func TestCreatePullWorkspaceServiceSuppressesAutoAssign(t *testing.T) {
 	assert.Empty(provider.pullAssigned)
 }
 
-func TestFederationWorkspaceCreationUsesHubAutoAssignment(t *testing.T) {
+func TestWorkspaceCreationDoesNotWaitForHubAutoAssignment(t *testing.T) {
 	tests := []struct {
 		name     string
 		itemType string
@@ -320,7 +326,12 @@ func TestFederationWorkspaceCreationUsesHubAutoAssignment(t *testing.T) {
 			require.NoError(err)
 			resolver := stubLaunchSpecResolver{}
 			manager := workspace.NewManager(database, t.TempDir())
-			automation := &recordingWorkspaceAutomation{}
+			manager.SetLaunchSpecResolver(resolver)
+			release := make(chan struct{})
+			defer close(release)
+			automation := &recordingWorkspaceAutomation{
+				requests: make(chan ProviderWorkspaceItemRequest, 1), release: release,
+			}
 			handler := New(Deps{
 				DB: database, Workspaces: manager, LaunchSpecResolver: resolver,
 				ProviderWorkspaceAutomation: automation,
@@ -333,10 +344,28 @@ func TestFederationWorkspaceCreationUsesHubAutoAssignment(t *testing.T) {
 				require.NoError(handler.Shutdown(ctx))
 			})
 
-			require.NoError(test.create(handler))
-			require.Len(automation.requests, 1)
-			assert.Equal(test.itemType, automation.requests[0].ItemType)
-			assert.Equal(test.number, automation.requests[0].ItemNumber)
+			created := make(chan error, 1)
+			go func() { created <- test.create(handler) }()
+			select {
+			case request := <-automation.requests:
+				assert.Equal(test.itemType, request.ItemType)
+				assert.Equal(test.number, request.ItemNumber)
+			case <-time.After(5 * time.Second):
+				require.FailNow("assignment did not start")
+			}
+			select {
+			case err := <-created:
+				require.NoError(err)
+			case <-time.After(5 * time.Second):
+				require.FailNow("workspace creation waited for assignment")
+			}
+			rows, err := database.ListWorkspaces(t.Context())
+			require.NoError(err)
+			require.Len(rows, 1)
+			require.Eventually(func() bool {
+				events, err := database.ListWorkspaceSetupEvents(t.Context(), rows[0].ID)
+				return err == nil && len(events) > 0
+			}, 5*time.Second, 10*time.Millisecond, "setup must start while assignment is blocked")
 		})
 	}
 }

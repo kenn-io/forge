@@ -11,6 +11,7 @@ export interface RawWorkspace {
   branchUpstreamMissing?: boolean;
   commitsAhead?: number;
   commitsBehind?: number;
+  commitsVsPRHead?: boolean;
   createdAt: string;
   enrichmentError?: string;
   enrichmentRefreshedAt?: string;

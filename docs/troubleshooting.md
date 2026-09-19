@@ -49,9 +49,13 @@ Check these in order:
 5. Neither the [local sync ceiling](#local-sync-ceiling-reached) nor the
    provider rate limit is exhausted.
 
-For GitHub, `gh auth token --hostname HOST` can supply the token when the
-configured token source is absent. The unscoped `gh auth token` fallback applies
-only to `github.com`; run `gh auth login --hostname HOST` for another host.
+When the configured token source is absent, the provider CLI can supply the
+token: `gh auth token --hostname HOST` for GitHub, the `glab` credential for
+the host on GitLab, and the `fj` keys file entry for the host on Forgejo or
+Gitea. The unscoped `gh auth token` fallback applies only to `github.com`.
+Log in to another host with `gh auth login --hostname HOST`,
+`glab auth login --hostname HOST`, or `fj --host HOST auth login`. Expired `fj`
+OAuth logins are skipped until any `fj` command refreshes them.
 With `[[github_owner_tokens]]`, confirm the entered owner matches the mapping
 exactly after case folding and restart after changing the PAT to one issued by
 a different GitHub user. A missing owner route reports the GitHub host and owner

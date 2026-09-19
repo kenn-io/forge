@@ -58,8 +58,8 @@
     type PRDetailActionInput,
   } from "./keyboard-actions.js";
     import { SelectDropdown } from "@kenn-io/kit-ui";
-  import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import CheckIcon from "@lucide/svelte/icons/check";
+  import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import ClockIcon from "@lucide/svelte/icons/clock";
   import ExternalLinkIcon from "@lucide/svelte/icons/external-link";
   import GitMergeIcon from "@lucide/svelte/icons/git-merge";
@@ -2853,9 +2853,14 @@
               </Button>
             {/if}
             {#if capabilities.review_mutation}
-              <Button size="sm" label="Approve">
-                <CheckIcon size="14" strokeWidth="2.4" aria-hidden="true" />
-              </Button>
+              <div class="approve-action-measure">
+                <Button size="sm" label="Approve">
+                  <CheckIcon size="14" strokeWidth="2.4" aria-hidden="true" />
+                </Button>
+                {#if capabilities.supported_review_actions?.includes("request_changes")}
+                  <span class="approve-action-measure__options"></span>
+                {/if}
+              </div>
             {/if}
             {#if capabilities.workflow_approval && workflowApproval?.checked && workflowApproval.required}
               {@const count = workflowApproval.count ?? 0}
@@ -3297,7 +3302,7 @@
             />
           </div>
         </div>
-        {#if detailStore.getDetailLoaded()}
+        {#if detailStore.getDiscussionLoaded()}
           <EventTimeline
             events={filteredTimelineEvents}
             orderingEvents={timelineEvents}
@@ -3836,6 +3841,15 @@
     gap: 8px;
     min-width: 0;
     max-width: 100%;
+  }
+
+  .approve-action-measure {
+    display: inline-flex;
+  }
+
+  .approve-action-measure__options {
+    width: 24px;
+    flex: 0 0 24px;
   }
 
   .actions-row :global(.approve-section),

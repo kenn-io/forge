@@ -10,8 +10,8 @@ import (
 	"testing"
 )
 
-func fakeGHCLIPath(dir string) string {
-	return filepath.Join(dir, "gh")
+func fakeCLIPath(dir, name string) string {
+	return filepath.Join(dir, name)
 }
 
 func fakeGHCLIScript(t *testing.T, opts fakeGHCLIOptions) string {

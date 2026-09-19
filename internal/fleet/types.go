@@ -193,6 +193,7 @@ type RawWorkspace struct {
 	CreatedAt             string             `json:"createdAt"`
 	CommitsAhead          *int               `json:"commitsAhead,omitempty"`
 	CommitsBehind         *int               `json:"commitsBehind,omitempty"`
+	CommitsVsPRHead       *bool              `json:"commitsVsPRHead,omitempty"`
 	BranchUpstreamMissing *bool              `json:"branchUpstreamMissing,omitempty"`
 	WorktreeDirty         *bool              `json:"worktreeDirty,omitempty"`
 	EnrichmentStatus      string             `json:"enrichmentStatus,omitempty"`
@@ -477,6 +478,7 @@ type WorkspaceSummary struct {
 	MRDeletions           *int                       `json:"mr_deletions,omitempty"`
 	CommitsAhead          *int                       `json:"commits_ahead,omitempty"`
 	CommitsBehind         *int                       `json:"commits_behind,omitempty"`
+	CommitsVsPRHead       *bool                      `json:"commits_vs_pr_head,omitempty"`
 	BranchUpstreamMissing *bool                      `json:"branch_upstream_missing,omitempty"`
 	WorktreeDirty         *bool                      `json:"worktree_dirty,omitempty"`
 	EnrichmentStatus      string                     `json:"enrichment_status,omitempty"`

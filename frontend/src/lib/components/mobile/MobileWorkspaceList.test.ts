@@ -115,6 +115,28 @@ describe("MobileWorkspaceList", () => {
   });
 
   it.each([
+    ["ahead", { commits_ahead: 2, commits_behind: 0 }],
+    ["behind", { commits_ahead: 0, commits_behind: 3 }],
+  ] as const)("offers no branch sync for a fork PR workspace that is %s of the PR head", async (_direction, counts) => {
+    mockGet.mockImplementation((path: string) => {
+      if (path === "/snapshot") {
+        return Promise.resolve({
+          data: { hosts: [], workspaces: [{ ...fixture, ...counts, commits_vs_pr_head: true }] },
+        });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    render(MobileWorkspaceList, { props: { onOpen: vi.fn(), onOpenItem: vi.fn() } });
+    await screen.findByText("Build mobile workspaces");
+    await fireEvent.click(screen.getByRole("button", { name: "Workspace actions for Build mobile workspaces" }));
+
+    const actions = await screen.findByRole("dialog", { name: "Workspace actions" });
+    expect(within(actions).queryByRole("button", { name: /Push branch/ })).toBeNull();
+    expect(within(actions).queryByRole("button", { name: /Pull remote changes/ })).toBeNull();
+  });
+
+  it.each([
     ["working", "Working", "working"],
     ["approval", "Approval", "waiting for approval"],
     ["input", "Input", "waiting for input"],

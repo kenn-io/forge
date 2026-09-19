@@ -24,7 +24,7 @@ import {
   resetWorkspaceCreatePendingForTest,
 } from "../../stores/workspace-create-pending.svelte.js";
 import type { WorkspaceItemIdentity } from "../../workspace-inline.js";
-import { runWorkspaceQuickAction } from "../../stores/workspace-quick-actions.js";
+import { runWorkspaceQuickAction, quickActionWorkspaces } from "../../stores/workspace-quick-actions.js";
 import { STORES_KEY } from "../../context.js";
 
 const mocks = vi.hoisted(() => ({
@@ -705,6 +705,7 @@ function fakeDataTransfer(): DataTransfer {
 
 describe("WorkspaceTerminalView", () => {
   beforeEach(() => {
+    quickActionWorkspaces.clear();
     mocks.runtime = makeAppRuntime();
     delete window.__BASE_PATH__;
     localStorage.clear();
@@ -4309,8 +4310,9 @@ describe("WorkspaceTerminalView", () => {
   });
 
   describe("launcher overlay", () => {
-    it("keeps the launcher closed while a quick action starts its agent", async () => {
+    it("keeps the launcher closed when a quick action fails", async () => {
       const handoff = deferred<Response>();
+      const runCommand = vi.spyOn(mocks.runtime, "runCommand");
       const originalFetch = globalThis.fetch;
       vi.stubGlobal(
         "fetch",
@@ -4323,6 +4325,7 @@ describe("WorkspaceTerminalView", () => {
       );
       mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
       runWorkspaceQuickAction(mocks.runtime, "ws-1", { label: "Review", agent: "codex", prompt: "Review this change" });
+      const execution = runCommand.mock.results.at(-1)!.value;
       claimForPrs();
       render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" as const } });
 
@@ -4334,7 +4337,63 @@ describe("WorkspaceTerminalView", () => {
       expect(mocks.launchWorkspaceSession).not.toHaveBeenCalled();
 
       handoff.resolve(Response.json({ title: "Launch failed", status: 400 }, { status: 400 }));
+      await execution.exit;
+      flushSync();
+      expect(screen.queryByRole("dialog", { name: "Launch a session" })).toBeNull();
+      hostedWorkspaceLauncher("prs")!();
       await screen.findByRole("dialog", { name: "Launch a session" });
+    });
+
+    it("keeps the launcher closed after a quick action succeeds and its session exits", async () => {
+      const eventSources = installEventSourceRecorder();
+      const handoff = deferred<Response>();
+      const runCommand = vi.spyOn(mocks.runtime, "runCommand");
+      const originalFetch = globalThis.fetch;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((input: Request | URL | string, init?: RequestInit) => {
+          if (String(input instanceof Request ? input.url : input).includes("agent-handoff")) {
+            return handoff.promise;
+          }
+          return originalFetch(input, init);
+        }),
+      );
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+      runWorkspaceQuickAction(mocks.runtime, "ws-1", { label: "Review", agent: "codex", prompt: "Review this change" });
+      const execution = runCommand.mock.results.at(-1)!.value;
+      claimForPrs();
+      render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" as const } });
+
+      await waitFor(() => expect(hostedWorkspaceControls()).not.toBeNull());
+      await screen.findByRole("region", { name: "Workflow panes" });
+      await waitFor(() => expect(screen.queryByText("Loading workspace runtime...")).toBeNull());
+      flushSync();
+      expect(screen.queryByRole("dialog", { name: "Launch a session" })).toBeNull();
+      expect(mocks.launchWorkspaceSession).not.toHaveBeenCalled();
+
+      handoff.resolve(
+        Response.json({
+          session: runningSession,
+          initial_message: { state: "delivered", target_key: "codex", message_bytes: 18 },
+        }),
+      );
+      // The handoff response can precede the next three-second runtime poll.
+      await execution.exit;
+      flushSync();
+      expect(screen.queryByRole("dialog", { name: "Launch a session" })).toBeNull();
+
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithStaleSession());
+      await waitFor(() =>
+        expect(latestWorkspaceEventListeners(eventSources)["reconnect.stale"]).toBeTypeOf("function"),
+      );
+      latestWorkspaceEventListeners(eventSources)["reconnect.stale"]?.();
+      await waitFor(() => expect(document.querySelector(".sole-embedded-session")).not.toBeNull());
+      expect(screen.queryByRole("dialog", { name: "Launch a session" })).toBeNull();
+
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+      latestWorkspaceEventListeners(eventSources)["reconnect.stale"]?.();
+      await waitFor(() => expect(document.querySelector(".sole-embedded-session")).toBeNull());
+      expect(screen.queryByRole("dialog", { name: "Launch a session" })).toBeNull();
     });
 
     it("drops the Home tab in a pane and opens the launcher when nothing is running", async () => {

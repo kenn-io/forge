@@ -86,6 +86,59 @@ describe("ApproveButton", () => {
     });
   }
 
+  it("opens request changes from the review menu and submits a comment with the captured head", async () => {
+    const post = vi.fn().mockResolvedValue({});
+    const props = {
+      owner: "acme",
+      name: "widget",
+      number: 7,
+      provider: "github",
+      repoPath: "acme/widget",
+      platformHeadSha: "original-head",
+      supportedReviewActions: ["request_changes"],
+    };
+    render(ApproveButton, {
+      props,
+      context: new Map<symbol, unknown>([[STORES_KEY, { detail: detailActions(post) }]]),
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Review options" }));
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Request changes" }));
+    const dialog = screen.getByRole("dialog", { name: "Submit pull request review" });
+    const submit = within(dialog).getByRole("button", { name: "Request changes" });
+    expect(submit.hasAttribute("disabled")).toBe(true);
+    expect(within(dialog).queryByRole("button", { name: "Approve" })).toBeNull();
+    expect(post).not.toHaveBeenCalled();
+    await fireEvent.input(within(dialog).getByRole("textbox", { name: "Requested changes" }), {
+      target: { value: "Please revise this." },
+    });
+    await fireEvent.click(submit);
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith("/request-changes", {
+        body: { body: "Please revise this.", expected_head_sha: "original-head" },
+      }),
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("only offers the review menu when request changes is supported and disables it with approval", async () => {
+    const props = {
+      owner: "acme",
+      name: "widget",
+      number: 7,
+      provider: "github",
+      repoPath: "acme/widget",
+      supportedReviewActions: [] as string[],
+    };
+    const { rerender } = render(ApproveButton, {
+      props,
+      context: new Map<symbol, unknown>([[STORES_KEY, { detail: detailActions(vi.fn()) }]]),
+    });
+    expect(screen.queryByRole("button", { name: "Review options" })).toBeNull();
+    await rerender({ ...props, supportedReviewActions: ["request_changes"], disabled: true });
+    expect(screen.getByRole("button", { name: "Review options" }).hasAttribute("disabled")).toBe(true);
+  });
+
   it("keeps a request-changes head conflict parent-handled without a danger flash", async () => {
     const post = vi.fn().mockResolvedValue({
       error: {

@@ -433,6 +433,7 @@ func buildWorkspaceSummaries(
 			MRReviewDecision: lowerPtr(workspace.MRReviewDecision),
 			MRAdditions:      workspace.MRAdditions, MRDeletions: workspace.MRDeletions,
 			CommitsAhead: workspace.CommitsAhead, CommitsBehind: workspace.CommitsBehind,
+			CommitsVsPRHead:       workspace.CommitsVsPRHead,
 			BranchUpstreamMissing: workspace.BranchUpstreamMissing,
 			WorktreeDirty:         workspace.WorktreeDirty,
 			EnrichmentStatus:      workspace.EnrichmentStatus,

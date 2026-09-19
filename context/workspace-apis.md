@@ -524,8 +524,21 @@ Workspace create endpoints may return 202 with a pre-existing workspace
 (`internal/server/workspaceapi/routes_handlers.go::createIssueWorkspace`).
 
 - Automatic self-assignment is opt-in and applies only after a new PR/issue
-  workspace is persisted; preserve current assignees and never roll back the
-  workspace on upstream failure (`internal/server/workspaceapi/auto_assign.go::Handler.autoAssignWorkspaceItem`).
+  workspace is persisted; run it independently of creation/setup under handler
+  shutdown ownership. Preserve assignees and never roll back on upstream failure
+  (`internal/server/workspaceapi/auto_assign.go::Handler.runWorkspaceAutoAssignment`).
+- Inspect warm clones locally for branch conflicts; setup owns the fresh fetch
+  before checkout. Cold admission still creates the clone so its existing branches
+  participate in conflict handling (`internal/workspace/manager.go::Manager.branchInspectionDir`).
+- Warm every repository that has had a workspace, even after deletion or restart.
+  Keep one detached spare per Git directory and destination parent, without runtime sessions
+  (`internal/workspace/hot_worktree.go::Manager.WarmWorktrees`).
+- Populate spares outside the repository lock; readiness must survive cancellation
+  without exposing incomplete files or blocking foreground creation
+  (`internal/workspace/hot_worktree.go::Manager.prepareHotWorktree`).
+- Claim only clean, owned spares at the freshly fetched requested revision; preserve
+  branch and ownership rules, and leave changed or foreign spares untouched
+  (`internal/workspace/hot_worktree.go::tryHotWorktree`).
 
 ## Agent Activity Hooks
 
@@ -694,11 +707,14 @@ blocked base branches stay untouched and emit a warning
 ## Branch Upstream
 
 The branch's git upstream config (`branch.<name>.remote`/`.merge`) is the
-single source of truth for every sync-derived workspace surface:
-`commits_ahead`/`commits_behind` in the list response, the sidebar
-ahead/behind arrows, push, pull, and unpushed-commit flags. All of them
-silently report nothing when the upstream is not configured. A configured upstream
-whose local tracking ref is missing exposes `branch_upstream_missing`, so the UI can
+single source of truth for push, pull, and unpushed-commit flags; they report
+nothing without one. `commits_ahead`/`commits_behind` and the desktop sidebar
+arrows use the upstream when configured. A PR workspace without one (every fork
+head) instead reports counts against the locally fetched merge-request head ref,
+flagged `commits_vs_pr_head`; clients never offer branch sync for flagged counts
+(`internal/server/workspaceapi/routes_handlers.go::applyPullRequestHeadDivergence`).
+A configured upstream whose local tracking ref is missing exposes
+`branch_upstream_missing`, so the UI can
 offer the push that verifies or creates its remote branch. Every path that creates a
 PR-owned branch should configure its upstream when repository identity is known.
 Configured local bases may use a remote other than `origin`; new preferred and synthetic

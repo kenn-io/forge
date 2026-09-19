@@ -220,7 +220,13 @@ func (s *Handler) createWorkspace(
 
 func (s *Handler) CreatePullWorkspace(
 	ctx context.Context, req CreatePullWorkspaceRequest,
-) (WorkspaceResult, error) {
+) (result WorkspaceResult, err error) {
+	started := time.Now()
+	defer func() {
+		slog.Info("workspace creation finished", "workspace_id", result.Workspace.ID,
+			"item_type", db.WorkspaceItemTypePullRequest,
+			"duration_ms", time.Since(started).Milliseconds(), "success", err == nil)
+	}()
 	input := &createWorkspaceInput{}
 	input.Body.Provider = req.Provider
 	input.Body.PlatformHost = req.PlatformHost
@@ -278,22 +284,13 @@ func (s *Handler) createPullWorkspaceRouteCore(
 		return nil, httpapi.Internal("create workspace: " + err.Error())
 	}
 
-	if assignErr := s.autoAssignWorkspaceItemForRoute(ctx, ProviderWorkspaceItemRequest{
+	s.runWorkspaceAutoAssignment(ws.ID, ProviderWorkspaceItemRequest{
 		Repository: providerplane.RepositoryRoute{
 			Provider: spec.Repository.Provider, PlatformHost: spec.Repository.PlatformHost,
 			Owner: spec.Repository.Owner, Name: spec.Repository.Name,
 		},
 		ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: input.Body.MRNumber,
-	}, input.Body.SuppressAutoAssign); assignErr != nil {
-		slog.Warn("automatically assign pull request workspace",
-			"provider", spec.Repository.Provider,
-			"platform_host", spec.Repository.PlatformHost,
-			"owner", spec.Repository.Owner,
-			"name", spec.Repository.Name,
-			"number", input.Body.MRNumber,
-			"err", assignErr,
-		)
-	}
+	}, input.Body.SuppressAutoAssign)
 
 	s.runWorkspaceSetup(ws)
 
@@ -396,6 +393,7 @@ func (s *Handler) runWorkspaceSetupWithBasePath(ws *workspace.Workspace, basePat
 				Data: resp,
 			})
 			if setupErr == nil {
+				s.wakeWorkspaceWarmer()
 				s.runWorkspacePushedHeadObserverPass(bgCtx)
 			}
 			if errors.Is(setupErr, workspace.ErrWorkspaceRepositoryUnresolved) {
@@ -578,7 +576,13 @@ func (s *Handler) createIssueWorkspace(
 
 func (s *Handler) CreateIssueWorkspaceService(
 	ctx context.Context, req CreateIssueWorkspaceRequest,
-) (WorkspaceResult, error) {
+) (result WorkspaceResult, err error) {
+	started := time.Now()
+	defer func() {
+		slog.Info("workspace creation finished", "workspace_id", result.Workspace.ID,
+			"item_type", db.WorkspaceItemTypeIssue,
+			"duration_ms", time.Since(started).Milliseconds(), "success", err == nil)
+	}()
 	input := &createIssueWorkspaceInput{
 		Provider: req.Provider, PlatformHost: req.PlatformHost,
 		Owner: req.Owner, Name: req.Name, Number: req.Number,
@@ -758,22 +762,14 @@ func (s *Handler) createIssueWorkspaceRouteCore(
 	}
 
 	createdBranch := ws.WorkspaceBranch != ""
-	if assignErr := s.autoAssignWorkspaceItemForRoute(ctx, ProviderWorkspaceItemRequest{
+	s.runWorkspaceAutoAssignment(ws.ID, ProviderWorkspaceItemRequest{
 		Repository: providerplane.RepositoryRoute{
 			Provider: spec.Repository.Provider, PlatformHost: spec.Repository.PlatformHost,
 			Owner: spec.Repository.Owner, Name: spec.Repository.Name,
 		},
 		ItemType: db.WorkspaceItemTypeIssue, ItemNumber: input.Number,
-	}, input.Body.SuppressAutoAssign); assignErr != nil {
-		slog.Warn("automatically assign issue workspace",
-			"provider", spec.Repository.Provider,
-			"platform_host", spec.Repository.PlatformHost,
-			"owner", spec.Repository.Owner,
-			"name", spec.Repository.Name,
-			"number", input.Number,
-			"err", assignErr,
-		)
-	}
+	}, input.Body.SuppressAutoAssign)
+
 	s.runWorkspaceSetup(ws)
 
 	summary, err := s.workspaces.GetSummary(ctx, ws.ID)
@@ -823,7 +819,13 @@ func (s *Handler) createAdHocWorkspace(
 
 func (s *Handler) CreateAdHocWorkspaceService(
 	ctx context.Context, req CreateAdHocWorkspaceRequest,
-) (WorkspaceResult, error) {
+) (result WorkspaceResult, err error) {
+	started := time.Now()
+	defer func() {
+		slog.Info("workspace creation finished", "workspace_id", result.Workspace.ID,
+			"item_type", db.WorkspaceItemTypeAdHoc,
+			"duration_ms", time.Since(started).Milliseconds(), "success", err == nil)
+	}()
 	if s.resolveRepository != nil {
 		if _, err := s.resolveRepository(ctx, providerplane.RepositoryRoute{
 			Provider: req.Provider, PlatformHost: req.PlatformHost,
@@ -2038,7 +2040,7 @@ func (s *Handler) probeWorkspaceEnrichment(
 	}
 	var gitStateErr error
 	if plan.git {
-		divergenceErr := applyWorktreeDivergence(ctx, &resp, summary.WorktreePath)
+		divergenceErr := applyWorktreeDivergence(ctx, &resp, summary)
 		dirtyErr := applyWorktreeDirty(ctx, &resp, summary.WorktreePath)
 		gitStateErr = errors.Join(divergenceErr, dirtyErr)
 		result.divergenceComplete = gitStateErr == nil
@@ -2310,8 +2312,9 @@ const worktreeDivergenceTimeout = 750 * time.Millisecond
 func applyWorktreeDivergence(
 	ctx context.Context,
 	resp *workspaceResponse,
-	worktreePath string,
+	summary *db.WorkspaceSummary,
 ) error {
+	worktreePath := summary.WorktreePath
 	if worktreePath == "" {
 		return nil
 	}
@@ -2335,13 +2338,53 @@ func applyWorktreeDivergence(
 		}
 		if missing {
 			resp.BranchUpstreamMissing = &missing
+			return nil
 		}
-		return nil
+		return applyPullRequestHeadDivergence(probeCtx, resp, summary)
 	}
 	ahead := div.Ahead
 	behind := div.Behind
 	resp.CommitsAhead = &ahead
 	resp.CommitsBehind = &behind
+	return nil
+}
+
+// applyPullRequestHeadDivergence reports a pull-request workspace's drift from
+// the provider's merge-request head ref when its branch has no upstream. Fork
+// heads never get an upstream because origin has no ref for them and the fork
+// is not an authorized push target, yet the workspace still has to show
+// whether it is behind the pull request. The flag tells clients the counts do
+// not name a push or pull target.
+func applyPullRequestHeadDivergence(
+	ctx context.Context,
+	resp *workspaceResponse,
+	summary *db.WorkspaceSummary,
+) error {
+	if summary.ItemType != db.WorkspaceItemTypePullRequest || summary.ItemNumber <= 0 {
+		return nil
+	}
+	headRef := platform.MergeRequestHeadRef(
+		platform.Kind(summary.Platform), summary.ItemNumber,
+	)
+	div, ok, err := workspace.WorktreeDivergenceFromRef(
+		ctx, summary.WorktreePath, headRef,
+	)
+	if err != nil {
+		slog.Debug(
+			"worktree pull request head divergence probe failed",
+			"workspace_id", resp.ID,
+			"path", summary.WorktreePath,
+			"err", err,
+		)
+		return err
+	}
+	if !ok {
+		return nil
+	}
+	relative := true
+	resp.CommitsAhead = &div.Ahead
+	resp.CommitsBehind = &div.Behind
+	resp.CommitsVsPRHead = &relative
 	return nil
 }
 
@@ -2550,7 +2593,13 @@ func (s *Handler) PreferredWorkspaceAgentTargetService(
 
 func (s *Handler) launchWorkspaceRuntimeService(
 	ctx context.Context, workspaceID, targetKey, displayRegion string,
-) (localruntime.SessionInfo, error) {
+) (session localruntime.SessionInfo, err error) {
+	started := time.Now()
+	defer func() {
+		slog.Info("workspace runtime launch finished", "workspace_id", workspaceID,
+			"session_key", session.Key, "target_key", targetKey,
+			"duration_ms", time.Since(started).Milliseconds(), "success", err == nil)
+	}()
 	summary, err := s.getReadyRuntimeWorkspace(ctx, workspaceID)
 	if err != nil {
 		return localruntime.SessionInfo{}, err
@@ -2573,7 +2622,7 @@ func (s *Handler) launchWorkspaceRuntimeService(
 			return localruntime.SessionInfo{}, httpapi.Internal("prepare agent context: " + err.Error())
 		}
 	}
-	session, err := s.runtime.Launch(ctx, summary.ID, summary.WorktreePath, targetKey)
+	session, err = s.runtime.Launch(ctx, summary.ID, summary.WorktreePath, targetKey)
 	if err != nil {
 		return localruntime.SessionInfo{}, workspaceRuntimeLaunchError(err)
 	}

@@ -206,6 +206,78 @@ func TestMCPBackendPreservesCachedPullReadiness(t *testing.T) {
 	assert.Equal("not_found", backendErr.Kind)
 }
 
+func TestMCPBackendFiltersPullLabelsBeforePagination(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	for number, name := range []string{"bug", "debug", "bug"} {
+		id := seedPR(t, database, "acme", "widget", number+1)
+		repo, err := database.GetRepoByIdentity(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+		require.NoError(err)
+		require.NoError(database.ReplaceMergeRequestLabels(t.Context(), repo.ID, id, []db.Label{{Name: name}}))
+	}
+	repo, err := database.GetRepoByIdentity(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	identity := mcpserver.RepositoryIdentity{
+		Provider: "github", PlatformHost: "github.com", PlatformRepoID: repo.PlatformRepoID,
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+	}
+	var numbers []int
+	for offset := range 2 {
+		rows, err := srv.MCPBackend().ListPulls(t.Context(), mcpserver.ItemListQuery{
+			Repository: identity, State: "open", Label: "bug", Limit: 1, Offset: offset,
+		})
+		require.NoError(err)
+		require.Len(rows, 1)
+		assert.Equal([]string{"bug"}, rows[0].Labels)
+		numbers = append(numbers, rows[0].Number)
+	}
+	assert.ElementsMatch([]int{1, 3}, numbers)
+	rows, err := srv.MCPBackend().ListPulls(t.Context(), mcpserver.ItemListQuery{Repository: identity, Label: "Bug"})
+	require.NoError(err)
+	assert.Empty(rows)
+	detail, err := srv.MCPBackend().GetPull(t.Context(), mcpserver.ItemIdentity{
+		Type: "pr", Provider: "github", PlatformHost: "github.com", PlatformRepoID: repo.PlatformRepoID,
+		Owner: "acme", Name: "widget", Number: 1,
+	})
+	require.NoError(err)
+	require.NotNil(detail.Pull)
+	assert.Equal([]string{"bug"}, detail.Pull.Labels)
+}
+
+func TestMCPBackendListsPullsWithMalformedCachedChecks(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	seedPR(t, database, "acme", "widget", 42, func(pr *db.MergeRequest) {
+		pr.CIChecksJSON = `[{"name":"unit","conclusion":"success"}]`
+	})
+	seedPR(t, database, "acme", "widget", 43, func(pr *db.MergeRequest) {
+		pr.MergeableState = "dirty"
+		pr.CIChecksJSON = `[{"name":"partial","conclusion":"success"},{"name":42}]`
+	})
+	repo, err := database.GetRepoByIdentity(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	rows, err := srv.MCPBackend().ListPulls(t.Context(), mcpserver.ItemListQuery{
+		Repository: mcpserver.RepositoryIdentity{
+			Provider: "github", PlatformHost: "github.com", PlatformRepoID: repo.PlatformRepoID,
+			Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+		}, State: "open", Limit: 25,
+	})
+	require.NoError(err)
+	require.Len(rows, 2)
+	byNumber := make(map[int]mcpserver.Pull)
+	for _, row := range rows {
+		byNumber[row.Number] = row
+	}
+	assert.Contains(byNumber, 42)
+	assert.Contains(byNumber, 43)
+	require.Len(byNumber[42].Checks, 1)
+	assert.Equal("success", byNumber[42].Checks[0].Conclusion)
+	assert.Empty(byNumber[43].Checks)
+	assert.Equal("dirty", byNumber[43].MergeableState)
+}
+
 func TestMCPWorkspaceRepositoryFenceReconcilesHubIdentity(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)

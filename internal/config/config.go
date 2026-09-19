@@ -2529,16 +2529,23 @@ func (c *Config) TokenForPlatformHost(platform, host, repoTokenEnv string) strin
 	}
 	for _, pc := range c.Platforms {
 		if pc.Type == p && pc.Host == h && pc.TokenEnv != "" {
-			return os.Getenv(pc.TokenEnv)
+			if token := os.Getenv(pc.TokenEnv); token != "" {
+				return token
+			}
+			break
 		}
 	}
 	if defaultTokenEnv, ok := defaultTokenEnvForPlatformHost(p, h); ok {
-		return os.Getenv(defaultTokenEnv)
+		if token := os.Getenv(defaultTokenEnv); token != "" {
+			return token
+		}
 	}
 	if p == defaultPlatform {
 		return c.gitHubTokenForHost(h)
 	}
-	return ""
+	// Non-GitHub hosts end on the same host-scoped CLI fallback their
+	// descriptor chain declares (glab for GitLab, fj for Forgejo and Gitea).
+	return providerCLITokenForHost(p, h)
 }
 
 func (c *Config) ResolveRepoToken(r Repo) string {
@@ -2557,9 +2564,9 @@ func (c *Config) ResolveRepoToken(r Repo) string {
 // owner discovery and repository import.
 //
 // A readable App private key counts, since it mints installation tokens on
-// demand. The `gh` CLI candidate is deliberately excluded: it shells out and is
-// host-scoped, so pollers resolve it once per host through TokenForPlatformHost
-// instead of once per route here.
+// demand. CLI candidates (gh, glab, fj) are deliberately excluded: they shell
+// out or read a credential store and are host-scoped, so pollers resolve them
+// once per host through TokenForPlatformHost instead of once per route here.
 // selectedRepoUnderAccount splits one selected_repos entry and reports whether
 // it names a repository the installation account owns. App route generation and
 // coverage checks must agree on this predicate: an entry with a blank repository
@@ -3026,12 +3033,15 @@ func (c *Config) ProviderTokenSources() []ProviderTokenSource {
 // host's ownerless git fallback chain under tokenauth.CloneKey(host).
 // Repository-scoped Git operations select credentials by (provider, host,
 // owner, name) and never consult this fallback; it exists only for genuinely
-// ownerless host operations. When every tokened provider on a hostname agrees
-// on one canonical chain, that chain is the fallback; when providers disagree,
-// the fallback is disabled (empty chain) because an ownerless operation cannot
-// select a provider safely. Hosts whose plans are all credential-less also
-// keep an empty chain so a reload clears a previously tokened live clone
-// source instead of leaving the removed credential active.
+// ownerless host operations. When every provider on a hostname agrees on one
+// canonical chain, that chain is the fallback; when providers disagree, the
+// fallback is disabled (empty chain) because an ownerless operation cannot
+// select a provider safely. Every provider chain ends on its CLI credential
+// (Forgejo and Gitea share fj's), so providers sharing a hostname agree only
+// when their declared tokens and CLI credential match. A
+// host whose plans declare no token keeps its CLI-only chain, so a reload
+// that removes a token replaces the live clone source's credential instead
+// of leaving the removed one active.
 func (c *Config) CloneTokenDescriptors() []tokenauth.Descriptor {
 	plans := c.ProviderTokenSources()
 	indexByHost := make(map[string]int, len(plans))
@@ -3131,6 +3141,14 @@ func (c *Config) TokenSourceForPlatformHost(
 		desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
 			Kind:    tokenauth.SourceKindEnv,
 			EnvName: defaultTokenEnv,
+		})
+	}
+	// Every non-GitHub provider ends on its host-scoped CLI credential, so a
+	// user logged in with glab or fj needs no token_env for that host.
+	if kind := cliSourceKindForPlatform(p); kind != "" {
+		desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
+			Kind: kind,
+			Host: h,
 		})
 	}
 	if p == defaultPlatform {

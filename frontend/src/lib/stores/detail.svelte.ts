@@ -231,6 +231,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
   let syncing = $state(false);
   let storeError = $state<string | null>(null);
   let detailLoaded = $state(false);
+  let discussionLoaded = $state(false);
   let syncGeneration = 0;
   let selectionGeneration = 0;
   let detailRequestSequence = 0;
@@ -300,6 +301,10 @@ export function createDetailStore(opts: DetailStoreOptions) {
 
   function getDetailLoaded(): boolean {
     return detailLoaded;
+  }
+
+  function getDiscussionLoaded(): boolean {
+    return discussionLoaded;
   }
 
   // --- internal helpers ---
@@ -873,7 +878,20 @@ export function createDetailStore(opts: DetailStoreOptions) {
     return strip(detail) === strip(next);
   }
 
+  function applyDetailAvailability(next: PullDetail): void {
+    const sameItem =
+      detail !== null &&
+      !!next.repo.platform_repo_id &&
+      detail.repo.platform_repo_id === next.repo.platform_repo_id &&
+      detail.repo.provider === next.repo.provider &&
+      detail.repo.platform_host === next.repo.platform_host &&
+      detail.merge_request.Number === next.merge_request.Number;
+    detailLoaded = next.detail_loaded ?? false;
+    discussionLoaded = detailLoaded || (sameItem && discussionLoaded);
+  }
+
   function applyRefreshedDetail(next: PullDetail): void {
+    applyDetailAvailability(next);
     if (detailContentUnchanged(next)) return;
     detail = next;
   }
@@ -931,6 +949,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     syncing = false;
     storeError = null;
     detailLoaded = false;
+    discussionLoaded = false;
     unsavedLocalBody = null;
     lastObservedFetchedAt = undefined;
     runtime.runCommand(
@@ -954,6 +973,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     // intent if its requested mode is stronger.
     const key = prKey(requestRef);
     if (activeSelectionKey !== key) {
+      discussionLoaded = false;
       activeSelectionKey = key;
       ++selectionGeneration;
       // The observed-timestamp baseline belongs to the previous selection;
@@ -1038,8 +1058,8 @@ export function createDetailStore(opts: DetailStoreOptions) {
       const applied = yield* rebasePullMutations(requestRef, data, () => {
         if (gen !== syncGeneration || activeSelectionKey !== key) return false;
         const didApply = applyEnvelopeAt(envelopeTick, () => {
+          applyDetailAvailability(data);
           detail = withPreservedLocalBody(data);
-          detailLoaded = data.detail_loaded;
         });
         if (didApply) noteObservedFetchedAt(data.detail_fetched_at);
         return didApply;
@@ -1240,7 +1260,6 @@ export function createDetailStore(opts: DetailStoreOptions) {
                 }
                 const didApply = applyEnvelopeAt(envelopeTick, () => {
                   applyRefreshedDetail(withPreservedLocalBody(next));
-                  detailLoaded = data.detail_loaded ?? detailLoaded;
                 });
                 if (didApply) noteObservedFetchedAt(data.detail_fetched_at);
                 return didApply;
@@ -1286,7 +1305,6 @@ export function createDetailStore(opts: DetailStoreOptions) {
               storeError = null;
               const didApply = applyEnvelopeAt(envelopeTick, () => {
                 applyRefreshedDetail(withPreservedLocalBody(next));
-                detailLoaded = next.detail_loaded ?? detailLoaded;
               });
               if (didApply) noteObservedFetchedAt(next.detail_fetched_at);
               return didApply;
@@ -1321,6 +1339,10 @@ export function createDetailStore(opts: DetailStoreOptions) {
   ): void {
     const ref = detailRequestRef(owner, name, number, identity);
     activeLoad = null;
+    if (activeSelectionKey !== prKey(ref)) {
+      detailLoaded = false;
+      discussionLoaded = false;
+    }
     activeSelectionKey = prKey(ref);
     syncGeneration += 1;
     const program = syncDetailEffect(owner, name, number, ref).pipe(
@@ -1367,7 +1389,6 @@ export function createDetailStore(opts: DetailStoreOptions) {
         storeError = null;
         const didApply = applyEnvelopeAt(envelopeTick, () => {
           applyRefreshedDetail(withPreservedLocalBody(next));
-          detailLoaded = next.detail_loaded ?? detailLoaded;
         });
         if (didApply) {
           noteObservedFetchedAt(next.detail_fetched_at);
@@ -1853,7 +1874,6 @@ export function createDetailStore(opts: DetailStoreOptions) {
               if (!isDetailShowingRef(ref)) return false;
               return applyEnvelopeAt(refreshTick, () => {
                 applyRefreshedDetail(withPreservedLocalBody(response));
-                detailLoaded = response.detail_loaded ?? detailLoaded;
                 noteObservedFetchedAt(response.detail_fetched_at);
               });
             }),
@@ -1882,7 +1902,6 @@ export function createDetailStore(opts: DetailStoreOptions) {
           if (!isDetailShowingRef(ref)) return false;
           return applyEnvelopeAt(confirmed.envelopeTick, () => {
             applyRefreshedDetail(withPreservedLocalBody(confirmed.detail));
-            detailLoaded = confirmed.detail.detail_loaded ?? detailLoaded;
             noteObservedFetchedAt(confirmed.detail.detail_fetched_at);
           });
         });
@@ -2645,6 +2664,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     isDetailSyncing,
     getDetailError,
     getDetailLoaded,
+    getDiscussionLoaded,
     clearDetail,
     loadDetail,
     refreshDetailOnly,

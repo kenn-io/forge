@@ -1170,13 +1170,12 @@ func (m *Manager) branchInspectionDir(
 		validateRoute = m.workspaceCloneRouteValidator(identity, repo.ID, fence)
 	}
 	cloneCtx := gitclone.WithRepositoryIdentity(ctx, repo.ProviderID)
-	if err := m.clones.EnsureCloneValidated(
+	if err := m.clones.EnsureCloneForInspection(
 		cloneCtx, repo.Platform, repo.PlatformHost, repo.Owner, repo.Name, repo.RemoteURL,
 		validateRoute,
 	); err != nil {
 		return "", false, false, fmt.Errorf("ensure clone: %w", err)
 	}
-
 	cloneDir, err := m.clones.ClonePathForContext(
 		cloneCtx, repo.Platform, repo.PlatformHost, repo.Owner, repo.Name,
 	)
@@ -1378,7 +1377,23 @@ func (m *Manager) SetupWithWorktreeBasePath(
 // snapshot captured for this attempt.
 func (m *Manager) SetupWithOptions(
 	ctx context.Context, ws *Workspace, options SetupOptions,
-) error {
+) (setupErr error) {
+	started := time.Now()
+	stage, stageStarted := "prepare", started
+	finishStage := func() {
+		slog.Info("workspace setup stage finished", "workspace_id", ws.ID,
+			"stage", stage, "duration_ms", time.Since(stageStarted).Milliseconds(),
+			"success", setupErr == nil)
+	}
+	nextStage := func(next string) {
+		finishStage()
+		stage, stageStarted = next, time.Now()
+	}
+	defer func() {
+		finishStage()
+		slog.Info("workspace setup finished", "workspace_id", ws.ID,
+			"duration_ms", time.Since(started).Milliseconds(), "success", setupErr == nil)
+	}()
 	worktreeBasePath := options.WorktreeBasePath
 	recoveryPending := workspaceRequiresExistingDirectory(ws)
 	m.recordSetupEvent(
@@ -1448,6 +1463,7 @@ func (m *Manager) SetupWithOptions(
 	preserveWorktree := reusedWorktree
 	var gitDir string
 	commonDir, managedClone := reuse.commonDir, reuse.managedClone
+	remote := reuse.remote
 	if err != nil {
 		if recoveryPending {
 			if recoveryErr := m.validateExistingWorkspaceDirectory(ctx, ws); recoveryErr != nil {
@@ -1471,6 +1487,7 @@ func (m *Manager) SetupWithOptions(
 		if err := m.ensureWorkspacePathAvailable(ctx, ws); err != nil {
 			return m.failSetup(ctx, ws.ID, workspaceSetupStageWorktree, err)
 		}
+		nextStage(workspaceSetupStageClone)
 		var gitSetupDir workspaceGitDir
 		gitSetupDir, err = m.workspaceSetupGitDir(
 			ctx, ws, worktreeBasePath, launchSpec, validateCloneRoute,
@@ -1482,6 +1499,7 @@ func (m *Manager) SetupWithOptions(
 			)
 		}
 
+		nextStage(workspaceSetupStageWorktree)
 		gitDir = gitSetupDir.path
 		savedBranch := ws.WorkspaceBranch
 		if savedBranch != "" && savedBranch != workspaceBranchUnknown {
@@ -1505,7 +1523,9 @@ func (m *Manager) SetupWithOptions(
 		preserveWorktree = preserveWorktree || restored
 		commonDir = gitSetupDir.path
 		managedClone = !gitSetupDir.localBase
+		remote = gitSetupDir.remote
 	}
+	nextStage("finalize")
 	if ws.ItemType == db.WorkspaceItemTypePullRequest && ws.MRHeadRepo != nil {
 		currentBranch, branchErr := worktreeCurrentBranch(ctx, ws.WorktreePath)
 		if branchErr == nil && currentBranch != "" {
@@ -1570,6 +1590,7 @@ func (m *Manager) SetupWithOptions(
 	}
 
 	if managedClone && options.RoborevInitManagedClones {
+		nextStage(workspaceSetupStageRepositoryHooks)
 		m.recordSetupEvent(
 			ctx, ws.ID, workspaceSetupStageRepositoryHooks, "started",
 			"setting up managed repository hooks",
@@ -1583,6 +1604,7 @@ func (m *Manager) SetupWithOptions(
 		)
 	}
 
+	nextStage(workspaceSetupStageTmuxSession)
 	terminalWorkspace := ws
 	if recoveryPending {
 		copy := *ws
@@ -1609,6 +1631,7 @@ func (m *Manager) SetupWithOptions(
 		"terminal session started",
 	)
 
+	nextStage("ready")
 	// Record the final setup event before flipping status: "ready" is
 	// the externally visible completion signal, so observers that poll
 	// status must never see "ready" while the event log is still
@@ -1633,6 +1656,9 @@ func (m *Manager) SetupWithOptions(
 	}
 	ws.WorkspaceBranch = persistedBranch
 	ws.Status = "ready"
+	if err := m.rememberHotWorktreeRepository(ctx, commonDir, ws.WorktreePath, remote); err != nil {
+		slog.Warn("remember workspace repository for warming", "workspace_id", ws.ID, "err", err)
+	}
 	return nil
 }
 
@@ -1795,6 +1821,7 @@ func (m *Manager) RefreshWorkspaceHeadRepoSnapshot(
 type existingWorkspaceWorktreeResult struct {
 	branch       string
 	commonDir    string
+	remote       string
 	managedClone bool
 	reused       bool
 }
@@ -1919,7 +1946,7 @@ func (m *Manager) reuseExistingWorkspaceWorktreeDetails(
 		return existingWorkspaceWorktreeResult{}, err
 	}
 	return existingWorkspaceWorktreeResult{
-		branch: branch, commonDir: commonDir, managedClone: !prov.localBase, reused: true,
+		branch: branch, commonDir: commonDir, remote: prov.remote, managedClone: !prov.localBase, reused: true,
 	}, nil
 }
 
@@ -6283,6 +6310,9 @@ func gitRefExists(ctx context.Context, dir, ref string) bool {
 func runGitWorktreeAdd(
 	ctx context.Context, dir, worktreePath string, args ...string,
 ) error {
+	if claimed, err := tryHotWorktree(ctx, dir, worktreePath, args...); claimed || err != nil {
+		return err
+	}
 	gitArgs := make([]string, 0, len(args)+3)
 	gitArgs = append(gitArgs, "worktree", "add", worktreePath)
 	gitArgs = append(gitArgs, args...)

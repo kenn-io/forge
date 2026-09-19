@@ -9,6 +9,9 @@
 - Repository-wide PR scans use bulk cached list data by default, never one detail
   read per PR; review-event enrichment is opt-in. Cached readiness evidence must
   not certify permission to merge (`internal/mcpserver/tools_pulls.go::Server.listPullContexts`).
+- PR contexts preserve cached label names. Exact label filters run in the
+  provider-owned list query before pagination, including across hub transport
+  (`internal/server/mcp_backend.go::mcpBackend.ListPulls`).
 - MCP is an optional daemon-owned secondary listener enabled by
   `[mcp].enabled`; an omitted or zero port uses the backend port plus one, while
   a nonzero port overrides it (`internal/config/config.go::Config.MCPPort`).

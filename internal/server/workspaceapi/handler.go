@@ -157,6 +157,7 @@ type Handler struct {
 	workspaceEnrichmentDisabled    bool
 	workspaceSetupMu               sync.Mutex
 	workspaceSetupDone             map[string]chan struct{}
+	workspaceWarmWake              chan struct{}
 	workspaceDeleting              map[string]*workspaceDeletion
 	initialMessagesMu              sync.Mutex
 	initialMessages                map[initialMessageKey]initialMessageAttempt
@@ -234,6 +235,7 @@ func New(deps Deps) *Handler {
 		workspaceEnrichmentSlots:       make(chan struct{}, tmuxProbeMaxConcurrency),
 		workspaceEnrichmentDisabled:    deps.EnrichmentDisabled,
 		workspaceSetupDone:             make(map[string]chan struct{}),
+		workspaceWarmWake:              make(chan struct{}, 1),
 		workspaceDeleting:              make(map[string]*workspaceDeletion),
 		initialMessages:                make(map[initialMessageKey]initialMessageAttempt),
 		tmuxActivity:                   newTmuxActivityTracker(now),

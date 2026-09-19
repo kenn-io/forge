@@ -116,9 +116,9 @@ Interactive surfaces must agree on which item is selected.
   their automatically opened empty fallback while the launch intent is pending and may discard only unclaimed intents
   (`frontend/src/lib/stores/workspace-create-pending.svelte.ts::acceptWorkspaceLaunch`,
   `frontend/src/lib/components/terminal/workspace-runtime-workflow.ts::reconcileAcceptedLaunch`).
-- Quick actions already choose an agent, so their pending server handoff suppresses
-  the automatic session launcher without queuing a second frontend launch
-  (`frontend/src/lib/stores/workspace-quick-actions.ts::runWorkspaceQuickAction`).
+- Quick actions keep the automatic session picker closed for that workspace during the browser session,
+  regardless of launch outcome or session exit. Opening it remains an explicit user action
+  (`frontend/src/lib/stores/workspace-quick-actions.ts::quickActionWorkspaces`).
 - Inline surface claims come only from live selection effects (the list
   views' claim effects, which react to recorded overrides); async responses
   record overrides and tombstones but never claim a surface themselves, and
@@ -252,6 +252,16 @@ Persisted controls must state their scope clearly.
 - Activity detail selection uses one URL-backed slot for pull requests, issues,
   and default-branch commits so browser history restores one mutually exclusive pane
   (`frontend/src/App.svelte::updateDrawerURL`).
+- Issue and PR links opened from Activity stay in Activity and enable the matching
+  item-type filter so the sidebar agrees with the detail selection
+  (`frontend/src/App.svelte::handleItemReference`).
+- Link navigation reveals the selected Activity row once it renders; later feed
+  refreshes must preserve the user's scroll position
+  (`frontend/src/lib/views/ActivityFeedView.svelte::revealSelectedActivityRow`).
+- Loaded discussion stays visible across incomplete refreshes only for the same
+  provider-stable repository and PR. Keep its availability separate from current
+  detail completeness used by CI; clear it on selection change or explicit clear
+  (`frontend/src/lib/stores/detail.svelte.ts::applyDetailAvailability`).
 - Activity filters remain URL-backed and session-scoped. Missing filter params on a
   partial Activity URL inherit the last validated route before store hydration, while
   explicit URL values win (`frontend/src/lib/stores/router.svelte.ts::restoreMissingActivityFilters`).
@@ -320,6 +330,9 @@ Persisted controls must state their scope clearly.
 - Rebasing must not hide commit authorship: show the original author and label a
   distinct committer, while preserving committer-based activity identity and time
   (`frontend/src/lib/components/detail/EventTimeline.svelte::eventAttribution`).
+- Timeline diff retry suppression must permit a new load after another pane clears
+  or replaces the shared diff store; a previous attempt is not permanent availability
+  (`frontend/src/lib/components/detail/EventTimeline.svelte::lastDiffLoadKey`).
 - Detail timelines apply the server-backed entry limit after filtering and grouping,
   then make the remainder explicit and mount it in bounded idle batches; harnesses
   that require every fixture row pass a large limit. An explicit full-timeline request

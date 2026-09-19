@@ -1,0 +1,13 @@
+# CI-only tools, loaded with MISE_ENV=ci so a macOS workstation's
+# `mise install` never fails on a tool with no published build for it.
+# fj (forgejo-cli) publishes prebuilt binaries on Codeberg, which mise's
+# GitHub-only binary backend cannot reach. The provider CLI credential tests
+# run the real fj, so pin its release download per platform; bump the version
+# and both checksums together. macOS has no published build, so those hosts
+# install fj themselves and the tests skip without it.
+[tools."http:fj"]
+version = "0.6.0"
+bin_path = "."
+[tools."http:fj".platforms]
+linux-x64 = { url = "https://codeberg.org/forgejo-contrib/forgejo-cli/releases/download/v0.6.0/forgejo-cli-x86_64-linux.tar.gz", checksum = "sha256:ea559da5449b6dd7e0dd9f7ea51c906b575696f782edd606b52adcf773602742" }
+linux-arm64 = { url = "https://codeberg.org/forgejo-contrib/forgejo-cli/releases/download/v0.6.0/forgejo-cli-aarch64-linux.tar.gz", checksum = "sha256:f427e0f94e2bf6f4b44bff17020706915bccfe7abb7ad9b9cbb74cc1aa2dd7b5" }

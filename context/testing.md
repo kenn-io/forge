@@ -548,13 +548,21 @@ Workspace fixtures with background monitors must seed observer inputs before
 capture transitional fixture state (`internal/server/server.go::runWorkspacePushedHeadObserverLoop`).
 
 `testing/synctest` is appropriate only when all goroutines and timers under test
-are pure in-process work created inside the `synctest.Run` bubble. Good
+are pure in-process work created inside the `synctest.Test` bubble. Good
 candidates include fake-client backoff, cooldown, cancellation, and event-hub
 tests. Do not use `synctest` around `httptest.Server`, WebSockets, tmux, PTYs,
 git, shell commands, filesystem polling driven by external processes, or tests
 that call `t.Run`, `t.Parallel`, or `t.Deadline` inside the bubble.
 `synctest.Wait` is race-detector synchronization, so it is useful under
 `go test -race` when the test is structurally eligible.
+
+`make timing-budget-check` runs in `guardrail-check` and the pre-commit hooks
+and rejects testify `Eventually`, `EventuallyWithT`, `Eventuallyf`,
+`EventuallyWithTf`, `Never` and `Neverf` completion budgets written as literals
+below one second, whether called on the package or an `assert.New`/`require.New`
+helper. Keep a shorter wait only when it observes an external owner, and record
+that owner in a reviewed `allowedBudgets` entry; named budgets and tick
+intervals stay outside the check. (`tools/timingbudgetcheck/main.go::allowedBudgets`)
 
 ## HTTP testing discipline
 

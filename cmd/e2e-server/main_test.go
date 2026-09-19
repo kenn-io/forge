@@ -27,11 +27,11 @@ import (
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
-	"go.kenn.io/forge/platform"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/testsignal"
 	"go.kenn.io/forge/internal/web"
+	"go.kenn.io/forge/platform"
 )
 
 var testTmux = newTestTmuxTracker()
@@ -505,63 +505,58 @@ func TestPatchFixturePRSHAsUpdatesLookupPRs(t *testing.T) {
 }
 
 func TestAppStateRegistryWaitsForInFlightHandlersAfterSwap(t *testing.T) {
-	started := make(chan struct{})
-	release := make(chan struct{})
-	oldState := &appState{
-		handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			close(started)
-			<-release
-			w.WriteHeader(http.StatusNoContent)
-		}),
-	}
-	newState := &appState{
-		handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusAccepted)
-		}),
-	}
-	states := newAppStateRegistry(oldState)
+	synctest.Test(t, func(t *testing.T) {
+		started := make(chan struct{})
+		release := make(chan struct{})
+		oldState := &appState{
+			handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				close(started)
+				<-release
+				w.WriteHeader(http.StatusNoContent)
+			}),
+		}
+		newState := &appState{
+			handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusAccepted)
+			}),
+		}
+		states := newAppStateRegistry(oldState)
 
-	oldDone := make(chan struct{})
-	go func() {
-		defer close(oldDone)
-		states.ServeHTTP(
-			httptest.NewRecorder(),
-			httptest.NewRequest(http.MethodGet, "/", nil),
-		)
-	}()
-	<-started
+		oldDone := make(chan struct{})
+		go func() {
+			defer close(oldDone)
+			states.ServeHTTP(
+				httptest.NewRecorder(),
+				httptest.NewRequest(http.MethodGet, "/", nil),
+			)
+		}()
+		<-started
 
-	require := require.New(t)
-	swapped := states.Swap(newState)
-	require.Same(oldState, swapped)
+		require := require.New(t)
+		swapped := states.Swap(newState)
+		require.Same(oldState, swapped)
 
-	drained := make(chan struct{})
-	go func() {
-		defer close(drained)
-		_ = swapped.waitForHandlers(context.Background())
-	}()
+		drained := make(chan struct{})
+		go func() {
+			defer close(drained)
+			_ = swapped.waitForHandlers(context.Background())
+		}()
 
-	select {
-	case <-drained:
-		require.Fail("old state drained before its in-flight handler returned")
-	case <-time.After(100 * time.Millisecond):
-	}
+		synctest.Wait()
+		select {
+		case <-drained:
+			require.Fail("old state drained before its in-flight handler returned")
+		default:
+		}
 
-	newRecorder := httptest.NewRecorder()
-	states.ServeHTTP(newRecorder, httptest.NewRequest(http.MethodGet, "/", nil))
-	require.Equal(http.StatusAccepted, newRecorder.Code)
+		newRecorder := httptest.NewRecorder()
+		states.ServeHTTP(newRecorder, httptest.NewRequest(http.MethodGet, "/", nil))
+		require.Equal(http.StatusAccepted, newRecorder.Code)
 
-	close(release)
-	select {
-	case <-oldDone:
-	case <-time.After(5 * time.Second):
-		require.Fail("old handler did not return")
-	}
-	select {
-	case <-drained:
-	case <-time.After(5 * time.Second):
-		require.Fail("old state did not drain after handler returned")
-	}
+		close(release)
+		<-oldDone
+		<-drained
+	})
 }
 
 func TestAppStateRegistryWaitsForAsyncStateCleanup(t *testing.T) {

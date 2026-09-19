@@ -42,7 +42,7 @@ DEV_CLONE_FRONTEND_PORT ?= 5175
         docs-build docs-check docs-screenshots docs-vercel-build docs-branding-check docs-deploy-staging docs-deploy \
         dev dev-ephemeral dev-ephemeral-stop test test-short test-integration test-e2e test-e2e-roborev huma-check test-fleet-container test-fleet-drive-container test-gitlab-container gitlab-fixture-bake vet check-mise lint lint-check nilaway testify-helper-check \
         profile-workspace-switch otel-lgtm \
-        frontend-api-client-check font-size-token-check huma-route-check migration-history-check playwright-version-check script-tests guardrail-check race-times tidy svelte-skills svelte-skills-sync clean install-hooks help \
+        frontend-api-client-check font-size-token-check huma-route-check migration-history-check timing-budget-check playwright-version-check script-tests guardrail-check race-times tidy svelte-skills svelte-skills-sync clean install-hooks help \
         dev-clone-db frontend-dev-clone-db
 
 # gotestsum prints package names on success and full output on failure,
@@ -236,8 +236,12 @@ script-tests: check-vite-plus-bin
 migration-history-check:
 	go run ./tools/migrationhistorycheck
 
+# Reject unreviewed sub-second test polling budgets.
+timing-budget-check:
+	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" go run ./tools/timingbudgetcheck .
+
 guardrail-check: check-vite-plus-bin
-	$(MAKE) frontend-api-client-check font-size-token-check huma-route-check migration-history-check playwright-version-check script-tests testify-helper-check docs-branding-check
+	$(MAKE) frontend-api-client-check font-size-token-check huma-route-check migration-history-check playwright-version-check script-tests testify-helper-check docs-branding-check timing-budget-check
 
 
 # Regenerate the checked-in OpenAPI document and generated clients
@@ -467,6 +471,7 @@ help:
 	@echo "  vet            - Run go vet"
 	@echo "  lint           - Run mise-managed golangci-lint (auto-fix)"
 	@echo "  lint-check     - Run mise-managed golangci-lint without modifying files"
+	@echo "  timing-budget-check - Reject unreviewed sub-second test polling budgets"
 	@echo "  nilaway        - Run NilAway against first-party Go packages"
 	@echo "  testify-helper-check - Enforce Assert.New(t) in assertion-heavy Go tests"
 	@echo "  huma-route-check - Prevent non-Huma Go route registrations"

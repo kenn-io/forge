@@ -376,6 +376,46 @@ describe("workflow actions store", () => {
     },
   );
 
+  it.each(["first page", "pagination"])("refreshes after activity during a pending %s read", async (phase) => {
+    const stalePage = Promise.withResolvers<Response>();
+    const staleRead = phase === "pagination" ? 2 : 1;
+    let reads = 0;
+    globalThis.fetch = async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
+      if (!url.pathname.endsWith("/runs")) return api.fetch(input, init);
+      reads++;
+      if (reads === staleRead) return stalePage.promise;
+      return jsonResponse({
+        repo,
+        items: [run("run-old", reads > staleRead ? "completed" : "queued")],
+        exhausted: reads > staleRead,
+        ...(reads < staleRead && { next_cursor: "page-2" }),
+      });
+    };
+    store.loadCatalog(ref);
+    await settle();
+    store.selectWorkflow(ref, "deploy.yml");
+    await settle();
+    if (phase === "pagination") {
+      store.loadMoreRuns(ref);
+      await settle();
+      expect(store.getSnapshot(ref)?.runsPage.loadingMore).toBe(true);
+    } else {
+      expect(store.getLoading(ref).runs).toBe(true);
+    }
+    try {
+      store.refreshRuns(ref);
+      await settle();
+      expect(store.getRuns(ref)[0]?.status).toBe("completed");
+    } finally {
+      stalePage.resolve(jsonResponse({ repo, items: [run("run-old", "queued")], exhausted: true }));
+    }
+    await settle();
+    expect(store.getRuns(ref)[0]?.status).toBe("completed");
+    expect(store.getLoading(ref).runs).toBe(false);
+    expect(store.getSnapshot(ref)?.runsPage.loadingMore).toBe(false);
+  });
+
   it("uses fresh run status instead of retaining an older dispatch snapshot on refresh", async () => {
     fixture.dispatchResponse = () =>
       jsonResponse(

@@ -173,6 +173,36 @@ func TestRelayTargetedChecksAndBudgetGate(t *testing.T) {
 	assert.Equal(int32(1), provider.getCombinedCalls.Load(), "closed, unknown, and headless PRs do not spend CI budget")
 }
 
+func TestRelayWorkflowNotificationBypassesBackgroundReserve(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+	database := openTestDB(t)
+	repo := RepoRef{Platform: platform.KindGitHub, PlatformHost: "github.com", PlatformExternalID: "R_project", Owner: "team", Name: "project"}
+	repoID, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
+		Platform: "github", PlatformHost: repo.PlatformHost, PlatformRepoID: repo.PlatformExternalID, Owner: repo.Owner, Name: repo.Name,
+	})
+	require.NoError(err)
+	quota := NewQuotaRegistry()
+	quota.UpdateSnapshot(HostIdentity(repo.PlatformHost), QuotaResourceREST, Rate{
+		Limit: 5000, Remaining: RateReserveBuffer, Reset: time.Now().UTC().Add(time.Hour),
+	})
+	syncer := NewSyncer(nil, database, nil, []RepoRef{repo}, time.Minute, nil, nil)
+	syncer.SetQuotaRegistry(quota)
+	require.True(syncer.backgroundReserveExhausted(repo, QuotaResourceREST, false))
+	var notified []string
+	syncer.SetOnRelayRefresh(func(_ context.Context, id int64, target string, _ int) {
+		assert.Equal(repoID, id)
+		notified = append(notified, target)
+	})
+	for _, target := range []string{activityrelay.RepositoryRefs, activityrelay.WorkflowRuns} {
+		require.NoError(syncer.refreshRelayHint(WithSyncBudget(t.Context()), activityrelay.Hint{
+			Provider: "github", Host: repo.PlatformHost, RepositoryID: repo.PlatformExternalID, Target: target,
+		}))
+	}
+	assert.Equal([]string{activityrelay.WorkflowRuns}, notified, "only the notification bypasses the background quota gate")
+}
+
 func TestRelayChecksRefreshImmediatelyAndKeepEventsDuringRefresh(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {

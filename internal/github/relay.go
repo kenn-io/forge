@@ -212,7 +212,7 @@ func (s *Syncer) refreshRelayHint(ctx context.Context, hint activityrelay.Hint) 
 	if err != nil {
 		return err
 	}
-	if s.backgroundReserveExhausted(repo, QuotaResourceREST, false) {
+	if hint.Target != activityrelay.WorkflowRuns && s.backgroundReserveExhausted(repo, QuotaResourceREST, false) {
 		return nil
 	}
 	stored, err := s.db.GetRepositoryByProviderID(ctx, hint.Provider, hint.Host, repo.PlatformExternalID)

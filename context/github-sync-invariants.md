@@ -795,6 +795,8 @@ error or cancellation unchanged and never adopts.
   ordinary activity and discard pending hints on shutdown. (`internal/activityrelay/broadcast.go::Broadcaster`)
 - Checks refresh only known open PRs with a head SHA; never upgrade them to full PR syncs.
   (`internal/github/relay.go::refreshRelayHint`)
+- Workflow-list hints only notify foreground views, so background quota reserves must not
+  suppress them; the foreground read owns provider admission. (`internal/github/relay.go::refreshRelayHint`)
 - A parent ETag does not establish whether comment content changed; child-change hints require
   unconditional detail reads. (`internal/github/sync.go::getIssueForDetail`)
 - Relay status travels with ordinary sync status and is absent when the consumer is off. It

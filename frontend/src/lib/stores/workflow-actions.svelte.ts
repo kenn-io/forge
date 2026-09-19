@@ -406,7 +406,14 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
     if (!enabled) return;
     const snapshot = snapshotFor(ref);
     const cursor = snapshot.runsPage.nextCursor;
-    if (!snapshot.selectedWorkflow || !cursor || snapshot.runsPage.exhausted || snapshot.runsPage.loadingMore) return;
+    if (
+      !snapshot.selectedWorkflow ||
+      snapshot.loading.runs ||
+      !cursor ||
+      snapshot.runsPage.exhausted ||
+      snapshot.runsPage.loadingMore
+    )
+      return;
     update(ref, (current) => ({ ...current, runsPage: { ...current.runsPage, loadingMore: true } }));
     readRuns(ref, snapshot.selectedWorkflow.id, cursor);
   }
@@ -414,7 +421,9 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
   function refreshRuns(ref: WorkflowRepositoryRef): void {
     if (!enabled) return;
     const snapshot = snapshotFor(ref);
-    if (!snapshot.selectedWorkflow || snapshot.loading.runs || snapshot.runsPage.loadingMore) return;
+    if (!snapshot.selectedWorkflow) return;
+    // A relay hint supersedes a read that may already contain stale status.
+    // readRuns interrupts that request and fences out its response.
     update(ref, (current) => ({ ...current, loading: { ...current.loading, runs: true } }));
     readRuns(ref, snapshot.selectedWorkflow.id, undefined);
   }

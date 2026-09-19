@@ -82,13 +82,16 @@
     workspacePaneControls = undefined,
   }: Props = $props();
 
-  const selectedPR = $derived.by(() => {
-    if (!routeSelection || routeSelection.platformRepoId) return routeSelection;
+  const selectedPlatformRepoId = $derived.by(() => {
+    if (!routeSelection || routeSelection.platformRepoId) return routeSelection?.platformRepoId;
     const item = pulls.getPulls().find((item) =>
       item.Number === routeSelection.number && repoIdentityMatches(item, routeSelection),
     );
-    return { ...routeSelection, platformRepoId: item?.repo.platform_repo_id };
+    return item?.repo.platform_repo_id;
   });
+  const selectedPR = $derived(
+    routeSelection ? { ...routeSelection, platformRepoId: selectedPlatformRepoId } : null,
+  );
   const paneLayoutStore = getPaneLayoutStore("prs");
   const paneLayout = $derived<PaneLayoutStore | null>(detailPresentation === "panes" ? paneLayoutStore : null);
 

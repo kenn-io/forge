@@ -1255,11 +1255,16 @@ export function createDetailStore(opts: DetailStoreOptions) {
     });
   }
 
-  function refreshRequestRef(owner: string, name: string, number: number, identity: DetailRequestOptions) {
+  function refreshRequest(owner: string, name: string, number: number, identity: DetailRequestOptions) {
     const ref = detailRequestRef(owner, name, number, identity);
-    if (ref.platformRepoId || !isDetailShowingRef(ref)) return ref;
-    const verified = { ...ref, platformRepoId: detail?.repo.platform_repo_id };
-    return activeSelectionKey === prKey(verified) ? verified : ref;
+    if (!isDetailShowingRef(ref)) return { ref, key: prKey(ref) };
+    const verified = { ...ref, platformRepoId: ref.platformRepoId ?? detail?.repo.platform_repo_id };
+    const verifiedKey = prKey(verified);
+    if (activeSelectionKey === verifiedKey) return { ref: verified, key: verifiedKey };
+    const routeKey = prKey({ ...verified, platformRepoId: undefined });
+    // A mutation can know the repository ID even when the selection began from a direct URL.
+    // Keep the original selection key without dropping the mutation's verified ID.
+    return { ref, key: activeSelectionKey === routeKey ? routeKey : prKey(ref) };
   }
 
   function refreshDetailOnlyEffect(
@@ -1271,8 +1276,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     observeStaleSuccess = false,
   ): Effect.Effect<DetailRefreshResult, ApiProblemError | TransientTransportError, GeneratedApi | ProviderMutations> {
     return Effect.suspend(() => {
-      const ref = refreshRequestRef(owner, name, number, identity);
-      const key = prKey(ref);
+      const { ref, key } = refreshRequest(owner, name, number, identity);
       const requestSequence = ++detailRequestSequence;
       const envelopeTick = nextWorkspaceLifecycleTick();
       const ownership = (): "current" | "irrelevant" | "superseded" => {
@@ -1353,10 +1357,9 @@ export function createDetailStore(opts: DetailStoreOptions) {
     identity: DetailRequestOptions,
   ): Effect.Effect<boolean, ApiProblemError | TransientTransportError, GeneratedApi | ProviderMutations> {
     return Effect.suspend(() => {
-      const ref = refreshRequestRef(owner, name, number, identity);
+      const { ref, key } = refreshRequest(owner, name, number, identity);
       const expectedGeneration = syncGeneration;
       const envelopeTick = nextWorkspaceLifecycleTick();
-      const key = prKey(ref);
       const isCurrent = () => expectedGeneration === syncGeneration && activeSelectionKey === key;
       if (isCurrent()) syncing = true;
       return executeGeneratedApiRequest("POST synchronize pull request detail", (client, signal) =>

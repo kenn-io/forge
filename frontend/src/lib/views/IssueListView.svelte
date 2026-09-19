@@ -58,13 +58,16 @@
     workspacePaneControls = undefined,
   }: Props = $props();
 
-  const selectedIssue = $derived.by(() => {
-    if (!routeSelection || routeSelection.platformRepoId) return routeSelection;
+  const selectedPlatformRepoId = $derived.by(() => {
+    if (!routeSelection || routeSelection.platformRepoId) return routeSelection?.platformRepoId;
     const item = issues.getIssues().find((item) =>
       item.Number === routeSelection.number && repoIdentityMatches(item, routeSelection),
     );
-    return { ...routeSelection, platformRepoId: item?.repo.platform_repo_id };
+    return item?.repo.platform_repo_id;
   });
+  const selectedIssue = $derived(
+    routeSelection ? { ...routeSelection, platformRepoId: selectedPlatformRepoId } : null,
+  );
 
   function refreshSelectedDetail(): void {
     if (selectedIssue === null) return;

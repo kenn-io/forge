@@ -9,6 +9,18 @@ import (
 )
 
 func (s *Server) broadcastRelayRefresh(ctx context.Context, repoID int64, target string, number int) {
+	if target == activityrelay.WorkflowRuns {
+		repo, err := s.db.GetRepoByID(ctx, repoID)
+		if err != nil || repo == nil {
+			return
+		}
+		s.hub.Broadcast(Event{Type: "workflow_runs_changed", Data: struct {
+			Provider       string `json:"provider"`
+			PlatformHost   string `json:"platform_host"`
+			PlatformRepoID string `json:"platform_repo_id"`
+		}{repo.Platform, repo.PlatformHost, repo.PlatformRepoID}})
+		return
+	}
 	s.hub.Broadcast(Event{Type: "data_changed", Data: struct{}{}})
 	if target == activityrelay.PullRequest || target == activityrelay.PullRequestChecks {
 		s.broadcastMergedActorDetailRefresh(ctx, repoID, number)

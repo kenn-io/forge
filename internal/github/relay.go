@@ -27,7 +27,7 @@ type RelayStatus struct {
 type RelayActivity struct {
 	ID         int64     `json:"id"`
 	Repository string    `json:"repository"`
-	Target     string    `json:"target" enum:"pull_request,pull_request_checks,issue,repository_refs,repository"`
+	Target     string    `json:"target" enum:"pull_request,pull_request_checks,workflow_runs,issue,repository_refs,repository"`
 	Number     int       `json:"number"`
 	ReceivedAt time.Time `json:"received_at"`
 }
@@ -50,6 +50,8 @@ const (
 	// relayQueueLimit bounds refresh work waiting on provider budget; hints
 	// beyond it are dropped and covered by ordinary syncing.
 	relayQueueLimit = 1024
+	// Workflow notifications have no ordinary-sync fallback.
+	relayWorkflowReserve = 256
 )
 
 func (s *Syncer) updateRelayStatus(update func(*RelayStatus)) {
@@ -153,7 +155,11 @@ type relayQueue struct {
 
 func (q *relayQueue) push(hint activityrelay.Hint) {
 	q.mu.Lock()
-	if _, waiting := q.pending[hint]; !waiting && len(q.order) < relayQueueLimit {
+	limit := relayQueueLimit
+	if hint.Target == activityrelay.WorkflowRuns {
+		limit += relayWorkflowReserve
+	}
+	if _, waiting := q.pending[hint]; !waiting && len(q.order) < limit {
 		if q.pending == nil {
 			q.pending = make(map[activityrelay.Hint]struct{})
 		}
@@ -212,7 +218,7 @@ func (s *Syncer) refreshRelayHint(ctx context.Context, hint activityrelay.Hint) 
 	if err != nil {
 		return err
 	}
-	if s.backgroundReserveExhausted(repo, QuotaResourceREST, false) {
+	if hint.Target != activityrelay.WorkflowRuns && s.backgroundReserveExhausted(repo, QuotaResourceREST, false) {
 		return nil
 	}
 	stored, err := s.db.GetRepositoryByProviderID(ctx, hint.Provider, hint.Host, repo.PlatformExternalID)
@@ -249,6 +255,8 @@ func (s *Syncer) refreshRelayHint(ctx context.Context, hint activityrelay.Hint) 
 		cost = IssueDetailWorstCase * wireAttemptsPerRequest
 	}
 	switch target {
+	case activityrelay.WorkflowRuns:
+		// Notify open Actions views; only a visible view reads workflow runs.
 	case activityrelay.PullRequest, activityrelay.Issue:
 		if budget := s.budgets[bucket]; budget != nil && !budget.CanSpend(cost) {
 			return nil

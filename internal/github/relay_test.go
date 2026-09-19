@@ -174,6 +174,36 @@ func TestRelayTargetedChecksAndBudgetGate(t *testing.T) {
 	assert.Equal(int32(1), provider.getCombinedCalls.Load(), "closed, unknown, and headless PRs do not spend CI budget")
 }
 
+func TestRelayWorkflowNotificationBypassesBackgroundReserve(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+	database := openTestDB(t)
+	repo := RepoRef{Platform: platform.KindGitHub, PlatformHost: "github.com", PlatformExternalID: "R_project", Owner: "team", Name: "project"}
+	repoID, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
+		Platform: "github", PlatformHost: repo.PlatformHost, PlatformRepoID: repo.PlatformExternalID, Owner: repo.Owner, Name: repo.Name,
+	})
+	require.NoError(err)
+	quota := NewQuotaRegistry()
+	quota.UpdateSnapshot(HostIdentity(repo.PlatformHost), QuotaResourceREST, Rate{
+		Limit: 5000, Remaining: RateReserveBuffer, Reset: time.Now().UTC().Add(time.Hour),
+	})
+	syncer := NewSyncer(nil, database, nil, []RepoRef{repo}, time.Minute, nil, nil)
+	syncer.SetQuotaRegistry(quota)
+	require.True(syncer.backgroundReserveExhausted(repo, QuotaResourceREST, false))
+	var notified []string
+	syncer.SetOnRelayRefresh(func(_ context.Context, id int64, target string, _ int) {
+		assert.Equal(repoID, id)
+		notified = append(notified, target)
+	})
+	for _, target := range []string{activityrelay.RepositoryRefs, activityrelay.WorkflowRuns} {
+		require.NoError(syncer.refreshRelayHint(WithSyncBudget(t.Context()), activityrelay.Hint{
+			Provider: "github", Host: repo.PlatformHost, RepositoryID: repo.PlatformExternalID, Target: target,
+		}))
+	}
+	assert.Equal([]string{activityrelay.WorkflowRuns}, notified, "only the notification bypasses the background quota gate")
+}
+
 func TestRelayChecksRefreshImmediatelyAndKeepEventsDuringRefresh(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -255,6 +285,35 @@ func TestRelayQueueCoalescesAndSkipsDisabledSync(t *testing.T) {
 	_, ok = queue.pop()
 	assert.False(ok, "hints are ignored while syncing is disabled")
 	assert.Nil(syncer.Status().Relay)
+}
+
+func TestRelayQueueReservesRoomForWorkflowUpdates(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	queue := &relayQueue{signal: make(chan struct{}, 1)}
+	for number := 1; number <= 1025; number++ {
+		queue.push(activityrelay.Hint{Provider: "github", Host: "github.com", RepositoryID: "R_project", Target: activityrelay.PullRequestChecks, Number: number})
+	}
+	var expected []activityrelay.Hint
+	for i := range 257 {
+		hint := activityrelay.Hint{Provider: "github", Host: "github.com", RepositoryID: "R_project_" + strconv.Itoa(i), Target: activityrelay.WorkflowRuns}
+		queue.push(hint)
+		queue.push(hint)
+		if i < 256 {
+			expected = append(expected, hint)
+		}
+	}
+	var workflows []activityrelay.Hint
+	var checks int
+	for hint, ok := queue.pop(); ok; hint, ok = queue.pop() {
+		if hint.Target == activityrelay.WorkflowRuns {
+			workflows = append(workflows, hint)
+		} else {
+			checks++
+		}
+	}
+	require.Equal(expected, workflows, "workflow updates have bounded, coalesced space beyond a full check queue")
+	require.Equal(1024, checks)
 }
 
 func TestRelayRepositoryHintsRespectBudgetAdmission(t *testing.T) {

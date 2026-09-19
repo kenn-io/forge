@@ -332,15 +332,22 @@ func TestWorkflowRunHintsBatchBeforeReachingSubscribers(t *testing.T) {
 		ordinary := Hint{Provider: "github", Host: "github.com", RepositoryID: "R_test_project", Target: PullRequest, Number: 7}
 		require.Equal(ordinary, <-first, "ordinary updates do not wait behind checks")
 		require.Equal(ordinary, <-second)
+		// Individual check updates share the workflow's existing window.
+		response = deliver(t, ingress, secret, "check_run", `{"repository":{"id":12345,"node_id":"R_test_project"},"check_run":{"pull_requests":[{"number":7},{"number":9}]}}`)
+		require.Equal(http.StatusNoContent, response.Code)
 		time.Sleep(time.Second)
 		synctest.Wait()
 		check := ordinary
 		check.Target = PullRequestChecks
 		other := check
 		other.Number = 8
+		checkOnly := check
+		checkOnly.Number = 9
 		for _, hints := range []<-chan Hint{first, second} {
-			require.Len(hints, 2, "one hint per PR, even with multiple workflows")
-			assert.ElementsMatch([]Hint{check, other}, []Hint{<-hints, <-hints})
+			runs := ordinary
+			runs.Target, runs.Number = "workflow_runs", 0
+			require.Len(hints, 4, "one hint per PR and one for the repository's runs")
+			assert.ElementsMatch([]Hint{check, other, checkOnly, runs}, []Hint{<-hints, <-hints, <-hints, <-hints})
 		}
 		feed.Publish([]Hint{check})
 		time.Sleep(59 * time.Second)
@@ -360,6 +367,28 @@ func TestWorkflowRunHintsBatchBeforeReachingSubscribers(t *testing.T) {
 	})
 }
 
+func TestUnassociatedActionsHints(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		require := require.New(t)
+		feed := new(Broadcaster)
+		defer feed.Close()
+		hints, cancel := feed.Subscribe()
+		defer cancel()
+		secret := []byte("synthetic-secret")
+		ingress, _ := Handlers(feed, map[string]Source{"team": {Secret: secret, RepositoryIDs: []int64{12345}}})
+		for _, event := range []string{"check_run", "workflow_run"} {
+			response := deliver(t, ingress, secret, event, `{"repository":{"id":12345,"node_id":"R_test_project"},"`+event+`":{"pull_requests":[]}}`)
+			require.Equal(http.StatusNoContent, response.Code)
+		}
+		require.Empty(hints)
+		time.Sleep(time.Minute)
+		synctest.Wait()
+		require.Len(hints, 1, "a run without a PR refreshes Actions, never every PR")
+		assert.Equal(t, Hint{Provider: "github", Host: "github.com", RepositoryID: "R_test_project", Target: "workflow_runs"}, <-hints)
+	})
+}
+
 func TestPendingChecksDoNotCrowdOutActivity(t *testing.T) {
 	t.Parallel()
 	feed := new(Broadcaster)
@@ -376,7 +405,7 @@ func TestPendingChecksDoNotCrowdOutActivity(t *testing.T) {
 	}
 }
 
-func TestFlushedChecksLeaveRoomForActivity(t *testing.T) {
+func TestFlushedChecksLeaveRoomForWorkflowAndActivity(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []struct {
 		name    string
@@ -396,19 +425,23 @@ func TestFlushedChecksLeaveRoomForActivity(t *testing.T) {
 				for i := range checks {
 					checks[i] = Hint{Provider: "github", Host: "github.com", RepositoryID: "R_project", Target: PullRequestChecks, Number: i + 1}
 				}
-				for range tt.batches {
+				workflow := Hint{Provider: "github", Host: "github.com", RepositoryID: "R_project", Target: WorkflowRuns}
+				for i := range tt.batches {
 					feed.Publish(checks)
+					if i == tt.batches-1 {
+						feed.Publish([]Hint{workflow})
+					}
 					time.Sleep(time.Minute)
 					synctest.Wait()
 				}
 				ordinary := Hint{Provider: "github", Host: "github.com", RepositoryID: "R_project", Target: PullRequest, Number: 1}
 				feed.Publish([]Hint{ordinary})
-				require.Len(t, hints, len(checks)+1, "a full batch must reach the subscriber and leave room for immediate activity")
-				received := make([]Hint, len(checks))
+				require.Len(t, hints, len(checks)+2, "checks must leave room for workflow updates and immediate activity")
+				received := make([]Hint, len(checks)+1)
 				for i := range received {
 					received[i] = <-hints
 				}
-				assert.ElementsMatch(t, checks, received)
+				assert.ElementsMatch(t, append(checks, workflow), received)
 				assert.Equal(t, ordinary, <-hints)
 			})
 		})

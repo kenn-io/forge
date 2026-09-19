@@ -23,6 +23,7 @@ import (
 const (
 	PullRequest       = "pull_request"
 	PullRequestChecks = "pull_request_checks"
+	WorkflowRuns      = "workflow_runs"
 	Issue             = "issue"
 	RepositoryRefs    = "repository_refs"
 	Repository        = "repository"
@@ -45,7 +46,7 @@ func (h Hint) Validate() error {
 		if h.Number > 0 {
 			return nil
 		}
-	case RepositoryRefs, Repository:
+	case RepositoryRefs, Repository, WorkflowRuns:
 		if h.Number == 0 {
 			return nil
 		}

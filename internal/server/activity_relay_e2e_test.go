@@ -274,6 +274,7 @@ func TestActivityRelayEndToEnd(t *testing.T) {
 	assert.Equal(int32(2), detailReads.Load(), "PR comments must refresh details after a relay restart")
 	assert.Equal(int32(2), checkReads.Load())
 	deliver("check_run", `{"repository":{"id":12345,"node_id":"R_test_project"},"check_run":{"pull_requests":[{"number":7}]}}`)
+	deliver("workflow_run", `{"repository":{"id":12345,"node_id":"R_test_project"},"workflow_run":{"pull_requests":[]}}`)
 	issueHint := `{"repository":{"id":12345,"node_id":"R_test_project"},"issue":{"number":9}}`
 	for index, body := range []*string{new("Original comment"), new("Edited comment"), nil} {
 		issueComment.Store(body)
@@ -303,10 +304,28 @@ func TestActivityRelayEndToEnd(t *testing.T) {
 		}
 		require.NoError(database.UpsertHTTPEtag(ctx, "github", "github.com", "team", "project", "issue", 9, `"issue-stable"`))
 	}
-	// The ignored check event was delivered before the issue hints; refreshes
-	// run in order, so its absence here proves it never became a refresh.
-	assert.Equal(int32(2), checkReads.Load())
-	assert.Equal(int32(2), detailReads.Load(), "check events must not trigger refreshes")
+	// Actions wait in the relay while ordinary issue updates go straight through.
+	var actionRefreshes []int
+	for range 2 {
+		select {
+		case number := <-refreshed:
+			actionRefreshes = append(actionRefreshes, number)
+		case <-time.After(90 * time.Second):
+			require.FailNow("batched Actions hints did not reach Forge")
+		}
+	}
+	assert.ElementsMatch([]int{7, 0}, actionRefreshes)
+	assert.Equal(int32(3), checkReads.Load(), "check_run refreshes checks once")
+	assert.Equal(int32(2), detailReads.Load(), "Actions hints must not refetch PR details")
+	events, _, stale = srv.Hub().ReplaySnapshotSince(0)
+	require.False(stale)
+	var workflowChanged bool
+	for _, event := range events {
+		if event.Event.Type == "workflow_runs_changed" {
+			workflowChanged = true
+		}
+	}
+	assert.True(workflowChanged, "unassociated runs must reach an open Actions view")
 	unrelated, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 8)
 	require.NoError(err)
 	assert.Equal("pending", unrelated.CIStatus)

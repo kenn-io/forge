@@ -92,10 +92,20 @@ type Installation struct {
 	SuspendedAt         *time.Time `json:"suspended_at"`
 }
 
-// InstallationToken is a minted installation access token.
+// InstallationTokenRequest optionally narrows an installation token's access.
+// Nil fields retain the installation's repository or permission grants.
+type InstallationTokenRequest struct {
+	RepositoryIDs []int64           `json:"repository_ids,omitzero"`
+	Permissions   map[string]string `json:"permissions,omitzero"`
+}
+
+// InstallationToken is a minted installation access token and its returned scope.
 type InstallationToken struct {
-	Token     string    `json:"token"`
-	ExpiresAt time.Time `json:"expires_at"`
+	Token               string            `json:"token"`
+	ExpiresAt           time.Time         `json:"expires_at"`
+	Repositories        []Repository      `json:"repositories"`
+	Permissions         map[string]string `json:"permissions"`
+	RepositorySelection string            `json:"repository_selection"`
 }
 
 // RateLimit is the core REST rate budget for a credential.
@@ -146,15 +156,22 @@ func (c *Client) ListInstallations(ctx context.Context, appJWT string) ([]Instal
 	}
 }
 
-// CreateInstallationToken mints an installation access token. Tokens
-// expire after one hour.
+// CreateInstallationToken mints an installation access token that expires after
+// one hour. A nil request retains the installation's full access. Callers own
+// validation of the returned scope and must not cache narrowed tokens by
+// installation alone or share them with the ordinary sync token cache.
 func (c *Client) CreateInstallationToken(
 	ctx context.Context, appJWT string, installationID int64,
+	request *InstallationTokenRequest,
 ) (*InstallationToken, error) {
+	var body any
+	if request != nil {
+		body = request
+	}
 	var token InstallationToken
 	err := c.do(ctx, http.MethodPost,
 		fmt.Sprintf("/app/installations/%d/access_tokens", installationID),
-		appJWT, nil, &token)
+		appJWT, body, &token)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"creating installation token for installation %d: %w", installationID, err,

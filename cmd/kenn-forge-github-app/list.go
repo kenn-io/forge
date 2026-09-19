@@ -123,7 +123,7 @@ func (env *appEnv) fillLiveStatus(
 	if app.InstallationID == 0 {
 		return nil
 	}
-	token, err := client.CreateInstallationToken(ctx, jwt, app.InstallationID)
+	token, err := client.CreateInstallationToken(ctx, jwt, app.InstallationID, nil)
 	if err != nil {
 		return err
 	}

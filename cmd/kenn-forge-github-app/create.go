@@ -634,7 +634,7 @@ func (env *appEnv) verifySelectedInstallationCoverage(
 	if err != nil {
 		return nil, err
 	}
-	token, err := client.CreateInstallationToken(ctx, jwt, picked.ID)
+	token, err := client.CreateInstallationToken(ctx, jwt, picked.ID, nil)
 	if err != nil {
 		return nil, fmt.Errorf("verifying selected-repository installation: %w", err)
 	}

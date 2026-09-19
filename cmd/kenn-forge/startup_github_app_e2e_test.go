@@ -103,7 +103,7 @@ repository_selection = "all"
 				return "", time.Time{}, err
 			}
 			tok, err := apiClient.CreateInstallationToken(
-				ctx, jwt, candidate.InstallationID,
+				ctx, jwt, candidate.InstallationID, nil,
 			)
 			if err != nil {
 				return "", time.Time{}, err

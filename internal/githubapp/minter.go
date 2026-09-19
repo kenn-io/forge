@@ -36,7 +36,7 @@ func mintInstallationToken(
 	if err != nil {
 		return "", time.Time{}, err
 	}
-	token, err := githubapp.NewClientWithBase(apiBase).CreateInstallationToken(ctx, appJWT, installationID)
+	token, err := githubapp.NewClientWithBase(apiBase).CreateInstallationToken(ctx, appJWT, installationID, nil)
 	if err != nil {
 		return "", time.Time{}, err
 	}

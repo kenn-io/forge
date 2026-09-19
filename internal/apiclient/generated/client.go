@@ -51527,6 +51527,7 @@ type SyncStatus struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema                  *string                  `json:"$schema,omitempty"`
 	CurrentRepo             *string                  `json:"current_repo,omitempty"`
+	DetailRefreshOverdue    *int64                   `json:"detail_refresh_overdue,omitempty"`
 	LastError               *string                  `json:"last_error,omitempty"`
 	LastErrorCeilingKey     *string                  `json:"last_error_ceiling_key,omitempty"`
 	LastErrorCeilingResetAt *time.Time               `json:"last_error_ceiling_reset_at,omitempty"`

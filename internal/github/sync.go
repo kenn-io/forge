@@ -436,6 +436,9 @@ type SyncStatus struct {
 	// produced LastError. Clients must match it against the live ceiling row
 	// before displaying counters or reset details from that row.
 	LastErrorCeilingResetAt string `json:"last_error_ceiling_reset_at,omitempty" format:"date-time"`
+	// DetailRefreshOverdue counts open items whose last successful detail
+	// check is at least a day old (including items never checked).
+	DetailRefreshOverdue int `json:"detail_refresh_overdue,omitempty"`
 }
 
 func formatRateLimitWait(wait time.Duration) string {
@@ -1140,6 +1143,9 @@ func (s *Syncer) publishStatus(status *SyncStatus) {
 }
 
 func (s *Syncer) publishStatusLocked(status *SyncStatus) {
+	if status.Running {
+		status.DetailRefreshOverdue = s.Status().DetailRefreshOverdue
+	}
 	if status.Relay == nil {
 		status.Relay = s.Status().Relay
 	}
@@ -4893,6 +4899,7 @@ dispatch:
 		LastErrorCode:           lastErrorCode,
 		LastErrorCeilingKey:     lastErrorCeilingKey,
 		LastErrorCeilingResetAt: lastErrorCeilingResetAt,
+		DetailRefreshOverdue:    s.countOverdueDetails(ctx),
 	}
 }
 
@@ -7660,6 +7667,9 @@ func (s *Syncer) refreshPRCommentsForItem(
 	if pr == nil || pr.DetailFetchedAt == nil {
 		return false, false
 	}
+	if !commentRefreshDue(string(pr.State), pr.UpdatedAt, *pr.DetailFetchedAt, pr.Starred, time.Now()) {
+		return false, false
+	}
 	if !s.canSpendCommentRefresh(repo) {
 		return false, false
 	}
@@ -7700,6 +7710,9 @@ func (s *Syncer) refreshIssueCommentsForItem(
 	issue *db.Issue,
 ) (bool, bool) {
 	if issue == nil || issue.DetailFetchedAt == nil {
+		return false, false
+	}
+	if !commentRefreshDue(issue.State, issue.UpdatedAt, *issue.DetailFetchedAt, issue.Starred, time.Now()) {
 		return false, false
 	}
 	if !s.canSpendCommentRefresh(repo) {
@@ -8852,6 +8865,25 @@ func (s *Syncer) markUnchangedMRDetailFetched(
 	ctx = s.db.WithRepositoryRouteFence(
 		ctx, platformdb.DBRepoIdentity(platformRepoRef(repo)), routeFence,
 	)
+	// A parent 304 does not cover edited/deleted comments. Once a detail
+	// check is admitted, check comments too before advancing freshness.
+	if existing.State == "open" {
+		client, err := s.clientFor(repo)
+		if err != nil {
+			return calls, err
+		}
+		comments, err := s.listCommentsForRefresh(ctx, client, repo, number, existing.CommentCount)
+		calls++
+		if err != nil && !platformgithub.IsNotModified(err) {
+			return calls, err
+		}
+		if err == nil {
+			if err := s.persistPRComments(ctx, repo, existing, comments); err != nil {
+				client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
+				return calls, err
+			}
+		}
+	}
 	if err := s.refreshStoredPRCommentVisibility(
 		ctx, repo, existing.ID, existing.SnapshotRevision, number,
 	); err != nil {
@@ -9332,6 +9364,23 @@ func (s *Syncer) markUnchangedIssueDetailFetched(
 	ctx = s.db.WithRepositoryRouteFence(
 		ctx, platformdb.DBRepoIdentity(platformRepoRef(repo)), routeFence,
 	)
+	if existing.State == "open" {
+		client, err := s.clientFor(repo)
+		if err != nil {
+			return calls, err
+		}
+		comments, err := s.listCommentsForRefresh(ctx, client, repo, number, existing.CommentCount)
+		calls++
+		if err != nil && !platformgithub.IsNotModified(err) {
+			return calls, err
+		}
+		if err == nil {
+			if err := s.persistIssueComments(ctx, repo, existing, comments); err != nil {
+				client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
+				return calls, err
+			}
+		}
+	}
 	if err := s.refreshStoredIssueCommentVisibility(
 		ctx, repo, existing.ID, existing.SnapshotRevision, number,
 	); err != nil {
@@ -10901,6 +10950,19 @@ func (s *Syncer) fetchAndUpdateClosedPlatformIssue(
 
 // --- Detail Drain ---
 
+// countOverdueDetails reports remaining daily work even when a credential's
+// budget or provider throttle kept its repository out of this pass.
+func (s *Syncer) countOverdueDetails(ctx context.Context) int {
+	now := time.Now()
+	overdue := 0
+	for _, item := range s.buildDetailQueueItems(ctx, s.TrackedRepos()) {
+		if item.DetailFetchedAt == nil || now.Sub(*item.DetailFetchedAt) >= dailyRefetchInterval {
+			overdue++
+		}
+	}
+	return overdue
+}
+
 // drainDetailQueue builds a priority queue of items needing detail
 // fetches and processes them within the per-provider/host budget.
 func (s *Syncer) drainDetailQueue(
@@ -11108,7 +11170,22 @@ func (s *Syncer) buildDetailQueueItems(
 	// spending their detail budget on unrelated repositories on the same host.
 	trackedRepos := make(map[string]bool, len(repos))
 	for _, r := range repos {
+		if r.Archived {
+			continue
+		}
 		trackedRepos[detailRepoKey(repoPlatform(r), repoHost(r), r.Owner, r.Name)] = true
+	}
+	if len(trackedRepos) == 0 {
+		return nil
+	}
+	storedRepos, err := s.db.ListRepos(ctx)
+	if err != nil {
+		slog.Warn("detail drain: list repositories failed", "err", err)
+		return nil
+	}
+	reposByID := make(map[int64]db.Repo, len(storedRepos))
+	for _, repo := range storedRepos {
+		reposByID[repo.ID] = repo
 	}
 
 	// Gather watched MR numbers for matching.
@@ -11136,8 +11213,8 @@ func (s *Syncer) buildDetailQueueItems(
 		prCountsByRepoID[pr.RepoID]++
 	}
 	for _, pr := range prs {
-		repo, rErr := s.db.GetRepoByID(ctx, pr.RepoID)
-		if rErr != nil || repo == nil {
+		repo, found := reposByID[pr.RepoID]
+		if !found {
 			continue
 		}
 		repoKey := detailRepoKey(platform.Kind(repo.Platform), repo.PlatformHost, repo.Owner, repo.Name)
@@ -11181,8 +11258,8 @@ func (s *Syncer) buildDetailQueueItems(
 		issueCountsByRepoID[issue.RepoID]++
 	}
 	for _, issue := range issues {
-		repo, rErr := s.db.GetRepoByID(ctx, issue.RepoID)
-		if rErr != nil || repo == nil {
+		repo, found := reposByID[issue.RepoID]
+		if !found {
 			continue
 		}
 		repoKey := detailRepoKey(platform.Kind(repo.Platform), repo.PlatformHost, repo.Owner, repo.Name)

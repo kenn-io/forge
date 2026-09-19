@@ -76,6 +76,15 @@ what "current" means.
 - Budgeted detail drain treats each queue item's worst-case cost as soft admission;
   provider pagination and child hydration may exceed it because the transport counts
   actual wire attempts (`internal/github/sync.go::drainDetailQueue`).
+- Dormant open items use a daily check, not hourly full hydration; overdue checks go
+  oldest-first within existing budgets. Closed history stays outside routine polling
+  (`internal/github/queue.go::BuildQueue`).
+- Daily coverage is a target, not permission to exceed quota. Show remaining overdue
+  open items, including never-fetched items, rather than implying complete freshness
+  (`internal/github/sync.go::countOverdueDetails`).
+- Comment-only polling must respect dormant-item cadence. Admitted open-item detail
+  checks still check comments on parent 304s before advancing freshness; edits and
+  deletions may leave the parent unchanged (`internal/github/sync.go::markUnchangedIssueDetailFetched`).
 
 For pull requests, that means:
 

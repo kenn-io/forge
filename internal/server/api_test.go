@@ -11225,9 +11225,9 @@ func TestE2ELargeRepoSkipsGraphQLAndUsesConditionalPRDetail(t *testing.T) {
 	assert := assert.New(t)
 	ctx := t.Context()
 
-	unchangedAt := time.Date(2026, 4, 12, 10, 0, 0, 0, time.UTC)
-	detailFetchedAt := time.Date(2026, 4, 12, 11, 0, 0, 0, time.UTC)
-	changedAt := time.Date(2026, 4, 12, 12, 0, 0, 0, time.UTC)
+	changedAt := time.Now().UTC().Truncate(time.Second)
+	unchangedAt := changedAt.Add(-2 * time.Hour)
+	detailFetchedAt := changedAt.Add(-time.Hour)
 
 	buildPR := func(number int, updatedAt time.Time, title string) *gh.PullRequest {
 		id := int64(number * 1000)
@@ -11393,7 +11393,7 @@ func TestE2EConditionalPRDetailRefreshesInlineModerationThroughAPI(t *testing.T)
 	assert := assert.New(t)
 	ctx := t.Context()
 
-	now := time.Date(2026, 8, 6, 12, 0, 0, 0, time.UTC)
+	now := time.Now().UTC().Truncate(time.Second).Add(-time.Hour)
 	recentDetail := now.Add(time.Minute)
 	staleDetail := now.Add(-time.Hour)
 	buildPR := func(number int) *gh.PullRequest {
@@ -11543,9 +11543,9 @@ func TestE2ELargeRepoSkipsGraphQLAndUsesConditionalIssueDetail(t *testing.T) {
 	assert := assert.New(t)
 	ctx := t.Context()
 
-	unchangedAt := time.Date(2026, 4, 12, 10, 0, 0, 0, time.UTC)
-	detailFetchedAt := time.Date(2026, 4, 12, 11, 0, 0, 0, time.UTC)
-	changedAt := time.Date(2026, 4, 12, 12, 0, 0, 0, time.UTC)
+	changedAt := time.Now().UTC().Truncate(time.Second)
+	unchangedAt := changedAt.Add(-2 * time.Hour)
+	detailFetchedAt := changedAt.Add(-time.Hour)
 
 	buildIssue := func(number int, updatedAt time.Time, title string) *gh.Issue {
 		id := int64(number * 1000)
@@ -11838,7 +11838,7 @@ func TestE2EPRDetailRefreshesEditedCommentBody(t *testing.T) {
 	assert := assert.New(t)
 	ctx := t.Context()
 
-	now := time.Date(2026, 4, 12, 14, 0, 0, 0, time.UTC)
+	now := time.Now().UTC().Truncate(time.Second).Add(-time.Hour)
 	prNumber := 160
 	prID := int64(160000)
 	prTitle := "Edited comment refresh"
@@ -11968,7 +11968,7 @@ func TestE2EPRDetailRemovesDeletedCommentWhenPRListIsUnchanged(t *testing.T) {
 	assert := assert.New(t)
 	ctx := t.Context()
 
-	now := time.Date(2026, 4, 12, 14, 0, 0, 0, time.UTC)
+	now := time.Now().UTC().Truncate(time.Second).Add(-time.Hour)
 	prNumber := 160
 	prID := int64(160000)
 	prTitle := "Deleted comment refresh"
@@ -12095,7 +12095,7 @@ func TestE2EPRDetailRemovesDeletedCommentWhenAnotherPRChanges(t *testing.T) {
 	assert := assert.New(t)
 	ctx := t.Context()
 
-	now := time.Date(2026, 4, 12, 15, 0, 0, 0, time.UTC)
+	now := time.Now().UTC().Truncate(time.Second).Add(-time.Hour)
 	targetNumber := 160
 	targetID := int64(160000)
 	targetTitle := "Target PR keeps stale comment"
@@ -12241,7 +12241,7 @@ func TestE2EIssueDetailRefreshesEditedCommentBody(t *testing.T) {
 	assert := assert.New(t)
 	ctx := t.Context()
 
-	now := time.Date(2026, 4, 12, 14, 0, 0, 0, time.UTC)
+	now := time.Now().UTC().Truncate(time.Second).Add(-time.Hour)
 	issueNumber := 161
 	issueID := int64(161000)
 	issueTitle := "Edited issue comment refresh"
@@ -12353,7 +12353,7 @@ func TestE2EIssueDetailRemovesDeletedCommentWhenIssueListIsUnchanged(t *testing.
 	assert := assert.New(t)
 	ctx := t.Context()
 
-	now := time.Date(2026, 4, 12, 14, 0, 0, 0, time.UTC)
+	now := time.Now().UTC().Truncate(time.Second).Add(-time.Hour)
 	issueNumber := 161
 	issueID := int64(161000)
 	issueTitle := "Deleted issue comment refresh"
@@ -12464,7 +12464,7 @@ func TestE2EIssueDetailRemovesDeletedCommentWhenAnotherIssueChanges(t *testing.T
 	assert := assert.New(t)
 	ctx := t.Context()
 
-	now := time.Date(2026, 4, 12, 16, 0, 0, 0, time.UTC)
+	now := time.Now().UTC().Truncate(time.Second).Add(-time.Hour)
 	targetNumber := 161
 	targetID := int64(161000)
 	targetTitle := "Target issue keeps stale comment"

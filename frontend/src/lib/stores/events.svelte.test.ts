@@ -179,6 +179,7 @@ describe("createEventsStore event dispatch", () => {
       running: true,
       last_run_at: "2026-04-08T12:00:00Z",
       last_error: "",
+      detail_refresh_overdue: 12,
     };
     emit(await awaitSource(), "sync_status", {
       data: JSON.stringify(payload),

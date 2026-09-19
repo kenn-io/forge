@@ -9,6 +9,7 @@ const activityState = vi.hoisted(() => ({
   enabledItemTypes: new Set<"pr" | "issue">(["pr", "issue"]),
   hideBots: false,
   providerAvailable: true,
+  overdue: 0,
 }));
 
 const runtime = vi.hoisted(() => ({
@@ -37,7 +38,7 @@ vi.mock("../../context.js", () => ({
     issues: { getIssues: () => [] },
     settings: { getAirplaneMode: () => false },
     sync: {
-      getSyncState: () => null,
+      getSyncState: () => ({ running: false, detail_refresh_overdue: activityState.overdue }),
       getRateLimits: () => ({ provider_pools: {}, local_ceilings: {} }),
       getProviderAvailable: () => activityState.providerAvailable,
     },
@@ -101,6 +102,7 @@ describe("StatusBar Activity counts", () => {
     activityState.enabledItemTypes = new Set(["pr", "issue"]);
     activityState.hideBots = false;
     activityState.providerAvailable = true;
+    activityState.overdue = 0;
     runtime.runCommand.mockClear();
   });
 
@@ -161,5 +163,12 @@ describe("StatusBar Activity counts", () => {
     expect(screen.getByText("provider unavailable")).toBeTruthy();
     expect(screen.getByTitle("This Forge spoke cannot reach its federation hub")).toBeTruthy();
     expect(screen.queryByText(/synced/)).toBeNull();
+  });
+
+  it("shows missed daily checks instead of implying all items are fresh", () => {
+    activityState.overdue = 12;
+    render(StatusBar);
+    expect(screen.getByText("12 overdue checks")).toBeTruthy();
+    expect(screen.getByTitle(/not checked in 24 hours/)).toBeTruthy();
   });
 });

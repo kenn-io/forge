@@ -349,6 +349,14 @@
       <span class="status-sep">&middot;</span>
     {/if}
     {#if sync.getProviderAvailable()}
+      {@const overdue = sync.getSyncState()?.detail_refresh_overdue ?? 0}
+      {#if overdue > 0}
+        <span
+          class="status-item status-item--overdue"
+          title="Open PRs/issues not checked in 24 hours or never checked. Background refresh stays within the API budget."
+        >{overdue} overdue checks</span>
+        <span class="status-sep">&middot;</span>
+      {/if}
       <span class="status-item" class:status-item--active={sync.getSyncState()?.running}>
         {#if sync.getSyncState()?.running}
           <StatusDot status="working" label="Syncing" size={5} animated />
@@ -371,6 +379,9 @@
     color: var(--accent-red);
   }
   .status-item--airplane {
+    color: var(--accent-amber);
+  }
+  .status-item--overdue {
     color: var(--accent-amber);
   }
   .status-item--active {

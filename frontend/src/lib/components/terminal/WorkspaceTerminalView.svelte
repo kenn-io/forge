@@ -4580,6 +4580,7 @@
                   {workspaceHostKey}
                   provider={workspace.repo.provider}
                   platformHost={workspace.repo.platform_host}
+                  platformRepoId={workspace.repo.platform_repo_id}
                   repoOwner={workspace.repo.owner}
                   repoName={workspace.repo.name}
                   repoPath={workspace.repo.repo_path}

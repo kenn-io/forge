@@ -13,6 +13,7 @@
     workspaceHostKey?: string | undefined;
     provider: string;
     platformHost?: string | undefined;
+    platformRepoId?: string | undefined;
     repoOwner: string;
     repoName: string;
     repoPath: string;
@@ -34,6 +35,7 @@
     workspaceHostKey = undefined,
     provider,
     platformHost,
+    platformRepoId,
     repoOwner,
     repoName,
     repoPath,
@@ -96,6 +98,7 @@
           <PullDetail
             {provider}
             {platformHost}
+            {platformRepoId}
             owner={repoOwner}
             name={repoName}
             {repoPath}
@@ -115,6 +118,7 @@
           <IssueDetail
             {provider}
             {platformHost}
+            {platformRepoId}
             owner={repoOwner}
             name={repoName}
             {repoPath}

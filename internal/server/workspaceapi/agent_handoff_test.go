@@ -228,25 +228,31 @@ func TestAgentHandoffSurvivesClientCancellationWhileWaiting(t *testing.T) {
 	// The client goes away while the workspace is still provisioning; the
 	// accepted handoff must still launch the agent and deliver the prompt.
 	requestCtx, cancelRequest := context.WithCancel(t.Context())
+	t.Cleanup(cancelRequest)
 	request := fixture.request(t, map[string]string{"target_key": "codex", "message": "rebase this"}).
 		WithContext(requestCtx)
 	done := make(chan *httptest.ResponseRecorder, 1)
 	go func() {
 		done <- fixture.serve(request)
 	}()
-	time.Sleep(40 * time.Millisecond)
+	// Cancel only after validation has transferred ownership to the handoff.
+	require.Eventually(func() bool {
+		fixture.handler.lifecycleMu.Lock()
+		defer fixture.handler.lifecycleMu.Unlock()
+		return fixture.handler.agentHandoffCtx != nil
+	}, time.Second, 5*time.Millisecond)
 	cancelRequest()
-	time.Sleep(20 * time.Millisecond)
 	require.NoError(fixture.database.UpdateWorkspaceStatus(context.Background(), "ws-runtime-token", "ready", nil))
 
+	var response *httptest.ResponseRecorder
 	select {
-	case <-done:
+	case response = <-done:
 	case <-time.After(3 * time.Second):
 		require.FailNow("handoff did not finish after the client canceled")
 	}
-	require.Eventually(func() bool {
-		return fixture.owner.pty != nil && string(fixture.owner.pty.written()) == "\x1b[200~rebase this\x1b[201~\r"
-	}, time.Second, 5*time.Millisecond)
+	require.Equal(http.StatusOK, response.Code, response.Body.String())
+	require.NotNil(fixture.owner.pty)
+	assert.Equal("\x1b[200~rebase this\x1b[201~\r", string(fixture.owner.pty.written()))
 	assert.Len(fixture.handler.runtime.ListSessions("ws-runtime-token"), 1)
 }
 

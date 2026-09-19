@@ -1,132 +1,55 @@
+import { canonicalProvider, resolvedPlatformHost } from "../../api/provider-routes.js";
+import { repoIdentityKey, type RepoLabelIdentity } from "../../utils/repo-label.js";
+
 type CommentDraftTarget = "issue" | "pull";
 
-let drafts = $state<Record<string, string>>({});
-let pendingSubmitCounts = $state<Record<string, number>>({});
+const storagePrefix = "kenn-forge:comment-draft:";
+const drafts = $state<Record<string, string>>({});
+const pendingSubmitCounts = $state<Record<string, number>>({});
 
-export function getCommentDraftKey(
-  target: CommentDraftTarget,
-  owner: string,
-  name: string,
-  number: number,
-  platformHost?: string | undefined,
-): string {
-  const repoKey = platformHost ? `${platformHost}/${owner}/${name}` : `${owner}/${name}`;
-  return `${target}:${repoKey}/${number}`;
+export function getCommentDraftKey(target: CommentDraftTarget, ref: RepoLabelIdentity & { number: number }): string {
+  const provider = canonicalProvider(ref.provider);
+  const repository = repoIdentityKey({
+    ...ref,
+    provider,
+    platformHost: resolvedPlatformHost(provider, ref.platformHost),
+  });
+  return `${target}\u0000${repository}\u0000${ref.number}`;
 }
 
-function getLegacyCommentDraftKey(target: CommentDraftTarget, owner: string, name: string, number: number): string {
-  return getCommentDraftKey(target, owner, name, number);
-}
-
-function getCommentDraftKeys(
-  target: CommentDraftTarget,
-  owner: string,
-  name: string,
-  number: number,
-  platformHost?: string | undefined,
-): {
-  primary: string;
-  legacy: string | undefined;
-} {
-  return {
-    primary: getCommentDraftKey(target, owner, name, number, platformHost),
-    legacy: platformHost ? getLegacyCommentDraftKey(target, owner, name, number) : undefined,
-  };
-}
-
-export function getCommentDraft(
-  target: CommentDraftTarget,
-  owner: string,
-  name: string,
-  number: number,
-  platformHost?: string | undefined,
-): string {
-  const keys = getCommentDraftKeys(target, owner, name, number, platformHost);
-  return drafts[keys.primary] ?? (keys.legacy ? drafts[keys.legacy] : undefined) ?? "";
-}
-
-export function setCommentDraft(
-  target: CommentDraftTarget,
-  owner: string,
-  name: string,
-  number: number,
-  body: string,
-  platformHost?: string | undefined,
-): void {
-  const keys = getCommentDraftKeys(target, owner, name, number, platformHost);
-  if (body === "") {
-    const next = { ...drafts };
-    delete next[keys.primary];
-    if (keys.legacy) {
-      delete next[keys.legacy];
-    }
-    drafts = next;
-    return;
+export function getCommentDraft(key: string): string {
+  if (drafts[key] !== undefined) return drafts[key];
+  try {
+    return localStorage.getItem(storagePrefix + key) ?? "";
+  } catch {
+    return "";
   }
-  drafts = {
-    ...drafts,
-    [keys.primary]: body,
-  };
 }
 
-export function clearCommentDraft(
-  target: CommentDraftTarget,
-  owner: string,
-  name: string,
-  number: number,
-  platformHost?: string | undefined,
-): void {
-  const keys = getCommentDraftKeys(target, owner, name, number, platformHost);
-  const next = { ...drafts };
-  delete next[keys.primary];
-  if (keys.legacy) {
-    delete next[keys.legacy];
+export function setCommentDraft(key: string, body: string): void {
+  drafts[key] = body;
+  try {
+    if (body === "") localStorage.removeItem(storagePrefix + key);
+    else localStorage.setItem(storagePrefix + key, body);
+  } catch {
+    // Keep editing in memory when browser storage is unavailable or full.
   }
-  drafts = next;
 }
 
-export function isCommentSubmitPending(
-  target: CommentDraftTarget,
-  owner: string,
-  name: string,
-  number: number,
-  platformHost?: string | undefined,
-): boolean {
-  const keys = getCommentDraftKeys(target, owner, name, number, platformHost);
-  return (pendingSubmitCounts[keys.primary] ?? (keys.legacy ? pendingSubmitCounts[keys.legacy] : undefined) ?? 0) > 0;
+export function clearCommentDraft(key: string): void {
+  setCommentDraft(key, "");
 }
 
-export function beginCommentSubmit(
-  target: CommentDraftTarget,
-  owner: string,
-  name: string,
-  number: number,
-  platformHost?: string | undefined,
-): void {
-  const key = getCommentDraftKey(target, owner, name, number, platformHost);
-  pendingSubmitCounts = {
-    ...pendingSubmitCounts,
-    [key]: (pendingSubmitCounts[key] ?? 0) + 1,
-  };
+export function isCommentSubmitPending(key: string): boolean {
+  return (pendingSubmitCounts[key] ?? 0) > 0;
 }
 
-export function finishCommentSubmit(
-  target: CommentDraftTarget,
-  owner: string,
-  name: string,
-  number: number,
-  platformHost?: string | undefined,
-): void {
-  const key = getCommentDraftKey(target, owner, name, number, platformHost);
+export function beginCommentSubmit(key: string): void {
+  pendingSubmitCounts[key] = (pendingSubmitCounts[key] ?? 0) + 1;
+}
+
+export function finishCommentSubmit(key: string): void {
   const nextCount = (pendingSubmitCounts[key] ?? 0) - 1;
-  if (nextCount <= 0) {
-    const next = { ...pendingSubmitCounts };
-    delete next[key];
-    pendingSubmitCounts = next;
-    return;
-  }
-  pendingSubmitCounts = {
-    ...pendingSubmitCounts,
-    [key]: nextCount,
-  };
+  if (nextCount <= 0) delete pendingSubmitCounts[key];
+  else pendingSubmitCounts[key] = nextCount;
 }

@@ -61,10 +61,10 @@ unavailable.
 
 **Workspaces** opens durable local shells and configured agents against
 repository worktrees. **Repos** browses branches, tags, files, previews, and
-file history. **Reviews** connects to a running Roborev daemon. **Docs** reads,
-edits, pulls, and publishes registered Markdown folders. Kata issues appear
-where they are linked to a pull request, provider issue, or workspace rather
-than in a separate mode.
+file history. The **Reviews** panel in a local workspace connects to a running
+Roborev daemon when displayed. **Docs** reads, edits, pulls, and publishes
+registered Markdown folders. Kata issues appear where they are linked to a
+pull request, provider issue, or workspace rather than in a separate mode.
 
 ## Advanced use
 

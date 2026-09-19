@@ -122,7 +122,6 @@ describe("Roborev request cancellation", () => {
       client: makeRouteMockFetch({ GET: get } as never),
       runtime: runtime!,
       owner: "jobs-latest-test",
-      navigate: vi.fn(),
     });
 
     store.loadJobs();

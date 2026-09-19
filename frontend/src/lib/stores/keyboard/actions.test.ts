@@ -124,7 +124,6 @@ describe("defaultActions", () => {
         "theme.toggle",
         "nav.settings",
         "nav.repos",
-        "nav.reviews",
         "nav.workspaces",
         "nav.design-system",
       ]),
@@ -223,19 +222,6 @@ describe("defaultActions", () => {
     }
 
     expect(events).toEqual([{ itemType: "issue", ...selected }]);
-  });
-
-  it("cheatsheet.open does not fire on the reviews page (roborev owns ?)", () => {
-    // Roborev's ReviewsView has its own window-level `?` handler that
-    // opens a help modal. If kenn-forge's cheatsheet also fires on `?`,
-    // both modals open and the cheatsheet's filter input steals focus,
-    // causing roborev's Escape handler to short-circuit on its
-    // tag === "INPUT" guard. Gate the action by page to avoid that.
-    const cheatsheet = defaultActions.find((a) => a.id === "cheatsheet.open");
-    expect(cheatsheet).toBeDefined();
-    expect(cheatsheet!.when(ctx("reviews"))).toBe(false);
-    expect(cheatsheet!.when(ctx("pulls"))).toBe(true);
-    expect(cheatsheet!.when(ctx("issues"))).toBe(true);
   });
 
   it("sidebar.toggle reserves the chord everywhere but only toggles pages with a sidebar target", () => {

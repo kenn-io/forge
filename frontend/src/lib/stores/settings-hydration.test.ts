@@ -29,6 +29,7 @@ const codexTarget = {
 };
 
 const settingsPayload = makeStartupSnapshot({
+  airplane_mode: true,
   repo_presets: [
     {
       name: "Review queue",
@@ -72,6 +73,7 @@ describe("applySettingsHydration", () => {
   it("hydrates repository presets into the settings store", () => {
     const { settingsStore } = hydrate();
     expect(settingsStore.getRepoPresets()).toEqual(settingsPayload.repo_presets);
+    expect(settingsStore.getAirplaneMode()).toBe(true);
   });
 
   it("hydrates launch targets into the settings store", () => {

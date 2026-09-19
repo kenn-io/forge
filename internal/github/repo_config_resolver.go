@@ -92,6 +92,17 @@ func FallbackConfiguredRepoRefs(
 	host := raw.PlatformHostOrDefault()
 	repoPath := configuredRepoPath(raw)
 	if !raw.HasNameGlob() {
+		if providerID := strings.TrimSpace(raw.PlatformRepoID); providerID != "" {
+			for _, repo := range previous {
+				if repoPlatform(repo) == kind &&
+					sameConfiguredRepoHost(repoHost(repo), host) &&
+					repo.PlatformExternalID == providerID {
+					repo.ConfiguredRepoPath = repoPath
+					return []RepoRef{repo}
+				}
+			}
+			return nil
+		}
 		// Provenance first: a provider-side rename moves the tracked route
 		// away from the configured path, but the tracked ref still records
 		// which config entry it was resolved from. Falling back to it keeps

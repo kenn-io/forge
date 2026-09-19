@@ -284,6 +284,9 @@ per-task error isolation rather than duplicating Kata's component suite.
 
 Roborev `hide_classify_jobs` e2e fixtures must cover skipped design rows and classify-typed auto-design rows.
 Seed classify rows terminal unless testing worker mutation; live workers can rewrite queued/running rows during browser assertions (`internal/testutil/roborev_fixtures.go::seedRoborevMutationFixtures`).
+Real Roborev mutation fixtures need an available fixture agent. Pause the queue while asserting a queued rerun;
+`--workers 0` retains the daemon's default worker count
+(`frontend/tests/e2e-full/roborev-e2e.spec.ts:969`).
 Keep injected Roborev `panel_run` failures controlled until the assertion observes them; drawer/list refresh demand can immediately retry member fetches and clear transient panel errors (`frontend/src/lib/stores/roborev/jobs.svelte.ts::wantsPanelMembers`).
 Roborev `/api/stream/events` is NDJSON, not SSE: use an abortable Fetch reader with bounded reconnects, and abort both pre-header and active-body requests on teardown (`frontend/src/lib/stores/roborev/jobs.svelte.ts::connectEventStream`).
 Playwright retries that write to a persistent authority must use per-attempt mutation identities or reset state; a committed first attempt otherwise poisons its retry (`frontend/tests/e2e-full/roborev-e2e.spec.ts:923`).
@@ -501,6 +504,9 @@ migration state, dirty database handling, or other internal invariants.
   equality cannot prove stasis. (`internal/db/queries_archive_test.go::TestArchivePromptReopensEqualOrNewerObservations`)
 - Snapshot race coverage must include equal provider timestamps through a real sync workflow and generated HTTP client; helper-only tests miss ordering gaps where child I/O begins before the parent revision is committed. (`internal/server/e2etest/archive_snapshot_race_test.go::TestIssueSyncCannotReplaceEqualTimestampArchiveSnapshotE2E`)
 - Seeded full-stack provider fakes must return every child family represented as provider-owned seed data. Complete mirroring legitimately deletes absent comments/reviews, so a DB-only synthetic child row is not stable across background or explicit sync. (`internal/testutil/fixtures.go::SeedFixtures`)
+- The standalone e2e server runs outside Go's test-only public-API guard. Every provider
+  client it constructs must prevent remote I/O explicitly, including clients used for rate
+  display (`cmd/e2e-server/main.go::newE2EGraphQLFetcher`).
 
 ### SQLite Fixtures
 

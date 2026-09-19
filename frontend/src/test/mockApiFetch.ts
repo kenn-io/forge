@@ -267,6 +267,7 @@ const syncStatus = {
 };
 
 export const mockSettings = {
+  airplane_mode: false,
   repos: [
     {
       provider: "github",
@@ -315,7 +316,6 @@ export const mockSettings = {
     issues: true,
     pulls: true,
     repos: true,
-    reviews: true,
     workspaces: true,
   },
   kata_projects: [],

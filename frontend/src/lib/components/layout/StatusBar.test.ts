@@ -21,6 +21,7 @@ vi.mock("../../app/runtime-context.js", () => ({
 
 vi.mock("../../stores/router.svelte.ts", () => ({
   getPage: () => "activity",
+  navigate: vi.fn(),
 }));
 
 vi.mock("../../context.js", () => ({
@@ -34,6 +35,7 @@ vi.mock("../../context.js", () => ({
     },
     pulls: { getPulls: () => [] },
     issues: { getIssues: () => [] },
+    settings: { getAirplaneMode: () => false },
     sync: {
       getSyncState: () => null,
       getRateLimits: () => ({ provider_pools: {}, local_ceilings: {} }),

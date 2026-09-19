@@ -142,6 +142,7 @@ function renderWithRealPullDetail(
     stopDetailPolling: vi.fn(),
     getDetail: () => detail,
     getDetailEnvelopeTick: () => 0,
+    isDetailFromCache: () => false,
     isDetailLoading: () => false,
     getDetailError: () => null,
     isDetailSyncing: () => false,
@@ -170,7 +171,7 @@ function renderWithRealPullDetail(
           STORES_KEY,
           {
             detail: detailStore,
-            pulls: { loadPulls: vi.fn() },
+            pulls: { loadPulls: vi.fn(), getPulls: () => [] },
             activity: { loadActivity: vi.fn() },
             detailActivityView: createDetailActivityViewStore(),
             settings: {

@@ -7,12 +7,7 @@ import { executeGeneratedApiRequest } from "./api/generated-api.js";
 import { ProblemCodes } from "./api/problems.js";
 import type { ProviderRouteRef } from "./api/provider-routes.js";
 import { retryIdempotentRead } from "./api/retry-policy.js";
-import { createDaemonStore } from "./stores/roborev/daemon.svelte.js";
-import { createJobsStore } from "./stores/roborev/jobs.svelte.js";
-import { createReviewStore } from "./stores/roborev/review.svelte.js";
-import { createLogStore } from "./stores/roborev/log.svelte.js";
-import { makeRoborevOwner } from "./stores/roborev/roborev-workflow.js";
-import type { NavigateCallback, HostStateAccessors, StoreInstances, UIConfig } from "./types.js";
+import type { HostStateAccessors, StoreInstances, UIConfig } from "./types.js";
 import type { AppRuntime, AppServices } from "./app/runtime.js";
 import type { ProviderEventsError } from "./stores/provider-events-workflow.js";
 import type { PullsStoreOptions } from "./stores/pulls.svelte.js";
@@ -43,7 +38,6 @@ import { notifyWorkspaceDeleted } from "./stores/workspace-host.svelte.js";
 
 export interface AppStoreOptions {
   runtime: AppRuntime;
-  onNavigate?: NavigateCallback;
   hostState?: HostStateAccessors;
   config?: UIConfig;
   getPage?: () => string;
@@ -63,7 +57,6 @@ export interface AppStoreComposition {
 export function createAppStores(options: AppStoreOptions): AppStoreComposition {
   const {
     runtime,
-    onNavigate = () => {},
     hostState = {},
     config = {},
     getPage = () => "",
@@ -76,7 +69,6 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
   const appRuntime = runtime;
   const hs = hostState;
   const cfg = config;
-  const nav = onNavigate;
   const gp = getPage;
   const getSelectedActivity = getActivitySelection;
   const roborevBase = roborevBaseUrl;
@@ -129,6 +121,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
   const detailOpts: DetailStoreOptions = {
     runtime: appRuntime,
     getPage: gp,
+    getAirplaneMode: settingsStore.getAirplaneMode,
     onDetailSynchronized: reconcileActivityAfterDetailSync,
     pulls: {
       loadPulls: pullsStore.loadPulls,
@@ -144,6 +137,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
   const issuesOpts: IssuesStoreOptions = {
     runtime: appRuntime,
     getPage: gp,
+    getAirplaneMode: settingsStore.getAirplaneMode,
     onDetailSynchronized: reconcileActivityAfterDetailSync,
     sync: {
       refreshSyncStatus: syncStore.refreshSyncStatus,
@@ -253,14 +247,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
 
   function reconcileProviderState() {
     return Effect.all(
-      [
-        pullsStore.reconcilePullsEffect(),
-        issuesStore.reconcileIssuesEffect(),
-        activityStore.reconcileActivityEffect(),
-        refreshSelectedActivityDetail(),
-        issuesStore.refreshActiveIssueDetailEffect(),
-        syncStore.reconcileSyncStatusEffect,
-      ],
+      [refreshVisibleData(), issuesStore.refreshActiveIssueDetailEffect(), syncStore.reconcileSyncStatusEffect],
       { concurrency: "unbounded", discard: true },
     );
   }
@@ -293,6 +280,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
       ),
     onWorkspaceStatus: () =>
       settingsStore.getWorkspaceSettings().show_agent_status_in_lists ? refreshVisibleData(false) : Effect.void,
+    onConnectionStateChange: (state) => syncStore.setLiveUpdatesConnected(state === "connected"),
     onSyncStatus: (status) => Effect.sync(() => syncStore.setSyncStatus(status)),
     onHubConnectionChanged: ({ connected }) => {
       if (!connected) {
@@ -401,9 +389,8 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
       const markUnavailable = Effect.sync(() => syncStore.setProviderAvailable(false));
       if (hub_connected === false) return markUnavailable;
       // The replay ring rolled past the client's cursor while it was
-      // disconnected. Hide cached provider projections until every
-      // authoritative read succeeds because no missed event can be assumed
-      // to replay.
+      // disconnected. Keep cached provider projections visible and marked stale until
+      // the visible view is reconciled; missed events cannot be assumed to replay.
       return markUnavailable.pipe(
         Effect.andThen(reconcileProviderStateAfterHubConnection()),
         Effect.andThen(Effect.sync(() => syncStore.setProviderAvailable(true))),
@@ -432,39 +419,6 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
   if (roborevBase) {
     const bp = (cfg.basePath ?? "/").replace(/\/$/, "");
     roborevClient = createRoborevClient(bp + roborevBase);
-    const roborevOwner = makeRoborevOwner("app-reviews");
-
-    const jobsOpts: Parameters<typeof createJobsStore>[0] = {
-      client: roborevClient,
-      runtime: appRuntime,
-      owner: roborevOwner,
-      navigate: nav,
-    };
-    if (errorCb) jobsOpts.onError = errorCb;
-    const jobsStore = createJobsStore(jobsOpts);
-    si.roborevJobs = jobsStore;
-
-    const reviewOpts: Parameters<typeof createReviewStore>[0] = {
-      client: roborevClient,
-      runtime: appRuntime,
-      owner: roborevOwner,
-    };
-    if (errorCb) reviewOpts.onError = errorCb;
-    const reviewStore = createReviewStore(reviewOpts);
-    si.roborevReview = reviewStore;
-
-    const logStore = createLogStore({
-      runtime: appRuntime,
-      baseUrl: bp + roborevBase,
-      ...(errorCb !== undefined && { onError: errorCb }),
-    });
-    si.roborevLog = logStore;
-
-    const daemon = createDaemonStore({
-      client: roborevClient,
-      runtime: appRuntime,
-    });
-    si.roborevDaemon = daemon;
   }
 
   const listAgentStatusPolling = pollWhileVisible(

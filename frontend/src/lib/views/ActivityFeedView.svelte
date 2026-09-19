@@ -30,6 +30,7 @@
     itemType: "pr" | "issue";
     provider: string;
     platformHost?: string | undefined;
+    platformRepoId?: string | undefined;
     repoPath: string;
     owner: string;
     name: string;
@@ -209,6 +210,7 @@
           number: activeDrawer.number,
           provider: activeDrawer.provider,
           platformHost: activeDrawer.platformHost,
+          platformRepoId: activeDrawer.platformRepoId,
           repoPath: activeDrawer.repoPath,
         }
       : null,
@@ -221,6 +223,7 @@
           number: activeDrawer.number,
           provider: activeDrawer.provider,
           platformHost: activeDrawer.platformHost,
+          platformRepoId: activeDrawer.platformRepoId,
           repoPath: activeDrawer.repoPath,
         }
       : null,
@@ -268,6 +271,7 @@
         sync: false,
         provider: ref.provider,
         platformHost: ref.platformHost,
+        platformRepoId: ref.platformRepoId,
         repoPath: ref.repoPath,
       });
       return;
@@ -278,6 +282,7 @@
         sync: false,
         provider: ref.provider,
         platformHost: ref.platformHost,
+        platformRepoId: ref.platformRepoId,
         repoPath: ref.repoPath,
       });
     }
@@ -399,6 +404,7 @@
       itemType,
       provider: item.repo.provider,
       platformHost: item.repo.platform_host,
+      platformRepoId: item.repo.platform_repo_id,
       repoPath: item.repo.repo_path,
       owner: item.repo.owner,
       name: item.repo.name,
@@ -624,6 +630,7 @@
               number={drawerIssueSelection.number}
               provider={drawerIssueSelection.provider}
               platformHost={drawerIssueSelection.platformHost}
+              platformRepoId={drawerIssueSelection.platformRepoId}
               repoPath={drawerIssueSelection.repoPath}
               autoSync="background"
               hideStaleWhileLoading={true}

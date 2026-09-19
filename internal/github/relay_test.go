@@ -137,6 +137,7 @@ func TestRelayTargetedChecksAndBudgetGate(t *testing.T) {
 	// A cached catalog ref need not carry GitHub's numeric REST ID.
 	repo := RepoRef{Platform: platform.KindGitHub, PlatformHost: "github.com", PlatformExternalID: "R_test_project", Owner: "team", Name: "project"}
 	syncer := NewSyncer(map[string]Client{"github.com": provider}, database, nil, []RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{"github.com": budget})
+	syncer.SetAirplaneMode(true)
 	hint := activityrelay.Hint{Provider: "github", Host: "github.com", RepositoryID: "R_test_project", Target: activityrelay.PullRequestChecks, Number: 7}
 	budget.Spend(100)
 	require.NoError(syncer.refreshRelayHint(WithSyncBudget(ctx), hint))

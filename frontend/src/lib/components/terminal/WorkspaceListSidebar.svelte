@@ -1200,7 +1200,12 @@
 
   onMount(() => {
     const workspaceEvents = workspaceEventStream(eventsStore.subscribeWorkspaceEvents).pipe(
-      Stream.filter((signal) => signal._tag === "Status"),
+      Stream.filter((signal) =>
+        signal._tag === "Status" ||
+        signal._tag === "Open" ||
+        signal._tag === "ReconnectStale" ||
+        signal._tag === "Associated"
+      ),
     );
     const execution = runtime.runCommand(
       Effect.scoped(

@@ -237,6 +237,7 @@ async function renderWorkflowDetail() {
     stopDetailPolling: vi.fn(),
     getDetail: () => state.detail,
     getDetailEnvelopeTick: () => 0,
+    isDetailFromCache: () => false,
     isDetailLoading: () => state.loading,
     getDetailError: () => state.error,
     isDetailSyncing: () => false,

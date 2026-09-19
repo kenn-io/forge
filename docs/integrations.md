@@ -20,7 +20,7 @@ Roborev daemon for you. The optional managed-clone setting is off by default
 and can be changed live under **Settings → Workspaces**. It runs `roborev init
 --no-daemon` for new, retried, or recovered Forge-managed workspaces. This
 requires Roborev v0.65.0 or newer and a loopback HTTP endpoint; remote Roborev
-endpoints still work for the Reviews page when managed-clone initialization is
+endpoints still work for the Reviews panel when managed-clone initialization is
 off.
 
 Initialization applies only to Forge's managed clones. A repository configured
@@ -30,15 +30,10 @@ Roborev snapshot exclusion separate, so changing or removing one workspace
 does not hide paths in its siblings. Hook setup failures leave the workspace
 available for retry but do not start its terminal session.
 
-Open **Reviews** to see jobs from the connected daemon. Filter by repository,
-branch, status, or Git ref. The table shows the agent, status, verdict, elapsed
-time, cost, job type, and queue time.
-
-<figure class="workflow-shot">
-  <img class="workflow-shot__image workflow-shot__image--light" src="assets/generated/roborev-reviews-light.svg" alt="Forge Reviews with a selected Roborev job in light mode">
-  <img class="workflow-shot__image workflow-shot__image--dark" src="assets/generated/roborev-reviews-dark.svg" alt="Forge Reviews with a selected Roborev job in dark mode">
-  <figcaption>Select a Roborev job to read the review, inspect its log and prompt, and respond without leaving Forge.</figcaption>
-</figure>
+Open **Reviews** in a pull request's workspace panel or a local workspace.
+Forge loads jobs when you display the panel and scopes them to the workspace's
+repository and branch. Filter the jobs by status or Git ref. The table shows
+the agent, status, verdict, elapsed time, cost, job type, and queue time.
 
 Select a job to open its review. The drawer also has the job log, the submitted
 prompt, Roborev comments, token usage, and controls that apply to the current
@@ -47,7 +42,7 @@ review, add a comment, and copy the review output.
 
 Roborev still owns the jobs and review data. Forge sends these reads and
 actions through its local server so the browser does not connect to the daemon
-directly. Set `reviews = false` under `[modes]` if you do not use Roborev.
+directly.
 
 ## Link Kata issues
 

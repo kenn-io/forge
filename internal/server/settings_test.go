@@ -529,6 +529,28 @@ diff_cache_mb = 256
 	assert.Equal(config.MCP{Enabled: true, DiffCacheMB: 256}, reloaded.MCP)
 }
 
+func TestAirplaneModeSettingsPersistAndReload(t *testing.T) {
+	require := require.New(t)
+	srv, _, cfgPath := setupTestServerWithConfig(t)
+	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", map[string]bool{"airplane_mode": true})
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	var response map[string]any
+	require.NoError(json.NewDecoder(rr.Body).Decode(&response))
+	require.Equal(true, response["airplane_mode"])
+	require.False(srv.syncer.AutomaticSyncEnabled())
+	reloaded, err := config.Load(cfgPath)
+	require.NoError(err)
+	require.True(reloaded.AirplaneMode)
+	reloaded.AirplaneMode = false
+	require.NoError(reloaded.Save(cfgPath))
+	srv.handleConfigFileChanged()
+	require.True(srv.syncer.AutomaticSyncEnabled())
+	rr = testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	require.NoError(json.NewDecoder(rr.Body).Decode(&response))
+	require.Equal(false, response["airplane_mode"])
+}
+
 func TestHandleUpdateSettingsPersistsRoborevManagedCloneInit(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -701,7 +723,6 @@ func TestHandleUpdateSettingsPersistsModes(t *testing.T) {
 	assert.True(*resp.Modes.Repos)
 	assert.True(*resp.Modes.Pulls)
 	assert.True(*resp.Modes.Issues)
-	assert.True(*resp.Modes.Reviews)
 
 	cfg2, err := config.Load(cfgPath)
 	require.NoError(err)
@@ -712,7 +733,6 @@ func TestHandleUpdateSettingsPersistsModes(t *testing.T) {
 	assert.True(*cfg2.Modes.Repos)
 	assert.True(*cfg2.Modes.Pulls)
 	assert.True(*cfg2.Modes.Issues)
-	assert.True(*cfg2.Modes.Reviews)
 
 	activity := srv.cfg.Activity
 	activity.TimeRange = "30d"
@@ -842,7 +862,6 @@ func assertDefaultModeVisibility(t *testing.T, modes config.ModeVisibility) {
 	assert.False(*modes.Actions)
 	assert.True(*modes.Pulls)
 	assert.True(*modes.Issues)
-	assert.True(*modes.Reviews)
 	assert.True(*modes.Workspaces)
 }
 

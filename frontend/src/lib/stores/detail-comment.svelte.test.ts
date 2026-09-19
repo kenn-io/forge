@@ -74,6 +74,7 @@ interface MockDetail {
   repo: {
     provider: string;
     platform_host: string;
+    platform_repo_id: string;
     owner: string;
     name: string;
     repo_path: string;
@@ -89,6 +90,7 @@ function makeDetail(events: unknown[] = [], number = 1): MockDetail {
     repo: {
       provider: pullRef.provider,
       platform_host: pullRef.platformHost,
+      platform_repo_id: "repo-octo-repo",
       owner: "octo",
       name: "repo",
       repo_path: pullRef.repoPath,

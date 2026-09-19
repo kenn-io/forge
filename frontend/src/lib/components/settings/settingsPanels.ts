@@ -18,6 +18,14 @@ export const SETTINGS_PANELS: SettingsPanelMeta[] = [
     keywords: "repos repositories providers github gitlab forgejo gitea import glob",
   },
   {
+    id: "settings-sync",
+    label: "Sync",
+    title: "Sync",
+    group: "Providers",
+    description: "Background updates and airplane mode",
+    keywords: "sync airplane mode slow internet bandwidth relay offline network",
+  },
+  {
     id: "settings-pull-requests",
     label: "Pull requests",
     title: "Pull request safeguards",
@@ -96,7 +104,7 @@ export const SETTINGS_PANELS: SettingsPanelMeta[] = [
     title: "Visible modes",
     group: "Navigation",
     description: "Modes shown in the app header",
-    keywords: "visible modes navigation tabs prs issues reviews docs kata actions github workflows release dispatch",
+    keywords: "visible modes navigation tabs prs issues docs kata actions github workflows release dispatch",
   },
   {
     id: "settings-mcp",

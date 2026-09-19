@@ -501,7 +501,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
       Effect.andThen(
         Effect.gen(function* () {
           const workflow = yield* PullsWorkflow;
-          return yield* workflow.list(read);
+          return yield* workflow.list(JSON.stringify(query), read);
         }),
       ),
       Effect.tap((result) =>

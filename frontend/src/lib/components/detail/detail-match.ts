@@ -5,6 +5,7 @@ import { canonicalProvider, resolvedPlatformHost } from "../../api/provider-rout
 export interface DetailRefLike {
   provider: string;
   platformHost?: string | undefined;
+  platformRepoId?: string | undefined;
   owner: string;
   name: string;
   repoPath: string;
@@ -19,11 +20,11 @@ export interface DetailRefLike {
  * aliases and an omitted default host are the same identity, so both sides are
  * canonicalized before comparison.
  */
-function repoIdentityMatches(
+export function repoIdentityMatches(
   detail: {
     repo_owner: string;
     repo_name: string;
-    repo?: { provider?: string; platform_host?: string; repo_path?: string };
+    repo?: { provider?: string; platform_host?: string; platform_repo_id?: string; repo_path?: string };
   },
   ref: DetailRefLike,
 ): boolean {
@@ -33,7 +34,8 @@ function repoIdentityMatches(
     canonicalProvider(detail.repo?.provider ?? "") === canonicalProvider(ref.provider) &&
     resolvedPlatformHost(ref.provider, detail.repo?.platform_host) ===
       resolvedPlatformHost(ref.provider, ref.platformHost) &&
-    detail.repo?.repo_path === ref.repoPath
+    detail.repo?.repo_path === ref.repoPath &&
+    (!ref.platformRepoId || detail.repo?.platform_repo_id === ref.platformRepoId)
   );
 }
 

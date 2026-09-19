@@ -18,7 +18,10 @@ export interface IssueDetailReadResult {
 export type IssueDetailReadError = ApiProblemError | TransientTransportError;
 
 interface IssuesWorkflowShape {
-  readonly list: <E, R>(read: Effect.Effect<Issue[], E, R>) => Effect.Effect<Issue[], E, R>;
+  readonly list: (
+    key: string,
+    read: Effect.Effect<Issue[], ApiProblemError | TransientTransportError, GeneratedApi>,
+  ) => Effect.Effect<Issue[], ApiProblemError | TransientTransportError>;
   readonly reconcile: <E, R, ProjectError, ProjectRequirements>(
     read: Effect.Effect<readonly Issue[], E, R>,
     project: (result: readonly Issue[]) => Effect.Effect<void, ProjectError, ProjectRequirements>,
@@ -64,7 +67,7 @@ export class IssuesWorkflow extends Context.Service<IssuesWorkflow, IssuesWorkfl
 export const IssuesWorkflowLive = Layer.effect(IssuesWorkflow)(
   Effect.gen(function* () {
     const api = yield* GeneratedApi;
-    const listHandle = yield* FiberHandle.make<Issue[], unknown>();
+    const listReads = yield* makeLatestSharedRead<Issue[], ApiProblemError | TransientTransportError, GeneratedApi>();
     const listGeneration = yield* Ref.make(0);
     const projection = yield* Semaphore.make(1);
     const detailReads = yield* makeLatestSharedRead<IssueDetail, IssueDetailReadError, GeneratedApi>();
@@ -78,10 +81,11 @@ export const IssuesWorkflowLive = Layer.effect(IssuesWorkflow)(
       (failure) => failure instanceof MutationNeedsReview,
     );
 
-    function list<E, R>(read: Effect.Effect<Issue[], E, R>): Effect.Effect<Issue[], E, R> {
-      return projection
-        .withPermit(Ref.update(listGeneration, (generation) => generation + 1))
-        .pipe(Effect.andThen(FiberHandle.run(listHandle, read)), Effect.flatMap(Fiber.join));
+    function list(key: string, read: Effect.Effect<Issue[], ApiProblemError | TransientTransportError, GeneratedApi>) {
+      return listReads.read(
+        key,
+        projection.withPermit(Ref.update(listGeneration, (generation) => generation + 1)).pipe(Effect.andThen(read)),
+      );
     }
 
     function reconcile<E, R, ProjectError, ProjectRequirements>(

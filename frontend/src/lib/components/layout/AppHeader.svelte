@@ -105,7 +105,6 @@
     | "actions"
     | "pulls"
     | "issues"
-    | "reviews"
     | "workspaces";
   type NavValue = NavDestination | "settings" | "design-system";
 
@@ -116,7 +115,6 @@
     { value: "actions", label: "Actions", mode: "actions" },
     { value: "pulls", label: "PRs", mode: "pulls" },
     { value: "issues", label: "Issues", mode: "issues" },
-    { value: "reviews", label: "Reviews", mode: "reviews" },
     { value: "workspaces", label: "Workspaces", mode: "workspaces" },
   ];
 
@@ -254,22 +252,10 @@
   // Settings and the design-system gallery are not modes, but while one of
   // those pages is current it needs a tab entry: the collapsed dropdown
   // otherwise presents the first mode as the current page.
-  const reviewsDaemonUnavailable = $derived(
-    settings.isModeVisible("reviews")
-      && stores.roborevDaemon !== undefined
-      && !stores.roborevDaemon.isAvailable(),
-  );
-
   const tabs: TopBarTab[] = $derived.by(() => {
     const entries: TopBarTab[] = modeNavOptions
       .filter((option) => settings.isModeVisible(option.mode))
-      .map(({ value, label }) => {
-        const tab: TopBarTab = { id: value, label };
-        if (value === "reviews" && reviewsDaemonUnavailable) {
-          tab.indicator = { tone: "danger", title: "Reviews daemon unavailable" };
-        }
-        return tab;
-      });
+      .map(({ value, label }) => ({ id: value, label }));
 
     if (getPage() === "design-system") {
       entries.push({ id: "design-system", label: "Design system" });
@@ -341,8 +327,7 @@
     }
     else if (destination === "pulls" || destination === "issues") {
       navigate(routeForTab(destination));
-    } else if (destination === "reviews") navigate("/reviews");
-    else if (destination === "workspaces") {
+    } else if (destination === "workspaces") {
       if (getPage() !== "workspaces" && getPage() !== "terminal") {
         navigate(getLastWorkspaceRoute());
       }
@@ -358,7 +343,6 @@
     else if (value === "actions") navigateTab("actions");
     else if (value === "pulls") navigateTab("pulls");
     else if (value === "issues") navigateTab("issues");
-    else if (value === "reviews") navigateTab("reviews");
     else if (value === "workspaces") navigateTab("workspaces");
     else if (value === "settings") navigateTab("settings");
     else if (value === "design-system") navigateTab("design-system");

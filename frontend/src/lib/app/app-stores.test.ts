@@ -49,7 +49,9 @@ describe("app store composition", () => {
   it.each(["issues", "activity", "focus", "workspaces"])(
     "refreshes an open issue after data_changed on %s without waiting for the detail poll",
     async (page) => {
-      let updatedDetail: IssueDetail | undefined;
+      const initialResponse = await createMockApiFetch().fetch("/api/v1/issues/github/acme/widgets/7");
+      let updatedDetail: IssueDetail = await initialResponse.json();
+      updatedDetail.repo.platform_repo_id = "repo-acme-widgets";
       const api = createMockApiFetch([
         ({ method, url }) =>
           method === "GET" && url.pathname === "/api/v1/activity/authors"
@@ -155,6 +157,22 @@ describe("app store composition", () => {
     ).toEqual([]);
   });
 
+  it("reconciles the visible list without fetching hidden lists after reconnect", async () => {
+    const api = createMockApiFetch();
+    vi.stubGlobal("fetch", api.fetch);
+    const { stores } = createAppStores({ runtime, getPage: () => "pulls" });
+    runtime.runCommand(stores.events.streamEffect, {
+      operation: "test provider reconnect",
+      safeContext: {},
+      onFailure: () => {},
+    });
+    await vi.waitFor(() => expect(eventSources).toHaveLength(1));
+    emit(eventSources[0]!, "reconnect.stale", { hub_connected: true });
+    await vi.waitFor(() => expect(api.requests.some(({ url }) => url.pathname === "/api/v1/pulls")).toBe(true));
+    await vi.waitFor(() => expect(stores.sync.getProviderAvailable()).toBe(true));
+    expect(api.requests.some(({ url }) => ["/api/v1/issues", "/api/v1/activity"].includes(url.pathname))).toBe(false);
+  });
+
   it("keeps provider data unavailable when reconnect reconciliation fails", async () => {
     const failures: string[] = [];
     vi.stubGlobal(
@@ -172,7 +190,11 @@ describe("app store composition", () => {
         ),
       ),
     );
-    const composition = createAppStores({ runtime, onError: (message) => failures.push(message) });
+    const composition = createAppStores({
+      runtime,
+      getPage: () => "pulls",
+      onError: (message) => failures.push(message),
+    });
     runtime.runCommand(composition.stores.events.streamEffect, {
       operation: "test provider events",
       safeContext: {},
@@ -214,7 +236,11 @@ describe("app store composition", () => {
         );
       }),
     );
-    const composition = createAppStores({ runtime, onError: (message) => failures.push(message) });
+    const composition = createAppStores({
+      runtime,
+      getPage: () => "pulls",
+      onError: (message) => failures.push(message),
+    });
     runtime.runCommand(composition.stores.events.streamEffect, {
       operation: "test provider events",
       safeContext: {},

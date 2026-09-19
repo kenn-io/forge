@@ -97,7 +97,7 @@ func (h *Handler) SeedRefreshRepos(ctx context.Context) {
 }
 
 func (h *Handler) runRefreshPass(ctx context.Context) {
-	if h.clones == nil {
+	if h.clones == nil || h.automaticRefreshEnabled != nil && !h.automaticRefreshEnabled() {
 		return
 	}
 	slog.Debug("refreshing repo browser clones")

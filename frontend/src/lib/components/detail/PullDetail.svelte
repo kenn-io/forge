@@ -163,7 +163,7 @@
       || detailStore.isDetailLoading()
       || detailStore.isDetailSyncing()
       || sync?.getProviderAvailable() === false
-      || stalePR
+      || detailMismatch
     ) return;
     const requestIdentity = $state.snapshot(itemIdentity);
     const requestGeneration = ++manualRefreshGeneration;
@@ -172,7 +172,7 @@
       owner,
       name,
       number,
-      { provider, platformHost, repoPath },
+      { provider, platformHost, platformRepoId, repoPath },
       {
         onFailure: (message) => {
           if (isCurrentManualRefresh(requestGeneration, requestIdentity)) {
@@ -235,6 +235,7 @@
     number: number;
     provider: string;
     platformHost?: string | undefined;
+    platformRepoId?: string | undefined;
     repoPath: string;
     hideTabs?: boolean;
     hideWorkspaceAction?: boolean;
@@ -259,6 +260,7 @@
     number,
     provider,
     platformHost,
+    platformRepoId,
     repoPath,
     hideTabs = false,
     hideWorkspaceAction = false,
@@ -276,6 +278,7 @@
   const routeRef = $derived({
     provider,
     platformHost,
+    platformRepoId,
     owner,
     name,
     repoPath,
@@ -557,7 +560,7 @@
   // load completes. `stalePR` is true in that window, and every mutation
   // handler short-circuits on it so a click during the transition can't
   // operate on the freshly-routed PR while showing the previous one.
-  const stalePR = $derived.by(() => {
+  const detailMismatch = $derived.by(() => {
     const d = detailStore.getDetail();
     if (d == null) return false;
     return (
@@ -571,9 +574,13 @@
       canonicalProvider(d.repo?.provider ?? "") !== canonicalProvider(provider) ||
       resolvedPlatformHost(provider, d.repo?.platform_host) !==
         resolvedPlatformHost(provider, platformHost) ||
-      d.repo?.repo_path !== repoPath
+      d.repo?.repo_path !== repoPath ||
+      (!!platformRepoId && d.repo?.platform_repo_id !== platformRepoId)
     );
   });
+
+  // A restored snapshot stays readable, but cannot authorize actions until revalidated.
+  const stalePR = $derived(detailMismatch || detailStore.isDetailFromCache());
 
   // Same comparison shape as PRListView's detailMatchesSelected, but
   // against the inline workspace identity rather than a route ref: the
@@ -591,7 +598,8 @@
       canonicalProvider(detail.repo?.provider ?? "") === canonicalProvider(identity.provider) &&
       resolvedPlatformHost(identity.provider, detail.repo?.platform_host) ===
         resolvedPlatformHost(identity.provider, identity.platformHost) &&
-      detail.repo?.repo_path === identity.repoPath
+      detail.repo?.repo_path === identity.repoPath &&
+      (!platformRepoId || detail.repo?.platform_repo_id === platformRepoId)
     );
   }
 
@@ -614,6 +622,7 @@
             detailStore.refreshPendingCI(owner, name, number, {
               provider,
               platformHost,
+              platformRepoId,
               repoPath,
               workflowApprovalSync,
             });
@@ -632,6 +641,7 @@
   });
 
   let lastDetailLoadIdentity: WorkspaceItemIdentity | null = null;
+  let lastDetailLoadPlatformRepoId: string | undefined;
   let lastDetailLoadAutoSync: DetailSyncMode | undefined;
   let lastDetailLoadWorkflowApprovalSync: boolean | undefined;
 
@@ -641,6 +651,7 @@
     const requestNumber = number;
     const requestProvider = provider;
     const requestPlatformHost = platformHost;
+    const requestPlatformRepoId = platformRepoId;
     const requestRepoPath = repoPath;
     const requestAutoSync = autoSync;
     const requestWorkflowApprovalSync = workflowApprovalSync;
@@ -648,10 +659,12 @@
     const shouldLoad =
       lastDetailLoadIdentity === null
       || !identityEquals(lastDetailLoadIdentity, requestIdentity)
+      || lastDetailLoadPlatformRepoId !== requestPlatformRepoId
       || lastDetailLoadAutoSync !== requestAutoSync
       || lastDetailLoadWorkflowApprovalSync !== requestWorkflowApprovalSync;
     if (shouldLoad) {
       lastDetailLoadIdentity = requestIdentity;
+      lastDetailLoadPlatformRepoId = requestPlatformRepoId;
       lastDetailLoadAutoSync = requestAutoSync;
       lastDetailLoadWorkflowApprovalSync = requestWorkflowApprovalSync;
     }
@@ -666,6 +679,7 @@
             workflowApprovalSync: requestWorkflowApprovalSync,
             provider: requestProvider,
             platformHost: requestPlatformHost,
+            platformRepoId: requestPlatformRepoId,
             repoPath: requestRepoPath,
           },
         );
@@ -677,6 +691,7 @@
         {
           provider: requestProvider,
           platformHost: requestPlatformHost,
+          platformRepoId: requestPlatformRepoId,
           repoPath: requestRepoPath,
         },
       );
@@ -1063,7 +1078,7 @@
       owner,
       name,
       number,
-      { provider, platformHost, repoPath },
+      { provider, platformHost, platformRepoId, repoPath },
       { onSuccess: finish, onFailure: () => finish(false) },
     );
   }
@@ -1718,6 +1733,7 @@
     detailStore.refreshDetailOnly(owner, name, number, {
       provider,
       platformHost,
+      platformRepoId,
       repoPath,
     });
   }
@@ -2103,13 +2119,13 @@
 <svelte:window onkeydown={onActionMenuKeydown} />
 <svelte:document onmousedown={onDocumentMousedown} />
 
-{#if detailStore.isDetailLoading() && (detailStore.getDetail() === null || (stalePR && hideStaleWhileLoading))}
+{#if detailStore.isDetailLoading() && (detailStore.getDetail() === null || (detailMismatch && hideStaleWhileLoading))}
   <div class="state-center"><p class="state-msg">Loading…</p></div>
-{:else if detailStore.getDetailError() !== null && (detailStore.getDetail() === null || (stalePR && hideStaleWhileLoading))}
+{:else if detailStore.getDetailError() !== null && (detailStore.getDetail() === null || (detailMismatch && hideStaleWhileLoading))}
   <div class="state-center"><p class="state-msg state-msg--error">Error: {detailStore.getDetailError()}</p></div>
 {:else}
   {@const detail = detailStore.getDetail()}
-  {@const staleLoadError = stalePR && detailStore.getDetailError() !== null}
+  {@const detailLoadError = detailStore.getDetailError() !== null}
   {#if detail !== null}
     {@const pr = detail.merge_request}
     {@const capabilities = detail.repo?.capabilities ?? defaultProviderCapabilities}
@@ -2133,9 +2149,10 @@
       detail.repo?.name ?? name,
     )}
     <div class="pull-detail-wrap" {@attach loadWorkflowCatalog(workflowCatalogDemandEnabled ? workflowRef : null)}>
-      {#if staleLoadError}
+      {#if detailLoadError}
         <div class="detail-load-error" data-testid="detail-load-error">
-          Couldn't load this pull request: {detailStore.getDetailError()}
+          {detailMismatch ? "Couldn't load this pull request:" : "Couldn't refresh this pull request. Showing previously loaded content:"}
+          {detailStore.getDetailError()}
         </div>
       {/if}
       {#if !hideTabs}
@@ -3149,6 +3166,7 @@
             detailStore.refreshDetailOnly(owner, name, number, {
               provider,
               platformHost,
+              platformRepoId,
               repoPath,
             });
           }}
@@ -3157,6 +3175,7 @@
             detailStore.loadDetail(owner, name, number, {
               provider,
               platformHost,
+              platformRepoId,
               repoPath,
             });
             pulls.loadPulls();
@@ -3275,6 +3294,7 @@
           {number}
           provider={detail.repo.provider}
           platformHost={detail.platform_host}
+          platformRepoId={detail.repo.platform_repo_id}
           repoPath={detail.repo.repo_path}
           disabled={stalePR || !capabilities.comment_mutation || addCommentGate.unavailable}
           disabledReason={addCommentGate.unavailable ? addCommentGate.reason : undefined}
@@ -3287,7 +3307,7 @@
           <h3 class="section-title">Activity</h3>
           <div class="section-title-actions">
             <DetailRefreshButton
-              disabled={detailStore.isDetailLoading() || detailStore.isDetailSyncing() || stalePR || sync?.getProviderAvailable() === false}
+              disabled={detailStore.isDetailLoading() || detailStore.isDetailSyncing() || detailMismatch || sync?.getProviderAvailable() === false}
               disabledReason={sync?.getProviderAvailable() === false ? "Hub unavailable" : undefined}
               refreshing={manualRefreshPending}
               onRefresh={refreshDetail}
@@ -3308,6 +3328,7 @@
             orderingEvents={timelineEvents}
             {provider}
             {platformHost}
+            {platformRepoId}
             repoOwner={owner}
             repoName={name}
             {repoPath}

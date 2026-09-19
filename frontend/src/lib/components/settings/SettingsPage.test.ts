@@ -1,11 +1,21 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { Effect, Layer } from "effect";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { DEFAULT_TERMINAL_SETTINGS, type Settings } from "../../api/types.js";
 import { makeStartupSnapshot } from "../../../test/startupSnapshot.js";
 
-const { loadSettings, setDetailSettings, setLaunchTargets, setQuickActions, setRepoPresets } = vi.hoisted(() => ({
+const {
+  loadSettings,
+  setAirplaneMode,
+  persistSettings,
+  setDetailSettings,
+  setLaunchTargets,
+  setQuickActions,
+  setRepoPresets,
+} = vi.hoisted(() => ({
   loadSettings: vi.fn(),
+  setAirplaneMode: vi.fn(),
+  persistSettings: vi.fn(),
   setDetailSettings: vi.fn(),
   setLaunchTargets: vi.fn(),
   setQuickActions: vi.fn(),
@@ -16,6 +26,7 @@ vi.mock("../../context.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../context.js")>()),
   getStores: () => ({
     settings: {
+      setAirplaneMode,
       getTerminalSettings: () => DEFAULT_TERMINAL_SETTINGS,
       setTerminalSettings: vi.fn(),
       setConfiguredRepos: vi.fn(),
@@ -41,6 +52,14 @@ vi.mock("../../app/startup-workflow.js", async (importOriginal) => {
       start: Effect.suspend(() => loadSettings()),
       invalidate: Effect.void,
     }),
+  };
+});
+
+vi.mock("../../stores/settings-workflow.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../stores/settings-workflow.js")>();
+  return {
+    ...actual,
+    SettingsWorkflowLive: Layer.mock(actual.SettingsWorkflow)({ persist: (request) => persistSettings(request) }),
   };
 });
 
@@ -112,10 +131,43 @@ describe("SettingsPage", () => {
   afterEach(() => {
     cleanup();
     loadSettings.mockReset();
+    setAirplaneMode.mockReset();
+    persistSettings.mockReset();
     setLaunchTargets.mockReset();
     setQuickActions.mockReset();
     setDetailSettings.mockReset();
     setRepoPresets.mockReset();
+  });
+
+  it("persists airplane mode and applies the confirmed value", async () => {
+    const settings = makeSettings();
+    loadSettings.mockReturnValue(Effect.succeed(settings));
+    persistSettings.mockReturnValue(Effect.succeed({ ...settings, airplane_mode: true }));
+    render(SettingsRuntimeHarness, { props: { component: SettingsPage, componentProps: {} } });
+    await screen.findByText("Providers");
+    await fireEvent.click(screen.getByRole("button", { name: /^Sync/ }));
+    await fireEvent.click(screen.getByRole("switch", { name: "Airplane mode" }));
+    await waitFor(() => expect(setAirplaneMode).toHaveBeenLastCalledWith(true));
+    expect(persistSettings.mock.calls[0]?.[0]()).toEqual({ airplane_mode: true });
+    expect((screen.getByRole("switch", { name: "Airplane mode" }) as HTMLInputElement).checked).toBe(true);
+  });
+
+  it("keeps airplane mode off when saving fails", async () => {
+    loadSettings.mockReturnValue(Effect.succeed(makeSettings()));
+    persistSettings.mockReturnValue(
+      Effect.fail({
+        _tag: "TransientTransportError",
+        operation: "save settings",
+        cause: new Error("offline"),
+      }),
+    );
+    render(SettingsRuntimeHarness, { props: { component: SettingsPage, componentProps: {} } });
+    await screen.findByText("Providers");
+    await fireEvent.click(screen.getByRole("button", { name: /^Sync/ }));
+    await fireEvent.click(screen.getByRole("switch", { name: "Airplane mode" }));
+    await screen.findByRole("alert");
+    expect((screen.getByRole("switch", { name: "Airplane mode" }) as HTMLInputElement).checked).toBe(false);
+    expect(setAirplaneMode).toHaveBeenLastCalledWith(false);
   });
 
   it("hydrates launch targets into the shared settings store on initial load", async () => {

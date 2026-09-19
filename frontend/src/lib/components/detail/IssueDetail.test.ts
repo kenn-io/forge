@@ -202,6 +202,7 @@ function renderIssueDetail(
     stopIssueDetailPolling: vi.fn(),
     getIssueDetail: () => detail,
     getIssueDetailEnvelopeTick: () => envelopeTick,
+    isIssueDetailFromCache: () => false,
     isIssueDetailLoading: () => options.detailLoading ?? false,
     getIssueDetailError: () => null,
     isIssueStaleRefreshing: () => options.staleRefreshing ?? false,

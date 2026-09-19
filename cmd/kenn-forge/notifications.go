@@ -53,6 +53,9 @@ func startBackgroundLoops(ctx context.Context, database *db.DB) *backgroundLoopH
 func startNotificationLoops(handle *backgroundLoopHandle, syncer *ghclient.Syncer, cfg *config.Config) {
 	settings := notificationLoopSettingsFromConfig(cfg)
 	handle.startTicker("notification sync", settings.syncInterval, func(runCtx context.Context) error {
+		if !syncer.AutomaticSyncEnabled() {
+			return nil
+		}
 		return syncer.RunNotificationSync(runCtx)
 	})
 	handle.startTicker("notification read propagation", settings.propagationInterval, func(runCtx context.Context) error {

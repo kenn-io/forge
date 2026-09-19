@@ -121,7 +121,6 @@ vi.mock("../../context.js", async (importOriginal) => {
           docs: false,
           pulls: true,
           issues: true,
-          reviews: true,
           workspaces: true,
         }),
         setModeVisibility: vi.fn(),

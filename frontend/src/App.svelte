@@ -15,7 +15,6 @@
   import MobileWorkspaceTerminal from "./lib/components/mobile/MobileWorkspaceTerminal.svelte";
   import MobileWorkspaceItem from "./lib/components/mobile/MobileWorkspaceItem.svelte";
   import MobileDetailHeader from "./lib/components/mobile/MobileDetailHeader.svelte";
-  import ReviewsView from "./lib/views/ReviewsView.svelte";
   import FocusListView from "./lib/views/FocusListView.svelte";
   import { normalizeInteractiveRepoFilterSelection } from "./lib/utils/repo-filter-values.js";
   import type { NavigateCallback, StoreInstances } from "./lib/types.js";
@@ -54,13 +53,10 @@
     isNewWorkspaceDialogOpen,
   } from "./lib/stores/new-workspace.svelte.js";
   import RepoSummaryPage from "./lib/components/repositories/RepoSummaryPage.svelte";
-  import ActionsPage from "./lib/components/actions/ActionsPage.svelte";
-  import SettingsPage from "./lib/components/settings/SettingsPage.svelte";
   import WorkspaceHost from "./lib/components/terminal/WorkspaceHost.svelte";
   import SessionTerminalPool from "./lib/components/terminal/SessionTerminalPool.svelte";
   import WorkspacePaneControls from "./lib/components/terminal/WorkspacePaneControls.svelte";
   import WorkspaceFirstRunPanel from "./lib/components/terminal/WorkspaceFirstRunPanel.svelte";
-  import DesignSystemPage from "./lib/components/design-system/DesignSystemPage.svelte";
   import OnboardingFlow from "./lib/components/onboarding/OnboardingFlow.svelte";
   import RepoBrowserFeature from "./lib/features/repo-browser/RepoBrowserFeature.svelte";
   import {
@@ -176,7 +172,6 @@
     onError: (message) => showFlash(message, { tone: "danger" }),
     onWarning: (message) => showFlash(message, { tone: "warning" }),
     onNotification: showFlash,
-    onNavigate: appNavigate,
     hostState: {
       getGlobalRepo: getNormalizedGlobalRepo,
       getGroupByRepo: () => stores?.grouping.getGroupByRepo() ?? true,
@@ -200,15 +195,6 @@
     return () => execution.interrupt();
   });
 
-  const roborevPollingExecution = appComposition.stores.roborevDaemon === undefined
-    ? undefined
-    : appRuntime.runCommand(appComposition.stores.roborevDaemon.pollingEffect, {
-        operation: "poll Roborev daemon health",
-        safeContext: {},
-        onFailure: (failure) => {
-          console.warn("Roborev daemon polling stopped unexpectedly:", failure);
-        },
-      });
   setContext(NAVIGATE_KEY, appNavigate);
   setContext(STORES_KEY, appComposition.stores);
   setContext(UI_CONFIG_KEY, { basePath: getBasePath() });
@@ -829,9 +815,7 @@
   }
 
   onDestroy(() => {
-    stores?.roborevJobs?.dispose();
     stopFullAppShell();
-    roborevPollingExecution?.interrupt();
   });
 
   $effect(() => {
@@ -993,6 +977,7 @@
       itemType,
       provider: item.repo.provider,
       platformHost: item.repo.platform_host,
+      platformRepoId: item.repo.platform_repo_id,
       repoPath: item.repo.repo_path,
       owner: item.repo.owner,
       name: item.repo.name,
@@ -1114,6 +1099,7 @@
   // is intentionally NOT wired (see pr-detail-actions.ts).
   function buildPRDetailInput(ctx: Context): PRDetailActionInput | null {
     if (!stores) return null;
+    if (stores.detail.isDetailFromCache()) return null;
     if (ctx.selectedPR === null) return null;
     const detail = stores.detail.getDetail();
     if (detail === null) return null;
@@ -1192,6 +1178,7 @@
         appStores.detail.loadDetail(sel.owner, sel.name, sel.number, {
           provider: sel.provider,
           platformHost: sel.platformHost,
+          platformRepoId: detail.repo.platform_repo_id,
           repoPath: sel.repoPath,
         });
       },
@@ -1440,7 +1427,16 @@
 
     <main class="app-main">
       {#if getPage() === "design-system"}
-        <DesignSystemPage />
+        {#await import("./lib/components/design-system/DesignSystemPage.svelte")}
+          <div class="loading-state" role="status"><Spinner size={18} />Loading design system</div>
+        {:then { default: DesignSystemPage }}
+          <DesignSystemPage />
+        {:catch}
+          <div class="loading-state" role="alert">
+            <span>Could not load design system.</span>
+            <button type="button" onclick={() => window.location.reload()}>Reload</button>
+          </div>
+        {/await}
       {:else if !appReady}
         <div class="loading-state">
           <Spinner size={18} />
@@ -1451,7 +1447,16 @@
           {@render providerUnavailableState()}
         {/if}
         {#if getPage() === "settings"}
-        <SettingsPage />
+        {#await import("./lib/components/settings/SettingsPage.svelte")}
+          <div class="loading-state" role="status"><Spinner size={18} />Loading settings</div>
+        {:then { default: SettingsPage }}
+          <SettingsPage />
+        {:catch}
+          <div class="loading-state" role="alert">
+            <span>Could not load settings.</span>
+            <button type="button" onclick={() => window.location.reload()}>Reload</button>
+          </div>
+        {/await}
         {:else if getPage() === "activity"}
         <!-- Desktop shell only: focus-presentation and mobile branches of
              this view get no controller (structural eligibility). -->
@@ -1473,7 +1478,16 @@
       {:else if getPage() === "actions"
         && stores.settings.isSettingsLoaded()
         && stores.settings.isModeVisible("actions")}
-        <ActionsPage />
+        {#await import("./lib/components/actions/ActionsPage.svelte")}
+          <div class="loading-state" role="status"><Spinner size={18} />Loading Actions</div>
+        {:then { default: ActionsPage }}
+          <ActionsPage />
+        {:catch}
+          <div class="loading-state" role="alert">
+            <span>Could not load Actions.</span>
+            <button type="button" onclick={() => window.location.reload()}>Reload</button>
+          </div>
+        {/await}
       {:else if getPage() === "repo-browser"}
         {@const route = getRoute()}
         {#if route.page === "repo-browser"}
@@ -1527,13 +1541,6 @@
           inlineWorkspace={getInlineWorkspaceController("issues")}
           {workspacePaneControls}
         />
-      {:else if getPage() === "reviews"}
-        {@const route = getRoute()}
-        {#if route.page === "reviews" && route.jobId != null}
-          <ReviewsView jobId={route.jobId} />
-        {:else}
-          <ReviewsView />
-        {/if}
       {:else if getPage() === "project-intake"}
         {@const route = getRoute()}
         {#if route.page === "project-intake"}

@@ -194,6 +194,7 @@ function issueDetail(): IssueDetail {
       provider: "github",
       platform_host: "github.com",
       repo_path: "acme/widget",
+      platform_repo_id: "widget-repo-id",
     },
     events: [],
     detail_loaded: true,
@@ -217,6 +218,160 @@ function mockClient(overrides: Partial<GeneratedClient> = {}): GeneratedClient {
 }
 
 describe("createIssuesStore", () => {
+  it("does not install a response from a different repository", async () => {
+    const store = createIssuesStore({
+      client: mockClient({ GET: vi.fn().mockResolvedValue({ data: issueDetail() }) }),
+    });
+    await loadIssueDetail(store, "acme", "widget", 7, {
+      provider: "github",
+      repoPath: "acme/widget",
+      platformRepoId: "replacement-repo-id",
+      sync: false,
+    });
+    expect(store.getIssueDetail()).toBeNull();
+  });
+
+  it.each(["replacement-repo-id", undefined])(
+    "does not restore an issue snapshot for repository %s",
+    async (platformRepoId) => {
+      const failedRead = Promise.withResolvers<{ error: { code: "forbidden"; detail: string } }>();
+      const original = issueDetail();
+      original.repo.platform_repo_id = "widget-repo-id";
+      const get = vi.fn().mockResolvedValueOnce({ data: original }).mockReturnValueOnce(failedRead.promise);
+      const store = createIssuesStore({ client: mockClient({ GET: get }) });
+      const options = {
+        provider: "github",
+        repoPath: "acme/widget",
+        platformRepoId: "widget-repo-id",
+        sync: false,
+      } as const;
+      await loadIssueDetail(store, "acme", "widget", 7, options);
+      store.clearIssueDetail();
+      store.loadIssueDetail("acme", "widget", 7, { ...options, platformRepoId });
+      expect(store.getIssueDetail()).toBeNull();
+      failedRead.resolve({ error: { code: "forbidden", detail: "Cannot refresh" } });
+      await vi.waitFor(() => expect(store.isIssueDetailLoading()).toBe(false));
+      expect(store.getIssueDetail()).toBeNull();
+    },
+  );
+
+  it("does not join an old repository read when the selected repository changes", async () => {
+    const oldRead = Promise.withResolvers<{ data: IssueDetail }>();
+    const original = issueDetail();
+    original.repo.platform_repo_id = "widget-repo-id";
+    const replacement = { ...original, repo: { ...original.repo, platform_repo_id: "replacement-repo-id" } };
+    const get = vi.fn().mockReturnValueOnce(oldRead.promise).mockResolvedValue({ data: replacement });
+    const store = createIssuesStore({ client: mockClient({ GET: get }) });
+    const options = {
+      provider: "github",
+      repoPath: "acme/widget",
+      platformRepoId: "widget-repo-id",
+      sync: false,
+    } as const;
+    store.loadIssueDetail("acme", "widget", 7, options);
+    await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(1));
+    store.loadIssueDetail("acme", "widget", 7, { ...options, platformRepoId: "replacement-repo-id" });
+    oldRead.resolve({ data: original });
+    await vi.waitFor(() => expect(store.isIssueDetailLoading()).toBe(false));
+    expect(store.getIssueDetail()?.repo.platform_repo_id).toBe("replacement-repo-id");
+  });
+
+  it("restores a recently viewed issue before its fresh read and retains its original workspace tick", async () => {
+    const freshRead = Promise.withResolvers<{ data: IssueDetail }>();
+    const initial = issueDetail();
+    const other = { ...issueDetail(), issue: { ...initial.issue, Number: 8 } };
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ data: initial })
+      .mockResolvedValueOnce({ data: other })
+      .mockReturnValueOnce(freshRead.promise);
+    const store = createIssuesStore({ client: mockClient({ GET: get }) });
+    const options = {
+      provider: "github",
+      repoPath: "acme/widget",
+      platformRepoId: "widget-repo-id",
+      sync: false,
+    } as const;
+    await loadIssueDetail(store, "acme", "widget", 7, options);
+    const originalTick = store.getIssueDetailEnvelopeTick();
+    store.clearIssueDetail();
+    await loadIssueDetail(store, "acme", "widget", 8, options);
+
+    store.loadIssueDetail("acme", "widget", 7, options);
+
+    expect(store.getIssueDetail()?.issue.Number).toBe(7);
+    expect(store.getIssueDetailEnvelopeTick()).toBe(originalTick);
+    expect(store.getIssueDetailLoaded()).toBe(true);
+    expect(store.isIssueDetailLoading()).toBe(true);
+    freshRead.resolve({ data: { ...initial, issue: { ...initial.issue, Body: "fresh content" } } });
+    await vi.waitFor(() => expect(store.isIssueDetailLoading()).toBe(false));
+    expect(store.getIssueDetail()?.issue.Body).toBe("fresh content");
+    expect(store.getIssueDetailEnvelopeTick()).toBeGreaterThan(originalTick);
+  });
+
+  it("keeps a restored issue read-only when an earlier body save finishes", async () => {
+    const initial = issueDetail();
+    const other = { ...issueDetail(), issue: { ...initial.issue, Number: 8 } };
+    const updated = { ...issueDetail(), issue: { ...initial.issue, Body: "local edit" } };
+    const mutation = Promise.withResolvers<{ data: IssueDetail; error: undefined }>();
+    const freshRead = Promise.withResolvers<{ data: IssueDetail }>();
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ data: initial })
+      .mockResolvedValueOnce({ data: other })
+      .mockReturnValueOnce(freshRead.promise);
+    const patch = vi.fn(() => mutation.promise);
+    const store = createIssuesStore({ client: mockClient({ GET: get, PATCH: patch }) });
+    const ref = {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widget",
+      repoPath: "acme/widget",
+      platformRepoId: "widget-repo-id",
+    };
+    await loadIssueDetail(store, "acme", "widget", 7, { ...ref, sync: false });
+    store.setLocalIssueBody("github", "github.com", "acme", "widget", 7, "local edit");
+    store.saveIssueBodyInBackground("acme", "widget", 7, "local edit", ref);
+    await vi.waitFor(() => expect(patch).toHaveBeenCalledOnce());
+    await loadIssueDetail(store, "acme", "widget", 8, { ...ref, sync: false });
+    store.loadIssueDetail("acme", "widget", 7, { ...ref, sync: false });
+    await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(3));
+    expect(store.isIssueDetailFromCache()).toBe(true);
+
+    mutation.resolve({ data: updated, error: undefined });
+    await vi.waitFor(() => expect(store.hasUnsavedLocalBody()).toBe(false));
+
+    expect(store.isIssueDetailLoading()).toBe(true);
+    expect(store.isIssueDetailFromCache()).toBe(true);
+    freshRead.resolve({ data: updated });
+    await vi.waitFor(() => expect(store.isIssueDetailLoading()).toBe(false));
+    expect(store.isIssueDetailFromCache()).toBe(false);
+  });
+
+  it("discards a saved optimistic snapshot when its mutation fails while another issue is visible", async () => {
+    const mutation = Promise.withResolvers<{ error: { code: "forbidden"; detail: string } }>();
+    const initial = issueDetail();
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ data: initial })
+      .mockResolvedValueOnce({ data: { ...initial, issue: { ...initial.issue, Number: 8 } } })
+      .mockImplementation(() => new Promise(() => {}));
+    const store = createIssuesStore({
+      client: mockClient({ GET: get, PUT: vi.fn().mockReturnValue(mutation.promise) }),
+    });
+    const ref = { provider: "github", owner: "acme", name: "widget", repoPath: "acme/widget" };
+    await loadIssueDetail(store, "acme", "widget", 7, { ...ref, sync: false });
+    store.toggleIssueStar(ref, 7, false);
+    await vi.waitFor(() => expect(store.getIssueDetail()?.issue.Starred).toBe(true));
+    await loadIssueDetail(store, "acme", "widget", 8, { ...ref, sync: false });
+    mutation.resolve({ error: { code: "forbidden", detail: "Star rejected" } });
+    await vi.waitFor(() => expect(getFlash()?.message).toBe("Star rejected"));
+
+    store.loadIssueDetail("acme", "widget", 7, { ...ref, sync: false });
+    expect(store.getIssueDetail()?.issue.Number).toBe(8);
+  });
+
   it("reports when a bounded list filled the requested chunk", async () => {
     const get = vi.fn(async () => ({
       data: Array.from({ length: 30 }, (_, index) => issue(index + 1, "alice")),
@@ -703,6 +858,60 @@ describe("createIssuesStore", () => {
     expect(store.getIssueDetail()?.issue.Body).toBe("- [x] done");
     expect(store.hasUnsavedLocalBody()).toBe(true);
   });
+
+  it.each([
+    { repository: "same", saveState: "failed" },
+    { repository: "replacement", saveState: "failed" },
+    { repository: "replacement", saveState: "pending" },
+  ])(
+    "scopes a $saveState local body save to its repository on a $repository refresh",
+    async ({ repository, saveState }) => {
+      const initial = issueDetail();
+      const refreshed = issueDetail();
+      refreshed.issue.Body = "provider body";
+      if (repository === "replacement") refreshed.repo.platform_repo_id = "replacement-repo-id";
+      const saving = Promise.withResolvers<{ error: { detail: string } }>();
+      const patch = vi.fn(() => saving.promise);
+      const get = vi.fn().mockResolvedValueOnce({ data: initial }).mockResolvedValue({ data: refreshed });
+      const store = createIssuesStore({ client: mockClient({ GET: get, PATCH: patch }) });
+      const routeRef = {
+        provider: "github",
+        platformHost: "github.com",
+        owner: "acme",
+        name: "widget",
+        repoPath: "acme/widget",
+      };
+      await loadIssueDetail(store, "acme", "widget", 7, { ...routeRef, sync: false });
+      store.setLocalIssueBody("github", "github.com", "acme", "widget", 7, "local edit");
+      store.saveIssueBodyInBackground("acme", "widget", 7, "local edit", routeRef);
+      await vi.waitFor(() => expect(patch).toHaveBeenCalledOnce());
+      if (saveState === "failed") {
+        saving.resolve({ error: { detail: "save rejected" } });
+        await vi.waitFor(() => expect(getFlash()?.message).toBe("save rejected"));
+      }
+
+      store.startIssueDetailPolling("acme", "widget", 7, routeRef);
+      await Effect.runPromise(
+        runtime!
+          .runCommand(store.refreshActiveIssueDetailEffect(), {
+            operation: "test repository replacement refresh",
+            safeContext: {},
+            onFailure: () => {},
+          })
+          .await.pipe(Effect.flatMap((exit) => exit)),
+      );
+
+      expect(store.getIssueDetail()?.repo.platform_repo_id).toBe(refreshed.repo.platform_repo_id);
+      expect(store.getIssueDetail()?.issue.Body).toBe(repository === "same" ? "local edit" : "provider body");
+      expect(store.hasUnsavedLocalBody()).toBe(repository === "same");
+      if (saveState === "pending") {
+        saving.resolve({ error: { detail: "save rejected" } });
+        await vi.waitFor(() => expect(getFlash()?.message).toBe("save rejected"));
+        expect(store.getIssueDetail()?.issue.Body).toBe("provider body");
+        expect(store.hasUnsavedLocalBody()).toBe(false);
+      }
+    },
+  );
 
   it("coalesces pending issue body saves to the latest captured edit", async () => {
     const initial = issueDetail();

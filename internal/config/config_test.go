@@ -26,6 +26,12 @@ func writeConfig(t *testing.T, content string) string {
 	return path
 }
 
+func TestAirplaneModeRoundTrip(t *testing.T) {
+	cfg, saved := roundTripConfigString(t, "airplane_mode = true\n")
+	assert.True(t, cfg.AirplaneMode)
+	assert.True(t, saved.AirplaneMode)
+}
+
 func TestWorkspaceListAgentStatus(t *testing.T) {
 	assert := assert.New(t)
 	cfg, saved := roundTripConfigString(t, "[workspaces]\nshow_agent_status_in_lists = true\n")
@@ -3273,7 +3279,6 @@ name = "b"
 		assert.False(*cfg.Modes.Actions)
 		assert.True(*cfg.Modes.Pulls)
 		assert.True(*cfg.Modes.Issues)
-		assert.True(*cfg.Modes.Reviews)
 		assert.True(*cfg.Modes.Workspaces)
 	})
 
@@ -3292,7 +3297,6 @@ repos = false
 docs = false
 pulls = false
 issues = false
-reviews = false
 workspaces = false
 `))
 		require.NoError(err)
@@ -3311,7 +3315,6 @@ workspaces = false
 		assert.False(*cfg2.Modes.Docs)
 		assert.False(*cfg2.Modes.Pulls)
 		assert.False(*cfg2.Modes.Issues)
-		assert.False(*cfg2.Modes.Reviews)
 		assert.False(*cfg2.Modes.Workspaces)
 	})
 }

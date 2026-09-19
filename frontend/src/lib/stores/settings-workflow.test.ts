@@ -711,6 +711,26 @@ it.layer(SettingsTestLayer)("ordered settings writes", (it) => {
     }),
   );
 
+  it.effect("reports an airplane-mode change that did not take effect after a transport failure", () =>
+    Effect.gen(function* () {
+      const workflow = yield* SettingsWorkflow;
+      for (const enabled of [true, false]) {
+        const original = { ...makeSettings(), airplane_mode: !enabled };
+        const fetch: typeof globalThis.fetch = (input, init) => {
+          const request = input instanceof Request ? input : new Request(input, init);
+          return request.method === "PUT"
+            ? Promise.reject(new TypeError("request did not reach server"))
+            : Promise.resolve(Response.json(original));
+        };
+        vi.stubGlobal("fetch", fetch);
+
+        const failure = yield* Effect.flip(workflow.persist(() => ({ airplane_mode: enabled })));
+
+        assert.strictEqual(failure._tag, "TransientTransportError");
+      }
+    }),
+  );
+
   it.effect("accepts a committed Roborev toggle after its response is lost", () =>
     Effect.gen(function* () {
       const original = makeSettings();

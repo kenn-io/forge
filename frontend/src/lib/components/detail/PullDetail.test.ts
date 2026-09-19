@@ -292,6 +292,7 @@ function renderPullDetail(
     stopDetailPolling: vi.fn(),
     getDetail: () => detail,
     getDetailEnvelopeTick: () => envelopeTick,
+    isDetailFromCache: () => false,
     isDetailLoading: () => options.detailLoading ?? false,
     getDetailError: () => null,
     isDetailSyncing: () => options.detailSyncing ?? false,

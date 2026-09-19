@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json/v2"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -113,23 +114,68 @@ func TestHumaResponseCompressionPreservesHumagoUnwrap(t *testing.T) {
 	assert.Equal(t, "br", rr.Header().Get("Content-Encoding"))
 }
 
-func TestHumaResponseCompressionStreamsUncompressedWhenBodyExceedsCap(t *testing.T) {
+func TestHumaResponseCompressionStreamsWhenBodyExceedsCap(t *testing.T) {
 	mux := http.NewServeMux()
 	api := humago.NewWithPrefix(mux, "/api/v1", apiConfig("/"))
 	api.UseMiddleware(newResponseCompressionMiddleware(128))
 	registerCompressionTestRoutes(api)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/oversized", nil)
-	req.Header.Set("Accept-Encoding", "br")
-	rr := httptest.NewRecorder()
+	for _, tc := range []struct {
+		encoding string
+		decode   func(*testing.T, io.Reader) string
+	}{
+		{"br", decodeBrotliBody},
+		{"zstd", decodeZstdBody},
+	} {
+		t.Run(tc.encoding, func(t *testing.T) {
+			assert, require := assert.New(t), require.New(t)
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/oversized", nil)
+			req.Header.Set("Accept-Encoding", tc.encoding)
+			rr := httptest.NewRecorder()
 
-	mux.ServeHTTP(rr, req)
+			mux.ServeHTTP(rr, req)
 
-	assert := assert.New(t)
-	assert.Equal(http.StatusOK, rr.Code)
-	assert.Empty(rr.Header().Get("Content-Encoding"))
-	assert.Equal("Accept-Encoding", rr.Header().Get("Vary"))
-	assert.Contains(rr.Body.String(), strings.Repeat("oversized-payload ", 20))
+			require.Equal(tc.encoding, rr.Header().Get("Content-Encoding"))
+			var body struct {
+				Text string `json:"text"`
+			}
+			require.NoError(json.Unmarshal([]byte(tc.decode(t, rr.Body)), &body))
+			assert.Equal(http.StatusOK, rr.Code)
+			assert.Equal("Accept-Encoding", rr.Header().Get("Vary"))
+			assert.Equal(strings.Repeat("oversized-payload ", 300_000), body.Text)
+		})
+	}
+}
+
+func TestResponseCompressionSpillsBufferedChunks(t *testing.T) {
+	for _, tc := range []struct {
+		name, cacheControl, wantEncoding string
+	}{
+		{"compressed", "", "br"},
+		{"no transform", "no-transform", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert, require := assert.New(t), require.New(t)
+			rr := httptest.NewRecorder()
+			rr.Header().Set("Content-Type", "text/plain")
+			rr.Header().Set("Cache-Control", tc.cacheControl)
+			buffered := &bufferedHumaContext{w: rr, maxBuffer: 8, minSize: 1, encoding: "br"}
+			for _, chunk := range []string{"first ", "second ", "third"} {
+				_, err := buffered.Write([]byte(chunk))
+				require.NoError(err)
+			}
+			if buffered.compressor != nil {
+				require.NoError(buffered.compressor.Close())
+			}
+			body := rr.Body.String()
+			if tc.wantEncoding != "" {
+				body = decodeBrotliBody(t, rr.Body)
+			}
+			assert.Equal(tc.wantEncoding, rr.Header().Get("Content-Encoding"))
+			assert.Zero(buffered.body.Len())
+			assert.Equal("first second third", body)
+		})
+	}
 }
 
 func TestHumaResponseCompressionIncludesMultiMiBPayloads(t *testing.T) {

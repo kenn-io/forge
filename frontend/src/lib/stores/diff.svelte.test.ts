@@ -564,6 +564,59 @@ describe("createDiffStore loadDiff", () => {
     expect(previewPaths.some(({ path }) => path === "src/previous.ts")).toBe(false);
   });
 
+  it("reuses a commit preview after leaving the item while keeping host, commit, and side separate", async () => {
+    const previewCalls: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/file-preview?")) {
+        previewCalls.push(url);
+        return Response.json(makeFilePreview("src/app.ts", url));
+      }
+      return Response.json(makeDiffResult(["src/app.ts"]));
+    });
+    const store = createDiffStore({ client: testClient() });
+    await loadDiff(store, "owner", "repo", 1, ownerRepoRef);
+    store.selectCommit("commit-a");
+    await vi.waitFor(() => expect(store.isDiffLoading()).toBe(false));
+    const first = await loadFilePreview(store, "owner", "repo", 1, "src/app.ts", "new");
+
+    store.clearDiff();
+    await loadDiff(store, "owner", "repo", 1, { ...ownerRepoRef, platformHost: "git.example.test" });
+    store.selectCommit("commit-a");
+    await vi.waitFor(() => expect(store.isDiffLoading()).toBe(false));
+    const otherHost = await loadFilePreview(store, "owner", "repo", 1, "src/app.ts", "new");
+
+    await loadDiff(store, "owner", "repo", 1, ownerRepoRef);
+    store.selectCommit("commit-b");
+    await vi.waitFor(() => expect(store.isDiffLoading()).toBe(false));
+    const otherCommit = await loadFilePreview(store, "owner", "repo", 1, "src/app.ts", "new");
+    store.selectCommit("commit-a");
+    await vi.waitFor(() => expect(store.isDiffLoading()).toBe(false));
+    const oldSide = await loadFilePreview(store, "owner", "repo", 1, "src/app.ts", "old");
+    const returned = await loadFilePreview(store, "owner", "repo", 1, "src/app.ts", "new");
+
+    expect(returned.content).toBe(first.content);
+    expect([otherHost.content, otherCommit.content, oldSide.content]).not.toContain(first.content);
+    expect(previewCalls.filter((url) => url === first.content)).toHaveLength(1);
+  });
+
+  it("reloads a head preview when the pull diff is refreshed", async () => {
+    let previewCalls = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      if (String(input).includes("/file-preview?")) {
+        previewCalls += 1;
+        return Response.json(makeFilePreview("src/app.ts", `head-${previewCalls}`));
+      }
+      return Response.json(makeDiffResult(["src/app.ts"]));
+    });
+    const store = createDiffStore({ client: testClient() });
+    await loadDiff(store, "owner", "repo", 1, ownerRepoRef);
+    expect((await loadFilePreview(store, "owner", "repo", 1, "src/app.ts", "new")).content).toBe("head-1");
+
+    await loadDiff(store, "owner", "repo", 1, ownerRepoRef);
+    expect((await loadFilePreview(store, "owner", "repo", 1, "src/app.ts", "new")).content).toBe("head-2");
+  });
+
   it("reloads the coherent workspace snapshot and retries a conflicted preview once", async () => {
     const calls: string[] = [];
     let filesCalls = 0;

@@ -49,6 +49,12 @@ Rules:
 
 ## Freshness Rules
 
+- Airplane mode pauses scheduled sync after the current pass; relay hints, item visits,
+  manual sync, and queued notification read propagation remain enabled
+  (`internal/github/sync.go::Syncer.AutomaticSyncEnabled`).
+- Startup and reload while paused reuse known repository identities instead of
+  provider discovery (`cmd/kenn-forge/main.go::resolveStartupRepos`).
+
 Bulk sync and detail sync have different jobs, but they must not disagree about
 what "current" means.
 

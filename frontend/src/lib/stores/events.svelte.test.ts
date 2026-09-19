@@ -412,7 +412,8 @@ describe("createEventsStore connection lifecycle", () => {
   });
 
   it("connection state reflects open and error events", async () => {
-    const store = createEventsStore();
+    const onConnectionStateChange = vi.fn();
+    const store = createEventsStore({ onConnectionStateChange });
     start(store);
     expect(store.getConnectionState()).toBe("connecting");
     await vi.waitFor(() => expect(instances).toHaveLength(1));
@@ -420,10 +421,16 @@ describe("createEventsStore connection lifecycle", () => {
     await vi.waitFor(() => expect(store.getConnectionState()).toBe("connected"));
     emit(instances[0] as StubEventSource, "error", {});
     await vi.waitFor(() => expect(store.getConnectionState()).toBe("reconnecting"));
+    expect(onConnectionStateChange.mock.calls.map(([state]) => state)).toEqual([
+      "connecting",
+      "connected",
+      "reconnecting",
+    ]);
   });
 
   it("interrupt closes the source and a new owned stream can reconnect", async () => {
-    const store = createEventsStore();
+    const onConnectionStateChange = vi.fn();
+    const store = createEventsStore({ onConnectionStateChange });
     const firstExecution = start(store);
     await vi.waitFor(() => expect(instances).toHaveLength(1));
     emit(instances[0] as StubEventSource, "open", {});
@@ -431,6 +438,7 @@ describe("createEventsStore connection lifecycle", () => {
     firstExecution.interrupt();
     await vi.waitFor(() => expect(instances[0]?.closed).toBe(true));
     expect(store.getConnectionState()).toBe("disconnected");
+    expect(onConnectionStateChange).toHaveBeenLastCalledWith("disconnected");
 
     start(store);
     await vi.waitFor(() => expect(instances).toHaveLength(2));

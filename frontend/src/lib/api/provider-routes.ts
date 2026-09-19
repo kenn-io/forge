@@ -3,6 +3,7 @@ import { configuredAPIPath } from "./runtime-base.js";
 export type ProviderRouteRef = {
   provider: string;
   platformHost?: string | undefined;
+  platformRepoId?: string | undefined;
   owner: string;
   name: string;
   repoPath: string;

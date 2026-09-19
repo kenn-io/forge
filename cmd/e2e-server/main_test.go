@@ -27,11 +27,11 @@ import (
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
-	"go.kenn.io/forge/platform"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/testsignal"
 	"go.kenn.io/forge/internal/web"
+	"go.kenn.io/forge/platform"
 )
 
 var testTmux = newTestTmuxTracker()
@@ -615,6 +615,23 @@ func TestDefaultRoborevEndpointIsUnbindable(t *testing.T) {
 		"default roborev port must be privileged so it cannot be "+
 			"silently bound by an unrelated developer process")
 	assert.Positive(port)
+}
+
+func TestE2EGraphQLReadsStayLocal(t *testing.T) {
+	previousTransport := http.DefaultTransport
+	var outboundCalls int
+	http.DefaultTransport = platform.RoundTripFunc(func(*http.Request) (*http.Response, error) {
+		outboundCalls++
+		return nil, errors.New("unexpected outbound request")
+	})
+	t.Cleanup(func() { http.DefaultTransport = previousTransport })
+
+	fetcher := newE2EGraphQLFetcher(nil)
+	_, err := fetcher.FetchPullRequestCommentVisibility(t.Context(), "acme", "widgets", 1)
+	require.ErrorIs(t, err, platform.ErrMissingToken)
+	_, err = fetcher.FetchIssueCommentVisibility(t.Context(), "acme", "widgets", 10)
+	require.ErrorIs(t, err, platform.ErrMissingToken)
+	require.Zero(t, outboundCalls)
 }
 
 func TestMixedCIFixtureSurvivesRefresh(t *testing.T) {

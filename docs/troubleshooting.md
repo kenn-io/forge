@@ -207,9 +207,6 @@ If Roborev listens elsewhere, update the endpoint and restart Forge:
 endpoint = "http://127.0.0.1:17373"
 ```
 
-The Reviews page shows the configured scheme and host when the connection
-fails. It does not expose credentials or a path from the configured URL.
-
 If workspace setup fails in the `repository_hooks` stage, check the error in
 the workspace setup history. Enabling **Initialize Roborev in managed clones**
 requires `roborev` on `PATH`, a running daemon, and a loopback HTTP endpoint.

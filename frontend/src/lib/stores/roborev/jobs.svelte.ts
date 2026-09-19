@@ -22,7 +22,6 @@ export interface JobsStoreOptions {
   client: RoborevClient;
   runtime: AppRuntime;
   owner: string;
-  navigate: (path: string) => void;
   onError?: (msg: string) => void;
 }
 
@@ -354,6 +353,7 @@ export function createJobsStore(opts: JobsStoreOptions) {
     );
 
   function loadJobs(): void {
+    if (disposed) return;
     opts.runtime.runCommand(loadJobsEffect(), {
       operation: "load Roborev jobs",
       safeContext: { owner: opts.owner },
@@ -456,7 +456,6 @@ export function createJobsStore(opts: JobsStoreOptions) {
   function setRepoBranchFilter(repo: string | undefined, branch: string | undefined): void {
     filterRepo = repo;
     filterBranch = branch;
-    loadJobs();
   }
 
   function setSortColumn(col: SortColumn): void {
@@ -739,14 +738,10 @@ export function createJobsStore(opts: JobsStoreOptions) {
   function selectJob(id: number): void {
     selectedJobId = id;
     highlightedJobId = id;
-    if (!window.location.pathname.endsWith(`/reviews/${id}`)) {
-      opts.navigate(`/reviews/${id}`);
-    }
   }
 
   function deselectJob(): void {
     selectedJobId = undefined;
-    opts.navigate("/reviews");
   }
 
   const connectEventStreamEffect = (baseUrl: string, eventOwner: string) =>

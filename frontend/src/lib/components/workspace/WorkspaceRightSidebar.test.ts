@@ -28,8 +28,10 @@ function makeStores(): Pick<StoreInstances, "diff"> & Partial<StoreInstances> {
 
 function renderSidebar(refreshToken = 0) {
   const sidebarProps = {
-    activeTab: "diff" as const,
+    activeTab: "diff" as "diff" | "reviews",
+    workspaceHostKey: undefined as string | undefined,
     workspaceID: "ws-1",
+    worktreePath: "/tmp/worktrees/ws-1",
     provider: "github",
     platformHost: "github.com",
     repoOwner: "acme",
@@ -63,6 +65,7 @@ function renderDisabledSidebar() {
       sidebarProps: {
         activeTab: "diff",
         workspaceID: "ws-1",
+        worktreePath: "/tmp/worktrees/ws-1",
         provider: "github",
         platformHost: "github.com",
         repoOwner: "acme",
@@ -87,6 +90,7 @@ function renderKataSidebarWithoutPR() {
       sidebarProps: {
         activeTab: "diff",
         workspaceID: "ws-kata-1",
+        worktreePath: "/tmp/worktrees/ws-kata-1",
         provider: "github",
         platformHost: "github.com",
         repoOwner: "acme",
@@ -113,6 +117,7 @@ function renderKataLinksSidebar(
       sidebarProps: {
         activeTab: "kata",
         workspaceID: "ws-linked-1",
+        worktreePath: "/tmp/worktrees/ws-linked-1",
         workspaceHostKey,
         provider: "github",
         platformHost: "github.com",
@@ -158,6 +163,17 @@ describe("WorkspaceRightSidebar", () => {
 
     expect(screen.queryByTestId("kata-links-panel")).toBeNull();
     expect(screen.getByText("Kata links are unavailable for remote workspaces")).toBeTruthy();
+  });
+
+  it("does not read local reviews for a remote workspace", async () => {
+    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ files: [], commits: [] }));
+    const { rerender } = renderSidebar();
+    await rerender({ activeTab: "reviews", workspaceHostKey: "member" });
+
+    expect(screen.getByText("Local reviews are unavailable for remote workspaces")).toBeTruthy();
+    expect(
+      fetch.mock.calls.filter(([input]) => (input instanceof Request ? input.url : String(input)).includes("roborev")),
+    ).toHaveLength(0);
   });
 
   it("preserves the workspace diff base and selected commit across refreshes", async () => {

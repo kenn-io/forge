@@ -545,6 +545,51 @@ func TestFallbackConfiguredRepoRefsPreservesProviderIdentity(t *testing.T) {
 	}}, got)
 }
 
+func TestFallbackConfiguredRepoRefsHonorsPinnedIdentity(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		id       string
+		provider platform.Kind
+		host     string
+		cached   bool
+		want     bool
+		fromGlob bool
+	}{
+		{"renamed verified repository", "R_pinned", platform.KindGitHub, "github.com", true, true, false},
+		{"different repository", "R_other", platform.KindGitHub, "github.com", true, false, false},
+		{"unverified repository", "", platform.KindGitHub, "github.com", true, false, false},
+		{"different provider", "R_pinned", platform.KindGitLab, "github.com", true, false, false},
+		{"different host", "R_pinned", platform.KindGitHub, "git.example.com", true, false, false},
+		{"no cached reference", "", platform.KindGitHub, "github.com", false, false, false},
+		{"renamed repository from glob", "R_pinned", platform.KindGitHub, "github.com", true, true, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			verified := RepoRef{
+				Platform: tt.provider, PlatformHost: tt.host,
+				Owner: "acme", Name: "widget-next", RepoPath: "acme/widget-next",
+				ConfiguredRepoPath: "acme/widget", PlatformExternalID: tt.id,
+				Archived: true,
+			}
+			if tt.fromGlob {
+				verified.ConfiguredRepoPath = ""
+			}
+			var previous []RepoRef
+			if tt.cached {
+				previous = []RepoRef{verified}
+			}
+			got := FallbackConfiguredRepoRefs(previous, config.Repo{
+				Owner: "acme", Name: "widget", PlatformRepoID: " R_pinned ",
+			})
+			if tt.want {
+				verified.ConfiguredRepoPath = "acme/widget"
+				assert.Equal(t, []RepoRef{verified}, got)
+			} else {
+				assert.Empty(t, got)
+			}
+		})
+	}
+}
+
 func TestRepoRefFromRepositoryStampsConfiguredRepoPath(t *testing.T) {
 	assert := assert.New(t)
 

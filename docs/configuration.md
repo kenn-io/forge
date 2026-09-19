@@ -229,6 +229,26 @@ Selected repository access is a startup routing snapshot. New grants use the
 PAT route until refresh. Revoked App access can return 404, and Forge does
 not retry that response with a PAT because 404 can also mean missing or private.
 
+## Airplane mode
+
+Turn on **Settings → Sync → Airplane mode** to pause automatic background
+sync after any running update finishes. Relay updates, opening an item, and
+manual **Sync** remain available, including a manually requested full sync.
+The status bar shows **airplane mode** while enabled; click it to return to
+the setting.
+
+Airplane mode is off by default and stays enabled across restarts until you
+turn it off. It applies only to the Forge instance you configure. On a fleet
+spoke, it pauses local background refresh; the hub keeps its own setting.
+
+The equivalent top-level option, before any `[section]` header, is:
+
+```toml
+airplane_mode = true
+```
+
+Changes apply without restarting Forge.
+
 ## Sync budget
 
 `sync_budget_per_hour` limits the API requests Forge spends on live background
@@ -296,7 +316,6 @@ docs = false
 actions = false
 pulls = true
 issues = true
-reviews = true
 workspaces = true
 ```
 
@@ -308,8 +327,8 @@ other mode to `false` to hide it.
 
 ## Roborev
 
-The Reviews page reads from a separately running Roborev daemon. The default
-endpoint is `http://127.0.0.1:7373`:
+The Reviews panel in local workspaces reads from a separately running Roborev
+daemon when displayed. The default endpoint is `http://127.0.0.1:7373`:
 
 ```toml
 [roborev]
@@ -323,8 +342,7 @@ also change it under **Settings → Workspaces** without restarting. When it is
 enabled, the endpoint must use loopback HTTP (`127.0.0.1`, `localhost`, or
 `[::1]`) because Forge passes it to the Roborev CLI during workspace setup.
 
-Set `reviews = false` under `[modes]` if you do not want the Reviews page. See
-[Integrations](integrations.md#review-roborev-jobs) for the current Reviews
+See [Integrations](integrations.md#review-roborev-jobs) for the Reviews panel
 workflow.
 
 ## Workspace agents

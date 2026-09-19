@@ -1,6 +1,7 @@
-import { realpathSync } from "node:fs";
+import { readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { brotliCompressSync, constants } from "node:zlib";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { svelteTesting } from "@testing-library/svelte/vite";
 import { defaultClientConditions, searchForWorkspaceRoot, type Plugin, type ProxyOptions, type UserConfig } from "vite";
@@ -29,6 +30,27 @@ const devServerPort = resolveViteServerPort();
 const devServerAllowedHosts = resolveViteAllowedHosts();
 const devServerHmr = resolveViteHmr();
 const workspaceRoot = searchForWorkspaceRoot(process.cwd());
+
+function precompressAssets(): Plugin {
+  return {
+    name: "kenn-forge-precompress-assets",
+    apply: "build",
+    enforce: "post",
+    writeBundle(options, bundle) {
+      if (!options.dir) this.error("Asset precompression requires an output directory");
+      for (const fileName of Object.keys(bundle)) {
+        if (!/^assets\/.*\.(?:css|html|js|json|mjs|svg|txt|xml)$/.test(fileName)) continue;
+        // Vite's generateBundle hooks still rewrite preload URLs. Compress the final files.
+        const assetPath = path.join(options.dir, fileName);
+        const body = readFileSync(assetPath);
+        writeFileSync(
+          `${assetPath}.br`,
+          brotliCompressSync(body, { params: { [constants.BROTLI_PARAM_QUALITY]: 11 } }),
+        );
+      }
+    },
+  };
+}
 
 function devApiUrlPlugin(url: string): Plugin {
   return {
@@ -247,6 +269,7 @@ const config = {
   },
   plugins: [
     frontendApiClient(),
+    precompressAssets(),
     healthcheckPlugin(),
     devApiUrlPlugin(apiUrl),
     svelte(),

@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import type { ProblemError } from "../../src/lib/api/generated/models/index.js";
+import type { ResolveRepoOutputBody } from "../../src/lib/api/roborev/generated/models/index.js";
 import { createMockApiHandler } from "../../src/test/mockApiFetch.js";
 import { mockApi } from "./support/mockApi";
 
@@ -233,6 +234,7 @@ async function setupTerminalMocks(
     roborevJobs?: typeof roborevJobs;
     roborevStatus?: typeof roborevStatus;
     roborevReview?: typeof roborevReview;
+    roborevResolution?: ResolveRepoOutputBody;
     workspaceDetailResponses?: Array<{
       status: number;
       body?: unknown;
@@ -548,6 +550,17 @@ async function setupTerminalMocks(
     (url) => url.pathname.startsWith("/api/roborev/"),
     async (route) => {
       const url = new URL(route.request().url());
+      if (url.pathname.endsWith("/api/repos/resolve")) {
+        const repo = rrRepos.repos[0];
+        await route.fulfill({
+          json:
+            opts?.roborevResolution ??
+            (repo && url.searchParams.get("path") === ws.worktree_path
+              ? { tracked: true, repo: { ...repo, identity: "" } }
+              : { tracked: false }),
+        });
+        return;
+      }
       if (url.pathname.endsWith("/api/repos")) {
         await route.fulfill({
           status: 200,
@@ -1445,6 +1458,17 @@ test("phone terminal clears a draft before falling back to another session", asy
   await page.getByRole("button", { name: "Open terminal composer" }).click();
   await page.getByRole("textbox", { name: "Terminal command" }).fill("do not send elsewhere");
 
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (
+          window as unknown as {
+            __kenn_forgeControllableTerminalSockets: Array<{ url: string }>;
+          }
+        ).__kenn_forgeControllableTerminalSockets.some(({ url }) => url.includes(encodeURIComponent("ws-123:codex"))),
+      ),
+    )
+    .toBe(true);
   mocked.runtime.sessions = mocked.runtime.sessions.filter(({ key }) => key !== "ws-123:codex");
   await emitTerminalControl(page, "ws-123:codex", { type: "exited", code: 0 });
 
@@ -2764,7 +2788,7 @@ test.describe("workspace launch home", () => {
   });
 
   test("shows one Workspaces option in the compact page menu on terminal routes", async ({ page }) => {
-    await page.setViewportSize({ width: 1000, height: 720 });
+    await page.setViewportSize({ width: 820, height: 720 });
     await setupTerminalMocks(page, {
       runtime: workflowDragRuntime(),
     });
@@ -5809,6 +5833,7 @@ test.describe("issue workspace sidebar", () => {
       },
       events: [],
       platform_host: "example.com",
+      repo: workspaceRepoRef("acme", "widgets", "example.com"),
       repo_owner: "acme",
       repo_name: "widgets",
       detail_loaded: true,
@@ -5992,6 +6017,46 @@ test.describe("sidebar Reviews tab", () => {
     });
   });
 
+  test("loads local reviews on display and explicit refresh, then stops when hidden", async ({ page }) => {
+    await setupTerminalMocks(page);
+    const reviewRequests: string[] = [];
+    page.on("request", (request) => {
+      const path = new URL(request.url()).pathname;
+      if (path.startsWith("/api/roborev/") || path === "/api/v1/roborev/status") {
+        reviewRequests.push(path);
+      }
+    });
+    await page.clock.install();
+    await page.goto("/terminal/ws-123");
+    const reviewsTab = page.locator(".panel-toggle-btn", { hasText: "Reviews" });
+    await expect(reviewsTab).toBeVisible();
+    expect(reviewRequests).toEqual([]);
+
+    await reviewsTab.click();
+    await expect(page.locator(".right-sidebar .job-row")).toBeVisible();
+    const refresh = page.getByRole("button", { name: "Refresh local reviews" });
+    await expect(refresh).toBeEnabled();
+    const requestsWhileOpen = reviewRequests.length;
+    await page.clock.fastForward("01:00");
+    expect(reviewRequests).toHaveLength(requestsWhileOpen);
+    const jobsBeforeRefresh = reviewRequests.filter((path) => path.endsWith("/api/jobs")).length;
+    await refresh.click();
+    await expect
+      .poll(() => reviewRequests.filter((path) => path.endsWith("/api/jobs")).length)
+      .toBeGreaterThan(jobsBeforeRefresh);
+    await expect(refresh).toBeEnabled();
+
+    await reviewsTab.click();
+    await expect(page.locator(".right-sidebar")).toBeHidden();
+    const requestsWhileClosed = reviewRequests.length;
+    await page.clock.fastForward("01:00");
+    expect(reviewRequests).toHaveLength(requestsWhileClosed);
+
+    await reviewsTab.click();
+    await expect(page.locator(".right-sidebar .job-row")).toBeVisible();
+    expect(reviewRequests.length).toBeGreaterThan(requestsWhileClosed);
+  });
+
   test("Reviews tab preserves a daemon version that already starts with v", async ({ page }) => {
     await setupTerminalMocks(page, {
       roborevStatus: {
@@ -6007,8 +6072,78 @@ test.describe("sidebar Reviews tab", () => {
     await expect(page.locator('.right-sidebar .daemon-status [title="Daemon version"]')).toHaveText("v0.52.0");
   });
 
-  test("Reviews tab shows job list when roborev repo matches", async ({ page }) => {
+  test("closing a local review refreshes the visible filtered job list", async ({ page }) => {
     await setupTerminalMocks(page);
+    let closed = false;
+    await page.route("**/api/roborev/api/review/close", async (route) => {
+      closed = true;
+      await route.fulfill({ json: { success: true } });
+    });
+    await page.route(
+      (url) => url.pathname === "/api/roborev/api/review",
+      (route) => route.fulfill({ json: { ...roborevReview, closed } }),
+    );
+    await page.route(
+      (url) => url.pathname === "/api/roborev/api/jobs",
+      (route) => {
+        const url = new URL(route.request().url());
+        const jobs = closed && url.searchParams.get("closed") === "false" ? [] : roborevJobs.jobs;
+        return route.fulfill({ json: { ...roborevJobs, jobs } });
+      },
+    );
+    await page.goto("/terminal/ws-123");
+    await page.locator(".panel-toggle-btn", { hasText: "Reviews" }).click();
+    await page.getByRole("checkbox", { name: "Hide closed" }).check();
+    await page.locator(".right-sidebar .job-row").click();
+    await page.getByRole("button", { name: "Close Review", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Reopen", exact: true })).toBeVisible();
+    await expect(page.locator(".right-sidebar .job-row")).toHaveCount(0);
+  });
+
+  test("local review comments remain accepted and show a warning when refresh fails", async ({ page }) => {
+    await setupTerminalMocks(page);
+    const comment = "Review comment with an unavailable refresh";
+    let acceptedComments = 0;
+    await page.route("**/api/roborev/api/comment", async (route) => {
+      acceptedComments += 1;
+      await route.fulfill({
+        status: 201,
+        json: {
+          id: 2,
+          job_id: 1,
+          responder: "web",
+          response: route.request().postDataJSON().comment,
+          created_at: "2026-04-10T12:01:00Z",
+        },
+      });
+    });
+    await page.route("**/api/roborev/api/comments?**", (route) =>
+      acceptedComments > 0 ? route.abort("failed") : route.fulfill({ json: { responses: [] } }),
+    );
+    await page.goto("/terminal/ws-123");
+    await page.locator(".panel-toggle-btn", { hasText: "Reviews" }).click();
+    await page.locator(".right-sidebar .job-row").click();
+    const textarea = page.locator(".comment-input .comment-textarea");
+    await textarea.fill(comment);
+    await page.locator(".submit-btn").click();
+
+    await expect(page.locator(".response-item", { hasText: comment })).toHaveCount(1);
+    await expect(textarea).toHaveValue("");
+    await expect(page.locator(".kit-flash-banner")).toContainText(
+      "Comment was added, but the refreshed review is unavailable",
+    );
+    expect(acceptedComments).toBe(1);
+  });
+
+  test("Reviews tab resolves the workspace path before showing local jobs", async ({ page }) => {
+    await setupTerminalMocks(page);
+    const resolvedPaths: string[] = [];
+    const jobRepositories: string[] = [];
+    page.on("request", (request) => {
+      const url = new URL(request.url());
+      if (url.pathname.endsWith("/api/repos/resolve")) resolvedPaths.push(url.searchParams.get("path") ?? "");
+      if (url.pathname === "/api/roborev/api/jobs") jobRepositories.push(url.searchParams.get("repo") ?? "");
+    });
     await page.goto("/terminal/ws-123");
 
     // Open Reviews tab
@@ -6020,6 +6155,25 @@ test.describe("sidebar Reviews tab", () => {
     await expect(page.locator(".right-sidebar .job-row")).toContainText("Add auth middleware");
     await expect(page.locator(".right-sidebar .job-table thead")).toContainText("Cost");
     await expect(page.locator(".right-sidebar .job-row")).toContainText("~$0.42");
+    expect(resolvedPaths).toContain(testWorkspace.worktree_path);
+    expect(jobRepositories).toContain(roborevRepos.repos[0]!.root_path);
+  });
+
+  test("local reviews do not guess a repository from a matching name", async ({ page }) => {
+    await setupTerminalMocks(page, {
+      roborevRepos: { repos: [{ name: "widgets", root_path: "/tmp/other/widgets", count: 1 }], total_count: 1 },
+      roborevResolution: { tracked: false },
+    });
+    const jobRequests: string[] = [];
+    page.on("request", (request) => {
+      const url = new URL(request.url());
+      if (url.pathname === "/api/roborev/api/jobs") jobRequests.push(request.url());
+    });
+    await page.goto("/terminal/ws-123");
+    await page.locator(".panel-toggle-btn", { hasText: "Reviews" }).click();
+
+    await expect(page.locator(".right-sidebar .kit-empty-state")).toContainText("No reviews for this worktree");
+    expect(jobRequests).toEqual([]);
   });
 
   test("Reviews tab shows empty state when no repo matches", async ({ page }) => {
@@ -6034,6 +6188,25 @@ test.describe("sidebar Reviews tab", () => {
 
     // Should show empty/no-reviews message
     await expect(page.locator(".right-sidebar .kit-empty-state")).toContainText("No reviews");
+  });
+
+  test("local reviews allow choosing a repository when the workspace is untracked", async ({ page }) => {
+    await setupTerminalMocks(page, {
+      roborevRepos: {
+        repos: [
+          { name: "widgets", root_path: "/tmp/clone-a/acme/widgets", count: 1 },
+          { name: "widgets", root_path: "/tmp/clone-b/acme/widgets", count: 1 },
+        ],
+        total_count: 2,
+      },
+      roborevResolution: { tracked: false },
+    });
+    await page.goto("/terminal/ws-123");
+    await page.locator(".panel-toggle-btn", { hasText: "Reviews" }).click();
+    await expect(page.locator(".right-sidebar .kit-empty-state")).toContainText("No reviews for this worktree");
+    await page.locator('.right-sidebar .picker-button[title="Filter by repository"]').click();
+    await page.locator(".right-sidebar .dropdown-item.repo-item").first().click();
+    await expect(page.locator(".right-sidebar .job-row")).toBeVisible();
   });
 
   test("branch picker shows and clears branch filter", async ({ page }) => {

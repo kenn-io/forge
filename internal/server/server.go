@@ -1009,6 +1009,11 @@ func newServer(
 		Clones:           clones,
 		Config:           cfg,
 		DescriptorSource: repositoryDescriptorSource,
+		AutomaticRefreshEnabled: func() bool {
+			s.cfgMu.Lock()
+			defer s.cfgMu.Unlock()
+			return s.cfg == nil || !s.cfg.AirplaneMode
+		},
 	})
 	s.hostOpts.Store(&hostOpts)
 	if hostOpts.TrustReverseProxy && len(hostOpts.Allowed) == 0 {
@@ -1376,6 +1381,7 @@ func newServer(
 	// before the config watcher so the boot value cannot race a reload that
 	// swaps the preference and reconciles from its own snapshot.
 	if syncer != nil && cfg != nil {
+		syncer.SetAirplaneMode(cfg.AirplaneMode)
 		syncer.SetPreferGitHubNativeStacks(cfg.PullRequests.PreferGitHubNativeStacks)
 		if !cfg.PullRequests.PreferGitHubNativeStacks {
 			// Boot is a transition point too: the setting may have been edited

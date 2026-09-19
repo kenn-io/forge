@@ -22,25 +22,28 @@ type RepositoryDescriptorSource interface {
 }
 
 type Handler struct {
-	resolver     *httpapi.RepositoryResolver
-	clones       *gitclone.Manager
-	descriptors  RepositoryDescriptorSource
-	refreshEvery time.Duration
+	resolver                *httpapi.RepositoryResolver
+	clones                  *gitclone.Manager
+	descriptors             RepositoryDescriptorSource
+	refreshEvery            time.Duration
+	automaticRefreshEnabled func() bool
 }
 
 type Deps struct {
-	Resolver         *httpapi.RepositoryResolver
-	Clones           *gitclone.Manager
-	Config           *config.Config
-	DescriptorSource RepositoryDescriptorSource
+	Resolver                *httpapi.RepositoryResolver
+	Clones                  *gitclone.Manager
+	Config                  *config.Config
+	DescriptorSource        RepositoryDescriptorSource
+	AutomaticRefreshEnabled func() bool
 }
 
 func New(deps Deps) *Handler {
 	return &Handler{
-		resolver:     deps.Resolver,
-		clones:       deps.Clones,
-		descriptors:  deps.DescriptorSource,
-		refreshEvery: refreshIntervalForConfig(deps.Config),
+		resolver:                deps.Resolver,
+		clones:                  deps.Clones,
+		descriptors:             deps.DescriptorSource,
+		refreshEvery:            refreshIntervalForConfig(deps.Config),
+		automaticRefreshEnabled: deps.AutomaticRefreshEnabled,
 	}
 }
 

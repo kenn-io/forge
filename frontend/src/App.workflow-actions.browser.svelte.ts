@@ -8,7 +8,7 @@ import {
   resetKeyboardModuleState,
   type MountedBrowserApp,
 } from "./test/browserAppHarness.js";
-import { jsonResponse, mockSettings, type MockRouteOverride } from "./test/mockApiFetch.js";
+import { createMockApiHandler, jsonResponse, mockSettings, type MockRouteOverride } from "./test/mockApiFetch.js";
 
 const WAIT = 10_000;
 
@@ -174,6 +174,56 @@ describe("opt-in workflow Actions route", () => {
     await expect
       .element(page.getByRole("note", { name: "acme/legacy does not support workflow Actions" }))
       .toBeVisible();
+  });
+
+  it("keeps a pull workflow dialog and its draft open when the list refreshes", async () => {
+    const fixtures = createMockApiHandler();
+    const detailPath = "/api/v1/pulls/github/acme/widgets/42";
+    const detail = await fixtures
+      .handle({
+        method: "GET",
+        url: new URL(detailPath, "http://localhost"),
+        bodyText: "",
+      })
+      .json();
+    detail.repo = summary("widgets", true).repo;
+    let refreshed = false;
+    const pullFixtures: MockRouteOverride = (request) => {
+      if (request.method === "GET" && request.url.pathname === "/api/v1/pulls") {
+        return jsonResponse([
+          {
+            ...detail.merge_request,
+            Title: refreshed ? "Refreshed pull list title" : detail.merge_request.Title,
+            repo: detail.repo,
+          },
+        ]);
+      }
+      if (request.url.pathname === detailPath || request.url.pathname === `${detailPath}/sync`) {
+        return jsonResponse(detail);
+      }
+      return null;
+    };
+    mounted = await mountBrowserApp("/pulls/github/acme/widgets/42", {
+      overrides: [pullFixtures, actionsFixtures()],
+    });
+    await page
+      .getByRole("region", { name: "Pull request conversation" })
+      .getByRole("button", { name: "Run workflow", exact: true })
+      .click();
+    await page
+      .getByRole("region", { name: "GitHub Actions" })
+      .getByRole("button", { name: "Deploy", exact: true })
+      .click();
+    const dialog = page.getByRole("dialog", { name: "Run workflow" });
+    await expect.element(dialog).toBeVisible();
+    await dialog.getByRole("textbox", { name: "Git ref" }).fill("feature/keep-this-draft");
+
+    refreshed = true;
+    emitBrowserEventSource("data_changed", {});
+
+    await expect.element(page.getByText("Refreshed pull list title", { exact: true })).toBeVisible();
+    await expect.element(dialog).toBeVisible();
+    await expect.element(dialog.getByRole("textbox", { name: "Git ref" })).toHaveValue("feature/keep-this-draft");
   });
 
   it("releases the mounted workspace and redirects when a settings update disables Actions", async () => {

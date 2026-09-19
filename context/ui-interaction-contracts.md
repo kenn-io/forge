@@ -53,6 +53,12 @@ Interactive surfaces must agree on which item is selected.
   (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::openTerminalLink`).
 - When a view changes from item A to item B, reset transient action state that
   could otherwise submit or render against the wrong item.
+- Recent detail snapshots stay read-only until that visit's revalidation succeeds;
+  preserve the original workspace lifecycle tick. Settled mutations invalidate saved views
+  so hidden optimistic state cannot survive rollback (`frontend/src/lib/stores/detail.svelte.ts::submitDetailMutation`).
+- Restore recent details only with a verified provider/host/repository ID; an unknown
+  ID requires a fresh response because owner/name routes can be reused
+  (`frontend/src/lib/stores/detail.svelte.ts::loadDetail`).
 - A response confirming a server-side outcome (a completed delete or create)
   must publish to identity-scoped global state — claims, tombstones, creation
   overrides, route memory — before any liveness guard: neither unmount nor a
@@ -917,8 +923,13 @@ Rows that contain buttons, links, or toggles need clear event ownership.
   `tracked_repo_path`, because selections created from catalog rows use the
   current route, which diverges after a provider-side rename
   (`frontend/src/lib/utils/repo-filter-values.ts::normalizeInteractiveRepoFilterSelection`).
-- Roborev has no event replay cursor: reconnect after authoritative job-list reconciliation; a lost
-  mutation response retains and fences its original target until authoritative observation, never
+- Local Roborev reviews belong to the PR workspace panel: read on display or explicit action,
+  never poll globally or refresh hidden workspace panels
+  (`frontend/src/lib/components/workspace/WorkspaceReviewsPanel.svelte`).
+- Resolve local reviews from the actual workspace path; unresolved paths require an explicit
+  repository choice. Remote workspaces cannot use the viewing node's Roborev authority
+  (`frontend/src/lib/components/workspace/WorkspaceRightSidebar.svelte`).
+- A lost Roborev mutation response retains and fences its original target until authoritative observation, never
   replays the write. A confirmed POST stays acknowledged when its follow-up refresh fails; report
   refresh degradation separately. Cancel only the exact owner lease on teardown
   (`frontend/src/lib/stores/roborev/roborev-workflow.ts::RoborevWorkflowService`).
@@ -1173,6 +1184,9 @@ responses, and discard stale responses instead of patching another item.
 - Acknowledging a provider comment POST clears and unlocks its keyed draft; follow-up
   reconciliation failure is reported separately and must never offer to replay the POST
   (`frontend/src/lib/stores/detail.svelte.ts::submitComment`).
+- Unsent top-level comments persist only in browser storage, scoped by item kind and
+  canonical provider/host, verified repository ID (full path when unavailable), and item number.
+  Restoring never submits; pending submissions use the same identity in memory (`frontend/src/lib/components/detail/comment-drafts.svelte.ts::getCommentDraftKey`).
 - Onboarding repository setup owns its initial sync through `triggerSyncEffect`: a rejected trigger returns the flow
   to a retryable repository step with the failure visible, while an accepted trigger advances only after the ordered
   sync command settles (`frontend/src/lib/components/onboarding/OnboardingFlow.svelte::startSync`).

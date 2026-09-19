@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"errors"
+	"fmt"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -25,13 +27,16 @@ const (
 )
 
 type bufferedHumaContext struct {
-	inner     huma.Context
-	w         http.ResponseWriter
-	body      bytes.Buffer
-	status    int
-	maxBuffer int
-	streaming bool
-	writeErr  error
+	inner      huma.Context
+	w          http.ResponseWriter
+	body       bytes.Buffer
+	status     int
+	maxBuffer  int
+	minSize    int
+	encoding   string
+	stream     io.Writer
+	compressor io.WriteCloser
+	writeErr   error
 }
 
 func (c *bufferedHumaContext) Operation() *huma.Operation {
@@ -119,26 +124,35 @@ func (c *bufferedHumaContext) Unwrap() huma.Context {
 }
 
 func (c *bufferedHumaContext) Write(p []byte) (int, error) {
-	if c.streaming {
-		return c.w.Write(p)
+	if c.stream != nil {
+		return c.stream.Write(p)
 	}
 	if c.body.Len()+len(p) <= c.maxBuffer {
 		return c.body.Write(p)
 	}
-	c.streaming = true
 	status := c.status
 	if status == 0 {
 		status = http.StatusOK
 	}
+	c.stream = c.w
+	if shouldCompressResponse(c.w.Header(), status, c.body.Len()+len(p), c.minSize, c.encoding) {
+		c.compressor, c.writeErr = newCompressedWriter(c.w, c.encoding)
+		if c.writeErr != nil {
+			return 0, c.writeErr
+		}
+		c.stream = c.compressor
+		c.w.Header().Set("Content-Encoding", c.encoding)
+		c.w.Header().Del("Content-Length")
+	}
 	c.w.WriteHeader(status)
 	if c.body.Len() > 0 {
-		if _, err := c.w.Write(c.body.Bytes()); err != nil {
+		if _, err := c.stream.Write(c.body.Bytes()); err != nil {
 			c.writeErr = err
 			return 0, err
 		}
 		c.body.Reset()
 	}
-	n, err := c.w.Write(p)
+	n, err := c.stream.Write(p)
 	if err != nil {
 		c.writeErr = err
 	}
@@ -162,9 +176,16 @@ func newResponseCompressionMiddleware(
 			inner:     ctx,
 			w:         w,
 			maxBuffer: responseCompressionMaxBytes,
+			minSize:   minSize,
+			encoding:  encoding,
 		}
 		next(buffered)
-		if buffered.streaming || buffered.writeErr != nil {
+		if buffered.compressor != nil {
+			if err := buffered.compressor.Close(); err != nil {
+				return
+			}
+		}
+		if buffered.stream != nil || buffered.writeErr != nil {
 			return
 		}
 
@@ -317,27 +338,22 @@ func isCompressibleContentType(contentType string) bool {
 }
 
 func writeCompressedBody(w io.Writer, encoding string, body []byte) error {
+	writer, err := newCompressedWriter(w, encoding)
+	if err != nil {
+		return err
+	}
+	_, err = writer.Write(body)
+	return errors.Join(err, writer.Close())
+}
+
+func newCompressedWriter(w io.Writer, encoding string) (io.WriteCloser, error) {
 	switch encoding {
 	case "zstd":
-		zw, err := zstd.NewWriter(w, zstd.WithEncoderLevel(zstd.SpeedFastest))
-		if err != nil {
-			return err
-		}
-		if _, err := zw.Write(body); err != nil {
-			zw.Close()
-			return err
-		}
-		return zw.Close()
+		return zstd.NewWriter(w, zstd.WithEncoderLevel(zstd.SpeedFastest))
 	case "br":
-		bw := brotli.NewWriterLevel(w, brotli.BestSpeed)
-		if _, err := bw.Write(body); err != nil {
-			bw.Close()
-			return err
-		}
-		return bw.Close()
+		return brotli.NewWriterLevel(w, brotli.BestSpeed), nil
 	default:
-		_, err := w.Write(body)
-		return err
+		return nil, fmt.Errorf("unsupported response encoding %q", encoding)
 	}
 }
 

@@ -136,7 +136,7 @@ var roborevBaseTime = time.Date(
 
 // SeedRoborevDB creates a roborev-compatible SQLite database at path
 // with deterministic test data. The database contains 79 review jobs
-// across 2 repos, 5 branches, 3 agents, and all statuses.
+// across 2 repos, 5 branches, 3 display agents plus a test agent, and all statuses.
 func SeedRoborevDB(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create directory: %w", err)
@@ -447,7 +447,8 @@ func seedRoborevMutationFixtures(tx *sql.Tx) error {
 		return fmt.Errorf("insert mutation job 72: %w", err)
 	}
 
-	// ID 73: failed job (rerun test) - no review
+	// ID 73: failed job (rerun test) - no review. The built-in test agent
+	// allows real mutation handlers to accept reruns without an installed CLI.
 	enq73 := jobTime(73)
 	fin73 := enq73.Add(7 * time.Minute)
 	_, err = tx.Exec(
@@ -456,7 +457,7 @@ func seedRoborevMutationFixtures(tx *sql.Tx) error {
 		  agent, model, status,
 		  enqueued_at, started_at, finished_at,
 		  error, job_type)
-		 VALUES (73, 1, 73, ?, 'main', 'codex', 'gpt-5.4',
+		 VALUES (73, 1, 73, ?, 'main', 'test', '',
 		         'failed', ?, ?, ?,
 		         'agent crashed during review', 'review')`,
 		fmt.Sprintf("%08x", 0xaa000000+73),

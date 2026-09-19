@@ -55,9 +55,6 @@ screenshots, or the Zensical site.
 - Static Codex terminal overlays reproduce a one-off real Codex TUI capture,
   including its composer and model/path status; sanitize local paths to the
   public synthetic repository. (`docs/screenshots/docs-screenshots.spec.ts::embedSyntheticCodexTranscript`)
-- Roborev workflow captures use a synthetic loopback daemon through the
-  isolated server's real proxy, never an installed daemon or database.
-  (`docs/screenshots/docs-screenshots.spec.ts::startSyntheticRoborevDaemon`)
 - Vercel deployments are static docs builds: install Zensical, sync the
   published `docs-assets` set, and render `site/`. Go, the application frontend,
   screenshot capture, and browser verification stay out of the Vercel build.

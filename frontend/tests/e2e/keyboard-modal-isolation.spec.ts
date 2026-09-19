@@ -86,23 +86,6 @@ const MODAL_OPENERS: ModalOpener[] = [
     },
     todo: "Mock workspace POST 409 with git_head_ref conflict on an issue detail",
   },
-  {
-    name: "shortcut-help",
-    open: async (page) => {
-      // ReviewsView listens for "?" globally. The keyboard handler
-      // is attached on mount, so we just need the route to render.
-      await page.goto("/reviews");
-      // Wait for the reviews shell to mount before pressing "?".
-      await expect(page.locator(".reviews-view")).toBeVisible();
-      await page.keyboard.press("Shift+/");
-      // The modal title text comes from ShortcutHelpModal.
-      await expect(
-        page.getByRole("dialog", {
-          name: /keyboard shortcuts/i,
-        }),
-      ).toBeVisible();
-    },
-  },
 ];
 
 test.beforeEach(async ({ page }) => {

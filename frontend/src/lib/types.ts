@@ -3,7 +3,7 @@ import type { WorkspaceItemIdentity } from "./workspace-inline.js";
 export interface NavigateEvent {
   path: string;
   route: {
-    page: "pulls" | "issues" | "activity" | "diff" | "reviews" | "inbox";
+    page: "pulls" | "issues" | "activity" | "diff" | "inbox";
     view?: string;
     tab?: string;
     presentation?: "fullLayout" | "focus";

@@ -382,6 +382,46 @@ func TestRunClosesPrimaryListenerWhenProfilerStartFails(t *testing.T) {
 	}, 2*time.Second, 25*time.Millisecond)
 }
 
+func TestResolveStartupReposAirplaneModeUsesCachedCatalog(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
+	identity.PlatformRepoID = "R_widget"
+	repoID, err := database.UpsertRepoByProviderID(t.Context(), identity)
+	require.NoError(err)
+	require.NoError(database.UpdateRepoProviderMetadata(t.Context(), repoID, db.RepoProviderMetadata{
+		PlatformRepoID: identity.PlatformRepoID,
+		WebURL:         "https://github.com/acme/widget",
+		CloneURL:       "https://github.com/acme/widget.git",
+		DefaultBranch:  "main",
+	}))
+	called := false
+	client := &testutil.FixtureClient{ListRepositoriesByOwnerFn: func(context.Context, string) ([]*gh.Repository, error) {
+		called = true
+		return nil, nil
+	}}
+	repos := resolveStartupRepos(t.Context(), &config.Config{
+		AirplaneMode: true,
+		Repos: []config.Repo{
+			{Owner: "acme", Name: "*"},
+			{Owner: "acme", Name: "widget", PlatformRepoID: identity.PlatformRepoID},
+		},
+	}, mustProviderRegistry(t, map[string]ghclient.Client{"github.com": client}), database, nil)
+	require.False(called)
+	require.Equal([]ghclient.RepoRef{{
+		Platform:           platform.KindGitHub,
+		PlatformHost:       "github.com",
+		Owner:              "acme",
+		Name:               "widget",
+		RepoPath:           "acme/widget",
+		PlatformExternalID: "R_widget",
+		WebURL:             "https://github.com/acme/widget",
+		CloneURL:           "https://github.com/acme/widget.git",
+		DefaultBranch:      "main",
+		ConfiguredRepoPath: "acme/widget",
+	}}, repos)
+}
+
 func TestResolveStartupReposExpandsConfiguredGlobs(t *testing.T) {
 	assert := assert.New(t)
 	cfg := &config.Config{
@@ -700,16 +740,20 @@ func TestResolveStartupReposFallsBackToDBForOfflineGlobs(t *testing.T) {
 
 	assert.ElementsMatch([]ghclient.RepoRef{
 		{
-			Platform:     platform.KindGitHub,
-			Owner:        "acme",
-			Name:         "widgets",
-			PlatformHost: "github.com",
+			Platform:           platform.KindGitHub,
+			Owner:              "acme",
+			Name:               "widgets",
+			PlatformHost:       "github.com",
+			RepoPath:           "acme/widgets",
+			PlatformExternalID: "R_widgets",
 		},
 		{
-			Platform:     platform.KindGitHub,
-			Owner:        "acme",
-			Name:         "tools",
-			PlatformHost: "github.com",
+			Platform:           platform.KindGitHub,
+			Owner:              "acme",
+			Name:               "tools",
+			PlatformHost:       "github.com",
+			RepoPath:           "acme/tools",
+			PlatformExternalID: "R_tools",
 		},
 	}, repos)
 }

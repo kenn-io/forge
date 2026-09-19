@@ -119,6 +119,7 @@ function pullDetail(owner: string, name: string, number: number, body: string) {
 
 function issueDetail(owner: string, name: string, number: number, body: string) {
   return {
+    repo: repoRef(owner, name),
     issue: {
       ID: 2000 + number,
       RepoID: 1,

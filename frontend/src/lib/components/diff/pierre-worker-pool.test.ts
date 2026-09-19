@@ -26,6 +26,7 @@ describe("pierre-worker-pool", () => {
     await Effect.runPromise(
       Effect.gen(function* () {
         const workerPool = yield* PierreDiffWorkerPool;
+        expect(WorkerPoolManager).not.toHaveBeenCalled();
         const first = yield* Effect.scoped(Effect.succeed(workerPool.pool));
         expect(first).toBeDefined();
         expect(terminate).not.toHaveBeenCalled();

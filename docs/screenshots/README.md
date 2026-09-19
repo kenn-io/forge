@@ -32,8 +32,6 @@ The generated files are:
 - `first-run-dark.svg`
 - `code-reviewer-agent-launch-light.svg`
 - `code-reviewer-agent-launch-dark.svg`
-- `roborev-reviews-light.svg`
-- `roborev-reviews-dark.svg`
 - `repository-source-light.svg`
 - `repository-source-dark.svg`
 - `docs-workspace-light.svg`
@@ -65,10 +63,6 @@ seeded repository controls and the complete category menu.
 The mobile workspace capture opens the same synthetic Codex session at a
 390-by-844 viewport and opens the terminal composer. It uses the isolated
 workspace and sanitized transcript from the desktop capture.
-
-The Roborev capture starts a synthetic daemon on a free loopback port, then
-opens its seeded job through kenn-forge's real status and proxy routes. It does
-not contact an installed Roborev daemon or read a Roborev database.
 
 The repository source capture reads the seeded repository clone through the
 real source-browser routes. The Docs capture registers a temporary synthetic

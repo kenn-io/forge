@@ -12,6 +12,7 @@ import "./App.svelte";
 const featureImports = vi.hoisted(() => ({
   docs: 0,
   failDocsOnce: false,
+  coldScreens: [] as string[],
 }));
 
 const startup = vi.hoisted(() => ({
@@ -51,9 +52,6 @@ vi.mock("./lib/views/ActivityFeedView.svelte", async () => ({
   default: (await import("./lib/testing/AppViewStub.svelte")).default,
 }));
 vi.mock("./lib/views/MobileActivityView.svelte", async () => ({
-  default: (await import("./lib/testing/AppViewStub.svelte")).default,
-}));
-vi.mock("./lib/views/ReviewsView.svelte", async () => ({
   default: (await import("./lib/testing/AppViewStub.svelte")).default,
 }));
 vi.mock("./lib/views/FocusListView.svelte", async () => ({
@@ -97,16 +95,22 @@ vi.mock("./lib/components/keyboard/Cheatsheet.svelte", async () => ({
 vi.mock("./lib/components/repositories/RepoSummaryPage.svelte", async () => ({
   default: (await import("./lib/testing/AppViewStub.svelte")).default,
 }));
-vi.mock("./lib/components/settings/SettingsPage.svelte", async () => ({
-  default: (await import("./lib/testing/AppViewStub.svelte")).default,
-}));
+vi.mock("./lib/components/settings/SettingsPage.svelte", async () => {
+  featureImports.coldScreens.push("settings");
+  return { default: (await import("./lib/testing/AppViewStub.svelte")).default };
+});
+vi.mock("./lib/components/actions/ActionsPage.svelte", async () => {
+  featureImports.coldScreens.push("actions");
+  return { default: (await import("./lib/testing/AppViewStub.svelte")).default };
+});
 vi.mock("./lib/components/terminal/WorkspaceTerminalView.svelte", async () => ({
   default: (await import("./lib/testing/AppViewStub.svelte")).default,
 }));
 
-vi.mock("./lib/components/design-system/DesignSystemPage.svelte", async () => ({
-  default: (await import("./lib/testing/AppViewStub.svelte")).default,
-}));
+vi.mock("./lib/components/design-system/DesignSystemPage.svelte", async () => {
+  featureImports.coldScreens.push("design-system");
+  return { default: (await import("./lib/testing/AppViewStub.svelte")).default };
+});
 vi.mock("./lib/features/docs/DocsFeature.svelte", async () => {
   featureImports.docs += 1;
   if (featureImports.failDocsOnce) {
@@ -255,6 +259,19 @@ describe("App feature routes", () => {
 
     expect(replaceState).toHaveBeenCalledWith(null, "", "/issues");
     expect(pushState).not.toHaveBeenCalled();
+  });
+
+  it("loads infrequent screens only when their route is opened", async () => {
+    const { default: App } = await import("./App.svelte");
+    render(App, { target: createAppTarget(), props: { runtime: appRuntime } });
+    await waitFor(() => expect(screen.queryByText("Loading")).toBeNull());
+    expect(featureImports.coldScreens).toEqual([]);
+
+    const { navigate } = await import("./lib/stores/router.svelte.ts");
+    navigate("/settings");
+    await waitFor(() => expect(featureImports.coldScreens).toEqual(["settings"]));
+    navigate("/design-system");
+    await waitFor(() => expect(featureImports.coldScreens).toEqual(["settings", "design-system"]));
   });
 
   it("retries lazy feature imports after a chunk load failure", async () => {

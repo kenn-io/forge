@@ -8,10 +8,10 @@
   import RepoTreePicker from "./RepoTreePicker.svelte";
 
   interface Props {
-    onHelpClick?: () => void;
     disabled?: boolean;
+    onRepositoryChange?: () => void;
   }
-  let { onHelpClick, disabled = false }: Props = $props();
+  let { disabled = false, onRepositoryChange }: Props = $props();
 
   const stores = getStores();
   const jobsStore = stores.roborevJobs;
@@ -100,7 +100,7 @@
 
 <div class="filter-bar">
   <div class:filter-disabled={disabled}>
-    <RepoTreePicker />
+    <RepoTreePicker onChange={onRepositoryChange} />
   </div>
 
   <FilterDropdown
@@ -142,13 +142,6 @@
     {disabled}
   />
 
-  <button
-    class="help-btn"
-    title="Keyboard shortcuts"
-    onclick={onHelpClick}
-  >
-    ?
-  </button>
 </div>
 
 <style>
@@ -177,28 +170,6 @@
 
   :global(.filter-checkbox .kit-checkbox__label) {
     color: var(--text-secondary);
-  }
-
-  .help-btn {
-    width: 24px;
-    height: 24px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-sm);
-    background: var(--bg-surface);
-    color: var(--text-muted);
-    font-size: var(--font-size-sm);
-    font-weight: 600;
-    cursor: pointer;
-    flex-shrink: 0;
-    margin-left: auto;
-  }
-
-  .help-btn:hover {
-    background: var(--bg-surface-hover);
-    color: var(--text-primary);
   }
 
   .filter-disabled {

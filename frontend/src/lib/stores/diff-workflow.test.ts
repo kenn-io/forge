@@ -1,7 +1,9 @@
 import { assert, it } from "@effect/vitest";
 import { Deferred, Effect, Fiber, Ref } from "effect";
-import type { DiffResponseWire, FilesResponseWire } from "../api/types.js";
+import { TestClock } from "effect/testing";
+import type { DiffResponseWire, FilePreview, FilesResponseWire } from "../api/types.js";
 import { DiffWorkflow, DiffWorkflowLive, type ProviderDiffRead } from "./diff-workflow.js";
+import { FilePreviewUnavailable, FilePreviewWorkflow, FilePreviewWorkflowLive } from "./diff-preview-workflow.js";
 
 function diff(path: string): ProviderDiffRead {
   return {
@@ -61,6 +63,40 @@ it.layer(DiffWorkflowLive)("shared diff reads", (it) => {
       yield* Deferred.succeed(release, undefined);
       assert.deepStrictEqual(yield* Fiber.join(first), result);
       assert.deepStrictEqual(yield* Fiber.join(second), result);
+    }),
+  );
+});
+
+it.layer(FilePreviewWorkflowLive)("retained file previews", (it) => {
+  it.effect("retains immutable content across navigation and expires it after five minutes", () =>
+    Effect.gen(function* () {
+      const workflow = yield* FilePreviewWorkflow;
+      const calls = yield* Ref.make(0);
+      const request = Ref.updateAndGet(calls, (count) => count + 1).pipe(
+        Effect.map((count) => ({ content: `preview-${count}` }) as FilePreview),
+      );
+      const first = yield* workflow.read("commit-preview", request, true);
+      yield* workflow.invalidateMutable;
+      yield* TestClock.adjust("3 seconds");
+      const returned = yield* workflow.read("commit-preview", request, true);
+      assert.strictEqual(returned.content, first.content);
+      assert.strictEqual(yield* Ref.get(calls), 1);
+
+      yield* TestClock.adjust("5 minutes");
+      const expired = yield* workflow.read("commit-preview", request, true);
+      assert.strictEqual(expired.content, "preview-2");
+    }),
+  );
+
+  it.effect("does not retain failed immutable reads", () =>
+    Effect.gen(function* () {
+      const workflow = yield* FilePreviewWorkflow;
+      yield* Effect.result(
+        workflow.read("retry-preview", Effect.fail(new FilePreviewUnavailable({ message: "not ready" })), true),
+      );
+
+      const retried = yield* workflow.read("retry-preview", Effect.succeed({ content: "ready" } as FilePreview), true);
+      assert.strictEqual(retried.content, "ready");
     }),
   );
 });

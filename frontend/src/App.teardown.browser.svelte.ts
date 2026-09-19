@@ -57,31 +57,4 @@ describe("app shell teardown", () => {
       requestsAfterUnmount,
     );
   });
-
-  it("owns Roborev health polling across a workspace route", async () => {
-    const app = await mountBrowserApp("/workspaces", {
-      overrides: [
-        (request) =>
-          request.method === "GET" && request.url.pathname === "/api/v1/roborev/status"
-            ? jsonResponse({ available: false, endpoint: "", version: "" })
-            : null,
-      ],
-    });
-    mounted = app;
-
-    await vi.waitFor(() => {
-      expect(app.api.requests.filter((request) => request.url.pathname === "/api/v1/roborev/status")).toHaveLength(1);
-    });
-
-    app.unmount();
-    mounted = null;
-    const requestsAfterUnmount = app.api.requests.filter(
-      (request) => request.url.pathname === "/api/v1/roborev/status",
-    ).length;
-    await new Promise((resolve) => setTimeout(resolve, 1_500));
-
-    expect(app.api.requests.filter((request) => request.url.pathname === "/api/v1/roborev/status")).toHaveLength(
-      requestsAfterUnmount,
-    );
-  });
 });

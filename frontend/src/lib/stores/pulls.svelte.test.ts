@@ -149,7 +149,7 @@ describe("pulls store display order", () => {
     expect(get).toHaveBeenCalledWith(expect.objectContaining({ unassigned: true }), expect.anything());
   });
 
-  it("aborts a superseded list request", async () => {
+  it("aborts a list request when its query changes", async () => {
     let firstSignal: AbortSignal | undefined;
     const get = vi
       .fn()
@@ -166,9 +166,9 @@ describe("pulls store display order", () => {
       client: makeGeneratedClient({ PullRequestsService: { listPulls: get } }),
     });
 
-    store.loadPulls();
+    store.loadPulls({ q: "old" });
     await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(1));
-    store.loadPulls();
+    store.loadPulls({ q: "new" });
     await vi.waitFor(() => expect(store.isLoading()).toBe(false));
 
     expect(firstSignal?.aborted).toBe(true);

@@ -216,6 +216,7 @@ function sameValue(left: unknown, right: unknown): boolean {
 
 function settingsMatchRequest(settings: SettingsSnapshot, request: UpdateSettingsRequest): boolean {
   return (
+    (request.airplane_mode === undefined || settings.airplane_mode === request.airplane_mode) &&
     (request.activity === undefined || sameValue(settings.activity, request.activity)) &&
     (request.agents === undefined || sameValue(settings.agents, request.agents)) &&
     (request.detail === undefined || sameValue(settings.detail, request.detail)) &&

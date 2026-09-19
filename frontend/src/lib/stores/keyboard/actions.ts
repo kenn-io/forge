@@ -244,7 +244,6 @@ const onNumberNavPages = (ctx: Context): boolean => {
     case "settings":
     case "design-system":
     case "repos":
-    case "reviews":
     case "workspaces":
     case "activity":
       return false;
@@ -515,12 +514,7 @@ export const defaultActions: Action[] = [
       { key: "/", shift: true },
     ],
     priority: 0,
-    // The reviews page renders roborev's UI, which owns its own `?`-bound
-    // help modal. Letting the kenn-forge cheatsheet also fire on `?` opens
-    // both modals at once and the cheatsheet's filter input then steals
-    // focus, causing roborev's window-level handler to ignore the
-    // subsequent Escape (its tag === "INPUT" guard returns early).
-    when: (ctx) => ctx.page !== "reviews",
+    when: always,
     handler: () => toggleCheatsheet(),
   },
   {
@@ -675,15 +669,6 @@ export const defaultActions: Action[] = [
     priority: 0,
     when: always,
     handler: () => navigate("/repos"),
-  },
-  {
-    id: "nav.reviews",
-    label: "Reviews",
-    scope: "global",
-    binding: null,
-    priority: 0,
-    when: always,
-    handler: () => navigate("/reviews"),
   },
   {
     id: "workspace.new",

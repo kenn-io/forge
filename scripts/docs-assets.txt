@@ -14,8 +14,6 @@ mobile-workspace-session-dark.svg
 mobile-workspace-session-light.svg
 repository-source-dark.svg
 repository-source-light.svg
-roborev-reviews-dark.svg
-roborev-reviews-light.svg
 settings-overview-dark.svg
 settings-overview-light.svg
 workspace-codex-session-dark.svg

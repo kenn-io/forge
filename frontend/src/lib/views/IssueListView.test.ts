@@ -68,6 +68,7 @@ const controlsDouble: Snippet = createRawSnippet(() => ({
 function renderIssueListView(options: RenderIssueListViewOptions = {}) {
   const detailBox = createReactiveValue(options.detail ?? null);
   const issuesStore = {
+    getIssues: () => [],
     getIssueDetail: detailBox.get,
     loadIssueDetail: vi.fn(async () => undefined),
   };

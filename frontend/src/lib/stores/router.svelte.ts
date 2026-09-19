@@ -64,7 +64,6 @@ export type Route =
   | ({ page: "focus" } & IssueRouteRef & { itemType: "issue" })
   | { page: "focus"; itemType: "mrs"; repo?: string }
   | { page: "focus"; itemType: "issues"; repo?: string }
-  | { page: "reviews"; jobId?: number }
   | { page: "project-intake"; hostKey?: string }
   | { page: "terminal"; workspaceId: string; hostKey?: string };
 
@@ -348,16 +347,6 @@ function parseRoute(fullPath: string): Route {
         selected: issue,
       };
     }
-  }
-  const reviewsMatch = path.match(/^\/reviews(?:\/(\d+))?$/);
-  if (reviewsMatch) {
-    if (reviewsMatch[1]) {
-      return {
-        page: "reviews",
-        jobId: parseInt(reviewsMatch[1], 10),
-      };
-    }
-    return { page: "reviews" };
   }
   if (path === "/project-intake") {
     const sp = new URLSearchParams(search);

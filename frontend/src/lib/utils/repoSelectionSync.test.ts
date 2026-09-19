@@ -120,13 +120,7 @@ describe("globalRepoForSelectedRoute", () => {
   });
 
   it("returns undefined for activity, repos, settings, reviews, workspaces", () => {
-    const pages: Route[] = [
-      { page: "activity" },
-      { page: "repos" },
-      { page: "settings" },
-      { page: "reviews" },
-      { page: "workspaces" },
-    ];
+    const pages: Route[] = [{ page: "activity" }, { page: "repos" }, { page: "settings" }, { page: "workspaces" }];
     for (const route of pages) {
       expect(globalRepoForSelectedRoute(route)).toBeUndefined();
     }

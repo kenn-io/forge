@@ -83,7 +83,7 @@
       manualRefreshPending
       || issues.isIssueDetailLoading()
       || issues.isIssueDetailSyncing()
-      || staleIssue
+      || detailMismatch
     ) return;
     const requestIdentity = $state.snapshot(itemIdentity);
     const requestGeneration = ++manualRefreshGeneration;
@@ -92,7 +92,7 @@
       owner,
       name,
       number,
-      { provider, platformHost, repoPath },
+      { provider, platformHost, platformRepoId, repoPath },
       {
         onFailure: (message) => {
           if (isCurrentManualRefresh(requestGeneration, requestIdentity)) {
@@ -155,6 +155,7 @@
     number: number;
     provider: string;
     platformHost?: string | undefined;
+    platformRepoId?: string | undefined;
     repoPath: string;
     hideStaleWhileLoading?: boolean;
     autoSync?: IssueDetailSyncMode;
@@ -169,6 +170,7 @@
     number,
     provider,
     platformHost,
+    platformRepoId,
     repoPath,
     hideStaleWhileLoading = false,
     autoSync = "background",
@@ -180,6 +182,7 @@
   const routeRef = $derived({
     provider,
     platformHost,
+    platformRepoId,
     owner,
     name,
     repoPath,
@@ -211,7 +214,7 @@
   // actions (state change, workspace create, etc.) read the props,
   // which point at the new route — so they must be gated until the
   // displayed issue catches up.
-  const staleIssue = $derived.by(() => {
+  const detailMismatch = $derived.by(() => {
     const d = issues.getIssueDetail();
     if (d == null) return false;
     if (
@@ -227,9 +230,13 @@
     // detail that is in fact current.
     return canonicalProvider(d.repo?.provider ?? "") !== canonicalProvider(provider)
       || d.repo?.repo_path !== repoPath
+      || (!!platformRepoId && d.repo?.platform_repo_id !== platformRepoId)
       || resolvedPlatformHost(provider, d.repo?.platform_host)
         !== resolvedPlatformHost(provider, platformHost);
   });
+
+  // A restored snapshot stays readable, but cannot authorize actions until revalidated.
+  const staleIssue = $derived(detailMismatch || issues.isIssueDetailFromCache());
 
   // Same comparison shape as PRListView's detailMatchesSelected, but
   // against the inline workspace identity rather than a route ref: the
@@ -247,7 +254,8 @@
       canonicalProvider(detail.repo?.provider ?? "") === canonicalProvider(identity.provider) &&
       resolvedPlatformHost(identity.provider, detail.repo?.platform_host) ===
         resolvedPlatformHost(identity.provider, identity.platformHost) &&
-      detail.repo?.repo_path === identity.repoPath
+      detail.repo?.repo_path === identity.repoPath &&
+      (!platformRepoId || detail.repo?.platform_repo_id === platformRepoId)
     );
   }
 
@@ -278,6 +286,7 @@
   }
 
   let lastDetailLoadIdentity: WorkspaceItemIdentity | null = null;
+  let lastDetailLoadPlatformRepoId: string | undefined;
   let lastDetailLoadAutoSync: IssueDetailSyncMode | undefined;
 
   $effect(() => {
@@ -286,15 +295,18 @@
     const requestNumber = number;
     const requestProvider = provider;
     const requestPlatformHost = platformHost;
+    const requestPlatformRepoId = platformRepoId;
     const requestRepoPath = repoPath;
     const requestAutoSync = autoSync;
     const requestIdentity = $state.snapshot(itemIdentity);
     const shouldLoad =
       lastDetailLoadIdentity === null
       || !identityEquals(lastDetailLoadIdentity, requestIdentity)
+      || lastDetailLoadPlatformRepoId !== requestPlatformRepoId
       || lastDetailLoadAutoSync !== requestAutoSync;
     if (shouldLoad) {
       lastDetailLoadIdentity = requestIdentity;
+      lastDetailLoadPlatformRepoId = requestPlatformRepoId;
       lastDetailLoadAutoSync = requestAutoSync;
     }
     untrack(() => {
@@ -307,6 +319,7 @@
             sync: requestAutoSync,
             provider: requestProvider,
             platformHost: requestPlatformHost,
+            platformRepoId: requestPlatformRepoId,
             repoPath: requestRepoPath,
           },
         );
@@ -318,6 +331,7 @@
         {
           provider: requestProvider,
           platformHost: requestPlatformHost,
+          platformRepoId: requestPlatformRepoId,
           repoPath: requestRepoPath,
         },
       );
@@ -769,6 +783,7 @@
     issues.loadIssueDetail(owner, name, number, {
       provider,
       platformHost,
+      platformRepoId,
       repoPath,
     });
   }
@@ -1182,13 +1197,13 @@
 
 <svelte:document onmousedown={onDocumentMousedown} />
 
-{#if issues.isIssueDetailLoading() && (issues.getIssueDetail() === null || (staleIssue && hideStaleWhileLoading))}
+{#if issues.isIssueDetailLoading() && (issues.getIssueDetail() === null || (detailMismatch && hideStaleWhileLoading))}
   <div class="state-center"><p class="state-msg">Loading...</p></div>
-{:else if issues.getIssueDetailError() !== null && (issues.getIssueDetail() === null || (staleIssue && hideStaleWhileLoading))}
+{:else if issues.getIssueDetailError() !== null && (issues.getIssueDetail() === null || (detailMismatch && hideStaleWhileLoading))}
   <div class="state-center"><p class="state-msg state-msg--error">Error: {issues.getIssueDetailError()}</p></div>
 {:else}
   {@const detail = issues.getIssueDetail()}
-  {@const staleLoadError = staleIssue && issues.getIssueDetailError() !== null}
+  {@const detailLoadError = issues.getIssueDetailError() !== null}
   {#if detail !== null}
     {@const issue = detail.issue}
     {@const labels = issue.labels ?? []}
@@ -1196,9 +1211,10 @@
     <ScrollBox label="Issue conversation">
     <div class="issue-detail">
       <div class="issue-detail-content">
-      {#if staleLoadError}
+      {#if detailLoadError}
         <div class="detail-load-error" data-testid="detail-load-error">
-          Couldn't load this issue: {issues.getIssueDetailError()}
+          {detailMismatch ? "Couldn't load this issue:" : "Couldn't refresh this issue. Showing previously loaded content:"}
+          {issues.getIssueDetailError()}
         </div>
       {/if}
       {#if issues.isIssueStaleRefreshing() && !manualRefreshPending}
@@ -1512,6 +1528,7 @@
           {number}
           provider={detail.repo.provider}
           platformHost={detail.platform_host}
+          platformRepoId={detail.repo.platform_repo_id}
           repoPath={detail.repo.repo_path}
           disabled={staleIssue || !capabilities.comment_mutation || addCommentGate.unavailable}
           disabledReason={addCommentGate.unavailable ? addCommentGate.reason : undefined}
@@ -1524,7 +1541,7 @@
           <h3 class="section-title">Activity</h3>
           <div class="section-title-actions">
             <DetailRefreshButton
-              disabled={issues.isIssueDetailLoading() || issues.isIssueDetailSyncing() || staleIssue}
+              disabled={issues.isIssueDetailLoading() || issues.isIssueDetailSyncing() || detailMismatch}
               refreshing={manualRefreshPending}
               onRefresh={refreshDetail}
             />
@@ -1539,6 +1556,7 @@
             events={detail.events ?? []}
             {provider}
             {platformHost}
+            {platformRepoId}
             repoOwner={owner}
             repoName={name}
             {repoPath}

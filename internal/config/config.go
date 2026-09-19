@@ -809,7 +809,6 @@ type ModeVisibility struct {
 	Actions    *bool `toml:"actions,omitempty" json:"actions" nullable:"false"`
 	Pulls      *bool `toml:"pulls,omitempty" json:"pulls" nullable:"false"`
 	Issues     *bool `toml:"issues,omitempty" json:"issues" nullable:"false"`
-	Reviews    *bool `toml:"reviews,omitempty" json:"reviews" nullable:"false"`
 	Workspaces *bool `toml:"workspaces,omitempty" json:"workspaces" nullable:"false"`
 }
 
@@ -821,7 +820,6 @@ func DefaultModeVisibility() ModeVisibility {
 		Actions:    new(false),
 		Pulls:      new(true),
 		Issues:     new(true),
-		Reviews:    new(true),
 		Workspaces: new(true),
 	}
 }
@@ -845,9 +843,6 @@ func (m ModeVisibility) WithDefaults() ModeVisibility {
 	}
 	if m.Issues != nil {
 		defaults.Issues = m.Issues
-	}
-	if m.Reviews != nil {
-		defaults.Reviews = m.Reviews
 	}
 	if m.Workspaces != nil {
 		defaults.Workspaces = m.Workspaces
@@ -940,6 +935,7 @@ type MCP struct {
 }
 
 type Config struct {
+	AirplaneMode                bool   `toml:"airplane_mode"`
 	SyncInterval                string `toml:"sync_interval"`
 	ActivePRRefreshInterval     string `toml:"active_pr_refresh_interval"`
 	ActivePRHotWindow           string `toml:"active_pr_hot_window"`
@@ -1144,7 +1140,6 @@ repos = true
 docs = false
 pulls = true
 issues = true
-reviews = true
 workspaces = true
 
 [notifications]
@@ -3570,6 +3565,7 @@ func reposForSave(repos []Repo) []Repo {
 
 // configFile is the subset of Config written to disk.
 type configFile struct {
+	AirplaneMode                bool                     `toml:"airplane_mode,omitempty"`
 	SyncInterval                string                   `toml:"sync_interval"`
 	ActivePRRefreshInterval     string                   `toml:"active_pr_refresh_interval"`
 	ActivePRHotWindow           string                   `toml:"active_pr_hot_window"`
@@ -3619,6 +3615,7 @@ func (c *Config) Save(path string) error {
 		return fmt.Errorf("validating config: %w", err)
 	}
 	f := configFile{
+		AirplaneMode:                cfg.AirplaneMode,
 		SyncInterval:                cfg.SyncInterval,
 		ActivePRRefreshInterval:     cfg.ActivePRRefreshInterval,
 		ActivePRHotWindow:           cfg.ActivePRHotWindow,

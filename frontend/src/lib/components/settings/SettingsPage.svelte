@@ -2,12 +2,13 @@
   import ArrowLeftIcon from "@lucide/svelte/icons/arrow-left";
   import { Effect } from "effect";
   import { onMount } from "svelte";
-  import { SearchInput, SettingsLayout, SettingsSection, type SettingsCategory } from "@kenn-io/kit-ui";
+  import { SearchInput, SettingsLayout, SettingsSection, Toggle, type SettingsCategory } from "@kenn-io/kit-ui";
   import { getStores } from "../../context.js";
   import type { Settings } from "../../api/types.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { StartupWorkflow, startupErrorMessage } from "../../app/startup-workflow.js";
-  import { navigate } from "../../stores/router.svelte.js";
+  import { SettingsWorkflow, settingsErrorMessage } from "../../stores/settings-workflow.js";
+  import { getRoute, navigate } from "../../stores/router.svelte.js";
   import RepoSettings from "./RepoSettings.svelte";
   import ActivitySettings from "./ActivitySettings.svelte";
   import TerminalSettings from "./TerminalSettings.svelte";
@@ -45,7 +46,14 @@
   let settings = $state.raw<Settings | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
-  let active = $state(SETTINGS_PANELS[0]!.id);
+  let airplaneMode = $state(false);
+  let savingAirplaneMode = $state(false);
+  let airplaneModeError = $state<string | null>(null);
+  let active = $derived.by(() => {
+    getRoute();
+    const section = new URLSearchParams(window.location.search).get("section");
+    return SETTINGS_PANELS.find((panel) => panel.id === section)?.id ?? SETTINGS_PANELS[0]!.id;
+  });
 
   // The host owns search semantics: kit renders whatever category list it is
   // given, and its display falls back to the first visible category while the
@@ -86,6 +94,8 @@
           onSuccess: (loaded) =>
             Effect.sync(() => {
               settings = loaded;
+              airplaneMode = loaded.airplane_mode;
+              settingsStore.setAirplaneMode(loaded.airplane_mode);
               settingsStore.setConfiguredRepos(loaded.repos);
               settingsStore.setRepoPresets(loaded.repo_presets);
               settingsStore.setModeVisibility(loaded.modes);
@@ -108,6 +118,33 @@
     );
     return execution.interrupt;
   });
+
+  function toggleAirplaneMode(enabled: boolean): void {
+    if (!settings || savingAirplaneMode) return;
+    savingAirplaneMode = true;
+    airplaneModeError = null;
+    runtime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* SettingsWorkflow;
+        return yield* workflow.persist(() => ({ airplane_mode: enabled }));
+      }).pipe(
+        Effect.tap((saved) => Effect.sync(() => {
+          settings = saved;
+          airplaneMode = saved.airplane_mode;
+          settingsStore.setAirplaneMode(saved.airplane_mode);
+        })),
+        Effect.ensuring(Effect.sync(() => { savingAirplaneMode = false; })),
+      ),
+      {
+        operation: "save airplane mode",
+        safeContext: {},
+        onFailure: (failure) => {
+          airplaneMode = settings?.airplane_mode ?? false;
+          airplaneModeError = settingsErrorMessage(failure);
+        },
+      },
+    );
+  }
 
   function backToApp(): void {
     // Always route to an in-app destination rather than window.history.back():
@@ -153,7 +190,12 @@
           {@const panelVisible = categories.some((panel) => panel.id === meta.id)}
           <div class="settings-panel" hidden={!panelVisible || meta.id !== activeId}>
             <SettingsSection title={meta.title} description={meta.description}>
-              {#if meta.id === "settings-repositories"}
+              {#if meta.id === "settings-sync"}
+            <Toggle label="Airplane mode" bind:checked={airplaneMode} disabled={savingAirplaneMode} onchange={toggleAirplaneMode} />
+            <p class="sync-description">Pause automatic background sync on this Forge instance. Relay updates, opening an item, and manual Sync remain available. This setting is remembered after restart.</p>
+            <p class="sync-description">An update already running will finish. On a spoke, this pauses local background refresh; the hub keeps its own sync setting.</p>
+            {#if airplaneModeError}<p class="state-error" role="alert">{airplaneModeError}</p>{/if}
+          {:else if meta.id === "settings-repositories"}
             <RepoSettings
               repos={loaded.repos}
               owner={providerOwner}
@@ -268,6 +310,8 @@
 </div>
 
 <style>
+  .sync-description { color: var(--text-secondary); font-size: var(--font-size-sm); max-width: 65ch; }
+
   .settings-page {
     display: flex;
     flex: 1 1 auto;

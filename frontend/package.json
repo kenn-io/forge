@@ -18,7 +18,8 @@
     "test:e2e:mock": "node ../node_modules/vite-plus/bin/vp exec -- playwright test --config=playwright.config.ts",
     "demo-workspace": "node node_modules/.bin/playwright test --config tests/demo/playwright-demo.config.ts",
     "effect:diagnostics": "NODE_PATH=../node_modules node node_modules/@effect/language-service/cli.js diagnostics --project tsconfig.json --format text --severity error",
-    "profile:workspace-switch": "node node_modules/.bin/playwright test --config tests/profiling/playwright-profile.config.ts"
+    "profile:workspace-switch": "node node_modules/.bin/playwright test --config tests/profiling/playwright-profile.config.ts workspace-switch.spec.ts",
+    "profile:slow-link": "node node_modules/.bin/playwright test --config tests/profiling/playwright-profile.config.ts slow-link.spec.ts"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.2",

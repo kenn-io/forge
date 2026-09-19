@@ -88,13 +88,13 @@ describe("createJobsStore filter preferences", () => {
         error: undefined,
       }),
     };
-    const firstStore = createJobsStore({ client: client as never, navigate: vi.fn() });
+    const firstStore = createJobsStore({ client: client as never });
 
     firstStore.setFilter("hideClosed", true);
     firstStore.setFilter("showAutoDesign", true);
     firstStore.dispose();
 
-    const restoredStore = createJobsStore({ client: client as never, navigate: vi.fn() });
+    const restoredStore = createJobsStore({ client: client as never });
     await loadJobs(restoredStore);
 
     expect(restoredStore.getFilterHideClosed()).toBe(true);
@@ -118,8 +118,8 @@ describe("createJobsStore filter preferences", () => {
         error: undefined,
       }),
     };
-    const firstStore = createJobsStore({ client: firstClient as never, navigate: vi.fn() });
-    const secondStore = createJobsStore({ client: secondClient as never, navigate: vi.fn() });
+    const firstStore = createJobsStore({ client: firstClient as never });
+    const secondStore = createJobsStore({ client: secondClient as never });
 
     firstStore.setFilter("hideClosed", true);
     firstStore.setFilter("showAutoDesign", true);
@@ -155,13 +155,13 @@ describe("createJobsStore filter preferences", () => {
     });
 
     try {
-      const firstStore = createJobsStore({ client: firstClient as never, navigate: vi.fn() });
+      const firstStore = createJobsStore({ client: firstClient as never });
       expect(firstStore.getFilterHideClosed()).toBe(false);
       expect(firstStore.getFilterShowAutoDesign()).toBe(false);
 
       firstStore.setFilter("hideClosed", true);
       firstStore.setFilter("showAutoDesign", true);
-      const secondStore = createJobsStore({ client: secondClient as never, navigate: vi.fn() });
+      const secondStore = createJobsStore({ client: secondClient as never });
       await loadJobs(secondStore);
 
       expect(secondStore.getFilterHideClosed()).toBe(true);
@@ -205,7 +205,6 @@ describe("createJobsStore cost sorting", () => {
 
     const store = createJobsStore({
       client: client as never,
-      navigate: vi.fn(),
     });
 
     await loadJobs(store);
@@ -253,7 +252,6 @@ describe("createJobsStore elapsed sorting", () => {
 
     const store = createJobsStore({
       client: client as never,
-      navigate: vi.fn(),
     });
 
     await loadJobs(store);
@@ -295,7 +293,7 @@ describe("createJobsStore event stream", () => {
         error: undefined,
       }),
     };
-    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
+    const store = createJobsStore({ client: client as never });
 
     const eventOwner = store.connectEventStream("/api/roborev");
     await vi.waitFor(() => expect(signal).toBeDefined());
@@ -320,7 +318,7 @@ describe("createJobsStore event stream", () => {
         error: undefined,
       }),
     };
-    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
+    const store = createJobsStore({ client: client as never });
 
     const firstLease = store.connectEventStream("/api/roborev");
     await vi.waitFor(() => expect(signals).toHaveLength(1));
@@ -368,7 +366,7 @@ describe("createJobsStore event stream", () => {
         error: undefined,
       }),
     };
-    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
+    const store = createJobsStore({ client: client as never });
 
     const eventOwner = store.connectEventStream("/api/roborev");
     await vi.waitFor(() => expect(store.isEventStreamConnected()).toBe(true));
@@ -408,7 +406,7 @@ describe("createJobsStore event stream", () => {
         error: undefined,
       }),
     };
-    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
+    const store = createJobsStore({ client: client as never });
 
     const eventOwner = store.connectEventStream("/api/roborev");
     await vi.waitFor(() => expect(bodies).toHaveLength(1));
@@ -433,7 +431,7 @@ describe("createJobsStore event stream", () => {
       signal = fetchSignal(_input, init);
       return new Response(body, { status: 503 });
     });
-    const store = createJobsStore({ client: {} as never, navigate: vi.fn() });
+    const store = createJobsStore({ client: {} as never });
 
     const eventOwner = store.connectEventStream("/api/roborev");
 
@@ -462,7 +460,7 @@ describe("createJobsStore event stream", () => {
         error: undefined,
       }),
     };
-    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
+    const store = createJobsStore({ client: client as never });
 
     const eventOwner = store.connectEventStream("/api/roborev");
     await vi.waitFor(() => expect(bodies).toHaveLength(1));
@@ -502,7 +500,7 @@ describe("createJobsStore event stream", () => {
         };
       }),
     };
-    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
+    const store = createJobsStore({ client: client as never });
 
     const eventOwner = store.connectEventStream("/api/roborev");
     await vi.waitFor(() => expect(bodies).toHaveLength(1));
@@ -543,7 +541,7 @@ describe("createJobsStore event stream", () => {
         };
       }),
     };
-    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
+    const store = createJobsStore({ client: client as never });
 
     const eventOwner = store.connectEventStream("/api/roborev");
     await vi.waitFor(() => expect(bodies).toHaveLength(1));
@@ -571,7 +569,7 @@ describe("createJobsStore auto-design filter", () => {
 
   it("sends hide_classify_jobs by default and drops it when showAutoDesign is on", async () => {
     const client = makeClient();
-    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
+    const store = createJobsStore({ client: client as never });
 
     await loadJobs(store);
 
@@ -601,7 +599,7 @@ describe("createJobsStore filtered status counts", () => {
         error: undefined,
       }),
     };
-    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
+    const store = createJobsStore({ client: client as never });
 
     await loadJobs(store);
 
@@ -649,7 +647,7 @@ describe("createJobsStore filtered status counts", () => {
         });
       }),
     };
-    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
+    const store = createJobsStore({ client: client as never });
 
     store.setFilter("repo", "/workspace/repo");
     await vi.waitFor(() => {
@@ -693,7 +691,7 @@ describe("createJobsStore filtered status counts", () => {
         });
       }),
     };
-    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
+    const store = createJobsStore({ client: client as never });
     await loadJobs(store);
     expect(store.getFilteredStatusCounts()?.done).toBe(1);
 
@@ -727,7 +725,7 @@ describe("createJobsStore filtered status counts", () => {
         });
       }),
     };
-    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
+    const store = createJobsStore({ client: client as never });
     await loadJobs(store);
 
     store.setFilter("search", "next");
@@ -751,7 +749,7 @@ describe("createJobsStore filtered status counts", () => {
         });
       }),
     };
-    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
+    const store = createJobsStore({ client: client as never });
 
     await loadJobs(store);
 
@@ -814,7 +812,7 @@ describe("createJobsStore panel expansion", () => {
         });
       }),
     };
-    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
+    const store = createJobsStore({ client: client as never });
     await loadJobs(store);
 
     expect(store.isPanelExpanded("run-10")).toBe(false);
@@ -846,7 +844,7 @@ describe("createJobsStore panel expansion", () => {
         error: undefined,
       }),
     };
-    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
+    const store = createJobsStore({ client: client as never });
     await loadJobs(store);
     store.togglePanel(parent);
     await vi.waitFor(() => expect(store.getPanelMembers("run-10")).toBeDefined());
@@ -880,7 +878,7 @@ describe("createJobsStore panel expansion", () => {
         });
       }),
     };
-    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
+    const store = createJobsStore({ client: client as never });
     await loadJobs(store);
     store.togglePanel(parent);
     await vi.waitFor(() => {
@@ -927,7 +925,7 @@ describe("createJobsStore panel expansion", () => {
         });
       }),
     };
-    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
+    const store = createJobsStore({ client: client as never });
     await loadJobs(store);
     store.togglePanel(parent);
     await vi.waitFor(() => {
@@ -975,7 +973,7 @@ describe("createJobsStore panel expansion", () => {
         });
       }),
     };
-    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
+    const store = createJobsStore({ client: client as never });
     await loadJobs(store);
     store.togglePanel(parent);
     await vi.waitFor(() => {
@@ -1012,7 +1010,7 @@ describe("createJobsStore panel expansion", () => {
         });
       }),
     };
-    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
+    const store = createJobsStore({ client: client as never });
     await loadJobs(store);
 
     store.setPanelMemberInterest("run-10");
@@ -1054,7 +1052,7 @@ describe("createJobsStore panel expansion", () => {
         });
       }),
     };
-    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
+    const store = createJobsStore({ client: client as never });
     await loadJobs(store);
 
     store.setPanelMemberInterest("run-10");
@@ -1104,7 +1102,7 @@ describe("createJobsStore panel expansion", () => {
         error: undefined,
       }),
     };
-    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
+    const store = createJobsStore({ client: client as never });
     await loadJobs(store);
 
     store.setSortColumn("cost");
@@ -1154,7 +1152,7 @@ describe("createJobsStore panel expansion", () => {
         });
       }),
     };
-    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
+    const store = createJobsStore({ client: client as never });
     await loadJobs(store);
     store.togglePanel(parent);
     await vi.waitFor(() => {
@@ -1215,7 +1213,7 @@ describe("createJobsStore panel expansion", () => {
         });
       }),
     };
-    const store = createJobsStore({ client: client as never, navigate: vi.fn(), onError });
+    const store = createJobsStore({ client: client as never, onError });
     await loadJobs(store);
     store.togglePanel(parent);
     await vi.waitFor(() => {

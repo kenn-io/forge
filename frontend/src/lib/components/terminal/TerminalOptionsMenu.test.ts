@@ -23,7 +23,6 @@ type ModeVisibility = {
   docs: boolean;
   pulls: boolean;
   issues: boolean;
-  reviews: boolean;
   workspaces: boolean;
 };
 
@@ -55,7 +54,6 @@ const {
     docs: false,
     pulls: true,
     issues: true,
-    reviews: true,
     workspaces: true,
   };
   return {
@@ -84,7 +82,6 @@ vi.mock("../../context.js", async (importOriginal) => {
       docs: false,
       pulls: true,
       issues: true,
-      reviews: true,
       workspaces: true,
     },
     DEFAULT_TERMINAL_SETTINGS: {

@@ -9,6 +9,5 @@ export interface ModeVisibility {
   issues: boolean;
   pulls: boolean;
   repos: boolean;
-  reviews: boolean;
   workspaces: boolean;
 }

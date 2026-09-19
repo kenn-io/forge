@@ -21,6 +21,7 @@ import (
 )
 
 type settingsResponse struct {
+	AirplaneMode  bool                            `json:"airplane_mode"`
 	Repos         []ghclient.ConfiguredRepoStatus `json:"repos" nullable:"false"`
 	RepoPresets   []config.RepoPreset             `json:"repo_presets" nullable:"false"`
 	Activity      config.Activity                 `json:"activity"`
@@ -58,6 +59,7 @@ type roborevSettingsResponse struct {
 }
 
 type updateSettingsRequest struct {
+	AirplaneMode *bool                            `json:"airplane_mode,omitempty"`
 	Activity     *config.Activity                 `json:"activity,omitempty"`
 	Detail       *config.Detail                   `json:"detail,omitempty"`
 	PullRequests *config.PullRequests             `json:"pull_requests,omitempty"`
@@ -113,6 +115,7 @@ func (s *Server) buildLocalSettingsResponse(
 	ctx context.Context,
 ) (settingsResponse, error) {
 	s.cfgMu.Lock()
+	airplaneMode := s.cfg.AirplaneMode
 	repos := slices.Clone(s.cfg.Repos)
 	repoPresets := cloneRepoPresets(s.cfg.RepoPresets)
 	if repoPresets == nil {
@@ -185,6 +188,7 @@ func (s *Server) buildLocalSettingsResponse(
 		}
 	}
 	return settingsResponse{
+		AirplaneMode: airplaneMode,
 		Repos:        configured,
 		RepoPresets:  repoPresets,
 		Activity:     activity,
@@ -1056,6 +1060,7 @@ func (s *Server) updateLocalSettings(
 	s.configReloadMu.Lock()
 	defer s.configReloadMu.Unlock()
 	s.cfgMu.Lock()
+	prevAirplaneMode := s.cfg.AirplaneMode
 	prevActivity := s.cfg.Activity
 	prevDetail := s.cfg.Detail
 	prevPullRequests := s.cfg.PullRequests
@@ -1068,6 +1073,9 @@ func (s *Server) updateLocalSettings(
 	prevKataProjects := slices.Clone(s.cfg.KataProjects)
 	prevMCP := s.cfg.MCP
 	prevRoborev := s.cfg.Roborev
+	if input.Body.AirplaneMode != nil {
+		s.cfg.AirplaneMode = *input.Body.AirplaneMode
+	}
 	if input.Body.Activity != nil {
 		candidate := *input.Body.Activity
 		if candidate.ViewMode == "" {
@@ -1128,6 +1136,7 @@ func (s *Server) updateLocalSettings(
 		s.cfg.Roborev.InitManagedClones = *input.Body.Roborev.InitManagedClones
 	}
 	if err := s.cfg.Validate(); err != nil {
+		s.cfg.AirplaneMode = prevAirplaneMode
 		s.cfg.Activity = prevActivity
 		s.cfg.Detail = prevDetail
 		s.cfg.PullRequests = prevPullRequests
@@ -1144,6 +1153,7 @@ func (s *Server) updateLocalSettings(
 		return nil, httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
 	}
 	if err := s.cfg.Save(s.cfgPath); err != nil {
+		s.cfg.AirplaneMode = prevAirplaneMode
 		s.cfg.Activity = prevActivity
 		s.cfg.Detail = prevDetail
 		s.cfg.PullRequests = prevPullRequests
@@ -1160,6 +1170,7 @@ func (s *Server) updateLocalSettings(
 		return nil, httpapi.Internal("save config: " + err.Error())
 	}
 	if s.syncer != nil {
+		s.syncer.SetAirplaneMode(s.cfg.AirplaneMode)
 		s.syncer.SetBranchActivityLimits(
 			s.cfg.BranchActivityRetention(),
 			s.cfg.Activity.DefaultBranchMaxCommits,
@@ -1213,6 +1224,7 @@ func splitSettingsUpdate(
 	provider.Detail = update.Detail
 	provider.PullRequests = update.PullRequests
 	provider.Issues = update.Issues
+	local.AirplaneMode = update.AirplaneMode
 	local.Workspaces = update.Workspaces
 	local.Terminal = update.Terminal
 	local.Modes = update.Modes
@@ -1225,7 +1237,7 @@ func splitSettingsUpdate(
 }
 
 func hasSettingsUpdate(update updateSettingsRequest) bool {
-	return update.Activity != nil || update.Detail != nil ||
+	return update.AirplaneMode != nil || update.Activity != nil || update.Detail != nil ||
 		update.PullRequests != nil || update.Workspaces != nil ||
 		update.Issues != nil || update.Terminal != nil ||
 		update.Modes != nil || update.Agents != nil ||
@@ -1270,10 +1282,6 @@ func cloneModeVisibility(modes config.ModeVisibility) config.ModeVisibility {
 	if modes.Issues != nil {
 		v := *modes.Issues
 		out.Issues = &v
-	}
-	if modes.Reviews != nil {
-		v := *modes.Reviews
-		out.Reviews = &v
 	}
 	if modes.Workspaces != nil {
 		v := *modes.Workspaces

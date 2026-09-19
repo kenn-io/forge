@@ -47,8 +47,11 @@ import {
   providerMutationProblem,
   type MutationCallbacks,
   type ProviderMutationFailure,
+  type ProviderMutationService,
+  type VersionedCommand,
 } from "./ordered-mutations.js";
 import { normalizeKanbanStatus } from "./workflow.svelte.js";
+import { createRecentDetails } from "./recent-details.js";
 
 export type DetailSyncMode = boolean | "background";
 
@@ -57,6 +60,7 @@ export interface DetailRequestOptions {
   workflowApprovalSync?: boolean;
   provider: string;
   platformHost?: string | undefined;
+  platformRepoId?: string | undefined;
   repoPath: string;
 }
 
@@ -66,6 +70,7 @@ type DetailRequestRef = {
   number: number;
   provider: string;
   platformHost?: string | undefined;
+  platformRepoId?: string | undefined;
   repoPath: string;
 };
 
@@ -76,6 +81,7 @@ interface PullCommentMutationState {
 }
 
 export interface DetailStoreOptions {
+  getAirplaneMode?: () => boolean;
   runtime: AppRuntime;
   getPage?: () => string;
   onDetailSynchronized?: () => void;
@@ -220,6 +226,8 @@ export function createDetailStore(opts: DetailStoreOptions) {
   // Detail envelopes are replaced immutably. Keeping the large event array raw
   // avoids proxying thousands of timeline objects that are never mutated in place.
   let detail = $state.raw<PullDetail | null>(null);
+  // Earlier requests cannot validate a later visit restored from cache.
+  let detailCacheTick = $state(0);
   // Lifecycle tick captured when the request that produced the current
   // envelope STARTED (not when it landed). Workspace-create reconciliation
   // compares it against a creation confirmation's tick to tell a stale
@@ -245,6 +253,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
   type UnsavedTarget = {
     provider: string;
     platformHost: string | undefined;
+    platformRepoId: string | undefined;
     owner: string;
     name: string;
     number: number;
@@ -264,6 +273,13 @@ export function createDetailStore(opts: DetailStoreOptions) {
   // make the previous cycle's sync look like this cycle's completion and
   // end the convergence loop before the new sync has landed.
   let lastObservedFetchedAt: string | undefined;
+  const recentDetails = createRecentDetails<{
+    detail: PullDetail;
+    envelopeTick: number;
+    loaded: boolean;
+    discussionLoaded: boolean;
+    observedFetchedAt: string | undefined;
+  }>();
   // Provider synchronization is eventually complete. Keep a successfully
   // deleted comment hidden locally until an ordinary sync no longer returns it.
   const hiddenDeletedCommentIDs: Record<string, number[]> = {};
@@ -281,6 +297,10 @@ export function createDetailStore(opts: DetailStoreOptions) {
 
   function getDetail(): PullDetail | null {
     return detail;
+  }
+
+  function isDetailFromCache(): boolean {
+    return detailCacheTick !== 0;
   }
 
   function getDetailEnvelopeTick(): number {
@@ -310,13 +330,17 @@ export function createDetailStore(opts: DetailStoreOptions) {
   // --- internal helpers ---
 
   function prKey(ref: DetailRequestRef): string {
-    return providerItemKey({
-      provider: ref.provider,
-      platformHost: concretePlatformHost(ref),
-      owner: ref.owner,
-      name: ref.name,
-      number: ref.number,
-    });
+    return JSON.stringify([
+      providerItemKey({
+        provider: ref.provider,
+        platformHost: concretePlatformHost(ref),
+        owner: ref.owner,
+        name: ref.name,
+        number: ref.number,
+      }),
+      ref.repoPath,
+      ref.platformRepoId ?? null,
+    ]);
   }
 
   function detailRequestRef(
@@ -331,6 +355,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
       number,
       provider: options.provider,
       platformHost: options.platformHost,
+      platformRepoId: options.platformRepoId,
       repoPath: options.repoPath,
     };
   }
@@ -358,6 +383,10 @@ export function createDetailStore(opts: DetailStoreOptions) {
     ) {
       return next;
     }
+    if (!unsavedLocalBody.platformRepoId || unsavedLocalBody.platformRepoId !== next.repo.platform_repo_id) {
+      unsavedLocalBody = null;
+      return next;
+    }
     if (
       detail.repo_owner !== next.repo_owner ||
       detail.repo_name !== next.repo_name ||
@@ -376,7 +405,9 @@ export function createDetailStore(opts: DetailStoreOptions) {
 
   function withHiddenDeletedComments(next: PullDetail): PullDetail {
     if (Object.keys(hiddenDeletedCommentIDs).length === 0) return next;
-    const key = providerItemKey({
+    const key = prKey({
+      platformRepoId: next.repo.platform_repo_id,
+      repoPath: next.repo.repo_path,
       provider: next.repo.provider,
       platformHost: resolvedPlatformHost(next.repo.provider, next.repo.platform_host),
       owner: next.repo_owner,
@@ -442,7 +473,8 @@ export function createDetailStore(opts: DetailStoreOptions) {
       detail.repo_name === ref.name &&
       detail.merge_request.Number === ref.number &&
       sameBodyTarget(detail.repo?.provider, detail.repo?.platform_host, ref.provider, ref.platformHost) &&
-      detail.repo?.repo_path === ref.repoPath
+      detail.repo?.repo_path === ref.repoPath &&
+      (!ref.platformRepoId || detail.repo?.platform_repo_id === ref.platformRepoId)
     );
   }
 
@@ -453,6 +485,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     return detailRequestRef(owner, name, number, {
       provider: detail.repo.provider,
       platformHost: detail.repo.platform_host,
+      platformRepoId: detail.repo.platform_repo_id,
       repoPath: detail.repo.repo_path,
     });
   }
@@ -527,6 +560,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
   }
 
   function rebasePullMutations(ref: DetailRequestRef, authoritative: PullDetail, installEnvelope: () => boolean) {
+    if (ref.platformRepoId && authoritative.repo.platform_repo_id !== ref.platformRepoId) return Effect.succeed(false);
     return Effect.gen(function* () {
       const mutations = yield* ProviderMutations;
       const labels = authoritative.merge_request.labels ?? [];
@@ -604,7 +638,14 @@ export function createDetailStore(opts: DetailStoreOptions) {
           confirmed: applyPullCommentState(ref, commentID, state),
         });
       }
-      return yield* mutations.rebaseAll(Effect.sync(installEnvelope), rebaseEntries);
+      return yield* mutations.rebaseAll(
+        Effect.sync(() => {
+          const applied = installEnvelope();
+          if (applied && detailEnvelopeTick >= detailCacheTick) detailCacheTick = 0;
+          return applied;
+        }),
+        rebaseEntries,
+      );
     });
   }
 
@@ -640,7 +681,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     let mutationSettled = false;
     const program = Effect.gen(function* () {
       const mutations = yield* ProviderMutations;
-      yield* mutations.submit({
+      yield* submitDetailMutation(mutations, ref, {
         key: pullMutationKey(ref, "actions"),
         baseline: undefined,
         optimistic: undefined,
@@ -938,13 +979,41 @@ export function createDetailStore(opts: DetailStoreOptions) {
 
   // --- writes ---
 
+  function rememberDetail(): void {
+    if (!detail) return;
+    const ref = currentDetailRef(detail.repo_owner, detail.repo_name, detail.merge_request.Number);
+    if (!ref.platformRepoId) return;
+    if (activeSelectionKey !== prKey(ref) && activeSelectionKey !== prKey({ ...ref, platformRepoId: undefined }))
+      return;
+    recentDetails.remember(JSON.stringify([prKey(ref), ref.repoPath]), {
+      detail,
+      envelopeTick: detailEnvelopeTick,
+      loaded: detailLoaded,
+      discussionLoaded,
+      observedFetchedAt: lastObservedFetchedAt,
+    });
+  }
+
+  function submitDetailMutation<A>(
+    mutations: ProviderMutationService,
+    ref: DetailRequestRef,
+    command: VersionedCommand<A, GeneratedApi>,
+  ) {
+    return mutations.submit(command).pipe(
+      // A settled write may have updated or rolled back while this item was hidden.
+      Effect.ensuring(Effect.sync(() => recentDetails.delete(JSON.stringify([prKey(ref), ref.repoPath])))),
+    );
+  }
+
   function clearDetail(): void {
+    rememberDetail();
     ++syncGeneration;
     ++selectionGeneration;
     activeSelectionKey = null;
     activeLoad = null;
     latestSuccessfulDetailRequestSequenceBySelection.clear();
     detail = null;
+    detailCacheTick = 0;
     loading = false;
     syncing = false;
     storeError = null;
@@ -973,12 +1042,27 @@ export function createDetailStore(opts: DetailStoreOptions) {
     // intent if its requested mode is stronger.
     const key = prKey(requestRef);
     if (activeSelectionKey !== key) {
-      discussionLoaded = false;
+      rememberDetail();
+      const previous = requestRef.platformRepoId
+        ? recentDetails.get(JSON.stringify([key, requestRef.repoPath]))
+        : undefined;
+      detailCacheTick = previous ? nextWorkspaceLifecycleTick() : 0;
+      if (previous) {
+        // Do not rebase mutations or advance workspace freshness from a saved view.
+        detail = previous.detail;
+        detailEnvelopeTick = previous.envelopeTick;
+        detailLoaded = previous.loaded;
+      } else if (isDetailShowingRef({ ...requestRef, platformRepoId: undefined })) {
+        detail = null;
+        detailLoaded = false;
+        unsavedLocalBody = null;
+      }
+      discussionLoaded = previous?.discussionLoaded ?? false;
       activeSelectionKey = key;
       ++selectionGeneration;
       // The observed-timestamp baseline belongs to the previous selection;
       // carrying it over would let another PR's sync clock gate this one.
-      lastObservedFetchedAt = undefined;
+      lastObservedFetchedAt = previous?.observedFetchedAt;
     }
     if (loading && activeLoad?.key === key && activeLoad.execution !== null) {
       activeLoad.syncMode = strongerSyncMode(activeLoad.syncMode, syncMode);
@@ -1010,7 +1094,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     loading = true;
     syncing = false;
     storeError = null;
-    detailLoaded = false;
+    if (!isDetailShowingRef(requestRef)) detailLoaded = false;
     const envelopeTick = nextWorkspaceLifecycleTick();
     const read = executeGeneratedApiRequest("GET pull request", (client, signal) =>
       providerUsesHostRoute(requestRef)
@@ -1191,6 +1275,18 @@ export function createDetailStore(opts: DetailStoreOptions) {
     });
   }
 
+  function refreshRequest(owner: string, name: string, number: number, identity: DetailRequestOptions) {
+    const ref = detailRequestRef(owner, name, number, identity);
+    if (!isDetailShowingRef(ref)) return { ref, key: prKey(ref) };
+    const verified = { ...ref, platformRepoId: ref.platformRepoId ?? detail?.repo.platform_repo_id };
+    const verifiedKey = prKey(verified);
+    if (activeSelectionKey === verifiedKey) return { ref: verified, key: verifiedKey };
+    const routeKey = prKey({ ...verified, platformRepoId: undefined });
+    // A mutation can know the repository ID even when the selection began from a direct URL.
+    // Keep the original selection key without dropping the mutation's verified ID.
+    return { ref, key: activeSelectionKey === routeKey ? routeKey : prKey(ref) };
+  }
+
   function refreshDetailOnlyEffect(
     owner: string,
     name: string,
@@ -1200,8 +1296,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     observeStaleSuccess = false,
   ): Effect.Effect<DetailRefreshResult, ApiProblemError | TransientTransportError, GeneratedApi | ProviderMutations> {
     return Effect.suspend(() => {
-      const ref = detailRequestRef(owner, name, number, identity);
-      const key = prKey(ref);
+      const { ref, key } = refreshRequest(owner, name, number, identity);
       const requestSequence = ++detailRequestSequence;
       const envelopeTick = nextWorkspaceLifecycleTick();
       const ownership = (): "current" | "irrelevant" | "superseded" => {
@@ -1282,10 +1377,9 @@ export function createDetailStore(opts: DetailStoreOptions) {
     identity: DetailRequestOptions,
   ): Effect.Effect<boolean, ApiProblemError | TransientTransportError, GeneratedApi | ProviderMutations> {
     return Effect.suspend(() => {
-      const ref = detailRequestRef(owner, name, number, identity);
+      const { ref, key } = refreshRequest(owner, name, number, identity);
       const expectedGeneration = syncGeneration;
       const envelopeTick = nextWorkspaceLifecycleTick();
-      const key = prKey(ref);
       const isCurrent = () => expectedGeneration === syncGeneration && activeSelectionKey === key;
       if (isCurrent()) syncing = true;
       return executeGeneratedApiRequest("POST synchronize pull request detail", (client, signal) =>
@@ -1476,7 +1570,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
           return { detail: confirmed, pulls: confirmed };
         }),
       );
-      yield* mutations.submit({
+      yield* submitDetailMutation(mutations, ref, {
         key: pullMutationKey(ref, "kanban"),
         baseline: {
           ...(prevDetailStatus !== undefined && { detail: prevDetailStatus }),
@@ -1595,7 +1689,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
             detail = { ...detail, merge_request: { ...detail.merge_request, labels: nextLabels } };
           }
         });
-      yield* mutations.submit({
+      yield* submitDetailMutation(mutations, ref, {
         key,
         baseline: previousLabels,
         optimistic: labels,
@@ -1668,7 +1762,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
             };
           }
         });
-      yield* mutations.submit({
+      yield* submitDetailMutation(mutations, ref, {
         key,
         baseline: previousAssignees,
         optimistic: assignees,
@@ -1741,7 +1835,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
             };
           }
         });
-      yield* mutations.submit({
+      yield* submitDetailMutation(mutations, ref, {
         key,
         baseline: previousReviewers,
         optimistic: reviewers,
@@ -1782,8 +1876,9 @@ export function createDetailStore(opts: DetailStoreOptions) {
     callbacks: MutationCallbacks = {},
     requireVisible: boolean,
   ): PreparedPRContentUpdate | undefined {
-    const ref = detailRequestRef(routeRef.owner, routeRef.name, number, routeRef);
-    const visibleDetail = isDetailShowingRef(ref) ? detail : null;
+    const requestedRef = detailRequestRef(routeRef.owner, routeRef.name, number, routeRef);
+    const visibleDetail = isDetailShowingRef(requestedRef) ? detail : null;
+    const ref = visibleDetail ? { ...requestedRef, platformRepoId: visibleDetail.repo.platform_repo_id } : requestedRef;
     if (requireVisible && visibleDetail === null) return undefined;
     const baseline: PRContentProjection = {
       ...(fields.title !== undefined && { title: visibleDetail?.merge_request.Title ?? fields.title }),
@@ -1797,6 +1892,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
         const projectedBody =
           projection.body !== undefined &&
           unsavedLocalBody !== null &&
+          unsavedLocalBody.platformRepoId === ref.platformRepoId &&
           sameBodyTarget(unsavedLocalBody.provider, unsavedLocalBody.platformHost, ref.provider, ref.platformHost) &&
           unsavedLocalBody.owner === ref.owner &&
           unsavedLocalBody.name === ref.name &&
@@ -1841,6 +1937,8 @@ export function createDetailStore(opts: DetailStoreOptions) {
                 fields.body !== undefined &&
                 unsavedLocalBody !== null &&
                 unsavedLocalBody.body === fields.body &&
+                unsavedLocalBody.platformRepoId === ref.platformRepoId &&
+                unsavedLocalBody.platformRepoId === response.repo.platform_repo_id &&
                 sameBodyTarget(
                   unsavedLocalBody.provider,
                   unsavedLocalBody.platformHost,
@@ -1884,7 +1982,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
           })),
         );
       }).pipe(Effect.provideService(ProviderMutations, mutations));
-      yield* mutations.submit({
+      yield* submitDetailMutation(mutations, ref, {
         key: pullMutationKey(ref, "content"),
         baseline,
         optimistic,
@@ -1936,6 +2034,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
         : Effect.gen(function* () {
             if (
               unsavedLocalBody !== null &&
+              unsavedLocalBody.platformRepoId === update.ref.platformRepoId &&
               sameBodyTarget(
                 unsavedLocalBody.provider,
                 unsavedLocalBody.platformHost,
@@ -2004,7 +2103,15 @@ export function createDetailStore(opts: DetailStoreOptions) {
     ) {
       return;
     }
-    unsavedLocalBody = { provider, platformHost, owner, name, number, body };
+    unsavedLocalBody = {
+      provider,
+      platformHost,
+      platformRepoId: detail.repo.platform_repo_id,
+      owner,
+      name,
+      number,
+      body,
+    };
     detail = {
       ...detail,
       merge_request: { ...detail.merge_request, Body: body },
@@ -2050,7 +2157,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
       unsubSyncComplete = null;
     }
     const pollOnce = Effect.suspend(() =>
-      syncing
+      syncing || opts.getAirplaneMode?.()
         ? Effect.void
         : enqueueBackgroundDetailSyncEffect(owner, name, number, syncGeneration, observedFetchedAtBaseline(), ref),
     ).pipe(Effect.catch(() => Effect.void));
@@ -2136,7 +2243,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
             ? client.PullRequestsService.getPullOnHost({ ...providerHostRouteParams(ref), number: number }, { signal })
             : client.PullRequestsService.getPull({ ...providerRouteParams(ref), number: number }, { signal }),
       ).pipe(Effect.map((response) => response.merge_request.Starred ?? baseline));
-      yield* mutations.submit({
+      yield* submitDetailMutation(mutations, ref, {
         key: pullMutationKey(ref, "star"),
         baseline,
         optimistic,
@@ -2172,6 +2279,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     envelopeTick = 0,
   ): void {
     const ref = detailRequestRef(routeRef.owner, routeRef.name, number, routeRef);
+    recentDetails.delete(JSON.stringify([prKey(ref), ref.repoPath]));
     if (!isDetailShowingRef(ref) || detail === null) return;
     detail = { ...detail, merge_request: { ...detail.merge_request, Starred: starred } };
     detailEnvelopeTick = Math.max(detailEnvelopeTick, envelopeTick);
@@ -2205,7 +2313,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
               { signal },
             ),
       ).pipe(Effect.asVoid);
-      yield* mutations.submit({
+      yield* submitDetailMutation(mutations, ref, {
         key,
         baseline: undefined,
         optimistic: undefined,
@@ -2311,16 +2419,14 @@ export function createDetailStore(opts: DetailStoreOptions) {
       ).pipe(Effect.map((response) => pullCommentState(response.events ?? [], commentID, baseline)));
       const apply = (state: PullCommentMutationState) => applyPullCommentState(ref, commentID, state);
       yield* Effect.sync(() => trackPullCommentMutation(commentID, baseline));
-      yield* mutations
-        .submit({
-          key,
-          baseline,
-          optimistic,
-          apply,
-          commit,
-          refreshOnStale,
-        })
-        .pipe(Effect.ensuring(Effect.sync(() => releasePullCommentMutation(commentID))));
+      yield* submitDetailMutation(mutations, ref, {
+        key,
+        baseline,
+        optimistic,
+        apply,
+        commit,
+        refreshOnStale,
+      }).pipe(Effect.ensuring(Effect.sync(() => releasePullCommentMutation(commentID))));
       const shouldReconcile = yield* Effect.sync(() => {
         mutationSettled = true;
         return isDetailShowingRef(ref);
@@ -2406,16 +2512,14 @@ export function createDetailStore(opts: DetailStoreOptions) {
         storeError = null;
         trackPullCommentMutation(commentID, baseline);
       });
-      yield* mutations
-        .submit({
-          key,
-          baseline,
-          optimistic,
-          apply,
-          commit,
-          refreshOnStale,
-        })
-        .pipe(Effect.ensuring(Effect.sync(() => releasePullCommentMutation(commentID))));
+      yield* submitDetailMutation(mutations, ref, {
+        key,
+        baseline,
+        optimistic,
+        apply,
+        commit,
+        refreshOnStale,
+      }).pipe(Effect.ensuring(Effect.sync(() => releasePullCommentMutation(commentID))));
       yield* Effect.sync(() => hideDeletedComment(ref, commentID));
       const shouldReconcile = yield* Effect.sync(() => {
         mutationSettled = true;
@@ -2486,7 +2590,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
               { signal },
             ),
       ).pipe(Effect.asVoid);
-      yield* mutations.submit({
+      yield* submitDetailMutation(mutations, ref, {
         key,
         baseline: undefined,
         optimistic: undefined,
@@ -2584,7 +2688,11 @@ export function createDetailStore(opts: DetailStoreOptions) {
               { signal },
             ),
       );
-      const requestResult = yield* Effect.result(request);
+      const requestResult = yield* Effect.result(
+        request.pipe(
+          Effect.ensuring(Effect.sync(() => recentDetails.delete(JSON.stringify([prKey(ref), ref.repoPath])))),
+        ),
+      );
       if (requestSelectionGeneration !== selectionGeneration || !isDetailShowingRef(ref)) {
         if (
           Result.isFailure(requestResult) &&
@@ -2659,6 +2767,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
 
   return {
     getDetail,
+    isDetailFromCache,
     getDetailEnvelopeTick,
     isDetailLoading,
     isDetailSyncing,

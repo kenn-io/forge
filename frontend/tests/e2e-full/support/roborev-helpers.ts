@@ -38,11 +38,6 @@ export function startDaemon(): void {
   waitForDaemonHealthy();
 }
 
-export function restartDaemon(): void {
-  composeExec("restart roborev");
-  waitForDaemonHealthy();
-}
-
 function waitForDaemonHealthy(): void {
   const env = readEnvFile();
   const port = env["ROBOREV_PORT"] ?? "17373";
@@ -70,19 +65,6 @@ function waitForDaemonHealthy(): void {
   throw new Error("Daemon not healthy through Kenn Forge's proxy after 30 attempts");
 }
 
-export async function countRoborevDaemonEventStreams(): Promise<number> {
-  const env = readEnvFile();
-  const port = env["ROBOREV_PORT"] ?? "17373";
-  const response = await fetch(`http://127.0.0.1:${port}/debug/pprof/goroutine?debug=2`, {
-    signal: AbortSignal.timeout(3_000),
-  });
-  if (!response.ok) {
-    throw new Error(`roborev goroutine profile returned HTTP ${response.status}`);
-  }
-  const profile = await response.text();
-  return profile.split("\n").filter((line) => line.includes("humaStreamEvents")).length;
-}
-
 // Probe the daemon backing the e2e server and assert it matches the
 // shape of the script-seeded test daemon. If the e2e server proxies
 // to an unmanaged daemon (e.g. someone passes -roborev pointing at a
@@ -101,7 +83,7 @@ export async function countRoborevDaemonEventStreams(): Promise<number> {
 //     larger history.
 //
 //  2. /api/jobs?id=73 must return the seeded mutation fixture with
-//     agent="codex" and branch="main". These two fields are
+//     agent="test" and branch="main". These two fields are
 //     immutable across the test run (the rerun test re-enqueues job
 //     73 in place but does not touch agent/branch), so they make a
 //     load-bearing fingerprint for the seeded daemon. Without this
@@ -185,12 +167,12 @@ export async function assertSeededRoborevDaemon(): Promise<void> {
   const job = jobs[0] as Record<string, unknown>;
   const agent = job["agent"];
   const branch = job["branch"];
-  if (agent !== "codex" || branch !== "main") {
+  if (agent !== "test" || branch !== "main") {
     throw new Error(
       `roborev daemon at ${jobsURL} returned job 73 with ` +
         `agent=${JSON.stringify(agent)}, ` +
         `branch=${JSON.stringify(branch)}, ` +
-        'but the seed pins these to agent="codex" branch="main". ' +
+        'but the seed pins these to agent="test" branch="main". ' +
         wrongDaemonHint(),
     );
   }
@@ -226,11 +208,87 @@ function wrongDaemonHint(): string {
   );
 }
 
-export async function waitForReviewsReady(page: Page): Promise<void> {
-  await page.goto("/reviews");
-  await expect(page.locator(".job-table")).toBeVisible({
-    timeout: 15_000,
+const defaultWorkspace = {
+  id: "roborev-e2e",
+  platform_host: "github.com",
+  repo_owner: "acme",
+  repo_name: "test-repo-alpha",
+  repo: {
+    provider: "github",
+    platform_host: "github.com",
+    owner: "acme",
+    name: "test-repo-alpha",
+    repo_path: "acme/test-repo-alpha",
+  },
+  item_type: "pull_request",
+  item_number: 1,
+  source_item_visible: true,
+  git_head_ref: "main",
+  worktree_path: "/home/dev/test-repo-alpha",
+  status: "ready",
+  enrichment_status: "fresh",
+  created_at: "2026-04-10T12:00:00Z",
+  tmux_session: "",
+  tmux_working: false,
+  tmux_activity_source: "unknown",
+  tmux_last_output_at: null,
+};
+
+// The workspace shell is a fixture; all review requests still pass through
+// Forge's real proxy to the script-managed, seeded RoboRev daemon.
+export async function setupRoborevWorkspace(
+  page: Page,
+  options: { repoName?: string; branch?: string; worktreePath?: string } = {},
+): Promise<void> {
+  const repoName = options.repoName ?? defaultWorkspace.repo_name;
+  const workspace = {
+    ...defaultWorkspace,
+    repo_name: repoName,
+    worktree_path: options.worktreePath ?? defaultWorkspace.worktree_path,
+    git_head_ref: options.branch ?? defaultWorkspace.git_head_ref,
+    repo: { ...defaultWorkspace.repo, name: repoName, repo_path: `acme/${repoName}` },
+  };
+  await page.route("**/api/v1/snapshot**", (route) => route.fulfill({ json: { hosts: [], workspaces: [workspace] } }));
+  await page.route("**/api/v1/workspaces/roborev-e2e**", (route) => {
+    const path = new URL(route.request().url()).pathname;
+    const json = path.endsWith("/runtime")
+      ? { launch_targets: [], sessions: [] }
+      : path.endsWith("/files") || path.endsWith("/diff")
+        ? { files: [], stale: false, whitespace_only_count: 0 }
+        : path.endsWith("/commits")
+          ? { commits: [] }
+          : workspace;
+    return route.fulfill({ json });
   });
+}
+
+export async function openWorkspaceReviews(page: Page, baseURL = ""): Promise<void> {
+  await page.goto(`${baseURL}/terminal/roborev-e2e`);
+  const reviews = page.locator(".panel-toggle-btn", { hasText: "Reviews" });
+  await expect(reviews).toBeVisible();
+  if (!(await reviews.evaluate((node) => node.classList.contains("active")))) await reviews.click();
+  await expect(page.locator(".sidebar-reviews")).toBeVisible();
+}
+
+export async function waitForReviewsReady(page: Page, baseURL = ""): Promise<void> {
+  await openWorkspaceReviews(page, baseURL);
+  await expect(page.locator(".picker-button")).toBeVisible({ timeout: 15_000 });
+  await page.locator(".picker-button").click();
+  const unscopedJobs = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      response.ok() &&
+      url.pathname.endsWith("/api/roborev/api/jobs") &&
+      url.searchParams.get("limit") === "50" &&
+      !url.searchParams.has("repo") &&
+      !url.searchParams.has("branch")
+    );
+  });
+  await page.getByRole("button", { name: "All Repos", exact: true }).click();
+  await unscopedJobs;
+  await expect(page.locator(".picker-button")).toContainText("All Repos");
+  await expect(page.locator(".sidebar-reviews .loading-bar")).toHaveCount(0);
+  await expect(page.locator(".job-table")).toBeVisible();
 }
 
 export async function waitForJobRows(page: Page, min: number): Promise<void> {
@@ -241,8 +299,12 @@ export async function waitForJobRows(page: Page, min: number): Promise<void> {
   }).toPass({ timeout: 10_000 });
 }
 
-export async function openDrawer(page: Page, jobId: number): Promise<void> {
-  await page.goto(`/reviews/${jobId}`);
+export async function openDrawer(page: Page, jobId: number, baseURL = ""): Promise<void> {
+  await waitForReviewsReady(page, baseURL);
+  await page
+    .locator(".job-row")
+    .filter({ has: page.locator(".col-id .mono", { hasText: new RegExp(`^${jobId}$`) }) })
+    .click();
   await expect(page.getByRole("region", { name: "Review details" })).toBeVisible({
     timeout: 10_000,
   });

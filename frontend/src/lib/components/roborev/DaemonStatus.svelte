@@ -1,6 +1,8 @@
 <script lang="ts">
   import { getStores } from "../../context.js";
 
+  let { onRetry }: { onRetry?: () => void } = $props();
+
   const stores = getStores();
   const daemon = stores.roborevDaemon;
 
@@ -62,7 +64,7 @@
     {:else}
       <button
         class="retry-btn"
-        onclick={() => daemon.checkHealth()}
+        onclick={() => onRetry ? onRetry() : daemon.checkHealth()}
       >
         Retry
       </button>

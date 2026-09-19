@@ -16,6 +16,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 
+import type { RepoRefResponse } from "./lib/api/generated/models/repoRefResponse.js";
 import {
   firePopstate,
   mountBrowserApp,
@@ -23,6 +24,49 @@ import {
   type MountedBrowserApp,
 } from "./test/browserAppHarness.js";
 import { jsonResponse, type MockRequest, type MockRouteOverride } from "./test/mockApiFetch.js";
+
+const mirrorRepo: RepoRefResponse = {
+  provider: "github",
+  platform_host: "ghe.example.com",
+  repo_path: "acme/widgets",
+  owner: "acme",
+  name: "widgets",
+  capabilities: {
+    read_repositories: true,
+    read_merge_requests: true,
+    read_issues: true,
+    read_issue_pr_references: false,
+    read_comments: true,
+    read_releases: true,
+    read_ci: true,
+    read_workflows: false,
+    read_workflow_runs: false,
+    workflow_dispatch: false,
+    read_labels: false,
+    read_markdown_images: false,
+    read_authenticated_user: false,
+    comment_mutation: true,
+    state_mutation: true,
+    merge_mutation: true,
+    review_mutation: true,
+    workflow_approval: true,
+    ready_for_review: true,
+    draft_mutation: true,
+    issue_mutation: true,
+    label_mutation: false,
+    assignee_mutation: false,
+    reviewer_mutation: false,
+    thread_reply: false,
+    thread_resolve: false,
+    review_draft_mutation: false,
+    review_thread_resolution: false,
+    review_suggestion_application: false,
+    read_review_threads: false,
+    native_multiline_ranges: false,
+    mutation_head_binding: false,
+    supported_review_actions: [],
+  },
+};
 
 const mirrorIssueDetail = {
   issue: {
@@ -43,6 +87,7 @@ const mirrorIssueDetail = {
     ClosedAt: null,
     Starred: false,
   },
+  repo: mirrorRepo,
   events: [],
   platform_host: "ghe.example.com",
   repo_owner: "acme",
@@ -62,6 +107,7 @@ const assignedIssueDetail = {
     CommentCount: 0,
     assignees: ["alice", "bob"],
   },
+  repo: mirrorRepo,
   events: [],
   platform_host: "ghe.example.com",
   repo_owner: "acme",

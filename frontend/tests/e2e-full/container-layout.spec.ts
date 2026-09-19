@@ -70,7 +70,7 @@ test.describe("container-aware layout", () => {
   });
 
   test("medium viewport collapses page tabs and sync label", async ({ page }) => {
-    await page.setViewportSize({ width: 1024, height: 768 });
+    await page.setViewportSize({ width: 820, height: 768 });
     await page.goto("/pulls/github/acme/widgets/1?desktop=1");
     const header = page.locator(".app-top-bar");
     await header.waitFor({ state: "visible", timeout: 10_000 });

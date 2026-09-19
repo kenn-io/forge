@@ -12,9 +12,9 @@
   import BudgetPopover from "./BudgetPopover.svelte";
   import RelayIndicator from "./RelayIndicator.svelte";
   import { formatCompact } from "./budget-utils";
-  import { getPage } from "../../stores/router.svelte.ts";
+  import { getPage, navigate } from "../../stores/router.svelte.ts";
 
-  const { activity, pulls, issues, sync, events } = getStores();
+  const { activity, pulls, issues, sync, events, settings } = getStores();
   const runtime = getAppRuntime();
   const liveUpdateState = $derived(events.getConnectionState());
 
@@ -281,6 +281,16 @@
     <span class="status-item">{counts.repos} repos</span>
   {/snippet}
   {#snippet right()}
+    {#if settings.getAirplaneMode()}
+      <button
+        type="button"
+        class="status-item status-item--airplane status-button"
+        aria-label="Airplane mode: open Sync settings"
+        title="Automatic background sync is paused; an update already running will finish. Open Sync settings"
+        onclick={() => navigate("/settings?section=settings-sync")}
+      >airplane mode</button>
+      <span class="status-sep">&middot;</span>
+    {/if}
     {@const relay = sync.getSyncState()?.relay}
     {#if relay}
       <RelayIndicator status={relay} />
@@ -322,7 +332,7 @@
       {#if liveUpdateState === "disconnected"}
         <button
           type="button"
-          class="status-item status-item--error status-item--live-updates live-updates-button"
+          class="status-item status-item--error status-item--live-updates status-button"
           aria-label="Reconnect live updates"
           title={events.getLastError() ?? "Reconnect live updates"}
           onclick={events.reconnect}
@@ -360,6 +370,9 @@
   .status-item--error {
     color: var(--accent-red);
   }
+  .status-item--airplane {
+    color: var(--accent-amber);
+  }
   .status-item--active {
     color: var(--accent-green);
     display: flex;
@@ -376,7 +389,7 @@
     align-items: center;
     gap: 4px;
   }
-  .live-updates-button {
+  .status-button {
     padding: 0;
     border: 0;
     background: transparent;

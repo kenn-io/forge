@@ -123,12 +123,14 @@ to pull requests, issues, and workspaces. There is no separate Kata mode.
 
 ## Review Roborev jobs
 
-Start the Roborev daemon, then open **Reviews**. Filter the queue by repository,
-branch, status, or Git ref. Select a job to read the review, inspect its log and
-prompt, add a comment, or use the actions available for its current state.
+Start the Roborev daemon, then open **Reviews** in a pull request's workspace
+panel or a local workspace. Jobs load for that workspace's repository and
+branch when you display the panel. Select a job to read the review, inspect its
+log and prompt, add a comment, or use the actions available for its current
+state.
 
 See [Integrations](integrations.md#review-roborev-jobs) for endpoint setup and a
-walkthrough of the Reviews page.
+walkthrough of the Reviews panel.
 
 ## Browse and edit Docs
 

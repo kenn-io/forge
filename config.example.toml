@@ -1,4 +1,10 @@
 sync_interval = "5m"
+# Pause automatic sync after the current update. Default: false; persists across restarts.
+# Relay updates, item visits, and manual Sync remain available on this Forge instance.
+# A fleet spoke pauses local refresh only; its hub has a separate setting.
+# Can also be changed in Settings > Sync. No restart required.
+airplane_mode = false
+
 # Raise the local hourly sync allowance for large or active repositories.
 # Default: 500. Minimum: 50. Zero uses the default. Restart after changing.
 # See docs/configuration.md#sync-budget for budget sharing and provider quota.

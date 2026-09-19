@@ -34,6 +34,7 @@ function makeStores(
   let roborevSettings: Settings["roborev"] = { init_managed_clones: false };
   return {
     settings: {
+      setAirplaneMode: vi.fn(),
       setConfiguredRepos: vi.fn(),
       setRepoPresets: vi.fn(),
       setModeVisibility: vi.fn(),

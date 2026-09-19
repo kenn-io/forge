@@ -41,7 +41,6 @@
     { key: "actions", label: "Actions" },
     { key: "pulls", label: "PRs" },
     { key: "issues", label: "Issues" },
-    { key: "reviews", label: "Reviews" },
     { key: "workspaces", label: "Workspaces" },
   ];
 

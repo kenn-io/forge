@@ -60,6 +60,7 @@
     orderingEvents?: Array<PREvent | IssueEvent> | undefined;
     provider?: string | undefined;
     platformHost?: string | undefined;
+    platformRepoId?: string | undefined;
     repoOwner?: string;
     repoName?: string;
     repoPath?: string | undefined;
@@ -109,6 +110,7 @@
     orderingEvents = events,
     provider,
     platformHost,
+    platformRepoId,
     repoOwner,
     repoName,
     repoPath,
@@ -1077,6 +1079,7 @@
     detailStore?.loadDetail(repoOwner, repoName, number, {
       provider,
       platformHost,
+      platformRepoId,
       repoPath,
       sync: false,
     });

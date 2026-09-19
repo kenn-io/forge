@@ -58,6 +58,7 @@ export interface IssueDetailRequestOptions {
   sync?: IssueDetailSyncMode;
   provider: string;
   platformHost?: string | undefined;
+  platformRepoId?: string | undefined;
   repoPath: string;
 }
 
@@ -67,6 +68,7 @@ type IssueDetailRequestRef = {
   number: number;
   provider: string;
   platformHost?: string | undefined;
+  platformRepoId?: string | undefined;
   repoPath: string;
 };
 
@@ -182,6 +184,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   };
   let unsavedLocalBody = $state<UnsavedIssueTarget | null>(null);
   let issueSyncGeneration = 0;
+  let activeIssueSelectionKey: string | null = null;
   let issuePollingGeneration = 0;
   let activeIssueDetailRef: IssueDetailRequestRef | null = null;
   const recentDetails = createRecentDetails<{ detail: IssueDetail; envelopeTick: number; loaded: boolean }>();
@@ -592,7 +595,8 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       issueDetail.repo_name === ref.name &&
       issueDetail.issue.Number === ref.number &&
       sameBodyTarget(issueDetail.repo?.provider, issueDetail.repo?.platform_host, ref.provider, ref.platformHost) &&
-      issueDetail.repo?.repo_path === ref.repoPath
+      issueDetail.repo?.repo_path === ref.repoPath &&
+      (!ref.platformRepoId || issueDetail.repo?.platform_repo_id === ref.platformRepoId)
     );
   }
 
@@ -605,6 +609,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     return issueDetailRequestRef(owner, name, number, {
       provider,
       platformHost: issueDetail?.repo?.platform_host ?? selectedIssue?.platformHost,
+      platformRepoId: issueDetail?.repo?.platform_repo_id,
       repoPath,
     });
   }
@@ -621,6 +626,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       number,
       provider: options.provider,
       platformHost: options.platformHost,
+      platformRepoId: options.platformRepoId,
       repoPath: options.repoPath,
     };
   }
@@ -768,13 +774,17 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   }
 
   function issueDetailKey(ref: IssueDetailRequestRef): string {
-    return providerItemKey({
-      provider: ref.provider,
-      platformHost: concretePlatformHost(ref),
-      owner: ref.owner,
-      name: ref.name,
-      number: ref.number,
-    });
+    return JSON.stringify([
+      providerItemKey({
+        provider: ref.provider,
+        platformHost: concretePlatformHost(ref),
+        owner: ref.owner,
+        name: ref.name,
+        number: ref.number,
+      }),
+      ref.repoPath,
+      ref.platformRepoId ?? null,
+    ]);
   }
 
   function readIssueDetail(ref: IssueDetailRequestRef, operation: string) {
@@ -792,6 +802,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     expectedGeneration: number,
     requireVisible: boolean,
   ) {
+    if (ref.platformRepoId && authoritative.repo.platform_repo_id !== ref.platformRepoId) return Effect.succeed(false);
     const next = withPreservedLocalBody(authoritative);
     return rebaseIssueMutations(ref, authoritative, () => {
       if (expectedGeneration !== issueSyncGeneration) return false;
@@ -928,16 +939,24 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
 
   function loadIssueDetail(owner: string, name: string, number: number, options: IssueDetailRequestOptions): void {
     const ref = issueDetailRequestRef(owner, name, number, options);
-    if (!isIssueDetailShowingRef(ref)) {
+    const key = issueDetailKey(ref);
+    if (activeIssueSelectionKey !== key) {
       rememberIssueDetail();
-      const previous = recentDetails.get(JSON.stringify([issueDetailKey(ref), ref.repoPath]));
+      const previous = ref.platformRepoId
+        ? recentDetails.get(JSON.stringify([issueDetailKey(ref), ref.repoPath]))
+        : undefined;
       if (previous) {
         // Restoring presentation must not acknowledge mutations or workspace absence.
         issueDetail = previous.detail;
         issueDetailEnvelopeTick = previous.envelopeTick;
         issueDetailLoaded = previous.loaded;
+      } else if (isIssueDetailShowingRef({ ...ref, platformRepoId: undefined })) {
+        issueDetail = null;
+        issueDetailLoaded = false;
+        unsavedLocalBody = null;
       }
     }
+    activeIssueSelectionKey = key;
     const syncMode = options.sync ?? true;
     const generation = ++issueSyncGeneration;
     const envelopeTick = nextWorkspaceLifecycleTick();
@@ -1026,10 +1045,11 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   }
 
   function rememberIssueDetail(): void {
-    if (!issueDetail) return;
+    if (!issueDetail?.repo.platform_repo_id) return;
     const ref = issueDetailRequestRef(issueDetail.repo_owner, issueDetail.repo_name, issueDetail.issue.Number, {
       provider: issueDetail.repo.provider,
       platformHost: issueDetail.repo.platform_host,
+      platformRepoId: issueDetail.repo.platform_repo_id,
       repoPath: issueDetail.repo.repo_path,
     });
     recentDetails.remember(JSON.stringify([issueDetailKey(ref), ref.repoPath]), {
@@ -1053,6 +1073,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
 
   function clearIssueDetail(): void {
     rememberIssueDetail();
+    activeIssueSelectionKey = null;
     ++issueSyncGeneration;
     issueDetail = null;
     detailLoading = false;

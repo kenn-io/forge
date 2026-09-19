@@ -977,6 +977,7 @@
       itemType,
       provider: item.repo.provider,
       platformHost: item.repo.platform_host,
+      platformRepoId: item.repo.platform_repo_id,
       repoPath: item.repo.repo_path,
       owner: item.repo.owner,
       name: item.repo.name,
@@ -1176,6 +1177,7 @@
         appStores.detail.loadDetail(sel.owner, sel.name, sel.number, {
           provider: sel.provider,
           platformHost: sel.platformHost,
+          platformRepoId: detail.repo.platform_repo_id,
           repoPath: sel.repoPath,
         });
       },

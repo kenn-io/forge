@@ -10,7 +10,7 @@
   import PullList from "../components/sidebar/PullList.svelte";
   import PullDetailPane from "../components/detail/PullDetailPane.svelte";
   import KataLinksPanel from "../components/kata/KataLinksPanel.svelte";
-  import { pullDetailMatchesRef } from "../components/detail/detail-match.js";
+  import { repoIdentityMatches, pullDetailMatchesRef } from "../components/detail/detail-match.js";
   import DetailPaneLayout from "../components/shared/DetailPaneLayout.svelte";
   import type { TabbedPanelLeaf } from "../components/shared/tabbed-panel-layout.js";
   import { getPaneLayoutStore, type PaneLayoutStore, type PaneTabSpec } from "../stores/paneLayout.svelte.js";
@@ -30,7 +30,7 @@
 
   const { toggleSidebar } = getSidebar();
   const navigate = getNavigate();
-  const { detail: detailStore } = getStores();
+  const { detail: detailStore, pulls } = getStores();
   interface Props {
     selectedPR?: PullRequestRouteRef | null;
     detailTab?: DetailTab;
@@ -61,7 +61,7 @@
   }
 
   let {
-    selectedPR = null,
+    selectedPR: routeSelection = null,
     detailTab = "conversation",
     detailPresentation = "panes",
     isSidebarCollapsed = false,
@@ -81,6 +81,14 @@
     inlineWorkspace = null,
     workspacePaneControls = undefined,
   }: Props = $props();
+
+  const selectedPR = $derived.by(() => {
+    if (!routeSelection || routeSelection.platformRepoId) return routeSelection;
+    const item = pulls.getPulls().find((item) =>
+      item.Number === routeSelection.number && repoIdentityMatches(item, routeSelection),
+    );
+    return { ...routeSelection, platformRepoId: item?.repo.platform_repo_id };
+  });
   const paneLayoutStore = getPaneLayoutStore("prs");
   const paneLayout = $derived<PaneLayoutStore | null>(detailPresentation === "panes" ? paneLayoutStore : null);
 
@@ -171,6 +179,7 @@
       sync: false,
       provider: ref.provider,
       platformHost: ref.platformHost,
+      platformRepoId: ref.platformRepoId,
       repoPath: ref.repoPath,
     });
   }

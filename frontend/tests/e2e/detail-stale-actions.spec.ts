@@ -84,6 +84,7 @@ function repoEnvelope(item: { repo_owner: string; repo_name: string; platform_ho
     owner: item.repo_owner,
     name: item.repo_name,
     repo_path: `${item.repo_owner}/${item.repo_name}`,
+    platform_repo_id: `repo-${item.repo_owner}-${item.repo_name}`,
     capabilities: providerCapabilities,
   };
 }
@@ -578,6 +579,16 @@ test.describe("detail load-error banner", () => {
     test(`${item.kind}: returning to a cached item stays readable when refresh fails`, async ({ page }) => {
       await mockApi(page);
       await mockSettings(page);
+      await page.route(
+        (url) => url.pathname === `/api/v1/${item.kind}`,
+        async (route) => {
+          const rows = [item.first, item.second].map((entry) => {
+            const detail = JSON.parse(entry.body);
+            return { ...(detail.merge_request ?? detail.issue), repo: detail.repo };
+          });
+          await route.fulfill({ contentType: "application/json", body: JSON.stringify(rows) });
+        },
+      );
       let returning = false;
       const refresh = Promise.withResolvers<void>();
       for (const entry of [item.first, item.second]) {
@@ -610,6 +621,63 @@ test.describe("detail load-error banner", () => {
       refresh.resolve();
       await expect(page.getByTestId("detail-load-error")).toContainText("Refresh unavailable");
       await expect(page.locator(".detail-title")).toContainText(item.first.title);
+    });
+
+    test(`${item.kind}: a replacement repository does not restore the old item's snapshot`, async ({ page }) => {
+      await mockApi(page);
+      await mockSettings(page);
+      let replaced = false;
+      const refresh = Promise.withResolvers<void>();
+      await page.route(
+        (url) => url.pathname === `/api/v1/${item.kind}`,
+        async (route) => {
+          const rows = [item.first, item.second].map((entry) => {
+            const detail = JSON.parse(entry.body);
+            return {
+              ...(detail.merge_request ?? detail.issue),
+              Title: replaced && entry === item.first ? "Replacement repository item" : entry.title,
+              repo: { ...detail.repo, ...(replaced && { platform_repo_id: "R_replacement" }) },
+            };
+          });
+          await route.fulfill({ contentType: "application/json", body: JSON.stringify(rows) });
+        },
+      );
+      for (const entry of [item.first, item.second]) {
+        await page.route(`**/api/v1/${item.kind}/github/acme/widgets/${entry.number}`, async (route) => {
+          if (replaced && entry === item.first) {
+            await refresh.promise;
+            await route.fulfill({
+              status: 403,
+              contentType: "application/problem+json",
+              body: JSON.stringify({ code: "forbidden", detail: "Refresh unavailable" }),
+            });
+          } else {
+            const detail = JSON.parse(entry.body);
+            if (replaced) detail.repo.platform_repo_id = "R_replacement";
+            await route.fulfill({ contentType: "application/json", body: JSON.stringify(detail) });
+          }
+        });
+      }
+      await page.goto(`/${item.kind}/github/acme/widgets/${item.first.number}`);
+      await expect(page.locator(".detail-title")).toContainText(item.first.title);
+      await page.evaluate((path) => {
+        window.history.pushState(null, "", path);
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      }, `/${item.kind}/github/acme/widgets/${item.second.number}`);
+      await expect(page.locator(".detail-title")).toContainText(item.second.title);
+      replaced = true;
+      await page
+        .getByRole("searchbox", { name: item.kind === "pulls" ? "Search PRs" : "Search issues", exact: true })
+        .fill("Replacement");
+      await expect(page.getByText("Replacement repository item", { exact: true })).toBeVisible();
+      await page.evaluate((path) => {
+        window.history.pushState(null, "", path);
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      }, `/${item.kind}/github/acme/widgets/${item.first.number}`);
+      await expect(page.locator(".detail-title")).not.toContainText(item.first.title);
+      refresh.resolve();
+      await expect(page.getByTestId("detail-load-error")).toContainText("Refresh unavailable");
+      await expect(page.locator(".detail-title")).not.toContainText(item.first.title);
     });
   }
 

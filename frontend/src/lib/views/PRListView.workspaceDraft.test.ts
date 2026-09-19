@@ -170,7 +170,7 @@ function renderWithRealPullDetail(
           STORES_KEY,
           {
             detail: detailStore,
-            pulls: { loadPulls: vi.fn() },
+            pulls: { loadPulls: vi.fn(), getPulls: () => [] },
             activity: { loadActivity: vi.fn() },
             detailActivityView: createDetailActivityViewStore(),
             settings: {

@@ -56,6 +56,9 @@ Interactive surfaces must agree on which item is selected.
 - Recent detail snapshots are presentation only: revalidate every visit and preserve
   the original workspace lifecycle tick. Settled mutations invalidate saved views
   so hidden optimistic state cannot survive rollback (`frontend/src/lib/stores/detail.svelte.ts::submitDetailMutation`).
+- Restore recent details only with a verified provider/host/repository ID; an unknown
+  ID requires a fresh response because owner/name routes can be reused
+  (`frontend/src/lib/stores/detail.svelte.ts::loadDetail`).
 - A response confirming a server-side outcome (a completed delete or create)
   must publish to identity-scoped global state — claims, tombstones, creation
   overrides, route memory — before any liveness guard: neither unmount nor a

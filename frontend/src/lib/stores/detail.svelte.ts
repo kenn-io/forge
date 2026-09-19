@@ -60,6 +60,7 @@ export interface DetailRequestOptions {
   workflowApprovalSync?: boolean;
   provider: string;
   platformHost?: string | undefined;
+  platformRepoId?: string | undefined;
   repoPath: string;
 }
 
@@ -69,6 +70,7 @@ type DetailRequestRef = {
   number: number;
   provider: string;
   platformHost?: string | undefined;
+  platformRepoId?: string | undefined;
   repoPath: string;
 };
 
@@ -321,13 +323,17 @@ export function createDetailStore(opts: DetailStoreOptions) {
   // --- internal helpers ---
 
   function prKey(ref: DetailRequestRef): string {
-    return providerItemKey({
-      provider: ref.provider,
-      platformHost: concretePlatformHost(ref),
-      owner: ref.owner,
-      name: ref.name,
-      number: ref.number,
-    });
+    return JSON.stringify([
+      providerItemKey({
+        provider: ref.provider,
+        platformHost: concretePlatformHost(ref),
+        owner: ref.owner,
+        name: ref.name,
+        number: ref.number,
+      }),
+      ref.repoPath,
+      ref.platformRepoId ?? null,
+    ]);
   }
 
   function detailRequestRef(
@@ -342,6 +348,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
       number,
       provider: options.provider,
       platformHost: options.platformHost,
+      platformRepoId: options.platformRepoId,
       repoPath: options.repoPath,
     };
   }
@@ -387,7 +394,9 @@ export function createDetailStore(opts: DetailStoreOptions) {
 
   function withHiddenDeletedComments(next: PullDetail): PullDetail {
     if (Object.keys(hiddenDeletedCommentIDs).length === 0) return next;
-    const key = providerItemKey({
+    const key = prKey({
+      platformRepoId: next.repo.platform_repo_id,
+      repoPath: next.repo.repo_path,
       provider: next.repo.provider,
       platformHost: resolvedPlatformHost(next.repo.provider, next.repo.platform_host),
       owner: next.repo_owner,
@@ -453,7 +462,8 @@ export function createDetailStore(opts: DetailStoreOptions) {
       detail.repo_name === ref.name &&
       detail.merge_request.Number === ref.number &&
       sameBodyTarget(detail.repo?.provider, detail.repo?.platform_host, ref.provider, ref.platformHost) &&
-      detail.repo?.repo_path === ref.repoPath
+      detail.repo?.repo_path === ref.repoPath &&
+      (!ref.platformRepoId || detail.repo?.platform_repo_id === ref.platformRepoId)
     );
   }
 
@@ -464,6 +474,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     return detailRequestRef(owner, name, number, {
       provider: detail.repo.provider,
       platformHost: detail.repo.platform_host,
+      platformRepoId: detail.repo.platform_repo_id,
       repoPath: detail.repo.repo_path,
     });
   }
@@ -538,6 +549,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
   }
 
   function rebasePullMutations(ref: DetailRequestRef, authoritative: PullDetail, installEnvelope: () => boolean) {
+    if (ref.platformRepoId && authoritative.repo.platform_repo_id !== ref.platformRepoId) return Effect.succeed(false);
     return Effect.gen(function* () {
       const mutations = yield* ProviderMutations;
       const labels = authoritative.merge_request.labels ?? [];
@@ -952,7 +964,9 @@ export function createDetailStore(opts: DetailStoreOptions) {
   function rememberDetail(): void {
     if (!detail) return;
     const ref = currentDetailRef(detail.repo_owner, detail.repo_name, detail.merge_request.Number);
-    if (activeSelectionKey !== prKey(ref)) return;
+    if (!ref.platformRepoId) return;
+    if (activeSelectionKey !== prKey(ref) && activeSelectionKey !== prKey({ ...ref, platformRepoId: undefined }))
+      return;
     recentDetails.remember(JSON.stringify([prKey(ref), ref.repoPath]), {
       detail,
       envelopeTick: detailEnvelopeTick,
@@ -1010,12 +1024,18 @@ export function createDetailStore(opts: DetailStoreOptions) {
     const key = prKey(requestRef);
     if (activeSelectionKey !== key) {
       rememberDetail();
-      const previous = recentDetails.get(JSON.stringify([key, requestRef.repoPath]));
+      const previous = requestRef.platformRepoId
+        ? recentDetails.get(JSON.stringify([key, requestRef.repoPath]))
+        : undefined;
       if (previous) {
         // Do not rebase mutations or advance workspace freshness from a saved view.
         detail = previous.detail;
         detailEnvelopeTick = previous.envelopeTick;
         detailLoaded = previous.loaded;
+      } else if (isDetailShowingRef({ ...requestRef, platformRepoId: undefined })) {
+        detail = null;
+        detailLoaded = false;
+        unsavedLocalBody = null;
       }
       discussionLoaded = previous?.discussionLoaded ?? false;
       activeSelectionKey = key;
@@ -1235,6 +1255,13 @@ export function createDetailStore(opts: DetailStoreOptions) {
     });
   }
 
+  function refreshRequestRef(owner: string, name: string, number: number, identity: DetailRequestOptions) {
+    const ref = detailRequestRef(owner, name, number, identity);
+    if (ref.platformRepoId || !isDetailShowingRef(ref)) return ref;
+    const verified = { ...ref, platformRepoId: detail?.repo.platform_repo_id };
+    return activeSelectionKey === prKey(verified) ? verified : ref;
+  }
+
   function refreshDetailOnlyEffect(
     owner: string,
     name: string,
@@ -1244,7 +1271,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     observeStaleSuccess = false,
   ): Effect.Effect<DetailRefreshResult, ApiProblemError | TransientTransportError, GeneratedApi | ProviderMutations> {
     return Effect.suspend(() => {
-      const ref = detailRequestRef(owner, name, number, identity);
+      const ref = refreshRequestRef(owner, name, number, identity);
       const key = prKey(ref);
       const requestSequence = ++detailRequestSequence;
       const envelopeTick = nextWorkspaceLifecycleTick();
@@ -1326,7 +1353,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     identity: DetailRequestOptions,
   ): Effect.Effect<boolean, ApiProblemError | TransientTransportError, GeneratedApi | ProviderMutations> {
     return Effect.suspend(() => {
-      const ref = detailRequestRef(owner, name, number, identity);
+      const ref = refreshRequestRef(owner, name, number, identity);
       const expectedGeneration = syncGeneration;
       const envelopeTick = nextWorkspaceLifecycleTick();
       const key = prKey(ref);

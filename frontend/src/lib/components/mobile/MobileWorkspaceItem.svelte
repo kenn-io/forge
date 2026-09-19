@@ -66,6 +66,7 @@
     return {
       provider: workspace.repo.provider,
       platformHost: workspace.repo.platform_host,
+      platformRepoId: workspace.repo.platform_repo_id,
       owner: workspace.repo.owner,
       name: workspace.repo.name,
       repoPath: workspace.repo.repo_path,

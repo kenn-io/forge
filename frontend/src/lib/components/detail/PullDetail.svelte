@@ -172,7 +172,7 @@
       owner,
       name,
       number,
-      { provider, platformHost, repoPath },
+      { provider, platformHost, platformRepoId, repoPath },
       {
         onFailure: (message) => {
           if (isCurrentManualRefresh(requestGeneration, requestIdentity)) {
@@ -235,6 +235,7 @@
     number: number;
     provider: string;
     platformHost?: string | undefined;
+    platformRepoId?: string | undefined;
     repoPath: string;
     hideTabs?: boolean;
     hideWorkspaceAction?: boolean;
@@ -259,6 +260,7 @@
     number,
     provider,
     platformHost,
+    platformRepoId,
     repoPath,
     hideTabs = false,
     hideWorkspaceAction = false,
@@ -276,6 +278,7 @@
   const routeRef = $derived({
     provider,
     platformHost,
+    platformRepoId,
     owner,
     name,
     repoPath,
@@ -571,7 +574,8 @@
       canonicalProvider(d.repo?.provider ?? "") !== canonicalProvider(provider) ||
       resolvedPlatformHost(provider, d.repo?.platform_host) !==
         resolvedPlatformHost(provider, platformHost) ||
-      d.repo?.repo_path !== repoPath
+      d.repo?.repo_path !== repoPath ||
+      (!!platformRepoId && d.repo?.platform_repo_id !== platformRepoId)
     );
   });
 
@@ -591,7 +595,8 @@
       canonicalProvider(detail.repo?.provider ?? "") === canonicalProvider(identity.provider) &&
       resolvedPlatformHost(identity.provider, detail.repo?.platform_host) ===
         resolvedPlatformHost(identity.provider, identity.platformHost) &&
-      detail.repo?.repo_path === identity.repoPath
+      detail.repo?.repo_path === identity.repoPath &&
+      (!platformRepoId || detail.repo?.platform_repo_id === platformRepoId)
     );
   }
 
@@ -614,6 +619,7 @@
             detailStore.refreshPendingCI(owner, name, number, {
               provider,
               platformHost,
+              platformRepoId,
               repoPath,
               workflowApprovalSync,
             });
@@ -632,6 +638,7 @@
   });
 
   let lastDetailLoadIdentity: WorkspaceItemIdentity | null = null;
+  let lastDetailLoadPlatformRepoId: string | undefined;
   let lastDetailLoadAutoSync: DetailSyncMode | undefined;
   let lastDetailLoadWorkflowApprovalSync: boolean | undefined;
 
@@ -641,6 +648,7 @@
     const requestNumber = number;
     const requestProvider = provider;
     const requestPlatformHost = platformHost;
+    const requestPlatformRepoId = platformRepoId;
     const requestRepoPath = repoPath;
     const requestAutoSync = autoSync;
     const requestWorkflowApprovalSync = workflowApprovalSync;
@@ -648,10 +656,12 @@
     const shouldLoad =
       lastDetailLoadIdentity === null
       || !identityEquals(lastDetailLoadIdentity, requestIdentity)
+      || lastDetailLoadPlatformRepoId !== requestPlatformRepoId
       || lastDetailLoadAutoSync !== requestAutoSync
       || lastDetailLoadWorkflowApprovalSync !== requestWorkflowApprovalSync;
     if (shouldLoad) {
       lastDetailLoadIdentity = requestIdentity;
+      lastDetailLoadPlatformRepoId = requestPlatformRepoId;
       lastDetailLoadAutoSync = requestAutoSync;
       lastDetailLoadWorkflowApprovalSync = requestWorkflowApprovalSync;
     }
@@ -666,6 +676,7 @@
             workflowApprovalSync: requestWorkflowApprovalSync,
             provider: requestProvider,
             platformHost: requestPlatformHost,
+            platformRepoId: requestPlatformRepoId,
             repoPath: requestRepoPath,
           },
         );
@@ -677,6 +688,7 @@
         {
           provider: requestProvider,
           platformHost: requestPlatformHost,
+          platformRepoId: requestPlatformRepoId,
           repoPath: requestRepoPath,
         },
       );
@@ -1063,7 +1075,7 @@
       owner,
       name,
       number,
-      { provider, platformHost, repoPath },
+      { provider, platformHost, platformRepoId, repoPath },
       { onSuccess: finish, onFailure: () => finish(false) },
     );
   }
@@ -1718,6 +1730,7 @@
     detailStore.refreshDetailOnly(owner, name, number, {
       provider,
       platformHost,
+      platformRepoId,
       repoPath,
     });
   }
@@ -3150,6 +3163,7 @@
             detailStore.refreshDetailOnly(owner, name, number, {
               provider,
               platformHost,
+              platformRepoId,
               repoPath,
             });
           }}
@@ -3158,6 +3172,7 @@
             detailStore.loadDetail(owner, name, number, {
               provider,
               platformHost,
+              platformRepoId,
               repoPath,
             });
             pulls.loadPulls();
@@ -3310,6 +3325,7 @@
             orderingEvents={timelineEvents}
             {provider}
             {platformHost}
+            {platformRepoId}
             repoOwner={owner}
             repoName={name}
             {repoPath}

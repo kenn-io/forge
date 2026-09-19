@@ -92,7 +92,7 @@
       owner,
       name,
       number,
-      { provider, platformHost, repoPath },
+      { provider, platformHost, platformRepoId, repoPath },
       {
         onFailure: (message) => {
           if (isCurrentManualRefresh(requestGeneration, requestIdentity)) {
@@ -155,6 +155,7 @@
     number: number;
     provider: string;
     platformHost?: string | undefined;
+    platformRepoId?: string | undefined;
     repoPath: string;
     hideStaleWhileLoading?: boolean;
     autoSync?: IssueDetailSyncMode;
@@ -169,6 +170,7 @@
     number,
     provider,
     platformHost,
+    platformRepoId,
     repoPath,
     hideStaleWhileLoading = false,
     autoSync = "background",
@@ -180,6 +182,7 @@
   const routeRef = $derived({
     provider,
     platformHost,
+    platformRepoId,
     owner,
     name,
     repoPath,
@@ -227,6 +230,7 @@
     // detail that is in fact current.
     return canonicalProvider(d.repo?.provider ?? "") !== canonicalProvider(provider)
       || d.repo?.repo_path !== repoPath
+      || (!!platformRepoId && d.repo?.platform_repo_id !== platformRepoId)
       || resolvedPlatformHost(provider, d.repo?.platform_host)
         !== resolvedPlatformHost(provider, platformHost);
   });
@@ -247,7 +251,8 @@
       canonicalProvider(detail.repo?.provider ?? "") === canonicalProvider(identity.provider) &&
       resolvedPlatformHost(identity.provider, detail.repo?.platform_host) ===
         resolvedPlatformHost(identity.provider, identity.platformHost) &&
-      detail.repo?.repo_path === identity.repoPath
+      detail.repo?.repo_path === identity.repoPath &&
+      (!platformRepoId || detail.repo?.platform_repo_id === platformRepoId)
     );
   }
 
@@ -278,6 +283,7 @@
   }
 
   let lastDetailLoadIdentity: WorkspaceItemIdentity | null = null;
+  let lastDetailLoadPlatformRepoId: string | undefined;
   let lastDetailLoadAutoSync: IssueDetailSyncMode | undefined;
 
   $effect(() => {
@@ -286,15 +292,18 @@
     const requestNumber = number;
     const requestProvider = provider;
     const requestPlatformHost = platformHost;
+    const requestPlatformRepoId = platformRepoId;
     const requestRepoPath = repoPath;
     const requestAutoSync = autoSync;
     const requestIdentity = $state.snapshot(itemIdentity);
     const shouldLoad =
       lastDetailLoadIdentity === null
       || !identityEquals(lastDetailLoadIdentity, requestIdentity)
+      || lastDetailLoadPlatformRepoId !== requestPlatformRepoId
       || lastDetailLoadAutoSync !== requestAutoSync;
     if (shouldLoad) {
       lastDetailLoadIdentity = requestIdentity;
+      lastDetailLoadPlatformRepoId = requestPlatformRepoId;
       lastDetailLoadAutoSync = requestAutoSync;
     }
     untrack(() => {
@@ -307,6 +316,7 @@
             sync: requestAutoSync,
             provider: requestProvider,
             platformHost: requestPlatformHost,
+            platformRepoId: requestPlatformRepoId,
             repoPath: requestRepoPath,
           },
         );
@@ -318,6 +328,7 @@
         {
           provider: requestProvider,
           platformHost: requestPlatformHost,
+          platformRepoId: requestPlatformRepoId,
           repoPath: requestRepoPath,
         },
       );
@@ -769,6 +780,7 @@
     issues.loadIssueDetail(owner, name, number, {
       provider,
       platformHost,
+      platformRepoId,
       repoPath,
     });
   }
@@ -1541,6 +1553,7 @@
             events={detail.events ?? []}
             {provider}
             {platformHost}
+            {platformRepoId}
             repoOwner={owner}
             repoName={name}
             {repoPath}

@@ -160,6 +160,64 @@ function mockClient(overrides: Partial<GeneratedClient> = {}): GeneratedClient {
 }
 
 describe("createDetailStore", () => {
+  it("does not install a response from a different repository", async () => {
+    const store = createDetailStore({
+      client: mockClient({ GET: vi.fn().mockResolvedValue({ data: pullDetail("old-head") }) }),
+    });
+    await loadDetail(store, "acme", "widget", 7, {
+      provider: "github",
+      repoPath: "acme/widget",
+      platformRepoId: "replacement-repo-id",
+      sync: false,
+    });
+    expect(store.getDetail()).toBeNull();
+  });
+
+  it.each(["replacement-repo-id", undefined])(
+    "does not restore a pull snapshot for repository %s",
+    async (platformRepoId) => {
+      const failedRead = deferred<{ error: ProblemBody }>();
+      const get = vi
+        .fn()
+        .mockResolvedValueOnce({ data: pullDetail("old-head") })
+        .mockReturnValueOnce(failedRead.promise);
+      const store = createDetailStore({ client: mockClient({ GET: get }) });
+      const options = {
+        provider: "github",
+        repoPath: "acme/widget",
+        platformRepoId: "widget-repo-id",
+        sync: false,
+      } as const;
+      await loadDetail(store, "acme", "widget", 7, options);
+      store.clearDetail();
+      store.loadDetail("acme", "widget", 7, { ...options, platformRepoId });
+      expect(store.getDetail()).toBeNull();
+      failedRead.resolve({ error: { code: ProblemCodes.forbidden, title: "Unavailable", detail: "Cannot refresh" } });
+      await vi.waitFor(() => expect(store.isDetailLoading()).toBe(false));
+      expect(store.getDetail()).toBeNull();
+    },
+  );
+
+  it("does not join an old repository read when the selected repository changes", async () => {
+    const oldRead = deferred<{ data: PullDetail }>();
+    const replacement = pullDetail("replacement-head");
+    replacement.repo.platform_repo_id = "replacement-repo-id";
+    const get = vi.fn().mockReturnValueOnce(oldRead.promise).mockResolvedValue({ data: replacement });
+    const store = createDetailStore({ client: mockClient({ GET: get }) });
+    const options = {
+      provider: "github",
+      repoPath: "acme/widget",
+      platformRepoId: "widget-repo-id",
+      sync: false,
+    } as const;
+    store.loadDetail("acme", "widget", 7, options);
+    await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(1));
+    store.loadDetail("acme", "widget", 7, { ...options, platformRepoId: "replacement-repo-id" });
+    oldRead.resolve({ data: pullDetail("old-head") });
+    await vi.waitFor(() => expect(store.isDetailLoading()).toBe(false));
+    expect(store.getDetail()?.repo.platform_repo_id).toBe("replacement-repo-id");
+  });
+
   it("restores a recently viewed pull before its fresh read and retains its original workspace tick", async () => {
     const freshRead = deferred<{ data: PullDetail }>();
     const get = vi
@@ -168,7 +226,12 @@ describe("createDetailStore", () => {
       .mockResolvedValueOnce({ data: pullDetailFor("other", 8, "other-head") })
       .mockReturnValueOnce(freshRead.promise);
     const store = createDetailStore({ client: mockClient({ GET: get }) });
-    const options = { provider: "github", repoPath: "acme/widget", sync: false } as const;
+    const options = {
+      provider: "github",
+      repoPath: "acme/widget",
+      platformRepoId: "widget-repo-id",
+      sync: false,
+    } as const;
     await loadDetail(store, "acme", "widget", 7, options);
     const originalTick = store.getDetailEnvelopeTick();
     store.clearDetail();
@@ -194,7 +257,12 @@ describe("createDetailStore", () => {
       .mockReturnValueOnce(failedRead.promise)
       .mockImplementation(() => new Promise(() => {}));
     const store = createDetailStore({ client: mockClient({ GET: get }) });
-    const options = { provider: "github", repoPath: "acme/widget", sync: false } as const;
+    const options = {
+      provider: "github",
+      repoPath: "acme/widget",
+      platformRepoId: "widget-repo-id",
+      sync: false,
+    } as const;
     await loadDetail(store, "acme", "widget", 7, options);
     store.clearDetail();
     store.loadDetail("acme", "widget", 7, options);
@@ -219,7 +287,13 @@ describe("createDetailStore", () => {
     const store = createDetailStore({
       client: mockClient({ GET: get, PUT: vi.fn().mockReturnValue(mutation.promise) }),
     });
-    const ref = { provider: "github", owner: "acme", name: "widget", repoPath: "acme/widget" };
+    const ref = {
+      provider: "github",
+      owner: "acme",
+      name: "widget",
+      repoPath: "acme/widget",
+      platformRepoId: "widget-repo-id",
+    };
     await loadDetail(store, "acme", "widget", 7, { ...ref, sync: false });
     store.toggleDetailPRStar(ref, 7, false);
     await vi.waitFor(() => expect(store.getDetail()?.merge_request.Starred).toBe(true));
@@ -239,7 +313,12 @@ describe("createDetailStore", () => {
       .mockResolvedValueOnce({ data: pullDetail("cached-head") })
       .mockImplementation(() => new Promise(() => {}));
     const store = createDetailStore({ client: mockClient({ GET: get }) });
-    const options = { provider: "github", repoPath: "acme/widget", sync: false } as const;
+    const options = {
+      provider: "github",
+      repoPath: "acme/widget",
+      platformRepoId: "widget-repo-id",
+      sync: false,
+    } as const;
     await loadDetail(store, "acme", "widget", 7, options);
     store.loadDetail("acme", "widget", 8, options);
     store.loadDetail("acme", "widget", 7, options);
@@ -343,7 +422,13 @@ describe("createDetailStore", () => {
   });
 
   it("keeps discussion available through incomplete background snapshots but resets for another PR", async () => {
-    const identity = { provider: "github", platformHost: "github.com", repoPath: "acme/widget", sync: false as const };
+    const identity = {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+      platformRepoId: "widget-repo-id",
+      sync: false as const,
+    };
     const incomplete = { ...pullDetail("head"), detail_loaded: false };
     const restoredRead = deferred<{ data: PullDetail }>();
     const get = vi
@@ -412,7 +497,11 @@ describe("createDetailStore", () => {
       client: mockClient({ GET: get }),
       getPage: () => "pulls",
     });
-    await loadDetail(store, "acme", "widget", 7, { ...routeIdentity, sync: false });
+    await loadDetail(store, "acme", "widget", 7, {
+      ...routeIdentity,
+      platformRepoId: "widget-repo-id",
+      sync: false,
+    });
     const displayed = store.getDetail();
 
     // Only the sync timestamp moved: the polling refresh must not swap

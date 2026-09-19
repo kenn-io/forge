@@ -644,6 +644,10 @@ Provider quota is keyed by `IdentityKey` and REST/GraphQL resource, so a user
 response never overwrites an App installation pool
 (`internal/github/quota.go::QuotaRegistry`).
 
+- Prefer valid core response headers over the `/rate_limit` core body: the body
+  can report full capacity while the same response reports exhaustion. GraphQL
+  remains a separate pool (`platform/github/client.go::Client.GetRateLimitSnapshot`).
+
 - Each client transport chain carries a fixed identity: reads spend the route's
   read identity, mutations and notifications its write identity
   (`internal/github/client.go::WithQuotaAccounting`).

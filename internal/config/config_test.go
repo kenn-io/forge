@@ -345,7 +345,7 @@ func TestSaveAppliesNotificationDefaultsForInMemoryConfig(t *testing.T) {
 	require.NoError(err)
 
 	assert.True(reloaded.NotificationsEnabled())
-	assert.Equal(defaultNotificationSyncInterval, reloaded.Notifications.SyncInterval)
+	assert.Equal(time.Hour, reloaded.NotificationSyncDuration())
 	assert.Equal(defaultNotificationPropagationInterval, reloaded.Notifications.PropagationInterval)
 	assert.Equal(25, reloaded.Notifications.BatchSize)
 }

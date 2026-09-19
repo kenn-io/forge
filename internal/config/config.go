@@ -35,7 +35,7 @@ const (
 	defaultActivePRHotWindow               = "0s"
 	defaultActivePRWarmRefreshInterval     = "10m"
 	defaultActivePRWindow                  = "4h"
-	defaultNotificationSyncInterval        = "2m"
+	defaultNotificationSyncInterval        = "1h"
 	defaultNotificationPropagationInterval = "1m"
 	defaultHost                            = "127.0.0.1"
 	defaultPort                            = 8091
@@ -1143,7 +1143,7 @@ issues = true
 workspaces = true
 
 [notifications]
-sync_interval = "2m"
+sync_interval = "1h"
 propagation_interval = "1m"
 batch_size = 25
 

@@ -67,3 +67,52 @@ func TestPublicClientEmptyHostUsesGitHubDotCom(t *testing.T) {
 	assert.Equal(int64(17), repo.GetID())
 	assert.Equal(1, requests)
 }
+
+func TestRateLimitSnapshotPrefersCoreResponseHeaders(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		resource  string
+		remaining int
+		reset     int64
+	}{
+		{"core headers override optimistic body", "core", 0, 2000000000},
+		{"body without headers", "", 5000, 2000003600},
+		{"other resource does not replace core", "search", 5000, 2000003600},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			transport := platform.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
+				assert.Equal("/rate_limit", req.URL.Path)
+				header := make(http.Header)
+				if tc.resource != "" {
+					header.Set("X-RateLimit-Resource", tc.resource)
+					header.Set("X-RateLimit-Limit", "5000")
+					header.Set("X-RateLimit-Remaining", "0")
+					header.Set("X-RateLimit-Reset", "2000000000")
+				}
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     header,
+					Body: io.NopCloser(strings.NewReader(`{"resources":{
+						"core":{"limit":5000,"remaining":5000,"reset":2000003600},
+						"graphql":{"limit":5000,"remaining":4321,"reset":2000001800}
+					}}`)),
+					Request: req,
+				}, nil
+			})
+			httpClient := &http.Client{Transport: transport}
+			client, err := github.NewClient(github.ClientConfig{
+				Read: httpClient, Write: httpClient, Notifications: httpClient, Clock: time.Now,
+			})
+			require.NoError(err)
+			snapshot, err := client.GetRateLimitSnapshot(t.Context())
+			require.NoError(err)
+			require.NotNil(snapshot.Core)
+			require.NotNil(snapshot.GraphQL)
+			assert.Equal(tc.remaining, snapshot.Core.Remaining)
+			assert.Equal(tc.reset, snapshot.Core.Reset.Unix())
+			assert.Equal(4321, snapshot.GraphQL.Remaining)
+		})
+	}
+}

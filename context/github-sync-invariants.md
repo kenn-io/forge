@@ -781,18 +781,18 @@ error or cancellation unchanged and never adopts.
 - One `RunRelay` loop owns the subscription and reconnects with jittered exponential backoff from
   the backoff library, 1s rising to a 30s base ceiling plus jitter, reset only after a stream stayed open. The `[relay]` config has no
   poll interval; `relay.poll_interval` is rejected at load. (`internal/github/relay.go::RunRelay`)
-- Webhook ingress maps `workflow_run` to checks-only hints for explicitly referenced PRs;
-  unassociated runs, `check_run`, `check_suite`, `workflow_job`, and `status` produce no hints.
-  Never fan an unassociated run out across a repository. (`internal/activityrelay/http.go::reduce`)
+- `workflow_run` and `check_run` refresh checks only for explicit PR references;
+  workflows also invalidate the repository's Actions run list. Never fan an unassociated
+  event out across PRs. (`internal/activityrelay/http.go::reduce`)
 - Feed repository IDs are GitHub node IDs, matching the durable catalog; numeric REST IDs need
   a fresh provider resolve and must not become the consumer's lookup key. (`internal/activityrelay/http.go::reduce`)
 - Nothing about a hint is persisted. Received hints wait in a bounded in-memory queue that
   coalesces repeats for one target; a single worker refreshes ready hints so provider work
   never stalls the stream. A hint that cannot run now because of budget, cooldown, or catalog
   state is dropped and left to ordinary syncing. (`internal/github/relay.go::relayQueue`)
-- Batch checks in the relay, never in consumers: one hint per repository/PR per minute,
-  with repeats unable to postpone delivery. Keep pending checks separate from immediate
-  activity and discard them on shutdown. (`internal/activityrelay/broadcast.go::Broadcaster`)
+- Batch Actions in the relay, never in consumers: one checks hint per PR and one runs hint
+  per repository per minute, with repeats unable to postpone delivery. Reserve room for
+  ordinary activity and discard pending hints on shutdown. (`internal/activityrelay/broadcast.go::Broadcaster`)
 - Checks refresh only known open PRs with a head SHA; never upgrade them to full PR syncs.
   (`internal/github/relay.go::refreshRelayHint`)
 - A parent ETag does not establish whether comment content changed; child-change hints require

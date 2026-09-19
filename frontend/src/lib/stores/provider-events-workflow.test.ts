@@ -119,6 +119,34 @@ it.layer(ProviderEventsTest)("provider event checkpoint resume", (it) => {
   );
 });
 
+it.layer(ProviderEventsTest)("workflow run activity", (it) => {
+  it.effect("decodes repository identity for an Actions refresh", () =>
+    Effect.gen(function* () {
+      const probe = yield* ProviderEventsProbe;
+      const events = yield* Queue.unbounded<ProviderEvent>();
+      const fiber = yield* Effect.forkChild(
+        providerEventsProgram({
+          url: "/api/v1/events",
+          onState: () => undefined,
+          onEvent: (event) => Queue.offer(events, event).pipe(Effect.asVoid),
+        }),
+      );
+      const source = yield* probe.awaitSource;
+      emitOpen(source);
+      emitFrame(
+        source,
+        "workflow_runs_changed",
+        { provider: "github", platform_host: "github.com", platform_repo_id: "R_project" },
+        "1",
+      );
+      const event = yield* Queue.take(events);
+      assert.strictEqual(event.type, "workflow_runs_changed");
+      if (event.type === "workflow_runs_changed") assert.strictEqual(event.payload.platform_repo_id, "R_project");
+      yield* Fiber.interrupt(fiber);
+    }),
+  );
+});
+
 it.layer(ProviderEventsTest)("workspace lifecycle events", (it) => {
   it.effect("decodes workspace creation, status, and confirmed deletion events", () =>
     Effect.gen(function* () {

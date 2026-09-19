@@ -55,6 +55,9 @@ service is the supported tool here.
 - Workflow caches and progress belong to provider, host, and permanent repository ID;
   renames retain successful reads and dispatches, while a replacement route occupant gets separate state
   (`frontend/src/lib/stores/workflow-actions.svelte.ts::workflowRepositoryKey`).
+- Relay workflow events refresh only the mounted Actions page's selected repository and
+  workflow; do not add hidden-page fetches or a second batching timer.
+  (`frontend/src/lib/components/actions/ActionsPage.svelte::loadSelectedCatalog`).
 - Reads are latest-wins per repository through generation counters; a stale catalog
   or run response never replaces newer data
   (`frontend/src/lib/stores/workflow-actions.svelte.ts::selectWorkflow`).

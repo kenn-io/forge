@@ -20,6 +20,7 @@
     switch (event.target) {
       case "pull_request": return `PR #${event.number}`;
       case "pull_request_checks": return `PR #${event.number} checks`;
+      case "workflow_runs": return "Workflow runs";
       case "issue": return `Issue #${event.number}`;
       case "repository_refs": return "Branches and tags";
       case "repository": return "Repository";

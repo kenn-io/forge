@@ -99,6 +99,12 @@ export class PRCIRefreshedEvent extends Schema.Class<PRCIRefreshedEvent>("PRCIRe
   warnings: Schema.Array(Schema.String),
 }) {}
 
+export class WorkflowRunsChangedEvent extends Schema.Class<WorkflowRunsChangedEvent>("WorkflowRunsChangedEvent")({
+  provider: Schema.String,
+  platform_host: Schema.String,
+  platform_repo_id: Schema.String,
+}) {}
+
 export class WorkflowDispatchProgressEvent extends Schema.Class<WorkflowDispatchProgressEvent>(
   "WorkflowDispatchProgressEvent",
 )({
@@ -143,7 +149,14 @@ export class SyncStatusEvent extends Schema.Class<SyncStatusEvent>("SyncStatusEv
           Schema.Struct({
             id: Schema.Number,
             repository: Schema.String,
-            target: Schema.Literals(["pull_request", "pull_request_checks", "issue", "repository_refs", "repository"]),
+            target: Schema.Literals([
+              "pull_request",
+              "pull_request_checks",
+              "workflow_runs",
+              "issue",
+              "repository_refs",
+              "repository",
+            ]),
             number: Schema.Number,
             received_at: Schema.String,
           }),
@@ -182,6 +195,7 @@ export type ProviderEvent =
   | { readonly type: "pr_ci_refresh_queued"; readonly payload: PRCIRefreshQueuedEvent }
   | { readonly type: "pr_ci_refreshed"; readonly payload: PRCIRefreshedEvent }
   | { readonly type: "deferred_merge_completed"; readonly payload: DeferredMergeCompletedEvent }
+  | { readonly type: "workflow_runs_changed"; readonly payload: WorkflowRunsChangedEvent }
   | { readonly type: "workflow_dispatch_progress"; readonly payload: WorkflowDispatchProgressEvent };
 
 export type ProviderEventsError = ApiProblemError | InvalidExternalPayload | TransientTransportError;
@@ -292,6 +306,7 @@ const providerEventTypes: ReadonlyArray<ProviderEventType> = [
   "pr_ci_refreshed",
   "deferred_merge_completed",
   "workflow_dispatch_progress",
+  "workflow_runs_changed",
 ];
 
 interface ProviderEventFrame {
@@ -445,6 +460,13 @@ const decodeProviderEvent = Effect.fn("ProviderEvents.decodeFrame")(function* (f
       return {
         type: "deferred_merge_completed",
         payload: yield* Schema.decodeUnknownEffect(DeferredMergeCompletedEvent)(payload).pipe(
+          Effect.mapError((cause) => invalidFrame(frame, cause)),
+        ),
+      } satisfies ProviderEvent;
+    case "workflow_runs_changed":
+      return {
+        type: "workflow_runs_changed",
+        payload: yield* Schema.decodeUnknownEffect(WorkflowRunsChangedEvent)(payload).pipe(
           Effect.mapError((cause) => invalidFrame(frame, cause)),
         ),
       } satisfies ProviderEvent;

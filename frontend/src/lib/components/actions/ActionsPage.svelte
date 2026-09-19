@@ -28,7 +28,7 @@
   import WorkflowRunList from "./WorkflowRunList.svelte";
 
   const runtime = getAppRuntime();
-  const { workflowActions } = getStores();
+  const { workflowActions, events } = getStores();
 
   let summaries = $state.raw<RepoSummaryCard[]>([]);
   let summariesLoading = $state(true);
@@ -159,6 +159,15 @@
     return () => {
       if (!ref) return;
       untrack(() => workflowActions.loadCatalog(ref));
+      return events.subscribeWorkspaceEvents((event) => {
+        if (event.type !== "workflow_runs_changed") return;
+        const identity = {
+          provider: event.payload.provider,
+          platformHost: event.payload.platform_host,
+          platformRepoId: event.payload.platform_repo_id,
+        };
+        if (workflowRepositoryKey(identity) === workflowRepositoryKey(ref)) workflowActions.refreshRuns(ref);
+      });
     };
   }
 

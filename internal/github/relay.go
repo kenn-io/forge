@@ -27,7 +27,7 @@ type RelayStatus struct {
 type RelayActivity struct {
 	ID         int64     `json:"id"`
 	Repository string    `json:"repository"`
-	Target     string    `json:"target" enum:"pull_request,pull_request_checks,issue,repository_refs,repository"`
+	Target     string    `json:"target" enum:"pull_request,pull_request_checks,workflow_runs,issue,repository_refs,repository"`
 	Number     int       `json:"number"`
 	ReceivedAt time.Time `json:"received_at"`
 }
@@ -249,6 +249,8 @@ func (s *Syncer) refreshRelayHint(ctx context.Context, hint activityrelay.Hint) 
 		cost = IssueDetailWorstCase * wireAttemptsPerRequest
 	}
 	switch target {
+	case activityrelay.WorkflowRuns:
+		// Notify open Actions views; only a visible view reads workflow runs.
 	case activityrelay.PullRequest, activityrelay.Issue:
 		if budget := s.budgets[bucket]; budget != nil && !budget.CanSpend(cost) {
 			return nil

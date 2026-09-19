@@ -7,6 +7,7 @@ export type RelayActivityTarget = (typeof RelayActivityTarget)[keyof typeof Rela
 export const RelayActivityTarget = {
   pull_request: "pull_request",
   pull_request_checks: "pull_request_checks",
+  workflow_runs: "workflow_runs",
   issue: "issue",
   repository_refs: "repository_refs",
   repository: "repository",

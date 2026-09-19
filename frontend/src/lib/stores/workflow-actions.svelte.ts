@@ -85,6 +85,7 @@ export interface WorkflowActionsStore {
   readonly loadCatalog: (ref: WorkflowRepositoryRef) => void;
   readonly refreshCatalog: (ref: WorkflowRepositoryRef, workflowId: string) => void;
   readonly selectWorkflow: (ref: WorkflowRepositoryRef, workflowId: string | null) => void;
+  readonly refreshRuns: (ref: WorkflowRepositoryRef) => void;
   readonly loadMoreRuns: (ref: WorkflowRepositoryRef) => void;
   readonly loadJobs: (ref: WorkflowRepositoryRef, runId: string) => void;
   readonly dispatch: (input: WorkflowDispatchInput) => void;
@@ -322,6 +323,7 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
   }
 
   function readRuns(ref: WorkflowRepositoryRef, workflowId: string, cursor: string | undefined): void {
+    const dispatchAtStart = snapshotFor(ref).dispatches[workflowId];
     const generation =
       cursor === undefined ? nextGeneration(ref, "runs") : (generations.get(workflowRepositoryKey(ref))?.runs ?? 0);
     run(
@@ -361,11 +363,13 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
             const items = page.items ?? [];
             const cycle = snapshot.dispatches[workflowId];
             const retainedRun = cycle?.kind === "succeeded" || cycle?.kind === "timed_out" ? cycle.run : undefined;
+            const retainRun =
+              retainedRun && (cycle !== dispatchAtStart || !items.some((run) => run.id === retainedRun.id));
             return {
               ...snapshot,
               runs:
                 cursor === undefined
-                  ? retainedRun
+                  ? retainRun
                     ? mergeNamedRun(items, retainedRun).runs
                     : items
                   : [...snapshot.runs, ...items.filter((item) => !snapshot.runs.some((run) => run.id === item.id))],
@@ -405,6 +409,14 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
     if (!snapshot.selectedWorkflow || !cursor || snapshot.runsPage.exhausted || snapshot.runsPage.loadingMore) return;
     update(ref, (current) => ({ ...current, runsPage: { ...current.runsPage, loadingMore: true } }));
     readRuns(ref, snapshot.selectedWorkflow.id, cursor);
+  }
+
+  function refreshRuns(ref: WorkflowRepositoryRef): void {
+    if (!enabled) return;
+    const snapshot = snapshotFor(ref);
+    if (!snapshot.selectedWorkflow || snapshot.loading.runs || snapshot.runsPage.loadingMore) return;
+    update(ref, (current) => ({ ...current, loading: { ...current.loading, runs: true } }));
+    readRuns(ref, snapshot.selectedWorkflow.id, undefined);
   }
 
   function loadJobs(ref: WorkflowRepositoryRef, runId: string): void {
@@ -559,6 +571,7 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
     loadCatalog,
     refreshCatalog,
     selectWorkflow,
+    refreshRuns,
     loadMoreRuns,
     loadJobs,
     dispatch,

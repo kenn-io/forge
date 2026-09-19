@@ -376,6 +376,30 @@ describe("workflow actions store", () => {
     },
   );
 
+  it("uses fresh run status instead of retaining an older dispatch snapshot on refresh", async () => {
+    fixture.dispatchResponse = () =>
+      jsonResponse(
+        { accepted: true, dispatch_id: "dispatch-1", actor: "maintainer", run: run("run-old", "queued") },
+        202,
+      );
+    store.loadCatalog(ref);
+    await settle();
+    store.selectWorkflow(ref, "deploy.yml");
+    await settle();
+    store.dispatch({
+      ref,
+      workflowId: "deploy.yml",
+      expectedDefinitionSha: "definition-1",
+      dispatchRef: "main",
+      inputs: {},
+    });
+    await settle();
+    expect(store.getRuns(ref)[0]?.status).toBe("queued");
+    store.refreshRuns(ref);
+    await settle();
+    expect(store.getRuns(ref)[0]?.status).toBe("completed");
+  });
+
   it("retains the dispatched run when an older first page finishes afterward", async () => {
     const pageReady = Promise.withResolvers<void>();
     globalThis.fetch = async (input, init) => {

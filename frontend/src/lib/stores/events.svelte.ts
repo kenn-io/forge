@@ -125,6 +125,7 @@ export function createEventsStore(opts: EventsStoreOptions) {
           return opts.onWorkflowDispatchProgress?.(event.payload) ?? Effect.void;
         case "workspace_diff_ready":
         case "workspace_diff_changed":
+        case "workflow_runs_changed":
           return Effect.void;
       }
     })();

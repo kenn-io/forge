@@ -41490,6 +41490,7 @@ const (
 	RelayActivityTargetPullRequestChecks RelayActivityTarget = "pull_request_checks"
 	RelayActivityTargetRepository        RelayActivityTarget = "repository"
 	RelayActivityTargetRepositoryRefs    RelayActivityTarget = "repository_refs"
+	RelayActivityTargetWorkflowRuns      RelayActivityTarget = "workflow_runs"
 )
 
 type SyncStatusLastErrorCode string

@@ -6787,6 +6787,7 @@ components:
           enum:
             - pull_request
             - pull_request_checks
+            - workflow_runs
             - issue
             - repository_refs
             - repository

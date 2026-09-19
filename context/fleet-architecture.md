@@ -410,6 +410,9 @@ change-driven and idle-cheap:
 - Leaving requires a revoked enrollment and a stopped daemon; preserve current local execution
   state, not a pre-enrollment database. Hub-owned provider state and credentials stay on the hub
   (`cmd/kenn-forge/fleet_leave.go::leaveFleet`).
+- A revoked local receipt alone does not prove hub cleanup finished after forced abort;
+  leave requires the matching hub binding before deleting the revocation credential
+  (`cmd/kenn-forge/fleet_leave.go::leaveFleet`).
 - Enrollment-managed membership and ordinary fleet settings can reload live.
   Role, local and hub origins, API authentication, and
   session-monitor policy report `restart_required` until the running process

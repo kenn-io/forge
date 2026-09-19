@@ -718,6 +718,10 @@ starting Forge. Sync its repositories, then check its local workspaces and
 terminals. Provider state created on the hub stays there. Pending enrollments
 use `fleet abort-preparation`, not `fleet leave`.
 
+After `abort-preparation --force`, finish pending revocation on the hub before
+disabling federation. `leave` must not remove the credential needed for that
+cleanup; an already-disabled standalone instance is left unchanged.
+
 ## Upgrade federation protocol 3 to 4
 
 A protocol-3 fleet needs a one-time data migration before protocol-4 binaries

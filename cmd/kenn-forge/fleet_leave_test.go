@@ -118,6 +118,46 @@ func TestFleetLeaveRejectsUnrevokedEnrollmentOrRunningDaemon(t *testing.T) {
 	}
 }
 
+func TestFleetLeavePreservesPendingHubCleanupWithoutBinding(t *testing.T) {
+	for _, enabled := range []bool{true, false} {
+		t.Run("federation-enabled="+strconv.FormatBool(enabled), func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			path, cfg, _ := fleetLeaveFixture(t, federation.EnrollmentRevoked)
+			// Forced abort restores standalone role but keeps this credential for
+			// hub-initiated revocation. Disabling federation is not a cleanup receipt.
+			cfg.Fleet.Role = config.FleetRoleHub
+			cfg.Fleet.Hub = nil
+			cfg.Fleet.Enabled = enabled
+			require.NoError(cfg.Save(path))
+			require.NoError(dbtest.OpenAt(t, cfg.DBPath()).Close())
+			credentials, err := federationauth.Open(federationauth.DefaultStorePath(cfg.DataDir))
+			require.NoError(err)
+			require.NoError(credentials.StoreInbound(startupHubID, "cleanup-token",
+				[]federationauth.Scope{federationauth.ScopeEnrollmentActivate}))
+			_, authenticated := credentials.Authenticate("cleanup-token")
+			require.True(authenticated)
+
+			command := newFleetCommand(fleetCLIOptions{Stdout: io.Discard})
+			command.SetArgs([]string{"leave", "--config", path})
+			err = command.ExecuteContext(t.Context())
+			if enabled {
+				require.ErrorContains(err, "hub binding")
+			} else {
+				require.NoError(err) // Already disabled: no cleanup, only an idempotent no-op.
+			}
+			credentials, err = federationauth.Open(credentials.Path())
+			require.NoError(err)
+			principal, authenticated := credentials.Authenticate("cleanup-token")
+			require.True(authenticated, "leave must preserve the hub's pending cleanup credential")
+			assert.True(principal.Has(federationauth.ScopeEnrollmentActivate))
+			unchanged, err := config.Load(path)
+			require.NoError(err)
+			assert.Equal(cfg.Fleet, unchanged.Fleet)
+		})
+	}
+}
+
 func fleetLeaveFixture(t *testing.T, state federation.EnrollmentState) (string, *config.Config, *federation.Store) {
 	t.Helper()
 	require := require.New(t)

@@ -69,7 +69,14 @@ func leaveFleet(ctx context.Context, configPath string) (err error) {
 			return errors.New("revoke this hub's enrollments before leaving")
 		}
 	}
-	if cfg.Fleet.Hub != nil && (cfg.Fleet.Hub.NodeID != local.HubID || cfg.Fleet.Hub.BaseURL != local.HubURL) {
+	if cfg.Fleet.Hub == nil {
+		if !cfg.Fleet.Enabled && cfg.Fleet.RoleOrDefault() == config.FleetRoleHub {
+			// Already standalone. Do not consume a forced-abort cleanup credential.
+			return nil
+		}
+		return errors.New("no configured hub binding; after a forced abort, finish pending revocation on the hub instead")
+	}
+	if cfg.Fleet.Hub.NodeID != local.HubID || cfg.Fleet.Hub.BaseURL != local.HubURL {
 		return errors.New("fleet hub does not match the revoked enrollment")
 	}
 	if _, err := os.Stat(cfg.DBPath()); err != nil {

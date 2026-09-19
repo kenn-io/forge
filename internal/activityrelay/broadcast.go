@@ -5,8 +5,8 @@ import (
 	"time"
 )
 
-// subscriberBuffer bounds how far one connection may fall behind. A full
-// buffer drops hints for that subscriber; ordinary syncing covers the gap.
+// subscriberBuffer reserves room for ordinary activity beyond one full check
+// batch. A full buffer drops hints; ordinary syncing covers the gap.
 const subscriberBuffer = 256
 
 const (
@@ -25,7 +25,7 @@ type Broadcaster struct {
 
 // Subscribe registers a receiver. The returned cancel function releases it.
 func (b *Broadcaster) Subscribe() (<-chan Hint, func()) {
-	ch := make(chan Hint, subscriberBuffer)
+	ch := make(chan Hint, maxPendingChecks+subscriberBuffer)
 	b.mu.Lock()
 	if b.subscribers == nil {
 		b.subscribers = make(map[chan Hint]struct{})
@@ -72,6 +72,11 @@ func (b *Broadcaster) Publish(hints []Hint) {
 
 func (b *Broadcaster) publishLocked(hint Hint) {
 	for ch := range b.subscribers {
+		// Later batches must also leave room for ordinary activity when a
+		// subscriber has not drained the previous batch.
+		if hint.Target == PullRequestChecks && len(ch) >= maxPendingChecks {
+			continue
+		}
 		select {
 		case ch <- hint:
 		default:

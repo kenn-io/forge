@@ -50,6 +50,8 @@ const (
 	// relayQueueLimit bounds refresh work waiting on provider budget; hints
 	// beyond it are dropped and covered by ordinary syncing.
 	relayQueueLimit = 1024
+	// Workflow notifications have no ordinary-sync fallback.
+	relayWorkflowReserve = 256
 )
 
 func (s *Syncer) updateRelayStatus(update func(*RelayStatus)) {
@@ -153,7 +155,11 @@ type relayQueue struct {
 
 func (q *relayQueue) push(hint activityrelay.Hint) {
 	q.mu.Lock()
-	if _, waiting := q.pending[hint]; !waiting && len(q.order) < relayQueueLimit {
+	limit := relayQueueLimit
+	if hint.Target == activityrelay.WorkflowRuns {
+		limit += relayWorkflowReserve
+	}
+	if _, waiting := q.pending[hint]; !waiting && len(q.order) < limit {
 		if q.pending == nil {
 			q.pending = make(map[activityrelay.Hint]struct{})
 		}

@@ -286,6 +286,35 @@ func TestRelayQueueCoalescesAndSkipsDisabledSync(t *testing.T) {
 	assert.Nil(syncer.Status().Relay)
 }
 
+func TestRelayQueueReservesRoomForWorkflowUpdates(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	queue := &relayQueue{signal: make(chan struct{}, 1)}
+	for number := 1; number <= 1025; number++ {
+		queue.push(activityrelay.Hint{Provider: "github", Host: "github.com", RepositoryID: "R_project", Target: activityrelay.PullRequestChecks, Number: number})
+	}
+	var expected []activityrelay.Hint
+	for i := range 257 {
+		hint := activityrelay.Hint{Provider: "github", Host: "github.com", RepositoryID: "R_project_" + strconv.Itoa(i), Target: activityrelay.WorkflowRuns}
+		queue.push(hint)
+		queue.push(hint)
+		if i < 256 {
+			expected = append(expected, hint)
+		}
+	}
+	var workflows []activityrelay.Hint
+	var checks int
+	for hint, ok := queue.pop(); ok; hint, ok = queue.pop() {
+		if hint.Target == activityrelay.WorkflowRuns {
+			workflows = append(workflows, hint)
+		} else {
+			checks++
+		}
+	}
+	require.Equal(expected, workflows, "workflow updates have bounded, coalesced space beyond a full check queue")
+	require.Equal(1024, checks)
+}
+
 func TestRelayRepositoryHintsRespectBudgetAdmission(t *testing.T) {
 	t.Parallel()
 	for _, target := range []string{activityrelay.Repository, activityrelay.RepositoryRefs} {

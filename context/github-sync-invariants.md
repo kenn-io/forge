@@ -793,6 +793,9 @@ error or cancellation unchanged and never adopts.
 - Batch Actions in the relay, never in consumers: one checks hint per PR and one runs hint
   per repository per minute, with repeats unable to postpone delivery. Reserve room for
   ordinary activity and discard pending hints on shutdown. (`internal/activityrelay/broadcast.go::Broadcaster`)
+- Reserve bounded workflow-list capacity in pending relay batches, subscriber buffers, and
+  consumer queues; PR-check traffic must not crowd out hints with no ordinary-sync fallback.
+  (`internal/activityrelay/broadcast.go`, `internal/github/relay.go::relayQueue`)
 - Checks refresh only known open PRs with a head SHA; never upgrade them to full PR syncs.
   (`internal/github/relay.go::refreshRelayHint`)
 - Workflow-list hints only notify foreground views, so background quota reserves must not

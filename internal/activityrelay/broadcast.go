@@ -6,12 +6,13 @@ import (
 )
 
 // subscriberBuffer reserves room for ordinary activity beyond one full Actions
-// batch. A full buffer drops hints; ordinary syncing covers the gap.
+// batch. A full buffer drops hints.
 const subscriberBuffer = 256
 
 const (
 	actionsBatchInterval = time.Minute
 	maxPendingActions    = 1024
+	workflowReserve      = 256 // PR-check bursts cannot consume these workflow slots.
 )
 
 // Broadcaster fans hints out to every open subscription. Its zero value is
@@ -25,7 +26,7 @@ type Broadcaster struct {
 
 // Subscribe registers a receiver. The returned cancel function releases it.
 func (b *Broadcaster) Subscribe() (<-chan Hint, func()) {
-	ch := make(chan Hint, maxPendingActions+subscriberBuffer)
+	ch := make(chan Hint, maxPendingActions+workflowReserve+subscriberBuffer)
 	b.mu.Lock()
 	if b.subscribers == nil {
 		b.subscribers = make(map[chan Hint]struct{})
@@ -49,8 +50,12 @@ func (b *Broadcaster) Publish(hints []Hint) {
 			b.publishLocked(hint)
 			continue
 		}
-		if len(b.actions) >= maxPendingActions {
-			continue // Ordinary syncing covers overflow; other activity has no delay.
+		limit := maxPendingActions
+		if hint.Target == WorkflowRuns {
+			limit += workflowReserve
+		}
+		if len(b.actions) >= limit {
+			continue
 		}
 		if b.actions == nil {
 			b.actions = make(map[Hint]struct{})
@@ -60,8 +65,13 @@ func (b *Broadcaster) Publish(hints []Hint) {
 			b.actionsTimer = time.AfterFunc(actionsBatchInterval, func() {
 				b.mu.Lock()
 				defer b.mu.Unlock()
-				for hint := range b.actions {
-					b.publishLocked(hint)
+				// Fill the check allowance before using the reserved workflow slots.
+				for _, target := range []string{PullRequestChecks, WorkflowRuns} {
+					for hint := range b.actions {
+						if hint.Target == target {
+							b.publishLocked(hint)
+						}
+					}
 				}
 				clear(b.actions)
 				b.actionsTimer = nil
@@ -71,10 +81,14 @@ func (b *Broadcaster) Publish(hints []Hint) {
 }
 
 func (b *Broadcaster) publishLocked(hint Hint) {
+	limit := maxPendingActions
+	if hint.Target == WorkflowRuns {
+		limit += workflowReserve
+	}
 	for ch := range b.subscribers {
 		// Later batches must also leave room for ordinary activity when a
 		// subscriber has not drained the previous batch.
-		if (hint.Target == PullRequestChecks || hint.Target == WorkflowRuns) && len(ch) >= maxPendingActions {
+		if (hint.Target == PullRequestChecks || hint.Target == WorkflowRuns) && len(ch) >= limit {
 			continue
 		}
 		select {

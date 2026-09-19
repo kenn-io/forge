@@ -405,7 +405,7 @@ func TestPendingChecksDoNotCrowdOutActivity(t *testing.T) {
 	}
 }
 
-func TestFlushedChecksLeaveRoomForActivity(t *testing.T) {
+func TestFlushedChecksLeaveRoomForWorkflowAndActivity(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []struct {
 		name    string
@@ -425,19 +425,23 @@ func TestFlushedChecksLeaveRoomForActivity(t *testing.T) {
 				for i := range checks {
 					checks[i] = Hint{Provider: "github", Host: "github.com", RepositoryID: "R_project", Target: PullRequestChecks, Number: i + 1}
 				}
-				for range tt.batches {
+				workflow := Hint{Provider: "github", Host: "github.com", RepositoryID: "R_project", Target: WorkflowRuns}
+				for i := range tt.batches {
 					feed.Publish(checks)
+					if i == tt.batches-1 {
+						feed.Publish([]Hint{workflow})
+					}
 					time.Sleep(time.Minute)
 					synctest.Wait()
 				}
 				ordinary := Hint{Provider: "github", Host: "github.com", RepositoryID: "R_project", Target: PullRequest, Number: 1}
 				feed.Publish([]Hint{ordinary})
-				require.Len(t, hints, len(checks)+1, "a full batch must reach the subscriber and leave room for immediate activity")
-				received := make([]Hint, len(checks))
+				require.Len(t, hints, len(checks)+2, "checks must leave room for workflow updates and immediate activity")
+				received := make([]Hint, len(checks)+1)
 				for i := range received {
 					received[i] = <-hints
 				}
-				assert.ElementsMatch(t, checks, received)
+				assert.ElementsMatch(t, append(checks, workflow), received)
 				assert.Equal(t, ordinary, <-hints)
 			})
 		})

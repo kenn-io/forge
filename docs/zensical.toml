@@ -23,6 +23,7 @@ nav = [
     {"Read and edit Docs" = "workflows/docs.md"},
   ]},
   {"Federated fleet" = "federated-fleet.md"},
+  {"Shared Linux host" = "shared-host.md"},
   {"Faster GitHub updates" = "activity-relay.md"},
   {"Integrations" = "integrations.md"},
   {"Settings" = "settings.md"},

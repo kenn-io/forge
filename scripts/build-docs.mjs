@@ -19,6 +19,7 @@ const publishedFiles = new Set([
   "kenn-forge-mcp.md",
   "quickstart.md",
   "settings.md",
+  "shared-host.md",
   path.join("overrides", "main.html"),
   path.join("stylesheets", "extra.css"),
   "troubleshooting.md",

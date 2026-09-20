@@ -132,6 +132,24 @@ export function createSyncStore(opts: SyncStoreOptions) {
 
   const refreshSyncStatusEffect = Effect.suspend(refreshSyncStatusProgram);
 
+  // Rate limits never arrive through sync status events, so this read is not
+  // tied to refreshGeneration: a status event that lands while it is in flight
+  // must not discard it. Use it after a change that moves a quota or ceiling.
+  function refreshRateLimits(): void {
+    runtime.runCommand(
+      rateLimitsRead().pipe(
+        Effect.map((next) => {
+          rateLimits = next;
+        }),
+      ),
+      {
+        operation: "refresh rate limits",
+        safeContext: {},
+        onFailure: () => {},
+      },
+    );
+  }
+
   function reconcileSyncStatusProgram() {
     const generation = refreshGeneration;
     return Effect.gen(function* () {
@@ -285,6 +303,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
     onNextSyncComplete,
     subscribeSyncComplete,
     refreshSyncStatus,
+    refreshRateLimits,
     refreshSyncStatusEffect,
     reconcileSyncStatusEffect,
     setSyncStatus,

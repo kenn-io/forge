@@ -254,7 +254,7 @@ describe("opt-in workflow Actions route", () => {
       expect(getComputedStyle(layout!).flexDirection).toBe("column");
       expect(
         Array.from(document.querySelectorAll(".actions-layout h2"), (heading) => heading.textContent?.trim()),
-      ).toEqual(["Workflows", "Dispatch", "Recent runs"]);
+      ).toEqual(["Repos", "Workflows", "Dispatch", "Recent runs"]);
       expect(document.querySelector<HTMLElement>(".actions-page")!.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
     }, WAIT);
   });
@@ -294,14 +294,23 @@ describe("opt-in workflow Actions route", () => {
       const row = document.querySelector<HTMLElement>(".run-row")!;
       const disclosure = document.querySelector<HTMLElement>(".run-disclosure")!;
       const providerLink = row.querySelector<HTMLAnchorElement>("a")!;
-      const metadata = row.querySelectorAll<HTMLElement>(".run-ref, .run-actor, .run-time, .run-status");
-      expect(metadata).toHaveLength(4);
       expect(pageElement.scrollWidth).toBeLessThanOrEqual(pageElement.clientWidth);
       expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth);
       expect(disclosure.scrollWidth).toBeLessThanOrEqual(disclosure.clientWidth);
       expect(providerLink.getBoundingClientRect().right).toBeLessThanOrEqual(row.getBoundingClientRect().right);
-      for (const item of metadata) {
-        expect(item.getBoundingClientRect().right).toBeLessThanOrEqual(disclosure.getBoundingClientRect().right);
+    }, WAIT);
+
+    // Narrow panes collapse table columns, so the expanded detail must carry the same fields.
+    await page.getByRole("button", { name: /Run 99/ }).click();
+    await vi.waitFor(() => {
+      const pageElement = document.querySelector<HTMLElement>(".actions-page")!;
+      const detail = document.querySelector<HTMLElement>(".run-detail")!;
+      expect(detail.textContent).toContain("feature/an-intentionally-long-reference-that-must-not-expand-the-page");
+      expect(detail.textContent).toContain("maintainer-with-an-intentionally-long-provider-identity");
+      expect(detail.textContent).toContain("0123456");
+      expect(pageElement.scrollWidth).toBeLessThanOrEqual(pageElement.clientWidth);
+      for (const item of detail.querySelectorAll<HTMLElement>("dd")) {
+        expect(item.getBoundingClientRect().right).toBeLessThanOrEqual(detail.getBoundingClientRect().right);
       }
     }, WAIT);
   });

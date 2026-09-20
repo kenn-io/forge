@@ -99,21 +99,22 @@ test("runs typed Actions workflows and applies pull request ref defaults until t
   const dispatchedRun = page.getByRole("button", { name: "Run 43 Release" });
   await expect(dispatchedRun).toBeVisible();
   await expect(dispatchedRun).toContainText("#43");
-  await expect(dispatchedRun).toContainText("main");
-  await expect(dispatchedRun).toContainText("fixture-viewer");
-  await expect(dispatchedRun).toContainText("in_progress");
+  const dispatchedRow = page.getByRole("row").filter({ has: dispatchedRun });
+  await expect(dispatchedRow).toContainText("main");
+  await expect(dispatchedRow).toContainText("fixture-viewer");
+  await expect(dispatchedRow).toContainText("in progress");
   await dispatchedRun.click();
 
   const jobs = page.getByLabel("Jobs for run 43");
   await expect(jobs).toBeVisible();
   const publishJob = jobs.getByRole("button", { name: /publish-release/ });
-  await expect(publishJob).toContainText("in_progress");
+  await expect(publishJob).toContainText("in progress");
   await publishJob.click();
   const steps = jobs.getByRole("list", { name: "publish-release steps" });
   await expect(steps.getByText("Prepare")).toBeVisible();
-  await expect(steps.getByText("completed · success")).toBeVisible();
+  await expect(steps.getByText("success", { exact: true })).toBeVisible();
   await expect(steps.getByText("Publish")).toBeVisible();
-  await expect(steps.getByText("in_progress", { exact: true })).toBeVisible();
+  await expect(steps.getByText("in progress", { exact: true })).toBeVisible();
 
   const sameRepoDialog = await openReleaseFromPull(page, 1);
   await expect(sameRepoDialog.getByRole("textbox", { name: "Git ref" })).toHaveValue("feature/caching");

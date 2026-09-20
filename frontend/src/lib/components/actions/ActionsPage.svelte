@@ -1,5 +1,13 @@
 <script lang="ts">
-  import { ScrollBox } from "@kenn-io/kit-ui";
+  import {
+    Button,
+    Chip,
+    FilterDropdown,
+    ScrollBox,
+    SearchInput,
+    SplitResizeHandle,
+    type SplitResizeEvent,
+  } from "@kenn-io/kit-ui";
   import { Effect } from "effect";
   import { onMount, untrack } from "svelte";
   import type { Attachment } from "svelte/attachments";
@@ -20,6 +28,16 @@
     type RepoSummaryReadError,
   } from "../repositories/repo-summary-workflow.js";
   import { getGlobalRepo, parseRepoFilterValue } from "../../stores/filter.svelte.js";
+  import GroupedSidebarSection from "../shared/GroupedSidebarSection.svelte";
+  import {
+    actionsPaneBounds,
+    clampPaneWidth,
+    fitPaneWidths,
+    loadPaneWidths,
+    savePaneWidths,
+    type ActionsPane,
+  } from "./actions-pane-widths.js";
+  import { workflowStatusPresentation } from "./workflow-run-status.js";
   import WorkflowDispatchForm, { type WorkflowDispatchRequest } from "./WorkflowDispatchForm.svelte";
   import {
     workflowActionsErrorMessage,
@@ -54,6 +72,93 @@
   const catalog = $derived(snapshot?.catalog ?? null);
   const selectedWorkflow = $derived(snapshot?.selectedWorkflow ?? null);
   const showRepositoryRail = $derived(capableSummaries.length > 1 || unsupportedSummaries.length > 0);
+
+  type RailSort = "name" | "activity";
+  const railSortOptions: { value: RailSort; label: string }[] = [
+    { value: "name", label: "Name" },
+    { value: "activity", label: "Recent activity" },
+  ];
+  let railSort = $state<RailSort>("name");
+  let railSearch = $state("");
+  let collapsedGroups = $state<Record<string, boolean>>({});
+
+  const railSortLabel = $derived(railSortOptions.find((option) => option.value === railSort)?.label ?? "Name");
+
+  const railSortSections = $derived([
+    {
+      title: "Sorting",
+      items: railSortOptions.map((option) => ({
+        id: option.value,
+        label: option.label,
+        active: railSort === option.value,
+        closeOnSelect: true,
+        onSelect: () => { railSort = option.value; },
+      })),
+    },
+  ]);
+
+  function railOrder(list: RepoSummaryCard[]): RepoSummaryCard[] {
+    const query = railSearch.trim().toLowerCase();
+    const matches = query === ""
+      ? list
+      : list.filter((summary) => repoKey(summary).toLowerCase().includes(query));
+    return [...matches].sort((a, b) =>
+      (railSort === "activity"
+        ? (b.most_recent_activity_at ?? "").localeCompare(a.most_recent_activity_at ?? "")
+        : 0)
+      || a.name.localeCompare(b.name));
+  }
+
+  function ownerLabel(summary: RepoSummaryCard): string {
+    return repoKey(summary).slice(0, -(summary.name.length + 1));
+  }
+
+  const railRepositories = $derived(railOrder(capableSummaries));
+  const railUnsupported = $derived(railOrder(unsupportedSummaries));
+  // Owners only earn a group header when there is more than one to tell apart.
+  const railGroups = $derived.by(() => {
+    const groups: { label: string; items: RepoSummaryCard[] }[] = [];
+    for (const summary of railRepositories) {
+      const label = ownerLabel(summary);
+      const group = groups.find((candidate) => candidate.label === label);
+      if (group) group.items.push(summary);
+      else groups.push({ label, items: [summary] });
+    }
+    return groups.sort((a, b) => a.label.localeCompare(b.label));
+  });
+  const groupByOwner = $derived(new Set(capableSummaries.map(ownerLabel)).size > 1);
+
+  // Only repositories whose runs were loaded this session have a known state.
+  function latestRunStatus(summary: RepoSummaryCard) {
+    const ref = workflowRef(summary);
+    const latest = ref ? workflowActions.getRuns(ref)[0] : undefined;
+    return latest ? workflowStatusPresentation(latest.status, latest.conclusion) : null;
+  }
+
+  const sortedWorkflows = $derived(
+    [...(catalog?.workflows ?? [])].sort((a, b) => Number(b.available) - Number(a.available)),
+  );
+
+  let requestedWidths = $state(loadPaneWidths());
+  let layoutWidth = $state(0);
+  let resizeStartWidth = 0;
+  const visiblePanes = $derived<ActionsPane[]>(
+    showRepositoryRail ? ["rail", "catalog", "dispatch"] : ["catalog", "dispatch"],
+  );
+  const paneWidths = $derived(fitPaneWidths(requestedWidths, layoutWidth, visiblePanes));
+
+  function startResize(pane: ActionsPane): void {
+    resizeStartWidth = paneWidths[pane];
+  }
+
+  function resize(pane: ActionsPane, event: SplitResizeEvent): void {
+    requestedWidths[pane] = clampPaneWidth(pane, resizeStartWidth + event.delta);
+  }
+
+  function endResize(): void {
+    requestedWidths = { ...paneWidths };
+    savePaneWidths(requestedWidths);
+  }
 
   function supportsWorkflowActions(summary: RepoSummaryCard): boolean {
     const capabilities = summary.repo.capabilities;
@@ -173,16 +278,48 @@
 
 </script>
 
+{#snippet repositoryRow(summary: RepoSummaryCard)}
+  {@const selected = summary === selectedSummary}
+  {@const latest = latestRunStatus(summary)}
+  <button
+    type="button"
+    class="rail-row"
+    class:selected
+    aria-current={selected ? "true" : undefined}
+    title={repoKey(summary)}
+    onclick={() => selectRepository(summary)}
+  >
+    <span class="rail-row__name">{summary.name}</span>
+    {#if !groupByOwner}<small class="rail-row__owner">{ownerLabel(summary)}</small>{/if}
+    {#if latest}
+      <span class="rail-row__status" data-tone={latest.tone} title={`Latest run: ${latest.label}`}>
+        <span class="kit-sr-only">Latest run: {latest.label}</span>
+      </span>
+    {/if}
+  </button>
+{/snippet}
+
+{#snippet paneHandle(pane: ActionsPane, label: string)}
+  <SplitResizeHandle
+    class="actions-resize-handle"
+    ariaLabel={label}
+    orientation="horizontal"
+    ariaValueMin={actionsPaneBounds[pane].min}
+    ariaValueMax={actionsPaneBounds[pane].max}
+    ariaValueNow={paneWidths[pane]}
+    onResizeStart={() => startResize(pane)}
+    onResize={(event) => resize(pane, event)}
+    onResizeEnd={endResize}
+  />
+{/snippet}
+
 <section
   class="actions-page"
   aria-labelledby="actions-title"
   {@attach loadSelectedCatalog(selectedRef)}
 >
   <header class="actions-page__header">
-    <div>
-      <h1 id="actions-title">Actions</h1>
-      <p>Run manual provider workflows and inspect recent runs.</p>
-    </div>
+    <h1 id="actions-title">Actions</h1>
     {#if selectedSummary}
       <span class="actions-page__selection" title={selectedSummary.repo.repo_path}>
         {repoKey(selectedSummary)}
@@ -195,7 +332,7 @@
   {:else if summariesError}
     <div class="actions-page__state actions-page__state--error" role="alert">
       <span>{summariesError}</span>
-      <button type="button" onclick={loadSummaries}>Retry</button>
+      <Button size="sm" surface="soft" onclick={loadSummaries}>Retry</Button>
     </div>
   {:else if filteredSummaries.length === 0}
     <div class="actions-page__state">No repositories match the current repository filter.</div>
@@ -210,43 +347,93 @@
       </ul>
     </div>
   {:else}
-    <div class:actions-layout--with-rail={showRepositoryRail} class="actions-layout">
+    <div
+      class="actions-layout"
+      class:actions-layout--with-rail={showRepositoryRail}
+      bind:clientWidth={layoutWidth}
+      style:--actions-rail-width={`${paneWidths.rail}px`}
+      style:--actions-catalog-width={`${paneWidths.catalog}px`}
+      style:--actions-dispatch-width={`${paneWidths.dispatch}px`}
+    >
       {#if showRepositoryRail}
         <nav class="repository-rail" aria-label="Actions repositories">
+          <header class="pane-heading">
+            <h2>Repos</h2>
+            <Chip size="xs" tone="muted" uppercase={false}>{capableSummaries.length}</Chip>
+            <span class="pane-heading__tools">
+              <FilterDropdown
+                label={railSortLabel}
+                showBadge={false}
+                sections={railSortSections}
+                title="Sort repositories"
+                minWidth="180px"
+                align="end"
+                icon="sort"
+              />
+            </span>
+          </header>
+          <div class="rail-search">
+            <SearchInput
+              bind:value={railSearch}
+              size="sm"
+              block
+              placeholder="Search repositories..."
+              ariaLabel="Search Actions repositories"
+            />
+          </div>
           <ScrollBox label="Actions repositories">
             <div class="repository-list">
-              {#each capableSummaries as summary (repoStateKey(summary))}
-                {@const selected = summary === selectedSummary}
-                <button
-                  type="button"
-                  class:selected
-                  aria-current={selected ? "true" : undefined}
-                  onclick={() => selectRepository(summary)}
+              {#if groupByOwner}
+                {#each railGroups as group (group.label)}
+                  <GroupedSidebarSection
+                    label={group.label}
+                    count={group.items.length}
+                    collapsed={collapsedGroups[group.label] === true}
+                    onclick={() => { collapsedGroups[group.label] = collapsedGroups[group.label] !== true; }}
+                  >
+                    {#each group.items as summary (repoStateKey(summary))}
+                      {@render repositoryRow(summary)}
+                    {/each}
+                  </GroupedSidebarSection>
+                {/each}
+              {:else}
+                {#each railRepositories as summary (repoStateKey(summary))}
+                  {@render repositoryRow(summary)}
+                {/each}
+              {/if}
+              {#if railRepositories.length === 0 && railUnsupported.length === 0}
+                <p class="pane-state">No repositories match "{railSearch.trim()}".</p>
+              {/if}
+              {#if railUnsupported.length > 0}
+                <GroupedSidebarSection
+                  label="No workflow support"
+                  count={railUnsupported.length}
+                  collapsed={collapsedGroups.unsupported === true}
+                  onclick={() => { collapsedGroups.unsupported = collapsedGroups.unsupported !== true; }}
                 >
-                  <span>{summary.name}</span>
-                  <small>{summary.owner}</small>
-                </button>
-              {/each}
-              {#each unsupportedSummaries as summary (repoStateKey(summary))}
-                <div
-                  class="repository-unsupported"
-                  aria-label={`${repoKey(summary)} does not support workflow Actions`}
-                  role="note"
-                >
-                  <strong>{summary.name}</strong>
-                  <span>{summary.owner}</span>
-                  <small>does not support workflow Actions</small>
-                </div>
-              {/each}
+                  {#each railUnsupported as summary (repoStateKey(summary))}
+                    <div
+                      class="rail-row rail-row--unsupported"
+                      aria-label={`${repoKey(summary)} does not support workflow Actions`}
+                      title={`${repoKey(summary)} does not support workflow Actions`}
+                      role="note"
+                    >
+                      <span class="rail-row__name">{summary.name}</span>
+                      <small class="rail-row__owner">{ownerLabel(summary)}</small>
+                    </div>
+                  {/each}
+                </GroupedSidebarSection>
+              {/if}
             </div>
           </ScrollBox>
         </nav>
+        {@render paneHandle("rail", "Resize Actions repositories")}
       {/if}
 
       <section class="workflow-catalog" aria-labelledby="workflow-list-title">
         <header class="pane-heading">
           <h2 id="workflow-list-title">Workflows</h2>
-          {#if catalog}<span>{catalog.workflows?.length ?? 0}</span>{/if}
+          {#if catalog}<Chip size="xs" tone="muted" uppercase={false}>{catalog.workflows?.length ?? 0}</Chip>{/if}
         </header>
         <ScrollBox label="Manual workflows">
           {#if snapshot?.loading.catalog || !snapshot}
@@ -254,23 +441,29 @@
           {:else if snapshot.error && !catalog}
             <div class="pane-state pane-state--error" role="alert">
               <p>Could not load workflows.</p>
-              <button type="button" onclick={() => selectedRef && workflowActions.loadCatalog(selectedRef)}>Retry workflows</button>
+              <Button size="sm" surface="soft" onclick={() => selectedRef && workflowActions.loadCatalog(selectedRef)}>Retry workflows</Button>
             </div>
-          {:else if (catalog?.workflows?.length ?? 0) === 0}
+          {:else if sortedWorkflows.length === 0}
             <p class="pane-state">No manual workflows are available.</p>
           {:else}
             <ul class="workflow-list">
-              {#each catalog?.workflows ?? [] as workflow (workflow.id)}
+              {#each sortedWorkflows as workflow (workflow.id)}
                 <li>
                   <button
                     type="button"
+                    class="rail-row workflow-row"
                     class:selected={selectedWorkflow?.id === workflow.id}
+                    class:workflow-row--unavailable={!workflow.available}
                     aria-current={selectedWorkflow?.id === workflow.id ? "true" : undefined}
                     onclick={() => selectWorkflow(workflow.id)}
                   >
-                    <strong>{workflow.name}</strong>
-                    <span>{workflow.path}</span>
-                    {#if !workflow.available}<small>{workflow.unavailable_reason || "Unavailable"}</small>{/if}
+                    <span class="rail-row__name">{workflow.name}</span>
+                    <code class="workflow-row__path" title={workflow.path}>{workflow.path}</code>
+                    {#if !workflow.available}
+                      <span class="workflow-row__flag" title={workflow.unavailable_reason || "Unavailable"}>
+                        <Chip size="xs" tone="muted" uppercase={false}>Unavailable</Chip>
+                      </span>
+                    {/if}
                   </button>
                 </li>
               {/each}
@@ -278,6 +471,7 @@
           {/if}
         </ScrollBox>
       </section>
+      {@render paneHandle("catalog", "Resize workflow list")}
 
       <div class="workflow-workspace">
         <section class="dispatch-pane" aria-labelledby="dispatch-title">
@@ -299,16 +493,17 @@
                   />
                 {/key}
               {:else}
-                <p class="pane-state">Select a workflow to configure a manual run.</p>
+                <p class="pane-state pane-state--flush">Select a workflow to configure a manual run.</p>
               {/if}
             </div>
           </ScrollBox>
         </section>
+        {@render paneHandle("dispatch", "Resize dispatch form")}
 
         <section class="runs-pane" aria-labelledby="runs-title">
           <header class="pane-heading">
             <h2 id="runs-title">Recent runs</h2>
-            {#if snapshot}<span>{snapshot.runs.length}</span>{/if}
+            {#if snapshot}<Chip size="xs" tone="muted" uppercase={false}>{snapshot.runs.length}</Chip>{/if}
           </header>
           <ScrollBox label="Recent workflow runs">
             {#if snapshot?.error}
@@ -331,13 +526,14 @@
               />
               {#if snapshot.runsPage.nextCursor && !snapshot.runsPage.exhausted}
                 <div class="runs-pagination">
-                  <button
-                    type="button"
+                  <Button
+                    size="sm"
+                    surface="soft"
                     disabled={snapshot.runsPage.loadingMore}
                     onclick={() => workflowActions.loadMoreRuns(selectedRef)}
                   >
                     {snapshot.runsPage.loadingMore ? "Loading more runs…" : "Load more runs"}
-                  </button>
+                  </Button>
                 </div>
               {/if}
             {/if}
@@ -359,12 +555,13 @@
   }
 
   .actions-page__header {
-    min-height: 54px;
+    min-height: 36px;
+    flex: 0 0 auto;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: var(--space-4);
-    padding: var(--space-3) var(--space-5);
+    gap: var(--space-5);
+    padding: 0 var(--space-5);
     border-block-end: 1px solid var(--border-default);
     background: var(--bg-surface);
   }
@@ -376,23 +573,19 @@
   }
 
   h1 {
-    font-size: var(--font-size-lg);
+    font-size: var(--font-size-md);
+    font-weight: 650;
     line-height: 1.25;
   }
 
-  .actions-page__header p,
-  .actions-page__selection,
-  .pane-heading span {
-    color: var(--text-secondary);
-    font-size: var(--font-size-xs);
-  }
-
   .actions-page__selection {
-    max-width: min(40vw, 420px);
+    max-width: min(50vw, 480px);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    color: var(--text-secondary);
     font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
   }
 
   .actions-page__state {
@@ -402,18 +595,11 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: var(--space-3);
-    padding: var(--space-6);
+    gap: var(--space-4);
+    padding: var(--space-7);
     color: var(--text-secondary);
+    font-size: var(--font-size-sm);
     text-align: center;
-  }
-
-  .actions-page__state button {
-    min-height: 30px;
-    padding: 0 var(--space-4);
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-sm);
-    background: var(--bg-surface);
   }
 
   .actions-page__state--error,
@@ -424,21 +610,17 @@
   .unsupported-list {
     display: grid;
     gap: var(--space-2);
+    margin: 0;
     padding: 0;
     list-style: none;
-    font-size: var(--font-size-sm);
   }
 
-  .actions-layout {
+  .actions-layout,
+  .workflow-workspace {
     flex: 1;
     min-height: 0;
     min-width: 0;
-    display: grid;
-    grid-template-columns: var(--actions-workflow-list-width) minmax(0, 1fr);
-  }
-
-  .actions-layout--with-rail {
-    grid-template-columns: var(--actions-repository-rail-width) var(--actions-workflow-list-width) minmax(0, 1fr);
+    display: flex;
   }
 
   .repository-rail,
@@ -452,9 +634,56 @@
     background: var(--bg-surface);
   }
 
-  .repository-rail,
+  .repository-rail {
+    flex: 0 0 var(--actions-rail-width);
+    background: var(--sidebar-list-bg);
+  }
+
   .workflow-catalog {
-    border-inline-end: 1px solid var(--border-default);
+    flex: 0 0 var(--actions-catalog-width);
+    background: var(--sidebar-list-bg);
+  }
+
+  .dispatch-pane {
+    flex: 0 0 var(--actions-dispatch-width);
+  }
+
+  .runs-pane {
+    flex: 1 1 0;
+  }
+
+  .pane-heading {
+    min-height: 34px;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: 0 var(--space-4) 0 var(--space-5);
+    border-block-end: 1px solid var(--border-default);
+    background: var(--bg-inset);
+  }
+
+  .pane-heading h2 {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-secondary);
+    font-size: var(--font-size-xs);
+    font-weight: 650;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .pane-heading__tools {
+    margin-inline-start: auto;
+    display: inline-flex;
+  }
+
+  .rail-search {
+    flex: 0 0 auto;
+    padding: var(--space-3) var(--space-4);
+    border-block-end: 1px solid var(--sidebar-list-border-muted);
   }
 
   .repository-list,
@@ -472,100 +701,122 @@
     min-width: 0;
   }
 
-  .repository-list button,
-  .repository-unsupported,
-  .workflow-list button {
+  .rail-row {
+    box-sizing: border-box;
+    width: 100%;
     min-width: 0;
     display: grid;
-    gap: var(--space-1);
-    padding: var(--space-3) var(--space-4);
-    border-block-end: 1px solid var(--border-subtle);
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0 var(--space-3);
+    padding: var(--space-3) var(--space-4) var(--space-3) var(--space-5);
+    border: 0;
+    border-block-end: 1px solid var(--sidebar-list-border-muted);
+    background: var(--sidebar-row-bg);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: var(--font-size-sm);
     text-align: start;
   }
 
-  .workflow-list button {
-    width: 100%;
+  button.rail-row {
+    cursor: pointer;
   }
 
-  .repository-list button:hover,
-  .workflow-list button:hover {
-    background: var(--bg-surface-hover);
+  button.rail-row:hover,
+  button.rail-row.selected:hover {
+    background: var(--sidebar-row-hover-bg);
   }
 
-  .repository-list button.selected,
-  .workflow-list button.selected {
+  button.rail-row.selected {
     background: var(--bg-row-selected);
     box-shadow: inset var(--chrome-active-accent-width) 0 0 var(--accent-blue);
   }
 
-  .repository-list span,
-  .repository-list small,
-  .workflow-list span,
-  .workflow-list small {
+  .rail-row__name,
+  .rail-row__owner,
+  .workflow-row__path {
+    grid-column: 1;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .repository-list small,
-  .repository-unsupported,
-  .workflow-list span,
-  .workflow-list small {
-    color: var(--text-secondary);
+  .rail-row__name {
+    font-weight: 550;
+  }
+
+  .rail-row__owner,
+  .workflow-row__path {
+    color: var(--text-muted);
     font-size: var(--font-size-xs);
   }
 
-  .repository-unsupported {
-    background: var(--bg-inset);
+  .workflow-row__path {
+    font-family: var(--font-mono);
   }
 
-  .repository-unsupported small {
-    white-space: normal;
+  .rail-row__status,
+  .workflow-row__flag {
+    grid-column: 2;
+    grid-row: 1;
+    display: inline-flex;
   }
 
-  .pane-heading {
-    min-height: 37px;
-    flex: 0 0 auto;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-3);
-    padding: 0 var(--space-4);
-    border-block-end: 1px solid var(--border-default);
-    background: var(--bg-inset);
+  .workflow-row__flag {
+    grid-row: 1 / span 2;
   }
 
-  .pane-heading h2 {
-    font-size: var(--font-size-sm);
-    font-weight: 650;
+  .rail-row__status {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--text-muted);
   }
 
-  .workflow-workspace {
-    min-height: 0;
-    min-width: 0;
-    display: grid;
-    grid-template-columns: minmax(260px, 0.8fr) minmax(360px, 1.2fr);
-  }
+  .rail-row__status[data-tone="success"] { background: var(--accent-green); }
+  .rail-row__status[data-tone="danger"] { background: var(--accent-red); }
+  .rail-row__status[data-tone="warning"] { background: var(--accent-amber); }
+  .rail-row__status[data-tone="info"] { background: var(--accent-blue); }
 
-  .dispatch-pane {
-    border-inline-end: 1px solid var(--border-default);
+  .rail-row--unsupported .rail-row__name,
+  .workflow-row--unavailable .rail-row__name {
+    color: var(--text-secondary);
+    font-weight: 450;
   }
 
   .pane-content {
-    padding: var(--space-4);
+    padding: var(--space-5);
   }
 
   .pane-state {
-    padding: var(--space-5) var(--space-4);
+    padding: var(--space-5);
     color: var(--text-secondary);
     font-size: var(--font-size-sm);
+  }
+
+  .pane-state--flush {
+    padding: 0;
+  }
+
+  .pane-state--error {
+    display: grid;
+    justify-items: start;
+    gap: var(--space-3);
+  }
+
+  .runs-pagination {
+    display: flex;
+    justify-content: center;
+    padding: var(--space-4);
   }
 
   .workflow-data-error {
     display: grid;
     gap: var(--space-1);
-    margin: var(--space-3) var(--space-4) 0;
-    padding: var(--space-3);
+    margin: var(--space-4) var(--space-5);
+    padding: var(--space-3) var(--space-4);
     border: 1px solid color-mix(in srgb, var(--accent-red) 45%, var(--border-default));
     border-radius: var(--radius-sm);
     background: color-mix(in srgb, var(--accent-red) 8%, var(--bg-surface));
@@ -573,14 +824,24 @@
     font-size: var(--font-size-sm);
   }
 
+  /* Below the split threshold the panes stack, so the dividers stand down. */
   @media (max-width: 900px) {
     .actions-layout {
-      grid-template-columns: 180px minmax(0, 1fr);
+      display: grid;
+      grid-template-columns: 200px minmax(0, 1fr);
       grid-template-rows: minmax(0, 1fr);
     }
 
+    .actions-layout :global(.actions-resize-handle) {
+      display: none;
+    }
+
+    .repository-rail,
+    .workflow-catalog {
+      border-inline-end: 1px solid var(--border-default);
+    }
+
     .actions-layout--with-rail {
-      grid-template-columns: 180px minmax(0, 1fr);
       grid-template-rows: minmax(150px, 0.7fr) minmax(0, 1.3fr);
     }
 
@@ -594,27 +855,22 @@
     }
 
     .workflow-workspace {
-      grid-template-columns: minmax(0, 1fr);
+      flex-direction: column;
     }
 
     .dispatch-pane {
-      border-inline-end: 0;
+      flex: 0 1 auto;
+      max-height: 45%;
       border-block-end: 1px solid var(--border-default);
     }
   }
 
   @media (max-width: 640px) {
     .actions-page__header {
-      align-items: flex-start;
-      padding: var(--space-3) var(--space-4);
+      padding: 0 var(--space-4);
     }
 
-    .actions-page__header p {
-      display: none;
-    }
-
-    .actions-layout,
-    .actions-layout--with-rail {
+    .actions-layout {
       display: flex;
       flex-direction: column;
       overflow: auto;
@@ -625,24 +881,15 @@
     .dispatch-pane,
     .runs-pane {
       flex: 0 0 auto;
-      min-height: 160px;
+      max-height: none;
+      min-height: 200px;
       border-inline-end: 0;
       border-block-end: 1px solid var(--border-default);
     }
 
-    .repository-rail {
-      min-height: 132px;
-    }
-
-    .repository-list {
-      grid-auto-flow: column;
-      grid-auto-columns: minmax(148px, 1fr);
-      overflow-x: auto;
-    }
-
-    .repository-list button,
-    .repository-unsupported {
-      border-inline-end: 1px solid var(--border-subtle);
+    .repository-rail,
+    .workflow-catalog {
+      max-height: 40vh;
     }
 
     .workflow-workspace {

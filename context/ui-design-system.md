@@ -246,6 +246,13 @@ hierarchy, such as a repo/ref or file-name cell. Do not use terminal/TUI
 connector glyphs, branch-line borders, or extra ornamental strokes to draw the
 tree. Indentation and a standard chevron are the affordance.
 
+### Table
+
+Row-and-column data uses kit `Table`/`TableHeaderCell` with caller-owned sort state, not
+grid-styled buttons. Under `table-layout: fixed` with a full-width `colspan` detail row,
+collapse narrow-container columns to zero width; `display: none` leaves phantom columns
+that steal width (`frontend/src/lib/components/actions/WorkflowRunList.svelte`).
+
 ### ActionButton
 
 Use `ActionButton` for repeated action styling.

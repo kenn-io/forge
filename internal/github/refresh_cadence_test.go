@@ -89,12 +89,13 @@ func TestDailyIssueCheckRefreshesCommentsEvenWhenParentIsUnchanged(t *testing.T)
 	}
 }
 
-func TestSyncChecksCommentsOnceAfterUnchangedDetail(t *testing.T) {
+func TestSyncChecksCommentsOncePerCycleAfterUnchangedDetail(t *testing.T) {
 	for _, kind := range []string{"pull request", "issue"} {
 		for _, listUnchanged := range []bool{false, true} {
 			listResult := map[bool]string{false: "list 200", true: "list 304"}[listUnchanged]
 			t.Run(kind+"/"+listResult, func(t *testing.T) {
 				require := require.New(t)
+				assert := assert.New(t)
 				ctx := t.Context()
 				d := openTestDB(t)
 				repo := RepoRef{Owner: "acme", Name: "widgets", PlatformHost: "github.com"}
@@ -102,13 +103,14 @@ func TestSyncChecksCommentsOnceAfterUnchangedDetail(t *testing.T) {
 				require.NoError(err)
 				now := time.Now().UTC().Truncate(time.Second)
 				updated := now.Add(-2 * time.Hour)
+				fetched := now.Add(-25 * time.Hour)
 				var client Client
 				var mock *mockClient
 				var id int64
 				if kind == "pull request" {
 					id, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
 						RepoID: repoID, Number: 1, PlatformID: 101, State: "open", Title: "Active PR",
-						CreatedAt: updated, UpdatedAt: updated, LastActivityAt: updated, DetailFetchedAt: &updated,
+						CreatedAt: updated, UpdatedAt: updated, LastActivityAt: updated, DetailFetchedAt: &fetched,
 					})
 					require.NoError(err)
 					prClient := &conditionalPRTrackingClient{notModified: true}
@@ -123,7 +125,7 @@ func TestSyncChecksCommentsOnceAfterUnchangedDetail(t *testing.T) {
 				} else {
 					id, err = d.UpsertIssue(ctx, &db.Issue{
 						RepoID: repoID, Number: 1, PlatformID: 101, State: "open", Title: "Active issue",
-						CreatedAt: updated, UpdatedAt: updated, LastActivityAt: updated, DetailFetchedAt: &updated,
+						CreatedAt: updated, UpdatedAt: updated, LastActivityAt: updated, DetailFetchedAt: &fetched,
 					})
 					require.NoError(err)
 					issueClient := &conditionalIssueTrackingClient{notModified: true}
@@ -141,19 +143,27 @@ func TestSyncChecksCommentsOnceAfterUnchangedDetail(t *testing.T) {
 				syncer := NewSyncer(map[string]Client{"github.com": client}, d, nil,
 					[]RepoRef{repo}, time.Minute, nil, testBudget(1000))
 
+				mock.listIssueCommentsErr = errors.New("comments unavailable")
+				syncer.RunOnce(ctx)
+				assert.Equal(int32(1), mock.listIssueCommentsIfChangedCalls.Load(),
+					"a failed detail comment request must not be retried by the queued pass")
+				assert.Equal(1, syncer.Status().DetailRefreshOverdue, "failed details must remain overdue")
+
+				mock.listIssueCommentsErr = nil
 				syncer.RunOnce(ctx)
 
-				assert.Equal(t, int32(1), mock.listIssueCommentsCalled.Load(), "comments must be fetched once per cycle")
+				assert.Equal(int32(2), mock.listIssueCommentsIfChangedCalls.Load(), "retry on the next cycle only")
+				assert.Zero(syncer.Status().DetailRefreshOverdue)
 				if kind == "pull request" {
 					events, err := d.ListMREvents(ctx, id)
 					require.NoError(err)
 					require.Len(events, 1)
-					assert.Equal(t, "edited comment", events[0].Body)
+					assert.Equal("edited comment", events[0].Body)
 				} else {
 					events, err := d.ListIssueEvents(ctx, id)
 					require.NoError(err)
 					require.Len(events, 1)
-					assert.Equal(t, "edited comment", events[0].Body)
+					assert.Equal("edited comment", events[0].Body)
 				}
 			})
 		}

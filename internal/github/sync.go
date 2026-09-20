@@ -10944,6 +10944,25 @@ func (s *Syncer) drainDetailQueue(
 		return
 	}
 
+	// A failed detail attempt stays overdue, but must not spend more budget
+	// retrying through the comment-only pass in this same cycle.
+	type detailAttempt struct {
+		repoID int64
+		number int
+		kind   QueueItemType
+	}
+	attempted := make(map[detailAttempt]bool)
+	defer func() {
+		s.commentRefreshMu.Lock()
+		defer s.commentRefreshMu.Unlock()
+		s.pendingPRCommentSyncs = slices.DeleteFunc(s.pendingPRCommentSyncs, func(item queuedPRCommentSync) bool {
+			return attempted[detailAttempt{item.repoID, item.number, QueueItemPR}]
+		})
+		s.pendingIssueCommentSyncs = slices.DeleteFunc(s.pendingIssueCommentSyncs, func(item queuedIssueCommentSync) bool {
+			return attempted[detailAttempt{item.repoID, item.number, QueueItemIssue}]
+		})
+	}()
+
 	// Track which hosts are exhausted so we skip quickly.
 	exhausted := make(map[string]bool)
 	verifiedRepos := make(map[string]RepoRef)
@@ -11088,6 +11107,9 @@ func (s *Syncer) drainDetailQueue(
 			providerCalls, err = s.fetchIssueDetail(
 				itemCtx, repo, repoID, qi.Number,
 			)
+		}
+		if providerCalls > 0 {
+			attempted[detailAttempt{repoID, qi.Number, qi.Type}] = true
 		}
 
 		if err != nil {

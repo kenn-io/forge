@@ -87,11 +87,8 @@ func BuildQueue(
 			continue
 		}
 		items[i].Score = score(&items[i], now)
-		checkedAt := items[i].UpdatedAt
-		if items[i].DetailFetchedAt != nil {
-			checkedAt = *items[i].DetailFetchedAt
-		}
-		items[i].dailyDue = now.Sub(checkedAt) >= dailyRefetchInterval
+		items[i].dailyDue = items[i].DetailFetchedAt == nil ||
+			now.Sub(*items[i].DetailFetchedAt) >= dailyRefetchInterval
 		eligible = append(eligible, items[i])
 	}
 	slices.SortFunc(eligible, QueueItem.Compare)

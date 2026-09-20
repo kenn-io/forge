@@ -146,11 +146,12 @@ func TestBuildQueueSortedByScoreDescending(t *testing.T) {
 			DetailFetchedAt: &fetched,
 		},
 		{
-			// Mid score: never fetched, open.
-			Type:      QueueItemPR,
-			Number:    30,
-			IsOpen:    true,
-			UpdatedAt: testNow.Add(-3 * time.Hour),
+			// Mid score: previously fetched, open, unchanged.
+			Type:            QueueItemPR,
+			Number:          30,
+			IsOpen:          true,
+			UpdatedAt:       testNow.Add(-3 * time.Hour),
+			DetailFetchedAt: &fetched,
 		},
 	}
 

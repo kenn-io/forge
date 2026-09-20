@@ -183,3 +183,43 @@ func TestSyncReportsDailyBacklogWhenBudgetCannotCoverOpenItems(t *testing.T) {
 	syncer.RunOnce(ctx)
 	assert.Equal(t, 1, syncer.Status().DetailRefreshOverdue)
 }
+
+func TestDetailDrainHydratesRecentNeverFetchedBeforeActiveWork(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	repoID, err := d.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", repo.Owner, repo.Name))
+	require.NoError(err)
+	now := time.Now().UTC().Truncate(time.Second)
+	fetched := now.Add(-2 * time.Hour)
+	prs := []*gh.PullRequest{buildOpenPR(1, now), buildOpenPR(2, now.Add(-time.Hour))}
+	for i, pr := range prs {
+		stored, err := NormalizePR(repoID, pr)
+		require.NoError(err)
+		if i == 0 {
+			stored.DetailFetchedAt = &fetched
+		}
+		_, err = d.UpsertMergeRequest(ctx, stored)
+		require.NoError(err)
+	}
+	// Enough admission capacity for one PR detail, not a second.
+	budget := testBudget(20)
+	mock := &detailTrackingClient{}
+	mock.budget = budget["github.com"]
+	mock.openPRs = prs
+	mock.comments = []*gh.IssueComment{}
+	syncer := NewSyncer(map[string]Client{"github.com": mock}, d, nil,
+		[]RepoRef{repo}, time.Minute, nil, budget)
+	require.Equal(1, syncer.countOverdueDetails(ctx))
+
+	syncer.drainDetailQueue(ctx, map[string]bool{"github.com": true}, []RepoRef{repo})
+
+	assert.Equal(int32(1), mock.getPRCalls.Load())
+	newPR, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 2)
+	require.NoError(err)
+	require.NotNil(newPR)
+	assert.NotNil(newPR.DetailFetchedAt, "initial hydration must precede another active-item refresh")
+	assert.Zero(syncer.countOverdueDetails(ctx))
+}

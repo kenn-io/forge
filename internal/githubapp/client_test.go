@@ -122,7 +122,7 @@ func TestMintInstallationTokenRejectsWrongKey(t *testing.T) {
 	otherKey := generateTestKey(t)
 	wrongJWT, err := githubapp.SignAppJWT(creds.ID, otherKey, time.Now())
 	require.NoError(err)
-	_, err = client.CreateInstallationToken(context.Background(), wrongJWT, installID)
+	_, err = client.CreateInstallationToken(context.Background(), wrongJWT, installID, nil)
 	assert.True(t, githubapp.IsStatus(err, http.StatusUnauthorized), "got %v", err)
 }
 

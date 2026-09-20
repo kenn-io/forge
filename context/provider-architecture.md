@@ -35,6 +35,10 @@ cache policy and admission remain internal
 (`cmd/kenn-forge/provider_startup.go::defaultProviderFactories`,
 `internal/tokenauth/source.go::githubAppTokenStore`).
 
+Scoped installation tokens stay outside ordinary sync credential caches; callers
+validate returned grants and key any scoped cache by the complete scope
+(`githubapp/client.go::Client.CreateInstallationToken`).
+
 App discovery pages are observations, not atomic inventories; callers own total
 budgets and must not equate stopping with exhaustion
 (`githubapp/discovery.go::InstallationPage`).

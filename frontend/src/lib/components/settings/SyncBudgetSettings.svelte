@@ -62,7 +62,7 @@
               onUpdate(settings.sync);
               // The status bar reads the live ceiling; show the new limit now
               // instead of on the next poll.
-              syncStore.refreshSyncStatus();
+              syncStore.refreshRateLimits();
             }),
         }),
         Effect.ensuring(Effect.sync(() => (saving = false))),

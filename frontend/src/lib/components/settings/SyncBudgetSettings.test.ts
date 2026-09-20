@@ -2,13 +2,13 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/sv
 import { Effect, Layer } from "effect";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-const mockRefreshSyncStatus = vi.fn();
+const mockRefreshRateLimits = vi.fn();
 const mockPersistSettings = vi.hoisted(() => vi.fn());
 
 vi.mock("../../context.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../context.js")>()),
   getStores: () => ({
-    sync: { refreshSyncStatus: mockRefreshSyncStatus },
+    sync: { refreshRateLimits: mockRefreshRateLimits },
   }),
 }));
 
@@ -39,7 +39,7 @@ function renderSettings(props: Record<string, unknown> = {}) {
 describe("SyncBudgetSettings", () => {
   afterEach(() => {
     cleanup();
-    mockRefreshSyncStatus.mockReset();
+    mockRefreshRateLimits.mockReset();
     mockPersistSettings.mockReset();
   });
 
@@ -59,7 +59,7 @@ describe("SyncBudgetSettings", () => {
     await waitFor(() => expect(onUpdate).toHaveBeenCalledWith({ budget_per_hour: 3000 }));
     const build = mockPersistSettings.mock.calls[0]![0] as () => unknown;
     expect(build()).toEqual({ sync: { budget_per_hour: 3000 } });
-    expect(mockRefreshSyncStatus).toHaveBeenCalledTimes(1);
+    expect(mockRefreshRateLimits).toHaveBeenCalledTimes(1);
   });
 
   it.each(["49", "15001", "12.5", ""])("rejects %j without sending a request", async (value) => {
@@ -81,6 +81,6 @@ describe("SyncBudgetSettings", () => {
 
     await waitFor(() => expect(input.value).toBe("500"));
     expect(onUpdate).not.toHaveBeenCalled();
-    expect(mockRefreshSyncStatus).not.toHaveBeenCalled();
+    expect(mockRefreshRateLimits).not.toHaveBeenCalled();
   });
 });

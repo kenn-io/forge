@@ -51401,6 +51401,7 @@ type SettingsResponse struct {
 	RepoPresets   []RepoPreset                  `json:"repo_presets"`
 	Repos         []ConfiguredRepoStatus        `json:"repos"`
 	Roborev       RoborevSettingsResponse       `json:"roborev"`
+	Sync          SyncSettingsResponse          `json:"sync"`
 	Terminal      Terminal                      `json:"terminal"`
 	Workspaces    Workspaces                    `json:"workspaces"`
 }
@@ -51522,6 +51523,14 @@ type SubmitInitialMessageInputBody struct {
 	Schema    *string `json:"$schema,omitempty"`
 	Message   string  `json:"message"`
 	TargetKey string  `json:"target_key"`
+}
+
+type SyncSettingsResponse struct {
+	BudgetPerHour int64 `json:"budget_per_hour"`
+}
+
+type SyncSettingsUpdate struct {
+	BudgetPerHour *int64 `json:"budget_per_hour,omitempty"`
 }
 
 type SyncStatus struct {
@@ -51655,6 +51664,7 @@ type UpdateSettingsRequest struct {
 	PullRequests *PullRequests            `json:"pull_requests,omitempty"`
 	QuickActions []QuickAction            `json:"quick_actions,omitempty"`
 	Roborev      *RoborevSettingsUpdate   `json:"roborev,omitempty"`
+	Sync         *SyncSettingsUpdate      `json:"sync,omitempty"`
 	Terminal     *Terminal                `json:"terminal,omitempty"`
 	Workspaces   *WorkspaceSettingsUpdate `json:"workspaces,omitempty"`
 }

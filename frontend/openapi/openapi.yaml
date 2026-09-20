@@ -8268,6 +8268,8 @@ components:
           type: array
         roborev:
           $ref: "#/components/schemas/RoborevSettingsResponse"
+        sync:
+          $ref: "#/components/schemas/SyncSettingsResponse"
         terminal:
           $ref: "#/components/schemas/Terminal"
         workspaces:
@@ -8278,6 +8280,7 @@ components:
         - repo_presets
         - activity
         - detail
+        - sync
         - pull_requests
         - workspaces
         - issues
@@ -8645,6 +8648,26 @@ components:
         - target_key
         - message
       type: object
+    SyncSettingsResponse:
+      additionalProperties: false
+      properties:
+        budget_per_hour:
+          format: int64
+          maximum: 15000
+          minimum: 50
+          type: integer
+      required:
+        - budget_per_hour
+      type: object
+    SyncSettingsUpdate:
+      additionalProperties: false
+      properties:
+        budget_per_hour:
+          format: int64
+          maximum: 15000
+          minimum: 50
+          type: integer
+      type: object
     SyncStatus:
       additionalProperties: false
       properties:
@@ -8975,6 +8998,8 @@ components:
           type: array
         roborev:
           $ref: "#/components/schemas/RoborevSettingsUpdate"
+        sync:
+          $ref: "#/components/schemas/SyncSettingsUpdate"
         terminal:
           $ref: "#/components/schemas/Terminal"
         workspaces:

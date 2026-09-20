@@ -253,7 +253,8 @@ Changes apply without restarting Forge.
 ## Sync budget
 
 `sync_budget_per_hour` limits the API requests Forge spends on live background
-sync each hour. It defaults to 500. For a large or active repository, raise it in
+sync each hour. It defaults to 500. For a large or active repository, raise
+**Hourly sync budget** under **Settings > Sync**, or set it in
 `~/.kenn/forge/config.toml`:
 
 ```toml
@@ -261,13 +262,11 @@ sync_budget_per_hour = 3000
 ```
 
 Put this at the top level, before any `[section]` or `[[repos]]` header. If
-the key already exists, change its value. Restart Forge to apply it:
+the key already exists, change its value. Either way the new limit applies
+without a restart and keeps the requests already spent this hour.
 
-```sh
-kenn-forge daemon restart
-```
-
-The value must be at least 50. Omitting it or setting it to `0` uses the
+The value must be between 50 and 15,000, the largest hourly quota GitHub
+grants a single account. Omitting it or setting it to `0` uses the
 500-request default; zero does not disable the ceiling.
 
 The same configured limit applies to each budget. GitHub repositories share a

@@ -3155,7 +3155,19 @@ name = "b"
 `)
 		_, err := Load(path)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "sync_budget_per_hour must be >= 50 or omitted")
+		assert.Contains(t, err.Error(), "sync_budget_per_hour must be between 50 and 15000 or omitted")
+	})
+
+	t.Run("rejects value above the provider quota ceiling", func(t *testing.T) {
+		path := writeConfig(t, `
+sync_budget_per_hour = 15001
+[[repos]]
+owner = "a"
+name = "b"
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "sync_budget_per_hour must be between 50 and 15000 or omitted")
 	})
 
 	t.Run("configured value preserved", func(t *testing.T) {

@@ -11,6 +11,7 @@ import type { ModeVisibility } from "./modeVisibility.ts";
 import type { PullRequests } from "./pullRequests.ts";
 import type { QuickAction } from "./quickAction.ts";
 import type { RoborevSettingsUpdate } from "./roborevSettingsUpdate.ts";
+import type { SyncSettingsUpdate } from "./syncSettingsUpdate.ts";
 import type { Terminal } from "./terminal.ts";
 import type { WorkspaceSettingsUpdate } from "./workspaceSettingsUpdate.ts";
 
@@ -28,6 +29,7 @@ export interface UpdateSettingsRequest {
   pull_requests?: PullRequests;
   quick_actions?: QuickAction[];
   roborev?: RoborevSettingsUpdate;
+  sync?: SyncSettingsUpdate;
   terminal?: Terminal;
   workspaces?: WorkspaceSettingsUpdate;
 }

@@ -16,6 +16,7 @@ import type { PullRequests } from "./pullRequests.ts";
 import type { QuickAction } from "./quickAction.ts";
 import type { RepoPreset } from "./repoPreset.ts";
 import type { RoborevSettingsResponse } from "./roborevSettingsResponse.ts";
+import type { SyncSettingsResponse } from "./syncSettingsResponse.ts";
 import type { Terminal } from "./terminal.ts";
 import type { Workspaces } from "./workspaces.ts";
 
@@ -38,6 +39,7 @@ export interface SettingsResponse {
   repo_presets: RepoPreset[];
   repos: ConfiguredRepoStatus[];
   roborev: RoborevSettingsResponse;
+  sync: SyncSettingsResponse;
   terminal: Terminal;
   workspaces: Workspaces;
 }

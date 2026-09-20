@@ -26,6 +26,7 @@ type settingsResponse struct {
 	RepoPresets   []config.RepoPreset             `json:"repo_presets" nullable:"false"`
 	Activity      config.Activity                 `json:"activity"`
 	Detail        config.Detail                   `json:"detail"`
+	Sync          syncSettingsResponse            `json:"sync"`
 	PullRequests  config.PullRequests             `json:"pull_requests"`
 	Workspaces    config.Workspaces               `json:"workspaces"`
 	Issues        config.Issues                   `json:"issues"`
@@ -39,6 +40,13 @@ type settingsResponse struct {
 	Fleet         fleetSettingsResponse           `json:"fleet"`
 	MCP           mcpSettingsResponse             `json:"mcp"`
 	Roborev       roborevSettingsResponse         `json:"roborev"`
+}
+
+// syncSettingsResponse reports the effective hourly sync ceiling. The schema
+// bounds mirror config.MinSyncBudgetPerHour and config.MaxSyncBudgetPerHour so
+// the UI can reject an out-of-range value before sending it.
+type syncSettingsResponse struct {
+	BudgetPerHour int `json:"budget_per_hour" minimum:"50" maximum:"15000"`
 }
 
 type notificationsSettingsResponse struct {
@@ -62,6 +70,7 @@ type updateSettingsRequest struct {
 	AirplaneMode *bool                            `json:"airplane_mode,omitempty"`
 	Activity     *config.Activity                 `json:"activity,omitempty"`
 	Detail       *config.Detail                   `json:"detail,omitempty"`
+	Sync         *syncSettingsUpdate              `json:"sync,omitempty"`
 	PullRequests *config.PullRequests             `json:"pull_requests,omitempty"`
 	Workspaces   *workspaceSettingsUpdate         `json:"workspaces,omitempty"`
 	Issues       *config.Issues                   `json:"issues,omitempty"`
@@ -78,6 +87,10 @@ type workspaceSettingsUpdate struct {
 	ShowAgentStatusInLists *bool   `json:"show_agent_status_in_lists,omitempty"`
 	AutoAssignOnCreate     *bool   `json:"auto_assign_on_create,omitempty"`
 	DefaultSidebarView     *string `json:"default_sidebar_view,omitempty" enum:"diff,item"`
+}
+
+type syncSettingsUpdate struct {
+	BudgetPerHour *int `json:"budget_per_hour,omitempty" minimum:"50" maximum:"15000"`
 }
 
 type mcpSettingsUpdate struct {
@@ -123,6 +136,7 @@ func (s *Server) buildLocalSettingsResponse(
 	}
 	activity := s.cfg.Activity
 	detail := s.cfg.Detail
+	syncSettings := syncSettingsResponse{BudgetPerHour: s.cfg.BudgetPerHour()}
 	pullRequests := s.cfg.PullRequests
 	workspaces := s.cfg.Workspaces
 	issues := s.cfg.Issues
@@ -193,6 +207,7 @@ func (s *Server) buildLocalSettingsResponse(
 		RepoPresets:  repoPresets,
 		Activity:     activity,
 		Detail:       detail,
+		Sync:         syncSettings,
 		PullRequests: pullRequests,
 		Workspaces:   workspaces,
 		Issues:       issues,
@@ -1063,6 +1078,7 @@ func (s *Server) updateLocalSettings(
 	prevAirplaneMode := s.cfg.AirplaneMode
 	prevActivity := s.cfg.Activity
 	prevDetail := s.cfg.Detail
+	prevSyncBudgetPerHour := s.cfg.SyncBudgetPerHour
 	prevPullRequests := s.cfg.PullRequests
 	prevWorkspaces := s.cfg.Workspaces
 	prevIssues := s.cfg.Issues
@@ -1088,6 +1104,9 @@ func (s *Server) updateLocalSettings(
 	}
 	if input.Body.Detail != nil {
 		s.cfg.Detail = *input.Body.Detail
+	}
+	if input.Body.Sync != nil && input.Body.Sync.BudgetPerHour != nil {
+		s.cfg.SyncBudgetPerHour = *input.Body.Sync.BudgetPerHour
 	}
 	if input.Body.PullRequests != nil {
 		s.cfg.PullRequests = *input.Body.PullRequests
@@ -1139,6 +1158,7 @@ func (s *Server) updateLocalSettings(
 		s.cfg.AirplaneMode = prevAirplaneMode
 		s.cfg.Activity = prevActivity
 		s.cfg.Detail = prevDetail
+		s.cfg.SyncBudgetPerHour = prevSyncBudgetPerHour
 		s.cfg.PullRequests = prevPullRequests
 		s.cfg.Workspaces = prevWorkspaces
 		s.cfg.Issues = prevIssues
@@ -1156,6 +1176,7 @@ func (s *Server) updateLocalSettings(
 		s.cfg.AirplaneMode = prevAirplaneMode
 		s.cfg.Activity = prevActivity
 		s.cfg.Detail = prevDetail
+		s.cfg.SyncBudgetPerHour = prevSyncBudgetPerHour
 		s.cfg.PullRequests = prevPullRequests
 		s.cfg.Workspaces = prevWorkspaces
 		s.cfg.Issues = prevIssues
@@ -1169,8 +1190,10 @@ func (s *Server) updateLocalSettings(
 		s.cfgMu.Unlock()
 		return nil, httpapi.Internal("save config: " + err.Error())
 	}
+	budgetRaised := s.cfg.SyncBudgetPerHour > prevSyncBudgetPerHour
 	if s.syncer != nil {
 		s.syncer.SetAirplaneMode(s.cfg.AirplaneMode)
+		s.syncer.SetBudgetLimit(s.cfg.BudgetPerHour())
 		s.syncer.SetBranchActivityLimits(
 			s.cfg.BranchActivityRetention(),
 			s.cfg.Activity.DefaultBranchMaxCommits,
@@ -1190,6 +1213,11 @@ func (s *Server) updateLocalSettings(
 	}
 	s.applyTmuxMouse(ctx)
 	s.reconcileGitHubNativeStackProjection(nativeStacksPrevious, nativeStacksEnabled)
+	if budgetRaised && s.syncer != nil {
+		// A sync paused at the old ceiling reports that failure until its
+		// next pass; run one now so the raised ceiling takes visible effect.
+		s.syncer.TriggerRun(context.WithoutCancel(ctx))
+	}
 
 	return s.settingsOutputResponseWithProvider(ctx, provider)
 }
@@ -1212,6 +1240,7 @@ func (s *settingsResponse) applyProviderSettings(provider settingsResponse) {
 	s.RepoPresets = provider.RepoPresets
 	s.Activity = provider.Activity
 	s.Detail = provider.Detail
+	s.Sync = provider.Sync
 	s.PullRequests = provider.PullRequests
 	s.Issues = provider.Issues
 	s.Notifications = provider.Notifications
@@ -1222,6 +1251,7 @@ func splitSettingsUpdate(
 ) (provider updateSettingsRequest, local updateSettingsRequest) {
 	provider.Activity = update.Activity
 	provider.Detail = update.Detail
+	provider.Sync = update.Sync
 	provider.PullRequests = update.PullRequests
 	provider.Issues = update.Issues
 	local.AirplaneMode = update.AirplaneMode
@@ -1238,6 +1268,7 @@ func splitSettingsUpdate(
 
 func hasSettingsUpdate(update updateSettingsRequest) bool {
 	return update.AirplaneMode != nil || update.Activity != nil || update.Detail != nil ||
+		update.Sync != nil ||
 		update.PullRequests != nil || update.Workspaces != nil ||
 		update.Issues != nil || update.Terminal != nil ||
 		update.Modes != nil || update.Agents != nil ||

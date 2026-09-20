@@ -20,6 +20,7 @@
   import KataProjectMappingsSettings from "./KataProjectMappingsSettings.svelte";
   import PullRequestSettings from "./PullRequestSettings.svelte";
   import DetailSettings from "./DetailSettings.svelte";
+  import SyncBudgetSettings from "./SyncBudgetSettings.svelte";
   import WorkspaceSettings from "./WorkspaceSettings.svelte";
   import {
     beginTerminalSettingsHydration,
@@ -195,6 +196,13 @@
             <p class="sync-description">Pause automatic background sync on this Forge instance. Relay updates, opening an item, and manual Sync remain available. This setting is remembered after restart.</p>
             <p class="sync-description">An update already running will finish. On a spoke, this pauses local background refresh; the hub keeps its own sync setting.</p>
             {#if airplaneModeError}<p class="state-error" role="alert">{airplaneModeError}</p>{/if}
+            <SyncBudgetSettings
+              sync={loaded.sync}
+              owner={providerOwner}
+              onUpdate={(sync) => {
+                settings = { ...settings!, sync };
+              }}
+            />
           {:else if meta.id === "settings-repositories"}
             <RepoSettings
               repos={loaded.repos}

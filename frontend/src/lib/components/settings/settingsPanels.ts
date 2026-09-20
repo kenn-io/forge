@@ -22,8 +22,9 @@ export const SETTINGS_PANELS: SettingsPanelMeta[] = [
     label: "Sync",
     title: "Sync",
     group: "Providers",
-    description: "Background updates and airplane mode",
-    keywords: "sync airplane mode slow internet bandwidth relay offline network",
+    description: "Background updates, airplane mode, and the hourly sync budget",
+    keywords:
+      "sync airplane mode slow internet bandwidth relay offline network budget ceiling quota rate limit requests hourly",
   },
   {
     id: "settings-pull-requests",

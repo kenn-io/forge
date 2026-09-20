@@ -56,6 +56,10 @@ type SyncBudget struct {
 	windowStart  time.Time
 	window       BudgetWindow
 	now          func() time.Time
+
+	// essentialReserve records that reserve tracks limit, so SetLimit resizes
+	// it with the ceiling.
+	essentialReserve bool
 }
 
 // BudgetWindow identifies the hourly window a reservation was made in. Refunds
@@ -98,8 +102,22 @@ const essentialReserveDenominator = 10
 // may spend up to the full limit.
 func NewSyncBudgetWithEssentialReserve(limit int) *SyncBudget {
 	b := NewSyncBudget(limit)
+	b.essentialReserve = true
 	b.reserve = limit / essentialReserveDenominator
 	return b
+}
+
+// SetLimit changes the hourly ceiling in place. Spend already recorded in the
+// current window stands: raising the limit releases refused work at once, and
+// lowering it below current spend refuses further spend until the window
+// rolls.
+func (b *SyncBudget) SetLimit(limit int) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.limit = limit
+	if b.essentialReserve {
+		b.reserve = limit / essentialReserveDenominator
+	}
 }
 
 // TrySpendEssential is TrySpend for essential requests: it may consume the
@@ -221,6 +239,8 @@ func (b *SyncBudget) Spent() int {
 }
 
 func (b *SyncBudget) Limit() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	return b.limit
 }
 

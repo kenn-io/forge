@@ -229,6 +229,10 @@ function settingsMatchRequest(settings: SettingsSnapshot, request: UpdateSetting
       Object.entries(request.roborev).every(
         ([key, value]) => settings.roborev[key as keyof typeof settings.roborev] === value,
       )) &&
+    (request.sync === undefined ||
+      Object.entries(request.sync).every(
+        ([key, value]) => settings.sync[key as keyof typeof settings.sync] === value,
+      )) &&
     (request.terminal === undefined || sameValue(settings.terminal, request.terminal)) &&
     (request.workspaces === undefined ||
       Object.entries(request.workspaces).every(

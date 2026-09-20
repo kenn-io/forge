@@ -4033,6 +4033,16 @@ func (s *Syncer) Budgets() map[string]*SyncBudget {
 	return s.budgets
 }
 
+// SetBudgetLimit applies a new hourly ceiling to every sync budget. Each
+// budget keeps the spend already recorded in its current window.
+func (s *Syncer) SetBudgetLimit(limit int) {
+	for _, budget := range s.budgets {
+		if budget != nil {
+			budget.SetLimit(limit)
+		}
+	}
+}
+
 func (s *Syncer) SetQuotaRegistry(registry *QuotaRegistry) {
 	s.quotaRegistry = registry
 }

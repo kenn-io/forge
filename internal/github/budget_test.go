@@ -52,6 +52,39 @@ func TestSyncBudgetEssentialReserve(t *testing.T) {
 	assert.False(ok, "essential spend must stop at the full limit")
 }
 
+func TestSyncBudgetSetLimitAppliesToCurrentWindow(t *testing.T) {
+	assert := assert.New(t)
+
+	b := NewSyncBudgetWithEssentialReserve(100)
+	_, ok := b.TrySpend(90)
+	assert.True(ok)
+	_, ok = b.TrySpendEssential(10)
+	assert.True(ok)
+	_, ok = b.TrySpendEssential(1)
+	assert.False(ok, "the original ceiling is exhausted")
+
+	b.SetLimit(200)
+	assert.Equal(200, b.Limit())
+	assert.Equal(100, b.Spent(), "raising the ceiling keeps spend already recorded")
+	assert.Equal(180, b.BackgroundLimit(), "the essential reserve resizes with the ceiling")
+	_, ok = b.TrySpend(80)
+	assert.True(ok, "a raised ceiling releases optional work in the same window")
+	_, ok = b.TrySpend(1)
+	assert.False(ok)
+
+	b.SetLimit(150)
+	assert.Equal(0, b.Remaining(), "a ceiling lowered below spend leaves nothing to spend")
+	_, ok = b.TrySpendEssential(1)
+	assert.False(ok)
+}
+
+func TestSyncBudgetSetLimitKeepsReserveDisabled(t *testing.T) {
+	b := NewSyncBudget(100)
+	b.SetLimit(200)
+	_, ok := b.TrySpend(200)
+	assert.True(t, ok, "budgets built without a reserve stay without one")
+}
+
 func TestSyncBudgetEssentialReserveBoundsArchiveSpend(t *testing.T) {
 	assert := assert.New(t)
 

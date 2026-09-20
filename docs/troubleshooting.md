@@ -69,22 +69,13 @@ The provider may still have quota available.
 
 To give a large or active repository more capacity:
 
-1. Open `~/.kenn/forge/config.toml`, or `$KENN_FORGE_HOME/config.toml` if you
-    set a custom home.
-2. Add or update this top-level setting, before any `[section]` or `[[repos]]`
-    header. This example raises the allowance to 3,000 requests per hour:
+1. Open **Settings > Sync**.
+2. Raise **Hourly sync budget**, for example to 3,000 requests per hour.
+3. Check that the local ceiling now shows a limit of 3,000. The new limit
+    applies immediately and Forge starts a sync.
 
-    ```toml
-    sync_budget_per_hour = 3000
-    ```
-
-3. Restart Forge to apply the new limit:
-
-    ```sh
-    kenn-forge daemon restart
-    ```
-
-4. Retry sync and check that the local ceiling now shows a limit of 3,000.
+The same setting is `sync_budget_per_hour` in `config.toml`. See
+[Sync budget](configuration.md#sync-budget).
 
 You can also wait for the local hourly window to reset. Clicking sync again
 does not clear the spent allowance.

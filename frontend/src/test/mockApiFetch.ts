@@ -297,6 +297,7 @@ export const mockSettings = {
     collapse_single_line_breaks: false,
     render_commit_messages_as_markdown: false,
   },
+  sync: { budget_per_hour: 500 },
   issues: {
     hide_bots: false,
   },

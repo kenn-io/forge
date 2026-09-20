@@ -47,6 +47,9 @@ back to TOML.
 - `detail.initial_timeline_entry_limit` is a global PR/issue presentation preference.
   Omitted or zero values default to 50; explicit values must remain within 10-250
   in both config loading and settings writes (`internal/config/config.go::Detail`).
+- `sync_budget_per_hour` is hub-owned, bounded 50-15000 on load and settings writes, and never
+  startup-bound: writes and reloads resize live budgets in place, keeping the window's spend
+  (`internal/github/budget.go::SyncBudget.SetLimit`).
 - `detail.collapse_single_line_breaks` is a false-by-default PR/issue presentation opt-in
   that renders markdown descriptions, comments, and markdown-rendered commit bodies with
   CommonMark soft breaks. It never changes plain text, Docs mode, or editor previews, and Detail settings writes replace the

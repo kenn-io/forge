@@ -6,7 +6,8 @@ sync_interval = "5m"
 airplane_mode = false
 
 # Raise the local hourly sync allowance for large or active repositories.
-# Default: 500. Minimum: 50. Zero uses the default. Restart after changing.
+# Default: 500. Range: 50-15000. Zero uses the default. Applies without a
+# restart, and is also adjustable under Settings > Sync.
 # See docs/configuration.md#sync-budget for budget sharing and provider quota.
 # sync_budget_per_hour = 3000
 

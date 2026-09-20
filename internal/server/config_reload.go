@@ -52,7 +52,6 @@ type startupConfigSnapshot struct {
 	MCP                             config.MCP
 	BasePath                        string
 	DataDir                         string
-	SyncBudgetPerHour               int
 	AllowedHosts                    []config.HostKey
 	TrustReverseProxy               bool
 	ProviderHosts                   []tokenauth.Key
@@ -117,7 +116,6 @@ func snapshotStartupConfig(cfg *config.Config) startupConfigSnapshot {
 		MCP:                             cfg.MCP,
 		BasePath:                        cfg.BasePath,
 		DataDir:                         cfg.DataDir,
-		SyncBudgetPerHour:               cfg.SyncBudgetPerHour,
 		AllowedHosts:                    startupAllowedHosts(cfg),
 		TrustReverseProxy:               cfg.TrustReverseProxy,
 		ProviderHosts:                   startupProviderHosts(cfg),
@@ -557,6 +555,7 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 			newCfg.BranchActivityRetention(),
 			newCfg.Activity.DefaultBranchMaxCommits,
 		)
+		s.syncer.SetBudgetLimit(newCfg.BudgetPerHour())
 		s.syncer.SetWatchInterval(newCfg.ActivePRRefreshDuration())
 		s.syncer.SetActiveMRWindow(newCfg.ActivePRWindowDuration())
 		s.syncer.SetActiveMRRefreshPolicy(newCfg.ActivePRHotWindowDuration(), newCfg.ActivePRWarmRefreshDuration())

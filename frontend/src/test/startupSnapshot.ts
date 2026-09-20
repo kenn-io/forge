@@ -21,6 +21,7 @@ export function makeStartupSnapshot(overrides: Partial<StartupSnapshot> = {}): S
     },
     agents: [],
     detail: { ...DEFAULT_DETAIL_SETTINGS },
+    sync: { budget_per_hour: 500 },
     fleet: {
       enabled: false,
       role: "hub",

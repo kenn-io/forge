@@ -56,6 +56,14 @@ const (
 	maxSSEBufferSize                       = 16384
 )
 
+// Bounds for sync_budget_per_hour. The maximum matches the largest hourly REST
+// quota GitHub grants one identity (an Enterprise Cloud App installation); a
+// higher local ceiling could never bind before the provider quota does.
+const (
+	MinSyncBudgetPerHour = 50
+	MaxSyncBudgetPerHour = 15000
+)
+
 func githubAppRole(app GitHubAppConfig) string {
 	role := strings.ToLower(strings.TrimSpace(app.Role))
 	if role == "" {
@@ -1611,9 +1619,12 @@ func (c *Config) validate() error {
 		c.parsedAllowedHosts = append(c.parsedAllowedHosts, key)
 	}
 
-	if c.SyncBudgetPerHour != 0 && c.SyncBudgetPerHour < 50 {
+	if c.SyncBudgetPerHour != 0 &&
+		(c.SyncBudgetPerHour < MinSyncBudgetPerHour || c.SyncBudgetPerHour > MaxSyncBudgetPerHour) {
 		return fmt.Errorf(
-			"config: sync_budget_per_hour must be >= 50 or omitted, got %d",
+			"config: sync_budget_per_hour must be between %d and %d or omitted, got %d",
+			MinSyncBudgetPerHour,
+			MaxSyncBudgetPerHour,
 			c.SyncBudgetPerHour,
 		)
 	}
@@ -3351,7 +3362,13 @@ func isUnsupportedHostnameFlag(err error, stderr []byte) bool {
 		strings.Contains(text, "unknown shorthand flag")
 }
 
+// BudgetPerHour returns the effective hourly sync ceiling. Zero means unset,
+// including on a Config built without Load, so it resolves to the default
+// rather than a ceiling that refuses every request.
 func (c *Config) BudgetPerHour() int {
+	if c.SyncBudgetPerHour == 0 {
+		return defaultSyncBudgetPerHour
+	}
 	return c.SyncBudgetPerHour
 }
 

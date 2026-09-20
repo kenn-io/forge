@@ -761,6 +761,8 @@ export * from "./syncIssueOnHostPathParameters.ts";
 export * from "./syncIssuePathParameters.ts";
 export * from "./syncPullOnHostPathParameters.ts";
 export * from "./syncPullPathParameters.ts";
+export * from "./syncSettingsResponse.ts";
+export * from "./syncSettingsUpdate.ts";
 export * from "./syncStatus.ts";
 export * from "./syncStatusLastErrorCode.ts";
 export * from "./telemetryEventInputBody.ts";

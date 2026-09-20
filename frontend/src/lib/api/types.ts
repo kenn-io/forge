@@ -63,6 +63,7 @@ import type {
   SessionInfo,
   SettingsResponse as GeneratedSettingsResponse,
   StarredRequest as GeneratedStarredRequest,
+  SyncSettingsResponse,
   SyncStatus as GeneratedSyncStatus,
   Terminal,
   UpdateFleetSettingsInputBody,
@@ -139,6 +140,7 @@ export type ActivitySettings = Activity;
 export type IssueSettings = Issues;
 export type PullRequestSettings = PullRequests;
 export type DetailSettings = Detail;
+export type SyncSettings = SyncSettingsResponse;
 export type TerminalSettings = Terminal;
 export type ModeVisibility = GeneratedModeVisibility;
 

@@ -3362,7 +3362,13 @@ func isUnsupportedHostnameFlag(err error, stderr []byte) bool {
 		strings.Contains(text, "unknown shorthand flag")
 }
 
+// BudgetPerHour returns the effective hourly sync ceiling. Zero means unset,
+// including on a Config built without Load, so it resolves to the default
+// rather than a ceiling that refuses every request.
 func (c *Config) BudgetPerHour() int {
+	if c.SyncBudgetPerHour == 0 {
+		return defaultSyncBudgetPerHour
+	}
 	return c.SyncBudgetPerHour
 }
 

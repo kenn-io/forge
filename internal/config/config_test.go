@@ -3146,6 +3146,10 @@ name = "b"
 		assert.Equal(t, 500, cfg.BudgetPerHour())
 	})
 
+	t.Run("unset value on a config built without Load resolves to the default", func(t *testing.T) {
+		assert.Equal(t, 500, (&Config{}).BudgetPerHour())
+	})
+
 	t.Run("rejects value below 50", func(t *testing.T) {
 		path := writeConfig(t, `
 sync_budget_per_hour = 49

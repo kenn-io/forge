@@ -85,6 +85,9 @@ what "current" means.
 - Comment-only polling must respect dormant-item cadence. Admitted open-item detail
   checks still check comments on parent 304s before advancing freshness; edits and
   deletions may leave the parent unchanged (`internal/github/sync.go::markUnchangedIssueDetailFetched`).
+- Defer comment-only work until after details and skip items refreshed by that pass;
+  duplicate requests consume other items' daily budget
+  (`internal/github/sync.go::drainPendingCommentSyncs`).
 
 For pull requests, that means:
 

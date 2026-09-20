@@ -18266,7 +18266,7 @@ func TestDeferredCommentRefreshRejectsABARoutePayload(t *testing.T) {
 			map[string]Client{"github.com": client}, database, nil,
 			[]RepoRef{repo}, time.Minute, nil, nil,
 		)
-		syncer.queuePRCommentSync(repo, original.Repository.ID, 7)
+		syncer.queuePRCommentSync(repo, original.Repository.ID, 7, &detailFetchedAt)
 		done := make(chan struct{})
 		go func() {
 			syncer.drainPendingCommentSyncs(ctx, map[string]bool{"github.com": true})
@@ -18329,7 +18329,7 @@ func TestDeferredCommentRefreshRejectsABARoutePayload(t *testing.T) {
 			map[string]Client{"github.com": client}, database, nil,
 			[]RepoRef{repo}, time.Minute, nil, nil,
 		)
-		syncer.queueIssueCommentSync(repo, original.Repository.ID, 7)
+		syncer.queueIssueCommentSync(repo, original.Repository.ID, 7, &detailFetchedAt)
 		done := make(chan struct{})
 		go func() {
 			syncer.drainPendingCommentSyncs(ctx, map[string]bool{"github.com": true})
@@ -18406,9 +18406,9 @@ func TestDeferredCommentRefreshSkipsRemovedUpstreamItems(t *testing.T) {
 				[]RepoRef{repo}, time.Minute, nil, nil,
 			)
 			if itemType == db.ArchiveItemTypeMergeRequest {
-				syncer.queuePRCommentSync(repo, repoID, 7)
+				syncer.queuePRCommentSync(repo, repoID, 7, &detailFetchedAt)
 			} else {
-				syncer.queueIssueCommentSync(repo, repoID, 7)
+				syncer.queueIssueCommentSync(repo, repoID, 7, &detailFetchedAt)
 			}
 			_, err = database.WriteDB().ExecContext(ctx, `
 				INSERT INTO forge_archive_items (
@@ -20709,7 +20709,7 @@ func TestPersistGitHubCommentsRollsBackRecoveryWrites(t *testing.T) {
 	})
 }
 
-func TestRefreshRepoPRCommentsUsesFullFetchForLargeThreads(t *testing.T) {
+func TestQueuedRepoPRCommentsUsesFullFetchForLargeThreads(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -20754,13 +20754,14 @@ func TestRefreshRepoPRCommentsUsesFullFetchForLargeThreads(t *testing.T) {
 		time.Minute, nil, nil,
 	)
 
-	syncer.refreshRepoPRComments(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"})
+	syncer.queueRepoPRComments(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"})
+	syncer.drainPendingCommentSyncs(ctx, map[string]bool{"github.com": true})
 
 	assert.Equal(int32(1), mock.listIssueCommentsCalled.Load())
 	assert.Equal(int32(0), mock.listIssueCommentsIfChangedCalls.Load())
 }
 
-func TestRefreshRepoIssueCommentsUsesFullFetchForLargeThreads(t *testing.T) {
+func TestQueuedRepoIssueCommentsUsesFullFetchForLargeThreads(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -20805,7 +20806,8 @@ func TestRefreshRepoIssueCommentsUsesFullFetchForLargeThreads(t *testing.T) {
 		time.Minute, nil, nil,
 	)
 
-	syncer.refreshRepoIssueComments(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"})
+	syncer.queueRepoIssueComments(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"})
+	syncer.drainPendingCommentSyncs(ctx, map[string]bool{"github.com": true})
 
 	assert.Equal(int32(1), mock.listIssueCommentsCalled.Load())
 	assert.Equal(int32(0), mock.listIssueCommentsIfChangedCalls.Load())
@@ -20919,8 +20921,8 @@ func TestDrainPendingCommentSyncsReadsQueuedItemsByProviderIdentity(t *testing.T
 		[]RepoRef{codeRepo, githubRepo},
 		time.Minute, nil, nil,
 	)
-	syncer.queuePRCommentSync(codeRepo, codeRepoID, 7)
-	syncer.queueIssueCommentSync(codeRepo, codeRepoID, 8)
+	syncer.queuePRCommentSync(codeRepo, codeRepoID, 7, &detailFetchedAt)
+	syncer.queueIssueCommentSync(codeRepo, codeRepoID, 8, &detailFetchedAt)
 
 	syncer.drainPendingCommentSyncs(ctx, map[string]bool{"code.example.com": true})
 
@@ -20944,7 +20946,7 @@ func TestDrainPendingCommentSyncsReadsQueuedItemsByProviderIdentity(t *testing.T
 	assert.Empty(githubIssueEvents)
 }
 
-func TestRefreshRepoCommentsFiltersByHost(t *testing.T) {
+func TestQueuedRepoCommentsFiltersByHost(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -21051,8 +21053,9 @@ func TestRefreshRepoCommentsFiltersByHost(t *testing.T) {
 		time.Minute, nil, nil,
 	)
 
-	syncer.refreshRepoPRComments(ctx, codeRepo)
-	syncer.refreshRepoIssueComments(ctx, codeRepo)
+	syncer.queueRepoPRComments(ctx, codeRepo)
+	syncer.queueRepoIssueComments(ctx, codeRepo)
+	syncer.drainPendingCommentSyncs(ctx, map[string]bool{"code.example.com": true})
 
 	codeMREvents, err := d.ListMREvents(ctx, codeMRID)
 	require.NoError(err)
@@ -21164,7 +21167,7 @@ func TestDeferredCommentRefreshYieldsBudgetToDetailDrain(t *testing.T) {
 		time.Minute, nil, budget,
 	)
 
-	syncer.queuePRCommentSync(repo, repoID, 1)
+	syncer.queuePRCommentSync(repo, repoID, 1, &detailFetchedAt)
 	budget["github.com"].Spend(3)
 	syncer.drainDetailQueue(ctx, map[string]bool{"github.com": true}, syncer.TrackedRepos())
 	syncer.drainPendingCommentSyncs(ctx, map[string]bool{"github.com": true})
@@ -22738,7 +22741,7 @@ func TestCommentDrainStopsIssueRefreshesAtTheReserve(t *testing.T) {
 	require.NoError(err)
 	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
 	syncer.SetQuotaRegistry(registry)
-	syncer.queueIssueCommentSync(repo, repoID, 11)
+	syncer.queueIssueCommentSync(repo, repoID, 11, nil)
 
 	bucket := RateBucketKey("github", "github.com", "user:7")
 	eligible := map[string]bool{bucket: true}

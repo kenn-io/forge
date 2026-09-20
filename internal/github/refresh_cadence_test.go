@@ -39,10 +39,10 @@ func TestDormantCommentRefreshWaitsForDailyDeadline(t *testing.T) {
 	syncer := NewSyncer(map[string]Client{"github.com": mock}, d, nil,
 		[]RepoRef{repo}, time.Minute, nil, testBudget(1000))
 
-	syncer.refreshRepoPRComments(ctx, repo)
-	syncer.refreshRepoIssueComments(ctx, repo)
-	syncer.queuePRCommentSync(repo, repoID, 1)
-	syncer.queueIssueCommentSync(repo, repoID, 2)
+	syncer.queueRepoPRComments(ctx, repo)
+	syncer.queueRepoIssueComments(ctx, repo)
+	syncer.queuePRCommentSync(repo, repoID, 1, &fetched)
+	syncer.queueIssueCommentSync(repo, repoID, 2, &fetched)
 	syncer.drainPendingCommentSyncs(ctx, map[string]bool{"github.com": true})
 	assert.Zero(t, mock.listIssueCommentsIfChangedCalls.Load(), "neither comment path should poll dormant items hourly")
 }
@@ -86,6 +86,77 @@ func TestDailyIssueCheckRefreshesCommentsEvenWhenParentIsUnchanged(t *testing.T)
 				assert.Zero(syncer.countOverdueDetails(ctx))
 			}
 		})
+	}
+}
+
+func TestSyncChecksCommentsOnceAfterUnchangedDetail(t *testing.T) {
+	for _, kind := range []string{"pull request", "issue"} {
+		for _, listUnchanged := range []bool{false, true} {
+			listResult := map[bool]string{false: "list 200", true: "list 304"}[listUnchanged]
+			t.Run(kind+"/"+listResult, func(t *testing.T) {
+				require := require.New(t)
+				ctx := t.Context()
+				d := openTestDB(t)
+				repo := RepoRef{Owner: "acme", Name: "widgets", PlatformHost: "github.com"}
+				repoID, err := d.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", repo.Owner, repo.Name))
+				require.NoError(err)
+				now := time.Now().UTC().Truncate(time.Second)
+				updated := now.Add(-2 * time.Hour)
+				var client Client
+				var mock *mockClient
+				var id int64
+				if kind == "pull request" {
+					id, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
+						RepoID: repoID, Number: 1, PlatformID: 101, State: "open", Title: "Active PR",
+						CreatedAt: updated, UpdatedAt: updated, LastActivityAt: updated, DetailFetchedAt: &updated,
+					})
+					require.NoError(err)
+					prClient := &conditionalPRTrackingClient{notModified: true}
+					mock = &prClient.mockClient
+					client = prClient
+					mock.openPRs = []*gh.PullRequest{{ID: new(int64(101)), Number: new(1),
+						Title: new("Active PR"), State: new("open"), CreatedAt: makeTimestamp(updated),
+						UpdatedAt: makeTimestamp(updated)}}
+					if listUnchanged {
+						mock.listOpenPRsErr = notModifiedErr()
+					}
+				} else {
+					id, err = d.UpsertIssue(ctx, &db.Issue{
+						RepoID: repoID, Number: 1, PlatformID: 101, State: "open", Title: "Active issue",
+						CreatedAt: updated, UpdatedAt: updated, LastActivityAt: updated, DetailFetchedAt: &updated,
+					})
+					require.NoError(err)
+					issueClient := &conditionalIssueTrackingClient{notModified: true}
+					mock = &issueClient.mockClient
+					client = issueClient
+					mock.openIssues = []*gh.Issue{{ID: new(int64(101)), Number: new(1),
+						Title: new("Active issue"), State: new("open"), CreatedAt: makeTimestamp(updated),
+						UpdatedAt: makeTimestamp(updated)}}
+					if listUnchanged {
+						mock.listOpenIssuesErr = notModifiedErr()
+					}
+				}
+				mock.comments = []*gh.IssueComment{{ID: new(int64(5)), Body: new("edited comment"),
+					CreatedAt: makeTimestamp(updated), UpdatedAt: makeTimestamp(now)}}
+				syncer := NewSyncer(map[string]Client{"github.com": client}, d, nil,
+					[]RepoRef{repo}, time.Minute, nil, testBudget(1000))
+
+				syncer.RunOnce(ctx)
+
+				assert.Equal(t, int32(1), mock.listIssueCommentsCalled.Load(), "comments must be fetched once per cycle")
+				if kind == "pull request" {
+					events, err := d.ListMREvents(ctx, id)
+					require.NoError(err)
+					require.Len(events, 1)
+					assert.Equal(t, "edited comment", events[0].Body)
+				} else {
+					events, err := d.ListIssueEvents(ctx, id)
+					require.NoError(err)
+					require.Len(events, 1)
+					assert.Equal(t, "edited comment", events[0].Body)
+				}
+			})
+		}
 	}
 }
 

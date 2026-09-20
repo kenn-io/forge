@@ -727,7 +727,7 @@ func TestCommentRefreshWithoutProviderAttemptAbandonsExpiredFeatureProbeReservat
 			name:    "pending merge request missing detail",
 			feature: platform.RepositoryFeatureMergeRequests,
 			run: func(ctx context.Context, syncer *Syncer, repo RepoRef, repoID int64) {
-				syncer.queuePRCommentSync(repo, repoID, 7)
+				syncer.queuePRCommentSync(repo, repoID, 7, nil)
 				syncer.drainPendingCommentSyncs(ctx, map[string]bool{"github.com": true})
 			},
 		},
@@ -735,7 +735,8 @@ func TestCommentRefreshWithoutProviderAttemptAbandonsExpiredFeatureProbeReservat
 			name:    "repository issue list empty",
 			feature: platform.RepositoryFeatureIssues,
 			run: func(ctx context.Context, syncer *Syncer, repo RepoRef, _ int64) {
-				syncer.refreshRepoIssueComments(ctx, repo)
+				syncer.queueRepoIssueComments(ctx, repo)
+				syncer.drainPendingCommentSyncs(ctx, map[string]bool{"github.com": true})
 			},
 		},
 	}
@@ -949,7 +950,7 @@ func TestDisabledIssueCooldownSkipsQueuedComments(t *testing.T) {
 			errors.New("repository issues disabled"),
 		),
 	))
-	syncer.queueIssueCommentSync(repo, repoID, 1)
+	syncer.queueIssueCommentSync(repo, repoID, 1, &now)
 
 	syncer.drainPendingCommentSyncs(ctx, map[string]bool{"github.com": true})
 
@@ -1002,9 +1003,9 @@ func TestExpiredIssueCommentProbeRenewsDisabledCooldown(t *testing.T) {
 	))
 	now = now.Add(repositoryFeatureProbeInterval)
 
-	syncer.queueIssueCommentSync(repo, repoID, 1)
+	syncer.queueIssueCommentSync(repo, repoID, 1, &now)
 	syncer.drainPendingCommentSyncs(ctx, map[string]bool{"github.com": true})
-	syncer.queueIssueCommentSync(repo, repoID, 1)
+	syncer.queueIssueCommentSync(repo, repoID, 1, &now)
 	syncer.drainPendingCommentSyncs(ctx, map[string]bool{"github.com": true})
 
 	assert.Equal(int32(1), commentCalls.Load())
